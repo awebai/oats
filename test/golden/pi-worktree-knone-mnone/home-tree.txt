@@ -13,7 +13,6 @@ AGENTS.md
 CLAUDE.md -> AGENTS.md
 TASK.md
 instance.json
-soul -> <base>/scope/agents/dev/soul
 work/
 work/.git
 work/.gitignore

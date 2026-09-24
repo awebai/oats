@@ -32,7 +32,6 @@ instances/dev-owner/TASK.md
 instances/dev-owner/instance.json
 instances/dev-owner/notes/
 instances/dev-owner/notes/.keep
-instances/dev-owner/soul -> <base>/scope/agents/dev/soul
 instances/dev-owner/work/
 instances/dev-owner/work/.git
 instances/dev-owner/work/.gitignore

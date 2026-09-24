@@ -78,7 +78,7 @@ members:
 packages:
   oats.framework: v1.1.3
   oats.okf: v2.1.5
-  oats.aweb: v1.12.2
+  oats.aweb: v1.12.3
 teams:
   global: { description: Org-wide }
   engineering: { description: Platform }
@@ -340,7 +340,7 @@ declares are used.
 
 OKF 2 pins each knowledge **owner** to a soul by path: at source registration
 (the `oats.okf` spawn hook) it writes `owners.json` in `state-dir` as
-`{ <owner id>: realpath(<home>/soul) }` and refuses a later registration whose
+`{ <owner id>: realpath($OATS_SOUL) }` and refuses a later registration whose
 owner resolves to a different path (`E_OWNER stable owner ID already identifies
 a different soul in this state namespace`).
 
@@ -348,8 +348,9 @@ Under v2 that path is no longer your checkout. `oats spawn` fetches the soul
 from its member repo at the confirmed commit into the deployment's
 **per-commit soul cache**, `agents/<name>/souls/<commit12>/` (immutable once
 written; `agents/<name>/soul` is a kernel-swapped pointer to the current one),
-and the instance's `<home>/soul` links **its own commit's directory** — so the
-realpath the hook pins is `<deployment>/agents/<name>/souls/<commit12>`, which
+and the kernel hands every lifecycle hook of the instance **its own commit's directory**
+as `OATS_SOUL` (recorded as `instance.json` `soulDir`; homes carry no soul
+link) — so the realpath the hook pins is `<deployment>/agents/<name>/souls/<commit12>`, which
 never equals the 0.24 pin (`<repo>/agents/<name>/soul`) and changes whenever the
 member moves. Two consequences:
 

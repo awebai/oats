@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync, lstatSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
@@ -225,7 +225,7 @@ test('native preparation publishes complete source/curriculum/helper records, th
   const scaffold=scaffoldCapturedInstance({deployment:f.deployment,resolution:result.resolution,home:scaffoldHome,instance:'imported-expert-1'});
   assert.equal(scaffold.hooksPending,true);assert.equal(scaffold.responsibleHuman,null);assert.equal(scaffold.executionBinding.resolution.id,result.resolution.id);
   assert.equal(readFileSync(join(scaffoldHome,'AGENTS.md'),'utf8').startsWith('Expert instructions'),true);assert.equal(existsSync(join(scaffoldHome,'work')),true);
-  assert.ok(realpathSync(join(scaffoldHome,'soul')).includes('.agents/soul-artifacts/'),'home soul points to retained custody, not deleted source');
+  assert.throws(() => lstatSync(join(scaffoldHome,'soul')), { code: "ENOENT" }, 'a captured home carries no soul link; AGENTS.md holds the retained soul instructions');
   const scaffoldMeta=JSON.parse(readFileSync(join(scaffoldHome,'instance.json'),'utf8'));assert.equal(scaffoldMeta.captured.lifecycle,'scaffolded-hooks-pending');
   assert.equal(scaffoldMeta.executionBinding.resolution.id,result.resolution.id);assert.equal(existsSync(join(scaffoldHome,'.agents/skills/procedure/SKILL.md')),true);
   assert.throws(()=>scaffoldCapturedInstance({deployment:f.deployment,resolution:result.resolution,home:scaffoldHome,instance:'imported-expert-1'}),{code:'E_INSTANCE_EXISTS'});
@@ -666,7 +666,7 @@ test('full retained persistent/helper curriculum selects portable boundaries wit
     assert.equal(existsSync(join(retainedBoundary,'..','work-directory.md')),false,'captured inventory excludes old directory doctrine');
     assert.ok(text.includes(originalBoundary.toString('utf8').trim()));assert.ok(text.includes(originalDirectory.toString('utf8').trim()));
     assert.match(text,/instance\.json\.executionBinding/);assert.match(text,/CLAUDE\.md -> AGENTS\.md/);
-    assert.match(text,/read-only retained source link/);assert.match(text,/instance-owned execution directory/);
+    assert.match(text,/soul is retained source, not your edit surface/);assert.doesNotMatch(text,/\.\/soul/);assert.match(text,/instance-owned execution directory/);
     assert.match(text,/cwd and a recorded `repo` path never select configuration/);
     assert.match(text,/does not promise\s+implemented captured launch/);assert.match(text,/Missing authority is a hold/);
     assert.doesNotMatch(text,/They resolve their\s+scope from the directory/);

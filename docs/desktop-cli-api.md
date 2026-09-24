@@ -48,7 +48,313 @@ no progress prose (progress goes to stderr):
 - success (exit 0): `{"schemaVersion":1,"ok":true,"result":{...}}`
 - failure (nonzero exit): `{"schemaVersion":1,"ok":false,"error":{"code":"...","message":"..."}}`
 
+## Inspect, readiness and operation run on the workspace model (`operationsApi: 2`, `soulsApi: 2`, `readinessApi: 2`, OATS 0.26.0)
+
+On a workspace deployment (an `oats-local.yaml` in reach of `--dir`), and for
+any home whose `instance.json` records `modules`, these three commands read the
+workspace model's own records and **never the classic config chain**. The probe
+integers are the gate; there is no feature string. The probe's integer says
+this kernel CAN answer the v2 shape. **Dispatch on the payload's own integer**:
+a classic scope (no `oats-local.yaml`) still answers the v1 shapes until the
+classic chain is removed.
+
+| Command | Integer (probe and payload) | 0.25.x value |
+|---|---|---|
+| `oats inspect --json` | `operationsApi: 2` (top level); each `souls[]` row `soulsApi: 2` | 1 / 1 |
+| `oats readiness --json` | `readinessApi: 2` | 1 |
+| `oats operation run --json` | `operationsApi: 2` on the result | absent |
+
+The probe's `soulsApi` follows the inspect soul rows. The `oats souls --json`
+document keeps its own `soulsApi: 1`, because its shape did not change (see
+[`oats souls`](#oats-capabilities---dir---json-capabilitiesapi-1-oats-souls---dir---json-soulsapi-1)).
+
+**The subject is an instance or a soul, never a scope.** Pass `--home <abs>`
+or `--soul <name>`. A workspace deployment with neither is `E_BAD_ARGS`. An
+`oats-local.yaml` that exists but cannot be read is reported with its own
+error code, never answered from the classic chain. For
+inspect, the message points to `oats souls` and `oats capabilities`, the
+scope-wide lists.
+- `--home` selects the instance, from its `instance.json` and the module copies
+  under `<home>/.oats/modules/`. Everything is as spawned.
+- `--soul` selects the soul, resolved exactly as a spawn of it would be:
+  discovery, then soul `capabilities:` plus workspace defaults, then the lock.
+- A v2 home lives at `<deployment>/agents/<soul>/instances/<name>`, and its
+  deployment is derived from that path. `<deployment>/oats-local.yaml` must
+  exist exactly there (never found by walking up), otherwise
+  `E_HOME_MISMATCH`. A v2 spawn ignores an ambient `PI_AGENTS_ROOT` /
+  `OATS_ROOT`, so its homes always have this layout.
+- `--dir`, if given with `--home`, must be that home's deployment
+  (`E_HOME_MISMATCH`). `--agents-root`, if given, must be
+  `<deployment>/agents` (`E_HOME_MISMATCH` with `--home`, `E_SOUL_UNKNOWN`
+  with `--soul`).
+
+**Gone from every payload:** `scope` (`context`, `chain`, `team`,
+`agentsRoots`), config `levels`, `activation {declaredAt, target, level,
+source}`, `currentConfig`, `snapshot.drift`, `health {trusted, approved,
+locked, installedIntegrity}`, soul `provenance`/`readiness`, and the scope's
+portable `sources`. A capability's origin is its module's `from` (member
+commit, or package version + commit + integrity). Its settings are the merged
+payload the spawn recorded for a home, or the resolution computes for a soul.
+
+### `oats inspect (--home <abs> | --soul <name> [--dir <d>]) --json` → `operationsApi: 2`
+
+```json
+{"operationsApi":2,"kernel":"0.26.0",
+ "subject":{"kind":"instance","instance":"release-manager-x","home":"/w/agents/release-manager/instances/release-manager-x","soul":"release-manager"},
+ "workspace":{"key":"github.com/northwind/agents","name":null,"deployment":"/w","commit":"461b9c24…","standalone":false},
+ "souls":[{"soulsApi":2,"name":"release-manager","repoKey":"github.com/northwind/agents","commit":"461b9c24…","team":"engineering",
+   "kind":null,"path":null,"description":"Cuts, verifies and announces platform releases.","work":"worktree","runtime":null,"model":null,
+   "declarations":{"requires":null,"defaults":null,"knowledge":{"owns":"release-manager","reads":["platform-engineer"]},"teams":null,"resources":null,"children":null,
+                   "capabilities":{"nw-release-tooling":{"from":"here"},"nw-deploy":{"from":"package"}}},
+   "declarationProblems":[],
+   "instructions":{"file":"/w/agents/release-manager/souls/461b9c24929c/AGENTS.md","text":"# release-manager\n…","truncated":false}}],
+ "layers":{"knowledge":{"id":"oats.okf"},"messaging":{"id":null},"tasks":{"id":null}},
+ "capabilities":[
+   {"id":"nw-house-style","version":"0.0.0-workspace","layer":null,"command":null,
+    "from":{"kind":"member","repoKey":"github.com/northwind/agents","commit":"461b9c24…"},
+    "dir":"/w/agents/release-manager/instances/release-manager-x/.oats/modules/nw-house-style","settings":{},"missingRequires":[],"operations":[]},
+   {"id":"oats.okf","version":"2.1.3","layer":"knowledge","command":"okf",
+    "from":{"kind":"package","package":"oats.okf","version":"2.1.3","commit":"71f53649…","integrity":"sha256-5019…","repoKey":"github.com/awebai/oats-okf"},
+    "dir":"/w/agents/release-manager/instances/release-manager-x/.oats/modules/oats.okf",
+    "settings":{"owns":"release-manager","reads":["platform-engineer"],"state-dir":"/srv/okf"},"missingRequires":[],
+    "operations":[{"name":"inspect","kind":"view","command":"inspect","context":"home","description":"…","args":[],"argv":["okf","inspect"],"available":true,"reason":null}]}],
+ "knowledge":{"provider":"oats.okf","version":"2.1.3","operations":[{"name":"inspect","kind":"view","available":true,"reason":null}]},
+ "instance":{"home":"/w/agents/release-manager/instances/release-manager-x","instance":"release-manager-x","agent":"release-manager",
+   "runtime":"pi","model":null,"yolo":null,"launched":false,"createdAt":"<iso>","resolution":"7217670b…",
+   "soulDir":"/w/agents/release-manager/souls/461b9c24929c",
+   "instructions":{"file":"/w/agents/release-manager/instances/release-manager-x/AGENTS.md","text":"…","truncated":false,
+                   "sources":[{"source":"kernel:instance-boundary","file":"…"},{"source":"capability:oats.okf","file":"…/.oats/modules/oats.okf/injects/okf.md"}]}},
+ "identity":null,"problems":[]}
+```
+
+- `subject` is `{kind:"instance", instance, home, soul}` for `--home` (the
+  `home` as you passed it) or `{kind:"soul", soul, repoKey, commit, team}` for
+  `--soul`.
+- `workspace.deployment` is canonical (realpath). `workspace.name` is
+  observed, so it is `null` on `inspect --home`: that command never contacts
+  the remotes, and `instance.json` records the workspace `key`, not its name.
+  Identify the workspace by `key`.
+- `souls` holds exactly the subject's soul. For a home, it is read from the
+  recorded `soulDir` (the per-commit copy the instance incarnates), with
+  `path: null`. For a soul, it is the member's current definition, with
+  `path` inside the member repository. `kind` is `member` or `external`.
+  It is observed from discovery, so it is `null` on `inspect --home`
+  (readiness `--home` observes it).
+  `declarations` gains `capabilities` (the soul's own `capabilities:`).
+- `capabilities[]` lists the subject's resolved modules, sorted by id:
+  - `dir` is the home's module copy, or `null` for a soul (nothing is
+    materialized to answer inspect).
+  - `settings` is the merged provider payload.
+  - `missingRequires` lists the manifest `requires` commands absent from PATH.
+  - `operations[].available` is `false` with a `reason` when it cannot run
+    here: a `context: "home"` operation for a soul subject says `needs a
+    running home (--home)`.
+- `instance` is `null` for a soul. For a home, `instructions.sources` names
+  each composed inject in order.
+- A soul whose resolution is refused (for example, a package the lock does
+  not provide) is an error for inspect (`E_PACKAGE_MISSING`,
+  `E_PACKAGE_INTEGRITY`, `E_CAPABILITY_MISSING`, `E_LOCK_SCHEMA`). Readiness
+  reports the same condition as a failing item.
+
+### `oats readiness (--home <abs> | --soul <name> [--dir <d>]) [--policy] --json` → `readinessApi: 2`
+
+```json
+{"readinessApi":2,
+ "subject":{"kind":"soul","soul":"release-manager","repoKey":"github.com/northwind/agents","commit":"461b9c24…","team":"engineering"},
+ "selector":{"kind":"soul","soul":"release-manager","agentsRoot":null,"dir":"/w"},"at":"<iso>",
+ "checks":{
+  "installed":{"status":"pass","items":[
+    {"subject":"oats.okf","status":"pass","required":true,"reason":null,"producer":"workspace resolution",
+     "evidence":{"from":{"kind":"package","package":"oats.okf","version":"2.1.3","commit":"71f53649…","integrity":"sha256-5019…"}},"remedy":null,"capability":{"id":"oats.okf"}}]},
+  "configured":{"status":"not-applicable","items":[]},
+  "member":{"status":"pass","items":[
+    {"subject":"member github.com/northwind/agents","status":"pass","required":true,"reason":null,"producer":"workspace discovery",
+     "evidence":{"repoKey":"github.com/northwind/agents","workspace":"github.com/northwind/agents","commit":"461b9c24…"},"remedy":null}]},
+  "providers":{"status":"fail","items":[
+    {"subject":"oats.okf","status":"fail","required":true,"reason":"setting state-dir is required (absolute host path)","producer":"provider binding check",
+     "evidence":null,"remedy":null,"capability":{"id":"oats.okf"},
+     "result":{"status":"needs-configuration","problems":[{"code":"needs-configuration","message":"setting state-dir is required (absolute host path)"}],"warnings":[]}}]}},
+ "summary":{"ready":false,"required":3,"pass":2,"fail":1,"unknown":0,
+   "byCapability":[{"capability":{"id":"oats.okf"},"checks":{"installed":"pass","configured":"not-applicable","member":"not-applicable","providers":"fail"},"ownReady":false,"ready":false}],
+   "subjectBlockers":[]},
+ "notes":["…"]}
+```
+
+For `--home`, `subject` is `{kind:"instance", instance, home, soul}`, and
+`selector` is `{kind:"home", home, soul, agentsRoot}`. The selector echoes
+your arguments byte-exact, as before. It is now a top-level field, not
+`subject.selector`.
+
+The four checks are `installed | configured | member | providers`, each
+`{status, items}` with the item fields as before (`subject, status, required,
+reason, producer, evidence, remedy`, plus `capability {id}` on
+per-capability items). Item and check statuses are `pass | fail | unknown |
+not-applicable`. **`summary.ready`** means every required item passes or is
+not-applicable, and at least one required item exists. `byCapability` and
+`subjectBlockers` keep their 0.24.9 meaning over the four new checks.
+
+- **`installed`**:
+  - For `--home` (producer `instance modules`): each recorded module, `pass`
+    when its copy under `<home>/.oats/modules/<id>/` holds its `oats.json`.
+    A missing copy fails, with remedy "spawn a new instance".
+  - For `--soul` (producer `workspace resolution`): each resolved module, with
+    its `from` as evidence.
+  - A resolution refusal is one failing item carrying `code` (`E_PACKAGE_MISSING`,
+    `E_PACKAGE_INTEGRITY`, `E_CAPABILITY_MISSING`, `E_LOCK_SCHEMA` or
+    `E_REQUIREMENT_INACTIVE`), the kernel's message as `reason`, its details as
+    `evidence`, and `remedy: "oats sync (…)"`. That covers a soul whose
+    packages are not locked, or whose lock no longer matches. The item's
+    `subject` is the soul; it lands in `summary.subjectBlockers`.
+- **`configured`** (producer `capability manifest`): each module's manifest
+  `requires` command (`evidence.command`), `pass` on PATH and `fail`
+  otherwise, with the manifest's `install` hint as the remedy. It is `not-applicable` when nothing declares a
+  requirement. Settings problems are the provider's to say, in `providers`.
+- **`member`** (producer `workspace discovery`): the soul's member
+  repository is confirmed in the workspace. It is the host's `members:` with
+  the member's `oats-membership.yaml` backlink, as `oats workspace status`
+  reports it. The kernel never reads `oats.yaml` here.
+  - `fail` when the backlink is not confirmed; the remedy names
+    `oats-membership.yaml`.
+  - `unknown` when discovery could not be read.
+  - `not-applicable` (`required: false`) for an external soul (it has no
+    member backlink) and on a standalone view (decision 10, an allowed mode:
+    membership is declared there, never confirmed). The reason starts with
+    `standalone view (explicit | unreadable-host)`, and
+    `evidence.standaloneReason` carries the reason code. A standalone soul can
+    therefore read Ready.
+  - Never login, never team registration.
+- **`providers`** (producer `provider binding check`): for each module whose
+  manifest declares `binding`, the kernel runs the provider's own check
+  (`binding.check`). It relays **the provider's answer verbatim** as
+  `item.result: {status, problems: [{code, message}], warnings: [{code,
+  message}]}`. The status maps to the item:
+
+  | `result.status` | item `status` |
+  |---|---|
+  | `ready` | `pass` |
+  | `needs-configuration` | `fail` |
+  | `authorization-required` | `fail` |
+  | `unavailable` | `unknown` |
+
+  The reason is the first problem's message (`null` on pass).
+  `authorization-required` and `unavailable` were added in 0.26.0 (additive):
+  treat an unrecognized status as `unknown` and show `result` as sent.
+  - `warnings` is always present (`[]` when the provider sends none). It
+    **never changes the status** and is not counted in `summary`. A ready
+    binding can still say, for example, that end-to-end encryption is off:
+    show it next to the pass. A `warnings` that is not an array of `{code,
+    message}` strings makes the whole answer `unknown`, the same as a
+    malformed `problems`.
+  - A provider that cannot answer is `unknown`, with `item.problems` carrying
+    its error `{code, message}` and `result: null`. That covers:
+    - a refusal (`ok:false`, whose code is relayed);
+    - an invalid answer (`provider-unavailable`, see the wire below);
+    - a timeout;
+    - a module tree that cannot be made available.
+  - **One time budget per readiness read**: 60 s for all provider checks
+    together, and at most 30 s for each. Checks the budget does not reach are
+    not run; they are `unknown` with code `time-budget-exhausted`.
+  - For `--home` the check runs from the home's module copy, as the home's
+    hooks do. For `--soul` it runs from the module in the deployment's module
+    store (the tree `oats <ns> …` dispatch uses). A store tree is used only
+    while its content digest matches the digest verified when it was fetched
+    at the locked commit. A drifted tree is fetched again, and a fetch that
+    does not verify is `E_PACKAGE_INTEGRITY` (the item is `unknown` with that
+    code).
+  - A module without `binding` has no item; the check is `not-applicable`
+    when there are none.
+  - This check reads the provider; it does not bind. A spawn's fail-closed
+    hooks are unchanged.
+- **Removed:** `trusted` and its `signature` block (declaring a package in
+  `packages:` is the trust decision). `--verify-signatures` answers
+  `E_BAD_ARGS` on a workspace deployment. `enrolled` is now `member`.
+
+`--policy` is **kept**: it means the same without the chain. With `--home` it
+is the instance's recorded, enforced policy (`instance.json` `policy`, plus
+the recorded work mode). With `--soul` it is the soul's declaration
+(`children.spawn`, `work`), `enforced: false`. The shape is unchanged:
+
+```json
+"policy":{"childSpawns":{"allowed":true,"enforced":true,"origin":{"kind":"default","detail":"no declaration: children allowed"}},
+          "worktrees":{"allowed":false,"mode":"directory","enforced":true,"origin":{"kind":"work-mode","detail":"work: directory"}}}
+```
+
+**The provider check wire (the request `binding.check` receives).** The
+request is one JSON line on stdin, and the provider answers one envelope line
+on stdout:
+
+```json
+{"schemaVersion":1,"phase":"check","slot":"knowledge","capability":"oats.okf","settings":{"…":"the merged payload"},
+ "input":{"context":{"kind":"workspace","workspace":"<workspace key>","deployment":"/w","soul":"release-manager","team":"engineering",
+                     "instance":"release-manager-x","home":"/w/agents/…/release-manager-x"},
+          "action":{"kind":"readiness"}}}
+```
+
+```json
+{"schemaVersion":1,"phase":"check","slot":"knowledge","capability":"oats.okf","ok":true,
+ "result":{"status":"ready","problems":[],"warnings":[]}}
+```
+
+The environment is the provider's module environment:
+- `OATS_CAPABILITY`, `OATS_SETTINGS`, `OATS_CLI_BIN` and `OATS_WORKSPACE`;
+- the team variables (`OATS_TEAM_*`, `OATS_WORKSPACE_NAME`/`_KEY`);
+- `OATS_AGENT` (the soul), and `OATS_SOUL` when the soul directory is known;
+- for a home, `OATS_INSTANCE` and `OATS_INSTANCE_HOME`.
+
+For a home, `OATS_WORKSPACE_NAME` is `""` until spawn records the workspace
+name (planned).
+
+Ambient `OATS_*`/`PI_*` is removed. For a soul, `instance` and `home` are
+`null`. The answer is decoded by the binding wire's response rules:
+- the process exits 0;
+- stdout is exactly one JSON document within the wire limits;
+- the envelope has exactly `schemaVersion`, `phase`, `slot`, `capability`,
+  `ok` and `result` (or `error`), echoing the request's first four;
+- `result` has `status`, `problems` and optionally `warnings`, and nothing else;
+- `ready` carries no problems;
+- problems and warnings are `{code, message}` strings. Their codes are the
+  provider's own and are not checked against `binding.reasons`.
+
+Anything else is `unknown` (`provider-unavailable`). The check executable must
+resolve (realpath) inside its module directory and be a regular file; otherwise
+the item is `unknown` (`resource-not-found`). The request carries no captured
+`binding`. A provider whose check
+still requires one answers `invalid-binding`, and readiness reports it as
+`unknown`.
+
+### `oats operation run <layer>:<name> (--home <abs> | --soul <name> [--dir <d>]) [--arg k=v …] --json` → `operationsApi: 2`
+
+```json
+{"operationsApi":2,"operation":"knowledge:inspect","capability":"oats.okf","version":"2.1.3","argv":["okf","inspect"],
+ "cwd":"/w/agents/release-manager/instances/release-manager-x",
+ "target":{"home":"/w/agents/release-manager/instances/release-manager-x","instance":"release-manager-x"},
+ "result":{"documents":[{"label":"Working state (STATE.md)","kind":"markdown","text":"…"}]}}
+```
+
+The provider is the module that fills `<layer>`:
+- for `--home`, the home's module copy, with its recorded settings;
+- for `--soul`, the resolved module, materialized into the deployment's module
+  store if needed.
+
+The rest of the contract is unchanged ([operations contract](design/operations-contract.md)):
+- errors: `E_OPERATION_UNKNOWN`, `E_OPERATION_UNAVAILABLE` (also a
+  `context: "home"` operation without `--home`), `E_CAPABILITY_REQUIRES`;
+- the receipt rules and the `E_OPERATION_TIMEOUT` / `E_OPERATION_RESULT`
+  unconfirmed outcomes.
+
+There is no `E_CAPABILITY_BLOCKED` (no trust gate). `cwd` is the home for a
+`context: "home"` operation, and the deployment otherwise.
+
+**Remote.** `--server` routes as before. The destination must advertise
+`operations` with `operationsApi` 1 or 2; a 0.26 CLI routes to either.
+Payload shapes are the destination kernel's.
+
 ## Souls and sources (`oats inspect --json`, `soulsApi: 1`, OATS 0.24.7+)
+
+> **Superseded on workspace deployments in 0.26.0** by
+> [`soulsApi: 2`](#oats-inspect---home---soul---dir---json-operationsapi-2).
+> This section describes the classic scope document, which is removed with the
+> classic config chain.
 
 Every entry in `result.souls[]` carries what the soul's **own `soul.yaml`
 declares**, parsed by the kernel — a consumer never parses YAML and never
@@ -480,6 +786,11 @@ the pre-fix marker and is never accepted for dispatch.
 
 ## Readiness quartet, signatures, enforced policy (`oats readiness`, `readinessApi: 1`, OATS 0.24.8+)
 
+> **Superseded in 0.26.0 by [`readinessApi: 2`](#oats-readiness---home---soul---dir---policy---json-readinessapi-2)**
+> on every workspace deployment and v2 home: checks `installed | configured |
+> member | providers`, no `trusted`, an instance or soul subject. The 0.25
+> status note and the quartet below describe the classic producers only.
+
 > **0.25 status — the producers below are the 0.24 tier.** The readiness DTO
 > (`readinessApi: 1`) still ships unchanged, but its four checks are *produced*
 > by the classic observers: `installed` by `oats list` over the
@@ -601,7 +912,8 @@ the UI says so.
   interpretation.
 - **`--agents-root <abs>`** is accepted with `--soul` (and with `--home`), as
   inspect takes it — pin the exact root you admitted.
-- **Signature verification (feature `readiness-verify`)**: `--verify-signatures`
+- **Signature verification (feature `readiness-verify`, no longer advertised
+  from 0.26.0; the classic flag is removed with the classic chain)**: `--verify-signatures`
   is bounded custody — **one total budget per readiness read** (120 s default)
   shared by every capability's fetch and verify (an exhausted budget refuses the
   remaining capabilities with `budget-exhausted`, no fetch), each Git child in
@@ -742,7 +1054,8 @@ location. The receipt says so:
 `retire-retention`, `readiness`, `spawn-preview`, `instance-events`,
 `schedule-history`, and carries the API integers (`instanceGitApi`, `soulsApi`,
 `lifecycleApi`, `readinessApi`, `spawnPreviewApi`, `eventsApi`,
-`scheduleHistoryApi`). **Gate on these, never on a version string and never by
+`scheduleHistoryApi`, `operationsApi`). In 0.26.0, `soulsApi`, `readinessApi`
+and `operationsApi` are **2** ([the workspace-model inspect](#inspect-readiness-and-operation-run-on-the-workspace-model-operationsapi-2-soulsapi-2-readinessapi-2-oats-0260)). **Gate on these, never on a version string and never by
 optimistic invocation**: an older CLI ignores an unknown `--plan` on `retire`
 and *retires*. Absent feature → the view is unavailable. (`catalog` was the
 0.24 `oats catalog` verb's flag; the verb is removed under the workspace model
@@ -939,8 +1252,9 @@ or `"unassigned"`.
 ```
 
 Package capabilities of declared-but-unsynced packages are absent until `sync`.
-(`soulsApi: 1` is also the integer of the existing `oats inspect --json`
-declarations block; the two payloads are distinguished by their command.)
+(`oats souls --json` keeps `soulsApi: 1` in 0.26.0: its shape is unchanged.
+The probe's `soulsApi` is **2** because it tracks the `oats inspect --json`
+soul rows. The two payloads are distinguished by their command.)
 
 ### `oats spawn <soul> … --preview --json` — additions (Preview API 2 unchanged)
 
@@ -1021,6 +1335,12 @@ spawn. The same view is marked `standalone: true` in `oats sync --json` (with
 `workspace.name` = `standalone:<repo>`) and in the roster. `capabilities[]` is
 the per-module row set (`toCapabilityRows`) that `oats inspect`/`status` read.
 
+`soulDir` (0.26.0) is the absolute soul directory the instance incarnates — a
+workspace soul's per-commit copy `<deployment>/agents/<soul>/souls/<commit12>`, or
+the read-only soul inside a capability package — and is what every classic
+lifecycle hook and dispatched command receives as `OATS_SOUL` (captured
+lifecycle hooks set none). Instance homes carry no `soul` link.
+
 `digest` is the sha256 of the copied module tree (`<home>/.oats/modules/<cap>/`);
 `providers.<cap>` is the merged payload (soul ⊕ `oats-local.yaml`
 `settings.<cap>` ⊕ `--provider`), `{}` for a capability with none. Copies live at
@@ -1074,8 +1394,8 @@ refreshes the home in place:
 
 - `oats session recompose --home <abs> [--dry-run] --json` → `{home, instance,
   agent, soulDir, contextDir, changed, dryRun, blocks[{source,file}], previous,
-  note}`. Same composer spawn used, the home's own `soul` link and recorded
-  context/work mode. `changed:false` is a no-op (no receipt). On change the
+  note}`. Same composer spawn used, the home's recorded soul directory
+  (`instance.json` `soulDir`) and recorded context/work mode. `changed:false` is a no-op (no receipt). On change the
   prior text is retained as `previous` (`<home>/.oats-agents-md.<stamp>.previous`),
   `instance.json` gains `instructions[]`/`recomposedAt`, and a `recomposed`
   event is appended.

@@ -20,5 +20,4 @@ TASK.md
 instance.json
 notes/
 notes/.keep
-soul -> <base>/scope/agents/dev/soul
 work -> <base>/scope/agents/dev/instances/dev-owner/work

@@ -122,3 +122,20 @@ workspace is the scope. Soul instructions travel as bytes on the ssh stdin
 `test/operations-routing.test.mjs` use an owned alternative knowledge
 provider (namespace `notes`, one `MEMORY.md`, operations `harvest` and
 `inspect`) and never mention the official provider.
+
+## Workspace model (0.26.0)
+
+On a workspace deployment, and for a home whose `instance.json` records
+`modules`, `oats inspect`, `oats readiness` and `oats operation run` read the
+workspace model's own records instead of the config chain:
+- the subject is `--home` (instance.json plus its module copies) or `--soul`
+  (the soul resolved as its spawn would be), never a scope;
+- `operationsApi` is 2 (also on the run result), and each soul row carries
+  `soulsApi: 2`;
+- there is no trust gate (`E_CAPABILITY_BLOCKED` is gone);
+- no `scope`, `chain`, `activation`, `snapshot` or `currentConfig` block.
+
+The payloads are specified in
+[desktop-cli-api.md](../desktop-cli-api.md#inspect-readiness-and-operation-run-on-the-workspace-model-operationsapi-2-soulsapi-2-readinessapi-2-oats-0260).
+The sections above describe the classic path, which is removed with the classic
+config chain.

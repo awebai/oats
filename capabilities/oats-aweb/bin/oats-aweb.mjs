@@ -152,6 +152,9 @@ try {
 const event = process.env.OATS_EVENT || process.argv[2];
 const instance = process.env.OATS_INSTANCE;
 const home = process.env.OATS_HOME || process.cwd();
+const AWEB_ALIAS_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
+const AWEB_ALIAS_RULE = "invalid alias: aweb aliases must be 1-64 characters, start with a letter or digit, and then contain only letters, digits, '-' or '_'";
+const ALIAS_REUSE_REMEDY = "spawn with a different --name (kernels 0.26.0+) or a different --purpose";
 // Effective capability settings, injected by kernel dispatch (OATS_SETTINGS).
 // delivery: "channel" (default) keeps the native channel packages waking the
 // instance; "session" hands delivery to the host wake broker (aweb-abil):
@@ -166,6 +169,7 @@ const deliveryMode = (() => {
 const identitySettings = settings.identity && typeof settings.identity === "object" && !Array.isArray(settings.identity) ? settings.identity : {};
 const identityMode = identitySettings.mode === undefined || identitySettings.mode === null || identitySettings.mode === "" ? "local" : String(identitySettings.mode);
 if (!["local", "global"].includes(identityMode) && ["spawn", "retire"].includes(event)) fatal(`identity.mode must be either "local" or "global" (got ${JSON.stringify(identitySettings.mode)})`);
+if (event === "spawn" && identityMode === "local" && !identitySettings.source && (!instance || !AWEB_ALIAS_RE.test(instance))) fatal(`${AWEB_ALIAS_RULE}; OATS_INSTANCE is ${instance ? "not valid" : "missing"}, so no identity could be minted`);
 const payloadTeam = () => {
   const fromSettings = typeof settings.team === "string" && settings.team.trim() ? settings.team.trim() : undefined;
   const fromEnv = process.env.OATS_TEAM_ID || process.env.OATS_TEAM_NAME || undefined;
@@ -407,7 +411,7 @@ const seatLockPath = (source) => join(dirname(source), ".aw-retained-seat.json")
 /** The alias a home's .aw/workspace.yaml records under memberships (indented),
  *  or undefined. Read only when the hook has no alias of its own. */
 const workspaceAliasOf = (homeDir) => {
-  try { const m = readFileSync(join(homeDir, ".aw", "workspace.yaml"), "utf8").match(/^\s*alias:\s*["']?([a-z0-9][a-z0-9._-]{0,127})["']?\s*$/mi); return m ? m[1] : undefined; }
+  try { const m = readFileSync(join(homeDir, ".aw", "workspace.yaml"), "utf8").match(/^\s*alias:\s*["']?([a-z0-9][a-z0-9_-]{0,63})["']?\s*$/mi); return m ? m[1] : undefined; }
   catch { return undefined; }
 };
 /** A join that the CLI reported as failed (or that this hook killed on
@@ -513,7 +517,7 @@ function retainedSeatSpawn(source, takeOver) {
     if (expectedDid && shownDid !== expectedDid) throw new Error(`aw whoami shows did ${shownDid || "(none)"}, not the retained identity's ${expectedDid}; the seat is not the same identity`);
     if (expectedAddress && shownAddress !== expectedAddress) throw new Error(`aw whoami shows address ${shownAddress || "(none)"}, not the retained identity's ${expectedAddress}; the seat is not the same identity`);
     const aliasRaw = String(ws.alias || st.alias || (expectedAddress || "").split("/").pop() || instance);
-    if (!/^[a-z0-9][a-z0-9._-]{0,127}$/i.test(aliasRaw)) throw new Error(`aw workspace status reports an alias that is not a plausible alias; the seat is not briefed`);
+    if (!AWEB_ALIAS_RE.test(aliasRaw)) throw new Error(`aw workspace status reports an alias that is not a plausible alias; the seat is not briefed`);
     const alias = aliasRaw;
     if (expectedAddress && !expectedAddress.endsWith(`/${alias}`)) throw new Error(`aw workspace status shows alias ${alias}, not the retained identity's address ${expectedAddress}; the seat is not the same identity`);
     writeFileSync(lockPath, JSON.stringify({ home, instance, alias, team, takenAt: new Date().toISOString(), host: hostname(), ...(takenOver ? { tookOverFrom: takenOver } : {}) }, null, 2) + "\n", { mode: 0o600 });
@@ -594,7 +598,7 @@ if (event === "spawn") {
       // re-spawn under the same name is refused by AWID. Say that, and the
       // remedy, instead of relaying a bare join error.
       if (e.aliasConflict) {
-        fatal(`alias "${instance}" already holds a certificate on ${team} (a retired instance of that name is not reusable until aweb-abim ships), so no identity could be minted — spawn with a fresh --purpose instead`);
+        fatal(`alias "${instance}" already holds a certificate on ${team} (a retired instance of that name is not reusable until aweb-abim ships), so no identity could be minted — ${ALIAS_REUSE_REMEDY}`);
       }
       throw e;
     }
@@ -607,7 +611,7 @@ if (event === "spawn") {
     // token; otherwise fall back to what WE asked for, which is always known.
     const clean = (v) => (typeof v === "string" && v.trim() && !v.includes(inv.token) ? v.trim() : undefined);
     const joined = {
-      alias: (() => { const a = clean(raw.alias); return a && /^[a-z0-9][a-z0-9._-]{0,127}$/i.test(a) ? a : instance; })(),
+      alias: (() => { const a = clean(raw.alias); return a && AWEB_ALIAS_RE.test(a) ? a : instance; })(),
       // Team ids are "<name>:<domain>"; anything else is not one, and the
       // requested team is the honest fallback.
       team_id: (() => { const t = clean(raw.team_id); return t && /^[^\s:]+:[^\s:]+$/.test(t) ? t : team; })(),
@@ -688,14 +692,14 @@ if (event === "spawn") {
       // aw 1.36.1 prints the cause as alias_released_reason (workspace.go,
       // workspace_self_retire.go); `reason` is tolerated for a later rename.
       const reason = typeof doc?.alias_released_reason === "string" ? doc.alias_released_reason : typeof doc?.reason === "string" ? doc.reason : (doc ? "unstated" : "no JSON answer");
-      out({ meta: { retired: true, aliasReusable: released, aliasReason: reason }, ...(released ? {} : { warning: `oats-aweb: workspace "${meta.alias}" deleted but its alias was not released (${reason}); spawn successors with a fresh --purpose until it is` }) });
+      out({ meta: { retired: true, aliasReusable: released, aliasReason: reason }, ...(released ? {} : { warning: `oats-aweb: workspace "${meta.alias}" deleted but its alias was not released (${reason}); spawn successors with a different --name (kernels 0.26.0+) or a different --purpose until it is` }) });
     }
     run(["aw", "workspace", "delete", meta.alias], home);
     // Honest: the workspace row is deleted, but a hosted local member cannot
     // revoke its own AWID certificate (aweb-abim), so the alias is NOT
     // reusable. retired stays true because the cleanup is as complete as the
     // platform allows; the field and the line carry the truth.
-    out({ meta: { retired: true, aliasReusable: false }, warning: `oats-aweb: workspace "${meta.alias}" deleted; its certificate is not revoked (aweb-abim), so the alias is not reusable — spawn successors with a fresh --purpose` });
+    out({ meta: { retired: true, aliasReusable: false }, warning: `oats-aweb: workspace "${meta.alias}" deleted; its certificate is not revoked (aweb-abim), so the alias is not reusable — spawn successors with a different --name (kernels 0.26.0+) or a different --purpose` });
   } catch (e) {
     // Exit nonzero: during a required-hook rollback this is the signal that
     // compensation did NOT complete, so the spawn is not reported as cleanly

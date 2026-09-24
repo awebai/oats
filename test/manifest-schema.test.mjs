@@ -27,4 +27,9 @@ test("every bundled capability manifest validates against docs/capability-manife
   assert.equal(validate({ ...base, operations: { "Bad Name": { command: "go" } } }), false, "bad name");
   assert.equal(validate({ ...base, operations: { run: { kind: "view" } } }), false, "command required");
   assert.equal(validate({ ...base, operations: { run: { command: "go", args: [{ flag: "--n" }] } } }), false, "arg name required");
+  // Workspace discovery reads `private` and `team` (lib/workspace.mjs): the schema accepts what it accepts.
+  assert.equal(validate({ ...base, private: true }), true, "private: true");
+  assert.equal(validate({ ...base, private: "yes" }), false, "private must be a boolean");
+  assert.equal(validate({ ...base, team: "engineering" }), true, "team label");
+  assert.equal(validate({ ...base, team: "Engineering Team" }), false, "team uses the capability-name grammar");
 });

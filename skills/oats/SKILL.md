@@ -26,8 +26,7 @@ capability selected for one exclusive knowledge, messaging, or tasks layer.
 | Path | Meaning |
 |---|---|
 | `TASK.md` | briefing and task |
-| `soul/` | linked canonical soul |
-| `AGENTS.md` | generated canonical soul + active capability instructions |
+| `AGENTS.md` | generated: the soul's instructions + active capability instructions (the home has no soul link) |
 | `CLAUDE.md -> AGENTS.md` | compatibility view |
 | `.agents/skills/` | exact runtime skill set |
 | `work/` | all repository work happens here |
@@ -116,8 +115,9 @@ retirement deletes the instance home.
 
 ## Canonical versus generated
 
-Edit `soul/AGENTS.md` for durable role instructions. Instance `AGENTS.md` is a
-generated view; marked blocks name their source. Config changes do not mutate
+Durable role instructions live in the soul, edited in its member repository
+(`souls/<name>/`) and reviewed like code; the home has no soul link. Instance
+`AGENTS.md` is a generated view; marked blocks name their source. Config changes do not mutate
 the committed soul. Preview a fresh composition with:
 
 ```bash

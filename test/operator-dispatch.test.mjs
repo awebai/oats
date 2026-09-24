@@ -16,12 +16,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { deploymentOf, ensureModuleTree, moduleRef, moduleStoreDir, resolveOperatorDispatch } from "../lib/operator-dispatch.mjs";
 import { MODULES_DIR } from "../lib/materialize.mjs";
+import { contentDigest } from "../lib/remote.mjs";
 import { materializeOkfGitPayload } from "../scripts/check-okf-mirror.mjs";
 import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
 
@@ -87,6 +88,42 @@ test("ensureModuleTree: fetches once through a staging dir, reuses an existing t
     assert.deepEqual(readdirSync(join(base, MODULES_DIR)).filter((n) => n.startsWith(".staging")), []);
     // A failing fetch propagates untouched.
     await assert.rejects(ensureModuleTree(base, { ...module, name: "fail" }, null, { fetch: async () => { const e = new Error("unreadable"); e.code = "E_REMOTE_UNREADABLE"; throw e; } }), (e) => e.code === "E_REMOTE_UNREADABLE");
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("ensureModuleTree verifies the resolution's content digest: a drifted store tree is re-materialized, a mismatching fetch refused", async () => {
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "opd-")));
+  try {
+    const good = (dest) => { mkdirSync(join(dest, "bin"), { recursive: true }); writeFileSync(join(dest, "oats.json"), JSON.stringify({ capability: "cap", command: "cap", commands: { go: "bin/go.mjs" } })); writeFileSync(join(dest, "bin", "go.mjs"), "console.log('locked');\n"); };
+    const ref = join(base, "reference"); good(ref);
+    const module = { name: "cap", dir: "capabilities/cap", digest: contentDigest(ref), from: { kind: "member", repoKey: "local//tmp/r.git", commit: OID("2") } };
+    let calls = 0;
+    const fetch = async (_r, _c, _d, dest) => { calls++; good(dest); };
+    const dir = await ensureModuleTree(base, module, null, { fetch });
+    assert.equal(await ensureModuleTree(base, module, null, { fetch }), dir); assert.equal(calls, 1, "a matching tree is reused");
+    writeFileSync(join(dir, "bin", "go.mjs"), "console.log('tampered');\n");
+    assert.equal(await ensureModuleTree(base, module, null, { fetch }), dir);
+    assert.equal(calls, 2, "a drifted tree is fetched again, never handed out");
+    assert.equal(readFileSync(join(dir, "bin", "go.mjs"), "utf8"), "console.log('locked');\n");
+    // Without a pinned digest, the reference is the digest the fetch read at the commit, recorded
+    // beside the tree; a tree with no record (or a drifted one) is fetched again.
+    const unpinned = { ...module, name: "unpinned", digest: undefined };
+    const udir = await ensureModuleTree(base, unpinned, null, { fetch }); assert.equal(calls, 3);
+    assert.equal(readFileSync(join(base, MODULES_DIR, `.${basename(udir)}.digest`), "utf8").trim(), module.digest, "the verified fetch digest is recorded");
+    await ensureModuleTree(base, unpinned, null, { fetch }); assert.equal(calls, 3, "a tree matching its record is reused");
+    writeFileSync(join(udir, "bin", "go.mjs"), "console.log('tampered');\n");
+    await ensureModuleTree(base, unpinned, null, { fetch }); assert.equal(calls, 4, "a drifted tree is fetched again");
+    rmSync(join(base, MODULES_DIR, `.${basename(udir)}.digest`));
+    await ensureModuleTree(base, unpinned, null, { fetch }); assert.equal(calls, 5, "an unrecorded tree is never trusted");
+    // A fetch whose written content differs from what it reports reading is refused.
+    await assert.rejects(ensureModuleTree(base, { ...unpinned, name: "liar" }, null, { fetch: async (_r, _c, _d, dest) => { good(dest); return { digest: "sha256-" + "0".repeat(64) }; } }),
+      (e) => e.code === "E_PACKAGE_INTEGRITY");
+    // A fetch whose content does not match the resolution is refused and leaves nothing behind.
+    const other = { ...module, name: "other" };
+    await assert.rejects(ensureModuleTree(base, other, null, { fetch: async (_r, _c, _d, dest) => { good(dest); writeFileSync(join(dest, "extra.txt"), "x"); } }),
+      (e) => e.code === "E_PACKAGE_INTEGRITY" && e.details?.expected === module.digest);
+    assert.ok(!existsSync(moduleStoreDir(base, other)));
+    assert.deepEqual(readdirSync(join(base, MODULES_DIR)).filter((n) => n.startsWith(".staging")), []);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
