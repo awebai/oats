@@ -50,7 +50,12 @@ refused (`E_WORKSPACE_SCHEMA`).
 Every `oats` command that needs the workspace (`sync`, `workspace status`,
 `capabilities`, `souls`, `spawn`, `status` drift) walks **up** from the current
 directory (or `--dir`) to the nearest `oats-local.yaml`; its directory is the
-deployment. Not found → `E_LOCAL_MISSING`. Beside it:
+deployment. Not found → `E_LOCAL_MISSING`. The deployment is also a
+**configuration boundary**: nothing above the directory holding
+`oats-local.yaml` composes into it (a deployment created inside another
+scope — a scratch deployment under a repository, a fixture under an operator
+workspace — sees only its own files; `oats inspect` reports it, not the outer
+scope, as the workspace). Beside it:
 
 ```
 ~/acme-workspace/
