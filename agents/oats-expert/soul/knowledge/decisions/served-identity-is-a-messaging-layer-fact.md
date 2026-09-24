@@ -2,7 +2,7 @@
 type: Decision
 title: Per-spawn identity choice (local | global) — the served principal is a messaging-layer fact the kernel binds and shows, never a kernel vocabulary
 status: proposed
-description: PROPOSED (2026-09-23, to the human) from an OSS request that every instance creation offer a local (instance-lifetime) or global (resident identity served through a grant) messaging identity. Kernel asks reduced to three provider-neutral additions — `decision.effective.providers` binds the merged per-module payloads a spawn applied; roster/inspect copy a documented messaging-layer meta key `identity`; a manifest-declared `hostOnly` settings key is refused by the resolver in every committed or per-spawn layer — with NO new `oats spawn` flags; the choice travels through the existing `--provider <cap> k=v` payload and the provider owns every identity-specific rule.
+description: PROPOSED (2026-09-23, to the human) from an OSS request that every instance creation offer a local (instance-lifetime) or global (resident identity served through a grant) messaging identity. Kernel asks reduced to four provider-neutral additions — `decision.effective.providers` binds the merged per-module payloads a spawn applied; roster/inspect copy a documented messaging-layer meta key `identity`; a manifest-declared `hostOnly` settings key is refused by the resolver in every committed or per-spawn layer; launch-hook meta is persisted into `capabilityMeta` — with NO new `oats spawn` flags; the choice travels through the existing `--provider <cap> k=v` payload and the provider owns every identity-specific rule.
 tags: [identity, messaging, provider-payload, spawn, decision-record, desktop, kernel-boundary]
 timestamp: 2026-09-23
 ---
@@ -62,6 +62,16 @@ resolution revision.
   a **messaging-layer contract** documented in the integrations guide:
   `{ mode: "local"|"global", alias, team, address|null, resident|null,
   grant?: { id, expiresAt, scopes } }`. Any messaging provider may emit it.
+- **Kernel (K3′) — launch-hook meta is persisted.** `runLifecycleHooks("launch")`
+  already collects `results.meta[<cap>]`, but the start/restart path consumes
+  only `contributions` and `env`; `meta` is dropped. A provider that renews a
+  grant at every start (planned oats.aweb 1.13) would leave `capabilityMeta`
+  holding the ORIGINAL grant id, so retire revokes the wrong grant and the
+  live one runs to its TTL. After a successful launch the kernel merges
+  `res.meta` per capability into `instance.json.capabilityMeta` (the shape
+  spawn writes); a hook that returns no meta keeps its prior entry. No change
+  to the spawn/retire contracts. Needed before any renewing provider ships;
+  not needed for 1.12.0.
 - **No `--identity` / `--resident` flags.** Desktop shows an *Identity* select
   and a *Resident* field (prefilled from preview `settings.<cap>.identity`) and
   forwards them as `--provider` pairs; its arg allowlist gains one `provider`
@@ -98,8 +108,9 @@ resolution revision.
 
 ## Consequences
 
-- Kernel additions are two provider-neutral fields plus one manifest attribute
-  (`settings.<key>.hostOnly`); no CLI grammar grows.
+- Kernel additions are two provider-neutral fields, one manifest attribute
+  (`settings.<key>.hostOnly`) and one persistence fix (launch meta); no CLI
+  grammar grows.
 - The Desktop's confirmed apply binds provider facts for the first time
   (they were previously covered only through the resolution revision).
 - A 0.24 kernel is unaffected; on it the same keys work through capability
