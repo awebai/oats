@@ -8,12 +8,15 @@ import { readFileSync } from 'node:fs';
 import { createOnboardOffers, createOnboardExecutor, MAX_ONBOARD_OFFERS } from '../workspace-registry.mjs';
 import { cliWorkspace, validWorkspaceRef } from '../workspace-cli.mjs';
 import { onboardData } from '../deployment-data.mjs';
+import { specProbe, specDocument, specExit } from './helpers/no-approval-spec.mjs';
 
-const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/f2/${name}.json`, import.meta.url), 'utf8'));
+// Captured 0.25.x documents read through the published no-approval spec until
+// the 0.26.0 kernel branch is captured (helpers/no-approval-spec.mjs).
+const fixture = name => specDocument(JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/f2/${name}.json`, import.meta.url), 'utf8')));
 const exits = JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/f2/provenance.json', import.meta.url), 'utf8')).files;
 const dir = '/fixture/base/northwind-workspace';
-const cli = { ...fixture('version'), ok: true, bin: '/fixture/bin/oats' };
-const replay = name => (_bin, _argv, _options, done) => done(exits[name].exit ? Object.assign(new Error('exit'), { code: exits[name].exit }) : null, JSON.stringify(fixture(name)));
+const cli = { ...specProbe(fixture('version')), ok: true, bin: '/fixture/bin/oats' };
+const replay = name => (_bin, _argv, _options, done) => { const exit = specExit(exits[name].exit); done(exit ? Object.assign(new Error('exit'), { code: exit }) : null, JSON.stringify(fixture(name))); };
 
 function harness({ document = 'onboard-pending', deployment = () => false, realpath = p => p, add = async p => ({ ok: true, workspace: { id: p, path: p } }) } = {}) {
   let n = 0;
@@ -45,10 +48,10 @@ test('success: the kernel onboards the offered folder with the operator ref, the
   const h = harness();
   const token = h.offers.offer(dir);
   const result = await h.onboard(token, '/fixture/base/fx/remotes/agents.git');
-  assert.equal(result.ok, true); assert.equal(result.pending, true);
+  assert.equal(result.ok, true); assert.equal(Object.hasOwn(result, 'pending'), false, 'nothing is ever pending approval');
   assert.deepEqual(h.runs, [{ action: 'onboard', dir, workspace: '/fixture/base/fx/remotes/agents.git' }]);
   assert.deepEqual(h.adds, [dir]);
-  assert.equal(result.onboard.sync.approvalNeeded.length, 3, 'pending approvals travel with the result');
+  assert.equal(Object.hasOwn(result.onboard.sync, 'approvalNeeded'), false);
   assert.deepEqual(result.onboard.next.souls, ['campaign-writer', 'data-analyst', 'platform-engineer']);
   assert.equal(result.added.ok, true);
   assert.equal((await h.onboard(token, 'github.com/acme/agents')).code, 'offer-expired', 'the offer was consumed');

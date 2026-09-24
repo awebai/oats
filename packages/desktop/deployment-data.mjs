@@ -61,8 +61,9 @@ function recordedWorkspace(value) {
   return out;
 }
 
-/** workspace status is the sole header authority. approval's ID arrays are
- * not sync.approvalNeeded's digest/target rows. No inspect.scope dependency. */
+/** workspace status is the sole header authority (lock current / out of
+ * date). Declaring a package in `packages:` is the trust decision, so there
+ * is no approval state to read. No inspect.scope dependency. */
 export function workspaceStatusData(document, deployment) {
   check(absolute(deployment), 'E_BAD_ARGS');
   check(record(document) && document.schemaVersion === 1 && document.ok === true);
@@ -75,10 +76,8 @@ export function workspaceStatusData(document, deployment) {
   if (own(data.workspace, 'teams')) workspace.teams = strings(data.workspace.teams);
   const members = array(data.members).map(memberRow);
   const packages = array(data.packages).map(packageRow);
-  check(record(data.approval));
   return flags(data, ['standalone'], { workspaceStatusApi: 1, workspace, members, packages,
     declaredPackages: strings(data.declaredPackages), unsynced: strings(data.unsynced), stale: strings(data.stale),
-    approval: { approved: strings(data.approval.approved), needed: strings(data.approval.needed) },
     external: array(data.external).map(row => fields(row, ['source', 'soul', 'team'])),
     problems: problemRows(data.problems) });
 }
@@ -149,10 +148,8 @@ export function deploymentStatusData(document, deployment) {
 /* ── Workspace model v2 catalog, sync and onboarding (F2) ───────────────
    Command-specific shapes, projected once where they are read. The kernel's
    rows are kept verbatim within bounds; nothing is joined, inferred or
-   re-derived (approval digests, members' publishes and package capabilities
-   stay distinct — the non-collapse rule). */
-const oid = value => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value);
-const digest = value => typeof value === 'string' && /^sha256-[0-9a-f]{64}$/.test(value);
+   re-derived (members' publishes and package capabilities stay distinct —
+   the non-collapse rule). */
 function memberRow(row) {
   const out = fields(row, ['key', 'name', 'commit', 'status', 'detail', 'team']);
   check(text(out.key)); flags(row, ['confirmed'], out);
@@ -163,14 +160,11 @@ function memberRow(row) {
 function packageRow(row) {
   const out = fields(row, ['id', 'version', 'source', 'commit', 'integrity']); check(text(out.id));
   if (own(row, 'capabilities')) out.capabilities = strings(row.capabilities);
-  if (own(row, 'approved')) out.approved = row.approved === null ? null : fields(row.approved, ['executables', 'at']);
   return out;
 }
 const problemRows = value => array(value).map(row => fields(row, ['code', 'message', 'repoKey', 'path']));
 
-/** `oats sync --json` (syncApi 1). approvalNeeded rows carry exactly what an
- * approval binds: id, the version string to pass back verbatim, the commit,
- * the executables digest and the human-readable targets. */
+/** `oats sync --json` (syncApi 1): the lock it wrote and what changed. */
 export function syncData(document, deployment) {
   check(absolute(deployment), 'E_BAD_ARGS');
   check(record(document) && document.schemaVersion === 1 && document.ok === true);
@@ -179,17 +173,10 @@ export function syncData(document, deployment) {
   check(data.workspace.local === join(deployment, 'oats-local.yaml'), 'E_DEPLOYMENT_SCOPE');
   const workspace = fields(data.workspace, ['name', 'key', 'url', 'commit', 'observedAt', 'local', 'lock']);
   check(text(workspace.name) && text(workspace.key));
-  const approvalNeeded = array(data.approvalNeeded, 500).map(row => {
-    const out = fields(row, ['id', 'version', 'commit', 'executables']);
-    check(text(out.id) && out.id.length > 0 && text(out.version) && out.version.length > 0 && oid(out.commit) && digest(out.executables));
-    out.targets = strings(row.targets);
-    return out;
-  });
-  const ids = new Set(approvalNeeded.map(row => row.id)); check(ids.size === approvalNeeded.length);
   return flags(data, ['standalone'], { syncApi: 1, workspace,
     members: array(data.members).map(memberRow), packages: array(data.packages).map(packageRow),
-    changes: array(data.changes).map(row => { const out = fields(row, ['id', 'from', 'to', 'commit']); check(text(out.id)); return flags(row, ['approvalNeeded'], out); }),
-    approvalNeeded, problems: problemRows(data.problems) });
+    changes: array(data.changes).map(row => { const out = fields(row, ['id', 'from', 'to', 'commit']); check(text(out.id)); return out; }),
+    problems: problemRows(data.problems) });
 }
 
 /** `oats capabilities --json` (capabilitiesApi 1): every non-private item of
@@ -202,7 +189,7 @@ export function capabilitiesData(document) {
   const capabilities = array(data.capabilities).map(row => {
     const out = fields(row, ['name', 'origin', 'kind', 'repoKey', 'commit', 'team', 'path', 'layer', 'version', 'package']);
     check(text(out.name) && out.name.length > 0 && ['member', 'package', 'external'].includes(out.kind));
-    return flags(row, ['private', 'approved'], out);
+    return flags(row, ['private'], out);
   });
   return { capabilitiesApi: 1, workspace, capabilities, problems: problemRows(data.problems) };
 }

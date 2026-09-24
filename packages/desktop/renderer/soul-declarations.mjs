@@ -61,7 +61,7 @@ export function renderSoulDeclarations(parent, soul) {
       : node('pre', JSON.stringify(value, null, 2)));
   }
   section.append(node('h3', 'Declared-source observations'), node('p',
-    'Source installation, executable approval and activation are separate observations. They do not establish launchability, adoption, enrolment or a verified signature.', 'declaration-note'));
+    'Source installation and activation are separate observations. They do not establish launchability, adoption, enrolment or a verified signature.', 'declaration-note'));
   const readiness = object(soul.readiness) ? soul.readiness : {};
   const labels = { undeclared: 'Requirements undeclared', 'sources-installed': 'Declared sources installed', 'sources-missing': 'Declared sources missing', unknown: 'Declared source status unknown' };
   // A read failure cannot establish that the missing sections are undeclared.
@@ -78,7 +78,6 @@ export function renderSoulDeclarations(parent, soul) {
     row.append(node('h4', requirement.capability));
     facts(row, [['Declared source', text(requirement.source)],
       ['Installation', observed(requirement.installed, 'Installed', 'Not installed')],
-      ['Executable approval', observed(requirement.approved, 'Approved', 'Not approved')],
       ['Activation', observed(requirement.active, 'Active', 'Not active')], ['Version', text(requirement.version)]]);
     section.append(row);
   }

@@ -1,7 +1,9 @@
-// The v2 Workspace view (F2): the Capabilities table from `oats capabilities`,
-// team/source filter pills, Sources from `oats workspace status`, and the
-// sync/approval sheet. Kernel-captured fixtures; the shipped Workspace stage
-// is mounted in jsdom with a fixture ctx.api. No CLI, server, GUI or network.
+// The v2 Workspace view (F2, no package approval): the Capabilities table from
+// `oats capabilities`, team/source filter pills, Sources from `oats workspace
+// status`, and Sync. Kernel-captured fixtures read through the published
+// no-approval spec (helpers/no-approval-spec.mjs) until the 0.26.0 kernel
+// branch is captured; the shipped Workspace stage is mounted in jsdom with a
+// fixture ctx.api. No CLI, server, GUI or network.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -12,13 +14,15 @@ import { refreshCli } from '../renderer/views/cli-status.mjs';
 import { workspaceStatusData, deploymentStatusData, syncData } from '../deployment-data.mjs';
 import { filterChoices, capabilityUse, memberNames } from '../renderer/workspace-catalog.mjs';
 import { syncStateText } from '../renderer/workspace-sync-view.mjs';
+import { specProbe, specDocument } from './helpers/no-approval-spec.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const settle = async () => { for (let i = 0; i < 4; i++) await tick(); };
 const deferred = () => { let resolve; const promise = new Promise(yes => { resolve = yes; }); return { promise, resolve }; };
-const f2 = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/f2/${name}.json`, import.meta.url), 'utf8'));
+const f2 = name => specDocument(JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/f2/${name}.json`, import.meta.url), 'utf8')));
 const dir = '/fixture/base/northwind-workspace';
-const CLI = { ...f2('version'), ok: true, bin: '/fixture/bin/oats', operationsApi: 1, relations: true };
+const CLI = { ...specProbe(f2('version')), ok: true, bin: '/fixture/bin/oats', operationsApi: 1, relations: true };
+const APPROVAL_TEXT = /approv/i;
 const statusOf = name => workspaceStatusData(f2(name), dir);
 const roster = deploymentStatusData(f2('status'), dir);
 const instances = roster.agents.flatMap(agent => agent.instances.map(i => ({ ...i, agent: i.agent || agent.name, agentsRoot: roster.root })));
@@ -62,13 +66,15 @@ test('Capabilities is the kernel catalog: counts, three design columns and readi
   assert.equal(u.doc.querySelector('#workspace-tab-capabilities .workspace-count').textContent, '', 'no catalog read until the tab is opened');
   assert.deepEqual(u.syncCalls(), []);
   await u.tab('capabilities');
-  assert.deepEqual(u.syncCalls(), [{ action: 'read' }], 'exactly one read; never a sync or approval');
+  assert.deepEqual(u.syncCalls(), [{ action: 'read' }], 'exactly one read; never a sync');
   assert.equal(u.doc.querySelector('#workspace-tab-capabilities .workspace-count').textContent, '10');
   assert.deepEqual([...u.doc.querySelectorAll('.catalog-row.head [role=columnheader]')].map(el => el.textContent), ['Capability', 'Status', 'Used by']);
   assert.equal(u.rows().length, 10);
   const row = name => u.rows().find(el => el.dataset.capability === name);
   assert.match(row('oats.okf').querySelector('.catalog-sub').textContent, /^Package · oats\.okf v2\.1\.3$/);
-  assert.deepEqual([...row('oats.okf').querySelectorAll('.catalog-chip')].map(el => el.textContent).slice(0, 2), ['locked', 'approved']);
+  assert.equal(row('oats.okf').querySelector('.catalog-chip').textContent, 'locked');
+  assert.match(row('oats.okf').querySelectorAll('.catalog-chip')[1].textContent, /^@[0-9a-f]{7}$/, 'locked, then the commit — no approval state');
+  assert.doesNotMatch(u.doc.querySelector('.workspace-discovery').textContent, APPROVAL_TEXT);
   assert.match(row('nw-brand-voice').querySelector('.catalog-sub').textContent, /^Member · marketing$/, 'the team is not repeated when it names the repository');
   assert.match(row('nw-release-tooling').querySelector('.catalog-sub').textContent, /^Member · agents · engineering$/);
   assert.equal(row('nw-brand-voice').querySelector('.catalog-chip').textContent, 'member confirmed');
@@ -101,7 +107,7 @@ test('team and source pills filter the table (AND), name only what the catalog h
   assert.deepEqual(u.syncCalls(), [{ action: 'read' }], 'filtering is local');
 });
 
-test('Sources: repositories with team and confirmation, packages with lock/approval, kernel detail verbatim', async t => {
+test('Sources: repositories with team and confirmation, packages with their lock, kernel detail verbatim', async t => {
   const moved = syncData(f2('sync-moved'), dir);
   const u = await setup(t);
   await u.tab('sources');
@@ -112,6 +118,8 @@ test('Sources: repositories with team and confirmation, packages with lock/appro
   assert.equal(repos.length, 5);
   assert.ok(repos.every(row => row.querySelector('.catalog-chip').textContent === 'confirmed'));
   assert.equal([...u.doc.querySelectorAll('[data-package]')].length, 3);
+  assert.ok([...u.doc.querySelectorAll('[data-package]')].every(row => row.querySelector('.catalog-chips').textContent === 'locked'));
+  assert.doesNotMatch(u.doc.querySelector('.workspace-discovery').textContent, APPROVAL_TEXT);
   assert.deepEqual(u.syncCalls(), [], 'Sources render the observation only');
   // An unconfirmed member (kernel row from a later sync) keeps its status and detail.
   const status = { ...statusOf('workspace-status-approved'), members: moved.members };
@@ -122,63 +130,56 @@ test('Sources: repositories with team and confirmation, packages with lock/appro
   assert.match(marketing.querySelector('.sources-detail').textContent, /has no oats-membership\.yaml/);
 });
 
-test('header state: approvals pending, lock out of date, current — from workspace status ID arrays', async () => {
-  assert.deepEqual(syncStateText(statusOf('workspace-status-pending')), { text: '3 packages need approval', warn: true, needed: 3 });
-  assert.deepEqual(syncStateText({ ...statusOf('workspace-status-approved'), unsynced: ['x'] }), { text: 'Lock out of date', warn: true, needed: 0 });
-  assert.deepEqual(syncStateText(statusOf('workspace-status-approved')), { text: 'Lock current', warn: false, needed: 0 });
+test('header state: lock out of date or current — from workspace status; there is no approval state', async () => {
+  assert.deepEqual(syncStateText({ ...statusOf('workspace-status-approved'), unsynced: ['x'] }), { text: 'Lock out of date', warn: true });
+  assert.deepEqual(syncStateText({ ...statusOf('workspace-status-approved'), stale: ['x'] }), { text: 'Lock out of date', warn: true });
+  assert.deepEqual(syncStateText(statusOf('workspace-status-approved')), { text: 'Lock current', warn: false });
   assert.equal(syncStateText(null).text, '');
 });
 
-test('review → kernel sync → approval sheet → approve exactly the selected rows → partial report', async t => {
-  const pending = report('sync-pending', 'pending');
-  const u = await setup(t, { status: 'workspace-status-pending', sync: body => body.action === 'sync' ? pending
-    : body.action === 'approve' ? report('sync-approve-partial', 'pending') : catalog('capabilities-pending') });
-  assert.equal(u.doc.querySelector('.ws-sync-state').textContent, '3 packages need approval');
-  u.button('Review approvals').click(); await settle();
-  assert.deepEqual(u.syncCalls(), [{ action: 'sync' }], 'review starts from a fresh kernel sync');
-  const sheet = u.doc.querySelector('.ws-sync-sheet');
-  assert.equal(sheet.hidden, false);
-  const items = [...sheet.querySelectorAll('.ws-approval')];
-  assert.deepEqual(items.map(el => el.querySelector('label').textContent), ['nw.tools 0.4.0', 'oats.framework 1.1.3', 'oats.okf 2.1.3']);
-  const first = pending.report.approvalNeeded[0];
-  assert.ok(items[0].textContent.includes(first.executables), 'the full executables digest is shown');
-  assert.ok(items[0].textContent.includes('nw-deploy: command apply → bin/nw-deploy.mjs'), 'targets are listed');
-  const approve = u.button('Approve selected');
-  assert.equal(approve.disabled, true, 'nothing is approved by default');
-  items[0].querySelector('input').click();
-  assert.equal(u.button('Approve 1').disabled, false);
-  u.button('Approve 1').click(); await settle();
-  assert.deepEqual(u.syncCalls().at(-1), { action: 'approve', approvals: [{ id: first.id, version: first.version, executables: first.executables }] });
-  assert.deepEqual([...sheet.querySelectorAll('.ws-approval label')].map(el => el.textContent), ['oats.framework 1.1.3', 'oats.okf 2.1.3']);
-  assert.match(sheet.querySelector('.ws-sync-status').textContent, /Approved nw\.tools\./);
+test('Sync runs oats sync and nothing else: no approval control, no sheet for a clean sync, the catalog re-read', async t => {
+  const u = await setup(t, { sync: body => body.action === 'sync' ? report('sync-current', 'ok') : catalog('capabilities-approved') });
+  assert.equal(u.doc.querySelector('.ws-sync-state').textContent, 'Lock current');
+  assert.equal(u.button('Review approvals'), undefined); assert.equal(u.doc.querySelector('.ws-approval'), null);
+  await u.tab('capabilities');
+  u.doc.querySelector('.ws-sync button.primary').click(); await settle();
+  assert.deepEqual(u.syncCalls(), [{ action: 'read' }, { action: 'sync' }, { action: 'read' }], 'sync, then the catalog is read again');
+  assert.equal(u.doc.querySelector('.ws-sync-sheet').hidden, true, 'a clean sync needs nothing from the operator');
+  assert.equal(u.doc.querySelector('.ws-sync-state').textContent, 'Lock current');
 });
 
-test('a kernel refusal is shown verbatim; a stale approval is refused, not retried', async t => {
-  const integrity = f2('sync-integrity').error;
-  let mode = 'refuse';
-  const u = await setup(t, { status: 'workspace-status-pending', sync: body => {
-    if (body.action === 'sync') return mode === 'refuse' ? { workspaceSyncApi: 1, status: 'refused', report: null, reason: { code: integrity.code, message: integrity.message } } : report('sync-pending', 'pending');
-    if (body.action === 'approve') return { workspaceSyncApi: 1, status: 'refused', report: null, reason: { code: 'E_APPROVAL_STALE', message: 'The approval you reviewed no longer matches the latest sync.' } };
-    return catalog('capabilities-pending');
-  } });
-  u.button('Sync').click(); await settle();
+test('a sync that reports problems says so in a sheet, in the kernel\'s words', async t => {
+  const withProblems = report('sync-current', 'ok');
+  withProblems.report.problems = [{ code: 'E_MEMBER_UNREADABLE', message: 'member marketing could not be read', path: null, repoKey: null }];
+  const u = await setup(t, { sync: body => body.action === 'sync' ? withProblems : catalog('capabilities-approved') });
+  u.doc.querySelector('.ws-sync button.primary').click(); await settle();
   const sheet = u.doc.querySelector('.ws-sync-sheet');
-  assert.equal(sheet.querySelector('.ws-sync-status').textContent, `${integrity.code}: ${integrity.message}`);
-  assert.ok(sheet.querySelector('.ws-sync-status').classList.contains('error'));
-  u.button('Close').click(); mode = 'pending';
-  u.button('Sync').click(); await settle();
-  sheet.querySelector('.ws-approval input').click();
-  u.button('Approve 1').click(); await settle();
-  assert.match(sheet.querySelector('.ws-sync-status').textContent, /^E_APPROVAL_STALE: /);
-  assert.equal(u.doc.querySelector('.ws-sync-foot .primary').hidden, true, 'no approve against a stale review');
+  assert.equal(sheet.hidden, false); assert.equal(sheet.querySelector('h2').textContent, 'Synced, with problems');
+  assert.match(sheet.textContent, /member marketing could not be read/);
+  u.button('Close').click(); assert.equal(sheet.hidden, true);
+});
+
+test('a refused sync reads plainly; the kernel code and message stay verbatim behind Details', async t => {
+  const integrity = f2('sync-integrity').error;
+  const u = await setup(t, { sync: body => body.action === 'sync'
+    ? { workspaceSyncApi: 1, status: 'refused', report: null, reason: { code: integrity.code, message: integrity.message } } : catalog('capabilities-approved') });
+  u.doc.querySelector('.ws-sync button.primary').click(); await settle();
+  const sheet = u.doc.querySelector('.ws-sync-sheet');
+  assert.equal(sheet.hidden, false); assert.equal(sheet.querySelector('h2').textContent, 'Sync didn’t finish');
+  const lead = sheet.querySelector('.ws-sync-lead');
+  assert.ok(lead.classList.contains('error')); assert.doesNotMatch(lead.textContent, /E_[A-Z]|\//);
+  assert.match(lead.textContent, /no longer matches what the lock recorded/);
+  const detail = sheet.querySelector('.ws-sync-detail');
+  assert.equal(detail.hidden, true); sheet.querySelector('.ws-sync-details').click();
+  assert.equal(detail.hidden, false); assert.equal(detail.textContent, `${integrity.code} · ${integrity.message}`);
 });
 
 test('a sync that settles after a workspace switch is inert', async t => {
   const gate = deferred();
-  const u = await setup(t, { status: 'workspace-status-pending', sync: body => body.action === 'sync' ? gate.promise : catalog('capabilities-pending') });
+  const u = await setup(t, { sync: body => body.action === 'sync' ? gate.promise : catalog('capabilities-approved') });
   u.button('Sync').click(); await tick();
   setWorkspace('/other'); await settle();
-  gate.resolve(report('sync-pending', 'pending')); await settle();
+  gate.resolve({ workspaceSyncApi: 1, status: 'refused', report: null, reason: { code: 'E_PACKAGE_INTEGRITY', message: 'old' } }); await settle();
   assert.equal(u.doc.querySelector('.ws-sync-sheet').hidden, true, 'the old workspace\'s report never opens a sheet');
 });
 
@@ -214,10 +215,10 @@ async function syncOwnership(t, create, outcome) {
   const ctx = { api: () => gate.promise };
   const view = create(dom.window.document.querySelector('header'), { ctx });
   t.after(() => { view.dispose(); setWorkspace(previous); dom.window.close(); });
-  view.update({ status: statusOf('workspace-status-pending'), canSync: true });
+  view.update({ status: statusOf('workspace-status-approved'), canSync: true });
   dom.window.document.querySelector('.ws-sync button.primary').click(); await tick();
   setWorkspace('/other'); // a newer workspace intent
-  if (outcome === 'success') gate.resolve(report('sync-pending', 'pending'));
+  if (outcome === 'success') gate.resolve({ workspaceSyncApi: 1, status: 'refused', report: null, reason: { code: 'E_PACKAGE_INTEGRITY', message: 'OLD refusal' } });
   else gate.resolve(Promise.reject(new Error('OLD sync failure')));
   await settle();
   return dom.window.document.querySelector('.ws-sync-sheet').hidden;

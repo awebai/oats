@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { cliDeploymentRead, DEPLOYMENT_READ_MAX_BUFFER, DEPLOYMENT_READ_TIMEOUT } from '../deployment-read-cli.mjs';
 import { deploymentReadGate, DEPLOYMENT_FEATURES } from '../renderer/deployment-contract.mjs';
 import { deploymentStatusData, workspaceStatusData } from '../deployment-data.mjs';
+import { specProbe, NO_APPROVAL } from './helpers/no-approval-spec.mjs';
 
 const file = name => new URL(`./fixtures/workspace-v2/${name}.json`, import.meta.url);
 const fixture = name => JSON.parse(readFileSync(file(name), 'utf8'));
@@ -13,7 +14,9 @@ const status = fixture('status'), header = fixture('workspace-status'), probe = 
 const context = dirname(status.root);
 // An already accepted locator result. The producer's source version is retained
 // in the fixture and provenance; version-band tests belong to the locator.
-const cli = () => ({ ...probe, ok: true, bin: '/fixture/bin/oats' });
+// The 0.26.0 feature (packages-no-approval) is applied per the published spec
+// until the kernel branch is captured (helpers/no-approval-spec.mjs).
+const cli = () => ({ ...specProbe(probe), ok: true, bin: '/fixture/bin/oats' });
 const input = action => ({ action, context });
 const reply = (document, error = null) => (_bin, _args, _options, callback) => callback(error, JSON.stringify(document));
 
@@ -29,7 +32,7 @@ test('Northwind producer fixtures are exit-0 kernel documents with recorded hash
   }
   assert.equal(probe.version, provenance.kernel);
   assert.equal(probe.workspaceApi, 2);
-  for (const feature of DEPLOYMENT_FEATURES) assert.ok(probe.features.includes(feature), feature);
+  for (const feature of DEPLOYMENT_FEATURES.filter(f => f !== NO_APPROVAL)) assert.ok(probe.features.includes(feature), feature);
 });
 
 for (const action of ['status', 'workspace-status']) test(`${action}: fixed argv, selected cwd, bounded I/O and ambient selector removal`, async () => {
@@ -47,7 +50,7 @@ for (const action of ['status', 'workspace-status']) test(`${action}: fixed argv
   assert.equal(environment.OATS_INSTANCE_HOME, '/foreign', 'caller environment is not mutated');
 });
 
-for (const feature of ['workspace-v2', 'instance-modules', 'served-identity']) test(`actual exec owner refuses missing ${feature}, names it, and never invokes`, async () => {
+for (const feature of ['workspace-v2', 'instance-modules', 'served-identity', 'packages-no-approval']) test(`actual exec owner refuses missing ${feature}, names it, and never invokes`, async () => {
   const state = cli(); state.features = state.features.filter(f => f !== feature);
   const result = await cliDeploymentRead(state, input('status'), { exec() { assert.fail('unadvertised dispatch'); } });
   assert.equal(result.ok, false); assert.equal(result.reason.feature, feature); assert.match(result.reason.message, new RegExp(feature));
@@ -56,8 +59,10 @@ for (const value of [undefined, 1, '2', 3]) test(`workspaceApi ${String(value)} 
   const result = await cliDeploymentRead({ ...cli(), workspaceApi: value }, input('workspace-status'), { exec() { assert.fail('unsupported dispatch'); } });
   assert.equal(result.reason.code, 'E_DEPLOYMENT_FEATURE');
 });
-test('workspace header does not require roster-only features', () => {
-  assert.equal(deploymentReadGate({ ...cli(), features: ['workspace-v2'] }, 'workspace-status'), null);
+test('workspace header does not require roster-only features, but does require packages-no-approval', () => {
+  assert.equal(deploymentReadGate({ ...cli(), features: ['workspace-v2', 'packages-no-approval'] }, 'workspace-status'), null);
+  assert.equal(deploymentReadGate({ ...cli(), features: ['workspace-v2'] }, 'workspace-status').reason.feature, 'packages-no-approval',
+    'an older kernel gets the update state, never a half-working header');
   assert.equal(deploymentReadGate({ ...cli(), features: 'workspace-v2' }, 'workspace-status').ok, false);
 });
 for (const options of [{ action: 'sync', context }, { action: 'status', context: 'relative' }, { action: 'status', context: context + '/..' }, { action: 'status', context, argv: ['--force'] }, { action: 'status', context: context + '\0' }]) test(`invalid input is refused: ${JSON.stringify(options)}`, async () => {
@@ -89,13 +94,15 @@ test('kernel domain refusal retains bounded code/message, not process diagnostic
   assert.deepEqual(result, { ok: false, reason: { code: 'E_PACKAGE_INTEGRITY', message } });
 });
 
-test('workspace header consumes exact producer approval IDs, members and packages, without inspect scope', () => {
+test('workspace header consumes exact producer members and packages (commit + integrity), no approval state and no inspect scope', () => {
   const result = workspaceStatusData(header, context);
   assert.deepEqual(result.workspace, header.result.workspace);
   assert.deepEqual(result.members, header.result.members);
-  assert.deepEqual(result.packages, header.result.packages);
-  assert.deepEqual(result.approval, { approved: ['nw.tools', 'oats.framework', 'oats.okf'], needed: [] });
-  assert.equal(Object.hasOwn(result, 'approvalNeeded'), false);
+  assert.deepEqual(result.packages, header.result.packages.map(({ approved: _gone, ...row }) => row));
+  assert.ok(result.packages.every(p => p.commit && p.integrity), 'the lock still pins commit and integrity');
+  for (const key of ['approval', 'approvalNeeded']) assert.equal(Object.hasOwn(result, key), false, key);
+  const { approval: _none, ...withoutApproval } = structuredClone(header.result);
+  assert.deepEqual(workspaceStatusData({ ...header, result: withoutApproval }, context).members, result.members, 'the 0.26 shape (no approval object) reads the same');
   assert.equal(Object.hasOwn(result, 'scope'), false);
 });
 test('native roster retains module drift, recorded soul/workspace and absent identity', () => {

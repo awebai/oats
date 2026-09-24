@@ -1,11 +1,11 @@
 /** Workspace view header and its Capabilities / Sources tabs, natively on
  * workspace model v2. Facts come from the installed kernel only:
  *   - `oats workspace status` + `oats status` (the roster observation) for
- *     sources, lock/approval state and which instances carry a module;
+ *     sources, lock state and which instances carry a module;
  *   - `oats capabilities` (POST /api/workspace-sync {action:"read"}) for the
  *     capability table.
- * Sync and package approval are the kernel's `oats sync [--approve]`
- * (workspace-sync-view.mjs). Souls stay the host view's own grid. */
+ * Sync is the kernel's `oats sync` (workspace-sync-view.mjs); there is no
+ * package approval. Souls stay the host view's own grid. */
 import { postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
 import { cliStatus, cliKnownUnavailable } from './views/cli-status.mjs';
 import { deploymentUnavailableText } from './deployment-header.mjs';
@@ -69,7 +69,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     });
     controls.set(name, control); tabs.append(control);
   }
-  // Attach first: the approval sheet mounts inside the view (.oats-view) so it
+  // Attach first: the sync sheet mounts inside the view (.oats-view) so it
   // inherits the view's control styles and is removed with it.
   const syncHost = node('div'); header.append(syncHost);
   const sync = createWorkspaceSync(syncHost, { ctx, onSynced: () => { catalog = null; failure = ''; if (tab === 'capabilities') void load(); } });

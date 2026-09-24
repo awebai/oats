@@ -321,11 +321,10 @@ export function createOnboardExecutor(io) {
       }
       let report;
       try { report = io.project(result.document, dir); } catch { return { ok: false, code: "E_CLI_PROTOCOL", reason: "The installed OATS CLI returned an invalid onboarding result.", ...retry() }; }
-      if (result.pending !== report.sync.approvalNeeded.length > 0) return { ok: false, code: "E_CLI_PROTOCOL", reason: "The installed OATS CLI returned an inconsistent onboarding result.", ...retry() };
       // The deployment exists now; registering it is the ordinary add. An add
       // failure is reported with the onboarding result, never rolled back here.
       const added = await io.add(dir);
-      return { ok: true, pending: result.pending, onboard: report, added };
+      return { ok: true, onboard: report, added };
     } finally { busy = false; }
   };
 }

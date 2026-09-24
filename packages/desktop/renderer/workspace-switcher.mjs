@@ -45,7 +45,7 @@ export function createWorkspaceSwitcher({
   refInput.type = "text"; refInput.autocomplete = "off"; refInput.spellcheck = false; refInput.placeholder = "github.com/org/agents";
   refLabel.append(refText, refInput);
   const onboardNote = document.createElement("p"); onboardNote.className = "ws-onboard-note";
-  onboardNote.textContent = "Runs oats onboard in this folder: it writes oats-local.yaml and agents/, reads the workspace over Git and writes the lock. It installs nothing and spawns nothing. Packages that run executables wait for your approval.";
+  onboardNote.textContent = "Runs oats onboard in this folder: it writes oats-local.yaml and agents/, reads the workspace over Git and writes the lock. It installs nothing and spawns nothing.";
   onboardEl.append(onboardPath, refLabel, onboardNote);
   status.before(onboardEl);
   let onboarding = null; // { token, path } — the current single-use offer

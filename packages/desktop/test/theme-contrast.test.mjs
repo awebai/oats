@@ -300,20 +300,24 @@ for (const [name] of palettes) test(`${name}: actual identity/runtime markup win
 });
 
 for (const [name] of palettes) test(`${name}: workspace catalog, sources and sync text use AA tokens on their computed surfaces`, t => {
-  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"><header class="workspace-header"><div class="ws-sync"><span class="ws-sync-state warn">3 packages need approval</span></div></header><p class="catalog-note warn">note</p><div class="filters"></div><div class="caps"></div><div class="sources"></div></main></body></html>`);
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"><header class="workspace-header"><div class="ws-sync"><span class="ws-sync-state warn">Lock out of date</span></div></header><p class="catalog-note warn">note</p><div class="filters"></div><div class="caps"></div><div class="sources"></div></main></body></html>`);
   const doc = dom.window.document;
   for (const source of [css, identityCSS, discoveryCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
   t.after(() => dom.window.close());
-  // Kernel captures (F2): the pending catalog paints both approval states;
-  // a later sync's members carry an unconfirmed row with its detail.
+  // Kernel captures (F2): the catalog paints locked/confirmed chips; a later
+  // sync's members carry an unconfirmed (warn) row with its detail.
   const f2 = file => JSON.parse(readFileSync(new URL(`fixtures/workspace-v2/f2/${file}.json`, new URL("./", import.meta.url)), "utf8"));
   const dir = '/fixture/base/northwind-workspace';
   const status = { ...workspaceStatusData(f2('workspace-status-approved'), dir), members: syncData(f2('sync-moved'), dir).members };
-  const rows = f2('capabilities-pending').result.capabilities;
+  const rows = f2('capabilities-approved').result.capabilities;
   const names = memberNames(status);
   renderFilters(doc.querySelector('.filters'), { ...filterChoices(rows, names), value: { team: 'marketing', source: null }, onChange() {} });
   renderCapabilities(doc.querySelector('.caps'), { rows, status, instances: [], root: dir });
   renderSources(doc.querySelector('.sources'), { status });
+  // The sync sheet's refusal text, as createWorkspaceSync builds it.
+  const sheet = doc.createElement('section'); sheet.className = 'ws-sync-dialog';
+  sheet.innerHTML = '<div class="ws-sync-body"><p class="ws-sync-lead error">x</p><p class="ws-sync-lead">x</p><button class="ws-sync-details">Details</button><p class="ws-sync-detail">x</p></div>';
+  doc.querySelector('main').append(sheet);
   const root = dom.window.getComputedStyle(doc.documentElement);
   for (const [selector, painted, fg, bg] of [
     ['.catalog-row.head', '.catalog-row.head', 'muted', 'surface-2'],
@@ -329,6 +333,8 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
     ['.sources-key', '.catalog-table', 'muted', 'surface'],
     ['.sources-detail', '.catalog-table', 'warn', 'surface'],
     ['.ws-sync-state.warn', '.workspace-header', 'warn', 'surface'],
+    ['.ws-sync-lead.error', '.ws-sync-dialog', 'danger', 'surface'], ['.ws-sync-lead:not(.error)', '.ws-sync-dialog', 'fg', 'surface'],
+    ['.ws-sync-details', '.ws-sync-dialog', 'muted', 'surface'], ['.ws-sync-detail', '.ws-sync-detail', 'muted', 'surface-2'],
   ]) {
     const el = doc.querySelector(selector), surface = doc.querySelector(painted);
     assert.ok(el && surface, selector);
