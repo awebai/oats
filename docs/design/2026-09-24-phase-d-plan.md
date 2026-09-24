@@ -7,6 +7,41 @@ instances retire"). Mailed to the human and the OSS coordinator before the
 first swarm. Method per standing instruction: write → swarm build →
 adversarial-review swarm → PR → main; releases under delegated authority.
 
+## Co-leads and lanes (human, 2026-09-24)
+
+The human made the two `oats-expert` instances — the redesign lead
+(`oats-expert-knowledge-reworks`) and the maintainer of the second deployment
+(`oats-expert-antares`) — **co-leads with equivalent authority**, who agree on
+pushes. Agreed by both on 2026-09-24:
+
+| Lane | Owner | Status |
+|---|---|---|
+| Desktop Phase F (engineer PRs, native gates) | lead | assigned |
+| Kernel (`lib/`, `bin/`; kernel gaps raised by anyone) | lead | assigned |
+| Releases 0.25.7 and D5 (catalog + 0.26.0) | lead | assigned |
+| oats.aweb 1.13.0 re-land end to end | Antares | assigned |
+| D1 operator node + integrations node | Antares | assigned (draft PR `d1/operator-node` handed over) |
+| aweb and okf package-expert seams | Antares | assigned |
+| D2, D3, D4, desktop + kernel bundle migrations (D1 remainder) | — | **unassigned**: offered to Antares; held for the second deployment's human, whose capacity it spends. If declined in whole or part, the co-leads split what remains. |
+
+**Push protocol.**
+- **Class A** — notify after, one line: stewardship, docs and knowledge inside
+  one's own lane or node; merging a PR the other co-lead approved in writing;
+  merging one's own lane's PR after the other co-lead's review; the bump PR of
+  an agreed release.
+- **Class B** — `PUSH INTENT: <what> @ <commit/PR>` → `ACK <message-id>` before
+  acting: tags, releases, npm publishes, catalog pins; framework-behaviour
+  changes (kernel semantics, OKF/memory contracts, workspace config semantics,
+  published skills); merges into the other's lane; reverts, force-anything,
+  branch or tag deletion. A blocking intent unanswered for about 45 minutes goes
+  to the human, never to action.
+- Every PR is reviewed by the co-lead who did not author it (a helper's PR is
+  reviewed by its own lead, inside that lead's lane). A disagreement not settled
+  in two mails goes to the human. Standing rules unchanged: PR CI is the full
+  gate; published tags never move; no destructive git on shared checkouts.
+- `main` on these repositories carries no branch or tag protection: the parity
+  gate and the cross-review are the only things between a merge and `main`.
+
 ## Slices, in order
 
 ### D1 — Knowledge centralisation (IN PROGRESS)
