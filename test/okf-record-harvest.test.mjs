@@ -136,7 +136,7 @@ test('runtime/model choices cross the real worker scaffold boundary without laun
     const f = fixture(t, { settings: { 'harvest-runtime': runtime, 'harvest-model': model } });
     write(join(f.home, 'notes/one.md'), 'Durable observation.\n');
     const run = f.run(), meta = readJSON(join(run.home, 'instance.json'));
-    assert.equal(meta.runtime, runtime); assert.equal(meta.model, model); assert.equal(meta.launched, false);
+    assert.equal(meta.harness, runtime); assert.equal(meta.model, model); assert.equal(meta.launched, false);
     assert.equal(meta.work, 'directory'); assert.equal(meta.parentInstance, f.source.instance);
     assert.equal(fs.lstatSync(join(run.home, 'work')).isSymbolicLink(), false);
   }

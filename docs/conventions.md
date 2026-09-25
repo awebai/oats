@@ -48,8 +48,8 @@ Pi with ambient skill and context discovery disabled and the one instance path
 explicit; that exclusion is gone.)* Claude runs provider-native: it reads the
 instance's `.claude/skills` and `CLAUDE.md` symlinks, and the operator's own
 user and project configuration — skills, plugins, settings — stays in effect.
-Neither runtime gets a redirected config home.
-`composition.materialized.runtimePosture` in `instance.json` records what each
+Neither harness gets a redirected config home.
+`composition.materialized.harnessPosture` in `instance.json` records what each
 instance actually exposes. `oats-getting-started` is the sole pre-workspace
 ambient bootstrap.
 

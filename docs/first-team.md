@@ -103,7 +103,7 @@ oats spawn backend-expert --purpose first-fix --task "Fix one small issue, run t
 oats status
 ```
 
-`--runtime pi|claude|codex` picks the harness; complete any native folder
+`--harness pi|claude|codex` picks the harness; complete any native folder
 trust or authentication prompt in the printed session. The instance home is
 `agents/<soul>/instances/<instance>/`; `work/` is its repository view;
 `.oats/modules/<cap>/` and `.agents/skills/<cap>/` are the copied capabilities;

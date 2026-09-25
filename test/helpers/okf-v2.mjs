@@ -1,4 +1,4 @@
-// Public-CLI OKF v2 fixtures. No kernel-private imports, global config, runtime
+// Public-CLI OKF v2 fixtures. No kernel-private imports, global config, harness
 // sessions, host schedulers, GitHub access, or inherited agent identity.
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
@@ -35,9 +35,9 @@ export function fixture(t, { git = false, settings = {}, register = true } = {})
   const base = fx.base, context = fx.dep, bin = join(base, 'bin'), user = join(base, 'user');
   fs.mkdirSync(user);
   linkExecutables(bin, ['node', 'git']);
-  for (const runtime of ['pi', 'claude', 'codex']) {
-    write(join(bin, runtime), '#!/bin/sh\necho NO_MODEL_SESSIONS_IN_FIXTURES >&2\nexit 98\n');
-    fs.chmodSync(join(bin, runtime), 0o755);
+  for (const harness of ['pi', 'claude', 'codex']) {
+    write(join(bin, harness), '#!/bin/sh\necho NO_MODEL_SESSIONS_IN_FIXTURES >&2\nexit 98\n');
+    fs.chmodSync(join(bin, harness), 0o755);
   }
   const env = { HOME: user, PATH: bin, OATS_HOME_DIR: join(base, 'host'), LANG: 'en_US.UTF-8',
     OATS_REMOTE_CACHE: fx.env.OATS_REMOTE_CACHE, OATS_TMUX_SESSION: `none-${process.pid}`, PI_AGENTS_TMUX_SESSION: `none-${process.pid}`,
@@ -83,7 +83,7 @@ export function fixture(t, { git = false, settings = {}, register = true } = {})
     gitRun('-C', accepted, 'add', '.'); gitRun('-C', accepted, 'commit', '-qm', 'accepted baseline');
   } else cli(['okf', 'init', '--base', 'project', '--nodes', nodes, '--confirm', '--soul', 'source', '--json']);
   const f = { base, context, bin, user, env, cap, soul, bindings, accepted, cli, raw, git: gitRun, fx, localFile, configSettings };
-  f.spawn = (purpose = 'probe') => cli(['spawn', 'source', '--purpose', purpose, '--repo', context, '--work', 'directory', '--runtime', 'pi', '--no-launch', '--json']);
+  f.spawn = (purpose = 'probe') => cli(['spawn', 'source', '--purpose', purpose, '--repo', context, '--work', 'directory', '--harness', 'pi', '--no-launch', '--json']);
   if (register) {
     f.source = f.spawn(); f.home = f.source.home;
     f.marker = readJSON(join(f.home, '.okf-source.json'));

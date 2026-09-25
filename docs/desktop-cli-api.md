@@ -28,7 +28,7 @@ refusals below remain authoritative.
 
 Optional features are negotiated from the probe's `features` array. Starting
 an existing home requires `session-start`; named launch configurations and
-runtime/permission overrides require `launch-config`; restarting a running
+harness/permission overrides require `launch-config`; restarting a running
 home also requires `session-restart`. Desktop checks the corresponding
 `remote` entries before offering these operations for a server. The router
 then probes the execution host before sending a mutation. An absent feature
@@ -47,6 +47,63 @@ no progress prose (progress goes to stderr):
 
 - success (exit 0): `{"schemaVersion":1,"ok":true,"result":{...}}`
 - failure (nonzero exit): `{"schemaVersion":1,"ok":false,"error":{"code":"...","message":"..."}}`
+
+Either may also carry `"warnings":[…]` (0.27.0+), present only when there is
+something to say. The one warning so far is `deprecated-runtime-name` (see
+[the harness rename](#the-harness-rename-feature-harness-oats-0270)). `oats status
+--json`, whose document is not an envelope, carries the same `warnings` beside
+its `problems`. In text mode the warning is one `oats: warning: …` line on stderr.
+
+## The harness rename (feature `harness`, OATS 0.27.0)
+
+What starts an instance (pi, claude or codex) is its **harness**. 0.27.0 renames
+the kernel's `runtime` to `harness` everywhere it means that:
+
+- Outputs speak only the new names.
+- Every input written before 0.27.0 still works. The rule is read either,
+  write new: the old spelling is read as the new one, and the next write
+  records the new one.
+- A command that read an old spelling answers **one** warning:
+  `{"code":"deprecated-runtime-name","key":"runtime","replacement":"harness","sources":[…],"message":"…"}`.
+  `sources` names each place it read the old spelling (a flag, a file and its
+  key, a home).
+- A pair that disagrees is refused rather than guessed, for example
+  `--harness pi --runtime claude`, or both keys with different values.
+- A later release drops the old spellings.
+
+Gate on the feature `harness`. A kernel without it speaks the old names: the
+routed commands (`--server`) already translate for such a host, sending
+`--runtime` and `runtime` keys to it and reading its `runtimes` list.
+
+| Surface | Before 0.27.0 | 0.27.0 | Old spelling still accepted? |
+|---|---|---|---|
+| `oats version --json` | `runtimes: [pi, claude, codex]` | `harnesses: [...]`, feature `harness` | **Dropped**: no `runtimes` alias; gate on the feature |
+| Flag on `spawn` (and `--preview`), `session start`/`restart`, `launch-config preview`, and their `--server` forms | `--runtime <h>` | `--harness <h>` | Yes, with the warning (the okf 2.1.5 harvest worker passes `--runtime` to spawn). Both flags disagreeing → `E_BAD_ARGS` |
+| `oats status --json`: `agents[]` rows (soul default) and `agents[].instances[]` rows | `runtime` | `harness` | Output only |
+| `oats status --json`: instance rows' `composition.materialized` | `runtimePackages`, `runtimePosture` | `harnessPackages`, `harnessPosture` | Output only |
+| `oats inspect --json` `souls[]` rows, remote roster rows | `runtime` | `harness` | Output only; a pre-0.27 host's `runtime` rows are read as `harness` |
+| `oats inspect --home --json` `instance` | `runtime` | `harness` | Output only |
+| The launch plan's package check (`launch-config preview` `problems[]`) | `runtime-packages` | `harness-packages` | Output only |
+| Soul `soul.yaml` (member souls and capability-defined agents) | `runtime:` | `harness:` | Yes, **without** a warning: released capabilities (oats.aweb 1.13.1) ship `runtime:`, and the operator cannot fix a provider's file. Both, disagreeing → `E_BAD_MANIFEST` |
+| `oats-local.yaml` `launch-configs.<name>` | `runtime:` | `harness:` | Yes, with the warning. Both, disagreeing → `E_WORKSPACE_SCHEMA`. `launch-config set` writes `harness` (a `runtime` in its `--file` definition too) |
+| `launch-config list/preview --json` rows and `selection` | `runtime` | `harness` | Output only |
+| Home `instance.json` | `runtime`; launch recipe `launch` version 1 `{runtime}` | `harness`; recipe version **2** `{harness}` | Yes, with the warning naming the home: a 0.26.0 home inspects, starts, restarts and retires; its next start or restart records the new names |
+| `oats spawn … --preview` decision | `effective.runtime` | `effective.harness` | Output only. The revision digests the key names, so a decision previewed by a 0.26 kernel is `E_DECISION_STALE` at apply (with the fresh decision) |
+| `spawn`/`session` results, `spawned` event `data` | `runtime` | `harness` | Output only |
+| Schedule definitions (`schedule add/update --spec-json`, stored jobs, `schedule list`) | `runtime` | `harness` | Yes, with the warning. A stored job is read in the new name and saved in it next time. Both, disagreeing → `E_SCHEDULE_INVALID` (a stored job: invalid on its own) |
+| Schedule run records (`lastRun`, `recentRuns`) | `startedRuntime` | `startedHarness` | Output; a 0.26.0 record's `startedRuntime` is still read |
+| Error codes | `E_UNSUPPORTED_RUNTIME`, `E_RUNTIME_PACKAGE`, `E_RUNTIME_RESOURCE_MISSING` | `E_UNSUPPORTED_HARNESS`, `E_HARNESS_PACKAGE`, `E_HARNESS_RESOURCE_MISSING` | Output only |
+| Hook environment (spawn and launch hooks) | `OATS_RUNTIME`, `OATS_PREVIOUS_RUNTIME` | `OATS_HARNESS`, `OATS_PREVIOUS_HARNESS` | Both are set, with the same values, for released hooks |
+| Capability manifest `requires[]` harness package | `runtime` | `harness` | Yes, **without** a warning (a provider's file); a row naming both is refused |
+| Package verification `loadedBy` | `runtime-discovery` | `harness-discovery` | Output only |
+
+Unchanged, because they do not name the harness: the session endpoint
+vocabulary (`runtimeAuthority`, `runtimeState`/`runtimeError` in liveness,
+`E_RUNTIME_ENDPOINT_UNKNOWN`, `E_RUNTIME_AUTHORITY_MISMATCH`,
+`E_RUNTIME_QUIESCE_FAILED`); `capabilityRuntime`; the retirement baseline's
+`runtime`; oats.okf's `harvest-runtime` setting; and the kernel's
+"runtime-neutral" design. Hook stdin carries no `launch.runtime` (no 0.26 hook
+emitter wrote it).
 
 ## Inspect, readiness and operation run on the workspace model (`operationsApi: 2`, `soulsApi: 2`, `readinessApi: 2`, OATS 0.26.0)
 
@@ -121,7 +178,7 @@ payload the spawn recorded for a home, or the resolution computes for a soul.
  "subject":{"kind":"instance","instance":"release-manager-x","home":"/w/agents/release-manager/instances/release-manager-x","soul":"release-manager"},
  "workspace":{"key":"github.com/northwind/agents","name":null,"deployment":"/w","commit":"461b9c24…","standalone":false},
  "souls":[{"soulsApi":2,"name":"release-manager","repoKey":"github.com/northwind/agents","commit":"461b9c24…","team":"engineering",
-   "kind":null,"path":null,"description":"Cuts, verifies and announces platform releases.","work":"worktree","runtime":null,"model":null,
+   "kind":null,"path":null,"description":"Cuts, verifies and announces platform releases.","work":"worktree","harness":null,"model":null,
    "declarations":{"requires":null,"defaults":null,"knowledge":{"owns":"release-manager","reads":["platform-engineer"]},"teams":null,"resources":null,"children":null,
                    "capabilities":{"nw-release-tooling":{"from":"here"},"nw-deploy":{"from":"package"}}},
    "declarationProblems":[],
@@ -138,7 +195,7 @@ payload the spawn recorded for a home, or the resolution computes for a soul.
     "operations":[{"name":"inspect","kind":"view","command":"inspect","context":"home","description":"…","args":[],"argv":["okf","inspect"],"available":true,"reason":null}]}],
  "knowledge":{"provider":"oats.okf","version":"2.1.3","operations":[{"name":"inspect","kind":"view","available":true,"reason":null}]},
  "instance":{"home":"/w/agents/release-manager/instances/release-manager-x","instance":"release-manager-x","agent":"release-manager",
-   "runtime":"pi","model":null,"yolo":null,"launched":false,"createdAt":"<iso>","resolution":"7217670b…",
+   "harness":"pi","model":null,"yolo":null,"launched":false,"createdAt":"<iso>","resolution":"7217670b…",
    "soulDir":"/w/agents/release-manager/souls/461b9c24929c",
    "instructions":{"file":"/w/agents/release-manager/instances/release-manager-x/AGENTS.md","text":"…","truncated":false,
                    "sources":[{"source":"kernel:instance-boundary","file":"…"},{"source":"capability:oats.okf","file":"…/.oats/modules/oats.okf/injects/okf.md"}]}},
@@ -471,7 +528,7 @@ home's removal, so a retired instance's `retired` event is still readable).
 
 ```json
 {"eventsApi":1,"instance":"dev-1","home":"/abs/home","count":7,"returned":7,"truncated":false,
- "events":[{"eventsApi":1,"at":"<iso>","instance":"dev-1","home":"/abs/home","producer":"kernel","kind":"spawned","data":{"agent":"dev","work":"worktree","branch":"agents/dev-1","runtime":"claude","model":null,"parentInstance":null,"relation":null,"launched":true}},
+ "events":[{"eventsApi":1,"at":"<iso>","instance":"dev-1","home":"/abs/home","producer":"kernel","kind":"spawned","data":{"agent":"dev","work":"worktree","branch":"agents/dev-1","harness":"claude","model":null,"parentInstance":null,"relation":null,"launched":true}},
            {"…":"launched | restarted | stopped | stop-refused | retire-planned | worktree-retained | worktree-removed | branch-deleted | retired | child-spawn-refused"}],
  "lastEvent":{"kind":"stopped","at":"<iso>","producer":"kernel"},
  "waitingOnYou":null,
@@ -628,12 +685,12 @@ unchecked, echoed a stored `definition.id` without checking it, and named a
 The Spawn modal's fields are backed by the kernel's own decision, taken **before
 any side effect**: `oats spawn <agent> [same flags as a real spawn] --preview --json`
 runs every preflight a spawn runs (placement, composition, resources,
-executable, runtime packages, child-spawn policy) and returns what the spawn
+executable, harness packages, child-spawn policy) and returns what the spawn
 *would* do — then returns without creating a home, branch or worktree.
 
 ```json
 {"spawnPreviewApi":1,"preview":true,"agent":"dev","kind":"persistent","instance":"dev-fix-login","home":"/abs/agents/dev/instances/dev-fix-login",
- "repo":"/abs/repo","work":"worktree","runtime":"claude","model":"opus","modelSource":"explicit","launchConfig":null,"yolo":false,"backend":"tmux",
+ "repo":"/abs/repo","work":"worktree","harness":"claude","model":"opus","modelSource":"explicit","launchConfig":null,"yolo":false,"backend":"tmux",
  "branch":"agents/dev-fix-login","base":{"ref":"HEAD","oid":"<oid>"},"worktree":"/abs/agents/dev/instances/dev-fix-login/work",
  "relation":null,"parentInstance":null,"policy":{"childSpawns":{"allowed":true,"origin":{"kind":"default","detail":"…"}}},
  "executable":"/abs/bin/claude","capabilities":["oats.core"],"skills":["oats-operate","oats-souls"],"task":"…"}
@@ -650,7 +707,7 @@ executable, runtime packages, child-spawn policy) and returns what the spawn
   the worktree **from that exact oid**.
 - **Model**: `model`/`modelSource` are the resolved selection. Omitting
   `--model` **inherits** the launch configuration's or soul's preference;
-  `--model @native-default` is the explicit "use the runtime's own default"
+  `--model @native-default` is the explicit "use the harness's own default"
   (`modelSource: "native default (explicit)"`). These are different requests
   and the UI must not relabel one as the other.
 - **Policy**: `policy.childSpawns` is what this instance will record (soul
@@ -722,11 +779,11 @@ the pre-fix marker and is never accepted for dispatch.
 - **Bounded preflight**: every native probe a preview runs (`pi --list-models`,
   `pi list`, `claude plugin list`) shares ONE budget (20 s default), runs in its
   own process group and is group-killed on timeout; `preflight {status:
-  complete|timeout, budgetMs, elapsedMs}` says which. A hanging runtime cannot
+  complete|timeout, budgetMs, elapsedMs}` says which. A hanging harness CLI cannot
   hang a preview.
 - **Confirmed apply contract** (0.24.10+, feature `spawn-apply-2`,
   `spawnApplyApi: 1`) — what a GUI may promise at "Confirm spawn":
-  - `decision` gains **`effective {repo, work, runtime, model, launchConfig,
+  - `decision` gains **`effective {repo, work, harness, model, launchConfig,
     yolo, backend, childSpawns, relation{kind, anchor{instance, agentsRoot}}}`**
     and `revision` hashes placement + effective. An inherited default that would
     change what launches (the soul's model edited between preview and apply,
@@ -1342,7 +1399,7 @@ are described in [the operations contract](design/operations-contract.md).
 
 ```text
 oats session start --home /absolute/home [--server id] \
-  [--launch-config name] [--runtime pi|claude|codex] \
+  [--launch-config name] [--harness pi|claude|codex] \
   [--model id] [--yolo|--no-yolo] --json
 oats session restart --home /absolute/home [the same options] --json
 ```
@@ -1366,7 +1423,7 @@ oats launch-config list [--dir /scope | --home /home | --soul name --agents-root
 oats launch-config set name --file /private/definition.json [--keep-env] --dir /scope --json
 oats launch-config remove name --dir /scope --json
 oats launch-config preview (--home /home | --soul name --agents-root /scope/agents --dir /scope) \
-  [--launch-config name] [--runtime runtime] [--model id] [--yolo|--no-yolo] --json
+  [--launch-config name] [--harness harness] [--model id] [--yolo|--no-yolo] --json
 ```
 
 All accept `--server id`. Scope edits follow the registration; inspection and
@@ -1375,7 +1432,7 @@ is serialized to SSH stdin and read on the host with `--file -`; the local
 filename is never passed to the server as though it existed there.
 
 The list result supplies `context`, `selected` and `configurations`. Each
-configuration has a name, runtime, executable, literal argument array,
+configuration has a name, harness, executable, literal argument array,
 environment, model, permission choice and declaring `source`. Environment
 literals appear as `{ "redacted": true }`; references appear as
 `{ "fromEnv": "VARIABLE_NAME" }`. Optional executable/model/yolo fields can be
@@ -1410,7 +1467,7 @@ See [launch configuration syntax](configuration.md) and
 | `warnings` | string[]        | non-fatal warnings (always an array)       |
 | `tmux`     | {session,window} \| null | tmux target                       |
 
-Additional informative fields: `repo`, `runtime`, `model`, `parent`,
+Additional informative fields: `repo`, `harness`, `model`, `parent`,
 `sibling` (explicit sibling cluster link when a root-level sibling relation
 was declared, else null), `relation` (`child`/`sibling`/`parent` when a
 relation was declared at spawn, else null), `spawnOrigin`, `attach`.

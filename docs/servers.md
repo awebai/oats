@@ -25,8 +25,8 @@ oats server list
 - `--path` names directories to prepend to the remote PATH for every routed
   command (`~/.local/bin:/opt/pi/bin`). A non-interactive ssh command runs in
   the login shell's minimal PATH, and the remote kernel's spawn preflight looks
-  for the runtime binary (`claude`, `pi`, `codex`) there; without this, a
-  runtime installed under the user's home is "not found" even though it runs
+  for the harness binary (`claude`, `pi`, `codex`) there; without this, a
+  harness installed under the user's home is "not found" even though it runs
   fine in an interactive shell on that host.
 - Registrations live in `~/.oats/servers.json` on this machine, never in a
   repository scope.
@@ -44,13 +44,13 @@ worktree, identity, launch, retirement. The local side only routes: a local
 `--task-file` travels as text, every argument is quoted for the remote login
 shell, and the remote's version and envelope are checked before either
 mutation (spawn and retire). A spawn is also held to what the remote
-advertises: a runtime it does not list (including the soul's own default as
+advertises: a harness it does not list (including the soul's own default as
 the remote roster reports it), a session backend it lacks, or a launch option
 such as `--yolo` it does not know is refused with `E_REMOTE_INCOMPATIBLE`
 saying what was established. A remote that advertises nothing (any kernel
 before 0.22.2) is assumed to run pi and claude on tmux with no options, and
 the refusal says so rather than claiming the remote lacks the feature; a soul
-the remote roster does not list with a runtime is validated by the remote
+the remote roster does not list with a harness is validated by the remote
 kernel itself at spawn. `--dir` and `--server` do not combine; the remote
 workspace comes from the registration.
 

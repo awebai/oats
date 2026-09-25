@@ -22,7 +22,7 @@ const LOCAL = "schemaVersion: 2\nworkspace: example.invalid/acme/workspace\n";
 function workspace() {
   const ws = join(base, `ws-${++n}`);
   mkdirSync(join(ws, "agents", "dev", "soul"), { recursive: true });
-  writeFileSync(join(ws, "agents", "dev", "soul", "soul.yaml"), "name: dev\nwork: worktree\nruntime: claude\n");
+  writeFileSync(join(ws, "agents", "dev", "soul", "soul.yaml"), "name: dev\nwork: worktree\nharness: claude\n");
   writeFileSync(join(ws, "agents", "dev", "soul", "AGENTS.md"), "# Developer\n");
   writeFileSync(join(ws, "oats-local.yaml"), LOCAL);
   return ws;
@@ -45,7 +45,7 @@ test("definitions are validated field by field, with croner and IANA zones", () 
   bad({ id: "a", cron: "* * * * *", kind: "spawn", agent: "dev", task: "t" }, "tz");
   bad({ id: "a", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "nobody", task: "t" }, "agent");
   bad({ id: "a", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "" }, "task");
-  bad({ id: "a", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t", runtime: "bash" }, "runtime");
+  bad({ id: "a", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t", harness: "bash" }, "harness");
   bad({ id: "a", cron: "* * * * *", tz: "UTC", kind: "command", cwd: "/etc", argv: ["oats", "status"] }, "cwd");
   bad({ id: "a", cron: "* * * * *", tz: "UTC", kind: "command", cwd: ws, argv: ["sh", "-c", "x"] }, "argv");
   bad({ id: "a", cron: "* * * * *", tz: "UTC", kind: "wake", home: join(base, "elsewhere"), message: "hi" }, "home");
@@ -153,7 +153,7 @@ test("a wake job starts a stopped home, delivers once when active, and skips wha
   const reg = S.readRegistry();
   let c = S.tickWorkspace(ws, { now: at("2026-09-07T09:15:00Z"), io, reg });
   assert.equal(c[0].action, "started"); assert.deepEqual(started, [h]); assert.equal(inputs.length, 0);
-  assert.ok(S.jobLockInfo(ws, "nudge"), "a wake that started a runtime holds the job lock (a launch slot) until that home ends");
+  assert.ok(S.jobLockInfo(ws, "nudge"), "a wake that started a harness holds the job lock (a launch slot) until that home ends");
   assert.deepEqual(S.describe(ws, "nudge", io).pendingWake, { scheduledFor: "2026-09-07T09:15:00.000Z" }, "the started wake keeps ONE pending delivery");
   // Still stopped on the next (non-due) tick: no restart between due minutes, still pending.
   c = S.tickWorkspace(ws, { now: at("2026-09-07T09:16:00Z"), io, reg });
@@ -246,7 +246,7 @@ test("the CLI answers the envelope for add, list, show, update, enable, disable,
   const env = { ...process.env, OATS_HOME_DIR: process.env.OATS_HOME_DIR };
   const run = (...a) => { const r = execFileSync(process.execPath, [bin, "schedule", ...a, "--dir", ws, "--json"], { encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] }); return JSON.parse(r.trim().split("\n").pop()); };
   const spec = join(base, "spec.json");
-  writeFileSync(spec, JSON.stringify({ id: "nightly", cron: "0 3 * * *", tz: "Europe/Madrid", kind: "spawn", agent: "dev", task: "Nightly sweep.", runtime: "claude", yolo: true }));
+  writeFileSync(spec, JSON.stringify({ id: "nightly", cron: "0 3 * * *", tz: "Europe/Madrid", kind: "spawn", agent: "dev", task: "Nightly sweep.", harness: "claude", yolo: true }));
   let out = run("add", "nightly", "--file", spec);
   assert.equal(out.ok, true); assert.equal(out.result.schedule.id, "nightly"); assert.ok(out.result.schedule.nextRun);
   out = run("list");
@@ -327,7 +327,7 @@ test("remote schedules route to the server workspace only when the host advertis
   assert.equal(calls.filter(c => c.includes("schedule add pinned")).length, before, "no host receives a captured mutation");
 });
 
-test("a cold wake needs a launch slot; a delivery to a running home does not; a started runtime keeps its slot until the home ends", () => {
+test("a cold wake needs a launch slot; a delivery to a running home does not; a started harness keeps its slot until the home ends", () => {
   const ws = workspace();
   const h1 = home(ws, "dev-one"), h2 = home(ws, "dev-two"), h3 = home(ws, "dev-running");
   const states = { [h1]: { present: false, state: "shell" }, [h2]: { present: false, state: "shell" }, [h3]: { present: true, state: "unknown" } };
@@ -436,7 +436,7 @@ process.stdout.write("spawned dev-harvest-text\\n");\n`);
   assert.equal(c4.find((x) => x.id === "clean").action, "launch-failed"); assert.equal(S.describe(ws, "clean", io).running, false);
 });
 
-test("a wake slot is released when its started runtime is proven stopped, and kept while it is starting (the start receipt), even though the home remains", () => {
+test("a wake slot is released when its started harness is proven stopped, and kept while it is starting (the start receipt), even though the home remains", () => {
   const ws = workspace();
   const h1 = home(ws, "dev-persistent"), h2 = home(ws, "dev-waiting");
   const states = { [h1]: { present: false, state: "stopped" }, [h2]: { present: false, state: "stopped" } };
@@ -522,7 +522,7 @@ test("an execution target cannot be edited under a running or unresolved job; ti
   const rio = { inspect: (x) => states[x], start: () => { throw Object.assign(new Error("independent receipt is invalid"), { code: "E_RUNTIME_ENDPOINT_UNKNOWN" }); } };
   by = Object.fromEntries(S.tickWorkspace(ws, { now: at("2026-09-07T22:02:00Z"), io: rio, reg: { maxConcurrent: 1 } }).map((x) => [x.id, x]));
   assert.equal(by.cold.action, "skipped"); assert.equal(by.cold.reason.includes("E_RUNTIME_ENDPOINT_UNKNOWN"), true); assert.ok(S.jobLockInfo(ws, "cold"));
-  // The next observation (a non-due tick) proves the runtime stopped and releases the slot; nothing is started off the minute.
+  // The next observation (a non-due tick) proves the harness stopped and releases the slot; nothing is started off the minute.
   by = Object.fromEntries(S.tickWorkspace(ws, { now: at("2026-09-07T22:02:30Z"), io: rio, reg: { maxConcurrent: 1 } }).map((x) => [x.id, x]));
   assert.equal(by.cold.action, "skipped"); assert.equal(S.jobLockInfo(ws, "cold"), null, "observation released the slot");
   // Registry register/unregister are serialized and idempotent.
@@ -579,7 +579,7 @@ test("dry-run touches no lock, state or definition; a retiring home keeps its sl
   assert.equal(S.jobLockInfo(ws, "d"), null);
   S.tickWorkspace(ws, { now: at("2026-09-07T19:00:00Z"), io, reg });
   const h = S.describe(ws, "d", io).lastRun.home;
-  // A pending retirement marker beside the home is not "ended": the runtime may still be alive.
+  // A pending retirement marker beside the home is not "ended": the harness may still be alive.
   writeFileSync(join(dirname(h), `.oats-retire-pending-${basename(h)}.json`), "{}");
   const seen = S.observeHome(h, io);
   assert.equal(seen.outcome, "active"); assert.match(seen.note, /retiring/);
@@ -634,8 +634,8 @@ test("a routed spawn refuses a wake schedule when the host lacks the feature and
   writeFileSync(join(oatsHome, "servers.json"), JSON.stringify({ servers: { s: { sshHost: "h", workspace: "/w" } } }));
   const calls = [];
   const io = (features) => ({ execFileSync: (b, argv) => { const a = argv.join(" "); calls.push(a);
-    if (a.includes("version --json")) return JSON.stringify({ schemaVersion: 1, ok: true, result: { desktopApi: 1, version: "0.22.10", runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "session"], features } });
-    if (a.includes(" status ")) return JSON.stringify({ schemaVersion: 1, ok: true, result: { root: "/w/agents", agents: [{ name: "dev", runtime: "claude" }] } });
+    if (a.includes("version --json")) return JSON.stringify({ schemaVersion: 1, ok: true, result: { desktopApi: 1, version: "0.22.10", harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "session"], features } });
+    if (a.includes(" status ")) return JSON.stringify({ schemaVersion: 1, ok: true, result: { root: "/w/agents", agents: [{ name: "dev", harness: "claude" }] } });
     return JSON.stringify({ schemaVersion: 1, ok: true, result: { instance: "dev-x", home: "/w/agents/dev/instances/dev-x", launched: true } }); } });
   assert.throws(() => routeCommand("s", "spawn", ["dev", "--wake-json", "{\"cron\":\"*/5 * * * *\",\"tz\":\"UTC\",\"message\":\"hi\"}"], io(["retire-home"])), (e) => e.code === "E_REMOTE_INCOMPATIBLE" && /wake schedule/.test(e.message));
   assert.equal(calls.filter((c) => c.includes(" spawn ")).length, 0, "refused before spawning");

@@ -162,7 +162,7 @@ instance homed inside a repository with its own `.claude/skills` sees those
 too. Project *settings* — hooks, plugins, permissions, custom agents — resolve
 from the instance home rather than from ancestors.
 
-Codex is available with `--runtime codex`. It starts in the instance home,
+Codex is available with `--harness codex`. It starts in the instance home,
 reads `AGENTS.md` and `.agents/skills` natively, and receives `TASK.md` as its
 initial prompt. User configuration, approval policy, ancestor instructions and
 ambient skill sources remain native. Worktrees are already below the instance
@@ -175,8 +175,8 @@ The Desktop model field accepts a native id without using Pi's model catalog.
 This launch support does not supply an aweb channel for Codex: agents can use
 `aw` from their home, with automatic wake delivery tracked separately.
 
-All runtimes record what they actually expose in `instance.json` under
-`composition.materialized.runtimePosture`: the OATS-composed set, what is
+All harnesses record what they actually expose in `instance.json` under
+`composition.materialized.harnessPosture`: the OATS-composed set, what is
 curtailed, and what remains ambient. The deviation from strict composition is
 auditable rather than implied.
 

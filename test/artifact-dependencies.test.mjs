@@ -12,7 +12,7 @@ function fixture(t) {
   t.after(() => rmSync(base, { recursive: true, force: true }));
   for (const dir of ["user", "bin", "state"]) mkdirSync(join(base, dir));
   symlinkSync(process.execPath, join(base, "bin/node"));
-  // No ambient identity, credentials, config, runtime, Git, or scheduler.
+  // No ambient identity, credentials, config, harness, Git, or scheduler.
   const env = { HOME: join(base, "user"), OATS_HOME_DIR: join(base, "state"), PATH: join(base, "bin") };
   return { base, env };
 }
@@ -26,10 +26,10 @@ test("changed core scaffold-only probe composes copied resources and retires nor
   const f = fixture(t);
   // A workspace deployment needs Git (the soul is fetched from its member repository).
   symlinkSync(execFileSync("/usr/bin/which", ["git"], { encoding: "utf8" }).trim(), join(f.base, "bin/git"));
-  const runtime = join(f.base, "bin/pi");
+  const harness = join(f.base, "bin/pi");
   // Preflight can discover this file but nothing may execute it.
-  writeFileSync(runtime, `#!/bin/sh\necho invoked > '${f.base}/runtime-invoked'\nexit 98\n`);
-  chmodSync(runtime, 0o755);
+  writeFileSync(harness, `#!/bin/sh\necho invoked > '${f.base}/harness-invoked'\nexit 98\n`);
+  chmodSync(harness, 0o755);
   const result = run(f, `
     import assert from 'node:assert/strict';
     import { chmodSync, existsSync, lstatSync, readFileSync, readlinkSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -69,7 +69,7 @@ test("changed core scaffold-only probe composes copied resources and retires nor
       assert.deepEqual(readFileSync(join(recovered, 'result.bin')), Buffer.from([4, 0, 255]));
       assert.equal(lstatSync(join(recovered, 'result.bin')).mode & 0o7777, 0o751);
       assert.equal(readlinkSync(join(recovered, 'alias')), 'result.bin');
-      assert.equal(existsSync('runtime-invoked'), false);
+      assert.equal(existsSync('harness-invoked'), false);
       console.log('scaffold inspected; normal retirement and recovery verified; no backend launched');
     } finally { fx.cleanup(); }
   `);

@@ -23,7 +23,7 @@
           "repo": "<base>/deployment/ws",
           "work": "worktree",
           "branch": "agents/dev-owner",
-          "runtime": "pi",
+          "harness": "pi",
           "spawnOrigin": "operator",
           "policy": {
             "childSpawns": {
@@ -142,8 +142,8 @@
                   "file": "<base>/deployment/agents/dev/instances/dev-owner/.oats/modules/golden.messaging/inject.md"
                 }
               ],
-              "runtimePackages": [],
-              "runtimePosture": {
+              "harnessPackages": [],
+              "harnessPosture": {
                 "oatsComposed": "skills via --skill <instance-home>/.agents/skills; instructions via --append-system-prompt",
                 "curtailed": [
                   "user skills",
@@ -194,8 +194,8 @@
             "window": "dev-owner"
           },
           "launch": {
-            "version": 1,
-            "runtime": "pi",
+            "version": 2,
+            "harness": "pi",
             "launchConfig": null,
             "launchConfigSource": null,
             "executable": "<base>/bin/pi",
@@ -310,7 +310,7 @@
           "repo": "<base>/deployment/ws",
           "work": "attached",
           "branch": "agents/dev-owner",
-          "runtime": "pi",
+          "harness": "pi",
           "parentInstance": "dev-owner",
           "spawnOrigin": "instance",
           "policy": {
@@ -430,8 +430,8 @@
                   "file": "<base>/deployment/agents/dev/instances/dev-pi-attached-knone-mstub/.oats/modules/golden.messaging/inject.md"
                 }
               ],
-              "runtimePackages": [],
-              "runtimePosture": {
+              "harnessPackages": [],
+              "harnessPosture": {
                 "oatsComposed": "skills via --skill <instance-home>/.agents/skills; instructions via --append-system-prompt",
                 "curtailed": [
                   "user skills",
@@ -482,8 +482,8 @@
             "window": "dev-pi-attached-knone-mstub"
           },
           "launch": {
-            "version": 1,
-            "runtime": "pi",
+            "version": 2,
+            "harness": "pi",
             "launchConfig": null,
             "launchConfigSource": null,
             "executable": "<base>/bin/pi",

@@ -42,10 +42,11 @@
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["runtime"],
+        "anyOf": [{ "required": ["harness"] }, { "required": ["runtime"] }],
         "properties": {
-          "runtime": { "type": "string", "enum": ["pi", "claude", "codex"], "description": "The harness family this configuration starts; it decides the kernel's own baseline arguments (skills, instructions, task) and how model/yolo are expressed." },
-          "executable": { "type": "string", "minLength": 1, "description": "The program to run instead of the runtime's default binary: a bare name is looked up on PATH on the execution host; a path containing a slash is resolved against the deployment directory (where this oats-local.yaml lives) when relative. Checked to exist and be executable before any start; never executed just to probe it." },
+          "harness": { "type": "string", "enum": ["pi", "claude", "codex"], "description": "The harness this configuration starts (named `runtime` before 0.27.0); it decides the kernel's own baseline arguments (skills, instructions, task) and how model/yolo are expressed." },
+          "runtime": { "type": "string", "enum": ["pi", "claude", "codex"], "deprecated": true, "description": "The pre-0.27 name of `harness`, still read (a deprecation warning); both, disagreeing, are refused. `oats launch-config set` writes `harness`." },
+          "executable": { "type": "string", "minLength": 1, "description": "The program to run instead of the harness's default binary: a bare name is looked up on PATH on the execution host; a path containing a slash is resolved against the deployment directory (where this oats-local.yaml lives) when relative. Checked to exist and be executable before any start; never executed just to probe it." },
           "args": { "type": "array", "items": { "type": "string" }, "description": "Extra arguments, each passed literally (no shell interpretation): native configuration files or profiles go here as ordinary arguments." },
           "env": {
             "type": "object",
@@ -58,7 +59,7 @@
             },
             "description": "Environment for the harness. A string is a literal (non-secret by contract; still redacted in every answer). {fromEnv: NAME} is resolved from the execution host's environment at start time; the reference, never the value, is recorded. A missing reference refuses the start before anything stops."
           },
-          "model": { "type": "string", "minLength": 1, "description": "Model for this configuration's runtime; overrides the soul default when this configuration is selected." },
+          "model": { "type": "string", "minLength": 1, "description": "Model for this configuration's harness; overrides the soul default when this configuration is selected." },
           "yolo": { "type": "boolean", "description": "Permission bypass for this configuration; overrides scope and soul defaults when selected." }
         }
       }

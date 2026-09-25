@@ -2,7 +2,7 @@
 // the September 3 architecture proposal ("Migration plan", step 1; in the v0.25.x tags).
 //
 // WHAT THIS GUARDS. The plan's later steps move code without meaning to change
-// behavior: split lib/core.mjs by responsibility (step 3), extract the runtime
+// behavior: split lib/core.mjs by responsibility (step 3), extract the harness
 // providers (step 4), extract the tmux platform (step 5), extract the work
 // targets and add `none` (step 10). Each of those touches the five externally
 // meaningful outputs of an instance — the composed AGENTS.md, TASK.md,
@@ -48,8 +48,8 @@
 // discovery → resolution → materialization path. No network, no real tmux, no
 // developer state.
 //
-// THE MATRIX. runtime × work mode × knowledge slot × messaging slot = 32 cases,
-// named `<runtime>-<work>-k<none|stub>-m<none|stub>` (k = knowledge slot, m =
+// THE MATRIX. harness × work mode × knowledge slot × messaging slot = 32 cases,
+// named `<harness>-<work>-k<none|stub>-m<none|stub>` (k = knowledge slot, m =
 // messaging slot), plus 4 model-preference cases named with a `-model` /
 // `-modellist` suffix (see MODEL PREFERENCE below) and one `-deletebranch` case
 // for the branch-deleting retire path = 37.
@@ -68,10 +68,10 @@
 //
 // MODEL PREFERENCE. The 32 matrix cases set no model, so on their own they would
 // freeze only the "unset ⇒ --model omitted" branch — while step 4 of the plan
-// extracts resolveModelPreference AND the per-runtime flag placement. Four extra
-// cases close that: for each runtime, one with a single preference and one with a
+// extracts resolveModelPreference AND the per-harness flag placement. Four extra
+// cases close that: for each harness, one with a single preference and one with a
 // two-entry preference list, all four otherwise identical to
-// `<runtime>-worktree-kstub-mstub`, so the diff against that twin is exactly what
+// `<harness>-worktree-kstub-mstub`, so the diff against that twin is exactly what
 // the model contributed. They freeze all four resolution behaviors —
 // pi passes a single preference through untouched, claude strips the `anthropic/`
 // provider, pi PROBES a list with `pi --list-models` and keeps the winner's
@@ -123,7 +123,7 @@
 // and absent by construction means UNTESTED, not correct. Read them as holes:
 //   - the tmux socket and everything else the LAUNCH path writes. Every case is
 //     --no-launch, so meta.launched is always false, meta.tmux.socket is never
-//     written, and the retirement baseline's runtime authority is always the
+//     written, and the retirement baseline's harness authority is always the
 //     `{launched:false}` shape. A full pass says nothing about launched-instance
 //     metadata, about tmuxSocket(), or about the quiesce-before-recovery
 //     sequence in retire — all of which step 5 (extract the platform) moves.
@@ -132,12 +132,12 @@
 //   - the recovery directory. Nothing here dirties an instance home or a
 //     worktree after the baseline is stamped, so `workRecovery` is absent in all
 //     of them and the preserve-work path is never exercised.
-//   - runtime-package verification. `composition.materialized.runtimePackages` is
+//   - harness-package verification. `composition.materialized.harnessPackages` is
 //     `[]` in every golden, because neither stub capability declares a
-//     `requires:` entry with a `runtime:`. So verifyRuntimePackages
+//     `requires:` entry with a `harness:`. So verifyHarnessPackages
 //     (lib/core.mjs:4966) — which step 4 also extracts, and which can FAIL a
 //     spawn outright — is frozen only in its empty case. Closing this needs a
-//     stub capability requiring a fake runtime package plus a `pi list` stub in
+//     stub capability requiring a fake harness package plus a `pi list` stub in
 //     the fixture pi (test/capabilities.test.mjs's fakePiWithPackages shows the
 //     output shape); that is a separate fixture and deliberately not built here.
 //
@@ -161,7 +161,7 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
+import { inertHarnessPath } from "./helpers/runtime-stub.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const KERNEL_ROOT = resolve(new URL("..", import.meta.url).pathname);
@@ -176,13 +176,13 @@ const TASK = "Freeze the externally meaningful outputs of spawn and retire.";
 
 // ---------- the case table ----------
 
-const RUNTIMES = ["pi", "claude"];
+const HARNESSES = ["pi", "claude"];
 const WORK_MODES = ["worktree", "checkout", "attached", "workspace"];
 const SLOTS = ["none", "stub"];
 
 /** A single model preference, and a two-entry preference LIST. The same two
- *  strings are used for BOTH runtimes on purpose: resolveModelPreference
- *  (lib/core.mjs:4913) resolves them differently per runtime, and the goldens are
+ *  strings are used for BOTH harnesses on purpose: resolveModelPreference
+ *  (lib/core.mjs:4913) resolves them differently per harness, and the goldens are
  *  where that asymmetry becomes visible instead of merely documented —
  *
  *    pi,     one entry   → returned verbatim, no probe: `anthropic/claude-sonnet-4-5`
@@ -200,34 +200,34 @@ const MODEL_LIST = "openai/gpt-5,anthropic/claude-sonnet-4-5:thinking";
  *  --purpose, so the instance is named `dev-<id>` and a golden can be traced to
  *  the command that produced it. */
 const CASES = [];
-for (const runtime of RUNTIMES) {
+for (const harness of HARNESSES) {
   for (const work of WORK_MODES) {
     for (const knowledge of SLOTS) {
       for (const messaging of SLOTS) {
-        CASES.push({ id: `${runtime}-${work}-k${knowledge}-m${messaging}`, runtime, work, knowledge, messaging });
+        CASES.push({ id: `${harness}-${work}-k${knowledge}-m${messaging}`, harness, work, knowledge, messaging });
       }
     }
   }
 }
-// Model preference, one pair per runtime on top of the matrix. Held at
+// Model preference, one pair per harness on top of the matrix. Held at
 // worktree/kstub/mstub so the ONLY difference from
-// `<runtime>-worktree-kstub-mstub` is the model, and the diff between the two
+// `<harness>-worktree-kstub-mstub` is the model, and the diff between the two
 // goldens is exactly what the model contributed.
-for (const runtime of RUNTIMES) {
-  const fixed = { runtime, work: "worktree", knowledge: "stub", messaging: "stub" };
-  CASES.push({ id: `${runtime}-worktree-kstub-mstub-model`, ...fixed, model: MODEL_ONE });
-  CASES.push({ id: `${runtime}-worktree-kstub-mstub-modellist`, ...fixed, model: MODEL_LIST });
+for (const harness of HARNESSES) {
+  const fixed = { harness, work: "worktree", knowledge: "stub", messaging: "stub" };
+  CASES.push({ id: `${harness}-worktree-kstub-mstub-model`, ...fixed, model: MODEL_ONE });
+  CASES.push({ id: `${harness}-worktree-kstub-mstub-modellist`, ...fixed, model: MODEL_LIST });
 }
 // Branch deletion. Every case above retires WITHOUT --delete-branch, so all of
 // them freeze `branchDeleted: false` and a surviving `agents/dev-…` branch, and
 // the deletion path — which is the one that destroys work if step 10 moves it
 // wrong — was unfrozen. ONE case covers it, on pi only: branch deletion belongs
-// to the work target, not to the runtime provider (retireInstance's git block,
-// lib/core.mjs:6682-6685, never consults meta.runtime), so a claude twin would
+// to the work target, not to the harness provider (retireInstance's git block,
+// lib/core.mjs:6682-6685, never consults meta.harness), so a claude twin would
 // duplicate the fixture without testing anything the pi one does not.
 CASES.push({
   id: "pi-worktree-kstub-mstub-deletebranch",
-  runtime: "pi", work: "worktree", knowledge: "stub", messaging: "stub", deleteBranch: true,
+  harness: "pi", work: "worktree", knowledge: "stub", messaging: "stub", deleteBranch: true,
 });
 
 // ---------- fixture construction ----------
@@ -274,7 +274,7 @@ console.log(JSON.stringify({
 };
 
 /** The stub messaging capability: a messaging layer with a REQUIRED spawn hook
- *  that returns meta, a per-runtime launch argument and one environment variable
+ *  that returns meta, a per-harness launch argument and one environment variable
  *  under the GOLDEN_ vendor prefix it declares (docs/capabilities.md, "Commands
  *  and hooks"), plus a retire hook, an injection block and one skill. */
 const MESSAGING_CAPABILITY = {
@@ -316,7 +316,7 @@ console.log(JSON.stringify({
 /** A complete hermetic workspace-model deployment for one case
  *  (test/helpers/v2-deployment.mjs):
  *
- *   <base>/bin/{pi,claude,tmux}         fake runtimes on PATH
+ *   <base>/bin/{pi,claude,tmux}         fake harnesses on PATH
  *   <base>/remotes/ws.git               the workspace host AND its only member: oats-workspace.yaml
  *                                       (the case's knowledge/messaging slot defaults), souls/dev/,
  *                                       capabilities/golden-{knowledge,messaging}/
@@ -376,7 +376,7 @@ exit 0
     OATS_HOME_DIR: join(HERMETIC_HOME, ".oats"),
     OATS_REMOTE_CACHE: fx.env.OATS_REMOTE_CACHE,
     PI_AGENTS_TMUX_SESSION: "oats-golden",
-    PATH: `${bin}:${inertRuntimePath(base)}`,
+    PATH: `${bin}:${inertHarnessPath(base)}`,
     GIT_CONFIG_GLOBAL: "/dev/null",
     GIT_CONFIG_SYSTEM: "/dev/null",
     GIT_AUTHOR_NAME: "Golden", GIT_AUTHOR_EMAIL: "golden@example.invalid",
@@ -608,7 +608,7 @@ test.after(() => {
   rmSync(HERMETIC_HOME, { recursive: true, force: true });
 });
 
-// ---------- normalization regressions (no CLI or runtime) ----------
+// ---------- normalization regressions (no CLI or harness) ----------
 
 function nativeHistoryFixture() {
   const base = mkdtempSync(join(tmpdir(), "oats-golden-history-"));
@@ -698,7 +698,7 @@ for (const kase of CASES) {
     const extra = [];
     if (kase.work === "attached") {
       const owner = spawnEnvelope(f, ["spawn", "dev", "--purpose", "owner", "--work", "worktree",
-        "--runtime", "pi", "--task", TASK, "--no-launch", "--json"]).result;
+        "--harness", "pi", "--task", TASK, "--no-launch", "--json"]).result;
       // A v2 soul declares no `repo:` and bin resolves the member clone only for
       // worktree/checkout, so an attached spawn names its repository explicitly.
       extra.push("--work-dir", join(owner.home, "work"), "--repo", f.repo);
@@ -706,7 +706,7 @@ for (const kase of CASES) {
 
     // The model reaches the kernel through `--model` rather than a `model:` in
     // soul.yaml. Both feed the SAME call site — resolveModelPreference(o.model ||
-    // agent.model || "", runtime) at lib/core.mjs:5020 — so freezing one freezes
+    // agent.model || "", harness) at lib/core.mjs:5020 — so freezing one freezes
     // the resolver; `--model` is chosen because it is the path `oats spawn` and
     // the Desktop take, it exercises the flag's precedence over the soul default,
     // and it leaves the fixture soul byte-identical across every case, so a
@@ -715,7 +715,7 @@ for (const kase of CASES) {
     if (kase.model) extra.push("--model", kase.model);
 
     const envelope = spawnEnvelope(f, ["spawn", "dev", "--purpose", kase.id, "--work", kase.work,
-      "--runtime", kase.runtime, "--task", TASK, "--no-launch", "--json", ...extra]);
+      "--harness", kase.harness, "--task", TASK, "--no-launch", "--json", ...extra]);
     const spawned = envelope.result;
     const home = spawned.home;
 

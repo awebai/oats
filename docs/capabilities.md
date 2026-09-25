@@ -47,7 +47,7 @@ A self-contained package has an `oats.json`:
   "requires": [
     { "command": "team-chat", "why": "send and receive messages" },
     {
-      "runtime": "pi",
+      "harness": "pi",
       "package": "npm:team-chat-pi",
       "why": "real-time push events in pi sessions"
     }
@@ -134,15 +134,15 @@ A self-contained package has an `oats.json`:
   the operator to clean up by hand.
 - `requires` declares what must exist before the capability works. Two kinds:
   - a **host command** (`command`), satisfied by a binary on `PATH`;
-  - a **runtime package** (`runtime` + `package`, optionally `marketplace`),
-    satisfied by that runtime's own package manager — `npm:@scope/name` for pi,
+  - a **harness package** (`harness` + `package`, optionally `marketplace`),
+    satisfied by that harness's own package manager — `npm:@scope/name` for pi,
     `plugin@marketplace` for Claude Code. It is raised only for deployments that use the named
-    runtime — a Claude-only deployment is never asked to install a pi package —
-    and is verified in the runtime's package list, never on `PATH`. A version
+    harness — a Claude-only deployment is never asked to install a pi package —
+    and is verified in the harness's package list, never on `PATH`. A version
     selector is allowed and ignored for identity, so `@latest` and a pinned
     version are one requirement.
-  A runtime package is **verified at spawn, never installed there**: installing
-  would mutate the operator's runtime configuration without asking, in the
+  A harness package is **verified at spawn, never installed there**: installing
+  would mutate the operator's harness configuration without asking, in the
   middle of a spawn. A missing, uninstalled or disabled package fails the spawn
   with the consent command that fixes it.
 - OATS never installs a host requirement silently. A missing host command is
@@ -250,7 +250,7 @@ team: [engineering, reviewers]
   discovery warning (`unmapped-team-label`, one per label naming its souls); a
   label not in `teams:` at all is the `E_TEAM_UNKNOWN` problem.
 
-## Exact runtime composition
+## Exact harness composition
 
 Every spawned instance receives:
 
@@ -334,7 +334,7 @@ existing manifests load, and change nothing.
 Hooks receive `OATS_EVENT`, `OATS_CAPABILITY`, `OATS_LAYER`, `OATS_INSTANCE`,
 `OATS_HOME`, `OATS_AGENT`, `OATS_SOUL`, `OATS_CONTEXT`, `OATS_WORKSPACE`,
 `OATS_ROOT`, `OATS_LEVEL`, `OATS_SETTINGS`, and `OATS_META`. A final JSON line may
-return `meta`, `brief`, `warning`, or runtime-specific `launch` arguments. A
+return `meta`, `brief`, `warning`, or harness-specific `launch` arguments. A
 **spawn hook only** may also return an `env` object for the launched process;
 returning `env` from retire or soul-scaffold is an explicit contract error.
 
@@ -378,7 +378,7 @@ boundary — adding a new launch variable requires a visible manifest change
 `OATS_*`, `PI_AGENT_*`, kernel launch variables, and known shell/bootstrap/loader
 names are also rejected as defense in depth. The denylist includes current Node,
 JVM, .NET, Python, Perl, Ruby, Lua, PHP, ELF, and dyld surfaces, but is explicitly
-not the authority boundary: runtime bootstrap names are open-ended, so the
+not the authority boundary: harness bootstrap names are open-ended, so the
 manifest declaration and trust review enforce what an artifact may contribute.
 Two capabilities claiming the same name is an error even when their values
 match.
@@ -394,7 +394,7 @@ without a retire hook uses the standard retryable quarantine instead. Ordinary
 advisory hook execution failure itself contributes no environment.
 
 The environment prefix applies to the initial Pi or Claude process. `--no-launch`
-validates command preparation but has no runtime consumer. The fallback shell
+validates command preparation but launches no harness. The fallback shell
 after that process exits does not inherit command-scoped assignments, and OATS
 has no restart command or replay policy yet. The generated command is persisted
 as before; hooks must contribute locators, selectors, or broker endpoints—not

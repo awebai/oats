@@ -22,9 +22,9 @@ const piCmd = (home) => `OATS_INSTANCE='n' OATS_INSTANCE_HOME=${shq(home)} PI_AG
 
 test("persisted launch commands re-render with a model and keep everything else byte-identical", () => {
   const home = "/tmp/it's home";
-  for (const [cmd, runtime] of [[claudeCmd(home), "claude"], [codexCmd(home), "codex"], [piCmd(home), "pi"]]) {
+  for (const [cmd, harness] of [[claudeCmd(home), "claude"], [codexCmd(home), "codex"], [piCmd(home), "pi"]]) {
     const parsed = parseLaunchCommand(cmd);
-    assert.equal(renderLaunchCommand(parsed.tokens), cmd, `${runtime} round-trips`);
+    assert.equal(renderLaunchCommand(parsed.tokens), cmd, `${harness} round-trips`);
     assert.equal(parsed.modelIndex, -1);
     const withModel = withLaunchModel(cmd, "m-1");
     const p2 = parseLaunchCommand(withModel);
@@ -73,11 +73,11 @@ const fx = v2Deployment();
 test.after(() => { try { tmux("kill-server"); } catch { /* gone */ } finally { restoreEnvironment(); rmSync(base, { recursive: true, force: true }); fx.cleanup(); } });
 
 async function makeHome(name, { launched = true, withSocket = true } = {}) {
-  // Spawned with the fixture's inert runtimes on PATH (the isolated PATH has no claude).
+  // Spawned with the fixture's inert harnesses on PATH (the isolated PATH has no claude).
   const path = process.env.PATH;
   process.env.PATH = fx.env.PATH;
   let spawned;
-  try { spawned = await fx.spawn("dev", { name, runtime: "claude" }); } finally { process.env.PATH = path; }
+  try { spawned = await fx.spawn("dev", { name, harness: "claude" }); } finally { process.env.PATH = path; }
   const home = spawned.home;
   const harness = join(base, "fakeharness");
   if (!existsSync(harness)) {
@@ -235,7 +235,7 @@ test("an injected metadata write failure after allocation is recovered by the ne
   assert.ok(injected instanceof Error && injected.code === "E_SESSION_START_INCOMPLETE" && /\.oats-start-pending\.json/.test(injected.message), "injected write failure surfaces as E_SESSION_START_INCOMPLETE naming the receipt");
   // The receipt was updated, the metadata was not.
   assert.deepEqual(readJson(f.baselinePath).runtime, { launched: true, tmux: { session, window: "crash", socket: resolve(socket) } });
-  assert.deepEqual({ ...readJson(f.baselinePath), runtime: undefined }, { ...before, runtime: undefined }, "fingerprints untouched by the failed start");
+  assert.deepEqual({ ...readJson(f.baselinePath), harness: undefined }, { ...before, harness: undefined }, "fingerprints untouched by the failed start");
   assert.deepEqual(readJson(join(f.home, "instance.json")), f.meta);
   assert.equal(existsSync(join(f.home, ".oats-start-pending.json")), true);
   assert.equal(existsSync(join(f.home, ".oats-start.lock")), false, "the guard is released even when recording fails");

@@ -22,11 +22,12 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runtimeNameWarning, noteRuntimeName } from "../lib/deprecation.mjs";
 import {
-  LAYERS, OATS_VERSION, manifestOperations,
+  LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
   officialPackageCatalog, officialCatalogFile, officialCapabilityAliases, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, isCapturedHome, capturedHomeRefusal, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
-  findInstanceHome, findInstanceHomes, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, launchConfigsAt, explicitInstanceName, findModuleCapabilityAgent, capabilityAgentFromDir, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, planLaunch, redactLaunchCommand, restartInstanceSession,
+  findInstanceHome, findInstanceHomes, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, launchConfigsAt, explicitInstanceName, findModuleCapabilityAgent, capabilityAgentFromDir, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
 import {
   writeFileAtomic, LOCK_FILE, readLock, writeLock, resolvePackages,
@@ -65,6 +66,16 @@ function valueFlag(name) {
   return value;
 }
 const die = (msg) => { console.error(`oats: ${msg}`); process.exit(1); };
+/** A command's harness: --harness, or --runtime, its pre-0.27 name (the released okf worker and
+ *  a 0.26-era Desktop pass it) — read either, with the deprecation warning. Both, disagreeing,
+ *  are refused. `get` reads one flag (the command's own reader where it has one). */
+function harnessFlag(get = flag) {
+  const harness = get("harness"), runtime = get("runtime");
+  if (runtime === undefined) return harness;
+  if (harness !== undefined && harness !== runtime) cmdFail("E_BAD_ARGS", `--harness ${harness} and --runtime ${runtime} disagree; --runtime is the pre-0.27 name of --harness — give one`);
+  noteRuntimeName("the --runtime flag (use --harness)");
+  return runtime;
+}
 const cmdFail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
 /** Resolve the --dir flag with central validation: a value-taking flag given
  * no value (flag() → true) is E_BAD_ARGS inside the JSON boundary, never an
@@ -86,8 +97,25 @@ const JSON_MODE = args.includes("--json");
 // Canonical absolute path of this CLI executable — the versioned OATS_CLI_BIN
 // env contract for dispatched package commands (never resolved via PATH).
 const CLI_BIN = realpathSync(fileURLToPath(import.meta.url));
-const jsonFail = (code, message, details) => { console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code, message: String(message), ...(details !== undefined ? { details } : {}) } })); process.exit(1); };
-const jsonOk = (result) => { console.log(JSON.stringify({ schemaVersion: 1, ok: true, result })); };
+// The one deprecated-name warning (lib/deprecation.mjs) rides the envelope, only when there is one.
+const envelopeWarnings = () => { const w = runtimeNameWarning(); if (w) warningDelivered = true; return w ? { warnings: [w] } : {}; };
+let warningDelivered = false;
+/** A forwarded envelope keeps the host's warnings; this command's own deprecated-name
+ *  note (a `--runtime` given here) joins the host's into the one warning. */
+const withLocalWarnings = (envelope) => {
+  const mine = runtimeNameWarning();
+  if (!mine || !envelope || typeof envelope !== "object") return envelope;
+  warningDelivered = true;
+  const theirs = Array.isArray(envelope.warnings) ? envelope.warnings : [];
+  const same = theirs.find((w) => w?.code === mine.code);
+  if (!same) return { ...envelope, warnings: [...theirs, mine] };
+  const sources = [...new Set([...(Array.isArray(same.sources) ? same.sources : []), ...mine.sources])];
+  return { ...envelope, warnings: theirs.map((w) => (w === same ? { ...mine, sources, message: mine.message.replace(/\(.*\)/, `(${sources.join("; ")})`) } : w)) };
+};
+const jsonFail = (code, message, details) => { console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code, message: String(message), ...(details !== undefined ? { details } : {}) }, ...envelopeWarnings() })); process.exit(1); };
+const jsonOk = (result) => { console.log(JSON.stringify({ schemaVersion: 1, ok: true, result, ...envelopeWarnings() })); };
+// Text mode (or a JSON answer printed before the read): the warning goes to stderr, never stdout.
+process.on("exit", () => { const w = runtimeNameWarning(); if (w && !warningDelivered) process.stderr.write(`oats: warning: ${w.message}\n`); });
 const formatBytes = (n) => n < 1024 ? `${n} B` : n < 1024 ** 2 ? `${(n / 1024).toFixed(1)} KiB` : n < 1024 ** 3 ? `${(n / 1024 ** 2).toFixed(1)} MiB` : `${(n / 1024 ** 3).toFixed(1)} GiB`;
 /** A retire recovery's copied outputs (untracked/ignored or directory work), named with their size. */
 function preservedOutputLines(recovery) {
@@ -203,7 +231,7 @@ const INSPECT_TEXT_CAP = 256 * 1024;
 /** The agents root a home belongs to, from its path alone:
  *  <root>/<agent>/instances/<instance>. */
 function agentsRootOfHome(home) { return dirname(dirname(dirname(home))); }
-const SOUL_FIELDS = ["runtime", "model", "yolo", "backend", "description", "launch-config"];
+const SOUL_FIELDS = ["harness", "model", "yolo", "backend", "description", "launch-config"];
 const realOrResolved = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
 /** Every soul of a scope: the persistent souls of every agents root in
  *  scope, plus packaged souls (read-only). One enumeration for inspect and
@@ -293,7 +321,7 @@ function soulEntry(soul, root, { capability } = {}) {
     declarationProblems: declared.problems,
     name: soul.name, kind: packaged ? "capability" : (soul.kind || "persistent"), capability: capability || null,
     type: soul.type ?? null, description: soul.description ?? null, repo: soul.repo ?? null, work: soul.work || "checkout",
-    runtime: soul.runtime || "pi", model: soul.model ?? null, yolo: soul.yolo === true || soul.yolo === "true" ? true : soul.yolo === false || soul.yolo === "false" ? false : null, launchConfig: soul["launch-config"] ?? null, backend: soul.backend ?? null,
+    harness: soul.harness || "pi", model: soul.model ?? null, yolo: soul.yolo === true || soul.yolo === "true" ? true : soul.yolo === false || soul.yolo === "false" ? false : null, launchConfig: soul["launch-config"] ?? null, backend: soul.backend ?? null,
     agentsRoot: root, dir: packaged ? soulDir : dir, soulFile: join(soulDir, "soul.yaml"), instructionsFile: join(soulDir, "AGENTS.md"),
     editable: packaged
       ? { fields: [], instructions: false, reason: `packaged soul from capability ${capability}: edit the package and update it; scoped bindings still apply through oats use` }
@@ -621,7 +649,7 @@ function serializeLaunchConfigs(map) {
   const lines = ["launch-configs:"];
   for (const name of names) {
     const e = map[name];
-    lines.push(`  ${name}:`, `    runtime: ${e.runtime}`);
+    lines.push(`  ${name}:`, `    harness: ${e.harness}`);
     if (e.executable !== undefined) lines.push(`    executable: ${yamlQuoted(e.executable)}`);
     if (e.args?.length) { lines.push("    args:"); for (const a of e.args) lines.push(`      - ${yamlQuoted(a)}`); }
     const envNames = Object.keys(e.env || {}).sort();
@@ -635,9 +663,11 @@ function serializeLaunchConfigs(map) {
   return lines.join("\n") + "\n";
 }
 /** Only the declared keys, in canonical order, from a validated entry. */
+/** A configuration as `launch-config set` writes it: `harness` always — a `runtime` (the
+ *  pre-0.27 name, read either) is written back under its new name (lead call 6). */
 function normalizeLaunchConfig(e) {
   return {
-    runtime: e.runtime,
+    harness: Object.hasOwn(e, "harness") ? e.harness : e.runtime,
     ...(e.executable !== undefined ? { executable: e.executable } : {}),
     ...(e.args?.length ? { args: [...e.args] } : {}),
     ...(e.env && Object.keys(e.env).length ? { env: Object.fromEntries(Object.keys(e.env).sort().map((n) => [n, typeof e.env[n] === "string" ? e.env[n] : { fromEnv: e.env[n].fromEnv }])) } : {}),
@@ -659,7 +689,7 @@ function readLaunchConfigsModel(local) {
  *  `set --keep-env`. */
 function publicLaunchConfig(e, extra = {}) {
   const env = Object.fromEntries(Object.keys(e.env || {}).sort().map((n) => [n, typeof e.env[n] === "string" ? { redacted: true } : { fromEnv: e.env[n].fromEnv }]));
-  return { runtime: e.runtime, executable: e.executable ?? null, args: [...(e.args || [])], env, model: e.model ?? null, yolo: e.yolo ?? null, ...extra };
+  return { harness: e.harness, executable: e.executable ?? null, args: [...(e.args || [])], env, model: e.model ?? null, yolo: e.yolo ?? null, ...extra };
 }
 /** The scope a launch-config command reads: --dir (or cwd), a running
  *  home's recorded context (--home), or a soul's own member context
@@ -692,16 +722,16 @@ function launchConfigContext(bail) {
  *  configuration, preflighted, read-only; environment values withheld and
  *  the prompt named, never the TASK body. */
 function launchPreview(bail) {
-  const sel = { launchConfig: flag("launch-config"), runtime: flag("runtime"), model: flag("model"), yolo: yoloFlag() };
-  for (const k of ["launch-config", "runtime", "model"]) if (flag(k) === true) bail("E_BAD_ARGS", `--${k} needs a value`);
-  if (sel.runtime !== undefined && !LAUNCH_RUNTIMES.includes(sel.runtime)) bail("E_BAD_ARGS", `--runtime must be one of ${LAUNCH_RUNTIMES.join(", ")}`);
+  for (const k of ["launch-config", "harness", "runtime", "model"]) if (flag(k) === true) bail("E_BAD_ARGS", `--${k} needs a value`);
+  const sel = { launchConfig: flag("launch-config"), harness: harnessFlag(), model: flag("model"), yolo: yoloFlag() };
+  if (sel.harness !== undefined && !LAUNCH_HARNESSES.includes(sel.harness)) bail("E_BAD_ARGS", `--harness must be one of ${LAUNCH_HARNESSES.join(", ")}`);
   const { context, selected } = launchConfigContext(bail);
   if (!selected) bail("E_BAD_ARGS", "preview needs --home <abs> (an existing instance) or --soul <name> [--dir <scope>] (a new instance)");
-  const selectionGiven = sel.launchConfig !== undefined || sel.runtime !== undefined || sel.model !== undefined || sel.yolo !== undefined;
+  const selectionGiven = sel.launchConfig !== undefined || sel.harness !== undefined || sel.model !== undefined || sel.yolo !== undefined;
   let meta = null, agentLike, home, instance;
   if (selected.home) {
     home = selected.home;
-    try { meta = JSON.parse(readFileSync(join(home, "instance.json"), "utf8")); } catch (e) { bail("E_HOME_UNKNOWN", `${home}: ${e.message}`); }
+    try { meta = upgradeHomeMeta(JSON.parse(readFileSync(join(home, "instance.json"), "utf8")), home); } catch (e) { bail("E_HOME_UNKNOWN", `${home}: ${e.message}`); }
     instance = meta.instance || basename(home);
     if (!(meta.launch && typeof meta.launch === "object") && !selectionGiven) {
       // A home that predates recipes, asked nothing: its frozen command is
@@ -709,15 +739,15 @@ function launchPreview(bail) {
       // (E_LAUNCH_LEGACY: re-spawn it from the deployment).
       let d;
       try { d = describeLaunchCommand(meta.command); } catch (e) { bail(e.code || "E_LAUNCH_COMMAND_UNSUPPORTED", e.message); }
-      jsonOk({ context, selected, selection: { source: "frozen-command", launchConfig: null, runtime: null, model: null, yolo: null }, runtime: meta.runtime, model: meta.model || null, modelSource: meta.model ? "recorded" : "native default", yolo: meta.yolo ?? null, launchConfig: null, launchConfigSource: null, executable: { path: d.executable, declared: null, resolvedFrom: "recorded" }, argv: d.argv, environment: d.environment, command: redactLaunchCommand(meta.command), prompt: { kind: "task-file", file: "TASK.md" }, hooks: null, preflight: [{ check: "recipe", ok: true, detail: "frozen command; a selection is refused (E_LAUNCH_LEGACY): re-spawn it" }], ok: true });
+      jsonOk({ context, selected, selection: { source: "frozen-command", launchConfig: null, harness: null, model: null, yolo: null }, harness: meta.harness, model: meta.model || null, modelSource: meta.model ? "recorded" : "native default", yolo: meta.yolo ?? null, launchConfig: null, launchConfigSource: null, executable: { path: d.executable, declared: null, resolvedFrom: "recorded" }, argv: d.argv, environment: d.environment, command: redactLaunchCommand(meta.command), prompt: { kind: "task-file", file: "TASK.md" }, hooks: null, preflight: [{ check: "recipe", ok: true, detail: "frozen command; a selection is refused (E_LAUNCH_LEGACY): re-spawn it" }], ok: true });
       return;
     }
     const agentsRoot = agentsRootOfHome(home);
     const agent = (() => { try { return findAgent(agentsRoot, meta.agent); } catch { return undefined; } })();
-    agentLike = agent || { runtime: meta.runtime, model: meta.model, yolo: meta.yolo };
+    agentLike = agent || { harness: meta.harness, model: meta.model, yolo: meta.yolo };
   } else {
     const soul = scopeSouls(context).souls.find((x) => x.name === selected.soul && x.agentsRoot === selected.agentsRoot);
-    agentLike = { runtime: soul.runtime, model: soul.model };
+    agentLike = { harness: soul.harness, model: soul.model };
     instance = `${soul.name}-<purpose>`; home = join(selected.agentsRoot, soul.name, "instances", instance);
   }
   // A home's recorded capabilities; a new instance's are its spawn's resolution,
@@ -731,13 +761,13 @@ function launchPreview(bail) {
   const command = renderLaunchRecipe(recipe, { home, instance, redact: true });
   const d = describeLaunchCommand(command);
   const environment = d.environment.map((e) => e.reference && recipe.env[e.name]?.fromEnv ? { name: e.name, fromEnv: recipe.env[e.name].fromEnv } : e);
-  jsonOk({ context, selected, selection: { source: plan.selectionSource, launchConfig: recipe.launchConfig, runtime: sel.runtime ?? null, model: sel.model ?? null, yolo: sel.yolo ?? null }, runtime: plan.runtime, model: recipe.model, modelSource: plan.modelSource, yolo: recipe.yolo ?? null, launchConfig: recipe.launchConfig, launchConfigSource: recipe.launchConfigSource, executable: { path: plan.executable.path, declared: plan.executable.declared ?? null, resolvedFrom: plan.executable.resolvedFrom }, argv: d.argv, environment, command, prompt: recipe.prompt, hooks: redactLaunchRecipe(recipe).hooks, preflight: plan.preflight, ok: plan.ok });
+  jsonOk({ context, selected, selection: { source: plan.selectionSource, launchConfig: recipe.launchConfig, harness: sel.harness ?? null, model: sel.model ?? null, yolo: sel.yolo ?? null }, harness: plan.harness, model: recipe.model, modelSource: plan.modelSource, yolo: recipe.yolo ?? null, launchConfig: recipe.launchConfig, launchConfigSource: recipe.launchConfigSource, executable: { path: plan.executable.path, declared: plan.executable.declared ?? null, resolvedFrom: plan.executable.resolvedFrom }, argv: d.argv, environment, command, prompt: recipe.prompt, hooks: redactLaunchRecipe(recipe).hooks, preflight: plan.preflight, ok: plan.ok });
 }
 async function launchConfigCmd() {
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   dropAmbientRoot();
   const sub = args[1];
-  const usage = "usage: oats launch-config list [--dir <scope> | --home <abs> | --soul <name> [--dir <scope>] [--agents-root <abs>]] [--json] | set <name> --file <json> [--keep-env] [--dir <scope>] [--json] | remove <name> [--dir <scope>] [--json] | preview (--home <abs> | --soul <name> [--dir <scope>]) [--launch-config <name>|none] [--runtime r] [--model m] [--yolo|--no-yolo] --json";
+  const usage = "usage: oats launch-config list [--dir <scope> | --home <abs> | --soul <name> [--dir <scope>] [--agents-root <abs>]] [--json] | set <name> --file <json> [--keep-env] [--dir <scope>] [--json] | remove <name> [--dir <scope>] [--json] | preview (--home <abs> | --soul <name> [--dir <scope>]) [--launch-config <name>|none] [--harness r] [--model m] [--yolo|--no-yolo] --json";
   if (sub === "preview") { launchPreview(bail); return; }
   if (!["list", "set", "remove"].includes(sub)) bail("E_USAGE", usage);
   const { context: dir, selected } = sub === "list" ? launchConfigContext(bail) : { context: dirFlag(), selected: null };
@@ -760,7 +790,7 @@ async function launchConfigCmd() {
     if (!configurations.length) { console.log(`No launch configurations are declared${file ? ` in ${shortPath(file)}` : ` (no oats-local.yaml in reach of ${dir})`}`); return; }
     for (const c of configurations) {
       const env = Object.entries(c.env).map(([n, v]) => v.fromEnv ? `${n}=$${v.fromEnv}` : `${n}=<redacted>`).join(" ");
-      console.log(`${c.name}: ${c.runtime}${c.executable ? ` ${c.executable}` : ""}${c.args.length ? ` ${c.args.map((a) => JSON.stringify(a)).join(" ")}` : ""}${env ? ` [${env}]` : ""}${c.model ? ` model ${c.model}` : ""}${c.yolo !== null ? ` yolo ${c.yolo}` : ""}`);
+      console.log(`${c.name}: ${c.harness}${c.executable ? ` ${c.executable}` : ""}${c.args.length ? ` ${c.args.map((a) => JSON.stringify(a)).join(" ")}` : ""}${env ? ` [${env}]` : ""}${c.model ? ` model ${c.model}` : ""}${c.yolo !== null ? ` yolo ${c.yolo}` : ""}`);
     }
     return;
   }
@@ -777,7 +807,7 @@ async function launchConfigCmd() {
     delete model[name];
   } else {
     const f = flag("file");
-    if (!f || f === true) bail("E_BAD_ARGS", "launch-config set needs --file <json> (an object with runtime and optional executable, args, env, model, yolo)");
+    if (!f || f === true) bail("E_BAD_ARGS", "launch-config set needs --file <json> (an object with harness and optional executable, args, env, model, yolo)");
     let entry;
     // A parse error is reported without the parser's text: its message can
     // quote the document, and a definition may carry environment literals.
@@ -790,7 +820,7 @@ async function launchConfigCmd() {
     } else {
       try { raw = readFileSync(f, "utf8"); } catch (e) { bail("E_BAD_ARGS", `--file ${f}: ${e.code === "ENOENT" ? "no such file" : e.code || "cannot read"}`); }
     }
-    try { entry = JSON.parse(raw); } catch { bail("E_BAD_ARGS", `--file ${f} is not valid JSON (one object with runtime and optional executable, args, env, model, yolo)`); }
+    try { entry = JSON.parse(raw); } catch { bail("E_BAD_ARGS", `--file ${f} is not valid JSON (one object with harness and optional executable, args, env, model, yolo)`); }
     if (args.includes("--keep-env")) {
       // An editor that saw only redacted values keeps the environment of the
       // declared definition of that name: a one-time copy into the complete
@@ -801,6 +831,7 @@ async function launchConfigCmd() {
       if (entry && typeof entry === "object" && Object.keys(current.env || {}).length) entry.env = { ...current.env };
     }
     try { validateLaunchConfig(name, entry, `--file ${f}`); } catch (e) { bail(e.code || "E_LAUNCH_CONFIG_INVALID", e.message); }
+    if (!Object.hasOwn(entry, "harness")) noteRuntimeName(`runtime in the --file definition (written as harness)`);
     model[name] = normalizeLaunchConfig(entry);
   }
   let next;
@@ -1389,7 +1420,7 @@ async function status() {
         if (s) i.soul = { repoKey: s.repoKey, commit: s.commit, current: s.current?.commit ?? null, status: s.status, ...(s.reason ? { reason: s.reason } : {}) };
       }
     }
-    console.log(JSON.stringify({ root, agents: data, ...(ws ? { workspace: ws.unreachable ? { reachable: false, ...ws.unreachable } : { reachable: true } } : {}), ...(problems.length ? { problems } : {}) }, null, 2)); return;
+    console.log(JSON.stringify({ root, agents: data, ...(ws ? { workspace: ws.unreachable ? { reachable: false, ...ws.unreachable } : { reachable: true } } : {}), ...(problems.length ? { problems } : {}), ...envelopeWarnings() }, null, 2)); return;
   }
   console.log(`oats status — agents root ${shortPath(root)}\n`);
   if (ws?.unreachable) console.log(`  workspace: unreachable (${ws.unreachable.reason}) — drift unknown\n`);
@@ -1427,7 +1458,7 @@ async function spawnCmd() {
   };
   checkDirectoryOptions(requestedWork); // before anything is resolved or written
   const name = args[1];
-  if (!name || name.startsWith("--")) bail("E_USAGE", "usage: oats spawn <agent> [--task <text>|--task-file <f>] [--purpose <slug>|--name <slug>] [--preview] [--base <ref>] [--model <id>|@native-default] [--allow-child-spawns|--no-child-spawns] [--relation child|sibling|parent|unrelated --relative-to <instance> [--relative-root <agents-root>]] [--parent <instance>] [--repo <r>] [--work worktree|checkout|attached|workspace|directory] [--work-dir <owner-work>] [--runtime pi|claude|codex] [--backend tmux|herdr] [--herdr-socket <path>] [--yolo|--no-yolo] [--model <m>] [--branch <b>] [--no-launch] [--json]");
+  if (!name || name.startsWith("--")) bail("E_USAGE", "usage: oats spawn <agent> [--task <text>|--task-file <f>] [--purpose <slug>|--name <slug>] [--preview] [--base <ref>] [--model <id>|@native-default] [--allow-child-spawns|--no-child-spawns] [--relation child|sibling|parent|unrelated --relative-to <instance> [--relative-root <agents-root>]] [--parent <instance>] [--repo <r>] [--work worktree|checkout|attached|workspace|directory] [--work-dir <owner-work>] [--harness pi|claude|codex] [--backend tmux|herdr] [--herdr-socket <path>] [--yolo|--no-yolo] [--model <m>] [--branch <b>] [--no-launch] [--json]");
   // Retired boundary flags (maintainer transport ruling): fail LOUDLY before
   // ANY side effect, including root discovery.
   // Local souls (local-agents/) are gone with the workspace model: a soul is a member
@@ -1650,12 +1681,12 @@ async function spawnCmd() {
       // An attached instance's repository is its work tree owner's (derived by the kernel).
       repo: preparedRepo !== undefined ? preparedRepo : ["directory", "attached"].includes(requestedWork || agent.work)
         ? repo : repo || defaultRepo(workspaceOf(root)) || defaultRepo(process.cwd()),
-      work: requestedWork, workDir, runtime: flag("runtime"), backend, herdrSocket, yolo, model: flag("model"), branch,
+      work: requestedWork, workDir, harness: harnessFlag(), backend, herdrSocket, yolo, model: flag("model"), branch,
       launchConfig: valueFlag("launch-config"),
       launch: !args.includes("--no-launch"),
       // K6: --preview decides everything and touches nothing; --base <ref>
       // selects a worktree's start point; --model @native-default is the
-      // explicit "runtime's own default" (distinct from omitting --model).
+      // explicit "harness's own default" (distinct from omitting --model).
       ...(args.includes("--preview") ? { preview: true, subject: { soul: name, agentsRoot: agentsRootFlag !== undefined ? String(agentsRootFlag) : null, dir: flag("dir") !== undefined && flag("dir") !== true ? String(flag("dir")) : null } } : {}),
       ...(flag("base") !== undefined && flag("base") !== true ? { baseRef: flag("base") } : {}),
       // A confirmed preview binds this apply (K6b): drift → E_DECISION_STALE, nothing created.
@@ -1669,7 +1700,7 @@ async function spawnCmd() {
       // (the deployment's cache had no entry for its commit): the result says so.
       if (prepared) r.soulFetched = soulFetched;
       if (JSON_MODE) { jsonOk(r); return; }
-      console.log(`preview ${r.agent} → ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch} from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}) runtime ${r.runtime}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}; nothing was created${soulFetched ? " (the soul source was fetched to a temporary copy, not kept)" : ""}`);
+      console.log(`preview ${r.agent} → ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch} from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}) harness ${r.harness}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}; nothing was created${soulFetched ? " (the soul source was fetched to a temporary copy, not kept)" : ""}`);
       return;
     }
   } catch (e) {
@@ -1679,9 +1710,9 @@ async function spawnCmd() {
     // document the message already names. The shared boundary renders it.
     if (TYPED_CLI_FAILURES.has(e?.code)) throw e;
     // A launch refusal (configuration, executable, environment reference,
-    // model, runtime) is a fact about the selection, not a spawn-mechanism
+    // model, harness) is a fact about the selection, not a spawn-mechanism
     // failure: it keeps its own code so a GUI can act on it.
-    if (typeof e?.code === "string" && /^E_LAUNCH_|^E_MODEL_UNKNOWN$|^E_UNSUPPORTED_RUNTIME$/.test(e.code)) { bail(e.code, e.message); throw e; }
+    if (typeof e?.code === "string" && /^E_LAUNCH_|^E_MODEL_UNKNOWN$|^E_UNSUPPORTED_HARNESS$/.test(e.code)) { bail(e.code, e.message); throw e; }
     // An unmet declared requirement is a fact about the soul's configuration
     // (with a remedy), not a spawn-mechanism failure: keep its code and details.
     if (e?.code === "E_REQUIREMENT_INACTIVE") { bail(e.code, e.message, { soul: e.soul, capabilities: e.capabilities, context: e.context, remedy: e.remedy }); throw e; }
@@ -1716,7 +1747,7 @@ async function spawnCmd() {
       instance: r.instance, agent: r.agent, home: r.home, work: r.work,
       branch: r.branch || null, launched: r.launched, warnings: r.warnings || [],
       ...(wakeSchedule ? { wakeSchedule } : {}), ...(wakeScheduleError ? { wakeScheduleError } : {}),
-      tmux: r.tmux || null, repo: r.repo || null, runtime: r.runtime || null,
+      tmux: r.tmux || null, repo: r.repo || null, harness: r.harness || null,
       model: r.model || null, parent: r.parentInstance || null,
       sibling: r.siblingInstance || null, relation: r.relation || null,
       spawnOrigin: r.spawnOrigin, attach: r.attach,
@@ -1809,7 +1840,7 @@ function retireCmd() {
   if (r.deferred) {
     if (args.includes("--json")) { console.log(JSON.stringify(r, null, 2)); return; }
     console.log(`Retirement of ${r.retired} (agent ${r.agent}) is ${r.alreadyScheduled ? "already " : ""}scheduled — say any goodbyes now.`);
-    console.log(`  in ~${r.completesInSec}s a detached completion quiesces this runtime (that is what ends this window), preserves work, runs retire hooks and removes the home`);
+    console.log(`  in ~${r.completesInSec}s a detached completion quiesces this harness (that is what ends this window), preserves work, runs retire hooks and removes the home`);
     console.log(`  if the completion fails, this window stays, the failure shows in \`oats status\` and at ${shortPath(r.resultPath)}, and \`oats retire ${r.retired}\` retries it`);
     return;
   }
@@ -1916,9 +1947,9 @@ async function sessionCmd() {
       if (model === true) bad("--model needs a model id; omit it to keep the recorded model");
       const launchConfig = flag("launch-config");
       if (launchConfig === true) bad("--launch-config needs a configuration name, or none");
-      const runtime = flag("runtime");
-      if (runtime === true || (runtime !== undefined && !LAUNCH_RUNTIMES.includes(runtime))) bad(`--runtime must be one of ${LAUNCH_RUNTIMES.join(", ")}`);
-      const opts = { model: model || undefined, launchConfig, runtime, yolo: yoloFlag(), env: process.env, ...(await homeLiveTeams(home)) };
+      const harness = harnessFlag();
+      if (harness === true || (harness !== undefined && !LAUNCH_HARNESSES.includes(harness))) bad(`--harness must be one of ${LAUNCH_HARNESSES.join(", ")}`);
+      const opts = { model: model || undefined, launchConfig, harness, yolo: yoloFlag(), env: process.env, ...(await homeLiveTeams(home)) };
       if (args[1] === "restart") {
         const grace = flag("stop-grace");
         if (grace !== undefined) { if (grace === true || !/^\d+$/.test(String(grace)) || Number(grace) < 1 || Number(grace) > 300) bad("--stop-grace needs a number of seconds (1..300) to wait for the harness after SIGTERM"); opts.stopGraceMs = Number(grace) * 1000; }
@@ -1941,7 +1972,7 @@ async function sessionCmd() {
       const file = flag("file");
       if (!file || file === true) throw Object.assign(new Error("session upload needs --file <local path>"), { code: "E_BAD_ARGS" });
       result = uploadAttachment({ file, home: home === true ? undefined : home });
-    } else throw Object.assign(new Error("usage: oats session inspect|input|attach|start|restart|receive|upload --home /absolute/home [--text-file path] [--model id] [--launch-config name|none] [--runtime pi|claude|codex] [--yolo|--no-yolo] [--stop-grace seconds] [--name file] [--file path] [--json]"), { code: "E_BAD_ARGS" });
+    } else throw Object.assign(new Error("usage: oats session inspect|input|attach|start|restart|receive|upload --home /absolute/home [--text-file path] [--model id] [--launch-config name|none] [--harness pi|claude|codex] [--yolo|--no-yolo] [--stop-grace seconds] [--name file] [--file path] [--json]"), { code: "E_BAD_ARGS" });
     if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2));
   } catch (e) { cmdFail(e.code || "E_SESSION_FAILED", e.message, e.details); }
 }
@@ -2325,7 +2356,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "teams", "settings-declared", "capabilities-private", "layers-from"], workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2 }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "teams", "settings-declared", "capabilities-private", "layers-from", "harness"], workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2 }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -2470,7 +2501,7 @@ async function serverRouteCmd() {
     const value = (name) => { const v = flag(name); if (v === true) bail("E_BAD_ARGS", `--${name} needs a value`); return v; };
     if (!["list", "set", "remove", "preview"].includes(action)) bail("E_BAD_ARGS", "launch-config --server supports list, set, remove and preview");
     const options = { action, name: args[2], context: value("dir"), home: value("home"), instance: value("instance"), soul: value("soul"), agentsRoot: value("agents-root") };
-    if (action === "preview") Object.assign(options, { launchConfig: value("launch-config"), runtime: value("runtime"), model: value("model"), yolo: yoloFlag() });
+    if (action === "preview") Object.assign(options, { launchConfig: value("launch-config"), harness: harnessFlag(value), model: value("model"), yolo: yoloFlag() });
     if (action === "set") {
       const file = value("file");
       if (!file) bail("E_BAD_ARGS", "launch-config set needs --file <local JSON file> (or - for stdin)");
@@ -2489,7 +2520,7 @@ async function serverRouteCmd() {
     let out;
     try { out = launchConfigRemote(id, options); } catch (e) { bail(e.code || "E_SSH", e.message); }
     if (out.stderr?.trim()) process.stderr.write(out.stderr.endsWith("\n") ? out.stderr : out.stderr + "\n");
-    if (JSON_MODE) { console.log(JSON.stringify(out.envelope, null, 2)); if (!out.envelope.ok) process.exit(1); return; }
+    if (JSON_MODE) { console.log(JSON.stringify(withLocalWarnings(out.envelope), null, 2)); if (!out.envelope.ok) process.exit(1); return; }
     if (!out.envelope.ok) die(`${id}: ${out.envelope.error?.message || "launch configuration request failed"} (${out.envelope.error?.code || "E_REMOTE"})`);
     console.log(JSON.stringify(out.envelope.result, null, 2));
     return;
@@ -2506,7 +2537,7 @@ async function serverRouteCmd() {
     let routed;
     try { routed = routeCommand(id, "harvest", [inst]); } catch (e) { bail(e.code || "E_SSH", e.message); }
     if (routed.stderr?.trim()) process.stderr.write(routed.stderr.endsWith("\n") ? routed.stderr : routed.stderr + "\n");
-    if (JSON_MODE) { console.log(JSON.stringify(routed.envelope, null, 2)); if (!routed.envelope.ok) process.exit(1); return; }
+    if (JSON_MODE) { console.log(JSON.stringify(withLocalWarnings(routed.envelope), null, 2)); if (!routed.envelope.ok) process.exit(1); return; }
     if (!routed.envelope.ok) die(`${id}: ${routed.envelope.error?.message || "harvest failed"} (${routed.envelope.error?.code || "E_REMOTE"})`);
     const hr = routed.envelope.result;
     console.log(`Harvest on ${id} for ${inst}: ${hr.harvest}${hr.reason ? ` (${hr.reason})` : ""}${hr.instance && hr.harvest === "spawned" ? ` — harvester ${hr.instance}` : ""}`);
@@ -2534,7 +2565,7 @@ async function serverRouteCmd() {
     let out;
     try { out = scheduleRemote(id, rest); } catch (e) { bail(e.code || "E_SSH", e.message); }
     if (out.stderr?.trim()) process.stderr.write(out.stderr.endsWith("\n") ? out.stderr : out.stderr + "\n");
-    if (JSON_MODE) { console.log(JSON.stringify(out.envelope, null, 2)); if (!out.envelope.ok) process.exit(1); return; }
+    if (JSON_MODE) { console.log(JSON.stringify(withLocalWarnings(out.envelope), null, 2)); if (!out.envelope.ok) process.exit(1); return; }
     if (!out.envelope.ok) die(`${id}: ${out.envelope.error?.message || "schedule command failed"} (${out.envelope.error?.code || "E_REMOTE"})`);
     console.log(JSON.stringify(out.envelope.result, null, 2));
     return;
@@ -2547,7 +2578,7 @@ async function serverRouteCmd() {
       let out;
       try { out = inspectRemote(id, addr); } catch (e) { bail(e.code || "E_SSH", e.message); }
       if (out.stderr?.trim()) process.stderr.write(out.stderr.endsWith("\n") ? out.stderr : out.stderr + "\n");
-      if (JSON_MODE) { console.log(JSON.stringify(out.envelope, null, 2)); if (!out.envelope.ok) process.exit(1); return; }
+      if (JSON_MODE) { console.log(JSON.stringify(withLocalWarnings(out.envelope), null, 2)); if (!out.envelope.ok) process.exit(1); return; }
       if (!out.envelope.ok) die(`${id}: ${out.envelope.error?.message || "inspect failed"} (${out.envelope.error?.code || "E_REMOTE"})`);
       const r = out.envelope.result;
       console.log(`${r.instance || r.home} on ${id}: ${r.present ? `present, ${r.state || "unknown"}` : "not present"}${r.backend ? ` (${r.backend})` : ""}`);
@@ -2555,12 +2586,12 @@ async function serverRouteCmd() {
     }
     if (args[1] === "start" || args[1] === "restart") {
       const value = (name) => { const v = flag(name); if (v === true) bail("E_BAD_ARGS", `--${name} needs a value`); return v; };
-      const choices = { ...addr, model: value("model"), launchConfig: value("launch-config"), runtime: value("runtime"), yolo: yoloFlag() };
+      const choices = { ...addr, model: value("model"), launchConfig: value("launch-config"), harness: harnessFlag(value), yolo: yoloFlag() };
       if (flag("stop-grace") !== undefined) bail("E_BAD_ARGS", "--stop-grace is currently supported on the execution host; omit it to use the remote restart's default wait");
       let out;
       try { out = (args[1] === "restart" ? restartRemote : startRemote)(id, choices); } catch (e) { bail(e.code || "E_SSH", e.message); }
       if (out.stderr?.trim()) process.stderr.write(out.stderr.endsWith("\n") ? out.stderr : out.stderr + "\n");
-      if (JSON_MODE) { console.log(JSON.stringify(out.envelope, null, 2)); if (!out.envelope.ok) process.exit(1); return; }
+      if (JSON_MODE) { console.log(JSON.stringify(withLocalWarnings(out.envelope), null, 2)); if (!out.envelope.ok) process.exit(1); return; }
       if (!out.envelope.ok) die(`${id}: ${out.envelope.error?.message || "start failed"} (${out.envelope.error?.code || "E_REMOTE"})`);
       const r = out.envelope.result;
       console.log(`Started ${r.instance || r.home} on ${id} (${r.backend}${r.model ? `, model ${r.model}` : ""}, ${r.reused === "pane" ? "in its existing pane" : r.reused === "adopted" ? "adopted the pending session" : "new window"})`);
@@ -2626,7 +2657,7 @@ async function serverRouteCmd() {
   catch (e) { bail(e.code || "E_SSH", e.message); }
   const { envelope, stderr } = routed;
   if (stderr && stderr.trim()) process.stderr.write(stderr.endsWith("\n") ? stderr : stderr + "\n");
-  if (JSON_MODE) { console.log(JSON.stringify(envelope, null, 2)); if (!envelope.ok || envelope.result?.rollbackIncomplete) process.exit(1); return; }
+  if (JSON_MODE) { console.log(JSON.stringify(withLocalWarnings(envelope), null, 2)); if (!envelope.ok || envelope.result?.rollbackIncomplete) process.exit(1); return; }
   if (!envelope.ok && !(cmd === "retire" && envelope.result)) die(`${id}: ${envelope.error?.message || "remote command failed"} (${envelope.error?.code || "E_REMOTE"})`);
   const r = envelope.result;
   const target = r.target || {};
@@ -2839,7 +2870,7 @@ Usage:
       <file> [--json]                       upload's remote half)
   oats session start --home <absolute-home>  start a STOPPED instance again in its existing home
       [--model m] [--launch-config n|none]  (recorded recipe as is; a selection re-resolves it
-      [--runtime r] [--yolo|--no-yolo]      against the scope; a named configuration is a unit)
+      [--harness r] [--yolo|--no-yolo]      against the scope; a named configuration is a unit)
   oats session restart --home <abs-home>     stop the running harness (SIGTERM, bounded wait,
       [same flags] [--stop-grace <s>]        never escalated) and start it again in place under
                                             the same lock; a stop that is not observed is
@@ -2854,7 +2885,7 @@ Usage:
       [--relative-to <instance>]            new instance to an existing one; --parent X
       [--relative-root <agents-root>]       disambiguates same-named team anchors
       [--work worktree|checkout|attached|workspace|directory]  = sugar for --relative-to X --relation
-      [--work-dir <owner-work>] [--runtime pi|claude|codex] [--backend tmux|herdr] [--herdr-socket <path>] [--yolo|--no-yolo] [--model <m>] [--branch <b>]  child (default: unrelated, top-level)
+      [--work-dir <owner-work>] [--harness pi|claude|codex] [--backend tmux|herdr] [--herdr-socket <path>] [--yolo|--no-yolo] [--model <m>] [--branch <b>]  child (default: unrelated, top-level)
       [--no-launch] [--json]
                                             with team: declared, unknown souls
                                             resolve across the team scope's repos
@@ -2868,7 +2899,7 @@ Usage:
       [--keep-dir] [--json]                 CALLING instance: the window dies, then
                                             a detached external retirement runs
   oats inspect [--dir <scope>] [--soul <name>   one authoritative JSON answer for a GUI: souls
-      [--agents-root <abs>]] [--home <abs>]   (runtime defaults, editability, instructions),
+      [--agents-root <abs>]] [--home <abs>]   (harness defaults, editability, instructions),
       [--json]                              installed capabilities with health, effective
                                             layer bindings and activation, declared
                                             operations with availability; --home answers the
@@ -2882,7 +2913,7 @@ Usage:
                                             relayed; a view answers {documents: [...]}
   oats launch-config list [--dir <scope>     named launch configurations effective at a scope,
       | --home <abs> | --soul <name>]       a home's recorded context or a soul's own scope:
-      [--agents-root <abs>] [--json]        runtime, executable, args, env (values redacted,
+      [--agents-root <abs>] [--json]        harness, executable, args, env (values redacted,
                                             references shown), model, yolo; the closest
                                             declaring scope provides the whole entry
   oats launch-config set <name> --file <j>   declare or replace one at this scope from a JSON
@@ -2890,11 +2921,11 @@ Usage:
                                             --keep-env copies the effective definition's env)
   oats launch-config remove <name>           remove this scope's declaration; an ancestor's,
       [--dir <scope>] [--json]              if any, becomes effective again
-  oats launch-config preview                 what a start would run: resolved runtime, model,
+  oats launch-config preview                 what a start would run: resolved harness, model,
       (--home <abs> | --soul <name>)        yolo, executable, argv, environment (redacted),
       [--launch-config <name>|none]         command and preflight; read-only, nothing
-      [--runtime r] [--model m]             started; a named configuration is a unit, so
-      [--yolo | --no-yolo] --json           a disagreeing --runtime is refused
+      [--harness r] [--model m]             started; a named configuration is a unit, so
+      [--yolo | --no-yolo] --json           a disagreeing --harness is refused
   oats doctor [dir] [--soul <name>] [--json] resolved targets, trust, requirements;
                                             --soul shows final composed AGENTS.md
   oats update [--check] [--yes]              check npm for a newer kernel+pi bridge and

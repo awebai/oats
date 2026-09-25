@@ -5,7 +5,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, 
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { buildNorthwind } from "./fixtures/northwind/build.mjs";
-import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
+import { inertHarnessPath } from "./helpers/runtime-stub.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-ops-route-")));
@@ -23,7 +23,7 @@ test("inspect and operation run route to a registered server over its saved rout
   const team = join(base, "northwind-workspace");
   mkdirSync(join(team, "agents"), { recursive: true });
   writeFileSync(join(team, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.agents}\n`);
-  const local = (args) => spawnSync(process.execPath, [CLI, ...args, "--json"], { encoding: "utf8", env: { ...env, PATH: inertRuntimePath(base) }, cwd: team });
+  const local = (args) => spawnSync(process.execPath, [CLI, ...args, "--json"], { encoding: "utf8", env: { ...env, PATH: inertHarnessPath(base) }, cwd: team });
   let r = local(["sync", "--dir", team]); assert.equal(r.status, 0, r.stdout + r.stderr);
   r = local(["spawn", "release-manager", "--dir", team, "--purpose", "r1", "--work", "directory", "--no-launch", "--provider", "oats.okf", "state-dir=/tmp/nw-state"]); assert.equal(r.status, 0, r.stdout + r.stderr);
   const { home, instance } = JSON.parse(r.stdout).result;
@@ -34,7 +34,7 @@ test("inspect and operation run route to a registered server over its saved rout
   chmodSync(join(bin, "ssh"), 0o755);
   env.PATH = `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`;
   const oldOats = join(base, "old-oats.sh");
-  write(oldOats, `#!/bin/sh\necho '{"schemaVersion":1,"name":"@awebai/oats","version":"0.22.14","desktopApi":1,"runtimes":["pi"],"sessionBackends":["tmux"],"launchOptions":[],"remote":["session"],"features":["session-upload"]}'\n`); chmodSync(oldOats, 0o755);
+  write(oldOats, `#!/bin/sh\necho '{"schemaVersion":1,"name":"@awebai/oats","version":"0.22.14","desktopApi":1,"harnesses":["pi"],"sessionBackends":["tmux"],"launchOptions":[],"remote":["session"],"features":["session-upload"]}'\n`); chmodSync(oldOats, 0o755);
   write(join(env.OATS_HOME_DIR, "servers.json"), JSON.stringify({ servers: { build: { sshHost: "build-host", workspace: team, oatsPath: CLI }, old: { sshHost: "old-host", workspace: team, oatsPath: oldOats } } }));
   write(join(env.OATS_HOME_DIR, "remote", "build", `${instance}.json`), JSON.stringify({ serverId: "build", instance, home, target: { sshHost: "build-host", workspace: team, oatsPath: CLI } }));
   const oats = (args) => { const r = spawnSync(process.execPath, [CLI, ...args], { encoding: "utf8", env, cwd: base }); const json = () => { try { return JSON.parse(r.stdout.trim()); } catch { throw new Error(`no JSON: ${r.stdout}\n${r.stderr}`); } }; return { ...r, json }; };

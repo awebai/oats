@@ -36,8 +36,8 @@ test("a consistent instance.json reports exactly as before (no diagnostic keys)"
   const { root, instances } = layout();
   const dir = join(instances, "worker-2");
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "instance.json"), JSON.stringify({ agent: "worker", instance: "worker-2", home: dir, work: "directory", runtime: "pi" }));
+  writeFileSync(join(dir, "instance.json"), JSON.stringify({ agent: "worker", instance: "worker-2", home: dir, work: "directory", harness: "pi" }));
   const [row] = rowsOf(root);
-  assert.equal(row.home, dir); assert.equal(row.instance, "worker-2"); assert.equal(row.runtime, "pi");
+  assert.equal(row.home, dir); assert.equal(row.instance, "worker-2"); assert.equal(row.harness, "pi");
   assert.equal(Object.hasOwn(row, "recordedHome"), false); assert.equal(Object.hasOwn(row, "recordedInstance"), false);
 });

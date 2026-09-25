@@ -4,8 +4,8 @@ import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 // The bundled official payloads must validate against the manifest schema
-// this kernel publishes, with every key the runtime accepts (operations
-// included): a schema behind the runtime lets a package author ship a
+// this kernel publishes, with every key the harness accepts (operations
+// included): a schema behind the harness lets a package author ship a
 // manifest OATS loads but the mirror validator refuses, or the reverse.
 test("every bundled capability manifest validates against docs/capability-manifest.schema.json", async () => {
   const { default: Ajv2020 } = await import("ajv/dist/2020.js");
@@ -20,7 +20,7 @@ test("every bundled capability manifest validates against docs/capability-manife
   }
   const okf = JSON.parse(readFileSync(join(root, "capabilities", "oats-okf", "oats.json"), "utf8"));
   assert.deepEqual(Object.keys(okf.operations).sort(), ["harvest", "inspect"]);
-  // The schema rejects what the runtime rejects.
+  // The schema rejects what the harness rejects.
   const base = { capability: "acme.x", version: "1.0.0", compatibility: { oats: ">=0.6.2" }, description: "x", commands: { go: "bin/x.mjs" } };
   assert.equal(validate({ ...base, operations: { run: { command: "go", kind: "view" } } }), true);
   assert.equal(validate({ ...base, operations: { run: { command: "go", kind: "batch" } } }), false, "unknown kind");

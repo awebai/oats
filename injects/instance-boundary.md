@@ -1,7 +1,7 @@
 ## Your two directories
 
 **`<instance-home>` is where this session starts** — the specific gitignored OATS
-instance directory you woke up in, given to your runtime and to every lifecycle
+instance directory you woke up in, given to your harness and to every lifecycle
 hook as `$OATS_INSTANCE_HOME`. It is not your user home (`~`), not the repository
 root, and not the work tree. Anything that says "your home" means this directory.
 

@@ -16,7 +16,9 @@ export function sourceSessionEnvironment(home, base = process.env) {
   }
   const recipe = meta?.launch;
   if (recipe !== undefined) {
-    if (!recipe || recipe.version !== 1 || !["claude", "pi", "codex"].includes(recipe.runtime)) {
+    // Version 1 (a 0.26.0 home) names the harness `runtime`; version 2 `harness`.
+    const harness = recipe?.version === 2 ? recipe.harness : recipe?.version === 1 ? recipe.runtime : undefined;
+    if (!recipe || !["claude", "pi", "codex"].includes(harness)) {
       throw new Error("cannot resolve source transcript roots: unsupported recorded launch recipe");
     }
     for (const layer of [recipe.hooks?.env, recipe.env]) {
@@ -32,7 +34,7 @@ export function sourceSessionEnvironment(home, base = process.env) {
     }
     // Pi also supports a direct session-directory override. Do not certify
     // default roots when native options direct evidence somewhere else.
-    if (recipe.runtime === "pi") {
+    if (harness === "pi") {
       const args = recipe.args ?? [];
       if (!Array.isArray(args) || args.some((a) => typeof a !== "string")) throw new Error("cannot resolve source transcript roots: invalid launch arguments");
       for (let i = 0; i < args.length; i++) {
@@ -69,13 +71,13 @@ export function nativeDirectory(value, { home = homedir(), cwd = process.cwd(), 
 /** Native execution-side locations, without existence filtering. Unlike a
  * background observer scan, Claude's native default is exactly ~/.claude,
  * not every .claude* profile found under an observer's HOME. */
-export function nativeLaunchLocations(runtime, { cwd, env = process.env, args = [] } = {}) {
+export function nativeLaunchLocations(harness, { cwd, env = process.env, args = [] } = {}) {
   const home = env.HOME || homedir();
   if (!isAbsolute(home)) throw new Error("native launch HOME must be absolute");
   if (!Array.isArray(args) || args.some(a => typeof a !== "string")) throw new Error("invalid native launch arguments");
-  if (runtime === "claude") return [join(nativeDirectory(env.CLAUDE_CONFIG_DIR || join(home, ".claude"), { home, cwd }), "projects")];
-  if (runtime === "codex") return [join(nativeDirectory(env.CODEX_HOME || join(home, ".codex"), { home, cwd }), "sessions")];
-  if (runtime !== "pi") throw new Error("unsupported native record runtime");
+  if (harness === "claude") return [join(nativeDirectory(env.CLAUDE_CONFIG_DIR || join(home, ".claude"), { home, cwd }), "projects")];
+  if (harness === "codex") return [join(nativeDirectory(env.CODEX_HOME || join(home, ".codex"), { home, cwd }), "sessions")];
+  if (harness !== "pi") throw new Error("unsupported native record harness");
   let sessionDir = env.PI_CODING_AGENT_SESSION_DIR;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];

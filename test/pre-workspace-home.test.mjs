@@ -33,7 +33,7 @@ function preWorkspaceHome(fx, name) {
   writeFileSync(join(home, "TASK.md"), "task\n");
   writeFileSync(join(home, "AGENTS.md"), "# dev\n");
   writeFileSync(join(home, "instance.json"), JSON.stringify({
-    agent: "dev", kind: "persistent", instance: name, home, repo: fx.member, work: "checkout", branch: null, runtime: "claude",
+    agent: "dev", kind: "persistent", instance: name, home, repo: fx.member, work: "checkout", branch: null, harness: "claude",
     tmux: { session: `none-${process.pid}`, window: name }, command: `claude -- "$(cat TASK.md)"`, launched: false,
     capabilities: [], createdAt: "2026-09-01T00:00:00.000Z",
   }, null, 2) + "\n");

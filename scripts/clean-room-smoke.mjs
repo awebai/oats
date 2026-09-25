@@ -476,13 +476,13 @@ try {
   // spawnable soul) resolve from materialized modules in a later phase; here
   // the module bytes and the composed instance are what is asserted.
   const theoryProbes = [];
-  for (const runtime of ["pi", "claude"]) {
-    const author = boundary(["spawn", "author", "--dir", deployment, "--agents-root", agentsRoot, "--purpose", `theory-${runtime}`, "--runtime", runtime, "--no-launch", "--json"]);
+  for (const harness of ["pi", "claude"]) {
+    const author = boundary(["spawn", "author", "--dir", deployment, "--agents-root", agentsRoot, "--purpose", `theory-${harness}`, "--harness", harness, "--no-launch", "--json"]);
     const authorHome = realpathSync(author.home);
     try {
       const authorMeta = readJson(join(authorHome, "instance.json"));
       assert.equal(authorMeta.launched, false);
-      assert.equal(authorMeta.runtime, runtime);
+      assert.equal(authorMeta.harness, harness);
       assert.equal(readlinkSync(join(authorHome, "CLAUDE.md")), "AGENTS.md");
       assert.deepEqual(Object.keys(authorMeta.modules).sort(), ["oats.knowledge-theory"], "knowledge: none drops the OKF default; the theory package is the only module");
       assert.equal(authorMeta.modules["oats.knowledge-theory"].commit, theoryCommit);
@@ -505,7 +505,7 @@ try {
     } finally {
       retire(author.instance, authorHome);
     }
-    theoryProbes.push(`directory/${runtime}`);
+    theoryProbes.push(`directory/${harness}`);
   }
   assert.deepEqual(readJson(lockPath), locked, "theory spawns never mutate the lock");
   assert.ok(!existsSync(env.OATS_SMOKE_UNEXPECTED_EXEC), "a runtime/backend/host scheduler was invoked");

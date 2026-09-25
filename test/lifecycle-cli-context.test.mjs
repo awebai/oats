@@ -5,7 +5,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, 
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { OATS_VERSION, runLifecycleHooks } from "../lib/core.mjs";
-import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
+import { inertHarnessPath } from "./helpers/runtime-stub.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const CLI = realpathSync(new URL("../bin/oats.mjs", import.meta.url));
@@ -26,7 +26,7 @@ function fixture(t, { probeCli = false } = {}) {
   for (const [name, text] of [["oats", "#!/bin/sh\necho POISONED\nexit 99\n"], ["claude", "#!/bin/sh\nexit 0\n"]]) {
     write(join(fakeBin, name), text); chmodSync(join(fakeBin, name), 0o755);
   }
-  process.env.PATH = `${fakeBin}:${inertRuntimePath(base)}`;
+  process.env.PATH = `${fakeBin}:${inertHarnessPath(base)}`;
   process.env.OATS_CLI_BIN = join(fakeBin, "oats");
   process.env.OATS_ROOT = join(base, "wrong-agents");
   const hook = join(base, "hook.mjs");
@@ -72,9 +72,9 @@ test("direct core and CLI spawns supply the known agents root and an executable 
     capabilities: { "test.context": { manifest: { description: "Lifecycle fixture.", hooks: { spawn: "hook.mjs" } }, files: { "hook.mjs": readFileSync(hook, "utf8") } } },
   });
   t.after(() => fx.cleanup());
-  const direct = await fx.spawn("dev", { purpose: "direct", runtime: "claude" });
+  const direct = await fx.spawn("dev", { purpose: "direct", harness: "claude" });
   check(JSON.parse(readFileSync(join(direct.home, "hook-result.json"))), fx.root, direct.home);
-  const child = spawnSync(process.execPath, [CLI, "spawn", "dev", "--dir", fx.dep, "--purpose", "cli", "--runtime", "claude", "--no-launch", "--json"], { cwd: fx.dep, env: { ...process.env, OATS_REMOTE_CACHE: fx.env.OATS_REMOTE_CACHE }, encoding: "utf8" });
+  const child = spawnSync(process.execPath, [CLI, "spawn", "dev", "--dir", fx.dep, "--purpose", "cli", "--harness", "claude", "--no-launch", "--json"], { cwd: fx.dep, env: { ...process.env, OATS_REMOTE_CACHE: fx.env.OATS_REMOTE_CACHE }, encoding: "utf8" });
   assert.equal(child.status, 0, child.stderr + child.stdout);
   const envelope = JSON.parse(child.stdout); assert.equal(envelope.ok, true, JSON.stringify(envelope));
   check(JSON.parse(readFileSync(join(envelope.result.home, "hook-result.json"))), fx.root, envelope.result.home);

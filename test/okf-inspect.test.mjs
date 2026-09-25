@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { fixture, write, json, readJSON, CAP, CLI, ROOT } from './helpers/okf-v2.mjs';
 import { materializeOkfGitPayload } from '../scripts/check-okf-mirror.mjs';
-import { inertRuntimePath } from './helpers/runtime-stub.mjs';
+import { inertHarnessPath } from './helpers/runtime-stub.mjs';
 
 const operation = f => f.cli(['operation', 'run', 'knowledge:inspect', '--home', f.home, '--json']);
 
@@ -41,7 +41,7 @@ function workspaceDeployment() {
   const catalog = join(room, 'catalog.json');
   json(catalog, { packages: { 'oats.okf': { url: pathToFileURL(official).href, ref: 'v2.1.3', path: 'oats-package' } } });
   const user = join(room, 'user'); fs.mkdirSync(user);
-  const env = { HOME: user, PATH: inertRuntimePath(room), OATS_HOME_DIR: join(room, 'host-state'), LANG: 'en_US.UTF-8',
+  const env = { HOME: user, PATH: inertHarnessPath(room), OATS_HOME_DIR: join(room, 'host-state'), LANG: 'en_US.UTF-8',
     OATS_PACKAGE_CATALOG: catalog, OATS_REMOTE_CACHE: join(room, 'cache'), OATS_TMUX_SESSION: `none-${process.pid}`,
     GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_ALLOW_PROTOCOL: 'file' };
   const cli = args => {
@@ -96,7 +96,7 @@ test('local execution ignores ambient installed-package roots and source identit
   const r = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
     encoding: 'utf8', timeout: 90000,
     env: { ...process.env, OATS_PKG_ROOT: '/must-not-use-installed-package',
-      OATS_OKF_CLI: '/must-not-use-installed-cli', OATS_CLI_BIN: '/must-not-use-runtime-cli',
+      OATS_OKF_CLI: '/must-not-use-installed-cli', OATS_CLI_BIN: '/must-not-use-harness-cli',
       OATS_INSTANCE_HOME: '/must-not-use-source-home', OATS_HOME: '/must-not-use-source-home',
       OATS_PACKAGE_CATALOG: '/must-not-use-host-catalog', OATS_SETTINGS: '{broken' },
   });

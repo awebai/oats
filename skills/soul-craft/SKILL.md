@@ -81,7 +81,7 @@ plus `knowledge` / `messaging` / `tasks` slots; `none` empties one). The
 soul lives in its member repository, which is also what it works on.
 
 Runtime, model and permission bypass are not soul fields: they are chosen at
-spawn (`--runtime`, `--model`, `--yolo`) or by a host's named launch
+spawn (`--harness`, `--model`, `--yolo`) or by a host's named launch
 configuration, so the same soul runs on any harness a host provides. Check a
 soul with `oats spawn <soul> --preview` before committing it.
 

@@ -13,7 +13,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildNorthwind } from "./fixtures/northwind/build.mjs";
-import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
+import { inertHarnessPath } from "./helpers/runtime-stub.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const EXPECTED_MODULES = ["nw-deploy", "nw-house-style", "nw-release-tooling", "oats.core", "oats.okf"];
@@ -22,7 +22,7 @@ function oats(args, { cwd, env = {}, base }) {
   return spawnSync(process.execPath, [CLI, ...args], {
     cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
     env: {
-      ...process.env, PATH: inertRuntimePath(base), PI_AGENT_HOME: "", OATS_HOME: "", PI_AGENTS_ROOT: "",
+      ...process.env, PATH: inertHarnessPath(base), PI_AGENT_HOME: "", OATS_HOME: "", PI_AGENTS_ROOT: "",
       OATS_REMOTE_CACHE: join(base, "cache"), HOME: join(base, "home"),
       OATS_TMUX_SESSION: `none-${process.pid}`, PI_AGENTS_TMUX_SESSION: `none-${process.pid}`,
       ...env,

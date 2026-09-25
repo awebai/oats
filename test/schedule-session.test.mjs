@@ -12,7 +12,7 @@ import { v2Deployment } from "./helpers/v2-deployment.mjs";
 // Exercise the actual scheduler -> session start -> tmux -> harness stdin
 // boundary. All homes, receipts, binaries and the tmux socket are fixtures;
 // no model, identity, user's tmux server or host timer is involved.
-test("scheduled wakes deliver literal text once and give the next cold home the slot after a runtime stops", async () => {
+test("scheduled wakes deliver literal text once and give the next cold home the slot after a harness stops", async () => {
   const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-schedule-session-")));
   const socket = join(base, "tmux.sock");
   // A workspace deployment; the schedule scope is its directory (oats-local.yaml).
@@ -36,12 +36,12 @@ test("scheduled wakes deliver literal text once and give the next cold home the 
     const homes = [];
     for (const id of ["one", "two"]) {
       const instance = `dev-${id}`;
-      // Spawned with the fixture's inert runtimes on PATH, then given a frozen
+      // Spawned with the fixture's inert harnesses on PATH, then given a frozen
       // command in place of the launch recipe (the persisted-command start path).
       const path = process.env.PATH;
       process.env.PATH = fx.env.PATH;
       let spawned;
-      try { spawned = await fx.spawn("dev", { instance, runtime: "claude" }); } finally { process.env.PATH = path; }
+      try { spawned = await fx.spawn("dev", { instance, harness: "claude" }); } finally { process.env.PATH = path; }
       const home = spawned.home;
       const harness = join(base, `fixture-${id}.mjs`), log = join(home, "received.jsonl"), ready = join(base, `fixture-${id}.ready`);
       // The harness announces itself once it reads stdin. Session start runs
@@ -69,7 +69,7 @@ setTimeout(()=>process.exit(0),30000);\n`);
     assert.equal(result.find(r => r.id === "one").action, "started");
     assert.equal(result.find(r => r.id === "two").action, "skipped", "two cold homes cannot both start under cap one");
     assert.equal(existsSync(homes[1].log), false);
-    await waitFor(() => existsSync(homes[0].ready) && inspectInstanceSession(homes[0].home).state === "unknown", "first dummy runtime becomes active");
+    await waitFor(() => existsSync(homes[0].ready) && inspectInstanceSession(homes[0].home).state === "unknown", "first dummy harness becomes active");
     result = tick("2026-09-07T12:00:10Z");
     const delivered = result.find(r => r.id === "one");
     assert.equal(delivered.action, "delivered", delivered.reason);
@@ -84,7 +84,7 @@ setTimeout(()=>process.exit(0),30000);\n`);
     await waitFor(() => existsSync(join(homes[0].home, ".oats-start-exited")) && inspectInstanceSession(homes[0].home).state === "shell", "dummy exits to fallback shell");
     result = tick("2026-09-07T12:01:00Z");
     assert.equal(result.find(r => r.id === "two").action, "started", "the never-launched home gets the free slot");
-    assert.ok(existsSync(homes[0].home), "stopping a runtime does not require deleting its persistent home");
+    assert.ok(existsSync(homes[0].home), "stopping a harness does not require deleting its persistent home");
   } finally {
     try { tmux("kill-server"); } catch { /* fixture server already gone */ }
     // The tmux server exits asynchronously and may still be writing under base: bounded retry on ENOTEMPTY/EBUSY.

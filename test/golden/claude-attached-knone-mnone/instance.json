@@ -7,7 +7,7 @@
   "repo": "<base>/deployment/ws",
   "work": "attached",
   "branch": "agents/dev-owner",
-  "runtime": "claude",
+  "harness": "claude",
   "parentInstance": "dev-owner",
   "spawnOrigin": "instance",
   "policy": {
@@ -58,8 +58,8 @@
           "file": "<kernel>/injects/work-attached.md"
         }
       ],
-      "runtimePackages": [],
-      "runtimePosture": {
+      "harnessPackages": [],
+      "harnessPosture": {
         "oatsComposed": "skills via .claude/skills -> ../.agents/skills; instructions via CLAUDE.md -> AGENTS.md",
         "ambient": [
           "user skills",
@@ -83,8 +83,8 @@
     "window": "dev-claude-attached-knone-mnone"
   },
   "launch": {
-    "version": 1,
-    "runtime": "claude",
+    "version": 2,
+    "harness": "claude",
     "launchConfig": null,
     "launchConfigSource": null,
     "executable": "<base>/bin/claude",
