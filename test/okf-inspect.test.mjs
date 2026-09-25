@@ -1,11 +1,81 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { fixture, write, json, readJSON, CAP } from './helpers/okf-v2.mjs';
+import { pathToFileURL } from 'node:url';
+import { fixture, write, json, readJSON, CAP, CLI, ROOT } from './helpers/okf-v2.mjs';
+import { materializeOkfGitPayload } from '../scripts/check-okf-mirror.mjs';
+import { inertRuntimePath } from './helpers/runtime-stub.mjs';
 
 const operation = f => f.cli(['operation', 'run', 'knowledge:inspect', '--home', f.home, '--json']);
+
+// `oats inspect --home` and `oats operation run --home` answer only on the
+// workspace model (0.26.0), so the public pipes run on a workspace home: one
+// deployment pinning the REAL oats.okf package (the git payload the release
+// mirrors), built once; each test spawns its own home in it. The direct pipe
+// runs the source tree's provider (CAP) against that same home.
+let deployment;
+after(() => { if (deployment) fs.rmSync(deployment.room, { recursive: true, force: true }); });
+function workspaceDeployment() {
+  if (deployment) return deployment;
+  const room = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'okf-inspect-v2-')));
+  deployment = { room };
+  const sh = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8' }).trim();
+  const git = (dir, ...args) => sh('git', ['-C', dir, '-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...args]);
+  const official = join(room, 'official'); materializeOkfGitPayload(join(official, 'oats-package'), { repoRoot: ROOT });
+  sh('git', ['init', '-q', official]); git(official, 'add', '-A'); git(official, 'commit', '-qm', 'okf'); git(official, 'tag', 'v2.1.3');
+  const host = join(room, 'host'), hostRef = pathToFileURL(host).href;
+  sh('git', ['init', '-q', host]);
+  write(join(host, 'oats-workspace.yaml'), `schemaVersion: 2\nname: okf-inspect\nmembers:\n  - ${hostRef}\npackages:\n  oats.okf: v2.1.3\nteams:\n  global: { description: all }\ndefaults:\n  knowledge:\n    oats.okf: { from: package }\n`);
+  write(join(host, 'oats-membership.yaml'), `schemaVersion: 2\nworkspace: ${hostRef}\n`);
+  write(join(host, 'souls/source/soul.yaml'), 'schemaVersion: 2\nname: source\ndescription: source\nwork: directory\n');
+  write(join(host, 'souls/source/AGENTS.md'), '# Expert\nOwn rationale and observed limitations, not code descriptions.\n');
+  json(join(host, 'souls/source/okf.json'), { version: 1, owner: 'source-owner', owns: ['project/expert'], reads: [] });
+  git(host, 'add', '-A'); git(host, 'commit', '-qm', 'host');
+  const dep = join(room, 'dep'), accepted = join(room, 'accepted'), bindings = join(room, 'bindings.json');
+  fs.mkdirSync(join(dep, 'agents'), { recursive: true });
+  json(bindings, { version: 1, stateDir: join(room, 'state'), bases: { project: { id: 'fixture-base', kind: 'directory', path: accepted } } });
+  write(join(dep, 'oats-local.yaml'), `schemaVersion: 2\nworkspace: ${hostRef}\nsettings:\n  oats.okf:\n    bindings-file: ${bindings}\n`);
+  const catalog = join(room, 'catalog.json');
+  json(catalog, { packages: { 'oats.okf': { url: pathToFileURL(official).href, ref: 'v2.1.3', path: 'oats-package' } } });
+  const user = join(room, 'user'); fs.mkdirSync(user);
+  const env = { HOME: user, PATH: inertRuntimePath(room), OATS_HOME_DIR: join(room, 'host-state'), LANG: 'en_US.UTF-8',
+    OATS_PACKAGE_CATALOG: catalog, OATS_REMOTE_CACHE: join(room, 'cache'), OATS_TMUX_SESSION: `none-${process.pid}`,
+    GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_ALLOW_PROTOCOL: 'file' };
+  const cli = args => {
+    const r = spawnSync(process.execPath, [CLI, ...args], { cwd: dep, env, encoding: 'utf8', timeout: 90000, maxBuffer: 32 * 1024 * 1024 });
+    assert.equal(r.status, 0, JSON.stringify(args) + '\n' + r.stdout + r.stderr);
+    const out = JSON.parse(r.stdout); assert.equal(out.ok, true, JSON.stringify(out)); return out.result;
+  };
+  cli(['sync', '--dir', dep, '--json']);
+  const nodes = join(room, 'nodes.json'); json(nodes, { expert: { path: 'expert', owner: 'source-owner' } });
+  cli(['okf', 'init', '--base', 'project', '--nodes', nodes, '--confirm', '--soul', 'source', '--json']);
+  Object.assign(deployment, { dep, accepted, env, cli });
+  return deployment;
+}
+let homes = 0;
+function workspaceHome() {
+  const d = workspaceDeployment();
+  const source = d.cli(['spawn', 'source', '--dir', d.dep, '--purpose', `probe-${++homes}`, '--no-launch', '--json']);
+  const home = source.home, meta = readJSON(join(home, 'instance.json'));
+  assert.ok(meta.modules?.['oats.okf'], 'the home materialized the real oats.okf');
+  const sourceFile = readJSON(join(home, '.okf-source.json')).source;
+  const f = { home, source, accepted: d.accepted, cli: d.cli };
+  // The source tree's provider against this home, with the payload the spawn recorded.
+  f.direct = args => {
+    const r = spawnSync(process.execPath, [join(CAP, 'bin/oats-okf.mjs'), ...args, '--json'], {
+      cwd: d.dep, env: { ...d.env, OATS_CLI_BIN: CLI, OATS_PKG_ROOT: CAP, OATS_HOME: home, OATS_INSTANCE_HOME: home,
+        OATS_SOUL: meta.soulDir, OATS_CONTEXT: d.dep, OATS_SETTINGS: JSON.stringify(meta.providers['oats.okf']) },
+      encoding: 'utf8', timeout: 90000, maxBuffer: 32 * 1024 * 1024,
+    });
+    assert.equal(r.status, 0, args.join(' ') + '\n' + r.stdout + r.stderr);
+    return { ...r, out: JSON.parse(r.stdout) };
+  };
+  f.inspect = () => d.cli(['okf', 'inspect', '--source', sourceFile, '--soul', 'source', '--json']);
+  return f;
+}
 test('local execution ignores ambient installed-package roots and source identity', () => {
   const helper = new URL('./helpers/okf-v2.mjs', import.meta.url).href;
   const script = `
@@ -32,8 +102,8 @@ test('local execution ignores ambient installed-package roots and source identit
   });
   assert.equal(r.status, 0, r.stdout + r.stderr);
 });
-test('OKF inspect exposes matching STATE/log/notes alongside durable evidence through direct and public operation pipes', t => {
-  const f = fixture(t);
+test('OKF inspect exposes matching STATE/log/notes alongside durable evidence through direct and public operation pipes', { timeout: 300_000 }, () => {
+  const f = workspaceHome();
   const manifest = readJSON(join(CAP, 'oats.json'));
   assert.deepEqual(Object.keys(manifest.operations).sort(), ['harvest', 'inspect']);
   assert.equal(manifest.operations.inspect.kind, 'view');
@@ -60,8 +130,8 @@ test('OKF inspect exposes matching STATE/log/notes alongside durable evidence th
   assert.equal(empty.liveMemory.available, true); assert.match(empty.summary, /0 working-memory documents/);
 });
 
-test('large pipe regression: three live documents over 128 KiB arrive byte-exact through both stdout pipes', t => {
-  const f = fixture(t);
+test('large pipe regression: three live documents over 128 KiB arrive byte-exact through both stdout pipes', { timeout: 300_000 }, () => {
+  const f = workspaceHome();
   const texts = ['# State\n' + 'Live α state: do not truncate this pipe.\n'.repeat(5000), '# Log\n' + 'Observed β limitation in the source.\n'.repeat(5000), '# Note\n' + 'A live γ note for inspection.\n'.repeat(6000)];
   for (const [i, p] of ['STATE.md', 'log.md', 'notes/live.md'].entries()) {
     assert.ok(Buffer.byteLength(texts[i]) > 128 * 1024 && Buffer.byteLength(texts[i]) < 256 * 1024);
@@ -76,8 +146,8 @@ test('large pipe regression: three live documents over 128 KiB arrive byte-exact
   }
 });
 
-test('inspection announces its document preview cap without splitting UTF-8', t => {
-  const f = fixture(t), text = 'x'.repeat(256 * 1024 - 1) + 'α trailing bytes';
+test('inspection announces its document preview cap without splitting UTF-8', { timeout: 300_000 }, () => {
+  const f = workspaceHome(), text = 'x'.repeat(256 * 1024 - 1) + 'α trailing bytes';
   write(join(f.home, 'STATE.md'), text);
   for (const result of [f.direct(['inspect']).out.result, operation(f).result]) {
     const d = result.documents[0]; assert.equal(d.text, 'x'.repeat(256 * 1024 - 1));
