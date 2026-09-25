@@ -579,6 +579,11 @@ test("operational commands are gated by active instance metadata; doctor exposes
   const plainHome = (await fx.spawn("plain", { name: "plain-ops" })).home;
   r = fx.cli(["ops", "ping"], { cwd: plainHome, env: { PI_AGENT_HOME: plainHome } });
   assert.equal(r.status, 1); assert.match(r.stderr, /unknown command "ops"/);
+  // OATS_INSTANCE_HOME, the canonical identity, is recognised on its own and wins over the older names.
+  r = fx.cli(["ops", "ping"], { cwd: fx.base, env: { OATS_INSTANCE_HOME: home } });
+  assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /pong/);
+  r = fx.cli(["ops", "ping"], { cwd: fx.base, env: { OATS_INSTANCE_HOME: plainHome, PI_AGENT_HOME: home } });
+  assert.equal(r.status, 1); assert.match(r.stderr, /unknown command "ops"/);
   assert.match(readFileSync(join(home, "AGENTS.md"), "utf8"), /Ops instructions/);
   const tree = () => spawnSync("find", [fx.dep, "-path", `${fx.member}`, "-prune", "-o", "-print"], { encoding: "utf8" }).stdout.split("\n").sort().join("\n");
   const before = tree();

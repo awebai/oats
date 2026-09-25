@@ -2495,7 +2495,8 @@ async function capabilityCommand() {
     let activeIds;
     let context = process.cwd();
     let teamCtx;
-    const instanceHome = process.env.PI_AGENT_HOME || process.env.OATS_HOME;
+    // OATS_INSTANCE_HOME is the canonical identity; the older names still count.
+    const instanceHome = process.env.OATS_INSTANCE_HOME || process.env.PI_AGENT_HOME || process.env.OATS_HOME;
     const metaFile = instanceHome && join(instanceHome, "instance.json");
     // Capability-id keyed — never answer for `constructor`/`toString`. Belt and
     // braces: the ids come from instance.json, which spawn wrote from resolved
