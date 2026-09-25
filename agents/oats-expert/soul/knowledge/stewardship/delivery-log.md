@@ -22,7 +22,7 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
-## Batch — 2026-09-24 night (PRs 131, 136, 151–178) → toward v0.26.0 (unreleased; main carries breaking changes)
+## Batch — 2026-09-24 night (PRs 131, 136, 151–179) → toward v0.26.0 (unreleased; main carries breaking changes)
 - **Merged:**
   - PR151 packages: approval removed (human decision; declaring a package IS the trust decision) `e62b8f16`, plus the release-note follow-up `f0994882`.
   - PR153 docs for it `b97de554`.
@@ -87,6 +87,12 @@ decisions/ and referenced from here.
     - The panel appears iff the messaging provider declares `messaging:teams|join|leave`, and reads the arg name from the row. It decodes the teams document strictly; `receive: poll` reads "Checks this team's mail between tasks".
     - One action at a time, with latest-intent checks. Refusals are shown verbatim, the code behind Details.
     - The lead's native gate (a real Electron build against a stand-in provider) returned round 1: a refused join whose row vanished on the re-read lost its error. Round 2 keeps it at panel level with a "no longer offered" line until the next action or Refresh (10/10).
+  - PR179 kernel teams (t) `3c58a345` (squash tree verified; two rounds; merged by the lead on the human's direction, green Node 22 at the approved head).
+    - A soul's `team` is a label or a list, the first the primary. `defaults.byTeam` applies per label in order; differing entries → `E_TEAM_CONFLICT`, except a capability the soul names itself.
+    - `teams` `[{label, team, mapped, payload}]` in the preview, `inspect` and `instance.json.teams`, plus `OATS_TEAM_LABELS` / `OATS_TEAMS` / `OATS_TEAMS_SOURCE`. The merged payload stays the primary's.
+    - Live resolution for homes is two repo reads (host + soul repo), only for session start/restart, messaging-module commands/operations and inspect --home. Otherwise the record, marked `recorded`.
+    - One `unmapped-team-label` warning per label. Also fixed: a home's launch/retire hooks got an empty OATS_TEAM_LABEL/ID.
+    - Round 1 was returned: every in-home command paid a full workspace discovery (1.4–2.0 s vs ~0.1 s), the source marker was missing, and the warnings were per soul.
 - **taught us:**
   - (1) **Arm a merge watcher with the full approved oid, never "the current head".** #160's head moved twice after approval while mails crossed. The watcher's named-oid guard refused both mismatches, so nothing unreviewed merged. The loop ends with one FINAL mail per party (author and watcher) naming the full oid and "no pushes", and by ignoring the stale mails that follow.
   - (2) **A native gate must wait for the message, not for a spinner.** Preview in the rig is slow, and fixed waits produced false FAILs in both directions. Poll for the expected sentence with a bound.
