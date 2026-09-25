@@ -426,13 +426,14 @@ try {
   // for its own independent directory worker, then stages durable evidence.
   // memory-harvest is a CAPABILITY-DEFINED agent (oats.okf agents/): with no live instance carrying
   // the module, the kernel resolves it from the deployment's lock (locked package → fetched into
-  // <deployment>/.oats/modules/<cap>@<commit>/) and homes it under local-agents/.
+  // <deployment>/.oats/modules/<cap>@<commit>/) and homes it under <deployment>/agents/memory-harvest/instances/.
   const requested = boundary(["okf", "run-source", "--source", marker.source, "--manual", "--no-launch", "--soul", "probe", "--json"], inScope);
   assert.equal(requested.status, "ready");
   const workerMeta = readJson(join(requested.home, "instance.json"));
   assert.equal(workerMeta.launched, false);
   assert.equal(workerMeta.work, "directory");
   assert.equal(workerMeta.kind, "capability");
+  assert.equal(dirname(dirname(realpathSync(requested.home))), realpathSync(join(agentsRoot, "memory-harvest")), "a capability agent homes under the agents root");
   assert.equal(lstatSync(join(requested.home, "work")).isSymbolicLink(), false);
   assert.ok(!existsSync(join(requested.home, ".okf-source.json")), "service worker must not become another working-memory source");
   const workerWork = join(requested.home, "work");
@@ -451,7 +452,7 @@ try {
   assert.equal(completed.processed, true);
   assert.equal(readFileSync(join(accepted, "expert/decision.md"), "utf8"), concept);
   assert.deepEqual(boundary(["okf", "complete", "--source", marker.source, "--run", requested.run, "--soul", "probe", "--json"], inScope), completed, "completion receipt is idempotent");
-  // A capability agent homes under <deployment>/local-agents/<name>/instances/; retire through the agents root it belongs to.
+  // A capability agent homes under <deployment>/agents/<name>/instances/; retire through that agents root.
   core.retireInstance(agentsRoot, requested.instance, { home: requested.home });
   assert.ok(!existsSync(requested.home), "independent scaffold-only worker retired");
   // A fresh reader of the same soul sees the accepted concept; its modules are

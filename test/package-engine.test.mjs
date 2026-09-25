@@ -12,12 +12,12 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync,
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import {
-  acquirePackage, applyLegacyLockMigration, approveCapability, assertCapabilitySelfContained,
+  acquirePackage, approveCapability, assertCapabilitySelfContained,
   capabilityArtifactIntegrity, capabilityManifest, capabilityManifests, capabilityTrust,
-  copyTreeSafe, ensureInstalledGitignore, installedCapabilityDir, listInstalledPackages,
-  loadPackageManifestAt, materializeCapabilityDeps, migrateLegacyLock, normalizePackagePath,
+  copyTreeSafe, ensureInstalledGitignore, installedCapabilityDir, 
+  loadPackageManifestAt, materializeCapabilityDeps, normalizePackagePath,
   isCanonicalTemplatePath, packageIntegrity, parseLockFileStrict, parsePackageSource, platformVariantLockPackages,
-  readLockedConfigTemplates, readPackageLocks, removePackage, resolveOatsConfig, restorePackages,
+  readPackageLocks, resolveOatsConfig, 
   updatePackage, validateCapabilityLockEntry, validateLockEntry, writeCapabilityLock,
   writeCapabilityLockEntry, writePackageLock,
   CAPABILITY_INSTALLATION_FILE, DEFAULT_PACKAGE_PATH, LOCKFILE_VERSION, OATS_LOCK_FILE,
@@ -353,8 +353,6 @@ test("unsupported transitional package-root v2 is rejected centrally, with NO si
   // Rejection has no side effects: the bytes are untouched.
   const before = readFileSync(join(a, OATS_LOCK_FILE), "utf8");
   throwsCode(() => readPackageLocks(a), "invalid-lock", "read");
-  throwsCode(() => listInstalledPackages(a), "invalid-lock", "list");
-  throwsCode(() => restorePackages(a), "invalid-lock", "restore");
   assert.equal(readFileSync(join(a, OATS_LOCK_FILE), "utf8"), before, "no repair, no rewrite");
 });
 
@@ -862,11 +860,6 @@ test("an EMPTY v1 scope is refused too, and refused BEFORE the source is ever fe
   assert.equal(readFileSync(join(s, OATS_LOCK_FILE), "utf8"), lockBefore);
   assert.equal(existsSync(join(s, ".agents/capabilities/installed")), false);
   assert.ok(existsSync(join(repo, "oats-package.json")), "the source itself is untouched");
-  // The whole point of refusing: explicit migration is still the only way in.
-  applyLegacyLockMigration(s);
-  assert.equal(lockOf(s).lockfileVersion, 2);
-  acquirePackage(s, `file://${join(t, "repo")}@${commit}#oats-package`);
-  assert.ok(existsSync(artifact(s, "x.a")));
 });
 
 test("acquirePackage: catalog is identity/discovery only — resolution grants no trust and advances no lock", () => {
@@ -924,12 +917,6 @@ test(".oats-installation.json is deterministic, lock-derived, and reproducible u
   assert.equal(doc.capabilityPath, lock.capabilities["x.a"].path);
   assert.equal(doc.commit, lock.packages["x.p"].commit);
 
-  // A second projection of the same locked bytes is byte-identical.
-  const integrity = lock.capabilities["x.a"].integrity;
-  rmSync(artifact(s, "x.a"), { recursive: true, force: true });
-  const rep = restorePackages(s);
-  assert.equal(rep.find((x) => x.capability === "x.a").status, "restored");
-  assert.equal(capabilityArtifactIntegrity(artifact(s, "x.a")), integrity, "reprojection reproduces the artifact hash exactly");
   assert.equal(readFileSync(file, "utf8"), raw);
 });
 
@@ -950,77 +937,6 @@ test("tampering with provenance is integrity drift and revokes trust", () => {
 });
 
 // ---------- restore ----------
-
-test("restorePackages: ok when present, reprojects when missing, refuses drift, never advances", () => {
-  const t = temp();
-  const repo = pkgSource(join(t, "repo", "oats-package"), { package: "x.p" }, { "capabilities/a": { capability: "x.a" } });
-  const commit = gitify(join(t, "repo"));
-  const s = scope(t);
-  acquirePackage(s, `file://${join(t, "repo")}@${commit}#oats-package`);
-  const locked = JSON.parse(readFileSync(join(s, OATS_LOCK_FILE), "utf8"));
-
-  assert.equal(restorePackages(s)[0].status, "ok", "present + matching = ok");
-
-  rmSync(artifact(s, "x.a"), { recursive: true, force: true });
-  assert.equal(restorePackages(s).find((r) => r.capability === "x.a").status, "restored");
-  assert.deepEqual(JSON.parse(readFileSync(join(s, OATS_LOCK_FILE), "utf8")), locked, "restore never advances the lock");
-
-  // The upstream moves on: bare restore stays at the locked commit.
-  write(join(repo, "capabilities/a/new.md"), "moved on\n");
-  gitCommit(join(t, "repo"));
-  rmSync(artifact(s, "x.a"), { recursive: true, force: true });
-  restorePackages(s);
-  assert.equal(existsSync(join(artifact(s, "x.a"), "new.md")), false, "the exact locked commit is restored");
-
-  // Payload drift at the locked commit is refused.
-  const s2 = scope(t, "scope2");
-  const localSrc = pkgSource(join(t, "local"), { package: "x.local" }, { "capabilities/a": { capability: "x.localcap" } });
-  acquirePackage(s2, localSrc);
-  rmSync(artifact(s2, "x.localcap"), { recursive: true, force: true });
-  write(join(localSrc, "capabilities/a/drift.md"), "drift\n");
-  const failed = restorePackages(s2).find((r) => r.capability === "x.localcap");
-  assert.equal(failed.status, "failed");
-  assert.equal(failed.code, "integrity-drift");
-  assert.equal(existsSync(artifact(s2, "x.localcap")), false, "a failed restore installs nothing");
-});
-
-test("restorePackages: a provider that no longer exports the locked capability at the locked path fails closed", () => {
-  const t = temp();
-  const src = pkgSource(join(t, "src"), { package: "x.p" }, { "capabilities/a": { capability: "x.a" } });
-  const s = scope(t);
-  acquirePackage(s, src);
-  // Forge a capability row pointing at a path the package does not export.
-  const doc = lockOf(s);
-  doc.capabilities["x.a"].path = "capabilities/moved";
-  write(join(s, OATS_LOCK_FILE), JSON.stringify(doc, null, 2));
-  rmSync(artifact(s, "x.a"), { recursive: true, force: true });
-  const r = restorePackages(s).find((x) => x.capability === "x.a");
-  assert.equal(r.status, "failed");
-  assert.equal(r.code, "capability-list-mismatch");
-});
-
-test("restore preflight covers the COMPLETE visible chain before any mutation", () => {
-  const t = temp();
-  const outer = scope(t, "outer");
-  acquirePackage(outer, pkgSource(join(t, "src"), { package: "x.p" }, { "capabilities/a": { capability: "x.a" } }));
-  rmSync(artifact(outer, "x.a"), { recursive: true, force: true });
-  // A malformed INNER lock-only scope must fail before the outer artifact is touched.
-  const inner = join(outer, "inner");
-  mkdirSync(inner, { recursive: true });
-  write(join(inner, OATS_LOCK_FILE), "{ not json");
-  throwsCode(() => restorePackages(inner), "invalid-lock", "malformed inner lock");
-  assert.equal(existsSync(artifact(outer, "x.a")), false, "the outer artifact was never restored");
-});
-
-test("restorePackages reports an unconverted v1 scope as legacy with its migration action", () => {
-  const t = temp();
-  const s = scope(t);
-  write(join(s, OATS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, capabilities: {} }));
-  const r = restorePackages(s);
-  assert.equal(r[0].status, "legacy");
-  assert.equal(r[0].lockfileVersion, 1);
-  assert.match(r[0].reason, /oats migrate/);
-});
 
 // ---------- discovery, activation, trust ----------
 
@@ -1319,139 +1235,7 @@ test("updatePackage: an identity change fails PRE-COMMIT — nothing lands under
   assert.equal(existsSync(join(s, ".agents/capabilities/installed/x.renamed")), false);
 });
 
-test("removePackage: refuses while a dependent package or a config reference exists, then removes cleanly", () => {
-  const t = temp();
-  const dep = pkgSource(join(t, "dep"), { package: "x.dep" }, { "capabilities/d": { capability: "x.d" } });
-  const root = pkgSource(join(t, "root"), { package: "x.root", dependencies: [dep] }, { "capabilities/r": { capability: "x.r" } });
-  const s = scope(t, "scope", "name: t\ncapabilities:\n  additive:\n    x.r:\n      global: true\n");
-  acquirePackage(s, root);
-
-  const blockedByDependent = throwsCode(() => removePackage(s, "x.dep"), "remove-blocked", "dependent package");
-  assert.match(blockedByDependent.message, /x\.root/);
-  const blockedByConfig = throwsCode(() => removePackage(s, "x.root"), "remove-blocked", "config reference");
-  assert.match(blockedByConfig.message, /x\.r/);
-
-  write(join(s, "oats-config.yaml"), "name: t\n");
-  const r = removePackage(s, "x.root");
-  assert.deepEqual(r.capabilities, ["x.r"]);
-  assert.equal(existsSync(artifact(s, "x.r")), false);
-  assert.equal(lockOf(s).packages["x.root"], undefined);
-  assert.equal(lockOf(s).capabilities["x.r"], undefined);
-  assert.ok(lockOf(s).packages["x.dep"], "unrelated packages are untouched");
-  assert.ok(existsSync(artifact(s, "x.d")));
-  removePackage(s, "x.dep"); // now unblocked
-  assert.deepEqual(lockOf(s), { lockfileVersion: 2, packages: {}, capabilities: {} });
-});
-
 // ---------- config templates ----------
-
-test("readLockedConfigTemplates: exact locked bytes, no persisted package root, typed unknown template", () => {
-  const t = temp();
-  const src = pkgSource(join(t, "src"), { package: "x.p", configTemplates: { default: { path: "config-templates/default.yaml", default: true, description: "recommended" }, minimal: { path: "config-templates/minimal.yaml" } } }, { "capabilities/a": { capability: "x.a" } });
-  write(join(src, "config-templates/default.yaml"), "name: full\n");
-  write(join(src, "config-templates/minimal.yaml"), "name: minimal\n");
-  const s = scope(t);
-  const acq = acquirePackage(s, src);
-
-  const all = readLockedConfigTemplates(s, "x.p");
-  assert.deepEqual(all.templates.map((x) => x.template).sort(), ["default", "minimal"]);
-  assert.equal(all.integrity, lockOf(s).packages["x.p"].integrity, "the payload integrity is verified against the lock");
-  assert.equal(all.commit, "local");
-  const one = readLockedConfigTemplates(s, "x.p", { template: "default" });
-  assert.equal(one.templates[0].content, "name: full\n");
-  assert.equal(one.templates[0].description, "recommended");
-  assert.equal(one.templates[0].default, true);
-  // The digest matches what acquisition already handed the config lane.
-  const inline = acq.configTemplates.find((x) => x.template === "default");
-  assert.equal(inline.contentIntegrity, one.templates[0].contentIntegrity, "same bytes, same digest, no second fetch needed");
-
-  throwsCode(() => readLockedConfigTemplates(s, "x.p", { template: "nope" }), "unknown-config-template", "unknown template");
-  throwsCode(() => readLockedConfigTemplates(s, "not.locked"), "unknown-capability", "unlocked package");
-  // Nothing persisted, nothing mutated.
-  assert.equal(existsSync(join(s, ".agents", "packages")), false);
-  assert.deepEqual(readdirSync(join(s, ".agents/capabilities/installed")), ["x.a"]);
-});
-
-test("both template readers produce ONE descriptor shape — legacySpelling sits on every item, canonical and legacy alike", () => {
-  const t = temp();
-  // Canonical spelling.
-  const modern = pkgSource(join(t, "modern"), { package: "x.modern", configTemplates: { default: { path: "config-templates/d.yaml", default: true, description: "recommended" }, minimal: { path: "config-templates/m.yaml" } } }, { "capabilities/a": { capability: "x.a" } });
-  write(join(modern, "config-templates/d.yaml"), "name: full\n");
-  write(join(modern, "config-templates/m.yaml"), "name: minimal\n");
-  const s = scope(t);
-  const acq = acquirePackage(s, modern);
-  const locked = readLockedConfigTemplates(s, "x.modern");
-  const KEYS = ["content", "contentIntegrity", "default", "legacySpelling", "path", "template"]; // sorted
-  for (const item of locked.templates) {
-    assert.equal(Object.hasOwn(item, "legacySpelling"), true, `${item.template}: legacySpelling is per-descriptor, not root-only`);
-    assert.equal(item.legacySpelling, false);
-  }
-  assert.equal(locked.legacySpelling, false, "the root value stays available as a package-level convenience");
-  // Field-for-field agreement between the two readers: acquisition's descriptor
-  // is the locked reader's plus `package`. A consumer must never need to know
-  // which reader produced a descriptor.
-  for (const item of locked.templates) {
-    const staged = acq.configTemplates.find((x) => x.template === item.template);
-    assert.deepEqual(Object.keys(staged).sort(), ["package", ...Object.keys(item)].sort(), `${item.template}: same fields`);
-    assert.deepEqual({ ...staged, package: undefined }, { ...item, package: undefined }, `${item.template}: same values`);
-  }
-  assert.deepEqual(Object.keys(locked.templates.find((x) => x.template === "default")).sort(), [...KEYS, "description"].sort());
-  assert.deepEqual(Object.keys(locked.templates.find((x) => x.template === "minimal")).sort(), KEYS, "an absent description is absent, not undefined");
-
-  // Legacy spelling: same shape, flag flipped, on every item.
-  const d = join(t, "legacy");
-  write(join(d, "capabilities/a/oats.json"), JSON.stringify({ capability: "x.l", version: "1.0.0", description: "d" }));
-  write(join(d, "configs/default/oats-config.yaml"), "name: legacy\n");
-  write(join(d, "oats-package.json"), JSON.stringify({ package: "x.legacy", version: "1.0.0", description: "d", compatibility: { oats: ">=0.1.0" }, capabilities: ["capabilities/a"], configs: { default: { path: "configs/default/oats-config.yaml", default: true } } }));
-  const s2 = scope(t, "scope2");
-  const acq2 = acquirePackage(s2, d);
-  const locked2 = readLockedConfigTemplates(s2, "x.legacy");
-  assert.equal(locked2.templates[0].legacySpelling, true);
-  assert.equal(acq2.configTemplates[0].legacySpelling, true);
-  assert.deepEqual(Object.keys(locked2.templates[0]).sort(), KEYS);
-});
-
-test("contentIntegrity digests the EXACT file bytes, and undecodable template bytes fail closed", () => {
-  const t = temp();
-  const src = pkgSource(join(t, "src"), { package: "x.p", configTemplates: { default: { path: "config-templates/d.yaml", default: true } } }, { "capabilities/a": { capability: "x.a" } });
-  // Bytes chosen so a lossy read would differ from the file: a lone CR, a BOM,
-  // a NUL and a multi-byte character all survive an exact-byte digest.
-  const bytes = Buffer.from([0xef, 0xbb, 0xbf, 0x6e, 0x61, 0x6d, 0x65, 0x3a, 0x20, 0xc3, 0xa9, 0x00, 0x0d, 0x0a]);
-  write(join(src, "config-templates/d.yaml"), "");
-  writeFileSync(join(src, "config-templates/d.yaml"), bytes);
-  const expected = `sha256-${createHash("sha256").update(bytes).digest("hex")}`;
-  const s = scope(t);
-  const acq = acquirePackage(s, src);
-  const locked = readLockedConfigTemplates(s, "x.p");
-  assert.equal(acq.configTemplates[0].contentIntegrity, expected, "acquisition digests the file bytes");
-  assert.equal(locked.templates[0].contentIntegrity, expected, "the locked reader agrees, byte for byte");
-  // The digest must reproduce from the bytes an adopter would write back.
-  assert.equal(`sha256-${createHash("sha256").update(Buffer.from(locked.templates[0].content, "utf8")).digest("hex")}`, expected, "content round-trips to the same bytes");
-
-  // Invalid UTF-8 is a malformed package, never silently repaired to U+FFFD —
-  // a replacement-character digest is one nothing can reproduce from the file.
-  const bad = pkgSource(join(t, "bad"), { package: "x.bad", configTemplates: { default: { path: "config-templates/d.yaml" } } }, { "capabilities/a": { capability: "x.badcap" } });
-  write(join(bad, "config-templates/d.yaml"), "");
-  writeFileSync(join(bad, "config-templates/d.yaml"), Buffer.from([0x6e, 0x3a, 0x20, 0xff, 0xfe, 0x0a]));
-  const s2 = scope(t, "scope2");
-  const e = throwsCode(() => acquirePackage(s2, bad), "invalid-package-manifest", "invalid UTF-8 template");
-  assert.match(e.message, /UTF-8/);
-  assert.equal(existsSync(join(s2, OATS_LOCK_FILE)), false, "the package never installed");
-  assert.equal(existsSync(artifact(s2, "x.badcap")), false);
-});
-
-test("readLockedConfigTemplates normalizes the deprecated configs spelling and flags it", () => {
-  const t = temp();
-  const d = join(t, "legacy");
-  write(join(d, "capabilities/a/oats.json"), JSON.stringify({ capability: "x.a", version: "1.0.0", description: "d" }));
-  write(join(d, "configs/default/oats-config.yaml"), "name: legacy\n");
-  write(join(d, "oats-package.json"), JSON.stringify({ package: "x.legacy", version: "1.0.0", description: "d", compatibility: { oats: ">=0.1.0" }, capabilities: ["capabilities/a"], configs: { default: { path: "configs/default/oats-config.yaml", default: true } } }));
-  const s = scope(t);
-  acquirePackage(s, d);
-  const r = readLockedConfigTemplates(s, "x.legacy");
-  assert.equal(r.legacySpelling, true);
-  assert.equal(r.templates[0].content, "name: legacy\n");
-});
 
 // ---------- gitignore ----------
 
@@ -1609,21 +1393,6 @@ test("anchor pruning removes only what the operation created — pre-existing em
   const ownedBefore = treeFingerprint(owned);
   throwsCode(() => acquirePackage(owned, bad), "capability-not-self-contained", "owned/adopted state");
   assert.deepEqual(treeFingerprint(owned), ownedBefore, "owned/ and adopted/ survive untouched");
-
-  // A SUCCESSFUL acquire keeps its anchors: pruning is a no-op the moment the
-  // store is non-empty. Removing the last package empties the store but does
-  // NOT delete it — `installed/` was created by the acquire, not by the remove,
-  // and the rule is "only what THIS operation created". A later refused acquire
-  // at that scope must then leave the now-pre-existing empty store alone.
-  const live = scope(t, "live");
-  const good = pkgSource(join(t, "good"), { package: "x.good" }, { "capabilities/a": { capability: "x.a" } });
-  acquirePackage(live, good);
-  assert.ok(existsSync(artifact(live, "x.a")), "the store survives a successful acquire");
-  removePackage(live, "x.good");
-  assert.deepEqual(readdirSync(join(live, ".agents/capabilities/installed")), [], "the store is emptied");
-  const emptied = treeFingerprint(live);
-  throwsCode(() => acquirePackage(live, bad), "capability-not-self-contained", "refusal at a scope with an emptied store");
-  assert.deepEqual(treeFingerprint(live), emptied, "the emptied store is now pre-existing state, and survives the refusal");
 });
 
 test("assertCommittable exposes the declared fundamental layer, so a template binding the root package's OWN capability validates pre-commit", () => {
@@ -1843,169 +1612,12 @@ test("a materialized artifact IS its own containment boundary, and tampering wit
   assert.equal(realpathSync(m._dir), realpathSync(artifact(s, "x.a")));
   assert.equal(realpathSync(m._dir).startsWith(realpathSync(join(s, ".agents/capabilities/installed"))), true);
   // A link planted into the installed artifact that escapes it is drift: the
-  // artifact hash covers every byte, so restore refuses to call it ok.
+  // artifact hash covers every byte.
   symlinkSync(t, join(artifact(s, "x.a"), "skills/s/escape"));
   assert.notEqual(capabilityArtifactIntegrity(artifact(s, "x.a")), lockOf(s).capabilities["x.a"].integrity);
-  assert.equal(restorePackages(s).find((r) => r.capability === "x.a").status, "restored", "a tampered artifact is reprojected from the locked source");
-  assert.equal(existsSync(join(artifact(s, "x.a"), "skills/s/escape")), false);
-  assert.equal(capabilityArtifactIntegrity(artifact(s, "x.a")), lockOf(s).capabilities["x.a"].integrity);
 });
 
 function hasNpm() {
   return spawnSync("npm", ["--version"], { encoding: "utf8" }).status === 0;
 }
 
-// ---------- v1 migration ----------
-
-test("migrate: an empty v1 lock reports a FORMAT conversion and converts only when applied", () => {
-  const t = temp();
-  const s = scope(t);
-  write(join(s, OATS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, capabilities: {} }));
-  const plan = migrateLegacyLock(s);
-  assert.equal(plan.from, 1);
-  assert.equal(plan.convertible, true);
-  assert.equal(plan.plan[0].action, "convert-format");
-  assert.equal(lockOf(s).lockfileVersion, 1, "planning converts nothing");
-  const r = applyLegacyLockMigration(s);
-  assert.equal(r.formatConverted, true);
-  assert.deepEqual(lockOf(s), { lockfileVersion: 2, packages: {}, capabilities: {} });
-});
-
-test("migrate: a v1 scope converts wholly into materialized capabilities, and trust is re-earned", () => {
-  const t = temp();
-  const repo = pkgSource(join(t, "repo", "oats-package"), { package: "x.official" }, { "capabilities/a": { capability: "x.a", commands: { go: "bin/go.mjs run" } } });
-  write(join(repo, "capabilities/a/bin/go.mjs"), "//\n");
-  const commit = gitify(join(t, "repo"));
-  const catalog = (id) => (id === "x.official" ? { url: `file://${join(t, "repo")}`, ref: commit, path: "oats-package" } : undefined);
-  const s = scope(t, "scope", "name: t\ncapabilities:\n  additive:\n    x.a:\n      global: true\n      from: installed\n");
-  // A v1 lock with an approved marketplace capability.
-  write(join(s, OATS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, capabilities: { "x.a": { source: "marketplace:x.a@1.0.0", version: "1.0.0", integrity: `sha256-${"a".repeat(64)}`, trustedExecutables: true } } }, null, 2));
-
-  const r = applyLegacyLockMigration(s, { catalog, aliases: { "x.a": "x.official" }, official: true });
-  assert.deepEqual(r.migrated.map((m) => m.capability), ["x.a"]);
-  assert.equal(lockOf(s).lockfileVersion, 2);
-  assert.equal(lockOf(s).capabilities["x.a"].package, "x.official");
-  assert.equal(lockOf(s).capabilities["x.a"].trusted, false, "v1 approval is NEVER carried over — different bytes");
-  assert.deepEqual(r.trust.map((x) => x.capability), ["x.a"], "the surfaces to re-approve are named");
-  assert.ok(existsSync(artifact(s, "x.a")));
-  assert.deepEqual(activeIds(s), ["x.a"], "activation is preserved — `from: installed` still means installed");
-});
-
-test("migrate: one unmappable entry keeps the WHOLE scope on v1, byte-identical, and it keeps working", () => {
-  const t = temp();
-  const s = scope(t);
-  const v1 = { lockfileVersion: 1, capabilities: { "x.mappable": { source: "marketplace:x.mappable@1.0.0", version: "1.0.0", integrity: `sha256-${"a".repeat(64)}` }, "x.orphan": { source: "marketplace:x.orphan@1.0.0", version: "1.0.0", integrity: `sha256-${"b".repeat(64)}` } } };
-  write(join(s, OATS_LOCK_FILE), JSON.stringify(v1, null, 2));
-  const before = readFileSync(join(s, OATS_LOCK_FILE), "utf8");
-  const catalog = (id) => (id === "x.mappable" ? { url: "file:///nowhere", ref: "0".repeat(40) } : undefined);
-
-  const plan = migrateLegacyLock(s, { catalog });
-  assert.equal(plan.convertible, false, "there is no residue container, so partial conversion is not an option");
-  assert.ok(plan.plan.some((p) => p.capabilityId === "x.orphan" && p.action === "manual"));
-
-  throwsCode(() => applyLegacyLockMigration(s, { catalog }), "legacy-lock", "unmappable entry");
-  assert.equal(readFileSync(join(s, OATS_LOCK_FILE), "utf8"), before, "the scope stays v1, byte-identical");
-});
-
-test("migrate: guided official mode refuses a MIXED scope — `retain` clears convertible and blocks the whole conversion", () => {
-  const t = temp();
-  const repo = pkgSource(join(t, "repo", "oats-package"), { package: "x.official" }, { "capabilities/a": { capability: "x.a", commands: { go: "bin/go.mjs run" } } });
-  write(join(repo, "capabilities/a/bin/go.mjs"), "//\n");
-  const commit = gitify(join(t, "repo"));
-  const catalog = (id) => (id === "x.official" ? { url: `file://${join(t, "repo")}`, ref: commit, path: "oats-package" } : undefined);
-  const aliases = { "x.a": "x.official" };
-
-  // One official capability the catalog CAN map, beside a git: and a path:
-  // entry the guided mode keeps unchanged. Both source kinds are pinned: the
-  // refusal must not depend on which one appears.
-  const s = scope(t, "scope", "name: t\ncapabilities:\n  additive:\n    x.a:\n      global: true\n      from: installed\n");
-  const v1 = {
-    lockfileVersion: 1,
-    capabilities: {
-      "x.a": { source: "marketplace:x.a@1.0.0", version: "1.0.0", integrity: `sha256-${"a".repeat(64)}` },
-      "x.fromgit": { source: "git:https://host/custom.git", version: "0.3.0", integrity: `sha256-${"b".repeat(64)}` },
-      "x.frompath": { source: `path:${join(t, "vendor")}`, version: "0.2.0", integrity: `sha256-${"c".repeat(64)}` },
-    },
-  };
-  write(join(s, OATS_LOCK_FILE), JSON.stringify(v1, null, 2));
-  const before = treeFingerprint(s);
-
-  // PLAN: retain clears convertible exactly like hold and manual do. Without
-  // this the apply below would convert x.a and drop the other two rows.
-  const plan = migrateLegacyLock(s, { catalog, aliases, official: true });
-  assert.equal(plan.convertible, false, "a retained entry has nowhere to live in a v2 lock");
-  assert.deepEqual(plan.plan.filter((p) => p.action === "retain").map((p) => p.capabilityId).sort(), ["x.frompath", "x.fromgit"].sort());
-  assert.ok(plan.plan.some((p) => p.capabilityId === "x.a" && p.action === "acquire"), "the official entry IS mappable — that is what makes this mixed");
-
-  // APPLY: refused before any lock, artifact or ignore mutation.
-  const e = throwsCode(() => applyLegacyLockMigration(s, { catalog, aliases, official: true }), "legacy-lock", "mixed scope");
-  for (const id of ["x.fromgit", "x.frompath"]) assert.ok(e.message.includes(id), e.message);
-  assert.match(e.message, /NOTHING was changed and the whole v1 scope stays usable/);
-  assert.match(e.message, /without --official/, "both retained sources are package-mappable, so plain migrate is named");
-
-  // Byte-identical: the whole tree, not just the lock — no partial acquisition,
-  // no ignore file, no anchor directory left behind.
-  assert.deepEqual(treeFingerprint(s), before, "a refused mixed scope is byte-identical");
-  assert.equal(existsSync(artifact(s, "x.a")), false, "not one official artifact was materialized");
-  assert.equal(lockOf(s).lockfileVersion, 1);
-
-  // No official work at all: a truthful no-op that REPORTS what it retained.
-  const s2 = scope(t, "scope2");
-  write(join(s2, OATS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, capabilities: { "x.fromgit": v1.capabilities["x.fromgit"] } }, null, 2));
-  const skipped = applyLegacyLockMigration(s2, { catalog, aliases, official: true });
-  assert.equal(skipped.skipped, true);
-  assert.deepEqual(skipped.retained, ["x.fromgit"]);
-  assert.equal(Object.hasOwn(skipped, "residue"), false, "there is no residue container, so no result may name one");
-  assert.equal(lockOf(s2).lockfileVersion, 1);
-
-  // And no result shape anywhere claims residue.
-  const s3 = scope(t, "scope3");
-  write(join(s3, OATS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, capabilities: {} }));
-  assert.equal(Object.hasOwn(applyLegacyLockMigration(s3), "residue"), false);
-  rmSync(t, { recursive: true, force: true });
-});
-
-test("migrate: guided official mode holds an unmappable official capability and leaves the scope untouched", () => {
-  const t = temp();
-  const s = scope(t);
-  write(join(s, OATS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, capabilities: { "x.a": { source: "marketplace:x.a@1.0.0", version: "1.0.0", integrity: `sha256-${"a".repeat(64)}` } } }, null, 2));
-  const before = readFileSync(join(s, OATS_LOCK_FILE), "utf8");
-  throwsCode(() => applyLegacyLockMigration(s, { catalog: () => undefined, official: true }), "official-mapping-unavailable", "no catalog mapping");
-  assert.equal(readFileSync(join(s, OATS_LOCK_FILE), "utf8"), before);
-});
-
-test("migrate: a failed conversion restores the original v1 lock byte-identically and removes what it created", () => {
-  const t = temp();
-  // Two capabilities from two packages; the second package is broken.
-  const goodRepo = pkgSource(join(t, "good", "oats-package"), { package: "x.good" }, { "capabilities/a": { capability: "x.a" } });
-  const goodCommit = gitify(join(t, "good"));
-  const badRepo = join(t, "bad", "oats-package");
-  write(join(badRepo, "capabilities/b/oats.json"), JSON.stringify({ capability: "x.b", version: "1.0.0", description: "d", skills: ["missing"] }));
-  write(join(badRepo, "oats-package.json"), JSON.stringify({ package: "x.bad", version: "1.0.0", description: "d", compatibility: { oats: ">=0.1.0" }, capabilities: ["capabilities/b"] }));
-  const badCommit = gitify(join(t, "bad"));
-  const catalog = (id) => ({
-    "x.good": { url: `file://${join(t, "good")}`, ref: goodCommit, path: "oats-package" },
-    "x.bad": { url: `file://${join(t, "bad")}`, ref: badCommit, path: "oats-package" },
-  }[id]);
-  const aliases = { "x.a": "x.good", "x.b": "x.bad" };
-  const s = scope(t);
-  const v1 = { lockfileVersion: 1, capabilities: { "x.a": { source: "marketplace:x.a@1.0.0", version: "1.0.0", integrity: `sha256-${"a".repeat(64)}` }, "x.b": { source: "marketplace:x.b@1.0.0", version: "1.0.0", integrity: `sha256-${"b".repeat(64)}` } } };
-  write(join(s, OATS_LOCK_FILE), JSON.stringify(v1, null, 2));
-  const before = readFileSync(join(s, OATS_LOCK_FILE), "utf8");
-
-  assert.throws(() => applyLegacyLockMigration(s, { catalog, aliases, official: true }));
-  assert.equal(readFileSync(join(s, OATS_LOCK_FILE), "utf8"), before, "original v1 lock restored byte-identically");
-  const installed = join(s, ".agents/capabilities/installed");
-  assert.deepEqual(existsSync(installed) ? readdirSync(installed) : [], [], "every artifact the conversion created was removed");
-});
-
-test("migrate: a v1 lock with only custom sources is left exactly as it is by the guided command", () => {
-  const t = temp();
-  const s = scope(t);
-  const v1 = { lockfileVersion: 1, capabilities: { "x.custom": { source: "git:https://example.invalid/x.git", version: "1.0.0", integrity: `sha256-${"a".repeat(64)}` } } };
-  write(join(s, OATS_LOCK_FILE), JSON.stringify(v1, null, 2));
-  const before = readFileSync(join(s, OATS_LOCK_FILE), "utf8");
-  const r = applyLegacyLockMigration(s, { catalog: () => undefined, official: true });
-  assert.equal(r.skipped, true);
-  assert.equal(readFileSync(join(s, OATS_LOCK_FILE), "utf8"), before);
-});

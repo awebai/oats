@@ -318,23 +318,14 @@ test("session CLI uses original Herdr receipt and rejects metadata drift", () =>
   assert.equal(JSON.parse(result.stdout).error.code, "E_RUNTIME_AUTHORITY_MISMATCH");
 });
 
-test("create persists both yolo choices in the new soul", () => {
-  const f = fixture();
-  for (const [name, flag, value] of [["yes", "--yolo", "true"], ["no", "--no-yolo", "false"]]) {
-    const r = f.run(["create", name, "--local", "--repo", f.repo, flag]);
-    assert.equal(r.status, 0, r.stdout + r.stderr);
-    const soul = JSON.parse(r.stdout).soul;
-    assert.match(readFileSync(join(soul, "soul.yaml"), "utf8"), new RegExp(`yolo: ${value}`));
-  }
-});
-test("new spawn flags fail with actionable argument errors before local upsert", () => {
+test("bad spawn flags and the removed local-soul flags fail as argument errors before anything is written", () => {
   const f = fixture();
   const instructions = join(f.base, "instructions.md"); write(instructions, "probe");
-  for (const flags of [["--yolo", "--no-yolo"], ["--backend"], ["--herdr-socket"]]) {
-    const r = f.run(["spawn", "new-local", "--instructions-file", instructions, ...flags]);
+  for (const flags of [["--yolo", "--no-yolo"], ["--backend"], ["--herdr-socket"], ["--instructions-file", instructions], ["--def-file", instructions]]) {
+    const r = f.run(["spawn", "dev", "--purpose", "flags", ...flags]);
     assert.notEqual(r.status, 0);
-    assert.equal(JSON.parse(r.stdout).error.code, "E_BAD_ARGS");
-    assert.equal(existsSync(join(f.base, "local-agents", "new-local")), false);
+    assert.equal(JSON.parse(r.stdout).error.code, "E_BAD_ARGS", flags.join(" "));
+    assert.equal(existsSync(join(f.root, "dev", "instances", "dev-flags")), false);
   }
 });
 test("status uses the host Herdr executable, never the mutable metadata binary", () => {

@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { createAgent, upsertLocalAgent, findAgent, composeInstanceAgentsMd, planInstanceResources, spawnInstance, retireInstance, parseYamlNested } from '../lib/core.mjs';
+import { findAgent, composeInstanceAgentsMd, planInstanceResources, spawnInstance, retireInstance, parseYamlNested } from '../lib/core.mjs';
 import { inertRuntimePath } from './helpers/runtime-stub.mjs';
 const CLI = fileURLToPath(new URL('../bin/oats.mjs', import.meta.url));
 const SOURCE = 'git:https://catalog.invalid/operations.git@v1.2.3#distribution';
@@ -23,34 +23,18 @@ function fixture(t) {
   const definition = soul => parseYamlNested(readFileSync(join(soul, 'soul.yaml'), 'utf8'));
   return { base, context, root, bin, catalog, write, run, definition };
 }
-
-test('creation writes the actual official alias/source and local updates preserve explicit requirements or removal', t => {
-  const f = fixture(t), cli = f.run(['create', 'example', '--work', 'directory', '--json']);
-  assert.equal(cli.status, 0, cli.stdout + cli.stderr);
-  const created = JSON.parse(cli.stdout), soul = created.soul;
-  assert.equal(f.definition(soul).requires.capabilities['oats.core'].source, SOURCE);
-  assert.deepEqual(created.notes.map(n => n.code), ["next-step"], "a declared, inactive oats.core names its activation step"); assert.equal(existsSync(join(f.context, '.agents/capabilities/installed')), false, 'declaration is not acquisition');
-  const local = upsertLocalAgent(f.root, { name: 'scratch', instructions: '# scratch', work: 'directory', runtime: 'claude' });
-  const file = join(local._dir, 'soul/soul.yaml');
-  assert.equal(f.definition(dirname(file)).requires.capabilities['oats.core'].source, SOURCE);
-  f.write(file, readFileSync(file, 'utf8').replace(/^requires:.*\n/m, 'requires: {capabilities: {example.extra: {source: "repo:extra"}}}\n'));
-  upsertLocalAgent(f.root, { name: 'scratch', instructions: '# updated' });
-  assert.deepEqual(f.definition(dirname(file)).requires, { capabilities: { 'example.extra': { source: 'repo:extra' } } }, 'update must not re-add removed default or erase other requirements');
-});
-
-test('creation opt-out omits the dependency and missing official publication returns a configuration note, not an invented source', t => {
-  const f = fixture(t), opted = f.run(['create', 'unaware', '--no-oats-core', '--work', 'directory', '--json']);
-  assert.equal(opted.status, 0, opted.stderr);
-  assert.equal(f.definition(JSON.parse(opted.stdout).soul).requires, undefined); assert.equal(JSON.parse(opted.stdout).notes, undefined);
-  f.write(f.catalog, { packages: {} });
-  const missing = f.run(['create', 'waiting', '--work', 'directory', '--json']);
-  assert.equal(missing.status, 0, missing.stderr);
-  const result = JSON.parse(missing.stdout);
-  assert.equal(result.notes[0].code, 'needs-configuration'); assert.equal(f.definition(result.soul).requires, undefined);
-  const text = f.run(['create', 'waiting-text', '--work', 'directory']);
-  assert.equal(text.status, 0); assert.match(text.stderr, /needs-configuration.*oats.core/);
-  assert.match(f.run(['create', '--help']).stdout, /--no-oats-core/);
-});
+/** Author a soul as files (souls are authored in a member repository; `oats create` is gone).
+ *  `oatsCore` (default true) declares oats.core from the fixture catalog, as a soul template would. */
+function authorSoul(root, { name, description, repo, work, runtime, model, oatsCore = true }) {
+  const soul = join(root, name, 'soul');
+  mkdirSync(soul, { recursive: true }); mkdirSync(join(root, name, 'instances'), { recursive: true });
+  const fields = { name, kind: 'persistent', description, repo, work: work || 'checkout', runtime: runtime || 'pi', model };
+  writeFileSync(join(soul, 'soul.yaml'), Object.entries(fields).filter(([, v]) => v !== undefined).map(([k, v]) => `${k}: ${v}\n`).join('')
+    + (oatsCore ? `requires: ${JSON.stringify({ capabilities: { 'oats.core': { source: SOURCE } } })}\n` : ''));
+  writeFileSync(join(soul, 'AGENTS.md'), `# ${name}\n`);
+  symlinkSync('AGENTS.md', join(soul, 'CLAUDE.md'));
+  return { agent: name, soul };
+}
 
 test('declared oats.core replaces legacy operational injection and skills through preflight and actual scaffold, not boundary briefings', t => {
   const f = fixture(t), cap = join(f.context, '.agents/capabilities/owned/core');
@@ -58,7 +42,7 @@ test('declared oats.core replaces legacy operational injection and skills throug
   f.write(join(cap, 'inject.md'), 'CAPABILITY-OPERATIONS-ONCE');
   f.write(join(cap, 'skills/oats-operate/SKILL.md'), '# Inert operate skill\n');
   f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n  additive:\n    oats.core:\n      global: true\n');
-  const created = createAgent(f.root, { name: 'operator', work: 'directory', runtime: 'claude' });
+  const created = authorSoul(f.root, { name: 'operator', work: 'directory', runtime: 'claude' });
   const bytes = readFileSync(join(created.soul, 'soul.yaml'), 'utf8'), agent = findAgent(f.root, 'operator');
   const composed = composeInstanceAgentsMd(created.soul, f.context, 'operator', 'directory', 'persistent');
   assert.equal(composed.oatsCoreDeclared, true); assert.equal(composed.blocks.some(b => b.source === 'kernel:oats'), false);
@@ -86,7 +70,7 @@ for (const declared of [['oats.setup'], ['oats.core', 'oats.setup']]) {
       for (const name of skillNames[id]) f.write(join(cap, 'skills', name, 'SKILL.md'), `# ${name}\nOwned by ${id}, not kernel.\n`);
     }
     f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n  additive:\n' + declared.map(id => `    ${id}:\n      global: true\n`).join(''));
-    const created = createAgent(f.root, { name: 'configured', work: 'directory', runtime: 'claude', oatsCore: false });
+    const created = authorSoul(f.root, { name: 'configured', work: 'directory', runtime: 'claude', oatsCore: false });
     const file = join(created.soul, 'soul.yaml');
     f.write(file, readFileSync(file, 'utf8') + `requires: ${JSON.stringify({ capabilities: Object.fromEntries(declared.map(id => [id, { source: 'repo:oats-package' }])) })}\n`);
     const agent = findAgent(f.root, 'configured'), composition = composeInstanceAgentsMd(created.soul, f.context, 'configured', 'directory', 'persistent');
@@ -107,7 +91,7 @@ for (const declared of [['oats.setup'], ['oats.core', 'oats.setup']]) {
 }
 
 test('doctor reports absent oats.core informationally and preserves legacy composition for the transition', t => {
-  const f = fixture(t), created = createAgent(f.root, { name: 'legacy', work: 'directory', oatsCore: false });
+  const f = fixture(t), created = authorSoul(f.root, { name: 'legacy', work: 'directory', oatsCore: false });
   const before = readFileSync(join(created.soul, 'soul.yaml'), 'utf8'), message = 'soul legacy has no oats.core capability; kernel-shipped operational skills are deprecated';
   const text = f.run(['doctor', f.context, '--soul', 'legacy']); assert.equal(text.status, 0, text.stderr); assert.ok(text.stdout.includes(message));
   const json = f.run(['doctor', f.context, '--soul', 'legacy', '--json']); assert.equal(json.status, 0, json.stderr);
@@ -119,15 +103,11 @@ test('doctor reports absent oats.core informationally and preserves legacy compo
   assert.equal(readFileSync(join(created.soul, 'soul.yaml'), 'utf8'), before);
 });
 
-test('declared oats.core that is NOT active refuses spawn with the remedy (no hollow agent), create says the next step, and removing the declaration opts out', t => {
-  // Second-operator finding (0.24.6): create declares oats.core, composition
+test('declared oats.core that is NOT active refuses spawn with the remedy (no hollow agent), and removing the declaration opts out', t => {
+  // Second-operator finding (0.24.6): a soul declares oats.core, composition
   // suppresses the kernel skills, nothing activates the replacement, spawn
   // succeeded with an EMPTY skill set and no warning.
-  const f = fixture(t), cli = f.run(['create', 'plain', '--work', 'directory', '--runtime', 'claude', '--json']);
-  assert.equal(cli.status, 0, cli.stdout + cli.stderr); const created = JSON.parse(cli.stdout);
-  assert.deepEqual(created.declaredCapabilities, ['oats.core']);
-  // Phase B (CLI L1): the remedy names the v2 path (packages: + soul.yaml capabilities: from), not the removed `oats use`.
-  assert.ok(created.notes.some(n => n.code === 'next-step' && /oats\.core/.test(n.message) && /workspace model v2/.test(n.message) && !/oats use/.test(n.message)), 'create names the activation step before spawn');
+  const f = fixture(t), created = authorSoul(f.root, { name: 'plain', work: 'directory', runtime: 'claude' });
   const agent = findAgent(f.root, 'plain');
   assert.throws(() => planInstanceResources({ resolved: composeInstanceAgentsMd(created.soul, f.context, 'plain', 'directory', 'persistent').resolved, soulDir: created.soul, agent, contextDir: f.context }),
     // Phase C (M16): the remedy names the workspace-model path (oats-local.yaml + oats sync), never the removed `oats use` / `oats install`.
@@ -156,7 +136,7 @@ test('K5 readiness: quartet derived from inspect facts — installed/trusted/con
   f.write(join(cap, 'oats.json'), { capability: 'oats.core', version: '1.0.0', description: 'Inert composition fixture', inject: 'inject.md', skills: ['skills'] });
   f.write(join(cap, 'inject.md'), 'CORE'); f.write(join(cap, 'skills/oats-operate/SKILL.md'), '# op\n');
   f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n  additive:\n    oats.core:\n      global: true\n');
-  const created = f.run(['create', 'ready', '--work', 'directory', '--runtime', 'claude', '--json']); assert.equal(created.status, 0, created.stdout + created.stderr);
+  authorSoul(f.root, { name: 'ready', work: 'directory', runtime: 'claude' });
   const r = f.run(['readiness', '--soul', 'ready', '--json']); assert.equal(r.status, 0, r.stdout + r.stderr);
   const rd = JSON.parse(r.stdout).result;
   assert.equal(rd.readinessApi, 1); assert.deepEqual(rd.subject, { kind: 'soul', name: 'ready', selector: { kind: 'soul', soul: 'ready', agentsRoot: null, dir: null } });
@@ -185,9 +165,9 @@ test('K5 policy: children.spawn declared false is recorded at spawn and ENFORCED
   f.write(join(cap, 'oats.json'), { capability: 'oats.core', version: '1.0.0', description: 'Inert', inject: 'inject.md', skills: ['skills'] });
   f.write(join(cap, 'inject.md'), 'CORE'); f.write(join(cap, 'skills/oats-operate/SKILL.md'), '# op\n');
   f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n  additive:\n    oats.core:\n      global: true\n');
-  const created = createAgent(f.root, { name: 'boss', work: 'directory', runtime: 'claude' });
+  const created = authorSoul(f.root, { name: 'boss', work: 'directory', runtime: 'claude' });
   const file = join(created.soul, 'soul.yaml'); writeFileSync(file, readFileSync(file, 'utf8') + 'children: {"spawn":false}\n');
-  createAgent(f.root, { name: 'minion', work: 'directory', runtime: 'claude' });
+  authorSoul(f.root, { name: 'minion', work: 'directory', runtime: 'claude' });
   writeFileSync(join(f.bin, 'claude'), `#!/bin/sh\nexit 98\n`, { mode: 0o700 });
   const boss = spawnCore(f.root, findAgent(f.root, 'boss'), { purpose: 'p', launch: false });
   const bossMeta = JSON.parse(readFileSync(join(boss.home, 'instance.json'), 'utf8'));
@@ -217,7 +197,7 @@ test('K6 preview: spawn --preview decides instance/home/branch/base/runtime/mode
   spawnSync('git', ['init', '-q', '-b', 'main', f.context]); spawnSync('git', ['-C', f.context, '-c', 'user.email=t@x', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
   spawnSync('git', ['-C', f.context, 'branch', 'release']); spawnSync('git', ['-C', f.context, '-c', 'user.email=t@x', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'second']);
   const head = git('rev-parse', 'HEAD'), release = git('rev-parse', 'release');
-  const created = createAgent(f.root, { name: 'wt', work: 'worktree', repo: f.context, runtime: 'claude', model: 'opus', oatsCore: false });
+  const created = authorSoul(f.root, { name: 'wt', work: 'worktree', repo: f.context, runtime: 'claude', model: 'opus', oatsCore: false });
   writeFileSync(join(f.bin, 'claude'), `#!/bin/sh\nexit 98\n`, { mode: 0o700 });
   const p = f.run(['spawn', 'wt', '--purpose', 'fix-login', '--preview', '--json']); assert.equal(p.status, 0, p.stdout + p.stderr);
   const pv = JSON.parse(p.stdout.trim().split('\n').pop()).result;
@@ -245,9 +225,9 @@ test('K7 events: spawn writes spawned (+launched when launching); a refused chil
   f.write(join(cap, 'oats.json'), { capability: 'oats.core', version: '1.0.0', description: 'Inert', inject: 'inject.md', skills: ['skills'] });
   f.write(join(cap, 'inject.md'), 'CORE'); f.write(join(cap, 'skills/oats-operate/SKILL.md'), '# op\n');
   f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n  additive:\n    oats.core:\n      global: true\n');
-  const created = createAgent(f.root, { name: 'evboss', work: 'directory', runtime: 'claude' });
+  const created = authorSoul(f.root, { name: 'evboss', work: 'directory', runtime: 'claude' });
   writeFileSync(join(created.soul, 'soul.yaml'), readFileSync(join(created.soul, 'soul.yaml'), 'utf8') + 'children: {"spawn":false}\n');
-  createAgent(f.root, { name: 'evkid', work: 'directory', runtime: 'claude' });
+  authorSoul(f.root, { name: 'evkid', work: 'directory', runtime: 'claude' });
   writeFileSync(join(f.bin, 'claude'), `#!/bin/sh\nexit 98\n`, { mode: 0o700 });
   const boss = spawnCore(f.root, findAgent(f.root, 'evboss'), { purpose: 'p', launch: false });
   assert.throws(() => spawnCore(f.root, findAgent(f.root, 'evkid'), { purpose: 'k', launch: false, parent: boss.instance }), e => e.code === 'E_CHILD_SPAWNS_DISABLED');
@@ -265,7 +245,7 @@ test('K5 pins (slice 5): configured is EFFECTIVE activation not declaration; dat
   f.write(join(cap, 'inject.md'), 'CORE'); f.write(join(cap, 'skills/oats-operate/SKILL.md'), '# op\n');
   // Declared FOR this soul but explicitly disabled: a declaration is not activation.
   f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n  additive:\n    oats.core:\n      souls:\n        ready: {enabled: false}\n');
-  const created = f.run(['create', 'ready', '--work', 'directory', '--runtime', 'claude', '--json']); assert.equal(created.status, 0, created.stdout + created.stderr);
+  authorSoul(f.root, { name: 'ready', work: 'directory', runtime: 'claude' });
   const r = JSON.parse(f.run(['readiness', '--soul', 'ready', '--agents-root', f.root, '--json']).stdout).result;
   const act = r.checks.configured.items.find(i => i.subject === 'oats.core activation');
   assert.equal(act.status, 'fail', 'declared-but-disabled is a FAIL, not pass'); assert.match(act.reason, /declared for soul ready but disabled/);
@@ -323,14 +303,14 @@ test('K6b (spawnPreviewApi 2): a preview — success OR refusal — leaves the d
   f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n');
   spawnSync('git', ['init', '-q', '-b', 'main', f.context]); spawnSync('git', ['-C', f.context, '-c', 'user.email=t@x', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
   const git = (...a) => spawnSync('git', ['-C', f.context, ...a], { encoding: 'utf8' }).stdout.trim();
-  createAgent(f.root, { name: 'wt', work: 'worktree', repo: f.context, runtime: 'claude', model: 'opus', oatsCore: false });
-  createAgent(f.root, { name: 'boss', work: 'directory', runtime: 'claude', oatsCore: false });
+  authorSoul(f.root, { name: 'wt', work: 'worktree', repo: f.context, runtime: 'claude', model: 'opus', oatsCore: false });
+  authorSoul(f.root, { name: 'boss', work: 'directory', runtime: 'claude', oatsCore: false });
   const bossSoul = join(f.root, 'boss', 'soul', 'soul.yaml'); writeFileSync(bossSoul, readFileSync(bossSoul, 'utf8') + 'children: {"spawn":false}\n');
   writeFileSync(join(f.bin, 'claude'), `#!/bin/sh\nexit 98\n`, { mode: 0o700 });
   writeFileSync(join(f.bin, 'herdr'), `#!/bin/sh\necho STARTED >> "${f.base}/herdr-started"; sleep 30\n`, { mode: 0o700 });
   const boss = spawnCore(f.root, findAgent(f.root, 'boss'), { purpose: 'p', launch: false });
   const treeHash = () => { const out = spawnSync('bash', ['-c', `cd "${f.context}" && find . -path ./.git -prune -o -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256`], { encoding: 'utf8' }); return out.stdout.trim(); };
-  f.write(join(f.context, 'ghost.agent.md'), '---\nname: ghost\n---\n# ghost\n'); // an importable def a non-preview spawn WOULD import
+  f.write(join(f.context, 'ghost.agent.md'), '---\nname: ghost\n---\n# ghost\n'); // a def file named like the soul: spawn never imports it
   const before = treeHash(), eventsBefore = existsSync(join(boss.home, '.oats-events.jsonl')) ? readFileSync(join(boss.home, '.oats-events.jsonl'), 'utf8') : '';
   // Success preview with the Herdr backend requested: no daemon started, backend reported as installed but not started.
   const ok = JSON.parse(f.run(['spawn', 'wt', '--purpose', 'a', '--preview', '--backend', 'herdr', '--agents-root', f.root, '--json']).stdout.trim().split('\n').pop()).result;
@@ -342,7 +322,7 @@ test('K6b (spawnPreviewApi 2): a preview — success OR refusal — leaves the d
   const refused = JSON.parse(f.run(['spawn', 'wt', '--purpose', 'kid', '--preview', '--parent', boss.instance, '--json']).stdout.trim().split('\n').pop());
   assert.equal(refused.error.code, 'E_CHILD_SPAWNS_DISABLED');
   assert.equal(existsSync(join(boss.home, '.oats-events.jsonl')) ? readFileSync(join(boss.home, '.oats-events.jsonl'), 'utf8') : '', eventsBefore, 'a refusal preview appends no event');
-  // Unknown soul in preview: never imports/creates; exact-root mismatch refuses.
+  // Unknown soul in preview: never creates a soul; exact-root mismatch refuses.
   assert.equal(JSON.parse(f.run(['spawn', 'ghost', '--preview', '--json']).stdout.trim().split('\n').pop()).error.code, 'E_SOUL_UNKNOWN'); assert.equal(existsSync(join(f.root, 'ghost')), false, 'no soul written');
   assert.equal(JSON.parse(f.run(['spawn', 'wt', '--preview', '--agents-root', join(f.base, 'elsewhere'), '--json']).stdout.trim().split('\n').pop()).error.code, 'E_SOUL_UNKNOWN');
   assert.equal(JSON.parse(f.run(['spawn', 'wt', '--preview', '--instructions-file', bossSoul, '--json']).stdout.trim().split('\n').pop()).error.code, 'E_BAD_ARGS');
@@ -367,7 +347,7 @@ test('K6b preflight custody: a hanging `pi --list-models` probe cannot hang a pr
   f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n');
   spawnSync('git', ['init', '-q', '-b', 'main', f.context]); spawnSync('git', ['-C', f.context, '-c', 'user.email=t@x', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
   // Two provider-qualified preferences force the pi catalog probe; the fake pi hangs forever.
-  createAgent(f.root, { name: 'pp', work: 'worktree', repo: f.context, runtime: 'pi', model: 'openai/gpt-x, anthropic/claude-y', oatsCore: false });
+  authorSoul(f.root, { name: 'pp', work: 'worktree', repo: f.context, runtime: 'pi', model: 'openai/gpt-x, anthropic/claude-y', oatsCore: false });
   // The fake probe records its own pid and its forked child's, so custody is
   // checked on exactly this fixture's processes (never a machine-wide match that
   // a concurrent test file's probe could satisfy), and it never finishes.
@@ -416,7 +396,7 @@ test('K6c spawn idempotency: --expect-decision + --idempotency-key — a retry o
   const f = fixture(t);
   f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n');
   spawnSync('git', ['init', '-q', '-b', 'main', f.context]); spawnSync('git', ['-C', f.context, '-c', 'user.email=t@x', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
-  createAgent(f.root, { name: 'wt', work: 'worktree', repo: f.context, runtime: 'claude', model: 'opus', oatsCore: false });
+  authorSoul(f.root, { name: 'wt', work: 'worktree', repo: f.context, runtime: 'claude', model: 'opus', oatsCore: false });
   writeFileSync(join(f.bin, 'claude'), `#!/bin/sh\nexit 98\n`, { mode: 0o700 });
   const last = r => JSON.parse(r.stdout.trim().split('\n').pop());
   const rev = last(f.run(['spawn', 'wt', '--purpose', 'a', '--preview', '--json'])).result.decision.revision;
@@ -450,7 +430,7 @@ test('K6d (spawn-apply-2): the decision binds EFFECTIVE launch facts (a changed 
   const f = fixture(t);
   f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n');
   spawnSync('git', ['init', '-q', '-b', 'main', f.context]); spawnSync('git', ['-C', f.context, '-c', 'user.email=t@x', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
-  const created = createAgent(f.root, { name: 'wt', work: 'worktree', repo: f.context, runtime: 'claude', model: 'opus', oatsCore: false });
+  const created = authorSoul(f.root, { name: 'wt', work: 'worktree', repo: f.context, runtime: 'claude', model: 'opus', oatsCore: false });
   writeFileSync(join(f.bin, 'claude'), `#!/bin/sh\nexit 98\n`, { mode: 0o700 });
   writeFileSync(join(f.bin, 'herdr'), `#!/bin/sh\necho STARTED >> "${f.base}/herdr-started"; sleep 30\n`, { mode: 0o700 });
   const last = r => JSON.parse(r.stdout.trim().split('\n').pop());
@@ -489,7 +469,7 @@ test('K6e replay custody: key recovery runs BEFORE placement/branch checks (an e
   const f = fixture(t);
   f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n');
   spawnSync('git', ['init', '-q', '-b', 'main', f.context]); spawnSync('git', ['-C', f.context, '-c', 'user.email=t@x', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
-  createAgent(f.root, { name: 'wt', work: 'worktree', repo: f.context, runtime: 'claude', model: 'opus', oatsCore: false });
+  authorSoul(f.root, { name: 'wt', work: 'worktree', repo: f.context, runtime: 'claude', model: 'opus', oatsCore: false });
   writeFileSync(join(f.bin, 'claude'), `#!/bin/sh\nexit 98\n`, { mode: 0o700 });
   const last = r => JSON.parse(r.stdout.trim().split('\n').pop());
   // Explicit branch: after the first spawn the branch EXISTS; the same-key retry must replay, not E_BRANCH_EXISTS.
@@ -519,7 +499,7 @@ test('K6f retention: a fresh keyed (decision-bound, idempotent) spawn with a wak
   const f = fixture(t);
   f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n');
   spawnSync('git', ['init', '-q', '-b', 'main', f.context]); spawnSync('git', ['-C', f.context, '-c', 'user.email=t@x', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
-  createAgent(f.root, { name: 'wt', work: 'worktree', repo: f.context, runtime: 'claude', model: 'opus', oatsCore: false });
+  authorSoul(f.root, { name: 'wt', work: 'worktree', repo: f.context, runtime: 'claude', model: 'opus', oatsCore: false });
   writeFileSync(join(f.bin, 'claude'), `#!/bin/sh\nexit 98\n`, { mode: 0o700 });
   const last = r => JSON.parse(r.stdout.trim().split('\n').pop());
   const rev = last(f.run(['spawn', 'wt', '--purpose', 'r', '--preview', '--json'])).result.decision.revision;
@@ -536,7 +516,7 @@ test('K6g retention authority: kernel post-spawn fields (spawnCompleted, wake) n
   const f = fixture(t);
   f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n');
   spawnSync('git', ['init', '-q', '-b', 'main', f.context]); spawnSync('git', ['-C', f.context, '-c', 'user.email=t@x', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
-  createAgent(f.root, { name: 'wt', work: 'worktree', repo: f.context, runtime: 'claude', model: 'opus', oatsCore: false });
+  authorSoul(f.root, { name: 'wt', work: 'worktree', repo: f.context, runtime: 'claude', model: 'opus', oatsCore: false });
   // The "runtime": tmux is faked so the launch writes an authored STATE.md into the home the moment it starts —
   // i.e. BEFORE the kernel's completion marker and the CLI's wake record are written.
   writeFileSync(join(f.bin, 'claude'), `#!/bin/sh\nexit 98\n`, { mode: 0o700 });

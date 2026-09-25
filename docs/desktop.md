@@ -87,18 +87,14 @@ default). To view a deployment, open the workspace switcher in the sidebar
 and choose **Add workspace → Browse**, then point it at an OATS deployment —
 a directory containing `agents/` (under the 0.25 workspace model that is the
 deployment directory (the operator's choice) holding `oats-local.yaml` and `agents/`;
-under 0.24, an `agents/` root, a `local-agents/` root for machine-local souls,
-or a team scope whose `oats-config.yaml` declares `team:`). *The Desktop's own
+under 0.24, an `agents/` root or a team scope whose `oats-config.yaml` declares `team:`). *The Desktop's own
 multi-repo roster ("team scopes show every member repo's agents under one
 roster") still keys on the 0.24 `oats-config.yaml` `team:` declaration; reading
 the member set from `oats-local.yaml` / `oats workspace status` is the Phase F
 follow-up named in the [0.25.0 notes](release-notes/v0.25.0.md#desktop).*
 Added workspaces are remembered and offered as suggestions next time.
 
-Local souls (uncommitted, machine-local agents under `local-agents/`) are
-first-class: they appear in the roster with a `local` chip, their brains
-and knowledge render, and they spawn like any other soul. Launch flags for
-scripted use: `--dir <workspace>` and `OATS_DESKTOP_PORT`.
+Launch flags for scripted use: `--dir <workspace>` and `OATS_DESKTOP_PORT`.
 
 ## Scheduling agents and wake messages
 
@@ -164,7 +160,7 @@ The full breaking-change list is in the
 | Terminals fail to open ("could not attach") | tmux missing, or no live session for that instance. Install tmux (`tmux -V`); check `tmux ls`. |
 | Can't select/copy text in a terminal tab | The terminal runs with tmux mouse handling, so a plain drag scrolls/passes through. Hold **Option** (macOS) or **Shift** while dragging to make a local selection, then copy (Cmd+C / right-click → Copy). |
 | macOS "app is damaged / can't be opened" | Ad-hoc-signed (not notarized) build + quarantine. Right-click → Open, or clear the quarantine attribute (above). If it persists, verify the bundle: `codesign --verify --deep --strict --verbose=2 "/Applications/OATS Desktop.app"` — a non-zero exit means a broken artifact, report it. |
-| Roster empty | The opened directory isn't an OATS workspace (needs `agents/` or `local-agents/`, or a team scope). Use the workspace switcher → Add workspace to select the right root. |
+| Roster empty | The opened directory isn't an OATS workspace (needs `agents/`, or a team scope). Use the workspace switcher → Add workspace to select the right root. |
 
 For bugs, attach the terminal output of the app (`OATS Desktop` prints
 server and CLI-discovery logs to stdout) and your platform/arch.

@@ -423,7 +423,7 @@ test("desktop server: file guard never re-resolves roots — a dir→symlink swa
   const base = mkdtempSync(join(tmpdir(), "oatsweb-swap-"));
   const secret = mkdtempSync(join(tmpdir(), "oatsweb-swap-secret-"));
   writeFileSync(join(secret, "secret.md"), "TOCTOU-SECRET");
-  const la = join(base, "local-agents"); mkdirSync(la);
+  const la = join(base, "agents"); mkdirSync(la);
   writeFileSync(join(la, "real.md"), "legit");
   const admittedRealBase = realpathSync(la);            // fileRoots-style admission capture
   // sanity pre-swap: legit file serves through the admitted root

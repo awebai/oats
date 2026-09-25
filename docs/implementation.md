@@ -197,11 +197,10 @@ The generated order is:
 
 1. canonical soul content;
 2. kernel OATS block;
-3. local-soul block (local souls only);
-4. **home/work boundary block** — runtime-neutral, every mode and every kind;
-5. actual spawn work-mode block;
-6. active capability blocks in resolver order; and
-7. unconditional config blocks outermost to innermost.
+3. **home/work boundary block** — runtime-neutral, every mode and every kind;
+4. actual spawn work-mode block;
+5. active capability blocks in resolver order; and
+6. unconditional config blocks outermost to innermost.
 
 Every generated block carries its source path. `oats doctor --soul <name>` uses
 the same composer and prints/returns the final text. Config-dependent prose is
@@ -244,8 +243,10 @@ API and error taxonomy.
 
 ## Hooks and scaffold ownership
 
-Only `soul-scaffold`, `spawn`, and `retire` manifest hooks are accepted.
-Spawn/scaffold use outer-scope then capability-ID order; retire reverses it.
+Only `soul-scaffold`, `spawn`, and `retire` manifest hooks are accepted. The
+kernel no longer runs `soul-scaffold`: it ran when `oats create` wrote a soul,
+and souls are now authored in member repositories.
+Spawn uses outer-scope then capability-ID order; retire reverses it.
 Each hook receives package identity/layer plus structured OATS environment and
 may emit a final JSON object containing `meta`, `brief`, `warning`, or `launch`.
 Only a spawn hook may add `env`; other lifecycle events reject it rather than
@@ -266,10 +267,6 @@ the required-spawn rollback transaction. It runs compensation in reverse,
 removes and verifies rollback-owned Git topology, and removes the home only
 when cleanup completed. Failed compensation or reported state with no retire
 hook uses the same retryable quarantine as every other incomplete spawn.
-
-Soul scaffolding snapshots files around each package hook and records new-file
-ownership in `.oats-scaffold-owners.json`. Overwriting canonical or another
-package's file restores the prior bytes and raises a conflict.
 
 ## Commands
 

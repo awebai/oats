@@ -24,15 +24,15 @@ import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import {
-  LAYERS, WORK_MODES, LEGACY_HOME_CAPABILITIES_DIR, OATS_VERSION, OAS_SCOPE_REMEDY, RETIRED_CAPABILITIES, detectOasScopes, retiredCapabilityReason, configChain, configCapabilityEntries, manifestOperations,
+  LAYERS, WORK_MODES, LEGACY_HOME_CAPABILITIES_DIR, OATS_VERSION, RETIRED_CAPABILITIES, retiredCapabilityReason, configChain, configCapabilityEntries, manifestOperations,
   capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityTrust, capabilityExecutablePath, activateCapturedScaffold, loadCapturedDispatch, inspectPortableOnboarding, prepareCapturedComposition, resolveCapturedHelper, capturedNativeSessionAvailability, scaffoldCapturedInstance, startCapturedInstanceSession, withCapturedBindingFile, withCapturedInvocationContextFile,
-  readCapabilityLocks, admitCapturedAction, beginCapturedIntent, settleCapturedIntent, listInstalledPackages, readPackageLocks,
+  readCapabilityLocks, admitCapturedAction, beginCapturedIntent, settleCapturedIntent,
   officialPackageCatalog, describeOfficialCatalog, approveAvailableCapability,
-  packageIntegrity, capabilityArtifactIntegrity, verifyCapabilityInstallation, installedCapabilityDir,
+  packageIntegrity, capabilityArtifactIntegrity,
   resolveOatsConfig, resolveWorkMode, composeInstanceAgentsMd, parseYamlNested, assertSafeConfigValue, stripInternalAnnotations, withConfigFile, teamAgentRoots,
   findTeamAgent, findTeamInstance, findCapabilityAgent, findInstanceHome, findInstanceHomes, listCapabilityAgents, workspaceOf, stopInstanceSession, recomposeInstanceInstructions,
-  ensureRoot, findRoot, findAgent, listAgents, listInstances, servedIdentityLine, servedIdentityOf, listAgentDefs, createAgent as coreCreateAgent,
-  spawnInstance, spawnInstanceAsync, instanceSoulDir, explicitInstanceName, findModuleCapabilityAgent, capabilityAgentFromDir, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS, validateLaunchConfig, resolveLaunchSelection, resolveLaunchExecutable, checkLaunchExecutable, missingLaunchEnvRefs, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, LAUNCH_RECIPE_VERSION, parseLaunchCommand, resolveYolo, planLaunch, redactLaunchCommand, restartInstanceSession,
+  ensureRoot, findRoot, findAgent, legacyLocalAgents, listAgents, listInstances, servedIdentityLine, servedIdentityOf,
+  spawnInstance, spawnInstanceAsync, instanceSoulDir, explicitInstanceName, findModuleCapabilityAgent, capabilityAgentFromDir, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, resolveLaunchSelection, resolveLaunchExecutable, checkLaunchExecutable, missingLaunchEnvRefs, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, LAUNCH_RECIPE_VERSION, parseLaunchCommand, resolveYolo, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
 import {
   assertNoSymlinkedParents, writeFileAtomic,
@@ -66,7 +66,7 @@ import { readEvents } from "../lib/instance-events.mjs";
 const args = process.argv.slice(2);
 let cmd = args[0];
 const HELP_WORDS = new Set(["help", "--help", "-h"]);
-const KERNEL_COMMANDS = new Set(["prepare", "capture", "capabilities", "create", "doctor", "inspect", "instance", "operation", "package", "readiness", "soul", "souls", "launch-config", "experimental", "onboard", "pane", "recall", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "sync", "type", "update", "version", "workspace"]);
+const KERNEL_COMMANDS = new Set(["prepare", "capture", "capabilities", "doctor", "inspect", "instance", "operation", "package", "readiness", "soul", "souls", "launch-config", "experimental", "onboard", "pane", "recall", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "sync", "type", "update", "version", "workspace"]);
 const flag = (name) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? (args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : true) : undefined;
@@ -567,45 +567,12 @@ function doctorLockData(ctx) {
   return out;
 }
 
-/** The health of ONE materialized capability, against the rows it was projected
- * from. Shared by doctor and list so both name the same states with the same
- * codes — and so the `.oats-installation.json` provenance is checked in BOTH,
- * not only deep inside trust resolution where it surfaces as a bare "untrusted".
- *
- * Order matters: a missing artifact cannot be hashed, drifted bytes make an
- * approval meaningless (so trust is not ALSO reported), and provenance is only
- * worth reading once the bytes are the locked ones. */
-/** The lock rows AT one level. Never the merged maps: those resolve each
- * identity independently, so an outer scope's capability can be paired with a
- * nearer scope's package of the same id — a provider that never exported it. */
-const levelRows = (locks, level) => locks.levels.find((l) => l.level === level) || { packages: Object.create(null), capabilities: Object.create(null) };
-
 /** A capability has an executable surface when its manifest declares commands,
  *  hooks or launch environment — the things `oats trust` approves. A
  *  data-only capability (skills/injects) has none, and trust is not-applicable. */
 function hasExecutableSurface(manifest) {
   return !!(Object.keys(manifest?.commands || {}).length || Object.keys(manifest?.hooks || {}).length || (manifest?.environment?.length || 0));
 }
-function capabilityHealth(level, cap, capRow, pkgRow) {
-  const dir = installedCapabilityDir(level, cap.id);
-  if (!cap.installed) return { status: "missing", code: "missing-capability-artifact", dir, detail: `capability ${cap.id} is locked but not materialized — run \`oats sync\` to re-materialize it` };
-  let integrity;
-  try { integrity = capabilityArtifactIntegrity(dir); }
-  catch (e) { return { status: "broken", code: e.code || "invalid-capability-artifact", dir, detail: `capability ${cap.id}: ${e.message}` }; }
-  if (integrity !== cap.integrity) {
-    return { status: "drifted", code: "integrity-drift", dir, integrity, detail: `capability ${cap.id}: artifact integrity drift — installed ${integrity}, locked ${cap.integrity}; its executable approval is invalid` };
-  }
-  // The artifact's own provenance and the lock must tell the SAME story before
-  // either is believed. Neither silently wins; the disagreement is the finding.
-  if (capRow && pkgRow) {
-    try { verifyCapabilityInstallation(dir, cap.id, capRow, pkgRow); }
-    catch (e) { return { status: "provenance-mismatch", code: e.code || "invalid-lock", dir, integrity, detail: `capability ${cap.id}: ${e.message}` }; }
-  }
-  const executable = hasExecutableSurface(cap.manifest);
-  if (executable && !cap.trusted) return { status: "untrusted", code: "untrusted-surface", dir, integrity, detail: `capability ${cap.id}: executable surface UNTRUSTED — approve it in \`oats sync\`` };
-  return { status: "ok", code: null, dir, integrity, detail: null };
-}
-
 // ---------- inspect: one authoritative answer for GUIs ----------
 /** Souls, capabilities (installed state and health, separately from
  *  activation), effective layer bindings and declared operations for a
@@ -625,17 +592,12 @@ function readTextCapped(file) {
   if (truncated && text.endsWith("\uFFFD")) text = text.slice(0, -1);
   return { file, text, sha256: createHash("sha256").update(bytes).digest("hex"), bytes: bytes.length, truncated, error: null };
 }
-/** The canonical agents root a home belongs to, from its path alone:
- *  <root>/<agent>/instances/<instance>, or <workspace>/local-agents/<agent>/
- *  instances/<instance> whose canonical root is the sibling agents/. */
-function agentsRootOfHome(home) {
-  const agentDir = dirname(dirname(home));
-  const base = dirname(agentDir);
-  return basename(base) === "local-agents" ? join(dirname(base), "agents") : base;
-}
+/** The agents root a home belongs to, from its path alone:
+ *  <root>/<agent>/instances/<instance>. */
+function agentsRootOfHome(home) { return dirname(dirname(dirname(home))); }
 const SOUL_FIELDS = ["runtime", "model", "yolo", "backend", "description", "launch-config"];
 const realOrResolved = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
-/** Every soul of a scope: persistent and local souls of every agents root in
+/** Every soul of a scope: the persistent souls of every agents root in
  *  scope, plus packaged souls (read-only). One enumeration for inspect and
  *  operation run, so both address souls the same way. */
 function scopeSouls(ctx, r, { extraRoots = [] } = {}) {
@@ -862,26 +824,11 @@ function computeInspect({ onFail } = {}) {
     }
   }
 
-  // Capabilities: installed state and health from the package engine (exactly
-  // what `oats list` reports), owned/path manifests beside them, and the
-  // ACTIVATION for the selected soul (or global) from the resolver.
+  // Capabilities: owned/path manifests, and the ACTIVATION for the selected soul
+  // (or global) from the resolver. (The installed tier is gone.)
   const mans = capabilityManifests(manifestSource(meta, home, ctx));
-  let lockError = null;
+  const lockError = null;
   const byId = new Map();
-  try {
-    const pkgs = listInstalledPackages(ctx), locks = readPackageLocks(ctx);
-    for (const p of pkgs) {
-      const rows = levelRows(locks, p.level);
-      for (const c of p.capabilities) {
-        const h = capabilityHealth(p.level, c, rows.capabilities[c.id], rows.packages[p.package]);
-        byId.set(c.id, {
-          id: c.id, package: p.package, version: c.version || null, layer: c.manifest?.layer || null, command: c.manifest?.command || null,
-          origin: "installed", level: p.level, source: p.source || null, commit: p.commit ?? rows.packages[p.package]?.commit ?? null, dir: h.dir,
-          health: { status: h.status, code: h.code, detail: h.detail, installed: !!c.installed, locked: true, trusted: c.trusted === true, executableSurface: hasExecutableSurface(c.manifest), integrity: c.integrity || null, installedIntegrity: h.integrity ?? null },
-        });
-      }
-    }
-  } catch (e) { lockError = { code: e.code || "invalid-lock", message: e.message }; }
   for (const [id, m] of Object.entries(mans)) {
     if (byId.has(id)) continue;
     const trust = capabilityTrust(m, ctx);
@@ -1338,14 +1285,11 @@ function doctorJson(dir) {
   const mans = capabilityManifests(ctx);
   const composition = doctorComposition(ctx, soulName);
   const chain = configChain(ctx);
-  const oasScopes = detectOasScopes(ctx);
   console.log(JSON.stringify({
     schemaVersion: 1,
     context: ctx,
     team: r.team || null,
     chain: r.chain.map((c) => ({ file: c._file, level: c._level, levelKind: levelOf(c._level) })),
-    oasScopes,
-    oasRemedy: oasScopes.length ? OAS_SCOPE_REMEDY : null,
     layers: Object.fromEntries(LAYERS.map((l) => [l, r.layers[l] ? {
       integration: r.layers[l].id, level: r.layers[l].level, inject: r.layers[l].inject,
       skills: [...(Array.isArray(r.layers[l].skills) ? r.layers[l].skills : (r.layers[l].skills ? [r.layers[l].skills] : []))],
@@ -1378,14 +1322,22 @@ retiredLocks: (() => { try { return Object.entries(readCapabilityLocks(ctx)); } 
 
 /** The v2 doctor payload: the deployment declaration + lock (offline) and, with
  *  --soul, the composed instructions. No v1 keys (chain/layers/acquired/injects…). */
+/** The problems doctor and status share for a v2 deployment: what OATS 0.25 left
+ *  under local-agents/ (named, never read). */
+function legacyLayoutProblems(root) {
+  const legacy = legacyLocalAgents(root);
+  return legacy ? [legacy] : [];
+}
 function doctorWorkspaceJson(ctx, soulName, ws) {
   const composition = doctorComposition(ctx, soulName);
+  const problems = legacyLayoutProblems(join(dirname(ws.local.path), "agents"));
   return {
     schemaVersion: 1, workspaceApi: 2, context: ctx,
     workspace: { file: ws.local.path, ref: ws.local.workspace },
     workspaceError: ws.localError, lockFile: ws.lockFile, packages: ws.packages, lockError: ws.lockError,
     information: operationalKnowledgeNote(composition, soulName) ? [operationalKnowledgeNote(composition, soulName)] : [],
     composedInstructions: composition?.text, instructionBlocks: composition?.blocks,
+    ...(problems.length ? { problems } : {}),
   };
 }
 /** Kernel/bridge version skew (published in lockstep from one tag). */
@@ -1424,6 +1376,7 @@ function doctor(dir) {
     // warnings) would describe a tier this deployment does not have.
     const composition = doctorComposition(ctx, soulName);
     printDoctorWorkspace(ws);
+    for (const p of legacyLayoutProblems(join(dirname(ws.local.path), "agents"))) console.log(`\n! ${p.code}: ${p.message}`);
     if (soulName) {
       const information = operationalKnowledgeNote(composition, soulName);
       if (information) console.log(`\nINFO: ${information}`);
@@ -1439,15 +1392,6 @@ function doctor(dir) {
   if (chain.length === 0) console.log("  (none — no oats-config.yaml found walking up)");
   for (const c of chain) {
     console.log(`  ${shortPath(c._file)}  [${levelOf(c._level)}]`);
-  }
-
-  // An empty-looking chain over oas-* files is not an empty scope: it is a
-  // pre-rename OAS deployment this kernel cannot read (aweb-abfy.1).
-  const oasScopes = detectOasScopes(ctx);
-  if (oasScopes.length) {
-    console.log("");
-    for (const f of oasScopes) console.log(`UN-MIGRATED OAS SCOPE: ${shortPath(f.dir)}  (${f.files.join(", ")})`);
-    console.log(`  ${OAS_SCOPE_REMEDY}`);
   }
 
   if (r.team) console.log(`\nTeam: ${r.team.name}${r.team.id ? `  (id: ${r.team.id})` : ""}  [scope: ${shortPath(r.team.scope)}]`);
@@ -2374,6 +2318,7 @@ async function status() {
   const data = listInstances(root);
   const ws = await statusDrift(data);
   const verbose = args.includes("--verbose");
+  const problems = legacyLayoutProblems(root);
   if (args.includes("--json")) {
     if (ws) for (const a of data) {
       const stamp = ws.souls.get(a.name);
@@ -2386,13 +2331,14 @@ async function status() {
         if (s) i.soul = { repoKey: s.repoKey, commit: s.commit, current: s.current?.commit ?? null, status: s.status, ...(s.reason ? { reason: s.reason } : {}) };
       }
     }
-    console.log(JSON.stringify({ root, agents: data, ...(ws ? { workspace: ws.unreachable ? { reachable: false, ...ws.unreachable } : { reachable: true } } : {}) }, null, 2)); return;
+    console.log(JSON.stringify({ root, agents: data, ...(ws ? { workspace: ws.unreachable ? { reachable: false, ...ws.unreachable } : { reachable: true } } : {}), ...(problems.length ? { problems } : {}) }, null, 2)); return;
   }
   console.log(`oats status — agents root ${shortPath(root)}\n`);
   if (ws?.unreachable) console.log(`  workspace: unreachable (${ws.unreachable.reason}) — drift unknown\n`);
-  if (data.length === 0) { console.log("  (no agents — create one with `oats create <name>`)"); return; }
+  for (const p of problems) console.log(`  ! ${p.code}: ${p.message}\n`);
+  if (data.length === 0) { console.log("  (no agents — a soul is a member repository's souls/<name>; `oats souls` lists the workspace's)"); return; }
   for (const a of data) {
-    console.log(`  ${a.name}${a.kind === "local" ? " (local)" : ""}  [work: ${a.work || "checkout"}, repo: ${soulRepoLabel(a, ws)}]`);
+    console.log(`  ${a.name}  [work: ${a.work || "checkout"}, repo: ${soulRepoLabel(a, ws)}]`);
     if (a.description) console.log(`      ${a.description}`);
     for (const i of a.instances) {
       console.log(`      • ${i.instance}  ${i.retirePending ? "RETIRING" : i.running ? "RUNNING" : "idle"}  (branch ${i.branch || "?"}, ${i.work || "?"})`);
@@ -2407,8 +2353,6 @@ async function status() {
       console.log(`      ! deferred retirement of ${f.instance} FAILED${f.completedAt ? ` at ${f.completedAt}` : ""}: ${f.error || (f.incomplete || []).join("; ") || "see result file"} — retry with \`oats retire ${f.instance}\``);
     }
   }
-  const defs = listAgentDefs(process.cwd());
-  if (defs.length) console.log(`\n  importable defs: ${defs.map((d) => d.name).join(", ")}`);
 }
 
 function statusTeam() {
@@ -2425,7 +2369,7 @@ function statusTeam() {
     console.log(`  ${shortPath(root)}`);
     if (!agents.length) { console.log("    (no agents)"); continue; }
     for (const a of agents) {
-      console.log(`    ${a.name}${a.kind === "local" ? " (local)" : ""}${a.description ? `  — ${a.description}` : ""}`);
+      console.log(`    ${a.name}${a.description ? `  — ${a.description}` : ""}`);
       for (const i of a.instances) console.log(`      • ${i.instance}  ${i.retirePending ? "RETIRING" : i.running ? "RUNNING" : "idle"}`);
       for (const f of a.retireFailures || []) console.log(`      ! deferred retirement of ${f.instance} FAILED: ${f.error || (f.incomplete || []).join("; ") || "see result file"} — retry with \`oats retire ${f.instance}\``);
     }
@@ -2444,19 +2388,20 @@ async function spawnCmd() {
   const checkDirectoryOptions = (work) => {
     if (work === "directory" && (workDir !== undefined || branch !== undefined)) bail("E_BAD_ARGS", "--work directory owns only <home>/work; --work-dir and --branch are not allowed");
   };
-  checkDirectoryOptions(requestedWork); // before a local soul could be upserted
+  checkDirectoryOptions(requestedWork); // before anything is resolved or written
   const name = args[1];
-  if (!name || name.startsWith("--")) bail("E_USAGE", "usage: oats spawn <agent> [--task <text>|--task-file <f>] [--purpose <slug>|--name <slug>] [--preview] [--base <ref>] [--model <id>|@native-default] [--allow-child-spawns|--no-child-spawns] [--relation child|sibling|parent|unrelated --relative-to <instance> [--relative-root <agents-root>]] [--parent <instance>] [--repo <r>] [--work worktree|checkout|attached|workspace|directory] [--work-dir <owner-work>] [--runtime pi|claude|codex] [--backend tmux|herdr] [--herdr-socket <path>] [--yolo|--no-yolo] [--model <m>] [--branch <b>] [--instructions-file <f>|--def-file <f>] [--no-launch] [--json]");
+  if (!name || name.startsWith("--")) bail("E_USAGE", "usage: oats spawn <agent> [--task <text>|--task-file <f>] [--purpose <slug>|--name <slug>] [--preview] [--base <ref>] [--model <id>|@native-default] [--allow-child-spawns|--no-child-spawns] [--relation child|sibling|parent|unrelated --relative-to <instance> [--relative-root <agents-root>]] [--parent <instance>] [--repo <r>] [--work worktree|checkout|attached|workspace|directory] [--work-dir <owner-work>] [--runtime pi|claude|codex] [--backend tmux|herdr] [--herdr-socket <path>] [--yolo|--no-yolo] [--model <m>] [--branch <b>] [--no-launch] [--json]");
   // Retired boundary flags (maintainer transport ruling): fail LOUDLY before
-  // ANY side effect — including root discovery and local-agent upsert (an
-  // --instructions-file spawn must not scaffold/overwrite a local soul before
-  // this rejection; reviewer-b671de0).
+  // ANY side effect, including root discovery.
+  // Local souls (local-agents/) are gone with the workspace model: a soul is a member
+  // repository's souls/<name>, so spawn never writes one.
+  for (const removed of ["instructions-file", "def-file"]) if (flag(removed) !== undefined) bail("E_BAD_ARGS", `--${removed} created a local soul under local-agents/, which the workspace model removed — author souls/<name>/soul.yaml + AGENTS.md in a member repository, then \`oats sync\``);
   if (args.includes("--instance")) bail("E_BAD_ARGS", "--instance was removed by the runtime-boundary ruling — use --purpose <slug> (deterministic <agent>-<purpose> naming) or --name <slug> (the exact instance name)");
   // --name <slug>: the exact, unprefixed instance name (human decision 2026-09-24).
   const nameFlag = flag("name");
   if (nameFlag === true) bail("E_BAD_ARGS", "--name needs an instance name (a slug: lowercase letters and digits, single dashes between them)");
   if (nameFlag !== undefined && flag("purpose") !== undefined) bail("E_BAD_ARGS", "--name and --purpose are mutually exclusive: --name is the exact instance name, --purpose derives <agent>-<purpose>");
-  // The slug rule is checked here too, before any side effect (soul fetch, local-agent upsert).
+  // The slug rule is checked here too, before any side effect (soul fetch).
   if (nameFlag !== undefined) { try { explicitInstanceName(String(nameFlag)); } catch (e) { bail(e.code, e.message); throw e; } }
   if (args.includes("--ephemeral")) bail("E_BAD_ARGS", "--ephemeral was removed by the runtime-boundary ruling — declare the agent in a capability manifest (agents:) for automatic ephemeral semantics");
   let root;
@@ -2516,8 +2461,7 @@ async function spawnCmd() {
           bail(e.code, `${e.details?.capability ?? "oats.core"}: the catalog has no package providing oats.core (OATS_PACKAGE_CATALOG=${file ?? "<bundled>"}) — standalone spawns resolve only the kernel's default package from the catalog`, { ...(e.details ?? {}), standalone: true, reason: "no-catalog", catalog: file });
         }
         // Not a workspace soul: a capability-defined agent (a module's `agents:`
-        // soul, resolved below from a materialized copy) or a local-only soul
-        // (--instructions-file/--def-file) may still answer to this name.
+        // soul, resolved below from a materialized copy) may still answer to this name.
         if (e?.code === "E_SOUL_UNKNOWN" && !isPreview) { wsSoulUnknown = e; }
         else if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details);
         else throw e;
@@ -2526,18 +2470,15 @@ async function spawnCmd() {
   }
   if (agentsRootFlag !== undefined && !agent) bail("E_SOUL_UNKNOWN", `soul "${name}" is not at agents root ${String(agentsRootFlag)}`);
   if (isPreview && !agent) bail("E_SOUL_UNKNOWN", `soul "${name}" is not in ${shortPath(root)}; a preview never creates or imports a soul (known: ${listAgents(root).map((a) => a.name).join(", ") || "none"})`);
-  if (isPreview && (flag("instructions-file") !== undefined || flag("def-file") !== undefined)) bail("E_BAD_ARGS", "--preview does not take --instructions-file/--def-file: a preview never writes a soul");
-  const instrFile = flag("instructions-file");
-  const defFile = flag("def-file");
-  if (!agent && !instrFile && !defFile) {
+  if (!agent) {
     // Capability-defined agent: a package's `agents:` soul, active in this context.
     const capAgent = findCapabilityAgent(dirFlag(), root, name);
     if (capAgent) {
       agent = capAgent;
-      note(`(capability agent: "${name}" from ${capAgent.capability} — fresh soul, instances home locally)`);
+      note(`(capability agent: "${name}" from ${capAgent.capability} — fresh soul, instances home under ${shortPath(join(root, name, "instances"))})`);
     }
   }
-  if (!agent && !instrFile && !defFile && hasLocal) {
+  if (!agent && hasLocal) {
     // Workspace model: the agent is declared by a capability some INSTANCE already
     // materialized (the --parent home first, then any home under this root) —
     // OKF's memory-harvest worker spawned by a knowledge source, for example.
@@ -2548,7 +2489,7 @@ async function spawnCmd() {
     catch (e) { bail(e.code || "E_CAPABILITY_BROKEN", e.message, e.details); }
     if (modAgent) {
       agent = modAgent;
-      note(`(capability agent: "${name}" from ${modAgent.capability}, materialized in ${shortPath(modAgent._manifestSource)} — fresh soul, instances home locally)`);
+      note(`(capability agent: "${name}" from ${modAgent.capability}, materialized in ${shortPath(modAgent._manifestSource)} — fresh soul, instances home under ${shortPath(join(root, name, "instances"))})`);
     } else {
       // No instance carries it: resolve from the deployment's LOCK — a locked
       // package whose capability declares agents/<name> is fetched into the
@@ -2558,13 +2499,13 @@ async function spawnCmd() {
         const hit = await resolvePackageCapabilityAgent(dirFlag(), name, { remoteOptions: remoteOptionsFromEnv(), discovery: wsDiscovery, catalog: (() => { try { return officialPackageCatalog(); } catch { return null; } })() });
         if (hit) {
           agent = capabilityAgentFromDir(hit.dir, name, root, { module: { from: { kind: "package", package: hit.package, version: hit.version, commit: hit.commit } } });
-          if (agent) note(`(capability agent: "${name}" from ${hit.capability} — package ${hit.package} v${hit.version}, fetched to ${shortPath(hit.dir)} — fresh soul, instances home locally)`);
+          if (agent) note(`(capability agent: "${name}" from ${hit.capability} — package ${hit.package} v${hit.version}, fetched to ${shortPath(hit.dir)} — fresh soul, instances home under ${shortPath(join(root, name, "instances"))})`);
         }
       } catch (e) { if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details); throw e; }
     }
   }
-  if (!agent && wsSoulUnknown && !instrFile && !defFile) bail(wsSoulUnknown.code, wsSoulUnknown.message, wsSoulUnknown.details);
-  if (!agent && !instrFile && !defFile) {
+  if (!agent && wsSoulUnknown) bail(wsSoulUnknown.code, wsSoulUnknown.message, wsSoulUnknown.details);
+  if (!agent) {
     // Cross-repo lookup: the soul may live in a sibling repo of the team scope.
     // Unique match wins; the instance homes with its owning repo's agents root.
     const teamHit = findTeamAgent(dirFlag(), name);
@@ -2577,21 +2518,7 @@ async function spawnCmd() {
     }
   }
   checkDirectoryOptions(requestedWork || agent?.work);
-  // local agents: create/update from raw instructions or a single-file def
-  if (instrFile || defFile || !agent) {
-    if (!agent && !instrFile && !defFile) {
-      const def = listAgentDefs(process.cwd()).find((d) => d.name === name);
-      if (!def) bail("E_UNKNOWN_AGENT", `unknown agent "${name}" (known: ${listAgents(root).map((a) => a.name).join(", ") || "none"}; importable defs: ${listAgentDefs(process.cwd()).map((d) => d.name).join(", ") || "none"}) — pass --instructions-file or --def-file to create a local agent`);
-      agent = upsertLocalAgent(root, { name: def.name, file: def.path, repo: flag("repo"), work: flag("work"), runtime: flag("runtime"), model: flag("model"), oatsCore: !args.includes("--no-oats-core") });
-    } else if (!agent || agent.kind === "local") {
-      agent = upsertLocalAgent(root, {
-        name, file: defFile, instructions: instrFile ? readFileSync(instrFile, "utf8") : undefined, oatsCore: !args.includes("--no-oats-core"),
-        repo: flag("repo"), work: flag("work"), runtime: flag("runtime"), model: flag("model"), yolo: yoloFlag(),
-      });
-    } else {
-      bail("E_BAD_ARGS", `"${name}" is a persistent agent — spawn it without --instructions-file/--def-file`);
-    }
-  }
+  if (!agent) bail("E_UNKNOWN_AGENT", `unknown agent "${name}" (known: ${listAgents(root).map((a) => a.name).join(", ") || "none"}) — a soul is a member repository's souls/<name>; add it there and run \`oats sync\``);
   for (const information of agent.notes || []) note(`[${information.code}] ${information.message}`);
   // Lineage is explicit: --relation child|sibling|parent|unrelated anchors the new
   // instance to --relative-to <instance>. --parent X is sugar for
@@ -2619,7 +2546,7 @@ async function spawnCmd() {
   // NOTE: explicit "unrelated" is passed through to the kernel.
   if (relativeTo && relation !== "unrelated") {
     // findInstanceHome also sees capability-defined agents' instance homes
-    // (local-agents/<name>/ without a local soul) — e.g. a reviewer passing
+    // (<root>/<name>/ without a soul) — e.g. a reviewer passing
     // --parent "$OATS_INSTANCE" from a capability agent.
     if (!findInstanceHome(root, relativeTo) && !findTeamInstance(dirFlag(), relativeTo)) bail(parent ? "E_PARENT_NOT_FOUND" : "E_RELATIVE_NOT_FOUND", `${parent ? "--parent" : "--relative-to"} "${relativeTo}" does not match any known instance`);
   }
@@ -2843,7 +2770,9 @@ function retireCmd() {
     if (running.length) return args.includes("--json") ? jsonFail("E_CHILDREN_RUNNING", `${running.map((k) => k.instance).join(", ")} ${running.length === 1 ? "is" : "are"} still running after a bounded stop; nothing was retired and nothing was escalated`, { childrenStopped, plan: fresh }) : die(`children still running: ${running.map((k) => k.instance).join(", ")}; nothing retired`);
     expectedBranch = fresh.facts.work.observed ? fresh.facts.work.branch : undefined;
   }
-  const r = retireInstance(root, name, { home: homeFlag, self: isSelf, deleteBranch: args.includes("--delete-branch"), discardWorktree: args.includes("--discard-worktree"), keepDir: args.includes("--keep-dir"), force: args.includes("--force"), ...(expectedBranch !== undefined ? { expectedBranch } : {}) });
+  let r;
+  try { r = retireInstance(root, name, { home: homeFlag, self: isSelf, deleteBranch: args.includes("--delete-branch"), discardWorktree: args.includes("--discard-worktree"), keepDir: args.includes("--keep-dir"), force: args.includes("--force"), ...(expectedBranch !== undefined ? { expectedBranch } : {}) }); }
+  catch (e) { if (!e?.code) throw e; return args.includes("--json") ? jsonFail(e.code, e.message, e.candidates ? { candidates: e.candidates } : undefined) : die(e.message); }
   if (childrenStopped) r.childrenStopped = childrenStopped;
   if (replayPath) { r.planRevision = planRev; r.idempotencyKey = idemKey; r.replayed = false; try { writeFileAtomic(replayPath, JSON.stringify(r, null, 2)); } catch { /* receipt is evidence, not authority */ } }
   // A retired home's wake jobs are forgotten (definitions only; nothing is
@@ -3134,45 +3063,6 @@ function memberUrlOf(discovery, key) {
   }
   if (discovery.standalone === true && discovery.key === key) return discovery.url ?? null;
   return null;
-}
-
-function createCmd() {
-  const yolo = yoloFlag();
-  const name = args[1];
-  if (!name || name.startsWith("--")) die("usage: oats create <name> [--local] [--no-oats-core] [--description <d>] [--type <agent-type>] [--repo <r>] [--work worktree|checkout|attached|workspace|directory] [--runtime pi|claude|codex] [--model <m>] [--yolo|--no-yolo] [--instructions-file <f>]");
-  const local = args.includes("--local");
-  const startDir = dirFlag();
-  // `create` BOOTSTRAPS a deployment: with no agents/ or local-agents/ yet,
-  // anchor at the enclosing git repo (else the start dir). It is the command
-  // that populates the roster root, so it must not demand that the root
-  // already exist — that demand was the first thing a new user hit after
-  // `oats init` (a raw stack trace from ensureRoot). Local and committed souls
-  // anchor the same way; writeSoul creates the directories.
-  let root = findRoot(startDir);
-  // A configured package-only scope may resolve its future agents root before
-  // that directory exists. Preserve create's bootstrap receipt/message.
-  let bootstrapped = !!root && !existsSync(root) && !existsSync(join(dirname(root), "local-agents"));
-  if (!root) {
-    root = join(defaultRepo(startDir) || resolve(startDir), "agents");
-    bootstrapped = true;
-  }
-  const instrFile = flag("instructions-file");
-  const r = coreCreateAgent(root, {
-    name, local, oatsCore: !args.includes("--no-oats-core"), description: flag("description"), type: flag("type"), repo: flag("repo") || (flag("work") === "directory" ? undefined : defaultRepo(process.cwd())),
-    work: flag("work"), runtime: flag("runtime"), model: flag("model"), yolo,
-    instructions: instrFile ? readFileSync(instrFile, "utf8") : undefined,
-  });
-  // A declared oats.core is a requirement spawn will enforce: say the next
-  // step here, not only at the refusal.
-  const declared = r.declaredCapabilities || [];
-  const inactive = declared.filter((id) => !(resolveOatsConfig(workspaceOf(root), name).capabilities || []).some((c) => c.id === id));
-  const next = inactive.length ? [{ code: "next-step", message: `${name} declares ${inactive.join(", ")}; before spawning, pin their packages in oats-workspace.yaml packages: and declare them in soul.yaml capabilities: { <cap>: { from } } (workspace model v2)` }] : [];
-  const notes = [...(r.notes || []), ...next];
-  if (args.includes("--json")) { console.log(JSON.stringify({ ...r, ...(notes.length ? { notes } : {}), ...(bootstrapped ? { agentsRoot: root } : {}) }, null, 2)); return; }
-  for (const information of notes) console.error(`[${information.code}] ${information.message}`);
-  if (bootstrapped) console.log(`Created deployment root ${shortPath(root)} (this scope had no agents/ yet)`);
-  console.log(`Created ${r.kind === "local" ? "LOCAL agent (uncommitted — soul lives in local-agents/, gitignored)" : "agent"} "${r.agent}" — soul at ${shortPath(r.soul)}`);
-  console.log(`Edit ${shortPath(join(r.soul, "AGENTS.md"))} to define its role, then${inactive.length ? ` activate ${inactive.join(", ")} (above) and` : ":"} oats spawn ${r.agent} --task "..."`);
 }
 
 // ---------- capability command dispatch ----------
@@ -3807,7 +3697,7 @@ async function serverRouteCmd() {
 // blame` pointing at the commit that last changed each command.
 const TYPED_CLI_FAILURES = new Set(["unsafe-config-key", "unsafe-config-value"]);
 /** Removed 0.24 verbs → their v2 replacement (workspace model v2, decision 5). Checked before capability dispatch. */
-const REMOVED_VERBS = { install: "oats sync", restore: "oats sync", init: "oats-local.yaml + oats sync", use: "soul.yaml capabilities: { <cap>: { from } } + workspace defaults", trust: "declaring the package in packages: (package approval was removed; oats sync locks commit + integrity)", list: "oats workspace status | oats capabilities", catalog: "oats package add <id> <version> (bare versions resolve through package-catalog.json)", remove: "oats package remove <id>", migrate: "a rebuild (no migration: docs/design/2026-09-23-workspace-module-contracts.md)", config: "oats-local.yaml (host settings) and oats-workspace.yaml (shared)", inject: "injection overrides are not part of the workspace model yet; edit the capability inject in its member repo" };
+const REMOVED_VERBS = { create: "author souls/<name>/soul.yaml + AGENTS.md in a member repository, then `oats sync`", install: "oats sync", restore: "oats sync", init: "oats-local.yaml + oats sync", use: "soul.yaml capabilities: { <cap>: { from } } + workspace defaults", trust: "declaring the package in packages: (package approval was removed; oats sync locks commit + integrity)", list: "oats workspace status | oats capabilities", catalog: "oats package add <id> <version> (bare versions resolve through package-catalog.json)", remove: "oats package remove <id>", migrate: "a rebuild (no migration: docs/design/2026-09-23-workspace-module-contracts.md)", config: "oats-local.yaml (host settings) and oats-workspace.yaml (shared)", inject: "injection overrides are not part of the workspace model yet; edit the capability inject in its member repo" };
 try {
 // Inspect explicit selectors with the existing parser before new-work routing,
 // including selectors before the command. Inherited captures are not prepare inputs.
@@ -3896,7 +3786,6 @@ else if (cmd === "session") await sessionCmd();
 else if (cmd === "schedule") scheduleCmd();
 else if (cmd === "spawn") { try { await spawnCmd(); } catch (e) { if (TYPED_CLI_FAILURES.has(e?.code)) throw e; if (JSON_MODE) jsonFail("E_SPAWN_FAILED", e.message || e); throw e; } }
 else if (cmd === "retire") retireCmd();
-else if (cmd === "create") createCmd();
 else if (cmd === "capture" || cmd === "recall" || cmd === "setup") await recordCmd(cmd);
 else if (cmd === "experimental") await experimentalCmd();
 // `!HELP_WORDS.has(cmd)`: usage NEVER depends on deployment state. `help` is a
@@ -3984,10 +3873,6 @@ Usage:
                                             and prints the
                                             next steps (clone members you work IN, spawn
                                             oats-operator-expert); creates no soul, spawns nothing
-  oats create <name> [--local] [--no-oats-core] create an agent soul; --local = full
-      [--description <d>] [--repo <r>]      soul under local-agents/ (uncommitted,
-      [--work <mode>] [--runtime pi|claude|codex] gitignored; same memory + lifecycle)
-      [--model <m>] [--yolo|--no-yolo] [--instructions-file <f>]
   oats session inspect|input|attach --home <absolute-home> [--text-file <path>] [--json]
   oats schedule list|show <id>|add <id> --file <spec.json>|update <id> --file <spec.json>
       enable|disable|run|remove|reconcile <id>   workspace-scoped, host-owned schedules (spawn,
@@ -4012,16 +3897,15 @@ Usage:
                                             spawn hooks); --model replaces the recorded model
                                             for this and later starts; a live harness is refused
   oats spawn <agent> [--task <text>]         spawn an instance (tmux/Herdr; --no-launch
-      [--purpose <slug>] [--repo <r>]       = scaffold only); --instructions-file/
-      [--parent <instance>]                 --def-file creates a local agent;
-      [--no-oats-core]                      omit the default only on NEW local souls;
+      [--purpose <slug>] [--repo <r>]       = scaffold only); the agent is a workspace
+      [--parent <instance>]                 soul or a capability-defined agent
       [--relation child|sibling|parent|unrelated]    --relation + --relative-to anchor the
       [--relative-to <instance>]            new instance to an existing one; --parent X
       [--relative-root <agents-root>]       disambiguates same-named team anchors
       [--work worktree|checkout|attached|workspace|directory]  = sugar for --relative-to X --relation
       [--work-dir <owner-work>] [--runtime pi|claude|codex] [--backend tmux|herdr] [--herdr-socket <path>] [--yolo|--no-yolo] [--model <m>] [--branch <b>]  child (default: unrelated, top-level)
-      [--instructions-file <f>|--def-file <f>] [--no-launch] [--json]
-                                            with team: declared, unknown local souls
+      [--no-launch] [--json]
+                                            with team: declared, unknown souls
                                             resolve across the team scope's repos
                                             directory: owned home/work, config context may
                                             be non-Git; rejects --work-dir and --branch

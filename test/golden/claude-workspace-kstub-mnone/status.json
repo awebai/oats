@@ -57,7 +57,6 @@
                 "<base>/scope/.agents/capabilities/owned/golden-knowledge/skills"
               ],
               "hooks": [
-                "soul-scaffold",
                 "spawn"
               ],
               "trusted": true
@@ -227,7 +226,6 @@
               "level": "<base>/scope",
               "settings": {},
               "hooks": {
-                "soul-scaffold": "node '<base>/scope/.agents/capabilities/owned/golden-knowledge/hooks/scaffold.mjs'",
                 "spawn": "node '<base>/scope/.agents/capabilities/owned/golden-knowledge/hooks/spawn.mjs'"
               },
               "requiredHooks": [],

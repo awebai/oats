@@ -7,11 +7,8 @@ instances/.oats-retirement/
 instances/.oats-retirement/baselines/
 instances/.oats-retirement/baselines/<retirement-key>.json
 soul/
-soul/.oats-scaffold-owners.json
 soul/AGENTS.md
 soul/CLAUDE.md -> AGENTS.md
-soul/knowledge/
-soul/knowledge/index.md
 soul/soul.yaml
 
 # git worktree list --porcelain

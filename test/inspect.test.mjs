@@ -41,11 +41,9 @@ function scope(name) {
   write(join(repo, "oats-config.yaml"), "name: t\ncapabilities:\n  layers:\n    knowledge:\n      capability: test.notes\n      from: owned\n      global: true\n      settings:\n        tone: dry\n      souls:\n        dev:\n          settings:\n            tone: warm\n    messaging: none\n    tasks: none\n  additive:\n    test.tools:\n      from: owned\n      souls:\n        dev: true\n");
   write(join(repo, "agents", "dev", "soul", "soul.yaml"), "name: dev\nkind: persistent\ndescription: developer\nrepo: .\nwork: worktree\nruntime: claude\nmodel: opus\nyolo: true\n");
   write(join(repo, "agents", "dev", "soul", "AGENTS.md"), "# dev\n\nYou are dev.\n");
-  write(join(repo, "local-agents", "scratch", "soul", "soul.yaml"), "name: scratch\nkind: local\nrepo: .\nwork: checkout\nruntime: pi\n");
   // K4 fixture: a soul declaring a requirement the inventory does not hold.
   write(join(repo, "agents", "needy", "soul", "soul.yaml"), "name: needy\nkind: persistent\nrepo: .\nwork: checkout\nruntime: pi\nrequires: {\"capabilities\":{\"test.tools\":{\"source\":\"owned\"},\"test.absent\":{\"source\":\"git:x@y#z\"}}}\n");
   write(join(repo, "agents", "needy", "soul", "AGENTS.md"), "# needy\n");
-  write(join(repo, "local-agents", "scratch", "soul", "AGENTS.md"), "# scratch\n");
   // A running-home snapshot for dev with an older setting and a capability no longer active.
   const home = join(repo, "agents", "dev", "instances", "dev-one");
   write(join(home, "instance.json"), JSON.stringify({ agent: "dev", instance: "dev-one", home, repo, work: "worktree", runtime: "claude", yolo: true, launched: true, createdAt: "2026-09-07T00:00:00.000Z",
@@ -62,7 +60,7 @@ test("inspect answers souls with editability, capabilities with health separate 
   const res = r.json().result;
   assert.equal(res.operationsApi, 1); assert.equal(res.selected.source, "config"); assert.equal(res.selected.soul, null);
   const names = res.souls.map((s) => `${s.name}:${s.kind}`).sort();
-  assert.deepEqual(names, ["dev:persistent", "helper:capability", "needy:persistent", "scratch:local"]);
+  assert.deepEqual(names, ["dev:persistent", "helper:capability", "needy:persistent"]);
   const dev = res.souls.find((s) => s.name === "dev");
   assert.equal(dev.runtime, "claude"); assert.equal(dev.model, "opus"); assert.equal(dev.yolo, true); assert.equal(dev.work, "worktree");
   assert.deepEqual(dev.editable.fields, ["runtime", "model", "yolo", "backend", "description", "launch-config"]); assert.equal(dev.editable.instructions, true);
@@ -126,7 +124,7 @@ test("inspect --soul selects one soul with its instructions and soul-specific bi
   assert.ok(drift["test.notes:integrity"], "a changed artifact integrity since spawn is drift");
   const harvest = res.capabilities.find((c) => c.id === "test.notes").operations.find((o) => o.name === "harvest");
   assert.equal(harvest.available, true, "with a home the home operation is available");
-  assert.equal(oats(["inspect", "--home", home, "--soul", "scratch", "--json"]).json().error.code, "E_HOME_MISMATCH");
+  assert.equal(oats(["inspect", "--home", home, "--soul", "needy", "--json"]).json().error.code, "E_HOME_MISMATCH");
   assert.equal(oats(["inspect", "--home", join(base, "nowhere"), "--json"]).json().error.code, "E_SESSION_UNKNOWN");
 });
 
