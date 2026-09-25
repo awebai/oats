@@ -22,7 +22,7 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
-## Batch — 2026-09-24 night (PRs 131, 136, 151–182) → toward v0.26.0 (unreleased; main carries breaking changes)
+## Batch — 2026-09-24 night (PRs 131, 136, 151–183) → toward v0.26.0 (unreleased; main carries breaking changes)
 - **Merged:**
   - PR151 packages: approval removed (human decision; declaring a package IS the trust decision) `e62b8f16`, plus the release-note follow-up `f0994882`.
   - PR153 docs for it `b97de554`.
@@ -119,6 +119,10 @@ decisions/ and referenced from here.
     - The provider-check stdin is exactly the released wire again, with teams only through `OATS_TEAMS` / `OATS_TEAMS_SOURCE` / `OATS_TEAM_LABELS`. A test runs the real bundled oats.aweb 1.13.1 check (a mutation re-adding the keys fails it).
     - `declares` (declared setting names) on the preview `modules[]` and inspect `capabilities[]` rows, feature `settings-declared`.
   - PR182 mirror + pins `8c3775aa` (lead; squash tree verified). The bundled jira/linear copies are byte-identical to their v1.0.1 tags; oats-review = oats.dev v1.0.1 (1.2.1) with `private: true` as the only delta; the catalog pins v1.0.1 ×3.
+  - PR183 kernel `38293016` (squash tree verified; lead-approved, watcher-merged). Found by the (e) assessment: v2 never checked a capability's `compatibility.oats` (hard-coded ok; the only checker lived in the captured loaders).
+    - Now resolveSoul and capability agents refuse with `E_CAPABILITY_INCOMPATIBLE {capability, range, kernel, from}`; an unparseable range gives `why: "range"`.
+    - inspect rows carry the real `compatibility`; a frozen home's module that no longer admits the kernel is a `capability-incompatible` problem, not a refusal.
+    - **Main is now the 0.26.0 line** (root/pi/desktop manifests and locks): the in-repo >=0.26.0 floors needed it. At the tag, release.yml finds main pre-aligned and opens no bump PR.
 - **taught us:**
   - (1) **Arm a merge watcher with the full approved oid, never "the current head".** #160's head moved twice after approval while mails crossed. The watcher's named-oid guard refused both mismatches, so nothing unreviewed merged. The loop ends with one FINAL mail per party (author and watcher) naming the full oid and "no pushes", and by ignoring the stale mails that follow.
   - (2) **A native gate must wait for the message, not for a spinner.** Preview in the rig is slow, and fixed waits produced false FAILs in both directions. Poll for the expected sentence with a bound.
