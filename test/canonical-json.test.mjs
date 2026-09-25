@@ -4,11 +4,11 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { canonicalJson, decodeUtf8, parseStrictJson } from "../lib/portable-values.mjs";
-import { BYTES_FORMAT, bytesIntegrity } from "../lib/portable-digest.mjs";
+import { canonicalJson, decodeUtf8, parseStrictJson } from "../lib/canonical-json.mjs";
+import { BYTES_FORMAT, bytesIntegrity } from "../lib/digest.mjs";
 
 function fixture(t) {
-  const root = mkdtempSync(join(tmpdir(), "oats-portable-digest-"));
+  const root = mkdtempSync(join(tmpdir(), "oats-canonical-json-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   return root;
 }

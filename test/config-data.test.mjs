@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Composer } from "yaml";
 import { parseConfigData } from "../lib/config-data.mjs";
-import { canonicalJson } from "../lib/portable-values.mjs";
+import { canonicalJson } from "../lib/canonical-json.mjs";
 
 test("portable YAML preserves nested map sequences, source references and pointer origins", () => {
   const source = `schemaVersion: 1

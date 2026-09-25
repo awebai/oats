@@ -11,12 +11,12 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import * as core from "../lib/core.mjs";
-import { copyTreeSafe } from "../lib/artifact-tree.mjs";
+import { copyTreeSafe } from "../lib/tree-copy.mjs";
 import { oatsError } from "../lib/errors.mjs";
 
 const write = (file, bytes) => { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, bytes); };
 function fixture(t) {
-  const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-artifact-tree-")));
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-tree-copy-")));
   t.after(() => {
     // Some cases deliberately copy read-only directories. Restore ONLY fixture
     // directory permissions for cleanup, without following links.
