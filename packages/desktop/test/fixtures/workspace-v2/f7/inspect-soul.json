@@ -8,14 +8,14 @@
       "kind": "soul",
       "soul": "release-manager",
       "repoKey": "local//fixture/base/fx/remotes/agents.git",
-      "commit": "038f8665e7b7c2ecd36e9c27e5ed76aca3f98473",
+      "commit": "7ba7c24422ee343b7f87870e33d58aad31703579",
       "team": "engineering"
     },
     "workspace": {
       "key": "local//fixture/base/fx/remotes/agents.git",
       "name": "northwind",
       "deployment": "/fixture/base/northwind-workspace",
-      "commit": "038f8665e7b7c2ecd36e9c27e5ed76aca3f98473",
+      "commit": "7ba7c24422ee343b7f87870e33d58aad31703579",
       "standalone": false
     },
     "souls": [
@@ -23,7 +23,7 @@
         "soulsApi": 2,
         "name": "release-manager",
         "repoKey": "local//fixture/base/fx/remotes/agents.git",
-        "commit": "038f8665e7b7c2ecd36e9c27e5ed76aca3f98473",
+        "commit": "7ba7c24422ee343b7f87870e33d58aad31703579",
         "team": "engineering",
         "kind": "member",
         "path": "souls/release-manager",
@@ -78,7 +78,7 @@
           "kind": "package",
           "package": "nw.tools",
           "version": "0.4.0",
-          "commit": "84502af2cf93fb99e4373827843ce59061c98f50",
+          "commit": "7c74e136f86827f420f132145b0dcd4480aeabbc",
           "integrity": "sha256-4a0ee48230d65cc6c0b9d0c9a3883e64182cfc7b2410e4f5839bacf551fcf1cf",
           "repoKey": "local//fixture/base/fx/remotes/nw-tools.git"
         },
@@ -95,7 +95,7 @@
         "from": {
           "kind": "member",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
-          "commit": "038f8665e7b7c2ecd36e9c27e5ed76aca3f98473"
+          "commit": "7ba7c24422ee343b7f87870e33d58aad31703579"
         },
         "dir": null,
         "settings": {},
@@ -110,7 +110,7 @@
         "from": {
           "kind": "member",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
-          "commit": "038f8665e7b7c2ecd36e9c27e5ed76aca3f98473"
+          "commit": "7ba7c24422ee343b7f87870e33d58aad31703579"
         },
         "dir": null,
         "settings": {},
@@ -126,7 +126,7 @@
           "kind": "package",
           "package": "nw.teams",
           "version": "0.1.0",
-          "commit": "e092ebe68609584faac25408b912e7931ea681d5",
+          "commit": "46a2f4cec474374a82fa97f2c70a9c714ef6da0f",
           "integrity": "sha256-fcbce78fa3db67ea5601c5647bea41ef9c240af42d6bb59a61f0c23af39870b1",
           "repoKey": "local//fixture/base/fx/remotes/pkg-teams.git"
         },

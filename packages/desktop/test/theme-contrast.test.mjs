@@ -24,6 +24,7 @@ import { createSchedulesView } from '../renderer/views/schedules.mjs';
 import { createSoulInspector, inspectorCSS } from '../renderer/soul-inspector.mjs';
 import { readinessCSS as readinessViewCSS } from '../renderer/readiness-view.mjs';
 import { createInstanceGitPanel } from '../renderer/instance-git.mjs';
+import { spawnDialogCSS } from '../renderer/spawn-dialog.mjs';
 import { setWorkspace } from '../renderer/views/common.mjs';
 import { scheduleReadData } from '../renderer/schedule-read-data.mjs';
 import { cli as scheduleCli, scope as scheduleScope, data as scheduleData, entry as scheduleEntry } from './helpers/schedule-read-fixture.mjs';
@@ -595,4 +596,25 @@ for (const [name] of palettes) test(`${name}: F7 inspector cards, teams, compact
     assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
   }
+});
+
+// F7 Part C: the spawn dialog's Teams row (the classes drawTeams builds).
+for (const [name] of palettes) test(`${name}: the spawn Teams row (fixed, joinable, unmapped) meets computed AA`, () => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="spawn-team-list">
+    <label class="spawn-team spawn-team-fixed"><input type="checkbox" checked disabled><span class="spawn-team-name">Personal team</span><span class="spawn-team-meta">always</span></label>
+    <label class="spawn-team"><input type="checkbox"><span class="spawn-team-name">engineering</span><span class="spawn-team-meta">northwind:eng</span></label>
+    <label class="spawn-team unavailable"><input type="checkbox" disabled><span class="spawn-team-name">global</span><span class="spawn-team-meta">Not mapped by this workspace</span></label>
+  </div></body></html>`, { pretendToBeVisual: true });
+  const doc = dom.window.document;
+  for (const source of [css, spawnDialogCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  for (const [selector, fg] of [['.spawn-team-fixed .spawn-team-name', 'fg'], ['.spawn-team:not(.unavailable):not(.spawn-team-fixed) .spawn-team-name', 'fg'],
+    ['.spawn-team-meta', 'muted'], ['.spawn-team.unavailable .spawn-team-name', 'muted'], ['.spawn-team.unavailable .spawn-team-meta', 'muted']]) {
+    const el = doc.querySelector(selector); assert.ok(el, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.equal(dom.window.getComputedStyle(doc.querySelector('.spawn-team-list')).background.replace(/^.*(var\(--[\w-]+\)).*$/, '$1'), 'var(--surface)');
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue('--surface').trim())) >= 4.5, selector);
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+  }
+  dom.window.close();
 });

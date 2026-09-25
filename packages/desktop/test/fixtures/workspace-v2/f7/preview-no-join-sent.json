@@ -15,43 +15,52 @@
         },
         "layer": null,
         "private": false,
-        "changedSince": null
+        "changedSince": false
       },
       {
         "name": "nw-house-style",
         "from": {
           "kind": "member",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
-          "commit": "7ba7c24422ee343b7f87870e33d58aad31703579"
+          "commit": "93e7935c8dad71efb5f57551a20eb2b2d3a276e2"
         },
         "layer": null,
         "private": false,
-        "changedSince": null
+        "changedSince": {
+          "instance": "release-manager-teams",
+          "was": "7ba7c24422ee343b7f87870e33d58aad31703579"
+        }
       },
       {
         "name": "nw-release-tooling",
         "from": {
           "kind": "member",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
-          "commit": "7ba7c24422ee343b7f87870e33d58aad31703579"
+          "commit": "93e7935c8dad71efb5f57551a20eb2b2d3a276e2"
         },
         "layer": null,
         "private": false,
-        "changedSince": null
+        "changedSince": {
+          "instance": "release-manager-teams",
+          "was": "7ba7c24422ee343b7f87870e33d58aad31703579"
+        }
       },
       {
-        "name": "nw.teams",
+        "name": "nw.chat",
         "from": {
           "kind": "package",
-          "package": "nw.teams",
+          "package": "nw.chat",
           "version": "0.1.0",
-          "commit": "46a2f4cec474374a82fa97f2c70a9c714ef6da0f",
-          "integrity": "sha256-fcbce78fa3db67ea5601c5647bea41ef9c240af42d6bb59a61f0c23af39870b1",
-          "repoKey": "local//fixture/base/fx/remotes/pkg-teams.git"
+          "commit": "5526fd50bcab4acf16b54f8535be475ec8c77712",
+          "integrity": "sha256-f1021844f28d07ccd8f66398726ce73eb893fd277f2268aeb1a2a6ad9db90e75",
+          "repoKey": "local//fixture/base/fx/remotes/pkg-chat.git"
         },
         "layer": "messaging",
         "private": false,
-        "changedSince": null
+        "changedSince": {
+          "instance": "release-manager-teams",
+          "was": null
+        }
       },
       {
         "name": "oats.core",
@@ -65,7 +74,7 @@
         },
         "layer": null,
         "private": false,
-        "changedSince": null
+        "changedSince": false
       },
       {
         "name": "oats.okf",
@@ -79,7 +88,7 @@
         },
         "layer": "knowledge",
         "private": false,
-        "changedSince": null
+        "changedSince": false
       }
     ],
     "team": "engineering",
@@ -110,13 +119,13 @@
         }
       }
     ],
-    "resolution": "ede6eeedb01857ad2e8095ff",
-    "declRevision": "50f22e22a52e97bf74ca367a",
-    "payloadRevision": "cca01e2a62e47b776c4adcbf",
+    "resolution": "cf62dcb88183f5d036211ce5",
+    "declRevision": "563b985ae2367a3c21ccb7dd",
+    "payloadRevision": "73f108de5ff9ca4f28283c0e",
     "workspace": "local//fixture/base/fx/remotes/agents.git",
     "standalone": false,
     "providers": {
-      "nw.teams": {
+      "nw.chat": {
         "join": "engineering"
       }
     },
@@ -124,7 +133,7 @@
       "nw-deploy": {},
       "nw-house-style": {},
       "nw-release-tooling": {},
-      "nw.teams": {
+      "nw.chat": {
         "private": "per-human",
         "channels": [
           "northwind-eng"
@@ -146,7 +155,7 @@
       "nw-deploy": {},
       "nw-house-style": {},
       "nw-release-tooling": {},
-      "nw.teams": {
+      "nw.chat": {
         "/private": {
           "kind": "workspace",
           "at": "oats-workspace.yaml#/messaging"
@@ -161,7 +170,7 @@
         },
         "/join": {
           "kind": "spawn",
-          "at": "--provider nw.teams"
+          "at": "--provider nw.chat"
         }
       },
       "oats.core": {},
@@ -184,8 +193,8 @@
     "preview": true,
     "agent": "release-manager",
     "kind": "persistent",
-    "instance": "release-manager-teams",
-    "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams",
+    "instance": "release-manager-teams-2",
+    "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams-2",
     "repo": "/fixture/base/northwind-workspace/agents-repo",
     "work": "worktree",
     "subject": {
@@ -194,9 +203,9 @@
       "dir": "/fixture/base/northwind-workspace"
     },
     "decision": {
-      "instance": "release-manager-teams",
-      "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams",
-      "branch": "agents/release-manager-teams",
+      "instance": "release-manager-teams-2",
+      "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams-2",
+      "branch": "agents/release-manager-teams-2",
       "base": {
         "ref": "HEAD",
         "oid": "7ba7c24422ee343b7f87870e33d58aad31703579"
@@ -215,7 +224,7 @@
           "nw-deploy": {},
           "nw-house-style": {},
           "nw-release-tooling": {},
-          "nw.teams": {
+          "nw.chat": {
             "private": "per-human",
             "channels": [
               "northwind-eng"
@@ -234,13 +243,13 @@
           }
         }
       },
-      "resolution": "ede6eeedb01857ad2e8095ff",
-      "revision": "e8f1ffe77fe0e6781ee0ce9f"
+      "resolution": "cf62dcb88183f5d036211ce5",
+      "revision": "c10adcb3956c6f724ab081a4"
     },
     "preflight": {
       "status": "complete",
       "budgetMs": 20000,
-      "elapsedMs": 327
+      "elapsedMs": 76
     },
     "backendStatus": {
       "name": "tmux",
@@ -252,12 +261,12 @@
     "modelSource": "native default",
     "launchConfig": null,
     "backend": "tmux",
-    "branch": "agents/release-manager-teams",
+    "branch": "agents/release-manager-teams-2",
     "base": {
       "ref": "HEAD",
       "oid": "7ba7c24422ee343b7f87870e33d58aad31703579"
     },
-    "worktree": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/work",
+    "worktree": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams-2/work",
     "relation": null,
     "parentInstance": null,
     "policy": {
@@ -277,15 +286,15 @@
       },
       {
         "name": "nw-house-style",
-        "origin": "member:local//fixture/base/fx/remotes/agents.git@7ba7c24422ee343b7f87870e33d58aad31703579"
+        "origin": "member:local//fixture/base/fx/remotes/agents.git@93e7935c8dad71efb5f57551a20eb2b2d3a276e2"
       },
       {
         "name": "nw-release-tooling",
-        "origin": "member:local//fixture/base/fx/remotes/agents.git@7ba7c24422ee343b7f87870e33d58aad31703579"
+        "origin": "member:local//fixture/base/fx/remotes/agents.git@93e7935c8dad71efb5f57551a20eb2b2d3a276e2"
       },
       {
-        "name": "nw.teams",
-        "origin": "package:nw.teams@0.1.0"
+        "name": "nw.chat",
+        "origin": "package:nw.chat@0.1.0"
       },
       {
         "name": "oats.core",
