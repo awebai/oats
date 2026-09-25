@@ -22,7 +22,7 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
-## Batch — 2026-09-24 night (PRs 131, 136, 151–190) → toward v0.26.0 (unreleased; main carries breaking changes)
+## Batch — 2026-09-24 night (PRs 131, 136, 151–191) → toward v0.26.0 (unreleased; main carries breaking changes)
 - **Merged:**
   - PR151 packages: approval removed (human decision; declaring a package IS the trust decision) `e62b8f16`, plus the release-note follow-up `f0994882`.
   - PR153 docs for it `b97de554`.
@@ -134,6 +134,9 @@ decisions/ and referenced from here.
   - oats.aweb **v1.14.0** tagged on awebai/oats-aweb (co-lead; the tag object `bcf04587` → merge `c26ce257`; the stage by integrations-expert-aweb-1140; lead cross-review over 4 rounds found the Q2 mint target needed K). The teams verbs teams|join|leave; joined teams poll. The oats mirror + pin come in 0.26.1. oats-knowledge #42 (its lessons) merged `2fac8ed9`.
   - PR190 kernel `5f152168` (the Phase D driver; the co-lead's #189 follow-up; lead skip-primary mutation killing 3 tests; co-lead ACK; the watcher merged on a corrected arm; squash tree verified): resolveSoul validates every carried label's byTeam entry (reserved key + hostOnly), not only the primary's.
   - oats.aweb v1.14.0 DEFECT (found by the co-lead against aw 1.36.9 source): joined-team mints ran `aw team join` under `--identity-home`, which aw's identity-home allowlist refuses on every 1.36.x. The fakes never modelled the allowlist. 1.14.1 switches to `aw id team accept-invite`, with a table-driven real-aw admission test; 0.26.1 mirrors 1.14.1.
+  - PR186 Desktop `153547c3` (oats-desktop-engineer-1; F7: side panels (Instance · Soul · Git & GitHub), soul and capability pages, teams on the spawn row / instance / soul (E_TEAM_CONFLICT), Capabilities sections incl. repo-owned behind `capabilities-private`, the Setup graph). The human QA'd it and directed the merge without a lead native gate; rebased on current main for CI; the watcher merged; squash tree verified.
+  - PR191 kernel `e17609d4` (the Phase D driver; lead byTeam mutation killing 2; co-lead ACK; the watcher merged; squash tree verified): `layers.<layer>.from` (soul | workspace | team:<label>) on inspect --soul/--home; homes record it at spawn; feature `layers-from`; provenance only (no revision moves).
+  - Human direction: release 0.26.0 without the harness rename; harness → 0.27.0 (plan `36a63259`).
 - **taught us:**
   - (1) **Arm a merge watcher with the full approved oid, never "the current head".** #160's head moved twice after approval while mails crossed. The watcher's named-oid guard refused both mismatches, so nothing unreviewed merged. The loop ends with one FINAL mail per party (author and watcher) naming the full oid and "no pushes", and by ignoring the stale mails that follow.
   - (2) **A native gate must wait for the message, not for a spinner.** Preview in the rig is slow, and fixed waits produced false FAILs in both directions. Poll for the expected sentence with a bound.
