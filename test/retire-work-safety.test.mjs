@@ -216,6 +216,32 @@ test("human retire output reports preserved classes and recovery location", () =
   assert.match(retired.stdout, /\.oats-retirement\/recovery\/dev-reported-/);
 });
 
+test("retire names the ignored and untracked outputs a recovery copied, and what they cost", () => {
+  // There is no disposable declaration on the workspace model: a worktree's build
+  // outputs (ignored cache/) are copied to recovery with everything else. Safe, not
+  // clean — the summary says which paths and how many bytes.
+  const f = fixture();
+  const outputs = (spawned) => {
+    write(join(spawned.home, "work", "cache", "deep", "big.bin"), "x".repeat(5000));
+    write(join(spawned.home, "work", "cache", "small.bin"), "y".repeat(120));
+    write(join(spawned.home, "work", "note.txt"), "twelve bytes");
+  };
+  const a = spawn(f, "costly");
+  outputs(a);
+  const retired = cli(f, ["retire", "dev-costly", "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const recovery = JSON.parse(retired.stdout).workRecovery;
+  assert.deepEqual(recovery.outputs, { paths: [{ path: "cache/", bytes: 5120 }, { path: "note.txt", bytes: 12 }], bytes: 5132 });
+  assert.ok(recovery.bytes >= 5132, `the recovery's own size covers the outputs it carries (${recovery.bytes})`);
+  assert.deepEqual(JSON.parse(readFileSync(join(recovery.path, "recovery.json"), "utf8")).outputs, recovery.outputs, "recovery.json records them too");
+  const b = spawn(f, "costly-text");
+  outputs(b);
+  const text = cli(f, ["retire", "dev-costly-text"]);
+  assert.equal(text.status, 0, text.stderr);
+  assert.match(text.stdout, /\.oats-retirement\/recovery\/dev-costly-text-\S+ \(\d+(\.\d)? (B|KiB|MiB)\)/);
+  assert.match(text.stdout, /copied outputs: cache\/ \(5\.0 KiB\), note\.txt \(12 B\) — 5\.0 KiB in total/);
+});
+
 test("home-only recovery preserves notes without cloning a clean merged worktree", () => {
   const f = fixture();
   const spawned = spawn(f, "home-only");

@@ -97,6 +97,15 @@ const JSON_MODE = args.includes("--json");
 const CLI_BIN = realpathSync(fileURLToPath(import.meta.url));
 const jsonFail = (code, message, details) => { console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code, message: String(message), ...(details !== undefined ? { details } : {}) } })); process.exit(1); };
 const jsonOk = (result) => { console.log(JSON.stringify({ schemaVersion: 1, ok: true, result })); };
+const formatBytes = (n) => n < 1024 ? `${n} B` : n < 1024 ** 2 ? `${(n / 1024).toFixed(1)} KiB` : n < 1024 ** 3 ? `${(n / 1024 ** 2).toFixed(1)} MiB` : `${(n / 1024 ** 3).toFixed(1)} GiB`;
+/** A retire recovery's copied outputs (untracked/ignored or directory work), named with their size. */
+function preservedOutputLines(recovery) {
+  const outputs = recovery?.outputs;
+  if (!outputs?.paths?.length) return [];
+  const shown = outputs.paths.slice(0, 8).map((p) => `${p.path} (${formatBytes(p.bytes)})`);
+  const more = outputs.paths.length > 8 ? `, and ${outputs.paths.length - 8} more` : "";
+  return [`  copied outputs: ${shown.join(", ")}${more} — ${formatBytes(outputs.bytes)} in total`];
+}
 
 function inspectOnboardingCmd() {
   const fail = (code, message) => JSON_MODE ? jsonFail(code, message) : die(message);
@@ -2182,7 +2191,8 @@ function retireCmd() {
   // which is most of the harm of deleting it. Name the classes and the path.
   for (const recovery of r.workRecoveries || (r.workRecovery ? [r.workRecovery] : [])) {
     console.log(`Work that was not committed has been preserved: ${recovery.classes.join(", ")}`);
-    console.log(`  ${recovery.path}`);
+    console.log(`  ${recovery.path}${typeof recovery.bytes === "number" ? ` (${formatBytes(recovery.bytes)})` : ""}`);
+    for (const line of preservedOutputLines(recovery)) console.log(line);
   }
   if (isSelf) console.log("This window dies in ~8s — say any goodbyes now.");
 }
@@ -2983,7 +2993,8 @@ async function serverRouteCmd() {
     console.log(`Retired ${r.retired} on ${id}${r.deferred ? " (deferred completion scheduled there)" : ""}${r.rollbackIncomplete ? " — cleanup INCOMPLETE on the server, home retained there" : ""}`);
     for (const recovery of r.workRecoveries || (r.workRecovery ? [r.workRecovery] : [])) {
       console.log(`Work that was not committed has been preserved on ${target.sshHost}: ${(recovery.classes || []).join(", ")}`);
-      console.log(`  ${recovery.path}`);
+      console.log(`  ${recovery.path}${typeof recovery.bytes === "number" ? ` (${formatBytes(recovery.bytes)})` : ""}`);
+      for (const line of preservedOutputLines(recovery)) console.log(line);
     }
     if (r.rollbackIncomplete) { for (const f of r.rollbackIncomplete) console.error(`  ${f}`); console.error(`Fix the cause there and re-run \`oats retire ${r.retired} --server ${id}\`.`); process.exit(1); }
   } else {
