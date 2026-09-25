@@ -8,7 +8,9 @@ import { approveCapturedCapability, artifactApprovalKey, inspectCapturedApproval
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { bytesIntegrity, jsonIntegrity, PACKAGE_FORMAT, treeIntegrity } from "../lib/portable-digest.mjs";
-import { acquirePackage, installedCapabilityDir, loadCapturedDispatch, updatePackage } from "../lib/core.mjs";
+import { loadCapturedDispatch } from "../lib/core.mjs";
+// The captured path's store writer (deleted with the captured path in (e)).
+import { acquirePackage, installedCapabilityDir, updatePackage } from "../lib/captured-store-writer.mjs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { parsePortableSoul } from "../lib/portable-soul.mjs";

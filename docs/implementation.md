@@ -76,21 +76,10 @@ the slot). `lib/materialize.mjs` then copies every module whole into the home.
 The normative contract is
 [docs/design/2026-09-23-workspace-module-contracts.md](design/2026-09-23-workspace-module-contracts.md).
 
-**Classic 0.24 (superseded; still carried for homes without `oats-local.yaml`).**
-`configChain(context)` loads `oats-config.yaml` from closest scope outward.
-`resolveCapabilities(context, soulName)`:
-
-1. resolves explicit group definitions;
-2. collects matching global/group/soul bindings;
-3. composes settings by target specificity then config closeness;
-4. applies explicit enable/exclusion;
-5. validates equal-specificity conflicts, IDs, command namespaces, lock
-   integrity, and skill/layer collisions; and
-6. returns deterministic active capability records with provenance.
-
-`resolveOatsConfig` maps active packages declaring `layer` into the exclusive
-knowledge/messaging/tasks slots. `layers.<layer>: none` explicitly suppresses
-an inherited slot and remains distinct from absence.
+**Classic 0.24 (removed in 0.26.0).** The `oats-config.yaml` chain and its
+resolvers are gone. A legacy `oats-config.yaml` between the invocation
+directory and the deployment is refused with `E_CONFIG_BROKEN`
+(`reason: "legacy-config"`), and the message names the files that replace it.
 
 ## Spawn composition
 

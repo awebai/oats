@@ -6,42 +6,12 @@
 // every validator) while still answering property reads.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import {
-  capabilityManifest, marketplaceCapabilities, parseYamlFlat, parseYamlNested,
-  validateConfigShape, withConfigFile,
-} from "../lib/core.mjs";
+import { join } from "node:path";
+import { capabilityManifest, parseYamlFlat, parseYamlNested, withConfigFile } from "../lib/core.mjs";
 
 function temp() { return mkdtempSync(join(tmpdir(), "oats-keysafe-test-")); }
-function write(path, content) { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content); }
-/** Native function source text is what an inherited-name lookup leaks into a diagnostic. */
-const NATIVE_SOURCE = /\[native code\]|function \w*\s*\(/;
-
-test("inherited-name config keys get the ordinary unsupported-key diagnostic", () => {
-  const file = join(temp(), "oats-config.yaml");
-  for (const key of ["constructor", "toString", "valueOf", "hasOwnProperty"]) {
-    const cfg = parseYamlNested(`${key}: x\n`);
-    assert.deepEqual(Object.keys(cfg), [key]);
-    assert.throws(() => validateConfigShape(cfg, file), (e) => {
-      assert.equal(e.message, `unsupported oats-config key in ${file}: ${key}`);
-      assert.doesNotMatch(e.message, NATIVE_SOURCE);
-      return true;
-    });
-  }
-  // The renamed-key table still answers for its own entries.
-  assert.throws(() => validateConfigShape(parseYamlNested("groups:\n  devs: [dev]\n"), file), /unsupported oats-config key "groups".*agent-types/s);
-  // …and inside a capability entry, where RENAMED_ENTRY_KEYS is indexed the same way.
-  assert.throws(
-    () => validateConfigShape(parseYamlNested("capabilities:\n  additive:\n    acme.thing:\n      constructor: x\n"), file),
-    (e) => {
-      assert.equal(e.message, `unsupported keys for capability acme.thing in ${file}: constructor`);
-      assert.doesNotMatch(e.message, NATIVE_SOURCE);
-      return true;
-    });
-  assert.throws(() => validateConfigShape(parseYamlNested("capabilities:\n  additive:\n    acme.thing:\n      injection: none\n"), file), /unsupported key "injection".*injection-override/s);
-});
 
 test("__proto__ is refused by every YAML reader and pollutes nothing", () => {
   const documents = [
@@ -65,12 +35,6 @@ test("__proto__ is refused by every YAML reader and pollutes nothing", () => {
   assert.throws(() => parseYamlFlat("__proto__: polluted\n"), (e) => e.code === "unsafe-config-key");
   assert.equal(Object.prototype.polluted, undefined);
   assert.equal({}.polluted, undefined);
-  // A template shipped as config source material is refused on the same path,
-  // so it can neither mutate a prototype nor smuggle an unvalidated key past
-  // validateConfigShape by vanishing from Object.keys.
-  const file = join(temp(), "oats-config.yaml");
-  assert.throws(() => validateConfigShape(parseYamlNested("__proto__: {name: smuggled}\n"), file), /unsupported mapping key "__proto__"/);
-  assert.equal(Object.prototype.name, undefined);
 });
 
 test("ordinary config parses unchanged (control)", () => {
@@ -96,7 +60,6 @@ test("ordinary config parses unchanged (control)", () => {
   assert.equal(cfg.team.name, "Demo");
   assert.equal(cfg.capabilities.layers.knowledge.capability, "acme.knowledge");
   assert.equal(cfg.capabilities.additive["acme.chat"].souls.dev, true);
-  validateConfigShape(cfg, join(temp(), "oats-config.yaml"));
   assert.deepEqual(parseYamlFlat("type: developers\nruntime: pi\n"), { type: "developers", runtime: "pi" });
 });
 
@@ -107,7 +70,6 @@ test("an inherited-name capability id is not acquired just because Object.protot
   // Object.prototype.constructor as if it were a manifest.
   assert.equal(capabilityManifest("constructor", repo), undefined);
   assert.equal(capabilityManifest("toString", repo), undefined);
-  assert.equal(marketplaceCapabilities().toString, undefined);
 });
 
 test("the reported filename is the path itself, even when it contains regex substitution syntax", () => {

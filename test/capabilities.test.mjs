@@ -434,13 +434,17 @@ test("hooks run in deterministic order, with retire reversing spawn", async (t) 
   assert.deepEqual(readFileSync(order, "utf8").trim().split("\n"), ["spawn:acme.a", "spawn:acme.z", "retire:acme.z", "retire:acme.a"]);
 });
 
+/** One entry of a deployment's module store (<deployment>/.oats/modules/<id>@<commit>/),
+ * the one directory outside a home whose manifest the kernel reads. */
+function storeEntry(manifest) {
+  const deployment = temp(); write(join(deployment, "oats-local.yaml"), "workspace: store-test\n");
+  const dir = join(deployment, ".oats", "modules", "entry@0000000"); // a fixed name: ids under test carry `/`
+  write(join(dir, "oats.json"), JSON.stringify({ version: "1.0.0", compatibility: { oats: ">=0.6.2" }, description: "Test capability.", ...manifest }, null, 2));
+  return dir;
+}
+
 test("a capability may declare extra environment namespaces it speaks for, disclosed and never reserved", () => {
-  const mk = (extra) => {
-    const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
-    capability(repo, "aw", { capability: "acme.aw", environment: ["AWEB_DELIVERY"], ...(extra !== undefined ? { environmentNamespaces: extra } : {}) });
-    write(join(repo, "oats-config.yaml"), "name: ns-test\n");
-    return repo;
-  };
+  const mk = (extra) => storeEntry({ capability: "acme.aw", environment: ["AWEB_DELIVERY"], ...(extra !== undefined ? { environmentNamespaces: extra } : {}) });
   assert.throws(() => capabilityManifest("acme.aw", mk(undefined)), /outside its ACME_ namespace \(declare another in environmentNamespaces\)/);
   assert.equal(capabilityManifest("acme.aw", mk(["AWEB_"])).environment.includes("AWEB_DELIVERY"), true);
   assert.throws(() => capabilityManifest("acme.aw", mk(["OATS_"])), /reserved namespace/);
@@ -469,23 +473,14 @@ test("launch environment authority requires an unambiguous dotted capability ID"
   // Workspace-model grammar refuses `@`, `/` and upper case at manifest load;
   // an id that passes the grammar but is not dotted still fails the authority rule.
   for (const id of ["aweb@evil", "aweb/evil", "aweb.evil@other", "aweb.evil/other", "Aweb.evil"]) {
-    const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
-    capability(repo, "invalid-id", { capability: id, environment: ["AWEB_IDENTITY_HOME"] });
-    write(join(repo, "oats-config.yaml"), "name: invalid-id-test\n");
-    assert.throws(() => capabilityManifest(id, repo), /capability ID must match/);
+    assert.throws(() => capabilityManifest(id, storeEntry({ capability: id, environment: ["AWEB_IDENTITY_HOME"] })), /capability ID must match/);
   }
   for (const id of ["aweb-evil", "aweb_evil.x-"]) {
-    const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
-    capability(repo, "undotted-id", { capability: id, environment: ["AWEB_IDENTITY_HOME"] });
-    write(join(repo, "oats-config.yaml"), "name: undotted-id-test\n");
-    assert.throws(() => capabilityManifest(id, repo), /must use a lowercase dotted ID/);
+    assert.throws(() => capabilityManifest(id, storeEntry({ capability: id, environment: ["AWEB_IDENTITY_HOME"] })), /must use a lowercase dotted ID/);
   }
 
   // A capability that requests no environment authority needs only the grammar.
-  const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
-  capability(repo, "compatible-id", { capability: "aweb-evil" });
-  write(join(repo, "oats-config.yaml"), "name: compatible-id-test\n");
-  assert.equal(capabilityManifest("aweb-evil", repo).capability, "aweb-evil");
+  assert.equal(capabilityManifest("aweb-evil", storeEntry({ capability: "aweb-evil" })).capability, "aweb-evil");
 });
 
 test("executable and nested skill paths cannot escape the package integrity boundary", async (t) => {
