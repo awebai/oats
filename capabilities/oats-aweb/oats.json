@@ -1,9 +1,9 @@
 {
   "capability": "oats.aweb",
   "command": "aweb",
-  "version": "1.13.1",
+  "version": "1.14.1",
   "compatibility": {
-    "oats": ">=0.25.6"
+    "oats": ">=0.26.0"
   },
   "layer": "messaging",
   "description": "Messaging layer via aweb: per-instance team identities + native aw mail/chat skills + cross-machine team roster.",
@@ -71,7 +71,10 @@
     "setup": "bin/oats-aweb.mjs setup",
     "binding-normalize": "bin/oats-aweb-binding.mjs normalize",
     "binding-bind": "bin/oats-aweb-binding.mjs bind",
-    "binding-check": "bin/oats-aweb-binding.mjs check"
+    "binding-check": "bin/oats-aweb-binding.mjs check",
+    "teams": "bin/oats-aweb.mjs teams",
+    "join": "bin/oats-aweb.mjs join",
+    "leave": "bin/oats-aweb.mjs leave"
   },
   "binding": {
     "version": 1,
@@ -138,7 +141,7 @@
       "description": "channel: the native aweb channel packages wake the instance (default). session: delivery is external (AWEB_DELIVERY=session), no channel flag; the host wake broker registers the instance once it exists."
     },
     "team": {
-      "description": "Target aweb team id for identity lifecycle. In workspace v2 spawns this payload value wins over OATS_TEAM_ID/OATS_TEAM_NAME; if both are set and differ the hook warns and uses this setting."
+      "description": "Target aweb team id for the primary personal identity lifecycle. In workspace v2 spawns this payload value wins over OATS_TEAM_ID; if both are set and differ the hook warns and uses this setting."
     },
     "root": {
       "hostOnly": true,
@@ -157,9 +160,48 @@
     "residents": {
       "hostOnly": true,
       "description": "Host-owned map for global mode: resident name to absolute custody directory whose .aw holds the resident root keys and team certificate. Put this only in oats-local.yaml settings.oats.aweb.residents; committed workspace or soul files must never carry custody paths."
+    },
+    "join": {
+      "description": "comma-separated eligible team labels to join at spawn; values are workspace-defined labels and the default is absent"
     }
   },
   "environmentNamespaces": [
     "AWEB_"
-  ]
+  ],
+  "operations": {
+    "teams": {
+      "kind": "action",
+      "command": "teams",
+      "context": "home",
+      "description": "Read-only structured JSON summary of eligible and joined aweb teams for this home."
+    },
+    "join": {
+      "kind": "action",
+      "command": "join",
+      "context": "home",
+      "description": "Join comma-separated eligible aweb team labels for this home.",
+      "args": [
+        {
+          "name": "labels",
+          "flag": "--labels",
+          "required": true,
+          "description": "Comma-separated eligible team labels to join."
+        }
+      ]
+    },
+    "leave": {
+      "kind": "action",
+      "command": "leave",
+      "context": "home",
+      "description": "Leave comma-separated joined aweb team labels for this home.",
+      "args": [
+        {
+          "name": "labels",
+          "flag": "--labels",
+          "required": true,
+          "description": "Comma-separated joined team labels to leave."
+        }
+      ]
+    }
+  }
 }

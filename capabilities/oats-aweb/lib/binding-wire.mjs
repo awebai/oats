@@ -83,10 +83,11 @@ export function parseBindingJson(bytes,limits=BINDING_WIRE_LIMITS) {
 function settings(value,{phase}={}) {
   if(!obj(value)) wireError('invalid-binding');
   if(phase!=='check' && Object.hasOwn(value,'identity')) wireError('provider-not-qualified');
-  keys(value,phase==='check'?['delivery','team','root','roots','identity','residents']:['delivery','team','root','roots'],[]);
+  keys(value,phase==='check'?['delivery','team','root','roots','identity','residents','join']:['delivery','team','root','roots','join'],[]);
   if(value.delivery!==undefined && !['channel','session'].includes(value.delivery)) wireError('needs-configuration');
   if(value.team!==undefined && (typeof value.team!=='string' || !value.team.trim())) wireError('needs-configuration');
   if(value.root!==undefined && (typeof value.root!=='string' || !value.root.trim())) wireError('needs-configuration');
+  if(value.join!==undefined && typeof value.join!=='string') wireError('needs-configuration');
   if(value.roots!==undefined && !obj(value.roots)) wireError('needs-configuration');
   if(obj(value.roots)) for(const [team,root] of Object.entries(value.roots)) if(!team || typeof root!=='string' || !root.trim()) wireError('needs-configuration');
   if(value.identity!==undefined && !obj(value.identity)) wireError('needs-configuration');
@@ -164,6 +165,9 @@ function workspaceReadinessContext(value) {
 }
 function yamlScalar(text,key){const m=String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`,'m'));return m?m[1].trim():undefined;}
 export const CUSTODY_ATTACH_MIN = '1.36.3';
+export const WAKE_STREAM_MIN = '1.36.5';
+const CLASSIC_REFUSAL = 'oats.aweb 1.14 needs OATS 0.26.0 or newer (workspace model); on an older kernel pin oats.aweb v1.13.x';
+function classicEnv(env=process.env) {return !!env.OATS_TEAM_SCOPE && !(env.OATS_WORKSPACE_KEY || env.OATS_WORKSPACE_NAME || env.OATS_TEAM_LABEL);}
 export function grantYamlCustodySocket(text) {
   const lines=String(text??'').split(/\r?\n/);let inCustody=false,baseIndent=0;
   for(const line of lines) {
@@ -189,27 +193,35 @@ function grantAttachmentProblem(home) {
   const id=yamlScalar(text,'grant_id')||'<unknown>';
   return {code:'custody',message:`grant ${id} is not attached to custody; retire and respawn on aw >= ${CUSTODY_ATTACH_MIN}`};
 }
-function activeTeamAt(root){try{return yamlScalar(readFileSync(join(resolve(root),'.aw','teams.yaml'),'utf8'),'active_team')||yamlScalar(readFileSync(join(resolve(root),'.aw','teams.yaml'),'utf8'),'active');}catch{return undefined;}}
+function activeTeamAt(root){try{const text=readFileSync(join(resolve(root),'.aw','teams.yaml'),'utf8');return yamlScalar(text,'active_team')||yamlScalar(text,'active');}catch{return undefined;}}
+function residentCustodyRoot(settings){const identity=obj(settings.identity)?settings.identity:{},residents=obj(settings.residents)?settings.residents:{};const name=typeof identity.resident==='string'?identity.resident:'';const root=name&&typeof residents[name]==='string'?residents[name]:undefined;return identity.mode==='global'&&root&&isAbsolute(root)?root:undefined;}
 function teamFromSettings(settings,candidate,{env=process.env}={}) {
-  const configured=typeof settings.team==='string' && settings.team.trim()?settings.team.trim():(env.OATS_TEAM_ID || env.OATS_TEAM_NAME || undefined);
-  if(configured || env.OATS_TEAM_LABEL) return configured;
+  const configured=typeof settings.team==='string' && settings.team.trim()?settings.team.trim():undefined;
+  if(configured) return configured;
+  const custody=residentCustodyRoot(settings);if(custody)return activeTeamAt(custody);
   return candidate?.root && isAbsolute(candidate.root) ? activeTeamAt(candidate.root) : undefined;
 }
-function classicEnv(env=process.env) {return !!env.OATS_TEAM_SCOPE && !(env.OATS_WORKSPACE_KEY || env.OATS_WORKSPACE_NAME || env.OATS_TEAM_LABEL);}
 function rootCandidate(settings,team,{deployment,env=process.env}={}) {
   const roots=obj(settings.roots)?settings.roots:{};
   if(team && typeof roots[team]==='string' && roots[team].trim()) return {root:roots[team].trim(),key:`settings.oats.aweb.roots[${JSON.stringify(team)}]`,declared:true};
   if(typeof settings.root==='string' && settings.root.trim()) return {root:settings.root.trim(),key:'settings.oats.aweb.root',declared:true};
-  const candidates=classicEnv(env)?[env.OATS_TEAM_SCOPE,env.OATS_WORKSPACE].filter(Boolean):[env.OATS_WORKSPACE || deployment || env.OATS_TEAM_SCOPE || process.cwd()];
+  const candidates=[env.OATS_WORKSPACE || deployment || process.cwd()];
   for(const root of candidates) if(isAbsolute(root) && existsSync(join(resolve(root),'.aw'))) return {root,key:'settings.oats.aweb.root',declared:false};
   return {root:candidates[0] || process.cwd(),key:'settings.oats.aweb.root',declared:false};
 }
+function parseOatsTeams(env=process.env){try{const rows=JSON.parse(env.OATS_TEAMS||'[]');return Array.isArray(rows)?rows.filter(r=>r&&typeof r==='object').map(r=>({label:String(r.label||''),team:typeof r.team==='string'?r.team:null,mapped:r.mapped===true,payload:obj(r.payload)?r.payload:{}})):[];}catch{return [];}}
+function primaryTeamLabel(env=process.env){return env.OATS_TEAM_LABEL || String(env.OATS_TEAM_LABELS||'').split(',').map(s=>s.trim()).filter(Boolean)[0] || null;}
+function unmappedPrimary(env=process.env){const primary=primaryTeamLabel(env);return primary?parseOatsTeams(env).find(t=>t.label===primary&&!t.mapped):undefined;}
+function joinedTeams(home){if(!home)return[];try{const doc=JSON.parse(readFileSync(join(home,'.oats-aweb','teams.json'),'utf8'));return Array.isArray(doc.joinedTeams)?doc.joinedTeams.filter(j=>j&&typeof j==='object'&&j.label&&j.team&&j.identityHome):[];}catch{return[];}}
+function teamsReadiness({home,team,env=process.env}){const teams=parseOatsTeams(env),joined=joinedTeams(home),joinedLabels=new Set(joined.map(j=>j.label));return{personal:{team:team||null},primary:primaryTeamLabel(env),eligible:teams.filter(t=>t.mapped&&t.team).map(t=>({label:t.label,team:t.team,joined:joinedLabels.has(t.label)})),joined:joined.map(j=>({label:j.label,team:j.team,identityHome:j.identityHome,receive:j.receive||'poll',since:j.since})),unmapped:teams.filter(t=>!t.mapped).map(t=>t.label),at:new Date().toISOString()};}
 function readinessDetails(settings,{deployment,env=process.env}={}) {
-  const initialTeam=typeof settings.team==='string' && settings.team.trim()?settings.team.trim():(env.OATS_TEAM_ID || env.OATS_TEAM_NAME || undefined);
-  const candidate=rootCandidate(settings,initialTeam,{deployment,env}),team=teamFromSettings(settings,candidate,{env}),problems=[];
+  if(classicEnv(env)) return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:CLASSIC_REFUSAL}]}};
+  const initialTeam=typeof settings.team==='string' && settings.team.trim()?settings.team.trim():undefined;
+  const candidate=rootCandidate(settings,initialTeam,{deployment,env}),team=teamFromSettings(settings,candidate,{env}),problems=[],warnings=[];
   if(!candidate.root || !isAbsolute(candidate.root) || !existsSync(join(resolve(candidate.root),'.aw'))) problems.push({code:'needs-configuration',message:`no messaging root at ${candidate.root?resolve(candidate.root):process.cwd()}: run oats aweb setup there or set ${candidate.key}`});
-  if(!team) problems.push({code:'needs-configuration',message:'no team: set messaging.byTeam.<label>.team in the workspace file or settings.oats.aweb.team'});
-  return {team,candidate,result:checkProblems(problems) || {status:'ready',problems:[]}};
+  const unmapped=unmappedPrimary(env);if(unmapped&&team)warnings.push({code:'team-unmapped',message:`workspace label ${unmapped.label} is not mapped; using personal team ${team}`});
+  if(!team) problems.push({code:'needs-configuration',message:'no team: set settings.oats.aweb.team or keep an active team at the aweb root'});
+  return {team,candidate,warnings,result:checkProblems(problems) || {status:'ready',problems:[]}};
 }
 function readinessFromSettings(settings,options) {return readinessDetails(settings,options).result;}
 function runAw(argv,cwd,{unsetEnv=[],timeout=60000}={}) {
@@ -217,10 +229,25 @@ function runAw(argv,cwd,{unsetEnv=[],timeout=60000}={}) {
   try {return execFileSync(argv[0],argv.slice(1),{cwd,env,encoding:'utf8',stdio:['ignore','pipe','pipe'],timeout}).trim();}
   catch(e) {throw new Error(`${argv.slice(0,3).join(' ')} failed${e.status===undefined?'':` (exit ${e.status})`}`);}
 }
+function semverLt(a,b) {const A=String(a||'0.0.0').split('.').map(n=>Number(n)||0),B=String(b).split('.').map(n=>Number(n)||0);for(let i=0;i<3;i++){if((A[i]||0)!==(B[i]||0)) return (A[i]||0)<(B[i]||0);}return false;}
+function wakeReadiness(home,{reliedOn=false}={}) {
+  if(!home || !reliedOn) return {problems:[],warnings:[]};
+  try {
+    const doc=JSON.parse(runAw(['aw','wake','status','--json'],home,{timeout:10000}));
+    const state=doc.daemon_version_state || (doc.daemon_running===false?'not_running':doc.daemon_version?'reported':'unknown');
+    if(state==='reported') {
+      const running=String(doc.daemon_version||'unknown');
+      if(semverLt(running,WAKE_STREAM_MIN)) return {problems:[{code:'wake-daemon-outdated',message:`host wake daemon is running ${running}; required ${WAKE_STREAM_MIN}; upgrade aw, then restart the host wake daemon`}],warnings:[]};
+      return {problems:[],warnings:[]};
+    }
+    if(state==='not_running') return {problems:[{code:'wake-daemon-not-running',message:'host wake daemon is not running; session delivery relies on it'}],warnings:[]};
+    return {problems:[],warnings:[{code:'wake-daemon-version-unknown',message:`host wake daemon version is unknown; compatibility unproven; required ${WAKE_STREAM_MIN}; upgrade aw, then restart the host wake daemon`}]};
+  } catch {return {problems:[],warnings:[{code:'wake-daemon-version-unknown',message:`host wake daemon version is unknown; compatibility unproven; required ${WAKE_STREAM_MIN}; upgrade aw, then restart the host wake daemon`}]};}
+}
 function workspaceReadinessPhase(req) {
   const ctx=workspaceReadinessContext(req.input.context);
   if(!obj(req.input.action) || req.input.action.kind!=='readiness') wireError('invalid-binding');
-  const details=readinessDetails(req.settings,{deployment:ctx.deployment}),problems=[...details.result.problems],warnings=[];
+  const details=readinessDetails(req.settings,{deployment:ctx.deployment}),problems=[...details.result.problems],warnings=[...details.warnings];
   const identity=obj(req.settings.identity)?req.settings.identity:{},mode=identity.mode===undefined || identity.mode===null || identity.mode===''?'local':String(identity.mode);
   if(mode==='global') {
     const grantProblem=grantAttachmentProblem(ctx.home);if(grantProblem) problems.push(grantProblem);
@@ -237,8 +264,12 @@ function workspaceReadinessPhase(req) {
       catch(e) {problems.push({code:'custody',message:e.message});}
     }
   }
+  const teams=process.env.OATS_TEAMS?teamsReadiness({home:ctx.home,team:details.team,env:process.env}):undefined;
+  for(const joined of teams?.joined||[]) if(joined.receive==='poll') warnings.push({code:'joined-team-poll-only',message:`joined team ${joined.label} receives by polling in oats.aweb 1.14; check aw --identity-home ${joined.identityHome} mail inbox/chat pending`});
+  const wake=String(req.settings.delivery||'channel')==='session'?wakeReadiness(ctx.home,{reliedOn:true}):{problems:[],warnings:[]};
+  problems.push(...wake.problems);warnings.push(...wake.warnings);
   const result=checkProblems(problems) || {status:'ready',problems:[]};
-  return {...result,warnings};
+  return {...result,warnings,...(teams?{teams}:{})};
 }
 function checkPhase(req) {
   keys(req.input,['binding','context','action','invocation'],['context','action']);
