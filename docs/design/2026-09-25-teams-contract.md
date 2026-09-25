@@ -78,6 +78,9 @@ folded in below.
    - `OATS_TEAM_LABEL` / `OATS_TEAM_ID` stay the primary's.
    - New: `OATS_TEAM_LABELS` (all labels, comma-joined, in order) and
      `OATS_TEAMS` (the JSON above).
+   - New: `OATS_TEAMS_SOURCE`, which is `live` or `recorded` (decision 6). It's empty
+     when `OATS_TEAMS` is empty (unknown). A provider check's stdin carries
+     `teamsSource` beside `teams` in the same way.
    - Workspace identity is unchanged: `OATS_WORKSPACE_KEY` / `OATS_WORKSPACE_NAME`.
    - The person's identity stays the provider's (its messaging root from host
      settings); the kernel passes the deployment, as today.
@@ -85,6 +88,9 @@ folded in below.
    - A label the workspace doesn't map is a discovery **warning**
      (`unmapped-team-label`), not an error, so the provider can fall back to
      the personal team and say so.
+   - There's one warning per unmapped label, naming its souls
+     (`{ code, label, souls, paths, message }`), not one per soul and label.
+     A workspace with no `messaging.byTeam` must not print a line per soul.
    - A label that isn't in the workspace's `teams:` list at all stays the
      error it is today.
 6. **Live resolution for a home.**
@@ -97,8 +103,27 @@ folded in below.
      `messaging`.
    - That lets the provider offer a team the workspace added as eligible,
      and leave one it removed, without a respawn.
-   - The recorded spawn-time `teams` stays in `instance.json.providers` as
-     evidence.
+   - The recorded spawn-time `teams` stays in `instance.json.teams` as
+     evidence: beside `providers`, never inside that capability-keyed map.
+   - **Live or recorded.** When the workspace can't be read now (the host is
+     offline, or the soul is no longer listed), the kernel falls back to the
+     recorded set and says so: `OATS_TEAMS_SOURCE=recorded`, or
+     `teamsSource: "recorded"` in inspect and on the check stdin.
+     - **A provider leaves a joined team only on a `live` answer.** On
+       `recorded` or unknown it keeps every membership and may warn
+       (`teams-unverified`).
+     - Reason: a team mapped after spawn and joined live is absent from the
+       record, and an offline host must never cost an instance a membership.
+   - **Cost.** Live teams are computed only where they're consumed:
+     - session start/restart;
+     - the messaging module's own home-context commands and operations;
+     - `inspect` / `readiness --home`.
+
+     The live read covers the workspace host and the soul's repo, not a full
+     workspace discovery. Every other in-home capability command uses the
+     record and costs what it did before.
+   - **0.26.0 limitation:** a scheduled wake's start uses the spawn-time teams.
+     The scheduler is synchronous; only operator starts are live.
    - **Retire** works from the provider's own recorded membership list,
      never from the live eligible set. A mapping removed after the spawn
      still has its membership revoked at retire.
@@ -139,7 +164,8 @@ folded in below.
      spawn provider setting (`--provider <messaging> join=<label>[,<label>]`).
      That needs no new kernel flag, and the spawn preview shows it.
    - The launch hook re-checks joined memberships against the live eligible
-     set: it leaves what's no longer eligible and never joins on its own.
+     set: it leaves what's no longer eligible (only when
+     `OATS_TEAMS_SOURCE=live`, decision 6) and never joins on its own.
    - **The kernel puts `teams` (eligible, the OATS_TEAMS entries) in the
      spawn preview and in `inspect --home`**, so a Desktop can offer the
      choice before anything is minted. The Desktop reads that, plus joined memberships from the provider's inspect or
@@ -157,10 +183,15 @@ folded in below.
 
 ## Tests
 
-- Several labels compose in order; a conflict → `E_TEAM_CONFLICT`.
+- Several labels compose in order; a conflict → `E_TEAM_CONFLICT`. A
+  capability the soul names itself is exempt, since the soul's entry wins over
+  every label.
 - The primary merged payload is byte-identical to 0.25 for one label.
 - `OATS_TEAMS` shape: mapped and unmapped labels, and no label → `[]`.
 - Home-context `teams` follows a new workspace commit (a mapping added and
   removed) while the home's modules stay frozen.
-- Discovery warns on an unmapped label.
+- Discovery warns once per unmapped label.
+- A home whose workspace can't be read gets the record with
+  `OATS_TEAMS_SOURCE=recorded`; a non-messaging in-home command runs no live
+  team read.
 - `teams` entries carry `team`; identical cross-label entries don't conflict.
