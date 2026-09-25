@@ -125,7 +125,7 @@ export function preselectSoul(ref) {
   const intent = nextSelectionIntent();
   pendingWorkspaceTab = { name: "souls", ...intent };
   pendingPreselect = ref && ref.name
-    ? { name: String(ref.name), agentsRoot: ref.agentsRoot, server: ref.server, ...intent }
+    ? { name: String(ref.name), agentsRoot: ref.agentsRoot, server: ref.server, onMiss: typeof ref.onMiss === 'function' ? ref.onMiss : null, ...intent }
     : null;
   // Already mounted with a current roster: apply on the spot, including an
   // empty roster (a no-match is consumed once, never resurrected by polling).
@@ -144,7 +144,8 @@ function applyPreselect(s) {
   pendingPreselect = null; // consumed-once, match or not
   const matches = s.souls.agents.filter((x) => x.name === ref.name
     && (!ref.agentsRoot || x.agentsRoot === ref.agentsRoot) && (!ref.server || x.server === ref.server));
-  if (matches.length !== 1) return; // an incomplete identity must not pick a twin
+  // an incomplete identity must not pick a twin; the caller says why nothing opened
+  if (matches.length !== 1) { ref.onMiss?.(matches.length); return; }
   const a = matches[0];
   inspectSoul(s, a, ref);
   // Degraded / attached souls still select for details; their inspector

@@ -94,12 +94,12 @@ test('an instance shows its teams: personal always on (no Leave), eligible with 
   assert.deepEqual(u.runs(), [{ action: 'run', selector: { home: HOME }, operation: 'messaging:teams' }]);
   assert.equal(u.panel().querySelector('h3').textContent, 'Teams');
   const personal = u.row('personal');
-  assert.match(personal.textContent, /Personal team.*personal:northwind:alice.*Always on — the personal team can't be left\./s);
+  assert.match(personal.textContent, /Personal team.*personal:northwind:alice.*Always on/s); assert.equal(personal.querySelector('.team-badge').title, "The personal team can't be left.");
   assert.equal(personal.querySelector('button'), null, 'the personal team has no Leave');
-  assert.match(u.row('dev').querySelector('h4').textContent, /^dev · primary$/);
+  assert.equal(u.row('dev').querySelector('.team-name').textContent, 'dev · primary');
   assert.equal(u.row('dev').querySelector('[data-team-action]').textContent, 'Join');
   assert.equal(u.row('reviewers').querySelector('[data-team-action]').textContent, 'Join');
-  assert.match(u.row('marketing').textContent, /Not mapped by this workspace — can't be joined\./); assert.equal(u.row('marketing').querySelector('button'), null);
+  assert.match(u.row('marketing').textContent, /Not mapped by this workspace.*Unavailable/); assert.equal(u.row('marketing').querySelector('button'), null);
   // The generic Provider operations list leaves the three team verbs to the panel.
   assert.equal([...u.el.querySelectorAll('[data-operation]')].some(b => b.dataset.operation.startsWith('messaging:')), false);
   assert.doesNotMatch([...u.el.querySelectorAll('.inspector-cap h4')].map(h => h.textContent).join('|'), /messaging: (teams|join|leave)/);
@@ -109,7 +109,7 @@ test('Join and Leave run the declared operation with the declared argument; poll
   const u = await mount(t, captured());
   await u.press('join', 'dev');
   assert.deepEqual(u.runs().at(-1), { action: 'run', selector: { home: HOME }, operation: 'messaging:join', args: { labels: 'dev' } });
-  assert.match(u.row('dev').textContent, /Joined 2026-09-25 10:00 UTC/); assert.equal(u.row('dev').querySelectorAll('p')[1].title, '2026-09-25T10:00:00.000Z');
+  assert.match(u.row('dev').textContent, /Joined 2026-09-25 10:00 UTC/); assert.equal(u.row('dev').querySelector('.team-meta[title]').title, '2026-09-25T10:00:00.000Z');
   assert.match(u.row('dev').textContent, /Checks this team's mail between tasks/);
   assert.doesNotMatch(u.row('dev').textContent, /as it arrives|live/);
   assert.equal(u.row('dev').querySelector('details pre').textContent, `${HOME}/.aweb-identity-dev`);
@@ -117,7 +117,7 @@ test('Join and Leave run the declared operation with the declared argument; poll
   assert.match(u.row('reviewers').textContent, /Receives this team's mail as it arrives/);
   await u.press('leave', 'reviewers');
   assert.deepEqual(u.runs().at(-1).args, { labels: 'reviewers' }); assert.equal(u.runs().at(-1).operation, 'messaging:leave');
-  assert.match(u.row('reviewers').textContent, /Not joined\./);
+  assert.match(u.row('reviewers').textContent, /northwind:review · Not joined/);
   assert.equal(u.runs().filter(r => r.operation === 'messaging:teams').length, 1, 'join/leave answer the document: no second read');
 });
 
@@ -142,26 +142,26 @@ test('a refusal is shown verbatim under its row, the code behind Details; the pa
   assert.match(u.row('marketing').textContent, /Not mapped by this workspace/);
   const gone = u.panel().querySelector('[data-team-refusal="marketing"]');
   assert.ok(gone, 'the refusal survives the re-read that removed its row');
-  assert.equal(gone.querySelector('.inspector-problem p').textContent, 'messaging:join: not eligible: marketing (eligible: dev, reviewers)');
-  assert.equal(gone.querySelector('details summary').textContent, 'Details'); assert.equal(gone.querySelector('details p').textContent, 'E_TEAM_NOT_ELIGIBLE');
+  assert.equal(gone.querySelector('.teams-problem p').textContent, 'messaging:join: not eligible: marketing (eligible: dev, reviewers)');
+  assert.equal(gone.querySelector('details summary').textContent, 'Details'); assert.equal(gone.querySelector('details pre').textContent, 'E_TEAM_NOT_ELIGIBLE');
   assert.match(gone.textContent, /marketing is no longer offered to this instance\./);
-  assert.equal(u.panel().querySelector('.teams-body').firstElementChild, gone, 'said first, above the rows');
+  assert.equal(u.panel().querySelector('.teams-card').firstElementChild, gone, 'said first, above the rows');
   // Cleared by an explicit Refresh …
-  u.panel().querySelector(':scope > .act').click(); await tick(); await tick();
+  u.panel().querySelector('.teams-refresh').click(); await tick(); await tick();
   assert.equal(reads, 3); assert.equal(u.panel().querySelector('[data-team-refusal]'), null, 'Refresh clears it');
   // The captured personal refusal, on a Leave the provider refuses, reads the same way.
   const v = await mount(t, body => body.operation === 'messaging:teams' ? { ...run('join-dev'), operation: 'messaging:teams' } : refusal('leave-personal'));
   await v.press('leave', 'dev');
-  const box = v.row('dev').querySelector('.inspector-problem');
+  const box = v.row('dev').querySelector('.teams-problem');
   assert.equal(box.querySelector('p').textContent, 'messaging:leave: the personal team cannot be left');
-  assert.equal(box.querySelector('details summary').textContent, 'Details'); assert.equal(box.querySelector('details p').textContent, 'E_TEAM_PERSONAL');
+  assert.equal(box.querySelector('details summary').textContent, 'Details'); assert.equal(box.querySelector('details pre').textContent, 'E_TEAM_PERSONAL');
   assert.match(v.row('dev').textContent, /Joined 2026/, 'the last good state stays');
 });
 
 test('the not-eligible refusal names the eligible labels (captured) and is shown as relayed', async t => {
   const u = await mount(t, body => body.operation === 'messaging:teams' ? run('teams-initial') : refusal('join-not-eligible'));
   await u.press('join', 'reviewers');
-  assert.equal(u.row('reviewers').querySelector('.inspector-problem p').textContent, 'messaging:join: not eligible: marketing (eligible: dev, reviewers)');
+  assert.equal(u.row('reviewers').querySelector('.teams-problem p').textContent, 'messaging:join: not eligible: marketing (eligible: dev, reviewers)');
 });
 
 test('states: not supported, unavailable, eligible none, unreadable and a failed read with Retry', async t => {
@@ -179,14 +179,14 @@ test('states: not supported, unavailable, eligible none, unreadable and a failed
     const d = await mount(t, () => empty); assert.match(d.panel().textContent, new RegExp(sentence.replace(/[.']/g, '.')));
   }
   const classic = await mount(t, () => ({ ...run('teams-initial'), operationsApi: 1 }));
-  assert.match(classic.panel().querySelector('.inspector-status').textContent, /classic layout/);
+  assert.match(classic.panel().querySelector('.teams-status').textContent, /classic layout/);
   const bad = await mount(t, () => ({ ...run('teams-initial'), operation: 'messaging:join' }));
-  assert.match(bad.panel().querySelector('.inspector-status').textContent, /cannot read/);
+  assert.match(bad.panel().querySelector('.teams-status').textContent, /cannot read/);
   let first = true;
   const e = await mount(t, () => { if (first) { first = false; return Object.assign(new Error('aw is not signed in'), { code: 'E_OPERATION_FAILED' }); } return run('teams-initial'); });
-  assert.equal(e.panel().querySelector('.inspector-problem p').textContent, 'aw is not signed in');
-  e.panel().querySelector('.teams-body button').click(); await tick(); await tick();
-  assert.equal(e.panel().querySelector('.inspector-problem'), null); assert.ok(e.row('dev'));
+  assert.equal(e.panel().querySelector('.teams-problem p').textContent, 'aw is not signed in');
+  e.panel().querySelector('.teams-card button').click(); await tick(); await tick();
+  assert.equal(e.panel().querySelector('.teams-problem'), null); assert.ok(e.row('dev'));
 });
 
 test('a soul shows no Teams section (home operations), and without a compatible CLI team actions are disabled', async t => {

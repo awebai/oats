@@ -45,7 +45,8 @@ test('inert mount; first-visible read once; routine updates preserve controls/fo
   assert.deepEqual(u.calls[1].body, { action: 'diff', selector: u.calls[0].body.selector, fileId: id, revision: oid, indexRevision: idx });
   assert.match(u.one('.git-patch').textContent, /-old\n\+X/); assert.equal(u.doc.activeElement, b);
   assert.match(u.text(), /actual-branch/); assert.match(u.text(), /Recorded branchrecorded-branch/);
-  assert.match(u.text(), /Upstream refNot reportedAheadNot reportedBehindNot reported/);
+  // Nothing reported is one plain line, never rows of "Not reported".
+  assert.match(u.text(), /Upstream comparisonNo upstream branch is reported\./); assert.doesNotMatch(u.text(), /Not reported/);
   assert.match(u.text(), /Base reforigin\/mainBase sourceorigin\/HEAD/); assert.match(u.text(), /Changes · 2/);
   assert.match(u.one('.git-github').textContent, /installed OATS CLI does not report a remote/); assert.equal(u.one('a'), null);
 });
@@ -228,4 +229,17 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: actual Git p
     assert.ok((Math.max(a, b) + .05) / (Math.min(a, b) + .05) >= 4.5, selector);
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(u.dom.window.getComputedStyle(parent).opacity, '1');
   }
+});
+
+test('a refused read is one plain sentence with its code behind Details; sections with nothing observed are hidden', async t => {
+  const u = setup(t, () => refused('E_CLI_FAILED'));
+  await u.show();
+  const status = u.one('.git-status');
+  assert.equal(status.textContent, 'Read unavailable'); assert.doesNotMatch(status.textContent, /E_CLI_FAILED/);
+  const details = u.one('.git-status-details');
+  assert.equal(details.hidden, false); assert.equal(details.querySelector('summary').textContent, 'Details'); assert.equal(details.querySelector('pre').textContent, 'E_CLI_FAILED');
+  assert.equal(u.one('h3').hidden, true, 'no observation: no Changes heading'); assert.equal(u.one('.git-github').hidden, true, 'no observation: no GitHub section');
+  u.read(() => available(data())); u.one('.git-toolbar button').click(); await tick(); await tick();
+  assert.equal(u.one('.git-status-details').hidden, true, 'a good read clears the code');
+  assert.equal(u.one('.git-github').hidden, false); assert.match(u.text(), /Observed .* ago|Observed just now|Observed \d{4}-/);
 });

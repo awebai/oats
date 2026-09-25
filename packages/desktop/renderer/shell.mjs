@@ -41,6 +41,7 @@ import { NAV, stageSidebarMode, loadStageView } from "./shell-nav.mjs";
 import { shellIcon, mountShellIcons } from "./shell-icons.mjs";
 import { createRuntimeBadge, identityCSS } from "./identity-marks.mjs";
 import { createContextPanel, contextPanelCSS } from "./context-panel.mjs";
+import { createInstanceTeamsSection, teamsCSS } from "./instance-teams.mjs";
 import { createInstanceGitPanel, instanceGitCSS } from "./instance-git.mjs";
 import { createNotificationCenter, notificationCSS } from "./notifications.mjs";
 import { createPanelOwner } from "./panel-owner.mjs";
@@ -64,7 +65,7 @@ const desk = window.oatsDesktop;
 initTheme();
 mountShellIcons(document);
 const identityStyle = document.createElement("style");
-identityStyle.textContent = identityCSS + contextPanelCSS + instanceGitCSS + notificationCSS + connectionsCSS + lifecycleCSS; document.head.append(identityStyle);
+identityStyle.textContent = identityCSS + contextPanelCSS + teamsCSS + instanceGitCSS + notificationCSS + connectionsCSS + lifecycleCSS; document.head.append(identityStyle);
 let connectionGeneration = 0;
 const connectionListeners = new Set();
 const subscribeConnections = fn => { connectionListeners.add(fn); return () => connectionListeners.delete(fn); };
@@ -634,6 +635,24 @@ const contextPanel = createContextPanel({
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
     }),
   }),
+  // Teams (teams contract): the instance's own teams through its messaging provider's operations.
+  createTeamsSection: (host, { onPresence }) => createInstanceTeamsSection(host, { onPresence, generation: workspaceGeneration,
+    request: (workspace, body) => api(`/api/capabilities?ws=${encodeURIComponent(workspace)}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    }),
+  }),
+  // Soul tab → the soul in the Workspace view (same hand-off as Quick Open).
+  openSoul: async ({ workspace, name, agentsRoot, server }) => {
+    const owns = tabOpenIntents.begin();
+    let mod;
+    try { mod = await import("./views/spawn.mjs"); }
+    catch (e) { if (owns()) ctx.notify(`Could not open soul: ${e.message || e}`); return; }
+    if (!owns() || workspace !== currentWorkspace()) return;
+    // The hand-off is intent-guarded by the view (a newer selection drops it); a miss says why nothing opened.
+    const gen = workspaceGeneration();
+    mod.preselectSoul({ name, agentsRoot, server, onMiss: count => { if (workspaceGeneration() === gen) ctx.notify(count ? `Several souls are named ${name}; pick it in the Workspace view.` : `${name} is not in this workspace's souls.`); } });
+    showStage("spawn");
+  },
   onIntent: () => { if (!tabOpenIntents.isApplyingFocus()) tabOpenIntents.invalidate(); },
   applyFocus: callback => tabOpenIntents.applyFocus(callback),
   onFocusModeChange: () => updateSidebarControls(),
