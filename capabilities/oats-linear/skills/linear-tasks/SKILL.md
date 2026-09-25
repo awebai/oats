@@ -23,6 +23,12 @@ Get the target from the `Tasks: Linear` line in your `TASK.md` briefing:
 - **project** is an optional deployment default. Do not invent one when unset.
 - **alias** is your exact OATS instance name; your label is `agent-<alias>`.
 
+team and project come from the tasks payload OATS merged for this instance —
+the soul's `soul.yaml` `tasks: { team, project }`, the deployment's
+`oats-local.yaml` `settings.oats.linear.*`, or a spawn's `--provider` — and
+`./instance.json` in your instance home records it as `providers["oats.linear"]`.
+If team is unset, stop and ask your human to set it there.
+
 Before the first operation, run:
 
 ```bash

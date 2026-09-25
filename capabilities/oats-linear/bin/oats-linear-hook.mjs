@@ -10,23 +10,25 @@ if (event !== "spawn") output({ warning: `oats-linear: unknown event "${event}" 
 
 let settings = {};
 try { settings = JSON.parse(process.env.OATS_SETTINGS || "{}"); }
-catch { output({ warning: "oats-linear: integrations.linear.settings is not valid JSON" }); }
+catch { output({ warning: "oats-linear: the tasks settings payload (OATS_SETTINGS) is not valid JSON" }); }
 
 const instance = process.env.OATS_INSTANCE || "unknown-instance";
 const team = settings.team;
 const project = settings.project;
 const label = `agent-${instance}`;
+// Where team lives under the workspace model (0.26): the soul's tasks payload or this machine's settings.
+const TEAM_HOMES = "tasks: { team } in the soul's soul.yaml, or settings.oats.linear.team in the deployment's oats-local.yaml";
 const target = team
   ? `team ${team}${project ? `, default project ${project}` : ""}`
-  : "team unset — ask your human, or set integrations.linear.settings.team in oats-config.yaml";
+  : `team unset — ask your human to set ${TEAM_HOMES}`;
 const warnings = [];
-if (!team) warnings.push("settings.team is unset");
+if (!team) warnings.push(`settings.team is unset (set ${TEAM_HOMES})`);
 if (!process.env.LINEAR_API_KEY) warnings.push("LINEAR_API_KEY is not in the spawn environment");
 
 output({
   meta: { label, ...(team ? { team } : {}), ...(project ? { project } : {}) },
   brief: `Tasks: Linear — ${target}. Your agent identity is label "${label}"; keep the human assignee unchanged. Load the linear-tasks skill before touching issues.`,
   ...(warnings.length ? {
-    warning: `oats-linear: ${warnings.join("; ")} — see capabilities/oats-linear/README.md`,
+    warning: `oats-linear: ${warnings.join("; ")} — see the linear-tasks skill`,
   } : {}),
 });

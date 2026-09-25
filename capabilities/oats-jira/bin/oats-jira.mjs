@@ -27,13 +27,13 @@ if (event === "spawn") {
   const site = settings.site;
   const project = settings.project;
   const where = site && project ? `project ${project} on ${site}`
-    : site ? `site ${site} (project unset — ask your human or check oats doctor)`
-    : project ? `project ${project} (site unset — ask your human or check oats doctor)`
-    : `your deployment's Jira (site/project not configured — ask your human, or set capabilities.oats.jira.<target>.settings in oats-config.yaml)`;
+    : site ? `site ${site} (project unset — ask your human)`
+    : project ? `project ${project} (site unset — ask your human)`
+    : `your deployment's Jira (site/project not configured — ask your human to set tasks: { site, project } in the soul's soul.yaml, or settings.oats.jira.{site,project} in the deployment's oats-local.yaml)`;
   out({
     meta: { label, ...(site ? { site } : {}), ...(project ? { project } : {}) },
     brief: `Tasks: Jira — ${where}. Your Jira identity is the label "${label}" (never the assignee field). Load the jira-tasks skill before touching tickets.`,
-    ...(site && project ? {} : { warning: `oats-jira: settings incomplete (site: ${site || "unset"}, project: ${project || "unset"}) — set capabilities.oats.jira.<target>.settings.{site,project} in oats-config.yaml` }),
+    ...(site && project ? {} : { warning: `oats-jira: settings incomplete (site: ${site || "unset"}, project: ${project || "unset"}) — set tasks: { site, project } in the soul's soul.yaml, or settings.oats.jira.{site,project} in the deployment's oats-local.yaml` }),
   });
 } else {
   warn(`unknown event "${event}" (expected spawn)`);

@@ -13,12 +13,12 @@
     },
     "oats.jira": {
       "url": "https://github.com/awebai/oats-jira.git",
-      "ref": "v1.0.0",
+      "ref": "v1.0.1",
       "path": "oats-package"
     },
     "oats.linear": {
       "url": "https://github.com/awebai/oats-linear.git",
-      "ref": "v1.0.0",
+      "ref": "v1.0.1",
       "path": "oats-package"
     },
     "oats.authoring": {
@@ -28,7 +28,7 @@
     },
     "oats.dev": {
       "url": "https://github.com/awebai/oats-dev.git",
-      "ref": "v1.0.0",
+      "ref": "v1.0.1",
       "path": "oats-package"
     },
     "oats.framework": {
