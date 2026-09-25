@@ -106,7 +106,7 @@ folded in below.
    - The join/leave/list verbs are the provider's (oats.aweb 1.14.0), run
      inside a home or with `--home <abs>`, all idempotent, all with `--json`:
      - `oats aweb teams` answers
-       `{ personal: {team}, primary, eligible: [{label, team, joined}], joined: [{label, team, since}], unmapped: [label], at }`;
+       `{ personal: {team}, primary, eligible: [{label, team, joined}], joined: [{label, team, since, identityHome, receive}], unmapped: [label], at }`, where `receive` is `native` or `poll`;
      - `oats aweb join <label>[,<label>]` and
        `oats aweb leave <label>[,<label>]` answer the same document. The
        personal team can't be left (`E_TEAM_PERSONAL`).
@@ -116,6 +116,18 @@ folded in below.
      - Identity model: one local identity per joined team, under the home as
        `.aweb-identity-<label>`. The personal-team identity is the primary one,
        wired to the harness. There are no global identities by default.
+     - **Sending and receiving as a joined team (oats.aweb 1.14.0):**
+       - Sending is complete: `aw --identity-home <identityHome> mail|chat …`,
+         the one form the aweb inject teaches.
+       - Receiving is by POLL: the channel plugin, the pi extension and a wake
+         registration each listen on one identity home. The inject says to
+         check a joined team's inbox at task boundaries, and readiness and
+         `receive: poll` say so.
+       - Native receive for joined teams needs one of two aweb primitives:
+         wake/channel on several identity homes per instance home, or global
+         instance identities with address release (one identity, many teams,
+         one channel). This is a named gap against the "seamless" bar,
+         tracked as an aweb ask.
    - Each is idempotent, and refuses a label the instance isn't eligible for
      (`E_TEAM_NOT_ELIGIBLE`, naming the eligible labels).
    - At spawn, the kernel carries the operator's choice to the provider as a
