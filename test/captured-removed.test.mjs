@@ -126,5 +126,27 @@ test("captured (versioned) schedules are refused on add and update; a stored one
     assert.equal(old?.action, "invalid", JSON.stringify(acts));
     assert.match(old.error, /captured schedules are refused \(the captured\/portable path was removed in 0\.26\)/);
     assert.equal(acts.find((a) => a.id === "j")?.action === "invalid", false, "the other job is untouched");
+
+    // What 0.25 left mid-run: an admitted captured attempt in state and a job lock naming its
+    // execution. Reported on that job only (describe, reconcile), never run or adopted, and
+    // the rest of the scope still ticks.
+    const st = S.readState(ws);
+    st.jobs.old = { ...(st.jobs.old || {}), attempt: { schemaVersion: 1, scheduledFor: "2026-09-25T09:00:00.000Z", startedAt: "2026-09-25T09:00:00.000Z", execution: { executionId: "x1" } } };
+    S.writeState(ws, st);
+    assert.match(S.describe(ws, "old").executionStatus.intent?.reason ?? "", /^this job holds a captured schedule attempt/, "the attempt alone is reported");
+    S.acquireJobLock(ws, "old", { scheduledFor: "2026-09-25T09:00:00.000Z", executionId: "x1" });
+    const acts2 = S.tickWorkspace(ws, { now: new Date("2026-09-25T10:01:00Z"), io, reg: S.readRegistry() });
+    assert.equal(acts2.find((a) => a.id === "old")?.action, "invalid", JSON.stringify(acts2));
+    assert.ok(acts2.some((a) => a.id === "j"), "the scope's other job is still evaluated");
+    const described = S.describe(ws, "old");
+    assert.equal(described.executionStatus.kind, "invalid");
+    assert.equal(described.executionStatus.intent.kind, "invalid");
+    assert.match(described.executionStatus.intent.reason, /captured schedule attempt .*removed in 0\.26.*oats schedule remove --force/);
+    assert.throws(() => S.reconcile(ws, "old", { io }), (e) => e.code === "E_SCHEDULE_INVALID" && /removed in 0\.26/.test(e.message));
+    assert.equal(S.readState(ws).jobs.old.attempt?.execution?.executionId, "x1", "reconcile never adopts or clears a captured attempt");
+    const st2 = S.readState(ws); delete st2.jobs.old.attempt; S.writeState(ws, st2);
+    const lockOnly = S.describe(ws, "old").executionStatus.intent;
+    assert.equal(lockOnly?.kind, "invalid", "a captured job lock alone is reported too");
+    assert.match(lockOnly.reason, /^captured job lock: /);
   } finally { process.env = saved; rmSync(base, { recursive: true, force: true }); }
 });

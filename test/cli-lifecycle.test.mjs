@@ -21,7 +21,8 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
-import { OATS_LOCK_FILE, findAgent } from "../lib/core.mjs";
+import { findAgent } from "../lib/core.mjs";
+import { LOCK_FILE } from "../lib/packages.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const temp = () => mkdtempSync(join(tmpdir(), "oats-cli-lifecycle-"));
@@ -135,7 +136,7 @@ test("the Desktop version probe is unchanged: `oats version --json` still answer
   const s = scope(base);
   // Even a scope whose lock the kernel refuses must not break the probe — it is
   // how the Desktop decides whether a kernel is usable at all.
-  write(join(s, OATS_LOCK_FILE), "{ not json");
+  write(join(s, LOCK_FILE), "{ not json");
   const r = cli(["version", "--json"], { cwd: s });
   assert.equal(r.status, 0, r.stderr);
   const doc = JSON.parse(r.stdout);
