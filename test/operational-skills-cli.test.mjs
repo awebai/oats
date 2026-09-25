@@ -60,7 +60,7 @@ test("oats-operate quotes only drift markers the CLI renders", () => {
   }
 });
 
-// No published skill (framework, oats.framework package, or a soul's own) may teach a verb the kernel refuses (REMOVED_VERBS in bin/oats.mjs).
+// No published skill (framework, oats.framework package, bundled capability copies, or a soul's own) may teach a verb the kernel refuses (REMOVED_VERBS in bin/oats.mjs).
 // The captured selector form of trust (`--deployment` plus `--resolution` or
 // `--artifact-set`) is routed before that table and stays live; bare `trust` is removed.
 const removedVerbs = Object.keys(Function(`return (${cliSource.match(/const REMOVED_VERBS = (\{[^\n]*\});/)[1]})`)());
@@ -79,7 +79,11 @@ test("no published skill teaches a removed verb", () => {
   const soulSkills = readdirSync(join(ROOT, "souls"), { withFileTypes: true })
     .filter((d) => d.isDirectory() && existsSync(join(ROOT, "souls", d.name, "skills")))
     .flatMap((d) => skillFiles(join("souls", d.name, "skills")));
-  const files = [...skillFiles("skills"), ...skillFiles("oats-package/capabilities"), ...soulSkills];
+  // Bundled first-party capability copies (capabilities/<slug>/skills) are published too.
+  const capabilitySkills = readdirSync(join(ROOT, "capabilities"), { withFileTypes: true })
+    .filter((d) => d.isDirectory() && existsSync(join(ROOT, "capabilities", d.name, "skills")))
+    .flatMap((d) => skillFiles(join("capabilities", d.name, "skills")));
+  const files = [...skillFiles("skills"), ...skillFiles("oats-package/capabilities"), ...soulSkills, ...capabilitySkills];
   const found = [];
   for (const rel of files) {
     const text = readFileSync(join(ROOT, rel), "utf8");
