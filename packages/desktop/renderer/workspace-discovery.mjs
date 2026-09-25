@@ -1,4 +1,4 @@
-/** Workspace view header and its Capabilities / Sources tabs, natively on
+/** Workspace view header and its Capabilities / Repositories (id: sources) tabs, natively on
  * workspace model v2. Facts come from the installed kernel only:
  *   - `oats workspace status` + `oats status` (the roster observation) for
  *     sources, lock state and which instances carry a module;
@@ -13,6 +13,8 @@ import { catalogCSS, renderCapabilities, renderFilters, renderSources, filterCho
 import { createWorkspaceSync, syncCSS, reasonText } from './workspace-sync-view.mjs';
 
 export const workspaceTabs = ['souls', 'capabilities', 'sources'];
+// What a person reads (the ids stay stable): where souls and capabilities come from is its repositories.
+const TAB_LABELS = { souls: 'Souls', capabilities: 'Capabilities', sources: 'Repositories' };
 export const discoveryCSS = `
 ${catalogCSS}
 ${syncCSS}
@@ -56,7 +58,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   const tabs = node('div', undefined, 'workspace-tabs'); tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Workspace sections'); header.append(tabs);
   const controls = new Map(), counts = new Map();
   for (const name of workspaceTabs) {
-    const control = node('button', name[0].toUpperCase() + name.slice(1)); control.type = 'button';
+    const control = node('button', TAB_LABELS[name]); control.type = 'button';
     control.id = `workspace-tab-${name}`; control.setAttribute('role', 'tab');
     const count = node('span', '', 'workspace-count'); control.append(count); counts.set(name, count);
     control.addEventListener('click', () => setTab(name));
