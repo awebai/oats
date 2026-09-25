@@ -73,10 +73,17 @@ Style rules (from the agents.md standard + field experience):
 
 ## soul.yaml
 
-Keep honest: `repo` (what it works on), `work` (worktree for builders,
-checkout for reviewers/coordinators), `runtime`, `model` (only pin when the
-role needs a specific one — reviewers on a different model than authors),
-`description` (one line; shows in rosters and pickers).
+Keep honest: `description` (one line; shows in rosters and pickers), `work`
+(`worktree` for builders, `checkout` for reviewers/coordinators, `directory`
+or `workspace` where the role needs them), and the capabilities the role
+actually uses (`capabilities: { <cap>: { from: package | here | <repo key> } }`,
+plus `knowledge` / `messaging` / `tasks` slots; `none` empties one). The
+soul lives in its member repository, which is also what it works on.
+
+Runtime, model and permission bypass are not soul fields: they are chosen at
+spawn (`--runtime`, `--model`, `--yolo`) or by a host's named launch
+configuration, so the same soul runs on any harness a host provides. Check a
+soul with `oats spawn <soul> --preview` before committing it.
 
 ## Maintaining a soul
 
