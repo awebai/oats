@@ -6,8 +6,9 @@
 // kernel binds join= for any provider, so without the declared fact the row
 // would promise joins an older provider ignores (captured: preview-no-join-sent).
 // Kernel captures: test/fixtures/workspace-v2/f7 (stand-ins nw.teams / nw.chat,
-// provenance `standIn`). The declared fact is a STAND-IN shape (kernel pending):
-// the messaging module row's `declares`, patched in by `declared()` below.
+// provenance `standIn`). The declared fact is the kernel's `declares` (#181,
+// feature settings-declared; contract bdd7e55e), patched in by `declared()`
+// below until the recapture from #181's merge.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -23,8 +24,9 @@ const declared = envelope => { const v = structuredClone(envelope); for (const m
 const previewFor = choices => choices.join ? 'preview-teams-join' : 'preview-teams-default';
 const argvOf = name => { const a = provenance.files[name].argv; return a.slice(a.indexOf('--purpose'), a.indexOf(name.startsWith('apply') ? '--expect-decision' : '--preview')); };
 
-async function dialog(t, { kernel = choices => declared(f7(previewFor(choices))), ...options } = {}) {
-  const u = await mountSpawn(t, { kernel: (_c, { choices }) => kernel(choices), ...options });
+const DECLARED_CLI = () => ({ ...structuredClone(CLI), features: [...CLI.features, 'settings-declared'] });
+async function dialog(t, { kernel = choices => declared(f7(previewFor(choices))), cli = DECLARED_CLI(), ...options } = {}) {
+  const u = await mountSpawn(t, { kernel: (_c, { choices }) => kernel(choices), cli, ...options });
   await u.open(); await u.type('.fpurpose', 'teams'); await settle();
   return u;
 }
@@ -114,14 +116,16 @@ test('a preview that does not bind the ticked teams keeps Spawn off and says so'
   assert.equal(u.q('.fspawn').disabled, true);
 });
 
-test('no row without the declared fact (as captured), for a provider without settings.join, or without spawn-provider-payload', async t => {
+test('no row without the declared fact (as captured), for a provider without settings.join, without spawn-provider-payload, or without settings-declared', async t => {
   const a = await dialog(t, { kernel: choices => f7(previewFor(choices)) });
   assert.equal(a.q('.spawn-teams').hidden, true);
   const b = await dialog(t, { kernel: () => f7('preview-teams-no-join') });
   assert.equal(b.q('.spawn-teams').hidden, true);
-  const c = await dialog(t, { cli: { ...structuredClone(CLI), features: CLI.features.filter(f => f !== 'spawn-provider-payload') } });
+  const c = await dialog(t, { cli: { ...DECLARED_CLI(), features: DECLARED_CLI().features.filter(f => f !== 'spawn-provider-payload') } });
   assert.equal(c.q('.spawn-teams').hidden, true);
-  for (const u of [a, b, c]) assert.ok(u.previews().every(p => !Object.hasOwn(p.choices, 'join')));
+  const d = await dialog(t, { cli: structuredClone(CLI) }); // declares present, but the CLI does not advertise settings-declared
+  assert.equal(d.q('.spawn-teams').hidden, true);
+  for (const u of [a, b, c, d]) assert.ok(u.previews().every(p => !Object.hasOwn(p.choices, 'join')));
 });
 
 test('a soul whose preview reports no teams shows no row, even with the declared fact', async t => {

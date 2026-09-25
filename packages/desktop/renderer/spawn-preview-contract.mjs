@@ -36,8 +36,9 @@ function teamsOf(v) {
 /** Whether the messaging provider declares the spawn setting `join` (teams
  * contract). The ONE gate for the spawn Teams choice: a provider that does not
  * declare it would ignore a bound join=, so without the declared fact the row
- * is not offered. Stand-in shape (kernel pending): the preview's messaging
- * module row lists its declared setting keys in `declares`. */
+ * is not offered. The kernel's fact (teams contract bdd7e55e, kernel #181):
+ * each preview modules[] row carries `declares` — its sorted setting key names —
+ * under feature settings-declared (the dialog checks the feature). */
 const joinDeclared = row => Array.isArray(row?.declares) && row.declares.includes('join');
 /** The soul's messaging provider, the identity its bound payload carries, and
  * where that identity's mode came from: the one module on layer messaging,

@@ -503,7 +503,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const effectiveWork = () => worktree.checked && soul.work === 'checkout' ? 'worktree' : soul.work;
   const identityOffered = () => local() && !!messagingProvider && !!cli()?.features?.includes('spawn-provider-payload');
   // Only the teams the soul has access to (mapped); with none, there is nothing to choose and no row.
-  const teamsOffered = () => identityOffered() && joinDeclaredNow && Array.isArray(teamsNow) && teamsNow.some(t => t.mapped);
+  // Gate (teams contract bdd7e55e): feature settings-declared, and the messaging row declares `join`.
+  const teamsOffered = () => identityOffered() && !!cli()?.features?.includes('settings-declared') && joinDeclaredNow && Array.isArray(teamsNow) && teamsNow.some(t => t.mapped);
   // What the operator ticked, in the kernel's order, mapped labels only.
   const joinLabels = () => teamsOffered() ? teamsNow.filter(t => t.mapped && joinPicked.has(t.label)).map(t => t.label) : [];
   // The preview for these choices must bind exactly the ticked teams (settings echo).
