@@ -23,10 +23,10 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  LAYERS, OATS_VERSION, configChain, manifestOperations,
+  LAYERS, OATS_VERSION, manifestOperations,
   capabilityManifests, capabilityTrust, capabilityExecutablePath, activateCapturedScaffold, loadCapturedDispatch, inspectPortableOnboarding, prepareCapturedComposition, resolveCapturedHelper, capturedNativeSessionAvailability, scaffoldCapturedInstance, startCapturedInstanceSession, withCapturedBindingFile, withCapturedInvocationContextFile, admitCapturedAction, beginCapturedIntent, settleCapturedIntent,
-  officialPackageCatalog, describeOfficialCatalog, approveAvailableCapability, resolveOatsConfig, resolvedFromHome, composeInstanceAgentsMd, parseYamlNested, stripInternalAnnotations, withConfigFile,
-  findCapabilityAgent, findInstanceHome, findInstanceHomes, listCapabilityAgents, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, listAgents, listInstances, servedIdentityLine, spawnInstance, spawnInstanceAsync, instanceSoulDir, launchConfigsAt, explicitInstanceName, findModuleCapabilityAgent, capabilityAgentFromDir, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, planLaunch, redactLaunchCommand, restartInstanceSession,
+  officialPackageCatalog, describeOfficialCatalog, approveAvailableCapability, resolvedFromHome, resolvedFromPrepared, teamEnv, preWorkspaceHome, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
+  findInstanceHome, findInstanceHomes, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, launchConfigsAt, explicitInstanceName, findModuleCapabilityAgent, capabilityAgentFromDir, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
 import {
   writeFileAtomic, LOCK_FILE, readLock, writeLock, resolvePackages,
@@ -2494,7 +2494,8 @@ async function capabilityCommand() {
       throw e;
     }
     if (!hit) return NOT_DISPATCHED;
-    const teamCtx = hit.soul?.team ? { name: hit.soul.team } : undefined;
+    // The same team/workspace facts a spawn hook receives (lead decision c3-7).
+    const teamCtx = teamEnv(resolvedFromPrepared(hit.prepared, hit.deployment));
     // No home, so no recorded soul: the soul's per-commit copy is OATS_SOUL when a spawn
     // already fetched exactly this commit; otherwise the command gets none (never ambient).
     const cachedSoul = hit.soul?.commit ? join(hit.deployment, "agents", hit.soul.name, "souls", String(hit.soul.commit).slice(0, 12)) : null;
@@ -2522,22 +2523,21 @@ async function capabilityCommand() {
         instanceModules = !!(meta.modules && typeof meta.modules === "object");
         activeIds = (meta.capabilities || []).map((c) => c.id);
         for (const c of meta.capabilities || []) capSettings[c.id] = c.settings || {};
+        // Workspace-model homes only (lead decision c3 Q2).
+        if (!instanceModules) { const e = preWorkspaceHome(instanceHome, "nothing was dispatched"); bail(e.code, e.message); }
         context = meta.repo || context;
         soulDir = instanceSoulDir(instanceHome, meta);
-        // Team: the spawn-time snapshot, but fall back to live config — instances
-        // spawned before a team: block was declared have no snapshot.
-        teamCtx = meta.team || resolveOatsConfig(context).team;
+        // The team/workspace facts the home recorded at spawn, as its hooks got them.
+        const ws = meta.workspace && typeof meta.workspace === "object" ? meta.workspace : {};
+        const messaging = (meta.capabilities || []).find((c) => c.layer === "messaging")?.id;
+        teamCtx = teamEnv({ workspace: { key: ws.key, name: ws.name, deployment: ws.deployment, team: ws.soul?.team, slots: { messaging } }, payloads: meta.providers });
       } else {
         // Not inside a home: a v2 deployment (oats-local.yaml in reach) resolves
         // through the workspace, exactly as a spawn of --soul would (below).
         try { const { deploymentOf } = await import("../lib/operator-dispatch.mjs"); deployment = deploymentOf(context); }
         catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) bail(e.code, e.message, e.details); throw e; }
-        if (!deployment) {
-          const resolved = resolveOatsConfig(context, flag("soul"));
-          activeIds = resolved.capabilities.map((c) => c.id);
-          for (const c of resolved.capabilities) capSettings[c.id] = c.settings || {};
-          teamCtx = resolved.team;
-        }
+        // No home and no deployment in reach: no capability namespace is active.
+        if (!deployment) return NOT_DISPATCHED;
       }
     } catch (e) { bail("E_CONFIG_BROKEN", e.message || e); throw e; }
     if (deployment) return operatorDispatch();
@@ -2606,7 +2606,7 @@ async function capabilityCommand() {
       // canonical absolute executable of THIS CLI; official consumers execFile
       // it directly and never resolve `oats` from PATH or a shell.
       OATS_CLI_BIN: CLI_BIN,
-      OATS_TEAM_NAME: teamCtx?.name || "", OATS_TEAM_ID: teamCtx?.id || "", OATS_TEAM_SCOPE: teamCtx?.scope || "",
+      ...teamEnv(null), ...(teamCtx || {}),
       // The soul the command acts for (an instance home's recorded soul directory):
       // homes carry no soul link, so providers read it here.
       ...(soulDir ? { OATS_SOUL: soulDir } : {}),
