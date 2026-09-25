@@ -95,7 +95,7 @@ folded in below.
      computes `teams` from the soul's labels at the soul commit the
      deployment currently resolves (the lock), and the workspace's current
      `messaging`.
-   - That lets `messaging:reconcile-teams` join a team the workspace added,
+   - That lets the provider offer a team the workspace added as eligible,
      and leave one it removed, without a respawn.
    - The recorded spawn-time `teams` stays in `instance.json.providers` as
      evidence.
