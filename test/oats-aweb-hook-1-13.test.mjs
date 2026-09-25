@@ -1,4 +1,4 @@
-// oats.aweb 1.13.0 hook behaviour, against a fake `aw` on PATH:
+// oats.aweb 1.13.1 hook behaviour, against a fake `aw` on PATH:
 // custody preflight, concrete grant scopes, team selector gating, launch renewal,
 // and retirement cleanup for resident grants.
 
