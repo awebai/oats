@@ -22,7 +22,7 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
-## Batch — 2026-09-24 night (PRs 131, 136, 151–187) → toward v0.26.0 (unreleased; main carries breaking changes)
+## Batch — 2026-09-24 night (PRs 131, 136, 151–189) → toward v0.26.0 (unreleased; main carries breaking changes)
 - **Merged:**
   - PR151 packages: approval removed (human decision; declaring a package IS the trust decision) `e62b8f16`, plus the release-note follow-up `f0994882`.
   - PR153 docs for it `b97de554`.
@@ -129,6 +129,9 @@ decisions/ and referenced from here.
   - oats.authoring **v1.0.3** (oats-authoring#7 by the Phase D driver, lead-merged `5b2bed13`, tagged): the core-capabilities wording. PR187 mirror + pin `9978858e` (lead; co-lead ACK; squash tree verified): the bundled copy is byte-identical to the tag; the framework's integration-authoring matches the package.
   - Teams amendment **K** (co-lead ruling on the oats.aweb 1.14.0 review; contract `23e30eef`): byTeam is no longer merged into the messaging provider's settings; each label's payload lives only in its `teams` entry, and `settings.team` means the personal team. The kernel PR is in flight. Found by cross-review: the provider minted the primary identity into the mapped team, and its test faked a kernel payload without `team`.
   - Wake **proven** end to end on the released stack (co-lead): aw 1.36.8 daemon, delivery=session homes; floor 1.36.5.
+  - PR189 kernel `c03ea555` (the Phase D driver; lead review with a re-merge mutation killing 5 tests; co-lead ACK; the watcher merged; squash tree verified): teams amendment K. The messaging settings = base ⊕ soul ⊕ host ⊕ spawn; each label's payload is only in OATS_TEAMS; payloadRevision/revision change for mapped primaries.
+  - PR188 kernel `bcf44b59` (cli-dev-v2-native; lead probe 17/17 on both heads; co-lead full review; the watcher merged after #189 on a fresh CLEAN recheck; squash tree verified): (e) the captured/portable path removed. About 21k lines and 54 lib modules deleted; typed refusals ("the captured/portable path was removed in 0.26"); captured homes are flagged by status and retire-only with the unrevoked-identity warning; D7 removed the kernel's portable skills/injects plus skills/oats + injects/oats.md (oats.core 2.0.0 ships them). Accepted follow-ups: a v2 check-wire schema, packages/record captured custody, the schedule executionStatus kinds, the oats-package schema configTemplates, 4 stale Desktop spots.
+  - oats.aweb **v1.14.0** tagged on awebai/oats-aweb (co-lead; the tag object `bcf04587` → merge `c26ce257`; the stage by integrations-expert-aweb-1140; lead cross-review over 4 rounds found the Q2 mint target needed K). The teams verbs teams|join|leave; joined teams poll. The oats mirror + pin come in 0.26.1. oats-knowledge #42 (its lessons) merged `2fac8ed9`.
 - **taught us:**
   - (1) **Arm a merge watcher with the full approved oid, never "the current head".** #160's head moved twice after approval while mails crossed. The watcher's named-oid guard refused both mismatches, so nothing unreviewed merged. The loop ends with one FINAL mail per party (author and watcher) naming the full oid and "no pushes", and by ignoring the stale mails that follow.
   - (2) **A native gate must wait for the message, not for a spinner.** Preview in the rig is slow, and fixed waits produced false FAILs in both directions. Poll for the expected sentence with a bound.
