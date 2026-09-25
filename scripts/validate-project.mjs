@@ -3,7 +3,6 @@ import Ajv2020 from "ajv/dist/2020.js";
 import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseYamlNested } from "@awebai/oats";
 import { parse as parseYamlFull } from "yaml";
 import { checkOkfMirror } from "./check-okf-mirror.mjs";
 import { checkKnowledgeTheoryPackage } from "./check-knowledge-theory-package.mjs";
@@ -28,16 +27,14 @@ function walk(dir, accept = () => true) {
 // Schemas + current clean-contract artifacts.
 const ajv = new Ajv2020({ allErrors: true, strict: false, allowUnionTypes: true });
 const manifestSchemaPath = join(root, "docs", "capability-manifest.schema.json");
-const configSchemaPath = join(root, "docs", "oats-config.schema.json");
 const packageSchemaPath = join(root, "docs", "oats-package.schema.json");
 const lockSchemaPath = join(root, "docs", "oats-lock.schema.json");
 const manifestSchema = json(manifestSchemaPath);
-const configSchema = json(configSchemaPath);
-for (const [path, schema] of [[manifestSchemaPath, manifestSchema], [configSchemaPath, configSchema], [packageSchemaPath, json(packageSchemaPath)], [lockSchemaPath, json(lockSchemaPath)]]) {
+const baseSchemas = [[manifestSchemaPath, manifestSchema], [packageSchemaPath, json(packageSchemaPath)], [lockSchemaPath, json(lockSchemaPath)]];
+for (const [path, schema] of baseSchemas) {
   if (!ajv.validateSchema(schema)) fail(`${relative(root, path)} is not a valid JSON Schema: ${ajv.errorsText()}`);
 }
 const validateManifest = ajv.compile(manifestSchema);
-const validateConfig = ajv.compile(configSchema);
 // Workspace model (v2) declaration schemas — documentation examples are checked
 // against the schema their shape names (see exampleKind below).
 const v2Schemas = Object.fromEntries(["oats-workspace", "oats-membership", "soul", "oats-local"].map((name) => {
@@ -60,10 +57,12 @@ for (const path of [
   manifests++;
   if (!validateManifest(json(path))) fail(`${relative(root, path)}: ${ajv.errorsText(validateManifest.errors)}`);
 }
-const repoConfig = parseYamlNested(readFileSync(join(root, "oats-config.yaml"), "utf8"));
-if (!validateConfig(repoConfig)) fail(`oats-config.yaml: ${ajv.errorsText(validateConfig.errors)}`);
+// The repository is a workspace member: a work tree of it sits between an instance's
+// commands and its deployment, where the kernel refuses any oats-config.yaml
+// (E_CONFIG_BROKEN legacy-config). The v2 host and member files are the only root config.
+if (existsSync(join(root, "oats-config.yaml"))) fail("oats-config.yaml: the 0.25 config file must not exist at the repository root — the kernel refuses it in every member work tree (oats-workspace.yaml and oats-membership.yaml are the root config)");
 
-// Public Markdown set: local links/anchors and OATS-config YAML examples.
+// Public Markdown set: local links/anchors and v2 declaration YAML examples.
 const markdown = [join(root, "README.md"), ...walk(join(root, "docs"), (p) => extname(p) === ".md")];
 for (const dir of walk(join(root, "capabilities"), (p) => basename(p) === "README.md")) markdown.push(dir);
 markdown.push(join(root, "packages", "pi", "README.md"));
@@ -121,7 +120,7 @@ for (const file of publicMarkdown) {
 /** Which declaration a YAML example is, by shape. A block that is only a fragment
  *  (a `# soul.yaml` comment header, a partial `capabilities:` excerpt, a mixed
  *  illustration with several files) is not a document and is skipped. */
-function exampleKind(block, parsed) {
+function exampleKind(parsed) {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
   const keys = Object.keys(parsed);
   const has = (k) => keys.includes(k);
@@ -132,9 +131,6 @@ function exampleKind(block, parsed) {
     if (has("name") && has("description") && has("work")) return "soul";
     return null;
   }
-  // Legacy oats-config.yaml shape (still validated: the schema is documentation of what 0.24 read).
-  if (/^(?:\s*)(?:groups|layers|skill-overrides|agents-md-injection|oats|work-modes):/m.test(block)) return "oats-config";
-  if (has("capabilities") && (has("name") || has("agent-types") || has("launch-configs")) && !has("schemaVersion")) return "oats-config";
   return null;
 }
 for (const file of exampleMarkdown) {
@@ -146,10 +142,10 @@ for (const file of exampleMarkdown) {
     // model; the full YAML parser reads examples. Placeholder grammar (`<slug>`, `…`)
     // fails to parse or to classify and is skipped as illustration.
     try { parsed = parseYamlFull(block); } catch { continue; }
-    const kind = exampleKind(block, parsed);
+    const kind = exampleKind(parsed);
     if (!kind) continue;
     examples++;
-    const validator = kind === "oats-config" ? validateConfig : v2Schemas[kind];
+    const validator = v2Schemas[kind];
     if (!validator(parsed)) fail(`${relative(root, file)} YAML example #${examples} (${kind}): ${ajv.errorsText(validator.errors)}`);
   }
 }
@@ -158,4 +154,4 @@ if (failures.length) {
   console.error(`Project validation failed (${failures.length}):\n- ${failures.join("\n- ")}`);
   process.exit(1);
 }
-console.log(`Project validation passed: 4 schemas, ${manifests} clean-contract manifests, ${examples} config examples, ${links} local links across ${publicMarkdown.length} public Markdown files.`);
+console.log(`Project validation passed: ${baseSchemas.length + Object.keys(v2Schemas).length} schemas, ${manifests} clean-contract manifests, ${examples} config examples, ${links} local links across ${publicMarkdown.length} public Markdown files.`);

@@ -51,13 +51,43 @@ packages:
   named by `OATS_PACKAGE_CATALOG` — which supplies the repo url, the tag
   convention (`v2.1.3` or `oats-framework/v1.1.3`) and the payload path. An id
   the catalog does not know is `E_PACKAGE_MISSING` ("use `git:<repo>@<ref>` for
-  a package outside the catalog"). The catalog is the reviewed marketplace
-  ([official-marketplace.md](official-marketplace.md)) and the only way a
+  a package outside the catalog"). The catalog is the reviewed official list
+  ([official-catalog.md](official-catalog.md)) and the only way a
   package becomes pinnable *by id*.
 - **`git:<repo>@<ref>`**: `<repo>` is any repo ref the kernel understands
   (`github.com/org/repo`, `https://…`, `git@host:…`, `/abs/bare.git`,
   `file:///…`); `<ref>` is a tag name or a full 40-hex commit. The package is
   read at `oats-package/`.
+
+A whole workspace file pinning the current official packages — its bare
+versions are kept equal to `package-catalog.json` by
+`test/docs-catalog-pins.test.mjs`, so a catalog pin round updates this example
+in the same change:
+
+<!-- catalog-pins -->
+```yaml
+schemaVersion: 2
+name: acme
+members:
+  - git:github.com/acme/agents
+  - git:github.com/acme/platform
+packages:
+  oats.framework: v1.1.3
+  oats.okf: v2.1.5
+  oats.aweb: v1.13.1
+teams:
+  global: { description: Org-wide }
+  engineering: { description: Platform }
+defaults:
+  capabilities: { oats.core: { from: package } }
+  knowledge: { oats.okf: { from: package } }
+  messaging: { oats.aweb: { from: package } }
+  tasks: none
+stores:
+  org: git:github.com/acme/knowledge
+messaging:
+  private: per-human
+```
 
 There is no third form; `lib/packages.mjs#classifyPackageValue` is the one
 grammar, used by workspace validation and by `sync`. A `<ref>` (or catalog ref)
@@ -222,7 +252,7 @@ roles never collapse (see [workspaces.md](workspaces.md#member-tier-vs-package-t
    → commit → `oats sync`. Discovery shows the member row with
    `publishes: { package: "acme.tools", version: "0.4.0" }`.
 5. To become pinnable by id, open a PR adding the package to
-   `package-catalog.json` in the `oats` repo ([official-marketplace.md](official-marketplace.md)).
+   `package-catalog.json` in the `oats` repo ([official-catalog.md](official-catalog.md)).
 
 A soul that names one of the package's capabilities with
 `from: github.com/acme/tools` fails: `E_CAPABILITY_MISSING` with the hint
@@ -232,7 +262,7 @@ A soul that names one of the package's capabilities with
 
 ```json
 {
-  "policy": "docs/official-marketplace.md",
+  "policy": "docs/official-catalog.md",
   "packages": {
     "oats.okf":       { "url": "https://github.com/awebai/oats-okf.git", "ref": "v2.1.3", "path": "oats-package" },
     "oats.framework": { "url": "https://github.com/awebai/oats.git", "ref": "oats-framework/v1.1.3", "path": "oats-package" }
@@ -253,4 +283,4 @@ replacement (`details.removed` / `details.replacement` in `--json`). There is
 no installed-capability directory, no config template adoption, no host
 requirement installer. A manifest's `requires` still describes what must exist
 on the host (runtime packages are verified at spawn; host commands are the
-operator's to install). See [rebuild-to-v2.md](rebuild-to-v2.md).
+operator's to install).

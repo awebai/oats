@@ -159,7 +159,8 @@ spawns children (its call; the lead reviews each PR).
 Read, in this order, in the checked-out main:
 1. `docs/workspaces.md` — the v2 model end to end (deployment vs workspace,
    members, packages, payloads, `byTeam`, hosting).
-2. `docs/rebuild-to-v2.md` — how an operator builds a deployment (this is the
+2. the 0.25 rebuild guide (removed in 0.26.0; `docs/configuration.md` and
+   `oats onboard` now) — how an operator builds a deployment (this is the
    flow F2 wraps).
 3. `docs/desktop-cli-api.md` — every JSON surface, with examples; note
    `features[]`, `decision.effective.providers`, `instances[].identity`.

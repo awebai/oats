@@ -131,7 +131,7 @@ export function syncKnowledgeTheoryReferences(repoRoot = REPO_ROOT) {
 export function checkOperationalCapabilities(packageRoot) {
   for (const [slug, names, injection] of [
     ["oats-core", ["oats-operate", "oats-souls"], "injects/oats.md"],
-    ["oats-setup", ["oats-onboarding", "oats-package-pins", "oats-rebuild"], null],
+    ["oats-setup", ["oats-onboarding", "oats-package-pins"], null],
   ]) {
     const root = join(packageRoot, "capabilities", slug);
     const cap = JSON.parse(readFileSync(join(root, "oats.json"), "utf8"));

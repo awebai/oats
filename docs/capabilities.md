@@ -5,7 +5,7 @@ skills, instance instructions, requirements, namespaced commands, and declared
 lifecycle hooks. A soul — not the capability — decides which souls receive it,
 by naming it with where it comes from (`from:`; see [workspaces](workspaces.md)).
 
-The [official marketplace policy](official-marketplace.md) defines the reviewed
+The [official catalog policy](official-catalog.md) defines the reviewed
 package list and its acceptance criteria. Finding an official package does not
 declare it or give it to any soul; declaring it in `packages:` is the
 workspace's trust decision, and giving it to a soul is a separate choice.
@@ -401,7 +401,7 @@ spawn order. Hooks run from the instance's own copy
 | `oats.authoring` | additive | capability, skill, and soul authoring guidance | `oats.authoring` |
 
 Each is pinned by a bare version in `packages:` and resolved through the
-[official catalog](official-marketplace.md); each package repo is also a member
+[official catalog](official-catalog.md); each package repo is also a member
 of the OATS workspace carrying its expert soul (`okf-expert`, `aweb-expert`, …).
 The framework's own souls say `oats.okf: { from: package }` — membership never
 turns a package into a latest-state capability.

@@ -3,7 +3,7 @@
 The reference implementation publishes two npm packages:
 
 - **`@awebai/oats`**: runtime-neutral kernel, universal `oats` CLI,
-  bootstrap skills, instruction sources, and the official capability marketplace.
+  bootstrap skills, instruction sources, and the official package catalog.
 - **`@awebai/oats-pi`**: minimal pi adapter for instance-local resource
   exposure and memory session events. It registers no agent tools.
 

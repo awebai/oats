@@ -32,7 +32,7 @@ packages:
 ```
 
 - A **bare version** works only for ids in the official catalog
-  (`package-catalog.json` in the OATS repository — the reviewed marketplace).
+  (`package-catalog.json` in the OATS repository — the reviewed official list).
 - A **git reference** names a tag or a full commit. A reference that resolves
   to a branch is refused: versions must not move. A tag that moved fails
   integrity on the next sync (`E_PACKAGE_INTEGRITY`); a new version needs a new

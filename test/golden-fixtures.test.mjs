@@ -1,5 +1,5 @@
 // Golden fixtures for spawn and retire — step 1 of the migration plan in
-// docs/2026-09-03-architecture-proposal.md ("Migration plan", step 1).
+// the September 3 architecture proposal ("Migration plan", step 1; in the v0.25.x tags).
 //
 // WHAT THIS GUARDS. The plan's later steps move code without meaning to change
 // behavior: split lib/core.mjs by responsibility (step 3), extract the runtime

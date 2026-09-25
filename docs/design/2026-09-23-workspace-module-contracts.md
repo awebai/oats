@@ -462,7 +462,7 @@ stays advertised because the verb still serves classic homes
 ### 0.25.2 operator-rebuild round (2026-09-24) — appended, not edited in place
 
 Source: an operator's first rebuild of a real two-team deployment on 0.25.0,
-following `docs/rebuild-to-v2.md` literally. **The guide is a contract the
+following the 0.25 rebuild guide literally (removed in 0.26.0). **The guide is a contract the
 kernel must honour**: where the guide claimed behaviour the kernel lacked, the
 kernel changes; where the guide described keys no provider consumes, the guide
 changes. Findings R1–R10; kernel side in 0.25.2 (`docs/release-notes/v0.25.2.md`).

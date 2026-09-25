@@ -85,13 +85,11 @@ The probe/mutation contract is specified in
 The app starts on the directory it was launched with (its own folder by
 default). To view a deployment, open the workspace switcher in the sidebar
 and choose **Add workspace → Browse**, then point it at an OATS deployment —
-a directory containing `agents/` (under the 0.25 workspace model that is the
-deployment directory (the operator's choice) holding `oats-local.yaml` and `agents/`;
-under 0.24, an `agents/` root or a team scope whose `oats-config.yaml` declares `team:`). *The Desktop's own
-multi-repo roster ("team scopes show every member repo's agents under one
-roster") still keys on the 0.24 `oats-config.yaml` `team:` declaration; reading
-the member set from `oats-local.yaml` / `oats workspace status` is the Phase F
-follow-up named in the [0.25.0 notes](release-notes/v0.25.0.md#desktop).*
+the directory (the operator's choice) holding `oats-local.yaml` and `agents/`.
+A picked folder without `oats-local.yaml` is offered onboarding instead. The
+Desktop never parses the deployment: its members, lock state and header come
+from `oats workspace status`, and its instances from the deployment's one
+`agents/` root. There is no team scope and no `oats-config.yaml`.
 Added workspaces are remembered and offered as suggestions next time.
 
 Launch flags for scripted use: `--dir <workspace>` and `OATS_DESKTOP_PORT`.

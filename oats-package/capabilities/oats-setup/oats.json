@@ -1,14 +1,13 @@
 {
   "capability": "oats.setup",
   "version": "2.0.0",
-  "description": "Deployment operation under the workspace model: onboarding, package pins and approval, rebuilding a deployment; the operator knowledge node carries the rationale.",
+  "description": "Deployment operation under the workspace model: onboarding and package pins; the operator knowledge node carries the rationale.",
   "compatibility": {
     "oats": ">=0.25.5"
   },
   "requires": [],
   "skills": [
     "skills/oats-onboarding",
-    "skills/oats-package-pins",
-    "skills/oats-rebuild"
+    "skills/oats-package-pins"
   ]
 }

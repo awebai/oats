@@ -7,7 +7,7 @@ Dated design documents record how decisions were reached and what each implement
 - **[Workspace module contracts (2026-09-23)](2026-09-23-workspace-module-contracts.md) — NORMATIVE for implementation**: `lib/remote.mjs`, `lib/workspace.mjs`, `lib/resolve.mjs`, `lib/packages.mjs` (lock v3), `lib/materialize.mjs`, the CLI verbs and DTOs, the error codes, the Northwind fixture.
 - [Simplified workspace model — worked example (2026-09-23)](2026-09-23-simplified-workspace-model.md) — ACCEPTED: one workspace per org, membership = trust, `from:` as location, nothing installed, full per-instance copy, teams as labels, harnesses start normally. The Decision concept is `agents/oats-expert/soul/knowledge/decisions/workspace-model-v2.md`.
 - [Implementation plan (2026-09-23)](2026-09-23-workspace-v2-implementation-plan.md) — phases A/B/C, what each deletes.
-- Operator-facing: [rebuild guide](../rebuild-to-v2.md) (0.24.x → v2; no converter), [Desktop CLI API — workspace model](../desktop-cli-api.md#workspace-model-workspaceapi-2).
+- Operator-facing: [workspace model](../workspaces.md), [Desktop CLI API — workspace model](../desktop-cli-api.md#workspace-model-workspaceapi-2).
 - Open threads (tracked here until closed): the `workspace` work mode still derives its `./work` boundary from the classic `team:` scope; the readiness `enrolled` producer still reads the 0.24 `oats.yaml` backlink; launch configurations / yolo / work-mode setup are still read from a classic config chain.
 
 ## Superseded by the workspace model

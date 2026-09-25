@@ -25,7 +25,7 @@ import { fileURLToPath } from "node:url";
 import {
   LAYERS, OATS_VERSION, manifestOperations,
   capabilityManifests, capabilityTrust, capabilityExecutablePath, activateCapturedScaffold, loadCapturedDispatch, inspectPortableOnboarding, prepareCapturedComposition, resolveCapturedHelper, capturedNativeSessionAvailability, scaffoldCapturedInstance, startCapturedInstanceSession, withCapturedBindingFile, withCapturedInvocationContextFile, admitCapturedAction, beginCapturedIntent, settleCapturedIntent,
-  officialPackageCatalog, describeOfficialCatalog, approveAvailableCapability, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
+  officialPackageCatalog, officialCatalogFile, officialCapabilityAliases, approveAvailableCapability, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
   findInstanceHome, findInstanceHomes, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, launchConfigsAt, explicitInstanceName, findModuleCapabilityAgent, capabilityAgentFromDir, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
 import {
@@ -1369,12 +1369,13 @@ function catalogForSync(bail) {
  *  recomposes the tag from the catalog's own convention.
  *  → { packages: { <id>: <version> }, problems: [ { code: "E_PACKAGE_MISSING", … } ] } */
 function standalonePackages(catalog) {
-  let id = "oats.framework", file = process.env.OATS_PACKAGE_CATALOG || null;
-  try { const d = describeOfficialCatalog(); file = d.catalog.file; id = d.capabilityAliases.find((a) => a.capability === "oats.core")?.package ?? id; } catch { /* the catalog is diagnosed below */ }
+  let id = "oats.framework";
+  const file = officialCatalogFile();
+  try { const alias = officialCapabilityAliases()["oats.core"]; id = (typeof alias === "string" ? alias : alias?.package) ?? id; } catch { /* the catalog is diagnosed below */ }
   const version = standaloneCatalogVersion(catalog?.[id]?.ref);
   if (version) return { packages: { [id]: version }, problems: [] };
   const why = catalog?.[id] ? `its ref ${JSON.stringify(catalog[id].ref)} carries no version` : `it has no entry ${JSON.stringify(id)}`;
-  return { packages: {}, problems: [{ code: "E_PACKAGE_MISSING", id, reason: "no-catalog", catalog: file, path: `/packages/${id}`, message: `the catalog has no package providing oats.core (OATS_PACKAGE_CATALOG=${file ?? "<bundled>"}): ${why}; standalone spawns will be refused until it does` }] };
+  return { packages: {}, problems: [{ code: "E_PACKAGE_MISSING", id, reason: "no-catalog", catalog: file, path: `/packages/${id}`, message: `the catalog has no package providing oats.core (OATS_PACKAGE_CATALOG=${file}): ${why}; standalone spawns will be refused until it does` }] };
 }
 /** The bare version of a catalog ref: its LAST path segment when that is a version
  *  (`v1.1.3` → `v1.1.3`; `oats-framework/v1.1.3` → `v1.1.3`; `main` → null). */
@@ -1881,8 +1882,8 @@ async function spawnCmd() {
       // default; when the catalog cannot name it, say so instead of "add it to packages:"
       // (there is no workspace file to add it to).
       if (e?.code === "E_PACKAGE_MISSING" && discovery?.standalone === true) {
-        let file = process.env.OATS_PACKAGE_CATALOG || null; try { file = describeOfficialCatalog().catalog.file; } catch { /* keep the env value */ }
-        bail(e.code, `${e.details?.capability ?? "oats.core"}: the catalog has no package providing oats.core (OATS_PACKAGE_CATALOG=${file ?? "<bundled>"}) — standalone spawns resolve only the kernel's default package from the catalog`, { ...(e.details ?? {}), standalone: true, reason: "no-catalog", catalog: file });
+        const file = officialCatalogFile();
+        bail(e.code, `${e.details?.capability ?? "oats.core"}: the catalog has no package providing oats.core (OATS_PACKAGE_CATALOG=${file}) — standalone spawns resolve only the kernel's default package from the catalog`, { ...(e.details ?? {}), standalone: true, reason: "no-catalog", catalog: file });
       }
       // Not a workspace soul: a capability-defined agent (a module's `agents:`
       // soul, resolved below from a materialized copy) may still answer to this name.

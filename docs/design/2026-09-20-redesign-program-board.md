@@ -25,7 +25,7 @@ Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, n
 - Open: strict-Pi "enriched profile" remains unqualified (documented, not hidden).
 
 ## S2 — Workspace adoption of the OATS repos
-- ✅ **PR23 merged f6d5a89b**: `oats-workspace.yaml` (7 members, `imports: []`), `oats.yaml` (exports souls/oats-expert, oats-package, capabilities/oats-authoring), transitional `souls/oats-expert/` edition, `docs/workspace-adoption.md`, layout tests.
+- ✅ **PR23 merged f6d5a89b**: `oats-workspace.yaml` (7 members, `imports: []`), `oats.yaml` (exports souls/oats-expert, oats-package, capabilities/oats-authoring), transitional `souls/oats-expert/` edition, the workspace adoption guide (removed in 0.26.0), layout tests.
 - ✅ **PR24 merged da38e5a9**: deletion of `skills/oats-portable-setup` + `oats inspect --request` read-only seam (ACCEPTED as the public inspection route); full gate 1621/0.
 - ✅ Member `oats.yaml` merged to main: oats-okf #3 (fec78a20), oats-aweb #1 (069ea2f6), oats-authoring #1 (54183a6a), oats-jira #1 (2f855daf).
 - ✅ oats-dev#1 (main 6e164ee3) and oats-linear#1 (main a2121e48) merged after Juan granted write access — M's exact commits 0434f4ef / 8c183c37.
@@ -117,7 +117,7 @@ Fresh directory and deployment, `@awebai/oats@0.24.4`, policy sources v2.1.2 / v
 
 ## S5 — Official marketplace
 - ✅ Mechanism exists (`package-catalog.json`, `officialPackageCatalog()`); decision names it the official list.
-- ✅ **D4 merged PR26 (786490ae)**: `docs/official-marketplace.md`, `package-catalog.json` policy pointer (inert to the reader), README/packages/capabilities links, D3 sketch in adoption guide. ⬜ entries for `oats.core`/`oats.setup` at D1 release. Desktop view → S8.
+- ✅ **D4 merged PR26 (786490ae)**: the official list policy (now `docs/official-catalog.md`), `package-catalog.json` policy pointer (inert to the reader), README/packages/capabilities links, D3 sketch in adoption guide. ⬜ entries for `oats.core`/`oats.setup` at D1 release. Desktop view → S8.
 
 ## S6 — Five expert souls in the oats repo
 - ✅ **PR30 merged (40a579dc)** + maintainer follow-up **caa341f3**: all five declare `oats.core: {source: repo:oats-package}`, oats.okf@v2.1.1; `oats.yaml` exports all five; `oats-workspace.yaml` imports all five at caa341f3 (375b9f42). Live inspection against published main resolves them.

@@ -32,7 +32,7 @@ how to choose and combine them. A working installation must remain operable
 without the expert running or the original setup conversation being available.
 
 The architecture principle is already in the
-[September 3 proposal](../2026-09-03-architecture-proposal.md):
+September 3 architecture proposal (removed in 0.26.0; it is in the v0.25.x tags):
 
 > Contracts and bootstrap skills in OATS; implementations in packages.
 

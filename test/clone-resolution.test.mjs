@@ -1,7 +1,7 @@
 // lib/instance-resolution.mjs — resolveMemberClone / requireMemberClone (0.25.2 R1) and the
 // E_NO_DEPLOYMENT remedy for a deployment that has oats-local.yaml but no agents/ (0.25.2 R2).
 //
-// R1: docs/workspaces.md, docs/rebuild-to-v2.md §5 and `oats onboard` all say "the kernel finds a
+// R1: docs/workspaces.md, docs/configuration.md and `oats onboard` all say "the kernel finds a
 // member's clone through oats-local.yaml (`clones:`) or at <deployment>/<member name>"; the 0.25.0/1
 // kernel never read either and refused every worktree|checkout spawn until --repo was given. These
 // tests pin the lookup order and the verification (a found path must be a clone of THAT member).

@@ -9,7 +9,7 @@ npm root; the kernel npm tarball does not contain it.
 | Capability | Resources | Authority |
 | --- | --- | --- |
 | `oats.core` | `oats-operate`, `oats-souls`, and the capability-owned "You run on OATS" injection | How an agent works inside an instance of the workspace model; no hooks, commands or fundamental layer |
-| `oats.setup` | `oats-onboarding`, `oats-package-pins`, `oats-rebuild` | How an operator realizes, pins and rebuilds a deployment; no automatic provisioning |
+| `oats.setup` | `oats-onboarding`, `oats-package-pins` | How an operator realizes and pins a deployment; no automatic provisioning |
 | `oats.knowledge-theory` | `knowledge-capability-authoring` and `knowledge-theory-expert` with their complete local references | Optional authoring theory; no mandatory runtime doctrine, harvester or OKF dependency |
 
 ## How a workspace selects them
@@ -48,7 +48,7 @@ version like any other; its capabilities add no commands or hooks.
 - `oats.setup` is procedure. The judgement behind each step is the operator
   knowledge node (`oats/oats-operator-expert`), cited by concept name; the
   contract is the kernel's shipped `docs/` (`workspaces.md`,
-  `configuration.md`, `packages.md`, `rebuild-to-v2.md`), read from the
+  `configuration.md`, `packages.md`), read from the
   installed kernel so it always matches the running version.
 - Every `oats` command and flag the core and setup skills show is checked
   against the shipped CLI by `test/operational-skills-cli.test.mjs`.

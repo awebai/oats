@@ -83,7 +83,7 @@ directory delivery is recoverable and needs no Git/gh. Explicit bindings,
 `soul/okf.json` and accepted base metadata are required before a working source
 can spawn. `owns`/`reads` are responsibility/context, not ACLs. See
 [knowledge](knowledge.md) for the **prepared** version scope, provisioning and
-commands, and [migration](knowledge-migration.md) before updating v1.
+commands.
 
 **`oats.aweb`** fills `messaging`: mints an instance identity at spawn (local
 mode) or grants an instance an expiring session as a resident global identity

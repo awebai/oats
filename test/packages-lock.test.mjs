@@ -117,7 +117,7 @@ function fixture() {
   nw.tag("v0.3.0", nwMain); nw.branch("main", nwMain);
 
   const catalog = {
-    policy: "docs/official-marketplace.md",
+    policy: "docs/official-catalog.md",
     packages: {
       "oats.okf": { url: okf.url, ref: "v2.1.3", path: "oats-package" },
       "oats.framework": { url: fw.url, ref: "oats-framework/v1.1.3", path: "oats-package" },

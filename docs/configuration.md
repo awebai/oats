@@ -13,7 +13,8 @@ derived from workspace defaults plus each soul's `capabilities:` — and its
 `souls:` blocks are gone — per-instance provider content moved to
 `oats spawn … --provider`. There is no `oats init`, no `oats use`, no config
 scope chain, no adopted config templates. A 0.24.x deployment is rebuilt, not
-converted: [rebuild-to-v2.md](rebuild-to-v2.md).
+converted: write `oats-local.yaml` with `oats onboard` and move what the old
+file declared into `oats-workspace.yaml` and each soul's `soul.yaml`.
 
 ## The file
 
