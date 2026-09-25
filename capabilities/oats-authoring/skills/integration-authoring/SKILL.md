@@ -12,18 +12,26 @@ description: >-
 # Capability and integration authoring — delegate
 
 A capability package may ship skills, instance instructions, requirements,
-namespaced commands, and approved hooks. An integration is the constrained
+namespaced commands, and declared hooks. An integration is the constrained
 subtype implementing exactly one fundamental layer. Building either requires
 manifest, security, targeting-boundary, collision, and probe discipline; use
 the framework's **integrations-expert** soul rather than improvising.
 
-If the user only wants an existing package, use:
+If the user only wants an existing package, declare it and give it to souls;
+no build is needed:
 
-```bash
-oats install <source>            # external acquisition + exact lock; inactive
-oats trust <id>                  # only if commands/hooks exist
-oats use <id> --global|--type <t>|--soul <s>
+```yaml
+# oats-workspace.yaml (host repository): declaring the package is the trust decision
+packages:
+  vendor.review: git:github.com/vendor/review@v1.0.0
+# a soul's soul.yaml, or the workspace defaults: a capability the package exports
+# (a package may export several; the soul names each one it wants)
+capabilities:
+  vendor.review: { from: package }
 ```
+
+Then run `oats sync` (fetch, verify integrity, lock). The oats.setup
+capability's **oats-package-pins** skill has the procedure.
 
 ## 1. Verify the expert is available
 
