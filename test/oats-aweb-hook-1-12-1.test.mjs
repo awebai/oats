@@ -145,25 +145,20 @@ test("v2 spawn does not search above OATS_WORKSPACE when no root is declared", (
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-test("classic spawn keeps 1.12.0 bounded root precedence before OATS_WORKSPACE", () => {
+// RETIRED (oats.aweb 1.14.1): "classic spawn keeps 1.12.0 bounded root precedence before OATS_WORKSPACE".
+// 1.14 refuses the classic environment outright (no kernel produces it since 0.26); what stays is that the
+// refusal is fatal before anything is minted.
+test("a classic environment (OATS_TEAM_SCOPE without workspace facts) is refused before any aw call", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-1121-"));
   try {
     const bin = fakeAw(base);
     const teamScope = join(base, "team-scope"); awRoot(teamScope);
     const workspace = join(base, "workspace"); awRoot(workspace);
     const home = join(workspace, "agents", "dev", "instances", "probe"); mkdirSync(home, { recursive: true });
-    const r = runHook(bin, "spawn", {
-      OATS_INSTANCE: "probe",
-      OATS_HOME: home,
-      OATS_WORKSPACE: workspace,
-      OATS_CONTEXT: workspace,
-      OATS_TEAM_SCOPE: teamScope,
-      OATS_TEAM_ID: "t:example.test",
-      OATS_SETTINGS: JSON.stringify({}),
-    });
-    assert.equal(r.status, 0, r.stdout + r.stderr);
-    const invite = logLines(base).find((l) => l.argv.join(" ").startsWith("team invite"));
-    assert.equal(invite.cwd, realpathSync(teamScope));
+    const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: workspace, OATS_CONTEXT: workspace, OATS_TEAM_SCOPE: teamScope, OATS_TEAM_ID: "t:example.test", OATS_SETTINGS: JSON.stringify({}) });
+    assert.notEqual(r.status, 0, r.stdout + r.stderr);
+    assert.equal(r.doc.warning, "oats-aweb: oats.aweb 1.14 needs OATS 0.26.0 or newer (workspace model); on an older kernel pin oats.aweb v1.13.x");
+    assert.equal(existsSync(join(base, "aw.log")), false, "nothing was asked of aw, so nothing was minted");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
@@ -174,8 +169,8 @@ test("setup in v2 reads settings root/team and prints v2 remedies", () => {
     const workspace = join(base, "workspace"); mkdirSync(workspace, { recursive: true });
     let r = runHook(bin, "setup", { OATS_WORKSPACE: workspace, OATS_SETTINGS: JSON.stringify({}) });
     assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.match(r.stdout, /set messaging\.byTeam\.<label>\.team in the workspace file or settings\.oats\.aweb\.team/);
-    assert.doesNotMatch(r.stdout, /oats-config\.yaml|team:/);
+    assert.match(r.stdout, /set settings\.oats\.aweb\.team or keep an active team at the aweb root/);
+    assert.doesNotMatch(r.stdout, /oats-config\.yaml|messaging\.byTeam|team:/);
     const root = join(base, "declared-root"); mkdirSync(root, { recursive: true });
     r = runHook(bin, "setup", { OATS_WORKSPACE: workspace, OATS_SETTINGS: JSON.stringify({ team: "t:example.test", root }) });
     assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -196,7 +191,7 @@ test("binding-check reports one v2 problem per missing root/team and ready once 
     assert.equal(r.doc.result.status, "needs-configuration");
     assert.deepEqual(r.doc.result.problems.map((p) => p.message), [
       `no messaging root at ${workspace}: run oats aweb setup there or set settings.oats.aweb.root`,
-      "no team: set messaging.byTeam.<label>.team in the workspace file or settings.oats.aweb.team",
+      "no team: set settings.oats.aweb.team or keep an active team at the aweb root",
     ]);
     awRoot(workspace);
     r = runBinding(bindingRequest({ delivery: "session", team: "t:example.test" }), { OATS_WORKSPACE: workspace });
@@ -205,30 +200,33 @@ test("binding-check reports one v2 problem per missing root/team and ready once 
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-test("binding-check accepts classic team from environment without settings.team", () => {
-  const base = mkdtempSync(join(tmpdir(), "oats-aweb-1121-"));
-  try {
-    const workspace = join(base, "workspace"); awRoot(workspace);
-    const r = runBinding(bindingRequest({ delivery: "session" }), { OATS_WORKSPACE: workspace, OATS_TEAM_ID: "t:example.test" });
-    assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.deepEqual(r.doc.result, { status: "ready", problems: [] });
-  } finally { rmSync(base, { recursive: true, force: true }); }
-});
+// RETIRED (oats.aweb 1.14.1): "binding-check accepts classic team from environment without settings.team".
+// 1.14 reads no team from OATS_TEAM_ID (lead decision K): the team is settings.oats.aweb.team or the root's
+// active team, covered above and below.
 
-test("unmapped v2 team label reports no team instead of inheriting the root active team", () => {
+test("an unmapped v2 team label uses the personal team (the root's active team) with a team-unmapped warning; with none, the check reports no team", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-1121-"));
   try {
     const bin = fakeAw(base);
     const workspace = join(base, "workspace"); awRoot(workspace);
     const teamScope = join(base, "deployment-dir"); awRoot(teamScope);
     const home = join(workspace, "agents", "dev", "instances", "probe"); mkdirSync(home, { recursive: true });
-    const env = { OATS_WORKSPACE: workspace, OATS_TEAM_SCOPE: teamScope, OATS_WORKSPACE_KEY: "fixture-workspace", OATS_WORKSPACE_NAME: "Fixture Workspace", OATS_TEAM_LABEL: "engineering", OATS_TEAM_ID: "" };
-    const check = runBinding(bindingRequest({ delivery: "session" }), env);
+    // What the kernel's teamEnv exports for a home whose primary label has no messaging.byTeam mapping.
+    const env = { OATS_WORKSPACE: workspace, OATS_TEAM_SCOPE: teamScope, OATS_WORKSPACE_KEY: "fixture-workspace", OATS_WORKSPACE_NAME: "Fixture Workspace", OATS_TEAM_LABEL: "engineering", OATS_TEAM_LABELS: "engineering", OATS_TEAMS: JSON.stringify([{ label: "engineering", team: null, mapped: false }]), OATS_TEAM_ID: "" };
+    // No active team at the root: nothing to fall back to.
+    let check = runBinding(bindingRequest({ delivery: "session" }), env);
     assert.equal(check.status, 0, check.stdout + check.stderr);
-    assert.deepEqual(check.doc.result, { status: "needs-configuration", problems: [{ code: "needs-configuration", message: "no team: set messaging.byTeam.<label>.team in the workspace file or settings.oats.aweb.team" }] });
+    assert.deepEqual(check.doc.result, { status: "needs-configuration", problems: [{ code: "needs-configuration", message: "no team: set settings.oats.aweb.team or keep an active team at the aweb root" }] });
+    // The root keeps an active team: the label falls back to it and readiness stays ready.
+    write(join(workspace, ".aw", "teams.yaml"), "active_team: t:example.test\n");
+    check = runBinding(bindingRequest({ delivery: "session" }), env);
+    assert.deepEqual(check.doc.result, { status: "ready", problems: [] });
     const spawn = runHook(bin, "spawn", { ...env, OATS_INSTANCE: "probe", OATS_HOME: home, OATS_CONTEXT: workspace, OATS_SETTINGS: JSON.stringify({}) });
-    assert.notEqual(spawn.status, 0);
-    assert.match(spawn.doc.warning, /set messaging\.byTeam\.<label>\.team in the workspace file or settings\.oats\.aweb\.team/);
-    assert.equal(existsSync(join(base, "aw.log")) && logLines(base).some((l) => l.argv.join(" ").startsWith("team invite")), false, "no invite is minted from the root active team");
+    assert.equal(spawn.status, 0, spawn.stdout + spawn.stderr);
+    assert.equal(spawn.doc.warning, "oats-aweb: team-unmapped — workspace label engineering is not mapped; using personal team t:example.test");
+    assert.equal(spawn.doc.meta.team, "t:example.test");
+    const invite = logLines(base).find((l) => l.argv.join(" ").startsWith("team invite"));
+    assert.deepEqual(invite.argv.slice(2, 4), ["--team-id", "t:example.test"], "minted into the personal team, named explicitly");
+    assert.equal(JSON.stringify(spawn.doc).includes("TOK-secret"), false, "the invite token never reaches the output");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });

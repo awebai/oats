@@ -168,7 +168,7 @@ test("an unmapped label is a workspace-status WARNING; two labels that disagree 
   assert.deepEqual([ins.error.details?.capability, ins.error.details?.labels], ["acme.other", ["global", "night"]], JSON.stringify(ins.error));
 });
 
-test("the REAL oats.aweb 1.13.1 binding check decodes the kernel's check request for a two-label home: the teams never break its strict wire", async (t) => {
+test("the REAL bundled oats.aweb binding check decodes the kernel's check request for a two-label home: the teams never break its strict wire", async (t) => {
   const fx = fixture(); t.after(fx.cleanup);
   const { home } = await fx.spawn("dev", { instance: "dev-aweb" });
   const meta = JSON.parse(readFileSync(join(home, "instance.json"), "utf8"));
@@ -177,7 +177,9 @@ test("the REAL oats.aweb 1.13.1 binding check decodes the kernel's check request
   // The released provider, from this repository, filling the messaging slot with an aweb-shaped payload.
   const dir = fileURLToPath(new URL("../capabilities/oats-aweb", import.meta.url));
   const manifest = JSON.parse(readFileSync(join(dir, "oats.json"), "utf8"));
-  assert.equal(manifest.version, "1.13.1", "the released provider 0.26.0 pins");
+  // Whatever release is bundled (never a literal to chase): the one the official catalog pins.
+  const catalog = JSON.parse(readFileSync(fileURLToPath(new URL("../package-catalog.json", import.meta.url)), "utf8"));
+  assert.equal(`v${manifest.version}`, catalog.packages["oats.aweb"].ref, "the bundled provider is the catalog's pinned release");
   const aweb = { ...target, payloads: { ...target.payloads, "oats.aweb": { team: "aweb:acme.global" } }, slots: { ...target.slots, messaging: "oats.aweb" } };
   const out = runProviderCheck(aweb, { name: "oats.aweb", manifest }, dir);
   // Its decoder accepted the request: the answer is one of its check statuses (here no messaging
