@@ -109,14 +109,15 @@ test("oats schedule outside a deployment is E_LOCAL_MISSING, whatever ambient ro
 });
 
 test("a capability command gets the same team and workspace facts from a home as from the deployment", async (t) => {
-  const probe = "console.log(JSON.stringify({schemaVersion:1,ok:true,result:Object.fromEntries(Object.entries(process.env).filter(([k])=>/^OATS_(TEAM|WORKSPACE)_/.test(k)))}))\n";
+  const probe = "console.log(JSON.stringify({schemaVersion:1,ok:true,result:Object.fromEntries(Object.entries(process.env).filter(([k])=>/^OATS_(TEAM|WORKSPACE)_|^OATS_TEAMS$/.test(k)))}))\n";
   const fx = v2Deployment({
     name: "northwind",
     souls: { dev: { soul: { capabilities: { "acme.env": { from: "here" } } } } },
     capabilities: { "acme.env": { manifest: { command: "envprobe", commands: { show: "show.mjs" } }, files: { "show.mjs": probe } } },
   });
   t.after(fx.cleanup);
-  const expected = { OATS_TEAM_NAME: "", OATS_TEAM_ID: "", OATS_TEAM_SCOPE: fx.dep, OATS_TEAM_LABEL: "global", OATS_WORKSPACE_NAME: "northwind", OATS_WORKSPACE_KEY: fx.key };
+  const expected = { OATS_TEAM_NAME: "", OATS_TEAM_ID: "", OATS_TEAM_SCOPE: fx.dep, OATS_TEAM_LABEL: "global", OATS_WORKSPACE_NAME: "northwind", OATS_WORKSPACE_KEY: fx.key,
+    OATS_TEAM_LABELS: "global", OATS_TEAMS: JSON.stringify([{ label: "global", team: null, mapped: false, payload: {} }]) };
   const noHome = { OATS_INSTANCE_HOME: "", PI_AGENT_HOME: "", OATS_HOME: "", OATS_TEAM_NAME: "ambient", OATS_WORKSPACE_NAME: "ambient" };
   const fromDeployment = fx.cli(["envprobe", "show", "--soul", "dev", "--json"], { env: noHome });
   assert.equal(fromDeployment.status, 0, fromDeployment.stdout + fromDeployment.stderr);

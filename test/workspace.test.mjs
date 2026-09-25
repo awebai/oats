@@ -280,7 +280,7 @@ test("confirmMembership: confirmed (same key across ref spellings) carries commi
   const remote = northwind();
   const ws = await observeWorkspace(WS, { remote });
   const platform = await confirmMembership(ws, R.platform, { remote });
-  assert.deepEqual(platform, { key: K.platform, commit: C.platform, confirmed: true, team: "engineering" });
+  assert.deepEqual(platform, { key: K.platform, commit: C.platform, confirmed: true, team: "engineering", labels: ["engineering"] });
   // data backlinks with the https spelling — parseRepoRef(...).key makes them equal
   const data = await confirmMembership(ws, "https://github.com/northwind/data", { remote });
   assert.equal(data.confirmed, true);
@@ -705,4 +705,93 @@ test("L2: the absolute-path refusal applies to REF/PATH fields only — members,
   abs({ defaults: { byTeam: { engineering: { capabilities: { x: { from: "/abs" } } } } } }, "/defaults/byTeam/engineering/capabilities/x/from");
   // a LOCAL REMOTE is a repo ref, not an absolute path (contract §2 Phase B): file:/// and git:/abs/bare.git@<ref> pass
   assert.deepEqual(paths({ members: [R.agents, "file:///abs/bare.git"], packages: { "loc.pkg": "git:/abs/bare.git@v1" } }).filter((p) => /members|packages/.test(p)), []);
+});
+
+/* ─────────────────── teams contract 2026-09-25 (several labels) ─────────────────── */
+
+test("several labels: a soul's `team` list and a membership default list are listed in order, the first the primary; each label is checked", async () => {
+  const ws = workspaceFile();
+  ws.messaging = { ...ws.messaging, byTeam: { engineering: { team: "aweb:northwind.eng" } } };
+  const remote = northwind({ workspace: ws, mutate: (repos) => {
+    repos[K.agents].files["souls/release-manager/soul.yaml"].team = ["engineering", "marketing"];
+    repos[K.platform].files["oats-membership.yaml"].team = ["engineering", "global"];
+    repos[K.data].files["souls/growth-hacker/soul.yaml"].team = ["engineering", "growth"];
+  } });
+  const d = await discoverWorkspace(WS, { remote });
+  const agents = d.members.find((m) => m.key === K.agents);
+  const rm = agents.souls.find((s) => s.name === "release-manager");
+  assert.equal(rm.team, "engineering");
+  assert.deepEqual(rm.labels, ["engineering", "marketing"]);
+  const platform = d.members.find((m) => m.key === K.platform);
+  assert.equal(platform.team, "engineering");
+  assert.deepEqual(platform.labels, ["engineering", "global"]);
+  assert.deepEqual(platform.souls.find((s) => s.name === "platform-engineer").labels, ["engineering", "global"], "a soul without `team:` takes the repo default's list");
+  // A capability is LISTED under one team: the repo default's primary.
+  assert.equal(platform.capabilities.find((c) => c.name === "nw-experimental-linter").team, "engineering");
+  // Every label is checked against `teams:`; an undeclared one is still E_TEAM_UNKNOWN at its list index.
+  assert.ok(d.problems.some((p) => p.code === "E_TEAM_UNKNOWN" && p.path === "souls/growth-hacker/soul.yaml#/team/1"), JSON.stringify(d.problems.map((p) => p.path)));
+  assert.ok(!d.problems.some((p) => p.path === "souls/release-manager/soul.yaml#/team/1"), "marketing is declared");
+});
+
+test("unmapped-team-label: a declared label the workspace's messaging.byTeam does not map is a WARNING, never a problem", async () => {
+  const ws = workspaceFile();
+  ws.messaging = { ...ws.messaging, byTeam: { engineering: { team: "aweb:northwind.eng" } } };
+  const remote = northwind({ workspace: ws, mutate: (repos) => {
+    repos[K.agents].files["souls/release-manager/soul.yaml"].team = ["engineering", "marketing", "global"];
+  } });
+  const d = await discoverWorkspace(WS, { remote });
+  // ONE warning per unmapped label, naming every soul that carries it (sorted), never one per soul.
+  assert.deepEqual(d.warnings.map((x) => x.label), ["global", "marketing"], "sorted by label");
+  const w = d.warnings.find((x) => x.label === "marketing");
+  assert.deepEqual([w.code, w.souls, w.paths], ["unmapped-team-label", ["release-manager"], [`${K.agents}:souls/release-manager/soul.yaml#/team`]]);
+  assert.match(w.message, /team "marketing" has no messaging\.byTeam entry; its souls \(release-manager\) fall back to the personal team for it/);
+  const global = d.warnings.find((x) => x.label === "global");
+  assert.deepEqual(global.souls, ["release-manager", "support-triager"], "several souls, one warning, sorted");
+  assert.ok(!d.problems.some((p) => p.code === "unmapped-team-label"), "a warning is not a problem");
+  // An UNDECLARED label is not also warned about: it stays the E_TEAM_UNKNOWN problem.
+  assert.ok(!d.warnings.some((x) => x.label === "growth"));
+  assert.ok(d.problems.some((p) => p.code === "E_TEAM_UNKNOWN" && p.path === "souls/growth-hacker/soul.yaml#/team"));
+});
+
+test("soul.yaml and oats-membership.yaml refuse an empty or repeated team list (E_WORKSPACE_SCHEMA)", async () => {
+  const remote = northwind({ mutate: (repos) => {
+    repos[K.agents].files["souls/release-manager/soul.yaml"].team = [];
+    repos[K.agents].files["souls/support-triager/soul.yaml"].team = ["global", "global"];
+  } });
+  const d = await discoverWorkspace(WS, { remote });
+  const names = d.members.find((m) => m.key === K.agents).souls.map((s) => s.name);
+  assert.ok(!names.includes("release-manager") && !names.includes("support-triager"), "a soul with an invalid team list is not listed");
+  assert.ok(d.problems.some((p) => p.code === "E_WORKSPACE_SCHEMA" && p.path.startsWith("souls/release-manager/soul.yaml#/team")), JSON.stringify(d.problems.map((p) => p.path)));
+  assert.ok(d.problems.some((p) => p.code === "E_WORKSPACE_SCHEMA" && p.path.startsWith("souls/support-triager/soul.yaml#/team")));
+  const m = northwind({ mutate: (repos) => { repos[K.platform].files["oats-membership.yaml"].team = []; } });
+  const d2 = await discoverWorkspace(WS, { remote: m });
+  const row = d2.members.find((x) => x.key === K.platform);
+  assert.equal(row.confirmed, false, "an invalid membership file confirms nothing");
+});
+
+test("live teams of a home read TWO repositories, never a workspace discovery (review A2): the host, then the soul's own repo", async () => {
+  const { liveTeams } = await import("../lib/instance-resolution.mjs");
+  const ws = workspaceFile();
+  ws.messaging = { ...ws.messaging, byTeam: { engineering: { team: "aweb:northwind.eng" } } };
+  const inner = northwind({ workspace: ws, mutate: (repos) => { repos[K.platform].files["oats-membership.yaml"].team = ["engineering", "global"]; } });
+  const calls = [];
+  const remote = { ...inner };
+  for (const fn of ["observeRemote", "readRemoteFile", "listRemoteTree"]) remote[fn] = (...a) => { calls.push([fn, parseRepoRef(a[0]).key, fn === "observeRemote" ? null : a[2]]); return inner[fn](...a); };
+  const base = mkdtempSync(join(tmpdir(), "oats-live-teams-"));
+  try {
+    const dep = join(base, "dep"), home = join(dep, "agents", "platform-engineer", "instances", "pe-1");
+    mkdirSync(home, { recursive: true });
+    writeFileSync(join(dep, "oats-local.yaml"), YAML.stringify({ schemaVersion: 2, workspace: WS }));
+    const meta = { agent: "platform-engineer", workspace: { soul: { repoKey: K.platform, team: "engineering" } }, teams: [] };
+    const live = await liveTeams(home, meta, { remote });
+    assert.equal(live.source, "live");
+    assert.deepEqual(live.teams.map((t) => [t.label, t.mapped, t.team]), [["engineering", true, "aweb:northwind.eng"], ["global", false, null]], "the soul inherits its repo default's list");
+    assert.deepEqual(calls.filter(([fn]) => fn === "observeRemote").map(([, key]) => key), [K.agents, K.platform], "exactly two repositories observed: the host and the soul's repo");
+    assert.equal(calls.some(([fn]) => fn === "listRemoteTree"), false, "no tree listing: no discovery");
+    assert.deepEqual(calls.filter(([fn]) => fn === "readRemoteFile").map(([, key, path]) => `${key === K.agents ? "host" : "soul"}:${path}`),
+      ["host:oats-workspace.yaml", "soul:souls/platform-engineer/soul.yaml", "soul:oats-membership.yaml"]);
+    // A soul whose repo the workspace no longer lists answers the record, marked recorded.
+    const gone = await liveTeams(home, { ...meta, workspace: { soul: { repoKey: "github.com/northwind/nowhere" } }, teams: [{ label: "x" }] }, { remote });
+    assert.deepEqual([gone.source, gone.teams], ["recorded", [{ label: "x" }]]);
+  } finally { rmSync(base, { recursive: true, force: true }); }
 });

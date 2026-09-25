@@ -145,7 +145,8 @@ A self-contained package has an `oats.json`:
 
 `capability` is the only manifest identity field; it may also carry
 `private: true` (usable only by souls of its own repo) and `team: <label>`
-(a workspace team label). The machine-readable contract is
+(the one workspace team label it is listed under; without it, the primary of
+its repository's default). The machine-readable contract is
 [`capability-manifest.schema.json`](capability-manifest.schema.json).
 
 ## Who gets a capability
@@ -173,8 +174,11 @@ knowledge:
 ```
 
 Composition order: `defaults.<slot>` ⊕ `defaults.capabilities` ⊕
-`defaults.byTeam[<soul team>]` ⊕ `soul.capabilities` — later wins, `off`
-removes, a soul `<slot>: none` drops the workspace's slot default. A resolved
+`defaults.byTeam[<label>]` for each of the soul's team labels, in order ⊕
+`soul.capabilities` — later wins, `off` removes, a soul `<slot>: none` drops
+the workspace's slot default. Two labels that give one capability different
+entries are `E_TEAM_CONFLICT`, naming both labels; identical entries are fine,
+and a capability the soul names itself settles it (the soul's entry wins). A resolved
 capability whose manifest says `layer: X` fills slot X; two for one slot are
 `E_SLOT_CONFLICT`. Provider settings start from the manifest's own declared
 defaults (`settings.<key>.default`, the lowest layer), then take the workspace's
@@ -182,6 +186,55 @@ defaults (`settings.<key>.default`, the lowest layer), then take the workspace's
 slot payload, `oats-local.yaml` `settings.<cap>`, and `oats spawn --provider`,
 deep-merged in that order. There are no agent types, no `global`, no
 per-deployment activation or exclusion maps.
+
+### Several team labels
+
+A soul's `team` (or its repository's default in `oats-membership.yaml`) is a
+label or a non-empty list of distinct labels; the first is the **primary**:
+
+```yaml
+# souls/release-manager/soul.yaml
+schemaVersion: 2
+name: release-manager
+description: Cuts and ships releases.
+work: worktree
+team: [engineering, reviewers]
+```
+
+- The merged messaging payload, `OATS_TEAM_LABEL` and `OATS_TEAM_ID` follow the
+  primary label only (a one-label soul is unchanged).
+- Every label is an **eligible team**: the kernel hands the messaging provider
+  `teams`, one `{ label, team, mapped, payload }` per label in order. `payload`
+  is `workspace.messaging` ⊕ `byTeam[<label>]` when the workspace maps the
+  label (`team` is then its team id), else the base alone with `mapped: false`
+  and `team: null`. A soul with no label gets `[]` (personal only).
+- `teams` travels **beside** a provider's settings, never inside them:
+  `OATS_TEAMS` (the JSON), `OATS_TEAM_LABELS` (comma-joined) and
+  `OATS_TEAMS_SOURCE` in every hook and home command, and `teams` +
+  `teamsSource` next to `settings` on a provider check's stdin. The variables
+  are empty (not `[]`) when a home's teams are unknown.
+- `OATS_TEAMS_SOURCE` is `live` (read from the workspace now, or a fresh
+  resolution) or `recorded` (the spawn-time list). **A provider leaves a joined
+  team only on a `live` list**: a recorded one lacks every team mapped since
+  the spawn, so acting on it could drop a valid membership.
+- Joining an eligible team is the provider's explicit act (a spawn choice or a
+  command at any time); the kernel never joins anything.
+- For an existing home the teams are **live** where they are acted on: its
+  launch hook (`oats session start|restart`), its messaging module's commands
+  and `messaging:` operations (`oats operation run --home`), and `oats inspect
+  --home` read the soul's labels and the workspace's `messaging` as they stand
+  now — two repository reads (the workspace host, the soul's own repo), never a
+  discovery; `oats readiness --home` takes them from the discovery it already
+  runs. The home's modules and skills stay as spawned. Every other capability
+  command and operation gets the teams the spawn recorded in `instance.json`
+  (`teams`), marked `recorded`, at no remote cost; so does any read where the
+  workspace cannot be reached.
+- **Known limitation (0.26.0):** a scheduled wake's session start uses the
+  recorded teams (`OATS_TEAMS_SOURCE=recorded`), so its launch hook leaves
+  nothing; the next operator start or messaging command is live.
+- A label in the workspace's `teams:` but not in `messaging.byTeam` is a
+  discovery warning (`unmapped-team-label`, one per label naming its souls); a
+  label not in `teams:` at all is the `E_TEAM_UNKNOWN` problem.
 
 ## Exact runtime composition
 
@@ -387,6 +440,7 @@ passed as arguments; no shell is involved.
 ```json
 {"schemaVersion":1,"phase":"check","slot":"messaging","capability":"my.provider",
  "settings":{"team":"acme:eng","root":"/srv/aw"},
+ "teams":[{"label":"engineering","team":"acme:eng","mapped":true,"payload":{"team":"acme:eng"}}],
  "input":{"context":{"kind":"workspace","workspace":"github.com/acme/agents","deployment":"/srv/acme",
                      "soul":"release-manager","team":"engineering","instance":"release-manager-1",
                      "home":"/srv/acme/agents/release-manager/instances/release-manager-1"},
@@ -396,7 +450,10 @@ passed as arguments; no shell is involved.
 - `slot` is the manifest's `layer`.
 - `settings` is the merged provider payload: the one the spawn recorded for a
   home, or the one the resolution computes for a soul.
-- `context.team` is the soul's team label, or `null`.
+- `teams` is the soul's eligible teams (see *Several team labels*), beside
+  `settings`, with `teamsSource` (`live` | `recorded`); both `null` when a
+  home's teams are unknown.
+- `context.team` is the soul's primary team label, or `null`.
 - `instance` and `home` are `null` for a soul subject.
 
 **Environment:**
@@ -408,7 +465,8 @@ passed as arguments; no shell is involved.
   - `OATS_WORKSPACE` (the deployment);
   - the team variables `OATS_TEAM_ID` (the messaging payload's `team`),
     `OATS_TEAM_SCOPE`, `OATS_TEAM_LABEL`, `OATS_TEAM_NAME`,
-    `OATS_WORKSPACE_NAME` and `OATS_WORKSPACE_KEY`;
+    `OATS_TEAM_LABELS`, `OATS_TEAMS`, `OATS_TEAMS_SOURCE`, `OATS_WORKSPACE_NAME` and
+    `OATS_WORKSPACE_KEY`;
   - `OATS_AGENT` (the soul);
   - `OATS_SOUL` when the soul directory is known;
   - for a home, `OATS_INSTANCE` and `OATS_INSTANCE_HOME`.

@@ -1070,8 +1070,14 @@ found to check the declaration even though it does not edit it. `E_USAGE`,
  "unsynced":[],
  "stale":[],
  "external":[{"source":"git:github.com/oss-collective/experts@<oid>","soul":"security-reviewer","team":"unassigned"}],
- "problems":[]}
+ "problems":[],
+ "warnings":[]}
 ```
+
+`warnings[]` (feature `teams`, also in the `sync` report): `{ code, label,
+souls, paths, message }` — one `unmapped-team-label` per label that is in
+`teams:` but not in `messaging.byTeam`, naming its souls (sorted) and each
+soul's `<repoKey>:<path>#/team`; sorted by label. Never a problem.
 
 `unsynced` = declared in `packages:` but not in the lock (run `sync`);
 `stale` = locked but no longer declared. Read-only: does not write the lock.
@@ -1234,16 +1240,50 @@ top-level `workspace` reachability field:
 - Text mode prints `modules: <cap> from <member|package …> @ <7-char>` lines
   for non-current modules (`--verbose` for all).
 
+### Eligible teams (feature `teams`, OATS 0.26.0)
+
+A soul's `team` may be a list of labels; the first is the primary
+([teams contract](design/2026-09-25-teams-contract.md)). Every label is an
+**eligible** team — which the messaging provider may join on an explicit
+request (a spawn provider setting, or its own join/leave verbs); the kernel
+joins nothing. One entry per label, in soul order:
+
+```json
+{"label":"engineering","team":"aweb:acme.eng","mapped":true,"payload":{"private":"per-human","team":"aweb:acme.eng"}}
+{"label":"reviewers","team":null,"mapped":false,"payload":{"private":"per-human"}}
+```
+
+`payload` = `workspace.messaging` ⊕ `byTeam[label]` (base alone when unmapped);
+`team` = the mapped payload's team id, else `null`. No label → `[]`.
+
+Where it appears:
+- `oats spawn … --preview --json`: top-level `teams` (next to `team`, which
+  stays the primary label). `settings.<messaging>` stays the primary's merged
+  payload and never carries `teams`.
+- `oats inspect --soul|--home --json`: top-level `teams` and `teamsSource`.
+  For `--home` the teams are **live** (the soul's labels and the workspace's
+  `messaging` as the deployment resolves them now, in two repository reads;
+  the home's modules are unchanged): `teamsSource: "live"`, or `"recorded"`
+  with the spawn-time list when the workspace cannot be read now. Providers
+  get the same marker as `OATS_TEAMS_SOURCE`.
+- `instance.json`: `teams` (the spawn-time list, kept as evidence; never
+  rewritten) and `workspace.soul.labels`.
+- `oats souls --json`: each row carries `labels` (`team` stays the primary).
+- A spawn, preview or `inspect --soul` whose labels give one capability
+  different `defaults.byTeam` entries answers `E_TEAM_CONFLICT { capability,
+  labels: [a, b], entries, paths }`.
+
 ### Probe
 
 ```json
-{"…":"…","features":["…","workspace-v2","instance-modules","spawn-provider-payload","packages-no-approval","spawn-name"],"workspaceApi":2}
+{"…":"…","features":["…","workspace-v2","instance-modules","spawn-provider-payload","packages-no-approval","spawn-name","settings-origins","teams"],"workspaceApi":2}
 ```
 
 A feature is listed only once the binary implements it. Gate `sync`/`package`/
 `workspace status`/`capabilities`/`souls` on `workspace-v2`; gate reading
 `instance.json.modules` and preview `modules[]` on `instance-modules`; gate
-`--provider` on `spawn-provider-payload`.
+`--provider` on `spawn-provider-payload`; gate reading `teams`, `teamsSource`,
+`labels` and `warnings[]` on `teams`.
 
 ## Instruction refresh (`oats session recompose`) — removed in 0.26.0
 

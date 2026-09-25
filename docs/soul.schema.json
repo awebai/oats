@@ -11,7 +11,7 @@
     "name": { "$ref": "#/$defs/slug" },
     "description": { "type": "string" },
     "work": { "enum": ["worktree", "checkout", "directory", "workspace"] },
-    "team": { "$ref": "#/$defs/label", "description": "Team label; overrides the repo's default from oats-membership.yaml." },
+    "team": { "$ref": "#/$defs/teamLabels", "description": "Team label, or a non-empty list of distinct labels (the first is the primary); overrides the repo's default from oats-membership.yaml. Each label's messaging payload reaches the provider as an eligible team (OATS_TEAMS); joining is the provider's explicit act." },
     "private": { "type": "boolean", "description": "true → not discoverable in the workspace; usable only from its own repo." },
     "capabilities": {
       "type": "object",
@@ -31,6 +31,12 @@
   "$defs": {
     "slug": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
     "label": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+    "teamLabels": {
+      "anyOf": [
+        { "$ref": "#/$defs/label" },
+        { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/label" } }
+      ]
+    },
     "capabilityName": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
     "repoKey": { "type": "string", "pattern": "^[^\\s@/][^\\s@]*/[^\\s@]+$" },
     "fromLocation": {

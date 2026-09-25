@@ -10,6 +10,9 @@ import {
   canonicalJson, composeCapabilities, manifestDefaultsPayload, mergePayload, parseVersion, payloadOrigins, refForKey, resolveSoul, revisionOf,
   satisfiesRange, skillsInListing,
 } from "../lib/resolve.mjs";
+// The teams-contract exports are reached through the namespace so this file also loads against a
+// resolver that predates them (the single-label pin below was checked against main's resolver).
+import * as resolveLib from "../lib/resolve.mjs";
 
 /* ───────────────────────────── identities ─────────────────────────────── */
 
@@ -915,4 +918,88 @@ test("L6: declRevision and payloadRevision are fingerprinted apart; revision = h
   assert.notEqual(both.declRevision, a.declRevision); assert.notEqual(both.payloadRevision, a.payloadRevision);
   // frozen + serializable with the new fields
   assert.ok(Object.isFrozen(a)); assert.deepEqual(JSON.parse(JSON.stringify(a)), a);
+});
+
+/* ─────────────────── teams contract 2026-09-25 (several labels) ─────────────────── */
+
+const PIN_SINGLE_LABEL = { decl: "ce27f0e0fa837d02d037d752", payload: "1e84c24d04acb86a36a46494", revision: "41a494f695699d3afbe615be" };
+/** A soul entry carrying several labels, as discovery lists one (`team` is the primary). */
+const labelled = (d, name, labels) => {
+  const entry = { ...findSoul(d, name), team: labels[0] ?? null, labels };
+  for (const m of d.members) m.souls = m.souls.map((s) => (s.name === name ? entry : s));
+  return entry;
+};
+const teamsWorkspace = () => {
+  const ws = workspaceFile();
+  ws.teams = { ...ws.teams, cloud: { description: "hosted" } };
+  ws.defaults = { ...ws.defaults, messaging: { "nw-chat": { from: K.agents } } };
+  ws.messaging = { private: "per-human", byTeam: { engineering: { team: "aweb:example.oss", channels: ["eng"] }, cloud: { team: "aweb:example.cloud" } } };
+  return ws;
+};
+
+test("single label: composition, merged payload and every fingerprint are byte-identical to the pre-teams resolver (pinned)", async () => {
+  // Pinned from origin/main's lib/resolve.mjs (129bcbf3) on this fixture: a one-label soul must not move.
+  const d = discovery({ workspace: teamsWorkspace() });
+  const r = await resolveSoul(d, findSoul(d, "release-manager"), opts());
+  assert.deepEqual(r.payloads["nw-chat"], { private: "per-human", team: "aweb:example.oss", channels: ["northwind-eng"] });
+  assert.deepEqual({ decl: r.declRevision, payload: r.payloadRevision, revision: r.revision }, PIN_SINGLE_LABEL);
+  assert.deepEqual(r.modules.map((m) => m.name), ["nw-chat", "nw-deploy", "nw-house-style", "nw-release-tooling", "oats.core", "oats.okf"]);
+});
+
+test("several labels: byTeam capabilities apply for each label in soul order, `via` names the label; the soul still wins", async () => {
+  const d = discovery({ workspace: teamsWorkspace() });
+  const entry = labelled(d, "release-manager", ["engineering", "marketing"]);
+  const r = await resolveSoul(d, entry, opts());
+  assert.equal(r.soul.team, "engineering", "the first label is the primary");
+  assert.ok(r.modules.some((m) => m.name === "nw-brand-voice"), "marketing's team default applies too");
+  assert.ok(r.modules.some((m) => m.name === "nw-release-tooling"));
+  const vias = Object.fromEntries(composeCapabilities(teamsWorkspace(), { capabilities: {} }, { labels: ["engineering", "marketing"] }).map((c) => [c.name, c.via]));
+  assert.equal(vias["nw-release-tooling"], "defaults.byTeam.engineering");
+  assert.equal(vias["nw-brand-voice"], "defaults.byTeam.marketing");
+  // …and the soul's own `off` still removes a label's default.
+  assert.ok(!composeCapabilities(teamsWorkspace(), { capabilities: { "nw-brand-voice": "off" } }, { labels: ["engineering", "marketing"] }).some((c) => c.name === "nw-brand-voice"));
+  // The merged messaging payload is the PRIMARY label's only.
+  assert.deepEqual(r.payloads["nw-chat"], { private: "per-human", team: "aweb:example.oss", channels: ["northwind-eng"] });
+});
+
+test("E_TEAM_CONFLICT: two labels giving one capability different entries is refused naming both; identical entries are not a conflict", () => {
+  const ws = workspaceFile({ defaults: { ...workspaceFile().defaults, byTeam: {
+    engineering: { capabilities: { "nw-shared": { from: K.agents } } },
+    marketing: { capabilities: { "nw-shared": "off" } },
+    global: { capabilities: { "nw-shared": { from: K.agents } } },
+  } } });
+  assert.throws(() => composeCapabilities(ws, {}, { labels: ["engineering", "marketing"] }), (e) => {
+    assert.equal(e.code, "E_TEAM_CONFLICT");
+    assert.deepEqual(e.details.labels, ["engineering", "marketing"]);
+    assert.equal(e.details.capability, "nw-shared");
+    assert.match(e.message, /"engineering" and "marketing"/);
+    return true;
+  });
+  assert.throws(() => composeCapabilities(ws, {}, { labels: ["marketing", "engineering"] }), (e) => e.code === "E_TEAM_CONFLICT" && e.details.labels.join() === "marketing,engineering");
+  const same = composeCapabilities(ws, {}, { labels: ["engineering", "global"] });
+  assert.equal(same.find((c) => c.name === "nw-shared").via, "defaults.byTeam.global", "identical entries: the later label is recorded, nothing refused");
+  // The soul's own entry wins over every label, so naming the capability settles it (the remedy the message names).
+  const settled = composeCapabilities(ws, { capabilities: { "nw-shared": "off" } }, { labels: ["engineering", "marketing"] });
+  assert.ok(!settled.some((c) => c.name === "nw-shared"));
+});
+
+test("teams: one eligible entry per label in soul order — mapped (base ⊕ byTeam, team id) or unmapped (base, team null); no label → []", async () => {
+  const d = discovery({ workspace: teamsWorkspace() });
+  const r = await resolveSoul(d, labelled(d, "release-manager", ["engineering", "marketing", "cloud"]), opts());
+  assert.deepEqual(r.teams, [
+    { label: "engineering", team: "aweb:example.oss", mapped: true, payload: { private: "per-human", team: "aweb:example.oss", channels: ["eng"] } },
+    { label: "marketing", team: null, mapped: false, payload: { private: "per-human" } },
+    { label: "cloud", team: "aweb:example.cloud", mapped: true, payload: { private: "per-human", team: "aweb:example.cloud" } },
+  ]);
+  for (const t of r.teams) assert.equal("byTeam" in t.payload, false, "byTeam never reaches a provider");
+  const none = await resolveSoul(d, labelled(d, "release-manager", []), opts());
+  assert.deepEqual(none.teams, []);
+  assert.equal(none.soul.team, null);
+  // Teams are live messaging state, not composition: changing a non-primary label's mapping moves no fingerprint.
+  const ws2 = teamsWorkspace(); ws2.messaging.byTeam.marketing = { team: "aweb:example.mkt" };
+  const d2 = discovery({ workspace: ws2 });
+  const r2 = await resolveSoul(d2, labelled(d2, "release-manager", ["engineering", "marketing", "cloud"]), opts());
+  assert.equal(r2.teams[1].team, "aweb:example.mkt");
+  assert.equal(r2.revision, r.revision);
+  assert.deepEqual(resolveLib.teamsOf(null, ["x"]), [{ label: "x", team: null, mapped: false, payload: {} }], "no workspace (standalone): every label unmapped");
 });
