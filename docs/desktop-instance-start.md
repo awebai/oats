@@ -43,7 +43,7 @@ wrapper saves all of its in-flight conversation state. Wrappers should
 **Preview invocation** asks the execution host for the resolved command and
 displays it as text, with environment values redacted. It never launches an
 agent. **Manage launch configurations** in the dialog creates or updates named
-configurations at the displayed scope, including executable/wrapper, a JSON
+configurations in the deployment's `oats-local.yaml`, including executable/wrapper, a JSON
 argument list, environment references, model and permissions. Saving a
 configuration changes its definition; applying it to an existing home requires
 an explicit Start or Restart. When editing redacted environment values, keep

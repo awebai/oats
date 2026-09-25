@@ -61,6 +61,7 @@ test("inspect / readiness / operation run over the workspace model: instance and
     assert.equal(doc.operationsApi, 2);
     assert.deepEqual(doc.subject, { kind: "instance", instance: "release-manager-x", home, soul: "release-manager" });
     assert.equal(doc.workspace.key, fx.keys.agents);
+    assert.equal(doc.workspace.name, "northwind", "M5: inspect --home answers the recorded workspace name, no discovery");
     assert.deepEqual(doc.capabilities.map((c) => c.id), EXPECTED_MODULES);
     const okf = doc.capabilities.find((c) => c.id === "oats.okf");
     assert.equal(okf.layer, "knowledge"); assert.equal(okf.from.kind, "package"); assert.equal(okf.from.package, "oats.okf");

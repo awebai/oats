@@ -237,13 +237,13 @@ or the Desktop's per-launch choice. A soul does not carry it: `soul.yaml` has
 no `yolo`. With no setting, native policy is retained, and the spawn flag
 overrides any configured value.
 
-Launch configurations are machine-level: `oats launch-config set` writes them
-to the `launch-configs:` block of a scope's `oats-config.yaml`, and the kernel
-still reads that block and a scope-level `yolo:` there (the closest scope
-wins). They are the only keys of that file it reads — nothing else in it is
-configuration under the workspace model ([configuration.md](configuration.md)).
-Prefer the explicit spawn flag or a named launch configuration to a
-scope-level `yolo:`.
+Launch configurations are host-level: `oats launch-config set` writes them to
+the `launch-configs:` block of the deployment's `oats-local.yaml`, the one
+place the kernel reads them from ([configuration.md](configuration.md)). A
+scope's `oats-config.yaml` declaring `launch-configs:` is refused with a message
+naming the move. The kernel still reads a scope-level `yolo:` from
+`oats-config.yaml` until the config chain is removed; prefer the explicit spawn
+flag or a named launch configuration to it.
 
 Autonomous or unattended execution is not permission to synthesize `yolo: true`.
 Explicit user CLI/UI input or a user-selected configuration is the opt-in; explicit

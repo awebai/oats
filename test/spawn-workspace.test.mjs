@@ -98,6 +98,18 @@ test("workspace spawn chain over Northwind: sync → spawn materializes whole mo
     assert.equal(overridden.settings["oats.okf"]["harvest-runtime"], "claude", "a spawn flag overrides the manifest default");
     assert.equal(overridden.settingsOrigins["oats.okf"]["/harvest-runtime"].kind, "spawn");
     assert.notEqual(overridden.decision.revision, firstPreview.decision.revision, "the override changes the bound decision");
+    // Lead decision 2: launch configurations are the deployment's (oats-local.yaml `launch-configs:`),
+    // selected by name on a workspace spawn; an undeclared name is refused before anything is written.
+    const localText = readFileSync(join(dep, "oats-local.yaml"), "utf8");
+    writeFileSync(join(dep, "oats-local.yaml"), `${localText}launch-configs:\n  fast:\n    runtime: pi\n    args: ["--x"]\n    model: nw-fast-model\n`);
+    r = oats(spawnArgs("release-manager", "--preview", "--launch-config", "fast", "--provider", "oats.okf", "state-dir=/tmp/x"), { cwd: dep, env, base });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const launched = envelope(r).result;
+    assert.equal(launched.launchConfig, "fast"); assert.equal(launched.decision.effective.launchConfig, "fast");
+    assert.equal(launched.model, "nw-fast-model", "the configuration's model applies");
+    r = oats(spawnArgs("release-manager", "--preview", "--launch-config", "nope", "--provider", "oats.okf", "state-dir=/tmp/x"), { cwd: dep, env, base });
+    assert.equal(envelope(r).error.code, "E_LAUNCH_CONFIG_UNKNOWN", r.stdout);
+    writeFileSync(join(dep, "oats-local.yaml"), localText);
     r = oats(spawnArgs("release-manager", "--preview", "--provider", "oats.okf", "state-dir=/tmp/x"), { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.equal(envelope(r).result.soulFetched, false, "a second preview at the same commit reuses the copy");
@@ -165,6 +177,8 @@ test("workspace spawn chain over Northwind: sync → spawn materializes whole mo
     assert.equal(meta.providers["oats.okf"].owns, "release-manager", "…merged over the soul's own payload");
     assert.match(meta.workspace.resolution, /^[0-9a-f]{24}$/, "the resolution revision is recorded");
     assert.equal(meta.workspace.soul.repoKey, fx.keys.agents); assert.equal(meta.workspace.soul.team, "engineering");
+    // M5/3a: the workspace's name and the deployment directory are recorded at spawn.
+    assert.equal(meta.workspace.name, "northwind"); assert.equal(meta.workspace.deployment, dep);
     // Harness starts normally: no ambient-skill exclusion anywhere in the launch.
     const launchText = `${meta.command || ""} ${JSON.stringify(meta.launch || {})} ${JSON.stringify(spawned.launch || {})}`;
     assert.ok(!launchText.includes("--no-skills"), "the launch has no --no-skills");

@@ -12,7 +12,7 @@ import { spawnSync } from 'node:child_process';
 const kernel = resolve(new URL('..', import.meta.url).pathname);
 const cli = join(kernel, 'bin/oats.mjs');
 const { writeServers, writeSnapshot } = await import(pathToFileURL(join(kernel, 'lib/servers.mjs')));
-const { parseYamlNested } = await import(pathToFileURL(join(kernel, 'lib/core.mjs')));
+const { parseConfigData } = await import(pathToFileURL(join(kernel, 'lib/config-data.mjs')));
 test('remote launch configuration CLI: stdin transport, receiving scope, frozen routes and old-kernel refusal', async () => {
 const base = realpathSync(mkdtempSync(join(tmpdir(), 'oats-remote-cli-seam-')));
 const localScope = join(base, 'local'), remoteScope = join(base, 'remote team'), bin = join(base, 'bin');
@@ -44,7 +44,8 @@ if (process.env.OATS_REMOTE_SEAM_OLD && command.includes('version --json')) {
 `;
   write(join(bin, 'ssh'), shim); chmodSync(join(bin, 'ssh'), 0o755);
   const untouched = 'name: local\n'; write(join(localScope, 'oats-config.yaml'), untouched);
-  write(join(remoteScope, 'oats-config.yaml'), 'name: remote\n');
+  // The receiving host's deployment: launch configurations live in its oats-local.yaml.
+  write(join(remoteScope, 'oats-local.yaml'), 'schemaVersion: 2\nworkspace: example.invalid/acme/workspace\n');
   const target = { sshHost: 'loopback-test', workspace: remoteScope, oatsPath: cli };
   writeServers({ test: target });
   const run = (args, extra = {}) => {
@@ -61,7 +62,8 @@ if (process.env.OATS_REMOTE_SEAM_OLD && command.includes('version --json')) {
   const definitionFile = join(base, 'definition.json'); write(definitionFile, JSON.stringify(definition));
   const r = run(['launch-config', 'set', 'personal', '--server', 'test', '--dir', remoteScope, '--file', definitionFile]);
   assert.equal(r.ok, true, JSON.stringify(r));
-  const stored = parseYamlNested(readFileSync(join(remoteScope, 'oats-config.yaml'), 'utf8'))['launch-configs'].personal;
+  // parseConfigData answers null-prototype objects; compare plain data.
+  const stored = JSON.parse(JSON.stringify(parseConfigData(readFileSync(join(remoteScope, 'oats-local.yaml'), 'utf8')).value['launch-configs'].personal));
   assert.deepEqual(stored, definition);
   assert.equal(JSON.stringify(r).includes('synthetic-private-path'), false);
   assert.equal(readFileSync(join(localScope, 'oats-config.yaml'), 'utf8'), untouched);

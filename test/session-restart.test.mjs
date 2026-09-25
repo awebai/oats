@@ -5,7 +5,7 @@ import { appendFileSync, chmodSync, existsSync, readdirSync, symlinkSync, mkdirS
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
-import { recipeFromLegacyCommand, restartInstanceSession, startInstanceSession, inspectInstanceSession, stopHarness } from "../lib/core.mjs";
+import { findAgent, recipeFromLegacyCommand, restartInstanceSession, spawnInstance, startInstanceSession, inspectInstanceSession, stopHarness } from "../lib/core.mjs";
 import { spawn as spawnProcess } from "node:child_process";
 import { isolateSessionEnvironment, waitUntil } from "./helpers/host-fixture.mjs";
 
@@ -39,7 +39,9 @@ const repo = join(base, "repo"); mkdirSync(join(repo, "agents", "dev", "soul"), 
 spawnSync("git", ["init", "-q", repo]);
 write(join(repo, "agents", "dev", "soul", "soul.yaml"), "name: dev\nrepo: .\nwork: checkout\nruntime: claude\n");
 write(join(repo, "agents", "dev", "soul", "AGENTS.md"), "# dev\n");
-write(join(repo, "oats-config.yaml"), `name: r\ncapabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\nlaunch-configs:\n  polite:\n    runtime: claude\n    executable: ${JSON.stringify(join(binDir, "polite"))}\n    args:\n      - "--flag"\n      - "a b c"\n    env:\n      KEY:\n        fromEnv: RESTART_TEST_SRC\n      LIT: "plain"\n    model: "claude-opus-5"\n  stubborn:\n    runtime: claude\n    executable: ${JSON.stringify(join(binDir, "stubborn"))}\n  codexy:\n    runtime: codex\n    executable: ${JSON.stringify(join(binDir, "polite"))}\n`);
+write(join(repo, "oats-config.yaml"), "name: r\ncapabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n");
+// Launch configurations are a host choice in the deployment's oats-local.yaml (found walking up from a home).
+write(join(repo, "oats-local.yaml"), `schemaVersion: 2\nworkspace: example.invalid/acme/workspace\nlaunch-configs:\n  polite:\n    runtime: claude\n    executable: ${JSON.stringify(join(binDir, "polite"))}\n    args:\n      - "--flag"\n      - "a b c"\n    env:\n      KEY:\n        fromEnv: RESTART_TEST_SRC\n      LIT: "plain"\n    model: "claude-opus-5"\n  stubborn:\n    runtime: claude\n    executable: ${JSON.stringify(join(binDir, "stubborn"))}\n  codexy:\n    runtime: codex\n    executable: ${JSON.stringify(join(binDir, "polite"))}\n`);
 function makeHome(name, { command, launch, runtime = "claude", model, capabilityRuntime } = {}) {
   const home = join(repo, "agents", "dev", "instances", name); mkdirSync(home, { recursive: true });
   write(join(home, "TASK.md"), "task\n");
@@ -250,7 +252,7 @@ test("launch hooks: only capabilities captured for the home take part; a hook an
   write(join(cap, "bin", "launch.mjs"), `import { readFileSync, writeFileSync } from "node:fs"; import { join, dirname } from "node:path"; import { fileURLToPath } from "node:url";\nwriteFileSync(join(process.env.OATS_HOME, "hooked-settings"), process.env.OATS_SETTINGS);\nprocess.stdout.write(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "answer.json"), "utf8") + "\\n");\n`);
   const hook = (answer) => write(join(cap, "bin", "answer.json"), JSON.stringify(answer));
   hook({ launch: { codex: "--hooked" }, env: { TEST_NEWVAR: "1" } });
-  write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8").replace("launch-configs:\n", "  additive:\n    test.extra:\n      from: owned\n      global: true\n      settings:\n        mode: current\nlaunch-configs:\n"));
+  write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8") + "  additive:\n    test.extra:\n      from: owned\n      global: true\n      settings:\n        mode: current\n");
   const name = "dev-newcap";
   const home = join(repo, "agents", "dev", "instances", name);
   makeHome(name, { command: renderFor(home, name, join(binDir, "polite")), launch: recipeFor(home, name, { executable: join(binDir, "polite") }) });
@@ -303,7 +305,7 @@ test("0.25.5 launch-hook meta is persisted: after a successful start, each capab
   write(join(cap, "oats.json"), JSON.stringify({ capability: "test.renew", version: "0.1.0", description: "renew", compatibility: { oats: ">=0.6.2" }, hooks: { launch: "bin/launch.mjs" }, environment: [], settings: {} }));
   write(join(cap, "bin", "launch.mjs"), `import { readFileSync } from "node:fs"; import { join, dirname } from "node:path"; import { fileURLToPath } from "node:url";\nprocess.stdout.write(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "answer.json"), "utf8") + "\\n");\n`);
   const hook = (answer) => write(join(cap, "bin", "answer.json"), JSON.stringify(answer));
-  write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8").replace("launch-configs:\n", "  additive:\n    test.renew:\n      from: owned\n      global: true\nlaunch-configs:\n"));
+  write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8") + "  additive:\n    test.renew:\n      from: owned\n      global: true\n");
   const name = "dev-renew";
   const home = join(repo, "agents", "dev", "instances", name);
   makeHome(name, { command: renderFor(home, name, join(binDir, "polite")), launch: recipeFor(home, name, { executable: join(binDir, "polite") }) });
@@ -382,16 +384,17 @@ test("a captured provider with no contribution at spawn still takes part (launch
   v = preview();
   assert.equal(pk(v).ok, true); assert.match(pk(v).detail, /nothing probed|no runtime package requirement/);
   // Spawn: the scope binds the provider with an applicable requirement; a new instance under the args configuration is refused before a home exists; with the requirement off, it spawns.
-  write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8").replace("launch-configs:\n", "  additive:\n    test.req:\n      from: owned\n      global: true\n      settings:\n        mode: on\nlaunch-configs:\n"));
-  let sp = oats(["spawn", "dev", "--purpose", "args1", "--launch-config", "probed", "--no-launch", "--dir", repo]);
-  assert.equal(sp.json.error?.code, "E_LAUNCH_PROBE_UNSUPPORTED", sp.stdout); assert.equal(existsSync(join(repo, "agents", "dev", "instances", "dev-args1")), false);
+  write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8") + "  additive:\n    test.req:\n      from: owned\n      global: true\n      settings:\n        mode: on\n");
+  // Core spawn (the CLI's `oats spawn` in reach of oats-local.yaml takes the workspace path): same planner, same refusal.
+  const root = join(repo, "agents");
+  const spawnArgs1 = () => spawnInstance(root, findAgent(root, "dev"), { instance: "dev-args1", launch: false, launchConfig: "probed" });
+  assert.throws(spawnArgs1, (e) => e.code === "E_LAUNCH_PROBE_UNSUPPORTED"); assert.equal(existsSync(join(repo, "agents", "dev", "instances", "dev-args1")), false);
   write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8").replace("        mode: on\n", "        mode: off\n"));
-  sp = oats(["spawn", "dev", "--purpose", "args1", "--launch-config", "probed", "--no-launch", "--dir", repo]);
-  assert.equal(sp.json.ok, true, sp.stdout);
+  assert.ok(spawnArgs1().home, "with the requirement off, it spawns");
   write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8").replace(/  additive:\n    test.req:\n      from: owned\n      global: true\n      settings:\n        mode: off\n/, ""));
   write(join(home, "instance.json"), JSON.stringify(meta));
   // A merely newly bound provider (not captured) does not take part, even with a launch hook and a requirement.
-  write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8").replace("launch-configs:\n", "  additive:\n    test.req:\n      from: owned\n      global: true\n      settings:\n        mode: on\nlaunch-configs:\n"));
+  write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8") + "  additive:\n    test.req:\n      from: owned\n      global: true\n      settings:\n        mode: on\n");
   write(join(home, "instance.json"), JSON.stringify({ ...meta, capabilityRuntime: [] }));
   v = preview({ PROBE_SRC: "wrong" });
   assert.ok(!v.argv.includes("--req-hook"), JSON.stringify(v.argv)); assert.match(pk(v).detail, /nothing probed|no runtime package requirement/);
