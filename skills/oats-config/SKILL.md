@@ -1,158 +1,46 @@
 ---
 name: oats-config
 description: >-
-  Use only for configuring a legacy uncaptured OATS deployment with the current
-  oats-config.yaml cascade, including legacy activation, agent types, targeting,
-  overrides, and templates. Triggers: "legacy oats-config", "uncaptured config",
-  "oats use", or "agent type". This legacy policy is not a portable preparation
-  authority and never fills a captured record.
+  Use when someone asks about oats-config.yaml, the classic config cascade,
+  agent types, capability activation or injection overrides. The workspace
+  model has no config cascade and no config-editing verbs; this skill says
+  where each of those concerns lives now. For setting up a deployment use the
+  oats.setup capability's oats-onboarding and oats-package-pins skills.
 ---
 
-# Configuring legacy uncaptured OATS
+# Where configuration lives in the workspace model
 
-> **Legacy-only procedure.** The cascading scopes, agent-type targeting and
-> closest-team rules below are compatibility behavior for uncaptured instances.
-> They are not portable composition authorities. Never consult this cascade as
-> a fallback during captured preparation or dispatch.
+There is no configuration cascade to edit. Each fact lives in the one file
+that owns it, and `oats sync` reads them over the Git remotes. The classic
+`init`, `use`, `config` and `inject` verbs answer `E_UNKNOWN_COMMAND` with
+their replacement. Contract: `docs/workspaces.md` and `docs/configuration.md`
+in the installed kernel (`"$(oats root)/docs/"`).
 
-Config lives in `oats-config.yaml` at laptop (`~`), workspace, and repository
-levels; resolution walks from a soul's repository outward, closest scope wins.
-Prefer the CLI for config edits (`oats init`, `oats use`,
-`oats inject eject`); hand-editing is valid but the CLI writes the canonical
-shape. A soul's type is declared in its own `soul.yaml` in its member repository.
-
-## Shape
-
-```yaml
-team:                          # deployment boundary (typically workspace scope)
-  name: lfx-engineering
-  # id: lfx-engineering:example.com   # provider team id (aweb <name>:<namespace>)
-agent-types:
-  developers:
-    description: Agents that build the service
-capabilities:
-  layers:                      # exclusive fundamental slots
-    knowledge:
-      capability: oats.okf
-      from: installed            # enforced provenance: installed|owned|path:<dir>
-      # injection-override: .agents/injections/capabilities/oats.okf.md
-    messaging: none            # explicit none suppresses inherited integrations
-    tasks: none
-  additive:                    # non-exclusive packages
-    vendor.review:
-      from: installed
-      agent-types:
-        developers:
-          enabled: true
-          settings: {depth: normal}
-      souls:
-        api-expert:
-          enabled: true
-          settings: {depth: exhaustive}
-```
-
-`global` means every soul governed by the declaring level. Bindings can also
-target **agent types** (families — declared in config under `agent-types:`,
-joined via `type: <name>` in each soul.yaml) and individual souls. Matching
-global + agent-type + soul bindings compose. Settings precedence is
-soul > agent-type > global, then closer config. Equal-specificity conflicts
-error. `false`/`enabled: false` is an explicit exclusion and follows the same
-precedence. V1 does not target instances or use tags/selectors.
-
-The closest `team:` declaration marks the deployment boundary: all repos
-under it share one team (identity + the messaging provider's team). Declare it once at the workspace scope. With
-aweb messaging active, `oats aweb setup` walks the onboarding (aw CLI →
-workspace init → team create/join) and `oats aweb roster` shows the
-cross-machine member directory.
-
-## Injection overrides
-
-Capability entries and the `oats:` kernel block take an
-`injection-override: <path>|none|default`. Work-mode briefings are packaged
-and NOT overridable; the only work-mode key is `setup:` (env bootstrap run in
-each new worktree). The clean path is ejecting:
-
-```bash
-oats inject eject <capability-id|oats> [--dir <level>]
-```
-
-It copies the packaged default to the conventional
-`.agents/injections/{capabilities/<id>.md, oats-defaults/oats.md}` path and
-sets the override — the file then stops
-tracking package updates, deliberately. Overrides are **not allowed** on
-`from: owned`/`path:` capabilities: the scope owns the package source, so
-edit `.agents/capabilities/owned/<id>/injects/` directly.
-
-## Activate
-
-Acquisition, trust, and package lifecycle → the **oats-packages** skill. The
-config side is activation and targeting of already-acquired capabilities
-(acquired or catalog availability never implies activation):
-
-```bash
-oats use <capability> --global [--dir <level>]
-oats use <capability> --type <agent-type> [--disable]
-oats use <capability> --soul <name> [--settings k=v [k2=v2 ...]]
-```
-
-`oats init` creates config and activates only explicit defaults.
-
-## Package config templates
-
-A distribution package can ship reference **config templates**. Adopting one
-writes it as this scope's ordinary `oats-config.yaml` and records the exact
-template as a commit-safe **adopted base** — provenance, never live inheritance.
-Installing the package alone adopts no template.
-
-```bash
-oats init --package <id|path|git-url> [--config <name>]   # acquire + adopt one template
-oats config diff                                          # report drift; never merges
-oats config sync [--accept <regionId>=local|package]      # apply upstream; keep local edits
-oats config sync --reset --yes                            # discard local; take the template verbatim
-oats config adopt <package> [--config <name>]             # switch to a different base
-```
-
-The config is yours: retarget, disable, re-set, or replace anything the template
-enabled; nested repository configs override it per the normal cascade; package
-updates never rewrite it or the adopted base. `oats config sync` preserves your
-untouched bytes, comments, and formatting, and a region changed both locally and
-upstream is a conflict you must resolve explicitly. See docs/packages.md for the
-full adoption and sync UX.
-
-## Fundamental layers
-
-Knowledge, messaging, and tasks are formal exclusive contracts. A package
-manifest declaring one `layer` is an integration. Two active integrations for
-the same layer error; a closer scope's entry (or `none`) overrides outer ones.
-
-| Layer | Bundled | Requirement |
+| Concern | Where it lives | Changed by |
 |---|---|---|
-| knowledge | `oats.okf` | none |
-| messaging | `oats.aweb` | `aw` CLI |
-| tasks | none by default; `oats.jira` or `oats.linear` available | provider-specific |
+| Members, packages, teams, defaults, stores, messaging payload | `oats-workspace.yaml` in the workspace's host repository | a reviewed change to that repository, then `oats sync` |
+| A repository's membership and default team | `oats-membership.yaml` in that repository | a reviewed change |
+| Which capabilities a soul gets | the soul's `soul.yaml` `capabilities: { <cap>: { from: here \| <repo key> \| package } }`, plus the workspace `defaults` (and `defaults.byTeam.<team>`) | a reviewed change; `off` removes a default, `<slot>: none` empties a slot |
+| Host facts (absolute paths, state directories) | `oats-local.yaml` `settings.<cap>` on each machine, never committed | the operator |
+| A fact about one spawn | `oats spawn <soul> --provider <cap> key=value` | the spawner |
+| Launch settings (runtime, model, permission bypass) | spawn flags, or a named launch configuration (`oats launch-config set <name> --file <json>`) | the operator |
+| A capability's instruction inject | the capability itself, in its member repository or package | a reviewed change there; the workspace model has no local override |
 
-Activation uses the manifest-declared layer — `oats use` writes the entry
-under `capabilities.layers.<layer>` automatically:
+Agent types are gone: a soul's own `soul.yaml` and the workspace's team
+labels (`defaults.byTeam`) replace them.
 
-```bash
-oats use <capability> --global|--type <agent-type>|--soul <name>
-oats use none --layer <layer>
-```
+## Slots
 
-`capabilities` is the only activation map: fundamental integrations under
-`capabilities.layers.<layer>` (entry or explicit `none`), everything else
-under `capabilities.additive`.
+Knowledge, messaging and tasks are exclusive slots. A capability whose manifest
+declares `layer: <slot>` fills it; two in one slot is `E_SLOT_CONFLICT`. A slot
+default must be a capability of that layer, and a soul's `<slot>: none` empties
+the slot.
 
-Rare hand-edited keys: `skill-overrides:` (names the winning source on
-duplicate skill names), the top-level `agents-md-injection:` map (extra
-unconditional instruction blocks), `templates:` (named init seeds).
-
-## Verify
+## Check the result
 
 ```bash
-oats doctor [context] [--soul <name>] [--json]
+oats workspace status                # members confirmed, packages locked
+oats souls                           # every soul, its origin and team
+oats capabilities                    # member and package capabilities
+oats spawn <soul> --preview          # the exact modules, skills and merged settings a spawn would use
 ```
-
-Doctor shows config chain, acquired/active packages, layer selection, target
-and settings provenance, requirements, trust, skill sources, instruction
-blocks, and — with `--soul` — the final composed AGENTS.md.

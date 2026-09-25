@@ -6,7 +6,7 @@
 // in that help text.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -58,6 +58,40 @@ test("oats-operate quotes only drift markers the CLI renders", () => {
   for (const marker of markers) {
     assert.ok(cliSource.includes(marker), `drift marker [${marker}] is not rendered by bin/oats.mjs`);
   }
+});
+
+// No published skill (framework, oats.framework package, or a soul's own) may teach a verb the kernel refuses (REMOVED_VERBS in bin/oats.mjs).
+// The captured selector form of trust (`--deployment` plus `--resolution` or
+// `--artifact-set`) is routed before that table and stays live; bare `trust` is removed.
+const removedVerbs = Object.keys(Function(`return (${cliSource.match(/const REMOVED_VERBS = (\{[^\n]*\});/)[1]})`)());
+const capturedTrust = (line) => /--deployment\b/.test(line) && /--(resolution|artifact-set)\b/.test(line);
+function skillFiles(dir) {
+  const out = [];
+  for (const entry of readdirSync(join(ROOT, dir), { withFileTypes: true })) {
+    const rel = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...skillFiles(rel));
+    else if (entry.name.endsWith(".md")) out.push(rel);
+  }
+  return out;
+}
+test("no published skill teaches a removed verb", () => {
+  assert.ok(removedVerbs.includes("install") && removedVerbs.includes("trust"), "REMOVED_VERBS parsed");
+  const soulSkills = readdirSync(join(ROOT, "souls"), { withFileTypes: true })
+    .filter((d) => d.isDirectory() && existsSync(join(ROOT, "souls", d.name, "skills")))
+    .flatMap((d) => skillFiles(join("souls", d.name, "skills")));
+  const files = [...skillFiles("skills"), ...skillFiles("oats-package/capabilities"), ...soulSkills];
+  const found = [];
+  for (const rel of files) {
+    const text = readFileSync(join(ROOT, rel), "utf8");
+    for (const [n, line] of text.split("\n").entries()) {
+      for (const m of line.matchAll(/oats ([a-z][a-z-]*)(?![\w-])/g)) {
+        if (!removedVerbs.includes(m[1])) continue;
+        if (m[1] === "trust" && capturedTrust(line + " " + (text.split("\n")[n + 1] || ""))) continue;
+        found.push(`${rel}:${n + 1} "oats ${m[1]}": ${line.trim()}`);
+      }
+    }
+  }
+  assert.deepEqual(found, [], `skills teach removed verbs:\n${found.join("\n")}`);
 });
 
 for (const rel of SKILLS) {

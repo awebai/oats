@@ -132,12 +132,14 @@ chooses a source.
 
 ## Configuration
 
-Deployments are configured in scoped `oats-config.yaml` files (laptop /
-workspace / repository) declaring capability packages, exclusive
-knowledge/messaging/tasks layers, agent types, targeting, and injection
-overrides. The CLI is the config author (`oats init`, `oats use`,
-`oats inject eject`). **Load the `oats-config` skill for all configuration
-work** — this skill covers operating, not configuring.
+A deployment is configured by files, not by config-editing commands:
+`oats-workspace.yaml` (shared: members, packages, teams, defaults) in the
+workspace's host repository, `oats-membership.yaml` in each member, each
+soul's `soul.yaml`, and the per-machine `oats-local.yaml` (host settings).
+After a change, run `oats sync`. The **oats-config** skill maps each classic
+concern to its file; setting up a deployment is the oats.setup capability's
+work (**oats-onboarding**, **oats-package-pins**). This skill covers
+operating, not configuring.
 
 ## Commands and doctor
 

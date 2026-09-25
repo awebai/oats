@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://oats.dev/schemas/oats-package.schema.json",
   "title": "OATS distribution package manifest (oats-package.json)",
-  "description": "Manifest at a distribution-package root. A package is the source, dependency, integrity, review and atomic-update unit — it is TRANSPORT, not the installed entity. Acquisition stages the package in a temporary transaction directory, validates the whole selected payload, MATERIALIZES each declared capability into .agents/capabilities/installed/<id>/, writes the exact lock, and discards staging; there is no persistent package store. Every package must therefore export at least one capability, and each capability entry must name a DEDICATED capability root whose declared paths and symlinks all resolve inside it, so the materialized artifact is self-contained, independently hashable and independently trustable. Config templates are optional package SOURCE MATERIAL, never installed behavior: `oats install` applies none of them. Install never ambiently loads undeclared files.",
+  "description": "Manifest at a distribution-package root. A package is the source, dependency, integrity, review and atomic-update unit — it is TRANSPORT, not the installed entity. A workspace declares it in `packages:`; `oats sync` resolves it to a commit, verifies its integrity and locks it, and each spawn copies the capabilities a soul selects into that instance's home; there is no persistent package store. Every package must therefore export at least one capability, and each capability entry must name a DEDICATED capability root whose declared paths and symlinks all resolve inside it, so the copied artifact is self-contained and independently hashable. Config templates are optional package SOURCE MATERIAL, never applied behavior; nothing ambiently loads undeclared files.",
   "type": "object",
   "required": [
     "package",
@@ -54,7 +54,7 @@
       "uniqueItems": true
     },
     "configTemplates": {
-      "description": "Named config TEMPLATES: complete reference oats-config.yaml files an adopter may explicitly adopt with `oats init --package`. A template is a recommended starting point that becomes ordinary local policy on adoption — adopters may change every copied setting, and package updates never rewrite an adopted config. Templates must stay portable: no secret, credential, account, machine path or provider-local ID. Installation applies none of them. This is the canonical spelling; a manifest may not carry both this and the legacy `configs`.",
+      "description": "Named config TEMPLATES: complete reference oats-config.yaml files of the classic line, whose adoption verb is removed under the workspace model. A template is a recommended starting point that becomes ordinary local policy on adoption — adopters may change every copied setting, and package updates never rewrite an adopted config. Templates must stay portable: no secret, credential, account, machine path or provider-local ID. Installation applies none of them. This is the canonical spelling; a manifest may not carry both this and the legacy `configs`.",
       "type": "object",
       "propertyNames": {
         "pattern": "^[a-z0-9][a-z0-9._-]*$"

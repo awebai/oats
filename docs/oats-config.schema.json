@@ -121,7 +121,7 @@
       "additionalProperties": false
     },
     "skill-overrides": { "type": "object", "additionalProperties": { "type": "string" } },
-    "templates": { "type": "object", "additionalProperties": { "type": "string" }, "description": "Named oats init templates: local config paths or git URLs whose main branch carries an oats-config.yaml." },
+    "templates": { "type": "object", "additionalProperties": { "type": "string" }, "description": "Named config templates of the classic line (their init verb is removed under the workspace model): local config paths or git URLs whose main branch carries an oats-config.yaml." },
     "agents-md-injection": { "oneOf": [{ "type": "string" }, { "type": "object", "additionalProperties": { "type": "string" } }], "description": "Extra unconditional instruction blocks (adds content; does not override packaged defaults)." },
     "oats": {
       "type": "object",
