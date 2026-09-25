@@ -1,7 +1,7 @@
 {
   "capability": "oats.knowledge-theory",
   "version": "1.0.1",
-  "description": "Optional knowledge-model authoring guidance and expert; no knowledge layer or runtime policy injection.",
+  "description": "Optional knowledge-model authoring guidance and expert; not a knowledge core capability, no runtime policy injection.",
   "compatibility": { "oats": ">=0.22.19" },
   "requires": [],
   "skills": ["skills/knowledge-capability-authoring"],

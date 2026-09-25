@@ -19,7 +19,7 @@ A minimal distribution shape (replace example identities/descriptions):
 {
   "package": "example.knowledge",
   "version": "1.0.0",
-  "description": "Example knowledge integration.",
+  "description": "Example knowledge capability.",
   "compatibility": { "oats": ">=0.22.19" },
   "capabilities": ["capabilities/knowledge"]
 }
@@ -31,7 +31,7 @@ A knowledge implementation's capability manifest might begin:
 {
   "capability": "example.knowledge",
   "version": "1.0.0",
-  "description": "Native knowledge integration.",
+  "description": "Native knowledge capability.",
   "compatibility": { "oats": ">=0.22.19" },
   "layer": "knowledge",
   "skills": ["skills/native-reader", "skills/native-harvest"],

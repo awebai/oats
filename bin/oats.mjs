@@ -731,7 +731,7 @@ function printWorkspaceInspect(doc) {
   const s = doc.subject;
   console.log(`oats inspect — ${s.kind === "instance" ? `instance ${s.instance} (soul ${s.soul}) ${shortPath(s.home)}` : `soul ${s.soul} from ${s.repoKey}`}`);
   if (doc.identity) console.log(`  identity: ${servedIdentityLine(doc.identity)}`);
-  for (const l of LAYERS) console.log(`  layer ${l}: ${doc.layers[l].id || "none"}`);
+  for (const l of LAYERS) console.log(`  ${l} capability: ${doc.layers[l].id || "none"}`);
   for (const c of doc.capabilities) console.log(`  ${c.id}@${c.version || "?"} ${c.from?.kind === "package" ? `package ${c.from.package}` : c.from?.kind === "member" ? `member ${c.from.repoKey}` : ""}${c.operations.length ? `  ops: ${c.operations.map((o) => `${o.name}${o.available ? "" : "(unavailable)"}`).join(", ")}` : ""}`);
   for (const p of doc.problems) console.log(`  ! ${p.code}: ${p.message}`);
 }
@@ -3279,7 +3279,7 @@ Usage:
                                             operations with availability; --home answers the
                                             running home's captured bindings and their drift
                                             from the current config
-  oats operation run <layer>:<name>          run an operation the effective provider of that
+  oats operation run <layer>:<name>          run an operation the soul's core capability for that
       (--home <abs> | --soul <name> [--dir <d>])  layer declares (knowledge:harvest, knowledge:
       [--arg k=v ...] [--json]              inspect ...): resolved from the home's captured
                                             bindings or the scope's config, trust checked, the provider's

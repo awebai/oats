@@ -10,9 +10,10 @@ package list and its acceptance criteria. Finding an official package does not
 declare it or give it to any soul; declaring it in `packages:` is the
 workspace's trust decision, and giving it to a soul is a separate choice.
 
-An **integration** is a capability that implements one exclusive fundamental
-layer: `knowledge`, `messaging`, or `tasks`. General capabilities claim no
-layer and compose additively.
+A **core capability** fills one of the three positions a soul has: knowledge,
+messaging or tasks, at most one of each per soul. The manifest's `layer` field
+names which core capability it is. Other capabilities claim no `layer` and
+compose additively.
 
 ## Mental model
 
@@ -75,8 +76,9 @@ A self-contained package has an `oats.json`:
   --soul`, operator commands). `oats inspect` shows each module's
   `compatibility: { ok, range, kernel }`; a home whose spawned module no longer
   admits the running kernel reports a `capability-incompatible` problem.
-- `layer` is optional and may name exactly one fundamental layer. Two active
-  packages cannot implement the same layer for one soul.
+- `layer` is optional; when present it names which core capability this is
+  (`knowledge`, `messaging` or `tasks`). A soul has at most one capability per
+  slot.
 - `skills` entries can be skill directories or roots containing skills.
 - `inject` is optional instance instruction Markdown.
 - Only `soul-scaffold`, `spawn`, and `retire` hooks are accepted. A hook is a
@@ -402,10 +404,10 @@ spawn order. Hooks run from the instance's own copy
 |---|---|---|---|
 | `oats.core` | additive | day-to-day OATS operation for an instance | `oats.framework` |
 | `oats.setup` | additive | whole-architecture knowledge for an onboarding expert | `oats.framework` |
-| `oats.okf` | knowledge integration | External owned OKF bases, durable notes/record custody, independent judgment and inspection | `oats.okf` |
-| `oats.aweb` | messaging integration | aweb identity lifecycle and messaging skills | `oats.aweb` |
-| `oats.jira` | tasks integration | Jira task protocol via `acli` | `oats.jira` |
-| `oats.linear` | tasks integration | Linear GraphQL task commands and workflow | `oats.linear` |
+| `oats.okf` | knowledge core capability | External owned OKF bases, durable notes/record custody, independent judgment and inspection | `oats.okf` |
+| `oats.aweb` | messaging core capability | aweb identity lifecycle and messaging skills | `oats.aweb` |
+| `oats.jira` | tasks core capability | Jira task protocol via `acli` | `oats.jira` |
+| `oats.linear` | tasks core capability | Linear GraphQL task commands and workflow | `oats.linear` |
 | `oats.authoring` | additive | capability, skill, and soul authoring guidance | `oats.authoring` |
 
 Each is pinned by a bare version in `packages:` and resolved through the

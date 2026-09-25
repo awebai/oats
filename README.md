@@ -84,9 +84,9 @@ Several developers may each work with an instance of the same kernel-expert soul
 
 They share a specialisation, but not an active mind. Each develops an understanding of its assignment and keeps track of its own unfinished work. Accepted findings can become useful to other instances without making their working contexts identical.
 
-## Fundamental capabilities—and any others you need
+## Core capabilities—and any others you need
 
-Three capability areas provide the foundation for working as a team:
+Three **core capabilities** provide the foundation for working as a team; a soul has at most one of each:
 
 | Capability | What it provides |
 |---|---|
@@ -96,7 +96,7 @@ Three capability areas provide the foundation for working as a team:
 
 These responsibilities are distinct. A conversation is not automatically a task record, and a task record is not automatically knowledge.
 
-They are **not the only capabilities you can define**. Additional capabilities can provide domain tools, specialised skills, research methods, review procedures or integrations with your systems.
+Core capabilities are **not the only capabilities you can define**. Other capabilities can provide domain tools, specialised skills, research methods, review procedures or integrations with your systems.
 
 A **skill** teaches a way of working. A capability can supply that skill together with instructions, tools and supporting automation. OATS composes the selected resources into an instance’s working environment when it is created.
 

@@ -28,7 +28,7 @@ real CLAUDE.md file diverging from AGENTS.md, that's a defect: merge and relink)
 |---|---|---|
 | **AGENTS.md** | always | Role, boundaries, the default workflow, memory pointers — only what applies to *every* session |
 | **skills/** | on demand (description match) | Domain workflows, repeatable procedures ("how") — see `skill-craft` |
-| **knowledge/** | on demand (index-first) | Facts, decisions, lessons ("what/why") — format per the knowledge integration (default okf) |
+| **knowledge/** | on demand (index-first) | Facts, decisions, lessons ("what/why") — format per the knowledge capability (default okf) |
 
 The test for every AGENTS.md line: **"would removing this cause mistakes in
 most sessions?"** No → move it to a skill or a knowledge concept, or cut it.
@@ -53,7 +53,7 @@ Structure that works (keep the whole thing short — a screen or two):
    "run the tests").
 4. **Memory pointers.** Where its knowledge and state live (knowledge base
    index, STATE.md discipline). Point, don't duplicate — the protocol lives
-   with your knowledge integration (default okf: the memory-harvest skill).
+   with your knowledge capability (default okf: the memory-harvest skill).
 5. **Escalation.** When to stop and ask the human or coordinator: the
    human-gate triggers (security, authz, migrations, contract breaks),
    plus "report to your spawner, don't self-fix" for infrastructure faults.

@@ -29,7 +29,7 @@ root, and not the work tree. Anything that says "your home" means this directory
 - **Soul work is repository work.** If your TASK is to change soul content that
   lives in this repository, that is ordinary code work — do it on tracked paths
   under `work/`, reviewed like the rest. How your own learnings reach your soul
-  is your knowledge layer's business, and its instructions below say so if you
+  is your knowledge capability's business, and its instructions below say so if you
   have one.
 
 **`<instance-home>/work` is your repository or workspace view** — whatever your
@@ -60,7 +60,7 @@ not code changes.
 
 - **Read freely across all member repos; never edit or commit inside them.**
   Repo changes are routed to that repo's own agents (see `oats status` in the
-  deployment, your task layer, or messaging) or to the human.
+  deployment, your tasks capability, or messaging) or to the human.
 - No git state operations in any member repo: no branch switching, no
   commits, no worktrees, no resets.
 - Your own working state lives in your instance home, not in any member repo,

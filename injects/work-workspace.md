@@ -7,7 +7,7 @@ not code changes.
 
 - **Read freely across all member repos; never edit or commit inside them.**
   Repo changes are routed to that repo's own agents (see `oats status` in the
-  deployment, your task layer, or messaging) or to the human.
+  deployment, your tasks capability, or messaging) or to the human.
 - No git state operations in any member repo: no branch switching, no
   commits, no worktrees, no resets.
 - Your own working state lives in your instance home, not in any member repo,

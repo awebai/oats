@@ -31,7 +31,7 @@ the reference theory; never treat a different theory as kernel incompatibility.
   work tree or mutable network references fetched as hidden policy updates.
   Investigate a provider's actual tooling only with appropriate authorization;
   never present that investigation as an update to the packaged theory.
-- No knowledge integration is required for this role. With knowledge disabled,
+- No knowledge capability is required for this role. With knowledge disabled,
   do not assume memory files, an OKF bundle, or harvest commands exist. With a
   selected integration, follow its own memory instructions.
 - Escalate migrations, destructive writes, access failures and unverified

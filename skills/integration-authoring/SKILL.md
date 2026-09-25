@@ -3,7 +3,7 @@ name: integration-authoring
 description: >-
   Route custom OATS capability-package and integration work to the framework's
   integrations expert. Use when building, adapting, or debugging a reusable
-  capability, new task/messaging/knowledge integration, oats.json manifest,
+  capability, new tasks/messaging/knowledge core capability, oats.json manifest,
   lifecycle hook, or operational command—not merely activating an existing
   package. Triggers: "custom integration", "capability package", "integrate
   our tracker", "new messaging integration", "write an oats.json".
@@ -12,8 +12,9 @@ description: >-
 # Capability and integration authoring — delegate
 
 A capability package may ship skills, instance instructions, requirements,
-namespaced commands, and declared hooks. An integration is the constrained
-subtype implementing exactly one fundamental layer. Building either requires
+namespaced commands, and declared hooks. A core capability is the constrained
+kind that fills one of the knowledge, messaging or tasks slots (its manifest's
+`layer` field names which). Building either requires
 manifest, security, targeting-boundary, collision, and probe discipline; use
 the framework's **integrations-expert** soul rather than improvising.
 
