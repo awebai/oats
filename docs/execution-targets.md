@@ -241,9 +241,11 @@ Launch configurations are host-level: `oats launch-config set` writes them to
 the `launch-configs:` block of the deployment's `oats-local.yaml`, the one
 place the kernel reads them from ([configuration.md](configuration.md)). A
 scope's `oats-config.yaml` declaring `launch-configs:` is refused with a message
-naming the move. The kernel still reads a scope-level `yolo:` from
-`oats-config.yaml` until the config chain is removed; prefer the explicit spawn
-flag or a named launch configuration to it.
+naming the move. The scope-level `yolo:` of `oats-config.yaml` is removed in
+0.26.0 with the config chain (lead decision c3-4): yolo is chosen only by
+`--yolo` / `--no-yolo` on `oats spawn`, `oats session start` and
+`oats session restart`, or by the `yolo` of a named launch configuration. It is
+not a soul field either (lead decision c3-q Q6): `soul.yaml` has no `yolo`.
 
 Autonomous or unattended execution is not permission to synthesize `yolo: true`.
 Explicit user CLI/UI input or a user-selected configuration is the opt-in; explicit

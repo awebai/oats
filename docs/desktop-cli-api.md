@@ -601,7 +601,7 @@ executable, runtime packages, child-spawn policy) and returns what the spawn
 
 ```json
 {"spawnPreviewApi":1,"preview":true,"agent":"dev","kind":"persistent","instance":"dev-fix-login","home":"/abs/agents/dev/instances/dev-fix-login",
- "repo":"/abs/repo","work":"worktree","runtime":"claude","model":"opus","modelSource":"soul","launchConfig":null,"yolo":false,"backend":"tmux",
+ "repo":"/abs/repo","work":"worktree","runtime":"claude","model":"opus","modelSource":"explicit","launchConfig":null,"yolo":false,"backend":"tmux",
  "branch":"agents/dev-fix-login","base":{"ref":"HEAD","oid":"<oid>"},"worktree":"/abs/agents/dev/instances/dev-fix-login/work",
  "relation":null,"parentInstance":null,"policy":{"childSpawns":{"allowed":true,"origin":{"kind":"default","detail":"…"}}},
  "executable":"/abs/bin/claude","capabilities":["oats.core"],"skills":["oats-operate","oats-souls"],"task":"…"}
@@ -864,6 +864,12 @@ location. The receipt says so:
   nothing is lost; retry or pass `--discard-worktree`.
 - Non-worktree modes report `retention: null`. Quarantine/rollback paths keep
   their removal semantics.
+- A recovery (`workRecovery`, `workRecoveries[]`) is `{path, classes, bytes,
+  outputs?, repoCopy?}` (0.26.0: `bytes`, `outputs`): `bytes` is the recovery's
+  own size; `outputs: {paths: [{path, bytes}], bytes}` names what it copied
+  beyond tracked state — a worktree's untracked and ignored paths, or a
+  directory's work entries — grouped by top-level entry, largest first. Absent
+  when only home bytes were copied.
 - The Remove dialog's "also delete worktree / branch" checkboxes map to these
   two flags; the kernel never touches a PR.
 - **Guarded apply** (what a GUI sends): `oats retire <i> --plan-revision <rev>

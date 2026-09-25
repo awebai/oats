@@ -6,10 +6,11 @@ docs/configuration.md; 0.26.0, lead decision 2 — earlier kernels read it
 from a scope's `oats-config.yaml`): runtime, an executable, literal
 arguments, environment (literals or `{fromEnv}` references), model, yolo.
 It is independent of any soul, and a spawn, start or restart selects one by
-name. A soul may still name one as its default (`launch-config:` in its
-soul.yaml, edited in its member repository): that field names a
-*preference* for an entry the host declares, never a definition, so it does
-not make launch configuration a soul field.
+name (`--launch-config`, or the Desktop's per-launch choice). A launch
+configuration is a spawn-time host choice, never a soul field: `launch-config:`
+is not a field of a workspace-model soul.yaml (docs/soul.schema.json; discovery
+refuses it), so a v2 soul cannot name one, not even as a default. (A classic
+0.25 soul.yaml could name a preferred entry; 0.26.0 reads no such field.)
 
 A **launch recipe** is what a start is made of, recorded in the instance's
 `instance.json` under `launch` beside the rendered `command`:
@@ -58,14 +59,14 @@ shows them: `list` and `preview` redact every environment value.
   that disagrees with the configuration's runtime is refused
   (`E_LAUNCH_CONFIG_MISMATCH`) before anything happens; the same runtime may
   be repeated; `--model` and `--yolo` override the configuration's fields.
-- Without `--launch-config`: a spawn takes the soul's `launch-config` default
-  or none; an existing home keeps its recorded configuration, except that
+- Without `--launch-config`: a spawn uses no configuration (the runtime's
+  defaults; a soul names none); an existing home keeps its recorded configuration, except that
   `--runtime` alone deliberately leaves it behind and renders the new
   runtime's defaults (no old executable or args are carried).
 - Model: explicit, else the configuration's, else on an existing home the
   recorded model when the runtime is unchanged, else the runtime's native
-  default; a spawn without either resolves the soul's preference for the
-  runtime. A model never crosses runtimes.
+  default; a spawn without either uses the runtime's native default (a
+  workspace-model soul declares no model). A model never crosses runtimes.
 - Executable: the configuration's (bare name on PATH; a path resolved against
   the deployment directory when relative) or the runtime's default (claude through
   `oats-claude-config`). It must be a regular executable file; it is never
