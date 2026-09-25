@@ -40,7 +40,6 @@ name: release-manager                     # must equal the directory name
 description: Cuts, verifies and announces releases.
 work: worktree                            # worktree | checkout | directory | workspace
 team: engineering                         # optional label; else the repo's default (oats-membership.yaml); else unassigned
-private: true                             # optional: not discoverable; spawnable only from this repo
 
 capabilities:                             # WHERE each capability comes from — a location, never a version
   acme-release-tooling: { from: here }    # here = this soul's own repo
@@ -63,7 +62,7 @@ compatibility:                            # optional floors on PACKAGE versions 
 |---|---|
 | `name`, `description`, `work` | Required. `work` is the work mode below. |
 | `team` | A label, or a list of labels (the first the primary), declared in the workspace's `teams:`; each may add `defaults.byTeam` capabilities and is an eligible messaging team. Never gates or restricts. |
-| `private` | `true` keeps the soul out of workspace discovery; its own repo can still spawn it. |
+| `private` | **Ignored since 0.26.0:** souls have no private mode. Every soul of a confirmed member is listed and spawnable; a soul that still carries the field gets a `soul-private-ignored` warning. Remove it. |
 | `capabilities` | `<cap>: { from: here \| <repo key> \| package }` or `<cap>: off`. Composed over `defaults.<slot>` ⊕ `defaults.capabilities` ⊕ `defaults.byTeam[team]`; the soul wins. |
 | `knowledge` / `messaging` / `tasks` | The slot's provider payload (true of every instance of the soul), or `none`. Merged with `oats-local.yaml` `settings.<cap>` and `spawn --provider <cap>`; the provider's `binding` contract validates the result — and refuses keys it does not declare. For `oats.okf` 2.1.3 the admitted keys are its settings (`bindings-file`, `state-dir`, `harvest-runtime`, `harvest-model`); the soul's `owns`/`reads` live in `souls/<name>/okf.json`, which OKF reads from the soul directory. |
 | `compatibility` | `<cap>: <semver range>` checked against the locked package version (`E_COMPATIBILITY`). |

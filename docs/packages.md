@@ -106,7 +106,7 @@ workspace  acme  (github.com/acme/agents @ 3f2a9c1e)
 members    agents ✓↔ (@ 3f2a9c1e)   platform ✓↔ (@ 77c0a1b2)   tools ✓↔ (@ 47f4b816)   billing ✗ (no-backlink)
 packages   acme.tools 0.4.0 ✓ (@ 47f4b816)   oats.framework 1.1.3 ✓ (@ 9c3e27aa)   oats.okf 2.1.3 ✓ (@ b2e16f2e)
 changed    acme.tools  — → 0.4.0 (@ 47f4b816)
-souls      7 discovered (6 members, 1 external, 0 disabled here) · 1 private (platform-reviewer, platform only)
+souls      7 discovered (6 members, 1 external, 0 disabled here) · 0 private capabilities
 teams      engineering 4 souls, 3 capabilities · global 2 souls, 2 capabilities · unassigned 1 soul
 
 lock       oats-lock.json

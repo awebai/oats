@@ -1094,8 +1094,12 @@ soul's `<repoKey>:<path>#/team`; sorted by label. Never a problem.
 
 ### `oats capabilities [--dir] --json` → `capabilitiesApi: 1` · `oats souls [--dir] --json` → `soulsApi: 1`
 
-Every **non-private** item of every confirmed member, external souls, and
-locked package capabilities, sorted by name then origin. `origin` is the
+Every item of every confirmed member, external souls, and locked package
+capabilities, sorted by name then origin. Souls have no private mode (their
+`private` is always `false`); a repo-owned capability is listed with
+`private: true` — usable only by its own repo's souls. The Desktop shows its
+"Repo owned" section when `version --json` lists the `capabilities-private`
+feature. `origin` is the
 human string (`member <key> @ <8-char commit>` | `package <id> v<version>` |
 `external <key> @ <commit>`); `kind` is the machine field. `team` is the label
 or `"unassigned"`.

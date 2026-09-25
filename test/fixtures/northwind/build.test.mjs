@@ -90,7 +90,7 @@ test("every member backlinks to the workspace with its team; the store has no me
   assert.ok(!expertsTree.includes("oats-membership.yaml"), "external repo has no backlink");
 });
 
-test("souls: every soul dir has soul.yaml v2, AGENTS.md, a relative CLAUDE.md symlink and a skill; platform-reviewer is private", () => {
+test("souls: every soul dir has soul.yaml v2, AGENTS.md, a relative CLAUDE.md symlink and a skill; no soul carries `private` (souls have no private mode since 0.26.0)", () => {
   const souls = {
     agents: ["release-manager", "support-triager"],
     platform: ["platform-engineer", "platform-reviewer"],
@@ -104,6 +104,7 @@ test("souls: every soul dir has soul.yaml v2, AGENTS.md, a relative CLAUDE.md sy
     for (const soul of names) {
       const def = YAML.parse(show(bare, `HEAD:souls/${soul}/soul.yaml`));
       assert.equal(def.schemaVersion, 2, `${soul} schemaVersion`);
+      assert.equal(Object.hasOwn(def, "private"), false, `${soul} has no private key (it would only draw soul-private-ignored)`);
       assert.equal(def.name, soul);
       assert.ok(["worktree", "checkout", "directory", "workspace"].includes(def.work), `${soul} work mode`);
       assert.ok(show(bare, `HEAD:souls/${soul}/AGENTS.md`).length > 0);
@@ -114,10 +115,6 @@ test("souls: every soul dir has soul.yaml v2, AGENTS.md, a relative CLAUDE.md sy
       assert.ok(skills.some((p) => /^souls\/[^/]+\/skills\/[^/]+\/SKILL\.md$/.test(p)), `${soul} has a skill`);
     }
   }
-  const reviewer = YAML.parse(show(fixture.refs.platform, "HEAD:souls/platform-reviewer/soul.yaml"));
-  assert.equal(reviewer.private, true);
-  const engineer = YAML.parse(show(fixture.refs.platform, "HEAD:souls/platform-engineer/soul.yaml"));
-  assert.equal(engineer.private, undefined);
 
   const rm = YAML.parse(show(fixture.refs.agents, "HEAD:souls/release-manager/soul.yaml"));
   assert.equal(rm.team, "engineering");

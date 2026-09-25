@@ -12,7 +12,8 @@
     "description": { "type": "string" },
     "work": { "enum": ["worktree", "checkout", "directory", "workspace"] },
     "team": { "$ref": "#/$defs/teamLabels", "description": "Team label, or a non-empty list of distinct labels (the first is the primary); overrides the repo's default from oats-membership.yaml. Each label's messaging payload reaches the provider as an eligible team (OATS_TEAMS); joining is the provider's explicit act." },
-    "private": { "type": "boolean", "description": "true → not discoverable in the workspace; usable only from its own repo." },
+    "private": { "type": "boolean", "deprecated": true,
+      "description": "Ignored since 0.26.0: souls have no private mode. Every soul of a confirmed member is listed and spawnable; discovery warns soul-private-ignored. Accepted so existing files still validate; remove it." },
     "capabilities": {
       "type": "object",
       "propertyNames": { "$ref": "#/$defs/capabilityName" },

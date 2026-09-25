@@ -21,7 +21,7 @@ spawned from.
 ## Find souls
 
 ```bash
-oats souls                   # every non-private soul of every confirmed member, with origin and team
+oats souls                   # every soul of every confirmed member, with origin and team
 oats souls --json
 oats workspace status        # which members are confirmed (an unconfirmed member contributes no souls)
 ```
@@ -34,8 +34,6 @@ a clone).
 
 What discovery does not show, on purpose:
 
-- **Private souls** (`private: true` in `soul.yaml`) are spawnable only from
-  their own repository.
 - **Souls of a repository that is not a confirmed member.** Membership is
   reciprocal: the workspace lists the repository and the repository's
   `oats-membership.yaml` names the workspace back. A soul left outside

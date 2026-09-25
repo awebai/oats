@@ -1403,18 +1403,20 @@ const memberLabel = (key) => String(key).split("/").filter(Boolean).pop()?.repla
 const teamLabel = (team) => team ?? "unassigned";
 const originOf = (item) => (item.package ? `package ${item.package} v${item.version}` : `member ${item.repoKey} @ ${short(item.commit)}`);
 
-/** Rows of every non-private soul/capability of confirmed members + locked package capabilities. */
-function workspaceItems(discovery, lock, { includePrivate = false } = {}) {
+/** Rows of every soul and capability of confirmed members (+ external souls) + locked package
+ *  capabilities. Souls have no private mode (0.26.0); a private member capability is listed with
+ *  `private: true` — repo-owned: usable only by its own repo's souls (E_CAPABILITY_PRIVATE). */
+function workspaceItems(discovery, lock) {
   const souls = [];
   const capabilities = [];
   for (const m of discovery.members) {
     if (!m.confirmed && !(discovery.standalone === true && m.key === discovery.key)) continue;
-    for (const s of m.souls) if (includePrivate || !s.private) souls.push({ name: s.name, origin: originOf(s), kind: "member", repoKey: s.repoKey, commit: s.commit, team: teamLabel(s.team), labels: [...(s.labels ?? (s.team ? [s.team] : []))], private: s.private, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null });
-    for (const c of m.capabilities) if (includePrivate || !c.private) capabilities.push({ name: c.name, origin: originOf(c), kind: "member", repoKey: c.repoKey, commit: c.commit, team: teamLabel(c.team), private: c.private, path: c.path, layer: c.manifest.layer ?? null, version: c.manifest.version ?? null });
+    for (const s of m.souls) souls.push({ name: s.name, origin: originOf(s), kind: "member", repoKey: s.repoKey, commit: s.commit, team: teamLabel(s.team), labels: [...(s.labels ?? (s.team ? [s.team] : []))], private: s.private, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null });
+    for (const c of m.capabilities) capabilities.push({ name: c.name, origin: originOf(c), kind: "member", repoKey: c.repoKey, commit: c.commit, team: teamLabel(c.team), private: c.private, path: c.path, layer: c.manifest.layer ?? null, version: c.manifest.version ?? null });
   }
   for (const ext of discovery.external || []) {
     const s = ext.soul;
-    if (includePrivate || !s.private) souls.push({ name: s.name, origin: `external ${s.repoKey} @ ${short(s.commit)}`, kind: "external", repoKey: s.repoKey, commit: s.commit, team: teamLabel(s.team), labels: [...(s.labels ?? (s.team ? [s.team] : []))], private: s.private, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null });
+    souls.push({ name: s.name, origin: `external ${s.repoKey} @ ${short(s.commit)}`, kind: "external", repoKey: s.repoKey, commit: s.commit, team: teamLabel(s.team), labels: [...(s.labels ?? (s.team ? [s.team] : []))], private: s.private, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null });
   }
   for (const [id, entry] of Object.entries(lock?.packages || {})) {
     for (const name of entry.capabilities) capabilities.push({ name, origin: originOf({ package: id, version: entry.version }), kind: "package", package: id, version: entry.version, commit: entry.commit, team: teamLabel(null), private: false });
@@ -1482,7 +1484,7 @@ async function performSync(ctx, bail, { onDiscovered } = {}) {
   const members = memberRows(discovery);
   const packages = packageRows(lock);
   const changes = resolved.changes;
-  const items = workspaceItems(discovery, lock, { includePrivate: true });
+  const items = workspaceItems(discovery, lock);
   const report = { syncApi: 1, standalone: discovery.standalone === true || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, lock: lockFile }, members, packages, changes, problems, warnings: discovery.warnings ?? [] };
   return { report, lock, discovery, items, lockFile, problems };
 }
@@ -1512,9 +1514,10 @@ function printSyncReport(ctx, synced) {
   console.log(`changed    ${[...changed, ...removed].join("   ") || "(nothing — the lock already described this workspace)"}`);
   const memberSouls = items.souls.filter((s) => s.kind === "member");
   const externalSouls = items.souls.filter((s) => s.kind === "external");
-  const privateSouls = memberSouls.filter((s) => s.private);
+  // Souls have no private mode (0.26.0); the private count is of repo-owned member capabilities.
+  const repoOwned = items.capabilities.filter((c) => c.kind === "member" && c.private);
   const disabledHere = items.souls.filter((s) => disabled.has(s.name));
-  console.log(`souls      ${items.souls.length} discovered (${memberSouls.length} members, ${externalSouls.length} external, ${disabledHere.length} disabled here) · ${privateSouls.length} private${privateSouls.length ? ` (${privateSouls.map((s) => `${s.name}, ${memberLabel(s.repoKey)} only`).join("; ")})` : ""}`);
+  console.log(`souls      ${items.souls.length} discovered (${memberSouls.length} members, ${externalSouls.length} external, ${disabledHere.length} disabled here) · ${repoOwned.length} private capabilit${repoOwned.length === 1 ? "y" : "ies"}${repoOwned.length ? ` (${repoOwned.map((c) => `${c.name}, ${memberLabel(c.repoKey)} only`).join("; ")})` : ""}`);
   const teams = new Map();
   for (const s of items.souls) { const t = teams.get(s.team) || { souls: 0, capabilities: 0 }; t.souls++; teams.set(s.team, t); }
   for (const c of items.capabilities.filter((c) => c.kind === "member")) { const t = teams.get(c.team) || { souls: 0, capabilities: 0 }; t.capabilities++; teams.set(c.team, t); }
@@ -1666,7 +1669,7 @@ async function itemsCmd(kind) {
   console.log(`${kind} of workspace ${workspaceName(discovery)} (${discovery.key} @ ${short(discovery.commit)})${standalone ? `  — ${standaloneNote(discovery)}` : ""}\n`);
   if (!items.length) console.log("  (none)");
   else if (kind === "souls") printTable(["name", "origin", "team", "work"], items.map((s) => [s.name, s.origin, s.labels?.length > 1 ? s.labels.join(",") : s.team, s.work ?? "—"]));
-  else printTable(["name", "origin", "team", "layer"], items.map((c) => [c.name, c.origin, c.team, c.layer ?? "—"]));
+  else printTable(["name", "origin", "team", "layer"], items.map((c) => [c.private ? `${c.name} (repo-owned)` : c.name, c.origin, c.team, c.layer ?? "—"]));
   const unsynced = Object.keys(discovery.workspace?.packages || {}).filter((id) => !lock.packages[id]);
   if (kind === "capabilities" && unsynced.length) console.log(`\n  package capabilities of ${unsynced.join(", ")} appear after \`oats sync\``);
 }
@@ -2705,7 +2708,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "teams", "settings-declared"], workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "teams", "settings-declared", "capabilities-private"], workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -3316,8 +3319,11 @@ Usage:
                                             print the line to add (the file travels through Git)
   oats workspace status [--dir <d>] [--json] membership table (confirmed / no-backlink /
                                             cannot-read / backlink-elsewhere), locked packages
-  oats capabilities [--dir <d>] [--json]     every non-private capability of every confirmed
-  oats souls [--dir <d>] [--json]            member + the locked packages, with origin
+  oats capabilities [--dir <d>] [--json]     every capability of every confirmed member (a
+                                            private one is listed as repo-owned: usable only by
+                                            its own repo's souls) + the locked packages
+  oats souls [--dir <d>] [--json]            every soul of every confirmed member + external souls
+                                            (souls have no private mode), with origin
                                             (member <key> @ <commit> | package <id> v<ver>) and team
   oats instance git <instance> [--home <abs>] [--dir <d>] [--json]
                                              read-only Git observation of the instance's work

@@ -87,7 +87,7 @@ test("workspace v2 CLI over the Northwind fixture: sync (exit 0, lock v3 written
     assert.match(r.stdout, /^members {4}.*agents ✓↔/m);
     assert.match(r.stdout, /^packages {3}.*oats\.okf 2\.1\.3 ✓ \(@ [0-9a-f]{8}\)/m);
     assert.match(r.stdout, /^changed {4}/m);
-    assert.match(r.stdout, /^souls {6}9 discovered \(8 members, 1 external, 1 disabled here\) · 1 private \(platform-reviewer, platform only\)/m);
+    assert.match(r.stdout, /^souls {6}9 discovered \(8 members, 1 external, 1 disabled here\) · 0 private capabilities$/m, "souls have no private mode: the count is of repo-owned capabilities (Northwind has none)");
     assert.match(r.stdout, /^teams {6}.*engineering 5 souls, 3 capabilities.*marketing 2 souls, 2 capabilities/m);
     assert.match(r.stdout, /^lock {7}/m);
     assert.doesNotMatch(r.stdout, /approv/i, "the report never mentions approval");
@@ -111,7 +111,7 @@ test("workspace v2 CLI over the Northwind fixture: sync (exit 0, lock v3 written
     assert.equal(st.members.length, 5);
     const platform = st.members.find((m) => m.name === "platform");
     assert.equal(platform.status, "confirmed"); assert.equal(platform.team, "engineering");
-    assert.deepEqual(platform.souls, ["platform-engineer", "platform-reviewer"], "status lists every soul, private ones included (it is the membership view)");
+    assert.deepEqual(platform.souls, ["platform-engineer", "platform-reviewer"], "status lists every soul (souls have no private mode)");
     assert.ok(!Object.hasOwn(st, "approval"), "workspace status has no approval section");
     assert.deepEqual(st.unsynced, []); assert.deepEqual(st.stale, []);
     assert.deepEqual(st.external.map((e) => e.soul), ["security-reviewer"]);
@@ -139,7 +139,7 @@ test("workspace v2 CLI over the Northwind fixture: sync (exit 0, lock v3 written
     assert.equal(caps.find((c) => c.name === "nw-tools-dev").kind, "member");
     assert.equal(caps.find((c) => c.name === "nw-lint").kind, "package");
     assert.equal(caps.find((c) => c.name === "nw-deploy").origin, "package nw.tools v0.4.0");
-    assert.ok(caps.every((c) => !c.private), "private capabilities are not listed");
+    assert.ok(caps.every((c) => c.private === false), "Northwind has no private capability; test/visibility.test.mjs lists one as repo-owned");
     r = oats(["capabilities"], { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /name\s+origin\s+team\s+layer/);
@@ -153,7 +153,7 @@ test("workspace v2 CLI over the Northwind fixture: sync (exit 0, lock v3 written
     const souls = doc.result.souls;
     const names = souls.map((s) => s.name);
     assert.ok(names.includes("tools-expert"), "tools-expert (member soul of the package publisher) is visible");
-    assert.ok(!names.includes("platform-reviewer"), "platform-reviewer is private: not visible");
+    assert.equal(souls.find((s) => s.name === "platform-reviewer")?.private, false, "every soul is listed (souls have no private mode)");
     assert.ok(names.includes("platform-engineer"));
     assert.ok(names.includes("security-reviewer"), "the pinned external soul is visible");
     const tools = souls.find((s) => s.name === "tools-expert");
@@ -163,7 +163,7 @@ test("workspace v2 CLI over the Northwind fixture: sync (exit 0, lock v3 written
     r = oats(["souls"], { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /tools-expert\s+member .*nw-tools\.git @ [0-9a-f]{8}\s+engineering\s+worktree/);
-    assert.doesNotMatch(r.stdout, /platform-reviewer/);
+    assert.match(r.stdout, /platform-reviewer\s+member /);
 
     // ---- oats package add outside a workspace checkout prints the line ----
     const elsewhere = join(base, "elsewhere"); mkdirSync(elsewhere);
