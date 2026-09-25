@@ -167,6 +167,34 @@ Kernel (lead): pass the soul's team label and the workspace identity so the
 provider derives the personal team deterministically; an unmapped team means
 "personal". The onboarding skill's manual invite-then-join step is the 1.12.0
 path and is rewritten when the provider ships R1/R2.
+**Teams, re-stated as THE priority (human, 2026-09-25; amends R1/R2):**
+"As long as we don't have this working seamlessly, people won't understand
+things." The two most important messaging behaviours, above every other
+messaging item:
+- **(R1) A personal team by default.** A user's agents in a workspace get
+  that person's personal team for the workspace with no setup step. This is
+  the default whenever the workspace maps nothing else.
+- **(R2′) Wider teams, at spawn AND during an instance's life.** When a soul
+  belongs to one or more wider teams, its instance is also included in each
+  team the soul specifies, both at spawn and at any later point of its life,
+  not only at spawn. The teams are exactly those the workspace defines
+  (`messaging.byTeam` / the workspace's team labels); no team outside the
+  workspace's definition, and none silently missing. R2′ supersedes R2's
+  "is spawned … joins": joining is a lifetime operation, and a soul may name
+  several teams.
+Both are oats.aweb's (Antares) with aweb primitives. **The kernel's share is
+the lead's:**
+- today `soul.team` is ONE label (docs/soul.schema.json), and the messaging
+  payload merges `byTeam[soul.team]` for that one label. "Team/teams" needs a
+  soul to name several team labels, and the payload to carry each mapped
+  team's entry (not one merged view), so the provider can join all of them;
+- the workspace identity and the person's identity reach the provider, so
+  the personal team derives deterministically;
+- a lifecycle entry point for "join now" during an instance's life (for
+  example, a provider operation or hook run against a live home when the
+  workspace's teams or the soul's team labels change at a new commit).
+The contract shape is decided with Antares and recorded as a Decision before
+code.
 **Naming (lead, 2026-09-24):** the `oats-` prefix on all six —
 it matches the repository names and the roster's `oats-kernel-`/`oats-desktop-`/
 `oats-operator-expert`, and it keeps instance aliases from colliding with the
