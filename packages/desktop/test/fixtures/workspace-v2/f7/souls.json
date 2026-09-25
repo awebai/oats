@@ -6,15 +6,15 @@
     "workspace": {
       "name": "northwind",
       "key": "local//fixture/base/fx/remotes/agents.git",
-      "commit": "7ba7c24422ee343b7f87870e33d58aad31703579"
+      "commit": "be5b20d0b43d732f87e8e3a9dddc4e47a9df48eb"
     },
     "souls": [
       {
         "name": "campaign-writer",
-        "origin": "member local//fixture/base/fx/remotes/marketing.git @ 8f433317",
+        "origin": "member local//fixture/base/fx/remotes/marketing.git @ 8f5c7f08",
         "kind": "member",
         "repoKey": "local//fixture/base/fx/remotes/marketing.git",
-        "commit": "8f4333170883d991dd8e00b160176722c1c0c78a",
+        "commit": "8f5c7f0865d76531654007142f4bdfc5f2dd9e33",
         "team": "marketing",
         "labels": [
           "marketing"
@@ -26,10 +26,10 @@
       },
       {
         "name": "data-analyst",
-        "origin": "member local//fixture/base/fx/remotes/data.git @ 3c1c80b7",
+        "origin": "member local//fixture/base/fx/remotes/data.git @ ac3afe54",
         "kind": "member",
         "repoKey": "local//fixture/base/fx/remotes/data.git",
-        "commit": "3c1c80b7efca19ce1e168d13148c1e0c046b23e0",
+        "commit": "ac3afe54bb1352bf511beec7ce0fa253b90d97a4",
         "team": "engineering",
         "labels": [
           "engineering"
@@ -41,10 +41,10 @@
       },
       {
         "name": "platform-engineer",
-        "origin": "member local//fixture/base/fx/remotes/platform.git @ 8aaab5f3",
+        "origin": "member local//fixture/base/fx/remotes/platform.git @ 4122c0af",
         "kind": "member",
         "repoKey": "local//fixture/base/fx/remotes/platform.git",
-        "commit": "8aaab5f357bfaee94e7f0f6e8be4c22e54905802",
+        "commit": "4122c0af32da98a9090c2ab11723810f50cd596f",
         "team": "engineering",
         "labels": [
           "engineering"
@@ -56,10 +56,10 @@
       },
       {
         "name": "positioning-analyst",
-        "origin": "member local//fixture/base/fx/remotes/marketing.git @ 8f433317",
+        "origin": "member local//fixture/base/fx/remotes/marketing.git @ 8f5c7f08",
         "kind": "member",
         "repoKey": "local//fixture/base/fx/remotes/marketing.git",
-        "commit": "8f4333170883d991dd8e00b160176722c1c0c78a",
+        "commit": "8f5c7f0865d76531654007142f4bdfc5f2dd9e33",
         "team": "marketing",
         "labels": [
           "marketing"
@@ -71,10 +71,10 @@
       },
       {
         "name": "release-manager",
-        "origin": "member local//fixture/base/fx/remotes/agents.git @ 7ba7c244",
+        "origin": "member local//fixture/base/fx/remotes/agents.git @ be5b20d0",
         "kind": "member",
         "repoKey": "local//fixture/base/fx/remotes/agents.git",
-        "commit": "7ba7c24422ee343b7f87870e33d58aad31703579",
+        "commit": "be5b20d0b43d732f87e8e3a9dddc4e47a9df48eb",
         "team": "engineering",
         "labels": [
           "engineering",
@@ -100,10 +100,10 @@
       },
       {
         "name": "support-triager",
-        "origin": "member local//fixture/base/fx/remotes/agents.git @ 7ba7c244",
+        "origin": "member local//fixture/base/fx/remotes/agents.git @ be5b20d0",
         "kind": "member",
         "repoKey": "local//fixture/base/fx/remotes/agents.git",
-        "commit": "7ba7c24422ee343b7f87870e33d58aad31703579",
+        "commit": "be5b20d0b43d732f87e8e3a9dddc4e47a9df48eb",
         "team": "global",
         "labels": [
           "global"
@@ -115,10 +115,10 @@
       },
       {
         "name": "tools-expert",
-        "origin": "member local//fixture/base/fx/remotes/nw-tools.git @ 7c74e136",
+        "origin": "member local//fixture/base/fx/remotes/nw-tools.git @ 0269bbd7",
         "kind": "member",
         "repoKey": "local//fixture/base/fx/remotes/nw-tools.git",
-        "commit": "7c74e136f86827f420f132145b0dcd4480aeabbc",
+        "commit": "0269bbd7ce20668ebdf7dd942e5da38283470bab",
         "team": "engineering",
         "labels": [
           "engineering"

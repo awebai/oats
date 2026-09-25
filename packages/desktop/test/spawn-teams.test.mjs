@@ -5,10 +5,9 @@
 // Offered only when the provider DECLARES the spawn setting `join` — the
 // kernel binds join= for any provider, so without the declared fact the row
 // would promise joins an older provider ignores (captured: preview-no-join-sent).
-// Kernel captures: test/fixtures/workspace-v2/f7 (stand-ins nw.teams / nw.chat,
-// provenance `standIn`). The declared fact is the kernel's `declares` (#181,
-// feature settings-declared; contract bdd7e55e), patched in by `declared()`
-// below until the recapture from #181's merge.
+// Kernel captures: test/fixtures/workspace-v2/f7 from main (#181's `declares`,
+// feature settings-declared; contract bdd7e55e), with the stand-in providers
+// nw.teams (declares ["join"]) and nw.chat (declares ["identity"]) — provenance `standIn`.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -19,8 +18,10 @@ import { cli as CLI, target } from './helpers/spawn-preview-fixture.mjs';
 const f7 = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/f7/${name}.json`, import.meta.url), 'utf8'));
 const provenance = f7('provenance');
 const JOIN = { provider: 'nw.teams', labels: ['engineering'] };
-/** Stand-in for the kernel's declared-settings fact: the messaging row lists `join`. */
-const declared = envelope => { const v = structuredClone(envelope); for (const m of v.result.modules) if (m.layer === 'messaging') m.declares = ['identity', 'join']; return v; };
+/** As captured: the kernel's messaging row declares `join` (nw.teams). */
+const declared = envelope => structuredClone(envelope);
+/** A kernel before #181: no `declares` on the rows. */
+const undeclared = envelope => { const v = structuredClone(envelope); for (const m of v.result.modules) delete m.declares; return v; };
 const previewFor = choices => choices.join ? 'preview-teams-join' : 'preview-teams-default';
 const argvOf = name => { const a = provenance.files[name].argv; return a.slice(a.indexOf('--purpose'), a.indexOf(name.startsWith('apply') ? '--expect-decision' : '--preview')); };
 
@@ -56,7 +57,8 @@ test('the projection carries the kernel\'s teams (primary first, no payloads), t
   assert.deepEqual(d.teams, [{ label: 'engineering', team: 'northwind:eng', mapped: true }, { label: 'global', team: null, mapped: false }]);
   assert.equal(d.messaging.provider, 'nw.teams'); assert.equal(d.messaging.join, null); assert.equal(d.messaging.joinDeclared, true);
   assert.equal(previewData(declared(f7('preview-teams-join')).result, t).messaging.join, 'engineering');
-  assert.equal(previewData(f7('preview-teams-default').result, t).messaging.joinDeclared, false, 'as captured: the kernel reports no declared settings yet');
+  assert.deepEqual(f7('preview-teams-default').result.modules.find(m => m.layer === 'messaging').declares, ['join'], 'the kernel\'s declared fact (#181)');
+  assert.equal(previewData(undeclared(f7('preview-teams-default')).result, t).messaging.joinDeclared, false, 'a kernel before #181 declares nothing');
   const chat = previewData(f7('preview-teams-no-join').result, t);
   assert.equal(chat.messaging.provider, 'nw.chat'); assert.equal(chat.messaging.joinDeclared, false);
   // The captured hazard: an undeclared provider still gets join= bound.
@@ -116,8 +118,8 @@ test('a preview that does not bind the ticked teams keeps Spawn off and says so'
   assert.equal(u.q('.fspawn').disabled, true);
 });
 
-test('no row without the declared fact (as captured), for a provider without settings.join, without spawn-provider-payload, or without settings-declared', async t => {
-  const a = await dialog(t, { kernel: choices => f7(previewFor(choices)) });
+test('no row without the declared fact (a kernel before #181), for a provider that does not declare join, without spawn-provider-payload, or without settings-declared', async t => {
+  const a = await dialog(t, { kernel: choices => undeclared(f7(previewFor(choices))) });
   assert.equal(a.q('.spawn-teams').hidden, true);
   const b = await dialog(t, { kernel: () => f7('preview-teams-no-join') });
   assert.equal(b.q('.spawn-teams').hidden, true);
