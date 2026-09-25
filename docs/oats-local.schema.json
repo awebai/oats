@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://oats.dev/schemas/local-v2.json",
   "title": "Deployment-local overrides v2 (oats-local.yaml)",
-  "description": "The operator's side of a workspace: which workspace this machine realizes, where member clones live when not at the taught convention, host-owned capability settings (absolute paths belong HERE, never in the workspace file), and souls disabled on this machine. Never shared through Git.",
+  "description": "The operator's side of a workspace: which workspace this machine realizes, where member clones live when not at the taught convention, host-owned capability settings (absolute paths belong HERE, never in the workspace file), souls disabled on this machine, and the named launch configurations this host offers. Never shared through Git.",
   "type": "object",
   "required": ["schemaVersion", "workspace"],
   "additionalProperties": false,
@@ -34,6 +34,34 @@
         "propertyNames": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$" }
       },
       "description": "<capability>: { <key>: <value> } host-owned values the manifests ask for."
+    },
+    "launch-configs": {
+      "type": "object",
+      "description": "Named ways to start a harness on this host, independent of any soul (lead decision 2: a spawn-time host choice). Selected by name at spawn or session start/restart; explicit flags override its fields. Written by `oats launch-config set|remove`.",
+      "propertyNames": { "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["runtime"],
+        "properties": {
+          "runtime": { "type": "string", "enum": ["pi", "claude", "codex"], "description": "The harness family this configuration starts; it decides the kernel's own baseline arguments (skills, instructions, task) and how model/yolo are expressed." },
+          "executable": { "type": "string", "minLength": 1, "description": "The program to run instead of the runtime's default binary: a bare name is looked up on PATH on the execution host; a path containing a slash is resolved against the deployment directory (where this oats-local.yaml lives) when relative. Checked to exist and be executable before any start; never executed just to probe it." },
+          "args": { "type": "array", "items": { "type": "string" }, "description": "Extra arguments, each passed literally (no shell interpretation): native configuration files or profiles go here as ordinary arguments." },
+          "env": {
+            "type": "object",
+            "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+            "additionalProperties": {
+              "oneOf": [
+                { "type": "string" },
+                { "type": "object", "additionalProperties": false, "required": ["fromEnv"], "properties": { "fromEnv": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" } } }
+              ]
+            },
+            "description": "Environment for the harness. A string is a literal (non-secret by contract; still redacted in every answer). {fromEnv: NAME} is resolved from the execution host's environment at start time; the reference, never the value, is recorded. A missing reference refuses the start before anything stops."
+          },
+          "model": { "type": "string", "minLength": 1, "description": "Model for this configuration's runtime; overrides the soul default when this configuration is selected." },
+          "yolo": { "type": "boolean", "description": "Permission bypass for this configuration; overrides scope and soul defaults when selected." }
+        }
+      }
     },
     "souls": {
       "type": "object",

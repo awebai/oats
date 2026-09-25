@@ -32,13 +32,14 @@ import {
   resolveOatsConfig, resolveWorkMode, composeInstanceAgentsMd, parseYamlNested, assertSafeConfigValue, stripInternalAnnotations, withConfigFile, teamAgentRoots,
   findTeamAgent, findTeamInstance, findCapabilityAgent, findInstanceHome, findInstanceHomes, listCapabilityAgents, workspaceOf, stopInstanceSession, recomposeInstanceInstructions,
   ensureRoot, findRoot, findAgent, legacyLocalAgents, listAgents, listInstances, servedIdentityLine, servedIdentityOf,
-  spawnInstance, spawnInstanceAsync, instanceSoulDir, explicitInstanceName, findModuleCapabilityAgent, capabilityAgentFromDir, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, resolveLaunchSelection, resolveLaunchExecutable, checkLaunchExecutable, missingLaunchEnvRefs, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, LAUNCH_RECIPE_VERSION, parseLaunchCommand, resolveYolo, planLaunch, redactLaunchCommand, restartInstanceSession,
+  spawnInstance, spawnInstanceAsync, instanceSoulDir, launchConfigsAt, explicitInstanceName, findModuleCapabilityAgent, capabilityAgentFromDir, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, resolveLaunchSelection, resolveLaunchExecutable, checkLaunchExecutable, missingLaunchEnvRefs, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, LAUNCH_RECIPE_VERSION, parseLaunchCommand, resolveYolo, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
 import {
   assertNoSymlinkedParents, writeFileAtomic,
   LOCK_FILE, readLock, writeLock, resolvePackages,
   classifyPackageValue, parsePackageRequest } from "../lib/packages.mjs";
-import { loadLocal, discoverWorkspace, validateWorkspace } from "../lib/workspace.mjs";
+import { loadLocal, discoverWorkspace, validateWorkspace, validateLocal } from "../lib/workspace.mjs";
+import { parseConfigData } from "../lib/config-data.mjs";
 import * as remoteModule from "../lib/remote.mjs";
 import YAML from "yaml";
 import { attachArgv, checkRemote, forgetSnapshot, getServer, inspectRemote, startRemote, restartRemote, launchConfigRemote, scheduleRemote, listSnapshots, readServers, rosterGroups, routeCommand, targetOf, validateServer, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
@@ -1495,7 +1496,7 @@ function replaceLaunchConfigsBlock(text, serialized) {
   const keyLine = /^(["']?)launch-configs\1:(\s*(?:#.*)?|\s+\S.*)?$/;
   const lines = text.split("\n");
   const starts = lines.map((l, i) => keyLine.test(l) ? i : -1).filter((i) => i >= 0);
-  if (starts.length > 1) throw Object.assign(new Error(`oats-config.yaml declares launch-configs ${starts.length} times (lines ${starts.map((i) => i + 1).join(", ")}); keep one`), { code: "E_CONFIG_BROKEN" });
+  if (starts.length > 1) throw Object.assign(new Error(`oats-local.yaml declares launch-configs ${starts.length} times (lines ${starts.map((i) => i + 1).join(", ")}); keep one`), { code: "E_CONFIG_BROKEN" });
   const block = serialized ? serialized.replace(/\n$/, "").split("\n") : [];
   if (!starts.length) {
     if (!serialized) return text;
@@ -1560,11 +1561,9 @@ function normalizeLaunchConfig(e) {
     ...(e.yolo !== undefined ? { yolo: e.yolo } : {}),
   };
 }
-function readLaunchConfigsModel(file) {
-  if (!existsSync(file)) return {};
-  const cfg = withConfigFile(file, () => parseYamlNested(readFileSync(file, "utf8")));
-  const map = cfg["launch-configs"] || {};
-  for (const [name, entry] of Object.entries(map)) validateLaunchConfig(name, entry, file);
+function readLaunchConfigsModel(local) {
+  const map = local["launch-configs"] || {};
+  for (const [name, entry] of Object.entries(map)) validateLaunchConfig(name, entry, "oats-local.yaml");
   const out = Object.create(null); // a name may be "constructor": membership is own only
   for (const [n, e] of Object.entries(map)) out[n] = normalizeLaunchConfig(e);
   return out;
@@ -1660,33 +1659,38 @@ async function launchConfigCmd() {
   if (sub === "preview") { launchPreview(bail); return; }
   if (!["list", "set", "remove"].includes(sub)) bail("E_USAGE", usage);
   const { context: dir, selected } = sub === "list" ? launchConfigContext(bail) : { context: dirFlag(), selected: null };
-  if (sub !== "list" && (flag("home") !== undefined || flag("soul") !== undefined)) bail("E_BAD_ARGS", `launch-config ${sub} writes one scope's oats-config.yaml: address it with --dir, not --home or --soul`);
-  const level = levelOf(dir);
-  const file = join(dir, "oats-config.yaml");
-  const effective = () => {
-    const r = resolveOatsConfig(dir);
-    return Object.values(r.launchConfigs || {}).sort((a, b) => a.name.localeCompare(b.name)).map((e) => ({ name: e.name, ...publicLaunchConfig(e, { source: e.source, shadows: e.shadows }) }));
-  };
+  if (sub !== "list" && (flag("home") !== undefined || flag("soul") !== undefined)) bail("E_BAD_ARGS", `launch-config ${sub} writes the deployment's oats-local.yaml: address it with --dir, not --home or --soul`);
+  // Lead decision 2: launch configurations are a HOST choice, declared in the
+  // deployment's oats-local.yaml (found walking up; a home's own deployment).
+  const at = selected?.home ?? dir;
+  // A scope file still declaring launch-configs is refused here too (the migration
+  // message names the move), never read as "no configurations".
+  try { configChain(at); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+  let found = null;
+  try { found = loadLocal(at); } catch (e) { if (e?.code !== "E_LOCAL_MISSING") bail(e.code || "E_WORKSPACE_SCHEMA", e.message); }
+  const file = found?.path ?? null, level = file ? dirname(file) : null;
+  const effective = () => Object.values(launchConfigsAt(at)).sort((a, b) => a.name.localeCompare(b.name)).map((e) => ({ name: e.name, ...publicLaunchConfig(e, { source: e.source, shadows: e.shadows }) }));
   if (sub === "list") {
     let configurations;
-    try { configurations = effective(); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
-    if (JSON_MODE) { jsonOk({ context: dir, level, file: existsSync(file) ? file : null, selected, configurations }); return; }
-    if (!configurations.length) { console.log(`No launch configurations are effective at ${dir}`); return; }
+    try { configurations = effective(); } catch (e) { bail(e.code || "E_LAUNCH_CONFIG_INVALID", e.message); }
+    if (JSON_MODE) { jsonOk({ context: dir, level, file, selected, configurations }); return; }
+    if (!configurations.length) { console.log(`No launch configurations are declared${file ? ` in ${shortPath(file)}` : ` (no oats-local.yaml in reach of ${dir})`}`); return; }
     for (const c of configurations) {
       const env = Object.entries(c.env).map(([n, v]) => v.fromEnv ? `${n}=$${v.fromEnv}` : `${n}=<redacted>`).join(" ");
-      console.log(`${c.name}: ${c.runtime}${c.executable ? ` ${c.executable}` : ""}${c.args.length ? ` ${c.args.map((a) => JSON.stringify(a)).join(" ")}` : ""}${env ? ` [${env}]` : ""}${c.model ? ` model ${c.model}` : ""}${c.yolo !== null ? ` yolo ${c.yolo}` : ""}  (${c.source}${c.shadows.length ? `; shadows ${c.shadows.join(", ")}` : ""})`);
+      console.log(`${c.name}: ${c.runtime}${c.executable ? ` ${c.executable}` : ""}${c.args.length ? ` ${c.args.map((a) => JSON.stringify(a)).join(" ")}` : ""}${env ? ` [${env}]` : ""}${c.model ? ` model ${c.model}` : ""}${c.yolo !== null ? ` yolo ${c.yolo}` : ""}`);
     }
     return;
   }
+  if (!file) bail("E_LOCAL_MISSING", `launch-config ${sub} writes the deployment's oats-local.yaml, and none is in reach of ${dir} — run it from the deployment (\`oats onboard\` creates one)`);
   const name = args[2];
   if (!name || name.startsWith("--")) bail("E_BAD_ARGS", `launch-config ${sub} needs a configuration name`);
-  const text = existsSync(file) ? readFileSync(file, "utf8") : `name: ${scaffoldConfigName(dir)}\n`;
+  const text = readFileSync(file, "utf8");
   let model;
-  try { model = readLaunchConfigsModel(file); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+  try { model = readLaunchConfigsModel(found.local); } catch (e) { bail(e.code || "E_LAUNCH_CONFIG_INVALID", e.message); }
   const declaredHere = Object.hasOwn(model, name);
   const before = declaredHere ? publicLaunchConfig(model[name]) : null;
   if (sub === "remove") {
-    if (!declaredHere) bail("E_LAUNCH_CONFIG_UNKNOWN", `${name} is not declared at ${level} level (${shortPath(file)}); an inherited configuration is removed at the scope that declares it`);
+    if (!declaredHere) bail("E_LAUNCH_CONFIG_UNKNOWN", `${name} is not declared in ${shortPath(file)}`);
     delete model[name];
   } else {
     const f = flag("file");
@@ -1706,13 +1710,11 @@ async function launchConfigCmd() {
     try { entry = JSON.parse(raw); } catch { bail("E_BAD_ARGS", `--file ${f} is not valid JSON (one object with runtime and optional executable, args, env, model, yolo)`); }
     if (args.includes("--keep-env")) {
       // An editor that saw only redacted values keeps the environment of the
-      // definition EFFECTIVE at this scope for that name (this scope's own, or
-      // the inherited one it is overriding): a one-time copy into the complete
-      // replacement entry, not inheritance; whole-entry shadowing stays.
-      if (entry && typeof entry === "object" && entry.env !== undefined) bail("E_BAD_ARGS", "--keep-env keeps the environment of the effective definition; omit env from --file");
-      let current;
-      try { const all = resolveOatsConfig(dir).launchConfigs || {}; current = Object.hasOwn(all, name) ? all[name] : undefined; } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
-      if (!current) bail("E_LAUNCH_CONFIG_UNKNOWN", `--keep-env: no launch configuration ${name} is effective at ${dir}, so there is no environment to keep; declare it with env`);
+      // declared definition of that name: a one-time copy into the complete
+      // replacement entry.
+      if (entry && typeof entry === "object" && entry.env !== undefined) bail("E_BAD_ARGS", "--keep-env keeps the environment of the declared definition; omit env from --file");
+      const current = declaredHere ? model[name] : undefined;
+      if (!current) bail("E_LAUNCH_CONFIG_UNKNOWN", `--keep-env: no launch configuration ${name} is declared in ${shortPath(file)}, so there is no environment to keep; declare it with env`);
       if (entry && typeof entry === "object" && Object.keys(current.env || {}).length) entry.env = { ...current.env };
     }
     try { validateLaunchConfig(name, entry, `--file ${f}`); } catch (e) { bail(e.code || "E_LAUNCH_CONFIG_INVALID", e.message); }
@@ -1723,7 +1725,10 @@ async function launchConfigCmd() {
   // What is written must read back as exactly what was asked, by the kernel's
   // own reader, before a byte of the file changes.
   let readBack;
-  try { readBack = parseYamlNested(next)["launch-configs"] || {}; } catch (e) { bail("E_LAUNCH_CONFIG_INVALID", `the rewritten block does not parse: ${e.message}; nothing was written`); }
+  let nextLocal;
+  try { nextLocal = parseConfigData(next, { origin: { kind: "local", path: file } }).value; readBack = nextLocal["launch-configs"] || {}; } catch (e) { bail("E_LAUNCH_CONFIG_INVALID", `the rewritten block does not parse: ${e.message}; nothing was written`); }
+  const schemaProblems = validateLocal(nextLocal);
+  if (schemaProblems.length) bail("E_LAUNCH_CONFIG_INVALID", `the rewritten oats-local.yaml would be invalid (${schemaProblems.map((p) => `${p.path || "/"}: ${p.message}`).join("; ")}); nothing was written`);
   const canonical = (m) => JSON.stringify(Object.keys(m).sort().map((n) => [n, normalizeLaunchConfig(m[n])]));
   const same = canonical(readBack) === canonical(model);
   if (!same) bail("E_LAUNCH_CONFIG_INVALID", `${name} would not read back as written; nothing was written`);
@@ -1732,7 +1737,7 @@ async function launchConfigCmd() {
   try { eff = effective().find((c) => c.name === name) || null; } catch (e) { eff = { error: e.message }; }
   const receipt = { name, action: sub, level, file, before, after: Object.hasOwn(model, name) ? publicLaunchConfig(model[name]) : null, effective: eff };
   if (JSON_MODE) { jsonOk(receipt); return; }
-  console.log(sub === "set" ? `Declared launch configuration ${name} at ${level} level (${shortPath(file)})` : `Removed launch configuration ${name} from ${level} level (${shortPath(file)})${eff ? `; ${eff.source} now provides it` : ""}`);
+  console.log(sub === "set" ? `Declared launch configuration ${name} in ${shortPath(file)}` : `Removed launch configuration ${name} from ${shortPath(file)}`);
 }
 
 

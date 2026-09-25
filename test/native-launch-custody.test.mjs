@@ -125,8 +125,9 @@ for(const [runtime,variable,suffix,source] of [['claude','CLAUDE_CONFIG_DIR','pr
    mkdirSync(join(observer,suffix),{recursive:true});
    process.env[variable]=actual;process.env.FIXTURE_NATIVE_LOCATION=actual;process.env.ANTHROPIC_API_KEY='FIXTURE_SECRET_VALUE';
    if(kind==='fromEnv-retargeted') {
-    write(join(f.context,'oats-config.yaml'),readFileSync(join(f.context,'oats-config.yaml'),'utf8')+
-      `launch-configs:\n  custom:\n    runtime: ${runtime}\n    env:\n      ${variable}:\n        fromEnv: FIXTURE_NATIVE_LOCATION\n`);
+    // Launch configurations live in the deployment's oats-local.yaml (found walking up from the agents root).
+    write(join(f.context,'oats-local.yaml'),
+      `schemaVersion: 2\nworkspace: example.invalid/acme/workspace\nlaunch-configs:\n  custom:\n    runtime: ${runtime}\n    env:\n      ${variable}:\n        fromEnv: FIXTURE_NATIVE_LOCATION\n`);
    }
    write(join(f.base,'bin',runtime),`#!${process.execPath}
 const fs=require('node:fs'),path=require('node:path');

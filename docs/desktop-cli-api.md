@@ -1332,10 +1332,17 @@ Written by materialization inside the spawn transaction; read back by
    "oats.okf":{"from":{"kind":"package","package":"oats.okf","version":"2.1.3","commit":"<oid>","integrity":"sha256-…","repoKey":"github.com/awebai/oats-okf"},
                "commit":"<oid>","digest":"sha256-…","materializedAt":"<iso>"}},
  "providers":{"acme-release-tooling":{},"oats.okf":{"owns":"release-manager","reads":["platform-engineer"],"state-dir":"/Users/ana/.oats/okf"}},
- "workspace":{"key":"github.com/acme/agents","commit":"<oid>","resolution":"<24 hex>","standalone":false,
+ "workspace":{"key":"github.com/acme/agents","name":"acme","deployment":"/Users/ana/acme-workspace","commit":"<oid>","resolution":"<24 hex>","standalone":false,
               "soul":{"repoKey":"github.com/acme/agents","commit":"<oid>","team":"engineering"}},
  "capabilities":[{"id":"oats.okf","capability":"oats.okf","origin":"package:oats.okf@2.1.3","…":"one row per module"}]}
 ```
+
+`workspace.name` (the workspace file's `name`) and `workspace.deployment` (the
+directory holding the deployment's `oats-local.yaml`) are recorded from 0.26.0,
+so a home answers them without discovery: `oats inspect --home` reports the
+recorded name, and `oats operation run --home` hands it to the provider as
+`OATS_WORKSPACE_NAME`. Homes spawned
+before 0.26.0 lack both; the name is then discovered, or `null`.
 
 `workspace.standalone` is `true` when the instance was spawned from the
 **standalone view** (decisions 10/25: a *member* whose workspace could not be

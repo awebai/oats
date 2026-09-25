@@ -212,7 +212,7 @@ test("standalone packages (H3/M10): a catalog ref with a tag PATH (oats-framewor
   }
 });
 
-test("H4: an oats-config.yaml beside a v3 lock (a launch-config, say) does not make the classic config chain strict-parse the v3 lock — spawn and doctor stay green", { timeout: 240_000 }, async () => {
+test("H4: an oats-config.yaml beside a v3 lock (a scope yolo, say) does not make the classic config chain strict-parse the v3 lock — spawn and doctor stay green", { timeout: 240_000 }, async () => {
   const base = mkdtempSync(join(tmpdir(), "oats-h4-"));
   const fx = await buildNorthwind(join(base, "fx"));
   const catalogFile = join(base, "catalog.json"); writeFileSync(catalogFile, JSON.stringify({ packages: fx.catalog }));
@@ -222,7 +222,9 @@ test("H4: an oats-config.yaml beside a v3 lock (a launch-config, say) does not m
   try {
     const synced = oats(["sync", "--dir", dep, "--json"], { base, env });
     assert.equal(synced.status, 0, synced.stdout + synced.stderr);
-    writeFileSync(join(dep, "oats-config.yaml"), "name: northwind-workspace\nlaunch-configs:\n  default:\n    runtime: pi\n");
+    writeFileSync(join(dep, "oats-config.yaml"), "name: northwind-workspace\nyolo: false\n");
+    // Launch configurations are declared in oats-local.yaml now (lead decision 2); one there reads beside the v3 lock too.
+    writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.agents}\nlaunch-configs:\n  default:\n    runtime: pi\n`);
     const r = oats(["spawn", "release-manager", "--dir", dep, "--agents-root", join(dep, "agents"), "--purpose", "x", "--work", "directory", "--no-launch", "--json"], { base, env });
     assert.equal(r.status, 0, r.stderr + r.stdout);
     assert.equal(envelope(r).ok, true);
