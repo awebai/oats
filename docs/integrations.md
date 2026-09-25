@@ -291,9 +291,9 @@ soul messaging, `oats-local.yaml` `settings.oats.aweb`, then per-spawn
   socket is refused. It then runs `aw id grant mint --team <team-id> --scope
   <comma-list> --ttl <ttl> --label oats:<instance> --out
   <home>/.aweb-identity --custody-socket <preflight-socket> --json` from the
-  custody directory when aw is 1.36.2 or later for `--team` and at least the
-  release named by `CUSTODY_ATTACH_MIN` for `--custody-socket`; complete custody
-  operations require aw 1.36.2 paired with aweb server 1.27.5. `AWEB_IDENTITY_HOME`
+  custody directory when aw is 1.36.2 or later for `--team`; grants need aw >=
+  1.36.3 (`CUSTODY_ATTACH_MIN`) with aweb server >= 1.27.5 for
+  `--custody-socket`. `AWEB_IDENTITY_HOME`
   is removed from mint/revoke child environments: grant commands are not
   identity-home-aware and intentionally refuse both `--identity-home` and
   external `AWEB_IDENTITY_HOME`, so cwd selects the custody identity. The hook
