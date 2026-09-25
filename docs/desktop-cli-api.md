@@ -115,11 +115,11 @@ payload the spawn recorded for a home, or the resolution computes for a soul.
  "capabilities":[
    {"id":"nw-house-style","version":"0.0.0-workspace","layer":null,"command":null,
     "from":{"kind":"member","repoKey":"github.com/northwind/agents","commit":"461b9c24…"},
-    "dir":"/w/agents/release-manager/instances/release-manager-x/.oats/modules/nw-house-style","settings":{},"missingRequires":[],"operations":[]},
+    "dir":"/w/agents/release-manager/instances/release-manager-x/.oats/modules/nw-house-style","settings":{},"declares":[],"missingRequires":[],"operations":[]},
    {"id":"oats.okf","version":"2.1.3","layer":"knowledge","command":"okf",
     "from":{"kind":"package","package":"oats.okf","version":"2.1.3","commit":"71f53649…","integrity":"sha256-5019…","repoKey":"github.com/awebai/oats-okf"},
     "dir":"/w/agents/release-manager/instances/release-manager-x/.oats/modules/oats.okf",
-    "settings":{"owns":"release-manager","reads":["platform-engineer"],"state-dir":"/srv/okf"},"missingRequires":[],
+    "settings":{"owns":"release-manager","reads":["platform-engineer"],"state-dir":"/srv/okf"},"declares":["bindings-file","git-timeout","harvest-model","harvest-runtime","state-dir"],"missingRequires":[],
     "operations":[{"name":"inspect","kind":"view","command":"inspect","context":"home","description":"…","args":[],"argv":["okf","inspect"],"available":true,"reason":null}]}],
  "knowledge":{"provider":"oats.okf","version":"2.1.3","operations":[{"name":"inspect","kind":"view","available":true,"reason":null}]},
  "instance":{"home":"/w/agents/release-manager/instances/release-manager-x","instance":"release-manager-x","agent":"release-manager",
@@ -148,6 +148,10 @@ payload the spawn recorded for a home, or the resolution computes for a soul.
   - `dir` is the home's module copy, or `null` for a soul (nothing is
     materialized to answer inspect).
   - `settings` is the merged provider payload.
+  - `declares` lists the setting keys the manifest declares (`settings.<key>`),
+    sorted; names only, never descriptions or defaults; `[]` when it declares
+    none. Gate on feature `settings-declared` (e.g. offer a Teams choice only
+    when the messaging module declares `join`).
   - `missingRequires` lists the manifest `requires` commands absent from PATH.
   - `operations[].available` is `false` with a `reason` when it cannot run
     here: a `context: "home"` operation for a soul subject says `needs a
@@ -1123,10 +1127,10 @@ between preview and apply is `E_DECISION_STALE`):
 
 ```json
 {"modules":[
-   {"name":"acme-release-tooling","from":{"kind":"member","repoKey":"github.com/acme/agents","commit":"<oid>"},"layer":null,"private":false,
+   {"name":"acme-release-tooling","from":{"kind":"member","repoKey":"github.com/acme/agents","commit":"<oid>"},"layer":null,"private":false,"declares":[],
     "changedSince":{"instance":"release-manager-v2","was":"<old oid>"}},
    {"name":"oats.okf","from":{"kind":"package","package":"oats.okf","version":"2.1.3","commit":"<oid>","integrity":"sha256-…","repoKey":"github.com/awebai/oats-okf"},
-    "layer":"knowledge","private":false,"changedSince":false}],
+    "layer":"knowledge","private":false,"declares":["bindings-file","git-timeout","harvest-model","harvest-runtime","state-dir"],"changedSince":false}],
  "team":"engineering",
  "resolution":"6e3050c0d005879441ab017d",
  "workspace":"github.com/acme/agents",
@@ -1136,6 +1140,8 @@ between preview and apply is `E_DECISION_STALE`):
 ```
 
 - `modules[].from` is exactly the `from` recorded in `instance.json` on apply.
+- `modules[].declares`: the manifest's declared setting keys, as in `inspect`
+  (feature `settings-declared`).
 - `changedSince`: `null` (no previous instance of this soul), `false`
   (unchanged since the newest previous instance), or
   `{ instance, was }` (`was` = the previous commit, or `null` when the previous
@@ -1283,7 +1289,8 @@ A feature is listed only once the binary implements it. Gate `sync`/`package`/
 `workspace status`/`capabilities`/`souls` on `workspace-v2`; gate reading
 `instance.json.modules` and preview `modules[]` on `instance-modules`; gate
 `--provider` on `spawn-provider-payload`; gate reading `teams`, `teamsSource`,
-`labels` and `warnings[]` on `teams`.
+`labels` and `warnings[]` on `teams`; gate reading `declares` on
+`settings-declared`.
 
 ## Instruction refresh (`oats session recompose`) — removed in 0.26.0
 
