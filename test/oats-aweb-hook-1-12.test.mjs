@@ -29,10 +29,18 @@ if (grantCmd[0] === "id" && grantCmd[1] === "grant" && (a[0] === "--identity-hom
 }
 const cmd = a;
 function val(flag) { const i = a.indexOf(flag); return i >= 0 ? a[i + 1] : undefined; }
-if (s === "version") { console.log("aw 1.36.2"); process.exit(0); }
+if (s === "version") { console.log(process.env.FAKE_AW_VERSION || "aw 9.9.9"); process.exit(0); }
 if (s.startsWith("wake ")) { if (process.env.FAKE_NO_WAKE) { console.error("aw: unknown command wake"); process.exit(2); } process.exit(0); }
 if (cmd[0] === "custody" && cmd[1] === "status" && cmd.includes("--json")) {
-  console.log(j({ status: "running", teams: [{ team_id: "t:example.test", ready: true, certificate_present: true, grant_status_endpoint_ready: true }, { team_id: "expected:team", ready: true, certificate_present: true, grant_status_endpoint_ready: true }], keys: { signing_ready: true, encryption_ready: true }, ops: ["sign_plain_message.v1", "unwrap_e2ee_message.v1", "create_e2ee_envelope.v1"] }));
+  if (process.env.AWEB_IDENTITY_HOME) {
+    let text = ""; try { text = fs.readFileSync(path.join(process.env.AWEB_IDENTITY_HOME, "grant.yaml"), "utf8"); } catch {}
+    const line = text.split("\\n").find((l) => l.trim().startsWith("socket_path:"));
+    if (!line) { console.error("grant home has no custody.socket_path locator"); process.exit(1); }
+    const socket = line.split("socket_path:")[1].trim();
+    console.log(j({ status: "running", socket_path: socket, service_id: "svc", resident: { alias: "resident-alias", address: process.env.FAKE_GRANT_ADDRESS || "oats.aweb.ai/resident-alias" }, teams: [{ team_id: process.env.FAKE_GRANT_TEAM || "t:example.test", ready: true, certificate_present: true }], keys: { signing_ready: true, encryption_ready: true }, ops: ["sign_plain_message.v1", "unwrap_e2ee_message.v1", "create_e2ee_envelope.v1"] }));
+    process.exit(0);
+  }
+  console.log(j({ status: "running", socket_path: path.join(${JSON.stringify(base)}, "custody.sock"), teams: [{ team_id: "t:example.test", ready: true, certificate_present: true, grant_status_endpoint_ready: true }, { team_id: "expected:team", ready: true, certificate_present: true, grant_status_endpoint_ready: true }], keys: { signing_ready: true, encryption_ready: true }, ops: ["sign_plain_message.v1", "unwrap_e2ee_message.v1", "create_e2ee_envelope.v1"] }));
   process.exit(0);
 }
 if (s.startsWith("team list")) { console.log(j({ active_team: "t:example.test", memberships: [{ team_id: "t:example.test" }] })); process.exit(0); }
@@ -42,9 +50,11 @@ if (s.startsWith("init")) process.exit(0);
 if (s.startsWith("workspace delete")) { console.log(j({ alias_released: true, alias_released_reason: "revoked" })); process.exit(0); }
 if (cmd[0] === "id" && cmd[1] === "grant" && cmd[2] === "mint") {
   const out = val("--out");
+  const socket = val("--custody-socket");
   if (!out) { console.error("missing --out"); process.exit(2); }
+  if (!socket) { console.error("missing --custody-socket"); process.exit(2); }
   fs.mkdirSync(out, { recursive: true, mode: 0o700 });
-  fs.writeFileSync(path.join(out, "grant.yaml"), "version: 1\\ngrant_id: grant-123\\nteam_id: " + (process.env.FAKE_GRANT_TEAM || "t:example.test") + "\\nexpires_at: 2026-09-24T07:00:00Z\\n");
+  fs.writeFileSync(path.join(out, "grant.yaml"), "version: 1\\ngrant_id: grant-123\\nteam_id: " + (process.env.FAKE_GRANT_TEAM || "t:example.test") + "\\nexpires_at: 2026-09-24T07:00:00Z\\ncustody:\\n  socket_path: " + socket + "\\n");
   console.log("progress: minted");
   if (process.env.FAKE_MINT_NO_JSON) process.exit(0);
   console.log(j({ grant_id: "grant-123", expires_at: "2026-09-24T07:00:00Z", team_id: process.env.FAKE_GRANT_TEAM || "t:example.test", alias: "resident-alias", address: process.env.FAKE_GRANT_ADDRESS || "oats.aweb.ai/resident-alias", out }));
@@ -144,7 +154,7 @@ test("global mode mints a grant from custody, returns AWEB_IDENTITY_HOME and ide
     assert.equal(existsSync(join(home, ".aweb-identity", "grant.yaml")), true);
     const lines = logLines(base);
     const mint = lines.find((l) => l.argv.join(" ").includes("id grant mint"));
-    assert.deepEqual(mint.argv, ["id", "grant", "mint", "--team", "t:example.test", "--scope", "mail.read,chat.send", "--ttl", "90m", "--label", "oats:probe", "--out", join(home, ".aweb-identity"), "--json"]);
+    assert.deepEqual(mint.argv, ["id", "grant", "mint", "--team", "t:example.test", "--scope", "mail.read,chat.send", "--ttl", "90m", "--label", "oats:probe", "--out", join(home, ".aweb-identity"), "--custody-socket", join(base, "custody.sock"), "--json"]);
     assert.equal(mint.cwd, realpathSync(custody));
     assert.equal(mint.identityHome, null);
     const wake = lines.find((l) => l.argv[0] === "wake" && l.argv[1] === "register");

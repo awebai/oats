@@ -286,19 +286,27 @@ soul messaging, `oats-local.yaml` `settings.oats.aweb`, then per-spawn
   the `oats-local.yaml settings.oats.aweb.residents.<name>` key to set. Optional
   `identity.scopes` defaults to exactly `[mail.read, mail.send, chat.read,
   chat.send]`; optional `identity.ttl` defaults to `8h` (aw accepts `60s` to
-  `720h`). Spawn runs `aw id grant mint --team <team-id> --scope
+  `720h`). Spawn first runs `aw custody status --json` in the resident custody
+  directory and uses exactly the reported `socket_path`; a status without a
+  socket is refused. It then runs `aw id grant mint --team <team-id> --scope
   <comma-list> --ttl <ttl> --label oats:<instance> --out
-  <home>/.aweb-identity --json` from the custody directory when aw is 1.36.2
-  or later; complete custody operations require aw 1.36.2 paired with aweb
-  server 1.27.5. `AWEB_IDENTITY_HOME` is removed from the child environment:
-  grant commands are not identity-home-aware and intentionally refuse both
-  `--identity-home` and external `AWEB_IDENTITY_HOME`, so cwd selects the
-  custody identity. The hook parses the whole JSON document because aw `--json`
-  output is indented across lines, with a fallback to the first brace-prefixed
-  block when progress lines precede it; it then verifies the minted grant's
-  `team_id` and returns
-  `env.AWEB_IDENTITY_HOME=<home>/.aweb-identity`. If the minted team differs,
-  the hook revokes the grant and keeps nothing. Receiving, wake registration,
+  <home>/.aweb-identity --custody-socket <preflight-socket> --json` from the
+  custody directory when aw is 1.36.2 or later for `--team`; grants need aw >=
+  1.36.3 (`CUSTODY_ATTACH_MIN`) with aweb server >= 1.27.5 for
+  `--custody-socket`. `AWEB_IDENTITY_HOME`
+  is removed from mint/revoke child environments: grant commands are not
+  identity-home-aware and intentionally refuse both `--identity-home` and
+  external `AWEB_IDENTITY_HOME`, so cwd selects the custody identity. The hook
+  parses the whole JSON document because aw `--json` output is indented across
+  lines, with a fallback to the first brace-prefixed block when progress lines
+  precede it; it then verifies the minted grant's `team_id`, reads back
+  `<grantHome>/grant.yaml` (not `encryption.yaml`) and requires
+  `custody.socket_path` to equal the preflight socket, and runs
+  `aw custody status --json` with `AWEB_IDENTITY_HOME=<grantHome>` from the grant
+  home to verify the resident alias and ready team row. Missing or mismatched
+  custody attachment revokes the grant, removes the grant home and fails the
+  spawn. It returns `env.AWEB_IDENTITY_HOME=<home>/.aweb-identity`. If the minted
+  team differs, the hook revokes the grant and keeps nothing. Receiving, wake registration,
   and `aw whoami` work through a grant. On aw 1.36.1 the server rejected mail
   or chat sent through a grant with 422 (`from_did must match the authenticated
   sender`) because the client signed with the grant-key DID. aw 1.36.2 with
@@ -309,7 +317,10 @@ soul messaging, `oats-local.yaml` `settings.oats.aweb`, then per-spawn
   Retire revokes
   `meta.identity.grant.id` through the custody directory; with no grant id it
   reports `nothing-to-revoke`. A failed revoke exits nonzero and reports the TTL
-  expiry.
+  expiry. A binding-less home readiness check for global mode never reports ready
+  for a grant home whose `grant.yaml` lacks `custody.socket_path`; it reports
+  `needs-configuration` / code `custody` and tells the operator to retire and
+  respawn on an aw new enough to attach custody.
 - `residents: { <name>: /abs/custody/dir }` is the host-owned map for global
   mode. Each custody directory's `.aw` holds the resident identity root keys and
   team certificate. Do not put this map in committed source; the hook cannot

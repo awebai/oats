@@ -8,7 +8,9 @@ Some instances serve a resident global identity through an expiring session
 grant instead of holding their own root keys. In that mode, your TASK.md and
 `instance.json` identify the resident alias, scopes, and expiry; root keys are
 not in your home, and mint/revoke/join/identity-lifecycle commands are not yours
-to run. If `aw mail` or `aw chat` reports a terminal grant condition —
+to run. Your grant home is attached to the resident's custody service; if a
+message you sent shows unverified at the receiver, the attachment is missing:
+report it, do not retry. If `aw mail` or `aw chat` reports a terminal grant condition —
 `grant_expired`, `grant_revoked`, `grant_subject_inactive`,
 `grant_issuer_revoked`, or `grant_freshness_unavailable` — report the exact
 condition to your coordinator/human and stop using messaging. The host restarts

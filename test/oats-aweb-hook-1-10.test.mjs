@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 const HOOK = resolve(new URL("../capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
+const BINDING = resolve(new URL("../capabilities/oats-aweb/bin/oats-aweb-binding.mjs", import.meta.url).pathname);
 
 function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, c); }
 
@@ -18,9 +19,11 @@ function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync
 function fakeAw(base, joinMode = "ok") {
   const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
   write(join(bin, "aw"), `#!/usr/bin/env node
-const a = process.argv.slice(2).join(" ");
+const args = process.argv.slice(2);
+const a = args.join(" ");
+const fs = require("node:fs"); const p = require("node:path");
 const log = ${JSON.stringify(join(base, "aw.log"))};
-require("node:fs").appendFileSync(log, a + " @" + process.cwd() + "\\n");
+fs.appendFileSync(log, a + " @" + process.cwd() + "\\n");
 if (a.startsWith("wake ")) { if (process.env.FAKE_NO_WAKE) { console.error("aw: unknown command wake"); process.exit(2); } process.exit(0); }
 if (a.startsWith("team list")) { console.log(JSON.stringify({ active_team: "t:example.test", memberships: [{ team_id: "t:example.test" }] })); process.exit(0); }
 if (a.startsWith("team invite")) { console.log(JSON.stringify({ token: "TOK-secret" })); process.exit(0); }
@@ -28,7 +31,7 @@ if (a.startsWith("team join")) {
   if (${JSON.stringify(joinMode)} === "conflict") { console.error("aweb: http 422: alias already holds an active certificate for this team"); process.exit(1); }
   if (process.env.FAKE_JOIN_LATE) {
     // The join completes server-side (and binds the home) but the CLI hangs past the hook's timeout.
-    const fs = require("node:fs"); const p = require("node:path"); const aw = p.join(process.cwd(), ".aw");
+    const aw = p.join(process.cwd(), ".aw");
     fs.mkdirSync(p.join(aw, "team-certs"), { recursive: true }); fs.writeFileSync(p.join(aw, "signing.key"), "k"); fs.writeFileSync(p.join(aw, "workspace.yaml"), "memberships:\\n    - team_id: t:example.test\\n      alias: probe\\n");
     require("node:child_process").execFileSync("sleep", ["3"]); process.exit(0);
   }
@@ -36,6 +39,27 @@ if (a.startsWith("team join")) {
 }
 if (a.startsWith("init")) process.exit(0);
 if (a === "version") { console.log(process.env.FAKE_AW_VERSION || "aw 1.34.11"); process.exit(0); }
+if (a.startsWith("custody status")) {
+  if (process.env.AWEB_IDENTITY_HOME) {
+    let text = ""; try { text = fs.readFileSync(p.join(process.env.AWEB_IDENTITY_HOME, "grant.yaml"), "utf8"); } catch {}
+    const line = text.split("\\n").find((l) => l.trim().startsWith("socket_path:"));
+    if (!line) { console.error("grant home has no custody.socket_path locator"); process.exit(1); }
+    const socket = line.split("socket_path:")[1].trim();
+    console.log(JSON.stringify({ status: "running", socket_path: socket, service_id: "svc", resident: { alias: "merlin", address: "cjr.aweb.ai/merlin", did_aw: "did:aw:WJ5Q2fnu" }, teams: [{ team_id: "t:example.test", ready: true, certificate_present: true }], keys: { signing_ready: true, encryption_ready: true }, ops: ["sign_plain_message.v1", "unwrap_e2ee_message.v1", "create_e2ee_envelope.v1"] })); process.exit(0);
+  }
+  console.log(JSON.stringify({ status: "running", socket_path: process.env.FAKE_SOCKET || p.join(process.env.FAKE_BASE || process.cwd(), "custody.sock"), teams: [{ team_id: "t:example.test", ready: true, certificate_present: true, grant_status_endpoint_ready: true }], keys: { signing_ready: true, encryption_ready: true }, ops: ["sign_plain_message.v1", "unwrap_e2ee_message.v1", "create_e2ee_envelope.v1"] })); process.exit(0);
+}
+if (a.startsWith("id grant mint")) {
+  if (process.env.AWEB_IDENTITY_HOME) { console.error("grant mint refuses AWEB_IDENTITY_HOME"); process.exit(2); }
+  const out = args[args.indexOf("--out") + 1]; const socket = args[args.indexOf("--custody-socket") + 1];
+  if (!socket) { console.error("missing --custody-socket"); process.exit(2); }
+  fs.mkdirSync(out, { recursive: true });
+  const written = process.env.FAKE_GRANT_SOCKET === "missing" ? null : (process.env.FAKE_GRANT_SOCKET || socket);
+  fs.writeFileSync(p.join(out, "grant.yaml"), "grant_id: grant-new\\nteam_id: t:example.test\\nexpires_at: 2026-09-25T00:00:00Z\\n" + (written ? "custody:\\n  socket_path: " + written + "\\n" : ""));
+  console.log(JSON.stringify({ grant_id: "grant-new", expires_at: "2026-09-25T00:00:00Z", team_id: "t:example.test", out, alias: "merlin", address: "cjr.aweb.ai/merlin" })); process.exit(0);
+}
+if (a.startsWith("id grant revoke")) { console.log(JSON.stringify({ grant_id: args[3], status: "revoked" })); process.exit(0); }
+if (a.startsWith("id grant show")) { console.log(JSON.stringify({ grant_id: args[3], status: "revoked" })); process.exit(0); }
 if (a.startsWith("workspace delete")) { if (a.endsWith("--json")) console.log(JSON.stringify({ alias: "probe", alias_released: process.env.FAKE_ALIAS_RELEASED !== "false", alias_released_reason: process.env.FAKE_ALIAS_RELEASED === "false" ? "no_workspace_credential" : "revoked" })); process.exit(0); }
 if (a.startsWith("workspace connect")) process.exit(0);
 if (a.startsWith("check --online")) process.exit(0);
@@ -56,10 +80,109 @@ function deployment(base) {
 }
 
 function runHook(base, bin, event, env) {
-  const r = spawnSync(process.execPath, [HOOK, event], { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: event, ...env } });
+  const r = spawnSync(process.execPath, [HOOK, event], { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, FAKE_BASE: base, OATS_EVENT: event, ...env } });
   let doc; try { doc = JSON.parse(r.stdout.trim()); } catch { doc = undefined; }
   return { ...r, doc };
 }
+
+function resident(base) {
+  const custody = join(base, "resident");
+  write(join(custody, ".aw", "identity.yaml"), "did: did:aw:WJ5Q2fnu\n");
+  return custody;
+}
+
+const globalSettings = (custody, extra = {}) => JSON.stringify({ team: "t:example.test", identity: { mode: "global", resident: "merlin", ...extra.identity }, residents: { merlin: custody }, ...extra });
+
+function runBindingCheck(bin, settings, context, env = {}) {
+  const input = { schemaVersion: 1, phase: "check", slot: "messaging", capability: "oats.aweb", settings: JSON.parse(settings), input: { action: { kind: "readiness" }, context } };
+  const r = spawnSync(process.execPath, [BINDING, "check"], { input: JSON.stringify(input), encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, ...env } });
+  let doc; try { doc = JSON.parse(r.stdout); } catch { doc = undefined; }
+  return { ...r, doc };
+}
+
+test("global grant spawn attaches the preflight custody socket, verifies grant.yaml and verifies custody status through the grant home", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-grant-"));
+  try {
+    const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base); const socket = join(base, "custody.sock");
+    const r = runHook(base, bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "pi", OATS_SETTINGS: globalSettings(custody), FAKE_AW_VERSION: "aw 9.9.9", FAKE_SOCKET: socket });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(r.doc.env.AWEB_IDENTITY_HOME, join(home, ".aweb-identity"));
+    const grantYaml = readFileSync(join(home, ".aweb-identity", "grant.yaml"), "utf8");
+    assert.match(grantYaml, new RegExp(`socket_path: ${socket.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}`));
+    const log = readFileSync(join(base, "aw.log"), "utf8");
+    assert.match(log, new RegExp(`id grant mint --team t:example.test .* --custody-socket ${socket.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}`));
+    assert.match(log, /^custody status --json @.*\.aweb-identity$/m, "post-mint custody status runs from the grant home");
+    assert.match(r.doc.brief, /grant home is attached to the resident's custody service/);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("global grant spawn refuses below the custody attach floor before minting", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-grant-"));
+  try {
+    const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
+    const r = runHook(base, bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "pi", OATS_SETTINGS: globalSettings(custody), FAKE_AW_VERSION: "aw 1.36.1" });
+    assert.notEqual(r.status, 0);
+    assert.match(r.doc.warning, /cannot attach a grant to custody \(--custody-socket\); grants need aw >= 1\.36\.3/);
+    assert.doesNotMatch(readFileSync(join(base, "aw.log"), "utf8"), /id grant mint/, "nothing minted below the floor");
+    assert.equal(existsSync(join(home, ".aweb-identity")), false);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("global grant spawn revokes and removes the home when grant.yaml custody socket mismatches", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-grant-"));
+  try {
+    const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
+    const r = runHook(base, bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "pi", OATS_SETTINGS: globalSettings(custody), FAKE_AW_VERSION: "aw 9.9.9", FAKE_SOCKET: join(base, "custody.sock"), FAKE_GRANT_SOCKET: join(base, "other.sock") });
+    assert.notEqual(r.status, 0);
+    assert.match(r.doc.warning, /grant.yaml custody.socket_path .* differs/);
+    assert.match(readFileSync(join(base, "aw.log"), "utf8"), /id grant revoke grant-new --json/);
+    assert.equal(existsSync(join(home, ".aweb-identity")), false);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("global grant renewal attaches and verifies custody before replacing launch meta", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-grant-"));
+  try {
+    const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base); const old = join(home, ".aweb-identity");
+    write(join(old, "grant.yaml"), "grant_id: old\nteam_id: t:example.test\nexpires_at: old\ncustody:\n  socket_path: old.sock\n");
+    const meta = { delivery: "channel", identity: { mode: "global", alias: "merlin", team: "t:example.test", address: "cjr.aweb.ai/merlin", resident: "merlin", grant: { id: "old", expiresAt: "old", scopes: ["mail.read"], home: old } } };
+    const r = runHook(base, bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "pi", OATS_META: JSON.stringify(meta), OATS_SETTINGS: globalSettings(custody, { identity: { renew: "launch" } }), FAKE_AW_VERSION: "aw 9.9.9", FAKE_SOCKET: join(base, "custody.sock") });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(r.doc.meta.identity.grant.id, "grant-new");
+    assert.notEqual(r.doc.meta.identity.grant.home, old);
+    assert.match(readFileSync(join(r.doc.meta.identity.grant.home, "grant.yaml"), "utf8"), /custody:\n  socket_path: /);
+    assert.match(readFileSync(join(base, "aw.log"), "utf8"), /id grant revoke old --json/);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("readiness reports existing grant homes without custody.socket_path as not ready", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-grant-"));
+  try {
+    const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
+    write(join(home, ".aweb-identity", "grant.yaml"), "grant_id: old\nteam_id: t:example.test\nexpires_at: old\n");
+    const ctx = { kind: "workspace", workspace: root, deployment: root, soul: "dev", home };
+    const missing = runBindingCheck(bin, globalSettings(custody), ctx);
+    assert.equal(missing.status, 0, missing.stderr);
+    assert.equal(missing.doc.result.status, "needs-configuration");
+    assert.deepEqual(missing.doc.result.problems.find((p) => p.code === "custody")?.message, "grant old is not attached to custody; retire and respawn on aw >= 1.36.3");
+    write(join(home, ".aweb-identity", "grant.yaml"), "grant_id: old\nteam_id: t:example.test\nexpires_at: old\ncustody:\n  socket_path: attached.sock\n");
+    const attached = runBindingCheck(bin, globalSettings(custody), ctx);
+    assert.equal(attached.doc.result.status, "ready");
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("real aw fixture: unattached grant home reports the released custody locator error", (t) => {
+  const fixture = process.env.AW_REAL_GRANT_FIXTURE;
+  const realAw = process.env.AW_REAL_CLI_BIN || "aw";
+  if (!fixture) return t.skip("AW_REAL_GRANT_FIXTURE not set; skipping real aw grant-home regression");
+  const version = spawnSync(realAw, ["version"], { encoding: "utf8", timeout: 10000 });
+  const parsed = /aw\s+v?(\d+)\.(\d+)\.(\d+)/.exec(version.stdout + version.stderr);
+  const atLeast = parsed && parsed.slice(1, 4).map(Number).reduce((ok, part, i, arr) => ok || (arr.slice(0, i).every((n, j) => n === [1, 36, 3][j]) && part > [1, 36, 3][i]), parsed.slice(1, 4).map(Number).every((n, i) => n === [1, 36, 3][i]));
+  if (version.status !== 0 || !atLeast) return t.skip(`real aw is not 1.36.3+: ${version.stdout || version.stderr}`);
+  const r = spawnSync(realAw, ["custody", "status", "--json"], { cwd: fixture, encoding: "utf8", env: { ...process.env, AWEB_IDENTITY_HOME: fixture } });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr + r.stdout, /grant home has no custody\.socket_path locator/);
+});
 
 test("spawn with delivery=session: AWEB_DELIVERY in the launch env, no Claude channel flag, and a brief that says nothing wakes the instance", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-110-"));

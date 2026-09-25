@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 import { TextDecoder } from 'node:util';
 import { assessCapturedSessionReadiness } from './session-readiness.mjs';
@@ -163,6 +163,32 @@ function workspaceReadinessContext(value) {
   return value;
 }
 function yamlScalar(text,key){const m=String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`,'m'));return m?m[1].trim():undefined;}
+export const CUSTODY_ATTACH_MIN = '1.36.3';
+export function grantYamlCustodySocket(text) {
+  const lines=String(text??'').split(/\r?\n/);let inCustody=false,baseIndent=0;
+  for(const line of lines) {
+    const custody=/^(\s*)custody:\s*(?:#.*)?$/.exec(line);if(custody){inCustody=true;baseIndent=custody[1].length;continue;}
+    if(inCustody){const ind=/^(\s*)/.exec(line)?.[1].length||0;if(line.trim()&&ind<=baseIndent)inCustody=false;const socket=/^\s*socket_path:\s*["']?([^"'\n#]+)["']?\s*$/.exec(line);if(socket)return socket[1].trim();}
+  }
+  return undefined;
+}
+function newestGrantHome(home) {
+  if(typeof home!=='string'||!home.trim()) return null;
+  try {
+    const dirs=readdirSync(home).filter((name)=>name==='.aweb-identity'||/^\.aweb-identity-\d+$/.test(name)).map((name)=>join(home,name)).filter((p)=>{try{return statSync(p).isDirectory();}catch{return false;}}).map((p)=>{try{return {path:p,mtime:statSync(p).mtimeMs};}catch{return {path:p,mtime:0};}}).sort((a,b)=>b.mtime-a.mtime||b.path.localeCompare(a.path));
+    return dirs[0]?.path||null;
+  } catch {return null;}
+}
+function grantAttachmentProblem(home) {
+  const grantHome=newestGrantHome(home);
+  if(!grantHome) return null;
+  const grantYaml=join(grantHome,'grant.yaml');
+  if(!existsSync(grantYaml)) return null;
+  let text;try{text=readFileSync(grantYaml,'utf8');}catch{return null;}
+  if(grantYamlCustodySocket(text)) return null;
+  const id=yamlScalar(text,'grant_id')||'<unknown>';
+  return {code:'custody',message:`grant ${id} is not attached to custody; retire and respawn on aw >= ${CUSTODY_ATTACH_MIN}`};
+}
 function activeTeamAt(root){try{return yamlScalar(readFileSync(join(resolve(root),'.aw','teams.yaml'),'utf8'),'active_team')||yamlScalar(readFileSync(join(resolve(root),'.aw','teams.yaml'),'utf8'),'active');}catch{return undefined;}}
 function teamFromSettings(settings,candidate,{env=process.env}={}) {
   const configured=typeof settings.team==='string' && settings.team.trim()?settings.team.trim():(env.OATS_TEAM_ID || env.OATS_TEAM_NAME || undefined);
@@ -197,6 +223,7 @@ function workspaceReadinessPhase(req) {
   const details=readinessDetails(req.settings,{deployment:ctx.deployment}),problems=[...details.result.problems],warnings=[];
   const identity=obj(req.settings.identity)?req.settings.identity:{},mode=identity.mode===undefined || identity.mode===null || identity.mode===''?'local':String(identity.mode);
   if(mode==='global') {
+    const grantProblem=grantAttachmentProblem(ctx.home);if(grantProblem) problems.push(grantProblem);
     const resident=typeof identity.resident==='string' && identity.resident.trim()?identity.resident.trim():undefined;
     const residents=obj(req.settings.residents)?req.settings.residents:{};
     const custody=resident?residents[resident]:undefined;
