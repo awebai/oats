@@ -22,7 +22,7 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
-## Batch — 2026-09-24 night (PRs 131, 136, 151–179) → toward v0.26.0 (unreleased; main carries breaking changes)
+## Batch — 2026-09-24 night (PRs 131, 136, 151–180) → toward v0.26.0 (unreleased; main carries breaking changes)
 - **Merged:**
   - PR151 packages: approval removed (human decision; declaring a package IS the trust decision) `e62b8f16`, plus the release-note follow-up `f0994882`.
   - PR153 docs for it `b97de554`.
@@ -93,6 +93,28 @@ decisions/ and referenced from here.
     - Live resolution for homes is two repo reads (host + soul repo), only for session start/restart, messaging-module commands/operations and inspect --home. Otherwise the record, marked `recorded`.
     - One `unmapped-team-label` warning per label. Also fixed: a home's launch/retire hooks got an empty OATS_TEAM_LABEL/ID.
     - Round 1 was returned: every in-home command paid a full workspace discovery (1.4–2.0 s vs ~0.1 s), the source marker was missing, and the warnings were per soul.
+  - Teams contract corrections after #179:
+    - `eb073209`: the env is the only channel. No check-stdin keys, because released providers decode their binding wire strictly (the co-lead measured oats.aweb 1.13.1 answering `invalid-binding` → readiness `unknown`).
+    - `bdd7e55e`: `declares` (declared setting keys) for the Desktop's `settings.join` gate; `inspect --soul` refuses on `E_TEAM_CONFLICT`.
+  - PR180 legacy sweep `56906470` (the Phase D driver; human GO; co-lead ACK with three conditions; squash tree verified).
+    - Deleted:
+      - the framework repo's root `oats-config.yaml`: a real 0.26 bug, because the kernel refuses it in every member work tree; validate-project now refuses it;
+      - its inject;
+      - six classic-era docs;
+      - the oats-config schema;
+      - the stale root log;
+      - `oats.setup`'s `oats-rebuild` skill;
+      - the v1 catalog-migration helpers and findRoot's config probe.
+    - `official-marketplace.md` → `official-catalog.md`.
+    - Kept for (e), because only the captured path reads them: `RETIRED_CAPABILITIES`, the approval-ledger and lock-v2 schemas, and config-template validation.
+    - Conditions:
+      - the consequence line for a classic deployment rooted at this repo is in the PR and the notes;
+      - the pinned example moved to `packages.md` under a new parity test;
+      - the deleted-path list went to the co-lead for knowledge citations.
+  - First-party packages oats.jira / oats.linear / oats.dev **v1.0.1** (the driver's PRs, lead-merged; tags under co-lead ACK):
+    - floors >=0.26.0;
+    - v2 settings homes in the hook, skill and README texts;
+    - oats.dev drops its oats-config template, the tooling around it, and its dependencies; oats.review is 1.2.1.
 - **taught us:**
   - (1) **Arm a merge watcher with the full approved oid, never "the current head".** #160's head moved twice after approval while mails crossed. The watcher's named-oid guard refused both mismatches, so nothing unreviewed merged. The loop ends with one FINAL mail per party (author and watcher) naming the full oid and "no pushes", and by ignoring the stale mails that follow.
   - (2) **A native gate must wait for the message, not for a spinner.** Preview in the rig is slow, and fixed waits produced false FAILs in both directions. Poll for the expected sentence with a bound.
