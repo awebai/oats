@@ -337,7 +337,8 @@ try {
   assert.deepEqual(skills, ["oats.okf", "private"], "module skill dirs plus the soul's private skill");
   assert.deepEqual(readdirSync(join(skillsRoot, "oats.okf")).sort(), ["memory-harvest", "okf"], "oats.okf → okf + memory-harvest");
   assert.ok(existsSync(join(skillsRoot, "oats.okf/okf/SKILL.md")) && existsSync(join(skillsRoot, "private/SKILL.md")));
-  assert.deepEqual(meta.skills.map((s) => [s.name, s.source]), [["private", "soul"]]);
+  // The soul's own skill and each module skill by its `module:<cap>` source (record order is not a contract).
+  assert.deepEqual(meta.skills.map((s) => [s.name, s.source]).sort(), [["memory-harvest", "module:oats.okf"], ["okf", "module:oats.okf"], ["private", "soul"]]);
   assert.equal(lstatSync(join(probeHome, "AGENTS.md")).isSymbolicLink(), false);
   assert.equal(readlinkSync(join(probeHome, "CLAUDE.md")), "AGENTS.md");
   const composed = readFileSync(join(probeHome, "AGENTS.md"), "utf8");
