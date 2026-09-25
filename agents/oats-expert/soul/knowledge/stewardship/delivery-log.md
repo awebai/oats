@@ -22,7 +22,7 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
-## Batch — 2026-09-24 night (PRs 131, 136, 151–169) → toward v0.26.0 (unreleased; main carries breaking changes)
+## Batch — 2026-09-24 night (PRs 131, 136, 151–170) → toward v0.26.0 (unreleased; main carries breaking changes)
 - **Merged:**
   - PR151 packages: approval removed (human decision; declaring a package IS the trust decision) `e62b8f16`, plus the release-note follow-up `f0994882`.
   - PR153 docs for it `b97de554`.
@@ -65,6 +65,7 @@ decisions/ and referenced from here.
     - Rounds: a return for the missing typed error and the skills text; then CI red on two retire-safety tests that read stderr after coded retire errors became `--json` envelopes. That fix was test-only, with the behaviour verified intact, plus the known K6d flake.
   - PR168 (addendum 5) `bf24c947`: manifest setting defaults are the lowest payload layer on the v2 path, with per-leaf `settingsOrigins` in the preview and the feature `settings-origins`. The decision revision binds the defaults by value; the captured builder is untouched. Probe 9/9. The squash patch is byte-identical to the PR's delta.
   - PR169 Desktop settings-origins label `9f32cc11` (squash patch == PR delta). The identity select's Default option shows a mode only when the kernel reported one: `Default · local` for a manifest default, `Default · <mode> — from <origin>` otherwise, and plain `Default` with no feature, no origin or no identity. The hint names the origin pointer. Native gate 5/5 twice on a stand-in messaging package; 2/2 with the feature hidden.
+  - PR170 kernel v2-native (c1) `5ee006ed` (squash patch == PR delta; lead probe 12/12 + co-lead ACK). Launch configurations move from the oats-config scope chain to the deployment's `oats-local.yaml` `launch-configs:`. There is one reader, `launchConfigsAt(dir)`, walking up; a home reads its own deployment's, never a member clone's context. `set`/`remove` rewrite only that block, with a read-back before writing. A legacy `oats-config.yaml` key is refused with the migration message; `set` with no deployment is `E_LOCAL_MISSING`. `instance.json.workspace` records `name` + `deployment` (M5/3a). The Desktop consumer is unchanged, since its context is the deployment directory.
 - **taught us:**
   - (1) **Arm a merge watcher with the full approved oid, never "the current head".** #160's head moved twice after approval while mails crossed. The watcher's named-oid guard refused both mismatches, so nothing unreviewed merged. The loop ends with one FINAL mail per party (author and watcher) naming the full oid and "no pushes", and by ignoring the stale mails that follow.
   - (2) **A native gate must wait for the message, not for a spinner.** Preview in the rig is slow, and fixed waits produced false FAILs in both directions. Poll for the expected sentence with a bound.
