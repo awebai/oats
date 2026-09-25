@@ -23,7 +23,7 @@
     },
     "oats.authoring": {
       "url": "https://github.com/awebai/oats-authoring.git",
-      "ref": "v1.0.1",
+      "ref": "v1.0.2",
       "path": "oats-package"
     },
     "oats.dev": {
