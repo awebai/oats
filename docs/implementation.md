@@ -210,25 +210,10 @@ locked commit, and a spawn uses only packages the workspace still declares. The
 verbs `oats install|trust|list|restore|use|migrate` are removed
 (`E_UNKNOWN_COMMAND` naming the replacement).
 
-**Classic 0.24 (superseded).** External installation copies/clones one exact
-artifact and writes `oats-lock.json` with source, version/commit, and SHA-256
-tree integrity. An existing destination is never pulled silently. Resolution
-rejects changed locked artifacts and unlocked installed/path packages.
-
-Executable package hooks, commands, and launch-environment authority are omitted
-until the 0.24 bare trust verb (removed) marks the exact locked integrity approved.
-Bundled packages are framework-trusted.
-Packages under a scope's `owned/` subtree are config-owned. Anything under
-`installed/` requires a matching lock entry, so an acquired artifact cannot
-bypass executable trust by its directory location.
-
-Distribution packages generalize this: a package materializes each capability it
-exports into `.agents/capabilities/installed/<id>/`, each independently
-addressable and independently trusted at its own artifact integrity. There is no
-persistent package store. The 0.24 `lockfileVersion: 2` lock records package
-provenance (`packages`) and materialized capability identity (`capabilities`)
-separately. See `docs/design/package-engine-contract.md` for the resolver/lock
-API and error taxonomy.
+**Classic 0.24 (removed in 0.26).** The installed tier
+(`.agents/capabilities/installed/`, the `lockfileVersion: 2` lock, per-artifact
+approval) and its last writer went with the captured path; the
+[0.24 release notes](release-notes/v0.24.0.md) describe what it was.
 
 ## Hooks and scaffold ownership
 

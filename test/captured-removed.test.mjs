@@ -148,5 +148,10 @@ test("captured (versioned) schedules are refused on add and update; a stored one
     const lockOnly = S.describe(ws, "old").executionStatus.intent;
     assert.equal(lockOnly?.kind, "invalid", "a captured job lock alone is reported too");
     assert.match(lockOnly.reason, /^captured job lock: /);
+    // The documented way out: remove --force forgets the job and frees its slot.
+    assert.throws(() => S.removeSchedule(ws, "old"), { code: "E_SCHEDULE_RUNNING" });
+    S.removeSchedule(ws, "old", { force: true });
+    assert.equal(S.jobLockInfo(ws, "old"), null);
+    assert.equal("old" in S.readDefinitions(ws).jobs, false);
   } finally { process.env = saved; rmSync(base, { recursive: true, force: true }); }
 });

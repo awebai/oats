@@ -29,7 +29,7 @@ Binding inputs, all portable repository paths:
   integration requirements are binding despite the historical heading.
 - [Reconciled explainer](2026-09-14-portable-souls-explainer.md); LFX examples are
   hypothetical illustrations, not actual repositories, team setups or credentials.
-- [Package engine](package-engine-contract.md), [runtime API](package-runtime-api.md)
+- Package engine (`package-engine-contract.md`, removed in 0.26), runtime API (`package-runtime-api.md`, removed in 0.26)
   and [current knowledge runtime](../knowledge.md) for preserved contracts.
   The [older knowledge brief](2026-09-13-knowledge-and-memory-direction.md) provides
   doctrine, not a competing source/default schema or permission to auto-edit skills.

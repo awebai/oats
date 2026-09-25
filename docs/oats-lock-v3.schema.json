@@ -1,7 +1,0 @@
-{
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://oats.dev/schemas/selection-lock-v3.json",
-  "title": "Source-request selection lock v3",
-  "description": "New private wire boundary; public consumer activation requires the explicit preparation/migration integration. See portable-v1.json for semantic verification requirements.",
-  "$ref": "https://oats.dev/schemas/portable-v1.json#/$defs/Lock3"
-}

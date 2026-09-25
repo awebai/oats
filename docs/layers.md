@@ -46,15 +46,14 @@ The [workspace guide](workspaces.md) explains these boundaries and the [declarat
 
 A capability's `oats.json` declares its identity, an optional `layer` field (which names the core capability it is, if any), resources, host/runtime prerequisites, commands, operations and supported lifecycle contributions. A distribution package's `oats-package.json` exports one or more capabilities; a package is not itself an active capability or workspace.
 
-The current [manifest schema](capability-manifest.schema.json) includes the published binding interface and helper/input declarations. A manifest shape alone does not certify its implementation:
+The current [manifest schema](capability-manifest.schema.json) includes the published binding interface. A manifest shape alone does not certify its implementation:
 
-- Captured core capabilities expose their declared normalize/bind/check phases through the existing broker. The kernel resolves their fields without implementing their domain model.
-- Commands/hooks execute only from a declared source (a member, or a package the workspace declares, at its locked commit and integrity) — or, for a prepared artifact, its exact `oats trust` approval — and with invocation authority.
-- Helper behavior and optional source-receipt inputs are declared by their owner, not guessed from a layer name.
+- A core capability declares normalize/bind/check binding phases; readiness runs its `check` (the kernel relays its answer without implementing its domain model).
+- Commands/hooks execute only from a declared source (a member, or a package the workspace declares, at its locked commit and integrity).
+- `helperInjection` and hook `inputs` are accepted and ignored since 0.26 (they served the removed captured path).
 - Required setup/capture outcomes cannot be silently omitted to make a launch or cleanup appear successful.
-- Legacy hook environment and captured binding/invocation inputs are distinct contracts. A legacy hook is not automatically safe for retained execution.
 
-Use [capability details](capabilities.md), the [provider wire](design/2026-09-16-provider-binding-wire.md), [helper/input contract](design/2026-09-17-capability-helper-input-contract.md) and [package runtime boundary](design/package-runtime-api.md).
+Use [capability details](capabilities.md) and the [provider wire](design/2026-09-16-provider-binding-wire.md).
 
 ## The three core capabilities
 
@@ -80,7 +79,7 @@ Messaging is conversation, not automatically task state. Accepted knowledge may 
 
 The current slot name is **`messaging`**. The capability owns native identity, addressing, team membership, transport, wake delivery and qualification. A team alias in a workspace is a declaration, not proof that an actor is enrolled or a privacy property is enforced.
 
-aweb 1.10.3 supports its legacy setup/lifecycle path but lacks the captured provider-binding interface. **aweb 1.11.0** (OATS >=0.24.2) adds it (1.11.2, OATS >=0.24.4, is code-identical and declares its fixed reasons and `helperInjection: omit`): `check` qualifies HOME-route operational custody for an input-capable Claude/Codex primary with an explicit private team and `delivery: session`; a strict-Pi print primary reports `needs-configuration` rather than dropping the requirement. Qualification is not account delegation, broker delivery or model consumption.
+aweb 1.10.3 supports its setup/lifecycle path but lacks the provider-binding interface. **aweb 1.11.0** (OATS >=0.24.2) adds it (1.11.2, OATS >=0.24.4, is code-identical and declares its fixed reasons and `helperInjection: omit`): `check` qualifies HOME-route operational custody for an input-capable Claude/Codex primary with an explicit private team and `delivery: session`; a strict-Pi print primary reports `needs-configuration` rather than dropping the requirement. Qualification is not account delegation, broker delivery or model consumption.
 
 The earlier proposed `reach` ladder is **not an enforced universal field**. In particular, aweb's `team_and_contacts` includes verified same-team senders; the compatibility spellings `contacts-only` and `contacts_only` do not establish owner-only admission. A config command succeeding proves neither inbound/outbound restrictions nor knowledge visibility. See the [identity/membership amendment](design/2026-09-08-expert-assisted-deployment-proposal.md#membership-reach-and-visibility-are-separate) and [messaging boundary](design/2026-09-16-messaging-capability-contract.md).
 
@@ -110,7 +109,7 @@ A capability boundary is useful when implementations can differ without a new ke
 
 - Two stores within OKF are not proof of a genuinely different knowledge model.
 - Schema validation is not native authority, provider readiness or learning.
-- A working old configuration does not prove compatibility with a new captured profile.
+- A working old configuration does not prove compatibility with a new profile.
 - Workspace membership does not select every capability a member exports.
 - Published primitives and documentation do not constitute a completed deployment.
 

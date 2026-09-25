@@ -517,5 +517,14 @@ holds one, and `oats status` and `oats doctor` report it once, as the
 `legacy-local-agents` problem naming the instances found there; retire them
 with the 0.25 kernel, or delete the directory once they are stopped.
 
+A *captured home* (spawned through 0.24–0.25's captured path, removed in 0.26:
+its `instance.json` records `executionBinding`, `incarnationId` or `captured`) is
+reported by `oats status` and `oats doctor` as the `legacy-captured-home`
+problem. It has no 0.26 runtime: start, restart, inspect/readiness/operation
+`--home` and its in-home commands refuse it (`E_UNSUPPORTED_MODE`). `oats retire`
+still works; it warns once per capability whose retire hook did NOT run, since
+identities and memberships those capabilities created are not revoked — remove
+them with the provider's own tooling. Re-spawn the soul from the deployment.
+
 Alternative agents-root layouts are planned but not built. Today the default
 layout is the only implemented layout.

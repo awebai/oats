@@ -700,8 +700,8 @@ feature work forward.
 ## Current implementation references
 
 These provide baseline context, not proof that this proposal is implemented:
-- [Package engine](package-engine-contract.md)
-- [Package runtime API](package-runtime-api.md)
+- Package engine (`package-engine-contract.md`, removed in 0.26)
+- Package runtime API (`package-runtime-api.md`, removed in 0.26)
 - [Configuration](../configuration.md)
 - [Souls and instances](../souls-and-instances.md)
 - [Multi-team/deployment proposal](2026-09-08-expert-assisted-deployment-proposal.md)
