@@ -18,7 +18,7 @@ function applyThatRuns(u, preview = created()) {
   };
 }
 
-test('the dialog shows what the kernel decided: name, runtime, model and work — no toggles, placeholders or preview button', async t => {
+test('the dialog shows what the kernel decided: name, harness, model and work — no toggles, placeholders or preview button', async t => {
   const u = await mountSpawn(t);
   const dialog = await u.open();
   const preview = created('preview-worktree-default');
@@ -26,7 +26,7 @@ test('the dialog shows what the kernel decided: name, runtime, model and work �
   assert.equal(u.q('.spawn-name-prefix').textContent, 'release-manager-');
   const trigger = u.q('.spawn-run .spawn-choice-trigger');
   assert.equal(trigger.querySelector('.runtime-badge').dataset.runtime, 'pi'); assert.equal(trigger.querySelector('.spawn-trigger-tag').textContent, 'default');
-  assert.equal(trigger.getAttribute('aria-label'), 'Runtime: Pi (default)');
+  assert.equal(trigger.getAttribute('aria-label'), 'Harness: Pi (default)');
   assert.equal(u.text('.spawn-model-default'), "Pi's default model"); assert.equal(u.text('.spawn-input-tag'), 'default');
   assert.equal(u.text('.spawn-run-hint'), 'Launches Pi with its own default model.');
   // Work lives in Developer settings, collapsed by default.
@@ -234,11 +234,11 @@ test('Run on an execution server: no local preview; the remote spawn carries the
   assert.equal(u.spawns().filter(b => b?.action).length, 0, 'never the local prepare/apply');
 });
 
-test('model suggestions follow the kernel\'s runtime; "the runtime\'s own default" is the native-default choice', async t => {
+test('model suggestions follow the kernel\'s harness; "the harness\'s own default" is the native-default choice', async t => {
   const asked = [];
-  const u = await mountSpawn(t, { models: body => { asked.push(body.runtime); return { models: [{ id: 'anthropic/claude-sonnet', label: 'Sonnet' }] }; } });
+  const u = await mountSpawn(t, { models: body => { asked.push(body.harness); return { models: [{ id: 'anthropic/claude-sonnet', label: 'Sonnet' }] }; } });
   await u.open(); await u.type('.fpurpose', 'api-v2');
-  assert.deepEqual(asked, ['pi'], 'asked for the runtime the kernel resolved');
+  assert.deepEqual(asked, ['pi'], 'asked for the harness the kernel resolved');
   u.q('.spawn-model-controls .spawn-choice-trigger').click(); await settle();
   const labels = [...u.doc.querySelectorAll('#spawn-model-choices button')].map(b => b.textContent);
   assert.ok(labels.some(l => l.startsWith('Sonnet'))); assert.ok(labels.includes("The harness's own default"));
@@ -248,13 +248,13 @@ test('model suggestions follow the kernel\'s runtime; "the runtime\'s own defaul
   assert.equal(u.text('.spawn-input-tag'), 'chosen');
 });
 
-test('choosing a runtime re-reads the kernel and swaps the suggestions', async t => {
+test('choosing a harness re-reads the kernel and swaps the suggestions', async t => {
   const asked = [];
-  const u = await mountSpawn(t, { models: body => { asked.push(body.runtime); return { models: [] }; } });
+  const u = await mountSpawn(t, { models: body => { asked.push(body.harness); return { models: [] }; } });
   await u.open(); await u.type('.fpurpose', 'api-v2');
   u.q('.spawn-run .spawn-choice-trigger').click(); await settle();
   [...u.doc.querySelectorAll('#spawn-runtime-choices button')].find(b => b.textContent.includes('Claude Code')).click(); await settle();
-  assert.equal(last(u).runtime, 'claude'); assert.equal(asked.at(-1), 'claude');
+  assert.equal(last(u).harness, 'claude'); assert.equal(asked.at(-1), 'claude');
   assert.match(u.q('.spawn-run .spawn-choice-trigger').textContent, /Claude Code/);
 });
 

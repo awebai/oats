@@ -1,6 +1,7 @@
 /** Workspace-scoped scheduling through the installed CLI. */
 import { capabilityRequest } from "./capabilities.mjs";
 import { cliSchedule } from "../cli-adapter.mjs";
+import { harnessKey } from "../renderer/harness-names.mjs";
 
 const fail = (message, code = "E_BAD_ARGS") => { throw Object.assign(new Error(message), { code }); };
 
@@ -29,10 +30,11 @@ export async function scheduleRequest(request, { workspace, cli, agents = [], in
       if (typeof value.task !== "string" || !value.task.trim()) fail("A scheduled agent needs a task");
       spec = { ...spec, kind: "spawn", agent: matches[0].name, agentsRoot: matches[0].agentsRoot, task: value.task };
       if (matches[0].repo) spec.repo = matches[0].repo;
-      for (const key of ["runtime", "model", "backend", "purpose"]) {
+      for (const key of ["harness", "model", "backend", "purpose"]) {
         if (value[key] !== undefined && (value[key] !== "" || key === "model")) {
           if (typeof value[key] !== "string") fail(`Invalid ${key}`);
-          spec[key] = value[key];
+          // The harness is written in this kernel's key (feature harness; a released kernel reads runtime).
+          spec[key === "harness" ? harnessKey(cli) : key] = value[key];
         }
       }
       if (value.yolo !== undefined) {

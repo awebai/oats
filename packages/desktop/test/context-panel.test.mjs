@@ -46,7 +46,7 @@ function fixture(t) {
   };
   return { dom, document, root, panel, query, tab, value, select, stage, intents, focusCalls, modeCalls };
 }
-const instance = (home, extra = {}) => ({ instance: 'same-name', agent: 'dev', home, runtime: 'pi', running: true, ...extra });
+const instance = (home, extra = {}) => ({ instance: 'same-name', agent: 'dev', home, harness: 'pi', running: true, ...extra });
 
 test('exact APIs, safe absent-host defaults, shell-owned root and no footer click binding', t => {
   const inert = createContextPanel();
@@ -198,14 +198,14 @@ test('same-name instances use the exact supplied selection; reported text is ine
   assert.equal(u.value('model'), unsafe);
   assert.equal(u.value('description'), unsafe);
   assert.equal(u.root.querySelector('img'), null);
-  const b = Object.freeze(instance('/A/two', { running: false, runtime: null, model: null }));
+  const b = Object.freeze(instance('/A/two', { running: false, harness: null, model: null }));
   u.select(b, 'qualified-two');
   assert.equal(u.value('instance'), 'same-name');
   assert.equal(u.value('home'), '/A/two');
   assert.equal(u.value('running'), 'Stopped');
   assert.equal(u.value('model'), 'Not reported');
   assert.equal(u.value('description'), 'Not reported', 'no same-name metadata carryover');
-  assert.equal(u.value('runtime'), 'Not reported', 'never invent a runtime');
+  assert.equal(u.value('harness'), 'Not reported', 'never invent a harness');
   u.panel.setContext({ workspace: 'A', key: 'key-only' });
   assert.equal(u.root.hidden, false);
   assert.equal(u.value('home'), 'Not reported', 'key-only selection cannot retain last instance');

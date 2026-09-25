@@ -49,12 +49,12 @@ test('configuration writes use a private literal JSON file and remove it on fail
 
 test('restart uses one kernel call with the exact home and launch choices', async () => {
   let call;
-  await cliStart(cli.bin, { home, workspaceDir: '/local', server: 'host', restart: true, launchConfig: 'personal', runtime: 'codex', model: 'model-id', yolo: false }, {
+  await cliStart(cli.bin, { home, workspaceDir: '/local', server: 'host', restart: true, launchConfig: 'personal', harness: 'codex', harnessFlag: '--harness', model: 'model-id', yolo: false }, {
     exec: (_, argv, opts, done) => { call = { argv, opts }; done(null, JSON.stringify(envelope({}))); },
   });
-  assert.deepEqual(call.argv, ['session', 'restart', '--home', home, '--server', 'host', '--launch-config', 'personal', '--runtime', 'codex', '--model', 'model-id', '--no-yolo', '--json']);
+  assert.deepEqual(call.argv, ['session', 'restart', '--home', home, '--server', 'host', '--launch-config', 'personal', '--harness', 'codex', '--model', 'model-id', '--no-yolo', '--json']);
   assert.equal(call.opts.shell, false);
-  for (const choices of [{ launchConfig: '--force' }, { runtime: 'unknown' }, { yolo: 'false' }, { model: '--launch-config' }]) {
+  for (const choices of [{ launchConfig: '--force' }, { harness: 'unknown', harnessFlag: '--harness' }, { harness: 'codex' }, { yolo: 'false' }, { model: '--launch-config' }]) {
     const r = await cliStart(cli.bin, { home, ...choices }, { exec: assert.fail }); assert.equal(r.error.code, 'E_BAD_ARGS');
   }
 });
@@ -63,7 +63,7 @@ function ui(respond) {
   setWorkspace('/team');
   const dom = new JSDOM('<body><section></section></body>'), el = dom.window.document.querySelector('section');
   const calls = [];
-  const controller = launchConfigFields(el, { selector: () => ({ home }), choices: () => ({ runtime: 'codex' }), ctx: { api: async (path, opts) => {
+  const controller = launchConfigFields(el, { selector: () => ({ home }), choices: () => ({ harness: 'codex' }), ctx: { api: async (path, opts) => {
     const body = JSON.parse(opts.body); calls.push({ path, ...body }); return respond(body);
   } } });
   return { dom, el, calls, controller, close() { controller.dispose(); dom.window.close(); } };

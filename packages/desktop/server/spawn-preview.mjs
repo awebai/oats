@@ -23,7 +23,7 @@ export function admitSpawnSelection(selector, choices, { workspace: w, cli, agen
   const work = choices.work ?? soul.work;
   if ((choices.base !== undefined || choices.branch !== undefined) && work !== 'worktree') return fail('E_UNSUPPORTED_OPTION');
   const supports = (values, value) => Array.isArray(values) && values.includes(value);
-  if (choices.runtime && !supports(cli.runtimes, choices.runtime) || choices.backend && !supports(cli.sessionBackends, choices.backend)
+  if (choices.harness && !supports(cli.harnesses, choices.harness) || choices.backend && !supports(cli.sessionBackends, choices.backend)
     || choices.yolo !== undefined && !supports(cli.launchOptions, 'yolo') || choices.launchConfig && !cli.features.includes('launch-config')) return fail('E_UNSUPPORTED_OPTION');
   let anchorIdentity = null;
   if (choices.relation.kind !== 'unrelated') {
@@ -37,7 +37,7 @@ export function admitSpawnSelection(selector, choices, { workspace: w, cli, agen
   }
   const target = { workspace: w.id, context: dirname(soul.agentsRoot), selector };
   const identity = JSON.stringify([w.id, w.scope, target, soul.work, soul.repo, soul.capability, anchorIdentity, choices,
-    cli.bin, cli.version, cli.spawnPreviewApi, cli.spawnApplyApi, cli.features, cli.runtimes, cli.sessionBackends, cli.launchOptions]);
+    cli.bin, cli.version, cli.spawnPreviewApi, cli.spawnApplyApi, cli.features, cli.harnesses, cli.sessionBackends, cli.launchOptions]);
   return { target, identity, cli: structuredClone(cli) };
 }
 export function createSpawnPreviewBoundary({ invoke = cliSpawnPreview } = {}) {

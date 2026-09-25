@@ -3,6 +3,7 @@
  * any kernel lifecycle/trust logic. Producer shapes remain command-specific. */
 import { dirname, basename, join, isAbsolute, resolve } from 'node:path';
 import { deploymentRecord as record } from './renderer/deployment-contract.mjs';
+import { harnessOf } from './renderer/harness-names.mjs';
 const text = value => typeof value === 'string' && value.length <= 8192 && !value.includes('\0');
 const absolute = value => text(value) && isAbsolute(value) && resolve(value) === value;
 const own = (value, key) => Object.hasOwn(value, key);
@@ -14,6 +15,12 @@ function fields(value, names) {
   check(record(value));
   const out = {};
   for (const key of names) if (own(value, key)) { check(value[key] === null || text(value[key])); out[key] = value[key]; }
+  return out;
+}
+/** The row's harness (`harness`, or a released kernel's `runtime`), validated like fields(). */
+function withHarness(value, out) {
+  const harness = harnessOf(value);
+  if (harness !== undefined) { check(harness === null || text(harness)); out.harness = harness; }
   return out;
 }
 function flags(value, names, into) {
@@ -105,7 +112,7 @@ export function deploymentStatusData(document, deployment) {
     // deployment. The Desktop does not name or search any layout itself.
     check(inside(agent.dir, deployment), 'E_DEPLOYMENT_SCOPE');
     check(!seenSouls.has(agent.dir)); seenSouls.add(agent.dir);
-    const out = fields(agent, ['name', 'description', 'work', 'runtime', 'model', 'backend', 'team', 'dir', 'kind', 'repo', 'capability', 'color', 'launch-config']);
+    const out = withHarness(agent, fields(agent, ['name', 'description', 'work', 'model', 'backend', 'team', 'dir', 'kind', 'repo', 'capability', 'color', 'launch-config']));
     if (own(agent, 'yolo')) { check(agent.yolo === null || typeof agent.yolo === 'boolean'); out.yolo = agent.yolo; }
     if (own(agent, 'soulSource')) out.soulSource = soulSource(agent.soulSource);
     if (own(agent, 'retireFailures')) out.retireFailures = array(agent.retireFailures).map(row => fields(row, ['instance', 'completedAt', 'error', 'resultPath']));
@@ -119,8 +126,8 @@ export function deploymentStatusData(document, deployment) {
       }
       if (seenHomes.has(instance.home)) { withheld.push({ agent: agent.name, instance: instance.instance, reason: 'duplicate-home' }); return []; }
       check(seenHomes.size < 10000); seenHomes.add(instance.home);
-      const row = fields(instance, ['instance', 'agent', 'home', 'repo', 'work', 'branch', 'runtime', 'model', 'createdAt',
-        'parentInstance', 'siblingInstance', 'relation', 'relativeTo', 'runtimeState', 'runtimeError', 'spawnOrigin', 'capability']);
+      const row = withHarness(instance, fields(instance, ['instance', 'agent', 'home', 'repo', 'work', 'branch', 'model', 'createdAt',
+        'parentInstance', 'siblingInstance', 'relation', 'relativeTo', 'runtimeState', 'runtimeError', 'spawnOrigin', 'capability']));
       for (const key of ['running', 'launched', 'captured']) if (own(instance, key)) {
         check(instance[key] === null || typeof instance[key] === 'boolean'); row[key] = instance[key];
       }

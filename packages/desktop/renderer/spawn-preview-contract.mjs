@@ -2,6 +2,7 @@
  * their fixed argv, and the bounded projection of the kernel's preview. */
 import { absolute, record } from './readiness-contract.mjs';
 import { spawnDecision } from './spawn-decision.mjs';
+import { harnessOf, harnessFlag, HARNESSES } from './harness-names.mjs';
 export { absolute, record };
 const exact = (v, keys) => record(v) && Object.keys(v).every(k => keys.includes(k));
 const name = v => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(v);
@@ -90,14 +91,14 @@ export function previewSelector(v) {
   return exact(v, ['soul', 'agentsRoot']) && name(v.soul) && absolute(v.agentsRoot) ? { soul: v.soul, agentsRoot: v.agentsRoot } : null;
 }
 export function previewChoices(v) {
-  if (!exact(v, ['purpose', 'name', 'work', 'branch', 'base', 'runtime', 'model', 'launchConfig', 'backend', 'yolo', 'relation', 'identity', 'join'])) return null;
+  if (!exact(v, ['purpose', 'name', 'work', 'branch', 'base', 'harness', 'model', 'launchConfig', 'backend', 'yolo', 'relation', 'identity', 'join'])) return null;
   // --name (exact, unprefixed; feature spawn-name) and --purpose are mutually exclusive.
   if (Object.hasOwn(v, 'purpose') && Object.hasOwn(v, 'name')) return null;
   const out = {};
-  for (const k of ['purpose', 'name', 'branch', 'base', 'runtime', 'launchConfig', 'backend']) if (Object.hasOwn(v, k)) {
+  for (const k of ['purpose', 'name', 'branch', 'base', 'harness', 'launchConfig', 'backend']) if (Object.hasOwn(v, k)) {
     if (!arg(v[k]) || (k === 'purpose' || k === 'name') && !INSTANCE_TOKEN.test(v[k])
       || k === 'launchConfig' && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(v[k])
-      || k === 'runtime' && !['pi', 'claude', 'codex'].includes(v[k]) || k === 'backend' && !['tmux', 'herdr'].includes(v[k])) return null;
+      || k === 'harness' && !HARNESSES.includes(v[k]) || k === 'backend' && !['tmux', 'herdr'].includes(v[k])) return null;
     out[k] = v[k];
   }
   // The only work override the Desktop offers: a checkout soul in a worktree.
@@ -138,10 +139,11 @@ export function previewChoices(v) {
   }
   return out;
 }
-/** The spawn flags for admitted choices — shared by preview and apply. */
-export function choiceArgv(choices) {
+/** The spawn flags for admitted choices — shared by preview and apply. The
+ * harness flag is the kernel's (feature harness: --harness; a released kernel: --runtime). */
+export function choiceArgv(choices, cli) {
   const argv = [];
-  for (const [k, flag] of [['purpose', '--purpose'], ['name', '--name'], ['work', '--work'], ['branch', '--branch'], ['base', '--base'], ['runtime', '--runtime'], ['launchConfig', '--launch-config'], ['backend', '--backend']]) if (choices[k] !== undefined) argv.push(flag, choices[k]);
+  for (const [k, flag] of [['purpose', '--purpose'], ['name', '--name'], ['work', '--work'], ['branch', '--branch'], ['base', '--base'], ['harness', harnessFlag(cli)], ['launchConfig', '--launch-config'], ['backend', '--backend']]) if (choices[k] !== undefined) argv.push(flag, choices[k]);
   if (choices.model.kind !== 'inherit') argv.push('--model', choices.model.kind === 'native-default' ? '@native-default' : choices.model.value);
   if (choices.yolo !== undefined) argv.push(choices.yolo ? '--yolo' : '--no-yolo');
   if (choices.relation.kind !== 'unrelated') argv.push('--relation', choices.relation.kind, '--relative-to', choices.relation.anchor.instance, '--relative-root', choices.relation.anchor.agentsRoot);
@@ -207,7 +209,7 @@ export function previewData(v, expected) {
   const e = d.effective, base = d.base;
   if (v.instance !== d.instance || v.home !== d.home || v.branch !== d.branch
     || (v.base === null ? base !== null : !record(v.base) || v.base.ref !== base?.ref || v.base.oid !== base?.oid)
-    || v.work !== e.work || v.repo !== e.repo || v.runtime !== e.runtime || v.model !== e.model || v.launchConfig !== e.launchConfig
+    || v.work !== e.work || v.repo !== e.repo || harnessOf(v) !== e.harness || v.model !== e.model || v.launchConfig !== e.launchConfig
     || (v.yolo ?? null) !== e.yolo || v.backend !== e.backend || (v.relation ?? null) !== (e.relation?.kind ?? null)
     || Object.hasOwn(v, 'policy') && v.policy?.childSpawns?.allowed !== e.childSpawns) return null;
   if (!safe(v.modelSource) || !v.modelSource || v.team !== null && !safe(v.team, 256)
@@ -219,7 +221,7 @@ export function previewData(v, expected) {
   if (messaging === undefined || teams === undefined) return null;
   return { spawnPreviewApi: 2, preview: true, subject: { soul: v.subject.soul, agentsRoot: v.subject.agentsRoot, dir: v.subject.dir },
     decision: d, resolution: d.resolution, instance: d.instance, home: d.home, branch: d.branch, base: base ? { ...base } : null,
-    repo: e.repo, work: e.work, worktree: v.worktree, runtime: e.runtime, model: e.model, modelSource: v.modelSource, relation: e.relation?.kind ?? null,
+    repo: e.repo, work: e.work, worktree: v.worktree, harness: e.harness, model: e.model, modelSource: v.modelSource, relation: e.relation?.kind ?? null,
     launchConfig: e.launchConfig, yolo: e.yolo, backend: e.backend, team: v.team ?? null,
     backendStatus: { name: v.backendStatus.name, installed: v.backendStatus.installed, started: false },
     preflight: { status: v.preflight.status, budgetMs: v.preflight.budgetMs, elapsedMs: v.preflight.elapsedMs }, messaging, teams };

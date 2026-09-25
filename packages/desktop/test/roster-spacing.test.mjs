@@ -180,9 +180,9 @@ function assertTools(u) {
     "hover or keyboard focus reveals the row tools");
 }
 
-test("sidebar metadata uses reported branch/runtime without claiming membership or installation", t => {
+test("sidebar metadata uses reported branch/harness without claiming membership or installation", t => {
   const u = fixture(t);
-  u.render([{ ...roster[0], branch: "feature/<literal>", runtime: "pi" }]);
+  u.render([{ ...roster[0], branch: "feature/<literal>", harness: "pi" }]);
   const row = u.doc.querySelector(".ctx-inst");
   assert.equal(row.querySelector(".ctx-meta").textContent, "desktop-repo · feature/<literal>");
   assert.equal(row.querySelector(".ctx-meta").title, "Repository: desktop-repo\nBranch: feature/<literal>");

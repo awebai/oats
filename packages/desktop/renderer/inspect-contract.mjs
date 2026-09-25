@@ -4,6 +4,7 @@
  * capability's origin is its module's `from`, its settings the merged payload.
  * Presentation-only; no classic field (scope chain, activation, trust,
  * snapshot drift, sources provenance) is read. */
+import { harnessOf } from './harness-names.mjs';
 import { memberLabel } from './deployment-facts.mjs';
 
 export const OPERATIONS_API = 2;
@@ -52,7 +53,7 @@ export function layerFrom(from) {
 }
 export const inspectFacts = {
   instance: i => [
-    ['Harness', text(i.runtime)], ['Model', text(i.model, 'Harness default')],
+    ['Harness', text(harnessOf(i))], ['Model', text(i.model, 'Harness default')],
     ['Permissions', i.yolo === true ? 'Unrestricted (yolo)' : i.yolo === false ? 'Restricted' : 'Harness default'],
     ['Launched', i.launched === true ? 'Yes' : i.launched === false ? 'No' : '—'], ['Created', text(i.createdAt)],
     ['Resolution', str(i.resolution) ? i.resolution.slice(0, 12) : '—'],

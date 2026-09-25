@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "context": "/fixture/base/northwind-workspace",
+    "level": "/fixture/base/northwind-workspace",
+    "file": "/fixture/base/northwind-workspace/oats-local.yaml",
+    "selected": null,
+    "configurations": [
+      {
+        "name": "legacy",
+        "harness": "claude",
+        "executable": null,
+        "args": [],
+        "env": {},
+        "model": null,
+        "yolo": null,
+        "source": "/fixture/base/northwind-workspace",
+        "shadows": []
+      },
+      {
+        "name": "personal",
+        "harness": "codex",
+        "executable": null,
+        "args": [
+          "--profile",
+          "personal"
+        ],
+        "env": {},
+        "model": null,
+        "yolo": null,
+        "source": "/fixture/base/northwind-workspace",
+        "shadows": []
+      }
+    ]
+  }
+}

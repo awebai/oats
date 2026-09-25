@@ -35,7 +35,7 @@ for (const alter of [c => delete c.spawnApplyApi, c => c.spawnApplyApi = '1', c 
   assert.equal(f.calls.length, 0); assert.equal(f.dirs.length, 0);
 });
 test('apply fixed argv, exact roots, tagged choices and original key/revision; private bytes never argv', async () => {
-  const f = fixture(), input = options({ choices: { purpose: 'review', branch: 'feat/review', base: 'release', runtime: 'codex', launchConfig: 'personal', backend: 'herdr',
+  const f = fixture(), input = options({ choices: { purpose: 'review', branch: 'feat/review', base: 'release', harness: 'codex', launchConfig: 'personal', backend: 'herdr',
     model: { kind: 'native-default' }, yolo: false, relation: { kind: 'child', anchor } }, wake });
   const result = await cliSpawnApply(capable(), input, f.io);
   assert.equal(result.started, true); assert.deepEqual(result.envelope, ok);
@@ -81,7 +81,7 @@ for (const changes of [{ key: 'caller key' }, { key: 'b'.repeat(63) }, { decisio
 });
 for (const [label, change, overrides] of [
   ['wake', c => c.features = c.features.filter(f => f !== 'schedule'), { wake }],
-  ['runtime', c => c.runtimes = [], { choices: { runtime: 'codex' } }],
+  ['harness', c => c.harnesses = [], { choices: { harness: 'codex' } }],
   ['backend', c => c.sessionBackends = [], { choices: { backend: 'herdr' } }],
   ['permission', c => c.launchOptions = [], { choices: { yolo: false } }],
   ['configuration', c => c.features = c.features.filter(f => f !== 'launch-config'), { choices: { launchConfig: 'personal' } }],

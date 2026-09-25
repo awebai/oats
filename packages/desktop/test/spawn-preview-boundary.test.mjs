@@ -21,7 +21,7 @@ for (const c of [null, { ...cli, spawnPreviewApi: 1, features: ['spawn-preview']
 });
 test('qualified boundary uses fixed exact-root argv, tagged model and anchor; no task, apply or files', async () => {
   const c = context(); let seen;
-  const choices = { purpose: 'review', branch: 'feat/review', base: 'release', model: { kind: 'native-default' }, runtime: 'codex', backend: 'herdr', launchConfig: 'personal', yolo: false,
+  const choices = { purpose: 'review', branch: 'feat/review', base: 'release', model: { kind: 'native-default' }, harness: 'codex', backend: 'herdr', launchConfig: 'personal', yolo: false,
     relation: { kind: 'child', anchor } };
   const read = createSpawnPreviewBoundary({ invoke: (cli, args) => cliSpawnPreview(cli, args, { env: { PATH: '/fixture/bin', HOME: '/fixture/home', PI_AGENTS_ROOT: '/other', OATS_DEPLOYMENT: '/D', OATS_RESOLUTION: '/R', OATS_PREVIEW_PREFLIGHT_BUDGET_MS: '999999' }, exec: (bin, argv, opts, callback) => {
     seen = { bin, argv, opts }; callback(null, JSON.stringify(envelope(data(args.target))));
@@ -41,7 +41,7 @@ for (const choices of [{ task: 'SECRET' }, { repo: '/other' }, { workDir: '/othe
 for (const [name, alter, choices = {}] of [
   ['remote workspace', c => c.workspace.remote = true], ['server workspace', c => c.workspace.server = 'remote'], ['remote soul', c => c.agents[0].remote = true],
   ['duplicate soul', c => c.agents.push({ ...c.agents[0] })], ['vanished soul', c => c.agents = []], ['attached', c => c.agents[0].work = 'attached'],
-  ['non-worktree branch', c => c.agents[0].work = 'checkout', { branch: 'feat/a' }], ['runtime unavailable', c => c.cli.runtimes = [], { runtime: 'codex' }],
+  ['non-worktree branch', c => c.agents[0].work = 'checkout', { branch: 'feat/a' }], ['harness unavailable', c => c.cli.harnesses = [], { harness: 'codex' }],
   ['worktree override for a worktree soul', () => {}, { work: 'worktree' }], ['worktree override for a directory soul', c => c.agents[0].work = 'directory', { work: 'worktree' }],
   ['branch for a directory soul', c => c.agents[0].work = 'directory', { branch: 'feat/a' }],
   ['ambiguous anchor pair', c => c.instances.push({ ...c.instances[0], agent: 'other', home: '/team/agents/other/instances/boss-1' }), { relation: { kind: 'child', anchor } }],

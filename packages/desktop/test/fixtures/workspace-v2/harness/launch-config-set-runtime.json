@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "name": "legacy",
+    "action": "set",
+    "level": "/fixture/base/northwind-workspace",
+    "file": "/fixture/base/northwind-workspace/oats-local.yaml",
+    "before": null,
+    "after": {
+      "harness": "claude",
+      "executable": null,
+      "args": [],
+      "env": {},
+      "model": null,
+      "yolo": null
+    },
+    "effective": {
+      "name": "legacy",
+      "harness": "claude",
+      "executable": null,
+      "args": [],
+      "env": {},
+      "model": null,
+      "yolo": null,
+      "source": "/fixture/base/northwind-workspace",
+      "shadows": []
+    }
+  },
+  "warnings": [
+    {
+      "code": "deprecated-runtime-name",
+      "key": "runtime",
+      "replacement": "harness",
+      "sources": [
+        "runtime in the --file definition (written as harness)"
+      ],
+      "message": "`runtime` was renamed to `harness` in 0.27.0; the old name is still read here (runtime in the --file definition (written as harness)) and a later release drops it"
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "scope": "/fixture/base/northwind-workspace",
+    "scheduleApi": 2,
+    "scheduleHistoryApi": 3,
+    "integrity": {
+      "sources": [
+        {
+          "path": "definitions",
+          "status": "ok",
+          "bytes": 580
+        },
+        {
+          "path": "state",
+          "status": "absent",
+          "bytes": 0
+        }
+      ]
+    },
+    "schedules": [
+      {
+        "id": "nightly",
+        "enabled": false,
+        "cron": "0 3 * * *",
+        "tz": "UTC",
+        "kind": "spawn",
+        "agent": "release-manager",
+        "agentsRoot": "/fixture/base/northwind-workspace/agents",
+        "purpose": "nightly",
+        "task": "Nightly release check",
+        "harness": "claude",
+        "createdAt": "2026-09-25T18:38:49.173Z",
+        "updatedAt": "2026-09-25T18:38:49.173Z",
+        "scope": "/fixture/base/northwind-workspace",
+        "scheduleApi": 2,
+        "scheduleHistoryApi": 3,
+        "executionStatus": {
+          "kind": "legacy",
+          "capture": "unknown",
+          "migrationRequired": true
+        },
+        "nextRun": null,
+        "lastRun": null,
+        "history": {
+          "status": "ok",
+          "stored": 0,
+          "truncated": false
+        },
+        "recentRuns": [],
+        "running": false
+      }
+    ],
+    "scheduler": {
+      "installed": false,
+      "active": false,
+      "unit": "/fixture/base/home/Library/LaunchAgents/ai.oats.schedule-tick.plist",
+      "lastTick": null,
+      "maxConcurrent": 1,
+      "tickIntervalSec": 60,
+      "workspace": "/fixture/base/northwind-workspace",
+      "registered": false,
+      "workspaces": [],
+      "live": 0
+    }
+  }
+}

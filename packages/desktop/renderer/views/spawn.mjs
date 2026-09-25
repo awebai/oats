@@ -855,7 +855,7 @@ export async function doSpawn(s, fields) {
       relation: relation !== "unrelated" ? relation : undefined,
       relativeTo: relation !== "unrelated" ? fields.relativeTo : undefined,
       relativeRoot: relation !== "unrelated" ? (fields.relativeRoot || undefined) : undefined,
-      yolo: fields.yolo, backend: fields.backend || undefined, runtime: fields.runtime || undefined,
+      yolo: fields.yolo, backend: fields.backend || undefined, harness: fields.harness || undefined,
       model: fields.model || undefined, launchConfig: fields.launchConfig || undefined, wake: fields.wake,
     });
     if (!owns()) return;
@@ -880,7 +880,7 @@ export async function doSpawn(s, fields) {
       if (visible && stillThere()) {
         if (typeof d.home === "string" && admitted?.home === d.home && admitted.agent === a.name) s.ctx.notifySpawn?.(admitted, d.workspaceId, connection);
         s.ctx.openTerminal(ref, { quiet: true });
-      } else if (stillThere()) s.ctx.notify?.(`Spawned ${d.instance} on ${d.server}; its runtime is not visible yet. Check the server roster to open it.`);
+      } else if (stillThere()) s.ctx.notify?.(`Spawned ${d.instance} on ${d.server}; it is not visible yet. Check the server roster to open it.`);
       return { created: true };
     }
     if (!d.workspaceId) { fields.status(`Spawned ${d.instance} on ${d.server}. Attach with: oats session attach --server ${d.server} --instance ${d.instance}`); return { created: true }; }

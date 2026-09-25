@@ -210,7 +210,7 @@ export function createContextPanel({
     pages.get(pageId).append(dl);
   }
   // Instance page (Redesign v3): identity header — soul mark, name, "soul ·
-  // runtime · model", state — then Worktree and Details. Every value is the
+  // harness · model", state — then Worktree and Details. Every value is the
   // roster row's own reported fact; unreported facts read "Not reported".
   const identityHeader = (pageId) => {
     const wrap = node('div', 'context-panel-identity'), mark = node('span', 'context-panel-mark');
@@ -265,7 +265,7 @@ export function createContextPanel({
     host.append(dl); return dl;
   }
   const session = section('instance', 'Session');
-  facts(session, [['runtime', 'Harness'], ['model', 'Model'], ['work', 'Work mode'], ['createdAt', 'Created']]);
+  facts(session, [['harness', 'Harness'], ['model', 'Model'], ['work', 'Work mode'], ['createdAt', 'Created']]);
   const lineage = section('instance', 'Lineage');
   facts(lineage, [['parentInstance', 'Parent'], ['siblingInstance', 'Sibling']]);
   const details = node('details', 'context-panel-details'); details.append(node('summary', null, 'Details'));
@@ -360,7 +360,7 @@ export function createContextPanel({
     }
   }
   /** Status bar (Redesign v3): the focused terminal's reported branch and
-   * "runtime · model" — the row's own facts, nothing inferred or fetched. */
+   * "harness · model" — the row's own facts, nothing inferred or fetched. */
   function projectStatus(instance) {
     const el = document.getElementById('context-status');
     if (!el) return;
@@ -369,21 +369,21 @@ export function createContextPanel({
       const branch = node('span', 'context-status-branch');
       branch.append(iconElement(document, 'branch', { size: 12 }), node('span', '', instance.branch)); parts.push(branch);
     }
-    const detail = [instance?.runtime, instance?.model].filter(v => typeof v === 'string' && v).join(' · ');
+    const detail = [instance?.harness, instance?.model].filter(v => typeof v === 'string' && v).join(' · ');
     if (detail) parts.push(node('span', '', detail));
     el.replaceChildren(...parts);
   }
   function projectMetadata() {
     projectStatus(context.instance);
     const instance = context.instance ?? {};
-    // Header: soul mark and the "soul · runtime · model" line omit what the
+    // Header: soul mark and the "soul · harness · model" line omit what the
     // row did not report (Details still says "Not reported" for each).
     const soul = typeof instance.agent === 'string' && instance.agent ? { name: instance.agent, agentsRoot: instance.agentsRoot } : null;
     const markKey = JSON.stringify([soul?.name ?? null, soul?.agentsRoot ?? null]);
     for (const head of [instanceHead, soulHead]) if (head.mark.dataset.markKey !== markKey) {
       head.mark.dataset.markKey = markKey; head.mark.replaceChildren(...(soul ? [createSoulMark(document, soul)] : []));
     }
-    const sub = [instance.agent, instance.runtime, instance.model].filter(v => typeof v === 'string' && v).join(' · ');
+    const sub = [instance.agent, instance.harness, instance.model].filter(v => typeof v === 'string' && v).join(' · ');
     if (instanceSub.textContent !== sub) instanceSub.textContent = sub;
     state.dataset.state = instance.running === true ? 'running' : instance.running === false ? 'stopped' : 'unknown';
     for (const [id, el] of fields) {

@@ -3,11 +3,12 @@
 // The CLI facts are the captured `oats version --json`; the preview and the
 // creation receipt are the captured `spawn … --preview --json` and
 // `spawn … --expect-decision … --json` documents. Tests mutate copies.
+import { harnessList } from '../../renderer/harness-names.mjs';
 import { readFileSync } from 'node:fs';
 export const kernel = name => JSON.parse(readFileSync(new URL(`../fixtures/workspace-v2/f3/${name}.json`, import.meta.url), 'utf8'));
 const version = kernel('version');
 export const cli = { ok: true, bin: '/fixture/oats', version: version.version, spawnPreviewApi: version.spawnPreviewApi, spawnApplyApi: version.spawnApplyApi,
-  workspaceApi: version.workspaceApi, features: [...version.features], runtimes: [...version.runtimes], sessionBackends: [...version.sessionBackends],
+  workspaceApi: version.workspaceApi, features: [...version.features], harnesses: harnessList(version), sessionBackends: [...version.sessionBackends],
   launchOptions: [...version.launchOptions], remote: [...version.remote] };
 export const DEPLOYMENT = '/fixture/base/northwind-workspace';
 export const ROOT = `${DEPLOYMENT}/agents`;
