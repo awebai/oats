@@ -260,7 +260,7 @@
     },
     "settings": {
       "type": "object",
-      "description": "Declared capability settings: name to { default, values?, description }. Documentation for `oats use --settings`; undeclared settings are still accepted.",
+      "description": "Declared capability settings: name to { default, values?, description }. Documentation for the values a soul, oats-local.yaml or `oats spawn --provider` supplies; undeclared settings are still accepted.",
       "additionalProperties": {
         "type": "object",
         "properties": {

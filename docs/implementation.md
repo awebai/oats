@@ -227,7 +227,7 @@ tree integrity. An existing destination is never pulled silently. Resolution
 rejects changed locked artifacts and unlocked installed/path packages.
 
 Executable package hooks, commands, and launch-environment authority are omitted
-until `oats trust <id>` (0.24) marks the exact locked integrity approved.
+until the 0.24 bare trust verb (removed) marks the exact locked integrity approved.
 Bundled packages are framework-trusted.
 Packages under a scope's `owned/` subtree are config-owned. Anything under
 `installed/` requires a matching lock entry, so an acquired artifact cannot
