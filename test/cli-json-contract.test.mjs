@@ -70,6 +70,20 @@ test("oats version --json emits the exact Desktop API v1 probe payload", () => {
   assert.equal(r.stdout.trim(), `{"schemaVersion":1,"name":"@awebai/oats","version":"${PKG_VERSION}","desktopApi":1,"runtimes":["pi","claude","codex"],"sessionBackends":["tmux","herdr"],"launchOptions":["yolo"],"remote":["spawn","retire","status","session","session-start","session-restart","launch-config","roster","harvest","schedule","session-upload","operations"],"features":["retire-home","session-start","session-restart","launch-config","schedule","session-upload","operations","instance-git","instance-git-remote","souls-declarations","lifecycle-plans","retire-retention","readiness","spawn-preview","instance-events","instance-events-2","schedule-history","schedule-read-2","spawn-preview-2","spawn-idempotency","spawn-idempotency-2","spawn-apply-2","workspace-v2","instance-modules","spawn-provider-payload","served-identity","packages-no-approval","spawn-name","settings-origins"],"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,"readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,"capturedDispatchApi":1,"capturedDispatchActions":["inspect","compose","command","operation","spawn","trust"]}`);
 });
 
+test("oats status reads a workspace soul.yaml with its real shape: nested capabilities stay a map, schemaVersion stays a number", async (t) => {
+  const fx = v2Deployment({ souls: { dev: { soul: { capabilities: { "acme.x": { from: "here" } }, private: true } } }, capabilities: { "acme.x": { manifest: {} } } });
+  t.after(() => fx.cleanup());
+  await fx.spawn("dev");
+  const r = fx.cli(["status", "--json"]);
+  assert.equal(r.status, 0, r.stderr);
+  const dev = JSON.parse(r.stdout).agents.find((a) => a.name === "dev");
+  assert.equal(dev.schemaVersion, 2);
+  assert.deepEqual(dev.capabilities, { "acme.x": { from: "here" } });
+  assert.equal(dev.private, true);
+  assert.equal(dev.work, "directory");
+  assert.deepEqual(dev.instances.map((i) => i.instance), ["dev-1"]);
+});
+
 test("oats version human output stays ergonomic and mentions the version", () => {
   const r = spawnSync(process.execPath, [CLI, "version"], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);

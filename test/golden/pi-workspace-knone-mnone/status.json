@@ -2,7 +2,7 @@
   "root": "<base>/deployment/agents",
   "agents": [
     {
-      "schemaVersion": "2",
+      "schemaVersion": 2,
       "name": "dev",
       "description": "Golden fixture developer soul.",
       "work": "checkout",

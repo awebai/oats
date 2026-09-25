@@ -2,11 +2,15 @@
   "root": "<base>/deployment/agents",
   "agents": [
     {
-      "schemaVersion": "2",
+      "schemaVersion": 2,
       "name": "dev",
       "description": "Golden fixture developer soul.",
       "work": "checkout",
-      "capabilities": "",
+      "capabilities": {
+        "golden.knowledge": {
+          "from": "here"
+        }
+      },
       "kind": "persistent",
       "dir": "<base>/deployment/agents/dev",
       "instances": [
