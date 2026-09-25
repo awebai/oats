@@ -28,7 +28,7 @@ function fixture() {
     souls: { dev: { soul: { team: ["global", "night"], capabilities: { "acme.env": { from: "here" }, "acme.chat": { from: "here" } } } } },
     capabilities: {
       "acme.env": { manifest: { layer: "knowledge", command: "envprobe", commands: { show: "show.mjs" }, operations: { show: { command: "show", context: "home" } } }, files: { "show.mjs": envProbe } },
-      "acme.chat": { manifest: { layer: "messaging", hooks: { spawn: "spawn.mjs", retire: "retire.mjs" }, binding: { version: 1, normalize: "bn", bind: "bb", check: "bc", reasons: ["not ready"] }, command: "chat", commands: { bn: "noop.mjs", bb: "noop.mjs", bc: "check.mjs", teams: "show.mjs" }, operations: { teams: { command: "teams", context: "home" } } },
+      "acme.chat": { manifest: { layer: "messaging", settings: { join: { description: "labels to join at spawn" }, identity: { description: "the identity to use" } }, hooks: { spawn: "spawn.mjs", retire: "retire.mjs" }, binding: { version: 1, normalize: "bn", bind: "bb", check: "bc", reasons: ["not ready"] }, command: "chat", commands: { bn: "noop.mjs", bb: "noop.mjs", bc: "check.mjs", teams: "show.mjs" }, operations: { teams: { command: "teams", context: "home" } } },
         files: { "check.mjs": echoCheck, "noop.mjs": "process.exit(0);\n", "show.mjs": envProbe,
           "retire.mjs": `import { writeFileSync } from "node:fs";\nwriteFileSync(process.env.TEAMS_RETIRE_OUT, JSON.stringify({ label: process.env.OATS_TEAM_LABEL, id: process.env.OATS_TEAM_ID, labels: process.env.OATS_TEAM_LABELS, teams: JSON.parse(process.env.OATS_TEAMS) }));\nprocess.stdout.write("{}\\n");\n`,
           "spawn.mjs": `import { writeFileSync } from "node:fs"; import { join } from "node:path";\nwriteFileSync(join(process.env.OATS_INSTANCE_HOME, "spawn-teams.json"), JSON.stringify({ labels: process.env.OATS_TEAM_LABELS, teams: JSON.parse(process.env.OATS_TEAMS), settings: JSON.parse(process.env.OATS_SETTINGS) }));\nprocess.stdout.write("{}\\n");\n` } },
@@ -141,6 +141,12 @@ test("an unmapped label is a workspace-status WARNING; two labels that disagree 
   assert.equal(j.ok, false, r.stdout);
   assert.equal(j.error.code, "E_TEAM_CONFLICT");
   assert.match(j.error.message, /"global" and "night"/);
+  // inspect --soul refuses the same way (the soul cannot be spawned until the workspace resolves
+  // it): no teams answered; the details name the capability and both labels.
+  const ins = fx.cli(["inspect", "--soul", "dev", "--json"]).json();
+  assert.equal(ins.ok, false, JSON.stringify(ins));
+  assert.equal(ins.error.code, "E_TEAM_CONFLICT");
+  assert.deepEqual([ins.error.details?.capability, ins.error.details?.labels], ["acme.other", ["global", "night"]], JSON.stringify(ins.error));
 });
 
 test("the REAL oats.aweb 1.13.1 binding check decodes the kernel's check request for a two-label home: the teams never break its strict wire", async (t) => {
@@ -160,4 +166,19 @@ test("the REAL oats.aweb 1.13.1 binding check decodes the kernel's check request
   assert.equal(out.outcome, "result", JSON.stringify(out));
   assert.equal(out.result.status, "needs-configuration");
   assert.equal(out.result.problems.some((p) => ["invalid-binding", "provider-not-qualified"].includes(p.code)), false, JSON.stringify(out));
+});
+
+test("the spawn preview's modules and inspect's capabilities list the setting keys each manifest DECLARES (names only); feature settings-declared", async (t) => {
+  const fx = fixture(); t.after(fx.cleanup);
+  const declares = (rows, key) => Object.fromEntries(rows.map((r) => [r[key], r.declares]));
+  const preview = ok(fx.cli(["spawn", "dev", "--preview", "--json"]), "spawn --preview");
+  assert.deepEqual(declares(preview.modules, "name"), { "acme.chat": ["identity", "join"], "acme.env": [] }, "sorted key names; a manifest with no settings declares []");
+  const soul = ok(fx.cli(["inspect", "--soul", "dev", "--json"]), "inspect --soul");
+  assert.deepEqual(declares(soul.capabilities, "id"), { "acme.chat": ["identity", "join"], "acme.env": [] });
+  const { home } = await fx.spawn("dev", { instance: "dev-declares" });
+  const doc = ok(fx.cli(["inspect", "--home", home, "--json"]), "inspect --home");
+  assert.deepEqual(declares(doc.capabilities, "id"), { "acme.chat": ["identity", "join"], "acme.env": [] }, "a home answers from its own module copies");
+  assert.equal(JSON.stringify(doc.capabilities).includes("labels to join at spawn"), false, "never a declaration's description");
+  const version = JSON.parse(fx.cli(["version", "--json"]).stdout);
+  assert.ok(version.features.includes("settings-declared"));
 });
