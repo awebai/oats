@@ -300,7 +300,8 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       renderSoulDeclarations(declared, soul, { heading: false }); content.append(declared);
       instructions(soul.instructions, 'Instructions are truncated here. The full document is in the soul\'s repository.');
     } else content.append(node('p', 'The kernel did not report this soul. Refresh to retry.', 'muted'));
-    renderOperations(inspected);
+    // Operations run on a live home: a soul shows none (human, F7); an instance lists what it can run.
+    if (inspected.subject.kind === 'instance') renderOperations(inspected);
     paginate();
   }
   // Page layout: each titled section (and each top-level disclosure) becomes a card in

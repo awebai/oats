@@ -100,9 +100,9 @@ async function operated(t, run) {
   t.after(() => { inspector.dispose(); dom.window.close(); setWorkspace(previous); });
   await inspector.show(homeSelection); return { el, calls, press: async name => { el.querySelector(`[data-operation="knowledge:${name}"]`).click(); await new Promise(r => setTimeout(r, 0)); } };
 }
-test('captured operations: unavailable on a soul with the kernel reason, runnable on a home (layer:name address)', async t => {
+test('captured operations: a soul lists none (they need a live home, F7); a home runs them by layer:name address', async t => {
   const s = await rendered(t, { ...soulSelection, selector: { soul: 'release-manager', agentsRoot: soulSelection.agent.agentsRoot } }, soul);
-  assert.equal(s.querySelectorAll('[data-operation]').length, 0); assert.equal(s.textContent.split('needs a running home (--home)').length, 3, 'status and reindex both say why');
+  assert.equal(s.querySelectorAll('[data-operation]').length, 0); assert.doesNotMatch(s.textContent, /Provider operations|needs a running home/, 'no soul-level actions');
   const u = await operated(t, () => doc('operation-run-status').result);
   assert.deepEqual([...u.el.querySelectorAll('[data-operation]')].map(b => [b.dataset.operation, b.textContent]), [['knowledge:status', 'View'], ['knowledge:reindex', 'Run']]);
   assert.match(u.el.textContent, /This instance's knowledge status/);

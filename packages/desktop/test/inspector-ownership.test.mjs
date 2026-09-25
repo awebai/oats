@@ -11,7 +11,7 @@ import { createSoulMark } from '../renderer/identity-marks.mjs';
 import { inspectData, inspectFacts, originText } from '../renderer/inspect-contract.mjs';
 import { createTeamsPanel, teamsOperations, soulTeams } from '../renderer/teams-panel.mjs';
 import { ageText } from '../renderer/age-text.mjs';
-import { soulInspection, capturedOperations, capturedRun } from './helpers/inspect-fixture.mjs';
+import { homeInspection, capturedOperations, capturedRun } from './helpers/inspect-fixture.mjs';
 import { renderSoulDeclarations } from '../renderer/soul-declarations.mjs';
 import { iconElement } from '../renderer/shell-icons.mjs';
 
@@ -22,11 +22,13 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 const settle = (request, outcome, value) => outcome === 'resolve' ? request.resolve(value) : request.reject(new Error('obsolete request failed'));
-const selection = root => ({ agent: { name: 'dev', agentsRoot: `/team/${root}/agents` }, selector: { soul: 'dev', agentsRoot: `/team/${root}/agents` } });
+// Operations run on a live home (a soul lists none, F7): the selections are instance homes.
+const homeOf = root => `/team/${root}/agents/dev/instances/dev-${root}`;
+const selection = root => ({ instance: { instance: `dev-${root}`, agentsRoot: `/team/${root}/agents`, home: homeOf(root) }, selector: { home: homeOf(root) } });
 // Inspection on the workspace model (operationsApi 2, from the kernel capture):
 // oats.okf's two captured operations (status view, reindex action), available as
 // on a home. The inspector is read-only, so only provider operations await.
-const inspection = root => soulInspection('dev', { instructions: { text: `${root}-instructions`, truncated: false }, operations: capturedOperations() });
+const inspection = root => homeInspection(homeOf(root), { instance: `dev-${root}`, soul: 'dev', instructions: { file: `${homeOf(root)}/AGENTS.md`, text: `${root}-instructions`, truncated: false, sources: [] }, operations: capturedOperations() });
 function ui(api, factory = createSoulInspector) {
   const previousWorkspace = currentWorkspace(); setWorkspace('/team');
   const dom = new JSDOM('<body><main><aside></aside></main></body>');
@@ -91,7 +93,7 @@ async function operationOverlap(outcome, factory = createSoulInspector) {
 
 async function operationInvalidation(outcome, boundary, factory = createSoulInspector) {
   const first = deferred(), second = deferred(); let runs = 0;
-  const view = ui(body => body.action === 'inspect' ? inspection(body.selector.agentsRoot === selection('a').selector.agentsRoot ? 'a' : 'b') : ++runs === 1 ? first.promise : second.promise, factory);
+  const view = ui(body => body.action === 'inspect' ? inspection(body.selector.home === selection('a').selector.home ? 'a' : 'b') : ++runs === 1 ? first.promise : second.promise, factory);
   try {
     await view.controller.show(selection('a'));
     const oldControl = view.operation('status'); oldControl.click();
