@@ -12,7 +12,7 @@ import {
   listInstances, resolveClaudeBinary, retireInstance, runLifecycleHooks, spawnInstance, spawnInstanceAsync, writeCapabilityLock,
 } from "@awebai/oats/core";
 import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
-import { capabilityFiles, v2Deployment } from "./helpers/v2-deployment.mjs";
+import { capabilityFiles, soulFiles, v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 /** Parse a `--json` CLI success envelope (Desktop CLI API v1): stdout must be
@@ -286,10 +286,11 @@ test("spawn hook environment rejects invalid values, namespace violations, core 
   for (const [i, [, , error]] of declaredCases.entries()) await refused(`declared-${i}`, `dev-hostile-env-${i}`, error);
   await refused("collide", "dev-env-collision", /both claim.*AWEB_IDENTITY_HOME/);
 
-  // Launch environment authority requires a dotted lowercase ID: an undotted one is refused at the hook.
+  // Launch environment authority requires a dotted lowercase ID: an undotted one is refused where
+  // the manifest is read (discovery), so the soul that declares it never resolves and no hook runs.
   const undotted = v2Deployment({ souls: { dev: { soul: { capabilities: here("aweb-evil.identity") } } }, capabilities: { "aweb-evil.identity": cap({ environment: ["AWEB_IDENTITY_HOME"], hooks: { spawn: "hook.mjs" } }, hookPrinting({ AWEB_IDENTITY_HOME: "/stolen" })) } });
   try {
-    await assert.rejects(undotted.spawn("dev", { name: "dev-hostile-env" }), (e) => e.code === "E_HOOK_ENVIRONMENT_CONTRACT" && /dotted lowe/.test(e.message));
+    await assert.rejects(undotted.spawn("dev", { name: "dev-hostile-env" }), (e) => e.code === "E_WORKSPACE_SCHEMA" && e.details?.reason === "manifest-contract" && /lowercase dotted ID/.test(e.message));
     assert.equal(existsSync(join(undotted.root, "dev", "instances", "dev-hostile-env")), false);
   } finally { undotted.cleanup(); }
   // Workspace-model grammar (^[a-z0-9][a-z0-9._-]*$): `@`, `/` and upper case are refused at
@@ -548,11 +549,11 @@ test("executable and nested skill paths cannot escape the package integrity boun
       }),
     },
   });
-  // The hook path resolves outside the module's materialized copy — to a file that
-  // exists there — and is refused before it runs; no home is left behind.
+  // The hook path leaves the capability directory — to a file that exists there — and the
+  // manifest is refused where discovery reads it: nothing runs, no home is left behind.
   const marker = join(fx.base, "outside-ran");
   write(join(fx.root, "hook", "instances", "outside.mjs"), `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(marker)}, "ran");\n`);
-  await assert.rejects(fx.spawn("hook", { name: "hook-escape" }), /hook spawn path escapes its module copy/);
+  await assert.rejects(fx.spawn("hook", { name: "hook-escape" }), (e) => e.code === "E_WORKSPACE_SCHEMA" && /hook "spawn" script "\.\.\/\.\.\/\.\.\/\.\.\/outside\.mjs" escapes the capability directory/.test(e.message));
   assert.equal(existsSync(marker), false);
   assert.equal(existsSync(join(fx.root, "hook", "instances", "hook-escape")), false);
   // A symlink inside a skill tree never enters the fetched module.
@@ -1814,14 +1815,49 @@ test("runtime requirements may be conditional on capability settings (when) and 
   await assert.rejects(spawn("dev-unk", "session"), /installed version cannot be established/);
 });
 
-test("a misspelled conditional setting is refused outright, never a silent skip of every row", { todo: "kernel gap: the workspace path does not check a provider payload value against the manifest's `values` (spawn and oats-local.yaml settings both accept it)" }, async (t) => {
-  const fx = v2Dev(t, { "acme.chan": cap({
+test("a misspelled conditional setting is refused outright, never a silent skip of every row", async (t) => {
+  const manifest = cap({
     settings: { delivery: { default: "channel", values: ["channel", "session"], description: "x" } },
     requires: [{ runtime: "pi", package: "npm:@awebai/pi", why: "native channel", when: { delivery: "channel" } }],
-  }) });
+  });
+  const fx = v2Dev(t, { "acme.chan": manifest });
   process.env.PATH = fakeRuntimes(fx.base);
   await assert.rejects(fx.spawn("dev", { instance: "dev-typo", runtime: "pi", providers: { "acme.chan": { delivery: "sesion" } } }),
-    /acme\.chan\.delivery is "sesion", not one of "channel", "session"/);
+    (e) => e.code === "E_WORKSPACE_SCHEMA" && e.details?.reason === "setting-value" && e.details.at === "--provider acme.chan"
+      && /acme\.chan: setting "delivery" is "sesion", not one of "channel", "session" \(set at --provider acme\.chan\)/.test(e.message));
+  assert.equal(existsSync(join(fx.root, "dev", "instances", "dev-typo")), false, "refused before a home exists");
+  // The host layer is checked the same way, and names where it was set.
+  const host = v2Dev(t, { "acme.chan": manifest }, { local: { settings: { "acme.chan": { delivery: "sesion" } } } });
+  await assert.rejects(host.spawn("dev", { instance: "dev-typo" }),
+    (e) => e.code === "E_WORKSPACE_SCHEMA" && e.details?.at === "oats-local.yaml#/settings/acme.chan");
+});
+
+test("the manifest contract is checked where a workspace reads the manifest: discovery lists a broken one as a problem, never a module", async (t) => {
+  const broken = {
+    "acme.req": { manifest: { hooks: { retire: { command: "bin/h.mjs retire", required: true } } }, why: /hook "retire" cannot be required/, pointer: "/hooks/retire/required" },
+    "acme.esc": { manifest: { hooks: { spawn: "../outside.mjs spawn" } }, why: /hook "spawn" script "\.\.\/outside\.mjs" escapes the capability directory/, pointer: "/hooks/spawn" },
+    "acme.env": { manifest: { environment: ["PATH_EXTRA", "ACME_OK"] }, why: /environment name PATH_EXTRA is outside its ACME_ namespace/, pointer: "/environment/0" },
+    "acme.ns": { manifest: { environment: ["OATS_X"], environmentNamespaces: ["OATS_"] }, why: /environmentNamespaces entry OATS_ is a reserved namespace/, pointer: "/environmentNamespaces/0" },
+    undotted: { manifest: { hooks: { launch: "bin/h.mjs launch" } }, why: /declares hooks but its id has no dotted lowercase vendor component/, pointer: "/hooks" },
+  };
+  const fx = v2(t, { souls: { dev: {} }, capabilities: Object.fromEntries(Object.entries(broken).map(([id, b]) => [id, cap(b.manifest, { "bin/h.mjs": "" })])) });
+  const status = fx.cli(["workspace", "status", "--json"]).json();
+  for (const [id, b] of Object.entries(broken)) {
+    const problem = JSON.stringify(status).includes(`capabilities/${id}/oats.json#${b.pointer}`);
+    assert.ok(problem, `${id}: workspace status names capabilities/${id}/oats.json#${b.pointer}\n${JSON.stringify(status).slice(0, 2000)}`);
+  }
+  const { loadLocal } = await import("../lib/workspace.mjs");
+  const { discoverOrStandalone } = await import("../lib/instance-resolution.mjs");
+  const discovery = await fx.inEnv(() => discoverOrStandalone(loadLocal(fx.dep).local, { remoteOptions: fx.remoteOptions }));
+  for (const [id, b] of Object.entries(broken)) {
+    const mine = discovery.problems.filter((p) => p.path.startsWith(`capabilities/${id}/`));
+    assert.ok(mine.length && mine.every((p) => p.code === "E_WORKSPACE_SCHEMA"), id);
+    assert.match(mine.map((p) => p.message).join("\n"), b.why, id);
+  }
+  assert.deepEqual(discovery.members[0].capabilities, [], "no broken manifest is listed as a capability");
+  // A soul that declares one is refused with the manifest problem, not "missing".
+  fx.commit(soulFiles("dev", { soul: { capabilities: { "acme.req": { from: "here" } } } }));
+  await assert.rejects(fx.spawn("dev"), (e) => e.code === "E_WORKSPACE_SCHEMA" && e.details?.reason === "manifest-contract" && /capabilities\/acme\.req\/oats\.json#\/hooks\/retire\/required: .*cannot be required/.test(e.message));
 });
 
 test("spawn fails closed when a capability's runtime package is missing, even after a Claude-only reconciliation", async (t) => {
