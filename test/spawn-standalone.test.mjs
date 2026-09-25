@@ -212,7 +212,7 @@ test("standalone packages (H3/M10): a catalog ref with a tag PATH (oats-framewor
   }
 });
 
-test("H4: an oats-config.yaml beside a v3 lock (a scope yolo, say) does not make the classic config chain strict-parse the v3 lock — spawn and doctor stay green", { timeout: 240_000 }, async () => {
+test("H4: an oats-config.yaml beside a v3 lock is refused as a 0.25 configuration (E_CONFIG_BROKEN legacy-config) — never read, so the v3 lock is never strict-parsed as a classic one", { timeout: 240_000 }, async () => {
   const base = mkdtempSync(join(tmpdir(), "oats-h4-"));
   const fx = await buildNorthwind(join(base, "fx"));
   const catalogFile = join(base, "catalog.json"); writeFileSync(catalogFile, JSON.stringify({ packages: fx.catalog }));
@@ -222,13 +222,22 @@ test("H4: an oats-config.yaml beside a v3 lock (a scope yolo, say) does not make
   try {
     const synced = oats(["sync", "--dir", dep, "--json"], { base, env });
     assert.equal(synced.status, 0, synced.stdout + synced.stderr);
-    writeFileSync(join(dep, "oats-config.yaml"), "name: northwind-workspace\nyolo: false\n");
-    // Launch configurations are declared in oats-local.yaml now (lead decision 2); one there reads beside the v3 lock too.
-    writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.agents}\nlaunch-configs:\n  default:\n    runtime: pi\n`);
+    const legacy = join(dep, "oats-config.yaml");
+    writeFileSync(legacy, "name: northwind-workspace\nyolo: false\n");
     const r = oats(["spawn", "release-manager", "--dir", dep, "--agents-root", join(dep, "agents"), "--purpose", "x", "--work", "directory", "--no-launch", "--json"], { base, env });
-    assert.equal(r.status, 0, r.stderr + r.stdout);
-    assert.equal(envelope(r).ok, true);
+    assert.notEqual(r.status, 0, r.stdout);
+    const e = envelope(r);
+    assert.equal(e.ok, false);
+    assert.equal(e.error.code, "E_CONFIG_BROKEN", e.error.message);
+    assert.equal(e.error.details?.reason, "legacy-config");
+    assert.ok(e.error.message.includes(legacy), "the refusal names the file");
+    assert.match(e.error.message, /oats-local\.yaml/, "and where its launch-configs moved");
+    assert.doesNotMatch(r.stdout + r.stderr, /unsupported lockfileVersion|invalid-lock/);
+    assert.ok(!existsSync(join(dep, "agents", "release-manager", "instances")), "nothing is created");
     const d = oats(["doctor", "--dir", dep], { base, env });
+    assert.notEqual(d.status, 0);
     assert.doesNotMatch(d.stdout + d.stderr, /unsupported lockfileVersion|invalid-lock/);
+    assert.ok((d.stdout + d.stderr).includes(legacy), d.stdout + d.stderr);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
+

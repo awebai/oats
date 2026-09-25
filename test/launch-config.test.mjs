@@ -218,9 +218,10 @@ test("a top-level comment after the launch-configs block is not part of it: set 
   assert.deepEqual(readLocal(join(scope, "oats-local.yaml"))["launch-configs"], { personal: { runtime: "codex" } });
 });
 
-test("launch-configs in oats-config.yaml is a migration error, and set with no deployment in reach writes nothing", () => {
+test("an oats-config.yaml in a deployment is a migration error (E_CONFIG_BROKEN), and set with no deployment in reach writes nothing", () => {
   const scope = join(base, "migrate"); mkdirSync(join(scope, "agents"), { recursive: true });
   const legacy = "name: m\nlaunch-configs:\n  x:\n    runtime: pi\n";
+  write(join(scope, "oats-local.yaml"), LOCAL);
   write(join(scope, "oats-config.yaml"), legacy);
   // The launch-config commands refuse it with the migration message, never answering "no configurations".
   let r;
@@ -228,12 +229,16 @@ test("launch-configs in oats-config.yaml is a migration error, and set with no d
     write(join(base, "m.json"), JSON.stringify({ runtime: "pi" }));
     r = oats(argv);
     assert.equal(r.json.ok, false, r.stdout);
-    assert.match(r.json.error.message, /unsupported oats-config key "launch-configs".*moved to the deployment's oats-local\.yaml/, argv.join(" "));
+    assert.equal(r.json.error.code, "E_CONFIG_BROKEN", argv.join(" "));
+    assert.ok(r.json.error.message.includes(join(scope, "oats-config.yaml")), `${argv.join(" ")}: names the file`);
+    assert.match(r.json.error.message, /oats-config\.yaml is no longer read.*launch-configs moved to the deployment's oats-local\.yaml/, argv.join(" "));
   }
   assert.equal(readFileSync(join(scope, "oats-config.yaml"), "utf8"), legacy, "the legacy file is untouched");
-  // Without the legacy key, set with no deployment in reach is E_LOCAL_MISSING and writes nothing.
+  assert.equal(readFileSync(join(scope, "oats-local.yaml"), "utf8"), LOCAL, "and nothing was written to oats-local.yaml");
+  // Set with no deployment in reach is E_LOCAL_MISSING and writes nothing.
   const bare = join(base, "bare"); mkdirSync(join(bare, "agents"), { recursive: true });
   r = oats(["launch-config", "set", "x", "--file", join(base, "m.json"), "--dir", bare]);
   assert.equal(r.json.error?.code, "E_LOCAL_MISSING", r.stdout);
   assert.deepEqual(readdirSync(bare), ["agents"], "no oats-local.yaml was created");
 });
+

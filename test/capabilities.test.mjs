@@ -7,8 +7,8 @@ import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, re
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import {
-  capabilityIntegrity, capabilityManifest, completeDeferredRetirement, composeInstanceAgentsMd, deferredRetireResultPath, findAgent, findInstanceHomes, resolveOatsConfig, retirePendingMarkerPath,
-  listInstances, resolveClaudeBinary, retireInstance, runLifecycleHooks, spawnInstance, spawnInstanceAsync, writeCapabilityLock,
+  capabilityManifest, completeDeferredRetirement, composeInstanceAgentsMd, deferredRetireResultPath, findAgent, findInstanceHomes, retirePendingMarkerPath,
+  listInstances, resolveClaudeBinary, retireInstance, runLifecycleHooks, spawnInstanceAsync,
 } from "@awebai/oats/core";
 import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
 import { capabilityFiles, soulFiles, v2Deployment } from "./helpers/v2-deployment.mjs";
@@ -133,7 +133,8 @@ test("pi and Claude instances receive the same exact local skills and generated 
     assert.match(readFileSync(join(meta.home, "AGENTS.md"), "utf8"), /Review capability/);
     const diskMeta = JSON.parse(readFileSync(join(meta.home, "instance.json"), "utf8"));
     assert.ok(diskMeta.capabilities.some((c) => c.id === "acme.review"));
-    assert.deepEqual(diskMeta.skills.map((s) => s.name), ["private"], "instance.json.skills records the soul's own skills");
+    assert.deepEqual(diskMeta.skills.map((s) => [s.name, s.source]), [["private", "soul"], ["review", "module:acme.review"]],
+      "instance.json.skills records the soul's own skills and each module skill with its module:<cap> source");
     if (meta.runtime === "pi") {
       // Workspace model, decision 13: the harness starts NORMALLY. The composed
       // skills live at <home>/.agents/skills (pi discovers them from its cwd),
@@ -422,56 +423,6 @@ test("model preference lists resolve to the first available provider/model", asy
   } finally { process.env.PATH = oldPath; }
 });
 
-test("capability-defined agents resolve when active, home locally, and keep the package soul read-only", () => {
-  const base = temp(); const { repo, root } = fixtureSoul(base);
-  const capDir = capability(repo, "rev", { capability: "acme.review", agents: ["agents/reviewer"] }, {
-    "agents/reviewer/soul.yaml": "name: reviewer\nkind: capability\nwork: checkout\nruntime: pi\nmodel: fake/model\ndescription: Fresh reviewer.\n",
-    "agents/reviewer/AGENTS.md": "# Reviewer\n\nReview fresh.\n",
-  });
-  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.review:\n      global: true\n");
-  const { findCapabilityAgent, listCapabilityAgents } = { findCapabilityAgent: undefined, listCapabilityAgents: undefined };
-  return import("@awebai/oats/core").then((core) => {
-    const listed = core.listCapabilityAgents(repo);
-    assert.deepEqual(listed.map((a) => a.name), ["reviewer"]);
-    const agent = core.findCapabilityAgent(repo, root, "reviewer");
-    assert.equal(agent.capability, "acme.review");
-    assert.equal(agent._soulDir, join(capDir, "agents", "reviewer"));
-    const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
-    try {
-      const res = core.spawnInstance(root, { ...agent, repo }, { instance: "reviewer-1", launch: false });
-      // instance homes under the agents root; the recorded soul directory is inside the package
-      assert.equal(res.home, join(root, "reviewer", "instances", "reviewer-1"));
-      assert.throws(() => lstatSync(join(res.home, "soul")), { code: "ENOENT" }, "an instance home carries no soul link");
-      assert.equal(JSON.parse(readFileSync(join(res.home, "instance.json"), "utf8")).soulDir, join(capDir, "agents", "reviewer"));
-      assert.match(readFileSync(join(res.home, "AGENTS.md"), "utf8"), /Review fresh/);
-      // the package soul was not written to (no instances/, no scaffolded memory)
-      assert.ok(!existsSync(join(capDir, "agents", "reviewer", "instances")));
-      core.retireInstance(root, "reviewer-1", { tmuxSession: "oats-test-nosuch" });
-    } finally { process.env.PATH = oldPath; }
-  });
-});
-
-test("capability agents carry their own capability's skills regardless of targeting", () => {
-  const base = temp(); const { repo, root } = fixtureSoul(base);
-  capability(repo, "rev2", { capability: "acme.rev2", agents: ["agents/checker"], skills: ["skills"] }, {
-    "agents/checker/soul.yaml": "name: checker\nkind: capability\nwork: checkout\nruntime: pi\ndescription: Checker.\n",
-    "agents/checker/AGENTS.md": "# Checker\n",
-    "skills/deep-check/SKILL.md": "---\nname: deep-check\ndescription: Deep checking.\n---\n",
-  });
-  // Targeted at a type the checker does NOT belong to — its own skills must still compose.
-  write(join(repo, "oats-config.yaml"), "agent-types:\n  devs:\n    description: devs\ncapabilities:\n  additive:\n    acme.rev2:\n      agent-types:\n        devs: true\n");
-  return import("@awebai/oats/core").then((core) => {
-    const agent = core.findCapabilityAgent(repo, root, "checker");
-    assert.ok(agent, "checker resolves on declaration despite type targeting");
-    const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
-    try {
-      const res = core.spawnInstance(root, { ...agent, repo }, { instance: "checker-1", launch: false });
-      assert.ok(existsSync(join(res.home, ".agents", "skills", "deep-check", "SKILL.md")), "own capability skill materialized");
-      core.retireInstance(root, "checker-1", { tmuxSession: "oats-test-nosuch" });
-    } finally { process.env.PATH = oldPath; }
-  });
-});
-
 test("hooks run in deterministic order, with retire reversing spawn", async (t) => {
   const order = join(temp(), "order");
   t.after(() => rmSync(dirname(order), { recursive: true, force: true }));
@@ -663,35 +614,25 @@ test("spawn lineage is explicit: ambient env never sets parent; --parent and att
   }
 });
 
-test("--parent accepts capability-defined parent instances homing under the agents root", () => {
-  const base = temp(); const { repo, root } = fixtureSoul(base);
-  capability(repo, "rev", { capability: "acme.rev", agents: ["agents/reviewer"] }, {
-    "agents/reviewer/soul.yaml": "name: reviewer\nkind: capability\nwork: checkout\nruntime: pi\ndescription: Reviewer.\n",
-    "agents/reviewer/AGENTS.md": "# Reviewer\n",
+test("--parent accepts a capability agent's instance, homed under the agents root", (t) => {
+  const fx = v2(t, {
+    souls: { dev: { soul: { work: "checkout" } } },
+    capabilities: { "acme.rev": cap({ agents: ["agents/reviewer"] }, {
+      "agents/reviewer/soul.yaml": "name: reviewer\nkind: capability\nwork: directory\nruntime: pi\ndescription: Reviewer.\n",
+      "agents/reviewer/AGENTS.md": "# Reviewer\n",
+    }) },
   });
-  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.rev:\n      global: true\n");
-  return import("@awebai/oats/core").then((core) => {
-    const capAgent = core.findCapabilityAgent(repo, root, "reviewer");
-    const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
-    try {
-      // Capability agent instance homes under <root>/reviewer/instances/.
-      const parent = core.spawnInstance(root, { ...capAgent, repo }, { instance: "reviewer-abc", launch: false });
-      assert.equal(parent.home, join(root, "reviewer", "instances", "reviewer-abc"));
-      // Kernel lookup sees it (this is what `oats spawn --parent` validates with).
-      assert.ok(core.findInstanceHome(root, "reviewer-abc"), "findInstanceHome sees capability-agent homes");
-      // Coordinator-style spawn: a capability-defined instance passes itself as
-      // --parent when spawning a child through the CLI.
-      const env = { ...process.env, PATH: fakeRuntimes(base), PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" };
-      delete env.PI_AGENTS_ROOT;
-      const r = spawnSync(process.execPath, [CLI, "spawn", "dev", "--parent", "reviewer-abc", "--task", "child work", "--purpose", "child", "--no-launch", "--json"], { cwd: repo, env, encoding: "utf8" });
-      assert.equal(r.status, 0, r.stderr);
-      const child = jsonResult(r);
-      assert.equal(child.parent, "reviewer-abc");
-      assert.equal(child.spawnOrigin, "instance");
-      assert.match(readFileSync(join(child.home, "TASK.md"), "utf8"), /child work/);
-      core.retireInstance(root, "reviewer-abc", { tmuxSession: "oats-test-nosuch" });
-    } finally { process.env.PATH = oldPath; }
-  });
+  const env = { PATH: fakeRuntimes(fx.base) };
+  // A capability agent's instance homes under <root>/reviewer/instances/.
+  const parent = jsonResult(fx.cli(["spawn", "reviewer", "--name", "reviewer-abc", "--no-launch", "--json"], { env }));
+  assert.equal(parent.home, join(fx.root, "reviewer", "instances", "reviewer-abc"));
+  // Coordinator-style spawn: a capability agent's instance passes itself as --parent.
+  const r = fx.cli(["spawn", "dev", "--parent", "reviewer-abc", "--task", "child work", "--purpose", "child", "--no-launch", "--json"], { env });
+  assert.equal(r.status, 0, r.stderr);
+  const child = jsonResult(r);
+  assert.equal(child.parent, "reviewer-abc");
+  assert.equal(child.spawnOrigin, "instance");
+  assert.match(readFileSync(join(child.home, "TASK.md"), "utf8"), /child work/);
 });
 
 test("spawn relations: child/sibling/parent/unrelated, sugar equivalence, validation", async (t) => {
@@ -1427,61 +1368,6 @@ test("OKF service agents stay memory-less: a capability agent composes its provi
   f.retire(orphan.instance);
 });
 
-test("capability-agent trust isolates providers and preserves path/owned structural trust", async () => {
-  const core = await import("@awebai/oats/core");
-  const base = temp(); const { repo, root } = fixtureSoul(base);
-
-  // Developer-owned path provider: instruction agents are structurally trusted
-  // without a lock, while its executable command policy remains unchanged.
-  const pathDir = join(base, "path-cap");
-  write(join(pathDir, "oats.json"), JSON.stringify({ capability: "path.agent", version: "1.0.0", description: "path", agents: ["agents/helper"], commands: { run: "run.mjs" } }));
-  write(join(pathDir, "agents", "helper", "soul.yaml"), "name: helper\nkind: capability\nwork: checkout\nruntime: pi\n");
-  write(join(pathDir, "agents", "helper", "AGENTS.md"), "# path helper\n");
-  write(join(pathDir, "run.mjs"), "// executable remains subject to old policy\n");
-
-  // Owned provider parity.
-  capability(repo, "own-agent", { capability: "owned.agent", agents: ["agents/ownhelper"] }, {
-    "agents/ownhelper/soul.yaml": "name: ownhelper\nkind: capability\nwork: checkout\nruntime: pi\n",
-    "agents/ownhelper/AGENTS.md": "# owned helper\n",
-  });
-
-  // Locked installed provider with two names; tamper after locking.
-  const badDir = join(repo, ".agents", "capabilities", "installed", "bad-agent");
-  write(join(badDir, "oats.json"), JSON.stringify({ capability: "bad.agent", version: "1.0.0", description: "bad", agents: ["agents/helper", "agents/badonly"] }));
-  for (const name of ["helper", "badonly"]) {
-    write(join(badDir, "agents", name, "soul.yaml"), `name: ${name}\nkind: capability\nwork: checkout\nruntime: pi\n`);
-    write(join(badDir, "agents", name, "AGENTS.md"), `# ${name}\n`);
-  }
-  writeCapabilityLock(repo, "bad.agent", { source: "path:/fixture", version: "1.0.0", integrity: capabilityIntegrity(badDir), trustedExecutables: false });
-  write(join(badDir, "agents", "badonly", "AGENTS.md"), "TAMPERED\n");
-
-  const config = (badFirst) => `capabilities:\n  additive:\n${badFirst ? "    bad.agent:\n      from: installed\n" : ""}    path.agent:\n      from: path:${pathDir}\n    owned.agent:\n      from: owned\n${badFirst ? "" : "    bad.agent:\n      from: installed\n"}`;
-  for (const badFirst of [true, false]) {
-    write(join(repo, "oats-config.yaml"), config(badFirst));
-    const helper = core.findCapabilityAgent(repo, root, "helper");
-    assert.equal(helper.capability, "path.agent", `trusted match survives invalid provider ${badFirst ? "before" : "after"}`);
-    assert.equal(core.findCapabilityAgent(repo, root, "does-not-exist"), undefined, "unrelated invalid provider never poisons not-found");
-  }
-  assert.throws(() => core.findCapabilityAgent(repo, root, "badonly"), (e) => e.code === "integrity-drift", "matched tampered provider rejects");
-  assert.equal(core.capabilityTrust(core.capabilityManifest("path.agent", repo), repo).trusted, false, "path executable policy remains lock/approval-gated");
-
-  const listed = core.listCapabilityAgents(repo);
-  assert.deepEqual(listed.map((a) => `${a.capability}:${a.name}`).sort(), ["owned.agent:ownhelper", "path.agent:helper"]);
-  assert.equal(listed.diagnostics.length, 1, "invalid provider reported once");
-  assert.equal(listed.diagnostics[0].capability, "bad.agent");
-  assert.match(listed.diagnostics[0].message, /integrity/);
-  assert.ok(listed.diagnostics[0].provenance, "diagnostic carries provenance");
-
-  const agent = core.findCapabilityAgent(repo, root, "helper");
-  const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
-  try {
-    const spawned = core.spawnInstance(root, { ...agent, repo }, { instance: "helper-path", launch: false });
-    assert.match(readFileSync(join(spawned.home, "AGENTS.md"), "utf8"), /path helper/);
-    core.retireInstance(root, "helper-path", { tmuxSession: "oats-test-nosuch" });
-  } finally { process.env.PATH = oldPath; }
-  rmSync(base, { recursive: true, force: true });
-});
-
 // ---------- canonical deployment root (instance homes never in a linked worktree) ----------
 
 /** A repo with a soul, plus a linked worktree of it. Mirrors the real shape:
@@ -1716,10 +1602,13 @@ test("instance.json records expected == materialized, and the .claude/skills ali
   const meta = instanceMeta(r.home);
   // The soul's own skills are recorded by name; a module's skills are expected as
   // its skill tree and materialized under its module namespace.
+  // A module skill is recorded with its `module:<cap>` source and lives under that namespace.
   const names = meta.composition.materialized.skills.map((s) => s.name);
   assert.ok(names.includes("soul-skill"), `soul skills materialized: ${names}`);
+  assert.deepEqual(meta.composition.materialized.skills.map((s) => [s.name, s.source]), [["soul-skill", "soul"], ["cap-skill", "module:acme.withskill"]]);
   for (const s of meta.composition.materialized.skills) {
-    assert.ok(existsSync(join(r.home, ".agents", "skills", s.name, "SKILL.md")), `${s.name} is a real copy`);
+    const at = s.source.startsWith("module:") ? join(r.home, ".agents", "skills", s.source.slice("module:".length), s.name) : join(r.home, ".agents", "skills", s.name);
+    assert.ok(lstatSync(join(at, "SKILL.md")).isFile(), `${s.name} is a real copy`);
   }
   const tree = meta.composition.expected.find((e) => e.type === "skill-tree" && e.source === "acme.withskill");
   assert.equal(tree?.resolved, join(r.home, ".agents", "skills", "acme.withskill"));
@@ -2171,17 +2060,6 @@ test("a required worktree spawn rolls back the worktree and branch too", async (
     const branches = execFileSync("git", ["-C", fx.member, "branch", "--list"], { encoding: "utf8" });
     assert.doesNotMatch(branches, /dev-wtreq/, "branch deleted");
   } finally { process.env.PATH = oldPath; }
-});
-
-test("only the spawn hook may be declared required", () => {
-  const base = temp();
-  const { repo, root } = fixtureSoul(base, "pi");
-  // retire and soul-scaffold run outside a spawn transaction, so "required"
-  // there would promise an enforcement with no moment to act.
-  capability(repo, "bad", { capability: "acme.bad", hooks: { retire: { command: "hook.mjs retire", required: true } } }, { "hook.mjs": "" });
-  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.bad:\n      global: true\n");
-  assert.throws(() => resolveOatsConfig(repo, "dev"), /cannot be required — only the spawn hook is enforced/);
-  rmSync(base, { recursive: true, force: true });
 });
 
 test("a clean rollback reports no verification problems (probe stderr regression)", async (t) => {
@@ -2656,44 +2534,6 @@ test("a plugin installed for an UNRELATED project does not satisfy the requireme
   } finally { process.env.PATH = oldPath; }
 });
 
-test("an UNTRUSTED capability's required hook fails the spawn instead of being skipped", () => {
-  const base = temp();
-  const { repo, root } = fixtureSoul(base, "pi");
-  // Package-backed capability with no executable approval — the default state
-  // right after `oats install`. Gating requiredHooks on trust made this spawn
-  // succeed with a warning while the required setup never ran.
-  const capDir = capability(repo, "chan", {
-    capability: "acme.chan",
-    hooks: { spawn: { command: "hook.mjs spawn", required: true } },
-  }, { "hook.mjs": "console.log('{}');" });
-  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
-  const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
-  try {
-    const resolved = resolveOatsConfig(repo, "dev");
-    const cap = resolved.capabilities.find((c) => c.id === "acme.chan");
-    assert.deepEqual(cap.requiredHooks, ["spawn"], "the DECLARATION is visible regardless of trust");
-    if (!cap.trust?.trusted) {
-      assert.throws(
-        () => spawnInstance(root, findAgent(root, "dev"), { instance: "dev-untrusted", launch: false }),
-        (e) => e.code === "E_REQUIRED_HOOK_UNTRUSTED"
-          && /acme\.chan declares required hook\(s\) spawn/.test(e.message)
-          && /oats trust acme\.chan/.test(e.message),
-        "a required hook that cannot execute must fail closed, with the trust remedy",
-      );
-      assert.equal(existsSync(join(root, "dev", "instances", "dev-untrusted")), false, "and before any scaffold");
-    }
-    // An ADVISORY executable hook stays disabled-with-warning, not fatal.
-    write(join(capDir, "oats.json"), JSON.stringify({
-      capability: "acme.chan", version: "1.0.0", compatibility: { oats: ">=0.6.2" },
-      description: "Test capability.", hooks: { spawn: "hook.mjs spawn" },
-    }, null, 2));
-    const r = spawnInstance(root, findAgent(root, "dev"), { instance: "dev-advisory", launch: false });
-    assert.ok(r.home, "advisory hooks never block a spawn");
-    retireInstance(root, "dev-advisory", { tmuxSession: "oats-test-nosuch" });
-  } finally { process.env.PATH = oldPath; }
-  rmSync(base, { recursive: true, force: true });
-});
-
 test("a quarantined home can be cleaned up on retry, and only then removed", async (t) => {
   const out = temp(); t.after(() => rmSync(out, { recursive: true, force: true }));
   // EXTERNAL state stands in for a remote identity. Cleanup must actually RUN on
@@ -2989,12 +2829,17 @@ const SETTLE_IN_WORK = /cd work\/? once|and stay there|where you live|Start in `
 /** Compare wording, not line wrapping: the contract is what the agent reads. */
 const flat = (t) => t.replace(/\s+/g, " ");
 
-test("every work mode's generated instructions carry the home/work boundary (maintainer contract)", () => {
-  const base = temp();
-  const { repo, root } = fixtureSoul(base, "pi");
-  const soulDir = join(root, "dev", "soul");
+/** A workspace soul's composed instructions for one work mode (and kind), exactly as a
+ *  prepared spawn composes them. */
+async function composedFor(fx, mode, kind) {
+  const { prepared } = await fx.prepare("dev");
+  return flat(composeInstanceAgentsMd(join(fx.root, "dev", "soul"), fx.dep, "dev", mode, kind, prepared).text);
+}
+
+test("every work mode's generated instructions carry the home/work boundary (maintainer contract)", async (t) => {
+  const fx = v2(t);
   for (const mode of ["worktree", "checkout", "attached", "workspace"]) {
-    const text = flat(composeInstanceAgentsMd(soulDir, repo, "dev", mode).text);
+    const text = await composedFor(fx, mode);
     for (const must of BOUNDARY_MUST_SAY) {
       assert.ok(text.includes(flat(must)), `${mode}: generated instructions must say ${JSON.stringify(must)}`);
     }
@@ -3011,55 +2856,41 @@ test("every work mode's generated instructions carry the home/work boundary (mai
     assert.doesNotMatch(text, /Nothing you produce belongs anywhere else/,
       `${mode}: an absolute output ban contradicts episodic state and role artifacts`);
   }
-  rmSync(base, { recursive: true, force: true });
 });
 
-test("the boundary does not contradict a read-only workspace instance (reviewer-focus-c6e3680)", () => {
-  const base = temp();
-  const { repo, root } = fixtureSoul(base, "pi");
-  const text = flat(composeInstanceAgentsMd(join(root, "dev", "soul"), repo, "dev", "workspace").text);
+test("the boundary does not contradict a read-only workspace instance (reviewer-focus-c6e3680)", async (t) => {
+  const fx = v2(t);
+  const text = await composedFor(fx, "workspace");
   // Workspace `work` is the deployment scope, not a repo, and it is read-only.
   assert.ok(text.includes("never edit or commit inside them"), "the mode's read-only rule survives");
   assert.ok(text.includes(flat("`<instance-home>/work` is your repository or workspace view")),
     "and the boundary calls it a repository OR WORKSPACE view, not simply the repository");
   assert.doesNotMatch(text, /work` is the repository\b/, "no unqualified 'work is the repository' claim");
-  rmSync(base, { recursive: true, force: true });
 });
 
-test("a REAL spawned packaged reviewer gets the boundary and keeps its own report path (reviewer-focus-c6e3680)", async () => {
-  const base = temp();
-  const { repo, root } = fixtureSoul(base, "pi");
-  // The SHIPPED oats-review capability, spawned through the real service path —
-  // not a synthetic composer call. Its own instructions require writing a report
-  // to a temp file before mailing it, so a boundary forbidding output outside
-  // work/ would contradict the very agent it ships beside.
+test("a REAL spawned packaged reviewer gets the boundary and keeps its own report path (reviewer-focus-c6e3680)", (t) => {
+  // The SHIPPED oats-review capability, spawned through the real CLI as a capability
+  // agent anchored on the instance that declares it — not a synthetic composer call.
+  // Its own instructions require writing a report to a temp file before mailing it,
+  // so a boundary forbidding output outside work/ would contradict the very agent
+  // it ships beside.
   const src = resolve(new URL("../capabilities/oats-review", import.meta.url).pathname);
-  const dst = join(repo, ".agents", "capabilities", "owned", "oats-review");
-  mkdirSync(dirname(dst), { recursive: true });
-  cpSync(src, dst, { recursive: true });
-  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    oats.review:\n      global: true\n");
-  const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
-  try {
-    // `await` INSIDE the try: returning the promise from the try block restores
-    // PATH before the body ever runs, so the test silently used whatever `pi`
-    // the machine happened to have installed (reviewer-focus-699fdb6).
-    const core = await import("@awebai/oats/core");
-    const agent = core.findCapabilityAgent(repo, root, "reviewer");
-    assert.ok(agent, "the shipped reviewer resolves");
-    const res = core.spawnInstance(root, { ...agent, repo }, { instance: "reviewer-boundary", work: "checkout", launch: false });
-    const text = flat(readFileSync(join(res.home, "AGENTS.md"), "utf8"));
-    for (const must of BOUNDARY_MUST_SAY) {
-      assert.ok(text.includes(flat(must)), `spawned reviewer: must say ${JSON.stringify(must)}`);
-    }
-    assert.doesNotMatch(text, SETTLE_IN_WORK);
-    // Its mandated artifact must remain possible.
-    assert.match(text, /Write the report to a temp file first/,
-      "the reviewer's own report artifact survives composition — the boundary must not forbid it");
-    assert.doesNotMatch(text, /Nothing you produce belongs anywhere else/,
-      "and the boundary must not forbid the temp file that instruction requires");
-    core.retireInstance(root, "reviewer-boundary", { tmuxSession: "oats-test-nosuch" });
-  } finally { process.env.PATH = oldPath; }
-  rmSync(base, { recursive: true, force: true });
+  const fx = v2(t, { souls: { dev: { soul: { work: "checkout", capabilities: here("oats.review") } } }, capabilityDirs: { "oats.review": src } });
+  const env = { PATH: fakeRuntimes(fx.base) };
+  const owner = jsonResult(fx.cli(["spawn", "dev", "--name", "dev-owner", "--no-launch", "--json"], { env }));
+  const r = fx.cli(["spawn", "reviewer", "--name", "reviewer-boundary", "--parent", owner.instance, "--work", "checkout", "--repo", fx.member, "--no-launch", "--json"], { env });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const res = jsonResult(r);
+  const text = flat(readFileSync(join(res.home, "AGENTS.md"), "utf8"));
+  for (const must of BOUNDARY_MUST_SAY) {
+    assert.ok(text.includes(flat(must)), `spawned reviewer: must say ${JSON.stringify(must)}`);
+  }
+  assert.doesNotMatch(text, SETTLE_IN_WORK);
+  // Its mandated artifact must remain possible.
+  assert.match(text, /Write the report to a temp file first/,
+    "the reviewer's own report artifact survives composition — the boundary must not forbid it");
+  assert.doesNotMatch(text, /Nothing you produce belongs anywhere else/,
+    "and the boundary must not forbid the temp file that instruction requires");
 });
 
 // Notes and `oats okf harvest` come from the oats.okf capability. An instance
@@ -3074,30 +2905,21 @@ test("a REAL spawned packaged reviewer gets the boundary and keeps its own repor
 // its promotions are delivered is what only the knowledge layer may do.
 const KNOWLEDGE_PROTOCOL = /notes\/|okf harvest|memory promotion|harvester(,? which| that)? promot|promot\w* (it |them |your learnings )?(in)?to (its|your|the) soul|knowledge (promotion|updates) (arrive|are delivered)/i;
 
-test("kernel-composed blocks never prescribe a knowledge protocol they cannot guarantee (reviewer-focus-b512782)", () => {
-  const base = temp();
-  const { repo, root } = fixtureSoul(base, "pi");
-  const soulDir = join(root, "dev", "soul");
-  // No oats.okf capability anywhere in this fixture: whatever these blocks say,
-  // no notes/ dir is scaffolded and no `oats okf harvest` exists.
-  const kernelOnly = (mode, kind) => flat(composeInstanceAgentsMd(soulDir, repo, "dev", mode, kind).text);
+test("kernel-composed blocks never prescribe a knowledge protocol they cannot guarantee (reviewer-focus-b512782)", async (t) => {
+  // No oats.okf capability anywhere in this deployment (knowledge: none): whatever
+  // these blocks say, no notes/ dir is scaffolded and no `oats okf harvest` exists.
+  const fx = v2(t);
   for (const mode of ["worktree", "checkout", "attached", "workspace"]) {
     for (const kind of [undefined, "capability"]) {
-      const text = kernelOnly(mode, kind);
+      const text = await composedFor(fx, mode, kind);
       for (const must of BOUNDARY_MUST_SAY) {
         assert.ok(text.includes(flat(must)), `${mode}/${kind}: must say ${JSON.stringify(must)}`);
       }
       assert.doesNotMatch(text, KNOWLEDGE_PROTOCOL,
         `${mode}/${kind}: kernel blocks must not prescribe notes//harvest — no knowledge layer is composed here`);
-      // aweb is a capability too, so the kernel may CITE `aw` as an example of an
-      // active capability's command but never command it. Checking three
-      // spellings let "Use `aw`" or "Run aw" through, so check the property:
-      // every sentence mentioning `aw` must carry a conditional (reviewer-focus-d589eec).
-
       assert.doesNotMatch(text, SETTLE_IN_WORK, `${mode}/${kind}`);
     }
   }
-  rmSync(base, { recursive: true, force: true });
 });
 
 test("with the knowledge layer active, ONE block owns the protocol (reviewer-focus-b512782)", async (t) => {
@@ -3521,44 +3343,30 @@ process.exit(1);`,
   } finally { process.env.PATH = oldPath; }
 });
 
-test("an incomplete cleanup names the home's REAL path, including a capability agent's (reviewer-adff009)", async () => {
-  const base = temp();
-  const { repo, root } = fixtureSoul(base, "pi");
-  // Capability-defined agents have no soul under the agents root, only
-  // instances/. A reconstructed path sends the operator to a directory that
-  // does not exist, on the one message that asks them to go clean up by hand.
-  capability(repo, "rev", {
-    capability: "acme.review",
-    agents: ["agents/reviewer"],
+test("an incomplete cleanup names the home's REAL path (reviewer-adff009)", async (t) => {
+  // A reconstructed path sends the operator to a directory that may not exist, on
+  // the one message that asks them to go clean up by hand. (A capability agent
+  // composes its providing module with no hooks — Q1 — so only a soul's spawn can
+  // leave outstanding cleanup.)
+  const fx = v2Dev(t, { "acme.review": cap({
     hooks: { spawn: { command: "hook.mjs spawn", required: true }, retire: "hook.mjs retire" },
   }, {
-    "agents/reviewer/soul.yaml": "name: reviewer\nkind: capability\nwork: checkout\nruntime: pi\ndescription: Fresh reviewer.\n",
-    "agents/reviewer/AGENTS.md": "# Reviewer\n",
     "hook.mjs": `if (process.env.OATS_EVENT === 'spawn') { console.log(JSON.stringify({ meta: { alias: 'probe' } })); process.exit(1); }
 console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed' } }));`,
-  });
-  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.review:\n      global: true\n");
-  const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
-  try {
-    const core = await import("@awebai/oats/core");
-    const agent = core.findCapabilityAgent(repo, root, "reviewer");
-    assert.throws(() => spawnInstance(root, { ...agent, repo }, { instance: "reviewer-q", launch: false }),
-      (e) => e.code === "E_REQUIRED_HOOK_FAILED");
-    const home = findInstanceHomes(root, "reviewer-q")[0].home;
-    assert.equal(home, join(root, "reviewer", "instances", "reviewer-q"), "precondition: it homes under the agents root");
+  }) });
+  process.env.PATH = fakeRuntimes(fx.base);
+  await assert.rejects(fx.spawn("dev", { instance: "dev-q" }), (e) => e.code === "E_REQUIRED_HOOK_FAILED");
+  const home = findInstanceHomes(fx.root, "dev-q")[0].home;
+  assert.equal(home, join(fx.root, "dev", "instances", "dev-q"), "precondition: it homes under the agents root");
 
-    const r = retireInstance(root, "reviewer-q", { tmuxSession: "oats-test-nosuch" });
-    assert.ok(r.rollbackIncomplete, "cleanup is incomplete");
-    assert.equal(realpathSync(r.retainedHome), realpathSync(home), "the result names the home that actually survived");
+  const r = retireInstance(fx.root, "dev-q", { tmuxSession: "oats-test-nosuch" });
+  assert.ok(r.rollbackIncomplete, "cleanup is incomplete");
+  assert.equal(realpathSync(r.retainedHome), realpathSync(home), "the result names the home that actually survived");
 
-    const env = { ...process.env, PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" };
-    delete env.PI_AGENTS_ROOT;
-    const cli = spawnSync(process.execPath, [CLI, "retire", "reviewer-q", "--dir", root], { encoding: "utf8", env });
-    assert.notEqual(cli.status, 0);
-    assert.match(cli.stderr, new RegExp(home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
-      `the diagnostic must point at the retained home, got: ${cli.stderr}`);
-  } finally { process.env.PATH = oldPath; }
-  rmSync(base, { recursive: true, force: true });
+  const cli = fx.cli(["retire", "dev-q"], { env: { PATH: process.env.PATH, PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" } });
+  assert.notEqual(cli.status, 0);
+  assert.match(cli.stderr, new RegExp(home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    `the diagnostic must point at the retained home, got: ${cli.stderr}`);
 });
 
 test("`oats retire` reports an incomplete cleanup and exits nonzero, not 'Retired'", async (t) => {
