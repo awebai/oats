@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "name": "personal",
+    "action": "set",
+    "level": "/fixture/base/northwind-workspace",
+    "file": "/fixture/base/northwind-workspace/oats-local.yaml",
+    "before": null,
+    "after": {
+      "harness": "codex",
+      "executable": null,
+      "args": [
+        "--profile",
+        "personal"
+      ],
+      "env": {},
+      "model": null,
+      "yolo": null
+    },
+    "effective": {
+      "name": "personal",
+      "harness": "codex",
+      "executable": null,
+      "args": [
+        "--profile",
+        "personal"
+      ],
+      "env": {},
+      "model": null,
+      "yolo": null,
+      "source": "/fixture/base/northwind-workspace",
+      "shadows": []
+    }
+  }
+}

@@ -1,5 +1,6 @@
 /** API2 address-history projection. No log parsing, activity inference or IO.
  * Counts/integrity/claims come from the producer, not reconstructed from prose. */
+import { harnessOf } from './harness-names.mjs';
 import { record } from './readiness-contract.mjs';
 import { eventsTarget, eventsLimit, eventsTimestamp } from './instance-events-contract.mjs';
 const count = v => Number.isSafeInteger(v) && v >= 0;
@@ -16,7 +17,7 @@ export const EVENT_TITLES = Object.freeze({ spawned: 'Spawned', launched: 'Launc
   'worktree-retained': 'Worktree retained', 'worktree-removed': 'Worktree removed', 'branch-deleted': 'Branch deleted',
   'child-spawn-refused': 'Child spawn refused', recomposed: 'Instructions recomposed' });
 const strings = {
-  spawned: ['agent', 'work', 'branch', 'runtime', 'model', 'parentInstance', 'relation'], launched: ['runtime', 'backend', 'launchConfig'],
+  spawned: ['agent', 'work', 'branch', 'model', 'parentInstance', 'relation'], launched: ['backend', 'launchConfig'],
   restarted: ['phase', 'signal'], stopped: ['signal', 'state'], 'stop-refused': ['phase', 'signal', 'state'],
   'retire-planned': ['planRevision'], retired: ['agent', 'workRecovery'], 'worktree-retained': ['movedTo', 'branch', 'recordedBranch'],
   'worktree-removed': ['branch'], 'branch-deleted': ['branch'], 'child-spawn-refused': ['child', 'agent'], recomposed: ['previous', 'soulDir'],
@@ -29,6 +30,8 @@ function facts(kind, v, publicView) {
   if (!record(v)) throw Error('invalid event facts');
   const out = {};
   for (const key of keysFor(strings, kind)) if (Object.hasOwn(v, key)) out[key] = nullableDetail(v[key], 4096);
+  // The harness: `harness` (0.27) or a released kernel's `runtime`.
+  if (['spawned', 'launched'].includes(kind) && harnessOf(v) !== undefined) out.harness = nullableDetail(harnessOf(v), 4096);
   for (const key of keysFor(numbers, kind)) if (Object.hasOwn(v, key)) {
     if (!(count(v[key]) || key === 'dirty' && v[key] === null)) throw Error('invalid event count');
     out[key] = v[key];

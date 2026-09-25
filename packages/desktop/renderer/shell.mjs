@@ -452,8 +452,8 @@ function renderContextRoster(instances) {
         meta.title = `Repository: ${instanceRepoLabel(i)}${i.branch ? `\nBranch: ${i.branch}` : ""}`;
         copy.append(name, meta);
         row.append(dot, copy);
-        if (typeof i.runtime === "string" && i.runtime) {
-          const runtime = createRuntimeBadge(document, i.runtime);
+        if (typeof i.harness === "string" && i.harness) {
+          const runtime = createRuntimeBadge(document, i.harness);
           runtime.classList.add("ctx-runtime");
           row.append(runtime);
         }

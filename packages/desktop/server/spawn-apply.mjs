@@ -11,7 +11,7 @@ import { spawnApplySupported, spawnApplyChoicesSupported, spawnPrepareInput, spa
 const clone = v => structuredClone(v);
 const byteSize = v => Buffer.byteLength(JSON.stringify(v));
 const scopeKey = c => JSON.stringify([c?.workspace?.id, c?.workspace?.scope, c?.workspace?.remote, c?.workspace?.server,
-  c?.cli?.bin, c?.cli?.version, c?.cli?.spawnPreviewApi, c?.cli?.spawnApplyApi, c?.cli?.features, c?.cli?.runtimes, c?.cli?.sessionBackends, c?.cli?.launchOptions]);
+  c?.cli?.bin, c?.cli?.version, c?.cli?.spawnPreviewApi, c?.cli?.spawnApplyApi, c?.cli?.features, c?.cli?.harnesses, c?.cli?.sessionBackends, c?.cli?.launchOptions]);
 export function createSpawnApplyBoundary({ read = spawnPreviewRequest, invoke = cliSpawnApply,
   now = () => performance.now(), mint = () => randomBytes(32).toString('hex') } = {}) {
   const prepared = new Map(), submitted = new Map();

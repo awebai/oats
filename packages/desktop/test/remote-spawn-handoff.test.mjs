@@ -30,7 +30,7 @@ for (const outcome of ["visible", "switched", "missing", "routeConflict"]) test(
     assert.deepEqual(result, { created: true });
     assert.equal(submitted.serverId, "host");
     assert.deepEqual(opens, outcome === "visible" ? [ref] : []);
-    if (outcome === "missing") assert.match(notices[0], /runtime is not visible/);
+    if (outcome === "missing") assert.match(notices[0], /it is not visible yet/);
     else assert.deepEqual(notices, []);
     assert.equal(currentWorkspace(), switched ? "another" : outcome === "routeConflict" ? "local" : "remote:host-key");
     if (outcome === "routeConflict") assert.match(status, /already has a saved route.*\/remote\/home/);

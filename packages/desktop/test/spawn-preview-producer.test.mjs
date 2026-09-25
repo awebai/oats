@@ -8,13 +8,14 @@ import { cliSpawnPreview } from '../spawn-preview-cli.mjs';
 import { createSpawnPreviewBoundary } from '../server/spawn-preview.mjs';
 import { previewData, INSTANCE_NAME_MAX } from '../renderer/spawn-preview-contract.mjs';
 import { cli, kernel, DEPLOYMENT, ROOT } from './helpers/spawn-preview-fixture.mjs';
+import { harnessOf } from '../renderer/harness-names.mjs';
 const provenance = JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/f3/provenance.json', import.meta.url), 'utf8'));
 const souls = { 'release-manager': 'worktree', 'platform-reviewer': 'checkout', 'support-triager': 'directory', 'no-such-soul': 'worktree' };
 const purpose = p => ({ purpose: p });
 const cases = {
   'preview-worktree-default': ['release-manager', {}],
   'preview-worktree-purpose': ['release-manager', purpose('api-v2')],
-  'preview-runtime-claude': ['release-manager', { ...purpose('api-v2'), runtime: 'claude', model: { kind: 'custom', value: 'opus' } }],
+  'preview-runtime-claude': ['release-manager', { ...purpose('api-v2'), harness: 'claude', model: { kind: 'custom', value: 'opus' } }],
   'preview-native-default': ['release-manager', { ...purpose('api-v2'), model: { kind: 'native-default' } }],
   'preview-yolo': ['release-manager', { ...purpose('api-v2'), yolo: true }],
   'preview-branch-base': ['release-manager', { ...purpose('api-v2'), branch: 'feat/api-v2', base: 'HEAD' }],
@@ -63,7 +64,9 @@ for (const [name, [soul, choices]] of Object.entries(cases)) test(`kernel previe
   const r = envelope.result;
   assert.deepEqual(response.data.subject, r.subject); assert.deepEqual(response.data.decision.revision, r.decision.revision);
   assert.equal(response.data.decision.resolution, r.resolution);
-  for (const key of ['instance', 'work', 'runtime', 'model', 'modelSource', 'branch', 'worktree', 'backend']) assert.deepEqual(response.data[key], r[key], key);
+  for (const key of ['instance', 'work', 'model', 'modelSource', 'branch', 'worktree', 'backend']) assert.deepEqual(response.data[key], r[key], key);
+  assert.equal(response.data.harness, harnessOf(r), 'a released kernel\'s runtime reads as the harness');
+  assert.equal(typeof response.data.harness, 'string');
   assert.deepEqual(response.data.base, r.base); assert.equal(response.data.yolo, r.yolo ?? null);
   for (const key of ['task', 'executable', 'env', 'modules', 'capabilities', 'skills', 'settings', 'providers']) assert.equal(Object.hasOwn(response.data, key), false, key);
 });

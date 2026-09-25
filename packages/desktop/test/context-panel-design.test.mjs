@@ -29,12 +29,12 @@ function fixture(t, { teams, openSoul } = {}) {
 }
 const HOME = '/Users/me/work/northwind/agents/web-developer/instances/web-developer-1';
 const instance = (extra = {}) => ({ instance: 'web-developer-1', agent: 'web-developer', agentsRoot: '/Users/me/work/northwind/agents', home: HOME,
-  repo: '/Users/me/work/northwind', branch: 'feat/checkout', runtime: 'claude', work: 'directory', running: true, ...extra });
+  repo: '/Users/me/work/northwind', branch: 'feat/checkout', harness: 'claude', work: 'directory', running: true, ...extra });
 
 test('only reported facts: an unreported fact hides its row (its field still says so), and an empty section hides', t => {
   const u = fixture(t); u.select(instance());
   assert.equal(u.field('model').textContent, 'Not reported'); assert.equal(u.row('model').hidden, true, 'no "Not reported" row is shown');
-  assert.equal(u.row('runtime').hidden, false); assert.equal(u.row('work').hidden, false);
+  assert.equal(u.row('harness').hidden, false); assert.equal(u.row('work').hidden, false);
   const lineage = u.row('parentInstance').closest('.context-panel-section');
   assert.equal(lineage.hidden, true, 'no parent or sibling reported: no Lineage section');
   u.select(instance({ parentInstance: 'lead-1' }));

@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "eventsApi": 2,
+    "instance": "release-manager-harness",
+    "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-harness",
+    "incarnation": "2026-09-25T18:38:46.930Z",
+    "count": 1,
+    "returned": 1,
+    "truncated": false,
+    "integrity": {
+      "unreadableRows": 0,
+      "foreignRows": 0,
+      "sources": [
+        {
+          "path": "home",
+          "status": "ok",
+          "bytes": 624
+        },
+        {
+          "path": "workspace",
+          "status": "ok",
+          "bytes": 624
+        }
+      ]
+    },
+    "events": [
+      {
+        "eventsApi": 2,
+        "at": "2026-09-25T18:38:46.957Z",
+        "instance": "release-manager-harness",
+        "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-harness",
+        "incarnation": "2026-09-25T18:38:46.930Z",
+        "producer": "kernel",
+        "kind": "spawned",
+        "data": {
+          "agent": "release-manager",
+          "work": "worktree",
+          "branch": "agents/release-manager-harness",
+          "harness": "claude",
+          "model": null,
+          "parentInstance": null,
+          "relation": null,
+          "launched": false,
+          "hooks": [
+            {
+              "capability": "oats.okf",
+              "ok": true,
+              "meta": false
+            }
+          ]
+        }
+      }
+    ],
+    "lastEvent": {
+      "kind": "spawned",
+      "at": "2026-09-25T18:38:46.957Z",
+      "producer": "kernel",
+      "incarnation": "2026-09-25T18:38:46.930Z"
+    },
+    "waitingOnYou": null,
+    "waitingClaims": [],
+    "notes": [
+      "events are producer-attributed facts written by the kernel action that made them true; nothing is inferred from transcripts or task files",
+      "this is the ADDRESS's history: rows tagged with an earlier incarnation belong to a previous instance at this address",
+      "waitingOnYou is null unless a producer reported it for the current incarnation — null means unknown, not 'not waiting'; an explicit false clears that producer's claim; an unknown current incarnation (null) admits no claim at all",
+      "integrity counts torn and foreign rows and names each source's status; truncated is true when the window cut rows or a source was read as a tail"
+    ]
+  }
+}

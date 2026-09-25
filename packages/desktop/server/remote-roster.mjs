@@ -1,3 +1,4 @@
+import { harnessOf } from "../renderer/harness-names.mjs";
 /** Projection of the installed CLI's remote roster. Never reads remote paths locally. */
 export function remoteWorkspace(group) {
   return {
@@ -9,11 +10,11 @@ export function remoteWorkspace(group) {
 
 export function remotePanel(group) {
   const ws = remoteWorkspace(group);
-  const instances = (group.instances || []).map((i) => ({
+  const instances = (group.instances || []).map(({ runtime: _released, ...i }) => ({
     ...i, server: group.server, savedRoute: i.savedRoute === true,
     home: i.home, agentsRoot: i.agentsRoot || group.agentsRoot,
     workspace: group.target.workspace, repoName: group.label || group.server,
-    runtime: i.runtime || null, model: i.model || null,
+    harness: harnessOf({ runtime: _released, ...i }) || null, model: i.model || null,
     running: group.probe.ok ? i.running : null,
     runtimeError: group.probe.ok ? i.runtimeError : group.probe.error?.message || "Server is unreachable",
     tmux: i.tmux || null, git: i.git || null, task: i.task || "", next: i.next || "",
@@ -29,11 +30,12 @@ export function remotePanel(group) {
 
 export function remoteAgents(group) {
   if (!group.registrationPresent || !group.probe.ok) return [];
-  return (group.souls || []).map((a) => ({
+  return (group.souls || []).map(({ runtime: _released, ...a }) => ({
     ...a, server: group.server, remote: true,
     agentsRoot: a.agentsRoot || group.agentsRoot,
     workspace: group.target.workspace, repoName: group.label || group.server,
-    runtime: a.runtime || "pi", backend: a.backend || "tmux", work: a.work || "checkout",
+    // The reported default harness only (a pre-0.27 host's `runtime` is read as it); never a guessed pi.
+    harness: harnessOf({ runtime: _released, ...a }) || null, backend: a.backend || "tmux", work: a.work || "checkout",
     kind: a.kind || "persistent", description: a.description || "",
   }));
 }

@@ -5,7 +5,7 @@
 // binary via execFile/argv — never a shell, never kernel imports:
 //
 //   1. oats spawn <agent> --dir <workspace> --task-file <0600-temp>
-//      [allowlisted purpose/repo/work/runtime/model args] --json
+//      [allowlisted purpose/repo/work/harness/model args] --json
 //   2. oats operation run <layer>:<operation> --home <resolved home> --json
 //
 // JSON mode emits exactly one stdout object (progress goes to stderr):
@@ -17,7 +17,7 @@
 //     reads. It is written to a mkdtemp-owned file created 0600 (mode set at
 //     open, not chmod-after) so no other local user can read a task that may
 //     contain secrets; the temp dir is removed after the CLI returns.
-//   * Spawn argv is an ALLOWLIST — purpose/repo/work/runtime/model only,
+//   * Spawn argv is an ALLOWLIST — purpose/repo/work/harness/model only,
 //     values passed as separate argv entries (no interpolation). Anything
 //     else the renderer sends is dropped, never forwarded.
 //   * Harvest cwd is fixed by the privileged backend to the RESOLVED
@@ -53,7 +53,8 @@ const SPAWN_ARG_RULES = {
   repo:    { flag: "--repo",    re: /^[^-][^\0]*$/ },                       // path — anything not option-shaped
   work:    { flag: "--work",    re: /^(worktree|checkout|attached|workspace|directory)$/ },
   backend: { flag: "--backend", re: /^(tmux|herdr)$/ },
-  runtime: { flag: "--runtime", re: /^(pi|claude|codex)$/ },
+  // The flag is the kernel's (harness-names.mjs harnessFlag): the caller names it, never guessed.
+  harness: { flag: null, re: /^(pi|claude|codex)$/ },
   launchConfig: { flag: "--launch-config", re: /^[a-z0-9][a-z0-9._-]*$/i },
   server:  { flag: "--server",  re: /^[a-z0-9][a-z0-9-]{0,63}$/ },          // registered server id (remote route)
   model:   { flag: "--model",   re: /^[^-][^\0]*$/ },                       // model pattern — not option-shaped
@@ -97,7 +98,7 @@ export function spawnArgv(agent, workspaceDir, taskFile, opts = {}) {
     if (v === undefined || v === null || v === "") continue;
     const s = String(v);
     if (!rule.re.test(s)) { const e = new Error(`invalid ${key} value`); e.code = "E_BAD_ARGS"; throw e; }
-    argv.push(rule.flag, s);
+    argv.push(key === "harness" ? flagFor(opts.harnessFlag) : rule.flag, s);
   }
   if (opts.yolo !== undefined) {
     if (typeof opts.yolo !== "boolean") throw Object.assign(new Error("yolo must be a boolean"), { code: "E_BAD_ARGS" });
@@ -297,14 +298,21 @@ export function cliRetire(bin, { instance, home, workspaceDir, server }, io = {}
   });
 }
 
+/** The kernel's harness flag, named by the caller: --harness (feature harness)
+ * or a released kernel's --runtime. Anything else is refused, never guessed. */
+function flagFor(harnessFlag) {
+  if (harnessFlag === "--harness" || harnessFlag === "--runtime") return harnessFlag;
+  throw Object.assign(new Error("The kernel's harness flag was not named"), { code: "E_BAD_ARGS" });
+}
+
 /** Shared explicit launch choices; every value remains one argv entry. */
-export function launchChoiceArgv({ launchConfig, runtime, model, yolo } = {}) {
+export function launchChoiceArgv({ launchConfig, harness, model, yolo, harnessFlag } = {}) {
   const argv = [];
-  for (const [key, v] of Object.entries({ launchConfig, runtime, model })) {
+  for (const [key, v] of Object.entries({ launchConfig, harness, model })) {
     if (v === undefined || v === "") continue;
     const rule = SPAWN_ARG_RULES[key];
     if (typeof v !== "string" || !rule.re.test(v)) throw Object.assign(new Error(`Invalid ${key}`), { code: "E_BAD_ARGS" });
-    argv.push(rule.flag, v);
+    argv.push(key === "harness" ? flagFor(harnessFlag) : rule.flag, v);
   }
   if (yolo !== undefined) {
     if (typeof yolo !== "boolean") throw Object.assign(new Error("Invalid permission setting"), { code: "E_BAD_ARGS" });

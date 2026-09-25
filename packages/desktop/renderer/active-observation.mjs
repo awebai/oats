@@ -5,7 +5,7 @@ import { eventsTimestamp } from './instance-events-contract.mjs';
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const text = value => typeof value === 'string' ? value : typeof value === 'number' && Number.isFinite(value) ? String(value) : '';
 const identityFields = ['home', 'agentsRoot', 'server'];
-const displayed = ['agent', 'repoName', 'runtime', 'branch', 'model', 'backend']; // model/backend preserve existing Start/Restart handoffs
+const displayed = ['agent', 'repoName', 'harness', 'branch', 'model', 'backend']; // model/backend preserve existing Start/Restart handoffs
 
 export function projectActivePanel(panel) {
   if (!object(panel) || !Array.isArray(panel.instances)) throw new Error('The server did not report a roster.');

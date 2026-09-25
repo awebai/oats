@@ -1,3 +1,4 @@
+import { harnessOf } from './harness-names.mjs';
 import { apiJson, postJson, instanceApiPath, currentWorkspace, workspaceGeneration, onWorkspaceChange, wsQuery } from "./views/common.mjs";
 import { instanceId } from "./instance-tree.mjs";
 import { waitForInstanceInPanel } from "./views/spawn.mjs";
@@ -35,7 +36,7 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
     const submit = modal.querySelector(".start-submit"), status = modal.querySelector(".start-status");
     const retry = modal.querySelector(".start-retry");
     modal.querySelector("h2").textContent = `${restart ? "Restart" : "Start"} ${instance.instance}`;
-    modal.querySelector(".start-context").textContent = `${instance.runtime || "pi"} · ${instance.server || "This machine"} · ${instance.home}`;
+    modal.querySelector(".start-context").textContent = `${instance.harness || "Harness not reported"} · ${instance.server || "This machine"} · ${instance.home}`;
     model.placeholder = instance.model || "Harness default";
     modal.querySelector(".start-model-help").textContent = `Leave blank to keep ${instance.model || "the harness default"}. Choosing a model here changes this instance’s next launch.`;
     let closed = false, starting = false, started = false, live = false, canStart = false, refreshGeneration = 0, hasLaunchConfig = false, configsLoaded = false;
@@ -43,8 +44,8 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
     const runtime = modal.querySelector(".start-runtime"), yolo = modal.querySelector(".start-yolo");
     let chosenConfig, modelRequest = 0;
     const updateModelHelp = () => {
-      const effectiveRuntime = chosenConfig?.runtime || runtime.value || instance.runtime || "pi";
-      const defaultModel = chosenConfig?.model || (effectiveRuntime === instance.runtime ? instance.model : null);
+      const effectiveHarness = harnessOf(chosenConfig) || runtime.value || instance.harness || "pi";
+      const defaultModel = chosenConfig?.model || (effectiveHarness === instance.harness ? instance.model : null);
       model.placeholder = defaultModel || "Harness default";
       modal.querySelector(".start-model-help").textContent = `Leave blank to use ${defaultModel || "the selected harness’s default model"}. This choice is saved for later starts of this instance.`;
     };
@@ -52,14 +53,14 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
       const id = ++modelRequest, list = modal.querySelector("datalist"); list.replaceChildren();
       if (instance.server || chosenConfig) return; // A named wrapper may have a different model catalog.
       try {
-        const data = await postJson(ctx, "/api/models", { runtime: runtime.value || instance.runtime || "pi" });
+        const data = await postJson(ctx, "/api/models", { harness: runtime.value || instance.harness || "pi" });
         if (!owns() || id !== modelRequest) return;
         for (const m of data.models || []) { const option = doc.createElement("option"); option.value = m.id; if (m.label) option.label = m.label; list.append(option); }
       } catch { /* Models can always be entered explicitly. */ }
     };
-    const choices = () => ({ ...(model.value.trim() ? { model: model.value.trim() } : {}), ...(hasLaunchConfig && runtime.value ? { runtime: runtime.value } : {}), ...(hasLaunchConfig && yolo.value !== "" ? { yolo: yolo.value === "true" } : {}) });
+    const choices = () => ({ ...(model.value.trim() ? { model: model.value.trim() } : {}), ...(hasLaunchConfig && runtime.value ? { harness: runtime.value } : {}), ...(hasLaunchConfig && yolo.value !== "" ? { yolo: yolo.value === "true" } : {}) });
     const launchFields = launchConfigFields(modal.querySelector(".start-configurations"), { ctx, selector: () => ({ home: instance.home }), choices, owns,
-      changed: row => { chosenConfig = row; runtime.value = ""; runtime.disabled = !!row; runtime.querySelector("option").textContent = row ? `Configuration harness (${row.runtime})` : `Recorded harness (${instance.runtime || "pi"})`; updateModelHelp(); void fillModels(); },
+      changed: row => { chosenConfig = row; runtime.value = ""; runtime.disabled = !!row; runtime.querySelector("option").textContent = row ? `Configuration harness (${harnessOf(row)})` : `Recorded harness (${instance.runtime || "pi"})`; updateModelHelp(); void fillModels(); },
     });
     for (const input of [runtime, model, yolo]) input.addEventListener("input", () => launchFields.invalidate());
     runtime.addEventListener("change", () => { updateModelHelp(); void fillModels(); });

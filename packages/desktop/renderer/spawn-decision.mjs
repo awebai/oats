@@ -1,12 +1,13 @@
 /** Producer-owned K6 decision data. Never compute revisions or derive argv from it. */
 import { absolute, record } from './readiness-contract.mjs';
+import { harnessOf, HARNESSES } from './harness-names.mjs';
 const name = v => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(v);
 const safe = v => typeof v === 'string' && v.length <= 4096
   && !/[\x00-\x1f\x7f]|https?:\/\/[^/\s]*@|(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{16,}/.test(v);
 const nullable = v => v === null || safe(v);
 export function spawnEffective(v) {
   if (!record(v) || !absolute(v.repo) || !['worktree', 'checkout', 'directory', 'workspace', 'attached'].includes(v.work)
-    || !['pi', 'claude', 'codex'].includes(v.runtime) || !nullable(v.model) || !nullable(v.launchConfig)
+    || !HARNESSES.includes(harnessOf(v)) || !nullable(v.model) || !nullable(v.launchConfig)
     || v.yolo !== null && typeof v.yolo !== 'boolean' || !['tmux', 'herdr'].includes(v.backend)
     || typeof v.childSpawns !== 'boolean') return null;
   let relation = null;
@@ -16,7 +17,7 @@ export function spawnEffective(v) {
       || !name(a.instance) || !absolute(a.agentsRoot)) return null;
     relation = { kind: r.kind, anchor: { instance: a.instance, agentsRoot: a.agentsRoot } };
   }
-  return { repo: v.repo, work: v.work, runtime: v.runtime, model: v.model, launchConfig: v.launchConfig,
+  return { repo: v.repo, work: v.work, harness: harnessOf(v), model: v.model, launchConfig: v.launchConfig,
     yolo: v.yolo, backend: v.backend, childSpawns: v.childSpawns, relation };
 }
 export function spawnDecision(v, { effectiveRequired = false } = {}) {

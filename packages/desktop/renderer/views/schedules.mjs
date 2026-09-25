@@ -61,7 +61,7 @@ export function createSchedulesView(el, ctx, readOptions = {}) {
       <div class="schedule-spawn-options">
         <label>Purpose (optional instance name prefix)<input class="field" name="purpose"></label>
         <div class="schedule-pair">
-          <label>Harness<select class="field" name="runtime"><option value="">Soul default</option><option>pi</option><option>claude</option><option>codex</option></select></label>
+          <label>Harness<select class="field" name="harness"><option value="">Soul default</option><option>pi</option><option>claude</option><option>codex</option></select></label>
           <label>Model<input class="field" name="model" placeholder="Soul default"></label>
         </div>
         <div class="schedule-pair">
@@ -151,7 +151,7 @@ export function createSchedulesView(el, ctx, readOptions = {}) {
     field("task").value = job?.message || job?.task || "";
     field("purpose").value = job?.purpose || "";
     nestedWake.set(job?.wake);
-    for (const name of ["runtime", "model", "backend"]) field(name).value = job?.[name] || "";
+    for (const name of ["harness", "model", "backend"]) field(name).value = job?.[name] || "";
     field("yolo").value = job?.yolo === undefined ? "" : String(job.yolo);
     baseline = Object.fromEntries([...form.elements].filter(f => f.name).map(f => [f.name, f.value]));
     originalWake = job?.wake ? { ...nestedWake.read() } : null;
@@ -233,7 +233,7 @@ export function createSchedulesView(el, ctx, readOptions = {}) {
         if (wake) spec.wake = Object.fromEntries(['cron', 'tz', 'message'].map(key => [key,
           original?.wake && original.kind === kind && wake[key] === originalWake?.[key] ? original.wake[key] : wake[key]]));
       } catch (e) { q(".schedule-form-error").textContent = e.message; return; }
-      for (const name of ["runtime", "model", "backend"]) if (field(name).value || original && Object.hasOwn(original, name)) spec[name] = preserve(name);
+      for (const name of ["harness", "model", "backend"]) if (field(name).value || original && Object.hasOwn(original, name)) spec[name] = preserve(name);
       if (field("yolo").value) spec.yolo = field("yolo").value === "true";
     } else {
       spec.home = field("home").value;

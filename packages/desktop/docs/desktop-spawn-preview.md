@@ -13,7 +13,7 @@ kernel to mutate, or treats preview paths as filesystem/terminal authority.
   its replay could fail at the branch-existence check and lacked completion custody.
 
 The full apply fence is checked at admission/confirmation and at the actual
-process owner. Existing optional advertisements remain required too: runtime and
+process owner. Existing optional advertisements remain required too: harness and
 backend lists, yolo launch option, launch-config and schedule (for wake input).
 A version string or optimistic flag probe never enables a mode.
 API 1 preview is never invoked: older parsers can ignore unknown flags and spawn.
@@ -34,7 +34,7 @@ reports twice, refuses rather than falling back to the roster.
 Choices include purpose **or** name (exclusive; the kernel owns naming rules and
 refuses with `E_INSTANCE_NAME_INVALID`/`E_INSTANCE_NAME_TAKEN`), work
 (`worktree` for a checkout soul), worktree-only branch/base, advertised
-runtime/backend, launchConfig, yolo, model, relation and identity.
+harness/backend, launchConfig, yolo, model, relation and identity.
 `identity` is `{provider, mode:"local"}` or `{provider, mode:"global", resident}`
 (decision 27): `provider` is the soul's messaging capability as the preview
 reported it (the one module on layer `messaging`), and the argv is
@@ -73,12 +73,14 @@ success and rejection.
 Response: `{spawnPreviewViewApi:1,status,target,data,reason}`. Success requires
 API2, `preview:true`, byte-exact `subject{soul,agentsRoot,dir}` and consistent
 `decision{instance,home,branch,base,revision}`. Revision is opaque24-hex producer data.
-K6d additionally reports `decision.effective {repo,work,runtime,model,launchConfig,
-yolo,backend,childSpawns,relation}`. Child policy is boolean; relation is null or
+K6d additionally reports `decision.effective {repo,work,harness,model,launchConfig,
+yolo,backend,childSpawns,relation}` (a released kernel without feature `harness`
+reports `runtime`; the Desktop reads either and sends `--harness` or `--runtime`
+by the feature: renderer/harness-names.mjs). Child policy is boolean; relation is null or
 `{kind,anchor{instance,agentsRoot}}`; model/config/yolo can be null. Old API2 READ
 without effective remains an observation, never a synthesized executable plan.
 
-Projection preserves bounded work/runtime/model provenance, the `resolution`
+Projection preserves bounded work/harness/model provenance, the `resolution`
 binding (top-level facts cross-checked against `decision.effective`),
 `messaging{provider, identity{mode,resident}|null, origin{kind,at}|null}` —
 the identity `decision.effective.providers[<cap>]` binds, which must equal the
@@ -148,7 +150,7 @@ result lookup has a short10s proxy deadline, prepare35s.
 The private adapter's `{started,envelope}` records possible dispatch, not creation
 or rollback. The broker must qualify success: full returned decision equals the
 confirmed decision (including effective), exact soul/name/home/work/repo/branch
-and model/runtime facts, and typed launched/replayed fields. Raw recipes, attach
+and model/harness facts, and typed launched/replayed fields. Raw recipes, attach
 commands, task content and warning text are dropped; only warning count crosses.
 Malformed/mismatched receipts, transport loss and ambiguous post-dispatch failures
 are **unknown**, not permission for a fresh spawn/key. A timeout does not prove

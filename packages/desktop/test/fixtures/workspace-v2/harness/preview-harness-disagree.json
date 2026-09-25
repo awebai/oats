@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_BAD_ARGS",
+    "message": "--harness pi and --runtime claude disagree; --runtime is the pre-0.27 name of --harness — give one"
+  }
+}

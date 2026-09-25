@@ -1,6 +1,7 @@
 /** The CLI resolves launch definitions; the server admits workspace targets. */
 import { dirname } from "node:path";
 import { cliLaunchConfig } from "../cli-adapter.mjs";
+import { harnessFlag, harnessKey } from "../renderer/harness-names.mjs";
 
 const fail = (message, code = "E_BAD_ARGS") => { throw Object.assign(new Error(message), { code }); };
 
@@ -32,8 +33,14 @@ export async function launchConfigRequest(request, { workspace, cli, agents = []
     context = selector.context;
   }
   if (action === "preview" && !home && !soul) fail("Select a soul or existing home to preview");
+  // What is written speaks this kernel's names: a definition's harness under its key
+  // (feature harness; a released kernel reads runtime), and the preview's harness flag.
+  const definition = request.definition && typeof request.definition === "object" && !Array.isArray(request.definition) && Object.hasOwn(request.definition, "harness")
+    ? Object.fromEntries(Object.entries(request.definition).map(([key, value]) => [key === "harness" ? harnessKey(cli) : key, value]))
+    : request.definition;
+  const choices = request.choices && typeof request.choices === "object" ? { ...request.choices, harnessFlag: harnessFlag(cli) } : request.choices;
   const envelope = await invoke(cli.bin, {
-    action, name: request.name, definition: request.definition, keepEnv: request.keepEnv, choices: request.choices,
+    action, name: request.name, definition, keepEnv: request.keepEnv, choices,
     context, server, home, soul, agentsRoot, localCwd: server ? localCwd : context || workspace.scope,
   });
   if (!envelope.ok) fail(envelope.error?.message || "Launch configuration operation failed", envelope.error?.code);

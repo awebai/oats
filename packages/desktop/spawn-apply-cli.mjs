@@ -37,7 +37,7 @@ export async function cliSpawnApply(cli, options = {}, io = {}) {
     taskFile = writeTaskFile(input.task, io);
     if (input.wake) wakeFile = writeTaskFile(JSON.stringify(input.wake), io);
     const choices = input.choices;
-    const argv = ['spawn', target.selector.soul, '--dir', target.context, '--agents-root', target.selector.agentsRoot, ...choiceArgv(choices)];
+    const argv = ['spawn', target.selector.soul, '--dir', target.context, '--agents-root', target.selector.agentsRoot, ...choiceArgv(choices, cli)];
     argv.push('--expect-decision', decision.revision, '--idempotency-key', options.key, '--task-file', taskFile.file);
     if (wakeFile) argv.push('--wake-file', wakeFile.file);
     argv.push('--json');

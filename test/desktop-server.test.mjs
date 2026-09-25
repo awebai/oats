@@ -324,7 +324,7 @@ test("desktop server: parsePiModelList drops the header and yields provider/mode
   assert.deepEqual(parse(null), [], "missing catalog → empty list, never a throw");
 });
 
-test("desktop server: POST /api/models serves runtime-scoped catalogs, coalesces concurrent misses into ONE probe, guards Origin, and 400s unknown runtimes", async () => {
+test("desktop server: POST /api/models serves harness-scoped catalogs, coalesces concurrent misses into ONE probe, guards Origin, and 400s unknown harnesses", async () => {
   const { mkdtempSync, writeFileSync, chmodSync, readFileSync: rf } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   // Fake `pi` on PATH: a deterministic catalog that COUNTS its invocations
@@ -338,9 +338,9 @@ test("desktop server: POST /api/models serves runtime-scoped catalogs, coalesces
   const { scope } = northwindDeployment();
   const { port, proc } = await startServer(scope, { env: { PATH: `${bindir}:${process.env.PATH}` } });
   try {
-    const post = (runtime, headers = {}) => fetch(`http://127.0.0.1:${port}/api/models`, {
+    const post = (harness, headers = {}) => fetch(`http://127.0.0.1:${port}/api/models`, {
       method: "POST", headers: { "content-type": "application/json", ...headers },
-      body: JSON.stringify(runtime === undefined ? {} : { runtime }),
+      body: JSON.stringify(harness === undefined ? {} : { harness }),
     });
     // concurrent COLD misses (both runtimes) fan in to ONE child-process run
     const burst = await Promise.all([post("pi"), post("claude"), post("pi"), post("claude"), post("pi")]);
@@ -348,19 +348,19 @@ test("desktop server: POST /api/models serves runtime-scoped catalogs, coalesces
     const runs = rf(countFile, "utf8").trim().split("\n").length;
     assert.equal(runs, 1, `concurrent misses coalesce into one probe (got ${runs} runs)`);
     const pi = await (await post("pi")).json();
-    assert.equal(pi.runtime, "pi");
+    assert.equal(pi.harness, "pi");
     assert.deepEqual(pi.models.map((m) => m.id),
       ["anthropic/claude-opus-4-5", "anthropic/claude-sonnet-4-5", "openai/gpt-5.2"],
       "pi catalog is the full provider/model list");
     const cl = await (await post("claude")).json();
-    assert.equal(cl.runtime, "claude");
+    assert.equal(cl.harness, "claude");
     const ids = cl.models.map((m) => m.id);
     for (const alias of ["opus", "sonnet", "haiku"]) assert.ok(ids.includes(alias), `claude alias ${alias} offered`);
     assert.ok(ids.includes("claude-opus-4-5"), "anthropic ids offered WITHOUT the provider prefix");
     assert.ok(!ids.some((id) => id.startsWith("openai/") || id === "gpt-5.2"), "non-anthropic models never offered to claude");
-    assert.deepEqual(await (await post("codex")).json(), { runtime: "codex", models: [] }, "Codex accepts native model ids without Pi catalog guesses");
-    assert.equal((await post("unknown")).status, 400, "unknown runtime → 400");
-    assert.equal((await (await post(undefined)).json()).runtime, "pi", "runtime defaults to pi");
+    assert.deepEqual(await (await post("codex")).json(), { harness: "codex", models: [] }, "Codex accepts native model ids without Pi catalog guesses");
+    assert.equal((await post("unknown")).status, 400, "unknown harness → 400");
+    assert.equal((await (await post(undefined)).json()).harness, "pi", "harness defaults to pi");
     // command-running route sits behind the POST Origin guard — a hostile
     // page can never fan out child processes cross-origin (review 9b1e3ff)
     assert.equal((await post("pi", { origin: "http://evil.com" })).status, 403, "hostile origin rejected");
@@ -372,8 +372,8 @@ test("desktop server: /api/models degrades to an empty list when pi is not insta
   const { scope } = northwindDeployment();
   const { port, proc } = await startServer(scope, { env: { PATH: "/nonexistent", SHELL: "/bin/false" } });
   try {
-    const post = (runtime) => fetch(`http://127.0.0.1:${port}/api/models`, {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ runtime }) });
+    const post = (harness) => fetch(`http://127.0.0.1:${port}/api/models`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ harness }) });
     const pi = await (await post("pi")).json();
     assert.deepEqual(pi.models, [], "no pi → empty catalog, not an error");
     const cl = await (await post("claude")).json();

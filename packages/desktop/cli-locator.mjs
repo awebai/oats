@@ -13,7 +13,7 @@
 // Every candidate is canonicalized to an absolute executable and accepted
 // ONLY if executable and `<bin> version --json` returns the v1 probe:
 //   {"schemaVersion":1,"name":"@awebai/oats","version":"0.24.x","desktopApi":1}
-// Desktop accepts desktopApi === 1 and semver >=0.25.8 <0.27.0 (the band is
+// Desktop accepts desktopApi === 1 and semver >=0.25.8 <0.28.0 (the band is
 // spelled ONCE, in ACCEPT_RANGE below — this line only paraphrases it).
 // API version — not source adjacency — is authoritative.
 //
@@ -21,6 +21,7 @@
 // discovery matrix and acceptance rules are unit-testable and
 // mutation-checkable without a real CLI.
 import { delimiter, isAbsolute, join } from "node:path";
+import { harnessList } from "./renderer/harness-names.mjs";
 
 export const DESKTOP_API = 1;
 // The accepted band is per-minor and widened DELIBERATELY, once per kernel
@@ -49,7 +50,7 @@ export const DESKTOP_API = 1;
 // it. The REAL gate is the positive `packages-no-approval` feature fence
 // (workspace-cli WORKSPACE_FEATURES, deployment-contract DEPLOYMENT_FEATURES):
 // released 0.25.x kernels lack it and get the "update OATS" state.
-export const ACCEPT_RANGE = { min: [0, 25, 8], maxExclusive: [0, 27, 0] };
+export const ACCEPT_RANGE = { min: [0, 25, 8], maxExclusive: [0, 28, 0] };
 /** The band as humans read it — derived, never hand-spelled, so the probe
  * rejection reason, the backend's /api status and the degradation card can
  * never disagree with the numbers actually enforced above. */
@@ -204,7 +205,7 @@ export async function discover(io, probe) {
         continue;
       }
       const a = acceptProbe(payload);
-      if (a.ok) return { ok: true, bin: path, source: src.source, version: payload.version, ...(Array.isArray(payload.runtimes) ? { runtimes: payload.runtimes } : {}), ...(Array.isArray(payload.sessionBackends) ? { sessionBackends: payload.sessionBackends } : {}), ...(Array.isArray(payload.launchOptions) ? { launchOptions: payload.launchOptions } : {}), ...([1, 2].includes(payload.scheduleApi) ? { scheduleApi: payload.scheduleApi } : {}), ...(payload.operationsApi === 2 ? { operationsApi: 2 } : {}), ...(payload.lifecycleApi === 1 ? { lifecycleApi: 1 } : {}), ...(payload.readinessApi === 2 ? { readinessApi: 2 } : {}), ...(payload.spawnPreviewApi === 2 ? { spawnPreviewApi: 2 } : {}), ...(payload.spawnApplyApi === 1 ? { spawnApplyApi: 1 } : {}), ...(payload.eventsApi === 2 ? { eventsApi: 2 } : {}), ...(payload.scheduleHistoryApi === 3 ? { scheduleHistoryApi: 3 } : {}), ...(payload.workspaceApi === 2 ? { workspaceApi: 2 } : {}), ...(Array.isArray(payload.features) ? { features: payload.features } : {}), ...(Array.isArray(payload.remote) ? { remote: payload.remote } : {}) };
+      if (a.ok) return { ok: true, bin: path, source: src.source, version: payload.version, ...(harnessList(payload) ? { harnesses: harnessList(payload) } : {}), ...(Array.isArray(payload.sessionBackends) ? { sessionBackends: payload.sessionBackends } : {}), ...(Array.isArray(payload.launchOptions) ? { launchOptions: payload.launchOptions } : {}), ...([1, 2].includes(payload.scheduleApi) ? { scheduleApi: payload.scheduleApi } : {}), ...(payload.operationsApi === 2 ? { operationsApi: 2 } : {}), ...(payload.lifecycleApi === 1 ? { lifecycleApi: 1 } : {}), ...(payload.readinessApi === 2 ? { readinessApi: 2 } : {}), ...(payload.spawnPreviewApi === 2 ? { spawnPreviewApi: 2 } : {}), ...(payload.spawnApplyApi === 1 ? { spawnApplyApi: 1 } : {}), ...(payload.eventsApi === 2 ? { eventsApi: 2 } : {}), ...(payload.scheduleHistoryApi === 3 ? { scheduleHistoryApi: 3 } : {}), ...(payload.workspaceApi === 2 ? { workspaceApi: 2 } : {}), ...(Array.isArray(payload.features) ? { features: payload.features } : {}), ...(Array.isArray(payload.remote) ? { remote: payload.remote } : {}) };
       tried.push({ path, source: src.source, reason: a.reason, version: payload?.version });
     }
   }

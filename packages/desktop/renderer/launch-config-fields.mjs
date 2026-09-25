@@ -1,3 +1,4 @@
+import { harnessOf } from './harness-names.mjs';
 import { postJson, currentWorkspace, workspaceGeneration } from "./views/common.mjs";
 
 /** Shared launch configuration selector/editor. The kernel resolves every preview. */
@@ -44,7 +45,7 @@ export function launchConfigFields(el, { ctx, selector, choices, owns = () => tr
   const fillEditor = row => {
     const def = row?.definition || row || {};
     field("name").value = row?.name || "";
-    field("runtime").value = def.runtime || "codex";
+    field("runtime").value = harnessOf(def) || "codex";
     field("executable").value = def.executable || "";
     field("args").value = JSON.stringify(def.args || [], null, 2);
     field("env").value = JSON.stringify(def.env || {}, null, 2);
@@ -59,7 +60,7 @@ export function launchConfigFields(el, { ctx, selector, choices, owns = () => tr
   };
   const selectionChanged = (notify = true) => {
     invalidate(); const row = selected();
-    el.querySelector(".launch-config-source").textContent = row ? `${row.runtime} · ${row.source || "Selected scope"}` : "Use the recorded launch for this home, or the soul defaults for a new instance.";
+    el.querySelector(".launch-config-source").textContent = row ? `${harnessOf(row)} · ${row.source || "Selected scope"}` : "Use the recorded launch for this home, or the soul defaults for a new instance.";
     fillEditor(row); if (notify) changed(row);
   };
   select.addEventListener("change", () => selectionChanged());
@@ -77,7 +78,7 @@ export function launchConfigFields(el, { ctx, selector, choices, owns = () => tr
       configurations = data.configurations || []; context = data.context || data.scope?.context;
       select.replaceChildren();
       const option = doc.createElement("option"); option.value = ""; option.textContent = "Keep recorded / soul defaults"; select.append(option);
-      for (const row of configurations) { const option = doc.createElement("option"); option.value = row.name; option.textContent = `${row.name} (${row.runtime})`; select.append(option); }
+      for (const row of configurations) { const option = doc.createElement("option"); option.value = row.name; option.textContent = `${row.name} (${harnessOf(row)})`; select.append(option); }
       select.value = configurations.some(c => c.name === prefer) ? prefer : "";
       editor.hidden = !context;
       el.querySelector(".launch-config-scope").textContent = context ? `Configuration scope: ${context}` : "";
@@ -113,7 +114,7 @@ export function launchConfigFields(el, { ctx, selector, choices, owns = () => tr
         if (!Array.isArray(args) || args.some(a => typeof a !== "string")) throw Error("Arguments must be a JSON array of strings.");
         if (!keepEnv && (!env || typeof env !== "object" || Array.isArray(env))) throw Error("Environment must be a JSON object.");
         if (env && Object.values(env).some(v => v?.redacted === true)) throw Error("Replace redacted values with complete environment references, or preserve the saved environment.");
-        definition = { runtime: field("runtime").value, args, ...(env ? { env } : {}) };
+        definition = { harness: field("runtime").value, args, ...(env ? { env } : {}) };
         for (const key of ["executable", "model"]) if (field(key).value.trim()) definition[key] = field(key).value.trim();
         if (field("yolo").value !== "") definition.yolo = field("yolo").value === "true";
       }

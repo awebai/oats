@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "context": "/fixture/base/northwind-workspace/agents-repo",
+    "selected": {
+      "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-harness",
+      "instance": "release-manager-harness"
+    },
+    "selection": {
+      "source": "config",
+      "launchConfig": "personal",
+      "harness": null,
+      "model": null,
+      "yolo": null
+    },
+    "harness": "codex",
+    "model": null,
+    "modelSource": "native default (harness changed)",
+    "yolo": null,
+    "launchConfig": "personal",
+    "launchConfigSource": "/fixture/base/northwind-workspace",
+    "executable": {
+      "path": "/fixture/base/bin/codex",
+      "declared": null,
+      "resolvedFrom": "PATH"
+    },
+    "argv": [
+      "--cd",
+      "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-harness",
+      "--profile",
+      "personal",
+      "--",
+      "\"$(cat TASK.md)\""
+    ],
+    "environment": [
+      {
+        "name": "OATS_INSTANCE",
+        "redacted": true
+      },
+      {
+        "name": "OATS_INSTANCE_HOME",
+        "redacted": true
+      },
+      {
+        "name": "PI_AGENT_INSTANCE",
+        "redacted": true
+      },
+      {
+        "name": "PI_AGENT_HOME",
+        "redacted": true
+      }
+    ],
+    "command": "OATS_INSTANCE='release-manager-harness' OATS_INSTANCE_HOME='/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-harness' PI_AGENT_INSTANCE='release-manager-harness' PI_AGENT_HOME='/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-harness' '/fixture/base/bin/codex' --cd '/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-harness' '--profile' 'personal' -- \"$(cat TASK.md)\"",
+    "prompt": {
+      "kind": "task-file",
+      "file": "TASK.md"
+    },
+    "hooks": {
+      "launch": {},
+      "env": {},
+      "contributions": []
+    },
+    "preflight": [
+      {
+        "check": "executable",
+        "ok": true,
+        "detail": "/fixture/base/bin/codex (PATH)"
+      },
+      {
+        "check": "capabilities",
+        "ok": true,
+        "detail": "prepared for the new harness"
+      },
+      {
+        "check": "environment",
+        "ok": true,
+        "detail": "0 value(s), references resolved on the execution host at start"
+      },
+      {
+        "check": "model",
+        "ok": true,
+        "detail": "native default (native default (harness changed))"
+      },
+      {
+        "check": "harness-packages",
+        "ok": true,
+        "detail": "no harness package requirement declared for this harness; nothing probed"
+      }
+    ],
+    "ok": true
+  }
+}

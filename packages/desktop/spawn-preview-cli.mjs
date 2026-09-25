@@ -8,7 +8,7 @@ export function cliSpawnPreview(cli, options = {}, io = {}) {
   if (!previewSupported(cli)) return Promise.resolve(failure('E_PREVIEW_UNAVAILABLE'));
   const target = previewTarget(options.target), choices = previewChoices(options.choices);
   if (!target || !choices || Object.keys(options).some(k => !['target', 'choices'].includes(k))) return Promise.resolve(failure('E_BAD_ARGS'));
-  const argv = ['spawn', target.selector.soul, '--dir', target.context, '--agents-root', target.selector.agentsRoot, '--preview', ...choiceArgv(choices), '--json'];
+  const argv = ['spawn', target.selector.soul, '--dir', target.context, '--agents-root', target.selector.agentsRoot, '--preview', ...choiceArgv(choices, cli), '--json'];
   const env = { ...(io.env ?? process.env) };
   for (const k of ['PI_AGENTS_ROOT', 'OATS_DEPLOYMENT', 'OATS_RESOLUTION', 'OATS_PREVIEW_PREFLIGHT_BUDGET_MS']) delete env[k];
   return new Promise(resolve => {

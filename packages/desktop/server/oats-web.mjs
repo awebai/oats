@@ -17,7 +17,7 @@
 
  *   POST /api/instance-git?ws=<id>  { action: git|diff, selector, fileId?, revision?, indexRevision? } → qualified K1 read
  *   POST /api/workspace-sync?ws=<id> { action: read|sync } → `oats capabilities` / `oats sync` (workspace-v2)
- *   POST /api/models                { runtime: pi|claude|codex } → advisory model catalog for the spawn modal
+ *   POST /api/models                { harness: pi|claude|codex } → advisory model catalog for the spawn modal
  *   GET  /api/cli                   CLI discovery status (bin, version, required range, tried)
  *   POST /api/cli/reprobe           re-run discovery; body { bin? } prioritizes a user-chosen binary
  *   POST /api/harvest/<instance>    the active provider’s harvest operation addressed by the exact --home; the CLI derives the recorded context
@@ -58,6 +58,7 @@ import { previewFailure } from '../renderer/spawn-preview-contract.mjs';
 import { forgeBoundary, FORGE_EPOCH_HEADER, validForgeEpoch } from "./forge.mjs";
 import { launchConfigRequest } from "./launch-configs.mjs";
 import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
+import { harnessFlag, HARNESSES } from "../renderer/harness-names.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -146,7 +147,8 @@ function workspaceChoices(all = workspaces()) {
 function projectPanelInstance(i) {
   return {
     instance: i.instance, agent: i.agent, description: i.description,
-    repo: i.repo, work: i.work, branch: i.branch || null, runtime: i.runtime || "pi",
+    // The reported harness only (harness-names.mjs reads a released kernel's runtime); never a guessed default.
+    repo: i.repo, work: i.work, branch: i.branch || null, harness: i.harness || null,
     model: i.model || null, running: i.running, createdAt: i.createdAt,
     home: i.home, agentsRoot: i.agentsRoot,
     workspace: dirname(i.agentsRoot), repoName: (i.repo || dirname(i.agentsRoot)).split("/").pop(),
@@ -218,7 +220,7 @@ function agentsData(wsId) {
    empty list — a missing pi must not break the spawn modal.
    SECURITY (review 9b1e3ff): every cache miss executes a child process
    (pi, possibly a login shell), so this is a POST — POST /api/models
-   { runtime } → { runtime, models: [{ id, label }] } — behind the server's
+   { harness } → { harness, models: [{ id, label }] } — behind the server's
    Origin guard: a GET with its own Origin check is bypassable by <img>/
    no-cors requests that omit the header, letting a hostile page fan out
    child processes against the fixed loopback port. All concurrent misses
@@ -226,7 +228,7 @@ function agentsData(wsId) {
    regardless of request fan-in. */
 const CLAUDE_MODEL_ALIASES = ["opus", "sonnet", "haiku", "sonnet[1m]"];
 const MODELS_TTL_MS = 60_000;
-const modelsCache = new Map(); // runtime → { at, models }
+const modelsCache = new Map(); // harness → { at, models }
 function execCapture(cmd, cmdArgs) {
   return new Promise((ok) => {
     execFile(cmd, cmdArgs, { encoding: "utf8", timeout: 10_000, shell: false, maxBuffer: 4 * 1024 * 1024 },
@@ -264,21 +266,21 @@ function piModelCatalogOnce() {
   }
   return piCatalogInflight;
 }
-async function modelsData(runtime) {
-  const cached = modelsCache.get(runtime);
+async function modelsData(harness) {
+  const cached = modelsCache.get(harness);
   if (cached && Date.now() - cached.at < MODELS_TTL_MS) return cached.models;
   // Codex has its own configured providers; Pi's catalog is not authoritative.
   // The model field accepts an explicit id or an empty value for native defaults.
-  if (runtime === "codex") return [];
+  if (harness === "codex") return [];
   const catalog = await piModelCatalogOnce();
-  const models = runtime === "pi"
+  const models = harness === "pi"
     ? catalog.map((id) => ({ id, label: id }))
     : [
         ...CLAUDE_MODEL_ALIASES.map((id) => ({ id, label: `${id} (alias)` })),
         ...catalog.filter((id) => id.startsWith("anthropic/"))
           .map((id) => ({ id: id.slice("anthropic/".length), label: id.slice("anthropic/".length) })),
       ];
-  modelsCache.set(runtime, { at: Date.now(), models });
+  modelsCache.set(harness, { at: Date.now(), models });
   return models;
 }
 
@@ -315,7 +317,7 @@ function spawnErrorPayload(e) {
 
 /** Execution-server spawn only (`--server`). A local spawn is always the
  * preview-bound prepare → apply of server/spawn-apply.mjs. */
-async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relativeTo, relativeRoot, runtime, backend, model, yolo, launchConfig, serverId, wake }) {
+async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relativeTo, relativeRoot, harness, backend, model, yolo, launchConfig, serverId, wake }) {
   const name = String(agent || "");
   const root = resolve(String(agentsRoot || ""));
   const server = String(serverId);
@@ -366,9 +368,10 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
     // agentsRoot; sending the pair makes related spawns unambiguous under
     // cross-root name shadowing (kernel E_RELATIVE_AMBIGUOUS otherwise).
     relativeRoot: relativeRoot ? String(relativeRoot) : undefined,
-    // Runtime/model overrides (spawn-modal options): adapter-allowlisted and
-    // shape-validated there; empty means "agent definition default".
-    runtime: runtime ? String(runtime) : undefined,
+    // Harness/model overrides (spawn-modal options): adapter-allowlisted and
+    // shape-validated there; empty means "agent definition default". The flag
+    // is the local kernel's: its --server route translates for an older host.
+    harness: harness ? String(harness) : undefined, harnessFlag: harnessFlag(cliState),
     backend: backend ? String(backend) : undefined,
     yolo,
     launchConfig,
@@ -459,8 +462,8 @@ function cliStatus() {
     // Capability flag for the spawn form: relation UI renders DISABLED
     // (never hidden) with the required version when the accepted CLI
     // predates spawn-time relations.
-    runtimes: cliState.runtimes || ["pi", "claude"],
-    runtimesSource: Array.isArray(cliState.runtimes) ? "reported" : "assumed",
+    harnesses: cliState.harnesses || ["pi", "claude"],
+    harnessesSource: Array.isArray(cliState.harnesses) ? "reported" : "assumed",
     sessionBackends: cliState.sessionBackends || ["tmux"],
     launchOptions: cliState.launchOptions || [],
     features: cliState.features || [],
@@ -751,7 +754,7 @@ function latestFile(dir, filter = () => true) {
 }
 function sessionFileFor(inst) {
   const home = inst.home;
-  if ((inst.runtime || "pi") === "pi") {
+  if ((inst.harness || "pi") === "pi") {
     const dir = join(homedir(), ".pi", "agent", "sessions", `-${home.replace(/\//g, "-")}--`);
     return { file: latestFile(dir), kind: "pi" };
   }
@@ -1260,9 +1263,9 @@ const server = createServer(async (req, res) => {
       // POST (not GET) so the CSRF Origin guard above covers this
       // command-running route — see the model-catalog SECURITY note.
       const body = await readBody(req);
-      const runtime = typeof body.runtime === "string" && body.runtime ? body.runtime : "pi";
-      if (!["pi", "claude", "codex"].includes(runtime)) return send(res, 400, { error: `unknown runtime "${runtime}" (pi|claude|codex)` });
-      return send(res, 200, { runtime, models: await modelsData(runtime) });
+      const harness = typeof body.harness === "string" && body.harness ? body.harness : "pi";
+      if (!HARNESSES.includes(harness)) return send(res, 400, { error: `unknown harness "${harness}" (pi|claude|codex)` });
+      return send(res, 200, { harness, models: await modelsData(harness) });
     }
     if (req.method === "GET" && path === "/api/servers") {
       // Registered execution servers, read through the CLI (the Desktop
@@ -1336,13 +1339,13 @@ const server = createServer(async (req, res) => {
         const body = await readBody(req);
         const restart = hm[1] === "restart";
         if (restart && !cliState.features?.includes("session-restart")) return send(res, 409, { error: "Update OATS to restart an existing instance", code: "unsupported-start-option" });
-        if ([body.launchConfig, body.runtime, body.yolo].some(v => v !== undefined)) {
+        if ([body.launchConfig, body.harness, body.yolo].some(v => v !== undefined)) {
           if (!cliState.features?.includes("launch-config")) return send(res, 409, { error: "Update OATS to change the launch configuration", code: "unsupported-start-option" });
           if (inst.server) locator.requireRemoteSupport(cliState, "launch-config");
         }
         if (restart && inst.server) locator.requireRemoteSupport(cliState, "session-restart");
         const env = await adapter.cliStart(cliState.bin, { home: inst.home, model: body.model,
-          launchConfig: body.launchConfig, runtime: body.runtime, yolo: body.yolo, restart,
+          launchConfig: body.launchConfig, harness: body.harness, harnessFlag: harnessFlag(cliState), yolo: body.yolo, restart,
           workspaceDir: inst.server ? ctxs[0] : dirname(inst.agentsRoot), server: inst.server });
         refreshSnapshot(); void refreshRemoteSnapshot();
         return env.ok ? send(res, 200, env.result) : send(res, env.error.code === "E_BAD_ARGS" ? 400 : 409, { error: env.error.message, code: env.error.code });

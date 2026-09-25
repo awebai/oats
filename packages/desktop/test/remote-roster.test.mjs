@@ -19,7 +19,10 @@ test("remote roster projects server identity and souls without local path resolu
   assert.equal(panel.instances[0].agentsRoot, "/remote/project/agents");
   assert.equal(panel.running, 1);
   assert.equal(remoteAgents(group)[0].server, "host");
-  assert.equal(remoteAgents(group)[0].runtime, "codex");
+  assert.equal(remoteAgents(group)[0].harness, "codex", "a pre-0.27 host's runtime reads as the harness");
+  assert.equal(Object.hasOwn(remoteAgents(group)[0], "runtime"), false);
+  assert.equal(remoteAgents({ ...group, souls: [{ name: "dev", harness: "claude" }] })[0].harness, "claude", "0.27 rows carry harness");
+  assert.equal(remoteAgents({ ...group, souls: [{ name: "dev" }] })[0].harness, null, "an unreported harness is never guessed as pi");
 });
 
 test("spawn handoff matches the actual remote target, preserving old route groups", () => {

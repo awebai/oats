@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "instance": "release-manager-harness",
+    "agent": "release-manager",
+    "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-harness",
+    "work": "worktree",
+    "branch": "agents/release-manager-harness",
+    "launched": false,
+    "warnings": [],
+    "tmux": {
+      "session": "none-30669",
+      "window": "release-manager-harness"
+    },
+    "repo": "/fixture/base/northwind-workspace/agents-repo",
+    "harness": "claude",
+    "model": null,
+    "parent": null,
+    "sibling": null,
+    "relation": null,
+    "spawnOrigin": "operator",
+    "attach": "tmux attach -t none-30669",
+    "decision": {
+      "instance": "release-manager-harness",
+      "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-harness",
+      "branch": "agents/release-manager-harness",
+      "base": {
+        "ref": "HEAD",
+        "oid": "b739e3afe8966d9fe1e0bb5b3ea51bd626bd9629"
+      },
+      "effective": {
+        "repo": "/fixture/base/northwind-workspace/agents-repo",
+        "work": "worktree",
+        "harness": "claude",
+        "model": null,
+        "launchConfig": null,
+        "yolo": null,
+        "backend": "tmux",
+        "childSpawns": true,
+        "relation": null,
+        "providers": {
+          "nw-deploy": {},
+          "nw-house-style": {},
+          "nw-release-tooling": {},
+          "oats.core": {},
+          "oats.okf": {
+            "harvest-runtime": "pi",
+            "owns": "release-manager",
+            "reads": [
+              "platform-engineer",
+              "data-analyst"
+            ]
+          }
+        }
+      },
+      "resolution": "de166f476e4f6bd4660fc5b1",
+      "revision": "2f9e8c2b4f120f58a23ca160"
+    },
+    "replayed": false,
+    "wake": {
+      "requested": false,
+      "saved": null,
+      "error": null
+    },
+    "launchConfig": null,
+    "launch": {
+      "version": 2,
+      "harness": "claude",
+      "launchConfig": null,
+      "launchConfigSource": null,
+      "executable": "/fixture/base/bin/claude",
+      "executableDeclared": null,
+      "executableResolvedFrom": "PATH",
+      "args": [],
+      "env": {},
+      "model": null,
+      "hooks": {
+        "launch": {},
+        "env": {},
+        "contributions": []
+      },
+      "prompt": {
+        "kind": "task-file",
+        "file": "TASK.md"
+      }
+    }
+  }
+}

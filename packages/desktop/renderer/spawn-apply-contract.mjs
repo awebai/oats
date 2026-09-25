@@ -1,4 +1,5 @@
 /** Confirmed K6d input/data boundary. No kernel resolution or renderer key authority. */
+import { harnessOf } from './harness-names.mjs';
 import { absolute, record, previewSupported, previewSelector, previewChoices, previewTarget, previewData, previewFailure } from './spawn-preview-contract.mjs';
 import { spawnDecision, sameSpawnDecision } from './spawn-decision.mjs';
 const exact = (v, keys) => record(v) && Object.keys(v).every(k => keys.includes(k));
@@ -12,7 +13,7 @@ export const spawnApplySupported = cli => previewSupported(cli) && cli.spawnAppl
   && cli.features.includes('spawn-apply-2') && cli.features.includes('spawn-idempotency-2');
 export function spawnApplyChoicesSupported(cli, choices, wakeRequested = false) {
   const has = (values, value) => Array.isArray(values) && values.includes(value);
-  return !!choices && (!choices.runtime || has(cli?.runtimes, choices.runtime))
+  return !!choices && (!choices.harness || has(cli?.harnesses, choices.harness))
     && (!choices.backend || has(cli?.sessionBackends, choices.backend))
     && (choices.yolo === undefined || has(cli?.launchOptions, 'yolo'))
     && (!choices.launchConfig || has(cli?.features, 'launch-config'))
@@ -67,7 +68,7 @@ export function spawnCreationReceipt(v, { target, preview, wakeRequested = false
   if (!selected || !expected || !record(v) || !sameSpawnDecision(expected, decision)
     || v.agent !== selected.selector.soul || v.instance !== expected.instance || v.home !== expected.home
     || v.branch !== expected.branch || v.repo !== expected.effective.repo || v.work !== expected.effective.work
-    || v.runtime !== expected.effective.runtime || v.model !== expected.effective.model
+    || harnessOf(v) !== expected.effective.harness || v.model !== expected.effective.model
     || typeof v.launched !== 'boolean' || typeof v.replayed !== 'boolean'
     || v.yolo !== undefined && v.yolo !== expected.effective.yolo
     || !Array.isArray(v.warnings) || v.warnings.length > 512 || !v.warnings.every(w => typeof w === 'string' && w.length <= 4096)) return null;
@@ -81,7 +82,7 @@ export function spawnCreationReceipt(v, { target, preview, wakeRequested = false
   if (!wake) return null;
   return { instance: v.instance, agent: v.agent, home: v.home, agentsRoot: selected.selector.agentsRoot,
     workspace: selected.workspace, server: null, repo: v.repo, work: v.work, branch: v.branch,
-    runtime: v.runtime, model: v.model, launched: v.launched, replayed: v.replayed, decision,
+    harness: harnessOf(v), model: v.model, launched: v.launched, replayed: v.replayed, decision,
     warningCount: v.warnings.length, wake };
 }
 /** Project the Desktop HTTP view again at the main/renderer trust boundaries. */

@@ -1,6 +1,7 @@
 /** On-demand kernel inspection, read-only: a v2 soul is edited in its
  * repository (soul-repository.mjs), never in place. Roster polling never
  * rebuilds the selected inspector. */
+import { harnessOf } from './harness-names.mjs';
 import { postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
 import { runtimeState } from './instance-presentation.mjs';
 import { createSoulMark } from './identity-marks.mjs';
@@ -298,7 +299,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       renderSoulTeams(inspected);
       // The harness it declares by default, and the model within it (if any).
       section('Harness');
-      if (typeof soul.runtime === 'string' && soul.runtime) card([['Default harness', harnessName(soul.runtime)], ...(typeof soul.model === 'string' && soul.model ? [['Default model', soul.model]] : [])]);
+      if (typeof harnessOf(soul) === 'string' && harnessOf(soul)) card([['Default harness', harnessName(harnessOf(soul))], ...(typeof soul.model === 'string' && soul.model ? [['Default model', soul.model]] : [])]);
       else content.append(node('p', 'No default harness: you choose one when you launch it.', 'muted'));
       renderCapabilities(inspected);
     } else content.append(node('p', 'The kernel did not report this soul. Refresh to retry.', 'muted'));

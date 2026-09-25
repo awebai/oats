@@ -2,7 +2,7 @@
  *
  * What the operator sees is what the kernel decided: the dialog reads a spawn
  * preview in the background whenever a choice changes (latest intent wins)
- * and shows the real defaults — instance name, runtime, model and where it
+ * and shows the real defaults — instance name, harness, model and where it
  * came from, the work area, branch and base. Nothing here derives a name, a
  * path or a default.
  *
@@ -11,6 +11,7 @@
  * idempotency key). If the world moved, the dialog shows the new values and
  * asks again. An unknown outcome is checked on the same intent, never retried
  * under a new one. */
+import { harnessOf } from './harness-names.mjs';
 import { createSoulMark, createRuntimeBadge } from './identity-marks.mjs';
 import { distinguishingRootTags } from './instance-tree.mjs';
 import { createChoicePopup } from './choice-popup.mjs';
@@ -341,7 +342,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   nameInput.append(prefix, purpose);
   const nameResult = el('p', '', 'spawn-hint spawn-name-result'); nameResult.id = 'spawn-name-result'; nameResult.setAttribute('aria-live', 'polite');
   nameField.append(nameHead, nameInput, nameResult);
-  // Runtime · Model — the runtime is a picker with its badge; the select holds the value.
+  // Harness · Model — the harness is a picker with its badge; the select holds the value.
   const runRow = el('div', undefined, 'spawn-row spawn-run');
   const runtimeLabel = el('label'); runtimeLabel.append(el('span', 'Harness', 'spawn-label-text'));
   const runtime = el('select', undefined, 'field fruntime'); runtime.hidden = true; runtime.tabIndex = -1; runtime.setAttribute('aria-hidden', 'true');
@@ -470,7 +471,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
 
   // ── static options
   const c0 = cli();
-  const runtimes = Array.isArray(c0?.runtimes) ? c0.runtimes.filter(v => Object.hasOwn(RUNTIME_NAMES, v)) : [];
+  const runtimes = Array.isArray(c0?.harnesses) ? c0.harnesses.filter(v => Object.hasOwn(RUNTIME_NAMES, v)) : [];
   const fillSelect = (select, rows) => { select.replaceChildren(); for (const [value, label, disabled] of rows) { const o = el('option', label); o.value = value; o.disabled = !!disabled; select.append(o); } };
   fillSelect(runtime, [['', 'Default'], ...runtimes.map(v => [v, RUNTIME_NAMES[v]])]);
   const yoloSupported = Array.isArray(c0?.launchOptions) && c0.launchOptions.includes('yolo');
@@ -537,7 +538,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     const out = { ...(p ? exact ? { name: p } : { purpose: p } : {}), ...(soul.work === 'checkout' && worktree.checked ? { work: 'worktree' } : {}),
       ...(effectiveWork() === 'worktree' && branch.value.trim() ? { branch: branch.value.trim() } : {}),
       ...(effectiveWork() === 'worktree' && base.value.trim() ? { base: base.value.trim() } : {}),
-      ...(runtime.value ? { runtime: runtime.value } : {}), ...(config.value ? { launchConfig: config.value } : {}),
+      ...(runtime.value ? { harness: runtime.value } : {}), ...(config.value ? { launchConfig: config.value } : {}),
       ...(backend.value ? { backend: backend.value } : {}), ...(yolo.value ? { yolo: yolo.value === 'true' } : {}),
       model: nativeModel ? { kind: 'native-default' } : model.value.trim() ? { kind: 'custom', value: model.value.trim() } : { kind: 'inherit' },
       relation: relationValue, ...(identityChoice ? { identity: identityChoice } : {}),
@@ -571,9 +572,9 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       if (fresh && typed && !exact && data.instance !== `${soul.name}-${typed.toLowerCase()}`) nameResult.append(' — that name is taken, so the kernel numbered it');
     }
     // Runtime / model defaults.
-    const defaultRuntime = data && !runtime.value ? ` · ${runtimeName(data.runtime)}` : '';
+    const defaultRuntime = data && !runtime.value ? ` · ${runtimeName(data.harness)}` : '';
     runtime.options[0].textContent = `Default${defaultRuntime}`;
-    const shownRuntime = runtimeName(runtime.value || data?.runtime || '');
+    const shownRuntime = runtimeName(runtime.value || data?.harness || '');
     const defaultModel = !data ? '' : nativeModel || data.model === null ? `${shownRuntime}'s default model` : data.model;
     model.placeholder = ' '; // :placeholder-shown drives the default overlay
     modelDefault.textContent = model.value ? '' : defaultModel;
@@ -582,7 +583,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     model.setAttribute('aria-label', model.value ? 'Model' : `Model — empty uses ${defaultModel || 'the default'}`);
     syncRuntime(data);
     runHint.textContent = !local() ? `Harness and model defaults are decided on ${remoteTarget()}.`
-      : data ? `Launches ${runtimeName(data.runtime)} with ${modelText(data)}.` : '';
+      : data ? `Launches ${runtimeName(data.harness)} with ${modelText(data)}.` : '';
     // Work.
     worktreeLabel.hidden = soul.work !== 'checkout';
     const worktreeMode = effectiveWork() === 'worktree' && local();
@@ -693,8 +694,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     else showProblem(next.failure, 'preview');
     if (phase === 'drifted' && next.data) phase = 'idle';
     render();
-    // Suggestions follow the runtime the kernel resolved, once it is known.
-    if (next.data && !runtime.value && modelsFor !== next.data.runtime) void fillModels();
+    // Suggestions follow the harness the kernel resolved, once it is known.
+    if (next.data && !runtime.value && modelsFor !== next.data.harness) void fillModels();
   }
   const reasonOf = reason => typeof reason?.code === 'string' && typeof reason?.message === 'string' && reason.message.length <= 2048
     ? { code: reason.code, message: reason.message } : previewFailure(reason?.code).reason;
@@ -779,7 +780,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     if (draftChoice.error) { setStatus(draftChoice.error, true); return; }
     remoteBusy = true; syncButton();
     try {
-      const outcome = await remoteSpawn({ server: remoteTarget(), purpose: purpose.value.trim(), task: task.value, runtime: runtime.value, model: model.value.trim(),
+      const outcome = await remoteSpawn({ server: remoteTarget(), purpose: purpose.value.trim(), task: task.value, harness: runtime.value, model: model.value.trim(),
         backend: backend.value, launchConfig: config.value, yolo: yolo.value === '' ? undefined : yolo.value === 'true', wake: wakeValue,
         relation: rel.value, relativeTo: relTo.value, relativeRoot: relTo.selectedOptions[0]?.dataset.root || '', status: setStatus, button: spawn });
       if (outcome?.created && alive) phase = 'complete'; // created on the host: never a second spawn
@@ -797,30 +798,30 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     if (item.native) { nativeModel = true; model.value = ''; }
     else if (!item.custom) { nativeModel = false; model.value = item.value; }
     schedule(0); model.focus();
-  }, { searchable: true, scope: () => JSON.stringify([runtime.value || shown?.data?.runtime || '', remoteTarget()]),
+  }, { searchable: true, scope: () => JSON.stringify([runtime.value || shown?.data?.harness || '', remoteTarget()]),
     nothingReported: 'No model suggestions reported. Any model ID can be typed.', noMatch: 'No suggestions match this filter.' });
   models.trigger.textContent = ''; models.trigger.setAttribute('aria-label', 'Choose model');
-  // ── runtime picker: the runtime's badge, like the design's provider field
+  // ── harness picker: the harness's badge, like the design's provider field
   const runtimePicker = createChoicePopup(doc, runtimeLabel, 'Harness choices', 'spawn-runtime-choices', () => [
-    { value: '', label: shown?.data ? `Default · ${runtimeName(shown.data.runtime)}` : 'Default', detail: 'What this soul launches with unless you choose', selected: !runtime.value,
-      group: 'Default', search: false, ...(shown?.data ? { mark: () => createRuntimeBadge(doc, shown.data.runtime) } : {}) },
+    { value: '', label: shown?.data ? `Default · ${runtimeName(shown.data.harness)}` : 'Default', detail: 'What this soul launches with unless you choose', selected: !runtime.value,
+      group: 'Default', search: false, ...(shown?.data ? { mark: () => createRuntimeBadge(doc, shown.data.harness) } : {}) },
     ...runtimes.map(v => ({ value: v, label: RUNTIME_NAMES[v], selected: runtime.value === v, group: 'Harnesses', mark: () => createRuntimeBadge(doc, v) })),
   ], item => { runtime.value = item.value; runtime.dispatchEvent(new doc.defaultView.Event('change', { bubbles: true })); });
   function syncRuntime(data) {
-    const t = runtimePicker.trigger, value = runtime.value || data?.runtime || '';
+    const t = runtimePicker.trigger, value = runtime.value || data?.harness || '';
     t.replaceChildren();
     if (value) t.append(createRuntimeBadge(doc, value));
     t.append(doc.createTextNode(value ? runtimeName(value) : 'Default'));
     if (!runtime.value && data) t.append(el('span', 'default', 'spawn-trigger-tag'));
-    t.setAttribute('aria-label', `Runtime: ${value ? runtimeName(value) : 'default'}${runtime.value ? '' : ' (default)'}`);
+    t.setAttribute('aria-label', `Harness: ${value ? runtimeName(value) : 'default'}${runtime.value ? '' : ' (default)'}`);
     runtimePicker.refresh();
   }
   async function fillModels() {
-    const ticket = ++modelsReq, rt = runtime.value || shown?.data?.runtime || '';
+    const ticket = ++modelsReq, rt = runtime.value || shown?.data?.harness || '';
     modelsFor = rt; suggestions.length = 0; models.refresh();
     if (!rt || !local() || !current()) return;
     try {
-      const d = await postJson(ctx, '/api/models', { runtime: rt });
+      const d = await postJson(ctx, '/api/models', { harness: rt });
       if (!current() || ticket !== modelsReq) return;
       for (const m of Array.isArray(d?.models) ? d.models.slice(0, 500) : []) if (m && typeof m.id === 'string' && m.id) suggestions.push({ id: m.id, label: typeof m.label === 'string' ? m.label : '' });
       models.refresh();
@@ -835,8 +836,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       const d = await postJson(ctx, `/api/launch-configs${wsQuery()}`, { action: 'list', selector });
       if (!current() || ticket !== configsReq) return;
       if (d?.selected?.soul !== soul.name || d.selected.agentsRoot !== soul.agentsRoot || !Array.isArray(d.configurations)) return;
-      for (const row of d.configurations.slice(0, 200)) if (row && typeof row.name === 'string' && typeof row.runtime === 'string') {
-        const o = el('option', `${row.name} · ${runtimeName(row.runtime)}`); o.value = row.name; config.append(o);
+      for (const row of d.configurations.slice(0, 200)) if (row && typeof row.name === 'string' && typeof harnessOf(row) === 'string') {
+        const o = el('option', `${row.name} · ${runtimeName(harnessOf(row))}`); o.value = row.name; config.append(o);
       }
       if ([...config.options].some(o => o.value === prefer)) config.value = prefer;
     } catch { /* the default stays */ }

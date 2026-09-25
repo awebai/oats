@@ -30,7 +30,7 @@ test("parseEnvelope: accepts exactly the two contract shapes, rejects contaminat
 
 test("spawnArgv: allowlisted args only — unknown renderer keys are dropped, never forwarded", () => {
   const argv = spawnArgv("dev", "/ws", "/tmp/t/TASK.md", {
-    purpose: "fix", repo: "/r", work: "worktree", runtime: "pi", model: "opus",
+    purpose: "fix", repo: "/r", work: "worktree", harness: "pi", harnessFlag: "--harness", model: "opus",
     parent: "evil-1",             // NOT allowlisted (operator-origin spawns only)
     "--task": "injection",        // junk keys dropped
     branch: "sneaky",             // not in the v1 allowlist
@@ -38,14 +38,19 @@ test("spawnArgv: allowlisted args only — unknown renderer keys are dropped, ne
   assert.deepEqual(argv, [
     "spawn", "dev", "--dir", "/ws", "--task-file", "/tmp/t/TASK.md",
     "--purpose", "fix", "--repo", "/r", "--work", "worktree",
-    "--runtime", "pi", "--model", "opus", "--json",
+    "--harness", "pi", "--model", "opus", "--json",
   ]);
   assert.ok(!argv.includes("evil-1") && !argv.includes("sneaky") && !argv.includes("injection"));
 });
 
-test("spawnArgv: native Codex reaches the CLI", () => {
-  assert.deepEqual(spawnArgv("dev", "/ws", "/t/TASK.md", { runtime: "codex" }),
-    ["spawn", "dev", "--dir", "/ws", "--task-file", "/t/TASK.md", "--runtime", "codex", "--json"]);
+test("spawnArgv: native Codex reaches the CLI in the kernel's own flag; an unnamed flag is refused, never guessed", () => {
+  assert.deepEqual(spawnArgv("dev", "/ws", "/t/TASK.md", { harness: "codex", harnessFlag: "--harness" }),
+    ["spawn", "dev", "--dir", "/ws", "--task-file", "/t/TASK.md", "--harness", "codex", "--json"]);
+  assert.deepEqual(spawnArgv("dev", "/ws", "/t/TASK.md", { harness: "codex", harnessFlag: "--runtime" }),
+    ["spawn", "dev", "--dir", "/ws", "--task-file", "/t/TASK.md", "--runtime", "codex", "--json"], "a released kernel (no feature harness)");
+  for (const harnessFlag of [undefined, "--model", "--harness=x"]) assert.throws(() => spawnArgv("dev", "/ws", "/t/TASK.md", { harness: "codex", harnessFlag }), /harness flag/);
+  assert.deepEqual(spawnArgv("dev", "/ws", "/t/TASK.md", { runtime: "codex", harnessFlag: "--harness" }),
+    ["spawn", "dev", "--dir", "/ws", "--task-file", "/t/TASK.md", "--json"], "the old key is not an input any more");
 });
 
 test("spawnArgv: option-shaped values are REJECTED, never forwarded (review 53a20c7)", () => {
@@ -56,7 +61,7 @@ test("spawnArgv: option-shaped values are REJECTED, never forwarded (review 53a2
     { repo: "--task-file" },
     { model: "-x" },
     { work: "--json" },          // also fails the enum
-    { runtime: "claude; rm" },   // fails the enum
+    { harness: "claude; rm", harnessFlag: "--harness" },   // fails the enum
     { purpose: "a b" },          // fails the slug
   ]) {
     assert.throws(() => spawnArgv("dev", "/ws", "/t/TASK.md", opts), /invalid/, JSON.stringify(opts));

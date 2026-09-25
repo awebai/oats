@@ -1,5 +1,6 @@
 /** History API3 projection. No filesystem/log reader, run-ID reconstruction,
  * outcome inference, or mutation authority. Draft bytes are a separate channel. */
+import { harnessOf, HARNESSES } from './harness-names.mjs';
 import { absolute, record } from './readiness-contract.mjs';
 import { eventsTimestamp } from './instance-events-contract.mjs';
 import { scheduleReadId, scheduleReadRequest, scheduleReadFailure, scheduleSource, CAPTURED_SCHEDULE_EDIT_UNAVAILABLE } from './schedule-read-contract.mjs';
@@ -59,7 +60,8 @@ export function scheduleDraft(v) {
     || !draftString(v.tz) || !v.tz.trim() || typeof v.enabled !== 'boolean') return null;
   const common = ['id', 'kind', 'cron', 'tz', 'enabled', 'createdAt', 'updatedAt', 'scope', 'scheduleApi', 'scheduleHistoryApi',
     'executionStatus', 'nextRun', 'lastRun', 'history', 'recentRuns', 'running', 'attempt', 'pendingWake'];
-  const fields = v.kind === 'spawn' ? ['agent', 'agentsRoot', 'repo', 'task', 'runtime', 'model', 'backend', 'purpose', 'yolo', 'wake']
+  // A stored job's harness is `harness` (0.27) or a released kernel's `runtime`; the draft speaks harness.
+  const fields = v.kind === 'spawn' ? ['agent', 'agentsRoot', 'repo', 'task', 'harness', 'runtime', 'model', 'backend', 'purpose', 'yolo', 'wake']
     : v.kind === 'wake' ? ['home', 'message'] : ['home', 'operation'];
   if (Object.keys(v).some(k => !common.includes(k) && !fields.includes(k))) return null;
   const out = { id: v.id, kind: v.kind, cron: v.cron, tz: v.tz, enabled: v.enabled };
@@ -67,10 +69,13 @@ export function scheduleDraft(v) {
   if (required.some(k => !draftString(v[k]) || !v[k].trim())) return null;
   for (const k of required) out[k] = v[k];
   if (v.kind === 'spawn') {
-    for (const k of ['repo', 'runtime', 'model', 'backend', 'purpose']) if (Object.hasOwn(v, k)) {
+    if (Object.hasOwn(v, 'harness') && Object.hasOwn(v, 'runtime')) return null;
+    for (const k of ['repo', 'model', 'backend', 'purpose']) if (Object.hasOwn(v, k)) {
       if (!draftString(v[k])) return null;
       out[k] = v[k];
     }
+    const harness = harnessOf(v);
+    if (harness !== undefined) { if (!draftString(harness)) return null; out.harness = harness; }
     if (Object.hasOwn(v, 'yolo')) { if (typeof v.yolo !== 'boolean') return null; out.yolo = v.yolo; }
     if (Object.hasOwn(v, 'wake')) {
       if (!record(v.wake) || Object.keys(v.wake).some(k => !['cron', 'tz', 'message'].includes(k))
@@ -78,7 +83,7 @@ export function scheduleDraft(v) {
       out.wake = { cron: v.wake.cron, tz: v.wake.tz, message: v.wake.message };
     }
     // The current form cannot retain an unknown select option.
-    if (v.runtime && !['pi', 'claude', 'codex'].includes(v.runtime) || v.backend && !['tmux', 'herdr'].includes(v.backend)) return null;
+    if (out.harness && !HARNESSES.includes(out.harness) || v.backend && !['tmux', 'herdr'].includes(v.backend)) return null;
   }
   return out;
 }
