@@ -147,7 +147,7 @@ test("retire refuses a mutable instance.json endpoint that disagrees with indepe
   write(metaPath, JSON.stringify(meta, null, 2) + "\n");
   const retired = cli(f, ["retire", "dev-endpoint-authority", "--json"]);
   assert.notEqual(retired.status, 0, "mutable child metadata redefined the endpoint authority");
-  assert.match(retired.stderr, /E_RUNTIME_AUTHORITY_MISMATCH/);
+  assert.equal(JSON.parse(retired.stdout).error.code, "E_RUNTIME_AUTHORITY_MISMATCH", retired.stdout);
   assert.equal(existsSync(spawned.home), true, "authority disagreement did not fail before deletion");
   assert.equal(existsSync(activeA), true, "refusal unexpectedly mutated the independently recorded runtime");
 });
@@ -316,7 +316,7 @@ test("missing or corrupt independent authority fails closed before quiescence or
     else rmSync(baseline);
     const retired = cli(f, ["retire", corrupt ? "dev-receipt-corrupt" : "dev-receipt-missing", "--json"]);
     assert.notEqual(retired.status, 0, `${corrupt ? "corrupt" : "missing"} authority did not fail closed`);
-    assert.match(retired.stderr, corrupt ? /E_WORK_INSPECTION_FAILED/ : /E_RUNTIME_ENDPOINT_UNKNOWN/);
+    assert.equal(JSON.parse(retired.stdout).error.code, corrupt ? "E_WORK_INSPECTION_FAILED" : "E_RUNTIME_ENDPOINT_UNKNOWN", retired.stdout);
     assert.equal(existsSync(spawned.home), true);
   }
 });
