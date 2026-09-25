@@ -403,12 +403,14 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     }
     summary.append(roster);
   }
+  // Core capabilities name their origin only when the CLI advertises layers-from.
+  const layersFrom = () => Array.isArray(cliStatus()?.features) && cliStatus().features.includes('layers-from');
   function renderCapabilities(inspected, { collapsed = false } = {}) {
     let host = content;
     // The page renders a soul's capabilities with the Capabilities view's own table (host-injected).
     if (layout === 'page' && !collapsed && typeof capabilityTable === 'function') {
       host.append(node('h3', 'Core capabilities', 'inspector-section'));
-      card(inspectFacts.layers(inspected.layers), host);
+      card(inspectFacts.layers(inspected.layers, { from: layersFrom() }), host);
       host.append(node('h3', `Capabilities · ${inspected.capabilities.length}`, 'inspector-section'));
       const table = node('div', undefined, 'inspector-capability-table'); host.append(table);
       capabilityTable(table, inspected.capabilities, { soul: selection.agent });
@@ -416,7 +418,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     }
     if (collapsed) { host = node('details', undefined, 'inspector-disclosure'); host.append(node('summary', `Modules as spawned · ${inspected.capabilities.length}`)); content.append(host); }
     host.append(node('h3', 'Core capabilities', 'inspector-section'));
-    card(inspectFacts.layers(inspected.layers), host);
+    card(inspectFacts.layers(inspected.layers, { from: layersFrom() }), host);
     host.append(node('h3', `Capabilities · ${inspected.capabilities.length}`, 'inspector-section'));
     if (!inspected.capabilities.length) { host.append(node('p', 'No capabilities resolved.', 'muted')); return; }
     const list = node('div', undefined, 'inspector-list');

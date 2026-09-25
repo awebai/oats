@@ -189,7 +189,7 @@ export const runtimeName = value => Object.hasOwn(RUNTIME_NAMES, value) ? RUNTIM
 
 /** Human text for the kernel's model decision. */
 // Where the bound identity's mode came from (settingsOrigins, feature settings-origins).
-const ORIGIN_NAMES = { workspace: 'the workspace', 'workspace-team': "the workspace's team settings", soul: 'the soul', host: 'this host', spawn: 'this spawn' };
+const ORIGIN_NAMES = { workspace: 'the workspace', soul: 'the soul', host: 'this host', spawn: 'this spawn' };
 const originName = kind => ORIGIN_NAMES[kind] ?? kind;
 /** The identity select's Default option: the mode only when the kernel reported
  * it — a manifest default, or another origin it names. Never a mode it did not report. */

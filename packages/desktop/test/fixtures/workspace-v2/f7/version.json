@@ -61,7 +61,8 @@
     "settings-origins",
     "teams",
     "settings-declared",
-    "capabilities-private"
+    "capabilities-private",
+    "layers-from"
   ],
   "workspaceApi": 2,
   "instanceGitApi": 1,
@@ -73,14 +74,5 @@
   "eventsApi": 2,
   "scheduleHistoryApi": 3,
   "scheduleApi": 2,
-  "operationsApi": 2,
-  "capturedDispatchApi": 1,
-  "capturedDispatchActions": [
-    "inspect",
-    "compose",
-    "command",
-    "operation",
-    "spawn",
-    "trust"
-  ]
+  "operationsApi": 2
 }

@@ -8,14 +8,14 @@
       "kind": "soul",
       "soul": "release-manager",
       "repoKey": "local//fixture/base/fx/remotes/agents.git",
-      "commit": "0242e349690131c52e866da3fd986cb18be410ef",
+      "commit": "7eab079d748d3906db69d67e0beb12e784790d19",
       "team": "engineering"
     },
     "workspace": {
       "key": "local//fixture/base/fx/remotes/agents.git",
       "name": "northwind",
       "deployment": "/fixture/base/northwind-workspace",
-      "commit": "0242e349690131c52e866da3fd986cb18be410ef",
+      "commit": "7eab079d748d3906db69d67e0beb12e784790d19",
       "standalone": false
     },
     "souls": [
@@ -23,7 +23,7 @@
         "soulsApi": 2,
         "name": "release-manager",
         "repoKey": "local//fixture/base/fx/remotes/agents.git",
-        "commit": "0242e349690131c52e866da3fd986cb18be410ef",
+        "commit": "7eab079d748d3906db69d67e0beb12e784790d19",
         "team": "engineering",
         "kind": "member",
         "path": "souls/release-manager",
@@ -59,13 +59,16 @@
     ],
     "layers": {
       "knowledge": {
-        "id": "oats.okf"
+        "id": "oats.okf",
+        "from": "workspace"
       },
       "messaging": {
-        "id": "nw.teams"
+        "id": "nw.teams",
+        "from": "workspace"
       },
       "tasks": {
-        "id": null
+        "id": null,
+        "from": null
       }
     },
     "capabilities": [
@@ -78,7 +81,7 @@
           "kind": "package",
           "package": "nw.tools",
           "version": "0.4.0",
-          "commit": "828d597bd42ac3181e5331fa0c0f25543067c327",
+          "commit": "0e605d04de28a5d0670f6dfa927d9ce962e150a2",
           "integrity": "sha256-4a0ee48230d65cc6c0b9d0c9a3883e64182cfc7b2410e4f5839bacf551fcf1cf",
           "repoKey": "local//fixture/base/fx/remotes/nw-tools.git"
         },
@@ -101,7 +104,7 @@
         "from": {
           "kind": "member",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
-          "commit": "0242e349690131c52e866da3fd986cb18be410ef"
+          "commit": "7eab079d748d3906db69d67e0beb12e784790d19"
         },
         "dir": null,
         "settings": {},
@@ -122,7 +125,7 @@
         "from": {
           "kind": "member",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
-          "commit": "0242e349690131c52e866da3fd986cb18be410ef"
+          "commit": "7eab079d748d3906db69d67e0beb12e784790d19"
         },
         "dir": null,
         "settings": {},
@@ -144,7 +147,7 @@
           "kind": "package",
           "package": "nw.teams",
           "version": "0.1.0",
-          "commit": "8092a2a212827e335608d48512e360b14dc3762d",
+          "commit": "48750f86cba8050acd69940eba4bed753d3ffb37",
           "integrity": "sha256-fcbce78fa3db67ea5601c5647bea41ef9c240af42d6bb59a61f0c23af39870b1",
           "repoKey": "local//fixture/base/fx/remotes/pkg-teams.git"
         },
@@ -153,8 +156,7 @@
           "private": "per-human",
           "channels": [
             "northwind-eng"
-          ],
-          "team": "northwind:eng"
+          ]
         },
         "declares": [
           "join"
