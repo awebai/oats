@@ -5,8 +5,7 @@ description: >-
   where the workspace file is hosted, writing or checking the shared
   declarations, choosing the deployment directory, running `oats onboard`,
   placing host settings, syncing, setting up messaging, cloning work targets
-  and verifying before the first spawn. For package pins see oats-package-pins; for moving an
-  existing deployment see oats-rebuild.
+  and verifying before the first spawn. For package pins see oats-package-pins.
 ---
 
 # Onboarding a deployment

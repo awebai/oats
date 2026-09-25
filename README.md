@@ -11,7 +11,7 @@ OATS—**Open Agent Team Specification**—is a framework for building, running 
 
 **Capabilities are the building blocks of an OATS setup.** When you define an agent, you choose its capabilities. Each provides the know-how and tools for knowledge systems, messaging, task coordination or any other workflows, tools or ways of working. We provide defaults to get started, but you can adapt existing capabilities or create fully custom ones to shape how your agents work and which tools they use.
 
-The [official marketplace](docs/official-marketplace.md) is the reviewed list of official packages; a workspace trusts a package by declaring it, and listing does not declare it for you.
+The [official catalog](docs/official-catalog.md) is the reviewed list of official packages; a workspace trusts a package by declaring it, and listing does not declare it for you.
 
 **oats.aweb 1.13.1** attaches resident session-grant homes to the resident custody service during minting, verifies the written `grant.yaml` custody locator, and fails closed if an installed `aw` cannot write or prove that attachment. If a grant-sent message ever arrives as unverified, report the missing custody attachment instead of retrying.
 

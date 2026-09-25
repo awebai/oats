@@ -103,7 +103,7 @@ work: worktree            # worktree | checkout | directory | workspace
 A soul says where each extra capability comes from (`{ from: package }`,
 `{ from: here }` or `{ from: <member repo key> }`), never a version. A soul
 whose knowledge slot is filled by `oats.okf` also needs `okf.json` beside
-`soul.yaml`; `docs/rebuild-to-v2.md` in the OATS repository shows its shape.
+`soul.yaml`; `docs/knowledge.md` in the OATS repository shows its shape.
 Commit and push; OATS reads members over their remotes, not from local clones.
 
 ## 4. Realize the workspace on this machine

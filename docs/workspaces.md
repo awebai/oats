@@ -8,7 +8,6 @@ contracts the kernel is built against are in
 [design/2026-09-23-workspace-module-contracts.md](design/2026-09-23-workspace-module-contracts.md);
 a full worked example (an imaginary company with three teams) is in
 [design/2026-09-23-simplified-workspace-model.md](design/2026-09-23-simplified-workspace-model.md).
-Moving an existing 0.24.x deployment: [rebuild-to-v2.md](rebuild-to-v2.md).
 
 ## The rule
 
@@ -257,7 +256,7 @@ member soul that is the expert in that capability (`okf-expert`, `aweb-expert`,
 
 - a **bare version** (`v2.1.3`, `2.1.3`, `v1.0.0-rc.1`) — resolved through the
   official catalog (`package-catalog.json` in the `oats` repo; the reviewed
-  marketplace, see [official-marketplace.md](official-marketplace.md)). This is
+  list, see [official-catalog.md](official-catalog.md)). This is
   the only way a package becomes *pinnable by id*.
 - **`git:<repo>@<ref>`** — a direct package ref: `<repo>` is any ref the kernel
   understands (`github.com/org/repo`, `https://…`, `git@host:…`, `/abs/bare.git`,
@@ -400,9 +399,10 @@ delivery is verifiable, and `instance.json.providers.<cap>` records it — but
 team (`--team-id`), warning when the payload disagrees with an `OATS_TEAM_*`
 value — so `byTeam.<label>.team` IS the per-label identity. What the payload
 does not change is **where the `.aw` root is found**: the hook still searches
-the bounded candidates in
-[rebuild-to-v2.md §8b](rebuild-to-v2.md#8b-where-the-team-aw-lives-now-and-what-byteam-does-today)
-and that root must hold a membership of the named team (the deployment's `.aw`
+bounded candidates, first hit wins — the instance home, the Git repository
+containing it, the soul's work repository and the Git repository containing
+it, then the deployment directory (`OATS_WORKSPACE`); never the user home or
+above the deployment — and that root must hold a membership of the named team (the deployment's `.aw`
 joined to every team its labels name is the simple layout). On oats.aweb
 1.11.2 `team` was ignored (the root's active team won), so `byTeam` there is
 a recorded intent only.
@@ -515,12 +515,12 @@ installed-capability tier (`.agents/capabilities/installed/`) and
 `E_UNKNOWN_COMMAND` naming its replacement); per-soul `stores.<x>.inherit`;
 ambient-skill exclusion at launch. Lock v1/v2 files are `E_LOCK_SCHEMA`.
 There is no converter and no dual-schema reader: a 0.24.x kernel keeps
-spawning 0.24.x deployments; see [rebuild-to-v2.md](rebuild-to-v2.md).
+spawning 0.24.x deployments.
 
 ## Related
 
 - [Souls and instances](souls-and-instances.md) · [Packages](packages.md) ·
-  [Configuration (`oats-local.yaml`)](configuration.md) · [Rebuild guide](rebuild-to-v2.md)
+  [Configuration (`oats-local.yaml`)](configuration.md)
 - [Capability manifests](capabilities.md) · [Contracts](layers.md) ·
   [Desktop CLI API — workspace model](desktop-cli-api.md#workspace-model-workspaceapi-2)
 - [Design navigation](design/README.md)

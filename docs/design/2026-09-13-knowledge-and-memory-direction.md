@@ -85,8 +85,8 @@ code already says**.
 ## 2. Vocabulary
 
 These terms are used precisely throughout. Most are already OATS vocabulary
-(`docs/knowledge.md`, `docs/knowledge-theory.md`,
-`docs/2026-09-03-architecture-proposal.md`); the new ones are marked.
+(`docs/knowledge.md`, `docs/knowledge-theory.md`, the September 3
+architecture proposal); the new ones are marked.
 
 | Term | Meaning |
 |---|---|
@@ -721,7 +721,7 @@ repository is named.
 | 2026-07-26 | Provider-agnostic specialization: compounding expertise across sessions, models, and runtimes; memory outside any one harness. | `decisions/provider-agnostic-specialization-and-curated-context.md`. |
 | 2026-08-27 | Investigation of the public auto-memory audit: governed memory must survive that audit; developer souls must not mirror code; harness-agnostic knowledge enables mixed-runtime teams. | `lessons/governed-memory-survives-auto-memory-audit.md`, `lessons/developer-souls-should-not-mirror-code.md`, `lessons/harness-agnostic-knowledge-enables-mixed-runtime-teams.md`; the video "Turn off Claude Code's Memory" (Theo, t3.gg, YouTube id Jf54k7tFeEc). |
 | 2026-08-27 | Founder correction: developer and UX souls hold decisions, rejected alternatives, inspiration genealogy, and typed slow state; the bias is against descriptions, not decisions. Decision-vs-description; one home per decision; freshness discipline. | Steward note `decision-vs-description-and-knowledge-homing.md` (instance notes, pending harvest); relayed to the OATS coordinator on 2026-09-04. |
-| 2026-09-03/04 | OATS architecture proposal: knowledge is a contract with a read side and a write side; a harvester is a soul type permitted to write knowledge; the write side's doctrine is decision versus description; non-coding specialists are almost pure knowledge; custody scoping belongs to the contract. | `docs/2026-09-03-architecture-proposal.md` (this repository), sections "Soul type", "The slot contracts", "Three simplifications". |
+| 2026-09-03/04 | OATS architecture proposal: knowledge is a contract with a read side and a write side; a harvester is a soul type permitted to write knowledge; the write side's doctrine is decision versus description; non-coding specialists are almost pure knowledge; custody scoping belongs to the contract. | the September 3 architecture proposal (this repository until 0.26.0; in the v0.25.x tags), sections "Soul type", "The slot contracts", "Three simplifications". |
 | 2026-09-05 to 09-08 | Record-fed harvest shipped: `oats.okf` 1.5.0 to 1.6.1 (record windows, watermark, replan detection, exclusions, harvest runtime and model settings, non-zero exit on failure, inspect view and harvest action). | `capabilities/oats-okf/` at 1.6.1 (this repository); `docs/design/operations-contract.md`. |
 | 2026-09-07 | Founder: the OATS team holds the agreed architecture vision; OAS-side review is advisory. | Steward note `oats-vision-delegated-to-juan.md`. |
 | 2026-09-08 | Expert-assisted deployment proposal: shared knowledge collections with explicit promotion destinations; pending-for-owner for ambiguous material; the expert must not become the deployment's database; acceptance is knowledge output, not harvester activity. | `docs/design/2026-09-08-expert-assisted-deployment-proposal.md` (this repository), "Shared knowledge and promotion destinations"; steward note `deployment-as-capability-not-a-layer.md`. |

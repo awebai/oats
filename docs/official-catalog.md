@@ -1,6 +1,6 @@
-# The official OATS marketplace
+# The official OATS catalog
 
-The marketplace is the reviewed [package-catalog.json](../package-catalog.json)
+The official catalog is the reviewed [package-catalog.json](../package-catalog.json)
 list in [awebai/oats](https://github.com/awebai/oats), not a separate registry
 service. **A package listed there is official.** A name, logo, repository owner
 or workspace membership alone does not make a package official.
@@ -16,8 +16,8 @@ or workspace membership alone does not make a package official.
   A package outside the catalog is written `git:<repo>@<ref>`.
   Pinning does not enroll a team or adopt the publisher's workspace. See
   [packages](packages.md).
-- The Desktop marketplace view/search is **planned for the parity phase**, not
-  shipped by this policy or by OATS 0.24. There is no new marketplace CLI verb.
+- The Desktop catalog view/search is **planned for the parity phase**, not
+  shipped by this policy. There is no catalog CLI verb.
 - **Discoverable ≠ declared.** A catalog listing grants nothing; a
   `packages:` pin is the workspace's decision to trust that package at that
   version, and the lock pins it to an exact commit and integrity. Nothing is
@@ -75,10 +75,7 @@ this policy does not invent new catalog or manifest fields.
 
 These entries are in the current repository catalog. An older installed CLI keeps
 its bundled catalog; publication here does not update that installation or rewrite
-old source references, locks or tags. Follow that CLI's supported acquisition path.
-The [workspace adoption guide](workspace-adoption.md) distinguishes the published
-capabilities and five expert imports from the still-pending D3 setup-expert flow.
-No package is silently added to an existing soul.
+locks or tags. No package is silently added to an existing workspace.
 
 ## Updates, deprecation and removal
 

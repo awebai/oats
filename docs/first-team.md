@@ -5,10 +5,8 @@
 > `use` / `trust`, the 0.24 `oats onboard --dir` bootstrap that created a local
 > `oats-setup-expert`) no longer exists; those verbs answer `E_UNKNOWN_COMMAND`
 > naming their replacement. Model: [workspaces.md](workspaces.md) ·
-> packages: [packages.md](packages.md) · moving a 0.24 deployment:
-> [rebuild-to-v2.md](rebuild-to-v2.md) (§5 is the deployment layout this page
-> creates). The [qualification example](first-team-demo.md) records real v1
-> tasks on 0.23 and is not v2 acceptance.
+> packages: [packages.md](packages.md) · the deployment layout this page
+> creates: [configuration.md](configuration.md).
 
 Start with one workspace, one member repository and one small, real task. A
 soul keeps the role and its curated skills; an instance gets a working session
@@ -30,8 +28,7 @@ node --version && tmux -V && oats version --json   # features must list workspac
 
 ## 1. Declare the workspace (shared, in Git)
 
-Three files, all committed ([rebuild-to-v2.md](rebuild-to-v2.md) §§2–4 show
-each field):
+Three files, all committed ([workspaces.md](workspaces.md) shows each field):
 
 - `oats-workspace.yaml` (`schemaVersion: 2`) in **one** host repository: `name`,
   `members: [<repo ref>, …]`, `teams:`, `packages: { oats.framework: v<x>, … }`,
@@ -52,7 +49,7 @@ one soul and, optionally, one capability. Every soul gets `oats.core` from the
 ## 2. Realize it on this machine — `oats onboard`
 
 `oats onboard` is the bootstrap: it writes a minimal `oats-local.yaml`, creates
-`agents/` and runs the first `sync` ([rebuild-to-v2.md](rebuild-to-v2.md) §5 is
+`agents/` and runs the first `sync` ([configuration.md](configuration.md) is
 the resulting layout).
 
 ```bash

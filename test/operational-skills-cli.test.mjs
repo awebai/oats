@@ -17,7 +17,6 @@ const SKILLS = [
   "oats-package/capabilities/oats-core/skills/oats-souls/SKILL.md",
   "oats-package/capabilities/oats-setup/skills/oats-onboarding/SKILL.md",
   "oats-package/capabilities/oats-setup/skills/oats-package-pins/SKILL.md",
-  "oats-package/capabilities/oats-setup/skills/oats-rebuild/SKILL.md",
   "skills/oats-getting-started/SKILL.md",
 ];
 // Flags a command's own usage line accepts but the top-level `oats help` omits.

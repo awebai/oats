@@ -423,7 +423,7 @@ test("B2: a v2 `work: workspace` soul spawns on a plain deployment — home/work
 });
 
 // ---- 0.25.2 R1/R2: member clones through oats-local.yaml + the convention path; sync creates agents/ ----
-// docs/workspaces.md, docs/rebuild-to-v2.md §5 and `oats onboard` all say "the kernel finds a member's clone
+// docs/workspaces.md, docs/configuration.md and `oats onboard` all say "the kernel finds a member's clone
 // through oats-local.yaml (`clones:`) or at <deployment>/<member name>"; 0.25.0/1 never read either, so every
 // `work: worktree|checkout` spawn/preview of a workspace soul failed "has no repo configured" until --repo was
 // given. And a hand-written oats-local.yaml + `oats sync` left no agents/, so spawn answered E_NO_DEPLOYMENT with
@@ -436,7 +436,7 @@ test("R1/R2: worktree soul finds its clone — convention <dep>/<member>, clones
     writeFileSync(catalogFile, JSON.stringify({ packages: fx.catalog }, null, 2));
     const env = { OATS_PACKAGE_CATALOG: catalogFile };
     mkdirSync(join(base, "home"));
-    // The operator's hand-written deployment: oats-local.yaml only — NO agents/ (rebuild-to-v2.md §3 literally).
+    // The operator's hand-written deployment: oats-local.yaml only — NO agents/.
     const dep = join(base, "northwind-workspace");
     mkdirSync(dep, { recursive: true });
     writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.agents}\n`);
