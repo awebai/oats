@@ -274,6 +274,14 @@
               "labels": [
                 "global"
               ]
+            },
+            "layers": {
+              "knowledge": null,
+              "messaging": {
+                "capability": "golden.messaging",
+                "from": "soul"
+              },
+              "tasks": null
             }
           },
           "teams": [
@@ -554,6 +562,14 @@
               "labels": [
                 "global"
               ]
+            },
+            "layers": {
+              "knowledge": null,
+              "messaging": {
+                "capability": "golden.messaging",
+                "from": "soul"
+              },
+              "tasks": null
             }
           },
           "teams": [

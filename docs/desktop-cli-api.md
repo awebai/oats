@@ -126,7 +126,7 @@ payload the spawn recorded for a home, or the resolution computes for a soul.
                    "capabilities":{"nw-release-tooling":{"from":"here"},"nw-deploy":{"from":"package"}}},
    "declarationProblems":[],
    "instructions":{"file":"/w/agents/release-manager/souls/461b9c24929c/AGENTS.md","text":"# release-manager\n…","truncated":false}}],
- "layers":{"knowledge":{"id":"oats.okf"},"messaging":{"id":null},"tasks":{"id":null}},
+ "layers":{"knowledge":{"id":"oats.okf","from":"workspace"},"messaging":{"id":null,"from":null},"tasks":{"id":null,"from":null}},
  "capabilities":[
    {"id":"nw-house-style","version":"0.0.0-workspace","layer":null,"command":null,
     "from":{"kind":"member","repoKey":"github.com/northwind/agents","commit":"461b9c24…"},
@@ -159,6 +159,14 @@ payload the spawn recorded for a home, or the resolution computes for a soul.
   It is observed from discovery, so it is `null` on `inspect --home`
   (readiness `--home` observes it).
   `declarations` gains `capabilities` (the soul's own `capabilities:`).
+- `layers.<layer>` is `{ id, from }`: the capability filling the slot
+  (`null` when empty) and where it came from (feature `layers-from`):
+  `"soul"` (the soul's own `capabilities:`), `"workspace"`
+  (`defaults.<slot>` or `defaults.capabilities`) or `"team:<label>"`
+  (`defaults.byTeam.<label>.capabilities`). `from` is `null` for an empty
+  slot. A soul answers from its resolution now. A home answers what its spawn
+  recorded, even after the workspace changes. A home spawned before
+  `layers-from` recorded nothing, so its `from` is `null`.
 - `capabilities[]` lists the subject's resolved modules, sorted by id:
   - `dir` is the home's module copy, or `null` for a soul (nothing is
     materialized to answer inspect).

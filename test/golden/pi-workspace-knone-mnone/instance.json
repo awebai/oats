@@ -123,6 +123,11 @@
       "labels": [
         "global"
       ]
+    },
+    "layers": {
+      "knowledge": null,
+      "messaging": null,
+      "tasks": null
     }
   },
   "teams": [
