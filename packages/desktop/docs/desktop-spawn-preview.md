@@ -80,9 +80,17 @@ without effective remains an observation, never a synthesized executable plan.
 
 Projection preserves bounded work/runtime/model provenance, the `resolution`
 binding (top-level facts cross-checked against `decision.effective`),
-`messaging{provider, identity{mode,resident}|null}` — the identity
-`decision.effective.providers[<cap>]` binds, which must equal the preview's
-`settings[<cap>]`; none means the provider's documented default, local —
+`messaging{provider, identity{mode,resident}|null, origin{kind,at}|null}` —
+the identity `decision.effective.providers[<cap>]` binds, which must equal the
+preview's `settings[<cap>]`, and where its mode came from
+(`settingsOrigins[<cap>]['/identity/mode']`: `manifest-default` | `workspace` |
+`workspace-team` | `soul` | `host` | `spawn`, or a newer kind shown as sent).
+The dialog's identity **Default** option shows a mode only when the kernel
+reported it: with feature `settings-origins`, `Default · <mode>` for a
+manifest default and `Default · <mode> — from <origin>` otherwise (the hint
+names `at`); without the feature, or with no identity in the payload, plain
+`Default` (a bound global resident is shown from the identity itself). The
+Desktop never supplies a mode the kernel did not report —
 `backendStatus{name,installed,started:false}` and
 `preflight{status:complete|timeout,budgetMs,elapsedMs}`. Installation is not daemon
 reachability. Omitted yolo remains unknown. Capabilities, skills, providers, task,

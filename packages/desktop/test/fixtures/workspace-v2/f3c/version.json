@@ -58,7 +58,8 @@
     "spawn-provider-payload",
     "served-identity",
     "packages-no-approval",
-    "spawn-name"
+    "spawn-name",
+    "settings-origins"
   ],
   "workspaceApi": 2,
   "instanceGitApi": 1,
