@@ -22,7 +22,7 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
-## Batch — 2026-09-24 night (PRs 131, 136, 151–192) → toward v0.26.0 (unreleased; main carries breaking changes)
+## Batch — 2026-09-24 night (PRs 131, 136, 151–194) → toward v0.26.0 (unreleased; main carries breaking changes)
 - **Merged:**
   - PR151 packages: approval removed (human decision; declaring a package IS the trust decision) `e62b8f16`, plus the release-note follow-up `f0994882`.
   - PR153 docs for it `b97de554`.
@@ -139,6 +139,8 @@ decisions/ and referenced from here.
   - Human direction: release 0.26.0 without the harness rename; harness → 0.27.0 (plan `36a63259`).
   - **v0.26.0 RELEASED**: the tag object `7005ef4a` → `6536929d` (lead-tagged after the co-lead's Class B ACK on the SHA + main CI green); release.yml green; npm 0.26.0 for both packages; 7 release assets. Published-artifact probe 17/17 (the v2 flows against the installed CLI) + 82-module syntax check.
   - PR192 Desktop `fdf05fa1` (oats-desktop-engineer-1; the watcher merged; squash tree verified): Core capabilities name their origin (feature `layers-from`); the dead `workspace-team` settings-origin label removed. Ships in 0.26.1.
+  - PR193 `04c82127` (lead; co-lead ACK; the watcher merged; squash tree verified): the framework workspace's `oats-workspace.yaml` `packages:` pinned to exactly the 0.26.0 catalog (precondition 1 of the fresh-deployment runbook).
+  - PR194 kernel `af02f93d` (cli-dev-v2-native; for 0.27.0; lead upgrade-path probe: a PUBLISHED 0.26.0 made the deployment + home, this head operated them, 11/11; lead mutation killing 3; co-lead ACK, 13/13 on the rename suite; the watcher merged; squash tree verified): runtime → harness. Read either, write new, for persisted 0.26 state (the v1 recipe, instance.json, launch-configs, schedules); `--runtime` aliased everywhere; one envelope-level `deprecated-runtime-name` warning; outputs renamed behind feature `harness`; the provider-read aliases kept. The v0.27.0 tag waits for the Desktop switch.
 - **taught us:**
   - (1) **Arm a merge watcher with the full approved oid, never "the current head".** #160's head moved twice after approval while mails crossed. The watcher's named-oid guard refused both mismatches, so nothing unreviewed merged. The loop ends with one FINAL mail per party (author and watcher) naming the full oid and "no pushes", and by ignoring the stale mails that follow.
   - (2) **A native gate must wait for the message, not for a spinner.** Preview in the rig is slow, and fixed waits produced false FAILs in both directions. Poll for the expected sentence with a bound.
