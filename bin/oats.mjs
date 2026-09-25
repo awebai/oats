@@ -1096,7 +1096,7 @@ function launchPreview(bail) {
   jsonOk({ context, selected, selection: { source: plan.selectionSource, launchConfig: recipe.launchConfig, runtime: sel.runtime ?? null, model: sel.model ?? null, yolo: sel.yolo ?? null }, runtime: plan.runtime, model: recipe.model, modelSource: plan.modelSource, yolo: recipe.yolo ?? null, launchConfig: recipe.launchConfig, launchConfigSource: recipe.launchConfigSource, executable: { path: plan.executable.path, declared: plan.executable.declared ?? null, resolvedFrom: plan.executable.resolvedFrom }, argv: d.argv, environment, command, prompt: recipe.prompt, hooks: redactLaunchRecipe(recipe).hooks, preflight: plan.preflight, ok: plan.ok });
 }
 async function launchConfigCmd() {
-  const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
+  const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   dropAmbientRoot();
   const sub = args[1];
   const usage = "usage: oats launch-config list [--dir <scope> | --home <abs> | --soul <name> [--dir <scope>] [--agents-root <abs>]] [--json] | set <name> --file <json> [--keep-env] [--dir <scope>] [--json] | remove <name> [--dir <scope>] [--json] | preview (--home <abs> | --soul <name> [--dir <scope>]) [--launch-config <name>|none] [--runtime r] [--model m] [--yolo|--no-yolo] --json";
@@ -1110,7 +1110,9 @@ async function launchConfigCmd() {
   // A 0.25 oats-config.yaml in reach is refused by loadLocal (E_CONFIG_BROKEN, naming
   // the move), never read as "no configurations".
   let found = null;
-  try { found = loadLocal(at); } catch (e) { if (e?.code !== "E_LOCAL_MISSING") bail(e.code || "E_WORKSPACE_SCHEMA", e.message); }
+  // No deployment in reach answers the (empty) effective set — unless what is in
+  // reach is a 0.25 oats-config.yaml, whose launch-configs nothing reads any more.
+  try { found = loadLocal(at); } catch (e) { if (e?.code !== "E_LOCAL_MISSING" || e.details?.legacy) bail(e.code || "E_WORKSPACE_SCHEMA", e.message, e.details); }
   const file = found?.path ?? null, level = file ? dirname(file) : null;
   const effective = () => Object.values(launchConfigsAt(at)).sort((a, b) => a.name.localeCompare(b.name)).map((e) => ({ name: e.name, ...publicLaunchConfig(e, { source: e.source, shadows: e.shadows }) }));
   if (sub === "list") {

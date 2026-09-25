@@ -232,6 +232,7 @@ test("an oats-config.yaml in a deployment is a migration error (E_CONFIG_BROKEN)
     assert.equal(r.json.error.code, "E_CONFIG_BROKEN", argv.join(" "));
     assert.ok(r.json.error.message.includes(join(scope, "oats-config.yaml")), `${argv.join(" ")}: names the file`);
     assert.match(r.json.error.message, /oats-config\.yaml is no longer read.*launch-configs moved to the deployment's oats-local\.yaml/, argv.join(" "));
+    assert.equal(r.json.error.details?.reason, "legacy-config", argv.join(" "));
   }
   assert.equal(readFileSync(join(scope, "oats-config.yaml"), "utf8"), legacy, "the legacy file is untouched");
   assert.equal(readFileSync(join(scope, "oats-local.yaml"), "utf8"), LOCAL, "and nothing was written to oats-local.yaml");
@@ -240,5 +241,10 @@ test("an oats-config.yaml in a deployment is a migration error (E_CONFIG_BROKEN)
   r = oats(["launch-config", "set", "x", "--file", join(base, "m.json"), "--dir", bare]);
   assert.equal(r.json.error?.code, "E_LOCAL_MISSING", r.stdout);
   assert.deepEqual(readdirSync(bare), ["agents"], "no oats-local.yaml was created");
+  // A 0.25 file with no deployment in reach: list names it (E_LOCAL_MISSING), never "no configurations".
+  write(join(bare, "oats-config.yaml"), legacy);
+  r = oats(["launch-config", "list", "--dir", bare, "--json"]);
+  assert.equal(r.json.error?.code, "E_LOCAL_MISSING", r.stdout);
+  assert.ok(r.json.error.message.includes(join(bare, "oats-config.yaml")), r.json.error.message);
 });
 
