@@ -59,5 +59,6 @@ or source checkout.
 - Partial or unknown historical evidence is inspectable but never executable.
 - No unattended approval, background refresh, or automatic advancement exists.
 
-Use `oats prepare --help` for new preparation inputs and **oats-portable** to
-invoke the resulting exact record.
+The captured/portable path, preparation included, was removed in 0.26: a new
+instance is spawned from its workspace deployment (`oats spawn <soul> --preview`
+shows what it would resolve).

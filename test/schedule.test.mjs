@@ -322,10 +322,9 @@ test("remote schedules route to the server workspace only when the host advertis
   assert.match(calls.find((c) => c.includes("schedule add")), /schedule add x --spec-json .*\{\}.* --dir \/w --json/);
   const captured = ["add", "pinned", "--spec-json", JSON.stringify({ definitionVersion: 2, recurrencePolicy: "capture" })];
   const before = calls.filter(c => c.includes("schedule add pinned")).length;
-  assert.throws(() => scheduleRemote("s", captured, io(["schedule"], 1)), { code: "E_REMOTE_INCOMPATIBLE" });
-  assert.equal(calls.filter(c => c.includes("schedule add pinned")).length, before, "old host receives no captured mutation");
-  assert.equal(scheduleRemote("s", captured, io(["schedule"], 2)).envelope.ok, true);
-  assert.throws(() => scheduleRemote("s", ["add", "remote-file", "--file", "/remote/spec.json"], io(["schedule"], 1)), { code: "E_REMOTE_INCOMPATIBLE" });
+  // Captured (versioned) schedules were removed in 0.26: refused whatever the host advertises, never forwarded.
+  for (const api of [1, 2]) assert.throws(() => scheduleRemote("s", captured, io(["schedule"], api)), (e) => e.code === "E_SCHEDULE_INVALID" && /definitionVersion, recurrencePolicy: captured schedules are refused \(the captured\/portable path was removed in 0\.26\)/.test(e.message));
+  assert.equal(calls.filter(c => c.includes("schedule add pinned")).length, before, "no host receives a captured mutation");
 });
 
 test("a cold wake needs a launch slot; a delivery to a running home does not; a started runtime keeps its slot until the home ends", () => {

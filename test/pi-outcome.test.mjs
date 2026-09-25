@@ -222,25 +222,6 @@ test("private process-observer argv cannot become launch-selection/request autho
   assert.throws(() => parsePiHostRecipeArgs(args), { code: "E_PI_HOST_ARGS" });
 });
 
-test("public captured inspect has a closed read-only grammar before any source/native effects", t => {
-  const f = fixture(t), cli = new URL("../bin/oats.mjs", import.meta.url).pathname;
-  const scope = ["--deployment", f.root, "--resolution", "sha256-" + "a".repeat(64), "--home", f.home, "--json"];
-  for (const args of [
-    ["session", "inspect", ...scope],
-    ["session", "inspect", ...scope, "--native-record", id, "--request", "/not-read"],
-    ["session", "inspect", ...scope, "--native-record", id, "--retry-intent", "not-admitted"],
-    ["session", "inspect", ...scope, "--native-record", id, "--model", "other/model"],
-    ["session", "start", ...scope, "--native-record", id],
-    ["session", "inspect", "--home", f.home, "--native-record", id, "--json"],
-  ]) {
-    const result = spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", cwd: f.home });
-    assert.equal(result.status, 1);
-    assert.equal(JSON.parse(result.stdout).error.code, "E_BAD_ARGS");
-    assert.equal(result.stderr, "");
-  }
-  assert.throws(() => lstatSync(join(f.home, ".oats-start-pending.json")), { code: "ENOENT" });
-});
-
 test("common tmux/Herdr wrapper observes actual shell exit status and preserves original env/ref", t => {
   const f = fixture(t), observer = join(f.root, "inert-observer.mjs"), receipt = join(f.root, "inert-observation.json");
   writeFileSync(observer, `import {writeFileSync} from 'node:fs'; writeFileSync(${JSON.stringify(receipt)},JSON.stringify({argv:process.argv.slice(2),attempt:process.env.OATS_EXECUTION_ATTEMPT,home:process.env.OATS_INSTANCE_HOME})); process.exitCode=19;\n`);
