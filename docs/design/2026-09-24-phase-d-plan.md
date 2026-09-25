@@ -256,6 +256,13 @@ the harvester delivers to that node as a PR the owning expert reviews.
 - **Legacy souls** (`agents/*` and their knowledge bundles) are NOT part of D4:
   they go when the live instances linking them retire (human rule).
 
+**Human direction 2026-09-25: runtime → harness** ("throughout the app and cli and everywhere"). It ships in 0.26.0 as one kernel PR after (e):
+- every kernel-owned name is renamed with no alias (`--harness`, `launch-configs.<n>.harness`, `instance.json.harness`, JSON fields, feature `harness`);
+- two released-contract aliases stay: the provider env sets both `OATS_HARNESS` and `OATS_RUNTIME`, and manifests may say `requires[].runtime` or `requires[].harness`;
+- the Desktop switches on the `harness` feature.
+
+Also: "core capabilities" is the human vocabulary for the knowledge/messaging/tasks capabilities in prose; wire names are unchanged.
+
 ### D5 — Catalog update and 0.26.0
 
 Catalog pins for the new package versions; **widen Desktop `ACCEPT_RANGE` and
