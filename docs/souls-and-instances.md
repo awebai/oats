@@ -289,9 +289,9 @@ an agent's environment variables — is operator-origin and appears top-level.
 Agents spawning sub-agents should pass `--parent "$OATS_INSTANCE"` (or the
 relation that fits).
 
-If the workspace has a messaging integration such as aweb, spawned instances
+If the workspace has a messaging capability such as aweb, spawned instances
 can also receive identities and coordinate with each other automatically. The
-task layer can provide shared work state while messaging provides conversation.
+tasks capability can provide shared work state while messaging provides conversation.
 
 ### Retire
 

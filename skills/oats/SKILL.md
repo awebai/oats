@@ -18,8 +18,8 @@ description: >-
 
 A **soul** is a durable specialized agent. An **instance** is one disposable,
 resumable incarnation. A **capability package** distributes reusable skills,
-instructions, commands, and approved lifecycle hooks. An **integration** is a
-capability selected for one exclusive knowledge, messaging, or tasks layer.
+instructions, commands, and approved lifecycle hooks. A **core capability** is
+the one capability a soul has for knowledge, messaging or tasks.
 
 ## Instance home
 
@@ -32,21 +32,21 @@ capability selected for one exclusive knowledge, messaging, or tasks layer.
 | `work/` | all repository work happens here |
 | `instance.json` | repo, branch, capabilities, skills, instruction sources, trust, hooks |
 
-Memory files exist only when the selected knowledge integration creates them.
+Memory files exist only when the knowledge capability creates them.
 Follow their injected protocol.
 
 ## Lifecycle and roster
 
 ```bash
 oats status [--json]
-# with the aweb messaging integration active, `oats aweb roster` adds the
+# with the aweb messaging capability active, `oats aweb roster` adds the
 # cross-machine view: aweb team members, where OATS aliases are instance names
 # a soul is authored in a member repository — souls/<name>/soul.yaml + AGENTS.md
 # (soul.yaml sets work: worktree|checkout|attached|workspace|directory) — then `oats sync`
 # directory mode = owned execution directory; repo is config context (no Git
 # required); --work-dir and --branch are rejected; retirement preserves work.
 # workspace mode = cross-repo coordinator: ./work is the whole team scope; read
-# all member repos, edit none; if a knowledge layer is active, IT defines how
+# all member repos, edit none; if a knowledge capability is active, IT defines how
 # soul updates are delivered (see that capability's own instructions)
 oats spawn <agent> [--task ...] [--purpose ...] [--relation child|sibling|parent|unrelated --relative-to <instance>] [--parent <instance>] [--no-launch] [--json]
 # lineage is explicit: agents spawning sub-agents declare their RELATION to the

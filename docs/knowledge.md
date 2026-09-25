@@ -375,7 +375,7 @@ is unknown, inspect the worker session before retrying. See the
 [standalone runtime guide](https://github.com/awebai/oats-okf#independent-worker-and-completion)
 for exact recovery, adoption and lock-release procedures.
 
-## Without a knowledge integration
+## Without a knowledge capability
 
 `capabilities.layers.knowledge: none` is valid. The kernel creates no OKF state,
 notes, bundle or harvest flow. Other capabilities may adopt, adapt or replace

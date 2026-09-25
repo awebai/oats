@@ -58,7 +58,7 @@ v0.23.1 is published, an explicit initial Git acquisition at that tag selects
 the patch instead. It does not silently change the catalog's 1.0.0 selection
 or an existing lock. For local development, use an explicit complete source
 package path instead. Activation exposes the expert and targets
-the authoring skill, without selecting or replacing a knowledge integration.
+the authoring skill, without selecting or replacing a knowledge capability.
 There are no executable surfaces to trust in this package. Installed experts
 use their materialized local curriculum, not this repository at runtime.
 

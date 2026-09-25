@@ -8,7 +8,7 @@ their branch and their uncommitted state. You are a guest in their workspace.
 - Keep your changes and commits **small and clearly attributable** (your
   instance name in commit messages where ambiguity is possible).
 - Do not touch files the owner is mid-editing unless your task says so; when
-  in doubt, coordinate through your messaging layer or your spawner.
+  in doubt, coordinate through your messaging capability or your spawner.
 - Retiring you never removes the shared tree — cleanup of the tree is the
   owner's concern, not yours.
 

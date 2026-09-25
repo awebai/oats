@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://oats.dev/schemas/soul-v2.json",
   "title": "Soul declaration v2 (soul.yaml)",
-  "description": "Authored shape only. A soul names each capability WITH WHERE IT COMES FROM (`from: here | <repo key> | package`) — a location, never a version. Provider payloads (knowledge, messaging, tasks) are opaque to the kernel; `none` empties the slot. Membership, privacy and team semantics are enforced by discovery/resolution, not here.",
+  "description": "Authored shape only. A soul names each capability WITH WHERE IT COMES FROM (`from: here | <repo key> | package`) — a location, never a version. Core-capability payloads (knowledge, messaging, tasks) are opaque to the kernel; `none` empties the slot. Membership, privacy and team semantics are enforced by discovery/resolution, not here.",
   "type": "object",
   "required": ["schemaVersion", "name", "description", "work"],
   "additionalProperties": false,
@@ -55,7 +55,7 @@
     "capabilityChoice": { "anyOf": [{ "$ref": "#/$defs/capabilityRef" }, { "const": "off" }] },
     "slotPayload": {
       "anyOf": [{ "const": "none" }, { "type": "object" }],
-      "description": "Opaque provider payload, or `none` to leave the slot empty."
+      "description": "Opaque payload for the slot's core capability, or `none` to leave the slot empty."
     }
   }
 }

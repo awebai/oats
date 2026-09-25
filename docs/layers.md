@@ -44,11 +44,11 @@ The [workspace guide](workspaces.md) explains these boundaries and the [declarat
 
 ## Capability manifest and lifecycle events
 
-A capability's `oats.json` declares its identity, optional fundamental `layer`, resources, host/runtime prerequisites, commands, operations and supported lifecycle contributions. A distribution package's `oats-package.json` exports one or more capabilities; a package is not itself an active integration or workspace.
+A capability's `oats.json` declares its identity, an optional `layer` field (which names the core capability it is, if any), resources, host/runtime prerequisites, commands, operations and supported lifecycle contributions. A distribution package's `oats-package.json` exports one or more capabilities; a package is not itself an active capability or workspace.
 
 The current [manifest schema](capability-manifest.schema.json) includes the published binding interface and helper/input declarations. A manifest shape alone does not certify its implementation:
 
-- Captured fundamental providers expose their declared normalize/bind/check phases through the existing broker. The kernel resolves their fields without implementing their domain model.
+- Captured core capabilities expose their declared normalize/bind/check phases through the existing broker. The kernel resolves their fields without implementing their domain model.
 - Commands/hooks execute only from a declared source (a member, or a package the workspace declares, at its locked commit and integrity) — or, for a prepared artifact, its exact `oats trust` approval — and with invocation authority.
 - Helper behavior and optional source-receipt inputs are declared by their owner, not guessed from a layer name.
 - Required setup/capture outcomes cannot be silently omitted to make a launch or cleanup appear successful.
@@ -56,9 +56,9 @@ The current [manifest schema](capability-manifest.schema.json) includes the publ
 
 Use [capability details](capabilities.md), the [provider wire](design/2026-09-16-provider-binding-wire.md), [helper/input contract](design/2026-09-17-capability-helper-input-contract.md) and [package runtime boundary](design/package-runtime-api.md).
 
-## The three fundamental slots
+## The three core capabilities
 
-Knowledge, messaging and tasks are exclusive provider slots: zero or one selected implementation of each per composition. `none` is an explicit permitted choice only where requirements allow it. Additional capabilities are unlimited and nonexclusive; the three slots do not limit domain tools or workflows.
+Knowledge, messaging and tasks are the **core capabilities**: at most one of each per soul, each filling its own slot. `none` is an explicit permitted choice only where requirements allow it; it empties that slot. Other capabilities are unlimited and nonexclusive; the three core capabilities do not limit domain tools or workflows.
 
 ### The knowledge contract
 
@@ -72,7 +72,7 @@ Alternatives may choose different placement or learning procedures. A supported 
 
 ### The tasks contract
 
-A task provider owns work assignment, claims, status, blockers, outcomes and handoff procedures. OATS supplies the selected capability/runtime boundary, not one mandatory tracker workflow. Jira and Linear are available integrations; no tasks provider is mandatory when source requirements permit none.
+The tasks core capability owns work assignment, claims, status, blockers, outcomes and handoff procedures. OATS supplies the selected capability/runtime boundary, not one mandatory tracker workflow. Jira and Linear are available tasks capabilities; none is mandatory when source requirements permit `none`.
 
 Messaging is conversation, not automatically task state. Accepted knowledge may explain a decision or important situation without duplicating the tracker.
 
@@ -100,7 +100,7 @@ The kernel owns only what describes the layout it creates: the `instance-boundar
 
 ## Capture and knowledge are separate
 
-The native turn record is an evidence substrate, not accepted knowledge or a compulsory fourth fundamental slot. A capability decides which evidence it consumes and how it judges it. Source attribution, before-read custody and incomplete-outcome handling remain necessary wherever those guarantees are promised.
+The native turn record is an evidence substrate, not accepted knowledge or a compulsory fourth core capability. A capability decides which evidence it consumes and how it judges it. Source attribution, before-read custody and incomplete-outcome handling remain necessary wherever those guarantees are promised.
 
 A successful capture is not a completed judgment; completed judgment is not accepted Git knowledge. Source loss or retirement must not erase pending obligations or make an uncertain record complete. See [the record package](../packages/record/README.md) and the relevant versioned lifecycle contracts.
 

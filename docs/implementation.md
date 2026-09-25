@@ -18,7 +18,7 @@ own Claude configuration is deliberately left enabled.
 |---|---|
 | `lib/core.mjs` | Souls, instances, config/target resolver, capability discovery, composition, locks/trust, hooks. |
 | `bin/oats.mjs` | Agent lifecycle, config, acquisition/trust/activation, doctor, and operational command dispatch. |
-| `capabilities/` | Bundled additive packages and layer integrations, each with `oats.json`. |
+| `capabilities/` | Bundled package copies — core capabilities and others — each with `oats.json`. |
 | `skills/` | Kernel/bootstrap and package-authoring skills. |
 | `injects/` | Kernel and work-mode instruction sources. |
 | `packages/pi/` | Thin pi adapter. |
@@ -58,7 +58,7 @@ and the `oats.web` browser panel were retired in its favor.)
     instance.json             # capabilities, skills, instruction sources, lifecycle metadata
 ```
 
-Knowledge integration hooks may add memory files. The kernel does not assume
+The knowledge capability's hooks may add memory files. The kernel does not assume
 their names.
 
 ## Resolution

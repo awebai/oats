@@ -29,7 +29,7 @@ root, and not the work tree. Anything that says "your home" means this directory
 - **Soul work is repository work.** If your TASK is to change soul content that
   lives in this repository, that is ordinary code work — do it on tracked paths
   under `work/`, reviewed like the rest. How your own learnings reach your soul
-  is your knowledge layer's business, and its instructions below say so if you
+  is your knowledge capability's business, and its instructions below say so if you
   have one.
 
 **`<instance-home>/work` is your repository or workspace view** — whatever your
@@ -61,7 +61,7 @@ their branch and their uncommitted state. You are a guest in their workspace.
 - Keep your changes and commits **small and clearly attributable** (your
   instance name in commit messages where ambiguity is possible).
 - Do not touch files the owner is mid-editing unless your task says so; when
-  in doubt, coordinate through your messaging layer or your spawner.
+  in doubt, coordinate through your messaging capability or your spawner.
 - Retiring you never removes the shared tree — cleanup of the tree is the
   owner's concern, not yours.
 
