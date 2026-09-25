@@ -22,7 +22,7 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
-## Batch — 2026-09-24 night (PRs 131, 136, 151–177) → toward v0.26.0 (unreleased; main carries breaking changes)
+## Batch — 2026-09-24 night (PRs 131, 136, 151–178) → toward v0.26.0 (unreleased; main carries breaking changes)
 - **Merged:**
   - PR151 packages: approval removed (human decision; declaring a package IS the trust decision) `e62b8f16`, plus the release-note follow-up `f0994882`.
   - PR153 docs for it `b97de554`.
@@ -78,6 +78,15 @@ decisions/ and referenced from here.
     - The rounds: the co-lead found `status`/`doctor` crashing (stack trace) on a legacy oats-config.yaml; CI caught a stale classic team-env test; then the clean-room tarball smoke (outside `test/**`) pinned the old `meta.skills`.
   - PR176 oats.authoring 1.0.2 mirror + catalog pin v1.0.2 `4161353c` (lead-authored, co-lead ACK; the payload on main is byte-identical to tag v1.0.2 `5b182959`→`5d0afebb`). soul-craft teaches the v2 soul fields; runtime/model/yolo are spawn or launch-configuration choices. The framework's own `skills/soul-craft` and `skills/integration-authoring` now equal the package copies. The framework's integration-authoring had still told agents to `import('<framework-repo>/lib/core.mjs')` and call `spawnInstance` unprepared: a private-kernel import, and refused by 0.26.
   - PR177 kernel v2-native (c3c) `85243cff` (squash tree verified; lead + co-lead full runs agree). The 0.25 package engine's remainder is deleted: approveCapability, the chain readers, marketplace hoisting, the owned store, and the legacy launch conversion (a pre-recipe home under a selection is now `E_LAUNCH_LEGACY`). `capabilityTrust` trusts only workspace module copies. `acquirePackage`/`updatePackage` live alone in `lib/captured-store-writer.mjs` as the captured path's store writer; a reach test proves only its two fixtures import it, and (e) deletes it with the captured path.
+  - Teams contract amendment `18c38d4a` (lead, co-lead ACK), from the (t) #179 review:
+    - `OATS_TEAMS_SOURCE=live|recorded` + `teamsSource` on the check stdin; a provider leaves a joined team only on `live`.
+    - One `unmapped-team-label` warning per label.
+    - The live-read cost bound: only where consumed, with a host + soul-repo read.
+    - The scheduled-wake limitation; spawn-time teams recorded in `instance.json.teams`.
+  - PR178 Desktop live Teams panel `bb7e0dd1` (squash tree verified; two rounds).
+    - The panel appears iff the messaging provider declares `messaging:teams|join|leave`, and reads the arg name from the row. It decodes the teams document strictly; `receive: poll` reads "Checks this team's mail between tasks".
+    - One action at a time, with latest-intent checks. Refusals are shown verbatim, the code behind Details.
+    - The lead's native gate (a real Electron build against a stand-in provider) returned round 1: a refused join whose row vanished on the re-read lost its error. Round 2 keeps it at panel level with a "no longer offered" line until the next action or Refresh (10/10).
 - **taught us:**
   - (1) **Arm a merge watcher with the full approved oid, never "the current head".** #160's head moved twice after approval while mails crossed. The watcher's named-oid guard refused both mismatches, so nothing unreviewed merged. The loop ends with one FINAL mail per party (author and watcher) naming the full oid and "no pushes", and by ignoring the stale mails that follow.
   - (2) **A native gate must wait for the message, not for a spinner.** Preview in the rig is slow, and fixed waits produced false FAILs in both directions. Poll for the expected sentence with a bound.
