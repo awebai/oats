@@ -191,7 +191,7 @@ test("the lower-level final pass cannot silently lose a pinned discovered source
   assert.throws(() => captureSessions(f.store, { owner: "tester", files, final: true }), { code: "ENOENT" });
 });
 
-test("ordinary Claude config files and absent optional runtimes are not scan failures", (t) => {
+test("ordinary Claude config files and absent optional harnesses are not scan failures", (t) => {
   const f = fixture(t);
   writeFileSync(join(f.user, ".claude.json"), "{}");
   writeFileSync(join(f.user, ".claude.json.backup"), "{}");
@@ -282,7 +282,7 @@ for (const [format, variable, defaultDir] of [["cc", "CLAUDE_CONFIG_DIR", ".clau
       if (origin === "environment") f.env[variable] = relocated;
       else {
         f.env[variable] = join(f.base, "wrong-observer-root");
-        const launch = { version: 1, runtime: format === "cc" ? "claude" : format, env: {}, hooks: { env: {} } };
+        const launch = { version: 2, harness: format === "cc" ? "claude" : format, env: {}, hooks: { env: {} } };
         if (origin === "launch-hooks") launch.hooks.env[variable] = relocated;
         else if (origin === "launch-reference") {
           launch.env[variable] = { fromEnv: "FIXTURE_NATIVE_ROOT" }; f.env.FIXTURE_NATIVE_ROOT = relocated;
@@ -308,7 +308,7 @@ for (const [format, variable, defaultDir] of [["cc", "CLAUDE_CONFIG_DIR", ".clau
       }
       if (failure === "unresolved-reference") {
         delete f.env[variable]; delete f.env.FIXTURE_UNRESOLVED_NATIVE_ROOT;
-        writeFileSync(join(f.home, "instance.json"), JSON.stringify({ launch: { version: 1, runtime: format === "cc" ? "claude" : format, env: { [variable]: { fromEnv: "FIXTURE_UNRESOLVED_NATIVE_ROOT" } } } }));
+        writeFileSync(join(f.home, "instance.json"), JSON.stringify({ launch: { version: 2, harness: format === "cc" ? "claude" : format, env: { [variable]: { fromEnv: "FIXTURE_UNRESOLVED_NATIVE_ROOT" } } } }));
       }
       const out = incomplete(f.run({ native: true, preload }), "failed");
       assert.deepEqual(out.sessions, []); assert.equal(f.store.listStreams().length, 0);
@@ -319,10 +319,23 @@ for (const [format, variable, defaultDir] of [["cc", "CLAUDE_CONFIG_DIR", ".clau
 test("recorded HOME locates source sessions independently of the capturing worker's HOME", (t) => {
   const f = fixture(t);
   writeFileSync(f.file, line(f.home));
-  writeFileSync(join(f.home, "instance.json"), JSON.stringify({ launch: { version: 1, runtime: "claude", env: { HOME: f.user } } }));
+  writeFileSync(join(f.home, "instance.json"), JSON.stringify({ launch: { version: 2, harness: "claude", env: { HOME: f.user } } }));
   const observerHome = join(f.base, "observer"); mkdirSync(observerHome); f.env.HOME = observerHome;
   const r = f.run({ native: true }); assert.equal(r.status, 0, r.stderr);
   assert.equal(JSON.parse(r.stdout).sessions[0].turns, 1);
+});
+
+test("a 0.26.0 home's version-1 recipe (`runtime`) locates its sessions like version 2 (read either, 0.27.0)", (t) => {
+  const f = fixture(t);
+  writeFileSync(f.file, line(f.home));
+  writeFileSync(join(f.home, "instance.json"), JSON.stringify({ runtime: "claude", launch: { version: 1, runtime: "claude", env: { HOME: f.user } } }));
+  const observerHome = join(f.base, "observer"); mkdirSync(observerHome); f.env.HOME = observerHome;
+  const r = f.run({ native: true }); assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout).sessions[0].turns, 1);
+  const pi = fixture(t, "pi"); writeFileSync(pi.file, nativeHeader("pi", pi.home));
+  writeFileSync(join(pi.home, "instance.json"), JSON.stringify({ launch: { version: 1, runtime: "pi", args: ["--session-dir", join(pi.user, ".pi/agent/sessions")] } }));
+  const p = pi.run({ native: true }); assert.equal(p.status, 0, p.stderr);
+  assert.equal(JSON.parse(p.stdout).sessions[0].turns, 1, "a version-1 pi recipe's --session-dir is honoured");
 });
 
 for (const mode of ["environment", "launch-argument", "relative-argument", "tilde-agent-dir"]) {
@@ -330,13 +343,13 @@ for (const mode of ["environment", "launch-argument", "relative-argument", "tild
     const f = fixture(t, "pi"); writeFileSync(f.file, nativeHeader("pi", f.home));
     if (mode === "tilde-agent-dir") f.env.PI_CODING_AGENT_DIR = "~/.pi/agent";
     else if (mode === "environment") f.env.PI_CODING_AGENT_SESSION_DIR = join(f.user, ".pi/agent/sessions");
-    else writeFileSync(join(f.home, "instance.json"), JSON.stringify({ launch: { version: 1, runtime: "pi", args: ["--session-dir", mode === "relative-argument" ? "../user/.pi/agent/sessions" : join(f.user, ".pi/agent/sessions")] } }));
+    else writeFileSync(join(f.home, "instance.json"), JSON.stringify({ launch: { version: 2, harness: "pi", args: ["--session-dir", mode === "relative-argument" ? "../user/.pi/agent/sessions" : join(f.user, ".pi/agent/sessions")] } }));
     const r = f.run({ native: true }); assert.equal(r.status, 0, r.stderr);
     assert.equal(JSON.parse(r.stdout).sessions[0].turns, 1);
   });
 }
 
-test("dangling default runtime directories and malformed recorded roots are failures, not absent runtimes", (t) => {
+test("dangling default harness directories and malformed recorded roots are failures, not absent harnesses", (t) => {
   const f = fixture(t);
   mkdirSync(join(f.user, ".pi")); symlinkSync(join(f.base, "missing"), join(f.user, ".pi", "agent"));
   incomplete(f.run(), "failed");

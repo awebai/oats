@@ -58,7 +58,7 @@ if (process.env.OATS_REMOTE_SEAM_OLD && command.includes('version --json')) {
     assert.ok(probe.features.includes(f), `feature ${f}`);
     assert.ok(probe.remote.includes(f), `remote ${f}`);
   }
-  const definition = { runtime: 'codex', executable: '/usr/bin/true', args: ['--profile', "a,b # 'x'", '', '$(never-executed)'], env: { API_KEY: { fromEnv: 'REMOTE_KEY' }, DIR: 'synthetic-private-path' }, yolo: true };
+  const definition = { harness: 'codex', executable: '/usr/bin/true', args: ['--profile', "a,b # 'x'", '', '$(never-executed)'], env: { API_KEY: { fromEnv: 'REMOTE_KEY' }, DIR: 'synthetic-private-path' }, yolo: true };
   const definitionFile = join(base, 'definition.json'); write(definitionFile, JSON.stringify(definition));
   const r = run(['launch-config', 'set', 'personal', '--server', 'test', '--dir', remoteScope, '--file', definitionFile]);
   assert.equal(r.ok, true, JSON.stringify(r));
@@ -79,11 +79,11 @@ if (process.env.OATS_REMOTE_SEAM_OLD && command.includes('version --json')) {
   assert.equal(badFile.error.code, 'E_BAD_ARGS');
   assert.equal(JSON.stringify(badFile).includes('synthetic-parse-secret'), false);
   assert.equal(calls().length, callsBeforeBadFile, 'invalid local definition never reaches the host');
-  const badChoice = run(['session', 'restart', '--server', 'test', '--home', '/fake/home', '--runtime']);
+  const badChoice = run(['session', 'restart', '--server', 'test', '--home', '/fake/home', '--harness']);
   assert.equal(badChoice.error.code, 'E_BAD_ARGS');
   assert.equal(calls().length, callsBeforeBadFile, 'a missing flag value never probes a host');
   const home = join(remoteScope, 'agents/dev/instances/dev-one');
-  write(join(home, 'instance.json'), JSON.stringify({ agent: 'dev', instance: 'dev-one', home, repo: remoteScope, runtime: 'codex', launched: false, launch: { version: 1, runtime: 'codex', launchConfig: null, executable: '/usr/bin/true', args: [], env: {}, model: null, yolo: false, hooks: { launch: {}, env: {}, contributions: [] }, prompt: { kind: 'task-file', file: 'TASK.md' } } }));
+  write(join(home, 'instance.json'), JSON.stringify({ agent: 'dev', instance: 'dev-one', home, repo: remoteScope, harness: 'codex', launched: false, launch: { version: 2, harness: 'codex', launchConfig: null, executable: '/usr/bin/true', args: [], env: {}, model: null, yolo: false, hooks: { launch: {}, env: {}, contributions: [] }, prompt: { kind: 'task-file', file: 'TASK.md' } } }));
   writeSnapshot('test', target, { version: probe.version, schemaVersion: 1 }, { instance: 'dev-one', home, agent: 'dev' });
   writeServers({ test: { ...target, sshHost: 'must-not-connect', workspace: '/must-not-write' } });
   const before = readFileSync(join(home, 'instance.json'), 'utf8');

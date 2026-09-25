@@ -39,7 +39,7 @@ see [Captured definitions](#captured-definitions-removed-in-026).
 ## Kinds
 
 - **spawn** `{id, enabled, cron, tz, kind: "spawn", agent, agentsRoot?,
-  repo?, backend?, purpose?, task, runtime?, model?, yolo?, wake?}` — every
+  repo?, backend?, purpose?, task, harness?, model?, yolo?, wake?}` — every
   due minute launches one disposable instance of `agent` with the same
   options `oats spawn` takes. `agentsRoot` names the exact agents root that
   holds the soul (it must lie inside the workspace and defaults to the
@@ -136,7 +136,7 @@ running}], scheduler: {installed, active, lastTick, maxConcurrent, ...}}`.
 ## What a run reports
 
 `launched` (spawn or command returned), `active` (the instance is running;
-a home whose retirement is pending still counts, its runtime may be alive),
+a home whose retirement is pending still counts, its harness may be alive),
 `ended` (its home is gone), `stopped` (home present, nothing running: needs
 attention, never removed for you), `launch-failed`, `unknown`, and for wake
 jobs `delivered`, `started` or `skipped`. The kernel never claims a task
@@ -159,13 +159,13 @@ unknown; check the roster and the host by hand, then
 slot (or `remove --force` forgets the job).
 
 A wake job that starts a stopped home holds a launch slot while that
-runtime is starting, active, retiring or unobservable, and releases it when
-the runtime is proven stopped (the session start receipt's exit marker for
+harness is starting, active, retiring or unobservable, and releases it when
+the harness is proven stopped (the session start receipt's exit marker for
 that launch, or a home that no longer has a session) or the home is gone.
 A persistent home that outlives its process does not keep a slot. Delivering
 a message to a home that is already running takes no slot. The host tick
 observes every registered scope first, then admits due jobs in one
-host-wide order, least recently launched first (only an actual runtime
+host-wide order, least recently launched first (only an actual harness
 launch counts; a skipped or pending job keeps its place at the front), so
 one frequent job in one scope cannot keep the only slot forever. An invalid
 or malformed definition is reported on that job and the rest of the tick
@@ -177,7 +177,7 @@ execution identity, kind and target cannot
 change; cron, tz and enabled can. A cold wake persists its slot before
 the session start runs and keeps it on any start exception, whatever its code
 (the kernel can refuse while recording, after the session exists); the next
-observation releases it once the runtime is proven stopped or absent, one tick
+observation releases it once the harness is proven stopped or absent, one tick
 at worst.
 `remove` refuses while the job's instance is still tracked (`--force`
 forgets the job without stopping anything). Retiring an instance removes the

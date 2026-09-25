@@ -107,7 +107,7 @@ test("captured (versioned) schedules are refused on add and update; a stored one
     const S = await import("../lib/schedule.mjs");
     const ws = join(base, "ws");
     mkdirSync(join(ws, "agents", "dev", "soul"), { recursive: true });
-    writeFileSync(join(ws, "agents", "dev", "soul", "soul.yaml"), "name: dev\nwork: worktree\nruntime: claude\n");
+    writeFileSync(join(ws, "agents", "dev", "soul", "soul.yaml"), "name: dev\nwork: worktree\nharness: claude\n");
     writeFileSync(join(ws, "oats-local.yaml"), "schemaVersion: 2\nworkspace: example.invalid/acme/workspace\n");
     const job = { id: "j", cron: "* * * * *", tz: "UTC", kind: "command", cwd: ws, argv: ["oats", "status", "--json"] };
     for (const key of S.CAPTURED_SCHEDULE_KEYS) {

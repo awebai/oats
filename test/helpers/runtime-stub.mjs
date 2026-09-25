@@ -1,6 +1,6 @@
-/** Inert runtime binaries for fixtures that spawn.
+/** Inert harness binaries for fixtures that spawn.
  *
- * `oats spawn --no-launch` still resolves the runtime's launch executable
+ * `oats spawn --no-launch` still resolves the harness's launch executable
  * (lib/core.mjs resolveLaunchExecutable) and refuses a spawn when it is not on
  * PATH. A fixture that spawns must therefore bring its own `pi`, `claude` and
  * `codex`, or it passes only on a machine that has them installed.
@@ -13,7 +13,7 @@ import { join } from "node:path";
 export const RUNTIME_STUBS = ["pi", "claude", "codex"];
 
 /** Create `<parent>/runtime-stub/{pi,claude,codex}`, each `exit 0`; return the directory. */
-export function inertRuntimeDir(parent) {
+export function inertHarnessDir(parent) {
   const dir = join(parent, "runtime-stub");
   mkdirSync(dir, { recursive: true });
   for (const name of RUNTIME_STUBS) {
@@ -23,7 +23,7 @@ export function inertRuntimeDir(parent) {
   return dir;
 }
 
-/** `rest` (the host PATH by default) with an inert runtime directory in front of it. */
-export function inertRuntimePath(parent, rest = process.env.PATH) {
-  return `${inertRuntimeDir(parent)}:${rest}`;
+/** `rest` (the host PATH by default) with an inert harness directory in front of it. */
+export function inertHarnessPath(parent, rest = process.env.PATH) {
+  return `${inertHarnessDir(parent)}:${rest}`;
 }

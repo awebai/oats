@@ -28,7 +28,7 @@ write(join(binDir, "polite"), `#!/bin/sh\nprintf '%s\\n' "$@" > "$OATS_INSTANCE_
 write(join(binDir, "stubborn"), `#!/bin/sh\ntrap '' TERM\necho $$ > "$OATS_INSTANCE_HOME/pid.txt"\nwhile :; do sleep 0.2; done\n`);
 for (const n of ["polite", "stubborn", "claude", "codex", "pi"]) chmodSync(join(binDir, n === "claude" || n === "codex" || n === "pi" ? "polite" : n), 0o755);
 for (const n of ["claude", "codex", "pi"]) { write(join(binDir, n), readFileSync(join(binDir, "polite"), "utf8")); chmodSync(join(binDir, n), 0o755); }
-// In-process starts resolve a runtime's default binary on THIS process's PATH (`which`), not on the
+// In-process starts resolve a harness's default binary on THIS process's PATH (`which`), not on the
 // environment passed to them: the fakes go first here too, so a host without the real harnesses plans alike.
 process.env.PATH = `${binDir}:${process.env.PATH}`;
 const env = (extra = {}) => { const e = { ...process.env, PATH: `${binDir}:${process.env.PATH}`, OATS_HOME_DIR: join(base, "oats-home"), ...extra }; for (const k of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "PI_AGENT_INSTANCE", "PI_AGENT_HOME", "PI_AGENTS_ROOT"]) delete e[k]; return e; };
@@ -53,7 +53,7 @@ const fx = v2Deployment({
       files: { "bin/launch.mjs": answerHook(`writeFileSync(join(process.env.OATS_HOME, "hooked-settings"), process.env.OATS_SETTINGS);\n`) } },
     "test.two": { manifest: { environment: ["TEST_SHARED"] } },
     "test.renew": { manifest: { hooks: { launch: "bin/launch.mjs" }, environment: [], settings: {} }, files: { "bin/launch.mjs": answerHook() } },
-    "test.req": { manifest: { hooks: { launch: "bin/launch.mjs" }, requires: [{ runtime: "claude", package: "chan@acme-marketplace", marketplace: "acme/claude-plugins", when: { mode: "on" } }], settings: { mode: { description: "m" } } },
+    "test.req": { manifest: { hooks: { launch: "bin/launch.mjs" }, requires: [{ harness: "claude", package: "chan@acme-marketplace", marketplace: "acme/claude-plugins", when: { mode: "on" } }], settings: { mode: { description: "m" } } },
       files: { "bin/launch.mjs": `process.stdout.write(JSON.stringify({ launch: { claude: "--req-hook" }, env: {} }) + "\\n");\n` } },
     // Records the eligible teams its launch hook was given (teams contract decision 6).
     "test.teams": { manifest: { hooks: { launch: "bin/launch.mjs" }, environment: [], settings: {} },
@@ -61,9 +61,9 @@ const fx = v2Deployment({
   },
   workspace: { teams: { global: { description: "Fixture team" }, night: { description: "Night shift" } } },
   local: { "launch-configs": {
-    polite: { runtime: "claude", executable: join(binDir, "polite"), args: ["--flag", "a b c"], env: { KEY: { fromEnv: "RESTART_TEST_SRC" }, LIT: "plain" }, model: "claude-opus-5" },
-    stubborn: { runtime: "claude", executable: join(binDir, "stubborn") },
-    codexy: { runtime: "codex", executable: join(binDir, "polite") },
+    polite: { harness: "claude", executable: join(binDir, "polite"), args: ["--flag", "a b c"], env: { KEY: { fromEnv: "RESTART_TEST_SRC" }, LIT: "plain" }, model: "claude-opus-5" },
+    stubborn: { harness: "claude", executable: join(binDir, "stubborn") },
+    codexy: { harness: "codex", executable: join(binDir, "polite") },
   } },
 });
 test.after(() => fx.cleanup());
@@ -71,10 +71,10 @@ const repo = fx.dep; // the deployment: the scope lifecycle verbs resolve from
 const homeOf = (name, soul = "dev") => join(fx.root, soul, "instances", name);
 // Homes are SPAWNED through the workspace path (fx.spawn), then given the recorded launch a test
 // starts from: the private tmux socket, and a recipe (or the command alone).
-async function makeHome(name, { soul = "dev", command, launch, runtime = "claude", model, providers, ...spawn } = {}) {
-  const { home } = await fx.spawn(soul, { name, work: "checkout", launch: false, runtime, providers, ...spawn });
+async function makeHome(name, { soul = "dev", command, launch, harness = "claude", model, providers, ...spawn } = {}) {
+  const { home } = await fx.spawn(soul, { name, work: "checkout", launch: false, harness, providers, ...spawn });
   assert.equal(home, homeOf(name, soul));
-  const meta = { ...readJson(join(home, "instance.json")), runtime, ...(model ? { model } : {}), tmux: { session, window: name, socket }, launched: true };
+  const meta = { ...readJson(join(home, "instance.json")), harness, ...(model ? { model } : {}), tmux: { session, window: name, socket }, launched: true };
   if (command !== undefined) meta.command = command;
   if (launch) meta.launch = launch;
   write(join(home, "instance.json"), JSON.stringify(meta, null, 2) + "\n");
@@ -84,7 +84,7 @@ async function makeHome(name, { soul = "dev", command, launch, runtime = "claude
   write(baselinePath, JSON.stringify({ ...baseline, runtime: { launched: true, tmux: { session, window: name, socket } } }, null, 2) + "\n");
   return { home, meta };
 }
-const recipeFor = (home, name, { executable, args = [], env = {}, hooksEnv = {}, contributions = [] } = {}) => ({ version: 1, runtime: "claude", launchConfig: null, launchConfigSource: null, executable, executableDeclared: null, executableResolvedFrom: "PATH", args, env, model: null, yolo: true, hooks: { launch: {}, env: hooksEnv, contributions }, prompt: { kind: "task-file", file: "TASK.md" } });
+const recipeFor = (home, name, { executable, args = [], env = {}, hooksEnv = {}, contributions = [] } = {}) => ({ version: 2, harness: "claude", launchConfig: null, launchConfigSource: null, executable, executableDeclared: null, executableResolvedFrom: "PATH", args, env, model: null, yolo: true, hooks: { launch: {}, env: hooksEnv, contributions }, prompt: { kind: "task-file", file: "TASK.md" } });
 const renderFor = (home, name, exe, extraEnv = "") => `OATS_INSTANCE=${shq(name)} OATS_INSTANCE_HOME=${shq(home)} PI_AGENT_INSTANCE=${shq(name)} PI_AGENT_HOME=${shq(home)}${extraEnv} ${shq(exe)} --dangerously-skip-permissions -- "$(cat TASK.md)"`;
 const waitFor = (pred, description = "harness readiness") => waitUntil(pred, description);
 const runningPid = (home) => {
@@ -108,7 +108,7 @@ test("restart: every preflight before the stop; a polite harness ends on SIGTERM
   assert.ok(await waitFor(() => runningPid(home) !== null), "the first harness is up");
   const oldPid = runningPid(home);
   // Preflight refusals leave the running harness alone.
-  for (const [sel, code] of [[{ launchConfig: "nope" }, "E_LAUNCH_CONFIG_UNKNOWN"], [{ launchConfig: "polite", runtime: "codex" }, "E_LAUNCH_CONFIG_MISMATCH"], [{ launchConfig: "polite" }, "E_LAUNCH_ENV_MISSING"]]) {
+  for (const [sel, code] of [[{ launchConfig: "nope" }, "E_LAUNCH_CONFIG_UNKNOWN"], [{ launchConfig: "polite", harness: "codex" }, "E_LAUNCH_CONFIG_MISMATCH"], [{ launchConfig: "polite" }, "E_LAUNCH_ENV_MISSING"]]) {
     assert.throws(() => restartInstanceSession(home, { ...sel, env: env() }), (e) => e.code === code, code);
     assert.equal(runningPid(home), oldPid, `${code}: still the same harness`);
     assert.equal(existsSync(join(home, ".oats-restart.json")), false, `${code}: no stop was attempted`);
@@ -125,7 +125,7 @@ test("restart: every preflight before the stop; a polite harness ends on SIGTERM
   const meta = readJson(join(home, "instance.json"));
   assert.equal(meta.launch.launchConfig, "polite"); assert.deepEqual(meta.launch.env, { KEY: { fromEnv: "RESTART_TEST_SRC" }, LIT: "plain" });
   assert.ok(meta.command.includes(`KEY="$OATS_LAUNCH_REF_KEY"`) && !meta.command.includes("s3cret") && !meta.command.includes("RESTART_TEST_SRC"), meta.command);
-  assert.equal(meta.restartCount, 2); assert.equal(meta.runtime, "claude");
+  assert.equal(meta.restartCount, 2); assert.equal(meta.harness, "claude");
   const receipt = readJson(join(home, ".oats-restart.json"));
   assert.equal(receipt.stop.exited, true); assert.equal(receipt.next.launchConfig, "polite");
   assert.ok(!JSON.stringify(receipt).includes("s3cret"));
@@ -174,7 +174,7 @@ test("every start of a recipe home goes through the planner: a missing recorded 
   assert.ok(!windows().includes(name));
 });
 
-test("a restart to another runtime whose metadata write is interrupted is recovered by the next start with ONE allocation and the new recipe; a running recovered target refuses a new selection factually", async () => {
+test("a restart to another harness whose metadata write is interrupted is recovered by the next start with ONE allocation and the new recipe; a running recovered target refuses a new selection factually", async () => {
   const name = "dev-recover";
   const home = homeOf(name);
   await makeHome(name, { command: renderFor(home, name, join(binDir, "polite")), launch: recipeFor(home, name, { executable: join(binDir, "polite") }) });
@@ -183,18 +183,18 @@ test("a restart to another runtime whose metadata write is interrupted is recove
   const oldPid = runningPid(home);
   assert.throws(() => restartInstanceSession(home, { launchConfig: "codexy", env: env(), stopGraceMs: 5000, io: { failBeforeMetadataWrite: true } }), (e) => e.code === "E_SESSION_START_INCOMPLETE");
   const pending = readJson(join(home, ".oats-start-pending.json"));
-  assert.deepEqual([pending.runtime, pending.launch.launchConfig, pending.launch.runtime, pending.model], ["codex", "codexy", "codex", null], "the receipt carries the new recipe");
-  assert.equal(readJson(join(home, "instance.json")).runtime, "claude", "metadata still says the old runtime");
+  assert.deepEqual([pending.harness, pending.launch.launchConfig, pending.launch.harness, pending.model], ["codex", "codexy", "codex", null], "the receipt carries the new recipe");
+  assert.equal(readJson(join(home, "instance.json")).harness, "claude", "metadata still says the old harness");
   assert.ok(await waitFor(() => runningPid(home) !== null && runningPid(home) !== oldPid, "replacement harness PID"), "the new harness is up");
   const recovered = startInstanceSession(home, { env: env() });
-  assert.equal(recovered.reused, "adopted"); assert.equal(recovered.runtime, "codex"); assert.equal(recovered.launchConfig, "codexy"); assert.equal(recovered.model, null);
+  assert.equal(recovered.reused, "adopted"); assert.equal(recovered.harness, "codex"); assert.equal(recovered.launchConfig, "codexy"); assert.equal(recovered.model, null);
   const meta = readJson(join(home, "instance.json"));
-  assert.deepEqual([meta.runtime, meta.launch.launchConfig, meta.launch.runtime, meta.model], ["codex", "codexy", "codex", undefined]);
+  assert.deepEqual([meta.harness, meta.launch.launchConfig, meta.launch.harness, meta.model], ["codex", "codexy", "codex", undefined]);
   assert.equal(windows().filter((w) => w === name).length, 1, "one allocation");
   assert.equal(existsSync(join(home, ".oats-start-pending.json")), true, "the receipt stays until the command exits");
   // A choice made now against the running recovered target is refused, not silently ignored.
   assert.throws(() => startInstanceSession(home, { launchConfig: "polite", env: env({ RESTART_TEST_SRC: "x" }) }), (e) => e.code === "E_SESSION_RUNNING" && /was not applied/.test(e.message));
-  assert.throws(() => startInstanceSession(home, { runtime: "claude", env: env() }), (e) => e.code === "E_SESSION_RUNNING" && /was not applied/.test(e.message));
+  assert.throws(() => startInstanceSession(home, { harness: "claude", env: env() }), (e) => e.code === "E_SESSION_RUNNING" && /was not applied/.test(e.message));
   // A pending receipt whose recipe is not a shape this kernel starts from is refused before anything.
   write(join(home, ".oats-start-pending.json"), JSON.stringify({ ...pending, launch: { ...pending.launch, version: 9 } }));
   assert.throws(() => startInstanceSession(home, { env: env() }), (e) => e.code === "E_SESSION_UNKNOWN" && /invalid receipt/.test(e.message));
@@ -331,7 +331,7 @@ test("0.25.5 launch-hook meta is persisted: after a successful start, each capab
 test("a captured provider with no contribution at spawn still takes part (launch hook, conditional requirement); package probes run under the launch's effective environment, not the ambient one", async () => {
   // A wrapper that answers claude's plugin list only under the SELECTED environment; otherwise it is the polite harness.
   const wrapper = join(binDir, "claude-wrapper"); write(wrapper, `#!/bin/sh\nif [ "$1" = "plugin" ] && [ "$2" = "list" ]; then\n  if [ "$TEST_PROBE_TOKEN" = "selected" ]; then printf '[{"id":"chan@acme-marketplace","scope":"user","enabled":true}]'; else printf '[]'; fi\n  exit 0\nfi\nexec ${JSON.stringify(join(binDir, "polite"))} "$@"\n`); chmodSync(wrapper, 0o755);
-  write(join(base, "probed.json"), JSON.stringify({ runtime: "claude", executable: wrapper, env: { TEST_PROBE_TOKEN: "selected" } }));
+  write(join(base, "probed.json"), JSON.stringify({ harness: "claude", executable: wrapper, env: { TEST_PROBE_TOKEN: "selected" } }));
   assert.equal(oats(["launch-config", "set", "probed", "--file", join(base, "probed.json"), "--dir", repo]).json.ok, true);
   // A captured provider (spawned from the soul's declaration, no contribution at spawn) declaring a launch hook and a requirement conditional on its captured settings; the spawn itself verified it under the selected configuration.
   const name = "dev-captured";
@@ -342,16 +342,16 @@ test("a captured provider with no contribution at spawn still takes part (launch
   // The captured provider took part although it contributed nothing at spawn: its hook's args are in, its requirement was probed under the selected env and found.
   let v = preview();
   assert.ok(v.argv.includes("--req-hook"), JSON.stringify(v.argv));
-  const pk = (x) => x.preflight.find((c) => c.check === "runtime-packages");
+  const pk = (x) => x.preflight.find((c) => c.check === "harness-packages");
   assert.equal(pk(v).ok, true, JSON.stringify(pk(v))); assert.match(pk(v).detail, /verified with .*claude-wrapper/);
   assert.equal(v.ok, true);
   // The configuration's environment wins over the ambient one: ambient says selected, the configuration says wrong -> the probe fails.
-  write(join(base, "probed2.json"), JSON.stringify({ runtime: "claude", executable: wrapper, env: { TEST_PROBE_TOKEN: "wrong" } }));
+  write(join(base, "probed2.json"), JSON.stringify({ harness: "claude", executable: wrapper, env: { TEST_PROBE_TOKEN: "wrong" } }));
   assert.equal(oats(["launch-config", "set", "probed", "--file", join(base, "probed2.json"), "--dir", repo]).json.ok, true);
   v = preview({ TEST_PROBE_TOKEN: "selected" });
   assert.equal(pk(v).ok, false, JSON.stringify(pk(v))); assert.match(pk(v).detail, /chan@acme-marketplace/);
   // A reference to the source variable: resolved from the base for the probe; unset -> the environment check fails and nothing is probed.
-  write(join(base, "probed3.json"), JSON.stringify({ runtime: "claude", executable: wrapper, env: { TEST_PROBE_TOKEN: { fromEnv: "PROBE_SRC" } } }));
+  write(join(base, "probed3.json"), JSON.stringify({ harness: "claude", executable: wrapper, env: { TEST_PROBE_TOKEN: { fromEnv: "PROBE_SRC" } } }));
   assert.equal(oats(["launch-config", "set", "probed", "--file", join(base, "probed3.json"), "--dir", repo]).json.ok, true);
   v = preview({ PROBE_SRC: "selected" });
   assert.equal(pk(v).ok, true, JSON.stringify(pk(v)));
@@ -361,23 +361,23 @@ test("a captured provider with no contribution at spawn still takes part (launch
   const meta = readJson(join(home, "instance.json"));
   write(join(home, "instance.json"), JSON.stringify({ ...meta, capabilityRuntime: [{ ...meta.capabilityRuntime[0], settings: { mode: "off" } }] }));
   v = preview({ PROBE_SRC: "wrong" });
-  assert.equal(pk(v).ok, true); assert.match(pk(v).detail, /nothing probed|no runtime package requirement/);
+  assert.equal(pk(v).ok, true); assert.match(pk(v).detail, /nothing probed|no harness package requirement/);
   // An applicable requirement plus configuration arguments: the probe cannot carry the arguments, so the launch is not reported verified (planner, and spawn before any side effect); without an applicable requirement, arguments are fine and nothing is probed.
   write(join(home, "instance.json"), JSON.stringify(meta));
-  write(join(base, "probed-args.json"), JSON.stringify({ runtime: "claude", executable: wrapper, args: ["--settings", "/abs/native.json"], env: { TEST_PROBE_TOKEN: "selected" } }));
+  write(join(base, "probed-args.json"), JSON.stringify({ harness: "claude", executable: wrapper, args: ["--settings", "/abs/native.json"], env: { TEST_PROBE_TOKEN: "selected" } }));
   assert.equal(oats(["launch-config", "set", "probed", "--file", join(base, "probed-args.json"), "--dir", repo]).json.ok, true);
   v = preview();
   assert.equal(pk(v).ok, false, JSON.stringify(pk(v))); assert.match(pk(v).detail, /cannot carry.*test.req's requirement chan@acme-marketplace cannot be verified.*wrapper executable or the environment/); assert.equal(pk(v).code, "E_LAUNCH_PROBE_UNSUPPORTED");
   assert.throws(() => restartInstanceSession(home, { launchConfig: "probed", env: env() }), (e) => e.code === "E_LAUNCH_PROBE_UNSUPPORTED", "start/restart refuse before anything");
   write(join(home, "instance.json"), JSON.stringify({ ...meta, capabilityRuntime: [{ ...meta.capabilityRuntime[0], settings: { mode: "off" } }] }));
   v = preview();
-  assert.equal(pk(v).ok, true); assert.match(pk(v).detail, /nothing probed|no runtime package requirement/);
+  assert.equal(pk(v).ok, true); assert.match(pk(v).detail, /nothing probed|no harness package requirement/);
   // Spawn (a workspace deployment): the soul declares the provider with an applicable requirement; a new instance under the args configuration is refused before a home exists; with the requirement off (the provider payload), it spawns.
   const fx2 = v2Deployment({
     souls: { dev: { soul: { capabilities: { "test.req": { from: "here" } } } } },
-    capabilities: { "test.req": { manifest: { hooks: { launch: "bin/launch.mjs" }, requires: [{ runtime: "claude", package: "chan@acme-marketplace", marketplace: "acme/claude-plugins", when: { mode: "on" } }], settings: { mode: { description: "m" } } },
+    capabilities: { "test.req": { manifest: { hooks: { launch: "bin/launch.mjs" }, requires: [{ harness: "claude", package: "chan@acme-marketplace", marketplace: "acme/claude-plugins", when: { mode: "on" } }], settings: { mode: { description: "m" } } },
       files: { "bin/launch.mjs": `process.stdout.write(JSON.stringify({ launch: { claude: "--req-hook" }, env: {} }) + "\\n");\n` } } },
-    local: { "launch-configs": { probed: { runtime: "claude", executable: wrapper, args: ["--settings", "/abs/native.json"], env: { TEST_PROBE_TOKEN: "selected" } } } },
+    local: { "launch-configs": { probed: { harness: "claude", executable: wrapper, args: ["--settings", "/abs/native.json"], env: { TEST_PROBE_TOKEN: "selected" } } } },
   });
   try {
     const saved = { HOME: process.env.HOME, OATS_REMOTE_CACHE: process.env.OATS_REMOTE_CACHE };
@@ -392,7 +392,7 @@ test("a captured provider with no contribution at spawn still takes part (launch
   // A provider the home did not capture does not take part, even with a launch hook and a requirement.
   write(join(home, "instance.json"), JSON.stringify({ ...meta, capabilityRuntime: [] }));
   v = preview({ PROBE_SRC: "wrong" });
-  assert.ok(!v.argv.includes("--req-hook"), JSON.stringify(v.argv)); assert.match(pk(v).detail, /nothing probed|no runtime package requirement/);
+  assert.ok(!v.argv.includes("--req-hook"), JSON.stringify(v.argv)); assert.match(pk(v).detail, /nothing probed|no harness package requirement/);
 });
 
 // ---- K3: stop plan → apply (recursive, retained, bounded, idempotent) and the retire plan ----
@@ -522,7 +522,7 @@ test("K3 pins: guarded retire STOPS recorded children first and refuses (E_CHILD
   assert.equal(replayA.replayed, true); assert.equal(replayA.at, a.at, "an EARLIER key replays its own receipt after a later key was used");
   // Pin 4: a child whose parent NAME is not unique under the root is reported as ambiguous and excluded.
   const twinDir = join(root, "ops"); mkdirSync(join(twinDir, "soul"), { recursive: true });
-  write(join(twinDir, "soul", "soul.yaml"), "name: ops\nrepo: .\nwork: checkout\nruntime: claude\n"); write(join(twinDir, "soul", "AGENTS.md"), "# ops\n");
+  write(join(twinDir, "soul", "soul.yaml"), "name: ops\nrepo: .\nwork: checkout\nharness: claude\n"); write(join(twinDir, "soul", "AGENTS.md"), "# ops\n");
   const twinHome = join(twinDir, "instances", "pin-parent"); write(join(twinHome, "instance.json"), JSON.stringify({ agent: "ops", instance: "pin-parent", home: twinHome, repo, work: "checkout", branch: null, launched: false }));
   const kids = descendantsOf(root, "pin-parent");
   assert.deepEqual(kids.map((k) => k.instance), [], "no edge is followed to a non-unique parent name");
@@ -575,4 +575,41 @@ test("teams contract decision 6: a session start's launch hook gets the home's L
   const after = readJson(join(home, "instance.json"));
   assert.deepEqual(after.modules, spawned.modules, "modules stay frozen");
   assert.deepEqual(after.teams, spawned.teams, "the spawn-time record is evidence, never rewritten");
+});
+
+test("a 0.26.0 home (instance.json `runtime`, a version-1 recipe) inspects, restarts on its recipe and is recorded in the new names, then retires; each command answers one deprecated-runtime-name warning (lead call 6)", async () => {
+  const name = "dev-v026";
+  const { home } = await makeHome(name, { command: renderFor(homeOf(name), name, join(binDir, "polite")), launch: recipeFor(homeOf(name), name, { executable: join(binDir, "polite") }) });
+  // The same home in 0.26.0's names.
+  const { harness, launch, ...rest } = readJson(join(home, "instance.json"));
+  const { harness: recipeHarness, ...recipe } = launch;
+  write(join(home, "instance.json"), JSON.stringify({ ...rest, runtime: harness, launch: { ...recipe, version: 1, runtime: recipeHarness } }, null, 2) + "\n");
+  const warned = (r, what) => {
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(r.json.warnings?.length, 1, `${what}: ${r.stdout}`);
+    assert.equal(r.json.warnings[0].code, "deprecated-runtime-name");
+    assert.match(r.json.warnings[0].message, /`runtime` was renamed to `harness` in 0\.27\.0/);
+    assert.ok(r.json.warnings[0].sources.some((s) => s.includes(`instance.json of ${home}`)), JSON.stringify(r.json.warnings));
+  };
+  const inspected = oats(["inspect", "--home", home]);
+  warned(inspected, "inspect");
+  assert.equal(inspected.json.result.instance.harness, "claude", "runtime is read as harness");
+  const status = oats(["status", "--dir", repo]);
+  warned(status, "status");
+  assert.equal(status.json.agents.flatMap((a) => a.instances).find((i) => i.instance === name)?.harness, "claude", "the roster (a bare document) carries the warning beside its rows");
+  assert.deepEqual(Object.keys(readJson(join(home, "instance.json"))).filter((k) => k === "runtime"), ["runtime"], "reading rewrites nothing");
+  const started = oats(["session", "restart", "--home", home, "--stop-grace", "5"]);
+  warned(started, "restart");
+  assert.equal(started.json.result.harness, "claude");
+  assert.ok(await waitFor(() => runningPid(home) !== null), "the recipe's harness is up");
+  const meta = readJson(join(home, "instance.json"));
+  assert.equal(Object.hasOwn(meta, "runtime"), false, "the start records the new names");
+  assert.equal(meta.harness, "claude");
+  assert.equal(meta.launch.version, 2); assert.equal(meta.launch.harness, "claude"); assert.equal(Object.hasOwn(meta.launch, "runtime"), false);
+  assert.equal(meta.launch.executable, join(binDir, "polite"), "the same recipe, re-recorded");
+  const quiet = oats(["inspect", "--home", home]);
+  assert.equal(quiet.status, 0); assert.equal(Object.hasOwn(quiet.json, "warnings"), false, "a rewritten home is read without a warning");
+  assert.equal(stopInstanceSession(home, { graceMs: 5000 }).stopped, true);
+  const r = oats(["retire", name, "--dir", repo]); assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(existsSync(home), false);
 });

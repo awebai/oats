@@ -10,7 +10,7 @@ import {
   capabilityManifest, completeDeferredRetirement, composeInstanceAgentsMd, deferredRetireResultPath, findAgent, findInstanceHomes, retirePendingMarkerPath,
   listInstances, resolveClaudeBinary, retireInstance, runLifecycleHooks, spawnInstanceAsync,
 } from "@awebai/oats/core";
-import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
+import { inertHarnessPath } from "./helpers/runtime-stub.mjs";
 import { capabilityFiles, soulFiles, v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
@@ -40,10 +40,10 @@ function capability(repo, folder, manifest, files = {}) {
   for (const [name, body] of Object.entries(files)) write(join(dir, name), body);
   return dir;
 }
-function fakeRuntimes(base) {
+function fakeHarnesses(base) {
   const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
   for (const name of ["pi", "claude"]) { write(join(bin, name), "#!/bin/sh\nexit 0\n"); execFileSync("chmod", ["+x", join(bin, name)]); }
-  return `${bin}:${inertRuntimePath(base)}`;
+  return `${bin}:${inertHarnessPath(base)}`;
 }
 
 /** A `pi` stub that answers `pi list` the way pi actually does: a two-space spec
@@ -64,11 +64,11 @@ function fakePiWithPackages(base, rows) {
   return `${bin}:${process.env.PATH}`;
 }
 
-function fixtureSoul(base, runtime = "pi", type) {
+function fixtureSoul(base, harness = "pi", type) {
   const repo = join(base, "repo"); gitRepo(repo);
   const root = join(base, "agents");
   const soul = join(root, "dev", "soul");
-  write(join(soul, "soul.yaml"), `name: dev\nkind: persistent\n${type ? `type: ${type}\n` : ""}repo: ${repo}\nwork: checkout\nruntime: ${runtime}\n`);
+  write(join(soul, "soul.yaml"), `name: dev\nkind: persistent\n${type ? `type: ${type}\n` : ""}repo: ${repo}\nwork: checkout\nharness: ${harness}\n`);
   write(join(soul, "AGENTS.md"), "# Canonical dev\n\nNever mutate me.\n");
   symlinkSync("AGENTS.md", join(soul, "CLAUDE.md"));
   mkdirSync(join(root, "dev", "instances"), { recursive: true });
@@ -118,9 +118,9 @@ test("pi and Claude instances receive the same exact local skills and generated 
     capabilities: { "acme.review": { manifest: { description: "review", skills: ["skills/review"], inject: "inject.md" }, files: { "skills/review/SKILL.md": "---\nname: review\ndescription: Review.\n---\n# Review\n", "inject.md": "## Review capability\n\nUse review." } } },
   });
   write(join(fx.member, ".agents", "skills", "pollution", "SKILL.md"), "---\nname: pollution\ndescription: No.\n---\n# No\n");
-  process.env.PATH = fakeRuntimes(fx.base);
-  const pi = await fx.spawn("dev", { instance: "dev-pi", runtime: "pi" });
-  const claude = await fx.spawn("dev", { instance: "dev-claude", runtime: "claude" });
+  process.env.PATH = fakeHarnesses(fx.base);
+  const pi = await fx.spawn("dev", { instance: "dev-pi", harness: "pi" });
+  const claude = await fx.spawn("dev", { instance: "dev-claude", harness: "claude" });
   const soul = join(fx.root, "dev", "soul");
   const canonical = readFileSync(join(soul, "AGENTS.md"), "utf8");
   for (const meta of [pi, claude]) {
@@ -135,7 +135,7 @@ test("pi and Claude instances receive the same exact local skills and generated 
     assert.ok(diskMeta.capabilities.some((c) => c.id === "acme.review"));
     assert.deepEqual(diskMeta.skills.map((s) => [s.name, s.source]), [["private", "soul"], ["review", "module:acme.review"]],
       "instance.json.skills records the soul's own skills and each module skill with its module:<cap> source");
-    if (meta.runtime === "pi") {
+    if (meta.harness === "pi") {
       // Workspace model, decision 13: the harness starts NORMALLY. The composed
       // skills live at <home>/.agents/skills (pi discovers them from its cwd),
       // the instance's AGENTS.md is delivered by --append-system-prompt, and no
@@ -163,7 +163,7 @@ test("duplicate skill names across modules fail the spawn closed (decision 16); 
     },
     capabilities: { "acme.dup": { manifest: { skills: ["skills/shared"] }, files: shared }, "acme.dup2": { manifest: { skills: ["skills/shared"] }, files: shared } },
   });
-  process.env.PATH = fakeRuntimes(fx.base);
+  process.env.PATH = fakeHarnesses(fx.base);
   await assert.rejects(fx.spawn("dev", { instance: "dev-bad" }), (e) => e.code === "E_SKILL_DUPLICATE");
   assert.equal(existsSync(join(fx.root, "dev", "instances", "dev-bad")), false, "nothing was created");
   const own = await fx.spawn("own", { instance: "own-ok" });
@@ -171,8 +171,8 @@ test("duplicate skill names across modules fail the spawn closed (decision 16); 
   assert.match(readFileSync(join(own.home, ".agents", "skills", "acme.dup", "shared", "SKILL.md"), "utf8"), /description: A/, "the module's, under its namespace");
 });
 
-test("claude runtime resolves oats-claude-config and hooks contribute launch args", async (t) => {
-  // A spawn hook contributes runtime launch args (the aweb channel-plugin pattern).
+test("claude harness resolves oats-claude-config and hooks contribute launch args", async (t) => {
+  // A spawn hook contributes harness launch args (the aweb channel-plugin pattern).
   const script = `console.log(JSON.stringify({ launch: { claude: "--extra-flag", pi: "--never-used" } }));`;
   const fx = v2Dev(t, { "acme.chan": cap({ hooks: { spawn: "hook.mjs" } }, { "hook.mjs": script }) });
   // Closest oats-claude-config names the binary; none → claude.
@@ -182,10 +182,10 @@ test("claude runtime resolves oats-claude-config and hooks contribute launch arg
   const bin = join(fx.base, "bin"); mkdirSync(bin, { recursive: true });
   write(join(bin, "claude-personal"), "#!/bin/sh\nexit 0\n");
   execFileSync("chmod", ["+x", join(bin, "claude-personal")]);
-  process.env.PATH = `${bin}:${fakeRuntimes(fx.base)}`;
-  const res = await fx.spawn("dev", { instance: "dev-cl", runtime: "claude" });
+  process.env.PATH = `${bin}:${fakeHarnesses(fx.base)}`;
+  const res = await fx.spawn("dev", { instance: "dev-cl", harness: "claude" });
   const meta = instanceMeta(res.home);
-  assert.equal(meta.runtime, "claude");
+  assert.equal(meta.harness, "claude");
   assert.match(meta.command, /claude-personal/);
   assert.match(meta.command, /--extra-flag/);
   assert.doesNotMatch(meta.command, /--never-used/);
@@ -201,8 +201,8 @@ test("claude runtime resolves oats-claude-config and hooks contribute launch arg
 test("pi task positional precedes capability-contributed launch args", async (t) => {
   const script = `console.log(JSON.stringify({ launch: { pi: "--append-system-prompt" } }));`;
   const fx = v2Dev(t, { "acme.chan": cap({ hooks: { spawn: "hook.mjs" } }, { "hook.mjs": script }) });
-  process.env.PATH = fakeRuntimes(fx.base);
-  const res = await fx.spawn("dev", { instance: "dev-pi-order", runtime: "pi" });
+  process.env.PATH = fakeHarnesses(fx.base);
+  const res = await fx.spawn("dev", { instance: "dev-pi-order", harness: "pi" });
   const meta = instanceMeta(res.home);
   const taskIndex = meta.command.indexOf("@TASK.md");
   const contributedArgIndex = meta.command.lastIndexOf("--append-system-prompt");
@@ -218,14 +218,14 @@ test("spawn hook environment reaches exact Pi and Claude processes and overrides
   const fx = v2Dev(t, { "aweb.identity": cap({ environment: ["AWEB_A_FIRST", "AWEB_IDENTITY_HOME", "AWEB_Z_LAST"], hooks: { spawn: "hook.mjs" } },
     { "hook.mjs": `console.log(JSON.stringify({ env: { AWEB_Z_LAST: "z", AWEB_IDENTITY_HOME: ${JSON.stringify(externalHome)}, AWEB_A_FIRST: "a" } }));` }) });
   const bin = join(fx.base, "bin"); mkdirSync(bin);
-  for (const runtime of ["pi", "claude"]) {
-    write(join(bin, runtime), "#!/bin/sh\nprintf '%s' \"$AWEB_IDENTITY_HOME\" > \"$OATS_CAPTURE\"\n");
-    execFileSync("chmod", ["+x", join(bin, runtime)]);
+  for (const harness of ["pi", "claude"]) {
+    write(join(bin, harness), "#!/bin/sh\nprintf '%s' \"$AWEB_IDENTITY_HOME\" > \"$OATS_CAPTURE\"\n");
+    execFileSync("chmod", ["+x", join(bin, harness)]);
   }
   process.env.PATH = `${bin}:${process.env.PATH}`;
-  for (const runtime of ["pi", "claude"]) {
-    const capture = join(fx.base, `${runtime}.identity-home`);
-    const result = await fx.spawn("dev", { instance: `dev-env-${runtime}`, runtime });
+  for (const harness of ["pi", "claude"]) {
+    const capture = join(fx.base, `${harness}.identity-home`);
+    const result = await fx.spawn("dev", { instance: `dev-env-${harness}`, harness });
     // The spawn answer's command is public (env values withheld); the persisted one runs.
     result.command = instanceMeta(result.home).command;
     execFileSync("/bin/sh", ["-c", result.command], {
@@ -277,7 +277,7 @@ test("spawn hook environment rejects invalid values, namespace violations, core 
   capabilities["aweb.invalid"] = cap({ environment: ["AWEB_IDENTITY_HOME"], hooks: { spawn: "hook.mjs" } }, hookPrinting({ AWEB_IDENTITY_HOME: 42 }));
   souls.wt = { soul: { work: "worktree", capabilities: here("aweb.invalid") } };
   const fx = v2(t, { souls, capabilities });
-  process.env.PATH = fakeRuntimes(fx.base);
+  process.env.PATH = fakeHarnesses(fx.base);
   const refused = async (soul, instance, error) => {
     await assert.rejects(fx.spawn(soul, { name: instance }), error, `${soul}: ${error}`);
     assert.equal(existsSync(join(fx.root, soul, "instances", instance)), false, `${soul}: fatal env contract failure rolls back the scaffold`);
@@ -330,7 +330,7 @@ appendFileSync(${JSON.stringify(events)}, "two:" + process.env.OATS_EVENT + "\\n
 console.log(JSON.stringify({ env: { AWEB_TWO: 2 } }));`,
     }),
   });
-  process.env.PATH = fakeRuntimes(fx.base);
+  process.env.PATH = fakeHarnesses(fx.base);
   await assert.rejects(fx.spawn("dev", { instance: "dev-env-compensate" }), /rollback INCOMPLETE.*retire hook aweb.two.*supported only for spawn/);
   assert.equal(existsSync(join(fx.root, "dev", "instances", "dev-env-compensate", ".oats-rollback-incomplete.json")), true);
   assert.deepEqual(readFileSync(events, "utf8").trim().split("\n"), [
@@ -348,7 +348,7 @@ test("fatal hook environment contract reports missing compensation without hidin
 writeFileSync(${JSON.stringify(externalMarker)}, "spawn ran");
 console.log(JSON.stringify({ meta: { created: true }, env: { AWEB_IDENTITY_HOME: 42 } }));`,
   }) });
-  process.env.PATH = fakeRuntimes(fx.base);
+  process.env.PATH = fakeHarnesses(fx.base);
   await assert.rejects(fx.spawn("dev", { instance: "dev-env-sideeffect" }), (error) => {
     assert.match(error.message, /rollback INCOMPLETE.*reported state it created.*no retire hook/);
     assert.doesNotMatch(error.message, /hooks compensated/);
@@ -368,7 +368,7 @@ test("hook environment is rejected outside the spawn event", async (t) => {
       "hook.mjs": `console.log(JSON.stringify({ env: { AWEB_IDENTITY_HOME: "/ignored" } }));`,
     })])),
   });
-  process.env.PATH = fakeRuntimes(fx.base);
+  process.env.PATH = fakeHarnesses(fx.base);
   for (const [i, event] of events.entries()) {
     // The hook rows a home carries (instance.json capabilityRuntime) — what retire runs.
     const spawned = await fx.spawn(`ev${i}`, { name: `ev${i}-event` });
@@ -385,7 +385,7 @@ test("hook environment is rejected outside the spawn event", async (t) => {
 
 test("workspace mode links work to the deployment and records no branch", async (t) => {
   const fx = v2(t, { souls: { coord: { soul: { work: "workspace" } } } });
-  process.env.PATH = fakeRuntimes(fx.base);
+  process.env.PATH = fakeHarnesses(fx.base);
   const res = await fx.spawn("coord", { instance: "coord-1", work: "workspace" });
   assert.equal(res.work, "workspace");
   assert.equal(readlinkSync(join(res.home, "work")), resolve(fx.dep));
@@ -404,7 +404,7 @@ test("model preference lists resolve to the first available provider/model", asy
   assert.equal(resolveModelPreference("", "pi"), "");
   assert.equal(resolveModelPreference("github-copilot/claude-fable-5:high", "pi"), "github-copilot/claude-fable-5:high");
   // claude: pi-style patterns TRANSLATE or DROP — claude takes aliases/bare
-  // ids only (operator report: a pi-pattern soul default runtime-overridden
+  // ids only (operator report: a pi-pattern soul default harness-overridden
   // to claude made claude reject the model at launch)
   assert.equal(resolveModelPreference("anthropic/claude-opus-4-5:high", "claude"), "claude-opus-4-5", "anthropic pattern → bare id, thinking stripped");
   assert.equal(resolveModelPreference("opus", "claude"), "opus", "alias passes through");
@@ -428,7 +428,7 @@ test("hooks run in deterministic order, with retire reversing spawn", async (t) 
   t.after(() => rmSync(dirname(order), { recursive: true, force: true }));
   const script = `import {appendFileSync} from 'node:fs'; appendFileSync(${JSON.stringify(order)}, process.env.OATS_EVENT + ':' + process.env.OATS_CAPABILITY + '\\n');`;
   const fx = v2Dev(t, { "acme.z": cap({ hooks: { spawn: "hook.mjs", retire: "hook.mjs" } }, { "hook.mjs": script }), "acme.a": cap({ hooks: { spawn: "hook.mjs", retire: "hook.mjs" } }, { "hook.mjs": script }) });
-  process.env.PATH = fakeRuntimes(fx.base);
+  process.env.PATH = fakeHarnesses(fx.base);
   await fx.spawn("dev", { instance: "dev-1" });
   retireInstance(fx.root, "dev-1", { tmuxSession: "oats-test-nosuch" });
   assert.deepEqual(readFileSync(order, "utf8").trim().split("\n"), ["spawn:acme.a", "spawn:acme.z", "retire:acme.z", "retire:acme.a"]);
@@ -452,20 +452,20 @@ test("a capability may declare extra environment namespaces it speaks for, discl
   assert.throws(() => capabilityManifest("acme.aw", mk(["aweb_"])), /uppercase prefix/);
 });
 
-test("a hook may set a variable under a declared extra namespace at spawn, and the runtime refuses one it did not declare", async (t) => {
+test("a hook may set a variable under a declared extra namespace at spawn, and the harness refuses one it did not declare", async (t) => {
   const out = join(temp(), "hook-out.json");
   t.after(() => rmSync(dirname(out), { recursive: true, force: true }));
   const fx = v2Dev(t, { "acme.aw": cap({ environment: ["AWEB_DELIVERY"], environmentNamespaces: ["AWEB_"], hooks: { spawn: "hook.mjs" } },
     { "hook.mjs": `import { writeFileSync } from "node:fs"; const name = process.env.EMIT_NAME || "AWEB_DELIVERY"; const out = { meta: {}, env: { [name]: "session" } }; writeFileSync(${JSON.stringify(out)}, JSON.stringify({ out, emit: process.env.EMIT_NAME || null })); console.log(JSON.stringify(out));` }) });
-  process.env.PATH = fakeRuntimes(fx.base);
+  process.env.PATH = fakeHarnesses(fx.base);
   try {
-    // the manifest permits it AND the runtime accepts it: the variable reaches the launch
-    const r = await fx.spawn("dev", { instance: "dev-env", runtime: "pi" });
+    // the manifest permits it AND the harness accepts it: the variable reaches the launch
+    const r = await fx.spawn("dev", { instance: "dev-env", harness: "pi" });
     assert.match(instanceMeta(r.home).command, /AWEB_DELIVERY='?session'?/, "the declared namespace variable is in the launch command (persisted; the answer withholds env values)");
     retireInstance(fx.root, "dev-env", { tmuxSession: "oats-test-nosuch" });
     // an undeclared namespace is refused at spawn even though the manifest loaded
     process.env.EMIT_NAME = "OTHER_THING";
-    await assert.rejects(fx.spawn("dev", { instance: "dev-env2", runtime: "pi" }), /OTHER_THING is outside its ACME_, AWEB_ namespaces/);
+    await assert.rejects(fx.spawn("dev", { instance: "dev-env2", harness: "pi" }), /OTHER_THING is outside its ACME_, AWEB_ namespaces/);
   } finally { delete process.env.EMIT_NAME; }
 });
 
@@ -562,7 +562,7 @@ test("inject eject is a removed verb", () => {
 
 test("spawn lineage is explicit: ambient env never sets parent; --parent and attached owner do", async (t) => {
   const fx = v2(t, { souls: { dev: { soul: { work: "checkout" } } } });
-  const env = { PATH: fakeRuntimes(fx.base) };
+  const env = { PATH: fakeHarnesses(fx.base) };
   // 1. Env-polluted shell (a terminal opened inside an agent's tmux window) WITHOUT
   //    --parent: operator origin, top-level, and the task still lands in TASK.md.
   const polluted = { ...env, OATS_INSTANCE: "dev-existing", PI_AGENT_INSTANCE: "dev-existing" };
@@ -589,7 +589,7 @@ test("spawn lineage is explicit: ambient env never sets parent; --parent and att
   assert.equal(r.status, 1);
   assert.match(r.stderr, /--task needs a value/);
   // 5. Kernel: attached mode still nests under the work-tree OWNER (no env, no parent).
-  process.env.PATH = fakeRuntimes(fx.base);
+  process.env.PATH = fakeHarnesses(fx.base);
   const oldInst = process.env.OATS_INSTANCE; const oldPiInst = process.env.PI_AGENT_INSTANCE;
   process.env.OATS_INSTANCE = "dev-existing"; process.env.PI_AGENT_INSTANCE = "dev-existing";
   try {
@@ -616,11 +616,11 @@ test("--parent accepts a capability agent's instance, homed under the agents roo
   const fx = v2(t, {
     souls: { dev: { soul: { work: "checkout" } } },
     capabilities: { "acme.rev": cap({ agents: ["agents/reviewer"] }, {
-      "agents/reviewer/soul.yaml": "name: reviewer\nkind: capability\nwork: directory\nruntime: pi\ndescription: Reviewer.\n",
+      "agents/reviewer/soul.yaml": "name: reviewer\nkind: capability\nwork: directory\nharness: pi\ndescription: Reviewer.\n",
       "agents/reviewer/AGENTS.md": "# Reviewer\n",
     }) },
   });
-  const env = { PATH: fakeRuntimes(fx.base) };
+  const env = { PATH: fakeHarnesses(fx.base) };
   // A capability agent's instance homes under <root>/reviewer/instances/.
   const parent = jsonResult(fx.cli(["spawn", "reviewer", "--name", "reviewer-abc", "--no-launch", "--json"], { env }));
   assert.equal(parent.home, join(fx.root, "reviewer", "instances", "reviewer-abc"));
@@ -636,7 +636,7 @@ test("--parent accepts a capability agent's instance, homed under the agents roo
 test("spawn relations: child/sibling/parent/unrelated, sugar equivalence, validation", async (t) => {
   const fx = v2(t, { souls: { dev: { soul: { work: "checkout" } } } });
   const { base, root } = fx;
-  const env = { PATH: fakeRuntimes(base) };
+  const env = { PATH: fakeHarnesses(base) };
   const spawn = (...extra) => fx.cli(["spawn", "dev", "--no-launch", "--json", ...extra], { env });
   const metaOf = (home) => JSON.parse(readFileSync(join(home, "instance.json"), "utf8"));
 
@@ -743,7 +743,7 @@ test("spawn relations: child/sibling/parent/unrelated, sugar equivalence, valida
   assert.equal(r.status, 0, r.stderr);
   const cliAtt = jsonResult(r);
   assert.equal(cliAtt.parent, anchor.instance, "CLI: attached auto-parents under the work-tree owner");
-  process.env.PATH = fakeRuntimes(base);
+  process.env.PATH = fakeHarnesses(base);
   {
     const att = await fx.spawn("dev", { instance: "dev-att", work: "attached", workDir: join(anchor.home, "work") });
     assert.equal(att.parentInstance, anchor.instance, "attached auto-parents under the work-tree owner");
@@ -787,7 +787,7 @@ test("anchor enumeration sees intra-root duplicates (generated-name collisions)"
   const fx = v2(t, { souls: { dev: { soul: { work: "checkout" } }, "dev-foo": { soul: { work: "checkout" } } } });
   const { base, root } = fx;
   const oldPath = process.env.PATH;
-  process.env.PATH = fakeRuntimes(base);
+  process.env.PATH = fakeHarnesses(base);
   try {
     await fx.spawn("dev", { instance: "dev-foo-1" });
     await fx.spawn("dev-foo", { instance: "dev-foo-1" });
@@ -809,7 +809,7 @@ test("retire refuses a same-named twin by name alone and retires exactly the hom
   const fx = v2(t, { souls: { dev: { soul: { work: "checkout" } }, "dev-foo": { soul: { work: "checkout" } } } });
   const { base, root } = fx;
   const oldPath = process.env.PATH;
-  process.env.PATH = fakeRuntimes(base);
+  process.env.PATH = fakeHarnesses(base);
   try {
     await fx.spawn("dev", { instance: "dev-foo-1" });
     await fx.spawn("dev-foo", { instance: "dev-foo-1" });
@@ -837,7 +837,7 @@ test("a deferred self-retirement of a same-named twin completes with the home re
   const fx = v2(t, { souls: { dev: { soul: { work: "checkout" } }, "dev-foo": { soul: { work: "checkout" } } } });
   const { base, root } = fx;
   const oldPath = process.env.PATH;
-  process.env.PATH = fakeRuntimes(base);
+  process.env.PATH = fakeHarnesses(base);
   try {
     await fx.spawn("dev", { instance: "dev-foo-1" });
     await fx.spawn("dev-foo", { instance: "dev-foo-1" });
@@ -863,7 +863,7 @@ test("retire splices lineage: orphans inherit the retiree's links (parent-relati
   const fx = v2(t, { souls: { dev: { soul: { work: "checkout" } } } });
   const { base, root } = fx;
   const oldPath = process.env.PATH;
-  process.env.PATH = fakeRuntimes(base);
+  process.env.PATH = fakeHarnesses(base);
   const metaOf = (name) => JSON.parse(readFileSync(join(root, "dev", "instances", name, "instance.json"), "utf8"));
   try {
       // coordinator → developer (child) → reviewer (parent relation over the developer).
@@ -1272,7 +1272,7 @@ test("lineage is deployment-local: --parent from an unrelated deployment is reje
   // Deployment B: a separate workspace and deployment (oats-support's --dir <deployment> case).
   const b = v2Deployment({ souls: { expert: { soul: { work: "checkout" } } } });
   t.after(() => b.cleanup());
-  const env = { PATH: fakeRuntimes(a.base) };
+  const env = { PATH: fakeHarnesses(a.base) };
   // A real instance in deployment A…
   let r = a.cli(["spawn", "dev", "--purpose", "caller", "--no-launch", "--json"], { env });
   assert.equal(r.status, 0, r.stderr);
@@ -1295,9 +1295,9 @@ test("lineage is deployment-local: --parent from an unrelated deployment is reje
 test("traversal names are rejected: --parent and retire cannot reach outside instances/", async (t) => {
   const fx = v2(t, { souls: { dev: { soul: { work: "checkout" } } } });
   const { base, root } = fx;
-  const env = { PATH: fakeRuntimes(base) };
+  const env = { PATH: fakeHarnesses(base) };
   // A real instance to anchor the fixture (and prove normal lookups still work).
-  process.env.PATH = fakeRuntimes(base);
+  process.env.PATH = fakeHarnesses(base);
   const real = await fx.spawn("dev", { instance: "dev-real" });
   const soul = join(root, "dev", "soul");
   const core = await import("@awebai/oats/core");
@@ -1341,7 +1341,7 @@ test("OKF service agents stay memory-less: a capability agent composes its provi
   const f = okfFixture(t);
   const sources = () => readdirSync(join(f.base, "state", "sources")).sort();
   const before = sources();
-  const spawnWorker = (name, extra = []) => f.cli(["spawn", "memory-harvest", "--name", name, ...extra, "--work", "directory", "--repo", f.context, "--runtime", "pi", "--no-launch", "--json"]);
+  const spawnWorker = (name, extra = []) => f.cli(["spawn", "memory-harvest", "--name", name, ...extra, "--work", "directory", "--repo", f.context, "--harness", "pi", "--no-launch", "--json"]);
   const check = (worker, how) => {
     for (const p of ["STATE.md", "notes", ".okf-source.json"]) assert.equal(existsSync(join(worker.home, p)), false, `${how}: no ${p}`);
     assert.doesNotMatch(readFileSync(join(worker.home, "AGENTS.md"), "utf8"), /Knowledge: OKF|oats:capability:oats\.okf/, `${how}: no memory protocol`);
@@ -1375,7 +1375,7 @@ function repoWithWorktree(base) {
   const repo = join(base, "repo"); gitRepo(repo);
   write(join(repo, ".gitignore"), "agents/*/instances/\n");
   const root = join(repo, "agents");
-  write(join(root, "dev", "soul", "soul.yaml"), `name: dev\nkind: persistent\nrepo: ${repo}\nwork: checkout\nruntime: pi\n`);
+  write(join(root, "dev", "soul", "soul.yaml"), `name: dev\nkind: persistent\nrepo: ${repo}\nwork: checkout\nharness: pi\n`);
   write(join(root, "dev", "soul", "AGENTS.md"), "# Canonical dev\n");
   execFileSync("git", ["-C", repo, "add", "-A"]);
   execFileSync("git", ["-C", repo, "commit", "-qm", "soul"]);
@@ -1436,7 +1436,7 @@ test("spawnInstance refuses to create an instance home inside a linked worktree"
   const { fx, root, wtRoot } = await v2WithWorktree(t);
   const agent = findAgent(wtRoot, "dev");
   assert.ok(agent, "the soul is present in the worktree too — which is what makes the bug silent");
-  process.env.PATH = fakeRuntimes(fx.base);
+  process.env.PATH = fakeHarnesses(fx.base);
   // The kernel is its own validation boundary: direct callers (desktop server,
   // adapters, tests) bypass the CLI's ensureRoot canonicalization.
   await assert.rejects(
@@ -1459,7 +1459,7 @@ test("spawnInstance validates the AGENT DIR, not just the root (reviewer-2366d09
   // `agent._dir/instances/…` — inside the worktree.
   const linkedAgent = findAgent(wtRoot, "dev");
   assert.equal(linkedAgent._dir, join(wtRoot, "dev"), "the agent carries the linked dir");
-  process.env.PATH = fakeRuntimes(fx.base);
+  process.env.PATH = fakeHarnesses(fx.base);
   const { prepared } = await fx.prepare("dev");
   await assert.rejects(
     spawnInstanceAsync(root, linkedAgent, { instance: "dev-mixed", launch: false, prepared, repo: fx.member }),
@@ -1495,7 +1495,7 @@ test("a failed Git probe fails closed instead of passing as a non-Git scope (rev
   rmSync(base, { recursive: true, force: true });
 });
 
-test("OATS_INSTANCE_HOME is exported to the runtime and to lifecycle hooks, aliases retained", async (t) => {
+test("OATS_INSTANCE_HOME is exported to the harness and to lifecycle hooks, aliases retained", async (t) => {
   const out = temp(); t.after(() => rmSync(out, { recursive: true, force: true }));
   // A hook that records the env it was given.
   const probe = `import {writeFileSync} from 'node:fs';
@@ -1506,14 +1506,14 @@ writeFileSync(${JSON.stringify(join(out, "hook-env.json"))}, JSON.stringify({
 }));
 console.log('{}');`;
   const fx = v2Dev(t, { "acme.envprobe": cap({ hooks: { spawn: "hook.mjs" } }, { "hook.mjs": probe }) }, { soul: { work: "checkout" } });
-  process.env.PATH = fakeRuntimes(fx.base);
-  const r = await fx.spawn("dev", { instance: "dev-env", runtime: "pi" });
+  process.env.PATH = fakeHarnesses(fx.base);
+  const r = await fx.spawn("dev", { instance: "dev-env", harness: "pi" });
   const seen = JSON.parse(readFileSync(join(out, "hook-env.json"), "utf8"));
   assert.equal(seen.instanceHome, r.home, "hooks receive the runtime-neutral name");
   assert.equal(seen.legacyHome, r.home, "OATS_HOME stays a compatibility alias for shipped capability hooks");
   // The package STORE root is a different concept and must never be conflated.
   assert.notEqual(seen.storeDir, r.home);
-  // Every runtime gets the neutral name; the pi-branded ones remain as aliases
+  // Every harness gets the neutral name; the pi-branded ones remain as aliases
   // because the separately published @awebai/oats-pi extension reads them.
   assert.match(r.command, new RegExp(`OATS_INSTANCE_HOME='${r.home}'`));
   assert.match(r.command, new RegExp(`PI_AGENT_HOME='${r.home}'`));
@@ -1522,7 +1522,7 @@ console.log('{}');`;
 
 test("symlinks on the path to the home cannot smuggle it into a linked worktree (reviewer-249aa7b)", async (t) => {
   const { fx, root, wtRoot } = await v2WithWorktree(t);
-  process.env.PATH = fakeRuntimes(fx.base);
+  process.env.PATH = fakeHarnesses(fx.base);
   const { prepared } = await fx.prepare("dev");
   const spawnWith = (r, agent, opts) => spawnInstanceAsync(r, agent, { launch: false, ...opts, prepared, repo: fx.member });
   // (1) An agent dir in the PRIMARY checkout that is a symlink to an agent in
@@ -1565,7 +1565,7 @@ test("a capability whose declared skill does not resolve fails the spawn closed,
   // nothing, and the instance used to be born without them while the
   // capability's injection still told the agent to load them.
   const fx = v2Dev(t, { "acme.ghost": cap({ skills: ["node_modules/@vendor/pkg/skills/ghost-skill"] }) });
-  process.env.PATH = fakeRuntimes(fx.base);
+  process.env.PATH = fakeHarnesses(fx.base);
   await assert.rejects(
     fx.spawn("dev", { instance: "dev-ghost" }),
     (e) => e.code === "E_CAPABILITY_MISSING"
@@ -1579,7 +1579,7 @@ test("preflight distinguishes declared-and-missing from declared-nothing", async
   // acme.quiet declares no skills and no injection at all — contributes nothing,
   // and that is not a missing resource; acme.loud declares an injection that DOES resolve.
   const fx = v2Dev(t, { "acme.quiet": cap({}), "acme.loud": cap({ inject: "injects/loud.md" }, { "injects/loud.md": "## Loud\n" }) });
-  process.env.PATH = fakeRuntimes(fx.base);
+  process.env.PATH = fakeHarnesses(fx.base);
   const r = await fx.spawn("dev", { instance: "dev-quiet" });
   const meta = instanceMeta(r.home);
   assert.ok(meta.composition, "instance.json records the composition");
@@ -1595,7 +1595,7 @@ test("instance.json records expected == materialized, and the .claude/skills ali
   const fx = v2Dev(t, { "acme.withskill": cap({ skills: ["skills/cap-skill"] }, { "skills/cap-skill/SKILL.md": "---\nname: cap-skill\ndescription: A capability skill.\n---\nbody\n" }) },
     { soul: { work: "checkout" }, souls: {} });
   fx.commit({ "souls/dev/skills/soul-skill/SKILL.md": "---\nname: soul-skill\ndescription: A soul-private skill.\n---\nbody\n" });
-  process.env.PATH = fakeRuntimes(fx.base);
+  process.env.PATH = fakeHarnesses(fx.base);
   const r = await fx.spawn("dev", { instance: "dev-mat" });
   const meta = instanceMeta(r.home);
   // The soul's own skills are recorded by name; a module's skills are expected as
@@ -1626,7 +1626,7 @@ test("a declared skill tree that exists but yields no skills fails closed (revie
   // nothing: no SKILL.md of its own, and no child directory with one. The
   // capability would spawn with zero of its promised skills.
   const fx = v2Dev(t, { "acme.hollow": cap({ skills: ["skills/not-a-skill"] }, { "skills/not-a-skill/README.md": "no SKILL.md here\n" }) });
-  process.env.PATH = fakeRuntimes(fx.base);
+  process.env.PATH = fakeHarnesses(fx.base);
   await assert.rejects(
     fx.spawn("dev", { instance: "dev-hollow" }),
     (e) => e.code === "E_CAPABILITY_MISSING" && /skills entry "skills\/not-a-skill" but no SKILL\.md is there/.test(e.message),
@@ -1643,7 +1643,7 @@ test("a skill directory represented by a symlink is reported, never silently dro
     "skills/aliased-skill": { symlink: join("..", "real", "aliased-skill") },
   };
   const fx = v2Dev(t, { "acme.linked": cap({ skills: ["skills"] }, { ...aliased, "skills/plain/SKILL.md": "---\nname: plain\ndescription: Plain.\n---\n" }) });
-  process.env.PATH = fakeRuntimes(fx.base);
+  process.env.PATH = fakeHarnesses(fx.base);
   await assert.rejects(
     fx.spawn("dev", { instance: "dev-linked" }),
     (e) => e.code === "E_REMOTE_TREE_UNSAFE" && /capabilities\/acme\.linked\/skills\/aliased-skill is a symlink/.test(e.message),
@@ -1662,7 +1662,7 @@ test("an empty soul skills/ dir is not a broken promise, unlike a declared capab
   // Git tracks no empty directory: the soul's skills/ holds only a placeholder
   // file — it exists and declares nothing.
   const fx = v2(t, { files: { "souls/dev/skills/.gitkeep": "" } });
-  process.env.PATH = fakeRuntimes(fx.base);
+  process.env.PATH = fakeHarnesses(fx.base);
   const r = await fx.spawn("dev", { instance: "dev-emptysoul" });
   assert.ok(existsSync(join(r.home, "instance.json")), "spawn succeeds");
   retireInstance(fx.root, "dev-emptysoul", { tmuxSession: "oats-test-nosuch" });
@@ -1673,7 +1673,7 @@ test("a SKILL.md that is not a regular file does not count as a skill (reviewer-
   // tree pass preflight, be copied, pass the post-check, and launch an instance
   // with no readable skill document.
   const fx = v2Dev(t, { "acme.fakedoc": cap({ skills: ["skills/fake"] }, { "skills/fake/SKILL.md/placeholder": "x\n" }) });
-  process.env.PATH = fakeRuntimes(fx.base);
+  process.env.PATH = fakeHarnesses(fx.base);
   await assert.rejects(
     fx.spawn("dev", { instance: "dev-fakedoc" }),
     (e) => e.code === "E_CAPABILITY_MISSING" && /skills entry "skills\/fake" but no SKILL\.md is there/.test(e.message),
@@ -1681,27 +1681,27 @@ test("a SKILL.md that is not a regular file does not count as a skill (reviewer-
   assert.equal(existsSync(join(fx.root, "dev", "instances", "dev-fakedoc")), false);
 });
 
-// ---------- runtime extensions: strict launch resolves them, or refuses ----------
+// ---------- harness extensions: strict launch resolves them, or refuses ----------
 
-test("runtime requirements may be conditional on capability settings (when) and carry a version floor (minVersion)", async (t) => {
+test("harness requirements may be conditional on capability settings (when) and carry a version floor (minVersion)", async (t) => {
   const chan = (floor = {}) => ({
     settings: { delivery: { default: "channel", values: ["channel", "session"], description: "x" } },
     requires: [
-      { runtime: "pi", package: "npm:@awebai/pi", why: "native channel", when: { delivery: "channel" } },
-      { runtime: "pi", package: "npm:@awebai/pi", minVersion: "0.3.10", ...floor, why: "must honour the opt-out", when: { delivery: "session" } },
+      { harness: "pi", package: "npm:@awebai/pi", why: "native channel", when: { delivery: "channel" } },
+      { harness: "pi", package: "npm:@awebai/pi", minVersion: "0.3.10", ...floor, why: "must honour the opt-out", when: { delivery: "session" } },
     ],
   });
   const fx = v2Dev(t, { "acme.chan": cap(chan()) });
   const { base, root } = fx;
   const pkgDir = (version) => { const d = join(base, `pi-pkg-${version}`); write(join(d, "package.json"), JSON.stringify({ name: "@awebai/pi", version })); return d; };
   // The capability's settings reach the spawn as its provider payload.
-  const spawn = (instance, delivery) => fx.spawn("dev", { instance, runtime: "pi", providers: delivery === undefined ? {} : { "acme.chan": { delivery } } });
+  const spawn = (instance, delivery) => fx.spawn("dev", { instance, harness: "pi", providers: delivery === undefined ? {} : { "acme.chan": { delivery } } });
   process.env.HOME = join(base, "nohome");
   // session + old extension: the floor refuses, naming both versions and the remedy
   process.env.PATH = fakePiWithPackages(base, [{ source: "npm:@awebai/pi", dir: pkgDir("0.3.9") }]);
   await assert.rejects(
     spawn("dev-old", "session"),
-    (e) => e.code === "E_RUNTIME_RESOURCE_MISSING" && /at 0\.3\.10 or later; 0\.3\.9 is installed/.test(e.message) && /--accept-requirement/.test(e.message),
+    (e) => e.code === "E_HARNESS_RESOURCE_MISSING" && /at 0\.3\.10 or later; 0\.3\.9 is installed/.test(e.message) && /--accept-requirement/.test(e.message),
   );
   // session + current extension: passes
   process.env.PATH = fakePiWithPackages(base, [{ source: "npm:@awebai/pi", dir: pkgDir("0.3.10") }]);
@@ -1714,17 +1714,17 @@ test("runtime requirements may be conditional on capability settings (when) and 
   assert.equal(ch.instance, "dev-ch");
   retireInstance(root, "dev-ch", { tmuxSession: "oats-test-nosuch" });
   // UNSET: the manifest default (channel) applies, so the plain channel row is a requirement and a missing package refuses (the default path keeps its requirements)
-  process.env.PATH = fakeRuntimes(base);
-  await assert.rejects(spawn("dev-unset"), (e) => e.code === "E_RUNTIME_RESOURCE_MISSING" && /requires the pi package npm:@awebai\/pi, which is not installed/.test(e.message));
+  process.env.PATH = fakeHarnesses(base);
+  await assert.rejects(spawn("dev-unset"), (e) => e.code === "E_HARNESS_RESOURCE_MISSING" && /requires the pi package npm:@awebai\/pi, which is not installed/.test(e.message));
   // session with NO pi extension at all: the floor row is ifInstalled, absence is fine
   recap(fx, { capability: "acme.chan", ...chan({ ifInstalled: true }) });
   const none = await spawn("dev-none", "session");
   assert.equal(none.instance, "dev-none");
   retireInstance(root, "dev-none", { tmuxSession: "oats-test-nosuch" });
   // a malformed when is a problem, not an unconditional row
-  recap(fx, { capability: "acme.chan", requires: [{ runtime: "pi", package: "npm:@awebai/pi", why: "x", when: "channel" }] });
+  recap(fx, { capability: "acme.chan", requires: [{ harness: "pi", package: "npm:@awebai/pi", why: "x", when: "channel" }] });
   await assert.rejects(spawn("dev-bad"), /`when` must be an object/);
-  // session + a version the runtime cannot report: fails closed
+  // session + a version the harness cannot report: fails closed
   recap(fx, { capability: "acme.chan", ...chan() });
   mkdirSync(join(base, "pi-pkg-noversion"), { recursive: true });
   process.env.PATH = fakePiWithPackages(base, [{ source: "npm:@awebai/pi", dir: join(base, "pi-pkg-noversion") }]);
@@ -1734,11 +1734,11 @@ test("runtime requirements may be conditional on capability settings (when) and 
 test("a misspelled conditional setting is refused outright, never a silent skip of every row", async (t) => {
   const manifest = cap({
     settings: { delivery: { default: "channel", values: ["channel", "session"], description: "x" } },
-    requires: [{ runtime: "pi", package: "npm:@awebai/pi", why: "native channel", when: { delivery: "channel" } }],
+    requires: [{ harness: "pi", package: "npm:@awebai/pi", why: "native channel", when: { delivery: "channel" } }],
   });
   const fx = v2Dev(t, { "acme.chan": manifest });
-  process.env.PATH = fakeRuntimes(fx.base);
-  await assert.rejects(fx.spawn("dev", { instance: "dev-typo", runtime: "pi", providers: { "acme.chan": { delivery: "sesion" } } }),
+  process.env.PATH = fakeHarnesses(fx.base);
+  await assert.rejects(fx.spawn("dev", { instance: "dev-typo", harness: "pi", providers: { "acme.chan": { delivery: "sesion" } } }),
     (e) => e.code === "E_WORKSPACE_SCHEMA" && e.details?.reason === "setting-value" && e.details.at === "--provider acme.chan"
       && /acme\.chan: setting "delivery" is "sesion", not one of "channel", "session" \(set at --provider acme\.chan\)/.test(e.message));
   assert.equal(existsSync(join(fx.root, "dev", "instances", "dev-typo")), false, "refused before a home exists");
@@ -1776,26 +1776,26 @@ test("the manifest contract is checked where a workspace reads the manifest: dis
   await assert.rejects(fx.spawn("dev"), (e) => e.code === "E_WORKSPACE_SCHEMA" && e.details?.reason === "manifest-contract" && /capabilities\/acme\.req\/oats\.json#\/hooks\/retire\/required: .*cannot be required/.test(e.message));
 });
 
-test("spawn fails closed when a capability's runtime package is missing, even after a Claude-only reconciliation", async (t) => {
+test("spawn fails closed when a capability's harness package is missing, even after a Claude-only reconciliation", async (t) => {
   const fx = v2Dev(t, { "acme.chan": cap({
-    requires: [{ runtime: "pi", package: "npm:@awebai/pi", why: "channel extension for pi sessions" }],
+    requires: [{ harness: "pi", package: "npm:@awebai/pi", why: "channel extension for pi sessions" }],
   }) });
   const { base, root } = fx;
-  const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
+  const oldPath = process.env.PATH; process.env.PATH = fakeHarnesses(base);
   const oldHome = process.env.HOME; process.env.HOME = join(base, "nohome"); // no pi packages
   try {
     // Claude is unaffected: it never needed the pi package.
-    const claude = await fx.spawn("dev", { instance: "dev-claude", runtime: "claude" });
+    const claude = await fx.spawn("dev", { instance: "dev-claude", harness: "claude" });
     retireInstance(root, "dev-claude", { tmuxSession: "oats-test-nosuch" });
     assert.doesNotMatch(claude.command, /-e /);
 
-    // --runtime pi is a per-spawn choice, made long after install-time
+    // --harness pi is a per-spawn choice, made long after install-time
     // reconciliation decided this host was Claude-only. Spawn is the
     // authoritative check, and it must refuse rather than launch a pi instance
     // whose channel silently vanished under --no-extensions.
     await assert.rejects(
-      fx.spawn("dev", { instance: "dev-pi", runtime: "pi" }),
-      (e) => e.code === "E_RUNTIME_RESOURCE_MISSING"
+      fx.spawn("dev", { instance: "dev-pi", harness: "pi" }),
+      (e) => e.code === "E_HARNESS_RESOURCE_MISSING"
         && /acme\.chan requires the pi package npm:@awebai\/pi/.test(e.message)
         && /--accept-requirement pi:npm:@awebai\/pi/.test(e.message),
       "spawn names the exact separately-consentable remedy",
@@ -1805,9 +1805,9 @@ test("spawn fails closed when a capability's runtime package is missing, even af
 });
 
 
-test("a required runtime package is verified and recorded, and pi loads it through its own discovery", async (t) => {
+test("a required harness package is verified and recorded, and pi loads it through its own discovery", async (t) => {
   const fx = v2Dev(t, { "acme.chan": cap({
-    requires: [{ runtime: "pi", package: "npm:fake-channel", why: "channel extension" }],
+    requires: [{ harness: "pi", package: "npm:fake-channel", why: "channel extension" }],
   }) });
   const { base, root } = fx;
   // A relocated pi config dir (PI_CODING_AGENT_DIR) holding the package entry.
@@ -1819,18 +1819,18 @@ test("a required runtime package is verified and recorded, and pi loads it throu
   process.env.PATH = fakePiWithPackages(base, [{ source: "npm:fake-channel@1.2.3", dir: pkgDir }]);
   const oldPi = process.env.PI_CODING_AGENT_DIR; process.env.PI_CODING_AGENT_DIR = piDir;
   try {
-    const r = await fx.spawn("dev", { instance: "dev-ext", runtime: "pi" });
+    const r = await fx.spawn("dev", { instance: "dev-ext", harness: "pi" });
     // We do NOT name extensions on the command line: pi resolves them itself
     // (its manifest supports globs and conventional directories), and passing
     // them too would load the same extension twice.
     assert.doesNotMatch(r.command, / -e /);
     assert.doesNotMatch(r.command, /--no-extensions/);
     const meta = JSON.parse(readFileSync(join(r.home, "instance.json"), "utf8"));
-    const pkgs = meta.composition.materialized.runtimePackages;
+    const pkgs = meta.composition.materialized.harnessPackages;
     assert.equal(pkgs.length, 1);
     assert.equal(pkgs[0].capability, "acme.chan");
     assert.equal(pkgs[0].package, "npm:fake-channel");
-    assert.equal(pkgs[0].loadedBy, "runtime-discovery", "provenance says how it reaches the session");
+    assert.equal(pkgs[0].loadedBy, "harness-discovery", "provenance says how it reaches the session");
     retireInstance(root, "dev-ext", { tmuxSession: "oats-test-nosuch" });
   } finally {
     process.env.PATH = oldPath;
@@ -1840,7 +1840,7 @@ test("a required runtime package is verified and recorded, and pi loads it throu
 
 test("PI_PACKAGE_DIR pointing elsewhere does not break detection (reviewer-ad1b9f0)", async (t) => {
   const fx = v2Dev(t, { "acme.chan": cap({
-    requires: [{ runtime: "pi", package: "npm:fake-channel", why: "channel extension" }],
+    requires: [{ harness: "pi", package: "npm:fake-channel", why: "channel extension" }],
   }) });
   const { base, root } = fx;
   const piDir = join(base, "pi-agent");
@@ -1854,7 +1854,7 @@ test("PI_PACKAGE_DIR pointing elsewhere does not break detection (reviewer-ad1b9
   try {
     // PI_PACKAGE_DIR is pi's own asset dir, not `pi install` output. Detection
     // must key off the agent dir alone, or a Nix/Guix-style host fails every spawn.
-    const r = await fx.spawn("dev", { instance: "dev-nix", runtime: "pi" });
+    const r = await fx.spawn("dev", { instance: "dev-nix", harness: "pi" });
     assert.ok(existsSync(join(r.home, "instance.json")));
     retireInstance(root, "dev-nix", { tmuxSession: "oats-test-nosuch" });
   } finally {
@@ -1866,7 +1866,7 @@ test("PI_PACKAGE_DIR pointing elsewhere does not break detection (reviewer-ad1b9
 
 test('a settings entry with "extensions": [] fails the spawn — it loads none of them (reviewer-8518c49)', async (t) => {
   const fx = v2Dev(t, { "acme.chan": cap({
-    requires: [{ runtime: "pi", package: "npm:fake-channel", why: "channel extension" }],
+    requires: [{ harness: "pi", package: "npm:fake-channel", why: "channel extension" }],
   }) });
   const { base, root } = fx;
   const piDir = join(base, "pi-agent");
@@ -1880,8 +1880,8 @@ test('a settings entry with "extensions": [] fails the spawn — it loads none o
   const oldPi = process.env.PI_CODING_AGENT_DIR; process.env.PI_CODING_AGENT_DIR = piDir;
   try {
     await assert.rejects(
-      fx.spawn("dev", { instance: "dev-off", runtime: "pi" }),
-      (e) => e.code === "E_RUNTIME_RESOURCE_MISSING" && /"extensions": \[\], which loads none of them/.test(e.message),
+      fx.spawn("dev", { instance: "dev-off", harness: "pi" }),
+      (e) => e.code === "E_HARNESS_RESOURCE_MISSING" && /"extensions": \[\], which loads none of them/.test(e.message),
     );
     assert.equal(existsSync(join(root, "dev", "instances", "dev-off")), false);
   } finally {
@@ -1892,7 +1892,7 @@ test('a settings entry with "extensions": [] fails the spawn — it loads none o
 
 test("a stale settings row whose files were never installed fails the spawn (reviewer-8518c49)", async (t) => {
   const fx = v2Dev(t, { "acme.chan": cap({
-    requires: [{ runtime: "pi", package: "npm:fake-channel", why: "channel extension" }],
+    requires: [{ harness: "pi", package: "npm:fake-channel", why: "channel extension" }],
   }) });
   const { base, root } = fx;
   const piDir = join(base, "pi-agent");
@@ -1905,8 +1905,8 @@ test("a stale settings row whose files were never installed fails the spawn (rev
   const oldPi = process.env.PI_CODING_AGENT_DIR; process.env.PI_CODING_AGENT_DIR = piDir;
   try {
     await assert.rejects(
-      fx.spawn("dev", { instance: "dev-ghost", runtime: "pi" }),
-      (e) => e.code === "E_RUNTIME_RESOURCE_MISSING" && /reports no installed location, so it was never installed/.test(e.message),
+      fx.spawn("dev", { instance: "dev-ghost", harness: "pi" }),
+      (e) => e.code === "E_HARNESS_RESOURCE_MISSING" && /reports no installed location, so it was never installed/.test(e.message),
     );
   } finally {
     process.env.PATH = oldPath;
@@ -1916,7 +1916,7 @@ test("a stale settings row whose files were never installed fails the spawn (rev
 
 test("a non-empty extensions filter fails as unverifiable; a skills-only filter still passes", async (t) => {
   const fx = v2Dev(t, { "acme.chan": cap({
-    requires: [{ runtime: "pi", package: "npm:fake-channel", why: "channel extension" }],
+    requires: [{ harness: "pi", package: "npm:fake-channel", why: "channel extension" }],
   }) });
   const { base, root } = fx;
   const piDir = join(base, "pi-agent");
@@ -1931,19 +1931,19 @@ test("a non-empty extensions filter fails as unverifiable; a skills-only filter 
     // implementing pi's matcher, so this is unverifiable — not merely auditable.
     write(join(piDir, "settings.json"), JSON.stringify({ packages: [{ source: "npm:fake-channel", extensions: ["./dist/*.js"] }] }));
     await assert.rejects(
-      fx.spawn("dev", { instance: "dev-filt", runtime: "pi" }),
-      (e) => e.code === "E_RUNTIME_RESOURCE_MISSING" && /filters its extensions/.test(e.message) && /skills-only filter is fine/.test(e.message),
+      fx.spawn("dev", { instance: "dev-filt", harness: "pi" }),
+      (e) => e.code === "E_HARNESS_RESOURCE_MISSING" && /filters its extensions/.test(e.message) && /skills-only filter is fine/.test(e.message),
     );
 
     // A filter on OTHER resource kinds is unrelated and must keep working —
     // the real oats-aweb entry filters skills only, and pi still marks the row
     // "(filtered)", so the two must not be conflated.
     write(join(piDir, "settings.json"), JSON.stringify({ packages: [{ source: "npm:fake-channel", skills: ["skills/one"] }] }));
-    const r = await fx.spawn("dev", { instance: "dev-skillfilt", runtime: "pi" });
+    const r = await fx.spawn("dev", { instance: "dev-skillfilt", harness: "pi" });
     const meta = JSON.parse(readFileSync(join(r.home, "instance.json"), "utf8"));
-    const pkg = meta.composition.materialized.runtimePackages[0];
+    const pkg = meta.composition.materialized.harnessPackages[0];
     assert.equal(pkg.filtered, true, "pi's own (filtered) marker is recorded…");
-    assert.equal(pkg.dir, pkgDir, "…along with where the runtime says it lives");
+    assert.equal(pkg.dir, pkgDir, "…along with where the harness says it lives");
     retireInstance(root, "dev-skillfilt", { tmuxSession: "oats-test-nosuch" });
   } finally {
     process.env.PATH = oldPath;
@@ -1953,7 +1953,7 @@ test("a non-empty extensions filter fails as unverifiable; a skills-only filter 
 
 test("a directory pi names but that does not exist also fails the spawn", async (t) => {
   const fx = v2Dev(t, { "acme.chan": cap({
-    requires: [{ runtime: "pi", package: "npm:fake-channel", why: "channel extension" }],
+    requires: [{ harness: "pi", package: "npm:fake-channel", why: "channel extension" }],
   }) });
   const { base, root } = fx;
   const piDir = join(base, "pi-agent");
@@ -1963,8 +1963,8 @@ test("a directory pi names but that does not exist also fails the spawn", async 
   const oldPi = process.env.PI_CODING_AGENT_DIR; process.env.PI_CODING_AGENT_DIR = piDir;
   try {
     await assert.rejects(
-      fx.spawn("dev", { instance: "dev-gonedir", runtime: "pi" }),
-      (e) => e.code === "E_RUNTIME_RESOURCE_MISSING" && /but nothing is installed there/.test(e.message),
+      fx.spawn("dev", { instance: "dev-gonedir", harness: "pi" }),
+      (e) => e.code === "E_HARNESS_RESOURCE_MISSING" && /but nothing is installed there/.test(e.message),
     );
   } finally {
     process.env.PATH = oldPath;
@@ -1974,7 +1974,7 @@ test("a directory pi names but that does not exist also fails the spawn", async 
 
 test("when pi cannot be run, a config entry is not accepted as an installation", async (t) => {
   const fx = v2Dev(t, { "acme.chan": cap({
-    requires: [{ runtime: "pi", package: "npm:fake-channel", why: "channel extension" }],
+    requires: [{ harness: "pi", package: "npm:fake-channel", why: "channel extension" }],
   }) });
   const { base, root } = fx;
   const piDir = join(base, "pi-agent");
@@ -1989,8 +1989,8 @@ test("when pi cannot be run, a config entry is not accepted as an installation",
   const oldPi = process.env.PI_CODING_AGENT_DIR; process.env.PI_CODING_AGENT_DIR = piDir;
   try {
     await assert.rejects(
-      fx.spawn("dev", { instance: "dev-noverify", runtime: "pi" }),
-      (e) => e.code === "E_RUNTIME_RESOURCE_MISSING" && /could not verify it is installed/.test(e.message),
+      fx.spawn("dev", { instance: "dev-noverify", harness: "pi" }),
+      (e) => e.code === "E_HARNESS_RESOURCE_MISSING" && /could not verify it is installed/.test(e.message),
     );
   } finally {
     process.env.PATH = oldPath;
@@ -1998,19 +1998,19 @@ test("when pi cannot be run, a config entry is not accepted as an installation",
   }
 });
 
-test("instance.json records the runtime posture — what is composed, curtailed, and ambient", async (t) => {
+test("instance.json records the harness posture — what is composed, curtailed, and ambient", async (t) => {
   const fx = v2(t, { souls: { dev: { soul: { work: "checkout" } } } });
-  process.env.PATH = fakeRuntimes(fx.base);
-  for (const runtime of ["pi", "claude"]) {
-    const r = await fx.spawn("dev", { instance: `dev-${runtime}`, runtime });
-    const posture = instanceMeta(r.home).composition.materialized.runtimePosture;
-    assert.ok(posture.oatsComposed, `${runtime} records the composed surface`);
-    assert.ok(posture.ambient?.length, `${runtime} states what remains ambient`);
-    assert.ok(posture.why, `${runtime} records why`);
-    if (runtime === "pi") assert.ok(posture.curtailed?.includes("user skills"), "pi curtails ambient skills");
+  process.env.PATH = fakeHarnesses(fx.base);
+  for (const harness of ["pi", "claude"]) {
+    const r = await fx.spawn("dev", { instance: `dev-${harness}`, harness });
+    const posture = instanceMeta(r.home).composition.materialized.harnessPosture;
+    assert.ok(posture.oatsComposed, `${harness} records the composed surface`);
+    assert.ok(posture.ambient?.length, `${harness} states what remains ambient`);
+    assert.ok(posture.why, `${harness} records why`);
+    if (harness === "pi") assert.ok(posture.curtailed?.includes("user skills"), "pi curtails ambient skills");
     // Claude keeps its own global and per-repo configuration by founder ruling.
     else assert.ok(posture.ambient.some((a) => /plugins/.test(a)), "claude keeps user/project plugins");
-    retireInstance(fx.root, `dev-${runtime}`, { tmuxSession: "oats-test-nosuch" });
+    retireInstance(fx.root, `dev-${harness}`, { tmuxSession: "oats-test-nosuch" });
   }
 });
 
@@ -2019,10 +2019,10 @@ test("a failing REQUIRED spawn hook fails the spawn and rolls it back", async (t
   // would start believing this capability works.
   const fx = v2Dev(t, { "acme.chan": cap({ hooks: { spawn: { command: "hook.mjs spawn", required: true } } }, { "hook.mjs": "process.stderr.write('identity minting failed\\n'); process.exit(1);" }) });
   const { base, root } = fx;
-  const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
+  const oldPath = process.env.PATH; process.env.PATH = fakeHarnesses(base);
   try {
     await assert.rejects(
-      fx.spawn("dev", { instance: "dev-reqhook", runtime: "pi" }),
+      fx.spawn("dev", { instance: "dev-reqhook", harness: "pi" }),
       (e) => e.code === "E_REQUIRED_HOOK_FAILED"
         && /acme\.chan spawn hook \(declared required\)/.test(e.message)
         && /spawn rolled back/.test(e.message),
@@ -2036,9 +2036,9 @@ test("a failing hook that is NOT required still only warns", async (t) => {
   // blocker just because required hooks now exist.
   const fx = v2Dev(t, { "acme.soft": cap({ hooks: { spawn: "hook.mjs spawn" } }, { "hook.mjs": "process.stderr.write('scaffolding failed\\n'); process.exit(1);" }) });
   const { base, root } = fx;
-  const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
+  const oldPath = process.env.PATH; process.env.PATH = fakeHarnesses(base);
   try {
-    const r = await fx.spawn("dev", { instance: "dev-soft", runtime: "pi" });
+    const r = await fx.spawn("dev", { instance: "dev-soft", harness: "pi" });
     assert.ok(r.warnings?.some((w) => /acme\.soft spawn hook failed/.test(w)), `failure is surfaced: ${JSON.stringify(r.warnings)}`);
     retireInstance(root, "dev-soft", { tmuxSession: "oats-test-nosuch" });
   } finally { process.env.PATH = oldPath; }
@@ -2047,10 +2047,10 @@ test("a failing hook that is NOT required still only warns", async (t) => {
 test("a required worktree spawn rolls back the worktree and branch too", async (t) => {
   const fx = v2Dev(t, { "acme.chan": cap({ hooks: { spawn: { command: "hook.mjs spawn", required: true } } }, { "hook.mjs": "process.exit(1);" }) });
   const { base, root } = fx;
-  const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
+  const oldPath = process.env.PATH; process.env.PATH = fakeHarnesses(base);
   try {
     await assert.rejects(
-      fx.spawn("dev", { instance: "dev-wtreq", runtime: "pi", work: "worktree" }),
+      fx.spawn("dev", { instance: "dev-wtreq", harness: "pi", work: "worktree" }),
       (e) => e.code === "E_REQUIRED_HOOK_FAILED" && /spawn rolled back/.test(e.message),
     );
     const wts = execFileSync("git", ["-C", fx.member, "worktree", "list"], { encoding: "utf8" });
@@ -2063,7 +2063,7 @@ test("a required worktree spawn rolls back the worktree and branch too", async (
 test("a clean rollback reports no verification problems (probe stderr regression)", async (t) => {
   const fx = v2Dev(t, { "acme.chan": cap({ hooks: { spawn: { command: "hook.mjs spawn", required: true } } }, { "hook.mjs": "process.exit(1);" }) });
   const { base, root } = fx;
-  const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
+  const oldPath = process.env.PATH; process.env.PATH = fakeHarnesses(base);
   try {
     // execFileSync with encoding:"utf8" gives stderr === "" for a silent
     // command, so `stderr || message` fell through to "Command failed: …" and
@@ -2071,7 +2071,7 @@ test("a clean rollback reports no verification problems (probe stderr regression
     // looked like an unverifiable probe. Every clean rollback then reported
     // INCOMPLETE, training readers to ignore the one message that matters.
     await assert.rejects(
-      fx.spawn("dev", { instance: "dev-cleanrb", runtime: "pi", work: "worktree" }),
+      fx.spawn("dev", { instance: "dev-cleanrb", harness: "pi", work: "worktree" }),
       (e) => /spawn rolled back/.test(e.message) && !/rollback INCOMPLETE/.test(e.message),
       "a rollback that fully succeeded must say so",
     );
@@ -2098,10 +2098,10 @@ if (meta.alias === 'probe-alias' && existsSync(marker)) rmSync(marker);   // com
 console.log('{}');`,
   }) });
   const { base, root } = fx;
-  const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
+  const oldPath = process.env.PATH; process.env.PATH = fakeHarnesses(base);
   try {
     await assert.rejects(
-      fx.spawn("dev", { instance: "dev-comp", runtime: "pi" }),
+      fx.spawn("dev", { instance: "dev-comp", harness: "pi" }),
       (e) => e.code === "E_REQUIRED_HOOK_FAILED",
     );
     assert.equal(existsSync(marker), false, "the retire hook received the failed hook's metadata and undid its external state");
@@ -2125,8 +2125,8 @@ test("the SHIPPED aweb spawn hook exits nonzero when it cannot mint an identity"
   rmSync(base, { recursive: true, force: true });
 });
 
-test("the manifest schema rejects `required` on non-spawn hooks, matching runtime validation", async () => {
-  // A schema more permissive than the runtime lets authoring approve a manifest
+test("the manifest schema rejects `required` on non-spawn hooks, matching harness validation", async () => {
+  // A schema more permissive than the harness lets authoring approve a manifest
   // OATS then refuses to load.
   const { default: Ajv2020 } = await import("ajv/dist/2020.js");   // the schema declares draft 2020-12, as validate-project.mjs does
   const schema = JSON.parse(readFileSync(resolve(new URL("../docs/capability-manifest.schema.json", import.meta.url).pathname), "utf8"));
@@ -2181,10 +2181,10 @@ test("a compensation hook that reports incomplete cleanup is not announced as a 
 console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed' } }));`,
   }) });
   const { base, root } = fx;
-  const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
+  const oldPath = process.env.PATH; process.env.PATH = fakeHarnesses(base);
   try {
     await assert.rejects(
-      fx.spawn("dev", { instance: "dev-badcomp", runtime: "pi" }),
+      fx.spawn("dev", { instance: "dev-badcomp", harness: "pi" }),
       (e) => e.code === "E_REQUIRED_HOOK_FAILED"
         && /rollback INCOMPLETE/.test(e.message)
         && /external state may remain/.test(e.message)
@@ -2217,10 +2217,10 @@ test("a compensation hook with nothing to undo still counts as a clean rollback"
 console.log(JSON.stringify({ meta: { retired: false, reason: 'nothing-to-delete' } }));`,
   }) });
   const { base, root } = fx;
-  const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
+  const oldPath = process.env.PATH; process.env.PATH = fakeHarnesses(base);
   try {
     await assert.rejects(
-      fx.spawn("dev", { instance: "dev-nooop", runtime: "pi" }),
+      fx.spawn("dev", { instance: "dev-nooop", harness: "pi" }),
       (e) => /spawn rolled back/.test(e.message) && !/rollback INCOMPLETE/.test(e.message),
       "nothing to undo is completion, not failure",
     );
@@ -2348,7 +2348,7 @@ test("an alias minted with no local key is incomplete cleanup, not 'nothing to d
   rmSync(base, { recursive: true, force: true });
 });
 
-// ---------- Claude runtime packages (consented, never installed at spawn) ----------
+// ---------- Claude harness packages (consented, never installed at spawn) ----------
 
 /** A `claude` stub answering `plugin list --json` in Claude's real shape, and
  * REFUSING every other `plugin` subcommand so an imperative install during spawn
@@ -2387,7 +2387,7 @@ exit 0
 
 test("a Claude capability plugin is verified at spawn, never installed there", async (t) => {
   const fx = v2Dev(t, { "acme.chan": cap({
-    requires: [{ runtime: "claude", package: "chan@acme-marketplace", marketplace: "acme/claude-plugins", why: "push events" }],
+    requires: [{ harness: "claude", package: "chan@acme-marketplace", marketplace: "acme/claude-plugins", why: "push events" }],
   }) });
   const { base, root } = fx;
   const oldPath = process.env.PATH;
@@ -2395,10 +2395,10 @@ test("a Claude capability plugin is verified at spawn, never installed there", a
   // imperative install during spawn would fail loudly rather than pass silently.
   process.env.PATH = fakeClaudeWithPlugins(base, [{ name: "chan@acme-marketplace" }]);
   try {
-    const r = await fx.spawn("dev", { instance: "dev-cc", runtime: "claude" });
+    const r = await fx.spawn("dev", { instance: "dev-cc", harness: "claude" });
     const meta = JSON.parse(readFileSync(join(r.home, "instance.json"), "utf8"));
-    const pkg = meta.composition.materialized.runtimePackages[0];
-    assert.equal(pkg.runtime, "claude");
+    const pkg = meta.composition.materialized.harnessPackages[0];
+    assert.equal(pkg.harness, "claude");
     assert.equal(pkg.package, "chan@acme-marketplace");
     retireInstance(root, "dev-cc", { tmuxSession: "oats-test-nosuch" });
   } finally { process.env.PATH = oldPath; }
@@ -2406,7 +2406,7 @@ test("a Claude capability plugin is verified at spawn, never installed there", a
 
 test("a missing or DISABLED Claude plugin fails the spawn with the consent remedy", async (t) => {
   const fx = v2Dev(t, { "acme.chan": cap({
-    requires: [{ runtime: "claude", package: "chan@acme-marketplace", marketplace: "acme/claude-plugins", why: "push events" }],
+    requires: [{ harness: "claude", package: "chan@acme-marketplace", marketplace: "acme/claude-plugins", why: "push events" }],
   }) });
   const { base, root } = fx;
   const oldPath = process.env.PATH;
@@ -2414,16 +2414,16 @@ test("a missing or DISABLED Claude plugin fails the spawn with the consent remed
     // Absent entirely: the remedy names the consent command AND both install steps.
     process.env.PATH = fakeClaudeWithPlugins(base, []);
     await assert.rejects(
-      fx.spawn("dev", { instance: "dev-miss", runtime: "claude" }),
-      (e) => e.code === "E_RUNTIME_RESOURCE_MISSING"
+      fx.spawn("dev", { instance: "dev-miss", harness: "claude" }),
+      (e) => e.code === "E_HARNESS_RESOURCE_MISSING"
         && /--accept-requirement claude:chan@acme-marketplace/.test(e.message)
         && /claude plugin marketplace add acme\/claude-plugins && claude plugin install chan@acme-marketplace/.test(e.message),
     );
     // Installed but switched off will not load, so it does not satisfy the requirement.
     process.env.PATH = fakeClaudeWithPlugins(base, [{ name: "chan@acme-marketplace", disabled: true }]);
     await assert.rejects(
-      fx.spawn("dev", { instance: "dev-off", runtime: "claude" }),
-      (e) => e.code === "E_RUNTIME_RESOURCE_MISSING" && /installed but DISABLED/.test(e.message),
+      fx.spawn("dev", { instance: "dev-off", harness: "claude" }),
+      (e) => e.code === "E_HARNESS_RESOURCE_MISSING" && /installed but DISABLED/.test(e.message),
     );
     // REGISTERED but gone: Claude still lists the plugin and names an installPath
     // that no longer exists (a cleared cache, a pruned directory). The row is not
@@ -2432,8 +2432,8 @@ test("a missing or DISABLED Claude plugin fails the spawn with the consent remed
     // (reviewer-aggregate2).
     process.env.PATH = fakeClaudeWithPlugins(base, [{ name: "chan@acme-marketplace", missing: true }]);
     await assert.rejects(
-      fx.spawn("dev", { instance: "dev-gone", runtime: "claude" }),
-      (e) => e.code === "E_RUNTIME_RESOURCE_MISSING",
+      fx.spawn("dev", { instance: "dev-gone", harness: "claude" }),
+      (e) => e.code === "E_HARNESS_RESOURCE_MISSING",
       "a plugin whose advertised install directory is gone does not satisfy the requirement",
     );
   } finally { process.env.PATH = oldPath; }
@@ -2442,7 +2442,7 @@ test("a missing or DISABLED Claude plugin fails the spawn with the consent remed
 test("the shipped aweb capability declares the Claude channel instead of installing it", () => {
   const dir = resolve(new URL("../capabilities/oats-aweb", import.meta.url).pathname);
   const manifest = JSON.parse(readFileSync(join(dir, "oats.json"), "utf8"));
-  const req = (manifest.requires || []).find((r) => r.runtime === "claude");
+  const req = (manifest.requires || []).find((r) => r.runtime === "claude"); // the released manifest names it `runtime` (read as `harness`)
   assert.ok(req, "the Claude channel plugin is a declared requirement");
   assert.equal(req.package, "aweb-channel@awebai-marketplace");
   assert.equal(req.marketplace, "awebai/claude-plugins");
@@ -2479,7 +2479,7 @@ test("the aweb hook runs argv only, and detects `aw` without a shell builtin", (
 
 test("the plugin probe uses the CONTEXT-SELECTED claude executable, not the literal one (reviewer-6f1bb9c)", async (t) => {
   const fx = v2Dev(t, { "acme.chan": cap({
-    requires: [{ runtime: "claude", package: "chan@acme-marketplace", marketplace: "acme/claude-plugins", why: "push events" }],
+    requires: [{ harness: "claude", package: "chan@acme-marketplace", marketplace: "acme/claude-plugins", why: "push events" }],
   }) });
   const { base, root } = fx;
   // oats-claude-config names a wrapper — a separate account with its own plugins.
@@ -2488,19 +2488,19 @@ test("the plugin probe uses the CONTEXT-SELECTED claude executable, not the lite
   try {
     // Default `claude` HAS the plugin; the selected `claude-personal` does NOT.
     // Probing the literal executable would pass preflight and launch an
-    // instance claiming a channel the real runtime lacks.
+    // instance claiming a channel the real harness lacks.
     fakeClaudeWithPlugins(base, [{ name: "chan@acme-marketplace" }], { name: "claude" });
     process.env.PATH = fakeClaudeWithPlugins(base, [], { name: "claude-personal" });
     await assert.rejects(
-      fx.spawn("dev", { instance: "dev-wrap", runtime: "claude" }),
-      (e) => e.code === "E_RUNTIME_RESOURCE_MISSING" && /chan@acme-marketplace/.test(e.message),
+      fx.spawn("dev", { instance: "dev-wrap", harness: "claude" }),
+      (e) => e.code === "E_HARNESS_RESOURCE_MISSING" && /chan@acme-marketplace/.test(e.message),
       "the wrapper's missing plugin must fail, despite `claude` having it",
     );
     // And the reverse: the wrapper has it, the default does not → spawn succeeds.
     const base2 = temp();
     fakeClaudeWithPlugins(base2, [], { name: "claude" });
     process.env.PATH = fakeClaudeWithPlugins(base2, [{ name: "chan@acme-marketplace" }], { name: "claude-personal" });
-    const r = await fx.spawn("dev", { instance: "dev-wrap2", runtime: "claude" });
+    const r = await fx.spawn("dev", { instance: "dev-wrap2", harness: "claude" });
     assert.match(r.command, /claude-personal/, "and the session launches with that same executable");
     retireInstance(root, "dev-wrap2", { tmuxSession: "oats-test-nosuch" });
     rmSync(base2, { recursive: true, force: true });
@@ -2509,7 +2509,7 @@ test("the plugin probe uses the CONTEXT-SELECTED claude executable, not the lite
 
 test("a plugin installed for an UNRELATED project does not satisfy the requirement", async (t) => {
   const fx = v2Dev(t, { "acme.chan": cap({
-    requires: [{ runtime: "claude", package: "chan@acme-marketplace", marketplace: "acme/claude-plugins", why: "push events" }],
+    requires: [{ harness: "claude", package: "chan@acme-marketplace", marketplace: "acme/claude-plugins", why: "push events" }],
   }) });
   const { base, root } = fx;
   const oldPath = process.env.PATH;
@@ -2520,13 +2520,13 @@ test("a plugin installed for an UNRELATED project does not satisfy the requireme
       { name: "chan@acme-marketplace", scope: "project", projectPath: join(base, "somebody-elses-repo") },
     ]);
     await assert.rejects(
-      fx.spawn("dev", { instance: "dev-otherproj", runtime: "claude" }),
-      (e) => e.code === "E_RUNTIME_RESOURCE_MISSING",
+      fx.spawn("dev", { instance: "dev-otherproj", harness: "claude" }),
+      (e) => e.code === "E_HARNESS_RESOURCE_MISSING",
       "a project-scoped install elsewhere must not count",
     );
     // A user-scope install does apply everywhere.
     process.env.PATH = fakeClaudeWithPlugins(base, [{ name: "chan@acme-marketplace", scope: "user" }]);
-    const r = await fx.spawn("dev", { instance: "dev-userscope", runtime: "claude" });
+    const r = await fx.spawn("dev", { instance: "dev-userscope", harness: "claude" });
     retireInstance(root, "dev-userscope", { tmuxSession: "oats-test-nosuch" });
     assert.ok(r.home);
   } finally { process.env.PATH = oldPath; }
@@ -2562,11 +2562,11 @@ rmSync(remote);
 console.log(JSON.stringify({ meta: { retired: true } }));`,
   }) });
   const { base, root } = fx;
-  const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
+  const oldPath = process.env.PATH; process.env.PATH = fakeHarnesses(base);
   const home = join(root, "dev", "instances", "dev-retry");
   try {
     await assert.rejects(
-      fx.spawn("dev", { instance: "dev-retry", runtime: "pi", work: "worktree" }),
+      fx.spawn("dev", { instance: "dev-retry", harness: "pi", work: "worktree" }),
       (e) => e.code === "E_REQUIRED_HOOK_FAILED" && /RETAINED/.test(e.message),
     );
     assert.equal(existsSync(remote), true, "external state exists and cleanup has not succeeded");
@@ -2575,7 +2575,7 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
     const marker = JSON.parse(readFileSync(join(home, ".oats-rollback-incomplete.json"), "utf8"));
     assert.equal(marker.cleanup.repo, fx.member, "cleanup descriptor records the context");
     assert.equal(marker.cleanup.capabilityMeta["acme.chan"].alias, "probe", "and the failed hook's metadata");
-    assert.ok(marker.cleanup.capabilityRuntime.some((c) => c.id === "acme.chan"), "and the capability runtime");
+    assert.ok(marker.cleanup.capabilityRuntime.some((c) => c.id === "acme.chan"), "and the capability harness");
 
     // Retry while the cause persists: cleanup runs, still fails, home SURVIVES.
     const first = retireInstance(root, "dev-retry", { tmuxSession: "oats-test-nosuch" });
@@ -2608,11 +2608,11 @@ if (!existsSync(${JSON.stringify(allow)})) { console.log(JSON.stringify({ meta: 
 console.log(JSON.stringify({ meta: { retired: true } }));`,
   }) });
   const { base, root } = fx;
-  const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
+  const oldPath = process.env.PATH; process.env.PATH = fakeHarnesses(base);
   const home = join(root, "dev", "instances", "dev-git");
   try {
     await assert.rejects(
-      fx.spawn("dev", { instance: "dev-git", runtime: "pi", work: "worktree" }),
+      fx.spawn("dev", { instance: "dev-git", harness: "pi", work: "worktree" }),
       (e) => e.code === "E_REQUIRED_HOOK_FAILED" && /RETAINED/.test(e.message),
     );
     assert.equal(existsSync(home), true, "the spawn quarantined the home");
@@ -2764,10 +2764,10 @@ if (process.env.OATS_EVENT === 'spawn') { writeFileSync(${JSON.stringify(remote)
 console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed' } })); process.exit(1);`,
   }) });
   const { base, root } = fx;
-  const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
+  const oldPath = process.env.PATH; process.env.PATH = fakeHarnesses(base);
   const home = join(root, "dev", "instances", "dev-nohook");
   try {
-    await assert.rejects(fx.spawn("dev", { instance: "dev-nohook", runtime: "pi" }),
+    await assert.rejects(fx.spawn("dev", { instance: "dev-nohook", harness: "pi" }),
       (e) => e.code === "E_REQUIRED_HOOK_FAILED");
     const markerPath = join(home, ".oats-rollback-incomplete.json");
     const marker = JSON.parse(readFileSync(markerPath, "utf8"));
@@ -2874,7 +2874,7 @@ test("a REAL spawned packaged reviewer gets the boundary and keeps its own repor
   // it ships beside.
   const src = resolve(new URL("../capabilities/oats-review", import.meta.url).pathname);
   const fx = v2(t, { souls: { dev: { soul: { work: "checkout", capabilities: here("oats.review") } } }, capabilityDirs: { "oats.review": src } });
-  const env = { PATH: fakeRuntimes(fx.base) };
+  const env = { PATH: fakeHarnesses(fx.base) };
   const owner = jsonResult(fx.cli(["spawn", "dev", "--name", "dev-owner", "--no-launch", "--json"], { env }));
   const r = fx.cli(["spawn", "reviewer", "--name", "reviewer-boundary", "--parent", owner.instance, "--work", "checkout", "--repo", fx.member, "--no-launch", "--json"], { env });
   assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -2924,7 +2924,7 @@ test("with the knowledge layer active, ONE block owns the protocol (reviewer-foc
   // The REAL oats.okf bound to the knowledge slot (test/helpers/okf-v2.mjs), and a
   // persistent soul spawned in every work mode.
   const f = okfFixture(t, { register: false });
-  const spawn = (mode, ...extra) => f.cli(["spawn", "source", "--purpose", mode, "--work", mode, "--runtime", "pi", "--no-launch", "--json", ...extra]);
+  const spawn = (mode, ...extra) => f.cli(["spawn", "source", "--purpose", mode, "--work", mode, "--harness", "pi", "--no-launch", "--json", ...extra]);
   const owner = spawn("checkout", "--repo", f.fx.member);
   const homes = {
     worktree: spawn("worktree", "--repo", f.fx.member).home,
@@ -2969,7 +2969,7 @@ test("harvest briefing and staged inputs give an actual independent worker its c
 });
 
 test("bundled capabilities respect the actual public kernel module boundary", async () => {
-  // docs/design/package-runtime-api.md: "independently released packages MUST
+  // docs/design/package-harness-api.md: "independently released packages MUST
   // NOT import kernel-private lib/core.mjs (including via `oats root` + dynamic
   // import)". Everything under capabilities/ is a byte-identical copy of an
   // independently released package, so the rule applies to every file there.
@@ -3000,7 +3000,7 @@ test("bundled capabilities respect the actual public kernel module boundary", as
     assert.doesNotMatch(text, /\boats root\b/, `${relative(capsDir, f)} resolves kernel files through \`oats root\``);
   }
   // OKF execution reaches the kernel through dispatch-supplied OATS_CLI_BIN;
-  // inspecting a package export must never be substituted for runtime coverage.
+  // inspecting a package export must never be substituted for harness coverage.
   const okfIO = readFileSync(join(capsDir, "oats-okf", "lib", "io.mjs"), "utf8");
   assert.match(okfIO, /OATS_CLI_BIN/, "oats.okf executes the CLI through the dispatch-supplied absolute path");
   const publicAPI = await import("@awebai/oats/core");
@@ -3066,7 +3066,7 @@ test("no shipped instructional surface teaches settling in the work tree (mainta
 
 test("the independently targetable oats.review assumes no knowledge or messaging layer", () => {
   // oats.review may be composed into a deployment that has replaced or disabled
-  // either layer — `requires` is for host commands and runtime packages, never
+  // either layer — `requires` is for host commands and harness packages, never
   // capability dependencies (maintainer ruling). These are BOUNDED, observable
   // properties. Provider neutrality as a whole is not machine-decidable from
   // prose: when these surfaces change, it needs semantic review by the
@@ -3120,7 +3120,7 @@ test("instance homes stay inside the deployment: every layout, every symlink esc
   // escapes below are only interesting because the home would land in a real,
   // unrelated deployment-looking place, taking any credential a hook writes.
   const foreign = join(base, "foreign"); gitRepo(foreign);
-  process.env.PATH = fakeRuntimes(base);
+  process.env.PATH = fakeHarnesses(base);
   // --- Legitimate layouts still work. ------------------------------------
   const persistent = (await fx.spawn("dev", { instance: "dev-ok" })).home;
   assert.equal(realpathSync(persistent), join(realpathSync(join(root, "dev")), "instances", "dev-ok"));
@@ -3158,12 +3158,12 @@ test("instance homes stay inside the deployment: every layout, every symlink esc
 });
 
 test("a path swapped AFTER validation is caught before anything is written (reviewer-a6aa1c5)", async (t) => {
-  // The placement checks run before composition and the runtime preflight, both
+  // The placement checks run before composition and the harness preflight, both
   // of which shell out — a real window. The fake `pi` swaps instances/ for a link
   // to the foreign repo WHILE the preflight is running, which is exactly the
   // race: mkdirSync then follows the link, and everything after it (scaffolding,
   // the identity hook and its key) would land outside the deployment.
-  const fx = v2Dev(t, { "acme.chan": cap({ requires: [{ runtime: "pi", package: "npm:@acme/chan", why: "channel" }] }) });
+  const fx = v2Dev(t, { "acme.chan": cap({ requires: [{ harness: "pi", package: "npm:@acme/chan", why: "channel" }] }) });
   const { base, root } = fx;
   const foreign = join(base, "foreign"); gitRepo(foreign);
   const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
@@ -3183,7 +3183,7 @@ exit 0
   execFileSync("chmod", ["-R", "+x", bin]);
   process.env.PATH = `${bin}:${process.env.PATH}`;
   await assert.rejects(
-    fx.spawn("dev", { instance: "dev-race", runtime: "pi" }),
+    fx.spawn("dev", { instance: "dev-race", harness: "pi" }),
     (e) => e.code === "E_NO_CANONICAL_ROOT" && /after it was validated|not at/.test(e.message),
     "a destination that changed after validation must not be used",
   );
@@ -3217,16 +3217,16 @@ rmSync(${JSON.stringify(remote)}, { force: true });
 console.log(JSON.stringify({ meta: { retired: true } }));`,
   }) });
   const { base, root } = fx;
-  const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
+  const oldPath = process.env.PATH; process.env.PATH = fakeHarnesses(base);
   const home = join(root, "dev", "instances", "dev-child");
   try {
-    const anchorInst = await fx.spawn("dev", { instance: "dev-anchor", runtime: "pi" });
+    const anchorInst = await fx.spawn("dev", { instance: "dev-anchor", harness: "pi" });
     // Make the anchor's atomic re-point fail: a DIRECTORY where its temp file goes.
     mkdirSync(join(anchorInst.home, "instance.json.tmp-dev-child"), { recursive: true });
     write(join(anchorInst.home, "instance.json.tmp-dev-child", "x"), "x");
 
     await assert.rejects(
-      fx.spawn("dev", { instance: "dev-child", runtime: "pi", relation: "parent", relativeTo: "dev-anchor" }),
+      fx.spawn("dev", { instance: "dev-child", harness: "pi", relation: "parent", relativeTo: "dev-anchor" }),
       (e) => /failed to re-point anchor/.test(e.message) && /RETAINED/.test(e.message),
       "a rollback that could not compensate must not report a clean one",
     );
@@ -3267,7 +3267,7 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
 test("a marker beside a live instance.json is authoritative, usable or not (reviewer-final0130bc8)", async (t) => {
   const fx = v2(t, { souls: { dev: { soul: { work: "checkout" } } } });
   const { base, root } = fx;
-  const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
+  const oldPath = process.env.PATH; process.env.PATH = fakeHarnesses(base);
   try {
     // An UNUSABLE marker next to instance.json is evidence that cleanup was
     // interrupted, not noise to skip: OATS cannot tell what remains, so it fails
@@ -3314,11 +3314,11 @@ console.log(JSON.stringify({ meta: { alias: 'probe' } }));
 process.exit(1);`,
   }) });
   const { base, root } = fx;
-  const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
+  const oldPath = process.env.PATH; process.env.PATH = fakeHarnesses(base);
   const home = join(root, "dev", "instances", "dev-nocomp");
   try {
     await assert.rejects(
-      fx.spawn("dev", { instance: "dev-nocomp", runtime: "pi" }),
+      fx.spawn("dev", { instance: "dev-nocomp", harness: "pi" }),
       (e) => e.code === "E_REQUIRED_HOOK_FAILED" && /RETAINED/.test(e.message),
       "a rollback that could not compensate must not report a clean one",
     );
@@ -3352,7 +3352,7 @@ test("an incomplete cleanup names the home's REAL path (reviewer-adff009)", asyn
     "hook.mjs": `if (process.env.OATS_EVENT === 'spawn') { console.log(JSON.stringify({ meta: { alias: 'probe' } })); process.exit(1); }
 console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed' } }));`,
   }) });
-  process.env.PATH = fakeRuntimes(fx.base);
+  process.env.PATH = fakeHarnesses(fx.base);
   await assert.rejects(fx.spawn("dev", { instance: "dev-q" }), (e) => e.code === "E_REQUIRED_HOOK_FAILED");
   const home = findInstanceHomes(fx.root, "dev-q")[0].home;
   assert.equal(home, join(fx.root, "dev", "instances", "dev-q"), "precondition: it homes under the agents root");
@@ -3377,9 +3377,9 @@ test("`oats retire` reports an incomplete cleanup and exits nonzero, not 'Retire
 console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed' } }));`,
   }) });
   const { base, root } = fx;
-  const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
+  const oldPath = process.env.PATH; process.env.PATH = fakeHarnesses(base);
   try {
-    await assert.rejects(fx.spawn("dev", { instance: "dev-cli", runtime: "pi" }),
+    await assert.rejects(fx.spawn("dev", { instance: "dev-cli", harness: "pi" }),
       (e) => e.code === "E_REQUIRED_HOOK_FAILED");
     const env = { ...process.env, PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" };
     delete env.PI_AGENTS_ROOT;
@@ -3417,10 +3417,10 @@ if (!existsSync(${JSON.stringify(allowCleanup)})) {
 console.log(JSON.stringify({ meta: { retired: true } }));`,
   }) });
   const { base, root } = fx;
-  const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
+  const oldPath = process.env.PATH; process.env.PATH = fakeHarnesses(base);
   const home = join(root, "dev", "instances", "dev-ord");
   try {
-    await fx.spawn("dev", { instance: "dev-ord", runtime: "pi" });
+    await fx.spawn("dev", { instance: "dev-ord", harness: "pi" });
     assert.equal(existsSync(home), true, "ordinary spawn succeeded — no quarantine");
     assert.equal(existsSync(join(home, ".oats-rollback-incomplete.json")), false, "and no marker yet");
     assert.equal(existsSync(remote), true, "external state exists");
@@ -3468,10 +3468,10 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
   }) });
   const { base, root } = fx;
   writeFileSync(join(out, "block-cleanup"), "the remote refuses");
-  const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
+  const oldPath = process.env.PATH; process.env.PATH = fakeHarnesses(base);
   const home = join(root, "dev", "instances", "dev-self");
   try {
-    await fx.spawn("dev", { instance: "dev-self", runtime: "pi" });
+    await fx.spawn("dev", { instance: "dev-self", harness: "pi" });
     // Long delay: the detached child must not race the assertions below; the
     // completion under test is driven synchronously with delaySec 0.
     const r = retireInstance(root, "dev-self", { tmuxSession: "oats-test-nosuch", self: true, selfKillDelaySec: 600 });
@@ -3539,11 +3539,11 @@ unlinkSync(${JSON.stringify(remote)});
 console.log(JSON.stringify({ meta: { retired: true } }));`,
   }) });
   const { base, root } = fx;
-  const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
+  const oldPath = process.env.PATH; process.env.PATH = fakeHarnesses(base);
   const oldInst = process.env.OATS_INSTANCE; process.env.OATS_INSTANCE = "dev-self";
   const home = join(root, "dev", "instances", "dev-self");
   try {
-    await fx.spawn("dev", { instance: "dev-self", runtime: "pi" });
+    await fx.spawn("dev", { instance: "dev-self", harness: "pi" });
     const r = retireInstance(root, "dev-self", { tmuxSession: "oats-test-nosuch", self: true, selfKillDelaySec: 0 });
     assert.equal(r.deferred, true);
     assert.equal(existsSync(r.pendingMarker), true, "the promise is on disk once a completion process exists");

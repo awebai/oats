@@ -39,8 +39,8 @@ console.log(JSON.stringify({meta: {context: e.OATS_CONTEXT, repo: e.OATS_REPO, r
     fx.cleanup();
   });
   const base = fx.base, context = fx.dep, root = fx.root;
-  // No host identity, credentials, config, runtime or scheduler can leak into a
-  // no-launch probe. Runtimes are inert executables for preflight only; Git is
+  // No host identity, credentials, config, harness or scheduler can leak into a
+  // no-launch probe. Harnesses are inert executables for preflight only; Git is
   // on PATH (its own directory) because the workspace is read over Git.
   for (const key of Object.keys(process.env)) delete process.env[key];
   const bin = join(base, "bin"), gitBin = join(base, "git-bin");
@@ -51,7 +51,7 @@ console.log(JSON.stringify({meta: {context: e.OATS_CONTEXT, repo: e.OATS_REPO, r
   symlinkSync(process.execPath, join(bin, "node"));
   symlinkSync(GIT, join(gitBin, "git"));
   for (const name of ["pi", "claude", "codex"]) {
-    write(join(bin, name), `#!/bin/sh\necho unexpected-runtime-launch >&2\nexit 99\n`);
+    write(join(bin, name), `#!/bin/sh\necho unexpected-harness-launch >&2\nexit 99\n`);
     chmodSync(join(bin, name), 0o755);
   }
   // The deployment's own event directory exists before any listing is taken.
@@ -105,12 +105,12 @@ function noSpawnRecord(home) {
 
 test("actual core spawn: directory mode has no Git work tree, canonical composition and launch metadata", async (t) => {
   const f = fixture(t, { hook: true });
-  const result = await f.spawn("core", { runtime: "claude" });
+  const result = await f.spawn("core", { harness: "claude" });
   assert.equal(result.work, "directory");
   assert.equal(result.repo, f.context);
   assert.equal(result.branch, undefined);
   assert.equal(result.launched, false);
-  assert.equal(result.launch.runtime, "claude");
+  assert.equal(result.launch.harness, "claude");
   assert.equal(result.capabilityRuntime[0].trust.trusted, true);
   assert.equal(lstatSync(join(result.home, "work")).isDirectory(), true);
   assert.equal(lstatSync(join(result.home, "work")).isSymbolicLink(), false);
@@ -374,13 +374,13 @@ test("unsupported filesystem entries fail retirement closed, even with force", a
   assert.equal(readFileSync(join(result.home, "work", "authored"), "utf8"), "keep");
 });
 
-test("directory mode is runtime-neutral and records the frozen no-launch recipe for every supported runtime", async (t) => {
+test("directory mode is runtime-neutral and records the frozen no-launch recipe for every supported harness", async (t) => {
   const f = fixture(t);
-  for (const runtime of ["pi", "claude", "codex"]) {
-    const result = await f.spawn(`runtime-${runtime}`, { runtime });
+  for (const harness of ["pi", "claude", "codex"]) {
+    const result = await f.spawn(`harness-${harness}`, { harness });
     const meta = readJson(join(result.home, "instance.json"));
-    assert.equal(meta.launch.runtime, runtime);
-    assert.equal(meta.runtime, runtime);
+    assert.equal(meta.launch.harness, harness);
+    assert.equal(meta.harness, harness);
     assert.equal(meta.launched, false);
     assert.equal(meta.work, "directory");
     assert.ok(meta.command.includes(result.home));
@@ -625,7 +625,7 @@ process.exitCode = 1;`);
 test("a member capability's agent is CLI-spawnable in a non-Git deployment before any instance or agents directory exists", (t) => {
   const fx = v2Deployment({
     capabilities: { "example.worker": { manifest: { description: "Provider-neutral execution fixture.", agents: ["agents/worker"], skills: ["skills"], inject: "inject.md" }, files: {
-      "agents/worker/soul.yaml": "name: worker\nkind: capability\nwork: directory\nruntime: claude\n",
+      "agents/worker/soul.yaml": "name: worker\nkind: capability\nwork: directory\nharness: claude\n",
       "agents/worker/AGENTS.md": "# Generic worker\n",
       "skills/worker-skill/SKILL.md": "---\nname: worker-skill\ndescription: Generic worker fixture.\n---\n# Worker skill\n",
       "inject.md": "## Generic worker capability\n",

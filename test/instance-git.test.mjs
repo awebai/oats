@@ -32,7 +32,7 @@ function oats(args, cwd = base) {
 function scope(name, { work, instance = "dev-1", agent = "dev", branch = "feat/x" } = {}) {
   const ws = join(base, name); mkdirSync(ws, { recursive: true });
   write(join(ws, "oats-config.yaml"), "name: t\n");
-  write(join(ws, "agents", agent, "soul", "soul.yaml"), `name: ${agent}\nkind: persistent\nrepo: .\nwork: worktree\nruntime: pi\n`);
+  write(join(ws, "agents", agent, "soul", "soul.yaml"), `name: ${agent}\nkind: persistent\nrepo: .\nwork: worktree\nharness: pi\n`);
   write(join(ws, "agents", agent, "soul", "AGENTS.md"), "# dev\n");
   const home = join(ws, "agents", agent, "instances", instance);
   write(join(home, "instance.json"), JSON.stringify({ agent, instance, home, repo: ws, work: "worktree", branch }));
@@ -109,7 +109,7 @@ test("instance addressing: unknown, ambiguous (twins refuse with candidates; --h
   const { ws, home } = scope("s3", { work });
   // Twin: same instance name under another agent.
   const twinHome = join(ws, "agents", "ops", "instances", "dev-1");
-  write(join(ws, "agents", "ops", "soul", "soul.yaml"), "name: ops\nkind: persistent\nrepo: .\nwork: worktree\nruntime: pi\n"); write(join(ws, "agents", "ops", "soul", "AGENTS.md"), "# ops\n");
+  write(join(ws, "agents", "ops", "soul", "soul.yaml"), "name: ops\nkind: persistent\nrepo: .\nwork: worktree\nharness: pi\n"); write(join(ws, "agents", "ops", "soul", "AGENTS.md"), "# ops\n");
   write(join(twinHome, "instance.json"), JSON.stringify({ agent: "ops", instance: "dev-1", home: twinHome, repo: ws, work: "worktree", branch: "z" }));
   const amb = oats(["instance", "git", "dev-1", "--dir", ws]);
   assert.equal(amb.status, 1); assert.equal(amb.envelope.error.code, "E_AMBIGUOUS_INSTANCE");

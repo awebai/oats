@@ -64,7 +64,7 @@ test("a capability agent is held to its capability's range too (E_CAPABILITY_INC
     name: "acme",
     souls: { dev: { soul: {} } },
     capabilities: { "acme.rev": { manifest: { compatibility: { oats: ">=99.0.0" }, agents: ["agents/reviewer"] }, files: {
-      "agents/reviewer/soul.yaml": "name: reviewer\nkind: capability\nwork: directory\nruntime: pi\ndescription: Reviewer.\n",
+      "agents/reviewer/soul.yaml": "name: reviewer\nkind: capability\nwork: directory\nharness: pi\ndescription: Reviewer.\n",
       "agents/reviewer/AGENTS.md": "# Reviewer\n",
     } } },
   });

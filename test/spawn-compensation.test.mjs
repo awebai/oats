@@ -14,7 +14,7 @@ const write = (path, text, mode) => {
   writeFileSync(path, text, mode ? { mode } : undefined);
 };
 
-function fixture({ runtime = true, runtimeName = "pi", backend = "tmux", platform = true, taskDirectory = false, retireFailure = false, stubbornWindow = false, launchFailure = false, allocationFailure = false } = {}) {
+function fixture({ harness = true, harnessName = "pi", backend = "tmux", platform = true, taskDirectory = false, retireFailure = false, stubbornWindow = false, launchFailure = false, allocationFailure = false } = {}) {
   const resourceHolder = mkdtempSync(join(tmpdir(), "oats-spawn-compensation-"));
   directories.push(resourceHolder);
   const resource = join(resourceHolder, "external-resource");
@@ -63,7 +63,7 @@ else { rmSync(${JSON.stringify(resource)}); console.log(JSON.stringify({meta:{re
   delete env.TMUX;
   symlinkSync(process.execPath, join(bin, "node"));
   symlinkSync(execFileSync("which", ["git"], { encoding: "utf8" }).trim(), join(bin, "git"));
-  if (runtime) write(join(bin, runtimeName), "#!/bin/sh\nexit 0\n", 0o755);
+  if (harness) write(join(bin, harnessName), "#!/bin/sh\nexit 0\n", 0o755);
   if (platform) write(join(bin, "tmux"), `#!${process.execPath}
 const { existsSync, readFileSync, writeFileSync, rmSync } = require('node:fs');
 const args = process.argv.slice(2);
@@ -94,26 +94,26 @@ if (args[1] === 'run' && ${launchFailure}) {console.error('launch failed after c
 if (args[1] === 'close' && !${stubbornWindow}) rmSync(state, {force:true});
 `, 0o755);
   const run = (args) => spawnSync(process.execPath, [CLI, ...args, "--dir", dep, "--json"], { cwd: dep, env, encoding: "utf8" });
-  // The runtime is a spawn choice (a v2 soul declares none); pi is the default.
-  const runtimeFlag = runtimeName === "pi" ? [] : ["--runtime", runtimeName];
-  const spawn = (launch = true) => run(["spawn", "dev", "--purpose", "probe", ...runtimeFlag, ...(launch ? [] : ["--no-launch"]), ...(backend === "herdr" ? ["--backend", "herdr", "--herdr-socket", join(base, "herdr.sock")] : [])]);
-  return { base, dep, repo, root, home, resource, events, window, spawn, run, env, runtimeFlag };
+  // The harness is a spawn choice (a v2 soul declares none); pi is the default.
+  const harnessFlag = harnessName === "pi" ? [] : ["--harness", harnessName];
+  const spawn = (launch = true) => run(["spawn", "dev", "--purpose", "probe", ...harnessFlag, ...(launch ? [] : ["--no-launch"]), ...(backend === "herdr" ? ["--backend", "herdr", "--herdr-socket", join(base, "herdr.sock")] : [])]);
+  return { base, dep, repo, root, home, resource, events, window, spawn, run, env, harnessFlag };
 }
 
 function assertClean(f) {
   assert.equal(existsSync(f.home), false, "failed instance home removed");
   assert.equal(existsSync(f.resource), false, "hook resource compensated");
-  assert.equal(existsSync(f.window), false, "runtime stopped");
+  assert.equal(existsSync(f.window), false, "harness stopped");
   assert.equal(execFileSync("git", ["-C", f.repo, "branch", "--list", "agents/dev-probe"], { encoding: "utf8", env: f.env }).trim(), "", "failed branch removed");
   assert.equal(execFileSync("git", ["-C", f.repo, "worktree", "list", "--porcelain"], { encoding: "utf8", env: f.env }).includes("dev-probe"), false, "failed worktree deregistered");
 }
 
-for (const missing of ["runtime", "platform"]) {
+for (const missing of ["harness", "platform"]) {
   test(`missing ${missing} fails before the home, Git topology, or required hooks exist`, () => {
     const f = fixture({ [missing]: false });
     const result = f.spawn();
     assert.notEqual(result.status, 0);
-    assert.match(result.stdout, missing === "runtime" ? /pi binary not found/ : /tmux not installed/);
+    assert.match(result.stdout, missing === "harness" ? /pi binary not found/ : /tmux not installed/);
     assert.equal(existsSync(f.events), false, "no hook ran");
     assertClean(f);
   });
@@ -160,14 +160,14 @@ test("an unquiesced partial launch retains work and credentials for retry", () =
   assert.equal(existsSync(f.window), true);
   assert.equal(existsSync(f.resource), true);
   assert.equal(existsSync(join(f.home, "work")), true);
-  assert.equal(readFileSync(f.events, "utf8"), "spawn\n", "no credentials removed while runtime still runs");
+  assert.equal(readFileSync(f.events, "utf8"), "spawn\n", "no credentials removed while harness still runs");
   const marker = JSON.parse(readFileSync(join(f.home, ".oats-rollback-incomplete.json"), "utf8"));
   assert.equal(marker.cleanup.launched, true);
   assert.deepEqual(marker.cleanup.outstanding.git, ["worktree", "branch"]);
 });
 
 test("native Codex launch preserves its prompt, configured policy and assigned work directory", () => {
-  const f = fixture({ runtimeName: "codex" });
+  const f = fixture({ harnessName: "codex" });
   const taskFile = join(f.base, "task.md");
   const prompt = "Read the soul. Literal task: $(touch NEVER_RUN) `touch NEVER_RUN` 'quotes'\nsecond line";
   write(taskFile, prompt);
@@ -176,10 +176,10 @@ test("native Codex launch preserves its prompt, configured policy and assigned w
   write(join(f.env.PATH, "codex"), `#!${process.execPath}
 require('node:fs').writeFileSync(${JSON.stringify(captured)}, JSON.stringify({argv:process.argv.slice(2),cwd:process.cwd(),home:process.env.OATS_INSTANCE_HOME}));
 `, 0o755);
-  const result = f.run(["spawn", "dev", "--purpose", "probe", ...f.runtimeFlag, "--model", "anthropic/claude-test,openai-codex/gpt-test:high", "--task-file", taskFile, "--no-launch"]);
+  const result = f.run(["spawn", "dev", "--purpose", "probe", ...f.harnessFlag, "--model", "anthropic/claude-test,openai-codex/gpt-test:high", "--task-file", taskFile, "--no-launch"]);
   assert.equal(result.status, 0, result.stdout + result.stderr);
   const meta = JSON.parse(readFileSync(join(f.home, "instance.json"), "utf8"));
-  assert.equal(meta.runtime, "codex");
+  assert.equal(meta.harness, "codex");
   assert.match(readFileSync(join(f.home, "TASK.md"), "utf8"), /Follow the explicit delivery briefing for this instance/);
   assert.equal(meta.model, "gpt-test");
   execFileSync("/bin/sh", ["-c", meta.command], { cwd: f.home, env: f.env });
@@ -194,11 +194,11 @@ require('node:fs').writeFileSync(${JSON.stringify(captured)}, JSON.stringify({ar
   assert.ok(existsSync(join(f.home, ".agents", "skills")));
 });
 
-test("unsupported runtime fails before provisioning external state", () => {
+test("unsupported harness fails before provisioning external state", () => {
   const f = fixture();
-  const result = f.run(["spawn", "dev", "--purpose", "probe", "--runtime", "unsupported", "--no-launch"]);
+  const result = f.run(["spawn", "dev", "--purpose", "probe", "--harness", "unsupported", "--no-launch"]);
   assert.notEqual(result.status, 0);
-  assert.match(result.stdout, /unknown runtime/);
+  assert.match(result.stdout, /unknown harness/);
   assert.equal(existsSync(f.events), false);
   assertClean(f);
 });
@@ -259,15 +259,15 @@ test("Herdr self-retirement completes in the detached child without an operator"
 
 test.after(() => { for (const dir of directories) rmSync(dir, { recursive: true, force: true }); });
 
-for (const runtimeName of ["codex", "claude", "pi"]) {
-  test(`shared yolo maps only permission bypass for ${runtimeName}`, () => {
-    const f = fixture({ runtimeName });
-    const result = f.run(["spawn", "dev", "--purpose", "probe", ...f.runtimeFlag, "--no-launch", "--yolo"]);
+for (const harnessName of ["codex", "claude", "pi"]) {
+  test(`shared yolo maps only permission bypass for ${harnessName}`, () => {
+    const f = fixture({ harnessName });
+    const result = f.run(["spawn", "dev", "--purpose", "probe", ...f.harnessFlag, "--no-launch", "--yolo"]);
     assert.equal(result.status, 0, result.stdout + result.stderr);
     const meta = JSON.parse(readFileSync(join(f.home, "instance.json"), "utf8"));
     assert.equal(meta.yolo, true);
-    assert.equal(meta.command.includes(" --yolo"), runtimeName === "codex");
-    assert.equal(meta.command.includes(" --dangerously-skip-permissions"), runtimeName === "claude");
+    assert.equal(meta.command.includes(" --yolo"), harnessName === "codex");
+    assert.equal(meta.command.includes(" --dangerously-skip-permissions"), harnessName === "claude");
   });
 }
 test("contradictory yolo fails before provisioning", () => {

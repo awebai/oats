@@ -44,7 +44,7 @@ test("retire succeeds on a work tree whose index listing exceeds 1 MiB, and pres
   try {
     const repo = join(base, "repo"); mkdirSync(repo);
     write(join(repo, "oats-config.yaml"), "capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n");
-    write(join(repo, "agents", "dev", "soul", "soul.yaml"), "name: dev\nrepo: .\nwork: worktree\nruntime: pi\n");
+    write(join(repo, "agents", "dev", "soul", "soul.yaml"), "name: dev\nrepo: .\nwork: worktree\nharness: pi\n");
     write(join(repo, "agents", "dev", "soul", "AGENTS.md"), "You are dev.\n");
     // ~4,500 tracked files at ~280-character paths (deep, long directory
     // names): `git ls-files --stage -z`, which work preservation reads whole,

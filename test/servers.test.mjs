@@ -35,7 +35,7 @@ while [ "$1" != "--" ]; do shift; done
 shift; shift
 exec sh -c "$1"
 `);
-  // Runtimes live OFF the PATH the fake ssh inherits, like ~/.local/bin on a
+  // Harnesses live OFF the PATH the fake ssh inherits, like ~/.local/bin on a
   // real host: only a registration --path makes the remote preflight find them.
   const tools = join(base, "remote-tools"); mkdirSync(tools, { recursive: true });
   for (const rt of ["pi", "claude"]) write(join(tools, rt), "#!/bin/sh\nexit 0\n");
@@ -121,15 +121,22 @@ test("runRemote: a bare retire answer with cleanup still owed is not ok, so a ro
 });
 
 test("checkRemoteSupport: a request is held to what the remote kernel advertises, soul defaults included", () => {
-  const legacy = { version: "0.22.1", runtimes: ["pi", "claude"], sessionBackends: [], launchOptions: [], advertised: false };
-  const modern = { version: "0.22.2", runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], advertised: true };
+  const legacy = { version: "0.22.1", harnesses: ["pi", "claude"], sessionBackends: [], launchOptions: [], features: [], advertised: false };
+  const modern = { version: "0.22.2", harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], features: [], advertised: true };
+  const current = { ...modern, version: "0.27.0", features: ["harness"] };
   const target = { sshHost: "h" };
-  const roster = { agents: [{ name: "dev", runtime: "codex" }, { name: "rev", runtime: "claude" }] };
-  assert.deepEqual(checkRemoteSupport(legacy, target, ["rev", "--purpose", "x"], roster), { runtime: "claude", backend: undefined, yolo: false });
-  assert.throws(() => checkRemoteSupport(legacy, target, ["rev", "--runtime", "codex"], roster), /runtime codex was not established/);
+  const roster = { agents: [{ name: "dev", harness: "codex" }, { name: "rev", harness: "claude" }] };
+  assert.deepEqual(checkRemoteSupport(legacy, target, ["rev", "--purpose", "x"], roster), { harness: "claude", backend: undefined, yolo: false });
+  // --harness or --runtime (its pre-0.27 name) is the choice on a host of any version: the
+  // forwarded flag is spelled in the host's names (hostHarnessArgs). A 0.26.x roster says `runtime`.
+  assert.deepEqual(checkRemoteSupport(legacy, target, ["rev", "--harness", "claude"], roster), { harness: "claude", backend: undefined, yolo: false });
+  assert.deepEqual(checkRemoteSupport(modern, target, ["x"], { agents: [{ name: "x", runtime: "codex" }] }), { harness: "codex", backend: undefined, yolo: false });
+  assert.throws(() => checkRemoteSupport(legacy, target, ["rev", "--runtime", "codex"], roster), /harness codex was not established/);
+  assert.deepEqual(checkRemoteSupport(legacy, target, ["rev", "--runtime", "pi"], roster), { harness: "pi", backend: undefined, yolo: false });
+  assert.deepEqual(checkRemoteSupport(current, target, ["rev", "--harness", "codex"], roster), { harness: "codex", backend: undefined, yolo: false });
   assert.throws(() => checkRemoteSupport(legacy, target, ["rev", "--yolo"], roster), /yolo launch option/);
   assert.throws(() => checkRemoteSupport(legacy, target, ["rev", "--backend", "herdr"], roster), /session backend herdr/);
-  assert.deepEqual(checkRemoteSupport(modern, target, ["dev", "--backend", "herdr", "--yolo"], roster), { runtime: "codex", backend: "herdr", yolo: true });
+  assert.deepEqual(checkRemoteSupport(modern, target, ["dev", "--backend", "herdr", "--yolo"], roster), { harness: "codex", backend: "herdr", yolo: true });
   assert.throws(() => checkRemoteSupport(modern, target, ["dev", "--backend", "screen"], roster), /session backend screen/);
 });
 
@@ -139,7 +146,7 @@ test("oats server + --server: registry, check, remote spawn with a hostile task,
     const { bin, log, tools } = fakeBin(base);
     const repo = remoteWorkspace();
     // Only enumerated tools and fake ssh/tmux, not even node's parent bin
-    // directory: it may contain globally installed model runtimes.
+    // directory: it may contain globally installed model harnesses.
     const env = { ...process.env, PATH: bin, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
     const prevHomeDir = process.env.OATS_HOME_DIR; process.env.OATS_HOME_DIR = env.OATS_HOME_DIR;
     mkdirSync(env.HOME, { recursive: true }); mkdirSync(env.OATS_HOME_DIR, { recursive: true });
@@ -171,12 +178,12 @@ test("oats server + --server: registry, check, remote spawn with a hostile task,
     // remote spawn: the task travels as text and lands byte for byte
     const hostile = "Review `this` and $(touch NEVER_RUN) 'quotes' \"dq\"\nsecond line % and * and ~\n";
     const taskFile = join(base, "task.md"); writeFileSync(taskFile, hostile);
-    // Without --path the remote preflight cannot find the runtime: a typed
+    // Without --path the remote preflight cannot find the harness: a typed
     // failure from the remote kernel, relayed as its own envelope.
     r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "probe", "--task-file", taskFile, "--no-launch", "--json"]);
     assert.notEqual(r.status, 0, r.stdout);
     assert.match(r.json().error.message, /pi binary not found/);
-    assert.equal(existsSync(join(repo, "agents", "dev", "instances", "dev-probe")), false, "missing runtime refuses before creating a home");
+    assert.equal(existsSync(join(repo, "agents", "dev", "instances", "dev-probe")), false, "missing harness refuses before creating a home");
     r = oats(env, ["server", "add", "build", "--ssh", "build-host", "--workspace", repo, "--oats", CLI, "--path", tools, "--replace", "--json"]);
     assert.equal(r.status, 0, r.stderr);
     r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "probe", "--task-file", taskFile, "--no-launch", "--json"]);
@@ -197,13 +204,28 @@ test("oats server + --server: registry, check, remote spawn with a hostile task,
     // reaches it. This fake remote is this kernel, which advertises pi, claude
     // and codex on tmux and herdr with the yolo option; ask for what it lacks.
     const before = readFileSync(log, "utf8");
-    r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "nope", "--runtime", "gemini", "--no-launch", "--json"]);
+    r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "nope", "--harness", "gemini", "--no-launch", "--json"]);
     assert.equal(r.json().error.code, "E_REMOTE_INCOMPATIBLE");
-    assert.match(r.json().error.message, /runtime gemini was not established as supported there \(it advertises runtimes pi, claude, codex/, "an advertising remote's list is quoted, nothing more is claimed");
+    assert.match(r.json().error.message, /harness gemini was not established as supported there \(it advertises harnesses pi, claude, codex/, "an advertising remote's list is quoted, nothing more is claimed");
     assert.equal(readFileSync(log, "utf8").includes("spawn dev --purpose nope"), false, "no spawn command was sent");
     r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "nope", "--backend", "screen", "--no-launch", "--json"]);
     assert.equal(r.json().error.code, "E_REMOTE_INCOMPATIBLE");
     assert.match(r.json().error.message, /session backend screen/);
+    // --runtime, the pre-0.27 name, is routed too: the forwarded envelope keeps ONE deprecated-runtime-name
+    // warning, this command's note merged with whatever the host said (lead call 6).
+    r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "alias", "--runtime", "pi", "--no-launch", "--json"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.equal(r.json().warnings?.length, 1, r.stdout);
+    assert.equal(r.json().warnings[0].code, "deprecated-runtime-name");
+    assert.ok(r.json().warnings[0].sources.includes("the --runtime flag (use --harness)"), JSON.stringify(r.json().warnings));
+    assert.equal(r.stderr.includes("oats: warning"), false, "delivered in the envelope");
+    r = oats(env, ["retire", "dev-alias", "--server", "build", "--json"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    // A flag this side reads (a routed preview) is sent in the host's names, and the note joins the envelope.
+    r = oats(env, ["launch-config", "preview", "--server", "build", "--instance", "dev-probe", "--runtime", "pi", "--json"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.deepEqual(r.json().warnings?.map((w) => [w.code, w.sources]), [["deprecated-runtime-name", ["the --runtime flag (use --harness)"]]], r.stdout);
+    assert.match(readFileSync(log, "utf8"), /launch-config preview --harness pi --home /, "the 0.27 host is sent --harness");
     // The viewer route: ssh -t, saved target, remote home from the snapshot; --print shows it.
     const att = attachArgv("build", { instance: "dev-probe" }, { skipVersionCheck: true }); // route resolution only; the version gate is exercised through the CLI above
     assert.deepEqual(att.argv.slice(0, 2), ["ssh", "-t"]);

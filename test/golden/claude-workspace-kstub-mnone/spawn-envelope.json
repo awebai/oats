@@ -14,7 +14,7 @@
       "window": "dev-claude-workspace-kstub-mnone"
     },
     "repo": "<base>/deployment",
-    "runtime": "claude",
+    "harness": "claude",
     "model": null,
     "parent": null,
     "sibling": null,
@@ -23,8 +23,8 @@
     "attach": "tmux attach -t oats-golden",
     "launchConfig": null,
     "launch": {
-      "version": 1,
-      "runtime": "claude",
+      "version": 2,
+      "harness": "claude",
       "launchConfig": null,
       "launchConfigSource": null,
       "executable": "<base>/bin/claude",

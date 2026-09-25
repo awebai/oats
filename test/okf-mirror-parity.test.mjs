@@ -16,7 +16,7 @@ const FILE = "agents/memory-harvest/AGENTS.md";
 const write = (path, text) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, text); };
 function temp(t) {
   // Keep all test writes under this checkout; no live OATS config, kernel,
-  // scheduler, runtime or network is involved in mirror verification.
+  // scheduler, harness or network is involved in mirror verification.
   mkdirSync(join(REPO_ROOT, ".agents"), { recursive: true });
   const base = mkdtempSync(join(REPO_ROOT, ".agents/okf-mirror-test-"));
   t.after(() => rmSync(base, { recursive: true, force: true }));

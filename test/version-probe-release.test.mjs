@@ -10,17 +10,18 @@ const probe = JSON.parse(execFileSync(process.execPath, ["bin/oats.mjs", "versio
 
 test("release probe accepts the real CLI and additive capabilities", () => {
   checkVersionProbe(probe, version);
-  checkVersionProbe({ ...probe, futureField: true, runtimes: [...probe.runtimes, "future"] }, version);
+  checkVersionProbe({ ...probe, futureField: true, harnesses: [...probe.harnesses, "future"] }, version);
 });
 
 test("release probe rejects the wrong release or missing required capabilities", () => {
   assert.throws(() => checkVersionProbe(probe, "wrong"), /probe mismatch: version/);
-  for (const key of ["schemaVersion", "name", "desktopApi", "runtimes", "sessionBackends", "launchOptions", "remote"]) {
+  for (const key of ["schemaVersion", "name", "desktopApi", "harnesses", "sessionBackends", "launchOptions", "remote"]) {
     const missing = { ...probe };
     delete missing[key];
     assert.throws(() => checkVersionProbe(missing, version), /probe mismatch/);
   }
-  assert.throws(() => checkVersionProbe({ ...probe, runtimes: ["pi", "claude"] }, version), /runtimes.codex/);
+  assert.throws(() => checkVersionProbe({ ...probe, harnesses: ["pi", "claude"] }, version), /harnesses.codex/);
+  assert.throws(() => checkVersionProbe({ ...probe, features: probe.features.filter((f) => f !== "harness") }, version), /features.harness/, "0.26.0: the Desktop gates the harness names on this feature");
 });
 
 test("both release lanes execute the shared probe check", () => {

@@ -48,8 +48,8 @@ console.log(JSON.stringify({meta: {context: e.OATS_CONTEXT, repo: e.OATS_REPO, r
     Object.assign(process.env, saved);
     fx.cleanup();
   });
-  // No host identity, credentials, config, runtime, or scheduler can leak into a
-  // no-launch probe. Runtimes are inert executables for preflight only; git is
+  // No host identity, credentials, config, harness, or scheduler can leak into a
+  // no-launch probe. Harnesses are inert executables for preflight only; git is
   // the one host tool (the spawn resolves the workspace over its local remote).
   const git = hostGit();
   for (const key of Object.keys(process.env)) delete process.env[key];
@@ -59,15 +59,15 @@ console.log(JSON.stringify({meta: {context: e.OATS_CONTEXT, repo: e.OATS_REPO, r
   symlinkSync(process.execPath, join(process.env.PATH, "node"));
   symlinkSync(git, join(process.env.PATH, "git"));
   for (const name of ["pi", "claude", "codex"]) {
-    write(join(process.env.PATH, name), `#!/bin/sh\necho unexpected-runtime-launch >&2\nexit 99\n`);
+    write(join(process.env.PATH, name), `#!/bin/sh\necho unexpected-harness-launch >&2\nexit 99\n`);
     chmodSync(join(process.env.PATH, name), 0o755);
   }
-  const f = { base, fx, context: fx.dep, root: fx.root, runtime: "claude" };
+  const f = { base, fx, context: fx.dep, root: fx.root, harness: "claude" };
   /** The worker capability gains a launch hook (committed to the member before any spawn). */
   f.launchHook = (script) => fx.commit({ [`capabilities/${WORKER}/oats.json`]: { json: workerManifest(hook, true) }, [`capabilities/${WORKER}/launch.mjs`]: script }, "worker: launch hook");
   /** Launch configurations are the deployment's oats-local.yaml `launch-configs:`. */
   f.launchConfigs = (configs) => writeFileSync(join(fx.dep, "oats-local.yaml"), JSON.stringify({ schemaVersion: 2, workspace: fx.ref, "launch-configs": configs }) + "\n");
-  f.spawn = (purpose, options = {}) => fx.spawn("worker", { purpose, runtime: f.runtime, ...options });
+  f.spawn = (purpose, options = {}) => fx.spawn("worker", { purpose, harness: f.harness, ...options });
   return f;
 }
 function readJson(file) { return JSON.parse(readFileSync(file, "utf8")); }
@@ -116,28 +116,28 @@ test('original native recall now drains successful >21MB JSON',t=>{
 // Observer environment changes after an inert native executable has emitted
 // evidence. The executable does no model/network work and uses only the
 // source recipe's real shell/environment transport.
-for(const [runtime,variable,suffix,source] of [['claude','CLAUDE_CONFIG_DIR','projects/p','cc'],['pi','PI_CODING_AGENT_DIR','sessions/p','pi'],['codex','CODEX_HOME','sessions/2026/09/13','codex']]) {
+for(const [harness,variable,suffix,source] of [['claude','CLAUDE_CONFIG_DIR','projects/p','cc'],['pi','PI_CODING_AGENT_DIR','sessions/p','pi'],['codex','CODEX_HOME','sessions/2026/09/13','codex']]) {
  for(const kind of ['inherited-disappeared','fromEnv-retargeted']) {
-  test(`R1 root authority ${runtime}: ${kind} cannot certify empty observer storage`,async t=>{
+  test(`R1 root authority ${harness}: ${kind} cannot certify empty observer storage`,async t=>{
    const f=fixture(t);
-   f.runtime=runtime; // v2 souls declare no runtime: the spawn selects it
+   f.harness=harness; // v2 souls declare no harness: the spawn selects it
    const actual=join(f.base,'native-root-at-launch'),observer=join(f.base,'empty-observer-root');
    mkdirSync(join(observer,suffix),{recursive:true});
    process.env[variable]=actual;process.env.FIXTURE_NATIVE_LOCATION=actual;process.env.ANTHROPIC_API_KEY='FIXTURE_SECRET_VALUE';
    if(kind==='fromEnv-retargeted') {
     // Launch configurations live in the deployment's oats-local.yaml.
-    f.launchConfigs({custom:{runtime,env:{[variable]:{fromEnv:'FIXTURE_NATIVE_LOCATION'}}}});
+    f.launchConfigs({custom:{harness,env:{[variable]:{fromEnv:'FIXTURE_NATIVE_LOCATION'}}}});
    }
-   write(join(f.base,'bin',runtime),`#!${process.execPath}
+   write(join(f.base,'bin',harness),`#!${process.execPath}
 const fs=require('node:fs'),path=require('node:path');
 const dir=path.join(process.env[${JSON.stringify(variable)}],${JSON.stringify(suffix)});
 fs.mkdirSync(dir,{recursive:true});const cwd=process.cwd(),timestamp='2026-09-13T10:00:00Z';
-const header=${JSON.stringify(runtime)}==='claude'?{cwd,type:'user',timestamp,message:{content:'source evidence'}}:${JSON.stringify(runtime)}==='pi'?{cwd,type:'session',timestamp,id:'s1',text:'source evidence'}:{type:'session_meta',timestamp,payload:{cwd,id:'s1',text:'source evidence'}};
+const header=${JSON.stringify(harness)}==='claude'?{cwd,type:'user',timestamp,message:{content:'source evidence'}}:${JSON.stringify(harness)}==='pi'?{cwd,type:'session',timestamp,id:'s1',text:'source evidence'}:{type:'session_meta',timestamp,payload:{cwd,id:'s1',text:'source evidence'}};
 fs.writeFileSync(path.join(dir,'s1.jsonl'),JSON.stringify(header)+String.fromCharCode(10));
 `);
-   chmodSync(join(f.base,'bin',runtime),0o755);
+   chmodSync(join(f.base,'bin',harness),0o755);
    symlinkSync('/bin/cat',join(f.base,'bin/cat'));
-   const result=await f.spawn('root-history',kind==='fromEnv-retargeted'?{launchConfig:'custom',runtime:undefined}:{});
+   const result=await f.spawn('root-history',kind==='fromEnv-retargeted'?{launchConfig:'custom',harness:undefined}:{});
    const meta=readJson(join(result.home,'instance.json'));
    installBackend(f, { execute: true });
    startInstanceSession(result.home);
@@ -150,7 +150,7 @@ fs.writeFileSync(path.join(dir,'s1.jsonl'),JSON.stringify(header)+String.fromCha
    process.env.TURN_RECORD_ROOT=join(f.base,'record');process.env.TURN_RECORD_OWNER='fixture';
    const r=spawnSync(process.execPath,[CLI,'capture','--home',result.home,'--no-index'],{env:process.env,encoding:'utf8'});
    const out=JSON.parse(r.stdout);
-   console.log(JSON.stringify({case:'root-history',runtime,kind,exit:r.status,actualSourceExists:existsSync(join(actual,suffix,'s1.jsonl')),recipeEnv:meta.launch.env,complete:out.complete,appended:out.appended,sessions:out.sessions.length}));
+   console.log(JSON.stringify({case:'root-history',harness,kind,exit:r.status,actualSourceExists:existsSync(join(actual,suffix,'s1.jsonl')),recipeEnv:meta.launch.env,complete:out.complete,appended:out.appended,sessions:out.sessions.length}));
    assert.equal(r.status, 0, r.stderr); assert.equal(out.complete, true); assert.equal(out.sessions.length, 1); assert.equal(out.sessions[0].source, source); assert.ok(out.sessions[0].path.startsWith(actual));
    assert.equal(historicalSessionRoots(result.home)[source].length, 1);
    const history = readdirSync(nativeHistoryPath(result.home)).map(n => readFileSync(join(nativeHistoryPath(result.home), n), 'utf8')).join('');
@@ -238,16 +238,16 @@ for (const restart of [false, true]) for (const backend of ['new-tmux', 'saved-t
   }
 }
 
-function emitter(f, runtime) {
-  write(join(f.base,'bin',runtime),`#!${process.execPath}
-const fs=require('node:fs'),p=require('node:path');const rt=${JSON.stringify(runtime)},home=process.cwd(),timestamp='2026-09-13T10:00:00Z';
+function emitter(f, harness) {
+  write(join(f.base,'bin',harness),`#!${process.execPath}
+const fs=require('node:fs'),p=require('node:path');const rt=${JSON.stringify(harness)},home=process.cwd(),timestamp='2026-09-13T10:00:00Z';
 const root=rt==='claude'?p.join(process.env.CLAUDE_CONFIG_DIR||p.join(process.env.HOME,'.claude'),'projects','p'):rt==='pi'?p.join(process.env.PI_CODING_AGENT_DIR||p.join(process.env.HOME,'.pi/agent'),'sessions','p'):p.join(process.env.CODEX_HOME||p.join(process.env.HOME,'.codex'),'sessions');
 fs.mkdirSync(root,{recursive:true}); const row=rt==='claude'?{cwd:home,type:'user',timestamp,message:{content:'evidence'}}:rt==='pi'?{cwd:home,type:'session',timestamp}:{type:'session_meta',timestamp,payload:{cwd:home}};
 fs.writeFileSync(p.join(root,rt+'.jsonl'),JSON.stringify(row)+'\\n');`);
-  chmodSync(join(f.base,'bin',runtime),0o755);
+  chmodSync(join(f.base,'bin',harness),0o755);
 }
 
-test('actual spawn, resumed start and runtime switch retain every execution root, not recipes or current HOME', async t => {
+test('actual spawn, resumed start and harness switch retain every execution root, not recipes or current HOME', async t => {
   const f=fixture(t);installBackend(f,{execute:true});symlinkSync('/bin/cat',join(f.base,'bin/cat'));
   for(const rt of ['claude','pi','codex']) emitter(f,rt);
   process.env.CLAUDE_CONFIG_DIR=join(f.base,'first');
@@ -256,16 +256,16 @@ test('actual spawn, resumed start and runtime switch retain every execution root
   process.env.CLAUDE_CONFIG_DIR=join(f.base,'second');
   startInstanceSession(r.home);
   process.env.PI_CODING_AGENT_DIR=join(f.base,'third');
-  restartInstanceSession(r.home,{runtime:'pi'});
+  restartInstanceSession(r.home,{harness:'pi'});
   process.env.CODEX_HOME=join(f.base,'fourth');
-  restartInstanceSession(r.home,{runtime:'codex'});
+  restartInstanceSession(r.home,{harness:'codex'});
   const roots=historicalSessionRoots(r.home);
   assert.deepEqual(roots.cc.sort(),[join(f.base,'first/projects'),join(f.base,'second/projects')].sort());
   assert.deepEqual(roots.pi,[join(f.base,'third/sessions')]);assert.deepEqual(roots.codex,[join(f.base,'fourth/sessions')]);
-  const meta=readJson(join(r.home,'instance.json')); assert.equal(meta.runtime,'codex');
+  const meta=readJson(join(r.home,'instance.json')); assert.equal(meta.harness,'codex');
   for(const name of ['CLAUDE_CONFIG_DIR','PI_CODING_AGENT_DIR','CODEX_HOME']) delete process.env[name];
   process.env.HOME=join(f.base,'observer');mkdirSync(process.env.HOME);
-  assert.equal(sessionsForHome(r.home).length,4,'all roots survive both runtime and HOME drift');
+  assert.equal(sessionsForHome(r.home).length,4,'all roots survive both harness and HOME drift');
   rmSync(join(f.base,'first'),{recursive:true});
   assert.throws(()=>sessionsForHome(r.home),/ENOENT/,'a removed historical root is not an empty successful scan');
 });

@@ -28,8 +28,8 @@ function deployment(t, opts) {
 }
 const homes = (fx, soul) => { const dir = join(fx.root, soul, 'instances'); return existsSync(dir) ? readdirSync(dir).filter(n => !n.startsWith('.')) : []; };
 const metaOf = home => JSON.parse(readFileSync(join(home, 'instance.json'), 'utf8'));
-// Runtime and model are spawn flags or a launch configuration, never soul fields.
-const OPUS = { 'launch-configs': { opus: { runtime: 'claude', model: 'opus' } } };
+// Harness and model are spawn flags or a launch configuration, never soul fields.
+const OPUS = { 'launch-configs': { opus: { harness: 'claude', model: 'opus' } } };
 const WORKTREE = { wt: { soul: { work: 'worktree' } } };
 
 // ---- K5: enforced child-spawn policy (readiness --policy is covered on a workspace home in inspect-readiness) ----
@@ -52,7 +52,7 @@ test('K5 policy: --no-child-spawns is recorded at spawn and ENFORCED by the spaw
   for (const h of [boss.home, boss2.home, free.home, kid.home]) retireInstance(fx.root, metaOf(h).instance);
 });
 
-test('K6 preview: spawn --preview decides instance/home/branch/base/runtime/model/policy and creates NOTHING; --base selects the worktree start point; --model @native-default is explicit; E_BRANCH_EXISTS / E_BASE_UNKNOWN before any side effect; apply agrees with the preview', async t => {
+test('K6 preview: spawn --preview decides instance/home/branch/base/harness/model/policy and creates NOTHING; --base selects the worktree start point; --model @native-default is explicit; E_BRANCH_EXISTS / E_BASE_UNKNOWN before any side effect; apply agrees with the preview', async t => {
   const fx = deployment(t, { souls: WORKTREE, local: OPUS });
   const git = (...a) => gitIn(fx.member, ...a);
   git('branch', 'release'); const release = git('rev-parse', 'release');
@@ -61,13 +61,13 @@ test('K6 preview: spawn --preview decides instance/home/branch/base/runtime/mode
   const pv = JSON.parse(p.stdout.trim().split('\n').pop()).result;
   assert.equal(pv.spawnPreviewApi, 2); assert.equal(pv.preview, true); assert.equal(pv.instance, 'wt-fix-login'); assert.equal(pv.branch, 'agents/wt-fix-login');
   assert.deepEqual(pv.base, { ref: 'HEAD', oid: head }); assert.equal(pv.worktree, join(fx.root, 'wt', 'instances', 'wt-fix-login', 'work'));
-  assert.equal(pv.runtime, 'claude'); assert.equal(pv.model, 'opus'); assert.equal(pv.policy.childSpawns.allowed, true);
+  assert.equal(pv.harness, 'claude'); assert.equal(pv.model, 'opus'); assert.equal(pv.policy.childSpawns.allowed, true);
   assert.deepEqual(homes(fx, 'wt'), [], 'preview created no home');
   assert.equal(git('branch', '--list', 'agents/wt-fix-login'), '', 'preview created no branch');
   const nd = fx.last(['spawn', 'wt', '--launch-config', 'opus', '--preview', '--base', 'release', '--model', '@native-default', '--json']).result;
   assert.deepEqual(nd.base, { ref: 'release', oid: release }); assert.equal(nd.model, null); assert.equal(nd.modelSource, 'native default (explicit)');
   const inherit = fx.last(['spawn', 'wt', '--launch-config', 'opus', '--preview', '--json']).result;
-  assert.equal(inherit.model, 'opus', 'omitting --model still inherits the launch configuration\'s model; only @native-default forces the runtime default');
+  assert.equal(inherit.model, 'opus', 'omitting --model still inherits the launch configuration\'s model; only @native-default forces the harness default');
   assert.equal(fx.last(['spawn', 'wt', '--preview', '--base', 'nope', '--json']).error.code, 'E_BASE_UNKNOWN');
   git('branch', 'agents/wt-taken');
   assert.equal(fx.last(['spawn', 'wt', '--purpose', 'taken', '--preview', '--json']).error.code, 'E_BRANCH_EXISTS');
@@ -139,7 +139,7 @@ test('K6b preflight custody: a hanging `pi --list-models` probe cannot hang a pr
   // a concurrent test file's probe could satisfy), and it never finishes.
   const pids = join(fx.base, 'probe.pids');
   writeFileSync(join(fx.bin, 'pi'), `#!/bin/sh\ncase "$1" in --list-models) echo $$ > '${pids}'; sleep 600 & echo $! >> '${pids}'; wait; echo finished > '${pids}.finished';; esac\nexit 0\n`, { mode: 0o700 });
-  const out = spawnSync(process.execPath, [CLI, 'spawn', 'dev', '--runtime', 'pi', '--model', 'openai/gpt-x, anthropic/claude-y', '--preview', '--json'], { cwd: fx.dep, env: { ...fx.env, PATH: fx.path, OATS_PREVIEW_PREFLIGHT_BUDGET_MS: '1500' }, encoding: 'utf8', timeout: 60000 });
+  const out = spawnSync(process.execPath, [CLI, 'spawn', 'dev', '--harness', 'pi', '--model', 'openai/gpt-x, anthropic/claude-y', '--preview', '--json'], { cwd: fx.dep, env: { ...fx.env, PATH: fx.path, OATS_PREVIEW_PREFLIGHT_BUDGET_MS: '1500' }, encoding: 'utf8', timeout: 60000 });
   // The 60 s spawn timeout is only a safety net: the preview must return on its own (no signal).
   assert.equal(out.signal, null, `the preview was killed by the test's safety timeout: the hanging probe hung it (${out.stderr.slice(0, 400)})`);
   assert.ok(out.stdout.trim(), `no output (status ${out.status}): ${out.stderr.slice(0, 400)}`);
@@ -272,7 +272,7 @@ test('K6f retention: a fresh keyed (decision-bound, idempotent) spawn with a wak
 
 test('K6g retention authority: kernel post-spawn fields (spawnCompleted, wake) never read as changes, but authored home bytes written in the launch→completion interval are STILL recovered at retire — nothing but the kernel fields is ever re-blessed', t => {
   const fx = deployment(t, { souls: WORKTREE });
-  // The "runtime": tmux is faked so the launch writes an authored STATE.md into the home the moment it starts —
+  // The "harness": tmux is faked so the launch writes an authored STATE.md into the home the moment it starts —
   // i.e. BEFORE the kernel's completion marker and the CLI's wake record are written.
   const wins = join(fx.base, 'tmux-wins'); writeFileSync(wins, '');
   const fakeTmux = (writeState) => `#!/bin/sh

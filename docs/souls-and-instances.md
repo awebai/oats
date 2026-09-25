@@ -68,9 +68,9 @@ compatibility:                            # optional floors on PACKAGE versions 
 | `compatibility` | `<cap>: <semver range>` checked against the locked package version (`E_COMPATIBILITY`). |
 
 Schema: [`soul.schema.json`](soul.schema.json). Not in v2: `kind`, `type`,
-`repo`, `runtime`, `model`, `backend`, `yolo`, `launch-config`, `children`,
+`repo`, `harness`, `model`, `backend`, `yolo`, `launch-config`, `children`,
 `requires`, `source:`, `stores.inherit`. Runtime, model, backend, yolo and the
-launch configuration are spawn-time host choices (`--runtime`, `--model`,
+launch configuration are spawn-time host choices (`--harness`, `--model`,
 `--backend`, `--yolo`, `--launch-config`, or a launch configuration in
 `oats-local.yaml`), not soul identity: a soul is model-agnostic as an artifact.
 A child-spawn policy is a spawn flag too (`--no-child-spawns`).
@@ -303,13 +303,13 @@ evidence but never waits for a model or GitHub: independent processing and
 source-targeted inspection continue after the home disappears.
 
 `oats retire <instance> --self` lets an instance retire itself when the human
-or briefing says it is done. A live runtime cannot give a stable final
+or briefing says it is done. A live harness cannot give a stable final
 inspection of its own work, so the calling process inspects, runs, and removes
 nothing: it records the intent beside its home as
 `.oats-retire-pending-<instance>.json` and starts a detached completion, then returns so the instance can report final
 status before its tmux window dies a few seconds later. The completion then
 retires the instance exactly as an external `oats retire` would: quiesce the
-runtime, preserve uncommitted work, run retire hooks, repair lineage, remove
+harness, preserve uncommitted work, run retire hooks, repair lineage, remove
 the worktree and the home. Success leaves nothing behind: the home and the
 marker are gone. A failure writes `.oats-retired-<instance>.json` beside the
 retained home (plus the usual quarantine marker when hooks reported incomplete
@@ -399,7 +399,7 @@ directory; without it, the deployment directory (where `oats-local.yaml` is) is
 used. No implicit fallback changes the other modes.
 
 `--work-dir` and `--branch` are rejected. Canonical instructions, skill
-composition, provider trust and runtime preflight still apply. No worktree setup
+composition, provider trust and harness preflight still apply. No worktree setup
 runs. Retirement preserves nonempty work in verified recovery storage beside the
 home (`workRecovery.path/work`) before deleting it, including files created by
 hooks; directory work has no disposable-root exemptions. The work-root cannot be
@@ -469,7 +469,7 @@ they are stated separately:
   compatibility aliases for the separately published pi extension.
 - **Lifecycle hooks**: `OATS_INSTANCE_HOME` and `OATS_HOME`, alongside the rest of
   the hook contract. `OATS_HOME` predates `OATS_INSTANCE_HOME` and is kept because
-  shipped capability hooks read it; it is **not** exported to runtime sessions.
+  shipped capability hooks read it; it is **not** exported to harness sessions.
 
 Neither is `OATS_HOME_DIR`, which is the package store root — do not conflate
 them.

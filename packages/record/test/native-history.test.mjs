@@ -19,11 +19,11 @@ test("unknown standalone/legacy roots fail closed; current-env and explicit API 
   const f = fixture(t);
   mkdirSync(join(f.user, ".claude", "projects"), { recursive: true });
   const env = { HOME: f.user };
-  for (const meta of [undefined, { runtime: "claude", command: "'claude'" }, { launch: { version: 1, runtime: "claude", env: { CLAUDE_CONFIG_DIR: { fromEnv: "CURRENT_ROOT" } } } }]) {
+  for (const meta of [undefined, { harness: "claude", command: "'claude'" }, { launch: { version: 2, harness: "claude", env: { CLAUDE_CONFIG_DIR: { fromEnv: "CURRENT_ROOT" } } } }]) {
     if (meta) writeFileSync(join(f.home, "instance.json"), JSON.stringify(meta));
     assert.throws(() => sessionsForHome(f.home, { env }), /ENOENT/);
   }
-  writeFileSync(join(f.home, "instance.json"), JSON.stringify({ launch: { version: 1, runtime: "claude", env: {} } }));
+  writeFileSync(join(f.home, "instance.json"), JSON.stringify({ launch: { version: 2, harness: "claude", env: {} } }));
   assert.deepEqual(sessionsForHome(f.home, { env, fallback: "current-env" }), []);
   assert.deepEqual(sessionsForHome(f.home, { roots: {} }), [], "explicit inventory excludes unspecified formats");
   assert.throws(() => sessionsForHome(f.home, { roots: { cc: [join(f.base, "missing")] } }), /ENOENT/);

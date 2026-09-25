@@ -15,13 +15,13 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { buildNorthwind } from "./fixtures/northwind/build.mjs";
-import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
+import { inertHarnessPath } from "./helpers/runtime-stub.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-operation-")));
 // The scheduler runs its jobs with this process's environment: isolate it here.
 Object.assign(process.env, {
-  OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home"), OATS_REMOTE_CACHE: join(base, "cache"), PATH: inertRuntimePath(base),
+  OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home"), OATS_REMOTE_CACHE: join(base, "cache"), PATH: inertHarnessPath(base),
   OATS_TMUX_SESSION: `none-${process.pid}`, PI_AGENTS_TMUX_SESSION: `none-${process.pid}`, OATS_PACKAGE_CATALOG: join(base, "catalog.json"),
 });
 for (const k of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "PI_AGENT_INSTANCE", "PI_AGENT_HOME", "PI_AGENTS_ROOT", "OATS_ROOT"]) delete process.env[k];

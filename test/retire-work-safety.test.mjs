@@ -68,7 +68,7 @@ case "$command" in
       esac
     done
     mkdir -p "$state"; printf '%s\\n' "$window" > "$state/window"
-    printf 'early-runtime-bytes\\n' > "$cwd/early-runtime.txt"
+    printf 'early-harness-bytes\\n' > "$cwd/early-harness.txt"
     exit 0 ;;
   kill-window) rm -f "$state/window"; exit 0 ;;
   *) exit 0 ;;
@@ -82,20 +82,20 @@ test.afterEach(() => {
   for (const dir of temporaryDirectories.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-test("launched runtime writes cannot be stamped into the clean retirement baseline", () => {
+test("launched harness writes cannot be stamped into the clean retirement baseline", () => {
   const f = fixture();
   installFakeTmux(f);
   f.env.TMUX = `${join(f.base, "socket-a")},1,0`;
   const launched = cli(f, ["spawn", "dev", "--purpose", "early-write", "--json"]);
   assert.equal(launched.status, 0, `${launched.stderr}\n${launched.stdout}`);
   const spawned = JSON.parse(launched.stdout).result;
-  assert.equal(readFileSync(join(spawned.home, "early-runtime.txt"), "utf8"), "early-runtime-bytes\n");
+  assert.equal(readFileSync(join(spawned.home, "early-harness.txt"), "utf8"), "early-harness-bytes\n");
 
   const retired = cli(f, ["retire", "dev-early-write", "--json"]);
   assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
   const recovery = JSON.parse(retired.stdout).workRecovery;
   assert.ok(recovery?.classes.includes("changed instance-home bytes"));
-  assert.equal(readFileSync(join(recovery.path, "home", "early-runtime.txt"), "utf8"), "early-runtime-bytes\n");
+  assert.equal(readFileSync(join(recovery.path, "home", "early-harness.txt"), "utf8"), "early-harness-bytes\n");
 });
 
 test("retire quiesces the exact tmux endpoint recorded at spawn, not ambient TMUX", () => {
@@ -132,7 +132,7 @@ test("retire refuses a mutable instance.json endpoint that disagrees with indepe
   assert.notEqual(retired.status, 0, "mutable child metadata redefined the endpoint authority");
   assert.equal(JSON.parse(retired.stdout).error.code, "E_RUNTIME_AUTHORITY_MISMATCH", retired.stdout);
   assert.equal(existsSync(spawned.home), true, "authority disagreement did not fail before deletion");
-  assert.equal(existsSync(activeA), true, "refusal unexpectedly mutated the independently recorded runtime");
+  assert.equal(existsSync(activeA), true, "refusal unexpectedly mutated the independently recorded harness");
 });
 
 test("production retire preserves untracked worktree and unknown home bytes in a reported recovery", () => {

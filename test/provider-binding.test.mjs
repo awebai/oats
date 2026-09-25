@@ -9,7 +9,7 @@ test('binding phases name owned commands and introduce no implicit provider', ()
   const manifest={capability:'example.provider',layer:'tasks',commands:{binding:'binding.mjs'},binding:{version:1,normalize:'binding',bind:'binding',check:'binding'}};
   assert.equal(validateBindingInterface(manifest),manifest.binding);
 });
-test('binding reason declarations enforce the pinned count, length and literal bounds in schema and runtime', () => {
+test('binding reason declarations enforce the pinned count, length and literal bounds in schema and harness', () => {
   const base={capability:'oats.aweb',version:'1.11.0',description:'Inert manifest',layer:'messaging',commands:{binding:'binding.mjs'},binding:{version:1,normalize:'binding',bind:'binding',check:'binding'}};
   const validate=new Ajv2020({strict:false,allowUnionTypes:true}).compile(JSON.parse(readFileSync(new URL('../docs/capability-manifest.schema.json',import.meta.url),'utf8')));
   for(const reasons of [['fixed safe reason'],['fixed reason','another fixed reason'],['x'.repeat(200)],Array.from({length:64},(_,i)=>`fixed reason ${i}`)]) {

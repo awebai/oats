@@ -1,6 +1,6 @@
 # @awebai/oats-pi
 
-Pi runtime bridge for [OATS](https://github.com/awebai/oats).
+Pi harness bridge for [OATS](https://github.com/awebai/oats).
 
 The runtime-neutral kernel and universal `oats` CLI live in
 `@awebai/oats`. Publishes in lockstep with the kernel (same version
@@ -35,6 +35,6 @@ status`, `oats spawn`, `oats doctor`, `oats install`, `oats trust`, `oats use`, 
 With [OKF v2](../../docs/knowledge.md), state/log/notes stay episodic while
 accepted expertise lives in external bases exposed as immutable reader views.
 The Pi bridge is not a harvester or knowledge store. Independent workers select
-their own runtime/model; source retirement relies on durable evidence custody,
+their own harness/model; source retirement relies on durable evidence custody,
 not this adapter's presence. V0.23.1 integration is
 [prepared, not yet a publication claim](../../docs/release-notes/v0.23.1.md).

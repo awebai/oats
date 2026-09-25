@@ -25,7 +25,7 @@
           "soulDir": "<base>/deployment/agents/dev/souls/<commit12>",
           "repo": "<base>/deployment",
           "work": "workspace",
-          "runtime": "pi",
+          "harness": "pi",
           "spawnOrigin": "operator",
           "policy": {
             "childSpawns": {
@@ -204,8 +204,8 @@
                   "file": "<base>/deployment/agents/dev/instances/dev-pi-workspace-kstub-mstub/.oats/modules/golden.messaging/inject.md"
                 }
               ],
-              "runtimePackages": [],
-              "runtimePosture": {
+              "harnessPackages": [],
+              "harnessPosture": {
                 "oatsComposed": "skills via --skill <instance-home>/.agents/skills; instructions via --append-system-prompt",
                 "curtailed": [
                   "user skills",
@@ -274,8 +274,8 @@
             "window": "dev-pi-workspace-kstub-mstub"
           },
           "launch": {
-            "version": 1,
-            "runtime": "pi",
+            "version": 2,
+            "harness": "pi",
             "launchConfig": null,
             "launchConfigSource": null,
             "executable": "<base>/bin/pi",

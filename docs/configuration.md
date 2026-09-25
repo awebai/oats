@@ -37,7 +37,7 @@ souls:                                       # optional — souls this machine d
 
 launch-configs:                              # optional — named ways this host starts a harness
   personal:
-    runtime: claude
+    harness: claude
     executable: "./bin/claude-wrapper.sh"    # relative → against this deployment directory
     args: ["--verbose"]
     env:
@@ -55,7 +55,7 @@ refused (`E_WORKSPACE_SCHEMA`).
 | `clones` | `<canonical repo key>: <absolute path>` — where a member's clone lives when it is not at `<deployment>/<member name>/`. Only a soul's **work target** (`work: worktree \| checkout`) needs a clone. Lookup order: `spawn --repo`, then this map (keys normalised through `parseRepoRef`, so any ref spelling of the same repo matches), then `<deployment>/<member name>` (a member named `agents` → `<deployment>/agents-repo`, since `agents/` is the instance root); none → `E_CLONE_MISSING`; a directory whose `origin` is another repo → `E_CLONE_MISMATCH`. |
 | `settings.<cap>.<key>` | Host-owned provider values the capability's manifest asks for — absolute paths, state roots, delivery modes. The workspace file **refuses** absolute paths; this is where they go. Merged into the capability's provider payload after the soul's own payload and before any `--provider` flag (see [three homes](workspaces.md#provider-payloads-have-three-homes)). |
 | `souls.disabled` | Soul names not run on this machine; reported by `oats sync` ("disabled here"). |
-| `launch-configs.<name>` | A named way to start a harness on this host (0.26.0; lead decision 2 — a spawn-time host choice, never a soul field): `runtime` (`pi` \| `claude` \| `codex`, required), `executable` (a bare name looked up on `PATH`, or a path — relative to this deployment directory), `args` (literal, no shell), `env` (a literal string, non-secret by contract and always redacted, or `{ fromEnv: NAME }` resolved on the host at start), `model`, `yolo`. Selected with `--launch-config <name>` on `oats spawn` and `oats session start \| restart`; explicit flags override its fields. Written by `oats launch-config set <name> --file <json>` / `remove <name>`, which rewrite only this block. Earlier kernels read `launch-configs:` from a scope's `oats-config.yaml`; 0.26.0 refuses it there with a message naming this move. |
+| `launch-configs.<name>` | A named way to start a harness on this host (0.26.0; lead decision 2 — a spawn-time host choice, never a soul field): `harness` (`pi` \| `claude` \| `codex`, required; named `runtime` before 0.27.0, which is still read with a `deprecated-runtime-name` warning), `executable` (a bare name looked up on `PATH`, or a path — relative to this deployment directory), `args` (literal, no shell), `env` (a literal string, non-secret by contract and always redacted, or `{ fromEnv: NAME }` resolved on the host at start), `model`, `yolo`. Selected with `--launch-config <name>` on `oats spawn` and `oats session start \| restart`; explicit flags override its fields. Written by `oats launch-config set <name> --file <json>` / `remove <name>`, which rewrite only this block. Earlier kernels read `launch-configs:` from a scope's `oats-config.yaml`; 0.26.0 refuses it there with a message naming this move. |
 
 ## Where it sits and how it is found
 

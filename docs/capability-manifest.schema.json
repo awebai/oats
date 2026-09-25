@@ -117,17 +117,28 @@
             "additionalProperties": false
           },
           {
-            "title": "runtime package requirement",
-            "description": "A package that must be installed into a specific runtime's own package manager. Raised only for deployments using that runtime, satisfied by the runtime's package list rather than by PATH, and installed only with explicit consent.",
+            "title": "harness package requirement",
+            "description": "A package that must be installed into a specific harness's own package manager. Raised only for deployments using that harness, satisfied by the harness's package list rather than by PATH, and installed only with explicit consent. The harness is named by `harness` (0.27.0) or by `runtime`, its pre-0.27 name that released manifests use: exactly one of the two.",
             "type": "object",
             "required": [
-              "runtime",
               "package",
               "why"
             ],
+            "oneOf": [
+              { "required": ["harness"], "not": { "required": ["runtime"] } },
+              { "required": ["runtime"], "not": { "required": ["harness"] } }
+            ],
             "properties": {
+              "harness": {
+                "type": "string",
+                "enum": [
+                  "pi",
+                  "claude"
+                ]
+              },
               "runtime": {
                 "type": "string",
+                "description": "The pre-0.27 name of `harness`, accepted for released manifests.",
                 "enum": [
                   "pi",
                   "claude"
@@ -135,7 +146,7 @@
               },
               "package": {
                 "type": "string",
-                "description": "Source spec in that runtime's own naming: \"npm:@scope/name\" for pi, \"plugin@marketplace\" for Claude."
+                "description": "Source spec in that harness's own naming: \"npm:@scope/name\" for pi, \"plugin@marketplace\" for Claude."
               },
               "why": {
                 "type": "string"
@@ -155,7 +166,7 @@
               },
               "minVersion": {
                 "type": "string",
-                "description": "Lowest acceptable installed version of the package, read from the package.json under the install directory the runtime's listing names; an older or absent manifest fails the requirement with the install remedy.",
+                "description": "Lowest acceptable installed version of the package, read from the package.json under the install directory the harness's listing names; an older or absent manifest fails the requirement with the install remedy.",
                 "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+"
               },
               "ifInstalled": {

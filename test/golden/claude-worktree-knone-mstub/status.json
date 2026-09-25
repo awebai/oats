@@ -23,7 +23,7 @@
           "repo": "<base>/deployment/ws",
           "work": "worktree",
           "branch": "agents/dev-claude-worktree-knone-mstub",
-          "runtime": "claude",
+          "harness": "claude",
           "spawnOrigin": "operator",
           "policy": {
             "childSpawns": {
@@ -142,8 +142,8 @@
                   "file": "<base>/deployment/agents/dev/instances/dev-claude-worktree-knone-mstub/.oats/modules/golden.messaging/inject.md"
                 }
               ],
-              "runtimePackages": [],
-              "runtimePosture": {
+              "harnessPackages": [],
+              "harnessPosture": {
                 "oatsComposed": "skills via .claude/skills -> ../.agents/skills; instructions via CLAUDE.md -> AGENTS.md",
                 "ambient": [
                   "user skills",
@@ -191,8 +191,8 @@
             "window": "dev-claude-worktree-knone-mstub"
           },
           "launch": {
-            "version": 1,
-            "runtime": "claude",
+            "version": 2,
+            "harness": "claude",
             "launchConfig": null,
             "launchConfigSource": null,
             "executable": "<base>/bin/claude",

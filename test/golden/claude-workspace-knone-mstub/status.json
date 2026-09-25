@@ -22,7 +22,7 @@
           "soulDir": "<base>/deployment/agents/dev/souls/<commit12>",
           "repo": "<base>/deployment",
           "work": "workspace",
-          "runtime": "claude",
+          "harness": "claude",
           "spawnOrigin": "operator",
           "policy": {
             "childSpawns": {
@@ -141,8 +141,8 @@
                   "file": "<base>/deployment/agents/dev/instances/dev-claude-workspace-knone-mstub/.oats/modules/golden.messaging/inject.md"
                 }
               ],
-              "runtimePackages": [],
-              "runtimePosture": {
+              "harnessPackages": [],
+              "harnessPosture": {
                 "oatsComposed": "skills via .claude/skills -> ../.agents/skills; instructions via CLAUDE.md -> AGENTS.md",
                 "ambient": [
                   "user skills",
@@ -190,8 +190,8 @@
             "window": "dev-claude-workspace-knone-mstub"
           },
           "launch": {
-            "version": 1,
-            "runtime": "claude",
+            "version": 2,
+            "harness": "claude",
             "launchConfig": null,
             "launchConfigSource": null,
             "executable": "<base>/bin/claude",

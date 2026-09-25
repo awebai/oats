@@ -14,7 +14,7 @@
       "window": "dev-claude-worktree-kstub-mstub-model"
     },
     "repo": "<base>/deployment/ws",
-    "runtime": "claude",
+    "harness": "claude",
     "model": "claude-sonnet-4-5",
     "parent": null,
     "sibling": null,
@@ -23,8 +23,8 @@
     "attach": "tmux attach -t oats-golden",
     "launchConfig": null,
     "launch": {
-      "version": 1,
-      "runtime": "claude",
+      "version": 2,
+      "harness": "claude",
       "launchConfig": null,
       "launchConfigSource": null,
       "executable": "<base>/bin/claude",

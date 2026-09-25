@@ -13,7 +13,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSy
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildNorthwind, moveMember, dropBacklink } from "./fixtures/northwind/build.mjs";
-import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
+import { inertHarnessPath } from "./helpers/runtime-stub.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const HEX40 = /^[0-9a-f]{40}$/;
@@ -30,7 +30,7 @@ function oats(args, { cwd, env = {}, base }) {
   return spawnSync(process.execPath, [CLI, ...args], {
     cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
     env: {
-      ...process.env, PATH: inertRuntimePath(base), PI_AGENT_HOME: "", OATS_HOME: "", PI_AGENTS_ROOT: "",
+      ...process.env, PATH: inertHarnessPath(base), PI_AGENT_HOME: "", OATS_HOME: "", PI_AGENTS_ROOT: "",
       OATS_REMOTE_CACHE: join(base, "cache"), HOME: join(base, "home"),
       // Never a real tmux session: --no-launch everywhere, and liveness lookups hit a session that does not exist.
       OATS_TMUX_SESSION: `none-${process.pid}`, PI_AGENTS_TMUX_SESSION: `none-${process.pid}`,
@@ -100,7 +100,7 @@ test("workspace spawn chain over Northwind: sync → spawn materializes whole mo
     // Lead decision 2: launch configurations are the deployment's (oats-local.yaml `launch-configs:`),
     // selected by name on a workspace spawn; an undeclared name is refused before anything is written.
     const localText = readFileSync(join(dep, "oats-local.yaml"), "utf8");
-    writeFileSync(join(dep, "oats-local.yaml"), `${localText}launch-configs:\n  fast:\n    runtime: pi\n    args: ["--x"]\n    model: nw-fast-model\n`);
+    writeFileSync(join(dep, "oats-local.yaml"), `${localText}launch-configs:\n  fast:\n    harness: pi\n    args: ["--x"]\n    model: nw-fast-model\n`);
     r = oats(spawnArgs("release-manager", "--preview", "--launch-config", "fast", "--provider", "oats.okf", "state-dir=/tmp/x"), { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     const launched = envelope(r).result;

@@ -9,7 +9,7 @@ The Desktop roster is the place to return to it:
 - The hierarchy's action popover offers **Start…** for a stopped instance.
 - An unknown status is shown as unknown, not as permission to launch another process.
 
-The Start/Restart dialog names the existing instance, runtime and host. Choose
+The Start/Restart dialog names the existing instance, harness and host. Choose
 a named launch configuration or keep the recorded launch. Without a selected
 configuration, the harness can also be changed directly. A named configuration
 fixes its harness; model and permission choices can override its defaults.
@@ -53,7 +53,7 @@ Use the server's workspace to manage configurations defined on that server.
 Desktop sends `POST /api/start/<instance>?ws=…&home=…` (and `server=…` for a
 remote instance). The backend resolves that exact roster identity and calls
 `oats session start --home <absolute-home> [--server <id>] [--model <model>] --json`.
-Launch choices add `--launch-config`, `--runtime` or `--yolo`/`--no-yolo`.
+Launch choices add `--launch-config`, `--harness` or `--yolo`/`--no-yolo`.
 Restart uses `POST /api/restart/<instance>?ws=…&home=…` and the single kernel
 command `oats session restart` with the same selectors and choices.
 Configuration inspection and editing use `POST /api/launch-configs?ws=…`,

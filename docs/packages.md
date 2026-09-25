@@ -286,5 +286,5 @@ says so.
 replacement (`details.removed` / `details.replacement` in `--json`). There is
 no installed-capability directory, no config template adoption, no host
 requirement installer. A manifest's `requires` still describes what must exist
-on the host (runtime packages are verified at spawn; host commands are the
+on the host (harness packages are verified at spawn; host commands are the
 operator's to install).
