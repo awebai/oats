@@ -115,11 +115,11 @@ payload the spawn recorded for a home, or the resolution computes for a soul.
  "capabilities":[
    {"id":"nw-house-style","version":"0.0.0-workspace","layer":null,"command":null,
     "from":{"kind":"member","repoKey":"github.com/northwind/agents","commit":"461b9c24…"},
-    "dir":"/w/agents/release-manager/instances/release-manager-x/.oats/modules/nw-house-style","settings":{},"declares":[],"missingRequires":[],"operations":[]},
+    "dir":"/w/agents/release-manager/instances/release-manager-x/.oats/modules/nw-house-style","settings":{},"declares":[],"compatibility":{"ok":true,"range":">=0.25.0","kernel":"0.26.0"},"missingRequires":[],"operations":[]},
    {"id":"oats.okf","version":"2.1.3","layer":"knowledge","command":"okf",
     "from":{"kind":"package","package":"oats.okf","version":"2.1.3","commit":"71f53649…","integrity":"sha256-5019…","repoKey":"github.com/awebai/oats-okf"},
     "dir":"/w/agents/release-manager/instances/release-manager-x/.oats/modules/oats.okf",
-    "settings":{"owns":"release-manager","reads":["platform-engineer"],"state-dir":"/srv/okf"},"declares":["bindings-file","git-timeout","harvest-model","harvest-runtime","state-dir"],"missingRequires":[],
+    "settings":{"owns":"release-manager","reads":["platform-engineer"],"state-dir":"/srv/okf"},"declares":["bindings-file","git-timeout","harvest-model","harvest-runtime","state-dir"],"compatibility":{"ok":true,"range":">=0.24.4","kernel":"0.26.0"},"missingRequires":[],
     "operations":[{"name":"inspect","kind":"view","command":"inspect","context":"home","description":"…","args":[],"argv":["okf","inspect"],"available":true,"reason":null}]}],
  "knowledge":{"provider":"oats.okf","version":"2.1.3","operations":[{"name":"inspect","kind":"view","available":true,"reason":null}]},
  "instance":{"home":"/w/agents/release-manager/instances/release-manager-x","instance":"release-manager-x","agent":"release-manager",
@@ -148,6 +148,11 @@ payload the spawn recorded for a home, or the resolution computes for a soul.
   - `dir` is the home's module copy, or `null` for a soul (nothing is
     materialized to answer inspect).
   - `settings` is the merged provider payload.
+  - `compatibility` is `{ ok, range, kernel }`: the manifest's
+    `compatibility.oats` (`null` when none) against the running kernel. A
+    soul's resolution refuses an incompatible module (`E_CAPABILITY_INCOMPATIBLE`),
+    so `ok: false` appears only for a home, together with a
+    `capability-incompatible` entry in `problems`.
   - `declares` lists the setting keys the manifest declares (`settings.<key>`),
     sorted; names only, never descriptions or defaults; `[]` when it declares
     none. Gate on feature `settings-declared` (e.g. offer a Teams choice only
