@@ -510,7 +510,8 @@ There are no local souls. A soul is a member repository's `souls/<name>`
 (`soul.yaml` + `AGENTS.md`); author it there and run `oats sync`. OATS 0.25
 and earlier kept local souls and capability-agent homes under
 `<scope>/local-agents/`: this kernel never reads, spawns into or retires from
-that directory. `oats status` and `oats doctor` report it once, as the
+that directory; it only detects it. Onboarding refuses into a directory that
+holds one, and `oats status` and `oats doctor` report it once, as the
 `legacy-local-agents` problem naming the instances found there; retire them
 with the 0.25 kernel, or delete the directory once they are stopped.
 

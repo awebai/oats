@@ -39,7 +39,6 @@ Follow their injected protocol.
 
 ```bash
 oats status [--json]
-oats status --team [--json]   # whole-team roster when config declares team: (all repos in the team scope)
 # with the aweb messaging integration active, `oats aweb roster` adds the
 # cross-machine view: aweb team members, where OATS aliases are instance names
 # a soul is authored in a member repository — souls/<name>/soul.yaml + AGENTS.md
@@ -136,7 +135,7 @@ chooses a source.
 Deployments are configured in scoped `oats-config.yaml` files (laptop /
 workspace / repository) declaring capability packages, exclusive
 knowledge/messaging/tasks layers, agent types, targeting, and injection
-overrides. The CLI is the config author (`oats init`, `oats use`, `oats type`,
+overrides. The CLI is the config author (`oats init`, `oats use`,
 `oats inject eject`). **Load the `oats-config` skill for all configuration
 work** — this skill covers operating, not configuring.
 

@@ -222,15 +222,13 @@ test("launch-configs in oats-config.yaml is a migration error, and set with no d
   const scope = join(base, "migrate"); mkdirSync(join(scope, "agents"), { recursive: true });
   const legacy = "name: m\nlaunch-configs:\n  x:\n    runtime: pi\n";
   write(join(scope, "oats-config.yaml"), legacy);
-  let r = oats(["inspect", "--dir", scope]);
-  assert.equal(r.json.ok, false, r.stdout);
-  assert.match(r.json.error.message, /unsupported oats-config key "launch-configs".*moved to the deployment's oats-local\.yaml/);
-  // The launch-config commands refuse it too, never answering "no configurations".
+  // The launch-config commands refuse it with the migration message, never answering "no configurations".
+  let r;
   for (const argv of [["launch-config", "list", "--dir", scope, "--json"], ["launch-config", "set", "x", "--file", join(base, "m.json"), "--dir", scope]]) {
     write(join(base, "m.json"), JSON.stringify({ runtime: "pi" }));
     r = oats(argv);
     assert.equal(r.json.ok, false, r.stdout);
-    assert.match(r.json.error.message, /moved to the deployment's oats-local\.yaml/, argv.join(" "));
+    assert.match(r.json.error.message, /unsupported oats-config key "launch-configs".*moved to the deployment's oats-local\.yaml/, argv.join(" "));
   }
   assert.equal(readFileSync(join(scope, "oats-config.yaml"), "utf8"), legacy, "the legacy file is untouched");
   // Without the legacy key, set with no deployment in reach is E_LOCAL_MISSING and writes nothing.

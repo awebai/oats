@@ -1,5 +1,5 @@
 // lib/core.mjs — the KERNEL half of a prepared (workspace-model) spawn, in-process over the
-// Northwind fixture (adversarial-review fix round, findings H1 M1 M2 M3 M11 M16 S1).
+// Northwind fixture (adversarial-review fix round, findings H1 M1 M3 M11 M16 S1).
 //
 //   H1  a prepared spawn runs with the resolution's capability rows: instance.json.capabilities
 //       and capabilityRuntime carry one row per module, the oats.okf spawn hook (required:true)
@@ -7,8 +7,6 @@
 //   M1  materialize → launch is one rollback: a failure after the home is populated removes it
 //       whole, and a retry gets the SAME instance name (no auto-suffix -2). Backend presence is
 //       checked before anything is placed.
-//   M2  recompose on a home with materialized modules is refused (E_UNSUPPORTED_MODE), never
-//       silently stripped of its capability blocks.
 //   M3  preview == apply: capabilities[] are {name, origin} from the resolution's modules and
 //       skills[] include every module skill as {name, source: "module:<cap>"}.
 //   M11 workspace.key is the discovery's key (never null) and workspace.standalone is recorded,
@@ -27,7 +25,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildNorthwind } from "./fixtures/northwind/build.mjs";
 import { prepareInstance, ensureWorkspaceSoul, toCapabilityRows, modulesPreview, materializePrepared } from "../lib/instance-resolution.mjs";
-import { spawnInstanceAsync, findAgent, retireInstance, recomposeInstanceInstructions, composeInstanceAgentsMd, planInstanceResources } from "../lib/core.mjs";
+import { spawnInstanceAsync, findAgent, retireInstance, composeInstanceAgentsMd, planInstanceResources } from "../lib/core.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const HEX40 = /^[0-9a-f]{40}$/;
@@ -143,9 +141,7 @@ test("H1/M3/M11/S1: a prepared spawn runs with the resolution's capability rows 
     assert.deepEqual(preview.capabilities.map((c) => c.name).sort(), meta.capabilities.map((c) => c.id).sort(), "M3: preview == apply");
     assert.deepEqual(preview.capabilities.map((c) => [c.name, c.origin]).sort(), meta.capabilities.map((c) => [c.id, c.origin]).sort());
 
-    // ---- M2: recompose refuses a materialized home ----
-    assert.throws(() => recomposeInstanceInstructions(home, { dryRun: true }), (e) => e.code === "E_UNSUPPORTED_MODE" && /recompose from materialized modules is not supported yet; re-spawn/.test(e.message));
-    assert.equal((readFileSync(join(home, "AGENTS.md"), "utf8").match(/<!-- oats:capability:/g) || []).length, 4, "M2: nothing was stripped");
+    assert.equal((readFileSync(join(home, "AGENTS.md"), "utf8").match(/<!-- oats:capability:/g) || []).length, 4, "nothing was stripped");
 
     // ---- H1: retire runs the retire hook (recorded on the retired event in the workspace log) ----
     const retired = retireInstance(d.root, "release-manager-x");

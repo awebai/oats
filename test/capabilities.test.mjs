@@ -486,7 +486,7 @@ test("hook environment is rejected outside the spawn event", () => {
   }
 });
 
-test("team block resolves closest-first, reaches hooks/TASK.md, and drives team-wide status", () => {
+test("team block resolves closest-first and reaches hooks/TASK.md", () => {
   const base = temp(); const ws = join(base, "lfx"); mkdirSync(ws);
   const repo = join(ws, "self-serve"); gitRepo(repo);
   write(join(ws, "oats-config.yaml"), "name: lfx\nteam:\n  name: lfx-engineering\n  id: lfx-engineering:example.com\n");
@@ -501,19 +501,9 @@ test("team block resolves closest-first, reaches hooks/TASK.md, and drives team-
   const home = join(base, "home"); mkdirSync(home);
   runLifecycleHooks("spawn", { home, instance: "dev-1", agentName: "dev", soulDir: home, contextDir: repo, resolved });
   assert.equal(readFileSync(join(home, "team"), "utf8"), "lfx-engineering|lfx-engineering:example.com");
-  // Two agents roots inside the team scope: workspace-level and repo-level.
-  write(join(ws, "agents", "ws-agent", "soul", "soul.yaml"), `name: ws-agent\nkind: persistent\nrepo: ${repo}\nwork: checkout\n`);
-  write(join(ws, "agents", "ws-agent", "soul", "AGENTS.md"), "# ws-agent\n");
+  // TASK.md carries the team line at spawn; instance.json records the team.
   write(join(repo, "agents", "repo-agent", "soul", "soul.yaml"), `name: repo-agent\nkind: persistent\nrepo: ${repo}\nwork: checkout\n`);
   write(join(repo, "agents", "repo-agent", "soul", "AGENTS.md"), "# repo-agent\n");
-  const env = { ...process.env, PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" }; delete env.PI_AGENTS_ROOT;
-  const r = spawnSync(process.execPath, [CLI, "status", "--team", "--json", "--dir", repo], { encoding: "utf8", env });
-  assert.equal(r.status, 0, r.stderr);
-  const payload = JSON.parse(r.stdout);
-  assert.equal(payload.team.name, "lfx-engineering");
-  const names = payload.roots.flatMap((x) => x.agents.map((a) => a.name)).sort();
-  assert.deepEqual(names, ["repo-agent", "ws-agent"]);
-  // TASK.md carries the team line at spawn; instance.json records the team.
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   try {
     const root = join(repo, "agents");
@@ -814,7 +804,7 @@ test("injection-override is rejected on owned/path capabilities; old injection k
   assert.throws(() => resolveOatsConfig(repo, "dev"), /renamed to "injection-override:"/);
 });
 
-test("oats type add declares agent types; inject eject is a removed verb", () => {
+test("inject eject is a removed verb", () => {
   const base = temp(); const repo = join(base, "repo"); gitRepo(repo);
   // Installed-provenance capability (eject allowed) and an owned one (refused).
   const inst = join(repo, ".agents", "capabilities", "installed", "chat");
@@ -823,15 +813,9 @@ test("oats type add declares agent types; inject eject is a removed verb", () =>
   writeCapabilityLock(repo, "acme.chat", { source: "test", version: "1.0.0", integrity: capabilityIntegrity(inst) });
   capability(repo, "own", { capability: "acme.own", inject: "inject.md" }, { "inject.md": "## Own" });
   write(join(repo, "oats-config.yaml"), "name: test\ncapabilities:\n  additive:\n    acme.chat:\n      global: true\n    acme.own:\n      global: true\n");
-  let r = spawnSync(process.execPath, [CLI, "type", "add", "reviewers", "--description", "Review agents", "--dir", repo], { encoding: "utf8" });
-  assert.equal(r.status, 0, r.stderr);
-  const cfg = readFileSync(join(repo, "oats-config.yaml"), "utf8");
-  assert.match(cfg, /agent-types:\n  reviewers:\n    description: Review agents/);
-  r = spawnSync(process.execPath, [CLI, "type", "list", "--dir", repo], { encoding: "utf8" });
-  assert.match(r.stdout, /reviewers/);
   // `inject eject` was removed by the workspace model (injection overrides are
   // not part of it yet; a capability's inject is edited in its member repo).
-  r = spawnSync(process.execPath, [CLI, "inject", "eject", "acme.chat", "--dir", repo], { encoding: "utf8" });
+  const r = spawnSync(process.execPath, [CLI, "inject", "eject", "acme.chat", "--dir", repo], { encoding: "utf8" });
   assert.equal(r.status, 1); assert.match(r.stderr, /removed by the workspace model/);
   assert.equal(existsSync(join(repo, ".agents", "injections")), false);
 });

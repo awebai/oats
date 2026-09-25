@@ -97,15 +97,16 @@ are listed. `use none --layer l` is a level statement and takes no soul or
 type. A layer bound to another capability at a level is never overwritten
 (`E_LAYER_BOUND` with the exact remedy).
 
+*(0.24/0.25 only — `oats soul set` was removed in 0.26.0: a soul is edited in its member repository, then `oats sync`. Kept for history.)*
 `oats soul set <name> [--dir] [--agents-root] [--runtime] [--model |
 --no-model] [--yolo | --no-yolo] [--backend] [--description |
---no-description] [--instructions-file <path>] --json` edits only the given
-`soul.yaml` lines and replaces `AGENTS.md`; packaged souls are refused
-(`E_SOUL_READONLY`). The receipt carries before/after and sha256s.
+--no-description] [--instructions-file <path>] --json` edited only the given
+`soul.yaml` lines and replaced `AGENTS.md`; packaged souls were refused
+(`E_SOUL_READONLY`). The receipt carried before/after and sha256s.
 
 ## Remote
 
-`inspect`, `operation`, `use` and `soul` route with `--server <id>` through
+`inspect` and `operation` route with `--server <id>` through
 the saved route. The gate is the destination's `features` list containing
 `operations` and its `operationsApi: 1` (`E_REMOTE_INCOMPATIBLE` before
 anything is sent): `features` describes what a kernel can do locally, which
@@ -113,15 +114,14 @@ is what runs on the host. The probe's `remote` list describes what a CLI
 can ROUTE to a server and is what a GUI checks on the local CLI before
 offering remote actions; it is not a gate on the destination. An explicit `--dir` is the exact member context and
 travels as is; `--home` is its own context; otherwise the registered
-workspace is the scope. Soul instructions travel as bytes on the ssh stdin
-(`--instructions-stdin` on the host), never as a local path.
+workspace is the scope.
 
 ## Replaceability
 
-`test/inspect.test.mjs`, `test/operation.test.mjs` and
-`test/operations-routing.test.mjs` use an owned alternative knowledge
-provider (namespace `notes`, one `MEMORY.md`, operations `harvest` and
-`inspect`) and never mention the official provider.
+`test/operation.test.mjs` runs the real CLI on the Northwind fixture and
+replaces the provider in a spawned home's module copy (what `operation run
+--home` executes) with a recording provider of its own: the runner is generic
+and assumes nothing about the official provider's operations.
 
 ## Workspace model (0.26.0)
 

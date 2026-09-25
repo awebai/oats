@@ -127,40 +127,10 @@ test('declared oats.core that is NOT active refuses spawn with the remedy (no ho
   retireInstance(f.root, spawned.instance);
 });
 
-// ---- K5: readiness quartet + enforced child-spawn policy ----
+// ---- K5: enforced child-spawn policy (readiness --policy is covered on a workspace home in inspect-readiness) ----
 import { spawnInstance as spawnCore } from '../lib/core.mjs';
-import { signatureOf, SIGNATURE_FAILURES, verificationBudget } from '../lib/readiness.mjs';
 
-test('K5 readiness: quartet derived from inspect facts — installed/trusted/configured/enrolled with items and remedies; ready never inferred from an empty set; signature unknown without --verify-signatures', t => {
-  const f = fixture(t), cap = join(f.context, '.agents/capabilities/owned/core');
-  f.write(join(cap, 'oats.json'), { capability: 'oats.core', version: '1.0.0', description: 'Inert composition fixture', inject: 'inject.md', skills: ['skills'] });
-  f.write(join(cap, 'inject.md'), 'CORE'); f.write(join(cap, 'skills/oats-operate/SKILL.md'), '# op\n');
-  f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n  additive:\n    oats.core:\n      global: true\n');
-  authorSoul(f.root, { name: 'ready', work: 'directory', runtime: 'claude' });
-  const r = f.run(['readiness', '--soul', 'ready', '--json']); assert.equal(r.status, 0, r.stdout + r.stderr);
-  const rd = JSON.parse(r.stdout).result;
-  assert.equal(rd.readinessApi, 1); assert.deepEqual(rd.subject, { kind: 'soul', name: 'ready', selector: { kind: 'soul', soul: 'ready', agentsRoot: null, dir: null } });
-  assert.equal(rd.checks.installed.status, 'pass'); assert.equal(rd.checks.installed.items[0].subject, 'oats.core'); assert.equal(rd.checks.installed.items[0].producer, 'oats list');
-  const trusted = rd.checks.trusted.items.find(i => i.subject === 'oats.core');
-  assert.equal(trusted.status, 'not-applicable', 'a data-only capability (skills/inject, no commands/hooks/env) has nothing trust approves — whatever the lock records');
-  assert.equal(trusted.signature.status, 'not-applicable', 'owned/path capability has no source commit to sign');
-  assert.equal(rd.checks.configured.status, 'pass'); assert.equal(rd.checks.configured.items[0].subject, 'oats.core activation');
-  assert.equal(rd.checks.enrolled.status, 'not-applicable'); assert.equal(rd.checks.enrolled.items[0].required, false); assert.match(rd.checks.enrolled.items[0].reason, /standalone/);
-  assert.equal(rd.summary.ready, true); assert.ok(rd.summary.required > 0);
-  assert.ok(rd.notes.some(n => /never inferred from an empty set/.test(n)));
-  // Deactivate: configured fails with the exact remedy; ready is false.
-  f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n');
-  const r2 = JSON.parse(f.run(['readiness', '--soul', 'ready', '--json']).stdout).result;
-  assert.equal(r2.checks.configured.status, 'fail'); assert.equal(r2.checks.configured.items[0].remedy, 'oats use oats.core --soul ready'); assert.equal(r2.summary.ready, false);
-  // Scope-level (no soul): required = active capabilities; nothing active → installed rows optional, ready false (not vacuously true).
-  const r3 = JSON.parse(f.run(['readiness', '--json']).stdout).result;
-  assert.equal(r3.subject.kind, 'scope'); assert.equal(r3.summary.ready, false);
-  // Policy view for the soul: default allowed, not yet enforced (no instance).
-  const p = JSON.parse(f.run(['readiness', '--soul', 'ready', '--policy', '--json']).stdout).result.policy;
-  assert.deepEqual(p.childSpawns, { allowed: true, enforced: false, origin: { kind: 'default', detail: 'no declaration: children allowed' } });
-});
-
-test('K5 policy: children.spawn declared false is recorded at spawn and ENFORCED by the spawn route for --parent / --relation child; --allow-child-spawns overrides with its origin; readiness --policy --home reports the enforced policy', t => {
+test('K5 policy: children.spawn declared false is recorded at spawn and ENFORCED by the spawn route for --parent / --relation child; --allow-child-spawns overrides with its origin', t => {
   const f = fixture(t), cap = join(f.context, '.agents/capabilities/owned/core');
   f.write(join(cap, 'oats.json'), { capability: 'oats.core', version: '1.0.0', description: 'Inert', inject: 'inject.md', skills: ['skills'] });
   f.write(join(cap, 'inject.md'), 'CORE'); f.write(join(cap, 'skills/oats-operate/SKILL.md'), '# op\n');
@@ -184,9 +154,6 @@ test('K5 policy: children.spawn declared false is recorded at spawn and ENFORCED
   const boss2 = spawnCore(f.root, findAgent(f.root, 'boss'), { purpose: 'open', launch: false, allowChildSpawns: true });
   assert.deepEqual(JSON.parse(readFileSync(join(boss2.home, 'instance.json'), 'utf8')).policy.childSpawns, { allowed: true, origin: { kind: 'spawn-option', detail: '--allow-child-spawns' } });
   const kid = spawnCore(f.root, findAgent(f.root, 'minion'), { purpose: 'kid3', launch: false, parent: boss2.instance }); assert.equal(JSON.parse(readFileSync(join(kid.home, 'instance.json'), 'utf8')).parentInstance, boss2.instance);
-  // readiness --policy --home reports the ENFORCED policy with origin.
-  const pol = JSON.parse(f.run(['readiness', '--soul', 'boss', '--policy', '--home', boss.home, '--json']).stdout).result.policy;
-  assert.deepEqual(pol.childSpawns, { allowed: false, enforced: true, origin: { kind: 'soul', detail: 'children.spawn: false in soul.yaml' } });
   for (const h of [boss.home, boss2.home, free.home, kid.home]) retireInstance(f.root, JSON.parse(readFileSync(join(h, 'instance.json'), 'utf8')).instance);
 });
 
@@ -237,65 +204,6 @@ test('K7 events: spawn writes spawned (+launched when launching); a refused chil
   assert.equal(ev.events[0].data.launched, false); assert.equal(ev.events[1].data.policy.allowed, false); assert.match(ev.events[1].data.child, /^evkid-k/);
   assert.equal(ev.waitingOnYou, null);
   retireInstance(f.root, boss.instance);
-});
-
-test('K5 pins (slice 5): configured is EFFECTIVE activation not declaration; data-only capability trust is not-applicable however the lock reads; typed capability/origin + byCapability; selector echo; unreadable member document is unknown; captured home refuses; signature failure is a closed code, never stderr', t => {
-  const f = fixture(t), cap = join(f.context, '.agents/capabilities/owned/core');
-  f.write(join(cap, 'oats.json'), { capability: 'oats.core', version: '1.0.0', description: 'Inert composition fixture', inject: 'inject.md', skills: ['skills'] });
-  f.write(join(cap, 'inject.md'), 'CORE'); f.write(join(cap, 'skills/oats-operate/SKILL.md'), '# op\n');
-  // Declared FOR this soul but explicitly disabled: a declaration is not activation.
-  f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n  additive:\n    oats.core:\n      souls:\n        ready: {enabled: false}\n');
-  authorSoul(f.root, { name: 'ready', work: 'directory', runtime: 'claude' });
-  const r = JSON.parse(f.run(['readiness', '--soul', 'ready', '--agents-root', f.root, '--json']).stdout).result;
-  const act = r.checks.configured.items.find(i => i.subject === 'oats.core activation');
-  assert.equal(act.status, 'fail', 'declared-but-disabled is a FAIL, not pass'); assert.match(act.reason, /declared for soul ready but disabled/);
-  assert.equal(r.summary.ready, false);
-  // Typed linkage on every item + the same items grouped per capability.
-  for (const check of Object.values(r.checks)) for (const i of check.items) if (i.subject.startsWith('oats.core')) { assert.equal(i.capability.id, 'oats.core'); assert.ok(['requires', 'declares', 'default', 'inventory'].includes(i.origin.kind)); }
-  assert.equal(act.origin.kind, 'requires'); assert.equal(act.origin.target, 'soul:ready');
-  const grouped = r.summary.byCapability.find(g => g.capability.id === 'oats.core');
-  assert.deepEqual(Object.keys(grouped.checks), ['installed', 'trusted', 'configured', 'enrolled']); assert.equal(grouped.checks.configured, 'fail'); assert.equal(grouped.ready, false); assert.equal(grouped.ownReady, false);
-  assert.deepEqual(r.summary.subjectBlockers, [], 'no subject-level blocker here');
-  // Selector echo: exactly what this read was made with.
-  assert.deepEqual(r.subject.selector, { kind: 'soul', soul: 'ready', agentsRoot: f.root, dir: null }, 'arguments AS GIVEN, no realpath');
-  assert.deepEqual(JSON.parse(f.run(['readiness', '--json']).stdout).result.subject.selector, { kind: 'scope', dir: null });
-  assert.deepEqual(JSON.parse(f.run(['readiness', '--dir', f.context + '/.', '--json']).stdout).result.subject.selector, { kind: 'scope', dir: f.context + '/.' }, 'byte-exact echo of --dir');
-  // Data-only capability: no commands/hooks/env → trust NOT-APPLICABLE, whatever the lock says; a hook makes it applicable.
-  const tr = r.checks.trusted.items.find(i => i.subject === 'oats.core');
-  assert.equal(tr.status, 'not-applicable'); assert.equal(tr.reason, 'no executable surface'); assert.equal(tr.remedy, null);
-  f.write(join(cap, 'oats.json'), { capability: 'oats.core', version: '1.0.0', description: 'now executable', inject: 'inject.md', skills: ['skills'], hooks: { spawn: 'hook.sh' } }); f.write(join(cap, 'hook.sh'), '#!/bin/sh\necho {}\n');
-  const tr2 = JSON.parse(f.run(['readiness', '--soul', 'ready', '--json']).stdout).result.checks.trusted.items.find(i => i.subject === 'oats.core');
-  assert.notEqual(tr2.status, 'not-applicable', 'a hook is an executable surface');
-  // Unreadable member document → enrolled UNKNOWN with the file, never not-applicable.
-  for (const bad of ['workspace: [this: is: not: valid\n  yaml', 'workspace: nope\n']) {
-    f.write(join(f.context, 'oats.yaml'), bad);
-    const en = JSON.parse(f.run(['readiness', '--soul', 'ready', '--json']).stdout).result.checks.enrolled.items[0];
-    assert.equal(en.status, 'unknown', bad); assert.match(en.reason, /unreadable/); assert.equal(en.evidence.file, join(f.context, 'oats.yaml')); assert.equal(en.required, true);
-  }
-  // Subject-level blocker: the capability's OWN quartet may pass while the subject is blocked by membership — a row never says ready then.
-  { const rr = JSON.parse(f.run(['readiness', '--soul', 'ready', '--json']).stdout).result; f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n  additive:\n    oats.core:\n      global: true\n');
-    const rb = JSON.parse(f.run(['readiness', '--soul', 'ready', '--json']).stdout).result; const g = rb.summary.byCapability.find(x => x.capability.id === 'oats.core');
-    assert.equal(g.ownReady, true, JSON.stringify(g)); assert.equal(g.ready, false, 'blocked by the subject-level enrolled unknown'); assert.deepEqual(rb.summary.subjectBlockers.map(b => b.check), ['enrolled']); assert.equal(rb.summary.ready, false); void rr; }
-  rmSync(join(f.context, 'oats.yaml')); mkdirSync(join(f.context, 'oats.yaml')); // a directory: cannot be read at all
-  assert.equal(JSON.parse(f.run(['readiness', '--soul', 'ready', '--json']).stdout).result.checks.enrolled.items[0].status, 'unknown');
-  rmSync(join(f.context, 'oats.yaml'), { recursive: true });
-  // Captured home refuses before any current-config interpretation.
-  const cHome = join(f.root, 'ready', 'instances', 'ready-cap'); f.write(join(cHome, 'instance.json'), { instance: 'ready-cap', agent: 'ready', home: cHome, executionBinding: { deployment: f.context, resolution: { id: 'sha256-' + 'a'.repeat(64) } } });
-  const cap1 = f.run(['readiness', '--home', cHome, '--json']); assert.equal(cap1.status, 1);
-  const err = JSON.parse(cap1.stdout.trim().split('\n').pop()).error; assert.equal(err.code, 'E_UNSUPPORTED_MODE'); assert.equal(err.details.captured, true);
-  // Signature verification: closed failure code, no stderr; transport allowlist; feature no longer advertised.
-  const sig = signatureOf({ url: 'file:///nowhere', commit: 'a'.repeat(40) }, { verify: true });
-  assert.deepEqual(sig, { status: 'unknown', signer: null, reason: 'source transport is not https or ssh; not fetched', failure: { code: 'transport-not-allowed' } });
-  const dead = signatureOf({ url: 'https://127.0.0.1:9/none.git', commit: 'a'.repeat(40) }, { verify: true, budgetMs: 4000 });
-  assert.equal(dead.status, 'unknown'); assert.ok(['fetch-failed', 'fetch-timeout', 'budget-exhausted'].includes(dead.failure.code), JSON.stringify(dead));
-  assert.doesNotMatch(dead.reason, /fatal:|127\.0\.0\.1|Could not read|unable to access/, 'no stderr in the reason'); assert.equal(dead.reason, 'the source could not be fetched'); assert.ok(SIGNATURE_FAILURES.includes(dead.failure.code));
-  assert.equal(readdirSync(tmpdir()).filter(n => n.startsWith('oats-sig-')).length, 0, 'scratch repository removed');
-  // One budget for the whole read: an exhausted shared budget refuses the next capability without a fetch.
-  const spent = verificationBudget(1); const t0 = Date.now(); while (Date.now() - t0 < 3) { /* spin */ }
-  assert.deepEqual(signatureOf({ url: 'https://127.0.0.1:9/none.git', commit: 'a'.repeat(40) }, { verify: true, budget: spent }), { status: 'unknown', signer: null, reason: 'the verification budget was exhausted', failure: { code: 'budget-exhausted' } });
-  // 0.26.0: the feature is no longer advertised (a v2 deployment refuses --verify-signatures; the
-  // classic flag itself is removed with the classic chain).
-  assert.ok(!JSON.parse(f.run(['version', '--json']).stdout).features.includes('readiness-verify'));
 });
 
 test('K6b (spawnPreviewApi 2): a preview — success OR refusal — leaves the deployment byte-identical (no event, no daemon, no soul write); --agents-root binds the exact root with no fallback; decision.revision binds the apply via --expect-decision (drift → E_DECISION_STALE, nothing created); preflight is bounded and reported', t => {
@@ -381,15 +289,6 @@ test('process-group: killGroup never signals pid 0 / negative / non-integer — 
   // The real path: a probe whose binary does not exist reports pid 0 and must not kill us.
   const r = spawnSync('/nonexistent/binary-' + process.pid, ['x'], { detached: true, timeout: 1000 });
   assert.equal(r.error?.code, 'ENOENT'); assert.equal(r.pid, 0); assert.equal(killGroup(r), false, 'and we are still alive to assert this');
-});
-
-test('process-group, end to end: signature verification with NO git on PATH reports fetch-failed and the calling process survives (was: process.kill(-0) on the caller\'s group)', () => {
-  const emptyBin = mkdtempSync(join(tmpdir(), 'nobin-')); writeFileSync(join(emptyBin, 'node'), `#!/bin/sh\nexec "${process.execPath}" "$@"\n`, { mode: 0o700 });
-  const child = spawnSync(process.execPath, ['--input-type=module', '-e', `import { signatureOf } from ${JSON.stringify(new URL('../lib/readiness.mjs', import.meta.url).href)}; console.log(JSON.stringify(signatureOf({ url: 'https://example.invalid/x.git', commit: 'a'.repeat(40) }, { verify: true, budgetMs: 5000 })));`],
-    { encoding: 'utf8', env: { PATH: emptyBin, HOME: emptyBin }, timeout: 30000 });
-  assert.equal(child.signal, null, `the verifying process was signalled: ${child.signal} ${child.stderr}`); assert.equal(child.status, 0, child.stderr);
-  const sig = JSON.parse(child.stdout.trim()); assert.equal(sig.status, 'unknown'); assert.equal(sig.failure.code, 'verifier-failed', JSON.stringify(sig));
-  rmSync(emptyBin, { recursive: true, force: true });
 });
 
 test('K6c spawn idempotency: --expect-decision + --idempotency-key — a retry of the SAME confirmed decision replays the recorded home (found by key, never by name) instead of spawning twice; the same key for a different decision refuses E_IDEMPOTENCY_CONFLICT; a different key spawns anew', t => {

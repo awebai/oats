@@ -56,9 +56,10 @@ The public capability agent named oats-assistant is **not** a persistent soul.
 Do not create a persistent soul of that name in a context also activating this
 helper: that is a collision, not a fallback or a curriculum merge.
 
-For an authorized new ordinary specialist, the kernel's `oats` skill describes
-`oats create <name>` and supported work/runtime configuration. Choose a unique
-name and explicit work discipline. Checkout shares the user's Git tree;
+An authorized new ordinary specialist is a soul authored in a member
+repository (`souls/<name>/soul.yaml` + `AGENTS.md`), then `oats sync`, with a
+supported work/runtime configuration. Choose a unique name and explicit work
+discipline. Checkout shares the user's Git tree;
 worktree isolates approved branch work; directory creates independent scratch
 inside the instance, not a link to the configured context. Directory output
 must be deliberately delivered; it does not silently edit the user's files.

@@ -77,7 +77,7 @@
     "name": { "type": "string" },
     "team": {
       "type": "object",
-      "description": "The deployment/team boundary. Closest scope declaring team: wins; used for identity, cross-repo agent discovery (oats status --team), and messaging providers.",
+      "description": "The deployment/team boundary. Closest scope declaring team: wins; used for identity and messaging providers.",
       "properties": {
         "name": { "type": "string" },
         "id": { "type": "string", "description": "Explicit provider team id (e.g. aweb <name>:<namespace>)." }
