@@ -194,7 +194,11 @@ the lead's:**
   example, a provider operation or hook run against a live home when the
   workspace's teams or the soul's team labels change at a new commit).
 The contract shape is decided with Antares and recorded as a Decision before
-code.
+code. **Human, same day:** the primitives must be seamlessly integrated into
+the aweb messaging capability (acceptance is the oats.aweb experience: no
+manual `aw team …` anywhere we ship, and live instances follow the
+workspace's teams), and kernel changes are in scope, so the provider is not
+bent around today's kernel.
 **Naming (lead, 2026-09-24):** the `oats-` prefix on all six —
 it matches the repository names and the roster's `oats-kernel-`/`oats-desktop-`/
 `oats-operator-expert`, and it keeps instance aliases from colliding with the
