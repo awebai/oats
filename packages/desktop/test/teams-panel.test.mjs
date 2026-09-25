@@ -138,9 +138,17 @@ test('a refusal is shown verbatim under its row, the code behind Details; the pa
   const u = await mount(t, body => body.operation === 'messaging:teams' ? (reads++ === 0 ? stale : run('teams-initial')) : refusal('join-not-eligible'));
   await u.press('join', 'marketing'); await tick();
   assert.equal(reads, 2, 'refused → the provider is asked again');
-  const problem = u.row('dev') && u.panel().querySelector('.inspector-problem');
-  assert.equal(problem, null, 'after the re-read the refused row is no longer offered (marketing is unmapped now)');
+  // The re-read no longer offers marketing (unmapped now): the refusal is said at panel level, not dropped.
   assert.match(u.row('marketing').textContent, /Not mapped by this workspace/);
+  const gone = u.panel().querySelector('[data-team-refusal="marketing"]');
+  assert.ok(gone, 'the refusal survives the re-read that removed its row');
+  assert.equal(gone.querySelector('.inspector-problem p').textContent, 'messaging:join: not eligible: marketing (eligible: dev, reviewers)');
+  assert.equal(gone.querySelector('details summary').textContent, 'Details'); assert.equal(gone.querySelector('details p').textContent, 'E_TEAM_NOT_ELIGIBLE');
+  assert.match(gone.textContent, /marketing is no longer offered to this instance\./);
+  assert.equal(u.panel().querySelector('.teams-body').firstElementChild, gone, 'said first, above the rows');
+  // Cleared by an explicit Refresh …
+  u.panel().querySelector(':scope > .act').click(); await tick(); await tick();
+  assert.equal(reads, 3); assert.equal(u.panel().querySelector('[data-team-refusal]'), null, 'Refresh clears it');
   // The captured personal refusal, on a Leave the provider refuses, reads the same way.
   const v = await mount(t, body => body.operation === 'messaging:teams' ? { ...run('join-dev'), operation: 'messaging:teams' } : refusal('leave-personal'));
   await v.press('leave', 'dev');
@@ -237,4 +245,16 @@ test('operation arguments: only a bounded record travels, as --arg name=value, a
   assert.equal(Object.hasOwn(invoked[1], 'args'), false, 'no args: none sent');
   await assert.rejects(capabilityRequest({ action: 'inspect', selector: { home: HOME }, args: { labels: 'dev' } }, options), /Invalid operation arguments/);
   await assert.rejects(capabilityRequest({ action: 'run', selector: { home: HOME }, operation: 'messaging:join', args: { labels: ['dev'] } }, options), /Invalid operation arguments/);
+});
+
+test('a refusal whose row disappears is cleared by the next team action, not by the automatic re-read', async t => {
+  const stale = structuredClone(run('teams-initial')); stale.result.eligible.push({ label: 'marketing', team: 'northwind:marketing', joined: false }); stale.result.unmapped = [];
+  let reads = 0; const answer = captured();
+  const u = await mount(t, body => body.operation === 'messaging:teams' ? (reads++ === 0 ? stale : run('teams-initial'))
+    : body.args?.labels === 'marketing' ? refusal('join-not-eligible') : answer(body));
+  await u.press('join', 'marketing'); await tick();
+  assert.ok(u.panel().querySelector('[data-team-refusal="marketing"]'), 'kept across the automatic re-read');
+  await u.press('join', 'dev'); await tick();
+  assert.equal(u.panel().querySelector('[data-team-refusal]'), null, 'the next action clears it');
+  assert.match(u.row('dev').textContent, /Joined 2026/);
 });

@@ -202,7 +202,11 @@ never reads as live delivery), its identity home and Leave; labels the
 workspace does not map, unavailable. Join/Leave answer the same document, so
 the panel repaints from it; a refusal (`E_TEAM_NOT_ELIGIBLE`,
 `E_TEAM_PERSONAL`) shows the relayed message verbatim under its row with the
-code behind **Details**, keeps the last good state and re-reads. One action at
+code behind **Details**, keeps the last good state and re-reads. If the re-read
+no longer offers that row (e.g. the mapping was removed between read and
+click), the refusal moves to the top of the panel, verbatim with its code and
+"<label> is no longer offered to this instance.", and stays until the next team
+action or an explicit Refresh/Retry. One action at
 a time: while it runs every team control and Refresh are locked. Reads and
 actions carry the inspector's selection lifetime plus their own serial, checked
 on success and rejection, so an obsolete answer paints nothing and re-arms

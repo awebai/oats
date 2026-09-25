@@ -13,6 +13,8 @@ export const teamsCSS = `
 .teams-panel .team-row > details, .teams-panel .team-row > .inspector-problem { grid-column:1 / -1; margin-top:4px; font-size:12px; }
 .teams-panel .team-row > details pre { margin:4px 0 0; }
 .teams-panel > .act { margin-top:10px; }
+.teams-panel .teams-refusal { padding:10px 0; font-size:12px; }
+.teams-panel .teams-refusal > p { margin:4px 0 0; }
 `;
 const record = v => !!v && typeof v === 'object' && !Array.isArray(v);
 const exact = (v, keys) => record(v) && Object.keys(v).length === keys.length && keys.every(k => Object.hasOwn(v, k));
@@ -103,8 +105,9 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
     return result?.operationsApi === 1 ? 'This workspace still uses the classic layout, which answers an older operation result.'
       : 'The messaging provider answered teams this Desktop cannot read.';
   }
-  async function read() {
-    const ticket = ++serial; pending = 'read'; say('Reading teams…'); sync();
+  // `explicit`: Refresh/Retry clear a refusal; the re-read after a refusal keeps it.
+  async function read({ explicit = false } = {}) {
+    const ticket = ++serial; pending = 'read'; if (explicit) rowError = null; say('Reading teams…'); sync();
     try {
       const result = await request({ action: 'run', selector, operation: operations.teams.address });
       if (!live() || ticket !== serial) return;
@@ -114,7 +117,7 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
     } catch (error) {
       if (!live() || ticket !== serial) return;
       say(''); body.replaceChildren(problem(error, 'The messaging provider could not list teams.'));
-      const retry = node('button', 'Retry', 'act'); retry.type = 'button'; retry.addEventListener('click', () => { if (live() && !pending) void read(); }); body.append(retry);
+      const retry = node('button', 'Retry', 'act'); retry.type = 'button'; retry.addEventListener('click', () => { if (live() && !pending) void read({ explicit: true }); }); body.append(retry);
     } finally { if (ticket === serial) { pending = null; if (live()) sync(); } }
   }
   async function change(verb, target) {
@@ -155,6 +158,12 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
     const joined = new Map(current.joined.map(j => [j.label, j]));
     const rows = [...current.eligible.map(e => ({ label: e.label, team: e.team, eligible: true })),
       ...current.joined.filter(j => !current.eligible.some(e => e.label === j.label)).map(j => ({ label: j.label, team: j.team, eligible: false }))];
+    // A refusal whose row the re-read no longer offers is said at panel level, never dropped.
+    if (rowError && !rows.some(row => row.label === rowError.label)) {
+      const gone = node('div', undefined, 'teams-refusal'); gone.dataset.teamRefusal = rowError.label;
+      gone.append(problem(rowError.error, 'The messaging provider refused.'), node('p', `${rowError.label} is no longer offered to this instance.`, 'muted'));
+      body.prepend(gone);
+    }
     for (const row of rows) {
       const j = joined.get(row.label), el = node('div', undefined, 'inspector-cap team-row'); el.dataset.teamRow = row.label;
       el.append(node('h4', row.label === current.primary ? `${row.label} · primary` : row.label), node('p', row.team, 'muted'));
@@ -183,7 +192,7 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
       b.disabled = !!pending || !available() || !live() || !op || !op.arg || !op.available;
     }
   }
-  refresh.addEventListener('click', () => { if (live() && !pending) void read(); });
+  refresh.addEventListener('click', () => { if (live() && !pending) void read({ explicit: true }); });
   void read();
-  return { sync, refresh: () => { if (live() && !pending) void read(); } };
+  return { sync, refresh: () => { if (live() && !pending) void read({ explicit: true }); } };
 }
