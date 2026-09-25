@@ -1,16 +1,12 @@
 .agents/
 .agents/skills/
-.agents/skills/oats/
-.agents/skills/oats/SKILL.md
-.agents/skills/oats-config/
-.agents/skills/oats-config/SKILL.md
-.agents/skills/oats-packages/
-.agents/skills/oats-packages/SKILL.md
 .claude/
 .claude/skills -> ../.agents/skills
+.oats/
+.oats/modules/
 .oats-events.jsonl
 AGENTS.md
 CLAUDE.md -> AGENTS.md
 TASK.md
 instance.json
-work -> <base>/scope/repo
+work -> <base>/deployment/ws

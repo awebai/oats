@@ -21,7 +21,7 @@ import YAML from "yaml";
 import { inertRuntimeDir } from "./runtime-stub.mjs";
 
 export const CLI = resolve(new URL("../../bin/oats.mjs", import.meta.url).pathname);
-const IDENTITY = ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "OATS_AGENT", "OATS_SOUL", "OATS_ROOT", "OATS_CONTEXT", "OATS_WORKSPACE",
+const IDENTITY = ["TMUX", "TMUX_PANE", "OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "OATS_AGENT", "OATS_SOUL", "OATS_ROOT", "OATS_CONTEXT", "OATS_WORKSPACE",
   "PI_AGENT_INSTANCE", "PI_AGENT_HOME", "PI_AGENTS_ROOT"];
 const DATE = "2026-09-25T09:00:00Z";
 
@@ -78,7 +78,9 @@ export function capabilityFiles(id, manifest = {}, files = {}) {
  *   workspace     extra oats-workspace.yaml keys, merged over the base (defaults: messaging/tasks/knowledge none)
  *   local         extra oats-local.yaml keys (launch-configs, settings, clones…)
  *   files         any other repo files
- * → { base, dep, root, repo, key, ref, member, env, remoteOptions, prepare, spawn, cli, commit, cleanup }
+ * → { base, dep, root, repo, key, ref, member, env, remoteOptions, inEnv, prepare, spawn, cli, commit, cleanup }
+ * In-process kernel calls a test makes itself (session start, retire…) go through
+ * fx.inEnv(() => …) so they never see the operator's environment.
  */
 export function v2Deployment({ souls = { dev: {} }, capabilities = {}, capabilityDirs = {}, workspace = {}, local = {}, files = {}, name = "fixture" } = {}) {
   const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-v2-")));
@@ -125,8 +127,22 @@ export function v2Deployment({ souls = { dev: {} }, capabilities = {}, capabilit
     git(member, "pull", "-q", "--ff-only", "origin", "main");
     return git(seed, "rev-parse", "HEAD");
   };
+  /** Run `fn` with the fixture's isolation forced onto process.env, restored afterwards:
+   *  HOME, the remote cache, a tmux session that does not exist, and no ambient instance
+   *  identity or TMUX. Everything else the test set (its own PATH with fakes, switches)
+   *  is kept. Every in-process kernel call goes through here, so a test can never reach
+   *  the operator's own tmux server or deployment. */
+  fx.inEnv = async (fn) => {
+    const saved = process.env;
+    const next = { ...saved };
+    for (const k of ["HOME", "OATS_HOME_DIR", "OATS_REMOTE_CACHE", "OATS_TMUX_SESSION", "PI_AGENTS_TMUX_SESSION"]) next[k] = env[k];
+    for (const k of IDENTITY) delete next[k];
+    process.env = next;
+    try { return await fn(); } finally { process.env = saved; }
+  };
   /** What bin/oats.mjs hands spawnInstanceAsync for a soul: the prepared resolution and the fetched soul. */
-  fx.prepare = async (soul, { providers = {} } = {}) => {
+  fx.prepare = (soul, opts) => fx.inEnv(() => prepareIn(soul, opts));
+  const prepareIn = async (soul, { providers = {} } = {}) => {
     const { prepareInstance, ensureWorkspaceSoul, toCapabilityRows, modulesPreview } = await import("../../lib/instance-resolution.mjs");
     const { findAgent } = await import("../../lib/core.mjs");
     const prepared = await prepareInstance(dep, soul, { spawn: { providers }, remoteOptions });
@@ -137,14 +153,14 @@ export function v2Deployment({ souls = { dev: {} }, capabilities = {}, capabilit
     return { prepared, agent: findAgent(root, soul) };
   };
   /** An in-process spawn the way `oats spawn` does it (no launch unless asked). */
-  fx.spawn = async (soul, opts = {}) => {
+  fx.spawn = (soul, opts = {}) => fx.inEnv(async () => {
     const { spawnInstanceAsync } = await import("../../lib/core.mjs");
     const { providers, ...rest } = opts;
-    const { prepared, agent } = await fx.prepare(soul, { providers });
+    const { prepared, agent } = await prepareIn(soul, { providers });
     const work = rest.work || agent.work || "directory";
     const repo = rest.repo ?? (work === "directory" ? dep : member);
     return spawnInstanceAsync(root, agent, { launch: false, ...rest, prepared, repo });
-  };
+  });
   /** The real CLI in the deployment, isolated; `json()` parses the one envelope. */
   fx.cli = (args, { cwd = dep, env: extra = {} } = {}) => {
     const r = spawnSync(process.execPath, [CLI, ...args], { cwd, env: { ...env, ...extra }, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });

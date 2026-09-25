@@ -4,7 +4,7 @@
   "result": {
     "instance": "dev-pi-worktree-kstub-mstub",
     "agent": "dev",
-    "home": "<base>/scope/agents/dev/instances/dev-pi-worktree-kstub-mstub",
+    "home": "<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub",
     "work": "worktree",
     "branch": "agents/dev-pi-worktree-kstub-mstub",
     "launched": false,
@@ -13,7 +13,7 @@
       "session": "oats-golden",
       "window": "dev-pi-worktree-kstub-mstub"
     },
-    "repo": "<base>/scope/repo",
+    "repo": "<base>/deployment/ws",
     "runtime": "pi",
     "model": null,
     "parent": null,
@@ -47,7 +47,7 @@
           {
             "capability": "golden.messaging",
             "layer": "messaging",
-            "level": "<base>/scope",
+            "level": "<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub",
             "settings": {},
             "trust": {
               "trusted": true,

@@ -36,14 +36,17 @@
 // The committed goldens under test/golden/ were produced by that second path on
 // this branch, so they are exactly what this kernel emits today.
 //
-// HERMETIC, and it has to be: a fresh HOME per run (the config/lock walk climbs
-// to `/` and would otherwise union the developer's own ~/oats-config.yaml),
+// HERMETIC, and it has to be: a fresh HOME per run, a private remote cache,
 // every OATS_*/PI_* variable stripped (running the suite inside an OATS instance
 // otherwise re-points the whole context at the real repository), an empty
 // package catalog, GIT_CONFIG_GLOBAL/SYSTEM neutered, fake `pi` and `claude`
 // binaries on PATH (spawn resolves the binary even under --no-launch), a fixed
 // PI_AGENTS_TMUX_SESSION, and --no-launch everywhere so tmux is never contacted.
-// No network, no real tmux, no developer state.
+// Each case is its own workspace-model deployment (test/helpers/v2-deployment.mjs):
+// one local bare repo that is both the workspace host and its only member, and a
+// deployment whose oats-local.yaml points at it. Spawns go through the real
+// discovery → resolution → materialization path. No network, no real tmux, no
+// developer state.
 //
 // THE MATRIX. runtime × work mode × knowledge slot × messaging slot = 32 cases,
 // named `<runtime>-<work>-k<none|stub>-m<none|stub>` (k = knowledge slot, m =
@@ -55,12 +58,13 @@
 //   - `attached` needs `--work-dir`, so each attached case first spawns an owner
 //     instance in worktree mode and attaches to its <home>/work
 //     (lib/core.mjs:5017, in spawnInstance, rejects attached without workDir);
-//   - `workspace` needs a declared boundary, supplied here by the `team:` block
-//     in the scope config (lib/core.mjs:5487-5491, spawnInstance's workspace branch).
-// The knowledge and messaging slots are STUBS DEFINED IN THIS FILE as owned
-// capabilities under .agents/capabilities/owned/. Nothing here depends on
-// oats-okf, oats-aweb, or any sibling checkout, so a golden cannot move because
-// a package next door moved.
+//   - `workspace` works in the deployment directory itself (the directory holding
+//     oats-local.yaml is its boundary).
+// The knowledge and messaging slots are STUBS DEFINED IN THIS FILE as member
+// capabilities of the fixture workspace repo, bound by the soul (`capabilities:
+// {<id>: {from: here}}`; each declares its layer, so it fills that slot). Nothing
+// here depends on oats-okf, oats-aweb, or any sibling checkout, so a golden cannot
+// move because a package next door moved.
 //
 // MODEL PREFERENCE. The 32 matrix cases set no model, so on their own they would
 // freeze only the "unset ⇒ --model omitted" branch — while step 4 of the plan
@@ -77,14 +81,20 @@
 //
 // OBSTACLES TO DETERMINISM, and what was done about each. All of these are
 // normalization, not omission — the artifact is still compared in full:
-//   - absolute paths. The scope root, the hermetic HOME and the kernel package
+//   - absolute paths. The fixture base, the hermetic HOME and the kernel package
 //     root are replaced by <base>, <home> and <kernel>. Both the lexical and the
 //     realpath spelling of each is replaced, because macOS hands out
 //     /var/folders/… while git and realpathSync answer /private/var/folders/…
 //     and BOTH forms appear in the same artifact (compare instance.json `home`
 //     with the workspace-mode TASK.md line, which is built from
 //     realpathSync(join(home,"work")) at lib/core.mjs:5637, spawnInstance's workDesc).
-//   - instance.json `createdAt` (lib/core.mjs:5777) — replaced by <createdAt>.
+//   - instance.json `createdAt` (lib/core.mjs:5777) — replaced by <createdAt>;
+//     each module's `materializedAt` — replaced by <materializedAt>.
+//   - the member commit. The workspace file names its member by a file:// URL
+//     that embeds the fixture path, so the commit differs per run: the full id is
+//     <sha> and the 12-hex prefix (per-commit soul copies `souls/<commit12>`,
+//     module origins) is <commit12>. The resolution revision fingerprints those
+//     keys and commits and is replaced by <resolution>.
 //   - the retirement baseline file name. retirementKey() at lib/core.mjs:6174 is
 //     sha256 OF THE INSTANCE HOME PATH, so `<agent>/instances/.oats-retirement/
 //     baselines/<64 hex>.json` is a hash of a temp path and can never be stable
@@ -98,10 +108,8 @@
 //   - git object ids in `git worktree list --porcelain` — replaced by <sha>.
 //   - tmux socket: absent by construction. meta.tmux.socket is only written on
 //     the launch path (lib/core.mjs:5791), and every case here is --no-launch.
-//   - capability integrity hashes: absent by construction. Owned capabilities are
-//     config-owned and trusted without an integrity digest (manifestTrust,
-//     lib/core.mjs:1314), so no content hash reaches a golden. Were one to
-//     appear it would still be stable, since the stub bytes are fixed here.
+//   - module digests (instance.json `modules.<id>.digest`) are content hashes of
+//     the stub trees, whose bytes are fixed here: stable, frozen as they are.
 //
 // The stub retire hook deliberately reports itself through its returned `meta`
 // rather than by writing a file into the instance home. A file written after the
@@ -142,23 +150,19 @@
 // behavior, so the goldens record it; if it is fixed, these goldens change and
 // that is the correct signal, not a fixture bug.
 //
-// NOT A DEFECT: the stub capabilities carry no integrity digest. That is the
-// documented trust model, not an oversight — an owned capability is config-owned,
-// trusted by authorship rather than by hash, and manifestTrust returns
-// `{trusted:true, configOwned:true}` for any `owned:` origin before any digest is
-// computed (lib/core.mjs:1314). Provenance outranks location: what makes it
-// trusted is that the operator wrote it into their own scope. Acquired package
-// capabilities are the ones that carry integrity, and they are a different seam.
-// Please do not re-file this as a gap in the fixtures.
+// A member capability is trusted because the workspace declares its member
+// (trust.reason "workspace member"); its tree is pinned by the recorded commit
+// and digest.
 
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
+import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const KERNEL_ROOT = resolve(new URL("..", import.meta.url).pathname);
 const CLI = join(KERNEL_ROOT, "bin", "oats.mjs");
@@ -237,11 +241,10 @@ const HERMETIC_HOME = mkdtempSync(join(tmpdir(), "oats-golden-home-"));
 const BASES = [];
 
 /** The stub knowledge capability: a knowledge layer with a spawn hook
- *  (STATE.md + notes/ in the home), an
- *  injection block and one skill. Deliberately NOT oats-okf. */
-function knowledgeCapability(scope) {
-  const dir = join(scope, ".agents", "capabilities", "owned", "golden-knowledge");
-  write(join(dir, "oats.json"), `${JSON.stringify({
+ *  (STATE.md + notes/ in the home), an injection block and one skill. A member
+ *  capability of the fixture workspace repo. Deliberately NOT oats-okf. */
+const KNOWLEDGE_CAPABILITY = {
+  manifest: {
     capability: "golden.knowledge",
     version: "1.0.0",
     description: "Stub knowledge layer for the golden fixtures.",
@@ -250,10 +253,11 @@ function knowledgeCapability(scope) {
     skills: ["skills"],
     inject: "inject.md",
     hooks: { spawn: "hooks/spawn.mjs" },
-  }, null, 2)}\n`);
-  write(join(dir, "inject.md"), "## Knowledge (stub)\n\nYour durable knowledge is at `soul/knowledge/index.md`.\nYour working state for this instance is `STATE.md` and `notes/`.\n");
-  write(join(dir, "skills", "golden-knowledge", "SKILL.md"), "---\nname: golden-knowledge\ndescription: Read and write the stub knowledge base.\n---\n\n# Stub knowledge skill\n\nRead `soul/knowledge/index.md`.\n");
-  write(join(dir, "hooks", "spawn.mjs"), `#!/usr/bin/env node
+  },
+  files: {
+    "inject.md": "## Knowledge (stub)\n\nYour durable knowledge is at `soul/knowledge/index.md`.\nYour working state for this instance is `STATE.md` and `notes/`.\n",
+    "skills/golden-knowledge/SKILL.md": "---\nname: golden-knowledge\ndescription: Read and write the stub knowledge base.\n---\n\n# Stub knowledge skill\n\nRead `soul/knowledge/index.md`.\n",
+    "hooks/spawn.mjs": { mode: 0o755, text: `#!/usr/bin/env node
 // spawn: this instance's own working state, inside the instance home.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -265,16 +269,16 @@ console.log(JSON.stringify({
   meta: { state: "STATE.md", notes: "notes/" },
   brief: "Knowledge: keep STATE.md current and drop working notes in notes/.",
 }));
-`);
-}
+` },
+  },
+};
 
 /** The stub messaging capability: a messaging layer with a REQUIRED spawn hook
  *  that returns meta, a per-runtime launch argument and one environment variable
  *  under the GOLDEN_ vendor prefix it declares (docs/capabilities.md, "Commands
  *  and hooks"), plus a retire hook, an injection block and one skill. */
-function messagingCapability(scope) {
-  const dir = join(scope, ".agents", "capabilities", "owned", "golden-messaging");
-  write(join(dir, "oats.json"), `${JSON.stringify({
+const MESSAGING_CAPABILITY = {
+  manifest: {
     capability: "golden.messaging",
     version: "1.0.0",
     description: "Stub messaging layer for the golden fixtures.",
@@ -284,10 +288,11 @@ function messagingCapability(scope) {
     inject: "inject.md",
     environment: ["GOLDEN_BROKER_ENDPOINT"],
     hooks: { spawn: { command: "hooks/spawn.mjs", required: true }, retire: "hooks/retire.mjs" },
-  }, null, 2)}\n`);
-  write(join(dir, "inject.md"), "## Messaging (stub)\n\nYou are reachable over the stub broker named in `$GOLDEN_BROKER_ENDPOINT`.\n");
-  write(join(dir, "skills", "golden-messaging", "SKILL.md"), "---\nname: golden-messaging\ndescription: Send and receive over the stub broker.\n---\n\n# Stub messaging skill\n\nThe broker endpoint is in `$GOLDEN_BROKER_ENDPOINT`.\n");
-  write(join(dir, "hooks", "spawn.mjs"), `#!/usr/bin/env node
+  },
+  files: {
+    "inject.md": "## Messaging (stub)\n\nYou are reachable over the stub broker named in `$GOLDEN_BROKER_ENDPOINT`.\n",
+    "skills/golden-messaging/SKILL.md": "---\nname: golden-messaging\ndescription: Send and receive over the stub broker.\n---\n\n# Stub messaging skill\n\nThe broker endpoint is in `$GOLDEN_BROKER_ENDPOINT`.\n",
+    "hooks/spawn.mjs": { mode: 0o755, text: `#!/usr/bin/env node
 // spawn (required): mint this instance's messaging identity. The env name is the
 // exact one declared in the manifest, under this capability's GOLDEN_ prefix.
 const alias = process.env.OATS_INSTANCE;
@@ -297,27 +302,46 @@ console.log(JSON.stringify({
   launch: { pi: "--golden-channel stub", claude: "--golden-channel stub" },
   env: { GOLDEN_BROKER_ENDPOINT: "stub://broker/" + alias },
 }));
-`);
-  write(join(dir, "hooks", "retire.mjs"), `#!/usr/bin/env node
+` },
+    "hooks/retire.mjs": { mode: 0o755, text: `#!/usr/bin/env node
 // retire: records that it ran, through meta rather than by touching the home —
 // see the note about the retirement baseline at the top of the test.
 console.log(JSON.stringify({
   meta: { retired: true, ran: "retire", alias: process.env.OATS_INSTANCE },
 }));
-`);
-}
+` },
+  },
+};
 
-/** A complete hermetic deployment for one case:
+/** A complete hermetic workspace-model deployment for one case
+ *  (test/helpers/v2-deployment.mjs):
  *
- *   <base>/bin/{pi,claude}            fake runtimes on PATH
- *   <base>/scope/oats-config.yaml     team: block + the case's layer activations
- *   <base>/scope/.agents/capabilities/owned/…   the stub capabilities
- *   <base>/scope/repo/                the soul's git repo (branch `main`)
- *   <base>/scope/agents/dev/soul/     the soul, authored as files
- */
+ *   <base>/bin/{pi,claude,tmux}         fake runtimes on PATH
+ *   <base>/remotes/ws.git               the workspace host AND its only member: oats-workspace.yaml
+ *                                       (the case's knowledge/messaging slot defaults), souls/dev/,
+ *                                       capabilities/golden-{knowledge,messaging}/
+ *   <base>/deployment/oats-local.yaml   the deployment; agents/ is its agents root
+ *   <base>/deployment/ws/               the member clone a worktree/checkout soul works in (branch `main`)
+ *
+ *  "none" is expressed by not binding a capability to that slot (the workspace
+ *  default `none`), which is what a workspace with no knowledge (or no
+ *  messaging) provider looks like. The stubs are member capabilities the soul
+ *  binds from its own member. */
 function fixture(kase) {
-  const base = mkdtempSync(join(tmpdir(), "oats-golden-"));
-  BASES.push(base);
+  const capabilities = {};
+  const bound = {};
+  if (kase.knowledge === "stub") { capabilities["golden-knowledge"] = KNOWLEDGE_CAPABILITY; bound["golden.knowledge"] = { from: "here" }; }
+  if (kase.messaging === "stub") { capabilities["golden-messaging"] = MESSAGING_CAPABILITY; bound["golden.messaging"] = { from: "here" }; }
+  // The soul binds the stubs from its own member (`from: here`); each declares
+  // its layer, so it fills that slot of the resolution.
+  const fx = v2Deployment({
+    name: "golden",
+    souls: { dev: { soul: { description: "Golden fixture developer soul.", work: "checkout", ...(Object.keys(bound).length ? { capabilities: bound } : {}) },
+      agents: "# dev\n\nYou are the golden-fixture developer soul.\n\n## Operating notes\n\n- Do repository work in `./work`.\n" } },
+    capabilities,
+  });
+  BASES.push(fx.base);
+  const base = fx.base;
   const bin = join(base, "bin");
   // `claude` is never executed here: under --no-launch spawn only RESOLVES it on
   // PATH (which(), lib/core.mjs:5646), and claude's model translation is pure.
@@ -345,16 +369,12 @@ fi
 exit 0
 `, 0o755);
 
-  const scope = join(base, "scope");
-  const repo = join(scope, "repo");
-  const root = join(scope, "agents");
-  mkdirSync(repo, { recursive: true });
-
   const env = {};
   for (const [k, v] of Object.entries(process.env)) if (!/^(OATS|PI)_/.test(k)) env[k] = v;
   Object.assign(env, {
     HOME: HERMETIC_HOME,
     OATS_HOME_DIR: join(HERMETIC_HOME, ".oats"),
+    OATS_REMOTE_CACHE: fx.env.OATS_REMOTE_CACHE,
     PI_AGENTS_TMUX_SESSION: "oats-golden",
     PATH: `${bin}:${inertRuntimePath(base)}`,
     GIT_CONFIG_GLOBAL: "/dev/null",
@@ -362,45 +382,16 @@ exit 0
     GIT_AUTHOR_NAME: "Golden", GIT_AUTHOR_EMAIL: "golden@example.invalid",
     GIT_COMMITTER_NAME: "Golden", GIT_COMMITTER_EMAIL: "golden@example.invalid",
   });
-  // A genuinely EMPTY catalog: nothing can reach the network, and soul creation cannot
-  // resolve oats.core, so the goldens keep exercising the legacy ambient-skill composition.
+  // A genuinely EMPTY catalog: nothing can reach the network and no package
+  // resolves; the fixture workspace declares none.
   const emptyCatalog = join(HERMETIC_HOME, "empty-package-catalog.json");
   write(emptyCatalog, JSON.stringify({ packages: {}, capabilities: {} }));
   env.OATS_PACKAGE_CATALOG = emptyCatalog;
-  delete env.PI_AGENTS_ROOT;
 
-  const git = (...argv) => execFileSync("git", ["-C", repo, ...argv], { env, stdio: ["ignore", "pipe", "pipe"] });
-  execFileSync("git", ["init", "-q", "-b", "main", repo], { env, stdio: ["ignore", "pipe", "pipe"] });
-  write(join(repo, "README.md"), "# Golden fixture repo\n");
-  write(join(repo, ".gitignore"), "node_modules/\n");
-  git("add", "-A");
-  git("commit", "-qm", "init");
-
-  if (kase.knowledge === "stub") knowledgeCapability(scope);
-  if (kase.messaging === "stub") messagingCapability(scope);
-
-  // "none" is expressed by simply not activating a capability for that slot,
-  // which is what an installation with no knowledge (or no messaging) package
-  // looks like. The `team:` block is what gives `workspace` mode its boundary
-  // and puts the team line into TASK.md and instance.json for every case.
-  const layers = [];
-  if (kase.knowledge === "stub") layers.push("    knowledge:\n      capability: golden.knowledge\n      from: owned\n      global: true\n");
-  if (kase.messaging === "stub") layers.push("    messaging:\n      capability: golden.messaging\n      from: owned\n      global: true\n");
-  write(join(scope, "oats-config.yaml"),
-    "name: golden\n"
-    + "team:\n  name: golden-team\n  id: golden-team-id\n"
-    + (layers.length ? `capabilities:\n  layers:\n${layers.join("")}` : ""));
-
-  // The soul is authored as files, the way a member repository carries one
-  // (`oats create` is gone). The kernel never scaffolds a soul.
-  const soulDir = join(root, "dev", "soul");
-  mkdirSync(join(root, "dev", "instances"), { recursive: true });
-  write(join(soulDir, "soul.yaml"), "name: dev\nkind: persistent\ndescription: Golden fixture developer soul.\n"
-    + `repo: ${repo}\nwork: checkout\nruntime: pi\n`);
-  write(join(soulDir, "AGENTS.md"), "# dev\n\nYou are the golden-fixture developer soul.\n\n## Operating notes\n\n- Do repository work in `./work`.\n");
-  symlinkSync("AGENTS.md", join(soulDir, "CLAUDE.md"));
-
-  return { base, scope, repo, root, env, nativeHistoryKeys: new Map() };
+  // The member's commit embeds the fixture's own path (oats-workspace.yaml names the
+  // member by its file:// URL), so it differs per run; spawn records its 12-hex prefix.
+  const memberCommit = execFileSync("git", ["-C", fx.member, "rev-parse", "HEAD"], { encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] }).trim();
+  return { base, dep: fx.dep, repo: fx.member, root: fx.root, env, memberCommit, nativeHistoryKeys: new Map() };
 }
 
 function cli(f, argv) {
@@ -460,8 +451,14 @@ function substitutions(f) {
 function normalize(text, f) {
   let out = String(text);
   for (const [from, to] of substitutions(f)) out = out.split(from).join(to);
-  // createdAt is the only volatile field in instance.json.
+  // createdAt and each module's materializedAt are the clock fields of instance.json.
   out = out.replace(/("createdAt":\s*)"[^"]*"/g, '$1"<createdAt>"');
+  out = out.replace(/("materializedAt":\s*)"[^"]*"/g, '$1"<materializedAt>"');
+  // The resolution revision fingerprints the resolution, whose repo keys and member
+  // commit embed the fixture path: volatile across runs, never across cases of one run.
+  out = out.replace(/("resolution":\s*)"[0-9a-f]{24}"/g, '$1"<resolution>"');
+  // The member commit's 12-hex prefix (per-commit soul copies, module origins).
+  if (f.memberCommit) out = out.split(f.memberCommit).join("<sha>").split(f.memberCommit.slice(0, 12)).join("<commit12>");
   // sha256 of the instance home path — see the header note on retirementKey().
   out = out.replace(/baselines\/[0-9a-f]{64}\.json/g, "baselines/<retirement-key>.json");
   // Only registered source hashes in the native custody namespace are volatile.
@@ -702,7 +699,9 @@ for (const kase of CASES) {
     if (kase.work === "attached") {
       const owner = spawnEnvelope(f, ["spawn", "dev", "--purpose", "owner", "--work", "worktree",
         "--runtime", "pi", "--task", TASK, "--no-launch", "--json"]).result;
-      extra.push("--work-dir", join(owner.home, "work"));
+      // A v2 soul declares no `repo:` and bin resolves the member clone only for
+      // worktree/checkout, so an attached spawn names its repository explicitly.
+      extra.push("--work-dir", join(owner.home, "work"), "--repo", f.repo);
     }
 
     // The model reaches the kernel through `--model` rather than a `model:` in
@@ -754,6 +753,22 @@ for (const kase of CASES) {
         treeFingerprint(join(home, ".agents", "skills", s.name)), treeFingerprint(s.from),
         `materialized skill "${s.name}" does not match the source instance.json records it came from (${s.from})`);
     }
+    // Workspace model: a module's skills are copied whole to .agents/skills/<module>/<skill>/
+    // from the home's own module copy (.oats/modules/<module>/, the stubs declare
+    // `skills: ["skills"]`). The same property, over every module the home records.
+    let moduleSkills = 0;
+    for (const module of Object.keys(parsedMeta.modules || {})) {
+      const placed = join(home, ".agents", "skills", module);
+      if (!existsSync(placed)) continue;
+      for (const skill of readdirSync(placed)) {
+        const from = join(home, ".oats", "modules", module, "skills", skill);
+        assert.ok(existsSync(from), `module skill ${module}/${skill} has no source in the home's module copy`);
+        assert.equal(treeFingerprint(join(placed, skill)), treeFingerprint(from),
+          `materialized module skill "${module}/${skill}" does not match its module copy (${from})`);
+        moduleSkills++;
+      }
+    }
+    assert.equal(moduleSkills, (kase.knowledge === "stub" ? 1 : 0) + (kase.messaging === "stub" ? 1 : 0), "every stub's one skill is materialized");
 
     // ---- retirement ----
     const retireArgs = ["retire", spawned.instance, "--json"];
@@ -766,6 +781,6 @@ for (const kase of CASES) {
     // 8. what retirement left: the agent directory, and the repository's
     //    worktree and branch lists.
     golden(kase.id, "after-retire.txt", normalize(
-      `# tree of <base>/scope/agents/dev\n${treeOf(join(f.root, "dev"), f)}\n${gitStateOf(f)}`, f));
+      `# tree of <base>/deployment/agents/dev\n${treeOf(join(f.root, "dev"), f)}\n${gitStateOf(f)}`, f));
   });
 }

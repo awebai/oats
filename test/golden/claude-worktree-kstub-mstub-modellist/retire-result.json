@@ -3,7 +3,7 @@
   "agent": "dev",
   "retention": {
     "worktree": "retained",
-    "movedTo": "<base>/scope/.agents/worktrees/repo/agents-dev-claude-worktree-kstub-mstub-modellist",
+    "movedTo": "<base>/deployment/.agents/worktrees/ws/agents-dev-claude-worktree-kstub-mstub-modellist",
     "branch": "agents/dev-claude-worktree-kstub-mstub-modellist",
     "detachedAt": null,
     "recordedBranch": "agents/dev-claude-worktree-kstub-mstub-modellist"

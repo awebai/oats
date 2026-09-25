@@ -79,7 +79,7 @@ in the same tree as the human and possibly other agents.
   for a worktree-mode instance instead.
 <!-- /oats:work-mode:checkout -->
 
-<!-- oats:capability:golden.messaging src=<base>/scope/.agents/capabilities/owned/golden-messaging/inject.md -->
+<!-- oats:capability:golden.messaging src=<base>/deployment/agents/dev/instances/dev-claude-checkout-knone-mstub/.oats/modules/golden.messaging/inject.md -->
 ## Messaging (stub)
 
 You are reachable over the stub broker named in `$GOLDEN_BROKER_ENDPOINT`.

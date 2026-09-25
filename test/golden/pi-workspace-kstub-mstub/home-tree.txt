@@ -1,17 +1,32 @@
 .agents/
 .agents/skills/
-.agents/skills/golden-knowledge/
-.agents/skills/golden-knowledge/SKILL.md
-.agents/skills/golden-messaging/
-.agents/skills/golden-messaging/SKILL.md
-.agents/skills/oats/
-.agents/skills/oats/SKILL.md
-.agents/skills/oats-config/
-.agents/skills/oats-config/SKILL.md
-.agents/skills/oats-packages/
-.agents/skills/oats-packages/SKILL.md
+.agents/skills/golden.knowledge/
+.agents/skills/golden.knowledge/golden-knowledge/
+.agents/skills/golden.knowledge/golden-knowledge/SKILL.md
+.agents/skills/golden.messaging/
+.agents/skills/golden.messaging/golden-messaging/
+.agents/skills/golden.messaging/golden-messaging/SKILL.md
 .claude/
 .claude/skills -> ../.agents/skills
+.oats/
+.oats/modules/
+.oats/modules/golden.knowledge/
+.oats/modules/golden.knowledge/hooks/
+.oats/modules/golden.knowledge/hooks/spawn.mjs
+.oats/modules/golden.knowledge/inject.md
+.oats/modules/golden.knowledge/oats.json
+.oats/modules/golden.knowledge/skills/
+.oats/modules/golden.knowledge/skills/golden-knowledge/
+.oats/modules/golden.knowledge/skills/golden-knowledge/SKILL.md
+.oats/modules/golden.messaging/
+.oats/modules/golden.messaging/hooks/
+.oats/modules/golden.messaging/hooks/retire.mjs
+.oats/modules/golden.messaging/hooks/spawn.mjs
+.oats/modules/golden.messaging/inject.md
+.oats/modules/golden.messaging/oats.json
+.oats/modules/golden.messaging/skills/
+.oats/modules/golden.messaging/skills/golden-messaging/
+.oats/modules/golden.messaging/skills/golden-messaging/SKILL.md
 .oats-events.jsonl
 AGENTS.md
 CLAUDE.md -> AGENTS.md
@@ -20,4 +35,4 @@ TASK.md
 instance.json
 notes/
 notes/.keep
-work -> <base>/scope
+work -> <base>/deployment

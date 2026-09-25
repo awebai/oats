@@ -1,15 +1,21 @@
 .agents/
 .agents/skills/
-.agents/skills/golden-messaging/
-.agents/skills/golden-messaging/SKILL.md
-.agents/skills/oats/
-.agents/skills/oats/SKILL.md
-.agents/skills/oats-config/
-.agents/skills/oats-config/SKILL.md
-.agents/skills/oats-packages/
-.agents/skills/oats-packages/SKILL.md
+.agents/skills/golden.messaging/
+.agents/skills/golden.messaging/golden-messaging/
+.agents/skills/golden.messaging/golden-messaging/SKILL.md
 .claude/
 .claude/skills -> ../.agents/skills
+.oats/
+.oats/modules/
+.oats/modules/golden.messaging/
+.oats/modules/golden.messaging/hooks/
+.oats/modules/golden.messaging/hooks/retire.mjs
+.oats/modules/golden.messaging/hooks/spawn.mjs
+.oats/modules/golden.messaging/inject.md
+.oats/modules/golden.messaging/oats.json
+.oats/modules/golden.messaging/skills/
+.oats/modules/golden.messaging/skills/golden-messaging/
+.oats/modules/golden.messaging/skills/golden-messaging/SKILL.md
 .oats-events.jsonl
 AGENTS.md
 CLAUDE.md -> AGENTS.md
@@ -17,5 +23,20 @@ TASK.md
 instance.json
 work/
 work/.git
-work/.gitignore
-work/README.md
+work/capabilities/
+work/capabilities/golden-messaging/
+work/capabilities/golden-messaging/hooks/
+work/capabilities/golden-messaging/hooks/retire.mjs
+work/capabilities/golden-messaging/hooks/spawn.mjs
+work/capabilities/golden-messaging/inject.md
+work/capabilities/golden-messaging/oats.json
+work/capabilities/golden-messaging/skills/
+work/capabilities/golden-messaging/skills/golden-messaging/
+work/capabilities/golden-messaging/skills/golden-messaging/SKILL.md
+work/oats-membership.yaml
+work/oats-workspace.yaml
+work/souls/
+work/souls/dev/
+work/souls/dev/AGENTS.md
+work/souls/dev/CLAUDE.md -> AGENTS.md
+work/souls/dev/soul.yaml

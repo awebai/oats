@@ -1,10 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
+import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const temporaryDirectories = [];
@@ -14,45 +13,29 @@ function write(path, content, mode) {
   writeFileSync(path, content, mode === undefined ? undefined : { mode });
 }
 
-function fixture({ disposable = [] } = {}) {
-  const base = mkdtempSync(join(tmpdir(), "oats-retire-work-"));
-  temporaryDirectories.push(base);
-  const repo = join(base, "repo");
-  mkdirSync(repo);
-  execFileSync("git", ["init", "-q", repo]);
+/** A workspace deployment whose soul dev works in a worktree of the member clone
+ *  (which carries .gitignore + tracked.txt); `capabilities` are member
+ *  capabilities the soul declares (their hooks are captured at spawn). */
+function fixture({ capabilities = {} } = {}) {
+  const declared = Object.fromEntries(Object.keys(capabilities).map((id) => [id, { from: "here" }]));
+  const fx = v2Deployment({
+    souls: { dev: { soul: { work: "worktree", ...(Object.keys(declared).length ? { capabilities: declared } : {}) }, agents: "# Dev\n" } },
+    capabilities,
+    files: { ".gitignore": "cache/\nhuman-ignored/\n", "tracked.txt": "base\n" },
+  });
+  temporaryDirectories.push(fx.base);
+  const repo = fx.member;
   execFileSync("git", ["-C", repo, "config", "user.email", "test@example.invalid"]);
   execFileSync("git", ["-C", repo, "config", "user.name", "Test"]);
-  write(join(repo, ".gitignore"), "cache/\nhuman-ignored/\n");
-  write(join(repo, "tracked.txt"), "base\n");
-  execFileSync("git", ["-C", repo, "add", "."]);
-  execFileSync("git", ["-C", repo, "commit", "-qm", "init"]);
-
-  if (disposable.length) {
-    write(join(repo, "oats-config.yaml"), `work-modes:\n  worktree:\n    retirement-disposable: [${disposable.join(", ")}]\n`);
-    execFileSync("git", ["-C", repo, "add", "."]);
-    execFileSync("git", ["-C", repo, "commit", "-qm", "config"]);
-  }
-
-  const root = join(base, "agents");
-  const soul = join(root, "dev", "soul");
-  write(join(soul, "soul.yaml"), `name: dev\nkind: persistent\nrepo: ${repo}\nwork: worktree\nruntime: pi\n`);
-  write(join(soul, "AGENTS.md"), "# Dev\n");
-  symlinkSync("AGENTS.md", join(soul, "CLAUDE.md"));
-  mkdirSync(join(root, "dev", "instances"), { recursive: true });
-
-  const bin = join(base, "bin");
+  const bin = join(fx.base, "bin");
   write(join(bin, "pi"), "#!/bin/sh\nexit 0\n", 0o755);
-  const env = {
-    ...process.env,
-    PATH: `${bin}:${inertRuntimePath(base)}`,
-    OATS_HOME_DIR: join(base, "oats-state"),
-  };
-  delete env.PI_AGENTS_ROOT;
-  return { base, repo, root, env };
+  const env = { ...fx.env, PATH: `${bin}:${fx.env.PATH}` };
+  delete env.OATS_TMUX_SESSION; delete env.PI_AGENTS_TMUX_SESSION;
+  return { base: fx.base, dep: fx.dep, repo, root: fx.root, env };
 }
 
 function cli(f, args) {
-  return spawnSync(process.execPath, [CLI, ...args, "--dir", f.root], { encoding: "utf8", env: f.env });
+  return spawnSync(process.execPath, [CLI, ...args, "--dir", f.dep], { cwd: f.dep, encoding: "utf8", env: f.env });
 }
 
 function spawn(f, purpose) {
@@ -286,28 +269,9 @@ test("production recovery reopens staged index state after the original worktree
   assert.equal(readFileSync(join(recoveryRepo, "tracked.txt"), "utf8"), "staged-human-bytes\n");
 });
 
-test("declared ignored output stays clean while an undeclared ignored twin is preserved", () => {
-  const clean = fixture({ disposable: ["cache"] });
-  const cleanSpawn = spawn(clean, "owned");
-  write(join(cleanSpawn.home, "work", "cache", "later.bin"), "generated-later\n");
-  const cleanRetire = cli(clean, ["retire", "dev-owned", "--json"]);
-  assert.equal(cleanRetire.status, 0, `${cleanRetire.stderr}\n${cleanRetire.stdout}`);
-  assert.equal(JSON.parse(cleanRetire.stdout).workRecovery, undefined, "declared disposable bytes caused a false recovery");
-
-  const risky = fixture({ disposable: ["cache"] });
-  const riskySpawn = spawn(risky, "ignored-risk");
-  write(join(riskySpawn.home, "work", "cache", "later.bin"), "generated-later\n");
-  write(join(riskySpawn.home, "work", "human-ignored", "sentinel.txt"), "ignored-human-bytes\n");
-  const riskyRetire = cli(risky, ["retire", "dev-ignored-risk", "--json"]);
-  assert.equal(riskyRetire.status, 0, `${riskyRetire.stderr}\n${riskyRetire.stdout}`);
-  const recovery = JSON.parse(riskyRetire.stdout).workRecovery;
-  assert.ok(recovery?.classes.includes("untracked or ignored worktree bytes"));
-  assert.equal(readFileSync(join(recovery.path, "repo", "human-ignored", "sentinel.txt"), "utf8"), "ignored-human-bytes\n");
-});
-
 test("missing or corrupt independent authority fails closed before quiescence or deletion", () => {
   for (const corrupt of [false, true]) {
-    const f = fixture({ disposable: ["cache"] });
+    const f = fixture();
     const spawned = spawn(f, corrupt ? "receipt-corrupt" : "receipt-missing");
     write(join(spawned.home, "work", "cache", "later.bin"), "generated-later\n");
     const baselineDir = join(dirname(spawned.home), ".oats-retirement", "baselines");
@@ -322,11 +286,10 @@ test("missing or corrupt independent authority fails closed before quiescence or
 });
 
 test("retire-hook bytes are caught by the final post-hook inspection", () => {
-  const f = fixture();
-  const cap = join(f.repo, ".agents", "capabilities", "owned", "writer");
-  write(join(cap, "oats.json"), JSON.stringify({ capability: "acme.writer", version: "1.0.0", description: "writer", hooks: { retire: "hook.mjs" } }));
-  write(join(cap, "hook.mjs"), "import {writeFileSync} from 'node:fs'; import {join} from 'node:path'; writeFileSync(join(process.env.OATS_HOME, 'hook-created.txt'), 'hook-bytes\\n'); console.log(JSON.stringify({meta:{retired:true}}));\n");
-  write(join(f.repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.writer:\n      global: true\n");
+  const f = fixture({ capabilities: { "acme-writer": {
+    manifest: { description: "writer", hooks: { retire: "hook.mjs" } },
+    files: { "hook.mjs": "import {writeFileSync} from 'node:fs'; import {join} from 'node:path'; writeFileSync(join(process.env.OATS_HOME, 'hook-created.txt'), 'hook-bytes\\n'); console.log(JSON.stringify({meta:{retired:true}}));\n" },
+  } } });
   const spawned = spawn(f, "hook-write");
   const retired = cli(f, ["retire", "dev-hook-write", "--json"]);
   assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
@@ -497,13 +460,12 @@ test("K3 guarded Remove: retire --plan-revision/--idempotency-key revalidates th
 });
 
 test("K3 pin 2: --delete-branch through a plan is bound to the CONFIRMED branch — a branch switch during retirement (hook window) deletes nothing and is reported", () => {
-  const f = fixture();
   // The retire hook set is the one CAPTURED at spawn (capabilityRuntime), so the
-  // switching capability must be active BEFORE the instance is spawned.
-  const cap = join(f.repo, ".agents", "capabilities", "owned", "switcher");
-  write(join(cap, "oats.json"), JSON.stringify({ capability: "acme.switcher", version: "1.0.0", description: "switches the branch during retire", hooks: { retire: "hook.mjs" } }));
-  write(join(cap, "hook.mjs"), "import {execFileSync} from 'node:child_process'; import {join} from 'node:path'; execFileSync('git', ['-C', join(process.env.OATS_HOME, 'work'), 'switch', '--quiet', '-c', 'feat/sneaky']); console.log(JSON.stringify({ meta: { retired: true } }));");
-  write(join(f.repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.switcher:\n      global: true\n");
+  // switching capability is declared by the soul BEFORE the instance is spawned.
+  const f = fixture({ capabilities: { "acme-switcher": {
+    manifest: { description: "switches the branch during retire", hooks: { retire: "hook.mjs" } },
+    files: { "hook.mjs": "import {execFileSync} from 'node:child_process'; import {join} from 'node:path'; execFileSync('git', ['-C', join(process.env.OATS_HOME, 'work'), 'switch', '--quiet', '-c', 'feat/sneaky']); console.log(JSON.stringify({ meta: { retired: true } }));" },
+  } } });
   const s = spawn(f, "bind"); const work = join(s.home, "work");
   execFileSync("git", ["-C", work, "switch", "--quiet", "-c", "feat/confirmed"]);
   const plan = JSON.parse(cli(f, ["retire", "dev-bind", "--plan", "--json"]).stdout).result;

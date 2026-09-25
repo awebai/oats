@@ -4,7 +4,7 @@
   "result": {
     "instance": "dev-claude-attached-kstub-mnone",
     "agent": "dev",
-    "home": "<base>/scope/agents/dev/instances/dev-claude-attached-kstub-mnone",
+    "home": "<base>/deployment/agents/dev/instances/dev-claude-attached-kstub-mnone",
     "work": "attached",
     "branch": "agents/dev-owner",
     "launched": false,
@@ -13,7 +13,7 @@
       "session": "oats-golden",
       "window": "dev-claude-attached-kstub-mnone"
     },
-    "repo": "<base>/scope/repo",
+    "repo": "<base>/deployment/ws",
     "runtime": "claude",
     "model": null,
     "parent": "dev-owner",

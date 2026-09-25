@@ -1,30 +1,25 @@
 {
-  "root": "<base>/scope/agents",
+  "root": "<base>/deployment/agents",
   "agents": [
     {
+      "schemaVersion": "2",
       "name": "dev",
-      "kind": "persistent",
       "description": "Golden fixture developer soul.",
-      "repo": "<base>/scope/repo",
       "work": "checkout",
-      "runtime": "pi",
-      "dir": "<base>/scope/agents/dev",
+      "capabilities": "",
+      "kind": "persistent",
+      "dir": "<base>/deployment/agents/dev",
       "instances": [
         {
           "agent": "dev",
           "kind": "persistent",
           "instance": "dev-claude-attached-kstub-mnone",
-          "home": "<base>/scope/agents/dev/instances/dev-claude-attached-kstub-mnone",
-          "soulDir": "<base>/scope/agents/dev/soul",
-          "repo": "<base>/scope/repo",
+          "home": "<base>/deployment/agents/dev/instances/dev-claude-attached-kstub-mnone",
+          "soulDir": "<base>/deployment/agents/dev/souls/<commit12>",
+          "repo": "<base>/deployment/ws",
           "work": "attached",
           "branch": "agents/dev-owner",
           "runtime": "claude",
-          "team": {
-            "name": "golden-team",
-            "id": "golden-team-id",
-            "scope": "<base>/scope"
-          },
           "parentInstance": "dev-owner",
           "spawnOrigin": "instance",
           "policy": {
@@ -42,21 +37,18 @@
               "notes": "notes/"
             }
           },
-          "layers": {
-            "knowledge": "golden.knowledge [global @ <base>/scope]"
-          },
           "capabilities": [
             {
               "id": "golden.knowledge",
               "layer": "knowledge",
-              "origin": "owned:<base>/scope",
-              "level": "<base>/scope",
+              "origin": "member:local/<base>/remotes/ws.git@<sha>",
+              "level": "<base>/deployment/agents/dev/instances/dev-claude-attached-kstub-mnone",
               "settings": {},
               "provenance": [
-                "global @ <base>/scope"
+                "member local/<base>/remotes/ws.git @ <commit12>"
               ],
               "skills": [
-                "<base>/scope/.agents/capabilities/owned/golden-knowledge/skills"
+                "<base>/deployment/agents/dev/instances/dev-claude-attached-kstub-mnone/.agents/skills/golden.knowledge/golden-knowledge"
               ],
               "hooks": [
                 "spawn"
@@ -64,24 +56,7 @@
               "trusted": true
             }
           ],
-          "skills": [
-            {
-              "name": "golden-knowledge",
-              "source": "golden.knowledge"
-            },
-            {
-              "name": "oats",
-              "source": "kernel"
-            },
-            {
-              "name": "oats-config",
-              "source": "kernel"
-            },
-            {
-              "name": "oats-packages",
-              "source": "kernel"
-            }
-          ],
+          "skills": [],
           "instructions": [
             {
               "source": "kernel:oats",
@@ -97,44 +72,26 @@
             },
             {
               "source": "capability:golden.knowledge",
-              "file": "<base>/scope/.agents/capabilities/owned/golden-knowledge/inject.md"
+              "file": "<base>/deployment/agents/dev/instances/dev-claude-attached-kstub-mnone/.oats/modules/golden.knowledge/inject.md"
             }
           ],
           "composition": {
             "expected": [
               {
                 "type": "skill-tree",
-                "source": "kernel",
-                "declared": "oats",
-                "resolved": "<kernel>/skills/oats"
-              },
-              {
-                "type": "skill-tree",
-                "source": "kernel",
-                "declared": "oats-config",
-                "resolved": "<kernel>/skills/oats-config"
-              },
-              {
-                "type": "skill-tree",
-                "source": "kernel",
-                "declared": "oats-packages",
-                "resolved": "<kernel>/skills/oats-packages"
-              },
-              {
-                "type": "skill-tree",
                 "source": "golden.knowledge",
                 "declared": "skills",
-                "resolved": "<base>/scope/.agents/capabilities/owned/golden-knowledge/skills",
-                "origin": "owned:<base>/scope",
-                "level": "<base>/scope"
+                "resolved": "<base>/deployment/agents/dev/instances/dev-claude-attached-kstub-mnone/.agents/skills/golden.knowledge",
+                "origin": "member:local/<base>/remotes/ws.git@<sha>",
+                "deferred": "materialize"
               },
               {
                 "type": "injection",
                 "source": "golden.knowledge",
                 "declared": "inject.md",
-                "resolved": "<base>/scope/.agents/capabilities/owned/golden-knowledge/inject.md",
-                "origin": "owned:<base>/scope",
-                "level": "<base>/scope"
+                "resolved": "<base>/deployment/agents/dev/instances/dev-claude-attached-kstub-mnone/.oats/modules/golden.knowledge/inject.md",
+                "origin": "member:local/<base>/remotes/ws.git@<sha>",
+                "deferred": "materialize"
               },
               {
                 "type": "instruction-block",
@@ -157,33 +114,12 @@
               {
                 "type": "instruction-block",
                 "source": "capability:golden.knowledge",
-                "declared": "<base>/scope/.agents/capabilities/owned/golden-knowledge/inject.md",
-                "resolved": "<base>/scope/.agents/capabilities/owned/golden-knowledge/inject.md"
+                "declared": "<base>/deployment/agents/dev/instances/dev-claude-attached-kstub-mnone/.oats/modules/golden.knowledge/inject.md",
+                "resolved": "<base>/deployment/agents/dev/instances/dev-claude-attached-kstub-mnone/.oats/modules/golden.knowledge/inject.md"
               }
             ],
             "materialized": {
-              "skills": [
-                {
-                  "name": "golden-knowledge",
-                  "source": "golden.knowledge",
-                  "from": "<base>/scope/.agents/capabilities/owned/golden-knowledge/skills/golden-knowledge"
-                },
-                {
-                  "name": "oats",
-                  "source": "kernel",
-                  "from": "<kernel>/skills/oats"
-                },
-                {
-                  "name": "oats-config",
-                  "source": "kernel",
-                  "from": "<kernel>/skills/oats-config"
-                },
-                {
-                  "name": "oats-packages",
-                  "source": "kernel",
-                  "from": "<kernel>/skills/oats-packages"
-                }
-              ],
+              "skills": [],
               "instructions": [
                 {
                   "source": "kernel:oats",
@@ -199,7 +135,7 @@
                 },
                 {
                   "source": "capability:golden.knowledge",
-                  "file": "<base>/scope/.agents/capabilities/owned/golden-knowledge/inject.md"
+                  "file": "<base>/deployment/agents/dev/instances/dev-claude-attached-kstub-mnone/.oats/modules/golden.knowledge/inject.md"
                 }
               ],
               "runtimePackages": [],
@@ -214,9 +150,9 @@
                 ],
                 "why": "founder ruling: Claude Code's own global and per-repo configuration stays enabled — it is powerful, and the operator decides. An all-OATS setup is the way to opt out."
               },
-              "canonicalSkillTree": "<base>/scope/agents/dev/instances/dev-claude-attached-kstub-mnone/.agents/skills",
+              "canonicalSkillTree": "<base>/deployment/agents/dev/instances/dev-claude-attached-kstub-mnone/.agents/skills",
               "skillAlias": {
-                "path": "<base>/scope/agents/dev/instances/dev-claude-attached-kstub-mnone/.claude/skills",
+                "path": "<base>/deployment/agents/dev/instances/dev-claude-attached-kstub-mnone/.claude/skills",
                 "target": "../.agents/skills"
               }
             }
@@ -225,10 +161,10 @@
             {
               "id": "golden.knowledge",
               "layer": "knowledge",
-              "level": "<base>/scope",
+              "level": "<base>/deployment/agents/dev/instances/dev-claude-attached-kstub-mnone",
               "settings": {},
               "hooks": {
-                "spawn": "node '<base>/scope/.agents/capabilities/owned/golden-knowledge/hooks/spawn.mjs'"
+                "spawn": "node '<base>/deployment/agents/dev/instances/dev-claude-attached-kstub-mnone/.oats/modules/golden.knowledge/hooks/spawn.mjs'"
               },
               "requiredHooks": [],
               "environment": [],
@@ -236,9 +172,9 @@
               "missingRequires": [],
               "trust": {
                 "trusted": true,
-                "configOwned": true
+                "reason": "workspace member"
               },
-              "executable": true
+              "executable": false
             }
           ],
           "tmux": {
@@ -266,26 +202,59 @@
               "file": "TASK.md"
             }
           },
-          "command": "OATS_INSTANCE='dev-claude-attached-kstub-mnone' OATS_INSTANCE_HOME='<base>/scope/agents/dev/instances/dev-claude-attached-kstub-mnone' PI_AGENT_INSTANCE='dev-claude-attached-kstub-mnone' PI_AGENT_HOME='<base>/scope/agents/dev/instances/dev-claude-attached-kstub-mnone' '<base>/bin/claude' -- \"$(cat TASK.md)\"",
+          "command": "OATS_INSTANCE='dev-claude-attached-kstub-mnone' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-claude-attached-kstub-mnone' PI_AGENT_INSTANCE='dev-claude-attached-kstub-mnone' PI_AGENT_HOME='<base>/deployment/agents/dev/instances/dev-claude-attached-kstub-mnone' '<base>/bin/claude' -- \"$(cat TASK.md)\"",
           "createdAt": "<createdAt>",
+          "modules": [
+            {
+              "name": "golden.knowledge",
+              "from": {
+                "kind": "member",
+                "repoKey": "local/<base>/remotes/ws.git",
+                "commit": "<sha>"
+              },
+              "commit": "<sha>",
+              "current": {
+                "commit": "<sha>"
+              },
+              "status": "current"
+            }
+          ],
+          "providers": {
+            "golden.knowledge": {}
+          },
+          "workspace": {
+            "key": "local/<base>/remotes/ws.git",
+            "name": "golden",
+            "deployment": "<base>/deployment",
+            "commit": "<sha>",
+            "resolution": "<resolution>",
+            "standalone": false,
+            "soul": {
+              "id": "local/<base>/remotes/ws.git#dev",
+              "repoKey": "local/<base>/remotes/ws.git",
+              "commit": "<sha>",
+              "team": "global"
+            }
+          },
           "launched": false,
-          "running": false
+          "running": false,
+          "soul": {
+            "repoKey": "local/<base>/remotes/ws.git",
+            "commit": "<sha>",
+            "current": "<sha>",
+            "status": "current"
+          }
         },
         {
           "agent": "dev",
           "kind": "persistent",
           "instance": "dev-owner",
-          "home": "<base>/scope/agents/dev/instances/dev-owner",
-          "soulDir": "<base>/scope/agents/dev/soul",
-          "repo": "<base>/scope/repo",
+          "home": "<base>/deployment/agents/dev/instances/dev-owner",
+          "soulDir": "<base>/deployment/agents/dev/souls/<commit12>",
+          "repo": "<base>/deployment/ws",
           "work": "worktree",
           "branch": "agents/dev-owner",
           "runtime": "pi",
-          "team": {
-            "name": "golden-team",
-            "id": "golden-team-id",
-            "scope": "<base>/scope"
-          },
           "spawnOrigin": "operator",
           "policy": {
             "childSpawns": {
@@ -302,21 +271,18 @@
               "notes": "notes/"
             }
           },
-          "layers": {
-            "knowledge": "golden.knowledge [global @ <base>/scope]"
-          },
           "capabilities": [
             {
               "id": "golden.knowledge",
               "layer": "knowledge",
-              "origin": "owned:<base>/scope",
-              "level": "<base>/scope",
+              "origin": "member:local/<base>/remotes/ws.git@<sha>",
+              "level": "<base>/deployment/agents/dev/instances/dev-owner",
               "settings": {},
               "provenance": [
-                "global @ <base>/scope"
+                "member local/<base>/remotes/ws.git @ <commit12>"
               ],
               "skills": [
-                "<base>/scope/.agents/capabilities/owned/golden-knowledge/skills"
+                "<base>/deployment/agents/dev/instances/dev-owner/.agents/skills/golden.knowledge/golden-knowledge"
               ],
               "hooks": [
                 "spawn"
@@ -324,24 +290,7 @@
               "trusted": true
             }
           ],
-          "skills": [
-            {
-              "name": "golden-knowledge",
-              "source": "golden.knowledge"
-            },
-            {
-              "name": "oats",
-              "source": "kernel"
-            },
-            {
-              "name": "oats-config",
-              "source": "kernel"
-            },
-            {
-              "name": "oats-packages",
-              "source": "kernel"
-            }
-          ],
+          "skills": [],
           "instructions": [
             {
               "source": "kernel:oats",
@@ -357,44 +306,26 @@
             },
             {
               "source": "capability:golden.knowledge",
-              "file": "<base>/scope/.agents/capabilities/owned/golden-knowledge/inject.md"
+              "file": "<base>/deployment/agents/dev/instances/dev-owner/.oats/modules/golden.knowledge/inject.md"
             }
           ],
           "composition": {
             "expected": [
               {
                 "type": "skill-tree",
-                "source": "kernel",
-                "declared": "oats",
-                "resolved": "<kernel>/skills/oats"
-              },
-              {
-                "type": "skill-tree",
-                "source": "kernel",
-                "declared": "oats-config",
-                "resolved": "<kernel>/skills/oats-config"
-              },
-              {
-                "type": "skill-tree",
-                "source": "kernel",
-                "declared": "oats-packages",
-                "resolved": "<kernel>/skills/oats-packages"
-              },
-              {
-                "type": "skill-tree",
                 "source": "golden.knowledge",
                 "declared": "skills",
-                "resolved": "<base>/scope/.agents/capabilities/owned/golden-knowledge/skills",
-                "origin": "owned:<base>/scope",
-                "level": "<base>/scope"
+                "resolved": "<base>/deployment/agents/dev/instances/dev-owner/.agents/skills/golden.knowledge",
+                "origin": "member:local/<base>/remotes/ws.git@<sha>",
+                "deferred": "materialize"
               },
               {
                 "type": "injection",
                 "source": "golden.knowledge",
                 "declared": "inject.md",
-                "resolved": "<base>/scope/.agents/capabilities/owned/golden-knowledge/inject.md",
-                "origin": "owned:<base>/scope",
-                "level": "<base>/scope"
+                "resolved": "<base>/deployment/agents/dev/instances/dev-owner/.oats/modules/golden.knowledge/inject.md",
+                "origin": "member:local/<base>/remotes/ws.git@<sha>",
+                "deferred": "materialize"
               },
               {
                 "type": "instruction-block",
@@ -417,33 +348,12 @@
               {
                 "type": "instruction-block",
                 "source": "capability:golden.knowledge",
-                "declared": "<base>/scope/.agents/capabilities/owned/golden-knowledge/inject.md",
-                "resolved": "<base>/scope/.agents/capabilities/owned/golden-knowledge/inject.md"
+                "declared": "<base>/deployment/agents/dev/instances/dev-owner/.oats/modules/golden.knowledge/inject.md",
+                "resolved": "<base>/deployment/agents/dev/instances/dev-owner/.oats/modules/golden.knowledge/inject.md"
               }
             ],
             "materialized": {
-              "skills": [
-                {
-                  "name": "golden-knowledge",
-                  "source": "golden.knowledge",
-                  "from": "<base>/scope/.agents/capabilities/owned/golden-knowledge/skills/golden-knowledge"
-                },
-                {
-                  "name": "oats",
-                  "source": "kernel",
-                  "from": "<kernel>/skills/oats"
-                },
-                {
-                  "name": "oats-config",
-                  "source": "kernel",
-                  "from": "<kernel>/skills/oats-config"
-                },
-                {
-                  "name": "oats-packages",
-                  "source": "kernel",
-                  "from": "<kernel>/skills/oats-packages"
-                }
-              ],
+              "skills": [],
               "instructions": [
                 {
                   "source": "kernel:oats",
@@ -459,7 +369,7 @@
                 },
                 {
                   "source": "capability:golden.knowledge",
-                  "file": "<base>/scope/.agents/capabilities/owned/golden-knowledge/inject.md"
+                  "file": "<base>/deployment/agents/dev/instances/dev-owner/.oats/modules/golden.knowledge/inject.md"
                 }
               ],
               "runtimePackages": [],
@@ -477,9 +387,9 @@
                 ],
                 "why": "founder ruling: shared cross-agent pi extensions (web search, output formatting) stay available to every instance."
               },
-              "canonicalSkillTree": "<base>/scope/agents/dev/instances/dev-owner/.agents/skills",
+              "canonicalSkillTree": "<base>/deployment/agents/dev/instances/dev-owner/.agents/skills",
               "skillAlias": {
-                "path": "<base>/scope/agents/dev/instances/dev-owner/.claude/skills",
+                "path": "<base>/deployment/agents/dev/instances/dev-owner/.claude/skills",
                 "target": "../.agents/skills"
               }
             }
@@ -488,10 +398,10 @@
             {
               "id": "golden.knowledge",
               "layer": "knowledge",
-              "level": "<base>/scope",
+              "level": "<base>/deployment/agents/dev/instances/dev-owner",
               "settings": {},
               "hooks": {
-                "spawn": "node '<base>/scope/.agents/capabilities/owned/golden-knowledge/hooks/spawn.mjs'"
+                "spawn": "node '<base>/deployment/agents/dev/instances/dev-owner/.oats/modules/golden.knowledge/hooks/spawn.mjs'"
               },
               "requiredHooks": [],
               "environment": [],
@@ -499,9 +409,9 @@
               "missingRequires": [],
               "trust": {
                 "trusted": true,
-                "configOwned": true
+                "reason": "workspace member"
               },
-              "executable": true
+              "executable": false
             }
           ],
           "tmux": {
@@ -529,12 +439,60 @@
               "file": "TASK.md"
             }
           },
-          "command": "OATS_INSTANCE='dev-owner' OATS_INSTANCE_HOME='<base>/scope/agents/dev/instances/dev-owner' PI_AGENT_INSTANCE='dev-owner' PI_AGENT_HOME='<base>/scope/agents/dev/instances/dev-owner' '<base>/bin/pi' --append-system-prompt '<base>/scope/agents/dev/instances/dev-owner/AGENTS.md' --approve --name 'dev-owner' '@TASK.md'",
+          "command": "OATS_INSTANCE='dev-owner' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-owner' PI_AGENT_INSTANCE='dev-owner' PI_AGENT_HOME='<base>/deployment/agents/dev/instances/dev-owner' '<base>/bin/pi' --append-system-prompt '<base>/deployment/agents/dev/instances/dev-owner/AGENTS.md' --approve --name 'dev-owner' '@TASK.md'",
           "createdAt": "<createdAt>",
+          "modules": [
+            {
+              "name": "golden.knowledge",
+              "from": {
+                "kind": "member",
+                "repoKey": "local/<base>/remotes/ws.git",
+                "commit": "<sha>"
+              },
+              "commit": "<sha>",
+              "current": {
+                "commit": "<sha>"
+              },
+              "status": "current"
+            }
+          ],
+          "providers": {
+            "golden.knowledge": {}
+          },
+          "workspace": {
+            "key": "local/<base>/remotes/ws.git",
+            "name": "golden",
+            "deployment": "<base>/deployment",
+            "commit": "<sha>",
+            "resolution": "<resolution>",
+            "standalone": false,
+            "soul": {
+              "id": "local/<base>/remotes/ws.git#dev",
+              "repoKey": "local/<base>/remotes/ws.git",
+              "commit": "<sha>",
+              "team": "global"
+            }
+          },
           "launched": false,
-          "running": false
+          "running": false,
+          "soul": {
+            "repoKey": "local/<base>/remotes/ws.git",
+            "commit": "<sha>",
+            "current": "<sha>",
+            "status": "current"
+          }
         }
-      ]
+      ],
+      "soulSource": {
+        "repoKey": "local/<base>/remotes/ws.git",
+        "commit": "<sha>",
+        "path": "souls/dev",
+        "current": "<sha>",
+        "status": "current"
+      }
     }
-  ]
+  ],
+  "workspace": {
+    "reachable": true
+  }
 }

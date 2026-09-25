@@ -3,7 +3,7 @@
   "agent": "dev",
   "retention": {
     "worktree": "retained",
-    "movedTo": "<base>/scope/.agents/worktrees/repo/agents-dev-pi-worktree-knone-mstub",
+    "movedTo": "<base>/deployment/.agents/worktrees/ws/agents-dev-pi-worktree-knone-mstub",
     "branch": "agents/dev-pi-worktree-knone-mstub",
     "detachedAt": null,
     "recordedBranch": "agents/dev-pi-worktree-knone-mstub"

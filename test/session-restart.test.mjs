@@ -5,7 +5,8 @@ import { chmodSync, existsSync, readdirSync, symlinkSync, mkdirSync, mkdtempSync
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
-import { findAgent, recipeFromLegacyCommand, restartInstanceSession, spawnInstance, startInstanceSession, inspectInstanceSession, stopHarness } from "../lib/core.mjs";
+import { recipeFromLegacyCommand, restartInstanceSession, startInstanceSession, inspectInstanceSession, stopHarness } from "../lib/core.mjs";
+import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { spawn as spawnProcess } from "node:child_process";
 import { isolateSessionEnvironment, waitUntil } from "./helpers/host-fixture.mjs";
 
@@ -383,22 +384,27 @@ test("a captured provider with no contribution at spawn still takes part (launch
   write(join(home, "instance.json"), JSON.stringify({ ...meta, capabilityRuntime: [{ ...meta.capabilityRuntime[0], settings: { mode: "off" } }] }));
   v = preview();
   assert.equal(pk(v).ok, true); assert.match(pk(v).detail, /nothing probed|no runtime package requirement/);
-  // Spawn: the scope binds the provider with an applicable requirement; a new instance under the args configuration is refused before a home exists; with the requirement off, it spawns.
-  write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8") + "  additive:\n    test.req:\n      from: owned\n      global: true\n      settings:\n        mode: on\n");
-  // Core spawn (the CLI's `oats spawn` in reach of oats-local.yaml takes the workspace path): same planner, same refusal.
-  const root = join(repo, "agents");
-  const spawnArgs1 = () => spawnInstance(root, findAgent(root, "dev"), { instance: "dev-args1", launch: false, launchConfig: "probed" });
-  assert.throws(spawnArgs1, (e) => e.code === "E_LAUNCH_PROBE_UNSUPPORTED"); assert.equal(existsSync(join(repo, "agents", "dev", "instances", "dev-args1")), false);
-  write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8").replace("        mode: on\n", "        mode: off\n"));
-  assert.ok(spawnArgs1().home, "with the requirement off, it spawns");
-  write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8").replace(/  additive:\n    test.req:\n      from: owned\n      global: true\n      settings:\n        mode: off\n/, ""));
+  // Spawn (a workspace deployment): the soul declares the provider with an applicable requirement; a new instance under the args configuration is refused before a home exists; with the requirement off (the provider payload), it spawns.
+  const fx = v2Deployment({
+    souls: { dev: { soul: { capabilities: { "test-req": { from: "here" } } } } },
+    capabilities: { "test-req": { manifest: { hooks: { launch: "bin/launch.mjs" }, requires: [{ runtime: "claude", package: "chan@acme-marketplace", marketplace: "acme/claude-plugins", when: { mode: "on" } }], settings: { mode: { description: "m" } } },
+      files: { "bin/launch.mjs": `process.stdout.write(JSON.stringify({ launch: { claude: "--req-hook" }, env: {} }) + "\\n");\n` } } },
+    local: { "launch-configs": { probed: { runtime: "claude", executable: wrapper, args: ["--settings", "/abs/native.json"], env: { TEST_PROBE_TOKEN: "selected" } } } },
+  });
+  try {
+    const saved = { HOME: process.env.HOME, OATS_REMOTE_CACHE: process.env.OATS_REMOTE_CACHE };
+    Object.assign(process.env, { HOME: fx.env.HOME, OATS_REMOTE_CACHE: fx.env.OATS_REMOTE_CACHE });
+    try {
+      const spawnArgs1 = (mode) => fx.spawn("dev", { instance: "dev-args1", launchConfig: "probed", providers: { "test-req": { mode } } });
+      await assert.rejects(spawnArgs1("on"), (e) => e.code === "E_LAUNCH_PROBE_UNSUPPORTED"); assert.equal(existsSync(join(fx.root, "dev", "instances", "dev-args1")), false);
+      assert.ok((await spawnArgs1("off")).home, "with the requirement off, it spawns");
+    } finally { for (const [k, v] of Object.entries(saved)) if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  } finally { fx.cleanup(); }
   write(join(home, "instance.json"), JSON.stringify(meta));
-  // A merely newly bound provider (not captured) does not take part, even with a launch hook and a requirement.
-  write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8") + "  additive:\n    test.req:\n      from: owned\n      global: true\n      settings:\n        mode: on\n");
+  // A provider the home did not capture does not take part, even with a launch hook and a requirement.
   write(join(home, "instance.json"), JSON.stringify({ ...meta, capabilityRuntime: [] }));
   v = preview({ PROBE_SRC: "wrong" });
   assert.ok(!v.argv.includes("--req-hook"), JSON.stringify(v.argv)); assert.match(pk(v).detail, /nothing probed|no runtime package requirement/);
-  write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8").replace(/  additive:\n    test.req:\n      from: owned\n      global: true\n      settings:\n        mode: on\n/, ""));
 });
 
 // ---- K3: stop plan → apply (recursive, retained, bounded, idempotent) and the retire plan ----

@@ -4,7 +4,7 @@
   "result": {
     "instance": "dev-pi-workspace-kstub-mnone",
     "agent": "dev",
-    "home": "<base>/scope/agents/dev/instances/dev-pi-workspace-kstub-mnone",
+    "home": "<base>/deployment/agents/dev/instances/dev-pi-workspace-kstub-mnone",
     "work": "workspace",
     "branch": null,
     "launched": false,
@@ -13,7 +13,7 @@
       "session": "oats-golden",
       "window": "dev-pi-workspace-kstub-mnone"
     },
-    "repo": "<base>/scope/repo",
+    "repo": "<base>/deployment",
     "runtime": "pi",
     "model": null,
     "parent": null,

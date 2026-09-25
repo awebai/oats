@@ -2,17 +2,12 @@
   "agent": "dev",
   "kind": "persistent",
   "instance": "dev-pi-attached-knone-mnone",
-  "home": "<base>/scope/agents/dev/instances/dev-pi-attached-knone-mnone",
-  "soulDir": "<base>/scope/agents/dev/soul",
-  "repo": "<base>/scope/repo",
+  "home": "<base>/deployment/agents/dev/instances/dev-pi-attached-knone-mnone",
+  "soulDir": "<base>/deployment/agents/dev/souls/<commit12>",
+  "repo": "<base>/deployment/ws",
   "work": "attached",
   "branch": "agents/dev-owner",
   "runtime": "pi",
-  "team": {
-    "name": "golden-team",
-    "id": "golden-team-id",
-    "scope": "<base>/scope"
-  },
   "parentInstance": "dev-owner",
   "spawnOrigin": "instance",
   "policy": {
@@ -25,20 +20,7 @@
     }
   },
   "capabilities": [],
-  "skills": [
-    {
-      "name": "oats",
-      "source": "kernel"
-    },
-    {
-      "name": "oats-config",
-      "source": "kernel"
-    },
-    {
-      "name": "oats-packages",
-      "source": "kernel"
-    }
-  ],
+  "skills": [],
   "instructions": [
     {
       "source": "kernel:oats",
@@ -55,24 +37,6 @@
   ],
   "composition": {
     "expected": [
-      {
-        "type": "skill-tree",
-        "source": "kernel",
-        "declared": "oats",
-        "resolved": "<kernel>/skills/oats"
-      },
-      {
-        "type": "skill-tree",
-        "source": "kernel",
-        "declared": "oats-config",
-        "resolved": "<kernel>/skills/oats-config"
-      },
-      {
-        "type": "skill-tree",
-        "source": "kernel",
-        "declared": "oats-packages",
-        "resolved": "<kernel>/skills/oats-packages"
-      },
       {
         "type": "instruction-block",
         "source": "kernel:oats",
@@ -93,23 +57,7 @@
       }
     ],
     "materialized": {
-      "skills": [
-        {
-          "name": "oats",
-          "source": "kernel",
-          "from": "<kernel>/skills/oats"
-        },
-        {
-          "name": "oats-config",
-          "source": "kernel",
-          "from": "<kernel>/skills/oats-config"
-        },
-        {
-          "name": "oats-packages",
-          "source": "kernel",
-          "from": "<kernel>/skills/oats-packages"
-        }
-      ],
+      "skills": [],
       "instructions": [
         {
           "source": "kernel:oats",
@@ -139,9 +87,9 @@
         ],
         "why": "founder ruling: shared cross-agent pi extensions (web search, output formatting) stay available to every instance."
       },
-      "canonicalSkillTree": "<base>/scope/agents/dev/instances/dev-pi-attached-knone-mnone/.agents/skills",
+      "canonicalSkillTree": "<base>/deployment/agents/dev/instances/dev-pi-attached-knone-mnone/.agents/skills",
       "skillAlias": {
-        "path": "<base>/scope/agents/dev/instances/dev-pi-attached-knone-mnone/.claude/skills",
+        "path": "<base>/deployment/agents/dev/instances/dev-pi-attached-knone-mnone/.claude/skills",
         "target": "../.agents/skills"
       }
     }
@@ -172,7 +120,23 @@
       "file": "TASK.md"
     }
   },
-  "command": "OATS_INSTANCE='dev-pi-attached-knone-mnone' OATS_INSTANCE_HOME='<base>/scope/agents/dev/instances/dev-pi-attached-knone-mnone' PI_AGENT_INSTANCE='dev-pi-attached-knone-mnone' PI_AGENT_HOME='<base>/scope/agents/dev/instances/dev-pi-attached-knone-mnone' '<base>/bin/pi' --append-system-prompt '<base>/scope/agents/dev/instances/dev-pi-attached-knone-mnone/AGENTS.md' --approve --name 'dev-pi-attached-knone-mnone' '@TASK.md'",
+  "command": "OATS_INSTANCE='dev-pi-attached-knone-mnone' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-pi-attached-knone-mnone' PI_AGENT_INSTANCE='dev-pi-attached-knone-mnone' PI_AGENT_HOME='<base>/deployment/agents/dev/instances/dev-pi-attached-knone-mnone' '<base>/bin/pi' --append-system-prompt '<base>/deployment/agents/dev/instances/dev-pi-attached-knone-mnone/AGENTS.md' --approve --name 'dev-pi-attached-knone-mnone' '@TASK.md'",
   "createdAt": "<createdAt>",
+  "modules": {},
+  "providers": {},
+  "workspace": {
+    "key": "local/<base>/remotes/ws.git",
+    "name": "golden",
+    "deployment": "<base>/deployment",
+    "commit": "<sha>",
+    "resolution": "<resolution>",
+    "standalone": false,
+    "soul": {
+      "id": "local/<base>/remotes/ws.git#dev",
+      "repoKey": "local/<base>/remotes/ws.git",
+      "commit": "<sha>",
+      "team": "global"
+    }
+  },
   "launched": false
 }

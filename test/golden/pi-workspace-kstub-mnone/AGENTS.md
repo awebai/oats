@@ -89,7 +89,7 @@ scope is the workspace itself; if a task needs actual edits in one repo, ask
 for (or route to) a worktree-mode instance of that repo's agent instead.
 <!-- /oats:work-mode:workspace -->
 
-<!-- oats:capability:golden.knowledge src=<base>/scope/.agents/capabilities/owned/golden-knowledge/inject.md -->
+<!-- oats:capability:golden.knowledge src=<base>/deployment/agents/dev/instances/dev-pi-workspace-kstub-mnone/.oats/modules/golden.knowledge/inject.md -->
 ## Knowledge (stub)
 
 Your durable knowledge is at `soul/knowledge/index.md`.

@@ -4,7 +4,8 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { describeLaunchCommand, findAgent, launchEnvRefs, parseLaunchCommand, planLaunch, redactLaunchCommand, renderLaunchCommand, renderLaunchRecipe, resolveLaunchSelection, spawnInstance, validateLaunchConfig } from "../lib/core.mjs";
+import { describeLaunchCommand, launchEnvRefs, parseLaunchCommand, planLaunch, redactLaunchCommand, renderLaunchCommand, renderLaunchRecipe, resolveLaunchSelection, validateLaunchConfig } from "../lib/core.mjs";
+import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-launch-recipe-")));
@@ -122,20 +123,15 @@ test("selection rules: a named configuration is a unit; models never cross runti
   }
 });
 
-test("spawn records the recipe: a configuration's executable, args and references land in instance.json and the command; missing references, unknown or mismatched configurations refuse before a home exists", () => {
-  const repo = join(base, "repo"); mkdirSync(join(repo, "agents", "dev", "soul"), { recursive: true });
-  spawnSync("git", ["init", "-q", repo]); spawnSync("git", ["-C", repo, "commit", "-q", "--allow-empty", "-m", "init"], { env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@e.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@e.invalid" } });
-  write(join(repo, "agents", "dev", "soul", "soul.yaml"), "name: dev\nrepo: .\nwork: checkout\nruntime: pi\nmodel: anthropic/claude-opus-5\n");
-  write(join(repo, "agents", "dev", "soul", "AGENTS.md"), "# dev\n");
+test("spawn records the recipe: a configuration's executable, args and references land in instance.json and the command; missing references, unknown or mismatched configurations refuse before a home exists", async (t) => {
+  // A workspace deployment (the one shared v2 fixture): launch configurations are a host
+  // choice in its oats-local.yaml (lead decision 2); spawns go through prepare → spawnInstanceAsync.
+  const fx = v2Deployment(); t.after(fx.cleanup);
+  const repo = fx.dep;
   const wrapper = join(repo, "tools", "claude-wrapper.sh"); write(wrapper, "#!/bin/sh\nexit 0\n"); chmodSync(wrapper, 0o755);
-  write(join(repo, "oats-config.yaml"), "name: r\ncapabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n");
-  // Launch configurations are a host choice in the deployment's oats-local.yaml (lead decision 2).
-  write(join(repo, "oats-local.yaml"), "schemaVersion: 2\nworkspace: example.invalid/acme/workspace\n");
-  // The CLI's `oats spawn` in reach of oats-local.yaml takes the workspace path; this classic
-  // fixture spawns through the kernel's own spawn (same planner, same recipe, same refusals).
-  const spawnDev = (purpose, { launchConfig, runtime, extra = {} } = {}) => {
-    const saved = { ...process.env }; Object.assign(process.env, extra);
-    try { const json = { ok: true, result: spawnInstance(join(repo, "agents"), findAgent(join(repo, "agents"), "dev"), { purpose, launch: false, ...(launchConfig ? { launchConfig } : {}), ...(runtime ? { runtime } : {}) }) }; return { json, stdout: JSON.stringify(json) }; }
+  const spawnDev = async (purpose, { launchConfig, runtime, extra = {} } = {}) => {
+    const saved = { ...process.env }; Object.assign(process.env, { HOME: fx.env.HOME, OATS_REMOTE_CACHE: fx.env.OATS_REMOTE_CACHE }, extra);
+    try { const json = { ok: true, result: await fx.spawn("dev", { purpose, ...(launchConfig ? { launchConfig } : {}), ...(runtime ? { runtime } : {}) }) }; return { json, stdout: JSON.stringify(json) }; }
     catch (e) { return { json: { ok: false, error: { code: e.code, message: e.message } }, stdout: e.message }; }
     finally { for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k]; Object.assign(process.env, saved); }
   };
@@ -144,14 +140,14 @@ test("spawn records the recipe: a configuration's executable, args and reference
   assert.equal(r.json.ok, true, r.stdout);
   const instancesDir = join(repo, "agents", "dev", "instances");
   // Refusals happen before a home exists.
-  r = spawnDev("p1", { launchConfig: "personal" });
+  r = await spawnDev("p1", { launchConfig: "personal" });
   assert.equal(r.json.error?.code, "E_LAUNCH_ENV_MISSING", r.stdout); assert.equal(existsSync(join(instancesDir, "dev-p1")), false);
-  r = spawnDev("p1", { launchConfig: "nope" });
+  r = await spawnDev("p1", { launchConfig: "nope" });
   assert.equal(r.json.error?.code, "E_LAUNCH_CONFIG_UNKNOWN", r.stdout);
-  r = spawnDev("p1", { launchConfig: "personal", runtime: "codex", extra: { LAUNCH_TEST_SRC: "s3cret" } });
+  r = await spawnDev("p1", { launchConfig: "personal", runtime: "codex", extra: { LAUNCH_TEST_SRC: "s3cret" } });
   assert.equal(r.json.error?.code, "E_LAUNCH_CONFIG_MISMATCH", r.stdout); assert.equal(existsSync(join(instancesDir, "dev-p1")), false);
   // The spawn: recipe recorded, command carries the args literally and the reference by reference, never the value.
-  r = spawnDev("p1", { launchConfig: "personal", extra: { LAUNCH_TEST_SRC: "s3cret" } });
+  r = await spawnDev("p1", { launchConfig: "personal", extra: { LAUNCH_TEST_SRC: "s3cret" } });
   assert.equal(r.json.ok, true, r.stdout);
   const meta = JSON.parse(readFileSync(join(instancesDir, "dev-p1", "instance.json"), "utf8"));
   assert.equal(meta.runtime, "claude"); assert.equal(meta.model, "claude-opus-5"); assert.equal(meta.yolo, true);
@@ -168,12 +164,12 @@ test("spawn records the recipe: a configuration's executable, args and reference
   const row = (st.json.agents || []).flatMap((a) => a.instances || []).find((i) => i.instance === "dev-p1");
   assert.ok(row, `the roster lists dev-p1: ${st.stdout.slice(0, 400)}`);
   assert.deepEqual(row.launch.env.LIT, { redacted: true }); assert.ok(row.command.includes("LIT='<redacted>'") && !row.command.includes("'plain'"), row.command);
-  // Without a configuration: the soul's runtime and model, no configuration fields, same command shape as before recipes.
-  r = spawnDev("p2");
+  // Without a configuration: the default runtime (a v2 soul declares none) with a spawn --model, no configuration fields, same command shape as before recipes.
+  r = await spawnDev("p2", { extra: {} });
   assert.equal(r.json.ok, true, r.stdout);
   const plain = JSON.parse(readFileSync(join(instancesDir, "dev-p2", "instance.json"), "utf8"));
-  assert.deepEqual([plain.launch.runtime, plain.launch.launchConfig, plain.launch.args, plain.launch.env, plain.launch.model], ["pi", null, [], {}, "anthropic/claude-opus-5"]);
-  assert.ok(plain.command.endsWith(`--approve --name 'dev-p2' --model 'anthropic/claude-opus-5' '@TASK.md'`), plain.command);
+  assert.deepEqual([plain.launch.runtime, plain.launch.launchConfig, plain.launch.args, plain.launch.env], ["pi", null, [], {}]);
+  assert.ok(plain.command.endsWith(`--approve --name 'dev-p2' '@TASK.md'`), plain.command);
   // Preview of the existing home: frozen as recorded; a switch to codex renders codex defaults with no wrapper or args; a disagreeing --runtime is refused.
   const h1 = join(instancesDir, "dev-p1");
   r = oats(["launch-config", "preview", "--home", h1], { extra: { LAUNCH_TEST_SRC: "s3cret" } });
@@ -211,19 +207,13 @@ test("spawn records the recipe: a configuration's executable, args and reference
   assert.equal(r.json.error?.code, "E_LAUNCH_CONFIG_MISMATCH");
   r = oats(["launch-config", "preview", "--home", h1]);
   assert.equal(r.json.result.ok, false); assert.match(r.json.result.preflight.find((c) => c.check === "environment").detail, /LAUNCH_TEST_SRC/, "a missing reference is a failed preflight on this host");
-  // Preview for a soul (a new instance), and the soul's preference for a host-declared entry (soul.yaml launch-config:).
-  const soulYaml = join(repo, "agents", "dev", "soul", "soul.yaml"); const soulBytes = readFileSync(soulYaml, "utf8");
-  write(soulYaml, soulBytes + "launch-config: personal\n");
-  r = oats(["launch-config", "preview", "--soul", "dev", "--dir", repo], { extra: { LAUNCH_TEST_SRC: "s3cret" } });
+  // Preview for a soul (a new instance). (A soul-declared launch-config preference is not a v2
+  // soul field: lead question Q6, notes/design-c3-plan.md.)
+  r = oats(["launch-config", "preview", "--soul", "dev", "--dir", repo, "--launch-config", "personal"], { extra: { LAUNCH_TEST_SRC: "s3cret" } });
   v = r.json.result;
-  assert.deepEqual([v.selection.source, v.runtime, v.launchConfig, v.executable.path, v.ok, v.hooks.pending], ["config", "claude", "personal", wrapper, true, true]);
+  assert.deepEqual([v.selection.source, v.runtime, v.launchConfig, v.executable.path, v.ok, v.hooks.pending], ["config", "claude", "personal", wrapper, true, true], JSON.stringify(r.json).slice(0, 400));
   r = oats(["launch-config", "preview", "--soul", "dev", "--dir", repo, "--launch-config", "none"]);
-  assert.deepEqual([r.json.result.runtime, r.json.result.launchConfig, r.json.result.model], ["pi", null, "anthropic/claude-opus-5"]);
-  r = oats(["launch-config", "preview", "--soul", "dev", "--dir", repo, "--launch-config", "none", "--runtime", "codex"]);
-  assert.deepEqual([r.json.result.runtime, r.json.result.model, r.json.result.modelSource], ["codex", null, "native default (runtime differs from the soul's)"]);
-  r = spawnDev("p3", { extra: { LAUNCH_TEST_SRC: "s3cret" } });
-  assert.equal(r.json.ok, true, r.stdout); assert.equal(JSON.parse(readFileSync(join(instancesDir, "dev-p3", "instance.json"), "utf8")).launch.launchConfig, "personal", "the soul default applies to new instances");
-  write(soulYaml, soulBytes);
+  assert.deepEqual([r.json.result.runtime, r.json.result.launchConfig, r.json.result.model], ["pi", null, null]);
   // A legacy home (no recipe): described as is; a selection is refused until conversion.
   const legacy = join(instancesDir, "dev-legacy"); mkdirSync(legacy, { recursive: true });
   write(join(legacy, "instance.json"), JSON.stringify({ agent: "dev", instance: "dev-legacy", home: legacy, repo, runtime: "claude", model: "claude-x", launched: false, command: `OATS_INSTANCE='dev-legacy' OATS_INSTANCE_HOME=${shq(legacy)} AWEB_DELIVERY='session' '/opt/homebrew/bin/claude' --model 'claude-x' -- "$(cat TASK.md)"` }));

@@ -1,4 +1,5 @@
-# tree of <base>/scope/agents/dev
+# tree of <base>/deployment/agents/dev
+.oats-soul-source.json
 instances/
 instances/.oats-native-record/
 instances/.oats-native-record/<history-dev-pi-workspace-kstub-mstub>/
@@ -6,13 +7,15 @@ instances/.oats-native-record/<history-dev-pi-workspace-kstub-mstub>/history.jso
 instances/.oats-retirement/
 instances/.oats-retirement/baselines/
 instances/.oats-retirement/baselines/<retirement-key>.json
-soul/
-soul/AGENTS.md
-soul/CLAUDE.md -> AGENTS.md
-soul/soul.yaml
+soul -> <base>/deployment/agents/dev/souls/<commit12>
+souls/
+souls/<commit12>/
+souls/<commit12>/AGENTS.md
+souls/<commit12>/CLAUDE.md -> AGENTS.md
+souls/<commit12>/soul.yaml
 
 # git worktree list --porcelain
-worktree <base>/scope/repo
+worktree <base>/deployment/ws
 HEAD <sha>
 branch refs/heads/main
 
