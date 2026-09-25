@@ -222,7 +222,7 @@ test("operation run relays a provider's view whole when it exceeds a pipe buffer
 
 test("in-home capability dispatch: OATS_SOUL is the home's recorded soulDir, and an ambient OATS_SOUL never reaches the command when the home records none", () => {
   const { home, meta } = provider("dispatch");
-  const dispatch = () => spawnSync(process.execPath, [CLI, "okf", "sweep"], { encoding: "utf8", cwd: home, env: { ...process.env, ...ambient, PI_AGENT_HOME: home, OATS_HOME: home } });
+  const dispatch = () => spawnSync(process.execPath, [CLI, "okf", "sweep"], { encoding: "utf8", cwd: home, env: { ...process.env, ...ambient, OATS_INSTANCE_HOME: home, PI_AGENT_HOME: home, OATS_HOME: home } });
   let r = dispatch();
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.equal(JSON.parse(readFileSync(join(home, "notes-invocation.json"), "utf8")).env.OATS_SOUL, meta.soulDir);
