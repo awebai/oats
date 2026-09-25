@@ -151,7 +151,7 @@ test('the declared soul is read-only; its disclosed instructions are stable unde
   const u = await setup(t);
   u.doc.querySelector('.soul-card').click(); await tick();
   const inspector = u.doc.querySelector('.soul-inspector');
-  assert.match(inspector.textContent, /What a spawn of this soul resolves now/);
+  assert.match(inspector.textContent, /When spawned/);
   assert.match(inspector.textContent, /Edit this soul in its repository/);
   assert.equal(inspector.querySelector('form, textarea, input'), null, 'no in-place editor');
   const details = [...inspector.querySelectorAll('details')].find(d => d.querySelector('summary')?.textContent === 'AGENTS.md / instructions');

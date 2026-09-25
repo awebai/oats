@@ -88,6 +88,18 @@ export function whenText(iso) {
   const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?Z$/.exec(iso);
   return m ? `${m[1]} ${m[2]} UTC` : iso;
 }
+/** The soul's eligible teams as `oats inspect` reports them (kernel `teams`,
+ * primary first): `[{label, team, mapped}]`, or null when not reported or not
+ * readable. `mapped` and `team` must agree (a mapped label names its team). */
+export function soulTeams(v) {
+  if (!Array.isArray(v) || v.length > 64) return null;
+  const out = [];
+  for (const t of v) {
+    if (!record(t) || !label(t.label) || typeof t.mapped !== 'boolean' || (t.mapped ? !text(t.team) : t.team !== null)) return null;
+    out.push({ label: t.label, team: t.team, mapped: t.mapped });
+  }
+  return new Set(out.map(t => t.label)).size === out.length ? out : null;
+}
 /** How a joined team's mail reaches the instance — never implying live delivery for a poll team. */
 export function receiveText(receive) {
   if (receive === 'poll') return "checks this team's mail between tasks";

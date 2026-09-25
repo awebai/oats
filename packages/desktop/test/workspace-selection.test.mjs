@@ -224,3 +224,21 @@ test('current roster rejection still reports failure and a current pending home 
   assert.deepEqual(u.inspections().map(call => call.body.selector), [{ home: home.home }]);
   assert.equal(u.doc.querySelector('.inspector-head h2').textContent, 'dev-seat');
 });
+
+test('F7: an instance\'s "Open soul" selects the exact roster soul it was spawned from (twins by agentsRoot are not confused); a miss is said', async t => {
+  const u = await setup(t);
+  spawn.preselectHome(home); await tick(); await tick();
+  const open = u.doc.querySelector('.inspector-spawned button');
+  assert.ok(open, 'the instance names its soul with Open soul');
+  open.click(); await tick(); await tick();
+  assert.deepEqual(u.inspections().at(-1).body.selector, { soul: 'dev', agentsRoot: '/b/agents' }, 'the /b twin, not /a');
+  assert.equal(u.doc.querySelector('.soul-inspector h2')?.textContent, 'dev');
+  assert.equal(u.doc.querySelector('.inspector-spawned'), null, 'now the soul, not the instance');
+  // the roster no longer carries it: nothing opens, and the inspector says why
+  spawn.preselectHome(home); await tick(); await tick();
+  u.setAgents([soul()]); u.poll(); await tick(); await tick();
+  const before = u.inspections().length;
+  u.doc.querySelector('.inspector-spawned button').click(); await tick();
+  assert.equal(u.inspections().length, before);
+  assert.equal(u.doc.querySelector('.inspector-status').textContent, "dev is not in this workspace's souls.");
+});

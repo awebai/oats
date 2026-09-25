@@ -204,6 +204,11 @@ ${spawnDialogCSS}</style>
   s.presentation?.setPresent(false); // no selected content at mount
   s.inspector = createSoulInspector(inspectorElement, {
     ctx, presentation: s.presentation, launch: agent => { if (cliAvailable()) openSpawnModal(s, agent); },
+    openSoul: ref => {
+      const matches = s.souls.agents.filter(x => x.name === ref.name && x.agentsRoot === ref.agentsRoot && (x.server || null) === (ref.server || null));
+      if (matches.length !== 1) return false;
+      inspectSoul(s, matches[0]); return true;
+    },
     canLaunch: agent => canLaunchSoul(s, agent),
     launchReason: () => cliProbePending() ? "Checking for a compatible oats CLI — spawning enables once it is verified" : "Requires a compatible installed OATS CLI and a current standalone soul.",
     available: () => cliAvailable() && inspectSupported(cliStatus()),

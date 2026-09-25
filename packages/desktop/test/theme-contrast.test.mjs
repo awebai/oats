@@ -21,6 +21,9 @@ import { createReadinessView, readinessCSS } from '../renderer/readiness-view.mj
 import { cli as readinessCli, workspace as readinessWorkspace, selector as readinessSelector, view as readinessView, data as readinessFixture } from './helpers/readiness-fixture.mjs';
 import { instance as lifeInstance, target as lifeTarget, stopPlan as stopFixture, retirePlan as retireFixture } from './helpers/lifecycle-fixture.mjs';
 import { createSchedulesView } from '../renderer/views/schedules.mjs';
+import { createSoulInspector, inspectorCSS } from '../renderer/soul-inspector.mjs';
+import { readinessCSS as readinessViewCSS } from '../renderer/readiness-view.mjs';
+import { createInstanceGitPanel } from '../renderer/instance-git.mjs';
 import { setWorkspace } from '../renderer/views/common.mjs';
 import { scheduleReadData } from '../renderer/schedule-read-data.mjs';
 import { cli as scheduleCli, scope as scheduleScope, data as scheduleData, entry as scheduleEntry } from './helpers/schedule-read-fixture.mjs';
@@ -545,5 +548,51 @@ test("every full-screen modal backdrop uses the shared scrim token, and each the
   for (const theme of ["dark", "light", "solarized"]) {
     const start = css.indexOf(`[data-theme="${theme}"] {`); assert.ok(start >= 0, theme);
     assert.match(css.slice(start, css.indexOf("}", start)), /--scrim:\s*rgb\(/, theme);
+  }
+});
+
+// F7 side panels: the Workspace inspector's cards/lists, the soul's read-only
+// teams, the instance Teams card, compact readiness, the context panel's path
+// line and the Git sentence-with-details — mounted from the kernel capture.
+const f7 = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/f7/${name}.json`, import.meta.url), 'utf8')).result;
+for (const [name] of palettes) test(`${name}: F7 inspector cards, teams, compact readiness, path line and Git details meet computed AA`, async t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"><aside class="soul-inspector"></aside><aside class="soul-inspector" id="home"></aside></div><div id="context-panel"></div></body></html>`, { pretendToBeVisual: true });
+  const doc = dom.window.document;
+  for (const source of [css, inspectorCSS, readinessViewCSS, contextPanelCSS, instanceGitCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  setWorkspace('/team');
+  const soul = f7('inspect-soul'), home = f7('inspect-home'), teams = f7('teams-initial'), agentsRoot = '/fixture/base/northwind-workspace/agents';
+  const [soulHost, homeHost] = doc.querySelectorAll('aside');
+  const a = createSoulInspector(soulHost, { ctx: { api: async () => structuredClone(soul) } });
+  const b = createSoulInspector(homeHost, { openSoul: () => true, ctx: { api: async (url, opts) => JSON.parse(opts.body).action === 'inspect' ? structuredClone(home) : structuredClone(teams) } });
+  const panel = createContextPanel({ document: doc });
+  panel.setContext({ workspace: 'team', key: 'key', instance: { instance: 'dev-1', agent: 'dev', agentsRoot: '/team/agents', home: '/team/agents/dev/instances/dev-1' } });
+  const git = createInstanceGitPanel(doc.querySelector('#context-panel'), { request: async () => ({}) });
+  t.after(() => { a.dispose(); b.dispose(); panel.dispose(); git.dispose?.(); dom.window.close(); });
+  await a.show({ agent: { name: 'release-manager', agentsRoot, description: 'Ships the releases.' }, selector: { soul: 'release-manager', agentsRoot } });
+  await b.show({ instance: { instance: home.subject.instance, agentsRoot, home: home.subject.home }, selector: { home: home.subject.home } });
+  for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve));
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  const checks = [
+    ['.inspector-lede', '.soul-inspector', 'fg', 'surface'],
+    ['.inspector-list .inspector-item-name', '.inspector-list', 'fg', 'surface'],
+    ['.inspector-list .inspector-item-meta', '.inspector-list', 'muted', 'surface'],
+    ['.inspector-list .inspector-badge', '.inspector-list', 'muted', 'surface'],
+    ['.inspector-cap-row details > summary', '.inspector-list', 'muted', 'surface'],
+    ['.inspector-disclosure > summary', '.soul-inspector', 'muted', 'surface'],
+    ['.readiness-more > summary', '.soul-inspector', 'muted', 'surface'],
+    ['#home .teams-card .team-name', '#home .teams-card', 'fg', 'surface'],
+    ['#home .teams-card .team-meta', '#home .teams-card', 'muted', 'surface'],
+    ['#home .teams-card .team-badge', '#home .teams-card', 'muted', 'surface'],
+    ['#home .inspector-spawned button', '#home .inspector-spawned button', 'fg', 'surface'],
+    ['#context-panel .context-panel-path', '#context-panel', 'muted', 'surface'],
+    ['#context-panel .context-panel-copy', '#context-panel .context-panel-copy', 'fg', 'surface'],
+  ];
+  checks.push(['.git-status-details > summary', '#context-panel', 'muted', 'surface']);
+  for (const [selector, painted, fg, bg] of checks) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.equal(dom.window.getComputedStyle(surface).background.replace(/^.*(var\(--[\w-]+\)).*$/, '$1'), `var(--${bg})`, painted);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
   }
 });

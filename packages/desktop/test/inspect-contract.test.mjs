@@ -68,7 +68,7 @@ test('the inspector renders a soul and a home from the capture, read-only, with 
   const v = structuredClone(soul); v.problems = [{ code: 'E_EXAMPLE_PROBLEM', message: 'The kernel could not read one declaration.' }];
   const s = await rendered(t, { ...soulSelection, selector: { soul: 'release-manager', agentsRoot: soulSelection.agent.agentsRoot } }, v);
   const text = s.textContent;
-  assert.match(text, /What a spawn of this soul resolves now/); assert.match(text, /member agents @ [0-9a-f]{7}/); assert.match(text, /Chosen at spawn/);
+  assert.match(text, /When spawned/); assert.match(text, /member agents @ [0-9a-f]{7}/); assert.match(text, /Chosen at spawn/);
   assert.match(text, /Capabilities · 5/); assert.match(text, /package oats\.okf 2\.1\.3 @ [0-9a-f]{7}/);
   const problem = s.querySelector('.inspector-problem');
   assert.equal(problem.querySelector('p').textContent, 'The kernel could not read one declaration.');

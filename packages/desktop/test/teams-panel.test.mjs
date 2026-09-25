@@ -92,7 +92,7 @@ test('the teams document is decoded strictly: exactly the contract fields, bound
 test('an instance shows its teams: personal always on (no Leave), eligible with Join, unmapped unavailable; one control per verb', async t => {
   const u = await mount(t, captured());
   assert.deepEqual(u.runs(), [{ action: 'run', selector: { home: HOME }, operation: 'messaging:teams' }]);
-  assert.equal(u.panel().querySelector('h3').textContent, 'Teams');
+  assert.equal(u.panel().previousElementSibling.textContent, 'Teams', 'the inspector labels the section'); assert.equal(u.panel().querySelector('h3'), null);
   const personal = u.row('personal');
   assert.match(personal.textContent, /Personal team.*personal:northwind:alice.*Always on/s); assert.equal(personal.querySelector('.team-badge').title, "The personal team can't be left.");
   assert.equal(personal.querySelector('button'), null, 'the personal team has no Leave');
@@ -167,7 +167,7 @@ test('the not-eligible refusal names the eligible labels (captured) and is shown
 test('states: not supported, unavailable, eligible none, unreadable and a failed read with Retry', async t => {
   const without = inspection(); without.capabilities.find(c => c.layer === 'messaging').operations = [];
   const a = await mount(t, () => assert.fail('no run'), { inspect: without });
-  assert.equal(a.panel().textContent, 'TeamsNot supported by this messaging provider.'); assert.equal(a.runs().length, 0);
+  assert.equal(a.panel().textContent, 'Not supported by this messaging provider.'); assert.equal(a.runs().length, 0);
   const none = inspection(); for (const c of none.capabilities) if (c.layer === 'messaging') c.layer = null;
   const b = await mount(t, () => assert.fail('no run'), { inspect: none });
   assert.equal(b.panel(), null, 'no messaging provider: no Teams section');

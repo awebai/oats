@@ -9,8 +9,9 @@ import { createReadinessView, readinessCSS } from './readiness-view.mjs';
 import { cliStatus } from './views/cli-status.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { soulRepository } from './soul-repository.mjs';
-import { inspectData, inspectFacts } from './inspect-contract.mjs';
-import { createTeamsPanel, teamsOperations, teamsCSS } from './teams-panel.mjs';
+import { inspectData, inspectFacts, originText } from './inspect-contract.mjs';
+import { createTeamsPanel, teamsOperations, teamsCSS, soulTeams } from './teams-panel.mjs';
+import { ageText } from './age-text.mjs';
 
 
 export const inspectorCSS = `
@@ -50,6 +51,21 @@ ${teamsCSS}
 .inspector-status { min-height:1.5em; font-size:13px; color:var(--muted); white-space:pre-wrap; }
 .inspector-status:empty { min-height:0; margin:0; }
 .inspector-status.error { color:var(--danger); }
+/* F7: cards and compact lists (the spawn modal / context panel language); tokens only. */
+.inspector-content h3.inspector-section { margin:20px 0 8px; color:var(--muted); }
+.inspector-lede { margin:6px 0 0; font-size:12.5px; line-height:1.5; color:var(--fg); }
+.inspector-card { border:1px solid var(--border); border-radius:8px; background:var(--surface); padding:10px 12px; }
+.inspector-card .inspector-facts { font-size:12px; }
+.inspector-list { border:1px solid var(--border); border-radius:8px; background:var(--surface); overflow:hidden; }
+.inspector-item { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:12px; row-gap:4px; align-items:center; padding:9px 12px; }
+.inspector-item + .inspector-item { border-top:1px solid var(--border); }
+.inspector-item-name { font-size:12.5px; font-weight:650; color:var(--fg); overflow-wrap:anywhere; }
+.inspector-item-meta { font-size:11.5px; color:var(--muted); overflow-wrap:anywhere; }
+.inspector-item > details { grid-column:1 / -1; font-size:12px; }
+.inspector-item > details > summary, .inspector-disclosure > summary { cursor:pointer; color:var(--muted); font-size:12px; }
+.inspector-item > .team-badge, .inspector-badge { font-size:11px; font-weight:650; line-height:1; color:var(--muted); border:1px solid var(--border); border-radius:999px; padding:4px 8px; white-space:nowrap; }
+.inspector-disclosure { margin-top:14px; }
+.inspector-spawned { display:flex; align-items:center; gap:12px; justify-content:space-between; }
 @container(max-width:700px) {
  .souls-body, .souls-body.inspecting { display:block; overflow:auto; }
  .workspace-main { height:auto; }
@@ -60,7 +76,7 @@ ${teamsCSS}
 
 /** presentation is an optional host lease. Presence belongs to this controller;
  * effective visibility/collapse belongs to the host, not request completions. */
-export function createSoulInspector(container, { ctx, presentation, launch, schedule, files, canFiles = () => false, canLaunch = () => true, launchReason = () => 'Requires a compatible installed OATS CLI.', available = () => true, instances = () => [], workspace = () => null, closed }) {
+export function createSoulInspector(container, { ctx, presentation, openSoul = null, launch, schedule, files, canFiles = () => false, canLaunch = () => true, launchReason = () => 'Requires a compatible installed OATS CLI.', available = () => true, instances = () => [], workspace = () => null, closed }) {
   const doc = container.ownerDocument;
   let alive = true, serial = 0, operationSerial = 0, selectionGen = null, selection, data, teamsPanel = null;
   const pendingOperations = new WeakMap();
@@ -103,9 +119,11 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
     head.append(heading, button('Refresh', () => show(selection)), closeControl);
     summary = node('div', undefined, 'inspector-summary');
     status = node('p', '', 'inspector-status'); status.setAttribute('role', 'status');
-    content = node('div', undefined, 'inspector-content'); container.append(head, summary, status, content);
-    const readinessHost = node('div', undefined, 'inspector-content'); container.append(readinessHost);
-    readiness = createReadinessView(readinessHost, { ctx }); syncReadiness();
+    content = node('div', undefined, 'inspector-content');
+    // Readiness is a first question ("can it run?"): one line under the summary, its checks behind a disclosure.
+    const readinessHost = node('div', undefined, 'inspector-content inspector-readiness');
+    container.append(head, summary, status, readinessHost, content);
+    readiness = createReadinessView(readinessHost, { ctx, compact: true }); syncReadiness();
     if (selection.agent) renderSelectedSoul();
   }
   // Resets are silent by default: workspace/subtab/disposal must not focus an
@@ -130,7 +148,12 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
       const result = await request({ action: 'inspect', selector: next.selector });
       if (!valid(id, gen)) return;
       data = result; message(''); render();
-    } catch (error) { if (valid(id, gen)) message(`${error.code ? `${error.code}: ` : ''}${error.message || 'Inspection failed. Refresh to retry.'}`, true); }
+    } catch (error) {
+      // One plain sentence (the kernel's), the code behind Details — e.g. E_TEAM_CONFLICT names the two labels.
+      if (!valid(id, gen)) return;
+      message(error.message || 'Inspection failed. Refresh to retry.', true);
+      if (error.code) { const more = node('details', undefined, 'inspector-problem-code'); more.append(node('summary', 'Details'), node('p', error.code, 'muted')); content.append(more); }
+    }
   }
   function facts(entries, parent = content) {
     const dl = node('dl', undefined, 'inspector-facts');
@@ -165,21 +188,66 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
     if (inspected.subject.kind === 'instance') {
       summary.replaceChildren();
       content.append(node('p', 'As spawned: an instance never changes under itself. A newer soul or module needs a new instance.', 'muted'));
-      content.append(node('h3', 'Instance')); facts(inspectFacts.instance(inspected.instance));
-      instructions(inspected.instance.instructions, 'Instructions are truncated here.');
-      // Team controls: only when the home's messaging provider declares them.
+      // Teams first (join/leave), then the instance, the soul it came from, and the as-spawned detail.
       const teams = teamsOperations(inspected);
       if (teams) {
-        const id = serial, gen = selectionGen;
-        teamsPanel = createTeamsPanel(content, { operations: teams, selector: selection.selector, request, owns: () => valid(id, gen) && selectionGen === workspaceGeneration(), available });
+        section('Teams'); const id = serial, gen = selectionGen;
+        teamsPanel = createTeamsPanel(content, { operations: teams, selector: selection.selector, request, heading: false,
+          owns: () => valid(id, gen) && selectionGen === workspaceGeneration(), available });
       }
-      if (soul) renderSoul(soul, false);
+      section('Instance'); card(instanceFacts(inspected.instance));
+      if (soul) spawnedFrom(soul);
+      instructions(inspected.instance.instructions, 'Instructions are truncated here.');
+      renderCapabilities(inspected, { collapsed: true });
     } else if (soul) {
-      content.append(node('p', 'What a spawn of this soul resolves now.', 'muted'));
-      renderSoul(soul, true);
+      renderSoulTeams(inspected);
+      section('When spawned'); card(inspectFacts.soul(soul).filter(([key]) => key !== 'Team'));
+      renderCapabilities(inspected);
+      const declared = node('details', undefined, 'inspector-disclosure'); declared.append(node('summary', 'Declared in soul.yaml'));
+      renderSoulDeclarations(declared, soul, { heading: false }); content.append(declared);
+      instructions(soul.instructions, 'Instructions are truncated here. The full document is in the soul\'s repository.');
     } else content.append(node('p', 'The kernel did not report this soul. Refresh to retry.', 'muted'));
-    renderCapabilities(inspected);
     renderOperations(inspected);
+  }
+  function section(title) { const h = node('h3', title, 'inspector-section'); content.append(h); return h; }
+  function card(entries, parent = content) { const box = node('div', undefined, 'inspector-card'); facts(entries, box); parent.append(box); return box; }
+  const item = (name, meta, side) => {
+    const el = node('div', undefined, 'inspector-item'), main = node('div');
+    main.append(node('div', name, 'inspector-item-name')); for (const m of meta) if (m) main.append(node('div', m, 'inspector-item-meta'));
+    el.append(main); if (side) el.append(side); return el;
+  };
+  const badge = (text, title) => { const b = node('span', text, 'inspector-badge'); if (title) b.title = title; return b; };
+  // Created as a relative age; the exact value and the resolution stay reachable.
+  function instanceFacts(instance) {
+    return inspectFacts.instance(instance).map(([key, value]) => key === 'Created' && instance.createdAt ? [key, `${ageText(instance.createdAt)}`] : [key, value]);
+  }
+  function spawnedFrom(soul) {
+    const box = node('div', undefined, 'inspector-card inspector-spawned');
+    const commit = typeof soul.commit === 'string' && soul.commit ? ` @ ${soul.commit.slice(0, 7)}` : '';
+    box.append(node('span', `Spawned from ${soul.name}${commit}`));
+    // The host resolves the soul in its roster (exact identity) and selects it; a miss is said, not silent.
+    const ref = { name: soul.name, agentsRoot: selection.instance?.agentsRoot, server: selection.instance?.server ?? null };
+    if (typeof openSoul === 'function' && ref.name && ref.agentsRoot) {
+      const id = serial, gen = selectionGen;
+      const open = button('Open soul', () => {
+        if (!valid(id, gen) || !open.isConnected) return;
+        if (openSoul(ref) !== true) message(`${ref.name} is not in this workspace's souls.`);
+      });
+      open.title = 'Inspect the soul this instance was spawned from'; box.append(open);
+    }
+    content.append(box);
+  }
+  // The soul's teams (kernel `teams`): which its instances may join; joining is per instance.
+  function renderSoulTeams(inspected) {
+    const teams = soulTeams(inspected.teams);
+    if (!teams) return;
+    section('Teams');
+    content.append(node('p', teams.length ? "Its instances start in their person's personal team only. They can join these teams:" : 'Personal team only: the soul names no wider team.', 'muted'));
+    if (!teams.length) return;
+    const list = node('div', undefined, 'inspector-list');
+    teams.forEach((t, index) => list.append(item(index === 0 ? `${t.label} · primary` : t.label,
+      [t.mapped ? t.team : 'Not mapped by this workspace'], t.mapped ? badge('Joinable') : badge('Unavailable', "The workspace does not map this team, so it can't be joined."))));
+    content.append(list);
   }
   // Roster-owned actions do not depend on operationsApi, inspect success, or
   // an editable soul record. Keep their DOM stable while inspection settles.
@@ -199,7 +267,10 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
     summary.append(actions); syncAvailability();
     const homes = instances(agent);
     const roster = node('div', undefined, 'inspector-content');
-    facts([['Reported runtime', agent.runtime], ['Source', agent.repoName || agent.workspace], ['Description', agent.description]], roster);
+    // Only what the roster reported: the description as a lede, then source and runtime when known.
+    if (agent.description) roster.append(node('p', agent.description, 'inspector-lede'));
+    const known = [['Source', agent.repoName || agent.workspace], ['Runtime', agent.runtime]].filter(([, v]) => typeof v === 'string' && v);
+    if (known.length) facts(known, roster);
     renderRepository(agent, roster, id, gen);
     roster.append(node('h3', `Instances · ${homes.length}`));
     if (!homes.length) roster.append(node('p', 'No instances reported for this soul.', 'muted'));
@@ -229,24 +300,23 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
     }
     parent.append(block);
   }
-  function renderSoul(soul, withInstructions) {
-    content.append(node('h3', 'Soul')); facts(inspectFacts.soul(soul));
-    renderSoulDeclarations(content, soul);
-    if (withInstructions) instructions(soul.instructions, 'Instructions are truncated here. The full document is in the soul\'s repository.');
-  }
-  function renderCapabilities(inspected) {
-    content.append(node('h3', 'Effective providers'));
-    facts(inspectFacts.layers(inspected.layers));
-    content.append(node('h3', `Capabilities · ${inspected.capabilities.length}`));
-    if (!inspected.capabilities.length) content.append(node('p', 'No capabilities resolved.', 'muted'));
+  function renderCapabilities(inspected, { collapsed = false } = {}) {
+    let host = content;
+    if (collapsed) { host = node('details', undefined, 'inspector-disclosure'); host.append(node('summary', `Modules as spawned · ${inspected.capabilities.length}`)); content.append(host); }
+    host.append(node('h3', 'Effective providers', 'inspector-section'));
+    card(inspectFacts.layers(inspected.layers), host);
+    host.append(node('h3', `Capabilities · ${inspected.capabilities.length}`, 'inspector-section'));
+    if (!inspected.capabilities.length) { host.append(node('p', 'No capabilities resolved.', 'muted')); return; }
+    const list = node('div', undefined, 'inspector-list');
     for (const cap of inspected.capabilities) {
-      const card = node('section', undefined, 'inspector-cap'); card.append(node('h4', cap.id));
-      facts(inspectFacts.capability(cap), card);
-      if (cap.settings && typeof cap.settings === 'object' && Object.keys(cap.settings).length) {
-        const settings = node('details'); settings.append(node('summary', 'Settings'), node('pre', JSON.stringify(cap.settings, null, 2))); card.append(settings);
-      }
-      content.append(card);
+      const missing = Array.isArray(cap.missingRequires) && cap.missingRequires.length ? `Missing: ${cap.missingRequires.join(', ')}` : '';
+      const row = item(cap.id, [[cap.version, cap.layer ? `${cap.layer} provider` : '', originText(cap.from)].filter(Boolean).join(' · '), missing]);
+      row.classList.add('inspector-cap-row');
+      const more = node('details'); more.append(node('summary', 'Details')); facts(inspectFacts.capability(cap), more);
+      if (cap.settings && typeof cap.settings === 'object' && Object.keys(cap.settings).length) more.append(node('pre', JSON.stringify(cap.settings, null, 2)));
+      row.append(more); list.append(row);
     }
+    host.append(list);
   }
   function renderOperations(inspected) {
     const id = serial, gen = selectionGen;

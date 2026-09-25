@@ -1,0 +1,377 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "operationsApi": 2,
+    "kernel": "0.25.9",
+    "subject": {
+      "kind": "instance",
+      "instance": "release-manager-teams",
+      "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams",
+      "soul": "release-manager"
+    },
+    "workspace": {
+      "key": "local//fixture/base/fx/remotes/agents.git",
+      "name": "northwind",
+      "deployment": "/fixture/base/northwind-workspace",
+      "commit": "038f8665e7b7c2ecd36e9c27e5ed76aca3f98473",
+      "standalone": false
+    },
+    "souls": [
+      {
+        "soulsApi": 2,
+        "name": "release-manager",
+        "repoKey": "local//fixture/base/fx/remotes/agents.git",
+        "commit": "038f8665e7b7c2ecd36e9c27e5ed76aca3f98473",
+        "team": "engineering",
+        "kind": null,
+        "path": null,
+        "description": "Cuts, verifies and announces platform releases.",
+        "work": "worktree",
+        "runtime": null,
+        "model": null,
+        "declarations": {
+          "requires": null,
+          "defaults": null,
+          "knowledge": {
+            "owns": "release-manager",
+            "reads": [
+              "platform-engineer",
+              "data-analyst"
+            ]
+          },
+          "teams": null,
+          "resources": null,
+          "children": null,
+          "capabilities": {
+            "nw-release-tooling": {
+              "from": "here"
+            },
+            "nw-deploy": {
+              "from": "package"
+            }
+          }
+        },
+        "declarationProblems": [],
+        "instructions": {
+          "file": "/fixture/base/northwind-workspace/agents/release-manager/souls/038f8665e7b7/AGENTS.md",
+          "text": "# release-manager\n\nYou cut, verify and announce platform releases for Northwind.\n",
+          "truncated": false
+        }
+      }
+    ],
+    "layers": {
+      "knowledge": {
+        "id": "oats.okf"
+      },
+      "messaging": {
+        "id": "nw.teams"
+      },
+      "tasks": {
+        "id": null
+      }
+    },
+    "capabilities": [
+      {
+        "id": "nw-deploy",
+        "version": "0.4.0",
+        "layer": null,
+        "command": null,
+        "from": {
+          "kind": "package",
+          "package": "nw.tools",
+          "version": "0.4.0",
+          "commit": "84502af2cf93fb99e4373827843ce59061c98f50",
+          "integrity": "sha256-4a0ee48230d65cc6c0b9d0c9a3883e64182cfc7b2410e4f5839bacf551fcf1cf",
+          "repoKey": "local//fixture/base/fx/remotes/nw-tools.git"
+        },
+        "dir": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/nw-deploy",
+        "settings": {},
+        "missingRequires": [],
+        "operations": []
+      },
+      {
+        "id": "nw-house-style",
+        "version": "0.0.0-workspace",
+        "layer": null,
+        "command": null,
+        "from": {
+          "kind": "member",
+          "repoKey": "local//fixture/base/fx/remotes/agents.git",
+          "commit": "038f8665e7b7c2ecd36e9c27e5ed76aca3f98473"
+        },
+        "dir": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/nw-house-style",
+        "settings": {},
+        "missingRequires": [],
+        "operations": []
+      },
+      {
+        "id": "nw-release-tooling",
+        "version": "0.0.0-workspace",
+        "layer": null,
+        "command": null,
+        "from": {
+          "kind": "member",
+          "repoKey": "local//fixture/base/fx/remotes/agents.git",
+          "commit": "038f8665e7b7c2ecd36e9c27e5ed76aca3f98473"
+        },
+        "dir": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/nw-release-tooling",
+        "settings": {},
+        "missingRequires": [],
+        "operations": []
+      },
+      {
+        "id": "nw.teams",
+        "version": "0.1.0",
+        "layer": "messaging",
+        "command": null,
+        "from": {
+          "kind": "package",
+          "package": "nw.teams",
+          "version": "0.1.0",
+          "commit": "e092ebe68609584faac25408b912e7931ea681d5",
+          "integrity": "sha256-fcbce78fa3db67ea5601c5647bea41ef9c240af42d6bb59a61f0c23af39870b1",
+          "repoKey": "local//fixture/base/fx/remotes/pkg-teams.git"
+        },
+        "dir": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/nw.teams",
+        "settings": {
+          "private": "per-human",
+          "channels": [
+            "northwind-eng"
+          ],
+          "team": "northwind:eng",
+          "join": "engineering"
+        },
+        "missingRequires": [],
+        "operations": [
+          {
+            "name": "teams",
+            "kind": "action",
+            "command": "teams",
+            "context": "home",
+            "description": "This instance's teams: personal, eligible and joined",
+            "args": [],
+            "argv": [
+              null,
+              "teams"
+            ],
+            "available": true,
+            "reason": null
+          },
+          {
+            "name": "join",
+            "kind": "action",
+            "command": "join",
+            "context": "home",
+            "description": "Join eligible teams",
+            "args": [
+              {
+                "name": "labels",
+                "flag": "--labels",
+                "required": true,
+                "description": "Comma-separated eligible team labels"
+              }
+            ],
+            "argv": [
+              null,
+              "join"
+            ],
+            "available": true,
+            "reason": null
+          },
+          {
+            "name": "leave",
+            "kind": "action",
+            "command": "leave",
+            "context": "home",
+            "description": "Leave joined teams",
+            "args": [
+              {
+                "name": "labels",
+                "flag": "--labels",
+                "required": true,
+                "description": "Comma-separated joined team labels"
+              }
+            ],
+            "argv": [
+              null,
+              "leave"
+            ],
+            "available": true,
+            "reason": null
+          }
+        ]
+      },
+      {
+        "id": "oats.core",
+        "version": "1.0.1",
+        "layer": null,
+        "command": null,
+        "from": {
+          "kind": "package",
+          "package": "oats.framework",
+          "version": "1.1.3",
+          "commit": "b80344dcafd4b614e58bb8dc5d766eca9ea0403c",
+          "integrity": "sha256-8f69a58cef42b8b3a1ab3edbd5eeb15793acb7ed5f23b4604bcf3b8303bc3903",
+          "repoKey": "local//fixture/base/fx/remotes/pkg-framework.git"
+        },
+        "dir": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/oats.core",
+        "settings": {},
+        "missingRequires": [],
+        "operations": []
+      },
+      {
+        "id": "oats.okf",
+        "version": "2.1.3",
+        "layer": "knowledge",
+        "command": "okf",
+        "from": {
+          "kind": "package",
+          "package": "oats.okf",
+          "version": "2.1.3",
+          "commit": "6c9742aa531b9be30fcb5fe8753c456b5a64f910",
+          "integrity": "sha256-8df2d930614743f3b973e405461aa4d73fc40dc6a5887ff32a177f8d59e244cb",
+          "repoKey": "local//fixture/base/fx/remotes/pkg-okf.git"
+        },
+        "dir": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/oats.okf",
+        "settings": {
+          "harvest-runtime": "pi",
+          "owns": "release-manager",
+          "reads": [
+            "platform-engineer",
+            "data-analyst"
+          ]
+        },
+        "missingRequires": [],
+        "operations": [
+          {
+            "name": "status",
+            "kind": "view",
+            "command": "status",
+            "context": "home",
+            "description": "This instance's knowledge status",
+            "args": [],
+            "argv": [
+              "okf",
+              "status"
+            ],
+            "available": true,
+            "reason": null
+          },
+          {
+            "name": "reindex",
+            "kind": "action",
+            "command": "reindex",
+            "context": "home",
+            "description": "Rebuild this instance's knowledge index",
+            "args": [
+              {
+                "name": "scope",
+                "flag": "--scope",
+                "required": false,
+                "description": "Limit the reindex to one node"
+              }
+            ],
+            "argv": [
+              "okf",
+              "reindex"
+            ],
+            "available": true,
+            "reason": null
+          }
+        ]
+      }
+    ],
+    "teams": [
+      {
+        "label": "engineering",
+        "team": "northwind:eng",
+        "mapped": true,
+        "payload": {
+          "private": "per-human",
+          "channels": [
+            "northwind-eng",
+            "northwind-mkt"
+          ],
+          "team": "northwind:eng"
+        }
+      },
+      {
+        "label": "global",
+        "team": null,
+        "mapped": false,
+        "payload": {
+          "private": "per-human",
+          "channels": [
+            "northwind-eng",
+            "northwind-mkt"
+          ]
+        }
+      }
+    ],
+    "teamsSource": "live",
+    "knowledge": {
+      "provider": "oats.okf",
+      "version": "2.1.3",
+      "operations": [
+        {
+          "name": "status",
+          "kind": "view",
+          "available": true,
+          "reason": null
+        },
+        {
+          "name": "reindex",
+          "kind": "action",
+          "available": true,
+          "reason": null
+        }
+      ]
+    },
+    "instance": {
+      "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams",
+      "instance": "release-manager-teams",
+      "agent": "release-manager",
+      "runtime": "pi",
+      "model": null,
+      "yolo": null,
+      "launched": false,
+      "createdAt": "2026-09-25T10:01:45.695Z",
+      "resolution": "c8b282a1986bc2601ee1cff0",
+      "soulDir": "/fixture/base/northwind-workspace/agents/release-manager/souls/038f8665e7b7",
+      "instructions": {
+        "file": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/AGENTS.md",
+        "text": "# release-manager\n\nYou cut, verify and announce platform releases for Northwind.\n\n<!-- oats:kernel:instance-boundary src=/fixture/oats/injects/instance-boundary.md -->\n## Your two directories\n\n**`<instance-home>` is where this session starts** — the specific gitignored OATS\ninstance directory you woke up in, given to your runtime and to every lifecycle\nhook as `$OATS_INSTANCE_HOME`. It is not your user home (`~`), not the repository\nroot, and not the work tree. Anything that says \"your home\" means this directory.\n\n- **Your brain and your state live here**: `AGENTS.md` (your composed\n  instructions), `TASK.md` (this task), `instance.json` (what you were given\n  and from where), and whatever working state your role keeps — your knowledge\n  layer names those files, if you have one. They belong here, not in the work\n  tree.\n- **Run OATS operational/lifecycle commands, and commands from active\n  capabilities, from instance home** — `oats status`, `oats doctor`, `oats spawn`,\n  and whatever your own capabilities add; for example, when the\n  aweb messaging capability is active, run `aw` there too. They resolve their\n  scope from the directory you run them in, so running them from the work tree\n  points them at the wrong deployment. To act on a different package or config\n  scope deliberately, pass an explicit resolved path: `oats <cmd> --dir <path>`.\n- **Soul work is repository work.** If your TASK is to change soul content that\n  lives in this repository, that is ordinary code work — do it on tracked paths\n  under `work/`, reviewed like the rest. How your own learnings reach your soul\n  is your knowledge layer's business, and its instructions below say so if you\n  have one.\n\n**`<instance-home>/work` is your repository or workspace view** — whatever your\nwork mode grants you of the code.\n\n- **Repository work happens there and only there**: reading, editing, building,\n  testing, git and commits, on repository content. Never from the main checkout\n  or from your home root.\n- **What your mode permits is the mode block's call**, immediately below. Some\n  modes are read-only, some share a tree with others, and that block is the\n  authority on which operations are yours to perform.\n- This is about where the *repository's* content lives, not a ban on writing\n  anywhere else: the episodic files above, and whatever artifacts your role\n  calls for (a report written to a temp file before mailing it, a scratch\n  script), go where your task and tooling direct.\n\nMove between the two as the task needs — the boundary is what each directory is\n*for*, not a place to settle in.\n<!-- /oats:kernel:instance-boundary -->\n\n<!-- oats:work-mode:worktree src=/fixture/oats/injects/work-worktree.md -->\n## Work mode: worktree\n\nYour `./work` is a **git worktree on your own branch** — a full checkout that is\nyours alone: build, test and commit there, on your branch.\n\n- **Never run git from the repo's main checkout**: it resolves to the wrong\n  branch and skips review. If unsure, `pwd`.\n- Everything you change happens in `work/` — **including your own soul** when\n  it lives in this repo: soul edits are branch changes, reviewed and merged\n  like code.\n- Don't create extra worktrees; `work/` is your one tree. Parallel work means\n  your human spawns another instance.\n- Leave your branch and the worktree list clean when your task closes.\n<!-- /oats:work-mode:worktree -->\n\n<!-- oats:capability:nw-house-style src=/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/nw-house-style/injects/house-style.md -->\n## House style\n\nShort sentences. Active voice. Name the repo you mean.\n<!-- /oats:capability:nw-house-style -->\n\n<!-- oats:capability:nw-release-tooling src=/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/nw-release-tooling/injects/release-policy.md -->\n## Release policy\n\nEvery release is cut from main, tagged, and announced in #northwind-eng.\n<!-- /oats:capability:nw-release-tooling -->\n\n<!-- oats:capability:oats.core src=/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/oats.core/injects/oats.md -->\n## You run on OATS\n\nYou are an agent instance in the OATS framework (fixture inject).\n<!-- /oats:capability:oats.core -->\n\n<!-- oats:capability:oats.okf src=/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/oats.okf/injects/okf.md -->\n## Knowledge layer: OKF\n\nYour durable knowledge lives in an OKF bundle (fixture inject).\n<!-- /oats:capability:oats.okf -->\n",
+        "truncated": false,
+        "sources": [
+          {
+            "source": "kernel:instance-boundary",
+            "file": "/fixture/oats/injects/instance-boundary.md"
+          },
+          {
+            "source": "work-mode:worktree",
+            "file": "/fixture/oats/injects/work-worktree.md"
+          },
+          {
+            "source": "capability:nw-house-style",
+            "file": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/nw-house-style/injects/house-style.md"
+          },
+          {
+            "source": "capability:nw-release-tooling",
+            "file": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/nw-release-tooling/injects/release-policy.md"
+          },
+          {
+            "source": "capability:oats.core",
+            "file": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/oats.core/injects/oats.md"
+          },
+          {
+            "source": "capability:oats.okf",
+            "file": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/oats.okf/injects/okf.md"
+          }
+        ]
+      }
+    },
+    "identity": null,
+    "problems": []
+  }
+}

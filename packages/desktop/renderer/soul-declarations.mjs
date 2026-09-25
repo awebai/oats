@@ -27,13 +27,13 @@ function builder(parent) {
 }
 
 /** Called only after the inspector's request/selection ownership checks. */
-export function renderSoulDeclarations(parent, soul) {
+export function renderSoulDeclarations(parent, soul, { heading = true } = {}) {
   if (soul?.soulsApi !== 2) return false;
   const { node } = builder(parent);
   const section = node('section', undefined, 'soul-declarations');
   section.setAttribute('aria-label', 'Soul declarations');
   parent.append(section);
-  section.append(node('h3', 'Declarations'));
+  if (heading) section.append(node('h3', 'Declarations'));
   const problems = soul.declarationProblems;
   const complete = Array.isArray(problems) && problems.length === 0;
   if (!Array.isArray(problems)) section.append(node('p', 'Declaration diagnostics not reported.', 'declaration-note'));
