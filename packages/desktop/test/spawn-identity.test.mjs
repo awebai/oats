@@ -171,7 +171,6 @@ test('without settings-origins the Default option asserts no mode, even when the
 });
 test('another origin is named as the kernel reports it; an unknown kind is shown as sent', async t => {
   for (const [kind, at, label, hint] of [['soul', 'soul.yaml#/messaging', 'Default · local — from the soul', 'Set by the soul (soul.yaml#/messaging).'],
-    ['workspace-team', 'oats-workspace.yaml#/teams/eng', "Default · local — from the workspace's team settings", "Set by the workspace's team settings (oats-workspace.yaml#/teams/eng)."],
     ['future-layer', 'somewhere.yaml#/x', 'Default · local — from future-layer', 'Set by future-layer (somewhere.yaml#/x).']]) {
     const variant = () => { const d = f3c('preview-messaging-default'); d.result.settingsOrigins['nw.messaging']['/identity/mode'] = { kind, at }; return d; };
     const u = await dialog(t, { cli: ORIGINS_CLI(), kernel: (_c, { choices }) => choices.identity ? f3c(previewFor(choices)) : variant() });

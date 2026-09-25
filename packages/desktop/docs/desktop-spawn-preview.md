@@ -84,7 +84,7 @@ binding (top-level facts cross-checked against `decision.effective`),
 the identity `decision.effective.providers[<cap>]` binds, which must equal the
 preview's `settings[<cap>]`, and where its mode came from
 (`settingsOrigins[<cap>]['/identity/mode']`: `manifest-default` | `workspace` |
-`workspace-team` | `soul` | `host` | `spawn`, or a newer kind shown as sent).
+`soul` | `host` | `spawn`, or a newer kind shown as sent).
 The dialog's identity **Default** option shows a mode only when the kernel
 reported it: with feature `settings-origins`, `Default · <mode>` for a
 manifest default and `Default · <mode> — from <origin>` otherwise (the hint

@@ -10,6 +10,8 @@ import { JSDOM } from 'jsdom';
 import { createSoulInspector } from '../renderer/soul-inspector.mjs';
 import { soulTeams } from '../renderer/teams-panel.mjs';
 import { setWorkspace, currentWorkspace } from '../renderer/views/common.mjs';
+import { refreshCli, resetCliStateForTests } from '../renderer/views/cli-status.mjs';
+import { layerFrom } from '../renderer/inspect-contract.mjs';
 
 const doc = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/f7/${name}.json`, import.meta.url), 'utf8'));
 const soul = doc('inspect-soul').result, home = doc('inspect-home').result, teamsRun = doc('teams-initial').result;
@@ -159,4 +161,24 @@ test('E_TEAM_CONFLICT in the inspector: the sentence, the two labels, the code b
     const v = await rendered(t, soulSelection, make(labels));
     assert.equal(v.el.querySelector('.inspector-conflict-labels'), null, JSON.stringify(labels));
   }
+});
+
+test('Core capabilities name where each provider came from, only with feature layers-from (kernel #191, captured)', async t => {
+  assert.deepEqual(soul.layers.knowledge, { id: 'oats.okf', from: 'workspace' }, 'the capture');
+  assert.deepEqual(home.layers.messaging, { id: 'nw.teams', from: 'workspace' }, 'a home answers what its spawn recorded');
+  // The contract's values in words; a home from before layers-from (null) and junk name nothing; a newer kind is shown as sent.
+  assert.deepEqual(['soul', 'workspace', 'team:engineering', 'someday', null, 7, ''].map(layerFrom),
+    ["the soul's own choice", 'workspace default', 'team engineering default', 'someday', null, null, null]);
+  const core = el => {
+    const head = [...el.querySelectorAll('h3.inspector-section')].find(h => h.textContent === 'Core capabilities');
+    return Object.fromEntries([...head.nextElementSibling.querySelectorAll('dt')].map(dt => [dt.textContent, dt.nextElementSibling.textContent]));
+  };
+  t.after(() => resetCliStateForTests());
+  await refreshCli({ api: async () => ({ ...doc('version'), ok: true, bin: '/fixture/bin/oats' }) });
+  assert.ok(doc('version').features.includes('layers-from'));
+  const withFrom = await rendered(t, soulSelection, soul);
+  assert.deepEqual(core(withFrom.el), { Knowledge: 'oats.okf · workspace default', Messaging: 'nw.teams · workspace default', Tasks: 'None' });
+  await refreshCli({ api: async () => ({ ...doc('version'), features: doc('version').features.filter(f => f !== 'layers-from'), ok: true, bin: '/fixture/bin/oats' }) });
+  const without = await rendered(t, soulSelection, soul);
+  assert.deepEqual(core(without.el), { Knowledge: 'oats.okf', Messaging: 'nw.teams', Tasks: 'None' }, 'no origin without the feature');
 });

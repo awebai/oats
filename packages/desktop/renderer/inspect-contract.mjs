@@ -39,6 +39,17 @@ export function originText(from) {
   if (from.kind === 'member') return `member ${memberLabel(from.repoKey)}${short(from.commit) ? ` @ ${short(from.commit)}` : ''}`;
   return text(from.kind);
 }
+/** Where a core capability came from (`layers.<layer>.from`, kernel #191):
+ * the soul's own capabilities, the workspace defaults, or a team's defaults. A
+ * home spawned before layers-from recorded none (null); a newer kind is shown as sent. */
+export function layerFrom(from) {
+  if (typeof from !== 'string' || !from || from.length > 120) return null;
+  if (from === 'soul') return "the soul's own choice";
+  if (from === 'workspace') return 'workspace default';
+  const team = /^team:(.+)$/.exec(from);
+  if (team) return `team ${team[1]} default`;
+  return from;
+}
 export const inspectFacts = {
   instance: i => [
     ['Harness', text(i.runtime)], ['Model', text(i.model, 'Harness default')],
@@ -50,6 +61,8 @@ export const inspectFacts = {
     ['Version', text(cap.version)], ['Layer', text(cap.layer, 'None')], ['Origin', originText(cap.from)],
     ['Missing requirements', Array.isArray(cap.missingRequires) && cap.missingRequires.length ? cap.missingRequires.join(', ') : 'None'],
   ],
-  layers: layers => ['knowledge', 'messaging', 'tasks'].map(layer => [layer[0].toUpperCase() + layer.slice(1),
-    !record(layers[layer]) ? 'Not reported' : layers[layer].id || 'None']),
+  // `from` (feature layers-from): where the slot's provider came from; only when the caller gates it on.
+  layers: (layers, { from = false } = {}) => ['knowledge', 'messaging', 'tasks'].map(layer => [layer[0].toUpperCase() + layer.slice(1),
+    !record(layers[layer]) ? 'Not reported' : !layers[layer].id ? 'None'
+      : [layers[layer].id, from ? layerFrom(layers[layer].from) : null].filter(Boolean).join(' · ')]),
 };
