@@ -57,8 +57,17 @@ folded in below.
      last-writer-wins. Identical entries from two labels are not a
      conflict.
 3. **Messaging payload.**
-   - The merged view stays exactly as today, for the **primary** label only:
-     `base ⊕ byTeam[primary]`.
+   - **Amended (K, co-lead ruling on the 1.14.0 review):** the messaging
+     provider's merged settings are `base ⊕ soul ⊕ host ⊕ spawn`, and **no
+     `byTeam[<label>]` is merged into them**, the primary's included. Each
+     label's `base ⊕ byTeam[label]` lives only in its `teams` entry (below).
+     So `settings.team` / `OATS_TEAM_ID` mean "the personal team, if the
+     host, soul or spawn set one"; empty means the provider's own default
+     (for oats.aweb, the root's active team). Reason: the instance is
+     personal-by-default (the human's model), and the primary label is just
+     the first eligible team. Merging its payload made the provider mint the
+     primary identity into the mapped team, and it couldn't tell a host-set
+     personal team from the workspace's mapped one.
    - New and kernel-owned: `teams`, an ordered list of
      `{ label, mapped: boolean, payload }`.
      - `payload` is `base ⊕ byTeam[label]` when the workspace maps the label.
@@ -188,7 +197,12 @@ folded in below.
 
 ## Compatibility
 
-- A single-label soul sees byte-identical composition and merged payload.
+- A single-label soul sees byte-identical **composition** (modules, skills,
+  injects). Its messaging **payload** changes: the mapped label's `byTeam`
+  entry is no longer merged into the provider's settings; it's only in
+  `OATS_TEAMS` (amendment K). With 0.26.0 + oats.aweb 1.13.1, the primary
+  identity therefore mints into the personal (root-active) team, as the
+  human's model wants.
 - oats.aweb 1.13.1 ignores `OATS_TEAMS` and keeps working, because no stdin
   wire changes (its binding decoder refuses unknown request keys).
 - oats.aweb 1.14.0 reads them.
@@ -200,7 +214,8 @@ folded in below.
 - Several labels compose in order; a conflict → `E_TEAM_CONFLICT`. A
   capability the soul names itself is exempt, since the soul's entry wins over
   every label.
-- The primary merged payload is byte-identical to 0.25 for one label.
+- A mapped primary's `byTeam` payload is absent from the provider's merged
+  settings and present in `OATS_TEAMS[0].payload` (amendment K).
 - `OATS_TEAMS` shape: mapped and unmapped labels, and no label → `[]`.
 - Home-context `teams` follows a new workspace commit (a mapping added and
   removed) while the home's modules stay frozen.
