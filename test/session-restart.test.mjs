@@ -386,8 +386,8 @@ test("a captured provider with no contribution at spawn still takes part (launch
   assert.equal(pk(v).ok, true); assert.match(pk(v).detail, /nothing probed|no runtime package requirement/);
   // Spawn (a workspace deployment): the soul declares the provider with an applicable requirement; a new instance under the args configuration is refused before a home exists; with the requirement off (the provider payload), it spawns.
   const fx = v2Deployment({
-    souls: { dev: { soul: { capabilities: { "test-req": { from: "here" } } } } },
-    capabilities: { "test-req": { manifest: { hooks: { launch: "bin/launch.mjs" }, requires: [{ runtime: "claude", package: "chan@acme-marketplace", marketplace: "acme/claude-plugins", when: { mode: "on" } }], settings: { mode: { description: "m" } } },
+    souls: { dev: { soul: { capabilities: { "test.req": { from: "here" } } } } },
+    capabilities: { "test.req": { manifest: { hooks: { launch: "bin/launch.mjs" }, requires: [{ runtime: "claude", package: "chan@acme-marketplace", marketplace: "acme/claude-plugins", when: { mode: "on" } }], settings: { mode: { description: "m" } } },
       files: { "bin/launch.mjs": `process.stdout.write(JSON.stringify({ launch: { claude: "--req-hook" }, env: {} }) + "\\n");\n` } } },
     local: { "launch-configs": { probed: { runtime: "claude", executable: wrapper, args: ["--settings", "/abs/native.json"], env: { TEST_PROBE_TOKEN: "selected" } } } },
   });
@@ -395,7 +395,7 @@ test("a captured provider with no contribution at spawn still takes part (launch
     const saved = { HOME: process.env.HOME, OATS_REMOTE_CACHE: process.env.OATS_REMOTE_CACHE };
     Object.assign(process.env, { HOME: fx.env.HOME, OATS_REMOTE_CACHE: fx.env.OATS_REMOTE_CACHE });
     try {
-      const spawnArgs1 = (mode) => fx.spawn("dev", { instance: "dev-args1", launchConfig: "probed", providers: { "test-req": { mode } } });
+      const spawnArgs1 = (mode) => fx.spawn("dev", { instance: "dev-args1", launchConfig: "probed", providers: { "test.req": { mode } } });
       await assert.rejects(spawnArgs1("on"), (e) => e.code === "E_LAUNCH_PROBE_UNSUPPORTED"); assert.equal(existsSync(join(fx.root, "dev", "instances", "dev-args1")), false);
       assert.ok((await spawnArgs1("off")).home, "with the requirement off, it spawns");
     } finally { for (const [k, v] of Object.entries(saved)) if (v === undefined) delete process.env[k]; else process.env[k] = v; }

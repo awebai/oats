@@ -1,7 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://oats.dev/schemas/oats-config.schema.json",
-  "title": "OATS scoped configuration",
+  "title": "OATS scoped configuration (0.25; removed in 0.26.0)",
+  "description": "REMOVED in 0.26.0. The kernel reads no oats-config.yaml: one found between a command's directory and its deployment (the directory holding oats-local.yaml) is refused with E_CONFIG_BROKEN naming where each key went (launch-configs to oats-local.yaml; capability bindings, layers and team to oats-workspace.yaml and each soul's soul.yaml; agents-md-injection, skill-overrides, work-modes and yolo removed). This schema documents what 0.25 read, for migrating a 0.25 deployment; see docs/release-notes/v0.26.0.md.",
   "$defs": {
     "settings": { "type": "object", "additionalProperties": true },
     "binding": {

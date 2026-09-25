@@ -25,7 +25,7 @@ import { fileURLToPath } from "node:url";
 import {
   LAYERS, OATS_VERSION, configChain, manifestOperations,
   capabilityManifests, capabilityTrust, capabilityExecutablePath, activateCapturedScaffold, loadCapturedDispatch, inspectPortableOnboarding, prepareCapturedComposition, resolveCapturedHelper, capturedNativeSessionAvailability, scaffoldCapturedInstance, startCapturedInstanceSession, withCapturedBindingFile, withCapturedInvocationContextFile, admitCapturedAction, beginCapturedIntent, settleCapturedIntent,
-  officialPackageCatalog, describeOfficialCatalog, approveAvailableCapability, resolveOatsConfig, composeInstanceAgentsMd, parseYamlNested, stripInternalAnnotations, withConfigFile,
+  officialPackageCatalog, describeOfficialCatalog, approveAvailableCapability, resolveOatsConfig, resolvedFromHome, composeInstanceAgentsMd, parseYamlNested, stripInternalAnnotations, withConfigFile,
   findCapabilityAgent, findInstanceHome, findInstanceHomes, listCapabilityAgents, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, listAgents, listInstances, servedIdentityLine, spawnInstance, spawnInstanceAsync, instanceSoulDir, launchConfigsAt, explicitInstanceName, findModuleCapabilityAgent, capabilityAgentFromDir, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
 import {
@@ -539,7 +539,7 @@ const realOrResolved = (p) => { try { return realpathSync(p); } catch { return r
 /** Every soul of a scope: the persistent souls of every agents root in
  *  scope, plus packaged souls (read-only). One enumeration for inspect and
  *  operation run, so both address souls the same way. */
-function scopeSouls(ctx, r, { extraRoots = [] } = {}) {
+function scopeSouls(ctx, { extraRoots = [] } = {}) {
   // A home's own agents root is always in scope for that home: its recorded
   // work repository may be another repository entirely (repo overrides), and
   // the config context resolves there while the soul lives with its owner.
@@ -553,17 +553,7 @@ function scopeSouls(ctx, r, { extraRoots = [] } = {}) {
       souls.push(e);
     }
   }
-  const diagnostics = [];
-  try {
-    const packaged = listCapabilityAgents(ctx);
-    diagnostics.push(...(packaged.diagnostics || []));
-    for (const pa of packaged) {
-      let soul = {};
-      try { soul = stripInternalAnnotations(withConfigFile(join(pa.soulDir, "soul.yaml"), () => parseYamlNested(readFileSync(join(pa.soulDir, "soul.yaml"), "utf8")))); } catch { /* reported by name only */ }
-      souls.push(soulEntry({ ...soul, name: pa.name, description: pa.description ?? soul.description, soulDir: pa.soulDir }, roots[0] || ctx, { capability: pa.capability }));
-    }
-  } catch (e) { diagnostics.push({ code: e.code || "E_CAPABILITY_BROKEN", message: e.message }); }
-  return { roots, souls, diagnostics };
+  return { roots, souls, diagnostics: [] };
 }
 /** The one soul a name (and optional agents root) addresses; throws with a
  *  code when none or several match. */
@@ -1007,10 +997,8 @@ function launchConfigContext(bail) {
     if (soulFlag === true) bail("E_BAD_ARGS", "--soul needs a soul name");
     const agentsRootFlag = flag("agents-root");
     if (agentsRootFlag === true) bail("E_BAD_ARGS", "--agents-root needs an absolute agents directory");
-    let r;
-    try { r = resolveOatsConfig(ctx); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
     let soul;
-    try { soul = selectSoul(scopeSouls(ctx, r).souls, String(soulFlag), agentsRootFlag, ctx); } catch (e) { bail(e.code || "E_SOUL_UNKNOWN", e.message); }
+    try { soul = selectSoul(scopeSouls(ctx).souls, String(soulFlag), agentsRootFlag, ctx); } catch (e) { bail(e.code || "E_SOUL_UNKNOWN", e.message); }
     return { context: memberContextOf(soul, ctx, flag("dir") !== undefined, bail), selected: { soul: soul.name, agentsRoot: soul.agentsRoot } };
   }
   return { context: ctx, selected: null };
@@ -1044,14 +1032,14 @@ function launchPreview(bail) {
     const agent = (() => { try { return findAgent(agentsRoot, meta.agent); } catch { return undefined; } })();
     agentLike = agent || { runtime: meta.runtime, model: meta.model, yolo: meta.yolo };
   } else {
-    let r0;
-    try { r0 = resolveOatsConfig(context); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
-    const soul = scopeSouls(context, r0).souls.find((x) => x.name === selected.soul && x.agentsRoot === selected.agentsRoot);
-    agentLike = { runtime: soul.runtime, model: soul.model, yolo: soul.yolo, "launch-config": soul.launchConfig };
+    const soul = scopeSouls(context).souls.find((x) => x.name === selected.soul && x.agentsRoot === selected.agentsRoot);
+    agentLike = { runtime: soul.runtime, model: soul.model };
     instance = `${soul.name}-<purpose>`; home = join(selected.agentsRoot, soul.name, "instances", instance);
   }
+  // A home's recorded capabilities; a new instance's are its spawn's resolution,
+  // which a preview of a soul does not prepare (spawn --preview does).
   let r;
-  try { r = resolveOatsConfig(context, selected.soul || meta?.agent); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+  try { r = meta ? resolvedFromHome(home, meta) : { capabilities: [], launchConfigs: launchConfigsAt(context) }; } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
   // The same planner a start uses, in preview mode: failed checks are listed, nothing is touched.
   let plan;
   try { plan = planLaunch({ home, instance, meta, contextDir: context, agentLike, selection: sel, resolvedCfg: r, preview: true }); } catch (e) { bail(e.code || "E_BAD_ARGS", e.message); }
@@ -1073,9 +1061,8 @@ async function launchConfigCmd() {
   // Lead decision 2: launch configurations are a HOST choice, declared in the
   // deployment's oats-local.yaml (found walking up; a home's own deployment).
   const at = selected?.home ?? dir;
-  // A scope file still declaring launch-configs is refused here too (the migration
-  // message names the move), never read as "no configurations".
-  try { configChain(at); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+  // A 0.25 oats-config.yaml in reach is refused by loadLocal (E_CONFIG_BROKEN, naming
+  // the move), never read as "no configurations".
   let found = null;
   try { found = loadLocal(at); } catch (e) { if (e?.code !== "E_LOCAL_MISSING") bail(e.code || "E_WORKSPACE_SCHEMA", e.message); }
   const file = found?.path ?? null, level = file ? dirname(file) : null;
@@ -1788,7 +1775,9 @@ async function spawnCmd() {
   let wsPrepared, soulFetched = false, wsSoulUnknown = null, wsDiscovery;
   let hasLocal = true;
   {
-    try { loadLocal(dirFlag()); } catch (e) { if (e?.code === "E_LOCAL_MISSING") hasLocal = false; else bail(e.code || "E_WORKSPACE_SCHEMA", e.message, e.details); }
+    // A spawn needs a workspace deployment (lead decision c3-1): its capabilities are
+    // the workspace's resolution. No oats-local.yaml in reach is a typed refusal.
+    try { loadLocal(dirFlag()); } catch (e) { if (e?.code === "E_LOCAL_MISSING") bail("E_LOCAL_MISSING", `${e.message}: a spawn needs a workspace deployment — \`oats onboard\` creates one`, e.details); else bail(e.code || "E_WORKSPACE_SCHEMA", e.message, e.details); }
     if (hasLocal) {
       let discovery = null;
       try {
@@ -1829,7 +1818,7 @@ async function spawnCmd() {
         else if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details);
         else throw e;
       }
-    } else if (providerPairs.length) bail("E_BAD_ARGS", "--provider needs a workspace deployment (oats-local.yaml); this directory has none");
+    }
   }
   if (agentsRootFlag !== undefined && !agent) bail("E_SOUL_UNKNOWN", `soul "${name}" is not at agents root ${String(agentsRootFlag)}`);
   if (isPreview && !agent) bail("E_SOUL_UNKNOWN", `soul "${name}" is not in ${shortPath(root)}; a preview never creates or imports a soul (known: ${listAgents(root).map((a) => a.name).join(", ") || "none"})`);
@@ -1968,8 +1957,9 @@ async function spawnCmd() {
       ...(args.includes("--allow-child-spawns") ? { allowChildSpawns: true } : args.includes("--no-child-spawns") ? { allowChildSpawns: false } : {}),
       // Directory execution uses deployment configuration, not an ambient Git
       // checkout (especially when invoked via --dir from a source instance).
-      repo: preparedRepo !== undefined ? preparedRepo : (requestedWork || agent.work) === "directory"
-        ? (repo ?? agent.repo) : repo || agent.repo || defaultRepo(workspaceOf(root)) || defaultRepo(process.cwd()),
+      // An attached instance's repository is its work tree owner's (derived by the kernel).
+      repo: preparedRepo !== undefined ? preparedRepo : ["directory", "attached"].includes(requestedWork || agent.work)
+        ? repo : repo || defaultRepo(workspaceOf(root)) || defaultRepo(process.cwd()),
       work: requestedWork, workDir, runtime: flag("runtime"), backend, herdrSocket, yolo, model: flag("model"), branch,
       launchConfig: valueFlag("launch-config"),
       launch: !args.includes("--no-launch"),
@@ -1983,7 +1973,7 @@ async function spawnCmd() {
       // K6c: with --idempotency-key, a retry of the SAME confirmed decision replays the recorded home instead of spawning twice.
       ...(flag("idempotency-key") !== undefined && flag("idempotency-key") !== true ? { idempotencyKey: String(flag("idempotency-key")) } : {}),
     };
-      r = prepared ? await spawnInstanceAsync(root, agent, spawnOpts) : spawnInstance(root, agent, spawnOpts); }
+      r = await spawnInstanceAsync(root, agent, spawnOpts); }
     if (args.includes("--preview")) {
       // A workspace preview may have fetched the soul's SOURCE to a temporary copy
       // (the deployment's cache had no entry for its commit): the result says so.
@@ -2166,9 +2156,11 @@ function retireCmd() {
 function scheduleCmd() {
   const sub = args[1];
   const id = args[2] && !args[2].startsWith("--") ? args[2] : undefined;
-  // One schedule-owning scope for a directory: the team workspace (the
-  // config level declaring the team), else the outermost config level.
-  const ws = scheduleScopeOf(dirFlag());
+  // One schedule-owning scope for a directory: its deployment (the directory
+  // holding oats-local.yaml), resolved when a subcommand needs it — inside the
+  // try, so no deployment in reach is a typed refusal (E_LOCAL_MISSING).
+  let scope;
+  const ws = () => (scope ??= scheduleScopeOf(dirFlag()));
   const io = { hostStatus: () => hostUnitStatus() };
   const out = (result) => { if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2)); };
   const readSpec = () => {
@@ -2182,27 +2174,27 @@ function scheduleCmd() {
   const needId = () => { if (!id) throw scheduleError("E_BAD_ARGS", `oats schedule ${sub} <id>`); return id; };
   try {
     switch (sub) {
-      case "list": return out(listSchedules(ws, io));
-      case "show": return out({ schedule: describeSchedule(ws, needId(), io) });
-      case "add": { const spec = readSpec(); if (id && spec.id === undefined) spec.id = id; if (id && spec.id !== id) throw scheduleError("E_SCHEDULE_INVALID", `id ${JSON.stringify(spec.id)} in the file does not match ${JSON.stringify(id)}`, { field: "id" }); return out({ schedule: addSchedule(ws, spec, io) }); }
-      case "update": return out({ schedule: updateSchedule(ws, needId(), readSpec(), io) });
-      case "enable": return out({ schedule: setScheduleEnabled(ws, needId(), true, io) });
-      case "disable": return out({ schedule: setScheduleEnabled(ws, needId(), false, io) });
-      case "run": return out(runScheduleNow(ws, needId(), { io, force: args.includes("--force") }));
-      case "remove": return out(removeSchedule(ws, needId(), { force: args.includes("--force") }));
-      case "reconcile": return out(reconcileSchedule(ws, needId(), { io, clear: args.includes("--clear") }));
+      case "list": return out(listSchedules(ws(), io));
+      case "show": return out({ schedule: describeSchedule(ws(), needId(), io) });
+      case "add": { const spec = readSpec(); if (id && spec.id === undefined) spec.id = id; if (id && spec.id !== id) throw scheduleError("E_SCHEDULE_INVALID", `id ${JSON.stringify(spec.id)} in the file does not match ${JSON.stringify(id)}`, { field: "id" }); return out({ schedule: addSchedule(ws(), spec, io) }); }
+      case "update": return out({ schedule: updateSchedule(ws(), needId(), readSpec(), io) });
+      case "enable": return out({ schedule: setScheduleEnabled(ws(), needId(), true, io) });
+      case "disable": return out({ schedule: setScheduleEnabled(ws(), needId(), false, io) });
+      case "run": return out(runScheduleNow(ws(), needId(), { io, force: args.includes("--force") }));
+      case "remove": return out(removeSchedule(ws(), needId(), { force: args.includes("--force") }));
+      case "reconcile": return out(reconcileSchedule(ws(), needId(), { io, clear: args.includes("--clear") }));
       case "tick": {
         const dryRun = args.includes("--dry-run");
         if (args.includes("--host")) return out(tickHost({ io, dryRun }));
         const reg = readRegistry();
-        const considered = withHostLock(() => tickWorkspace(ws, { io, reg, wsList: reg.workspaces.includes(ws) ? reg.workspaces : [...reg.workspaces, ws], dryRun }));
-        return out({ tickedAt: new Date().toISOString(), considered, scheduler: schedulerStatus(ws, io) });
+        const considered = withHostLock(() => tickWorkspace(ws(), { io, reg, wsList: reg.workspaces.includes(ws()) ? reg.workspaces : [...reg.workspaces, ws()], dryRun }));
+        return out({ tickedAt: new Date().toISOString(), considered, scheduler: schedulerStatus(ws(), io) });
       }
       case "host": {
         const op = args[2];
-        if (op === "install") { registerWorkspace(ws); installHostUnit(); return out({ scheduler: schedulerStatus(ws, io) }); }
-        if (op === "uninstall") { unregisterWorkspace(ws); if (!readRegistry().workspaces.length) uninstallHostUnit(); return out({ scheduler: schedulerStatus(ws, io) }); }
-        if (op === "status") return out({ scheduler: schedulerStatus(ws, io) });
+        if (op === "install") { registerWorkspace(ws()); installHostUnit(); return out({ scheduler: schedulerStatus(ws(), io) }); }
+        if (op === "uninstall") { unregisterWorkspace(ws()); if (!readRegistry().workspaces.length) uninstallHostUnit(); return out({ scheduler: schedulerStatus(ws(), io) }); }
+        if (op === "status") return out({ scheduler: schedulerStatus(ws(), io) });
         throw scheduleError("E_BAD_ARGS", "oats schedule host install|uninstall|status");
       }
       default: throw scheduleError("E_BAD_ARGS", "usage: oats schedule list|show <id>|add <id> --file <spec.json>|update <id> --file <spec.json>|enable <id>|disable <id>|run <id> [--force]|remove <id> [--force]|reconcile <id> [--clear]|tick [--dry-run] [--host]|host install|uninstall|status [--dir <workspace>|--server <id>] [--json]");

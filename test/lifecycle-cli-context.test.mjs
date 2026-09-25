@@ -68,8 +68,8 @@ test("direct lifecycle calls author the kernel CLI even with poisoned ambient an
 test("direct core and CLI spawns supply the known agents root and an executable canonical CLI", async (t) => {
   const { hook } = fixture(t, { probeCli: true });
   const fx = v2Deployment({
-    souls: { dev: { soul: { work: "checkout", capabilities: { "test-context": { from: "here" } } } } },
-    capabilities: { "test-context": { manifest: { description: "Lifecycle fixture.", hooks: { spawn: "hook.mjs" } }, files: { "hook.mjs": readFileSync(hook, "utf8") } } },
+    souls: { dev: { soul: { work: "checkout", capabilities: { "test.context": { from: "here" } } } } },
+    capabilities: { "test.context": { manifest: { description: "Lifecycle fixture.", hooks: { spawn: "hook.mjs" } }, files: { "hook.mjs": readFileSync(hook, "utf8") } } },
   });
   t.after(() => fx.cleanup());
   const direct = await fx.spawn("dev", { purpose: "direct", runtime: "claude" });

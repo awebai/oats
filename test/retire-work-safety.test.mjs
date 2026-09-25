@@ -286,7 +286,7 @@ test("missing or corrupt independent authority fails closed before quiescence or
 });
 
 test("retire-hook bytes are caught by the final post-hook inspection", () => {
-  const f = fixture({ capabilities: { "acme-writer": {
+  const f = fixture({ capabilities: { "acme.writer": {
     manifest: { description: "writer", hooks: { retire: "hook.mjs" } },
     files: { "hook.mjs": "import {writeFileSync} from 'node:fs'; import {join} from 'node:path'; writeFileSync(join(process.env.OATS_HOME, 'hook-created.txt'), 'hook-bytes\\n'); console.log(JSON.stringify({meta:{retired:true}}));\n" },
   } } });
@@ -462,7 +462,7 @@ test("K3 guarded Remove: retire --plan-revision/--idempotency-key revalidates th
 test("K3 pin 2: --delete-branch through a plan is bound to the CONFIRMED branch — a branch switch during retirement (hook window) deletes nothing and is reported", () => {
   // The retire hook set is the one CAPTURED at spawn (capabilityRuntime), so the
   // switching capability is declared by the soul BEFORE the instance is spawned.
-  const f = fixture({ capabilities: { "acme-switcher": {
+  const f = fixture({ capabilities: { "acme.switcher": {
     manifest: { description: "switches the branch during retire", hooks: { retire: "hook.mjs" } },
     files: { "hook.mjs": "import {execFileSync} from 'node:child_process'; import {join} from 'node:path'; execFileSync('git', ['-C', join(process.env.OATS_HOME, 'work'), 'switch', '--quiet', '-c', 'feat/sneaky']); console.log(JSON.stringify({ meta: { retired: true } }));" },
   } } });
