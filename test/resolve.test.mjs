@@ -1052,3 +1052,31 @@ test("teams: one eligible entry per label in soul order — mapped (base ⊕ byT
   assert.equal(r2.revision, r.revision);
   assert.deepEqual(resolveLib.teamsOf(null, ["x"]), [{ label: "x", team: null, mapped: false, payload: {} }], "no workspace (standalone): every label unmapped");
 });
+
+test("teams: EVERY carried label's byTeam entry is validated like the primary's — a hostOnly key or a nested byTeam in a secondary label's entry is refused, path named", async () => {
+  // Each label's base ⊕ byTeam[label] reaches the provider in OATS_TEAMS, so a secondary label's entry
+  // meets the primary's bar: same error, same reason, pointer /messaging/byTeam/<label>.
+  const chat = { ...M.chat, settings: { root: { hostOnly: true, description: "host-owned root" } } };
+  const caps = [capEntry(K.agents, C.agents, M.releaseTooling), capEntry(K.agents, C.agents, M.houseStyle, "global"), capEntry(K.agents, C.agents, chat, "global")];
+  const withEntry = (label, entry) => { const ws = teamsWorkspace(); ws.messaging.byTeam[label] = entry; return ws; };
+  for (const label of ["engineering", "cloud"]) { // the primary, then a secondary
+    const d = discovery({ workspace: withEntry(label, { team: "aweb:x", root: "/evil" }), agentsCaps: caps });
+    await rejectsCode(resolveSoul(d, labelled(d, "release-manager", ["engineering", "cloud"]), opts()), "E_WORKSPACE_SCHEMA", (e) => {
+      assert.equal(e.details.reason, "host-only-key"); assert.equal(e.details.key, "root"); assert.equal(e.details.capability, "nw-chat");
+      assert.equal(e.details.path, `/messaging/byTeam/${label}/root`);
+    });
+    const n = discovery({ workspace: withEntry(label, { team: "aweb:x", byTeam: { cloud: {} } }), agentsCaps: caps });
+    await rejectsCode(resolveSoul(n, labelled(n, "release-manager", ["engineering", "cloud"]), opts()), "E_WORKSPACE_SCHEMA", (e) => {
+      assert.equal(e.details.reason, "reserved-key"); assert.equal(e.details.path, `/messaging/byTeam/${label}/byTeam`);
+    });
+  }
+  // A label the soul does NOT carry is not its payload: a bad entry there does not block this soul.
+  const other = discovery({ workspace: withEntry("marketing", { root: "/evil", byTeam: {} }), agentsCaps: caps });
+  const ok = await resolveSoul(other, labelled(other, "release-manager", ["engineering", "cloud"]), opts());
+  assert.deepEqual(ok.teams.map((t) => t.label), ["engineering", "cloud"]);
+  // A clean secondary entry still resolves, and the host layer may carry the hostOnly key.
+  const clean = discovery({ workspace: teamsWorkspace(), agentsCaps: caps });
+  const r = await resolveSoul(clean, labelled(clean, "release-manager", ["engineering", "cloud"]), opts({ local: { schemaVersion: 2, workspace: R.agents, settings: { "nw-chat": { root: "/srv/aweb" } } } }));
+  assert.equal(r.payloads["nw-chat"].root, "/srv/aweb");
+  assert.deepEqual(r.teams[1], { label: "cloud", team: "aweb:example.cloud", mapped: true, payload: { private: "per-human", team: "aweb:example.cloud" } });
+});
