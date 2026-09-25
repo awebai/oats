@@ -61,7 +61,7 @@ test("workspace v2 CLI over the Northwind fixture: sync (exit 0, lock v3 written
     assert.equal(sync.workspace.name, "northwind");
     assert.equal(sync.workspace.key, fx.keys.agents);
     assert.equal(sync.workspace.commit, fx.commits.agents);
-    assert.deepEqual(Object.keys(sync).sort(), ["changes", "members", "packages", "problems", "syncApi", "workspace"]);
+    assert.deepEqual(Object.keys(sync).sort(), ["changes", "members", "packages", "problems", "syncApi", "warnings", "workspace"]);
     assert.equal(sync.members.length, 5);
     assert.ok(sync.members.every((m) => m.confirmed && m.status === "confirmed"), JSON.stringify(sync.members.map((m) => [m.name, m.status])));
     assert.deepEqual(sync.members.map((m) => m.name).sort(), ["agents", "data", "marketing", "nw-tools", "platform"]);

@@ -365,9 +365,20 @@
               "id": "local/<base>/remotes/ws.git#dev",
               "repoKey": "local/<base>/remotes/ws.git",
               "commit": "<sha>",
-              "team": "global"
+              "team": "global",
+              "labels": [
+                "global"
+              ]
             }
           },
+          "teams": [
+            {
+              "label": "global",
+              "team": null,
+              "mapped": false,
+              "payload": {}
+            }
+          ],
           "launched": false,
           "running": false,
           "soul": {
@@ -726,9 +737,20 @@
               "id": "local/<base>/remotes/ws.git#dev",
               "repoKey": "local/<base>/remotes/ws.git",
               "commit": "<sha>",
-              "team": "global"
+              "team": "global",
+              "labels": [
+                "global"
+              ]
             }
           },
+          "teams": [
+            {
+              "label": "global",
+              "team": null,
+              "mapped": false,
+              "payload": {}
+            }
+          ],
           "launched": false,
           "running": false,
           "soul": {

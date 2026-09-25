@@ -4,6 +4,8 @@
 // classic `team:` block — OATS_TEAM_SCOPE is the deployment directory, OATS_TEAM_ID
 // is the messaging slot's merged payload `team` (empty = personal), and the provider
 // also gets the soul's team label and the workspace's name and canonical key.
+// Teams contract 2026-09-25 (decision 4): OATS_TEAM_LABEL / OATS_TEAM_ID stay the
+// PRIMARY label's; OATS_TEAM_LABELS and OATS_TEAMS carry every eligible team.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { teamEnv } from "../lib/core.mjs";
@@ -11,13 +13,34 @@ import { teamEnv } from "../lib/core.mjs";
 const v2 = (over = {}) => ({
   workspace: { key: "github.com/acme/agents", name: "acme", deployment: "/srv/acme-workspace", team: "cloud", slots: { messaging: "oats.aweb", knowledge: "oats.okf" }, ...over.workspace },
   payloads: { "oats.aweb": { team: "aweb:acme.cloud", delivery: "channel" }, "oats.okf": {} , ...over.payloads },
+  ...(over.teams !== undefined ? { teams: over.teams, teamsSource: over.teamsSource ?? "live" } : {}),
 });
+const TEAMS = [
+  { label: "cloud", team: "aweb:acme.cloud", mapped: true, payload: { team: "aweb:acme.cloud", delivery: "channel" } },
+  { label: "design", team: null, mapped: false, payload: { delivery: "channel" } },
+];
 
 test("workspace model, shared team mapped: team id from the messaging payload, scope = deployment, label + workspace identity", () => {
-  assert.deepEqual(teamEnv(v2()), {
+  assert.deepEqual(teamEnv(v2({ teams: TEAMS })), {
     OATS_TEAM_NAME: "", OATS_TEAM_ID: "aweb:acme.cloud", OATS_TEAM_SCOPE: "/srv/acme-workspace",
-    OATS_TEAM_LABEL: "cloud", OATS_WORKSPACE_NAME: "acme", OATS_WORKSPACE_KEY: "github.com/acme/agents",
+    OATS_TEAM_LABEL: "cloud", OATS_TEAM_LABELS: "cloud,design", OATS_TEAMS: JSON.stringify(TEAMS), OATS_TEAMS_SOURCE: "live",
+    OATS_WORKSPACE_NAME: "acme", OATS_WORKSPACE_KEY: "github.com/acme/agents",
   });
+});
+
+test("eligible teams: no label is [] (personal only); teams not known is empty, never []", () => {
+  const none = teamEnv(v2({ teams: [] }));
+  assert.equal(none.OATS_TEAMS, "[]");
+  assert.equal(none.OATS_TEAM_LABELS, "");
+  const unknown = teamEnv(v2({ teams: null }));
+  assert.equal(unknown.OATS_TEAMS, "", "a home whose teams are unknown gets no claim of 'none'");
+  assert.equal(unknown.OATS_TEAM_LABELS, "");
+  assert.equal(unknown.OATS_TEAMS_SOURCE, "", "no source without a list");
+  assert.equal(teamEnv(v2({ teams: TEAMS, teamsSource: "recorded" })).OATS_TEAMS_SOURCE, "recorded", "a spawn-time list is marked recorded: a provider leaves nothing on it");
+  assert.equal(teamEnv(v2({ teams: TEAMS, teamsSource: "bogus" })).OATS_TEAMS_SOURCE, "", "only live|recorded");
+  // The primary facts do not depend on the list.
+  assert.equal(unknown.OATS_TEAM_LABEL, "cloud");
+  assert.equal(unknown.OATS_TEAM_ID, "aweb:acme.cloud");
 });
 
 test("workspace model, no shared team for the label: OATS_TEAM_ID is empty (= personal), identity still passed", () => {
@@ -34,8 +57,8 @@ test("workspace model, messaging slot empty (none): no team id; a non-string pay
   assert.equal(teamEnv(v2({ payloads: { "oats.aweb": { team: { evil: 1 } } } })).OATS_TEAM_ID, "");
 });
 
-test("a resolved view with no workspace answers six empty strings", () => {
-  const empty = { OATS_TEAM_NAME: "", OATS_TEAM_ID: "", OATS_TEAM_SCOPE: "", OATS_TEAM_LABEL: "", OATS_WORKSPACE_NAME: "", OATS_WORKSPACE_KEY: "" };
+test("a resolved view with no workspace answers nine empty strings", () => {
+  const empty = { OATS_TEAM_NAME: "", OATS_TEAM_ID: "", OATS_TEAM_SCOPE: "", OATS_TEAM_LABEL: "", OATS_TEAM_LABELS: "", OATS_TEAMS: "", OATS_TEAMS_SOURCE: "", OATS_WORKSPACE_NAME: "", OATS_WORKSPACE_KEY: "" };
   assert.deepEqual(teamEnv({}), empty);
   assert.deepEqual(teamEnv({ payloads: { "oats.aweb": { team: "aweb:acme.cloud" } } }), empty);
   assert.deepEqual(teamEnv(null), empty);

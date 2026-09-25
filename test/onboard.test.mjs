@@ -77,7 +77,7 @@ test("oats onboard <dir> --workspace <ref>: writes oats-local.yaml + agents/, ru
     // The embedded sync result IS the `oats sync --json` result (same code path).
     const sync = res.sync;
     assert.equal(sync.syncApi, 1);
-    assert.deepEqual(Object.keys(sync).sort(), ["changes", "members", "packages", "problems", "syncApi", "workspace"]);
+    assert.deepEqual(Object.keys(sync).sort(), ["changes", "members", "packages", "problems", "syncApi", "warnings", "workspace"]);
     assert.equal(sync.workspace.name, "northwind");
     assert.equal(sync.workspace.key, fx.keys.agents);
     assert.equal(sync.workspace.commit, fx.commits.agents);

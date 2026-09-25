@@ -354,10 +354,16 @@ not exclude anything.
 ## Teams
 
 `teams:` declares labels once (`global`, `engineering`, …) so they cannot drift
-into typos. A soul or capability carries `team:`, else its repo's default from
-`oats-membership.yaml`, else `unassigned`. A label not declared in `teams:` is
-`E_TEAM_UNKNOWN` (the item is still listed). `defaults.byTeam.<team>.capabilities`
-adds capabilities additively for souls with that label (`off` removes). **A
+into typos. A soul carries `team:` — one label or a list (`team: [engineering,
+reviewers]`, the first the primary) — else its repo's default from
+`oats-membership.yaml` (same shape), else `unassigned`; a capability carries one
+label. A label not declared in `teams:` is `E_TEAM_UNKNOWN` (the item is still
+listed); a declared label without a `messaging.byTeam` entry is the
+`unmapped-team-label` warning. `defaults.byTeam.<team>.capabilities` adds
+capabilities additively for souls with that label, for each label in order
+(`off` removes; two labels that disagree are `E_TEAM_CONFLICT`). Each label is
+an *eligible* messaging team the provider may join on request — see
+[capabilities.md](capabilities.md#several-team-labels). **A
 label never gates, restricts, changes trust or partitions the knowledge
 store** — it organises and can supply defaults. The messaging provider's payload
 (private teams, channels) lives under `messaging:`, so "team" means one thing.

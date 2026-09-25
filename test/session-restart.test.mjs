@@ -46,6 +46,7 @@ const fx = v2Deployment({
     hooked: { soul: { capabilities: { "test.extra": { from: "here" }, "test.two": { from: "here" } } } },
     renew: { soul: { capabilities: { "test.renew": { from: "here" } } } },
     req: { soul: { capabilities: { "test.req": { from: "here" } } } },
+    teamed: { soul: { team: ["global", "night"], capabilities: { "test.teams": { from: "here" } } } },
   },
   capabilities: {
     "test.extra": { manifest: { hooks: { launch: "bin/launch.mjs" }, environment: ["TEST_NEWVAR", "TEST_OLDVAR", "TEST_SHARED"], settings: { mode: { description: "m", default: "current" } } },
@@ -54,7 +55,11 @@ const fx = v2Deployment({
     "test.renew": { manifest: { hooks: { launch: "bin/launch.mjs" }, environment: [], settings: {} }, files: { "bin/launch.mjs": answerHook() } },
     "test.req": { manifest: { hooks: { launch: "bin/launch.mjs" }, requires: [{ runtime: "claude", package: "chan@acme-marketplace", marketplace: "acme/claude-plugins", when: { mode: "on" } }], settings: { mode: { description: "m" } } },
       files: { "bin/launch.mjs": `process.stdout.write(JSON.stringify({ launch: { claude: "--req-hook" }, env: {} }) + "\\n");\n` } },
+    // Records the eligible teams its launch hook was given (teams contract decision 6).
+    "test.teams": { manifest: { hooks: { launch: "bin/launch.mjs" }, environment: [], settings: {} },
+      files: { "bin/launch.mjs": `import { writeFileSync } from "node:fs"; import { join } from "node:path";\nwriteFileSync(join(process.env.OATS_HOME, "teams-env.json"), JSON.stringify({ labels: process.env.OATS_TEAM_LABELS, label: process.env.OATS_TEAM_LABEL, source: process.env.OATS_TEAMS_SOURCE, teams: JSON.parse(process.env.OATS_TEAMS) }));\nprocess.stdout.write("{}\\n");\n` } },
   },
+  workspace: { teams: { global: { description: "Fixture team" }, night: { description: "Night shift" } } },
   local: { "launch-configs": {
     polite: { runtime: "claude", executable: join(binDir, "polite"), args: ["--flag", "a b c"], env: { KEY: { fromEnv: "RESTART_TEST_SRC" }, LIT: "plain" }, model: "claude-opus-5" },
     stubborn: { runtime: "claude", executable: join(binDir, "stubborn") },
@@ -532,4 +537,42 @@ test("session recompose is removed (0.26): E_UNKNOWN_COMMAND naming the re-spawn
   const cli = oats(["session", "recompose", "--home", h.home, "--dry-run"]);
   assert.notEqual(cli.status, 0); assert.equal(cli.json.error.code, "E_UNKNOWN_COMMAND"); assert.match(cli.json.error.message, /re-spawn/);
   assert.ok(!oats(["version"]).json.features.includes("session-recompose"));
+});
+
+test("teams contract decision 6: a session start's launch hook gets the home's LIVE eligible teams — a mapping the workspace adds after the spawn is seen, one it removes disappears — while modules and the spawn-time record stay frozen", async () => {
+  const name = "teamed-live";
+  const home = homeOf(name, "teamed");
+  await makeHome(name, { soul: "teamed", command: renderFor(home, name, join(binDir, "polite")), launch: recipeFor(home, name, { executable: join(binDir, "polite") }) });
+  const spawned = readJson(join(home, "instance.json"));
+  assert.deepEqual(spawned.teams.map((t) => [t.label, t.mapped]), [["global", false], ["night", false]], "spawn records the eligible teams as evidence");
+  const seedWorkspace = join(fx.base, "seed", "oats-workspace.yaml");
+  const { parse, stringify } = await import("yaml");
+  const workspaceWith = (messaging) => { const ws = parse(readFileSync(seedWorkspace, "utf8")); if (messaging) ws.messaging = messaging; else delete ws.messaging; return { "oats-workspace.yaml": stringify(ws, { lineWidth: 0 }) }; };
+  const restart = async () => {
+    rmSync(join(home, "teams-env.json"), { force: true });
+    const r = spawnSync(process.execPath, [CLI, "session", "restart", "--home", home, "--json"], { encoding: "utf8", env: env({ OATS_REMOTE_CACHE: fx.remoteOptions.cacheDir }) });
+    assert.equal(JSON.parse(r.stdout.trim()).ok, true, r.stdout + r.stderr);
+    assert.ok(await waitFor(() => runningPid(home) !== null));
+    return readJson(join(home, "teams-env.json"));
+  };
+  try { tmux("has-session", "-t", session); } catch { tmux("new-session", "-d", "-s", session, "-n", "hq", "-c", home); }
+  tmux("new-window", "-t", `${session}:`, "-n", name, "-c", home, "exec /bin/sh");
+  await waitFor(() => inspectInstanceSession(home).state === "shell", "idle pane shell");
+  // The workspace maps "night" AFTER the spawn: the next start's hook sees it eligible and mapped.
+  fx.commit(workspaceWith({ private: "per-human", byTeam: { night: { team: "aweb:fixture.night" } } }), "map night");
+  let seen = await restart();
+  assert.equal(seen.labels, "global,night");
+  assert.equal(seen.label, "global", "OATS_TEAM_LABEL stays the primary's");
+  assert.equal(seen.source, "live", "the launch hook may act on leaves: the list is live");
+  assert.deepEqual(seen.teams, [
+    { label: "global", team: null, mapped: false, payload: { private: "per-human" } },
+    { label: "night", team: "aweb:fixture.night", mapped: true, payload: { private: "per-human", team: "aweb:fixture.night" } },
+  ]);
+  // …and removing the mapping takes it away again.
+  fx.commit(workspaceWith(null), "unmap night");
+  seen = await restart();
+  assert.deepEqual(seen.teams.map((t) => [t.label, t.mapped, t.team]), [["global", false, null], ["night", false, null]]);
+  const after = readJson(join(home, "instance.json"));
+  assert.deepEqual(after.modules, spawned.modules, "modules stay frozen");
+  assert.deepEqual(after.teams, spawned.teams, "the spawn-time record is evidence, never rewritten");
 });

@@ -15,9 +15,11 @@
       "description": "Repo ref of the workspace host, without revision."
     },
     "team": {
-      "type": "string",
-      "pattern": "^[a-z0-9][a-z0-9._-]*$",
-      "description": "Default team label for souls and capabilities in this repo that carry no `team:` of their own."
+      "anyOf": [
+        { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+        { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" } }
+      ],
+      "description": "Default team label, or a non-empty list of distinct labels (the first is the primary), for souls in this repo that carry no `team:` of their own. A capability without its own `team:` is listed under the primary."
     }
   }
 }

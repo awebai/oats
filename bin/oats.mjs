@@ -698,7 +698,7 @@ async function inspectCmd() {
  *  decision 4): an instance home with materialized modules (`--home`), or a soul
  *  of a workspace deployment (`--soul`, resolved as its spawn would be). Anything
  *  else is a typed refusal: there is no classic scope answer. */
-async function workspaceTarget(bail, { command }) {
+async function workspaceTarget(bail, { command, liveTeams = true }) {
   dropAmbientRoot();
   const homeFlag = flag("home"), soulFlag = flag("soul"), rootFlag = flag("agents-root");
   if (homeFlag === true) return bail("E_BAD_ARGS", "--home needs an absolute instance home");
@@ -717,7 +717,7 @@ async function workspaceTarget(bail, { command }) {
     if (!existsSync(join(deployment, "oats-local.yaml"))) return bail("E_HOME_MISMATCH", `${homeFlag} is not at <deployment>/agents/<soul>/instances/<name>: ${deployment} has no oats-local.yaml`, { home: homeFlag, expected: join(deployment, "oats-local.yaml") });
     if (flag("dir") !== undefined) { let given = null; try { given = dirname(loadLocal(dirFlag()).path); } catch { given = dirFlag(); } if (realOrResolved(given) !== realOrResolved(deployment)) return bail("E_HOME_MISMATCH", `--dir ${dirFlag()} is not the deployment of ${homeFlag} (${deployment}); omit --dir for a home`); }
     if (rootFlag && realOrResolved(rootFlag) !== realOrResolved(join(deployment, "agents"))) return bail("E_HOME_MISMATCH", `--agents-root ${rootFlag} is not the agents root of ${homeFlag}`);
-    return homeTarget(homeFlag, meta, { remoteOptions, discover: command === "readiness" });
+    return homeTarget(homeFlag, meta, { remoteOptions, discover: command === "readiness", live: liveTeams });
   }
   try { if (!isWorkspaceContext(dirFlag())) return bail("E_LOCAL_MISSING", `${command} reads a workspace deployment, and none is in reach of ${dirFlag()} (no oats-local.yaml walking up; \`oats onboard\` creates one) — or pass --home <abs> of a workspace instance`); }
   catch (e) { return bail(e?.code || "E_WORKSPACE_SCHEMA", e?.message || String(e), e?.details); }
@@ -734,6 +734,20 @@ function printWorkspaceInspect(doc) {
   for (const l of LAYERS) console.log(`  layer ${l}: ${doc.layers[l].id || "none"}`);
   for (const c of doc.capabilities) console.log(`  ${c.id}@${c.version || "?"} ${c.from?.kind === "package" ? `package ${c.from.package}` : c.from?.kind === "member" ? `member ${c.from.repoKey}` : ""}${c.operations.length ? `  ops: ${c.operations.map((o) => `${o.name}${o.available ? "" : "(unavailable)"}`).join(", ")}` : ""}`);
   for (const p of doc.problems) console.log(`  ! ${p.code}: ${p.message}`);
+}
+
+/** `{ teams, teamsSource }` for a session start of a workspace home: its eligible teams read
+ *  live (two repository reads), which the launch hook re-checks joined memberships against
+ *  (teams contract decision 6) — or the spawn record, marked `recorded`, when the read cannot
+ *  answer. Anything that is not a readable workspace home gets nothing here — the start
+ *  itself refuses it. */
+async function homeLiveTeams(home) {
+  let meta;
+  try { meta = JSON.parse(readFileSync(join(home, "instance.json"), "utf8")); } catch { return {}; }
+  if (!isWorkspaceHome(meta)) return {};
+  const { liveTeams } = await import("../lib/instance-resolution.mjs");
+  const { teams, source } = await liveTeams(home, meta, { remoteOptions: remoteOptionsFromEnv() });
+  return Array.isArray(teams) ? { teams, teamsSource: source } : {};
 }
 
 // ---------- operation run: generic invoke through the capability engine ----------
@@ -856,7 +870,8 @@ async function operationCmd() {
   const m0 = typeof address === "string" ? OPERATION_ADDRESS_RE.exec(address) : null;
   if (!m0) bail("E_BAD_ARGS", `operation address must be <layer>:<name> with layer one of ${LAYERS.join(", ")} (got ${JSON.stringify(address)})`);
   const [, layer, opName] = m0;
-  const target = await workspaceTarget(bail, { command: "operation run" });
+  // Only the messaging provider's operations act on the teams: others get the record, no remote read.
+  const target = await workspaceTarget(bail, { command: "operation run", liveTeams: layer === "messaging" });
   return workspaceOperation(target, { bail, address, layer, opName });
 }
 
@@ -1393,12 +1408,12 @@ function workspaceItems(discovery, lock, { includePrivate = false } = {}) {
   const capabilities = [];
   for (const m of discovery.members) {
     if (!m.confirmed && !(discovery.standalone === true && m.key === discovery.key)) continue;
-    for (const s of m.souls) if (includePrivate || !s.private) souls.push({ name: s.name, origin: originOf(s), kind: "member", repoKey: s.repoKey, commit: s.commit, team: teamLabel(s.team), private: s.private, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null });
+    for (const s of m.souls) if (includePrivate || !s.private) souls.push({ name: s.name, origin: originOf(s), kind: "member", repoKey: s.repoKey, commit: s.commit, team: teamLabel(s.team), labels: [...(s.labels ?? (s.team ? [s.team] : []))], private: s.private, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null });
     for (const c of m.capabilities) if (includePrivate || !c.private) capabilities.push({ name: c.name, origin: originOf(c), kind: "member", repoKey: c.repoKey, commit: c.commit, team: teamLabel(c.team), private: c.private, path: c.path, layer: c.manifest.layer ?? null, version: c.manifest.version ?? null });
   }
   for (const ext of discovery.external || []) {
     const s = ext.soul;
-    if (includePrivate || !s.private) souls.push({ name: s.name, origin: `external ${s.repoKey} @ ${short(s.commit)}`, kind: "external", repoKey: s.repoKey, commit: s.commit, team: teamLabel(s.team), private: s.private, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null });
+    if (includePrivate || !s.private) souls.push({ name: s.name, origin: `external ${s.repoKey} @ ${short(s.commit)}`, kind: "external", repoKey: s.repoKey, commit: s.commit, team: teamLabel(s.team), labels: [...(s.labels ?? (s.team ? [s.team] : []))], private: s.private, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null });
   }
   for (const [id, entry] of Object.entries(lock?.packages || {})) {
     for (const name of entry.capabilities) capabilities.push({ name, origin: originOf({ package: id, version: entry.version }), kind: "package", package: id, version: entry.version, commit: entry.commit, team: teamLabel(null), private: false });
@@ -1467,7 +1482,7 @@ async function performSync(ctx, bail, { onDiscovered } = {}) {
   const packages = packageRows(lock);
   const changes = resolved.changes;
   const items = workspaceItems(discovery, lock, { includePrivate: true });
-  const report = { syncApi: 1, standalone: discovery.standalone === true || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, lock: lockFile }, members, packages, changes, problems };
+  const report = { syncApi: 1, standalone: discovery.standalone === true || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, lock: lockFile }, members, packages, changes, problems, warnings: discovery.warnings ?? [] };
   return { report, lock, discovery, items, lockFile, problems };
 }
 
@@ -1504,6 +1519,7 @@ function printSyncReport(ctx, synced) {
   for (const c of items.capabilities.filter((c) => c.kind === "member")) { const t = teams.get(c.team) || { souls: 0, capabilities: 0 }; t.capabilities++; teams.set(c.team, t); }
   console.log(`teams      ${[...teams.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([team, n]) => `${team} ${n.souls} soul${n.souls === 1 ? "" : "s"}${n.capabilities ? `, ${n.capabilities} capabilit${n.capabilities === 1 ? "y" : "ies"}` : ""}`).join(" · ") || "(none)"}`);
   for (const p of synced.problems ?? discovery.problems) console.log(`problem    ${p.code}  ${p.repoKey ? `${memberLabel(p.repoKey)}:` : ""}${p.path}  ${p.message}`);
+  for (const w of discovery.warnings ?? []) console.log(`warning    ${w.code}  ${w.message}`);
   console.log(`\nlock       ${shortPath(lockFile)}`);
 }
 
@@ -1619,7 +1635,7 @@ async function workspaceCmd() {
   const locked = new Set(packages.map((p) => p.id));
   const unsynced = declared.filter((id) => !locked.has(id));
   const stale = packages.filter((p) => !declared.includes(p.id)).map((p) => p.id);
-  const result = { workspaceStatusApi: 1, standalone: standalone || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, teams: Object.keys(discovery.workspace?.teams || {}) }, members, packages, declaredPackages: declared, unsynced, stale, external: (discovery.external || []).map((e) => ({ source: e.source, soul: e.soul.name, team: teamLabel(e.soul.team) })), problems: discovery.problems };
+  const result = { workspaceStatusApi: 1, standalone: standalone || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, teams: Object.keys(discovery.workspace?.teams || {}) }, members, packages, declaredPackages: declared, unsynced, stale, external: (discovery.external || []).map((e) => ({ source: e.source, soul: e.soul.name, team: teamLabel(e.soul.team) })), problems: discovery.problems, warnings: discovery.warnings ?? [] };
   if (JSON_MODE) { jsonOk(result); return; }
   console.log(`workspace ${workspaceName(discovery)}  (${discovery.key} @ ${short(discovery.commit)})  local ${shortPath(ctx.localPath)}\n`);
   if (standalone) console.log(`  (${standaloneNote(discovery)})\n`);
@@ -1633,6 +1649,7 @@ async function workspaceCmd() {
   if (stale.length) console.log(`  locked but no longer declared (run \`oats sync\`): ${stale.join(", ")}`);
   if (result.external.length) console.log(`\nExternal: ${result.external.map((e) => `${e.soul} (${e.source.replace(/@([0-9a-f]{40})$/, (_, o) => `@${short(o)}`)}, ${e.team})`).join("   ")}`);
   if (discovery.problems.length) { console.log("\nProblems:"); for (const p of discovery.problems) console.log(`  ${p.code}  ${p.repoKey ? `${memberLabel(p.repoKey)}:` : ""}${p.path}  ${p.message}`); }
+  if (discovery.warnings?.length) { console.log("\nWarnings:"); for (const w of discovery.warnings) console.log(`  ${w.code}  ${w.message}`); }
 }
 
 /** `oats capabilities` / `oats souls` [--dir] [--json] — contract §6. */
@@ -1647,7 +1664,7 @@ async function itemsCmd(kind) {
   if (JSON_MODE) { jsonOk({ [`${kind}Api`]: 1, standalone: standalone || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, commit: discovery.commit }, [kind]: items, problems: discovery.problems }); return; }
   console.log(`${kind} of workspace ${workspaceName(discovery)} (${discovery.key} @ ${short(discovery.commit)})${standalone ? `  — ${standaloneNote(discovery)}` : ""}\n`);
   if (!items.length) console.log("  (none)");
-  else if (kind === "souls") printTable(["name", "origin", "team", "work"], items.map((s) => [s.name, s.origin, s.team, s.work ?? "—"]));
+  else if (kind === "souls") printTable(["name", "origin", "team", "work"], items.map((s) => [s.name, s.origin, s.labels?.length > 1 ? s.labels.join(",") : s.team, s.work ?? "—"]));
   else printTable(["name", "origin", "team", "layer"], items.map((c) => [c.name, c.origin, c.team, c.layer ?? "—"]));
   const unsynced = Object.keys(discovery.workspace?.packages || {}).filter((id) => !lock.packages[id]);
   if (kind === "capabilities" && unsynced.length) console.log(`\n  package capabilities of ${unsynced.join(", ")} appear after \`oats sync\``);
@@ -2281,7 +2298,7 @@ async function sessionCmd() {
       if (launchConfig === true) bad("--launch-config needs a configuration name, or none");
       const runtime = flag("runtime");
       if (runtime === true || (runtime !== undefined && !LAUNCH_RUNTIMES.includes(runtime))) bad(`--runtime must be one of ${LAUNCH_RUNTIMES.join(", ")}`);
-      const opts = { model: model || undefined, launchConfig, runtime, yolo: yoloFlag(), env: process.env };
+      const opts = { model: model || undefined, launchConfig, runtime, yolo: yoloFlag(), env: process.env, ...(await homeLiveTeams(home)) };
       if (args[1] === "restart") {
         const grace = flag("stop-grace");
         if (grace !== undefined) { if (grace === true || !/^\d+$/.test(String(grace)) || Number(grace) < 1 || Number(grace) > 300) bad("--stop-grace needs a number of seconds (1..300) to wait for the harness after SIGTERM"); opts.stopGraceMs = Number(grace) * 1000; }
@@ -2513,7 +2530,7 @@ async function capabilityCommand() {
   async function dispatch() {
     let activeIds;
     let context = process.cwd();
-    let teamCtx;
+    let teamCtx, homeMeta, homeTeamCtx;
     // OATS_INSTANCE_HOME is the canonical identity; the older names still count.
     const instanceHome = process.env.OATS_INSTANCE_HOME || process.env.PI_AGENT_HOME || process.env.OATS_HOME;
     const metaFile = instanceHome && join(instanceHome, "instance.json");
@@ -2533,10 +2550,15 @@ async function capabilityCommand() {
         if (!isWorkspaceHome(meta)) { const e = preWorkspaceHome(instanceHome, "nothing was dispatched"); bail(e.code, e.message); }
         context = meta.repo || context;
         soulDir = instanceSoulDir(instanceHome, meta);
-        // The team/workspace facts the home recorded at spawn, as its hooks got them.
+        // The team/workspace facts the home recorded at spawn, as its hooks got them, with the
+        // recorded eligible teams (OATS_TEAMS_SOURCE=recorded). Only the home's MESSAGING module
+        // gets them live (below): its team verbs (join/leave/teams) must see what the workspace
+        // allows now, and no other command pays a remote read for them.
         const ws = meta.workspace && typeof meta.workspace === "object" ? meta.workspace : {};
         const messaging = (meta.capabilities || []).find((c) => c.layer === "messaging")?.id;
-        teamCtx = teamEnv({ workspace: { key: ws.key, name: ws.name, deployment: ws.deployment, team: ws.soul?.team, slots: { messaging } }, payloads: meta.providers });
+        homeMeta = { meta, messaging };
+        homeTeamCtx = (teams, teamsSource) => teamEnv({ workspace: { key: ws.key, name: ws.name, deployment: ws.deployment, team: ws.soul?.team, slots: { messaging } }, payloads: meta.providers, teams, teamsSource });
+        teamCtx = homeTeamCtx(meta.teams, "recorded");
       } else {
         // Not inside a home: a v2 deployment (oats-local.yaml in reach) resolves
         // through the workspace, exactly as a spawn of --soul would (below).
@@ -2556,6 +2578,11 @@ async function capabilityCommand() {
     if (!activeIds.includes(m.capability)) bail("E_CAPABILITY_INACTIVE", `${m.capability} command namespace is not active in the current context/instance`);
     const trust = capabilityTrust(m);
     if (!trust.trusted) bail("E_CAPABILITY_BLOCKED", `${m.capability} executable command is blocked: ${trust.reason}`);
+    if (homeMeta && m.capability === homeMeta.messaging) {
+      const { liveTeams } = await import("../lib/instance-resolution.mjs");
+      const live = await liveTeams(instanceHome, homeMeta.meta, { remoteOptions: remoteOptionsFromEnv() });
+      teamCtx = homeTeamCtx(live.teams, live.source);
+    }
     return runManifestCommand(m, capSettings[m.capability] || {}, teamCtx, () => m._dir, soulDir);
   }
 
@@ -2677,7 +2704,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins"], workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "teams"], workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);

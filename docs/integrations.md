@@ -225,7 +225,7 @@ that CLI cannot revoke the certificate.
 Set portable team policy in the workspace/soul `messaging:` payload; set host
 facts in `oats-local.yaml` under `settings.oats.aweb.<key>`. Per-spawn
 `oats spawn … --provider oats.aweb <key>=<value>` is for non-host settings only.
-The effective payload is merged in order: workspace messaging, `byTeam[team]`,
+The effective payload is merged in order: workspace messaging, `byTeam[<primary label>]`,
 soul messaging, `oats-local.yaml` `settings.oats.aweb`, then per-spawn
 `--provider` values. `root`, `roots`, and `residents` are manifest-declared
 `hostOnly: true`: absolute root/custody paths are accepted only from
