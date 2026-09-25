@@ -3,16 +3,12 @@
 A schedule launches an agent, runs an oats command, or wakes an existing
 instance on a cron. Definitions belong to a scope and are committable; every
 `oats schedule` command run anywhere inside that scope, including from an
-instance home, reads and writes the same file. On a **workspace deployment**
-(0.25, [workspaces.md](workspaces.md)) the scope is the deployment directory
-— the one holding `oats-local.yaml` and the `agents/` root (the kernel derives
-it as the directory above the agents root; a leftover `oats-config.yaml` that
-declares `team:` would still win, so remove it); scheduled spawns there
-materialize exactly like `oats spawn`. On a classic 0.24 deployment the scope
-is the team workspace (the config level that declares the team, else the
-outermost `oats-config.yaml` level). Execution belongs to the host that holds
-the scope, so a schedule on a registered server keeps running while your laptop
-sleeps.
+instance home, reads and writes the same file. The scope is the deployment
+directory ([workspaces.md](workspaces.md)) — the one holding `oats-local.yaml`
+and the `agents/` root, found walking up; with none in reach, `oats schedule`
+is `E_LOCAL_MISSING`. Scheduled spawns materialize exactly like `oats spawn`.
+Execution belongs to the host that holds the scope, so a schedule on a
+registered server keeps running while your laptop sleeps.
 
 There is no daemon. One host timer (a launchd user agent on macOS, a systemd
 user timer on Linux) runs `oats schedule tick --host` once a minute; the tick
