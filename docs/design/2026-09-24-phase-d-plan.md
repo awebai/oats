@@ -261,6 +261,11 @@ the harvester delivers to that node as a PR the owning expert reviews.
 - two released-contract aliases stay: the provider env sets both `OATS_HARNESS` and `OATS_RUNTIME`, and manifests may say `requires[].runtime` or `requires[].harness`;
 - the Desktop switches on the `harness` feature.
 
+**Human direction 2026-09-25 (~17:20Z), amending the above: release 0.26.0 WITHOUT the harness rename; harness ships as a separate, later release.**
+- 0.26.0 ships main as it stands once the in-flight PRs land: (e), K, the teamsOf check, `layers.<layer>.from`, and Desktop F7. It keeps the `runtime` names everywhere.
+- The harness rename (the kernel PR, with the alias addendum: env `OATS_RUNTIME`, stdin `launch.runtime`, manifest `agents[].runtime`/`requires[].runtime`, `spawn --runtime`) ships in the **next minor, 0.27.0**. It is a breaking CLI/JSON change (`--runtime` refused on session/launch-config, `version.runtimes` dropped, launch-configs field renamed), so it isn't a patch. It ships together with the Desktop's switch on feature `harness`, and the Desktop's accepted kernel range widens to include 0.27.
+- Neither the kernel harness PR nor the Desktop switch merges to main before the v0.26.0 tag.
+
 Also: "core capabilities" is the human vocabulary for the knowledge/messaging/tasks capabilities in prose; wire names are unchanged.
 
 ### D5 — Catalog update and 0.26.0
