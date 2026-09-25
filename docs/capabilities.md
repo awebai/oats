@@ -176,9 +176,11 @@ Composition order: `defaults.<slot>` ⊕ `defaults.capabilities` ⊕
 `defaults.byTeam[<soul team>]` ⊕ `soul.capabilities` — later wins, `off`
 removes, a soul `<slot>: none` drops the workspace's slot default. A resolved
 capability whose manifest says `layer: X` fills slot X; two for one slot are
-`E_SLOT_CONFLICT`. Provider settings come from three homes — the soul's slot
-payload, `oats-local.yaml` `settings.<cap>`, and `oats spawn --provider` — and
-are deep-merged in that order. There are no agent types, no `global`, no
+`E_SLOT_CONFLICT`. Provider settings start from the manifest's own declared
+defaults (`settings.<key>.default`, the lowest layer), then take the workspace's
+`messaging` payload (and its `byTeam[<team>]`) for the messaging slot, the soul's
+slot payload, `oats-local.yaml` `settings.<cap>`, and `oats spawn --provider`,
+deep-merged in that order. There are no agent types, no `global`, no
 per-deployment activation or exclusion maps.
 
 ## Exact runtime composition

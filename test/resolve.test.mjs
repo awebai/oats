@@ -7,7 +7,7 @@ import { oatsError } from "../lib/errors.mjs";
 import { parseRepoRef } from "../lib/remote.mjs";
 import { standaloneRepo } from "../lib/workspace.mjs";
 import {
-  canonicalJson, composeCapabilities, mergePayload, parseVersion, refForKey, resolveSoul, revisionOf,
+  canonicalJson, composeCapabilities, manifestDefaultsPayload, mergePayload, parseVersion, payloadOrigins, refForKey, resolveSoul, revisionOf,
   satisfiesRange, skillsInListing,
 } from "../lib/resolve.mjs";
 
@@ -543,6 +543,20 @@ test("payload merge order: workspace.messaging ⊕ soul ⊕ local.settings ⊕ s
   assert.notEqual(r1.revision, r2.revision, "the instance-level payload is part of the revision");
   // a provider for a capability the soul does not resolve is refused
   await rejectsCode(resolveSoul(d, findSoul(d, "release-manager"), { ...base, spawn: { providers: { "nw-nothing": { a: 1 } } } }), "E_CAPABILITY_MISSING", (e) => assert.equal(e.details.capability, "nw-nothing"));
+});
+
+test("manifest setting defaults are a payload layer; payloadOrigins names the last layer that set each leaf (addendum 5)", () => {
+  const manifest = { settings: { identity: { default: { mode: "local" } }, tone: { description: "no default" }, retries: { default: 0 }, "a/b": { default: "x" } } };
+  const defaults = manifestDefaultsPayload(manifest);
+  assert.deepEqual(defaults, { identity: { mode: "local" }, retries: 0, "a/b": "x" }, "only declared defaults, falsy ones included");
+  assert.deepEqual(manifestDefaultsPayload({}), {});
+  const D = { kind: "manifest-default" }, S = { kind: "soul" }, H = { kind: "host" }, P = { kind: "spawn" };
+  // An object layer merges per leaf: the default keeps the leaves nobody overrode.
+  assert.deepEqual(payloadOrigins([{ payload: defaults, origin: D }, { payload: { identity: { resident: "r" } }, origin: S }]),
+    { "/identity/mode": D, "/identity/resident": S, "/retries": D, "/a~1b": D });
+  // A scalar replaces the whole subtree, taking its leaves' origins with it; a later object starts afresh.
+  assert.deepEqual(payloadOrigins([{ payload: { identity: { mode: "local" } }, origin: D }, { payload: { identity: "flat" }, origin: H }]), { "/identity": H });
+  assert.deepEqual(payloadOrigins([{ payload: { identity: "flat" }, origin: H }, { payload: { identity: { mode: "global" } }, origin: P }]), { "/identity/mode": P });
 });
 
 test("mergePayload: deep-merge objects, later wins on scalars and arrays, inputs untouched", () => {

@@ -706,7 +706,17 @@ the pre-fix marker and is never accepted for dispatch.
   per-module payload each provider will receive (`{ "<cap>": {…} }`, exactly
   `settings.<cap>` of the preview) — so a confirmed apply binds every
   provider fact (an identity choice, a delivery mode) **by value**; a Desktop
-  that changes a provider field re-previews. `instances[].identity` (status)
+  that changes a provider field re-previews. From 0.26.0 the merged payload
+  includes the manifest's declared setting defaults (`settings.<key>.default`,
+  the lowest layer), and the preview's **`settingsOrigins.<cap>`** maps each
+  leaf of `settings.<cap>` (a JSON pointer, e.g. `/identity/mode`) to
+  `{ kind, at }`: `kind` is `manifest-default` | `workspace` |
+  `workspace-team` | `soul` | `host` | `spawn` — the last layer that set it —
+  and `at` names where (`oats.json#/settings/identity/default`,
+  `soul.yaml#/messaging`, `oats-local.yaml#/settings/<cap>`,
+  `--provider <cap>`, …). A Desktop labels `manifest-default` values
+  "Default" from this, instead of hardcoding them (feature
+  **`settings-origins`**). `instances[].identity` (status)
   and `selected.identity` (inspect) carry the served principal a messaging
   provider reported: `{ mode: "local"|"global", alias, team, address|null,
   resident|null, grant?: { id, expiresAt, scopes }, provider }`; absent when
@@ -1342,8 +1352,8 @@ lifecycle hook and dispatched command receives as `OATS_SOUL` (captured
 lifecycle hooks set none). Instance homes carry no `soul` link.
 
 `digest` is the sha256 of the copied module tree (`<home>/.oats/modules/<cap>/`);
-`providers.<cap>` is the merged payload (soul ⊕ `oats-local.yaml`
-`settings.<cap>` ⊕ `--provider`), `{}` for a capability with none. Copies live at
+`providers.<cap>` is the merged payload (manifest defaults ⊕ soul ⊕
+`oats-local.yaml` `settings.<cap>` ⊕ `--provider`), `{}` for a capability with none. Copies live at
 `<home>/.oats/modules/<cap>/` and `<home>/.agents/skills/<cap>/<skill>/`.
 
 ### `oats status [--dir] --json` — module drift
