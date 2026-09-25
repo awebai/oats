@@ -2,7 +2,7 @@
 /**
  * oats — the OATS command line.
  *
- *   oats doctor [dir] [--json]              show the resolved config with origins
+ *   oats doctor [dir] [--soul <s>] [--json] show the deployment; --soul: the instructions an instance of <s> would carry
  *   oats onboard [<dir>] --workspace <ref>  realize a workspace here (oats-local.yaml +
  *                                          agents/), then sync
  *   oats sync [--dir <d>] [--json]          discover the workspace, confirm membership,
@@ -17,9 +17,9 @@
  * `init` / `use` / `install` / `restore` / `list` / `catalog` / `remove` /
  * `migrate` / `trust` / `inject` are gone with the installed-capability tier.
  */
-import { existsSync, lstatSync, mkdirSync, readFileSync, readSync, realpathSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readSync, realpathSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -488,17 +488,54 @@ function operationalKnowledgeNote(composition, soulName) {
   return composition && !composition.oatsCoreDeclared
     ? `soul ${soulName} has no oats.core capability; kernel-shipped operational skills are deprecated` : null;
 }
-function doctorComposition(ctx, soulName) {
+/** `doctor --soul`: the instructions an instance of that soul would carry. The soul
+ *  is resolved over the workspace remotes exactly as a spawn preview resolves it,
+ *  the kernel half composed, and the modules materialized into a scratch home
+ *  OUTSIDE the deployment (removed after), so module injects are part of the text.
+ *  Nothing in the deployment is written. Block files of module injects are named
+ *  home-relative (`.oats/modules/<cap>/<inject>`), where an instance carries them. */
+async function doctorComposition(ctx, soulName, ws, bail) {
   if (!soulName) return undefined;
-  const root = findRoot(ctx);
-  const agent = root && findAgent(root, soulName);
-  if (!agent) throw new Error(`unknown soul "${soulName}" for doctor composition`);
-  return composeInstanceAgentsMd(join(agent._dir, "soul"), ctx, agent.name, agent.work || "checkout", agent.kind);
+  const { prepareInstance, previewWorkspaceSoul, materializePrepared, discoverOrStandalone } = await import("../lib/instance-resolution.mjs");
+  const deployment = dirname(ws.local.path);
+  const root = join(deployment, "agents");
+  const remoteOptions = remoteOptionsFromEnv();
+  const cleanups = [];
+  // A bail exits the process without unwinding: the temporary copies are removed at exit too.
+  process.once("exit", () => { for (const c of cleanups) { try { c(); } catch { /* best effort */ } } });
+  try {
+    const discovery = await discoverOrStandalone(loadLocal(deployment).local, { remoteOptions });
+    const prepared = await prepareInstance(deployment, soulName, { remoteOptions, discovery });
+    const pv = await previewWorkspaceSoul(prepared, root);
+    cleanups.push(pv.cleanup);
+    const agent = findAgentAt(root, prepared.soulEntry.name, pv.soulDir);
+    if (!agent) bail("E_SOUL_UNKNOWN", `soul "${soulName}" was fetched but is not readable as a soul`);
+    const composition = composeInstanceAgentsMd(pv.soulDir, deployment, agent.name, agent.work || "checkout", agent.kind, prepared);
+    const scratch = realpathSync(mkdtempSync(join(tmpdir(), "oats-doctor-home-")));
+    cleanups.push(() => rmSync(scratch, { recursive: true, force: true }));
+    const outcome = await materializePrepared({ ...prepared, soulAgentsMd: composition.text, soulDir: pv.soulDir }, scratch);
+    const text = readFileSync(join(scratch, "AGENTS.md"), "utf8");
+    const known = new Set(composition.blocks.map((b) => b.source));
+    const outcomeBlocks = Array.isArray(outcome?.blocks) ? outcome.blocks : [];
+    for (const m of text.matchAll(/^<!-- oats:(capability:[^\s]+) src=(.+?) -->$/gm)) {
+      const [, source, file] = m;
+      if (known.has(source)) continue;
+      known.add(source);
+      const content = outcomeBlocks.find((b) => b.source === source && b.file === file)?.content ?? (existsSync(file) ? readFileSync(file, "utf8").trim() : "");
+      const rel = file.startsWith(scratch + sep) ? file.slice(scratch.length + 1) : file;
+      composition.blocks.push({ source, file: rel, content, materialized: true });
+    }
+    return { ...composition, text };
+  } catch (e) {
+    if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details);
+    throw e;
+  } finally { for (const c of cleanups) { try { c(); } catch { /* best effort: temporary copies only */ } } }
 }
 
 /** Workspace-model v2 doctor data, OFFLINE: the deployment declaration found
  * walking up from ctx (oats-local.yaml) and the lock v3 beside it. Doctor never
- * goes to the network; membership and discovery are `oats sync` / `oats workspace status`. */
+ * goes to the network for this view (only `--soul`, which resolves the soul like a
+ * spawn preview); membership and discovery are `oats sync` / `oats workspace status`. */
 function doctorLockData(ctx) {
   const out = { local: null, localError: null, lockFile: null, packages: [], lockError: null };
   let lockDir = ctx;
@@ -824,9 +861,9 @@ function doctorDeployment(dir) {
   if (!ws.local) bail("E_LOCAL_MISSING", `oats doctor reads a workspace deployment, and none is in reach of ${ctx} (no oats-local.yaml walking up; \`oats onboard\` creates one)`, { dir: ctx });
   return { ctx, ws };
 }
-function doctorJson(dir) {
+async function doctorJson(dir) {
   const { ctx, ws } = doctorDeployment(dir);
-  console.log(JSON.stringify(doctorWorkspaceJson(ctx, flag("soul"), ws), null, 2));
+  console.log(JSON.stringify(await doctorWorkspaceJson(ctx, flag("soul"), ws), null, 2));
 }
 
 /** The v2 doctor payload: the deployment declaration + lock (offline) and, with
@@ -837,8 +874,8 @@ function legacyLayoutProblems(root) {
   const legacy = legacyLocalAgents(root);
   return legacy ? [legacy] : [];
 }
-function doctorWorkspaceJson(ctx, soulName, ws) {
-  const composition = doctorComposition(ctx, soulName);
+async function doctorWorkspaceJson(ctx, soulName, ws) {
+  const composition = await doctorComposition(ctx, soulName, ws, (code, msg, details) => jsonFail(code, msg, details));
   const problems = legacyLayoutProblems(join(dirname(ws.local.path), "agents"));
   return {
     schemaVersion: 1, workspaceApi: 2, context: ctx,
@@ -871,12 +908,12 @@ function printDoctorWorkspace(ws) {
   }
   console.log("  membership, discovery and drift need the remotes: `oats workspace status`, `oats sync`.");
 }
-function doctor(dir) {
+async function doctor(dir) {
   const { ctx, ws } = doctorDeployment(dir);
   const soulName = flag("soul");
   console.log(`oats doctor — resolved from ${shortPath(ctx)}\n`);
   doctorVersionSkew();
-  const composition = doctorComposition(ctx, soulName);
+  const composition = await doctorComposition(ctx, soulName, ws, (code, msg) => die(`${msg} [${code}]`));
   printDoctorWorkspace(ws);
   for (const p of legacyLayoutProblems(join(dirname(ws.local.path), "agents"))) console.log(`\n! ${p.code}: ${p.message}`);
   if (soulName) {
@@ -3036,7 +3073,7 @@ else if (cmd === "operation") await operationCmd();
 else if (cmd === "launch-config") await launchConfigCmd();
 else if (cmd === "doctor") {
   const doctorDir = args[1] && !args[1].startsWith("--") ? args[1] : undefined;
-  args.includes("--json") ? doctorJson(doctorDir) : doctor(doctorDir);
+  await (args.includes("--json") ? doctorJson(doctorDir) : doctor(doctorDir));
 }
 else if (cmd === "update") {
   // `oats update <package>` left with the installed tier (packages are pinned in

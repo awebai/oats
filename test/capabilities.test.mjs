@@ -580,10 +580,20 @@ test("operational commands are gated by active instance metadata; doctor exposes
   r = fx.cli(["ops", "ping"], { cwd: plainHome, env: { PI_AGENT_HOME: plainHome } });
   assert.equal(r.status, 1); assert.match(r.stderr, /unknown command "ops"/);
   assert.match(readFileSync(join(home, "AGENTS.md"), "utf8"), /Ops instructions/);
+  const tree = () => spawnSync("find", [fx.dep, "-path", `${fx.member}`, "-prune", "-o", "-print"], { encoding: "utf8" }).stdout.split("\n").sort().join("\n");
+  const before = tree();
   r = fx.cli(["doctor", "--soul", "dev", "--json"]);
   assert.equal(r.status, 0, r.stderr);
   const doctor = JSON.parse(r.stdout); assert.match(doctor.composedInstructions, /Canonical dev/);
   assert.ok(doctor.instructionBlocks.some((b) => b.source === "kernel:instance-boundary"));
+  // The module's inject is part of what doctor shows, as it is of what a spawned home carries.
+  assert.match(doctor.composedInstructions, /Ops instructions/);
+  assert.deepEqual(doctor.instructionBlocks.filter((b) => b.source === "capability:acme.ops").map((b) => [b.file, b.content]), [[".oats/modules/acme.ops/inject.md", "## Ops instructions"]]);
+  assert.equal(tree(), before, "doctor --soul writes nothing in the deployment");
+  r = fx.cli(["doctor", "--soul", "dev"]);
+  assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /Final composed AGENTS\.md for dev:[\s\S]*Ops instructions/);
+  r = fx.cli(["doctor", "--soul", "nope", "--json"]);
+  assert.equal(r.json().error.code, "E_SOUL_UNKNOWN");
   assert.equal(readFileSync(join(fx.member, "souls", "dev", "AGENTS.md"), "utf8"), "# Canonical dev\n\nNever mutate me.\n");
 });
 
