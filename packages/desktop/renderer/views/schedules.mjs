@@ -61,7 +61,7 @@ export function createSchedulesView(el, ctx, readOptions = {}) {
       <div class="schedule-spawn-options">
         <label>Purpose (optional instance name prefix)<input class="field" name="purpose"></label>
         <div class="schedule-pair">
-          <label>Runtime<select class="field" name="runtime"><option value="">Soul default</option><option>pi</option><option>claude</option><option>codex</option></select></label>
+          <label>Harness<select class="field" name="runtime"><option value="">Soul default</option><option>pi</option><option>claude</option><option>codex</option></select></label>
           <label>Model<input class="field" name="model" placeholder="Soul default"></label>
         </div>
         <div class="schedule-pair">

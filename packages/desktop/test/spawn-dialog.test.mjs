@@ -241,8 +241,8 @@ test('model suggestions follow the kernel\'s runtime; "the runtime\'s own defaul
   assert.deepEqual(asked, ['pi'], 'asked for the runtime the kernel resolved');
   u.q('.spawn-model-controls .spawn-choice-trigger').click(); await settle();
   const labels = [...u.doc.querySelectorAll('#spawn-model-choices button')].map(b => b.textContent);
-  assert.ok(labels.some(l => l.startsWith('Sonnet'))); assert.ok(labels.includes("The runtime's own default"));
-  [...u.doc.querySelectorAll('#spawn-model-choices button')].find(b => b.textContent === "The runtime's own default").click(); await settle();
+  assert.ok(labels.some(l => l.startsWith('Sonnet'))); assert.ok(labels.includes("The harness's own default"));
+  [...u.doc.querySelectorAll('#spawn-model-choices button')].find(b => b.textContent === "The harness's own default").click(); await settle();
   assert.deepEqual(last(u).model, { kind: 'native-default' });
   assert.equal(u.q('.spawn-name-result strong').textContent, created('preview-native-default').instance);
   assert.equal(u.text('.spawn-input-tag'), 'chosen');
@@ -269,7 +269,7 @@ test('a launch configuration is listed for this soul and sent only when chosen',
 test('permissions default to what the kernel reports and are sent only when chosen', async t => {
   const u = await mountSpawn(t);
   await u.open(); await u.type('.fpurpose', 'api-v2');
-  assert.equal(u.q('.fyolo').options[0].textContent, "Default · runtime's policy");
+  assert.equal(u.q('.fyolo').options[0].textContent, "Default · harness's policy");
   await u.change('.fyolo', 'true'); assert.equal(last(u).yolo, true);
 });
 

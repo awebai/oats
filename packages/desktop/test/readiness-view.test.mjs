@@ -84,7 +84,7 @@ test('hidden host controls cannot refresh or steal focus', async t => {
   assert.equal(u.calls.length, 1); assert.equal(u.doc.activeElement.id, 'other');
 });
 
-test('inspector owns exact soul and home selectors, independent of operations inspection and disposal', async t => {
+test('inspector: a soul shows no readiness (F7); a home reads its exact instance selector, and a replaced home cannot repaint', async t => {
   const dom = new JSDOM('<!doctype html><body><aside></aside>'), doc = dom.window.document, previous = currentWorkspace(); setWorkspace('team'); resetCliStateForTests();
   const calls = [], gates = []; const ctx = { api: async (path, opts) => {
     if (path === '/api/cli') return cli;
@@ -95,11 +95,14 @@ test('inspector owns exact soul and home selectors, independent of operations in
   t.after(() => { inspector.dispose(); resetCliStateForTests(); setWorkspace(previous); dom.window.close(); });
   const agent = { name: 'dev', agentsRoot: '/team/agents' };
   await inspector.show({ agent, selector: { soul: 'dev', agentsRoot: agent.agentsRoot } });
-  assert.deepEqual(calls[0], { action: 'read', selector: { kind: 'soul', soul: 'dev', agentsRoot: '/team/agents' } });
+  assert.equal(calls.length, 0, 'no readiness read for a soul'); assert.equal(doc.querySelector('.readiness-view'), null);
   const home = { instance: 'dev-1', agent: 'dev', agentsRoot: '/team/agents', home: '/team/agents/dev/instances/dev-1' };
   await inspector.show({ instance: home, selector: { home: home.home } });
-  assert.deepEqual(calls[1].selector, { kind: 'instance', instance: 'dev-1', agent: 'dev', agentsRoot: '/team/agents', server: null });
-  const before = doc.body.innerHTML; gates[0].resolve(view()); await tick(); assert.equal(doc.body.innerHTML, before);
+  assert.deepEqual(calls[0], { action: 'read', selector: { kind: 'instance', instance: 'dev-1', agent: 'dev', agentsRoot: '/team/agents', server: null } });
+  const other = { ...home, instance: 'dev-2', home: '/team/agents/dev/instances/dev-2' };
+  await inspector.show({ instance: other, selector: { home: other.home } });
+  assert.deepEqual(calls[1].selector, { kind: 'instance', instance: 'dev-2', agent: 'dev', agentsRoot: '/team/agents', server: null });
+  const before = doc.body.innerHTML; gates[0].resolve(view()); await tick(); assert.equal(doc.body.innerHTML, before, 'the replaced home cannot repaint');
   inspector.dispose(); gates[1].reject(Error('PRIVATE')); await tick(); assert.equal(doc.querySelector('.readiness-view'), null);
 });
 

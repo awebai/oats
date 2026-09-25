@@ -36,8 +36,8 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
     const retry = modal.querySelector(".start-retry");
     modal.querySelector("h2").textContent = `${restart ? "Restart" : "Start"} ${instance.instance}`;
     modal.querySelector(".start-context").textContent = `${instance.runtime || "pi"} · ${instance.server || "This machine"} · ${instance.home}`;
-    model.placeholder = instance.model || "Runtime default";
-    modal.querySelector(".start-model-help").textContent = `Leave blank to keep ${instance.model || "the runtime default"}. Choosing a model here changes this instance’s next launch.`;
+    model.placeholder = instance.model || "Harness default";
+    modal.querySelector(".start-model-help").textContent = `Leave blank to keep ${instance.model || "the harness default"}. Choosing a model here changes this instance’s next launch.`;
     let closed = false, starting = false, started = false, live = false, canStart = false, refreshGeneration = 0, hasLaunchConfig = false, configsLoaded = false;
     const owns = () => !closed && ws === currentWorkspace() && generation === workspaceGeneration();
     const runtime = modal.querySelector(".start-runtime"), yolo = modal.querySelector(".start-yolo");

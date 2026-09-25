@@ -27,7 +27,7 @@ const UNKNOWN = 'Activity: unknown · Waiting on you: unknown';
 const title = kind => Object.hasOwn(EVENT_TITLES, kind) ? EVENT_TITLES[kind] : `Other reported event (${kind})`;
 const incarnationLabel = (row, value) => ({ current: 'Current recorded incarnation', earlier: 'Earlier instance at this address', unknown: 'Incarnation not reported' })[eventIncarnation(row, value)];
 const setText = (element, value) => { if (element.textContent === value) return false; element.textContent = value; return true; };
-const labels = { agent: 'Soul', work: 'Work mode', branch: 'Branch', runtime: 'Runtime', model: 'Model', parentInstance: 'Parent', relation: 'Relation',
+const labels = { agent: 'Soul', work: 'Work mode', branch: 'Branch', runtime: 'Harness', model: 'Model', parentInstance: 'Parent', relation: 'Relation',
   launched: 'Launch reported', backend: 'Backend', launchConfig: 'Launch configuration', phase: 'Phase', signal: 'Signal', state: 'State reported',
   waitedMs: 'Waited (ms)', stillRunningCount: 'Targets still running', planRevision: 'Plan revision', children: 'Children', dirty: 'Changed work count',
   keepDir: 'Home retained', self: 'Self retirement', quarantine: 'Quarantine', workRecovery: 'Recovery path', movedTo: 'Retained path',

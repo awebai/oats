@@ -56,8 +56,8 @@ test('safe decorative monograms and closed runtime placeholders never create res
     ['<img src=x>', undefined, '<img src=x>', '?'], [null, undefined, 'Not reported', '?'], ['constructor', undefined, 'constructor', '?']]) {
     const badge = createRuntimeBadge(doc, value); doc.body.append(badge);
     assert.equal(badge.dataset.runtime, key); assert.equal(badge.textContent, text);
-    assert.equal(badge.getAttribute('role'), 'img'); assert.equal(badge.getAttribute('aria-label'), `Reported runtime: ${label}`);
-    assert.equal(badge.title, `Reported runtime: ${label}`); assert.equal(badge.children.length, 0);
+    assert.equal(badge.getAttribute('role'), 'img'); assert.equal(badge.getAttribute('aria-label'), `Harness: ${label}`);
+    assert.equal(badge.title, `Harness: ${label}`); assert.equal(badge.children.length, 0);
     assert.doesNotMatch(badge.getAttribute('aria-label'), /installed|authenticated|trusted/i);
   }
   const cap = createCapabilityMark(doc, { id: 'fixture.notes', usedBy: ['invented-soul'], source: 'javascript:evil()' }, { root: '/team', host: 'one' });

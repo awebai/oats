@@ -12,7 +12,6 @@ import { inspectData, inspectFacts, originText } from '../renderer/inspect-contr
 import { createTeamsPanel, teamsOperations, soulTeams } from '../renderer/teams-panel.mjs';
 import { ageText } from '../renderer/age-text.mjs';
 import { homeInspection, capturedOperations, capturedRun } from './helpers/inspect-fixture.mjs';
-import { renderSoulDeclarations } from '../renderer/soul-declarations.mjs';
 import { iconElement } from '../renderer/shell-icons.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -130,7 +129,7 @@ for (const outcome of ['resolve', 'reject']) {
 function mutant(from, to) {
   const source = createSoulInspector.toString();
   assert.equal(source.split(from).length, 2, 'mutation targets exactly one production guard');
-  return runInNewContext(`(${source.replace(from, to)})`, { postJson, wsQuery, workspaceGeneration, runtimeState, createSoulMark, renderSoulDeclarations, createReadinessView, cliStatus, iconElement, originText, createTeamsPanel, teamsOperations, soulTeams, ageText, inspectData, inspectFacts });
+  return runInNewContext(`(${source.replace(from, to)})`, { postJson, wsQuery, workspaceGeneration, runtimeState, createSoulMark, createReadinessView, cliStatus, iconElement, originText, createTeamsPanel, teamsOperations, soulTeams, ageText, inspectData, inspectFacts });
 }
 test('mutation: pending ownership is essential during availability sync', async () => {
   const factory = mutant('pendingOperations.has(control) || !available()', '!available()');

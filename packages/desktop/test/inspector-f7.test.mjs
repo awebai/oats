@@ -38,9 +38,11 @@ test('the capture: a soul with two labels, one mapped; the kernel answers teams 
   assert.deepEqual(soulTeams([]), []);
 });
 
-test('soul: Teams (read-only), then what a spawn resolves, capabilities as a compact list, declarations behind a disclosure', async t => {
+test('soul: only what a person needs — Teams, Harness, Core capabilities, Capabilities; no readiness, source, spawn internals or declarations', async t => {
   const u = await rendered(t, soulSelection, soul);
-  assert.deepEqual(u.sections().slice(0, 4), ['Teams', 'When spawned', 'Effective providers', `Capabilities · ${soul.capabilities.length}`]);
+  assert.deepEqual(u.sections(), ['Teams', 'Harness', 'Core capabilities', `Capabilities · ${soul.capabilities.length}`]);
+  assert.doesNotMatch(u.el.textContent, /When spawned|Effective providers|Declared in soul\.yaml|AGENTS\.md|Provider operations/);
+  assert.equal(u.el.querySelector('.readiness-view'), null);
   const chips = u.el.querySelector('h3.inspector-section + p + .inspector-chips');
   assert.ok(chips, 'one horizontal row of chips follows the one-line explanation');
   assert.equal(chips.previousElementSibling.textContent, "The teams this soul has access to. Its instances start in their person's personal team only and can join these:");
@@ -48,19 +50,14 @@ test('soul: Teams (read-only), then what a spawn resolves, capabilities as a com
     [['engineering · primary', 'inspector-chip', 'engineering (northwind:eng)']], 'global is not mapped: not shown');
   assert.doesNotMatch(u.el.textContent, /global/);
   assert.equal(u.el.querySelector('form, input, select, textarea'), null, 'read-only: joining is per instance');
-  assert.ok(![...u.el.querySelectorAll('.inspector-card dt')].some(dt => dt.textContent === 'Team'), 'the single team fact gave way to the Teams section');
   const caps = [...u.el.querySelectorAll('.inspector-cap-row')];
   assert.equal(caps.length, soul.capabilities.length);
-  for (const row of caps) { const details = row.querySelector('details'); assert.equal(details.open, false); assert.equal(details.querySelector('summary').textContent, 'Details'); }
-  const declared = [...u.el.querySelectorAll('details.inspector-disclosure')].find(d => d.querySelector('summary').textContent === 'Declared in soul.yaml');
-  assert.ok(declared); assert.equal(declared.open, false); assert.equal(declared.querySelector('h3'), null, 'no second heading inside the disclosure');
-  assert.ok(declared.querySelector('pre'), 'the raw declaration is behind it');
 });
 
 test('soul: no teams reported shows nothing; an empty list says personal team only', async t => {
   const none = structuredClone(soul); delete none.teams;
   const a = await rendered(t, soulSelection, none);
-  assert.equal(a.sections()[0], 'When spawned');
+  assert.equal(a.sections()[0], 'Harness');
   const empty = structuredClone(soul); empty.teams = [];
   const b = await rendered(t, soulSelection, empty);
   assert.equal(b.sections()[0], 'Teams');
@@ -71,17 +68,13 @@ test('soul: no teams reported shows nothing; an empty list says personal team on
   assert.equal(b.el.querySelector('.inspector-chips'), null);
 });
 
-test('soul: readiness is one line under the summary, its checks behind a disclosure; the summary shows only reported facts', async t => {
-  const u = await rendered(t, soulSelection, soul);
-  const readiness = u.el.querySelector('.inspector-readiness .readiness-view');
-  assert.ok(readiness);
-  const more = readiness.querySelector('details.readiness-more');
-  assert.equal(more.open, false); assert.equal(more.querySelector('summary').textContent, 'Checks and policy');
-  assert.equal(readiness.querySelector(':scope > .readiness-status').parentElement, readiness, 'the status line is outside the disclosure');
-  assert.ok(more.querySelector('.readiness-context'));
-  const position = u.el.querySelector('.inspector-readiness').compareDocumentPosition(u.el.querySelector('h3.inspector-section'));
-  assert.ok(position & 4, 'readiness comes before the inspection');
-  assert.doesNotMatch(u.el.textContent, /Reported runtime|Description—|Source—/);
+test('soul: a declared default harness and model are named; the summary is the description only', async t => {
+  const v = structuredClone(soul); v.souls[0].runtime = 'claude'; v.souls[0].model = 'claude-opus-4';
+  const u = await rendered(t, { agent: { ...soulSelection.agent, description: 'Ships the releases.' }, selector: soulSelection.selector }, v);
+  const harness = [...u.el.querySelectorAll('h3.inspector-section')].find(h => h.textContent === 'Harness').nextElementSibling;
+  assert.deepEqual([...harness.querySelectorAll('dt')].map(dt => [dt.textContent, dt.nextElementSibling.textContent]), [['Default harness', 'Claude Code'], ['Default model', 'claude-opus-4']]);
+  assert.equal(u.el.querySelector('.inspector-summary .inspector-lede').textContent, 'Ships the releases.');
+  assert.equal(u.el.querySelector('.inspector-summary .inspector-facts'), null, 'no Source/Runtime facts');
 });
 
 test('instance: Teams first, then the instance card, "Spawned from" with Open soul, the as-spawned modules collapsed', async t => {

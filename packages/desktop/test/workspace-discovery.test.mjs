@@ -147,17 +147,16 @@ test('root/name/host focus survives polling, the soul page\'s back and modal clo
   assert.deepEqual(u.files, []); assert.deepEqual(u.opens, []);
 });
 
-test('the declared soul is read-only; its disclosed instructions are stable under roster polling', async t => {
+test('the declared soul is read-only; its page is stable under roster polling', async t => {
   const u = await setup(t);
   u.doc.querySelector('.soul-card').click(); await tick();
   const inspector = u.doc.querySelector('.workspace-soul-page');
-  assert.match(inspector.textContent, /When spawned/);
+  assert.match(inspector.textContent, /Core capabilities/);
   assert.doesNotMatch(inspector.textContent, /Edit this soul/);
   assert.equal(inspector.querySelector('form, textarea, input'), null, 'no in-place editor');
-  const details = [...inspector.querySelectorAll('details')].find(d => d.querySelector('summary')?.textContent === 'AGENTS.md / instructions');
-  assert.ok(details); details.open = true;
+  const main = inspector.querySelector('.inspector-main');
   u.polls[0](); await tick();
-  assert.equal([...inspector.querySelectorAll('details')].includes(details), true); assert.equal(details.open, true);
+  assert.equal(inspector.querySelector('.inspector-main'), main, 'polling keeps the rendered page');
   assert.equal(u.inspections().length, 1, 'polling never refreshes the inspector');
   assert.ok(u.inspections().every(c => c.body.action === 'inspect'));
 });

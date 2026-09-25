@@ -265,7 +265,7 @@ export function createContextPanel({
     host.append(dl); return dl;
   }
   const session = section('instance', 'Session');
-  facts(session, [['runtime', 'Runtime'], ['model', 'Model'], ['work', 'Work mode'], ['createdAt', 'Created']]);
+  facts(session, [['runtime', 'Harness'], ['model', 'Model'], ['work', 'Work mode'], ['createdAt', 'Created']]);
   const lineage = section('instance', 'Lineage');
   facts(lineage, [['parentInstance', 'Parent'], ['siblingInstance', 'Sibling']]);
   const details = node('details', 'context-panel-details'); details.append(node('summary', null, 'Details'));

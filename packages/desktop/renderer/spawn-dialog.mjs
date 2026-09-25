@@ -225,7 +225,7 @@ export function workText(data, soulWork) {
   return { lead: work ? `Work mode: ${work}` : '', code: '', tail: '' };
 }
 export function permissionText(yolo) {
-  return yolo === true ? 'skips prompts' : "runtime's policy";
+  return yolo === true ? 'skips prompts' : "harness's policy";
 }
 
 /** The soul chooser (left column). */
@@ -343,7 +343,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   nameField.append(nameHead, nameInput, nameResult);
   // Runtime · Model — the runtime is a picker with its badge; the select holds the value.
   const runRow = el('div', undefined, 'spawn-row spawn-run');
-  const runtimeLabel = el('label'); runtimeLabel.append(el('span', 'Runtime', 'spawn-label-text'));
+  const runtimeLabel = el('label'); runtimeLabel.append(el('span', 'Harness', 'spawn-label-text'));
   const runtime = el('select', undefined, 'field fruntime'); runtime.hidden = true; runtime.tabIndex = -1; runtime.setAttribute('aria-hidden', 'true');
   runtimeLabel.append(runtime);
   const modelLabel = el('label'); modelLabel.append(el('span', 'Model', 'spawn-label-text'));
@@ -474,7 +474,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const fillSelect = (select, rows) => { select.replaceChildren(); for (const [value, label, disabled] of rows) { const o = el('option', label); o.value = value; o.disabled = !!disabled; select.append(o); } };
   fillSelect(runtime, [['', 'Default'], ...runtimes.map(v => [v, RUNTIME_NAMES[v]])]);
   const yoloSupported = Array.isArray(c0?.launchOptions) && c0.launchOptions.includes('yolo');
-  fillSelect(yolo, [['', 'Default'], ['false', "Ask — runtime's policy", !yoloSupported], ['true', 'Skip prompts (YOLO)', !yoloSupported]]);
+  fillSelect(yolo, [['', 'Default'], ['false', "Ask — harness's policy", !yoloSupported], ['true', 'Skip prompts (YOLO)', !yoloSupported]]);
   const backends = Array.isArray(c0?.sessionBackends) ? c0.sessionBackends.filter(v => ['tmux', 'herdr'].includes(v)) : [];
   fillSelect(backend, [['', 'Default'], ...backends.map(v => [v, v === 'herdr' ? 'Herdr' : 'tmux'])]);
   fillSelect(config, [['', 'Default']]);
@@ -581,7 +581,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     modelTag.title = data?.modelSource || '';
     model.setAttribute('aria-label', model.value ? 'Model' : `Model — empty uses ${defaultModel || 'the default'}`);
     syncRuntime(data);
-    runHint.textContent = !local() ? `Runtime and model defaults are decided on ${remoteTarget()}.`
+    runHint.textContent = !local() ? `Harness and model defaults are decided on ${remoteTarget()}.`
       : data ? `Launches ${runtimeName(data.runtime)} with ${modelText(data)}.` : '';
     // Work.
     worktreeLabel.hidden = soul.work !== 'checkout';
@@ -789,8 +789,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   // ── model suggestions (advisory; free text stays valid)
   const suggestions = [];
   const models = createChoicePopup(doc, modelControls, 'Model choices', 'spawn-model-choices', () => [
-    { value: '', label: shown?.data && !model.value && !nativeModel ? `Default · ${shown.data.model ?? "runtime's own"}` : 'Default', selected: !model.value && !nativeModel, group: 'Defaults', search: false },
-    { native: true, label: "The runtime's own default", selected: nativeModel, group: 'Defaults', search: false },
+    { value: '', label: shown?.data && !model.value && !nativeModel ? `Default · ${shown.data.model ?? "harness's own"}` : 'Default', selected: !model.value && !nativeModel, group: 'Defaults', search: false },
+    { native: true, label: "The harness's own default", selected: nativeModel, group: 'Defaults', search: false },
     ...suggestions.map(m => ({ value: m.id, label: m.label || m.id, detail: m.label && m.label !== m.id ? m.id : undefined, selected: model.value === m.id, group: 'Suggestions' })),
     { custom: true, label: 'Custom…', detail: model.value || 'Type a model ID', group: 'Custom', search: false, selected: !!model.value && !suggestions.some(m => m.id === model.value) },
   ], item => {
@@ -801,10 +801,10 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     nothingReported: 'No model suggestions reported. Any model ID can be typed.', noMatch: 'No suggestions match this filter.' });
   models.trigger.textContent = ''; models.trigger.setAttribute('aria-label', 'Choose model');
   // ── runtime picker: the runtime's badge, like the design's provider field
-  const runtimePicker = createChoicePopup(doc, runtimeLabel, 'Runtime choices', 'spawn-runtime-choices', () => [
+  const runtimePicker = createChoicePopup(doc, runtimeLabel, 'Harness choices', 'spawn-runtime-choices', () => [
     { value: '', label: shown?.data ? `Default · ${runtimeName(shown.data.runtime)}` : 'Default', detail: 'What this soul launches with unless you choose', selected: !runtime.value,
       group: 'Default', search: false, ...(shown?.data ? { mark: () => createRuntimeBadge(doc, shown.data.runtime) } : {}) },
-    ...runtimes.map(v => ({ value: v, label: RUNTIME_NAMES[v], selected: runtime.value === v, group: 'Runtimes', mark: () => createRuntimeBadge(doc, v) })),
+    ...runtimes.map(v => ({ value: v, label: RUNTIME_NAMES[v], selected: runtime.value === v, group: 'Harnesses', mark: () => createRuntimeBadge(doc, v) })),
   ], item => { runtime.value = item.value; runtime.dispatchEvent(new doc.defaultView.Event('change', { bubbles: true })); });
   function syncRuntime(data) {
     const t = runtimePicker.trigger, value = runtime.value || data?.runtime || '';

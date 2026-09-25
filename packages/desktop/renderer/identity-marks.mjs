@@ -42,7 +42,7 @@ export function createRuntimeBadge(doc, value) {
   const key = reported.toLowerCase(), known = runtimeMarks.get(key);
   const el = doc.createElement('span'); el.className = 'runtime-badge';
   if (known) el.dataset.runtime = key; // closed set, even for hostile metadata
-  const label = `Reported runtime: ${known?.name || reported || 'Not reported'}`;
+  const label = `Harness: ${known?.name || reported || 'Not reported'}`;
   el.setAttribute('role', 'img'); el.setAttribute('aria-label', label); el.title = label;
   el.textContent = known?.mark || '?';
   return el;

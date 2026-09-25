@@ -4,7 +4,6 @@
 import { postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
 import { runtimeState } from './instance-presentation.mjs';
 import { createSoulMark } from './identity-marks.mjs';
-import { declarationsCSS, renderSoulDeclarations } from './soul-declarations.mjs';
 import { createReadinessView, readinessCSS } from './readiness-view.mjs';
 import { cliStatus } from './views/cli-status.mjs';
 import { iconElement } from './shell-icons.mjs';
@@ -13,8 +12,9 @@ import { createTeamsPanel, teamsOperations, teamsCSS, soulTeams, teamLabels } fr
 import { ageText } from './age-text.mjs';
 
 
+const HARNESS_NAMES = { pi: 'Pi', claude: 'Claude Code', codex: 'Codex' };
+const harnessName = value => HARNESS_NAMES[value] || value;
 export const inspectorCSS = `
-${declarationsCSS}
 ${readinessCSS}
 ${teamsCSS}
 .souls { container-type:inline-size; }
@@ -49,6 +49,7 @@ ${teamsCSS}
 .soul-page .inspector-head-actions .inspector-actions { display:flex; gap:8px; margin:0; }
 .soul-page > .inspector-status:empty { display:none; }
 .soul-page .soul-page-top { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(0,1fr); gap:16px; align-items:stretch; }
+.soul-page .soul-page-top:has(> :only-child) { grid-template-columns:minmax(0,1fr); }
 @container (max-width: 760px) { .soul-page .soul-page-top { grid-template-columns:minmax(0,1fr); } .soul-page .inspector-head { flex-wrap:wrap; } }
 /* Cards: About (the summary), Readiness, and each section block. */
 .soul-page .inspector-summary, .soul-page .inspector-readiness, .soul-page .inspector-block { background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; min-width:0; box-sizing:border-box; padding:0 0 14px; font-size:12px; }
@@ -206,14 +207,15 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     content = node('div', undefined, 'inspector-content inspector-main');
     // Readiness is a first question ("can it run?"): one line under the summary, its checks behind a disclosure.
     const readinessHost = node('div', undefined, 'inspector-content inspector-readiness');
+    // Readiness belongs to an instance; a soul's page shows what a person needs (human, F7).
+    const withReadiness = !selection.agent;
     if (layout === 'page') {
-      // The page's top row: what it is (description, source, instances) beside whether it can run.
-      const top = node('div', undefined, 'soul-page-top'); top.append(summary, readinessHost);
+      const top = node('div', undefined, 'soul-page-top'); top.append(summary); if (withReadiness) top.append(readinessHost);
       summary.append(node('h3', 'About', 'inspector-section'));
       container.append(head, status, top, content);
       headActions.append(button('Refresh', () => show(selection)));
-    } else container.append(head, summary, status, readinessHost, content);
-    readiness = createReadinessView(readinessHost, { ctx, compact: true }); syncReadiness();
+    } else container.append(head, summary, status, ...(withReadiness ? [readinessHost] : []), content);
+    readiness = withReadiness ? createReadinessView(readinessHost, { ctx, compact: true }) : null; syncReadiness();
     if (selection.agent) renderSelectedSoul();
   }
   // Resets are silent by default: workspace/subtab/disposal must not focus an
@@ -294,11 +296,11 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       renderCapabilities(inspected, { collapsed: true });
     } else if (soul) {
       renderSoulTeams(inspected);
-      section('When spawned'); card(inspectFacts.soul(soul).filter(([key]) => key !== 'Team'));
+      // The harness it declares by default, and the model within it (if any).
+      section('Harness');
+      if (typeof soul.runtime === 'string' && soul.runtime) card([['Default harness', harnessName(soul.runtime)], ...(typeof soul.model === 'string' && soul.model ? [['Default model', soul.model]] : [])]);
+      else content.append(node('p', 'No default harness: you choose one when you launch it.', 'muted'));
       renderCapabilities(inspected);
-      const declared = node('details', undefined, 'inspector-disclosure'); declared.append(node('summary', 'Declared in soul.yaml'));
-      renderSoulDeclarations(declared, soul, { heading: false }); content.append(declared);
-      instructions(soul.instructions, 'Instructions are truncated here. The full document is in the soul\'s repository.');
     } else content.append(node('p', 'The kernel did not report this soul. Refresh to retry.', 'muted'));
     // Operations run on a live home: a soul shows none (human, F7); an instance lists what it can run.
     if (inspected.subject.kind === 'instance') renderOperations(inspected);
@@ -385,10 +387,8 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     syncAvailability();
     const homes = instances(agent);
     const roster = node('div', undefined, 'inspector-content');
-    // Only what the roster reported: the description as a lede, then source and runtime when known.
+    // What a person needs: what it does, and its instances.
     if (agent.description) roster.append(node('p', agent.description, 'inspector-lede'));
-    const known = [['Source', agent.repoName || agent.workspace], ['Runtime', agent.runtime]].filter(([, v]) => typeof v === 'string' && v);
-    if (known.length) facts(known, roster);
     roster.append(node('h3', `Instances · ${homes.length}`));
     if (!homes.length) roster.append(node('p', 'No instances reported for this soul.', 'muted'));
     for (const instance of homes) {
@@ -407,7 +407,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     let host = content;
     // The page renders a soul's capabilities with the Capabilities view's own table (host-injected).
     if (layout === 'page' && !collapsed && typeof capabilityTable === 'function') {
-      host.append(node('h3', 'Effective providers', 'inspector-section'));
+      host.append(node('h3', 'Core capabilities', 'inspector-section'));
       card(inspectFacts.layers(inspected.layers), host);
       host.append(node('h3', `Capabilities · ${inspected.capabilities.length}`, 'inspector-section'));
       const table = node('div', undefined, 'inspector-capability-table'); host.append(table);
@@ -415,7 +415,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       return;
     }
     if (collapsed) { host = node('details', undefined, 'inspector-disclosure'); host.append(node('summary', `Modules as spawned · ${inspected.capabilities.length}`)); content.append(host); }
-    host.append(node('h3', 'Effective providers', 'inspector-section'));
+    host.append(node('h3', 'Core capabilities', 'inspector-section'));
     card(inspectFacts.layers(inspected.layers), host);
     host.append(node('h3', `Capabilities · ${inspected.capabilities.length}`, 'inspector-section'));
     if (!inspected.capabilities.length) { host.append(node('p', 'No capabilities resolved.', 'muted')); return; }
