@@ -119,6 +119,34 @@ action (`oats retire`) and `--force` behind a confirm.
 **F5 — Redesign frames** (the original Phase 3 deliverable, excl. 05/06),
 implemented on top of F1–F4 rather than on the 0.24 model.
 
+**F7 — Side panels redesigned, teams everywhere (human, 2026-09-25). This
+supersedes the frames and the text above wherever they differ.** One Desktop PR:
+- **Side panels** in the spawn modal's design language (frame 01a):
+  - an identity header and compact cards;
+  - only useful facts (no "Not reported" rows), and empty sections hidden;
+  - relative dates, and shortened paths with Copy;
+  - errors as one plain sentence, with the code behind Details;
+  - discoverable cross-links between an instance and its soul.
+- **Terminal-side context panel tabs, in order:** Instance · Soul · Git & GitHub.
+- **Teams, per surface** (teams contract `docs/design/2026-09-25-teams-contract.md`):
+  - **Soul** (Workspace inspector): the soul's labels, primary marked, each
+    joinable or "not mapped by this workspace". Read-only, from
+    `inspect --soul` `teams`.
+  - **Instance** (Workspace inspector and the terminal-side Instance tab): the
+    live panel (#178). Personal is always on; joined teams have Leave, and
+    joinable ones have Join.
+  - **Spawn modal, main form** (not Developer settings), a Teams row:
+    - "Personal team — always", fixed;
+    - each joinable label as an unchecked checkbox, sent as
+      `--provider <messaging> join=<a,b>`;
+    - unmapped labels greyed with the reason;
+    - the line "By default it's only in your personal team. Tick the teams it
+      should also join."
+
+    The row is shown iff the preview carries `teams` AND the messaging
+    manifest declares `settings.join` (the Desktop gates on declared facts,
+    never on versions).
+
 **F6 — Version and doctor surface.** `oats version --json` and `oats doctor
 --json` in an About/Health pane; `ACCEPT_RANGE` and the three pins move to
 `>=0.25.6`; a kernel below the floor is refused with the upgrade command shown.
