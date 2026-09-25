@@ -7,8 +7,8 @@ versioned. Nothing is installed: a package is resolved to an exact commit by
 `oats sync`, recorded in `oats-lock.json`, and **copied whole into each instance at spawn** (`<home>/.oats/modules/<cap>/`).
 
 Ground truth: [`oats-package.schema.json`](oats-package.schema.json) (the
-package manifest), [`oats-lock-v3.schema.json`](oats-lock-v3.schema.json) (the
-lock), and the module contract
+package manifest), the [lock v3 format](#lock-v3) below (`validateLock` in
+`lib/packages.mjs` is its authority; it has no JSON schema), and the module contract
 [design/2026-09-23-workspace-module-contracts.md §4](design/2026-09-23-workspace-module-contracts.md).
 
 ## What a package is

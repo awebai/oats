@@ -28,9 +28,8 @@ function walk(dir, accept = () => true) {
 const ajv = new Ajv2020({ allErrors: true, strict: false, allowUnionTypes: true });
 const manifestSchemaPath = join(root, "docs", "capability-manifest.schema.json");
 const packageSchemaPath = join(root, "docs", "oats-package.schema.json");
-const lockSchemaPath = join(root, "docs", "oats-lock.schema.json");
 const manifestSchema = json(manifestSchemaPath);
-const baseSchemas = [[manifestSchemaPath, manifestSchema], [packageSchemaPath, json(packageSchemaPath)], [lockSchemaPath, json(lockSchemaPath)]];
+const baseSchemas = [[manifestSchemaPath, manifestSchema], [packageSchemaPath, json(packageSchemaPath)]];
 for (const [path, schema] of baseSchemas) {
   if (!ajv.validateSchema(schema)) fail(`${relative(root, path)} is not a valid JSON Schema: ${ajv.errorsText()}`);
 }

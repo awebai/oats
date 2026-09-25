@@ -536,6 +536,9 @@ test("operational commands are gated by active instance metadata; doctor exposes
   r = fx.cli(["doctor", "--soul", "dev", "--json"]);
   assert.equal(r.status, 0, r.stderr);
   const doctor = JSON.parse(r.stdout); assert.match(doctor.composedInstructions, /Canonical dev/);
+  // No oats.core: no operating instructions at all (the kernel ships no "You run on OATS" copy since 0.26), and doctor says so.
+  assert.deepEqual(doctor.information, ["soul dev has no oats.core capability (the workspace default); it gets no OATS operating instructions"]);
+  assert.doesNotMatch(doctor.composedInstructions, /You run on OATS/);
   assert.ok(doctor.instructionBlocks.some((b) => b.source === "kernel:instance-boundary"));
   // The module's inject is part of what doctor shows, as it is of what a spawned home carries.
   assert.match(doctor.composedInstructions, /Ops instructions/);

@@ -145,7 +145,7 @@ implementation. **This is a messaging-layer contract, not an oats.aweb
 detail** (decision 27): from kernel 0.25.6 the kernel copies it through as
 the principal the instance *acts as* — `oats status --json
 instances[].identity`, the roster's `identity:` line, `oats inspect --home …
-selected.identity` — preferring the capability whose captured layer is
+selected.identity` — preferring the capability whose recorded layer is
 `messaging`, adding `provider: <capability id>`, and never interpreting
 `grant`. The kernel offers no `--identity` flag: the choice travels as
 `--provider <cap> identity.mode=… identity.resident=…` and is bound by the
@@ -254,7 +254,7 @@ soul messaging, `oats-local.yaml` `settings.oats.aweb`, then per-spawn
   per missing item: `no messaging root at <dir>: run oats aweb setup there or
   set settings.oats.aweb.root`; `no team: set messaging.byTeam.<label>.team in
   the workspace file or settings.oats.aweb.team`. With both present it answers
-  `ready` (subject to captured-session checks when an invocation is supplied).
+  `ready`.
   In classic deployments this readiness check approximates the full bounded
   spawn search by checking `OATS_TEAM_SCOPE` before `OATS_WORKSPACE`; the spawn
   hook itself still keeps the exact 1.12.0 bounded candidate order. With no

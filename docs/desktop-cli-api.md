@@ -22,7 +22,7 @@ The Desktop accepts `desktopApi === 1` and gates on the kernel feature
 `packages-no-approval` (semver range `>=0.25.8 <0.27.0`: the floor admits the
 main-branch kernel before 0.26.0 is tagged; the feature fence is the real gate).
 Earlier bands were `>=0.22.0 <0.26.0` (Desktop 0.25) and `>=0.22.0 <0.24.0`
-(Desktop 0.23). It does not establish complete captured
+(Desktop 0.23). It does not establish complete
 UI, backend, plugin, retirement or recovery parity; capability checks and explicit
 refusals below remain authoritative.
 
@@ -60,6 +60,21 @@ with no `oats-local.yaml` in reach and no `--home`, the three commands answer
 `E_LOCAL_MISSING`; a `--home` whose `instance.json` records no `modules`
 (spawned by an earlier kernel) answers `E_UNSUPPORTED_MODE` (re-spawn it from
 the deployment); an unreadable `--home` answers `E_SESSION_UNKNOWN`.
+
+**The captured/portable path was removed in 0.26.** A *captured home* (its `instance.json`
+records `executionBinding`, `incarnationId` or `captured`: spawned through
+0.24–0.25's `prepare` / `--deployment --resolution`) answers `E_UNSUPPORTED_MODE`
+(`details: {home, captured: true}`) to these three commands, to `session
+start|restart` and to its in-home commands; `oats retire` still works on it, and
+its result's `warnings[]` names each capability whose retire hook did NOT run
+(what it created is not revoked). `oats status --json` / `oats doctor --json`
+name captured homes once, in `problems[]`, as `legacy-captured-home` `{instances,
+homes, message}`. The captured selectors `--deployment`, `--resolution` and
+`--artifact-set`, and an inherited `OATS_DEPLOYMENT`/`OATS_RESOLUTION`, are refused
+by every command except `version` (`E_UNSUPPORTED_MODE`, `details.selector` or
+`details.inherited`); `oats prepare` and `oats inspect --request` are removed
+verbs (`E_UNKNOWN_COMMAND`, `details: {removed, replacement}`). The version
+document no longer carries `capturedDispatchApi` / `capturedDispatchActions`.
 
 | Command | Integer (probe and payload) | 0.25.x value |
 |---|---|---|
@@ -329,7 +344,7 @@ Ambient `OATS_*`/`PI_*` is removed. For a soul, `instance` and `home` are
 
 Anything else is `unknown` (`provider-unavailable`). The check executable must
 resolve (realpath) inside its module directory and be a regular file; otherwise
-the item is `unknown` (`resource-not-found`). The request carries no captured
+the item is `unknown` (`resource-not-found`). The request carries no
 `binding`. A provider whose check
 still requires one answers `invalid-binding`, and readiness reports it as
 `unknown`.
@@ -536,8 +551,8 @@ deduplicated per run. Where the run launched or targeted an instance, a
 session to open (the existing `oats session` surface); the kernel does not
 copy transcripts. `nextRun`/`lastRun`/`executionStatus` are unchanged. The
 Schedules view (frame 08) renders `recentRuns` as the recent-runs list and the
-transcript pointer as the handoff; captured-policy definitions are preserved
-as they are (definition fields are untouched by this addition).
+transcript pointer as the handoff (definition fields are untouched by this
+addition). A stored captured definition (removed in 0.26) lists as `invalid`.
 
 ### History API 3 (`scheduleHistoryApi: 3`, feature `schedule-read-2`, OATS 0.24.13+) — K8b
 
@@ -966,7 +981,7 @@ and writes no `oats-config.yaml`; the member clones and the setup-expert spawn
 are printed as next steps. `<dir>` defaults to cwd; `--dir <d>` is the same
 argument (give it once). `--workspace` is required and must be a ref
 `lib/remote.mjs` parses (`E_REPO_REF`) — checked **before** anything is
-written. Captured selectors are refused (`E_BAD_ARGS`).
+written. Captured selectors are refused (`E_UNSUPPORTED_MODE`: the captured/portable path was removed in 0.26).
 
 ```json
 {"onboardApi":2,
@@ -1221,8 +1236,7 @@ the per-module row set (`toCapabilityRows`) that `oats inspect`/`status` read.
 `soulDir` (0.26.0) is the absolute soul directory the instance incarnates — a
 workspace soul's per-commit copy `<deployment>/agents/<soul>/souls/<commit12>`, or
 the read-only soul inside a capability package — and is what every classic
-lifecycle hook and dispatched command receives as `OATS_SOUL` (captured
-lifecycle hooks set none). Instance homes carry no `soul` link.
+lifecycle hook and dispatched command receives as `OATS_SOUL`. Instance homes carry no `soul` link.
 
 `digest` is the sha256 of the copied module tree (`<home>/.oats/modules/<cap>/`);
 `providers.<cap>` is the merged payload (manifest defaults ⊕ soul ⊕

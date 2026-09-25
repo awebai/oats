@@ -86,9 +86,10 @@ souls — is ordinary capability content: **`oats.core`** (package
 `defaults.capabilities: { oats.core: { from: package } }`; a soul may say
 `oats.core: off`. **`oats.setup`** (same package) carries the whole-architecture
 knowledge an onboarding expert needs. Neither is kernel magic; the kernel still
-composes its own instance-boundary and work-mode briefings — and, when
-`oats.core` resolves as a module, leaves the "You run on OATS" briefing to the
-module's inject (one block, not two; 0.25.2).
+composes its own instance-boundary and work-mode briefings, and the "You run
+on OATS" briefing is `oats.core`'s inject (the kernel ships no copy since 0.26:
+a soul without `oats.core` gets no OATS operating instructions, and
+`oats doctor --soul` says so).
 
 ## Instance anatomy
 
@@ -516,6 +517,15 @@ that directory; it only detects it. Onboarding refuses into a directory that
 holds one, and `oats status` and `oats doctor` report it once, as the
 `legacy-local-agents` problem naming the instances found there; retire them
 with the 0.25 kernel, or delete the directory once they are stopped.
+
+A *captured home* (spawned through 0.24–0.25's captured path, removed in 0.26:
+its `instance.json` records `executionBinding`, `incarnationId` or `captured`) is
+reported by `oats status` and `oats doctor` as the `legacy-captured-home`
+problem. It has no 0.26 runtime: start, restart, inspect/readiness/operation
+`--home` and its in-home commands refuse it (`E_UNSUPPORTED_MODE`). `oats retire`
+still works; it warns once per capability whose retire hook did NOT run, since
+identities and memberships those capabilities created are not revoked — remove
+them with the provider's own tooling. Re-spawn the soul from the deployment.
 
 Alternative agents-root layouts are planned but not built. Today the default
 layout is the only implemented layout.

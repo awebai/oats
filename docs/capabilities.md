@@ -327,6 +327,10 @@ instance's modules (or the soul's resolved set). Workspace commands (`sync`,
 `package`, `workspace status`, `capabilities`, `souls`, `doctor`) are always
 available.
 
+A manifest's `helperInjection` and a hook's `inputs` are **ignored since 0.26**:
+they served the captured path (removed in 0.26), are still accepted so that
+existing manifests load, and change nothing.
+
 Hooks receive `OATS_EVENT`, `OATS_CAPABILITY`, `OATS_LAYER`, `OATS_INSTANCE`,
 `OATS_HOME`, `OATS_AGENT`, `OATS_SOUL`, `OATS_CONTEXT`, `OATS_WORKSPACE`,
 `OATS_ROOT`, `OATS_LEVEL`, `OATS_SETTINGS`, and `OATS_META`. A final JSON line may
@@ -335,7 +339,7 @@ return `meta`, `brief`, `warning`, or runtime-specific `launch` arguments. A
 returning `env` from retire or soul-scaffold is an explicit contract error.
 
 A **launch hook** runs at every start and restart of a home for each provider
-captured at spawn (under its captured settings). Its `launch` arguments and
+recorded at spawn (under its recorded settings). Its `launch` arguments and
 `env` replace that provider's previous contribution whole. Its `meta`, when
 returned, replaces that provider's entry in `instance.json.capabilityMeta`
 after the start succeeds — the same record the spawn hook wrote and the retire
@@ -450,7 +454,7 @@ deployment's verified module store for `--soul`. The script must resolve inside
 the module and be a regular file. The command's words after the script are
 passed as arguments; no shell is involved.
 
-**Request** — one JSON document on stdin. There is no captured `binding`:
+**Request** — one JSON document on stdin:
 
 ```json
 {"schemaVersion":1,"phase":"check","slot":"messaging","capability":"my.provider",
@@ -472,7 +476,7 @@ passed as arguments; no shell is involved.
 
 **Environment:**
 - Every ambient `OATS_*`, `OAS_*` and `PI_*` variable is removed. Other
-  variables pass through, as for the captured-path broker.
+  variables pass through.
 - The kernel sets:
   - `OATS_CAPABILITY` and `OATS_SETTINGS` (the payload as JSON);
   - `OATS_CLI_BIN`;

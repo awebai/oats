@@ -24,9 +24,9 @@ import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   LAYERS, OATS_VERSION, manifestOperations,
-  capabilityManifests, capabilityTrust, capabilityExecutablePath, activateCapturedScaffold, loadCapturedDispatch, inspectPortableOnboarding, prepareCapturedComposition, resolveCapturedHelper, capturedNativeSessionAvailability, scaffoldCapturedInstance, startCapturedInstanceSession, withCapturedBindingFile, withCapturedInvocationContextFile, admitCapturedAction, beginCapturedIntent, settleCapturedIntent,
-  officialPackageCatalog, officialCatalogFile, officialCapabilityAliases, approveAvailableCapability, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
-  findInstanceHome, findInstanceHomes, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, launchConfigsAt, explicitInstanceName, findModuleCapabilityAgent, capabilityAgentFromDir, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, planLaunch, redactLaunchCommand, restartInstanceSession,
+  capabilityManifests, capabilityTrust, capabilityExecutablePath,
+  officialPackageCatalog, officialCatalogFile, officialCapabilityAliases, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, isCapturedHome, capturedHomeRefusal, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
+  findInstanceHome, findInstanceHomes, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, launchConfigsAt, explicitInstanceName, findModuleCapabilityAgent, capabilityAgentFromDir, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
 import {
   writeFileAtomic, LOCK_FILE, readLock, writeLock, resolvePackages,
@@ -41,15 +41,6 @@ import { parseEnvelopeText, scheduleScopeOf, listSchedules, describe as describe
 import { hostUnitStatus, installHostUnit, uninstallHostUnit } from "../lib/schedule-host.mjs";
 import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } from "../lib/attachments.mjs";
 
-import { capturedSelector } from "../lib/captured-selector.mjs";
-import { inspectCapturedPiOutcome } from "../lib/captured-pi-host.mjs";
-import { readCapturedResolution } from "../lib/captured-resolutions.mjs";
-import { oatsError } from "../lib/errors.mjs";
-import { canonicalJson } from "../lib/portable-values.mjs";
-import { readPortablePreparationRequest } from "../lib/portable-onboarding-request.mjs";
-import { portableScope } from "../lib/portable-state.mjs";
-import { CAPTURED_OPERATION_TIMEOUT_MS, runCapturedOperationProcess } from "../lib/captured-operation-process.mjs";
-import { approveCapturedCapability } from "../lib/artifact-approvals.mjs";
 import { observeInstanceGit, diffInstanceFile } from "../lib/instance-git.mjs";
 import { planStop, applyStop, planRetire, resolveInstance as resolveInstanceForCli } from "../lib/instance-lifecycle.mjs";
 const await_import_lifecycle = () => ({ resolveInstance: resolveInstanceForCli });
@@ -59,7 +50,7 @@ import { readEvents } from "../lib/instance-events.mjs";
 const args = process.argv.slice(2);
 let cmd = args[0];
 const HELP_WORDS = new Set(["help", "--help", "-h"]);
-const KERNEL_COMMANDS = new Set(["prepare", "capture", "capabilities", "doctor", "inspect", "instance", "operation", "package", "readiness", "souls", "launch-config", "experimental", "onboard", "pane", "recall", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "sync", "update", "version", "workspace"]);
+const KERNEL_COMMANDS = new Set(["capture", "capabilities", "doctor", "inspect", "instance", "operation", "package", "readiness", "souls", "launch-config", "experimental", "onboard", "pane", "recall", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "sync", "update", "version", "workspace"]);
 const flag = (name) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? (args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : true) : undefined;
@@ -107,376 +98,6 @@ function preservedOutputLines(recovery) {
   return [`  copied outputs: ${shown.join(", ")}${more} — ${formatBytes(outputs.bytes)} in total`];
 }
 
-function inspectOnboardingCmd() {
-  const fail = (code, message) => JSON_MODE ? jsonFail(code, message) : die(message);
-  const values = new Map();
-  for (let index = 1; index < args.length; index++) {
-    if (args[index] === "--json") continue;
-    const key = args[index];
-    if (!["--request", "--emit-prepare-request"].includes(key) || values.has(key) || !args[index + 1] || args[index + 1].startsWith("--")) fail("E_BAD_ARGS", "source inspection accepts one --request <absolute-json>, optional --emit-prepare-request <new-absolute-json>, and --json");
-    values.set(key, args[++index]);
-  }
-  try {
-    const output = values.get("--emit-prepare-request");
-    let parent;
-    const checkOutput = () => {
-      if (!isAbsolute(output) || resolve(output) !== output || output.includes("\0")) throw oatsError("E_BAD_ARGS", "prepare-request output needs a normalized absolute path");
-      let stat;
-      try {
-        stat = lstatSync(dirname(output));
-        if (!stat.isDirectory() || realpathSync(dirname(output)) !== dirname(output)) throw new Error();
-      } catch { throw oatsError("E_BAD_ARGS", "prepare-request output parent must be an existing real directory"); }
-      if (parent && (parent.dev !== stat.dev || parent.ino !== stat.ino)) throw oatsError("selection-changed", "prepare-request output parent changed during inspection");
-      try { lstatSync(output); }
-      catch (error) { if (error.code === "ENOENT") return stat; throw oatsError("E_BAD_ARGS", "prepare-request output could not be checked"); }
-      throw oatsError("E_BAD_ARGS", "prepare-request output already exists; choose a new file (nothing overwritten)");
-    };
-    if (output !== undefined) parent = checkOutput();
-    const input = readPortablePreparationRequest({ file: values.get("--request") });
-    const { prepareRequest, ...view } = inspectPortableOnboarding(input, { includePrepareRequest: output !== undefined });
-    let result = view;
-    if (output !== undefined) {
-      checkOutput();
-      try { writeFileSync(output, canonicalJson(prepareRequest) + "\n", { flag: "wx", mode: 0o600 }); }
-      catch { throw oatsError("E_BAD_ARGS", "prepare-request output could not be created exclusively; no existing file was overwritten"); }
-      const deployment = view.deployment.deployment.path;
-      result = { ...view, prepareRequestFile: output, effects: { ...view.effects, requestFileWrite: true,
-        deploymentWrites: output === deployment || output.startsWith(deployment + sep) } };
-    }
-    if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2));
-  } catch (error) { fail(error.code || "E_INSPECT_FAILED", error.message); }
-}
-
-function prepareCmd() {
-  const fail = (code, message, details) => JSON_MODE ? jsonFail(code, message, details) : die(message);
-  const values = new Map(), allowed = new Set(["request", "dir", "source", "revision", "export", "alias", "workspace", "workspace-revision", "work"]);
-  for (let index = 1; index < args.length; index++) {
-    if (args[index] === "--json") continue;
-    const key = args[index].startsWith("--") ? args[index].slice(2) : "";
-    if (!allowed.has(key) || values.has(key) || !args[index + 1] || args[index + 1].startsWith("--")) fail("E_BAD_ARGS", "prepare needs unique named source/context arguments; use prepare --help");
-    values.set(key, args[++index]);
-  }
-  try {
-    let input;
-    if (values.has("request")) {
-      // The shared leaf owns request bytes/exclusivity; this router alone owns
-      // argv and has already refused explicit captured selectors.
-      input = readPortablePreparationRequest({ file: values.get("request"),
-        inputFlags: Object.fromEntries([...values].filter(([key]) => key !== "request")) });
-    } else {
-      const deployment = values.get("dir"), alias = values.get("alias"), source = values.get("source");
-      if (!deployment || !isAbsolute(deployment) || !alias) fail("E_BAD_ARGS", "prepare needs --dir <absolute deployment> and --alias <name>");
-      if (source ? !values.get("revision") || !values.get("export") : !values.get("workspace") || values.has("revision") || values.has("export")) fail("E_BAD_ARGS", "choose a complete source/revision/export reference or a workspace-advertised alias");
-      if (values.has("workspace-revision") && !values.has("workspace")) fail("E_BAD_ARGS", "--workspace-revision requires --workspace");
-      const origin = { kind: "operator", document: { kind: "operator", id: "oats-prepare" }, pointer: "/source" };
-      input = { deployment, source: source ? { source, revision: values.get("revision"), soul: values.get("export"), alias } : alias, origin,
-        ...(values.has("work") ? { mode: values.get("work") } : {}),
-        ...(values.has("workspace") ? { workspace: { source: values.get("workspace"), origin: { ...origin, pointer: "/workspace" },
-          ...(values.has("workspace-revision") ? { revision: values.get("workspace-revision") } : {}) } } : {}) };
-    }
-    // Pass the whole request to the one public validator/resolver. Unknown
-    // fields are refused there, never filtered or filled from ambient state.
-    const result = prepareCapturedComposition(input);
-    if (!result.resolution) {
-      const summary = "preparation is incomplete; no executable resolution was published";
-      const reasons = (result.problems ?? []).filter(p => p.key !== undefined || (p.slot && p.capability))
-        .map(p => `[${p.slot && p.capability ? `${p.capability}/${p.slot}` : p.code}] ${p.key === undefined ? "" : `${JSON.stringify(p.key)}: `}${p.message}`);
-      fail("needs-configuration", JSON_MODE ? summary : [summary, ...reasons].join("\n"), result);
-    }
-    if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2));
-  } catch (error) { fail(error.code || "E_PREPARE_FAILED", error.message); }
-}
-
-/** Run one provider operation from immutable captured authority. A home is an
- * explicit target only: its stored binding must name this exact record. */
-function capturedOperation(selector, load, bail) {
-  if (args[1] !== "run") bail("E_USAGE", "usage: oats operation run <layer>:<name> --deployment <abs> --resolution <id> [--home <abs>] [--arg k=v ...] [--retry-intent <saved-id>] [--json]");
-  const address = args[2], match = typeof address === "string" ? OPERATION_ADDRESS_RE.exec(address) : null;
-  if (!match) bail("E_BAD_ARGS", `operation address must be <layer>:<name> with layer one of ${LAYERS.join(", ")} (got ${JSON.stringify(address)})`);
-  const [, slot, name] = match, given = Object.create(null);
-  let home, retryExecutionId;
-  for (let index = 3; index < args.length; index++) {
-    const token = args[index];
-    if (token === "--json") continue;
-    if (token === "--home") {
-      const value = args[++index];
-      if (home !== undefined || !value || value.startsWith("--") || !isAbsolute(value)) bail("E_BAD_ARGS", "--home needs one absolute instance home");
-      home = resolve(value); continue;
-    }
-    if (token === "--retry-intent") {
-      const value = args[++index];
-      if (retryExecutionId !== undefined || !value || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(value)) bail("E_BAD_ARGS", "--retry-intent requires one saved executionId");
-      retryExecutionId = value; continue;
-    }
-    if (token === "--arg") {
-      const value = args[++index], eq = value?.indexOf("=") ?? -1;
-      if (eq < 1) bail("E_BAD_ARGS", "--arg expects name=value");
-      const key = value.slice(0, eq);
-      if (Object.hasOwn(given, key)) bail("E_BAD_ARGS", `duplicate operation arg ${JSON.stringify(key)}`);
-      given[key] = value.slice(eq + 1); continue;
-    }
-    bail("E_BAD_ARGS", `unsupported captured operation argument ${JSON.stringify(token)}`);
-  }
-  let meta;
-  if (home) {
-    const metaFile = join(home, "instance.json");
-    if (!existsSync(metaFile)) bail("E_SESSION_UNKNOWN", `${home} is not an OATS instance home (no instance.json)`);
-    try { meta = JSON.parse(readFileSync(metaFile, "utf8")); } catch (error) { bail("E_SESSION_UNKNOWN", `${metaFile}: ${error.message}`); }
-    if (!meta || typeof meta !== "object" || Array.isArray(meta) || typeof meta.instance !== "string" || !meta.instance) bail("E_SESSION_UNKNOWN", `${metaFile}: invalid instance metadata`);
-    const binding = meta.executionBinding;
-    if (!binding) bail("migration-required", `${home} has no captured executionBinding; current configuration was not used`);
-    if (binding.schemaVersion !== 1 || typeof binding.deployment !== "string" || !isAbsolute(binding.deployment)
-      || realOrResolved(binding.deployment) !== realOrResolved(selector.deployment)
-      || binding.resolution?.schemaVersion !== 1 || binding.resolution.id !== selector.resolution.id) {
-      bail("E_HOME_MISMATCH", `${home} is not bound to captured resolution ${selector.resolution.id} in ${selector.deployment}`);
-    }
-  }
-  // Inspect is static: validate target and arguments before the action load runs
-  // the provider's mutable readiness check.
-  const inspected = load({ kind: "inspect" }), providerId = inspected.record.bindings[slot]?.capability;
-  const provider = providerId ? inspected.manifests.get(providerId) : undefined;
-  if (!provider) bail("capability-not-selected", `no captured ${slot} provider is selected`);
-  const operation = manifestOperations(provider).find((entry) => entry.name === name);
-  if (!operation) bail("operation-not-found", "captured provider does not declare this operation");
-  if (operation.context === "home" && !meta) bail("E_OPERATION_UNAVAILABLE", `${address} runs in an instance home; pass --home <abs>`);
-  if (operation.context === "scope" && meta) bail("E_BAD_ARGS", `${address} is a scope operation and does not accept --home`);
-  const declared = new Map(operation.args.map((entry) => [entry.name, entry]));
-  for (const key of Object.keys(given)) if (!declared.has(key)) bail("E_BAD_ARGS", `${address} takes no arg ${JSON.stringify(key)} (declared: ${[...declared.keys()].join(", ") || "none"})`);
-  for (const entry of operation.args) if (entry.required && given[entry.name] === undefined) bail("E_BAD_ARGS", `${address} needs --arg ${entry.name}=<value>: ${entry.description || "required"}`);
-  const action = { kind: "operation", slot, name };
-  const argFlags = operation.args.flatMap((entry) => given[entry.name] === undefined ? [] : [entry.flag, given[entry.name]]), cwd = home || selector.deployment;
-  if (operation.kind === "action" && !home) bail("admission-required", "scope mutation has no qualified incarnation/admission path; use an instance-scoped operation");
-  if (retryExecutionId !== undefined && operation.kind !== "action") bail("E_BAD_ARGS", "read-only operations do not retry mutation intents");
-  const admission = operation.kind === "action" ? admitCapturedAction({ deployment: selector.deployment, resolution: selector.resolution, home, action, input: { arguments: argFlags },
-    ...(retryExecutionId !== undefined ? { retryExecutionId } : {}) }) : null;
-  let settlement;
-  const admittedBail = (code, message, details) => bail(code, message, { ...details, ...(admission ? { intent: admission.intent } : {}),
-    ...(settlement ? { settlement, unconfirmed: settlement.state === "unconfirmed" } : {}) });
-  if (admission?.replayed) {
-    settlement = { state: "completed", receipt: admission.receipt };
-    if (!admission.replayable) admittedBail("needs-configuration", "completed operation cannot replay its retained outcome");
-    finishOperation({ r: { status: 0, stdout: JSON.stringify(admission.receipt) }, bail: admittedBail, address, provider, op: operation, argFlags, cwd, home, meta, intent: admission.intent }); return;
-  }
-  let loaded;
-  try { loaded = load(action, { invocationTarget: meta ? { home, work: join(home, "work"), name: meta.instance, agent: meta.agent } : null,
-    ...(admission ? { intent: admission.intent, priorReceipt: admission.receipt } : {}) }); }
-  catch (error) {
-    if (admission) {
-      settleCapturedIntent({ deployment: selector.deployment, home, intent: admission.intent, action, state: "blocked", receipt: admission.receipt });
-      settlement = { state: "blocked", receipt: admission.receipt };
-    }
-    admittedBail(error.code || "provider-unavailable", error.message);
-  }
-  const { capability, executable } = loaded;
-  const env = { ...process.env };
-  for (const key of Object.keys(env)) if (key.startsWith("OATS_") || key.startsWith("PI_AGENT_") || key === "PI_AGENTS_ROOT") delete env[key];
-  Object.assign(env, {
-    OATS_DEPLOYMENT: selector.deployment, OATS_RESOLUTION: selector.resolution.id,
-    OATS_CAPABILITY: capability.id, OATS_CAPABILITY_ROOT: capability.manifest._dir,
-    OATS_SETTINGS: JSON.stringify(capability.settings), OATS_CLI_BIN: CLI_BIN,
-    OATS_OPERATION: address, OATS_CONTEXT: selector.deployment, OATS_LEVEL: selector.deployment,
-    OATS_WORKSPACE: selector.deployment,
-  });
-  if (meta) Object.assign(env, { OATS_INSTANCE: meta.instance, OATS_INSTANCE_HOME: home, OATS_HOME: home,
-    PI_AGENT_INSTANCE: meta.instance, PI_AGENT_HOME: home, ...(meta.agent ? { OATS_AGENT: meta.agent } : {}) });
-  const invocation = loaded.invocation;
-  let child, cleanupError, started = false;
-  try {
-    child = withCapturedInvocationContextFile(invocation, contextEnv => withCapturedBindingFile(loaded, bindingEnv => {
-      if (admission) { beginCapturedIntent({ deployment: selector.deployment, home, intent: admission.intent, action }); started = true; }
-      return runCapturedOperationProcess({ file: executable.file, args: [...executable.args, ...argFlags, "--json"], cwd, env: { ...env, ...contextEnv, ...bindingEnv } });
-    }));
-  } catch (error) {
-    if (!error?.invocationCompleted) {
-      if (admission) {
-        settleCapturedIntent({ deployment: selector.deployment, home, intent: admission.intent, action, state: started ? "unconfirmed" : "blocked", receipt: admission.receipt });
-        settlement = { state: started ? "unconfirmed" : "blocked", receipt: admission.receipt };
-      }
-      admittedBail(error.code || "E_OPERATION_RESULT", error.message, { unconfirmed: started });
-    }
-    child = error.invocationResult; cleanupError = error;
-  }
-  if (admission) {
-    let envelope; try { envelope = JSON.parse(String(child.stdout || "").trim()); } catch { /* unconfirmed below */ }
-    const completed = !cleanupError && !child.error && child.status === 0 && envelope?.schemaVersion === 1 && envelope.ok === true;
-    const state = completed ? "completed" : "unconfirmed", receipt = envelope ?? parseEnvelopeText(String(child.stdout || "")) ?? admission.receipt;
-    try {
-      settleCapturedIntent({ deployment: selector.deployment, home, intent: admission.intent, action, state, receipt, replayable: completed });
-      settlement = { state, receipt };
-    }
-    catch (error) { admittedBail("E_OPERATION_RESULT", "operation ran but outcome custody could not be confirmed", { unconfirmed: true, envelope, custody: { code: error.code, message: error.message } }); }
-  }
-  finishOperation({ r: child, bail: admittedBail, address, provider: capability.manifest, op: operation, argFlags, cwd, home, meta, cleanupError, settlement, ...(admission ? { intent: admission.intent } : {}) });
-}
-
-/** Fresh explicit captured scaffold + spawn hooks. Placement is supplied by
- * the operator; launch and non-directory work remain unsupported. */
-function capturedSpawn(selector, load, bail) {
-  const subject = args[1]; let home; let noLaunch = false;
-  if (!subject || subject.startsWith("-")) bail("E_BAD_ARGS", "captured spawn needs the retained subject name");
-  for (let index = 2; index < args.length; index++) {
-    const token = args[index];
-    if (token === "--json") continue;
-    if (token === "--no-launch") { if (noLaunch) bail("E_BAD_ARGS", "duplicate --no-launch"); noLaunch = true; continue; }
-    if (token === "--home") {
-      const value = args[++index];
-      if (home !== undefined || !value || value.startsWith("--") || !isAbsolute(value)) bail("E_BAD_ARGS", "--home needs one absolute new instance home");
-      home = resolve(value); continue;
-    }
-    bail("E_BAD_ARGS", `unsupported captured spawn argument ${JSON.stringify(token)}`);
-  }
-  if (!home || !noLaunch) bail("E_BAD_ARGS", "captured spawn currently requires --home <absolute new home> and --no-launch");
-  const inspected = load({ kind: "inspect" }), expected = inspected.record.subject.kind === "persistent" ? inspected.record.subject.soul.alias : inspected.record.subject.name;
-  if (subject !== expected) bail("E_HOME_MISMATCH", `captured resolution subject is ${expected}, not ${subject}`);
-  const scaffold = scaffoldCapturedInstance({ deployment: selector.deployment, resolution: selector.resolution, home, instance: basename(home) });
-  let activated;
-  try {
-    activated = activateCapturedScaffold({ deployment: selector.deployment, resolution: selector.resolution, home,
-      extraEnv: process.env.OATS_HOME_DIR ? { OATS_HOME_DIR: process.env.OATS_HOME_DIR } : {} });
-  } catch (error) {
-    if (error?.home) bail(error.code || "E_SPAWN_FAILED", error.message, { home: error.home, cleanupRequired: true, failures: error.provenance || [],
-      ...(error.capturedCustody ? { unconfirmed: true, custody: error.capturedCustody } : {}) });
-    throw error;
-  }
-  const result = { ...scaffold, hooksPending: activated.hooksPending, cleanupRequired: activated.cleanupRequired, launchPending: true,
-    hookIntents: activated.hooks.intents, hookOrder: activated.hooks.order, warnings: activated.hooks.warnings };
-  if (JSON_MODE) jsonOk(result); else console.log(`Scaffolded ${result.instance} at ${result.home}; ${result.hooksPending ? "captured hook custody requires retry/reconciliation" : "captured hooks complete"}, launch pending`);
-}
-
-/** Native continuation of an already owned captured home. A helper selector is
- * an exact edge from the SOURCE record, not a name/current-config resolver. */
-function capturedSession(selector, bail) {
-  const inspecting = args[1] === "inspect";
-  if (!["start", "restart", "inspect"].includes(args[1])) bail("unsupported-action", "captured session supports start/restart or explicit Pi outcome inspect; no current-context fallback was used");
-  const values = new Map(), allowed = new Set(inspecting ? ["home", "helper", "native-record"] : ["home", "helper", "request", "retry-intent"]);
-  for (let index = 2; index < args.length; index++) {
-    if (args[index] === "--json") continue;
-    const key = args[index].startsWith("--") ? args[index].slice(2) : "", value = args[index + 1];
-    if (!allowed.has(key) || values.has(key) || !value || value.startsWith("--")) bail("E_BAD_ARGS", "captured session needs unique named home/helper/request/retry arguments");
-    values.set(key, value); index++;
-  }
-  const home = values.get("home"), retry = values.get("retry-intent");
-  if (!home || !isAbsolute(home) || resolve(home) !== home || home.includes("\0")) bail("E_BAD_ARGS", "captured session needs a normalized absolute --home");
-  if (retry !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(retry)) bail("E_BAD_ARGS", "--retry-intent requires one saved executionId");
-  if (inspecting && !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(values.get("native-record") ?? "")) bail("E_BAD_ARGS", "captured Pi outcome inspect requires one explicit --native-record UUID");
-  const sourceExecutionBinding = { schemaVersion: 1, deployment: portableScope(selector.deployment), resolution: selector.resolution };
-  // Pure retained-subject check, before request files, provider or native calls.
-  // Dedicated helper IDs remain valid for scaffolding, not edge-less dispatch.
-  if (!values.has("helper") && readCapturedResolution(sourceExecutionBinding.deployment, sourceExecutionBinding.resolution).subject.kind === "helper") {
-    bail("helper-not-selected", "captured helper session needs SOURCE selectors plus --helper EXACT_SOURCE_HELPER_KEY");
-  }
-  // Reuse the same bounded strict object-file transport. Preparation and native
-  // request schemas remain separate; reject unknown fields before projection.
-  let request = {};
-  if (values.has("request")) {
-    const input = readPortablePreparationRequest({ file: values.get("request") });
-    if (input.schemaVersion !== 1 || Object.keys(input).some(key => !["schemaVersion", "backend", "task", "stopGraceMs"].includes(key))) bail("E_BAD_ARGS", "native request must be version1 with only backend/task/stopGraceMs");
-    if (Object.hasOwn(input, "backend") && (!input.backend || typeof input.backend !== "object" || Array.isArray(input.backend))) bail("E_BAD_ARGS", "a supplied native backend must be an explicit object, not omission");
-    const { schemaVersion, ...fields } = input; request = fields;
-  }
-  const helperSelection = values.has("helper") ? resolveCapturedHelper({ executionBinding: sourceExecutionBinding, helper: values.get("helper") }) : null;
-  const executionBinding = helperSelection?.executionBinding ?? sourceExecutionBinding;
-  try {
-    if (inspecting) {
-      const outcome = inspectCapturedPiOutcome(home, { ...executionBinding, nativeRecordId: values.get("native-record") });
-      const result = { outcome, executionBinding, ...(helperSelection ? { sourceExecutionBinding: helperSelection.sourceExecutionBinding, helper: helperSelection.helper } : {}) };
-      if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2));
-      return;
-    }
-    const native = startCapturedInstanceSession(home, { ...request, deployment: executionBinding.deployment, resolution: executionBinding.resolution,
-      restart: args[1] === "restart", ...(retry !== undefined ? { retryExecutionId: retry } : {}) });
-    const result = { ...native, executionBinding, ...(helperSelection ? { sourceExecutionBinding: helperSelection.sourceExecutionBinding, helper: helperSelection.helper } : {}) };
-    if (JSON_MODE) jsonOk(result); else console.log(`${result.replayed ? "Replayed captured dispatch receipt for" : "Dispatched captured native session for"} ${home}`);
-  } catch (error) {
-    bail(error.code || "E_SESSION_START_FAILED", error.message, { home: error.home ?? home, executionBinding,
-      ...(helperSelection ? { sourceExecutionBinding: helperSelection.sourceExecutionBinding, helper: helperSelection.helper } : {}),
-      ...(error.capturedCustody ? { custody: error.capturedCustody } : {}),
-      ...(error.nativeCustody ? { unconfirmed: true, nativeCustody: error.nativeCustody } : {}) });
-  }
-}
-
-/** Exact-selector dispatch enters before any current-context resolver. Its
- * child receives the same selector, never an invoking agent's ambient identity. */
-function capturedCommand(selector) {
-  const fail = (code, message, details) => JSON_MODE ? jsonFail(code, message, details) : die(message);
-  try {
-    const end = args.indexOf("--"), head = end < 0 ? args : args.slice(0, end);
-    const permitsHome = cmd === "operation" || cmd === "spawn" || cmd === "session";
-    const forbiddenContext = permitsHome ? ["--dir", "--server", "--soul", "--agents-root"] : ["--dir", "--home", "--server", "--soul", "--agents-root"];
-    if (head.some((arg) => forbiddenContext.includes(arg.split("=")[0]))) {
-      fail("E_BAD_ARGS", "captured selectors cannot be mixed with current-context selectors");
-    }
-    if (selector.artifactSet !== undefined) {
-      if (cmd !== "trust" || !args[1] || args[1].startsWith("-") || args.slice(2).some((arg) => arg !== "--json")) fail("E_BAD_ARGS", "artifact-set selectors support only explicit trust of one capability");
-      const result = approveAvailableCapability(selector.deployment, selector.artifactSet, args[1], {
-        kind: "operator", document: { kind: "operator", id: "oats-trust-artifact-set" }, pointer: "/capability",
-      });
-      if (JSON_MODE) jsonOk(result); else console.log(`${args[1]}: ${result.status}`);
-      return;
-    }
-    const target = { deployment: selector.deployment, resolution: selector.resolution };
-    const load = (action, extra = {}) => loadCapturedDispatch({ ...target, action, ...extra });
-    if (cmd === "inspect") {
-      let helperKey;
-      for (let index = 1; index < args.length; index++) {
-        if (["--json", "--composition"].includes(args[index])) continue;
-        if (args[index] !== "--helper" || helperKey !== undefined || !args[index + 1] || args[index + 1].startsWith("--")) fail("E_BAD_ARGS", "captured inspect accepts --json, --composition and one --helper <exact-map-key>");
-        helperKey = args[++index];
-      }
-      const helperSelection = helperKey === undefined ? null : resolveCapturedHelper({ executionBinding: { schemaVersion: 1, ...target }, helper: helperKey });
-      const selected = helperSelection?.executionBinding ?? target;
-      const loaded = loadCapturedDispatch({ deployment: selected.deployment, resolution: selected.resolution, action: { kind: args.includes("--composition") ? "compose" : "inspect" } });
-      const result = { resolution: loaded.resolution, capture: loaded.record.capture, nativeSession: capturedNativeSessionAvailability(),
-        launchSelection: loaded.record.dispatch.launch === null ? null : {
-          runtime: loaded.record.dispatch.launch.runtime, model: loaded.record.dispatch.launch.model,
-        },
-        ...(helperSelection ? { helperSelection } : {}),
-        capabilities: [...loaded.capabilities.values()].map(({ id, manifest }) => ({ id, version: manifest.version,
-          approval: loaded.approvals.find((entry) => entry.artifact.capability === id).status })),
-        helpers: Object.entries(loaded.record.helpers).map(([key, resolution]) => ({ key, resolution })),
-        hasComposition: !!loaded.record.dispatch.composition,
-        ...(loaded.composition ? { composition: loaded.composition } : {}) };
-      if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2));
-      return;
-    }
-    if (cmd === "trust") {
-      if (!args[1] || args[1].startsWith("-") || args.slice(2).some((arg) => arg !== "--json")) fail("E_BAD_ARGS", "captured trust needs one capability ID");
-      load({ kind: "inspect" }); // complete manifest validation before approval
-      const result = approveCapturedCapability(selector.deployment, selector.resolution, args[1], {
-        kind: "operator", document: { kind: "operator", id: "oats-trust" }, pointer: "/capability",
-      });
-      if (JSON_MODE) jsonOk(result); else console.log(`${args[1]}: ${result.status}`);
-      return;
-    }
-    if (cmd === "operation") { capturedOperation(selector, load, fail); return; }
-    if (cmd === "spawn") { capturedSpawn(selector, load, fail); return; }
-    if (cmd === "session") { capturedSession(selector, fail); return; }
-    if (!cmd || cmd.startsWith("-") || KERNEL_COMMANDS.has(cmd)) fail("unsupported-action", "this kernel command has not yet adopted captured selectors; no current-context fallback was used");
-    if (!args[1] || args[1] === "--json" || head.some((arg) => HELP_WORDS.has(arg))) {
-      const loaded = load({ kind: "inspect" });
-      const matches = [...loaded.manifests.values()].filter((manifest) => manifest.command === cmd);
-      if (matches.length !== 1) fail("capability-not-selected", "captured command namespace is absent or ambiguous");
-      const result = { capability: matches[0].capability, commands: Object.keys(matches[0].commands || {}), help: "manifest only; no executable ran" };
-      if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2));
-      return;
-    }
-    const loaded = load({ kind: "command", namespace: cmd, name: args[1] });
-    const env = { ...process.env };
-    for (const key of Object.keys(env)) if (key.startsWith("OATS_") || key.startsWith("PI_AGENT_") || key === "PI_AGENTS_ROOT") delete env[key];
-    Object.assign(env, { OATS_DEPLOYMENT: selector.deployment, OATS_RESOLUTION: selector.resolution.id,
-      OATS_CAPABILITY: loaded.capability.id, OATS_CAPABILITY_ROOT: loaded.capability.manifest._dir,
-      OATS_SETTINGS: JSON.stringify(loaded.capability.settings),
-      OATS_CLI_BIN: CLI_BIN, OATS_CONTEXT: selector.deployment, OATS_LEVEL: selector.deployment });
-    const forwarded = args.slice(2); if (forwarded[0] === "--") forwarded.shift();
-    const child = withCapturedInvocationContextFile(loaded.invocation, contextEnv => withCapturedBindingFile(loaded, bindingEnv => spawnSync(process.execPath, [loaded.executable.file, ...loaded.executable.args, ...forwarded], {
-      cwd: selector.deployment, env: { ...env, ...contextEnv, ...bindingEnv }, stdio: "inherit",
-    })));
-    if (child.error) fail("E_CAPABILITY_BROKEN", child.error.message);
-    process.exit(child.status ?? 1);
-  } catch (error) { fail(error.code || "E_CAPABILITY_BROKEN", error.message); }
-}
-
-
 function shortPath(p) {
   if (!p) return p;
   const home = homedir();
@@ -495,7 +116,7 @@ function shellQuote(s) {
  * cleanly (text or JSON) instead of an uncaught stack trace. */
 function operationalKnowledgeNote(composition, soulName) {
   return composition && !composition.oatsCoreDeclared
-    ? `soul ${soulName} has no oats.core capability; kernel-shipped operational skills are deprecated` : null;
+    ? `soul ${soulName} has no oats.core capability (the workspace default); it gets no OATS operating instructions` : null;
 }
 /** `doctor --soul`: the instructions an instance of that soul would carry. The soul
  *  is resolved over the workspace remotes exactly as a spawn preview resolves it,
@@ -709,6 +330,7 @@ async function workspaceTarget(bail, { command, liveTeams = true }) {
     if (!isAbsolute(homeFlag)) return bail("E_BAD_ARGS", "--home needs an absolute instance home");
     let meta = null;
     try { meta = JSON.parse(readFileSync(join(homeFlag, "instance.json"), "utf8")); } catch (e) { return bail("E_SESSION_UNKNOWN", `${homeFlag} is not an OATS instance home (${e.code === "ENOENT" ? "no instance.json" : e.message})`); }
+    if (isCapturedHome(meta)) { const e = capturedHomeRefusal(homeFlag, "nothing was read"); return bail(e.code, e.message, e.details); }
     if (!meta || typeof meta.modules !== "object" || meta.modules === null) return bail("E_UNSUPPORTED_MODE", `${homeFlag} is not a workspace-model home (it records no modules): it was spawned by an earlier kernel — re-spawn it from the deployment`);
     if (soulFlag && soulFlag !== meta.agent) return bail("E_HOME_MISMATCH", `--soul ${soulFlag} is not the soul of ${homeFlag} (${meta.agent})`);
     const deployment = dirname(dirname(dirname(dirname(realOrResolved(homeFlag)))));
@@ -763,7 +385,7 @@ const OPERATION_ADDRESS_RE = /^(knowledge|messaging|tasks):([a-z][a-z0-9-]*)$/;
 const reportsRetainedEffectsText = (message) => /INCOMPLETE|quarantin|retain|could not (?:be )?(?:verif|confirm)/i.test(String(message || ""));
 // Comfortably below the scheduler's 5-minute command bound and any GUI
 // proxy, so the receipt always reaches the caller before a wrapper gives up.
-const OPERATION_TIMEOUT_MS = CAPTURED_OPERATION_TIMEOUT_MS;
+const OPERATION_TIMEOUT_MS = 4 * 60 * 1000;
 function finishOperation({ r, bail, address, provider, op, argFlags, cwd, home, meta, cleanupError, intent, settlement, api }) {
   const stderr = String(r.stderr || "").trim();
   const timedOut = r.error?.code === "ETIMEDOUT" || (r.status === null && ["SIGTERM", "SIGKILL"].includes(r.signal) && (!settlement || !r.error));
@@ -895,10 +517,9 @@ async function doctorJson(dir) {
 /** The v2 doctor payload: the deployment declaration + lock (offline) and, with
  *  --soul, the composed instructions. No v1 keys (chain/layers/acquired/injects…). */
 /** The problems doctor and status share for a v2 deployment: what OATS 0.25 left
- *  under local-agents/ (named, never read). */
+ *  under local-agents/ (named, never read), and the captured homes under the agents root. */
 function legacyLayoutProblems(root) {
-  const legacy = legacyLocalAgents(root);
-  return legacy ? [legacy] : [];
+  return [legacyLocalAgents(root), legacyCapturedHomes(root)].filter(Boolean);
 }
 async function doctorWorkspaceJson(ctx, soulName, ws) {
   const composition = await doctorComposition(ctx, soulName, ws, (code, msg, details) => jsonFail(code, msg, details));
@@ -1300,13 +921,7 @@ function instanceCmd() {
 async function readinessCmd() {
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   dropAmbientRoot();
-  // A captured incarnation's readiness comes from its retained resolution, not
-  // from the current configuration this command reads; refuse before inspecting.
   const homeArg = flag("home");
-  if (homeArg && homeArg !== true) {
-    let capturedMeta = null; try { capturedMeta = JSON.parse(readFileSync(join(String(homeArg), "instance.json"), "utf8")); } catch { /* workspaceTarget reports the unreadable home */ }
-    if (capturedMeta?.executionBinding || capturedMeta?.captured) return bail("E_UNSUPPORTED_MODE", `${basename(String(homeArg))} is a captured incarnation: its readiness is the retained resolution's, not the current configuration's (inspect it with oats operation --deployment/--resolution)`, { home: String(homeArg), captured: true });
-  }
   // Workspace model (readinessApi 2): an instance or soul subject; checks
   // installed | configured | member | providers. No trusted check.
   if (args.includes("--verify-signatures")) return bail("E_BAD_ARGS", "--verify-signatures was removed with the trusted check (readinessApi 2): declaring a package in packages: is the trust decision, and the lock pins commit + integrity");
@@ -2223,6 +1838,7 @@ function retireCmd() {
     console.log(`  ${recovery.path}${typeof recovery.bytes === "number" ? ` (${formatBytes(recovery.bytes)})` : ""}`);
     for (const line of preservedOutputLines(recovery)) console.log(line);
   }
+  for (const w of r.warnings || []) console.log(`  WARNING: ${w}`);
   if (isSelf) console.log("This window dies in ~8s — say any goodbyes now.");
 }
 
@@ -2284,7 +1900,7 @@ function scheduleCmd() {
 
 async function sessionCmd() {
   try {
-    if (flag("native-record") !== undefined) throw Object.assign(new Error("--native-record outcome inspection requires exact captured deployment/resolution selectors"), { code: "E_BAD_ARGS" });
+    if (flag("native-record") !== undefined) throw Object.assign(new Error("--native-record outcome inspection is gone (the captured/portable path was removed in 0.26)"), { code: "E_BAD_ARGS" });
     const home = flag("home");
     let result;
     if (args[1] === "attach") {
@@ -2551,6 +2167,7 @@ async function capabilityCommand() {
         activeIds = (meta.capabilities || []).map((c) => c.id);
         for (const c of meta.capabilities || []) capSettings[c.id] = c.settings || {};
         // Workspace-model homes only (lead decision c3 Q2).
+        if (isCapturedHome(meta)) { const e = capturedHomeRefusal(instanceHome, "nothing was dispatched"); bail(e.code, e.message, e.details); }
         if (!isWorkspaceHome(meta)) { const e = preWorkspaceHome(instanceHome, "nothing was dispatched"); bail(e.code, e.message); }
         context = meta.repo || context;
         soulDir = instanceSoulDir(instanceHome, meta);
@@ -2708,7 +2325,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "teams", "settings-declared", "capabilities-private"], workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "teams", "settings-declared", "capabilities-private"], workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2 }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -3060,55 +2677,30 @@ async function serverRouteCmd() {
 // blame` pointing at the commit that last changed each command.
 const TYPED_CLI_FAILURES = new Set(["unsafe-config-key", "unsafe-config-value"]);
 /** Removed 0.24 verbs → their v2 replacement (workspace model v2, decision 5). Checked before capability dispatch. */
-const REMOVED_VERBS = { create: "author souls/<name>/soul.yaml + AGENTS.md in a member repository, then `oats sync`", type: "the soul's own soul.yaml in its member repository (agent types were a classic config block)", soul: "the soul's soul.yaml / AGENTS.md in its member repository, then `oats sync` (per-spawn choices: spawn flags or a launch configuration)", install: "oats sync", restore: "oats sync", init: "oats-local.yaml + oats sync", use: "soul.yaml capabilities: { <cap>: { from } } + workspace defaults", trust: "declaring the package in packages: (package approval was removed; oats sync locks commit + integrity)", list: "oats workspace status | oats capabilities", catalog: "oats package add <id> <version> (bare versions resolve through package-catalog.json)", remove: "oats package remove <id>", migrate: "a rebuild (no migration: docs/design/2026-09-23-workspace-module-contracts.md)", config: "oats-local.yaml (host settings) and oats-workspace.yaml (shared)", inject: "injection overrides are not part of the workspace model yet; edit the capability inject in its member repo" };
+const REMOVED_VERBS = { prepare: "`oats onboard` / `oats sync` to set up a workspace, and `oats spawn <soul> --preview` to see what a spawn would resolve (the captured/portable path was removed in 0.26)", create: "author souls/<name>/soul.yaml + AGENTS.md in a member repository, then `oats sync`", type: "the soul's own soul.yaml in its member repository (agent types were a classic config block)", soul: "the soul's soul.yaml / AGENTS.md in its member repository, then `oats sync` (per-spawn choices: spawn flags or a launch configuration)", install: "oats sync", restore: "oats sync", init: "oats-local.yaml + oats sync", use: "soul.yaml capabilities: { <cap>: { from } } + workspace defaults", trust: "declaring the package in packages: (package approval was removed; oats sync locks commit + integrity)", list: "oats workspace status | oats capabilities", catalog: "oats package add <id> <version> (bare versions resolve through package-catalog.json)", remove: "oats package remove <id>", migrate: "a rebuild (no migration: docs/design/2026-09-23-workspace-module-contracts.md)", config: "oats-local.yaml (host settings) and oats-workspace.yaml (shared)", inject: "injection overrides are not part of the workspace model yet; edit the capability inject in its member repo" };
 try {
-// Inspect explicit selectors with the existing parser before new-work routing,
-// including selectors before the command. Inherited captures are not prepare inputs.
-let captured;
-try { captured = capturedSelector(args, {}); }
-catch (error) {
-  if (JSON_MODE) jsonFail(error.code || "E_BAD_ARGS", error.message);
-  die(error.message);
-}
-const sourceInspection = (cmd === "inspect" || captured?.args[0] === "inspect")
-  && args.some(arg => arg === "--request" || arg.startsWith("--request="));
-if (sourceInspection) {
-  if (captured) {
-    if (JSON_MODE) jsonFail("E_BAD_ARGS", "source inspection is explicit new work and cannot use captured selectors");
-    die("source inspection is explicit new work and cannot use captured selectors");
+// The captured/portable path was removed in 0.26 (lead decisions on (e), D2/D3):
+// its selectors and an inherited captured context are refused, never quietly
+// resolved against the current context instead. `version` answers regardless:
+// host protocol negotiation describes this executable.
+{
+  const end = args.indexOf("--"), head = end < 0 ? args : args.slice(0, end);
+  const selector = head.find((a) => /^--(deployment|resolution|artifact-set)(=|$)/.test(a));
+  const refuse = (message, details) => { if (JSON_MODE) jsonFail("E_UNSUPPORTED_MODE", message, details); die(message); };
+  if (selector) refuse(`${selector.split("=")[0]}: a captured selector is refused (the captured/portable path was removed in 0.26); run the command in its workspace deployment or instance home instead`, { selector: selector.split("=")[0] });
+  const inherited = ["OATS_RESOLUTION", "OATS_DEPLOYMENT"].filter((k) => process.env[k]);
+  if (inherited.length && cmd !== "version") refuse(`this environment carries a captured context (${inherited.join(", ")}): the captured/portable path was removed in 0.26, and nothing is run against the current context in its place — retire the captured home and re-spawn it from the deployment`, { inherited });
+  if (cmd === "inspect" && head.some((a) => a === "--request" || a.startsWith("--request="))) {
+    const message = "oats inspect --request (portable onboarding inspection) is gone (the captured/portable path was removed in 0.26); use `oats onboard` / `oats sync` to set up a workspace and `oats spawn <soul> --preview` to see what a spawn would resolve";
+    if (JSON_MODE) jsonFail("E_UNKNOWN_COMMAND", message, { removed: "inspect --request", replacement: "oats onboard / oats sync; oats spawn --preview" });
+    die(message);
   }
-  if (args.includes("--help") || args.includes("-h")) { if (JSON_MODE) jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); else usageFor(cmd); process.exit(0); }
-  inspectOnboardingCmd(); process.exit(0);
 }
-if (cmd === "prepare" || captured?.args[0] === "prepare") {
-  if (captured) {
-    if (JSON_MODE) jsonFail("E_BAD_ARGS", "prepare is explicit new work and cannot use captured selectors");
-    die("prepare is explicit new work and cannot use captured selectors");
-  }
-  if (args.includes("--help") || args.includes("-h")) { if (JSON_MODE) jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); else usageFor(cmd); process.exit(0); }
-  prepareCmd(); process.exit(0);
-}
-if (cmd === "onboard" || captured?.args[0] === "onboard") {
-  if (captured) {
-    if (JSON_MODE) jsonFail("E_BAD_ARGS", "onboard is explicit workspace bootstrap and cannot use captured selectors");
-    die("onboard is explicit workspace bootstrap and cannot use captured selectors");
-  }
+if (cmd === "onboard") {
   if (args.includes("--help") || args.includes("-h")) { if (JSON_MODE) jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); else usageFor(cmd); process.exit(0); }
   await onboardCmd();
 }
 else {
-// Other commands retain their existing explicit/inherited selection rules.
-try { captured ??= capturedSelector(args); }
-catch (error) {
-  if (JSON_MODE) jsonFail(error.code || "E_BAD_ARGS", error.message);
-  die(error.message);
-}
-if (captured) {
-  args.splice(0, args.length, ...captured.args); cmd = args[0];
-  // Host protocol negotiation describes this executable, not a mutable
-  // configuration. An inherited capture must not break `oats version` probes.
-  if (captured.explicit || cmd !== "version") { capturedCommand(captured); process.exit(0); }
-}
 // `--help`/`-h` anywhere after a kernel command prints that command's usage
 // and exits 0 BEFORE any dispatch: a fresh operator inspects --help before
 // using a command, and `install --help` once ran the bare restore while
@@ -3280,12 +2872,12 @@ Usage:
       [--json]                              installed capabilities with health, effective
                                             layer bindings and activation, declared
                                             operations with availability; --home answers the
-                                            running home's captured bindings and their drift
-                                            from the current config
+                                            running home's recorded modules and their drift
+                                            from the deployment
   oats operation run <layer>:<name>          run an operation the soul's core capability for that
       (--home <abs> | --soul <name> [--dir <d>])  layer declares (knowledge:harvest, knowledge:
-      [--arg k=v ...] [--json]              inspect ...): resolved from the home's captured
-                                            bindings or the scope's config, trust checked, the provider's
+      [--arg k=v ...] [--json]              inspect ...): resolved from the home's recorded
+                                            modules or the deployment's soul, trust checked, the provider's
                                             own command run in the home or scope, envelope
                                             relayed; a view answers {documents: [...]}
   oats launch-config list [--dir <scope>     named launch configurations effective at a scope,
@@ -3349,8 +2941,8 @@ Usage:
                                              remedies; providers relays each bound provider's
                                              own check ({status, problems, warnings});
                                              --policy: enforced child-spawn / worktree policy
-                                             with origins (captured homes refuse: their
-                                             readiness is the retained resolution's)
+                                             with origins (captured homes refuse: the
+                                             captured/portable path was removed in 0.26)
   oats retire <instance> --plan [--json]     what Remove would touch, with retention defaults
   oats retire <instance> [--plan-revision <rev> --idempotency-key <key>] [--discard-worktree] [--delete-branch]
                                              with a plan revision: refuses E_PLAN_STALE (fresh plan
@@ -3375,43 +2967,6 @@ The turn record (core — every conversation captured, searchable, replicated):
                                             selection and agent synthesis; unproven by
                                             design, repo checkout only; see
                                             packages/experimental/README.md
-
-  oats inspect --request <absolute-json-file> [--json]
-      [--emit-prepare-request <new-absolute-json-file>]
-                                            fresh source/workspace/member metadata; optional private
-                                            request export uses the existing fresh-request builder;
-                                            no provider execution or preparation authority
-  oats prepare --request <absolute-json-file> [--json]
-                                            complete public preparation input; no mixed flags,
-                                            inherited binding, implicit setup or launch authority
-  oats prepare --dir <abs> --source <git repo> --revision <ref> --export <path>
-      --alias <name> [--work <mode>] [--json]  prepare retained commands and curriculum,
-                                            no launch; provider gaps report incomplete
-  oats prepare --dir <abs> --workspace <git repo> --alias <advertised alias>
-      [--workspace-revision <ref>] [--work <mode>] [--json]
-                                            same preparation through workspace imports
-  oats inspect --deployment <abs> --resolution <id> [--composition] [--json]
-      [--helper <exact-map-key>]             inspect retained source/helper inputs, not today's configuration
-  oats trust <capability> --deployment <abs> --artifact-set <sha256-…> [--json]
-                                            approve one exact prepared artifact; use each
-                                            selections[].artifactSet for capability ids
-                                            in prepare's approvalRequired[] at that selection
-  oats trust <capability> --deployment <abs> --resolution <id> [--json]
-                                            explicitly approve that exact captured artifact
-  oats <namespace> <command> --deployment <abs> --resolution <id> -- [args…]
-                                            run the approved retained command; no ambient fallback
-  oats operation run <layer>:<name> --deployment <abs> --resolution <id>
-      [--home <abs>] [--arg k=v ...] [--retry-intent <saved-id>] [--json]
-                                            home actions admit distinct requests; explicit retry reuses intent
-                                            scope views stay read-only; scope mutation is not yet qualified
-  oats spawn <captured subject> --deployment <abs> --resolution <id>
-      --home <abs> --no-launch [--json]      create a fresh directory scaffold and run captured hooks
-  oats session inspect --deployment <abs> --resolution <id> --home <abs> --native-record <UUID> [--helper <exact-key>] --json
-                                           read-only Pi completion observation; not admission or readiness
-  oats session start|restart --deployment <abs> --resolution <id> --home <abs>
-      [--helper <exact-source-map-key>] [--request <abs-json>] [--retry-intent <saved-id>] [--json]
-                                            dispatch the owned captured home via existing native custody;
-                                            version1 request: backend/task/stopGraceMs, no model override
 
   oats <namespace> <command> [args…]         run an operational command only when its
                                             capability is active (e.g. oats okf harvest)

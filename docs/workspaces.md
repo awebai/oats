@@ -38,8 +38,8 @@ machine (`oats-local.yaml`); the lock (`oats-lock.json`) sits beside
 `oats-local.yaml` and is identical on every machine that synced the same
 workspace commit. Schemas: [`oats-workspace.schema.json`](oats-workspace.schema.json),
 [`oats-membership.schema.json`](oats-membership.schema.json),
-[`soul.schema.json`](soul.schema.json), [`oats-local.schema.json`](oats-local.schema.json),
-[`oats-lock-v3.schema.json`](oats-lock-v3.schema.json). The JSON schemas encode
+[`soul.schema.json`](soul.schema.json), [`oats-local.schema.json`](oats-local.schema.json);
+the lock's format is in [packages](packages.md#lock-v3). The JSON schemas encode
 shapes; domain rules (declared teams, duplicate members, canonical `from:` keys,
 the two `packages:` value forms) live in the kernel's `validateWorkspace` /
 `validateSoul`, which are the authority.
@@ -318,7 +318,7 @@ Nothing is symlinked, nothing is shared between instances.
 ```
 <agents-root>/<soul>/instances/<instance>/
 ├── AGENTS.md                          # composed: soul AGENTS.md + kernel/work-mode blocks + each module's inject
-│                                      #   (with oats.core resolved, the module's "You run on OATS" block is the only one — the kernel's legacy copy is suppressed)
+│                                      #   (the "You run on OATS" block is oats.core's inject; the kernel ships no copy)
 ├── CLAUDE.md → AGENTS.md
 ├── .agents/skills/<capability>/<skill>/SKILL.md    # full copies; where pi/codex look
 ├── .claude/skills → ../.agents/skills

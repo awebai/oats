@@ -5,8 +5,7 @@ For the canonical design, defaults and alternatives, start with
 an operational guide to the version-scoped OKF implementation below, not a universal
 knowledge layout or learning policy. The default direction is centralised per-soul
 knowledge; other capabilities may provide different procedures and placements,
-including co-location, without writing into immutable captured artifacts. For the
-newer captured path, also read the [0.24 release scope](release-notes/v0.24.0.md).
+including co-location, without writing into a home's read-only module copies.
 
 Specialization is accumulated judgment: decisions and rationale, rejected
 alternatives, discovered limits, and maintained context that changes what a

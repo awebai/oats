@@ -160,9 +160,7 @@ These pathname checks are not OS-level exclusion against a concurrent hostile
 filesystem mutation between validation and use.
 
 Managed execution also records independent native transcript-location history;
-the recipe remains a template, not provenance. See
-[Native roots](design/package-runtime-api.md)
-for the exact source and standalone-fallback semantics.
+the recipe remains a template, not provenance.
 
 The start opens a new harness conversation on the instance's `TASK.md`; the
 instance resumes its work from its own `STATE.md`, as the knowledge protocol

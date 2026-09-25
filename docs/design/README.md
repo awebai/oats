@@ -12,7 +12,7 @@ Dated design documents record how decisions were reached and what each implement
 
 ## Superseded by the workspace model
 
-Everything below this line that describes per-soul `source:` provenance, `oats.yaml` exports/imports, the installed-capability tier (`.agents/capabilities/installed/`), `oats-config.yaml` scopes, `oats init`/`use`/`install`/`restore`/`trust`/`migrate`, lock v1/v2 or ambient-skill exclusion at launch is **history**. In particular [package-engine-contract.md](package-engine-contract.md) and [package-runtime-api.md](package-runtime-api.md) describe the removed acquisition/materialization engine; the package tier is now [packages.md](../packages.md) + module contract §4. Capability **manifests**, hooks, the operations contract, provider binding wire/codecs and the knowledge/messaging capability contracts are unchanged.
+Everything below this line that describes per-soul `source:` provenance, `oats.yaml` exports/imports, the installed-capability tier (`.agents/capabilities/installed/`), `oats-config.yaml` scopes, `oats init`/`use`/`install`/`restore`/`trust`/`migrate`, lock v1/v2 or ambient-skill exclusion at launch is **history**. In particular `package-engine-contract.md` and `package-runtime-api.md` (both deleted in 0.26) described the removed acquisition/materialization engine; the package tier is now [packages.md](../packages.md) + module contract §4. Capability **manifests**, hooks, the operations contract, provider binding wire/codecs and the knowledge/messaging capability contracts are unchanged.
 
 ## Earlier plan (0.24)
 
@@ -38,7 +38,7 @@ Everything below this line that describes per-soul `source:` provenance, `oats.y
 
 ## Capabilities and providers
 
-- [Package engine contract](package-engine-contract.md) · [package-runtime API](package-runtime-api.md) — **superseded** (installed tier removed; see [packages](../packages.md)) · [operations contract](operations-contract.md) · [launch configurations](launch-configurations.md).
+- Package engine contract (`package-engine-contract.md`, removed in 0.26) · package-runtime API (`package-runtime-api.md`, removed in 0.26) — **superseded** (installed tier removed; see [packages](../packages.md)) · [operations contract](operations-contract.md) · [launch configurations](launch-configurations.md).
 - [Provider binding wire v1](2026-09-16-provider-binding-wire.md) · [provider binding codecs](2026-09-16-provider-binding-codecs.md) · [capability helper/input contract](2026-09-17-capability-helper-input-contract.md).
 - [Knowledge capability contract](2026-09-16-knowledge-capability-contract.md) · [messaging capability contract](2026-09-16-messaging-capability-contract.md).
 

@@ -33,8 +33,8 @@ instance review file or original conversation is an acceptance dependency.
 | 4 | [Retention contract](2026-09-14-artifact-retention-contract.md) | Landed and binding: store semantics, captured resolution and consumer migration. |
 | 5 | [Implementation checklist/ledger](2026-09-15-portable-souls-implementation.md) | Clause-by-clause mapping, dependency order, evidence and pending gates. |
 | 6 | [Knowledge direction](2026-09-13-knowledge-and-memory-direction.md) and [current knowledge runtime](../knowledge.md) | Doctrine/context; the older brief's §4.9 automatic skill-delivery account is superseded by OKF v2 (no automatic soul-skill edits). Its older location/type mechanisms are not a second Portable Souls authority. |
-| 7 | [Package engine](package-engine-contract.md) and [runtime API](package-runtime-api.md) | Existing acquisition/trust/runtime invariants; explicit Portable Souls migration changes store/resolution semantics, not silently these contracts. |
-| 8 | [Retention source](../../lib/capability-artifacts.mjs) and [tests](../../test/capability-artifacts.test.mjs) | Storage prerequisite; not complete instance/job dispatch. |
+| 7 | Package engine (`package-engine-contract.md`, removed in 0.26) and runtime API (`package-runtime-api.md`, removed in 0.26) | Existing acquisition/trust/runtime invariants; explicit Portable Souls migration changes store/resolution semantics, not silently these contracts. |
+| 8 | Retention source `lib/capability-artifacts.mjs` and its tests (removed in 0.26 with the captured path) | Storage prerequisite; not complete instance/job dispatch. |
 
 Implementation baseline: `428cd9af615652c4a93d754c1106674abd18545b` on the isolated
 `feat/portable-souls-infrastructure` worktree. There is no instruction to merge,

@@ -2,7 +2,7 @@
 name: oats-support
 description: >-
   Route deep OATS framework questions to the framework's own expert agent.
-  Use when a user asks how OATS works beyond the basics in the oats skill, why
+  Use when a user asks how OATS works beyond the basics in the oats-operate skill, why
   the framework behaves a certain way, wants framework changes or roadmap
   context, or hits framework bugs — the answer is to instantiate the
   oats-expert soul from the OATS framework repo and delegate. Triggers: "ask
@@ -74,6 +74,6 @@ harvests the instance's notes back into the expert's soul.
 ## Scope note
 
 Quick questions (home layout, roster, lifecycle, doctor) are already
-answered by the **oats** skill — use that first. Delegate to the expert for
+answered by the **oats-operate** skill (the `oats.core` capability) — use that first. Delegate to the expert for
 architecture, design rationale, roadmap, and anything you would otherwise
 guess about.
