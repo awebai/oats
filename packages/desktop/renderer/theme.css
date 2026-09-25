@@ -4,6 +4,10 @@
    All three hold WCAG AA (≥4.5:1) for text
    on their inventoried surfaces. Views under renderer/views/ style themselves
    with these semantic tokens only — never raw colors or text transparency. */
+/* Shared rhythm (every theme): a section title to its content, and one section to
+   the next. Similar components use these, so forms, inspectors and panels line up. */
+:root { --title-gap: 10px; --section-gap: 20px; }
+
 :root, [data-theme="dark"] {
   --bg: #0e1116;          /* app background */
   --surface: #161b22;     /* cards, sidebar */
@@ -233,7 +237,7 @@
 .oats-view .cards { padding: 14px 18px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
 .oats-view .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
                   padding: 12px 14px; box-shadow: var(--shadow); }
-.oats-view .card h3 { margin: 0 0 8px; font-size: 12px; font-weight: 650; color: var(--muted);
+.oats-view .card h3 { margin: 0 0 var(--title-gap); font-size: 12px; font-weight: 650; color: var(--muted);
                      text-transform: uppercase; letter-spacing: .06em; }
 .oats-view .card .body { font-size: 13px; white-space: pre-wrap; word-break: break-word; }
 .oats-view .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 12.5px; }

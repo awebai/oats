@@ -8,7 +8,6 @@ import { declarationsCSS, renderSoulDeclarations } from './soul-declarations.mjs
 import { createReadinessView, readinessCSS } from './readiness-view.mjs';
 import { cliStatus } from './views/cli-status.mjs';
 import { iconElement } from './shell-icons.mjs';
-import { soulRepository } from './soul-repository.mjs';
 import { inspectData, inspectFacts, originText } from './inspect-contract.mjs';
 import { createTeamsPanel, teamsOperations, teamsCSS, soulTeams } from './teams-panel.mjs';
 import { ageText } from './age-text.mjs';
@@ -37,7 +36,7 @@ ${teamsCSS}
 .inspector-head h2 { flex:1; margin:0; font-size:19px; overflow-wrap:anywhere; }
 .inspector-content { min-width:0; overflow-wrap:anywhere; }
 .inspector-content .field { min-width:0; max-width:100%; box-sizing:border-box; }
-.inspector-content h3 { margin:18px 0 8px; font-size:10.5px; font-weight:650; letter-spacing:.06em; text-transform:uppercase; }
+.inspector-content h3 { margin:var(--section-gap) 0 var(--title-gap); font-size:10.5px; font-weight:650; letter-spacing:.06em; text-transform:uppercase; }
 .inspector-content p { line-height:1.5; }
 .inspector-content .muted { color:var(--muted); }
 .inspector-content pre { white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.6 var(--mono,monospace); }
@@ -52,10 +51,13 @@ ${teamsCSS}
 .inspector-status:empty { min-height:0; margin:0; }
 .inspector-status.error { color:var(--danger); }
 /* F7: cards and compact lists (the spawn modal / context panel language); tokens only. */
-.inspector-content h3.inspector-section { margin:20px 0 8px; color:var(--muted); }
+.inspector-content h3.inspector-section { color:var(--muted); }
+.inspector-content > h3.inspector-section:first-child { margin-top:4px; }
+.inspector-readiness { padding-bottom:0; }
+.inspector-readiness .readiness-view { margin-bottom:0; }
 .inspector-lede { margin:6px 0 0; font-size:12.5px; line-height:1.5; color:var(--fg); }
 .inspector-card { border:1px solid var(--border); border-radius:8px; background:var(--surface); padding:10px 12px; }
-.inspector-card .inspector-facts { font-size:12px; }
+.inspector-card .inspector-facts { font-size:12px; margin:0; }
 .inspector-list { border:1px solid var(--border); border-radius:8px; background:var(--surface); overflow:hidden; }
 .inspector-item { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:12px; row-gap:4px; align-items:center; padding:9px 12px; }
 .inspector-item + .inspector-item { border-top:1px solid var(--border); }
@@ -63,7 +65,9 @@ ${teamsCSS}
 .inspector-item-meta { font-size:11.5px; color:var(--muted); overflow-wrap:anywhere; }
 .inspector-item > details { grid-column:1 / -1; font-size:12px; }
 .inspector-item > details > summary, .inspector-disclosure > summary { cursor:pointer; color:var(--muted); font-size:12px; }
-.inspector-item > .team-badge, .inspector-badge { font-size:11px; font-weight:650; line-height:1; color:var(--muted); border:1px solid var(--border); border-radius:999px; padding:4px 8px; white-space:nowrap; }
+.inspector-chips { display:flex; flex-wrap:wrap; gap:6px; margin:var(--title-gap) 0; }
+.inspector-chip { font-size:12px; font-weight:600; line-height:1; color:var(--fg); background:var(--surface); border:1px solid var(--border); border-radius:999px; padding:6px 10px; white-space:nowrap; }
+.inspector-teams-lede { margin:0; }
 .inspector-disclosure { margin-top:14px; }
 .inspector-spawned { display:flex; align-items:center; gap:12px; justify-content:space-between; }
 @container(max-width:700px) {
@@ -216,7 +220,6 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     main.append(node('div', name, 'inspector-item-name')); for (const m of meta) if (m) main.append(node('div', m, 'inspector-item-meta'));
     el.append(main); if (side) el.append(side); return el;
   };
-  const badge = (text, title) => { const b = node('span', text, 'inspector-badge'); if (title) b.title = title; return b; };
   // Created as a relative age; the exact value and the resolution stay reachable.
   function instanceFacts(instance) {
     return inspectFacts.instance(instance).map(([key, value]) => key === 'Created' && instance.createdAt ? [key, `${ageText(instance.createdAt)}`] : [key, value]);
@@ -237,17 +240,23 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     }
     content.append(box);
   }
-  // The soul's teams (kernel `teams`): which its instances may join; joining is per instance.
+  // The soul's teams (kernel `teams`): one row of chips, primary first and marked;
+  // unmapped ones greyed, with the reason on one line. Joining is per instance.
   function renderSoulTeams(inspected) {
-    const teams = soulTeams(inspected.teams);
-    if (!teams) return;
+    const all = soulTeams(inspected.teams);
+    if (!all) return;
+    // Only the teams the soul has access to (mapped by this workspace); unmapped labels are not shown.
+    const teams = all.filter(t => t.mapped);
     section('Teams');
-    content.append(node('p', teams.length ? "Its instances start in their person's personal team only. They can join these teams:" : 'Personal team only: the soul names no wider team.', 'muted'));
-    if (!teams.length) return;
-    const list = node('div', undefined, 'inspector-list');
-    teams.forEach((t, index) => list.append(item(index === 0 ? `${t.label} · primary` : t.label,
-      [t.mapped ? t.team : 'Not mapped by this workspace'], t.mapped ? badge('Joinable') : badge('Unavailable', "The workspace does not map this team, so it can't be joined."))));
-    content.append(list);
+    if (!teams.length) { content.append(node('p', 'Personal team only: this soul has access to no other team.', 'muted')); return; }
+    content.append(node('p', "The teams this soul has access to. Its instances start in their person's personal team only and can join these:", 'muted inspector-teams-lede'));
+    const row = node('div', undefined, 'inspector-chips');
+    teams.forEach(t => {
+      const chip = node('span', t.label === all[0].label ? `${t.label} · primary` : t.label, 'inspector-chip');
+      chip.title = `${t.label} (${t.team})`;
+      row.append(chip);
+    });
+    content.append(row);
   }
   // Roster-owned actions do not depend on operationsApi, inspect success, or
   // an editable soul record. Keep their DOM stable while inspection settles.
@@ -271,7 +280,6 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     if (agent.description) roster.append(node('p', agent.description, 'inspector-lede'));
     const known = [['Source', agent.repoName || agent.workspace], ['Runtime', agent.runtime]].filter(([, v]) => typeof v === 'string' && v);
     if (known.length) facts(known, roster);
-    renderRepository(agent, roster, id, gen);
     roster.append(node('h3', `Instances · ${homes.length}`));
     if (!homes.length) roster.append(node('p', 'No instances reported for this soul.', 'muted'));
     for (const instance of homes) {
@@ -283,22 +291,6 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       roster.append(control);
     }
     summary.append(roster);
-  }
-  // Roster-owned like the actions above: from the `oats souls` source, never
-  // from inspection. The Desktop does not edit a declared soul in place.
-  function renderRepository(agent, parent, id, gen) {
-    const where = soulRepository(agent.soulSource);
-    const block = node('div', undefined, 'inspector-repository');
-    block.append(node('h3', 'Edit this soul in its repository'));
-    if (!where) { block.append(node('p', 'Its repository is not reported.', 'muted')); parent.append(block); return; }
-    block.append(node('p', where.path ? `${where.path} in ${where.repository}` : where.repository, 'muted'));
-    if (where.url) {
-      const open = button('Open repository', () => {
-        if (valid(id, gen) && open.isConnected && typeof ctx?.openExternal === 'function') ctx.openExternal(where.url);
-      });
-      open.title = where.url; block.append(open);
-    }
-    parent.append(block);
   }
   function renderCapabilities(inspected, { collapsed = false } = {}) {
     let host = content;

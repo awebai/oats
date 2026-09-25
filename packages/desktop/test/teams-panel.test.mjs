@@ -89,7 +89,7 @@ test('the teams document is decoded strictly: exactly the contract fields, bound
   assert.equal(whenText('2026-09-25T10:01:00.000Z'), '2026-09-25 10:01 UTC'); assert.equal(whenText('yesterday'), 'yesterday', 'not a timestamp: as sent');
 });
 
-test('an instance shows its teams: personal always on (no Leave), eligible with Join, unmapped unavailable; one control per verb', async t => {
+test('an instance shows its teams: personal always on (no Leave), the teams its soul has access to with Join, unmapped not shown; one control per verb', async t => {
   const u = await mount(t, captured());
   assert.deepEqual(u.runs(), [{ action: 'run', selector: { home: HOME }, operation: 'messaging:teams' }]);
   assert.equal(u.panel().previousElementSibling.textContent, 'Teams', 'the inspector labels the section'); assert.equal(u.panel().querySelector('h3'), null);
@@ -99,7 +99,8 @@ test('an instance shows its teams: personal always on (no Leave), eligible with 
   assert.equal(u.row('dev').querySelector('.team-name').textContent, 'dev · primary');
   assert.equal(u.row('dev').querySelector('[data-team-action]').textContent, 'Join');
   assert.equal(u.row('reviewers').querySelector('[data-team-action]').textContent, 'Join');
-  assert.match(u.row('marketing').textContent, /Not mapped by this workspace.*Unavailable/); assert.equal(u.row('marketing').querySelector('button'), null);
+  assert.equal(u.row('marketing'), null, 'an unmapped label is not shown');
+  assert.equal(u.panel().querySelector('.teams-intro').textContent, 'Always in its personal team. It can join the teams its soul has access to.');
   // The generic Provider operations list leaves the three team verbs to the panel.
   assert.equal([...u.el.querySelectorAll('[data-operation]')].some(b => b.dataset.operation.startsWith('messaging:')), false);
   assert.doesNotMatch([...u.el.querySelectorAll('.inspector-cap h4')].map(h => h.textContent).join('|'), /messaging: (teams|join|leave)/);
@@ -139,7 +140,7 @@ test('a refusal is shown verbatim under its row, the code behind Details; the pa
   await u.press('join', 'marketing'); await tick();
   assert.equal(reads, 2, 'refused → the provider is asked again');
   // The re-read no longer offers marketing (unmapped now): the refusal is said at panel level, not dropped.
-  assert.match(u.row('marketing').textContent, /Not mapped by this workspace/);
+  assert.equal(u.row('marketing'), null, 'unmapped: not shown');
   const gone = u.panel().querySelector('[data-team-refusal="marketing"]');
   assert.ok(gone, 'the refusal survives the re-read that removed its row');
   assert.equal(gone.querySelector('.teams-problem p').textContent, 'messaging:join: not eligible: marketing (eligible: dev, reviewers)');
@@ -174,7 +175,7 @@ test('states: not supported, unavailable, eligible none, unreadable and a failed
   const off = inspection(); Object.assign(off.capabilities.find(c => c.layer === 'messaging').operations.find(o => o.name === 'teams'), { available: false, reason: 'the provider is not configured' });
   const c = await mount(t, () => assert.fail('no run'), { inspect: off });
   assert.match(c.panel().textContent, /the provider is not configured/);
-  for (const [unmapped, sentence] of [[[], 'Personal team only: the soul names no wider team.'], [['marketing'], "None of this soul's teams is mapped by this workspace."]]) {
+  for (const [unmapped, sentence] of [[[], 'Its soul has access to no other team.'], [['marketing'], 'Its soul has access to no other team.']]) {
     const empty = structuredClone(run('teams-initial')); empty.result.eligible = []; empty.result.primary = null; empty.result.unmapped = unmapped;
     const d = await mount(t, () => empty); assert.match(d.panel().textContent, new RegExp(sentence.replace(/[.']/g, '.')));
   }

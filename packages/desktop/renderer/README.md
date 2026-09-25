@@ -11,9 +11,7 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
 - **spawn.mjs** — **Workspace**, with Souls / Capabilities / Sources subtabs.
   Souls come from `GET /api/agents` (the kernel's `oats souls` catalog);
   selection opens the side inspector — read-only: a v2 soul is edited in its
-  repository, so the inspector names where (**Edit this soul in its
-  repository**: path and repository from the `oats souls` source, a web link
-  for hosted keys) and never writes it in place; there are no layer bindings
+  repository and the inspector never writes it in place; there are no layer bindings
   (`oats use` was removed by workspace model v2). Its Spawn action opens the Spawn dialog
   (see below), which previews through the kernel and applies through the
   confirmed `/api/spawn?ws=` transaction. An empty opening instruction waits

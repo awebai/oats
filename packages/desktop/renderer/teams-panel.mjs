@@ -119,9 +119,11 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
   if (!operations.supported) { section.append(node('p', 'Not supported by this messaging provider.', 'teams-status')); return { sync() {}, refresh() {} }; }
   if (!operations.teams.available) { section.append(node('p', operations.teams.reason || 'The provider cannot list teams here.', 'teams-status')); return { sync() {}, refresh() {} }; }
   const status = node('p', '', 'teams-status'); status.setAttribute('role', 'status');
+  // What the list is: the personal team, then the teams the soul has access to (unmapped labels are not shown).
+  const intro = node('p', 'Always in its personal team. It can join the teams its soul has access to.', 'teams-note teams-intro'); intro.hidden = true;
   const body = node('div', undefined, 'teams-card');
   const refresh = node('button', 'Refresh teams', 'teams-refresh'); refresh.type = 'button';
-  section.append(status, body, refresh);
+  section.append(intro, status, body, refresh);
   // One row: name + meta lines on the left, the action or a badge on the right.
   const teamRow = (key, name, metas, side) => {
     const el = node('div', undefined, 'team-row'); el.dataset.teamRow = key;
@@ -191,7 +193,7 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
     return b;
   }
   function render() {
-    body.replaceChildren();
+    body.replaceChildren(); intro.hidden = !current;
     if (!current) return;
     body.append(teamRow('personal', 'Personal team', [current.personal.team], badge('Always on', "The personal team can't be left.")));
     const joined = new Map(current.joined.map(j => [j.label, j]));
@@ -216,8 +218,7 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
       if (rowError?.label === row.label) el.append(problem(rowError.error, 'The messaging provider refused.'));
       body.append(el);
     }
-    for (const unmapped of current.unmapped) body.append(teamRow(unmapped, unmapped, ['Not mapped by this workspace'], badge('Unavailable', "The workspace does not map this team, so it can't be joined.")));
-    if (!rows.length) body.append(node('p', current.unmapped.length ? "None of this soul's teams is mapped by this workspace." : 'Personal team only: the soul names no wider team.', 'teams-note'));
+    if (!rows.length) body.append(node('p', 'Its soul has access to no other team.', 'teams-note'));
     sync();
   }
   function sync() {

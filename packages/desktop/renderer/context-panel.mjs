@@ -26,7 +26,7 @@ export const contextPanelCSS = `
 #context-panel .context-panel-page h2 { font-size:14px; margin:0 0 12px; }
 #context-panel .context-panel-note { color:var(--muted); }
 /* Redesign v3 instance page: identity header, then labelled sections. */
-#context-panel .context-panel-page[data-context-page="instance"], #context-panel .context-panel-page[data-context-page="soul"] { display:flex; flex-direction:column; gap:18px; }
+#context-panel .context-panel-page[data-context-page="instance"], #context-panel .context-panel-page[data-context-page="soul"] { display:flex; flex-direction:column; gap:var(--section-gap); }
 #context-panel .context-panel-page[hidden] { display:none; }
 #context-panel .context-panel-identity { display:flex; align-items:center; gap:10px; min-width:0; }
 #context-panel .context-panel-identity .identity-mark { width:36px; height:36px; border-radius:9px; font-size:15px; font-weight:700; }
@@ -37,7 +37,7 @@ export const contextPanelCSS = `
 #context-panel .context-panel-state[data-state="running"] { color:var(--accent); }
 #context-panel .context-panel-state::before { content:''; width:6px; height:6px; border-radius:50%; box-sizing:border-box; border:1.5px solid currentColor; }
 #context-panel .context-panel-state[data-state="running"]::before { background:currentColor; }
-#context-panel .context-panel-section { display:flex; flex-direction:column; gap:8px; min-width:0; }
+#context-panel .context-panel-section { display:flex; flex-direction:column; gap:var(--title-gap); min-width:0; }
 #context-panel .context-panel-label { font-size:10.5px; font-weight:650; line-height:1.45; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
 #context-panel .context-panel-card { display:flex; flex-direction:column; gap:5px; padding:10px 12px; min-width:0; border:1px solid var(--border); border-radius:8px; background:var(--surface-2); }
 #context-panel .context-panel-branch { display:flex; align-items:center; gap:8px; min-width:0; font:700 12px ui-monospace, Menlo, monospace; }

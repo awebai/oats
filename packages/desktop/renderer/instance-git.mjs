@@ -19,7 +19,7 @@ export const instanceGitCSS = `
 .instance-git .git-counts { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:8px; }
 .instance-git .git-counts span { padding:2px 5px; border-radius:4px; background:var(--surface-2); color:var(--muted); font-size:10.5px; }
 .instance-git .git-card { border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin:0 0 16px; overflow-wrap:anywhere; background:var(--surface-2); }
-.instance-git h3 { font-size:10.5px; font-weight:650; letter-spacing:.06em; text-transform:uppercase; margin:16px 0 8px; }
+.instance-git h3 { font-size:10.5px; font-weight:650; letter-spacing:.06em; text-transform:uppercase; margin:var(--section-gap) 0 var(--title-gap); }
 .instance-git dl { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.6fr); gap:6px 10px; }
 .instance-git dt { color:var(--muted); }
 .instance-git dd { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }

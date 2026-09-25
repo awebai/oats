@@ -577,7 +577,7 @@ for (const [name] of palettes) test(`${name}: F7 inspector cards, teams, compact
     ['.inspector-lede', '.soul-inspector', 'fg', 'surface'],
     ['.inspector-list .inspector-item-name', '.inspector-list', 'fg', 'surface'],
     ['.inspector-list .inspector-item-meta', '.inspector-list', 'muted', 'surface'],
-    ['.inspector-list .inspector-badge', '.inspector-list', 'muted', 'surface'],
+    ['.inspector-chip', '.inspector-chip', 'fg', 'surface'],
     ['.inspector-cap-row details > summary', '.inspector-list', 'muted', 'surface'],
     ['.inspector-disclosure > summary', '.soul-inspector', 'muted', 'surface'],
     ['.readiness-more > summary', '.soul-inspector', 'muted', 'surface'],
@@ -598,22 +598,23 @@ for (const [name] of palettes) test(`${name}: F7 inspector cards, teams, compact
   }
 });
 
-// F7 Part C: the spawn dialog's Teams row (the classes drawTeams builds).
-for (const [name] of palettes) test(`${name}: the spawn Teams row (fixed, joinable, unmapped) meets computed AA`, () => {
-  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="spawn-team-list">
-    <label class="spawn-team spawn-team-fixed"><input type="checkbox" checked disabled><span class="spawn-team-name">Personal team</span><span class="spawn-team-meta">always</span></label>
-    <label class="spawn-team"><input type="checkbox"><span class="spawn-team-name">engineering</span><span class="spawn-team-meta">northwind:eng</span></label>
-    <label class="spawn-team unavailable"><input type="checkbox" disabled><span class="spawn-team-name">global</span><span class="spawn-team-meta">Not mapped by this workspace</span></label>
+// F7 Part C: the spawn dialog's Teams row — the Relationship segmented control, as toggles.
+for (const [name] of palettes) test(`${name}: the spawn Teams row (fixed, joinable, selected in the accent) meets computed AA`, () => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="spawn-seg spawn-teams-row spawn-team-list">
+    <label class="spawn-team spawn-team-fixed"><input type="checkbox" checked disabled><span class="spawn-team-name">Personal</span></label>
+    <label class="spawn-team"><input type="checkbox" class="fteam"><span class="spawn-team-name">engineering</span></label>
+    <label class="spawn-team picked"><input type="checkbox" class="fteam" checked><span class="spawn-team-name">platform</span></label>
   </div></body></html>`, { pretendToBeVisual: true });
   const doc = dom.window.document;
   for (const source of [css, spawnDialogCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
   const root = dom.window.getComputedStyle(doc.documentElement);
-  for (const [selector, fg] of [['.spawn-team-fixed .spawn-team-name', 'fg'], ['.spawn-team:not(.unavailable):not(.spawn-team-fixed) .spawn-team-name', 'fg'],
-    ['.spawn-team-meta', 'muted'], ['.spawn-team.unavailable .spawn-team-name', 'muted'], ['.spawn-team.unavailable .spawn-team-meta', 'muted']]) {
-    const el = doc.querySelector(selector); assert.ok(el, selector);
+  for (const [selector, painted, fg, bg] of [['.spawn-team-fixed span', '.spawn-team-fixed span', 'fg', 'surface'],
+    ['.spawn-team:not(.picked):not(.spawn-team-fixed) span', '.spawn-teams-row', 'muted', 'surface-2'],
+    ['.spawn-team.picked span', '.spawn-team.picked span', 'accent', 'sel']]) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
     assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
-    assert.equal(dom.window.getComputedStyle(doc.querySelector('.spawn-team-list')).background.replace(/^.*(var\(--[\w-]+\)).*$/, '$1'), 'var(--surface)');
-    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue('--surface').trim())) >= 4.5, selector);
+    assert.equal(dom.window.getComputedStyle(surface).background.replace(/^.*(var\(--[\w-]+\)).*$/, '$1'), `var(--${bg})`, painted);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
   }
   dom.window.close();

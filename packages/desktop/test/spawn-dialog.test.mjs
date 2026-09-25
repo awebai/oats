@@ -429,7 +429,7 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: every spawn 
     ['.spawn-input-tag', '.spawn-input-tag', 'muted', 'chip-bg'],
     ['.spawn-run .spawn-trigger-tag', '.spawn-run .spawn-trigger-tag', 'muted', 'chip-bg'],
     ['.spawn-choice-menu [aria-selected=true]', '.spawn-choice-menu [aria-selected=true]', 'fg', 'sel'],
-    ['.spawn-seg input:checked + span', '.spawn-seg input:checked + span', 'fg', 'surface'],
+    ['.spawn-seg input:checked + span', '.spawn-seg input:checked + span', 'accent', 'sel'], // F7: the selected option in the accent on its tint,
     ['.spawn-seg input:not(:checked) + span', '.spawn-seg', 'muted', 'surface-2'],
     ['.spawn-advanced > summary', '.spawn-advanced', 'fg', 'surface-2'],
     ['.spawn-advanced > summary small', '.spawn-advanced', 'muted', 'surface-2'],

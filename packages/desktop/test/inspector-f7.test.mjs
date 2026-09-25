@@ -41,12 +41,12 @@ test('the capture: a soul with two labels, one mapped; the kernel answers teams 
 test('soul: Teams (read-only), then what a spawn resolves, capabilities as a compact list, declarations behind a disclosure', async t => {
   const u = await rendered(t, soulSelection, soul);
   assert.deepEqual(u.sections().slice(0, 4), ['Teams', 'When spawned', 'Effective providers', `Capabilities · ${soul.capabilities.length}`]);
-  const list = u.el.querySelector('h3.inspector-section + p + .inspector-list');
-  assert.ok(list, 'the teams list follows its one-line explanation');
-  assert.equal(list.previousElementSibling.textContent, "Its instances start in their person's personal team only. They can join these teams:");
-  assert.deepEqual([...list.children].map(row => [row.querySelector('.inspector-item-name').textContent, row.querySelector('.inspector-item-meta').textContent, row.querySelector('.inspector-badge').textContent]),
-    [['engineering · primary', 'northwind:eng', 'Joinable'], ['global', 'Not mapped by this workspace', 'Unavailable']]);
-  assert.match(list.querySelectorAll('.inspector-badge')[1].title, /does not map this team/);
+  const chips = u.el.querySelector('h3.inspector-section + p + .inspector-chips');
+  assert.ok(chips, 'one horizontal row of chips follows the one-line explanation');
+  assert.equal(chips.previousElementSibling.textContent, "The teams this soul has access to. Its instances start in their person's personal team only and can join these:");
+  assert.deepEqual([...chips.children].map(c => [c.textContent, c.className, c.title]),
+    [['engineering · primary', 'inspector-chip', 'engineering (northwind:eng)']], 'global is not mapped: not shown');
+  assert.doesNotMatch(u.el.textContent, /global/);
   assert.equal(u.el.querySelector('form, input, select, textarea'), null, 'read-only: joining is per instance');
   assert.ok(![...u.el.querySelectorAll('.inspector-card dt')].some(dt => dt.textContent === 'Team'), 'the single team fact gave way to the Teams section');
   const caps = [...u.el.querySelectorAll('.inspector-cap-row')];
@@ -64,8 +64,11 @@ test('soul: no teams reported shows nothing; an empty list says personal team on
   const empty = structuredClone(soul); empty.teams = [];
   const b = await rendered(t, soulSelection, empty);
   assert.equal(b.sections()[0], 'Teams');
-  assert.match(b.el.textContent, /Personal team only: the soul names no wider team\./);
-  assert.equal(b.el.querySelector('.inspector-list .inspector-badge'), null);
+  assert.match(b.el.textContent, /Personal team only: this soul has access to no other team\./);
+  const unmapped = structuredClone(soul); unmapped.teams = [{ label: 'global', team: null, mapped: false, payload: {} }];
+  const c = await rendered(t, soulSelection, unmapped);
+  assert.match(c.el.textContent, /Personal team only: this soul has access to no other team\./); assert.doesNotMatch(c.el.textContent, /global/);
+  assert.equal(b.el.querySelector('.inspector-chips'), null);
 });
 
 test('soul: readiness is one line under the summary, its checks behind a disclosure; the summary shows only reported facts', async t => {

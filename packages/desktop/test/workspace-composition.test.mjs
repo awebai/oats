@@ -110,7 +110,7 @@ test('03: cards have one semantic Details entry with compact identity, descripti
   card.focus(); card.dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); await tick();
   for (const text of ['Launch…', 'Files', 'Schedule…']) assert.ok([...u.get('.soul-inspector').querySelectorAll('button')].find(b => b.textContent === text), text);
   for (const text of ['Edit defaults', 'Edit instructions']) assert.equal([...u.get('.soul-inspector').querySelectorAll('button')].some(b => b.textContent === text), false, `${text}: a v2 soul is edited in its repository`);
-  assert.match(u.get('.inspector-repository').textContent, /^Edit this soul in its repository/);
+  assert.equal(u.get('.inspector-repository'), null, 'no "Edit this soul" block (human, F7)');
   assert.equal(u.get('.spawn-dialog'), null, 'keyboard inspection does not launch');
   u.click('Schedule…'); assert.deepEqual(u.views, ['schedules']);
   u.get('[aria-label="Close inspector"]').click();

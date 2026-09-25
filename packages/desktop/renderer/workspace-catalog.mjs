@@ -38,8 +38,8 @@ export const catalogCSS = `
 .catalog-notes { display:grid; gap:4px; margin:0 0 14px; }
 .catalog-note { margin:0; color:var(--muted); font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
 .catalog-note.warn { color:var(--warn); }
-.sources-section + .sources-section { margin-top:20px; }
-.sources-section h2 { margin:0 0 8px; color:var(--muted); font-size:10.5px; font-weight:650; letter-spacing:.06em; text-transform:uppercase; }
+.sources-section + .sources-section { margin-top:var(--section-gap); }
+.sources-section h2 { margin:0 0 var(--title-gap); color:var(--muted); font-size:10.5px; font-weight:650; letter-spacing:.06em; text-transform:uppercase; }
 .sources-row { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1.1fr); align-items:center; gap:12px; min-height:52px; padding:8px 16px; box-sizing:border-box; border-top:1px solid var(--border); }
 .sources-row:first-child { border-top:0; }
 .sources-key { color:var(--muted); font:11px/1.5 var(--mono,monospace); overflow-wrap:anywhere; }

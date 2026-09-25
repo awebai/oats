@@ -39,7 +39,7 @@ export const spawnDialogCSS = `
 .spawn-search-label { display:flex; align-items:center; gap:6px; margin:0 4px 10px; }
 .spawn-search-label input { min-width:0; flex:1; }
 .spawn-search-count { flex:none; color:var(--muted); font:10.5px var(--mono,monospace); }
-.spawn-chooser h3 { margin:14px 8px 6px; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); overflow-wrap:anywhere; }
+.spawn-chooser h3 { margin:14px 8px var(--title-gap); font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); overflow-wrap:anywhere; }
 .spawn-choice { width:100%; min-height:56px; display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid transparent; border-radius:8px; text-align:left; background:var(--surface); color:var(--fg); font:inherit; cursor:pointer; }
 .spawn-choice[aria-pressed=true] { background:var(--sel); border-color:var(--accent); }
 .spawn-choice .spawn-choice-check { flex:none; color:var(--accent); visibility:hidden; }
@@ -52,13 +52,15 @@ export const spawnDialogCSS = `
 .spawn-chooser-note { margin:6px 8px; color:var(--muted); font-size:11.5px; line-height:1.5; overflow-wrap:anywhere; }
 .spawn-chooser-note:empty { display:none; }
 .spawn-form { min-width:0; min-height:0; overflow:hidden; display:flex; flex-direction:column; }
-.spawn-form-body { flex:1; min-height:0; overflow:auto; display:flex; flex-direction:column; gap:20px; padding:20px 24px; box-sizing:border-box; }
-.spawn-field { display:flex; flex-direction:column; gap:6px; min-width:0; margin:0; padding:0; border:0; }
+.spawn-form-body { flex:1; min-height:0; overflow:auto; display:flex; flex-direction:column; gap:var(--section-gap); padding:20px 24px; box-sizing:border-box; }
+.spawn-field { display:flex; flex-direction:column; gap:var(--title-gap); min-width:0; margin:0; padding:0; border:0; }
+/* a legend is not a flex item: the title gap is its own margin */
+.spawn-field > legend { margin-bottom:var(--title-gap); }
 .spawn-label, .spawn-field > label, .spawn-name-head > label, .spawn-row > label > .spawn-label-text, .spawn-field > legend { display:flex; align-items:center; gap:6px; padding:0; font-size:11.5px; font-weight:650; color:var(--muted); }
 .spawn-label .shell-icon { color:var(--muted); }
 .spawn-label small { font-weight:500; }
 .spawn-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
-.spawn-row > label { display:flex; flex-direction:column; gap:6px; min-width:0; }
+.spawn-row > label { display:flex; flex-direction:column; gap:var(--title-gap); min-width:0; }
 .spawn-form .field { min-width:0; width:100%; box-sizing:border-box; }
 .spawn-form :is(input.field, select.field, textarea.field):focus-visible, .spawn-name-input:focus-within, .spawn-joined:focus-within {
   outline:none; border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
@@ -77,15 +79,11 @@ export const spawnDialogCSS = `
 .spawn-hint:empty { display:none; }
 .spawn-hint code, .spawn-work-text code { font:11.5px var(--mono,monospace); color:var(--fg); }
 .spawn-hint.err { color:var(--danger); }
-/* Teams (teams contract): the personal team is fixed; mapped teams are ticked to join; unmapped ones say why. */
-.spawn-team-list { border:1px solid var(--border); border-radius:8px; background:var(--surface); overflow:hidden; }
-.spawn-team { display:flex; align-items:center; gap:10px; min-height:38px; padding:6px 12px; box-sizing:border-box; font-size:12.5px; color:var(--fg); cursor:pointer; }
-.spawn-team + .spawn-team { border-top:1px solid var(--border); }
-.spawn-team input { margin:0; flex:none; }
-.spawn-team-name { font-weight:600; min-width:0; overflow-wrap:anywhere; }
-.spawn-team-meta { margin-left:auto; color:var(--muted); font-size:11.5px; text-align:right; overflow-wrap:anywhere; }
-.spawn-team-fixed, .spawn-team.unavailable { cursor:default; }
-.spawn-team.unavailable .spawn-team-name { color:var(--muted); font-weight:500; }
+/* Teams (teams contract): one line like Relationship — Personal fixed on, mapped teams toggle, unmapped greyed. */
+.spawn-teams-row { flex-wrap:wrap; align-self:flex-start; max-width:100%; box-sizing:border-box; }
+.spawn-seg input:disabled { cursor:default; }
+/* Personal is fixed, not a choice: a quiet neutral chip, not the accent. */
+.spawn-seg .spawn-team-fixed input:checked + span { background:var(--surface); color:var(--fg); box-shadow:none; cursor:default; }
 /* Runtime picker and model field */
 .spawn-run .spawn-choice-trigger { height:38px; min-height:38px; border-radius:8px; }
 .spawn-run .spawn-choice-trigger .runtime-badge, .spawn-choice-menu .runtime-badge { flex:none; width:20px; height:20px; border-radius:5px; display:grid; place-items:center; font-size:9.5px; font-weight:700; }
@@ -126,7 +124,8 @@ export const spawnDialogCSS = `
 .spawn-seg label { position:relative; display:block; cursor:pointer; }
 .spawn-seg input { position:absolute; inset:0; appearance:none; -webkit-appearance:none; margin:0; border:0; background:transparent; cursor:pointer; }
 .spawn-seg span { display:block; padding:5px 11px; border-radius:6px; font-size:12px; font-weight:600; color:var(--muted); white-space:nowrap; }
-.spawn-seg input:checked + span { background:var(--surface); color:var(--fg); box-shadow:var(--shadow); }
+/* The selected option (Relationship, Teams): the accent on its selected tint, outlined. */
+.spawn-seg input:checked + span { background:var(--sel); color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); }
 .spawn-seg input:focus-visible + span { outline:2px solid var(--accent); outline-offset:1px; }
 .spawn-relationship-row .frelto { flex:1 1 200px; width:auto; min-width:0; height:34px; }
 .spawn-relationship-row .frelto[hidden] { display:none; }
@@ -417,10 +416,10 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   // Teams (teams contract): offered only when the provider declares the spawn
   // setting `join`; the list is the kernel's (primary first), never computed here.
   const teamsField = el('fieldset', undefined, 'spawn-field spawn-teams'); teamsField.hidden = true;
-  const teamsHint = el('p', "By default it's only in your personal team. Tick the teams it should also join.", 'spawn-hint spawn-teams-hint');
-  const teamsList = el('div', undefined, 'spawn-team-list');
+  const teamsList = el('div', undefined, 'spawn-seg spawn-teams-row spawn-team-list'); teamsList.setAttribute('role', 'group'); teamsList.setAttribute('aria-label', 'Teams');
+  const teamsHint = el('p', '', 'spawn-hint spawn-teams-hint'); teamsHint.setAttribute('aria-live', 'polite');
   const teamsError = el('p', '', 'spawn-hint spawn-teams-error err'); teamsError.setAttribute('aria-live', 'polite');
-  teamsField.append(el('legend', 'Teams'), teamsHint, teamsList, teamsError);
+  teamsField.append(el('legend', 'Teams'), teamsList, teamsHint, teamsError);
   let teamsNow = null, joinDeclaredNow = false, teamsDrawn = '';
   const joinPicked = new Set();
   teamsList.addEventListener('change', event => {
@@ -432,17 +431,15 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     const key = JSON.stringify(teamsNow);
     if (key === teamsDrawn) return;
     teamsDrawn = key; teamsList.replaceChildren();
-    const row = (cls, name, meta, box) => {
-      const r = el('label', undefined, cls); r.append(box, el('span', name, 'spawn-team-name'), el('span', meta, 'spawn-team-meta')); teamsList.append(r); return r;
-    };
+    const chip = (cls, name, box, title) => { const c = el('label', undefined, cls); c.append(box, el('span', name, 'spawn-team-name')); c.title = title; teamsList.append(c); return c; };
     const fixed = el('input'); fixed.type = 'checkbox'; fixed.checked = true; fixed.disabled = true;
-    row('spawn-team spawn-team-fixed', 'Personal team', 'always', fixed).title = "Every instance is in its person's personal team.";
-    for (const t of teamsNow || []) {
+    chip('spawn-team spawn-team-fixed', 'Personal', fixed, "Personal team — always. Every instance is in its person's personal team.");
+    for (const t of (teamsNow || []).filter(t => t.mapped)) {
       const box = el('input'); box.type = 'checkbox'; box.value = t.label; box.className = 'fteam';
-      box.disabled = !t.mapped; box.checked = t.mapped && joinPicked.has(t.label);
-      const r = row(t.mapped ? 'spawn-team' : 'spawn-team unavailable', t.label, t.mapped ? t.team : 'Not mapped by this workspace', box);
-      if (!t.mapped) r.title = "The workspace does not map this team, so it can't be joined.";
+      box.checked = joinPicked.has(t.label);
+      chip('spawn-team', t.label, box, `Join ${t.label} (${t.team})`);
     }
+    teamsHint.textContent = `By default it's only in your personal team. These are the teams ${soul.name} has access to — tick the ones it should also join.`;
   }
   const hostRow = el('div', undefined, 'spawn-row');
   const backendLabel = el('label', 'Session backend'), backend = el('select', undefined, 'field fbackend'); backendLabel.append(backend);
@@ -505,7 +502,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const busy = () => !!flight || remoteBusy;
   const effectiveWork = () => worktree.checked && soul.work === 'checkout' ? 'worktree' : soul.work;
   const identityOffered = () => local() && !!messagingProvider && !!cli()?.features?.includes('spawn-provider-payload');
-  const teamsOffered = () => identityOffered() && joinDeclaredNow && Array.isArray(teamsNow) && teamsNow.length > 0;
+  // Only the teams the soul has access to (mapped); with none, there is nothing to choose and no row.
+  const teamsOffered = () => identityOffered() && joinDeclaredNow && Array.isArray(teamsNow) && teamsNow.some(t => t.mapped);
   // What the operator ticked, in the kernel's order, mapped labels only.
   const joinLabels = () => teamsOffered() ? teamsNow.filter(t => t.mapped && joinPicked.has(t.label)).map(t => t.label) : [];
   // The preview for these choices must bind exactly the ticked teams (settings echo).
