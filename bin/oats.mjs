@@ -116,7 +116,7 @@ function shellQuote(s) {
  * cleanly (text or JSON) instead of an uncaught stack trace. */
 function operationalKnowledgeNote(composition, soulName) {
   return composition && !composition.oatsCoreDeclared
-    ? `soul ${soulName} has no oats.core capability; kernel-shipped operational skills are deprecated` : null;
+    ? `soul ${soulName} has no oats.core capability (the workspace default); it gets no OATS operating instructions` : null;
 }
 /** `doctor --soul`: the instructions an instance of that soul would carry. The soul
  *  is resolved over the workspace remotes exactly as a spawn preview resolves it,

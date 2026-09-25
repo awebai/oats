@@ -318,7 +318,7 @@ Nothing is symlinked, nothing is shared between instances.
 ```
 <agents-root>/<soul>/instances/<instance>/
 ├── AGENTS.md                          # composed: soul AGENTS.md + kernel/work-mode blocks + each module's inject
-│                                      #   (with oats.core resolved, the module's "You run on OATS" block is the only one — the kernel's legacy copy is suppressed)
+│                                      #   (the "You run on OATS" block is oats.core's inject; the kernel ships no copy)
 ├── CLAUDE.md → AGENTS.md
 ├── .agents/skills/<capability>/<skill>/SKILL.md    # full copies; where pi/codex look
 ├── .claude/skills → ../.agents/skills

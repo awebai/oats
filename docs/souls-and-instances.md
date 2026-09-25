@@ -86,9 +86,10 @@ souls — is ordinary capability content: **`oats.core`** (package
 `defaults.capabilities: { oats.core: { from: package } }`; a soul may say
 `oats.core: off`. **`oats.setup`** (same package) carries the whole-architecture
 knowledge an onboarding expert needs. Neither is kernel magic; the kernel still
-composes its own instance-boundary and work-mode briefings — and, when
-`oats.core` resolves as a module, leaves the "You run on OATS" briefing to the
-module's inject (one block, not two; 0.25.2).
+composes its own instance-boundary and work-mode briefings, and the "You run
+on OATS" briefing is `oats.core`'s inject (the kernel ships no copy since 0.26:
+a soul without `oats.core` gets no OATS operating instructions, and
+`oats doctor --soul` says so).
 
 ## Instance anatomy
 
