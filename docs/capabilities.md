@@ -192,7 +192,8 @@ and a capability the soul names itself settles it (the soul's entry wins). A res
 capability whose manifest says `layer: X` fills slot X; two for one slot are
 `E_SLOT_CONFLICT`. Provider settings start from the manifest's own declared
 defaults (`settings.<key>.default`, the lowest layer), then take the workspace's
-`messaging` payload (and its `byTeam[<team>]`) for the messaging slot, the soul's
+`messaging` payload (its base: no `byTeam` entry is merged, per teams
+amendment K) for the messaging slot, the soul's
 slot payload, `oats-local.yaml` `settings.<cap>`, and `oats spawn --provider`,
 deep-merged in that order. There are no agent types, no `global`, no
 per-deployment activation or exclusion maps.
@@ -211,8 +212,10 @@ work: worktree
 team: [engineering, reviewers]
 ```
 
-- The merged messaging payload, `OATS_TEAM_LABEL` and `OATS_TEAM_ID` follow the
-  primary label only (a one-label soul is unchanged).
+- `OATS_TEAM_LABEL` is the primary label. The merged messaging payload takes
+  **no** label's `byTeam` entry, the primary's included (teams amendment K), so
+  `OATS_TEAM_ID` (the payload's `team`) is the personal team a host, soul or
+  spawn set; empty means the provider's default.
 - Every label is an **eligible team**: the kernel hands the messaging provider
   `teams`, one `{ label, team, mapped, payload }` per label in order. `payload`
   is `workspace.messaging` ⊕ `byTeam[<label>]` when the workspace maps the
@@ -474,7 +477,8 @@ passed as arguments; no shell is involved.
   - `OATS_CAPABILITY` and `OATS_SETTINGS` (the payload as JSON);
   - `OATS_CLI_BIN`;
   - `OATS_WORKSPACE` (the deployment);
-  - the team variables `OATS_TEAM_ID` (the messaging payload's `team`),
+  - the team variables `OATS_TEAM_ID` (the messaging payload's `team`: the
+    personal team if one is set; empty = the provider's default),
     `OATS_TEAM_SCOPE`, `OATS_TEAM_LABEL`, `OATS_TEAM_NAME`,
     `OATS_TEAM_LABELS`, `OATS_TEAMS`, `OATS_TEAMS_SOURCE`, `OATS_WORKSPACE_NAME` and
     `OATS_WORKSPACE_KEY`;

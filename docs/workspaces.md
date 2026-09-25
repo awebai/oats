@@ -379,9 +379,13 @@ store** — it organises and can supply defaults. The messaging provider's paylo
 | A fact about **this spawn** | `oats spawn … --provider <cap> key=value` (repeatable; dotted keys nest) → `instance.json.providers.<cap>` | `--provider oats.aweb identity.source=/abs/path/to/retained/.aw` |
 
 The merged payload is `workspace.messaging` (messaging slot only; its base
-keys ⊕ `byTeam[<soul's team>]`, with `byTeam` itself stripped) ⊕ soul slot
-payload ⊕ `local.settings[cap]` ⊕ `spawn.providers[cap]` — objects deep-merge,
-later wins on scalars and arrays. The provider's own `binding` contract
+keys, with `byTeam` stripped) ⊕ soul slot payload ⊕ `local.settings[cap]` ⊕
+`spawn.providers[cap]` — objects deep-merge, later wins on scalars and arrays.
+**No `byTeam[<label>]` is merged into it, the primary's included** (teams
+amendment K): each label's `base ⊕ byTeam[label]` reaches the provider only as
+that label's entry in `OATS_TEAMS` (the preview's `teams`). So `settings.team`
+(and `OATS_TEAM_ID`) is the personal team if the host, the soul or the spawn
+set one; empty means the provider's own default. The provider's own `binding` contract
 (`normalize → bind → check`) runs over the merged payload exactly as before.
 Two teams, two messaging identities, one workspace:
 
@@ -393,15 +397,17 @@ messaging:
     cloud: { team: aweb:example.cloud }
 ```
 
-A soul with `team: cloud` hands its messaging provider `{ team: aweb:example.cloud, … }`;
-a label under `byTeam` that is not declared in `teams:` is `E_WORKSPACE_SCHEMA`.
-**`byTeam` is kernel-merged; whether a provider honours what arrives is the
-provider's.** `spawn --preview` shows the merged `settings.<cap>` so the
-delivery is verifiable, and `instance.json.providers.<cap>` records it — but
-**oats.aweb 1.12.0 reads `team` from its payload** and mints into exactly that
-team (`--team-id`), warning when the payload disagrees with an `OATS_TEAM_*`
-value — so `byTeam.<label>.team` IS the per-label identity. What the payload
-does not change is **where the `.aw` root is found**: the hook still searches
+A soul with `team: cloud` hands its messaging provider the eligible team
+`{ label: cloud, team: aweb:example.cloud, mapped: true, payload: { team: aweb:example.cloud, … } }`
+in `OATS_TEAMS`; its settings carry no `team` unless the host, soul or spawn set
+one. A label under `byTeam` that is not declared in `teams:` is
+`E_WORKSPACE_SCHEMA`. **Joining an eligible team is the provider's explicit
+act.** `spawn --preview` shows the merged `settings.<cap>` and the `teams`, so
+the delivery is verifiable, and `instance.json` records both. With oats.aweb
+1.13.1 (which reads `team` from its settings and ignores `OATS_TEAMS`) the
+primary identity therefore mints into the personal team: the `.aw` root's
+active team, or the one the host set. What the payload does not change is
+**where the `.aw` root is found**: the hook still searches
 bounded candidates, first hit wins — the instance home, the Git repository
 containing it, the soul's work repository and the Git repository containing
 it, then the deployment directory (`OATS_WORKSPACE`); never the user home or

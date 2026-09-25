@@ -676,8 +676,10 @@ the pre-fix marker and is never accepted for dispatch.
   includes the manifest's declared setting defaults (`settings.<key>.default`,
   the lowest layer), and the preview's **`settingsOrigins.<cap>`** maps each
   leaf of `settings.<cap>` (a JSON pointer, e.g. `/identity/mode`) to
-  `{ kind, at }`: `kind` is `manifest-default` | `workspace` |
-  `workspace-team` | `soul` | `host` | `spawn` — the last layer that set it —
+  `{ kind, at }`: `kind` is `manifest-default` | `workspace` | `soul` |
+  `host` | `spawn` — the last layer that set it. (`workspace-team` no longer
+  appears since teams amendment K: a label's `byTeam` entry is not merged into
+  the settings; it is in `teams[].payload`.) —
   and `at` names where (`oats.json#/settings/identity/default`,
   `soul.yaml#/messaging`, `oats-local.yaml#/settings/<cap>`,
   `--provider <cap>`, …). A Desktop labels `manifest-default` values
