@@ -298,7 +298,8 @@ test("launch hooks: only capabilities captured for the home take part; a hook an
   write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8").replace(/  additive:\n    test.extra:\n      from: owned\n      global: true\n      settings:\n        mode: current\n/, ""));
   r = spawnSync(process.execPath, [CLI, "launch-config", "preview", "--home", home, "--launch-config", "codexy", "--json"], { encoding: "utf8", env: env() });
   out = JSON.parse(r.stdout.trim()); assert.equal(out.ok, true, r.stdout);
-  assert.equal(out.result.ok, false); assert.match(out.result.preflight.find((c) => c.check === "capabilities").detail, /test.extra was part of .*no longer installed/);
+  assert.equal(out.result.ok, false); assert.match(out.result.preflight.find((c) => c.check === "capabilities").detail, /test.extra was part of .*no longer installed in the scope; respawn the instance; nothing was stopped/);
+  assert.doesNotMatch(out.result.preflight.find((c) => c.check === "capabilities").detail, /oats (install|trust)/, "the remedy names no removed verb");
 });
 
 test("0.25.5 launch-hook meta is persisted: after a successful start, each capability's launch `meta` lands in instance.json.capabilityMeta over the spawn's record; a hook that answers without meta keeps its prior entry; a failed launch leaves the record untouched", async () => {
