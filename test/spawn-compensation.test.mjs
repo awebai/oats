@@ -26,8 +26,8 @@ function fixture({ runtime = true, runtimeName = "pi", backend = "tmux", platfor
   // whose required spawn hook creates an external resource and whose retire
   // hook releases it — the compensation this suite exercises.
   const fx = v2Deployment({
-    souls: { dev: { soul: { work: "worktree", capabilities: { "test-messaging": { from: "here" } } }, agents: "# Developer\n" } },
-    capabilities: { "test-messaging": {
+    souls: { dev: { soul: { work: "worktree", capabilities: { "test.messaging": { from: "here" } } }, agents: "# Developer\n" } },
+    capabilities: { "test.messaging": {
       manifest: { description: "Compensatable test resource", hooks: { spawn: { command: "spawn.mjs", required: true }, retire: "retire.mjs" } },
       files: {
         "spawn.mjs": `
@@ -148,8 +148,8 @@ test("post-hook failure preserves the spawn receipt when compensation cannot fin
   assert.match(result.stdout, /rollback INCOMPLETE/);
   assert.equal(existsSync(f.resource), true);
   const marker = JSON.parse(readFileSync(join(f.home, ".oats-rollback-incomplete.json"), "utf8"));
-  assert.deepEqual(marker.cleanup.capabilityMeta["test-messaging"], { alias: "test-resource" });
-  assert.deepEqual(marker.cleanup.outstanding.hooks, ["test-messaging"]);
+  assert.deepEqual(marker.cleanup.capabilityMeta["test.messaging"], { alias: "test-resource" });
+  assert.deepEqual(marker.cleanup.outstanding.hooks, ["test.messaging"]);
 });
 
 test("an unquiesced partial launch retains work and credentials for retry", () => {

@@ -69,9 +69,12 @@ compatibility:                            # optional floors on PACKAGE versions 
 | `compatibility` | `<cap>: <semver range>` checked against the locked package version (`E_COMPATIBILITY`). |
 
 Schema: [`soul.schema.json`](soul.schema.json). Not in v2: `kind`, `type`,
-`repo`, `runtime`, `model`, `requires`, `source:`, `stores.inherit`. Model and
-runtime are spawn-time / launch-configuration choices (`--runtime`, `--model`,
-`--launch-config`), not soul identity: a soul is model-agnostic as an artifact.
+`repo`, `runtime`, `model`, `backend`, `yolo`, `launch-config`, `children`,
+`requires`, `source:`, `stores.inherit`. Runtime, model, backend, yolo and the
+launch configuration are spawn-time host choices (`--runtime`, `--model`,
+`--backend`, `--yolo`, `--launch-config`, or a launch configuration in
+`oats-local.yaml`), not soul identity: a soul is model-agnostic as an artifact.
+A child-spawn policy is a spawn flag too (`--no-child-spawns`).
 
 A soul never runs by itself. It is incarnated as an instance. Editing a soul
 is a code change, reviewed in its repo.

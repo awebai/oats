@@ -16,7 +16,7 @@ import { fixture as okfFixture } from "./helpers/okf-v2.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
@@ -70,6 +70,20 @@ test("oats version --json emits the exact Desktop API v1 probe payload", () => {
   assert.equal(r.stdout.trim(), `{"schemaVersion":1,"name":"@awebai/oats","version":"${PKG_VERSION}","desktopApi":1,"runtimes":["pi","claude","codex"],"sessionBackends":["tmux","herdr"],"launchOptions":["yolo"],"remote":["spawn","retire","status","session","session-start","session-restart","launch-config","roster","harvest","schedule","session-upload","operations"],"features":["retire-home","session-start","session-restart","launch-config","schedule","session-upload","operations","instance-git","instance-git-remote","souls-declarations","lifecycle-plans","retire-retention","readiness","spawn-preview","instance-events","instance-events-2","schedule-history","schedule-read-2","spawn-preview-2","spawn-idempotency","spawn-idempotency-2","spawn-apply-2","workspace-v2","instance-modules","spawn-provider-payload","served-identity","packages-no-approval","spawn-name","settings-origins"],"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,"readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,"capturedDispatchApi":1,"capturedDispatchActions":["inspect","compose","command","operation","spawn","trust"]}`);
 });
 
+test("oats status reads a workspace soul.yaml with its real shape: nested capabilities stay a map, schemaVersion stays a number", async (t) => {
+  const fx = v2Deployment({ souls: { dev: { soul: { capabilities: { "acme.x": { from: "here" } }, private: true } } }, capabilities: { "acme.x": { manifest: {} } } });
+  t.after(() => fx.cleanup());
+  await fx.spawn("dev");
+  const r = fx.cli(["status", "--json"]);
+  assert.equal(r.status, 0, r.stderr);
+  const dev = JSON.parse(r.stdout).agents.find((a) => a.name === "dev");
+  assert.equal(dev.schemaVersion, 2);
+  assert.deepEqual(dev.capabilities, { "acme.x": { from: "here" } });
+  assert.equal(dev.private, true);
+  assert.equal(dev.work, "directory");
+  assert.deepEqual(dev.instances.map((i) => i.instance), ["dev-1"]);
+});
+
 test("oats version human output stays ergonomic and mentions the version", () => {
   const r = spawnSync(process.execPath, [CLI, "version"], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
@@ -95,31 +109,33 @@ test("oats spawn --json success is one envelope with the contract result fields"
   assert.equal(typeof res.tmux.window, "string");
 });
 
-test("oats spawn --json failures are one stdout envelope, stable codes, nonzero exit", () => {
-  const base = temp(); const { repo } = fixtureSoul(base);
-  const env = { ...process.env, PATH: fakeRuntimes(base), PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" };
-  delete env.PI_AGENTS_ROOT;
+test("oats spawn --json failures are one stdout envelope, stable codes, nonzero exit", (t) => {
+  const fx = v2Deployment(); t.after(fx.cleanup);
   const cases = [
     { args: ["spawn", "--json"], code: "E_USAGE" },
-    { args: ["spawn", "no-such-agent", "--json"], code: "E_UNKNOWN_AGENT" },
+    { args: ["spawn", "no-such-agent", "--json"], code: "E_SOUL_UNKNOWN" },
     { args: ["spawn", "dev", "--parent", "ghost-1", "--json"], code: "E_PARENT_NOT_FOUND" },
     { args: ["spawn", "dev", "--task", "--json"], code: "E_BAD_ARGS" }, // --task without value
-    { args: ["spawn", "dev", "--task-file", join(base, "missing.md"), "--json"], code: "E_BAD_ARGS" },
+    { args: ["spawn", "dev", "--task-file", join(fx.base, "missing.md"), "--json"], code: "E_BAD_ARGS" },
   ];
-  for (const c of cases) {
-    const r = spawnSync(process.execPath, [CLI, ...c.args, "--no-launch"], { cwd: repo, env, encoding: "utf8" });
-    assert.notEqual(r.status, 0, `${c.args.join(" ")} exits nonzero`);
+  const envelope = (r, code, what) => {
+    assert.notEqual(r.status, 0, `${what} exits nonzero`);
     const doc = parseOnly(r.stdout);
     assert.equal(doc.schemaVersion, 1);
     assert.equal(doc.ok, false);
-    assert.equal(doc.error.code, c.code, `${c.args.join(" ")} → ${c.code} (got ${doc.error.code}: ${doc.error.message})`);
+    assert.equal(doc.error.code, code, `${what} → ${code} (got ${doc.error.code}: ${doc.error.message})`);
     assert.equal(typeof doc.error.message, "string");
-  }
-  // No deployment at all → E_NO_DEPLOYMENT.
+    return doc;
+  };
+  for (const c of cases) envelope(fx.cli([...c.args, "--no-launch"]), c.code, c.args.join(" "));
+  // No deployment in reach (no oats-local.yaml) → E_LOCAL_MISSING, naming onboard.
   const bare = temp();
-  const r = spawnSync(process.execPath, [CLI, "spawn", "dev", "--json", "--dir", bare, "--no-launch"], { cwd: bare, env, encoding: "utf8" });
-  assert.notEqual(r.status, 0);
-  assert.equal(parseOnly(r.stdout).error.code, "E_NO_DEPLOYMENT");
+  const none = envelope(fx.cli(["spawn", "dev", "--json", "--dir", bare, "--no-launch"], { cwd: bare }), "E_LOCAL_MISSING", "spawn outside a deployment");
+  assert.match(none.error.message, /oats onboard/);
+  // A deployment whose agents/ root is missing → E_NO_DEPLOYMENT, naming the remedy.
+  rmSync(fx.root, { recursive: true });
+  const rootless = envelope(fx.cli(["spawn", "dev", "--json", "--no-launch"]), "E_NO_DEPLOYMENT", "spawn in a deployment without agents/");
+  assert.match(rootless.error.message, /oats sync/);
 });
 
 test("okf harvest --json: no unprocessed input reports an empty durable queue", t => {
@@ -159,16 +175,23 @@ test("okf refuses a missing absolute OATS_CLI_BIN without private imports or PAT
 // unknown subcommand, unknown namespace, and malformed instance metadata all
 // print exactly one envelope object on stdout with a stable code.
 
-function opsCapability(repo, { commands = { ping: "ping.mjs" } } = {}) {
-  const dir = join(repo, ".agents", "capabilities", "owned", "ops");
-  write(join(dir, "oats.json"), JSON.stringify({ capability: "acme.ops", command: "ops", version: "1.0.0", compatibility: { oats: ">=0.6.2" }, description: "Ops.", commands }));
-  write(join(dir, "ping.mjs"), "console.log(JSON.stringify({schemaVersion:1,ok:true,result:{pong:true}}))\n");
-  return dir;
+/** A deployment whose member capability acme.ops declares `oats ops ping`, and a
+ *  spawned v2 home of the soul that activates it (`env` addresses that home). */
+async function opsHome(t, { ping = "console.log(JSON.stringify({schemaVersion:1,ok:true,result:{pong:true}}))\n", commands = { ping: "ping.mjs" } } = {}) {
+  const fx = v2Deployment({
+    souls: { dev: { soul: { capabilities: { "acme.ops": { from: "here" } } } }, plain: {} },
+    capabilities: { "acme.ops": { manifest: { command: "ops", description: "Ops.", commands }, files: { "ping.mjs": ping } } },
+  });
+  t.after(fx.cleanup);
+  const spawned = await fx.spawn("dev", { instance: "dev-ops" });
+  const env = { OATS_INSTANCE_HOME: spawned.home, PI_AGENT_HOME: spawned.home, OATS_HOME: spawned.home };
+  return { fx, home: spawned.home, env, run: (argv, opts = {}) => fx.cli(argv, { cwd: spawned.home, env, ...opts }) };
 }
+const NO_HOME = { OATS_INSTANCE_HOME: "", PI_AGENT_HOME: "", OATS_HOME: "" };
 
-test("--help never executes: kernel builtins print usage, capability commands answer from the manifest", () => {
+test("--help never executes: kernel builtins print usage, capability commands answer from the manifest", async (t) => {
   const base = temp(); const { repo } = fixtureSoul(base);
-  const envNoHome = { ...process.env, PI_AGENT_HOME: "", OATS_HOME: "" };
+  const envNoHome = { ...process.env, OATS_INSTANCE_HOME: "", PI_AGENT_HOME: "", OATS_HOME: "" };
   // A builtin with side effects (sync goes to the remotes and writes the lock): --help prints usage and touches nothing.
   let r = spawnSync(process.execPath, [CLI, "sync", "--help", "--dir", repo], { cwd: repo, encoding: "utf8", env: envNoHome });
   assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /^Usage:\n  oats sync/); assert.doesNotMatch(r.stdout, /no oats-local\.yaml/);
@@ -178,72 +201,50 @@ test("--help never executes: kernel builtins print usage, capability commands an
   r = spawnSync(process.execPath, [CLI, "update", "--help", "--json"], { cwd: repo, encoding: "utf8", env: envNoHome });
   assert.equal(r.status, 0); const helpDoc = parseOnly(r.stdout); assert.equal(helpDoc.result.command, "update"); assert.ok(helpDoc.result.usage.some((l) => /oats update \[--check\]/.test(l)));
   // A capability command: the executable must not run for --help.
-  const dir = opsCapability(repo);
   const marker = join(base, "ping-ran");
-  write(join(dir, "ping.mjs"), `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(marker)}, "ran"); console.log(JSON.stringify({schemaVersion:1,ok:true,result:{pong:true}}))\n`);
-  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.ops:\n      souls:\n        dev: true\n");
-  const home = join(base, "instance"); mkdirSync(home);
-  write(join(home, "instance.json"), JSON.stringify({ repo, capabilities: [{ id: "acme.ops" }] }));
-  const envHome = { ...process.env, PI_AGENT_HOME: home, OATS_HOME: home };
+  const ops = await opsHome(t, { ping: `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(marker)}, "ran"); console.log(JSON.stringify({schemaVersion:1,ok:true,result:{pong:true}}))\n` });
   for (const argv of [["ops", "ping", "--help"], ["ops", "ping", "-h"], ["ops", "--help"], ["ops", "ping", "--json", "--help"]]) {
-    r = spawnSync(process.execPath, [CLI, ...argv], { cwd: repo, encoding: "utf8", env: envHome });
+    r = ops.run(argv);
     assert.equal(r.status, 0, `${argv.join(" ")}: ${r.stdout}${r.stderr}`);
     assert.equal(existsSync(marker), false, `${argv.join(" ")} ran the executable`);
     if (argv.includes("--json")) { const d = parseOnly(r.stdout); assert.equal(d.result.capability, "acme.ops"); assert.deepEqual(d.result.commands, ["ping"]); }
     else assert.match(r.stdout, /acme\.ops.*\n\s+commands: ping/);
   }
   // Without --help the executable still runs.
-  r = spawnSync(process.execPath, [CLI, "ops", "ping"], { cwd: repo, encoding: "utf8", env: envHome });
+  r = ops.run(["ops", "ping"]);
   assert.equal(r.status, 0, r.stderr); assert.equal(existsSync(marker), true);
 });
 
-test("capability dispatch --json failures are one stdout envelope with stable codes", () => {
-  const base = temp(); const { repo } = fixtureSoul(base);
-  opsCapability(repo);
-  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.ops:\n      souls:\n        dev: true\n");
-  const envNoHome = { ...process.env, PI_AGENT_HOME: "", OATS_HOME: "" };
-  // inactive namespace (not active in this context) → E_CAPABILITY_INACTIVE
-  let r = spawnSync(process.execPath, [CLI, "ops", "ping", "--json"], { cwd: repo, encoding: "utf8", env: envNoHome });
-  assert.notEqual(r.status, 0);
-  assert.equal(parseOnly(r.stdout).error.code, "E_CAPABILITY_INACTIVE");
-  // active via instance metadata: unknown subcommand → E_UNKNOWN_COMMAND
-  const home = join(base, "instance"); mkdirSync(home);
-  write(join(home, "instance.json"), JSON.stringify({ repo, capabilities: [{ id: "acme.ops" }] }));
-  const envHome = { ...process.env, PI_AGENT_HOME: home };
-  r = spawnSync(process.execPath, [CLI, "ops", "nope", "--json"], { cwd: home, encoding: "utf8", env: envHome });
-  assert.notEqual(r.status, 0);
-  assert.equal(parseOnly(r.stdout).error.code, "E_UNKNOWN_COMMAND");
+test("capability dispatch --json failures are one stdout envelope with stable codes", async (t) => {
+  const ops = await opsHome(t);
+  const fail = (r, code, what) => { assert.notEqual(r.status, 0, what); const d = parseOnly(r.stdout); assert.equal(d.error.code, code, `${what} → ${code} (got ${d.error.code}: ${d.error.message})`); return d; };
+  // From the deployment, no home: a namespace resolves as a spawn of --soul would.
+  fail(ops.fx.cli(["ops", "ping", "--json"], { env: NO_HOME }), "E_BAD_ARGS", "no --soul outside a home");
+  // A soul whose resolution provides no "ops" namespace: nothing claims it.
+  fail(ops.fx.cli(["ops", "ping", "--soul", "plain", "--json"], { env: NO_HOME }), "E_UNKNOWN_COMMAND", "a soul without the namespace");
+  // In the home: unknown subcommand → E_UNKNOWN_COMMAND
+  fail(ops.run(["ops", "nope", "--json"]), "E_UNKNOWN_COMMAND", "unknown subcommand");
   // success passes the child's envelope through untouched
-  r = spawnSync(process.execPath, [CLI, "ops", "ping", "--json"], { cwd: home, encoding: "utf8", env: envHome });
+  let r = ops.run(["ops", "ping", "--json"]);
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(parseOnly(r.stdout).result, { pong: true });
-  // unknown namespace entirely → E_UNKNOWN_COMMAND (help must not hit stdout)
-  r = spawnSync(process.execPath, [CLI, "nosuchns", "x", "--json"], { cwd: repo, encoding: "utf8", env: envNoHome });
-  assert.notEqual(r.status, 0);
-  assert.equal(parseOnly(r.stdout).error.code, "E_UNKNOWN_COMMAND");
+  // unknown namespace entirely, outside any home or deployment → E_UNKNOWN_COMMAND (help must not hit stdout)
+  const bare = temp();
+  fail(ops.fx.cli(["nosuchns", "x", "--json"], { cwd: bare, env: NO_HOME }), "E_UNKNOWN_COMMAND", "unknown namespace");
   // malformed instance.json → E_CONFIG_BROKEN
-  const badHome = join(base, "bad-instance"); mkdirSync(badHome);
+  const badHome = join(temp(), "bad-instance"); mkdirSync(badHome);
   write(join(badHome, "instance.json"), "{not json");
-  r = spawnSync(process.execPath, [CLI, "ops", "ping", "--json"], { cwd: badHome, encoding: "utf8", env: { ...process.env, PI_AGENT_HOME: badHome } });
-  assert.notEqual(r.status, 0);
-  assert.equal(parseOnly(r.stdout).error.code, "E_CONFIG_BROKEN");
+  fail(ops.fx.cli(["ops", "ping", "--json"], { cwd: badHome, env: { OATS_INSTANCE_HOME: badHome, PI_AGENT_HOME: badHome } }), "E_CONFIG_BROKEN", "malformed instance.json");
 });
 
-test("capability dispatch --json: broken manifests and malformed command values still emit one envelope", () => {
-  // Reviewer repro 1: an instance whose metadata carries a team snapshot plus
-  // a malformed capability oats.json in the context — manifest discovery throws
-  // AFTER the metadata try, which previously escaped with empty stdout.
-  const base = temp(); const { repo } = fixtureSoul(base);
-  opsCapability(repo);
-  write(join(repo, "oats-config.yaml"), "name: fixture\n"); // config level so .agents/capabilities is discovered
-  write(join(repo, ".agents", "capabilities", "owned", "broken", "oats.json"), "{malformed");
-  const home = join(base, "instance"); mkdirSync(home);
-  write(join(home, "instance.json"), JSON.stringify({
-    repo, capabilities: [{ id: "acme.ops" }],
-    team: { name: "t", id: "t1", scope: base }, // team snapshot: metadata parse succeeds
-  }));
-  const env = { ...process.env, PI_AGENT_HOME: home };
-  let r = spawnSync(process.execPath, [CLI, "ops", "ping", "--json"], { cwd: home, encoding: "utf8", env });
+test("capability dispatch --json: broken manifests and malformed command values still emit one envelope", async (t) => {
+  // Reviewer repro 1: a home whose module copy's oats.json is malformed — manifest
+  // discovery throws AFTER the metadata read, which once escaped with empty stdout.
+  const ops = await opsHome(t);
+  const manifestPath = join(ops.home, ".oats", "modules", "acme.ops", "oats.json");
+  const good = JSON.parse(readFileSync(manifestPath, "utf8"));
+  writeFileSync(manifestPath, "{malformed");
+  let r = ops.run(["ops", "ping", "--json"]);
   assert.notEqual(r.status, 0);
   const doc1 = parseOnly(r.stdout); // throws if stdout is empty or contaminated
   assert.equal(doc1.ok, false);
@@ -254,21 +255,16 @@ test("capability dispatch --json: broken manifests and malformed command values 
   // Reviewer repro 2: manifest command values that are declared but invalid —
   // non-string (42), empty string, and falsy non-strings (0/false/null) must
   // all be E_CAPABILITY_BROKEN, never E_UNKNOWN_COMMAND (the key IS declared).
-  const base2 = temp(); const { repo: repo2 } = fixtureSoul(base2);
-  const dir = join(repo2, ".agents", "capabilities", "owned", "ops");
-  write(join(repo2, "oats-config.yaml"), "name: fixture\n");
-  const home2 = join(base2, "instance"); mkdirSync(home2);
-  write(join(home2, "instance.json"), JSON.stringify({ repo: repo2, capabilities: [{ id: "acme.ops" }] }));
   for (const bad of [42, "", 0, false, null]) {
-    write(join(dir, "oats.json"), JSON.stringify({ capability: "acme.ops", command: "ops", version: "1.0.0", compatibility: { oats: ">=0.6.2" }, description: "Ops.", commands: { ping: bad } }));
-    r = spawnSync(process.execPath, [CLI, "ops", "ping", "--json"], { cwd: home2, encoding: "utf8", env: { ...process.env, PI_AGENT_HOME: home2 } });
+    writeFileSync(manifestPath, JSON.stringify({ ...good, commands: { ping: bad } }));
+    r = ops.run(["ops", "ping", "--json"]);
     assert.notEqual(r.status, 0, `commands.ping=${JSON.stringify(bad)} exits nonzero`);
     const doc2 = parseOnly(r.stdout);
     assert.equal(doc2.error.code, "E_CAPABILITY_BROKEN", `commands.ping=${JSON.stringify(bad)} → E_CAPABILITY_BROKEN (got ${doc2.error.code})`);
     assert.match(doc2.error.message, /non-empty string/);
   }
   // …while a genuinely undeclared subcommand stays E_UNKNOWN_COMMAND.
-  r = spawnSync(process.execPath, [CLI, "ops", "undeclared", "--json"], { cwd: home2, encoding: "utf8", env: { ...process.env, PI_AGENT_HOME: home2 } });
+  r = ops.run(["ops", "undeclared", "--json"]);
   assert.notEqual(r.status, 0);
   assert.equal(parseOnly(r.stdout).error.code, "E_UNKNOWN_COMMAND");
 });

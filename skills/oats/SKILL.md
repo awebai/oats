@@ -124,11 +124,11 @@ the committed soul. Preview a fresh composition with:
 oats doctor /path/to/context --soul <name>
 ```
 
-The instance's `.agents/skills/` holds the exact OATS-composed set (kernel +
-soul + active capabilities); `.claude/skills` mirrors it. Harness-ambient
-skills (user-level, packages, work tree) coexist with this set. Duplicate
-names *within* the OATS set fail spawn unless `skill-overrides` explicitly
-chooses a source.
+The instance's `.agents/skills/` holds the exact OATS-composed set: the
+soul's own skills, and each module's under `.agents/skills/<module>/`;
+`.claude/skills` mirrors it. Harness-ambient skills (user-level, packages,
+work tree) coexist with this set. A duplicate name within the OATS set fails
+spawn (`E_SKILL_DUPLICATE`); there is no override.
 
 ## Configuration
 
@@ -136,10 +136,9 @@ A deployment is configured by files, not by config-editing commands:
 `oats-workspace.yaml` (shared: members, packages, teams, defaults) in the
 workspace's host repository, `oats-membership.yaml` in each member, each
 soul's `soul.yaml`, and the per-machine `oats-local.yaml` (host settings).
-After a change, run `oats sync`. The **oats-config** skill maps each classic
-concern to its file; setting up a deployment is the oats.setup capability's
-work (**oats-onboarding**, **oats-package-pins**). This skill covers
-operating, not configuring.
+After a change, run `oats sync`. Setting up a deployment is the oats.setup
+capability's work (**oats-onboarding**, **oats-package-pins**). This skill
+covers operating, not configuring.
 
 ## Commands and doctor
 

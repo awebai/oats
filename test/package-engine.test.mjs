@@ -17,7 +17,7 @@ import {
   copyTreeSafe, ensureInstalledGitignore, installedCapabilityDir, 
   loadPackageManifestAt, materializeCapabilityDeps, normalizePackagePath,
   isCanonicalTemplatePath, packageIntegrity, parseLockFileStrict, parsePackageSource, platformVariantLockPackages,
-  readPackageLocks, resolveOatsConfig, 
+  readPackageLocks,
   updatePackage, validateCapabilityLockEntry, validateLockEntry, writeCapabilityLock,
   writeCapabilityLockEntry, writePackageLock,
   CAPABILITY_INSTALLATION_FILE, DEFAULT_PACKAGE_PATH, LOCKFILE_VERSION, OATS_LOCK_FILE,
@@ -48,8 +48,6 @@ function pkgSource(dir, manifest, capabilities = {}) {
   write(join(dir, "oats-package.json"), JSON.stringify({ package: `x.${dir.split("/").pop().toLowerCase().replace(/[^a-z0-9._-]/g, "")}`, version: "1.0.0", description: "pkg", compatibility: { oats: ">=0.1.0" }, capabilities: caps, ...manifest }, null, 2));
   return dir;
 }
-/** Activation of the resolved chain, as plain capability IDs. */
-function activeIds(dir) { return resolveOatsConfig(dir, "any").capabilities.map((c) => c.id).sort(); }
 /** EVERY path under `dir` — directories included — with file digests. Compared
  * whole, so a stray empty directory is as visible as a changed byte. */
 function treeFingerprint(dir) {
@@ -472,9 +470,6 @@ test("acquirePackage: materializes flat self-contained artifacts, locks both lev
   assert.match(r.configTemplates[0].contentIntegrity, /^sha256-[0-9a-f]{64}$/);
   assert.equal(r.configTemplates[0].default, true);
   assert.equal(readFileSync(join(s, "oats-config.yaml"), "utf8"), "name: test\n", "install applies no template");
-
-  // Acquired is not active.
-  assert.deepEqual(activeIds(s), [], "nothing activated");
 });
 
 test("acquirePackage: dependency closure, cycles, identity collisions, unpinned git dependency", () => {
@@ -948,7 +943,6 @@ test("discovery: materialized capabilities are addressable with from: installed;
   const m = capabilityManifest("x.a", s);
   assert.equal(m._package, "x.p", "provenance comes from the lock, not a package directory");
   assert.equal(m._dir, artifact(s, "x.a"));
-  assert.deepEqual(activeIds(s), ["x.a"], "explicit activation works");
 
   // owned/ wins over installed at the same scope.
   write(join(s, ".agents/capabilities/owned/x.a/oats.json"), JSON.stringify({ capability: "x.a", version: "9.9.9", description: "owned" }));

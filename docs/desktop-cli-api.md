@@ -601,7 +601,7 @@ executable, runtime packages, child-spawn policy) and returns what the spawn
 
 ```json
 {"spawnPreviewApi":1,"preview":true,"agent":"dev","kind":"persistent","instance":"dev-fix-login","home":"/abs/agents/dev/instances/dev-fix-login",
- "repo":"/abs/repo","work":"worktree","runtime":"claude","model":"opus","modelSource":"soul","launchConfig":null,"yolo":false,"backend":"tmux",
+ "repo":"/abs/repo","work":"worktree","runtime":"claude","model":"opus","modelSource":"explicit","launchConfig":null,"yolo":false,"backend":"tmux",
  "branch":"agents/dev-fix-login","base":{"ref":"HEAD","oid":"<oid>"},"worktree":"/abs/agents/dev/instances/dev-fix-login/work",
  "relation":null,"parentInstance":null,"policy":{"childSpawns":{"allowed":true,"origin":{"kind":"default","detail":"…"}}},
  "executable":"/abs/bin/claude","capabilities":["oats.core"],"skills":["oats-operate","oats-souls"],"task":"…"}
@@ -646,15 +646,13 @@ the pre-fix marker and is never accepted for dispatch.
   import; `--instructions-file`/`--def-file` refused with `E_BAD_ARGS`). Test:
   the deployment tree is byte-identical after a success, a refusal and an
   unknown-soul preview.
-  **Workspace deployments (0.25.1+) — one stated exception**: the first preview
-  of a workspace soul may populate the deployment's per-commit soul cache
-  (`agents/<soul>/souls/<commit>/`, the swappable `agents/<soul>/soul` pointer,
-  `soulFetched: true` in the result). That cache is derived, content-addressed
-  and idempotent — the same member commit yields the same bytes, a later
-  preview of the same commit writes nothing — and nothing else moves: no lock,
-  no event, no home, no instance. A Desktop treats a preview as
-  side-effect-free for everything it shows; it must not assume the deployment
-  directory's byte-identity across the FIRST preview of a soul or commit.
+  **Workspace deployments (0.26.0+)**: this holds for the FIRST preview of a
+  soul or commit too. A preview reads the soul from the deployment's per-commit
+  cache (`agents/<soul>/souls/<commit>/`) when a spawn already filled it, else
+  fetches it to a temporary copy outside the deployment and removes it
+  (`soulFetched: true` in the result). Only a spawn fills the cache or moves the
+  `agents/<soul>/soul` pointer. (0.25.x previews populated the cache: that stated
+  exception is gone.)
 - **Exact root**: `spawn <soul> --agents-root <abs>` binds the soul to that root
   (as inspect/readiness take it) — no team-soul / capability-agent / importable-
   def fallback; mismatch → `E_SOUL_UNKNOWN`. The preview echoes
@@ -866,6 +864,12 @@ location. The receipt says so:
   nothing is lost; retry or pass `--discard-worktree`.
 - Non-worktree modes report `retention: null`. Quarantine/rollback paths keep
   their removal semantics.
+- A recovery (`workRecovery`, `workRecoveries[]`) is `{path, classes, bytes,
+  outputs?, repoCopy?}` (0.26.0: `bytes`, `outputs`): `bytes` is the recovery's
+  own size; `outputs: {paths: [{path, bytes}], bytes}` names what it copied
+  beyond tracked state — a worktree's untracked and ignored paths, or a
+  directory's work entries — grouped by top-level entry, largest first. Absent
+  when only home bytes were copied.
 - The Remove dialog's "also delete worktree / branch" checkboxes map to these
   two flags; the kernel never touches a PR.
 - **Guarded apply** (what a GUI sends): `oats retire <i> --plan-revision <rev>
@@ -1331,7 +1335,9 @@ Additional informative fields: `repo`, `runtime`, `model`, `parent`,
 was declared, else null), `relation` (`child`/`sibling`/`parent` when a
 relation was declared at spawn, else null), `spawnOrigin`, `attach`.
 
-Stable error codes: `E_USAGE`, `E_NO_DEPLOYMENT`, `E_UNKNOWN_AGENT`,
+Stable error codes: `E_USAGE`, `E_LOCAL_MISSING` (no `oats-local.yaml` in reach:
+a spawn needs a workspace deployment), `E_NO_DEPLOYMENT` (the deployment's
+`agents/` root is missing), `E_SOUL_UNKNOWN`, `E_UNKNOWN_AGENT`,
 `E_AMBIGUOUS_SOUL`, `E_PARENT_NOT_FOUND`, `E_RELATIVE_NOT_FOUND`,
 `E_RELATIVE_AMBIGUOUS` (a `--relative-to`/`--parent` anchor name matches
 multiple team instances — disambiguate with `--relative-root <agents-root>`

@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { parseLaunchCommand, renderLaunchCommand, withLaunchModel, startInstanceSession, inspectInstanceSession } from "../lib/core.mjs";
 import { startRemote } from "../lib/servers.mjs";
 import { isolateSessionEnvironment, waitUntil } from "./helpers/host-fixture.mjs";
+import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const bin = join(here, "..", "bin", "oats.mjs");
@@ -66,11 +67,18 @@ const session = "t";
 const restoreEnvironment = isolateSessionEnvironment(base, socket);
 const tmux = (...args) => execFileSync("tmux", ["-u", "-S", socket, ...args], { encoding: "utf8", timeout: 10000, stdio: ["ignore", "pipe", "pipe"] }).trim();
 const windows = () => { try { return tmux("list-windows", "-t", session, "-F", "#{window_name}").split("\n").filter(Boolean); } catch { return []; } };
-test.after(() => { try { tmux("kill-server"); } catch { /* gone */ } finally { restoreEnvironment(); rmSync(base, { recursive: true, force: true }); } });
+// Every home is a real workspace-model spawn (0.26.0 starts no other kind); the
+// session facts each test needs are then written onto that spawned home.
+const fx = v2Deployment();
+test.after(() => { try { tmux("kill-server"); } catch { /* gone */ } finally { restoreEnvironment(); rmSync(base, { recursive: true, force: true }); fx.cleanup(); } });
 
-function makeHome(name, { launched = true, withSocket = true } = {}) {
-  const home = join(base, "agents", "dev", "instances", name);
-  mkdirSync(home, { recursive: true });
+async function makeHome(name, { launched = true, withSocket = true } = {}) {
+  // Spawned with the fixture's inert runtimes on PATH (the isolated PATH has no claude).
+  const path = process.env.PATH;
+  process.env.PATH = fx.env.PATH;
+  let spawned;
+  try { spawned = await fx.spawn("dev", { name, runtime: "claude" }); } finally { process.env.PATH = path; }
+  const home = spawned.home;
   const harness = join(base, "fakeharness");
   if (!existsSync(harness)) {
     // A real process with explicit ready/release markers. It cannot exit just
@@ -87,12 +95,16 @@ setInterval(() => { if (existsSync(join(home, "release-" + process.pid))) proces
   writeFileSync(join(home, "TASK.md"), "task\n");
   const command = `OATS_INSTANCE=${shq(name)} OATS_INSTANCE_HOME=${shq(home)} ${shq(harness)} --dangerously-skip-permissions -- "$(cat TASK.md)"`;
   const tmuxMeta = { session, window: name, ...(withSocket ? { socket } : {}) };
-  const meta = { agent: "dev", kind: "persistent", instance: name, home, repo: base, work: "worktree", branch: `agents/${name}`, runtime: "claude", tmux: tmuxMeta, command, launched, createdAt: new Date().toISOString() };
+  // The spawned metadata with a frozen command in place of the launch recipe:
+  // these tests pin the persisted-command start path (a recipe start goes
+  // through the planner, pinned in session-restart).
+  const { launch: _recipe, ...spawnedMeta } = readJson(join(home, "instance.json"));
+  const meta = { ...spawnedMeta, tmux: tmuxMeta, command, launched };
   writeFileSync(join(home, "instance.json"), JSON.stringify(meta, null, 2) + "\n");
   const key = createHash("sha256").update(home).digest("hex");
   const baselinePath = join(dirname(home), ".oats-retirement", "baselines", `${key}.json`);
-  mkdirSync(dirname(baselinePath), { recursive: true });
-  const baseline = { version: 2, home, homeFingerprint: { files: 3, digest: "fp-home" }, disposableReceipts: [], generatedWorkFingerprint: { digest: "fp-work" }, runtime: launched ? { launched: true, tmux: { session, window: name, socket } } : { launched: false } };
+  assert.ok(existsSync(baselinePath), "the spawn wrote the independent session receipt");
+  const baseline = { ...readJson(baselinePath), runtime: launched ? { launched: true, tmux: { session, window: name, socket } } : { launched: false } };
   writeFileSync(baselinePath, JSON.stringify(baseline, null, 2) + "\n", { mode: 0o600 });
   return { home, meta, baselinePath, command };
 }
@@ -112,13 +124,13 @@ function heldWindow(f, window = f.meta.instance) {
 }
 const pendingFor = (f, target, fields = {}) => ({ id: `test-${f.meta.instance}`, target, command: f.command, model: null, startedAt: "2026-09-06T00:00:00.000Z", ...fields });
 
-test("refusals happen before any mutation", () => {
+test("refusals happen before any mutation", async () => {
   assert.throws(() => startInstanceSession("relative/home"), (e) => e.code === "E_BAD_ARGS");
   assert.throws(() => startInstanceSession(join(base, "nowhere")), (e) => e.code === "E_RUNTIME_ENDPOINT_UNKNOWN");
-  const f = makeHome("refuse");
-  const noBaseline = makeHome("nobaseline"); rmSync(noBaseline.baselinePath);
+  const f = await makeHome("refuse");
+  const noBaseline = await makeHome("nobaseline"); rmSync(noBaseline.baselinePath);
   assert.throws(() => startInstanceSession(noBaseline.home), (e) => e.code === "E_RUNTIME_ENDPOINT_UNKNOWN");
-  const mismatch = makeHome("mismatch");
+  const mismatch = await makeHome("mismatch");
   writeFileSync(join(mismatch.home, "instance.json"), JSON.stringify({ ...mismatch.meta, tmux: { ...mismatch.meta.tmux, window: "other" } }) + "\n");
   assert.throws(() => startInstanceSession(mismatch.home), (e) => e.code === "E_RUNTIME_AUTHORITY_MISMATCH");
   writeFileSync(join(f.home, ".oats-rollback-incomplete.json"), "{}\n");
@@ -132,7 +144,7 @@ test("refusals happen before any mutation", () => {
   assert.throws(() => startInstanceSession(f.home), (e) => e.code === "E_SESSION_START_BUSY");
   rmSync(join(f.home, ".oats-start.lock"), { recursive: true });
   assert.throws(() => startInstanceSession(f.home, { model: "openai/gpt-x" }), (e) => e.code === "E_MODEL_UNKNOWN", "a preference claude cannot use is an error, not a silent default");
-  const unsupported = makeHome("unsupported");
+  const unsupported = await makeHome("unsupported");
   writeFileSync(join(unsupported.home, "instance.json"), JSON.stringify({ ...unsupported.meta, command: "claude `id`" }) + "\n");
   assert.throws(() => startInstanceSession(unsupported.home, { model: "claude-x" }), (e) => e.code === "E_LAUNCH_COMMAND_UNSUPPORTED");
   assert.equal(readJson(f.baselinePath).runtime.launched, true);
@@ -142,7 +154,7 @@ test("refusals happen before any mutation", () => {
 
 test("a live harness is refused; a stopped instance starts in its recorded session on its recorded socket", async () => {
   tmux("new-session", "-d", "-s", session, "-n", "hq", "-c", base);
-  const f = makeHome("live");
+  const f = await makeHome("live");
   await heldWindow(f);
   assert.throws(() => startInstanceSession(f.home), (e) => e.code === "E_SESSION_RUNNING");
   tmux("kill-window", "-t", `=${session}:=live`);
@@ -187,8 +199,8 @@ test("a live harness is refused; a stopped instance starts in its recorded sessi
   assert.equal(tmux("display-message", "-p", "-t", `=${session}:=live`, "#{pane_current_path}"), f.home, "restart restores the instance cwd after shell navigation");
 });
 
-test("a lost tmux server on the recorded socket is a stopped instance: the session comes back on that socket", () => {
-  const f = makeHome("reboot");
+test("a lost tmux server on the recorded socket is a stopped instance: the session comes back on that socket", async () => {
+  const f = await makeHome("reboot");
   tmux("kill-server");
   assert.throws(() => inspectInstanceSession(f.home), (e) => e.code === "E_SESSION_UNAVAILABLE", "inspect alone cannot call a lost socket absent");
   const r = startInstanceSession(f.home);
@@ -199,7 +211,7 @@ test("a lost tmux server on the recorded socket is a stopped instance: the sessi
 });
 
 test("a start that allocated but could not record is adopted by the next start, never duplicated", async () => {
-  const f = makeHome("pending");
+  const f = await makeHome("pending");
   await heldWindow(f);
   // Simulate the partial failure: the actual target is in the pending receipt, metadata still says stopped.
   writeFileSync(join(f.home, ".oats-start-pending.json"), JSON.stringify(pendingFor(f, { backend: "tmux", session, window: "pending", socket })));
@@ -216,7 +228,7 @@ test("a start that allocated but could not record is adopted by the next start, 
 });
 
 test("an injected metadata write failure after allocation is recovered by the next start through the receipt", async () => {
-  const f = makeHome("crash");
+  const f = await makeHome("crash");
   const before = readJson(f.baselinePath);
   let injected;
   try { injected = startInstanceSession(f.home, { io: { failBeforeMetadataWrite: true } }); } catch (e) { injected = e; }
@@ -239,7 +251,7 @@ test("an injected metadata write failure after allocation is recovered by the ne
 test("a recorded pending target that differs from the metadata is reconciled before the equality gate", async () => {
   // The shape a Herdr reallocation (new pane) leaves after a metadata write failure:
   // receipt and pending name the new target, metadata still names the old one.
-  const f = makeHome("diverged");
+  const f = await makeHome("diverged");
   await heldWindow(f, "diverged-2");
   const target = { backend: "tmux", session, window: "diverged-2", socket };
   const baseline = readJson(f.baselinePath);
@@ -257,7 +269,7 @@ test("a recorded pending target that differs from the metadata is reconciled bef
 });
 
 test("a pending target that cannot be observed is kept and the start refuses; a dead pane restarts in place", async () => {
-  const f = makeHome("unobservable");
+  const f = await makeHome("unobservable");
   // A Herdr target with an unreachable server: not absence, no allocation, receipt kept.
   writeFileSync(join(f.home, ".oats-start-pending.json"), JSON.stringify(pendingFor(f, { backend: "herdr", binary: join(base, "no-such-herdr"), socket: join(base, "no.sock"), protocol: 20, workspaceId: "w", paneId: "p", terminalId: "t" })));
   assert.throws(() => startInstanceSession(f.home), (e) => e.code === "E_SESSION_UNKNOWN" && /receipt .* is kept/.test(e.message));
@@ -265,7 +277,7 @@ test("a pending target that cannot be observed is kept and the start refuses; a 
   assert.deepEqual(windows().filter((w) => w === "unobservable"), []);
   rmSync(join(f.home, ".oats-start-pending.json"));
   // Dead pane: the harness exited and tmux retained the pane (remain-on-exit).
-  const d = makeHome("deadpane");
+  const d = await makeHome("deadpane");
   await heldWindow(d);
   tmux("set-option", "-w", "-t", `=${session}:=deadpane`, "remain-on-exit", "on");
   releaseHarness(d.home);
@@ -312,7 +324,7 @@ test("the CLI advertises session-start and routes it only to a remote that adver
 });
 
 test("recovery preserves the actual model and reconciles even an exited allocation", async () => {
-  const f = makeHome("model-recovery");
+  const f = await makeHome("model-recovery");
   const target = { backend: "tmux", session, window: "model-recovery-new", socket };
   const pending = pendingFor(f, target, { command: withLaunchModel(f.command, "claude-old"), model: "claude-old" });
   const receipt = join(f.home, ".oats-start-pending.json");
@@ -332,8 +344,8 @@ test("recovery preserves the actual model and reconciles even an exited allocati
   assert.equal(existsSync(receipt), true, "the new launch keeps its own startup receipt");
 });
 
-test("invalid recovery receipts and tmux permission errors preserve evidence and never launch", () => {
-  const f = makeHome("bad-recovery");
+test("invalid recovery receipts and tmux permission errors preserve evidence and never launch", async () => {
+  const f = await makeHome("bad-recovery");
   const receipt = join(f.home, ".oats-start-pending.json");
   for (const bytes of ["{", '{}', '{"target":{"backend":"something"}}']) {
     writeFileSync(receipt, bytes);
@@ -349,8 +361,8 @@ test("invalid recovery receipts and tmux permission errors preserve evidence and
   assert.deepEqual(readJson(join(f.home, "instance.json")), f.meta);
 });
 
-test("Herdr restarts in the saved server, writes recovery before launching, and restores cwd", () => {
-  const f = makeHome("herdr-restart");
+test("Herdr restarts in the saved server, writes recovery before launching, and restores cwd", async () => {
+  const f = await makeHome("herdr-restart");
   const old = { backend: "herdr", binary: "/fake/herdr", socket: join(base, "herdr.sock"), protocol: 20, workspaceId: "w0", paneId: "p0", terminalId: "t0" };
   const meta = { ...f.meta, backend: "herdr", sessionTarget: old };
   delete meta.tmux;
@@ -394,7 +406,7 @@ test("Herdr restarts in the saved server, writes recovery before launching, and 
 });
 
 test("simultaneous CLI starts produce one launch and preserve a never-launched home's saved socket", async () => {
-  const f = makeHome("concurrent", { launched: false });
+  const f = await makeHome("concurrent", { launched: false });
   const invoke = () => new Promise((resolveRun, reject) => {
     execFile(process.execPath, [bin, "session", "start", "--home", f.home, "--model", "claude-x", "--json"], { timeout: 15000 }, (error, stdout, stderr) => {
       try { resolveRun(JSON.parse(stdout)); } catch { reject(new Error(`${error?.message}: ${stderr}`)); }
@@ -408,8 +420,8 @@ test("simultaneous CLI starts produce one launch and preserve a never-launched h
   assert.equal(readJson(join(f.home, "instance.json")).tmux.socket, socket);
 });
 
-test("a never-launched Herdr home without an endpoint cannot silently switch to tmux", () => {
-  const f = makeHome("herdr-no-launch", { launched: false });
+test("a never-launched Herdr home without an endpoint cannot silently switch to tmux", async () => {
+  const f = await makeHome("herdr-no-launch", { launched: false });
   const meta = { ...f.meta, backend: "herdr" };
   delete meta.tmux;
   writeFileSync(join(f.home, "instance.json"), JSON.stringify(meta));
@@ -421,7 +433,7 @@ test("a live startup shell is protected until its command actually exits", async
   // Support running this regression alone, before any earlier test has
   // created the private server. All launches use the isolated shell fixture.
   if (!windows().length) tmux("new-session", "-d", "-s", session, "-n", "hq", "-c", base, "/bin/sh");
-  const f = makeHome("slow-shell");
+  const f = await makeHome("slow-shell");
   const harness = join(base, "slow-shell-wrapper");
   // Builtins only. macOS reports the interpreter as a shell; Linux may
   // report the script name as an active process. Both must refuse a retry.
@@ -443,8 +455,8 @@ test("a live startup shell is protected until its command actually exits", async
   assert.equal(readJson(join(f.home, "instance.json")).restartCount, 2, "reconciling a recorded attempt does not count it twice");
 });
 
-test("every malformed pending field is rejected before metadata or authority changes", () => {
-  const f = makeHome("malformed-fields");
+test("every malformed pending field is rejected before metadata or authority changes", async () => {
+  const f = await makeHome("malformed-fields");
   const target = { backend: "tmux", session, window: "malformed-fields", socket };
   const receipt = join(f.home, ".oats-start-pending.json");
   const beforeMeta = readFileSync(join(f.home, "instance.json"), "utf8");
@@ -460,8 +472,8 @@ test("every malformed pending field is rejected before metadata or authority cha
   }
 });
 
-test("a transient startup child does not discard the startup guard", () => {
-  const f = makeHome("transient-child");
+test("a transient startup child does not discard the startup guard", async () => {
+  const f = await makeHome("transient-child");
   let launched = false, command = "cat", launches = 0;
   const io = { exec: (binary, args) => {
     if (binary === "ps") return "100 1 /bin/zsh\n";
@@ -481,11 +493,11 @@ test("a transient startup child does not discard the startup guard", () => {
   assert.equal(readJson(join(f.home, "instance.json")).restartCount, 1);
 });
 
-test("launch errors never expose saved commands through tmux or Herdr diagnostics", () => {
+test("launch errors never expose saved commands through tmux or Herdr diagnostics", async () => {
   const secret = "SYNTHETIC_START_SECRET";
   for (const backend of ["respawn", "new-window", "herdr"]) {
     for (const failure of [{ stderr: secret }, { stderr: "" }, { code: "ENOENT" }, { code: "ETIMEDOUT" }, { signal: "SIGTERM" }]) {
-      const f = makeHome(`redact-${backend}-${Object.keys(failure)[0]}-${String(failure.stderr ?? failure.code ?? failure.signal).length}`);
+      const f = await makeHome(`redact-${backend}-${Object.keys(failure)[0]}-${String(failure.stderr ?? failure.code ?? failure.signal).length}`);
       let meta = { ...f.meta, command: `REVIEW_TOKEN=${shq(secret)} ${f.command}` };
       const target = { backend: "herdr", binary: "/fake/herdr", socket: join(base, "h.sock"), protocol: 20, workspaceId: "w", paneId: "p", terminalId: "t" };
       if (backend === "herdr") {
@@ -515,8 +527,8 @@ test("launch errors never expose saved commands through tmux or Herdr diagnostic
   }
 });
 
-test("successful launch responses omit the private launch command too", () => {
-  const f = makeHome("private-result");
+test("successful launch responses omit the private launch command too", async () => {
+  const f = await makeHome("private-result");
   const secret = "SYNTHETIC_RESPONSE_SECRET";
   writeFileSync(join(f.home, "instance.json"), JSON.stringify({ ...f.meta, command: `REVIEW_TOKEN=${shq(secret)} ${f.command}` }));
   const io = { exec: (binary, args) => {

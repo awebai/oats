@@ -748,9 +748,11 @@ for (const kase of CASES) {
     // break in a refactor is the copy — a skipped symlink, a dropped mode, a
     // source resolved before an override was applied — and that is what this
     // catches, at every case, without a fixture to re-approve.
+    // A module's skills sit under its namespace (source "module:<cap>").
     for (const s of parsedMeta.composition.materialized.skills) {
+      const placed = s.source?.startsWith("module:") ? join(home, ".agents", "skills", s.source.slice("module:".length), s.name) : join(home, ".agents", "skills", s.name);
       assert.equal(
-        treeFingerprint(join(home, ".agents", "skills", s.name)), treeFingerprint(s.from),
+        treeFingerprint(placed), treeFingerprint(s.from),
         `materialized skill "${s.name}" does not match the source instance.json records it came from (${s.from})`);
     }
     // Workspace model: a module's skills are copied whole to .agents/skills/<module>/<skill>/

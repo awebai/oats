@@ -15,17 +15,13 @@
       "allowed": true,
       "origin": {
         "kind": "default",
-        "detail": "no declaration: children allowed"
+        "detail": "no spawn option: children allowed"
       }
     }
   },
   "capabilities": [],
   "skills": [],
   "instructions": [
-    {
-      "source": "kernel:oats",
-      "file": "<kernel>/injects/oats.md"
-    },
     {
       "source": "kernel:instance-boundary",
       "file": "<kernel>/injects/instance-boundary.md"
@@ -37,12 +33,6 @@
   ],
   "composition": {
     "expected": [
-      {
-        "type": "instruction-block",
-        "source": "kernel:oats",
-        "declared": "<kernel>/injects/oats.md",
-        "resolved": "<kernel>/injects/oats.md"
-      },
       {
         "type": "instruction-block",
         "source": "kernel:instance-boundary",
@@ -59,10 +49,6 @@
     "materialized": {
       "skills": [],
       "instructions": [
-        {
-          "source": "kernel:oats",
-          "file": "<kernel>/injects/oats.md"
-        },
         {
           "source": "kernel:instance-boundary",
           "file": "<kernel>/injects/instance-boundary.md"

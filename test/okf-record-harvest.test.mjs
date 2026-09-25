@@ -8,7 +8,6 @@ import { dirname, join } from 'node:path';
 import { fixture, write, json, readJSON, CLI } from './helpers/okf-v2.mjs';
 // Until the lead's Q1 (capability agents spawn prepared on a workspace deployment): these
 // two drive a harvest worker whose source home is gone, which only the classic scope resolves.
-import { fixture as classicFixture } from './helpers/okf-classic.mjs';
 
 function recordBoundary(f, { native = false } = {}) {
   const wrapper = join(f.base, "record ' boundary.mjs"), calls = join(f.base, 'calls.jsonl');
@@ -49,7 +48,7 @@ const status = f => readJSON(join(dirname(f.sourceFile), 'status.json'));
 const runResult = r => { assert.equal(r.out.ok, true, r.stdout); return r.out.result; };
 
 test('notes AND bounded record backlog enter durable custody; actual independent worker completes after source deletion', t => {
-  const f = classicFixture(t), boundary = recordBoundary(f);
+  const f = fixture(t), boundary = recordBoundary(f);
   const turns = records(f, [['thread', 145]]);
   write(join(f.home, 'notes/decision.md'), 'Accepted rationale from the source.\n');
   const retired = boundary.run(['retire']); assert.equal(retired.out.meta.retired, true);
@@ -144,7 +143,7 @@ test('runtime/model choices cross the real worker scaffold boundary without laun
 });
 
 test('actual native capture/recall transports sixty large Claude turns through pipes into durable inputs', t => {
-  const f = classicFixture(t), boundary = recordBoundary(f, { native: true });
+  const f = fixture(t), boundary = recordBoundary(f, { native: true });
   f.env.TURN_RECORD_ROOT = join(f.base, 'record'); f.env.TURN_RECORD_OWNER = 'fixture';
   const transcript = join(f.user, '.claude/projects/-fixture/session.jsonl');
   write(transcript, Array.from({ length: 60 }, (_, i) => JSON.stringify({ type: 'assistant', cwd: f.home, sessionId: 'fixture-session', timestamp: '2026-09-13T12:00:00Z', message: { role: 'assistant', content: [{ type: 'text', text: `${i}:` + 'x'.repeat(350000) }] } })).join('\n') + '\n');

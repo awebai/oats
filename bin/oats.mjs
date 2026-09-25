@@ -2,7 +2,7 @@
 /**
  * oats — the OATS command line.
  *
- *   oats doctor [dir] [--json]              show the resolved config with origins
+ *   oats doctor [dir] [--soul <s>] [--json] show the deployment; --soul: the instructions an instance of <s> would carry
  *   oats onboard [<dir>] --workspace <ref>  realize a workspace here (oats-local.yaml +
  *                                          agents/), then sync
  *   oats sync [--dir <d>] [--json]          discover the workspace, confirm membership,
@@ -17,24 +17,21 @@
  * `init` / `use` / `install` / `restore` / `list` / `catalog` / `remove` /
  * `migrate` / `trust` / `inject` are gone with the installed-capability tier.
  */
-import { existsSync, lstatSync, mkdirSync, readFileSync, readSync, realpathSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readSync, realpathSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  LAYERS, WORK_MODES, LEGACY_HOME_CAPABILITIES_DIR, OATS_VERSION, RETIRED_CAPABILITIES, retiredCapabilityReason, configChain, manifestOperations,
-  capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityTrust, capabilityExecutablePath, activateCapturedScaffold, loadCapturedDispatch, inspectPortableOnboarding, prepareCapturedComposition, resolveCapturedHelper, capturedNativeSessionAvailability, scaffoldCapturedInstance, startCapturedInstanceSession, withCapturedBindingFile, withCapturedInvocationContextFile,
-  readCapabilityLocks, admitCapturedAction, beginCapturedIntent, settleCapturedIntent,
-  officialPackageCatalog, describeOfficialCatalog, approveAvailableCapability,
-  packageIntegrity, resolveOatsConfig, resolveWorkMode, composeInstanceAgentsMd, parseYamlNested, stripInternalAnnotations, withConfigFile, teamAgentRoots,
-  findTeamAgent, findTeamInstance, findCapabilityAgent, findInstanceHome, findInstanceHomes, listCapabilityAgents, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, legacyLocalAgents, listAgents, listInstances, servedIdentityLine, spawnInstance, spawnInstanceAsync, instanceSoulDir, launchConfigsAt, explicitInstanceName, findModuleCapabilityAgent, capabilityAgentFromDir, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, resolveLaunchSelection, resolveLaunchExecutable, checkLaunchExecutable, missingLaunchEnvRefs, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, LAUNCH_RECIPE_VERSION, parseLaunchCommand, resolveYolo, planLaunch, redactLaunchCommand, restartInstanceSession,
+  LAYERS, OATS_VERSION, manifestOperations,
+  capabilityManifests, capabilityTrust, capabilityExecutablePath, activateCapturedScaffold, loadCapturedDispatch, inspectPortableOnboarding, prepareCapturedComposition, resolveCapturedHelper, capturedNativeSessionAvailability, scaffoldCapturedInstance, startCapturedInstanceSession, withCapturedBindingFile, withCapturedInvocationContextFile, admitCapturedAction, beginCapturedIntent, settleCapturedIntent,
+  officialPackageCatalog, describeOfficialCatalog, approveAvailableCapability, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
+  findInstanceHome, findInstanceHomes, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, launchConfigsAt, explicitInstanceName, findModuleCapabilityAgent, capabilityAgentFromDir, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
 import {
-  assertNoSymlinkedParents, writeFileAtomic,
-  LOCK_FILE, readLock, writeLock, resolvePackages,
+  writeFileAtomic, LOCK_FILE, readLock, writeLock, resolvePackages,
   classifyPackageValue, parsePackageRequest } from "../lib/packages.mjs";
-import { loadLocal, discoverWorkspace, validateWorkspace, validateLocal } from "../lib/workspace.mjs";
+import { loadLocal, validateWorkspace, validateLocal } from "../lib/workspace.mjs";
 import { parseConfigData } from "../lib/config-data.mjs";
 import * as remoteModule from "../lib/remote.mjs";
 import YAML from "yaml";
@@ -77,7 +74,7 @@ function valueFlag(name) {
   return value;
 }
 const die = (msg) => { console.error(`oats: ${msg}`); process.exit(1); };
-const cmdFail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
+const cmdFail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
 /** Resolve the --dir flag with central validation: a value-taking flag given
  * no value (flag() → true) is E_BAD_ARGS inside the JSON boundary, never an
  * uncaught resolve(true) TypeError (reviewer-6f0a3bd). */
@@ -100,6 +97,15 @@ const JSON_MODE = args.includes("--json");
 const CLI_BIN = realpathSync(fileURLToPath(import.meta.url));
 const jsonFail = (code, message, details) => { console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code, message: String(message), ...(details !== undefined ? { details } : {}) } })); process.exit(1); };
 const jsonOk = (result) => { console.log(JSON.stringify({ schemaVersion: 1, ok: true, result })); };
+const formatBytes = (n) => n < 1024 ? `${n} B` : n < 1024 ** 2 ? `${(n / 1024).toFixed(1)} KiB` : n < 1024 ** 3 ? `${(n / 1024 ** 2).toFixed(1)} MiB` : `${(n / 1024 ** 3).toFixed(1)} GiB`;
+/** A retire recovery's copied outputs (untracked/ignored or directory work), named with their size. */
+function preservedOutputLines(recovery) {
+  const outputs = recovery?.outputs;
+  if (!outputs?.paths?.length) return [];
+  const shown = outputs.paths.slice(0, 8).map((p) => `${p.path} (${formatBytes(p.bytes)})`);
+  const more = outputs.paths.length > 8 ? `, and ${outputs.paths.length - 8} more` : "";
+  return [`  copied outputs: ${shown.join(", ")}${more} — ${formatBytes(outputs.bytes)} in total`];
+}
 
 function inspectOnboardingCmd() {
   const fail = (code, message) => JSON_MODE ? jsonFail(code, message) : die(message);
@@ -470,13 +476,6 @@ function capturedCommand(selector) {
   } catch (error) { fail(error.code || "E_CAPABILITY_BROKEN", error.message); }
 }
 
-/** Level of a directory: laptop (home), repo (.git), else workspace. */
-function levelOf(dir) {
-  const d = resolve(dir);
-  if (d === homedir()) return "laptop";
-  if (existsSync(join(d, ".git"))) return "repo";
-  return "workspace";
-}
 
 function shortPath(p) {
   if (!p) return p;
@@ -494,40 +493,58 @@ function shellQuote(s) {
 /** Doctor must diagnose, not crash: a stale activation of a retired
  * capability fails config resolution — surface the cleanup instruction
  * cleanly (text or JSON) instead of an uncaught stack trace. */
-function resolveForDoctor(ctx, soulName, { json } = {}) {
-  try { return resolveOatsConfig(ctx, soulName); }
-  catch (e) {
-    // Doctor is THE diagnosis surface: it alone catches the typed fail-closed
-    // invalid-lock error and continues to render actionable state.
-    if (e.code === "invalid-lock") {
-      const prov = Array.isArray(e.provenance) ? e.provenance[0] : undefined;
-      if (json) { console.log(JSON.stringify({ context: ctx, error: { code: "invalid-lock", message: e.message, provenance: e.provenance || null } }, null, 2)); process.exit(1); }
-      console.log(`oats doctor — resolved from ${shortPath(ctx)}\n`);
-      console.log(`ERROR: ${e.message} [invalid-lock]`);
-      if (prov?.file) console.log(`  fix or remove the offending entry in ${shortPath(prov.file)} — the lock is never auto-repaired; all package operations fail closed until it is valid`);
-      process.exit(0); // doctor DIAGNOSED successfully; the lock is the problem
-    }
-    const retiredId = Object.keys(RETIRED_CAPABILITIES).find((id) => String(e.message).includes(`"${id}"`) && String(e.message).includes("retired"));
-    if (!retiredId) throw e;
-    if (json) { console.log(JSON.stringify({ schemaVersion: 1, context: ctx, error: e.message, retired: [retiredId] }, null, 2)); process.exit(1); }
-    die(`${e.message}`);
-  }
-}
 function operationalKnowledgeNote(composition, soulName) {
   return composition && !composition.oatsCoreDeclared
     ? `soul ${soulName} has no oats.core capability; kernel-shipped operational skills are deprecated` : null;
 }
-function doctorComposition(ctx, soulName) {
+/** `doctor --soul`: the instructions an instance of that soul would carry. The soul
+ *  is resolved over the workspace remotes exactly as a spawn preview resolves it,
+ *  the kernel half composed, and the modules materialized into a scratch home
+ *  OUTSIDE the deployment (removed after), so module injects are part of the text.
+ *  Nothing in the deployment is written. Block files of module injects are named
+ *  home-relative (`.oats/modules/<cap>/<inject>`), where an instance carries them. */
+async function doctorComposition(ctx, soulName, ws, bail) {
   if (!soulName) return undefined;
-  const root = findRoot(ctx);
-  const agent = root && findAgent(root, soulName);
-  if (!agent) throw new Error(`unknown soul "${soulName}" for doctor composition`);
-  return composeInstanceAgentsMd(join(agent._dir, "soul"), ctx, agent.name, agent.work || "checkout", agent.kind);
+  const { prepareInstance, previewWorkspaceSoul, materializePrepared, discoverOrStandalone } = await import("../lib/instance-resolution.mjs");
+  const deployment = dirname(ws.local.path);
+  const root = join(deployment, "agents");
+  const remoteOptions = remoteOptionsFromEnv();
+  const cleanups = [];
+  // A bail exits the process without unwinding: the temporary copies are removed at exit too.
+  process.once("exit", () => { for (const c of cleanups) { try { c(); } catch { /* best effort */ } } });
+  try {
+    const discovery = await discoverOrStandalone(loadLocal(deployment).local, { remoteOptions });
+    const prepared = await prepareInstance(deployment, soulName, { remoteOptions, discovery });
+    const pv = await previewWorkspaceSoul(prepared, root);
+    cleanups.push(pv.cleanup);
+    const agent = findAgentAt(root, prepared.soulEntry.name, pv.soulDir);
+    if (!agent) bail("E_SOUL_UNKNOWN", `soul "${soulName}" was fetched but is not readable as a soul`);
+    const composition = composeInstanceAgentsMd(pv.soulDir, deployment, agent.name, agent.work || "checkout", agent.kind, prepared);
+    const scratch = realpathSync(mkdtempSync(join(tmpdir(), "oats-doctor-home-")));
+    cleanups.push(() => rmSync(scratch, { recursive: true, force: true }));
+    const outcome = await materializePrepared({ ...prepared, soulAgentsMd: composition.text, soulDir: pv.soulDir }, scratch);
+    const text = readFileSync(join(scratch, "AGENTS.md"), "utf8");
+    const known = new Set(composition.blocks.map((b) => b.source));
+    const outcomeBlocks = Array.isArray(outcome?.blocks) ? outcome.blocks : [];
+    for (const m of text.matchAll(/^<!-- oats:(capability:[^\s]+) src=(.+?) -->$/gm)) {
+      const [, source, file] = m;
+      if (known.has(source)) continue;
+      known.add(source);
+      const content = outcomeBlocks.find((b) => b.source === source && b.file === file)?.content ?? (existsSync(file) ? readFileSync(file, "utf8").trim() : "");
+      const rel = file.startsWith(scratch + sep) ? file.slice(scratch.length + 1) : file;
+      composition.blocks.push({ source, file: rel, content, materialized: true });
+    }
+    return { ...composition, text };
+  } catch (e) {
+    if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details);
+    throw e;
+  } finally { for (const c of cleanups) { try { c(); } catch { /* best effort: temporary copies only */ } } }
 }
 
 /** Workspace-model v2 doctor data, OFFLINE: the deployment declaration found
  * walking up from ctx (oats-local.yaml) and the lock v3 beside it. Doctor never
- * goes to the network; membership and discovery are `oats sync` / `oats workspace status`. */
+ * goes to the network for this view (only `--soul`, which resolves the soul like a
+ * spawn preview); membership and discovery are `oats sync` / `oats workspace status`. */
 function doctorLockData(ctx) {
   const out = { local: null, localError: null, lockFile: null, packages: [], lockError: null };
   let lockDir = ctx;
@@ -536,7 +553,9 @@ function doctorLockData(ctx) {
     out.local = { path: found.path, workspace: found.local.workspace };
     lockDir = dirname(found.path);
   } catch (e) {
-    if (e?.code === "E_WORKSPACE_SCHEMA") out.localError = { code: e.code, message: e.message };
+    // An unreadable oats-local.yaml, or a 0.25 oats-config.yaml inside the deployment
+    // (E_CONFIG_BROKEN reason legacy-config): doctor answers it as its typed error.
+    if (e?.code === "E_WORKSPACE_SCHEMA" || e?.code === "E_CONFIG_BROKEN") out.localError = { code: e.code, message: e.message, details: e.details };
     else if (e?.code !== "E_LOCAL_MISSING") throw e;
   }
   const file = join(lockDir, LOCK_FILE);
@@ -568,11 +587,11 @@ const realOrResolved = (p) => { try { return realpathSync(p); } catch { return r
 /** Every soul of a scope: the persistent souls of every agents root in
  *  scope, plus packaged souls (read-only). One enumeration for inspect and
  *  operation run, so both address souls the same way. */
-function scopeSouls(ctx, r, { extraRoots = [] } = {}) {
+function scopeSouls(ctx, { extraRoots = [] } = {}) {
   // A home's own agents root is always in scope for that home: its recorded
   // work repository may be another repository entirely (repo overrides), and
   // the config context resolves there while the soul lives with its owner.
-  const roots = [...new Set([...(r.team ? teamAgentRoots(r.team.scope) : [findRoot(ctx)]), ...extraRoots].filter(Boolean).map((p) => realOrResolved(resolve(p))))];
+  const roots = [...new Set([findRoot(ctx), ...extraRoots].filter(Boolean).map((p) => realOrResolved(resolve(p))))];
   const souls = [];
   for (const root of roots) {
     for (const a of listInstances(root)) {
@@ -582,17 +601,7 @@ function scopeSouls(ctx, r, { extraRoots = [] } = {}) {
       souls.push(e);
     }
   }
-  const diagnostics = [];
-  try {
-    const packaged = listCapabilityAgents(ctx);
-    diagnostics.push(...(packaged.diagnostics || []));
-    for (const pa of packaged) {
-      let soul = {};
-      try { soul = stripInternalAnnotations(withConfigFile(join(pa.soulDir, "soul.yaml"), () => parseYamlNested(readFileSync(join(pa.soulDir, "soul.yaml"), "utf8")))); } catch { /* reported by name only */ }
-      souls.push(soulEntry({ ...soul, name: pa.name, description: pa.description ?? soul.description, soulDir: pa.soulDir }, roots[0] || ctx, { capability: pa.capability }));
-    }
-  } catch (e) { diagnostics.push({ code: e.code || "E_CAPABILITY_BROKEN", message: e.message }); }
-  return { roots, souls, diagnostics };
+  return { roots, souls, diagnostics: [] };
 }
 /** The one soul a name (and optional agents root) addresses; throws with a
  *  code when none or several match. */
@@ -852,50 +861,20 @@ async function operationCmd() {
 }
 
 
-function doctorJson(dir) {
-  const ctx = resolve(dir || process.cwd());
-  const soulName = flag("soul");
+/** Doctor answers on a workspace deployment only (lead decision c3-6): the
+ *  deployment found walking up from the given directory (positional or --dir),
+ *  else E_LOCAL_MISSING; an unreadable oats-local.yaml is its own error. */
+function doctorDeployment(dir) {
+  const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
+  const ctx = resolve(dir || dirFlag());
   const ws = doctorLockData(ctx);
-  // A v2 deployment (oats-local.yaml found walking up) has NO config chain, layers,
-  // acquired packages or installed tier: those keys are omitted, not emitted empty.
-  if (ws.local) { console.log(JSON.stringify(doctorWorkspaceJson(ctx, soulName, ws), null, 2)); return; }
-  const r = resolveForDoctor(ctx, soulName, { json: true });
-  const mans = capabilityManifests(ctx);
-  const composition = doctorComposition(ctx, soulName);
-  const chain = configChain(ctx);
-  console.log(JSON.stringify({
-    schemaVersion: 1,
-    context: ctx,
-    team: r.team || null,
-    chain: r.chain.map((c) => ({ file: c._file, level: c._level, levelKind: levelOf(c._level) })),
-    layers: Object.fromEntries(LAYERS.map((l) => [l, r.layers[l] ? {
-      integration: r.layers[l].id, level: r.layers[l].level, inject: r.layers[l].inject,
-      skills: [...(Array.isArray(r.layers[l].skills) ? r.layers[l].skills : (r.layers[l].skills ? [r.layers[l].skills] : []))],
-      hooks: Object.keys(r.layers[l].hooks || {}), missingRequires: r.layers[l].missingRequires,
-      provenance: r.provenance[l],
-    } : { provenance: r.provenance[l] || null }])),
-    kernelInjection: composition?.resolved.kernelInjection ?? r.kernelInjection,
-    information: operationalKnowledgeNote(composition, soulName) ? [operationalKnowledgeNote(composition, soulName)] : [],
-    injects: r.injects,
-    capabilities: r.capabilities.map((c) => ({ id: c.id, layer: c.layer, command: c.command, origin: c.origin, provenance: c.provenance, settings: c.settings, skills: c.skills, inject: c.inject, hooks: Object.keys(c.hooks || {}), trust: c.trust })),
-    acquired: Object.fromEntries(Object.entries(mans).map(([n, m]) => [n, { layer: m.layer, command: m.command, version: m.version, dir: m._dir, origin: m._origin, description: m.description }])),
-retiredLocks: (() => { try { return Object.entries(readCapabilityLocks(ctx)); } catch { return []; } })()
-      .filter(([id]) => retiredCapabilityReason(id))
-      .map(([id, lock]) => ({ id, file: lock._file, reason: retiredCapabilityReason(id) })),
-    retiredArtifacts: Object.entries(mans)
-      .filter(([id]) => retiredCapabilityReason(id))
-      .map(([id, m]) => ({ id, dir: m._dir, origin: m._origin, reason: retiredCapabilityReason(id) })),
-    // Workspace model v2 (offline view): the lock (v3) and the deployment
-    // declaration. Human and JSON doctor derive from ONE computation; a
-    // fail-closed lock read is diagnosed via lockError, never consumed as data.
-    workspace: ws.local ? { file: ws.local.path, ref: ws.local.workspace } : null,
-    workspaceError: ws.localError,
-    lockFile: ws.lockFile,
-    packages: ws.packages,
-    lockError: ws.lockError,
-    composedInstructions: composition?.text,
-    instructionBlocks: composition?.blocks,
-  }, null, 2));
+  if (ws.localError) bail(ws.localError.code, ws.localError.message, ws.localError.details);
+  if (!ws.local) bail("E_LOCAL_MISSING", `oats doctor reads a workspace deployment, and none is in reach of ${ctx} (no oats-local.yaml walking up; \`oats onboard\` creates one)`, { dir: ctx });
+  return { ctx, ws };
+}
+async function doctorJson(dir) {
+  const { ctx, ws } = doctorDeployment(dir);
+  console.log(JSON.stringify(await doctorWorkspaceJson(ctx, flag("soul"), ws), null, 2));
 }
 
 /** The v2 doctor payload: the deployment declaration + lock (offline) and, with
@@ -906,8 +885,8 @@ function legacyLayoutProblems(root) {
   const legacy = legacyLocalAgents(root);
   return legacy ? [legacy] : [];
 }
-function doctorWorkspaceJson(ctx, soulName, ws) {
-  const composition = doctorComposition(ctx, soulName);
+async function doctorWorkspaceJson(ctx, soulName, ws) {
+  const composition = await doctorComposition(ctx, soulName, ws, (code, msg, details) => jsonFail(code, msg, details));
   const problems = legacyLayoutProblems(join(dirname(ws.local.path), "agents"));
   return {
     schemaVersion: 1, workspaceApi: 2, context: ctx,
@@ -928,9 +907,7 @@ function doctorVersionSkew() {
 /** The "Workspace (v2, offline view)" + "Locked packages" sections, shared by both doctor shapes. */
 function printDoctorWorkspace(ws) {
   console.log("\nWorkspace (v2, offline view):");
-  if (ws.local) console.log(`  oats-local.yaml  ${shortPath(ws.local.path)}  → workspace ${ws.local.workspace}`);
-  else if (ws.localError) console.log(`  ERROR: ${ws.localError.message} [${ws.localError.code}]`);
-  else console.log("  (no oats-local.yaml found walking up — this scope realizes no v2 workspace; run `oats sync` from one that does)");
+  console.log(`  oats-local.yaml  ${shortPath(ws.local.path)}  → workspace ${ws.local.workspace}`);
   console.log("\nLocked packages (oats-lock.json v3):");
   if (ws.lockError) {
     console.log(`  ERROR: ${ws.lockError.message} [${ws.lockError.code}]`);
@@ -942,120 +919,14 @@ function printDoctorWorkspace(ws) {
   }
   console.log("  membership, discovery and drift need the remotes: `oats workspace status`, `oats sync`.");
 }
-function doctor(dir) {
-  const ctx = resolve(dir || process.cwd());
+async function doctor(dir) {
+  const { ctx, ws } = doctorDeployment(dir);
   const soulName = flag("soul");
-  const ws = doctorLockData(ctx);
   console.log(`oats doctor — resolved from ${shortPath(ctx)}\n`);
   doctorVersionSkew();
-  if (ws.local) {
-    // A v2 deployment: nothing is installed and there is no config chain — the v1
-    // sections (Config chain / Layers / Kernel injection / Acquired packages / lock
-    // warnings) would describe a tier this deployment does not have.
-    const composition = doctorComposition(ctx, soulName);
-    printDoctorWorkspace(ws);
-    for (const p of legacyLayoutProblems(join(dirname(ws.local.path), "agents"))) console.log(`\n! ${p.code}: ${p.message}`);
-    if (soulName) {
-      const information = operationalKnowledgeNote(composition, soulName);
-      if (information) console.log(`\nINFO: ${information}`);
-      console.log(`\nFinal composed AGENTS.md for ${soulName}:\n\n${composition.text}`);
-    } else console.log("\nPass --soul <name> to inspect final composed AGENTS.md.");
-    return;
-  }
-  const chain = configChain(ctx);
-  const r = resolveForDoctor(ctx, soulName);
-  const composition = doctorComposition(ctx, soulName);
-
-  console.log("Config chain (closest first):");
-  if (chain.length === 0) console.log("  (none — no oats-config.yaml found walking up)");
-  for (const c of chain) {
-    console.log(`  ${shortPath(c._file)}  [${levelOf(c._level)}]`);
-  }
-
-  if (r.team) console.log(`\nTeam: ${r.team.name}${r.team.id ? `  (id: ${r.team.id})` : ""}  [scope: ${shortPath(r.team.scope)}]`);
-
-  console.log("\nLayers:");
-  for (const layer of LAYERS) {
-    const l = r.layers[layer];
-    const prov = r.provenance[layer];
-    if (!prov) { console.log(`  ${layer.padEnd(10)} (unresolved — no declaration in chain)`); continue; }
-    if (!l) { console.log(`  ${layer.padEnd(10)} none  [${prov}]`); continue; }
-    console.log(`  ${layer.padEnd(10)} ${l.id}  [${prov}]`);
-    if (l.inject) console.log(`             inject: ${shortPath(l.inject)}`);
-    const skills = Array.isArray(l.skills) ? l.skills : (l.skills ? [l.skills] : []);
-    if (skills.length) console.log(`             skills: ${skills.map(shortPath).join(", ")}`);
-    const hooks = Object.keys(l.hooks || {});
-    if (hooks.length) console.log(`             hooks:  ${hooks.join(", ")}`);
-    for (const miss of l.missingRequires || []) {
-      console.log(`             MISSING REQUIREMENT: ${miss.command} — ${miss.why || ""}${miss.install ? ` (install: ${miss.install})` : ""}`);
-    }
-  }
-
-  console.log("\nKernel injection:");
-  const kernelInjection = composition?.resolved.kernelInjection ?? r.kernelInjection;
-  console.log(`  oats: ${kernelInjection?.inject ? shortPath(kernelInjection.inject) : "none"}  [${kernelInjection?.provenance || "default"}]`);
-
-  console.log("\nUnconditional injections (outermost→innermost):");
-  if (r.injects.length === 0) console.log("  (none)");
-  for (const inj of r.injects) console.log(`  ${inj.source}: ${shortPath(inj.file)}`);
-
-  for (const mode of WORK_MODES) {
-    const wm = resolveWorkMode(ctx, mode);
-    console.log(`\nWork mode ${mode}: inject ${wm.inject ? shortPath(wm.inject) : "none"}${wm.setup ? `, setup ${shortPath(wm.setup)}` : ""}`);
-  }
-
-  console.log("\nActive capabilities:");
-  if (!r.capabilities.length) console.log("  (none)");
-  for (const cap of r.capabilities) {
-    console.log(`  ${cap.id}${cap.layer ? `  layer: ${cap.layer}` : ""}  [${cap.provenance.join(" + ")}]`);
-    console.log(`             trust: ${cap.trust.trusted ? "approved" : `BLOCKED (${cap.trust.reason})`}`);
-    if (cap.inject) console.log(`             inject: ${shortPath(cap.inject)}`);
-    if (cap.skills.length) console.log(`             skills: ${cap.skills.map(shortPath).join(", ")}`);
-  }
-  console.log("\nAcquired capability packages:");
-  for (const [name, m] of Object.entries(capabilityManifests(ctx))) {
-    const missing = capabilityMissingRequires(name, ctx);
-    console.log(`  ${name.padEnd(16)} layer: ${(m.layer || "additive").padEnd(10)} origin: ${m._origin}${missing.length ? `  (missing: ${missing.map((x) => x.command).join(", ")})` : ""}`);
-    const retiredReason = retiredCapabilityReason(name);
-    if (retiredReason) {
-      const installed = String(m._origin).startsWith("installed:");
-      console.log(`             WARNING: artifact of a retired capability — ${retiredReason}${installed ? `; also delete ${shortPath(m._dir)}` : ` (origin ${m._origin}: remove its declaration; the source tree at ${shortPath(m._dir)} is yours to keep or drop)`}`);
-    }
-  }
-  // readCapabilityLocks fails closed on invalid legacy entries — doctor is the
-  // diagnosis surface, so catch the typed error and render it (never using the data).
-  let locks = {};
-  try { locks = readCapabilityLocks(ctx); }
-  catch (e) {
-    if (e.code !== "invalid-lock") throw e;
-    const prov = Array.isArray(e.provenance) ? e.provenance[0] : undefined;
-    console.log(`  ERROR: ${e.message} [invalid-lock]`);
-    if (prov?.file) console.log(`         fix or remove the entry in ${shortPath(prov.file)} — never auto-repaired; legacy trust/restore fail closed until it is valid`);
-  }
-  const mans = capabilityManifests(ctx);
-  for (const [id, lock] of Object.entries(locks)) {
-    const retiredReason = retiredCapabilityReason(id);
-    if (retiredReason) { console.log(`  WARNING: ${id} is locked in ${shortPath(lock._file)} but ${retiredReason}`); continue; }
-    if (!mans[id]) console.log(`  WARNING: ${id} is locked in ${shortPath(lock._file)} but not acquired — run \`oats sync\``);
-  }
-  for (const [id, m] of Object.entries(mans)) {
-    if (!String(m._origin).startsWith("installed:")) continue;
-    // SCOPE-EXACT on the v2 side. `m._capabilityLock` is the row from the
-    // artifact's OWN scope's lock (capabilityManifests annotates it there), and
-    // that is the only row that can lock this artifact: the merged chain would
-    // let an outer scope's lock — or a lock-only ancestor with no config at all
-    // — silence an unlocked inner copy that WINS discovery precedence and
-    // activates. The legacy arm stays chain-merged: v1 parity is unchanged.
-    if (m._capabilityLock || Object.hasOwn(locks, id)) continue;
-    console.log(`  WARNING: ${id} at ${shortPath(m._dir)} is in installed/ but has no lock entry — reacquire it or move it to owned/`);
-  }
-  if (existsSync(LEGACY_HOME_CAPABILITIES_DIR)) console.log(`  WARNING: legacy ~/.oats/capabilities exists and is no longer discovered — reinstall its packages at a config scope and remove it`);
-
-  // Workspace model v2: nothing is installed. Doctor reports the lock (v3) and
-  // the deployment declaration OFFLINE — membership, discovery and package
-  // resolution go to the remotes and belong to `oats sync` / `oats workspace status`.
+  const composition = await doctorComposition(ctx, soulName, ws, (code, msg) => die(`${msg} [${code}]`));
   printDoctorWorkspace(ws);
-
+  for (const p of legacyLayoutProblems(join(dirname(ws.local.path), "agents"))) console.log(`\n! ${p.code}: ${p.message}`);
   if (soulName) {
     const information = operationalKnowledgeNote(composition, soulName);
     if (information) console.log(`\nINFO: ${information}`);
@@ -1174,10 +1045,8 @@ function launchConfigContext(bail) {
     if (soulFlag === true) bail("E_BAD_ARGS", "--soul needs a soul name");
     const agentsRootFlag = flag("agents-root");
     if (agentsRootFlag === true) bail("E_BAD_ARGS", "--agents-root needs an absolute agents directory");
-    let r;
-    try { r = resolveOatsConfig(ctx); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
     let soul;
-    try { soul = selectSoul(scopeSouls(ctx, r).souls, String(soulFlag), agentsRootFlag, ctx); } catch (e) { bail(e.code || "E_SOUL_UNKNOWN", e.message); }
+    try { soul = selectSoul(scopeSouls(ctx).souls, String(soulFlag), agentsRootFlag, ctx); } catch (e) { bail(e.code || "E_SOUL_UNKNOWN", e.message); }
     return { context: memberContextOf(soul, ctx, flag("dir") !== undefined, bail), selected: { soul: soul.name, agentsRoot: soul.agentsRoot } };
   }
   return { context: ctx, selected: null };
@@ -1211,14 +1080,14 @@ function launchPreview(bail) {
     const agent = (() => { try { return findAgent(agentsRoot, meta.agent); } catch { return undefined; } })();
     agentLike = agent || { runtime: meta.runtime, model: meta.model, yolo: meta.yolo };
   } else {
-    let r0;
-    try { r0 = resolveOatsConfig(context); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
-    const soul = scopeSouls(context, r0).souls.find((x) => x.name === selected.soul && x.agentsRoot === selected.agentsRoot);
-    agentLike = { runtime: soul.runtime, model: soul.model, yolo: soul.yolo, "launch-config": soul.launchConfig };
+    const soul = scopeSouls(context).souls.find((x) => x.name === selected.soul && x.agentsRoot === selected.agentsRoot);
+    agentLike = { runtime: soul.runtime, model: soul.model };
     instance = `${soul.name}-<purpose>`; home = join(selected.agentsRoot, soul.name, "instances", instance);
   }
+  // A home's recorded capabilities; a new instance's are its spawn's resolution,
+  // which a preview of a soul does not prepare (spawn --preview does).
   let r;
-  try { r = resolveOatsConfig(context, selected.soul || meta?.agent); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+  try { r = meta ? resolvedFromHome(home, meta) : { capabilities: [], launchConfigs: launchConfigsAt(context) }; } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message, e.details); }
   // The same planner a start uses, in preview mode: failed checks are listed, nothing is touched.
   let plan;
   try { plan = planLaunch({ home, instance, meta, contextDir: context, agentLike, selection: sel, resolvedCfg: r, preview: true }); } catch (e) { bail(e.code || "E_BAD_ARGS", e.message); }
@@ -1229,7 +1098,7 @@ function launchPreview(bail) {
   jsonOk({ context, selected, selection: { source: plan.selectionSource, launchConfig: recipe.launchConfig, runtime: sel.runtime ?? null, model: sel.model ?? null, yolo: sel.yolo ?? null }, runtime: plan.runtime, model: recipe.model, modelSource: plan.modelSource, yolo: recipe.yolo ?? null, launchConfig: recipe.launchConfig, launchConfigSource: recipe.launchConfigSource, executable: { path: plan.executable.path, declared: plan.executable.declared ?? null, resolvedFrom: plan.executable.resolvedFrom }, argv: d.argv, environment, command, prompt: recipe.prompt, hooks: redactLaunchRecipe(recipe).hooks, preflight: plan.preflight, ok: plan.ok });
 }
 async function launchConfigCmd() {
-  const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
+  const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   dropAmbientRoot();
   const sub = args[1];
   const usage = "usage: oats launch-config list [--dir <scope> | --home <abs> | --soul <name> [--dir <scope>] [--agents-root <abs>]] [--json] | set <name> --file <json> [--keep-env] [--dir <scope>] [--json] | remove <name> [--dir <scope>] [--json] | preview (--home <abs> | --soul <name> [--dir <scope>]) [--launch-config <name>|none] [--runtime r] [--model m] [--yolo|--no-yolo] --json";
@@ -1240,11 +1109,12 @@ async function launchConfigCmd() {
   // Lead decision 2: launch configurations are a HOST choice, declared in the
   // deployment's oats-local.yaml (found walking up; a home's own deployment).
   const at = selected?.home ?? dir;
-  // A scope file still declaring launch-configs is refused here too (the migration
-  // message names the move), never read as "no configurations".
-  try { configChain(at); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+  // A 0.25 oats-config.yaml in reach is refused by loadLocal (E_CONFIG_BROKEN, naming
+  // the move), never read as "no configurations".
   let found = null;
-  try { found = loadLocal(at); } catch (e) { if (e?.code !== "E_LOCAL_MISSING") bail(e.code || "E_WORKSPACE_SCHEMA", e.message); }
+  // No deployment in reach answers the (empty) effective set — unless what is in
+  // reach is a 0.25 oats-config.yaml, whose launch-configs nothing reads any more.
+  try { found = loadLocal(at); } catch (e) { if (e?.code !== "E_LOCAL_MISSING" || e.details?.legacy) bail(e.code || "E_WORKSPACE_SCHEMA", e.message, e.details); }
   const file = found?.path ?? null, level = file ? dirname(file) : null;
   const effective = () => Object.values(launchConfigsAt(at)).sort((a, b) => a.name.localeCompare(b.name)).map((e) => ({ name: e.name, ...publicLaunchConfig(e, { source: e.source, shadows: e.shadows }) }));
   if (sub === "list") {
@@ -1381,8 +1251,7 @@ function instanceCmd() {
   if (home === undefined) {
     let root;
     try { root = ensureRoot(dirFlag()); } catch (e) { return bail(e.code || "E_NO_ROOT", e.message); }
-    let r; try { r = resolveOatsConfig(dirFlag()); } catch (e) { return bail(e.code || "E_CONFIG_BROKEN", e.message); }
-    const roots = [...new Set([root, ...(r.team ? teamAgentRoots(r.team.scope) : [])].map((p) => realOrResolved(p)))];
+    const roots = [realOrResolved(root)];
     const candidates = [];
     for (const rt of roots) for (const hit of findInstanceHomes(rt, name)) candidates.push({ root: rt, agent: hit.agent?.name ?? null, home: hit.home });
     if (!candidates.length) return bail("E_SESSION_UNKNOWN", `no instance ${JSON.stringify(name)} under ${roots.join(", ")}`);
@@ -1420,7 +1289,7 @@ async function readinessCmd() {
   // from the current configuration this command reads; refuse before inspecting.
   const homeArg = flag("home");
   if (homeArg && homeArg !== true) {
-    let capturedMeta = null; try { capturedMeta = JSON.parse(readFileSync(join(String(homeArg), "instance.json"), "utf8")); } catch { /* computeInspect reports the unreadable home */ }
+    let capturedMeta = null; try { capturedMeta = JSON.parse(readFileSync(join(String(homeArg), "instance.json"), "utf8")); } catch { /* workspaceTarget reports the unreadable home */ }
     if (capturedMeta?.executionBinding || capturedMeta?.captured) return bail("E_UNSUPPORTED_MODE", `${basename(String(homeArg))} is a captured incarnation: its readiness is the retained resolution's, not the current configuration's (inspect it with oats operation --deployment/--resolution)`, { home: String(homeArg), captured: true });
   }
   // Workspace model (readinessApi 2): an instance or soul subject; checks
@@ -1794,7 +1663,13 @@ async function itemsCmd(kind) {
  *  present) to its stamp — the roster's `repo:` column for a workspace soul. */
 async function statusDrift(data) {
   let ctx;
-  try { ctx = loadLocal(dirFlag()); } catch (e) { if (e?.code === "E_LOCAL_MISSING") return null; throw e; }
+  try { ctx = loadLocal(dirFlag()); }
+  catch (e) {
+    if (e?.code === "E_LOCAL_MISSING") return null;
+    // A 0.25 oats-config.yaml inside the deployment: the typed migration error, never a stack.
+    if (e?.code === "E_CONFIG_BROKEN") { if (JSON_MODE) jsonFail(e.code, e.message, e.details); die(e.message); }
+    throw e;
+  }
   const hasModules = (i) => i.modules && typeof i.modules === "object" && Object.keys(i.modules).length > 0;
   const hasSoul = (i) => i.workspace && typeof i.workspace === "object" && i.workspace.soul && typeof i.workspace.soul === "object" && typeof i.workspace.soul.repoKey === "string";
   // Workspace souls of this roster: the stamp ensureWorkspaceSoul leaves beside the soul pointer.
@@ -1931,80 +1806,79 @@ async function spawnCmd() {
   if (nameFlag !== undefined) { try { explicitInstanceName(String(nameFlag)); } catch (e) { bail(e.code, e.message); throw e; } }
   if (args.includes("--ephemeral")) bail("E_BAD_ARGS", "--ephemeral was removed by the runtime-boundary ruling — declare the agent in a capability manifest (agents:) for automatic ephemeral semantics");
   let root;
-  // Workspace model: the agents root is <deployment>/agents. An ambient root (the
-  // invoking agent's own PI_AGENTS_ROOT / OATS_ROOT) never redirects a v2 spawn —
-  // a home outside <deployment>/agents would have no derivable deployment.
-  try { loadLocal(dirFlag()); delete process.env.PI_AGENTS_ROOT; delete process.env.OATS_ROOT; } catch { /* not a workspace deployment: classic root rules */ }
+  // A spawn needs a workspace deployment (lead decision c3-1): no oats-local.yaml
+  // in reach is E_LOCAL_MISSING, before anything else is read. The agents root is
+  // then <deployment>/agents; an ambient root (the invoking agent's own
+  // PI_AGENTS_ROOT / OATS_ROOT) never redirects it — a home outside
+  // <deployment>/agents would have no derivable deployment.
+  try { loadLocal(dirFlag()); } catch (e) { if (e?.code === "E_LOCAL_MISSING") bail("E_LOCAL_MISSING", `${e.message}: a spawn needs a workspace deployment — \`oats onboard\` creates one`, e.details); else bail(e.code || "E_WORKSPACE_SCHEMA", e.message, e.details); }
+  delete process.env.PI_AGENTS_ROOT; delete process.env.OATS_ROOT;
+  // A deployment without its agents/ root is E_NO_DEPLOYMENT, naming the remedy.
   try { root = ensureRoot(dirFlag()); }
   catch (e) { bail("E_NO_DEPLOYMENT", e.message || e); throw e; }
   const isPreview = args.includes("--preview");
   // --agents-root <abs>: the exact root the soul must live in (as inspect and
-  // readiness take it). With it, no team-soul / capability-agent / importable-
-  // def fallback: the soul is there or the spawn refuses E_SOUL_UNKNOWN.
+  // readiness take it) — the deployment's one agents root, or E_SOUL_UNKNOWN.
   const agentsRootFlag = flag("agents-root");
   if (agentsRootFlag !== undefined && (agentsRootFlag === true || !isAbsolute(String(agentsRootFlag)))) bail("E_BAD_ARGS", "--agents-root needs an absolute agents root");
-  if (agentsRootFlag !== undefined && realOrResolved(String(agentsRootFlag)) !== realOrResolved(root)) {
-    const teamHit = findTeamAgent(dirFlag(), name), hit = (teamHit?.matches || []).find((m) => realOrResolved(m.root) === realOrResolved(String(agentsRootFlag)));
-    if (!hit) bail("E_SOUL_UNKNOWN", `soul "${name}" is not at agents root ${String(agentsRootFlag)} (this scope's root is ${shortPath(root)})`);
-    root = hit.root;
-  }
+  if (agentsRootFlag !== undefined && realOrResolved(String(agentsRootFlag)) !== realOrResolved(root)) bail("E_SOUL_UNKNOWN", `soul "${name}" is not at agents root ${String(agentsRootFlag)} (this scope's root is ${shortPath(root)})`);
   let agent = findAgent(root, name);
   // Workspace model: with an oats-local.yaml the soul is ALWAYS discovered over the
   // remotes and resolved (member = latest state, package = locked) — never
   // "whatever <agents-root>/<name>/soul/ happens to hold": that copy is a per-commit
   // cache (ensureWorkspaceSoul refreshes it when the member moved), so a second
   // spawn sees the member's CURRENT soul, not the first spawn's. A preview runs the
-  // same read-only discovery+resolution; the fetched soul copy it may leave under
-  // <agents-root>/<name>/soul/ is not an instance (reported as soulFetched).
+  // same read-only discovery+resolution and writes nothing: it reads the soul from
+  // the per-commit cache, or fetches it to a temporary copy (reported as soulFetched).
   const providerPairs = [];
   for (let i = 0; i < args.length; i++) if (args[i] === "--provider") { if (!args[i + 1] || !args[i + 2]) bail("E_BAD_ARGS", "--provider needs <capability> <key>=<value>"); providerPairs.push([args[i + 1], args[i + 2]]); i += 2; }
   let wsPrepared, soulFetched = false, wsSoulUnknown = null, wsDiscovery;
-  let hasLocal = true;
   {
-    try { loadLocal(dirFlag()); } catch (e) { if (e?.code === "E_LOCAL_MISSING") hasLocal = false; else bail(e.code || "E_WORKSPACE_SCHEMA", e.message, e.details); }
-    if (hasLocal) {
-      let discovery = null;
-      try {
-        const { prepareInstance, ensureWorkspaceSoul, parseProviderFlags, discoverOrStandalone } = await import("../lib/instance-resolution.mjs");
-        const remoteOptions = remoteOptionsFromEnv();
-        const { local } = loadLocal(dirFlag());
-        discovery = wsDiscovery = await discoverOrStandalone(local, { remoteOptions });
-        wsPrepared = await prepareInstance(dirFlag(), name, { spawn: { providers: parseProviderFlags(providerPairs) }, remoteOptions, discovery });
-        const soulName = wsPrepared.soulEntry.name;
+    let discovery = null;
+    try {
+      const { prepareInstance, ensureWorkspaceSoul, previewWorkspaceSoul, parseProviderFlags, discoverOrStandalone } = await import("../lib/instance-resolution.mjs");
+      const remoteOptions = remoteOptionsFromEnv();
+      const { local } = loadLocal(dirFlag());
+      discovery = wsDiscovery = await discoverOrStandalone(local, { remoteOptions });
+      wsPrepared = await prepareInstance(dirFlag(), name, { spawn: { providers: parseProviderFlags(providerPairs) }, remoteOptions, discovery });
+      const soulName = wsPrepared.soulEntry.name;
+      let soulDir;
+      if (isPreview) {
+        // A preview writes nothing in the deployment: the soul comes from the
+        // per-commit cache when complete, else from a temporary fetch removed at exit.
+        const pv = await previewWorkspaceSoul(wsPrepared, root);
+        process.once("exit", pv.cleanup);
+        soulDir = pv.soulDir; soulFetched = pv.fetched;
+        agent = findAgentAt(root, soulName, soulDir);
+      } else {
         const stampFile = join(root, soulName, ".oats-soul-source.json");
         const stampBefore = (() => { try { return JSON.parse(readFileSync(stampFile, "utf8")); } catch { return null; } })();
-        const soulDir = await ensureWorkspaceSoul(wsPrepared, root);
+        soulDir = await ensureWorkspaceSoul(wsPrepared, root);
         soulFetched = !stampBefore || stampBefore.commit !== wsPrepared.soulEntry.commit || stampBefore.repoKey !== wsPrepared.soulEntry.repoKey;
         if (!agent || soulFetched || agent._dir !== dirname(soulDir)) agent = findAgent(root, soulName);
-        if (!agent) bail("E_SOUL_UNKNOWN", `soul "${name}" was fetched to ${shortPath(soulDir)} but is not readable as a soul there`);
-        note(`(workspace soul: "${name}" from ${wsPrepared.soulEntry.repoKey} @ ${String(wsPrepared.soulEntry.commit).slice(0, 12)}${wsPrepared.soulEntry.team ? `, team ${wsPrepared.soulEntry.team}` : ""}${soulFetched ? "; soul source fetched" : ""})`);
-      } catch (e) {
-        // Standalone (decisions 10/25): the ONLY package request is the kernel's own
-        // default; when the catalog cannot name it, say so instead of "add it to packages:"
-        // (there is no workspace file to add it to).
-        if (e?.code === "E_PACKAGE_MISSING" && discovery?.standalone === true) {
-          let file = process.env.OATS_PACKAGE_CATALOG || null; try { file = describeOfficialCatalog().catalog.file; } catch { /* keep the env value */ }
-          bail(e.code, `${e.details?.capability ?? "oats.core"}: the catalog has no package providing oats.core (OATS_PACKAGE_CATALOG=${file ?? "<bundled>"}) — standalone spawns resolve only the kernel's default package from the catalog`, { ...(e.details ?? {}), standalone: true, reason: "no-catalog", catalog: file });
-        }
-        // Not a workspace soul: a capability-defined agent (a module's `agents:`
-        // soul, resolved below from a materialized copy) may still answer to this name.
-        if (e?.code === "E_SOUL_UNKNOWN" && !isPreview) { wsSoulUnknown = e; }
-        else if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details);
-        else throw e;
       }
-    } else if (providerPairs.length) bail("E_BAD_ARGS", "--provider needs a workspace deployment (oats-local.yaml); this directory has none");
+      if (!agent) bail("E_SOUL_UNKNOWN", `soul "${name}" was fetched to ${shortPath(soulDir)} but is not readable as a soul there`);
+      note(`(workspace soul: "${name}" from ${wsPrepared.soulEntry.repoKey} @ ${String(wsPrepared.soulEntry.commit).slice(0, 12)}${wsPrepared.soulEntry.team ? `, team ${wsPrepared.soulEntry.team}` : ""}${soulFetched ? "; soul source fetched" : ""})`);
+    } catch (e) {
+      // Standalone (decisions 10/25): the ONLY package request is the kernel's own
+      // default; when the catalog cannot name it, say so instead of "add it to packages:"
+      // (there is no workspace file to add it to).
+      if (e?.code === "E_PACKAGE_MISSING" && discovery?.standalone === true) {
+        let file = process.env.OATS_PACKAGE_CATALOG || null; try { file = describeOfficialCatalog().catalog.file; } catch { /* keep the env value */ }
+        bail(e.code, `${e.details?.capability ?? "oats.core"}: the catalog has no package providing oats.core (OATS_PACKAGE_CATALOG=${file ?? "<bundled>"}) — standalone spawns resolve only the kernel's default package from the catalog`, { ...(e.details ?? {}), standalone: true, reason: "no-catalog", catalog: file });
+      }
+      // Not a workspace soul: a capability-defined agent (a module's `agents:`
+      // soul, resolved below from a materialized copy) may still answer to this name.
+      if (e?.code === "E_SOUL_UNKNOWN" && !isPreview) { wsSoulUnknown = e; }
+      else if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details);
+      else throw e;
+    }
   }
   if (agentsRootFlag !== undefined && !agent) bail("E_SOUL_UNKNOWN", `soul "${name}" is not at agents root ${String(agentsRootFlag)}`);
   if (isPreview && !agent) bail("E_SOUL_UNKNOWN", `soul "${name}" is not in ${shortPath(root)}; a preview never creates or imports a soul (known: ${listAgents(root).map((a) => a.name).join(", ") || "none"})`);
+  // Capability agent (lead decision c3 Q1): a prepared spawn of its providing module only.
+  let capabilityPrepared, capabilityPkg = null;
   if (!agent) {
-    // Capability-defined agent: a package's `agents:` soul, active in this context.
-    const capAgent = findCapabilityAgent(dirFlag(), root, name);
-    if (capAgent) {
-      agent = capAgent;
-      note(`(capability agent: "${name}" from ${capAgent.capability} — fresh soul, instances home under ${shortPath(join(root, name, "instances"))})`);
-    }
-  }
-  if (!agent && hasLocal) {
     // Workspace model: the agent is declared by a capability some INSTANCE already
     // materialized (the --parent home first, then any home under this root) —
     // OKF's memory-harvest worker spawned by a knowledge source, for example.
@@ -2025,24 +1899,18 @@ async function spawnCmd() {
         const hit = await resolvePackageCapabilityAgent(dirFlag(), name, { remoteOptions: remoteOptionsFromEnv(), discovery: wsDiscovery, catalog: (() => { try { return officialPackageCatalog(); } catch { return null; } })() });
         if (hit) {
           agent = capabilityAgentFromDir(hit.dir, name, root, { module: { from: { kind: "package", package: hit.package, version: hit.version, commit: hit.commit } } });
-          if (agent) note(`(capability agent: "${name}" from ${hit.capability} — package ${hit.package} v${hit.version}, fetched to ${shortPath(hit.dir)} — fresh soul, instances home under ${shortPath(join(root, name, "instances"))})`);
+          if (agent) { capabilityPkg = hit; note(`(capability agent: "${name}" from ${hit.capability} — package ${hit.package} v${hit.version}, fetched to ${shortPath(hit.dir)} — fresh soul, instances home under ${shortPath(join(root, name, "instances"))})`); }
         }
+      } catch (e) { if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details); throw e; }
+    }
+    if (agent) {
+      try {
+        const { prepareCapabilityAgent } = await import("../lib/instance-resolution.mjs");
+        capabilityPrepared = await prepareCapabilityAgent(dirFlag(), agent, { discovery: wsDiscovery, pkg: capabilityPkg, remoteOptions: remoteOptionsFromEnv(), catalog: (() => { try { return officialPackageCatalog(); } catch { return null; } })() });
       } catch (e) { if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details); throw e; }
     }
   }
   if (!agent && wsSoulUnknown) bail(wsSoulUnknown.code, wsSoulUnknown.message, wsSoulUnknown.details);
-  if (!agent) {
-    // Cross-repo lookup: the soul may live in a sibling repo of the team scope.
-    // Unique match wins; the instance homes with its owning repo's agents root.
-    const teamHit = findTeamAgent(dirFlag(), name);
-    const remote = (teamHit?.matches || []).filter((m) => resolve(m.root) !== resolve(root));
-    if (remote.length > 1) bail("E_AMBIGUOUS_SOUL", `soul "${name}" found in multiple team repos: ${remote.map((m) => shortPath(m.root)).join(", ")} — re-run with --dir <that repo>`);
-    if (remote.length === 1) {
-      root = remote[0].root;
-      agent = remote[0].agent;
-      note(`(cross-repo: soul "${name}" found at ${shortPath(root)} — instance homes there)`);
-    }
-  }
   checkDirectoryOptions(requestedWork || agent?.work);
   if (!agent) bail("E_UNKNOWN_AGENT", `unknown agent "${name}" (known: ${listAgents(root).map((a) => a.name).join(", ") || "none"}) — a soul is a member repository's souls/<name>; add it there and run \`oats sync\``);
   for (const information of agent.notes || []) note(`[${information.code}] ${information.message}`);
@@ -2074,7 +1942,7 @@ async function spawnCmd() {
     // findInstanceHome also sees capability-defined agents' instance homes
     // (<root>/<name>/ without a soul) — e.g. a reviewer passing
     // --parent "$OATS_INSTANCE" from a capability agent.
-    if (!findInstanceHome(root, relativeTo) && !findTeamInstance(dirFlag(), relativeTo)) bail(parent ? "E_PARENT_NOT_FOUND" : "E_RELATIVE_NOT_FOUND", `${parent ? "--parent" : "--relative-to"} "${relativeTo}" does not match any known instance`);
+    if (!findInstanceHome(root, relativeTo)) bail(parent ? "E_PARENT_NOT_FOUND" : "E_RELATIVE_NOT_FOUND", `${parent ? "--parent" : "--relative-to"} "${relativeTo}" does not match any known instance`);
   }
   const taskText = flag("task");
   if (taskText === true) bail("E_BAD_ARGS", "--task needs a value (use --task-file for long tasks)");
@@ -2122,10 +1990,10 @@ async function spawnCmd() {
   // convention <deployment>/<member name>. Never an ambient Git checkout around the
   // deployment. Resolved once here so a preview sees exactly what the apply would.
   let preparedRepo;
-  if (wsPrepared) {
+  if (wsPrepared || capabilityPrepared) {
     try {
       const { toCapabilityRows, modulesPreview, requireMemberClone } = await import("../lib/instance-resolution.mjs");
-      prepared = wsPrepared;
+      prepared = wsPrepared ?? capabilityPrepared;
       prepared.capabilityRows = []; // filled after materialization (paths live in the home); preview uses modulesPreview
       prepared.preview = modulesPreview(prepared.resolution, root, agent.name);
       prepared.toCapabilityRows = toCapabilityRows;
@@ -2143,8 +2011,9 @@ async function spawnCmd() {
       ...(args.includes("--allow-child-spawns") ? { allowChildSpawns: true } : args.includes("--no-child-spawns") ? { allowChildSpawns: false } : {}),
       // Directory execution uses deployment configuration, not an ambient Git
       // checkout (especially when invoked via --dir from a source instance).
-      repo: preparedRepo !== undefined ? preparedRepo : (requestedWork || agent.work) === "directory"
-        ? (repo ?? agent.repo) : repo || agent.repo || defaultRepo(workspaceOf(root)) || defaultRepo(process.cwd()),
+      // An attached instance's repository is its work tree owner's (derived by the kernel).
+      repo: preparedRepo !== undefined ? preparedRepo : ["directory", "attached"].includes(requestedWork || agent.work)
+        ? repo : repo || defaultRepo(workspaceOf(root)) || defaultRepo(process.cwd()),
       work: requestedWork, workDir, runtime: flag("runtime"), backend, herdrSocket, yolo, model: flag("model"), branch,
       launchConfig: valueFlag("launch-config"),
       launch: !args.includes("--no-launch"),
@@ -2158,13 +2027,13 @@ async function spawnCmd() {
       // K6c: with --idempotency-key, a retry of the SAME confirmed decision replays the recorded home instead of spawning twice.
       ...(flag("idempotency-key") !== undefined && flag("idempotency-key") !== true ? { idempotencyKey: String(flag("idempotency-key")) } : {}),
     };
-      r = prepared ? await spawnInstanceAsync(root, agent, spawnOpts) : spawnInstance(root, agent, spawnOpts); }
+      r = await spawnInstanceAsync(root, agent, spawnOpts); }
     if (args.includes("--preview")) {
-      // A workspace preview may have fetched the soul's SOURCE under <agents-root>/<name>/soul/
-      // (a per-commit cache, not an instance): the result says so.
+      // A workspace preview may have fetched the soul's SOURCE to a temporary copy
+      // (the deployment's cache had no entry for its commit): the result says so.
       if (prepared) r.soulFetched = soulFetched;
       if (JSON_MODE) { jsonOk(r); return; }
-      console.log(`preview ${r.agent} → ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch} from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}) runtime ${r.runtime}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}; nothing was created${soulFetched ? ` (the soul source was fetched to ${shortPath(join(root, r.agent, "soul"))} — a per-commit copy, not an instance)` : ""}`);
+      console.log(`preview ${r.agent} → ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch} from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}) runtime ${r.runtime}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}; nothing was created${soulFetched ? " (the soul source was fetched to a temporary copy, not kept)" : ""}`);
       return;
     }
   } catch (e) {
@@ -2250,7 +2119,7 @@ function retireCmd() {
       console.log(`  defaults: retain worktree ${plan.defaults.retainWorktree}, delete branch ${plan.defaults.deleteBranch}, stop children ${plan.defaults.stopChildren}`);
       for (const n of plan.notes) console.log(`  note: ${n}`);
       return;
-    } catch (e) { return args.includes("--json") ? jsonFail(e.code || "E_LIFECYCLE_FAILED", e.message, e.candidates ? { candidates: e.candidates } : undefined) : die(e.message); }
+    } catch (e) { return args.includes("--json") ? jsonFail(e.code || "E_LIFECYCLE_FAILED", e.message, e.candidates ? { ...e.details, candidates: e.candidates } : e.details) : die(e.message); }
   }
   // The calling instance knows its own home: self-retire never needs to
   // disambiguate a same-named twin by hand.
@@ -2258,13 +2127,7 @@ function retireCmd() {
   const isSelf = process.env.PI_AGENT_INSTANCE === name || process.env.OATS_INSTANCE === name;
   if (isSelf && !args.includes("--self")) die(`"${name}" is the calling instance — self-retire is irreversible; if your task is complete and you were told to retire, re-run with --self (finish your memory files FIRST; your session dies ~8s after)`);
   if (!isSelf && args.includes("--self")) die(`--self given but "${name}" is not the calling instance`);
-  let root = ensureRoot(dirFlag());
-  // Cross-repo: the instance may home in a sibling repo of the team scope.
-  if (!listAgents(root).some((a) => existsSync(join(a._dir, "instances", name)))) {
-    const hit = findTeamInstance(dirFlag(), name);
-    // Stdout carries only the envelope in JSON mode (the Desktop parses it).
-    if (hit && resolve(hit.root) !== resolve(root)) { root = hit.root; (args.includes("--json") ? console.error : console.log)(`(cross-repo: instance homes at ${shortPath(root)})`); }
-  }
+  const root = ensureRoot(dirFlag());
   const retiringHome = homeFlag || findInstanceHome(root, name);
   // K3: a GUI-driven Remove carries the plan revision it showed and an
   // idempotency key. The revision is revalidated against a fresh plan
@@ -2281,7 +2144,7 @@ function retireCmd() {
     const replay = (dir) => { const p = join(dir, `.oats-retire-receipt.${idemKey}.json`); if (!existsSync(p)) return false; try { const prior = JSON.parse(readFileSync(p, "utf8")); if (prior.retired !== name) return false; if (args.includes("--json")) jsonOk({ ...prior, replayed: true }); else console.log(`retire ${name}: replayed receipt for key ${idemKey}`); return true; } catch { return false; } };
     for (const a of listAgents(root)) if (replay(join(a._dir, "instances"))) return;
     let fresh;
-    try { fresh = planRetire(dirFlag(), root, name, { home: homeFlag }); } catch (e) { return args.includes("--json") ? jsonFail(e.code || "E_LIFECYCLE_FAILED", e.message) : die(e.message); }
+    try { fresh = planRetire(dirFlag(), root, name, { home: homeFlag }); } catch (e) { return args.includes("--json") ? jsonFail(e.code || "E_LIFECYCLE_FAILED", e.message, e.details) : die(e.message); }
     replayPath = join(dirname(fresh.home), `.oats-retire-receipt.${idemKey}.json`);
     if (fresh.planRevision !== planRev) return args.includes("--json") ? jsonFail("E_PLAN_STALE", `the retire plan changed since it was shown (${planRev} → ${fresh.planRevision}); review the fresh plan`, { plan: fresh }) : die(`the retire plan changed since it was shown; re-run oats retire ${name} --plan`);
     // The plan promised: recorded children are STOPPED first (bounded, never
@@ -2298,7 +2161,7 @@ function retireCmd() {
   }
   let r;
   try { r = retireInstance(root, name, { home: homeFlag, self: isSelf, deleteBranch: args.includes("--delete-branch"), discardWorktree: args.includes("--discard-worktree"), keepDir: args.includes("--keep-dir"), force: args.includes("--force"), ...(expectedBranch !== undefined ? { expectedBranch } : {}) }); }
-  catch (e) { if (!e?.code) throw e; return args.includes("--json") ? jsonFail(e.code, e.message, e.candidates ? { candidates: e.candidates } : undefined) : die(e.message); }
+  catch (e) { if (!e?.code) throw e; return args.includes("--json") ? jsonFail(e.code, e.message, e.candidates ? { ...e.details, candidates: e.candidates } : e.details) : die(e.message); }
   if (childrenStopped) r.childrenStopped = childrenStopped;
   if (replayPath) { r.planRevision = planRev; r.idempotencyKey = idemKey; r.replayed = false; try { writeFileAtomic(replayPath, JSON.stringify(r, null, 2)); } catch { /* receipt is evidence, not authority */ } }
   // A retired home's wake jobs are forgotten (definitions only; nothing is
@@ -2336,7 +2199,8 @@ function retireCmd() {
   // which is most of the harm of deleting it. Name the classes and the path.
   for (const recovery of r.workRecoveries || (r.workRecovery ? [r.workRecovery] : [])) {
     console.log(`Work that was not committed has been preserved: ${recovery.classes.join(", ")}`);
-    console.log(`  ${recovery.path}`);
+    console.log(`  ${recovery.path}${typeof recovery.bytes === "number" ? ` (${formatBytes(recovery.bytes)})` : ""}`);
+    for (const line of preservedOutputLines(recovery)) console.log(line);
   }
   if (isSelf) console.log("This window dies in ~8s — say any goodbyes now.");
 }
@@ -2347,9 +2211,11 @@ function retireCmd() {
 function scheduleCmd() {
   const sub = args[1];
   const id = args[2] && !args[2].startsWith("--") ? args[2] : undefined;
-  // One schedule-owning scope for a directory: the team workspace (the
-  // config level declaring the team), else the outermost config level.
-  const ws = scheduleScopeOf(dirFlag());
+  // One schedule-owning scope for a directory: its deployment (the directory
+  // holding oats-local.yaml), resolved when a subcommand needs it — inside the
+  // try, so no deployment in reach is a typed refusal (E_LOCAL_MISSING).
+  let scope;
+  const ws = () => (scope ??= scheduleScopeOf(dirFlag()));
   const io = { hostStatus: () => hostUnitStatus() };
   const out = (result) => { if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2)); };
   const readSpec = () => {
@@ -2363,34 +2229,34 @@ function scheduleCmd() {
   const needId = () => { if (!id) throw scheduleError("E_BAD_ARGS", `oats schedule ${sub} <id>`); return id; };
   try {
     switch (sub) {
-      case "list": return out(listSchedules(ws, io));
-      case "show": return out({ schedule: describeSchedule(ws, needId(), io) });
-      case "add": { const spec = readSpec(); if (id && spec.id === undefined) spec.id = id; if (id && spec.id !== id) throw scheduleError("E_SCHEDULE_INVALID", `id ${JSON.stringify(spec.id)} in the file does not match ${JSON.stringify(id)}`, { field: "id" }); return out({ schedule: addSchedule(ws, spec, io) }); }
-      case "update": return out({ schedule: updateSchedule(ws, needId(), readSpec(), io) });
-      case "enable": return out({ schedule: setScheduleEnabled(ws, needId(), true, io) });
-      case "disable": return out({ schedule: setScheduleEnabled(ws, needId(), false, io) });
-      case "run": return out(runScheduleNow(ws, needId(), { io, force: args.includes("--force") }));
-      case "remove": return out(removeSchedule(ws, needId(), { force: args.includes("--force") }));
-      case "reconcile": return out(reconcileSchedule(ws, needId(), { io, clear: args.includes("--clear") }));
+      case "list": return out(listSchedules(ws(), io));
+      case "show": return out({ schedule: describeSchedule(ws(), needId(), io) });
+      case "add": { const spec = readSpec(); if (id && spec.id === undefined) spec.id = id; if (id && spec.id !== id) throw scheduleError("E_SCHEDULE_INVALID", `id ${JSON.stringify(spec.id)} in the file does not match ${JSON.stringify(id)}`, { field: "id" }); return out({ schedule: addSchedule(ws(), spec, io) }); }
+      case "update": return out({ schedule: updateSchedule(ws(), needId(), readSpec(), io) });
+      case "enable": return out({ schedule: setScheduleEnabled(ws(), needId(), true, io) });
+      case "disable": return out({ schedule: setScheduleEnabled(ws(), needId(), false, io) });
+      case "run": return out(runScheduleNow(ws(), needId(), { io, force: args.includes("--force") }));
+      case "remove": return out(removeSchedule(ws(), needId(), { force: args.includes("--force") }));
+      case "reconcile": return out(reconcileSchedule(ws(), needId(), { io, clear: args.includes("--clear") }));
       case "tick": {
         const dryRun = args.includes("--dry-run");
         if (args.includes("--host")) return out(tickHost({ io, dryRun }));
         const reg = readRegistry();
-        const considered = withHostLock(() => tickWorkspace(ws, { io, reg, wsList: reg.workspaces.includes(ws) ? reg.workspaces : [...reg.workspaces, ws], dryRun }));
-        return out({ tickedAt: new Date().toISOString(), considered, scheduler: schedulerStatus(ws, io) });
+        const considered = withHostLock(() => tickWorkspace(ws(), { io, reg, wsList: reg.workspaces.includes(ws()) ? reg.workspaces : [...reg.workspaces, ws()], dryRun }));
+        return out({ tickedAt: new Date().toISOString(), considered, scheduler: schedulerStatus(ws(), io) });
       }
       case "host": {
         const op = args[2];
-        if (op === "install") { registerWorkspace(ws); installHostUnit(); return out({ scheduler: schedulerStatus(ws, io) }); }
-        if (op === "uninstall") { unregisterWorkspace(ws); if (!readRegistry().workspaces.length) uninstallHostUnit(); return out({ scheduler: schedulerStatus(ws, io) }); }
-        if (op === "status") return out({ scheduler: schedulerStatus(ws, io) });
+        if (op === "install") { registerWorkspace(ws()); installHostUnit(); return out({ scheduler: schedulerStatus(ws(), io) }); }
+        if (op === "uninstall") { unregisterWorkspace(ws()); if (!readRegistry().workspaces.length) uninstallHostUnit(); return out({ scheduler: schedulerStatus(ws(), io) }); }
+        if (op === "status") return out({ scheduler: schedulerStatus(ws(), io) });
         throw scheduleError("E_BAD_ARGS", "oats schedule host install|uninstall|status");
       }
       default: throw scheduleError("E_BAD_ARGS", "usage: oats schedule list|show <id>|add <id> --file <spec.json>|update <id> --file <spec.json>|enable <id>|disable <id>|run <id> [--force]|remove <id> [--force]|reconcile <id> [--clear]|tick [--dry-run] [--host]|host install|uninstall|status [--dir <workspace>|--server <id>] [--json]");
     }
   } catch (e) {
     // K8b: typed refusal details travel (identity mismatch: key/declared; a refused file: its integrity source).
-    const details = Object.fromEntries(["key", "declared", "source", "field"].filter((k) => e[k] !== undefined).map((k) => [k, e[k]]));
+    const details = { ...(e.details && typeof e.details === "object" ? e.details : {}), ...Object.fromEntries(["key", "declared", "source", "field"].filter((k) => e[k] !== undefined).map((k) => [k, e[k]])) };
     if (JSON_MODE) jsonFail(e.code || "E_SCHEDULE_FAILED", e.message, Object.keys(details).length ? details : undefined); else die(e.message);
   }
 }
@@ -2440,7 +2306,7 @@ async function sessionCmd() {
       result = uploadAttachment({ file, home: home === true ? undefined : home });
     } else throw Object.assign(new Error("usage: oats session inspect|input|attach|start|restart|receive|upload --home /absolute/home [--text-file path] [--model id] [--launch-config name|none] [--runtime pi|claude|codex] [--yolo|--no-yolo] [--stop-grace seconds] [--name file] [--file path] [--json]"), { code: "E_BAD_ARGS" });
     if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2));
-  } catch (e) { cmdFail(e.code || "E_SESSION_FAILED", e.message); }
+  } catch (e) { cmdFail(e.code || "E_SESSION_FAILED", e.message, e.details); }
 }
 
 async function paneCmd() {
@@ -2604,7 +2470,7 @@ function memberUrlOf(discovery, key) {
  *     namespace's capability into <deployment>/.oats/modules/<cap>@<commit12>/
  *     and run THAT copy with the soul's merged payload (lib/operator-dispatch.mjs;
  *     contracts doc, "Post-0.25.0 clarifications");
- *   - otherwise the classic config chain.
+ *   - otherwise no namespace is active (the help fallthrough answers).
  */
 async function capabilityCommand() {
   // JSON-aware boundary: in --json mode every dispatch failure — inactive or
@@ -2636,7 +2502,8 @@ async function capabilityCommand() {
       throw e;
     }
     if (!hit) return NOT_DISPATCHED;
-    const teamCtx = hit.soul?.team ? { name: hit.soul.team } : undefined;
+    // The same team/workspace facts a spawn hook receives (lead decision c3-7).
+    const teamCtx = teamEnv(resolvedFromPrepared(hit.prepared, hit.deployment));
     // No home, so no recorded soul: the soul's per-commit copy is OATS_SOUL when a spawn
     // already fetched exactly this commit; otherwise the command gets none (never ambient).
     const cachedSoul = hit.soul?.commit ? join(hit.deployment, "agents", hit.soul.name, "souls", String(hit.soul.commit).slice(0, 12)) : null;
@@ -2647,44 +2514,42 @@ async function capabilityCommand() {
     let activeIds;
     let context = process.cwd();
     let teamCtx;
-    const instanceHome = process.env.PI_AGENT_HOME || process.env.OATS_HOME;
+    // OATS_INSTANCE_HOME is the canonical identity; the older names still count.
+    const instanceHome = process.env.OATS_INSTANCE_HOME || process.env.PI_AGENT_HOME || process.env.OATS_HOME;
     const metaFile = instanceHome && join(instanceHome, "instance.json");
     // Capability-id keyed — never answer for `constructor`/`toString`. Belt and
     // braces: the ids come from instance.json, which spawn wrote from resolved
     // manifests. Null-prototype because the dispatcher indexes it with the
     // namespace the operator typed on the command line.
     let capSettings = Object.create(null);
-    let instanceModules = false;
     let deployment = null;
     let soulDir;
     try {
       if (metaFile && existsSync(metaFile)) {
         const meta = JSON.parse(readFileSync(metaFile, "utf8"));
-        instanceModules = !!(meta.modules && typeof meta.modules === "object");
         activeIds = (meta.capabilities || []).map((c) => c.id);
         for (const c of meta.capabilities || []) capSettings[c.id] = c.settings || {};
+        // Workspace-model homes only (lead decision c3 Q2).
+        if (!isWorkspaceHome(meta)) { const e = preWorkspaceHome(instanceHome, "nothing was dispatched"); bail(e.code, e.message); }
         context = meta.repo || context;
         soulDir = instanceSoulDir(instanceHome, meta);
-        // Team: the spawn-time snapshot, but fall back to live config — instances
-        // spawned before a team: block was declared have no snapshot.
-        teamCtx = meta.team || resolveOatsConfig(context).team;
+        // The team/workspace facts the home recorded at spawn, as its hooks got them.
+        const ws = meta.workspace && typeof meta.workspace === "object" ? meta.workspace : {};
+        const messaging = (meta.capabilities || []).find((c) => c.layer === "messaging")?.id;
+        teamCtx = teamEnv({ workspace: { key: ws.key, name: ws.name, deployment: ws.deployment, team: ws.soul?.team, slots: { messaging } }, payloads: meta.providers });
       } else {
         // Not inside a home: a v2 deployment (oats-local.yaml in reach) resolves
         // through the workspace, exactly as a spawn of --soul would (below).
         try { const { deploymentOf } = await import("../lib/operator-dispatch.mjs"); deployment = deploymentOf(context); }
         catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) bail(e.code, e.message, e.details); throw e; }
-        if (!deployment) {
-          const resolved = resolveOatsConfig(context, flag("soul"));
-          activeIds = resolved.capabilities.map((c) => c.id);
-          for (const c of resolved.capabilities) capSettings[c.id] = c.settings || {};
-          teamCtx = resolved.team;
-        }
+        // No home and no deployment in reach: no capability namespace is active.
+        if (!deployment) return NOT_DISPATCHED;
       }
     } catch (e) { bail("E_CONFIG_BROKEN", e.message || e); throw e; }
     if (deployment) return operatorDispatch();
     // Workspace model: an instance's own materialized modules are the command
     // namespaces available to it (instance.json.modules → <home>/.oats/modules).
-    const mans = Object.values(capabilityManifests(instanceModules ? instanceHome : context)).filter((m) => m.command === cmd && m.commands);
+    const mans = Object.values(capabilityManifests(instanceHome)).filter((m) => m.command === cmd && m.commands);
     if (!mans.length) return NOT_DISPATCHED;
     if (mans.length > 1) bail("E_DUPLICATE_NAMESPACE", `duplicate operational command namespace "${cmd}": ${mans.map((m) => m.capability).join(", ")}`);
     const m = mans[0];
@@ -2747,7 +2612,7 @@ async function capabilityCommand() {
       // canonical absolute executable of THIS CLI; official consumers execFile
       // it directly and never resolve `oats` from PATH or a shell.
       OATS_CLI_BIN: CLI_BIN,
-      OATS_TEAM_NAME: teamCtx?.name || "", OATS_TEAM_ID: teamCtx?.id || "", OATS_TEAM_SCOPE: teamCtx?.scope || "",
+      ...teamEnv(null), ...(teamCtx || {}),
       // The soul the command acts for (an instance home's recorded soul directory):
       // homes carry no soul link, so providers read it here.
       ...(soulDir ? { OATS_SOUL: soulDir } : {}),
@@ -3134,7 +2999,8 @@ async function serverRouteCmd() {
     console.log(`Retired ${r.retired} on ${id}${r.deferred ? " (deferred completion scheduled there)" : ""}${r.rollbackIncomplete ? " — cleanup INCOMPLETE on the server, home retained there" : ""}`);
     for (const recovery of r.workRecoveries || (r.workRecovery ? [r.workRecovery] : [])) {
       console.log(`Work that was not committed has been preserved on ${target.sshHost}: ${(recovery.classes || []).join(", ")}`);
-      console.log(`  ${recovery.path}`);
+      console.log(`  ${recovery.path}${typeof recovery.bytes === "number" ? ` (${formatBytes(recovery.bytes)})` : ""}`);
+      for (const line of preservedOutputLines(recovery)) console.log(line);
     }
     if (r.rollbackIncomplete) { for (const f of r.rollbackIncomplete) console.error(`  ${f}`); console.error(`Fix the cause there and re-run \`oats retire ${r.retired} --server ${id}\`.`); process.exit(1); }
   } else {
@@ -3225,7 +3091,7 @@ else if (cmd === "operation") await operationCmd();
 else if (cmd === "launch-config") await launchConfigCmd();
 else if (cmd === "doctor") {
   const doctorDir = args[1] && !args[1].startsWith("--") ? args[1] : undefined;
-  args.includes("--json") ? doctorJson(doctorDir) : doctor(doctorDir);
+  await (args.includes("--json") ? doctorJson(doctorDir) : doctor(doctorDir));
 }
 else if (cmd === "update") {
   // `oats update <package>` left with the installed tier (packages are pinned in

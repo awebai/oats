@@ -83,9 +83,8 @@ test("workspace spawn chain over Northwind: sync → spawn materializes whole mo
     assert.equal(firstPreview.preview, true);
     assert.deepEqual(firstPreview.modules.map((m) => m.name).sort(), ["nw-deploy", "nw-house-style", "nw-release-tooling", "oats.core", "oats.okf"]);
     assert.ok(firstPreview.modules.every((m) => m.changedSince === null), "no previous instance → changedSince null");
-    assert.equal(firstPreview.soulFetched, true, "the preview fetched the soul SOURCE (a per-commit copy, not an instance) and says so");
-    assert.ok(isRegular(join(agentsRoot, "release-manager", "soul", "soul.yaml")), "the fetched soul copy is under <agents-root>/<soul>/soul/");
-    assert.ok(!existsSync(join(agentsRoot, "release-manager", "instances")), "a preview creates no instance");
+    assert.equal(firstPreview.soulFetched, true, "the preview fetched the soul SOURCE (to a temporary copy) and says so");
+    assert.ok(!existsSync(join(agentsRoot, "release-manager")), "a preview writes no soul copy and no instance under <agents-root>");
     // Addendum 5: a manifest's declared setting default (oats.okf harvest-runtime: pi) is the LOWEST
     // payload layer — the preview shows it with its origin, and the decision binds exactly that payload.
     assert.equal(firstPreview.settings["oats.okf"]["harvest-runtime"], "pi", "the manifest default reaches the merged payload");
@@ -112,10 +111,11 @@ test("workspace spawn chain over Northwind: sync → spawn materializes whole mo
     writeFileSync(join(dep, "oats-local.yaml"), localText);
     r = oats(spawnArgs("release-manager", "--preview", "--provider", "oats.okf", "state-dir=/tmp/x"), { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.equal(envelope(r).result.soulFetched, false, "a second preview at the same commit reuses the copy");
+    assert.equal(envelope(r).result.soulFetched, true, "every preview before a spawn fetches again: nothing is cached by a preview");
     r = oats(spawnArgs("release-manager", "--preview").filter((a) => a !== "--json"), { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.match(r.stdout, /^preview release-manager → release-manager-x .*nothing was created$/m, "text preview: no fetch note when the copy is reused");
+    assert.match(r.stdout, /^preview release-manager → release-manager-x .*nothing was created \(the soul source was fetched to a temporary copy, not kept\)$/m, "text preview: says the soul copy was temporary");
+    assert.ok(!existsSync(join(agentsRoot, "release-manager")), "still nothing under <agents-root>");
 
     // ---- spawn release-manager with an instance-level provider payload ----
     r = oats(spawnArgs("release-manager", "--provider", "oats.okf", "state-dir=/tmp/x"), { cwd: dep, env, base });
@@ -125,9 +125,11 @@ test("workspace spawn chain over Northwind: sync → spawn materializes whole mo
     const spawned = doc.result;
     assert.equal(spawned.instance, "release-manager-x");
     assert.equal(spawned.launched, false);
-    assert.match(r.stderr, /workspace soul: "release-manager" from .*agents\.git @ [0-9a-f]{12}, team engineering\)/, "progress goes to stderr (the soul copy from the preview is reused: no fetch note)");
+    assert.match(r.stderr, /workspace soul: "release-manager" from .*agents\.git @ [0-9a-f]{12}, team engineering; soul source fetched\)/, "progress goes to stderr (the spawn, not the previews, fills the soul cache)");
     const home = spawned.home;
     assert.equal(home, join(agentsRoot, "release-manager", "instances", "release-manager-x"));
+    r = oats(spawnArgs("release-manager", "--preview", "--provider", "oats.okf", "state-dir=/tmp/x"), { cwd: dep, env, base });
+    assert.equal(envelope(r).result.soulFetched, false, "a preview after the spawn reads the cached copy of the same commit");
 
     // The home on disk: every module copied WHOLE under .oats/modules/<name>/ (decision 7).
     const modulesDir = join(home, ".oats", "modules");

@@ -2,11 +2,18 @@
   "root": "<base>/deployment/agents",
   "agents": [
     {
-      "schemaVersion": "2",
+      "schemaVersion": 2,
       "name": "dev",
       "description": "Golden fixture developer soul.",
       "work": "checkout",
-      "capabilities": "",
+      "capabilities": {
+        "golden.knowledge": {
+          "from": "here"
+        },
+        "golden.messaging": {
+          "from": "here"
+        }
+      },
       "kind": "persistent",
       "dir": "<base>/deployment/agents/dev",
       "instances": [
@@ -26,7 +33,7 @@
               "allowed": true,
               "origin": {
                 "kind": "default",
-                "detail": "no declaration: children allowed"
+                "detail": "no spawn option: children allowed"
               }
             }
           },
@@ -80,12 +87,17 @@
               ]
             }
           ],
-          "skills": [],
-          "instructions": [
+          "skills": [
             {
-              "source": "kernel:oats",
-              "file": "<kernel>/injects/oats.md"
+              "name": "golden-knowledge",
+              "source": "module:golden.knowledge"
             },
+            {
+              "name": "golden-messaging",
+              "source": "module:golden.messaging"
+            }
+          ],
+          "instructions": [
             {
               "source": "kernel:instance-boundary",
               "file": "<kernel>/injects/instance-boundary.md"
@@ -139,12 +151,6 @@
               },
               {
                 "type": "instruction-block",
-                "source": "kernel:oats",
-                "declared": "<kernel>/injects/oats.md",
-                "resolved": "<kernel>/injects/oats.md"
-              },
-              {
-                "type": "instruction-block",
                 "source": "kernel:instance-boundary",
                 "declared": "<kernel>/injects/instance-boundary.md",
                 "resolved": "<kernel>/injects/instance-boundary.md"
@@ -169,12 +175,19 @@
               }
             ],
             "materialized": {
-              "skills": [],
-              "instructions": [
+              "skills": [
                 {
-                  "source": "kernel:oats",
-                  "file": "<kernel>/injects/oats.md"
+                  "name": "golden-knowledge",
+                  "source": "module:golden.knowledge",
+                  "from": "<base>/deployment/agents/dev/instances/dev-pi-checkout-kstub-mstub/.oats/modules/golden.knowledge/skills/golden-knowledge"
                 },
+                {
+                  "name": "golden-messaging",
+                  "source": "module:golden.messaging",
+                  "from": "<base>/deployment/agents/dev/instances/dev-pi-checkout-kstub-mstub/.oats/modules/golden.messaging/skills/golden-messaging"
+                }
+              ],
+              "instructions": [
                 {
                   "source": "kernel:instance-boundary",
                   "file": "<kernel>/injects/instance-boundary.md"

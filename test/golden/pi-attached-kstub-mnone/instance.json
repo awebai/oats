@@ -15,7 +15,7 @@
       "allowed": true,
       "origin": {
         "kind": "default",
-        "detail": "no declaration: children allowed"
+        "detail": "no spawn option: children allowed"
       }
     }
   },
@@ -44,12 +44,13 @@
       "trusted": true
     }
   ],
-  "skills": [],
-  "instructions": [
+  "skills": [
     {
-      "source": "kernel:oats",
-      "file": "<kernel>/injects/oats.md"
-    },
+      "name": "golden-knowledge",
+      "source": "module:golden.knowledge"
+    }
+  ],
+  "instructions": [
     {
       "source": "kernel:instance-boundary",
       "file": "<kernel>/injects/instance-boundary.md"
@@ -83,12 +84,6 @@
       },
       {
         "type": "instruction-block",
-        "source": "kernel:oats",
-        "declared": "<kernel>/injects/oats.md",
-        "resolved": "<kernel>/injects/oats.md"
-      },
-      {
-        "type": "instruction-block",
         "source": "kernel:instance-boundary",
         "declared": "<kernel>/injects/instance-boundary.md",
         "resolved": "<kernel>/injects/instance-boundary.md"
@@ -107,12 +102,14 @@
       }
     ],
     "materialized": {
-      "skills": [],
-      "instructions": [
+      "skills": [
         {
-          "source": "kernel:oats",
-          "file": "<kernel>/injects/oats.md"
-        },
+          "name": "golden-knowledge",
+          "source": "module:golden.knowledge",
+          "from": "<base>/deployment/agents/dev/instances/dev-pi-attached-kstub-mnone/.oats/modules/golden.knowledge/skills/golden-knowledge"
+        }
+      ],
+      "instructions": [
         {
           "source": "kernel:instance-boundary",
           "file": "<kernel>/injects/instance-boundary.md"

@@ -394,6 +394,17 @@ test("LOW: manifest hygiene — a missing capability dir or package path is E_PA
   await assert.rejects(readPackageManifests(remote, ghost.url, c, "nope"), (e) => e.code === "E_PACKAGE_MANIFEST");
 });
 
+test("a package capability manifest that breaks the kernel contract is E_PACKAGE_MANIFEST at read, naming the pointer", async () => {
+  const bad = new FakeRepo("github.com/x/bad");
+  const c = bad.commit("1", {
+    "oats-package/oats-package.json": JSON.stringify({ package: "x.bad", version: "1.0.0", capabilities: ["capabilities/tool"] }),
+    "oats-package/capabilities/tool/oats.json": JSON.stringify({ capability: "x.tool", version: "1.0.0", description: "d", hooks: { launch: { command: "bin/t.mjs launch", required: true } } }),
+  });
+  bad.tag("v1.0.0", c);
+  await assert.rejects(readPackageManifests(fakeRemote([bad]), bad.url, c, "oats-package"),
+    (e) => e.code === "E_PACKAGE_MANIFEST" && e.details.pointer === "/hooks/launch/required" && /hook "launch" cannot be required/.test(e.message));
+});
+
 // ---------- pre-0.26 locks (approval removed, human decision 2026-09-24) ----------
 
 test("a pre-0.26 lock carrying approved { executables, at } or approved: null validates; writeLock/canonicalLock/resolvePackages drop the field", async () => {
