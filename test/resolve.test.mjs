@@ -638,6 +638,37 @@ test("compatibility floors: pass, fail (E_COMPATIBILITY), and floors on member m
   await rejectsCode(resolveSoul(bad, findSoul(bad, "s"), opts()), "E_COMPATIBILITY", (e) => assert.equal(e.details.why, "range"));
 });
 
+test("a capability's own kernel range (manifest compatibility.oats) must admit the running kernel: E_CAPABILITY_INCOMPATIBLE for package and member capabilities", async () => {
+  const pkgKernel = JSON.parse((await import("node:fs")).readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+  assert.equal(resolveLib.KERNEL_VERSION, pkgKernel, "the running kernel is this package's version");
+  const d = discovery({ souls: { s: soulDef("s") } });
+  const withRange = async (m, range, fn) => { const had = Object.hasOwn(m, "compatibility"), was = m.compatibility; m.compatibility = { oats: range };
+    try { return await fn(); } finally { if (had) m.compatibility = was; else delete m.compatibility; } };
+  // A package capability (oats.okf, a workspace default) whose floor no kernel meets.
+  await withRange(M.okf, ">=99.0.0", () => rejectsCode(resolveSoul(d, findSoul(d, "s"), opts()), "E_CAPABILITY_INCOMPATIBLE", (e) => {
+    assert.deepEqual([e.details.capability, e.details.range, e.details.kernel, e.details.from.kind, e.details.from.package], ["oats.okf", ">=99.0.0", pkgKernel, "package", "oats.okf"]);
+    assert.match(e.message, /oats\.okf requires oats >=99\.0\.0; this kernel is .*pin a release of oats\.okf/);
+  }));
+  // A member capability is held to its range too.
+  await withRange(M.houseStyle, ">=99.0.0", () => rejectsCode(resolveSoul(d, findSoul(d, "s"), opts()), "E_CAPABILITY_INCOMPATIBLE", (e) => {
+    assert.deepEqual([e.details.capability, e.details.from.kind], ["nw-house-style", "member"]);
+    assert.match(e.message, /update nw-house-style in /);
+  }));
+  // The kernel is the running one unless given: a range admits exactly the kernels it names.
+  await withRange(M.okf, ">=0.26.0", async () => {
+    const r = await resolveSoul(d, findSoul(d, "s"), opts({ kernel: "0.26.0" }));
+    assert.ok(r.modules.some((m) => m.name === "oats.okf"));
+    await rejectsCode(resolveSoul(d, findSoul(d, "s"), opts({ kernel: "0.25.9" })), "E_CAPABILITY_INCOMPATIBLE");
+    await rejectsCode(resolveSoul(d, findSoul(d, "s"), opts({ kernel: "0.26.0-rc.1" })), "E_CAPABILITY_INCOMPATIBLE", undefined, "a prerelease is below its release");
+  });
+  await withRange(M.okf, "^0.25.0", () => rejectsCode(resolveSoul(d, findSoul(d, "s"), opts({ kernel: "1.0.0" })), "E_CAPABILITY_INCOMPATIBLE"));
+  // An unparseable range is refused, typed, with why: "range".
+  await withRange(M.okf, "banana", () => rejectsCode(resolveSoul(d, findSoul(d, "s"), opts({ kernel: "0.26.0" })), "E_CAPABILITY_INCOMPATIBLE", (e) => assert.equal(e.details.why, "range")));
+  // No range: always compatible.
+  assert.deepEqual(resolveLib.kernelCompatibility({ capability: "x" }, "0.26.0"), { ok: true, range: null, kernel: "0.26.0" });
+  assert.deepEqual(resolveLib.kernelCompatibility({ capability: "x", compatibility: { oats: ">=0.25.0" } }, "0.26.0"), { ok: true, range: ">=0.25.0", kernel: "0.26.0" });
+});
+
 test("satisfiesRange: >=, ^, ~, exact, partial, *, AND, ||, prereleases (no dependency)", () => {
   const cases = [
     ["2.1.3", ">=2.1.0", true], ["2.1.3", ">=2.2.0", false], ["2.1.3", ">2.1.3", false], ["2.1.3", "<=2.1.3", true], ["2.1.3", "<2.1.3", false],

@@ -68,6 +68,13 @@ A self-contained package has an `oats.json`:
   namespace.
 - `command` is an optional, unique CLI namespace. The example exposes
   `oats team-chat auth`.
+- `compatibility.oats` is the kernel range the capability runs on. The kernel
+  refuses to compose a capability whose range does not admit it
+  (`E_CAPABILITY_INCOMPATIBLE`, naming capability, range and kernel) wherever a
+  soul or capability agent resolves (spawn, `spawn --preview`, `inspect
+  --soul`, operator commands). `oats inspect` shows each module's
+  `compatibility: { ok, range, kernel }`; a home whose spawned module no longer
+  admits the running kernel reports a `capability-incompatible` problem.
 - `layer` is optional and may name exactly one fundamental layer. Two active
   packages cannot implement the same layer for one soul.
 - `skills` entries can be skill directories or roots containing skills.

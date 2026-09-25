@@ -233,6 +233,10 @@ Checked at resolution against the locked version (`E_COMPATIBILITY`,
 naming capability, package, version and range). A package pinned by OID has no
 version to check (`why: "unversioned"`): pin a tagged version.
 
+Separately, each capability's own `compatibility.oats` (its manifest's kernel
+range) must admit the running kernel, for package and member capabilities
+alike (`E_CAPABILITY_INCOMPATIBLE`); see [capabilities.md](capabilities.md).
+
 ## Publishing a package from a member repo
 
 A repo can be a **member** of the workspace **and** publish a package; the two
