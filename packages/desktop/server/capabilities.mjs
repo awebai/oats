@@ -1,6 +1,6 @@
 /** Provider inspection and mutations use the kernel's resolver, never a GUI copy. */
 import { dirname, isAbsolute } from 'node:path';
-import { cliCapability } from '../cli-adapter.mjs';
+import { cliCapability, operationArgs } from '../cli-adapter.mjs';
 
 const fail = (message, code = 'E_BAD_ARGS') => { throw Object.assign(new Error(message), { code }); };
 
@@ -20,6 +20,8 @@ export async function capabilityRequest(request, { workspace, cli, agents = [], 
   // Read-only plus provider operations: a v2 soul is edited in its repository,
   // and workspace model v2 removed `oats use` (capabilities are declared).
   if (!['inspect', 'run'].includes(action)) fail('Unknown capability action');
+  // Declared operation arguments only travel with a run (the kernel refuses undeclared ones).
+  if (request.args !== undefined && (action !== 'run' || !operationArgs(request.args))) fail('Invalid operation arguments');
   let soul, agentsRoot, home;
   let context = workspace.scope;
   if (selector.home !== undefined) {
@@ -41,7 +43,7 @@ export async function capabilityRequest(request, { workspace, cli, agents = [], 
   } else fail('Select a soul or an instance home (inspection has no scope subject)');
   const envelope = await invoke(cli.bin, {
     action, context, server, soul, agentsRoot, home,
-    operation: request.operation,
+    operation: request.operation, ...(request.args !== undefined ? { args: request.args } : {}),
     localCwd: server ? localCwd : context || workspace.scope,
   });
   if (!envelope.ok) fail(envelope.error?.message || 'Capability operation failed', envelope.error?.code || 'E_OPERATION_FAILED');

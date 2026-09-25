@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_TEAM_NOT_ELIGIBLE",
+    "message": "messaging:join: not eligible: marketing (eligible: dev, reviewers)",
+    "details": {
+      "exit": 1,
+      "envelope": {
+        "schemaVersion": 1,
+        "ok": false,
+        "error": {
+          "code": "E_TEAM_NOT_ELIGIBLE",
+          "message": "not eligible: marketing (eligible: dev, reviewers)"
+        }
+      }
+    }
+  }
+}

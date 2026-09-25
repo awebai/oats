@@ -179,6 +179,40 @@ the settled DOM; stale successes and rejections cannot overwrite the current
 observation. Native visual acceptance is not inferred from the DOM/CSSOM and
 computed-token AA tests.
 
+## Team controls on a live instance (teams contract 2026-09-25)
+
+An instance's inspector shows a **Teams** section (after its Instance facts)
+when the home's messaging provider **declares** the home operation
+`messaging:teams`; Join/Leave need `messaging:join` / `messaging:leave`, whose
+one required argument's name is read from the operation row (`--arg
+<name>=<label>`). The gate is never a provider name or version
+(`teams-panel.mjs`). No messaging provider: no section. A provider without
+`messaging:teams`: "Not supported by this messaging provider." — never an
+error. A soul subject has no section (home operations).
+
+The teams document (`{personal{team}, primary, eligible[{label, team,
+joined}], joined[{label, team, since, identityHome, receive}], unmapped[label],
+at}`) is read only from an `operationsApi: 2` run for exactly that operation
+and decoded strictly (exact keys, bounded strings, absolute identity homes,
+unique labels). Rows: the personal team (always on, no Leave); each eligible
+label (primary marked) with Join, or when joined its date, how its mail
+arrives (`poll` → "Checks this team's mail between tasks", `native` →
+"Receives this team's mail as it arrives", anything else as sent — a poll team
+never reads as live delivery), its identity home and Leave; labels the
+workspace does not map, unavailable. Join/Leave answer the same document, so
+the panel repaints from it; a refusal (`E_TEAM_NOT_ELIGIBLE`,
+`E_TEAM_PERSONAL`) shows the relayed message verbatim under its row with the
+code behind **Details**, keeps the last good state and re-reads. If the re-read
+no longer offers that row (e.g. the mapping was removed between read and
+click), the refusal moves to the top of the panel, verbatim with its code and
+"<label> is no longer offered to this instance.", and stays until the next team
+action or an explicit Refresh/Retry. One action at
+a time: while it runs every team control and Refresh are locked. Reads and
+actions carry the inspector's selection lifetime plus their own serial, checked
+on success and rejection, so an obsolete answer paints nothing and re-arms
+nothing. The generic Provider operations list leaves the three team verbs to
+the panel on an instance.
+
 ## Workspace view on workspace model v2 — Capabilities, Sources, sync (F2)
 
 Every fact comes from the installed kernel; the Desktop parses no deployment

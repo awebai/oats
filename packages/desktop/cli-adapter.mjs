@@ -363,7 +363,16 @@ export async function cliLaunchConfig(bin, { action, name, definition, keepEnv, 
 
 /** Inspection and provider operations share one CLI boundary. Read-only:
  * workspace model v2 removed `oats use`, and a soul is edited in its repository. */
-export async function cliCapability(bin, { action, context, server, soul, agentsRoot, home, operation, localCwd }, io = {}) {
+/** Operation arguments the provider declares (`--arg name=value`): a bounded
+ * record of names to single-line values. The kernel refuses undeclared ones. */
+export function operationArgs(args) {
+  if (args === undefined) return [];
+  if (!args || typeof args !== 'object' || Array.isArray(args) || Object.getPrototypeOf(args) !== Object.prototype) return null;
+  const entries = Object.entries(args);
+  if (entries.length > 8 || entries.some(([k, v]) => !/^[a-z][a-z0-9-]{0,63}$/.test(k) || typeof v !== 'string' || !v || v.length > 1024 || /[\x00-\x1f\x7f]/.test(v))) return null;
+  return entries.flatMap(([k, v]) => ['--arg', `${k}=${v}`]);
+}
+export async function cliCapability(bin, { action, context, server, soul, agentsRoot, home, operation, args, localCwd }, io = {}) {
   const bad = message => { throw Object.assign(new Error(message), { code: 'E_BAD_ARGS' }); };
   const value = (v, label) => {
     if (typeof v !== 'string' || !v || v.startsWith('-') || v.includes('\0')) bad(`Invalid ${label}`);
@@ -379,8 +388,11 @@ export async function cliCapability(bin, { action, context, server, soul, agents
   if (action === 'inspect') argv = ['inspect'];
   else if (action === 'run') {
     if (typeof operation !== 'string' || !/^(knowledge|messaging|tasks):[a-zA-Z0-9._-]+$/.test(operation)) bad('Select a declared provider operation');
-    argv = ['operation', 'run', operation];
+    const pairs = operationArgs(args);
+    if (!pairs) bad('Invalid operation arguments');
+    argv = ['operation', 'run', operation, ...pairs];
   } else bad('Unknown capability action');
+  if (action !== 'run' && args !== undefined) bad('Arguments belong to an operation run');
   return await runJson(bin, [...argv, ...target, '--json'], {
     cwd: localCwd, exec: io.exec, timeout: io.timeout ?? (action === 'run' ? 300_000 : ENVELOPE_TIMEOUT_MS),
   });
