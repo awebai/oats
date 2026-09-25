@@ -3,7 +3,7 @@
   "ok": false,
   "error": {
     "code": "E_DECISION_STALE",
-    "message": "the previewed decision changed (62bbfd8bac1d68147b0b81c2 → ec0b4e36789ee9886f97ef1a): release-manager-api-v2-2 from HEAD@c3d27e3876ef; preview again",
+    "message": "the previewed decision changed (562c2f6bfcdb591bf2f2d23c → cafa8a28d295c8927dc60792): release-manager-api-v2-2 from HEAD@8f6232aebf29; preview again",
     "details": {
       "decision": {
         "instance": "release-manager-api-v2-2",
@@ -11,7 +11,7 @@
         "branch": "agents/release-manager-api-v2-2",
         "base": {
           "ref": "HEAD",
-          "oid": "c3d27e3876efe34034db4d6e133c1ae819c08577"
+          "oid": "8f6232aebf29ba3ae56c3a0590814cd996e113ec"
         },
         "effective": {
           "repo": "/fixture/base/northwind-workspace/agents-repo",
@@ -28,17 +28,18 @@
             "nw-house-style": {},
             "nw-release-tooling": {},
             "nw.messaging": {
-              "private": "per-human",
-              "channels": [
-                "northwind-eng"
-              ],
               "identity": {
                 "mode": "global",
                 "resident": "ops"
-              }
+              },
+              "private": "per-human",
+              "channels": [
+                "northwind-eng"
+              ]
             },
             "oats.core": {},
             "oats.okf": {
+              "harvest-runtime": "pi",
               "owns": "release-manager",
               "reads": [
                 "platform-engineer",
@@ -47,8 +48,8 @@
             }
           }
         },
-        "resolution": "eb3a363a6bfc82f9de410481",
-        "revision": "ec0b4e36789ee9886f97ef1a"
+        "resolution": "5109e8f7293e48b2c6560cae",
+        "revision": "cafa8a28d295c8927dc60792"
       }
     }
   }

@@ -180,6 +180,26 @@ const short = oid => typeof oid === 'string' ? oid.slice(0, 7) : '';
 export const runtimeName = value => Object.hasOwn(RUNTIME_NAMES, value) ? RUNTIME_NAMES[value] : value;
 
 /** Human text for the kernel's model decision. */
+// Where the bound identity's mode came from (settingsOrigins, feature settings-origins).
+const ORIGIN_NAMES = { workspace: 'the workspace', 'workspace-team': "the workspace's team settings", soul: 'the soul', host: 'this host', spawn: 'this spawn' };
+const originName = kind => ORIGIN_NAMES[kind] ?? kind;
+/** The identity select's Default option: the mode only when the kernel reported
+ * it — a manifest default, or another origin it names. Never a mode it did not report. */
+function identityDefaultLabel(data, chosen, origins) {
+  const m = data?.messaging, bound = m?.identity;
+  if (!data || chosen || !bound) return 'Default';
+  const shown = bound.mode === 'global' ? `global as ${bound.resident}` : bound.mode;
+  // A global resident is the bound identity itself (reported by value).
+  if (!origins || !m.origin) return bound.mode === 'global' ? `Default · ${shown}` : 'Default';
+  return m.origin.kind === 'manifest-default' ? `Default · ${shown}` : `Default · ${shown} — from ${originName(m.origin.kind)}`;
+}
+function identityHintText(m, origins) {
+  const said = !m.identity ? `Messaging through ${m.provider}: the provider's own default identity.`
+    : m.identity.mode === 'global' ? `Messaging through ${m.provider}: acts as the resident ${m.identity.resident} through a session grant.`
+      : `Messaging through ${m.provider}: gets its own team identity.`;
+  if (!origins || !m.origin || m.origin.kind === 'spawn') return said;
+  return `${said} ${m.origin.kind === 'manifest-default' ? "This is the provider's default" : `Set by ${originName(m.origin.kind)}`} (${m.origin.at}).`;
+}
 export function modelText(data) {
   if (!data) return '';
   if (data.model === null) return data.modelSource === 'native default (explicit)' ? 'its own default model (chosen)' : 'its own default model';
@@ -544,13 +564,10 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     residentLabel.hidden = identity.value !== 'global';
     advancedTopics.textContent = `Work area · permissions${identityOffered() ? ' · identity' : ''} · launch · session · wake-up`;
     if (identityOffered()) {
-      const bound = data?.messaging?.identity;
-      identity.options[0].textContent = !data ? 'Default' : bound?.mode === 'global' && !identity.value ? `Default · global as ${bound.resident}` : identity.value ? 'Default' : 'Default · local';
+      const origins = !!cli()?.features?.includes('settings-origins');
+      identity.options[0].textContent = identityDefaultLabel(data, identity.value, origins);
       identityHint.classList.toggle('err', draftChoice.field === 'identity');
-      identityHint.textContent = draftChoice.field === 'identity' ? draftChoice.error
-        : !data || !data.messaging ? '' : (data.messaging.identity?.mode ?? 'local') === 'global'
-          ? `Messaging through ${data.messaging.provider}: acts as the resident ${data.messaging.identity.resident} through a session grant.`
-          : `Messaging through ${data.messaging.provider}: gets its own team identity.`;
+      identityHint.textContent = draftChoice.field === 'identity' ? draftChoice.error : !data || !data.messaging ? '' : identityHintText(data.messaging, origins);
     }
     const related = rel.value !== 'unrelated';
     relTo.hidden = !related; relTo.disabled = !related; relTo.setAttribute('aria-label', related ? `${rel.value[0].toUpperCase()}${rel.value.slice(1)} of which instance?` : 'Which instance');

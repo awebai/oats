@@ -65,8 +65,8 @@
       ],
       "exit": 0,
       "kernel": "0.25.9",
-      "sourceSha256": "1e94f5fd37777124adc317414428036e53120258a783032c522c0651842c38f2",
-      "fixtureSha256": "352f02ce46c6a725ee3ad98edf4d5f1e223a61bdd00c1f524adc1d2fc59bf86d"
+      "sourceSha256": "a3cdd2382023e7d80048290143ad36f29f85abd85a108168ea9d01d6bd491397",
+      "fixtureSha256": "12d7657a615978ea5be941260303c9fccd23c369c25f11f1816d21dd8a1fb1ed"
     },
     "souls": {
       "argv": [
@@ -78,8 +78,8 @@
       ],
       "exit": 0,
       "kernel": "0.25.9",
-      "sourceSha256": "b06e33aa9f991bcaa31f0501d3073822011bf58e6bd101c5a8007f17bc9fec1b",
-      "fixtureSha256": "612433b053a25b65e15b4a3b9f431b33c8ed5b51665c33568fbd4c4b5d4ec2d7"
+      "sourceSha256": "c86a4f112557936e9af915588d7412144842c11714df0e9c7f2ac704eed01799",
+      "fixtureSha256": "14c314d333e54a5cc2dae46bfad49e596767eec3aa4fe91dbd984ea4e725f683"
     },
     "preview-messaging-default": {
       "argv": [
@@ -97,8 +97,8 @@
       ],
       "exit": 0,
       "kernel": "0.25.9",
-      "sourceSha256": "e99ab7f4b8ab7b000034101bb6dcf741b9c4fdee090cefe00655f4880ae53217",
-      "fixtureSha256": "662036a6eb7092700130a617b8da25dc822fca1141cd9b11e4bb7807c0241e4a"
+      "sourceSha256": "6bd91420aeab73326718770d0815c0144844bec82107c9c6d1940d056d8345aa",
+      "fixtureSha256": "201e4db4a2cd8c6817fef667a94599812832a1e296c7f87099e44a2d50212911"
     },
     "preview-messaging-local": {
       "argv": [
@@ -119,8 +119,8 @@
       ],
       "exit": 0,
       "kernel": "0.25.9",
-      "sourceSha256": "b2c4ea10632e147f11624dd67b07838f1a37e79c7aed274d5371e58a955360db",
-      "fixtureSha256": "652956ad65229e50bebae11670d5bb402161c11690a3500c6408abddec565023"
+      "sourceSha256": "bde47be406ffc7b398f9d584db704de27756a4cd0d4becc0d45e1ad59f362f35",
+      "fixtureSha256": "f1767c3670916687de7902893a0a17836084b1b59153e694c040f9b7f4659195"
     },
     "preview-messaging-global": {
       "argv": [
@@ -144,8 +144,8 @@
       ],
       "exit": 0,
       "kernel": "0.25.9",
-      "sourceSha256": "3ad71cdb08d971d119d07f0e1fde4b1b63aff7dab8b6cf35e63f5abc0b38c5ab",
-      "fixtureSha256": "184d023d9ba432b147239e2f422e9004245972268eb44419692e0d17cdb20a93"
+      "sourceSha256": "def6da9a41967ae132663125c1a0bdca1cf63c8ca3e323852a7ee09de225f4fc",
+      "fixtureSha256": "d6045072410254185548b4f89a78b3cb9356b7fae44e5c249409824029b0341e"
     },
     "preview-provider-unknown": {
       "argv": [
@@ -187,7 +187,7 @@
         "nw.messaging",
         "identity.resident=ops",
         "--expect-decision",
-        "1e606fdb2b5bf143afc37cff",
+        "d97bd2fe23b393408c91ba1d",
         "--idempotency-key",
         "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
         "--no-launch",
@@ -195,8 +195,8 @@
       ],
       "exit": 0,
       "kernel": "0.25.9",
-      "sourceSha256": "bc36ad1c94e7fa163eb0cf4779b75610c3b771b9ed07f4d6f515b69877d3503c",
-      "fixtureSha256": "ffb412aff131e7b298046a451e510aa286d60a26a686fb072f6e32fa78caae71"
+      "sourceSha256": "53e2181f505d9251d6a327443e204cd19604eecfe746c6cb1c2bffb7c66053c2",
+      "fixtureSha256": "268e04a572a1c3b94b03cd42f02f34d31f68239f410019cb5828068b76010da4"
     },
     "apply-messaging-mismatch": {
       "argv": [
@@ -216,7 +216,7 @@
         "nw.messaging",
         "identity.resident=ops",
         "--expect-decision",
-        "62bbfd8bac1d68147b0b81c2",
+        "562c2f6bfcdb591bf2f2d23c",
         "--idempotency-key",
         "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
         "--no-launch",
@@ -224,8 +224,8 @@
       ],
       "exit": 1,
       "kernel": "0.25.9",
-      "sourceSha256": "52c60cacbf71296b0170eb44a08f9620ffe633c45d691e456a2b476bf3d0666e",
-      "fixtureSha256": "5ded2c5e45a54ca4d1f848e10549b5b302f891249e3eb1ffa46cdb451fbfbcb9"
+      "sourceSha256": "1912136b035677fb25cd9b934186afea102262d9ffe2da9116a6ca8cdd304d8a",
+      "fixtureSha256": "18d04b846d10677f84ecc8ed5c0fb8266ef16a91f0c10c80a6b2ccc864feabeb"
     },
     "apply-messaging-global-instance": {
       "argv": [
@@ -234,8 +234,8 @@
       ],
       "exit": 0,
       "kernel": "0.25.9",
-      "sourceSha256": "54c1bcb964ac33b1dd6c1ba8dccdfc404abd40afc2f22354fd8496558b87a5ca",
-      "fixtureSha256": "5eddf12ad166b9427a9dd2ff576ee2f89f32563d0ce72a1de3966eb9f0ac6c50"
+      "sourceSha256": "b3b9228beaacc0e19882b5cf719578ebd24dbb19e71f5b2f148c35fa27ce6dd2",
+      "fixtureSha256": "4c3cde60ba29a6e2bdab71152fa4030eded7a3938bb5d89d172c422561da25da"
     }
   }
 }

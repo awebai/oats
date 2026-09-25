@@ -54,11 +54,23 @@ test('the flags are the captured kernel argv: --provider <cap> identity.mode=…
   assert.deepEqual(choiceArgv(previewChoices({ purpose: 'api-v2', identity: GLOBAL })), apply.slice(apply.indexOf('--purpose'), apply.indexOf('--expect-decision')), 'preview and apply send the same choice');
 });
 
-test('the projection names the messaging provider and the identity the decision binds; the default payload has none', () => {
+const MANIFEST_DEFAULT = { kind: 'manifest-default', at: 'oats.json#/settings/identity/default' }, SPAWN = { kind: 'spawn', at: '--provider nw.messaging' };
+test('the projection names the messaging provider, the identity the decision binds, and where its mode came from (settingsOrigins)', () => {
   const t = { ...target };
-  assert.deepEqual(previewData(f3c('preview-messaging-default').result, t).messaging, { provider: 'nw.messaging', identity: null });
-  assert.deepEqual(previewData(f3c('preview-messaging-local').result, t).messaging, { provider: 'nw.messaging', identity: { mode: 'local', resident: null } });
-  assert.deepEqual(previewData(f3c('preview-messaging-global').result, t).messaging, { provider: 'nw.messaging', identity: { mode: 'global', resident: 'ops' } });
+  assert.deepEqual(previewData(f3c('preview-messaging-default').result, t).messaging, { provider: 'nw.messaging', identity: { mode: 'local', resident: null }, origin: MANIFEST_DEFAULT });
+  assert.deepEqual(previewData(f3c('preview-messaging-local').result, t).messaging, { provider: 'nw.messaging', identity: { mode: 'local', resident: null }, origin: SPAWN });
+  assert.deepEqual(previewData(f3c('preview-messaging-global').result, t).messaging, { provider: 'nw.messaging', identity: { mode: 'global', resident: 'ops' }, origin: SPAWN });
+  // A kernel without settings-origins reports no origin (and, before manifest defaults, no identity).
+  const older = f3c('preview-messaging-default').result; delete older.settingsOrigins;
+  delete older.decision.effective.providers['nw.messaging'].identity; delete older.settings['nw.messaging'].identity;
+  assert.deepEqual(previewData(older, t).messaging, { provider: 'nw.messaging', identity: null, origin: null });
+  for (const [label, mutate] of [['origins not a record', v => { v.settingsOrigins = 'soul'; }], ['cap origins not a record', v => { v.settingsOrigins['nw.messaging'] = []; }],
+    ['origin without at', v => { v.settingsOrigins['nw.messaging']['/identity/mode'] = { kind: 'soul' }; }],
+    ['origin extra key', v => { v.settingsOrigins['nw.messaging']['/identity/mode'] = { ...MANIFEST_DEFAULT, value: 'local' }; }],
+    ['empty kind', v => { v.settingsOrigins['nw.messaging']['/identity/mode'] = { kind: '', at: 'x' }; }],
+    ['control characters', v => { v.settingsOrigins['nw.messaging']['/identity/mode'] = { kind: 'soul', at: 'soul.yaml\n#' }; }]]) {
+    const v = f3c('preview-messaging-default').result; mutate(v); assert.equal(previewData(v, t), null, label);
+  }
   for (const name of ['preview-messaging-default', 'preview-messaging-global']) {
     const once = previewData(f3c(name).result, t);
     assert.deepEqual(previewData(once, t), once, `${name}: the renderer's re-validation of the server projection keeps it`);
@@ -99,11 +111,13 @@ async function dialog(t, options = {}) {
   return u;
 }
 
-test('Developer settings offer the identity once the preview reports a messaging provider; the default is local', async t => {
-  const u = await dialog(t);
+// The captured probe from the same kernel advertises settings-origins; f3's older probe does not.
+const ORIGINS_CLI = () => { assert.ok(f3c('version').features.includes('settings-origins')); return { ...structuredClone(CLI), features: [...CLI.features, 'settings-origins'] }; };
+test('Developer settings offer the identity once the preview reports a messaging provider; with settings-origins the Default names the manifest default', async t => {
+  const u = await dialog(t, { cli: ORIGINS_CLI() });
   assert.equal(u.q('.spawn-identity').hidden, false);
   assert.equal(u.q('.fidentity').options[0].textContent, 'Default · local');
-  assert.equal(u.text('.spawn-identity-hint'), 'Messaging through nw.messaging: gets its own team identity.');
+  assert.equal(u.text('.spawn-identity-hint'), "Messaging through nw.messaging: gets its own team identity. This is the provider's default (oats.json#/settings/identity/default).");
   assert.match(u.text('.spawn-advanced > summary small'), / · identity · /);
   assert.equal(u.q('.fresident').closest('label').hidden, true);
   assert.equal(Object.hasOwn(u.previews().at(-1).choices, 'identity'), false, 'the default sends nothing');
@@ -148,4 +162,52 @@ test('a soul without a messaging provider shows no identity field', async t => {
   assert.equal(u.q('.spawn-identity').hidden, true);
   assert.equal(u.previews().at(-1).choices.identity, undefined);
   assert.equal(typeof ROOT, 'string');
+});
+
+test('without settings-origins the Default option asserts no mode, even when the payload carries one', async t => {
+  const u = await dialog(t); assert.equal(CLI.features.includes('settings-origins'), false);
+  assert.equal(u.q('.fidentity').options[0].textContent, 'Default');
+  assert.equal(u.text('.spawn-identity-hint'), 'Messaging through nw.messaging: gets its own team identity.');
+});
+test('another origin is named as the kernel reports it; an unknown kind is shown as sent', async t => {
+  for (const [kind, at, label, hint] of [['soul', 'soul.yaml#/messaging', 'Default · local — from the soul', 'Set by the soul (soul.yaml#/messaging).'],
+    ['workspace-team', 'oats-workspace.yaml#/teams/eng', "Default · local — from the workspace's team settings", "Set by the workspace's team settings (oats-workspace.yaml#/teams/eng)."],
+    ['future-layer', 'somewhere.yaml#/x', 'Default · local — from future-layer', 'Set by future-layer (somewhere.yaml#/x).']]) {
+    const variant = () => { const d = f3c('preview-messaging-default'); d.result.settingsOrigins['nw.messaging']['/identity/mode'] = { kind, at }; return d; };
+    const u = await dialog(t, { cli: ORIGINS_CLI(), kernel: (_c, { choices }) => choices.identity ? f3c(previewFor(choices)) : variant() });
+    assert.equal(u.q('.fidentity').options[0].textContent, label, kind);
+    assert.equal(u.text('.spawn-identity-hint'), `Messaging through nw.messaging: gets its own team identity. ${hint}`, kind);
+    u.close?.();
+  }
+});
+test('no identity reported (a kernel before manifest defaults): plain Default, and the hint names no mode', async t => {
+  const older = () => { const d = f3c('preview-messaging-default'), r = d.result; delete r.settingsOrigins['nw.messaging']['/identity/mode'];
+    delete r.decision.effective.providers['nw.messaging'].identity; delete r.settings['nw.messaging'].identity; return d; };
+  const u = await dialog(t, { cli: ORIGINS_CLI(), kernel: (_c, { choices }) => choices.identity ? f3c(previewFor(choices)) : older() });
+  assert.equal(u.q('.fidentity').options[0].textContent, 'Default');
+  assert.equal(u.text('.spawn-identity-hint'), "Messaging through nw.messaging: the provider's own default identity.");
+});
+test('a chosen identity leaves the Default option plain; a spawn-set origin adds nothing to the hint', async t => {
+  const u = await dialog(t, { cli: ORIGINS_CLI() });
+  await u.change('.fidentity', 'local'); await settle();
+  assert.equal(u.q('.fidentity').options[0].textContent, 'Default');
+  assert.equal(u.text('.spawn-identity-hint'), 'Messaging through nw.messaging: gets its own team identity.');
+});
+test('a bound global resident is shown from the bound identity, with or without settings-origins', async t => {
+  const soulGlobal = () => { const d = f3c('preview-messaging-default'), r = d.result, identity = { mode: 'global', resident: 'ops' };
+    r.decision.effective.providers['nw.messaging'].identity = identity; r.settings['nw.messaging'].identity = { ...identity };
+    r.settingsOrigins['nw.messaging']['/identity/mode'] = { kind: 'soul', at: 'soul.yaml#/messaging' }; return d; };
+  for (const [cli, label] of [[CLI, 'Default · global as ops'], [ORIGINS_CLI(), 'Default · global as ops — from the soul']]) {
+    const u = await dialog(t, { cli, kernel: (_c, { choices }) => choices.identity ? f3c(previewFor(choices)) : soulGlobal() });
+    assert.equal(u.q('.fidentity').options[0].textContent, label);
+    assert.match(u.text('.spawn-identity-hint'), /^Messaging through nw\.messaging: acts as the resident ops through a session grant\./);
+  }
+});
+test("the renderer re-validates the server's messaging projection exactly: origin is required and nothing else rides along", () => {
+  const t = { ...target }, once = previewData(f3c('preview-messaging-default').result, t);
+  const { origin, ...withoutOrigin } = once.messaging; assert.deepEqual(origin, MANIFEST_DEFAULT);
+  assert.equal(previewData({ ...once, messaging: withoutOrigin }, t), null, 'origin missing');
+  assert.equal(previewData({ ...once, messaging: { ...once.messaging, at: 'x' } }, t), null, 'extra key');
+  assert.equal(previewData({ ...once, messaging: { ...once.messaging, origin: { kind: 'soul' } } }, t), null, 'malformed origin');
+  assert.deepEqual(previewData({ ...once, messaging: { ...once.messaging, origin: null } }, t).messaging.origin, null, 'no origin reported');
 });

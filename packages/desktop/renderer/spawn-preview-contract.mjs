@@ -16,21 +16,30 @@ const nullable = v => v === null || safe(v);
 const names = v => Array.isArray(v) && v.length <= 512 && v.every(x => safe(x, 512));
 const CAPABILITY = /^[a-z0-9][a-z0-9._-]{0,127}$/;
 const RESIDENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
-/** The soul's messaging provider and the identity its bound payload carries:
- * the one module on layer messaging, and decision.effective.providers[cap]
- * .identity (what the apply binds; the preview's settings must agree). No
- * identity in the payload means the provider's documented default (local). */
+/** The soul's messaging provider, the identity its bound payload carries, and
+ * where that identity's mode came from: the one module on layer messaging,
+ * decision.effective.providers[cap].identity (what the apply binds; the
+ * preview's settings must agree), and settingsOrigins[cap]['/identity/mode']
+ * ({kind, at}; feature settings-origins). No identity or no origin means the
+ * kernel reported none — the Desktop never supplies one. */
+function originOf(o) {
+  if (o === undefined || o === null) return null;
+  if (!exact(o, ['kind', 'at']) || !safe(o.kind, 64) || !o.kind || !safe(o.at, 512) || !o.at) return undefined;
+  return { kind: o.kind, at: o.at };
+}
 function messagingOf(v) {
   // Idempotent: the renderer re-validates the server's projection, which
   // carries `messaging` itself instead of the kernel's modules/settings.
   if (!Object.hasOwn(v, 'modules') && Object.hasOwn(v, 'messaging')) {
     const m = v.messaging;
     if (m === null) return null;
-    if (!exact(m, ['provider', 'identity']) || !CAPABILITY.test(m.provider ?? '')) return undefined;
-    if (m.identity === null) return { provider: m.provider, identity: null };
+    if (!exact(m, ['provider', 'identity', 'origin']) || !Object.hasOwn(m, 'origin') || !CAPABILITY.test(m.provider ?? '')) return undefined;
+    const origin = originOf(m.origin);
+    if (origin === undefined) return undefined;
+    if (m.identity === null) return { provider: m.provider, identity: null, origin };
     const i = m.identity;
     if (!exact(i, ['mode', 'resident']) || !['local', 'global'].includes(i.mode) || i.resident !== null && !RESIDENT.test(i.resident)) return undefined;
-    return { provider: m.provider, identity: { mode: i.mode, resident: i.resident } };
+    return { provider: m.provider, identity: { mode: i.mode, resident: i.resident }, origin };
   }
   if (!Array.isArray(v.modules)) return null;
   const rows = v.modules.filter(m => record(m) && m.layer === 'messaging');
@@ -38,10 +47,13 @@ function messagingOf(v) {
   if (rows.length !== 1 || !CAPABILITY.test(rows[0].name ?? '')) return undefined;
   const cap = rows[0].name, bound = v.decision?.effective?.providers?.[cap], shown = v.settings?.[cap];
   if (!record(bound) || !record(shown) || JSON.stringify(bound.identity ?? null) !== JSON.stringify(shown.identity ?? null)) return undefined;
+  if (Object.hasOwn(v, 'settingsOrigins') && !record(v.settingsOrigins) || v.settingsOrigins?.[cap] !== undefined && !record(v.settingsOrigins[cap])) return undefined;
+  const origin = originOf(v.settingsOrigins?.[cap]?.['/identity/mode']);
+  if (origin === undefined) return undefined;
   const i = bound.identity;
-  if (i === undefined) return { provider: cap, identity: null };
+  if (i === undefined) return { provider: cap, identity: null, origin };
   if (!record(i) || !['local', 'global'].includes(i.mode) || i.resident !== undefined && !RESIDENT.test(i.resident)) return undefined;
-  return { provider: cap, identity: { mode: i.mode, resident: i.resident ?? null } };
+  return { provider: cap, identity: { mode: i.mode, resident: i.resident ?? null }, origin };
 }
 export const previewSupported = cli => cli?.ok === true && absolute(cli.bin) && cli.spawnPreviewApi === 2
   && Array.isArray(cli.features) && cli.features.includes('spawn-preview-2');
