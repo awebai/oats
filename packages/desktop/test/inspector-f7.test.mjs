@@ -118,3 +118,52 @@ test('a refused inspection reads as the kernel sentence with the code behind Det
   const details = u.el.querySelector('.inspector-problem-code');
   assert.equal(details.querySelector('summary').textContent, 'Details'); assert.equal(details.querySelector('p').textContent, 'E_TEAM_CONFLICT');
 });
+
+// E_TEAM_CONFLICT end to end: the kernel's details.labels, bounded, through the
+// server refusal, the HTTP payload and both renderer error paths, to the inspector.
+import { capabilityRequest } from '../server/capabilities.mjs';
+import { apiJson, httpError } from '../renderer/views/common.mjs';
+const spawnErrorPayload = (() => {
+  const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
+  const start = source.indexOf('function spawnErrorPayload(e)'), end = source.indexOf('/* OATSWEB_SPAWNERR_END */', start);
+  return new Function(`${source.slice(start, end)}\nreturn spawnErrorPayload;`)();
+})();
+const conflict = doc('inspect-soul-conflict');
+const refusal = async envelope => {
+  try {
+    await capabilityRequest({ action: 'inspect', selector: { soul: 'release-manager', agentsRoot } }, {
+      workspace: { id: 'nw', scope: '/fixture/base/northwind-workspace' }, cli: { ok: true, operationsApi: 2, bin: '/fixture/bin/oats' },
+      agents: [{ name: 'release-manager', agentsRoot }], invoke: async () => envelope });
+  } catch (error) { return error; }
+  assert.fail('expected a refusal');
+};
+
+test('E_TEAM_CONFLICT: the server refusal carries the two labels (validated); nothing else does', async () => {
+  assert.deepEqual(conflict.error.details.labels, ['engineering', 'global'], 'captured');
+  const e = await refusal(conflict);
+  assert.equal(e.code, 'E_TEAM_CONFLICT'); assert.equal(e.message, conflict.error.message); assert.deepEqual(e.labels, ['engineering', 'global']);
+  for (const labels of [['engineering'], ['engineering', '-x'], 'engineering,global', Array.from({ length: 17 }, (_, i) => `t${i}`)]) {
+    const bad = structuredClone(conflict); bad.error.details.labels = labels;
+    assert.equal(Object.hasOwn(await refusal(bad), 'labels'), false, JSON.stringify(labels));
+  }
+  const other = structuredClone(conflict); other.error.code = 'E_SOUL_UNKNOWN';
+  assert.equal(Object.hasOwn(await refusal(other), 'labels'), false, 'only the conflict carries labels');
+  assert.deepEqual(spawnErrorPayload(e).body, { error: conflict.error.message, code: 'E_TEAM_CONFLICT', labels: ['engineering', 'global'] });
+  assert.equal(Object.hasOwn(spawnErrorPayload(Object.assign(new Error('x'), { code: 'E_SOUL_UNKNOWN', labels: ['a', 'b'] })).body, 'labels'), false);
+  // both renderer paths keep them
+  const body = spawnErrorPayload(e).body;
+  const viaFetch = await apiJson({ api: async () => ({ ok: false, status: 409, json: async () => body }) }, '/api/capabilities', {}).catch(x => x);
+  assert.deepEqual(viaFetch.labels, ['engineering', 'global']);
+  assert.deepEqual(httpError({ status: 409, body }, '/api/capabilities').labels, ['engineering', 'global']);
+});
+
+test('E_TEAM_CONFLICT in the inspector: the sentence, the two labels, the code behind Details; unreadable labels are not shown', async t => {
+  const make = labels => Object.assign(new Error(conflict.error.message), { code: 'E_TEAM_CONFLICT', labels });
+  const u = await rendered(t, soulSelection, make(['engineering', 'global']));
+  assert.equal(u.el.querySelector('.inspector-conflict-labels').textContent, 'Team labels in conflict: engineering, global');
+  assert.equal(u.el.querySelector('.inspector-problem-code p').textContent, 'E_TEAM_CONFLICT');
+  for (const labels of [undefined, ['engineering'], ['engineering', 'engineering'], ['a b', 'c']]) {
+    const v = await rendered(t, soulSelection, make(labels));
+    assert.equal(v.el.querySelector('.inspector-conflict-labels'), null, JSON.stringify(labels));
+  }
+});

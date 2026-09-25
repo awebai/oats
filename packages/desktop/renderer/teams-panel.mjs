@@ -88,6 +88,10 @@ export function whenText(iso) {
   const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?Z$/.exec(iso);
   return m ? `${m[1]} ${m[2]} UTC` : iso;
 }
+/** Team labels a refusal names (E_TEAM_CONFLICT details.labels): 2..16 distinct labels, or null. */
+export function teamLabels(v) {
+  return Array.isArray(v) && v.length >= 2 && v.length <= 16 && v.every(label) && new Set(v).size === v.length ? [...v] : null;
+}
 /** The soul's eligible teams as `oats inspect` reports them (kernel `teams`,
  * primary first): `[{label, team, mapped}]`, or null when not reported or not
  * readable. `mapped` and `team` must agree (a mapped label names its team). */

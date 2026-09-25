@@ -9,7 +9,7 @@ import { createReadinessView, readinessCSS } from './readiness-view.mjs';
 import { cliStatus } from './views/cli-status.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { inspectData, inspectFacts, originText } from './inspect-contract.mjs';
-import { createTeamsPanel, teamsOperations, teamsCSS, soulTeams } from './teams-panel.mjs';
+import { createTeamsPanel, teamsOperations, teamsCSS, soulTeams, teamLabels } from './teams-panel.mjs';
 import { ageText } from './age-text.mjs';
 
 
@@ -156,6 +156,9 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       // One plain sentence (the kernel's), the code behind Details — e.g. E_TEAM_CONFLICT names the two labels.
       if (!valid(id, gen)) return;
       message(error.message || 'Inspection failed. Refresh to retry.', true);
+      // E_TEAM_CONFLICT: the soul can't be spawned until the workspace agrees; name the two labels.
+      const labels = error.code === 'E_TEAM_CONFLICT' ? teamLabels(error.labels) : null;
+      if (labels) content.append(node('p', `Team labels in conflict: ${labels.join(', ')}`, 'muted inspector-conflict-labels'));
       if (error.code) { const more = node('details', undefined, 'inspector-problem-code'); more.append(node('summary', 'Details'), node('p', error.code, 'muted')); content.append(more); }
     }
   }

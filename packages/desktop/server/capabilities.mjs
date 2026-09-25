@@ -5,6 +5,7 @@ import { cliCapability, operationArgs } from '../cli-adapter.mjs';
 const fail = (message, code = 'E_BAD_ARGS') => { throw Object.assign(new Error(message), { code }); };
 
 const object = value => !!value && typeof value === 'object' && !Array.isArray(value);
+const TEAM_LABEL = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const absolute = value => typeof value === 'string' && isAbsolute(value) && !value.includes('\0');
 export async function capabilityRequest(request, { workspace, cli, agents = [], instances = [], localCwd, invoke = cliCapability }) {
   if (!workspace) fail('Select a known workspace', 'E_WORKSPACE_UNKNOWN');
@@ -46,6 +47,14 @@ export async function capabilityRequest(request, { workspace, cli, agents = [], 
     operation: request.operation, ...(request.args !== undefined ? { args: request.args } : {}),
     localCwd: server ? localCwd : context || workspace.scope,
   });
-  if (!envelope.ok) fail(envelope.error?.message || 'Capability operation failed', envelope.error?.code || 'E_OPERATION_FAILED');
+  if (!envelope.ok) {
+    const code = envelope.error?.code || 'E_OPERATION_FAILED';
+    const error = Object.assign(new Error(envelope.error?.message || 'Capability operation failed'), { code });
+    // E_TEAM_CONFLICT (teams contract): the two disagreeing labels travel with the refusal, bounded.
+    const labels = envelope.error?.details?.labels;
+    if (code === 'E_TEAM_CONFLICT' && Array.isArray(labels) && labels.length >= 2 && labels.length <= 16
+      && labels.every(l => typeof l === 'string' && TEAM_LABEL.test(l))) error.labels = [...labels];
+    throw error;
+  }
   return envelope.result;
 }

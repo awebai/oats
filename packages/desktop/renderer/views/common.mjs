@@ -33,6 +33,7 @@ export async function apiJson(ctx, pathname, opts) {
   if (!r.ok) {
     const err = new Error(d.error || `HTTP ${r.status}`);
     if (d.code) err.code = d.code; // stable CLI/domain code (e.g. cli-unavailable, E_RELATIVE_AMBIGUOUS)
+    if (Array.isArray(d.labels)) err.labels = d.labels; // E_TEAM_CONFLICT: the disagreeing team labels
     throw err;
   }
   return d;
@@ -50,6 +51,7 @@ export function httpError(r, pathname) {
   err.status = r.status;
   if (r.body?.code) err.code = r.body.code;
   if (r.body?.result) err.result = r.body.result;
+  if (Array.isArray(r.body?.labels)) err.labels = r.body.labels;
   return err;
 }
 export function postJson(ctx, pathname, body) {
