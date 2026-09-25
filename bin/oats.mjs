@@ -1420,7 +1420,7 @@ async function readinessCmd() {
   // from the current configuration this command reads; refuse before inspecting.
   const homeArg = flag("home");
   if (homeArg && homeArg !== true) {
-    let capturedMeta = null; try { capturedMeta = JSON.parse(readFileSync(join(String(homeArg), "instance.json"), "utf8")); } catch { /* computeInspect reports the unreadable home */ }
+    let capturedMeta = null; try { capturedMeta = JSON.parse(readFileSync(join(String(homeArg), "instance.json"), "utf8")); } catch { /* workspaceTarget reports the unreadable home */ }
     if (capturedMeta?.executionBinding || capturedMeta?.captured) return bail("E_UNSUPPORTED_MODE", `${basename(String(homeArg))} is a captured incarnation: its readiness is the retained resolution's, not the current configuration's (inspect it with oats operation --deployment/--resolution)`, { home: String(homeArg), captured: true });
   }
   // Workspace model (readinessApi 2): an instance or soul subject; checks
