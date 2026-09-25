@@ -66,7 +66,7 @@ test("Spawn modal close restores focus to the LIVE Spawn button and preserves th
       assert.equal(doc.querySelector(".spawn-dialog"), null, `${name}: modal closed`);
       assert.equal(doc.querySelector(".soul-card.open").dataset.agent, agent.name,
         `${name}: selected soul stays highlighted after the modal closes`);
-      const live = doc.querySelector(".soul-inspector .spawn-act");
+      const live = doc.querySelector(".workspace-soul-page .spawn-act");
       assert.equal(doc.activeElement, live,
         `${name}: focus restored to the CURRENTLY CONNECTED inspector Launch action`);
       assert.equal(doc.activeElement, opener, `${name}: inspector action survives grid repaints`);

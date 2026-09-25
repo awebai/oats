@@ -5,6 +5,8 @@
    Contract: mount(el, ctx) / unmount(). Plain ES module + DOM. */
 import { createSoulInspector, inspectorCSS } from "../soul-inspector.mjs";
 import { createWorkspaceDiscovery, discoveryCSS, workspaceTabs } from "../workspace-discovery.mjs";
+import { renderCapabilities, capabilityRow } from "../workspace-catalog.mjs";
+import { renderCapabilityPage, capabilityPageCSS, pageCardCSS } from "../capability-page.mjs";
 import { runtimeState } from "../instance-presentation.mjs";
 import { deploymentUnavailableText } from "../deployment-header.mjs";
 import { createSpawnDialog, spawnDialogCSS } from "../spawn-dialog.mjs";
@@ -118,7 +120,12 @@ function inspectSoul(s, agent, intent = nextSelectionIntent()) {
   s.discovery?.setTab("souls");
   s.inspectRef = { name: agent.name, agentsRoot: agent.agentsRoot, server: agent.server };
   renderGrid(s);
-  s.inspector?.show({ agent, selector: { soul: agent.name, agentsRoot: agent.agentsRoot } });
+  // A soul opens as a full page in the Workspace view; instances keep the sidebar.
+  showPage(s, "soul");
+  s.page?.show({ agent, selector: { soul: agent.name, agentsRoot: agent.agentsRoot } });
+  // The card that opened it is now covered: focus moves into the page (its back control).
+  const back = s.q("workspace-soul-page")?.querySelector(".inspector-back");
+  if (canFocusCard(s, back)) back.focus({ preventScroll: true });
 }
 
 export function preselectSoul(ref) {
@@ -148,22 +155,56 @@ function applyPreselect(s) {
   if (matches.length !== 1) { ref.onMiss?.(matches.length); return; }
   const a = matches[0];
   inspectSoul(s, a, ref);
-  // Degraded / attached souls still select for details; their inspector
-  // actions and diagnostic status explain availability. An
-  // active filter may exclude the selected soul's card: reveal it by
-  // clearing the filter before focusing (review 6d5e183 — a consumed
-  // preselect must never be a silent no-op for a soul that exists).
-  let card = [...(s.q("souls-grid").querySelectorAll?.("[data-agent]") || [])]
-    .find((c) => cardMatches(c, a));
+  // Degraded / attached souls still open their page; its actions and
+  // diagnostic status explain availability, and inspectSoul moved focus into it.
+  // An active filter may exclude the soul's card: clear it, so that going back
+  // returns to a visible card (review 6d5e183 — a consumed preselect must never
+  // be a silent no-op for a soul that exists).
+  const card = [...(s.q("souls-grid").querySelectorAll?.("[data-agent]") || [])].find((c) => cardMatches(c, a));
   if (!card && s.filterText) {
     s.filterText = "";
     const filterEl = s.q("filter");
     if (filterEl) filterEl.value = "";
     renderGrid(s);
-    card = [...(s.q("souls-grid").querySelectorAll?.("[data-agent]") || [])]
-      .find((c) => cardMatches(c, a));
   }
-  if (canFocusCard(s, card)) { card.tabIndex = 0; card.focus?.({ preventScroll: true }); }
+}
+
+/** A page (a soul's or a capability's) replaces the list it was opened from
+ * while it is open: mode null | "soul" | "capability". */
+function showPage(s, mode) {
+  const soulPage = s.q("workspace-soul-page"), capPage = s.q("workspace-cap-page");
+  if (!soulPage || !capPage) return;
+  soulPage.hidden = mode !== "soul"; capPage.hidden = mode !== "capability";
+  const souls = (s.discovery?.tab ?? "souls") === "souls";
+  s.q("souls-grid").hidden = !!mode || !souls;
+  s.q("souls-bar").hidden = !!mode || !souls;
+  s.q("workspace-discovery").hidden = !!mode || souls;
+}
+/** A capability's page, from the Capabilities table (from = null) or a soul page (from = the soul). */
+function openCapability(s, row, from = null) {
+  if (!s.alive) return;
+  s.capOpen = { row, from, gen: workspaceGeneration() };
+  renderCapabilityPage(s.q("workspace-cap-page"), { row, ...s.discovery.context(),
+    backLabel: from ? from.name : "Capabilities", from: from ? { label: from.name } : null,
+    onBack: () => closeCapability(s, { restoreFocus: true }),
+    openSoul: target => {
+      const matches = s.souls.agents.filter(a => a.name === target.name && a.agentsRoot === target.agentsRoot);
+      if (matches.length !== 1) return;
+      closeCapability(s); inspectSoul(s, matches[0]);
+    } });
+  showPage(s, "capability");
+  s.q("workspace-cap-page").querySelector(".page-back")?.focus({ preventScroll: true });
+}
+function closeCapability(s, { restoreFocus = false } = {}) {
+  const open = s.capOpen; s.capOpen = null;
+  const host = s.q("workspace-cap-page"); if (host) host.replaceChildren();
+  if (!open) return;
+  // Back to where it was opened: the soul's page (still shown) or the Capabilities table.
+  const backToSoul = !!open.from && !!s.inspectRef && s.inspectRef.name === open.from.name && s.inspectRef.agentsRoot === open.from.agentsRoot;
+  showPage(s, backToSoul ? "soul" : null);
+  if (!restoreFocus) return;
+  const scope = backToSoul ? s.q("workspace-soul-page") : s.q("workspace-discovery");
+  [...(scope?.querySelectorAll("[data-capability]") || [])].find(el => el.dataset.capability === open.row.name)?.focus({ preventScroll: false });
 }
 
 export function mount(el, ctx) {
@@ -175,6 +216,8 @@ export function mount(el, ctx) {
     <div class="oats-view" style="display:block">
       <style>${CSS}
 ${inspectorCSS}
+${pageCardCSS}
+${capabilityPageCSS}
 ${discoveryCSS}
 ${identityCSS}
 ${spawnDialogCSS}</style>
@@ -190,8 +233,10 @@ ${spawnDialogCSS}</style>
             <div class="workspace-recovery" hidden></div>
             <div class="souls-grid"><div class="loading-block"><span class="spinner"></span> Loading souls…</div></div>
             <section class="workspace-discovery" hidden></section>
+            <section id="workspace-soul-page" class="workspace-page workspace-soul-page" aria-label="Soul details" hidden></section>
+            <section class="workspace-page workspace-cap-page" aria-label="Capability details" hidden></section>
           </section>
-          <aside id="workspace-inspector" class="soul-inspector" aria-label="Soul and capability details" hidden></aside>
+          <aside id="workspace-inspector" class="soul-inspector" aria-label="Instance details" hidden></aside>
         </div>
       </div>
     </div>`;
@@ -202,8 +247,8 @@ ${spawnDialogCSS}</style>
   const inspectorElement = s.q("soul-inspector");
   s.presentation = ctx.rightPanel?.attach(inspectorElement);
   s.presentation?.setPresent(false); // no selected content at mount
-  s.inspector = createSoulInspector(inspectorElement, {
-    ctx, presentation: s.presentation, launch: agent => { if (cliAvailable()) openSpawnModal(s, agent); },
+  const inspectorOptions = {
+    ctx, launch: agent => { if (cliAvailable()) openSpawnModal(s, agent); },
     openSoul: ref => {
       const matches = s.souls.agents.filter(x => x.name === ref.name && x.agentsRoot === ref.agentsRoot && (x.server || null) === (ref.server || null));
       if (matches.length !== 1) return false;
@@ -216,9 +261,20 @@ ${spawnDialogCSS}</style>
     canFiles: agent => canOpenFiles(s, agent),
     instances: agent => soulInstances(s, agent), workspace: () => s.workspace,
     schedule: agent => { if (canLaunchSoul(s, agent)) { preselectSchedule(agent); ctx.openView?.("schedules"); } },
+  };
+  // Instances: the right-panel sidebar (it sits beside a running terminal).
+  s.inspector = createSoulInspector(inspectorElement, { ...inspectorOptions, presentation: s.presentation });
+  // Souls: a full page in the Workspace view, "← Souls" back to the grid.
+  s.page = createSoulInspector(s.q("workspace-soul-page"), {
+    ...inspectorOptions, layout: "page", backLabel: "Souls",
+    openInstance: instance => s.inspector.show({ instance, selector: { home: instance.home } }),
+    // A soul's capabilities: the Capabilities view's own table; a row opens the capability's page.
+    capabilityTable: (host, caps, { soul }) => renderCapabilities(host, { rows: caps.map(capabilityRow), ...s.discovery.context(),
+      onOpen: row => openCapability(s, row, soul) }),
     closed: ({ restoreFocus } = {}) => {
       const ref = s.inspectRef; s.inspectRef = null;
       if (!s.alive) return;
+      showPage(s, null);
       renderGrid(s, { restoreFocus: false });
       // The grid is rebuilt by polling; return to composite identity only on
       // explicit standalone close, never during reset or a hidden-stage close.
@@ -228,8 +284,9 @@ ${spawnDialogCSS}</style>
   });
   s.discovery = createWorkspaceDiscovery(s.q("workspace-header"), s.q("workspace-discovery"), {
     ctx, soulsPanel: s.q("souls-grid"), onIntent: () => nextSelectionIntent(),
+    onOpenCapability: row => openCapability(s, row, null),
     onTab: tab => {
-      s.spawnOp++; closeSpawnModal(s); s.inspector.close();
+      s.spawnOp++; closeSpawnModal(s); s.inspector.close(); closeCapability(s); s.page.close();
       s.q("souls-bar").hidden = tab !== "souls";
     },
   });
@@ -248,6 +305,14 @@ ${spawnDialogCSS}</style>
   s.q("workspace-header").append(s.q("wssel")); // standalone switcher stays reachable on every subtab
   applyWorkspaceTab(s);
   s.q("filter").addEventListener("input", (e) => { s.filterText = e.target.value; renderGrid(s); });
+  // Esc on a page goes back (never from a text field, a disclosure's summary, or the spawn modal).
+  const pageEscape = (event, back) => {
+    if (event.key !== "Escape" || event.defaultPrevented || event.target.closest?.(".spawn-modal")) return;
+    if (["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName) || event.target.isContentEditable) return;
+    event.preventDefault(); back();
+  };
+  s.q("workspace-soul-page").addEventListener("keydown", e => pageEscape(e, () => s.page.close({ restoreFocus: true })));
+  s.q("workspace-cap-page").addEventListener("keydown", e => pageEscape(e, () => closeCapability(s, { restoreFocus: true })));
   // Keyboard operability (task: keybindings wiring): `/` focuses the filter,
   // arrows rove the card grid, Enter inspects the focused soul,
   // b opens its brain, Esc cancels an open form. spawn.filter/spawn.brain
@@ -290,7 +355,7 @@ ${spawnDialogCSS}</style>
     if (!s.alive) return;
     renderGrid(s);
     s.discovery.syncCli();
-    s.inspector.syncAvailability();
+    s.inspector.syncAvailability(); s.page.syncAvailability();
     // an open modal tracks capability live — disabled state + version note
     // resync without touching typed fields (review 5526b70)
     s.syncModalRelations?.();
@@ -302,7 +367,7 @@ ${spawnDialogCSS}</style>
     s.spawnOp++;
     s.rosterReq++; s.rosterGen = null; s.souls = { agents: [] }; s.panelInstances = [];
     s.discovery.reset();
-    s.inspector.close();
+    s.inspector.close(); closeCapability(s); s.page.close();
     closeSpawnModal(s, { repaint: false }); // the switch replaces the grid below
     s.q("souls-grid").innerHTML = '<div class="loading-block"><span class="spinner"></span> Loading agents…</div>';
     // No force flag: if a newer B poll paints a B spawn modal before this
@@ -331,7 +396,7 @@ export function unmount() {
   pendingWorkspaceTab = null;
   selectionIntent++;
   state.alive = false;
-  state.inspector.dispose();
+  state.inspector.dispose(); state.page.dispose();
   state.presentation?.dispose();
   state.discovery.dispose();
   state.timers.forEach(clearInterval);
@@ -387,7 +452,7 @@ export async function refresh(s) {
     select.value = panel.workspace?.id || "";
   }
   s.discovery?.updateRoster(souls.agents, panel);
-  s.inspector?.syncAvailability();
+  s.inspector?.syncAvailability(); s.page?.syncAvailability();
   renderGrid(s);
   applyPreselect(s); // Quick Open handoff — after the roster is painted
   applyHome(s);
@@ -564,10 +629,8 @@ function soulCard(s, a) {
   card.dataset.agent = a.name; card.dataset.root = a.agentsRoot || ""; card.dataset.server = a.server || "";
   card.tabIndex = -1; // roving tabindex — renderGrid elects the tabbable card
   card.setAttribute("aria-label", `Inspect ${a.name}`);
-  card.setAttribute("aria-controls", "workspace-inspector");
-  // A hosted selection survives panel collapse/cover. It is not an expanded
-  // disclosure: aria-pressed describes selection without claiming visibility.
-  if (s.presentation) card.setAttribute("aria-pressed", String(cardMatches(card, s.inspectRef || {})));
+  card.setAttribute("aria-controls", "workspace-soul-page"); // a card opens the soul's page
+  // (No aria-pressed: a card opens its soul's page, which replaces the grid while open.)
   card.title = attached ? "Attached only — select for details and files" : `Inspect ${a.name} — Launch, Files, Schedule and reported defaults`;
   card.addEventListener("click", () => inspectSoul(s, a));
   const doc = s.el.ownerDocument;
@@ -608,7 +671,7 @@ function closeSpawnModal(s, { restoreFocus = false, repaint = true } = {}) {
   if (!hadModal || !repaint || s.alive === false) return;
   renderGrid(s); // clear the .open card highlight NOW
   if (!restoreFocus || !agentRef) return;
-  if (s.inspector?.focusLaunch(agentRef)) return;
+  if (s.page?.focusLaunch(agentRef)) return;
   const card = gridCards(s).find(card => cardMatches(card, agentRef));
   if (canFocusCard(s, card)) card.focus();
 }

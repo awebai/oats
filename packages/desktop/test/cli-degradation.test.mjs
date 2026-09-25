@@ -12,7 +12,7 @@ function selectSoul(el, index = 0) {
   const card = el.querySelectorAll(".soul-card")[index];
   assert.ok(card, "read-only soul card renders");
   card.click();
-  const launch = el.querySelector(".soul-inspector .spawn-act");
+  const launch = el.querySelector(".workspace-soul-page .spawn-act");
   assert.ok(launch, "selected-soul inspector exposes Launch");
   return launch;
 }
@@ -397,7 +397,7 @@ test("spawn view: no compatible CLI disables every spawn button and shows ONE ca
       assert.match(launch.title, /OATS CLI/i, "tooltip explains the CLI requirement");
       launch.dispatchEvent(new doc.defaultView.Event("click"));
       assert.equal(el.querySelector(".soul-form"), null, "no spawn form opens without a CLI");
-      const files = el.querySelector(".soul-inspector .brain-act");
+      const files = el.querySelector(".workspace-soul-page .brain-act");
       assert.ok(files && !files.disabled, "read-only Files remains usable");
     }
     // CLI becomes available → card disappears, buttons enable (same subscribe path)

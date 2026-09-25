@@ -94,11 +94,13 @@ for (const outcome of ['success', 'rejection']) for (const choice of ['sources',
   });
 }
 
-const inspectorFiles = u => [...u.doc.querySelectorAll('.soul-inspector button')].find(control => control.textContent === 'Files');
+// F7: a soul's actions live on its page in the Workspace view.
+const inspectorFiles = u => [...u.doc.querySelectorAll('.workspace-soul-page button')].find(control => control.textContent === 'Files');
 const handoff = kind => kind === 'soul' ? spawn.preselectSoul(soul('/b/agents')) : spawn.preselectHome(home);
 function assertNoHandoff(u, tab) {
   assert.equal(u.selectedTab().id, `workspace-tab-${tab}`);
   assert.equal(u.doc.querySelector('.soul-inspector').hidden, true);
+  assert.equal(u.doc.querySelector('.workspace-soul-page').hidden, true);
   assert.equal(u.doc.querySelector('.spawn-dialog'), null);
   assert.ok(u.inspections().every(call => !call.body.selector.soul && !call.body.selector.home), 'no superseded soul/home inspection was dispatched');
   assert.deepEqual(u.files, []); assert.deepEqual(u.terminals, []);
@@ -117,7 +119,7 @@ for (const [label, replacement] of [
   assert.equal(inspectorFiles(u), captured, 'polling preserves the inspector rather than disguising a retarget');
   captured.click();
   assert.deepEqual(u.files, [], 'old /a/agents/dev must never route to the same-named replacement');
-  const refresh = [...u.doc.querySelectorAll('.soul-inspector button')].find(control => control.textContent === 'Refresh');
+  const refresh = [...u.doc.querySelectorAll('.workspace-soul-page button')].find(control => control.textContent === 'Refresh');
   refresh.click(); await tick();
   assert.equal(inspectorFiles(u).disabled, true, 'a rerender disables the stale Files selector too');
   if (label === 'root replacement') {
@@ -188,14 +190,14 @@ for (const latest of ['soul', 'home']) for (const outcome of ['success', 'reject
     assert.deepEqual(u.inspections().map(call => call.body.selector), [expected]);
     assert.equal(u.doc.querySelector('.spawn-dialog'), null, 'Quick Open inspects, never launches');
     if (latest === 'soul') {
-      assert.equal(u.doc.activeElement.dataset.root, '/b/agents', 'preselection focuses the composite card, not its same-name twin');
-      u.doc.querySelector('[aria-label="Close inspector"]').click();
-      assert.equal(u.doc.activeElement.dataset.root, '/b/agents');
+      assert.ok(u.doc.activeElement.classList.contains('inspector-back'), 'preselection opens the soul\'s page and focuses it');
+      u.doc.querySelector('.workspace-soul-page .inspector-back').click();
+      assert.equal(u.doc.activeElement.dataset.root, '/b/agents', 'back returns to the composite card, not its same-name twin');
       launchSoul(u.doc, u.doc.activeElement);
       assert.ok(u.doc.querySelector('.spawn-dialog'), 'Launch remains an explicit separate action');
       u.doc.querySelector('.fcancel').click();
       assert.equal(u.doc.querySelector('.soul-card.open').dataset.root, '/b/agents', 'same composite soul remains selected');
-      assert.equal(u.doc.activeElement, u.doc.querySelector('.soul-inspector .spawn-act'), 'Launch cancellation returns to its inspector action');
+      assert.equal(u.doc.activeElement, u.doc.querySelector('.workspace-soul-page .spawn-act'), 'Launch cancellation returns to its page action');
     } else assert.match(u.doc.querySelector('.soul-inspector').textContent, /As spawned.*Captured instructions/s);
   });
 }
@@ -232,13 +234,14 @@ test('F7: an instance\'s "Open soul" selects the exact roster soul it was spawne
   assert.ok(open, 'the instance names its soul with Open soul');
   open.click(); await tick(); await tick();
   assert.deepEqual(u.inspections().at(-1).body.selector, { soul: 'dev', agentsRoot: '/b/agents' }, 'the /b twin, not /a');
-  assert.equal(u.doc.querySelector('.soul-inspector h2')?.textContent, 'dev');
-  assert.equal(u.doc.querySelector('.inspector-spawned'), null, 'now the soul, not the instance');
+  assert.equal(u.doc.querySelector('.workspace-soul-page').hidden, false, 'the soul opens as its page');
+  assert.equal(u.doc.querySelector('.workspace-soul-page h2')?.textContent, 'dev');
+  assert.equal(u.doc.querySelector('.soul-inspector h2')?.textContent, 'dev-seat', 'the instance keeps the sidebar beside it');
   // the roster no longer carries it: nothing opens, and the inspector says why
   spawn.preselectHome(home); await tick(); await tick();
   u.setAgents([soul()]); u.poll(); await tick(); await tick();
   const before = u.inspections().length;
   u.doc.querySelector('.inspector-spawned button').click(); await tick();
   assert.equal(u.inspections().length, before);
-  assert.equal(u.doc.querySelector('.inspector-status').textContent, "dev is not in this workspace's souls.");
+  assert.equal(u.doc.querySelector('.soul-inspector .inspector-status').textContent, "dev is not in this workspace's souls.");
 });

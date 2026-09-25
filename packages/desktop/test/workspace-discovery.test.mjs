@@ -123,7 +123,7 @@ test('subtab preselection is consumed on mount/current view, drops stale generat
   assert.ok(u.calls.filter(c => c.method === 'POST').every(c => c.body.action === 'inspect'));
 });
 
-test('root/name/host focus survives polling, inspector close and modal close without selecting a twin', async t => {
+test('root/name/host focus survives polling, the soul page\'s back and modal close without selecting a twin', async t => {
   const evil = 'dev"<unsafe>';
   const agents = [soul('/team/one/agents', evil), soul('/team/two/agents', evil)];
   const u = await setup(t, { agents });
@@ -132,16 +132,16 @@ test('root/name/host focus survives polling, inspector close and modal close wit
   assert.equal(u.doc.activeElement.dataset.root, '/team/two/agents');
   card = u.doc.activeElement;
   card.click(); await tick();
-  assert.equal(u.doc.querySelector('.soul-inspector').hidden, false);
-  assert.equal(u.doc.querySelector('.souls-grid').hidden, false, 'inspector does not replace the grid');
+  assert.equal(u.doc.querySelector('.workspace-soul-page').hidden, false);
+  assert.equal(u.doc.querySelector('.souls-grid').hidden, true, 'the soul\'s page replaces the grid (F7)');
   assert.equal(u.inspections().at(-1).body.selector.agentsRoot, '/team/two/agents');
   assert.equal(u.doc.querySelector('img'), null);
-  u.doc.querySelector('[aria-label="Close inspector"]').click();
+  u.doc.querySelector('.workspace-soul-page .inspector-back').click();
   assert.equal(u.doc.activeElement.dataset.root, '/team/two/agents');
   launchSoul(u.doc, u.doc.activeElement); await tick();
   u.doc.querySelector('.fcancel').click();
   assert.equal(u.doc.querySelector('.soul-card.open').dataset.root, '/team/two/agents');
-  assert.equal(u.doc.activeElement.closest('.soul-inspector'), u.doc.querySelector('.soul-inspector'));
+  assert.equal(u.doc.activeElement.closest('.workspace-soul-page'), u.doc.querySelector('.workspace-soul-page'));
   assert.equal(u.doc.activeElement.classList.contains('spawn-act'), true);
   assert.ok([...u.doc.querySelectorAll('.brain-act')].every(b => b.disabled), 'legacy name-only Files boundary fails closed for twins');
   assert.deepEqual(u.files, []); assert.deepEqual(u.opens, []);
@@ -150,7 +150,7 @@ test('root/name/host focus survives polling, inspector close and modal close wit
 test('the declared soul is read-only; its disclosed instructions are stable under roster polling', async t => {
   const u = await setup(t);
   u.doc.querySelector('.soul-card').click(); await tick();
-  const inspector = u.doc.querySelector('.soul-inspector');
+  const inspector = u.doc.querySelector('.workspace-soul-page');
   assert.match(inspector.textContent, /When spawned/);
   assert.doesNotMatch(inspector.textContent, /Edit this soul/);
   assert.equal(inspector.querySelector('form, textarea, input'), null, 'no in-place editor');
@@ -166,10 +166,10 @@ test('attached launch/schedule and capability downgrade remain disabled in the i
   const agent = { ...soul(), work: 'attached' };
   const u = await setup(t, { agents: [agent], inspect: () => { const v = inspectData(); v.souls[0].work = 'attached'; return v; } });
   u.doc.querySelector('.soul-card').click(); await tick();
-  assert.ok([...u.doc.querySelectorAll('.soul-inspector [data-launch]')].every(el => el.disabled));
+  assert.ok([...u.doc.querySelectorAll('.workspace-soul-page [data-launch]')].every(el => el.disabled));
   assert.equal(u.doc.querySelector('.spawn-act').disabled, true);
   await u.setCli({ ok: false });
-  assert.ok([...u.doc.querySelectorAll('.soul-inspector [data-launch]')].every(el => el.disabled));
+  assert.ok([...u.doc.querySelectorAll('.workspace-soul-page [data-launch]')].every(el => el.disabled));
 });
 
 for (const outcome of ['success', 'rejection']) test(`selected inspector ignores late ${outcome} after another soul is selected`, async t => {
@@ -181,8 +181,8 @@ for (const outcome of ['success', 'rejection']) test(`selected inspector ignores
   if (outcome === 'success') old.resolve(inspectData('old-capability')); else old.reject(new Error('old-inspection-failure'));
   await tick();
   assert.equal(u.doc.querySelector('.inspector-head h2').textContent, 'new-soul');
-  assert.match(u.doc.querySelector('.soul-inspector').textContent, /new-capability/);
-  assert.doesNotMatch(u.doc.querySelector('.soul-inspector').textContent, /old-capability|old-inspection-failure/);
+  assert.match(u.doc.querySelector('.workspace-soul-page').textContent, /new-capability/);
+  assert.doesNotMatch(u.doc.querySelector('.workspace-soul-page').textContent, /old-capability|old-inspection-failure/);
   assert.equal(u.doc.querySelector('.spawn-dialog'), null);
 });
 
@@ -195,6 +195,9 @@ test('instance rows reflect exact root/host identity and open only read-only sna
   const buttons = u.doc.querySelectorAll('.inspector-instance'); assert.equal(buttons.length, 1);
   buttons[0].click(); await tick();
   assert.deepEqual(u.inspections().at(-1).body.selector, { home: instance.home });
+  // F7: the instance opens in the sidebar beside the soul's page, which keeps the soul.
+  assert.equal(u.doc.querySelector('.workspace-soul-page .inspector-head h2').textContent, 'dev');
+  assert.equal(u.doc.querySelector('.soul-inspector .inspector-head h2').textContent, 'dev-seat');
   assert.match(u.doc.querySelector('.soul-inspector').textContent, /As spawned/);
   assert.match(u.doc.querySelector('.soul-inspector').textContent, /Captured instructions/);
   assert.equal(u.doc.querySelector('.soul-inspector [data-launch]'), null);

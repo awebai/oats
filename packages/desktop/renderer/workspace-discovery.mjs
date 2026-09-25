@@ -46,7 +46,7 @@ function gate(workspace, deployment) {
   return '';
 }
 
-export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab, onIntent }) {
+export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab, onIntent, onOpenCapability = null }) {
   const doc = header.ownerDocument;
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
   let alive = true, serial = 0, rosterGen = null, workspace = null, deployment = null, instances = [], tab = 'souls';
@@ -158,7 +158,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
         filters = next; render(); refocusPill(focused);
       },
       onRefresh: () => { catalog = null; failure = ''; void load(); } });
-    renderCapabilities(body, { rows: filterCapabilities(catalog.capabilities, filters, names), total: catalog.capabilities.length, status: s, instances, root: workspace?.id });
+    renderCapabilities(body, { rows: filterCapabilities(catalog.capabilities, filters, names), total: catalog.capabilities.length, status: s, instances, root: workspace?.id, onOpen: onOpenCapability });
   }
   // The pill row is rebuilt on a filter change; keep focus on the same pill.
   function refocusPill(focused) {
@@ -182,6 +182,8 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   setTab('souls');
   return {
     setTab, updateRoster, syncCli, get tab() { return tab; },
+    /** What the capability table renders with (observed facts only), for pages that reuse it. */
+    context: () => ({ status: observed(), instances, root: workspace?.id }),
     reset() {
       serial++; rosterGen = null; workspace = null; deployment = null; instances = []; catalog = null; loading = false; failure = '';
       filters = { team: null, source: null }; title.textContent = 'Workspace'; sync.reset(); updateCounts(null); render();

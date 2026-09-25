@@ -619,3 +619,31 @@ for (const [name] of palettes) test(`${name}: the spawn Teams row (fixed, joinab
   }
   dom.window.close();
 });
+
+// F7 pages: the capability page (and the shared page card: header band, facts, rows, back).
+import { renderCapabilityPage, capabilityPageCSS, pageCardCSS } from '../renderer/capability-page.mjs';
+for (const [name] of palettes) test(`${name}: F7 page cards, facts, used-by rows and the back control meet computed AA`, () => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"><section class="host"></section></div></body></html>`, { pretendToBeVisual: true });
+  const doc = dom.window.document;
+  for (const source of [css, discoveryCSS, pageCardCSS, capabilityPageCSS, identityCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  renderCapabilityPage(doc.querySelector('.host'), { row: { name: 'oats.okf', kind: 'package', package: 'oats.okf', version: '2.1.3', commit: 'a'.repeat(40), origin: 'package oats.okf v2.1.3' },
+    status: null, root: 'team', instances: [{ agent: 'dev', agentsRoot: '/a', instance: 'dev-1', modules: [{ name: 'oats.okf', status: 'moved' }] }], onBack() {}, openSoul() {} });
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  for (const [selector, painted, fg, bg] of [
+    ['.page-card-head', '.page-card-head', 'muted', 'surface-2'],
+    ['.page-facts dt', '.page-card', 'muted', 'surface'],
+    ['.page-facts dd', '.page-card', 'fg', 'surface'],
+    ['.used-row .used-name', 'button.used-row', 'fg', 'surface'],
+    ['.used-row .used-meta', 'button.used-row', 'muted', 'surface'],
+    ['.page-title .catalog-sub', '.oats-view', 'muted', 'bg'],
+    ['button.page-back', '.oats-view', 'muted', 'bg'],
+  ]) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
+    const color = dom.window.getComputedStyle(el).color;
+    assert.ok(color === `var(--${fg})` || (fg === 'fg' && color === ''), `${selector}: ${color}`);
+    assert.equal(dom.window.getComputedStyle(surface).background.replace(/^.*(var\(--[\w-]+\)).*$/, '$1'), `var(--${bg})`, painted);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+  }
+  dom.window.close();
+});

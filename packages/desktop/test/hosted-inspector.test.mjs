@@ -1,5 +1,8 @@
 // Inert DOM-only ownership checks. The controlled host implements the optional
 // lease contract; it does not stand in for native shell/layout acceptance.
+// F7: the hosted slot now holds INSTANCES (a soul opens as a page in the
+// Workspace view), so every hosted guarantee is exercised with an instance
+// selection; the soul page's own back/focus guarantees are tested below.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -15,7 +18,7 @@ import { refreshCli, cliStatus } from '../renderer/views/cli-status.mjs';
 import { runtimeState } from '../renderer/instance-presentation.mjs';
 import { createSoulMark } from '../renderer/identity-marks.mjs';
 import { inspectData, inspectFacts } from '../renderer/inspect-contract.mjs';
-import { soulInspection, capturedOperations, capturedRun } from './helpers/inspect-fixture.mjs';
+import { soulInspection, homeInspection, capturedOperations, capturedRun } from './helpers/inspect-fixture.mjs';
 import { iconElement } from '../renderer/shell-icons.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -23,8 +26,12 @@ const deferred = () => { let resolve, reject; const promise = new Promise((yes, 
 const CLI = { ok: true, operationsApi: 2, features: ['operations'], relations: true };
 const soul = root => ({ name: 'dev', agentsRoot: `/${root}/agents`, runtime: 'pi', work: 'worktree', description: root });
 const selection = root => ({ agent: soul(root), selector: { soul: 'dev', agentsRoot: soul(root).agentsRoot } });
-// operationsApi 2 inspection from the kernel capture, with oats.okf's captured status view.
-const inspection = (root = 'a') => soulInspection('dev', { instructions: { text: `${root}-instructions`, truncated: false }, operations: capturedOperations().filter(op => op.name === 'status') });
+// One instance per agents root (the hosted slot's subject), and its operationsApi 2
+// inspection from the kernel capture, with oats.okf's captured status view.
+const inst = root => ({ agent: 'dev', instance: `dev-${root}`, agentsRoot: `/${root}/agents`, home: `/${root}/agents/dev/instances/dev-${root}`, running: true });
+const inspection = (root = 'a') => homeInspection(inst(root).home, { instance: inst(root).instance, soul: 'dev',
+  instructions: { file: `${inst(root).home}/AGENTS.md`, text: `${root}-instructions`, truncated: false, sources: [] }, operations: capturedOperations().filter(op => op.name === 'status') });
+const soulPageInspection = () => soulInspection('dev', { instructions: { text: 'soul-instructions', truncated: false } });
 const button = (el, text) => { const found = [...el.querySelectorAll('button')].find(control => control.textContent === text); assert.ok(found, `button ${text}`); return found; };
 const settle = (request, outcome, value) => outcome === 'success' ? request.resolve(value) : request.reject(new Error('controlled late rejection'));
 
@@ -61,7 +68,7 @@ function controlledHost(doc) {
   };
 }
 
-async function workspace(t, { hosted = true, createHost = controlledHost, api = body => inspection(body.selector?.agentsRoot === '/b/agents' ? 'b' : 'a') } = {}) {
+async function workspace(t, { hosted = true, createHost = controlledHost, api = body => body.selector?.soul ? soulPageInspection() : inspection(body.selector?.home?.startsWith('/b/') ? 'b' : 'a') } = {}) {
   const dom = new JSDOM('<body><button id="outside">Outside</button><div id="stage"></div><aside id="panel"></aside></body>', { url: 'http://localhost' });
   const doc = dom.window.document, stage = doc.querySelector('#stage'), host = createHost(doc);
   const saved = { document: globalThis.document, window: globalThis.window, setInterval: globalThis.setInterval, ws: currentWorkspace() };
@@ -78,7 +85,7 @@ async function workspace(t, { hosted = true, createHost = controlledHost, api = 
       const body = opts.body && JSON.parse(opts.body); calls.push({ path, body });
       if (path === '/api/cli') return CLI;
       if (path.startsWith('/api/agents')) return { agents: [soul('a'), soul('b')] };
-      if (path.startsWith('/api/panel')) return { workspace: { id: currentWorkspace() }, workspaces: [], instances: [] };
+      if (path.startsWith('/api/panel')) return { workspace: { id: currentWorkspace() }, workspaces: [], instances: [inst('a'), inst('b')] };
       if (path.startsWith('/api/capabilities')) return api(body);
       if (path === '/api/servers') return { servers: [] };
       throw new Error(`Unexpected inert API: ${path}`);
@@ -95,6 +102,8 @@ async function workspace(t, { hosted = true, createHost = controlledHost, api = 
   return { dom, doc, stage, ctx, host, calls, focuses, get,
     card: (root = 'a') => [...doc.querySelectorAll('.soul-card')].find(card => card.dataset.root === soul(root).agentsRoot),
     click: text => button(get('.soul-inspector'), text).click(),
+    // Open an instance in the hosted sidebar (the Workspace's own handoff).
+    select: async (root = 'a') => { spawn.preselectHome(inst(root)); await tick(); await tick(); },
     poll: async () => { polls.at(-1)(); await tick(); },
   };
 }
@@ -103,7 +112,7 @@ async function workspace(t, { hosted = true, createHost = controlledHost, api = 
 // instructions. Hosting must keep that exact node and its open state.
 const instructionsOf = u => [...u.get('.soul-inspector').querySelectorAll('details')].find(d => d.querySelector('summary')?.textContent === 'AGENTS.md / instructions');
 async function openInstructions(u) {
-  u.card().click(); await tick();
+  await u.select();
   const details = instructionsOf(u); assert.ok(details, 'instructions disclosure'); details.open = true;
   return details;
 }
@@ -116,13 +125,11 @@ test('host moves the actual inspector; its stage stays one column and shared hea
   assert.equal(u.stage.querySelector('.soul-inspector'), null);
   assert.equal(aside.hidden, true); assert.equal(record.lease.isVisible(), false);
   assert.deepEqual([...u.get('.souls-body').children], [u.get('.workspace-main')]);
-  assert.equal(u.card().getAttribute('aria-pressed'), 'false');
+  assert.equal(u.card().hasAttribute('aria-pressed'), false, 'a card opens its soul\'s page, not the sidebar');
+  assert.equal(u.doc.getElementById(u.card().getAttribute('aria-controls')), u.get('.workspace-soul-page'));
   await openInstructions(u);
   assert.equal(record.lease.isVisible(), true); assert.equal(aside.hidden, false);
-  assert.equal(u.card().getAttribute('aria-pressed'), 'true');
-  assert.equal(u.card('b').getAttribute('aria-pressed'), 'false');
-  assert.equal(u.card().hasAttribute('aria-expanded'), false, 'selection is not visibility');
-  assert.equal(u.doc.getElementById(u.card().getAttribute('aria-controls')), aside);
+  assert.equal(aside.querySelector('h2').textContent, 'dev-a', 'the hosted slot holds the instance');
   assert.equal(u.get('.souls-body').classList.contains('inspecting'), false);
   assert.equal(record.slot.classList.contains('inspecting'), false);
   const css = el => u.dom.window.getComputedStyle(el);
@@ -132,13 +139,12 @@ test('host moves the actual inspector; its stage stays one column and shared hea
   assert.equal(css(aside.querySelector('button.act')).borderRadius, '7px');
 });
 
-test('hosted X, cover and polling preserve the selected soul and the exact disclosed instructions node', async t => {
+test('hosted X, cover and polling preserve the selected instance and the exact disclosed instructions node', async t => {
   const u = await workspace(t), field = await openInstructions(u), aside = u.get('.soul-inspector'), lease = u.host.current.lease;
   u.get('[aria-label="Close inspector"]').click();
   assert.equal(lease.isVisible(), false);
   assert.equal(aside.hidden, false, 'legacy hidden tracks presence, not host visibility');
-  assert.equal(u.card().getAttribute('aria-pressed'), 'true');
-  assert.equal(u.card().hasAttribute('aria-expanded'), false);
+  assert.equal(aside.querySelector('h2').textContent, 'dev-a', 'the selection is retained');
   await u.poll();
   u.host.expand();
   assert.equal(lease.isVisible(), true);
@@ -168,8 +174,8 @@ for (const path of ['inspect', 'operation']) {
         if (body.action === 'run') return pending.promise;
         throw new Error(`Unexpected action ${body.action}`);
       } });
-      u.card().click(); await tick();
-      if (path === 'operation') u.get('[data-operation]').click();
+      await u.select();
+      if (path === 'operation') u.get('.soul-inspector [data-operation]').click();
       const record = u.host.current;
       if (visibility === 'covered') u.host.cover(); else u.get('[aria-label="Close inspector"]').click();
       u.get('#outside').focus(); u.focuses.length = 0;
@@ -182,8 +188,7 @@ for (const path of ['inspect', 'operation']) {
       assert.equal(u.doc.activeElement, u.get('#outside')); assert.deepEqual(u.focuses, []);
       assert.equal(u.get('.souls-body').classList.contains('inspecting'), false);
       assert.equal(record.slot.classList.contains('inspecting'), false);
-      assert.equal(u.card().getAttribute('aria-pressed'), 'true');
-      assert.equal(u.card().hasAttribute('aria-expanded'), false);
+      assert.equal(record.element.querySelector('h2').textContent, 'dev-a', 'the hidden selection is retained');
       const status = record.element.querySelector('.inspector-status').textContent;
       if (outcome === 'rejection') assert.match(status, /controlled late rejection/);
       else if (path === 'operation') assert.match(record.element.textContent, /Owned hidden output/);
@@ -195,7 +200,7 @@ for (const boundary of ['workspace', 'subtab', 'unmount/remount']) for (const ou
   test(`${boundary} silently releases presence and invalidates late inspection ${outcome}`, async t => {
     const pending = deferred(); let reads = 0;
     const u = await workspace(t, { api: () => ++reads === 1 ? pending.promise : inspection('b') });
-    u.card().click(); const old = u.host.current;
+    spawn.preselectHome(inst('a')); await tick(); const old = u.host.current;
     // Even a focused card must not be refocused by the silent close callback.
     u.card().focus(); u.focuses.length = 0;
     if (boundary === 'workspace') setWorkspace('/other');
@@ -207,11 +212,11 @@ for (const boundary of ['workspace', 'subtab', 'unmount/remount']) for (const ou
     if (boundary === 'unmount/remount') {
       assert.deepEqual(old.events.slice(-2), [['present', false], ['dispose', true, 0]], 'inspector clears before lease disposal');
       assert.equal(old.events.filter(event => event[0] === 'dispose').length, 1);
-      spawn.mount(u.stage, u.ctx); await tick(); u.card('b').click(); await tick();
+      spawn.mount(u.stage, u.ctx); await tick(); await u.select('b');
     } else {
       assert.equal(old.disposed, false, 'workspace/subtab reset retains the mounted lease');
       await tick();
-      assert.equal(u.card().getAttribute('aria-pressed'), 'false');
+      assert.equal(old.element.hidden, true, 'nothing is selected after the reset');
     }
     const active = u.host.current, events = [...old.events], html = active.element.innerHTML;
     u.get('#outside').focus(); u.focuses.length = 0;
@@ -239,20 +244,34 @@ for (const hosted of [false, true]) for (const boundary of ['workspace', 'subtab
   });
 }
 
-test('standalone X still deselects, removes the inline column and focuses only the matching current card', async t => {
+test('standalone X deselects the instance and removes the inline column; it moves no focus (an instance has no card)', async t => {
   const u = await workspace(t, { hosted: false });
-  u.card('b').click(); await tick();
+  await u.select('b');
   assert.equal(u.get('.soul-inspector').parentElement, u.get('.souls-body'));
   assert.equal(u.get('.souls-body').classList.contains('inspecting'), true);
-  assert.equal(u.card('b').hasAttribute('aria-pressed'), false);
+  u.get('#outside').focus(); u.focuses.length = 0;
   u.get('[aria-label="Close inspector"]').click();
   assert.equal(u.get('.soul-inspector').hidden, true); assert.equal(u.get('.soul-inspector').childElementCount, 0);
   assert.equal(u.get('.souls-body').classList.contains('inspecting'), false);
-  assert.equal(u.get('.soul-card.open'), null);
+  assert.deepEqual(u.focuses, []);
+});
+
+// The soul page (replaces the sidebar for souls): back returns to the grid and focuses
+// only the matching current card, never a same-name twin, never a hidden stage.
+test('soul page: back deselects, shows the grid again and focuses only the matching current card', async t => {
+  const u = await workspace(t);
+  u.card('b').click(); await tick();
+  const page = u.get('.workspace-soul-page');
+  assert.equal(page.hidden, false); assert.equal(u.get('.souls-grid').hidden, true);
+  assert.equal(u.get('.souls-body').classList.contains('inspecting'), false, 'a page is not a side column');
+  assert.equal(u.get('.workspace-main').classList.contains('inspecting'), false, 'nor does it mark its own parent');
+  assert.equal(u.host.current.lease.isVisible(), false, 'the hosted slot is not used for a soul');
+  u.get('.workspace-soul-page .inspector-back').click();
+  assert.equal(page.hidden, true); assert.equal(page.childElementCount, 0); assert.equal(u.get('.souls-grid').hidden, false);
   assert.equal(u.doc.activeElement, u.card('b'), 'never the same-name twin');
   u.card('b').click(); await tick(); u.stage.style.display = 'none'; u.focuses.length = 0;
-  u.get('[aria-label="Close inspector"]').click();
-  assert.deepEqual(u.focuses, [], 'even explicit close must not focus a hidden retained stage');
+  u.get('.workspace-soul-page .inspector-back').click();
+  assert.deepEqual(u.focuses, [], 'even an explicit back must not focus a hidden retained stage');
 });
 
 async function launchVisibility(factory = createSoulInspector) {
@@ -348,11 +367,11 @@ test('Workspace keeps its actual panel facade across A→B→A resets and releas
   const aside = u.get('.soul-inspector'), wrapper = aside.parentElement;
   u.host.visit('/other');
   assert.equal(u.get('#panel').hidden, true); assert.equal(aside.childElementCount, 0);
-  await tick(); u.card('b').click(); await tick();
+  await tick(); await u.select('b');
   assert.equal(u.get('.soul-inspector'), aside); assert.equal(aside.parentElement, wrapper);
   assert.equal(wrapper.hidden, false); assert.equal(u.get('#panel').hidden, false);
   assert.match(aside.textContent, /b-instructions/);
-  u.host.visit('/team'); await tick(); u.card().click(); await tick();
+  u.host.visit('/team'); await tick(); await u.select();
   assert.equal(u.get('.soul-inspector'), aside); assert.equal(aside.parentElement, wrapper);
   assert.equal(wrapper.hidden, false); assert.match(aside.textContent, /a-instructions/);
   spawn.unmount(); spawn.unmount();
@@ -363,7 +382,7 @@ test('Workspace keeps its actual panel facade across A→B→A resets and releas
 for (const outcome of ['success', 'rejection']) test(`real facade: hidden inspection ${outcome} cannot uncollapse or replace the current owner`, async t => {
   const gate = deferred();
   const u = await workspace(t, { createHost: realHost, api: () => gate.promise });
-  u.card().click(); await tick();
+  await u.select();
   const aside = u.get('.soul-inspector');
   u.get('[aria-label="Close inspector"]').click();
   u.host.panel.setContext({ workspace: '/team', key: 'newer-terminal', instance: { instance: 'newer' } });

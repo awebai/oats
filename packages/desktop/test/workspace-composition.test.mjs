@@ -53,23 +53,27 @@ async function fixture(t, { cli = CLI, inspect = () => inspection, agents = [sou
     setCli: async next => { currentCli = next; await refreshCli({ api: async () => next }); } };
 }
 
-test('03: inspector shares the main-area top, header precedes canvas directly, and narrow stacking keeps real DOM order', async t => {
+test('03 (F7): a soul opens as a page in the main area — it replaces the grid, adds no side column; header precedes canvas directly', async t => {
   const u = await fixture(t);
   assert.equal(u.get('.soul-inspector').hidden, true, 'mount never chooses a soul automatically');
+  assert.equal(u.get('.workspace-soul-page').hidden, true);
   assert.equal(u.get('.spawn-act'), null, 'Launch is owned by an explicitly selected soul, not an arbitrary default');
   u.get('.soul-card').click(); await tick();
-  const main = u.get('.workspace-main'), aside = u.get('.soul-inspector'), header = u.get('.workspace-header');
+  const main = u.get('.workspace-main'), aside = u.get('.soul-inspector'), header = u.get('.workspace-header'), page = u.get('.workspace-soul-page');
   assert.deepEqual([...u.get('.souls-body').children], [main, aside]);
-  assert.equal(aside.tagName, 'ASIDE');
+  assert.equal(aside.tagName, 'ASIDE'); assert.equal(aside.hidden, true, 'the sidebar is for instances');
+  assert.equal(page.parentElement, main); assert.equal(page.hidden, false);
+  assert.equal(u.get('.souls-grid').hidden, true, 'the page replaces the grid'); assert.equal(u.get('.souls-bar').hidden, true, 'and its filter');
+  assert.equal(u.css('.workspace-soul-page').padding, '14px 20px 28px');
   assert.equal(main.firstElementChild, header);
   assert.equal(header.nextElementSibling, u.get('.workspace-recovery'));
   assert.equal(u.get('.workspace-recovery').hidden, true, 'compatible CLI adds no visible row before the cards');
   assert.equal(u.get('.workspace-recovery').nextElementSibling, u.get('.souls-grid'), 'no toolbar or repo-heading row before the cards');
   assert.equal(u.get('.repo-head'), null);
   assert.equal(u.css('.souls-body').display, 'grid');
-  assert.equal(u.css('.souls-body').gridTemplateColumns, 'minmax(0,1fr) 340px');
-  assert.equal(u.css('.soul-inspector').width, '340px');
-  for (const selector of ['.workspace-header', '.soul-inspector .inspector-head']) {
+  assert.equal(u.css('.souls-body').gridTemplateColumns, 'minmax(0,1fr)', 'no side column for a soul');
+  assert.equal(u.css('.soul-inspector').width, '340px', 'the instance sidebar keeps its width');
+  for (const selector of ['.workspace-header']) {
     assert.equal(u.css(selector).minHeight, '48px');
     assert.equal(u.css(selector).boxSizing, 'border-box');
     assert.equal(u.css(selector).paddingTop, '0px');
@@ -79,6 +83,8 @@ test('03: inspector shares the main-area top, header precedes canvas directly, a
   assert.equal(u.css('.workspace-tabs').flexWrap, 'nowrap');
   assert.equal(u.css('.workspace-tabs button').flexShrink, '0');
   assert.equal(u.css('.filter').height, '28px'); assert.equal(u.css('.filter').minHeight, '28px', 'generic 36px field floor is explicitly overridden');
+  page.querySelector('.inspector-back').click(); await tick();
+  assert.equal(u.get('.souls-grid').hidden, false);
   assert.equal(u.css('.souls-grid').padding, '18px 20px');
   assert.equal(u.css('.souls-grid').gap, '12px');
   assert.equal(u.get('.souls-bar').parentElement, header);
@@ -98,7 +104,7 @@ test('03: cards have one semantic Details entry with compact identity, descripti
   const card = u.get('.soul-card');
   assert.equal(card.tagName, 'BUTTON'); assert.equal(card.type, 'button');
   assert.equal(card.getAttribute('aria-label'), 'Inspect dev');
-  assert.equal(u.doc.getElementById(card.getAttribute('aria-controls')), u.get('.soul-inspector'));
+  assert.equal(u.doc.getElementById(card.getAttribute('aria-controls')), u.get('.workspace-soul-page'), 'a card opens its soul\'s page');
   assert.deepEqual([...card.children].map(el => el.className), ['sname', 'sdesc', 'sactivity']);
   assert.equal(card.querySelector('button, .schips, .sactions'), null);
   assert.equal(u.css('.soul-card').padding, '16px'); assert.equal(u.css('.soul-card').gap, '10px');
@@ -108,13 +114,13 @@ test('03: cards have one semantic Details entry with compact identity, descripti
   // v2 souls are runtime-agnostic (the runtime is chosen at spawn), so a card never claims one.
   assert.equal(u.get('.sruntime'), null);
   card.focus(); card.dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); await tick();
-  for (const text of ['Launch…', 'Files', 'Schedule…']) assert.ok([...u.get('.soul-inspector').querySelectorAll('button')].find(b => b.textContent === text), text);
-  for (const text of ['Edit defaults', 'Edit instructions']) assert.equal([...u.get('.soul-inspector').querySelectorAll('button')].some(b => b.textContent === text), false, `${text}: a v2 soul is edited in its repository`);
+  for (const text of ['Launch…', 'Files', 'Schedule…']) assert.ok([...u.get('.workspace-soul-page').querySelectorAll('button')].find(b => b.textContent === text), text);
+  for (const text of ['Edit defaults', 'Edit instructions']) assert.equal([...u.get('.workspace-soul-page').querySelectorAll('button')].some(b => b.textContent === text), false, `${text}: a v2 soul is edited in its repository`);
   assert.equal(u.get('.inspector-repository'), null, 'no "Edit this soul" block (human, F7)');
   assert.equal(u.get('.spawn-dialog'), null, 'keyboard inspection does not launch');
   u.click('Schedule…'); assert.deepEqual(u.views, ['schedules']);
-  u.get('[aria-label="Close inspector"]').click();
-  assert.equal(u.doc.activeElement, u.get('.soul-card'), 'close returns to the roving card');
+  u.get('.workspace-soul-page .inspector-back').click();
+  assert.equal(u.doc.activeElement, u.get('.soul-card'), 'back returns to the roving card');
   assert.equal(u.css('.souls-body').gridTemplateColumns, 'minmax(0,1fr)');
 });
 
@@ -149,7 +155,7 @@ for (const state of ['no operations', 'wrong API', 'rejection', 'pending', 'soul
       : state === 'rejection' ? Promise.reject(new Error('Reported inspection failure')) : request.promise,
   });
   u.get('.soul-card').click();
-  const launch = u.get('.soul-inspector .spawn-act');
+  const launch = u.get('.workspace-soul-page .spawn-act');
   assert.equal(launch.disabled, false, 'Launch is ready before any inspection await');
   u.click('Files'); assert.deepEqual(u.files, ['dev']);
   launch.click(); const modal = u.get('.spawn-dialog'); assert.ok(modal);
@@ -160,9 +166,9 @@ for (const state of ['no operations', 'wrong API', 'rejection', 'pending', 'soul
   if (state === 'no operations') assert.match(diagnostic, /operations API 2/);
   if (state === 'wrong API') assert.match(diagnostic, /cannot read/);
   if (state === 'rejection') assert.match(diagnostic, /Reported inspection failure/);
-  if (state === 'soul omitted') assert.match(u.get('.soul-inspector').textContent, /did not report this soul/);
+  if (state === 'soul omitted') assert.match(u.get('.workspace-soul-page').textContent, /did not report this soul/);
   assert.equal(u.get('.spawn-dialog'), modal); assert.equal(modal.querySelector('.ftask').value, 'Retain my task');
-  assert.equal(u.get('.soul-inspector .spawn-act'), launch, 'inspection does not replace the action opener');
+  assert.equal(u.get('.workspace-soul-page .spawn-act'), launch, 'inspection does not replace the action opener');
   modal.querySelector('.fcancel').click(); assert.equal(u.doc.activeElement, launch);
   assert.equal(u.calls.some(c => c.path === '/api/spawn'), false, 'selection or opening Launch does not submit it');
   if (state === 'no operations') assert.equal(u.calls.some(c => c.path.startsWith('/api/capabilities')), false);
@@ -189,4 +195,71 @@ test('an empty catalog uses factual empty copy, and empty rosters never select o
   u.get('#workspace-tab-capabilities').click(); await tick(); await tick();
   assert.match(u.get('.catalog-empty').textContent, /The workspace reports no capabilities/);
   assert.doesNotMatch(u.get('.workspace-discovery').textContent, /Installed capabilities|No capabilities installed/);
+});
+
+// F7: soul and capability PAGES in the Workspace view (instances keep the sidebar).
+import { capabilityRow } from '../renderer/workspace-catalog.mjs';
+const key = (u, el, name) => el.dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }));
+
+test('F7: a Capabilities row opens its page (click or Enter) — "← Capabilities", the catalog facts, back or Esc returns to the focused row', async t => {
+  const u = await fixture(t, { cli: V2_CLI, sync: () => catalogReply() });
+  u.get('#workspace-tab-capabilities').click(); await tick(); await tick();
+  const row = u.get('.workspace-discovery .catalog-row[data-capability="oats.okf"]');
+  assert.ok(row.classList.contains('openable')); assert.equal(row.tabIndex, 0);
+  row.click();
+  const page = u.get('.workspace-cap-page');
+  assert.equal(page.hidden, false); assert.equal(u.get('.workspace-discovery').hidden, true, 'the page replaces the table');
+  assert.equal(page.querySelector('.page-back').textContent, 'Capabilities');
+  assert.equal(u.doc.activeElement, page.querySelector('.page-back'), 'focus moves into the page');
+  assert.equal(page.querySelector('.page-title h2').textContent, 'oats.okf');
+  const source = [...page.querySelectorAll('.page-card')].find(c => c.dataset.card === 'Source');
+  const facts = Object.fromEntries([...source.querySelectorAll('dt')].map(dt => [dt.textContent, dt.nextElementSibling.textContent]));
+  const catalogRow = f2('capabilities').result.capabilities.find(r => r.name === 'oats.okf');
+  assert.equal(facts.Package, catalogRow.package); assert.equal(facts.Version, catalogRow.version); assert.equal(facts.Commit, catalogRow.commit);
+  assert.equal(facts.Team, catalogRow.team, 'only reported facts');
+  assert.equal([...page.querySelectorAll('.page-card')].some(c => /resolves it/.test(c.dataset.card)), false, 'no soul context from the catalog');
+  page.querySelector('.page-back').click();
+  assert.equal(page.hidden, true); assert.equal(page.childElementCount, 0); assert.equal(u.get('.workspace-discovery').hidden, false);
+  assert.equal(u.doc.activeElement.dataset.capability, 'oats.okf', 'back returns to its row');
+  key(u, u.doc.activeElement, 'Enter');
+  assert.equal(page.hidden, false, 'Enter opens it too');
+  key(u, u.doc.activeElement, 'Escape');
+  assert.equal(page.hidden, true, 'Esc goes back'); assert.equal(u.doc.activeElement.dataset.capability, 'oats.okf');
+  // a tab change closes an open capability page
+  u.get('.workspace-discovery .catalog-row[data-capability="oats.okf"]').click();
+  u.get('#workspace-tab-souls').click(); await tick();
+  assert.equal(page.hidden, true); assert.equal(page.childElementCount, 0); assert.equal(u.get('.souls-grid').hidden, false);
+});
+
+test('F7: a soul page lists its capabilities with the Capabilities view\'s own table; a row opens the capability as the soul resolves it, back returns to the soul', async t => {
+  const u = await fixture(t, { cli: V2_CLI, sync: () => catalogReply() });
+  u.get('.soul-card').click(); await tick(); await tick();
+  const soulPage = u.get('.workspace-soul-page');
+  const table = soulPage.querySelector('.inspector-capability-table .catalog-table');
+  assert.ok(table, 'the catalog table component');
+  assert.deepEqual([...table.querySelectorAll('.catalog-row.head span')].map(s => s.textContent), ['Capability', 'Status', 'Used by']);
+  assert.deepEqual([...table.querySelectorAll('.catalog-row:not(.head)')].map(r => r.dataset.capability), inspection.capabilities.map(c => c.id));
+  assert.equal(soulPage.querySelector('.inspector-cap-row'), null, 'the old per-soul list is gone from the page');
+  const first = inspection.capabilities[0];
+  table.querySelector(`.catalog-row[data-capability="${first.id}"]`).click();
+  const cap = u.get('.workspace-cap-page');
+  assert.equal(cap.hidden, false); assert.equal(soulPage.hidden, true);
+  assert.equal(cap.querySelector('.page-back').textContent, 'dev');
+  const resolved = [...cap.querySelectorAll('.page-card')].find(c => c.dataset.card === 'As dev resolves it');
+  assert.ok(resolved, 'what the soul resolves');
+  assert.match(resolved.textContent, /Missing requirements/);
+  key(u, u.doc.activeElement, 'Escape');
+  assert.equal(cap.hidden, true); assert.equal(soulPage.hidden, false, 'back to the soul\'s page');
+  assert.equal(u.doc.activeElement.dataset.capability, first.id);
+});
+
+test('F7: capabilityRow maps an inspected capability onto the catalog row shape (reported facts only)', () => {
+  const pkg = inspection.capabilities.find(c => c.from?.kind === 'package');
+  const row = capabilityRow(pkg);
+  assert.equal(row.name, pkg.id); assert.equal(row.kind, 'package'); assert.equal(row.package, pkg.from.package); assert.equal(row.commit, pkg.from.commit);
+  assert.equal(Object.hasOwn(row, 'team'), false, 'inspect reports no team');
+  assert.equal(row.resolved, pkg);
+  const member = inspection.capabilities.find(c => c.from?.kind === 'member');
+  if (member) { const m = capabilityRow(member); assert.equal(m.kind, 'member'); assert.equal(m.repoKey, member.from.repoKey); }
+  assert.equal(capabilityRow({ id: 'x', from: { kind: 'weird' } }).kind, 'external');
 });

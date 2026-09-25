@@ -34,6 +34,9 @@ export const catalogCSS = `
 .catalog-used-marks { display:flex; }
 .catalog-used-marks .identity-mark { width:20px; height:20px; margin-right:-4px; border-radius:50%; font-size:9.5px; box-shadow:0 0 0 1.5px var(--surface); }
 .catalog-used-count { margin-left:8px; }
+.catalog-row.openable { cursor:pointer; }
+.catalog-row.openable:hover { background:var(--surface-2); }
+.catalog-row.openable:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
 .catalog-empty { padding:24px 16px; color:var(--muted); line-height:1.5; }
 .catalog-notes { display:grid; gap:4px; margin:0 0 14px; }
 .catalog-note { margin:0; color:var(--muted); font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
@@ -143,7 +146,19 @@ export function filterChoices(rows, names = new Map()) {
   return { teams, sources };
 }
 
-export function renderCapabilities(host, { rows, status, instances, root, total = list(rows).length }) {
+/** A capability as a soul/instance resolves it (`oats inspect` capabilities[])
+ * in the catalog's row shape, so the one table renders both. Only reported
+ * facts: no team (inspect does not report one), the origin from `from`. */
+export function capabilityRow(cap) {
+  const from = cap?.from && typeof cap.from === 'object' ? cap.from : {};
+  const kind = ['package', 'member', 'external'].includes(from.kind) ? from.kind : 'external';
+  return { name: cap.id, kind, ...(text(from.package) ? { package: from.package } : {}), ...(text(cap.version) ? { version: cap.version } : {}),
+    ...(text(from.commit) ? { commit: from.commit } : {}), ...(text(from.repoKey) ? { repoKey: from.repoKey } : {}),
+    origin: kind === 'package' ? `package ${from.package} v${from.version || cap.version || ''}`.trim() : `${kind} ${from.repoKey || ''}`.trim(),
+    ...(cap.layer ? { layer: cap.layer } : {}), resolved: cap };
+}
+/** onOpen(row): rows open the capability's page (click, Enter or Space). */
+export function renderCapabilities(host, { rows, status, instances, root, total = list(rows).length, onOpen = null }) {
   const doc = host.ownerDocument, names = memberNames(status);
   host.replaceChildren();
   const table = node(doc, 'div', null, 'catalog-table'); table.setAttribute('role', 'table'); table.setAttribute('aria-label', 'Workspace capabilities');
@@ -153,6 +168,11 @@ export function renderCapabilities(host, { rows, status, instances, root, total 
   for (const row of list(rows)) {
     const line = node(doc, 'div', null, 'catalog-row'); line.setAttribute('role', 'row');
     line.dataset.capability = row.name;
+    if (typeof onOpen === 'function') {
+      line.classList.add('openable'); line.tabIndex = 0; line.setAttribute('aria-label', `${row.name}: open its page`);
+      line.addEventListener('click', () => onOpen(row));
+      line.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(row); } });
+    }
     const source = capabilitySource(row, names);
     const cap = node(doc, 'div', null, 'catalog-cap'); cap.setAttribute('role', 'cell');
     const copy = node(doc, 'span', null, 'catalog-copy');
