@@ -144,8 +144,12 @@ supersedes the frames and the text above wherever they differ.** One Desktop PR:
       should also join."
 
     The row is shown iff the preview carries `teams` AND the messaging
-    manifest declares `settings.join` (the Desktop gates on declared facts,
-    never on versions).
+    module's preview row lists `join` in `declares` (feature
+    `settings-declared`; the Desktop gates on declared facts, never on
+    versions).
+  - **Second human redirect (QA, same day):** unmapped labels are not shown
+    anywhere (no greyed rows, no "not mapped" text), and Teams in the spawn
+    modal is one row styled like Relationship.
 
 **F6 — Version and doctor surface.** `oats version --json` and `oats doctor
 --json` in an About/Health pane; `ACCEPT_RANGE` and the three pins move to
