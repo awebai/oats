@@ -60,7 +60,8 @@
     "spawn-name",
     "settings-origins",
     "teams",
-    "settings-declared"
+    "settings-declared",
+    "capabilities-private"
   ],
   "workspaceApi": 2,
   "instanceGitApi": 1,

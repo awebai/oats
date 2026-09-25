@@ -13,7 +13,7 @@ import { createHash } from 'node:crypto';
 const [source] = process.argv.slice(2);
 if (typeof source !== 'string' || !source.startsWith('/')) throw new Error('One explicit absolute capture directory required');
 const target = fileURLToPath(new URL('.', import.meta.url));
-const documents = ['version', 'souls', 'inspect-soul', 'preview-teams-default', 'preview-teams-join', 'preview-teams-join-unmapped', 'apply-teams-join',
+const documents = ['version', 'souls', 'capabilities', 'workspace-status', 'inspect-soul', 'preview-teams-default', 'preview-teams-join', 'preview-teams-join-unmapped', 'apply-teams-join',
   'inspect-home', 'teams-initial', 'preview-teams-no-join', 'preview-no-join-sent', 'preview-teams-conflict', 'inspect-soul-conflict'];
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const captured = JSON.parse(readFileSync(join(source, 'provenance.json'), 'utf8'));

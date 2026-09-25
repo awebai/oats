@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { JSDOM } from "jsdom";
 import { createSoulMark, createRuntimeBadge, identityCSS } from "../renderer/identity-marks.mjs";
 import { workspaceStatusData, syncData } from "../deployment-data.mjs";
-import { renderCapabilities, renderFilters, renderSources, filterChoices, memberNames } from "../renderer/workspace-catalog.mjs";
+import { renderCapabilities, renderCapabilitySections, capabilitySections, renderFilters, renderSources, filterChoices, memberNames } from "../renderer/workspace-catalog.mjs";
 import { discoveryCSS } from "../renderer/workspace-discovery.mjs";
 import { createConnections, connectionsCSS } from '../renderer/connections.mjs';
 import { createForgePrPanel } from '../renderer/forge-pr.mjs';
@@ -304,7 +304,7 @@ for (const [name] of palettes) test(`${name}: actual identity/runtime markup win
 });
 
 for (const [name] of palettes) test(`${name}: workspace catalog, sources and sync text use AA tokens on their computed surfaces`, t => {
-  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"><header class="workspace-header"><div class="ws-sync"><span class="ws-sync-state warn">Lock out of date</span></div></header><p class="catalog-note warn">note</p><div class="filters"></div><div class="caps"></div><div class="sources"></div></main></body></html>`);
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"><header class="workspace-header"><div class="ws-sync"><span class="ws-sync-state warn">Lock out of date</span></div></header><p class="catalog-note warn">note</p><div class="filters"></div><div class="caps"></div><div class="sections"></div><div class="sources"></div></main></body></html>`);
   const doc = dom.window.document;
   for (const source of [css, identityCSS, discoveryCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
   t.after(() => dom.window.close());
@@ -315,9 +315,12 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
   const status = { ...workspaceStatusData(f2('workspace-status'), dir), members: syncData(f2('sync-moved'), dir).members };
   const rows = f2('capabilities').result.capabilities;
   const names = memberNames(status);
-  renderFilters(doc.querySelector('.filters'), { ...filterChoices(rows, names), value: { team: 'marketing', source: null }, onChange() {} });
+  renderFilters(doc.querySelector('.filters'), { ...filterChoices(rows, names), value: { team: 'marketing', repo: null }, onChange() {} });
   renderCapabilities(doc.querySelector('.caps'), { rows, status, instances: [], root: dir });
-  renderSources(doc.querySelector('.sources'), { status });
+  // F7 (kernel #185): the three sections, with a repo-owned (private) row.
+  const sections = capabilitySections(JSON.parse(readFileSync(new URL('fixtures/workspace-v2/f7/capabilities.json', new URL('./', import.meta.url)), 'utf8')).result.capabilities);
+  renderCapabilitySections(doc.querySelector('.sections'), { sections, shown: sections.workspace, filterHost: null, privateListed: true, status, instances: [], root: dir });
+  renderSources(doc.querySelector('.sources'), { status, instances: [{ agent: 'a', running: true }] });
   // The sync sheet's refusal text, as createWorkspaceSync builds it.
   const sheet = doc.createElement('section'); sheet.className = 'ws-sync-dialog';
   sheet.innerHTML = '<div class="ws-sync-body"><p class="ws-sync-lead error">x</p><p class="ws-sync-lead">x</p><button class="ws-sync-details">Details</button><p class="ws-sync-detail">x</p></div>';
@@ -335,6 +338,11 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
     ['.catalog-pill[aria-pressed=true]', '.catalog-pill[aria-pressed=true]', 'fg', 'sel'],
     ['.catalog-note.warn', '.oats-view', 'warn', 'bg'],
     ['.sources-key', '.catalog-table', 'muted', 'surface'],
+    ['.capability-section-title', '.oats-view', 'muted', 'bg'], ['.capability-section-count', '.oats-view', 'muted', 'bg'],
+    ['.capability-section-lead', '.oats-view', 'muted', 'bg'], ['.capability-repo-title', '.oats-view', 'fg', 'bg'],
+    ['.setup-caption', '.setup-card', 'muted', 'surface'], ['.setup-name', '.setup-card', 'fg', 'surface'], ['.setup-meta', '.setup-card', 'muted', 'surface'],
+    ['.setup-node-name', '.setup-node', 'fg', 'surface'], ['.setup-node-sub', '.setup-node', 'muted', 'surface'], ['.setup-node-detail', '.setup-node', 'warn', 'surface'],
+    ['.setup-node .catalog-chip.ok', '.setup-node .catalog-chip.ok', 'ok', 'surface-2'],
     ['.sources-detail', '.catalog-table', 'warn', 'surface'],
     ['.ws-sync-state.warn', '.workspace-header', 'warn', 'surface'],
     ['.ws-sync-lead.error', '.ws-sync-dialog', 'danger', 'surface'], ['.ws-sync-lead:not(.error)', '.ws-sync-dialog', 'fg', 'surface'],

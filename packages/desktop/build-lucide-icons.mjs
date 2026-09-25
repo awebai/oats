@@ -17,8 +17,8 @@ export const TARGET = join(HERE, 'renderer', 'lucide-icons.mjs');
 /** The only Lucide icons the app uses (kebab-case Lucide names). */
 export const LUCIDE_NAMES = Object.freeze([
   'book-open', 'brain', 'check', 'chevron-down', 'chevron-left', 'chevron-right', 'circle-alert', 'circle-dot', 'clock',
-  'columns-2', 'contrast', 'ellipsis', 'external-link', 'file-text', 'git-branch', 'git-pull-request', 'house',
-  'info', 'keyboard', 'maximize-2', 'minus', 'panel-left', 'play', 'plus', 'refresh-cw', 'rotate-ccw', 'rows-2',
+  'columns-2', 'contrast', 'ellipsis', 'external-link', 'file-text', 'folder-git-2', 'git-branch', 'git-pull-request', 'house',
+  'info', 'keyboard', 'laptop', 'maximize-2', 'minus', 'package', 'panel-left', 'play', 'plus', 'refresh-cw', 'rotate-ccw', 'rows-2',
   'search', 'sliders-horizontal', 'sparkles', 'square', 'square-terminal', 'square-x', 'terminal', 'trash-2',
   'triangle-alert', 'x',
 ]);

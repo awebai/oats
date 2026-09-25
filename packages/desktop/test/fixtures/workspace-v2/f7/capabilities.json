@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "capabilitiesApi": 1,
+    "workspace": {
+      "name": "northwind",
+      "key": "local//fixture/base/fx/remotes/agents.git",
+      "commit": "0242e349690131c52e866da3fd986cb18be410ef"
+    },
+    "capabilities": [
+      {
+        "name": "nw-brand-voice",
+        "origin": "member local//fixture/base/fx/remotes/marketing.git @ 67d8a27d",
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/marketing.git",
+        "commit": "67d8a27d7b042439fba52f9f3795002d5a24a69b",
+        "team": "marketing",
+        "private": false,
+        "path": "capabilities/nw-brand-voice",
+        "layer": null,
+        "version": "0.0.0-workspace"
+      },
+      {
+        "name": "nw-campaign-metrics",
+        "origin": "member local//fixture/base/fx/remotes/marketing.git @ 67d8a27d",
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/marketing.git",
+        "commit": "67d8a27d7b042439fba52f9f3795002d5a24a69b",
+        "team": "marketing",
+        "private": false,
+        "path": "capabilities/nw-campaign-metrics",
+        "layer": null,
+        "version": "0.0.0-workspace"
+      },
+      {
+        "name": "nw-deploy",
+        "origin": "package nw.tools v0.4.0",
+        "kind": "package",
+        "package": "nw.tools",
+        "version": "0.4.0",
+        "commit": "828d597bd42ac3181e5331fa0c0f25543067c327",
+        "team": "unassigned",
+        "private": false
+      },
+      {
+        "name": "nw-house-style",
+        "origin": "member local//fixture/base/fx/remotes/agents.git @ 0242e349",
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/agents.git",
+        "commit": "0242e349690131c52e866da3fd986cb18be410ef",
+        "team": "global",
+        "private": false,
+        "path": "capabilities/nw-house-style",
+        "layer": null,
+        "version": "0.0.0-workspace"
+      },
+      {
+        "name": "nw-lint",
+        "origin": "package nw.tools v0.4.0",
+        "kind": "package",
+        "package": "nw.tools",
+        "version": "0.4.0",
+        "commit": "828d597bd42ac3181e5331fa0c0f25543067c327",
+        "team": "unassigned",
+        "private": false
+      },
+      {
+        "name": "nw-platform-runbook",
+        "origin": "member local//fixture/base/fx/remotes/platform.git @ f51d2f59",
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/platform.git",
+        "commit": "f51d2f595105fb946489859570a268cc114df873",
+        "team": "engineering",
+        "private": true,
+        "path": "capabilities/nw-platform-runbook",
+        "layer": null,
+        "version": "0.0.0-workspace"
+      },
+      {
+        "name": "nw-release-tooling",
+        "origin": "member local//fixture/base/fx/remotes/agents.git @ 0242e349",
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/agents.git",
+        "commit": "0242e349690131c52e866da3fd986cb18be410ef",
+        "team": "engineering",
+        "private": false,
+        "path": "capabilities/nw-release-tooling",
+        "layer": null,
+        "version": "0.0.0-workspace"
+      },
+      {
+        "name": "nw-tools-dev",
+        "origin": "member local//fixture/base/fx/remotes/nw-tools.git @ 828d597b",
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/nw-tools.git",
+        "commit": "828d597bd42ac3181e5331fa0c0f25543067c327",
+        "team": "engineering",
+        "private": false,
+        "path": "capabilities/nw-tools-dev",
+        "layer": null,
+        "version": "0.0.0-workspace"
+      },
+      {
+        "name": "nw-warehouse-access",
+        "origin": "member local//fixture/base/fx/remotes/data.git @ ae9001c7",
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/data.git",
+        "commit": "ae9001c75ecc9de4b81aa904dc4939c5d1b1bb3d",
+        "team": "engineering",
+        "private": false,
+        "path": "capabilities/nw-warehouse-access",
+        "layer": null,
+        "version": "0.0.0-workspace"
+      },
+      {
+        "name": "nw.chat",
+        "origin": "package nw.chat v0.1.0",
+        "kind": "package",
+        "package": "nw.chat",
+        "version": "0.1.0",
+        "commit": "c744c45b6785b4569c0d9b7f1894cff3a4aa7642",
+        "team": "unassigned",
+        "private": false
+      },
+      {
+        "name": "nw.teams",
+        "origin": "package nw.teams v0.1.0",
+        "kind": "package",
+        "package": "nw.teams",
+        "version": "0.1.0",
+        "commit": "8092a2a212827e335608d48512e360b14dc3762d",
+        "team": "unassigned",
+        "private": false
+      },
+      {
+        "name": "oats.core",
+        "origin": "package oats.framework v1.1.3",
+        "kind": "package",
+        "package": "oats.framework",
+        "version": "1.1.3",
+        "commit": "b80344dcafd4b614e58bb8dc5d766eca9ea0403c",
+        "team": "unassigned",
+        "private": false
+      },
+      {
+        "name": "oats.okf",
+        "origin": "package oats.okf v2.1.3",
+        "kind": "package",
+        "package": "oats.okf",
+        "version": "2.1.3",
+        "commit": "6c9742aa531b9be30fcb5fe8753c456b5a64f910",
+        "team": "unassigned",
+        "private": false
+      }
+    ],
+    "problems": []
+  }
+}

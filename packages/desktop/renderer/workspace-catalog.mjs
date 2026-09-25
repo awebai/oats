@@ -1,5 +1,5 @@
-/** Workspace model v2 catalog views: the Capabilities table (design frame 04)
- * and the Sources list. Pure DOM from kernel JSON — `oats capabilities`,
+/** Workspace model v2 catalog views: the Capabilities sections (design frame 04
+ * table) and the Setup tab (graph + lists). Pure DOM from kernel JSON — `oats capabilities`,
  * `oats workspace status` and the roster's module rows. Nothing is resolved,
  * joined across the non-collapse boundary, or inferred: a member's
  * `publishes` stays informational, package capabilities stay package rows. */
@@ -42,11 +42,56 @@ export const catalogCSS = `
 .catalog-note { margin:0; color:var(--muted); font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
 .catalog-note.warn { color:var(--warn); }
 .sources-section + .sources-section { margin-top:var(--section-gap); }
+.capability-section + .capability-section { margin-top:var(--section-gap); }
+.capability-section-title { display:flex; align-items:baseline; gap:8px; margin:0; color:var(--muted); font-size:10.5px; font-weight:650; letter-spacing:.06em; text-transform:uppercase; }
+.capability-section-title:focus { outline:none; }
+.capability-section-count { color:var(--muted); font-weight:500; letter-spacing:0; }
+.capability-section-lead { margin:2px 0 var(--title-gap); color:var(--muted); font-size:12px; line-height:1.5; }
+.capability-repo + .capability-repo { margin-top:14px; }
+.capability-repo-title { display:flex; align-items:center; gap:6px; margin:0 0 8px; color:var(--fg); font-size:12.5px; font-weight:650; }
+.capability-repo-title .shell-icon { color:var(--muted); }
+.capability-none { margin:0; padding:0; }
+.setup-graph { display:grid; grid-template-columns:minmax(180px,230px) 32px minmax(200px,260px) 32px minmax(260px,1fr); align-items:center; margin:0 0 var(--section-gap); }
+.setup-card { display:flex; flex-direction:column; gap:6px; min-width:0; padding:12px 14px; border:1px solid var(--border); border-radius:10px; background:var(--surface); box-sizing:border-box; }
+.setup-caption { color:var(--muted); font-size:10.5px; font-weight:650; letter-spacing:.06em; text-transform:uppercase; }
+.setup-title { display:flex; align-items:center; gap:8px; min-width:0; }
+.setup-title .shell-icon, .setup-node-icon { flex:none; color:var(--muted); }
+.setup-name { color:var(--fg); font-size:13px; font-weight:650; overflow-wrap:anywhere; }
+.setup-meta { color:var(--muted); font-size:11.5px; line-height:1.5; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.setup-meta.mono { font:11px/1.5 var(--mono,monospace); }
+.setup-link { position:relative; height:0; border-top:1px solid var(--muted); }
+.setup-link::after { content:''; position:absolute; right:0; top:-4px; width:6px; height:6px; border-top:1px solid var(--muted); border-right:1px solid var(--muted); transform:rotate(45deg); }
+.setup-branch { display:flex; flex-direction:column; min-width:0; margin:0; padding:0; list-style:none; }
+.setup-leaf { --above:6px; position:relative; margin-top:var(--above); padding-left:22px; }
+.setup-leaf.group-start { --above:16px; }
+.setup-leaf:first-child { margin-top:0; }
+.setup-leaf::before { content:''; position:absolute; left:0; top:50%; width:22px; border-top:1px solid var(--muted); }
+.setup-leaf::after { content:''; position:absolute; left:0; top:calc(-1 * var(--above)); bottom:0; border-left:1px solid var(--muted); }
+.setup-leaf:first-child::after { top:50%; }
+.setup-leaf:last-child::after { bottom:50%; }
+.setup-leaf:only-child::after, .setup-none::before { display:none; }
+.setup-none { color:var(--muted); font-size:12px; }
+.setup-node { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:2px 10px; width:100%; min-height:48px; padding:7px 12px; border:1px solid var(--border); border-radius:8px; background:var(--surface); box-sizing:border-box; color:var(--fg); font:inherit; text-align:left; }
+.setup-node .setup-node-icon { grid-row:span 2; }
+button.setup-node { cursor:pointer; }
+button.setup-node:hover { background:var(--surface-2); }
+button.setup-node:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+.setup-node-name { color:var(--fg); font-size:12.5px; font-weight:650; overflow-wrap:anywhere; }
+.setup-node-sub, .setup-node-detail { grid-column:2 / -1; font-size:11px; line-height:1.45; }
+.setup-node-sub { color:var(--muted); }
+.setup-node-detail { color:var(--warn); overflow-wrap:anywhere; }
 .sources-section h2 { margin:0 0 var(--title-gap); color:var(--muted); font-size:10.5px; font-weight:650; letter-spacing:.06em; text-transform:uppercase; }
 .sources-row { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1.1fr); align-items:center; gap:12px; min-height:52px; padding:8px 16px; box-sizing:border-box; border-top:1px solid var(--border); }
 .sources-row:first-child { border-top:0; }
 .sources-key { color:var(--muted); font:11px/1.5 var(--mono,monospace); overflow-wrap:anywhere; }
 .sources-detail { grid-column:1/-1; margin:0; color:var(--warn); font-size:11.5px; overflow-wrap:anywhere; }
+@container(max-width:900px) {
+ .setup-graph { grid-template-columns:minmax(0,1fr); align-items:stretch; }
+ .setup-link { justify-self:start; width:0; height:18px; margin-left:22px; border-top:0; border-left:1px solid var(--muted); }
+ .setup-link::after { top:auto; right:auto; bottom:0; left:-4px; transform:rotate(135deg); }
+ .setup-branch { margin-left:22px; }
+ .setup-leaf:first-child::after { top:0; }
+}
 @container(max-width:700px) {
  .catalog-row, .sources-row { grid-template-columns:minmax(0,1fr); gap:6px; }
  .catalog-row.head { display:none; }
@@ -82,8 +127,8 @@ export function capabilityUse(instances, name) {
   }
   return { souls: [...souls.values()], moved };
 }
-export function filterCapabilities(rows, { team = null, source = null } = {}, names = new Map()) {
-  return list(rows).filter(row => (!team || row.team === team) && (!source || capabilitySource(row, names).key === source));
+export function filterCapabilities(rows, { team = null, repo = null } = {}, names = new Map()) {
+  return list(rows).filter(row => (!team || row.team === team) && (!repo || capabilitySource(row, names).key === repo));
 }
 
 function node(doc, tag, value, cls) {
@@ -100,7 +145,7 @@ function chip(doc, label, tone = '', icon = null) {
 }
 
 /** Pill filters: single choice per group, AND across groups. */
-export function renderFilters(host, { teams, sources, value, onChange, onRefresh, refreshing = false }) {
+export function renderFilters(host, { teams, repos, value, onChange, onRefresh, refreshing = false }) {
   const doc = host.ownerDocument;
   host.replaceChildren(); host.className = 'catalog-filters';
   const group = (label, key, options) => {
@@ -119,7 +164,7 @@ export function renderFilters(host, { teams, sources, value, onChange, onRefresh
     return el;
   };
   host.append(group('Team', 'team', [{ label: 'All', value: null }, ...teams.map(team => ({ label: team, value: team }))]));
-  host.append(group('Source', 'source', [{ label: 'All', value: null }, ...sources]));
+  host.append(group('Repo', 'repo', [{ label: 'All', value: null }, ...repos]));
   if (onRefresh) {
     const refresh = node(doc, 'button', null, 'act catalog-refresh'); refresh.type = 'button'; refresh.disabled = refreshing;
     refresh.append(iconElement(doc, 'refresh', { size: 14 }));
@@ -132,18 +177,32 @@ export function renderFilters(host, { teams, sources, value, onChange, onRefresh
 
 /** Team and source choices from the catalog rows themselves (members first,
  * then packages), so a pill never names something the table cannot show. */
+/** Filter choices for the Workspace owned section: its rows' teams and the
+ * repositories they come from (members, then external sources). */
 export function filterChoices(rows, names = new Map()) {
-  const teams = [...new Set(list(rows).map(row => text(row.team)).filter(Boolean))].sort();
-  const bySource = new Map();
-  for (const row of list(rows)) { const source = capabilitySource(row, names); if (!bySource.has(source.key)) bySource.set(source.key, source); }
-  const order = { member: 0, external: 1, package: 2 };
-  const all = [...bySource.values()].sort((a, b) => order[a.kind] - order[b.kind] || a.label.localeCompare(b.label));
-  const sources = [];
+  const owned = list(rows).filter(row => row.kind !== 'package');
+  const teams = [...new Set(owned.map(row => text(row.team)).filter(Boolean))].sort();
+  const byRepo = new Map();
+  for (const row of owned) { const source = capabilitySource(row, names); if (!byRepo.has(source.key)) byRepo.set(source.key, source); }
+  const all = [...byRepo.values()].sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'member' ? -1 : 1) || a.label.localeCompare(b.label));
+  const repos = [];
   all.forEach((source, index) => {
-    if (index && source.kind !== all[index - 1].kind) sources.push('sep');
-    sources.push({ label: source.label, value: source.key, title: `${source.kind === 'package' ? 'Package' : source.kind === 'member' ? 'Repository' : 'External'}: ${source.label}` });
+    if (index && source.kind !== all[index - 1].kind) repos.push('sep');
+    repos.push({ label: source.label, value: source.key, title: `${source.kind === 'member' ? 'Repository' : 'External'}: ${source.label}` });
   });
-  return { teams, sources };
+  return { teams, repos };
+}
+
+/** The Capabilities view's three sections, from the catalog rows' own facts:
+ * workspace owned (listed to every soul), packages, and repo owned (the
+ * kernel's private: true, usable only by that repository's souls). */
+export function capabilitySections(rows) {
+  const all = list(rows);
+  return {
+    workspace: all.filter(row => row.kind !== 'package' && row.private !== true),
+    packages: all.filter(row => row.kind === 'package'),
+    repo: all.filter(row => row.kind !== 'package' && row.private === true),
+  };
 }
 
 /** A capability as a soul/instance resolves it (`oats inspect` capabilities[])
@@ -158,10 +217,10 @@ export function capabilityRow(cap) {
     ...(cap.layer ? { layer: cap.layer } : {}), resolved: cap };
 }
 /** onOpen(row): rows open the capability's page (click, Enter or Space). */
-export function renderCapabilities(host, { rows, status, instances, root, total = list(rows).length, onOpen = null }) {
+export function renderCapabilities(host, { rows, status, instances, root, total = list(rows).length, onOpen = null, label = 'Workspace capabilities', empty = null }) {
   const doc = host.ownerDocument, names = memberNames(status);
   host.replaceChildren();
-  const table = node(doc, 'div', null, 'catalog-table'); table.setAttribute('role', 'table'); table.setAttribute('aria-label', 'Workspace capabilities');
+  const table = node(doc, 'div', null, 'catalog-table'); table.setAttribute('role', 'table'); table.setAttribute('aria-label', label);
   const head = node(doc, 'div', null, 'catalog-row head'); head.setAttribute('role', 'row');
   for (const label of ['Capability', 'Status', 'Used by']) { const cell = node(doc, 'span', label); cell.setAttribute('role', 'columnheader'); head.append(cell); }
   table.append(head);
@@ -202,7 +261,7 @@ export function renderCapabilities(host, { rows, status, instances, root, total 
     line.append(cap, readiness, used);
     table.append(line);
   }
-  if (!list(rows).length) table.append(node(doc, 'p', total ? 'No capabilities match these filters.' : 'The workspace reports no capabilities yet: members publish capabilities and packages lock theirs on sync.', 'catalog-empty'));
+  if (!list(rows).length) table.append(node(doc, 'p', total ? 'No capabilities match these filters.' : empty || 'The workspace reports no capabilities yet: members publish capabilities and packages lock theirs on sync.', 'catalog-empty'));
   host.append(table);
 }
 
@@ -226,9 +285,116 @@ export function lockNotes(status) {
   return lines;
 }
 
-export function renderSources(host, { status }) {
+/** The Capabilities tab: Workspace owned (with its team/repo filters), Packages
+ * and, when the kernel lists them (feature capabilities-private), Repo owned
+ * grouped by repository. `filterHost` is the discovery's persistent pill row. */
+export function renderCapabilitySections(host, { sections, shown, filterHost, privateListed, status, instances, root, onOpen = null }) {
+  const doc = host.ownerDocument, names = memberNames(status);
+  host.replaceChildren();
+  const section = (id, title, count, lead) => {
+    const el = node(doc, 'section', null, 'capability-section'); el.dataset.section = id;
+    const head = node(doc, 'h2', null, 'capability-section-title'); head.id = `capability-section-${id}`; head.tabIndex = -1;
+    head.append(node(doc, 'span', title), node(doc, 'span', count, 'capability-section-count'));
+    el.setAttribute('aria-labelledby', head.id);
+    el.append(head, node(doc, 'p', lead, 'capability-section-lead'));
+    host.append(el); return el;
+  };
+  const table = (parent, rows, opts) => { const box = node(doc, 'div'); parent.append(box); renderCapabilities(box, { rows, status, instances, root, onOpen, ...opts }); };
+  // Nothing at all: one factual line (and the refresh), not three empty sections.
+  if (!sections.workspace.length && !sections.packages.length && !sections.repo.length) {
+    if (filterHost) host.append(filterHost);
+    table(host, [], {}); return;
+  }
+  const owned = section('workspace', 'Workspace owned', shown.length === sections.workspace.length ? String(shown.length) : `${shown.length} of ${sections.workspace.length}`,
+    'Listed to every soul in the workspace.');
+  if (filterHost) owned.append(filterHost);
+  table(owned, shown, { total: sections.workspace.length, label: 'Workspace owned capabilities', empty: 'No workspace repository offers a capability yet.' });
+  const packages = section('packages', 'Packages', String(sections.packages.length), 'From the packages this workspace installs.');
+  table(packages, sections.packages, { label: 'Package capabilities', empty: 'No package capability is locked yet. Sync to lock the declared packages.' });
+  if (!privateListed) return;
+  const repo = section('repo', 'Repo owned', String(sections.repo.length), "Private to their repository: only that repository's souls can use them.");
+  if (!sections.repo.length) { repo.append(node(doc, 'p', 'No repository keeps a private capability.', 'catalog-empty capability-none')); return; }
+  const byRepo = new Map();
+  for (const row of sections.repo) { const source = capabilitySource(row, names); if (!byRepo.has(source.key)) byRepo.set(source.key, { source, rows: [] }); byRepo.get(source.key).rows.push(row); }
+  for (const { source, rows } of [...byRepo.values()].sort((a, b) => a.source.label.localeCompare(b.source.label))) {
+    const group = node(doc, 'div', null, 'capability-repo'); group.dataset.repo = source.key;
+    const title = node(doc, 'h3', null, 'capability-repo-title');
+    title.append(iconElement(doc, 'repo', { size: 14 }), node(doc, 'span', source.label));
+    group.append(title); repo.append(group);
+    table(group, rows, { label: `${source.label} repo-owned capabilities` });
+  }
+}
+
+const count = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const tail = value => String(value || '').replace(/\/+$/, '').split('/').pop().replace(/\.git$/, '');
+/** The Setup overview: this computer → the workspace → what it is built from
+ * (repositories, packages, external souls). Kernel facts only, no commits;
+ * anything that lives in a git repository carries the repository icon. */
+export function renderSetupGraph(host, { status, instances = [], onOpenRepo = null, onOpenPackages = null }) {
+  const doc = host.ownerDocument;
+  const ws = status?.workspace || {};
+  const graph = node(doc, 'figure', null, 'setup-graph'); graph.setAttribute('aria-label', 'How this deployment is set up');
+  const card = (caption, icon, name, cls) => {
+    const el = node(doc, 'div', null, `setup-card ${cls}`);
+    const title = node(doc, 'div', null, 'setup-title'); title.append(iconElement(doc, icon, { size: 16 }), node(doc, 'span', name, 'setup-name'));
+    el.append(node(doc, 'span', caption, 'setup-caption'), title); return el;
+  };
+  const link = () => { const el = node(doc, 'div', null, 'setup-link'); el.setAttribute('aria-hidden', 'true'); return el; };
+  // This computer: the deployment folder (where oats-local.yaml lives) and its instances.
+  const deployment = text(ws.local) ? ws.local.replace(/\/oats-local\.yaml$/, '') : null;
+  const computer = card('This computer', 'computer', deployment ? tail(deployment) : 'This deployment', 'setup-computer');
+  if (deployment) { const path = node(doc, 'span', deployment, 'setup-meta mono'); path.title = deployment; computer.append(path); }
+  const all = list(instances), running = all.filter(i => i?.running === true).length;
+  computer.append(node(doc, 'span', all.length ? `${count(all.length, 'instance')} · ${running} running` : 'No instances yet', 'setup-meta'));
+  // The workspace: its host repository and its teams.
+  const names = memberNames(status);
+  const workspace = card('Workspace', 'repo', text(ws.name) || 'Workspace', 'setup-workspace');
+  if (text(ws.key)) { const host = node(doc, 'span', `Defined in ${names.get(ws.key) || tail(ws.url || ws.key)}`, 'setup-meta'); host.title = ws.key; workspace.append(host); }
+  if (list(ws.teams).length) { const teams = node(doc, 'div', null, 'catalog-chips'); for (const team of ws.teams) teams.append(chip(doc, team)); workspace.append(teams); }
+  // What it is built from.
+  const branch = node(doc, 'ul', null, 'setup-branch'); branch.setAttribute('aria-label', 'What the workspace is built from');
+  const leaf = (el, groupStart) => { const li = node(doc, 'li', null, `setup-leaf${groupStart ? ' group-start' : ''}`); li.append(el); branch.append(li); };
+  const item = (icon, name, sub, state, open) => {
+    const el = node(doc, open ? 'button' : 'div', null, 'setup-node');
+    if (open) { el.type = 'button'; el.addEventListener('click', open.run); el.setAttribute('aria-label', `${name}: ${open.label}`); }
+    const mark = iconElement(doc, icon, { size: 16 }); mark.classList.add('setup-node-icon');
+    el.append(mark, node(doc, 'span', name, 'setup-node-name'));
+    const states = node(doc, 'span', null, 'catalog-chips setup-node-state'); if (state) states.append(state); el.append(states);
+    el.append(node(doc, 'span', sub, 'setup-node-sub'));
+    return el;
+  };
+  list(status?.members).forEach((member, index) => {
+    const caps = list(member.capabilities).length;
+    const state = member.status === 'confirmed' ? chip(doc, 'confirmed', 'ok', 'check') : chip(doc, text(member.status) || 'unconfirmed', 'warn', 'warning');
+    const sub = ['Repository', text(member.team), count(list(member.souls).length, 'soul'), count(caps, 'capability', 'capabilities')].filter(Boolean).join(' · ');
+    const el = item('repo', text(member.name) || tail(member.key), sub, state,
+      caps && onOpenRepo ? { label: 'show its capabilities', run: () => onOpenRepo(member.key) } : null);
+    el.dataset.member = member.key;
+    if (text(member.detail)) el.append(node(doc, 'span', member.detail, 'setup-node-detail'));
+    leaf(el, index === 0);
+  });
+  const packages = [...list(status?.packages).map(pkg => ({ pkg })), ...list(status?.unsynced).map(id => ({ unsynced: id }))];
+  packages.forEach(({ pkg, unsynced }, index) => {
+    const el = pkg
+      ? item('package', `${pkg.id}${pkg.version ? ` v${pkg.version}` : ''}`, ['Package', count(list(pkg.capabilities).length, 'capability', 'capabilities')].join(' · '), chip(doc, 'locked', 'ok', 'check'),
+        onOpenPackages ? { label: 'show package capabilities', run: () => onOpenPackages() } : null)
+      : item('package', unsynced, 'Package · declared', chip(doc, 'not locked', 'warn', 'warning'), null);
+    el.dataset.package = pkg ? pkg.id : unsynced;
+    leaf(el, index === 0);
+  });
+  list(status?.external).forEach((row, index) => {
+    const repo = tail(String(row.source || '').replace(/@[^@/]*$/, ''));
+    leaf(item('repo', text(row.soul) || 'soul', ['External soul', repo, text(row.team)].filter(Boolean).join(' · '), null, null), index === 0);
+  });
+  if (!branch.children.length) branch.append(node(doc, 'li', 'No repositories or packages reported yet.', 'setup-leaf setup-none'));
+  graph.append(computer, link(), workspace, link(), branch);
+  host.append(graph);
+}
+
+export function renderSources(host, { status, instances = [], onOpenRepo = null, onOpenPackages = null }) {
   const doc = host.ownerDocument;
   host.replaceChildren();
+  renderSetupGraph(host, { status, instances, onOpenRepo, onOpenPackages });
   const section = (title, rows, empty) => {
     const el = node(doc, 'section', null, 'sources-section');
     el.append(node(doc, 'h2', title));
@@ -239,7 +405,7 @@ export function renderSources(host, { status }) {
   const repos = list(status?.members).map(member => {
     const row = node(doc, 'div', null, 'sources-row'); row.dataset.member = member.key;
     const who = node(doc, 'div', null, 'catalog-copy');
-    who.append(node(doc, 'span', text(member.name) || member.key, 'catalog-name'), node(doc, 'span', [member.key, short(member.commit)].filter(text).join(' @ '), 'sources-key'));
+    who.append(node(doc, 'span', text(member.name) || member.key, 'catalog-name'), node(doc, 'span', member.key, 'sources-key'));
     const facts = node(doc, 'div', null, 'catalog-chips');
     facts.append(member.status === 'confirmed' ? chip(doc, 'confirmed', 'ok', 'check') : chip(doc, text(member.status) || 'unconfirmed', 'warn', 'warning'));
     if (text(member.team)) facts.append(chip(doc, member.team));
@@ -253,7 +419,7 @@ export function renderSources(host, { status }) {
   const packages = list(status?.packages).map(pkg => {
     const row = node(doc, 'div', null, 'sources-row'); row.dataset.package = pkg.id;
     const who = node(doc, 'div', null, 'catalog-copy');
-    who.append(node(doc, 'span', `${pkg.id}${pkg.version ? ` v${pkg.version}` : ''}`, 'catalog-name'), node(doc, 'span', [pkg.source, short(pkg.commit)].filter(text).join(' @ '), 'sources-key'));
+    who.append(node(doc, 'span', `${pkg.id}${pkg.version ? ` v${pkg.version}` : ''}`, 'catalog-name'), node(doc, 'span', pkg.source, 'sources-key'));
     const facts = node(doc, 'div', null, 'catalog-chips');
     facts.append(chip(doc, 'locked', 'ok', 'check'));
     const offers = node(doc, 'div', null, 'catalog-chips');

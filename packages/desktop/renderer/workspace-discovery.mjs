@@ -9,7 +9,7 @@
 import { postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
 import { cliStatus, cliKnownUnavailable } from './views/cli-status.mjs';
 import { deploymentUnavailableText } from './deployment-header.mjs';
-import { catalogCSS, renderCapabilities, renderFilters, renderSources, filterChoices, filterCapabilities, memberNames, deploymentNotes } from './workspace-catalog.mjs';
+import { catalogCSS, renderCapabilitySections, capabilitySections, renderFilters, renderSources, filterChoices, filterCapabilities, memberNames, deploymentNotes } from './workspace-catalog.mjs';
 import { createWorkspaceSync, syncCSS, reasonText } from './workspace-sync-view.mjs';
 
 export const workspaceTabs = ['souls', 'capabilities', 'sources'];
@@ -52,7 +52,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   const doc = header.ownerDocument;
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
   let alive = true, serial = 0, rosterGen = null, workspace = null, deployment = null, instances = [], tab = 'souls';
-  let catalog = null, loading = false, failure = '', filters = { team: null, source: null }, rendered = null;
+  let catalog = null, loading = false, failure = '', filters = { team: null, repo: null }, rendered = null;
   header.className = 'workspace-header';
   const title = node('h1', 'Workspace'); header.append(title);
   const tabs = node('div', undefined, 'workspace-tabs'); tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Workspace sections'); header.append(tabs);
@@ -140,27 +140,56 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     status.classList.toggle('error', !unavailable && !!failure);
     retry.hidden = !!unavailable || !failure || tab !== 'capabilities';
     // Identical polls never rebuild a settled projection under focus/selection.
-    const key = JSON.stringify([tab, unavailable, loading, failure, filters, catalog, s, deployment?.withheld, deployment?.reachable, instances.map(i => [i.agent, i.agentsRoot, i.modules])]);
+    const key = JSON.stringify([tab, unavailable, loading, failure, filters, catalog, s, deployment?.withheld, deployment?.reachable, privateListed(), instances.map(i => [i.agent, i.agentsRoot, i.modules, i.running])]);
     if (key === rendered) return;
     rendered = key;
     notes.replaceChildren(); filterHost.replaceChildren(); body.replaceChildren(); filterHost.className = '';
     if (unavailable || tab === 'souls') return;
     for (const note of deploymentNotes(deployment)) notes.append(node('p', note.text, `catalog-note${note.warn ? ' warn' : ''}`));
-    if (tab === 'sources') { renderSources(body, { status: s }); return; }
+    if (tab === 'sources') {
+      // The kernel's workspace warnings (for example an unmapped team label), verbatim.
+      for (const warning of list(s?.warnings)) if (typeof warning?.message === 'string' && warning.message) notes.append(node('p', warning.message, 'catalog-note warn'));
+      renderSources(body, { status: s, instances, onOpenRepo: openRepo, onOpenPackages: openPackages }); return;
+    }
     if (!catalog) return;
     for (const problem of list(catalog.problems)) notes.append(node('p', reasonText(problem), 'catalog-note warn'));
     const names = memberNames(s);
-    const choices = filterChoices(catalog.capabilities, names);
+    const sections = capabilitySections(catalog.capabilities);
+    const choices = filterChoices(sections.workspace, names);
     // A remembered choice the catalog no longer offers falls back to All.
     if (filters.team && !choices.teams.includes(filters.team)) filters = { ...filters, team: null };
-    if (filters.source && !choices.sources.some(option => option !== 'sep' && option.value === filters.source)) filters = { ...filters, source: null };
+    if (filters.repo && !choices.repos.some(option => option !== 'sep' && option.value === filters.repo)) filters = { ...filters, repo: null };
     renderFilters(filterHost, { ...choices, value: filters, refreshing: loading,
       onChange: next => {
         const focused = doc.activeElement?.dataset?.filterKey ? { key: doc.activeElement.dataset.filterKey, value: doc.activeElement.dataset.filterValue } : null;
         filters = next; render(); refocusPill(focused);
       },
       onRefresh: () => { catalog = null; failure = ''; void load(); } });
-    renderCapabilities(body, { rows: filterCapabilities(catalog.capabilities, filters, names), total: catalog.capabilities.length, status: s, instances, root: workspace?.id, onOpen: onOpenCapability });
+    renderCapabilitySections(body, { sections, shown: filterCapabilities(sections.workspace, filters, names), filterHost, privateListed: privateListed(),
+      status: s, instances, root: workspace?.id, onOpen: onOpenCapability });
+    reveal();
+  }
+  // Repo owned is shown only when the kernel lists private capabilities.
+  const privateListed = () => list(cliStatus()?.features).includes('capabilities-private');
+  // Setup → Capabilities: a repository's capabilities (filtered), or the Packages section.
+  let pendingReveal = null;
+  function openRepo(key) {
+    pendingReveal = { repo: `member:${key}` }; filters = { team: null, repo: `member:${key}` };
+    if (!setTab('capabilities')) pendingReveal = null;
+  }
+  function openPackages() {
+    pendingReveal = { section: 'packages' };
+    if (!setTab('capabilities')) pendingReveal = null;
+  }
+  function reveal() {
+    if (!pendingReveal) return;
+    const want = pendingReveal; pendingReveal = null;
+    let target = null;
+    if (want.section) target = body.querySelector(`#capability-section-${want.section}`);
+    else if (filters.repo === want.repo) target = body.querySelector('#capability-section-workspace');
+    else target = [...body.querySelectorAll('.capability-repo')].find(el => el.dataset.repo === want.repo)?.querySelector('.capability-repo-title') || body.querySelector('#capability-section-workspace');
+    if (!target) return;
+    target.tabIndex = -1; target.scrollIntoView?.({ block: 'start' }); target.focus({ preventScroll: true });
   }
   // The pill row is rebuilt on a filter change; keep focus on the same pill.
   function refocusPill(focused) {
@@ -170,7 +199,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   }
   function updateRoster(agents, panelData) {
     const gen = workspaceGeneration();
-    if (rosterGen !== gen) { catalog = null; failure = ''; filters = { team: null, source: null }; serial++; loading = false; }
+    if (rosterGen !== gen) { catalog = null; failure = ''; filters = { team: null, repo: null }; serial++; loading = false; }
     rosterGen = gen; workspace = panelData.workspace || null; deployment = panelData.deployment || null;
     instances = list(panelData.instances);
     title.textContent = deployment?.status === 'observed' && deployment.workspace?.name ? deployment.workspace.name : 'Workspace';
@@ -188,7 +217,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     context: () => ({ status: observed(), instances, root: workspace?.id }),
     reset() {
       serial++; rosterGen = null; workspace = null; deployment = null; instances = []; catalog = null; loading = false; failure = '';
-      filters = { team: null, source: null }; title.textContent = 'Workspace'; sync.reset(); updateCounts(null); render();
+      filters = { team: null, repo: null }; title.textContent = 'Workspace'; sync.reset(); updateCounts(null); render();
     },
     dispose() { alive = false; serial++; sync.dispose(); },
   };
