@@ -122,7 +122,7 @@ test("global grant spawn refuses below the custody attach floor before minting",
     const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
     const r = runHook(base, bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "pi", OATS_SETTINGS: globalSettings(custody), FAKE_AW_VERSION: "aw 1.36.1" });
     assert.notEqual(r.status, 0);
-    assert.match(r.doc.warning, /cannot attach a grant to custody \(--custody-socket\); grants need aw >= 9\.9\.9/);
+    assert.match(r.doc.warning, /cannot attach a grant to custody \(--custody-socket\); grants need aw >= 1\.36\.3/);
     assert.doesNotMatch(readFileSync(join(base, "aw.log"), "utf8"), /id grant mint/, "nothing minted below the floor");
     assert.equal(existsSync(join(home, ".aweb-identity")), false);
   } finally { rmSync(base, { recursive: true, force: true }); }
@@ -164,7 +164,7 @@ test("readiness reports existing grant homes without custody.socket_path as not 
     const missing = runBindingCheck(bin, globalSettings(custody), ctx);
     assert.equal(missing.status, 0, missing.stderr);
     assert.equal(missing.doc.result.status, "needs-configuration");
-    assert.deepEqual(missing.doc.result.problems.find((p) => p.code === "custody")?.message, "grant old is not attached to custody; retire and respawn on aw >= 9.9.9");
+    assert.deepEqual(missing.doc.result.problems.find((p) => p.code === "custody")?.message, "grant old is not attached to custody; retire and respawn on aw >= 1.36.3");
     write(join(home, ".aweb-identity", "grant.yaml"), "grant_id: old\nteam_id: t:example.test\nexpires_at: old\ncustody:\n  socket_path: attached.sock\n");
     const attached = runBindingCheck(bin, globalSettings(custody), ctx);
     assert.equal(attached.doc.result.status, "ready");
@@ -173,8 +173,13 @@ test("readiness reports existing grant homes without custody.socket_path as not 
 
 test("real aw fixture: unattached grant home reports the released custody locator error", (t) => {
   const fixture = process.env.AW_REAL_GRANT_FIXTURE;
+  const realAw = process.env.AW_REAL_CLI_BIN || "aw";
   if (!fixture) return t.skip("AW_REAL_GRANT_FIXTURE not set; skipping real aw grant-home regression");
-  const r = spawnSync("aw", ["custody", "status", "--json"], { cwd: fixture, encoding: "utf8", env: { ...process.env, AWEB_IDENTITY_HOME: fixture } });
+  const version = spawnSync(realAw, ["version"], { encoding: "utf8", timeout: 10000 });
+  const parsed = /aw\s+v?(\d+)\.(\d+)\.(\d+)/.exec(version.stdout + version.stderr);
+  const atLeast = parsed && parsed.slice(1, 4).map(Number).reduce((ok, part, i, arr) => ok || (arr.slice(0, i).every((n, j) => n === [1, 36, 3][j]) && part > [1, 36, 3][i]), parsed.slice(1, 4).map(Number).every((n, i) => n === [1, 36, 3][i]));
+  if (version.status !== 0 || !atLeast) return t.skip(`real aw is not 1.36.3+: ${version.stdout || version.stderr}`);
+  const r = spawnSync(realAw, ["custody", "status", "--json"], { cwd: fixture, encoding: "utf8", env: { ...process.env, AWEB_IDENTITY_HOME: fixture } });
   assert.notEqual(r.status, 0);
   assert.match(r.stderr + r.stdout, /grant home has no custody\.socket_path locator/);
 });

@@ -43,7 +43,7 @@ import { join, dirname, resolve, delimiter, isAbsolute } from "node:path";
 import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/captured-execution.mjs";
 import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/session-readiness.mjs";
 import { runCapturedNative } from "../lib/captured-native.mjs";
-import { parseBindingJson } from "../lib/binding-wire.mjs";
+import { CUSTODY_ATTACH_MIN, grantYamlCustodySocket, parseBindingJson } from "../lib/binding-wire.mjs";
 import { custodyPreflight } from "../lib/grant-custody.mjs";
 
 /** Run a command as ARGV — never a shell string. Team ids, aliases, instance
@@ -298,7 +298,6 @@ function wakeDeregister(instanceHome) {
 // <team-id>` (and the full normal/reviewer scope lists): aw 1.36.2, paired with
 // aweb server 1.27.5 for complete custody operations. aw 1.36.1 has neither.
 const GRANT_TEAM_FLAG_MIN = "1.36.2";
-const CUSTODY_ATTACH_MIN = "9.9.9";
 const NORMAL_GRANT_SCOPES = ["mail.read", "mail.send", "chat.read", "chat.send", "events.read", "coord.read", "coord.write", "presence.write", "contacts.read", "contacts.write"];
 const REVIEWER_GRANT_SCOPES = ["mail.read", "chat.read", "events.read", "coord.read", "presence.write"];
 const residentKeyHint = (name) => `oats-local.yaml settings.oats.aweb.residents.${name || "<name>"}`;
@@ -341,6 +340,21 @@ function revokeGrant(custody, grantId) {
     throw e;
   }
 }
+function grantYamlNestedScalar(text, sectionName, key) {
+  const lines = String(text ?? "").split(/\r?\n/);
+  let inSection = false, baseIndent = 0;
+  for (const line of lines) {
+    const section = new RegExp(`^(\\s*)${sectionName}:\\s*(?:#.*)?$`).exec(line);
+    if (section) { inSection = true; baseIndent = section[1].length; continue; }
+    if (inSection) {
+      const ind = /^(\s*)/.exec(line)?.[1].length || 0;
+      if (line.trim() && ind <= baseIndent) inSection = false;
+      const value = new RegExp(`^\\s*${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`).exec(line);
+      if (value) return value[1].trim();
+    }
+  }
+  return undefined;
+}
 function recoverGrantHome(grantHome) {
   try {
     const text = readFileSync(join(grantHome, "grant.yaml"), "utf8");
@@ -348,23 +362,8 @@ function recoverGrantHome(grantHome) {
       const m = text.match(new RegExp(`^\\s*${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`, "m"));
       return m ? m[1].trim() : undefined;
     };
-    return { grantId: scalar("grant_id"), team: scalar("team_id"), expiresAt: scalar("expires_at"), custodySocket: grantYamlCustodySocket(text) };
+    return { grantId: scalar("grant_id"), team: scalar("team_id"), expiresAt: scalar("expires_at"), subjectAlias: grantYamlNestedScalar(text, "subject", "alias"), custodySocket: grantYamlCustodySocket(text) };
   } catch { return {}; }
-}
-function grantYamlCustodySocket(text) {
-  const lines = String(text ?? "").split(/\r?\n/);
-  let inCustody = false, baseIndent = 0;
-  for (const line of lines) {
-    const custody = /^(\s*)custody:\s*(?:#.*)?$/.exec(line);
-    if (custody) { inCustody = true; baseIndent = custody[1].length; continue; }
-    if (inCustody) {
-      const ind = /^(\s*)/.exec(line)?.[1].length || 0;
-      if (line.trim() && ind <= baseIndent) inCustody = false;
-      const socket = /^\s*socket_path:\s*["']?([^"'\n#]+)["']?\s*$/.exec(line);
-      if (socket) return socket[1].trim();
-    }
-  }
-  return undefined;
 }
 function readGrantYamlCustodySocket(grantHome) {
   const text = readFileSync(join(grantHome, "grant.yaml"), "utf8");
@@ -383,8 +382,11 @@ function verifyGrantCustodyAttachment({ grantHome, custodySocket, alias, team })
   if (!teamRow || teamRow.ready !== true) throw new Error(`grant custody team ${team} is not ready`);
   return status;
 }
+function preflightCustodySocket(preflight) {
+  return typeof preflight.status?.socket_path === "string" && preflight.status.socket_path.trim() ? preflight.status.socket_path.trim() : undefined;
+}
 function requirePreflightCustodySocket(preflight) {
-  const socket = typeof preflight.status?.socket_path === "string" && preflight.status.socket_path.trim() ? preflight.status.socket_path.trim() : undefined;
+  const socket = preflightCustodySocket(preflight);
   if (!socket) fatal("custody preflight reported no socket_path, so the grant cannot be attached to custody");
   return socket;
 }
@@ -441,7 +443,8 @@ function globalGrantRenew() {
   let preflight;
   try { preflight = custodyPreflight({ custody, resident, team, e2eeRequired: grantE2eeRequired(), fatalOnError: false, runAw: (argv, cwd, options) => run(argv, cwd, 60000, options), fatal }); }
   catch (e) { out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta, oldHome), warning: `oats-aweb: renewal custody preflight failed (${e.message || e}); keeping previous grant ${oldMeta.identity.grant.id}` }); }
-  const custodySocket = requirePreflightCustodySocket(preflight);
+  const custodySocket = preflightCustodySocket(preflight);
+  if (!custodySocket) out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta, oldHome), warning: `oats-aweb: renewal custody preflight reported no socket_path, so the grant cannot be attached to custody; keeping previous grant ${oldMeta.identity.grant.id}` });
   if (!awAtLeast(CUSTODY_ATTACH_MIN)) out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta, oldHome), warning: `oats-aweb: aw ${awVersionLabel()} cannot attach a grant to custody (--custody-socket); grants need aw >= ${CUSTODY_ATTACH_MIN}; keeping previous grant ${oldMeta.identity.grant.id}` });
   let stamp = Math.floor(Date.now() / 1000);
   let grantHome = join(home, `.aweb-identity-${stamp}`);
@@ -454,7 +457,9 @@ function globalGrantRenew() {
     out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta, oldHome), warning: `oats-aweb: renewal mint failed (${e.message || e}); keeping previous grant ${oldMeta.identity.grant.id}` });
   }
   const { grantId, expiresAt, mintedTeam, alias: mintedAlias, address } = parsed;
-  const newMeta = { ...oldMeta, delivery: oldMeta.delivery || deliveryMode, identity: identityMeta({ mode: "global", alias: mintedAlias || oldMeta.identity.alias || resident, team: mintedTeam, address: address || oldMeta.identity.address || null, resident, grant: { id: grantId, expiresAt, scopes, home: grantHome } }) };
+  const recovered = recoverGrantHome(grantHome);
+  const alias = recovered.subjectAlias || mintedAlias || oldMeta.identity.alias || resident;
+  const newMeta = { ...oldMeta, delivery: oldMeta.delivery || deliveryMode, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address: address || oldMeta.identity.address || null, resident, grant: { id: grantId, expiresAt, scopes, home: grantHome } }) };
   if (mintedTeam !== team) {
     try { revokeGrant(custody, grantId); } catch { /* minted mismatch expires by TTL if revoke fails */ }
     try { rmSync(grantHome, { recursive: true, force: true }); } catch { /* best effort */ }
@@ -500,7 +505,8 @@ function globalGrantSpawn() {
       throw parseError;
     }
     const { grantId, expiresAt, mintedTeam, alias: mintedAlias, address } = validateMintedGrant(minted, grantHome);
-    const alias = mintedAlias || resident;
+    const recovered = recoverGrantHome(grantHome);
+    const alias = recovered.subjectAlias || mintedAlias || resident;
     meta = { delivery: deliveryMode, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address, resident, grant: { id: grantId, expiresAt, scopes, home: grantHome } }) };
     if (mintedTeam !== team) {
       try { revokeGrant(custody, grantId); failAfterMint(`minted grant team ${mintedTeam} differs from ${team}; the grant was revoked and nothing was kept`); }
