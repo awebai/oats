@@ -22,7 +22,7 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
-## Batch — 2026-09-24 night (PRs 131, 136, 151–191) → toward v0.26.0 (unreleased; main carries breaking changes)
+## Batch — 2026-09-24 night (PRs 131, 136, 151–192) → toward v0.26.0 (unreleased; main carries breaking changes)
 - **Merged:**
   - PR151 packages: approval removed (human decision; declaring a package IS the trust decision) `e62b8f16`, plus the release-note follow-up `f0994882`.
   - PR153 docs for it `b97de554`.
@@ -137,6 +137,8 @@ decisions/ and referenced from here.
   - PR186 Desktop `153547c3` (oats-desktop-engineer-1; F7: side panels (Instance · Soul · Git & GitHub), soul and capability pages, teams on the spawn row / instance / soul (E_TEAM_CONFLICT), Capabilities sections incl. repo-owned behind `capabilities-private`, the Setup graph). The human QA'd it and directed the merge without a lead native gate; rebased on current main for CI; the watcher merged; squash tree verified.
   - PR191 kernel `e17609d4` (the Phase D driver; lead byTeam mutation killing 2; co-lead ACK; the watcher merged; squash tree verified): `layers.<layer>.from` (soul | workspace | team:<label>) on inspect --soul/--home; homes record it at spawn; feature `layers-from`; provenance only (no revision moves).
   - Human direction: release 0.26.0 without the harness rename; harness → 0.27.0 (plan `36a63259`).
+  - **v0.26.0 RELEASED**: the tag object `7005ef4a` → `6536929d` (lead-tagged after the co-lead's Class B ACK on the SHA + main CI green); release.yml green; npm 0.26.0 for both packages; 7 release assets. Published-artifact probe 17/17 (the v2 flows against the installed CLI) + 82-module syntax check.
+  - PR192 Desktop `fdf05fa1` (oats-desktop-engineer-1; the watcher merged; squash tree verified): Core capabilities name their origin (feature `layers-from`); the dead `workspace-team` settings-origin label removed. Ships in 0.26.1.
 - **taught us:**
   - (1) **Arm a merge watcher with the full approved oid, never "the current head".** #160's head moved twice after approval while mails crossed. The watcher's named-oid guard refused both mismatches, so nothing unreviewed merged. The loop ends with one FINAL mail per party (author and watcher) naming the full oid and "no pushes", and by ignoring the stale mails that follow.
   - (2) **A native gate must wait for the message, not for a spinner.** Preview in the rig is slow, and fixed waits produced false FAILs in both directions. Poll for the expected sentence with a bound.
