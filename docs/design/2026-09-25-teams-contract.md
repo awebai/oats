@@ -1,6 +1,6 @@
 # Teams contract: several team labels per soul, per-team messaging, live reconciliation
 
-Status: PROPOSED 2026-09-25 by the lead (kernel lane), with the messaging
+Status: AGREED 2026-09-25 by both co-leads (provider verbs confirmed in e205c93a). First drafted by the lead (kernel lane), with the messaging
 co-lead's provider plan. It serves the human priority of 2026-09-25, recorded
 in `2026-09-24-phase-d-plan.md` under "Teams, re-stated as THE priority".
 This document is the kernel half; the provider half (oats.aweb) is the
@@ -103,10 +103,19 @@ folded in below.
      never from the live eligible set. A mapping removed after the spawn
      still has its membership revoked at retire.
 7. **Explicit join, spawn choice, Desktop.**
-   - The join/leave/list verbs are the provider's, run in or against a home:
-     for example `oats aweb teams`, `oats aweb join <label>`,
-     `oats aweb leave <label>`, or the equivalent home-context operations,
-     with `--json`.
+   - The join/leave/list verbs are the provider's (oats.aweb 1.14.0), run
+     inside a home or with `--home <abs>`, all idempotent, all with `--json`:
+     - `oats aweb teams` answers
+       `{ personal: {team}, primary, eligible: [{label, team, joined}], joined: [{label, team, since}], unmapped: [label], at }`;
+     - `oats aweb join <label>[,<label>]` and
+       `oats aweb leave <label>[,<label>]` answer the same document. The
+       personal team can't be left (`E_TEAM_PERSONAL`).
+     - The same verbs are declared as home-context operations
+       `messaging:teams|join|leave`, so the Desktop uses `oats operation run`
+       and needs no new kernel surface.
+     - Identity model: one local identity per joined team, under the home as
+       `.aweb-identity-<label>`. The personal-team identity is the primary one,
+       wired to the harness. There are no global identities by default.
    - Each is idempotent, and refuses a label the instance isn't eligible for
      (`E_TEAM_NOT_ELIGIBLE`, naming the eligible labels).
    - At spawn, the kernel carries the operator's choice to the provider as a
@@ -114,8 +123,9 @@ folded in below.
      That needs no new kernel flag, and the spawn preview shows it.
    - The launch hook re-checks joined memberships against the live eligible
      set: it leaves what's no longer eligible and never joins on its own.
-   - The Desktop reads `teams` (eligible) from the spawn preview and the home
-     inspect, plus joined memberships from the provider's inspect or
+   - **The kernel puts `teams` (eligible, the OATS_TEAMS entries) in the
+     spawn preview and in `inspect --home`**, so a Desktop can offer the
+     choice before anything is minted. The Desktop reads that, plus joined memberships from the provider's inspect or
      operation, and drives the same verbs.
    - Later kernel item: `oats sync` reports the souls whose labels or
      mappings changed since the previous lock.
