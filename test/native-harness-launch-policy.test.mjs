@@ -146,7 +146,7 @@ test("ordinary native launch retains complete OATS homes for Claude and Codex: m
   }
   symlinkSync(process.execPath, join(bin, "node"));
   symlinkSync(execFileSync("/usr/bin/which", ["git"], { encoding: "utf8" }).trim(), join(bin, "git"));
-  const capability = "native-home";
+  const capability = "test.native-home";
   const canonical = "# Canonical complete native role\n";
   const fx = v2Deployment({
     souls: { probe: { soul: { capabilities: { [capability]: { from: "here" } } }, agents: canonical,
@@ -184,9 +184,9 @@ test("ordinary native launch retains complete OATS homes for Claude and Codex: m
       assert.ok(instructions.includes(canonical.trim())); assert.match(instructions, /Resolved native capability instructions/); assert.match(instructions, /Work mode: directory/);
       const names = readdirSync(join(home, ".agents", "skills")).sort();
       // Soul skills at .agents/skills/<skill>; a module's skills under .agents/skills/<module>/<skill>.
-      assert.deepEqual(names, [capability, "native-private"], "module and soul skills; no kernel-shipped legacy skills");
-      assert.deepEqual(meta.skills, [{ name: "native-private", source: "soul" }]);
-      assert.deepEqual(meta.composition.materialized.skills.map((sk) => sk.name), ["native-private"]);
+      assert.deepEqual(names, ["native-private", capability].sort(), "module and soul skills; no kernel-shipped legacy skills");
+      assert.deepEqual(meta.skills, [{ name: "native-private", source: "soul" }, { name: "native-cap", source: `module:${capability}` }], "soul skills, then each module's skills by source");
+      assert.deepEqual(meta.composition.materialized.skills.map((sk) => [sk.name, sk.source]), [["native-private", "soul"], ["native-cap", `module:${capability}`]]);
       for (const name of names) assert.equal(lstatSync(join(home, ".agents", "skills", name)).isDirectory(), true);
       assert.equal(readFileSync(join(home, ".agents", "skills", capability, "native-cap", "references", "resource.txt"), "utf8"), "capability resource bytes");
       assert.equal(readFileSync(join(home, ".agents", "skills", "native-private", "references", "detail.txt"), "utf8"), "private resource bytes");

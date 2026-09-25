@@ -5,6 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { addSchedule, runNow } from "../lib/schedule.mjs";
+import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const CLI = realpathSync(new URL("../bin/oats.mjs", import.meta.url));
 const IDENTITY = ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "OATS_AGENT", "OATS_SOUL", "OATS_ROOT", "OATS_CONTEXT", "OATS_WORKSPACE", "OATS_EVENT", "OATS_SETTINGS", "OATS_CLI_BIN", "PI_AGENT_INSTANCE", "PI_AGENT_HOME", "PI_AGENTS_ROOT", "OATS_CAPABILITY", "OATS_LAYER", "OATS_LEVEL", "OATS_META", "OATS_OPERATION", "OATS_REPO", "OATS_BRANCH", "OATS_WORK", "OATS_KIND", "OATS_TASK", "OATS_RUNTIME", "OATS_PREVIOUS_RUNTIME", "OATS_RETIRE_INTENT", "OATS_TEAM_NAME", "OATS_TEAM_ID", "OATS_TEAM_SCOPE"];
@@ -21,8 +22,9 @@ function fixture(t) {
   for (const k of Object.keys(process.env)) if (k.startsWith("OATS_") || k.startsWith("PI_AGENT")) delete process.env[k];
   process.env.HOME = join(base, "user"); mkdirSync(process.env.HOME);
   process.env.OATS_HOME_DIR = join(base, "host-store");
+  // A schedule scope is a deployment: the directory holding oats-local.yaml.
   const ws = join(base, "workspace"); mkdirSync(ws);
-  write(join(ws, "oats-config.yaml"), "name: test-schedule\n");
+  write(join(ws, "oats-local.yaml"), "schemaVersion: 2\nworkspace: example.invalid/acme/workspace\n");
   return { base, ws };
 }
 function add(ws, id, cwd, argv) { addSchedule(ws, { id, kind: "command", cwd, argv, cron: "* * * * *", tz: "UTC" }); }
@@ -48,24 +50,34 @@ console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: {} }));`);
 });
 
 test("direct and CLI scheduler dispatch resolve job cwd and explicit soul, never a caller's frozen home snapshot", (t) => {
-  const { base, ws } = fixture(t);
-  const target = join(ws, "target"), other = join(ws, "other"), caller = join(other, "agents", "dev", "instances", "dev-caller");
-  for (const [dir, value] of [[target, "target"], [other, "WRONG"]]) {
-    write(join(dir, "agents", "worker", "soul", "soul.yaml"), "name: worker\n");
-    const cap = join(dir, ".agents", "capabilities", "owned", "probe");
-    write(join(cap, "oats.json"), JSON.stringify({ capability: "test.dispatch", version: "1.0.0", description: "Dispatch fixture.", compatibility: { oats: ">=0.6.2" }, command: "ctxprobe", commands: { run: "run.mjs" } }));
-    write(join(cap, "run.mjs"), `import { writeFileSync } from 'node:fs';
+  // Two deployments whose member capability test.dispatch answers with its own
+  // host setting: the job's (target) and the caller's (other, WRONG). The job
+  // runs `oats ctxprobe run --soul worker` in a directory of the target
+  // deployment while the invoking process carries the other deployment's home.
+  const probe = (value) => {
+    const fx = v2Deployment({
+      souls: { worker: { soul: { capabilities: { "test.dispatch": { from: "here" } } } } },
+      capabilities: { "test.dispatch": { manifest: { description: "Dispatch fixture.", compatibility: { oats: ">=0.6.2" }, command: "ctxprobe", commands: { run: "run.mjs" } },
+        files: { "run.mjs": `import { writeFileSync } from 'node:fs';
 const result = { provider: ${JSON.stringify(value)}, cwd: process.cwd(), settings: JSON.parse(process.env.OATS_SETTINGS), cli: process.env.OATS_CLI_BIN, inheritedHome: process.env.OATS_HOME || null };
 writeFileSync('dispatch.json', JSON.stringify(result));
-console.log(JSON.stringify({ schemaVersion: 1, ok: true, result }));`);
-    write(join(dir, "oats-config.yaml"), `capabilities:\n  additive:\n    test.dispatch:\n      global: false\n      souls:\n        worker:\n          enabled: true\n          settings:\n            selected: ${value}\n`);
-  }
-  write(join(caller, "instance.json"), JSON.stringify({ instance: "dev-caller", agent: "dev", repo: other, capabilities: [{ id: "test.dispatch", settings: { selected: "frozen-caller" } }] }));
+console.log(JSON.stringify({ schemaVersion: 1, ok: true, result }));` } } },
+      local: { settings: { "test.dispatch": { selected: value } } },
+    });
+    t.after(() => fx.cleanup());
+    return fx;
+  };
+  const target = probe("target"), other = probe("WRONG");
+  fixture(t);
+  const ws = target.dep, cwd = join(ws, "jobs"); mkdirSync(cwd);
+  const caller = join(other.root, "worker", "instances", "worker-caller");
+  write(join(caller, "instance.json"), JSON.stringify({ instance: "worker-caller", agent: "worker", repo: other.dep, capabilities: [{ id: "test.dispatch", settings: { selected: "frozen-caller" } }] }));
   for (const key of IDENTITY) process.env[key] = `poison-${key}`;
   process.env.OATS_HOME = caller; process.env.PI_AGENT_HOME = caller;
-  process.env.OATS_INSTANCE_HOME = caller; process.env.PI_AGENTS_ROOT = join(other, "agents");
+  process.env.OATS_INSTANCE_HOME = caller; process.env.PI_AGENTS_ROOT = other.root;
+  process.env.OATS_REMOTE_CACHE = target.env.OATS_REMOTE_CACHE; process.env.PATH = target.env.PATH;
   for (const id of ["direct", "cli"]) {
-    add(ws, id, target, ["oats", "ctxprobe", "run", "--soul", "worker"]);
+    add(ws, id, cwd, ["oats", "ctxprobe", "run", "--soul", "worker"]);
     let result;
     if (id === "direct") result = runNow(ws, id);
     else {
@@ -74,7 +86,8 @@ console.log(JSON.stringify({ schemaVersion: 1, ok: true, result }));`);
       const envelope = JSON.parse(r.stdout); assert.equal(envelope.ok, true, JSON.stringify(envelope)); result = envelope.result;
     }
     assert.equal(result.run.outcome, "launched", JSON.stringify(result));
-    assert.deepEqual(JSON.parse(readFileSync(join(target, "dispatch.json"))), { provider: "target", cwd: target, settings: { selected: "target" }, cli: CLI, inheritedHome: null });
-    rmSync(join(target, "dispatch.json"));
+    assert.deepEqual(JSON.parse(readFileSync(join(cwd, "dispatch.json"))), { provider: "target", cwd, settings: { selected: "target" }, cli: CLI, inheritedHome: null });
+    rmSync(join(cwd, "dispatch.json"));
   }
 });
+
