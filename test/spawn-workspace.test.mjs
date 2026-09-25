@@ -86,6 +86,18 @@ test("workspace spawn chain over Northwind: sync → spawn materializes whole mo
     assert.equal(firstPreview.soulFetched, true, "the preview fetched the soul SOURCE (a per-commit copy, not an instance) and says so");
     assert.ok(isRegular(join(agentsRoot, "release-manager", "soul", "soul.yaml")), "the fetched soul copy is under <agents-root>/<soul>/soul/");
     assert.ok(!existsSync(join(agentsRoot, "release-manager", "instances")), "a preview creates no instance");
+    // Addendum 5: a manifest's declared setting default (oats.okf harvest-runtime: pi) is the LOWEST
+    // payload layer — the preview shows it with its origin, and the decision binds exactly that payload.
+    assert.equal(firstPreview.settings["oats.okf"]["harvest-runtime"], "pi", "the manifest default reaches the merged payload");
+    assert.deepEqual(firstPreview.settingsOrigins["oats.okf"]["/harvest-runtime"], { kind: "manifest-default", at: "oats.json#/settings/harvest-runtime/default" });
+    assert.deepEqual(firstPreview.settingsOrigins["oats.okf"]["/state-dir"], { kind: "spawn", at: "--provider oats.okf" });
+    assert.deepEqual(firstPreview.decision.effective.providers, firstPreview.settings, "the decision binds the previewed payload, defaults included");
+    r = oats(spawnArgs("release-manager", "--preview", "--provider", "oats.okf", "state-dir=/tmp/x", "--provider", "oats.okf", "harvest-runtime=claude"), { cwd: dep, env, base });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const overridden = envelope(r).result;
+    assert.equal(overridden.settings["oats.okf"]["harvest-runtime"], "claude", "a spawn flag overrides the manifest default");
+    assert.equal(overridden.settingsOrigins["oats.okf"]["/harvest-runtime"].kind, "spawn");
+    assert.notEqual(overridden.decision.revision, firstPreview.decision.revision, "the override changes the bound decision");
     r = oats(spawnArgs("release-manager", "--preview", "--provider", "oats.okf", "state-dir=/tmp/x"), { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.equal(envelope(r).result.soulFetched, false, "a second preview at the same commit reuses the copy");
@@ -149,6 +161,7 @@ test("workspace spawn chain over Northwind: sync → spawn materializes whole mo
     assert.equal(meta.modules["nw-house-style"].from.kind, "member"); assert.equal(meta.modules["nw-house-style"].from.repoKey, fx.keys.agents); assert.equal(meta.modules["nw-house-style"].commit, fx.commits.agents);
     assert.equal(meta.modules["nw-release-tooling"].from.kind, "member"); assert.equal(meta.modules["nw-release-tooling"].from.repoKey, fx.keys.agents);
     assert.equal(meta.providers["oats.okf"]["state-dir"], "/tmp/x", "the --provider payload is recorded under providers.<cap>");
+    assert.equal(meta.providers["oats.okf"]["harvest-runtime"], "pi", "the provider receives the manifest default it was previewed with");
     assert.equal(meta.providers["oats.okf"].owns, "release-manager", "…merged over the soul's own payload");
     assert.match(meta.workspace.resolution, /^[0-9a-f]{24}$/, "the resolution revision is recorded");
     assert.equal(meta.workspace.soul.repoKey, fx.keys.agents); assert.equal(meta.workspace.soul.team, "engineering");
