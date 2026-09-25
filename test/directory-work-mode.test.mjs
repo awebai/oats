@@ -1,10 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { acquirePackage, approveCapability, ensureRoot, findAgent, findCapabilityAgent, listCapabilityAgents, listInstances, retireInstance, spawnInstance, spawnInstanceAsync, startInstanceSession } from "../lib/core.mjs";
+import { findAgent, listInstances, retireInstance, spawnInstanceAsync, startInstanceSession } from "../lib/core.mjs";
 import { git, v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const CLI = realpathSync(new URL("../bin/oats.mjs", import.meta.url));
@@ -623,100 +622,33 @@ process.exitCode = 1;`);
   assert.deepEqual(readJson(join(home, ".oats-rollback-incomplete.json")).cleanup.capabilityMeta, { "example.worker": { receipt: "external-state" } });
 });
 
-// ---- Left on the classic fixture: capability-agent spawns (lead Q1) and the acquisition engine (c3c). ----
-/** CLASSIC (oats-config.yaml) fixture — kept only for the two capability-agent
- *  tests left for lead questions Q1 (capability-agent prepared spawn) and c3c. */
-function classicFixture(t, { git = false, hook = false, packaged = false } = {}) {
-  const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-directory-")));
-  const saved = { ...process.env };
-  t.after(() => {
-    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
-    Object.assign(process.env, saved);
-    rmSync(base, { recursive: true, force: true });
+test("a member capability's agent is CLI-spawnable in a non-Git deployment before any instance or agents directory exists", (t) => {
+  const fx = v2Deployment({
+    capabilities: { "example.worker": { manifest: { description: "Provider-neutral execution fixture.", agents: ["agents/worker"], skills: ["skills"], inject: "inject.md" }, files: {
+      "agents/worker/soul.yaml": "name: worker\nkind: capability\nwork: directory\nruntime: claude\n",
+      "agents/worker/AGENTS.md": "# Generic worker\n",
+      "skills/worker-skill/SKILL.md": "---\nname: worker-skill\ndescription: Generic worker fixture.\n---\n# Worker skill\n",
+      "inject.md": "## Generic worker capability\n",
+    } } },
   });
-  // No host identity, credentials, config, runtime, Git, or scheduler can leak
-  // into a no-launch probe. Runtimes are inert executables for preflight only.
-  for (const key of Object.keys(process.env)) delete process.env[key];
-  Object.assign(process.env, { HOME: join(base, "user"), OATS_HOME_DIR: join(base, "store"), PATH: join(base, "bin"), GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: join(base, "gitconfig") });
-  mkdirSync(process.env.HOME); write(process.env.GIT_CONFIG_GLOBAL, "");
-  mkdirSync(process.env.PATH);
-  symlinkSync(process.execPath, join(process.env.PATH, "node"));
-  for (const name of ["pi", "claude", "codex"]) {
-    write(join(process.env.PATH, name), `#!/bin/sh\necho unexpected-runtime-launch >&2\nexit 99\n`);
-    chmodSync(join(process.env.PATH, name), 0o755);
-  }
-  const context = join(base, "context"), root = join(context, "agents");
-  mkdirSync(context);
-  if (git) {
-    process.env.PATH += `:${HOST_PATH}`;
-    execFileSync("git", ["init", "-q", context]);
-    execFileSync("git", ["-C", context, "-c", "user.name=Fixture", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-qm", "baseline"]);
-  }
-  const cap = join(context, ".agents", "capabilities", "owned", "worker");
-  const manifest = { capability: "example.worker", version: "1.0.0", description: "Provider-neutral execution fixture.", compatibility: { oats: ">=0.6.2" }, skills: ["skills"], inject: "inject.md", ...(packaged ? { agents: ["agents/worker"] } : {}), ...(hook ? { hooks: { spawn: "spawn.mjs", retire: "retire.mjs" } } : {}) };
-  write(join(cap, "oats.json"), JSON.stringify(manifest));
-  write(join(cap, "skills", "worker-skill", "SKILL.md"), "---\nname: worker-skill\ndescription: Generic worker fixture.\n---\n# Worker skill\n");
-  write(join(cap, "inject.md"), "## Generic worker capability\n");
-  const soul = packaged ? join(cap, "agents", "worker") : join(root, "worker", "soul");
-  write(join(soul, "soul.yaml"), "name: worker\nwork: directory\nruntime: claude\n");
-  write(join(soul, "AGENTS.md"), "# Generic worker\n");
-  symlinkSync("AGENTS.md", join(soul, "CLAUDE.md"));
-  if (hook) {
-    write(join(cap, "spawn.mjs"), `import { writeFileSync } from 'node:fs';
-const e = process.env;
-writeFileSync(e.OATS_INSTANCE_HOME + '/work/from-hook.txt', 'spawn bytes');
-console.log(JSON.stringify({meta: {context: e.OATS_CONTEXT, repo: e.OATS_REPO, root: e.OATS_ROOT, work: e.OATS_WORK, branch: e.OATS_BRANCH, cli: e.OATS_CLI_BIN}}));\n`);
-    write(join(cap, "retire.mjs"), `console.log(JSON.stringify({meta: {retired: true}}));\n`);
-  }
-  write(join(context, "oats-config.yaml"), "capabilities:\n  additive:\n    example.worker:\n      from: owned\n      global: true\n");
-  const agent = () => packaged ? findCapabilityAgent(context, root, "worker") : findAgent(root, "worker");
-  const spawn = (purpose, options = {}) => spawnInstance(root, agent(), { purpose, launch: false, ...options });
-  return { base, context, root, cap, soul, agent, spawn };
-}
-
-test("package-only non-Git configured workspace is discoverable and CLI-spawnable before local directories exist", (t) => {
-  const f = classicFixture(t, { packaged: true });
-  assert.equal(existsSync(f.root), false);
-  assert.equal(ensureRoot(f.context), f.root);
-  assert.equal(listCapabilityAgents(f.context)[0].name, "worker");
-  const result = cliSpawn(f);
+  t.after(() => fx.cleanup());
+  assert.equal(existsSync(join(fx.root, "worker")), false);
+  const spawned = fx.cli(["spawn", "worker", "--purpose", "cli", "--no-launch", "--json"]);
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  const result = spawned.json().result;
   assert.equal(result.work, "directory");
-  assert.equal(result.home, join(f.root, "worker", "instances", "worker-cli"));
+  assert.equal(result.home, join(fx.root, "worker", "instances", "worker-cli"));
   assert.throws(() => lstatSync(join(result.home, "soul")), { code: "ENOENT" }, "an instance home carries no soul link");
-  assert.equal(JSON.parse(readFileSync(join(result.home, "instance.json"), "utf8")).soulDir, f.soul);
-  const status = cli(f, ["status"]);
+  const meta = readJson(join(result.home, "instance.json"));
+  assert.match(meta.soulDir, /\/\.oats\/modules\/example\.worker@[0-9a-f]{12}\/agents\/worker$/, "the soul is read from the deployment's module store");
+  assert.deepEqual(Object.keys(meta.modules), ["example.worker"]);
+  assert.ok(existsSync(join(result.home, ".agents", "skills", "example.worker", "worker-skill", "SKILL.md")), "its capability's skills");
+  assert.match(readFileSync(join(result.home, "AGENTS.md"), "utf8"), /Generic worker capability/, "and its (non-knowledge) capability's inject");
+  const status = fx.cli(["status", "--json"]);
   assert.equal(status.status, 0, status.stderr);
-  assert.equal(JSON.parse(status.stdout).agents[0].instances[0].instance, result.instance);
-  const retired = cli(f, ["retire", result.instance]);
+  assert.ok(status.stdout.includes(result.instance));
+  const retired = fx.cli(["retire", result.instance, "--json"]);
   assert.equal(retired.status, 0, retired.stderr);
-  assert.equal(JSON.parse(retired.stdout).worktreeRemoved, false);
   assert.equal(existsSync(result.home), false);
-  assert.equal(readFileSync(join(f.soul, "AGENTS.md"), "utf8"), "# Generic worker\n");
-});
-
-test("installed package agent integrity and executable trust remain enforced in a non-Git workspace", (t) => {
-  const f = classicFixture(t, { packaged: true });
-  const source = join(f.base, "package"), sourceCap = join(source, "capabilities", "worker");
-  // Use the real acquisition engine, not a fabricated lock/store.
-  mkdirSync(sourceCap, { recursive: true });
-  for (const [rel, content] of [
-    ["oats.json", JSON.stringify({ capability: "example.installed", version: "1.0.0", description: "Installed worker.", compatibility: { oats: ">=0.6.2" }, agents: ["agents/installed"], hooks: { spawn: { command: "spawn.mjs", required: true } } })],
-    ["agents/installed/soul.yaml", "name: installed\nwork: directory\nruntime: claude\n"],
-    ["agents/installed/AGENTS.md", "# Installed worker\n"],
-    ["spawn.mjs", "console.log(JSON.stringify({meta: {ready: true}}));\n"],
-  ]) write(join(sourceCap, rel), content);
-  symlinkSync("AGENTS.md", join(sourceCap, "agents", "installed", "CLAUDE.md"));
-  write(join(source, "oats-package.json"), JSON.stringify({ package: "example.workers", version: "1.0.0", description: "Worker fixtures.", compatibility: { oats: ">=0.6.2" }, capabilities: ["capabilities/worker"] }));
-  acquirePackage(f.context, source);
-  write(join(f.context, "oats-config.yaml"), "capabilities:\n  additive:\n    example.installed:\n      from: installed\n      global: true\n");
-  const agent = findCapabilityAgent(f.context, f.root, "installed");
-  assert.ok(agent);
-  assert.throws(() => spawnInstance(f.root, agent, { purpose: "untrusted", launch: false }), /trust|blocked|could not configure/i);
-  approveCapability(f.context, "example.installed");
-  const launched = spawnInstance(f.root, agent, { purpose: "trusted", launch: false });
-  assert.equal(launched.capabilityMeta["example.installed"].ready, true);
-  retireInstance(f.root, launched.instance);
-  write(join(agent._soulDir, "AGENTS.md"), "tampered");
-  assert.throws(() => findCapabilityAgent(f.context, f.root, "installed"), (e) => e.code === "integrity-drift");
-  assert.ok(listCapabilityAgents(f.context).diagnostics.length);
+  assert.equal(readFileSync(join(meta.soulDir, "AGENTS.md"), "utf8"), "# Generic worker\n", "the store copy is untouched");
 });

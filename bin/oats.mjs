@@ -1833,14 +1833,8 @@ async function spawnCmd() {
   }
   if (agentsRootFlag !== undefined && !agent) bail("E_SOUL_UNKNOWN", `soul "${name}" is not at agents root ${String(agentsRootFlag)}`);
   if (isPreview && !agent) bail("E_SOUL_UNKNOWN", `soul "${name}" is not in ${shortPath(root)}; a preview never creates or imports a soul (known: ${listAgents(root).map((a) => a.name).join(", ") || "none"})`);
-  if (!agent) {
-    // Capability-defined agent: a package's `agents:` soul, active in this context.
-    const capAgent = findCapabilityAgent(dirFlag(), root, name);
-    if (capAgent) {
-      agent = capAgent;
-      note(`(capability agent: "${name}" from ${capAgent.capability} — fresh soul, instances home under ${shortPath(join(root, name, "instances"))})`);
-    }
-  }
+  // Capability agent (lead decision c3 Q1): a prepared spawn of its providing module only.
+  let capabilityPrepared, capabilityPkg = null;
   if (!agent && hasLocal) {
     // Workspace model: the agent is declared by a capability some INSTANCE already
     // materialized (the --parent home first, then any home under this root) —
@@ -1862,8 +1856,14 @@ async function spawnCmd() {
         const hit = await resolvePackageCapabilityAgent(dirFlag(), name, { remoteOptions: remoteOptionsFromEnv(), discovery: wsDiscovery, catalog: (() => { try { return officialPackageCatalog(); } catch { return null; } })() });
         if (hit) {
           agent = capabilityAgentFromDir(hit.dir, name, root, { module: { from: { kind: "package", package: hit.package, version: hit.version, commit: hit.commit } } });
-          if (agent) note(`(capability agent: "${name}" from ${hit.capability} — package ${hit.package} v${hit.version}, fetched to ${shortPath(hit.dir)} — fresh soul, instances home under ${shortPath(join(root, name, "instances"))})`);
+          if (agent) { capabilityPkg = hit; note(`(capability agent: "${name}" from ${hit.capability} — package ${hit.package} v${hit.version}, fetched to ${shortPath(hit.dir)} — fresh soul, instances home under ${shortPath(join(root, name, "instances"))})`); }
         }
+      } catch (e) { if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details); throw e; }
+    }
+    if (agent) {
+      try {
+        const { prepareCapabilityAgent } = await import("../lib/instance-resolution.mjs");
+        capabilityPrepared = await prepareCapabilityAgent(dirFlag(), agent, { discovery: wsDiscovery, pkg: capabilityPkg, remoteOptions: remoteOptionsFromEnv(), catalog: (() => { try { return officialPackageCatalog(); } catch { return null; } })() });
       } catch (e) { if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details); throw e; }
     }
   }
@@ -1947,10 +1947,10 @@ async function spawnCmd() {
   // convention <deployment>/<member name>. Never an ambient Git checkout around the
   // deployment. Resolved once here so a preview sees exactly what the apply would.
   let preparedRepo;
-  if (wsPrepared) {
+  if (wsPrepared || capabilityPrepared) {
     try {
       const { toCapabilityRows, modulesPreview, requireMemberClone } = await import("../lib/instance-resolution.mjs");
-      prepared = wsPrepared;
+      prepared = wsPrepared ?? capabilityPrepared;
       prepared.capabilityRows = []; // filled after materialization (paths live in the home); preview uses modulesPreview
       prepared.preview = modulesPreview(prepared.resolution, root, agent.name);
       prepared.toCapabilityRows = toCapabilityRows;

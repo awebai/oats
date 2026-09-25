@@ -1,7 +1,6 @@
 import test from "node:test";
 import { fixture as okfFixture } from "./helpers/okf-v2.mjs";
 // Until the lead's Q1 (capability agents spawn prepared on a workspace deployment).
-import { fixture as okfClassicFixture } from "./helpers/okf-classic.mjs";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -1384,18 +1383,33 @@ test("traversal names are rejected: --parent and retire cannot reach outside ins
   assert.ok(!existsSync(real.home));
 });
 
-test("OKF service agents stay memory-less", async t => {
-  const f = okfClassicFixture(t, { register: false }), core = await import("@awebai/oats/core");
-  const root = join(f.context, "agents"), original = { ...process.env };
-  for (const k of Object.keys(process.env)) delete process.env[k];
-  Object.assign(process.env, f.env);
-  try {
-    const service = core.findCapabilityAgent(f.context, root, "memory-harvest");
-    const worker = core.spawnInstance(root, { ...service, repo: f.context }, { instance: "memory-harvest-probe", launch: false, work: "directory" });
-    for (const p of ["STATE.md", "notes", ".okf-source.json"]) assert.equal(existsSync(join(worker.home, p)), false);
-    assert.doesNotMatch(readFileSync(join(worker.home, "AGENTS.md"), "utf8"), /Knowledge: OKF/);
-    core.retireInstance(root, worker.instance);
-  } finally { for (const k of Object.keys(process.env)) delete process.env[k]; Object.assign(process.env, original); }
+test("OKF service agents stay memory-less: a capability agent composes its providing module only and runs no provider hook", async t => {
+  const f = okfFixture(t);
+  const sources = () => readdirSync(join(f.base, "state", "sources")).sort();
+  const before = sources();
+  const spawnWorker = (name, extra = []) => f.cli(["spawn", "memory-harvest", "--name", name, ...extra, "--work", "directory", "--repo", f.context, "--runtime", "pi", "--no-launch", "--json"]);
+  const check = (worker, how) => {
+    for (const p of ["STATE.md", "notes", ".okf-source.json"]) assert.equal(existsSync(join(worker.home, p)), false, `${how}: no ${p}`);
+    assert.doesNotMatch(readFileSync(join(worker.home, "AGENTS.md"), "utf8"), /Knowledge: OKF|oats:capability:oats\.okf/, `${how}: no memory protocol`);
+    const meta = instanceMeta(worker.home);
+    assert.deepEqual(Object.keys(meta.modules), ["oats.okf"], `${how}: its providing module and nothing else`);
+    assert.equal(meta.kind, "capability");
+    assert.ok(existsSync(join(worker.home, ".oats", "modules", "oats.okf", "oats.json")), `${how}: the module is materialized`);
+    assert.ok((meta.capabilityRuntime || []).every((row) => !Object.keys(row.hooks || {}).length), `${how}: no hook recorded`);
+    assert.equal(existsSync(join(worker.home, ".aw")), false, `${how}: no messaging identity`);
+    assert.deepEqual(sources(), before, `${how}: never registered as a knowledge source`);
+  };
+  // Anchored: the source instance's recorded module copy and payload.
+  const anchored = spawnWorker("memory-harvest-anchored", ["--parent", f.source.instance]);
+  check(anchored, "anchored");
+  assert.equal(instanceMeta(anchored.home).modules["oats.okf"].digest, instanceMeta(f.home).modules["oats.okf"].digest, "pinned to the anchor's verified copy");
+  assert.deepEqual(instanceMeta(anchored.home).providers["oats.okf"], instanceMeta(f.home).providers["oats.okf"], "the anchor's payload");
+  f.retire(anchored.instance);
+  // No anchor (the source is gone): the member capability that declares the agent.
+  f.retire(f.source.instance);
+  const orphan = spawnWorker("memory-harvest-orphan");
+  check(orphan, "no anchor");
+  f.retire(orphan.instance);
 });
 
 test("capability-agent trust isolates providers and preserves path/owned structural trust", async () => {
