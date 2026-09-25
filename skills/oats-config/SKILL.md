@@ -17,7 +17,7 @@ description: >-
 
 Config lives in `oats-config.yaml` at laptop (`~`), workspace, and repository
 levels; resolution walks from a soul's repository outward, closest scope wins.
-Prefer the CLI for config edits (`oats init`, `oats use`, `oats type`,
+Prefer the CLI for config edits (`oats init`, `oats use`,
 `oats inject eject`); hand-editing is valid but the CLI writes the canonical
 shape. A soul's type is declared in its own `soul.yaml` in its member repository.
 
@@ -52,7 +52,7 @@ capabilities:
 ```
 
 `global` means every soul governed by the declaring level. Bindings can also
-target **agent types** (families — declared in config via `oats type add`,
+target **agent types** (families — declared in config under `agent-types:`,
 joined via `type: <name>` in each soul.yaml) and individual souls. Matching
 global + agent-type + soul bindings compose. Settings precedence is
 soul > agent-type > global, then closer config. Equal-specificity conflicts
@@ -60,16 +60,10 @@ error. `false`/`enabled: false` is an explicit exclusion and follows the same
 precedence. V1 does not target instances or use tags/selectors.
 
 The closest `team:` declaration marks the deployment boundary: all repos
-under it share one team (identity + `oats status --team` discovery + the
-messaging provider's team). Declare it once at the workspace scope. With
+under it share one team (identity + the messaging provider's team). Declare it once at the workspace scope. With
 aweb messaging active, `oats aweb setup` walks the onboarding (aw CLI →
 workspace init → team create/join) and `oats aweb roster` shows the
 cross-machine member directory.
-
-```bash
-oats type add <name> [--description <d>] [--dir <level>]
-oats type list
-```
 
 ## Injection overrides
 

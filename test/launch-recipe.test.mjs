@@ -211,10 +211,9 @@ test("spawn records the recipe: a configuration's executable, args and reference
   assert.equal(r.json.error?.code, "E_LAUNCH_CONFIG_MISMATCH");
   r = oats(["launch-config", "preview", "--home", h1]);
   assert.equal(r.json.result.ok, false); assert.match(r.json.result.preflight.find((c) => c.check === "environment").detail, /LAUNCH_TEST_SRC/, "a missing reference is a failed preflight on this host");
-  // Preview for a soul (a new instance), and the soul default set through soul set.
-  r = oats(["soul", "set", "dev", "--launch-config", "personal", "--dir", repo]);
-  assert.equal(r.json.ok, true, r.stdout); assert.equal(r.json.result.before.launchConfig, null);
-  assert.match(readFileSync(join(repo, "agents", "dev", "soul", "soul.yaml"), "utf8"), /^launch-config: personal$/m);
+  // Preview for a soul (a new instance), and the soul's preference for a host-declared entry (soul.yaml launch-config:).
+  const soulYaml = join(repo, "agents", "dev", "soul", "soul.yaml"); const soulBytes = readFileSync(soulYaml, "utf8");
+  write(soulYaml, soulBytes + "launch-config: personal\n");
   r = oats(["launch-config", "preview", "--soul", "dev", "--dir", repo], { extra: { LAUNCH_TEST_SRC: "s3cret" } });
   v = r.json.result;
   assert.deepEqual([v.selection.source, v.runtime, v.launchConfig, v.executable.path, v.ok, v.hooks.pending], ["config", "claude", "personal", wrapper, true, true]);
@@ -224,8 +223,7 @@ test("spawn records the recipe: a configuration's executable, args and reference
   assert.deepEqual([r.json.result.runtime, r.json.result.model, r.json.result.modelSource], ["codex", null, "native default (runtime differs from the soul's)"]);
   r = spawnDev("p3", { extra: { LAUNCH_TEST_SRC: "s3cret" } });
   assert.equal(r.json.ok, true, r.stdout); assert.equal(JSON.parse(readFileSync(join(instancesDir, "dev-p3", "instance.json"), "utf8")).launch.launchConfig, "personal", "the soul default applies to new instances");
-  r = oats(["soul", "set", "dev", "--no-launch-config", "--dir", repo]);
-  assert.equal(r.json.ok, true); assert.doesNotMatch(readFileSync(join(repo, "agents", "dev", "soul", "soul.yaml"), "utf8"), /launch-config/);
+  write(soulYaml, soulBytes);
   // A legacy home (no recipe): described as is; a selection is refused until conversion.
   const legacy = join(instancesDir, "dev-legacy"); mkdirSync(legacy, { recursive: true });
   write(join(legacy, "instance.json"), JSON.stringify({ agent: "dev", instance: "dev-legacy", home: legacy, repo, runtime: "claude", model: "claude-x", launched: false, command: `OATS_INSTANCE='dev-legacy' OATS_INSTANCE_HOME=${shq(legacy)} AWEB_DELIVERY='session' '/opt/homebrew/bin/claude' --model 'claude-x' -- "$(cat TASK.md)"` }));

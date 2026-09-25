@@ -54,9 +54,12 @@ On a workspace deployment (an `oats-local.yaml` in reach of `--dir`), and for
 any home whose `instance.json` records `modules`, these three commands read the
 workspace model's own records and **never the classic config chain**. The probe
 integers are the gate; there is no feature string. The probe's integer says
-this kernel CAN answer the v2 shape. **Dispatch on the payload's own integer**:
-a classic scope (no `oats-local.yaml`) still answers the v1 shapes until the
-classic chain is removed.
+this kernel CAN answer the v2 shape. **Dispatch on the payload's own integer**.
+There is no v1 shape any more (0.26.0 removed the classic chain's answers):
+with no `oats-local.yaml` in reach and no `--home`, the three commands answer
+`E_LOCAL_MISSING`; a `--home` whose `instance.json` records no `modules`
+(spawned by an earlier kernel) answers `E_UNSUPPORTED_MODE` (re-spawn it from
+the deployment); an unreadable `--home` answers `E_SESSION_UNKNOWN`.
 
 | Command | Integer (probe and payload) | 0.25.x value |
 |---|---|---|
@@ -267,7 +270,7 @@ not-applicable, and at least one required item exists. `byCapability` and
     hooks are unchanged.
 - **Removed:** `trusted` and its `signature` block (declaring a package in
   `packages:` is the trust decision). `--verify-signatures` answers
-  `E_BAD_ARGS` on a workspace deployment. `enrolled` is now `member`.
+  `E_BAD_ARGS`. `enrolled` is now `member`.
 
 `--policy` is **kept**: it means the same without the chain. With `--home` it
 is the instance's recorded, enforced policy (`instance.json` `policy`, plus
@@ -349,56 +352,12 @@ There is no `E_CAPABILITY_BLOCKED` (no trust gate). `cwd` is the home for a
 `operations` with `operationsApi` 1 or 2; a 0.26 CLI routes to either.
 Payload shapes are the destination kernel's.
 
-## Souls and sources (`oats inspect --json`, `soulsApi: 1`, OATS 0.24.7+)
+## Souls and sources (`oats inspect --json`, `soulsApi: 1`) — removed in 0.26.0
 
-> **Superseded on workspace deployments in 0.26.0** by
-> [`soulsApi: 2`](#oats-inspect---home---soul---dir---json-operationsapi-2).
-> This section describes the classic scope document, which is removed with the
-> classic config chain.
-
-Every entry in `result.souls[]` carries what the soul's **own `soul.yaml`
-declares**, parsed by the kernel — a consumer never parses YAML and never
-infers a field that is not there:
-
-- `soulsApi: 1`
-- `declarations: { requires, defaults, knowledge, teams, resources, children }` — each
-  the declared object, or `null` when the section is absent (`children`
-  since 0.24.8: `{spawn: boolean}`, see readiness policy).
-- `provenance: { kind, source, revision, path, workspaceRevision } | null` —
-  where this soul copy came from, as recorded by the kernel when it created
-  it (the 0.24 bootstrap recorded `packaged-definition` or
-  `exported-edition-copy`; the 0.25 `oats onboard` creates no soul and records
-  nothing here — see [`oats onboard`](#oats-onboard-onboardapi-2)).
-  Souls created before 0.24.7 or authored by hand
-  read `null`; render that as *unrecorded*, not as local or as anything else.
-- `readiness` — the soul's **declared sources**, joined against
-  `result.capabilities[]` from the same payload. Distinct from launchability
-  (`oats spawn`) and adoption (`oats prepare`); never a green "Ready".
-  - `source: "recorded" | "unrecorded"`
-  - `requirements: [{ capability, source, installed, approved, active, version }] | null`
-    (`null` = nothing declared). `installed: false` = not in the inventory;
-    `approved`/`active`/`version` are `null` when there is no inventory row.
-    `approved` reports the 0.24 per-artifact approval; on a workspace
-    deployment a package is trusted by its declaration in `packages:`.
-  - `status: "undeclared" | "sources-installed" | "sources-missing" | "unknown"`
-- `declarationProblems: [{ code, message }]` — an unreadable file reports why;
-  the soul is still listed.
-
-`result.sources` is the scope's **portable source context**: the distinct
-provenance sources its souls record.
-
-```json
-{"soulsApi":1,"kind":"recorded-provenance","note":null,
- "items":[{"kind":"exported-edition-copy","source":"git:https://…/oats.git","revision":"<sha>","path":"souls/oats-setup-expert","workspaceRevision":"<sha>","souls":["oats-setup-expert"]}]}
-```
-
-`kind: "none-recorded"` (empty `items`, explanatory `note`) means no soul in the
-scope records a portable **source address** — a soul may still carry a
-`provenance` of kind `packaged-definition` with `source: null`. Say "no portable
-source recorded"; do not infer "local" or "authored" from this state.
-Workspace imports adopted onto a deployment will appear here at their pinned
-revisions when that adoption is recorded on the deployment; nothing is
-enumerated from a source repository that the deployment does not record.
+The classic scope document (`souls[].provenance`, `souls[].readiness`, the
+scope's portable `sources`) was removed with the classic config chain.
+`oats inspect` answers only [`soulsApi: 2`](#oats-inspect---home---soul---dir---json-operationsapi-2)
+rows; the soul's declarations are in `oats souls --json`.
 
 ## Instance Git state (`oats instance git|diff`, `instanceGitApi: 1`, OATS 0.24.7+)
 
@@ -794,82 +753,15 @@ the pre-fix marker and is never accepted for dispatch.
   (provider contract), auto-PR (P1/ADE write approval), branch enumeration
   (producer seam).
 
-## Readiness quartet, signatures, enforced policy (`oats readiness`, `readinessApi: 1`, OATS 0.24.8+)
+## Readiness quartet (`readinessApi: 1`) — removed in 0.26.0
 
-> **Superseded in 0.26.0 by [`readinessApi: 2`](#oats-readiness---home---soul---dir---policy---json-readinessapi-2)**
-> on every workspace deployment and v2 home: checks `installed | configured |
-> member | providers`, no `trusted`, an instance or soul subject. The 0.25
-> status note and the quartet below describe the classic producers only.
+The quartet (`installed | trusted | configured | enrolled`), its signature
+verification (`--verify-signatures`, feature `readiness-verify`) and the
+scope subject were removed with the classic config chain. `oats readiness`
+answers only [`readinessApi: 2`](#oats-readiness---home---soul---dir---policy---json-readinessapi-2);
+`--verify-signatures` is `E_BAD_ARGS`.
 
-> **0.25 status — the producers below are the 0.24 tier.** The readiness DTO
-> (`readinessApi: 1`) still ships unchanged, but its four checks are *produced*
-> by the classic observers: `installed` by `oats list` over the
-> `.agents/capabilities/installed/` tier, `trusted` by the per-artifact approval
-> that `oats trust` wrote, `configured` by `oats-config.yaml` activation, and
-> `enrolled` by the `oats.yaml` backlink. On a **workspace deployment**
-> (`oats-local.yaml` present) none of those sources exists: nothing is installed,
-> there is no package approval (declaring a package in `packages:` is the trust
-> decision; `oats-lock.json` v3 pins commit + integrity), activation
-> is derived (workspace defaults ⊕ soul `capabilities:`), and membership is
-> `oats-membership.yaml` observed over the remotes. `oats list` and `oats trust`
-> are removed verbs (`E_UNKNOWN_COMMAND`), so a `remedy` naming them cannot be
-> run. Treat the field names and producer strings as the stable wire shape they
-> are; for the workspace-model facts read `oats spawn <soul> --preview --json`
-> (`modules[]` with from/commit/digest — the "installed", "configured" and
-> "trusted" truth) and `oats workspace status --json` (the "enrolled" truth). Re-basing the quartet on
-> those producers is an open thread of [the workspace model](#workspace-model-workspaceapi-2);
-> when it lands it will be announced as a new feature name, not a silent change of
-> `readinessApi: 1`.
-
-`oats readiness [--soul <name>] [--home <abs>] [--verify-signatures] [--policy] [--dir <d>] --json`
-is the first-run readiness view (frame 09) and the Capabilities readiness rows
-(frame 04). Every fact is derived from the **same** data `oats inspect` reports
-— never a second opinion — and rolled into four checks:
-
-```json
-{"readinessApi":1,"subject":{"kind":"soul","name":"dev"},"at":"<iso>",
- "checks":{
-  "installed": {"status":"pass","items":[{"subject":"oats.core","status":"pass","required":true,"reason":null,"producer":"oats list","evidence":{"version":"1.1.3","integrity":"sha256-…","origin":"installed"},"remedy":null}]},
-  "trusted":   {"status":"fail","items":[{"subject":"oats.core","status":"fail","required":true,"reason":"executable surface not approved","producer":"artifact approval","evidence":{"integrity":"sha256-…"},"remedy":"oats trust oats.core",
-                                          "signature":{"status":"unknown","signer":null,"reason":"signature verification needs a network fetch; pass --verify-signatures"}}]},
-  "configured":{"status":"pass","items":[{"subject":"oats.core activation","status":"pass","required":true,"producer":"oats-config.yaml","evidence":{"target":"declared","level":"/abs"},"remedy":null}]},
-  "enrolled":  {"status":"not-applicable","items":[{"subject":"workspace membership","status":"not-applicable","required":false,"producer":"oats.yaml","reason":"standalone deployment: no workspace declared in oats.yaml"}]}},
- "summary":{"ready":false,"required":3,"pass":2,"fail":1,"unknown":0},
- "notes":["…"]}
-```
-
-- Each check is `pass | fail | unknown | not-applicable`; items carry
-  `subject, status, required, reason, producer, evidence, remedy`. **"Ready" is
-  `summary.ready`**: every *required* item passes (or is not-applicable) and
-  there is at least one required item — never inferred from an empty set.
-- **`installed`**: artifact present, locked, integrity matches. **`trusted`**:
-  the 0.24 producer, executable approval of the exact artifact (`oats trust`);
-  on a workspace deployment declaring the package is the trust (see the 0.25
-  status note above). Separately,
-  `signature {status: verified | unsigned | unknown | invalid | not-applicable,
-  signer: {id, label} | null, reason}` — the source commit's **verified Git
-  signature**, named signer or nothing. It is `unknown` unless
-  `--verify-signatures` (a network fetch of that one commit; `git log %G?`);
-  a catalog URL, repository owner or byte hash is never a signer. Render
-  "Trusted · signed by <label>" only for `verified`.
-- **`configured`**: activation for the subject, runtime-package requirements
-  (`missingRequires`), runtime-settings problems. **`enrolled`**: workspace
-  **member admission** (decision §3) — `not-applicable` for a standalone
-  deployment (no `workspace:` in `oats.yaml`), `unknown` until admission is
-  verified against the workspace observation, `pass`/`fail` when it is. Never
-  login, never team registration; "Skip" leaves it not-applicable, never pass.
-  *(The readiness producer still reads the 0.24 `oats.yaml` backlink; under the
-  workspace model membership is `oats-membership.yaml` observed by
-  `oats workspace status` — re-basing this item is an open thread.)*
-- Subject: `--soul <name>` scopes required items to the soul's declared
-  requirements; without it, to the scope's active capabilities.
-
-`--policy` adds the **enforced** policy view with origins:
-
-```json
-"policy":{"childSpawns":{"allowed":false,"enforced":true,"origin":{"kind":"soul","detail":"children.spawn: false in soul.yaml"}},
-          "worktrees":{"allowed":true,"mode":"worktree","enforced":true,"origin":{"kind":"work-mode","detail":"work: worktree"}}}
-```
+### Enforced child-spawn policy (`--policy`)
 
 `childSpawns` is **enforced by the spawn route**: `soul.yaml` may declare
 `children: {spawn: false}`; `oats spawn --allow-child-spawns | --no-child-spawns`
@@ -882,59 +774,6 @@ reported as `origin.kind: "default"`. With `--home <abs>` the policy is the
 instance's recorded (enforced) one; with only `--soul` it is the declaration
 (`enforced: false`). It is a lifecycle-authority claim, not an OS sandbox —
 the UI says so.
-
-### Slice-5 producer pins (0.24.9+; all additive — gate items on field presence)
-
-- **`configured` is EFFECTIVE activation.** `activation.enabled` is the resolved
-  verdict for the subject; a capability *declared* for the soul but disabled is
-  `fail` with reason `declared for soul <n> but disabled (…)`. Declaration is
-  never activation.
-- **Trust is not-applicable for data-only capabilities.** The inspect row now
-  carries `health.executableSurface` (manifest commands/hooks/launch env — what
-  `oats trust` approves). No surface → `trusted` item `not-applicable`, reason
-  `no executable surface`, whatever the lock records. This is why a fresh
-  `oats trust <package> --all-capabilities` "skipped" `oats.core` and readiness
-  still said fail before 0.24.9.
-- **Typed linkage on every item**: `capability {id, level, scope}` and
-  `origin {kind: requires|declares|default|inventory, target}`; plus
-  `summary.byCapability[] {capability, origin, required, checks{installed,
-  trusted, configured, enrolled}, ownReady, ready}` — the SAME items regrouped,
-  no second observation. `ownReady` is the capability's own four verdicts;
-  `ready` is `ownReady` AND no **subject-level blocker** — items that belong to
-  no capability (workspace membership, soul declarations) are listed in
-  `summary.subjectBlockers[] {check, subject, status}` and block every row.
-  A per-capability row never says ready while the subject is blocked, and a
-  row's verdict is never promoted to the subject's `summary.ready`. Render
-  per-capability rows from this; never parse subjects.
-- **Selector echo**: `subject.selector` = the arguments **as given, byte-exact,
-  no realpath** — `{kind:"scope", dir|null}` · `{kind:"soul", soul,
-  agentsRoot|null, dir|null}` · `{kind:"home", home, soul, agentsRoot|null}`.
-  Compare with what you sent, byte for byte; never filesystem-normalize a
-  response path. The canonical scope is `subject.context` (may differ from
-  `dir`, e.g. `/var` vs `/private/var` on macOS).
-- **Unreadable member document** (`oats.yaml` unreadable, or `workspace:`
-  present but not a mapping) → `enrolled` item `unknown` with
-  `evidence.file`, never `not-applicable`. A declared backlink stays `unknown`
-  with reason `reciprocal admission not observed …` until the CLI fetches the
-  workspace's members (K11).
-- **Captured homes refuse**: `readiness --home <captured>` →
-  `E_UNSUPPORTED_MODE` (`details.captured: true`) before any current-config
-  interpretation.
-- **`--agents-root <abs>`** is accepted with `--soul` (and with `--home`), as
-  inspect takes it — pin the exact root you admitted.
-- **Signature verification (feature `readiness-verify`, no longer advertised
-  from 0.26.0; the classic flag is removed with the classic chain)**: `--verify-signatures`
-  is bounded custody — **one total budget per readiness read** (120 s default)
-  shared by every capability's fetch and verify (an exhausted budget refuses the
-  remaining capabilities with `budget-exhausted`, no fetch), each Git child in
-  its own process group and the **whole group** SIGKILLed on timeout or failure,
-  scratch repositories removed on normal exit and on SIGINT/SIGTERM/SIGHUP, `GIT_CONFIG_GLOBAL
-  =/dev/null` + no system config + no prompts/askpass, **only https/ssh**
-  transports. `signature.failure` is `null` or `{code}` from the closed set
-  `transport-not-allowed | fetch-failed | fetch-timeout | budget-exhausted |
-  verifier-failed | verifier-timeout | cannot-check`; `signature.reason` is a
-  fixed sentence, **never stderr**. Gate the *Verify signatures…* action on the
-  feature name; keep it an explicit user action.
 
 ## Lifecycle plans — Stop and Remove (`lifecycleApi: 1`, OATS 0.24.8+)
 
@@ -1402,43 +1241,13 @@ A feature is listed only once the binary implements it. Gate `sync`/`package`/
 `instance.json.modules` and preview `modules[]` on `instance-modules`; gate
 `--provider` on `spawn-provider-payload`.
 
-## Instruction refresh (`oats session recompose`, feature `session-recompose`, OATS 0.24.8+)
+## Instruction refresh (`oats session recompose`) — removed in 0.26.0
 
-A live instance's composed `AGENTS.md` is generated at spawn and outranks any
-mail or tracked file *in the running context*. When a soul changes (a role or
-budget amendment) and a respawn is not possible or wanted, an operator
-refreshes the home in place:
-
-- `oats session recompose --home <abs> [--dry-run] --json` → `{home, instance,
-  agent, soulDir, contextDir, changed, dryRun, blocks[{source,file}], previous,
-  note}`. Same composer spawn used, the home's recorded soul directory
-  (`instance.json` `soulDir`) and recorded context/work mode. `changed:false` is a no-op (no receipt). On change the
-  prior text is retained as `previous` (`<home>/.oats-agents-md.<stamp>.previous`),
-  `instance.json` gains `instructions[]`/`recomposedAt`, and a `recomposed`
-  event is appended.
-- **Nothing is signalled or restarted** — the harness re-reads on its own
-  schedule; the receipt's `note` says so. Refuses a retiring home
-  (`E_INSTANCE_RETIRING`), captured incarnations and capability-defined souls
-  (`E_UNSUPPORTED_MODE`: those are refreshed by a new resolution / package).
-- **Module homes (0.25+) are `E_UNSUPPORTED_MODE` too.** A home whose
-  `instance.json` carries `modules{}` (spawned on a workspace deployment,
-  `instance-modules`) answers `E_UNSUPPORTED_MODE` ("recompose from
-  materialized modules is not supported yet; re-spawn"): its `AGENTS.md` was
-  composed from the soul at a recorded member commit plus the materialized
-  modules' injects, and the instance never changes under itself (decision 7).
-  **Desktop contract (Phase F, F4)**: for a module home, show the drift rows
-  and offer *re-spawn* (preview → apply of the same soul/purpose, then retire
-  the old instance); do not offer "recompose". A kernel recompose for module
-  homes is not planned — an instance never changes under itself.
-  The refresh path for such a home is a new spawn (the soul is re-fetched at
-  the member's current commit). `session-recompose` **stays advertised** in
-  `features[]` because the verb still works for classic homes; gate the UI
-  action on the feature AND on the absence of `instance.json.modules`
-  (`oats status --json` `instances[].modules` is non-empty for a module home),
-  and render the typed refusal otherwise.
-- Gate on `features.includes("session-recompose")`. It is an **operator
-  action** (the human or the instance's parent), never something a Desktop
-  poll or an agent runs on itself.
+`oats session recompose` answers `E_UNKNOWN_COMMAND`, and the
+`session-recompose` feature is no longer advertised. An instance never changes
+under itself: the refresh path is a re-spawn (preview → apply of the same
+soul/purpose, then retire the old instance), which fetches the soul at the
+member's current commit.
 
 ## Mutations exposed to Desktop v1
 

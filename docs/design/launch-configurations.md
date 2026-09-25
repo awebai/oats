@@ -1,12 +1,15 @@
 # Launch configurations and launch recipes
 
-A **launch configuration** is a named way to start a harness, declared per
-scope under `launch-configs:` in `oats-config.yaml` (see
-docs/configuration.md): runtime, an executable, literal arguments,
-environment (literals or `{fromEnv}` references), model, yolo. It is
-independent of any soul; a soul may name one as its default
-(`launch-config:` in soul.yaml, `oats soul set --launch-config`), and a
-spawn, start or restart selects one by name.
+A **launch configuration** is a named way to start a harness, declared by
+the host under `launch-configs:` in the deployment's `oats-local.yaml` (see
+docs/configuration.md; 0.26.0, lead decision 2 — earlier kernels read it
+from a scope's `oats-config.yaml`): runtime, an executable, literal
+arguments, environment (literals or `{fromEnv}` references), model, yolo.
+It is independent of any soul, and a spawn, start or restart selects one by
+name. A soul may still name one as its default (`launch-config:` in its
+soul.yaml, edited in its member repository): that field names a
+*preference* for an entry the host declares, never a definition, so it does
+not make launch configuration a soul field.
 
 A **launch recipe** is what a start is made of, recorded in the instance's
 `instance.json` under `launch` beside the rendered `command`:
@@ -15,9 +18,9 @@ A **launch recipe** is what a start is made of, recorded in the instance's
 {
   "version": 1,
   "runtime": "claude",
-  "launchConfig": "personal", "launchConfigSource": "/scope",
-  "executable": "/scope/tools/claude-wrapper.sh",
-  "executableDeclared": "./tools/claude-wrapper.sh", "executableResolvedFrom": "relative to /scope",
+  "launchConfig": "personal", "launchConfigSource": "/deployment",
+  "executable": "/deployment/tools/claude-wrapper.sh",
+  "executableDeclared": "./tools/claude-wrapper.sh", "executableResolvedFrom": "relative to /deployment",
   "args": ["--settings", "/abs/settings.json"],
   "env": { "KEY": { "fromEnv": "SRC" }, "LIT": "plain" },
   "model": "claude-opus-5", "yolo": true,
@@ -64,7 +67,7 @@ shows them: `list` and `preview` redact every environment value.
   default; a spawn without either resolves the soul's preference for the
   runtime. A model never crosses runtimes.
 - Executable: the configuration's (bare name on PATH; a path resolved against
-  the declaring scope when relative) or the runtime's default (claude through
+  the deployment directory when relative) or the runtime's default (claude through
   `oats-claude-config`). It must be a regular executable file; it is never
   run to probe it. Capability runtime-package requirements are checked with
   the runtime's default binary, as at spawn.

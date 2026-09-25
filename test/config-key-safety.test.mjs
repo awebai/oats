@@ -115,18 +115,6 @@ test("an inherited-name capability id is not acquired just because Object.protot
   assert.throws(() => resolveOatsConfig(repo, "dev"), /capability "constructor" is activated but no manifest was acquired/);
 });
 
-test("an inherited-name agent type is declarable, and refused only once really declared", () => {
-  const repo = temp();
-  write(join(repo, "oats-config.yaml"), "name: keysafe\nagent-types:\n  developers:\n    description: Devs\n");
-  const r = spawnSync(process.execPath, [CLI, "type", "add", "constructor", "--description", "Odd but legal", "--dir", repo], { encoding: "utf8" });
-  assert.equal(r.status, 0, r.stderr);
-  assert.match(readFileSync(join(repo, "oats-config.yaml"), "utf8"), / {2}constructor:\n {4}description: Odd but legal/);
-  // Declared once, the second attempt IS refused — the own-property check still works.
-  const again = spawnSync(process.execPath, [CLI, "type", "add", "constructor", "--dir", repo], { encoding: "utf8" });
-  assert.notEqual(again.status, 0);
-  assert.match(again.stderr, /agent type "constructor" already declared/);
-});
-
 test("a soul named __proto__ gets no binding: targeting reads own properties only", () => {
   const repo = temp();
   write(join(repo, ".agents", "capabilities", "owned", "acme.x", "oats.json"),
