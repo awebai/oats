@@ -13,7 +13,7 @@
 // spawnInstanceAsync. No network, no packages, no catalog, never bare `oats setup`;
 // HOME, the remote cache, tmux and the runtimes are isolated.
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir, devNull } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -74,12 +74,13 @@ export function capabilityFiles(id, manifest = {}, files = {}) {
  * Build a deployment. Options:
  *   souls         { <name>: { soul: {soul.yaml fields}, agents, skills } }   (default: one `dev` soul, work: directory)
  *   capabilities  { <id>: { manifest, files } }                                member capabilities of the one repo
+ *   capabilityDirs { <dir name>: <abs source dir> }   copied whole to capabilities/<dir name>/ (e.g. the real capabilities/oats-okf)
  *   workspace     extra oats-workspace.yaml keys, merged over the base (defaults: messaging/tasks/knowledge none)
  *   local         extra oats-local.yaml keys (launch-configs, settings, clones…)
  *   files         any other repo files
  * → { base, dep, root, repo, key, ref, member, env, remoteOptions, prepare, spawn, cli, commit, cleanup }
  */
-export function v2Deployment({ souls = { dev: {} }, capabilities = {}, workspace = {}, local = {}, files = {}, name = "fixture" } = {}) {
+export function v2Deployment({ souls = { dev: {} }, capabilities = {}, capabilityDirs = {}, workspace = {}, local = {}, files = {}, name = "fixture" } = {}) {
   const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-v2-")));
   if (/[\s@]/.test(base)) throw new Error(`tmpdir ${base} contains whitespace or @ (repo keys embed it)`);
   const bare = join(base, "remotes", "ws.git");
@@ -104,6 +105,7 @@ export function v2Deployment({ souls = { dev: {} }, capabilities = {}, workspace
   const seed = join(base, "seed");
   git(base, "clone", "-q", bare, seed);
   writeTree(seed, spec);
+  for (const [dirName, src] of Object.entries(capabilityDirs)) cpSync(src, join(seed, "capabilities", dirName), { recursive: true, verbatimSymlinks: true });
   git(seed, "add", "-A"); git(seed, "commit", "-qm", "fixture workspace"); git(seed, "push", "-q", "origin", "HEAD:main");
   git(base, "clone", "-q", bare, member);
 
