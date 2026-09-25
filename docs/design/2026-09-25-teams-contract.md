@@ -69,7 +69,7 @@ folded in below.
      it.
    - These are the **eligible** teams. Joining them is explicit (see "The
      model"), not automatic.
-   - It's delivered beside the settings (hook stdin / `OATS_TEAMS` JSON),
+   - It's delivered beside the settings, in the environment (`OATS_TEAMS` JSON),
      never inside the provider's own settings object, so it can't collide
      with a provider key or its manifest's settings validation.
    - `teams` is present when the soul has a label; a soul with no label gets
@@ -79,8 +79,12 @@ folded in below.
    - New: `OATS_TEAM_LABELS` (all labels, comma-joined, in order) and
      `OATS_TEAMS` (the JSON above).
    - New: `OATS_TEAMS_SOURCE`, which is `live` or `recorded` (decision 6). It's empty
-     when `OATS_TEAMS` is empty (unknown). A provider check's stdin carries
-     `teamsSource` beside `teams` in the same way.
+     when `OATS_TEAMS` is empty (unknown).
+   - **The environment is the only channel.** No stdin wire gains keys: the
+     binding check's request stays exactly the released wire, because released
+     providers (oats.aweb 1.13.1) key it strictly and refuse unknown keys with
+     `invalid-binding`. A provider check reads the teams from the same env
+     variables its hooks get. (Correction after #179, co-lead finding.)
    - Workspace identity is unchanged: `OATS_WORKSPACE_KEY` / `OATS_WORKSPACE_NAME`.
    - The person's identity stays the provider's (its messaging root from host
      settings); the kernel passes the deployment, as today.
@@ -108,7 +112,7 @@ folded in below.
    - **Live or recorded.** When the workspace can't be read now (the host is
      offline, or the soul is no longer listed), the kernel falls back to the
      recorded set and says so: `OATS_TEAMS_SOURCE=recorded`, or
-     `teamsSource: "recorded"` in inspect and on the check stdin.
+     `teamsSource: "recorded"` in inspect.
      - **A provider leaves a joined team only on a `live` answer.** On
        `recorded` or unknown it keeps every membership and may warn
        (`teams-unverified`).
@@ -176,7 +180,8 @@ folded in below.
 ## Compatibility
 
 - A single-label soul sees byte-identical composition and merged payload.
-- oats.aweb 1.13.1 ignores `teams` / `OATS_TEAMS` and keeps working.
+- oats.aweb 1.13.1 ignores `OATS_TEAMS` and keeps working, because no stdin
+  wire changes (its binding decoder refuses unknown request keys).
 - oats.aweb 1.14.0 reads them.
 - The schema change goes into 0.26.0, the release that already breaks the
   file formats.
