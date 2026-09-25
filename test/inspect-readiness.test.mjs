@@ -70,6 +70,8 @@ test("inspect / readiness / operation run over the workspace model: instance and
     assert.deepEqual(okf.operations[1].args.map((a) => [a.name, a.flag, a.required]), [["scope", "--scope", false]]);
     assert.deepEqual(doc.knowledge.operations.map((o) => o.name), ["status", "reindex"]);
     assert.equal(doc.layers.knowledge.id, "oats.okf");
+    // layers-from: the slot's origin as recorded at spawn (Northwind's defaults.knowledge → "workspace"); an empty slot has none.
+    assert.deepEqual(doc.layers, { knowledge: { id: "oats.okf", from: "workspace" }, messaging: { id: null, from: null }, tasks: { id: null, from: null } });
     assert.equal(doc.souls.length, 1); assert.equal(doc.souls[0].soulsApi, 2); assert.equal(doc.souls[0].name, "release-manager");
     assert.ok(doc.instance.soulDir.includes("/souls/"), "the recorded per-commit soul directory");
     assert.match(doc.instance.instructions.text, /release/i);
@@ -81,6 +83,7 @@ test("inspect / readiness / operation run over the workspace model: instance and
     assert.equal(doc.subject.kind, "soul"); assert.equal(doc.subject.soul, "release-manager"); assert.equal(doc.subject.repoKey, fx.keys.agents);
     assert.deepEqual(doc.capabilities.map((c) => c.id), EXPECTED_MODULES);
     assert.equal(doc.instance, null);
+    assert.deepEqual(doc.layers, { knowledge: { id: "oats.okf", from: "workspace" }, messaging: { id: null, from: null }, tasks: { id: null, from: null } }, "layers-from on a soul, from its resolution");
     assert.deepEqual(doc.capabilities.find((c) => c.id === "oats.okf").operations.map((o) => [o.name, o.available, o.reason]),
       [["status", false, "needs a running home (--home)"], ["reindex", false, "needs a running home (--home)"]], "a home operation needs a home");
 

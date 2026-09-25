@@ -1011,6 +1011,36 @@ test("several labels: byTeam capabilities apply for each label in soul order, `v
   assert.deepEqual(r.teams.map((t) => [t.label, t.team]), [["engineering", "aweb:example.oss"], ["marketing", null]]);
 });
 
+test("layers-from: each filled slot records where its capability came from — slot default / defaults.capabilities → workspace, defaults.byTeam.<label> → team:<label>, the soul's own → soul; an empty slot → null; outside every fingerprint", async () => {
+  // slot default (defaults.knowledge)
+  const d = discovery();
+  const rm = await resolveSoul(d, findSoul(d, "release-manager"), opts());
+  assert.deepEqual(rm.slotsFrom, { knowledge: "workspace", messaging: null, tasks: null });
+  // defaults.capabilities fills the messaging slot
+  const wsCaps = workspaceFile(); wsCaps.defaults = { ...wsCaps.defaults, capabilities: { ...wsCaps.defaults.capabilities, "nw-chat": { from: K.agents } } };
+  const dc = discovery({ workspace: wsCaps });
+  assert.equal((await resolveSoul(dc, findSoul(dc, "release-manager"), opts())).slotsFrom.messaging, "workspace");
+  // defaults.byTeam.<label>: on a two-label soul, the label that gave it
+  const wsTeam = teamsWorkspace(); wsTeam.defaults = { ...wsTeam.defaults, messaging: "none", byTeam: { ...wsTeam.defaults.byTeam, cloud: { capabilities: { "nw-chat": { from: K.agents } } } } };
+  const dt = discovery({ workspace: wsTeam });
+  const two = await resolveSoul(dt, labelled(dt, "release-manager", ["engineering", "cloud"]), opts());
+  assert.equal(two.slots.messaging, "nw-chat");
+  assert.deepEqual(two.slotsFrom, { knowledge: "workspace", messaging: "team:cloud", tasks: null });
+  // the soul's own entry (it wins over the workspace default of the same capability)
+  const ds = discovery({ workspace: wsCaps, souls: { s: soulDef("s", { capabilities: { "nw-chat": { from: "here" } } }) } });
+  assert.equal((await resolveSoul(ds, findSoul(ds, "s"), opts())).slotsFrom.messaging, "soul");
+  // the soul's `none` empties the slot: no origin
+  const st = await resolveSoul(d, findSoul(d, "support-triager"), opts());
+  assert.equal(st.slots.knowledge, null); assert.equal(st.slotsFrom.knowledge, null);
+  // Provenance only: the same capability reached another way moves no fingerprint.
+  const same = await resolveSoul(ds, findSoul(ds, "s"), opts());
+  const dw = discovery({ workspace: wsCaps, souls: { s: soulDef("s") } });
+  const viaWs = await resolveSoul(dw, findSoul(dw, "s"), opts());
+  assert.equal(viaWs.slotsFrom.messaging, "workspace");
+  assert.equal(viaWs.declRevision, same.declRevision);
+  assert.deepEqual(["soul", "defaults.knowledge", "defaults.capabilities", "defaults.byTeam.a.b", undefined].map(resolveLib.fromOfVia), ["soul", "workspace", "workspace", "team:a.b", null]);
+});
+
 test("E_TEAM_CONFLICT: two labels giving one capability different entries is refused naming both; identical entries are not a conflict", () => {
   const ws = workspaceFile({ defaults: { ...workspaceFile().defaults, byTeam: {
     engineering: { capabilities: { "nw-shared": { from: K.agents } } },
