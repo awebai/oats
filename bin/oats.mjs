@@ -1069,11 +1069,11 @@ function launchPreview(bail) {
     instance = meta.instance || basename(home);
     if (!(meta.launch && typeof meta.launch === "object") && !selectionGiven) {
       // A home that predates recipes, asked nothing: its frozen command is
-      // described as is. Under a selection it goes through the planner,
-      // whose narrow conversion is the one session restart uses.
+      // described as is. Under a selection the planner refuses it
+      // (E_LAUNCH_LEGACY: re-spawn it from the deployment).
       let d;
       try { d = describeLaunchCommand(meta.command); } catch (e) { bail(e.code || "E_LAUNCH_COMMAND_UNSUPPORTED", e.message); }
-      jsonOk({ context, selected, selection: { source: "frozen-command", launchConfig: null, runtime: null, model: null, yolo: null }, runtime: meta.runtime, model: meta.model || null, modelSource: meta.model ? "recorded" : "native default", yolo: meta.yolo ?? null, launchConfig: null, launchConfigSource: null, executable: { path: d.executable, declared: null, resolvedFrom: "recorded" }, argv: d.argv, environment: d.environment, command: redactLaunchCommand(meta.command), prompt: { kind: "task-file", file: "TASK.md" }, hooks: null, preflight: [{ check: "recipe", ok: true, detail: "frozen command; conversion on restart" }], ok: true });
+      jsonOk({ context, selected, selection: { source: "frozen-command", launchConfig: null, runtime: null, model: null, yolo: null }, runtime: meta.runtime, model: meta.model || null, modelSource: meta.model ? "recorded" : "native default", yolo: meta.yolo ?? null, launchConfig: null, launchConfigSource: null, executable: { path: d.executable, declared: null, resolvedFrom: "recorded" }, argv: d.argv, environment: d.environment, command: redactLaunchCommand(meta.command), prompt: { kind: "task-file", file: "TASK.md" }, hooks: null, preflight: [{ check: "recipe", ok: true, detail: "frozen command; a selection is refused (E_LAUNCH_LEGACY): re-spawn it" }], ok: true });
       return;
     }
     const agentsRoot = agentsRootOfHome(home);
@@ -2554,7 +2554,7 @@ async function capabilityCommand() {
     if (mans.length > 1) bail("E_DUPLICATE_NAMESPACE", `duplicate operational command namespace "${cmd}": ${mans.map((m) => m.capability).join(", ")}`);
     const m = mans[0];
     if (!activeIds.includes(m.capability)) bail("E_CAPABILITY_INACTIVE", `${m.capability} command namespace is not active in the current context/instance`);
-    const trust = capabilityTrust(m, context);
+    const trust = capabilityTrust(m);
     if (!trust.trusted) bail("E_CAPABILITY_BLOCKED", `${m.capability} executable command is blocked: ${trust.reason}`);
     return runManifestCommand(m, capSettings[m.capability] || {}, teamCtx, () => m._dir, soulDir);
   }

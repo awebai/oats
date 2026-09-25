@@ -6,10 +6,9 @@ import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Worker } from "node:worker_threads";
-import {
-  acquirePackage, capabilityArtifactIntegrity, installedCapabilityDir,
-  OATS_LOCK_FILE, parseLockFileStrict, updatePackage,
-} from "../lib/core.mjs";
+import { capabilityArtifactIntegrity, OATS_LOCK_FILE, parseLockFileStrict } from "../lib/core.mjs";
+// The captured path's store writer (deleted with the captured path in (e)).
+import { acquirePackage, installedCapabilityDir, updatePackage } from "../lib/captured-store-writer.mjs";
 import {
   retainCapabilityArtifact, retainedCapabilityDir, verifyRetainedCapability,
 } from "../lib/capability-artifacts.mjs";

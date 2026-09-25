@@ -91,7 +91,7 @@ re-run by a start or restart.
 Read-only; nothing is locked or started. `--home ABS` describes an existing
 home under a selection (`selection.source`: `frozen` when nothing was
 selected, `config` when re-resolved, `frozen-command` for a home that
-predates recipes, whose selection needs the restart conversion);
+predates recipes, where a selection answers `E_LAUNCH_LEGACY`: re-spawn it);
 `--soul NAME [--dir SCOPE] [--agents-root ABS]` describes a new instance.
 Answer: `{context, selected, selection:{source, launchConfig, runtime,
 model, yolo}, runtime, model, modelSource, yolo, launchConfig,
