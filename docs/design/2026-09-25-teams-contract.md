@@ -164,6 +164,15 @@ folded in below.
          tracked as an aweb ask.
    - Each is idempotent, and refuses a label the instance isn't eligible for
      (`E_TEAM_NOT_ELIGIBLE`, naming the eligible labels).
+   - **Declared setting keys (added after #179):** the spawn preview's
+     `modules[]` rows and `inspect`'s `capabilities[]` rows carry
+     `declares: [<setting key>…]` (names only; feature `settings-declared`).
+     That's how a Desktop sees that the messaging manifest declares
+     `settings.join` without reading manifests.
+   - `inspect --soul` on a soul whose labels conflict (`E_TEAM_CONFLICT`)
+     refuses. The error details name the capability and both labels; no
+     `teams` is answered, because the soul can't be spawned until the
+     workspace resolves it.
    - At spawn, the kernel carries the operator's choice to the provider as a
      spawn provider setting (`--provider <messaging> join=<label>[,<label>]`).
      That needs no new kernel flag, and the spawn preview shows it.
