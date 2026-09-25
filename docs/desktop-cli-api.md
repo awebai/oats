@@ -646,15 +646,13 @@ the pre-fix marker and is never accepted for dispatch.
   import; `--instructions-file`/`--def-file` refused with `E_BAD_ARGS`). Test:
   the deployment tree is byte-identical after a success, a refusal and an
   unknown-soul preview.
-  **Workspace deployments (0.25.1+) — one stated exception**: the first preview
-  of a workspace soul may populate the deployment's per-commit soul cache
-  (`agents/<soul>/souls/<commit>/`, the swappable `agents/<soul>/soul` pointer,
-  `soulFetched: true` in the result). That cache is derived, content-addressed
-  and idempotent — the same member commit yields the same bytes, a later
-  preview of the same commit writes nothing — and nothing else moves: no lock,
-  no event, no home, no instance. A Desktop treats a preview as
-  side-effect-free for everything it shows; it must not assume the deployment
-  directory's byte-identity across the FIRST preview of a soul or commit.
+  **Workspace deployments (0.26.0+)**: this holds for the FIRST preview of a
+  soul or commit too. A preview reads the soul from the deployment's per-commit
+  cache (`agents/<soul>/souls/<commit>/`) when a spawn already filled it, else
+  fetches it to a temporary copy outside the deployment and removes it
+  (`soulFetched: true` in the result). Only a spawn fills the cache or moves the
+  `agents/<soul>/soul` pointer. (0.25.x previews populated the cache: that stated
+  exception is gone.)
 - **Exact root**: `spawn <soul> --agents-root <abs>` binds the soul to that root
   (as inspect/readiness take it) — no team-soul / capability-agent / importable-
   def fallback; mismatch → `E_SOUL_UNKNOWN`. The preview echoes

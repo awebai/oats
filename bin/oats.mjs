@@ -26,7 +26,7 @@ import {
   LAYERS, OATS_VERSION, configChain, manifestOperations,
   capabilityManifests, capabilityTrust, capabilityExecutablePath, activateCapturedScaffold, loadCapturedDispatch, inspectPortableOnboarding, prepareCapturedComposition, resolveCapturedHelper, capturedNativeSessionAvailability, scaffoldCapturedInstance, startCapturedInstanceSession, withCapturedBindingFile, withCapturedInvocationContextFile, admitCapturedAction, beginCapturedIntent, settleCapturedIntent,
   officialPackageCatalog, describeOfficialCatalog, approveAvailableCapability, resolveOatsConfig, composeInstanceAgentsMd, parseYamlNested, stripInternalAnnotations, withConfigFile,
-  findCapabilityAgent, findInstanceHome, findInstanceHomes, listCapabilityAgents, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, legacyLocalAgents, listAgents, listInstances, servedIdentityLine, spawnInstance, spawnInstanceAsync, instanceSoulDir, launchConfigsAt, explicitInstanceName, findModuleCapabilityAgent, capabilityAgentFromDir, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, planLaunch, redactLaunchCommand, restartInstanceSession,
+  findCapabilityAgent, findInstanceHome, findInstanceHomes, listCapabilityAgents, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, listAgents, listInstances, servedIdentityLine, spawnInstance, spawnInstanceAsync, instanceSoulDir, launchConfigsAt, explicitInstanceName, findModuleCapabilityAgent, capabilityAgentFromDir, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
 import {
   writeFileAtomic, LOCK_FILE, readLock, writeLock, resolvePackages,
@@ -1781,8 +1781,8 @@ async function spawnCmd() {
   // "whatever <agents-root>/<name>/soul/ happens to hold": that copy is a per-commit
   // cache (ensureWorkspaceSoul refreshes it when the member moved), so a second
   // spawn sees the member's CURRENT soul, not the first spawn's. A preview runs the
-  // same read-only discovery+resolution; the fetched soul copy it may leave under
-  // <agents-root>/<name>/soul/ is not an instance (reported as soulFetched).
+  // same read-only discovery+resolution and writes nothing: it reads the soul from
+  // the per-commit cache, or fetches it to a temporary copy (reported as soulFetched).
   const providerPairs = [];
   for (let i = 0; i < args.length; i++) if (args[i] === "--provider") { if (!args[i + 1] || !args[i + 2]) bail("E_BAD_ARGS", "--provider needs <capability> <key>=<value>"); providerPairs.push([args[i + 1], args[i + 2]]); i += 2; }
   let wsPrepared, soulFetched = false, wsSoulUnknown = null, wsDiscovery;
@@ -1792,17 +1792,27 @@ async function spawnCmd() {
     if (hasLocal) {
       let discovery = null;
       try {
-        const { prepareInstance, ensureWorkspaceSoul, parseProviderFlags, discoverOrStandalone } = await import("../lib/instance-resolution.mjs");
+        const { prepareInstance, ensureWorkspaceSoul, previewWorkspaceSoul, parseProviderFlags, discoverOrStandalone } = await import("../lib/instance-resolution.mjs");
         const remoteOptions = remoteOptionsFromEnv();
         const { local } = loadLocal(dirFlag());
         discovery = wsDiscovery = await discoverOrStandalone(local, { remoteOptions });
         wsPrepared = await prepareInstance(dirFlag(), name, { spawn: { providers: parseProviderFlags(providerPairs) }, remoteOptions, discovery });
         const soulName = wsPrepared.soulEntry.name;
-        const stampFile = join(root, soulName, ".oats-soul-source.json");
-        const stampBefore = (() => { try { return JSON.parse(readFileSync(stampFile, "utf8")); } catch { return null; } })();
-        const soulDir = await ensureWorkspaceSoul(wsPrepared, root);
-        soulFetched = !stampBefore || stampBefore.commit !== wsPrepared.soulEntry.commit || stampBefore.repoKey !== wsPrepared.soulEntry.repoKey;
-        if (!agent || soulFetched || agent._dir !== dirname(soulDir)) agent = findAgent(root, soulName);
+        let soulDir;
+        if (isPreview) {
+          // A preview writes nothing in the deployment: the soul comes from the
+          // per-commit cache when complete, else from a temporary fetch removed at exit.
+          const pv = await previewWorkspaceSoul(wsPrepared, root);
+          process.once("exit", pv.cleanup);
+          soulDir = pv.soulDir; soulFetched = pv.fetched;
+          agent = findAgentAt(root, soulName, soulDir);
+        } else {
+          const stampFile = join(root, soulName, ".oats-soul-source.json");
+          const stampBefore = (() => { try { return JSON.parse(readFileSync(stampFile, "utf8")); } catch { return null; } })();
+          soulDir = await ensureWorkspaceSoul(wsPrepared, root);
+          soulFetched = !stampBefore || stampBefore.commit !== wsPrepared.soulEntry.commit || stampBefore.repoKey !== wsPrepared.soulEntry.repoKey;
+          if (!agent || soulFetched || agent._dir !== dirname(soulDir)) agent = findAgent(root, soulName);
+        }
         if (!agent) bail("E_SOUL_UNKNOWN", `soul "${name}" was fetched to ${shortPath(soulDir)} but is not readable as a soul there`);
         note(`(workspace soul: "${name}" from ${wsPrepared.soulEntry.repoKey} @ ${String(wsPrepared.soulEntry.commit).slice(0, 12)}${wsPrepared.soulEntry.team ? `, team ${wsPrepared.soulEntry.team}` : ""}${soulFetched ? "; soul source fetched" : ""})`);
       } catch (e) {
@@ -1975,11 +1985,11 @@ async function spawnCmd() {
     };
       r = prepared ? await spawnInstanceAsync(root, agent, spawnOpts) : spawnInstance(root, agent, spawnOpts); }
     if (args.includes("--preview")) {
-      // A workspace preview may have fetched the soul's SOURCE under <agents-root>/<name>/soul/
-      // (a per-commit cache, not an instance): the result says so.
+      // A workspace preview may have fetched the soul's SOURCE to a temporary copy
+      // (the deployment's cache had no entry for its commit): the result says so.
       if (prepared) r.soulFetched = soulFetched;
       if (JSON_MODE) { jsonOk(r); return; }
-      console.log(`preview ${r.agent} → ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch} from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}) runtime ${r.runtime}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}; nothing was created${soulFetched ? ` (the soul source was fetched to ${shortPath(join(root, r.agent, "soul"))} — a per-commit copy, not an instance)` : ""}`);
+      console.log(`preview ${r.agent} → ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch} from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}) runtime ${r.runtime}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}; nothing was created${soulFetched ? " (the soul source was fetched to a temporary copy, not kept)" : ""}`);
       return;
     }
   } catch (e) {

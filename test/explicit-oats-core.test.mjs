@@ -90,21 +90,19 @@ test('K7 events: spawn writes spawned (+launched when launching); a refused chil
   retireInstance(fx.root, boss.instance);
 });
 
-test.todo('K6b: the FIRST preview of a never-spawned soul writes nothing under agents/ (pending lead Q7 — today a v2 preview persists the fetched soul copy)');
 test('K6b (spawnPreviewApi 2): a preview — success OR refusal — leaves the deployment byte-identical (no event, no daemon, no soul write); --agents-root binds the exact root with no fallback; decision.revision binds the apply via --expect-decision (drift → E_DECISION_STALE, nothing created); preflight is bounded and reported', async t => {
   const fx = deployment(t, { souls: { ...WORKTREE, boss: {} }, local: OPUS });
   const git = (...a) => gitIn(fx.member, ...a);
   writeFileSync(join(fx.bin, 'herdr'), `#!/bin/sh\necho STARTED >> "${fx.base}/herdr-started"; sleep 30\n`, { mode: 0o700 });
   const boss = await fx.spawn('boss', { purpose: 'p', allowChildSpawns: false });
   const treeHash = () => { const out = spawnSync('bash', ['-c', `cd "${fx.dep}" && find . -name .git -prune -o -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256`], { encoding: 'utf8' }); return out.stdout.trim(); };
-  // KNOWN GAP (lead question Q7, test.todo below): a v2 preview persists the
-  // fetched soul copy under agents/<soul>/ the first time. One preview first, so
-  // the hash below measures everything ELSE a preview writes (it must be nothing).
-  assert.equal(fx.last(['spawn', 'wt', '--preview', '--json']).ok, true);
+  // The FIRST preview of a never-spawned soul is inside the hashed window too: a
+  // preview fetches the soul to a temporary copy, never into agents/<soul>/.
   const bossSoul = join(fx.member, 'souls', 'boss', 'soul.yaml');
   const before = treeHash(), eventsBefore = existsSync(join(boss.home, '.oats-events.jsonl')) ? readFileSync(join(boss.home, '.oats-events.jsonl'), 'utf8') : '';
   // Success preview with the Herdr backend requested: no daemon started, backend reported as installed but not started.
   const ok = fx.last(['spawn', 'wt', '--purpose', 'a', '--launch-config', 'opus', '--preview', '--backend', 'herdr', '--agents-root', fx.root, '--json']).result;
+  assert.equal(ok.soulFetched, true, 'the first preview fetched the soul source'); assert.equal(existsSync(join(fx.root, 'wt')), false, 'and wrote no soul copy');
   assert.equal(ok.spawnPreviewApi, 2); assert.deepEqual(ok.subject, { soul: 'wt', agentsRoot: fx.root, dir: null });
   assert.deepEqual(ok.backendStatus, { name: 'herdr', installed: true, started: false }); assert.equal(existsSync(join(fx.base, 'herdr-started')), false, 'preview started no daemon');
   assert.match(ok.decision.revision, /^[a-f0-9]{24}$/); assert.equal(ok.decision.instance, 'wt-a'); assert.equal(ok.decision.base.oid, git('rev-parse', 'HEAD'));
