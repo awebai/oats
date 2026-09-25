@@ -1,4 +1,4 @@
-/** Workspace view header and its Capabilities / Repositories (id: sources) tabs, natively on
+/** Workspace view header and its Capabilities / Setup (id: sources) tabs, natively on
  * workspace model v2. Facts come from the installed kernel only:
  *   - `oats workspace status` + `oats status` (the roster observation) for
  *     sources, lock state and which instances carry a module;
@@ -13,8 +13,8 @@ import { catalogCSS, renderCapabilities, renderFilters, renderSources, filterCho
 import { createWorkspaceSync, syncCSS, reasonText } from './workspace-sync-view.mjs';
 
 export const workspaceTabs = ['souls', 'capabilities', 'sources'];
-// What a person reads (the ids stay stable): where souls and capabilities come from is its repositories.
-const TAB_LABELS = { souls: 'Souls', capabilities: 'Capabilities', sources: 'Repositories' };
+// What a person reads (the ids stay stable): Setup is what the workspace is built from (repos, packages, external souls).
+const TAB_LABELS = { souls: 'Souls', capabilities: 'Capabilities', sources: 'Setup' };
 export const discoveryCSS = `
 ${catalogCSS}
 ${syncCSS}

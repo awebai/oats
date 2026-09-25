@@ -1,7 +1,7 @@
 /** The message for a deployment the kernel could not observe (workspace
  * model v2). A missing advertised feature is named; a kernel refusal keeps
  * its code and message. The observed facts themselves render in the
- * Workspace view's Repositories tab (workspace-catalog.mjs). */
+ * Workspace view's Setup tab (workspace-catalog.mjs). */
 const text = value => typeof value === 'string' && value ? value : null;
 export function deploymentUnavailableText(deployment) {
   if (!deployment || deployment.status === 'pending') return 'Reading the deployment through the installed OATS CLI…';
