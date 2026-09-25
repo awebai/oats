@@ -13,8 +13,8 @@ description: >-
 
 A capability package may ship skills, instance instructions, requirements,
 namespaced commands, and declared hooks. A core capability is the constrained
-kind that fills one of the knowledge, messaging or tasks slots (its manifest's
-`layer` field names which). Building either requires
+kind that fills one of the knowledge, messaging or tasks positions (its
+manifest's `layer` field names which). Building either requires
 manifest, security, targeting-boundary, collision, and probe discipline; use
 the framework's **integrations-expert** soul rather than improvising.
 
