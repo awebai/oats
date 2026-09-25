@@ -4,17 +4,17 @@
 import { postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
 import { runtimeState } from './instance-presentation.mjs';
 import { createSoulMark } from './identity-marks.mjs';
-import { declarationsCSS, renderSoulDeclarations } from './soul-declarations.mjs';
 import { createReadinessView, readinessCSS } from './readiness-view.mjs';
 import { cliStatus } from './views/cli-status.mjs';
 import { iconElement } from './shell-icons.mjs';
-import { soulRepository } from './soul-repository.mjs';
-import { inspectData, inspectFacts } from './inspect-contract.mjs';
-import { createTeamsPanel, teamsOperations, teamsCSS } from './teams-panel.mjs';
+import { inspectData, inspectFacts, originText } from './inspect-contract.mjs';
+import { createTeamsPanel, teamsOperations, teamsCSS, soulTeams, teamLabels } from './teams-panel.mjs';
+import { ageText } from './age-text.mjs';
 
 
+const HARNESS_NAMES = { pi: 'Pi', claude: 'Claude Code', codex: 'Codex' };
+const harnessName = value => HARNESS_NAMES[value] || value;
 export const inspectorCSS = `
-${declarationsCSS}
 ${readinessCSS}
 ${teamsCSS}
 .souls { container-type:inline-size; }
@@ -32,11 +32,78 @@ ${teamsCSS}
 .soul-inspector .inspector-summary .inspector-content { padding:0; }
 .soul-inspector > .inspector-status { padding:0 14px; }
 .oats-view .soul-inspector button.primary:not(:disabled) { background:var(--primary-bg); color:var(--primary-fg); border-color:var(--primary-bg); }
+/* The soul page (Workspace view): the full available width, in the list views'
+   language — every card has the catalog table's header band (pageCardCSS). */
+.workspace-page { flex:1; min-height:0; min-width:0; overflow-y:auto; padding:14px 20px 28px; box-sizing:border-box; container-type:inline-size; }
+.workspace-page[hidden] { display:none; }
+.oats-view .workspace-page button.primary:not(:disabled) { background:var(--primary-bg); color:var(--primary-fg); border-color:var(--primary-bg); }
+.soul-page { display:flex; flex-direction:column; gap:var(--section-gap); max-width:1180px; }
+.soul-page .inspector-crumb { display:flex; align-items:center; margin-bottom:calc(var(--title-gap) * -1); }
+.oats-view .soul-page button.inspector-back { display:inline-flex; align-items:center; gap:4px; min-height:28px; padding:0 8px 0 4px; border:0; border-radius:6px; background:transparent; color:var(--muted); font-weight:600; cursor:pointer; }
+.oats-view .soul-page button.inspector-back:hover { background:var(--surface-2); color:var(--fg); }
+.oats-view .soul-page button.inspector-back:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.soul-page .inspector-head { margin:0; gap:14px; flex-wrap:nowrap; }
+.soul-page .inspector-head .identity-mark { width:44px; height:44px; border-radius:11px; font-size:18px; flex:none; }
+.soul-page .inspector-head h2 { font-size:20px; line-height:1.25; }
+.soul-page .inspector-head-actions { margin-left:auto; display:flex; align-items:center; gap:8px; flex:none; }
+.soul-page .inspector-head-actions .inspector-actions { display:flex; gap:8px; margin:0; }
+.soul-page > .inspector-status:empty { display:none; }
+.soul-page .soul-page-top { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(0,1fr); gap:16px; align-items:stretch; }
+.soul-page .soul-page-top:has(> :only-child) { grid-template-columns:minmax(0,1fr); }
+@container (max-width: 760px) { .soul-page .soul-page-top { grid-template-columns:minmax(0,1fr); } .soul-page .inspector-head { flex-wrap:wrap; } }
+/* Cards: About (the summary), Readiness, and each section block. */
+.soul-page .inspector-summary, .soul-page .inspector-readiness, .soul-page .inspector-block { background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; min-width:0; box-sizing:border-box; padding:0 0 14px; font-size:12px; }
+.soul-page .inspector-summary > h3:first-child, .soul-page .inspector-block > h3:first-child, .soul-page .readiness-view > h2,
+.soul-page .inspector-block > details > summary {
+  display:flex; align-items:center; gap:8px; min-height:36px; margin:0; padding:0 16px; box-sizing:border-box; background:var(--surface-2); border-bottom:1px solid var(--border);
+  color:var(--muted); font-size:10.5px; font-weight:650; letter-spacing:.06em; text-transform:uppercase; }
+.soul-page .inspector-block > *:not(:first-child), .soul-page .inspector-summary > *:not(:first-child), .soul-page .readiness-view > *:not(h2) { margin-left:16px; margin-right:16px; }
+.soul-page .inspector-block > *:nth-child(2), .soul-page .inspector-summary > *:nth-child(2), .soul-page .readiness-view > h2 + * { margin-top:12px; }
+.soul-page .inspector-block > * + *:not(:nth-child(2)) { margin-top:var(--title-gap); }
+.soul-page .inspector-block > .inspector-card { border:0; padding:0; background:transparent; }
+.soul-page .inspector-block > details { margin:0; }
+.soul-page .inspector-block > details > summary { cursor:pointer; list-style:none; }
+.soul-page .inspector-block > details > summary::before { content:"▸"; font-size:10px; }
+.soul-page .inspector-block > details[open] > summary::before { content:"▾"; }
+.soul-page .inspector-block > details > *:not(summary) { margin:12px 16px 0; }
+.soul-page .inspector-block:has(> details:not([open])) { padding-bottom:0; }
+.soul-page .inspector-block:has(> details:not([open])) > details > summary { border-bottom:0; }
+.soul-page .inspector-readiness { padding-bottom:14px; }
+.soul-page .inspector-readiness .readiness-view { margin:0; }
+.soul-page .inspector-main { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap:16px; align-items:start; padding:0; }
+.soul-page .inspector-block.wide { grid-column:1 / -1; }
+/* A soul's capabilities: the Capabilities view's own table, flush in its card. */
+.soul-page .inspector-block:has(> .inspector-capability-table) { padding-bottom:0; }
+.soul-page .inspector-block > .inspector-capability-table { margin:0; }
+.soul-page .inspector-capability-table .catalog-table { border:0; border-radius:0; }
+/* Instances: rows, like the list views. */
+.soul-page .inspector-summary .inspector-content { display:flex; flex-direction:column; gap:var(--title-gap); padding:0; }
+.soul-page .inspector-summary .inspector-content > h3 { margin:var(--title-gap) 0 0; color:var(--muted); }
+.soul-page .inspector-summary .inspector-lede { font-size:13.5px; max-width:72ch; margin:0; }
+.soul-page .inspector-summary .inspector-facts { grid-template-columns:max-content 1fr; }
+.oats-view .soul-page button.inspector-instance { display:flex; align-items:center; width:calc(100% + 32px); min-height:44px; margin:0 -16px; padding:0 16px; box-sizing:border-box; border:0; border-top:1px solid var(--border); border-radius:0; background:var(--surface); color:var(--fg); text-align:left; font-weight:600; }
+.oats-view .soul-page button.inspector-instance:hover:not(:disabled) { background:var(--surface-2); color:var(--fg); }
+.oats-view .soul-page button.inspector-instance:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+.soul-page .inspector-summary .inspector-content > h3 + button.inspector-instance { margin-top:0; }
+.soul-page .inspector-summary .inspector-content > button.inspector-instance + button.inspector-instance { margin-top:calc(var(--title-gap) * -1); }
+.soul-page .inspector-summary:has(button.inspector-instance:last-child) { padding-bottom:0; }
+/* Provider operations: one line per operation, like the list views' rows. */
+.soul-page .inspector-block > .inspector-cap { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.6fr) minmax(0,auto); align-items:center; column-gap:16px; row-gap:6px;
+  min-height:48px; margin:0; padding:8px 16px; box-sizing:border-box; border-top:1px solid var(--border); }
+.soul-page .inspector-block > h3 + .inspector-cap { border-top:0; margin-top:0; }
+.soul-page .inspector-block > .inspector-cap h4 { margin:0; font-size:12.5px; font-weight:650; }
+.soul-page .inspector-block > .inspector-cap p { margin:0; font-size:12px; }
+.soul-page .inspector-block > .inspector-cap > p + p { justify-self:end; text-align:right; }
+.soul-page .inspector-block > .inspector-cap > button { justify-self:end; }
+.soul-page .inspector-block > .inspector-cap > .operation-output { grid-column:1 / -1; }
+.soul-page .inspector-block:has(> .inspector-cap:last-child) { padding-bottom:0; }
+/* The readiness title reads as a section title, like every other card's. */
+.soul-inspector .readiness-view h2 { font-size:10.5px; font-weight:650; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 var(--title-gap); }
 .inspector-head { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:16px; }
 .inspector-head h2 { flex:1; margin:0; font-size:19px; overflow-wrap:anywhere; }
 .inspector-content { min-width:0; overflow-wrap:anywhere; }
 .inspector-content .field { min-width:0; max-width:100%; box-sizing:border-box; }
-.inspector-content h3 { margin:18px 0 8px; font-size:10.5px; font-weight:650; letter-spacing:.06em; text-transform:uppercase; }
+.inspector-content h3 { margin:var(--section-gap) 0 var(--title-gap); font-size:10.5px; font-weight:650; letter-spacing:.06em; text-transform:uppercase; }
 .inspector-content p { line-height:1.5; }
 .inspector-content .muted { color:var(--muted); }
 .inspector-content pre { white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.6 var(--mono,monospace); }
@@ -50,6 +117,26 @@ ${teamsCSS}
 .inspector-status { min-height:1.5em; font-size:13px; color:var(--muted); white-space:pre-wrap; }
 .inspector-status:empty { min-height:0; margin:0; }
 .inspector-status.error { color:var(--danger); }
+/* F7: cards and compact lists (the spawn modal / context panel language); tokens only. */
+.inspector-content h3.inspector-section { color:var(--muted); }
+.inspector-content > h3.inspector-section:first-child { margin-top:4px; }
+.inspector-readiness { padding-bottom:0; }
+.inspector-readiness .readiness-view { margin-bottom:0; }
+.inspector-lede { margin:6px 0 0; font-size:12.5px; line-height:1.5; color:var(--fg); }
+.inspector-card { border:1px solid var(--border); border-radius:8px; background:var(--surface); padding:10px 12px; }
+.inspector-card .inspector-facts { font-size:12px; margin:0; }
+.inspector-list { border:1px solid var(--border); border-radius:8px; background:var(--surface); overflow:hidden; }
+.inspector-item { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:12px; row-gap:4px; align-items:center; padding:9px 12px; }
+.inspector-item + .inspector-item { border-top:1px solid var(--border); }
+.inspector-item-name { font-size:12.5px; font-weight:650; color:var(--fg); overflow-wrap:anywhere; }
+.inspector-item-meta { font-size:11.5px; color:var(--muted); overflow-wrap:anywhere; }
+.inspector-item > details { grid-column:1 / -1; font-size:12px; }
+.inspector-item > details > summary, .inspector-disclosure > summary { cursor:pointer; color:var(--muted); font-size:12px; }
+.inspector-chips { display:flex; flex-wrap:wrap; gap:6px; margin:var(--title-gap) 0; }
+.inspector-chip { font-size:12px; font-weight:600; line-height:1; color:var(--fg); background:var(--surface); border:1px solid var(--border); border-radius:999px; padding:6px 10px; white-space:nowrap; }
+.inspector-teams-lede { margin:0; }
+.inspector-disclosure { margin-top:14px; }
+.inspector-spawned { display:flex; align-items:center; gap:12px; justify-content:space-between; }
 @container(max-width:700px) {
  .souls-body, .souls-body.inspecting { display:block; overflow:auto; }
  .workspace-main { height:auto; }
@@ -60,7 +147,7 @@ ${teamsCSS}
 
 /** presentation is an optional host lease. Presence belongs to this controller;
  * effective visibility/collapse belongs to the host, not request completions. */
-export function createSoulInspector(container, { ctx, presentation, launch, schedule, files, canFiles = () => false, canLaunch = () => true, launchReason = () => 'Requires a compatible installed OATS CLI.', available = () => true, instances = () => [], workspace = () => null, closed }) {
+export function createSoulInspector(container, { ctx, presentation, openSoul = null, layout = 'sidebar', backLabel = 'Souls', openInstance = null, capabilityTable = null, launch, schedule, files, canFiles = () => false, canLaunch = () => true, launchReason = () => 'Requires a compatible installed OATS CLI.', available = () => true, instances = () => [], workspace = () => null, closed }) {
   const doc = container.ownerDocument;
   let alive = true, serial = 0, operationSerial = 0, selectionGen = null, selection, data, teamsPanel = null;
   const pendingOperations = new WeakMap();
@@ -73,7 +160,7 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
   const mutationButton = (text, run) => { const control = button(text, run); control.dataset.mutate = '1'; control.disabled = !available(); return control; };
   const request = (body, query = wsQuery()) => postJson(ctx, `/api/capabilities${query}`, body);
   const valid = (id, gen) => alive && id === serial && gen === workspaceGeneration();
-  let status, content, summary, readiness;
+  let status, content, summary, readiness, headActions = null;
   function syncReadiness() {
     const w = workspace();
     const ref = selection?.instance;
@@ -87,25 +174,48 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
   function frame(title) {
     container.hidden = false;
     if (presentation) presentation.setPresent(true);
-    else container.parentElement?.classList.add('inspecting');
+    else if (layout !== 'page') container.parentElement?.classList.add('inspecting'); // the page replaces the list; no side column
     readiness?.dispose(); readiness = null; container.replaceChildren();
     const head = node('div', undefined, 'inspector-head');
-    // Hosted X hides the slot without deselecting or rebuilding an editor.
-    const closeControl = button('', () => {
-      if (!alive) return;
-      if (presentation) presentation.collapse();
-      else close({ restoreFocus: true });
-    });
-    closeControl.classList.add('icon-act'); closeControl.append(iconElement(doc, 'close', { size: 14 }));
-    closeControl.setAttribute('aria-label', 'Close inspector');
+    container.classList.toggle('soul-page', layout === 'page');
     const heading = node('h2', title); heading.title = title;
-    if (selection.agent) head.append(createSoulMark(doc, selection.agent));
-    head.append(heading, button('Refresh', () => show(selection)), closeControl);
+    if (layout === 'page') {
+      // A full page in the Workspace view: back to the list it came from.
+      const back = button('', () => { if (alive) close({ restoreFocus: true }); });
+      back.classList.add('inspector-back'); back.append(iconElement(doc, 'chevronLeft', { size: 14 }), node('span', backLabel));
+      back.setAttribute('aria-label', `Back to ${backLabel}`);
+      const crumb = node('div', undefined, 'inspector-crumb'); crumb.append(back);
+      container.append(crumb);
+      if (selection.agent) head.append(createSoulMark(doc, selection.agent));
+      headActions = node('div', undefined, 'inspector-head-actions');
+      head.append(heading, headActions);
+    } else {
+      headActions = null;
+      // Hosted X hides the slot without deselecting or rebuilding an editor.
+      const closeControl = button('', () => {
+        if (!alive) return;
+        if (presentation) presentation.collapse();
+        else close({ restoreFocus: true });
+      });
+      closeControl.classList.add('icon-act'); closeControl.append(iconElement(doc, 'close', { size: 14 }));
+      closeControl.setAttribute('aria-label', 'Close inspector');
+      if (selection.agent) head.append(createSoulMark(doc, selection.agent));
+      head.append(heading, button('Refresh', () => show(selection)), closeControl);
+    }
     summary = node('div', undefined, 'inspector-summary');
     status = node('p', '', 'inspector-status'); status.setAttribute('role', 'status');
-    content = node('div', undefined, 'inspector-content'); container.append(head, summary, status, content);
-    const readinessHost = node('div', undefined, 'inspector-content'); container.append(readinessHost);
-    readiness = createReadinessView(readinessHost, { ctx }); syncReadiness();
+    content = node('div', undefined, 'inspector-content inspector-main');
+    // Readiness is a first question ("can it run?"): one line under the summary, its checks behind a disclosure.
+    const readinessHost = node('div', undefined, 'inspector-content inspector-readiness');
+    // Readiness belongs to an instance; a soul's page shows what a person needs (human, F7).
+    const withReadiness = !selection.agent;
+    if (layout === 'page') {
+      const top = node('div', undefined, 'soul-page-top'); top.append(summary); if (withReadiness) top.append(readinessHost);
+      summary.append(node('h3', 'About', 'inspector-section'));
+      container.append(head, status, top, content);
+      headActions.append(button('Refresh', () => show(selection)));
+    } else container.append(head, summary, status, ...(withReadiness ? [readinessHost] : []), content);
+    readiness = withReadiness ? createReadinessView(readinessHost, { ctx, compact: true }) : null; syncReadiness();
     if (selection.agent) renderSelectedSoul();
   }
   // Resets are silent by default: workspace/subtab/disposal must not focus an
@@ -118,7 +228,7 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
     readiness?.dispose(); readiness = null;
     container.replaceChildren();
     if (presentation) presentation.setPresent(false);
-    else container.parentElement?.classList.remove('inspecting');
+    else if (layout !== 'page') container.parentElement?.classList.remove('inspecting');
     closed?.({ restoreFocus: !presentation && restoreFocus });
   }
   async function show(next) {
@@ -130,7 +240,15 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
       const result = await request({ action: 'inspect', selector: next.selector });
       if (!valid(id, gen)) return;
       data = result; message(''); render();
-    } catch (error) { if (valid(id, gen)) message(`${error.code ? `${error.code}: ` : ''}${error.message || 'Inspection failed. Refresh to retry.'}`, true); }
+    } catch (error) {
+      // One plain sentence (the kernel's), the code behind Details — e.g. E_TEAM_CONFLICT names the two labels.
+      if (!valid(id, gen)) return;
+      message(error.message || 'Inspection failed. Refresh to retry.', true);
+      // E_TEAM_CONFLICT: the soul can't be spawned until the workspace agrees; name the two labels.
+      const labels = error.code === 'E_TEAM_CONFLICT' ? teamLabels(error.labels) : null;
+      if (labels) content.append(node('p', `Team labels in conflict: ${labels.join(', ')}`, 'muted inspector-conflict-labels'));
+      if (error.code) { const more = node('details', undefined, 'inspector-problem-code'); more.append(node('summary', 'Details'), node('p', error.code, 'muted')); content.append(more); }
+    }
   }
   function facts(entries, parent = content) {
     const dl = node('dl', undefined, 'inspector-facts');
@@ -165,21 +283,90 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
     if (inspected.subject.kind === 'instance') {
       summary.replaceChildren();
       content.append(node('p', 'As spawned: an instance never changes under itself. A newer soul or module needs a new instance.', 'muted'));
-      content.append(node('h3', 'Instance')); facts(inspectFacts.instance(inspected.instance));
-      instructions(inspected.instance.instructions, 'Instructions are truncated here.');
-      // Team controls: only when the home's messaging provider declares them.
+      // Teams first (join/leave), then the instance, the soul it came from, and the as-spawned detail.
       const teams = teamsOperations(inspected);
       if (teams) {
-        const id = serial, gen = selectionGen;
-        teamsPanel = createTeamsPanel(content, { operations: teams, selector: selection.selector, request, owns: () => valid(id, gen) && selectionGen === workspaceGeneration(), available });
+        section('Teams'); const id = serial, gen = selectionGen;
+        teamsPanel = createTeamsPanel(content, { operations: teams, selector: selection.selector, request, heading: false,
+          owns: () => valid(id, gen) && selectionGen === workspaceGeneration(), available });
       }
-      if (soul) renderSoul(soul, false);
+      section('Instance'); card(instanceFacts(inspected.instance));
+      if (soul) spawnedFrom(soul);
+      instructions(inspected.instance.instructions, 'Instructions are truncated here.');
+      renderCapabilities(inspected, { collapsed: true });
     } else if (soul) {
-      content.append(node('p', 'What a spawn of this soul resolves now.', 'muted'));
-      renderSoul(soul, true);
+      renderSoulTeams(inspected);
+      // The harness it declares by default, and the model within it (if any).
+      section('Harness');
+      if (typeof soul.runtime === 'string' && soul.runtime) card([['Default harness', harnessName(soul.runtime)], ...(typeof soul.model === 'string' && soul.model ? [['Default model', soul.model]] : [])]);
+      else content.append(node('p', 'No default harness: you choose one when you launch it.', 'muted'));
+      renderCapabilities(inspected);
     } else content.append(node('p', 'The kernel did not report this soul. Refresh to retry.', 'muted'));
-    renderCapabilities(inspected);
-    renderOperations(inspected);
+    // Operations run on a live home: a soul shows none (human, F7); an instance lists what it can run.
+    if (inspected.subject.kind === 'instance') renderOperations(inspected);
+    paginate();
+  }
+  // Page layout: each titled section (and each top-level disclosure) becomes a card in
+  // the page grid. The nodes are moved, never copied: their controls keep their owners.
+  function paginate() {
+    if (layout !== 'page') return;
+    const kids = [...content.children]; content.replaceChildren();
+    let block = null;
+    for (const el of kids) {
+      if (!block || el.tagName === 'H3' || el.tagName === 'DETAILS') {
+        block = node('section', undefined, 'inspector-block');
+        const title = el.tagName === 'H3' ? el.textContent : el.tagName === 'DETAILS' ? el.querySelector('summary')?.textContent || '' : '';
+        if (title) block.dataset.block = title.replace(/ · \d+$/, '');
+        if (el.tagName === 'DETAILS' || /^(Capabilities|Provider operations)/.test(title)) block.classList.add('wide');
+        content.append(block);
+      }
+      block.append(el);
+    }
+  }
+  function section(title) { const h = node('h3', title, 'inspector-section'); content.append(h); return h; }
+  function card(entries, parent = content) { const box = node('div', undefined, 'inspector-card'); facts(entries, box); parent.append(box); return box; }
+  const item = (name, meta, side) => {
+    const el = node('div', undefined, 'inspector-item'), main = node('div');
+    main.append(node('div', name, 'inspector-item-name')); for (const m of meta) if (m) main.append(node('div', m, 'inspector-item-meta'));
+    el.append(main); if (side) el.append(side); return el;
+  };
+  // Created as a relative age; the exact value and the resolution stay reachable.
+  function instanceFacts(instance) {
+    return inspectFacts.instance(instance).map(([key, value]) => key === 'Created' && instance.createdAt ? [key, `${ageText(instance.createdAt)}`] : [key, value]);
+  }
+  function spawnedFrom(soul) {
+    const box = node('div', undefined, 'inspector-card inspector-spawned');
+    const commit = typeof soul.commit === 'string' && soul.commit ? ` @ ${soul.commit.slice(0, 7)}` : '';
+    box.append(node('span', `Spawned from ${soul.name}${commit}`));
+    // The host resolves the soul in its roster (exact identity) and selects it; a miss is said, not silent.
+    const ref = { name: soul.name, agentsRoot: selection.instance?.agentsRoot, server: selection.instance?.server ?? null };
+    if (typeof openSoul === 'function' && ref.name && ref.agentsRoot) {
+      const id = serial, gen = selectionGen;
+      const open = button('Open soul', () => {
+        if (!valid(id, gen) || !open.isConnected) return;
+        if (openSoul(ref) !== true) message(`${ref.name} is not in this workspace's souls.`);
+      });
+      open.title = 'Inspect the soul this instance was spawned from'; box.append(open);
+    }
+    content.append(box);
+  }
+  // The soul's teams (kernel `teams`): one row of chips, primary first and marked;
+  // unmapped ones greyed, with the reason on one line. Joining is per instance.
+  function renderSoulTeams(inspected) {
+    const all = soulTeams(inspected.teams);
+    if (!all) return;
+    // Only the teams the soul has access to (mapped by this workspace); unmapped labels are not shown.
+    const teams = all.filter(t => t.mapped);
+    section('Teams');
+    if (!teams.length) { content.append(node('p', 'Personal team only: this soul has access to no other team.', 'muted')); return; }
+    content.append(node('p', "The teams this soul has access to. Its instances start in their person's personal team only and can join these:", 'muted inspector-teams-lede'));
+    const row = node('div', undefined, 'inspector-chips');
+    teams.forEach(t => {
+      const chip = node('span', t.label === all[0].label ? `${t.label} · primary` : t.label, 'inspector-chip');
+      chip.title = `${t.label} (${t.team})`;
+      row.append(chip);
+    });
+    content.append(row);
   }
   // Roster-owned actions do not depend on operationsApi, inspect success, or
   // an editable soul record. Keep their DOM stable while inspection settles.
@@ -196,16 +383,19 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
     const scheduleButton = action('Schedule…', 'schedule-act', canLaunch, schedule); scheduleButton.dataset.launch = '1';
     const filesButton = action('Files', 'brain-act', canFiles, files); filesButton.dataset.files = '1';
     actions.append(launchButton, filesButton, scheduleButton);
-    summary.append(actions); syncAvailability();
+    if (headActions) headActions.prepend(actions); else summary.append(actions);
+    syncAvailability();
     const homes = instances(agent);
     const roster = node('div', undefined, 'inspector-content');
-    facts([['Reported runtime', agent.runtime], ['Source', agent.repoName || agent.workspace], ['Description', agent.description]], roster);
-    renderRepository(agent, roster, id, gen);
+    // What a person needs: what it does, and its instances.
+    if (agent.description) roster.append(node('p', agent.description, 'inspector-lede'));
     roster.append(node('h3', `Instances · ${homes.length}`));
     if (!homes.length) roster.append(node('p', 'No instances reported for this soul.', 'muted'));
     for (const instance of homes) {
       const control = button(`${instance.instance} · ${runtimeState(instance)}`, () => {
-        if (valid(id, gen) && control.isConnected) void show({ instance, selector: { home: instance.home } });
+        if (!valid(id, gen) || !control.isConnected) return;
+        // Instances keep the sidebar: from a soul page, the host opens it beside the page.
+        if (typeof openInstance === 'function') openInstance(instance); else void show({ instance, selector: { home: instance.home } });
       });
       control.classList.add('inspector-instance'); control.disabled = !instance.home;
       control.title = instance.home ? 'Inspect the immutable instance snapshot' : 'No instance home reported';
@@ -213,40 +403,32 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
     }
     summary.append(roster);
   }
-  // Roster-owned like the actions above: from the `oats souls` source, never
-  // from inspection. The Desktop does not edit a declared soul in place.
-  function renderRepository(agent, parent, id, gen) {
-    const where = soulRepository(agent.soulSource);
-    const block = node('div', undefined, 'inspector-repository');
-    block.append(node('h3', 'Edit this soul in its repository'));
-    if (!where) { block.append(node('p', 'Its repository is not reported.', 'muted')); parent.append(block); return; }
-    block.append(node('p', where.path ? `${where.path} in ${where.repository}` : where.repository, 'muted'));
-    if (where.url) {
-      const open = button('Open repository', () => {
-        if (valid(id, gen) && open.isConnected && typeof ctx?.openExternal === 'function') ctx.openExternal(where.url);
-      });
-      open.title = where.url; block.append(open);
+  function renderCapabilities(inspected, { collapsed = false } = {}) {
+    let host = content;
+    // The page renders a soul's capabilities with the Capabilities view's own table (host-injected).
+    if (layout === 'page' && !collapsed && typeof capabilityTable === 'function') {
+      host.append(node('h3', 'Core capabilities', 'inspector-section'));
+      card(inspectFacts.layers(inspected.layers), host);
+      host.append(node('h3', `Capabilities · ${inspected.capabilities.length}`, 'inspector-section'));
+      const table = node('div', undefined, 'inspector-capability-table'); host.append(table);
+      capabilityTable(table, inspected.capabilities, { soul: selection.agent });
+      return;
     }
-    parent.append(block);
-  }
-  function renderSoul(soul, withInstructions) {
-    content.append(node('h3', 'Soul')); facts(inspectFacts.soul(soul));
-    renderSoulDeclarations(content, soul);
-    if (withInstructions) instructions(soul.instructions, 'Instructions are truncated here. The full document is in the soul\'s repository.');
-  }
-  function renderCapabilities(inspected) {
-    content.append(node('h3', 'Effective providers'));
-    facts(inspectFacts.layers(inspected.layers));
-    content.append(node('h3', `Capabilities · ${inspected.capabilities.length}`));
-    if (!inspected.capabilities.length) content.append(node('p', 'No capabilities resolved.', 'muted'));
+    if (collapsed) { host = node('details', undefined, 'inspector-disclosure'); host.append(node('summary', `Modules as spawned · ${inspected.capabilities.length}`)); content.append(host); }
+    host.append(node('h3', 'Core capabilities', 'inspector-section'));
+    card(inspectFacts.layers(inspected.layers), host);
+    host.append(node('h3', `Capabilities · ${inspected.capabilities.length}`, 'inspector-section'));
+    if (!inspected.capabilities.length) { host.append(node('p', 'No capabilities resolved.', 'muted')); return; }
+    const list = node('div', undefined, 'inspector-list');
     for (const cap of inspected.capabilities) {
-      const card = node('section', undefined, 'inspector-cap'); card.append(node('h4', cap.id));
-      facts(inspectFacts.capability(cap), card);
-      if (cap.settings && typeof cap.settings === 'object' && Object.keys(cap.settings).length) {
-        const settings = node('details'); settings.append(node('summary', 'Settings'), node('pre', JSON.stringify(cap.settings, null, 2))); card.append(settings);
-      }
-      content.append(card);
+      const missing = Array.isArray(cap.missingRequires) && cap.missingRequires.length ? `Missing: ${cap.missingRequires.join(', ')}` : '';
+      const row = item(cap.id, [[cap.version, cap.layer ? `${cap.layer} provider` : '', originText(cap.from)].filter(Boolean).join(' · '), missing]);
+      row.classList.add('inspector-cap-row');
+      const more = node('details'); more.append(node('summary', 'Details')); facts(inspectFacts.capability(cap), more);
+      if (cap.settings && typeof cap.settings === 'object' && Object.keys(cap.settings).length) more.append(node('pre', JSON.stringify(cap.settings, null, 2)));
+      row.append(more); list.append(row);
     }
+    host.append(list);
   }
   function renderOperations(inspected) {
     const id = serial, gen = selectionGen;
@@ -320,7 +502,7 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
       if (!alive || container.hidden || (presentation && !presentation.isVisible())
         || selectionGen !== workspaceGeneration() || !selected || selected.name !== agent.name
         || (selected.agentsRoot || '') !== (agent.agentsRoot || '') || (selected.server || '') !== (agent.server || '')) return false;
-      const control = summary?.querySelector('.spawn-act:not([disabled])');
+      const control = container.querySelector('.spawn-act:not([disabled])'); // the page keeps its actions in the head
       if (!control?.isConnected || control.closest('[hidden], [inert]')) return false;
       control.focus(); return true;
     },

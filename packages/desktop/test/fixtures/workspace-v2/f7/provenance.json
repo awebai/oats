@@ -1,0 +1,374 @@
+{
+  "source": "oats-desktop-engineer for the Desktop F7 side panels + teams (main 81ba3f1e); test/fixtures/northwind/build.mjs; capture-f7.mjs",
+  "kernel": "0.26.0",
+  "redactions": [
+    "<base> (capture scratch) → /fixture/base",
+    "<oats> (checkout) → /fixture/oats"
+  ],
+  "standIn": {
+    "reason": "oats.aweb 1.14.0 (the real teams provider) is not built yet; nw.teams declares the contract's settings.join and messaging:teams|join|leave, nw.chat declares neither (like oats.aweb 1.13.1).",
+    "contract": "docs/design/2026-09-25-teams-contract.md",
+    "manifest": {
+      "capability": "nw.teams",
+      "version": "0.1.0",
+      "compatibility": {
+        "oats": ">=0.25.6"
+      },
+      "layer": "messaging",
+      "description": "Stand-in messaging provider for Desktop fixtures: the teams contract's messaging:teams|join|leave home operations.",
+      "requires": [],
+      "settings": {
+        "join": {
+          "description": "Teams to join at spawn: comma-separated eligible labels (teams contract)."
+        }
+      },
+      "commands": {
+        "teams": "bin/nw-teams.mjs teams",
+        "join": "bin/nw-teams.mjs join",
+        "leave": "bin/nw-teams.mjs leave"
+      },
+      "operations": {
+        "teams": {
+          "kind": "action",
+          "command": "teams",
+          "context": "home",
+          "description": "This instance's teams: personal, eligible and joined"
+        },
+        "join": {
+          "kind": "action",
+          "command": "join",
+          "context": "home",
+          "description": "Join eligible teams",
+          "args": [
+            {
+              "name": "labels",
+              "flag": "--labels",
+              "required": true,
+              "description": "Comma-separated eligible team labels"
+            }
+          ]
+        },
+        "leave": {
+          "kind": "action",
+          "command": "leave",
+          "context": "home",
+          "description": "Leave joined teams",
+          "args": [
+            {
+              "name": "labels",
+              "flag": "--labels",
+              "required": true,
+              "description": "Comma-separated joined team labels"
+            }
+          ]
+        }
+      }
+    },
+    "manifestSha256": "4b797c345a12848371b28d38e9ea3bb6ce3bef3968643296f1fbc7433ca17c4c",
+    "chatManifest": {
+      "capability": "nw.chat",
+      "version": "0.1.0",
+      "compatibility": {
+        "oats": ">=0.25.6"
+      },
+      "layer": "messaging",
+      "description": "Stand-in messaging provider without the teams contract (no settings.join, no team operations).",
+      "requires": [],
+      "settings": {
+        "identity": {
+          "description": "Identity selection (stand-in)."
+        }
+      }
+    },
+    "package": {
+      "package": "nw.teams",
+      "version": "0.1.0",
+      "description": "Stand-in teams messaging package (Desktop fixture).",
+      "compatibility": {
+        "oats": ">=0.25.6"
+      },
+      "capabilities": [
+        "capabilities/nw-teams"
+      ]
+    },
+    "privateCapability": {
+      "repo": "platform",
+      "manifest": {
+        "capability": "nw-platform-runbook",
+        "version": "0.0.0-workspace",
+        "description": "Platform on-call runbook: only platform's own souls use it.",
+        "compatibility": {
+          "oats": ">=0.24.0"
+        },
+        "requires": [],
+        "private": true,
+        "inject": "injects/runbook.md"
+      },
+      "reason": "Northwind (build.mjs, read-only) has no private capability; this one is added to platform before onboarding."
+    }
+  },
+  "files": {
+    "version": {
+      "argv": [
+        "oats",
+        "version",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.26.0",
+      "sourceSha256": "4e6801408cdfa731dfc11b6bdefc09a4b6b4ab800a07cb6394b684021bf72595",
+      "fixtureSha256": "f688d72f51e481f4b841f44476c9422f30ccbc10c3a5854fb1aaf483a33b0bfb"
+    },
+    "souls": {
+      "argv": [
+        "oats",
+        "souls",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.26.0",
+      "sourceSha256": "8521acf3012e20fd3ceceef7738f2d62c6abcc22234241de3fb901cfff2e5ae7",
+      "fixtureSha256": "03dee40d00d290ac319f1674af59e2abf44789ec197b7c3dfccbf1acdb3e9425"
+    },
+    "capabilities": {
+      "argv": [
+        "oats",
+        "capabilities",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.26.0",
+      "sourceSha256": "6a7f20c9be6a8bef3feade26874440355e6729915540c2b3f007d73b1a9c1085",
+      "fixtureSha256": "640202f9af7dbb3c93755ca2791d030f9ae1ff516422152ccd76f4fb346e8edd"
+    },
+    "workspace-status": {
+      "argv": [
+        "oats",
+        "workspace",
+        "status",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.26.0",
+      "sourceSha256": "fcf5109868e14fd6617d7fc583b9d62f5f2ceff8b7835020cd4fc9adddd941e1",
+      "fixtureSha256": "953d0ce8b34ac553f0f0e9f184eeca935211e54398aa047e854fb39506a79c1d"
+    },
+    "inspect-soul": {
+      "argv": [
+        "oats",
+        "inspect",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--soul",
+        "release-manager",
+        "--agents-root",
+        "<base>/northwind-workspace/agents",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.26.0",
+      "sourceSha256": "5a804e488d6af70c9a91aaced0c26173bc4b65d2c0bbbb88f9462d6de99a0d4b",
+      "fixtureSha256": "1b69158d5cfc7662ae7cb406955eaedf05af866283fec9391cc096acdbc28edd"
+    },
+    "preview-teams-default": {
+      "argv": [
+        "oats",
+        "spawn",
+        "release-manager",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--agents-root",
+        "<base>/northwind-workspace/agents",
+        "--purpose",
+        "teams",
+        "--preview",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.26.0",
+      "sourceSha256": "27f23c6de85b0c8be4df94fcaff92225940982ebe540ecfed24df10df48e88ae",
+      "fixtureSha256": "f35545d78dd6ab72d3ba2c552657d98fc2066e21847a77101a4f0965db475867"
+    },
+    "preview-teams-join": {
+      "argv": [
+        "oats",
+        "spawn",
+        "release-manager",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--agents-root",
+        "<base>/northwind-workspace/agents",
+        "--purpose",
+        "teams",
+        "--provider",
+        "nw.teams",
+        "join=engineering",
+        "--preview",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.26.0",
+      "sourceSha256": "396d51290d682860310f72f0c08c23702a60e312ed45b619bc3dbbe8f83d309d",
+      "fixtureSha256": "75444f5810d3520b76cf6a22229ea6697f59df4d13c0d809ac41826386ce9487"
+    },
+    "preview-teams-join-unmapped": {
+      "argv": [
+        "oats",
+        "spawn",
+        "release-manager",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--agents-root",
+        "<base>/northwind-workspace/agents",
+        "--purpose",
+        "teams",
+        "--provider",
+        "nw.teams",
+        "join=global",
+        "--preview",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.26.0",
+      "sourceSha256": "4f590d0b862b6790fa127ff2a24e7fa4351922eacceb337fda98a4dfb6492263",
+      "fixtureSha256": "77cf1201e66bcc78405cde8a8353727e6821036890e818c0d376f0ec0d45eea8"
+    },
+    "apply-teams-join": {
+      "argv": [
+        "oats",
+        "spawn",
+        "release-manager",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--agents-root",
+        "<base>/northwind-workspace/agents",
+        "--purpose",
+        "teams",
+        "--provider",
+        "nw.teams",
+        "join=engineering",
+        "--expect-decision",
+        "119d07a855483ffed934f23e",
+        "--idempotency-key",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "--no-launch",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.26.0",
+      "sourceSha256": "10b92100669057725c1cc8a7b7f4b0775444904781d288a84a7df22aa293fe7c",
+      "fixtureSha256": "1536f26fa6b4cd4b596713997c25cb056cd789f26a770065cbcd2c5264390612"
+    },
+    "inspect-home": {
+      "argv": [
+        "oats",
+        "inspect",
+        "--home",
+        "<base>/northwind-workspace/agents/release-manager/instances/release-manager-teams",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.26.0",
+      "sourceSha256": "1fb5cb5f3e378ac3177017d94399328881d9931e6c6996a9a9205a866759f426",
+      "fixtureSha256": "9f5f4d45945b4a4e413dd012fa319c16b0347cab1f0c3efb10c31c4193f69996"
+    },
+    "teams-initial": {
+      "argv": [
+        "oats",
+        "operation",
+        "run",
+        "messaging:teams",
+        "--home",
+        "<base>/northwind-workspace/agents/release-manager/instances/release-manager-teams",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.26.0",
+      "sourceSha256": "79fe835472a59bd329e6476afab64c6f4af5fc6446cb112b302c06f9d2433cb3",
+      "fixtureSha256": "2b9586c5b42cb35e32632414d98ed872bd6611c64dde130a8329727bbf822531"
+    },
+    "preview-teams-no-join": {
+      "argv": [
+        "oats",
+        "spawn",
+        "release-manager",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--agents-root",
+        "<base>/northwind-workspace/agents",
+        "--purpose",
+        "teams",
+        "--preview",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.26.0",
+      "sourceSha256": "ae26cc16652d1d0c91e5da11dae626685a64132b77e283e33555abf0e5df5bd8",
+      "fixtureSha256": "cdbce3ce53cce860eddbf54ade6a84206bc592bf4d4a76a3528238fda5d448d9"
+    },
+    "preview-no-join-sent": {
+      "argv": [
+        "oats",
+        "spawn",
+        "release-manager",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--agents-root",
+        "<base>/northwind-workspace/agents",
+        "--purpose",
+        "teams",
+        "--provider",
+        "nw.chat",
+        "join=engineering",
+        "--preview",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.26.0",
+      "sourceSha256": "42ebcb5f4573d9e71aa158cec69e147b9a91340b908c0196cbbd4fc2965d5056",
+      "fixtureSha256": "7549d30172cbd49a632f9188f966fa05933f0ba0f3b5b757a29d62da35ec04ce"
+    },
+    "preview-teams-conflict": {
+      "argv": [
+        "oats",
+        "spawn",
+        "release-manager",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--agents-root",
+        "<base>/northwind-workspace/agents",
+        "--purpose",
+        "teams",
+        "--preview",
+        "--json"
+      ],
+      "exit": 1,
+      "kernel": "0.26.0",
+      "sourceSha256": "7dc551d4bf671cd3e9cc4a7e92e02bf163d94d0e229758ef13627aba1f639add",
+      "fixtureSha256": "52bf57ef77586695bab37706a41a83bdd2b4113db5791e197b73b9f01ba56200"
+    },
+    "inspect-soul-conflict": {
+      "argv": [
+        "oats",
+        "inspect",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--soul",
+        "release-manager",
+        "--agents-root",
+        "<base>/northwind-workspace/agents",
+        "--json"
+      ],
+      "exit": 1,
+      "kernel": "0.26.0",
+      "sourceSha256": "7dc551d4bf671cd3e9cc4a7e92e02bf163d94d0e229758ef13627aba1f639add",
+      "fixtureSha256": "52bf57ef77586695bab37706a41a83bdd2b4113db5791e197b73b9f01ba56200"
+    }
+  }
+}

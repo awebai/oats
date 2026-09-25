@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { JSDOM } from "jsdom";
 import { createSoulMark, createRuntimeBadge, identityCSS } from "../renderer/identity-marks.mjs";
 import { workspaceStatusData, syncData } from "../deployment-data.mjs";
-import { renderCapabilities, renderFilters, renderSources, filterChoices, memberNames } from "../renderer/workspace-catalog.mjs";
+import { renderCapabilities, renderCapabilitySections, capabilitySections, renderFilters, renderSources, filterChoices, memberNames } from "../renderer/workspace-catalog.mjs";
 import { discoveryCSS } from "../renderer/workspace-discovery.mjs";
 import { createConnections, connectionsCSS } from '../renderer/connections.mjs';
 import { createForgePrPanel } from '../renderer/forge-pr.mjs';
@@ -21,6 +21,10 @@ import { createReadinessView, readinessCSS } from '../renderer/readiness-view.mj
 import { cli as readinessCli, workspace as readinessWorkspace, selector as readinessSelector, view as readinessView, data as readinessFixture } from './helpers/readiness-fixture.mjs';
 import { instance as lifeInstance, target as lifeTarget, stopPlan as stopFixture, retirePlan as retireFixture } from './helpers/lifecycle-fixture.mjs';
 import { createSchedulesView } from '../renderer/views/schedules.mjs';
+import { createSoulInspector, inspectorCSS } from '../renderer/soul-inspector.mjs';
+import { readinessCSS as readinessViewCSS } from '../renderer/readiness-view.mjs';
+import { createInstanceGitPanel } from '../renderer/instance-git.mjs';
+import { spawnDialogCSS } from '../renderer/spawn-dialog.mjs';
 import { setWorkspace } from '../renderer/views/common.mjs';
 import { scheduleReadData } from '../renderer/schedule-read-data.mjs';
 import { cli as scheduleCli, scope as scheduleScope, data as scheduleData, entry as scheduleEntry } from './helpers/schedule-read-fixture.mjs';
@@ -300,7 +304,7 @@ for (const [name] of palettes) test(`${name}: actual identity/runtime markup win
 });
 
 for (const [name] of palettes) test(`${name}: workspace catalog, sources and sync text use AA tokens on their computed surfaces`, t => {
-  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"><header class="workspace-header"><div class="ws-sync"><span class="ws-sync-state warn">Lock out of date</span></div></header><p class="catalog-note warn">note</p><div class="filters"></div><div class="caps"></div><div class="sources"></div></main></body></html>`);
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"><header class="workspace-header"><div class="ws-sync"><span class="ws-sync-state warn">Lock out of date</span></div></header><p class="catalog-note warn">note</p><div class="filters"></div><div class="caps"></div><div class="sections"></div><div class="sources"></div></main></body></html>`);
   const doc = dom.window.document;
   for (const source of [css, identityCSS, discoveryCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
   t.after(() => dom.window.close());
@@ -311,9 +315,12 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
   const status = { ...workspaceStatusData(f2('workspace-status'), dir), members: syncData(f2('sync-moved'), dir).members };
   const rows = f2('capabilities').result.capabilities;
   const names = memberNames(status);
-  renderFilters(doc.querySelector('.filters'), { ...filterChoices(rows, names), value: { team: 'marketing', source: null }, onChange() {} });
+  renderFilters(doc.querySelector('.filters'), { ...filterChoices(rows, names), value: { team: 'marketing', repo: null }, onChange() {} });
   renderCapabilities(doc.querySelector('.caps'), { rows, status, instances: [], root: dir });
-  renderSources(doc.querySelector('.sources'), { status });
+  // F7 (kernel #185): the three sections, with a repo-owned (private) row.
+  const sections = capabilitySections(JSON.parse(readFileSync(new URL('fixtures/workspace-v2/f7/capabilities.json', new URL('./', import.meta.url)), 'utf8')).result.capabilities);
+  renderCapabilitySections(doc.querySelector('.sections'), { sections, shown: sections.workspace, filterHost: null, privateListed: true, status, instances: [], root: dir });
+  renderSources(doc.querySelector('.sources'), { status, instances: [{ agent: 'a', running: true }] });
   // The sync sheet's refusal text, as createWorkspaceSync builds it.
   const sheet = doc.createElement('section'); sheet.className = 'ws-sync-dialog';
   sheet.innerHTML = '<div class="ws-sync-body"><p class="ws-sync-lead error">x</p><p class="ws-sync-lead">x</p><button class="ws-sync-details">Details</button><p class="ws-sync-detail">x</p></div>';
@@ -331,6 +338,11 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
     ['.catalog-pill[aria-pressed=true]', '.catalog-pill[aria-pressed=true]', 'fg', 'sel'],
     ['.catalog-note.warn', '.oats-view', 'warn', 'bg'],
     ['.sources-key', '.catalog-table', 'muted', 'surface'],
+    ['.capability-section-title', '.oats-view', 'muted', 'bg'], ['.capability-section-count', '.oats-view', 'muted', 'bg'],
+    ['.capability-section-lead', '.oats-view', 'muted', 'bg'], ['.capability-repo-title', '.oats-view', 'fg', 'bg'],
+    ['.setup-caption', '.setup-card', 'muted', 'surface'], ['.setup-name', '.setup-card', 'fg', 'surface'], ['.setup-meta', '.setup-card', 'muted', 'surface'],
+    ['.setup-node-name', '.setup-node', 'fg', 'surface'], ['.setup-node-sub', '.setup-node', 'muted', 'surface'], ['.setup-node-detail', '.setup-node', 'warn', 'surface'],
+    ['.setup-node .catalog-chip.ok', '.setup-node .catalog-chip.ok', 'ok', 'surface-2'],
     ['.sources-detail', '.catalog-table', 'warn', 'surface'],
     ['.ws-sync-state.warn', '.workspace-header', 'warn', 'surface'],
     ['.ws-sync-lead.error', '.ws-sync-dialog', 'danger', 'surface'], ['.ws-sync-lead:not(.error)', '.ws-sync-dialog', 'fg', 'surface'],
@@ -546,4 +558,100 @@ test("every full-screen modal backdrop uses the shared scrim token, and each the
     const start = css.indexOf(`[data-theme="${theme}"] {`); assert.ok(start >= 0, theme);
     assert.match(css.slice(start, css.indexOf("}", start)), /--scrim:\s*rgb\(/, theme);
   }
+});
+
+// F7 side panels: the Workspace inspector's cards/lists, the soul's read-only
+// teams, the instance Teams card, compact readiness, the context panel's path
+// line and the Git sentence-with-details — mounted from the kernel capture.
+const f7 = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/f7/${name}.json`, import.meta.url), 'utf8')).result;
+for (const [name] of palettes) test(`${name}: F7 inspector cards, teams, compact readiness, path line and Git details meet computed AA`, async t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"><aside class="soul-inspector"></aside><aside class="soul-inspector" id="home"></aside></div><div id="context-panel"></div></body></html>`, { pretendToBeVisual: true });
+  const doc = dom.window.document;
+  for (const source of [css, inspectorCSS, readinessViewCSS, contextPanelCSS, instanceGitCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  setWorkspace('/team');
+  const soul = f7('inspect-soul'), home = f7('inspect-home'), teams = f7('teams-initial'), agentsRoot = '/fixture/base/northwind-workspace/agents';
+  const [soulHost, homeHost] = doc.querySelectorAll('aside');
+  const a = createSoulInspector(soulHost, { ctx: { api: async () => structuredClone(soul) } });
+  const b = createSoulInspector(homeHost, { openSoul: () => true, ctx: { api: async (url, opts) => JSON.parse(opts.body).action === 'inspect' ? structuredClone(home) : structuredClone(teams) } });
+  const panel = createContextPanel({ document: doc });
+  panel.setContext({ workspace: 'team', key: 'key', instance: { instance: 'dev-1', agent: 'dev', agentsRoot: '/team/agents', home: '/team/agents/dev/instances/dev-1' } });
+  const git = createInstanceGitPanel(doc.querySelector('#context-panel'), { request: async () => ({}) });
+  t.after(() => { a.dispose(); b.dispose(); panel.dispose(); git.dispose?.(); dom.window.close(); });
+  await a.show({ agent: { name: 'release-manager', agentsRoot, description: 'Ships the releases.' }, selector: { soul: 'release-manager', agentsRoot } });
+  await b.show({ instance: { instance: home.subject.instance, agentsRoot, home: home.subject.home }, selector: { home: home.subject.home } });
+  for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve));
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  const checks = [
+    ['.inspector-lede', '.soul-inspector', 'fg', 'surface'],
+    ['.inspector-list .inspector-item-name', '.inspector-list', 'fg', 'surface'],
+    ['.inspector-list .inspector-item-meta', '.inspector-list', 'muted', 'surface'],
+    ['.inspector-chip', '.inspector-chip', 'fg', 'surface'],
+    ['.inspector-cap-row details > summary', '.inspector-list', 'muted', 'surface'],
+    ['.inspector-disclosure > summary', '.soul-inspector', 'muted', 'surface'],
+    ['.readiness-more > summary', '.soul-inspector', 'muted', 'surface'],
+    ['#home .teams-card .team-name', '#home .teams-card', 'fg', 'surface'],
+    ['#home .teams-card .team-meta', '#home .teams-card', 'muted', 'surface'],
+    ['#home .teams-card .team-badge', '#home .teams-card', 'muted', 'surface'],
+    ['#home .inspector-spawned button', '#home .inspector-spawned button', 'fg', 'surface'],
+    ['#context-panel .context-panel-path', '#context-panel', 'muted', 'surface'],
+    ['#context-panel .context-panel-copy', '#context-panel .context-panel-copy', 'fg', 'surface'],
+  ];
+  checks.push(['.git-status-details > summary', '#context-panel', 'muted', 'surface']);
+  for (const [selector, painted, fg, bg] of checks) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.equal(dom.window.getComputedStyle(surface).background.replace(/^.*(var\(--[\w-]+\)).*$/, '$1'), `var(--${bg})`, painted);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+  }
+});
+
+// F7 Part C: the spawn dialog's Teams row — the Relationship segmented control, as toggles.
+for (const [name] of palettes) test(`${name}: the spawn Teams row (fixed, joinable, selected in the accent) meets computed AA`, () => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="spawn-seg spawn-teams-row spawn-team-list">
+    <label class="spawn-team spawn-team-fixed"><input type="checkbox" checked disabled><span class="spawn-team-name">Personal</span></label>
+    <label class="spawn-team"><input type="checkbox" class="fteam"><span class="spawn-team-name">engineering</span></label>
+    <label class="spawn-team picked"><input type="checkbox" class="fteam" checked><span class="spawn-team-name">platform</span></label>
+  </div></body></html>`, { pretendToBeVisual: true });
+  const doc = dom.window.document;
+  for (const source of [css, spawnDialogCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  for (const [selector, painted, fg, bg] of [['.spawn-team-fixed span', '.spawn-team-fixed span', 'fg', 'surface'],
+    ['.spawn-team:not(.picked):not(.spawn-team-fixed) span', '.spawn-teams-row', 'muted', 'surface-2'],
+    ['.spawn-team.picked span', '.spawn-team.picked span', 'accent', 'sel']]) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.equal(dom.window.getComputedStyle(surface).background.replace(/^.*(var\(--[\w-]+\)).*$/, '$1'), `var(--${bg})`, painted);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+  }
+  dom.window.close();
+});
+
+// F7 pages: the capability page (and the shared page card: header band, facts, rows, back).
+import { renderCapabilityPage, capabilityPageCSS, pageCardCSS } from '../renderer/capability-page.mjs';
+for (const [name] of palettes) test(`${name}: F7 page cards, facts, used-by rows and the back control meet computed AA`, () => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"><section class="host"></section></div></body></html>`, { pretendToBeVisual: true });
+  const doc = dom.window.document;
+  for (const source of [css, discoveryCSS, pageCardCSS, capabilityPageCSS, identityCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  renderCapabilityPage(doc.querySelector('.host'), { row: { name: 'oats.okf', kind: 'package', package: 'oats.okf', version: '2.1.3', commit: 'a'.repeat(40), origin: 'package oats.okf v2.1.3' },
+    status: null, root: 'team', instances: [{ agent: 'dev', agentsRoot: '/a', instance: 'dev-1', modules: [{ name: 'oats.okf', status: 'moved' }] }], onBack() {}, openSoul() {} });
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  for (const [selector, painted, fg, bg] of [
+    ['.page-card-head', '.page-card-head', 'muted', 'surface-2'],
+    ['.page-facts dt', '.page-card', 'muted', 'surface'],
+    ['.page-facts dd', '.page-card', 'fg', 'surface'],
+    ['.used-row .used-name', 'button.used-row', 'fg', 'surface'],
+    ['.used-row .used-meta', 'button.used-row', 'muted', 'surface'],
+    ['.page-title .catalog-sub', '.oats-view', 'muted', 'bg'],
+    ['button.page-back', '.oats-view', 'muted', 'bg'],
+  ]) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
+    const color = dom.window.getComputedStyle(el).color;
+    assert.ok(color === `var(--${fg})` || (fg === 'fg' && color === ''), `${selector}: ${color}`);
+    assert.equal(dom.window.getComputedStyle(surface).background.replace(/^.*(var\(--[\w-]+\)).*$/, '$1'), `var(--${bg})`, painted);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+  }
+  dom.window.close();
 });

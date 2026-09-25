@@ -48,8 +48,6 @@ test("facts are the kernel's records: a module's origin is its from (member comm
   assert.equal(originText(house.from), `member agents @ ${house.from.commit.slice(0, 7)}`);
   assert.deepEqual(Object.fromEntries(inspectFacts.capability(okf)), { Version: okf.version, Layer: 'knowledge', Origin: originText(okf.from), 'Missing requirements': 'None' });
   assert.deepEqual(Object.fromEntries(inspectFacts.layers(soul.layers)), { Knowledge: 'oats.okf', Messaging: 'None', Tasks: 'None' });
-  const facts = Object.fromEntries(inspectFacts.soul(soul.souls[0]));
-  assert.equal(facts.Source, `member agents @ ${soul.souls[0].commit.slice(0, 7)}`); assert.equal(facts.Runtime, 'Chosen at spawn');
   assert.equal(Object.fromEntries(inspectFacts.instance(home.instance)).Resolution, home.instance.resolution.slice(0, 12));
   // Removed classic fields are not read (and not present).
   for (const key of ['scope', 'selected', 'currentConfig', 'snapshot', 'sources']) assert.equal(Object.hasOwn(soul, key), false, key);
@@ -68,7 +66,7 @@ test('the inspector renders a soul and a home from the capture, read-only, with 
   const v = structuredClone(soul); v.problems = [{ code: 'E_EXAMPLE_PROBLEM', message: 'The kernel could not read one declaration.' }];
   const s = await rendered(t, { ...soulSelection, selector: { soul: 'release-manager', agentsRoot: soulSelection.agent.agentsRoot } }, v);
   const text = s.textContent;
-  assert.match(text, /What a spawn of this soul resolves now/); assert.match(text, /member agents @ [0-9a-f]{7}/); assert.match(text, /Chosen at spawn/);
+  assert.match(text, /Harness/); assert.match(text, /No default harness: you choose one when you launch it\./); assert.doesNotMatch(text, /When spawned|Source|readiness/i);
   assert.match(text, /Capabilities · 5/); assert.match(text, /package oats\.okf 2\.1\.3 @ [0-9a-f]{7}/);
   const problem = s.querySelector('.inspector-problem');
   assert.equal(problem.querySelector('p').textContent, 'The kernel could not read one declaration.');
@@ -100,9 +98,9 @@ async function operated(t, run) {
   t.after(() => { inspector.dispose(); dom.window.close(); setWorkspace(previous); });
   await inspector.show(homeSelection); return { el, calls, press: async name => { el.querySelector(`[data-operation="knowledge:${name}"]`).click(); await new Promise(r => setTimeout(r, 0)); } };
 }
-test('captured operations: unavailable on a soul with the kernel reason, runnable on a home (layer:name address)', async t => {
+test('captured operations: a soul lists none (they need a live home, F7); a home runs them by layer:name address', async t => {
   const s = await rendered(t, { ...soulSelection, selector: { soul: 'release-manager', agentsRoot: soulSelection.agent.agentsRoot } }, soul);
-  assert.equal(s.querySelectorAll('[data-operation]').length, 0); assert.equal(s.textContent.split('needs a running home (--home)').length, 3, 'status and reindex both say why');
+  assert.equal(s.querySelectorAll('[data-operation]').length, 0); assert.doesNotMatch(s.textContent, /Provider operations|needs a running home/, 'no soul-level actions');
   const u = await operated(t, () => doc('operation-run-status').result);
   assert.deepEqual([...u.el.querySelectorAll('[data-operation]')].map(b => [b.dataset.operation, b.textContent]), [['knowledge:status', 'View'], ['knowledge:reindex', 'Run']]);
   assert.match(u.el.textContent, /This instance's knowledge status/);

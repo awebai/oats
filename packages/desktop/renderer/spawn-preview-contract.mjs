@@ -16,6 +16,30 @@ const nullable = v => v === null || safe(v);
 const names = v => Array.isArray(v) && v.length <= 512 && v.every(x => safe(x, 512));
 const CAPABILITY = /^[a-z0-9][a-z0-9._-]{0,127}$/;
 const RESIDENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+/** A team label (teams contract; the kernel's label grammar). */
+const TEAM_LABEL = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const JOIN_MAX = 16;
+const joinText = v => typeof v === 'string' && v.split(',').every(l => TEAM_LABEL.test(l)) && new Set(v.split(',')).size === v.split(',').length && v.split(',').length <= JOIN_MAX;
+/** The soul's teams as the preview reports them (kernel `teams`, primary
+ * first), without the payloads: [{label, team, mapped}]; null when not
+ * reported, undefined when unreadable. Idempotent over the server projection. */
+function teamsOf(v) {
+  if (v.teams === undefined || v.teams === null) return null;
+  if (!Array.isArray(v.teams) || v.teams.length > 64) return undefined;
+  const out = [];
+  for (const t of v.teams) {
+    if (!record(t) || !TEAM_LABEL.test(t.label ?? '') || typeof t.mapped !== 'boolean' || (t.mapped ? !safe(t.team, 256) || !t.team : t.team !== null)) return undefined;
+    out.push({ label: t.label, team: t.team, mapped: t.mapped });
+  }
+  return new Set(out.map(t => t.label)).size === out.length ? out : undefined;
+}
+/** Whether the messaging provider declares the spawn setting `join` (teams
+ * contract). The ONE gate for the spawn Teams choice: a provider that does not
+ * declare it would ignore a bound join=, so without the declared fact the row
+ * is not offered. The kernel's fact (teams contract bdd7e55e, kernel #181):
+ * each preview modules[] row carries `declares` — its sorted setting key names —
+ * under feature settings-declared (the dialog checks the feature). */
+const joinDeclared = row => Array.isArray(row?.declares) && row.declares.includes('join');
 /** The soul's messaging provider, the identity its bound payload carries, and
  * where that identity's mode came from: the one module on layer messaging,
  * decision.effective.providers[cap].identity (what the apply binds; the
@@ -33,13 +57,15 @@ function messagingOf(v) {
   if (!Object.hasOwn(v, 'modules') && Object.hasOwn(v, 'messaging')) {
     const m = v.messaging;
     if (m === null) return null;
-    if (!exact(m, ['provider', 'identity', 'origin']) || !Object.hasOwn(m, 'origin') || !CAPABILITY.test(m.provider ?? '')) return undefined;
+    if (!exact(m, ['provider', 'identity', 'origin', 'join', 'joinDeclared']) || !Object.hasOwn(m, 'origin') || !CAPABILITY.test(m.provider ?? '')
+      || typeof m.joinDeclared !== 'boolean' || m.join !== null && !joinText(m.join)) return undefined;
     const origin = originOf(m.origin);
     if (origin === undefined) return undefined;
-    if (m.identity === null) return { provider: m.provider, identity: null, origin };
+    const join = { join: m.join, joinDeclared: m.joinDeclared };
+    if (m.identity === null) return { provider: m.provider, identity: null, origin, ...join };
     const i = m.identity;
     if (!exact(i, ['mode', 'resident']) || !['local', 'global'].includes(i.mode) || i.resident !== null && !RESIDENT.test(i.resident)) return undefined;
-    return { provider: m.provider, identity: { mode: i.mode, resident: i.resident }, origin };
+    return { provider: m.provider, identity: { mode: i.mode, resident: i.resident }, origin, ...join };
   }
   if (!Array.isArray(v.modules)) return null;
   const rows = v.modules.filter(m => record(m) && m.layer === 'messaging');
@@ -47,13 +73,16 @@ function messagingOf(v) {
   if (rows.length !== 1 || !CAPABILITY.test(rows[0].name ?? '')) return undefined;
   const cap = rows[0].name, bound = v.decision?.effective?.providers?.[cap], shown = v.settings?.[cap];
   if (!record(bound) || !record(shown) || JSON.stringify(bound.identity ?? null) !== JSON.stringify(shown.identity ?? null)) return undefined;
+  // The bound join (what the apply binds) must be the preview's settings echo.
+  if ((bound.join ?? null) !== (shown.join ?? null) || bound.join !== undefined && !joinText(bound.join)) return undefined;
+  const join = { join: bound.join ?? null, joinDeclared: joinDeclared(rows[0]) };
   if (Object.hasOwn(v, 'settingsOrigins') && !record(v.settingsOrigins) || v.settingsOrigins?.[cap] !== undefined && !record(v.settingsOrigins[cap])) return undefined;
   const origin = originOf(v.settingsOrigins?.[cap]?.['/identity/mode']);
   if (origin === undefined) return undefined;
   const i = bound.identity;
-  if (i === undefined) return { provider: cap, identity: null, origin };
+  if (i === undefined) return { provider: cap, identity: null, origin, ...join };
   if (!record(i) || !['local', 'global'].includes(i.mode) || i.resident !== undefined && !RESIDENT.test(i.resident)) return undefined;
-  return { provider: cap, identity: { mode: i.mode, resident: i.resident ?? null }, origin };
+  return { provider: cap, identity: { mode: i.mode, resident: i.resident ?? null }, origin, ...join };
 }
 export const previewSupported = cli => cli?.ok === true && absolute(cli.bin) && cli.spawnPreviewApi === 2
   && Array.isArray(cli.features) && cli.features.includes('spawn-preview-2');
@@ -61,7 +90,7 @@ export function previewSelector(v) {
   return exact(v, ['soul', 'agentsRoot']) && name(v.soul) && absolute(v.agentsRoot) ? { soul: v.soul, agentsRoot: v.agentsRoot } : null;
 }
 export function previewChoices(v) {
-  if (!exact(v, ['purpose', 'name', 'work', 'branch', 'base', 'runtime', 'model', 'launchConfig', 'backend', 'yolo', 'relation', 'identity'])) return null;
+  if (!exact(v, ['purpose', 'name', 'work', 'branch', 'base', 'runtime', 'model', 'launchConfig', 'backend', 'yolo', 'relation', 'identity', 'join'])) return null;
   // --name (exact, unprefixed; feature spawn-name) and --purpose are mutually exclusive.
   if (Object.hasOwn(v, 'purpose') && Object.hasOwn(v, 'name')) return null;
   const out = {};
@@ -84,6 +113,15 @@ export function previewChoices(v) {
     if (exact(i, ['provider', 'mode']) && i.mode === 'local') out.identity = { provider: i.provider, mode: 'local' };
     else if (exact(i, ['provider', 'mode', 'resident']) && i.mode === 'global' && RESIDENT.test(i.resident ?? '')) out.identity = { provider: i.provider, mode: 'global', resident: i.resident };
     else return null;
+  }
+  // Teams to join beyond the personal team (teams contract): the provider's
+  // spawn setting, sent as --provider <cap> join=<a,b>. Labels are the preview's
+  // mapped ones; the kernel/provider decides eligibility (E_TEAM_NOT_ELIGIBLE).
+  if (Object.hasOwn(v, 'join')) {
+    const j = v.join;
+    if (!exact(j, ['provider', 'labels']) || !CAPABILITY.test(j.provider ?? '') || !Array.isArray(j.labels) || !j.labels.length
+      || !j.labels.every(l => typeof l === 'string' && TEAM_LABEL.test(l)) || !joinText(j.labels.join(','))) return null;
+    out.join = { provider: j.provider, labels: [...j.labels] };
   }
   const model = v.model === undefined ? { kind: 'inherit' } : v.model;
   if (exact(model, ['kind']) && ['inherit', 'native-default'].includes(model.kind)) out.model = { kind: model.kind };
@@ -111,6 +149,7 @@ export function choiceArgv(choices) {
     argv.push('--provider', choices.identity.provider, `identity.mode=${choices.identity.mode}`);
     if (choices.identity.mode === 'global') argv.push('--provider', choices.identity.provider, `identity.resident=${choices.identity.resident}`);
   }
+  if (choices.join) argv.push('--provider', choices.join.provider, `join=${choices.join.labels.join(',')}`);
   return argv;
 }
 export function previewTarget(v) {
@@ -176,12 +215,12 @@ export function previewData(v, expected) {
     || !record(v.backendStatus) || v.backendStatus.name !== v.backend || typeof v.backendStatus.installed !== 'boolean' || v.backendStatus.started !== false
     || !record(v.preflight) || !['complete', 'timeout'].includes(v.preflight.status) || !Number.isInteger(v.preflight.budgetMs) || v.preflight.budgetMs <= 0 || v.preflight.budgetMs > 20000
     || !Number.isSafeInteger(v.preflight.elapsedMs) || v.preflight.elapsedMs < 0) return null;
-  const messaging = messagingOf(v);
-  if (messaging === undefined) return null;
+  const messaging = messagingOf(v), teams = teamsOf(v);
+  if (messaging === undefined || teams === undefined) return null;
   return { spawnPreviewApi: 2, preview: true, subject: { soul: v.subject.soul, agentsRoot: v.subject.agentsRoot, dir: v.subject.dir },
     decision: d, resolution: d.resolution, instance: d.instance, home: d.home, branch: d.branch, base: base ? { ...base } : null,
     repo: e.repo, work: e.work, worktree: v.worktree, runtime: e.runtime, model: e.model, modelSource: v.modelSource, relation: e.relation?.kind ?? null,
     launchConfig: e.launchConfig, yolo: e.yolo, backend: e.backend, team: v.team ?? null,
     backendStatus: { name: v.backendStatus.name, installed: v.backendStatus.installed, started: false },
-    preflight: { status: v.preflight.status, budgetMs: v.preflight.budgetMs, elapsedMs: v.preflight.elapsedMs }, messaging };
+    preflight: { status: v.preflight.status, budgetMs: v.preflight.budgetMs, elapsedMs: v.preflight.elapsedMs }, messaging, teams };
 }

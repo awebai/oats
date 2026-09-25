@@ -619,7 +619,7 @@ function nodeEl(s, n, wsName) {
   const name = node(s, 'div', undefined, 'hname');
   const dot = node(s, 'span', undefined, `hdot ${status === 'running' ? 'on' : status === 'stopped' ? 'off' : 'unknown'}`); dot.setAttribute('aria-hidden', 'true');
   name.append(dot, node(s, 'span', i.instance, 'nm'));
-  const metadata = [target, i.repoName || 'Context not reported', i.runtime || 'Runtime not reported', i.branch || '', status === 'unknown' ? 'state unknown' : ''].filter(Boolean).join(' · ');
+  const metadata = [target, i.repoName || 'Context not reported', i.runtime || 'Harness not reported', i.branch || '', status === 'unknown' ? 'state unknown' : ''].filter(Boolean).join(' · ');
   d.append(name, node(s, 'div', metadata, 'hmeta'));
   d.title = `${i.instance}\n${metadata}\nHome: ${i.home || 'not reported'}\nRoot: ${i.agentsRoot || 'not reported'}`;
   const current = () => dataCurrent(s) && visibleOwner(s, d) && !s.pending && s.nodeEls.get(id)?.el === d;
@@ -896,8 +896,8 @@ function updatePop(s) {
   setText(pop.querySelector('.pname'), i.instance);
   const identity = pop.querySelector('.pidentity'); identity.hidden = !activeTargetLabel(i, s.panel.instances);
   setText(identity, `Host: ${i.server || (i.remote ? 'not reported' : 'local')} · Root: ${i.agentsRoot || 'not reported'} · Home: ${i.home || 'not reported'}`);
-  setText(pop.querySelector('.pstate'), `Reported runtime: ${runtimeState(i)}${s.stale ? ' (last observation)' : ''}`);
-  setText(pop.querySelector('.rt'), i.runtime || 'Runtime not reported');
+  setText(pop.querySelector('.pstate'), `Reported state: ${runtimeState(i)}${s.stale ? ' (last observation)' : ''}`);
+  setText(pop.querySelector('.rt'), i.runtime || 'Harness not reported');
   setText(pop.querySelector('.pbranch'), i.branch ? `Reported branch: ${i.branch}` : 'Branch not reported');
   const allowed = actionsCurrent(s) && canAddressInstance(i);
   const terminal = pop.querySelector('.pterm');

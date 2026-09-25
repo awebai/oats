@@ -244,7 +244,11 @@ test('collapsed tab preferences are workspace-local; keyboard navigation keeps A
   const u = fixture(t);
   u.select(instance('/A/one'));
   u.tab('instance').focus();
+  // Instance · Soul · Git & GitHub: Git is last.
+  assert.deepEqual([...u.root.querySelectorAll('[data-context-tab]')].map(t => t.dataset.contextTab), ['instance', 'soul', 'git']);
   u.tab('instance').dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+  assert.equal(u.document.activeElement, u.tab('soul'));
+  u.tab('soul').dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
   assert.equal(u.document.activeElement, u.tab('git'));
   assert.equal(u.tab('git').getAttribute('aria-selected'), 'true');
   assert.equal(u.tab('git').tabIndex, 0);

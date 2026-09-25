@@ -187,7 +187,7 @@ test("sidebar metadata uses reported branch/runtime without claiming membership 
   assert.equal(row.querySelector(".ctx-meta").textContent, "desktop-repo · feature/<literal>");
   assert.equal(row.querySelector(".ctx-meta").title, "Repository: desktop-repo\nBranch: feature/<literal>");
   assert.equal(row.querySelector(".ctx-runtime").textContent, "π");
-  assert.equal(row.querySelector(".ctx-runtime").getAttribute("aria-label"), "Reported runtime: Pi");
+  assert.equal(row.querySelector(".ctx-runtime").getAttribute("aria-label"), "Harness: Pi");
   assert.equal(row.querySelector("literal"), null);
 });
 

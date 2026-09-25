@@ -9,6 +9,8 @@ export const readinessCSS = `
 .readiness-view { color:var(--fg); min-width:0; margin:18px 0; font-size:12px; line-height:1.5; }
 .readiness-view[hidden], .readiness-view [hidden] { display:none; }
 .readiness-view h2 { font-size:14px; margin:0; }
+.readiness-more > summary { cursor:pointer; font-size:12px; color:var(--muted); margin:4px 0; }
+.readiness-more[open] > summary { margin-bottom:10px; }
 .readiness-context, .readiness-note, .readiness-status, .readiness-item dt { color:var(--muted); overflow-wrap:anywhere; }
 .readiness-view p { margin:4px 0; }
 .readiness-status { min-height:1.5em; }
@@ -38,7 +40,7 @@ const PROVIDER_SAYS = {
   'authorization-required': 'Sign in needed: the provider is set up but is not signed in.', unavailable: 'The provider says: unavailable right now.',
 };
 const signIn = i => i.result?.status === 'authorization-required';
-export function createReadinessView(host, { ctx } = {}) {
+export function createReadinessView(host, { ctx, compact = false } = {}) {
   const doc = host.ownerDocument;
   const node = (tag, value, cls) => { const el = doc.createElement(tag); if (value !== undefined) el.textContent = value; if (cls) el.className = cls; return el; };
   let alive = true, active = false, serial = 0, identity = null, gen = null, state = {}, attempted = false, busy = false, value = null, blocked = '', query = '';
@@ -48,7 +50,12 @@ export function createReadinessView(host, { ctx } = {}) {
   const body = node('div'), actions = node('div', undefined, 'readiness-actions');
   const refresh = node('button', 'Refresh readiness', 'act readiness-refresh'); refresh.type = 'button';
   actions.append(refresh);
-  section.append(title, context, node('p', 'Independent kernel observations, not launch permission. Unknown is not granted; an empty required set is not Ready.', 'readiness-note'), status, body, actions);
+  const note = node('p', 'Independent kernel observations, not launch permission. Unknown is not granted; an empty required set is not Ready.', 'readiness-note');
+  if (compact) {
+    // Compact (the inspector): one status line up front; the checks, their context and the policy behind a disclosure.
+    const more = node('details', undefined, 'readiness-more'); more.append(node('summary', 'Checks and policy'), context, note, body);
+    section.append(title, status, more, actions);
+  } else section.append(title, context, note, status, body, actions);
   host.append(section);
   const current = () => alive && active && gen === workspaceGeneration();
   const owns = ticket => current() && serial === ticket;

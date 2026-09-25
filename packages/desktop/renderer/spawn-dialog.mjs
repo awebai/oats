@@ -39,7 +39,7 @@ export const spawnDialogCSS = `
 .spawn-search-label { display:flex; align-items:center; gap:6px; margin:0 4px 10px; }
 .spawn-search-label input { min-width:0; flex:1; }
 .spawn-search-count { flex:none; color:var(--muted); font:10.5px var(--mono,monospace); }
-.spawn-chooser h3 { margin:14px 8px 6px; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); overflow-wrap:anywhere; }
+.spawn-chooser h3 { margin:14px 8px var(--title-gap); font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); overflow-wrap:anywhere; }
 .spawn-choice { width:100%; min-height:56px; display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid transparent; border-radius:8px; text-align:left; background:var(--surface); color:var(--fg); font:inherit; cursor:pointer; }
 .spawn-choice[aria-pressed=true] { background:var(--sel); border-color:var(--accent); }
 .spawn-choice .spawn-choice-check { flex:none; color:var(--accent); visibility:hidden; }
@@ -52,13 +52,15 @@ export const spawnDialogCSS = `
 .spawn-chooser-note { margin:6px 8px; color:var(--muted); font-size:11.5px; line-height:1.5; overflow-wrap:anywhere; }
 .spawn-chooser-note:empty { display:none; }
 .spawn-form { min-width:0; min-height:0; overflow:hidden; display:flex; flex-direction:column; }
-.spawn-form-body { flex:1; min-height:0; overflow:auto; display:flex; flex-direction:column; gap:20px; padding:20px 24px; box-sizing:border-box; }
-.spawn-field { display:flex; flex-direction:column; gap:6px; min-width:0; margin:0; padding:0; border:0; }
+.spawn-form-body { flex:1; min-height:0; overflow:auto; display:flex; flex-direction:column; gap:var(--section-gap); padding:20px 24px; box-sizing:border-box; }
+.spawn-field { display:flex; flex-direction:column; gap:var(--title-gap); min-width:0; margin:0; padding:0; border:0; }
+/* a legend is not a flex item: the title gap is its own margin */
+.spawn-field > legend { margin-bottom:var(--title-gap); }
 .spawn-label, .spawn-field > label, .spawn-name-head > label, .spawn-row > label > .spawn-label-text, .spawn-field > legend { display:flex; align-items:center; gap:6px; padding:0; font-size:11.5px; font-weight:650; color:var(--muted); }
 .spawn-label .shell-icon { color:var(--muted); }
 .spawn-label small { font-weight:500; }
 .spawn-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
-.spawn-row > label { display:flex; flex-direction:column; gap:6px; min-width:0; }
+.spawn-row > label { display:flex; flex-direction:column; gap:var(--title-gap); min-width:0; }
 .spawn-form .field { min-width:0; width:100%; box-sizing:border-box; }
 .spawn-form :is(input.field, select.field, textarea.field):focus-visible, .spawn-name-input:focus-within, .spawn-joined:focus-within {
   outline:none; border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
@@ -77,6 +79,11 @@ export const spawnDialogCSS = `
 .spawn-hint:empty { display:none; }
 .spawn-hint code, .spawn-work-text code { font:11.5px var(--mono,monospace); color:var(--fg); }
 .spawn-hint.err { color:var(--danger); }
+/* Teams (teams contract): one line like Relationship — Personal fixed on, mapped teams toggle, unmapped greyed. */
+.spawn-teams-row { flex-wrap:wrap; align-self:flex-start; max-width:100%; box-sizing:border-box; }
+.spawn-seg input:disabled { cursor:default; }
+/* Personal is fixed, not a choice: a quiet neutral chip, not the accent. */
+.spawn-seg .spawn-team-fixed input:checked + span { background:var(--surface); color:var(--fg); box-shadow:none; cursor:default; }
 /* Runtime picker and model field */
 .spawn-run .spawn-choice-trigger { height:38px; min-height:38px; border-radius:8px; }
 .spawn-run .spawn-choice-trigger .runtime-badge, .spawn-choice-menu .runtime-badge { flex:none; width:20px; height:20px; border-radius:5px; display:grid; place-items:center; font-size:9.5px; font-weight:700; }
@@ -117,7 +124,8 @@ export const spawnDialogCSS = `
 .spawn-seg label { position:relative; display:block; cursor:pointer; }
 .spawn-seg input { position:absolute; inset:0; appearance:none; -webkit-appearance:none; margin:0; border:0; background:transparent; cursor:pointer; }
 .spawn-seg span { display:block; padding:5px 11px; border-radius:6px; font-size:12px; font-weight:600; color:var(--muted); white-space:nowrap; }
-.spawn-seg input:checked + span { background:var(--surface); color:var(--fg); box-shadow:var(--shadow); }
+/* The selected option (Relationship, Teams): the accent on its selected tint, outlined. */
+.spawn-seg input:checked + span { background:var(--sel); color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); }
 .spawn-seg input:focus-visible + span { outline:2px solid var(--accent); outline-offset:1px; }
 .spawn-relationship-row .frelto { flex:1 1 200px; width:auto; min-width:0; height:34px; }
 .spawn-relationship-row .frelto[hidden] { display:none; }
@@ -217,7 +225,7 @@ export function workText(data, soulWork) {
   return { lead: work ? `Work mode: ${work}` : '', code: '', tail: '' };
 }
 export function permissionText(yolo) {
-  return yolo === true ? 'skips prompts' : "runtime's policy";
+  return yolo === true ? 'skips prompts' : "harness's policy";
 }
 
 /** The soul chooser (left column). */
@@ -335,7 +343,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   nameField.append(nameHead, nameInput, nameResult);
   // Runtime · Model — the runtime is a picker with its badge; the select holds the value.
   const runRow = el('div', undefined, 'spawn-row spawn-run');
-  const runtimeLabel = el('label'); runtimeLabel.append(el('span', 'Runtime', 'spawn-label-text'));
+  const runtimeLabel = el('label'); runtimeLabel.append(el('span', 'Harness', 'spawn-label-text'));
   const runtime = el('select', undefined, 'field fruntime'); runtime.hidden = true; runtime.tabIndex = -1; runtime.setAttribute('aria-hidden', 'true');
   runtimeLabel.append(runtime);
   const modelLabel = el('label'); modelLabel.append(el('span', 'Model', 'spawn-label-text'));
@@ -405,6 +413,34 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const identityHint = el('p', '', 'spawn-hint spawn-identity-hint'); identityHint.setAttribute('aria-live', 'polite');
   identityField.append(identityRow, identityHint);
   let messagingProvider = null; // the capability the latest preview reported on layer messaging
+  // Teams (teams contract): offered only when the provider declares the spawn
+  // setting `join`; the list is the kernel's (primary first), never computed here.
+  const teamsField = el('fieldset', undefined, 'spawn-field spawn-teams'); teamsField.hidden = true;
+  const teamsList = el('div', undefined, 'spawn-seg spawn-teams-row spawn-team-list'); teamsList.setAttribute('role', 'group'); teamsList.setAttribute('aria-label', 'Teams');
+  const teamsHint = el('p', '', 'spawn-hint spawn-teams-hint'); teamsHint.setAttribute('aria-live', 'polite');
+  const teamsError = el('p', '', 'spawn-hint spawn-teams-error err'); teamsError.setAttribute('aria-live', 'polite');
+  teamsField.append(el('legend', 'Teams'), teamsList, teamsHint, teamsError);
+  let teamsNow = null, joinDeclaredNow = false, teamsDrawn = '';
+  const joinPicked = new Set();
+  teamsList.addEventListener('change', event => {
+    const box = event.target;
+    if (box?.type !== 'checkbox' || !box.value || box.disabled) return;
+    if (box.checked) joinPicked.add(box.value); else joinPicked.delete(box.value);
+  }); // before the form's own change listener: the choice is current when it re-reads
+  function drawTeams() {
+    const key = JSON.stringify(teamsNow);
+    if (key === teamsDrawn) return;
+    teamsDrawn = key; teamsList.replaceChildren();
+    const chip = (cls, name, box, title) => { const c = el('label', undefined, cls); c.append(box, el('span', name, 'spawn-team-name')); c.title = title; teamsList.append(c); return c; };
+    const fixed = el('input'); fixed.type = 'checkbox'; fixed.checked = true; fixed.disabled = true;
+    chip('spawn-team spawn-team-fixed', 'Personal', fixed, "Personal team — always. Every instance is in its person's personal team.");
+    for (const t of (teamsNow || []).filter(t => t.mapped)) {
+      const box = el('input'); box.type = 'checkbox'; box.value = t.label; box.className = 'fteam';
+      box.checked = joinPicked.has(t.label);
+      chip('spawn-team', t.label, box, `Join ${t.label} (${t.team})`);
+    }
+    teamsHint.textContent = `By default it's only in your personal team. These are the teams ${soul.name} has access to — tick the ones it should also join.`;
+  }
   const hostRow = el('div', undefined, 'spawn-row');
   const backendLabel = el('label', 'Session backend'), backend = el('select', undefined, 'field fbackend'); backendLabel.append(backend);
   const serverLabel = el('label', 'Run on'), server = el('select', undefined, 'field fserver'); server.setAttribute('aria-label', 'Execution server'); serverLabel.append(server);
@@ -427,7 +463,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const spawn = el('button', 'Spawn', 'act fspawn primary'); spawn.type = 'button';
   footer.append(statusRow, cancel, spawn, details);
   const body = el('div', undefined, 'spawn-form-body');
-  body.append(selectionSummary, nameField, runField, relation, taskLabel, advanced);
+  body.append(selectionSummary, nameField, runField, relation, teamsField, taskLabel, advanced);
   form.append(body, footer); // the footer stays in view while the body scrolls
   const columns = el('div', undefined, 'spawn-columns'); columns.append(chooser, form);
   dialog.append(header, columns); modal.append(dialog);
@@ -438,7 +474,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const fillSelect = (select, rows) => { select.replaceChildren(); for (const [value, label, disabled] of rows) { const o = el('option', label); o.value = value; o.disabled = !!disabled; select.append(o); } };
   fillSelect(runtime, [['', 'Default'], ...runtimes.map(v => [v, RUNTIME_NAMES[v]])]);
   const yoloSupported = Array.isArray(c0?.launchOptions) && c0.launchOptions.includes('yolo');
-  fillSelect(yolo, [['', 'Default'], ['false', "Ask — runtime's policy", !yoloSupported], ['true', 'Skip prompts (YOLO)', !yoloSupported]]);
+  fillSelect(yolo, [['', 'Default'], ['false', "Ask — harness's policy", !yoloSupported], ['true', 'Skip prompts (YOLO)', !yoloSupported]]);
   const backends = Array.isArray(c0?.sessionBackends) ? c0.sessionBackends.filter(v => ['tmux', 'herdr'].includes(v)) : [];
   fillSelect(backend, [['', 'Default'], ...backends.map(v => [v, v === 'herdr' ? 'Herdr' : 'tmux'])]);
   fillSelect(config, [['', 'Default']]);
@@ -466,6 +502,13 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const busy = () => !!flight || remoteBusy;
   const effectiveWork = () => worktree.checked && soul.work === 'checkout' ? 'worktree' : soul.work;
   const identityOffered = () => local() && !!messagingProvider && !!cli()?.features?.includes('spawn-provider-payload');
+  // Only the teams the soul has access to (mapped); with none, there is nothing to choose and no row.
+  // Gate (teams contract bdd7e55e): feature settings-declared, and the messaging row declares `join`.
+  const teamsOffered = () => identityOffered() && !!cli()?.features?.includes('settings-declared') && joinDeclaredNow && Array.isArray(teamsNow) && teamsNow.some(t => t.mapped);
+  // What the operator ticked, in the kernel's order, mapped labels only.
+  const joinLabels = () => teamsOffered() ? teamsNow.filter(t => t.mapped && joinPicked.has(t.label)).map(t => t.label) : [];
+  // The preview for these choices must bind exactly the ticked teams (settings echo).
+  const joinBound = data => { const labels = joinLabels(); return !labels.length || data?.messaging?.join === labels.join(','); };
   const selector = { soul: soul.name, agentsRoot: soul.agentsRoot };
 
   function relationChoice() {
@@ -497,7 +540,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       ...(runtime.value ? { runtime: runtime.value } : {}), ...(config.value ? { launchConfig: config.value } : {}),
       ...(backend.value ? { backend: backend.value } : {}), ...(yolo.value ? { yolo: yolo.value === 'true' } : {}),
       model: nativeModel ? { kind: 'native-default' } : model.value.trim() ? { kind: 'custom', value: model.value.trim() } : { kind: 'inherit' },
-      relation: relationValue, ...(identityChoice ? { identity: identityChoice } : {}) };
+      relation: relationValue, ...(identityChoice ? { identity: identityChoice } : {}),
+      ...(joinLabels().length ? { join: { provider: messagingProvider, labels: joinLabels() } } : {}) };
     const valid = previewChoices(out);
     return valid ? { value: valid } : { error: 'A value here is not a valid spawn option (no spaces or leading dashes).', field: 'option' };
   }
@@ -537,7 +581,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     modelTag.title = data?.modelSource || '';
     model.setAttribute('aria-label', model.value ? 'Model' : `Model — empty uses ${defaultModel || 'the default'}`);
     syncRuntime(data);
-    runHint.textContent = !local() ? `Runtime and model defaults are decided on ${remoteTarget()}.`
+    runHint.textContent = !local() ? `Harness and model defaults are decided on ${remoteTarget()}.`
       : data ? `Launches ${runtimeName(data.runtime)} with ${modelText(data)}.` : '';
     // Work.
     worktreeLabel.hidden = soul.work !== 'checkout';
@@ -559,7 +603,13 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     branch.placeholder = data?.branch && !branch.value ? data.branch : `agents/${soul.name}-…`;
     base.placeholder = data?.base ? `${data.base.ref} · ${short(data.base.oid)}` : 'HEAD';
     // Messaging identity: what the kernel bound for this spawn, and the choice.
-    if (data) messagingProvider = data.messaging?.provider ?? null;
+    if (data) { messagingProvider = data.messaging?.provider ?? null; teamsNow = data.teams ?? null; joinDeclaredNow = data.messaging?.joinDeclared === true; }
+    teamsField.hidden = !teamsOffered();
+    if (teamsOffered()) {
+      drawTeams();
+      teamsError.textContent = data && shown?.key === choiceKey(draftChoice.value) && !joinBound(data)
+        ? "The kernel didn't bind the ticked teams. Spawn waits until it does." : '';
+    }
     identityField.hidden = !identityOffered();
     residentLabel.hidden = identity.value !== 'global';
     advancedTopics.textContent = `Work area · permissions${identityOffered() ? ' · identity' : ''} · launch · session · wake-up`;
@@ -576,7 +626,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   }
   function syncButton() {
     if (!alive) return;
-    const draftChoice = choices(), ready = local() ? !!shown?.data && shown.key === choiceKey(draftChoice.value) && !reading : true;
+    const draftChoice = choices(), ready = local() ? !!shown?.data && shown.key === choiceKey(draftChoice.value) && !reading && joinBound(shown.data) : true;
     spawn.textContent = flight ? (phase === 'checking' ? 'Checking…' : 'Spawning…')
       : ['unknown', 'pending'].includes(phase) ? 'Check result' : ['complete', 'partial'].includes(phase) ? 'Created' : phase === 'incomplete' ? 'Spawn incomplete' : 'Spawn';
     const recovering = ['unknown', 'pending'].includes(phase);
@@ -739,8 +789,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   // ── model suggestions (advisory; free text stays valid)
   const suggestions = [];
   const models = createChoicePopup(doc, modelControls, 'Model choices', 'spawn-model-choices', () => [
-    { value: '', label: shown?.data && !model.value && !nativeModel ? `Default · ${shown.data.model ?? "runtime's own"}` : 'Default', selected: !model.value && !nativeModel, group: 'Defaults', search: false },
-    { native: true, label: "The runtime's own default", selected: nativeModel, group: 'Defaults', search: false },
+    { value: '', label: shown?.data && !model.value && !nativeModel ? `Default · ${shown.data.model ?? "harness's own"}` : 'Default', selected: !model.value && !nativeModel, group: 'Defaults', search: false },
+    { native: true, label: "The harness's own default", selected: nativeModel, group: 'Defaults', search: false },
     ...suggestions.map(m => ({ value: m.id, label: m.label || m.id, detail: m.label && m.label !== m.id ? m.id : undefined, selected: model.value === m.id, group: 'Suggestions' })),
     { custom: true, label: 'Custom…', detail: model.value || 'Type a model ID', group: 'Custom', search: false, selected: !!model.value && !suggestions.some(m => m.id === model.value) },
   ], item => {
@@ -751,10 +801,10 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     nothingReported: 'No model suggestions reported. Any model ID can be typed.', noMatch: 'No suggestions match this filter.' });
   models.trigger.textContent = ''; models.trigger.setAttribute('aria-label', 'Choose model');
   // ── runtime picker: the runtime's badge, like the design's provider field
-  const runtimePicker = createChoicePopup(doc, runtimeLabel, 'Runtime choices', 'spawn-runtime-choices', () => [
+  const runtimePicker = createChoicePopup(doc, runtimeLabel, 'Harness choices', 'spawn-runtime-choices', () => [
     { value: '', label: shown?.data ? `Default · ${runtimeName(shown.data.runtime)}` : 'Default', detail: 'What this soul launches with unless you choose', selected: !runtime.value,
       group: 'Default', search: false, ...(shown?.data ? { mark: () => createRuntimeBadge(doc, shown.data.runtime) } : {}) },
-    ...runtimes.map(v => ({ value: v, label: RUNTIME_NAMES[v], selected: runtime.value === v, group: 'Runtimes', mark: () => createRuntimeBadge(doc, v) })),
+    ...runtimes.map(v => ({ value: v, label: RUNTIME_NAMES[v], selected: runtime.value === v, group: 'Harnesses', mark: () => createRuntimeBadge(doc, v) })),
   ], item => { runtime.value = item.value; runtime.dispatchEvent(new doc.defaultView.Event('change', { bubbles: true })); });
   function syncRuntime(data) {
     const t = runtimePicker.trigger, value = runtime.value || data?.runtime || '';
@@ -808,7 +858,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     if (event.target === runtime || event.target === server) void fillModels();
     if (event.target === server) { shown = null; void fillConfigs(); }
     if ([search].includes(event.target) || wake.el.contains(event.target) || event.target === task) { syncButton(); return; }
-    schedule(event.type === 'change' && event.target.tagName !== 'INPUT' ? 0 : debounce);
+    schedule(event.type === 'change' && (event.target.tagName !== 'INPUT' || event.target.type === 'checkbox') ? 0 : debounce);
   };
   form.addEventListener('input', onEdit); form.addEventListener('change', onEdit);
   spawn.addEventListener('click', () => { void run(); });

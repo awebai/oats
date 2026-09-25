@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_TEAM_CONFLICT",
+    "message": "nw-brand-voice: team labels \"engineering\" and \"global\" give it different entries ({\"from\":\"local//fixture/base/fx/remotes/marketing.git\"} vs \"off\") in defaults.byTeam — make them agree, or name nw-brand-voice in the soul",
+    "details": {
+      "capability": "nw-brand-voice",
+      "labels": [
+        "engineering",
+        "global"
+      ],
+      "entries": [
+        {
+          "from": "local//fixture/base/fx/remotes/marketing.git"
+        },
+        "off"
+      ],
+      "paths": [
+        "/defaults/byTeam/engineering/capabilities/nw-brand-voice",
+        "/defaults/byTeam/global/capabilities/nw-brand-voice"
+      ]
+    }
+  }
+}

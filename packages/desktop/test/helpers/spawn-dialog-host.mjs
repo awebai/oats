@@ -103,7 +103,7 @@ export async function mountSpawn(t, options = {}) {
     async open(name = 'release-manager') {
       const card = [...doc.querySelectorAll('.soul-card')].find(c => c.dataset.agent === name); assert.ok(card, `card ${name}`);
       card.click(); await settle(3);
-      const launch = doc.querySelector('.soul-inspector .spawn-act'); assert.ok(launch, 'Launch'); launch.click();
+      const launch = doc.querySelector('.workspace-soul-page .spawn-act'); assert.ok(launch, 'Launch'); launch.click();
       await settle(); return u.dialog();
     },
     async type(selector, value) { const el = u.q(selector); el.value = value; el.dispatchEvent(new dom.window.Event('input', { bubbles: true })); await settle(); return el; },

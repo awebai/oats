@@ -11,6 +11,7 @@ import { cliInstanceGit } from '../cli-adapter.mjs';
 import { createInstanceGitBoundary } from '../server/instance-git.mjs';
 import { createContextPanel, contextPanelCSS } from '../renderer/context-panel.mjs';
 import { createInstanceGitPanel, instanceGitCSS } from '../renderer/instance-git.mjs';
+import { createInstanceTeamsSection } from '../renderer/instance-teams.mjs';
 import { createSelectionOwnership } from '../renderer/selection-ownership.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -111,7 +112,7 @@ function shell(t) {
   const dom = new JSDOM('<div id="app"><input id="terminal"><aside id="context-panel"></aside><button id="panel-toggle"></button><button id="focus-mode-toggle"></button></div>');
   const document = dom.window.document; const style = document.createElement('style'); style.textContent = contextPanelCSS + instanceGitCSS; document.head.append(style);
   const calls = [], pending = [];
-  const c = { document, window: dom.window, createContextPanel, createInstanceGitPanel, workspace: '/A', gen: 0, currentWorkspace: () => c.workspace,
+  const c = { document, window: dom.window, createContextPanel, createInstanceGitPanel, createInstanceTeamsSection, workspace: '/A', gen: 0, currentWorkspace: () => c.workspace,
     connectionGeneration: 0, subscribeConnections: () => () => {}, ctx: { openExternal: assert.fail }, openConnections: assert.fail,
     workspaceGeneration: () => c.gen, updateSidebarControls() {}, api(path, opts) {
       const d = deferred(); calls.push({ path, ...opts, body: JSON.parse(opts.body) }); pending.push(d); return d.promise;

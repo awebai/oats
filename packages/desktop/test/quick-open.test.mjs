@@ -206,35 +206,46 @@ async function mountSpawn(t, { cliOk = true } = {}) {
   return { dom, doc: dom.window.document, spawn };
 }
 
-test("preselectSoul opens inspection; launching is explicit", async (t) => {
+// F7: a soul opens as a page in the Workspace view; focus moves into it (its back
+// control), and going back focuses the soul's card.
+const onPage = (doc, name) => {
+  const page = doc.querySelector(".workspace-soul-page");
+  assert.equal(page.hidden, false, "the soul's page is open");
+  assert.equal(page.querySelector(".inspector-head h2").textContent, name);
+  assert.ok(doc.activeElement?.classList.contains("inspector-back"), "focus is on the page's back control");
+  return page;
+};
+test("preselectSoul opens the soul's page; launching is explicit", async (t) => {
   const { doc, spawn } = await mountSpawn(t);
   spawn.preselectSoul({ name: "ux-designer", agentsRoot: "/r2" });
-  const inspector = doc.querySelector(".soul-inspector");
+  const inspector = onPage(doc, "ux-designer");
   assert.equal(inspector.hidden, false);
   assert.match(inspector.textContent, /ux-designer/);
   assert.equal(doc.querySelector(".spawn-dialog"), null);
 });
 
-test("preselectSoul on an attached-only soul focuses its card, never a modal", async (t) => {
+test("preselectSoul on an attached-only soul opens its page (which explains itself), never a modal; back focuses its card", async (t) => {
   const { doc, spawn } = await mountSpawn(t);
   spawn.preselectSoul({ name: "reviewer", agentsRoot: "/r1" });
   assert.equal(doc.querySelector(".spawn-dialog"), null, "no modal for attached souls");
-  assert.equal(doc.activeElement?.dataset?.agent, "reviewer", "card focused so it explains itself");
+  onPage(doc, "reviewer").querySelector(".inspector-back").click();
+  assert.equal(doc.activeElement?.dataset?.agent, "reviewer", "back returns to its card");
 });
 
-test("preselectSoul with the CLI unavailable focuses the card (degradation respected)", async (t) => {
+test("preselectSoul with the CLI unavailable opens the page, not a modal (degradation respected)", async (t) => {
   const { doc, spawn } = await mountSpawn(t, { cliOk: false });
   spawn.preselectSoul({ name: "ux-designer" });
   assert.equal(doc.querySelector(".spawn-dialog"), null, "no modal without a verified CLI");
+  onPage(doc, "ux-designer").querySelector(".inspector-back").click();
   assert.equal(doc.activeElement?.dataset?.agent, "ux-designer");
 });
 
 test("preselect is consumed once: closing inspection keeps it closed", async (t) => {
   const { doc, spawn } = await mountSpawn(t);
   spawn.preselectSoul({ name: "ux-designer" });
-  assert.equal(doc.querySelector(".soul-inspector").hidden, false);
-  doc.querySelector('.inspector-head button[aria-label="Close inspector"]').click();
-  assert.equal(doc.querySelector(".soul-inspector").hidden, true);
+  assert.equal(doc.querySelector(".workspace-soul-page").hidden, false);
+  doc.querySelector(".workspace-soul-page .inspector-back").click();
+  assert.equal(doc.querySelector(".workspace-soul-page").hidden, true);
   assert.equal(doc.querySelector(".spawn-dialog"), null);
   // a later roster paint (poll) must not resurrect the consumed preselect
   await tick(); await tick();
@@ -292,7 +303,7 @@ test("preselect during a workspace switch is not consumed against the stale rost
   assert.equal(dom.window.document.querySelector(".spawn-dialog"), null, "not consumed against the stale roster");
   releaseB();
   await tick(); await tick();
-  const inspector = dom.window.document.querySelector(".soul-inspector");
+  const inspector = dom.window.document.querySelector(".workspace-soul-page");
   assert.equal(inspector.hidden, false, "preselect consumed by wsB's own roster paint");
   assert.match(inspector.textContent, /b-soul/);
 });
@@ -346,7 +357,7 @@ test("a deferred preselect dies with the view: defer → unmount → remount ope
     "a preselect deferred before unmount must never pop a modal on remount");
 });
 
-test("preselect of an attached soul hidden by an active filter clears the filter and focuses the card", async (t) => {
+test("preselect of an attached soul hidden by an active filter clears the filter, so back focuses the revealed card", async (t) => {
   const { dom, doc, spawn } = await mountSpawn(t);
   const filter = doc.querySelector(".filter");
   filter.value = "ux"; // excludes "reviewer"
@@ -355,10 +366,11 @@ test("preselect of an attached soul hidden by an active filter clears the filter
   spawn.preselectSoul({ name: "reviewer", agentsRoot: "/r1" });
   assert.equal(doc.querySelector(".spawn-dialog"), null, "attached soul never opens a modal");
   assert.equal(filter.value, "", "filter cleared to reveal the card");
+  onPage(doc, "reviewer").querySelector(".inspector-back").click();
   assert.equal(doc.activeElement?.dataset?.agent, "reviewer", "revealed card focused");
 });
 
-test("preselect with the CLI unavailable and a hiding filter reveals + focuses the card", async (t) => {
+test("preselect with the CLI unavailable and a hiding filter reveals the card; back focuses it", async (t) => {
   const { dom, doc, spawn } = await mountSpawn(t, { cliOk: false });
   const filter = doc.querySelector(".filter");
   filter.value = "reviewer"; // excludes "ux-designer"
@@ -366,6 +378,7 @@ test("preselect with the CLI unavailable and a hiding filter reveals + focuses t
   spawn.preselectSoul({ name: "ux-designer" });
   assert.equal(doc.querySelector(".spawn-dialog"), null, "no modal without a verified CLI");
   assert.equal(filter.value, "", "filter cleared");
+  onPage(doc, "ux-designer").querySelector(".inspector-back").click();
   assert.equal(doc.activeElement?.dataset?.agent, "ux-designer");
 });
 

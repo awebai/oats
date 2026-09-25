@@ -40,14 +40,9 @@ export function originText(from) {
   return text(from.kind);
 }
 export const inspectFacts = {
-  soul: soul => [
-    ['Source', soul.kind === 'external' ? `external ${text(soul.repoKey, '')}`.trimEnd() : `member ${memberLabel(soul.repoKey)}${short(soul.commit) ? ` @ ${short(soul.commit)}` : ''}`],
-    ['Team', text(soul.team)], ['Path', text(soul.path)], ['Work', text(soul.work)],
-    ['Runtime', text(soul.runtime, 'Chosen at spawn')], ['Model', text(soul.model, 'Runtime default')],
-  ],
   instance: i => [
-    ['Runtime', text(i.runtime)], ['Model', text(i.model, 'Runtime default')],
-    ['Permissions', i.yolo === true ? 'Unrestricted (yolo)' : i.yolo === false ? 'Restricted' : 'Runtime default'],
+    ['Harness', text(i.runtime)], ['Model', text(i.model, 'Harness default')],
+    ['Permissions', i.yolo === true ? 'Unrestricted (yolo)' : i.yolo === false ? 'Restricted' : 'Harness default'],
     ['Launched', i.launched === true ? 'Yes' : i.launched === false ? 'No' : '—'], ['Created', text(i.createdAt)],
     ['Resolution', str(i.resolution) ? i.resolution.slice(0, 12) : '—'],
   ],

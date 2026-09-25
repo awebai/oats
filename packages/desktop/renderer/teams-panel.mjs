@@ -4,18 +4,37 @@
  * home's inspection), never on a provider name or version. The provider's teams
  * document is decoded strictly and bounded; its refusals are shown verbatim. */
 
-/** Layout only (no colour): rows reuse the inspector's AA-tested classes. */
+/** One card, the same in the Workspace inspector and the context panel:
+ * tokens only (computed-AA inventory in theme-contrast), no opacity. */
 export const teamsCSS = `
-.teams-panel .team-row { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:12px; row-gap:2px; align-items:center; padding:10px 0; }
-.teams-panel .team-row > h4 { grid-column:1; margin:0; font-size:13px; line-height:18px; }
-.teams-panel .team-row > p { grid-column:1; margin:0; font-size:12px; line-height:17px; }
-.teams-panel .team-row > button { grid-column:2; grid-row:1 / span 3; align-self:center; }
-.teams-panel .team-row > details, .teams-panel .team-row > .inspector-problem { grid-column:1 / -1; margin-top:4px; font-size:12px; }
-.teams-panel .team-row > details pre { margin:4px 0 0; }
-.teams-panel > .act { margin-top:10px; }
-.teams-panel .teams-refusal { padding:10px 0; font-size:12px; }
-.teams-panel .teams-refusal > p { margin:4px 0 0; }
+.teams-panel { display:flex; flex-direction:column; gap:8px; min-width:0; }
+.teams-panel .teams-status { margin:0; font-size:12px; line-height:1.45; color:var(--muted); }
+.teams-panel .teams-status:empty { display:none; }
+.teams-panel .teams-status.error { color:var(--danger); }
+.teams-panel .teams-card { border:1px solid var(--border); border-radius:8px; background:var(--surface); overflow:hidden; }
+.teams-panel .teams-card:empty { display:none; }
+.teams-panel .team-row { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:12px; row-gap:6px; align-items:center; padding:9px 12px; min-height:44px; box-sizing:border-box; }
+.teams-panel .team-row + .team-row, .teams-panel .teams-card > .teams-note { border-top:1px solid var(--border); }
+.teams-panel .team-main { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.teams-panel .team-name { font-size:12.5px; font-weight:650; line-height:1.4; color:var(--fg); overflow-wrap:anywhere; }
+.teams-panel .team-meta { font-size:11.5px; line-height:1.4; color:var(--muted); overflow-wrap:anywhere; }
+.teams-panel .team-badge { font-size:11px; font-weight:650; line-height:1; color:var(--muted); border:1px solid var(--border); border-radius:999px; padding:4px 8px; white-space:nowrap; }
+.teams-panel .team-action { font:600 11.5px/1 inherit; height:26px; padding:0 10px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--fg); cursor:pointer; white-space:nowrap; }
+.teams-panel .team-action:hover:not(:disabled) { background:var(--surface-2); }
+.teams-panel .team-action:disabled { color:var(--muted); cursor:default; }
+.teams-panel .team-action:focus-visible, .teams-panel .teams-refresh:focus-visible, .teams-panel summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.teams-panel .team-row > details, .teams-panel .team-row > .teams-problem { grid-column:1 / -1; }
+.teams-panel details { font-size:11.5px; color:var(--muted); }
+.teams-panel details > summary { cursor:pointer; }
+.teams-panel details pre { margin:4px 0 0; font:11px/1.55 ui-monospace, Menlo, monospace; white-space:pre-wrap; overflow-wrap:anywhere; color:var(--fg); }
+.teams-panel .teams-problem { border-left:2px solid var(--danger); padding-left:8px; font-size:12px; color:var(--fg); }
+.teams-panel .teams-problem > p { margin:0; }
+.teams-panel .teams-refusal { padding:9px 12px; }
+.teams-panel .teams-note { margin:0; padding:9px 12px; font-size:12px; color:var(--muted); }
+.teams-panel .teams-refresh { align-self:flex-start; font:600 11.5px/1 inherit; height:26px; padding:0 10px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--fg); cursor:pointer; }
+.teams-panel .teams-refresh:disabled { color:var(--muted); cursor:default; }
 `;
+
 const record = v => !!v && typeof v === 'object' && !Array.isArray(v);
 const exact = (v, keys) => record(v) && Object.keys(v).length === keys.length && keys.every(k => Object.hasOwn(v, k));
 const text = (v, max = 256) => typeof v === 'string' && v.length > 0 && v.length <= max && !/[\x00-\x1f\x7f]/.test(v);
@@ -69,6 +88,22 @@ export function whenText(iso) {
   const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?Z$/.exec(iso);
   return m ? `${m[1]} ${m[2]} UTC` : iso;
 }
+/** Team labels a refusal names (E_TEAM_CONFLICT details.labels): 2..16 distinct labels, or null. */
+export function teamLabels(v) {
+  return Array.isArray(v) && v.length >= 2 && v.length <= 16 && v.every(label) && new Set(v).size === v.length ? [...v] : null;
+}
+/** The soul's eligible teams as `oats inspect` reports them (kernel `teams`,
+ * primary first): `[{label, team, mapped}]`, or null when not reported or not
+ * readable. `mapped` and `team` must agree (a mapped label names its team). */
+export function soulTeams(v) {
+  if (!Array.isArray(v) || v.length > 64) return null;
+  const out = [];
+  for (const t of v) {
+    if (!record(t) || !label(t.label) || typeof t.mapped !== 'boolean' || (t.mapped ? !text(t.team) : t.team !== null)) return null;
+    out.push({ label: t.label, team: t.team, mapped: t.mapped });
+  }
+  return new Set(out.map(t => t.label)).size === out.length ? out : null;
+}
 /** How a joined team's mail reaches the instance — never implying live delivery for a poll team. */
 export function receiveText(receive) {
   if (receive === 'poll') return "checks this team's mail between tasks";
@@ -79,26 +114,36 @@ export function receiveText(receive) {
 /** One Teams section for an instance home. `request(body)` posts to the
  * capabilities route; `owns()` is the inspector's selection lifetime (checked
  * on success AND rejection); `available()` the CLI gate. */
-export function createTeamsPanel(parent, { operations, selector, request, owns, available = () => true }) {
+export function createTeamsPanel(parent, { operations, selector, request, owns, available = () => true, heading = true }) {
   const doc = parent.ownerDocument;
   const node = (tag, value, cls) => { const el = doc.createElement(tag); if (value !== undefined) el.textContent = value; if (cls) el.className = cls; return el; };
   const section = node('section', undefined, 'teams-panel');
-  section.append(node('h3', 'Teams'));
+  if (heading) section.append(node('h3', 'Teams'));
   parent.append(section);
-  if (!operations.supported) { section.append(node('p', 'Not supported by this messaging provider.', 'muted')); return { sync() {}, refresh() {} }; }
-  if (!operations.teams.available) { section.append(node('p', operations.teams.reason || 'The provider cannot list teams here.', 'muted')); return { sync() {}, refresh() {} }; }
-  const status = node('p', '', 'inspector-status'); status.setAttribute('role', 'status');
-  const body = node('div', undefined, 'teams-body');
-  const refresh = node('button', 'Refresh teams', 'act'); refresh.type = 'button';
-  section.append(status, body, refresh);
+  if (!operations.supported) { section.append(node('p', 'Not supported by this messaging provider.', 'teams-status')); return { sync() {}, refresh() {} }; }
+  if (!operations.teams.available) { section.append(node('p', operations.teams.reason || 'The provider cannot list teams here.', 'teams-status')); return { sync() {}, refresh() {} }; }
+  const status = node('p', '', 'teams-status'); status.setAttribute('role', 'status');
+  // What the list is: the personal team, then the teams the soul has access to (unmapped labels are not shown).
+  const intro = node('p', 'Always in its personal team. It can join the teams its soul has access to.', 'teams-note teams-intro'); intro.hidden = true;
+  const body = node('div', undefined, 'teams-card');
+  const refresh = node('button', 'Refresh teams', 'teams-refresh'); refresh.type = 'button';
+  section.append(intro, status, body, refresh);
+  // One row: name + meta lines on the left, the action or a badge on the right.
+  const teamRow = (key, name, metas, side) => {
+    const el = node('div', undefined, 'team-row'); el.dataset.teamRow = key;
+    const main = node('div', undefined, 'team-main'); main.append(node('div', name, 'team-name'));
+    for (const meta of metas) main.append(typeof meta === 'string' ? node('div', meta, 'team-meta') : meta);
+    el.append(main); if (side) el.append(side); return el;
+  };
+  const badge = (text, title) => { const b = node('span', text, 'team-badge'); if (title) b.title = title; return b; };
   let serial = 0, pending = null, current = null, rowError = null;
   const live = () => owns() && section.isConnected;
   const say = (value, error = false) => { status.textContent = value; status.classList.toggle('error', error); };
   function problem(error, fallback) {
     const code = typeof error?.code === 'string' ? error.code : '';
-    const box = node('div', undefined, 'inspector-problem');
+    const box = node('div', undefined, 'teams-problem');
     box.append(node('p', typeof error?.message === 'string' && error.message ? error.message : fallback));
-    if (code) { const more = node('details'); more.append(node('summary', 'Details'), node('p', code, 'muted')); box.append(more); }
+    if (code) { const more = node('details'); more.append(node('summary', 'Details'), node('pre', code)); box.append(more); }
     return box;
   }
   function unreadable(result) {
@@ -116,8 +161,10 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
       current = next; say(''); render();
     } catch (error) {
       if (!live() || ticket !== serial) return;
-      say(''); body.replaceChildren(problem(error, 'The messaging provider could not list teams.'));
-      const retry = node('button', 'Retry', 'act'); retry.type = 'button'; retry.addEventListener('click', () => { if (live() && !pending) void read({ explicit: true }); }); body.append(retry);
+      say('');
+      const retry = node('button', 'Retry', 'team-action'); retry.type = 'button'; retry.addEventListener('click', () => { if (live() && !pending) void read({ explicit: true }); });
+      const failed = node('div', undefined, 'team-row'); failed.append(problem(error, 'The messaging provider could not list teams.'), retry);
+      body.replaceChildren(failed);
     } finally { if (ticket === serial) { pending = null; if (live()) sync(); } }
   }
   async function change(verb, target) {
@@ -140,7 +187,7 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
     } finally { if (ticket === serial && pending && typeof pending === 'object') { pending = null; if (live()) { render(); sync(); } } }
   }
   function control(verb, target) {
-    const op = operations[verb], b = node('button', verb === 'join' ? 'Join' : 'Leave', 'act'); b.type = 'button';
+    const op = operations[verb], b = node('button', verb === 'join' ? 'Join' : 'Leave', 'team-action'); b.type = 'button';
     b.dataset.team = target; b.dataset.teamAction = verb;
     if (pending?.label === target && pending.verb === verb) b.textContent = verb === 'join' ? 'Joining…' : 'Leaving…';
     if (!op) b.title = `This messaging provider does not declare messaging:${verb}.`;
@@ -150,39 +197,32 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
     return b;
   }
   function render() {
-    body.replaceChildren();
+    body.replaceChildren(); intro.hidden = !current;
     if (!current) return;
-    const personal = node('div', undefined, 'inspector-cap team-row'); personal.dataset.teamRow = 'personal';
-    personal.append(node('h4', 'Personal team'), node('p', current.personal.team, 'muted'), node('p', "Always on — the personal team can't be left.", 'muted'));
-    body.append(personal);
+    body.append(teamRow('personal', 'Personal team', [current.personal.team], badge('Always on', "The personal team can't be left.")));
     const joined = new Map(current.joined.map(j => [j.label, j]));
     const rows = [...current.eligible.map(e => ({ label: e.label, team: e.team, eligible: true })),
       ...current.joined.filter(j => !current.eligible.some(e => e.label === j.label)).map(j => ({ label: j.label, team: j.team, eligible: false }))];
     // A refusal whose row the re-read no longer offers is said at panel level, never dropped.
     if (rowError && !rows.some(row => row.label === rowError.label)) {
       const gone = node('div', undefined, 'teams-refusal'); gone.dataset.teamRefusal = rowError.label;
-      gone.append(problem(rowError.error, 'The messaging provider refused.'), node('p', `${rowError.label} is no longer offered to this instance.`, 'muted'));
+      gone.append(problem(rowError.error, 'The messaging provider refused.'), node('p', `${rowError.label} is no longer offered to this instance.`, 'teams-note'));
       body.prepend(gone);
     }
     for (const row of rows) {
-      const j = joined.get(row.label), el = node('div', undefined, 'inspector-cap team-row'); el.dataset.teamRow = row.label;
-      el.append(node('h4', row.label === current.primary ? `${row.label} · primary` : row.label), node('p', row.team, 'muted'));
+      const j = joined.get(row.label), name = row.label === current.primary ? `${row.label} · primary` : row.label;
+      let el;
       if (j) {
-        const since = node('p', `Joined ${whenText(j.since)}`); since.title = j.since;
-        el.append(since, node('p', receiveText(j.receive).replace(/^./, c => c.toUpperCase()), 'muted'));
+        const since = node('div', `${row.team} · Joined ${whenText(j.since)}`, 'team-meta'); since.title = j.since;
+        const metas = [since, receiveText(j.receive).replace(/^./, c => c.toUpperCase())];
+        if (!row.eligible) metas.push('No longer eligible in this workspace.');
+        el = teamRow(row.label, name, metas, control('leave', row.label));
         const where = node('details'); where.append(node('summary', 'Identity home'), node('pre', j.identityHome)); el.append(where);
-        if (!row.eligible) el.append(node('p', 'No longer eligible in this workspace.', 'muted'));
-        el.append(control('leave', row.label));
-      } else el.append(node('p', 'Not joined.', 'muted'), control('join', row.label));
+      } else el = teamRow(row.label, name, [`${row.team} · Not joined`], control('join', row.label));
       if (rowError?.label === row.label) el.append(problem(rowError.error, 'The messaging provider refused.'));
       body.append(el);
     }
-    for (const unmapped of current.unmapped) {
-      const el = node('div', undefined, 'inspector-cap team-row'); el.dataset.teamRow = unmapped;
-      el.append(node('h4', unmapped), node('p', "Not mapped by this workspace — can't be joined.", 'muted'));
-      body.append(el);
-    }
-    if (!rows.length) body.append(node('p', current.unmapped.length ? "None of this soul's teams is mapped by this workspace." : 'Personal team only: the soul names no wider team.', 'muted'));
+    if (!rows.length) body.append(node('p', 'Its soul has access to no other team.', 'teams-note'));
     sync();
   }
   function sync() {

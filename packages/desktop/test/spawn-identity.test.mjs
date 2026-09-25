@@ -57,13 +57,13 @@ test('the flags are the captured kernel argv: --provider <cap> identity.mode=…
 const MANIFEST_DEFAULT = { kind: 'manifest-default', at: 'oats.json#/settings/identity/default' }, SPAWN = { kind: 'spawn', at: '--provider nw.messaging' };
 test('the projection names the messaging provider, the identity the decision binds, and where its mode came from (settingsOrigins)', () => {
   const t = { ...target };
-  assert.deepEqual(previewData(f3c('preview-messaging-default').result, t).messaging, { provider: 'nw.messaging', identity: { mode: 'local', resident: null }, origin: MANIFEST_DEFAULT });
-  assert.deepEqual(previewData(f3c('preview-messaging-local').result, t).messaging, { provider: 'nw.messaging', identity: { mode: 'local', resident: null }, origin: SPAWN });
-  assert.deepEqual(previewData(f3c('preview-messaging-global').result, t).messaging, { provider: 'nw.messaging', identity: { mode: 'global', resident: 'ops' }, origin: SPAWN });
+  assert.deepEqual(previewData(f3c('preview-messaging-default').result, t).messaging, { provider: 'nw.messaging', identity: { mode: 'local', resident: null }, origin: MANIFEST_DEFAULT, join: null, joinDeclared: false });
+  assert.deepEqual(previewData(f3c('preview-messaging-local').result, t).messaging, { provider: 'nw.messaging', identity: { mode: 'local', resident: null }, origin: SPAWN, join: null, joinDeclared: false });
+  assert.deepEqual(previewData(f3c('preview-messaging-global').result, t).messaging, { provider: 'nw.messaging', identity: { mode: 'global', resident: 'ops' }, origin: SPAWN, join: null, joinDeclared: false });
   // A kernel without settings-origins reports no origin (and, before manifest defaults, no identity).
   const older = f3c('preview-messaging-default').result; delete older.settingsOrigins;
   delete older.decision.effective.providers['nw.messaging'].identity; delete older.settings['nw.messaging'].identity;
-  assert.deepEqual(previewData(older, t).messaging, { provider: 'nw.messaging', identity: null, origin: null });
+  assert.deepEqual(previewData(older, t).messaging, { provider: 'nw.messaging', identity: null, origin: null, join: null, joinDeclared: false });
   for (const [label, mutate] of [['origins not a record', v => { v.settingsOrigins = 'soul'; }], ['cap origins not a record', v => { v.settingsOrigins['nw.messaging'] = []; }],
     ['origin without at', v => { v.settingsOrigins['nw.messaging']['/identity/mode'] = { kind: 'soul' }; }],
     ['origin extra key', v => { v.settingsOrigins['nw.messaging']['/identity/mode'] = { ...MANIFEST_DEFAULT, value: 'local' }; }],

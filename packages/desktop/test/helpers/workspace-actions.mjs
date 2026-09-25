@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 export function launchSoul(doc, card = doc.querySelector('.soul-card')) {
   assert.ok(card, 'a specific soul card is available for selection');
   card.click();
-  const control = doc.querySelector('.soul-inspector .spawn-act');
+  const control = doc.querySelector('.workspace-soul-page .spawn-act');
   assert.ok(control, 'selected-soul inspector exposes Launch without waiting for inspection');
   control.click();
   return control;

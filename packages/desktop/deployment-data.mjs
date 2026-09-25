@@ -79,7 +79,8 @@ export function workspaceStatusData(document, deployment) {
   return flags(data, ['standalone'], { workspaceStatusApi: 1, workspace, members, packages,
     declaredPackages: strings(data.declaredPackages), unsynced: strings(data.unsynced), stale: strings(data.stale),
     external: array(data.external).map(row => fields(row, ['source', 'soul', 'team'])),
-    problems: problemRows(data.problems) });
+    problems: problemRows(data.problems), // warnings[] since kernel #185 (for example an unmapped team label); absent before.
+    warnings: own(data, 'warnings') ? array(data.warnings).map(row => fields(row, ['code', 'message', 'label', 'soul', 'repoKey'])) : [] });
 }
 
 /** status stays a native {root,agents,workspace} observation. No task/state

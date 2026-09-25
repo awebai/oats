@@ -2,6 +2,7 @@
  * The context-panel host owns visibility/selection, this controller owns reads. */
 import { gitTarget, gitTargetKey, gitState, gitDiff, gitObservation, gitKinds, INSTANCE_GIT_MINIMUM_VERSION } from './instance-git-contract.mjs';
 import { createForgePrPanel } from './forge-pr.mjs';
+import { ageText } from './age-text.mjs';
 
 export const instanceGitCSS = `
 .instance-git { min-width:0; color:var(--fg); font-size:12px; }
@@ -18,7 +19,7 @@ export const instanceGitCSS = `
 .instance-git .git-counts { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:8px; }
 .instance-git .git-counts span { padding:2px 5px; border-radius:4px; background:var(--surface-2); color:var(--muted); font-size:10.5px; }
 .instance-git .git-card { border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin:0 0 16px; overflow-wrap:anywhere; background:var(--surface-2); }
-.instance-git h3 { font-size:10.5px; font-weight:650; letter-spacing:.06em; text-transform:uppercase; margin:16px 0 8px; }
+.instance-git h3 { font-size:10.5px; font-weight:650; letter-spacing:.06em; text-transform:uppercase; margin:var(--section-gap) 0 var(--title-gap); }
 .instance-git dl { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.6fr); gap:6px 10px; }
 .instance-git dt { color:var(--muted); }
 .instance-git dd { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }
@@ -45,12 +46,17 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
   const toolbar = node('div', undefined, 'git-toolbar'), refreshButton = node('button', 'Refresh'); refreshButton.type = 'button';
   toolbar.append(node('h2', 'Worktree'), refreshButton);
   const status = node('p', '', 'git-status'); status.setAttribute('role', 'status');
+  // A read's code sits behind Details under its plain sentence (never inline).
+  const statusDetails = node('details', undefined, 'git-status-details'); statusDetails.hidden = true;
+  const statusCode = node('pre', '', 'git-note'); statusDetails.append(node('summary', 'Details'), statusCode);
   const facts = node('div', undefined, 'git-facts'), changesHeading = node('h3', 'Changes');
   const files = node('div', undefined, 'git-files'); files.setAttribute('aria-label', 'Observed worktree changes');
   const diffStatus = node('p', '', 'git-status'); diffStatus.setAttribute('role', 'status');
   const diffBody = node('section', undefined, 'git-diff'); diffBody.setAttribute('aria-label', 'Read-only unified diff');
   const github = node('section', undefined, 'git-github');
-  root.append(toolbar, status, facts, changesHeading, files, diffStatus, diffBody, github);
+  root.append(toolbar, status, statusDetails, facts, changesHeading, files, diffStatus, diffBody, github);
+  // Sections with nothing observed are not shown.
+  changesHeading.hidden = true; github.hidden = true;
   const pullRequest = createForgePrPanel(github, { request: requestForge, generation, connectionGeneration, subscribeConnections, connect, openExternal });
   let alive = true, active = false, epoch = 0, observationTicket = 0, fileTicket = 0;
   let target = null, identity = '', summaryIdentity = '', attempted = false, observation = null, selected = null, busy = false, remote = false;
@@ -67,10 +73,13 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
   const capture = () => ({ epoch, generation: generation(), connection: connectionGeneration(), identity, target, summaryIdentity });
   const owns = ref => alive && active && ref.epoch === epoch && ref.identity === identity && ref.generation === generation() && ref.connection === connectionGeneration();
   const canPaint = ref => owns(ref) && visible();
-  const message = (el, text = '', error = false) => { el.textContent = text; el.classList.toggle('error', error); };
-  const unavailable = text => message(status, `${text}${facts.childElementCount ? ' Previous observation is stale; file actions are disabled.' : ''}`, true);
+  const message = (el, text = '', error = false) => { el.textContent = text; el.classList.toggle('error', error); if (el === status) { statusDetails.hidden = true; statusCode.textContent = ''; } };
+  const unavailable = (text, code = '') => {
+    message(status, `${text}${facts.childElementCount ? ' Previous observation is stale; file actions are disabled.' : ''}`, true);
+    statusCode.textContent = code; statusDetails.hidden = !code;
+  };
   const clearDiff = () => { selected = null; fileTicket++; diffBody.replaceChildren(); message(diffStatus); for (const b of controls.values()) b.setAttribute('aria-pressed', 'false'); };
-  const clear = (summary = true) => { if (summary) onObservation(null); observation = null; pullRequest.update(); clearDiff(); controls.clear(); facts.replaceChildren(); files.replaceChildren(); changesHeading.textContent = 'Changes'; message(status); };
+  const clear = (summary = true) => { if (summary) onObservation(null); observation = null; pullRequest.update(); clearDiff(); controls.clear(); facts.replaceChildren(); files.replaceChildren(); changesHeading.textContent = 'Changes'; message(status);  changesHeading.hidden = true; github.hidden = true; };
   const locks = () => { refreshButton.disabled = !alive || !active || !target || remote || busy; for (const b of controls.values()) b.disabled = !active || busy || !observation; };
   function send(ref, action, extra = {}) {
     const t = ref.target;
@@ -93,18 +102,23 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
     facts.replaceChildren(); controls.clear(); files.replaceChildren();
     const data = observation, o = data.observation, card = node('section', undefined, 'git-card');
     card.append(node('div', o.unborn ? `${report(o.branch)} · unborn` : o.detached ? 'Detached HEAD' : report(o.branch), 'git-branch'), node('div', o.worktree, 'git-path'));
-    card.append(node('p', `Observed: ${o.at}`, 'git-note'));
+    const seen = node('p', `Observed ${ageText(o.at)}`, 'git-note'); seen.title = o.at; card.append(seen);
     if (data.recorded.drift) card.append(node('p', `Branch differs from recorded branch: ${report(data.recorded.branch)}`, 'git-note'));
     const metadata = node('details'); metadata.append(node('summary', 'Observation details'));
     rows(metadata, [['Observed revision', o.revision], ['Index fingerprint', o.indexRevision], ['Work mode', data.workMode],
       ['Recorded branch', data.recorded.branch], ['Branch drift', data.recorded.drift ? 'Changed from recorded branch' : 'No reported drift']]);
     card.append(metadata);
-    facts.append(card, node('h3', 'Upstream comparison'));
-    rows(facts, [['Upstream ref', data.upstream.ref], ['Ahead', data.upstream.ahead], ['Behind', data.upstream.behind]]);
-    facts.append(node('h3', 'Default-branch comparison'));
-    rows(facts, [['Base ref', data.base.ref], ['Base source', data.base.source], ['Merge base', data.base.mergeBase], ['Ahead', data.base.ahead], ['Behind', data.base.behind]]);
+    // A comparison shows only what was reported; nothing reported is one plain line.
+    const comparison = (title, pairs, none) => {
+      facts.append(node('h3', title));
+      const known = pairs.filter(([, value]) => value !== null && value !== undefined && value !== '');
+      if (known.length) rows(facts, known); else facts.append(node('p', none, 'git-note'));
+    };
+    facts.append(card);
+    comparison('Upstream comparison', [['Upstream ref', data.upstream.ref], ['Ahead', data.upstream.ahead], ['Behind', data.upstream.behind]], 'No upstream branch is reported.');
+    comparison('Default-branch comparison', [['Base ref', data.base.ref], ['Base source', data.base.source], ['Merge base', data.base.mergeBase], ['Ahead', data.base.ahead], ['Behind', data.base.behind]], 'No default-branch comparison is reported.');
     for (const note of data.notes) facts.append(node('p', note, 'git-note'));
-    changesHeading.textContent = `Changes · ${data.files.length}`;
+    changesHeading.textContent = `Changes · ${data.files.length}`; changesHeading.hidden = false; github.hidden = false;
     const counts = node('div', undefined, 'git-counts'); counts.setAttribute('role', 'list'); counts.setAttribute('aria-label', 'Reported change counts');
     for (const kind of gitKinds) { const label = node('span', `${kind[0].toUpperCase() + kind.slice(1)}: ${data.summary[kind]}`); label.setAttribute('role', 'listitem'); counts.append(label); }
     files.append(counts);
@@ -135,7 +149,7 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
       const raw = await send(ref, 'git');
       if (!canPaint(ref) || ticket !== observationTicket) return;
       const result = reply(raw, ref);
-      if (result.status !== 'available') { unavailable(`${result.reason.message} (${result.reason.code})`); return; }
+      if (result.status !== 'available') { unavailable(result.reason.message, result.reason.code); return; }
       const data = gitState(result.data, ref.target);
       if (!data) throw new Error('Invalid Git observation');
       observation = data; clearDiff(); renderObservation(ref, result.observationKey); message(status); message(diffStatus, notice);

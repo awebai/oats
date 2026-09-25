@@ -23,6 +23,8 @@ export function homeInspection(home, { instance = 'release-manager-cap', soul = 
   const v = capturedInspect('inspect-home').result;
   v.subject = { kind: 'instance', instance, home, soul };
   v.instance = { ...v.instance, home, instance, agent: soul, ...(instructions ? { instructions } : {}) };
+  // the spawned-from soul row names the same soul as the subject (one stand-in identity)
+  v.souls = v.souls.map((row, index) => index === 0 ? { ...row, name: soul } : row);
   if (operations) v.capabilities = v.capabilities.map(cap => cap.layer === 'knowledge' ? { ...cap, operations } : cap);
   return v;
 }

@@ -7,6 +7,7 @@ import { runInNewContext } from "node:vm";
 import { JSDOM } from "jsdom";
 import { createContextPanel, contextPanelCSS } from "../renderer/context-panel.mjs";
 import { createInstanceGitPanel } from "../renderer/instance-git.mjs";
+import { createInstanceTeamsSection } from '../renderer/instance-teams.mjs';
 import { THEMES } from "../renderer/theme.mjs";
 import { NAV } from "../renderer/shell-nav.mjs";
 import { shellIcon, mountShellIcons } from "../renderer/shell-icons.mjs";
@@ -44,7 +45,7 @@ function shell(t, shellSource = source) {
   const loads = [], events = [], notices = [], offs = [];
   const c = {
     document, window: dom.window, localStorage: dom.window.localStorage,
-    NAV, shellIcon, createContextPanel, createInstanceGitPanel, workspace: "A", generation: 0, events, notices,
+    NAV, shellIcon, createContextPanel, createInstanceGitPanel, createInstanceTeamsSection, workspace: "A", generation: 0, events, notices,
     connectionGeneration: 0, subscribeConnections: () => () => {},
     connections: { close() {}, open: () => events.push(['connections']) }, lifecycleDialog: { close() {} },
     currentWorkspace: () => c.workspace, workspaceGeneration: () => c.generation,
