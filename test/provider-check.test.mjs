@@ -170,10 +170,10 @@ test("provider-check wire (pinned): the request on stdin, the environment, the c
     assert.deepEqual(out, { outcome: "result", result: { status: "ready", problems: [], warnings: [] } });
     let seen = JSON.parse(readFileSync(record, "utf8"));
     assert.deepEqual(JSON.parse(seen.stdin), {
-      schemaVersion: 1, phase: "check", slot: "messaging", capability: "fx.provider", settings, teams: WIRE_TEAMS, teamsSource: "live",
+      schemaVersion: 1, phase: "check", slot: "messaging", capability: "fx.provider", settings,
       input: { context: { kind: "workspace", workspace: "github.com/acme/agents", deployment: base, soul: "release-manager", team: "engineering", instance: "rm-1", home },
         action: { kind: "readiness" } },
-    }, "the stdin request, exactly");
+    }, "the stdin request, exactly: the released binding wire (the teams travel in the env only; a strict decoder refuses any other key)");
     assert.equal(seen.cwd, dir, "cwd is the module directory");
     assert.deepEqual(seen.argv, ["check", "--wire", "1"], "the manifest command's arguments, no shell");
     const oats = Object.fromEntries(Object.entries(seen.env).filter(([k]) => /^(OATS_|OAS_|PI_)/.test(k)));
@@ -188,8 +188,8 @@ test("provider-check wire (pinned): the request on stdin, the environment, the c
     rmSync(record);
     withAmbient(() => runProviderCheck(wireTarget(base, { team: null, teams: [] }), mod, dir));
     seen = JSON.parse(readFileSync(record, "utf8"));
-    assert.deepEqual(JSON.parse(seen.stdin).teams, [], "no label: [] (personal only)");
-    assert.equal(seen.env.OATS_TEAMS, "[]");
+    assert.equal("teams" in JSON.parse(seen.stdin), false, "never on stdin");
+    assert.equal(seen.env.OATS_TEAMS, "[]", "no label: [] (personal only)");
     assert.deepEqual(JSON.parse(seen.stdin).input.context, { kind: "workspace", workspace: "github.com/acme/agents", deployment: base, soul: "release-manager", team: null, instance: null, home: null });
     for (const k of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_SOUL", "OATS_ROOT", "OAS_HOME", "PI_AGENTS_ROOT", "PI_AGENT_HOME", "OATS_PROVIDER_WIRE_KEEP"]) assert.equal(seen.env[k], undefined, `${k} is not passed for a soul subject`);
     assert.equal(seen.env.OATS_AGENT, "release-manager"); assert.equal(seen.env.OATS_TEAM_LABEL, "");

@@ -2,20 +2,24 @@
 // exposes it: a soul names several team labels; the kernel hands the messaging provider every
 // label's payload as the ELIGIBLE teams — in the spawn preview, in `inspect`, in OATS_TEAMS for a
 // home's commands (live: the workspace as it is now, never the spawn's frozen view), and beside
-// the settings on a provider check's stdin. Joining any of them is the provider's explicit act.
+// the settings in a provider check's environment (never on its stdin: the released binding wire is
+// decoded strictly). Joining any of them is the provider's explicit act.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import YAML from "yaml";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { homeTarget, runProviderCheck } from "../lib/instance-inspect.mjs";
 
 const envProbe = "console.log(JSON.stringify({schemaVersion:1,ok:true,result:{labels:process.env.OATS_TEAM_LABELS,label:process.env.OATS_TEAM_LABEL,id:process.env.OATS_TEAM_ID,source:process.env.OATS_TEAMS_SOURCE,teams:process.env.OATS_TEAMS===''?null:JSON.parse(process.env.OATS_TEAMS)}}))\n";
-// A binding check that answers `ready` and echoes the `teams` it was handed on stdin as a warning.
+// A binding check that answers `ready` and echoes, as a warning, the teams its ENVIRONMENT carries
+// and the keys of its stdin request.
 const echoCheck = `let raw = ""; process.stdin.on("data", (c) => (raw += c)); process.stdin.on("end", () => {
   const req = JSON.parse(raw);
   process.stdout.write(JSON.stringify({ schemaVersion: 1, phase: "check", slot: "messaging", capability: "acme.chat", ok: true,
-    result: { status: "ready", problems: [], warnings: [{ code: "teams-seen", message: JSON.stringify({ teams: req.teams, teamsSource: req.teamsSource, settingsHasTeams: "teams" in req.settings }) }] } }) + "\\n");
+    result: { status: "ready", problems: [], warnings: [{ code: "teams-seen", message: JSON.stringify({ teams: JSON.parse(process.env.OATS_TEAMS), source: process.env.OATS_TEAMS_SOURCE, labels: process.env.OATS_TEAM_LABELS, requestKeys: Object.keys(req).sort(), settingsHasTeams: "teams" in req.settings }) }] } }) + "\\n");
 });\n`;
 
 function fixture() {
@@ -60,7 +64,7 @@ test("spawn preview and inspect --soul show the eligible teams, one per label in
   assert.ok(version.features.includes("teams"), "feature `teams` advertises the surface");
 });
 
-test("a home's teams are LIVE: inspect --home, a home's command (OATS_TEAMS) and a provider check's stdin follow the workspace; the spawn record and modules stay frozen", async (t) => {
+test("a home's teams are LIVE: inspect --home, a home's command (OATS_TEAMS) and a provider check's environment follow the workspace; the spawn record and modules stay frozen", async (t) => {
   const fx = fixture(); t.after(fx.cleanup);
   const { home } = await fx.spawn("dev", { instance: "dev-teams" });
   const meta0 = JSON.parse(readFileSync(join(home, "instance.json"), "utf8"));
@@ -95,7 +99,8 @@ test("a home's teams are LIVE: inspect --home, a home's command (OATS_TEAMS) and
   const rd = ok(fx.cli(["readiness", "--home", home, "--json"]), "readiness --home");
   const check = rd.checks.providers.items.find((i) => i.subject === "acme.chat");
   const echoed = JSON.parse(check.result.warnings.find((w) => w.code === "teams-seen").message);
-  assert.deepEqual(echoed, { teams: [GLOBAL, NIGHT_MAPPED], teamsSource: "live", settingsHasTeams: false }, "teams and their source beside the settings on stdin, never inside them");
+  assert.deepEqual(echoed, { teams: [GLOBAL, NIGHT_MAPPED], source: "live", labels: "global,night", requestKeys: ["capability", "input", "phase", "schemaVersion", "settings", "slot"], settingsHasTeams: false },
+    "the check gets the live teams and their source in its env; its stdin stays the released wire");
   // …and removing it takes it away again.
   fx.commit(workspaceChange(fx, (ws) => { delete ws.messaging.byTeam.night; }), "unmap night");
   assert.deepEqual(messaging().teams, [GLOBAL, NIGHT_UNMAPPED]);
@@ -136,4 +141,23 @@ test("an unmapped label is a workspace-status WARNING; two labels that disagree 
   assert.equal(j.ok, false, r.stdout);
   assert.equal(j.error.code, "E_TEAM_CONFLICT");
   assert.match(j.error.message, /"global" and "night"/);
+});
+
+test("the REAL oats.aweb 1.13.1 binding check decodes the kernel's check request for a two-label home: the teams never break its strict wire", async (t) => {
+  const fx = fixture(); t.after(fx.cleanup);
+  const { home } = await fx.spawn("dev", { instance: "dev-aweb" });
+  const meta = JSON.parse(readFileSync(join(home, "instance.json"), "utf8"));
+  const target = await homeTarget(home, meta);
+  assert.deepEqual([target.teams, target.teamsSource], [[GLOBAL, NIGHT_UNMAPPED], "live"], "a live two-label target");
+  // The released provider, from this repository, filling the messaging slot with an aweb-shaped payload.
+  const dir = fileURLToPath(new URL("../capabilities/oats-aweb", import.meta.url));
+  const manifest = JSON.parse(readFileSync(join(dir, "oats.json"), "utf8"));
+  assert.equal(manifest.version, "1.13.1", "the released provider 0.26.0 pins");
+  const aweb = { ...target, payloads: { ...target.payloads, "oats.aweb": { team: "aweb:acme.global" } }, slots: { ...target.slots, messaging: "oats.aweb" } };
+  const out = runProviderCheck(aweb, { name: "oats.aweb", manifest }, dir);
+  // Its decoder accepted the request: the answer is one of its check statuses (here no messaging
+  // root is set up), never its wire refusal (`invalid-binding` / `provider-not-qualified`).
+  assert.equal(out.outcome, "result", JSON.stringify(out));
+  assert.equal(out.result.status, "needs-configuration");
+  assert.equal(out.result.problems.some((p) => ["invalid-binding", "provider-not-qualified"].includes(p.code)), false, JSON.stringify(out));
 });

@@ -210,9 +210,10 @@ team: [engineering, reviewers]
   and `team: null`. A soul with no label gets `[]` (personal only).
 - `teams` travels **beside** a provider's settings, never inside them:
   `OATS_TEAMS` (the JSON), `OATS_TEAM_LABELS` (comma-joined) and
-  `OATS_TEAMS_SOURCE` in every hook and home command, and `teams` +
-  `teamsSource` next to `settings` on a provider check's stdin. The variables
-  are empty (not `[]`) when a home's teams are unknown.
+  `OATS_TEAMS_SOURCE` in the environment of every hook, home command and
+  provider check. The environment is their only channel: a check's stdin
+  request stays the released binding wire, which providers decode strictly.
+  The variables are empty (not `[]`) when a home's teams are unknown.
 - `OATS_TEAMS_SOURCE` is `live` (read from the workspace now, or a fresh
   resolution) or `recorded` (the spawn-time list). **A provider leaves a joined
   team only on a `live` list**: a recorded one lacks every team mapped since
@@ -440,7 +441,6 @@ passed as arguments; no shell is involved.
 ```json
 {"schemaVersion":1,"phase":"check","slot":"messaging","capability":"my.provider",
  "settings":{"team":"acme:eng","root":"/srv/aw"},
- "teams":[{"label":"engineering","team":"acme:eng","mapped":true,"payload":{"team":"acme:eng"}}],
  "input":{"context":{"kind":"workspace","workspace":"github.com/acme/agents","deployment":"/srv/acme",
                      "soul":"release-manager","team":"engineering","instance":"release-manager-1",
                      "home":"/srv/acme/agents/release-manager/instances/release-manager-1"},
@@ -450,9 +450,9 @@ passed as arguments; no shell is involved.
 - `slot` is the manifest's `layer`.
 - `settings` is the merged provider payload: the one the spawn recorded for a
   home, or the one the resolution computes for a soul.
-- `teams` is the soul's eligible teams (see *Several team labels*), beside
-  `settings`, with `teamsSource` (`live` | `recorded`); both `null` when a
-  home's teams are unknown.
+- The request has exactly these keys; a provider may decode it strictly. The
+  soul's eligible teams (see *Several team labels*) are not on stdin: the check
+  reads them from `OATS_TEAMS` / `OATS_TEAMS_SOURCE` / `OATS_TEAM_LABELS`.
 - `context.team` is the soul's primary team label, or `null`.
 - `instance` and `home` are `null` for a soul subject.
 
