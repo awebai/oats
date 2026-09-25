@@ -40,13 +40,12 @@ let n = 0;
 const at = (iso) => new Date(iso);
 const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
 /** A deployment with a classic soul under agents/ (what the scheduler found before M4). */
-function deployment({ local = true, stamp = false } = {}) {
+function deployment({ local = true } = {}) {
   const dep = join(base, `dep-${++n}`);
   mkdirSync(join(dep, "agents", "triager", "soul"), { recursive: true });
   writeFileSync(join(dep, "agents", "triager", "soul", "soul.yaml"), "name: triager\nwork: directory\n");
   writeFileSync(join(dep, "agents", "triager", "soul", "AGENTS.md"), "# Triager\n");
   if (local) writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: file:///${dep}/nowhere.git\n`);
-  if (stamp) writeFileSync(join(dep, "agents", "triager", ".oats-soul-source.json"), JSON.stringify({ repoKey: "local//x.git", commit: "0".repeat(40), path: "souls/triager" }));
   return dep;
 }
 /** A stub `oats` that records its invocation and answers what the test scripted. */
@@ -75,24 +74,14 @@ else if (script.mode === "hang") { setTimeout(() => {}, 60000); }
 }
 const tick = (dep, io, now = "2026-09-07T10:05:10Z") => S.tickWorkspace(dep, { now: at(now), io, reg: S.readRegistry() });
 
-test("workspaceSpawnContext: oats-local.yaml at the deployment (or above the agents root) or a soul-source stamp marks a workspace spawn; a bare agents root is classic", () => {
+test("workspaceSpawnContext: the scope's oats-local.yaml is the spawn's deployment; an unreadable one is carried as an error, never a classic fallback", () => {
   const ws = deployment({ local: true });
-  const { root, agent } = S.resolveScheduledAgent(ws, { agent: "triager" });
-  const c = S.workspaceSpawnContext(ws, root, agent);
-  assert.equal(c?.kind, "local"); assert.equal(c.dir, ws); assert.equal(c.local, join(ws, "oats-local.yaml"));
-  const stamped = deployment({ local: false, stamp: true });
-  const s = S.resolveScheduledAgent(stamped, { agent: "triager" });
-  const c2 = S.workspaceSpawnContext(stamped, s.root, s.agent);
-  assert.equal(c2?.kind, "soul-source"); assert.equal(c2.dir, stamped);
-  const classic = deployment({ local: false });
-  const k = S.resolveScheduledAgent(classic, { agent: "triager" });
-  assert.equal(S.workspaceSpawnContext(classic, k.root, k.agent), null);
-  // An unreadable oats-local.yaml is STILL a workspace deployment (never a classic fallback): the context carries the schema error.
+  const c = S.workspaceSpawnContext(ws);
+  assert.equal(c.kind, "local"); assert.equal(c.dir, ws); assert.equal(c.local, join(ws, "oats-local.yaml")); assert.equal(c.error, undefined);
   const broken = deployment({ local: false });
   writeFileSync(join(broken, "oats-local.yaml"), "schemaVersion: 1\nnonsense: [\n");
-  const b = S.resolveScheduledAgent(broken, { agent: "triager" });
-  const c3 = S.workspaceSpawnContext(broken, b.root, b.agent);
-  assert.equal(c3?.kind, "local"); assert.ok(c3.error?.code?.startsWith("E_"), JSON.stringify(c3));
+  const c3 = S.workspaceSpawnContext(broken);
+  assert.equal(c3.kind, "local"); assert.ok(c3.error?.code?.startsWith("E_"), JSON.stringify(c3));
 });
 
 test("M4: over a workspace deployment the scheduler delegates to `oats spawn --json` (the workspace chain) with the definition's flags, the task as a private file and a scrubbed env — never the classic spawnInstance", () => {

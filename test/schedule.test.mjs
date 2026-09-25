@@ -17,11 +17,14 @@ const { scheduleRemote } = await import("../lib/servers.mjs");
 test.after(() => rmSync(base, { recursive: true, force: true }));
 
 let n = 0;
+// Every scope is a deployment: the directory holding oats-local.yaml.
+const LOCAL = "schemaVersion: 2\nworkspace: example.invalid/acme/workspace\n";
 function workspace() {
   const ws = join(base, `ws-${++n}`);
   mkdirSync(join(ws, "agents", "dev", "soul"), { recursive: true });
   writeFileSync(join(ws, "agents", "dev", "soul", "soul.yaml"), "name: dev\nwork: worktree\nruntime: claude\n");
   writeFileSync(join(ws, "agents", "dev", "soul", "AGENTS.md"), "# Developer\n");
+  writeFileSync(join(ws, "oats-local.yaml"), LOCAL);
   return ws;
 }
 function home(ws, name) { const h = join(ws, "agents", "dev", "instances", name); mkdirSync(h, { recursive: true }); writeFileSync(join(h, "instance.json"), JSON.stringify({ instance: name, home: h, agent: "dev" })); return h; }
@@ -185,23 +188,20 @@ test("a wake job starts a stopped home, delivers once when active, and skips wha
   assert.equal(inputs.length, 3);
 });
 
-test("agentsRoot selects the exact soul among same-named souls in member repositories; repo stays the work repository", () => {
+test("agentsRoot, when given, must be the deployment's one agents root; repo stays the work repository", () => {
   const ws = workspace();
+  const root = join(ws, "agents");
+  assert.equal(S.resolveScheduledAgent(ws, { agent: "dev" }).root, root);
   const other = join(ws, "member", "agents");
   mkdirSync(join(other, "dev", "soul"), { recursive: true });
-  writeFileSync(join(other, "dev", "soul", "soul.yaml"), "name: dev\nwork: worktree\nruntime: pi\n");
-  writeFileSync(join(other, "dev", "soul", "AGENTS.md"), "# Member dev\n");
-  const base1 = S.resolveScheduledAgent(ws, { agent: "dev" });
-  assert.equal(base1.root, join(ws, "agents"));
-  const picked = S.resolveScheduledAgent(ws, { agent: "dev", agentsRoot: other, repo: "/some/work/repo" });
-  assert.equal(picked.root, other); assert.equal(picked.agent.runtime, "pi");
+  assert.throws(() => S.resolveScheduledAgent(ws, { agent: "dev", agentsRoot: other }), (e) => e.code === "E_SCHEDULE_INVALID" && e.field === "agentsRoot");
+  assert.throws(() => S.validateDefinition(ws, { id: "x", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t", agentsRoot: other }), (e) => e.code === "E_SCHEDULE_INVALID" && e.field === "agentsRoot");
   assert.throws(() => S.validateDefinition(ws, { id: "x", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t", agentsRoot: join(base, "outside") }), (e) => e.code === "E_SCHEDULE_INVALID" && e.field === "agentsRoot");
-  assert.throws(() => S.validateDefinition(ws, { id: "x", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t", agentsRoot: join(ws, "member") }), (e) => e.code === "E_SCHEDULE_INVALID" && e.field === "agentsRoot");
   const calls = [];
-  const io = { spawn: (root, agent, opts) => { calls.push({ root, agent: agent.name, runtime: agent.runtime, repo: opts.repo }); return { instance: `dev-${opts.purpose}`, home: home(ws, `dev-${opts.purpose}`), launched: true }; }, inspect: () => ({ present: true, state: "unknown" }) };
-  S.addSchedule(ws, { id: "member", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", agentsRoot: other, repo: "/some/work/repo", task: "t" });
+  const io = { spawn: (r, agent, opts) => { calls.push({ root: r, agent: agent.name, repo: opts.repo }); return { instance: `dev-${opts.purpose}`, home: home(ws, `dev-${opts.purpose}`), launched: true }; }, inspect: () => ({ present: true, state: "unknown" }) };
+  S.addSchedule(ws, { id: "rooted", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", agentsRoot: root, repo: "/some/work/repo", task: "t" });
   S.tickWorkspace(ws, { now: at("2026-09-07T14:00:00Z"), io, reg: S.readRegistry() });
-  assert.deepEqual(calls, [{ root: other, agent: "dev", runtime: "pi", repo: "/some/work/repo" }], "launched from the named root with repo passed as the work repository");
+  assert.deepEqual(calls, [{ root, agent: "dev", repo: "/some/work/repo" }], "launched from the deployment root with repo passed as the work repository");
 });
 
 test("a command job runs an oats-only argv in its cwd and tracks the instance the envelope names", () => {
@@ -532,13 +532,10 @@ test("an execution target cannot be edited under a running or unresolved job; ti
   finally { S.writeRegistry(before); }
 });
 
-test("a command whose envelope names a member-repository home is tracked through the complete roster; an unplaceable instance stays unknown", () => {
+test("a command whose envelope names a capability agent's home is tracked through the deployment's roster; an unplaceable instance stays unknown", () => {
   const ws = workspace();
   const src = home(ws, "dev-src2");
-  const member = join(ws, "member", "agents");
-  mkdirSync(join(member, "dev", "soul"), { recursive: true });
-  writeFileSync(join(member, "dev", "soul", "soul.yaml"), "name: dev\n"); writeFileSync(join(member, "dev", "soul", "AGENTS.md"), "#\n");
-  const memberHome = join(member, "dev", "instances", "memory-harvest-one"); mkdirSync(memberHome, { recursive: true }); writeFileSync(join(memberHome, "instance.json"), "{}");
+  const memberHome = join(ws, "agents", "memory-harvest", "instances", "memory-harvest-one"); mkdirSync(memberHome, { recursive: true }); writeFileSync(join(memberHome, "instance.json"), "{}");
   const io = { command: () => ({ ok: true, result: { harvest: "spawned", instance: "memory-harvest-one" } }), inspect: () => ({ present: true, state: "unknown" }) };
   S.addSchedule(ws, { id: "member-harvest", cron: "* * * * *", tz: "UTC", kind: "command", cwd: src, argv: ["oats", "okf", "harvest"] });
   const c = S.tickWorkspace(ws, { now: at("2026-09-07T18:00:00Z"), io, reg: S.readRegistry() });
@@ -596,14 +593,18 @@ test("dry-run touches no lock, state or definition; a retiring home keeps its sl
   assert.equal(readJson(statePath).jobs.d.lastAttemptedMinute, "2026-09-07T19:05", "run-now records the attempted minute so the timer cannot double-fire");
 });
 
-test("the schedule scope is the team level, else the outermost config level; invalid definitions do not stop the tick; due jobs rotate", () => {
-  const team = join(base, "team-scope"); mkdirSync(join(team, "member", "agents", "dev", "soul"), { recursive: true });
-  writeFileSync(join(team, "oats-config.yaml"), "team:\n  name: t\n");
-  writeFileSync(join(team, "member", "oats-config.yaml"), "capabilities: {}\n");
-  assert.equal(S.scheduleScopeOf(join(team, "member", "agents", "dev", "soul")), realpathSync(team));
-  const plain = join(base, "plain-scope"); mkdirSync(join(plain, "inner", "agents"), { recursive: true });
-  writeFileSync(join(plain, "oats-config.yaml"), "capabilities: {}\n"); writeFileSync(join(plain, "inner", "oats-config.yaml"), "capabilities: {}\n");
-  assert.equal(S.scheduleScopeOf(join(plain, "inner", "agents")), realpathSync(plain), "outermost config level wins without a team");
+test("the schedule scope is the deployment (oats-local.yaml walking up), never an ambient agents root; no deployment is E_LOCAL_MISSING; invalid definitions do not stop the tick; due jobs rotate", () => {
+  const dep = workspace(); mkdirSync(join(dep, "agents", "dev", "soul", "nested"), { recursive: true });
+  const saved = { OATS_ROOT: process.env.OATS_ROOT, PI_AGENTS_ROOT: process.env.PI_AGENTS_ROOT };
+  const elsewhere = workspace();
+  process.env.OATS_ROOT = join(elsewhere, "agents"); process.env.PI_AGENTS_ROOT = join(elsewhere, "agents");
+  try {
+    assert.equal(S.scheduleScopeOf(join(dep, "agents", "dev", "soul", "nested")), dep);
+    const cli = JSON.parse(execFileSync(process.execPath, [bin, "schedule", "list", "--dir", dep, "--json"], { encoding: "utf8", env: process.env, stdio: ["ignore", "pipe", "pipe"] }).trim().split("\n").pop());
+    assert.equal(cli.ok, true, JSON.stringify(cli)); assert.equal(cli.result.scope, dep, "--dir <deployment> wins over an ambient root");
+  } finally { for (const [k, v] of Object.entries(saved)) if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  const bare = join(base, "bare-scope"); mkdirSync(join(bare, "agents"), { recursive: true });
+  assert.throws(() => S.scheduleScopeOf(join(bare, "agents")), (e) => e.code === "E_LOCAL_MISSING" && /oats onboard/.test(e.message));
   const ws = workspace();
   const io = { spawn: fakeSpawn(ws), inspect: () => ({ present: true, state: "unknown" }) };
   S.addSchedule(ws, { id: "a", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "a" });
