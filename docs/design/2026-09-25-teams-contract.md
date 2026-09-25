@@ -113,6 +113,11 @@ folded in below.
      - The same verbs are declared as home-context operations
        `messaging:teams|join|leave`, so the Desktop uses `oats operation run`
        and needs no new kernel surface.
+       All three are `kind: action` (the default): a `view` must answer
+       `{documents:[…]}` (markdown/text for reading), and the teams document
+       is structured JSON. `messaging:teams` is read-only by its own
+       contract, which its description says. Join and leave declare one
+       required arg, `labels` (flag `--labels`, comma-separated).
      - Identity model: one local identity per joined team, under the home as
        `.aweb-identity-<label>`. The personal-team identity is the primary one,
        wired to the harness. There are no global identities by default.
