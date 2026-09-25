@@ -1,6 +1,6 @@
 {
   "capability": "oats.authoring",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "compatibility": { "oats": ">=0.25.0" },
   "description": "Additive framework-authoring guidance for capability packages, agent skills, and souls.",
   "requires": [],
