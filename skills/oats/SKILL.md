@@ -42,7 +42,8 @@ oats status [--json]
 oats status --team [--json]   # whole-team roster when config declares team: (all repos in the team scope)
 # with the aweb messaging integration active, `oats aweb roster` adds the
 # cross-machine view: aweb team members, where OATS aliases are instance names
-oats create <name> [--description ...] [--type <agent-type>] [--repo ...] [--work worktree|checkout|attached|workspace|directory]
+# a soul is authored in a member repository — souls/<name>/soul.yaml + AGENTS.md
+# (soul.yaml sets work: worktree|checkout|attached|workspace|directory) — then `oats sync`
 # directory mode = owned execution directory; repo is config context (no Git
 # required); --work-dir and --branch are rejected; retirement preserves work.
 # workspace mode = cross-repo coordinator: ./work is the whole team scope; read
@@ -101,8 +102,8 @@ an exact, unprefixed name instead (not together with `--purpose`); it must be a
 slug and must not be a soul name. Instance names are unique across the whole
 deployment: a derived name in use gets `-2`, `-3`…; an explicit `--name` in
 use is refused, never silently suffixed.
-Do **not** use `oats create` to name an incarnation: it creates a new persistent
-soul. Never put secrets, user data, or volatile task details in an instance
+Do **not** author a new soul to name an incarnation: a soul is a durable
+definition in a member repository. Never put secrets, user data, or volatile task details in an instance
 name.
 
 To self-retire, first finish memory/commit/reporting requirements, report final

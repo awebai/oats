@@ -1,12 +1,12 @@
 import test from "node:test";
-import { fixture as okfFixture, json as writeJSON } from "./helpers/okf-v2.mjs";
+import { fixture as okfFixture } from "./helpers/okf-v2.mjs";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import {
-  capabilityIntegrity, capabilityManifest, completeDeferredRetirement, composeInstanceAgentsMd, createAgent, deferredRetireResultPath, findAgent, findInstanceHomes, resolveOatsConfig, retirePendingMarkerPath,
+  capabilityIntegrity, capabilityManifest, completeDeferredRetirement, composeInstanceAgentsMd, deferredRetireResultPath, findAgent, findInstanceHomes, resolveOatsConfig, retirePendingMarkerPath,
   listInstances, resolveClaudeBinary, resolveWorkMode, retireInstance, runLifecycleHooks, spawnInstance, writeCapabilityLock,
 } from "@awebai/oats/core";
 import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
@@ -637,8 +637,8 @@ test("capability-defined agents resolve when active, home locally, and keep the 
     const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
     try {
       const res = core.spawnInstance(root, { ...agent, repo }, { instance: "reviewer-1", launch: false });
-      // instance homes under the scope's local-agents/; the recorded soul directory is inside the package
-      assert.ok(res.home.includes(join("local-agents", "reviewer", "instances")));
+      // instance homes under the agents root; the recorded soul directory is inside the package
+      assert.equal(res.home, join(root, "reviewer", "instances", "reviewer-1"));
       assert.throws(() => lstatSync(join(res.home, "soul")), { code: "ENOENT" }, "an instance home carries no soul link");
       assert.equal(JSON.parse(readFileSync(join(res.home, "instance.json"), "utf8")).soulDir, join(capDir, "agents", "reviewer"));
       assert.match(readFileSync(join(res.home, "AGENTS.md"), "utf8"), /Review fresh/);
@@ -784,28 +784,6 @@ test("operational commands are gated by active instance metadata; doctor exposes
   assert.equal(readFileSync(join(soul, "AGENTS.md"), "utf8"), "# Canonical dev\n\nNever mutate me.\n");
 });
 
-test("soul-scaffold ownership prevents overwrites and deletion of canonical files", () => {
-  const base = temp(); const repo = join(base, "repo"); gitRepo(repo); const root = join(base, "agents"); mkdirSync(root);
-  const hook = (value) => `import {writeFileSync} from 'node:fs'; writeFileSync(process.env.OATS_SOUL + '/shared.txt', '${value}');`;
-  capability(repo, "a", { capability: "acme.a", hooks: { "soul-scaffold": "hook.mjs" } }, { "hook.mjs": hook("a") });
-  capability(repo, "b", { capability: "acme.b", hooks: { "soul-scaffold": "hook.mjs" } }, { "hook.mjs": hook("b") });
-  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.a:\n      global: true\n    acme.b:\n      global: true\n");
-  assert.throws(() => createAgent(root, { name: "dev", repo, work: "checkout", runtime: "pi" }), /ownership conflict/);
-  const soul = join(root, "dev", "soul");
-  assert.match(readFileSync(join(soul, "AGENTS.md"), "utf8"), /# dev/);
-  assert.equal(readFileSync(join(soul, "shared.txt"), "utf8"), "a");
-
-  const deleteBase = temp(); const deleteRepo = join(deleteBase, "repo"); gitRepo(deleteRepo); const deleteRoot = join(deleteBase, "agents"); mkdirSync(deleteRoot);
-  capability(deleteRepo, "delete", { capability: "acme.delete", hooks: { "soul-scaffold": "hook.mjs" } }, {
-    "hook.mjs": "import {rmSync} from 'node:fs'; rmSync(process.env.OATS_SOUL + '/soul.yaml'); rmSync(process.env.OATS_SOUL + '/CLAUDE.md');",
-  });
-  write(join(deleteRepo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.delete:\n      global: true\n");
-  assert.throws(() => createAgent(deleteRoot, { name: "dev", repo: deleteRepo }), /ownership conflict.*soul.yaml/);
-  const restored = join(deleteRoot, "dev", "soul");
-  assert.equal(existsSync(join(restored, "soul.yaml")), true);
-  assert.equal(readlinkSync(join(restored, "CLAUDE.md")), "AGENTS.md");
-});
-
 test("capabilities outside installed/ and owned/ are rejected with a move error", () => {
   const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
   write(join(repo, ".agents", "capabilities", "stray", "oats.json"), JSON.stringify({ capability: "acme.stray", version: "1.0.0", description: "Stray." }));
@@ -929,7 +907,7 @@ test("spawn lineage is explicit: ambient env never sets parent; --parent and att
   }
 });
 
-test("--parent accepts capability-defined parent instances homing under local-agents/", () => {
+test("--parent accepts capability-defined parent instances homing under the agents root", () => {
   const base = temp(); const { repo, root } = fixtureSoul(base);
   capability(repo, "rev", { capability: "acme.rev", agents: ["agents/reviewer"] }, {
     "agents/reviewer/soul.yaml": "name: reviewer\nkind: capability\nwork: checkout\nruntime: pi\ndescription: Reviewer.\n",
@@ -940,9 +918,9 @@ test("--parent accepts capability-defined parent instances homing under local-ag
     const capAgent = core.findCapabilityAgent(repo, root, "reviewer");
     const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
     try {
-      // Capability agent instance homes under <root>/local-agents/reviewer/instances/.
+      // Capability agent instance homes under <root>/reviewer/instances/.
       const parent = core.spawnInstance(root, { ...capAgent, repo }, { instance: "reviewer-abc", launch: false });
-      assert.ok(parent.home.includes(join("local-agents", "reviewer", "instances")));
+      assert.equal(parent.home, join(root, "reviewer", "instances", "reviewer-abc"));
       // Kernel lookup sees it (this is what `oats spawn --parent` validates with).
       assert.ok(core.findInstanceHome(root, "reviewer-abc"), "findInstanceHome sees capability-agent homes");
       // Coordinator-style spawn: a capability-defined instance passes itself as
@@ -1283,33 +1261,6 @@ test("a deferred self-retirement of a same-named twin completes with the home re
     assert.equal(completeDeferredRetirement(noHome, { quiesce: false }), false, "without a home the ambiguous completion fails closed");
     assert.match(readFileSync(noHome.resultPath, "utf8"), /E_AMBIGUOUS_INSTANCE/);
     assert.equal(existsSync(first), true); assert.equal(existsSync(second), true);
-  } finally { process.env.PATH = oldPath; }
-});
-
-test("local-soul instances enumerate once and accept relations (no false intra-root ambiguity)", () => {
-  const base = temp(); const repo = join(base, "repo"); gitRepo(repo);
-  const root = join(repo, "agents");
-  write(join(root, "dev", "soul", "soul.yaml"), `name: dev\nkind: persistent\nrepo: ${repo}\nwork: checkout\nruntime: pi\n`);
-  write(join(root, "dev", "soul", "AGENTS.md"), "# dev\n");
-  mkdirSync(join(root, "dev", "instances"), { recursive: true });
-  // Local soul under local-agents/ — visible via BOTH listAgents and the
-  // capability fallback scan; must not double-count.
-  const la = join(repo, "local-agents");
-  write(join(la, "helper", "soul", "soul.yaml"), `name: helper\nkind: local\nrepo: ${repo}\nwork: worktree\nruntime: pi\n`);
-  write(join(la, "helper", "soul", "AGENTS.md"), "# helper\n");
-  mkdirSync(join(la, "helper", "instances"), { recursive: true });
-  const oldPath = process.env.PATH;
-  process.env.PATH = fakeRuntimes(base);
-  try {
-    const anchor = spawnInstance(root, findAgent(root, "helper"), { instance: "helper-anchor", launch: false });
-    assert.equal(findInstanceHomes(root, anchor.instance).length, 1, "local-soul instance enumerated exactly once");
-    // Relations to a local-soul anchor work — with and without --relative-root.
-    const kid = spawnInstance(root, findAgent(root, "dev"), { instance: "dev-la-kid", relation: "child", relativeTo: anchor.instance, launch: false });
-    assert.equal(kid.parentInstance, anchor.instance);
-    const kid2 = spawnInstance(root, findAgent(root, "dev"), { instance: "dev-la-kid2", relation: "child", relativeTo: anchor.instance, relativeRoot: root, launch: false });
-    assert.equal(kid2.parentInstance, anchor.instance);
-    const sib = spawnInstance(root, findAgent(root, "dev"), { instance: "dev-la-sib", relation: "sibling", relativeTo: kid.instance, launch: false });
-    assert.equal(sib.parentInstance, anchor.instance, "sibling inherits the local-soul parent");
   } finally { process.env.PATH = oldPath; }
 });
 
@@ -1857,62 +1808,6 @@ test("attached ownership is path-first: a same-named local instance cannot shado
   } finally { process.env.PATH = oldPath; }
 });
 
-test("attached owner discovery reaches all-local sibling scopes (no agents/ dir)", () => {
-  const base = temp();
-  const ws = join(base, "ws"); mkdirSync(ws, { recursive: true });
-  write(join(ws, "oats-config.yaml"), "team:\n  name: t\n");
-  // Repo A: ALL-LOCAL — no agents/ dir, its soul lives under local-agents/.
-  const repoA = join(ws, "repo-a"); gitRepo(repoA);
-  write(join(repoA, "oats-config.yaml"), "capabilities:\n  additive: {}\n");
-  const laDir = join(repoA, "local-agents");
-  write(join(laDir, "helper", "soul", "soul.yaml"), `name: helper\nkind: local\nrepo: ${repoA}\nwork: worktree\nruntime: pi\n`);
-  write(join(laDir, "helper", "soul", "AGENTS.md"), "# helper\n");
-  mkdirSync(join(laDir, "helper", "instances"), { recursive: true });
-  // Repo B: regular agents/ root; spawns attach onto A's local instance tree.
-  const repoB = join(ws, "repo-b"); gitRepo(repoB);
-  write(join(repoB, "oats-config.yaml"), "capabilities:\n  additive: {}\n");
-  const rootB = join(repoB, "agents");
-  write(join(rootB, "dev", "soul", "soul.yaml"), `name: dev\nkind: persistent\nrepo: ${repoB}\nwork: checkout\nruntime: pi\n`);
-  write(join(rootB, "dev", "soul", "AGENTS.md"), "# dev\n");
-  mkdirSync(join(rootB, "dev", "instances"), { recursive: true });
-  const oldPath = process.env.PATH;
-  process.env.PATH = fakeRuntimes(base);
-  try {
-    const rootA = join(repoA, "agents"); // nonexistent — the all-local case
-    const helperAgent = findAgent(rootA, "helper");
-    assert.ok(helperAgent, "fixture: local soul resolves through the nonexistent agents/ root");
-    const owner = spawnInstance(rootA, helperAgent, { instance: "helper-owner", launch: false });
-    // Owner discovery from repo B must reach A's local-agents instance even
-    // though teamAgentRoots yields A's NONEXISTENT agents/ root for it.
-    const kid = spawnInstance(rootB, findAgent(rootB, "dev"), { instance: "dev-att-la", work: "attached", workDir: join(owner.home, "work"), launch: false });
-    assert.equal(kid.parentInstance, owner.instance, "all-local sibling owner discovered by path");
-    // Shadow + explicit parent must still be rejected: same-named instance in
-    // B's OWN local-agents (names are only unique per agent dir).
-    const laB = join(repoB, "local-agents");
-    write(join(laB, "helper", "soul", "soul.yaml"), `name: helper\nkind: local\nrepo: ${repoB}\nwork: worktree\nruntime: pi\n`);
-    write(join(laB, "helper", "soul", "AGENTS.md"), "# helper\n");
-    mkdirSync(join(laB, "helper", "instances"), { recursive: true });
-    spawnInstance(rootB, findAgent(rootB, "helper"), { instance: owner.instance, launch: false });
-    assert.throws(
-      () => spawnInstance(rootB, findAgent(rootB, "dev"), { instance: "dev-att-sh", work: "attached", workDir: join(owner.home, "work"), parent: owner.instance, launch: false }),
-      /ambiguous/,
-      "shadowed all-local owner rejected even with explicit --parent");
-    assert.equal(existsSync(join(rootB, "dev", "instances", "dev-att-sh")), false, "no stray home scaffolded");
-
-    // Retire-splice must ALSO reach the all-local scope (its nonexistent
-    // agents/ root is in the scan set): an orphan homed under A's
-    // local-agents whose parent lives in repo B gets repaired when that
-    // parent retires — this fails if the splice drops unresolvable roots.
-    const bossB = spawnInstance(rootB, findAgent(rootB, "dev"), { instance: "dev-la-boss", launch: false });
-    const orphanA = spawnInstance(rootA, helperAgent, { instance: "helper-orphan", relation: "child", relativeTo: bossB.instance, launch: false });
-    const orphanMeta = () => JSON.parse(readFileSync(join(orphanA.home, "instance.json"), "utf8"));
-    assert.equal(orphanMeta().parentInstance, bossB.instance, "cross-repo child into the all-local scope");
-    const rr = retireInstance(rootB, bossB.instance, { keepDir: false });
-    assert.ok(rr.relinked?.some((x) => x.instance === orphanA.instance), "splice reports the all-local orphan");
-    assert.equal(orphanMeta().parentInstance, undefined, "all-local orphan repaired to root");
-  } finally { process.env.PATH = oldPath; }
-});
-
 test("lineage is deployment-local: --parent from an unrelated deployment is rejected", () => {
   const base = temp();
   // Deployment A: the caller's instance lives here.
@@ -1990,70 +1885,17 @@ test("traversal names are rejected: --parent and retire cannot reach outside ins
   });
 });
 
-test("local souls: --local creates a full gitignored soul beside agents/, with memory and injection", () => {
-  const base = temp(); const repo = join(base, "repo"); gitRepo(repo);
-  const env = { ...process.env, PATH: fakeRuntimes(base), PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" }; delete env.PI_AGENTS_ROOT;
-  // Bootstrap: NO agents/ dir exists — --local must still work (all-local scopes).
-  let r = spawnSync(process.execPath, [CLI, "create", "helper", "--local", "--no-oats-core", "--description", "Local helper.", "--dir", repo], { cwd: repo, encoding: "utf8", env });
-  assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /LOCAL agent/);
-  // Soul lives at <scope>/local-agents/<name>/soul — sibling of agents/, not nested.
-  const soulDir = join(repo, "local-agents", "helper", "soul");
-  assert.ok(existsSync(join(soulDir, "soul.yaml")), "local soul scaffolded at scope level");
-  assert.ok(!existsSync(join(repo, "agents", "local-agents")), "not nested inside agents/");
-  assert.match(readFileSync(join(soulDir, "soul.yaml"), "utf8"), /kind: local/);
-  // Gitignore injected exactly once, and git actually ignores the tree.
-  assert.match(readFileSync(join(repo, ".gitignore"), "utf8"), /local-agents\//);
-  const ignored = spawnSync("git", ["-C", repo, "check-ignore", "local-agents"], { encoding: "utf8" });
-  assert.equal(ignored.status, 0, "git ignores local-agents/");
-  r = spawnSync(process.execPath, [CLI, "create", "helper2", "--local", "--no-oats-core", "--dir", repo], { cwd: repo, encoding: "utf8", env });
-  assert.equal(r.status, 0, r.stderr);
-  const gi = readFileSync(join(repo, ".gitignore"), "utf8");
-  assert.equal(gi.match(/local-agents\//g).length, 1, "gitignore entry not duplicated");
-  // Roster sees local souls (root resolves through the sibling layout).
-  return import("@awebai/oats/core").then((core) => {
-    const root = core.ensureRoot(repo);
-    const agents = core.listAgents(root);
-    const helper = agents.find((a) => a.name === "helper");
-    assert.ok(helper, "local soul listed");
-    assert.equal(helper.kind, "local");
-    // Spawn: full memory scaffold (STATE.md via oats-okf would need the layer —
-    // kernel-level checks here: local-soul injection composed, soul symlinked).
-    const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
-    try {
-      const res = core.spawnInstance(root, helper, { instance: "helper-1", launch: false, repo });
-      assert.match(readFileSync(join(res.home, "AGENTS.md"), "utf8"), /Local soul \(uncommitted\)/);
-      assert.equal(JSON.parse(readFileSync(join(res.home, "instance.json"), "utf8")).kind, "local");
-      // findInstanceHome + retire see sibling local-agents homes.
-      assert.ok(core.findInstanceHome(root, "helper-1"), "instance home found");
-      core.retireInstance(root, "helper-1", { tmuxSession: "oats-test-nosuch" });
-      assert.ok(!existsSync(res.home));
-    } finally { process.env.PATH = oldPath; }
-  });
-});
-
-test("local souls explicitly bind external OKF; service agents stay memory-less", async t => {
+test("OKF service agents stay memory-less", async t => {
   const f = okfFixture(t, { register: false }), core = await import("@awebai/oats/core");
   const root = join(f.context, "agents"), original = { ...process.env };
   for (const k of Object.keys(process.env)) delete process.env[k];
   Object.assign(process.env, f.env);
   try {
-    const local = core.upsertLocalAgent(root, { name: "scratch", instructions: "# scratch\n", repo: f.context, work: "directory", runtime: "pi", oatsCore: false });
-    const declaration = join(local._dir, "soul/okf.json");
-    // No v1 implicit soul knowledge scaffold and no missing-binding fallback.
-    assert.equal(existsSync(join(local._dir, "soul/knowledge")), false);
-    assert.throws(() => core.spawnInstance(root, local, { instance: "scratch-missing", launch: false, repo: f.context }), /okf.json|explicit/);
-    writeJSON(declaration, { version: 1, owner: "source-owner", owns: ["project/expert"], reads: ["project/peer"] });
-    const res = core.spawnInstance(root, local, { instance: "scratch-1", launch: false, repo: f.context });
-    assert.ok(existsSync(join(res.home, "STATE.md"))); assert.ok(existsSync(join(res.home, "notes")));
-    assert.ok(existsSync(join(res.home, "knowledge/bases/project/expert/index.md")));
-    assert.match(readFileSync(join(res.home, "AGENTS.md"), "utf8"), /Knowledge: OKF/);
-    assert.match(readFileSync(join(res.home, "AGENTS.md"), "utf8"), /Local soul \(uncommitted\)/);
     const service = core.findCapabilityAgent(f.context, root, "memory-harvest");
     const worker = core.spawnInstance(root, { ...service, repo: f.context }, { instance: "memory-harvest-probe", launch: false, work: "directory" });
     for (const p of ["STATE.md", "notes", ".okf-source.json"]) assert.equal(existsSync(join(worker.home, p)), false);
     assert.doesNotMatch(readFileSync(join(worker.home, "AGENTS.md"), "utf8"), /Knowledge: OKF/);
-    core.retireInstance(root, res.instance); core.retireInstance(root, worker.instance);
+    core.retireInstance(root, worker.instance);
   } finally { for (const k of Object.keys(process.env)) delete process.env[k]; Object.assign(process.env, original); }
 });
 
@@ -2158,10 +2000,9 @@ test("canonicalAgentsRoot leaves non-git and out-of-tree roots untouched", async
   // Not a Git work tree at all: nothing to canonicalize, behavior unchanged.
   const plain = join(base, "plain", "agents"); mkdirSync(plain, { recursive: true });
   assert.equal(core.canonicalAgentsRoot(plain), plain);
-  // A local-only scope whose agents/ does not exist yet still resolves.
-  const localScope = join(base, "localonly");
-  mkdirSync(join(localScope, "local-agents"), { recursive: true });
-  assert.equal(core.canonicalAgentsRoot(join(localScope, "agents")), join(localScope, "agents"));
+  // A scope whose agents/ does not exist yet still resolves.
+  const bare = join(base, "bare"); mkdirSync(bare);
+  assert.equal(core.canonicalAgentsRoot(join(bare, "agents")), join(bare, "agents"));
   rmSync(base, { recursive: true, force: true });
 });
 
@@ -3859,7 +3700,7 @@ test("kernel-composed blocks never prescribe a knowledge protocol they cannot gu
   // no notes/ dir is scaffolded and no `oats okf harvest` exists.
   const kernelOnly = (mode, kind) => flat(composeInstanceAgentsMd(soulDir, repo, "dev", mode, kind).text);
   for (const mode of ["worktree", "checkout", "attached", "workspace"]) {
-    for (const kind of [undefined, "local", "capability"]) {
+    for (const kind of [undefined, "capability"]) {
       const text = kernelOnly(mode, kind);
       for (const must of BOUNDARY_MUST_SAY) {
         assert.ok(text.includes(flat(must)), `${mode}/${kind}: must say ${JSON.stringify(must)}`);
@@ -3874,13 +3715,6 @@ test("kernel-composed blocks never prescribe a knowledge protocol they cannot gu
       assert.doesNotMatch(text, SETTLE_IN_WORK, `${mode}/${kind}`);
     }
   }
-  // The local block states CUSTODY (no commit, no PR, immediate effect) without
-  // prescribing who writes, and no longer tells the agent to edit its own soul.
-  const local = kernelOnly("worktree", "local");
-  assert.ok(local.includes("Local soul (uncommitted)"), "precondition: the local block composed");
-  assert.doesNotMatch(local, /Your soul updates are plain file edits/,
-    "the retired direct-edit instruction must stay gone");
-  assert.ok(local.includes(flat("no git commit, no PR, because this directory is not version-controlled")));
   rmSync(base, { recursive: true, force: true });
 });
 
@@ -3904,10 +3738,8 @@ test("with the knowledge layer active, ONE block owns the protocol (reviewer-foc
   const owners = (mode, kind) => composeInstanceAgentsMd(soulDir, repo, "dev", mode, kind)
     .blocks.filter((b) => KNOWLEDGE_PROTOCOL.test(b.content)).map((b) => b.source);
   for (const mode of ["worktree", "checkout", "attached", "workspace"]) {
-    for (const kind of [undefined, "local"]) {
-      assert.deepEqual(owners(mode, kind), ["capability:oats.okf"],
-        `${mode}/${kind}: exactly one block may own the knowledge protocol`);
-    }
+    assert.deepEqual(owners(mode, undefined), ["capability:oats.okf"],
+      `${mode}: exactly one block may own the knowledge protocol`);
     // Capability service agents suppress the knowledge layer by design, so NO
     // block may carry it — the shipped reviewer is told not to write notes at all.
     assert.deepEqual(owners(mode, "capability"), [],
@@ -4101,20 +3933,6 @@ test("instance homes stay inside the deployment: every layout, every symlink esc
     const persistent = spawnHome(findAgent(root, "dev"), "dev-ok");
     assert.equal(realpathSync(persistent), join(realpathSync(join(root, "dev")), "instances", "dev-ok"));
 
-    // A local soul under the scope's SIBLING local-agents/.
-    const localSoul = join(base, "local-agents", "helper", "soul");
-    write(join(localSoul, "soul.yaml"), `name: helper\nkind: local\nrepo: ${repo}\nwork: checkout\nruntime: pi\n`);
-    write(join(localSoul, "AGENTS.md"), "# helper\n");
-    const localHome = spawnHome(findAgent(root, "helper"), "helper-ok");
-    assert.ok(realpathSync(localHome).includes(join("local-agents", "helper", "instances")), "sibling local-agents layout spawns");
-
-    // A legacy NESTED local dir, still read by the kernel.
-    const legacySoul = join(root, "tmp-agents", "scratch", "soul");
-    write(join(legacySoul, "soul.yaml"), `name: scratch\nkind: local\nrepo: ${repo}\nwork: checkout\nruntime: pi\n`);
-    write(join(legacySoul, "AGENTS.md"), "# scratch\n");
-    const legacyHome = spawnHome(findAgent(root, "scratch"), "scratch-ok");
-    assert.ok(realpathSync(legacyHome).includes(join("tmp-agents", "scratch", "instances")), "legacy nested layout spawns");
-
     // --- Every escape is refused, and NOTHING is created outside. ----------
     const escapes = {
       // The instances/ dir itself redirects the home.
@@ -4131,15 +3949,6 @@ test("instance homes stay inside the deployment: every layout, every symlink esc
         write(join(out, "AGENTS.md"), "# esc2\n");
         symlinkSync(join(base, "outside-soul"), join(root, "esc2"));
         return findAgent(root, "esc2");
-      },
-      // The BASE redirects: resolving each base and trusting the result made the
-      // symlink's target an allowed deployment base (reviewer-1a6e82e).
-      "a symlinked legacy local base": () => {
-        const outside = join(base, "foreign-agents");
-        write(join(outside, "esc3", "soul", "soul.yaml"), `name: esc3\nkind: local\nrepo: ${repo}\nwork: checkout\nruntime: pi\n`);
-        write(join(outside, "esc3", "soul", "AGENTS.md"), "# esc3\n");
-        symlinkSync(outside, join(root, "local-agents"));
-        return findAgent(root, "esc3");
       },
     };
     for (const [label, setup] of Object.entries(escapes)) {
@@ -4352,13 +4161,12 @@ process.exit(1);`,
   rmSync(base, { recursive: true, force: true });
 });
 
-test("an incomplete cleanup names the home's REAL path, including local-agents/ (reviewer-adff009)", async () => {
+test("an incomplete cleanup names the home's REAL path, including a capability agent's (reviewer-adff009)", async () => {
   const base = temp();
   const { repo, root } = fixtureSoul(base, "pi");
-  // Capability-defined agents home under the scope's local-agents/, NOT under
-  // <root>/<agent>/instances/. A reconstructed path sends the operator to a
-  // directory that does not exist, on the one message that asks them to go
-  // clean up by hand.
+  // Capability-defined agents have no soul under the agents root, only
+  // instances/. A reconstructed path sends the operator to a directory that
+  // does not exist, on the one message that asks them to go clean up by hand.
   capability(repo, "rev", {
     capability: "acme.review",
     agents: ["agents/reviewer"],
@@ -4377,7 +4185,7 @@ console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed
     assert.throws(() => spawnInstance(root, { ...agent, repo }, { instance: "reviewer-q", launch: false }),
       (e) => e.code === "E_REQUIRED_HOOK_FAILED");
     const home = findInstanceHomes(root, "reviewer-q")[0].home;
-    assert.ok(home.includes(join("local-agents", "reviewer", "instances")), "precondition: it homes under local-agents/");
+    assert.equal(home, join(root, "reviewer", "instances", "reviewer-q"), "precondition: it homes under the agents root");
 
     const r = retireInstance(root, "reviewer-q", { tmuxSession: "oats-test-nosuch" });
     assert.ok(r.rollbackIncomplete, "cleanup is incomplete");

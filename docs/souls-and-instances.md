@@ -478,8 +478,7 @@ with **`E_NO_CANONICAL_ROOT`** and creates nothing.
 
 ### Deployment prerequisite: the agents directory must be operator-owned
 
-The canonical deployment (the agents root, `local-agents/`, and the instance
-homes under them) **must be owned by the operator and not writable by untrusted
+The canonical deployment (the agents root and the instance homes under it) **must be owned by the operator and not writable by untrusted
 users or processes.** OATS validates resolved destinations and re-checks the home
 immediately before creating anything in it, but it cannot defeat a concurrent
 local attacker who already has write access there: Node offers no
@@ -492,33 +491,28 @@ something the kernel can close from inside.
 Default layout:
 
 ```text
-<scope>/
-  agents/              # committed souls
-    docs-expert/
-      soul/
+<deployment>/
+  oats-local.yaml
+  agents/
+    docs-expert/         # a workspace soul, defined in a member repository's
+      souls/<commit12>/  #   souls/docs-expert/ and copied here per commit
       instances/
-  local-agents/        # local souls — same shape, never committed
-    scratch-agent/
-      soul/
+    memory-harvest/      # a capability-defined agent: only instances/, no soul
       instances/
 ```
 
-`local-agents/` sits BESIDE `agents/` at the scope level and holds **full local
-souls**: complete definitions with instructions, skills, capability declarations
-and instances, not committed to the repo. `oats create <name> --local` creates one — the directory
-is created on first use, and when the scope is a git repo the kernel adds
-`local-agents/` to its `.gitignore` automatically. A scope with only
-`local-agents/` is fully operable: people can use OATS with local agents alone.
-Ad hoc agents from `oats spawn --instructions-file`/`--def-file` land here too.
-Legacy nested `agents/local-agents/` and `agents/tmp-agents/` are still read
-for compatibility.
+A capability-defined agent (declared by a package or member module, such as
+the OKF harvester) homes under the agents root exactly like a soul; its
+directory holds only `instances/`. A name that is both a workspace soul and a
+capability agent is ambiguous (`E_SOUL_AMBIGUOUS`).
 
-Instances of a local soul receive a `local-soul` briefing: work and commits
-are normal, but soul updates are plain file edits (nothing to commit), and
-durability is the machine's — promote the soul to `agents/` when it starts to
-matter beyond one machine. That concerns soul artifacts, not a knowledge
-provider's custody: a local soul using OKF v2 still reads external bases and
-uses PR-only delivery for any Git base.
+There are no local souls. A soul is a member repository's `souls/<name>`
+(`soul.yaml` + `AGENTS.md`); author it there and run `oats sync`. OATS 0.25
+and earlier kept local souls and capability-agent homes under
+`<scope>/local-agents/`: this kernel never reads, spawns into or retires from
+that directory. `oats status` and `oats doctor` report it once, as the
+`legacy-local-agents` problem naming the instances found there; retire them
+with the 0.25 kernel, or delete the directory once they are stopped.
 
 Alternative agents-root layouts are planned but not built. Today the default
 layout is the only implemented layout.

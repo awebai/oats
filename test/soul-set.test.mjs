@@ -50,8 +50,4 @@ test("soul set rewrites only the given soul.yaml fields, clears with --no-*, rep
   assert.equal(oats(["soul", "set", "dev", "--dir", repo, "--instructions-file", join(base, "missing.md"), "--json"]).json().error.code, "E_BAD_ARGS");
   assert.equal(oats(["soul", "set", "ghost", "--dir", repo, "--runtime", "pi", "--json"]).json().error.code, "E_SOUL_UNKNOWN");
   assert.equal(oats(["soul", "set", "dev", "--dir", repo, "--agents-root", "/elsewhere/agents", "--runtime", "pi", "--json"]).json().error.code, "E_SOUL_UNKNOWN", "the ambient root never selects; the explicit one is refused when wrong");
-  // A local soul is editable too.
-  write(join(repo, "local-agents", "scratch", "soul", "soul.yaml"), "name: scratch\nkind: local\nrepo: .\nwork: checkout\nruntime: pi\n"); write(join(repo, "local-agents", "scratch", "soul", "AGENTS.md"), "# s\n");
-  rc = oats(["soul", "set", "scratch", "--dir", repo, "--model", "opus", "--json"]).json().result;
-  assert.equal(rc.kind, "local"); assert.equal(rc.after.model, "opus");
 });

@@ -22,7 +22,7 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
-## Batch — 2026-09-24 night (PRs 131, 136, 151–165) → toward v0.26.0 (unreleased; main carries breaking changes)
+## Batch — 2026-09-24 night (PRs 131, 136, 151–166) → toward v0.26.0 (unreleased; main carries breaking changes)
 - **Merged:**
   - PR151 packages: approval removed (human decision; declaring a package IS the trust decision) `e62b8f16`, plus the release-note follow-up `f0994882`.
   - PR153 docs for it `b97de554`.
@@ -58,6 +58,11 @@ decisions/ and referenced from here.
     - Returned once for a re-dated behavioural claim: a guide sentence said grant sends were still 422 on the new floor, but the floor release fixed them.
     - The first CI run was red: the Desktop pins the manifest's `settings.identity` byte for byte in a stand-in fixture. Fixed by the Desktop engineer's fixture-only recapture from the mirror's tree, fast-forwarded in as the new head `f85fed6c`.
     - After the merge, Antares deleted `hold/oats-aweb-1.13.0` under a Class B ACK. It pointed at `a8a8d1f6`, the pre-1.12.1 draft, whose content had shipped in 1.12.2 or been rebased into v1.13.0.
+  - PR166 kernel v2-native (b) `00813159`.
+    - Capability-defined agents home under `agents/<agent>/instances/`. `local-agents`/`tmp-agents`, the OAS probes, the installed tier and `oats create` are removed, and `spawn --instructions-file`/`--def-file` are `E_BAD_ARGS`.
+    - A leftover `local-agents/` is reported once as `legacy-local-agents`; soul-scaffold hooks no longer run.
+    - `retire <unknown> --json` answers `E_SESSION_UNKNOWN`. The co-lead found it; a new code was rejected because the Desktop classifies the existing one as a before-effect refusal.
+    - Rounds: a return for the missing typed error and the skills text; then CI red on two retire-safety tests that read stderr after coded retire errors became `--json` envelopes. That fix was test-only, with the behaviour verified intact, plus the known K6d flake.
 - **taught us:**
   - (1) **Arm a merge watcher with the full approved oid, never "the current head".** #160's head moved twice after approval while mails crossed. The watcher's named-oid guard refused both mismatches, so nothing unreviewed merged. The loop ends with one FINAL mail per party (author and watcher) naming the full oid and "no pushes", and by ignoring the stale mails that follow.
   - (2) **A native gate must wait for the message, not for a spinner.** Preview in the rig is slow, and fixed waits produced false FAILs in both directions. Poll for the expected sentence with a bound.
@@ -67,6 +72,7 @@ decisions/ and referenced from here.
   - (7) **A merge watcher busy in polling can leave a WATCH+ACT unread for many minutes.** If a green, approved PR sits unmerged, check the watcher's pane and nudge it directly.
   - (8) **A native gate reads collapsed UI by textContent, scoped to its section.** `innerText` skips closed `<details>`, and a page-wide regex matches the wrong row. Two runs of false FAILs came from the gate, not the app.
   - (9) **A provider mirror is a Desktop change when it touches a bundled manifest.** Run the Desktop suite with its own deps installed (`cd packages/desktop && npm ci`); missing-module walls are the environment. See the central lesson on mirrors running the Desktop suite, and the one on re-dated claims.
+  - (10) **When you route every coded error of a verb through `jsonFail`, grep the tests for `stderr, /E_` on that verb's `--json` calls.** The contract fix moves them to stdout, and safety tests read the old channel.
   - (4) **For removal PRs, grep the removed noun across `skills/`, `injects/` and `oats-package/capabilities/*/skills/`.** Those texts are composed into every AGENTS.md; #155 was returned for stale `./soul` wording there.
 
 ## Batch — 2026-09-24 evening (PRs 145–150) → v0.25.9
