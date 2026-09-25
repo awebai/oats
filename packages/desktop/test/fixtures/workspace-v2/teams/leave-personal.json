@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_TEAM_PERSONAL",
+    "message": "messaging:leave: the personal team cannot be left",
+    "details": {
+      "exit": 1,
+      "envelope": {
+        "schemaVersion": 1,
+        "ok": false,
+        "error": {
+          "code": "E_TEAM_PERSONAL",
+          "message": "the personal team cannot be left"
+        }
+      }
+    }
+  }
+}

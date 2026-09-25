@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "operationsApi": 2,
+    "operation": "messaging:join",
+    "capability": "nw.teams",
+    "version": "0.1.0",
+    "argv": [
+      null,
+      "join",
+      "--labels",
+      "reviewers"
+    ],
+    "cwd": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams",
+    "target": {
+      "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams",
+      "instance": "release-manager-teams"
+    },
+    "result": {
+      "personal": {
+        "team": "personal:northwind:alice"
+      },
+      "primary": "dev",
+      "eligible": [
+        {
+          "label": "dev",
+          "team": "northwind:eng",
+          "joined": true
+        },
+        {
+          "label": "reviewers",
+          "team": "northwind:review",
+          "joined": true
+        }
+      ],
+      "joined": [
+        {
+          "label": "dev",
+          "team": "northwind:eng",
+          "since": "2026-09-25T10:00:00.000Z",
+          "identityHome": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.aweb-identity-dev",
+          "receive": "poll"
+        },
+        {
+          "label": "reviewers",
+          "team": "northwind:review",
+          "since": "2026-09-25T10:01:00.000Z",
+          "identityHome": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.aweb-identity-reviewers",
+          "receive": "native"
+        }
+      ],
+      "unmapped": [
+        "marketing"
+      ],
+      "at": "2026-09-25T10:00:00.000Z"
+    }
+  }
+}

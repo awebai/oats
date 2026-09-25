@@ -10,11 +10,13 @@ import { cliStatus } from './views/cli-status.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { soulRepository } from './soul-repository.mjs';
 import { inspectData, inspectFacts } from './inspect-contract.mjs';
+import { createTeamsPanel, teamsOperations, teamsCSS } from './teams-panel.mjs';
 
 
 export const inspectorCSS = `
 ${declarationsCSS}
 ${readinessCSS}
+${teamsCSS}
 .souls { container-type:inline-size; }
 .souls-body { display:grid; grid-template-columns:minmax(0,1fr); flex:1; min-height:0; min-width:0; }
 .souls-body.inspecting { grid-template-columns:minmax(0,1fr) 340px; }
@@ -60,7 +62,7 @@ ${readinessCSS}
  * effective visibility/collapse belongs to the host, not request completions. */
 export function createSoulInspector(container, { ctx, presentation, launch, schedule, files, canFiles = () => false, canLaunch = () => true, launchReason = () => 'Requires a compatible installed OATS CLI.', available = () => true, instances = () => [], workspace = () => null, closed }) {
   const doc = container.ownerDocument;
-  let alive = true, serial = 0, operationSerial = 0, selectionGen = null, selection, data;
+  let alive = true, serial = 0, operationSerial = 0, selectionGen = null, selection, data, teamsPanel = null;
   const pendingOperations = new WeakMap();
   const node = (tag, text, cls) => {
     const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el;
@@ -112,7 +114,7 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
     if (alive) reset(restoreFocus);
   }
   function reset(restoreFocus = false) {
-    serial++; selection = null; selectionGen = null; data = null; container.hidden = true;
+    serial++; selection = null; selectionGen = null; data = null; teamsPanel = null; container.hidden = true;
     readiness?.dispose(); readiness = null;
     container.replaceChildren();
     if (presentation) presentation.setPresent(false);
@@ -149,7 +151,7 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
     if (doc?.truncated) content.append(node('p', truncatedNote, 'muted'));
   }
   function render() {
-    operationSerial++;
+    operationSerial++; teamsPanel = null;
     content.replaceChildren();
     const inspected = inspectData(data, selection);
     if (!inspected) {
@@ -165,6 +167,12 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
       content.append(node('p', 'As spawned: an instance never changes under itself. A newer soul or module needs a new instance.', 'muted'));
       content.append(node('h3', 'Instance')); facts(inspectFacts.instance(inspected.instance));
       instructions(inspected.instance.instructions, 'Instructions are truncated here.');
+      // Team controls: only when the home's messaging provider declares them.
+      const teams = teamsOperations(inspected);
+      if (teams) {
+        const id = serial, gen = selectionGen;
+        teamsPanel = createTeamsPanel(content, { operations: teams, selector: selection.selector, request, owns: () => valid(id, gen) && selectionGen === workspaceGeneration(), available });
+      }
       if (soul) renderSoul(soul, false);
     } else if (soul) {
       content.append(node('p', 'What a spawn of this soul resolves now.', 'muted'));
@@ -245,8 +253,11 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
     content.append(node('h3', 'Provider operations'));
     // A layer provider is the module that fills the layer (no activation record in v2).
     const providers = inspected.capabilities.filter(cap => cap.layer);
+    // The Teams section owns messaging:teams|join|leave on an instance (one control per verb).
+    const owned = inspected.subject.kind === 'instance' && teamsOperations(inspected)?.supported;
     let count = 0;
     for (const provider of providers) for (const operation of provider.operations || []) {
+      if (owned && provider.layer === 'messaging' && ['teams', 'join', 'leave'].includes(operation.name)) continue;
       count++; const row = node('div', undefined, 'inspector-cap');
       row.append(node('h4', `${provider.layer}: ${operation.name}`), node('p', operation.description || provider.id, 'muted'));
       if (!operation.available || operation.args?.some(arg => arg.required)) row.append(node('p', operation.reason || 'This operation requires arguments; run it with the OATS CLI.', 'muted'));
@@ -291,7 +302,7 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
     if (!count) content.append(node('p', 'The active providers do not declare operations.'));
   }
   function syncAvailability() {
-    syncReadiness();
+    syncReadiness(); teamsPanel?.sync();
     if (!selection || !content) return;
     for (const control of content.querySelectorAll('[data-mutate]')) control.disabled = pendingOperations.has(control) || !available() || selectionGen !== workspaceGeneration();
     for (const control of container.querySelectorAll('[data-launch]')) {

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_OPERATION_UNAVAILABLE",
+    "message": "messaging:teams runs in an instance home; pass --home <abs>"
+  }
+}
