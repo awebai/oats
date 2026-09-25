@@ -34,9 +34,21 @@ test("workspace model, messaging slot empty (none): no team id; a non-string pay
   assert.equal(teamEnv(v2({ payloads: { "oats.aweb": { team: { evil: 1 } } } })).OATS_TEAM_ID, "");
 });
 
-test("a classic team: block feeds nothing (0.26.0: teamEnv is workspace-model only); no input is six empty facts", () => {
+test("a resolved view with no workspace answers six empty strings", () => {
   const empty = { OATS_TEAM_NAME: "", OATS_TEAM_ID: "", OATS_TEAM_SCOPE: "", OATS_TEAM_LABEL: "", OATS_WORKSPACE_NAME: "", OATS_WORKSPACE_KEY: "" };
-  assert.deepEqual(teamEnv({ team: { name: "default", id: "default:oats.aweb.ai", scope: "/ws" } }), empty);
   assert.deepEqual(teamEnv({}), empty);
+  assert.deepEqual(teamEnv({ payloads: { "oats.aweb": { team: "aweb:acme.cloud" } } }), empty);
   assert.deepEqual(teamEnv(null), empty);
+});
+
+test("an ambient or recorded team name never reaches OATS_TEAM_NAME", () => {
+  const saved = process.env.OATS_TEAM_NAME;
+  process.env.OATS_TEAM_NAME = "ambient";
+  try {
+    assert.equal(teamEnv(v2()).OATS_TEAM_NAME, "");
+    assert.equal(teamEnv({ ...v2(), team: { name: "recorded", id: "recorded:oats.aweb.ai", scope: "/ws" } }).OATS_TEAM_NAME, "");
+    assert.equal(teamEnv(v2({ workspace: { name: "recorded" } })).OATS_TEAM_NAME, "", "the workspace name is OATS_WORKSPACE_NAME, never the team name");
+  } finally {
+    if (saved === undefined) delete process.env.OATS_TEAM_NAME; else process.env.OATS_TEAM_NAME = saved;
+  }
 });
