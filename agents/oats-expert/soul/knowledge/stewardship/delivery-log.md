@@ -22,7 +22,7 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
-## Batch — 2026-09-24 night (PRs 131, 136, 151–185) → toward v0.26.0 (unreleased; main carries breaking changes)
+## Batch — 2026-09-24 night (PRs 131, 136, 151–187) → toward v0.26.0 (unreleased; main carries breaking changes)
 - **Merged:**
   - PR151 packages: approval removed (human decision; declaring a package IS the trust decision) `e62b8f16`, plus the release-note follow-up `f0994882`.
   - PR153 docs for it `b97de554`.
@@ -126,6 +126,9 @@ decisions/ and referenced from here.
   - PR184 docs `29ac2acc` (the Phase D driver; squash tree verified). **"Core capabilities" is the human vocabulary** for the knowledge/messaging/tasks capabilities, in the README, docs, skills, injects, oats-package, CLI text and schema descriptions. "Slot" survives only for the position; wire names (`layer`, `layers`, `<layer>:<name>`, `defaults.<slot>`) are unchanged. The bundled oats-authoring skills need the same wording in a package release.
   - Human direction, same day: **runtime → harness** everywhere, in 0.26.0 as a kernel PR after (e). No alias for kernel-owned names; `OATS_RUNTIME` (env) and `requires[].runtime` (manifests) stay as released-contract aliases. Recorded in the Phase D plan (`127cf386`).
   - PR185 kernel `a85c7ff8` (the Phase D driver; two rounds; squash tree verified). Human direction: **no private souls.** A soul's `private` is accepted and ignored with one `soul-private-ignored` warning; every soul is listed and spawnable. **Private capabilities are repo-owned:** listed with `private: true` ("(repo-owned)"), with E_CAPABILITY_PRIVATE unchanged, and feature `capabilities-private`. Round 1 was CI-red: the Northwind fixture's own test still asserted a private soul, because the author's local suite list skipped nested test dirs.
+  - oats.authoring **v1.0.3** (oats-authoring#7 by the Phase D driver, lead-merged `5b2bed13`, tagged): the core-capabilities wording. PR187 mirror + pin `9978858e` (lead; co-lead ACK; squash tree verified): the bundled copy is byte-identical to the tag; the framework's integration-authoring matches the package.
+  - Teams amendment **K** (co-lead ruling on the oats.aweb 1.14.0 review; contract `23e30eef`): byTeam is no longer merged into the messaging provider's settings; each label's payload lives only in its `teams` entry, and `settings.team` means the personal team. The kernel PR is in flight. Found by cross-review: the provider minted the primary identity into the mapped team, and its test faked a kernel payload without `team`.
+  - Wake **proven** end to end on the released stack (co-lead): aw 1.36.8 daemon, delivery=session homes; floor 1.36.5.
 - **taught us:**
   - (1) **Arm a merge watcher with the full approved oid, never "the current head".** #160's head moved twice after approval while mails crossed. The watcher's named-oid guard refused both mismatches, so nothing unreviewed merged. The loop ends with one FINAL mail per party (author and watcher) naming the full oid and "no pushes", and by ignoring the stale mails that follow.
   - (2) **A native gate must wait for the message, not for a spinner.** Preview in the rig is slow, and fixed waits produced false FAILs in both directions. Poll for the expected sentence with a bound.
