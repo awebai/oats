@@ -3,9 +3,30 @@
 Status: PROPOSED 2026-09-25 by the lead (kernel lane), with the messaging
 co-lead's provider plan. It serves the human priority of 2026-09-25, recorded
 in `2026-09-24-phase-d-plan.md` under "Teams, re-stated as THE priority".
-This document is the kernel half. The provider half (oats.aweb 1.14.0:
-personal-team fallback, `messaging:reconcile-teams`, global instance
-identities) is the messaging lane's.
+This document is the kernel half; the provider half (oats.aweb) is the
+messaging lane's. Co-lead review (9a18a381): agreed, with three additions,
+folded in below.
+
+## The model (human, 2026-09-25)
+
+- **Default: the personal team only.** Every instance is in its person's
+  personal team for THIS workspace. A soul's `team` labels do NOT put it
+  in those teams by default.
+- **Joining is explicit.** A wider team is joined by an explicit action:
+  - at spawn, a spawn choice;
+  - or at any point of the instance's life, one simple command, run by the
+    human, by another agent, or by the instance itself when told to.
+- **Only what the soul and workspace allow.** The teams an instance MAY join
+  are exactly its soul's labels that the workspace maps. Nothing else is
+  offered or accepted.
+- **Leaving** is the same kind of command. When the workspace removes a
+  mapping or the soul drops a label, the joined membership for it is left.
+- **The Desktop has controls for it:** at spawn (which eligible teams to
+  join) and on a live instance (join/leave, and the joined vs eligible
+  teams).
+- **Personal teams are per WORKSPACE.** One personal team spanning several
+  workspaces is wrong. Until aweb ships the per-workspace get-or-create, the
+  person's single default team is an explicitly temporary stand-in.
 
 ## Problem
 
@@ -33,7 +54,8 @@ identities) is the messaging lane's.
      win.
    - Two labels that give the same capability different entries is
      `E_TEAM_CONFLICT`, naming both labels. There's no silent
-     last-writer-wins.
+     last-writer-wins. Identical entries from two labels are not a
+     conflict.
 3. **Messaging payload.**
    - The merged view stays exactly as today, for the **primary** label only:
      `base ⊕ byTeam[primary]`.
@@ -41,6 +63,12 @@ identities) is the messaging lane's.
      `{ label, mapped: boolean, payload }`.
      - `payload` is `base ⊕ byTeam[label]` when the workspace maps the label.
      - It's `base` alone, with `mapped: false`, when the label isn't mapped.
+   - Each entry also carries the resolved team id as `team` (null when the
+     label isn't mapped), so a provider never digs it out of `payload`.
+     "Personal" is the provider's to resolve; the kernel says nothing about
+     it.
+   - These are the **eligible** teams. Joining them is explicit (see "The
+     model"), not automatic.
    - It's delivered beside the settings (hook stdin / `OATS_TEAMS` JSON),
      never inside the provider's own settings object, so it can't collide
      with a provider key or its manifest's settings validation.
@@ -71,11 +99,26 @@ identities) is the messaging lane's.
      and leave one it removed, without a respawn.
    - The recorded spawn-time `teams` stays in `instance.json.providers` as
      evidence.
-7. **Triggers.** Nothing new is needed for the first release. The spawn hook,
-   the launch hook (every start/restart) and home-context operations are
-   enough. A later kernel item: `oats sync` reports the souls whose labels or
-   mappings changed since the previous lock, so an operator can reconcile
-   exactly those homes.
+   - **Retire** works from the provider's own recorded membership list,
+     never from the live eligible set. A mapping removed after the spawn
+     still has its membership revoked at retire.
+7. **Explicit join, spawn choice, Desktop.**
+   - The join/leave/list verbs are the provider's, run in or against a home:
+     for example `oats aweb teams`, `oats aweb join <label>`,
+     `oats aweb leave <label>`, or the equivalent home-context operations,
+     with `--json`.
+   - Each is idempotent, and refuses a label the instance isn't eligible for
+     (`E_TEAM_NOT_ELIGIBLE`, naming the eligible labels).
+   - At spawn, the kernel carries the operator's choice to the provider as a
+     spawn provider setting (`--provider <messaging> join=<label>[,<label>]`).
+     That needs no new kernel flag, and the spawn preview shows it.
+   - The launch hook re-checks joined memberships against the live eligible
+     set: it leaves what's no longer eligible and never joins on its own.
+   - The Desktop reads `teams` (eligible) from the spawn preview and the home
+     inspect, plus joined memberships from the provider's inspect or
+     operation, and drives the same verbs.
+   - Later kernel item: `oats sync` reports the souls whose labels or
+     mappings changed since the previous lock.
 
 ## Compatibility
 
@@ -93,3 +136,4 @@ identities) is the messaging lane's.
 - Home-context `teams` follows a new workspace commit (a mapping added and
   removed) while the home's modules stay frozen.
 - Discovery warns on an unmapped label.
+- `teams` entries carry `team`; identical cross-label entries don't conflict.

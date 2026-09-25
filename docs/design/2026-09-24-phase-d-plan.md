@@ -174,6 +174,19 @@ messaging item:
 - **(R1) A personal team by default.** A user's agents in a workspace get
   that person's personal team for the workspace with no setup step. This is
   the default whenever the workspace maps nothing else.
+- **Defaults and joining (human, later the same day; refines R1/R2′):**
+  - By default an instance is in the person's personal team ONLY, even when
+    its soul names teams.
+  - Joining a wider team is explicit: a spawn choice, or at any point of the
+    instance's life one simple command, run by the human, another agent, or
+    the instance when told to. It covers only the soul's labels the workspace
+    maps.
+  - The Desktop offers these controls.
+  - Personal teams are per WORKSPACE: one personal team spanning several
+    workspaces is wrong, and aweb's per-workspace get-or-create (abjj) is
+    urgent. Nobody uses OATS in production yet, which is what keeps this a
+    fix and not a migration.
+  - Contract: `docs/design/2026-09-25-teams-contract.md`.
 - **(R2′) Wider teams, at spawn AND during an instance's life.** When a soul
   belongs to one or more wider teams, its instance is also included in each
   team the soul specifies, both at spawn and at any later point of its life,
