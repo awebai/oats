@@ -5,7 +5,7 @@
 // gets the same team/workspace facts from a home as from the deployment.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
@@ -42,6 +42,37 @@ test("a 0.25 oats-config.yaml inside the deployment is E_CONFIG_BROKEN naming th
   t.after(() => rmSync(bare, { recursive: true, force: true }));
   writeFileSync(join(bare, "oats-config.yaml"), LEGACY);
   assert.throws(() => loadLocal(bare), (e) => e.code === "E_LOCAL_MISSING" && /0\.25 deployment's configuration/.test(e.message) && e.details.legacy?.[0] === join(bare, "oats-config.yaml"));
+});
+
+test("with a 0.25 oats-config.yaml in the deployment, every command a Desktop or operator runs there answers the typed legacy-config refusal, never a stack", async (t) => {
+  const fx = v2Deployment(); t.after(fx.cleanup);
+  const { home } = await fx.spawn("dev", { instance: "dev-legacy" });
+  writeFileSync(join(fx.dep, "oats-config.yaml"), LEGACY);
+  const noHome = { OATS_INSTANCE_HOME: "", PI_AGENT_HOME: "", OATS_HOME: "" };
+  const commands = [
+    ["status"], ["doctor"], ["doctor", "--soul", "dev"], ["workspace", "status"], ["souls"], ["capabilities"], ["packages"], ["sync"],
+    ["spawn", "dev", "--preview"], ["inspect", "--soul", "dev"], ["readiness", "--soul", "dev"],
+    ["launch-config", "list"], ["launch-config", "preview", "--soul", "dev"], ["launch-config", "preview", "--home", home],
+    ["schedule", "list"], ["schedule", "run", "nightly"], ["schedule", "tick"],
+    ["session", "start", "--home", home], ["session", "restart", "--home", home], ["retire", "dev-legacy"],
+  ];
+  for (const argv of commands) {
+    const what = argv.join(" ");
+    const json = fx.cli([...argv, "--json"], { env: noHome });
+    assert.notEqual(json.status, 0, what);
+    assert.doesNotMatch(json.stderr, /\n\s+at /, `${what}: no stack trace`);
+    const doc = envelope(json);
+    assert.equal(doc.error.code, "E_CONFIG_BROKEN", `${what}: ${doc.error.message}`);
+    assert.equal(doc.error.details?.reason, "legacy-config", `${what}: details.reason`);
+    assert.ok(doc.error.message.includes(join(fx.dep, "oats-config.yaml")), `${what}: names the file`);
+    // Human mode: one `oats: …` line, no stack.
+    const human = fx.cli(argv, { env: noHome });
+    assert.notEqual(human.status, 0, what);
+    assert.match(human.stderr, /^oats: .*oats-config\.yaml is no longer read/, `${what}: human line`);
+    assert.doesNotMatch(human.stderr, /\n\s+at /, `${what}: no stack trace (human)`);
+  }
+  // Nothing was retired or started: the home is still there.
+  assert.ok(existsSync(join(home, "instance.json")));
 });
 
 test("an attached instance takes its repository from the work tree owner's record, and refuses when there is none", async (t) => {

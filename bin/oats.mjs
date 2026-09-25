@@ -74,7 +74,7 @@ function valueFlag(name) {
   return value;
 }
 const die = (msg) => { console.error(`oats: ${msg}`); process.exit(1); };
-const cmdFail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
+const cmdFail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
 /** Resolve the --dir flag with central validation: a value-taking flag given
  * no value (flag() → true) is E_BAD_ARGS inside the JSON boundary, never an
  * uncaught resolve(true) TypeError (reviewer-6f0a3bd). */
@@ -553,7 +553,9 @@ function doctorLockData(ctx) {
     out.local = { path: found.path, workspace: found.local.workspace };
     lockDir = dirname(found.path);
   } catch (e) {
-    if (e?.code === "E_WORKSPACE_SCHEMA") out.localError = { code: e.code, message: e.message };
+    // An unreadable oats-local.yaml, or a 0.25 oats-config.yaml inside the deployment
+    // (E_CONFIG_BROKEN reason legacy-config): doctor answers it as its typed error.
+    if (e?.code === "E_WORKSPACE_SCHEMA" || e?.code === "E_CONFIG_BROKEN") out.localError = { code: e.code, message: e.message, details: e.details };
     else if (e?.code !== "E_LOCAL_MISSING") throw e;
   }
   const file = join(lockDir, LOCK_FILE);
@@ -866,7 +868,7 @@ function doctorDeployment(dir) {
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   const ctx = resolve(dir || dirFlag());
   const ws = doctorLockData(ctx);
-  if (ws.localError) bail(ws.localError.code, ws.localError.message);
+  if (ws.localError) bail(ws.localError.code, ws.localError.message, ws.localError.details);
   if (!ws.local) bail("E_LOCAL_MISSING", `oats doctor reads a workspace deployment, and none is in reach of ${ctx} (no oats-local.yaml walking up; \`oats onboard\` creates one)`, { dir: ctx });
   return { ctx, ws };
 }
@@ -1085,7 +1087,7 @@ function launchPreview(bail) {
   // A home's recorded capabilities; a new instance's are its spawn's resolution,
   // which a preview of a soul does not prepare (spawn --preview does).
   let r;
-  try { r = meta ? resolvedFromHome(home, meta) : { capabilities: [], launchConfigs: launchConfigsAt(context) }; } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+  try { r = meta ? resolvedFromHome(home, meta) : { capabilities: [], launchConfigs: launchConfigsAt(context) }; } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message, e.details); }
   // The same planner a start uses, in preview mode: failed checks are listed, nothing is touched.
   let plan;
   try { plan = planLaunch({ home, instance, meta, contextDir: context, agentLike, selection: sel, resolvedCfg: r, preview: true }); } catch (e) { bail(e.code || "E_BAD_ARGS", e.message); }
@@ -1661,7 +1663,13 @@ async function itemsCmd(kind) {
  *  present) to its stamp — the roster's `repo:` column for a workspace soul. */
 async function statusDrift(data) {
   let ctx;
-  try { ctx = loadLocal(dirFlag()); } catch (e) { if (e?.code === "E_LOCAL_MISSING") return null; throw e; }
+  try { ctx = loadLocal(dirFlag()); }
+  catch (e) {
+    if (e?.code === "E_LOCAL_MISSING") return null;
+    // A 0.25 oats-config.yaml inside the deployment: the typed migration error, never a stack.
+    if (e?.code === "E_CONFIG_BROKEN") { if (JSON_MODE) jsonFail(e.code, e.message, e.details); die(e.message); }
+    throw e;
+  }
   const hasModules = (i) => i.modules && typeof i.modules === "object" && Object.keys(i.modules).length > 0;
   const hasSoul = (i) => i.workspace && typeof i.workspace === "object" && i.workspace.soul && typeof i.workspace.soul === "object" && typeof i.workspace.soul.repoKey === "string";
   // Workspace souls of this roster: the stamp ensureWorkspaceSoul leaves beside the soul pointer.
@@ -2111,7 +2119,7 @@ function retireCmd() {
       console.log(`  defaults: retain worktree ${plan.defaults.retainWorktree}, delete branch ${plan.defaults.deleteBranch}, stop children ${plan.defaults.stopChildren}`);
       for (const n of plan.notes) console.log(`  note: ${n}`);
       return;
-    } catch (e) { return args.includes("--json") ? jsonFail(e.code || "E_LIFECYCLE_FAILED", e.message, e.candidates ? { candidates: e.candidates } : undefined) : die(e.message); }
+    } catch (e) { return args.includes("--json") ? jsonFail(e.code || "E_LIFECYCLE_FAILED", e.message, e.candidates ? { ...e.details, candidates: e.candidates } : e.details) : die(e.message); }
   }
   // The calling instance knows its own home: self-retire never needs to
   // disambiguate a same-named twin by hand.
@@ -2136,7 +2144,7 @@ function retireCmd() {
     const replay = (dir) => { const p = join(dir, `.oats-retire-receipt.${idemKey}.json`); if (!existsSync(p)) return false; try { const prior = JSON.parse(readFileSync(p, "utf8")); if (prior.retired !== name) return false; if (args.includes("--json")) jsonOk({ ...prior, replayed: true }); else console.log(`retire ${name}: replayed receipt for key ${idemKey}`); return true; } catch { return false; } };
     for (const a of listAgents(root)) if (replay(join(a._dir, "instances"))) return;
     let fresh;
-    try { fresh = planRetire(dirFlag(), root, name, { home: homeFlag }); } catch (e) { return args.includes("--json") ? jsonFail(e.code || "E_LIFECYCLE_FAILED", e.message) : die(e.message); }
+    try { fresh = planRetire(dirFlag(), root, name, { home: homeFlag }); } catch (e) { return args.includes("--json") ? jsonFail(e.code || "E_LIFECYCLE_FAILED", e.message, e.details) : die(e.message); }
     replayPath = join(dirname(fresh.home), `.oats-retire-receipt.${idemKey}.json`);
     if (fresh.planRevision !== planRev) return args.includes("--json") ? jsonFail("E_PLAN_STALE", `the retire plan changed since it was shown (${planRev} → ${fresh.planRevision}); review the fresh plan`, { plan: fresh }) : die(`the retire plan changed since it was shown; re-run oats retire ${name} --plan`);
     // The plan promised: recorded children are STOPPED first (bounded, never
@@ -2153,7 +2161,7 @@ function retireCmd() {
   }
   let r;
   try { r = retireInstance(root, name, { home: homeFlag, self: isSelf, deleteBranch: args.includes("--delete-branch"), discardWorktree: args.includes("--discard-worktree"), keepDir: args.includes("--keep-dir"), force: args.includes("--force"), ...(expectedBranch !== undefined ? { expectedBranch } : {}) }); }
-  catch (e) { if (!e?.code) throw e; return args.includes("--json") ? jsonFail(e.code, e.message, e.candidates ? { candidates: e.candidates } : undefined) : die(e.message); }
+  catch (e) { if (!e?.code) throw e; return args.includes("--json") ? jsonFail(e.code, e.message, e.candidates ? { ...e.details, candidates: e.candidates } : e.details) : die(e.message); }
   if (childrenStopped) r.childrenStopped = childrenStopped;
   if (replayPath) { r.planRevision = planRev; r.idempotencyKey = idemKey; r.replayed = false; try { writeFileAtomic(replayPath, JSON.stringify(r, null, 2)); } catch { /* receipt is evidence, not authority */ } }
   // A retired home's wake jobs are forgotten (definitions only; nothing is
@@ -2248,7 +2256,7 @@ function scheduleCmd() {
     }
   } catch (e) {
     // K8b: typed refusal details travel (identity mismatch: key/declared; a refused file: its integrity source).
-    const details = Object.fromEntries(["key", "declared", "source", "field"].filter((k) => e[k] !== undefined).map((k) => [k, e[k]]));
+    const details = { ...(e.details && typeof e.details === "object" ? e.details : {}), ...Object.fromEntries(["key", "declared", "source", "field"].filter((k) => e[k] !== undefined).map((k) => [k, e[k]])) };
     if (JSON_MODE) jsonFail(e.code || "E_SCHEDULE_FAILED", e.message, Object.keys(details).length ? details : undefined); else die(e.message);
   }
 }
@@ -2298,7 +2306,7 @@ async function sessionCmd() {
       result = uploadAttachment({ file, home: home === true ? undefined : home });
     } else throw Object.assign(new Error("usage: oats session inspect|input|attach|start|restart|receive|upload --home /absolute/home [--text-file path] [--model id] [--launch-config name|none] [--runtime pi|claude|codex] [--yolo|--no-yolo] [--stop-grace seconds] [--name file] [--file path] [--json]"), { code: "E_BAD_ARGS" });
     if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2));
-  } catch (e) { cmdFail(e.code || "E_SESSION_FAILED", e.message); }
+  } catch (e) { cmdFail(e.code || "E_SESSION_FAILED", e.message, e.details); }
 }
 
 async function paneCmd() {

@@ -34,8 +34,9 @@ test("workspace model, messaging slot empty (none): no team id; a non-string pay
   assert.equal(teamEnv(v2({ payloads: { "oats.aweb": { team: { evil: 1 } } } })).OATS_TEAM_ID, "");
 });
 
-test("classic deployment: unchanged — the config chain's team: block, no workspace keys", () => {
-  assert.deepEqual(teamEnv({ team: { name: "default", id: "default:oats.aweb.ai", scope: "/ws" } }),
-    { OATS_TEAM_NAME: "default", OATS_TEAM_ID: "default:oats.aweb.ai", OATS_TEAM_SCOPE: "/ws" });
-  assert.deepEqual(teamEnv({}), { OATS_TEAM_NAME: "", OATS_TEAM_ID: "", OATS_TEAM_SCOPE: "" });
+test("a classic team: block feeds nothing (0.26.0: teamEnv is workspace-model only); no input is six empty facts", () => {
+  const empty = { OATS_TEAM_NAME: "", OATS_TEAM_ID: "", OATS_TEAM_SCOPE: "", OATS_TEAM_LABEL: "", OATS_WORKSPACE_NAME: "", OATS_WORKSPACE_KEY: "" };
+  assert.deepEqual(teamEnv({ team: { name: "default", id: "default:oats.aweb.ai", scope: "/ws" } }), empty);
+  assert.deepEqual(teamEnv({}), empty);
+  assert.deepEqual(teamEnv(null), empty);
 });
