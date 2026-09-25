@@ -153,7 +153,8 @@ A self-contained package has an `oats.json`:
 - Target names never appear in a package manifest.
 
 `capability` is the only manifest identity field; it may also carry
-`private: true` (usable only by souls of its own repo) and `team: <label>`
+`private: true` (a **repo-owned** capability: listed, but usable only by souls
+of its own repo) and `team: <label>`
 (the one workspace team label it is listed under; without it, the primary of
 its repository's default). The machine-readable contract is
 [`capability-manifest.schema.json`](capability-manifest.schema.json).
@@ -303,8 +304,9 @@ by every soul in the workspace (`oats capabilities` lists it with origin
 `member <repo key> @ <commit>`) and is named with `from: <repo key>` — or
 `from: here` by souls of the same repo. It is trusted by **membership**: the
 repo's access control is the boundary and its latest default-branch state is
-what is copied. `private: true` in the manifest keeps it usable only from its
-own repo. A member's `oats-package/` is **not** a member capability: it is
+what is copied. `private: true` in the manifest makes it **repo-owned**: still
+listed (`private: true`, marked "(repo-owned)"), but usable only from its own
+repo (`E_CAPABILITY_PRIVATE` elsewhere). A member's `oats-package/` is **not** a member capability: it is
 reported as `publishes` and consumed only as a package.
 
 ## Capability-defined agents

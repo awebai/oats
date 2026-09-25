@@ -140,8 +140,9 @@ declaration; it travels with the soul into the per-commit soul cache. The
 carry only the binding's settings keys (`bindings-file`, `state-dir`,
 `harvest-runtime`, `harvest-model`); `owns`/`reads`/`root` there are refused by
 the provider, not read (a soul payload grammar is an OKF follow-up). Every
-`souls/*/soul.yaml` in a member is discoverable; one that wants to stay
-internal says `private: true` (spawnable only from its own repo). A soul's
+`souls/*/soul.yaml` in a member is listed and spawnable — souls have no
+private mode (`private:` in a soul.yaml is ignored since 0.26.0, with a
+`soul-private-ignored` warning). A soul's
 `name` must equal its directory name; the first of two souls declaring one
 name (by path) is listed, the second is a problem.
 
@@ -150,7 +151,8 @@ name (by path) is listed, the second is a problem.
 The capability manifest is the one file that did not change (see
 [capabilities.md](capabilities.md)). Discovery relies on `capability` (the same
 `^[a-z0-9][a-z0-9._-]*$` grammar every `capabilities:` key uses), `version`,
-`layer`, and may read `private: true` and `team: <label>`. `version` is
+`layer`, and may read `private: true` (a **repo-owned** capability) and
+`team: <label>`. `version` is
 informational for member capabilities — a materialized copy is identified by
 its content digest.
 
@@ -216,10 +218,11 @@ its capabilities unresolvable (`E_NOT_A_MEMBER` / `E_MEMBERSHIP_UNCONFIRMED`).
 Reading the workspace repo *is* being in the workspace — a workspace's access
 control is Git's.
 
-**Private items.** `private: true` on a soul or a capability keeps it out of the
-workspace listing; a private capability is usable only by souls of the same
-repo (`E_CAPABILITY_PRIVATE` otherwise). Owners still see their own private
-items.
+**Repo-owned capabilities.** `private: true` in a capability's `oats.json`
+makes it **repo-owned**: it is listed like any other capability (with
+`private: true`; the human table marks it "(repo-owned)"), and it is usable
+only by souls of the same repo (`E_CAPABILITY_PRIVATE` otherwise). Souls have
+no private mode: every soul of a confirmed member is listed and spawnable.
 
 **External souls.** `external:` adopts a soul by reference from a repo that is
 **not** a member, pinned to a full commit. No handshake is asked for and none is

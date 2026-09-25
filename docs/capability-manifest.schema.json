@@ -57,7 +57,7 @@
     },
     "private": {
       "type": "boolean",
-      "description": "Workspace discovery: true makes this member capability usable only by souls of its own repository (E_CAPABILITY_PRIVATE elsewhere)."
+      "description": "Workspace discovery: true makes this member capability repo-owned — listed (private: true) but usable only by souls of its own repository (E_CAPABILITY_PRIVATE elsewhere)."
     },
     "team": {
       "type": "string",

@@ -6,7 +6,7 @@
 // remotes without ever touching a network or invoking bare `oats setup`.
 //
 //   remotes/agents.git       workspace host: oats-workspace.yaml + membership (team global)
-//   remotes/platform.git     member, team engineering: platform-engineer, platform-reviewer (private)
+//   remotes/platform.git     member, team engineering: platform-engineer, platform-reviewer
 //   remotes/data.git         member, team engineering: data-analyst + nw-warehouse-access (executable)
 //   remotes/marketing.git    member, team marketing: campaign-writer, positioning-analyst + 2 capabilities
 //   remotes/nw-tools.git     member, team engineering: tools-expert + nw-tools-dev — AND publishes package
@@ -303,7 +303,6 @@ function platformRepo({ refs }) {
         name: "platform-reviewer",
         description: "Reviews platform PRs; internal to this repo.",
         work: "checkout",
-        private: true,
         capabilities: {},
         knowledge: { owns: "platform-reviewer" },
       },

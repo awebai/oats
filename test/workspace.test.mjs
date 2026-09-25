@@ -359,10 +359,16 @@ test("discoverWorkspace: the whole picture — rows, souls, capabilities, privat
   assert.equal(tooling.team, "engineering"); assert.equal(tooling.path, "capabilities/nw-release-tooling"); assert.equal(tooling.manifest.commands.cut, "bin/nw-release.mjs cut");
   assert.equal(agents.capabilities.find((c) => c.name === "nw-house-style").team, "global");
 
-  // platform: private soul + private capability are LISTED with private:true; README ignored
+  // platform: a soul's `private: true` has no effect since 0.26.0 — the soul is listed like any other
+  // (private: false) and ONE soul-private-ignored warning names it; a private CAPABILITY is listed
+  // with private: true (repo-owned). README ignored.
   const platform = rows[K.platform];
-  assert.deepEqual(platform.souls.map((s) => [s.name, s.private, s.team]).sort(), [["platform-engineer", false, "engineering"], ["platform-reviewer", true, "engineering"]]);
+  assert.deepEqual(platform.souls.map((s) => [s.name, s.private, s.team]).sort(), [["platform-engineer", false, "engineering"], ["platform-reviewer", false, "engineering"]]);
   assert.deepEqual(platform.capabilities.map((c) => [c.name, c.private]), [["nw-experimental-linter", true]]);
+  const ignored = d.warnings.filter((w) => w.code === "soul-private-ignored");
+  assert.deepEqual(ignored.map((w) => [w.soul, w.repoKey, w.path]), [["platform-reviewer", K.platform, `${K.platform}:souls/platform-reviewer/soul.yaml#/private`]]);
+  assert.equal(ignored[0].message, "`private` has no effect on a soul since 0.26.0; remove it from souls/platform-reviewer/soul.yaml");
+  assert.ok(!d.problems.some((p) => p.code === "soul-private-ignored"), "a warning, never a problem");
 
   // data: good items listed, bad items become problems without aborting the repo
   const data = rows[K.data];
@@ -741,7 +747,9 @@ test("unmapped-team-label: a declared label the workspace's messaging.byTeam doe
   } });
   const d = await discoverWorkspace(WS, { remote });
   // ONE warning per unmapped label, naming every soul that carries it (sorted), never one per soul.
-  assert.deepEqual(d.warnings.map((x) => x.label), ["global", "marketing"], "sorted by label");
+  const unmapped = d.warnings.filter((x) => x.code === "unmapped-team-label"); // platform-reviewer's soul-private-ignored is the other kind
+  assert.deepEqual(unmapped.map((x) => x.label), ["global", "marketing"], "sorted by label");
+  assert.deepEqual(d.warnings.map((x) => x.code), ["unmapped-team-label", "unmapped-team-label", "soul-private-ignored"], "label warnings first, then soul-private-ignored");
   const w = d.warnings.find((x) => x.label === "marketing");
   assert.deepEqual([w.code, w.souls, w.paths], ["unmapped-team-label", ["release-manager"], [`${K.agents}:souls/release-manager/soul.yaml#/team`]]);
   assert.match(w.message, /team "marketing" has no messaging\.byTeam entry; its souls \(release-manager\) fall back to the personal team for it/);
