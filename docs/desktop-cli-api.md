@@ -1335,7 +1335,9 @@ Additional informative fields: `repo`, `runtime`, `model`, `parent`,
 was declared, else null), `relation` (`child`/`sibling`/`parent` when a
 relation was declared at spawn, else null), `spawnOrigin`, `attach`.
 
-Stable error codes: `E_USAGE`, `E_NO_DEPLOYMENT`, `E_UNKNOWN_AGENT`,
+Stable error codes: `E_USAGE`, `E_LOCAL_MISSING` (no `oats-local.yaml` in reach:
+a spawn needs a workspace deployment), `E_NO_DEPLOYMENT` (the deployment's
+`agents/` root is missing), `E_SOUL_UNKNOWN`, `E_UNKNOWN_AGENT`,
 `E_AMBIGUOUS_SOUL`, `E_PARENT_NOT_FOUND`, `E_RELATIVE_NOT_FOUND`,
 `E_RELATIVE_AMBIGUOUS` (a `--relative-to`/`--parent` anchor name matches
 multiple team instances — disambiguate with `--relative-root <agents-root>`

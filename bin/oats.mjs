@@ -25,7 +25,7 @@ import { fileURLToPath } from "node:url";
 import {
   LAYERS, OATS_VERSION, manifestOperations,
   capabilityManifests, capabilityTrust, capabilityExecutablePath, activateCapturedScaffold, loadCapturedDispatch, inspectPortableOnboarding, prepareCapturedComposition, resolveCapturedHelper, capturedNativeSessionAvailability, scaffoldCapturedInstance, startCapturedInstanceSession, withCapturedBindingFile, withCapturedInvocationContextFile, admitCapturedAction, beginCapturedIntent, settleCapturedIntent,
-  officialPackageCatalog, describeOfficialCatalog, approveAvailableCapability, resolvedFromHome, resolvedFromPrepared, teamEnv, preWorkspaceHome, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
+  officialPackageCatalog, describeOfficialCatalog, approveAvailableCapability, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
   findInstanceHome, findInstanceHomes, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, launchConfigsAt, explicitInstanceName, findModuleCapabilityAgent, capabilityAgentFromDir, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
 import {
@@ -1796,10 +1796,14 @@ async function spawnCmd() {
   if (nameFlag !== undefined) { try { explicitInstanceName(String(nameFlag)); } catch (e) { bail(e.code, e.message); throw e; } }
   if (args.includes("--ephemeral")) bail("E_BAD_ARGS", "--ephemeral was removed by the runtime-boundary ruling — declare the agent in a capability manifest (agents:) for automatic ephemeral semantics");
   let root;
-  // Workspace model: the agents root is <deployment>/agents. An ambient root (the
-  // invoking agent's own PI_AGENTS_ROOT / OATS_ROOT) never redirects a v2 spawn —
-  // a home outside <deployment>/agents would have no derivable deployment.
-  try { loadLocal(dirFlag()); delete process.env.PI_AGENTS_ROOT; delete process.env.OATS_ROOT; } catch { /* not a workspace deployment: classic root rules */ }
+  // A spawn needs a workspace deployment (lead decision c3-1): no oats-local.yaml
+  // in reach is E_LOCAL_MISSING, before anything else is read. The agents root is
+  // then <deployment>/agents; an ambient root (the invoking agent's own
+  // PI_AGENTS_ROOT / OATS_ROOT) never redirects it — a home outside
+  // <deployment>/agents would have no derivable deployment.
+  try { loadLocal(dirFlag()); } catch (e) { if (e?.code === "E_LOCAL_MISSING") bail("E_LOCAL_MISSING", `${e.message}: a spawn needs a workspace deployment — \`oats onboard\` creates one`, e.details); else bail(e.code || "E_WORKSPACE_SCHEMA", e.message, e.details); }
+  delete process.env.PI_AGENTS_ROOT; delete process.env.OATS_ROOT;
+  // A deployment without its agents/ root is E_NO_DEPLOYMENT, naming the remedy.
   try { root = ensureRoot(dirFlag()); }
   catch (e) { bail("E_NO_DEPLOYMENT", e.message || e); throw e; }
   const isPreview = args.includes("--preview");
@@ -1819,58 +1823,52 @@ async function spawnCmd() {
   const providerPairs = [];
   for (let i = 0; i < args.length; i++) if (args[i] === "--provider") { if (!args[i + 1] || !args[i + 2]) bail("E_BAD_ARGS", "--provider needs <capability> <key>=<value>"); providerPairs.push([args[i + 1], args[i + 2]]); i += 2; }
   let wsPrepared, soulFetched = false, wsSoulUnknown = null, wsDiscovery;
-  let hasLocal = true;
   {
-    // A spawn needs a workspace deployment (lead decision c3-1): its capabilities are
-    // the workspace's resolution. No oats-local.yaml in reach is a typed refusal.
-    try { loadLocal(dirFlag()); } catch (e) { if (e?.code === "E_LOCAL_MISSING") bail("E_LOCAL_MISSING", `${e.message}: a spawn needs a workspace deployment — \`oats onboard\` creates one`, e.details); else bail(e.code || "E_WORKSPACE_SCHEMA", e.message, e.details); }
-    if (hasLocal) {
-      let discovery = null;
-      try {
-        const { prepareInstance, ensureWorkspaceSoul, previewWorkspaceSoul, parseProviderFlags, discoverOrStandalone } = await import("../lib/instance-resolution.mjs");
-        const remoteOptions = remoteOptionsFromEnv();
-        const { local } = loadLocal(dirFlag());
-        discovery = wsDiscovery = await discoverOrStandalone(local, { remoteOptions });
-        wsPrepared = await prepareInstance(dirFlag(), name, { spawn: { providers: parseProviderFlags(providerPairs) }, remoteOptions, discovery });
-        const soulName = wsPrepared.soulEntry.name;
-        let soulDir;
-        if (isPreview) {
-          // A preview writes nothing in the deployment: the soul comes from the
-          // per-commit cache when complete, else from a temporary fetch removed at exit.
-          const pv = await previewWorkspaceSoul(wsPrepared, root);
-          process.once("exit", pv.cleanup);
-          soulDir = pv.soulDir; soulFetched = pv.fetched;
-          agent = findAgentAt(root, soulName, soulDir);
-        } else {
-          const stampFile = join(root, soulName, ".oats-soul-source.json");
-          const stampBefore = (() => { try { return JSON.parse(readFileSync(stampFile, "utf8")); } catch { return null; } })();
-          soulDir = await ensureWorkspaceSoul(wsPrepared, root);
-          soulFetched = !stampBefore || stampBefore.commit !== wsPrepared.soulEntry.commit || stampBefore.repoKey !== wsPrepared.soulEntry.repoKey;
-          if (!agent || soulFetched || agent._dir !== dirname(soulDir)) agent = findAgent(root, soulName);
-        }
-        if (!agent) bail("E_SOUL_UNKNOWN", `soul "${name}" was fetched to ${shortPath(soulDir)} but is not readable as a soul there`);
-        note(`(workspace soul: "${name}" from ${wsPrepared.soulEntry.repoKey} @ ${String(wsPrepared.soulEntry.commit).slice(0, 12)}${wsPrepared.soulEntry.team ? `, team ${wsPrepared.soulEntry.team}` : ""}${soulFetched ? "; soul source fetched" : ""})`);
-      } catch (e) {
-        // Standalone (decisions 10/25): the ONLY package request is the kernel's own
-        // default; when the catalog cannot name it, say so instead of "add it to packages:"
-        // (there is no workspace file to add it to).
-        if (e?.code === "E_PACKAGE_MISSING" && discovery?.standalone === true) {
-          let file = process.env.OATS_PACKAGE_CATALOG || null; try { file = describeOfficialCatalog().catalog.file; } catch { /* keep the env value */ }
-          bail(e.code, `${e.details?.capability ?? "oats.core"}: the catalog has no package providing oats.core (OATS_PACKAGE_CATALOG=${file ?? "<bundled>"}) — standalone spawns resolve only the kernel's default package from the catalog`, { ...(e.details ?? {}), standalone: true, reason: "no-catalog", catalog: file });
-        }
-        // Not a workspace soul: a capability-defined agent (a module's `agents:`
-        // soul, resolved below from a materialized copy) may still answer to this name.
-        if (e?.code === "E_SOUL_UNKNOWN" && !isPreview) { wsSoulUnknown = e; }
-        else if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details);
-        else throw e;
+    let discovery = null;
+    try {
+      const { prepareInstance, ensureWorkspaceSoul, previewWorkspaceSoul, parseProviderFlags, discoverOrStandalone } = await import("../lib/instance-resolution.mjs");
+      const remoteOptions = remoteOptionsFromEnv();
+      const { local } = loadLocal(dirFlag());
+      discovery = wsDiscovery = await discoverOrStandalone(local, { remoteOptions });
+      wsPrepared = await prepareInstance(dirFlag(), name, { spawn: { providers: parseProviderFlags(providerPairs) }, remoteOptions, discovery });
+      const soulName = wsPrepared.soulEntry.name;
+      let soulDir;
+      if (isPreview) {
+        // A preview writes nothing in the deployment: the soul comes from the
+        // per-commit cache when complete, else from a temporary fetch removed at exit.
+        const pv = await previewWorkspaceSoul(wsPrepared, root);
+        process.once("exit", pv.cleanup);
+        soulDir = pv.soulDir; soulFetched = pv.fetched;
+        agent = findAgentAt(root, soulName, soulDir);
+      } else {
+        const stampFile = join(root, soulName, ".oats-soul-source.json");
+        const stampBefore = (() => { try { return JSON.parse(readFileSync(stampFile, "utf8")); } catch { return null; } })();
+        soulDir = await ensureWorkspaceSoul(wsPrepared, root);
+        soulFetched = !stampBefore || stampBefore.commit !== wsPrepared.soulEntry.commit || stampBefore.repoKey !== wsPrepared.soulEntry.repoKey;
+        if (!agent || soulFetched || agent._dir !== dirname(soulDir)) agent = findAgent(root, soulName);
       }
+      if (!agent) bail("E_SOUL_UNKNOWN", `soul "${name}" was fetched to ${shortPath(soulDir)} but is not readable as a soul there`);
+      note(`(workspace soul: "${name}" from ${wsPrepared.soulEntry.repoKey} @ ${String(wsPrepared.soulEntry.commit).slice(0, 12)}${wsPrepared.soulEntry.team ? `, team ${wsPrepared.soulEntry.team}` : ""}${soulFetched ? "; soul source fetched" : ""})`);
+    } catch (e) {
+      // Standalone (decisions 10/25): the ONLY package request is the kernel's own
+      // default; when the catalog cannot name it, say so instead of "add it to packages:"
+      // (there is no workspace file to add it to).
+      if (e?.code === "E_PACKAGE_MISSING" && discovery?.standalone === true) {
+        let file = process.env.OATS_PACKAGE_CATALOG || null; try { file = describeOfficialCatalog().catalog.file; } catch { /* keep the env value */ }
+        bail(e.code, `${e.details?.capability ?? "oats.core"}: the catalog has no package providing oats.core (OATS_PACKAGE_CATALOG=${file ?? "<bundled>"}) — standalone spawns resolve only the kernel's default package from the catalog`, { ...(e.details ?? {}), standalone: true, reason: "no-catalog", catalog: file });
+      }
+      // Not a workspace soul: a capability-defined agent (a module's `agents:`
+      // soul, resolved below from a materialized copy) may still answer to this name.
+      if (e?.code === "E_SOUL_UNKNOWN" && !isPreview) { wsSoulUnknown = e; }
+      else if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details);
+      else throw e;
     }
   }
   if (agentsRootFlag !== undefined && !agent) bail("E_SOUL_UNKNOWN", `soul "${name}" is not at agents root ${String(agentsRootFlag)}`);
   if (isPreview && !agent) bail("E_SOUL_UNKNOWN", `soul "${name}" is not in ${shortPath(root)}; a preview never creates or imports a soul (known: ${listAgents(root).map((a) => a.name).join(", ") || "none"})`);
   // Capability agent (lead decision c3 Q1): a prepared spawn of its providing module only.
   let capabilityPrepared, capabilityPkg = null;
-  if (!agent && hasLocal) {
+  if (!agent) {
     // Workspace model: the agent is declared by a capability some INSTANCE already
     // materialized (the --parent home first, then any home under this root) —
     // OKF's memory-harvest worker spawned by a knowledge source, for example.
@@ -2462,7 +2460,7 @@ function memberUrlOf(discovery, key) {
  *     namespace's capability into <deployment>/.oats/modules/<cap>@<commit12>/
  *     and run THAT copy with the soul's merged payload (lib/operator-dispatch.mjs;
  *     contracts doc, "Post-0.25.0 clarifications");
- *   - otherwise the classic config chain.
+ *   - otherwise no namespace is active (the help fallthrough answers).
  */
 async function capabilityCommand() {
   // JSON-aware boundary: in --json mode every dispatch failure — inactive or
@@ -2514,17 +2512,15 @@ async function capabilityCommand() {
     // manifests. Null-prototype because the dispatcher indexes it with the
     // namespace the operator typed on the command line.
     let capSettings = Object.create(null);
-    let instanceModules = false;
     let deployment = null;
     let soulDir;
     try {
       if (metaFile && existsSync(metaFile)) {
         const meta = JSON.parse(readFileSync(metaFile, "utf8"));
-        instanceModules = !!(meta.modules && typeof meta.modules === "object");
         activeIds = (meta.capabilities || []).map((c) => c.id);
         for (const c of meta.capabilities || []) capSettings[c.id] = c.settings || {};
         // Workspace-model homes only (lead decision c3 Q2).
-        if (!instanceModules) { const e = preWorkspaceHome(instanceHome, "nothing was dispatched"); bail(e.code, e.message); }
+        if (!isWorkspaceHome(meta)) { const e = preWorkspaceHome(instanceHome, "nothing was dispatched"); bail(e.code, e.message); }
         context = meta.repo || context;
         soulDir = instanceSoulDir(instanceHome, meta);
         // The team/workspace facts the home recorded at spawn, as its hooks got them.
@@ -2543,7 +2539,7 @@ async function capabilityCommand() {
     if (deployment) return operatorDispatch();
     // Workspace model: an instance's own materialized modules are the command
     // namespaces available to it (instance.json.modules → <home>/.oats/modules).
-    const mans = Object.values(capabilityManifests(instanceModules ? instanceHome : context)).filter((m) => m.command === cmd && m.commands);
+    const mans = Object.values(capabilityManifests(instanceHome)).filter((m) => m.command === cmd && m.commands);
     if (!mans.length) return NOT_DISPATCHED;
     if (mans.length > 1) bail("E_DUPLICATE_NAMESPACE", `duplicate operational command namespace "${cmd}": ${mans.map((m) => m.capability).join(", ")}`);
     const m = mans[0];
