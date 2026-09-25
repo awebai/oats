@@ -29,12 +29,15 @@ tracking and the agent roster. Agents do not know about projects — you know
 
 ## Site and project (from your deployment, never hardcoded)
 
-Your Jira **site** and **project key** come from the deployment's OATS config
-(`capabilities.oats.jira.<target>.settings: { site, project }`). Find them, in order:
+Your Jira **site** and **project key** come from the tasks payload OATS merged
+for this instance: the soul's `soul.yaml` `tasks: { site, project }`, the
+deployment's `oats-local.yaml` `settings.oats.jira.{site,project}`, or a
+spawn's `--provider oats.jira key=value`. Find them, in order:
 
 1. Your `TASK.md` briefing — the spawn hook writes a
    `Tasks: Jira — project <KEY> on <site>` line.
-2. `oats doctor --json` from your work tree (the tasks layer's settings).
+2. `./instance.json` in your instance home — `providers["oats.jira"]` is the
+   merged payload this instance received.
 3. Ask your human.
 
 Below, `<PROJECT>` means that project key. If site or project are unset,

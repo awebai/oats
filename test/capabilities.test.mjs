@@ -3035,7 +3035,7 @@ test("bundled capabilities carry the versions package-catalog.json pins", () => 
   const review = JSON.parse(readFileSync(join(pkgRoot, "capabilities", "oats-review", "oats.json"), "utf8"));
   assert.equal(review.capability, "oats.review");
   assert.equal(catalog.capabilities["oats.review"], "oats.dev", "oats.review is supplied by the oats.dev package");
-  assert.equal(review.version, "1.2.0", "the oats.dev@v1.0.0 payload ships oats.review at 1.2.0");
+  assert.equal(review.version, "1.2.1", "the oats.dev@v1.0.1 payload ships oats.review at 1.2.1");
 });
 
 test("no shipped instructional surface teaches settling in the work tree (maintainer contract)", () => {
