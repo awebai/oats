@@ -1,15 +1,20 @@
 .agents/
 .agents/skills/
-.agents/skills/golden-knowledge/
-.agents/skills/golden-knowledge/SKILL.md
-.agents/skills/oats/
-.agents/skills/oats/SKILL.md
-.agents/skills/oats-config/
-.agents/skills/oats-config/SKILL.md
-.agents/skills/oats-packages/
-.agents/skills/oats-packages/SKILL.md
+.agents/skills/golden.knowledge/
+.agents/skills/golden.knowledge/golden-knowledge/
+.agents/skills/golden.knowledge/golden-knowledge/SKILL.md
 .claude/
 .claude/skills -> ../.agents/skills
+.oats/
+.oats/modules/
+.oats/modules/golden.knowledge/
+.oats/modules/golden.knowledge/hooks/
+.oats/modules/golden.knowledge/hooks/spawn.mjs
+.oats/modules/golden.knowledge/inject.md
+.oats/modules/golden.knowledge/oats.json
+.oats/modules/golden.knowledge/skills/
+.oats/modules/golden.knowledge/skills/golden-knowledge/
+.oats/modules/golden.knowledge/skills/golden-knowledge/SKILL.md
 .oats-events.jsonl
 AGENTS.md
 CLAUDE.md -> AGENTS.md
@@ -18,4 +23,4 @@ TASK.md
 instance.json
 notes/
 notes/.keep
-work -> <base>/scope/repo
+work -> <base>/deployment/ws

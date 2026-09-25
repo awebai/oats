@@ -329,10 +329,6 @@ test("R5: a prepared preview shows `providers` (the --provider map as parsed) an
     // (c) the preview's payload objects are copies: mutating them never reaches the frozen resolution.
     pv2.settings["oats.okf"].mutated = true;
     assert.equal(noP.prepared.resolution.payloads["oats.okf"].mutated, undefined);
-
-    // (d) a classic (non-prepared) preview carries neither field.
-    const classic = await spawnInstanceAsync(d.root, noP.agent, { ...common });
-    assert.equal(classic.providers, undefined); assert.equal(classic.settings, undefined);
   });
 });
 

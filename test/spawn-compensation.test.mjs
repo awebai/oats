@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const CLI = fileURLToPath(new URL("../bin/oats.mjs", import.meta.url));
 const directories = [];
@@ -14,18 +15,42 @@ const write = (path, text, mode) => {
 };
 
 function fixture({ runtime = true, runtimeName = "pi", backend = "tmux", platform = true, taskDirectory = false, retireFailure = false, stubbornWindow = false, launchFailure = false, allocationFailure = false } = {}) {
-  const base = mkdtempSync(join(tmpdir(), "oats-spawn-compensation-"));
-  directories.push(base);
-  const repo = join(base, "repo");
-  const root = join(base, "agents");
-  const home = join(root, "dev", "instances", "dev-probe");
-  const resource = join(base, "external-resource");
-  const events = join(base, "events");
-  const window = join(base, "window");
-  const bin = join(base, "bin");
-  mkdirSync(repo);
+  const resourceHolder = mkdtempSync(join(tmpdir(), "oats-spawn-compensation-"));
+  directories.push(resourceHolder);
+  const resource = join(resourceHolder, "external-resource");
+  const events = join(resourceHolder, "events");
+  const window = join(resourceHolder, "window");
+  const bin = join(resourceHolder, "bin");
   mkdirSync(bin);
-  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(OATS|PI)_/.test(key)));
+  // A workspace deployment: soul dev (worktree) with one member capability
+  // whose required spawn hook creates an external resource and whose retire
+  // hook releases it — the compensation this suite exercises.
+  const fx = v2Deployment({
+    souls: { dev: { soul: { work: "worktree", capabilities: { "test-messaging": { from: "here" } } }, agents: "# Developer\n" } },
+    capabilities: { "test-messaging": {
+      manifest: { description: "Compensatable test resource", hooks: { spawn: { command: "spawn.mjs", required: true }, retire: "retire.mjs" } },
+      files: {
+        "spawn.mjs": `
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+appendFileSync(${JSON.stringify(events)}, 'spawn\\n');
+writeFileSync(${JSON.stringify(resource)}, 'created');
+if (${taskDirectory}) mkdirSync(process.env.OATS_HOME + '/TASK.md');
+console.log(JSON.stringify({meta:{alias:'test-resource'}}));
+`,
+        "retire.mjs": `
+import { appendFileSync, rmSync } from 'node:fs';
+appendFileSync(${JSON.stringify(events)}, 'retire\\n');
+if (JSON.parse(process.env.OATS_META).alias !== 'test-resource') throw new Error('lost spawn receipt');
+if (${retireFailure}) { console.log(JSON.stringify({meta:{retired:false,reason:'test failure'}})); }
+else { rmSync(${JSON.stringify(resource)}); console.log(JSON.stringify({meta:{retired:true}})); }
+`,
+      },
+    } },
+  });
+  directories.push(fx.base);
+  const { base, dep, root, member: repo } = fx;
+  const home = join(root, "dev", "instances", "dev-probe");
+  const env = Object.fromEntries(Object.entries(fx.env).filter(([key]) => !/^(OATS|PI)_/.test(key) || key === "OATS_REMOTE_CACHE" || key === "OATS_HOME_DIR"));
   // PATH is the fixture's bin directory ONLY. The "missing platform" case
   // relies on tmux being absent from PATH, and a system directory defeats
   // that: on the Ubuntu CI runner /usr/bin (and /bin, which is the same
@@ -34,35 +59,10 @@ function fixture({ runtime = true, runtimeName = "pi", backend = "tmux", platfor
   // by name is provided here explicitly: node and git as symlinks to the
   // real binaries, pi and tmux as the stubs the case asks for. Shells and
   // hook interpreters run by absolute path and need no PATH entry.
-  Object.assign(env, { HOME: join(base, "home"), PATH: bin, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" });
-  mkdirSync(env.HOME);
+  Object.assign(env, { PATH: bin, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" });
   delete env.TMUX;
   symlinkSync(process.execPath, join(bin, "node"));
   symlinkSync(execFileSync("which", ["git"], { encoding: "utf8" }).trim(), join(bin, "git"));
-  execFileSync("git", ["init", "-q", repo], { env });
-  execFileSync("git", ["-C", repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-qm", "initial"], { env });
-  write(join(root, "dev", "soul", "soul.yaml"), `name: dev\nrepo: ${repo}\nwork: worktree\nruntime: ${runtimeName}\n`);
-  write(join(root, "dev", "soul", "AGENTS.md"), "# Developer\n");
-  write(join(base, "oats-config.yaml"), "capabilities:\n  layers:\n    knowledge: none\n    messaging:\n      capability: test.messaging\n      from: owned\n    tasks: none\n");
-  const cap = join(base, ".agents", "capabilities", "owned", "test-messaging");
-  write(join(cap, "oats.json"), JSON.stringify({
-    capability: "test.messaging", version: "1.0.0", description: "Compensatable test resource", layer: "messaging",
-    hooks: { spawn: { command: "spawn.mjs", required: true }, retire: "retire.mjs" },
-  }));
-  write(join(cap, "spawn.mjs"), `
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
-appendFileSync(${JSON.stringify(events)}, 'spawn\\n');
-writeFileSync(${JSON.stringify(resource)}, 'created');
-if (${taskDirectory}) mkdirSync(process.env.OATS_HOME + '/TASK.md');
-console.log(JSON.stringify({meta:{alias:'test-resource'}}));
-`);
-  write(join(cap, "retire.mjs"), `
-import { appendFileSync, rmSync } from 'node:fs';
-appendFileSync(${JSON.stringify(events)}, 'retire\\n');
-if (JSON.parse(process.env.OATS_META).alias !== 'test-resource') throw new Error('lost spawn receipt');
-if (${retireFailure}) { console.log(JSON.stringify({meta:{retired:false,reason:'test failure'}})); }
-else { rmSync(${JSON.stringify(resource)}); console.log(JSON.stringify({meta:{retired:true}})); }
-`);
   if (runtime) write(join(bin, runtimeName), "#!/bin/sh\nexit 0\n", 0o755);
   if (platform) write(join(bin, "tmux"), `#!${process.execPath}
 const { existsSync, readFileSync, writeFileSync, rmSync } = require('node:fs');
@@ -93,9 +93,11 @@ if (args[0] === 'workspace') {
 if (args[1] === 'run' && ${launchFailure}) {console.error('launch failed after creating pane'); process.exit(1);}
 if (args[1] === 'close' && !${stubbornWindow}) rmSync(state, {force:true});
 `, 0o755);
-  const run = (args) => spawnSync(process.execPath, [CLI, ...args, "--dir", root, "--json"], { env, encoding: "utf8" });
-  const spawn = (launch = true) => run(["spawn", "dev", "--purpose", "probe", ...(launch ? [] : ["--no-launch"]), ...(backend === "herdr" ? ["--backend", "herdr", "--herdr-socket", join(base, "herdr.sock")] : [])]);
-  return { base, repo, root, home, resource, events, window, spawn, run, env };
+  const run = (args) => spawnSync(process.execPath, [CLI, ...args, "--dir", dep, "--json"], { cwd: dep, env, encoding: "utf8" });
+  // The runtime is a spawn choice (a v2 soul declares none); pi is the default.
+  const runtimeFlag = runtimeName === "pi" ? [] : ["--runtime", runtimeName];
+  const spawn = (launch = true) => run(["spawn", "dev", "--purpose", "probe", ...runtimeFlag, ...(launch ? [] : ["--no-launch"]), ...(backend === "herdr" ? ["--backend", "herdr", "--herdr-socket", join(base, "herdr.sock")] : [])]);
+  return { base, dep, repo, root, home, resource, events, window, spawn, run, env, runtimeFlag };
 }
 
 function assertClean(f) {
@@ -146,8 +148,8 @@ test("post-hook failure preserves the spawn receipt when compensation cannot fin
   assert.match(result.stdout, /rollback INCOMPLETE/);
   assert.equal(existsSync(f.resource), true);
   const marker = JSON.parse(readFileSync(join(f.home, ".oats-rollback-incomplete.json"), "utf8"));
-  assert.deepEqual(marker.cleanup.capabilityMeta["test.messaging"], { alias: "test-resource" });
-  assert.deepEqual(marker.cleanup.outstanding.hooks, ["test.messaging"]);
+  assert.deepEqual(marker.cleanup.capabilityMeta["test-messaging"], { alias: "test-resource" });
+  assert.deepEqual(marker.cleanup.outstanding.hooks, ["test-messaging"]);
 });
 
 test("an unquiesced partial launch retains work and credentials for retry", () => {
@@ -174,7 +176,7 @@ test("native Codex launch preserves its prompt, configured policy and assigned w
   write(join(f.env.PATH, "codex"), `#!${process.execPath}
 require('node:fs').writeFileSync(${JSON.stringify(captured)}, JSON.stringify({argv:process.argv.slice(2),cwd:process.cwd(),home:process.env.OATS_INSTANCE_HOME}));
 `, 0o755);
-  const result = f.run(["spawn", "dev", "--purpose", "probe", "--model", "anthropic/claude-test,openai-codex/gpt-test:high", "--task-file", taskFile, "--no-launch"]);
+  const result = f.run(["spawn", "dev", "--purpose", "probe", ...f.runtimeFlag, "--model", "anthropic/claude-test,openai-codex/gpt-test:high", "--task-file", taskFile, "--no-launch"]);
   assert.equal(result.status, 0, result.stdout + result.stderr);
   const meta = JSON.parse(readFileSync(join(f.home, "instance.json"), "utf8"));
   assert.equal(meta.runtime, "codex");
@@ -260,7 +262,7 @@ test.after(() => { for (const dir of directories) rmSync(dir, { recursive: true,
 for (const runtimeName of ["codex", "claude", "pi"]) {
   test(`shared yolo maps only permission bypass for ${runtimeName}`, () => {
     const f = fixture({ runtimeName });
-    const result = f.run(["spawn", "dev", "--purpose", "probe", "--no-launch", "--yolo"]);
+    const result = f.run(["spawn", "dev", "--purpose", "probe", ...f.runtimeFlag, "--no-launch", "--yolo"]);
     assert.equal(result.status, 0, result.stdout + result.stderr);
     const meta = JSON.parse(readFileSync(join(f.home, "instance.json"), "utf8"));
     assert.equal(meta.yolo, true);
@@ -268,34 +270,13 @@ for (const runtimeName of ["codex", "claude", "pi"]) {
     assert.equal(meta.command.includes(" --dangerously-skip-permissions"), runtimeName === "claude");
   });
 }
-for (const [soul, cli, expected] of [[undefined, [], true], ["false", [], false], ["false", ["--yolo"], true], ["true", ["--no-yolo"], false]]) {
-  test(`yolo precedence config=true soul=${soul} cli=${cli}`, () => {
-    const f = fixture({ runtimeName: "codex" });
-    const cfg = join(f.base, "oats-config.yaml");
-    write(cfg, readFileSync(cfg, "utf8") + "yolo: true\n");
-    if (soul !== undefined) {
-      const path = join(f.root, "dev", "soul", "soul.yaml");
-      write(path, readFileSync(path, "utf8") + `yolo: ${soul}\n`);
-    }
-    const result = f.run(["spawn", "dev", "--purpose", "probe", "--no-launch", ...cli]);
-    assert.equal(result.status, 0, result.stdout + result.stderr);
-    const meta = JSON.parse(readFileSync(join(f.home, "instance.json"), "utf8"));
-    assert.equal(meta.yolo, expected);
-    assert.equal(meta.command.includes(" --yolo"), expected);
-  });
-}
-test("invalid or contradictory yolo fails before provisioning", () => {
+test("contradictory yolo fails before provisioning", () => {
   const f = fixture();
-  let result = f.run(["spawn", "dev", "--yolo", "--no-yolo"]);
+  const result = f.run(["spawn", "dev", "--yolo", "--no-yolo"]);
   assert.notEqual(result.status, 0);
   assert.equal(JSON.parse(result.stdout).error.code, "E_BAD_ARGS");
   assert.match(JSON.parse(result.stdout).error.message, /choose --yolo or --no-yolo/);
   assert.equal(existsSync(f.resource), false);
-  const cfg = join(f.base, "oats-config.yaml");
-  write(cfg, readFileSync(cfg, "utf8") + "yolo: maybe\n");
-  result = f.spawn();
-  assert.notEqual(result.status, 0);
-  assert.match(result.stdout, /yolo.*true or false/);
   assert.equal(existsSync(f.home), false);
 });
 test("session CLI uses original Herdr receipt and rejects metadata drift", () => {

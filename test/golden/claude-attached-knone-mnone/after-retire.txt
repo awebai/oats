@@ -1,4 +1,5 @@
-# tree of <base>/scope/agents/dev
+# tree of <base>/deployment/agents/dev
+.oats-soul-source.json
 instances/
 instances/.oats-native-record/
 instances/.oats-native-record/<history-dev-claude-attached-knone-mnone>/
@@ -12,14 +13,10 @@ instances/.oats-retirement/baselines/<retirement-key>.json
 instances/dev-owner/
 instances/dev-owner/.agents/
 instances/dev-owner/.agents/skills/
-instances/dev-owner/.agents/skills/oats/
-instances/dev-owner/.agents/skills/oats/SKILL.md
-instances/dev-owner/.agents/skills/oats-config/
-instances/dev-owner/.agents/skills/oats-config/SKILL.md
-instances/dev-owner/.agents/skills/oats-packages/
-instances/dev-owner/.agents/skills/oats-packages/SKILL.md
 instances/dev-owner/.claude/
 instances/dev-owner/.claude/skills -> ../.agents/skills
+instances/dev-owner/.oats/
+instances/dev-owner/.oats/modules/
 instances/dev-owner/.oats-events.jsonl
 instances/dev-owner/AGENTS.md
 instances/dev-owner/CLAUDE.md -> AGENTS.md
@@ -27,19 +24,26 @@ instances/dev-owner/TASK.md
 instances/dev-owner/instance.json
 instances/dev-owner/work/
 instances/dev-owner/work/.git
-instances/dev-owner/work/.gitignore
-instances/dev-owner/work/README.md
-soul/
-soul/AGENTS.md
-soul/CLAUDE.md -> AGENTS.md
-soul/soul.yaml
+instances/dev-owner/work/oats-membership.yaml
+instances/dev-owner/work/oats-workspace.yaml
+instances/dev-owner/work/souls/
+instances/dev-owner/work/souls/dev/
+instances/dev-owner/work/souls/dev/AGENTS.md
+instances/dev-owner/work/souls/dev/CLAUDE.md -> AGENTS.md
+instances/dev-owner/work/souls/dev/soul.yaml
+soul -> <base>/deployment/agents/dev/souls/<commit12>
+souls/
+souls/<commit12>/
+souls/<commit12>/AGENTS.md
+souls/<commit12>/CLAUDE.md -> AGENTS.md
+souls/<commit12>/soul.yaml
 
 # git worktree list --porcelain
-worktree <base>/scope/repo
+worktree <base>/deployment/ws
 HEAD <sha>
 branch refs/heads/main
 
-worktree <base>/scope/agents/dev/instances/dev-owner/work
+worktree <base>/deployment/agents/dev/instances/dev-owner/work
 HEAD <sha>
 branch refs/heads/agents/dev-owner
 

@@ -8,6 +8,7 @@ import { join } from "node:path";
 const MODULES = ["capability-artifacts.mjs", "artifact-tree.mjs", "capability-provenance.mjs", "errors.mjs"];
 const CORE = new URL("../lib/core.mjs", import.meta.url).href;
 const RETENTION = new URL("../lib/capability-artifacts.mjs", import.meta.url).href;
+const V2 = new URL("./helpers/v2-deployment.mjs", import.meta.url).href;
 function fixture(t) {
   const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-artifact-foundation-")));
   t.after(() => rmSync(base, { recursive: true, force: true }));
@@ -120,54 +121,54 @@ test("retention imports and verifies in isolation without core, package metadata
 
 test("changed core scaffold-only probe composes copied resources and retires normally without native backends", (t) => {
   const f = fixture(t);
+  // A workspace deployment needs Git (the soul is fetched from its member repository).
+  symlinkSync(execFileSync("/usr/bin/which", ["git"], { encoding: "utf8" }).trim(), join(f.base, "bin/git"));
   const runtime = join(f.base, "bin/pi");
   // Preflight can discover this file but nothing may execute it.
   writeFileSync(runtime, `#!/bin/sh\necho invoked > '${f.base}/runtime-invoked'\nexit 98\n`);
   chmodSync(runtime, 0o755);
   const result = run(f, `
     import assert from 'node:assert/strict';
-    import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, writeFileSync } from 'node:fs';
+    import { chmodSync, existsSync, lstatSync, readFileSync, readlinkSync, symlinkSync, writeFileSync } from 'node:fs';
     import { join } from 'node:path';
-    import { findAgent, spawnInstance, retireInstance } from ${JSON.stringify(CORE)};
-    const context = join(process.cwd(), 'scope'), root = join(context, 'agents');
-    const soul = join(root, 'probe', 'soul'), skill = join(soul, 'skills', 'leaf-skill');
-    mkdirSync(skill, { recursive: true });
-    writeFileSync(join(context, 'oats-config.yaml'), 'capabilities:\\n  layers:\\n    knowledge: none\\n    messaging: none\\n    tasks: none\\n');
-    writeFileSync(join(soul, 'soul.yaml'), 'name: probe\\nwork: directory\\nruntime: pi\\n');
-    writeFileSync(join(soul, 'AGENTS.md'), '# Artifact leaf probe\\n');
-    symlinkSync('AGENTS.md', join(soul, 'CLAUDE.md'));
-    writeFileSync(join(skill, 'SKILL.md'), '---\\nname: leaf-skill\\ndescription: Hermetic leaf probe.\\n---\\n# Leaf skill\\n');
-    writeFileSync(join(skill, 'payload.bin'), Buffer.from([0, 255, 10]));
-    chmodSync(join(skill, 'payload.bin'), 0o751);
-    symlinkSync('payload.bin', join(skill, 'alias'));
-    const spawned = spawnInstance(root, findAgent(root, 'probe'), { purpose: 'leaf', launch: false });
-    assert.equal(spawned.launched, false);
-    assert.equal(spawned.work, 'directory');
-    assert.equal(lstatSync(join(spawned.home, 'work')).isDirectory(), true);
-    assert.equal(lstatSync(join(spawned.home, 'work')).isSymbolicLink(), false);
-    assert.equal(readlinkSync(join(spawned.home, 'CLAUDE.md')), 'AGENTS.md');
-    assert.equal(readlinkSync(join(spawned.home, '.claude/skills')), '../.agents/skills');
-    assert.match(readFileSync(join(spawned.home, 'AGENTS.md'), 'utf8'), /Artifact leaf probe/);
-    const copied = join(spawned.home, '.agents/skills/leaf-skill');
-    assert.deepEqual(readFileSync(join(copied, 'payload.bin')), Buffer.from([0, 255, 10]));
-    assert.equal(lstatSync(join(copied, 'payload.bin')).mode & 0o7777, 0o751);
-    assert.equal(readlinkSync(join(copied, 'alias')), 'payload.bin');
-    assert.equal(JSON.parse(readFileSync(join(spawned.home, 'instance.json'))).launched, false);
-    // Exercise copyTreeSafe's retirement caller too: normal verified recovery,
-    // not force, keep-dir or manual removal of the scaffold.
-    writeFileSync(join(spawned.home, 'work/result.bin'), Buffer.from([4, 0, 255]));
-    chmodSync(join(spawned.home, 'work/result.bin'), 0o751);
-    symlinkSync('result.bin', join(spawned.home, 'work/alias'));
-    const retired = retireInstance(root, spawned.instance);
-    assert.equal(existsSync(spawned.home), false);
-    assert.equal(retired.worktreeRemoved, false);
-    assert.equal(retired.branchDeleted, false);
-    const recovered = join(retired.workRecovery.path, 'work');
-    assert.deepEqual(readFileSync(join(recovered, 'result.bin')), Buffer.from([4, 0, 255]));
-    assert.equal(lstatSync(join(recovered, 'result.bin')).mode & 0o7777, 0o751);
-    assert.equal(readlinkSync(join(recovered, 'alias')), 'result.bin');
-    assert.equal(existsSync('runtime-invoked'), false);
-    console.log('scaffold inspected; normal retirement and recovery verified; no backend launched');
+    import { retireInstance } from ${JSON.stringify(CORE)};
+    import { v2Deployment } from ${JSON.stringify(V2)};
+    const fx = v2Deployment({
+      souls: { probe: { agents: '# Artifact leaf probe\\n', skills: { 'leaf-skill': { description: 'Hermetic leaf probe.', text: '# Leaf skill' } } } },
+      files: { 'souls/probe/skills/leaf-skill/payload.bin': { text: Buffer.from([0, 255, 10]), mode: 0o751 } },
+    });
+    try {
+      Object.assign(process.env, { OATS_REMOTE_CACHE: fx.env.OATS_REMOTE_CACHE });
+      const spawned = await fx.spawn('probe', { purpose: 'leaf' });
+      assert.equal(spawned.launched, false);
+      assert.equal(spawned.work, 'directory');
+      assert.equal(lstatSync(join(spawned.home, 'work')).isDirectory(), true);
+      assert.equal(lstatSync(join(spawned.home, 'work')).isSymbolicLink(), false);
+      assert.equal(readlinkSync(join(spawned.home, 'CLAUDE.md')), 'AGENTS.md');
+      assert.equal(readlinkSync(join(spawned.home, '.claude/skills')), '../.agents/skills');
+      assert.match(readFileSync(join(spawned.home, 'AGENTS.md'), 'utf8'), /Artifact leaf probe/);
+      const copied = join(spawned.home, '.agents/skills/leaf-skill');
+      assert.deepEqual(readFileSync(join(copied, 'payload.bin')), Buffer.from([0, 255, 10]));
+      // Git records only the executable bit of a member's file (100755): it survives, exactly.
+      assert.equal(lstatSync(join(copied, 'payload.bin')).mode & 0o7777, 0o755);
+      // (A symlink inside a fetched soul is refused by the workspace model; the work tree's is recovered below.)
+      assert.equal(JSON.parse(readFileSync(join(spawned.home, 'instance.json'))).launched, false);
+      // Exercise copyTreeSafe's retirement caller too: normal verified recovery,
+      // not force, keep-dir or manual removal of the scaffold.
+      writeFileSync(join(spawned.home, 'work/result.bin'), Buffer.from([4, 0, 255]));
+      chmodSync(join(spawned.home, 'work/result.bin'), 0o751);
+      symlinkSync('result.bin', join(spawned.home, 'work/alias'));
+      const retired = retireInstance(fx.root, spawned.instance);
+      assert.equal(existsSync(spawned.home), false);
+      assert.equal(retired.worktreeRemoved, false);
+      assert.equal(retired.branchDeleted, false);
+      const recovered = join(retired.workRecovery.path, 'work');
+      assert.deepEqual(readFileSync(join(recovered, 'result.bin')), Buffer.from([4, 0, 255]));
+      assert.equal(lstatSync(join(recovered, 'result.bin')).mode & 0o7777, 0o751);
+      assert.equal(readlinkSync(join(recovered, 'alias')), 'result.bin');
+      assert.equal(existsSync('runtime-invoked'), false);
+      console.log('scaffold inspected; normal retirement and recovery verified; no backend launched');
+    } finally { fx.cleanup(); }
   `);
   assert.equal(result, "scaffold inspected; normal retirement and recovery verified; no backend launched");
 });

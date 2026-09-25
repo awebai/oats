@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { acquirePackage, approveCapability, ensureRoot, findAgent, findCapabilityAgent, findRoot, listCapabilityAgents, listInstances, resolveWorkMode, retireInstance, spawnInstance, startInstanceSession, restartInstanceSession, launchEnvExports } from "../lib/core.mjs";
+import { startInstanceSession, restartInstanceSession } from "../lib/core.mjs";
+import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 import { HERDR_PROTOCOL } from "../lib/herdr.mjs";
 import { nativeHistoryPath, historicalSessionRoots } from "../packages/record/lib/native-history.mjs";
@@ -13,62 +13,62 @@ import { sessionsForHome } from "../packages/record/lib/sessions-for-home.mjs";
 const CLI = realpathSync(new URL("../bin/oats.mjs", import.meta.url));
 const HOST_PATH = process.env.PATH;
 function write(file, body) { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, body); }
-function fixture(t, { git = false, hook = false, packaged = false } = {}) {
-  const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-directory-")));
+const hostGit = () => execFileSync("/bin/sh", ["-c", "command -v git"], { env: { PATH: HOST_PATH }, encoding: "utf8" }).trim();
+const WORKER = "example.worker";
+const workerManifest = (hook, launch = false) => ({ capability: WORKER, version: "1.0.0", description: "Provider-neutral execution fixture.", compatibility: { oats: ">=0.6.2" }, skills: ["skills"], inject: "inject.md",
+  ...(hook ? { hooks: { spawn: "spawn.mjs", retire: "retire.mjs", ...(launch ? { launch: "launch.mjs" } : {}) } } : {}) });
+/** A workspace deployment (test/helpers/v2-deployment.mjs) whose one soul, `worker` (work: directory), resolves the
+ *  member capability example.worker. Spawns go through the real prepare → spawnInstanceAsync path.
+ *
+ *  KNOWN KERNEL BUG (c3a port, open): session start/restart of a workspace home resolves each recorded provider
+ *  (capturedProviders = every capabilityRuntime row) through capabilityManifest(id, meta.repo); meta.repo is the
+ *  deployment (or a member clone), never the home's .oats/modules, so every such start answers E_LAUNCH_PREPARATION
+ *  ("… no longer installed in the scope"). The tests that start a home past the work-root checks (R1 root authority,
+ *  the launch-hook custody cases, the history tests) assert the CORRECT behaviour and fail until it is fixed. */
+function fixture(t, { hook = false } = {}) {
+  const files = {
+    "skills/worker-skill/SKILL.md": "---\nname: worker-skill\ndescription: Generic worker fixture.\n---\n# Worker skill\n",
+    "inject.md": "## Generic worker capability\n",
+    ...(hook ? {
+      "spawn.mjs": `import { writeFileSync } from 'node:fs';
+const e = process.env;
+writeFileSync(e.OATS_INSTANCE_HOME + '/work/from-hook.txt', 'spawn bytes');
+console.log(JSON.stringify({meta: {context: e.OATS_CONTEXT, repo: e.OATS_REPO, root: e.OATS_ROOT, work: e.OATS_WORK, branch: e.OATS_BRANCH, cli: e.OATS_CLI_BIN}}));\n`,
+      "retire.mjs": `console.log(JSON.stringify({meta: {retired: true}}));\n`,
+    } : {}),
+  };
+  const fx = v2Deployment({
+    souls: { worker: { soul: { work: "directory", capabilities: { [WORKER]: { from: "here" } } }, agents: "# Generic worker\n" } },
+    capabilities: { [WORKER]: { manifest: workerManifest(hook), files } },
+  });
+  const base = fx.base;
   const saved = { ...process.env };
   t.after(() => {
     for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
     Object.assign(process.env, saved);
-    rmSync(base, { recursive: true, force: true });
+    fx.cleanup();
   });
-  // No host identity, credentials, config, runtime, Git, or scheduler can leak
-  // into a no-launch probe. Runtimes are inert executables for preflight only.
+  // No host identity, credentials, config, runtime, or scheduler can leak into a
+  // no-launch probe. Runtimes are inert executables for preflight only; git is
+  // the one host tool (the spawn resolves the workspace over its local remote).
+  const git = hostGit();
   for (const key of Object.keys(process.env)) delete process.env[key];
-  Object.assign(process.env, { HOME: join(base, "user"), OATS_HOME_DIR: join(base, "store"), PATH: join(base, "bin"), GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: join(base, "gitconfig") });
+  Object.assign(process.env, { HOME: join(base, "user"), OATS_HOME_DIR: join(base, "store"), PATH: join(base, "bin"), GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: join(base, "gitconfig"), OATS_REMOTE_CACHE: fx.env.OATS_REMOTE_CACHE });
   mkdirSync(process.env.HOME); write(process.env.GIT_CONFIG_GLOBAL, "");
   mkdirSync(process.env.PATH);
   symlinkSync(process.execPath, join(process.env.PATH, "node"));
+  symlinkSync(git, join(process.env.PATH, "git"));
   for (const name of ["pi", "claude", "codex"]) {
     write(join(process.env.PATH, name), `#!/bin/sh\necho unexpected-runtime-launch >&2\nexit 99\n`);
     chmodSync(join(process.env.PATH, name), 0o755);
   }
-  const context = join(base, "context"), root = join(context, "agents");
-  mkdirSync(context);
-  if (git) {
-    process.env.PATH += `:${HOST_PATH}`;
-    execFileSync("git", ["init", "-q", context]);
-    execFileSync("git", ["-C", context, "-c", "user.name=Fixture", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-qm", "baseline"]);
-  }
-  const cap = join(context, ".agents", "capabilities", "owned", "worker");
-  const manifest = { capability: "example.worker", version: "1.0.0", description: "Provider-neutral execution fixture.", compatibility: { oats: ">=0.6.2" }, skills: ["skills"], inject: "inject.md", ...(packaged ? { agents: ["agents/worker"] } : {}), ...(hook ? { hooks: { spawn: "spawn.mjs", retire: "retire.mjs" } } : {}) };
-  write(join(cap, "oats.json"), JSON.stringify(manifest));
-  write(join(cap, "skills", "worker-skill", "SKILL.md"), "---\nname: worker-skill\ndescription: Generic worker fixture.\n---\n# Worker skill\n");
-  write(join(cap, "inject.md"), "## Generic worker capability\n");
-  const soul = packaged ? join(cap, "agents", "worker") : join(root, "worker", "soul");
-  write(join(soul, "soul.yaml"), "name: worker\nwork: directory\nruntime: claude\n");
-  write(join(soul, "AGENTS.md"), "# Generic worker\n");
-  symlinkSync("AGENTS.md", join(soul, "CLAUDE.md"));
-  if (hook) {
-    write(join(cap, "spawn.mjs"), `import { writeFileSync } from 'node:fs';
-const e = process.env;
-writeFileSync(e.OATS_INSTANCE_HOME + '/work/from-hook.txt', 'spawn bytes');
-console.log(JSON.stringify({meta: {context: e.OATS_CONTEXT, repo: e.OATS_REPO, root: e.OATS_ROOT, work: e.OATS_WORK, branch: e.OATS_BRANCH, cli: e.OATS_CLI_BIN}}));\n`);
-    write(join(cap, "retire.mjs"), `console.log(JSON.stringify({meta: {retired: true}}));\n`);
-  }
-  write(join(context, "oats-config.yaml"), "capabilities:\n  additive:\n    example.worker:\n      from: owned\n      global: true\n");
-  const agent = () => packaged ? findCapabilityAgent(context, root, "worker") : findAgent(root, "worker");
-  const spawn = (purpose, options = {}) => spawnInstance(root, agent(), { purpose, launch: false, ...options });
-  return { base, context, root, cap, soul, agent, spawn };
-}
-function cli(f, args, cwd = f.context) {
-  return spawnSync(process.execPath, [CLI, ...args, "--dir", f.context, "--json"], { cwd, env: process.env, encoding: "utf8" });
-}
-function cliSpawn(f, args = [], cwd) {
-  const result = cli(f, ["spawn", "worker", "--purpose", "cli", "--no-launch", ...args], cwd);
-  assert.equal(result.status, 0, result.stdout + result.stderr);
-  const envelope = JSON.parse(result.stdout);
-  assert.equal(envelope.ok, true);
-  return envelope.result;
+  const f = { base, fx, context: fx.dep, root: fx.root, runtime: "claude" };
+  /** The worker capability gains a launch hook (committed to the member before any spawn). */
+  f.launchHook = (script) => fx.commit({ [`capabilities/${WORKER}/oats.json`]: { json: workerManifest(hook, true) }, [`capabilities/${WORKER}/launch.mjs`]: script }, "worker: launch hook");
+  /** Launch configurations are the deployment's oats-local.yaml `launch-configs:`. */
+  f.launchConfigs = (configs) => writeFileSync(join(fx.dep, "oats-local.yaml"), JSON.stringify({ schemaVersion: 2, workspace: fx.ref, "launch-configs": configs }) + "\n");
+  f.spawn = (purpose, options = {}) => fx.spawn("worker", { purpose, runtime: f.runtime, ...options });
+  return f;
 }
 function readJson(file) { return JSON.parse(readFileSync(file, "utf8")); }
 
@@ -118,16 +118,15 @@ test('original native recall now drains successful >21MB JSON',t=>{
 // source recipe's real shell/environment transport.
 for(const [runtime,variable,suffix,source] of [['claude','CLAUDE_CONFIG_DIR','projects/p','cc'],['pi','PI_CODING_AGENT_DIR','sessions/p','pi'],['codex','CODEX_HOME','sessions/2026/09/13','codex']]) {
  for(const kind of ['inherited-disappeared','fromEnv-retargeted']) {
-  test(`R1 root authority ${runtime}: ${kind} cannot certify empty observer storage`,t=>{
+  test(`R1 root authority ${runtime}: ${kind} cannot certify empty observer storage`,async t=>{
    const f=fixture(t);
-   write(join(f.soul,'soul.yaml'),`name: worker\nwork: directory\nruntime: ${runtime}\n`);
+   f.runtime=runtime; // v2 souls declare no runtime: the spawn selects it
    const actual=join(f.base,'native-root-at-launch'),observer=join(f.base,'empty-observer-root');
    mkdirSync(join(observer,suffix),{recursive:true});
    process.env[variable]=actual;process.env.FIXTURE_NATIVE_LOCATION=actual;process.env.ANTHROPIC_API_KEY='FIXTURE_SECRET_VALUE';
    if(kind==='fromEnv-retargeted') {
-    // Launch configurations live in the deployment's oats-local.yaml (found walking up from the agents root).
-    write(join(f.context,'oats-local.yaml'),
-      `schemaVersion: 2\nworkspace: example.invalid/acme/workspace\nlaunch-configs:\n  custom:\n    runtime: ${runtime}\n    env:\n      ${variable}:\n        fromEnv: FIXTURE_NATIVE_LOCATION\n`);
+    // Launch configurations live in the deployment's oats-local.yaml.
+    f.launchConfigs({custom:{runtime,env:{[variable]:{fromEnv:'FIXTURE_NATIVE_LOCATION'}}}});
    }
    write(join(f.base,'bin',runtime),`#!${process.execPath}
 const fs=require('node:fs'),path=require('node:path');
@@ -138,7 +137,7 @@ fs.writeFileSync(path.join(dir,'s1.jsonl'),JSON.stringify(header)+String.fromCha
 `);
    chmodSync(join(f.base,'bin',runtime),0o755);
    symlinkSync('/bin/cat',join(f.base,'bin/cat'));
-   const result=f.spawn('root-history',kind==='fromEnv-retargeted'?{launchConfig:'custom'}:{});
+   const result=await f.spawn('root-history',kind==='fromEnv-retargeted'?{launchConfig:'custom',runtime:undefined}:{});
    const meta=readJson(join(result.home,'instance.json'));
    installBackend(f, { execute: true });
    startInstanceSession(result.home);
@@ -161,11 +160,10 @@ fs.writeFileSync(path.join(dir,'s1.jsonl'),JSON.stringify(header)+String.fromCha
 }
 
 for(const kind of ['preexisting-symlink','launch-hook-symlink']) {
- test(`directory session start: ${kind} cannot reach backend`,t=>{
+ test(`directory session start: ${kind} cannot reach backend`,async t=>{
   const f=fixture(t,{hook:true});
   if(kind==='launch-hook-symlink') {
-   const manifest=readJson(join(f.cap,'oats.json'));manifest.hooks.launch='launch.mjs';write(join(f.cap,'oats.json'),JSON.stringify(manifest));
-   write(join(f.cap,'launch.mjs'),`import {renameSync,symlinkSync} from 'node:fs';
+   f.launchHook(`import {renameSync,symlinkSync} from 'node:fs';
 const home=process.env.OATS_INSTANCE_HOME;
 renameSync(home+'/work',home+'/owned-work');symlinkSync(process.env.OATS_CONTEXT,home+'/work');
 console.log(JSON.stringify({env:{}}));`);
@@ -176,7 +174,7 @@ const fs=require('node:fs');const a=process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(faked)},JSON.stringify(a)+String.fromCharCode(10));
 if(a.includes('display-message')) console.log(${JSON.stringify(join(f.base,'fake.sock'))});
 `);chmodSync(join(f.base,'bin/tmux'),0o755);
-  const result=f.spawn('session-substitution');
+  const result=await f.spawn('session-substitution');
   if(kind==='preexisting-symlink') {rmSync(join(result.home,'work'),{recursive:true});symlinkSync(f.context,join(result.home,'work'));}
   let error,started;
   try {started=startInstanceSession(result.home);} catch(e) {error={code:e.code,message:e.message};}
@@ -191,18 +189,17 @@ if(a.includes('display-message')) console.log(${JSON.stringify(join(f.base,'fake
 for (const restart of [false, true]) for (const backend of ['new-tmux', 'saved-tmux', 'herdr', 'pending']) {
   for (const attack of ['missing', 'file', 'directory', 'home-link', 'mode-edit', 'hook-work-link', 'hook-home-link']) {
     if (backend === 'pending' && attack.startsWith('hook-')) continue; // adoption observes the earlier launch, it does not prepare a new one
-    test(`${restart ? 'restart' : 'start'} custody: ${backend} ${attack}`, t => {
+    test(`${restart ? 'restart' : 'start'} custody: ${backend} ${attack}`, async t => {
       const f = fixture(t, { hook: true });
       const logs = installBackend(f);
       const hook = attack.startsWith('hook-');
       if (hook) {
-        const manifest = readJson(join(f.cap, 'oats.json')); manifest.hooks.launch = 'launch.mjs'; write(join(f.cap, 'oats.json'), JSON.stringify(manifest));
         const statements = attack === 'hook-home-link'
           ? "renameSync(home,home+'.owned');symlinkSync(process.env.OATS_CONTEXT,home);"
           : "renameSync(home+'/work',home+'/owned-work');symlinkSync(process.env.OATS_CONTEXT,home+'/work');";
-        write(join(f.cap, 'launch.mjs'), `import {renameSync,symlinkSync} from 'node:fs';const home=process.env.OATS_INSTANCE_HOME;${statements}console.log(JSON.stringify({env:{}}));`);
+        f.launchHook(`import {renameSync,symlinkSync} from 'node:fs';const home=process.env.OATS_INSTANCE_HOME;${statements}console.log(JSON.stringify({env:{}}));`);
       }
-      const r = f.spawn('guard');
+      const r = await f.spawn('guard');
       const metaPath = join(r.home, 'instance.json');
       const meta = readJson(metaPath);
       const baseDir = join(dirname(r.home), '.oats-retirement', 'baselines');
@@ -250,11 +247,11 @@ fs.writeFileSync(p.join(root,rt+'.jsonl'),JSON.stringify(row)+'\\n');`);
   chmodSync(join(f.base,'bin',runtime),0o755);
 }
 
-test('actual spawn, resumed start and runtime switch retain every execution root, not recipes or current HOME', t => {
+test('actual spawn, resumed start and runtime switch retain every execution root, not recipes or current HOME', async t => {
   const f=fixture(t);installBackend(f,{execute:true});symlinkSync('/bin/cat',join(f.base,'bin/cat'));
   for(const rt of ['claude','pi','codex']) emitter(f,rt);
   process.env.CLAUDE_CONFIG_DIR=join(f.base,'first');
-  const r=f.spawn('history',{launch:true}); // actual spawn dispatch, not a scaffold template replay
+  const r=await f.spawn('history',{launch:true}); // actual spawn dispatch, not a scaffold template replay
   assert.equal(sessionsForHome(r.home).length,1);
   process.env.CLAUDE_CONFIG_DIR=join(f.base,'second');
   startInstanceSession(r.home);
@@ -273,9 +270,9 @@ test('actual spawn, resumed start and runtime switch retain every execution root
   assert.throws(()=>sessionsForHome(r.home),/ENOENT/,'a removed historical root is not an empty successful scan');
 });
 
-test('unexecuted dispatch stays pending; legacy recipes cannot certify historical roots', t => {
+test('unexecuted dispatch stays pending; legacy recipes cannot certify historical roots', async t => {
   const f=fixture(t);installBackend(f);
-  const r=f.spawn('pending-history');
+  const r=await f.spawn('pending-history');
   startInstanceSession(r.home);
   assert.throws(()=>sessionsForHome(r.home),/pending/);
   rmSync(nativeHistoryPath(r.home),{recursive:true});
@@ -285,9 +282,9 @@ test('unexecuted dispatch stays pending; legacy recipes cannot certify historica
   assert.throws(()=>sessionsForHome(r.home),/earlier launches are unknown/);
 });
 
-test('Herdr execution records roots in its actual launch environment and keeps metadata recovery separate', t => {
+test('Herdr execution records roots in its actual launch environment and keeps metadata recovery separate', async t => {
   const f=fixture(t);emitter(f,'claude');symlinkSync('/bin/cat',join(f.base,'bin/cat'));
-  const r=f.spawn('herdr-history');
+  const r=await f.spawn('herdr-history');
   const target={backend:'herdr',binary:'/inert/herdr',socket:join(f.base,'herdr.sock'),protocol:HERDR_PROTOCOL,workspaceId:'w0',paneId:'p0',terminalId:'t0'};
   const metaPath=join(r.home,'instance.json'),meta=readJson(metaPath);delete meta.tmux;
   write(metaPath,JSON.stringify({...meta,launched:true,backend:'herdr',sessionTarget:target}));

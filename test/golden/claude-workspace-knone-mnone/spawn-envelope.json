@@ -4,7 +4,7 @@
   "result": {
     "instance": "dev-claude-workspace-knone-mnone",
     "agent": "dev",
-    "home": "<base>/scope/agents/dev/instances/dev-claude-workspace-knone-mnone",
+    "home": "<base>/deployment/agents/dev/instances/dev-claude-workspace-knone-mnone",
     "work": "workspace",
     "branch": null,
     "launched": false,
@@ -13,7 +13,7 @@
       "session": "oats-golden",
       "window": "dev-claude-workspace-knone-mnone"
     },
-    "repo": "<base>/scope/repo",
+    "repo": "<base>/deployment",
     "runtime": "claude",
     "model": null,
     "parent": null,

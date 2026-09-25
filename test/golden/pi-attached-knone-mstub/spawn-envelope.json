@@ -4,7 +4,7 @@
   "result": {
     "instance": "dev-pi-attached-knone-mstub",
     "agent": "dev",
-    "home": "<base>/scope/agents/dev/instances/dev-pi-attached-knone-mstub",
+    "home": "<base>/deployment/agents/dev/instances/dev-pi-attached-knone-mstub",
     "work": "attached",
     "branch": "agents/dev-owner",
     "launched": false,
@@ -13,7 +13,7 @@
       "session": "oats-golden",
       "window": "dev-pi-attached-knone-mstub"
     },
-    "repo": "<base>/scope/repo",
+    "repo": "<base>/deployment/ws",
     "runtime": "pi",
     "model": null,
     "parent": "dev-owner",
@@ -47,7 +47,7 @@
           {
             "capability": "golden.messaging",
             "layer": "messaging",
-            "level": "<base>/scope",
+            "level": "<base>/deployment/agents/dev/instances/dev-pi-attached-knone-mstub",
             "settings": {},
             "trust": {
               "trusted": true,

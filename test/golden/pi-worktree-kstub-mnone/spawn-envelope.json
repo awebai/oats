@@ -4,7 +4,7 @@
   "result": {
     "instance": "dev-pi-worktree-kstub-mnone",
     "agent": "dev",
-    "home": "<base>/scope/agents/dev/instances/dev-pi-worktree-kstub-mnone",
+    "home": "<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mnone",
     "work": "worktree",
     "branch": "agents/dev-pi-worktree-kstub-mnone",
     "launched": false,
@@ -13,7 +13,7 @@
       "session": "oats-golden",
       "window": "dev-pi-worktree-kstub-mnone"
     },
-    "repo": "<base>/scope/repo",
+    "repo": "<base>/deployment/ws",
     "runtime": "pi",
     "model": null,
     "parent": null,

@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { findAgent, OATS_VERSION, runLifecycleHooks, spawnInstance } from "../lib/core.mjs";
+import { OATS_VERSION, runLifecycleHooks } from "../lib/core.mjs";
 import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
+import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const CLI = realpathSync(new URL("../bin/oats.mjs", import.meta.url));
 const quote = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
@@ -64,20 +65,17 @@ test("direct lifecycle calls author the kernel CLI even with poisoned ambient an
   }
 });
 
-test("direct core and CLI scaffold spawns supply the known agents root and an executable canonical CLI", (t) => {
-  const { base, hook } = fixture(t, { probeCli: true });
-  const repo = join(base, "repo"), root = join(repo, "agents"), soul = join(root, "dev", "soul");
-  mkdirSync(repo); execFileSync("git", ["init", "-q", repo]);
-  write(join(soul, "soul.yaml"), "name: dev\nkind: persistent\nrepo: .\nwork: checkout\nruntime: claude\n");
-  write(join(soul, "AGENTS.md"), "# Dev\n"); symlinkSync("AGENTS.md", join(soul, "CLAUDE.md"));
-  const cap = join(repo, ".agents", "capabilities", "owned", "context");
-  write(join(cap, "hook.mjs"), readFileSync(hook, "utf8"));
-  write(join(cap, "oats.json"), JSON.stringify({ capability: "test.context", version: "1.0.0", description: "Lifecycle fixture.", compatibility: { oats: ">=0.6.2" }, hooks: { spawn: "hook.mjs" } }));
-  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    test.context:\n      global: true\n");
-  const direct = spawnInstance(root, findAgent(root, "dev"), { purpose: "direct", launch: false });
-  check(JSON.parse(readFileSync(join(direct.home, "hook-result.json"))), root, direct.home);
-  const child = spawnSync(process.execPath, [CLI, "spawn", "dev", "--dir", repo, "--purpose", "cli", "--no-launch", "--json"], { cwd: repo, env: process.env, encoding: "utf8" });
+test("direct core and CLI spawns supply the known agents root and an executable canonical CLI", async (t) => {
+  const { hook } = fixture(t, { probeCli: true });
+  const fx = v2Deployment({
+    souls: { dev: { soul: { work: "checkout", capabilities: { "test-context": { from: "here" } } } } },
+    capabilities: { "test-context": { manifest: { description: "Lifecycle fixture.", hooks: { spawn: "hook.mjs" } }, files: { "hook.mjs": readFileSync(hook, "utf8") } } },
+  });
+  t.after(() => fx.cleanup());
+  const direct = await fx.spawn("dev", { purpose: "direct", runtime: "claude" });
+  check(JSON.parse(readFileSync(join(direct.home, "hook-result.json"))), fx.root, direct.home);
+  const child = spawnSync(process.execPath, [CLI, "spawn", "dev", "--dir", fx.dep, "--purpose", "cli", "--runtime", "claude", "--no-launch", "--json"], { cwd: fx.dep, env: { ...process.env, OATS_REMOTE_CACHE: fx.env.OATS_REMOTE_CACHE }, encoding: "utf8" });
   assert.equal(child.status, 0, child.stderr + child.stdout);
   const envelope = JSON.parse(child.stdout); assert.equal(envelope.ok, true, JSON.stringify(envelope));
-  check(JSON.parse(readFileSync(join(envelope.result.home, "hook-result.json"))), root, envelope.result.home);
+  check(JSON.parse(readFileSync(join(envelope.result.home, "hook-result.json"))), fx.root, envelope.result.home);
 });

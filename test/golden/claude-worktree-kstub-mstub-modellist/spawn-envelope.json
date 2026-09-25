@@ -4,7 +4,7 @@
   "result": {
     "instance": "dev-claude-worktree-kstub-mstub-modellist",
     "agent": "dev",
-    "home": "<base>/scope/agents/dev/instances/dev-claude-worktree-kstub-mstub-modellist",
+    "home": "<base>/deployment/agents/dev/instances/dev-claude-worktree-kstub-mstub-modellist",
     "work": "worktree",
     "branch": "agents/dev-claude-worktree-kstub-mstub-modellist",
     "launched": false,
@@ -13,7 +13,7 @@
       "session": "oats-golden",
       "window": "dev-claude-worktree-kstub-mstub-modellist"
     },
-    "repo": "<base>/scope/repo",
+    "repo": "<base>/deployment/ws",
     "runtime": "claude",
     "model": "claude-sonnet-4-5",
     "parent": null,
@@ -47,7 +47,7 @@
           {
             "capability": "golden.messaging",
             "layer": "messaging",
-            "level": "<base>/scope",
+            "level": "<base>/deployment/agents/dev/instances/dev-claude-worktree-kstub-mstub-modellist",
             "settings": {},
             "trust": {
               "trusted": true,

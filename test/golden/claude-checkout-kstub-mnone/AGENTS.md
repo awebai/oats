@@ -79,7 +79,7 @@ in the same tree as the human and possibly other agents.
   for a worktree-mode instance instead.
 <!-- /oats:work-mode:checkout -->
 
-<!-- oats:capability:golden.knowledge src=<base>/scope/.agents/capabilities/owned/golden-knowledge/inject.md -->
+<!-- oats:capability:golden.knowledge src=<base>/deployment/agents/dev/instances/dev-claude-checkout-kstub-mnone/.oats/modules/golden.knowledge/inject.md -->
 ## Knowledge (stub)
 
 Your durable knowledge is at `soul/knowledge/index.md`.

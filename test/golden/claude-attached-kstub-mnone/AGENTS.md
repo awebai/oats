@@ -83,7 +83,7 @@ This mode fits service agents (harvesters, reviewers, fixers) that operate
 on a live instance's work in flight.
 <!-- /oats:work-mode:attached -->
 
-<!-- oats:capability:golden.knowledge src=<base>/scope/.agents/capabilities/owned/golden-knowledge/inject.md -->
+<!-- oats:capability:golden.knowledge src=<base>/deployment/agents/dev/instances/dev-claude-attached-kstub-mnone/.oats/modules/golden.knowledge/inject.md -->
 ## Knowledge (stub)
 
 Your durable knowledge is at `soul/knowledge/index.md`.

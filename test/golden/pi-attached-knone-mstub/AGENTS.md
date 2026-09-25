@@ -83,7 +83,7 @@ This mode fits service agents (harvesters, reviewers, fixers) that operate
 on a live instance's work in flight.
 <!-- /oats:work-mode:attached -->
 
-<!-- oats:capability:golden.messaging src=<base>/scope/.agents/capabilities/owned/golden-messaging/inject.md -->
+<!-- oats:capability:golden.messaging src=<base>/deployment/agents/dev/instances/dev-pi-attached-knone-mstub/.oats/modules/golden.messaging/inject.md -->
 ## Messaging (stub)
 
 You are reachable over the stub broker named in `$GOLDEN_BROKER_ENDPOINT`.

@@ -89,14 +89,14 @@ scope is the workspace itself; if a task needs actual edits in one repo, ask
 for (or route to) a worktree-mode instance of that repo's agent instead.
 <!-- /oats:work-mode:workspace -->
 
-<!-- oats:capability:golden.knowledge src=<base>/scope/.agents/capabilities/owned/golden-knowledge/inject.md -->
+<!-- oats:capability:golden.knowledge src=<base>/deployment/agents/dev/instances/dev-pi-workspace-kstub-mstub/.oats/modules/golden.knowledge/inject.md -->
 ## Knowledge (stub)
 
 Your durable knowledge is at `soul/knowledge/index.md`.
 Your working state for this instance is `STATE.md` and `notes/`.
 <!-- /oats:capability:golden.knowledge -->
 
-<!-- oats:capability:golden.messaging src=<base>/scope/.agents/capabilities/owned/golden-messaging/inject.md -->
+<!-- oats:capability:golden.messaging src=<base>/deployment/agents/dev/instances/dev-pi-workspace-kstub-mstub/.oats/modules/golden.messaging/inject.md -->
 ## Messaging (stub)
 
 You are reachable over the stub broker named in `$GOLDEN_BROKER_ENDPOINT`.

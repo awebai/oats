@@ -13,6 +13,7 @@
 //     scaffold-only execution is a mandatory success path, never launch-or-fail.
 import test from "node:test";
 import { fixture as okfFixture } from "./helpers/okf-v2.mjs";
+import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -75,12 +76,10 @@ test("oats version human output stays ergonomic and mentions the version", () =>
   assert.match(r.stdout, new RegExp(PKG_VERSION.replace(/\./g, "\\.")));
 });
 
-test("oats spawn --json success is one envelope with the contract result fields", () => {
-  const base = temp(); const { repo } = fixtureSoul(base);
-  const env = { ...process.env, PATH: fakeRuntimes(base), PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" };
-  delete env.PI_AGENTS_ROOT;
-  const r = spawnSync(process.execPath, [CLI, "spawn", "dev", "--task", "contract check", "--purpose", "ctr", "--no-launch", "--json"], { cwd: repo, env, encoding: "utf8" });
-  assert.equal(r.status, 0, r.stderr);
+test("oats spawn --json success is one envelope with the contract result fields", (t) => {
+  const fx = v2Deployment({ souls: { dev: { soul: { work: "checkout" } } } }); t.after(() => fx.cleanup());
+  const r = fx.cli(["spawn", "dev", "--task", "contract check", "--purpose", "ctr", "--no-launch", "--json"], { env: { PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" } });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
   const doc = parseOnly(r.stdout);
   assert.equal(doc.schemaVersion, 1);
   assert.equal(doc.ok, true);

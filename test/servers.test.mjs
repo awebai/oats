@@ -11,9 +11,10 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { linkExecutables } from "./helpers/host-fixture.mjs";
+import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { dirname, join, resolve } from "node:path";
 
-import { findAgent, spawnInstance } from "../lib/core.mjs";
+import { spawnInstanceAsync } from "../lib/core.mjs";
 import { attachArgv, checkRemoteSupport, resolveRoute, routeCommand, runRemote, compareSemver, remoteQuote, snapshotPath, sshArgv, validateServer } from "../lib/servers.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
@@ -44,16 +45,17 @@ exec sh -c "$1"
   return { bin, log, tools };
 }
 
-function remoteWorkspace(base) {
-  const repo = join(base, "remote-ws"); mkdirSync(repo, { recursive: true });
-  write(join(repo, "oats-config.yaml"), "capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n");
-  write(join(repo, "agents", "dev", "soul", "soul.yaml"), "name: dev\nrepo: .\nwork: checkout\nruntime: pi\n");
-  write(join(repo, "agents", "dev", "soul", "AGENTS.md"), "You are dev.\n");
-  execFileSync("git", ["init", "-q", repo]);
-  execFileSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "add", "-A"]);
-  execFileSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-qm", "init"]);
-  return repo;
+/** The registered "remote" workspace: a workspace deployment (oats-local.yaml
+ *  over a one-repo workspace) whose soul dev works in a checkout of the member
+ *  clone. `base` owns it: removed with the test's temp directory. */
+const deployments = [];
+function remoteDeployment(souls = {}) {
+  const fx = v2Deployment({ souls: { dev: { soul: { work: "checkout" }, agents: "You are dev.\n" }, ...souls } });
+  deployments.push(fx);
+  return fx;
 }
+function remoteWorkspace() { return remoteDeployment().dep; }
+test.after(() => { for (const fx of deployments) fx.cleanup(); });
 
 function oats(env, args, opts = {}) {
   const r = spawnSync(process.execPath, [CLI, ...args], { encoding: "utf8", env, cwd: opts.cwd || env.HOME });
@@ -135,7 +137,7 @@ test("oats server + --server: registry, check, remote spawn with a hostile task,
   const base = mkdtempSync(join(tmpdir(), "oats-servers-"));
   try {
     const { bin, log, tools } = fakeBin(base);
-    const repo = remoteWorkspace(base);
+    const repo = remoteWorkspace();
     // Only enumerated tools and fake ssh/tmux, not even node's parent bin
     // directory: it may contain globally installed model runtimes.
     const env = { ...process.env, PATH: bin, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
@@ -160,7 +162,9 @@ test("oats server + --server: registry, check, remote spawn with a hostile task,
     assert.equal(r.status, 0, r.stderr + r.stdout);
     const chk = r.json().result;
     assert.equal(chk.remote.desktopApi, 1); assert.equal(typeof chk.remote.version, "string");
-    assert.equal(chk.workspaceReachable, true); assert.equal(chk.agents, 1);
+    // A workspace deployment lists a soul under agents/ once it has been spawned
+    // (its per-commit copy); none has been yet.
+    assert.equal(chk.workspaceReachable, true); assert.equal(chk.agents, 0);
     const sshLines = readFileSync(log, "utf8");
     assert.match(sshLines, /^-o\nBatchMode=yes\n-o\nConnectTimeout=15\n--\nbuild-host\n/m, "non-interactive, options ended with -- before the host");
 
@@ -260,7 +264,7 @@ test("oats server roster, okf harvest --server, and the changed-registration gua
   const base = mkdtempSync(join(tmpdir(), "oats-servers-roster-"));
   try {
     const { bin, log, tools } = fakeBin(base);
-    const repo = remoteWorkspace(base);
+    const repo = remoteWorkspace();
     const env = { ...process.env, PATH: bin, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
     mkdirSync(env.HOME, { recursive: true }); mkdirSync(env.OATS_HOME_DIR, { recursive: true });
     for (const k of Object.keys(env)) if (/^(OATS_INSTANCE|PI_AGENT)/.test(k)) delete env[k];
@@ -387,19 +391,16 @@ test("oats server roster, okf harvest --server, and the changed-registration gua
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-test("routed retire with same-named twins: exact home on a 0.22.3 remote, refusal on an older one", () => {
+test("routed retire with same-named twins: exact home on a 0.22.3 remote, refusal on an older one", async () => {
   const base = mkdtempSync(join(tmpdir(), "oats-servers-twins-"));
   try {
     const { bin, tools } = fakeBin(base);
-    const repo = remoteWorkspace(base);
     // A second soul whose name can collide with dev's: dev --purpose foo-1 and
     // dev-foo --purpose 1 both derived dev-foo-1 before 0.26.0. A 0.26 spawn
     // de-duplicates names deployment-wide (it would derive dev-foo-1-2), but
     // homes an earlier kernel created keep sharing the name — the twins below.
-    write(join(repo, "agents", "dev-foo", "soul", "soul.yaml"), "name: dev-foo\nrepo: .\nwork: checkout\nruntime: pi\n");
-    write(join(repo, "agents", "dev-foo", "soul", "AGENTS.md"), "You are dev-foo.\n");
-    execFileSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "add", "-A"]);
-    execFileSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-qm", "twin soul"]);
+    const fx = remoteDeployment({ "dev-foo": { soul: { work: "checkout" }, agents: "You are dev-foo.\n" } });
+    const repo = fx.dep;
     const env = { ...process.env, PATH: bin, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
     mkdirSync(env.HOME, { recursive: true }); mkdirSync(env.OATS_HOME_DIR, { recursive: true });
     for (const k of Object.keys(env)) if (/^(OATS_INSTANCE|PI_AGENT)/.test(k)) delete env[k];
@@ -425,12 +426,14 @@ test("routed retire with same-named twins: exact home on a 0.22.3 remote, refusa
     // 0.26 spawn never derives it). It has no saved route here. That a routed
     // spawn reporting a colliding name never overwrites a saved route
     // (routeConflict) is lib/servers.mjs's own, covered by the routeCommand test.
-    const makeTwin = () => {
+    const makeTwin = async () => {
       const prevPath = process.env.PATH; process.env.PATH = `${tools}:${bin}`;
-      try { return spawnInstance(join(repo, "agents"), findAgent(join(repo, "agents"), "dev-foo"), { instance: "dev-foo-1", launch: false }).home; }
-      finally { process.env.PATH = prevPath; }
+      try {
+        const { prepared, agent } = await fx.prepare("dev-foo");
+        return (await spawnInstanceAsync(fx.root, agent, { prepared, instance: "dev-foo-1", repo: fx.member, launch: false })).home;
+      } finally { process.env.PATH = prevPath; }
     };
-    const twinHome = makeTwin();
+    const twinHome = await makeTwin();
     assert.notEqual(devHome, twinHome);
     r = oats(env, ["spawn", "dev-foo", "--server", "new", "--purpose", "1", "--no-launch", "--preview", "--json"]); assert.equal(r.status, 0, r.stderr + r.stdout);
     assert.equal(r.json().result.instance, "dev-foo-1-2", "a 0.26 spawn skips the name the twins share");
@@ -471,7 +474,7 @@ test("routed retire with same-named twins: exact home on a 0.22.3 remote, refusa
     assert.equal(r.json().error?.code, "E_HOME_MISMATCH", r.stdout); assert.match(r.json().error.message, /stale/);
     assert.equal(existsSync(devHome), true);
     writeFileSync(snapshotPath("old", "dev-foo-1"), JSON.stringify(driftSnap));
-    assert.equal(makeTwin(), twinHome, "the earlier-kernel twin is back");
+    assert.equal(await makeTwin(), twinHome, "the earlier-kernel twin is back");
     // New remote, an explicit home that is not the saved route: refused.
     r = oats(env, ["retire", "dev-foo-1", "--server", "new", "--home", twinHome, "--json"]);
     assert.equal(r.json().error?.code, "E_HOME_MISMATCH"); assert.equal(existsSync(twinHome), true);
@@ -527,7 +530,11 @@ test("roster budget: slow targets are bounded, healthy results survive, unreache
   const base = mkdtempSync(join(tmpdir(), "oats-servers-budget-"));
   try {
     const { bin, tools } = fakeBin(base);
-    const repo = remoteWorkspace(base);
+    const fx = remoteDeployment();
+    const repo = fx.dep;
+    // The roster lists a workspace soul once it has been spawned (its per-commit copy under agents/).
+    const seeded = fx.cli(["spawn", "dev", "--purpose", "seed", "--no-launch", "--json"]);
+    assert.equal(seeded.status, 0, seeded.stdout + seeded.stderr);
     const env = { ...process.env, PATH: bin, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
     mkdirSync(env.HOME, { recursive: true }); mkdirSync(env.OATS_HOME_DIR, { recursive: true });
     for (const k of Object.keys(env)) if (/^(OATS_INSTANCE|PI_AGENT)/.test(k)) delete env[k];

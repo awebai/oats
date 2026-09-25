@@ -13,13 +13,13 @@
 // and the tmux session are isolated (a fake `tmux` on PATH answers the live-window lookup).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildNorthwind } from "./fixtures/northwind/build.mjs";
-import { findAgent, spawnInstance } from "../lib/core.mjs";
 import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
+import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 
@@ -136,71 +136,56 @@ exit 1
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-test("kernel naming: derived names skip another soul's instance and a soul name (the latent collision); name excludes purpose and instance", () => {
-  const base = mkdtempSync(join(tmpdir(), "oats-spawn-name-k-"));
-  const oldPath = process.env.PATH;
-  try {
-    const repo = join(base, "repo"); mkdirSync(repo, { recursive: true });
-    execFileSync("git", ["init", "-q", repo]);
-    execFileSync("git", ["-C", repo, "-c", "user.email=t@example.invalid", "-c", "user.name=T", "commit", "-q", "--allow-empty", "-m", "init"]);
-    const root = join(repo, "agents");
-    for (const soul of ["dev", "dev-foo"]) {
-      mkdirSync(join(root, soul, "soul"), { recursive: true });
-      writeFileSync(join(root, soul, "soul", "soul.yaml"), `name: ${soul}\nkind: persistent\nrepo: ${repo}\nwork: checkout\nruntime: pi\n`);
-      writeFileSync(join(root, soul, "soul", "AGENTS.md"), `# ${soul}\n`);
-    }
-    process.env.PATH = inertRuntimePath(base);
-    // soul "dev" + purpose "foo-1" and soul "dev-foo" + purpose "1" both derive "dev-foo-1".
-    assert.equal(spawnInstance(root, findAgent(root, "dev"), { purpose: "foo-1", launch: false }).instance, "dev-foo-1");
-    assert.equal(spawnInstance(root, findAgent(root, "dev-foo"), { purpose: "1", launch: false }).instance, "dev-foo-1-2", "derived-vs-derived: the second soul skips the first's name");
-    // soul "dev" + purpose "foo" derives "dev-foo" — a soul name — and skips it.
-    assert.equal(spawnInstance(root, findAgent(root, "dev"), { purpose: "foo", launch: false }).instance, "dev-foo-2", "derived-vs-soul-name");
-    // An orphaned home (its soul definition removed) still holds its name.
-    mkdirSync(join(root, "gone", "instances", "orphan-x"), { recursive: true });
-    assert.throws(() => spawnInstance(root, findAgent(root, "dev"), { name: "orphan-x", launch: false }), { code: "E_INSTANCE_NAME_TAKEN" });
-    assert.throws(() => spawnInstance(root, findAgent(root, "dev"), { name: "x", purpose: "y", launch: false }), { code: "E_BAD_ARGS" });
-    assert.throws(() => spawnInstance(root, findAgent(root, "dev"), { name: "x", instance: "dev-x", launch: false }), { code: "E_BAD_ARGS" });
-    assert.equal(spawnInstance(root, findAgent(root, "dev"), { name: "plain", launch: false }).instance, "plain");
-  } finally { process.env.PATH = oldPath; rmSync(base, { recursive: true, force: true }); }
+/** In-process spawns read the fixture's isolated HOME, remote cache, runtimes and tmux session. */
+function v2(t, opts) {
+  const fx = v2Deployment(opts);
+  const saved = { ...process.env };
+  Object.assign(process.env, { HOME: fx.env.HOME, OATS_REMOTE_CACHE: fx.env.OATS_REMOTE_CACHE, PATH: fx.env.PATH, OATS_TMUX_SESSION: fx.env.OATS_TMUX_SESSION, PI_AGENTS_TMUX_SESSION: fx.env.PI_AGENTS_TMUX_SESSION });
+  t.after(() => { for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k]; Object.assign(process.env, saved); fx.cleanup(); });
+  return fx;
+}
+
+test("kernel naming: derived names skip another soul's instance and a soul name (the latent collision); name excludes purpose and instance", async (t) => {
+  const fx = v2(t, { souls: { dev: {}, "dev-foo": {} } });
+  // soul "dev" + purpose "foo-1" and soul "dev-foo" + purpose "1" both derive "dev-foo-1".
+  assert.equal((await fx.spawn("dev", { purpose: "foo-1" })).instance, "dev-foo-1");
+  assert.equal((await fx.spawn("dev-foo", { purpose: "1" })).instance, "dev-foo-1-2", "derived-vs-derived: the second soul skips the first's name");
+  // soul "dev" + purpose "foo" derives "dev-foo" — a soul name — and skips it.
+  assert.equal((await fx.spawn("dev", { purpose: "foo" })).instance, "dev-foo-2", "derived-vs-soul-name");
+  // An orphaned home (its soul definition removed) still holds its name.
+  mkdirSync(join(fx.root, "gone", "instances", "orphan-x"), { recursive: true });
+  await assert.rejects(fx.spawn("dev", { name: "orphan-x" }), { code: "E_INSTANCE_NAME_TAKEN" });
+  await assert.rejects(fx.spawn("dev", { name: "x", purpose: "y" }), { code: "E_BAD_ARGS" });
+  await assert.rejects(fx.spawn("dev", { name: "x", instance: "dev-x" }), { code: "E_BAD_ARGS" });
+  assert.equal((await fx.spawn("dev", { name: "plain" })).instance, "plain");
 });
 
-test("instance names are at most 64 characters — explicit and derived, preview and apply; never truncated", () => {
-  const base = mkdtempSync(join(tmpdir(), "oats-spawn-name-cap-"));
-  const oldPath = process.env.PATH;
-  try {
-    const repo = join(base, "repo"); mkdirSync(repo, { recursive: true });
-    execFileSync("git", ["init", "-q", repo]);
-    execFileSync("git", ["-C", repo, "-c", "user.email=t@example.invalid", "-c", "user.name=T", "commit", "-q", "--allow-empty", "-m", "init"]);
-    const root = join(repo, "agents");
-    mkdirSync(join(root, "dev", "soul"), { recursive: true });
-    writeFileSync(join(root, "dev", "soul", "soul.yaml"), `name: dev\nkind: persistent\nrepo: ${repo}\nwork: checkout\nruntime: pi\n`);
-    writeFileSync(join(root, "dev", "soul", "AGENTS.md"), "# dev\n");
-    process.env.PATH = inertRuntimePath(base);
-    const dev = () => findAgent(root, "dev");
-    const n64 = "n".repeat(64), n65 = "n".repeat(65);
-    // Explicit: 64 is fine, 65 is refused (kernel, preview and apply) — never truncated.
-    assert.equal(spawnInstance(root, dev(), { name: n64, launch: false, preview: true }).instance, n64);
-    for (const preview of [true, false]) {
-      assert.throws(() => spawnInstance(root, dev(), { name: n65, launch: false, preview }), (e) => e.code === "E_INSTANCE_NAME_INVALID" && /at most 64 characters/.test(e.message));
-    }
-    const cli = (...args) => spawnSync(process.execPath, [CLI, "spawn", "dev", "--dir", repo, "--no-launch", ...args, "--json"], { cwd: repo, encoding: "utf8", env: { ...process.env, HOME: join(base, "home"), OATS_TMUX_SESSION: `none-${process.pid}`, PI_AGENTS_TMUX_SESSION: `none-${process.pid}` } });
-    for (const extra of [["--preview"], []]) {
-      const r = cli("--name", n65, ...extra);
-      assert.equal(r.status, 1, r.stdout + r.stderr);
-      assert.equal(JSON.parse(r.stdout).error.code, "E_INSTANCE_NAME_INVALID");
-    }
-    assert.equal(existsSync(join(root, "dev", "instances", n65)), false);
-    assert.equal(existsSync(join(root, "dev", "instances", n64)), false, "a preview created nothing");
-    // Derived: "dev-" + a 60-char purpose = 64 fits; a 61-char purpose is refused, naming the purpose.
-    const p60 = "p".repeat(60), p61 = "p".repeat(61);
-    assert.equal(spawnInstance(root, dev(), { purpose: p60, launch: false }).instance, `dev-${p60}`);
-    for (const preview of [true, false]) {
-      assert.throws(() => spawnInstance(root, dev(), { purpose: p61, launch: false, preview }), (e) => e.code === "E_INSTANCE_NAME_INVALID" && /at most 64 characters/.test(e.message) && /purpose/.test(e.message));
-    }
-    const r = cli("--purpose", p61, "--preview");
-    assert.equal(JSON.parse(r.stdout).error.code, "E_INSTANCE_NAME_INVALID", r.stdout + r.stderr);
-    // The de-duplication suffix counts too: dev-<p60> is taken, and dev-<p60>-2 (66) is refused, not truncated.
-    assert.throws(() => spawnInstance(root, dev(), { purpose: p60, launch: false }), (e) => e.code === "E_INSTANCE_NAME_INVALID" && /purpose/.test(e.message));
-    assert.deepEqual(readdirSync(join(root, "dev", "instances")).filter((n) => !n.startsWith(".")), [`dev-${p60}`]);
-  } finally { process.env.PATH = oldPath; rmSync(base, { recursive: true, force: true }); }
+test("instance names are at most 64 characters — explicit and derived, preview and apply; never truncated", async (t) => {
+  const fx = v2(t);
+  const root = fx.root;
+  const n64 = "n".repeat(64), n65 = "n".repeat(65);
+  // Explicit: 64 is fine, 65 is refused (kernel, preview and apply) — never truncated.
+  assert.equal((await fx.spawn("dev", { name: n64, preview: true })).instance, n64);
+  for (const preview of [true, false]) {
+    await assert.rejects(fx.spawn("dev", { name: n65, preview }), (e) => e.code === "E_INSTANCE_NAME_INVALID" && /at most 64 characters/.test(e.message));
+  }
+  const cli = (...args) => fx.cli(["spawn", "dev", "--no-launch", ...args, "--json"]);
+  for (const extra of [["--preview"], []]) {
+    const r = cli("--name", n65, ...extra);
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.equal(r.json().error.code, "E_INSTANCE_NAME_INVALID");
+  }
+  assert.equal(existsSync(join(root, "dev", "instances", n65)), false);
+  assert.equal(existsSync(join(root, "dev", "instances", n64)), false, "a preview created nothing");
+  // Derived: "dev-" + a 60-char purpose = 64 fits; a 61-char purpose is refused, naming the purpose.
+  const p60 = "p".repeat(60), p61 = "p".repeat(61);
+  assert.equal((await fx.spawn("dev", { purpose: p60 })).instance, `dev-${p60}`);
+  for (const preview of [true, false]) {
+    await assert.rejects(fx.spawn("dev", { purpose: p61, preview }), (e) => e.code === "E_INSTANCE_NAME_INVALID" && /at most 64 characters/.test(e.message) && /purpose/.test(e.message));
+  }
+  const r = cli("--purpose", p61, "--preview");
+  assert.equal(r.json().error.code, "E_INSTANCE_NAME_INVALID", r.stdout + r.stderr);
+  // The de-duplication suffix counts too: dev-<p60> is taken, and dev-<p60>-2 (66) is refused, not truncated.
+  await assert.rejects(fx.spawn("dev", { purpose: p60 }), (e) => e.code === "E_INSTANCE_NAME_INVALID" && /purpose/.test(e.message));
+  assert.deepEqual(readdirSync(join(root, "dev", "instances")).filter((n) => !n.startsWith(".")), [`dev-${p60}`]);
 });

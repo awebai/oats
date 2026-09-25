@@ -89,7 +89,7 @@ scope is the workspace itself; if a task needs actual edits in one repo, ask
 for (or route to) a worktree-mode instance of that repo's agent instead.
 <!-- /oats:work-mode:workspace -->
 
-<!-- oats:capability:golden.messaging src=<base>/scope/.agents/capabilities/owned/golden-messaging/inject.md -->
+<!-- oats:capability:golden.messaging src=<base>/deployment/agents/dev/instances/dev-claude-workspace-knone-mstub/.oats/modules/golden.messaging/inject.md -->
 ## Messaging (stub)
 
 You are reachable over the stub broker named in `$GOLDEN_BROKER_ENDPOINT`.

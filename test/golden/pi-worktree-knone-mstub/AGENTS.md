@@ -80,7 +80,7 @@ yours alone: build, test and commit there, on your branch.
 - Leave your branch and the worktree list clean when your task closes.
 <!-- /oats:work-mode:worktree -->
 
-<!-- oats:capability:golden.messaging src=<base>/scope/.agents/capabilities/owned/golden-messaging/inject.md -->
+<!-- oats:capability:golden.messaging src=<base>/deployment/agents/dev/instances/dev-pi-worktree-knone-mstub/.oats/modules/golden.messaging/inject.md -->
 ## Messaging (stub)
 
 You are reachable over the stub broker named in `$GOLDEN_BROKER_ENDPOINT`.

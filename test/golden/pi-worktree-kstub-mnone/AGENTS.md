@@ -80,7 +80,7 @@ yours alone: build, test and commit there, on your branch.
 - Leave your branch and the worktree list clean when your task closes.
 <!-- /oats:work-mode:worktree -->
 
-<!-- oats:capability:golden.knowledge src=<base>/scope/.agents/capabilities/owned/golden-knowledge/inject.md -->
+<!-- oats:capability:golden.knowledge src=<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mnone/.oats/modules/golden.knowledge/inject.md -->
 ## Knowledge (stub)
 
 Your durable knowledge is at `soul/knowledge/index.md`.

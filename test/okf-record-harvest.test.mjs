@@ -6,6 +6,9 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fixture, write, json, readJSON, CLI } from './helpers/okf-v2.mjs';
+// Until the lead's Q1 (capability agents spawn prepared on a workspace deployment): these
+// two drive a harvest worker whose source home is gone, which only the classic scope resolves.
+import { fixture as classicFixture } from './helpers/okf-classic.mjs';
 
 function recordBoundary(f, { native = false } = {}) {
   const wrapper = join(f.base, "record ' boundary.mjs"), calls = join(f.base, 'calls.jsonl');
@@ -46,7 +49,7 @@ const status = f => readJSON(join(dirname(f.sourceFile), 'status.json'));
 const runResult = r => { assert.equal(r.out.ok, true, r.stdout); return r.out.result; };
 
 test('notes AND bounded record backlog enter durable custody; actual independent worker completes after source deletion', t => {
-  const f = fixture(t), boundary = recordBoundary(f);
+  const f = classicFixture(t), boundary = recordBoundary(f);
   const turns = records(f, [['thread', 145]]);
   write(join(f.home, 'notes/decision.md'), 'Accepted rationale from the source.\n');
   const retired = boundary.run(['retire']); assert.equal(retired.out.meta.retired, true);
@@ -141,7 +144,7 @@ test('runtime/model choices cross the real worker scaffold boundary without laun
 });
 
 test('actual native capture/recall transports sixty large Claude turns through pipes into durable inputs', t => {
-  const f = fixture(t), boundary = recordBoundary(f, { native: true });
+  const f = classicFixture(t), boundary = recordBoundary(f, { native: true });
   f.env.TURN_RECORD_ROOT = join(f.base, 'record'); f.env.TURN_RECORD_OWNER = 'fixture';
   const transcript = join(f.user, '.claude/projects/-fixture/session.jsonl');
   write(transcript, Array.from({ length: 60 }, (_, i) => JSON.stringify({ type: 'assistant', cwd: f.home, sessionId: 'fixture-session', timestamp: '2026-09-13T12:00:00Z', message: { role: 'assistant', content: [{ type: 'text', text: `${i}:` + 'x'.repeat(350000) }] } })).join('\n') + '\n');
@@ -174,12 +177,13 @@ test('live note revisions are independently captured while an earlier worker jud
 
 test('v2 registration rejects implicit/relative bindings and a missing owner declaration without bootstrapping soul knowledge', t => {
   const f = fixture(t, { register: false });
-  const config = join(f.context, 'oats-config.yaml'), before = fs.readFileSync(config, 'utf8');
-  write(config, before.replace(JSON.stringify(f.bindings), 'bindings.json'));
+  // The host settings are the deployment's oats-local.yaml; the soul's okf.json lives in its member.
+  const config = f.localFile, before = fs.readFileSync(config, 'utf8');
+  assert.ok(before.includes(f.bindings)); write(config, before.replace(f.bindings, 'bindings.json'));
   let r = f.raw(['spawn', 'source', '--purpose', 'relative', '--no-launch', '--json']);
   assert.equal(r.status, 1); assert.equal(JSON.parse(r.stdout).error.code, 'E_SPAWN_FAILED');
   assert.match(JSON.parse(r.stdout).error.message, /absolute bindings-file/);
-  write(config, before); fs.rmSync(join(f.soul, 'okf.json'));
+  write(config, before); f.fx.commit({ 'souls/source/okf.json': null }, 'drop the owner declaration');
   r = f.raw(['spawn', 'source', '--purpose', 'ownerless', '--no-launch', '--json']);
   assert.equal(r.status, 1); assert.match(JSON.parse(r.stdout).error.message, /okf.json/);
   assert.equal(fs.existsSync(join(f.soul, 'knowledge')), false);

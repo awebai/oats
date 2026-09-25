@@ -2,16 +2,11 @@
   "agent": "dev",
   "kind": "persistent",
   "instance": "dev-claude-workspace-knone-mnone",
-  "home": "<base>/scope/agents/dev/instances/dev-claude-workspace-knone-mnone",
-  "soulDir": "<base>/scope/agents/dev/soul",
-  "repo": "<base>/scope/repo",
+  "home": "<base>/deployment/agents/dev/instances/dev-claude-workspace-knone-mnone",
+  "soulDir": "<base>/deployment/agents/dev/souls/<commit12>",
+  "repo": "<base>/deployment",
   "work": "workspace",
   "runtime": "claude",
-  "team": {
-    "name": "golden-team",
-    "id": "golden-team-id",
-    "scope": "<base>/scope"
-  },
   "spawnOrigin": "operator",
   "policy": {
     "childSpawns": {
@@ -23,20 +18,7 @@
     }
   },
   "capabilities": [],
-  "skills": [
-    {
-      "name": "oats",
-      "source": "kernel"
-    },
-    {
-      "name": "oats-config",
-      "source": "kernel"
-    },
-    {
-      "name": "oats-packages",
-      "source": "kernel"
-    }
-  ],
+  "skills": [],
   "instructions": [
     {
       "source": "kernel:oats",
@@ -53,24 +35,6 @@
   ],
   "composition": {
     "expected": [
-      {
-        "type": "skill-tree",
-        "source": "kernel",
-        "declared": "oats",
-        "resolved": "<kernel>/skills/oats"
-      },
-      {
-        "type": "skill-tree",
-        "source": "kernel",
-        "declared": "oats-config",
-        "resolved": "<kernel>/skills/oats-config"
-      },
-      {
-        "type": "skill-tree",
-        "source": "kernel",
-        "declared": "oats-packages",
-        "resolved": "<kernel>/skills/oats-packages"
-      },
       {
         "type": "instruction-block",
         "source": "kernel:oats",
@@ -91,23 +55,7 @@
       }
     ],
     "materialized": {
-      "skills": [
-        {
-          "name": "oats",
-          "source": "kernel",
-          "from": "<kernel>/skills/oats"
-        },
-        {
-          "name": "oats-config",
-          "source": "kernel",
-          "from": "<kernel>/skills/oats-config"
-        },
-        {
-          "name": "oats-packages",
-          "source": "kernel",
-          "from": "<kernel>/skills/oats-packages"
-        }
-      ],
+      "skills": [],
       "instructions": [
         {
           "source": "kernel:oats",
@@ -134,9 +82,9 @@
         ],
         "why": "founder ruling: Claude Code's own global and per-repo configuration stays enabled — it is powerful, and the operator decides. An all-OATS setup is the way to opt out."
       },
-      "canonicalSkillTree": "<base>/scope/agents/dev/instances/dev-claude-workspace-knone-mnone/.agents/skills",
+      "canonicalSkillTree": "<base>/deployment/agents/dev/instances/dev-claude-workspace-knone-mnone/.agents/skills",
       "skillAlias": {
-        "path": "<base>/scope/agents/dev/instances/dev-claude-workspace-knone-mnone/.claude/skills",
+        "path": "<base>/deployment/agents/dev/instances/dev-claude-workspace-knone-mnone/.claude/skills",
         "target": "../.agents/skills"
       }
     }
@@ -167,7 +115,23 @@
       "file": "TASK.md"
     }
   },
-  "command": "OATS_INSTANCE='dev-claude-workspace-knone-mnone' OATS_INSTANCE_HOME='<base>/scope/agents/dev/instances/dev-claude-workspace-knone-mnone' PI_AGENT_INSTANCE='dev-claude-workspace-knone-mnone' PI_AGENT_HOME='<base>/scope/agents/dev/instances/dev-claude-workspace-knone-mnone' '<base>/bin/claude' -- \"$(cat TASK.md)\"",
+  "command": "OATS_INSTANCE='dev-claude-workspace-knone-mnone' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-claude-workspace-knone-mnone' PI_AGENT_INSTANCE='dev-claude-workspace-knone-mnone' PI_AGENT_HOME='<base>/deployment/agents/dev/instances/dev-claude-workspace-knone-mnone' '<base>/bin/claude' -- \"$(cat TASK.md)\"",
   "createdAt": "<createdAt>",
+  "modules": {},
+  "providers": {},
+  "workspace": {
+    "key": "local/<base>/remotes/ws.git",
+    "name": "golden",
+    "deployment": "<base>/deployment",
+    "commit": "<sha>",
+    "resolution": "<resolution>",
+    "standalone": false,
+    "soul": {
+      "id": "local/<base>/remotes/ws.git#dev",
+      "repoKey": "local/<base>/remotes/ws.git",
+      "commit": "<sha>",
+      "team": "global"
+    }
+  },
   "launched": false
 }

@@ -4,7 +4,7 @@
   "result": {
     "instance": "dev-claude-checkout-knone-mnone",
     "agent": "dev",
-    "home": "<base>/scope/agents/dev/instances/dev-claude-checkout-knone-mnone",
+    "home": "<base>/deployment/agents/dev/instances/dev-claude-checkout-knone-mnone",
     "work": "checkout",
     "branch": "main",
     "launched": false,
@@ -13,7 +13,7 @@
       "session": "oats-golden",
       "window": "dev-claude-checkout-knone-mnone"
     },
-    "repo": "<base>/scope/repo",
+    "repo": "<base>/deployment/ws",
     "runtime": "claude",
     "model": null,
     "parent": null,
