@@ -11,7 +11,7 @@ import { createSoulMark } from './identity-marks.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { soulTeams } from './teams-panel.mjs';
 import { memberLabel } from './deployment-facts.mjs';
-import { compositionEntries, coreWhy, WHY } from './capability-page.mjs';
+import { compositionEntries, coreWhy, whyTag, desktopFacts } from './capability-page.mjs';
 import { layerLabel } from './workspace-catalog.mjs';
 
 export const instanceSoulCSS = `
@@ -108,7 +108,7 @@ export function createInstanceSoulSection(host, { request, generation = () => 0,
     }
     core.append(table); root.append(core);
     // Every other capability: source and why it is here.
-    const entries = compositionEntries(inspected, soul);
+    const entries = compositionEntries(inspected, soul, { facts: desktopFacts(cli()) });
     const caps = node('section', undefined, 'soul-tab-section');
     caps.append(node('div', 'Capabilities', 'context-panel-label'));
     const rows = node('div', undefined, 'soul-tab-caps');
@@ -117,8 +117,7 @@ export function createInstanceSoulSection(host, { request, generation = () => 0,
       const row = node('div', undefined, `soul-tab-cap${off ? ' off' : ''}`); row.dataset.capability = name;
       const top = node('div', undefined, 'soul-tab-cap-head');
       const label = node('span', name, 'soul-tab-cap-name'); label.title = name; top.append(label);
-      if (off) top.append(node('span', 'turned off by soul', 'soul-tab-tag off'));
-      else { const [tag, title] = WHY[entry.why]; const el = node('span', tag, `soul-tab-tag${entry.why === 'soul' ? ' soul' : ''}`); el.title = title; top.append(el); }
+      const [tag, title] = whyTag(entry), el = node('span', tag, `soul-tab-tag${off ? ' off' : entry.why === 'soul' ? ' soul' : ''}`); el.title = title; top.append(el);
       row.append(top);
       if (!off) row.append(source(entry.cap, { repoOwned: entry.repoOwned }));
       rows.append(row);

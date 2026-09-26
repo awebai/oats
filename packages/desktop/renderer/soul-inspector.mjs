@@ -11,7 +11,7 @@ import { iconElement } from './shell-icons.mjs';
 import { inspectData, inspectFacts, originText } from './inspect-contract.mjs';
 import { createTeamsPanel, teamsOperations, teamsCSS, soulTeams, teamLabels } from './teams-panel.mjs';
 import { ageText } from './age-text.mjs';
-import { pageBar, pageCard, pageSection, capabilityIcon, compositionEntries, coreWhy } from './capability-page.mjs';
+import { pageBar, pageCard, pageSection, capabilityIcon, compositionEntries, coreWhy, desktopFacts } from './capability-page.mjs';
 import { layerLabel } from './workspace-catalog.mjs';
 
 
@@ -471,7 +471,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     }
     core.append(cards); content.append(core);
     // Composition: every other capability with its source and why it is here.
-    const entries = compositionEntries(inspected, soul);
+    const entries = compositionEntries(inspected, soul, { facts: desktopFacts(cliStatus()) });
     const composition = pageSection(doc, 'Capabilities', 'workspace defaults → team defaults → this soul · later wins');
     const table = node('div', undefined, 'inspector-capability-table'); composition.append(table); content.append(composition);
     if (typeof capabilityTable === 'function') capabilityTable(table, entries, { soul: selection.agent });

@@ -254,27 +254,48 @@ export function coreWhy(from) {
   const team = typeof from === 'string' && /^team:(.+)$/.exec(from);
   return team ? `team · ${team[1]}` : typeof from === 'string' && from ? from : null;
 }
-/** A soul's (or an instance's as-spawned) non-core capabilities with why each is there,
- * from an inspection: declared by the soul, else a (workspace or team) default,
- * then what the soul turned off. Workspace defaults → team defaults → soul order. */
-export function compositionEntries(inspected, soul) {
+/** Kernel #217's Desktop facts are read only from a CLI that reports the feature. */
+export const desktopFacts = cli => Array.isArray(cli?.features) && cli.features.includes('desktop-facts');
+/** A soul's (or an instance's as-spawned) non-core capabilities with why each is there.
+ * With `facts` (the CLI reports `desktop-facts`, kernel #217) the kernel says why:
+ * `capabilities[].composedFrom` (workspace / team:<label> / soul) and `capabilitiesOff[]`.
+ * Otherwise (an older kernel, or `inspect --home`, where composedFrom is null) it is read from
+ * the soul's declarations: declared by the soul, else a default, then what the soul turned off.
+ * Order: workspace defaults → team defaults → soul → turned off. */
+export function compositionEntries(inspected, soul, { facts = false } = {}) {
   const record = v => !!v && typeof v === 'object' && !Array.isArray(v);
   const declared = record(soul?.declarations) ? soul.declarations : {};
   const coreIds = new Set(['knowledge', 'messaging', 'tasks'].map(slot => inspected?.layers?.[slot]?.id).filter(Boolean));
   const choices = record(declared.capabilities) ? declared.capabilities : {};
   const caps = list(inspected?.capabilities);
+  const reported = facts && caps.some(cap => typeof cap.composedFrom === 'string');
   const entries = caps.filter(cap => !coreIds.has(cap.id)).map(cap => {
-    const own = record(choices[cap.id]);
-    return { cap, why: own ? 'soul' : 'default', repoOwned: own && choices[cap.id].from === 'here' };
+    const own = record(choices[cap.id]), repoOwned = own && choices[cap.id].from === 'here';
+    if (!reported) return { cap, why: own ? 'soul' : 'default', repoOwned };
+    const team = typeof cap.composedFrom === 'string' && /^team:(.+)$/.exec(cap.composedFrom);
+    return { cap, why: team ? 'team' : ['workspace', 'soul'].includes(cap.composedFrom) ? cap.composedFrom : 'default', ...(team ? { team: team[1] } : {}), repoOwned };
   });
-  for (const [name, choice] of Object.entries(choices)) if (choice === 'off' && !caps.some(cap => cap.id === name)) entries.push({ name, why: 'off' });
-  const order = { default: 0, soul: 1, off: 2 };
-  return entries.sort((a, b) => order[a.why] - order[b.why]);
+  if (facts && Array.isArray(inspected?.capabilitiesOff)) {
+    for (const off of inspected.capabilitiesOff) if (record(off) && typeof off.id === 'string' && off.id)
+      entries.push({ name: off.id, why: 'off', reason: off.reason === 'slot-none' ? 'slot-none' : 'off', slot: typeof off.slot === 'string' ? off.slot : null, overrides: typeof off.overrides === 'string' ? off.overrides : null });
+  } else for (const [name, choice] of Object.entries(choices)) if (choice === 'off' && !caps.some(cap => cap.id === name)) entries.push({ name, why: 'off' });
+  const order = { workspace: 0, default: 0, team: 1, soul: 2, off: 3 };
+  return entries.map((entry, i) => [entry, i]).sort(([a, i], [b, j]) => order[a.why] - order[b.why] || i - j).map(([entry]) => entry);
 }
-/** The why tag's label and title per composition reason. */
+/** The why tag's label and title per composition reason (legacy `default`: not declared by the soul). */
 export const WHY = { default: ['default', 'Not declared by this soul: a workspace or team default (the kernel does not say which)'],
-  soul: ['soul', 'Declared by this soul'] };
-/** A soul's composition: entries { cap, why: default|soul, repoOwned } or { name, why: 'off' }. */
+  workspace: ['workspace', 'A workspace default'], soul: ['soul', 'Declared by this soul'] };
+const overridden = layer => { const team = typeof layer === 'string' && /^team:(.+)$/.exec(layer); return team ? `the ${team[1]} team's default` : layer === 'workspace' ? 'the workspace default' : 'a default'; };
+/** An entry's tag: [label, title, off?]. */
+export function whyTag(entry) {
+  if (entry.why === 'team') return [`team · ${entry.team}`, `A default of the ${entry.team} team`, false];
+  if (entry.why === 'off') return entry.reason === 'slot-none'
+    ? ['turned off by soul', `This soul empties the ${entry.slot || 'layer'} slot, which ${overridden(entry.overrides)} filled with ${entry.name}`, true]
+    : ['turned off by soul', `This soul turns off ${overridden(entry.overrides)}`, true];
+  const [label, title] = WHY[entry.why] || WHY.default;
+  return [label, title, false];
+}
+/** A soul's composition: entries { cap, why: workspace|team|soul|default, team?, repoOwned } or { name, why: 'off', … }. */
 export function renderSoulCapabilities(host, { entries, status, onOpen = null }) {
   const doc = host.ownerDocument, names = memberNames(status);
   const node = (tag, value, cls) => el(doc, tag, value, cls);
@@ -294,8 +315,9 @@ export function renderSoulCapabilities(host, { entries, status, onOpen = null })
     const source = node('span', undefined, 'soul-cap-source'); source.setAttribute('role', 'cell'); source.style.minWidth = '0';
     if (row) source.append(sourceChip(doc, row, names, { boxed: true }));
     const why = node('span', undefined, 'soul-cap-why'); why.setAttribute('role', 'cell');
-    if (off) why.append(node('span', 'turned off by soul', 'why-note'));
-    else { const [label, title] = WHY[entry.why]; const tag = node('span', label, `why-tag${entry.why === 'soul' ? ' soul' : ''}`); tag.title = title; why.append(tag); }
+    const [label, title] = whyTag(entry);
+    if (off) { const note = node('span', label, 'why-note'); note.title = title; why.append(note); }
+    else { const tag = node('span', label, `why-tag${entry.why === 'soul' ? ' soul' : ''}`); tag.title = title; why.append(tag); }
     line.append(cap, source, why);
     if (!off && typeof onOpen === 'function') {
       line.classList.add('openable'); line.tabIndex = 0; line.setAttribute('aria-label', `${name}: open its page`);
