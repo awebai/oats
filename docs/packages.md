@@ -74,7 +74,7 @@ members:
   - git:github.com/acme/agents
   - git:github.com/acme/platform
 packages:
-  oats.framework: v1.1.3
+  oats.framework: v1.2.0
   oats.okf: v3.0.0
   oats.aweb: v1.14.2
 teams:
