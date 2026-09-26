@@ -306,7 +306,9 @@ Before any retire hook runs, retire preserves the instance's uncommitted and
 unmerged work: a verified recovery under `.oats-retirement/recovery/`, named in
 the summary. A worktree recovery is a standalone clone that carries the
 repository's local exclude rules (`info/exclude`, a configured
-`core.excludesFile`), so its Git status matches the source's. A recovery that
+`core.excludesFile`), its `info/attributes` and the settings that change what
+status reports (`core.fileMode`, `core.ignoreCase`, …), so its Git status
+matches the source's. A recovery that
 cannot be verified refuses with `E_WORK_PRESERVATION_FAILED` and keeps the
 home. **`--force` does not skip work preservation.** It forces only past a
 missing or unusable cleanup marker and past incomplete hook cleanup
