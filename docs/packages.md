@@ -265,6 +265,10 @@ oats-package/
   (`OATS_AGENT`, the `oats status` row); its instances are named from it
   (`oats-okf-knowledge-maintainer-<purpose>`). A soul name never holds `--`,
   so a member soul of the same bare name keeps its own `agents/<soul>/`.
+  Two packages whose ids sanitise alike (`a.b`, `a-b`) and that ship a
+  same-named soul would share a directory: both are listed with an
+  `E_SOUL_AMBIGUOUS` problem, and spawning either is `E_SOUL_AMBIGUOUS
+  { agentDir, qualified }` — keep one of the packages.
   `instance.json.workspace.soul` records `name`, `qualifiedName`, `package:
   { id, version, commit, digest, path }` and the soul id `package:<id>#<soul>`;
   in `oats status` the soul is `moved` once the package pin moves.

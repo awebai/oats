@@ -7,45 +7,14 @@
 // Real git: one bare member repo (the v2Deployment helper) plus one bare package repo with tags.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, existsSync, lstatSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { readFileSync, rmSync, writeFileSync, existsSync, lstatSync } from "node:fs";
+import { join } from "node:path";
 import YAML from "yaml";
 import { v2Deployment, git } from "./helpers/v2-deployment.mjs";
+import { packageRepo } from "./helpers/package-repo.mjs";
 
 const ok = (r, what) => { assert.equal(r.status, 0, `${what}: ${r.stdout}${r.stderr}`); const j = r.json(); assert.equal(j.ok, true, `${what}: ${r.stdout}`); return j.result; };
 const fails = (r, code, what) => { const j = r.json(); assert.equal(j.ok, false, `${what}: ${r.stdout}${r.stderr}`); assert.equal(j.error.code, code, `${what}: ${r.stdout}`); return j.error; };
-
-/** A package repo: oats-package/ with one capability (acme-tool) and the given souls. */
-function packageRepo({ id = "acme.pkg", version = "1.0.0", souls = { keeper: {} } } = {}) {
-  const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-pkgsoul-")));
-  const bare = join(base, "pkg.git");
-  git(base, "init", "-q", "--bare", bare);
-  const seed = join(base, "seed");
-  git(base, "clone", "-q", bare, seed);
-  const write = (rel, text) => { const abs = join(seed, rel); mkdirSync(dirname(abs), { recursive: true }); writeFileSync(abs, text); };
-  const pkg = { base, bare, seed, ref: `git:${pathToFileURL(bare).href}`, id };
-  pkg.files = (v, soulDefs) => {
-    write("oats-package/oats-package.json", JSON.stringify({ package: id, version: v, description: "fixture package", compatibility: { oats: ">=0.24.0" }, capabilities: ["capabilities/acme-tool"], souls: Object.keys(soulDefs).map((n) => `souls/${n}`) }, null, 2) + "\n");
-    write("oats-package/capabilities/acme-tool/oats.json", JSON.stringify({ capability: "acme-tool", version: v, description: "tool", compatibility: { oats: ">=0.24.0" }, skills: ["skills"] }, null, 2) + "\n");
-    write("oats-package/capabilities/acme-tool/skills/tool-skill/SKILL.md", "---\nname: tool-skill\ndescription: tool\n---\n\nuse the tool\n");
-    for (const [name, def] of Object.entries(soulDefs)) {
-      write(`oats-package/souls/${name}/soul.yaml`, YAML.stringify({ schemaVersion: 2, name, description: `${name} package soul.`, work: "directory", capabilities: { "acme-tool": { from: "here" } }, ...(def.soul || {}) }));
-      write(`oats-package/souls/${name}/AGENTS.md`, def.agents ?? `# ${name} (package ${v})\n`);
-    }
-  };
-  pkg.release = (v, soulDefs, { tag = `v${v}`, force = false } = {}) => {
-    pkg.files(v, soulDefs);
-    git(seed, "add", "-A"); git(seed, "commit", "-qm", `release ${v}`, "--allow-empty");
-    git(seed, "tag", ...(force ? ["-f"] : []), tag);
-    git(seed, "push", "-q", ...(force ? ["-f"] : []), "origin", "HEAD:main", tag);
-    return git(seed, "rev-parse", "HEAD");
-  };
-  pkg.commit1 = pkg.release(version, souls);
-  pkg.cleanup = () => rmSync(base, { recursive: true, force: true });
-  return pkg;
-}
 
 function fixture({ souls = { dev: {} }, pkgSouls = { keeper: {} }, teams = { global: { description: "Fixture team" } }, local = {} } = {}) {
   const pkg = packageRepo({ souls: pkgSouls });
@@ -130,6 +99,21 @@ test("a bare name shared by a member soul and a package soul is E_SOUL_AMBIGUOUS
   const text = fx.cli(["status"]).stdout;
   assert.match(text, /acme-pkg--keeper {2}\[work: directory, repo: package acme\.pkg v1\.0\.0 @ [0-9a-f]{7}\]/);
   assert.match(text, /^ {2}keeper {2}\[work: directory, repo: ws @ [0-9a-f]{7}\]/m);
+});
+
+test("two packages whose ids sanitise to one agent directory (a.b, a-b) and ship a same-named soul: listed, E_SOUL_AMBIGUOUS in discovery and at spawn", (t) => {
+  const fx = fixture(); t.after(fx.cleanup);
+  const twin = packageRepo({ id: "acme-pkg" }); t.after(twin.cleanup);
+  const ws = YAML.parse(readFileSync(join(fx.member, "oats-workspace.yaml"), "utf8"));
+  ws.packages["acme-pkg"] = `${twin.ref}@v1.0.0`;
+  fx.commit({ "oats-workspace.yaml": YAML.stringify(ws) }, "twin package");
+  const synced = ok(fx.cli(["sync", "--json"]), "sync");
+  assert.equal(synced.problems.filter((p) => p.code === "E_SOUL_AMBIGUOUS").length, 2, JSON.stringify(synced.problems));
+  for (const name of ["acme.pkg/keeper", "acme-pkg/keeper"]) {
+    const e = fails(fx.cli(["spawn", name, "--no-launch", "--json"]), "E_SOUL_AMBIGUOUS", name);
+    assert.deepEqual(e.details.qualified, ["acme-pkg/keeper", "acme.pkg/keeper"]);
+    assert.equal(e.details.agentDir, "acme-pkg--keeper");
+  }
 });
 
 test("oats-local.yaml souls.disabled refuses a package soul by its qualified name (E_SOUL_DISABLED)", (t) => {
