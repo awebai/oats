@@ -190,7 +190,31 @@ That makes "exactly one machine" a declared fact, and **consent** explicit: a ma
 
 **Safety:** everything in §2.3 still holds (the soul must resolve here; only whitelisted fields are templated; PR text is never interpolated; there's no credential in any definition).
 
-**Desktop:** an Automations section lists workspace automations (repo, owner, host, "runs here" or why not) and local ones.
+**Schedules are the same contract as triggers** (the human, 2026-09-26):
+- A workspace schedule (`oats-schedules/<id>.yaml`, or `*.oats-schedule.yaml` anywhere) carries `runsOn` + `owner` and runs ONLY on the named host logged in as that account.
+- The same `assigned-elsewhere` / `owner-mismatch` / `host-unnamed` reasons, the same `automations.disabled` opt-out, the same snapshot refresh, and local schedules as `local/<id>`.
+- One rule set for both kinds; the kernel implements them together.
+
+**Desktop, Automations** (the human, 2026-09-26):
+- The user sees **every workspace trigger and schedule defined in the member repos they can read**, plus their own machine's local ones.
+- **Each row:**
+  - the kind (trigger/schedule) and the id (`<member>/<id>` or `local/<id>`);
+  - **the owner** (the GitHub account);
+  - **where it runs** (`runsOn`, and whether that's THIS machine, with the reason when not);
+  - **the soul** it spawns (with its origin: member/package);
+  - **the prompt** (the task template, shown verbatim, with the whitelisted fields highlighted);
+  - the event (a trigger's `on`) or the cron+tz (a schedule);
+  - teams, harness/model, concurrency;
+  - enabled/disabled here;
+  - the last run/fire and the next due (for automations this machine runs).
+- **Where it comes from:** the repo + path + commit of the file, linking to the file.
+- **Actions:**
+  - `test` (a dry run on this host);
+  - disable/enable here (`automations.disabled`);
+  - open the defining file;
+  - for local ones: add/edit/remove.
+- **Visibility follows repo access:** a member the user can't read contributes nothing (the standalone rule), so the Desktop never shows automations the user couldn't read in Git.
+- **Data:** `oats trigger list --json` / `oats schedule list --json` (workspace + local, with origin, owner, runsOn, runsHere + reason, soul, task, and the last/next run). This JSON is part of PR 2b's contract, so the Desktop renders it and never re-derives it.
 
 **Onboarding / okf:**
 - The review trigger becomes a **workspace file** (`oats-triggers/okf-harvest-review.yaml` in the host repo, `from: oats.okf:harvest-review`, with `runsOn` + `owner` naming the merge-capable host and account).
