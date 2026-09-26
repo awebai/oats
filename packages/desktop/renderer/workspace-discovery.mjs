@@ -220,7 +220,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
       // The kernel's workspace warnings, verbatim; an unmapped team label is said on its team's row.
       for (const warning of list(s?.warnings)) if (typeof warning?.message === 'string' && warning.message && !(warning.code === 'unmapped-team-label' && list(s?.workspace?.teams).includes(warning.label))) notes.append(node('p', warning.message, 'catalog-note warn'));
       renderSetup(body, { status: s, instances, souls, cli: cliStatus(), view: setupView, selected: setupMember,
-        onSelect: key => selectMember(key), onOpenRepo: openRepo, onOpenPackages: openPackages }); return;
+        onSelect: key => selectMember(key), onOpenRepo: openRepo, onOpenPackages: openPackages, openExternal: url => ctx.openExternal?.(url) }); return;
     }
     if (!catalog) return;
     for (const problem of list(catalog.problems)) notes.append(node('p', reasonText(problem), 'catalog-note warn'));

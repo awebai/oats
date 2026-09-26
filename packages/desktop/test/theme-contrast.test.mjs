@@ -324,9 +324,14 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
   // F7 (kernel #185): the three sections, with a repo-owned (private) row.
   const sections = capabilitySections(JSON.parse(readFileSync(new URL('fixtures/workspace-v2/f7/capabilities.json', new URL('./', import.meta.url)), 'utf8')).result.capabilities);
   renderCapabilitySections(doc.querySelector('.sections'), { sections, shown: sections.workspace, filterHost: null, privateListed: true, status, instances: [], root: dir });
-  renderSetup(doc.querySelector('.sources'), { status, instances: [{ agent: 'a', running: true }], souls: [{ team: 'marketing' }], cli: { version: '0.26.0' } });
+  // Kernel #217 desktop facts: a hosted workspace file, clones (one here, one refused, the rest not cloned), the lock file.
   const unconfirmed = status.members.find(m => m.status !== 'confirmed');
-  renderSetup(doc.querySelector('.graph'), { status: { ...status, unsynced: ['x.pkg'] }, view: 'graph', selected: unconfirmed.key });
+  const facts = { ...status, workspace: { ...status.workspace, file: { path: 'oats-workspace.yaml', url: 'https://github.com/northwind/agents/blob/a/oats-workspace.yaml' } },
+    clones: status.members.map((m, i) => m.key === unconfirmed.key ? { key: m.key, name: m.name, path: null, rule: null, problem: { code: 'E_CLONE_MISMATCH', message: 'not a clone of this member' } }
+      : { key: m.key, name: m.name, path: i ? null : `${dir}/${m.name}`, rule: i ? null : 'convention' }),
+    disabledSouls: ['campaign-writer'], lock: { path: `${dir}/oats-lock.json`, lockfileVersion: 3 } };
+  renderSetup(doc.querySelector('.sources'), { status: facts, instances: [{ agent: 'a', running: true }], souls: [{ team: 'marketing' }], cli: { version: '0.26.0' }, openExternal() {} });
+  renderSetup(doc.querySelector('.graph'), { status: { ...facts, unsynced: ['x.pkg'] }, view: 'graph', selected: unconfirmed.key, openExternal() {} });
   // The sync sheet's refusal text, as createWorkspaceSync builds it.
   const sheet = doc.createElement('section'); sheet.className = 'ws-sync-dialog';
   sheet.innerHTML = '<div class="ws-sync-body"><p class="ws-sync-lead error">x</p><p class="ws-sync-lead">x</p><button class="ws-sync-details">Details</button><p class="ws-sync-detail">x</p></div>';
@@ -362,6 +367,8 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
     ['.setup-link-act', '.setup-box', 'accent', 'surface'],
     ['.setup-team-label', '.setup-team-label', 'fg', 'tag-bg'], ['.setup-team-meta', '.setup-box', 'muted', 'surface'], ['.setup-team-note', '.setup-box', 'muted', 'surface'],
     ['.setup-kv dt', '.setup-local', 'muted', 'surface-2'], ['.setup-kv dd', '.setup-local', 'fg', 'surface-2'],
+    ['.setup-lede-where button.setup-file', '.oats-view', 'accent', 'bg'], ['.setup-local-sub', '.setup-local', 'muted', 'surface-2'],
+    ['.setup-kv dd.muted', '.setup-local', 'muted', 'surface-2'], ['.setup-kv dd.warn', '.setup-local', 'warn', 'surface-2'],
     ['.setup-caption', '.setup-here', 'muted', 'surface-2'], ['.setup-card-title', '.setup-computer', 'fg', 'surface'], ['.setup-card-meta', '.setup-computer', 'muted', 'surface'],
     ['.setup-ws .setup-card-meta', '.setup-ws', 'fg', 'sel'],
     ['.setup-lock.warn', '.oats-view', 'warn', 'bg'],
@@ -370,7 +377,7 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
     ['.setup-node.bad .setup-node-name', '.setup-node.bad', 'fg', 'attn-bg'], ['.setup-node.bad .setup-node-meta', '.setup-node.bad', 'warn', 'attn-bg'],
     ['.setup-panel-name', '.setup-panel', 'fg', 'surface'], ['.setup-panel h4', '.setup-panel', 'muted', 'surface'],
     ['.setup-hand-title', '.setup-panel', 'fg', 'surface'], ['.setup-hand-sub', '.setup-panel', 'muted', 'surface'], ['.setup-hand-mark.warn', '.setup-panel', 'warn', 'surface'],
-    ['.setup-panel p:not(.muted)', '.setup-panel', 'fg', 'surface'], ['.setup-panel p.muted', '.setup-panel', 'muted', 'surface'],
+    ['.setup-panel p:not(.muted):not(.warn)', '.setup-panel', 'fg', 'surface'], ['.setup-panel p.warn', '.setup-panel', 'warn', 'surface'], ['.setup-panel p.muted', '.setup-panel', 'muted', 'surface'],
     ['.setup-detail', '.setup-detail', 'fg', 'surface-2'],
     ['.ws-sync-state.warn', '.workspace-header', 'warn', 'surface'],
     ['.ws-sync-lead.error', '.ws-sync-dialog', 'danger', 'surface'], ['.ws-sync-lead:not(.error)', '.ws-sync-dialog', 'fg', 'surface'],
