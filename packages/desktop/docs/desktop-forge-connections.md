@@ -177,3 +177,24 @@ Tests use inert CLI/PTY/dialog fixtures, a generated fake executable, the shippe
 HTTP callback and DOM/CSSOM; no native gh authentication or GUI launch is needed.
 Computed three-theme contrast is not native rendering evidence. Operator/CI
 owns final native authentication, keyboard and rendered acceptance.
+
+## Roster pull requests (forge-roster)
+
+`POST /api/forge-roster?ws=<id>` with `{}` answers the pull request of each
+LOCAL instance's branch, for the roster:
+`{ forgeApi: 1, status: "ok", rows: [{ home, number, state, isDraft, url }], reason: null, readEpoch, observedAt }`.
+
+- **The repository is the kernel's.** `workspace status` `clones[]` (feature
+  `desktop-facts`) names each member's key and this computer's clone path. An
+  instance maps to the member whose clone contains its recorded `repo`,
+  compared after realpath on both sides. The longest containing clone wins, and
+  a non-github member there claims its paths. The Desktop derives no remote.
+- **Only** `github.com/<owner>/<repo>` keys are read, only for instances with a
+  branch, at most 20 distinct (repo, branch) per read. Anything else gets no row,
+  never a guess, and an instance without a pull request has no row.
+- `gh` runs as this host's own auth: no token in argv, env or output. A missing
+  or signed-out `gh` answers `E_GH_UNAVAILABLE`.
+- One flight per workspace under the shared forge cap (`E_FORGE_BUSY`). Results
+  are cached for 60 s. A remote workspace is `unsupported-remote-operation`.
+- The app proxy classifies it as a forge route (frame guard, epoch header,
+  50 s) and pins the verified workspace.

@@ -25,7 +25,9 @@ const messages = {
   E_NO_BRANCH: 'No branch reported for this observation.', E_OBSERVATION_CHANGED: 'The Git observation changed. Refresh Git.',
   E_CONNECTION_CHANGED: 'The connection changed. Refresh Connections before trying again.',
   E_FORBIDDEN_FRAME: 'This window cannot access the sign-in session.', E_AUTH_CANCELLED: 'Sign-in cancelled.',
-  E_AUTH_EXPIRED: 'The sign-in session expired.', 'unsupported-remote-operation': 'Remote forge inspection is unavailable. No local fallback was used.',
+  E_AUTH_EXPIRED: 'The sign-in session expired.',
+  E_GH_UNAVAILABLE: 'Pull requests need GitHub CLI installed and signed in on this computer.',
+  E_WORKSPACE_UNKNOWN: 'Select a known workspace.', 'unsupported-remote-operation': 'Remote forge inspection is unavailable. No local fallback was used.',
 };
 export function forgeReason(code) { return { code: Object.hasOwn(messages, code) ? code : 'E_GH_FAILED', message: messages[code] || messages.E_GH_FAILED }; }
 export function forgeFailure(code, extra = {}) {
