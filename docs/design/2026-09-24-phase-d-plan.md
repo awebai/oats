@@ -1,5 +1,7 @@
 # Phase D — the OATS project runs on the architecture it offers (plan)
 
+> **Vocabulary (2026-09-26):** there is no "personal team". Read it below as **the workspace's default team**. See the AMENDMENT at the top of [the teams contract](2026-09-25-teams-contract.md). This document is a record and keeps its original wording.
+
 **Status**: plan, 2026-09-24, lead. Decisions 18–22 of the workspace model, the
 five-soul roster and its 2026-09-24 amendment, the human's sequencing
 ("knowledge centralisation first"; "do not retire live souls until their

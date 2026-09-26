@@ -1,6 +1,6 @@
 {
   "capability": "oats.setup",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "The setup and config of an OATS workspace: the model (people, workspace, members, packages, capabilities, souls, teams, automations, machines), onboarding a machine, workspace config, teams, package pins and automations; the operator knowledge node carries the rationale.",
   "compatibility": {
     "oats": ">=0.25.5"

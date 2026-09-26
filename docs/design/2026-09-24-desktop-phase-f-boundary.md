@@ -1,5 +1,7 @@
 # Desktop Phase F — the Desktop is built FOR workspace model v2
 
+> **Vocabulary (2026-09-26):** there is no "personal team". Read it below as **the workspace's default team**. See the AMENDMENT at the top of [the teams contract](2026-09-25-teams-contract.md). This document is a record and keeps its original wording.
+
 **Status**: boundary for the Desktop engineer, issued 2026-09-24 by the lead under
 the human's direction: *"the desktop should not just adapt to the new version,
 it should be natively built for it."* Supersedes the Phase 3 parity plan's

@@ -83,7 +83,7 @@ test("a home's teams are LIVE: inspect --home, a home's command (OATS_TEAMS) and
   const messaging = () => inHome("chat", "teams");
   const other = () => inHome("envprobe", "show");
   let seen = messaging();
-  // OATS_TEAM_ID is the settings' team: empty = the provider's default (personal), not the mapped primary's.
+  // OATS_TEAM_ID is the settings' team: empty = the provider's default (the workspace's default team), not the mapped primary's.
   assert.deepEqual([seen.labels, seen.label, seen.id, seen.source], ["global,night", "global", "", "live"]);
   assert.deepEqual(seen.teams, [GLOBAL, NIGHT_UNMAPPED]);
   // The workspace maps "night" after the spawn: the live views see it now.
@@ -130,17 +130,17 @@ test("a home's teams are LIVE: inspect --home, a home's command (OATS_TEAMS) and
   assert.deepEqual(JSON.parse(readFileSync(out, "utf8")), { label: "global", id: "", labels: "global,night", teams: [GLOBAL, NIGHT_UNMAPPED] });
 });
 
-test("amendment K: a personal team the HOST sets (oats-local.yaml settings) reaches settings.team and OATS_TEAM_ID; the mapped primary stays in OATS_TEAMS only", async (t) => {
-  const fx = fixture({ local: { settings: { "acme.chat": { team: "aweb:me.personal" } } } }); t.after(fx.cleanup);
+test("amendment K: a team the HOST sets (oats-local.yaml settings) reaches settings.team and OATS_TEAM_ID; the mapped primary stays in OATS_TEAMS only", async (t) => {
+  const fx = fixture({ local: { settings: { "acme.chat": { team: "aweb:me.default" } } } }); t.after(fx.cleanup);
   const preview = ok(fx.cli(["spawn", "dev", "--preview", "--json"]), "spawn --preview");
-  assert.deepEqual(preview.settings["acme.chat"], { private: "per-human", team: "aweb:me.personal" });
+  assert.deepEqual(preview.settings["acme.chat"], { private: "per-human", team: "aweb:me.default" });
   assert.equal(preview.settingsOrigins["acme.chat"]["/team"].kind, "host");
   assert.deepEqual(preview.teams, [GLOBAL, NIGHT_UNMAPPED], "the label's own payload is untouched");
-  const { home } = await fx.spawn("dev", { instance: "dev-personal" });
+  const { home } = await fx.spawn("dev", { instance: "dev-hostteam" });
   const spawnHook = JSON.parse(readFileSync(join(home, "spawn-teams.json"), "utf8"));
-  assert.equal(spawnHook.settings.team, "aweb:me.personal");
+  assert.equal(spawnHook.settings.team, "aweb:me.default");
   const seen = ok(fx.cli(["chat", "teams", "--json"], { cwd: home, env: { OATS_INSTANCE_HOME: home } }), "chat teams in the home");
-  assert.equal(seen.id, "aweb:me.personal", "OATS_TEAM_ID is the host-set personal team");
+  assert.equal(seen.id, "aweb:me.default", "OATS_TEAM_ID is the host-set team");
   assert.deepEqual(seen.teams, [GLOBAL, NIGHT_UNMAPPED]);
 });
 
@@ -150,7 +150,7 @@ test("an unmapped label is a workspace-status WARNING; two labels that disagree 
   assert.deepEqual(status.warnings.map((w) => [w.code, w.label, w.souls]), [["unmapped-team-label", "night", ["dev"]]]);
   assert.equal(status.problems.some((p) => p.code === "unmapped-team-label"), false);
   const human = fx.cli(["workspace", "status"]);
-  assert.match(human.stdout, /Warnings:\n\s+unmapped-team-label\s+team "night" has no messaging\.byTeam entry; its souls \(dev\) fall back to the personal team for it/);
+  assert.match(human.stdout, /Warnings:\n\s+unmapped-team-label\s+team "night" has no messaging\.byTeam entry; its souls \(dev\) fall back to the workspace's default team for it/);
   fx.commit(workspaceChange(fx, (ws) => {
     // acme.other: a capability the soul does not name itself (a soul's own entry would settle it).
     ws.defaults.byTeam = { global: { capabilities: { "acme.other": { from: fx.key } } }, night: { capabilities: { "acme.other": "off" } } };

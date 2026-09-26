@@ -399,7 +399,7 @@ keys, with `byTeam` stripped) ⊕ soul slot payload ⊕ `local.settings[cap]` �
 **No `byTeam[<label>]` is merged into it, the primary's included** (teams
 amendment K): each label's `base ⊕ byTeam[label]` reaches the provider only as
 that label's entry in `OATS_TEAMS` (the preview's `teams`). So `settings.team`
-(and `OATS_TEAM_ID`) is the personal team if the host, the soul or the spawn
+(and `OATS_TEAM_ID`) is the workspace's default team if the host, the soul or the spawn
 set one; empty means the provider's own default. The provider's own `binding` contract
 (`normalize → bind → check`) runs over the merged payload exactly as before.
 Two teams, two messaging identities, one workspace:
@@ -420,7 +420,7 @@ one. A label under `byTeam` that is not declared in `teams:` is
 act.** `spawn --preview` shows the merged `settings.<cap>` and the `teams`, so
 the delivery is verifiable, and `instance.json` records both. With oats.aweb
 1.13.1 (which reads `team` from its settings and ignores `OATS_TEAMS`) the
-primary identity therefore mints into the personal team: the `.aw` root's
+primary identity therefore mints into the workspace's default team: the `.aw` root's
 active team, or the one the host set. What the payload does not change is
 **where the `.aw` root is found**: the hook still searches
 bounded candidates, first hit wins — the instance home, the Git repository

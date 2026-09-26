@@ -128,7 +128,7 @@ top-level. Ask your human when the relation is unclear.
 
 **Teams to join.** The preview's `teams` lists the messaging teams the new
 instance is *eligible* for (one per team label of the soul). Its identity
-starts in its person's personal team; to join eligible teams at spawn, pass
+starts in the workspace's default team; to join eligible teams at spawn, pass
 `--provider <messaging capability> join=<label,label>`. Joining or leaving
 later is your messaging capability's skill.
 

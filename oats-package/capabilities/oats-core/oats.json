@@ -1,6 +1,6 @@
 {
   "capability": "oats.core",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Day-to-day OATS operation from inside an instance: home and work, modules, status and drift, spawn preview and apply (harness, relations, teams to join), soul discovery, being spawned by a trigger, retiring; no layer or executable authority. Workspace setup and config is oats.setup.",
   "compatibility": {
     "oats": ">=0.25.5"

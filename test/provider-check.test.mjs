@@ -189,7 +189,7 @@ test("provider-check wire (pinned): the request on stdin, the environment, the c
     withAmbient(() => runProviderCheck(wireTarget(base, { team: null, teams: [] }), mod, dir));
     seen = JSON.parse(readFileSync(record, "utf8"));
     assert.equal("teams" in JSON.parse(seen.stdin), false, "never on stdin");
-    assert.equal(seen.env.OATS_TEAMS, "[]", "no label: [] (personal only)");
+    assert.equal(seen.env.OATS_TEAMS, "[]", "no label: [] (the workspace's default team only)");
     assert.deepEqual(JSON.parse(seen.stdin).input.context, { kind: "workspace", workspace: "github.com/acme/agents", deployment: base, soul: "release-manager", team: null, instance: null, home: null });
     for (const k of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_SOUL", "OATS_ROOT", "OAS_HOME", "PI_AGENTS_ROOT", "PI_AGENT_HOME", "OATS_PROVIDER_WIRE_KEEP"]) assert.equal(seen.env[k], undefined, `${k} is not passed for a soul subject`);
     assert.equal(seen.env.OATS_AGENT, "release-manager"); assert.equal(seen.env.OATS_TEAM_LABEL, "");

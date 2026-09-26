@@ -728,11 +728,11 @@ test("decision 23 + teams amendment K: byTeam is stripped and NEVER merged into 
   const plain = await resolveSoul(d, findSoul(d, "untagged"), opts());
   assert.deepEqual(plain.payloads["nw-chat"], { private: "per-human" }, "no team → base only");
   for (const r of [rm, hosted, plain]) assert.equal("byTeam" in r.payloads["nw-chat"], false);
-  // The personal team a HOST sets still reaches settings.team (→ OATS_TEAM_ID), whatever the label maps.
-  const personal = await resolveSoul(d, findSoul(d, "hosted"), opts({ local: { schemaVersion: 2, settings: { "nw-chat": { team: "aweb:me.personal" } } } }));
-  assert.equal(personal.payloads["nw-chat"].team, "aweb:me.personal");
-  assert.equal(personal.payloadOrigins["nw-chat"]["/team"].kind, "host");
-  assert.equal(personal.teams[0].payload.team, "aweb:example.cloud", "the label's own payload is untouched");
+  // The team a HOST sets still reaches settings.team (→ OATS_TEAM_ID), whatever the label maps.
+  const hostSet = await resolveSoul(d, findSoul(d, "hosted"), opts({ local: { schemaVersion: 2, settings: { "nw-chat": { team: "aweb:me.default" } } } }));
+  assert.equal(hostSet.payloads["nw-chat"].team, "aweb:me.default");
+  assert.equal(hostSet.payloadOrigins["nw-chat"]["/team"].kind, "host");
+  assert.equal(hostSet.teams[0].payload.team, "aweb:example.cloud", "the label's own payload is untouched");
   // A byTeam entry is still validated where it would be delivered: a nested byTeam is refused.
   const bad = structuredClone(ws); bad.messaging.byTeam.cloud = { team: "aweb:x", byTeam: {} };
   const d2 = discovery({ workspace: bad, souls: { hosted: soulDef("hosted", { team: "cloud" }) } });

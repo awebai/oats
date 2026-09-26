@@ -1,8 +1,8 @@
 // The team facts a lifecycle hook receives (human decisions 2026-09-24: oats.aweb is
-// the messaging default; teams are seamless — a personal team per person per
+// the messaging default; teams are seamless — the workspace's default team per
 // workspace, and seamless joining of workspace-defined teams). Workspace model: no
 // classic `team:` block — OATS_TEAM_SCOPE is the deployment directory, OATS_TEAM_ID
-// is the messaging slot's merged payload `team` (empty = personal), and the provider
+// is the messaging slot's merged payload `team` (empty = the workspace's default team), and the provider
 // also gets the soul's team label and the workspace's name and canonical key.
 // Teams contract 2026-09-25 (decision 4): OATS_TEAM_LABEL / OATS_TEAM_ID stay the
 // PRIMARY label's; OATS_TEAM_LABELS and OATS_TEAMS carry every eligible team.
@@ -28,7 +28,7 @@ test("workspace model, shared team mapped: team id from the messaging payload, s
   });
 });
 
-test("eligible teams: no label is [] (personal only); teams not known is empty, never []", () => {
+test("eligible teams: no label is [] (the workspace's default team only); teams not known is empty, never []", () => {
   const none = teamEnv(v2({ teams: [] }));
   assert.equal(none.OATS_TEAMS, "[]");
   assert.equal(none.OATS_TEAM_LABELS, "");
@@ -43,7 +43,7 @@ test("eligible teams: no label is [] (personal only); teams not known is empty, 
   assert.equal(unknown.OATS_TEAM_ID, "aweb:acme.cloud");
 });
 
-test("workspace model, no shared team for the label: OATS_TEAM_ID is empty (= personal), identity still passed", () => {
+test("workspace model, no shared team for the label: OATS_TEAM_ID is empty (= the workspace's default team), identity still passed", () => {
   const e = teamEnv(v2({ payloads: { "oats.aweb": { delivery: "channel" } } }));
   assert.equal(e.OATS_TEAM_ID, "");
   assert.equal(e.OATS_TEAM_LABEL, "cloud");
