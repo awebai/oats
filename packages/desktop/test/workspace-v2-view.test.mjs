@@ -150,57 +150,79 @@ test('three sections: Workspace owned, Packages, and Repo owned (grouped by repo
   assert.deepEqual([...v.doc.querySelectorAll('.capability-section')].map(el => el.dataset.section), ['workspace', 'packages']);
 });
 
-test('Setup lists: repositories with team and confirmation, packages with their lock, kernel detail verbatim, no commits', async t => {
+// Workspace v4 (W1/W2) — replaces the Setup tests that pinned the old
+// Repositories/Packages/External souls lists and the always-on graph.
+test('W1 Setup list: members with handshake and contribution, packages with origin and lock, teams, this computer; kernel detail verbatim', async t => {
   const moved = syncData(f2('sync-moved'), dir);
   const u = await setup(t);
   await u.tab('sources');
   // Workspace v4: Setup carries no count; its dot says when something needs attention (here nothing does).
   assert.equal(u.doc.querySelector('#workspace-tab-sources .workspace-count').textContent, '');
   assert.equal(u.doc.querySelector('#workspace-tab-sources .workspace-attn').hidden, true);
-  const sections = [...u.doc.querySelectorAll('.sources-section h2')].map(el => el.textContent);
-  assert.deepEqual(sections, ['Repositories', 'Packages', 'External souls']);
-  const repos = [...u.doc.querySelectorAll('.sources-section [data-member]')];
+  const ws = statusOf('workspace-status').workspace;
+  assert.equal(u.doc.querySelector('.setup-lede h2').textContent, ws.name);
+  assert.match(u.doc.querySelector('.setup-lede-where').textContent, new RegExp(`oats-workspace\\.yaml @ ${ws.commit.slice(0, 7)}$`), 'the declaration and its commit');
+  assert.deepEqual([...u.doc.querySelectorAll('.setup-box, .setup-local')].map(el => el.dataset.box), ['Members', 'Packages', 'Teams', 'This computer']);
+  const repos = [...u.doc.querySelectorAll('[data-box=Members] [data-member]')];
   assert.equal(repos.length, 5);
-  assert.ok(repos.every(row => row.querySelector('.catalog-chip').textContent === 'confirmed'));
-  assert.equal([...u.doc.querySelectorAll('.sources-section [data-package]')].length, 3);
-  assert.ok([...u.doc.querySelectorAll('.sources-section [data-package]')].every(row => row.querySelector('.catalog-chips').textContent === 'locked'));
-  assert.doesNotMatch(u.doc.querySelector('.workspace-discovery').textContent, /\b[0-9a-f]{7,40}\b/, 'Setup shows no commit');
+  assert.ok(repos.every(row => row.querySelector('.setup-state').textContent === 'confirmed' && row.querySelector('.setup-state svg')));
+  assert.equal(u.doc.querySelectorAll('[data-box=Packages] [data-package]').length, 3);
+  const local = Object.fromEntries([...u.doc.querySelectorAll('.setup-kv')].map(r => [r.querySelector('dt').textContent, r.querySelector('dd').textContent]));
+  assert.equal(local.Folder, dir); assert.equal(local.Settings, 'oats-local.yaml'); assert.equal(local.Lock, 'current');
+  assert.doesNotMatch(u.doc.querySelector('.setup-cols').textContent, /\b[0-9a-f]{7,40}\b/, 'no commits in the lists');
   assert.doesNotMatch(u.doc.querySelector('.workspace-discovery').textContent, APPROVAL_TEXT);
-  assert.deepEqual(u.syncCalls(), [{ action: 'read' }], 'Sources render the observation only (the one read is the tab bar\'s catalog count)');
-  // An unconfirmed member (kernel row from a later sync) keeps its status and detail.
+  assert.deepEqual(u.syncCalls(), [{ action: 'read' }], 'Setup renders the observation only (the one read is the tab bar\'s catalog count)');
+  // An unconfirmed member (kernel row from a later sync) keeps its status; "Why?" opens its membership in the graph.
   const status = { ...statusOf('workspace-status'), members: moved.members };
-  const { renderSources } = await import('../renderer/workspace-catalog.mjs');
-  const host = u.doc.createElement('div'); renderSources(host, { status });
-  const marketing = host.querySelector('.sources-section [data-member$="marketing.git"]');
-  assert.equal(marketing.querySelector('.catalog-chip').textContent, 'no-backlink');
-  assert.match(marketing.querySelector('.sources-detail').textContent, /has no oats-membership\.yaml/);
+  const { renderSetup } = await import('../renderer/workspace-setup.mjs');
+  const host = u.doc.createElement('div'); let picked = null;
+  renderSetup(host, { status, onSelect: key => { picked = key; } });
+  const marketing = host.querySelector('[data-box=Members] [data-member$="marketing.git"]');
+  assert.equal(marketing.querySelector('.setup-state').textContent, '○no backlink');
+  assert.ok(marketing.querySelector('.setup-state').classList.contains('warn'));
+  marketing.querySelector('button.setup-link-act').click();
+  assert.match(picked, /marketing\.git$/);
+  renderSetup(host, { status, view: 'graph', selected: picked, onSelect() {} });
+  const panel = host.querySelector('.setup-panel');
+  assert.equal(panel.querySelector('.setup-panel-name').textContent, 'marketing');
+  assert.deepEqual([...panel.querySelectorAll('.setup-hand-mark')].map(m => m.dataset.side), ['yes', 'no'], 'listed, but no backlink');
+  assert.match(panel.querySelector('.setup-detail').textContent, /has no oats-membership\.yaml/, 'the kernel detail, verbatim');
 });
 
-test('Setup graph: this computer → workspace → repositories, packages and external souls; repository icons; a repo opens its capabilities', async t => {
+test('W2 Setup graph: this computer → the lock → the workspace → members and packages; a member opens its Member panel, which opens its capabilities', async t => {
   const u = await setup(t, { status: 'f7/workspace-status' });
   await u.tab('sources');
+  u.doc.querySelector('.ws-segmented [data-setup-view=graph]').click(); await settle();
   const graph = u.doc.querySelector('.setup-graph');
-  const computer = graph.querySelector('.setup-computer'), ws = graph.querySelector('.setup-workspace');
-  assert.equal(computer.querySelector('.setup-name').textContent, 'northwind-workspace');
-  assert.equal(computer.querySelector('.setup-meta.mono').textContent, dir);
-  const running = instances.filter(i => i.running === true).length;
-  assert.equal([...computer.querySelectorAll('.setup-meta')].at(-1).textContent, `${instances.length} instance${instances.length === 1 ? '' : 's'} · ${running} running`);
-  assert.equal(ws.querySelector('.setup-name').textContent, 'northwind');
-  assert.equal(ws.querySelector('.setup-meta').textContent, 'Defined in agents');
-  assert.deepEqual([...ws.querySelectorAll('.catalog-chip')].map(el => el.textContent), ['global', 'engineering', 'marketing']);
+  const computer = graph.querySelector('.setup-computer'), ws = graph.querySelector('.setup-ws');
+  assert.equal(computer.querySelector('.setup-card-meta.mono').textContent, dir);
+  assert.equal([...computer.querySelectorAll('.setup-card-meta')].at(-1).textContent, `oats-local.yaml · ${instances.length} instance${instances.length === 1 ? '' : 's'}`);
+  assert.equal(graph.querySelector('.setup-lock').getAttribute('aria-label'), 'Lock current');
+  assert.equal(ws.querySelector('.setup-card-title').textContent, 'Workspace northwind');
+  assert.equal(ws.querySelector('.setup-card-meta.mono').textContent, 'agents');
   const nodes = [...graph.querySelectorAll('.setup-node')];
   assert.deepEqual(nodes.map(el => el.querySelector('.setup-node-name').textContent),
-    ['agents', 'platform', 'data', 'marketing', 'nw-tools', 'nw.chat v0.1.0', 'nw.teams v0.1.0', 'nw.tools v0.4.0', 'oats.framework v1.1.3', 'oats.okf v2.1.3', 'security-reviewer']);
+    ['agents', 'platform', 'data', 'marketing', 'nw-tools', 'nw.chat 0.1.0', 'nw.teams 0.1.0', 'nw.tools 0.4.0', 'oats.framework 1.1.3', 'oats.okf 2.1.3', 'security-reviewer']);
+  assert.equal(nodes[0].querySelector('.setup-node-meta').textContent, 'host · 2 souls');
+  assert.deepEqual(nodes.filter(n => n.dataset.package).map(n => n.querySelector('.setup-node-meta').textContent), ['git tag', 'git tag', 'git tag', 'official', 'official']);
   const repoIcon = iconElement(u.doc, 'repo').innerHTML, packageIcon = iconElement(u.doc, 'package').innerHTML;
-  assert.ok(nodes.every(el => el.querySelector('.setup-node-icon').innerHTML === (el.dataset.package ? packageIcon : repoIcon)), 'git repositories (members, external souls) carry the repository icon');
-  assert.equal(nodes.at(-1).querySelector('.setup-node-sub').textContent, 'External soul · experts · unassigned');
-  assert.doesNotMatch(graph.textContent, /\b[0-9a-f]{7,40}\b/, 'no commits');
+  assert.ok(nodes.every(el => el.querySelector('svg').innerHTML === (el.dataset.package ? packageIcon : repoIcon)), 'git repositories carry the repository icon, packages the package icon');
   // The kernel's workspace warnings, verbatim (#185 warnings[]); a kernel before #185 sends none.
   assert.deepEqual(statusOf('workspace-status').warnings, []);
   assert.equal(statusOf('f7/workspace-status').warnings[0].code, 'unmapped-team-label');
-  assert.ok([...u.doc.querySelectorAll('.catalog-note.warn')].some(el => /team "global" has no messaging\.byTeam entry/.test(el.textContent)));
-  // A repository opens its capabilities, filtered.
-  graph.querySelector('button.setup-node[data-member$="agents.git"]').click(); await settle();
+  // An unmapped team label is said on its team's row in the list, in the kernel's words (not repeated as a note).
+  u.doc.querySelector('.ws-segmented [data-setup-view=list]').click(); await settle();
+  assert.match(u.doc.querySelector('.setup-team[data-team=global] .setup-team-warn').textContent, /team "global" has no messaging\.byTeam entry/);
+  assert.equal(u.doc.querySelector('.setup-team[data-team=engineering] .setup-team-warn'), null);
+  assert.equal([...u.doc.querySelectorAll('.catalog-note.warn')].some(el => /messaging\.byTeam/.test(el.textContent)), false);
+  u.doc.querySelector('.ws-segmented [data-setup-view=graph]').click(); await settle();
+  // A member opens its Member panel; the panel opens its capabilities, filtered.
+  u.doc.querySelector('button.setup-node[data-member$="agents.git"]').click(); await settle();
+  const panel = u.doc.querySelector('.setup-panel');
+  assert.equal(u.doc.activeElement, panel.querySelector('.icon-act'), 'focus moves into the panel');
+  assert.equal(u.doc.querySelector('button.setup-node[data-member$="agents.git"]').getAttribute('aria-pressed'), 'true');
+  assert.deepEqual([...panel.querySelectorAll('.setup-hand-mark')].map(m => m.dataset.side), ['yes', 'yes']);
+  [...panel.querySelectorAll('button')].find(b => b.textContent === 'Show its capabilities').click(); await settle();
   assert.equal(u.doc.getElementById('workspace-tab-capabilities').getAttribute('aria-selected'), 'true');
   assert.match(u.doc.querySelector('.catalog-select[data-filter-key=repo] select').value, /agents\.git$/, 'the Repo filter is that repository');
   assert.ok(u.doc.querySelector('.catalog-select[data-filter-key=repo]').classList.contains('active'));

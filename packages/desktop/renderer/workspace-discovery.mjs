@@ -9,7 +9,8 @@
 import { postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
 import { cliStatus, cliKnownUnavailable } from './views/cli-status.mjs';
 import { deploymentUnavailableText } from './deployment-header.mjs';
-import { catalogCSS, renderCapabilitySections, capabilitySections, renderFilters, renderSources, filterChoices, filterCapabilities, memberNames, deploymentNotes, syncCapabilityNav } from './workspace-catalog.mjs';
+import { setupCSS, renderSetup } from './workspace-setup.mjs';
+import { catalogCSS, renderCapabilitySections, capabilitySections, renderFilters, filterChoices, filterCapabilities, memberNames, deploymentNotes, syncCapabilityNav } from './workspace-catalog.mjs';
 import { createWorkspaceSync, syncCSS, reasonText } from './workspace-sync-view.mjs';
 import { iconElement } from './shell-icons.mjs';
 
@@ -18,6 +19,7 @@ export const workspaceTabs = ['souls', 'capabilities', 'sources'];
 const TAB_LABELS = { souls: 'Souls', capabilities: 'Capabilities', sources: 'Setup' };
 export const discoveryCSS = `
 ${catalogCSS}
+${setupCSS}
 ${syncCSS}
 .workspace-header { height:var(--bar-h); min-height:48px; flex:none; display:flex; align-items:stretch; flex-wrap:nowrap; gap:22px; padding:0 16px; border-bottom:1px solid var(--border); background:var(--surface); box-sizing:border-box; }
 .workspace-header[hidden] { display:none; }
@@ -47,6 +49,7 @@ ${syncCSS}
 /* Capabilities (W5) reads as one centred column. */
 .workspace-discovery[data-tab=capabilities] { padding:16px 28px 20px; }
 .workspace-discovery[data-tab=capabilities] > * { max-width:1000px; margin-inline:auto; }
+.workspace-discovery[data-tab=sources] { padding:20px 24px; }
 .workspace-discovery[hidden], .souls-bar[hidden] { display:none; }
 .discovery-status { margin:0 0 14px; color:var(--muted); font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
 .discovery-status:empty { display:none; }
@@ -81,7 +84,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
   let alive = true, serial = 0, rosterGen = null, workspace = null, deployment = null, instances = [], tab = 'souls';
   let catalog = null, loading = false, failure = '', filters = { team: null, repo: null }, rendered = null;
-  let setupView = 'list', query = '';
+  let setupView = 'list', query = '', setupMember = null, souls = [];
   header.className = 'workspace-header';
   const title = node('h1', 'Workspace'); header.append(title);
   const tabs = node('div', undefined, 'workspace-tabs'); tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Workspace sections'); header.append(tabs);
@@ -197,16 +200,17 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     status.classList.toggle('error', !unavailable && !!failure);
     retry.hidden = !!unavailable || !failure || tab !== 'capabilities';
     // Identical polls never rebuild a settled projection under focus/selection.
-    const key = JSON.stringify([tab, setupView, query, unavailable, loading, failure, filters, catalog, s, deployment?.withheld, deployment?.reachable, privateListed(), instances.map(i => [i.agent, i.agentsRoot, i.modules, i.running])]);
+    const key = JSON.stringify([tab, setupView, setupMember, souls.map(a => a?.team ?? null), query, unavailable, loading, failure, filters, catalog, s, deployment?.withheld, deployment?.reachable, privateListed(), instances.map(i => [i.agent, i.agentsRoot, i.modules, i.running])]);
     if (key === rendered) return;
     rendered = key;
     notes.replaceChildren(); filterHost.replaceChildren(); body.replaceChildren(); filterHost.className = '';
     if (unavailable || tab === 'souls') return;
     for (const note of deploymentNotes(deployment)) notes.append(node('p', note.text, `catalog-note${note.warn ? ' warn' : ''}`));
     if (tab === 'sources') {
-      // The kernel's workspace warnings (for example an unmapped team label), verbatim.
-      for (const warning of list(s?.warnings)) if (typeof warning?.message === 'string' && warning.message) notes.append(node('p', warning.message, 'catalog-note warn'));
-      renderSources(body, { status: s, instances, onOpenRepo: openRepo, onOpenPackages: openPackages }); return;
+      // The kernel's workspace warnings, verbatim; an unmapped team label is said on its team's row.
+      for (const warning of list(s?.warnings)) if (typeof warning?.message === 'string' && warning.message && !(warning.code === 'unmapped-team-label' && list(s?.workspace?.teams).includes(warning.label))) notes.append(node('p', warning.message, 'catalog-note warn'));
+      renderSetup(body, { status: s, instances, souls, cli: cliStatus(), view: setupView, selected: setupMember,
+        onSelect: key => selectMember(key), onOpenRepo: openRepo, onOpenPackages: openPackages }); return;
     }
     if (!catalog) return;
     for (const problem of list(catalog.problems)) notes.append(node('p', reasonText(problem), 'catalog-note warn'));
@@ -228,6 +232,14 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   }
   // Repo owned is shown only when the kernel lists private capabilities.
   const privateListed = () => list(cliStatus()?.features).includes('capabilities-private');
+  // Setup: a member's membership opens in the graph's Member panel; focus follows it.
+  function selectMember(key) {
+    setupMember = key || null;
+    if (setupMember && setupView !== 'graph') { setupView = 'graph'; syncTools(); }
+    render();
+    const target = setupMember ? body.querySelector('.setup-panel .icon-act') : body.querySelector('.setup-node[aria-pressed]');
+    target?.focus({ preventScroll: false });
+  }
   // Setup → Capabilities: a repository's capabilities (filtered), or the Packages section.
   let pendingReveal = null;
   function openRepo(key) {
@@ -256,8 +268,8 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   panel.addEventListener('scroll', () => { if (tab === 'capabilities') syncCapabilityNav(body, panel); }, { passive: true });
   function updateRoster(agents, panelData) {
     const gen = workspaceGeneration();
-    if (rosterGen !== gen) { catalog = null; failure = ''; filters = { team: null, repo: null }; serial++; loading = false; }
-    rosterGen = gen; workspace = panelData.workspace || null; deployment = panelData.deployment || null;
+    if (rosterGen !== gen) { catalog = null; failure = ''; filters = { team: null, repo: null }; setupMember = null; serial++; loading = false; }
+    rosterGen = gen; workspace = panelData.workspace || null; deployment = panelData.deployment || null; souls = list(agents);
     instances = list(panelData.instances);
     updateCounts(agents.length); render();
     // Read once per roster generation on any tab: the tab bar counts it.

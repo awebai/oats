@@ -4,7 +4,8 @@ import { readFileSync, readdirSync } from "node:fs";
 import { JSDOM } from "jsdom";
 import { createSoulMark, createRuntimeBadge, identityCSS } from "../renderer/identity-marks.mjs";
 import { workspaceStatusData, syncData } from "../deployment-data.mjs";
-import { renderCapabilities, renderCapabilitySections, capabilitySections, renderFilters, renderSources, filterChoices, memberNames } from "../renderer/workspace-catalog.mjs";
+import { renderCapabilities, renderCapabilitySections, capabilitySections, renderFilters, filterChoices, memberNames } from "../renderer/workspace-catalog.mjs";
+import { renderSetup } from "../renderer/workspace-setup.mjs";
 import { discoveryCSS } from "../renderer/workspace-discovery.mjs";
 import { createConnections, connectionsCSS } from '../renderer/connections.mjs';
 import { createForgePrPanel } from '../renderer/forge-pr.mjs';
@@ -307,7 +308,7 @@ for (const [name] of palettes) test(`${name}: actual identity/runtime markup win
 });
 
 for (const [name] of palettes) test(`${name}: workspace catalog, sources and sync text use AA tokens on their computed surfaces`, t => {
-  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"><header class="workspace-header"><div class="ws-sync"><span class="ws-sync-state warn">Lock out of date</span></div></header><p class="catalog-note warn">note</p><div class="filters"></div><div class="caps"></div><div class="sections"></div><div class="sources"></div></main></body></html>`);
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"><header class="workspace-header"><div class="ws-sync"><span class="ws-sync-state warn">Lock out of date</span></div></header><p class="catalog-note warn">note</p><div class="filters"></div><div class="caps"></div><div class="sections"></div><div class="sources"></div><div class="graph"></div></main></body></html>`);
   const doc = dom.window.document;
   for (const source of [css, identityCSS, discoveryCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
   t.after(() => dom.window.close());
@@ -323,7 +324,9 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
   // F7 (kernel #185): the three sections, with a repo-owned (private) row.
   const sections = capabilitySections(JSON.parse(readFileSync(new URL('fixtures/workspace-v2/f7/capabilities.json', new URL('./', import.meta.url)), 'utf8')).result.capabilities);
   renderCapabilitySections(doc.querySelector('.sections'), { sections, shown: sections.workspace, filterHost: null, privateListed: true, status, instances: [], root: dir });
-  renderSources(doc.querySelector('.sources'), { status, instances: [{ agent: 'a', running: true }] });
+  renderSetup(doc.querySelector('.sources'), { status, instances: [{ agent: 'a', running: true }], souls: [{ team: 'marketing' }], cli: { version: '0.26.0' } });
+  const unconfirmed = status.members.find(m => m.status !== 'confirmed');
+  renderSetup(doc.querySelector('.graph'), { status: { ...status, unsynced: ['x.pkg'] }, view: 'graph', selected: unconfirmed.key });
   // The sync sheet's refusal text, as createWorkspaceSync builds it.
   const sheet = doc.createElement('section'); sheet.className = 'ws-sync-dialog';
   sheet.innerHTML = '<div class="ws-sync-body"><p class="ws-sync-lead error">x</p><p class="ws-sync-lead">x</p><button class="ws-sync-details">Details</button><p class="ws-sync-detail">x</p></div>';
@@ -335,8 +338,6 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
     ['.catalog-name', '.catalog-table', 'fg', 'surface'],
     ['.source-chip', '.catalog-table', 'muted', 'surface'], ['.source-chip-name', '.catalog-table', 'fg', 'surface'],
     ['.catalog-used-count', '.catalog-table', 'muted', 'surface'],
-    ['.catalog-chip.ok', '.catalog-chip.ok', 'ok', 'surface-2'],
-    ['.catalog-chip.warn', '.catalog-chip.warn', 'warn', 'surface-2'],
     // Filters: "Filter by", a plain dropdown, an active one (Team = marketing), the count and Clear filters.
     ['.catalog-filters-label', '.oats-view', 'muted', 'bg'],
     ['.catalog-select:not(.active) .catalog-select-key', '.catalog-select:not(.active)', 'muted', 'surface'],
@@ -345,16 +346,31 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
     ['.catalog-select.active select', '.catalog-select.active', 'fg', 'sel'],
     ['.catalog-shown', '.oats-view', 'muted', 'bg'], ['.catalog-clear', '.oats-view', 'accent', 'bg'],
     ['.catalog-note.warn', '.oats-view', 'warn', 'bg'],
-    ['.sources-key', '.catalog-table', 'muted', 'surface'],
     // Sections: jump pills (current = ink), titles with their lead, repo sub-headings.
     ['.capability-nav button[aria-current=true]', '.capability-nav button[aria-current=true]', 'primary-fg', 'primary-bg'],
     ['.capability-nav button[aria-current=false]', '.capability-nav button[aria-current=false]', 'fg', 'surface'],
     ['.capability-section-title', '.oats-view', 'fg', 'bg'], ['.capability-section-lead', '.oats-view', 'muted', 'bg'],
     ['.catalog-group', '.catalog-table', 'muted', 'surface'],
-    ['.setup-caption', '.setup-card', 'muted', 'surface'], ['.setup-name', '.setup-card', 'fg', 'surface'], ['.setup-meta', '.setup-card', 'muted', 'surface'],
-    ['.setup-node-name', '.setup-node', 'fg', 'surface'], ['.setup-node-sub', '.setup-node', 'muted', 'surface'], ['.setup-node-detail', '.setup-node', 'warn', 'surface'],
-    ['.setup-node .catalog-chip.ok', '.setup-node .catalog-chip.ok', 'ok', 'surface-2'],
-    ['.sources-detail', '.catalog-table', 'warn', 'surface'],
+    // Workspace v4 Setup (W1/W2) — replaces the old setup-card/node/sources inventory.
+    ['.setup-lede h2', '.oats-view', 'fg', 'bg'], ['.setup-lede-where', '.oats-view', 'muted', 'bg'],
+    ['.setup-box-head h3', '.setup-box', 'fg', 'surface'], ['.setup-box-lead', '.setup-box', 'muted', 'surface'],
+    ['.setup-box .setup-scope', '.setup-box .setup-scope', 'muted', 'tag-bg'],
+    ['.setup-name', '.setup-box', 'fg', 'surface'], ['.setup-version', '.setup-box', 'muted', 'surface'],
+    ['.setup-state:not(.warn)', '.setup-state:not(.warn)', 'muted', 'tag-bg'], ['.setup-state.warn', '.setup-state.warn', 'warn', 'attn-bg'],
+    ['.setup-cell:not(.muted)', '.setup-box', 'fg', 'surface'], ['.setup-cell.muted', '.setup-box', 'muted', 'surface'],
+    ['.setup-link-act', '.setup-box', 'accent', 'surface'],
+    ['.setup-team-label', '.setup-team-label', 'fg', 'tag-bg'], ['.setup-team-meta', '.setup-box', 'muted', 'surface'], ['.setup-team-note', '.setup-box', 'muted', 'surface'],
+    ['.setup-kv dt', '.setup-local', 'muted', 'surface-2'], ['.setup-kv dd', '.setup-local', 'fg', 'surface-2'],
+    ['.setup-caption', '.setup-here', 'muted', 'surface-2'], ['.setup-card-title', '.setup-computer', 'fg', 'surface'], ['.setup-card-meta', '.setup-computer', 'muted', 'surface'],
+    ['.setup-ws .setup-card-meta', '.setup-ws', 'fg', 'sel'],
+    ['.setup-lock.warn', '.oats-view', 'warn', 'bg'],
+    ['.setup-tree-label', '.setup-shared', 'muted', 'surface'],
+    ['.setup-node:not(.bad) .setup-node-name', '.setup-node:not(.bad)', 'fg', 'surface'], ['.setup-node:not(.bad) .setup-node-meta', '.setup-node:not(.bad)', 'muted', 'surface'],
+    ['.setup-node.bad .setup-node-name', '.setup-node.bad', 'fg', 'attn-bg'], ['.setup-node.bad .setup-node-meta', '.setup-node.bad', 'warn', 'attn-bg'],
+    ['.setup-panel-name', '.setup-panel', 'fg', 'surface'], ['.setup-panel h4', '.setup-panel', 'muted', 'surface'],
+    ['.setup-hand-title', '.setup-panel', 'fg', 'surface'], ['.setup-hand-sub', '.setup-panel', 'muted', 'surface'], ['.setup-hand-mark.warn', '.setup-panel', 'warn', 'surface'],
+    ['.setup-panel p:not(.muted)', '.setup-panel', 'fg', 'surface'], ['.setup-panel p.muted', '.setup-panel', 'muted', 'surface'],
+    ['.setup-detail', '.setup-detail', 'fg', 'surface-2'],
     ['.ws-sync-state.warn', '.workspace-header', 'warn', 'surface'],
     ['.ws-sync-lead.error', '.ws-sync-dialog', 'danger', 'surface'], ['.ws-sync-lead:not(.error)', '.ws-sync-dialog', 'fg', 'surface'],
     ['.ws-sync-details', '.ws-sync-dialog', 'muted', 'surface'], ['.ws-sync-detail', '.ws-sync-detail', 'muted', 'surface-2'],

@@ -58,62 +58,14 @@ export const catalogCSS = `
 .catalog-notes:empty { display:none; }
 .catalog-note { margin:0; color:var(--muted); font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
 .catalog-note.warn { color:var(--warn); }
-.catalog-chips { display:flex; flex-wrap:wrap; gap:3px; min-width:0; }
-.catalog-chip { display:inline-flex; align-items:center; gap:3px; min-height:22px; padding:0 7px; border-radius:5px; background:var(--surface-2); color:var(--muted); font-size:10.5px; font-weight:650; line-height:1.45; white-space:nowrap; }
-.catalog-chip.ok { color:var(--ok); }
-.catalog-chip.warn { color:var(--warn); }
-.catalog-chip .shell-icon { width:11px; height:11px; }
-.catalog-chip.mono { font:500 10.5px var(--mono,monospace); }
 .capability-section { display:flex; flex-direction:column; gap:10px; }
 .capability-section + .capability-section { margin-top:22px; }
 .capability-section-title { display:flex; align-items:baseline; gap:10px; margin:0; padding:0 2px; color:var(--fg); font-size:14px; font-weight:700; }
 .capability-section-title:focus { outline:none; }
 .capability-section-lead { color:var(--muted); font-size:12px; font-weight:400; }
 .capability-none { margin:0; }
-.sources-section + .sources-section { margin-top:var(--section-gap); }
-.setup-graph { display:grid; grid-template-columns:minmax(180px,230px) 32px minmax(200px,260px) 32px minmax(260px,1fr); align-items:center; margin:0 0 var(--section-gap); }
-.setup-card { display:flex; flex-direction:column; gap:6px; min-width:0; padding:12px 14px; border:1px solid var(--border); border-radius:10px; background:var(--surface); box-sizing:border-box; }
-.setup-caption { color:var(--muted); font-size:10.5px; font-weight:650; letter-spacing:.06em; text-transform:uppercase; }
-.setup-title { display:flex; align-items:center; gap:8px; min-width:0; }
-.setup-title .shell-icon, .setup-node-icon { flex:none; color:var(--muted); }
-.setup-name { color:var(--fg); font-size:13px; font-weight:650; overflow-wrap:anywhere; }
-.setup-meta { color:var(--muted); font-size:11.5px; line-height:1.5; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.setup-meta.mono { font:11px/1.5 var(--mono,monospace); }
-.setup-link { position:relative; height:0; border-top:1px solid var(--muted); }
-.setup-link::after { content:''; position:absolute; right:0; top:-4px; width:6px; height:6px; border-top:1px solid var(--muted); border-right:1px solid var(--muted); transform:rotate(45deg); }
-.setup-branch { display:flex; flex-direction:column; min-width:0; margin:0; padding:0; list-style:none; }
-.setup-leaf { --above:6px; position:relative; margin-top:var(--above); padding-left:22px; }
-.setup-leaf.group-start { --above:16px; }
-.setup-leaf:first-child { margin-top:0; }
-.setup-leaf::before { content:''; position:absolute; left:0; top:50%; width:22px; border-top:1px solid var(--muted); }
-.setup-leaf::after { content:''; position:absolute; left:0; top:calc(-1 * var(--above)); bottom:0; border-left:1px solid var(--muted); }
-.setup-leaf:first-child::after { top:50%; }
-.setup-leaf:last-child::after { bottom:50%; }
-.setup-leaf:only-child::after, .setup-none::before { display:none; }
-.setup-none { color:var(--muted); font-size:12px; }
-.setup-node { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:2px 10px; width:100%; min-height:48px; padding:7px 12px; border:1px solid var(--border); border-radius:8px; background:var(--surface); box-sizing:border-box; color:var(--fg); font:inherit; text-align:left; }
-.setup-node .setup-node-icon { grid-row:span 2; }
-button.setup-node { cursor:pointer; }
-button.setup-node:hover { background:var(--surface-2); }
-button.setup-node:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
-.setup-node-name { color:var(--fg); font-size:12.5px; font-weight:650; overflow-wrap:anywhere; }
-.setup-node-sub, .setup-node-detail { grid-column:2 / -1; font-size:11px; line-height:1.45; }
-.setup-node-sub { color:var(--muted); }
-.setup-node-detail { color:var(--warn); overflow-wrap:anywhere; }
-.sources-section h2 { margin:0 0 var(--title-gap); color:var(--muted); font-size:10.5px; font-weight:650; letter-spacing:.06em; text-transform:uppercase; }
-.sources-row { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1.1fr); align-items:center; gap:12px; min-height:52px; padding:8px 16px; box-sizing:border-box; border-top:1px solid var(--border); }
-.sources-row:first-child { border-top:0; }
-.sources-key { color:var(--muted); font:11px/1.5 var(--mono,monospace); overflow-wrap:anywhere; }
-.sources-detail { grid-column:1/-1; margin:0; color:var(--warn); font-size:11.5px; overflow-wrap:anywhere; }
-@container(max-width:900px) {
- .setup-graph { grid-template-columns:minmax(0,1fr); align-items:stretch; }
- .setup-link { justify-self:start; width:0; height:18px; margin-left:22px; border-top:0; border-left:1px solid var(--muted); }
- .setup-link::after { top:auto; right:auto; bottom:0; left:-4px; transform:rotate(135deg); }
- .setup-branch { margin-left:22px; }
- .setup-leaf:first-child::after { top:0; }
-}
 @container(max-width:700px) {
- .catalog-row, .sources-row { grid-template-columns:minmax(0,1fr); gap:6px; }
+ .catalog-row { grid-template-columns:minmax(0,1fr); gap:6px; }
  .catalog-row.head { display:none; }
 }
 `;
@@ -169,12 +121,6 @@ function node(doc, tag, value, cls) {
   const el = doc.createElement(tag);
   if (value !== undefined && value !== null) el.textContent = value;
   if (cls) el.className = cls;
-  return el;
-}
-function chip(doc, label, tone = '', icon = null) {
-  const el = node(doc, 'span', null, `catalog-chip${tone ? ` ${tone}` : ''}`);
-  if (icon) el.append(iconElement(doc, icon, { size: 11 }));
-  el.append(doc.createTextNode(label));
   return el;
 }
 
@@ -394,118 +340,4 @@ export function syncCapabilityNav(host, scroller) {
   for (const jump of nav.querySelectorAll('button')) jump.setAttribute('aria-current', String(jump.dataset.jump === current));
 }
 
-const count = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-const tail = value => String(value || '').replace(/\/+$/, '').split('/').pop().replace(/\.git$/, '');
-/** The Setup overview: this computer → the workspace → what it is built from
- * (repositories, packages, external souls). Kernel facts only, no commits;
- * anything that lives in a git repository carries the repository icon. */
-export function renderSetupGraph(host, { status, instances = [], onOpenRepo = null, onOpenPackages = null }) {
-  const doc = host.ownerDocument;
-  const ws = status?.workspace || {};
-  const graph = node(doc, 'figure', null, 'setup-graph'); graph.setAttribute('aria-label', 'How this deployment is set up');
-  const card = (caption, icon, name, cls) => {
-    const el = node(doc, 'div', null, `setup-card ${cls}`);
-    const title = node(doc, 'div', null, 'setup-title'); title.append(iconElement(doc, icon, { size: 16 }), node(doc, 'span', name, 'setup-name'));
-    el.append(node(doc, 'span', caption, 'setup-caption'), title); return el;
-  };
-  const link = () => { const el = node(doc, 'div', null, 'setup-link'); el.setAttribute('aria-hidden', 'true'); return el; };
-  // This computer: the deployment folder (where oats-local.yaml lives) and its instances.
-  const deployment = text(ws.local) ? ws.local.replace(/\/oats-local\.yaml$/, '') : null;
-  const computer = card('This computer', 'computer', deployment ? tail(deployment) : 'This deployment', 'setup-computer');
-  if (deployment) { const path = node(doc, 'span', deployment, 'setup-meta mono'); path.title = deployment; computer.append(path); }
-  const all = list(instances), running = all.filter(i => i?.running === true).length;
-  computer.append(node(doc, 'span', all.length ? `${count(all.length, 'instance')} · ${running} running` : 'No instances yet', 'setup-meta'));
-  // The workspace: its host repository and its teams.
-  const names = memberNames(status);
-  const workspace = card('Workspace', 'repo', text(ws.name) || 'Workspace', 'setup-workspace');
-  if (text(ws.key)) { const host = node(doc, 'span', `Defined in ${names.get(ws.key) || tail(ws.url || ws.key)}`, 'setup-meta'); host.title = ws.key; workspace.append(host); }
-  if (list(ws.teams).length) { const teams = node(doc, 'div', null, 'catalog-chips'); for (const team of ws.teams) teams.append(chip(doc, team)); workspace.append(teams); }
-  // What it is built from.
-  const branch = node(doc, 'ul', null, 'setup-branch'); branch.setAttribute('aria-label', 'What the workspace is built from');
-  const leaf = (el, groupStart) => { const li = node(doc, 'li', null, `setup-leaf${groupStart ? ' group-start' : ''}`); li.append(el); branch.append(li); };
-  const item = (icon, name, sub, state, open) => {
-    const el = node(doc, open ? 'button' : 'div', null, 'setup-node');
-    if (open) { el.type = 'button'; el.addEventListener('click', open.run); el.setAttribute('aria-label', `${name}: ${open.label}`); }
-    const mark = iconElement(doc, icon, { size: 16 }); mark.classList.add('setup-node-icon');
-    el.append(mark, node(doc, 'span', name, 'setup-node-name'));
-    const states = node(doc, 'span', null, 'catalog-chips setup-node-state'); if (state) states.append(state); el.append(states);
-    el.append(node(doc, 'span', sub, 'setup-node-sub'));
-    return el;
-  };
-  list(status?.members).forEach((member, index) => {
-    const caps = list(member.capabilities).length;
-    const state = member.status === 'confirmed' ? chip(doc, 'confirmed', 'ok', 'check') : chip(doc, text(member.status) || 'unconfirmed', 'warn', 'warning');
-    const sub = ['Repository', text(member.team), count(list(member.souls).length, 'soul'), count(caps, 'capability', 'capabilities')].filter(Boolean).join(' · ');
-    const el = item('repo', text(member.name) || tail(member.key), sub, state,
-      caps && onOpenRepo ? { label: 'show its capabilities', run: () => onOpenRepo(member.key) } : null);
-    el.dataset.member = member.key;
-    if (text(member.detail)) el.append(node(doc, 'span', member.detail, 'setup-node-detail'));
-    leaf(el, index === 0);
-  });
-  const packages = [...list(status?.packages).map(pkg => ({ pkg })), ...list(status?.unsynced).map(id => ({ unsynced: id }))];
-  packages.forEach(({ pkg, unsynced }, index) => {
-    const el = pkg
-      ? item('package', `${pkg.id}${pkg.version ? ` v${pkg.version}` : ''}`, ['Package', count(list(pkg.capabilities).length, 'capability', 'capabilities')].join(' · '), chip(doc, 'locked', 'ok', 'check'),
-        onOpenPackages ? { label: 'show package capabilities', run: () => onOpenPackages() } : null)
-      : item('package', unsynced, 'Package · declared', chip(doc, 'not locked', 'warn', 'warning'), null);
-    el.dataset.package = pkg ? pkg.id : unsynced;
-    leaf(el, index === 0);
-  });
-  list(status?.external).forEach((row, index) => {
-    const repo = tail(String(row.source || '').replace(/@[^@/]*$/, ''));
-    leaf(item('repo', text(row.soul) || 'soul', ['External soul', repo, text(row.team)].filter(Boolean).join(' · '), null, null), index === 0);
-  });
-  if (!branch.children.length) branch.append(node(doc, 'li', 'No repositories or packages reported yet.', 'setup-leaf setup-none'));
-  graph.append(computer, link(), workspace, link(), branch);
-  host.append(graph);
-}
 
-export function renderSources(host, { status, instances = [], onOpenRepo = null, onOpenPackages = null }) {
-  const doc = host.ownerDocument;
-  host.replaceChildren();
-  renderSetupGraph(host, { status, instances, onOpenRepo, onOpenPackages });
-  const section = (title, rows, empty) => {
-    const el = node(doc, 'section', null, 'sources-section');
-    el.append(node(doc, 'h2', title));
-    const table = node(doc, 'div', null, 'catalog-table');
-    if (rows.length) table.append(...rows); else table.append(node(doc, 'p', empty, 'catalog-empty'));
-    el.append(table); return el;
-  };
-  const repos = list(status?.members).map(member => {
-    const row = node(doc, 'div', null, 'sources-row'); row.dataset.member = member.key;
-    const who = node(doc, 'div', null, 'catalog-copy');
-    who.append(node(doc, 'span', text(member.name) || member.key, 'catalog-name'), node(doc, 'span', member.key, 'sources-key'));
-    const facts = node(doc, 'div', null, 'catalog-chips');
-    facts.append(member.status === 'confirmed' ? chip(doc, 'confirmed', 'ok', 'check') : chip(doc, text(member.status) || 'unconfirmed', 'warn', 'warning'));
-    if (text(member.team)) facts.append(chip(doc, member.team));
-    const offers = node(doc, 'div', null, 'catalog-chips');
-    offers.append(chip(doc, `${list(member.souls).length} soul${list(member.souls).length === 1 ? '' : 's'}`), chip(doc, `${list(member.capabilities).length} capabilit${list(member.capabilities).length === 1 ? 'y' : 'ies'}`));
-    if (member.publishes?.package) offers.append(chip(doc, `publishes ${member.publishes.package}${member.publishes.version ? ` v${member.publishes.version}` : ''}`));
-    row.append(who, facts, offers);
-    if (text(member.detail)) row.append(node(doc, 'p', member.detail, 'sources-detail'));
-    return row;
-  });
-  const packages = list(status?.packages).map(pkg => {
-    const row = node(doc, 'div', null, 'sources-row'); row.dataset.package = pkg.id;
-    const who = node(doc, 'div', null, 'catalog-copy');
-    who.append(node(doc, 'span', `${pkg.id}${pkg.version ? ` v${pkg.version}` : ''}`, 'catalog-name'), node(doc, 'span', pkg.source, 'sources-key'));
-    const facts = node(doc, 'div', null, 'catalog-chips');
-    facts.append(chip(doc, 'locked', 'ok', 'check'));
-    const offers = node(doc, 'div', null, 'catalog-chips');
-    for (const cap of list(pkg.capabilities)) offers.append(chip(doc, cap));
-    row.append(who, facts, offers);
-    return row;
-  });
-  const external = list(status?.external).map(item => {
-    const row = node(doc, 'div', null, 'sources-row');
-    const who = node(doc, 'div', null, 'catalog-copy');
-    who.append(node(doc, 'span', text(item.soul) || 'soul', 'catalog-name'), node(doc, 'span', text(item.source) || '', 'sources-key'));
-    const facts = node(doc, 'div', null, 'catalog-chips'); facts.append(chip(doc, 'external soul'));
-    if (text(item.team)) facts.append(chip(doc, item.team));
-    row.append(who, facts, node(doc, 'div'));
-    return row;
-  });
-  host.append(section('Repositories', repos, 'No member repositories reported.'),
-    section('Packages', packages, list(status?.unsynced).length ? 'No package is locked yet. Sync to lock the declared packages.' : 'No packages declared.'));
-  if (external.length) host.append(section('External souls', external, ''));
-}
