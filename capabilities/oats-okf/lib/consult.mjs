@@ -493,8 +493,4 @@ export function search(source, flags, positionals) {
   return { result: { query, regex: !!flags.regex, bases: scope, node, hits: shownHits, total: hits.length, more, receipts: Object.fromEntries(receipts.map(r => [r.base, r])) },
     text: `${text || `no matches for ${JSON.stringify(query)}`}${more ? `\n… and ${more} more (narrow with --node or a longer query)` : ''}\n${footer(receipts)}` };
 }
-/** okf 2.x compatibility: read --base A [--path P] is cat of P (default the base index). */
-export function readCompat(source, flags) {
-  return cat(source, { base: flags.base, fresh: flags.fresh }, [flags.path ?? 'index.md']);
-}
-export const CONSULT = { bases, index, cat, ls, links, search, read: readCompat };
+export const CONSULT = { bases, index, cat, ls, links, search };

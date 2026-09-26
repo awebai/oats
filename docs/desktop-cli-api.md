@@ -1603,7 +1603,7 @@ addition to an existing row.
 ```json
 {"workspace":{"…":"…","file":{"path":"oats-workspace.yaml","url":"https://github.com/acme/agents/blob/<oid>/oats-workspace.yaml"}},
  "members":[{"…":"…","url":"https://github.com/acme/tools/tree/<oid>","membershipFile":{"path":"oats-membership.yaml","url":"https://github.com/acme/tools/blob/<oid>/oats-membership.yaml"}}],
- "packages":[{"id":"oats.okf","version":"2.1.5","source":"catalog:oats.okf","commit":"<oid>","…":"…","latest":{"version":"3.0.0","ref":"v3.0.0"}}],
+ "packages":[{"id":"oats.okf","version":"3.0.0","source":"catalog:oats.okf","commit":"<oid>","…":"…","latest":{"version":"4.0.0","ref":"v4.0.0"}}],
  "defaults":{"slots":{"knowledge":{"name":"oats.okf","from":"package"},"messaging":"none","tasks":null},
              "capabilities":[{"name":"acme-house-style","from":"github.com/acme/agents","off":false}],
              "byTeam":{"engineering":{"capabilities":[{"name":"acme-house-style","from":null,"off":true},{"name":"acme-deploy","from":"package","off":false}]}}},

@@ -1,5 +1,0 @@
-name: memory-harvest
-kind: capability
-work: directory
-runtime: pi
-description: Independent OKF judge for durable per-source evidence and external owned knowledge nodes.

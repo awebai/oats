@@ -180,7 +180,7 @@ test("oats okf init --soul probe from the deployment (no home) provisions the ba
     const dep = join(room, "dep"); mkdirSync(join(dep, "agents"), { recursive: true });
     const accepted = join(room, "accepted"); const bindings = join(room, "okf-bindings.json");
     writeFileSync(bindings, JSON.stringify({ version: 1, stateDir: join(room, "okf-state"), bases: { project: { id: "opd-base", kind: "directory", path: accepted } } }));
-    writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${hostRef}\nsettings:\n  oats.okf:\n    bindings-file: ${bindings}\n`);
+    writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${hostRef}\nsettings:\n  oats.okf:\n    bindings-file: ${bindings}\n    harvest: "on"\n`); // okf 4.0.0: harvest is off by default
     const catalog = join(room, "catalog.json"); writeFileSync(catalog, JSON.stringify({ packages: { "oats.okf": { url: pathToFileURL(official).href, ref: "v2.1.3", path: "oats-package" } } }));
     const home = join(room, "home"); mkdirSync(home);
     const env = { ...process.env, PATH: inertHarnessPath(room), OATS_PACKAGE_CATALOG: catalog, OATS_REMOTE_CACHE: join(room, "cache"), OATS_TMUX_SESSION: `none-${process.pid}`, HOME: home };
@@ -225,8 +225,8 @@ test("oats okf init --soul probe from the deployment (no home) provisions the ba
     assert.equal(store[0].slice("oats.okf@".length), lock.packages["oats.okf"].commit.slice(0, 12));
     const storeDir = join(dep, MODULES_DIR, store[0]);
     assert.ok(existsSync(join(storeDir, "oats.json")) && existsSync(join(storeDir, "bin", "oats-okf.mjs")));
-    // oats.okf 3.0.0 ships no CLAUDE.md alias (the kernel composes a home's); the alias fetch rule is pinned in remote.test.mjs.
-    assert.ok(existsSync(join(storeDir, "agents", "memory-harvest", "AGENTS.md")) && !existsSync(join(storeDir, "agents", "memory-harvest", "CLAUDE.md")));
+    // oats.okf 4.0.0 ships no capability agents (its harvester is a package soul); the alias fetch rule is pinned in remote.test.mjs.
+    assert.ok(!existsSync(join(storeDir, "agents")), "okf 4.0.0 has no agents/");
     assert.deepEqual(readdirSync(join(dep, MODULES_DIR)).filter((n) => n.startsWith(".staging")), []);
     assert.ok(!existsSync(join(dep, "agents", "probe", "instances")), "init ran before any instance existed");
 
@@ -243,12 +243,11 @@ test("oats okf init --soul probe from the deployment (no home) provisions the ba
     assert.equal(inside.status, 0, inside.stdout + inside.stderr);
     assert.equal(JSON.parse(inside.stdout.trim().split("\n").pop()).ok, true);
 
-    // A capability-defined agent (the okf harvester) homes under the agents root like a
-    // soul: <deployment>/agents/<agent>/instances/<name>, the dir holding only instances/.
-    r = run(["spawn", "memory-harvest", "--dir", dep, "--parent", r.json.result.instance, "--purpose", "harvest", "--no-launch", "--json"]);
+    // A package soul (the okf harvester, okf 4.0.0) homes under the agents root like a member
+    // soul: <deployment>/agents/<package>--<soul>/instances/<name>.
+    r = run(["spawn", "oats.okf/knowledge-harvester", "--dir", dep, "--parent", r.json.result.instance, "--name", "okf-harvester-opd", "--no-launch", "--json"]);
     assert.equal(r.code, 0, r.out + r.err);
-    assert.equal(realpathSync(r.json.result.home), join(dep, "agents", "memory-harvest", "instances", r.json.result.instance));
-    assert.deepEqual(readdirSync(join(dep, "agents", "memory-harvest")), ["instances"], "no soul, no link: only instances/");
+    assert.equal(realpathSync(r.json.result.home), join(dep, "agents", "oats-okf--knowledge-harvester", "instances", "okf-harvester-opd"));
     assert.ok(!existsSync(join(dep, "local-agents")), "nothing is written under the 0.25 local-agents/ base");
 
     // A leftover 0.25 local-agents/ dir is ONE status/doctor problem and changes nothing else.

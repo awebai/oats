@@ -151,7 +151,7 @@ test("okf harvest --json: actual directory worker identity through the public CL
   assert.equal(r.status, 0, r.stdout + r.stderr);
   const doc = parseOnly(r.stdout);
   assert.equal(doc.ok, true); assert.equal(doc.result.status, "ready");
-  assert.match(doc.result.instance, /^memory-harvest-/); assert.ok(doc.result.run);
+  assert.equal(doc.result.instance, `okf-harvester-${doc.result.run}`, "okf 4.0.0: the package-soul harvester's exact name");
   const meta = JSON.parse(readFileSync(join(doc.result.home, "instance.json"), "utf8"));
   assert.equal(meta.work, "directory"); assert.equal(meta.launched, false);
   assert.ok(existsSync(join(doc.result.home, "work/input.json")));

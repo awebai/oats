@@ -1,14 +1,22 @@
 {
   "capability": "oats.okf",
   "command": "okf",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "compatibility": {
-    "oats": ">=0.26.0"
+    "oats": ">=0.29.0"
   },
   "layer": "knowledge",
-  "description": "External OKF bases with owned nodes, consulted remotely at their accepted state (no per-instance copy), durable per-source evidence, independent workers, verified Git PR and recoverable non-Git directory delivery.",
+  "description": "The OKF knowledge slot for working souls: consult the soul's accepted OKF bases remotely (no per-instance copy), keep instance knowledge with judgment, and \u2014 when the deployment switches harvest on \u2014 hand each instance's notes and session to the knowledge harvester through durable custody.",
   "requires": [],
   "settings": {
+    "harvest": {
+      "default": "off",
+      "values": [
+        "on",
+        "off"
+      ],
+      "description": "Whether this deployment harvests: on or off (default off). A host fact, set in oats-local.yaml settings.oats.okf.harvest (`oats okf setup --harvest on|off`). A soul may only opt out, with knowledge: { harvest: off }, and that opt-out is absolute. Off means no source registration, no capture and no custody; the harvest-review trigger is independent of it."
+    },
     "harvest-runtime": {
       "default": "pi",
       "values": [
@@ -16,7 +24,7 @@
         "claude",
         "codex"
       ],
-      "description": "Harness for the memory harvester, independent of the source instance's runtime."
+      "description": "Harness for the knowledge harvester (the oats.okf/knowledge-harvester package soul), independent of the source instance's harness."
     },
     "harvest-model": {
       "description": "Optional model pin for the selected harvest runtime, for example to use a cheaper model: a Pi provider/model or a native Claude/Codex model. When omitted, each harness uses its configured default."
@@ -34,9 +42,6 @@
       "description": "Seconds a Git base's host-cached accepted commit may age before an `oats okf` consult read refetches the accepted branch; default 300, 0 fetches on every read. `--fresh` always refetches."
     }
   },
-  "agents": [
-    "agents/memory-harvest"
-  ],
   "skills": [
     "skills"
   ],
@@ -60,7 +65,8 @@
     "unlock": "bin/oats-okf.mjs unlock",
     "binding-normalize": "bin/oats-okf-binding.mjs normalize",
     "binding-bind": "bin/oats-okf-binding.mjs bind",
-    "binding-check": "bin/oats-okf-binding.mjs check"
+    "binding-check": "bin/oats-okf-binding.mjs check",
+    "harvest-status": "bin/oats-okf.mjs harvest-status"
   },
   "binding": {
     "version": 1,

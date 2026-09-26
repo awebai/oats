@@ -1,15 +1,14 @@
 ---
-name: okf
+name: okf-authoring
 description: >-
-  Open Knowledge Format (OKF) craft: how to author, maintain, consume, and
-  validate OKF knowledge bundles (directories of markdown concepts with YAML
-  frontmatter, per Google Cloud's OKF v0.1 spec). Use when writing or editing
-  concepts in a knowledge bundle or notes/, adding or renaming concept files,
-  updating index.md or log.md, answering questions from a bundle, triaging a
-  knowledge inbox, or when asked to validate a bundle. To consult your own
-  soul's knowledge with `oats okf`, load the okf-consultation skill instead.
-  Instance session protocol lives in the okf AGENTS.md injection, and
-  promotion judgment in the memory-harvest skill.
+  Open Knowledge Format (OKF) authoring craft for knowledge-operations souls:
+  how to write, edit, move and validate concepts in an OKF bundle (markdown
+  concepts with YAML frontmatter, per Google Cloud's OKF v0.1 spec), keep
+  index.md and log.md honest, supersede instead of silently rewriting, and run
+  the bundled validator. Use when staging or amending concepts in a knowledge
+  base, fixing index/log entries, reviewing a knowledge PR's Markdown, or when
+  asked to validate a bundle. Promotion judgment (what belongs in a base) is
+  the knowledge-theory skill.
 ---
 
 # OKF craft — author, maintain, consume
@@ -21,13 +20,6 @@ An external base is one bundle and link namespace. Owned nodes are
 nonoverlapping subdirectories, not separate root-link namespaces. Instance
 `notes/` files are task-local concepts; no knowledge lives in the soul.
 
-## Consulting your knowledge
-
-Your soul's knowledge is read remotely with `oats okf` (`index`, `cat`, `ls`,
-`links`, `search`, `bases`): there is no local copy. The **okf-consultation**
-skill teaches the procedure; load it at the start of every task and whenever
-you look something up. This skill is about the format itself.
-
 ## The format in one screen
 
 - **Concept = one file.** Concept ID = path minus `.md`. Small and specific
@@ -35,7 +27,7 @@ you look something up. This skill is about the format itself.
 - **Frontmatter** (`---` delimited): only **`type`** is required (short,
   freeform — the spec ships no vocabulary. Fleet core: `Lesson`, `Decision`,
   `Playbook`, `Reference`; souls also grow role-specific types like
-  `Area Guide` or `Roadmap` — see the memory-harvest skill for routing).
+  `Area Guide` or `Roadmap` — see the knowledge-theory skill for routing).
   Recommended,
   in order: `title`, `description` (ONE sentence — it's what index listings
   and skimming agents see), `resource` (URI, only if a real asset backs the
@@ -152,15 +144,8 @@ Those private mode-0600 files exist only for one synchronous captured invocation
 
 ## External bases and native tools
 
-Ordinary working agents consult with `oats okf index` / `cat` / `search`
-(the okf-consultation skill). When inspecting a source, treat the additive `authority`
-object literally: `captured` includes recorded qualified identity/execution;
-`legacy` or `invalid` means migration/evidence is still required. A
-responsible-human status of `disabled` comes only from explicit null; `unknown`
-is not permission to assume messaging is off. The summary deliberately omits
-opaque bindings, provenance, credential references and transient snapshot paths.
-
-Staged writers use native file tools only under roots
-listed in work/staging.json. Always validate the WHOLE base, not an isolated
-node: absolute Markdown links can cross node boundaries. Complete performs this
-validation again and refuses any errors or producer warnings.
+A harvester stages writes with native file tools only under the roots listed
+in work/staging.json. A maintainer amends a PR branch in its own checkout.
+Either way, validate the WHOLE base, not an isolated node: absolute Markdown
+links can cross node boundaries. The harvester's completion command validates
+again and refuses any errors or producer warnings.

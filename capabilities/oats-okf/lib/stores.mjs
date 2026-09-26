@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { fs, join, dirname, safePath, readJSON, save, atomic, tree, materialize, digest, hash, withLock, exec, cleanEnv, fail, relPath, overlaps, resolve } from './io.mjs';
 import { metadata, noGit, gitTimeoutMs } from './config.mjs';
-const validator = fileURLToPath(new URL('../skills/okf/scripts/okf-validate.mjs', import.meta.url));
+const validator = fileURLToPath(new URL('./okf-validate.mjs', import.meta.url));
 // Never let local replace refs reinterpret frozen OIDs, including inside Git's
 // transport subprocesses. Override even an explicitly supplied command env.
 export const gitEnv = (env = cleanEnv()) => ({...env,GIT_NO_REPLACE_OBJECTS:'1'});
@@ -353,7 +353,7 @@ function immutableCommit(cwd,oid) {
   const header=git(cwd,['cat-file','commit',oid]).split('\n\n')[0].split('\n');
   return {tree:header.find(l=>l.startsWith('tree '))?.slice(5),parents:header.filter(l=>l.startsWith('parent ')).map(l=>l.slice(7))};
 }
-export function gitPublish(base, stage, proposal, receipt, persist, {beforePublish=()=>{},prIdentity=receipt.pr}={}) {
+export function gitPublish(base, stage, proposal, receipt, persist, {beforePublish=()=>{},prIdentity=receipt.pr,pr:presentation}={}) {
   const cwd=stage.checkout, branch=`okf/${proposal.attempt || proposal.run}-${base.id}`;
   verifyRemote(base,cwd);
   const baseline=immutableCommit(cwd,stage.head);
@@ -400,7 +400,7 @@ export function gitPublish(base, stage, proposal, receipt, persist, {beforePubli
     // real Git write and receipt persistence; no guessed commit or fake repository.
     const stamp=proposal.created;
     const env={...cleanEnv(),GIT_AUTHOR_NAME:'OKF harvest',GIT_AUTHOR_EMAIL:'okf@localhost',GIT_COMMITTER_NAME:'OKF harvest',GIT_COMMITTER_EMAIL:'okf@localhost',GIT_AUTHOR_DATE:stamp,GIT_COMMITTER_DATE:stamp};
-    receipt.commit=git(cwd,['commit-tree',treeId,'-p',stage.head,'-m',`memory-harvest: ${proposal.run}`],{env});
+    receipt.commit=git(cwd,['commit-tree',treeId,'-p',stage.head,'-m',`okf-harvest: ${proposal.run}`],{env});
     receipt.status='committed'; persist();
   }
   const publication=immutableCommit(cwd,receipt.commit);
@@ -422,7 +422,12 @@ export function gitPublish(base, stage, proposal, receipt, persist, {beforePubli
   if(!rows.length) {
     beforePublish();
     receipt.status='pr-intent'; persist();
-    try { exec('gh',['pr','create','--repo',base.pr.repository,'--head',branch,'--base',base.acceptedBranch,'--title',`memory-harvest: ${proposal.run}`,'--body',`Knowledge-only proposal from durable OKF input ${proposal.run}. Review provenance and promotion judgment.`],{cwd,env:gitEnv()}); }
+    const title=presentation?.title || `okf-harvest: ${proposal.run}`,body=presentation?.body || `Knowledge-only proposal from durable OKF run ${proposal.run}. Review provenance and promotion judgment.`;
+    const label=presentation?.label;
+    // The label is what the harvest-review trigger watches: make sure the
+    // repository has it (idempotent), then open the PR carrying it.
+    if(label) try {exec('gh',['label','create',label,'--repo',base.pr.repository,'--force','--color','0E8A16','--description','OKF harvest PR (oats.okf)'],{cwd,env:gitEnv()});} catch { /* may exist already or be unmanageable; pr create reports a real problem */ }
+    try { exec('gh',['pr','create','--repo',base.pr.repository,'--head',branch,'--base',base.acceptedBranch,'--title',title,'--body',body,...(label?['--label',label]:[])],{cwd,env:gitEnv()}); }
     catch(e) {receipt.status='pr-unknown';receipt.error=e.message;persist();throw e;}
     rows=prRows(base,branch,cwd);
   }

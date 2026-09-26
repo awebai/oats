@@ -15,6 +15,8 @@ function github(f) {
 import * as fs from 'node:fs';import {execFileSync} from 'node:child_process';
 const a=process.argv.slice(2),v=k=>a[a.indexOf(k)+1],p=${JSON.stringify(prs)};
 fs.appendFileSync(${JSON.stringify(calls)},JSON.stringify(a)+'\\n');
+if(a[0]==='label') process.exit(0); // okf 4.0.0 ensures the harvest-review label before the PR
+if(a[0]!=='pr') process.exit(91);
 if(a[1]==='list') console.log(fs.readFileSync(p,'utf8'));
 else if(a[1]==='view') {
  if(v('--repo')!=='fixture/knowledge') process.exit(92);

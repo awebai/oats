@@ -37,7 +37,7 @@ function workspaceDeployment() {
   const dep = join(room, 'dep'), accepted = join(room, 'accepted'), bindings = join(room, 'bindings.json');
   fs.mkdirSync(join(dep, 'agents'), { recursive: true });
   json(bindings, { version: 1, stateDir: join(room, 'state'), bases: { project: { id: 'fixture-base', kind: 'directory', path: accepted } } });
-  write(join(dep, 'oats-local.yaml'), `schemaVersion: 2\nworkspace: ${hostRef}\nsettings:\n  oats.okf:\n    bindings-file: ${bindings}\n`);
+  write(join(dep, 'oats-local.yaml'), `schemaVersion: 2\nworkspace: ${hostRef}\nsettings:\n  oats.okf:\n    bindings-file: ${bindings}\n    harvest: "on"\n`); // okf 4.0.0: harvest (source registration) is off by default
   const catalog = join(room, 'catalog.json');
   json(catalog, { packages: { 'oats.okf': { url: pathToFileURL(official).href, ref: 'v2.1.3', path: 'oats-package' } } });
   const user = join(room, 'user'); fs.mkdirSync(user);

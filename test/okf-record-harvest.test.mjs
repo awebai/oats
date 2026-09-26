@@ -62,9 +62,12 @@ test('notes AND bounded record backlog enter durable custody; actual independent
   const evidence = readJSON(join(run.home, 'work/input.json'));
   assert.deepEqual(evidence.inputs.filter(i => i.kind === 'record').flatMap(i => i.turns), turns);
   assert.equal(evidence.inputs.filter(i => i.kind === 'note').length, 1);
-  const spawned = boundary.calls().find(c => c.a[0] === 'spawn');
+  // okf 4.0.0: the harvester is the package soul, spawned by name (its soul.yaml says work: directory);
+  // a --preview spawn first asks which messaging capability it resolves.
+  const spawned = boundary.calls().find(c => c.a[0] === 'spawn' && !c.a.includes('--preview'));
   for (const flag of ['--parent', '--work-dir', '--branch']) assert.equal(spawned.a.includes(flag), false);
-  assert.equal(spawned.identity, null); assert.equal(spawned.a[spawned.a.indexOf('--work') + 1], 'directory');
+  assert.equal(spawned.identity, null); assert.equal(spawned.a[1], 'oats.okf/knowledge-harvester');
+  assert.equal(spawned.a[spawned.a.indexOf('--name') + 1], `okf-harvester-${run.run}`);
   const done = f.complete(run); assert.equal(done.processed, true); assert.equal(done.receipts.project.status, 'accepted');
   assert.equal(status(f).processed.length, 4); assert.equal(f.complete(run).processed, true, 'completion replay is idempotent');
   f.retire(run.instance);
@@ -81,7 +84,7 @@ test('record capture drains turn and byte windows, completion alone suppresses r
   assert.deepEqual(windows.filter(i => i.thread === 'fat').map(i => i.turns.length), [1, 1, 1, 1, 1]);
   assert.deepEqual(status(f).processed, []);
   const repeat = runResult(boundary.run(['harvest', '--no-launch'])); assert.equal(repeat.run, first.run, 'one active worker per source');
-  assert.equal(boundary.calls().filter(c => c.a[0] === 'spawn').length, 1);
+  assert.equal(boundary.calls().filter(c => c.a[0] === 'spawn' && !c.a.includes('--preview')).length, 1);
   let current = first, runs = 0;
   while (current.status !== 'empty') {
     const input = readJSON(join(current.home, 'work/input.json'));
