@@ -13,8 +13,8 @@
         "status",
         "--json"
       ],
-      "createdAt": "2026-09-26T15:34:29.224Z",
-      "updatedAt": "2026-09-26T15:34:29.224Z",
+      "createdAt": "2026-09-26T19:58:09.380Z",
+      "updatedAt": "2026-09-26T19:58:09.380Z",
       "scope": "/fixture/base/northwind-workspace",
       "scheduleApi": 2,
       "scheduleHistoryApi": 3,

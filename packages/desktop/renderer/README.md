@@ -188,18 +188,18 @@ one required argument's name is read from the operation row (`--arg
 `messaging:teams`: "Not supported by this messaging provider." — never an
 error. A soul subject has no section (home operations).
 
-The teams document (`{personal{team}, primary, eligible[{label, team,
+The teams document (1.16 names: `{defaultTeam{team, source}, primary, eligible[{label, team,
 joined}], joined[{label, team, since, identityHome, receive}], unmapped[label],
 at}`) is read only from an `operationsApi: 2` run for exactly that operation
 and decoded strictly (exact keys, bounded strings, absolute identity homes,
-unique labels). Rows: the personal team (always on, no Leave); each eligible
+unique labels; `source` is exactly `setting` or `root`). Rows: the workspace's default team (always on, no Leave; its id and, in words, where it comes from: "set by the workspace or host setting" or "the messaging root's active team"); each eligible
 label (primary marked) with Join, or when joined its date, how its mail
 arrives (`poll` → "Checks this team's mail between tasks", `native` →
 "Receives this team's mail as it arrives", anything else as sent — a poll team
 never reads as live delivery), its identity home and Leave; labels the
 workspace does not map, unavailable. Join/Leave answer the same document, so
 the panel repaints from it; a refusal (`E_TEAM_NOT_ELIGIBLE`,
-`E_TEAM_PERSONAL`) shows the relayed message verbatim under its row with the
+`E_TEAM_DEFAULT`) shows the relayed message verbatim under its row with the
 code behind **Details**, keeps the last good state and re-reads. If the re-read
 no longer offers that row (e.g. the mapping was removed between read and
 click), the refusal moves to the top of the panel, verbatim with its code and

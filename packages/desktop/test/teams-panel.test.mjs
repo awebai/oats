@@ -75,7 +75,10 @@ test('the teams document is decoded strictly: exactly the contract fields, bound
   assert.equal(teamsDocument(run('teams-initial'), 'messaging:join'), null, 'another operation');
   const doc = () => structuredClone(run('join-reviewers'));
   for (const [label, mutate] of [['operationsApi 1', v => { v.operationsApi = 1; }], ['extra key', v => { v.result.extra = 1; }], ['missing at', v => { delete v.result.at; }],
-    ['personal extra', v => { v.result.personal.alias = 'x'; }], ['eligible extra', v => { v.result.eligible[0].mapped = true; }],
+    ['defaultTeam extra', v => { v.result.defaultTeam.alias = 'x'; }], ['defaultTeam without team', v => { delete v.result.defaultTeam.team; }],
+    ['defaultTeam without source', v => { delete v.result.defaultTeam.source; }], ['source outside the set', v => { v.result.defaultTeam.source = 'personal'; }],
+    ['source not text', v => { v.result.defaultTeam.source = 1; }], ['source from the prototype', v => { v.result.defaultTeam.source = 'toString'; }],
+    ['1.15 personal', v => { v.result.personal = v.result.defaultTeam; delete v.result.defaultTeam; }], ['eligible extra', v => { v.result.eligible[0].mapped = true; }],
     ['joined without receive', v => { delete v.result.joined[0].receive; }], ['joined without identityHome', v => { delete v.result.joined[0].identityHome; }],
     ['relative identityHome', v => { v.result.joined[0].identityHome = 'home/.aweb-identity-dev'; }], ['control character', v => { v.result.joined[0].since = 'a\nb'; }],
     ['label shape', v => { v.result.unmapped = ['-x']; }], ['duplicate eligible', v => { v.result.eligible.push(v.result.eligible[0]); }],
@@ -89,18 +92,26 @@ test('the teams document is decoded strictly: exactly the contract fields, bound
   assert.equal(whenText('2026-09-25T10:01:00.000Z'), '2026-09-25 10:01 UTC'); assert.equal(whenText('yesterday'), 'yesterday', 'not a timestamp: as sent');
 });
 
-test('an instance shows its teams: personal always on (no Leave), the teams its soul has access to with Join, unmapped not shown; one control per verb', async t => {
+test('the default team says where it comes from: "setting" (settings.oats.aweb.team named it) in words', async t => {
+  const set = structuredClone(run('teams-initial')); set.result.defaultTeam.source = 'setting';
+  assert.deepEqual(teamsDocument(set, 'messaging:teams').defaultTeam, { team: 'default:northwind:alice', source: 'setting' });
+  const u = await mount(t, () => set);
+  assert.equal(u.row('default').querySelector('.team-meta').textContent, 'default:northwind:alice · set by the workspace or host setting');
+});
+
+test('an instance shows its teams: the workspace\'s default team always on (no Leave), the teams its soul has access to with Join, unmapped not shown; one control per verb', async t => {
   const u = await mount(t, captured());
   assert.deepEqual(u.runs(), [{ action: 'run', selector: { home: HOME }, operation: 'messaging:teams' }]);
   assert.equal(u.panel().previousElementSibling.textContent, 'Teams', 'the inspector labels the section'); assert.equal(u.panel().querySelector('h3'), null);
-  const personal = u.row('personal');
-  assert.match(personal.textContent, /Personal team.*personal:northwind:alice.*Always on/s); assert.equal(personal.querySelector('.team-badge').title, "The personal team can't be left.");
-  assert.equal(personal.querySelector('button'), null, 'the personal team has no Leave');
+  const home = u.row('default');
+  assert.equal(home.querySelector('.team-meta').textContent, "default:northwind:alice · the messaging root's active team", 'source "root", in words');
+  assert.match(home.textContent, /Default team.*default:northwind:alice.*Always on/s); assert.equal(home.querySelector('.team-badge').title, "The workspace's default team can't be left.");
+  assert.equal(home.querySelector('button'), null, 'the default team has no Leave');
   assert.equal(u.row('dev').querySelector('.team-name').textContent, 'dev · primary');
   assert.equal(u.row('dev').querySelector('[data-team-action]').textContent, 'Join');
   assert.equal(u.row('reviewers').querySelector('[data-team-action]').textContent, 'Join');
   assert.equal(u.row('marketing'), null, 'an unmapped label is not shown');
-  assert.equal(u.panel().querySelector('.teams-intro').textContent, 'Always in its personal team. It can join the teams its soul has access to.');
+  assert.equal(u.panel().querySelector('.teams-intro').textContent, "Always in the workspace's default team. It can join the teams its soul has access to.");
   // The generic Provider operations list leaves the three team verbs to the panel.
   assert.equal([...u.el.querySelectorAll('[data-operation]')].some(b => b.dataset.operation.startsWith('messaging:')), false);
   assert.doesNotMatch([...u.el.querySelectorAll('.inspector-cap h4')].map(h => h.textContent).join('|'), /messaging: (teams|join|leave)/);
@@ -150,12 +161,12 @@ test('a refusal is shown verbatim under its row, the code behind Details; the pa
   // Cleared by an explicit Refresh …
   u.panel().querySelector('.teams-refresh').click(); await tick(); await tick();
   assert.equal(reads, 3); assert.equal(u.panel().querySelector('[data-team-refusal]'), null, 'Refresh clears it');
-  // The captured personal refusal, on a Leave the provider refuses, reads the same way.
-  const v = await mount(t, body => body.operation === 'messaging:teams' ? { ...run('join-dev'), operation: 'messaging:teams' } : refusal('leave-personal'));
+  // The captured default-team refusal, on a Leave the provider refuses, reads the same way.
+  const v = await mount(t, body => body.operation === 'messaging:teams' ? { ...run('join-dev'), operation: 'messaging:teams' } : refusal('leave-default'));
   await v.press('leave', 'dev');
   const box = v.row('dev').querySelector('.teams-problem');
-  assert.equal(box.querySelector('p').textContent, 'messaging:leave: the personal team cannot be left');
-  assert.equal(box.querySelector('details summary').textContent, 'Details'); assert.equal(box.querySelector('details pre').textContent, 'E_TEAM_PERSONAL');
+  assert.equal(box.querySelector('p').textContent, "messaging:leave: the workspace's default team cannot be left");
+  assert.equal(box.querySelector('details summary').textContent, 'Details'); assert.equal(box.querySelector('details pre').textContent, 'E_TEAM_DEFAULT');
   assert.match(v.row('dev').textContent, /Joined 2026/, 'the last good state stays');
 });
 

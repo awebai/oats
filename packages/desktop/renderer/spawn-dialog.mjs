@@ -80,10 +80,10 @@ export const spawnDialogCSS = `
 .spawn-hint:empty { display:none; }
 .spawn-hint code, .spawn-work-text code { font:11.5px var(--mono,monospace); color:var(--fg); }
 .spawn-hint.err { color:var(--danger); }
-/* Teams (teams contract): one line like Relationship — Personal fixed on, mapped teams toggle, unmapped greyed. */
+/* Teams (teams contract): one line like Relationship — Default fixed on, mapped teams toggle, unmapped greyed. */
 .spawn-teams-row { flex-wrap:wrap; align-self:flex-start; max-width:100%; box-sizing:border-box; }
 .spawn-seg input:disabled { cursor:default; }
-/* Personal is fixed, not a choice: a quiet neutral chip, not the accent. */
+/* Default is fixed, not a choice: a quiet neutral chip, not the accent. */
 .spawn-seg .spawn-team-fixed input:checked + span { background:var(--surface); color:var(--fg); box-shadow:none; cursor:default; }
 /* Runtime picker and model field */
 .spawn-run .spawn-choice-trigger { height:38px; min-height:38px; border-radius:8px; }
@@ -434,13 +434,13 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     teamsDrawn = key; teamsList.replaceChildren();
     const chip = (cls, name, box, title) => { const c = el('label', undefined, cls); c.append(box, el('span', name, 'spawn-team-name')); c.title = title; teamsList.append(c); return c; };
     const fixed = el('input'); fixed.type = 'checkbox'; fixed.checked = true; fixed.disabled = true;
-    chip('spawn-team spawn-team-fixed', 'Personal', fixed, "Personal team — always. Every instance is in its person's personal team.");
+    chip('spawn-team spawn-team-fixed', 'Default', fixed, "The workspace's default team — always. Every instance is in it.");
     for (const t of (teamsNow || []).filter(t => t.mapped)) {
       const box = el('input'); box.type = 'checkbox'; box.value = t.label; box.className = 'fteam';
       box.checked = joinPicked.has(t.label);
       chip('spawn-team', t.label, box, `Join ${t.label} (${t.team})`);
     }
-    teamsHint.textContent = `By default it's only in your personal team. These are the teams ${soul.name} has access to — tick the ones it should also join.`;
+    teamsHint.textContent = `By default it's only in the workspace's default team. These are the teams ${soul.name} has access to — tick the ones it should also join.`;
   }
   const hostRow = el('div', undefined, 'spawn-row');
   const backendLabel = el('label', 'Session backend'), backend = el('select', undefined, 'field fbackend'); backendLabel.append(backend);

@@ -35,7 +35,7 @@
           "kind": "persistent",
           "instance": "release-manager-facts",
           "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-facts",
-          "soulDir": "/fixture/base/northwind-workspace/agents/release-manager/souls/5ce1d9be306b",
+          "soulDir": "/fixture/base/northwind-workspace/agents/release-manager/souls/d06ff014b1ea",
           "repo": "/fixture/base/northwind-workspace/agents-repo",
           "work": "worktree",
           "branch": "agents/release-manager-facts",
@@ -58,7 +58,7 @@
             "branch": "agents/release-manager-facts",
             "base": {
               "ref": "HEAD",
-              "oid": "5ce1d9be306b3517797db2310b1b136e10ee6e33"
+              "oid": "d06ff014b1eadbb1f0093a3df1fe3e90e72f8a2b"
             },
             "effective": {
               "repo": "/fixture/base/northwind-workspace/agents-repo",
@@ -85,8 +85,8 @@
                 }
               }
             },
-            "resolution": "020a3ade52f790274026182a",
-            "revision": "7a23f984fd80a59d240c9154"
+            "resolution": "30cdab871878674baa8c5c29",
+            "revision": "800cb49ce062afc9ccf965ee"
           },
           "spawnIdempotencyKey": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
           "spawnCompleted": true,
@@ -108,12 +108,12 @@
             },
             {
               "id": "nw-house-style",
-              "origin": "member:local//fixture/base/fx/remotes/agents.git@5ce1d9be306b3517797db2310b1b136e10ee6e33",
+              "origin": "member:local//fixture/base/fx/remotes/agents.git@d06ff014b1eadbb1f0093a3df1fe3e90e72f8a2b",
               "level": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-facts",
               "settings": {},
               "settingsOrigins": {},
               "provenance": [
-                "member local//fixture/base/fx/remotes/agents.git @ 5ce1d9be306b"
+                "member local//fixture/base/fx/remotes/agents.git @ d06ff014b1ea"
               ],
               "skills": [],
               "hooks": [],
@@ -121,12 +121,12 @@
             },
             {
               "id": "nw-release-tooling",
-              "origin": "member:local//fixture/base/fx/remotes/agents.git@5ce1d9be306b3517797db2310b1b136e10ee6e33",
+              "origin": "member:local//fixture/base/fx/remotes/agents.git@d06ff014b1eadbb1f0093a3df1fe3e90e72f8a2b",
               "level": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-facts",
               "settings": {},
               "settingsOrigins": {},
               "provenance": [
-                "member local//fixture/base/fx/remotes/agents.git @ 5ce1d9be306b"
+                "member local//fixture/base/fx/remotes/agents.git @ d06ff014b1ea"
               ],
               "skills": [
                 "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-facts/.agents/skills/nw-release-tooling/cut-release"
@@ -259,7 +259,7 @@
                 "source": "nw-house-style",
                 "declared": "injects/house-style.md",
                 "resolved": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-facts/.oats/modules/nw-house-style/injects/house-style.md",
-                "origin": "member:local//fixture/base/fx/remotes/agents.git@5ce1d9be306b3517797db2310b1b136e10ee6e33",
+                "origin": "member:local//fixture/base/fx/remotes/agents.git@d06ff014b1eadbb1f0093a3df1fe3e90e72f8a2b",
                 "deferred": "materialize"
               },
               {
@@ -267,7 +267,7 @@
                 "source": "nw-release-tooling",
                 "declared": "skills/cut-release",
                 "resolved": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-facts/.agents/skills/nw-release-tooling",
-                "origin": "member:local//fixture/base/fx/remotes/agents.git@5ce1d9be306b3517797db2310b1b136e10ee6e33",
+                "origin": "member:local//fixture/base/fx/remotes/agents.git@d06ff014b1eadbb1f0093a3df1fe3e90e72f8a2b",
                 "deferred": "materialize"
               },
               {
@@ -275,7 +275,7 @@
                 "source": "nw-release-tooling",
                 "declared": "injects/release-policy.md",
                 "resolved": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-facts/.oats/modules/nw-release-tooling/injects/release-policy.md",
-                "origin": "member:local//fixture/base/fx/remotes/agents.git@5ce1d9be306b3517797db2310b1b136e10ee6e33",
+                "origin": "member:local//fixture/base/fx/remotes/agents.git@d06ff014b1eadbb1f0093a3df1fe3e90e72f8a2b",
                 "deferred": "materialize"
               },
               {
@@ -532,7 +532,7 @@
             }
           ],
           "tmux": {
-            "session": "none-87444",
+            "session": "none-35695",
             "window": "release-manager-facts"
           },
           "launch": {
@@ -557,7 +557,7 @@
             }
           },
           "command": "OATS_INSTANCE='release-manager-facts' OATS_INSTANCE_HOME='/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-facts' PI_AGENT_INSTANCE='release-manager-facts' PI_AGENT_HOME='/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-facts' '/fixture/base/bin/pi' --append-system-prompt '/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-facts/AGENTS.md' --approve --name 'release-manager-facts' --model 'fixture-model' '@TASK.md'",
-          "createdAt": "2026-09-26T17:12:27.648Z",
+          "createdAt": "2026-09-26T19:57:21.028Z",
           "modules": [
             {
               "name": "nw-deploy",
@@ -565,13 +565,13 @@
                 "kind": "package",
                 "package": "nw.tools",
                 "version": "0.4.0",
-                "commit": "371fdf6bccafaf545dac017d3342a63770c69957",
+                "commit": "741daab4b3aba5047fd1d02f6c8ff079b6ddb741",
                 "integrity": "sha256-4a0ee48230d65cc6c0b9d0c9a3883e64182cfc7b2410e4f5839bacf551fcf1cf",
                 "repoKey": "local//fixture/base/fx/remotes/nw-tools.git"
               },
-              "commit": "371fdf6bccafaf545dac017d3342a63770c69957",
+              "commit": "741daab4b3aba5047fd1d02f6c8ff079b6ddb741",
               "current": {
-                "commit": "371fdf6bccafaf545dac017d3342a63770c69957",
+                "commit": "741daab4b3aba5047fd1d02f6c8ff079b6ddb741",
                 "version": "0.4.0"
               },
               "status": "current"
@@ -581,11 +581,11 @@
               "from": {
                 "kind": "member",
                 "repoKey": "local//fixture/base/fx/remotes/agents.git",
-                "commit": "5ce1d9be306b3517797db2310b1b136e10ee6e33"
+                "commit": "d06ff014b1eadbb1f0093a3df1fe3e90e72f8a2b"
               },
-              "commit": "5ce1d9be306b3517797db2310b1b136e10ee6e33",
+              "commit": "d06ff014b1eadbb1f0093a3df1fe3e90e72f8a2b",
               "current": {
-                "commit": "5ce1d9be306b3517797db2310b1b136e10ee6e33",
+                "commit": "d06ff014b1eadbb1f0093a3df1fe3e90e72f8a2b",
                 "version": "0.0.0-workspace"
               },
               "status": "current"
@@ -595,11 +595,11 @@
               "from": {
                 "kind": "member",
                 "repoKey": "local//fixture/base/fx/remotes/agents.git",
-                "commit": "5ce1d9be306b3517797db2310b1b136e10ee6e33"
+                "commit": "d06ff014b1eadbb1f0093a3df1fe3e90e72f8a2b"
               },
-              "commit": "5ce1d9be306b3517797db2310b1b136e10ee6e33",
+              "commit": "d06ff014b1eadbb1f0093a3df1fe3e90e72f8a2b",
               "current": {
-                "commit": "5ce1d9be306b3517797db2310b1b136e10ee6e33",
+                "commit": "d06ff014b1eadbb1f0093a3df1fe3e90e72f8a2b",
                 "version": "0.0.0-workspace"
               },
               "status": "current"
@@ -657,13 +657,13 @@
             "key": "local//fixture/base/fx/remotes/agents.git",
             "name": "northwind",
             "deployment": "/fixture/base/northwind-workspace",
-            "commit": "5ce1d9be306b3517797db2310b1b136e10ee6e33",
-            "resolution": "020a3ade52f790274026182a",
+            "commit": "d06ff014b1eadbb1f0093a3df1fe3e90e72f8a2b",
+            "resolution": "30cdab871878674baa8c5c29",
             "standalone": false,
             "soul": {
               "id": "local//fixture/base/fx/remotes/agents.git#release-manager",
               "repoKey": "local//fixture/base/fx/remotes/agents.git",
-              "commit": "5ce1d9be306b3517797db2310b1b136e10ee6e33",
+              "commit": "d06ff014b1eadbb1f0093a3df1fe3e90e72f8a2b",
               "team": "engineering",
               "labels": [
                 "engineering"
@@ -703,17 +703,17 @@
           "running": false,
           "soul": {
             "repoKey": "local//fixture/base/fx/remotes/agents.git",
-            "commit": "5ce1d9be306b3517797db2310b1b136e10ee6e33",
-            "current": "5ce1d9be306b3517797db2310b1b136e10ee6e33",
+            "commit": "d06ff014b1eadbb1f0093a3df1fe3e90e72f8a2b",
+            "current": "d06ff014b1eadbb1f0093a3df1fe3e90e72f8a2b",
             "status": "current"
           }
         }
       ],
       "soulSource": {
         "repoKey": "local//fixture/base/fx/remotes/agents.git",
-        "commit": "5ce1d9be306b3517797db2310b1b136e10ee6e33",
+        "commit": "d06ff014b1eadbb1f0093a3df1fe3e90e72f8a2b",
         "path": "souls/release-manager",
-        "current": "5ce1d9be306b3517797db2310b1b136e10ee6e33",
+        "current": "d06ff014b1eadbb1f0093a3df1fe3e90e72f8a2b",
         "status": "current"
       }
     }

@@ -14,7 +14,9 @@ const raw = name => JSON.parse(readFileSync(new URL(`./fixtures/automations/kern
 const fx = name => raw(name).result;
 const NOW = Date.parse('2026-09-26T15:40:00.000Z');
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
-const URL_215 = 'https://github.com/northwind/agents/blob/87cea5aa4a1effece415590c7cefc888ed81a57d/oats-triggers/pr-review.yaml';
+// The captured commit of agents/pr-review (a fresh Northwind build each capture).
+const CAPTURED_COMMIT = fx('trigger-list').triggers.find(t => t.id === 'agents/pr-review').origin.commit;
+const URL_215 = `https://github.com/northwind/agents/blob/${CAPTURED_COMMIT}/oats-triggers/pr-review.yaml`;
 /** The trigger list with the facts the capture cannot have (a link, a run, the scheduler on). */
 function triggers215() {
   const json = fx('trigger-list');
@@ -31,7 +33,7 @@ test('the adapter reads the kernel rows as placed: groups come from runsHere/rea
   const t = automationRows(fx('trigger-list'), 'trigger');
   assert.deepEqual(t.host, { name: 'fixture-laptop', ghUser: { 'github.com': 'fixture-bot' } });
   assert.deepEqual([t.scheduler.installed, t.scheduler.active], [false, false], 'kernel #215: the trigger list carries the scheduler too');
-  assert.deepEqual(t.snapshot, { takenAt: '2026-09-26T15:34:28.814Z', problems: 1 }, 'snapshot.problems is a count');
+  assert.deepEqual(t.snapshot, { takenAt: fx('trigger-list').snapshot.takenAt, problems: 1 }, 'snapshot.problems is a count'); assert.match(t.snapshot.takenAt, /^\d{4}-\d\d-\d\dT/);
   assert.deepEqual(t.rows.map(r => [r.id, r.group]), [
     ['local/hotfix', 'here'], ['agents/docs-sync', 'elsewhere'], ['agents/pr-review', 'here'], ['agents/triage', 'attention']]);
   const [hotfix, , review] = t.rows;
@@ -189,7 +191,7 @@ test('the detail page: prompt with highlighted fields, where it runs, where it c
   await tick(); await tick();
   assert.match(u.$('.page-section[data-section="Recent fires"]').textContent, /1 of 1 live now · 3 fired in all/, 'trigger status: live and total');
   assert.equal(u.dom.window.document.activeElement, u.$('.page-back'), 'the status read keeps focus on Back');
-  assert.deepEqual(facts('Comes from'), { Member: 'agents', Repo: 'local//fixture/base/fx/remotes/agents.git', Path: 'oats-triggers/pr-review.yaml', Commit: '87cea5a' });
+  assert.deepEqual(facts('Comes from'), { Member: 'agents', Repo: 'local//fixture/base/fx/remotes/agents.git', Path: 'oats-triggers/pr-review.yaml', Commit: CAPTURED_COMMIT.slice(0, 7) });
   assert.equal(facts('Spawns')['Launch config'], 'reviewers');
   assert.deepEqual(u.$$('.page-bar-actions button').map(b => b.textContent), ['Open file', 'Test']);
   u.$('.page-bar-actions button[data-verb=file]').click(); assert.deepEqual(opened, [URL_215], 'opens the kernel-reported link');

@@ -15,12 +15,14 @@ const statusOf = (edit = () => {}) => { const doc = capture(); edit(doc.result);
 const host = () => { const doc = new JSDOM('<!doctype html><body></body>').window.document; return doc.body.appendChild(doc.createElement('div')); };
 const local = root => Object.fromEntries([...root.querySelectorAll('[data-box="This computer"] > dl:not([aria-label]) .setup-kv')].map(r => [r.querySelector('dt').textContent, r.querySelector('dd')]));
 const MARKETING = 'local//fixture/base/fx/remotes/marketing.git';
+// The captured workspace commit (a fresh Northwind build each capture), shown short.
+const SHORT = capture().result.workspace.commit.slice(0, 7);
 
 test('Setup names the files the kernel reports, and links them only when they have a web address', () => {
   const plain = host();
   renderSetup(plain, { status: statusOf(), openExternal: () => assert.fail('no url, no link') });
   const where = plain.querySelector('.setup-lede-where');
-  assert.match(where.textContent, /^declared in agents's oats-workspace\.yaml @ 5ce1d9b$/);
+  assert.match(where.textContent, new RegExp(`^declared in agents's oats-workspace\\.yaml @ ${SHORT}$`));
   assert.equal(where.querySelector('button'), null, 'the capture has url: null, so the path is plain text');
   renderSetup(plain, { status: statusOf(), view: 'graph', selected: MARKETING, onSelect() {}, openExternal: () => assert.fail() });
   const subs = [...plain.querySelectorAll('.setup-panel .setup-hand-sub')].map(s => s.textContent);
@@ -29,7 +31,7 @@ test('Setup names the files the kernel reports, and links them only when they ha
 
   const opened = [], hosted = host();
   const status = statusOf(r => {
-    r.workspace.file.url = 'https://github.com/northwind/agents/blob/5ce1d9b/oats-workspace.yaml';
+    r.workspace.file.url = `https://github.com/northwind/agents/blob/${SHORT}/oats-workspace.yaml`;
     const m = r.members.find(x => x.key === MARKETING);
     m.url = 'https://github.com/northwind/marketing/tree/abc'; m.membershipFile.url = 'https://github.com/northwind/marketing/blob/abc/oats-membership.yaml';
   });
@@ -70,7 +72,7 @@ test('an older kernel (no desktop facts) keeps the generic words and shows no cl
   const root = host();
   const status = statusOf(r => { delete r.workspace.file; for (const m of r.members) { delete m.url; delete m.membershipFile; } for (const p of r.packages) delete p.latest; for (const k of ['defaults', 'clones', 'disabledSouls', 'lock']) delete r[k]; });
   renderSetup(root, { status });
-  assert.match(root.querySelector('.setup-lede-where').textContent, /'s workspace file @ 5ce1d9b$/);
+  assert.match(root.querySelector('.setup-lede-where').textContent, new RegExp(`'s workspace file @ ${SHORT}$`));
   assert.equal(root.querySelector('dl[aria-label="Member clones"]'), null);
   assert.deepEqual(Object.keys(local(root)).filter(k => ['Lock file', 'Disabled souls'].includes(k)), []);
   renderSetup(root, { status, view: 'graph', selected: MARKETING, onSelect() {} });

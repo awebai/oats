@@ -10,7 +10,7 @@
     "launched": false,
     "warnings": [],
     "tmux": {
-      "session": "none-87444",
+      "session": "none-35695",
       "window": "release-manager-facts"
     },
     "repo": "/fixture/base/northwind-workspace/agents-repo",
@@ -20,14 +20,14 @@
     "sibling": null,
     "relation": null,
     "spawnOrigin": "operator",
-    "attach": "tmux attach -t none-87444",
+    "attach": "tmux attach -t none-35695",
     "decision": {
       "instance": "release-manager-facts",
       "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-facts",
       "branch": "agents/release-manager-facts",
       "base": {
         "ref": "HEAD",
-        "oid": "5ce1d9be306b3517797db2310b1b136e10ee6e33"
+        "oid": "d06ff014b1eadbb1f0093a3df1fe3e90e72f8a2b"
       },
       "effective": {
         "repo": "/fixture/base/northwind-workspace/agents-repo",
@@ -54,8 +54,8 @@
           }
         }
       },
-      "resolution": "020a3ade52f790274026182a",
-      "revision": "7a23f984fd80a59d240c9154"
+      "resolution": "30cdab871878674baa8c5c29",
+      "revision": "800cb49ce062afc9ccf965ee"
     },
     "replayed": false,
     "wake": {

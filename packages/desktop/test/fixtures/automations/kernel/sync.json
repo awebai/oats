@@ -7,14 +7,14 @@
       "triggers": 3,
       "schedules": 2,
       "problems": 1,
-      "takenAt": "2026-09-26T15:34:28.814Z"
+      "takenAt": "2026-09-26T19:58:09.281Z"
     },
     "workspace": {
       "name": "northwind",
       "key": "local//fixture/base/fx/remotes/agents.git",
       "url": "/fixture/base/fx/remotes/agents.git",
-      "commit": "87cea5aa4a1effece415590c7cefc888ed81a57d",
-      "observedAt": "2026-09-26T15:34:24.449Z",
+      "commit": "45b86f64470b9f0fe38d1abb39d76f63f72a3048",
+      "observedAt": "2026-09-26T19:58:07.810Z",
       "local": "/fixture/base/northwind-workspace/oats-local.yaml",
       "lock": "/fixture/base/northwind-workspace/oats-lock.json"
     },
@@ -22,7 +22,7 @@
       {
         "key": "local//fixture/base/fx/remotes/agents.git",
         "name": "agents",
-        "commit": "87cea5aa4a1effece415590c7cefc888ed81a57d",
+        "commit": "45b86f64470b9f0fe38d1abb39d76f63f72a3048",
         "confirmed": true,
         "status": "confirmed",
         "detail": null,
@@ -40,7 +40,7 @@
       {
         "key": "local//fixture/base/fx/remotes/platform.git",
         "name": "platform",
-        "commit": "dddc53ba8005700dc4382696dfa286f7907a3e4e",
+        "commit": "19839f9e93514a4b9011556a5a1c215255d53b22",
         "confirmed": true,
         "status": "confirmed",
         "detail": null,
@@ -55,7 +55,7 @@
       {
         "key": "local//fixture/base/fx/remotes/data.git",
         "name": "data",
-        "commit": "c724c00d21b63cb4e993d3a4181e8b5a317bd51a",
+        "commit": "89673506735eba027d2fe0c532bc486f7c9ff069",
         "confirmed": true,
         "status": "confirmed",
         "detail": null,
@@ -71,7 +71,7 @@
       {
         "key": "local//fixture/base/fx/remotes/marketing.git",
         "name": "marketing",
-        "commit": "1869c19a63faf8e60fd94e7d5e9cf179d3ab36e1",
+        "commit": "56a743b17c36d84e71018b3356e9a48163033240",
         "confirmed": true,
         "status": "confirmed",
         "detail": null,
@@ -89,7 +89,7 @@
       {
         "key": "local//fixture/base/fx/remotes/nw-tools.git",
         "name": "nw-tools",
-        "commit": "73398c0c8dca6ab8e8447d56946c3b533cd79228",
+        "commit": "eb3269217abfbea914cfdce577b22c42a53bbb6e",
         "confirmed": true,
         "status": "confirmed",
         "detail": null,
@@ -111,7 +111,7 @@
         "id": "nw.tools",
         "version": "0.4.0",
         "source": "git:local//fixture/base/fx/remotes/nw-tools.git@v0.4.0",
-        "commit": "73398c0c8dca6ab8e8447d56946c3b533cd79228",
+        "commit": "eb3269217abfbea914cfdce577b22c42a53bbb6e",
         "integrity": "sha256-4a0ee48230d65cc6c0b9d0c9a3883e64182cfc7b2410e4f5839bacf551fcf1cf",
         "capabilities": [
           "nw-deploy",
@@ -170,7 +170,7 @@
           "local//fixture/base/fx/remotes/agents.git:souls/release-manager/soul.yaml#/team",
           "local//fixture/base/fx/remotes/nw-tools.git:souls/tools-expert/soul.yaml#/team"
         ],
-        "message": "team \"engineering\" has no messaging.byTeam entry; its souls (data-analyst, platform-engineer, platform-reviewer, release-manager, tools-expert) fall back to the personal team for it"
+        "message": "team \"engineering\" has no messaging.byTeam entry; its souls (data-analyst, platform-engineer, platform-reviewer, release-manager, tools-expert) fall back to the workspace's default team for it"
       },
       {
         "code": "unmapped-team-label",
@@ -181,7 +181,7 @@
         "paths": [
           "local//fixture/base/fx/remotes/agents.git:souls/support-triager/soul.yaml#/team"
         ],
-        "message": "team \"global\" has no messaging.byTeam entry; its souls (support-triager) fall back to the personal team for it"
+        "message": "team \"global\" has no messaging.byTeam entry; its souls (support-triager) fall back to the workspace's default team for it"
       },
       {
         "code": "unmapped-team-label",
@@ -194,7 +194,7 @@
           "local//fixture/base/fx/remotes/marketing.git:souls/campaign-writer/soul.yaml#/team",
           "local//fixture/base/fx/remotes/marketing.git:souls/positioning-analyst/soul.yaml#/team"
         ],
-        "message": "team \"marketing\" has no messaging.byTeam entry; its souls (campaign-writer, positioning-analyst) fall back to the personal team for it"
+        "message": "team \"marketing\" has no messaging.byTeam entry; its souls (campaign-writer, positioning-analyst) fall back to the workspace's default team for it"
       }
     ]
   }

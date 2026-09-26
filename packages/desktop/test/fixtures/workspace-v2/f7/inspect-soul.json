@@ -3,19 +3,19 @@
   "ok": true,
   "result": {
     "operationsApi": 2,
-    "kernel": "0.26.0",
+    "kernel": "0.29.2",
     "subject": {
       "kind": "soul",
       "soul": "release-manager",
       "repoKey": "local//fixture/base/fx/remotes/agents.git",
-      "commit": "7eab079d748d3906db69d67e0beb12e784790d19",
+      "commit": "504b717008b2fad05fe578b43479721a316803cc",
       "team": "engineering"
     },
     "workspace": {
       "key": "local//fixture/base/fx/remotes/agents.git",
       "name": "northwind",
       "deployment": "/fixture/base/northwind-workspace",
-      "commit": "7eab079d748d3906db69d67e0beb12e784790d19",
+      "commit": "504b717008b2fad05fe578b43479721a316803cc",
       "standalone": false
     },
     "souls": [
@@ -23,13 +23,13 @@
         "soulsApi": 2,
         "name": "release-manager",
         "repoKey": "local//fixture/base/fx/remotes/agents.git",
-        "commit": "7eab079d748d3906db69d67e0beb12e784790d19",
+        "commit": "504b717008b2fad05fe578b43479721a316803cc",
         "team": "engineering",
         "kind": "member",
         "path": "souls/release-manager",
         "description": "Cuts, verifies and announces platform releases.",
         "work": "worktree",
-        "runtime": null,
+        "harness": null,
         "model": null,
         "declarations": {
           "requires": null,
@@ -81,17 +81,18 @@
           "kind": "package",
           "package": "nw.tools",
           "version": "0.4.0",
-          "commit": "0e605d04de28a5d0670f6dfa927d9ce962e150a2",
+          "commit": "36a842defb01aa36bf85d4be23b287018d0dd645",
           "integrity": "sha256-4a0ee48230d65cc6c0b9d0c9a3883e64182cfc7b2410e4f5839bacf551fcf1cf",
           "repoKey": "local//fixture/base/fx/remotes/nw-tools.git"
         },
+        "composedFrom": "soul",
         "dir": null,
         "settings": {},
         "declares": [],
         "compatibility": {
           "ok": true,
           "range": ">=0.24.0",
-          "kernel": "0.26.0"
+          "kernel": "0.29.2"
         },
         "missingRequires": [],
         "operations": []
@@ -104,15 +105,16 @@
         "from": {
           "kind": "member",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
-          "commit": "7eab079d748d3906db69d67e0beb12e784790d19"
+          "commit": "504b717008b2fad05fe578b43479721a316803cc"
         },
+        "composedFrom": "workspace",
         "dir": null,
         "settings": {},
         "declares": [],
         "compatibility": {
           "ok": true,
           "range": ">=0.24.0",
-          "kernel": "0.26.0"
+          "kernel": "0.29.2"
         },
         "missingRequires": [],
         "operations": []
@@ -125,15 +127,16 @@
         "from": {
           "kind": "member",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
-          "commit": "7eab079d748d3906db69d67e0beb12e784790d19"
+          "commit": "504b717008b2fad05fe578b43479721a316803cc"
         },
+        "composedFrom": "soul",
         "dir": null,
         "settings": {},
         "declares": [],
         "compatibility": {
           "ok": true,
           "range": ">=0.24.0",
-          "kernel": "0.26.0"
+          "kernel": "0.29.2"
         },
         "missingRequires": [],
         "operations": []
@@ -147,10 +150,11 @@
           "kind": "package",
           "package": "nw.teams",
           "version": "0.1.0",
-          "commit": "48750f86cba8050acd69940eba4bed753d3ffb37",
-          "integrity": "sha256-fcbce78fa3db67ea5601c5647bea41ef9c240af42d6bb59a61f0c23af39870b1",
+          "commit": "2cfc7624f9d5b9cda662eae53d4b1876b62e3356",
+          "integrity": "sha256-966131cd26279ac54be071c34f49fcc7adf8425c7651e800f06e277d54df80ce",
           "repoKey": "local//fixture/base/fx/remotes/pkg-teams.git"
         },
+        "composedFrom": "workspace",
         "dir": null,
         "settings": {
           "private": "per-human",
@@ -164,7 +168,7 @@
         "compatibility": {
           "ok": true,
           "range": ">=0.25.6",
-          "kernel": "0.26.0"
+          "kernel": "0.29.2"
         },
         "missingRequires": [],
         "operations": [
@@ -173,7 +177,7 @@
             "kind": "action",
             "command": "teams",
             "context": "home",
-            "description": "This instance's teams: personal, eligible and joined",
+            "description": "This instance's teams: default, eligible and joined",
             "args": [],
             "argv": [
               null,
@@ -239,13 +243,14 @@
           "integrity": "sha256-8f69a58cef42b8b3a1ab3edbd5eeb15793acb7ed5f23b4604bcf3b8303bc3903",
           "repoKey": "local//fixture/base/fx/remotes/pkg-framework.git"
         },
+        "composedFrom": "workspace",
         "dir": null,
         "settings": {},
         "declares": [],
         "compatibility": {
           "ok": true,
           "range": ">=0.24.0",
-          "kernel": "0.26.0"
+          "kernel": "0.29.2"
         },
         "missingRequires": [],
         "operations": []
@@ -263,6 +268,7 @@
           "integrity": "sha256-8df2d930614743f3b973e405461aa4d73fc40dc6a5887ff32a177f8d59e244cb",
           "repoKey": "local//fixture/base/fx/remotes/pkg-okf.git"
         },
+        "composedFrom": "workspace",
         "dir": null,
         "settings": {
           "harvest-runtime": "pi",
@@ -281,7 +287,7 @@
         "compatibility": {
           "ok": true,
           "range": ">=0.24.4",
-          "kernel": "0.26.0"
+          "kernel": "0.29.2"
         },
         "missingRequires": [],
         "operations": [
@@ -323,6 +329,7 @@
         ]
       }
     ],
+    "capabilitiesOff": [],
     "teams": [
       {
         "label": "engineering",

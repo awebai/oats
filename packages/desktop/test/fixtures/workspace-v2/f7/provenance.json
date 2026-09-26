@@ -1,13 +1,13 @@
 {
-  "source": "oats-desktop-engineer for the Desktop F7 side panels + teams (#191 1e3176ed (on main 9a7dcf94)); test/fixtures/northwind/build.mjs; capture-f7.mjs",
-  "kernel": "0.26.0",
+  "source": "ux-designer (the engineer's capture-f7.mjs, 1.16 stand-in) for the Desktop F7 side panels + teams (main dc948fa1); test/fixtures/northwind/build.mjs; capture-f7.mjs",
+  "kernel": "0.29.2",
   "redactions": [
     "<base> (capture scratch) → /fixture/base",
     "<oats> (checkout) → /fixture/oats"
   ],
   "standIn": {
-    "reason": "oats.aweb 1.14.0 (the real teams provider) is not built yet; nw.teams declares the contract's settings.join and messaging:teams|join|leave, nw.chat declares neither (like oats.aweb 1.13.1).",
-    "contract": "docs/design/2026-09-25-teams-contract.md",
+    "reason": "The oats.aweb 1.16.0 wire names (teams contract AMENDMENT c129125a: defaultTeam {team, source}, E_TEAM_DEFAULT) are not tagged yet; nw.teams answers in the 1.16 shape and declares the contract's settings.join and messaging:teams|join|leave, nw.chat declares neither (like oats.aweb 1.13.1).",
+    "contract": "docs/design/2026-09-25-teams-contract.md (AMENDMENT c129125a)",
     "manifest": {
       "capability": "nw.teams",
       "version": "0.1.0",
@@ -32,7 +32,7 @@
           "kind": "action",
           "command": "teams",
           "context": "home",
-          "description": "This instance's teams: personal, eligible and joined"
+          "description": "This instance's teams: default, eligible and joined"
         },
         "join": {
           "kind": "action",
@@ -64,7 +64,7 @@
         }
       }
     },
-    "manifestSha256": "4b797c345a12848371b28d38e9ea3bb6ce3bef3968643296f1fbc7433ca17c4c",
+    "manifestSha256": "5c497f1d949a4168ca1c0f1fa42602b7099839771b40f601cbda81881c64a7f5",
     "chatManifest": {
       "capability": "nw.chat",
       "version": "0.1.0",
@@ -115,9 +115,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.26.0",
-      "sourceSha256": "7985c82c5b49b63a7e9b56b360924470c55033bc1fc34cc8849f851b4bf1e497",
-      "fixtureSha256": "b603b1fc254cb9721c01fc80a260684068120d9bf8d817d93f671b4715be2167"
+      "kernel": "0.29.2",
+      "sourceSha256": "163c0710d9503845f0c29700abfb96001a7260405dce56e47f22022ec3aae20f",
+      "fixtureSha256": "6a56da64fbcd5651f6513dacdd52fa232ab27d38ab6247052fdad0693285cf2d"
     },
     "souls": {
       "argv": [
@@ -128,9 +128,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.26.0",
-      "sourceSha256": "c18f51b54bc7a31134617049843a71c9dd9cba143573401a1705b4b3b4ffd4ac",
-      "fixtureSha256": "6d8ae2a4c28996d00ddfe2eaabe77bafaf9e0eee120168f6c14c9fbf5cd4bdb6"
+      "kernel": "0.29.2",
+      "sourceSha256": "39799c762799a7db2b17da45b54a56f555824590afa3d5499172fea4cde56dc7",
+      "fixtureSha256": "0b92156ca14535ba8de90064b82115fe209a9e40514caac4be13318712481084"
     },
     "capabilities": {
       "argv": [
@@ -141,9 +141,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.26.0",
-      "sourceSha256": "33b3eeda026cd50377f1d721293b467389c8e356ac6d0f56a10d03489c7cdcaa",
-      "fixtureSha256": "419ceb18477ea36c5d425d50ccda1fab701b53b2a2fb60c308721d257fef353d"
+      "kernel": "0.29.2",
+      "sourceSha256": "d7078b1a8aba5854616b9764bd2557b82c786b4df9262de73bf7ba26ee124eb5",
+      "fixtureSha256": "43152922da72436e7e86a83203a6f250b921e97f23ae69b72175a2eb0673c3ba"
     },
     "workspace-status": {
       "argv": [
@@ -155,9 +155,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.26.0",
-      "sourceSha256": "b6919e785c99118ad08d488d690750fa7ce735eeef9e0ba84c566c4461ebebc3",
-      "fixtureSha256": "5464f2a6158409812f11b9af4164b868f48889a223525b4dffa546f57385c449"
+      "kernel": "0.29.2",
+      "sourceSha256": "378ee192d59f2dc0147c69b2f914ba4e92b8dc70601e68fdc826202e128f6b6d",
+      "fixtureSha256": "d99ccea8ef4b3e5528e9a493d283656781ac40026310ad979a9623af498ea635"
     },
     "inspect-soul": {
       "argv": [
@@ -172,9 +172,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.26.0",
-      "sourceSha256": "b1b8e826a5485967edd7a6910e4fadc14d661221f22b29bcf0d9f8fc81d7abdd",
-      "fixtureSha256": "1550891a4965559d052a090c3d7f9ef496020758f18ff284983336d86f91eafe"
+      "kernel": "0.29.2",
+      "sourceSha256": "18e329c73f0081d7248ed671c951664a28ad05f010eee920f3eb6b60cf24da90",
+      "fixtureSha256": "a51ff181f67aba9e5219ed47b293a1ea892b474f281445bcbc7e09097b10dd9e"
     },
     "preview-teams-default": {
       "argv": [
@@ -191,9 +191,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.26.0",
-      "sourceSha256": "7573e0404f3ee4cbf6d0b4400fdb1c241ee7f73bb6643a190f8ea3b21e532881",
-      "fixtureSha256": "719dfc183437fc166fae74f4dd5086d828db841bf32d2cc90e2090116bbed34a"
+      "kernel": "0.29.2",
+      "sourceSha256": "051ef0322b401a4bd63425f11ed0328e66bc2671e1053193a7f87a7e7249da24",
+      "fixtureSha256": "6094f56b3b951166093942802214195b960927ef281c463a999211aab4b05351"
     },
     "preview-teams-join": {
       "argv": [
@@ -213,9 +213,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.26.0",
-      "sourceSha256": "c9ce4f1d086efc326f727fc2bdfe73d08b7515686ede7331a752d9629685cb02",
-      "fixtureSha256": "c284bef90ff769767ad0d0e3cf2f6f3fdd83a8910230b50fc171a888dbddd99e"
+      "kernel": "0.29.2",
+      "sourceSha256": "ab610919f99ea257bfb4810ce2a65e1e1b5d94fc474fe1a41cd1ea0bd1e18820",
+      "fixtureSha256": "4b7edc4dc7dfadf8af6353ee798fa44d4cdc49900f0d0e44d32c54ee82ab18c0"
     },
     "preview-teams-join-unmapped": {
       "argv": [
@@ -235,9 +235,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.26.0",
-      "sourceSha256": "1fd865a6d4e9d2d4372204580e3e885884f8437365f3777520c2a947e021a817",
-      "fixtureSha256": "e7749fa97a991de03e22c38a507276a2cb82691ba81610d485fcb96352267e55"
+      "kernel": "0.29.2",
+      "sourceSha256": "0b391d42aa7eb72b6e57aed8a19afe5917cd55ba89d392be8750f64fb66b4096",
+      "fixtureSha256": "6c23458a1b1824ef5315319f83bf00b25b28299087134987107ecb89f8cf4b2c"
     },
     "apply-teams-join": {
       "argv": [
@@ -254,16 +254,16 @@
         "nw.teams",
         "join=engineering",
         "--expect-decision",
-        "d848ca21d5bd117433a4a3ed",
+        "0fa67b18699ac5cef0d8df11",
         "--idempotency-key",
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "--no-launch",
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.26.0",
-      "sourceSha256": "acdeb96da79d373e3b88081fb934c30f53d1df1ffa3082bcfcb44819625c5373",
-      "fixtureSha256": "da4a86220cc8cc27bb5e622f2382625f5b650bce5e19fb044da4385abd5b03b8"
+      "kernel": "0.29.2",
+      "sourceSha256": "f15c52aca7e1245717e9993ea110c1dbcc456fe8cb510b9ddd7c0b57b120f0c1",
+      "fixtureSha256": "7fa8786105c7ba52d8bbefa7a1c9aad8d5fcae2f7d74906ecae7a273c5c69974"
     },
     "inspect-home": {
       "argv": [
@@ -274,9 +274,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.26.0",
-      "sourceSha256": "56a6827a19b249dbcecac3df38711487f921a5ac3353ebd307828bede240af52",
-      "fixtureSha256": "f2dd080f7ab699c297e21c6844700d1c3431b175a29545ca77ceda8b225a529f"
+      "kernel": "0.29.2",
+      "sourceSha256": "a54b0d7a83b5b08039fcff5575c2f1049d72c7af6212ad3d491409ca223e848f",
+      "fixtureSha256": "faf85d53436e2b1197baa76c25c4db0c9568f79bb8fcc46e34848a1e522b48cf"
     },
     "teams-initial": {
       "argv": [
@@ -289,9 +289,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.26.0",
-      "sourceSha256": "79fe835472a59bd329e6476afab64c6f4af5fc6446cb112b302c06f9d2433cb3",
-      "fixtureSha256": "2b9586c5b42cb35e32632414d98ed872bd6611c64dde130a8329727bbf822531"
+      "kernel": "0.29.2",
+      "sourceSha256": "2081320a0086b973cf0d443795dcd16c44955357b37155aa14d381ecd6356578",
+      "fixtureSha256": "5093ab93911b34999527c39078e49917ce08e344b7d66eed4eb1357c01517f4f"
     },
     "preview-teams-no-join": {
       "argv": [
@@ -308,9 +308,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.26.0",
-      "sourceSha256": "7f3433686ed32c71c2e4883896280c222f86b44c60edeee46cbe000d826ca7da",
-      "fixtureSha256": "5396570e707744041e04e2819694ab0c25c207ecc3f1bf7c515a7a5809f99036"
+      "kernel": "0.29.2",
+      "sourceSha256": "3dc05a3e63e7358a6f1895d6ae258ffe90591ae534546936a8585c2abf5dafd8",
+      "fixtureSha256": "c974770d8d1e6626f6faf4bb274d26e22c13c2e95fc036e636615d2c74b0c690"
     },
     "preview-no-join-sent": {
       "argv": [
@@ -330,9 +330,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.26.0",
-      "sourceSha256": "e83cdb4167376dea32888e72ba58cf98d0d17af2fa0a9efbff54c0f9069137d4",
-      "fixtureSha256": "74a88d7b59bb745e631a4d28d35055abab2691efcc84eab000d7c8f1f5866ce5"
+      "kernel": "0.29.2",
+      "sourceSha256": "145ffb5abd39811711da23d7723fc88720cfdc8fac68042684ee40ccd27ced8c",
+      "fixtureSha256": "e9dbd90af1c09f11d7fd5382c585d7be6dab06177f861d2c606f0ddfe81f1030"
     },
     "preview-teams-conflict": {
       "argv": [
@@ -349,7 +349,7 @@
         "--json"
       ],
       "exit": 1,
-      "kernel": "0.26.0",
+      "kernel": "0.29.2",
       "sourceSha256": "7dc551d4bf671cd3e9cc4a7e92e02bf163d94d0e229758ef13627aba1f639add",
       "fixtureSha256": "52bf57ef77586695bab37706a41a83bdd2b4113db5791e197b73b9f01ba56200"
     },
@@ -366,7 +366,7 @@
         "--json"
       ],
       "exit": 1,
-      "kernel": "0.26.0",
+      "kernel": "0.29.2",
       "sourceSha256": "7dc551d4bf671cd3e9cc4a7e92e02bf163d94d0e229758ef13627aba1f639add",
       "fixtureSha256": "52bf57ef77586695bab37706a41a83bdd2b4113db5791e197b73b9f01ba56200"
     }

@@ -7,8 +7,8 @@
       "name": "northwind",
       "key": "local//fixture/base/fx/remotes/agents.git",
       "url": "/fixture/base/fx/remotes/agents.git",
-      "commit": "5ce1d9be306b3517797db2310b1b136e10ee6e33",
-      "observedAt": "2026-09-26T17:12:21.628Z",
+      "commit": "d06ff014b1eadbb1f0093a3df1fe3e90e72f8a2b",
+      "observedAt": "2026-09-26T19:57:15.436Z",
       "local": "/fixture/base/northwind-workspace/oats-local.yaml",
       "teams": [
         "global",
@@ -24,7 +24,7 @@
       {
         "key": "local//fixture/base/fx/remotes/agents.git",
         "name": "agents",
-        "commit": "5ce1d9be306b3517797db2310b1b136e10ee6e33",
+        "commit": "d06ff014b1eadbb1f0093a3df1fe3e90e72f8a2b",
         "confirmed": true,
         "status": "confirmed",
         "detail": null,
@@ -47,7 +47,7 @@
       {
         "key": "local//fixture/base/fx/remotes/platform.git",
         "name": "platform",
-        "commit": "b153c361c006a6ab2f79ce53af5e4efac0ee1592",
+        "commit": "4ee4cca38144465d166d371230095b92c0f5d446",
         "confirmed": true,
         "status": "confirmed",
         "detail": null,
@@ -67,7 +67,7 @@
       {
         "key": "local//fixture/base/fx/remotes/data.git",
         "name": "data",
-        "commit": "5737aecb3121418fdf3d715c642404e2d9cc4526",
+        "commit": "7f9471d470d0dab2a3ec6c4265df2bebaa7e9eae",
         "confirmed": true,
         "status": "confirmed",
         "detail": null,
@@ -88,7 +88,7 @@
       {
         "key": "local//fixture/base/fx/remotes/marketing.git",
         "name": "marketing",
-        "commit": "ad136e97ce9ac5c8361886337d5666451a82460e",
+        "commit": "76fb81f76d66c633952bc8b74932974691d1a11e",
         "confirmed": true,
         "status": "confirmed",
         "detail": null,
@@ -111,7 +111,7 @@
       {
         "key": "local//fixture/base/fx/remotes/nw-tools.git",
         "name": "nw-tools",
-        "commit": "371fdf6bccafaf545dac017d3342a63770c69957",
+        "commit": "741daab4b3aba5047fd1d02f6c8ff079b6ddb741",
         "confirmed": true,
         "status": "confirmed",
         "detail": null,
@@ -138,7 +138,7 @@
         "id": "nw.tools",
         "version": "0.4.0",
         "source": "git:local//fixture/base/fx/remotes/nw-tools.git@v0.4.0",
-        "commit": "371fdf6bccafaf545dac017d3342a63770c69957",
+        "commit": "741daab4b3aba5047fd1d02f6c8ff079b6ddb741",
         "integrity": "sha256-4a0ee48230d65cc6c0b9d0c9a3883e64182cfc7b2410e4f5839bacf551fcf1cf",
         "capabilities": [
           "nw-deploy",
@@ -205,7 +205,7 @@
           "local//fixture/base/fx/remotes/agents.git:souls/release-manager/soul.yaml#/team",
           "local//fixture/base/fx/remotes/nw-tools.git:souls/tools-expert/soul.yaml#/team"
         ],
-        "message": "team \"engineering\" has no messaging.byTeam entry; its souls (data-analyst, platform-engineer, platform-reviewer, release-manager, tools-expert) fall back to the personal team for it"
+        "message": "team \"engineering\" has no messaging.byTeam entry; its souls (data-analyst, platform-engineer, platform-reviewer, release-manager, tools-expert) fall back to the workspace's default team for it"
       },
       {
         "code": "unmapped-team-label",
@@ -216,7 +216,7 @@
         "paths": [
           "local//fixture/base/fx/remotes/agents.git:souls/support-triager/soul.yaml#/team"
         ],
-        "message": "team \"global\" has no messaging.byTeam entry; its souls (support-triager) fall back to the personal team for it"
+        "message": "team \"global\" has no messaging.byTeam entry; its souls (support-triager) fall back to the workspace's default team for it"
       },
       {
         "code": "unmapped-team-label",
@@ -229,7 +229,7 @@
           "local//fixture/base/fx/remotes/marketing.git:souls/campaign-writer/soul.yaml#/team",
           "local//fixture/base/fx/remotes/marketing.git:souls/positioning-analyst/soul.yaml#/team"
         ],
-        "message": "team \"marketing\" has no messaging.byTeam entry; its souls (campaign-writer, positioning-analyst) fall back to the personal team for it"
+        "message": "team \"marketing\" has no messaging.byTeam entry; its souls (campaign-writer, positioning-analyst) fall back to the workspace's default team for it"
       }
     ],
     "automations": {

@@ -9,7 +9,7 @@
           "kind": "package",
           "package": "nw.tools",
           "version": "0.4.0",
-          "commit": "0e605d04de28a5d0670f6dfa927d9ce962e150a2",
+          "commit": "36a842defb01aa36bf85d4be23b287018d0dd645",
           "integrity": "sha256-4a0ee48230d65cc6c0b9d0c9a3883e64182cfc7b2410e4f5839bacf551fcf1cf",
           "repoKey": "local//fixture/base/fx/remotes/nw-tools.git"
         },
@@ -23,14 +23,14 @@
         "from": {
           "kind": "member",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
-          "commit": "c5cef8aaa3a49f6eb4cab5671b974775bb85a443"
+          "commit": "6b3069f67b2a456afd4844e0eab819c12d5015c8"
         },
         "layer": null,
         "private": false,
         "declares": [],
         "changedSince": {
           "instance": "release-manager-teams",
-          "was": "7eab079d748d3906db69d67e0beb12e784790d19"
+          "was": "504b717008b2fad05fe578b43479721a316803cc"
         }
       },
       {
@@ -38,14 +38,14 @@
         "from": {
           "kind": "member",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
-          "commit": "c5cef8aaa3a49f6eb4cab5671b974775bb85a443"
+          "commit": "6b3069f67b2a456afd4844e0eab819c12d5015c8"
         },
         "layer": null,
         "private": false,
         "declares": [],
         "changedSince": {
           "instance": "release-manager-teams",
-          "was": "7eab079d748d3906db69d67e0beb12e784790d19"
+          "was": "504b717008b2fad05fe578b43479721a316803cc"
         }
       },
       {
@@ -54,7 +54,7 @@
           "kind": "package",
           "package": "nw.chat",
           "version": "0.1.0",
-          "commit": "90f8186cb1fa66a128211f992b87ca37dcade569",
+          "commit": "490e07aebe3f436bf5675002c8564e12459d7844",
           "integrity": "sha256-f1021844f28d07ccd8f66398726ce73eb893fd277f2268aeb1a2a6ad9db90e75",
           "repoKey": "local//fixture/base/fx/remotes/pkg-chat.git"
         },
@@ -132,8 +132,8 @@
         }
       }
     ],
-    "resolution": "0e4ee2ab8602d6168962b485",
-    "declRevision": "01b3f52146c18051a58c160c",
+    "resolution": "e093da3a47a1fbd138739b40",
+    "declRevision": "4aa6350bb582f48720e6e61b",
     "payloadRevision": "c0240e8ed584bfdf48b0ea6d",
     "workspace": "local//fixture/base/fx/remotes/agents.git",
     "standalone": false,
@@ -216,12 +216,12 @@
       "branch": "agents/release-manager-teams-2",
       "base": {
         "ref": "HEAD",
-        "oid": "7eab079d748d3906db69d67e0beb12e784790d19"
+        "oid": "504b717008b2fad05fe578b43479721a316803cc"
       },
       "effective": {
         "repo": "/fixture/base/northwind-workspace/agents-repo",
         "work": "worktree",
-        "runtime": "pi",
+        "harness": "pi",
         "model": null,
         "launchConfig": null,
         "yolo": null,
@@ -250,20 +250,20 @@
           }
         }
       },
-      "resolution": "0e4ee2ab8602d6168962b485",
-      "revision": "ffac455f066508a153647260"
+      "resolution": "e093da3a47a1fbd138739b40",
+      "revision": "5df53512017b8d2c053a7d74"
     },
     "preflight": {
       "status": "complete",
       "budgetMs": 20000,
-      "elapsedMs": 61
+      "elapsedMs": 49
     },
     "backendStatus": {
       "name": "tmux",
       "installed": true,
       "started": false
     },
-    "runtime": "pi",
+    "harness": "pi",
     "model": null,
     "modelSource": "native default",
     "launchConfig": null,
@@ -271,7 +271,7 @@
     "branch": "agents/release-manager-teams-2",
     "base": {
       "ref": "HEAD",
-      "oid": "7eab079d748d3906db69d67e0beb12e784790d19"
+      "oid": "504b717008b2fad05fe578b43479721a316803cc"
     },
     "worktree": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams-2/work",
     "relation": null,
@@ -293,11 +293,11 @@
       },
       {
         "name": "nw-house-style",
-        "origin": "member:local//fixture/base/fx/remotes/agents.git@c5cef8aaa3a49f6eb4cab5671b974775bb85a443"
+        "origin": "member:local//fixture/base/fx/remotes/agents.git@6b3069f67b2a456afd4844e0eab819c12d5015c8"
       },
       {
         "name": "nw-release-tooling",
-        "origin": "member:local//fixture/base/fx/remotes/agents.git@c5cef8aaa3a49f6eb4cab5671b974775bb85a443"
+        "origin": "member:local//fixture/base/fx/remotes/agents.git@6b3069f67b2a456afd4844e0eab819c12d5015c8"
       },
       {
         "name": "nw.chat",

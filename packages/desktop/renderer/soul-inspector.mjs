@@ -27,7 +27,7 @@ function coreDetail(slot, declared, teams, mapped) {
     const text = parts.join(' · ');
     return text ? text[0].toUpperCase() + text.slice(1) : null;
   }
-  if (slot === 'messaging' && teams) return mapped.length ? `Personal team · can join ${mapped.map(t => t.label).join(', ')}` : 'Personal team only';
+  if (slot === 'messaging' && teams) return mapped.length ? `Default team · can join ${mapped.map(t => t.label).join(', ')}` : 'Default team only';
   return null;
 }
 /** An instance's build against its soul, from the roster's drift rows: older
@@ -354,8 +354,8 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     // Only the teams the soul has access to (mapped by this workspace); unmapped labels are not shown.
     const teams = all.filter(t => t.mapped);
     section('Teams');
-    if (!teams.length) { content.append(node('p', 'Personal team only: this soul has access to no other team.', 'muted')); return; }
-    content.append(node('p', "The teams this soul has access to. Its instances start in their person's personal team only and can join these:", 'muted inspector-teams-lede'));
+    if (!teams.length) { content.append(node('p', 'Default team only: this soul has access to no other team.', 'muted')); return; }
+    content.append(node('p', "The teams this soul has access to. Its instances start in the workspace's default team only and can join these:", 'muted inspector-teams-lede'));
     const row = node('div', undefined, 'inspector-chips');
     teams.forEach(t => {
       const chip = node('span', t.label === all[0].label ? `${t.label} · primary` : t.label, 'inspector-chip');
@@ -490,7 +490,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     // Beside: its teams (joining is per instance) and its knowledge nodes.
     if (teams) {
       const card = pageCard(doc, 'Teams', { lead: 'organise · add defaults · never restrict' });
-      if (!mapped.length) card.card.append(node('p', 'Personal team only: this soul has access to no other team.', 'page-note'));
+      if (!mapped.length) card.card.append(node('p', 'Default team only: this soul has access to no other team.', 'page-note'));
       for (const team of mapped) {
         const row = node('div', undefined, 'soul-team'), name = node('span', undefined, 'soul-team-name');
         name.append(node('span', team.label)); if (team.label === teams[0].label) name.append(node('span', 'primary', 'page-tag'));

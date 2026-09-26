@@ -1,4 +1,4 @@
-// Import the teams-panel kernel capture (teams contract 2026-09-25, e60b4f7c): the
+// Import the teams-panel kernel capture (teams contract 2026-09-25; 1.16 names per its AMENDMENT, c129125a): the
 // live-instance operations messaging:teams|join|leave through the real kernel's
 // `oats operation run`, Northwind scratch + ONE stand-in messaging provider
 // (nw.teams; capture-teams.mjs + provenance.json `standIn` alongside it). NEVER runs a CLI, runtime or native probe.
@@ -13,7 +13,7 @@ const [source] = process.argv.slice(2);
 if (typeof source !== 'string' || !source.startsWith('/')) throw new Error('One explicit absolute capture directory required');
 const target = fileURLToPath(new URL('.', import.meta.url));
 const documents = ['version', 'inspect-home', 'inspect-soul', 'teams-initial', 'join-dev', 'join-reviewers', 'join-not-eligible',
-  'leave-personal', 'leave-reviewers', 'teams-joined', 'join-missing-arg', 'teams-on-soul'];
+  'leave-default', 'leave-reviewers', 'teams-joined', 'join-missing-arg', 'teams-on-soul'];
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const captured = JSON.parse(readFileSync(join(source, 'provenance.json'), 'utf8'));
 const provenance = { source: `${captured.capturedBy}; test/fixtures/northwind/build.mjs; capture-teams.mjs`, kernel: captured.kernel,
