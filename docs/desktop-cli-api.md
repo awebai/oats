@@ -1488,7 +1488,7 @@ a trigger never appears in `schedule list`, and a schedule never appears in
     `launchConfig` names a launch configuration in the running host's `oats-local.yaml`);
   - `template?: { package, version, commit, template }`: the package template it was added from.
   - `lastRun` is the last fired event: `{ at, instance, home, event, number, key }`.
-  - `nextDue` is the next poll, only when it runs here.
+  - `nextDue` is the next poll, only when it runs here; `null` before its first poll (it polls at the next tick).
 - **A schedule row** keeps every 0.28 field (`scheduleApi: 2`). Its `kind` is the run (`spawn` | `command` | `wake` | `operation`); it also carries `cron` and `tz`.
   - `nextDue` is the next minute, only when it runs here.
   - `teams` is `[]` and `concurrency` is `null`.
