@@ -346,7 +346,7 @@ test("spawn view: an UNSETTLED probe explains itself (no dead button pointing at
     await new Promise((r) => setTimeout(r, 20));
     const btn2 = el.querySelector(".spawn-act");
     assert.ok(btn2 && !btn2.disabled, "spawn enables once the probe settles ok");
-    assert.match(btn2.textContent, /Preview spawn/, "explicit launch affordance (Workspace v4: Preview spawn) remains available");
+    assert.match(btn2.textContent, /^Spawn$/, "explicit launch affordance (the soul page's Spawn, human 2026-09-26) remains available");
     // settled state: the retry stops (no more /api/cli fetches from the tick)
     const settled = state.cliFetches;
     for (const t of ticks) t();

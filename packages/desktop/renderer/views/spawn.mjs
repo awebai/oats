@@ -73,6 +73,12 @@ const CSS = `
 .soul-card .sactivity { display:inline-flex; align-items:center; gap:6px; margin-left:auto; flex:none; color:var(--muted); font-weight:600; white-space:nowrap; }
 .soul-card .sactivity.running { color:var(--fg); }
 .soul-card .sactivity.running::before { content:""; width:6px; height:6px; border-radius:50%; background:var(--live); }
+/* A card and its Spawn button share one grid cell (no nested buttons); the
+   button sits in the card's foot, whose facts leave it room. */
+.soul-tile { display:grid; min-width:0; }
+.soul-tile > .soul-card { grid-area:1/1; }
+.soul-tile.can-spawn > .soul-card .sfoot { padding-right:98px; min-height:26px; }
+.oats-view .souls .soul-tile > button.soul-spawn { grid-area:1/1; align-self:end; justify-self:end; display:inline-flex; align-items:center; gap:5px; height:26px; min-height:26px; margin:0 12px 8px 0; padding:0 10px; border-radius:6px; font-size:12px; font-weight:600; }
 .oats-view .souls button.spawn-act:not(:disabled), .oats-view .souls button.fspawn:not(:disabled) { background:var(--primary-bg); color:var(--primary-fg); border-color:var(--primary-bg); }
 .souls-grid[hidden] { display:none; }
 .spawn-modal { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 24px; background: var(--scrim); }
@@ -302,7 +308,7 @@ ${spawnDialogCSS}</style>
       // The grid is rebuilt by polling; return to composite identity only on
       // explicit standalone close, never during reset or a hidden-stage close.
       const card = restoreFocus && ref && gridCards(s).find(card => cardMatches(card, ref));
-      if (canFocusCard(s, card)) { card.tabIndex = 0; card.focus(); }
+      if (canFocusCard(s, card)) { rove(card, true); card.focus(); }
     },
   });
   s.discovery = createWorkspaceDiscovery(s.q("workspace-header"), s.q("workspace-discovery"), {
@@ -579,7 +585,7 @@ function renderGrid(s, { restoreFocus = true } = {}) {
   const rebuilt = [...grid.querySelectorAll(".soul-card")];
   if (rebuilt.length) {
     const restored = focusedRef && rebuilt.find((c) => cardMatches(c, focusedRef));
-    (restored || rebuilt[0]).tabIndex = 0;
+    rove(restored || rebuilt[0], true);
     if (restoreFocus && canFocusCard(s, restored)) restored.focus({ preventScroll: true });
   }
 }
@@ -589,6 +595,12 @@ function cardMatches(card, ref) {
   return card.dataset.agent === ref.name && (card.dataset.root || "") === (ref.agentsRoot || "") && (card.dataset.server || "") === (ref.server || "");
 }
 function gridCards(s) { return [...s.q("souls-grid").querySelectorAll(".soul-card")]; }
+/** Roving tabindex: a card's Spawn button enters the tab order with its card. */
+function rove(card, on) {
+  card.tabIndex = on ? 0 : -1;
+  const spawn = card.parentElement?.classList?.contains("soul-tile") ? card.parentElement.querySelector(".soul-spawn") : null;
+  if (spawn) spawn.tabIndex = on ? 0 : -1;
+}
 
 function canFocusCard(s, card) {
   if (!s.alive || s.rosterGen !== workspaceGeneration() || s.discovery?.tab !== "souls"
@@ -603,7 +615,8 @@ function canFocusCard(s, card) {
 
 function focusedCard(s) {
   const active = s.el.ownerDocument.activeElement;
-  return active?.closest?.(".soul-card") || null;
+  // A card's Spawn button moves with its card: arrow keys from it rove the grid.
+  return active?.closest?.(".soul-card") || active?.closest?.(".soul-tile")?.querySelector(".soul-card") || null;
 }
 
 function soulInstances(s, agent) {
@@ -660,7 +673,7 @@ function onGridKey(s, e) {
 function focusCard(s, cards, index) {
   const target = cards[index];
   if (!target) return;
-  for (const c of cards) c.tabIndex = c === target ? 0 : -1;
+  for (const c of cards) rove(c, c === target);
   target.focus();
 }
 
@@ -714,7 +727,17 @@ function soulCard(s, a) {
   foot.append(activity);
   body.append(foot);
   card.append(name, body);
-  return card;
+  if (attached) return card;
+  // Workspace v4 (human, 2026-09-26): every spawnable card offers Spawn directly.
+  const tile = doc.createElement("div"); tile.className = "soul-tile can-spawn";
+  const spawn = doc.createElement("button"); spawn.type = "button"; spawn.className = "act soul-spawn"; spawn.tabIndex = -1;
+  spawn.append(iconElement(doc, "plus", { size: 13 }), span("", "Spawn"));
+  spawn.setAttribute("aria-label", `Spawn ${a.name}`);
+  const can = canLaunchSoul(s, a); spawn.disabled = !can;
+  spawn.title = can ? `Spawn a new ${a.name} instance` : cliAvailable() ? `${a.name} cannot be spawned from here` : "Spawn needs a compatible installed OATS CLI";
+  spawn.addEventListener("click", () => { if (!spawn.disabled && canLaunchSoul(s, a)) { openSpawnModal(s, a); s.spawnFromCard = !!s.modalEl; } });
+  tile.append(card, spawn);
+  return tile;
 }
 
 /** Members whose handshake is not confirmed, with the souls workspace status
@@ -751,7 +774,7 @@ function unavailableCard(s, name, member) {
  * a same-named twin (review 41059e0). */
 function closeSpawnModal(s, { restoreFocus = false, repaint = true } = {}) {
   const hadModal = !!s.modalEl;
-  const agentRef = s.selAgent;
+  const agentRef = s.selAgent, fromCard = s.spawnFromCard; s.spawnFromCard = false;
   if (hadModal) s.spawnOp++; // closing ends the form operation ownership
   s.sel = null; s.selAgent = null;
   s.modalCleanup?.(); s.modalCleanup = null;
@@ -760,9 +783,12 @@ function closeSpawnModal(s, { restoreFocus = false, repaint = true } = {}) {
   if (!hadModal || !repaint || s.alive === false) return;
   renderGrid(s); // clear the .open card highlight NOW
   if (!restoreFocus || !agentRef) return;
-  if (s.page?.focusLaunch(agentRef)) return;
+  if (!fromCard && s.page?.focusLaunch(agentRef)) return;
   const card = gridCards(s).find(card => cardMatches(card, agentRef));
-  if (canFocusCard(s, card)) card.focus();
+  if (!canFocusCard(s, card)) return;
+  // Opened from a card's Spawn button: focus returns to that button.
+  const spawn = fromCard ? card.parentElement?.querySelector?.(".soul-spawn:not(:disabled)") : null;
+  if (spawn) { for (const c of gridCards(s)) rove(c, c === card); spawn.focus(); } else card.focus();
 }
 
 /** The spawn dialog (renderer/spawn-dialog.mjs) hosted as a modal: role=dialog +
