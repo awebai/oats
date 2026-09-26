@@ -3,60 +3,111 @@
 import { gitTarget, gitTargetKey, gitState, gitDiff, gitObservation, gitKinds, INSTANCE_GIT_MINIMUM_VERSION } from './instance-git-contract.mjs';
 import { createForgePrPanel } from './forge-pr.mjs';
 import { ageText } from './age-text.mjs';
+import { iconElement } from './shell-icons.mjs';
 
 export const instanceGitCSS = `
-.instance-git { min-width:0; color:var(--fg); font-size:12px; }
-.instance-git .git-toolbar { display:flex; gap:8px; align-items:center; margin-bottom:12px; }
-.instance-git .git-toolbar h2 { flex:1; margin:0; font-size:14px; }
-.instance-git button { font:inherit; background:var(--surface); color:var(--fg); border:1px solid var(--border); border-radius:6px; padding:5px 8px; cursor:pointer; }
-.instance-git button:hover:not(:disabled) { background:var(--surface-2); }
-.instance-git button:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
-.instance-git button:disabled { color:var(--faint); background:var(--surface-2); cursor:default; }
-.instance-git .git-status, .instance-git .git-note { color:var(--muted); line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; }
+/* W6 Git & GitHub (design): Branch, Changes, then the pull request, each under a small caps label. */
+.instance-git { display:flex; flex-direction:column; gap:18px; min-width:0; color:var(--fg); font-size:12px; }
+.instance-git .git-section { display:flex; flex-direction:column; gap:8px; min-width:0; }
+.instance-git .git-changes-section { gap:2px; }
+.instance-git .git-head { display:flex; align-items:center; gap:10px; min-width:0; color:var(--muted); font-size:11px; font-weight:650; letter-spacing:.05em; text-transform:uppercase; }
+.instance-git .git-changes-section .git-head { margin-bottom:4px; }
+.instance-git .git-head h3 { margin:0; font:inherit; color:inherit; }
+.instance-git .git-head-aside { margin-left:auto; text-transform:none; letter-spacing:0; font-weight:500; }
+.instance-git .git-head-aside:empty { display:none; }
+.instance-git .git-head-aside:empty + .git-link, .instance-git .git-changes-section .git-link { margin-left:auto; }
+.instance-git button { font:inherit; color:var(--fg); cursor:pointer; }
+.instance-git button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:3px; }
+.instance-git button.git-link { height:auto; min-height:0; padding:0; border:0; background:transparent; color:var(--accent); font-size:11px; font-weight:600; letter-spacing:0; text-transform:none; }
+.instance-git button.git-link:hover:not(:disabled) { text-decoration:underline; }
+.instance-git button.git-link:disabled { color:var(--muted); cursor:default; text-decoration:none; }
+.instance-git .git-status, .instance-git .git-note { margin:0; color:var(--muted); line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; }
 .instance-git .git-status:empty { display:none; }
 .instance-git .git-status.error { color:var(--danger); }
-.instance-git details > summary { cursor:pointer; color:var(--muted); margin-top:8px; }
-.instance-git .git-counts { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:8px; }
-.instance-git .git-counts span { padding:2px 5px; border-radius:4px; background:var(--surface-2); color:var(--muted); font-size:10.5px; }
-.instance-git .git-card { border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin:0 0 16px; overflow-wrap:anywhere; background:var(--surface-2); }
-.instance-git h3 { font-size:10.5px; font-weight:650; letter-spacing:.06em; text-transform:uppercase; margin:var(--section-gap) 0 var(--title-gap); }
-.instance-git dl { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.6fr); gap:6px 10px; }
+.instance-git details > summary { cursor:pointer; color:var(--muted); font-size:11.5px; }
+.instance-git .git-facts { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.instance-git .git-facts:empty { display:none; }
+.instance-git .git-branch-line { display:flex; align-items:center; gap:8px; min-width:0; font:650 12.5px var(--mono,monospace); }
+.instance-git .git-branch-line .shell-icon { flex:none; color:var(--muted); }
+.instance-git .git-branch { min-width:0; }
+.instance-git .git-ahead { flex:none; margin-left:auto; color:var(--muted); font-weight:500; white-space:nowrap; }
+.instance-git .git-branch-sub { color:var(--muted); font:11px/1.5 var(--mono,monospace); overflow-wrap:anywhere; }
+.instance-git .git-more { margin-top:6px; }
+.instance-git .git-more h4 { margin:10px 0 4px; color:var(--muted); font-size:10.5px; font-weight:650; letter-spacing:.05em; text-transform:uppercase; }
+.instance-git dl { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.6fr); gap:4px 10px; margin:0; }
 .instance-git dt { color:var(--muted); }
-.instance-git dd { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }
-.instance-git .git-branch { font:600 12px var(--mono,monospace); white-space:pre-wrap; }
-.instance-git .git-path { font:11px/1.5 var(--mono,monospace); white-space:pre-wrap; overflow-wrap:anywhere; }
-.instance-git .git-files { display:grid; gap:2px; }
-.instance-git .git-file { width:100%; min-height:30px; text-align:left; white-space:pre-wrap; overflow-wrap:anywhere; font:11.5px/1.5 var(--mono,monospace); }
-.instance-git button.git-file[aria-pressed=true] { background:var(--sel); color:var(--fg); border-color:var(--accent); }
-.instance-git .git-patch { max-height:420px; overflow:auto; white-space:pre; padding:10px; border:1px solid var(--border); border-radius:8px; background:var(--surface-2); color:var(--fg); font:11.5px/1.5 var(--mono,monospace); }
+.instance-git dd { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; font-family:var(--mono,monospace); font-size:11px; }
+.instance-git .git-files { display:flex; flex-direction:column; min-width:0; }
+.instance-git button.git-file { display:flex; align-items:baseline; gap:8px; width:100%; min-height:28px; margin:0; padding:6px 2px; box-sizing:border-box; border:0; border-bottom:1px solid var(--tag-bg); border-radius:0; background:transparent; text-align:left; font:11.5px/1.35 var(--mono,monospace); }
+.instance-git button.git-file:hover:not(:disabled):not([aria-pressed=true]) { background:var(--surface-2); }
+.instance-git button.git-file[aria-pressed=true] { background:var(--sel); color:var(--fg); }
+.instance-git button.git-file:disabled { color:var(--muted); cursor:default; }
+.instance-git .git-letter { flex:none; width:12px; font-weight:700; color:var(--muted); }
+.instance-git .git-file-path { flex:1; min-width:0; }
+/* A path or branch breaks after its slashes; a segment breaks inside only when longer than the line. */
+.instance-git .git-seg { display:inline-block; max-width:100%; overflow-wrap:anywhere; }
+.instance-git .git-diff:empty { display:none; }
+.instance-git .git-diff { display:flex; flex-direction:column; gap:6px; margin-top:10px; }
+.instance-git .git-diff h4 { margin:0; font:600 11.5px var(--mono,monospace); overflow-wrap:anywhere; }
+.instance-git .git-patch { margin:0; max-height:420px; overflow:auto; white-space:pre; padding:10px; border:1px solid var(--border); border-radius:8px; background:var(--surface-2); color:var(--fg); font:11.5px/1.5 var(--mono,monospace); }
 .instance-git .git-add { color:var(--ok); }
 .instance-git .git-remove { color:var(--danger); }
 .instance-git .git-hunk { color:var(--accent); }
+.instance-git .git-github h3 { margin:0 0 8px; color:var(--muted); font-size:11px; font-weight:650; letter-spacing:.05em; text-transform:uppercase; }
+.instance-git .git-card { border:1px solid var(--border); border-radius:8px; padding:10px 12px; overflow-wrap:anywhere; background:var(--surface-2); }
+.instance-git .git-github button { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:5px 8px; }
 .instance-git .forge-pass { color:var(--ok); }
 .instance-git .forge-fail { color:var(--danger); }
 .instance-git .forge-pending, .instance-git .forge-neutral { color:var(--muted); }
 .instance-git a { color:var(--accent); overflow-wrap:anywhere; }
 `;
 const report = v => v === null || v === undefined ? 'Not reported' : String(v);
+const tail = v => String(v || '').split('/').filter(Boolean).pop() || '';
+/** Text that breaks after its slashes: one inline-block per segment, a <wbr> after each slash. */
+function slashed(doc, el, value) {
+  el.replaceChildren();
+  value.split('/').forEach((part, i, all) => {
+    const seg = doc.createElement('span'); seg.className = 'git-seg'; seg.textContent = i < all.length - 1 ? `${part}/` : part;
+    el.append(seg); if (i < all.length - 1) el.append(doc.createElement('wbr'));
+  });
+  return el;
+}
+/** A change's one status letter (git status --short): the index side, else the worktree side. */
+export function changeLetter(file) {
+  if (file.kind === 'untracked') return '?';
+  if (file.kind === 'unmerged') return 'U';
+  const [x, y] = file.xy; return x !== '.' ? x : y;
+}
+const LETTER_WORD = { M: 'modified', A: 'added', D: 'deleted', R: 'renamed', C: 'copied', T: 'type changed', U: 'unmerged', '?': 'untracked' };
 export function createInstanceGitPanel(parent, { request, generation = () => 0, applyFocus = fn => fn(),
   requestForge, connectionGeneration = () => 0, subscribeConnections = () => () => {}, connect, openExternal, onObservation = () => {} } = {}) {
   const doc = parent.ownerDocument;
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
   const root = node('div', undefined, 'instance-git'); parent.append(root);
-  const toolbar = node('div', undefined, 'git-toolbar'), refreshButton = node('button', 'Refresh'); refreshButton.type = 'button';
-  toolbar.append(node('h2', 'Worktree'), refreshButton);
+  // Branch: its label, the work mode and Refresh; then the branch facts.
+  const branchSection = node('section', undefined, 'git-section git-branch-section');
+  const toolbar = node('div', undefined, 'git-toolbar git-head'), workMode = node('span', '', 'git-head-aside');
+  const refreshButton = node('button', 'Refresh', 'git-link'); refreshButton.type = 'button';
+  toolbar.append(node('h3', 'Branch'), workMode, refreshButton);
   const status = node('p', '', 'git-status'); status.setAttribute('role', 'status');
   // A read's code sits behind Details under its plain sentence (never inline).
   const statusDetails = node('details', undefined, 'git-status-details'); statusDetails.hidden = true;
   const statusCode = node('pre', '', 'git-note'); statusDetails.append(node('summary', 'Details'), statusCode);
-  const facts = node('div', undefined, 'git-facts'), changesHeading = node('h3', 'Changes');
+  const facts = node('div', undefined, 'git-facts');
+  // Changes: one row per file (its status letter and path); a row reads its diff below the list.
+  const changesSection = node('section', undefined, 'git-section git-changes-section');
+  const changesHead = node('div', undefined, 'git-head'), changesHeading = node('h3', 'Changes');
+  const openDiff = node('button', 'Open diff', 'git-link'); openDiff.type = 'button'; openDiff.hidden = true;
+  changesHead.append(changesHeading, openDiff);
   const files = node('div', undefined, 'git-files'); files.setAttribute('aria-label', 'Observed worktree changes');
   const diffStatus = node('p', '', 'git-status'); diffStatus.setAttribute('role', 'status');
   const diffBody = node('section', undefined, 'git-diff'); diffBody.setAttribute('aria-label', 'Read-only unified diff');
   const github = node('section', undefined, 'git-github');
-  root.append(toolbar, status, statusDetails, facts, changesHeading, files, diffStatus, diffBody, github);
+  branchSection.append(toolbar, status, statusDetails, facts);
+  changesSection.append(changesHead, files, diffStatus, diffBody);
+  root.append(branchSection, changesSection, github);
   // Sections with nothing observed are not shown.
-  changesHeading.hidden = true; github.hidden = true;
+  changesSection.hidden = true; github.hidden = true;
   const pullRequest = createForgePrPanel(github, { request: requestForge, generation, connectionGeneration, subscribeConnections, connect, openExternal });
   let alive = true, active = false, epoch = 0, observationTicket = 0, fileTicket = 0;
   let target = null, identity = '', summaryIdentity = '', attempted = false, observation = null, selected = null, busy = false, remote = false;
@@ -79,8 +130,8 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
     statusCode.textContent = code; statusDetails.hidden = !code;
   };
   const clearDiff = () => { selected = null; fileTicket++; diffBody.replaceChildren(); message(diffStatus); for (const b of controls.values()) b.setAttribute('aria-pressed', 'false'); };
-  const clear = (summary = true) => { if (summary) onObservation(null); observation = null; pullRequest.update(); clearDiff(); controls.clear(); facts.replaceChildren(); files.replaceChildren(); changesHeading.textContent = 'Changes'; message(status);  changesHeading.hidden = true; github.hidden = true; };
-  const locks = () => { refreshButton.disabled = !alive || !active || !target || remote || busy; for (const b of controls.values()) b.disabled = !active || busy || !observation; };
+  const clear = (summary = true) => { if (summary) onObservation(null); observation = null; pullRequest.update(); clearDiff(); controls.clear(); facts.replaceChildren(); files.replaceChildren(); workMode.textContent = ''; message(status); changesSection.hidden = true; openDiff.hidden = true; github.hidden = true; };
+  const locks = () => { refreshButton.disabled = !alive || !active || !target || remote || busy; for (const b of [...controls.values(), openDiff]) b.disabled = !active || busy || !observation; };
   function send(ref, action, extra = {}) {
     const t = ref.target;
     // home is used only for validating the returned target, NEVER sent as authority.
@@ -100,34 +151,44 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
   }
   function renderObservation(ref, observationKey) {
     facts.replaceChildren(); controls.clear(); files.replaceChildren();
-    const data = observation, o = data.observation, card = node('section', undefined, 'git-card');
-    card.append(node('div', o.unborn ? `${report(o.branch)} · unborn` : o.detached ? 'Detached HEAD' : report(o.branch), 'git-branch'), node('div', o.worktree, 'git-path'));
-    const seen = node('p', `Observed ${ageText(o.at)}`, 'git-note'); seen.title = o.at; card.append(seen);
-    if (data.recorded.drift) card.append(node('p', `Branch differs from recorded branch: ${report(data.recorded.branch)}`, 'git-note'));
-    const metadata = node('details'); metadata.append(node('summary', 'Observation details'));
-    rows(metadata, [['Observed revision', o.revision], ['Index fingerprint', o.indexRevision], ['Work mode', data.workMode],
+    const data = observation, o = data.observation;
+    workMode.textContent = data.workMode || '';
+    // The branch, and how far it is ahead of (or behind) the default branch.
+    const line = node('div', undefined, 'git-branch-line');
+    line.append(iconElement(doc, 'branch', { size: 13 }), slashed(doc, node('span', undefined, 'git-branch'), o.unborn ? `${report(o.branch)} · unborn` : o.detached ? 'Detached HEAD' : report(o.branch)));
+    if (data.base.ref && data.base.ahead !== null) {
+      const ahead = node('span', `↑${data.base.ahead}${data.base.behind ? ` ↓${data.base.behind}` : ''} from ${data.base.ref.replace(/^origin\//, '')}`, 'git-ahead');
+      ahead.title = `${data.base.ahead} ahead of, ${report(data.base.behind)} behind ${data.base.ref}`; line.append(ahead);
+    }
+    // The repository, and whether the worktree is clean.
+    const n = data.files.length, repo = tail(data.recorded.repo) || tail(o.worktree);
+    const sub = node('div', [repo, n ? `clean except ${n} file${n === 1 ? '' : 's'}` : 'clean'].filter(Boolean).join(' · '), 'git-branch-sub'); sub.title = o.worktree;
+    facts.append(line, sub);
+    if (data.recorded.drift) facts.append(node('p', `Branch differs from recorded branch: ${report(data.recorded.branch)}`, 'git-note'));
+    // Everything else the read reports, behind Details.
+    const more = node('details', undefined, 'git-more'); more.append(node('summary', 'Details'));
+    const seen = node('p', `Observed ${ageText(o.at)}`, 'git-note'); seen.title = o.at; more.append(seen);
+    more.append(node('h4', 'Observation'));
+    rows(more, [['Worktree', o.worktree], ['Observed revision', o.revision], ['Index fingerprint', o.indexRevision], ['Work mode', data.workMode],
       ['Recorded branch', data.recorded.branch], ['Branch drift', data.recorded.drift ? 'Changed from recorded branch' : 'No reported drift']]);
-    card.append(metadata);
     // A comparison shows only what was reported; nothing reported is one plain line.
     const comparison = (title, pairs, none) => {
-      facts.append(node('h3', title));
+      more.append(node('h4', title));
       const known = pairs.filter(([, value]) => value !== null && value !== undefined && value !== '');
-      if (known.length) rows(facts, known); else facts.append(node('p', none, 'git-note'));
+      if (known.length) rows(more, known); else more.append(node('p', none, 'git-note'));
     };
-    facts.append(card);
     comparison('Upstream comparison', [['Upstream ref', data.upstream.ref], ['Ahead', data.upstream.ahead], ['Behind', data.upstream.behind]], 'No upstream branch is reported.');
     comparison('Default-branch comparison', [['Base ref', data.base.ref], ['Base source', data.base.source], ['Merge base', data.base.mergeBase], ['Ahead', data.base.ahead], ['Behind', data.base.behind]], 'No default-branch comparison is reported.');
-    for (const note of data.notes) facts.append(node('p', note, 'git-note'));
-    changesHeading.textContent = `Changes · ${data.files.length}`; changesHeading.hidden = false; github.hidden = false;
-    const counts = node('div', undefined, 'git-counts'); counts.setAttribute('role', 'list'); counts.setAttribute('aria-label', 'Reported change counts');
-    for (const kind of gitKinds) { const label = node('span', `${kind[0].toUpperCase() + kind.slice(1)}: ${data.summary[kind]}`); label.setAttribute('role', 'listitem'); counts.append(label); }
-    files.append(counts);
+    for (const note of data.notes) more.append(node('p', note, 'git-note'));
+    facts.append(more);
+    changesSection.hidden = false; github.hidden = false; openDiff.hidden = !data.files.length;
     if (!data.files.length) files.append(node('p', 'No changes reported in this observation.', 'git-note'));
     const snapshot = data;
     for (const file of data.files) {
-      const b = node('button', `${file.xy}  ${file.origPath ? `${file.origPath} → ` : ''}${file.path}${file.submodule ? ' · submodule' : ''}`, 'git-file');
+      const letter = changeLetter(file), shown = `${file.origPath ? `${file.origPath} → ` : ''}${file.path}${file.submodule ? ' · submodule' : ''}`;
+      const b = node('button', undefined, 'git-file'); b.append(node('span', letter, 'git-letter'), slashed(doc, node('span', undefined, 'git-file-path'), shown));
       b.type = 'button'; b.setAttribute('aria-pressed', 'false'); b.dataset.fileId = file.id;
-      b.title = `Read diff: ${file.origPath ? `${file.origPath} → ` : ''}${file.path}`;
+      b.title = `${LETTER_WORD[letter] || file.kind} · read diff: ${shown}`;
       b.addEventListener('click', () => {
         if (canPaint(ref) && observation === snapshot && !busy && b.isConnected && files.contains(b)) void selectFile(file, ref, snapshot);
       });
@@ -178,7 +239,8 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
       if (result.status !== 'available') { message(diffStatus, `${result.reason.message} (${result.reason.code})`, true); return; }
       const data = gitDiff(result.data, { fileId: file.id, revision: snapshot.observation.revision, indexRevision: snapshot.observation.indexRevision, observation: snapshot.observation, file });
       if (!data) throw new Error('Invalid diff');
-      diffBody.append(node('h3', file.path), node('p', `Against: ${data.against} · ${data.bytes} patch bytes${data.truncated ? ` · truncated at ${data.limit} bytes` : ''}`, 'git-note'));
+      const against = node('p', `Against: ${/^[0-9a-f]{40,64}$/.test(data.against) ? data.against.slice(0, 7) : data.against} · ${data.bytes} patch bytes${data.truncated ? ` · truncated at ${data.limit} bytes` : ''}`, 'git-note'); against.title = data.against;
+      diffBody.append(slashed(doc, node('h4'), file.path), against);
       if (data.binary) diffBody.append(node('p', 'Binary file — no text patch returned.', 'git-note'));
       else if (!data.patch) diffBody.append(node('p', 'No text patch returned for this file.', 'git-note'));
       else {
@@ -195,6 +257,8 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
     }
   }
   refreshButton.addEventListener('click', () => { if (!refreshButton.disabled && refreshButton.isConnected && visible()) void refresh(); });
+  // Open diff: the selected file's diff, else the first file's.
+  openDiff.addEventListener('click', () => { if (!openDiff.disabled) ((selected && controls.get(selected.id)) || controls.values().next().value)?.click(); });
   function update({ active: nextActive = false, workspace, instance, key } = {}) {
     if (!alive) return;
     const next = gitTarget({ workspace, instance: instance?.instance, agent: instance?.agent, agentsRoot: instance?.agentsRoot, home: instance?.home, server: instance?.server || null });
