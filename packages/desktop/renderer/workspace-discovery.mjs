@@ -293,7 +293,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   return {
     setTab, updateRoster, syncCli, get tab() { return tab; },
     /** What the capability table renders with (observed facts only), for pages that reuse it. */
-    context: () => ({ status: observed(), instances, root: workspace?.id }),
+    context: () => ({ status: observed(), instances, root: workspace?.id, catalog: catalog?.capabilities ?? null }),
     reset() {
       serial++; rosterGen = null; workspace = null; deployment = null; instances = []; catalog = null; loading = false; failure = '';
       filters = { team: null, repo: null }; title.textContent = 'Workspace'; sync.reset(); updateCounts(null); render();
