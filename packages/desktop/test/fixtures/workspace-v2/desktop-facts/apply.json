@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "instance": "release-manager-facts",
+    "agent": "release-manager",
+    "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-facts",
+    "work": "worktree",
+    "branch": "agents/release-manager-facts",
+    "launched": false,
+    "warnings": [],
+    "tmux": {
+      "session": "none-87444",
+      "window": "release-manager-facts"
+    },
+    "repo": "/fixture/base/northwind-workspace/agents-repo",
+    "harness": "pi",
+    "model": "fixture-model",
+    "parent": null,
+    "sibling": null,
+    "relation": null,
+    "spawnOrigin": "operator",
+    "attach": "tmux attach -t none-87444",
+    "decision": {
+      "instance": "release-manager-facts",
+      "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-facts",
+      "branch": "agents/release-manager-facts",
+      "base": {
+        "ref": "HEAD",
+        "oid": "5ce1d9be306b3517797db2310b1b136e10ee6e33"
+      },
+      "effective": {
+        "repo": "/fixture/base/northwind-workspace/agents-repo",
+        "work": "worktree",
+        "harness": "pi",
+        "model": "fixture-model",
+        "launchConfig": null,
+        "yolo": null,
+        "backend": "tmux",
+        "childSpawns": true,
+        "relation": null,
+        "providers": {
+          "nw-deploy": {},
+          "nw-house-style": {},
+          "nw-release-tooling": {},
+          "oats.core": {},
+          "oats.okf": {
+            "harvest-runtime": "pi",
+            "owns": "release-manager",
+            "reads": [
+              "platform-engineer",
+              "data-analyst"
+            ]
+          }
+        }
+      },
+      "resolution": "020a3ade52f790274026182a",
+      "revision": "7a23f984fd80a59d240c9154"
+    },
+    "replayed": false,
+    "wake": {
+      "requested": false,
+      "saved": null,
+      "error": null
+    },
+    "launchConfig": null,
+    "launch": {
+      "version": 2,
+      "harness": "pi",
+      "launchConfig": null,
+      "launchConfigSource": null,
+      "executable": "/fixture/base/bin/pi",
+      "executableDeclared": null,
+      "executableResolvedFrom": "PATH",
+      "args": [],
+      "env": {},
+      "model": "fixture-model",
+      "hooks": {
+        "launch": {},
+        "env": {},
+        "contributions": []
+      },
+      "prompt": {
+        "kind": "task-file",
+        "file": "TASK.md"
+      }
+    }
+  }
+}

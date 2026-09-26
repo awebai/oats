@@ -27,6 +27,32 @@ function flags(value, names, into) {
   for (const key of names) if (own(value, key)) { check(typeof value[key] === 'boolean'); into[key] = value[key]; }
   return into;
 }
+/* Desktop facts (feature desktop-facts, kernel #217): additive fields, projected when reported. */
+const fileRef = value => value === null ? null : fields(value, ['path', 'url']);
+const problemRef = value => value === null ? null : fields(value, ['code', 'message']);
+function nameRows(value) {
+  return array(value, 500).map(row => { const out = fields(row, ['name', 'from']); check(text(out.name)); flags(row, ['off'], out); return out; });
+}
+function defaultsFacts(value) {
+  check(record(value) && record(value.slots) && record(value.byTeam) && Object.keys(value.slots).length <= 64 && Object.keys(value.byTeam).length <= 256);
+  const slots = Object.fromEntries(Object.entries(value.slots).map(([slot, v]) => {
+    check(text(slot) && slot.length > 0);
+    return [slot, v === null || v === 'none' ? v : fields(v, ['name', 'from'])];
+  }));
+  const byTeam = Object.fromEntries(Object.entries(value.byTeam).map(([label, v]) => { check(text(label) && label.length > 0 && record(v)); return [label, { capabilities: nameRows(v.capabilities) }]; }));
+  return { slots, capabilities: nameRows(value.capabilities), byTeam };
+}
+function cloneRow(row) {
+  const out = fields(row, ['key', 'name']); check(text(out.key));
+  check(row.path === null || absolute(row.path)); out.path = row.path;
+  check(row.rule === null || row.rule === 'clones' || row.rule === 'convention'); out.rule = row.rule;
+  if (own(row, 'problem')) out.problem = problemRef(row.problem);
+  return out;
+}
+function lockFact(value) {
+  check(record(value) && absolute(value.path) && Number.isSafeInteger(value.lockfileVersion));
+  return { path: value.path, lockfileVersion: value.lockfileVersion };
+}
 function source(value) {
   return fields(value, ['kind', 'package', 'version', 'commit', 'integrity', 'repoKey']);
 }
@@ -81,9 +107,15 @@ export function workspaceStatusData(document, deployment) {
   const workspace = fields(data.workspace, ['name', 'key', 'url', 'commit', 'observedAt', 'local']);
   check(text(workspace.name) && text(workspace.key));
   if (own(data.workspace, 'teams')) workspace.teams = strings(data.workspace.teams);
+  if (own(data.workspace, 'file')) workspace.file = fileRef(data.workspace.file);
   const members = array(data.members).map(memberRow);
   const packages = array(data.packages).map(packageRow);
-  return flags(data, ['standalone'], { workspaceStatusApi: 1, workspace, members, packages,
+  const facts = {};
+  if (own(data, 'defaults')) facts.defaults = defaultsFacts(data.defaults);
+  if (own(data, 'clones')) facts.clones = array(data.clones).map(cloneRow);
+  if (own(data, 'disabledSouls')) facts.disabledSouls = strings(data.disabledSouls);
+  if (own(data, 'lock')) facts.lock = lockFact(data.lock);
+  return flags(data, ['standalone'], { workspaceStatusApi: 1, workspace, members, packages, ...facts,
     declaredPackages: strings(data.declaredPackages), unsynced: strings(data.unsynced), stale: strings(data.stale),
     external: array(data.external).map(row => fields(row, ['source', 'soul', 'team'])),
     problems: problemRows(data.problems), // warnings[] since kernel #185 (for example an unmapped team label); absent before.
@@ -127,7 +159,8 @@ export function deploymentStatusData(document, deployment) {
       if (seenHomes.has(instance.home)) { withheld.push({ agent: agent.name, instance: instance.instance, reason: 'duplicate-home' }); return []; }
       check(seenHomes.size < 10000); seenHomes.add(instance.home);
       const row = withHarness(instance, fields(instance, ['instance', 'agent', 'home', 'repo', 'work', 'branch', 'model', 'createdAt',
-        'parentInstance', 'siblingInstance', 'relation', 'relativeTo', 'runtimeState', 'runtimeError', 'spawnOrigin', 'capability']));
+        'parentInstance', 'siblingInstance', 'relation', 'relativeTo', 'runtimeState', 'runtimeError', 'spawnOrigin', 'capability',
+        'startedAt', 'modelFrom', 'identityAddress']));
       for (const key of ['running', 'launched', 'captured']) if (own(instance, key)) {
         check(instance[key] === null || typeof instance[key] === 'boolean'); row[key] = instance[key];
       }
@@ -163,11 +196,14 @@ function memberRow(row) {
   check(text(out.key)); flags(row, ['confirmed'], out);
   for (const key of ['souls', 'capabilities']) if (own(row, key)) out[key] = strings(row[key]);
   if (own(row, 'publishes')) out.publishes = row.publishes === null ? null : fields(row.publishes, ['package', 'version']);
+  if (own(row, 'url')) { check(row.url === null || text(row.url)); out.url = row.url; }
+  if (own(row, 'membershipFile')) out.membershipFile = fileRef(row.membershipFile);
   return out;
 }
 function packageRow(row) {
   const out = fields(row, ['id', 'version', 'source', 'commit', 'integrity']); check(text(out.id));
   if (own(row, 'capabilities')) out.capabilities = strings(row.capabilities);
+  if (own(row, 'latest')) out.latest = row.latest === null ? null : fields(row.latest, ['version', 'ref']);
   return out;
 }
 const problemRows = value => array(value).map(row => fields(row, ['code', 'message', 'repoKey', 'path']));
@@ -195,8 +231,12 @@ export function capabilitiesData(document) {
   check(record(data) && data.capabilitiesApi === 1);
   const workspace = fields(data.workspace, ['name', 'key', 'commit']);
   const capabilities = array(data.capabilities).map(row => {
-    const out = fields(row, ['name', 'origin', 'kind', 'repoKey', 'commit', 'team', 'path', 'layer', 'version', 'package']);
+    const out = fields(row, ['name', 'origin', 'kind', 'repoKey', 'commit', 'team', 'path', 'layer', 'version', 'package', 'description', 'tree']);
     check(text(out.name) && out.name.length > 0 && ['member', 'package', 'external'].includes(out.kind));
+    // What it provides (desktop-facts); skills is null when a spawn could not list them.
+    if (own(row, 'skills')) out.skills = row.skills === null ? null : strings(row.skills);
+    for (const key of ['commands', 'hooks']) if (own(row, key)) out[key] = strings(row[key]);
+    if (own(row, 'file')) out.file = fileRef(row.file);
     return flags(row, ['private'], out);
   });
   return { capabilitiesApi: 1, workspace, capabilities, problems: problemRows(data.problems) };
@@ -218,7 +258,11 @@ export function soulsData(document) {
     const out = fields(row, ['name', 'origin', 'kind', 'repoKey', 'commit', 'team', 'path', 'work', 'description']);
     check(SOUL_NAME.test(out.name ?? '') && ['member', 'external'].includes(out.kind)
       && ['worktree', 'checkout', 'directory', 'workspace', 'attached'].includes(out.work));
-    flags(row, ['private'], out);
+    flags(row, ['private', 'spawnable'], out);
+    // desktop-facts: what a spawn starts with by default (today always the kernel's), whether it would refuse, and the file.
+    for (const key of ['harness', 'model', 'harnessFrom']) if (own(row, key)) { check(row[key] === null || text(row[key])); out[key] = row[key]; }
+    if (own(row, 'problem')) out.problem = problemRef(row.problem);
+    if (own(row, 'file')) out.file = fileRef(row.file);
     // Every team label the soul carries (primary first; teams contract), when reported.
     if (own(row, 'labels')) {
       check(Array.isArray(row.labels) && row.labels.length <= 64 && row.labels.every(l => typeof l === 'string' && TEAM_LABEL.test(l)) && new Set(row.labels).size === row.labels.length);

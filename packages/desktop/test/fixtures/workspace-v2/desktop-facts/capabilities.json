@@ -1,0 +1,260 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "capabilitiesApi": 1,
+    "workspace": {
+      "name": "northwind",
+      "key": "local//fixture/base/fx/remotes/agents.git",
+      "commit": "5ce1d9be306b3517797db2310b1b136e10ee6e33"
+    },
+    "capabilities": [
+      {
+        "name": "nw-brand-voice",
+        "origin": "member local//fixture/base/fx/remotes/marketing.git @ ad136e97",
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/marketing.git",
+        "commit": "ad136e97ce9ac5c8361886337d5666451a82460e",
+        "team": "marketing",
+        "private": false,
+        "path": "capabilities/nw-brand-voice",
+        "layer": null,
+        "version": "0.0.0-workspace",
+        "description": "Northwind brand voice guidance and tone checks.",
+        "skills": [
+          "tone-check"
+        ],
+        "commands": [],
+        "hooks": [],
+        "file": {
+          "path": "capabilities/nw-brand-voice/oats.json",
+          "url": null
+        },
+        "tree": "b2de0dd6daf228a44af00ea35addd399f10d8db2"
+      },
+      {
+        "name": "nw-campaign-metrics",
+        "origin": "member local//fixture/base/fx/remotes/marketing.git @ ad136e97",
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/marketing.git",
+        "commit": "ad136e97ce9ac5c8361886337d5666451a82460e",
+        "team": "marketing",
+        "private": false,
+        "path": "capabilities/nw-campaign-metrics",
+        "layer": null,
+        "version": "0.0.0-workspace",
+        "description": "Queries the ads APIs for campaign metrics.",
+        "skills": [
+          "campaign-report"
+        ],
+        "commands": [
+          "report"
+        ],
+        "hooks": [],
+        "file": {
+          "path": "capabilities/nw-campaign-metrics/oats.json",
+          "url": null
+        },
+        "tree": "76071eb09d2174a75bb4ce4911ffbed5bacc2d15"
+      },
+      {
+        "name": "nw-deploy",
+        "origin": "package nw.tools v0.4.0",
+        "kind": "package",
+        "package": "nw.tools",
+        "version": "0.4.0",
+        "commit": "371fdf6bccafaf545dac017d3342a63770c69957",
+        "team": "unassigned",
+        "private": false,
+        "layer": null,
+        "description": "Deploys Northwind services; carries an executable (bin/nw-deploy.mjs).",
+        "skills": [
+          "deploy"
+        ],
+        "commands": [
+          "apply",
+          "plan"
+        ],
+        "hooks": [],
+        "file": {
+          "path": "oats-package/capabilities/nw-deploy/oats.json",
+          "url": null
+        },
+        "tree": null
+      },
+      {
+        "name": "nw-house-style",
+        "origin": "member local//fixture/base/fx/remotes/agents.git @ 5ce1d9be",
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/agents.git",
+        "commit": "5ce1d9be306b3517797db2310b1b136e10ee6e33",
+        "team": "global",
+        "private": false,
+        "path": "capabilities/nw-house-style",
+        "layer": null,
+        "version": "0.0.0-workspace",
+        "description": "Northwind house style for every agent's prose.",
+        "skills": [],
+        "commands": [],
+        "hooks": [],
+        "file": {
+          "path": "capabilities/nw-house-style/oats.json",
+          "url": null
+        },
+        "tree": "1485909a6a47609555f820dd66be69dc8816c0b6"
+      },
+      {
+        "name": "nw-lint",
+        "origin": "package nw.tools v0.4.0",
+        "kind": "package",
+        "package": "nw.tools",
+        "version": "0.4.0",
+        "commit": "371fdf6bccafaf545dac017d3342a63770c69957",
+        "team": "unassigned",
+        "private": false,
+        "layer": null,
+        "description": "House lint rules for Northwind repositories.",
+        "skills": [
+          "lint"
+        ],
+        "commands": [],
+        "hooks": [],
+        "file": {
+          "path": "oats-package/capabilities/nw-lint/oats.json",
+          "url": null
+        },
+        "tree": null
+      },
+      {
+        "name": "nw-release-tooling",
+        "origin": "member local//fixture/base/fx/remotes/agents.git @ 5ce1d9be",
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/agents.git",
+        "commit": "5ce1d9be306b3517797db2310b1b136e10ee6e33",
+        "team": "engineering",
+        "private": false,
+        "path": "capabilities/nw-release-tooling",
+        "layer": null,
+        "version": "0.0.0-workspace",
+        "description": "Northwind release checklist, changelog and tag automation.",
+        "skills": [
+          "cut-release"
+        ],
+        "commands": [
+          "cut",
+          "verify"
+        ],
+        "hooks": [],
+        "file": {
+          "path": "capabilities/nw-release-tooling/oats.json",
+          "url": null
+        },
+        "tree": "c9b65f383f024e37cc0b56aaa0c55250ff23dd24"
+      },
+      {
+        "name": "nw-tools-dev",
+        "origin": "member local//fixture/base/fx/remotes/nw-tools.git @ 371fdf6b",
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/nw-tools.git",
+        "commit": "371fdf6bccafaf545dac017d3342a63770c69957",
+        "team": "engineering",
+        "private": false,
+        "path": "capabilities/nw-tools-dev",
+        "layer": null,
+        "version": "0.0.0-workspace",
+        "description": "Developer conventions for working on the nw.tools package itself.",
+        "skills": [
+          "package-conventions"
+        ],
+        "commands": [],
+        "hooks": [],
+        "file": {
+          "path": "capabilities/nw-tools-dev/oats.json",
+          "url": null
+        },
+        "tree": "1468b79e6802caee0e41b0b28c339cdf0aec9bea"
+      },
+      {
+        "name": "nw-warehouse-access",
+        "origin": "member local//fixture/base/fx/remotes/data.git @ 5737aecb",
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/data.git",
+        "commit": "5737aecb3121418fdf3d715c642404e2d9cc4526",
+        "team": "engineering",
+        "private": false,
+        "path": "capabilities/nw-warehouse-access",
+        "layer": null,
+        "version": "0.0.0-workspace",
+        "description": "Read access to the Northwind warehouse.",
+        "skills": [
+          "query-warehouse"
+        ],
+        "commands": [
+          "query"
+        ],
+        "hooks": [],
+        "file": {
+          "path": "capabilities/nw-warehouse-access/oats.json",
+          "url": null
+        },
+        "tree": "fed0ed51b1e0f15febca876946cb7d909a847220"
+      },
+      {
+        "name": "oats.core",
+        "origin": "package oats.framework v1.1.3",
+        "kind": "package",
+        "package": "oats.framework",
+        "version": "1.1.3",
+        "commit": "b80344dcafd4b614e58bb8dc5d766eca9ea0403c",
+        "team": "unassigned",
+        "private": false,
+        "layer": null,
+        "description": "Explicit OATS operation, soul discovery and lifecycle guidance; no fundamental-layer or executable authority.",
+        "skills": [
+          "oats-operate"
+        ],
+        "commands": [],
+        "hooks": [],
+        "file": {
+          "path": "oats-package/capabilities/oats-core/oats.json",
+          "url": null
+        },
+        "tree": null
+      },
+      {
+        "name": "oats.okf",
+        "origin": "package oats.okf v2.1.3",
+        "kind": "package",
+        "package": "oats.okf",
+        "version": "2.1.3",
+        "commit": "6c9742aa531b9be30fcb5fe8753c456b5a64f910",
+        "team": "unassigned",
+        "private": false,
+        "layer": "knowledge",
+        "description": "External OKF bases with owned nodes and immutable reader views (fixture edition).",
+        "skills": [
+          "okf"
+        ],
+        "commands": [
+          "binding-bind",
+          "binding-check",
+          "binding-normalize",
+          "harvest",
+          "inspect",
+          "reindex",
+          "status"
+        ],
+        "hooks": [
+          "retire",
+          "spawn"
+        ],
+        "file": {
+          "path": "oats-package/capabilities/oats-okf/oats.json",
+          "url": null
+        },
+        "tree": null
+      }
+    ],
+    "problems": []
+  }
+}
