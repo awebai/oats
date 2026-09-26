@@ -63,6 +63,8 @@ export function automationRow(raw, kind) {
     recentRuns: list(raw.recentRuns).filter(record),
     invalid: record(raw.invalid) ? raw.invalid : null,
     unreadable: record(raw.unreadable) ? raw.unreadable : null,
+    // The kernel's own row, for the local schedule editor's draft (never rendered).
+    raw,
   };
   row.group = automationGroup(row);
   return row;
@@ -216,4 +218,15 @@ export function triggerStatus(json, id) {
     pending: list(row.pending).filter(record), lastPoll: record(row.lastPoll) ? row.lastPoll : null,
     lastError: record(row.lastError) ? row.lastError : null,
   };
+}
+
+/** The fields a list row adds to a stored schedule definition (the automations contract). */
+const ROW_ONLY = ['qualifiedId', 'name', 'origin', 'description', 'owner', 'runsOn', 'runsHere', 'reason', 'reasonDetail', 'enabledHere', 'soul', 'teams', 'concurrency', 'nextDue', 'invalid'];
+const ROW_NULLABLE = ['task', 'harness', 'model', 'launchConfig'];
+/** A local schedule row → its stored definition (for scheduleDraft); null for any other row. */
+export function localScheduleDefinition(row) {
+  if (row?.kind !== 'schedule' || row.origin?.kind !== 'local' || !record(row.raw)) return null;
+  const out = {};
+  for (const [k, v] of Object.entries(row.raw)) if (!ROW_ONLY.includes(k) && !(ROW_NULLABLE.includes(k) && v === null)) out[k] = v;
+  return out;
 }

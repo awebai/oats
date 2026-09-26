@@ -13,6 +13,8 @@ import {
 import { pageCardCSS, pageBar, pageCard, pageFacts, pageSection } from '../capability-page.mjs';
 import { iconElement } from '../shell-icons.mjs';
 import { harnessName } from '../identity-marks.mjs';
+import { postJson, ensureTheme, wsQuery, currentWorkspace, onWorkspaceChange } from './common.mjs';
+import { cliStatus, cliCard, cliKnownUnavailable, onCliChange } from './cli-status.mjs';
 
 export const automationsCSS = `
 .automations { display:flex; flex-direction:column; height:100%; min-height:0; min-width:0; background:var(--bg); color:var(--fg); container-type:inline-size; }
@@ -20,12 +22,15 @@ export const automationsCSS = `
 .auto-header { flex:none; display:flex; align-items:center; gap:12px; height:48px; padding:0 16px; box-sizing:border-box; border-bottom:1px solid var(--border); background:var(--surface); }
 .auto-header h2 { display:flex; align-items:baseline; gap:8px; margin:0; font-size:14px; font-weight:700; }
 .auto-count { color:var(--muted); font:10.5px var(--mono,monospace); font-weight:400; }
-.auto-scheduler { display:inline-flex; align-items:center; gap:7px; margin-left:auto; color:var(--muted); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+.auto-spacer { flex:1; }
+.auto-scheduler { display:inline-flex; align-items:center; gap:7px; color:var(--muted); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
 .auto-dot { width:7px; height:7px; flex:none; border-radius:50%; background:var(--faint); }
 .auto-dot.ok { background:var(--ok); }
 .auto-dot.warn { background:var(--warn); }
 .oats-view .auto-header button.auto-icon { display:inline-grid; place-items:center; width:30px; height:30px; min-height:30px; padding:0; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); flex:none; }
-.auto-header .auto-scheduler + button.auto-icon, .auto-header h2 + button.auto-icon { margin-left:auto; }
+.oats-view .auto-header button.act:not(.auto-icon) { height:30px; min-height:30px; padding:0 12px; border-radius:7px; font-size:12.5px; font-weight:600; }
+.oats-view .auto-header button.act.primary:not(:disabled) { background:var(--primary-bg); color:var(--primary-fg); border-color:var(--primary-bg); }
+.oats-view .auto-banner button.act { margin-left:auto; height:28px; min-height:28px; padding:0 10px; border-radius:6px; font-size:12px; font-weight:600; flex:none; }
 .auto-body { flex:1; min-height:0; overflow:auto; padding:16px 20px 24px; }
 .auto-banner { display:flex; align-items:center; gap:10px; margin:0 0 14px; padding:10px 12px; border:1px solid var(--attn-border); border-radius:8px; background:var(--attn-bg); color:var(--fg); font-size:12.5px; }
 .auto-banner .shell-icon { flex:none; color:var(--warn); }
@@ -50,6 +55,9 @@ export const automationsCSS = `
 .auto-cell { display:flex; flex-direction:column; gap:2px; min-width:0; }
 .auto-main-line { display:flex; align-items:center; gap:6px; min-width:0; color:var(--fg); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .auto-main-line > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+/* A text-only line: the event or cron words wrap rather than clip; a one-line fact ellipsizes (title keeps it whole). */
+.auto-main-line.auto-wrap { display:block; white-space:normal; overflow-wrap:anywhere; }
+.auto-main-line.auto-text { display:block; }
 .auto-sub { color:var(--muted); font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .auto-mono { font-family:var(--mono,monospace); }
 .oats-view .auto-row button.auto-open { display:flex; flex-direction:column; align-items:flex-start; gap:3px; min-width:0; min-height:0; padding:2px 0; border:0; background:transparent; color:var(--fg); text-align:left; font:inherit; cursor:pointer; }
@@ -113,7 +121,10 @@ const OUTCOMES = { launched: 'agent launched', active: 'agent active', running: 
 
 /** read(): the list JSON · act(verb, row): enable|disable|test|run → kernel JSON · status(row): a trigger's
  * `oats trigger status` JSON (fire history, live instances) · openFile(row): open its defining file. */
-export function createAutomationsView(host, { kind, read, act = null, status = null, openFile = null, now = () => Date.now() } = {}) {
+/** verbs: the act verbs this server serves (default all) · headerActions(doc): extra header controls ·
+ * rowActions(row): extra { label, run, enabled } for a row's menu and page · onEnableScheduler: the banner's action. */
+export function createAutomationsView(host, { kind, read, act = null, status = null, openFile = null, now = () => Date.now(),
+  verbs = null, headerActions = null, rowActions = null, onEnableScheduler = null, onResult = null } = {}) {
   const doc = host.ownerDocument;
   const node = (tag, value, cls) => { const el = doc.createElement(tag); if (value !== undefined && value !== null) el.textContent = value; if (cls) el.className = cls; return el; };
   const title = TITLES[kind], noun = kind === 'trigger' ? 'trigger' : 'schedule';
@@ -124,14 +135,15 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
   const scheduler = node('span', '', 'auto-scheduler'); scheduler.hidden = true;
   const refreshButton = node('button', undefined, 'act auto-icon'); refreshButton.type = 'button';
   refreshButton.append(iconElement(doc, 'refresh', { size: 14 })); refreshButton.setAttribute('aria-label', `Refresh ${title.toLowerCase()}`); refreshButton.title = 'Refresh';
-  header.append(h2, scheduler, refreshButton);
+  header.append(h2, node('span', undefined, 'auto-spacer'), scheduler, ...(headerActions ? headerActions(doc) : []), refreshButton);
   const body = node('div', undefined, 'auto-body'), page = node('div', undefined, 'auto-page'); page.hidden = true;
   root.append(style, header, body, page); host.append(root);
 
-  let alive = true, serial = 0, data = null, failure = '', loading = false, origin = 'all', query = '', openId = null, busy = false;
+  let alive = true, serial = 0, data = null, failure = '', loading = false, origin = 'all', query = '', openId = null, busy = false, notice = '';
   const tests = new Map(), statuses = new Map();
   // A workspace item's file opens from its web URL or this machine's clone.
-  const canOpen = row => !!openFile && row.origin.kind === 'workspace' && !!(row.origin.url || row.origin.localPath);
+  const canOpen = row => !!openFile && row.origin.kind === 'workspace' && !!row.origin.url;
+  const supports = verb => !!act && (!verbs || verbs.includes(verb));
   const rowById = id => data?.rows.find(r => r.id === id) || null;
 
   // ── toolbar (persistent: the search keeps focus across renders) ──
@@ -168,7 +180,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
       const result = await act(verb, row);
       if (!alive) return;
       if (verb === 'test') tests.set(row.id, testResult(result, kind) || { ok: false, error: `This OATS did not answer a ${noun} test.` });
-      else await refresh();
+      else { onResult?.(verb, row, result); await refresh(); }
     } catch (error) { if (alive) { if (verb === 'test') tests.set(row.id, { ok: false, error: error?.message || String(error) }); else failure = error?.message || String(error); } }
     finally { if (alive) { busy = false; render(); } }
   }
@@ -179,7 +191,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     const b = node('button', undefined, 'auto-switch'); b.type = 'button'; b.setAttribute('role', 'switch');
     b.setAttribute('aria-checked', String(row.enabledHere)); b.setAttribute('aria-label', `${row.id} enabled on this computer`);
     b.title = row.enabledHere ? 'On here: click to turn it off on this computer' : 'Off here: click to turn it on';
-    b.disabled = busy || !act;
+    b.disabled = busy || !supports(row.enabledHere ? 'disable' : 'enable');
     b.addEventListener('click', () => perform(row.enabledHere ? 'disable' : 'enable', row));
     return b;
   }
@@ -208,13 +220,13 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
   function whenCell(row) {
     const cell = node('div', undefined, 'auto-cell');
     if (row.kind === 'schedule') {
-      const main = node('span', cronInWords(row.cron) || row.cron || 'Not reported', 'auto-main-line'); main.title = [row.cron, row.tz].filter(Boolean).join(' · ');
+      const main = node('span', cronInWords(row.cron) || row.cron || 'Not reported', 'auto-main-line auto-wrap'); main.title = [row.cron, row.tz].filter(Boolean).join(' · ');
       cell.append(main);
       // The cron itself goes under its words; with no words, the main line is already the cron.
       cell.append(node('span', [cronInWords(row.cron) ? row.cron : null, row.tz].filter(Boolean).join(' · '), 'auto-sub auto-mono'));
     } else {
       const on = onSummary(row.on);
-      const main = node('span', on?.title || 'Not reported', 'auto-main-line'); main.title = main.textContent;
+      const main = node('span', on?.title || 'Not reported', 'auto-main-line auto-wrap'); main.title = main.textContent;
       cell.append(main);
       if (on) cell.append(node('span', [on.repo, ...on.labels.map(l => `#${l}`)].filter(Boolean).join(' · '), 'auto-sub'));
     }
@@ -233,7 +245,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     if (!row.runsHere && row.group !== 'here') { cell.append(node('span', '—', 'auto-none')); return cell; }
     const next = relativeTime(row.nextDue, now()), last = relativeTime(row.lastRun?.at || row.lastRun?.startedAt || row.lastRun?.scheduledFor, now());
     // A trigger that runs here but has not polled yet polls at the next tick (nextDue null).
-    const n = node('span', next ? `Next ${next.label}` : !row.enabledHere ? 'Off here' : row.runsHere && kind === 'trigger' ? 'Polls at the next tick' : 'Next not reported', 'auto-main-line'); if (next) n.title = next.title;
+    const n = node('span', next ? `Next ${next.label}` : !row.enabledHere ? 'Off here' : row.runsHere && kind === 'trigger' ? 'Polls at the next tick' : 'Next not reported', 'auto-main-line auto-text'); n.title = next ? next.title : n.textContent;
     const l = node('span', last ? `Last ${last.label}${row.lastRun?.outcome ? ` · ${OUTCOMES[row.lastRun.outcome] || row.lastRun.outcome}` : row.lastRun?.number ? ` · #${row.lastRun.number}` : ''}` : 'Not run yet', 'auto-sub'); if (last) l.title = last.title;
     cell.append(n, l); return cell;
   }
@@ -243,10 +255,14 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     const items = node('div', undefined, 'auto-menu-list');
     const item = (label, verb, enabled = true) => { const b = node('button', label); b.type = 'button'; b.dataset.verb = verb; b.disabled = busy || !enabled; b.addEventListener('click', () => { menu.open = false; if (verb === 'open') openRow(row.id); else if (verb === 'file') openFile?.(row); else void perform(verb, row); }); items.append(b); };
     item('Open', 'open');
-    item('Test', 'test', !!act);
-    if (row.kind === 'schedule' && row.runsHere) item('Run now', 'run', !!act);
-    if (row.group !== 'elsewhere') item(row.enabledHere ? 'Turn off here' : 'Turn on here', row.enabledHere ? 'disable' : 'enable', !!act);
+    if (supports('test')) item('Test', 'test');
+    if (row.kind === 'schedule' && row.runsHere && supports('run')) item('Run now', 'run');
+    if (row.group !== 'elsewhere' && supports(row.enabledHere ? 'disable' : 'enable')) item(row.enabledHere ? 'Turn off here' : 'Turn on here', row.enabledHere ? 'disable' : 'enable');
     if (canOpen(row)) item('Open file', 'file');
+    for (const extra of rowActions ? rowActions(row) : []) {
+      const b = node('button', extra.label); b.type = 'button'; b.dataset.verb = extra.verb || ''; b.disabled = busy || extra.enabled === false;
+      b.addEventListener('click', () => { menu.open = false; extra.run(); }); items.append(b);
+    }
     menu.append(summary, items); return menu;
   }
   function rowEl(row) {
@@ -269,9 +285,10 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     setText(count, data ? String(rows.length) : '');
     renderScheduler();
     if (failure) notices.append(node('p', failure, 'auto-status error'));
+    if (notice) { const n = node('p', notice, 'auto-status auto-notice'); n.setAttribute('role', 'status'); notices.append(n); }
     if (!data) { if (loading) notices.append(node('p', `Reading ${title.toLowerCase()}…`, 'auto-status')); return; }
     if (!data.host.name && rows.some(r => r.reason === 'host-unnamed')) banner(`This computer has no host name, so it runs none of the workspace's ${title.toLowerCase()}. Name it in this deployment's local settings to take on the ones assigned to it.`);
-    if (data.scheduler && !schedulerOn(data.scheduler) && rows.some(r => r.runsHere)) banner('The scheduler is not running on this computer, so nothing here runs until it is enabled.');
+    if (data.scheduler && !schedulerOn(data.scheduler) && rows.some(r => r.runsHere)) banner('The scheduler is not running on this computer, so nothing here runs until it is enabled.', onEnableScheduler && ['Enable scheduler', onEnableScheduler]);
     for (const [id, b] of segButtons) { b.setAttribute('aria-pressed', String(id === origin)); setText(b.querySelector('.auto-seg-count'), String(id === 'all' ? rows.length : rows.filter(r => r.origin.kind === id).length)); }
     if (!rows.length) {
       const empty = node('div', undefined, 'auto-empty'); empty.append(node('strong', `No ${title.toLowerCase()} yet`));
@@ -297,7 +314,11 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
       'Only members you can read in Git contribute.'].filter(Boolean).join(' · ');
     listHost.append(foot);
   }
-  function banner(message) { const b = node('div', undefined, 'auto-banner'); b.setAttribute('role', 'note'); b.append(iconElement(doc, 'warning', { size: 15 }), node('span', message)); notices.append(b); }
+  function banner(message, action = null) {
+    const b = node('div', undefined, 'auto-banner'); b.setAttribute('role', 'note'); b.append(iconElement(doc, 'warning', { size: 15 }), node('span', message));
+    if (action) { const a = node('button', action[0], 'act'); a.type = 'button'; a.disabled = busy; a.addEventListener('click', async () => { busy = true; render(); try { await action[1](); } catch (e) { failure = e?.message || String(e); } finally { busy = false; await refresh(); } }); b.append(a); }
+    notices.append(b);
+  }
   const schedulerOn = s => s.installed === true && s.active === true && s.registered !== false;
   function renderScheduler() {
     const s = data?.scheduler; scheduler.hidden = !s; if (!s) return;
@@ -328,8 +349,9 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     const { bar, actions } = pageBar(doc, { backLabel: title, crumbs: [title], current: row.id, onBack: closeRow });
     const button = (label, verb, primary = false, enabled = true) => { const b = node('button', label, `act${primary ? ' primary' : ''}`); b.type = 'button'; b.dataset.verb = verb; b.disabled = busy || !enabled; b.addEventListener('click', () => verb === 'file' ? openFile?.(row) : perform(verb, row)); actions.append(b); return b; };
     if (canOpen(row)) button('Open file', 'file');
-    if (row.kind === 'schedule' && row.runsHere) button('Run now', 'run', false, !!act);
-    button('Test', 'test', true, !!act);
+    for (const extra of rowActions ? rowActions(row) : []) { const b = node('button', extra.label, 'act'); b.type = 'button'; b.dataset.verb = extra.verb || ''; b.disabled = busy || extra.enabled === false; b.addEventListener('click', () => extra.run()); actions.append(b); }
+    if (row.kind === 'schedule' && row.runsHere && supports('run')) button('Run now', 'run');
+    if (supports('test')) button('Test', 'test', true);
     const pageBody = node('div', undefined, 'page-body'), main = node('div', undefined, 'page-main'), side = node('div', undefined, 'page-side');
     // Identity.
     const identity = node('div', undefined, 'page-identity'), glyph = node('span', undefined, 'page-glyph');
@@ -382,7 +404,10 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     const from = pageCard(doc, 'Comes from', { icon: row.origin.kind === 'local' ? 'computer' : 'repo' });
     if (row.origin.kind === 'workspace') {
       from.body.append(pageFacts(doc, [['Member', row.origin.member], ['Repo', row.origin.repoKey], ['Path', row.origin.path], ['Commit', row.origin.commit ? row.origin.commit.slice(0, 7) : null, row.origin.commit]]));
-      if (canOpen(row)) { const f = node('button', 'Open file', 'act'); f.type = 'button'; f.title = row.origin.url || row.origin.localPath; f.addEventListener('click', () => openFile(row)); from.body.append(f); }
+      // Opens the file's web page; a file in this computer's clone waits for a guarded open route.
+      const f = node('button', 'Open file', 'act'); f.type = 'button'; f.disabled = !canOpen(row);
+      f.title = canOpen(row) ? row.origin.url : 'Opening needs the file\'s web address (a github.com member); this member has none';
+      f.addEventListener('click', () => { if (canOpen(row)) openFile(row); }); from.body.append(f);
     } else from.body.append(node('p', 'Local to this computer; not shared through Git.', 'page-note'));
     side.append(where.card, from.card);
     const tested = tests.get(row.id);
@@ -417,5 +442,65 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
   const closeMenus = e => { for (const m of root.querySelectorAll('.auto-menu[open]')) if (!m.contains(e.target)) m.open = false; };
   doc.addEventListener('click', closeMenus);
   render(); void refresh();
-  return { refresh, open: openRow, dispose() { alive = false; serial++; doc.removeEventListener('click', closeMenus); root.remove(); } };
+  return { refresh, open: openRow, setNotice(text) { notice = text || ''; render(); }, setBusy(v) { busy = !!v; render(); }, dispose() { alive = false; serial++; doc.removeEventListener('click', closeMenus); root.remove(); } };
+}
+
+/** The Desktop shows these pages only for an OATS that reports them (kernel 0.29.0). */
+export const automationsSupported = cli => !!cli?.ok && Array.isArray(cli.features) && cli.features.includes('automations') && cli.automationsApi === 1;
+/** The row verbs the Desktop server serves per kind (POST /api/automations); a trigger's
+ * `status` feeds its detail page and a schedule's `reconcile` its run-state check. */
+export const AUTOMATION_VERBS = Object.freeze({ trigger: ['enable', 'disable', 'test'], schedule: ['enable', 'disable', 'test', 'run'] });
+
+/** A Schedules or Triggers stage: the gate (CLI + workspace), the /api/automations IO, and
+ * a fresh view per workspace. `extend(call)` adds page-specific options (the local form).
+ * `call({ kind, action, key? })`: `key` is the row's qualified id. */
+export function mountAutomationsPage(el, ctx, kind, extend = () => ({}), { cli: readCli = cliStatus, subscribeCli = onCliChange } = {}) {
+  const doc = el.ownerDocument; ensureTheme(doc);
+  const title = TITLES[kind];
+  const root = doc.createElement('div'); root.className = 'automations-stage'; root.style.height = '100%';
+  el.append(root);
+  let view = null, card = null, shown = null, alive = true;
+  async function call(body) {
+    const r = await postJson(ctx, `/api/automations${wsQuery()}`, body);
+    if (r?.status !== 'ok') { const e = new Error(r?.reason?.message || `${title} are unavailable.`); e.code = r?.reason?.code; throw e; }
+    return r.result;
+  }
+  function gate(message, detail) {
+    const section = doc.createElement('section'); section.className = 'oats-view automations';
+    const style = doc.createElement('style'); style.textContent = automationsCSS;
+    const header = doc.createElement('header'); header.className = 'auto-header'; const h = doc.createElement('h2'); h.textContent = title; header.append(h);
+    const body = doc.createElement('div'); body.className = 'auto-body';
+    const empty = doc.createElement('div'); empty.className = 'auto-empty auto-gate';
+    const strong = doc.createElement('strong'); strong.textContent = message; empty.append(strong);
+    if (detail) { const span = doc.createElement('span'); span.textContent = detail; empty.append(span); }
+    body.append(empty); section.append(style, header, body); root.replaceChildren(section);
+    return body;
+  }
+  function build() {
+    if (!alive) return;
+    const cli = readCli(), ok = automationsSupported(cli), ws = currentWorkspace();
+    const key = JSON.stringify([ok, ws, cliKnownUnavailable()]);
+    if (key === shown) return; // CLI polls re-emit; rebuild only when the gate changes
+    shown = key; view?.dispose(); view = null; card?.dispose?.(); card = null;
+    if (cliKnownUnavailable()) { const body = gate(`${title} need the OATS CLI`); card = cliCard(doc, ctx); body.append(card.el); return; }
+    if (!cli) { gate('Checking the OATS CLI…'); return; }
+    if (!ok) { gate(`${title} need OATS 0.29 or later`, `Update OATS to see the workspace's ${title.toLowerCase()} and this computer's own, and where each one runs.`); return; }
+    if (!ws) { gate('Choose a workspace', `${title} are read for one local workspace.`); return; }
+    root.replaceChildren();
+    view = createAutomationsView(root, {
+      kind, now: () => Date.now(), verbs: AUTOMATION_VERBS[kind],
+      read: () => call({ kind, action: 'list' }),
+      act: (verb, row) => call({ kind, action: verb, key: row.key }),
+      status: kind === 'trigger' ? row => call({ kind, action: 'status', key: row.key }) : null,
+      openFile: row => { if (row.origin.url) ctx.openExternal?.(row.origin.url); },
+      ...extend(call),
+    });
+  }
+  const offCli = subscribeCli(build), offWs = onWorkspaceChange(() => { shown = null; build(); });
+  build();
+  return {
+    refresh: () => view?.refresh(),
+    get view() { return view; },
+    dispose() { alive = false; offCli(); offWs(); view?.dispose(); card?.dispose?.(); root.remove(); },
+  };
 }
