@@ -3,8 +3,8 @@
  * Presentation only, from `oats workspace status` (and the roster, the CLI
  * probe, the souls list): nothing is inferred and unreported facts are not
  * shown. Kernel #217 (desktop-facts) adds the files, this computer's clones,
- * available package versions, disabled souls and the lock file; each is shown
- * only when reported. */
+ * available package versions, disabled souls, the lock file and the workspace
+ * and team defaults as declared; each is shown only when reported. */
 import { iconElement } from './shell-icons.mjs';
 import { memberState } from './workspace-catalog.mjs';
 import { packageOrigin } from './capability-page.mjs';
@@ -50,6 +50,18 @@ export const setupCSS = `
 .setup-team-label { display:inline-flex; align-items:center; height:22px; padding:0 8px; border-radius:5px; background:var(--tag-bg); color:var(--fg); font-size:12px; font-weight:650; }
 .setup-team-meta { color:var(--muted); font-size:11.5px; }
 .setup-team-warn { color:var(--warn); font-size:11.5px; line-height:1.45; }
+/* Defaults (desktop-facts): what the workspace file gives every soul, and each team adds. */
+.setup-def-rows { display:flex; flex-direction:column; margin:0; padding:6px 16px 10px; }
+.setup-def { display:grid; grid-template-columns:96px minmax(0,1fr); gap:10px; align-items:baseline; padding:5px 0; }
+.setup-def dt { color:var(--muted); font-size:12px; }
+.setup-def dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:4px 12px; color:var(--fg); font-size:12px; }
+.setup-def dd.muted { color:var(--muted); }
+.setup-def-cap { display:inline-flex; align-items:baseline; gap:5px; min-width:0; overflow-wrap:anywhere; }
+.setup-def-name { font:600 12px var(--mono,monospace); color:var(--fg); }
+.setup-def-from { color:var(--muted); font-size:11.5px; }
+.setup-def-cap.off .setup-def-name { color:var(--muted); text-decoration:line-through; }
+.setup-team-adds { display:flex; flex-wrap:wrap; gap:2px 12px; color:var(--muted); font-size:11.5px; line-height:1.45; }
+.setup-team-adds > span { display:inline-flex; flex-wrap:wrap; align-items:baseline; gap:2px 8px; min-width:0; }
 .setup-team-note { margin:0; padding:10px 16px; border-top:1px solid var(--tag-bg); color:var(--muted); font-size:11.5px; line-height:1.5; }
 .setup-local { background:var(--surface-2); border:1px dashed var(--border); border-radius:10px; overflow:hidden; min-width:0; }
 .setup-local .setup-box-head { border-bottom:1px dashed var(--border); }
@@ -287,6 +299,8 @@ function columns(doc, { status, instances, souls, cli, onSelect }) {
   }
   if (!list(status?.packages).length && !list(status?.unsynced).length) packages.append(el(doc, 'p', 'No packages declared.', 'setup-empty'));
   main.append(members, packages);
+  // Defaults: as the workspace file declares them (defaults), not resolved for a soul.
+  const defaults = defaultsBox(doc, status);
   // Teams: the labels the workspace declares, how many souls take each as primary, and the kernel's warnings about them.
   const teams = box(doc, 'Teams', null, 'Shared · Git');
   const unmapped = new Map(list(status?.warnings).filter(w => w?.code === 'unmapped-team-label' && text(w.label)).map(w => [w.label, w]));
@@ -296,6 +310,9 @@ function columns(doc, { status, instances, souls, cli, onSelect }) {
     const count = list(souls).filter(s => s?.team === label).length;
     head.append(el(doc, 'span', plural(count, 'soul'), 'setup-team-meta'));
     row.append(head);
+    // What the team adds to (or turns off from) the workspace defaults (defaults.byTeam).
+    const adds = teamDefaults(doc, status, label);
+    if (adds) row.append(adds);
     // The kernel's own warning about this label, verbatim.
     if (text(unmapped.get(label)?.message)) row.append(el(doc, 'span', unmapped.get(label).message, 'setup-team-warn'));
     teams.append(row);
@@ -330,7 +347,7 @@ function columns(doc, { status, instances, souls, cli, onSelect }) {
     }
     local.append(el(doc, 'h4', 'Member clones', 'setup-local-sub'), list$);
   }
-  side.append(teams, local);
+  side.append(...[defaults, teams, local].filter(Boolean));
   cols.append(main, side);
   return cols;
 }
@@ -340,6 +357,57 @@ function cloneText(clone, folder) {
   if (text(clone?.problem?.message)) return { text: clone.problem.message, cls: 'warn wrap', title: clone.problem.code || '' };
   if (text(clone?.path)) return { text: within(clone.path, folder), cls: '', title: `${clone.path}${clone.rule === 'clones' ? ' · set in this computer\'s settings' : clone.rule === 'convention' ? ' · beside the deployment' : ''}` };
   return { text: 'not cloned here', cls: 'muted', title: '' };
+}
+
+/** Where a declared default comes from: a package, this workspace, or a member by name. */
+function declaredFrom(status, from) {
+  if (from === 'package') return 'package';
+  if (from === 'here') return 'this workspace';
+  if (!text(from)) return null;
+  const member = list(status?.members).find(m => m.key === from);
+  return member ? memberName(member) : tail(from);
+}
+/** One default capability: its name, where it comes from, or that it is turned off. */
+function defaultCap(doc, status, row, { sayOff = true } = {}) {
+  const cap = el(doc, 'span', null, `setup-def-cap${row.off ? ' off' : ''}`); cap.dataset.capability = row.name;
+  const where = row.off ? (sayOff ? 'off' : null) : declaredFrom(status, row.from);
+  cap.append(el(doc, 'span', row.name, 'setup-def-name'));
+  if (where) cap.append(el(doc, 'span', where, 'setup-def-from'));
+  return cap;
+}
+const capRows = value => list(value).filter(row => text(row?.name));
+const SLOT_LABEL = slot => slot.charAt(0).toUpperCase() + slot.slice(1);
+
+/** The Defaults box: the workspace's slots and default capabilities, when the kernel reports them. */
+function defaultsBox(doc, status) {
+  const defaults = status?.defaults;
+  if (!defaults || typeof defaults !== 'object') return null;
+  const slots = Object.entries(defaults.slots && typeof defaults.slots === 'object' ? defaults.slots : {}).filter(([slot]) => text(slot));
+  const caps = capRows(defaults.capabilities);
+  // Standalone (slots null, no capabilities): the workspace declares no defaults.
+  if (!slots.some(([, value]) => value !== null) && !caps.length) return null;
+  const card = box(doc, 'Defaults', 'every soul starts from these', 'Shared · Git');
+  const rows = el(doc, 'dl', null, 'setup-def-rows');
+  const row = (key, cls = '') => { const r = el(doc, 'div', null, 'setup-def'); const dd = el(doc, 'dd', null, cls); r.append(el(doc, 'dt', key), dd); rows.append(r); return { r, dd }; };
+  for (const [slot, value] of slots) {
+    const { r, dd } = row(SLOT_LABEL(slot), value === null || value === 'none' ? 'muted' : ''); r.dataset.slot = slot;
+    if (value === null) dd.append('not set');
+    else if (value === 'none') dd.append('none');
+    else if (text(value?.name)) dd.append(defaultCap(doc, status, value));
+  }
+  if (caps.length) { const { r, dd } = row('Capabilities'); r.dataset.slot = 'capabilities'; dd.append(...caps.map(cap => defaultCap(doc, status, cap))); }
+  card.append(rows);
+  return card;
+}
+/** A team's additions to the defaults (defaults.byTeam.<label>), or null when it adds nothing. */
+function teamDefaults(doc, status, label) {
+  const caps = capRows(status?.defaults?.byTeam?.[label]?.capabilities);
+  if (!caps.length) return null;
+  const line = el(doc, 'div', null, 'setup-team-adds'); line.dataset.teamDefaults = label;
+  const on = caps.filter(cap => !cap.off), off = caps.filter(cap => cap.off);
+  if (on.length) { const part = el(doc, 'span', 'adds '); part.append(...on.map(cap => defaultCap(doc, status, cap))); line.append(part); }
+  if (off.length) { const part = el(doc, 'span', 'turns off '); part.append(...off.map(cap => defaultCap(doc, status, cap, { sayOff: false }))); line.append(part); }
+  return line;
 }
 
 function graph(doc, { status, instances, selected, onSelect, onOpenRepo, onOpenPackages, openExternal }) {
