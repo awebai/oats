@@ -958,7 +958,8 @@ function instanceCmd() {
       console.log(`  upstream: ${observed.upstream.ref ? `${observed.upstream.ref} +${observed.upstream.ahead} -${observed.upstream.behind}` : "none (ahead/behind unknown)"}`);
       console.log(`  base: ${observed.base.ref ? `${observed.base.ref} +${observed.base.ahead} -${observed.base.behind} (merge-base ${observed.base.mergeBase?.slice(0, 12)})` : "unknown"}`);
       console.log(`  files: ${observed.files.length} (${Object.entries(observed.summary).filter(([, n]) => n).map(([k, n]) => `${n} ${k}`).join(", ") || "clean"})`);
-      for (const f of observed.files) console.log(`    ${f.xy} ${f.origPath ? `${f.origPath} -> ` : ""}${f.path}  [${f.id}]`);
+      const lines = (f) => (f.binary ? "  binary" : Number.isInteger(f.additions) ? `  +${f.additions} -${f.deletions}` : "");
+      for (const f of observed.files) console.log(`    ${f.xy} ${f.origPath ? `${f.origPath} -> ` : ""}${f.path}${lines(f)}  [${f.id}]`);
       for (const n of observed.notes) console.log(`  note: ${n}`);
       return;
     }

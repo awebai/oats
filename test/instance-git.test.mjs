@@ -80,6 +80,34 @@ test("instance git: branch/status from the TREE (recorded branch drift named), u
   assert.deepEqual(g2.upstream, { ref: "origin/feat/y", ahead: 1, behind: 0 }); assert.equal(g2.base.ahead, 2);
 });
 
+test("instance git: per-file line counts (numstat) against the captured HEAD, staged + unstaged combined; binary, untracked and renames as the contract says; paths with spaces intact", () => {
+  const work = repo(join(base, "r-numstat"));
+  write(join(work, "bin0.dat"), Buffer.from([0, 1, 2, 3])); git(work, "add", "bin0.dat"); git(work, "commit", "-qm", "binary");
+  // README: one line staged, a second unstaged → +2 combined, as the status letters (MM) imply.
+  write(join(work, "README.md"), "hello\nstaged\n"); git(work, "add", "README.md");
+  write(join(work, "README.md"), "hello\nstaged\nunstaged\n");
+  // A rename to a path with a space, edited after the move: counts land on the NEW path.
+  git(work, "mv", "src/a.txt", "src/b c.txt"); write(join(work, "src/b c.txt"), "a\nb\n");
+  write(join(work, "bin0.dat"), Buffer.from([0, 9, 9, 9, 0]));
+  write(join(work, "new file.txt"), "one\ntwo\n");
+  const { ws } = scope("s-numstat", { work });
+  const g = oats(["instance", "git", "dev-1", "--dir", ws]).envelope.result;
+  const f = (p) => { const e = g.files.find((x) => x.path === p); assert.ok(e, `${p} listed`); return e; };
+  assert.deepEqual([f("README.md").additions, f("README.md").deletions, f("README.md").binary], [2, 0, false]);
+  assert.equal(f("src/b c.txt").kind, "renamed"); assert.equal(f("src/b c.txt").origPath, "src/a.txt");
+  assert.deepEqual([f("src/b c.txt").additions, f("src/b c.txt").deletions, f("src/b c.txt").binary], [1, 0, false]);
+  assert.deepEqual([f("bin0.dat").additions, f("bin0.dat").deletions, f("bin0.dat").binary], [null, null, true]);
+  assert.equal(f("new file.txt").kind, "untracked");
+  assert.deepEqual([f("new file.txt").additions, f("new file.txt").deletions, f("new file.txt").binary], [null, null, null], "untracked: no baseline, contents unread");
+  assert.equal(g.instanceGitApi, 1, "additive fields: the API integer stays");
+  // An unborn tree counts against the empty tree.
+  const fresh = join(base, "r-numstat-unborn"); mkdirSync(fresh); git(fresh, "init", "-q", "-b", "main");
+  write(join(fresh, "first.txt"), "1\n2\n3\n"); git(fresh, "add", "first.txt");
+  const u = oats(["instance", "git", "dev-1", "--dir", scope("s-numstat-unborn", { work: fresh }).ws]).envelope.result;
+  assert.equal(u.observation.unborn, true);
+  assert.deepEqual([u.files[0].additions, u.files[0].deletions, u.files[0].binary], [3, 0, false]);
+});
+
 test("instance diff: bounded, against HEAD or empty, staged/renamed/untracked/binary handled, and a moved tree or foreign id REFUSES with the current observation", () => {
   const work = repo(join(base, "r2"));
   write(join(work, "README.md"), "hello\nchanged\n"); write(join(work, "big.txt"), "x".repeat(300 * 1024) + "\n"); write(join(work, "bin.dat"), Buffer.from([0, 1, 2, 255, 0, 3]));
