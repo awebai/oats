@@ -38,8 +38,8 @@ the model and the procedures; follow them rather than recalling commands.
    what you read, not that nothing failed.
 
 **Host facts** (`oats-local.yaml`: host name, clones, settings, launch
-configurations, disabled souls and automations) are edited only on the machine
-they describe, with that machine's operator's OK.
+configurations, disabled souls, triggers and schedules) are edited only on the
+machine they describe, with that machine's operator's OK.
 
 ## Never
 

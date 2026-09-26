@@ -405,6 +405,16 @@ the instance is neither hidden nor spawned again.
 
 ## OKF v2 source jobs
 
+> **oats.okf 4.0.0:** a source and its job exist only where harvest is
+> effectively on (`harvest: on|off`, default off), and the job spawns the
+> harvester package soul. The review of its PR runs as a **trigger**, run by
+> the same host tick: a workspace file (`oats-triggers/okf-harvest-review.yaml`
+> in a member repo, `kind: oats-trigger`, with `runsOn` and `owner`), or a
+> local one in this file. See
+> [knowledge.md](knowledge.md#knowledge-operations), [Triggers](#triggers) and
+> [Workspace triggers and schedules](#workspace-triggers-and-schedules); the
+> trigger commands are `oats trigger …`.
+
 The [prepared OKF v2 runtime](knowledge.md) registers **one command job per
 source**, not a fleet sweep or a home-bound operation job. It runs from stable
 deployment context with argv equivalent to:

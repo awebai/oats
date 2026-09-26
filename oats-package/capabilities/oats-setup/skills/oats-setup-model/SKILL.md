@@ -118,7 +118,8 @@ model.
 **Automations** spawn or wake instances without a person. **Local** ones live
 in this deployment's `oats-schedules.json`, run on this machine with its own
 `gh`, and are machine-private. **Workspace** ones (kernel 0.29.0) are committed
-in a member (`oats-triggers/`, `oats-schedules/`, or `*.oats-trigger.yaml`) and
+in a member (`oats-triggers/`, `oats-schedules/`, or a `*.oats-trigger.yaml` /
+`*.oats-schedule.yaml` file) and
 name **where** they run (`runsOn`, a host's `host.name`) and **as whom**
 (`owner`, a GitHub account); only that host, logged in as that account, runs
 them. One host timer per machine runs every due automation (oats-automations).
@@ -126,7 +127,7 @@ them. One host timer per machine runs every due automation (oats-automations).
 **This machine** is the deployment directory: `oats-local.yaml` (which
 workspace, host-owned settings such as paths and custody, clones, launch
 configurations, souls disabled here, and from 0.29.0 its `host.name` and
-`automations.disabled`), `oats-lock.json` (written by `oats sync`), `agents/`
+`triggers.disabled` / `schedules.disabled`), `oats-lock.json` (written by `oats sync`), `agents/`
 (the instance homes) and the host timer. None of it is in Git.
 
 ## Where does X come from, why is X here, why can't I Y

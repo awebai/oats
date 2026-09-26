@@ -302,6 +302,19 @@ workspace's decision to trust it. A soul names a package capability with
 packages is in [packages.md](packages.md). There is no installed
 copy at a deployment and no `oats install`/`trust`/`update`/`remove`.
 
+One package can carry capabilities meant for **different souls**. oats.okf
+4.0.0 ships three:
+
+- `oats.okf` fills every working soul's knowledge slot;
+- `oats.okf-harvest` is composed only into its harvester soul;
+- `oats.okf-maintenance` is composed only into its maintainer soul.
+
+Each is its own manifest with its own skills, inject and commands. One pin
+versions all three, together with the package's souls
+([knowledge.md](knowledge.md#who-gets-which-okf-skills)). Split a package this
+way when roles need different instructions: a soul composes only the
+capability it names, so no role carries another's procedure.
+
 ## Member capabilities
 
 A capability at `<member repo>/capabilities/<name>/oats.json` is discoverable
@@ -320,7 +333,10 @@ A manifest may declare `agents: ["agents/<name>"]` — package-relative soul
 directories (`soul.yaml` + `AGENTS.md` directly inside). *(Open thread: under
 the workspace model these are re-based on member souls — a package repo's
 expert soul is an ordinary `souls/<name>-expert/` in the member; the classic
-lookup still exists for 0.24 layouts.)*
+lookup still exists for 0.24 layouts.)* From kernel 0.28.0, **package souls**
+replace them ([packages.md](packages.md#package-souls)); the
+`agents:` path is removed after oats.okf 4.0.0, the last package using it, is
+mirrored.
 
 ## Commands and hooks
 
