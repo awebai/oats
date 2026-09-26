@@ -402,6 +402,8 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       if (refusal) { const note = node('p', `Can't spawn here · ${refusal}`, 'inspector-refusal'); note.setAttribute('role', 'note'); facts$.before(note); }
       if (typeof agent.repoName === 'string' && agent.repoName) facts$.append(pageFact('repo', agent.repoName, 'mono'));
       if (typeof agent.work === 'string' && agent.work) facts$.append(pageFact('branch', WORK_TEXT[agent.work] || `works in ${agent.work}`, 'muted'));
+      // Kernel #217: the soul's file. Without a web address (a non-GitHub repo) its path shows instead.
+      if (desktopFacts(cliStatus()) && typeof agent.file?.path === 'string' && agent.file.path && !(typeof agent.file.url === 'string' && /^https:\/\//.test(agent.file.url))) facts$.append(pageFact('file', agent.file.path, 'mono'));
       const card = pageCard(doc, 'Instances', { count: homes.length }); card.card.classList.add('inspector-instances');
       if (!homes.length) card.card.append(node('p', 'No instances yet.', 'page-note'));
       for (const instance of homes) {
