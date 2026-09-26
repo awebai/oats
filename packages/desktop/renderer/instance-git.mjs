@@ -63,7 +63,7 @@ export const instanceGitCSS = `
 .instance-git .forge-sub { color:var(--muted); font-size:11.5px; }
 .instance-git .forge-checks { display:flex; flex-direction:column; margin:0; padding:0; list-style:none; }
 .instance-git .forge-check { display:flex; align-items:baseline; gap:8px; min-height:28px; padding:6px 0; box-sizing:border-box; border-bottom:1px solid var(--tag-bg); color:var(--fg); font-size:12px; line-height:1.35; }
-.instance-git .forge-mark { flex:none; width:14px; text-align:center; }
+.instance-git .forge-mark { flex:none; display:inline-grid; place-items:center; width:14px; align-self:center; }
 .instance-git .forge-check-name { flex:1; min-width:0; overflow-wrap:anywhere; }
 .instance-git .forge-check-meta { flex:none; margin-left:auto; color:var(--muted); font-size:11.5px; }
 .instance-git .forge-pass .forge-mark { color:var(--ok); }

@@ -7,7 +7,8 @@ import { ageText } from './age-text.mjs';
 /** W6 (design): the PR's state word, its checks as rows (failing and running each, passing
  * grouped) and its review decision, each with a mark and a colour token. */
 const prState = d => d.state === 'MERGED' ? 'merged' : d.state === 'CLOSED' ? 'closed' : d.isDraft ? 'draft' : 'open';
-const MARK = { pass: '✓', fail: '✕', pending: '◔', neutral: '–', review: '●' };
+// Marks are Lucide icons (never text glyphs): check, x, clock, minus, circle-dot.
+const MARK = { pass: 'check', fail: 'close', pending: 'schedules', neutral: 'zoomOut', review: 'overview' };
 const REVIEW = { APPROVED: ['approved', 'pass'], CHANGES_REQUESTED: ['changes requested', 'fail'], REVIEW_REQUIRED: ['review required', 'pending'] };
 const word = v => String(v).toLowerCase().replaceAll('_', ' ');
 export function checkRows(checks) {
@@ -63,7 +64,8 @@ export function createForgePrPanel(root, { request, generation = () => 0, connec
         const list = node('ul', undefined, 'forge-checks'); list.setAttribute('aria-label', 'Reported pull request checks');
         const row = ({ outcome, name, meta, title }, kind = outcome) => {
           const li = node('li', undefined, `forge-check forge-${kind}`); li.dataset.outcome = outcome;
-          const mark = node('span', MARK[kind], 'forge-mark'); mark.setAttribute('aria-hidden', 'true');
+          const mark = node('span', undefined, 'forge-mark'); mark.setAttribute('aria-hidden', 'true'); mark.dataset.mark = kind;
+          mark.append(iconElement(doc, MARK[kind], { size: 13 }));
           li.append(mark, node('span', name, 'forge-check-name'));
           if (meta) li.append(node('span', meta, 'forge-check-meta'));
           li.setAttribute('aria-label', `${name}: ${meta || (outcome === 'pass' ? 'passed' : word(outcome))}`); if (title) li.title = title;
