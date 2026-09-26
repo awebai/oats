@@ -61,11 +61,12 @@ export const instanceGitCSS = `
 .instance-git .forge-head { display:flex; flex-direction:column; gap:2px; min-width:0; }
 .instance-git .forge-title { font-size:13px; font-weight:650; line-height:1.35; overflow-wrap:anywhere; }
 .instance-git .forge-sub { color:var(--muted); font-size:11.5px; }
+.instance-git .git-github button.forge-issue { height:auto; min-height:0; padding:0; border:0; border-radius:2px; background:transparent; color:var(--accent); font:inherit; text-decoration:underline; text-underline-offset:2px; }
 .instance-git .forge-checks { display:flex; flex-direction:column; margin:0; padding:0; list-style:none; }
 .instance-git .forge-check { display:flex; align-items:baseline; gap:8px; min-height:28px; padding:6px 0; box-sizing:border-box; border-bottom:1px solid var(--tag-bg); color:var(--fg); font-size:12px; line-height:1.35; }
 .instance-git .forge-mark { flex:none; display:inline-grid; place-items:center; width:14px; align-self:center; }
 .instance-git .forge-check-name { flex:1; min-width:0; overflow-wrap:anywhere; }
-.instance-git .forge-check-meta { flex:none; margin-left:auto; color:var(--muted); font-size:11.5px; }
+.instance-git .forge-check-meta { flex:0 1 auto; min-width:0; margin-left:auto; color:var(--muted); font-size:11.5px; text-align:right; overflow-wrap:anywhere; }
 .instance-git .forge-pass .forge-mark { color:var(--ok); }
 .instance-git .forge-fail .forge-mark, .instance-git .forge-review[data-outcome=fail] .forge-mark { color:var(--danger); }
 .instance-git .forge-pending .forge-mark, .instance-git .forge-review[data-outcome=pending] .forge-mark { color:var(--warn); }

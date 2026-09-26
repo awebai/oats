@@ -11,10 +11,23 @@ const prState = d => d.state === 'MERGED' ? 'merged' : d.state === 'CLOSED' ? 'c
 const MARK = { pass: 'check', fail: 'close', pending: 'schedules', neutral: 'zoomOut', review: 'overview' };
 const REVIEW = { APPROVED: ['approved', 'pass'], CHANGES_REQUESTED: ['changes requested', 'fail'], REVIEW_REQUIRED: ['review required', 'pending'] };
 const word = v => String(v).toLowerCase().replaceAll('_', ' ');
+/** How long a check took: only when gh reported both its start and its finish, and the
+ * finish is not before the start (gh reports times as-is; a skipped check can "finish first"). */
+export function checkDuration(check) {
+  const start = Date.parse(check?.startedAt ?? ''), end = Date.parse(check?.completedAt ?? '');
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null;
+  const s = Math.round((end - start) / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60); if (m < 60) return `${m}m`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+const times = check => [check.startedAt ? `started ${check.startedAt}` : null, check.completedAt ? `finished ${check.completedAt}` : null].filter(Boolean).join('\n');
 export function checkRows(checks) {
   const order = { fail: 0, pending: 1, neutral: 3 }, rows = [];
-  for (const check of checks.filter(c => c.outcome !== 'pass').sort((a, b) => order[a.outcome] - order[b.outcome]))
-    rows.push({ outcome: check.outcome, name: check.name, meta: word(check.conclusion) });
+  for (const check of checks.filter(c => c.outcome !== 'pass').sort((a, b) => order[a.outcome] - order[b.outcome])) {
+    const took = checkDuration(check), title = times(check);
+    rows.push({ outcome: check.outcome, name: check.name, meta: [word(check.conclusion), took].filter(Boolean).join(' · '), ...(title ? { title } : {}) });
+  }
   const passed = checks.filter(c => c.outcome === 'pass');
   // Passing checks are one row: their names when few, else how many (the names in its title).
   if (passed.length) rows.splice(rows.filter(r => r.outcome !== 'neutral').length, 0, passed.length <= 3
@@ -58,6 +71,17 @@ export function createForgePrPanel(root, { request, generation = () => 0, connec
         if (!data) throw new Error('Invalid PR projection');
         const card = node('div', undefined, 'forge-pr-card');
         const head = node('div', undefined, 'forge-head'), sub = node('span', `#${data.number} · ${prState(data)}`, 'forge-sub');
+        // The issues it closes (closingIssues), each opening its page; null or none says nothing.
+        if (Array.isArray(data.closingIssues) && data.closingIssues.length) {
+          sub.append(' · closes ');
+          data.closingIssues.forEach((issue, i) => {
+            if (i) sub.append(', ');
+            const link = node('button', `#${issue.number}`, 'forge-issue'); link.type = 'button'; link.title = issue.url;
+            link.setAttribute('aria-label', `Open issue #${issue.number} on GitHub`);
+            link.addEventListener('click', () => { if (owns() && link.isConnected && root.contains(link)) openExternal(issue.url); });
+            sub.append(link);
+          });
+        }
         sub.title = `${data.baseRefName} ← ${data.headRefName} · updated ${ageText(data.updatedAt)}`; sub.dataset.prState = prState(data);
         head.append(node('span', data.title, 'forge-title'), sub); card.append(head);
         // Checks, then the review decision, as rows.
@@ -74,8 +98,10 @@ export function createForgePrPanel(root, { request, generation = () => 0, connec
         if (data.checks === null) card.append(node('p', 'Checks not reported.', 'git-note'));
         else if (!data.checks.length) card.append(node('p', 'No checks returned.', 'git-note'));
         else for (const r of checkRows(data.checks)) row(r);
-        const review = REVIEW[data.reviewDecision];
-        if (review) row({ outcome: review[1], name: 'Review', meta: review[0] }, 'review');
+        // Review: the decision and the unresolved threads (unresolvedThreads; null is unknown and says nothing).
+        const review = REVIEW[data.reviewDecision], threads = Number.isSafeInteger(data.unresolvedThreads) && data.unresolvedThreads > 0 ? data.unresolvedThreads : 0;
+        if (review || threads) row({ outcome: review?.[1] ?? 'pending', name: 'Review',
+          meta: [review?.[0], threads ? `${threads} unresolved thread${threads === 1 ? '' : 's'}` : null].filter(Boolean).join(' · ') }, 'review');
         if (list.children.length) card.append(list);
         // Open it on GitHub (the design's ↗; it takes the row until a primary action joins it).
         const open = node('button', undefined, 'forge-open'); open.type = 'button';

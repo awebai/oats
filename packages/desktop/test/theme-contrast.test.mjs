@@ -555,6 +555,7 @@ for (const [name] of palettes) test(`${name}: actual Connections and reported PR
     { __typename: 'CheckRun', name: 'neutral', status: 'COMPLETED', conclusion: 'NEUTRAL' },
     { __typename: 'StatusContext', context: 'pending', state: 'PENDING' },
   ];
+  raw.closingIssuesReferences = [{ number: 7, url: 'https://github.com/owner/repo/issues/7' }]; // W6: a "closes #7" link
   const panel = createForgePrPanel(doc.querySelector('#pr'), { request: async () => ({ forgeApi: 1, status: 'available', target: forgeTarget,
     observation: { key, branch: 'feat/a', revision: 'a'.repeat(40) }, host: 'github.com', repository: 'owner/repo',
     data: pullRequest(raw, { host: 'github.com', path: 'owner/repo', branch: 'feat/a' }), reason: null }) });
@@ -569,6 +570,7 @@ for (const [name] of palettes) test(`${name}: actual Connections and reported PR
     ['.forge-pending .forge-mark', 'main', 'warn', 'surface'], ['.forge-neutral .forge-mark', 'main', 'muted', 'surface'],
     ['.forge-review .forge-mark', 'main', 'warn', 'surface'], ['.forge-check-name', 'main', 'fg', 'surface'], ['.forge-check-meta', 'main', 'muted', 'surface'],
     ['.forge-sub', 'main', 'muted', 'surface'], ['.forge-caveat', 'main', 'muted', 'surface'], ['button.forge-open', 'button.forge-open', 'fg', 'surface'],
+    ['button.forge-issue', 'main', 'accent', 'surface'],
   ]) {
     const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
     assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
