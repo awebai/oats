@@ -35,6 +35,12 @@ pushes. Agreed by both on 2026-09-24:
   published skills); merges into the other's lane; reverts, force-anything,
   branch or tag deletion. A blocking intent unanswered for about 45 minutes goes
   to the human, never to action.
+- **Amendment (the human, 2026-09-26 ~14:00Z): "do the merge then fix if something broke".**
+  - A PR the lead has reviewed and approved is **merged immediately** by the lead (`gh pr merge --squash --match-head-commit <approved oid>`), without waiting for PR CI. CI runs on main after the merge.
+  - A red main is fixed forward at once, by the author or the lead, before anything else merges.
+  - **Tags still wait for main CI green on their exact SHA** (a tag never moves).
+  - Developers run only the affected suites locally (the nested globs included). The full glob and `smoke:tarball` run in CI, sharded ×6.
+  - The watcher no longer relays merges.
 - **Amendment (the human, 2026-09-26 ~13:10Z): "lets approve and tag ourselves all of these PRs".**
   - With the co-lead unresponsive since ~10:30Z, the lead's review + green CI is the full Class B gate, in BOTH lanes: merges, okf/aweb tags, catalog pins, releases.
   - Every such act is logged, with its head/tag oid, in a running account mailed to the co-lead for after-the-fact review.

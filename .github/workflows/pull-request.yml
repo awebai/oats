@@ -14,8 +14,50 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The suite is ~470s serial on a 2-vCPU runner; six shards run it in parallel
+  # (node --test --test-shard). Every shard installs the desktop deps, so no
+  # Desktop suite is skipped.
+  tests:
+    name: Node 22 / tests (shard ${{ matrix.shard }}/6)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The workspace-layout guard reads the six import pins with `git cat-file`/`git show`;
+          # those are ancestor commits a shallow checkout does not have (main red since f34207e9).
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            packages/desktop/package-lock.json
+
+      - name: Install supported-node dependencies
+        run: npm ci
+
+      - name: Install desktop package dependencies
+        # Root `npm test` discovers packages/desktop suites (jsdom/marked/
+        # dompurify imports). The Electron binary is not needed for tests —
+        # skip its download; postinstall builds the renderer vendor bundle
+        # (esbuild) as part of ci.
+        run: npm ci
+        working-directory: packages/desktop
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+
+      - name: Unit and integration tests
+        run: npm test -- --test-shard=${{ matrix.shard }}/6
+
   verify:
-    name: Node 22 / test, validate, pack, smoke
+    name: Node 22 / check, validate, pack, smoke
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -46,9 +88,6 @@ jobs:
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
 
-      - name: Unit and integration tests
-        run: npm test
-
       - name: Kernel and CLI syntax
         run: npm run check
 
@@ -66,3 +105,15 @@ jobs:
 
       - name: Clean-room packed-artifact smoke test
         run: npm run smoke:tarball
+
+  # The one check to wait on (the name reviewers and merge tooling already know).
+  gate:
+    name: Node 22 / test, validate, pack, smoke
+    needs: [tests, verify]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All shards and gates passed
+        run: |
+          test "${{ needs.tests.result }}" = success
+          test "${{ needs.verify.result }}" = success
