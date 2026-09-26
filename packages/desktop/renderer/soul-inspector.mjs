@@ -374,8 +374,8 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       });
       control.classList.add(cls); return control;
     };
-    // The page names the launch for what it opens first: the spawn preview (Workspace v4).
-    const launchButton = action(column ? 'Preview spawn' : 'Launch…', 'spawn-act', canLaunch, launch); launchButton.classList.add('primary'); launchButton.dataset.launch = '1';
+    // The soul page's primary action is Spawn (human, 2026-09-26; it opens the spawn dialog).
+    const launchButton = action(column ? 'Spawn' : 'Launch…', 'spawn-act', canLaunch, launch); launchButton.classList.add('primary'); launchButton.dataset.launch = '1';
     const scheduleButton = action('Schedule…', 'schedule-act', canLaunch, schedule); scheduleButton.dataset.launch = '1';
     const filesButton = action('Files', 'brain-act', canFiles, files); filesButton.dataset.files = '1';
     actions.append(filesButton, scheduleButton, launchButton);

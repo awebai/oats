@@ -115,7 +115,19 @@ test('03: cards have one semantic Details entry with compact identity, descripti
   // Workspace v4 (W3): head (mark, name, repository), then description, team chips and a foot.
   assert.deepEqual([...card.children].map(el => el.className), ['sname', 'sbody']);
   assert.deepEqual([...card.querySelector('.sbody').children].map(el => el.className), ['sdesc', 'sfoot'], 'no team reported: no team chips invented');
-  assert.equal(card.querySelector('button, .schips, .sactions'), null);
+  assert.equal(card.querySelector('button, .schips, .sactions'), null, 'no control nested inside the card button');
+  // Workspace v4 (human, 2026-09-26; replaces "launch only from an opened soul"): each
+  // spawnable card has a Spawn button beside it in one grid cell, which roves with its card.
+  const tile = card.parentElement, spawn = tile.querySelector(':scope > .soul-spawn');
+  assert.equal(tile.className, 'soul-tile can-spawn'); assert.equal(u.css('.soul-tile').display, 'grid');
+  assert.equal(spawn.textContent, 'Spawn'); assert.equal(spawn.getAttribute('aria-label'), 'Spawn dev');
+  assert.equal(spawn.tabIndex, card.tabIndex, 'Spawn enters the tab order with its card');
+  assert.equal(spawn.disabled, false);
+  spawn.click(); await tick(); assert.ok(u.get('.spawn-dialog'), 'Spawn opens the spawn dialog for that soul, without opening its page');
+  assert.equal(u.get('.workspace-soul-page').hidden, true);
+  u.get('.spawn-dialog').dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); await tick();
+  assert.equal(u.get('.spawn-dialog'), null, 'Escape closes it');
+  assert.equal(u.doc.activeElement, u.get('.soul-tile > .soul-spawn'), 'focus returns to the Spawn button that opened it');
   assert.equal(u.css('.soul-card').padding, '0px');
   assert.equal(u.css('.sdesc').fontSize, '12px');
   assert.equal(u.css('.glyph').width, '30px'); assert.equal(u.css('.glyph').height, '30px'); assert.equal(u.css('.glyph').borderRadius, '8px');
@@ -124,8 +136,9 @@ test('03: cards have one semantic Details entry with compact identity, descripti
   assert.equal(u.get('.soul-card .runtime-badge').getAttribute('aria-label'), 'Harness: Pi');
   assert.equal(u.get('.soul-card .smode').textContent, 'worktree · Pi');
 
-  card.focus(); card.dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); await tick();
-  for (const text of ['Preview spawn', 'Files', 'Schedule…']) assert.ok([...u.get('.workspace-soul-page').querySelectorAll('button')].find(b => b.textContent === text), text);
+  const fresh = u.get('.soul-card'); // closing the dialog repaints the grid
+  fresh.focus(); fresh.dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); await tick();
+  for (const text of ['Spawn', 'Files', 'Schedule…']) assert.ok([...u.get('.workspace-soul-page').querySelectorAll('button')].find(b => b.textContent === text), text);
   for (const text of ['Edit defaults', 'Edit instructions']) assert.equal([...u.get('.workspace-soul-page').querySelectorAll('button')].some(b => b.textContent === text), false, `${text}: a v2 soul is edited in its repository`);
   assert.equal(u.get('.inspector-repository'), null, 'no "Edit this soul" block (human, F7)');
   assert.equal(u.get('.spawn-dialog'), null, 'keyboard inspection does not launch');
