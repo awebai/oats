@@ -311,6 +311,106 @@ receipts. Inputs are processed only when required destinations resolve. All-drop
 or no-change judgment can be successful without inventing a PR. Enqueue, worker
 spawn and command exit alone are not successful learning.
 
+## Knowledge operations
+
+> **Version scope:** oats.okf **4.0.0** on kernel **0.29.0** (package souls,
+> triggers and workspace automations). Everything above describes the 2.x runtime, which 4.0.0 keeps for
+> capture, custody and delivery. The design and its decisions are in
+> [the knowledge-operations plan](design/2026-09-26-okf-knowledge-operations.md).
+> The setup procedure is the `oats-onboarding` skill ("Knowledge operations with
+> OKF") and okf's `okf-trigger-setup`.
+
+From 4.0.0, harvested knowledge is judged by a harvester, reviewed by a
+maintainer and merged without an operator in the loop, except where a merge
+would supersede a human-accepted decision.
+
+### The flow
+
+1. **Capture.** A working soul whose knowledge slot is `oats.okf`, on a host
+   where harvest is on (below), registers a source at spawn. Capture and
+   custody are as above: notes and bounded transcript windows, copied outside
+   the home.
+2. **Harvest.** The source's `run-source` job spawns the package soul
+   `oats.okf/knowledge-harvester` (team `okf`). It reads the input in full,
+   transcript windows included, and judges it with the OKF promotion
+   doctrine. It stages edits on the owned nodes and opens a PR on the
+   knowledge-base repo, labelled `okf-harvest`, whose body carries a fenced
+   `okf-harvest` provenance block (the run, the source soul and instance, the
+   owned and read nodes, the task references, the harvester's alias). It
+   stays alive, answering questions in `okf`, until the PR is merged or
+   closed, then retires. `harvester-max-age` (default 7d) bounds it; it never
+   closes its own PR.
+3. **Trigger.** The workspace declares the trigger in a member repo,
+   `oats-triggers/okf-harvest-review.yaml` (`kind: oats-trigger`), from the package template
+   `oats.okf:harvest-review`. It names the host that runs it (`runsOn`, that
+   machine's `host.name`) and the GitHub account it acts as (`owner`, which
+   must be able to merge on the knowledge-base repo). Only that host, logged
+   in to `gh` as that account, polls for such PRs. For each one it spawns a
+   NEW `oats.okf/knowledge-maintainer`, joining `okf`. The event reaches it as
+   `OATS_TRIGGER_EVENT_FILE`. A local trigger (`oats trigger add`, this host
+   only) is the machine-private alternative. Triggers are described in
+   [schedules.md, "Triggers"](schedules.md#triggers).
+4. **Review.** The maintainer checks out the PR and situates it: the
+   provenance, the source soul's owned and read nodes, the neighbouring
+   concepts, and the source's tickets when a tasks capability can read them.
+   It records a verdict on the PR (`merge`, `amend+merge`, `request-changes`
+   or `close`), amends what needs amending, and merges with the host's `gh`. A
+   PR that would supersede a concept with human acceptance evidence is not
+   merged: it is labelled `okf-needs-human` for the workspace's human. The
+   maintainer tells the harvester the outcome and retires.
+
+### Who gets which okf skills
+
+| Capability | Composed into | Skills | Inject |
+|---|---|---|---|
+| `oats.okf` | every working soul whose knowledge slot it fills | `okf-consultation` (reading soul knowledge and citing it); `okf-instance-knowledge` (what instance knowledge is worth capturing, and the form of `STATE.md`, `log.md` and `notes/`) | the work mode: consult instance memory and soul knowledge at task start, after compaction and before decisions; capture before compaction |
+| `oats.okf-harvest` | `oats.okf/knowledge-harvester` only | `knowledge-theory` (the OKF promotion doctrine); `knowledge-harvest` (the procedure, through the PR's lifetime); `okf-authoring` | the harvester's: a judge, not a worker; the staged roots are its only write surface |
+| `oats.okf-maintenance` | `oats.okf/knowledge-maintainer` only | `knowledge-theory`; `knowledge-review`; `okf-authoring`; `okf-trigger-setup` | the maintainer's: one PR per instance; supersede explicitly, never silently |
+
+Working souls get no promotion doctrine: the harvester is the only judge of
+what is promoted, and the maintainer the only one who merges. The shared
+skills ship as identical copies in each capability. The harvester and the
+maintainer hold no knowledge slot, so nothing harvests them.
+
+### The harvest switch
+
+Harvest is off unless both the host and the soul allow it:
+
+| Where | Setting | Effect |
+|---|---|---|
+| The host, `oats-local.yaml` | `settings.oats.okf.harvest: on` (default `off`) | This host harvests its working souls. |
+| A soul, `soul.yaml` | `knowledge: { harvest: off }` | This soul is never harvested, whatever the host says. |
+
+Off means **no capture at all**: no source is registered and no transcript or
+notes enter custody, so nothing accumulates for later. Turning it on starts
+with the next session. `oats okf setup --harvest on|off` writes the host
+setting, and `oats okf harvest-status [--soul <soul>]` reports the effective
+value, the row that decided it and the registered sources.
+`oats schedule disable <job>` on a source's `run-source` job is an emergency
+brake for one source, not the switch. The review trigger does not depend on the
+switch: a host can review harvest PRs from other hosts without harvesting.
+Keep harvest off until the end-to-end check in `okf-trigger-setup` passes.
+
+### The `okf` team
+
+The package souls carry `team: okf`. The workspace declares the label and maps
+it to a messaging team:
+
+```yaml
+teams:
+  okf: { description: Knowledge operations }
+messaging:
+  byTeam:
+    okf: { team: <messaging team id> }
+```
+
+Harvesters and maintainers talk there (subjects prefixed `okf:` with the PR's
+URL) without writing into the working teams. Like every label it organises and
+gates nothing. A workspace without it reports `E_TEAM_UNKNOWN` on both package
+souls in discovery. They still spawn, but into no messaging team, so the
+harvester and the maintainer cannot talk, and `oats trigger test` fails its
+team check.
+
 ## Inspection and operator commands
 
 Run home-local commands from that source home: inside an instance the
