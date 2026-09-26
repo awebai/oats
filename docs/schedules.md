@@ -10,7 +10,7 @@ is `E_LOCAL_MISSING`. Scheduled spawns materialize exactly like `oats spawn`.
 Execution belongs to the host that holds the scope, so a schedule on a
 registered server keeps running while your laptop sleeps.
 
-There is no daemon. One host timer (a launchd user agent on macOS, a systemd
+[Triggers](#triggers) are evaluated by the same tick. There is no daemon. One host timer (a launchd user agent on macOS, a systemd
 user timer on Linux) runs `oats schedule tick --host` once a minute; the tick
 is a short-lived process that evaluates only the current minute, launches
 what is due through the same `spawn`, `session start` and `session input`
@@ -88,6 +88,86 @@ see [Captured definitions](#captured-definitions-removed-in-026).
 required IANA zone; both are evaluated by the croner library. `--wake-every
 N` at spawn time means `*/N * * * *`: every 7 fires at :00, :07, ... :56 and
 then :00 again, so 1, 5, 10, 15 and 30 give an even cadence.
+
+## Triggers
+
+A **trigger** (OATS 0.28.0, feature `triggers`) is an event-driven schedule:
+"when EVENT matches, spawn a NEW instance of SOUL with TASK, in TEAMS". It is
+stored in the same `oats-schedules.json` as a job of `kind: "trigger"`,
+managed with `oats trigger …` (never `oats schedule …`, which neither lists nor
+edits one), and evaluated by the same host tick (`oats schedule tick --host`,
+and `oats schedule tick` for one scope). There is no daemon and no webhook: it
+runs only on the host that holds the scope, with **that host's own
+credentials**; a definition carries none.
+
+```json
+{ "id": "okf-harvest-review", "enabled": true, "kind": "trigger",
+  "on": { "source": "github.pull_request", "repo": "github.com/acme/knowledge",
+          "events": ["opened", "reopened", "ready_for_review"],
+          "labels": ["okf-harvest"], "base": "main", "poll": "2m" },
+  "spawn": { "soul": "oats.okf/knowledge-maintainer", "purpose": "review-pr-{number}",
+             "task": "Review knowledge-base PR {repo}#{number}. Load knowledge-review first.",
+             "teams": ["okf"], "harness": "claude", "model": "opus" },
+  "concurrency": { "max": 2, "perKey": 1 } }
+```
+
+- **Source** `github.pull_request` (the only one in v1): the tick polls the
+  repository's open pull requests with the host's `gh` (`gh api repos/<owner>/<repo>/pulls`,
+  `state=open`, most recently updated first) every `poll` (default `2m`, at
+  least `1m`). `labels` (all must be present) and `base` filter them. A repo is
+  `github.com/<owner>/<repo>`; another host is passed to `gh` as `--hostname`.
+- **Events** are inferred poll over poll: `opened` (a PR first seen, not a
+  draft; the first poll sees every open PR), `reopened` (seen closed, open
+  again), `ready_for_review` (was a draft), `labeled` (now carries the filter
+  labels it lacked; without a filter, any new label), `synchronize` (a new
+  head commit).
+- **Dedup and retry.** Each event has a key
+  `<trigger>:<repo>#<number>:<event>:<stamp>` (`created_at` for `opened`, the
+  head SHA for `synchronize`, `updated_at` otherwise). A key is recorded as
+  fired **only after a successful spawn**; until then the event stays pending
+  and is retried at every poll, and dropped when its PR closes.
+- **Concurrency.** `max` (default 1) bounds the live instances of the trigger,
+  `perKey` (default 1) those of one PR; both are counted from the homes'
+  `instance.json.trigger` records, so a retired instance frees its slot. An
+  event over the bound stays pending (`held`).
+- **The spawn** is `oats spawn` (the same path as a scheduled spawn). `soul` is
+  bare or qualified (`<package>/<soul>`). `purpose` (default
+  `{trigger}-{number}`, must render to a slug) and `task` are templated from
+  **only** `{repo} {number} {url} {event} {headSha} {trigger}`: a pull
+  request's title and body are untrusted and never reach the task (a template
+  naming any other field is refused). `teams` becomes the messaging
+  capability's `join=` setting (as `--provider <messaging cap> join=<labels>`).
+  `harness`, `model`, `yolo`, `backend` are as for schedules.
+- **The event reaches the instance** as `OATS_TRIGGER_EVENT_FILE`
+  (`<home>/.oats/trigger-event.json`: `{ trigger, source, repo, number, url,
+  event, headSha, labels, observedAt, key }`), given to the spawn hooks and the
+  harness; `instance.json.trigger` records `{ id, key, source, repo, number,
+  url, event, headSha, observedAt, eventFile }`. The task ends with a short
+  block naming the event file.
+- **State** lives in `<scope>/.agents/schedules/triggers.json` (last poll, the
+  PRs seen, pending events, fired keys, the last error).
+
+```sh
+oats trigger add --file trigger.json                 # or:
+oats trigger add --from oats.okf:harvest-review --set repo=github.com/acme/knowledge [--id <id>]
+oats trigger list | show <id> | enable <id> | disable <id> | remove <id>
+oats trigger test <id>      # dry run: gh auth, repo + permissions (push/maintain/admin), the soul resolves,
+                            # its messaging capability, the teams declared, what WOULD fire now; spawns nothing
+oats trigger status [<id>]  # last poll, pending, fired keys, live instances, last error
+```
+
+All take `--dir` and `--json` (`triggerApi: 1`). `remove` leaves the instances
+it spawned running. Errors: `E_TRIGGER_INVALID { field }`, `E_TRIGGER_EXISTS`,
+`E_TRIGGER_UNKNOWN`, `E_BAD_ARGS`.
+
+**Package trigger templates.** A package may declare `triggers: [{ id, file }]`
+in `oats-package.json`. Each file is `{ parameters: { <name>: { path,
+required?, default?, description? } }, definition: { …a trigger… } }`.
+`oats trigger add --from <package>:<id>` reads it at the locked commit;
+`--set <name>=<value>` fills a parameter at its dotted `path` (a list value is
+comma-separated); a required parameter without a value is `E_BAD_ARGS
+{ missing }` naming it. The trigger records `template: { package, version,
+commit, template }`.
 
 ## Captured definitions (removed in 0.26)
 

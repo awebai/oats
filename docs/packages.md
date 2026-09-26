@@ -277,6 +277,13 @@ oats-package/
 - **Trusted** as the package's capabilities are: declaring the package is the
   trust decision.
 
+## Trigger templates
+
+A package may also ship **trigger templates** (0.28.0): `triggers: [{ id,
+file }]` in `oats-package.json`, each file `{ parameters, definition }`.
+`oats trigger add --from <package>:<id> --set <name>=<value>` instantiates one
+at the locked commit; see [schedules.md#triggers](schedules.md#triggers).
+
 ## Compatibility floors
 
 A soul may state floors on package versions — constraints, not sources:

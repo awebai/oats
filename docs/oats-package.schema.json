@@ -66,6 +66,32 @@
       },
       "uniqueItems": true
     },
+    "triggers": {
+      "description": "Trigger templates (OATS 0.28.0): `oats trigger add --from <package>:<id> [--set <name>=<value>]…` instantiates one from the locked package. Each file is { parameters: { <name>: { path, required?, default?, description? } }, definition: { …a trigger definition… } }; see docs/schedules.md#triggers.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "file"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "file": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^/].*$",
+            "not": {
+              "pattern": "(^|/)\\.\\.(/|$)"
+            }
+          }
+        }
+      }
+    },
     "configTemplates": {
       "description": "Named config TEMPLATES: complete reference oats-config.yaml files of the classic line, whose adoption verb is removed under the workspace model. A template is a recommended starting point that becomes ordinary local policy on adoption — adopters may change every copied setting, and package updates never rewrite an adopted config. Templates must stay portable: no secret, credential, account, machine path or provider-local ID. Installation applies none of them. This is the canonical spelling; a manifest may not carry both this and the legacy `configs`.",
       "type": "object",
