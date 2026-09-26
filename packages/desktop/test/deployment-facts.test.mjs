@@ -43,6 +43,11 @@ test('module drift names moved/missing rows with reason and origin; the recorded
   assert.deepEqual([a.name, a.from.kind, a.from.package, b.name, b.from.kind], ['nw-deploy', 'package', 'nw.tools', 'nw-house-style', 'member']);
   assert.equal(text, `nw-deploy: moved since — package nw.tools @ ${at(a)}; nw-house-style: missing (capability-absent) — member agents @ ${at(b)}; 3 current`);
   assert.equal(moduleDriftText({ a: {}, b: {} }), '2 recorded — drift not observed (workspace unreachable)');
+  // Kernel #217: a moved row's current.version names what it moved to (the recorded version from its origin).
+  const moved = [{ ...a, current: { commit: 'f'.repeat(40), version: '2.2.0' } }];
+  assert.equal(moduleDriftText(moved), `nw-deploy: moved ${a.from.version ? `${a.from.version} → ` : 'to '}2.2.0 — package nw.tools @ ${at(a)}; 0 current`);
+  assert.equal(moduleDriftText([{ ...moved[0], from: { ...a.from, version: '2.1.5' } }]), `nw-deploy: moved 2.1.5 → 2.2.0 — package nw.tools @ ${at(a)}; 0 current`);
+  assert.equal(moduleDriftText([{ ...moved[0], current: { commit: 'f'.repeat(40), version: null } }]), `nw-deploy: moved since — package nw.tools @ ${at(a)}; 0 current`, 'no version: the old wording');
   assert.equal(moduleDriftText([]), 'None');
   assert.equal(moduleDriftText(undefined), null);
 });
