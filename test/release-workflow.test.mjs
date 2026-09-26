@@ -32,8 +32,15 @@ test("tag-derived version bumps root, pi, and desktop manifests", () => {
   }
 });
 
-test("release installs root and Desktop test dependencies before npm test", () => {
-  const testStep = yml.slice(yml.indexOf("Test capability resolution and package commands"), yml.indexOf("Sanity-check tarballs"));
+test("release installs root and Desktop test dependencies before npm test, in every one of six shards", () => {
+  const testsJob = yml.slice(yml.indexOf("\n  tests:\n"), yml.indexOf("\n  build-and-test:\n"));
+  assert.ok(testsJob.length > 0, "a sharded tests job precedes build-and-test");
+  assert.match(testsJob, /fail-fast: false/, "one failing shard does not hide the others");
+  assert.match(testsJob, /shard: \[1, 2, 3, 4, 5, 6\]/);
+  assert.match(testsJob, /ref: \$\{\{ github\.sha \}\}/, "each shard tests the exact tag SHA");
+  assert.match(testsJob, /- name: Bump all three packages/, "each shard tests the bumped tree");
+  const testStep = testsJob.slice(testsJob.indexOf("Test capability resolution and package commands"));
+  assert.match(testStep, /npm test -- --test-shard=\$\{\{ matrix\.shard \}\}\/6/, "each shard runs its share of the suite");
   assert.match(testStep, /npm ci --ignore-scripts/, "fresh release checkout installs root dev dependencies and the pi test binary");
   assert.match(testStep, /packages\/desktop && ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci/, "Desktop test dependencies are installed separately");
   const testRun = testStep.lastIndexOf("npm test"); // ignore explanatory comment text
@@ -45,7 +52,7 @@ test("all build/smoke steps precede npm publication", () => {
   const publishJob = yml.indexOf("publish:\n");
   assert.ok(publishJob > 0);
   // publication is gated on both build jobs
-  assert.match(yml.slice(publishJob), /needs: \[build-and-test, desktop-build\]/);
+  assert.match(yml.slice(publishJob), /needs: \[build-and-test, tests, desktop-build\]/, "every test shard gates publication");
   // the first `npm publish` occurs inside the publish job only
   const firstPublish = yml.indexOf("npm publish");
   assert.ok(firstPublish > publishJob, "no npm publish before the gated publish job");
@@ -305,7 +312,7 @@ test("build-installers workflow: own concurrency group (never release.yml's), no
 test("release reuses the recursive syntax inventory and gates optional theory validation before publication", () => {
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
   assert.equal(pkg.scripts.check, "node scripts/check-package-dry-runs.mjs --syntax-only");
-  const syntaxStep = yml.slice(yml.indexOf("- name: Syntax-check all shipped JS"), yml.indexOf("- name: Test capability resolution"));
+  const syntaxStep = yml.slice(yml.indexOf("- name: Syntax-check all shipped JS"), yml.indexOf("- name: Check the kernel, the pi adapter and the project"));
   assert.match(syntaxStep, /run: node scripts\/check-package-dry-runs\.mjs --syntax-only/);
   assert.doesNotMatch(syntaxStep, /git ls-files/, "no narrower hand-maintained release-only pathspecs");
   for (const command of ["npm run check:pi", "npm run validate"]) {
@@ -317,7 +324,7 @@ test("release reuses the recursive syntax inventory and gates optional theory va
 
 test("every tag-driven npm version invocation permits an already-versioned candidate", () => {
   const commands = yml.split("\n").filter((line) => /npm version "/.test(line));
-  assert.equal(commands.length, 7, "three build, one Desktop and three publish bumps");
+  assert.equal(commands.length, 10, "three per test shard (one matrix job), three build, one Desktop and three publish bumps");
   for (const command of commands) assert.match(command, /--no-git-tag-version --allow-same-version/);
   assert.match(yml, /git diff --cached --quiet/, "an already-aligned tag does not require a no-op bump PR");
 });

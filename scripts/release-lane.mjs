@@ -350,7 +350,8 @@ class Lane {
     const syntaxCount = /JavaScript syntax passed: (\d+) shipped\/support files\./.exec(syntax.stdout);
     if (!syntaxCount) throw new LaneError("syntax checker did not report a checked-file count");
 
-    // "Test capability resolution and package commands"
+    // build-and-test "Check the kernel, the pi adapter and the project", then the
+    // tests job's "Test capability resolution and package commands" (unsharded here)
     await this.step("npm ci --ignore-scripts", "npm", ["ci", "--ignore-scripts"], { cwd: exportDir });
     await this.step("npm run check", "npm", ["run", "check"], { cwd: exportDir });
     await this.step("npm run check:pi", "npm", ["run", "check:pi"], { cwd: exportDir });
