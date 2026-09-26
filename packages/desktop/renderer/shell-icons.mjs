@@ -13,7 +13,7 @@ export const ICONS = Object.freeze({
   warning: "triangle-alert", alert: "circle-alert", info: "info", branch: "git-branch", repo: "folder-git-2", package: "package", computer: "laptop", soul: "sparkles",
   zoomIn: "plus", zoomOut: "minus", fit: "maximize-2", start: "play", stop: "square", remove: "trash-2",
   external: "external-link", pullRequest: "git-pull-request", knowledge: "book-open", file: "file-text",
-  brain: "brain", terminal: "square-terminal",
+  brain: "brain", terminal: "square-terminal", mail: "mail", tasks: "list-checks", home: "house",
 });
 const ATTR = /^[-0-9a-zA-Z .,]*$/;
 function iconNodes(name) {

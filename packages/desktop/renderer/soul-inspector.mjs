@@ -4,17 +4,39 @@
 import { harnessOf } from './harness-names.mjs';
 import { postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
 import { runtimeState } from './instance-presentation.mjs';
-import { createSoulMark } from './identity-marks.mjs';
+import { createSoulMark, createRuntimeBadge } from './identity-marks.mjs';
 import { createReadinessView, readinessCSS } from './readiness-view.mjs';
 import { cliStatus } from './views/cli-status.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { inspectData, inspectFacts, originText } from './inspect-contract.mjs';
 import { createTeamsPanel, teamsOperations, teamsCSS, soulTeams, teamLabels } from './teams-panel.mjs';
 import { ageText } from './age-text.mjs';
+import { pageBar, pageCard, pageSection, capabilityIcon, compositionEntries, coreWhy } from './capability-page.mjs';
+import { layerLabel } from './workspace-catalog.mjs';
 
 
 const HARNESS_NAMES = { pi: 'Pi', claude: 'Claude Code', codex: 'Codex' };
 const harnessName = value => HARNESS_NAMES[value] || value;
+const WORK_TEXT = { worktree: 'works in its own worktree', checkout: 'works in the repo checkout', attached: 'attaches to an owning instance' };
+const record = v => !!v && typeof v === 'object' && !Array.isArray(v);
+/** What a core capability does for this soul, from its own declarations and teams. */
+function coreDetail(slot, declared, teams, mapped) {
+  if (slot === 'knowledge' && record(declared.knowledge)) {
+    const reads = Array.isArray(declared.knowledge.reads) ? declared.knowledge.reads.length : 0;
+    const parts = [typeof declared.knowledge.owns === 'string' && declared.knowledge.owns ? 'Owns 1 node' : null, reads ? `reads ${reads}` : null].filter(Boolean);
+    const text = parts.join(' · ');
+    return text ? text[0].toUpperCase() + text.slice(1) : null;
+  }
+  if (slot === 'messaging' && teams) return mapped.length ? `Personal team · can join ${mapped.map(t => t.label).join(', ')}` : 'Personal team only';
+  return null;
+}
+/** An instance's build against its soul, from the roster's drift rows: older
+ * when the soul or a module moved since; current only when every row says so. */
+export function buildState(instance) {
+  const modules = Array.isArray(instance?.modules) ? instance.modules : null;
+  if (instance?.soul?.status === 'moved' || modules?.some(m => m?.status === 'moved')) return 'older build';
+  return instance?.soul?.status === 'current' && modules?.every(m => m?.status === 'current') ? 'current' : null;
+}
 export const inspectorCSS = `
 ${readinessCSS}
 ${teamsCSS}
@@ -33,71 +55,57 @@ ${teamsCSS}
 .soul-inspector .inspector-summary .inspector-content { padding:0; }
 .soul-inspector > .inspector-status { padding:0 14px; }
 .oats-view .soul-inspector button.primary:not(:disabled) { background:var(--primary-bg); color:var(--primary-fg); border-color:var(--primary-bg); }
-/* The soul page (Workspace view): the full available width, in the list views'
-   language — every card has the catalog table's header band (pageCardCSS). */
-.workspace-page { flex:1; min-height:0; min-width:0; overflow-y:auto; padding:14px 20px 28px; box-sizing:border-box; container-type:inline-size; }
+/* The soul page (Workspace v4 W4): the page bar in place of the Workspace
+   tabs, then identity, core capabilities and the composition table beside a
+   300px column of cards (pageCardCSS). */
+.workspace-page { flex:1; min-height:0; min-width:0; overflow-y:auto; padding:0; box-sizing:border-box; container-type:inline-size; background:var(--bg); }
 .workspace-page[hidden] { display:none; }
 .oats-view .workspace-page button.primary:not(:disabled) { background:var(--primary-bg); color:var(--primary-fg); border-color:var(--primary-bg); }
-.soul-page { display:flex; flex-direction:column; gap:var(--section-gap); max-width:1180px; }
-.soul-page .inspector-crumb { display:flex; align-items:center; margin-bottom:calc(var(--title-gap) * -1); }
-.oats-view .soul-page button.inspector-back { display:inline-flex; align-items:center; gap:4px; min-height:28px; padding:0 8px 0 4px; border:0; border-radius:6px; background:transparent; color:var(--muted); font-weight:600; cursor:pointer; }
-.oats-view .soul-page button.inspector-back:hover { background:var(--surface-2); color:var(--fg); }
-.oats-view .soul-page button.inspector-back:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
-.soul-page .inspector-head { margin:0; gap:14px; flex-wrap:nowrap; }
-.soul-page .inspector-head .identity-mark { width:44px; height:44px; border-radius:11px; font-size:18px; flex:none; }
-.soul-page .inspector-head h2 { font-size:20px; line-height:1.25; }
-.soul-page .inspector-head-actions { margin-left:auto; display:flex; align-items:center; gap:8px; flex:none; }
-.soul-page .inspector-head-actions .inspector-actions { display:flex; gap:8px; margin:0; }
-.soul-page > .inspector-status:empty { display:none; }
-.soul-page .soul-page-top { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(0,1fr); gap:16px; align-items:stretch; }
-.soul-page .soul-page-top:has(> :only-child) { grid-template-columns:minmax(0,1fr); }
-@container (max-width: 760px) { .soul-page .soul-page-top { grid-template-columns:minmax(0,1fr); } .soul-page .inspector-head { flex-wrap:wrap; } }
-/* Cards: About (the summary), Readiness, and each section block. */
-.soul-page .inspector-summary, .soul-page .inspector-readiness, .soul-page .inspector-block { background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; min-width:0; box-sizing:border-box; padding:0 0 14px; font-size:12px; }
-.soul-page .inspector-summary > h3:first-child, .soul-page .inspector-block > h3:first-child, .soul-page .readiness-view > h2,
-.soul-page .inspector-block > details > summary {
-  display:flex; align-items:center; gap:8px; min-height:36px; margin:0; padding:0 16px; box-sizing:border-box; background:var(--surface-2); border-bottom:1px solid var(--border);
-  color:var(--muted); font-size:10.5px; font-weight:650; letter-spacing:.06em; text-transform:uppercase; }
-.soul-page .inspector-block > *:not(:first-child), .soul-page .inspector-summary > *:not(:first-child), .soul-page .readiness-view > *:not(h2) { margin-left:16px; margin-right:16px; }
-.soul-page .inspector-block > *:nth-child(2), .soul-page .inspector-summary > *:nth-child(2), .soul-page .readiness-view > h2 + * { margin-top:12px; }
-.soul-page .inspector-block > * + *:not(:nth-child(2)) { margin-top:var(--title-gap); }
-.soul-page .inspector-block > .inspector-card { border:0; padding:0; background:transparent; }
-.soul-page .inspector-block > details { margin:0; }
-.soul-page .inspector-block > details > summary { cursor:pointer; list-style:none; }
-.soul-page .inspector-block > details > summary::before { content:"▸"; font-size:10px; }
-.soul-page .inspector-block > details[open] > summary::before { content:"▾"; }
-.soul-page .inspector-block > details > *:not(summary) { margin:12px 16px 0; }
-.soul-page .inspector-block:has(> details:not([open])) { padding-bottom:0; }
-.soul-page .inspector-block:has(> details:not([open])) > details > summary { border-bottom:0; }
-.soul-page .inspector-readiness { padding-bottom:14px; }
-.soul-page .inspector-readiness .readiness-view { margin:0; }
-.soul-page .inspector-main { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap:16px; align-items:start; padding:0; }
-.soul-page .inspector-block.wide { grid-column:1 / -1; }
-/* A soul's capabilities: the Capabilities view's own table, flush in its card. */
-.soul-page .inspector-block:has(> .inspector-capability-table) { padding-bottom:0; }
-.soul-page .inspector-block > .inspector-capability-table { margin:0; }
-.soul-page .inspector-capability-table .catalog-table { border:0; border-radius:0; }
-/* Instances: rows, like the list views. */
-.soul-page .inspector-summary .inspector-content { display:flex; flex-direction:column; gap:var(--title-gap); padding:0; }
-.soul-page .inspector-summary .inspector-content > h3 { margin:var(--title-gap) 0 0; color:var(--muted); }
-.soul-page .inspector-summary .inspector-lede { font-size:13.5px; max-width:72ch; margin:0; }
-.soul-page .inspector-summary .inspector-facts { grid-template-columns:max-content 1fr; }
-.oats-view .soul-page button.inspector-instance { display:flex; align-items:center; width:calc(100% + 32px); min-height:44px; margin:0 -16px; padding:0 16px; box-sizing:border-box; border:0; border-top:1px solid var(--border); border-radius:0; background:var(--surface); color:var(--fg); text-align:left; font-weight:600; }
+.oats-view .soul-page .page-bar-actions .inspector-actions { display:flex; gap:8px; margin:0; }
+.oats-view .soul-page .page-bar-actions button.icon-act { display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; min-height:30px; padding:0; }
+.soul-page .inspector-content h3.page-section-title { margin:0; color:var(--fg); font-size:13.5px; font-weight:650; letter-spacing:0; text-transform:none; }
+.soul-page .inspector-content h3.page-section-title .page-section-lead { color:var(--muted); font-size:12px; font-weight:400; }
+.soul-page .inspector-summary { min-width:0; padding:0; }
+.soul-page .inspector-head { display:flex; align-items:center; gap:14px; min-width:0; margin:0; flex-wrap:nowrap; }
+.soul-page .inspector-head .identity-mark { width:48px; height:48px; border-radius:11px; font-size:20px; font-weight:700; flex:none; }
+.soul-page .page-identity-copy { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.soul-page .inspector-head h2 { flex:none; margin:0; font-size:20px; font-weight:700; letter-spacing:-.01em; line-height:1.3; }
+.soul-page .inspector-head .inspector-lede { margin:0; color:var(--muted); font-size:13px; line-height:1.45; }
+.soul-page .page-facts-row:empty { display:none; }
+.soul-page .page-main > .inspector-status:empty { display:none; }
+.soul-page .inspector-main { display:flex; flex-direction:column; gap:22px; padding:0; }
+.soul-page .inspector-main:empty { display:none; }
+.soul-page .soul-page-side { display:flex; flex-direction:column; gap:14px; min-width:0; }
+.soul-page .soul-page-side:empty { display:none; }
+.soul-page .page-sr { display:inline-block; width:1px; height:1px; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+/* Core capabilities: one card per slot. */
+.core-card { display:flex; flex-direction:column; align-items:stretch; gap:8px; min-width:0; padding:14px; box-sizing:border-box; background:var(--surface); border:1px solid var(--border); border-radius:10px; color:var(--fg); text-align:left; font-size:12px; font-weight:400; }
+.oats-view .soul-page button.core-card { height:auto; min-height:0; font:inherit; font-size:12px; cursor:pointer; }
+.oats-view .soul-page button.core-card:hover { border-color:var(--sel-border); }
+.oats-view .soul-page button.core-card:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.core-slot { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:11px; font-weight:650; letter-spacing:.05em; text-transform:uppercase; }
+.core-slot-icon { display:grid; place-items:center; width:26px; height:26px; border-radius:7px; background:var(--bg); color:var(--fg); flex:none; }
+.core-id { display:flex; align-items:center; gap:6px; min-width:0; color:var(--fg); font:650 13px var(--mono,monospace); }
+.core-id .shell-icon { color:var(--muted); flex:none; }
+.core-id-name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+.core-version { color:var(--muted); font-weight:500; white-space:nowrap; }
+.core-card.none .core-id { color:var(--muted); font-family:var(--sans,system-ui); font-weight:500; }
+.core-detail { color:var(--fg); font-size:12px; }
+.core-why { padding-top:8px; border-top:1px solid var(--tag-bg); color:var(--muted); font-size:11.5px; }
+/* Side cards: teams, knowledge nodes, instances. */
+.soul-team { display:flex; flex-direction:column; gap:3px; padding:8px 0; border-top:1px solid var(--tag-bg); }
+.soul-team-name { display:flex; align-items:center; gap:8px; color:var(--fg); font-size:13px; font-weight:650; }
+.soul-team-name .page-tag { height:18px; padding:0 6px; border-radius:4px; font-size:10.5px; }
+.soul-team-note { color:var(--muted); font-size:12px; }
+.knowledge-role { margin-left:auto; flex:none; color:var(--muted); font:600 11px var(--sans,system-ui); }
+.knowledge-role.owns { color:var(--accent); }
+.oats-view .soul-page button.inspector-instance { display:flex; align-items:center; gap:8px; width:100%; min-height:28px; height:auto; margin:0; padding:0 4px; box-sizing:border-box; border:0; border-radius:6px; background:var(--surface); color:var(--fg); text-align:left; font:inherit; font-size:12.5px; font-weight:500; white-space:nowrap; }
 .oats-view .soul-page button.inspector-instance:hover:not(:disabled) { background:var(--surface-2); color:var(--fg); }
 .oats-view .soul-page button.inspector-instance:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
-.soul-page .inspector-summary .inspector-content > h3 + button.inspector-instance { margin-top:0; }
-.soul-page .inspector-summary .inspector-content > button.inspector-instance + button.inspector-instance { margin-top:calc(var(--title-gap) * -1); }
-.soul-page .inspector-summary:has(button.inspector-instance:last-child) { padding-bottom:0; }
-/* Provider operations: one line per operation, like the list views' rows. */
-.soul-page .inspector-block > .inspector-cap { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.6fr) minmax(0,auto); align-items:center; column-gap:16px; row-gap:6px;
-  min-height:48px; margin:0; padding:8px 16px; box-sizing:border-box; border-top:1px solid var(--border); }
-.soul-page .inspector-block > h3 + .inspector-cap { border-top:0; margin-top:0; }
-.soul-page .inspector-block > .inspector-cap h4 { margin:0; font-size:12.5px; font-weight:650; }
-.soul-page .inspector-block > .inspector-cap p { margin:0; font-size:12px; }
-.soul-page .inspector-block > .inspector-cap > p + p { justify-self:end; text-align:right; }
-.soul-page .inspector-block > .inspector-cap > button { justify-self:end; }
-.soul-page .inspector-block > .inspector-cap > .operation-output { grid-column:1 / -1; }
-.soul-page .inspector-block:has(> .inspector-cap:last-child) { padding-bottom:0; }
+.soul-page .instance-dot { width:7px; height:7px; border-radius:50%; box-sizing:border-box; border:1.5px solid var(--muted); flex:none; }
+.soul-page .instance-dot.running { border-color:var(--live); background:var(--live); }
+.soul-page .instance-name { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.soul-page .instance-build { margin-left:auto; flex:none; color:var(--muted); font-size:11px; }
 /* The readiness title reads as a section title, like every other card's. */
 .soul-inspector .readiness-view h2 { font-size:10.5px; font-weight:650; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 var(--title-gap); }
 .inspector-head { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:16px; }
@@ -148,7 +156,7 @@ ${teamsCSS}
 
 /** presentation is an optional host lease. Presence belongs to this controller;
  * effective visibility/collapse belongs to the host, not request completions. */
-export function createSoulInspector(container, { ctx, presentation, openSoul = null, layout = 'sidebar', backLabel = 'Souls', openInstance = null, capabilityTable = null, launch, schedule, files, canFiles = () => false, canLaunch = () => true, launchReason = () => 'Requires a compatible installed OATS CLI.', available = () => true, instances = () => [], workspace = () => null, closed }) {
+export function createSoulInspector(container, { ctx, presentation, openSoul = null, layout = 'sidebar', backLabel = 'Souls', openInstance = null, capabilityTable = null, openCapability = null, launch, schedule, files, canFiles = () => false, canLaunch = () => true, launchReason = () => 'Requires a compatible installed OATS CLI.', available = () => true, instances = () => [], workspace = () => null, closed }) {
   const doc = container.ownerDocument;
   let alive = true, serial = 0, operationSerial = 0, selectionGen = null, selection, data, teamsPanel = null;
   const pendingOperations = new WeakMap();
@@ -161,7 +169,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
   const mutationButton = (text, run) => { const control = button(text, run); control.dataset.mutate = '1'; control.disabled = !available(); return control; };
   const request = (body, query = wsQuery()) => postJson(ctx, `/api/capabilities${query}`, body);
   const valid = (id, gen) => alive && id === serial && gen === workspaceGeneration();
-  let status, content, summary, readiness, headActions = null;
+  let status, content, summary, readiness, headActions = null, facts$ = null, side = null;
   function syncReadiness() {
     const w = workspace();
     const ref = selection?.instance;
@@ -180,42 +188,45 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     const head = node('div', undefined, 'inspector-head');
     container.classList.toggle('soul-page', layout === 'page');
     const heading = node('h2', title); heading.title = title;
-    if (layout === 'page') {
-      // A full page in the Workspace view: back to the list it came from.
-      const back = button('', () => { if (alive) close({ restoreFocus: true }); });
-      back.classList.add('inspector-back'); back.append(iconElement(doc, 'chevronLeft', { size: 14 }), node('span', backLabel));
-      back.setAttribute('aria-label', `Back to ${backLabel}`);
-      const crumb = node('div', undefined, 'inspector-crumb'); crumb.append(back);
-      container.append(crumb);
-      if (selection.agent) head.append(createSoulMark(doc, selection.agent));
-      headActions = node('div', undefined, 'inspector-head-actions');
-      head.append(heading, headActions);
-    } else {
-      headActions = null;
-      // Hosted X hides the slot without deselecting or rebuilding an editor.
-      const closeControl = button('', () => {
-        if (!alive) return;
-        if (presentation) presentation.collapse();
-        else close({ restoreFocus: true });
-      });
-      closeControl.classList.add('icon-act'); closeControl.append(iconElement(doc, 'close', { size: 14 }));
-      closeControl.setAttribute('aria-label', 'Close inspector');
-      if (selection.agent) head.append(createSoulMark(doc, selection.agent));
-      head.append(heading, button('Refresh', () => show(selection)), closeControl);
-    }
-    summary = node('div', undefined, 'inspector-summary');
     status = node('p', '', 'inspector-status'); status.setAttribute('role', 'status');
     content = node('div', undefined, 'inspector-content inspector-main');
+    if (layout === 'page') {
+      // Workspace v4 (W4): the page bar replaces the Workspace tabs; back returns to the list it came from.
+      const bar = pageBar(doc, { backLabel, crumbs: ['Workspace', backLabel], current: title, onBack: () => { if (alive) close({ restoreFocus: true }); } });
+      bar.back.classList.add('inspector-back');
+      headActions = bar.actions;
+      const refresh = button('', () => show(selection)); refresh.classList.add('icon-act');
+      refresh.append(iconElement(doc, 'refresh', { size: 14 }), node('span', 'Refresh', 'page-sr')); refresh.title = 'Inspect again';
+      headActions.append(refresh);
+      summary = node('div', undefined, 'inspector-summary');
+      const copy = node('div', undefined, 'page-identity-copy');
+      facts$ = node('div', undefined, 'page-facts-row');
+      if (selection.agent) head.append(createSoulMark(doc, selection.agent));
+      copy.append(heading, facts$); head.append(copy); summary.append(head);
+      side = node('div', undefined, 'soul-page-side');
+      const body = node('div', undefined, 'page-body'), main = node('div', undefined, 'page-main'), column = node('div', undefined, 'page-side');
+      main.append(summary, status, content); column.append(side); body.append(main, column);
+      container.append(bar.bar, body);
+      if (selection.agent) renderSelectedSoul(column);
+      return;
+    }
+    headActions = null; facts$ = null; side = null;
+    // Hosted X hides the slot without deselecting or rebuilding an editor.
+    const closeControl = button('', () => {
+      if (!alive) return;
+      if (presentation) presentation.collapse();
+      else close({ restoreFocus: true });
+    });
+    closeControl.classList.add('icon-act'); closeControl.append(iconElement(doc, 'close', { size: 14 }));
+    closeControl.setAttribute('aria-label', 'Close inspector');
+    if (selection.agent) head.append(createSoulMark(doc, selection.agent));
+    head.append(heading, button('Refresh', () => show(selection)), closeControl);
+    summary = node('div', undefined, 'inspector-summary');
     // Readiness is a first question ("can it run?"): one line under the summary, its checks behind a disclosure.
     const readinessHost = node('div', undefined, 'inspector-content inspector-readiness');
     // Readiness belongs to an instance; a soul's page shows what a person needs (human, F7).
     const withReadiness = !selection.agent;
-    if (layout === 'page') {
-      const top = node('div', undefined, 'soul-page-top'); top.append(summary); if (withReadiness) top.append(readinessHost);
-      summary.append(node('h3', 'About', 'inspector-section'));
-      container.append(head, status, top, content);
-      headActions.append(button('Refresh', () => show(selection)));
-    } else container.append(head, summary, status, ...(withReadiness ? [readinessHost] : []), content);
+    container.append(head, summary, status, ...(withReadiness ? [readinessHost] : []), content);
     readiness = withReadiness ? createReadinessView(readinessHost, { ctx, compact: true }) : null; syncReadiness();
     if (selection.agent) renderSelectedSoul();
   }
@@ -271,7 +282,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
   }
   function render() {
     operationSerial++; teamsPanel = null;
-    content.replaceChildren();
+    content.replaceChildren(); side?.replaceChildren();
     const inspected = inspectData(data, selection);
     if (!inspected) {
       // Dispatch on the payload's own integer: a classic scope still answers operationsApi 1.
@@ -295,7 +306,8 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       if (soul) spawnedFrom(soul);
       instructions(inspected.instance.instructions, 'Instructions are truncated here.');
       renderCapabilities(inspected, { collapsed: true });
-    } else if (soul) {
+    } else if (soul && layout === 'page') renderSoulPage(inspected, soul);
+    else if (soul) {
       renderSoulTeams(inspected);
       // The harness it declares by default, and the model within it (if any).
       section('Harness');
@@ -305,24 +317,6 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     } else content.append(node('p', 'The kernel did not report this soul. Refresh to retry.', 'muted'));
     // Operations run on a live home: a soul shows none (human, F7); an instance lists what it can run.
     if (inspected.subject.kind === 'instance') renderOperations(inspected);
-    paginate();
-  }
-  // Page layout: each titled section (and each top-level disclosure) becomes a card in
-  // the page grid. The nodes are moved, never copied: their controls keep their owners.
-  function paginate() {
-    if (layout !== 'page') return;
-    const kids = [...content.children]; content.replaceChildren();
-    let block = null;
-    for (const el of kids) {
-      if (!block || el.tagName === 'H3' || el.tagName === 'DETAILS') {
-        block = node('section', undefined, 'inspector-block');
-        const title = el.tagName === 'H3' ? el.textContent : el.tagName === 'DETAILS' ? el.querySelector('summary')?.textContent || '' : '';
-        if (title) block.dataset.block = title.replace(/ · \d+$/, '');
-        if (el.tagName === 'DETAILS' || /^(Capabilities|Provider operations)/.test(title)) block.classList.add('wide');
-        content.append(block);
-      }
-      block.append(el);
-    }
   }
   function section(title) { const h = node('h3', title, 'inspector-section'); content.append(h); return h; }
   function card(entries, parent = content) { const box = node('div', undefined, 'inspector-card'); facts(entries, box); parent.append(box); return box; }
@@ -371,7 +365,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
   }
   // Roster-owned actions do not depend on operationsApi, inspect success, or
   // an editable soul record. Keep their DOM stable while inspection settles.
-  function renderSelectedSoul() {
+  function renderSelectedSoul(column = null) {
     const agent = selection.agent, id = serial, gen = selectionGen;
     const actions = node('div', undefined, 'inspector-actions');
     const action = (label, cls, can, run) => {
@@ -380,43 +374,136 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       });
       control.classList.add(cls); return control;
     };
-    const launchButton = action('Launch…', 'spawn-act', canLaunch, launch); launchButton.classList.add('primary'); launchButton.dataset.launch = '1';
+    // The page names the launch for what it opens first: the spawn preview (Workspace v4).
+    const launchButton = action(column ? 'Preview spawn' : 'Launch…', 'spawn-act', canLaunch, launch); launchButton.classList.add('primary'); launchButton.dataset.launch = '1';
     const scheduleButton = action('Schedule…', 'schedule-act', canLaunch, schedule); scheduleButton.dataset.launch = '1';
     const filesButton = action('Files', 'brain-act', canFiles, files); filesButton.dataset.files = '1';
-    actions.append(launchButton, filesButton, scheduleButton);
+    actions.append(filesButton, scheduleButton, launchButton);
     if (headActions) headActions.prepend(actions); else summary.append(actions);
     syncAvailability();
     const homes = instances(agent);
+    const openHome = (instance, control) => {
+      if (!valid(id, gen) || !control.isConnected) return;
+      // Instances keep the sidebar: from a soul page, the host opens it beside the page.
+      if (typeof openInstance === 'function') openInstance(instance); else void show({ instance, selector: { home: instance.home } });
+    };
+    if (column) {
+      // Identity: what it does, then where it works (the harness joins once inspected).
+      if (agent.description) facts$.before(node('p', agent.description, 'inspector-lede'));
+      if (typeof agent.repoName === 'string' && agent.repoName) facts$.append(pageFact('repo', agent.repoName, 'mono'));
+      if (typeof agent.work === 'string' && agent.work) facts$.append(pageFact('branch', WORK_TEXT[agent.work] || `works in ${agent.work}`, 'muted'));
+      const card = pageCard(doc, 'Instances', { count: homes.length }); card.card.classList.add('inspector-instances');
+      if (!homes.length) card.card.append(node('p', 'No instances yet.', 'page-note'));
+      for (const instance of homes) {
+        const control = node('button', undefined, 'inspector-instance'); control.type = 'button';
+        const state = runtimeState(instance), build = buildState(instance);
+        const dot = node('span', undefined, `instance-dot ${state}`); dot.setAttribute('aria-hidden', 'true');
+        control.append(dot, node('span', instance.instance, 'instance-name'));
+        if (build) control.append(node('span', build, 'instance-build'));
+        control.setAttribute('aria-label', [instance.instance, state, build].filter(Boolean).join(', '));
+        control.addEventListener('click', () => openHome(instance, control));
+        control.disabled = !instance.home;
+        control.title = instance.home ? `${state} — open its details` : 'No instance home reported';
+        card.card.append(control);
+      }
+      column.append(card.card);
+      return;
+    }
     const roster = node('div', undefined, 'inspector-content');
     // What a person needs: what it does, and its instances.
     if (agent.description) roster.append(node('p', agent.description, 'inspector-lede'));
     roster.append(node('h3', `Instances · ${homes.length}`));
     if (!homes.length) roster.append(node('p', 'No instances reported for this soul.', 'muted'));
     for (const instance of homes) {
-      const control = button(`${instance.instance} · ${runtimeState(instance)}`, () => {
-        if (!valid(id, gen) || !control.isConnected) return;
-        // Instances keep the sidebar: from a soul page, the host opens it beside the page.
-        if (typeof openInstance === 'function') openInstance(instance); else void show({ instance, selector: { home: instance.home } });
-      });
+      const control = button(`${instance.instance} · ${runtimeState(instance)}`, () => openHome(instance, control));
       control.classList.add('inspector-instance'); control.disabled = !instance.home;
       control.title = instance.home ? 'Inspect the immutable instance snapshot' : 'No instance home reported';
       roster.append(control);
     }
     summary.append(roster);
   }
+  function pageFact(icon, value, cls) {
+    const fact = node('span', undefined, 'page-fact');
+    fact.dataset.fact = icon; fact.append(iconElement(doc, icon, { size: 15 }), node('span', value, cls)); return fact;
+  }
+  // Workspace v4 (W4): the soul's harness joins its identity; core capabilities
+  // as cards; its composition (host-injected table) with why each is there;
+  // teams and knowledge beside. Only reported facts: what the kernel does not
+  // say (which default a capability came from) is said as not reported.
+  function renderSoulPage(inspected, soul) {
+    const harness = harnessOf(soul);
+    if (typeof harness === 'string' && harness) {
+      const fact = node('span', undefined, 'page-fact'); fact.dataset.fact = 'harness';
+      fact.append(createRuntimeBadge(doc, harness), node('span', harnessName(harness), 'strong'));
+      if (typeof soul.model === 'string' && soul.model) fact.append(node('span', `${soul.model} by default`, 'muted'));
+      const work = facts$.querySelector('[data-fact="branch"]'); if (work) work.before(fact); else facts$.append(fact);
+    }
+    const declared = record(soul.declarations) ? soul.declarations : {};
+    const teams = soulTeams(inspected.teams), mapped = (teams || []).filter(t => t.mapped);
+    // Core capabilities: one card per slot, the provider, what it does for this soul, and why.
+    const core = pageSection(doc, 'Core capabilities', 'one of each per soul');
+    const cards = node('div', undefined, 'page-cards3');
+    for (const slot of ['knowledge', 'messaging', 'tasks']) {
+      const layer = inspected.layers?.[slot], cap = layer?.id ? inspected.capabilities.find(c => c.id === layer.id) : null;
+      const opens = !!cap && typeof openCapability === 'function';
+      const card = node(opens ? 'button' : 'div', undefined, `core-card${layer?.id ? '' : ' none'}`); card.dataset.layer = slot;
+      const head = node('span', undefined, 'core-slot'), icon = node('span', undefined, 'core-slot-icon');
+      icon.append(iconElement(doc, capabilityIcon({ layer: slot }), { size: 15 })); head.append(icon, node('span', layerLabel(slot)));
+      const id = node('span', undefined, 'core-id');
+      if (layer?.id) {
+        const kind = cap?.from?.kind;
+        if (kind === 'package' || kind === 'member') id.append(iconElement(doc, kind === 'package' ? 'package' : 'repo', { size: 13 }));
+        id.append(node('span', layer.id, 'core-id-name'));
+        const version = kind === 'package' ? cap.version : kind === 'member' ? 'latest' : null;
+        if (typeof version === 'string' && version) id.append(node('span', version, 'core-version'));
+      } else id.append(node('span', layer ? 'None' : 'Not reported'));
+      card.append(head, id);
+      const detail = layer?.id ? coreDetail(slot, declared, teams, mapped) : null;
+      if (detail) card.append(node('span', detail, 'core-detail'));
+      const why = layer?.id && layersFrom() ? coreWhy(layer.from) : null;
+      if (why) card.append(node('span', why, 'core-why'));
+      if (opens) {
+        card.type = 'button'; card.dataset.capability = cap.id;
+        card.setAttribute('aria-label', [`${layerLabel(slot)}: ${cap.id}`, detail, why].filter(Boolean).join(', ') + ' — open its page');
+        card.addEventListener('click', () => { if (alive && card.isConnected) openCapability(cap, selection.agent); });
+      }
+      cards.append(card);
+    }
+    core.append(cards); content.append(core);
+    // Composition: every other capability with its source and why it is here.
+    const entries = compositionEntries(inspected, soul);
+    const composition = pageSection(doc, 'Capabilities', 'workspace defaults → team defaults → this soul · later wins');
+    const table = node('div', undefined, 'inspector-capability-table'); composition.append(table); content.append(composition);
+    if (typeof capabilityTable === 'function') capabilityTable(table, entries, { soul: selection.agent });
+    // Beside: its teams (joining is per instance) and its knowledge nodes.
+    if (teams) {
+      const card = pageCard(doc, 'Teams', { lead: 'organise · add defaults · never restrict' });
+      if (!mapped.length) card.card.append(node('p', 'Personal team only: this soul has access to no other team.', 'page-note'));
+      for (const team of mapped) {
+        const row = node('div', undefined, 'soul-team'), name = node('span', undefined, 'soul-team-name');
+        name.append(node('span', team.label)); if (team.label === teams[0].label) name.append(node('span', 'primary', 'page-tag'));
+        row.title = `${team.label} (${team.team})`;
+        row.append(name, node('span', `Instances can join the ${team.label} team chat`, 'soul-team-note'));
+        card.card.append(row);
+      }
+      side.append(card.card);
+    }
+    const knowledge = record(declared.knowledge) ? declared.knowledge : null;
+    const nodes = knowledge ? [...(typeof knowledge.owns === 'string' && knowledge.owns ? [[knowledge.owns, 'owns']] : []),
+      ...(Array.isArray(knowledge.reads) ? knowledge.reads.filter(r => typeof r === 'string' && r).map(r => [r, 'reads']) : [])] : [];
+    if (nodes.length) {
+      const card = pageCard(doc, 'Knowledge');
+      for (const [path, role] of nodes) {
+        const row = node('div', undefined, 'page-list-item'); row.append(node('span', path), node('span', role, `knowledge-role ${role}`));
+        card.card.append(row);
+      }
+      side.append(card.card);
+    }
+  }
   // Core capabilities name their origin only when the CLI advertises layers-from.
   const layersFrom = () => Array.isArray(cliStatus()?.features) && cliStatus().features.includes('layers-from');
   function renderCapabilities(inspected, { collapsed = false } = {}) {
     let host = content;
-    // The page renders a soul's capabilities with the Capabilities view's own table (host-injected).
-    if (layout === 'page' && !collapsed && typeof capabilityTable === 'function') {
-      host.append(node('h3', 'Core capabilities', 'inspector-section'));
-      card(inspectFacts.layers(inspected.layers, { from: layersFrom() }), host);
-      host.append(node('h3', `Capabilities · ${inspected.capabilities.length}`, 'inspector-section'));
-      const table = node('div', undefined, 'inspector-capability-table'); host.append(table);
-      capabilityTable(table, inspected.capabilities, { soul: selection.agent });
-      return;
-    }
     if (collapsed) { host = node('details', undefined, 'inspector-disclosure'); host.append(node('summary', `Modules as spawned · ${inspected.capabilities.length}`)); content.append(host); }
     host.append(node('h3', 'Core capabilities', 'inspector-section'));
     card(inspectFacts.layers(inspected.layers, { from: layersFrom() }), host);

@@ -40,7 +40,7 @@ function fixture(t, stylesheet = css) {
     instanceActionTarget, instanceSplitPlan, connectionGeneration: 0, menuState() {}, runAction: assert.fail,
     applyChordTitles() {}, updateActiveContexts() {}, getBinding: () => null, formatChord: c => c, isMac: true,
     contextRosterEl: doc.querySelector("#instance-roster"), contextFilter: "", contextWorkspace: "A",
-    contextInstances: roster, currentWorkspace: () => "A", workspaceGeneration: () => 0, collapsedInstances: new Set(), collapsedGroups: new Set(),
+    contextInstances: roster, currentWorkspace: () => "A", workspaceGeneration: () => 0, collapsedInstances: new Set(), rosterTip: { bind() {}, hide() {}, sync() {} }, rosterTipFacts: () => ({}),
     tabs: new Map([[1, { key: tree.terminalKey("A", roster[1]) }]]), activeTab: 1,
     tabOpenIntents: { applyFocus: fn => fn() },
     // Display-only fixture: any attempted navigation/action is a test failure.
@@ -91,8 +91,7 @@ test("roster typography (non-layout): valid control family and supplied sidebar 
   assert.equal(u.rule(".ctx-filter").getPropertyValue("font"), "", "no invalid 'size/line-height inherit' shorthand");
   assert.equal(u.rule(".ctx-filter").fontFamily, "inherit");
   assert.equal(u.rule(".ctx-filter").fontSize, "12px");
-  assert.equal(u.rule(".ctx-group").fontSize, "10.5px");
-  assert.equal(u.rule(".ctx-group").fontWeight, "600");
+  assert.equal(u.rule(".ctx-group").height, "14px", "Workspace v4: groups read from a 14px gap, no title");
   assert.equal(u.rule(".ctx-inst").getPropertyValue("font"), "inherit");
   assert.equal(u.rule(".ctx-name").fontSize, "12.5px");
   assert.equal(u.rule(".ctx-name").fontWeight, "600");
@@ -140,11 +139,13 @@ test("tree connectors (non-layout): lines leave the dots, no disclosure arrows",
   ]);
 });
 
-test("roster DOM contract: named groups, identity, active state, hidden-but-reachable tools and closed menus", t => {
+test("roster DOM contract: named group separators, identity, active state, hidden-but-reachable tools and closed menus", t => {
   const u = fixture(t);
-  assert.deepEqual([...u.doc.querySelectorAll(".ctx-group")].map(g => [g.querySelector(".ctx-group-name").textContent, g.querySelector(".ctx-group-count").textContent]),
-    [["root", "5"], ["independent", "1"]]);
-  assert.equal(u.doc.querySelector(".ctx-count").textContent, "5 running · 0 stopped · 1 unknown");
+  assert.deepEqual([...u.doc.querySelectorAll(".ctx-group")].map(g => [g.getAttribute("role"), g.getAttribute("aria-label"), g.textContent]),
+    [["separator", "root, 5 instances", ""], ["separator", "independent, 1 instance", ""]]);
+  // The head shows only the running count (human, 2026-09-26); the full breakdown is its title.
+  assert.equal(u.doc.querySelector(".ctx-count").textContent, "5 running");
+  assert.equal(u.doc.querySelector(".ctx-count").title, "5 running · 0 stopped · 1 unknown");
   for (const row of u.rows) {
     const button = row.querySelector(".ctx-inst"), name = row.querySelector(".ctx-name").textContent;
     assert.equal(button.dataset.treeInstance, `/synthetic/${name}`);

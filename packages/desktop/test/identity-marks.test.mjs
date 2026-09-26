@@ -52,7 +52,7 @@ test('safe decorative monograms and closed runtime placeholders never create res
     assert.equal(mark.hasAttribute('style'), false); assert.equal(mark.hasAttribute('title'), false);
     assert.ok(mark.textContent.length > 0);
   }
-  for (const [value, key, label, text] of [['pi', 'pi', 'Pi', 'π'], ['Claude', 'claude', 'Claude', 'C'], ['codex', 'codex', 'Codex', 'Cx'],
+  for (const [value, key, label, text] of [['pi', 'pi', 'Pi', 'π'], ['Claude', 'claude', 'Claude', 'C'], ['codex', 'codex', 'Codex', '⌥'],
     ['<img src=x>', undefined, '<img src=x>', '?'], [null, undefined, 'Not reported', '?'], ['constructor', undefined, 'constructor', '?']]) {
     const badge = createRuntimeBadge(doc, value); doc.body.append(badge);
     assert.equal(badge.dataset.runtime, key); assert.equal(badge.textContent, text);

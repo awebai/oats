@@ -31,14 +31,20 @@ function declaration(doc, selector, property) {
   return rule.style.getPropertyValue(property);
 }
 
-test("Souls toolbar can wrap instead of overflowing the narrow workspace stage", t => {
-  const source = readFileSync(new URL("../renderer/views/spawn.mjs", import.meta.url), "utf8");
-  const css = source.match(/const CSS = `([\s\S]*?)`;/)[1];
+// Workspace v4 (human decision 2026-09-26; replaces the one-row header placement): the
+// Souls toolbar is the view's own row; it may wrap at narrow widths and its search
+// shrinks (min-width 0) rather than overflowing the stage.
+test("Souls toolbar shrinks its filter instead of overflowing the narrow workspace stage", t => {
+  const spawn = readFileSync(new URL("../renderer/views/spawn.mjs", import.meta.url), "utf8");
+  const discovery = readFileSync(new URL("../renderer/workspace-discovery.mjs", import.meta.url), "utf8");
+  const css = spawn.match(/const CSS = `([\s\S]*?)`;/)[1] + discovery.match(/\.ws-toolbar \{[^\n]*\n(?:\.ws-[^\n]*\n|\.oats-view \.ws-search[^\n]*\n)*/)[0];
   const { doc, host, window } = fixture(t, css);
-  const bar = doc.createElement("div"); bar.className = "souls-bar"; host.append(bar);
-  assert.equal(window.getComputedStyle(bar).flexWrap, "wrap");
-  assert.equal(declaration(doc, ".souls-bar", "height"), "", "no fixed one-row height after wrapping");
-  assert.equal(declaration(doc, ".souls-bar", "min-height"), "", "compact toolbar does not impose a second 48px row");
+  const bar = doc.createElement("div"); bar.className = "souls-bar ws-toolbar"; host.append(bar);
+  assert.equal(window.getComputedStyle(bar).flexWrap, "wrap", "controls wrap rather than overflow");
+  assert.equal(declaration(doc, ".ws-toolbar", "min-width"), "0px");
+  assert.equal(declaration(doc, ".ws-search", "min-width"), "0px", "the search can shrink");
+  assert.equal(declaration(doc, ".souls-bar", "height"), "", "no fixed height");
+  assert.equal(declaration(doc, ".souls-bar", "min-height"), "", "no second 48px floor");
 });
 
 // jsdom exercises the shipped markup + CSS cascade, not browser layout or

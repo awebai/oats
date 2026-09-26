@@ -1,6 +1,6 @@
 // The v2 Workspace view (F2, no package approval; F7 sections/Setup): the
 // Capabilities sections from `oats capabilities` (Workspace owned with team/repo
-// pills, Packages, Repo owned behind capabilities-private), Setup (graph + lists)
+// dropdowns, Packages, Repo owned behind capabilities-private), Setup (graph + lists)
 // from `oats workspace status`, and Sync. Fixtures captured from main's kernel (packages-no-approval);
 // the shipped Workspace stage is mounted in jsdom with a
 // fixture ctx.api. No CLI, server, GUI or network.
@@ -56,59 +56,81 @@ async function setup(t, { status = 'workspace-status', cli = CLI, sync, workspac
     tab: async name => { doc.getElementById(`workspace-tab-${name}`).click(); await settle(); },
     rows: () => [...doc.querySelectorAll('.catalog-table .catalog-row:not(.head)')],
     owned: () => [...doc.querySelectorAll('[data-section=workspace] .catalog-row:not(.head)')].map(el => el.dataset.capability),
-    pill: (group, label) => [...doc.querySelectorAll(`.catalog-filter[aria-label="Filter by ${group}"] .catalog-pill`)].find(el => el.textContent === label),
     button: text => [...doc.querySelectorAll('button')].find(el => el.textContent.trim() === text),
     syncCalls: () => calls.filter(call => call.path.startsWith('/api/workspace-sync')).map(call => call.body),
     setStatus: name => { observedStatus = statusOf(name); },
   };
 }
 
-test('Capabilities is the kernel catalog: counts, three design columns and readiness in v2 terms', async t => {
+test('Capabilities is the kernel catalog: counts, jump pills, and Capability | Source | Used by in v2 terms', async t => {
   const u = await setup(t);
-  assert.equal(u.doc.querySelector('#workspace-tab-capabilities .workspace-count').textContent, '', 'no catalog read until the tab is opened');
-  assert.deepEqual(u.syncCalls(), []);
-  await u.tab('capabilities');
+  // Workspace v4: the tab bar counts capabilities, so the catalog is read once on mount (any tab).
   assert.deepEqual(u.syncCalls(), [{ action: 'read' }], 'exactly one read; never a sync');
+  await u.tab('capabilities');
+  assert.deepEqual(u.syncCalls(), [{ action: 'read' }], 'opening the tab does not read again');
   assert.equal(u.doc.querySelector('#workspace-tab-capabilities .workspace-count').textContent, '10');
-  assert.deepEqual([...u.doc.querySelectorAll('[data-section=workspace] .catalog-row.head [role=columnheader]')].map(el => el.textContent), ['Capability', 'Status', 'Used by']);
+  assert.deepEqual([...u.doc.querySelectorAll('.capability-nav button')].map(el => [el.dataset.jump, el.textContent, el.getAttribute('aria-current')]),
+    [['workspace', 'Workspace owned6', 'true'], ['packages', 'Packages4', 'false']]);
+  assert.deepEqual([...u.doc.querySelectorAll('[data-section=workspace] .catalog-row.head [role=columnheader]')].map(el => el.textContent), ['Capability', 'Source', 'Used by']);
   assert.equal(u.rows().length, 10);
   const row = name => u.rows().find(el => el.dataset.capability === name);
-  assert.match(row('oats.okf').querySelector('.catalog-sub').textContent, /^Package · oats\.okf v2\.1\.3$/);
-  assert.equal(row('oats.okf').querySelector('.catalog-chip').textContent, 'locked');
-  assert.match(row('oats.okf').querySelectorAll('.catalog-chip')[1].textContent, /^@[0-9a-f]{7}$/, 'locked, then the commit — no approval state');
+  // Source: the package and its pinned version, or the member repository at its latest.
+  assert.equal(row('oats.okf').querySelector('.source-chip').dataset.source, 'package');
+  assert.equal(row('oats.okf').querySelector('.source-chip').textContent, 'oats.okf2.1.3');
+  assert.equal(row('nw-brand-voice').querySelector('.source-chip').dataset.source, 'member');
+  assert.equal(row('nw-brand-voice').querySelector('.source-chip').textContent, 'marketinglatest');
   assert.doesNotMatch(u.doc.querySelector('.workspace-discovery').textContent, APPROVAL_TEXT);
-  assert.match(row('nw-brand-voice').querySelector('.catalog-sub').textContent, /^Member · marketing$/, 'the team is not repeated when it names the repository');
-  assert.match(row('nw-release-tooling').querySelector('.catalog-sub').textContent, /^Member · agents · engineering$/);
-  assert.equal(row('nw-brand-voice').querySelector('.catalog-chip').textContent, 'member confirmed');
-  assert.match(row('nw-brand-voice').querySelector('.catalog-chip.mono').textContent, /^@[0-9a-f]{7}$/);
   // Used by = souls whose instances record the module (roster module rows).
   const used = capabilityUse(instances, 'nw-release-tooling');
   assert.deepEqual(used.souls.map(s => s.name), ['release-manager']);
-  assert.equal(row('nw-release-tooling').querySelector('.catalog-used-count').textContent, '1 soul');
-  assert.equal(row('nw-brand-voice').querySelector('.catalog-used').textContent, 'No instance yet');
+  assert.equal(row('nw-release-tooling').querySelector('.catalog-used-count').textContent, '1');
+  assert.equal(row('nw-release-tooling').querySelector('.catalog-used-count').title, 'Used by release-manager');
+  assert.equal(row('nw-brand-voice').querySelector('.catalog-used-count').textContent, '—');
   assert.equal(u.doc.querySelector('.workspace-discovery').textContent.includes('Members'), false, 'no Members list in Capabilities');
 });
 
-test('team and repo pills filter Workspace owned only (AND), name only what it holds, and reset to All', async t => {
+test('team and repo dropdowns filter Workspace owned only (AND), name only what it holds, and Clear filters resets', async t => {
   const u = await setup(t);
   await u.tab('capabilities');
   const choices = filterChoices(capabilitySections(f2('capabilities').result.capabilities).workspace, memberNames(statusOf('workspace-status')));
   assert.deepEqual(choices.teams, ['engineering', 'global', 'marketing']);
   assert.deepEqual(choices.repos.map(s => s === 'sep' ? '|' : s.label), ['agents', 'data', 'marketing', 'nw-tools'], 'repositories, never packages');
-  assert.ok(u.doc.querySelector('[data-section=workspace] .catalog-filters'), 'the pills sit in the Workspace owned section');
-  assert.equal(u.pill('team', 'All').getAttribute('aria-pressed'), 'true');
-  u.pill('team', 'marketing').focus(); u.pill('team', 'marketing').click(); await settle();
+  assert.ok(u.doc.querySelector('[data-section=workspace] .catalog-filters'), 'the filters sit in the Workspace owned section');
+  const select = key => u.doc.querySelector(`.catalog-select[data-filter-key=${key}] select`);
+  const choose = async (key, value) => { const el = select(key); el.focus(); el.value = value; el.dispatchEvent(new u.dom.window.Event('change', { bubbles: true })); await settle(); };
+  assert.deepEqual([...select('team').options].map(o => o.textContent), ['All', 'engineering', 'global', 'marketing']);
+  assert.equal(u.doc.querySelector('.catalog-clear'), null, 'nothing to clear yet');
+  await choose('team', 'marketing');
   assert.deepEqual(u.owned(), ['nw-brand-voice', 'nw-campaign-metrics']);
-  assert.equal(u.doc.querySelector('[data-section=workspace] .capability-section-count').textContent, '2 of 6');
+  assert.equal(u.doc.querySelector('.catalog-shown').textContent, '2 of 6 shown');
+  assert.ok(u.doc.querySelector('.catalog-select[data-filter-key=team]').classList.contains('active'));
   assert.equal(u.doc.querySelectorAll('[data-section=packages] .catalog-row:not(.head)').length, 4, 'Packages are not filtered');
-  assert.equal(u.doc.activeElement, u.pill('team', 'marketing'), 'focus stays on the chosen pill across the re-render');
-  u.pill('repo', 'agents').click(); await settle();
+  assert.equal(u.doc.activeElement, select('team'), 'focus stays on the chosen dropdown across the re-render');
+  await choose('repo', 'member:local//fixture/base/fx/remotes/agents.git');
   assert.deepEqual(u.owned(), []); assert.match(u.doc.querySelector('[data-section=workspace] .catalog-empty').textContent, /No capabilities match/);
-  u.pill('team', 'All').click(); await settle();
+  await choose('team', '');
   assert.deepEqual(u.owned(), ['nw-house-style', 'nw-release-tooling']);
-  u.pill('repo', 'All').click(); await settle();
+  u.doc.querySelector('.catalog-clear').click(); await settle();
   assert.equal(u.owned().length, 6);
+  assert.equal(u.doc.querySelector('.catalog-shown'), null);
   assert.deepEqual(u.syncCalls(), [{ action: 'read' }], 'filtering is local');
+});
+
+// Workspace v4 (human decision 2026-09-26; replaces the header search): the search is
+// the Capabilities view's own toolbar, above the sections.
+test('the view search narrows every section by capability name', async t => {
+  const u = await setup(t);
+  await u.tab('capabilities');
+  const search = u.doc.querySelector('.ws-toolbar[data-tools=capabilities] input');
+  assert.equal(search.closest('.workspace-header'), null, 'not in the header');
+  assert.equal(search.closest('.ws-toolbar').hidden, false);
+  assert.ok(search.closest('.ws-toolbar').querySelector('.ws-toolbar-lead .capability-nav'), 'the section pills share the search row');
+  search.focus();
+  search.value = 'OKF'; search.dispatchEvent(new u.dom.window.Event('input', { bubbles: true })); await settle();
+  assert.deepEqual(u.rows().map(el => el.dataset.capability), ['oats.okf']);
+  assert.equal(u.doc.activeElement, search, 'narrowing rebuilds the pills, never the search under the caret');
+  await u.tab('souls');
+  assert.equal(search.closest('.ws-toolbar').hidden, true, 'the search belongs to Capabilities');
 });
 
 test('three sections: Workspace owned, Packages, and Repo owned (grouped by repo) only when the CLI advertises capabilities-private', async t => {
@@ -118,11 +140,15 @@ test('three sections: Workspace owned, Packages, and Repo owned (grouped by repo
   const u = await setup(t, { cli: withFeature, sync: () => catalog('f7/capabilities') });
   await u.tab('capabilities');
   assert.deepEqual([...u.doc.querySelectorAll('.capability-section-title > span:first-child')].map(el => el.textContent), ['Workspace owned', 'Packages', 'Repo owned']);
+  assert.deepEqual([...u.doc.querySelectorAll('.capability-section-lead')].map(el => el.textContent), ['latest from member repos', 'pinned versions, same everywhere', 'only for souls of the same repo']);
+  assert.deepEqual([...u.doc.querySelectorAll('.capability-nav button')].map(el => el.dataset.jump), ['workspace', 'packages', 'repo']);
   assert.ok(!u.owned().includes('nw-platform-runbook'), 'a repo-owned capability is never listed as workspace owned');
-  const group = u.doc.querySelector('[data-section=repo] .capability-repo');
-  assert.equal(group.querySelector('.capability-repo-title').textContent, 'platform');
-  assert.equal(group.querySelector('.capability-repo-title svg').innerHTML, iconElement(u.doc, 'repo').innerHTML, 'the repository icon');
-  assert.deepEqual([...group.querySelectorAll('.catalog-row:not(.head)')].map(el => el.dataset.capability), ['nw-platform-runbook']);
+  const group = u.doc.querySelector('[data-section=repo] .catalog-group');
+  assert.equal(group.textContent, 'platform');
+  assert.equal(group.querySelector('svg').innerHTML, iconElement(u.doc, 'repo').innerHTML, 'the repository icon');
+  const runbook = u.doc.querySelector('[data-section=repo] .catalog-row[data-capability=nw-platform-runbook]');
+  assert.equal(group.nextElementSibling, runbook);
+  assert.equal(runbook.querySelector('.source-chip svg').innerHTML, iconElement(u.doc, 'home').innerHTML, 'repo owned: this soul\'s own repository');
   // Without the feature the section is hidden, never guessed.
   spawn.unmount();
   const v = await setup(t, { sync: () => catalog('f7/capabilities') });
@@ -130,57 +156,83 @@ test('three sections: Workspace owned, Packages, and Repo owned (grouped by repo
   assert.deepEqual([...v.doc.querySelectorAll('.capability-section')].map(el => el.dataset.section), ['workspace', 'packages']);
 });
 
-test('Setup lists: repositories with team and confirmation, packages with their lock, kernel detail verbatim, no commits', async t => {
+// Workspace v4 (W1/W2) — replaces the Setup tests that pinned the old
+// Repositories/Packages/External souls lists and the always-on graph.
+test('W1 Setup list: members with handshake and contribution, packages with origin and lock, teams, this computer; kernel detail verbatim', async t => {
   const moved = syncData(f2('sync-moved'), dir);
   const u = await setup(t);
   await u.tab('sources');
-  assert.equal(u.doc.querySelector('#workspace-tab-sources .workspace-count').textContent, '9', '5 repositories + 3 packages + 1 external soul');
-  const sections = [...u.doc.querySelectorAll('.sources-section h2')].map(el => el.textContent);
-  assert.deepEqual(sections, ['Repositories', 'Packages', 'External souls']);
-  const repos = [...u.doc.querySelectorAll('.sources-section [data-member]')];
+  // Workspace v4: Setup carries no count; its dot says when something needs attention (here nothing does).
+  assert.equal(u.doc.querySelector('#workspace-tab-sources .workspace-count').textContent, '');
+  assert.equal(u.doc.querySelector('#workspace-tab-sources .workspace-attn').hidden, true);
+  const ws = statusOf('workspace-status').workspace;
+  assert.equal(u.doc.querySelector('.setup-lede h2').textContent, ws.name);
+  assert.match(u.doc.querySelector('.setup-lede-where').textContent, new RegExp(`'s workspace file @ ${ws.commit.slice(0, 7)}$`), 'the declaration and its commit');
+  assert.doesNotMatch(u.doc.querySelector('.setup').textContent, /oats-workspace\.yaml|oats-membership\.yaml|oats-lock\.json/, 'the Desktop never names the kernel\'s files');
+  assert.deepEqual([...u.doc.querySelectorAll('.setup-box, .setup-local')].map(el => el.dataset.box), ['Members', 'Packages', 'Teams', 'This computer']);
+  const repos = [...u.doc.querySelectorAll('[data-box=Members] [data-member]')];
   assert.equal(repos.length, 5);
-  assert.ok(repos.every(row => row.querySelector('.catalog-chip').textContent === 'confirmed'));
-  assert.equal([...u.doc.querySelectorAll('.sources-section [data-package]')].length, 3);
-  assert.ok([...u.doc.querySelectorAll('.sources-section [data-package]')].every(row => row.querySelector('.catalog-chips').textContent === 'locked'));
-  assert.doesNotMatch(u.doc.querySelector('.workspace-discovery').textContent, /\b[0-9a-f]{7,40}\b/, 'Setup shows no commit');
+  assert.ok(repos.every(row => row.querySelector('.setup-state').textContent === 'confirmed' && row.querySelector('.setup-state svg')));
+  assert.equal(u.doc.querySelectorAll('[data-box=Packages] [data-package]').length, 3);
+  const local = Object.fromEntries([...u.doc.querySelectorAll('.setup-kv')].map(r => [r.querySelector('dt').textContent, r.querySelector('dd').textContent]));
+  assert.equal(local.Folder, dir); assert.equal(local.Settings, 'oats-local.yaml'); assert.equal(local.Lock, 'current');
+  assert.doesNotMatch(u.doc.querySelector('.setup-cols').textContent, /\b[0-9a-f]{7,40}\b/, 'no commits in the lists');
   assert.doesNotMatch(u.doc.querySelector('.workspace-discovery').textContent, APPROVAL_TEXT);
-  assert.deepEqual(u.syncCalls(), [], 'Sources render the observation only');
-  // An unconfirmed member (kernel row from a later sync) keeps its status and detail.
+  assert.deepEqual(u.syncCalls(), [{ action: 'read' }], 'Setup renders the observation only (the one read is the tab bar\'s catalog count)');
+  // An unconfirmed member (kernel row from a later sync) keeps its status; "Why?" opens its membership in the graph.
   const status = { ...statusOf('workspace-status'), members: moved.members };
-  const { renderSources } = await import('../renderer/workspace-catalog.mjs');
-  const host = u.doc.createElement('div'); renderSources(host, { status });
-  const marketing = host.querySelector('.sources-section [data-member$="marketing.git"]');
-  assert.equal(marketing.querySelector('.catalog-chip').textContent, 'no-backlink');
-  assert.match(marketing.querySelector('.sources-detail').textContent, /has no oats-membership\.yaml/);
+  const { renderSetup } = await import('../renderer/workspace-setup.mjs');
+  const host = u.doc.createElement('div'); let picked = null;
+  renderSetup(host, { status, onSelect: key => { picked = key; } });
+  const marketing = host.querySelector('[data-box=Members] [data-member$="marketing.git"]');
+  assert.equal(marketing.querySelector('.setup-state').textContent, '○no backlink');
+  assert.ok(marketing.querySelector('.setup-state').classList.contains('warn'));
+  marketing.querySelector('button.setup-link-act').click();
+  assert.match(picked, /marketing\.git$/);
+  renderSetup(host, { status, view: 'graph', selected: picked, onSelect() {} });
+  const panel = host.querySelector('.setup-panel');
+  assert.equal(panel.querySelector('.setup-panel-name').textContent, 'marketing');
+  assert.deepEqual([...panel.querySelectorAll('.setup-hand-mark')].map(m => m.dataset.side), ['yes', 'no'], 'listed, but no backlink');
+  assert.match(panel.querySelector('.setup-detail').textContent, /has no oats-membership\.yaml/, 'the kernel detail, verbatim');
 });
 
-test('Setup graph: this computer → workspace → repositories, packages and external souls; repository icons; a repo opens its capabilities', async t => {
+test('W2 Setup graph: this computer → the lock → the workspace → members and packages; a member opens its Member panel, which opens its capabilities', async t => {
   const u = await setup(t, { status: 'f7/workspace-status' });
   await u.tab('sources');
+  u.doc.querySelector('.ws-segmented [data-setup-view=graph]').click(); await settle();
   const graph = u.doc.querySelector('.setup-graph');
-  const computer = graph.querySelector('.setup-computer'), ws = graph.querySelector('.setup-workspace');
-  assert.equal(computer.querySelector('.setup-name').textContent, 'northwind-workspace');
-  assert.equal(computer.querySelector('.setup-meta.mono').textContent, dir);
-  const running = instances.filter(i => i.running === true).length;
-  assert.equal([...computer.querySelectorAll('.setup-meta')].at(-1).textContent, `${instances.length} instance${instances.length === 1 ? '' : 's'} · ${running} running`);
-  assert.equal(ws.querySelector('.setup-name').textContent, 'northwind');
-  assert.equal(ws.querySelector('.setup-meta').textContent, 'Defined in agents');
-  assert.deepEqual([...ws.querySelectorAll('.catalog-chip')].map(el => el.textContent), ['global', 'engineering', 'marketing']);
+  const computer = graph.querySelector('.setup-computer'), ws = graph.querySelector('.setup-ws');
+  assert.equal(computer.querySelector('.setup-card-meta.mono').textContent, dir);
+  assert.equal([...computer.querySelectorAll('.setup-card-meta')].at(-1).textContent, `oats-local.yaml · ${instances.length} instance${instances.length === 1 ? '' : 's'}`);
+  assert.equal(graph.querySelector('.setup-lock').getAttribute('aria-label'), 'Lock current');
+  assert.equal(ws.querySelector('.setup-card-title').textContent, 'Workspace northwind');
+  assert.equal(ws.querySelector('.setup-card-meta.mono').textContent, 'agents');
   const nodes = [...graph.querySelectorAll('.setup-node')];
   assert.deepEqual(nodes.map(el => el.querySelector('.setup-node-name').textContent),
-    ['agents', 'platform', 'data', 'marketing', 'nw-tools', 'nw.chat v0.1.0', 'nw.teams v0.1.0', 'nw.tools v0.4.0', 'oats.framework v1.1.3', 'oats.okf v2.1.3', 'security-reviewer']);
+    ['agents', 'platform', 'data', 'marketing', 'nw-tools', 'nw.chat 0.1.0', 'nw.teams 0.1.0', 'nw.tools 0.4.0', 'oats.framework 1.1.3', 'oats.okf 2.1.3', 'security-reviewer']);
+  assert.equal(nodes[0].querySelector('.setup-node-meta').textContent, 'host · 2 souls');
+  assert.deepEqual(nodes.filter(n => n.dataset.package).map(n => n.querySelector('.setup-node-meta').textContent), ['git tag', 'git tag', 'git tag', 'official', 'official']);
   const repoIcon = iconElement(u.doc, 'repo').innerHTML, packageIcon = iconElement(u.doc, 'package').innerHTML;
-  assert.ok(nodes.every(el => el.querySelector('.setup-node-icon').innerHTML === (el.dataset.package ? packageIcon : repoIcon)), 'git repositories (members, external souls) carry the repository icon');
-  assert.equal(nodes.at(-1).querySelector('.setup-node-sub').textContent, 'External soul · experts · unassigned');
-  assert.doesNotMatch(graph.textContent, /\b[0-9a-f]{7,40}\b/, 'no commits');
+  assert.ok(nodes.every(el => el.querySelector('svg').innerHTML === (el.dataset.package ? packageIcon : repoIcon)), 'git repositories carry the repository icon, packages the package icon');
   // The kernel's workspace warnings, verbatim (#185 warnings[]); a kernel before #185 sends none.
   assert.deepEqual(statusOf('workspace-status').warnings, []);
   assert.equal(statusOf('f7/workspace-status').warnings[0].code, 'unmapped-team-label');
-  assert.ok([...u.doc.querySelectorAll('.catalog-note.warn')].some(el => /team "global" has no messaging\.byTeam entry/.test(el.textContent)));
-  // A repository opens its capabilities, filtered.
-  graph.querySelector('button.setup-node[data-member$="agents.git"]').click(); await settle();
+  // An unmapped team label is said on its team's row in the list, in the kernel's words (not repeated as a note).
+  u.doc.querySelector('.ws-segmented [data-setup-view=list]').click(); await settle();
+  assert.match(u.doc.querySelector('.setup-team[data-team=global] .setup-team-warn').textContent, /team "global" has no messaging\.byTeam entry/);
+  assert.equal(u.doc.querySelector('.setup-team[data-team=engineering] .setup-team-warn'), null);
+  assert.equal([...u.doc.querySelectorAll('.catalog-note.warn')].some(el => /messaging\.byTeam/.test(el.textContent)), false);
+  u.doc.querySelector('.ws-segmented [data-setup-view=graph]').click(); await settle();
+  // A member opens its Member panel; the panel opens its capabilities, filtered.
+  u.doc.querySelector('button.setup-node[data-member$="agents.git"]').click(); await settle();
+  const panel = u.doc.querySelector('.setup-panel');
+  assert.equal(u.doc.activeElement, panel.querySelector('.icon-act'), 'focus moves into the panel');
+  assert.equal(u.doc.querySelector('button.setup-node[data-member$="agents.git"]').getAttribute('aria-pressed'), 'true');
+  assert.deepEqual([...panel.querySelectorAll('.setup-hand-mark')].map(m => m.dataset.side), ['yes', 'yes']);
+  [...panel.querySelectorAll('button')].find(b => b.textContent === 'Show its capabilities').click(); await settle();
   assert.equal(u.doc.getElementById('workspace-tab-capabilities').getAttribute('aria-selected'), 'true');
-  assert.equal(u.pill('repo', 'agents').getAttribute('aria-pressed'), 'true');
+  assert.match(u.doc.querySelector('.catalog-select[data-filter-key=repo] select').value, /agents\.git$/, 'the Repo filter is that repository');
+  assert.ok(u.doc.querySelector('.catalog-select[data-filter-key=repo]').classList.contains('active'));
   assert.deepEqual(u.owned(), ['nw-house-style', 'nw-release-tooling']);
   assert.equal(u.doc.activeElement, u.doc.getElementById('capability-section-workspace'));
 });
@@ -194,20 +246,20 @@ test('header state: lock out of date or current — from workspace status; there
 
 test('Sync runs oats sync and nothing else: no approval control, no sheet for a clean sync, the catalog re-read', async t => {
   const u = await setup(t, { sync: body => body.action === 'sync' ? report('sync-current', 'ok') : catalog('capabilities') });
-  assert.equal(u.doc.querySelector('.ws-sync-state').textContent, 'Lock current');
+  assert.equal(u.doc.querySelector('.ws-sync-state').textContent, '', 'a current lock is shown on Setup (This computer), not beside Sync');
   assert.equal(u.button('Review approvals'), undefined); assert.equal(u.doc.querySelector('.ws-approval'), null);
   await u.tab('capabilities');
-  u.doc.querySelector('.ws-sync button.primary').click(); await settle();
+  u.doc.querySelector('.ws-sync button.ws-sync-run').click(); await settle();
   assert.deepEqual(u.syncCalls(), [{ action: 'read' }, { action: 'sync' }, { action: 'read' }], 'sync, then the catalog is read again');
   assert.equal(u.doc.querySelector('.ws-sync-sheet').hidden, true, 'a clean sync needs nothing from the operator');
-  assert.equal(u.doc.querySelector('.ws-sync-state').textContent, 'Lock current');
+  assert.equal(u.doc.querySelector('.ws-sync-state').textContent, '', 'a current lock is shown on Setup (This computer), not beside Sync');
 });
 
 test('a sync that reports problems says so in a sheet, in the kernel\'s words', async t => {
   const withProblems = report('sync-current', 'ok');
   withProblems.report.problems = [{ code: 'E_MEMBER_UNREADABLE', message: 'member marketing could not be read', path: null, repoKey: null }];
   const u = await setup(t, { sync: body => body.action === 'sync' ? withProblems : catalog('capabilities') });
-  u.doc.querySelector('.ws-sync button.primary').click(); await settle();
+  u.doc.querySelector('.ws-sync button.ws-sync-run').click(); await settle();
   const sheet = u.doc.querySelector('.ws-sync-sheet');
   assert.equal(sheet.hidden, false); assert.equal(sheet.querySelector('h2').textContent, 'Synced, with problems');
   assert.match(sheet.textContent, /member marketing could not be read/);
@@ -218,7 +270,7 @@ test('a refused sync reads plainly; the kernel code and message stay verbatim be
   const integrity = f2('sync-integrity').error;
   const u = await setup(t, { sync: body => body.action === 'sync'
     ? { workspaceSyncApi: 1, status: 'refused', report: null, reason: { code: integrity.code, message: integrity.message } } : catalog('capabilities') });
-  u.doc.querySelector('.ws-sync button.primary').click(); await settle();
+  u.doc.querySelector('.ws-sync button.ws-sync-run').click(); await settle();
   const sheet = u.doc.querySelector('.ws-sync-sheet');
   assert.equal(sheet.hidden, false); assert.equal(sheet.querySelector('h2').textContent, 'Sync didn’t finish');
   const lead = sheet.querySelector('.ws-sync-lead');
@@ -271,7 +323,7 @@ async function syncOwnership(t, create, outcome) {
   const view = create(dom.window.document.querySelector('header'), { ctx });
   t.after(() => { view.dispose(); setWorkspace(previous); dom.window.close(); });
   view.update({ status: statusOf('workspace-status'), canSync: true });
-  dom.window.document.querySelector('.ws-sync button.primary').click(); await tick();
+  dom.window.document.querySelector('.ws-sync button.ws-sync-run').click(); await tick();
   setWorkspace('/other'); // a newer workspace intent
   if (outcome === 'success') gate.resolve({ workspaceSyncApi: 1, status: 'refused', report: null, reason: { code: 'E_PACKAGE_INTEGRITY', message: 'OLD refusal' } });
   else gate.resolve(Promise.reject(new Error('OLD sync failure')));

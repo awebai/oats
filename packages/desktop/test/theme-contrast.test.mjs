@@ -4,7 +4,8 @@ import { readFileSync, readdirSync } from "node:fs";
 import { JSDOM } from "jsdom";
 import { createSoulMark, createRuntimeBadge, identityCSS } from "../renderer/identity-marks.mjs";
 import { workspaceStatusData, syncData } from "../deployment-data.mjs";
-import { renderCapabilities, renderCapabilitySections, capabilitySections, renderFilters, renderSources, filterChoices, memberNames } from "../renderer/workspace-catalog.mjs";
+import { renderCapabilities, renderCapabilitySections, capabilitySections, renderFilters, filterChoices, memberNames } from "../renderer/workspace-catalog.mjs";
+import { renderSetup } from "../renderer/workspace-setup.mjs";
 import { discoveryCSS } from "../renderer/workspace-discovery.mjs";
 import { createConnections, connectionsCSS } from '../renderer/connections.mjs';
 import { createForgePrPanel } from '../renderer/forge-pr.mjs';
@@ -104,13 +105,16 @@ const pairs = [
   ...runtimes.map(name => [`runtime-${name}-fg`, `runtime-${name}-bg`]),
   ...["fg", "muted", "faint", "accent"].flatMap((fg) => ["bg", "surface", "surface-2"].map((bg) => [fg, bg])),
   ...["ok", "warn", "danger"].flatMap((fg) => ["bg", "surface", "surface-2", "term-bg"].map((bg) => [fg, bg])),
-  ["chip-fg", "chip-bg"], ["accent", "chip-bg"], ["warn", "chip-bg"],
+  ["chip-fg", "chip-bg"], ["accent", "chip-bg"], ["warn", "chip-bg"], ["fg", "chip-bg"],
   ["primary-fg", "primary-bg"], ["term-fg", "term-bg"], ["term-sel-fg", "term-sel"],
   ["term-fg", "surface-2"], ["muted", "term-bg"],
   ["fg", "term-bg"], ["accent", "term-bg"], ["violet", "term-bg"], ["violet", "surface-2"],
   ...["fg", "muted", "faint", "accent", "warn", "ok"].map((fg) => [fg, "sel"]),
   ...["fg", "muted", "accent", "violet", "ok", "warn"].map((fg) => [fg, "md-code-bg"]),
   ...ansi.map((fg) => [fg, "term-bg"]),
+  // Workspace v4: amber attention chips/nodes, and reason/tag chips.
+  ["warn", "attn-bg"], ["fg", "attn-bg"], ["muted", "attn-bg"],
+  ...["fg", "muted"].map((fg) => [fg, "tag-bg"]),
 ];
 
 test("contrast inventory retains alpha and composites code backgrounds over the painted --bg", () => {
@@ -304,7 +308,7 @@ for (const [name] of palettes) test(`${name}: actual identity/runtime markup win
 });
 
 for (const [name] of palettes) test(`${name}: workspace catalog, sources and sync text use AA tokens on their computed surfaces`, t => {
-  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"><header class="workspace-header"><div class="ws-sync"><span class="ws-sync-state warn">Lock out of date</span></div></header><p class="catalog-note warn">note</p><div class="filters"></div><div class="caps"></div><div class="sections"></div><div class="sources"></div></main></body></html>`);
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"><header class="workspace-header"><div class="ws-sync"><span class="ws-sync-state warn">Lock out of date</span></div></header><p class="catalog-note warn">note</p><div class="filters"></div><div class="caps"></div><div class="sections"></div><div class="sources"></div><div class="graph"></div></main></body></html>`);
   const doc = dom.window.document;
   for (const source of [css, identityCSS, discoveryCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
   t.after(() => dom.window.close());
@@ -315,35 +319,58 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
   const status = { ...workspaceStatusData(f2('workspace-status'), dir), members: syncData(f2('sync-moved'), dir).members };
   const rows = f2('capabilities').result.capabilities;
   const names = memberNames(status);
-  renderFilters(doc.querySelector('.filters'), { ...filterChoices(rows, names), value: { team: 'marketing', repo: null }, onChange() {} });
+  renderFilters(doc.querySelector('.filters'), { ...filterChoices(rows, names), value: { team: 'marketing', repo: null }, shown: 2, total: 5, onChange() {} });
   renderCapabilities(doc.querySelector('.caps'), { rows, status, instances: [], root: dir });
   // F7 (kernel #185): the three sections, with a repo-owned (private) row.
   const sections = capabilitySections(JSON.parse(readFileSync(new URL('fixtures/workspace-v2/f7/capabilities.json', new URL('./', import.meta.url)), 'utf8')).result.capabilities);
   renderCapabilitySections(doc.querySelector('.sections'), { sections, shown: sections.workspace, filterHost: null, privateListed: true, status, instances: [], root: dir });
-  renderSources(doc.querySelector('.sources'), { status, instances: [{ agent: 'a', running: true }] });
+  renderSetup(doc.querySelector('.sources'), { status, instances: [{ agent: 'a', running: true }], souls: [{ team: 'marketing' }], cli: { version: '0.26.0' } });
+  const unconfirmed = status.members.find(m => m.status !== 'confirmed');
+  renderSetup(doc.querySelector('.graph'), { status: { ...status, unsynced: ['x.pkg'] }, view: 'graph', selected: unconfirmed.key });
   // The sync sheet's refusal text, as createWorkspaceSync builds it.
   const sheet = doc.createElement('section'); sheet.className = 'ws-sync-dialog';
   sheet.innerHTML = '<div class="ws-sync-body"><p class="ws-sync-lead error">x</p><p class="ws-sync-lead">x</p><button class="ws-sync-details">Details</button><p class="ws-sync-detail">x</p></div>';
   doc.querySelector('main').append(sheet);
   const root = dom.window.getComputedStyle(doc.documentElement);
   for (const [selector, painted, fg, bg] of [
-    ['.catalog-row.head', '.catalog-row.head', 'muted', 'surface-2'],
-    ['.catalog-sub', '.catalog-table', 'muted', 'surface'],
-    ['.catalog-chip.ok', '.catalog-chip.ok', 'ok', 'surface-2'],
-    ['.catalog-chip.warn', '.catalog-chip.warn', 'warn', 'surface-2'],
-    ['.catalog-chip.mono', '.catalog-chip.mono', 'muted', 'surface-2'],
-    ['.catalog-used', '.catalog-table', 'muted', 'surface'],
-    ['.catalog-filter-label', '.oats-view', 'muted', 'bg'],
-    ['.catalog-pill[aria-pressed=false]', '.catalog-pill[aria-pressed=false]', 'fg', 'surface'],
-    ['.catalog-pill[aria-pressed=true]', '.catalog-pill[aria-pressed=true]', 'fg', 'sel'],
+    // Workspace v4 (W5): the table head sits on the table surface; names, source chips and used-by counts.
+    ['.catalog-row.head', '.catalog-table', 'muted', 'surface'],
+    ['.catalog-name', '.catalog-table', 'fg', 'surface'],
+    ['.source-chip', '.catalog-table', 'muted', 'surface'], ['.source-chip-name', '.catalog-table', 'fg', 'surface'],
+    ['.catalog-used-count', '.catalog-table', 'muted', 'surface'],
+    // Filters: "Filter by", a plain dropdown, an active one (Team = marketing), the count and Clear filters.
+    ['.catalog-filters-label', '.oats-view', 'muted', 'bg'],
+    ['.catalog-select:not(.active) .catalog-select-key', '.catalog-select:not(.active)', 'muted', 'surface'],
+    ['.catalog-select:not(.active) select', '.catalog-select:not(.active)', 'fg', 'surface'],
+    ['.catalog-select.active .catalog-select-key', '.catalog-select.active', 'accent', 'sel'],
+    ['.catalog-select.active select', '.catalog-select.active', 'fg', 'sel'],
+    ['.catalog-shown', '.oats-view', 'muted', 'bg'], ['.catalog-clear', '.oats-view', 'accent', 'bg'],
     ['.catalog-note.warn', '.oats-view', 'warn', 'bg'],
-    ['.sources-key', '.catalog-table', 'muted', 'surface'],
-    ['.capability-section-title', '.oats-view', 'muted', 'bg'], ['.capability-section-count', '.oats-view', 'muted', 'bg'],
-    ['.capability-section-lead', '.oats-view', 'muted', 'bg'], ['.capability-repo-title', '.oats-view', 'fg', 'bg'],
-    ['.setup-caption', '.setup-card', 'muted', 'surface'], ['.setup-name', '.setup-card', 'fg', 'surface'], ['.setup-meta', '.setup-card', 'muted', 'surface'],
-    ['.setup-node-name', '.setup-node', 'fg', 'surface'], ['.setup-node-sub', '.setup-node', 'muted', 'surface'], ['.setup-node-detail', '.setup-node', 'warn', 'surface'],
-    ['.setup-node .catalog-chip.ok', '.setup-node .catalog-chip.ok', 'ok', 'surface-2'],
-    ['.sources-detail', '.catalog-table', 'warn', 'surface'],
+    // Sections: jump pills (current = ink), titles with their lead, repo sub-headings.
+    ['.capability-nav button[aria-current=true]', '.capability-nav button[aria-current=true]', 'primary-fg', 'primary-bg'],
+    ['.capability-nav button[aria-current=false]', '.capability-nav button[aria-current=false]', 'fg', 'surface'],
+    ['.capability-section-title', '.oats-view', 'fg', 'bg'], ['.capability-section-lead', '.oats-view', 'muted', 'bg'],
+    ['.catalog-group', '.catalog-table', 'muted', 'surface'],
+    // Workspace v4 Setup (W1/W2) — replaces the old setup-card/node/sources inventory.
+    ['.setup-lede h2', '.oats-view', 'fg', 'bg'], ['.setup-lede-where', '.oats-view', 'muted', 'bg'],
+    ['.setup-box-head h3', '.setup-box', 'fg', 'surface'], ['.setup-box-lead', '.setup-box', 'muted', 'surface'],
+    ['.setup-box .setup-scope', '.setup-box .setup-scope', 'muted', 'tag-bg'],
+    ['.setup-name', '.setup-box', 'fg', 'surface'], ['.setup-version', '.setup-box', 'muted', 'surface'],
+    ['.setup-state:not(.warn)', '.setup-state:not(.warn)', 'muted', 'tag-bg'], ['.setup-state.warn', '.setup-state.warn', 'warn', 'attn-bg'],
+    ['.setup-cell:not(.muted)', '.setup-box', 'fg', 'surface'], ['.setup-cell.muted', '.setup-box', 'muted', 'surface'],
+    ['.setup-link-act', '.setup-box', 'accent', 'surface'],
+    ['.setup-team-label', '.setup-team-label', 'fg', 'tag-bg'], ['.setup-team-meta', '.setup-box', 'muted', 'surface'], ['.setup-team-note', '.setup-box', 'muted', 'surface'],
+    ['.setup-kv dt', '.setup-local', 'muted', 'surface-2'], ['.setup-kv dd', '.setup-local', 'fg', 'surface-2'],
+    ['.setup-caption', '.setup-here', 'muted', 'surface-2'], ['.setup-card-title', '.setup-computer', 'fg', 'surface'], ['.setup-card-meta', '.setup-computer', 'muted', 'surface'],
+    ['.setup-ws .setup-card-meta', '.setup-ws', 'fg', 'sel'],
+    ['.setup-lock.warn', '.oats-view', 'warn', 'bg'],
+    ['.setup-tree-label', '.setup-shared', 'muted', 'surface'],
+    ['.setup-node:not(.bad) .setup-node-name', '.setup-node:not(.bad)', 'fg', 'surface'], ['.setup-node:not(.bad) .setup-node-meta', '.setup-node:not(.bad)', 'muted', 'surface'],
+    ['.setup-node.bad .setup-node-name', '.setup-node.bad', 'fg', 'attn-bg'], ['.setup-node.bad .setup-node-meta', '.setup-node.bad', 'warn', 'attn-bg'],
+    ['.setup-panel-name', '.setup-panel', 'fg', 'surface'], ['.setup-panel h4', '.setup-panel', 'muted', 'surface'],
+    ['.setup-hand-title', '.setup-panel', 'fg', 'surface'], ['.setup-hand-sub', '.setup-panel', 'muted', 'surface'], ['.setup-hand-mark.warn', '.setup-panel', 'warn', 'surface'],
+    ['.setup-panel p:not(.muted)', '.setup-panel', 'fg', 'surface'], ['.setup-panel p.muted', '.setup-panel', 'muted', 'surface'],
+    ['.setup-detail', '.setup-detail', 'fg', 'surface-2'],
     ['.ws-sync-state.warn', '.workspace-header', 'warn', 'surface'],
     ['.ws-sync-lead.error', '.ws-sync-dialog', 'danger', 'surface'], ['.ws-sync-lead:not(.error)', '.ws-sync-dialog', 'fg', 'surface'],
     ['.ws-sync-details', '.ws-sync-dialog', 'muted', 'surface'], ['.ws-sync-detail', '.ws-sync-detail', 'muted', 'surface-2'],
@@ -593,7 +620,9 @@ for (const [name] of palettes) test(`${name}: F7 inspector cards, teams, compact
     ['#home .teams-card .team-meta', '#home .teams-card', 'muted', 'surface'],
     ['#home .teams-card .team-badge', '#home .teams-card', 'muted', 'surface'],
     ['#home .inspector-spawned button', '#home .inspector-spawned button', 'fg', 'surface'],
-    ['#context-panel .context-panel-path', '#context-panel', 'muted', 'surface'],
+    // Workspace v4 (W6): the Folder row's path reads as a value; Details' home path stays muted.
+    ['#context-panel .context-panel-folder .context-panel-path', '#context-panel', 'fg', 'surface'],
+    ['#context-panel .context-panel-detail .context-panel-path', '#context-panel', 'muted', 'surface'],
     ['#context-panel .context-panel-copy', '#context-panel .context-panel-copy', 'fg', 'surface'],
   ];
   checks.push(['.git-status-details > summary', '#context-panel', 'muted', 'surface']);
@@ -628,23 +657,37 @@ for (const [name] of palettes) test(`${name}: the spawn Teams row (fixed, joinab
   dom.window.close();
 });
 
-// F7 pages: the capability page (and the shared page card: header band, facts, rows, back).
-import { renderCapabilityPage, capabilityPageCSS, pageCardCSS } from '../renderer/capability-page.mjs';
-for (const [name] of palettes) test(`${name}: F7 page cards, facts, used-by rows and the back control meet computed AA`, () => {
-  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"><section class="host"></section></div></body></html>`, { pretendToBeVisual: true });
+// Workspace v4 pages (W4/W5b) — replaces the F7 page inventory (header band,
+// facts, used-by rows, borderless back): the page bar, side cards, key/value
+// facts, the used-by table and a soul's composition table with its why tags.
+import { renderCapabilityPage, renderSoulCapabilities, capabilityPageCSS, pageCardCSS, soulCapabilitiesCSS } from '../renderer/capability-page.mjs';
+for (const [name] of palettes) test(`${name}: v4 page bar, cards, facts, used-by rows and why tags meet computed AA`, () => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"><section class="host"></section><section class="soul"></section></div></body></html>`, { pretendToBeVisual: true });
   const doc = dom.window.document;
-  for (const source of [css, discoveryCSS, pageCardCSS, capabilityPageCSS, identityCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
-  renderCapabilityPage(doc.querySelector('.host'), { row: { name: 'oats.okf', kind: 'package', package: 'oats.okf', version: '2.1.3', commit: 'a'.repeat(40), origin: 'package oats.okf v2.1.3' },
+  for (const source of [css, discoveryCSS, pageCardCSS, capabilityPageCSS, soulCapabilitiesCSS, identityCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  renderCapabilityPage(doc.querySelector('.host'), { row: { name: 'oats.okf', kind: 'package', package: 'oats.okf', version: '2.1.3', commit: 'a'.repeat(40), origin: 'package oats.okf v2.1.3', layer: 'knowledge' },
     status: null, root: 'team', instances: [{ agent: 'dev', agentsRoot: '/a', instance: 'dev-1', modules: [{ name: 'oats.okf', status: 'moved' }] }], onBack() {}, openSoul() {} });
+  renderSoulCapabilities(doc.querySelector('.soul'), { status: null, onOpen() {}, entries: [
+    { cap: { id: 'house-style', version: '0.0.0-workspace', from: { kind: 'member', repoKey: 'x/agents.git' } }, why: 'default' },
+    { cap: { id: 'runner', from: { kind: 'member', repoKey: 'x/app.git' } }, why: 'soul', repoOwned: true },
+    { name: 'pr-hygiene', why: 'off' }] });
   const root = dom.window.getComputedStyle(doc.documentElement);
   for (const [selector, painted, fg, bg] of [
-    ['.page-card-head', '.page-card-head', 'muted', 'surface-2'],
-    ['.page-facts dt', '.page-card', 'muted', 'surface'],
-    ['.page-facts dd', '.page-card', 'fg', 'surface'],
-    ['.used-row .used-name', 'button.used-row', 'fg', 'surface'],
-    ['.used-row .used-meta', 'button.used-row', 'muted', 'surface'],
-    ['.page-title .catalog-sub', '.oats-view', 'muted', 'bg'],
-    ['button.page-back', '.oats-view', 'muted', 'bg'],
+    ['.page-crumbs', '.page-bar', 'muted', 'surface'],
+    ['.page-crumb-current', '.page-bar', 'fg', 'surface'],
+    ['button.page-back', 'button.page-back', 'fg', 'surface'],
+    ['.page-tag', '.page-tag', 'fg', 'chip-bg'],
+    ['.page-card-title', '.page-card', 'muted', 'surface'],
+    ['.page-kv dt', '.page-card', 'muted', 'surface'],
+    ['.page-table-row.head', '.capability-page .page-table', 'muted', 'surface'],
+    ['.used-name', 'button.used-row', 'fg', 'surface'],
+    ['.used-meta.warn', 'button.used-row', 'warn', 'surface'],
+    ['.soul-cap-id', '.soul-caps', 'fg', 'surface'],
+    ['.soul-cap-note', '.soul-caps', 'muted', 'surface'],
+    ['.soul-cap-row.off .soul-cap-id', '.soul-caps', 'muted', 'surface'],
+    ['.why-tag:not(.soul)', '.why-tag:not(.soul)', 'fg', 'tag-bg'],
+    ['.why-tag.soul', '.why-tag.soul', 'primary-fg', 'primary-bg'],
+    ['.why-note', '.soul-caps', 'muted', 'surface'],
   ]) {
     const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
     const color = dom.window.getComputedStyle(el).color;

@@ -33,8 +33,9 @@ const instance = (extra = {}) => ({ instance: 'web-developer-1', agent: 'web-dev
 
 test('only reported facts: an unreported fact hides its row (its field still says so), and an empty section hides', t => {
   const u = fixture(t); u.select(instance());
-  assert.equal(u.field('model').textContent, 'Not reported'); assert.equal(u.row('model').hidden, true, 'no "Not reported" row is shown');
-  assert.equal(u.row('harness').hidden, false); assert.equal(u.row('work').hidden, false);
+  // Workspace v4 (W6): harness and model sit in the Session card; an unreported model is not shown.
+  assert.equal(u.field('model').textContent, 'Not reported'); assert.equal(u.field('model').hidden, true, 'no "Not reported" is shown');
+  assert.equal(u.field('harness').closest('.context-panel-section').hidden, false); assert.equal(u.row('work').hidden, false);
   const lineage = u.row('parentInstance').closest('.context-panel-section');
   assert.equal(lineage.hidden, true, 'no parent or sibling reported: no Lineage section');
   u.select(instance({ parentInstance: 'lead-1' }));
@@ -42,7 +43,7 @@ test('only reported facts: an unreported fact hides its row (its field still say
   // Less-used facts sit behind Details (collapsed), still only when reported.
   const details = u.q('[data-context-page="instance"] > .context-panel-details');
   assert.equal(details.open, false); assert.equal(details.hidden, false, 'the home is reported');
-  assert.equal(u.row('soulSource').hidden, true); assert.equal(u.row('identity').hidden, true);
+  assert.equal(u.row('soulSource').hidden, true); assert.equal(u.field('identity').hidden, true);
   u.select(instance({ home: undefined }));
   assert.equal(details.hidden, true, 'nothing reported for Details: hidden');
   assert.doesNotMatch([...u.document.querySelectorAll('#context-panel [data-row]:not([hidden])')].map(r => r.textContent).join('|'), /Not reported/);
@@ -66,14 +67,14 @@ test('created reads as a relative age with the exact value in its title; paths s
   assert.equal(ageText('not a date'), 'not a date');
 });
 
-test('Soul tab: the description under the name, Open in Workspace hands the soul identity off; no disclaimer paragraph', t => {
+test('Soul tab: the description under the name, Open soul page hands the soul identity off; no disclaimer paragraph', t => {
   const u = fixture(t); u.select(instance({ description: 'Builds the storefront', server: null }));
   u.tab('soul').click();
   const page = u.q('[data-context-page="soul"]');
   assert.match(page.textContent, /web-developer.*Builds the storefront/s);
   assert.doesNotMatch(page.textContent, /Metadata reported by this instance/);
   const open = u.q('[data-action="soul.open"]');
-  assert.equal(open.textContent, 'Open in Workspace'); assert.equal(open.disabled, false);
+  assert.equal(open.textContent, 'Open soul page', 'Workspace v4 (W6) wording'); assert.equal(open.disabled, false);
   open.click();
   assert.deepEqual(u.opened, [{ workspace: 'A', name: 'web-developer', agentsRoot: '/Users/me/work/northwind/agents', server: undefined }]);
   u.select(instance({ agent: undefined }));
@@ -81,11 +82,12 @@ test('Soul tab: the description under the name, Open in Workspace hands the soul
   assert.equal(u.field('description').hidden, true);
 });
 
-test('Teams sits in the Instance tab under the worktree, injected; it is active only while the Instance tab is the visible page', t => {
+test('Teams (Messaging) sits in the Instance tab under Session, injected; it is active only while the Instance tab is the visible page', t => {
   const u = fixture(t); u.select(instance());
   const section = u.q('[data-context-section="teams"]');
   assert.equal(u.hosts.length, 1); assert.equal(u.hosts[0].host, section);
-  assert.equal(section.previousElementSibling.querySelector('.context-panel-label').textContent, 'Worktree');
+  assert.equal(section.previousElementSibling.querySelector('.context-panel-label').textContent, 'Session', 'Workspace v4 (W6) order: Where it works, Session, Messaging');
+  assert.equal(section.querySelector('.context-panel-label').firstChild.textContent, 'Messaging');
   assert.equal(section.hidden, true, 'hidden until the section says it has something');
   u.hosts[0].onPresence(true); assert.equal(section.hidden, false);
   assert.equal(u.updates.at(-1).active, true); assert.equal(u.updates.at(-1).instance.home, HOME); assert.equal(u.updates.at(-1).workspace, 'A');

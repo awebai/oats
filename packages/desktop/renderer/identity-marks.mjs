@@ -10,8 +10,13 @@ export const identityCSS = `
 const runtimeMarks = new Map([
   ['claude', { name: 'Claude', mark: 'C' }],
   ['pi', { name: 'Pi', mark: 'π' }],
-  ['codex', { name: 'Codex', mark: 'Cx' }],
+  ['codex', { name: 'Codex', mark: '⌥' }],
 ]);
+/** A reported harness's display name (Claude, Pi, Codex), else the value verbatim. */
+export function harnessName(value) {
+  const reported = typeof value === 'string' ? value.trim() : '';
+  return runtimeMarks.get(reported.toLowerCase())?.name || reported;
+}
 const monogram = value => (typeof value === 'string' ? value.match(/[\p{L}\p{N}]/u)?.[0] : null)?.toUpperCase() || '?';
 function identityMark(doc, name, color, kind) {
   const el = doc.createElement('span');

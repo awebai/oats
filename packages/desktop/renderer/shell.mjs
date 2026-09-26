@@ -42,12 +42,14 @@ import { shellIcon, mountShellIcons } from "./shell-icons.mjs";
 import { createRuntimeBadge, identityCSS } from "./identity-marks.mjs";
 import { createContextPanel, contextPanelCSS } from "./context-panel.mjs";
 import { createInstanceTeamsSection, teamsCSS } from "./instance-teams.mjs";
+import { createInstanceSoulSection, instanceSoulCSS } from "./instance-soul.mjs";
 import { createInstanceGitPanel, instanceGitCSS } from "./instance-git.mjs";
 import { createNotificationCenter, notificationCSS } from "./notifications.mjs";
+import { createRosterTip, rosterTipFacts, rosterTipCSS } from "./roster-tip.mjs";
 import { createPanelOwner } from "./panel-owner.mjs";
 import {
   collapseKey, hasInstanceChildren, instanceRepoLabel, treeConnectors, filterInstanceTree, instanceVisibleInTree,
-  captureTreeRenderState, rosterResponseOwns, clusterHeader, renderRosterCount,
+  captureTreeRenderState, rosterResponseOwns, clusterSeparator, renderRosterCount,
   instanceId, rosterParentId, terminalKey, resolveTerminalOpen, visibleClusters,
 } from "./instance-tree.mjs";
 import {
@@ -65,7 +67,8 @@ const desk = window.oatsDesktop;
 initTheme();
 mountShellIcons(document);
 const identityStyle = document.createElement("style");
-identityStyle.textContent = identityCSS + contextPanelCSS + teamsCSS + instanceGitCSS + notificationCSS + connectionsCSS + lifecycleCSS; document.head.append(identityStyle);
+identityStyle.textContent = identityCSS + contextPanelCSS + teamsCSS + instanceSoulCSS + instanceGitCSS + notificationCSS + connectionsCSS + lifecycleCSS + rosterTipCSS; document.head.append(identityStyle);
+const rosterTip = createRosterTip(document);
 let connectionGeneration = 0;
 const connectionListeners = new Set();
 const subscribeConnections = fn => { connectionListeners.add(fn); return () => connectionListeners.delete(fn); };
@@ -238,7 +241,6 @@ function menuState(value, element) {
 }
 const collapsedInstances = new Set();
 // Collapsed agent groups (sidebar group headers), keyed like instances.
-const collapsedGroups = new Set();
 const desktopBridge = window.oatsDesktop;
 const unavailableWorkspaceService = () => Promise.reject(new Error("Workspace discovery is not available in this desktop service yet."));
 const workspaceLabel = createWorkspaceSwitcher({
@@ -391,16 +393,7 @@ function renderContextRoster(instances) {
       ? [{ key: "independent", label: "independent", clusters: clusters.filter((c) => c.instances.length === 1) }] : []),
   ];
   for (const group of groups) {
-    const groupKey = collapseKey(ws, `group:${group.key}`);
-    const groupCollapsed = !filtering && collapsedGroups.has(groupKey);
-    listEl.append(clusterHeader(document, {
-      label: group.label, count: group.clusters.reduce((n, c) => n + c.instances.length, 0), collapsed: groupCollapsed,
-      onToggle: () => {
-        if (collapsedGroups.has(groupKey)) collapsedGroups.delete(groupKey); else collapsedGroups.add(groupKey);
-        renderContextRoster(contextInstances);
-      },
-    }));
-    if (groupCollapsed) continue;
+    listEl.append(clusterSeparator(document, { label: group.label, count: group.clusters.reduce((n, c) => n + c.instances.length, 0) }));
     for (const cluster of group.clusters) {
       const items = cluster.instances;
       for (const i of items) {
@@ -437,8 +430,10 @@ function renderContextRoster(instances) {
         rowWrap.classList.toggle("active", isActive);
         if (hasChildren) row.setAttribute("aria-expanded", String(filtering || !collapsed));
         row.disabled = i.running == null || (!!i.server && !i.savedRoute);
-        row.title = i.runtimeError || (i.server && !i.savedRoute ? "No saved route for this instance on this machine"
+        const why = i.runtimeError || (i.server && !i.savedRoute ? "No saved route for this instance on this machine"
           : i.running ? `Open ${i.instance} terminal` : i.running === false ? `Start ${i.instance}` : `${i.instance}: status unknown`);
+        // Workspace v4: an enabled row explains itself in the hover/focus card; a disabled one keeps its reason as a title.
+        if (row.disabled) row.title = why; else rosterTip.bind(row, () => rosterTipFacts(i, why));
         const dot = document.createElement("span");
         dot.className = `ctx-dot ${state === "running" ? "on" : state === "stopped" ? "off" : "unknown"}`;
         const copy = document.createElement("span");
@@ -525,6 +520,7 @@ function renderContextRoster(instances) {
     restoreTreeState();
     restoreActionMenu();
   });
+  rosterTip.sync(listEl);
   // roving tabindex: exactly one row enters the tab order — the focused row
   // when it survived the rebuild, else the first enabled one
   applyChordTitles(); updateActiveContexts();
@@ -641,6 +637,19 @@ const contextPanel = createContextPanel({
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
     }),
   }),
+  // Soul tab (W6): the soul as the instance was spawned — its own `oats inspect --home` read.
+  createSoulSection: (host, { onPresence }) => createInstanceSoulSection(host, { onPresence, generation: workspaceGeneration,
+    request: (workspace, body) => api(`/api/capabilities?ws=${encodeURIComponent(workspace)}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    }),
+  }),
+  // W6 footer: the roster menu's own lifecycle dialogs (plan-backed Stop/Retire, Start/Restart with…).
+  lifecycle: {
+    start: (instance, workspace) => { if (workspace === currentWorkspace()) openInstanceStart(instance); },
+    restart: (instance, workspace) => { if (workspace === currentWorkspace()) openInstanceStart(instance, { restart: true }); },
+    stop: (instance, workspace) => { if (workspace === currentWorkspace()) openLifecycleDialog('stop', instance, workspace); },
+    retire: (instance, workspace) => { if (workspace === currentWorkspace()) openLifecycleDialog('retire', instance, workspace); },
+  },
   // Soul tab → the soul in the Workspace view (same hand-off as Quick Open).
   openSoul: async ({ workspace, name, agentsRoot, server }) => {
     const owns = tabOpenIntents.begin();
@@ -1227,7 +1236,8 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
 
   const made = addTab({
     title: `${name}${inst.server ? ` · ${inst.server}` : ""}`,
-    decor: { dot: inst.running ? "on" : "off", detail: typeof inst.branch === "string" ? inst.branch : null },
+    // Workspace v4 (W6): a terminal tab carries only its name and status; the branch lives in the bottom bar.
+    decor: { dot: inst.running ? "on" : "off" },
     key,
     kind: "terminal",
     workspace: ws,
