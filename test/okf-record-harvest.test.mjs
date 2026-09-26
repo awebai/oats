@@ -68,7 +68,7 @@ test('notes AND bounded record backlog enter durable custody; actual independent
   const done = f.complete(run); assert.equal(done.processed, true); assert.equal(done.receipts.project.status, 'accepted');
   assert.equal(status(f).processed.length, 4); assert.equal(f.complete(run).processed, true, 'completion replay is idempotent');
   f.retire(run.instance);
-  const reader = f.spawn('reader'); assert.match(fs.readFileSync(join(reader.home, 'knowledge/bases/project/expert/decision.md'), 'utf8'), /avoids silent fallback/);
+  const reader = f.spawn('reader'); assert.match(f.consult(reader.home, 'expert/decision.md'), /avoids silent fallback/);
   f.retire(reader.instance);
 });
 

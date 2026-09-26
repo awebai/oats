@@ -7,8 +7,9 @@ function keys(value, allowed, label, code='E_CONFIG') {
 }
 export function settings() {
   const s = JSON.parse(process.env.OATS_SETTINGS || '{}');
-  keys(s,['bindings-file','state-dir','harvest-runtime','harvest-model','git-timeout'],'OATS_SETTINGS');
+  keys(s,['bindings-file','state-dir','harvest-runtime','harvest-model','git-timeout','consult-max-age'],'OATS_SETTINGS');
   if(s['git-timeout']!==undefined && (!Number.isInteger(s['git-timeout']) || s['git-timeout']<1)) fail('E_CONFIG','git-timeout must be a positive integer number of seconds');
+  if(s['consult-max-age']!==undefined && (!Number.isInteger(s['consult-max-age']) || s['consult-max-age']<0)) fail('E_CONFIG','consult-max-age must be a non-negative integer number of seconds');
   if(s['state-dir']!==undefined && (typeof s['state-dir']!=='string' || !isAbsolute(s['state-dir']) || resolve(s['state-dir'])!==s['state-dir'])) fail('E_CONFIG','state-dir must be a normalized absolute path');
   if(s['harvest-runtime']!==undefined && !['pi','claude','codex'].includes(s['harvest-runtime'])) fail('E_CONFIG','invalid harvest-runtime');
   if(s['harvest-model']!==undefined && (typeof s['harvest-model']!=='string' || !s['harvest-model'].trim())) fail('E_CONFIG','harvest-model must be a nonempty string');
@@ -17,6 +18,9 @@ export function settings() {
 /** Time budget for Git operations that talk to a remote (clone, fetch, push,
  *  ls-remote). Local object reads keep the short exec default. */
 export function gitTimeoutMs() { return (settings()['git-timeout'] ?? 600)*1000; }
+/** How old (seconds) the host cache's accepted commit may be before a consult
+ *  read refetches the accepted branch; 0 fetches on every read. */
+export function consultMaxAgeMs() { return (settings()['consult-max-age'] ?? 300)*1000; }
 export function noGit(path) {
   for (let p = safePath(path); ; p = dirname(p)) {
     if (fs.existsSync(join(p, '.git')) || (fs.existsSync(join(p, 'HEAD')) && fs.existsSync(join(p, 'objects')) && fs.existsSync(join(p, 'refs')))) fail('E_DIRECTORY_GIT', `directory store is in Git custody: ${p}; use kind git`);

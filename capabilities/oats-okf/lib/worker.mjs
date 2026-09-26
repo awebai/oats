@@ -108,7 +108,7 @@ function spawnWorker(source,run,{parent=false}={}) {
       persist(source,run);throw error;
     }
   }
-  const args=['spawn','memory-harvest','--purpose',`okf-${id}`,'--work','directory','--repo',source.context,'--dir',source.context,'--runtime',source.execution.runtime,'--no-launch','--task-file',taskFile,'--json'];
+  const args=['spawn','memory-harvest','--purpose',`okf-${id}`,'--work','directory','--repo',source.context,'--dir',source.context,harnessFlag(source),source.execution.runtime,'--no-launch','--task-file',taskFile,'--json'];
   if(!['pi','claude','codex'].includes(source.execution.runtime)) fail('E_CONFIG','invalid harvest runtime');
   if(source.execution.model) args.push('--model',source.execution.model);
   if(parent) args.push('--parent',source.instance);
@@ -123,6 +123,14 @@ function spawnWorker(source,run,{parent=false}={}) {
   finally {fs.rmSync(taskFile,{force:true});}
 }
 
+/** OATS 0.27 names the spawn harness --harness (--runtime is its deprecated
+ *  alias). Ask the kernel; an older kernel, or one that cannot answer, gets
+ *  --runtime, which every supported kernel accepts. */
+export function harnessFlag(source) {
+  let version;
+  try {version=oats(['version','--json'],source.context,{native:true,timeout:15000});} catch {return '--runtime';}
+  return Array.isArray(version?.features) && version.features.includes('harness')?'--harness':'--runtime';
+}
 function workerHome(run,source) {
   const home=safePath(run.worker.home);const meta=readJSON(join(home,'instance.json'));
   if(meta.instance!==run.worker.instance || meta.agent!=='memory-harvest' || meta.work!=='directory') fail('E_WORKER','worker receipt does not identify a directory-mode harvester');

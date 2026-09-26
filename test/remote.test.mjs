@@ -3,12 +3,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
-  contentDigest, fetchRemoteTree, listRemoteTree, observeRemote, parseRepoRef, readRemoteFile, runGit, FILE_BUDGET,
+  contentDigest, fetchRemoteTree, listRemoteTree, observeRemote, parseRepoRef, readRemoteFile, runGit, FILE_BUDGET, OATS_ALIAS_SYMLINK,
 } from "../lib/remote.mjs";
 
 const GIT_ENV = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t",
@@ -307,6 +307,24 @@ test("fetchRemoteTree refuses a symlink in the tree (E_REMOTE_TREE_UNSAFE symlin
   assert.equal(read.code, "E_REMOTE_TREE_UNSAFE"); assert.equal(read.details.why, "symlink");
   const listed = await listRemoteTree(f.repo.bare, c, "capabilities/nw-tool", { cacheDir: f.cacheDir, depth: 1 });
   assert.deepEqual(listed.find((x) => x.path === "alias.json"), { path: "alias.json", type: "symlink", size: 9 });
+});
+
+// The module store's fetch (a capability-defined agent's soul): the tracked CLAUDE.md -> AGENTS.md
+// alias survives; any other symlink is still refused. (oats.okf 2.x shipped such an alias; 3.0.0 ships none.)
+test("fetchRemoteTree with OATS_ALIAS_SYMLINK keeps a CLAUDE.md -> AGENTS.md alias, and refuses any other link", async () => {
+  const f = fixture();
+  const c = f.repo.commit("agent alias", (w) => {
+    mkdirSync(join(w, "capabilities/nw-tool/agents/worker"), { recursive: true });
+    writeFileSync(join(w, "capabilities/nw-tool/agents/worker/AGENTS.md"), "# worker\n");
+    symlinkSync("AGENTS.md", join(w, "capabilities/nw-tool/agents/worker/CLAUDE.md"));
+  });
+  const dest = join(f.base, "out-alias", "nw-tool");
+  await fetchRemoteTree(f.repo.bare, c, "capabilities/nw-tool", dest, { cacheDir: f.cacheDir, allowSymlinks: OATS_ALIAS_SYMLINK });
+  const alias = join(dest, "agents/worker/CLAUDE.md");
+  assert.ok(lstatSync(alias).isSymbolicLink()); assert.equal(readlinkSync(alias), "AGENTS.md");
+  const c2 = f.repo.commit("other link", (w) => { symlinkSync("oats.json", join(w, "capabilities/nw-tool/alias.json")); });
+  const e = await caughtAsync(fetchRemoteTree(f.repo.bare, c2, "capabilities/nw-tool", join(f.base, "out-alias2", "nw-tool"), { cacheDir: f.cacheDir, allowSymlinks: OATS_ALIAS_SYMLINK }));
+  assert.equal(e.code, "E_REMOTE_TREE_UNSAFE"); assert.equal(e.details.why, "symlink");
 });
 
 test("contentDigest is canonical: order-independent, mode-normalized, refuses symlinks, missing dir → E_REMOTE_PATH_MISSING", () => {

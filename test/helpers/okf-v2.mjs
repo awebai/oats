@@ -83,6 +83,12 @@ export function fixture(t, { git = false, settings = {}, register = true } = {})
     gitRun('-C', accepted, 'add', '.'); gitRun('-C', accepted, 'commit', '-qm', 'accepted baseline');
   } else cli(['okf', 'init', '--base', 'project', '--nodes', nodes, '--confirm', '--soul', 'source', '--json']);
   const f = { base, context, bin, user, env, cap, soul, bindings, accepted, cli, raw, git: gitRun, fx, localFile, configSettings };
+  /** okf 3.0.0: a home has no ./knowledge/ view; it consults the accepted state (`oats okf cat`). null when absent. */
+  f.consult = (home, path, { fresh = false } = {}) => {
+    const r = raw(['okf', 'cat', '--base', 'project', path, ...(fresh ? ['--fresh'] : []), '--json'], { cwd: home, environment: { ...env, OATS_INSTANCE_HOME: home } }), out = JSON.parse(r.stdout);
+    assert.equal(fs.existsSync(join(home, 'knowledge')), false, 'okf 3.0.0 materializes no ./knowledge/ in a home');
+    return out.ok ? out.result.text : null;
+  };
   f.spawn = (purpose = 'probe') => cli(['spawn', 'source', '--purpose', purpose, '--repo', context, '--work', 'directory', '--harness', 'pi', '--no-launch', '--json']);
   if (register) {
     f.source = f.spawn(); f.home = f.source.home;

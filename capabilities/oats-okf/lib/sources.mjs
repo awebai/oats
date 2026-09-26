@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { fs, join, dirname, resolve, safePath, readJSON, save, atomic, materialize, hash, withLock, oats, fail, tree, overlaps, syncDir, identifier, relPath } from './io.mjs';
-import { loadBindings, declaration, metadata, resolveNodes, bindingFingerprint, settings, validateBindings } from './config.mjs';
-import { stageBase } from './stores.mjs';
+import { fs, join, dirname, resolve, safePath, readJSON, save, atomic, hash, withLock, oats, fail, tree, overlaps, identifier } from './io.mjs';
+import { loadBindings, declaration, bindingFingerprint, settings, validateBindings } from './config.mjs';
+import { acceptedResolution } from './consult.mjs';
 import { loadInvocationKnowledgeBinding, readPrivateInvocationJson, sourceRuntimeFromKnowledgeBinding } from './binding-wire.mjs';
 import { sameJson } from './portable-binding.mjs';
 import { qualifiedSoulIdentity } from './source-contract.mjs';
@@ -89,44 +89,14 @@ export function service(home) {
   if(fs.existsSync(join(home,'instance.json'))) return readJSON(join(home,'instance.json')).kind==='capability';
   return process.env.OATS_KIND==='capability';
 }
-// Control files live at the view root; arbitrary legal aliases live ONLY in
-// bases/. Receipts use paths relative to the view so moving a prepared view
-// into its final location cannot invalidate its navigation.
-export function views(bindings, decl, target) {
-  target=safePath(target); if(fs.existsSync(target)) fail('E_VIEW','view exists; use a new immutable view destination');
-  const all={}; const receipts={};
-  fs.mkdirSync(dirname(target),{recursive:true});
-  const pending=fs.mkdtempSync(join(dirname(target),'.okf-view-'));
-  try {
-    for(const [alias,base] of Object.entries(bindings.bases)) {
-      const scratch=fs.mkdtempSync(join(bindings.stateDir,'read-'));
-      try {
-        const staged=stageBase(base,join(scratch,'base'),{alias});
-        all[alias]=staged.meta;
-        const path=`bases/${alias}`;
-        materialize(join(pending,path),staged.files);
-        receipts[alias]={path,id:base.id,digest:staged.digest,head:staged.head || null,nodes:staged.meta.nodes};
-      } finally { fs.rmSync(scratch,{recursive:true,force:true}); }
-    }
-    resolveNodes(decl,bindings,all);
-    save(join(pending,'view.json'),{version:1,at:new Date().toISOString(),bases:receipts,owns:decl.owns,reads:decl.reads});
-    // Never expose a partial view or remove/replace a caller's existing view.
-    if(fs.existsSync(target)) fail('E_VIEW','view exists; use a new immutable view destination');
-    fs.renameSync(pending,target);syncDir(dirname(target));
-    return receipts;
-  } finally { fs.rmSync(pending,{recursive:true,force:true}); }
-}
-const registrationView = source => join(source.home,`.okf-view-${source.id}`);
+// okf 3.0.0 materializes no instance copy of any base: registration records
+// the accepted resolution (per base: commit or digest, and its nodes) and the
+// instance consults the bases remotely through `oats okf`. A ./knowledge/ left
+// by okf 2.x is not touched; inspect reports it as a legacy local view.
+const acceptedNodes = view => Object.fromEntries(Object.entries(view).map(([alias,row])=>[alias,row.nodes]));
 function finishRegistration(source) {
-  const pending=safePath(registrationView(source)),target=safePath(join(source.home,'knowledge'));
-  if(fs.existsSync(pending)) {
-    if(fs.existsSync(target)) fail('E_VIEW','knowledge already exists; refusing to replace it with the registered view');
-    fs.renameSync(pending,target);syncDir(source.home);
-  }
   // A durable home pointer precedes publication. Failures after it was saved
-  // resume this same source/view; they never reset captured evidence or IDs.
-  const receipt=readJSON(join(target,'view.json'));
-  if(source.acceptedView && JSON.stringify(receipt.bases)!==JSON.stringify(source.acceptedView)) fail('E_VIEW','registered accepted view receipt differs; preserve it and inspect');
+  // resume this same source; they never reset captured evidence or IDs.
   for(const [p,text] of [['STATE.md','# Working state\n\n# Task\n\n# Next\n'],['log.md','# Instance log\n']]) if(!fs.existsSync(join(source.home,p))) atomic(join(source.home,p),text);
   fs.mkdirSync(join(source.home,'notes'),{recursive:true});
   scheduleSource(source);return source;
@@ -155,8 +125,6 @@ export function registerCaptured(home,receipt) {
     const source=homeSource(home);if(!sameCapturedReceipt(source,receipt,captured)) fail('E_SOURCE','captured registration receipt differs from durable source');
     return finishRegistration(source);
   }
-  safePath(join(home,'knowledge'));
-  if(fs.existsSync(join(home,'knowledge'))) fail('E_VIEW','unregistered knowledge view exists; preserve it and inspect before registering');
   if(['.okf-harvest-record.json','.okf-harvest-record.next.json'].some(path=>fs.existsSync(join(home,path)))) fail('E_MIGRATION','legacy source watermarks require explicit migration before captured registration');
   if(overlaps(home,captured.context) && captured.context.startsWith(home)) fail('E_PATH','captured deployment context cannot be in disposable home');
   const {file:bindingsFile,...bindingsDoc}=captured.binding.bindings;
@@ -167,13 +135,13 @@ export function registerCaptured(home,receipt) {
     bindingFingerprint:bindingFingerprint(bindings),execution:captured.binding.execution,providerBinding:JSON.parse(JSON.stringify(receipt.binding)),
     registration:{schemaVersion:1,kind:'captured'},sourceIdentity:captured.sourceIdentity,executionBinding:captured.execution,
     responsibleHuman:captured.responsibleHuman,created:new Date().toISOString()};
-  const file=join(dir,'source.json'),pending=registrationView(source);fs.mkdirSync(dir,{recursive:true,mode:0o700});
+  const file=join(dir,'source.json');fs.mkdirSync(dir,{recursive:true,mode:0o700});
   try {
-    source.acceptedView=views(bindings,source.decl,pending);source.acceptedNodes=Object.fromEntries(Object.entries(source.acceptedView).map(([alias,row])=>[alias,row.nodes]));
+    source.acceptedView=acceptedResolution(bindings,source.decl);source.acceptedNodes=acceptedNodes(source.acceptedView);
     save(file,source);save(join(dir,'status.json'),{version:1,captured:{notes:[],threads:{},inputs:[]},processed:[],delivered:{},accepted:{},retired:false,auto:true,activeRun:null});
     save(markerPath(home),{version:1,id,source:file});
   } catch(error) {
-    if(!fs.existsSync(markerPath(home))) {fs.rmSync(pending,{recursive:true,force:true});fs.rmSync(dir,{recursive:true,force:true});}
+    if(!fs.existsSync(markerPath(home))) fs.rmSync(dir,{recursive:true,force:true});
     throw error;
   }
   return finishRegistration({...source,file});
@@ -188,8 +156,6 @@ export function register(home) {
   }
   if(service(home)) return {skipped:'service'};
   if(fs.existsSync(markerPath(home))) return finishRegistration(homeSource(home));
-  safePath(join(home,'knowledge'));
-  if(fs.existsSync(join(home,'knowledge'))) fail('E_VIEW','unregistered knowledge view exists; preserve it and inspect before registering');
   if(['.okf-harvest-record.json','.okf-harvest-record.next.json'].some(p=>fs.existsSync(join(home,p))) && !fs.existsSync(join(home,'.okf-v1-migration.json'))) fail('E_MIGRATION','legacy source watermarks require explicit oats okf migrate --source-home PATH before v2 registration; no cursor is silently trusted');
   const meta=fs.existsSync(join(home,'instance.json'))?readJSON(join(home,'instance.json')):{};
   if(!process.env.OATS_SOUL) fail('E_OATS_SOUL_MISSING','OATS_SOUL is not set; oats.okf hooks and commands run only under the OATS kernel');
@@ -213,22 +179,18 @@ export function register(home) {
   if(Buffer.byteLength(role)>128*1024) fail('E_SOURCE','role document exceeds 128KiB; provide a concise role before registering');
   const source={version:1,id,home,work,context,agent,instance,owner:decl.owner,decl,role,bindings,bindingFingerprint:bindingFingerprint(bindings),execution:{runtime:settings()['harvest-runtime']||'pi',model:settings()['harvest-model']||null},created:new Date().toISOString()};
   const file=join(dir,'source.json');
-  const pending=registrationView(source);
   fs.mkdirSync(dir,{recursive:true,mode:0o700});
   try {
-    source.acceptedView=views(bindings,decl,pending);
+    source.acceptedView=acceptedResolution(bindings,decl);
     pinOwner(ownersFile,decl.owner,{id:soulId,soulName:agent,path:soul});
-    source.acceptedNodes=Object.fromEntries(Object.entries(source.acceptedView).map(([alias,r])=>[alias,r.nodes]));
+    source.acceptedNodes=acceptedNodes(source.acceptedView);
     save(file,source);
     save(join(dir,'status.json'),{version:1,captured:{notes:[],threads:{},inputs:[]},processed:[],delivered:{},accepted:{},retired:false,auto:true,activeRun:null});
     save(markerPath(home),{version:1,id,source:file});
   } catch(e) {
     // Until the pointer is durable no capture or schedule can reference these
     // files. Leave an installed pointer's state intact even if fsync failed.
-    if(!fs.existsSync(markerPath(home))) {
-      fs.rmSync(pending,{recursive:true,force:true});
-      fs.rmSync(dir,{recursive:true,force:true});
-    }
+    if(!fs.existsSync(markerPath(home))) fs.rmSync(dir,{recursive:true,force:true});
     throw e;
   }
   return finishRegistration({...source,file});

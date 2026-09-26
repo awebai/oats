@@ -3,25 +3,25 @@
   "generatedBy": "scripts/check-okf-mirror.mjs --finalize --source <standalone-repository> --final-tag <tag> --final-commit <full-oid>",
   "distributionPath": "oats-package",
   "capabilityPath": "capabilities/oats-okf",
-  "version": "2.1.5",
+  "version": "3.0.0",
   "source": {
     "repository": "https://github.com/awebai/oats-okf.git",
     "branch": "HEAD",
-    "head": "00eaedd321f372a811f30643cb7fabfc2e5decad",
+    "head": "76f7ccdb336026c1e43afe6f1a5b25618794e964",
     "dirty": false,
     "workingTreeStatus": []
   },
   "release": {
     "status": "published",
-    "finalMergedCommit": "00eaedd321f372a811f30643cb7fabfc2e5decad",
-    "plannedTag": "v2.1.5",
-    "finalTag": "v2.1.5",
+    "finalMergedCommit": "76f7ccdb336026c1e43afe6f1a5b25618794e964",
+    "plannedTag": "v3.0.0",
+    "finalTag": "v3.0.0",
     "published": true,
     "remote": "origin",
-    "tagObject": "5cb1df8549ec1e3f13500e24624d0c9a8b3e3d29"
+    "tagObject": "ad2349c7d03caee6bd175306504b6e67c3e876ce"
   },
-  "distributionManifestText": "{\n  \"package\": \"oats.okf\",\n  \"version\": \"2.1.5\",\n  \"description\": \"Official OATS knowledge integration for Open Knowledge Format bundles and continuous memory harvesting.\",\n  \"compatibility\": {\n    \"oats\": \">=0.24.4\"\n  },\n  \"capabilities\": [\n    \"capabilities/oats-okf\"\n  ]\n}\n",
-  "distributionManifestSha256": "07eb4ab43ade15bad3c75371e3b1abb362bbe516457e433599f5e2d7863b47ee",
+  "distributionManifestText": "{\n  \"package\": \"oats.okf\",\n  \"version\": \"3.0.0\",\n  \"description\": \"Official OATS knowledge integration for Open Knowledge Format bundles and continuous memory harvesting.\",\n  \"compatibility\": {\n    \"oats\": \">=0.26.0\"\n  },\n  \"capabilities\": [\n    \"capabilities/oats-okf\"\n  ]\n}\n",
+  "distributionManifestSha256": "08a8e5d8977faf57104c24c91cc26ebf23ba9afbcfb5badab148b5e72f4d5bb9",
   "distributionLicenseText": "MIT License\n\nCopyright (c) 2026 OATS Framework\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n",
   "distributionLicenseSha256": "549762a3949c109455d73fabcd2340e98bd32ecbb6fea0fcac9ba7f5d41e52fd",
   "entries": [
@@ -37,16 +37,8 @@
       "path": "agents/memory-harvest/AGENTS.md",
       "type": "file",
       "mode": "100644",
-      "size": 1321,
-      "sha256": "62dabed337cd9c209176315751b1da54164b25badaca9a100fe9933627f39937"
-    },
-    {
-      "path": "agents/memory-harvest/CLAUDE.md",
-      "type": "symlink",
-      "mode": "120000",
-      "target": "AGENTS.md",
-      "size": 9,
-      "sha256": "a54ff182c7e8acf56acfd6e4b9c3ff41e2c41a31c9b211b2deb9df75d9a478f9"
+      "size": 1648,
+      "sha256": "691e1419606ecdb6ff7b9678e7bee963ef8020282d496bf0caac1fa456759cf8"
     },
     {
       "path": "agents/memory-harvest/soul.yaml",
@@ -70,8 +62,8 @@
       "path": "bin/oats-okf.mjs",
       "type": "file",
       "mode": "100755",
-      "size": 15355,
-      "sha256": "7a5c95470269deed13582a1bb600ed2bd0c013720a802d25e2556ff8553b4921"
+      "size": 16194,
+      "sha256": "4485ae5a6027b24c981dd71573eee119a4883191fb65c7eea435da5f2df50e4f"
     },
     {
       "path": "injects",
@@ -81,8 +73,8 @@
       "path": "injects/okf.md",
       "type": "file",
       "mode": "100644",
-      "size": 2133,
-      "sha256": "8514530ce8a23f19e38bb3c6229d5937d08254fea059e756c14c06be1538b4f9"
+      "size": 2392,
+      "sha256": "147edd90a7c348768c41aa4eb42e6a969120e038303892a974ab7a72de60fed4"
     },
     {
       "path": "lib",
@@ -106,15 +98,22 @@
       "path": "lib/config.mjs",
       "type": "file",
       "mode": "100644",
-      "size": 10001,
-      "sha256": "e6176fc8d028fbfeded7647019c9230de65e82284274f143c07f5371ba68f2e9"
+      "size": 10451,
+      "sha256": "027889352dd11800f7559868001cc3f1acd72d938c932e565d56366095fc37cc"
+    },
+    {
+      "path": "lib/consult.mjs",
+      "type": "file",
+      "mode": "100644",
+      "size": 34320,
+      "sha256": "a0c146dcf9c18aba981e673447c0368df2a634f0b84e0191dc622a12677f16ab"
     },
     {
       "path": "lib/inspection.mjs",
       "type": "file",
       "mode": "100644",
-      "size": 7333,
-      "sha256": "53fe361b376a7966bcab63397a5e1a59f4a06a4ebda08fdcc61ae14c53e5890a"
+      "size": 8097,
+      "sha256": "d252c93d76a02ad1f9e2cfd2124f5887be40b96d6968d747820cd534ab13a2df"
     },
     {
       "path": "lib/invocation-context.mjs",
@@ -134,8 +133,8 @@
       "path": "lib/io.mjs",
       "type": "file",
       "mode": "100644",
-      "size": 6739,
-      "sha256": "3e27968fe149f26d7299875a068375716b74e5ab5f6e7e973ba6263aef6e0838"
+      "size": 7157,
+      "sha256": "9e5dc0dcc38f30bc869d8fb71e5991ca07196d4c044f752a26627bc02499b4e4"
     },
     {
       "path": "lib/migration.mjs",
@@ -162,29 +161,29 @@
       "path": "lib/sources.mjs",
       "type": "file",
       "mode": "100644",
-      "size": 31706,
-      "sha256": "fdd01dd845001a043154e05994a31936285c303528ea00165587c502a3863255"
+      "size": 29249,
+      "sha256": "b6d45f42f43c8ffc1ffe098e68ee750b2b4d795b1b708be73e53ddc20a495cd3"
     },
     {
       "path": "lib/stores.mjs",
       "type": "file",
       "mode": "100644",
-      "size": 32669,
-      "sha256": "6841ee4205fd1a43b3040274ee7f4830ca609d4a38d4956cb3bb4fade4ca02b1"
+      "size": 32951,
+      "sha256": "188843679dccc3682d17d7579e27b256b4e94fbae5be5872aa515e3399e895c4"
     },
     {
       "path": "lib/worker.mjs",
       "type": "file",
       "mode": "100644",
-      "size": 31881,
-      "sha256": "b36776a58afbfdfe28a8b8f896864dc9cdb248bf922e867fd4dc0dca6b3f44e9"
+      "size": 32376,
+      "sha256": "a8fc31bb347ab6cf7d2c4f9cf84e62a5240eba89514c562c45d01a67f138f42e"
     },
     {
       "path": "oats.json",
       "type": "file",
       "mode": "100644",
-      "size": 4917,
-      "sha256": "21eb0f3bc9f4a2d652f5d0693730bcfff856d9b3dac50cd337994d6aedd46f87"
+      "size": 5450,
+      "sha256": "82a9d0263e8a7414d5c96196f2bb78f7889e91fe61dce8e7fb6097b9bd080bea"
     },
     {
       "path": "schemas",
@@ -245,11 +244,33 @@
       "type": "directory"
     },
     {
+      "path": "skills/okf-consultation",
+      "type": "directory"
+    },
+    {
+      "path": "skills/okf-consultation/SKILL.md",
+      "type": "file",
+      "mode": "100644",
+      "size": 6831,
+      "sha256": "186350ba5f8c5dd173374fba33fa0d2e90bbc4c38ed5f53bac25f447ca9c1444"
+    },
+    {
+      "path": "skills/okf-consultation/references",
+      "type": "directory"
+    },
+    {
+      "path": "skills/okf-consultation/references/consult.md",
+      "type": "file",
+      "mode": "100644",
+      "size": 4455,
+      "sha256": "73f46a52b8c6fd96b77d7c2908bf35df6bd5cc78f9d59bcf43598ba9ef74c431"
+    },
+    {
       "path": "skills/okf/SKILL.md",
       "type": "file",
       "mode": "100644",
-      "size": 8586,
-      "sha256": "3722c68d9fb4e8f1f5d606ed5ab68b57310b943f5edf003893162a4f47156913"
+      "size": 8971,
+      "sha256": "7232942891310a37a3a47c34f2f8c5b367b6034f7411352764407d64cf20d967"
     },
     {
       "path": "skills/okf/scripts",
@@ -263,7 +284,7 @@
       "sha256": "a784569cd80ebc1e31cc7a0699f013b3ce449712dd3fe052e986be217c1b07f1"
     }
   ],
-  "snapshotSha256": "e1c6ecd2410d01c963d9c7ea888ad1f59b6c3424165df80f10fb96f61603969d",
+  "snapshotSha256": "04ae5066539a7759206fa58229432198062e50911f2d8fb32295b31abf5a5fb1",
   "distributionManifestMode": "100644",
   "distributionLicenseMode": "100644"
 }

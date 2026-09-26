@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-import { randomUUID } from 'node:crypto';
-import { fs, join, dirname, resolve, readJSON, save, safePath, cliPath, oats, fail, unlock } from '../lib/io.mjs';
-import { loadBindings, declaration, splitRef } from '../lib/config.mjs';
-import { register, registerCaptured, loadInvocationSourceReceipt, homeSource, loadSource, loadStatus, saveStatus, updateStatus, capture, scheduleSource, settleRetiredSchedule, service, markerPath, views } from '../lib/sources.mjs';
+import { fs, join, resolve, readJSON, safePath, oats, fail, unlock } from '../lib/io.mjs';
+import { loadBindings } from '../lib/config.mjs';
+import { register, registerCaptured, loadInvocationSourceReceipt, homeSource, loadSource, loadStatus, saveStatus, updateStatus, capture, scheduleSource, settleRetiredSchedule, service, markerPath } from '../lib/sources.mjs';
+import { CONSULT } from '../lib/consult.mjs';
 import { runSource, complete, retry, readRun, requireQualifiedHelper } from '../lib/worker.mjs';
 import { initBase, migrate, deliverMigration, cutoverMigration, migrateSource, forgetMigration } from '../lib/migration.mjs';
 import { inspect } from '../lib/inspection.mjs';
@@ -13,8 +13,16 @@ oats okf harvest [--home PATH] [--no-launch] [--json]
 oats okf run-source --source FILE [--manual] [--no-launch] [--json]
 oats okf complete --source FILE --run ID --judgment FILE [--json]
 oats okf retry --source FILE [--run ID --rejudge | --rejudge | --launch | --adopt-home PATH] [--json]
-oats okf read [--home PATH | --source FILE] --base ALIAS [--path node/index.md] [--json]
-oats okf refresh [--home PATH | --source FILE] [--json]
+oats okf bases [--fresh] [--json]
+oats okf index [--base ALIAS] [NODE | ALIAS/NODE] [--fresh] [--json]
+oats okf cat --base ALIAS PATH [--from PATH] [--fresh] [--json]
+oats okf ls --base ALIAS [DIR] [--fresh] [--json]
+oats okf links --base ALIAS PATH [--fresh] [--json]
+oats okf search [--base ALIAS | --all] [--node NODE] [--regex] [--case-sensitive] TEXT [--fresh] [--json]
+oats okf read --base ALIAS [--path node/index.md] [--json]   (2.x alias of cat)
+Consult commands read the accepted state remotely (host cache, no local copy);
+also accept --home PATH | --source FILE. PATH is /node/x.md from the base root,
+relative to --from's directory, or bare node/x.md from the root.
 oats okf setup --source FILE [--enable | --disable] [--install-host] [--json]
 oats okf init --base ALIAS --nodes FILE [--output PATH | --confirm] [--json]
 oats okf migrate --legacy PATH --base ALIAS --node NODE --output PATH [--json]
@@ -36,11 +44,13 @@ if(args.includes('--help') || args.includes('-h')) {process.stdout.write(HELP);}
 else {
   const event=process.env.OATS_EVENT || args[0];
   const hook=['spawn','retire','soul-scaffold'].includes(event);
-  let exit=0,answer;
+  const consult=Object.hasOwn(CONSULT,event);
+  let exit=0,answer,text,textMode=consult && !args.includes('--json');
   try {
-    const flags={}; const boolean=new Set(['json','no-launch','manual','rejudge','launch','enable','disable','install-host','confirm']);
+    const flags={},positionals=[]; const boolean=new Set(['json','no-launch','manual','rejudge','launch','enable','disable','install-host','confirm','fresh','all','regex','case-sensitive']);
     for(let i=1;i<args.length;i++) {
-      if(!args[i].startsWith('--')) fail('E_USAGE',`unexpected argument ${args[i]}`);
+      if(consult && args[i]==='--') {positionals.push(...args.slice(i+1));break;}
+      if(!args[i].startsWith('--')) {if(!consult || event==='read') fail('E_USAGE',`unexpected argument ${args[i]}`);positionals.push(args[i]);continue;}
       const k=args[i].slice(2);if(k in flags) fail('E_USAGE',`duplicate --${k}`);
       if(boolean.has(k)) flags[k]=true;
       else {if(!args[i+1] || args[i+1].startsWith('--')) fail('E_USAGE',`--${k} needs a value`);flags[k]=args[++i];}
@@ -49,7 +59,9 @@ else {
       spawn:[],retire:['home'], 'soul-scaffold':[],
       harvest:['home','no-launch','native-request','worker-mode'],inspect:['home','source'],
       'run-source':['source','manual','no-launch'],complete:['source','run','judgment'],
-      retry:['source','run','rejudge','launch','adopt-home'],read:['home','source','base','path'],refresh:['home','source'],
+      retry:['source','run','rejudge','launch','adopt-home'],read:['home','source','base','path','fresh'],refresh:['home','source'],
+      bases:['home','source','fresh'],index:['home','source','base','fresh'],cat:['home','source','base','from','fresh'],ls:['home','source','base','fresh'],
+      links:['home','source','base','fresh'],search:['home','source','base','all','node','regex','case-sensitive','fresh'],
       setup:['source','enable','disable','install-host'],init:['base','nodes','output','confirm'],
       migrate:['source-home','legacy','base','node','output','deliver','cutover','soul-dir'],unlock:['lock','token']
     };
@@ -107,7 +119,9 @@ else {
       readRun(s,id);return s;
     };
     let result;
-    if(event==='soul-scaffold') {
+    if(consult) {const answer=CONSULT[event](src(),flags,positionals);result=answer.result;text=answer.text;}
+    else if(event==='refresh') fail('E_REMOVED','okf 3.0.0 has no per-instance views; index/cat always read the accepted state: run `oats okf index`, then `oats okf cat --base ALIAS PATH`');
+    else if(event==='soul-scaffold') {
       // Souls are portable declarations, never an implicit knowledge store.
       result={meta:{scaffolded:false},brief:'OKF requires explicit external bindings and soul/okf.json before a working instance can spawn. Use init or migrate; no knowledge was created in this soul.'};
     } else if(event==='spawn') {
@@ -115,7 +129,8 @@ else {
       if(s.skipped) result={meta:{memory:'none'},brief:'Service agent: follow your own task; no working-memory upkeep.'};
       else {
         const schedule=loadStatus(s).schedule.result;
-        result={meta:{memory:'okf-v2',source:s.file,schedule},brief:`Knowledge is an immutable accepted snapshot at ./knowledge/. Read knowledge/view.json for base paths under knowledge/bases/<alias>/, then the indexes for ${[...new Set([...s.decl.owns,...s.decl.reads])].join(', ')}. Follow only relevant links. All configured bases are available. Use oats okf read for current accepted text; old views stay stable. Keep STATE.md/log.md/notes/ current; never edit knowledge.`};
+        const nodes=(list)=>list.join(', ') || 'none';
+        result={meta:{memory:'okf-v2',source:s.file,schedule},brief:`Your knowledge is read remotely at its accepted state; there is no local copy. Start every task with \`oats okf index\` (owns: ${nodes(s.decl.owns)}; reads: ${nodes(s.decl.reads.filter(r=>!s.decl.owns.includes(r)))}), then \`oats okf cat --base ALIAS PATH\` for the concepts the task needs; \`oats okf search\` before re-deriving a decision. Load the okf-consultation skill for the procedure. Keep STATE.md/log.md/notes/ current; never edit knowledge.`};
       }
     } else if(event==='retire') {
       if(captured) {
@@ -151,20 +166,6 @@ else {
       if(flags.enable || flags.disable) {oats(['schedule',flags.enable?'enable':'disable',`okf-${s.id}`,'--dir',s.context,'--json'],s.context);updateStatus(s,current=>{current.auto=!!flags.enable;});}
       if(flags['install-host']) oats(['schedule','host','install','--dir',s.context,'--json'],s.context);
       result={source:s.file,scheduler:oats(['schedule','list','--dir',s.context,'--json'],s.context).scheduler};
-    } else if(event==='read' || event==='refresh') {
-      const s=src();
-      // A descriptor-selected read is independent of any invoking/source home.
-      // In particular, retired sources must not leave caches in context/repo.
-      const target=join(flags.source?join(dirname(s.file),'views'):home,`knowledge-view-${randomUUID()}`);
-      const receipts=views(s.bindings,s.decl,target);
-      if(event==='refresh') result={path:target,receipts};
-      else {
-        if(!Object.hasOwn(s.bindings.bases,flags.base || '')) fail('E_CONFIG','unknown --base');
-        const basePath=join(target,receipts[flags.base].path);
-        const p=safePath(join(basePath,flags.path || 'index.md'));
-        if(!p.startsWith(basePath+'/') || !p.endsWith('.md')) fail('E_PATH','read only contained Markdown');
-        result={path:p,text:fs.readFileSync(p,'utf8'),receipt:receipts[flags.base]};
-      }
     } else if(event==='init') result=initBase(loadBindings(),flags.base,flags.nodes,flags.output,{confirm:!!flags.confirm});
     else if(event==='migrate') {
       if(flags['source-home']) result=migrateSource(loadBindings(),flags['source-home']);
@@ -176,6 +177,10 @@ else {
     else fail('E_USAGE',`unknown command ${event}; see --help`);
     answer=hook?result:{schemaVersion:1,ok:true,result};
   } catch(e) {const code=e.code || 'E_OKF';exit=1;answer=hook?{meta:{...(event==='retire'?{retired:false,reason:e.message}:{})},warning:`oats-okf ${code}: ${e.message}`}:{schemaVersion:1,ok:false,error:{code,message:e.message}};}
-  // Let Node drain the pipe; no process.exit after a possibly large view.
-  process.stdout.write(JSON.stringify(answer)+'\n');process.exitCode=exit;
+  // Consult commands print text unless --json; every other answer is JSON.
+  // Let Node drain the pipe; no process.exit after a possibly large answer.
+  if(textMode && exit) process.stderr.write(`oats okf ${event}: ${answer.error.code}: ${answer.error.message}\n`);
+  else if(textMode) process.stdout.write(text+'\n');
+  else process.stdout.write(JSON.stringify(answer)+'\n');
+  process.exitCode=exit;
 }
