@@ -86,3 +86,12 @@ test('a first read that fails leaves no catalog (never a roster fallback); proto
   assert.deepEqual((await t.observe('/dep', CLI, WS)).reason, { code: 'E_CLI_FAILED', message: '' });
   t.forget('/dep'); assert.equal(t.held('/dep'), null);
 });
+
+test('soulsData keeps a soul\'s team labels only when they are a bounded list of distinct valid labels', () => {
+  const doc = JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/f7/souls.json', import.meta.url), 'utf8'));
+  assert.deepEqual(soulsData(doc).souls.find(s => s.name === 'release-manager').labels, ['engineering', 'global']);
+  for (const bad of ['engineering', [7], ['Bad Label'], ['a', 'a'], Array.from({ length: 65 }, (_, i) => `t${i}`)]) {
+    const d = structuredClone(doc); d.result.souls.find(s => s.name === 'release-manager').labels = bad;
+    assert.throws(() => soulsData(d), undefined, JSON.stringify(bad).slice(0, 40));
+  }
+});

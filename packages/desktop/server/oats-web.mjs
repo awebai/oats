@@ -197,7 +197,7 @@ function agentsData(wsId) {
       const color = normalizeSoulColor(roster.get(soul.name)?.color);
       agents.push({
         name: soul.name, description: soul.description || "", kind: "persistent", work: soul.work,
-        ...(color ? { color } : {}), ...(soul.team ? { team: soul.team } : {}),
+        ...(color ? { color } : {}), ...(soul.team ? { team: soul.team } : {}), ...(Array.isArray(soul.labels) ? { labels: [...soul.labels] } : {}),
         origin: soul.origin || "", soulKind: soul.kind, repo: soul.repoKey || null, capability: null,
         soulSource: { repoKey: soul.repoKey ?? null, commit: soul.commit ?? null, path: soul.path ?? null },
         agentsRoot: root, workspace: context,
