@@ -195,10 +195,13 @@ That makes "exactly one machine" a declared fact, and **consent** explicit: a ma
 - The same `assigned-elsewhere` / `owner-mismatch` / `host-unnamed` reasons, the same `automations.disabled` opt-out, the same snapshot refresh, and local schedules as `local/<id>`.
 - One rule set for both kinds; the kernel implements them together.
 
-**Desktop, Automations** (the human, 2026-09-26):
-- The user sees **every workspace trigger and schedule defined in the member repos they can read**, plus their own machine's local ones.
+**Desktop: the Schedules tab (existing, redesigned) + a NEW Triggers tab** (the human, 2026-09-26; no unified "Automations" view):
+- The existing **Schedules** tab is redesigned in place, and a new **Triggers** tab sits beside it.
+- **Both show workspace AND local items together**, each row marked with its origin.
+- **Sequencing:** the Desktop engineer's finished redesign ships FIRST (in 0.28.0). These tabs come after, on the kernel's `automations` JSON (0.29.0).
+- In each tab the user sees **every workspace item defined in the member repos they can read**, plus their own machine's local ones.
 - **Each row:**
-  - the kind (trigger/schedule) and the id (`<member>/<id>` or `local/<id>`);
+  - the id (`<member>/<id>` or `local/<id>`) and its origin (workspace/local);
   - **the owner** (the GitHub account);
   - **where it runs** (`runsOn`, and whether that's THIS machine, with the reason when not);
   - **the soul** it spawns (with its origin: member/package);
