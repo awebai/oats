@@ -539,7 +539,7 @@ for (const [name] of palettes) test(`${name}: the "sign in needed" provider stat
 });
 
 for (const [name] of palettes) test(`${name}: actual Connections and reported PR checks use computed AA surfaces`, async t => {
-  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="instance-git"><section id="pr"></section></main></body></html>`);
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="instance-git" style="background:var(--surface)"><section id="pr" class="git-github"></section></main></body></html>`);
   const doc = dom.window.document;
   for (const source of [css, readFileSync(new URL('shell.css', renderer), 'utf8'), connectionsCSS, instanceGitCSS]) {
     const style = doc.createElement('style'); style.textContent = source; doc.head.append(style);
@@ -564,8 +564,11 @@ for (const [name] of palettes) test(`${name}: actual Connections and reported PR
   for (const [selector, painted, fg, bg] of [
     ['.forge-settings h2', '.forge-settings', 'fg', 'surface'], ['.forge-card .forge-hint', '.forge-card', 'muted', 'surface-2'],
     ['.forge-settings button', '.forge-settings button', 'fg', 'surface'], ['.forge-settings select', '.forge-settings select', 'fg', 'surface'],
-    ['.forge-pass', '.git-card', 'ok', 'surface-2'], ['.forge-fail', '.git-card', 'danger', 'surface-2'],
-    ['.forge-pending', '.git-card', 'muted', 'surface-2'], ['.forge-neutral', '.git-card', 'muted', 'surface-2'], ['.git-card a', '.git-card', 'accent', 'surface-2'],
+    // W6 Pull request (design; replaces the .git-card pairs): marks, names and meta on the panel surface, and Open on GitHub.
+    ['.forge-pass .forge-mark', 'main', 'ok', 'surface'], ['.forge-fail .forge-mark', 'main', 'danger', 'surface'],
+    ['.forge-pending .forge-mark', 'main', 'warn', 'surface'], ['.forge-neutral .forge-mark', 'main', 'muted', 'surface'],
+    ['.forge-review .forge-mark', 'main', 'warn', 'surface'], ['.forge-check-name', 'main', 'fg', 'surface'], ['.forge-check-meta', 'main', 'muted', 'surface'],
+    ['.forge-sub', 'main', 'muted', 'surface'], ['.forge-caveat', 'main', 'muted', 'surface'], ['button.forge-open', 'button.forge-open', 'fg', 'surface'],
   ]) {
     const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
     assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);

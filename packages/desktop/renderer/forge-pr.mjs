@@ -1,6 +1,26 @@
 /** Read-only, observation-bound PR card. Never constructs a gh argument. */
 import { gitTargetKey } from './instance-git-contract.mjs';
 import { FORGE_API, ref, forgeReason, projectedPullRequest, hostName } from './forge-contract.mjs';
+import { iconElement } from './shell-icons.mjs';
+import { ageText } from './age-text.mjs';
+
+/** W6 (design): the PR's state word, its checks as rows (failing and running each, passing
+ * grouped) and its review decision, each with a mark and a colour token. */
+const prState = d => d.state === 'MERGED' ? 'merged' : d.state === 'CLOSED' ? 'closed' : d.isDraft ? 'draft' : 'open';
+const MARK = { pass: '✓', fail: '✕', pending: '◔', neutral: '–', review: '●' };
+const REVIEW = { APPROVED: ['approved', 'pass'], CHANGES_REQUESTED: ['changes requested', 'fail'], REVIEW_REQUIRED: ['review required', 'pending'] };
+const word = v => String(v).toLowerCase().replaceAll('_', ' ');
+export function checkRows(checks) {
+  const order = { fail: 0, pending: 1, neutral: 3 }, rows = [];
+  for (const check of checks.filter(c => c.outcome !== 'pass').sort((a, b) => order[a.outcome] - order[b.outcome]))
+    rows.push({ outcome: check.outcome, name: check.name, meta: word(check.conclusion) });
+  const passed = checks.filter(c => c.outcome === 'pass');
+  // Passing checks are one row: their names when few, else how many (the names in its title).
+  if (passed.length) rows.splice(rows.filter(r => r.outcome !== 'neutral').length, 0, passed.length <= 3
+    ? { outcome: 'pass', name: passed.map(c => c.name).join(' · '), meta: '' }
+    : { outcome: 'pass', name: `${passed.length} checks passed`, meta: '', title: passed.map(c => c.name).join('\n') });
+  return rows;
+}
 export function createForgePrPanel(root, { request, generation = () => 0, connectionGeneration = () => 0,
   subscribeConnections = () => () => {}, connect = () => {}, openExternal = () => {} } = {}) {
   const doc = root.ownerDocument;
@@ -15,7 +35,7 @@ export function createForgePrPanel(root, { request, generation = () => 0, connec
     }
     return true;
   };
-  const clear = text => { root.replaceChildren(node('h3', 'GitHub / pull request'), node('p', text, 'git-note')); };
+  const clear = text => { root.replaceChildren(node('h3', 'Pull request'), node('p', text, 'git-note')); };
   function update(value = null) { selection = value; ticket++; clear(value ? 'Reading pull request…' : 'No current Git observation.'); if (value) return refresh(); }
   async function refresh() {
     const selected = selection, mine = ++ticket, ws = generation(), account = connectionGeneration();
@@ -35,22 +55,33 @@ export function createForgePrPanel(root, { request, generation = () => 0, connec
       if (result.status === 'available') {
         const data = projectedPullRequest(result.data, { host: result.host, path: result.repository, branch: selected.branch });
         if (!data) throw new Error('Invalid PR projection');
-        const card = node('div', undefined, 'git-card');
-        card.append(node('strong', `#${data.number} · ${data.title}`), node('p', `${data.state}${data.isDraft ? ' · Draft' : ''}`, 'git-note'),
-          node('p', `${data.baseRefName} → ${data.headRefName}`, 'git-branch'), node('p', `Review: ${data.reviewDecision || 'Not reported'}`, 'git-note'),
-          node('h3', 'Reported PR checks'));
+        const card = node('div', undefined, 'forge-pr-card');
+        const head = node('div', undefined, 'forge-head'), sub = node('span', `#${data.number} · ${prState(data)}`, 'forge-sub');
+        sub.title = `${data.baseRefName} ← ${data.headRefName} · updated ${ageText(data.updatedAt)}`; sub.dataset.prState = prState(data);
+        head.append(node('span', data.title, 'forge-title'), sub); card.append(head);
+        // Checks, then the review decision, as rows.
+        const list = node('ul', undefined, 'forge-checks'); list.setAttribute('aria-label', 'Reported pull request checks');
+        const row = ({ outcome, name, meta, title }, kind = outcome) => {
+          const li = node('li', undefined, `forge-check forge-${kind}`); li.dataset.outcome = outcome;
+          const mark = node('span', MARK[kind], 'forge-mark'); mark.setAttribute('aria-hidden', 'true');
+          li.append(mark, node('span', name, 'forge-check-name'));
+          if (meta) li.append(node('span', meta, 'forge-check-meta'));
+          li.setAttribute('aria-label', `${name}: ${meta || (outcome === 'pass' ? 'passed' : word(outcome))}`); if (title) li.title = title;
+          list.append(li);
+        };
         if (data.checks === null) card.append(node('p', 'Checks not reported.', 'git-note'));
         else if (!data.checks.length) card.append(node('p', 'No checks returned.', 'git-note'));
-        else {
-          const list = node('ul');
-          for (const check of data.checks) list.append(node('li', `${check.name} · ${check.conclusion}`, `forge-check forge-${check.outcome}`));
-          card.append(list);
-        }
-        card.append(node('p', 'Reported for the pull request, not proof that the local revision was pushed.', 'git-note'));
-        const link = node('a', data.url); link.href = data.url; link.rel = 'noopener noreferrer';
-        link.addEventListener('click', event => { event.preventDefault(); if (owns() && link.isConnected && card.contains(link)) openExternal(data.url); });
-        card.append(link, node('p', `PR updated: ${data.updatedAt}`, 'git-note'));
-        root.replaceChildren(node('h3', 'GitHub / pull request'), card);
+        else for (const r of checkRows(data.checks)) row(r);
+        const review = REVIEW[data.reviewDecision];
+        if (review) row({ outcome: review[1], name: 'Review', meta: review[0] }, 'review');
+        if (list.children.length) card.append(list);
+        // Open it on GitHub (the design's ↗; it takes the row until a primary action joins it).
+        const open = node('button', undefined, 'forge-open'); open.type = 'button';
+        open.append(node('span', 'Open on GitHub'), iconElement(doc, 'external', { size: 13 }));
+        open.setAttribute('aria-label', `Open pull request #${data.number} on GitHub`); open.title = data.url;
+        open.addEventListener('click', () => { if (owns() && open.isConnected && card.contains(open)) openExternal(data.url); });
+        card.append(open, node('p', 'Checks are reported for the pull request, not proof that the local revision was pushed.', 'git-note forge-caveat'));
+        root.replaceChildren(node('h3', 'Pull request'), card);
       } else if (result.status === 'no-pull-request' && result.data === null) clear('No pull request found for this branch.');
       else {
         const reason = forgeReason(result.reason?.code);
