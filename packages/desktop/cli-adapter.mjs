@@ -256,9 +256,10 @@ export function cliServers(bin, io = {}) {
 
 /** Schedule definitions travel as private JSON files, never shell text. */
 export async function cliSchedule(bin, { operation, id, spec, workspaceDir, server }, io = {}) {
-  const actions = new Set(["list", "show", "add", "update", "enable", "disable", "remove", "run", "reconcile", "host-install", "host-uninstall", "host-status"]);
+  // Reading, enable/disable and run are cliAutomation's (the kernel's automations verbs).
+  const actions = new Set(["add", "update", "remove", "reconcile", "host-install", "host-uninstall", "host-status"]);
   const writes = operation === "add" || operation === "update";
-  const needsId = actions.has(operation) && operation !== "list" && !operation.startsWith("host-");
+  const needsId = actions.has(operation) && !operation.startsWith("host-");
   if (!actions.has(operation) || (needsId && (typeof id !== "string" || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(id)))
     || (server !== undefined && (typeof server !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(server)))
     || typeof workspaceDir !== "string" || !workspaceDir.startsWith("/") || workspaceDir.includes("\0")
