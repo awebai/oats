@@ -8,9 +8,10 @@ allowed-tools: "Bash(aw workspace status), Bash(aw team list), Bash(aw id cert s
 
 Use this skill when the question is about teams: current membership, eligible
 workspace teams, joined wider teams, team certificates, or why a message/command
-is landing in the wrong team. For identity keys, `did:key`/`did:aw`, custody,
-addressability, inbound mode, contacts, or key rotation, load `aweb-identity`.
-For mail/chat policy, load `aweb-messaging`.
+is landing in the wrong team. For the day-to-day OATS playbook (roster,
+sending as a team, wakes, troubleshooting codes) load `oats-aweb`. For identity
+keys, `did:key`/`did:aw`, custody, addressability, inbound mode, contacts, or
+key rotation, load `aweb-identity`. For mail/chat policy, load `aweb-messaging`.
 
 ## OATS owns agent team changes
 
@@ -30,7 +31,15 @@ oats aweb leave --labels <label>[,<label>]  # leave joined wider-team labels
 - The personal team cannot be left; attempting it is `E_TEAM_PERSONAL`.
 - A label that is not eligible for this soul/workspace is `E_TEAM_NOT_ELIGIBLE`.
 - Joined wider teams use a local identity home such as
-  `<home>/.aweb-identity-<label>` and receive by polling in oats.aweb 1.14. Joined teams require aw >= 1.36.12. The provider creates joined homes with `aw id team accept-invite` under `--identity-home`, verifies the root auto-connected, and does not run `aw init` inside the per-team home.
+  `<home>/.aweb-identity-<label>`. Joined teams require aw >= 1.36.12. The
+  provider creates joined homes with `aw id team accept-invite` under
+  `--identity-home`, verifies the root auto-connected, and does not run
+  `aw init` inside the per-team home.
+- Since oats.aweb 1.15 a joined team receives **live** (`receive: native`) when
+  the host wake broker holds its identity: always on session-delivery homes,
+  and on Claude/Pi channel homes through aw's mixed mode (the channel keeps the
+  primary identity, the broker adds the joined ones). Codex homes, a stopped
+  wake daemon or a refused registration leave it `receive: poll`.
 - Send as a joined team with exactly:
 
 ```bash
@@ -53,12 +62,13 @@ aw id cert show
 
 Interpret common states:
 
-- `teams.personal.team` is the primary personal team identity wired to the
-  harness.
+- `teams.personal.team` is the primary identity's team, wired to the harness:
+  the aweb root's active team (`personal.source: root`) or a deployment-pinned
+  team (`setting`). A team per workspace arrives in oats.aweb 1.16.
 - `eligible[]` are labels this soul/workspace may explicitly join; the primary
   label may appear here and is joinable/leavable like any other wider team.
 - `joined[]` are provider-created wider-team memberships; each has an
-  `identityHome`, `since`, and `receive` (`poll` in 1.14).
+  `identityHome`, `since`, and `receive` (`native` or `poll`).
 - `unmapped[]` labels are present on the soul but not mapped by the workspace.
   An unmapped primary falls back to the personal/root active team with a
   `team-unmapped` warning; it is not a spawn blocker.
@@ -71,11 +81,11 @@ Interpret common states:
   `default:oats.aweb.ai`).
 - **Team certificate**: a signed membership statement for an identity; stored in
   `.aw/team-certs/` for native identities.
-- **Personal team**: the default team for the instance's primary identity. In
-  1.14.1, until per-workspace personal teams are available, this may be the
-  person's default team as a stand-in.
+- **Personal team**: the default team for the instance's primary identity: the
+  aweb root's active team, or `settings.oats.aweb.team` when the deployment
+  pins one. Per-workspace personal-team enrollment arrives in oats.aweb 1.16.
 - **Joined team**: an explicit wider team joined through `oats aweb join`, with a
-  separate local identity home in this release.
+  separate local identity home.
 
 ## Hosted vs BYOT authority (diagnostic context)
 
