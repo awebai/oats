@@ -22,7 +22,7 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
-## Batch — 2026-09-24 night (PRs 131, 136, 151–196) → toward v0.26.0 (unreleased; main carries breaking changes)
+## Batch — 2026-09-24 night (PRs 131, 136, 151–199) → toward v0.26.0 (unreleased; main carries breaking changes)
 - **Merged:**
   - PR151 packages: approval removed (human decision; declaring a package IS the trust decision) `e62b8f16`, plus the release-note follow-up `f0994882`.
   - PR153 docs for it `b97de554`.
@@ -144,6 +144,10 @@ decisions/ and referenced from here.
   - PR195 Desktop `dcd0b7e7` (oats-desktop-engineer-1; the watcher merged on green; squash tree verified): the harness switch on feature `harness`; reads either spelling; no `pi` default for unreported harnesses; ACCEPT_RANGE `<0.28.0`.
   - PR196 `82329fa2` (lead; a bump, Class A): the 0.27.0 version pre-alignment + notes (a Desktop section; a Fixed line correcting 0.26.0's per-workspace personal-team sentence).
   - **v0.27.0 RELEASED**: the tag object `ff5d4928` → `82329fa2` (after the co-lead's Class B ACK + main CI green); release.yml green; npm 0.27.0 for both packages; 7 assets. The published upgrade probe (npm 0.26.0 state → npm 0.27.0 kernel): 11/11.
+  - PR197 `c28c1715` (lead mirror; cli-dev updated the 15 kernel tests pinned to the old bundled provider per the co-lead's classification, and its real-bundled-provider test caught the 1.14.x `result.teams` regression; re-mirrored on v1.14.2; co-lead ACK; the watcher merged; squash verified): oats.aweb 1.14.2 mirror + pin.
+  - PR198 `a32e3e05` (lead; bump): 0.27.1 pre-alignment + notes.
+  - **v0.27.1 RELEASED**: the tag object `c9f765b4` → `a32e3e05`; release.yml green; npm 0.27.1; 7 assets; published guard probe 6/6.
+  - PR199 kernel `ecf5b6af` (the Phase D driver; from a co-lead retire fault on 0.24.6, root-caused to an EMPTY directory excluded only by the common-dir info/exclude; lead mutation killing 2; co-lead ACK; merged after the v0.27.1 tag): the recovery clone carries the source's exclude rules; the refusal names the differing status rows. For 0.27.2.
 - **taught us:**
   - (1) **Arm a merge watcher with the full approved oid, never "the current head".** #160's head moved twice after approval while mails crossed. The watcher's named-oid guard refused both mismatches, so nothing unreviewed merged. The loop ends with one FINAL mail per party (author and watcher) naming the full oid and "no pushes", and by ignoring the stale mails that follow.
   - (2) **A native gate must wait for the message, not for a spinner.** Preview in the rig is slow, and fixed waits produced false FAILs in both directions. Poll for the expected sentence with a bound.
