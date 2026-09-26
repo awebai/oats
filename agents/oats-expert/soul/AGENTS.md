@@ -61,7 +61,7 @@ learn OATS and set it up in their own workspaces.
 
 ## Verification
 
-- After knowledge edits: `node ./work/capabilities/oats-okf/skills/okf/scripts/okf-validate.mjs soul/knowledge --strict` — must pass.
+- After knowledge edits: `node ./work/capabilities/oats-okf/lib/okf-validate.mjs soul/knowledge --strict` — must pass.
 - After any framework change you shepherd: spawn a scaffold-only probe
   (`spawnInstance(..., { launch: false })`), inspect the created layout,
   retire it, and record the result.
