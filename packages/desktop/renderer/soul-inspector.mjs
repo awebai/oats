@@ -132,6 +132,7 @@ ${teamsCSS}
 .inspector-readiness { padding-bottom:0; }
 .inspector-readiness .readiness-view { margin-bottom:0; }
 .inspector-lede { margin:6px 0 0; font-size:12.5px; line-height:1.5; color:var(--fg); }
+.inspector-refusal { margin:6px 0 0; color:var(--warn); font-size:12.5px; font-weight:600; line-height:1.45; overflow-wrap:anywhere; }
 .inspector-card { border:1px solid var(--border); border-radius:8px; background:var(--surface); padding:10px 12px; }
 .inspector-card .inspector-facts { font-size:12px; margin:0; }
 .inspector-list { border:1px solid var(--border); border-radius:8px; background:var(--surface); overflow:hidden; }
@@ -156,7 +157,7 @@ ${teamsCSS}
 
 /** presentation is an optional host lease. Presence belongs to this controller;
  * effective visibility/collapse belongs to the host, not request completions. */
-export function createSoulInspector(container, { ctx, presentation, openSoul = null, layout = 'sidebar', backLabel = 'Souls', openInstance = null, capabilityTable = null, openCapability = null, launch, schedule, files, canFiles = () => false, canLaunch = () => true, launchReason = () => 'Requires a compatible installed OATS CLI.', available = () => true, instances = () => [], workspace = () => null, closed }) {
+export function createSoulInspector(container, { ctx, presentation, openSoul = null, layout = 'sidebar', backLabel = 'Souls', openInstance = null, capabilityTable = null, openCapability = null, launch, schedule, files, canFiles = () => false, canLaunch = () => true, spawnRefusal = () => null, launchReason = () => 'Requires a compatible installed OATS CLI.', available = () => true, instances = () => [], workspace = () => null, closed }) {
   const doc = container.ownerDocument;
   let alive = true, serial = 0, operationSerial = 0, selectionGen = null, selection, data, teamsPanel = null;
   const pendingOperations = new WeakMap();
@@ -379,6 +380,12 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     const scheduleButton = action('Schedule…', 'schedule-act', canLaunch, schedule); scheduleButton.dataset.launch = '1';
     const filesButton = action('Files', 'brain-act', canFiles, files); filesButton.dataset.files = '1';
     actions.append(filesButton, scheduleButton, launchButton);
+    // Kernel #217 (desktop-facts): the soul's file opens as its web page, when reported.
+    const fileUrl = column && desktopFacts(cliStatus()) && typeof agent.file?.url === 'string' && /^https:\/\//.test(agent.file.url) ? agent.file.url : null;
+    if (fileUrl && typeof ctx?.openExternal === 'function') {
+      const open = button('Open file', () => { if (valid(id, gen)) ctx.openExternal(fileUrl); });
+      open.classList.add('file-act'); open.title = agent.file.path || fileUrl; actions.prepend(open);
+    }
     if (headActions) headActions.prepend(actions); else summary.append(actions);
     syncAvailability();
     const homes = instances(agent);
@@ -390,6 +397,9 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     if (column) {
       // Identity: what it does, then where it works (the harness joins once inspected).
       if (agent.description) facts$.before(node('p', agent.description, 'inspector-lede'));
+      // Kernel #217: a soul a spawn here would refuse says why, beside the disabled Spawn.
+      const refusal = spawnRefusal(agent);
+      if (refusal) { const note = node('p', `Can't spawn here · ${refusal}`, 'inspector-refusal'); note.setAttribute('role', 'note'); facts$.before(note); }
       if (typeof agent.repoName === 'string' && agent.repoName) facts$.append(pageFact('repo', agent.repoName, 'mono'));
       if (typeof agent.work === 'string' && agent.work) facts$.append(pageFact('branch', WORK_TEXT[agent.work] || `works in ${agent.work}`, 'muted'));
       const card = pageCard(doc, 'Instances', { count: homes.length }); card.card.classList.add('inspector-instances');

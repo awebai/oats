@@ -95,3 +95,14 @@ test('soulsData keeps a soul\'s team labels only when they are a bounded list of
     assert.throws(() => soulsData(d), undefined, JSON.stringify(bad).slice(0, 40));
   }
 });
+
+test('kernel #217 (desktop-facts): spawnable, problem and file pass through; the harness default does not', () => {
+  const doc = copy(), [first, second] = doc.result.souls;
+  Object.assign(first, { spawnable: true, problem: null, file: { path: 'agents/x/soul.yaml', url: 'https://github.com/acme/agents/blob/abc/agents/x/soul.yaml' }, harness: 'pi', model: null, harnessFrom: 'kernel-default' });
+  Object.assign(second, { spawnable: false, problem: { code: 'E_SOUL_DISABLED', message: 'disabled on this computer' }, file: null });
+  const [a, b] = soulsData(doc).souls;
+  assert.deepEqual([a.spawnable, a.problem, a.file], [true, null, first.file]);
+  assert.deepEqual([b.spawnable, b.problem, b.file], [false, { code: 'E_SOUL_DISABLED', message: 'disabled on this computer' }, null]);
+  assert.equal(Object.hasOwn(a, 'harnessFrom'), false, "the kernel default is not the soul's choice (#217 note 4)");
+  second.spawnable = 'no'; refused(() => soulsData(doc));
+});
