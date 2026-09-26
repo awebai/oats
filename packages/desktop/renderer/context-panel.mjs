@@ -105,6 +105,9 @@ export const contextPanelCSS = `
 #context-panel .context-panel-tab { height:100%; min-height:0; padding:0; border-radius:0; font-size:12.5px; color:var(--muted); background:none; }
 #context-panel .context-panel-tab:hover { background:none; color:var(--fg); }
 #context-panel .context-panel-tab[aria-selected="true"] { color:var(--fg); background:none; font-weight:650; box-shadow:inset 0 -2px 0 var(--live); }
+/* W6: the Git & GitHub tab's count of unresolved review threads (design: "Git & GitHub 2"). */
+#context-panel .context-panel-tab-count { margin-left:5px; color:var(--muted); font:400 10.5px ui-monospace, Menlo, monospace; }
+#context-panel .context-panel-tab-count:empty { display:none; }
 /* Messaging: the design's compact rows — no card, hairlines, Join/Leave as links. */
 #context-panel .teams-panel .teams-intro { display:none; }
 #context-panel .teams-panel .teams-card { border:0; border-radius:0; background:transparent; }
@@ -158,7 +161,7 @@ export function createContextPanel({
 
   let disposed = false, focusMode = false, applyingFocus = false, epoch = 0;
   let context = { workspace: null, owner: null, instance: null, key: null };
-  let gitSummary = null;
+  let gitSummary = null, prSummary = null;
   const contextIdentity = () => JSON.stringify([context.workspace, context.key, context.instance?.home, context.instance?.agent,
     context.instance?.agentsRoot, context.instance?.server || null, context.instance?.createdAt ?? null]);
   const preferences = new Map(); // Only chrome preferences, never selection.
@@ -248,6 +251,7 @@ export function createContextPanel({
       if (next === null || event.altKey || event.ctrlKey || event.metaKey) return;
       event.preventDefault(); selectTab(ids[next], event); focus(tabs.get(ids[next]));
     });
+    if (id === 'git') { const count = node('span', 'context-panel-tab-count'); count.setAttribute('aria-hidden', 'true'); tab.append(count); }
     tabs.set(id, tab); tablist.append(tab);
     const page = node('section', 'context-panel-page');
     page.id = `context-panel-page-${id}`; page.dataset.contextPage = id;
@@ -373,11 +377,22 @@ export function createContextPanel({
       gitSummary = summary && summary.identity === contextIdentity() && summary.connection === connectionGeneration() ? { ...summary } : null;
       paintGitDot();
     },
+    onPullRequest(summary) {
+      if (disposed) return;
+      prSummary = summary && summary.identity === contextIdentity() && summary.connection === connectionGeneration() ? { ...summary } : null;
+      paintGitDot();
+    },
   }) : null;
   function paintGitDot() {
     const changed = hasGeneric() && gitSummary?.identity === contextIdentity() && gitSummary.connection === connectionGeneration() && gitSummary.changed === true;
     gitDot.hidden = !changed;
-    const label = changed ? 'Git & GitHub — changes in the last accepted observation' : 'Git & GitHub';
+    // The PR's unresolved review threads, as reported; unknown (null) or none shows nothing.
+    const threads = hasGeneric() && prSummary?.identity === contextIdentity() && prSummary.connection === connectionGeneration()
+      && Number.isSafeInteger(prSummary.unresolvedThreads) && prSummary.unresolvedThreads > 0 ? prSummary.unresolvedThreads : 0;
+    const said = threads ? `${threads} unresolved review thread${threads === 1 ? '' : 's'}` : '';
+    const count = tabs.get('git').querySelector('.context-panel-tab-count'); count.textContent = threads ? String(threads) : '';
+    if (said) tabs.get('git').setAttribute('aria-label', `Git & GitHub, ${said}`); else tabs.get('git').removeAttribute('aria-label');
+    const label = [changed ? 'Git & GitHub — changes in the last accepted observation' : 'Git & GitHub', said].filter(Boolean).join(', ');
     railTabs.get('git').title = label; railTabs.get('git').setAttribute('aria-label', label);
   }
   if (!gitPanel) pages.get('git').append(node('h2', null, 'Git & GitHub'), node('p', 'context-panel-note',
@@ -549,7 +564,7 @@ export function createContextPanel({
     if (!disposed && !applyingFocus && !root.hidden && visible(event.target)) onIntent(event);
   };
   root.addEventListener('pointerdown', entry); root.addEventListener('focusin', entry);
-  const offConnection = subscribeConnections(() => { gitSummary = null; paintGitDot(); });
+  const offConnection = subscribeConnections(() => { gitSummary = null; prSummary = null; paintGitDot(); });
   render();
   return {
     setContext({ workspace = null, owner = null, instance = null, key = null } = {}) {
@@ -560,7 +575,7 @@ export function createContextPanel({
         }
         const previous = contextIdentity();
         context = { workspace, owner, instance, key };
-        if (previous !== contextIdentity() || owner != null) gitSummary = null;
+        if (previous !== contextIdentity() || owner != null) { gitSummary = null; prSummary = null; }
         projectMetadata();
       });
     },
@@ -611,7 +626,7 @@ export function createContextPanel({
         rail.remove(); generic.remove(); stages.remove();
         if (changed) onFocusModeChange(false);
       });
-      disposed = true; preferences.clear(); offConnection?.(); gitSummary = null;
+      disposed = true; preferences.clear(); offConnection?.(); gitSummary = null; prSummary = null;
       root.removeEventListener('pointerdown', entry); root.removeEventListener('focusin', entry);
     },
   };

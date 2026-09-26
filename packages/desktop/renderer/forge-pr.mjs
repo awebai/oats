@@ -36,7 +36,7 @@ export function checkRows(checks) {
   return rows;
 }
 export function createForgePrPanel(root, { request, generation = () => 0, connectionGeneration = () => 0,
-  subscribeConnections = () => () => {}, connect = () => {}, openExternal = () => {} } = {}) {
+  subscribeConnections = () => () => {}, connect = () => {}, openExternal = () => {}, onData = () => {} } = {}) {
   const doc = root.ownerDocument;
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
   let alive = true, selection = null, ticket = 0;
@@ -49,7 +49,8 @@ export function createForgePrPanel(root, { request, generation = () => 0, connec
     }
     return true;
   };
-  const clear = text => { root.replaceChildren(node('h3', 'Pull request'), node('p', text, 'git-note')); };
+  // onData: the painted PR's data, or null whenever no PR is shown (for the tab's badge).
+  const clear = text => { root.replaceChildren(node('h3', 'Pull request'), node('p', text, 'git-note')); onData(null); };
   function update(value = null) { selection = value; ticket++; clear(value ? 'Reading pull request…' : 'No current Git observation.'); if (value) return refresh(); }
   async function refresh() {
     const selected = selection, mine = ++ticket, ws = generation(), account = connectionGeneration();
@@ -109,7 +110,7 @@ export function createForgePrPanel(root, { request, generation = () => 0, connec
         open.setAttribute('aria-label', `Open pull request #${data.number} on GitHub`); open.title = data.url;
         open.addEventListener('click', () => { if (owns() && open.isConnected && card.contains(open)) openExternal(data.url); });
         card.append(open, node('p', 'Checks are reported for the pull request, not proof that the local revision was pushed.', 'git-note forge-caveat'));
-        root.replaceChildren(node('h3', 'Pull request'), card);
+        root.replaceChildren(node('h3', 'Pull request'), card); onData(data);
       } else if (result.status === 'no-pull-request' && result.data === null) clear('No pull request found for this branch.');
       else {
         const reason = forgeReason(result.reason?.code);

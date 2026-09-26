@@ -109,7 +109,7 @@ export function lineCounts(file) {
 const countWords = c => c.binary ? 'binary' : [c.add ? `${c.add} line${c.add === 1 ? '' : 's'} added` : null, c.del ? `${c.del} removed` : null].filter(Boolean).join(', ');
 const LETTER_WORD = { M: 'modified', A: 'added', D: 'deleted', R: 'renamed', C: 'copied', T: 'type changed', U: 'unmerged', '?': 'untracked' };
 export function createInstanceGitPanel(parent, { request, generation = () => 0, applyFocus = fn => fn(),
-  requestForge, connectionGeneration = () => 0, subscribeConnections = () => () => {}, connect, openExternal, onObservation = () => {} } = {}) {
+  requestForge, connectionGeneration = () => 0, subscribeConnections = () => () => {}, connect, openExternal, onObservation = () => {}, onPullRequest = () => {} } = {}) {
   const doc = parent.ownerDocument;
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
   const root = node('div', undefined, 'instance-git'); parent.append(root);
@@ -137,7 +137,9 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
   root.append(branchSection, changesSection, github);
   // Sections with nothing observed are not shown.
   changesSection.hidden = true; github.hidden = true;
-  const pullRequest = createForgePrPanel(github, { request: requestForge, generation, connectionGeneration, subscribeConnections, connect, openExternal });
+  // The painted PR's unresolved threads go up to the tab (its badge), tagged like onObservation.
+  const pullRequest = createForgePrPanel(github, { request: requestForge, generation, connectionGeneration, subscribeConnections, connect, openExternal,
+    onData: data => onPullRequest(data ? { identity: summaryIdentity, connection: connectionGeneration(), unresolvedThreads: data.unresolvedThreads ?? null } : null) });
   let alive = true, active = false, epoch = 0, observationTicket = 0, fileTicket = 0;
   let target = null, identity = '', summaryIdentity = '', attempted = false, observation = null, selected = null, busy = false, remote = false;
   const controls = new Map();

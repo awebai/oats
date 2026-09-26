@@ -603,6 +603,7 @@ for (const [name] of palettes) test(`${name}: frame10 rail, disabled menu reason
   for (const [selector, painted, fg, bg] of [
     ['.context-panel-rail-tab[aria-pressed=true]', '.context-panel-rail-tab[aria-pressed=true]', 'accent', 'sel'],
     ['.context-panel-rail-tab[aria-pressed=false]', '#context-panel', 'muted', 'surface'],
+    ['.context-panel-tab-count', '#context-panel', 'muted', 'surface'], // W6: the Git & GitHub tab's thread count
     ['.ctx-instance-menu small', '.ctx-instance-menu button:disabled', 'muted', 'surface-2'],
     ['.ws-option-meta', '.ws-option', 'muted', 'sel'],
     ['.app-toast-open', '.app-toast-open', 'primary-fg', 'primary-bg'],
