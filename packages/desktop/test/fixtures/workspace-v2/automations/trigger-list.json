@@ -1,0 +1,256 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "triggerApi": 1,
+    "scope": "/fixture/base/northwind-workspace",
+    "host": {
+      "name": "fixture-laptop"
+    },
+    "triggers": [
+      {
+        "kind": "trigger",
+        "id": "local/hotfix",
+        "name": "hotfix",
+        "origin": {
+          "kind": "local",
+          "path": "oats-schedules.json"
+        },
+        "description": null,
+        "owner": null,
+        "runsOn": null,
+        "runsHere": true,
+        "reason": null,
+        "enabledHere": true,
+        "qualifiedId": "local/hotfix",
+        "soul": {
+          "name": "release-manager",
+          "origin": {
+            "kind": "member",
+            "repoKey": "local//fixture/base/fx/remotes/agents.git",
+            "member": "agents"
+          }
+        },
+        "task": "Cut a hotfix for {repo}#{number}.",
+        "on": {
+          "source": "github.pull_request",
+          "repo": "github.com/northwind/storefront",
+          "events": [
+            "labeled"
+          ],
+          "labels": [
+            "hotfix"
+          ],
+          "poll": "5m"
+        },
+        "teams": [],
+        "harness": "codex",
+        "model": null,
+        "concurrency": {
+          "max": 1,
+          "perKey": 1
+        },
+        "lastRun": null,
+        "nextDue": null,
+        "enabled": true,
+        "spawn": {
+          "soul": "release-manager",
+          "purpose": "hotfix-{number}",
+          "task": "Cut a hotfix for {repo}#{number}.",
+          "teams": [],
+          "harness": "codex"
+        },
+        "triggerApi": 1,
+        "scope": "/fixture/base/northwind-workspace",
+        "createdAt": "2026-09-26T15:14:25.247Z",
+        "updatedAt": "2026-09-26T15:14:25.247Z"
+      },
+      {
+        "kind": "trigger",
+        "id": "agents/docs-sync",
+        "name": "docs-sync",
+        "origin": {
+          "kind": "workspace",
+          "repoKey": "local//fixture/base/fx/remotes/agents.git",
+          "path": "oats-triggers/docs-sync.yaml",
+          "commit": "abbe0f4edd7f882b0d8c3f4478db5992900f1717"
+        },
+        "description": "docs-sync on storefront pull requests",
+        "owner": "github.com/docs-bot",
+        "runsOn": "docs-server",
+        "runsHere": false,
+        "reason": "assigned-elsewhere",
+        "reasonDetail": "runs on docs-server; this host is fixture-laptop",
+        "enabledHere": true,
+        "qualifiedId": "agents/docs-sync",
+        "soul": {
+          "name": "release-manager",
+          "origin": {
+            "kind": "member",
+            "repoKey": "local//fixture/base/fx/remotes/agents.git",
+            "member": "agents"
+          }
+        },
+        "task": "Review storefront PR {repo}#{number} ({url}).",
+        "on": {
+          "source": "github.pull_request",
+          "repo": "github.com/northwind/storefront",
+          "events": [
+            "opened",
+            "ready_for_review"
+          ],
+          "labels": [],
+          "poll": "2m"
+        },
+        "teams": [
+          "engineering"
+        ],
+        "harness": "claude",
+        "model": null,
+        "concurrency": {
+          "max": 1,
+          "perKey": 1
+        },
+        "lastRun": null,
+        "nextDue": null,
+        "enabled": true,
+        "spawn": {
+          "soul": "release-manager",
+          "purpose": "docs-sync-{number}",
+          "task": "Review storefront PR {repo}#{number} ({url}).",
+          "teams": [
+            "engineering"
+          ],
+          "harness": "claude"
+        },
+        "triggerApi": 1,
+        "scope": "/fixture/base/northwind-workspace"
+      },
+      {
+        "kind": "trigger",
+        "id": "agents/pr-review",
+        "name": "pr-review",
+        "origin": {
+          "kind": "workspace",
+          "repoKey": "local//fixture/base/fx/remotes/agents.git",
+          "path": "oats-triggers/pr-review.yaml",
+          "commit": "abbe0f4edd7f882b0d8c3f4478db5992900f1717"
+        },
+        "description": "pr-review on storefront pull requests",
+        "owner": "github.com/fixture-bot",
+        "runsOn": "fixture-laptop",
+        "runsHere": true,
+        "reason": null,
+        "enabledHere": true,
+        "qualifiedId": "agents/pr-review",
+        "soul": {
+          "name": "release-manager",
+          "origin": {
+            "kind": "member",
+            "repoKey": "local//fixture/base/fx/remotes/agents.git",
+            "member": "agents"
+          }
+        },
+        "task": "Review storefront PR {repo}#{number} ({url}).",
+        "on": {
+          "source": "github.pull_request",
+          "repo": "github.com/northwind/storefront",
+          "events": [
+            "opened",
+            "ready_for_review"
+          ],
+          "labels": [],
+          "poll": "2m"
+        },
+        "teams": [
+          "engineering"
+        ],
+        "harness": "claude",
+        "model": null,
+        "concurrency": {
+          "max": 1,
+          "perKey": 1
+        },
+        "lastRun": null,
+        "nextDue": null,
+        "enabled": true,
+        "spawn": {
+          "soul": "release-manager",
+          "purpose": "pr-review-{number}",
+          "task": "Review storefront PR {repo}#{number} ({url}).",
+          "teams": [
+            "engineering"
+          ],
+          "harness": "claude"
+        },
+        "triggerApi": 1,
+        "scope": "/fixture/base/northwind-workspace"
+      },
+      {
+        "kind": "trigger",
+        "id": "agents/triage",
+        "name": "triage",
+        "origin": {
+          "kind": "workspace",
+          "repoKey": "local//fixture/base/fx/remotes/agents.git",
+          "path": "oats-triggers/triage.yaml",
+          "commit": "abbe0f4edd7f882b0d8c3f4478db5992900f1717"
+        },
+        "description": "triage on storefront pull requests",
+        "owner": "github.com/someone-else",
+        "runsOn": "fixture-laptop",
+        "runsHere": false,
+        "reason": "owner-mismatch",
+        "reasonDetail": "acts as github.com/someone-else; this host's gh is logged in as github.com/fixture-bot",
+        "enabledHere": true,
+        "qualifiedId": "agents/triage",
+        "soul": {
+          "name": "release-manager",
+          "origin": {
+            "kind": "member",
+            "repoKey": "local//fixture/base/fx/remotes/agents.git",
+            "member": "agents"
+          }
+        },
+        "task": "Review storefront PR {repo}#{number} ({url}).",
+        "on": {
+          "source": "github.pull_request",
+          "repo": "github.com/northwind/storefront",
+          "events": [
+            "opened",
+            "ready_for_review"
+          ],
+          "labels": [],
+          "poll": "2m"
+        },
+        "teams": [
+          "engineering"
+        ],
+        "harness": "claude",
+        "model": null,
+        "concurrency": {
+          "max": 1,
+          "perKey": 1
+        },
+        "lastRun": null,
+        "nextDue": null,
+        "enabled": true,
+        "spawn": {
+          "soul": "release-manager",
+          "purpose": "triage-{number}",
+          "task": "Review storefront PR {repo}#{number} ({url}).",
+          "teams": [
+            "engineering"
+          ],
+          "harness": "claude"
+        },
+        "triggerApi": 1,
+        "scope": "/fixture/base/northwind-workspace"
+      }
+    ],
+    "snapshot": {
+      "takenAt": "2026-09-26T15:14:25.044Z",
+      "problems": 1
+    }
+  }
+}
