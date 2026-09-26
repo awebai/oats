@@ -1,6 +1,6 @@
 # OKF knowledge operations: harvest, maintenance, triggers, and the working-soul surface
 
-**Status:** PLAN, 2026-09-26. The human's direction, planned by the lead and handed to the co-lead.
+**Status:** APPROVED by the human, 2026-09-26 ("perfect, I like it … get it moving and implemented and deployed as fast as possible"). Planned by the lead; the co-lead's amendments are folded in as they arrive.
 **Targets:** kernel **0.28.0**, oats.okf **4.0.0**, oats.framework **1.2.0**. okf **3.0.0** (the remote consult, in flight) ships first and unchanged in scope.
 
 ## 0. The human's direction, restated
@@ -12,7 +12,7 @@
    - The harvester and the maintainer share a renamed **knowledge-theory** skill (today `memory-harvest`), and each has its own skills too.
    - **oats.okf ships no harvest doctrine at all.**
 2. **Working souls using OKF get exactly two okf skills and one inject.**
-   - A skill for *instance knowledge maintenance* (STATE/log/notes).
+   - A skill for *instance knowledge maintenance* (STATE/log/notes), **teaching the judgment and theory of what useful instance knowledge to capture** (amended by the human, 2026-09-26).
    - A skill for *soul knowledge consultation* (`okf-consultation`).
    - The inject teaches the work mode: query both before starting a task, before compaction, and every so often while working, to decide, situate and work coherently with the soul's knowledge.
 3. **The harvester**:
@@ -60,7 +60,7 @@
 
 | Capability | Who gets it | Skills | Inject | Commands, hooks and the rest |
 |---|---|---|---|---|
-| **oats.okf** (knowledge slot) | every working soul with OKF knowledge | `okf-consultation` (soul knowledge: bases/index/cat/ls/links/search, receipts, citing); **`okf-instance-knowledge`** (instance memory: STATE.md/log.md/notes, capture-without-judging, compaction discipline) | **the work-mode inject** (§2.5) | the consult commands; `setup`/`init`/`migrate`/binding; the spawn hook (source registration) and retire hook (custody) |
+| **oats.okf** (knowledge slot) | every working soul with OKF knowledge | `okf-consultation` (soul knowledge: bases/index/cat/ls/links/search, receipts, citing); **`okf-instance-knowledge`** (instance memory: **the theory and judgment of what is worth capturing**, plus STATE.md/log.md/notes form and compaction discipline; §2.5a) | **the work-mode inject** (§2.5) | the consult commands; `setup`/`init`/`migrate`/binding; the spawn hook (source registration) and retire hook (custody) |
 | **oats.okf-harvest** (additive) | the harvester soul only | **`knowledge-theory`** (the doctrine, renamed from `memory-harvest` §3.x); **`knowledge-harvest`** (the procedure: read input fully, transcript windows first-class, situate, stage, PR, lifecycle until merged); **`okf-authoring`** (OKF Markdown craft, today's `okf` skill) | a harvester inject: you are a judge, not a worker; the staged roots are your only write surface; stay alive until the PR is merged/closed | `complete`, `harvest-status`; no source registration |
 | **oats.okf-maintenance** (additive) | the maintainer soul only | **`knowledge-theory`** (identical copy); **`knowledge-review`** (situate a PR, read provenance, the source soul's knowledge, its tasks, verdicts, amend, merge, notify); **`okf-authoring`** (identical copy); **`okf-trigger-setup`** (install/verify the review trigger on a host with merge-capable GitHub credentials) | a maintainer inject: one PR per instance; never merge what fails the doctrine; supersede, never silently overwrite | `review-context` (the PR's provenance → the reading list), `notify-harvester` |
 
@@ -162,7 +162,37 @@ It extends the 3.0.0 inject into a *work mode*:
 - **Before compaction:** update `STATE.md`/`log.md`/`notes/` first.
 - **Every so often while working, and always before a design decision or re-deriving something:** `oats okf search`/`cat`, and re-read your own notes.
 - Use both to situate the task and stay coherent with the soul's accepted decisions. Cite what you relied on.
-- **Capture without judging** (the harvester judges). Never write accepted knowledge.
+- **Capture with judgment** (§2.5a). The harvester still decides what is *promoted*. Never write accepted knowledge.
+
+### 2.5a Instance-knowledge judgment (the human, 2026-09-26)
+
+`okf-instance-knowledge` teaches **what useful instance knowledge is**, not only where to put it. This replaces "capture without judging importance" in today's inject. The **capture bar** is lower than the **promotion bar** (`knowledge-theory`), and they don't compete.
+
+- **The capture test:** *would my future self after compaction, or the harvester judging this session, decide or act better for having it, and is it absent from the code, the tracker and the repo docs?*
+- **Capture:**
+  - decisions taken, and **why**;
+  - alternatives rejected, and why;
+  - discoveries that cost effort;
+  - limitations and the workaround that worked;
+  - conclusions of an investigation (not its transcript);
+  - blockers, with what unblocks them;
+  - human direction and corrections, as the instance understood them;
+  - surprises (the world behaved differently from what the soul's knowledge says: a *candidate supersession*, flagged as such);
+  - process and environment lessons.
+- **Don't capture:**
+  - descriptions of the code, and maps of the repo;
+  - command logs and tool output;
+  - retries that taught nothing;
+  - secrets;
+  - third-party messages verbatim;
+  - things already in the tracker or the docs (link instead).
+- **Form:**
+  - `STATE.md` = the current task picture (rewritten);
+  - `log.md` = dated events (append-only);
+  - `notes/` = **one concept per insight**, with type (Decision / Rejected / Discovery / Limitation / Conclusion / Lesson / Blocker), a one-line claim, the *why*, the evidence and provenance (what was observed, when, from what), and its **generality** (instance-only vs likely true for the soul, a hint to the harvester, not a verdict).
+- **Timing:** capture as it happens, at the decision, not reconstructed at the end; update before compaction and before task boundaries.
+- **Relation to soul knowledge:** consult first; a note that confirms, refines or contradicts an existing concept cites it (`alias/node/concept.md@oid`). That is what lets the harvester situate it.
+- **The theory it teaches in brief:** decision vs description (descriptions drift and lie; decisions are superseded explicitly), code is truth about code, and indexical residue dies with the instance. This is a short version of `knowledge-theory`, taught from the capture side. **Working souls do NOT get the full promotion doctrine**, so there's no duplicate judge.
 
 ### 2.6 The `okf` team
 
