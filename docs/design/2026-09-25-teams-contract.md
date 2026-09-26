@@ -7,6 +7,31 @@ This document is the kernel half; the provider half (oats.aweb) is the
 messaging lane's. Co-lead review (9a18a381): agreed, with three additions,
 folded in below.
 
+## AMENDMENT 2026-09-26 (Juan, a total blocker): there is no "personal team"
+
+There is **no "personal team" concept**, in aweb or in OATS. **A workspace has its
+DEFAULT TEAM** (the team for the workspace key in its owner's namespace);
+agents can join other teams. Nothing is "personal". Everywhere below, read
+"personal team" as **"the workspace's default team"** (short: "default team").
+The rename is applied everywhere, with no compatibility aliases:
+
+- **Prose:** docs, skills, injects, READMEs, release notes (from 0.29.3 on), the
+  knowledge base. Past release notes and append-only logs stay as history.
+- **Wire names (the oats.aweb 1.16.0 release; the co-lead's lane):**
+  - the teams operation's JSON field `personal` → `defaultTeam` (`{team, source}`);
+  - `E_TEAM_PERSONAL` → `E_TEAM_DEFAULT` (leaving the workspace's default team);
+  - the broker receive label `personal` → `default`;
+  - `settings.oats.aweb.roots.personal` is removed (enrollment is 1.16+ and uses
+    the enrolled-root model);
+  - readiness codes/messages lose "personal".
+- **aweb** renames its `personal-workspace` endpoints, auth scope, CLI help and
+  flags, and binding file likewise (aweb's lane).
+- **The kernel** carries no wire name with "personal" (only prose/comments,
+  renamed). The Desktop reads `defaultTeam`.
+
+The model below is otherwise unchanged: the default team only, by default;
+joining is explicit; only the soul's labels that the workspace maps.
+
 ## The model (human, 2026-09-25)
 
 - **Default: the personal team only.** Every instance is in its person's
