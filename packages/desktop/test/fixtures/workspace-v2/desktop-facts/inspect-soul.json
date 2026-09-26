@@ -3,19 +3,19 @@
   "ok": true,
   "result": {
     "operationsApi": 2,
-    "kernel": "0.29.0",
+    "kernel": "0.29.2",
     "subject": {
       "kind": "soul",
       "soul": "release-manager",
       "repoKey": "local//fixture/base/fx/remotes/agents.git",
-      "commit": "5ce1d9be306b3517797db2310b1b136e10ee6e33",
+      "commit": "d06ff014b1eadbb1f0093a3df1fe3e90e72f8a2b",
       "team": "engineering"
     },
     "workspace": {
       "key": "local//fixture/base/fx/remotes/agents.git",
       "name": "northwind",
       "deployment": "/fixture/base/northwind-workspace",
-      "commit": "5ce1d9be306b3517797db2310b1b136e10ee6e33",
+      "commit": "d06ff014b1eadbb1f0093a3df1fe3e90e72f8a2b",
       "standalone": false
     },
     "souls": [
@@ -23,7 +23,7 @@
         "soulsApi": 2,
         "name": "release-manager",
         "repoKey": "local//fixture/base/fx/remotes/agents.git",
-        "commit": "5ce1d9be306b3517797db2310b1b136e10ee6e33",
+        "commit": "d06ff014b1eadbb1f0093a3df1fe3e90e72f8a2b",
         "team": "engineering",
         "kind": "member",
         "path": "souls/release-manager",
@@ -81,7 +81,7 @@
           "kind": "package",
           "package": "nw.tools",
           "version": "0.4.0",
-          "commit": "371fdf6bccafaf545dac017d3342a63770c69957",
+          "commit": "741daab4b3aba5047fd1d02f6c8ff079b6ddb741",
           "integrity": "sha256-4a0ee48230d65cc6c0b9d0c9a3883e64182cfc7b2410e4f5839bacf551fcf1cf",
           "repoKey": "local//fixture/base/fx/remotes/nw-tools.git"
         },
@@ -92,7 +92,7 @@
         "compatibility": {
           "ok": true,
           "range": ">=0.24.0",
-          "kernel": "0.29.0"
+          "kernel": "0.29.2"
         },
         "missingRequires": [],
         "operations": []
@@ -105,7 +105,7 @@
         "from": {
           "kind": "member",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
-          "commit": "5ce1d9be306b3517797db2310b1b136e10ee6e33"
+          "commit": "d06ff014b1eadbb1f0093a3df1fe3e90e72f8a2b"
         },
         "composedFrom": "workspace",
         "dir": null,
@@ -114,7 +114,7 @@
         "compatibility": {
           "ok": true,
           "range": ">=0.24.0",
-          "kernel": "0.29.0"
+          "kernel": "0.29.2"
         },
         "missingRequires": [],
         "operations": []
@@ -127,7 +127,7 @@
         "from": {
           "kind": "member",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
-          "commit": "5ce1d9be306b3517797db2310b1b136e10ee6e33"
+          "commit": "d06ff014b1eadbb1f0093a3df1fe3e90e72f8a2b"
         },
         "composedFrom": "soul",
         "dir": null,
@@ -136,7 +136,7 @@
         "compatibility": {
           "ok": true,
           "range": ">=0.24.0",
-          "kernel": "0.29.0"
+          "kernel": "0.29.2"
         },
         "missingRequires": [],
         "operations": []
@@ -161,7 +161,7 @@
         "compatibility": {
           "ok": true,
           "range": ">=0.24.0",
-          "kernel": "0.29.0"
+          "kernel": "0.29.2"
         },
         "missingRequires": [],
         "operations": []
@@ -198,7 +198,7 @@
         "compatibility": {
           "ok": true,
           "range": ">=0.24.4",
-          "kernel": "0.29.0"
+          "kernel": "0.29.2"
         },
         "missingRequires": [],
         "operations": [

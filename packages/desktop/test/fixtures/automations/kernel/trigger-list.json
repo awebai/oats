@@ -68,8 +68,8 @@
         },
         "triggerApi": 1,
         "scope": "/fixture/base/northwind-workspace",
-        "createdAt": "2026-09-26T15:34:29.486Z",
-        "updatedAt": "2026-09-26T15:34:29.486Z"
+        "createdAt": "2026-09-26T19:58:09.467Z",
+        "updatedAt": "2026-09-26T19:58:09.467Z"
       },
       {
         "kind": "trigger",
@@ -79,7 +79,7 @@
           "kind": "workspace",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
           "path": "oats-triggers/docs-sync.yaml",
-          "commit": "87cea5aa4a1effece415590c7cefc888ed81a57d",
+          "commit": "45b86f64470b9f0fe38d1abb39d76f63f72a3048",
           "url": null,
           "localPath": "/fixture/base/northwind-workspace/agents-repo/oats-triggers/docs-sync.yaml"
         },
@@ -143,7 +143,7 @@
           "kind": "workspace",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
           "path": "oats-triggers/pr-review.yaml",
-          "commit": "87cea5aa4a1effece415590c7cefc888ed81a57d",
+          "commit": "45b86f64470b9f0fe38d1abb39d76f63f72a3048",
           "url": null,
           "localPath": "/fixture/base/northwind-workspace/agents-repo/oats-triggers/pr-review.yaml"
         },
@@ -206,7 +206,7 @@
           "kind": "workspace",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
           "path": "oats-triggers/triage.yaml",
-          "commit": "87cea5aa4a1effece415590c7cefc888ed81a57d",
+          "commit": "45b86f64470b9f0fe38d1abb39d76f63f72a3048",
           "url": null,
           "localPath": "/fixture/base/northwind-workspace/agents-repo/oats-triggers/triage.yaml"
         },
@@ -264,7 +264,7 @@
       }
     ],
     "snapshot": {
-      "takenAt": "2026-09-26T15:34:28.814Z",
+      "takenAt": "2026-09-26T19:58:09.281Z",
       "problems": 1
     },
     "scheduler": {

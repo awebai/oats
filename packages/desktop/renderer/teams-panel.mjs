@@ -63,18 +63,22 @@ export function teamsOperations(inspected) {
     join: action('join'), leave: action('leave') };
 }
 
+/** Where the provider found the workspace's default team (1.16 `defaultTeam.source`):
+ * `setting` = settings.oats.aweb.team named it; `root` = the messaging root's active team. */
+const DEFAULT_SOURCE = Object.freeze({ __proto__: null, setting: 'set by the workspace or host setting', root: "the messaging root's active team" });
+
 /** The provider's teams document from an operation run result, or null. The run
  * must be `operationsApi: 2` for exactly `address`; the document carries exactly
- * the contract's fields (1.16 names, its AMENDMENT c129125a): `{defaultTeam{team, source?},
+ * the contract's fields (1.16 names, its AMENDMENT c129125a): `{defaultTeam{team, source: setting|root},
  * primary, eligible[{label, team, joined}],
  * joined[{label, team, since, identityHome, receive}], unmapped[label], at}`. */
 export function teamsDocument(run, address) {
   if (!record(run) || run.operationsApi !== 2 || run.operation !== address) return null;
   const d = run.result;
   if (!exact(d, ['defaultTeam', 'primary', 'eligible', 'joined', 'unmapped', 'at'])) return null;
-  // The workspace's default team: its id, and where the provider found it (`source`, when it says).
-  const home = d.defaultTeam, sourced = record(home) && Object.hasOwn(home, 'source');
-  if (!exact(home, sourced ? ['team', 'source'] : ['team']) || !text(home.team) || (sourced && !text(home.source, 32))) return null;
+  // The workspace's default team: its id, and where the provider found it (always sent, a closed set).
+  const home = d.defaultTeam;
+  if (!exact(home, ['team', 'source']) || !text(home.team) || !Object.hasOwn(DEFAULT_SOURCE, home.source)) return null;
   if (!(d.primary === null || label(d.primary)) || !text(d.at, 64)) return null;
   const list = v => Array.isArray(v) && v.length <= 64;
   if (!list(d.eligible) || !list(d.joined) || !list(d.unmapped)) return null;
@@ -203,7 +207,7 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
   function render() {
     body.replaceChildren(); intro.hidden = !current;
     if (!current) return;
-    body.append(teamRow('default', 'Default team', [current.defaultTeam.team], badge('Always on', "The workspace's default team can't be left.")));
+    body.append(teamRow('default', 'Default team', [`${current.defaultTeam.team} · ${DEFAULT_SOURCE[current.defaultTeam.source]}`], badge('Always on', "The workspace's default team can't be left.")));
     const joined = new Map(current.joined.map(j => [j.label, j]));
     const rows = [...current.eligible.map(e => ({ label: e.label, team: e.team, eligible: true })),
       ...current.joined.filter(j => !current.eligible.some(e => e.label === j.label)).map(j => ({ label: j.label, team: j.team, eligible: false }))];
