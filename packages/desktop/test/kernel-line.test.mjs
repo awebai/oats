@@ -1,4 +1,4 @@
-// The Desktop's kernel line (F2b): the version band is >=0.25.8 <0.29.0 so it
+// The Desktop's kernel line (F2b): the version band is >=0.25.8 <0.30.0 so it
 // runs against main's kernel before 0.26.0 is tagged; the REAL gate is the
 // positive packages-no-approval feature. A released 0.25.x kernel (no
 // feature) is accepted by the locator but gets the "update OATS" state from
@@ -36,5 +36,6 @@ test('the version band alone never decides: 0.26.x without the feature is refuse
   assert.equal(acceptProbe(probe('0.25.7', [...released.features, 'packages-no-approval'])).ok, false);
   assert.equal(acceptProbe(probe('0.27.4', [...released.features, 'packages-no-approval'])).ok, true, '0.27 (the harness rename) is inside the band');
   assert.equal(acceptProbe(probe('0.28.0', [...released.features, 'packages-no-approval'])).ok, true, '0.28 (package souls, triggers) is inside the band');
-  assert.equal(acceptProbe(probe('0.29.0', [...released.features, 'packages-no-approval'])).ok, false);
+  assert.equal(acceptProbe(probe('0.29.0', [...released.features, 'packages-no-approval'])).ok, true, '0.29 (automations, desktop facts) is inside the band');
+  assert.equal(acceptProbe(probe('0.30.0', [...released.features, 'packages-no-approval'])).ok, false);
 });
