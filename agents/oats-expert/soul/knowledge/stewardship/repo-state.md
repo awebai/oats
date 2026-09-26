@@ -15,6 +15,10 @@ than letting the file grow stale.
 
 ## On main
 
+- **2026-09-26 — OATS 0.29.1 PUBLISHED: every 0.29 Desktop fact has a view; forge-roster; the W6 Git & GitHub tab** (tag `f0ac9888` → `24df668e`; release run 36264079720 green; npm 0.29.1 for both packages; 7 assets; the published probe 18/18). Also: `oats instance git` per-file line counts; oats-setup-admin opts out of harvest. Pins unchanged (okf v4.0.0, oats.dev v1.1.0, framework v1.3.0, aweb v1.14.2).
+  - **Merged after the tag (→ 0.29.2):** #245–#247 (the line counts in the Desktop; the tab's unresolved-threads badge).
+  - **Next: 0.29.2** = oats.aweb 1.15 with personal-team enrollment OFF (joined-team live receive + the identity-home scrub), once the co-lead's live gate passes + tags; the W6 send-review-threads route (server-composed, digest-confirmed, bracketed paste, no Enter) + its button.
+  - **Then oats.aweb 1.16:** a per-deployment credential dir + a recorded owner (the aweb account + its GitHub login) checked before any mint; needs an aweb CLI change (a selectable credential location + the account in `aw auth status`).
 - **2026-09-26 — OATS 0.29.0 PUBLISHED: okf knowledge operations, workspace automations, capability agents removed** (tag `befefd3e` → `a0dfe761`; release run 36257860362 green; npm 0.29.0 for both packages; 7 assets; the published probe 18/18).
   - **Pins:** oats.okf v4.0.0 (three capabilities; the knowledge-harvester/maintainer package souls; the harvest-review trigger), oats.dev v1.1.0 (the reviewer package soul), oats-framework/v1.3.0 (knowledge-theory-expert package soul), oats.aweb v1.14.2 (1.15 untagged → 0.29.1).
   - **BREAKING:** 0.29 + okf 4.0.0 move in lockstep; a module declaring `agents:` is refused (`E_CAPABILITY_AGENTS_REMOVED`). Upgrade order: kernel → pins → `oats sync`.

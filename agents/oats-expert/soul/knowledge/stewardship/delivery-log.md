@@ -172,6 +172,16 @@ decisions/ and referenced from here.
     - (e) Moving a file a test reads by composed path (CAPABILITY_PATH + EXPERT_PATH) breaks in CI, not in the affected-suite gate: grep the constant's uses when relocating.
     - (f) tmux input sent to a busy Claude pane can sit unsubmitted: verify it was taken, or resend after C-u.
     - (g) npm can take minutes to serve a just-published version (404 on `npm view` right after `+ pkg@x`); wait before probing.
+  - After v0.29.0 (all Desktop unless noted): PR227 `da08416c` (docs band), PR228 `630903e8` + PR231 `a3db9e11` (spawnable souls, the soul file), PR229 `f98e8039` (oats-setup-admin `harvest: off`), PR230 `1b1ba3dd` (the server pass-through of the kernel facts), PR232 `937d69b2` (capabilities), PR233 `bdfa4246` (Setup), PR234 `46cfb5fa` (forge-roster `POST /api/forge-roster`), PR235 `e016bc43` (instance page), PR236 `46c20668` (roster PR badge), PR237 `26047e31` (defaults; every 0.29 fact now has a view).
+  - W6 Git & GitHub: PR238 `ec5130be` (kernel: `oats instance git` per-file line counts), PR239 `17babd46`, PR240 `32f43b65` — main RED on a raw ✕ glyph (lucide-icons test), fixed forward by PR242 `a974f452` — PR241 `a13465c1` (closing issues, unresolved threads via `gh api graphql`, check durations), PR243 `8f5e88a9`.
+  - PR244 `24df668e` (the 0.29.1 release PR; merged by the lead after the monitor's `gh pr merge` was denied by the harness permission classifier).
+  - **v0.29.1 RELEASED**: the tag `f0ac9888` → `24df668e`; release run 36264079720 green; npm 0.29.1 for both packages; 7 assets; the published probe 18/18. aweb stays v1.14.2.
+  - After v0.29.1 (→ 0.29.2): PR245 `301c16d7` (the line-counts pass-through), PR246 `46802434` (the counts view), PR247 `0f787ad3` (the tab's unresolved-threads badge).
+  - **oats.aweb 1.15 HELD by the co-lead:** a host's `aw auth` login is one file per OS user, so `aw team ensure` would mint a deployment's personal team into whichever account last logged in. 1.15 ships with enrollment OFF (joined-team receive + the identity-home scrub); 1.16 = a per-deployment credential dir + a recorded owner checked before any mint (design oats-aweb#19, lead-approved with fold-ins).
+  - **taught us (0.29.1):**
+    - (h) Package-wide renderer tests (icons, contrast) police the Desktop's chrome: a view PR runs the whole packages/desktop test, not only the affected suites.
+    - (i) Name each agent's layer up front on multi-agent features (server projections vs views); check a PR's state before restacking (a push to a merged PR branch goes nowhere).
+    - (j) Host CLI credentials belong to an OS USER, not a person: anything person-scoped must pin its credential location per deployment and check the expected owner.
     - (d) Stacked PRs conflict after a squash; the author rebases, and `git range-diff` proves an unchanged patch.
 - **taught us:**
   - (1) **Arm a merge watcher with the full approved oid, never "the current head".** #160's head moved twice after approval while mails crossed. The watcher's named-oid guard refused both mismatches, so nothing unreviewed merged. The loop ends with one FINAL mail per party (author and watcher) naming the full oid and "no pushes", and by ignoring the stale mails that follow.
