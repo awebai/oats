@@ -73,3 +73,17 @@ test('remote projection never reads a remote soul path or invents missing color'
   group.registrationPresent = false;
   assert.deepEqual(project(ws, snapshot).agents, []);
 });
+
+test('a soul carries every team label the kernel reports (primary first; kernel #179 capture), on /api/agents too', () => {
+  const souls = soulsData(JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/f7/souls.json', import.meta.url), 'utf8'))).souls;
+  const rm = souls.find(s => s.name === 'release-manager');
+  assert.deepEqual(rm.labels, ['engineering', 'global']); assert.equal(rm.team, 'engineering', 'the primary is the first label');
+  assert.deepEqual(souls.find(s => s.name === 'security-reviewer').labels, [], 'an external soul with no label says so');
+  const snapshot = { byWs: new Map([[context, { deployment: { status: 'observed', root: `${context}/agents`, souls: [], catalog: { souls, ambiguous: [], reason: null } } }]]) };
+  const rows = Object.fromEntries(project({ id: context, name: 'northwind', roots: [`${context}/agents`] }, snapshot).agents.map(row => [row.name, row]));
+  assert.deepEqual(rows['release-manager'].labels, ['engineering', 'global']);
+  assert.deepEqual(rows['security-reviewer'].labels, []);
+  const older = soulsData(JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/f3/souls.json', import.meta.url), 'utf8'))).souls;
+  const unlabelled = { byWs: new Map([[context, { deployment: { status: 'observed', root: `${context}/agents`, souls: [], catalog: { souls: older.map(({ labels: _l, ...s }) => s), ambiguous: [], reason: null } } }]]) };
+  assert.ok(project({ id: context, name: 'northwind', roots: [`${context}/agents`] }, unlabelled).agents.every(row => !Object.hasOwn(row, 'labels')), 'a kernel before labels: nothing invented');
+});

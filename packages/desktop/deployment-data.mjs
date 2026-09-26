@@ -207,6 +207,7 @@ export function capabilitiesData(document) {
  * mode each declares. Names are unique per catalog (the kernel refuses an
  * ambiguous bare name with E_SOUL_AMBIGUOUS; such a soul is not offered). */
 const SOUL_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/;
+const TEAM_LABEL = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 export function soulsData(document) {
   check(record(document) && document.schemaVersion === 1 && document.ok === true);
   const data = document.result;
@@ -218,6 +219,11 @@ export function soulsData(document) {
     check(SOUL_NAME.test(out.name ?? '') && ['member', 'external'].includes(out.kind)
       && ['worktree', 'checkout', 'directory', 'workspace', 'attached'].includes(out.work));
     flags(row, ['private'], out);
+    // Every team label the soul carries (primary first; teams contract), when reported.
+    if (own(row, 'labels')) {
+      check(Array.isArray(row.labels) && row.labels.length <= 64 && row.labels.every(l => typeof l === 'string' && TEAM_LABEL.test(l)) && new Set(row.labels).size === row.labels.length);
+      out.labels = [...row.labels];
+    }
     seen.set(out.name, seen.has(out.name) ? null : out);
   }
   const souls = [...seen.values()].filter(Boolean);
