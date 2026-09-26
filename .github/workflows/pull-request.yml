@@ -10,7 +10,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  # A PR shares one group (stale runs cancel); each main commit gets its OWN group, so no
+  # merge commit's run is queued behind or superseded by another (GitHub keeps one pending run per group).
+  group: ci-${{ github.event.pull_request.number || github.sha }}
   # A PR's stale run is cancelled by its next push; main's runs never cancel each other:
   # with merge-then-fix, every merge commit's CI is the record that main was green.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}

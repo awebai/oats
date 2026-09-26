@@ -10,7 +10,7 @@ test("direct main pushes retain the same read-only CI gates as pull requests", (
   assert.deepEqual(workflow.on.push.branches, ["main", "release/**"]);
   assert.deepEqual(workflow.on.pull_request.branches, workflow.on.push.branches);
   assert.equal(workflow.permissions.contents, "read");
-  assert.match(workflow.concurrency.group, /github\.event\.pull_request\.number \|\| github\.ref/);
+  assert.match(workflow.concurrency.group, /github\.event\.pull_request\.number \|\| github\.sha/);
   const steps = workflow.jobs.verify.steps, commands = steps.map((step) => step.run);
   for (const command of ["npm run check", "npm run check:pi", "npm run validate", "npm run validate:okf", "npm run pack:check", "npm run smoke:tarball"]) {
     assert.ok(commands.includes(command), `missing gate: ${command}`);
