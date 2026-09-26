@@ -22,7 +22,7 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
-## Batch — 2026-09-24 night (PRs 131, 136, 151–201) → toward v0.26.0 (unreleased; main carries breaking changes)
+## Batch — 2026-09-24 night (PRs 131, 136, 151–214) → toward v0.26.0 (unreleased; main carries breaking changes)
 - **Merged:**
   - PR151 packages: approval removed (human decision; declaring a package IS the trust decision) `e62b8f16`, plus the release-note follow-up `f0994882`.
   - PR153 docs for it `b97de554`.
@@ -151,6 +151,14 @@ decisions/ and referenced from here.
   - PR200 kernel `87b1fd62` (the Phase D driver; the #199 sibling fault: core.fileMode=false made a mode-only change ` M` in the recovery; lead fileMode mutation killing 1; the first head was CI-red on Linux only, a fixture `--unset-all` of a never-set core.precomposeUnicode (exit 5), fixed test-only; co-lead re-ACK; the watcher re-armed + merged; squash verified): the recovery clone takes the source's status-affecting settings (fileMode, ignoreCase, precomposeUnicode, symlinks, autocrlf, eol) + the common-dir info/attributes. For 0.27.2. Left fail-closed: a conditional include matching only the recovery path.
   - PR201 `67b955a8` (lead; bump): 0.27.2 pre-alignment + notes (the okf 2.1.6 line moved to Known limitations; 2.1.6 did not make it).
   - **v0.27.2 RELEASED**: the tag object `409daf15` → `67b955a8` (the co-lead's Class B ACK; main CI green on the SHA; the stewardship commit before it failed only the timing-sensitive Desktop K6d test on the same tree); release.yml green; npm 0.27.2; 7 assets; the published probe: catalog + bundled capabilities == tag, except for the unpacked okf template symlink (npm drops symlinks; pre-existing).
+  - PR202 `a62fd67f` (`--flag=value`), PR204 `d399e9c6` (package souls), PR205 `c2311c1e` (triggers), PR207 `f3c6f427` (the okf 3.0.0 mirror + pin), PR206 `7d45fcff` (the Workspace v4 Desktop, ux-designer), PR208 `a367f9ed` (soul labels), PR209 `22e2a3c7` (the 0.28.0 bump; it turned main red on 3 Desktop band tests, fixed forward in `8e9d7286`/`38f1a0a6`), PR210 `9bb956e5` (the oats-setup-admin soul + framework 1.2.0), PR211 `e4a41345`, PR212 `d99aeec1` (the framework 1.2.0 pin).
+  - **v0.28.0 RELEASED**: the tag `7c901520` → `acae8b79`; npm 0.28.0; 7 assets; the published probe clean.
+  - PR213 `27413bcb` (workspace automations, 0.29.0), PR214 `36ab3761` (the Desktop Spawn buttons), PR203 `27585c2b` (okf-ops onboarding; framework 1.2.1).
+  - **taught us (today):**
+    - (a) The `--test-shard` flag placed after the globs is read by `node --test` as a file pattern, so every shard ran the whole suite. Put forwarded flags before positionals.
+    - (b) `cancel-in-progress` on main cancels merge-then-fix's only record; one concurrency group per main SHA.
+    - (c) A version bump must move every test that pins the Desktop CLI band (three files, not one).
+    - (d) Stacked PRs conflict after a squash; the author rebases, and `git range-diff` proves an unchanged patch.
 - **taught us:**
   - (1) **Arm a merge watcher with the full approved oid, never "the current head".** #160's head moved twice after approval while mails crossed. The watcher's named-oid guard refused both mismatches, so nothing unreviewed merged. The loop ends with one FINAL mail per party (author and watcher) naming the full oid and "no pushes", and by ignoring the stale mails that follow.
   - (2) **A native gate must wait for the message, not for a spinner.** Preview in the rig is slow, and fixed waits produced false FAILs in both directions. Poll for the expected sentence with a bound.
