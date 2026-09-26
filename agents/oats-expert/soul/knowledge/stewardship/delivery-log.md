@@ -158,6 +158,20 @@ decisions/ and referenced from here.
     - (a) The `--test-shard` flag placed after the globs is read by `node --test` as a file pattern, so every shard ran the whole suite. Put forwarded flags before positionals.
     - (b) `cancel-in-progress` on main cancels merge-then-fix's only record; one concurrency group per main SHA.
     - (c) A version bump must move every test that pins the Desktop CLI band (three files, not one).
+  - PR215 `c33299b6` (the 2b follow-up: spawn.launchConfig, the 9 Desktop contract gaps, `oats schedule test`, the K6d kernel bug → E_PLACEMENT_TAKEN), PR216 `6ca7bacf` (release.yml tests sharded ×6; publish needs them).
+  - PR217 `2a605fd3` (the Desktop facts 1–14; 8 accepted deviations, e.g. `composedFrom`, `capabilitiesOff[]`, the tree oid), PR218 `6932046d` (`OATS_SETTINGS_ORIGINS`; the package-soul purpose budget measured on the slug).
+  - PR219 `e815975d` (the Desktop Schedules + Triggers on `/api/automations`; the old schedule-read path deleted), PR220 `c7a82f21`, PR221 `f65daaaa` (#217 Desktop slices), PR224 `fe85f1dd` (the app proxy route for automations, 90 s).
+  - **oats.okf v4.0.0 TAGGED** `239f2885` → `1f0ba12f` (oats-okf#18, after a LIVE e2e: a harvester PR → the harvest-review trigger → the maintainer's verdict + merge → both retired; the events audit clean).
+  - PR222 `db4d7da4` (the okf 4.0.0 mirror + pin, plus the 0.29.0 version pre-alignment and the Desktop band `<0.30.0`; the dead helperInjection guard retired).
+  - **oats.dev v1.1.0 TAGGED** `9b364d6a` → `6d17f0d5` (oats-dev#6: the `reviewer` becomes a package soul; oats.review 1.3.0; `oats >=0.28.0`).
+  - PR223 `7ac3845e` (PR 3: capability agents removed → `E_CAPABILITY_AGENTS_REMOVED`; knowledge-theory-expert → an oats.framework package soul) — main RED on a stale soul path in release-packaging; fixed forward by PR225 `b60276af`.
+  - **oats-framework/v1.3.0 TAGGED** `52e96ac3` → `b60276af`. PR226 `a0dfe761` (the 0.29.0 release PR: the framework pin, the notes, "Upgrading from 0.28").
+  - **v0.29.0 RELEASED**: the tag `befefd3e` → `a0dfe761`; release run 36257860362 green (6 shards + 3 Desktop builds + publish); npm 0.29.0 for both packages; 7 assets; the published probe 18/18 (version, the 4 features, the catalog == tag, the 8 bundled capabilities == tag, okf 4.0.0 ×3 capabilities, no `agents:`, the pins).
+  - **taught us (0.29.0):**
+    - (d) A breaking provider release and the kernel that refuses its predecessor move in LOCKSTEP (okf ≤3.x is refused on 0.29; okf 4.0.0 needs 0.29): the release notes lead with the upgrade order, and old deployments keep their kernel until they move their pins.
+    - (e) Moving a file a test reads by composed path (CAPABILITY_PATH + EXPERT_PATH) breaks in CI, not in the affected-suite gate: grep the constant's uses when relocating.
+    - (f) tmux input sent to a busy Claude pane can sit unsubmitted: verify it was taken, or resend after C-u.
+    - (g) npm can take minutes to serve a just-published version (404 on `npm view` right after `+ pkg@x`); wait before probing.
     - (d) Stacked PRs conflict after a squash; the author rebases, and `git range-diff` proves an unchanged patch.
 - **taught us:**
   - (1) **Arm a merge watcher with the full approved oid, never "the current head".** #160's head moved twice after approval while mails crossed. The watcher's named-oid guard refused both mismatches, so nothing unreviewed merged. The loop ends with one FINAL mail per party (author and watcher) naming the full oid and "no pushes", and by ignoring the stale mails that follow.
