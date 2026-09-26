@@ -190,7 +190,8 @@ test('instance rows reflect exact root/host identity and open only read-only sna
   const instance = { agent: 'dev', instance: 'dev-seat', agentsRoot: '/team/one/agents', home: '/team/one/agents/dev/instances/dev-seat', running: true };
   const u = await setup(t, { instances: [instance, { ...instance, agentsRoot: '/team/two/agents' }, { ...instance, server: 'another-host' }],
     inspect: body => body.selector.home ? homeInspection(body.selector.home, { instance: 'dev-seat', soul: 'dev', instructions: { file: '/fixture/AGENTS.md', text: 'Captured instructions', truncated: false, sources: [] } }) : inspectData() });
-  assert.equal(u.doc.querySelector('.sactivity').textContent, '1 running · 1 instance');
+  assert.equal(u.doc.querySelector('.sactivity').textContent, '1 running');
+  assert.equal(u.doc.querySelector('.sactivity').title, '1 running · 1 instance', 'the full count stays on the activity');
   u.doc.querySelector('.soul-card').click(); await tick();
   const buttons = u.doc.querySelectorAll('.inspector-instance'); assert.equal(buttons.length, 1);
   buttons[0].click(); await tick();
@@ -291,4 +292,35 @@ test('soul identity marks stay qualified and stable across reordered polling and
   // Read-only POSTs only: inspect, and the catalog read the tab bar counts (never a spawn or sync).
   assert.ok(u.calls.filter(c => c.method === 'POST').every(c => c.body.action === 'inspect' || (c.path.startsWith('/api/workspace-sync') && c.body.action === 'read')));
   assert.deepEqual(u.files, []); assert.deepEqual(u.opens, []);
+});
+
+// Workspace v4 (W3): cards grouped by primary team or repository; reported labels as
+// chips (primary first); souls of an unconfirmed member listed apart with its reason.
+test('Souls group by primary team or repository, and unconfirmed members explain their hidden souls', async t => {
+  const agents = [
+    { ...soul('/nw/agents', 'writer'), team: 'marketing', repoName: 'site', labels: ['marketing', 'engineering'] },
+    { ...soul('/nw/agents', 'builder'), team: 'engineering', repoName: 'app' },
+    { ...soul('/nw/agents', 'reviewer'), team: 'engineering', repoName: 'site' },
+  ];
+  const status = () => {
+    const d = observed();
+    d.workspaceStatus = { ...d.workspaceStatus, members: [...d.workspaceStatus.members,
+      { key: 'github.com/nw/lab', name: 'lab', status: 'no-backlink', team: 'research', souls: ['prober'], capabilities: [] }] };
+    return d;
+  };
+  const u = await setup(t, { agents, deployment: status });
+  const titles = () => [...u.doc.querySelectorAll('.souls-group-title')].map(el => el.textContent);
+  assert.deepEqual(titles(), ['engineering', 'marketing', "Not available· lab hasn't joined the workspace"]);
+  const writer = u.doc.querySelector('.soul-card[data-agent=writer]');
+  assert.deepEqual([...writer.querySelectorAll('.steam')].map(el => [el.textContent, el.classList.contains('primary')]), [['marketing', true], ['engineering', false]]);
+  assert.equal(u.doc.querySelector('.soul-card[data-agent=builder] .smode').textContent, 'worktree · Pi', 'work mode and the reported default harness');
+  assert.equal(u.doc.querySelector('.soul-card[data-agent=builder] .runtime-badge').getAttribute('aria-label'), 'Harness: Pi');
+  assert.equal(u.doc.querySelector('.soul-card[data-agent=builder] .sactivity').textContent, 'none');
+  const hidden = u.doc.querySelector('[data-unavailable=prober]');
+  assert.equal(hidden.tagName, 'DIV', 'an unavailable soul is not a control: it has no page to open');
+  assert.match(hidden.textContent, /Hidden until membership is confirmed/);
+  assert.equal(u.doc.querySelectorAll('.souls-grid .soul-card[tabindex="0"]').length, 1, 'one roving card');
+  u.doc.querySelector('.souls-group-by [data-group-by=repo]').click();
+  assert.deepEqual(titles().slice(0, 2), ['app', 'site']);
+  assert.equal(u.doc.querySelector('.souls-group-by [data-group-by=repo]').getAttribute('aria-pressed'), 'true');
 });

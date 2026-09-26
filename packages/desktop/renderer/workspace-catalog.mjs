@@ -101,6 +101,20 @@ button.setup-node:focus-visible { outline:2px solid var(--accent); outline-offse
 const list = value => Array.isArray(value) ? value : [];
 const text = value => typeof value === 'string' && value ? value : null;
 const short = value => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value) ? value.slice(0, 7) : value;
+/** A member's handshake state in plain words (docs/workspaces.md): the chip
+ * label, and why its souls are not available while it is not confirmed.
+ * An unknown kernel status is shown verbatim, never guessed. */
+const MEMBER_STATES = {
+  confirmed: { label: 'confirmed', ok: true },
+  'not-listed': { label: 'not listed', why: "isn't listed by the workspace" },
+  'no-backlink': { label: 'no backlink', why: "hasn't joined the workspace" },
+  'backlink-elsewhere': { label: 'points elsewhere', why: 'says it belongs to a different workspace' },
+  'cannot-read': { label: "can't read", why: "can't be read with your access" },
+};
+export function memberState(member) {
+  const status = text(member?.status) || 'unconfirmed';
+  return { status, ok: false, why: 'is not confirmed', label: status, ...MEMBER_STATES[status] };
+}
 /** A member's display name from workspace status; the key's tail otherwise. */
 export function memberNames(status) {
   const names = new Map();

@@ -31,13 +31,17 @@ function declaration(doc, selector, property) {
   return rule.style.getPropertyValue(property);
 }
 
-test("Souls toolbar can wrap instead of overflowing the narrow workspace stage", t => {
+// Workspace v4 (replaces the wrapping toolbar): the Souls controls stay in the one-row
+// 48px header; the filter shrinks (min-width 0) instead of wrapping to a second row.
+test("Souls toolbar shrinks its filter instead of overflowing the narrow workspace stage", t => {
   const source = readFileSync(new URL("../renderer/views/spawn.mjs", import.meta.url), "utf8");
   const css = source.match(/const CSS = `([\s\S]*?)`;/)[1];
   const { doc, host, window } = fixture(t, css);
   const bar = doc.createElement("div"); bar.className = "souls-bar"; host.append(bar);
-  assert.equal(window.getComputedStyle(bar).flexWrap, "wrap");
-  assert.equal(declaration(doc, ".souls-bar", "height"), "", "no fixed one-row height after wrapping");
+  assert.equal(window.getComputedStyle(bar).flexWrap, "nowrap");
+  assert.equal(declaration(doc, ".souls-bar", "min-width"), "0px");
+  assert.equal(declaration(doc, ".souls-bar label", "min-width"), "0px", "the filter can shrink");
+  assert.equal(declaration(doc, ".souls-bar", "height"), "", "no fixed height");
   assert.equal(declaration(doc, ".souls-bar", "min-height"), "", "compact toolbar does not impose a second 48px row");
 });
 

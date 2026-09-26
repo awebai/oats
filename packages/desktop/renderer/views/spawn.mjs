@@ -11,7 +11,10 @@ import { runtimeState } from "../instance-presentation.mjs";
 import { deploymentUnavailableText } from "../deployment-header.mjs";
 import { createSpawnDialog, spawnDialogCSS } from "../spawn-dialog.mjs";
 import { spawnProblem, catalogProblem } from "../spawn-messages.mjs";
-import { createSoulMark, identityCSS } from "../identity-marks.mjs";
+import { createSoulMark, createRuntimeBadge, harnessName, identityCSS } from "../identity-marks.mjs";
+import { harnessOf } from "../harness-names.mjs";
+import { memberState } from "../workspace-catalog.mjs";
+import { iconElement } from "../shell-icons.mjs";
 import {
   apiJson, postJson, ensureTheme,
   currentWorkspace, setWorkspace, onWorkspaceChange, wsQuery, workspaceGeneration,
@@ -29,9 +32,10 @@ const cliProbePending = () => !cliStatus() && !cliKnownUnavailable();
 
 const CSS = `
 .souls { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width:0; background: var(--bg); }
-.souls-bar { display:flex; align-items:center; flex-wrap:wrap; gap:4px 8px; margin-left:auto; min-width:0; flex:0 1 180px; }
-.souls-bar label { display:flex; min-width:0; width:100%; }
-.souls-bar .filter { width:100%; min-width:0; }
+.souls-bar { display:flex; align-items:center; flex-wrap:nowrap; gap:10px; margin-left:auto; min-width:0; flex:0 1 auto; }
+.souls-bar label { position:relative; display:flex; align-items:center; min-width:0; flex:0 1 200px; }
+.souls-bar label .shell-icon { position:absolute; left:10px; color:var(--muted); pointer-events:none; }
+.oats-view .workspace-header .souls-bar input.filter { width:100%; min-width:0; height:28px; min-height:28px; padding:0 10px 0 30px; border-radius:7px; background:var(--chip-bg); font-size:12px; }
 .workspace-header .wssel { max-width:100%; min-width:0; flex:0 1 140px; }
 .souls-sum { color:var(--muted); font-size:12px; }
 .workspace-recovery { flex:none; min-width:0; padding:18px 20px; }
@@ -39,26 +43,37 @@ const CSS = `
 /* Counts are already in the Souls tab. Keep the full filter/CLI status for
    assistive tech, without another permanent row above the canvas. */
 .workspace-sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
-.souls-grid { flex:1; min-height:0; min-width:0; overflow-y:auto; padding:18px 20px; display:grid; gap:12px;
-              grid-template-columns:repeat(auto-fill, minmax(min(230px, 100%), 1fr)); align-content:start; }
-.soul-card { background: var(--surface); border: 1px solid var(--border); border-radius:10px; min-width:0; overflow-wrap:anywhere;
-             padding:16px; cursor:pointer; display: flex; flex-direction: column; gap:10px;
-             text-align: left; font: inherit; color: var(--fg); }
-.soul-card:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
-.soul-card.attached { border-style: dashed; background: var(--surface-2); }
-.soul-card.open { border-color:color-mix(in srgb, var(--accent) 35%, var(--border)); box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent); } /* Redesign v3 soft selection */
-.soul-card .sname { font-weight:650; font-size:13.5px; display:flex; align-items:flex-start; gap:10px; }
-.soul-card .sidentity { display:flex; flex-direction:column; gap:1px; min-width:0; flex:1; }
-.soul-card .stitle { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.soul-card .scontext { color:var(--muted); font:11px var(--mono,monospace); }
-.soul-card .sname .glyph { width:36px; height:36px; flex:none; border-radius:9px; display:grid; place-items:center; font-size:15px; }
+/* Workspace v4 (W3): cards grouped by primary team (or repository); souls of a
+   member that has not joined are listed apart, with the reason. */
+.souls-grid { flex:1; min-height:0; min-width:0; overflow-y:auto; padding:2px 20px 16px; display:flex; flex-direction:column; }
+.souls-group-title { display:flex; align-items:baseline; gap:8px; margin:0; padding:10px 2px 8px; color:var(--fg); font-size:12.5px; font-weight:650; overflow-wrap:anywhere; }
+.souls-group-title.warn { color:var(--warn); }
+.souls-group-note { color:var(--muted); font-weight:500; }
+.souls-group-cards { display:grid; gap:12px; grid-template-columns:repeat(auto-fill, minmax(min(240px, 100%), 1fr)); align-content:start; }
+.soul-card { display:flex; flex-direction:column; min-width:0; padding:0; overflow:hidden; background:var(--surface); border:1px solid var(--border); border-radius:10px;
+             cursor:pointer; text-align:left; font:inherit; color:var(--fg); }
+.soul-card:hover { border-color:var(--sel-border); }
+.soul-card.open { border-color:var(--sel-border); box-shadow:0 0 0 1px var(--sel-border); }
+.soul-card.unavailable { cursor:default; background:var(--surface-2); }
+.soul-card .sname { display:flex; align-items:center; gap:10px; padding:12px 12px 2px; }
+.soul-card .sidentity { display:flex; flex-direction:column; min-width:0; flex:1; }
+.soul-card .stitle { font-size:13px; font-weight:650; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.soul-card.unavailable .stitle { color:var(--muted); }
+.soul-card .scontext { color:var(--muted); font:11px var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.soul-card .sname .glyph { width:30px; height:30px; flex:none; border-radius:8px; font-size:13px; font-weight:700; }
+.soul-card .sname .runtime-badge { width:20px; height:20px; font-size:10px; }
+.soul-card .sbody { display:flex; flex-direction:column; gap:6px; padding:8px 12px 10px; flex:1; }
+.soul-card .sdesc { min-height:18px; color:var(--muted); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.soul-card .steams { display:flex; flex-wrap:wrap; gap:4px; }
+.soul-card .steam { display:inline-flex; align-items:center; height:20px; padding:0 6px; border:1px solid var(--border); border-radius:4px; background:var(--surface); color:var(--muted); font-size:11px; font-weight:550; white-space:nowrap; }
+.soul-card .steam.primary { border-color:var(--chip-bg); background:var(--chip-bg); color:var(--fg); font-weight:650; }
+.soul-card .sfoot { display:flex; align-items:center; gap:8px; margin-top:auto; padding-top:6px; border-top:1px solid var(--tag-bg); color:var(--muted); font-size:11.5px; }
+.soul-card .smode { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+.soul-card .sactivity { display:inline-flex; align-items:center; gap:6px; margin-left:auto; flex:none; color:var(--muted); font-weight:600; white-space:nowrap; }
+.soul-card .sactivity.running { color:var(--fg); }
+.soul-card .sactivity.running::before { content:""; width:6px; height:6px; border-radius:50%; background:var(--live); }
 .oats-view .souls button.spawn-act:not(:disabled), .oats-view .souls button.fspawn:not(:disabled) { background:var(--primary-bg); color:var(--primary-fg); border-color:var(--primary-bg); }
-.soul-card .sactivity { display:flex; align-items:center; gap:6px; margin-top:auto; color:var(--muted); font-size:11.5px; font-weight:600; }
-.soul-card .sactivity::before { content:""; flex:none; width:6px; height:6px; border-radius:50%; background:var(--muted); }
-.soul-card .sactivity.running { color:var(--accent); }
-.soul-card .sactivity.running::before { background:var(--accent); }
 .souls-grid[hidden] { display:none; }
-.soul-card .sdesc { color:var(--muted); font-size:12px; line-height:1.5; text-wrap:pretty; flex:1; }
 .spawn-modal { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 24px; background: var(--scrim); }
 .spawn-dialog { display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
 .spawn-dialog-head { display: flex; }
@@ -210,7 +225,7 @@ function closeCapability(s, { restoreFocus = false } = {}) {
 export function mount(el, ctx) {
   ensureTheme(el.ownerDocument);
   // ctx.spawnTiming (optional, harness only): { previewDelay, wait } — never set by the shell.
-  const s = state = { el, ctx, souls: { agents: [] }, panelInstances: [], filterText: "", sel: null, timers: [], unsubWs: null, alive: true, spawnOp: 0, rosterReq: 0, rosterGen: null,
+  const s = state = { el, ctx, souls: { agents: [] }, panelInstances: [], filterText: "", groupBy: "team", sel: null, timers: [], unsubWs: null, alive: true, spawnOp: 0, rosterReq: 0, rosterGen: null,
     waitOpts: ctx.spawnTiming?.wait };
   el.innerHTML = `
     <div class="oats-view" style="display:block">
@@ -227,7 +242,8 @@ ${spawnDialogCSS}</style>
             <header class="workspace-header"></header>
             <div class="souls-bar">
               <select class="field wssel" aria-label="Workspace" style="display:none"></select>
-              <label><span class="workspace-sr-only">Search souls</span><input class="field filter" type="search" placeholder="Filter souls…" autocomplete="off"></label>
+              <label><span class="workspace-sr-only">Search souls</span><input class="field filter" type="search" placeholder="Filter souls" autocomplete="off"></label>
+              <div class="ws-segmented souls-group-by" role="group" aria-label="Group souls by"><button type="button" data-group-by="team" aria-pressed="true">Team</button><button type="button" data-group-by="repo" aria-pressed="false">Repo</button></div>
               <span class="souls-sum workspace-sr-only" role="status"></span>
             </div>
             <div class="workspace-recovery" hidden></div>
@@ -305,6 +321,13 @@ ${spawnDialogCSS}</style>
   s.q("workspace-header").append(s.q("wssel")); // standalone switcher stays reachable on every subtab
   applyWorkspaceTab(s);
   s.q("filter").addEventListener("input", (e) => { s.filterText = e.target.value; renderGrid(s); });
+  s.q("filter").before(iconElement(el.ownerDocument, "search", { size: 14 }));
+  for (const button of s.q("souls-group-by").querySelectorAll("button")) button.addEventListener("click", () => {
+    if (s.groupBy === button.dataset.groupBy) return;
+    s.groupBy = button.dataset.groupBy;
+    for (const other of s.q("souls-group-by").querySelectorAll("button")) other.setAttribute("aria-pressed", String(other === button));
+    renderGrid(s);
+  });
   // Esc on a page goes back (never from a text field, a disclosure's summary, or the spawn modal).
   const pageEscape = (event, back) => {
     if (event.key !== "Escape" || event.defaultPrevented || event.target.closest?.(".spawn-modal")) return;
@@ -516,12 +539,29 @@ function renderGrid(s, { restoreFocus = true } = {}) {
     grid.append(empty);
     return;
   }
-  // Source/name ordering remains stable; source is on each card, not an
-  // extra repo-heading row that offsets the reference canvas baseline.
-  const label = (a) => a.repoName || (a.repo ? String(a.repo).split("/").filter(Boolean).at(-1) : "") || "workspace";
-  const sorted = [...list].sort((a, b) =>
-    label(a).localeCompare(label(b)) || String(a.name).localeCompare(String(b.name)));
-  for (const a of sorted) grid.append(soulCard(s, a));
+  // Workspace v4: grouped by primary team (the kernel's `team`) or by repository;
+  // groups and cards in name order. Souls of a member that is not confirmed are
+  // listed last, apart, with the member's reason (workspace status).
+  const doc = grid.ownerDocument;
+  const key = (a) => s.groupBy === "repo" ? repoLabel(a) : (a.team || "No team");
+  const groups = new Map();
+  for (const a of [...list].sort((a, b) => String(a.name).localeCompare(String(b.name)))) {
+    if (!groups.has(key(a))) groups.set(key(a), []);
+    groups.get(key(a)).push(a);
+  }
+  const group = (title, cards, { note = "", warn = false } = {}) => {
+    const section = doc.createElement("section"); section.className = "souls-group";
+    const heading = doc.createElement("h2"); heading.className = `souls-group-title${warn ? " warn" : ""}`; heading.textContent = title;
+    if (note) { const extra = doc.createElement("span"); extra.className = "souls-group-note"; extra.textContent = note; heading.append(extra); }
+    const body = doc.createElement("div"); body.className = "souls-group-cards";
+    body.append(...cards); section.append(heading, body); grid.append(section);
+  };
+  for (const [title, agents] of [...groups].sort(([a], [b]) => a.localeCompare(b))) group(title, agents.map((a) => soulCard(s, a)));
+  for (const { member, state: why, souls } of unavailableMembers(s)) {
+    const shown = souls.filter((name) => matches(s, { name }));
+    if (s.filterText && !shown.length) continue;
+    group("Not available", shown.map((name) => unavailableCard(s, name, member)), { note: `· ${member.name || member.key} ${why.why}`, warn: true });
+  }
   // Roving tabindex across the rebuilt grid: keep the previously focused
   // card's identity tabbable (and focused) when it survives the repaint,
   // else the first card enters the tab order.
@@ -621,9 +661,15 @@ function canLaunchSoul(s, agent) {
       && current.agentsRoot === agent.agentsRoot && (current.server || "") === (agent.server || "")).work !== "attached";
 }
 
+const repoLabel = (a) => a.repoName || (a.repo ? String(a.repo).split("/").filter(Boolean).at(-1) : "") || "workspace";
+/** A soul's team labels as reported: `labels` (primary first) when the roster
+ * carries them, else its primary `team` alone. */
+const soulTeams = (a) => Array.isArray(a.labels) && a.labels.length ? a.labels : a.team ? [a.team] : [];
+
 function soulCard(s, a) {
   const attached = a.work === "attached";
-  const card = s.el.ownerDocument.createElement("button");
+  const doc = s.el.ownerDocument;
+  const card = doc.createElement("button");
   card.type = "button";
   card.className = "soul-card inspect-act" + (attached ? " attached" : "") + (((s.selAgent?.name === a.name && s.selAgent?.agentsRoot === a.agentsRoot && s.selAgent?.server === a.server) || (s.inspectRef?.name === a.name && s.inspectRef?.agentsRoot === a.agentsRoot && s.inspectRef?.server === a.server)) ? " open" : "");
   card.dataset.agent = a.name; card.dataset.root = a.agentsRoot || ""; card.dataset.server = a.server || "";
@@ -633,21 +679,53 @@ function soulCard(s, a) {
   // (No aria-pressed: a card opens its soul's page, which replaces the grid while open.)
   card.title = attached ? "Attached only — select for details and files" : `Inspect ${a.name} — Launch, Files, Schedule and reported defaults`;
   card.addEventListener("click", () => inspectSoul(s, a));
-  const doc = s.el.ownerDocument;
-  const name = doc.createElement("span"); name.className = "sname";
+  const span = (cls, text) => { const el = doc.createElement("span"); el.className = cls; if (text !== undefined) el.textContent = text; return el; };
+  // Head: mark, name and repository; the default harness badge only when the kernel reports one.
+  const name = span("sname");
   const avatar = createSoulMark(doc, a); avatar.classList.add("glyph");
-  const identity = doc.createElement("span"); identity.className = "sidentity";
-  const title = doc.createElement("span"); title.className = "stitle"; title.textContent = a.name;
-  const context = doc.createElement("span"); context.className = "scontext"; context.textContent = a.repoName || a.workspace || "Workspace soul";
-  identity.append(title, context);
+  const identity = span("sidentity");
+  identity.append(span("stitle", a.name), span("scontext", a.repoName || a.workspace || "Workspace soul"));
   name.append(avatar, identity);
-  const description = doc.createElement("span"); description.className = "sdesc"; description.textContent = a.description || "";
-  card.append(name, description);
+  const harness = harnessOf(a);
+  if (typeof harness === "string" && harness) name.append(createRuntimeBadge(doc, harness));
+  const body = span("sbody");
+  body.append(span("sdesc", a.description || ""));
+  const teams = span("steams");
+  soulTeams(a).forEach((team, index) => teams.append(span(`steam${index === 0 ? " primary" : ""}`, team)));
+  if (teams.childElementCount) body.append(teams);
+  // Foot: where it works (and its harness), then what runs now.
   const instances = soulInstances(s, a);
   const running = instances.filter(i => i.running === true).length;
-  const activity = s.el.ownerDocument.createElement("span"); activity.className = "sactivity" + (running ? " running" : "");
-  activity.textContent = `${running} running · ${instances.length} ${instances.length === 1 ? "instance" : "instances"}`;
-  card.append(activity);
+  const foot = span("sfoot");
+  foot.append(span("smode", [a.work, typeof harness === "string" && harness ? harnessName(harness) : ""].filter(Boolean).join(" · ")));
+  const activity = span("sactivity" + (running ? " running" : ""), running ? `${running} running` : "none");
+  activity.title = `${running} running · ${instances.length} ${instances.length === 1 ? "instance" : "instances"}`;
+  foot.append(activity);
+  body.append(foot);
+  card.append(name, body);
+  return card;
+}
+
+/** Members whose handshake is not confirmed, with the souls workspace status
+ * lists for them (they are not in the soul catalog, so they cannot open). */
+function unavailableMembers(s) {
+  const status = s.deployment?.status === "observed" ? s.deployment.workspaceStatus : null;
+  return (Array.isArray(status?.members) ? status.members : [])
+    .map(member => ({ member, state: memberState(member), souls: Array.isArray(member.souls) ? member.souls.filter(n => typeof n === "string" && n) : [] }))
+    .filter(row => !row.state.ok);
+}
+function unavailableCard(s, name, member) {
+  const doc = s.el.ownerDocument;
+  const card = doc.createElement("div"); card.className = "soul-card unavailable"; card.dataset.unavailable = name;
+  const span = (cls, text) => { const el = doc.createElement("span"); el.className = cls; if (text !== undefined) el.textContent = text; return el; };
+  const head = span("sname"); const avatar = createSoulMark(doc, { name }); avatar.classList.add("glyph");
+  const identity = span("sidentity"); identity.append(span("stitle", name), span("scontext", member.name || member.key));
+  head.append(avatar, identity);
+  const body = span("sbody");
+  body.append(span("sdesc", "Hidden until membership is confirmed"));
+  if (member.team) { const teams = span("steams"); teams.append(span("steam primary", member.team)); body.append(teams); }
+  const foot = span("sfoot"); foot.append(span("smode", ""), span("sactivity", "—")); body.append(foot);
+  card.append(head, body);
   return card;
 }
 

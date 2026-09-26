@@ -85,8 +85,8 @@ test('03 (F7): a soul opens as a page in the main area — it replaces the grid,
   assert.equal(u.css('.filter').height, '28px'); assert.equal(u.css('.filter').minHeight, '28px', 'generic 36px field floor is explicitly overridden');
   page.querySelector('.inspector-back').click(); await tick();
   assert.equal(u.get('.souls-grid').hidden, false);
-  assert.equal(u.css('.souls-grid').padding, '18px 20px');
-  assert.equal(u.css('.souls-grid').gap, '12px');
+  assert.equal(u.css('.souls-grid').padding, '2px 20px 16px', 'Workspace v4: groups start under the header');
+  assert.equal(u.css('.souls-group-cards').gap, '12px');
   assert.equal(u.get('.souls-bar').parentElement, header);
   assert.equal(u.get('.wssel').parentElement, header);
   assert.equal(u.get('.wssel').style.display, 'none', 'shell still owns its selector');
@@ -99,20 +99,24 @@ test('03 (F7): a soul opens as a page in the main area — it replaces the grid,
   assert.doesNotMatch(inspectorCSS, /display:\s*contents|order:\s*-1|position:\s*absolute/);
 });
 
-test('03: cards have one semantic Details entry with compact identity, description and activity (no runtime: v2 souls choose it at spawn)', async t => {
+test('03: cards have one semantic Details entry with compact identity, description, teams and a foot (the harness only as reported)', async t => {
   const u = await fixture(t);
   const card = u.get('.soul-card');
   assert.equal(card.tagName, 'BUTTON'); assert.equal(card.type, 'button');
   assert.equal(card.getAttribute('aria-label'), 'Inspect dev');
   assert.equal(u.doc.getElementById(card.getAttribute('aria-controls')), u.get('.workspace-soul-page'), 'a card opens its soul\'s page');
-  assert.deepEqual([...card.children].map(el => el.className), ['sname', 'sdesc', 'sactivity']);
+  // Workspace v4 (W3): head (mark, name, repository), then description, team chips and a foot.
+  assert.deepEqual([...card.children].map(el => el.className), ['sname', 'sbody']);
+  assert.deepEqual([...card.querySelector('.sbody').children].map(el => el.className), ['sdesc', 'sfoot'], 'no team reported: no team chips invented');
   assert.equal(card.querySelector('button, .schips, .sactions'), null);
-  assert.equal(u.css('.soul-card').padding, '16px'); assert.equal(u.css('.soul-card').gap, '10px');
+  assert.equal(u.css('.soul-card').padding, '0px');
   assert.equal(u.css('.sdesc').fontSize, '12px');
-  assert.equal(u.css('.glyph').width, '36px'); assert.equal(u.css('.glyph').height, '36px'); assert.equal(u.css('.glyph').borderRadius, '9px');
+  assert.equal(u.css('.glyph').width, '30px'); assert.equal(u.css('.glyph').height, '30px'); assert.equal(u.css('.glyph').borderRadius, '8px');
   assert.equal(u.get('.scontext').textContent, 'fixture');
-  // v2 souls are runtime-agnostic (the runtime is chosen at spawn), so a card never claims one.
-  assert.equal(u.get('.sruntime'), null);
+  // The default harness appears only as the roster reports it on the soul row (this fixture: pi).
+  assert.equal(u.get('.soul-card .runtime-badge').getAttribute('aria-label'), 'Harness: Pi');
+  assert.equal(u.get('.soul-card .smode').textContent, 'worktree · Pi');
+
   card.focus(); card.dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); await tick();
   for (const text of ['Launch…', 'Files', 'Schedule…']) assert.ok([...u.get('.workspace-soul-page').querySelectorAll('button')].find(b => b.textContent === text), text);
   for (const text of ['Edit defaults', 'Edit instructions']) assert.equal([...u.get('.workspace-soul-page').querySelectorAll('button')].some(b => b.textContent === text), false, `${text}: a v2 soul is edited in its repository`);
