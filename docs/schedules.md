@@ -187,6 +187,119 @@ comma-separated); a required parameter without a value is `E_BAD_ARGS
 { missing }` naming it. The trigger records `template: { package, version,
 commit, template }`.
 
+## Workspace triggers and schedules
+
+(OATS 0.29.0, feature `automations`.) A trigger or a schedule is defined at one of
+two levels:
+
+- **in the workspace**: a file committed in a confirmed member repository, shared
+  through Git and named `<member>/<id>`. This is the default for anything a team
+  relies on.
+- **locally**: in the deployment's `oats-schedules.json` (`oats trigger add`,
+  `oats schedule add`), machine-private and named `local/<id>`.
+
+The two kinds stay separate at every step. Each has its own folder, its own file
+kind, its own ids, its own commands, its own list and its own opt-out.
+
+| | trigger | schedule |
+| --- | --- | --- |
+| canonical folder (at the member's root) | `oats-triggers/` | `oats-schedules/` |
+| file name anywhere in the member | `*.oats-trigger.yaml` | `*.oats-schedule.yaml` |
+| `kind:` | `oats-trigger` | `oats-schedule` |
+| body | `from:` + `set:` (a package template), or `on`, `spawn`, `concurrency` as above | `run: spawn \| command`, `cron`, `tz`, `agent`, `task`, `purpose`, `harness`, `model`, `yolo`, `backend`, `wake`, `argv`, `cwd` |
+| commands | `oats trigger …` | `oats schedule …` |
+| opt-out on this host | `triggers.disabled` | `schedules.disabled` |
+
+Every `.yaml`/`.yml` under a canonical folder is a candidate, and so is a file with
+the kind's suffix anywhere in the member (`.yml` works too), e.g.
+`services/billing/nightly.oats-schedule.yaml` beside the code it concerns.
+`oats-package/`, `.git/` and `node_modules/` are never scanned.
+
+```yaml
+# <member>/oats-triggers/okf-harvest-review.yaml
+kind: oats-trigger
+schemaVersion: 1
+description: Review every harvest PR on the knowledge base
+from: oats.okf:harvest-review        # a package template at the locked commit, then its parameters
+set: { repo: github.com/acme/knowledge }
+runsOn: kb-bot-server                # the host.name that runs it
+owner: github.com/acme-kb-bot        # the GitHub account it acts as
+```
+
+```yaml
+# <member>/services/billing/nightly.oats-schedule.yaml
+kind: oats-schedule
+schemaVersion: 1
+run: spawn
+cron: "0 7 * * *"
+tz: Europe/Madrid
+agent: digest-writer                 # resolved like `oats spawn <soul>` (member or package soul)
+task: Write the nightly digest.
+runsOn: ana-laptop
+owner: github.com/ana
+```
+
+- **The file describes itself.** It carries `kind` and `schemaVersion: 1`. A
+  candidate of the wrong kind (a schedule in `oats-triggers/`) or without one is an
+  `E_AUTOMATION_SCHEMA` problem, never silently skipped.
+- **The id** is `id:`, else the filename stem. The same id twice in one member for
+  one kind is `E_AUTOMATION_DUPLICATE`, naming both paths; the second file is not
+  listed. A trigger and a schedule may share an id: they are different things.
+- **A workspace schedule is `run: spawn` or `run: command`.** A `command`'s `cwd` is
+  relative to the deployment. `wake` and `operation` target an instance home on one
+  machine, so they stay local.
+
+**Who runs it.** A host runs a workspace trigger or schedule only when both of these
+hold:
+
+1. its `runsOn` is this host's `host.name` in `oats-local.yaml`;
+2. the host's authenticated `gh` account (`gh api user`, asked once per tick) is its
+   `owner`.
+
+Otherwise the item is listed with a reason:
+
+- `assigned-elsewhere`: another host runs it;
+- `owner-mismatch`: this host is named, but its `gh` is logged in as someone else or
+  not at all. Nothing runs, the tick reports it, and `oats trigger test` says so;
+- `host-unnamed`: this host has no `host.name`.
+
+So exactly one machine runs it, and consent is explicit: the machine's operator
+named the host and is logged in as the account.
+
+**Opting out** without a commit: `oats trigger disable <member>/<id>` writes
+`triggers.disabled`, and `oats schedule disable <member>/<id>` writes
+`schedules.disabled`, in `oats-local.yaml`. `enable` removes the entry. A
+workspace definition is never edited or removed here (`update` and `remove` are
+`E_AUTOMATION_WORKSPACE`): change the file in Git.
+
+**Refresh.**
+
+- `oats sync` discovers the workspace triggers and schedules of the confirmed
+  members into a snapshot, `.agents/automations/snapshot.json` in the deployment,
+  with one list per kind. It takes one tree listing per member commit.
+- The host tick reads that snapshot. It refreshes it (`oats automations refresh`)
+  when the snapshot is more than ten minutes old, at most once per interval. When
+  the refresh fails, the last good snapshot keeps serving.
+- A change in Git therefore reaches the named host within about ten minutes.
+- The run state (dedup keys, last poll, last run) stays per host and local. A
+  workspace schedule's job lock and state are keyed `<member>~<id>`.
+- A trigger template (`from:`) is instantiated when the snapshot is taken, at the
+  commit the host's lock pins.
+
+**Writing one.** Add `--workspace <member> --runs-on <host> --owner <host>/<login>`
+to `oats trigger add` or `oats schedule add`:
+
+- Run inside a checkout of that member, it writes `oats-triggers/<id>.yaml` or
+  `oats-schedules/<id>.yaml` there, for you to commit and push.
+- Anywhere else, it prints the file.
+- Either way, the file is read back and validated first.
+- `oats trigger test <member>/<id>` checks the placement, and everything else it
+  checked before, on this host.
+
+Everything above still holds: the soul must resolve here, templates name only the
+whitelisted fields, a PR's text is never interpolated, and no definition carries a
+credential.
+
 ## Captured definitions (removed in 0.26)
 
 0.24–0.25 could save captured command definitions: `definitionVersion`,

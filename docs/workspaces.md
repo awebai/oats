@@ -169,7 +169,16 @@ settings:                                  # host-owned values the manifests ask
     state-dir: /Users/ana/.oats/okf
 souls:
   disabled: [data-analyst]                 # not run on this machine (E_SOUL_DISABLED); oats.okf/knowledge-harvester names a package soul
+host:
+  name: ana-laptop                         # this machine's name: runs the workspace triggers/schedules whose runsOn names it
+triggers:
+  disabled: [knowledge/okf-harvest-review] # workspace triggers this host does not run (oats trigger disable)
+schedules:
+  disabled: [platform/nightly-digest]      # workspace schedules this host does not run (oats schedule disable)
 ```
+
+`host`, `triggers.disabled` and `schedules.disabled` (0.29.0) are machine facts:
+see [schedules.md#workspace-triggers-and-schedules](schedules.md#workspace-triggers-and-schedules).
 
 See [configuration.md](configuration.md). `oats-config.yaml` no longer exists.
 

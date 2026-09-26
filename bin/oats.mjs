@@ -39,7 +39,8 @@ import YAML from "yaml";
 import { attachArgv, checkRemote, forgetSnapshot, getServer, inspectRemote, startRemote, restartRemote, launchConfigRemote, scheduleRemote, listSnapshots, readServers, rosterGroups, routeCommand, targetOf, validateServer, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
 import { spawnSync as spawnSyncProc } from "node:child_process";
 import { tickTriggers } from "../lib/triggers.mjs";
-import { parseEnvelopeText, scheduleScopeOf, listSchedules, describe as describeSchedule, addSchedule, updateSchedule, setEnabled as setScheduleEnabled, removeSchedule, runNow as runScheduleNow, reconcile as reconcileSchedule, tickHost, tickWorkspace, registerWorkspace, unregisterWorkspace, readRegistry, schedulerStatus, saveWakeForHome, removeWakeForHome, wakeFromFlags, withHostLock, scheduleError, SCHEDULE_API } from "../lib/schedule.mjs";
+import * as A from "../lib/automations.mjs";
+import { parseEnvelopeText, scheduleScopeOf, listSchedules, describe as describeSchedule, addSchedule, updateSchedule, setEnabled as setScheduleEnabled, removeSchedule, runNow as runScheduleNow, reconcile as reconcileSchedule, tickHost, tickWorkspace, scopeAutomations, scheduleKind, registerWorkspace, unregisterWorkspace, readRegistry, schedulerStatus, saveWakeForHome, removeWakeForHome, wakeFromFlags, withHostLock, scheduleError, SCHEDULE_API } from "../lib/schedule.mjs";
 import { hostUnitStatus, installHostUnit, uninstallHostUnit } from "../lib/schedule-host.mjs";
 import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } from "../lib/attachments.mjs";
 
@@ -70,7 +71,7 @@ function expandInlineValues(argv) {
 const { argv: args, problem: argvProblem } = expandInlineValues(rawArgs);
 let cmd = args[0];
 const HELP_WORDS = new Set(["help", "--help", "-h"]);
-const KERNEL_COMMANDS = new Set(["capture", "capabilities", "doctor", "inspect", "instance", "operation", "package", "readiness", "souls", "launch-config", "experimental", "onboard", "pane", "recall", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "sync", "update", "version", "workspace"]);
+const KERNEL_COMMANDS = new Set(["automations", "trigger", "capture", "capabilities", "doctor", "inspect", "instance", "operation", "package", "readiness", "souls", "launch-config", "experimental", "onboard", "pane", "recall", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "sync", "update", "version", "workspace"]);
 /** Commands whose argv another parser reads (packages/record and packages/experimental parse process.argv). */
 const OWN_ARGV_COMMANDS = new Set(["capture", "recall", "setup", "experimental"]);
 /** Commands `--server <id>` runs on a registered server. */
@@ -1164,11 +1165,17 @@ async function performSync(ctx, bail, { onDiscovered } = {}) {
   // The deployment's instance root: <deployment>/agents/ (findRoot's marker). A hand-written
   // oats-local.yaml + sync is a complete deployment; spawn must not answer E_NO_DEPLOYMENT after it.
   try { mkdirSync(join(ctx.deploymentDir, "agents"), { recursive: true }); } catch { /* reported by spawn's E_NO_DEPLOYMENT remedy if it matters */ }
+  // Workspace automations (0.29.0): discovered with the members and the new lock (a trigger
+  // template instantiates at the locked package commit), kept as the snapshot the host tick reads.
+  let automations;
+  try { automations = await takeAutomationSnapshot(ctx, discovery, lock); }
+  catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details); throw e; }
+  problems.push(...automations.problems);
   const members = memberRows(discovery);
   const packages = packageRows(lock);
   const changes = resolved.changes;
   const items = workspaceItems(discovery, lock);
-  const report = { syncApi: 1, standalone: discovery.standalone === true || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, lock: lockFile }, members, packages, changes, problems, warnings: discovery.warnings ?? [] };
+  const report = { syncApi: 1, automations: automationCounts(automations), standalone: discovery.standalone === true || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, lock: lockFile }, members, packages, changes, problems, warnings: discovery.warnings ?? [] };
   return { report, lock, discovery, items, lockFile, problems };
 }
 
@@ -1207,9 +1214,89 @@ function printSyncReport(ctx, synced) {
   for (const s of items.souls) { const t = teams.get(s.team) || { souls: 0, capabilities: 0 }; t.souls++; teams.set(s.team, t); }
   for (const c of items.capabilities.filter((c) => c.kind === "member")) { const t = teams.get(c.team) || { souls: 0, capabilities: 0 }; t.capabilities++; teams.set(c.team, t); }
   console.log(`teams      ${[...teams.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([team, n]) => `${team} ${n.souls} soul${n.souls === 1 ? "" : "s"}${n.capabilities ? `, ${n.capabilities} capabilit${n.capabilities === 1 ? "y" : "ies"}` : ""}`).join(" · ") || "(none)"}`);
+  const ac = report.automations;
+  if (ac.triggers || ac.schedules) console.log(`automations ${ac.triggers} trigger${ac.triggers === 1 ? "" : "s"}, ${ac.schedules} schedule${ac.schedules === 1 ? "" : "s"} in the members (oats trigger list · oats schedule list)`);
   for (const p of synced.problems ?? discovery.problems) console.log(`problem    ${p.code}  ${p.repoKey ? `${memberLabel(p.repoKey)}:` : ""}${p.path}  ${p.message}`);
   for (const w of discovery.warnings ?? []) console.log(`warning    ${w.code}  ${w.message}`);
   console.log(`\nlock       ${shortPath(lockFile)}`);
+}
+
+/** Discover the workspace automations of a discovery and write the snapshot the host tick reads
+ *  (lib/automations.mjs). A trigger's `from:` instantiates the package template at the lock's
+ *  commit; a schedule is checked against this deployment. → the snapshot */
+async function takeAutomationSnapshot(ctx, discovery, lock) {
+  const kinds = await automationKinds(ctx.deploymentDir, lock, ctx.remoteOptions);
+  const found = await A.discoverAutomations(discovery, { remote: kinds.remote, memberName: memberLabel, kinds: [kinds.trigger, kinds.schedule], previous: A.readSnapshot(ctx.deploymentDir) });
+  const snap = A.snapshotOf(discovery, found, { souls: A.soulIndexOf(discovery, memberLabel) });
+  // A workspace with no triggers or schedules leaves nothing behind (onboard creates what the
+  // kernel needs and nothing else); a snapshot that existed is replaced, so a removal lands.
+  const empty = !snap.triggers.length && !snap.schedules.length && !snap.problems.length;
+  if (!empty || A.readSnapshot(ctx.deploymentDir)) A.writeSnapshot(ctx.deploymentDir, snap);
+  return snap;
+}
+/** The two kinds' descriptors (lib/triggers.mjs triggerKind, lib/schedule.mjs scheduleKind). */
+async function automationKinds(dep, lock, remoteOptions) {
+  const T = await import("../lib/triggers.mjs");
+  const { bindRemote } = await import("../lib/packages.mjs");
+  const remote = bindRemote(remoteModule, remoteOptions);
+  return { remote, trigger: T.triggerKind({ lock, remote }), schedule: scheduleKind({ dep }) };
+}
+const automationCounts = (snap) => ({ triggers: snap.triggers.length, schedules: snap.schedules.length, problems: snap.problems.length, takenAt: snap.takenAt });
+
+/** `oats automations refresh [--dir] [--json]`: re-discover the workspace automations and rewrite
+ *  the snapshot (what `oats sync` does for them, without touching the lock). The host tick runs it
+ *  when the snapshot is ten minutes old. */
+async function automationsCmd() {
+  const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
+  if (args[1] !== "refresh") return bail("E_USAGE", "usage: oats automations refresh [--dir <deployment>] [--json]");
+  const ctx = workspaceContext(bail);
+  const discovery = await discoverForCli(ctx, bail);
+  let lock;
+  try { lock = readLock(ctx.deploymentDir); } catch (e) { return bail(e.code || "E_LOCK_SCHEMA", e.message, e.details); }
+  let snap;
+  try { snap = await takeAutomationSnapshot(ctx, discovery, lock); }
+  catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details); throw e; }
+  const result = { automationsApi: A.AUTOMATIONS_API, snapshot: A.snapshotPath(ctx.deploymentDir), ...automationCounts(snap), problems: snap.problems };
+  if (JSON_MODE) return jsonOk(result);
+  console.log(`automations ${result.triggers} trigger(s), ${result.schedules} schedule(s) — snapshot ${shortPath(result.snapshot)}`);
+  for (const p of snap.problems) console.log(`problem    ${p.code}  ${p.repoKey ? `${memberLabel(p.repoKey)}:` : ""}${p.path}  ${p.message}`);
+}
+
+/** `oats trigger|schedule add --workspace <member> --runs-on <host> --owner <host>/<login>`: the
+ *  workspace file, written into the member's checkout when `--dir` (or the cwd) is inside one, else
+ *  printed. What is written must read back as the same automation (parseAutomationFile + expand). */
+async function addWorkspaceAutomation(desc, { id, body }) {
+  const bail = (code, msg, details) => { throw Object.assign(new Error(msg), { code, details }); };
+  const member = flag("workspace"), runsOn = flag("runs-on"), owner = flag("owner"), description = flag("description");
+  if (typeof member !== "string" || !member) bail("E_BAD_ARGS", "--workspace needs a member name");
+  if (typeof runsOn !== "string" || !A.HOST_NAME_RE.test(runsOn)) bail("E_BAD_ARGS", "--runs-on <host>: the host.name (oats-local.yaml) of the machine that runs it");
+  if (!A.parseOwner(owner)) bail("E_BAD_ARGS", "--owner <host>/<login>: the GitHub account it acts as, e.g. github.com/acme-kb-bot");
+  const ctx = workspaceContext(bail);
+  const discovery = await discoverForCli(ctx, bail);
+  const row = (discovery.members || []).find((m) => m.confirmed && (memberLabel(m.key) === member || m.key === member));
+  if (!row) bail("E_AUTOMATION_MEMBER", `${member} is not a confirmed member of this workspace (members: ${(discovery.members || []).filter((m) => m.confirmed).map((m) => memberLabel(m.key)).join(", ") || "none"})`, { member });
+  const name = memberLabel(row.key);
+  const content = A.automationFileText(desc, { id, description: typeof description === "string" ? description : undefined, runsOn, owner, body });
+  const parsed = A.parseAutomationFile(desc, { stem: id, path: `${desc.folder}/${id}.yaml`, bytes: Buffer.from(content), member: name, repoKey: row.key, commit: row.commit });
+  if (parsed.problem) bail(parsed.problem.code, parsed.problem.message, { path: parsed.problem.path });
+  await desc.expand(parsed.entry);
+  const sameRepo = (url) => { try { return remoteModule.parseRepoRef(url).key === row.key; } catch { return false; } };
+  const at = A.memberCheckoutFor(dirFlag(), desc, id, { sameRepo });
+  const file = { member: name, repoKey: row.key, path: `${desc.folder}/${id}.yaml`, content };
+  if (!at) return { file, written: false, id: `${name}/${id}` };
+  if (existsSync(at.file)) bail(desc.kind === "trigger" ? "E_TRIGGER_EXISTS" : "E_SCHEDULE_EXISTS", `${at.file} already exists; edit it in place`, { path: at.file });
+  mkdirSync(dirname(at.file), { recursive: true });
+  writeFileSync(at.file, content);
+  return { file: { ...file, written: at.file }, written: true, id: `${name}/${id}` };
+}
+const printWorkspaceAdd = (r) => r.written
+  ? `wrote ${shortPath(r.file.written)} — commit and push it; after \`oats sync\` (or within ten minutes) ${r.id} runs on its host`
+  : `# ${r.file.path} in ${r.file.member} (${r.file.repoKey}) — this directory is not a checkout of it; save this there, commit and push:\n${r.file.content}`;
+/** Enable/disable a WORKSPACE trigger or schedule on this host: oats-local.yaml
+ *  `triggers.disabled` / `schedules.disabled`. */
+function setDisabledHereCli(ws, kind, qid, enabled) {
+  const { path } = loadLocal(ws);
+  return A.setDisabledHere(path, kind, qid, !enabled, { validate: validateLocal });
 }
 
 /** `oats sync [--dir] [--json]` — contract §6. */
@@ -1325,6 +1412,9 @@ async function workspaceCmd() {
   const unsynced = declared.filter((id) => !locked.has(id));
   const stale = packages.filter((p) => !declared.includes(p.id)).map((p) => p.id);
   const result = { workspaceStatusApi: 1, standalone: standalone || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, teams: Object.keys(discovery.workspace?.teams || {}) }, members, packages, declaredPackages: declared, unsynced, stale, external: (discovery.external || []).map((e) => ({ source: e.source, soul: e.soul.name, team: teamLabel(e.soul.team) })), problems: discovery.problems, warnings: discovery.warnings ?? [] };
+  // Workspace automations (0.29.0), from the snapshot `oats sync` took, placed on this host.
+  const actx = scopeAutomations(ctx.deploymentDir, {});
+  result.automations = { host: actx.host.name, snapshot: actx.snapshot ? { takenAt: actx.snapshot.takenAt, problems: actx.snapshot.problems.length } : null, rows: [...actx.triggers, ...actx.schedules].map((a) => ({ kind: a.kind, id: a.id, runsOn: a.runsOn, owner: a.owner, runsHere: a.placement.runsHere, reason: a.placement.reason, enabledHere: a.placement.enabledHere, origin: a.origin, ...(a.invalid ? { invalid: a.invalid } : {}) })) };
   if (JSON_MODE) { jsonOk(result); return; }
   console.log(`workspace ${workspaceName(discovery)}  (${discovery.key} @ ${short(discovery.commit)})  local ${shortPath(ctx.localPath)}\n`);
   if (standalone) console.log(`  (${standaloneNote(discovery)})\n`);
@@ -1337,6 +1427,10 @@ async function workspaceCmd() {
   if (packages.length && unsynced.length) console.log(`  declared but not locked (run \`oats sync\`): ${unsynced.join(", ")}`);
   if (stale.length) console.log(`  locked but no longer declared (run \`oats sync\`): ${stale.join(", ")}`);
   if (result.external.length) console.log(`\nExternal: ${result.external.map((e) => `${e.soul} (${e.source.replace(/@([0-9a-f]{40})$/, (_, o) => `@${short(o)}`)}, ${e.team})`).join("   ")}`);
+  if (result.automations.rows.length) {
+    console.log(`\nAutomations (this host: ${result.automations.host ?? "unnamed — set host.name in oats-local.yaml"}):`);
+    printTable(["kind", "id", "runs on", "owner", "here"], result.automations.rows.map((r) => [r.kind, r.id, r.runsOn, r.owner, r.runsHere ? "runs here" : r.invalid ? "invalid" : r.reason ?? "disabled here"]));
+  }
   if (discovery.problems.length) { console.log("\nProblems:"); for (const p of discovery.problems) console.log(`  ${p.code}  ${p.repoKey ? `${memberLabel(p.repoKey)}:` : ""}${p.path}  ${p.message}`); }
   if (discovery.warnings?.length) { console.log("\nWarnings:"); for (const w of discovery.warnings) console.log(`  ${w.code}  ${w.message}`); }
 }
@@ -1935,7 +2029,7 @@ function retireCmd() {
 /** `oats schedule ...`: workspace-scoped definitions, host-owned execution
  *  (lib/schedule.mjs). Every subcommand answers the envelope; nothing here
  *  launches unless a job is due or run-now is asked. */
-function scheduleCmd() {
+async function scheduleCmd() {
   const sub = args[1];
   const id = args[2] && !args[2].startsWith("--") ? args[2] : undefined;
   // One schedule-owning scope for a directory: its deployment (the directory
@@ -1944,7 +2038,11 @@ function scheduleCmd() {
   let scope;
   const ws = () => (scope ??= scheduleScopeOf(dirFlag()));
   const io = { hostStatus: () => hostUnitStatus() };
-  const out = (result) => { if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2)); };
+  // The workspace automations of this deployment (the snapshot) placed on this host.
+  let actx;
+  const ctx = () => (actx ??= scopeAutomations(ws(), { io }));
+  const isWorkspace = (qid) => A.splitId(qid).scope !== "local";
+  const out = (result, text) => { if (JSON_MODE) jsonOk(result); else console.log(text ? text(result) : JSON.stringify(result, null, 2)); };
   const readSpec = () => {
     const inline = flag("spec-json");
     if (inline && inline !== true) { try { return JSON.parse(inline); } catch (e) { throw scheduleError("E_SCHEDULE_INVALID", `--spec-json is not valid JSON: ${e.message}`, { field: "file" }); } }
@@ -1956,20 +2054,40 @@ function scheduleCmd() {
   const needId = () => { if (!id) throw scheduleError("E_BAD_ARGS", `oats schedule ${sub} <id>`); return id; };
   try {
     switch (sub) {
-      case "list": { const r = listSchedules(ws(), io); out(r); if (!JSON_MODE && r.triggers.count) console.log(`${r.triggers.count} trigger${r.triggers.count === 1 ? " is" : "s are"} not listed here: ${r.triggers.command}`); return; }
-      case "show": return out({ schedule: describeSchedule(ws(), needId(), io) });
-      case "add": { const spec = readSpec(); if (id && spec.id === undefined) spec.id = id; if (id && spec.id !== id) throw scheduleError("E_SCHEDULE_INVALID", `id ${JSON.stringify(spec.id)} in the file does not match ${JSON.stringify(id)}`, { field: "id" }); return out({ schedule: addSchedule(ws(), spec, io) }); }
+      case "list": { const r = listSchedules(ws(), io, { ctx: ctx() }); out(r); if (!JSON_MODE && r.triggers.count) console.log(`${r.triggers.count} trigger${r.triggers.count === 1 ? " is" : "s are"} not listed here: ${r.triggers.command}`); return; }
+      case "show": return out({ schedule: describeSchedule(ws(), needId(), io, { ctx: ctx() }) });
+      case "add": {
+        const spec = readSpec();
+        if (flag("workspace") !== undefined) {
+          const wid = id ?? spec.id;
+          if (typeof wid !== "string") throw scheduleError("E_BAD_ARGS", "oats schedule add <id> --workspace <member> …: the id names the file (oats-schedules/<id>.yaml)");
+          const { id: _i, enabled: _e, kind, ...rest } = spec; void _i; void _e;
+          const r = await addWorkspaceAutomation(scheduleKind({ dep: ws() }), { id: wid, body: { run: kind ?? "spawn", ...rest } });
+          return out(r, printWorkspaceAdd);
+        }
+        if (id && spec.id === undefined) spec.id = id;
+        if (id && spec.id !== id) throw scheduleError("E_SCHEDULE_INVALID", `id ${JSON.stringify(spec.id)} in the file does not match ${JSON.stringify(id)}`, { field: "id" });
+        return out({ schedule: addSchedule(ws(), spec, io) });
+      }
       case "update": return out({ schedule: updateSchedule(ws(), needId(), readSpec(), io) });
-      case "enable": return out({ schedule: setScheduleEnabled(ws(), needId(), true, io) });
-      case "disable": return out({ schedule: setScheduleEnabled(ws(), needId(), false, io) });
-      case "run": return out(runScheduleNow(ws(), needId(), { io, force: args.includes("--force") }));
+      case "enable":
+      case "disable": {
+        const on = sub === "enable";
+        if (!isWorkspace(needId())) return out({ schedule: setScheduleEnabled(ws(), id, on, io) });
+        describeSchedule(ws(), id, io, { ctx: ctx() }); // an unknown id is refused before the file changes
+        setDisabledHereCli(ws(), "schedule", A.qualifiedId(id), on);
+        actx = undefined;
+        return out({ schedule: describeSchedule(ws(), id, io, { ctx: ctx() }) });
+      }
+      case "run": return out(runScheduleNow(ws(), needId(), { io, force: args.includes("--force"), ctx: ctx() }));
       case "remove": return out(removeSchedule(ws(), needId(), { force: args.includes("--force") }));
-      case "reconcile": return out(reconcileSchedule(ws(), needId(), { io, clear: args.includes("--clear") }));
+      case "reconcile": return out(reconcileSchedule(ws(), needId(), { io, clear: args.includes("--clear"), ctx: ctx() }));
       case "tick": {
         const dryRun = args.includes("--dry-run");
         if (args.includes("--host")) return out(tickHost({ io, dryRun }));
         const reg = readRegistry();
-        const considered = withHostLock(() => [...tickWorkspace(ws(), { io, reg, wsList: reg.workspaces.includes(ws()) ? reg.workspaces : [...reg.workspaces, ws()], dryRun }), ...tickTriggers(ws(), { io, dryRun })]);
+        const tctx = scopeAutomations(ws(), { io, refresh: !dryRun });
+        const considered = withHostLock(() => [...(tctx.refresh && !tctx.refresh.ok ? [{ workspace: ws(), action: "error", error: `automations refresh: ${tctx.refresh.error}` }] : []), ...tickWorkspace(ws(), { io, reg, wsList: reg.workspaces.includes(ws()) ? reg.workspaces : [...reg.workspaces, ws()], dryRun, ctx: tctx }), ...tickTriggers(ws(), { io, dryRun, ctx: tctx })]);
         return out({ tickedAt: new Date().toISOString(), considered, scheduler: schedulerStatus(ws(), io) });
       }
       case "host": {
@@ -1979,7 +2097,7 @@ function scheduleCmd() {
         if (op === "status") return out({ scheduler: schedulerStatus(ws(), io) });
         throw scheduleError("E_BAD_ARGS", "oats schedule host install|uninstall|status");
       }
-      default: throw scheduleError("E_BAD_ARGS", "usage: oats schedule list|show <id>|add <id> --file <spec.json>|update <id> --file <spec.json>|enable <id>|disable <id>|run <id> [--force]|remove <id> [--force]|reconcile <id> [--clear]|tick [--dry-run] [--host]|host install|uninstall|status [--dir <workspace>|--server <id>] [--json]");
+      default: throw scheduleError("E_BAD_ARGS", "usage: oats schedule list|show <id>|add <id> --file <spec.json> [--workspace <member> --runs-on <host> --owner <host>/<login>]|update <id> --file <spec.json>|enable <id>|disable <id>|run <id> [--force]|remove <id> [--force]|reconcile <id> [--clear]|tick [--dry-run] [--host]|host install|uninstall|status [--dir <workspace>|--server <id>] [--json]");
     }
   } catch (e) {
     // K8b: typed refusal details travel (identity mismatch: key/declared; a refused file: its integrity source).
@@ -1998,16 +2116,28 @@ async function triggerCmd() {
   const ws = () => (scope ??= scheduleScopeOf(dirFlag()));
   const out = (result, text) => { if (JSON_MODE) jsonOk(result); else console.log(text ? text(result) : JSON.stringify(result, null, 2)); };
   const needId = () => { if (!id) throw T.triggerError("E_BAD_ARGS", `oats trigger ${sub} <id>`); return id; };
-  const usage = "usage: oats trigger add (--file <trigger.json> | --from <package>:<template> [--set <name>=<value>]… [--id <id>]) | list | show <id> | enable <id> | disable <id> | remove <id> | test <id> | status [<id>]  [--dir <deployment>] [--json]";
-  const line = (t) => `${t.id}  ${t.enabled ? "enabled " : "disabled"}  ${t.on?.source ?? "?"} ${t.on?.repo ?? "?"} [${(t.on?.events || []).join(",")}]${t.on?.labels?.length ? ` labels ${t.on.labels.join(",")}` : ""} every ${t.on?.poll ?? "?"} → spawn ${t.spawn?.soul ?? "?"}${t.spawn?.teams?.length ? ` in ${t.spawn.teams.join(",")}` : ""}${t.invalid ? `  INVALID: ${t.invalid.message}` : ""}`;
+  const usage = "usage: oats trigger add (--file <trigger.json> | --from <package>:<template> [--set <name>=<value>]… [--id <id>]) [--workspace <member> --runs-on <host> --owner <host>/<login>] | list | show <id> | enable <id> | disable <id> | remove <id> | test <id> | status [<id>]  [--dir <deployment>] [--json]   (<id>: local/<id> or <member>/<id>)";
+  const where = (t) => (t.origin?.kind === "workspace" ? (t.runsHere ? `runs here as ${t.owner}` : `${t.reason === "assigned-elsewhere" ? `runs on ${t.runsOn}` : t.reason ?? "disabled here"}`) : t.enabledHere ? "local" : "local, disabled");
+  const line = (t) => `${t.id}  ${where(t)}  ${t.on?.source ?? "?"} ${t.on?.repo ?? "?"} [${(t.on?.events || []).join(",")}]${t.on?.labels?.length ? ` labels ${t.on.labels.join(",")}` : ""} every ${t.on?.poll ?? "?"} → spawn ${t.spawn?.soul ?? "?"}${t.spawn?.teams?.length ? ` in ${t.spawn.teams.join(",")}` : ""}${t.invalid ? `  INVALID: ${t.invalid.message}` : ""}`;
+  // The workspace automations of this deployment (the snapshot) placed on this host.
+  let actx;
+  const ctx = () => (actx ??= scopeAutomations(ws(), {}));
+  const isWorkspace = (qid) => A.splitId(qid).scope !== "local";
   try {
     switch (sub) {
-      case "list": return out(T.listTriggers(ws()), (r) => r.triggers.length ? r.triggers.map(line).join("\n") : "(no triggers — oats trigger add --file <trigger.json> | --from <package>:<template>)");
-      case "show": return out({ trigger: T.describeTrigger(ws(), needId()) });
-      case "enable": return out({ trigger: T.setTriggerEnabled(ws(), needId(), true) }, (r) => line(r.trigger));
-      case "disable": return out({ trigger: T.setTriggerEnabled(ws(), needId(), false) }, (r) => line(r.trigger));
-      case "remove": return out(T.removeTrigger(ws(), needId()), (r) => `removed trigger ${r.removed}${r.live.length ? ` (its live instances keep running: ${r.live.join(", ")})` : ""}`);
-      case "status": return out(T.triggerStatus(ws(), id), (r) => r.triggers.map((t) => `${t.id}  last poll ${t.lastPoll ? `${t.lastPoll.at} ${t.lastPoll.ok ? `ok (${t.lastPoll.matching}/${t.lastPoll.prs} PRs match)` : `FAILED: ${t.lastPoll.error}`}` : "never"}  pending ${t.pending.length}  fired ${t.firedTotal}  live ${t.live.map((l) => l.instance).join(",") || "none"}${t.lastError ? `\n    last error ${t.lastError.at}: ${t.lastError.message}` : ""}`).join("\n") || "(no triggers)");
+      case "list": return out(T.listTriggers(ws(), ctx()), (r) => r.triggers.length ? r.triggers.map(line).join("\n") : "(no triggers — oats trigger add --file <trigger.json> | --from <package>:<template>)");
+      case "show": return out({ trigger: T.describeTrigger(ws(), needId(), ctx()) });
+      case "enable":
+      case "disable": {
+        const on = sub === "enable";
+        if (!isWorkspace(needId())) return out({ trigger: T.setTriggerEnabled(ws(), id, on, ctx()) }, (r) => line(r.trigger));
+        T.describeTrigger(ws(), id, ctx()); // an unknown id is refused before the file changes
+        setDisabledHereCli(ws(), "trigger", A.qualifiedId(id), on);
+        actx = undefined;
+        return out({ trigger: T.describeTrigger(ws(), id, ctx()) }, (r) => line(r.trigger));
+      }
+      case "remove": return out(T.removeTrigger(ws(), needId(), ctx()), (r) => `removed trigger ${r.removed}${r.live.length ? ` (its live instances keep running: ${r.live.join(", ")})` : ""}`);
+      case "status": return out(T.triggerStatus(ws(), id, ctx()), (r) => r.triggers.map((t) => `${t.id}  last poll ${t.lastPoll ? `${t.lastPoll.at} ${t.lastPoll.ok ? `ok (${t.lastPoll.matching}/${t.lastPoll.prs} PRs match)` : `FAILED: ${t.lastPoll.error}`}` : "never"}  pending ${t.pending.length}  fired ${t.firedTotal}  live ${t.live.map((l) => l.instance).join(",") || "none"}${t.lastError ? `\n    last error ${t.lastError.at}: ${t.lastError.message}` : ""}`).join("\n") || "(no triggers)");
       case "test": {
         let workspaceTeams = null;
         try {
@@ -2015,8 +2145,9 @@ async function triggerCmd() {
           const { local } = loadLocal(ws());
           if (typeof local.workspace === "string") workspaceTeams = Object.keys((await observeWorkspace(local.workspace, { remoteOptions: remoteOptionsFromEnv() })).workspace.teams || {});
         } catch { /* reported as unknown (null) */ }
-        return out(T.testTrigger(ws(), needId(), { workspaceTeams }), (r) => [
+        return out(T.testTrigger(ws(), needId(), { workspaceTeams, ctx: ctx() }), (r) => [
           `trigger ${r.id}: ${r.ok ? "ready" : "NOT ready"} (nothing was spawned)`,
+          `  placement  ${r.placement.runsOn ? `runs on ${r.placement.runsOn} as ${r.placement.owner}; this host is ${r.placement.host ?? "(unnamed)"} — ${r.placement.runsHere ? "runs here" : r.placement.reason ?? "disabled here"}` : "local (this host)"}`,
           `  gh auth    ${r.gh.ok ? `ok — ${r.gh.account ?? "?"} via ${r.gh.credentialSource}` : `FAILED${r.gh.detail ? ` — ${r.gh.detail}` : ""}`}`,
           `  repo       ${r.repo.key} ${r.repo.readable ? `readable; push ${r.repo.permissions.push} maintain ${r.repo.permissions.maintain} admin ${r.repo.permissions.admin}` : `NOT readable: ${r.repo.error}`}`,
           `  soul       ${r.soul.name} ${r.soul.resolves ? `resolves${r.soul.messaging ? ` (messaging ${r.soul.messaging})` : ""}` : `does NOT resolve: ${r.soul.error.code} ${r.soul.error.message}`}`,
@@ -2043,7 +2174,17 @@ async function triggerCmd() {
           if (Object.keys(sets).length) throw T.triggerError("E_BAD_ARGS", "--set fills a package template's parameters; with --file, edit the file");
           try { spec = JSON.parse(readFileSync(file, "utf8")); } catch (e) { throw T.triggerError("E_TRIGGER_INVALID", `${file} is not valid JSON: ${e.message}`, { details: { field: "file" } }); }
           if (idFlag !== undefined) spec.id = idFlag;
-        } else spec = await triggerFromPackage(T, String(from), sets, idFlag);
+        }
+        if (flag("workspace") !== undefined) {
+          // A workspace trigger (0.29.0): the file in the member, from/set when made from a template.
+          const kinds = await automationKinds(ws(), readLock(ws()), remoteOptionsFromEnv());
+          const wid = typeof idFlag === "string" ? idFlag : from !== undefined ? String(from).split(":")[1] : spec?.id;
+          if (typeof wid !== "string") throw T.triggerError("E_BAD_ARGS", "--workspace: name the trigger with --id (or an id in the file)");
+          const body = from !== undefined ? { from: String(from), ...(Object.keys(sets).length ? { set: sets } : {}) } : (({ id: _i, kind: _k, enabled: _e, template: _t, createdAt: _c, updatedAt: _u, ...rest }) => rest)(spec);
+          const r = await addWorkspaceAutomation(kinds.trigger, { id: wid, body });
+          return out(r, printWorkspaceAdd);
+        }
+        if (spec === undefined) spec = await triggerFromPackage(T, String(from), sets, idFlag);
         return out({ trigger: T.addTrigger(ws(), spec) }, (r) => `added ${line(r.trigger)}\n(\`oats trigger test ${r.trigger.id}\` checks gh, the repository, the soul and the teams on this host)`);
       }
       default: throw T.triggerError("E_BAD_ARGS", usage);
@@ -2056,28 +2197,8 @@ async function triggerCmd() {
 /** A package trigger template (`triggers: [{ id, file }]` in the locked package's oats-package.json),
  *  read at the lock's commit and instantiated with the --set parameters. */
 async function triggerFromPackage(T, from, sets, idFlag) {
-  const m = /^([a-z0-9][a-z0-9._-]*):([a-z0-9][a-z0-9._-]*)$/.exec(from);
-  if (!m) throw T.triggerError("E_BAD_ARGS", `--from ${JSON.stringify(from)}: write <package>:<template>, e.g. oats.okf:harvest-review`);
-  const [, pkg, template] = m;
-  const deployment = scheduleScopeOf(dirFlag());
-  const lock = readLock(deployment);
-  const entry = lock.packages[pkg];
-  if (!entry) throw T.triggerError("E_PACKAGE_MISSING", `package ${pkg} is not in ${LOCK_FILE} — declare it in packages: and run \`oats sync\``, { details: { package: pkg } });
-  const { lockedPackageRef, bindRemote } = await import("../lib/packages.mjs");
-  const ref = lockedPackageRef(entry);
-  const remote = bindRemote(remoteModule, remoteOptionsFromEnv());
-  const read = async (rel, what) => {
-    let bytes;
-    try { ({ bytes } = await remote.readRemoteFile(ref, entry.commit, `${entry.path}/${rel}`)); }
-    catch (e) { throw T.triggerError(e?.code === "E_REMOTE_PATH_MISSING" ? "E_PACKAGE_MANIFEST" : (e?.code || "E_REMOTE_UNREADABLE"), `${pkg} v${entry.version}: ${what} ${entry.path}/${rel} cannot be read: ${e.message}`, { details: { package: pkg, path: rel } }); }
-    try { return JSON.parse(Buffer.from(bytes).toString("utf8")); } catch (e) { throw T.triggerError("E_PACKAGE_MANIFEST", `${pkg} v${entry.version}: ${what} ${entry.path}/${rel} is not valid JSON: ${e.message}`, { details: { package: pkg, path: rel } }); }
-  };
-  const manifest = await read("oats-package.json", "the package manifest");
-  const listed = Array.isArray(manifest.triggers) ? manifest.triggers : [];
-  const row = listed.find((t) => t && t.id === template);
-  if (!row || typeof row.file !== "string" || !row.file || row.file.split("/").includes("..") || row.file.startsWith("/")) throw T.triggerError("E_TRIGGER_UNKNOWN", `package ${pkg} v${entry.version} has no trigger template ${JSON.stringify(template)} (templates: ${listed.map((t) => t?.id).filter(Boolean).join(", ") || "none"})`, { details: { package: pkg, template, templates: listed.map((t) => t?.id).filter(Boolean) } });
-  const doc = await read(row.file, `trigger template ${template}`);
-  return T.instantiateTemplate(doc, sets, { id: idFlag, provenance: { package: pkg, version: entry.version, commit: entry.commit, template } });
+  const { bindRemote } = await import("../lib/packages.mjs");
+  return T.packageTriggerTemplate(readLock(scheduleScopeOf(dirFlag())), from, sets, { id: idFlag, remote: bindRemote(remoteModule, remoteOptionsFromEnv()) });
 }
 
 async function sessionCmd() {
@@ -2507,7 +2628,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "teams", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers"], workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2 }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "teams", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2 }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -2921,8 +3042,9 @@ else if (cmd === "version" || cmd === "--version" || cmd === "-v") versionCmd();
 // Same rule as the inner catch: a typed CLI failure surfaces with its own code
 // through the shared boundary, never re-badged as a spawn-mechanism failure.
 else if (cmd === "session") await sessionCmd();
-else if (cmd === "schedule") scheduleCmd();
+else if (cmd === "schedule") await scheduleCmd();
 else if (cmd === "trigger") await triggerCmd();
+else if (cmd === "automations") await automationsCmd();
 else if (cmd === "spawn") { try { await spawnCmd(); } catch (e) { if (TYPED_CLI_FAILURES.has(e?.code)) throw e; if (JSON_MODE) jsonFail("E_SPAWN_FAILED", e.message || e); throw e; } }
 else if (cmd === "retire") retireCmd();
 else if (cmd === "capture" || cmd === "recall" || cmd === "setup") await recordCmd(cmd);
@@ -3020,6 +3142,13 @@ Usage:
       | disable | remove <id> | test <id> | status [<id>]   event-driven spawns (github.pull_request
                                                 polled with the host's gh by the schedule tick;
                                                 see docs/schedules.md#triggers)
+  oats trigger|schedule add … --workspace <member> --runs-on <host> --owner <host>/<login>
+                                                a trigger/schedule declared in Git (<member>/<id>):
+                                                writes oats-triggers|oats-schedules/<id>.yaml in a
+                                                checkout of the member, else prints it
+  oats automations refresh [--json]          re-discover the workspace triggers and schedules
+                                                (the snapshot the host tick reads; oats sync does
+                                                it too)
   oats spawn ... --wake-file <json> | --wake-every <N> --wake-message <text>  save a wake schedule
                                                 bound to the new instance's home (docs/schedules.md)
   oats session upload --file <path>          store a copy of a local file as a private attachment
