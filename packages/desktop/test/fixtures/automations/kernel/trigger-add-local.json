@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "trigger": {
+      "kind": "trigger",
+      "id": "local/hotfix",
+      "name": "hotfix",
+      "origin": {
+        "kind": "local",
+        "path": "oats-schedules.json",
+        "url": null,
+        "localPath": "/fixture/base/northwind-workspace/oats-schedules.json"
+      },
+      "description": null,
+      "owner": null,
+      "runsOn": null,
+      "runsHere": true,
+      "reason": null,
+      "enabledHere": true,
+      "qualifiedId": "local/hotfix",
+      "soul": {
+        "name": "release-manager",
+        "origin": null
+      },
+      "task": "Cut a hotfix for {repo}#{number}.",
+      "on": {
+        "source": "github.pull_request",
+        "repo": "github.com/northwind/storefront",
+        "events": [
+          "labeled"
+        ],
+        "labels": [
+          "hotfix"
+        ],
+        "poll": "5m"
+      },
+      "teams": [],
+      "launchConfig": null,
+      "harness": "codex",
+      "model": null,
+      "concurrency": {
+        "max": 1,
+        "perKey": 1
+      },
+      "lastRun": null,
+      "nextDue": null,
+      "enabled": true,
+      "spawn": {
+        "soul": "release-manager",
+        "purpose": "hotfix-{number}",
+        "task": "Cut a hotfix for {repo}#{number}.",
+        "teams": [],
+        "harness": "codex"
+      },
+      "triggerApi": 1,
+      "scope": "/fixture/base/northwind-workspace",
+      "createdAt": "2026-09-26T15:34:29.486Z",
+      "updatedAt": "2026-09-26T15:34:29.486Z"
+    }
+  }
+}

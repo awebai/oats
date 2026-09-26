@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "triggerApi": 1,
+    "id": "agents/triage",
+    "ok": false,
+    "placement": {
+      "runsOn": "fixture-laptop",
+      "owner": "github.com/someone-else",
+      "host": "fixture-laptop",
+      "runsHere": false,
+      "reason": "owner-mismatch",
+      "detail": "acts as github.com/someone-else; this host's gh is logged in as github.com/fixture-bot",
+      "enabledHere": true
+    },
+    "gh": {
+      "ok": false,
+      "account": null,
+      "credentialSource": null,
+      "reachesHostTimer": null,
+      "note": null,
+      "detail": "gh stub: auth status --hostname github.com"
+    },
+    "repo": {
+      "key": "github.com/northwind/storefront",
+      "readable": false,
+      "permissions": null,
+      "error": "gh stub: api repos/northwind/storefront"
+    },
+    "soul": {
+      "resolves": true,
+      "name": "release-manager",
+      "agent": "release-manager",
+      "messaging": null
+    },
+    "teams": {
+      "requested": [
+        "engineering"
+      ],
+      "undeclared": [],
+      "messaging": null
+    },
+    "wouldFire": [],
+    "problems": [
+      "not run on this host (owner-mismatch): acts as github.com/someone-else; this host's gh is logged in as github.com/fixture-bot",
+      "gh is not authenticated on this host",
+      "github.com/northwind/storefront is not readable with this host's gh",
+      "spawn.teams needs a messaging capability; release-manager resolves none"
+    ],
+    "warnings": [],
+    "spawned": false
+  }
+}

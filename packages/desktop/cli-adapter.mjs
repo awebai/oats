@@ -274,6 +274,23 @@ export async function cliSchedule(bin, { operation, id, spec, workspaceDir, serv
   finally { temporary?.cleanup(); }
 }
 
+/** Workspace + local triggers and schedules (feature automations, automationsApi 1): the
+ * kernel's own lists and verbs, argv only. `id` is a qualified id (`local/<id>`,
+ * `<member>/<id>`) or a bare local id; nothing option-shaped reaches the CLI. */
+// `list` takes no id; `status` takes an optional one (a trigger's fire history); the rest need one.
+export const AUTOMATION_VERBS = Object.freeze({ trigger: ["list", "status", "enable", "disable", "test"], schedule: ["list", "enable", "disable", "test", "run", "reconcile"] });
+const ID_OPTIONAL = new Set(["status"]);
+export const AUTOMATION_ID = /^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,63}\/)?[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+export function cliAutomation(bin, { kind, action, id, workspaceDir }, io = {}) {
+  if (!Object.hasOwn(AUTOMATION_VERBS, kind) || !AUTOMATION_VERBS[kind].includes(action)
+    || (action === "list" ? id !== undefined : id === undefined ? !ID_OPTIONAL.has(action) : typeof id !== "string" || !AUTOMATION_ID.test(id))
+    || typeof workspaceDir !== "string" || !isAbsolute(workspaceDir) || workspaceDir.includes("\0")) {
+    return Promise.resolve({ schemaVersion: 1, ok: false, error: { code: "E_BAD_ARGS", message: "Invalid automation request" } });
+  }
+  const argv = [kind, action, ...(id === undefined ? [] : [id]), "--dir", workspaceDir, "--json"];
+  return runJson(bin, argv, { cwd: workspaceDir, exec: io.exec, timeout: io.timeout || (action === "test" ? 60_000 : 30_000) });
+}
+
 /** One bounded aggregate read; the CLI owns registry and saved-route resolution. */
 export function cliRemoteRoster(bin, io = {}) {
   return runJson(bin, ["server", "roster", "--json"], { cwd: io.cwd || process.cwd(), exec: io.exec, timeout: io.timeout || 60_000 });

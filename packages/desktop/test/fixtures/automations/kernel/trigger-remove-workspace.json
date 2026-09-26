@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_AUTOMATION_WORKSPACE",
+    "message": "agents/pr-review is defined in Git (local//fixture/base/fx/remotes/agents.git:oats-triggers/pr-review.yaml @ 87cea5aa4a1e); remove the file there, or stop it on this host: oats trigger disable agents/pr-review",
+    "details": {
+      "id": "agents/pr-review",
+      "origin": {
+        "kind": "workspace",
+        "repoKey": "local//fixture/base/fx/remotes/agents.git",
+        "path": "oats-triggers/pr-review.yaml",
+        "commit": "87cea5aa4a1effece415590c7cefc888ed81a57d",
+        "url": null,
+        "localPath": "/fixture/base/northwind-workspace/agents-repo/oats-triggers/pr-review.yaml"
+      }
+    }
+  }
+}

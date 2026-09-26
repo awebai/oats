@@ -1,0 +1,201 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "syncApi": 1,
+    "automations": {
+      "triggers": 3,
+      "schedules": 2,
+      "problems": 1,
+      "takenAt": "2026-09-26T15:34:28.814Z"
+    },
+    "workspace": {
+      "name": "northwind",
+      "key": "local//fixture/base/fx/remotes/agents.git",
+      "url": "/fixture/base/fx/remotes/agents.git",
+      "commit": "87cea5aa4a1effece415590c7cefc888ed81a57d",
+      "observedAt": "2026-09-26T15:34:24.449Z",
+      "local": "/fixture/base/northwind-workspace/oats-local.yaml",
+      "lock": "/fixture/base/northwind-workspace/oats-lock.json"
+    },
+    "members": [
+      {
+        "key": "local//fixture/base/fx/remotes/agents.git",
+        "name": "agents",
+        "commit": "87cea5aa4a1effece415590c7cefc888ed81a57d",
+        "confirmed": true,
+        "status": "confirmed",
+        "detail": null,
+        "team": "global",
+        "souls": [
+          "release-manager",
+          "support-triager"
+        ],
+        "capabilities": [
+          "nw-house-style",
+          "nw-release-tooling"
+        ],
+        "publishes": null
+      },
+      {
+        "key": "local//fixture/base/fx/remotes/platform.git",
+        "name": "platform",
+        "commit": "dddc53ba8005700dc4382696dfa286f7907a3e4e",
+        "confirmed": true,
+        "status": "confirmed",
+        "detail": null,
+        "team": "engineering",
+        "souls": [
+          "platform-engineer",
+          "platform-reviewer"
+        ],
+        "capabilities": [],
+        "publishes": null
+      },
+      {
+        "key": "local//fixture/base/fx/remotes/data.git",
+        "name": "data",
+        "commit": "c724c00d21b63cb4e993d3a4181e8b5a317bd51a",
+        "confirmed": true,
+        "status": "confirmed",
+        "detail": null,
+        "team": "engineering",
+        "souls": [
+          "data-analyst"
+        ],
+        "capabilities": [
+          "nw-warehouse-access"
+        ],
+        "publishes": null
+      },
+      {
+        "key": "local//fixture/base/fx/remotes/marketing.git",
+        "name": "marketing",
+        "commit": "1869c19a63faf8e60fd94e7d5e9cf179d3ab36e1",
+        "confirmed": true,
+        "status": "confirmed",
+        "detail": null,
+        "team": "marketing",
+        "souls": [
+          "campaign-writer",
+          "positioning-analyst"
+        ],
+        "capabilities": [
+          "nw-brand-voice",
+          "nw-campaign-metrics"
+        ],
+        "publishes": null
+      },
+      {
+        "key": "local//fixture/base/fx/remotes/nw-tools.git",
+        "name": "nw-tools",
+        "commit": "73398c0c8dca6ab8e8447d56946c3b533cd79228",
+        "confirmed": true,
+        "status": "confirmed",
+        "detail": null,
+        "team": "engineering",
+        "souls": [
+          "tools-expert"
+        ],
+        "capabilities": [
+          "nw-tools-dev"
+        ],
+        "publishes": {
+          "package": "nw.tools",
+          "version": "0.4.0"
+        }
+      }
+    ],
+    "packages": [
+      {
+        "id": "nw.tools",
+        "version": "0.4.0",
+        "source": "git:local//fixture/base/fx/remotes/nw-tools.git@v0.4.0",
+        "commit": "73398c0c8dca6ab8e8447d56946c3b533cd79228",
+        "integrity": "sha256-4a0ee48230d65cc6c0b9d0c9a3883e64182cfc7b2410e4f5839bacf551fcf1cf",
+        "capabilities": [
+          "nw-deploy",
+          "nw-lint"
+        ],
+        "souls": []
+      },
+      {
+        "id": "oats.framework",
+        "version": "1.1.3",
+        "source": "catalog:oats.framework",
+        "commit": "b80344dcafd4b614e58bb8dc5d766eca9ea0403c",
+        "integrity": "sha256-8f69a58cef42b8b3a1ab3edbd5eeb15793acb7ed5f23b4604bcf3b8303bc3903",
+        "capabilities": [
+          "oats.core"
+        ],
+        "souls": []
+      },
+      {
+        "id": "oats.okf",
+        "version": "2.1.3",
+        "source": "catalog:oats.okf",
+        "commit": "6c9742aa531b9be30fcb5fe8753c456b5a64f910",
+        "integrity": "sha256-8df2d930614743f3b973e405461aa4d73fc40dc6a5887ff32a177f8d59e244cb",
+        "capabilities": [
+          "oats.okf"
+        ],
+        "souls": []
+      }
+    ],
+    "changes": [],
+    "problems": [
+      {
+        "code": "E_AUTOMATION_SCHEMA",
+        "kind": "schedule",
+        "repoKey": "local//fixture/base/fx/remotes/agents.git",
+        "path": "oats-schedules/wrong-kind.yaml#/kind",
+        "message": "kind must be \"oats-schedule\" (found \"oats-trigger\"): a file in oats-schedules/ follows the oats-schedule contract"
+      }
+    ],
+    "warnings": [
+      {
+        "code": "unmapped-team-label",
+        "label": "engineering",
+        "souls": [
+          "data-analyst",
+          "platform-engineer",
+          "platform-reviewer",
+          "release-manager",
+          "tools-expert"
+        ],
+        "paths": [
+          "local//fixture/base/fx/remotes/data.git:souls/data-analyst/soul.yaml#/team",
+          "local//fixture/base/fx/remotes/platform.git:souls/platform-engineer/soul.yaml#/team",
+          "local//fixture/base/fx/remotes/platform.git:souls/platform-reviewer/soul.yaml#/team",
+          "local//fixture/base/fx/remotes/agents.git:souls/release-manager/soul.yaml#/team",
+          "local//fixture/base/fx/remotes/nw-tools.git:souls/tools-expert/soul.yaml#/team"
+        ],
+        "message": "team \"engineering\" has no messaging.byTeam entry; its souls (data-analyst, platform-engineer, platform-reviewer, release-manager, tools-expert) fall back to the personal team for it"
+      },
+      {
+        "code": "unmapped-team-label",
+        "label": "global",
+        "souls": [
+          "support-triager"
+        ],
+        "paths": [
+          "local//fixture/base/fx/remotes/agents.git:souls/support-triager/soul.yaml#/team"
+        ],
+        "message": "team \"global\" has no messaging.byTeam entry; its souls (support-triager) fall back to the personal team for it"
+      },
+      {
+        "code": "unmapped-team-label",
+        "label": "marketing",
+        "souls": [
+          "campaign-writer",
+          "positioning-analyst"
+        ],
+        "paths": [
+          "local//fixture/base/fx/remotes/marketing.git:souls/campaign-writer/soul.yaml#/team",
+          "local//fixture/base/fx/remotes/marketing.git:souls/positioning-analyst/soul.yaml#/team"
+        ],
+        "message": "team \"marketing\" has no messaging.byTeam entry; its souls (campaign-writer, positioning-analyst) fall back to the personal team for it"
+      }
+    ]
+  }
+}

@@ -1,0 +1,206 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "scope": "/fixture/base/northwind-workspace",
+    "scheduleApi": 2,
+    "scheduleHistoryApi": 3,
+    "integrity": {
+      "sources": [
+        {
+          "path": "definitions",
+          "status": "ok",
+          "bytes": 1213
+        },
+        {
+          "path": "state",
+          "status": "absent",
+          "bytes": 0
+        }
+      ]
+    },
+    "host": {
+      "name": "fixture-laptop",
+      "ghUser": {
+        "github.com": "fixture-bot"
+      }
+    },
+    "schedules": [
+      {
+        "id": "digest",
+        "cron": "30 8 * * 1-5",
+        "tz": "UTC",
+        "kind": "command",
+        "cwd": "/fixture/base/northwind-workspace",
+        "argv": [
+          "oats",
+          "status",
+          "--json"
+        ],
+        "createdAt": "2026-09-26T15:34:29.224Z",
+        "updatedAt": "2026-09-26T15:34:29.224Z",
+        "scope": "/fixture/base/northwind-workspace",
+        "scheduleApi": 2,
+        "scheduleHistoryApi": 3,
+        "executionStatus": {
+          "kind": "legacy",
+          "capture": "unknown",
+          "migrationRequired": true
+        },
+        "nextRun": "2026-09-28T08:30:00.000Z",
+        "lastRun": null,
+        "history": {
+          "status": "ok",
+          "stored": 0,
+          "truncated": false
+        },
+        "recentRuns": [],
+        "running": false,
+        "name": "digest",
+        "origin": {
+          "kind": "local",
+          "path": "oats-schedules.json",
+          "url": null,
+          "localPath": "/fixture/base/northwind-workspace/oats-schedules.json"
+        },
+        "description": null,
+        "owner": null,
+        "runsOn": null,
+        "runsHere": true,
+        "reason": null,
+        "enabledHere": true,
+        "qualifiedId": "local/digest",
+        "soul": null,
+        "task": null,
+        "teams": [],
+        "launchConfig": null,
+        "harness": null,
+        "model": null,
+        "concurrency": null,
+        "nextDue": "2026-09-28T08:30:00.000Z",
+        "enabled": true
+      },
+      {
+        "id": "agents/nightly",
+        "cron": "0 7 * * *",
+        "tz": "Europe/Madrid",
+        "kind": "spawn",
+        "agent": "release-manager",
+        "task": "Check the release branch and report.",
+        "harness": "claude",
+        "purpose": "nightly",
+        "scope": "/fixture/base/northwind-workspace",
+        "scheduleApi": 2,
+        "scheduleHistoryApi": 3,
+        "executionStatus": {
+          "kind": "legacy",
+          "capture": "unknown",
+          "migrationRequired": true
+        },
+        "nextRun": "2026-09-27T05:00:00.000Z",
+        "lastRun": null,
+        "history": {
+          "status": "ok",
+          "stored": 0,
+          "truncated": false
+        },
+        "recentRuns": [],
+        "running": false,
+        "name": "nightly",
+        "origin": {
+          "kind": "workspace",
+          "repoKey": "local//fixture/base/fx/remotes/agents.git",
+          "path": "oats-schedules/nightly.yaml",
+          "commit": "87cea5aa4a1effece415590c7cefc888ed81a57d",
+          "url": null,
+          "localPath": "/fixture/base/northwind-workspace/agents-repo/oats-schedules/nightly.yaml"
+        },
+        "description": "Nightly release check",
+        "owner": "github.com/fixture-bot",
+        "runsOn": "fixture-laptop",
+        "runsHere": true,
+        "reason": null,
+        "enabledHere": true,
+        "qualifiedId": "agents/nightly",
+        "soul": {
+          "name": "release-manager",
+          "origin": {
+            "kind": "member",
+            "repoKey": "local//fixture/base/fx/remotes/agents.git",
+            "member": "agents"
+          }
+        },
+        "teams": [],
+        "launchConfig": null,
+        "model": null,
+        "concurrency": null,
+        "nextDue": "2026-09-27T05:00:00.000Z",
+        "enabled": true
+      },
+      {
+        "id": "agents/weekly",
+        "cron": "0 9 * * 1",
+        "tz": "UTC",
+        "kind": "command",
+        "cwd": "/fixture/base/northwind-workspace",
+        "argv": [
+          "oats",
+          "status",
+          "--json"
+        ],
+        "scope": "/fixture/base/northwind-workspace",
+        "scheduleApi": 2,
+        "scheduleHistoryApi": 3,
+        "nextRun": null,
+        "lastRun": null,
+        "running": false,
+        "name": "weekly",
+        "origin": {
+          "kind": "workspace",
+          "repoKey": "local//fixture/base/fx/remotes/agents.git",
+          "path": "services/reports/weekly.oats-schedule.yaml",
+          "commit": "87cea5aa4a1effece415590c7cefc888ed81a57d",
+          "url": null,
+          "localPath": "/fixture/base/northwind-workspace/agents-repo/services/reports/weekly.oats-schedule.yaml"
+        },
+        "description": "Weekly workspace status",
+        "owner": "github.com/reports-bot",
+        "runsOn": "reports-server",
+        "runsHere": false,
+        "reason": "assigned-elsewhere",
+        "reasonDetail": "runs on reports-server; this host is fixture-laptop",
+        "enabledHere": true,
+        "qualifiedId": "agents/weekly",
+        "soul": null,
+        "task": null,
+        "teams": [],
+        "launchConfig": null,
+        "harness": null,
+        "model": null,
+        "concurrency": null,
+        "nextDue": null,
+        "enabled": true
+      }
+    ],
+    "triggers": {
+      "count": 4,
+      "command": "oats trigger list"
+    },
+    "snapshot": {
+      "takenAt": "2026-09-26T15:34:28.814Z",
+      "problems": 1
+    },
+    "scheduler": {
+      "installed": false,
+      "active": false,
+      "unit": "/fixture/base/home/Library/LaunchAgents/ai.oats.schedule-tick.plist",
+      "lastTick": null,
+      "maxConcurrent": 1,
+      "tickIntervalSec": 60,
+      "workspace": "/fixture/base/northwind-workspace",
+      "registered": false,
+      "workspaces": [],
+      "live": 0
+    }
+  }
+}
