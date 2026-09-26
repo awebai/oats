@@ -20,12 +20,13 @@ test('the capture is a desktop-facts kernel', () => {
   assert.ok(fx('version').features.includes('desktop-facts'));
 });
 
-test('souls: spawn default (the kernel\'s), spawnable + problem, and the soul file', () => {
+test('souls: spawnable + problem and the soul file; the kernel\'s harness default is not kept', () => {
   const souls = Object.fromEntries(soulsData(fx('souls')).souls.map(s => [s.name, s]));
   assert.deepEqual([souls['campaign-writer'].spawnable, souls['campaign-writer'].problem.code], [false, 'E_SOUL_DISABLED']);
   assert.match(souls['campaign-writer'].problem.message, /souls\.disabled/);
   const rm = souls['release-manager'];
-  assert.deepEqual([rm.spawnable, rm.problem, rm.harness, rm.model, rm.harnessFrom], [true, null, 'pi', null, 'kernel-default']);
+  assert.deepEqual([rm.spawnable, rm.problem], [true, null]);
+  for (const key of ['harness', 'model', 'harnessFrom']) assert.equal(Object.hasOwn(rm, key), false, `${key}: the kernel default is not the soul's choice`);
   assert.deepEqual(rm.file, { path: 'souls/release-manager/soul.yaml', url: null });
   const before = soulsData(fx('souls-before-disable')).souls.find(s => s.name === 'campaign-writer');
   assert.deepEqual([before.spawnable, before.problem], [true, null], 'the same soul, before this machine disabled it');
@@ -82,7 +83,7 @@ test('status → /api/panel: startedAt, modelFrom and identityAddress travel wit
   for (const key of ['startedAt', 'modelFrom', 'identityAddress']) assert.equal(Object.hasOwn(legacy, key), false, `${key}: absent, not invented`);
 });
 
-test('/api/agents: the kernel\'s spawn default is nested (never the soul\'s own harness/model), spawnable + problem, file', () => {
+test('/api/agents: spawnable + problem and file; no harness/model default', () => {
   const start = source.indexOf('function agentsData('), end = source.indexOf('/* ── Model catalog', start);
   const agentsData = new Function('workspaceById', 'workspaces', 'snapshot', 'remote', 'dirname', 'resolve', 'normalizeSoulColor',
     `${source.slice(start, end)}; return agentsData;`);
@@ -92,14 +93,12 @@ test('/api/agents: the kernel\'s spawn default is nested (never the soul\'s own 
   const ws = { id: DEPLOYMENT, name: 'northwind', roots: [roster.root] };
   const rows = Object.fromEntries(agentsData(() => ws, () => [ws], snapshot, remote, dirname, resolve, normalizeSoulColor)().agents.map(a => [a.name, a]));
   const rm = rows['release-manager'], cw = rows['campaign-writer'];
-  assert.deepEqual(rm.spawnDefault, { harness: 'pi', model: null, harnessFrom: 'kernel-default' });
-  assert.equal(Object.hasOwn(rm, 'harness'), false, 'not presented as the soul\'s own default harness');
-  assert.equal(Object.hasOwn(rm, 'model'), false);
+  for (const key of ['spawnDefault', 'harness', 'model', 'harnessFrom']) assert.equal(Object.hasOwn(rm, key), false, key);
   assert.deepEqual([rm.spawnable, rm.problem, cw.spawnable, cw.problem.code], [true, null, false, 'E_SOUL_DISABLED']);
   assert.deepEqual(rm.file, { path: 'souls/release-manager/soul.yaml', url: null });
   // An older kernel's catalog rows: no facts, no keys.
   const older = soulsData(old('f3/souls')).souls;
   const snap2 = { byWs: new Map([[DEPLOYMENT, { deployment: { ...snapshot.byWs.get(DEPLOYMENT).deployment, catalog: { souls: older, ambiguous: [], reason: null } } }]]) };
   const legacy = agentsData(() => ws, () => [ws], snap2, remote, dirname, resolve, normalizeSoulColor)().agents[0];
-  for (const key of ['spawnDefault', 'spawnable', 'problem', 'file']) assert.equal(Object.hasOwn(legacy, key), false, key);
+  for (const key of ['spawnable', 'problem', 'file']) assert.equal(Object.hasOwn(legacy, key), false, key);
 });

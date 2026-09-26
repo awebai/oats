@@ -19,9 +19,12 @@ prints exactly one JSON object on stdout:
 
 `version` is the installed package's exact semver (e.g. `0.20.0`).
 The Desktop accepts `desktopApi === 1` and gates on the kernel feature
-`packages-no-approval` (semver range `>=0.25.8 <0.27.0`: the floor admits the
-main-branch kernel before 0.26.0 is tagged; the feature fence is the real gate).
-Earlier bands were `>=0.22.0 <0.26.0` (Desktop 0.25) and `>=0.22.0 <0.24.0`
+`packages-no-approval` (semver range `>=0.25.8 <0.30.0`, spelled once in
+`packages/desktop/cli-locator.mjs` `ACCEPT_RANGE`: the floor admits the
+main-branch kernel before 0.26.0 was tagged; the feature fences are the real gate,
+and 0.29's reads are gated on `automations` and `desktop-facts`).
+Earlier bands were `>=0.25.8 <0.29.0` (Desktop 0.28), `<0.28.0` (Desktop 0.27),
+`<0.27.0` (Desktop 0.26), `>=0.22.0 <0.26.0` (Desktop 0.25) and `>=0.22.0 <0.24.0`
 (Desktop 0.23). It does not establish complete
 UI, backend, plugin, retirement or recovery parity; capability checks and explicit
 refusals below remain authoritative.

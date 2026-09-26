@@ -259,8 +259,8 @@ export function soulsData(document) {
     check(SOUL_NAME.test(out.name ?? '') && ['member', 'external'].includes(out.kind)
       && ['worktree', 'checkout', 'directory', 'workspace', 'attached'].includes(out.work));
     flags(row, ['private', 'spawnable'], out);
-    // desktop-facts: what a spawn starts with by default (today always the kernel's), whether it would refuse, and the file.
-    for (const key of ['harness', 'model', 'harnessFrom']) if (own(row, key)) { check(row[key] === null || text(row[key])); out[key] = row[key]; }
+    // desktop-facts: whether a spawn here would refuse, and the file. The harness/model default is not kept:
+    // it is always the kernel's today (#217 note 4), never the soul's choice; the spawn preview reports the real one.
     if (own(row, 'problem')) out.problem = problemRef(row.problem);
     if (own(row, 'file')) out.file = fileRef(row.file);
     // Every team label the soul carries (primary first; teams contract), when reported.

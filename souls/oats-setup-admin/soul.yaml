@@ -8,3 +8,6 @@ work: worktree
 team: global
 capabilities:
   oats.setup: { from: package }   # oats.core, the oats.okf knowledge slot and messaging come from the workspace defaults
+# Never harvested: its sessions work on this deployment's config and carry deployment specifics that
+# must not reach the shared knowledge base. okf's soul opt-out is absolute.
+knowledge: { harvest: off }

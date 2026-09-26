@@ -3,7 +3,7 @@ type: Reference
 title: Repo state — the living picture of the OATS repo
 description: Always-current snapshot of what is on main, what is in flight (PRs, features, running instances), recent deliveries, and open threads. Every oats-expert instance updates the relevant subsection whenever it changes that reality (merge, release, spawn, retire, delivery).
 tags: [stewardship, repo-state, living]
-timestamp: 2026-09-20
+timestamp: 2026-09-26
 ---
 # Repo state — the living picture
 
@@ -15,6 +15,12 @@ than letting the file grow stale.
 
 ## On main
 
+- **2026-09-26 — OATS 0.29.0 PUBLISHED: okf knowledge operations, workspace automations, capability agents removed** (tag `befefd3e` → `a0dfe761`; release run 36257860362 green; npm 0.29.0 for both packages; 7 assets; the published probe 18/18).
+  - **Pins:** oats.okf v4.0.0 (three capabilities; the knowledge-harvester/maintainer package souls; the harvest-review trigger), oats.dev v1.1.0 (the reviewer package soul), oats-framework/v1.3.0 (knowledge-theory-expert package soul), oats.aweb v1.14.2 (1.15 untagged → 0.29.1).
+  - **BREAKING:** 0.29 + okf 4.0.0 move in lockstep; a module declaring `agents:` is refused (`E_CAPABILITY_AGENTS_REMOVED`). Upgrade order: kernel → pins → `oats sync`.
+  - **Desktop:** the Schedules + Triggers tabs on the kernel's automations lists; the #217 facts land slice by slice (why each capability, moved versions, spawnable souls; more after 0.29.0).
+  - **Merged after the tag (→ 0.29.1):** #227 (docs band), #228 (spawnable souls).
+  - **Next:** the aweb v1.15.0 tag + mirror/pin (0.29.1); the remaining #217 Desktop slices; the forge-roster endpoint; okf 4.0.1 (use `OATS_SETTINGS_ORIGINS`); adopt the okf review trigger on the operator host; the fresh deployment on the human's GO.
 - **2026-09-26 — OATS 0.28.0 PUBLISHED: package souls, triggers, okf 3.0.0 consult, the Workspace v4 Desktop** (tag `7c901520` → `acae8b79`; release run 36249462472 green; npm 0.28.0 for both packages; 7 assets). The published probe: `package-souls`, `triggers`, `harness` features; catalog == tag; the bundled capabilities == tag with no symlink gaps (okf 3.0.0 ships none).
   - **Gates today (the human):** first the lead-only gate while the co-lead was unresponsive, then **merge-then-fix**. Reviewed PRs merge immediately; CI runs after; a red main is fixed forward; tags still wait for a green CI on their exact SHA. The CI monitor merges on the lead's approve comment/mail. CI is sharded ×6; main commits get their own concurrency group; a known-flake-only red doesn't hold merges.
   - **Also tagged:** oats.okf v3.0.0 (`ad2349c7` → `76f7ccdb`); oats-framework/v1.2.0 (`e1b39e4b` → `9bb956e5`: the oats-setup-admin soul, oats.setup 2.1.0, oats.core 2.1.0), pinned by #212; oats-framework/v1.2.1 (`d2b64b1f` → `27585c2b`: the okf-ops onboarding).

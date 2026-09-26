@@ -743,3 +743,20 @@ for (const [name] of palettes) test(`${name}: v4 page bar, cards, facts, used-by
   }
   dom.window.close();
 });
+
+// Kernel #217: a soul a spawn here would refuse says why on its card and its page, in the warn token.
+for (const [name] of palettes) test(`${name}: the can't-spawn-here notes meet computed AA`, t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"><div class="souls"><div class="soul-tile"><button class="soul-card"><span class="sbody"><span class="sproblem">Can't spawn here</span></span></button></div></div>
+    <aside class="soul-inspector soul-page"><div class="inspector-head"><p class="inspector-refusal">Can't spawn here</p></div></aside></div></body></html>`);
+  t.after(() => dom.window.close());
+  const doc = dom.window.document, spawnCSS = readFileSync(new URL('views/spawn.mjs', renderer), 'utf8').match(/const CSS = `([\s\S]*?)`;/)[1];
+  for (const source of [css, spawnCSS, inspectorCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  const painted = el => { for (let p = el; p; p = p.parentElement) { const bg = dom.window.getComputedStyle(p).background; if (/^var\(--/.test(bg)) return bg.slice(6, -1); } return null; };
+  for (const selector of ['.sproblem', '.inspector-refusal']) {
+    const el = doc.querySelector(selector), bg = painted(el);
+    assert.equal(dom.window.getComputedStyle(el).color, 'var(--warn)', selector); assert.ok(bg, selector);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue('--warn').trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${selector} on ${bg}`);
+    for (let p = el; p; p = p.parentElement) assert.equal(dom.window.getComputedStyle(p).opacity, '1');
+  }
+});

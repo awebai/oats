@@ -201,9 +201,7 @@ function agentsData(wsId) {
       agents.push({
         name: soul.name, description: soul.description || "", kind: "persistent", work: soul.work,
         ...(color ? { color } : {}), ...(soul.team ? { team: soul.team } : {}), ...(Array.isArray(soul.labels) ? { labels: [...soul.labels] } : {}),
-        // desktop-facts: the kernel's spawn default (NOT the soul's own choice: harnessFrom says whose),
-        // whether a spawn here would refuse (problem), and the soul.yaml (path, url).
-        ...(Object.hasOwn(soul, "harnessFrom") ? { spawnDefault: { harness: soul.harness ?? null, model: soul.model ?? null, harnessFrom: soul.harnessFrom } } : {}),
+        // desktop-facts: whether a spawn here would refuse (problem), and the soul.yaml (path, url).
         ...(typeof soul.spawnable === "boolean" ? { spawnable: soul.spawnable, problem: soul.problem ?? null } : {}),
         ...(Object.hasOwn(soul, "file") ? { file: soul.file } : {}),
         origin: soul.origin || "", soulKind: soul.kind, repo: soul.repoKey || null, capability: null,

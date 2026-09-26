@@ -301,3 +301,25 @@ test('F7: capabilityRow maps an inspected capability onto the catalog row shape 
   if (member) { const m = capabilityRow(member); assert.equal(m.kind, 'member'); assert.equal(m.repoKey, member.from.repoKey); }
   assert.equal(capabilityRow({ id: 'x', from: { kind: 'weird' } }).kind, 'external');
 });
+
+test('kernel #217: a soul a spawn here would refuse says why on its card and page; Spawn is disabled; its file opens', async t => {
+  const refused = { ...soul, name: 'rm', spawnable: false, problem: { code: 'E_SOUL_DISABLED', message: 'rm is disabled on this computer' },
+    file: { path: 'agents/rm/soul.yaml', url: 'https://github.com/acme/agents/blob/abc/agents/rm/soul.yaml' } };
+  const u = await fixture(t, { cli: { ...CLI, features: ['operations', 'desktop-facts'] }, agents: [soul, refused] });
+  const opened = []; u.ctx.openExternal = url => opened.push(url);
+  const tile = name => u.get(`.soul-card[data-agent="${name}"]`).parentElement;
+  assert.equal(tile('dev').querySelector('.sproblem'), null);
+  assert.equal(tile('rm').querySelector('.sproblem').textContent, "Can't spawn here · rm is disabled on this computer");
+  const button = tile('rm').querySelector('.soul-spawn');
+  assert.equal(button.disabled, true); assert.equal(button.title, "Can't spawn here: rm is disabled on this computer");
+  assert.equal(tile('dev').querySelector('.soul-spawn').disabled, false);
+  u.get('.soul-card[data-agent="rm"]').click(); await tick(); await tick();
+  assert.equal(u.get('.inspector-refusal').textContent, "Can't spawn here · rm is disabled on this computer");
+  const spawnAct = u.get('.spawn-act'); assert.equal(spawnAct.disabled, true); assert.match(spawnAct.title, /disabled on this computer/);
+  u.get('.file-act').click(); assert.deepEqual(opened, [refused.file.url]);
+});
+
+test('kernel #217 facts are ignored from a CLI that does not report desktop-facts', async t => {
+  const u = await fixture(t, { agents: [{ ...soul, spawnable: false, problem: { code: 'E_X', message: 'x' } }] });
+  assert.equal(u.get('.sproblem'), null); assert.equal(u.get('.soul-spawn').disabled, false);
+});
