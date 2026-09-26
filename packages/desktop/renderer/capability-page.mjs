@@ -247,7 +247,32 @@ function moduleRow(instance, name) {
   return rows.find(m => m?.name === name) || null;
 }
 
-const WHY = { default: ['default', 'Not declared by this soul: a workspace or team default (the kernel does not say which)'],
+/** Why a core capability is the soul's (`layers.<slot>.from`). */
+export function coreWhy(from) {
+  if (from === 'workspace') return 'workspace default';
+  if (from === 'soul') return 'chosen by this soul';
+  const team = typeof from === 'string' && /^team:(.+)$/.exec(from);
+  return team ? `team · ${team[1]}` : typeof from === 'string' && from ? from : null;
+}
+/** A soul's (or an instance's as-spawned) non-core capabilities with why each is there,
+ * from an inspection: declared by the soul, else a (workspace or team) default,
+ * then what the soul turned off. Workspace defaults → team defaults → soul order. */
+export function compositionEntries(inspected, soul) {
+  const record = v => !!v && typeof v === 'object' && !Array.isArray(v);
+  const declared = record(soul?.declarations) ? soul.declarations : {};
+  const coreIds = new Set(['knowledge', 'messaging', 'tasks'].map(slot => inspected?.layers?.[slot]?.id).filter(Boolean));
+  const choices = record(declared.capabilities) ? declared.capabilities : {};
+  const caps = list(inspected?.capabilities);
+  const entries = caps.filter(cap => !coreIds.has(cap.id)).map(cap => {
+    const own = record(choices[cap.id]);
+    return { cap, why: own ? 'soul' : 'default', repoOwned: own && choices[cap.id].from === 'here' };
+  });
+  for (const [name, choice] of Object.entries(choices)) if (choice === 'off' && !caps.some(cap => cap.id === name)) entries.push({ name, why: 'off' });
+  const order = { default: 0, soul: 1, off: 2 };
+  return entries.sort((a, b) => order[a.why] - order[b.why]);
+}
+/** The why tag's label and title per composition reason. */
+export const WHY = { default: ['default', 'Not declared by this soul: a workspace or team default (the kernel does not say which)'],
   soul: ['soul', 'Declared by this soul'] };
 /** A soul's composition: entries { cap, why: default|soul, repoOwned } or { name, why: 'off' }. */
 export function renderSoulCapabilities(host, { entries, status, onOpen = null }) {

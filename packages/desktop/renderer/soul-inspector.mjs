@@ -11,7 +11,7 @@ import { iconElement } from './shell-icons.mjs';
 import { inspectData, inspectFacts, originText } from './inspect-contract.mjs';
 import { createTeamsPanel, teamsOperations, teamsCSS, soulTeams, teamLabels } from './teams-panel.mjs';
 import { ageText } from './age-text.mjs';
-import { pageBar, pageCard, pageSection, capabilityIcon } from './capability-page.mjs';
+import { pageBar, pageCard, pageSection, capabilityIcon, compositionEntries, coreWhy } from './capability-page.mjs';
 import { layerLabel } from './workspace-catalog.mjs';
 
 
@@ -19,13 +19,6 @@ const HARNESS_NAMES = { pi: 'Pi', claude: 'Claude Code', codex: 'Codex' };
 const harnessName = value => HARNESS_NAMES[value] || value;
 const WORK_TEXT = { worktree: 'works in its own worktree', checkout: 'works in the repo checkout', attached: 'attaches to an owning instance' };
 const record = v => !!v && typeof v === 'object' && !Array.isArray(v);
-/** Why a core capability is the soul's (`layers.<slot>.from`). */
-function coreWhy(from) {
-  if (from === 'workspace') return 'workspace default';
-  if (from === 'soul') return 'chosen by this soul';
-  const team = typeof from === 'string' && /^team:(.+)$/.exec(from);
-  return team ? `team · ${team[1]}` : typeof from === 'string' && from ? from : null;
-}
 /** What a core capability does for this soul, from its own declarations and teams. */
 function coreDetail(slot, declared, teams, mapped) {
   if (slot === 'knowledge' && record(declared.knowledge)) {
@@ -478,14 +471,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     }
     core.append(cards); content.append(core);
     // Composition: every other capability with its source and why it is here.
-    const coreIds = new Set(['knowledge', 'messaging', 'tasks'].map(slot => inspected.layers?.[slot]?.id).filter(Boolean));
-    const choices = record(declared.capabilities) ? declared.capabilities : {};
-    const entries = inspected.capabilities.filter(cap => !coreIds.has(cap.id)).map(cap => {
-      const own = record(choices[cap.id]);
-      return { cap, why: own ? 'soul' : 'default', repoOwned: own && choices[cap.id].from === 'here' };
-    });
-    for (const [name, choice] of Object.entries(choices)) if (choice === 'off' && !inspected.capabilities.some(cap => cap.id === name)) entries.push({ name, why: 'off' });
-    const order = { default: 0, soul: 1, off: 2 }; entries.sort((a, b) => order[a.why] - order[b.why]);
+    const entries = compositionEntries(inspected, soul);
     const composition = pageSection(doc, 'Capabilities', 'workspace defaults → team defaults → this soul · later wins');
     const table = node('div', undefined, 'inspector-capability-table'); composition.append(table); content.append(composition);
     if (typeof capabilityTable === 'function') capabilityTable(table, entries, { soul: selection.agent });

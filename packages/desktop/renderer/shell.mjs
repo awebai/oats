@@ -42,6 +42,7 @@ import { shellIcon, mountShellIcons } from "./shell-icons.mjs";
 import { createRuntimeBadge, identityCSS } from "./identity-marks.mjs";
 import { createContextPanel, contextPanelCSS } from "./context-panel.mjs";
 import { createInstanceTeamsSection, teamsCSS } from "./instance-teams.mjs";
+import { createInstanceSoulSection, instanceSoulCSS } from "./instance-soul.mjs";
 import { createInstanceGitPanel, instanceGitCSS } from "./instance-git.mjs";
 import { createNotificationCenter, notificationCSS } from "./notifications.mjs";
 import { createRosterTip, rosterTipFacts, rosterTipCSS } from "./roster-tip.mjs";
@@ -66,7 +67,7 @@ const desk = window.oatsDesktop;
 initTheme();
 mountShellIcons(document);
 const identityStyle = document.createElement("style");
-identityStyle.textContent = identityCSS + contextPanelCSS + teamsCSS + instanceGitCSS + notificationCSS + connectionsCSS + lifecycleCSS + rosterTipCSS; document.head.append(identityStyle);
+identityStyle.textContent = identityCSS + contextPanelCSS + teamsCSS + instanceSoulCSS + instanceGitCSS + notificationCSS + connectionsCSS + lifecycleCSS + rosterTipCSS; document.head.append(identityStyle);
 const rosterTip = createRosterTip(document);
 let connectionGeneration = 0;
 const connectionListeners = new Set();
@@ -632,6 +633,12 @@ const contextPanel = createContextPanel({
   }),
   // Teams (teams contract): the instance's own teams through its messaging provider's operations.
   createTeamsSection: (host, { onPresence }) => createInstanceTeamsSection(host, { onPresence, generation: workspaceGeneration,
+    request: (workspace, body) => api(`/api/capabilities?ws=${encodeURIComponent(workspace)}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    }),
+  }),
+  // Soul tab (W6): the soul as the instance was spawned — its own `oats inspect --home` read.
+  createSoulSection: (host, { onPresence }) => createInstanceSoulSection(host, { onPresence, generation: workspaceGeneration,
     request: (workspace, body) => api(`/api/capabilities?ws=${encodeURIComponent(workspace)}`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
     }),

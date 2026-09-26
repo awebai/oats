@@ -67,14 +67,14 @@ test('created reads as a relative age with the exact value in its title; paths s
   assert.equal(ageText('not a date'), 'not a date');
 });
 
-test('Soul tab: the description under the name, Open in Workspace hands the soul identity off; no disclaimer paragraph', t => {
+test('Soul tab: the description under the name, Open soul page hands the soul identity off; no disclaimer paragraph', t => {
   const u = fixture(t); u.select(instance({ description: 'Builds the storefront', server: null }));
   u.tab('soul').click();
   const page = u.q('[data-context-page="soul"]');
   assert.match(page.textContent, /web-developer.*Builds the storefront/s);
   assert.doesNotMatch(page.textContent, /Metadata reported by this instance/);
   const open = u.q('[data-action="soul.open"]');
-  assert.equal(open.textContent, 'Open in Workspace'); assert.equal(open.disabled, false);
+  assert.equal(open.textContent, 'Open soul page', 'Workspace v4 (W6) wording'); assert.equal(open.disabled, false);
   open.click();
   assert.deepEqual(u.opened, [{ workspace: 'A', name: 'web-developer', agentsRoot: '/Users/me/work/northwind/agents', server: undefined }]);
   u.select(instance({ agent: undefined }));

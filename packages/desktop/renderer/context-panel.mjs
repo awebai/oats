@@ -94,6 +94,10 @@ export const contextPanelCSS = `
 #context-panel .context-panel-footer-act.danger { color:var(--danger); }
 #context-panel .context-panel-footer-act:disabled { color:var(--muted); cursor:default; }
 #context-panel .context-panel-footer-act:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+/* Soul tab: "Open soul page" is an outline control at the page foot. */
+#context-panel .context-panel-page[data-context-page="soul"] .context-panel-actions { margin-top:auto; }
+#context-panel .context-panel-open-soul:not(:disabled) { flex:1; background:var(--surface); color:var(--fg); border-color:var(--border); }
+#context-panel .context-panel-open-soul:hover:not(:disabled) { background:var(--surface-2); }
 /* Tabs read like the Workspace header's: underlined, no fill. */
 #context-panel .context-panel-header { padding:0 6px 0 16px; gap:18px; }
 #context-panel .context-panel-tabs { gap:18px; align-items:stretch; }
@@ -142,7 +146,7 @@ const reported = value => typeof value === 'string' && value.length ? value
  */
 export function createContextPanel({
   document: suppliedDocument, root: suppliedRoot, onIntent = noop,
-  applyFocus = callback => callback(), onFocusModeChange = noop, createGitPanel, createTeamsSection, openSoul, lifecycle = null,
+  applyFocus = callback => callback(), onFocusModeChange = noop, createGitPanel, createTeamsSection, createSoulSection, openSoul, lifecycle = null,
   connectionGeneration = () => 0, subscribeConnections = () => noop,
 } = {}) {
   const document = suppliedDocument ?? suppliedRoot?.ownerDocument ?? globalThis.document;
@@ -263,7 +267,7 @@ export function createContextPanel({
     const wrap = node('div', 'context-panel-identity'), mark = node('span', 'context-panel-mark');
     const copy = node('div', 'context-panel-identity-copy');
     wrap.append(mark, copy); pages.get(pageId).append(wrap);
-    return { mark, copy };
+    return { wrap, mark, copy };
   };
   const section = (pageId, label) => {
     const el = node('section', 'context-panel-section'); el.append(node('div', 'context-panel-label', label));
@@ -343,16 +347,20 @@ export function createContextPanel({
   const soulSub = field('div', 'context-panel-identity-sub', 'description');
   soulHead.copy.append(field('div', 'context-panel-identity-name', 'agent'), soulSub);
   const soulActions = node('div', 'context-panel-actions');
-  const openSoulControl = node('button', 'context-panel-action', 'Open in Workspace'); openSoulControl.type = 'button';
-  openSoulControl.title = 'Show this soul in the Workspace view'; openSoulControl.dataset.action = 'soul.open';
+  const openSoulControl = node('button', 'context-panel-action context-panel-open-soul', 'Open soul page'); openSoulControl.type = 'button';
+  openSoulControl.title = "Open this instance's soul in the Workspace view"; openSoulControl.dataset.action = 'soul.open';
   openSoulControl.addEventListener('click', event => {
     if (disposed || !hasGeneric() || typeof openSoul !== 'function' || !context.instance?.agent) return;
     onIntent(event); openSoul({ workspace: context.workspace, name: context.instance.agent, agentsRoot: context.instance.agentsRoot, server: context.instance.server || undefined });
   });
-  soulActions.append(openSoulControl); pages.get('soul').append(soulActions);
+  soulActions.append(openSoulControl);
   const soulDetails = node('details', 'context-panel-details'); soulDetails.append(node('summary', null, 'Details'));
   const rootRow = node('div', 'context-panel-detail'); rootRow.append(node('div', 'context-panel-label', 'Agents root'), pathLine('agentsRoot'));
-  soulDetails.append(rootRow); pages.get('soul').append(soulDetails);
+  soulDetails.append(rootRow); pages.get('soul').append(soulDetails, soulActions);
+  // Workspace v4 (W6): the soul as this instance was spawned from it — injected like Teams (this host performs no IO).
+  // While it shows, its own header replaces the roster-only one above.
+  const soulSection = typeof createSoulSection === 'function' ? createSoulSection(pages.get('soul'), {
+    onPresence(present) { if (!disposed) soulHead.wrap.hidden = present; } }) : null;
   const gitPanel = typeof createGitPanel === 'function' ? createGitPanel(pages.get('git'), { applyFocus: projectFocus,
     onObservation(summary) {
       if (disposed) return;
@@ -410,6 +418,8 @@ export function createContextPanel({
     }
     footer.hidden = !expanded || !hasGeneric() || pref().tab !== 'instance' || !context.instance || !lifecycle;
     gitPanel?.update({ active: expanded && hasGeneric() && pref().tab === 'git',
+      workspace: context.workspace, instance: context.instance, key: context.key });
+    soulSection?.update({ active: expanded && hasGeneric() && pref().tab === 'soul',
       workspace: context.workspace, instance: context.instance, key: context.key });
     teamsSection?.update({ active: expanded && hasGeneric() && pref().tab === 'instance',
       workspace: context.workspace, instance: context.instance, key: context.key });
