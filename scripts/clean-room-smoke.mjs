@@ -421,8 +421,7 @@ try {
   assert.equal(refresh.error.code, "E_REMOVED", "okf 3.0.0 has no views to refresh");
   // okf 4.0.0 removed `read` (a 3.0.0 alias of `cat`).
   const read = JSON.parse(cli(["okf", "read", "--source", marker.source, "--base", "project", "--path", "expert/index.md", "--soul", "probe", "--json"], { ...inScope, expectExit: 1 }));
-  assert.equal(read.error.code, "E_REMOVED", "okf 4.0.0 removed read");
-  assert.equal(boundary(["okf", "cat", "--base", "project", "expert/index.md", "--json"], inScope).text, readFileSync(join(accepted, "expert/index.md"), "utf8"));
+  assert.equal(read.error.code, "E_REMOVED", "okf 4.0.0 removed read"); // `cat` is exercised below, from a fresh home
 
   // No source home exists. The real capability asks the installed public CLI
   // for its own independent directory worker, then stages durable evidence.
