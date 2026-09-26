@@ -142,3 +142,32 @@ test('a stale inspection (the selection or workspace changed while it was in fli
   release2(); await tick(); await tick();
   assert.equal(v.host.querySelector('.teams-panel'), null, 'a workspace-generation change revokes it too');
 });
+
+// Kernel #217 desktop facts on the instance page (views only): the last start,
+// where the model came from and the messaging address, each only when reported.
+test('desktop facts: a reported start replaces the spawn age, the model says where it came from, the messaging address sits in Details', t => {
+  const u = fixture(t);
+  const captured = JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/desktop-facts/status.json', import.meta.url), 'utf8')).agents.flatMap(a => a.instances)[0];
+  const created = new Date(Date.now() - 26 * 3600e3).toISOString(), started = new Date(Date.now() - 12 * 60e3).toISOString();
+  const age = which => u.q(`.context-panel-session-age${which === 'started' ? '[data-age=started]' : ':not([data-age])'}`);
+  // The real capture: spawned with --model, never launched (startedAt null), no messaging identity.
+  u.select(instance({ createdAt: created, model: captured.model, modelFrom: captured.modelFrom, startedAt: captured.startedAt, identityAddress: captured.identityAddress }));
+  assert.equal(captured.modelFrom, 'spawn'); assert.equal(captured.startedAt, null);
+  assert.equal(u.field('modelFrom').textContent, 'chosen at spawn'); assert.equal(u.field('modelFrom').hidden, false);
+  assert.equal(age('started').hidden, true, 'never launched: no start'); assert.equal(age('created').hidden, false);
+  assert.equal(u.row('identityAddress').hidden, true, 'no address reported');
+  // A restarted home: the start replaces the age, the spawn time stays in its title.
+  u.select(instance({ createdAt: created, model: 'claude-opus-5-5', modelFrom: 'soul', startedAt: started, identityAddress: 'northwind/web-developer-1' }));
+  assert.equal(age('started').textContent, 'started 12 min ago'); assert.equal(age('created').hidden, true);
+  assert.equal(u.field('startedAt').title, `${started} · created ${created}`);
+  assert.equal(u.field('modelFrom').textContent, "the soul's choice");
+  assert.equal(u.row('identityAddress').hidden, false); assert.equal(u.field('identityAddress').textContent, 'northwind/web-developer-1');
+  // An older kernel (none of the keys) or a pre-0.29 home (modelFrom null): as before.
+  u.select(instance({ createdAt: created, modelFrom: 'soul' }));
+  assert.equal(u.field('modelFrom').hidden, true, 'no model reported: its source alone says nothing');
+  for (const extra of [{}, { modelFrom: null }]) {
+    u.select(instance({ createdAt: created, model: 'm', ...extra }));
+    assert.equal(u.field('modelFrom').hidden, true); assert.equal(age('started').hidden, true);
+    assert.equal(age('created').textContent, 'created 1 d ago'); assert.equal(u.row('identityAddress').hidden, true);
+  }
+});

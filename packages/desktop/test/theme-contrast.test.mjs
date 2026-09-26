@@ -655,7 +655,7 @@ for (const [name] of palettes) test(`${name}: F7 inspector cards, teams, compact
   const a = createSoulInspector(soulHost, { ctx: { api: async () => structuredClone(soul) } });
   const b = createSoulInspector(homeHost, { openSoul: () => true, ctx: { api: async (url, opts) => JSON.parse(opts.body).action === 'inspect' ? structuredClone(home) : structuredClone(teams) } });
   const panel = createContextPanel({ document: doc });
-  panel.setContext({ workspace: 'team', key: 'key', instance: { instance: 'dev-1', agent: 'dev', agentsRoot: '/team/agents', home: '/team/agents/dev/instances/dev-1' } });
+  panel.setContext({ workspace: 'team', key: 'key', instance: { instance: 'dev-1', agent: 'dev', agentsRoot: '/team/agents', home: '/team/agents/dev/instances/dev-1', harness: 'claude', model: 'm', modelFrom: 'soul', startedAt: '2026-09-26T10:00:00.000Z' } });
   const git = createInstanceGitPanel(doc.querySelector('#context-panel'), { request: async () => ({}) });
   t.after(() => { a.dispose(); b.dispose(); panel.dispose(); git.dispose?.(); dom.window.close(); });
   await a.show({ agent: { name: 'release-manager', agentsRoot, description: 'Ships the releases.' }, selector: { soul: 'release-manager', agentsRoot } });
@@ -676,6 +676,8 @@ for (const [name] of palettes) test(`${name}: F7 inspector cards, teams, compact
     ['#home .inspector-spawned button', '#home .inspector-spawned button', 'fg', 'surface'],
     // Workspace v4 (W6): the Folder row's path reads as a value; Details' home path stays muted.
     ['#context-panel .context-panel-folder .context-panel-path', '#context-panel', 'fg', 'surface'],
+    // desktop-facts: where the model came from, under the model in the Session card.
+    ['#context-panel .context-panel-session-from', '#context-panel .context-panel-session', 'muted', 'surface'],
     ['#context-panel .context-panel-detail .context-panel-path', '#context-panel', 'muted', 'surface'],
     ['#context-panel .context-panel-copy', '#context-panel .context-panel-copy', 'fg', 'surface'],
   ];
