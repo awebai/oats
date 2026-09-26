@@ -59,7 +59,7 @@ members:                                   # repo refs, NO @revision (E_WORKSPAC
   - git:github.com/acme/tools              # a member that ALSO publishes a package (see below)
 
 packages:                                  # the ONLY versioned things
-  oats.framework: v1.1.3                   # bare version → resolves through the official catalog
+  oats.framework: v1.2.0                   # bare version → resolves through the official catalog
   oats.okf: v3.0.0
   acme.tools: git:github.com/acme/tools@v0.4.0   # outside the catalog → git:<repo>@<tag|OID>; still a package
 
