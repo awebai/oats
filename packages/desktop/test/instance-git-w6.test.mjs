@@ -62,3 +62,27 @@ test('a clean worktree says so and offers no Open diff', async t => {
   assert.equal(host.querySelector('.git-changes-section .git-link').hidden, true);
   assert.match(host.querySelector('.git-files').textContent, /No changes reported in this observation\./);
 });
+
+// Line counts (kernel #238, passed through by #245), on the engineer's real capture
+// (test/fixtures/workspace-v2/instance-git-counts): an added file, a binary one, a modified one, an untracked one.
+test('Changes rows show "+N −M" as reported; binary says so; unknown (null) and older kernels show nothing, never "+0"', async t => {
+  const counted = JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/instance-git-counts/instance-git.json', import.meta.url), 'utf8')).result;
+  const t2 = { workspace: '/fixture/base/northwind-workspace', instance: counted.instance, agent: counted.agent, agentsRoot: counted.home.split(`/${counted.agent}/instances/`)[0], home: counted.home, server: null };
+  const dom = new JSDOM('<!doctype html><body><aside></aside></body>'), host = dom.window.document.querySelector('aside');
+  const view = createInstanceGitPanel(host, { request: () => ({ instanceGitApi: 1, minimumVersion: '0.24.7', status: 'available', target: t2, data: counted, reason: null, observationKey: null }) });
+  t.after(() => { view.dispose(); dom.window.close(); });
+  await view.update({ active: true, workspace: t2.workspace, instance: t2, key: gitTargetKey(t2) });
+  const rows = Object.fromEntries([...host.querySelectorAll('button.git-file')].map(b => [b.querySelector('.git-file-path').textContent, b]));
+  const counts = path => rows[path].querySelector('.git-counts')?.textContent ?? null;
+  assert.deepEqual(counted.files.map(f => [f.path, f.additions, f.deletions, f.binary]),
+    [['NEW.md', 2, 0, false], ['blob.bin', null, null, true], ['capabilities/nw-house-style/injects/house-style.md', 4, 1, false], ['scratch.txt', null, null, null]]);
+  assert.equal(counts('NEW.md'), '+2', 'a zero side is not shown');
+  assert.equal(counts('blob.bin'), 'binary');
+  assert.equal(counts('capabilities/nw-house-style/injects/house-style.md'), '+4−1');
+  assert.equal(rows['capabilities/nw-house-style/injects/house-style.md'].querySelector('.git-count-del').textContent, '−1');
+  assert.equal(counts('scratch.txt'), null, 'untracked: unknown, so nothing');
+  assert.match(rows['NEW.md'].title, /^added · 2 lines added · read diff: NEW\.md$/);
+  // My earlier capture predates #238: no count keys, no counts.
+  const u = mount(t); await u.show();
+  assert.equal(u.host.querySelector('.git-counts'), null);
+});

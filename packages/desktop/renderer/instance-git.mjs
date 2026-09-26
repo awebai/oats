@@ -44,6 +44,11 @@ export const instanceGitCSS = `
 .instance-git button.git-file:disabled { color:var(--muted); cursor:default; }
 .instance-git .git-letter { flex:none; width:12px; font-weight:700; color:var(--muted); }
 .instance-git .git-file-path { flex:1; min-width:0; }
+.instance-git .git-counts { flex:none; display:inline-flex; gap:6px; margin-left:auto; padding-left:6px; white-space:nowrap; }
+.instance-git .git-count-add { color:var(--ok); }
+.instance-git .git-count-del { color:var(--danger); }
+.instance-git .git-file[aria-pressed=true] .git-count-add, .instance-git .git-file[aria-pressed=true] .git-count-del { color:var(--fg); } /* red/green on --sel is not AA in every theme; the sign says which */
+.instance-git .git-count-binary { color:var(--muted); font-family:var(--sans,system-ui); font-size:11px; }
 /* A path or branch breaks after its slashes; a segment breaks inside only when longer than the line. */
 .instance-git .git-seg { display:inline-block; max-width:100%; overflow-wrap:anywhere; }
 .instance-git .git-diff:empty { display:none; }
@@ -93,6 +98,15 @@ export function changeLetter(file) {
   if (file.kind === 'unmerged') return 'U';
   const [x, y] = file.xy; return x !== '.' ? x : y;
 }
+/** A change's line counts (kernel #238): "+N" and "−M" when non-zero, "binary" for a binary
+ * file, nothing when unknown (null) or absent (an older kernel). Never "+0". */
+export function lineCounts(file) {
+  if (file.binary === true) return { binary: true, add: null, del: null };
+  const add = Number.isSafeInteger(file.additions) && file.additions > 0 ? file.additions : null;
+  const del = Number.isSafeInteger(file.deletions) && file.deletions > 0 ? file.deletions : null;
+  return add === null && del === null ? null : { binary: false, add, del };
+}
+const countWords = c => c.binary ? 'binary' : [c.add ? `${c.add} line${c.add === 1 ? '' : 's'} added` : null, c.del ? `${c.del} removed` : null].filter(Boolean).join(', ');
 const LETTER_WORD = { M: 'modified', A: 'added', D: 'deleted', R: 'renamed', C: 'copied', T: 'type changed', U: 'unmerged', '?': 'untracked' };
 export function createInstanceGitPanel(parent, { request, generation = () => 0, applyFocus = fn => fn(),
   requestForge, connectionGeneration = () => 0, subscribeConnections = () => () => {}, connect, openExternal, onObservation = () => {} } = {}) {
@@ -202,8 +216,17 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
     for (const file of data.files) {
       const letter = changeLetter(file), shown = `${file.origPath ? `${file.origPath} → ` : ''}${file.path}${file.submodule ? ' · submodule' : ''}`;
       const b = node('button', undefined, 'git-file'); b.append(node('span', letter, 'git-letter'), slashed(doc, node('span', undefined, 'git-file-path'), shown));
+      // Its line counts (kernel #238), as the design's "+84 −3"; nothing when unknown.
+      const counts = lineCounts(file);
+      if (counts) {
+        const box = node('span', undefined, 'git-counts');
+        if (counts.binary) box.append(node('span', 'binary', 'git-count-binary'));
+        if (counts.add) box.append(node('span', `+${counts.add}`, 'git-count-add'));
+        if (counts.del) box.append(node('span', `−${counts.del}`, 'git-count-del'));
+        b.append(box);
+      }
       b.type = 'button'; b.setAttribute('aria-pressed', 'false'); b.dataset.fileId = file.id;
-      b.title = `${LETTER_WORD[letter] || file.kind} · read diff: ${shown}`;
+      b.title = [`${LETTER_WORD[letter] || file.kind}`, counts ? countWords(counts) : null, `read diff: ${shown}`].filter(Boolean).join(' · ');
       b.addEventListener('click', () => {
         if (canPaint(ref) && observation === snapshot && !busy && b.isConnected && files.contains(b)) void selectFile(file, ref, snapshot);
       });
