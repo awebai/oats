@@ -15,6 +15,8 @@ than letting the file grow stale.
 
 ## On main
 
+- **2026-09-26 — OATS 0.29.2 PUBLISHED: oats.aweb 1.15.0 + W6 completed** (tag `1aa72fe8` → `5c9bc486`; release run 36266446800 green; npm 0.29.2 for both packages; 7 assets; the published probe 19/19). oats.aweb 1.15.0: joined-team live receive, the identity-home scrub, home operations under the kernel; enrollment deferred to 1.16. Desktop: line counts, the threads badge, send review threads.
+  - **Next: 0.29.3** = the "default team" vocabulary (Juan's directive; the teams-contract amendment `c129125a`) across the kernel prose, docs and framework skills (oats-package 1.3.1), plus the oats.aweb 1.16.0 pin with the wire renames and the Desktop reading `defaultTeam`, landing together.
 - **2026-09-26 — OATS 0.29.1 PUBLISHED: every 0.29 Desktop fact has a view; forge-roster; the W6 Git & GitHub tab** (tag `f0ac9888` → `24df668e`; release run 36264079720 green; npm 0.29.1 for both packages; 7 assets; the published probe 18/18). Also: `oats instance git` per-file line counts; oats-setup-admin opts out of harvest. Pins unchanged (okf v4.0.0, oats.dev v1.1.0, framework v1.3.0, aweb v1.14.2).
   - **Merged after the tag (→ 0.29.2):** #245–#247 (the line counts in the Desktop; the tab's unresolved-threads badge).
   - **Next: 0.29.2** = oats.aweb 1.15 with personal-team enrollment OFF (joined-team live receive + the identity-home scrub), once the co-lead's live gate passes + tags; the W6 send-review-threads route (server-composed, digest-confirmed, bracketed paste, no Enter) + its button.

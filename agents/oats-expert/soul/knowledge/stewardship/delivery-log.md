@@ -182,6 +182,14 @@ decisions/ and referenced from here.
     - (h) Package-wide renderer tests (icons, contrast) police the Desktop's chrome: a view PR runs the whole packages/desktop test, not only the affected suites.
     - (i) Name each agent's layer up front on multi-agent features (server projections vs views); check a PR's state before restacking (a push to a merged PR branch goes nowhere).
     - (j) Host CLI credentials belong to an OS USER, not a person: anything person-scoped must pin its credential location per deployment and check the expected owner.
+  - PR248 `371b1d16` (send review threads: server-composed, digest-confirmed, ONE line, pasted without Enter), PR249 `a730d4e6` (its button + exact preview; W6 complete).
+  - **oats.aweb v1.15.0 TAGGED by the co-lead** `c5df6502` → `9a4e48fe` (oats-aweb#20: enrollment OFF; joined-team live receive; the identity-home scrub; home operations answer the kernel's JSON-v1 envelope, a defect since 1.14.0 found in the live gate). The live gate: both rosters back to baseline, custody unchanged.
+  - PR250 `5c9bc486` (the aweb 1.15.0 mirror == the tag tree 282b9ca6 + the 0.29.2 release).
+  - **v0.29.2 RELEASED**: the tag `1aa72fe8` → `5c9bc486`; release run 36266446800 green; npm 0.29.2 for both packages; 7 assets; the published probe 19/19 (+ aweb 1.15.0 bundled/pinned).
+  - **Juan's directive (2026-09-26): no "personal team" anywhere → the workspace's DEFAULT team.** The teams-contract amendment `c129125a`; oats.aweb 1.16.0 does the wire renames (`defaultTeam` proposed, `E_TEAM_DEFAULT`, the receive label `default`, `roots.personal` removed); the kernel/docs/framework-skills rename in flight → 0.29.3.
+  - **taught us (0.29.2):**
+    - (k) A capability operation must answer exactly one JSON-v1 envelope with an agreeing exit status under `oats operation run`; test every operation through a vendored copy of the kernel rule.
+    - (l) A live tmux check from inside an agent session runs on the human's server unless `env -u TMUX tmux -S <private socket>`.
     - (d) Stacked PRs conflict after a squash; the author rebases, and `git range-diff` proves an unchanged patch.
 - **taught us:**
   - (1) **Arm a merge watcher with the full approved oid, never "the current head".** #160's head moved twice after approval while mails crossed. The watcher's named-oid guard refused both mismatches, so nothing unreviewed merged. The loop ends with one FINAL mail per party (author and watcher) naming the full oid and "no pushes", and by ignoring the stale mails that follow.
