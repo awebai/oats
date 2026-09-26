@@ -196,9 +196,13 @@ refused (`E_INSTANCE_NAME_TAKEN`).
 
 From a deployment (where `oats-local.yaml` is), a spawn: reads the local file →
 discovers the workspace over its remotes and confirms membership → finds the
-soul among the confirmed members (or `external:`; an ambiguous bare name is
-`E_SOUL_AMBIGUOUS` — say `<repo>/<soul>`) → fetches the soul's source into
-`<agents-root>/<soul>/souls/<commit12>/` at its commit (the home links that
+soul among the confirmed members, `external:` souls and the locked packages'
+souls (an ambiguous bare name is `E_SOUL_AMBIGUOUS`, naming each qualified
+form: `<member>/<soul>` or `<package>/<soul>`; a soul listed in
+`oats-local.yaml` `souls.disabled` is `E_SOUL_DISABLED`) → fetches the soul's
+source into `<agents-root>/<soul>/souls/<commit12>/` at its commit (a package
+soul at the locked commit, verified against the lock's digest — see
+[package souls](packages.md#package-souls); the home links that
 directory; `<agents-root>/<soul>/soul` points at the current one) → resolves
 every capability by
 `from:` (member = latest, package = locked) → creates the home →

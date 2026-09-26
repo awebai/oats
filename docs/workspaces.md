@@ -168,7 +168,7 @@ settings:                                  # host-owned values the manifests ask
     bindings-file: /Users/ana/.oats/okf-bindings.json
     state-dir: /Users/ana/.oats/okf
 souls:
-  disabled: [data-analyst]                 # not run on this machine
+  disabled: [data-analyst]                 # not run on this machine (E_SOUL_DISABLED); oats.okf/knowledge-harvester names a package soul
 ```
 
 See [configuration.md](configuration.md). `oats-config.yaml` no longer exists.
@@ -229,6 +229,12 @@ no private mode: every soul of a confirmed member is listed and spawnable.
 read; the soul gets no member-tier capabilities of its own repo; it is
 "source-complete" (its skills travel with it) and the workspace's defaults fill
 its slots. An `external[].team` overrides the soul's own `team`.
+
+**Package souls.** A package may ship souls (`souls:` in `oats-package.json`,
+0.28.0): they are listed from the lock for each package the workspace declares,
+named `<package>/<soul>` (a bare name when unique), resolved like any soul
+(`from: here` = their own package at the locked commit) and trusted as the
+package is. See [packages](packages.md#package-souls).
 
 ## Member tier vs package tier — the non-collapse rule
 
