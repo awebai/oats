@@ -8,12 +8,11 @@ import { postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
 import { iconElement } from './shell-icons.mjs';
 
 export const syncCSS = `
-.ws-sync { display:flex; align-items:center; gap:10px; margin-left:auto; min-width:0; flex:none; }
+.ws-sync { display:flex; align-items:center; gap:10px; min-width:0; flex:none; }
 .ws-sync-state { color:var(--muted); font-size:12px; font-weight:600; white-space:nowrap; }
 .ws-sync-state.warn { color:var(--warn); }
 .ws-sync-state:empty { display:none; }
-.oats-view .ws-sync button.primary { display:inline-flex; align-items:center; gap:6px; min-height:30px; padding:0 12px; border-radius:7px; font-size:12px; font-weight:650; white-space:nowrap; }
-.oats-view .ws-sync button.primary:not(:disabled) { background:var(--primary-bg); color:var(--primary-fg); border-color:var(--primary-bg); }
+.oats-view .ws-sync button.ws-sync-run { display:inline-flex; align-items:center; gap:6px; height:28px; min-height:28px; padding:0 10px; border-radius:7px; font-size:12px; font-weight:600; white-space:nowrap; }
 .ws-sync-sheet { position:fixed; inset:0; z-index:40; display:grid; place-items:center; padding:24px; background:var(--scrim); }
 .ws-sync-sheet[hidden] { display:none; }
 .ws-sync-dialog { width:min(560px,100%); max-height:88vh; display:flex; flex-direction:column; border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--fg); box-shadow:var(--shadow-modal); }
@@ -72,8 +71,7 @@ export function createWorkspaceSync(host, { ctx, onSynced }) {
   let alive = true, serial = 0, busy = false, status = null, available = false;
   host.className = 'ws-sync';
   const state = node('span', '', 'ws-sync-state'); state.setAttribute('role', 'status');
-  const sync = node('button', null, 'primary'); sync.type = 'button';
-  sync.append(iconElement(doc, 'refresh', { size: 13 }), doc.createTextNode('Sync'));
+  const sync = node('button', 'Sync', 'act ws-sync-run'); sync.type = 'button';
   sync.title = 'Run oats sync: read the workspace, fetch its packages and write the lock';
   host.append(state, sync);
 
@@ -95,7 +93,8 @@ export function createWorkspaceSync(host, { ctx, onSynced }) {
   const owns = (id, gen) => alive && id === serial && gen === workspaceGeneration();
   function paint() {
     const view = syncStateText(status);
-    state.textContent = view.text; state.classList.toggle('warn', view.warn);
+    // Only an out-of-date lock is said here; a current lock is shown on Setup (This computer).
+    state.textContent = view.warn ? view.text : ''; state.classList.toggle('warn', view.warn);
     sync.disabled = busy || !available;
     sync.lastChild.textContent = busy ? 'Syncing…' : 'Sync';
   }

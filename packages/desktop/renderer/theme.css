@@ -25,6 +25,9 @@
   --ok: #3fb950; --warn: #d29922; --danger: #f85149;
   --chip-bg: #21262e; --chip-fg: #adb6c2;
   --sel: #1b2b40;         /* opaque selected surface; contrast is testable */
+  /* Workspace v4: running dot (graphic only), amber attention (text is --warn), neutral
+     reason/tag fill, and the soft border of a selected card. */
+  --live: #4493f8; --attn-bg: #332a14; --attn-border: #6b5424; --tag-bg: #242a33; --sel-border: #2f5286; --attn-dot: #d29922;
   --bar-h: 48px;          /* one top-bar height everywhere — borders align across panes */
   --term-bg: #0a0d12;     /* transcript surface follows the theme */
   --term-fg: #e6edf3;
@@ -82,6 +85,7 @@
   --ok: #267548; --warn: #725500; --danger: #b52f35;
   --chip-bg: #f4f4f1; --chip-fg: #5f5f5a;
   --sel: #fff0df;
+  --live: #d06a00; --attn-bg: #fbf1dc; --attn-border: #e0c48f; --tag-bg: #efefeb; --sel-border: #f3cfa6; --attn-dot: #c98a1b;
   --term-bg: #ffffff;
   --term-fg: #1a1a18;
   --term-sel: #fff0df;
@@ -135,6 +139,7 @@
   --ok: #465f00; --warn: #725500; --danger: #b52f35;
   --chip-bg: #ede5cc; --chip-fg: #56676d;
   --sel: #dce7e8;
+  --live: #155f96; --attn-bg: #f6e7c1; --attn-border: #d8bd7e; --tag-bg: #ebe3c9; --sel-border: #a9c3d4; --attn-dot: #b58900;
   --term-bg: #fdf6e3;
   --term-fg: #52666c;
   --term-sel: #d3c9a8;

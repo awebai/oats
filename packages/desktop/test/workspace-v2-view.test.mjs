@@ -65,10 +65,10 @@ async function setup(t, { status = 'workspace-status', cli = CLI, sync, workspac
 
 test('Capabilities is the kernel catalog: counts, three design columns and readiness in v2 terms', async t => {
   const u = await setup(t);
-  assert.equal(u.doc.querySelector('#workspace-tab-capabilities .workspace-count').textContent, '', 'no catalog read until the tab is opened');
-  assert.deepEqual(u.syncCalls(), []);
-  await u.tab('capabilities');
+  // Workspace v4: the tab bar counts capabilities, so the catalog is read once on mount (any tab).
   assert.deepEqual(u.syncCalls(), [{ action: 'read' }], 'exactly one read; never a sync');
+  await u.tab('capabilities');
+  assert.deepEqual(u.syncCalls(), [{ action: 'read' }], 'opening the tab does not read again');
   assert.equal(u.doc.querySelector('#workspace-tab-capabilities .workspace-count').textContent, '10');
   assert.deepEqual([...u.doc.querySelectorAll('[data-section=workspace] .catalog-row.head [role=columnheader]')].map(el => el.textContent), ['Capability', 'Status', 'Used by']);
   assert.equal(u.rows().length, 10);
@@ -134,7 +134,9 @@ test('Setup lists: repositories with team and confirmation, packages with their 
   const moved = syncData(f2('sync-moved'), dir);
   const u = await setup(t);
   await u.tab('sources');
-  assert.equal(u.doc.querySelector('#workspace-tab-sources .workspace-count').textContent, '9', '5 repositories + 3 packages + 1 external soul');
+  // Workspace v4: Setup carries no count; its dot says when something needs attention (here nothing does).
+  assert.equal(u.doc.querySelector('#workspace-tab-sources .workspace-count').textContent, '');
+  assert.equal(u.doc.querySelector('#workspace-tab-sources .workspace-attn').hidden, true);
   const sections = [...u.doc.querySelectorAll('.sources-section h2')].map(el => el.textContent);
   assert.deepEqual(sections, ['Repositories', 'Packages', 'External souls']);
   const repos = [...u.doc.querySelectorAll('.sources-section [data-member]')];
@@ -144,7 +146,7 @@ test('Setup lists: repositories with team and confirmation, packages with their 
   assert.ok([...u.doc.querySelectorAll('.sources-section [data-package]')].every(row => row.querySelector('.catalog-chips').textContent === 'locked'));
   assert.doesNotMatch(u.doc.querySelector('.workspace-discovery').textContent, /\b[0-9a-f]{7,40}\b/, 'Setup shows no commit');
   assert.doesNotMatch(u.doc.querySelector('.workspace-discovery').textContent, APPROVAL_TEXT);
-  assert.deepEqual(u.syncCalls(), [], 'Sources render the observation only');
+  assert.deepEqual(u.syncCalls(), [{ action: 'read' }], 'Sources render the observation only (the one read is the tab bar\'s catalog count)');
   // An unconfirmed member (kernel row from a later sync) keeps its status and detail.
   const status = { ...statusOf('workspace-status'), members: moved.members };
   const { renderSources } = await import('../renderer/workspace-catalog.mjs');
@@ -194,20 +196,20 @@ test('header state: lock out of date or current — from workspace status; there
 
 test('Sync runs oats sync and nothing else: no approval control, no sheet for a clean sync, the catalog re-read', async t => {
   const u = await setup(t, { sync: body => body.action === 'sync' ? report('sync-current', 'ok') : catalog('capabilities') });
-  assert.equal(u.doc.querySelector('.ws-sync-state').textContent, 'Lock current');
+  assert.equal(u.doc.querySelector('.ws-sync-state').textContent, '', 'a current lock is shown on Setup (This computer), not beside Sync');
   assert.equal(u.button('Review approvals'), undefined); assert.equal(u.doc.querySelector('.ws-approval'), null);
   await u.tab('capabilities');
-  u.doc.querySelector('.ws-sync button.primary').click(); await settle();
+  u.doc.querySelector('.ws-sync button.ws-sync-run').click(); await settle();
   assert.deepEqual(u.syncCalls(), [{ action: 'read' }, { action: 'sync' }, { action: 'read' }], 'sync, then the catalog is read again');
   assert.equal(u.doc.querySelector('.ws-sync-sheet').hidden, true, 'a clean sync needs nothing from the operator');
-  assert.equal(u.doc.querySelector('.ws-sync-state').textContent, 'Lock current');
+  assert.equal(u.doc.querySelector('.ws-sync-state').textContent, '', 'a current lock is shown on Setup (This computer), not beside Sync');
 });
 
 test('a sync that reports problems says so in a sheet, in the kernel\'s words', async t => {
   const withProblems = report('sync-current', 'ok');
   withProblems.report.problems = [{ code: 'E_MEMBER_UNREADABLE', message: 'member marketing could not be read', path: null, repoKey: null }];
   const u = await setup(t, { sync: body => body.action === 'sync' ? withProblems : catalog('capabilities') });
-  u.doc.querySelector('.ws-sync button.primary').click(); await settle();
+  u.doc.querySelector('.ws-sync button.ws-sync-run').click(); await settle();
   const sheet = u.doc.querySelector('.ws-sync-sheet');
   assert.equal(sheet.hidden, false); assert.equal(sheet.querySelector('h2').textContent, 'Synced, with problems');
   assert.match(sheet.textContent, /member marketing could not be read/);
@@ -218,7 +220,7 @@ test('a refused sync reads plainly; the kernel code and message stay verbatim be
   const integrity = f2('sync-integrity').error;
   const u = await setup(t, { sync: body => body.action === 'sync'
     ? { workspaceSyncApi: 1, status: 'refused', report: null, reason: { code: integrity.code, message: integrity.message } } : catalog('capabilities') });
-  u.doc.querySelector('.ws-sync button.primary').click(); await settle();
+  u.doc.querySelector('.ws-sync button.ws-sync-run').click(); await settle();
   const sheet = u.doc.querySelector('.ws-sync-sheet');
   assert.equal(sheet.hidden, false); assert.equal(sheet.querySelector('h2').textContent, 'Sync didn’t finish');
   const lead = sheet.querySelector('.ws-sync-lead');
@@ -271,7 +273,7 @@ async function syncOwnership(t, create, outcome) {
   const view = create(dom.window.document.querySelector('header'), { ctx });
   t.after(() => { view.dispose(); setWorkspace(previous); dom.window.close(); });
   view.update({ status: statusOf('workspace-status'), canSync: true });
-  dom.window.document.querySelector('.ws-sync button.primary').click(); await tick();
+  dom.window.document.querySelector('.ws-sync button.ws-sync-run').click(); await tick();
   setWorkspace('/other'); // a newer workspace intent
   if (outcome === 'success') gate.resolve({ workspaceSyncApi: 1, status: 'refused', report: null, reason: { code: 'E_PACKAGE_INTEGRITY', message: 'OLD refusal' } });
   else gate.resolve(Promise.reject(new Error('OLD sync failure')));

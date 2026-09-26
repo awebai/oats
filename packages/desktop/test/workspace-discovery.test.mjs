@@ -120,7 +120,8 @@ test('subtab preselection is consumed on mount/current view, drops stale generat
   spawn.mount(u.doc.querySelector('#host'), u.ctx); await tick();
   assert.equal(u.doc.getElementById('workspace-tab-souls').getAttribute('aria-selected'), 'true');
   assert.equal(u.doc.querySelector('.spawn-dialog'), null);
-  assert.ok(u.calls.filter(c => c.method === 'POST').every(c => c.body.action === 'inspect'));
+  // Read-only POSTs only: inspect, and the catalog read the tab bar counts (never a spawn or sync).
+  assert.ok(u.calls.filter(c => c.method === 'POST').every(c => c.body.action === 'inspect' || (c.path.startsWith('/api/workspace-sync') && c.body.action === 'read')));
 });
 
 test('root/name/host focus survives polling, the soul page\'s back and modal close without selecting a twin', async t => {
@@ -287,6 +288,7 @@ test('soul identity marks stay qualified and stable across reordered polling and
     assert.equal(u.doc.querySelector('[name=color]'), null, 'no invented writable CLI field');
   }
   assert.equal(u.doc.querySelector('img,svg:not(.shell-icon),script,[data-runtime="<svg onload=evil()>"]'), null, 'only the vetted Lucide chrome renders SVG');
-  assert.ok(u.calls.filter(call => call.method === 'POST').every(call => call.body.action === 'inspect'));
+  // Read-only POSTs only: inspect, and the catalog read the tab bar counts (never a spawn or sync).
+  assert.ok(u.calls.filter(c => c.method === 'POST').every(c => c.body.action === 'inspect' || (c.path.startsWith('/api/workspace-sync') && c.body.action === 'read')));
   assert.deepEqual(u.files, []); assert.deepEqual(u.opens, []);
 });

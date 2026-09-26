@@ -111,6 +111,9 @@ const pairs = [
   ...["fg", "muted", "faint", "accent", "warn", "ok"].map((fg) => [fg, "sel"]),
   ...["fg", "muted", "accent", "violet", "ok", "warn"].map((fg) => [fg, "md-code-bg"]),
   ...ansi.map((fg) => [fg, "term-bg"]),
+  // Workspace v4: amber attention chips/nodes, and reason/tag chips.
+  ["warn", "attn-bg"], ["fg", "attn-bg"], ["muted", "attn-bg"],
+  ...["fg", "muted"].map((fg) => [fg, "tag-bg"]),
 ];
 
 test("contrast inventory retains alpha and composites code backgrounds over the painted --bg", () => {

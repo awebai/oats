@@ -130,7 +130,7 @@ test('04: the capability table follows the design grid — 36px head, 56px rows,
   assert.equal(u.get('.discovery-tools'), null, 'no classic "Filter & scope" selector remains');
   assert.equal(u.get('.readiness-view, .deployment-inventory, .workspace-readiness-entry'), null, 'the 0.24 readiness/inventory blocks are gone');
   const header = u.get('.workspace-header');
-  assert.equal(u.get('.ws-sync').parentElement, header, 'sync lives in the Workspace header');
+  assert.equal(u.get('.ws-sync').closest('.workspace-header'), header, 'sync lives in the Workspace header (Setup tools)');
   assert.equal(u.css('.catalog-row.head').minHeight, '36px'); assert.equal(u.css('.catalog-row.head').textTransform, 'uppercase');
   assert.equal(u.css('.catalog-row.head').fontSize, '10.5px');
   assert.equal(u.css('.catalog-row:not(.head)').minHeight, '56px', 'a minimum: real wrapping can grow a row');
