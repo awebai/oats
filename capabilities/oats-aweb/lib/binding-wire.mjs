@@ -269,7 +269,7 @@ function workspaceReadinessPhase(req) {
   const wake=String(req.settings.delivery||'channel')==='session'?wakeReadiness(ctx.home,{reliedOn:true}):{problems:[],warnings:[]};
   problems.push(...wake.problems);warnings.push(...wake.warnings);
   const result=checkProblems(problems) || {status:'ready',problems:[]};
-  return {...result,warnings,...(teams?{teams}:{})};
+  return {...result,warnings};
 }
 function checkPhase(req) {
   keys(req.input,['binding','context','action','invocation'],['context','action']);
