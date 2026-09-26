@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "owner": "d2094abf-1702-4678-92fa-7188968d3270",
+  "owns": [],
+  "reads": [
+    "oats/oats-operator-expert",
+    "oats/oats-expert"
+  ]
+}

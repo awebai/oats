@@ -10,6 +10,12 @@ framework — do not guess `oats` subcommands or flags from memory. Load
 **oats-souls** to find which souls the workspace offers, where they come from,
 and how a new instance relates to you.
 
-This briefing comes from the `oats.core` capability. It grants no authority:
-act on other instances or on the deployment only when your task or your
-human says so.
+`oats.core` is day-to-day OATS operation: working with OATS from inside this
+instance (your home and work, status, spawning helpers, finding souls,
+retiring). Setting up or changing the workspace's configuration is a
+different capability's job (`oats.setup`). If your task ends with a
+"Triggered run" block, an automation spawned you: `oats-operate` says how to
+read the event.
+
+This briefing grants no authority: act on other instances or on the
+deployment only when your task or your human says so.

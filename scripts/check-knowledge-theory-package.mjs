@@ -131,7 +131,7 @@ export function syncKnowledgeTheoryReferences(repoRoot = REPO_ROOT) {
 export function checkOperationalCapabilities(packageRoot) {
   for (const [slug, names, injection] of [
     ["oats-core", ["oats-operate", "oats-souls"], "injects/oats.md"],
-    ["oats-setup", ["oats-onboarding", "oats-package-pins"], null],
+    ["oats-setup", ["oats-setup-model", "oats-onboarding", "oats-workspace-config", "oats-teams", "oats-package-pins", "oats-automations"], "injects/setup.md"],
   ]) {
     const root = join(packageRoot, "capabilities", slug);
     const cap = JSON.parse(readFileSync(join(root, "oats.json"), "utf8"));
@@ -158,7 +158,7 @@ export function checkOperationalCapabilities(packageRoot) {
     if (injection) {
       assert.equal(cap.inject, injection);
       const text = readFileSync(join(root, injection), "utf8");
-      assert.match(text, /oats-operate/); assert.match(text, /oats-souls/);
+      for (const name of names) assert.ok(text.includes(name), `${slug}: the inject must point at ${name}`);
     }
   }
 }
