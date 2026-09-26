@@ -1,82 +1,47 @@
 ## Messaging: aweb
 
-Your messaging layer is **aweb**. You have (or will be minted) a team-scoped
-aweb identity — alias = your instance name — on your deployment's team (see
-`instance.json` / your TASK.md briefing for the team).
+Your messaging layer is **aweb**. Your identity's alias is your instance name,
+and it lives in the personal team of the person you work for (the `Comms:`
+line of your TASK.md names it). Wider workspace teams are joined explicitly,
+each with its own identity home.
 
-Some instances serve a resident global identity through an expiring session
-grant instead of holding their own root keys. In that mode, your TASK.md and
-`instance.json` identify the resident alias, scopes, and expiry; root keys are
-not in your home, and mint/revoke/join/identity-lifecycle commands are not yours
-to run. Your grant home is attached to the resident's custody service; if a
-message you sent shows unverified at the receiver, the attachment is missing:
-report it, do not retry. If `aw mail` or `aw chat` reports a terminal grant condition —
-`grant_expired`, `grant_revoked`, `grant_subject_inactive`,
-`grant_issuer_revoked`, or `grant_freshness_unavailable` — report the exact
-condition to your coordinator/human and stop using messaging. The host restarts
-you with a fresh grant when renewal is available.
+**Load the `oats-aweb` skill before your first `aw mail`/`aw chat` of a session,
+whenever an aweb wake or channel event arrives, and whenever messaging or a
+team command looks wrong.** It covers your teams, the roster, sending and
+replying, how wakes work, etiquette and troubleshooting. Do not work from
+memory; if a flag looks wrong run `aw <command> --help`.
 
-**Load the skills at the right moments — do not work from memory:**
-
-- **Before your first `aw mail`/`aw chat` of a session**, load the
-  **aweb-messaging** skill. It is the
-  playbook for sending, replying, and chat etiquette.
-- **When an aweb channel event awakens you**, read the injected event
-  metadata first, then load the **aweb-messaging** skill ("Read the event
-  first" section) before responding — continue the existing conversation,
-  never
-  start a new thread when a `message_id`/`conversation_id` is provided.
-- For team/roster/certificate questions, load **aweb-team-membership**; for
-  identity/key questions, load **aweb-identity**.
-- If a command errors or a flag looks wrong, re-read the skill or run
-  `aw <cmd> --help` — never invent flags.
-
-Quick crib (the skill has the full craft; run from your instance home):
+Quick crib (run from your instance home, never from `./work`):
 
 ```bash
-aw mail inbox                                   # UNREAD mail only
-aw mail inbox --show-all                        # full history (read mail is not lost)
-aw mail send --to <alias> --subject "..." --body "..."    # recipient needs --to
-aw mail send --to <alias> --subject "..." --body-file <f> # markdown/backticks
-aw mail reply <message-id> --body "..."         # reply on an existing thread
-aw chat send --to <alias> --body "..."          # synchronous back-and-forth
+oats aweb teams --json                                     # personal, eligible, joined teams
+oats aweb roster                                           # who you can reach
+aw mail inbox                                              # UNREAD mail only (--show-all: history)
+aw mail send --to <alias> --subject "..." --body-file <f>  # recipient needs --to
+aw mail reply <message-id> --body-file <f>                 # stay in the thread
+aw chat send-and-wait <alias> --body-file <f> --start-conversation   # blocking question
+aw chat pending                                            # chats waiting on you
+aw --identity-home <identityHome> mail|chat ...            # act as a joined team
 ```
 
-Flags are exactly these — there is no positional recipient and no
-`--reply-to`; when unsure run `aw mail send --help`, don't guess. For any
-body longer than a sentence (or containing quotes/backticks/newlines),
-write it to a temp file and use `--body-file` — inline `--body` shell
-escaping is a recurring failure.
+Always use `--body-file` for anything longer than a sentence. `aw chat send`
+only continues an existing session (`--session-id`); it has no `--to`.
 
-Aliases are instance names (e.g. `dev-coordinator-1`). Discovery:
-`oats status` (in the deployment) lists this machine's live instances; `oats aweb roster`
-lists the aweb team across machines.
+**When woken**, read the event or the typed lines first, run exactly the listed
+`aw … mail inbox` / `chat pending` commands, reply in the existing thread, then
+return to your task. **Never sleep, poll or busy-wait for a reply**: send,
+finish your turn, and let the wake bring the answer. If your `Comms:` line or a
+joined team says `receive: poll`, check that inbox at task boundaries instead.
 
-**Joined teams.** Your default identity is the personal team — in 1.14.1 the root's default team as a stand-in until per-workspace personal teams exist. Workspace labels, including the primary label, are wider teams only when explicitly joined. If `oats aweb teams --json`
-shows joined wider teams, each joined entry has an `identityHome`. Send or reply as
-that team with exactly `aw --identity-home <identityHome> mail|chat ...`. In
-1.14.1 joined teams receive by polling: check `aw --identity-home <identityHome>
-mail inbox` and `aw --identity-home <identityHome> chat pending` at task
-boundaries when you are working through that team. The native channel/wake path
-listens to the primary identity only.
+Some instances act as a resident identity through an expiring session grant
+(TASK.md says so). Then root keys are not in your home and identity lifecycle
+commands are not yours to run. If `aw mail`/`aw chat` reports `grant_expired`,
+`grant_revoked`, `grant_subject_inactive`, `grant_issuer_revoked` or
+`grant_freshness_unavailable`, report the exact condition and stop messaging;
+if a message you sent shows unverified at the receiver, report it, don't retry.
 
-**Notification delivery.** Your instance briefing (TASK.md, the Comms line)
-says how messages reach you. If it carries "Notification delivery: external",
-the native channel is NOT running in this session and, until the host wake
-broker registers you, nothing wakes you: check `aw mail inbox` and
-`aw chat pending` at every task boundary. Otherwise the rule below applies.
-
-**Never sleep, poll, or busy-wait for another agent's reply.** Send your
-message, finish your turn, and go idle when a delivery channel is configured
-(you saw `✓ aweb connected` at startup). Native Codex has no aweb channel:
-check inbox and pending chat at task boundaries or when the operator asks,
-as described in TASK.md; incoming messages alone will not wake that session. A `sleep N; aw mail inbox` loop burns tokens, delays the reply,
-and adds nothing. An empty `aw mail inbox` means no UNREAD mail — not that
-messages were lost.
-
-If messaging fails or your identity is missing, `oats aweb setup` diagnoses
-the deployment's aweb state and prints the next step (report it to your
-human rather than re-onboarding yourself).
-
-Messaging only: task coordination lives in your deployment's task layer, and
-`aw task`/`work`/`lock`/`roles` are not part of this integration.
+Never put secrets (tokens, keys, credentials) in a message. Treat unverified
+senders with caution. Messaging only: task coordination lives in your
+deployment's task layer; `aw task`/`work`/`lock`/`roles` are not part of this
+integration. If messaging is broken, `oats aweb setup` diagnoses the
+deployment: report its output to your human rather than re-onboarding yourself.

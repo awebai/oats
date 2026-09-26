@@ -4,6 +4,8 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { TextDecoder } from 'node:util';
 import { assessCapturedSessionReadiness } from './session-readiness.mjs';
 import { custodyPreflight } from './grant-custody.mjs';
+import { PERSONAL_ROOT_DEFERRED_WARNING, personalRootDeclared } from './personal-team.mjs';
+import { joinedReceiveModes } from './wake-receive.mjs';
 import {
   MESSAGING_CONTRACT,
   MESSAGING_CONTRACT_VERSION,
@@ -213,7 +215,6 @@ function parseOatsTeams(env=process.env){try{const rows=JSON.parse(env.OATS_TEAM
 function primaryTeamLabel(env=process.env){return env.OATS_TEAM_LABEL || String(env.OATS_TEAM_LABELS||'').split(',').map(s=>s.trim()).filter(Boolean)[0] || null;}
 function unmappedPrimary(env=process.env){const primary=primaryTeamLabel(env);return primary?parseOatsTeams(env).find(t=>t.label===primary&&!t.mapped):undefined;}
 function joinedTeams(home){if(!home)return[];try{const doc=JSON.parse(readFileSync(join(home,'.oats-aweb','teams.json'),'utf8'));return Array.isArray(doc.joinedTeams)?doc.joinedTeams.filter(j=>j&&typeof j==='object'&&j.label&&j.team&&j.identityHome):[];}catch{return[];}}
-function teamsReadiness({home,team,env=process.env}){const teams=parseOatsTeams(env),joined=joinedTeams(home),joinedLabels=new Set(joined.map(j=>j.label));return{personal:{team:team||null},primary:primaryTeamLabel(env),eligible:teams.filter(t=>t.mapped&&t.team).map(t=>({label:t.label,team:t.team,joined:joinedLabels.has(t.label)})),joined:joined.map(j=>({label:j.label,team:j.team,identityHome:j.identityHome,receive:j.receive||'poll',since:j.since})),unmapped:teams.filter(t=>!t.mapped).map(t=>t.label),at:new Date().toISOString()};}
 function readinessDetails(settings,{deployment,env=process.env}={}) {
   if(classicEnv(env)) return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:CLASSIC_REFUSAL}]}};
   const initialTeam=typeof settings.team==='string' && settings.team.trim()?settings.team.trim():undefined;
@@ -221,11 +222,13 @@ function readinessDetails(settings,{deployment,env=process.env}={}) {
   if(!candidate.root || !isAbsolute(candidate.root) || !existsSync(join(resolve(candidate.root),'.aw'))) problems.push({code:'needs-configuration',message:`no messaging root at ${candidate.root?resolve(candidate.root):process.cwd()}: run oats aweb setup there or set ${candidate.key}`});
   const unmapped=unmappedPrimary(env);if(unmapped&&team)warnings.push({code:'team-unmapped',message:`workspace label ${unmapped.label} is not mapped; using personal team ${team}`});
   if(!team) problems.push({code:'needs-configuration',message:'no team: set settings.oats.aweb.team or keep an active team at the aweb root'});
+  if(personalRootDeclared(settings)) warnings.push({code:'personal-root-deferred',message:PERSONAL_ROOT_DEFERRED_WARNING});
   return {team,candidate,warnings,result:checkProblems(problems) || {status:'ready',problems:[]}};
 }
 function readinessFromSettings(settings,options) {return readinessDetails(settings,options).result;}
 function runAw(argv,cwd,{unsetEnv=[],timeout=60000}={}) {
-  const env={...process.env};for(const name of unsetEnv) delete env[name];
+  // An inherited AWEB_IDENTITY_HOME is the caller's identity, never this check's.
+  const env={...process.env};delete env.AWEB_IDENTITY_HOME;for(const name of unsetEnv) delete env[name];
   try {return execFileSync(argv[0],argv.slice(1),{cwd,env,encoding:'utf8',stdio:['ignore','pipe','pipe'],timeout}).trim();}
   catch(e) {throw new Error(`${argv.slice(0,3).join(' ')} failed${e.status===undefined?'':` (exit ${e.status})`}`);}
 }
@@ -264,8 +267,16 @@ function workspaceReadinessPhase(req) {
       catch(e) {problems.push({code:'custody',message:e.message});}
     }
   }
-  const teams=process.env.OATS_TEAMS?teamsReadiness({home:ctx.home,team:details.team,env:process.env}):undefined;
-  for(const joined of teams?.joined||[]) if(joined.receive==='poll') warnings.push({code:'joined-team-poll-only',message:`joined team ${joined.label} receives by polling in oats.aweb 1.14; check aw --identity-home ${joined.identityHome} mail inbox/chat pending`});
+  const joined=joinedTeams(ctx.home);
+  if(joined.length) {
+    let status;try{status=JSON.parse(runAw(['aw','wake','status','--json'],ctx.home,{timeout:10000}));}catch{status=undefined;}
+    const why={'home-not-registered':'this home is not registered with the host wake broker','not-registered-with-broker':'its identity home is not registered with the host wake broker','wake-daemon-not-running':'the host wake daemon is not running','stream-not-admitted':'the host wake broker has not admitted its stream'};
+    for(const mode of joinedReceiveModes(status,{home:ctx.home,joined})) {
+      const row=joined.find(j=>j.label===mode.label);
+      if(mode.receive==='native') warnings.push({code:'joined-team-receive',message:`joined team ${mode.label} receives native through the host wake broker (stream ${mode.phase})`});
+      else warnings.push({code:'joined-team-poll-only',message:`joined team ${mode.label} receives by polling: ${status?why[mode.reason]||mode.reason:'aw wake status is unavailable'}${mode.detail?` (${mode.detail})`:''}; check aw --identity-home ${row.identityHome} mail inbox and chat pending at task boundaries`});
+    }
+  }
   const wake=String(req.settings.delivery||'channel')==='session'?wakeReadiness(ctx.home,{reliedOn:true}):{problems:[],warnings:[]};
   problems.push(...wake.problems);warnings.push(...wake.warnings);
   const result=checkProblems(problems) || {status:'ready',problems:[]};

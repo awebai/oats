@@ -37,7 +37,7 @@
  * identity joined moments before the failure must still be deletable.
  */
 import { execFileSync } from "node:child_process";
-import { chmodSync, cpSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute } from "node:path";
 import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/captured-execution.mjs";
@@ -45,17 +45,24 @@ import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/sess
 import { runCapturedNative } from "../lib/captured-native.mjs";
 import { CUSTODY_ATTACH_MIN, grantYamlCustodySocket, parseBindingJson } from "../lib/binding-wire.mjs";
 import { custodyPreflight } from "../lib/grant-custody.mjs";
+import { PERSONAL_ROOT_DEFERRED_WARNING, personalRootDeclared } from "../lib/personal-team.mjs";
+import { runtimeDeliveryFor, wakeRegistration } from "../lib/wake-receive.mjs";
 
 /** Run a command as ARGV — never a shell string. Team ids, aliases, instance
  * names and invite tokens all flow through here; quoting them correctly is a
  * property of one helper staying correct forever, while argv removes the class.
  * This hook is a REQUIRED spawn hook, so it gates every spawn, which is reason
  * enough not to rely on quoting. */
-const run = (argv, cwd, timeout = 45000, { secrets = [], secretSafe = false, env: extraEnv, unsetEnv = [] } = {}) => {
+const run = (argv, cwd, timeout = 45000, { secrets = [], secretSafe = false, env: extraEnv, unsetEnv = [], input } = {}) => {
   try {
-    const childEnv = extraEnv || unsetEnv.length ? { ...process.env, ...(extraEnv || {}) } : undefined;
-    for (const name of unsetEnv) if (childEnv) delete childEnv[name];
-    return execFileSync(argv[0], argv.slice(1), { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout, ...(childEnv ? { env: childEnv } : {}) }).trim();
+    // An inherited AWEB_IDENTITY_HOME (every aweb instance session carries its
+    // own) is never this hook's identity: aw would act as the CALLER — refusing
+    // cwd-rooted commands such as team invite/list, or deleting the caller's
+    // workspace when a lead retires a worker. Only an explicit env sets one.
+    const childEnv = { ...process.env, ...(extraEnv || {}) };
+    if (!extraEnv || !Object.hasOwn(extraEnv, "AWEB_IDENTITY_HOME")) delete childEnv.AWEB_IDENTITY_HOME;
+    for (const name of unsetEnv) delete childEnv[name];
+    return execFileSync(argv[0], argv.slice(1), { cwd, encoding: "utf8", stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"], ...(input === undefined ? {} : { input }), timeout, env: childEnv }).trim();
   } catch (e) {
     // execFileSync puts the WHOLE ARGV in e.message ("Command failed: aw team
     // join <token> …"). This hook's failures are reported by the kernel and land
@@ -118,7 +125,43 @@ function onPath(cmd) {
   }
   return false;
 }
-const out = (o, code = 0) => { process.stdout.write(JSON.stringify(o) + "\n"); process.exit(code); };
+// Kernel home operations (`oats operation run messaging:teams|join|leave`, run
+// with OATS_OPERATION and --json) read stdout as EXACTLY ONE JSON-v1 envelope
+// whose `ok` agrees with the exit status (oats bin/oats.mjs finishOperation):
+// {schemaVersion:1, ok:true, result} with exit 0, or {schemaVersion:1, ok:false,
+// error:{code, message}} with a nonzero exit. Under OATS_OPERATION every other
+// stdout write goes to stderr and every way out answers one envelope. Without
+// it (`oats aweb teams --json` from a shell) the bare document is unchanged.
+const OPERATION_COMMANDS = ["teams", "join", "leave"];
+const operation = process.env.OATS_OPERATION && OPERATION_COMMANDS.includes(process.env.OATS_EVENT || process.argv[2]) ? process.env.OATS_OPERATION : undefined;
+let operationAnswered = false;
+let lastStderr = "";
+const operationEnvelopeFailure = (code, message, details) => ({ schemaVersion: 1, ok: false, error: { code: code || "E_OPERATION_FAILED", message: String(message || "failed").slice(0, 1000), ...(details ? { details } : {}) } });
+function answerOperation(envelope, exitCode) {
+  operationAnswered = true;
+  writeSync(1, JSON.stringify(envelope) + "\n");
+  process.exit(exitCode);
+}
+const operationOk = (result) => answerOperation({ schemaVersion: 1, ok: true, result }, 0);
+const operationFail = (code, message, details) => answerOperation(operationEnvelopeFailure(code, message, details), 1);
+if (operation) {
+  const toStderr = process.stderr.write.bind(process.stderr);
+  process.stderr.write = (chunk, ...rest) => { if (String(chunk).trim()) lastStderr = String(chunk).trim(); return toStderr(chunk, ...rest); };
+  process.stdout.write = (chunk, ...rest) => process.stderr.write(chunk, ...rest);
+  // Any exit that did not answer (a refusal printed to stderr, an uncaught
+  // error) still answers one failure envelope, and never exits 0.
+  process.on("exit", (code) => {
+    if (operationAnswered) return;
+    operationAnswered = true;
+    writeSync(1, JSON.stringify(operationEnvelopeFailure("E_OPERATION_FAILED", lastStderr || `oats-aweb ${operation} exited ${code} without an answer`)) + "\n");
+    if (!code) process.exitCode = 1;
+  });
+}
+const out = (o, code = 0) => {
+  if (operation) operationFail("E_OPERATION_FAILED", String(o?.warning || o?.problems?.[0]?.message || "failed").replace(/^oats-aweb: /, ""));
+  process.stdout.write(JSON.stringify(o) + "\n");
+  process.exit(code);
+};
 const warn = (m) => out({ warning: `oats-aweb: ${String(m).slice(0, 300)}` });
 /** Fatal for a REQUIRED spawn hook: emit metadata for compensation, then exit
  * nonzero so the kernel rolls the spawn back. `meta` carries whatever external
@@ -735,14 +778,14 @@ const providerTeamsFile = () => join(providerStateDir(), "teams.json");
 function readProviderTeamsState(meta = {}) {
   try {
     const doc = JSON.parse(readFileSync(providerTeamsFile(), "utf8"));
-    return { joinedTeams: joinedTeamsOf(doc) };
-  } catch { return { joinedTeams: joinedTeamsOf(meta) }; }
+    return { joinedTeams: joinedTeamsOf(doc), wakeJoined: doc.wakeJoined === true };
+  } catch { return { joinedTeams: joinedTeamsOf(meta), wakeJoined: meta.wakeJoined === true }; }
 }
 function writeProviderTeamsState(meta) {
   mkdirSync(providerStateDir(), { recursive: true, mode: 0o700 });
-  writeFileSync(providerTeamsFile(), JSON.stringify({ joinedTeams: joinedTeamsOf(meta) }, null, 2) + "\n", { mode: 0o600 });
+  writeFileSync(providerTeamsFile(), JSON.stringify({ joinedTeams: joinedTeamsOf(meta), wakeJoined: meta.wakeJoined === true }, null, 2) + "\n", { mode: 0o600 });
 }
-function withProviderTeams(meta = {}) { return { ...meta, joinedTeams: readProviderTeamsState(meta).joinedTeams }; }
+function withProviderTeams(meta = {}) { const state = readProviderTeamsState(meta); return { ...meta, joinedTeams: state.joinedTeams, wakeJoined: state.wakeJoined }; }
 function identityHomeForLabel(label) { return join(home, `.aweb-identity-${label}`); }
 function awWithIdentity(identityHome, args) { return ["aw", "--identity-home", identityHome, ...args]; }
 function commandOutput(e) { return [e?.stdout, e?.stderr, e?.message].filter(Boolean).join("\n"); }
@@ -763,9 +806,9 @@ function teamsDocument(meta = readCapabilityMeta()) {
   const joined = joinedTeamsOf(meta);
   const joinedLabels = new Set(joined.map((j) => j.label));
   const primary = primaryTeamLabel();
-  const personalTeam = meta.team || meta.identity?.team || payloadTeam().team || null;
+  const personalTeam = meta.personal?.team || meta.team || meta.identity?.team || payloadTeam().team || null;
   return {
-    personal: { team: personalTeam },
+    personal: { team: personalTeam, ...(meta.personal?.source ? { source: meta.personal.source } : {}) },
     primary,
     eligible: teams.filter((t) => t.mapped && t.team).map((t) => ({ label: t.label, team: t.team, joined: joinedLabels.has(t.label) })),
     joined: joined.map((j) => ({ label: j.label, team: j.team, identityHome: j.identityHome, receive: j.receive || "poll", since: j.since })),
@@ -855,18 +898,106 @@ function runTeamsCommand(kind) {
   const actions = [];
   const warnings = [];
   if (kind === "join" || kind === "leave") {
-    const rows = validateJoinLabels(args.labels, { action: kind });
-    if (!rows.length) throw new Error("labels are required");
-    for (const row of rows) {
-      const result = kind === "join" ? mintJoinedTeam(row, meta) : leaveJoinedTeam(row.label, meta);
-      meta = result.meta;
-      actions.push({ action: kind, label: row.label, ...(result.released ? { released: result.released } : {}), ...(result.receipt ? { receipt: result.receipt } : {}), ...(result.warning ? { warning: result.warning } : {}) });
-      if (result.warning) warnings.push(`oats-aweb: ${result.warning}`);
+    if (identityMode === "global" || meta.identity?.mode === "global") {
+      const error = new Error('joined teams need local per-team identities; this home acts as a resident identity through a session grant (identity.mode "global")');
+      error.code = "E_TEAM_GLOBAL_MODE";
+      throw error;
     }
-    writeProviderTeamsState(meta);
+    const rows = validateJoinLabels(args.labels, { action: kind });
+    if (!rows.length) { const error = new Error("labels are required"); error.code = "E_BAD_ARGS"; throw error; }
+    // Record every completed label even when a later one fails: a confirmed
+    // leave deleted its home, and a join created a remote identity.
+    try {
+      for (const row of rows) {
+        const result = kind === "join" ? mintJoinedTeam(row, meta) : leaveJoinedTeam(row.label, meta);
+        meta = result.meta;
+        writeProviderTeamsState(meta);
+        actions.push({ action: kind, label: row.label, ...(result.released ? { released: result.released } : {}), ...(result.receipt ? { receipt: result.receipt } : {}), ...(result.warning ? { warning: result.warning } : {}) });
+        if (result.warning) warnings.push(`oats-aweb: ${result.warning}`);
+      }
+    } catch (e) {
+      // What already happened travels with the failure, so a caller can
+      // reconcile (the operation envelope carries it as error.details).
+      e.partial = { actions };
+      throw e;
+    } finally {
+      const synced = syncWakeReceive(meta);
+      meta = synced.meta;
+      for (const w of synced.warnings) warnings.push(`oats-aweb: ${w}`);
+      writeProviderTeamsState(meta);
+    }
   }
   const doc = { ...teamsDocument(meta), ...(actions.length ? { actions } : {}), ...(warnings.length ? { warnings } : {}) };
+  if (operation) operationOk(doc);
   outputTeamsDocument(doc, args.json);
+}
+
+/** The primary identity's team and the root that mints it, exactly as 1.14.2:
+ *  the config's `team:` (id, then name) wins, else the root's active team.
+ *  Per-workspace personal-team enrollment is deferred to 1.16, so this makes no
+ *  `aw auth` or `aw team ensure` call and a declared roots.personal is ignored
+ *  with a warning. Exits through fatal() on refusal. */
+function resolvePrimaryTeam() {
+  const warnings = [];
+  const root = awebRoot();
+  if (!root) fatal(`${awebRootProblem(rootSettingCandidate())}, so no identity could be minted and this instance would have no messaging`);
+  let team = payloadTeam().team;
+  const source = team ? "setting" : "root";
+  const unmappedPrimary = !team ? unmappedPrimaryRow() : undefined;
+  if (!team) team = JSON.parse(run(["aw", "team", "list", "--json"], root)).active_team;
+  if (unmappedPrimary && team) warnings.push(`oats-aweb: team-unmapped — workspace label ${unmappedPrimary.label} is not mapped; using personal team ${team}`);
+  if (!team) fatal(`cannot determine target team, so no identity could be minted — ${teamConfigRemedy()}, or activate a team at the aweb root`);
+  // A bare team name (no namespace) resolves against the root's memberships.
+  if (!team.includes(":")) {
+    const teams = JSON.parse(run(["aw", "team", "list", "--json"], root));
+    const match = teamIdsOf(teams).filter((tid) => String(tid).startsWith(`${team}:`));
+    if (match.length === 1) team = match[0];
+    else if (match.length > 1) fatal(`team name "${team}" is ambiguous at ${root}: ${match.join(", ")}, so no identity could be minted — ${teamConfigRemedy()}`);
+    else fatal(`no membership matching team "${team}" at ${root}, so no identity could be minted — join or create it first (aweb-team-membership skill), or ${teamConfigRemedy()}`);
+  }
+  if (personalRootDeclared(settings)) warnings.push(`oats-aweb: personal-root-deferred — ${PERSONAL_ROOT_DEFERRED_WARNING}`);
+  return { team, root, source, warnings };
+}
+
+/** The home's runtime. Spawn and launch run in the session's own env; a
+ *  join/leave may be run by another agent whose OATS_RUNTIME is its own. */
+function instanceRuntime(meta = {}) {
+  const own = ["spawn", "launch"].includes(event) ? process.env.OATS_RUNTIME : undefined;
+  if (own) return own;
+  if (meta.runtime) return meta.runtime;
+  try { const r = JSON.parse(readFileSync(join(home, "instance.json"), "utf8")).runtime; if (r) return r; } catch { /* fall through */ }
+  return process.env.OATS_RUNTIME || undefined;
+}
+function primaryIdentityHomeOf(meta = {}) {
+  return meta.identity?.mode === "global" && meta.identity?.grant?.home ? meta.identity.grant.home : join(home, ".aw");
+}
+/** Keep the host wake broker's registration for this home in step with the
+ *  joined teams, and record each joined team's receive mode. Never throws: a
+ *  refused registration leaves that team poll-only with a warning. */
+function syncWakeReceive(meta) {
+  // A joined home that no longer exists would make aw refuse the whole
+  // registration; it is stale provider state, not a receive identity.
+  const joined = joinedTeamsOf(meta).filter((j) => existsSync(j.identityHome));
+  const delivery = meta.delivery || deliveryMode;
+  const runtime = instanceRuntime(meta);
+  const primary = primaryIdentityHomeOf(meta);
+  const doc = wakeRegistration({ home, primaryIdentityHome: primary, delivery, runtime, joined, backend: process.env.OATS_BACKEND });
+  const warnings = [];
+  let receive = "poll", wakeJoined = false;
+  if (doc) {
+    try { run(["aw", "wake", "register", "--registration-json", "-"], home, 60000, { input: JSON.stringify(doc) }); receive = "native"; wakeJoined = true; }
+    catch (e) { warnings.push(`joined teams stay poll-only: aw wake register refused the multi-identity registration (${e.message || e})`); }
+  } else if (joined.length && !runtimeDeliveryFor({ delivery, runtime })) {
+    warnings.push(`joined teams receive by polling: runtime ${runtime || "unknown"} has no native presentation surface for the host wake broker`);
+  }
+  if (!wakeJoined && meta.wakeJoined) {
+    // Back to one identity: a session home keeps its legacy registration, a
+    // native home leaves the broker entirely.
+    if (delivery === "session") { try { wakeRegister(home, primary); } catch (e) { warnings.push(String(e.message || e)); } }
+    else if (!wakeDeregister(home)) warnings.push("aw wake deregister failed; the broker treats a stale registration as inactive on its own");
+  }
+  const next = { ...meta, ...(runtime ? { runtime } : {}), wakeJoined, joinedTeams: joinedTeamsOf(meta).map((j) => ({ ...j, receive: joined.includes(j) ? receive : "poll" })) };
+  return { meta: next, warnings };
 }
 
 if (event === "launch") {
@@ -875,16 +1006,24 @@ if (event === "launch") {
   const joined = joinedTeamsOf(oldMeta);
   if (joined.length && process.env.OATS_TEAMS_SOURCE === "live") {
     const eligible = new Set(eligibleTeams().map((t) => t.label));
-    let changed = false;
     const warnings = [];
     for (const row of joined) if (!eligible.has(row.label)) {
-      try { oldMeta = leaveJoinedTeam(row.label, oldMeta).meta; changed = true; }
+      try { oldMeta = leaveJoinedTeam(row.label, oldMeta).meta; }
       catch (e) { warnings.push(`joined team ${row.label} cleanup failed: ${e.message || e}`); }
     }
-    if (changed) writeProviderTeamsState(oldMeta);
-    out({ ...(changed ? { meta: oldMeta } : {}), ...retainedLaunchOutput(oldMeta), ...(warnings.length ? { warning: `oats-aweb: ${warnings.join(" | ")}` } : {}) });
+    // Re-register what remains: the runtime may differ from the last session.
+    const synced = syncWakeReceive(oldMeta);
+    oldMeta = synced.meta;
+    warnings.push(...synced.warnings);
+    writeProviderTeamsState(oldMeta);
+    out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta), ...(warnings.length ? { warning: `oats-aweb: ${warnings.join(" | ")}` } : {}) });
   }
-  if (joined.length && process.env.OATS_TEAMS_SOURCE !== "live") out({ ...retainedLaunchOutput(oldMeta), warning: "oats-aweb: teams-unverified — keeping joined team memberships because live eligible teams are unavailable" });
+  if (joined.length) {
+    const synced = syncWakeReceive(oldMeta);
+    oldMeta = synced.meta;
+    writeProviderTeamsState(oldMeta);
+    out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta), warning: ["oats-aweb: teams-unverified — keeping joined team memberships because live eligible teams are unavailable", ...synced.warnings.map((w) => `oats-aweb: ${w}`)].join(" | ") });
+  }
   out(retainedLaunchOutput(oldMeta));
 } else if (event === "spawn") {
   if (identityMode === "global" && identitySettings.source) fatal('identity.mode "global" cannot be combined with identity.source; use identity.mode "local" with identity.source for a retained seat, or identity.mode "global" with identity.resident for a resident grant');
@@ -895,32 +1034,16 @@ if (event === "launch") {
   try { joinRows = validateJoinLabels(requestedJoinLabels()); }
   catch (e) { fatal(e.message || e); }
   let minted;                 // external identity, once `aw team join` succeeds
-  const root = awebRoot();
-  if (!root) {
-    const candidate = rootSettingCandidate();
-    fatal(`${awebRootProblem(candidate)}, so no identity could be minted and this instance would have no messaging`);
-  }
+  let spawnMeta;              // with joined teams, once any is accepted
   try {
     // Team correctness: the config's `team:` block wins (id, then name), else the
     // root's active team. ALWAYS pass --team-id explicitly — never inherit whatever
     // team happens to be active at mint time — and verify the joined cert matches.
     // The instance name IS the discoverable alias (the team roster doubles as the
     // cross-machine instance directory).
-    const resolvedTeam = payloadTeam();
-    let team = resolvedTeam.team;
-    const warnings = [];
-    const unmappedPrimary = !team ? unmappedPrimaryRow() : undefined;
-    if (!team) team = JSON.parse(run(["aw", "team", "list", "--json"], root)).active_team;
-    if (unmappedPrimary && team) warnings.push(`oats-aweb: team-unmapped — workspace label ${unmappedPrimary.label} is not mapped; using personal team ${team}`);
-    if (!team) fatal(`cannot determine target team, so no identity could be minted — ${teamConfigRemedy()}, or activate a team at the aweb root`);
-    // A bare team name (no namespace) resolves against the root's memberships.
-    if (!team.includes(":")) {
-      const teams = JSON.parse(run(["aw", "team", "list", "--json"], root));
-      const match = teamIdsOf(teams).filter((tid) => String(tid).startsWith(`${team}:`));
-      if (match.length === 1) team = match[0];
-      else if (match.length > 1) fatal(`team name "${team}" is ambiguous at ${root}: ${match.join(", ")}, so no identity could be minted — ${teamConfigRemedy()}`);
-      else fatal(`no membership matching team "${team}" at ${root}, so no identity could be minted — join or create it first (aweb-team-membership skill), or ${teamConfigRemedy()}`);
-    }
+    const primary = resolvePrimaryTeam();
+    const { team, root } = primary;
+    const warnings = [...primary.warnings];
     // Both of these carry the invite token — one mints it, the other spends it —
     // so neither their output nor their diagnostics may reach a log.
     const inv = parseSecretJson(run(["aw", "team", "invite", "--team-id", team, "--json"], root, 45000, { secretSafe: true }), "aw team invite");
@@ -987,15 +1110,19 @@ if (event === "launch") {
     const deliveryBrief = deliveryMode === "session"
       ? ` Notification delivery: external (AWEB_DELIVERY=session): the host wake broker (aw wake) is registered for this home and nudges you when mail or chat arrives; the native aweb channel is not running. If you have waited long with nothing arriving, check \`aw mail inbox\` and \`aw chat pending\` yourself at task boundaries.`
       : "";
-    let meta = { team: joined.team_id, alias, delivery: deliveryMode, identity: identityMeta({ mode: "local", alias, team: joined.team_id }) };
+    let meta = { team: joined.team_id, alias, delivery: deliveryMode, personal: { team: joined.team_id, source: primary.source }, ...(process.env.OATS_RUNTIME ? { runtime: process.env.OATS_RUNTIME } : {}), identity: identityMeta({ mode: "local", alias, team: joined.team_id }) };
     const joinFloorProblem = joinRows.length ? joinedTeamsAwFloorProblem() : undefined;
     if (joinFloorProblem) warnings.push(`oats-aweb: ${joinFloorProblem}`);
-    else for (const row of joinRows) { const result = mintJoinedTeam(row, meta); meta = result.meta; if (result.warning) warnings.push(`oats-aweb: ${result.warning}`); }
+    else for (const row of joinRows) { const result = mintJoinedTeam(row, meta); meta = result.meta; spawnMeta = meta; writeProviderTeamsState(meta); if (result.warning) warnings.push(`oats-aweb: ${result.warning}`); }
+    if (joinedTeamsOf(meta).length) { const synced = syncWakeReceive(meta); meta = synced.meta; for (const w of synced.warnings) warnings.push(`oats-aweb: ${w}`); }
     writeProviderTeamsState(meta);
+    const personalBrief = meta.personal.source === "setting" ? "the team this deployment configured for you" : "your personal team (the messaging root's active team)";
+    const joinedNow = joinedTeamsOf(meta);
+    const joinedBrief = joinedNow.length ? ` Joined teams: ${joinedNow.map((j) => `${j.label} (${j.team}, receive ${j.receive}, send with \`aw --identity-home ${j.identityHome} mail|chat ...\`)`).join("; ")}.` : "";
     out({
       meta,
       env,
-      brief: `Comms: you have an aweb identity — alias "${alias}" on team ${joined.team_id}.${mismatch}${deliveryBrief} Joined team identities receive by polling in oats.aweb 1.14; run \`oats aweb teams --json\` for identity homes. Use \`aw mail\`/\`aw chat\` for messaging (see the aweb-messaging skill); coordination stays in your deployment's task layer.`,
+      brief: `Comms: you have an aweb identity — alias "${alias}" on team ${joined.team_id}, ${personalBrief}.${mismatch}${deliveryBrief}${joinedBrief} Load the oats-aweb skill before messaging: \`oats aweb teams --json\` shows your teams, \`oats aweb roster\` who you can reach. Coordination stays in your deployment's task layer.`,
       ...(launch ? { launch } : {}),
       ...(joined.team_id !== team ? { warning: `oats-aweb: team mismatch — joined ${joined.team_id}, expected ${team}` } : warnings.length ? { warning: warnings.join(" | ") } : channelWarning ? { warning: channelWarning } : {}),
     });
@@ -1003,7 +1130,7 @@ if (event === "launch") {
     // A join may already have created a REMOTE identity before the failure.
     // Hand it back as meta so the kernel's compensation can delete it — losing
     // it here would strand a roster entry no one owns.
-    fatal(`identity minting failed: ${e.message || e}`, minted);
+    fatal(`identity minting failed: ${e.message || e}`, minted && joinedTeamsOf(spawnMeta).length ? { ...minted, joinedTeams: joinedTeamsOf(spawnMeta) } : minted);
   }
 } else if (event === "retire") {
   let meta = withProviderTeams(JSON.parse(process.env.OATS_META || "{}"));
@@ -1017,6 +1144,10 @@ if (event === "launch") {
     try { meta = leaveJoinedTeam(joined.label, meta).meta; }
     catch (e) { retireWarnings.push(`joined team ${joined.label} cleanup failed: ${e.message || e}`); }
   }
+  // A native (channel/pi) home registered with the broker only for its joined
+  // teams; a session home was deregistered above.
+  if (meta.wakeJoined && meta.delivery !== "session") { if (!wakeDeregister(home)) retireWarnings.push("aw wake deregister failed; the broker treats a retired home as inactive on its own"); }
+  meta = { ...meta, wakeJoined: false };
   writeProviderTeamsState(meta);
   if (meta.retained) {
     if (meta.lock) { try { rmSync(meta.lock, { force: true }); } catch { /* the lock may already be gone */ } }
@@ -1065,15 +1196,35 @@ if (event === "launch") {
   }
 } else if (["teams", "join", "leave"].includes(event)) {
   try { runTeamsCommand(event); process.exit(0); }
-  catch (e) { console.error(e.code ? `${e.code}: ${e.message}` : `oats aweb ${event}: ${e.message || e}`); process.exit(1); }
+  catch (e) {
+    console.error(e.code ? `${e.code}: ${e.message}` : `oats aweb ${event}: ${e.message || e}`);
+    if (operation) operationFail(e.code, e.message || String(e), e.partial ? { ...e.partial, joined: teamsDocument(readCapabilityMeta()).joined } : undefined);
+    process.exit(1);
+  }
 } else if (event === "roster") {
   // Cross-machine directory: every OATS-spawned instance joins the team with
   // alias = instance name, so the team's member roster lists live instances
   // wherever they run (plus human members). Local liveness comes from
   // `oats status` in the deployment; this is the network view.
-  const root = awebRoot();
-  if (!root) { console.error(`oats aweb roster: ${awebRootProblem(rootSettingCandidate())}`); process.exit(1); }
-  const team = process.env.OATS_TEAM_ID || JSON.parse(run(["aw", "team", "list", "--json"], root)).active_team;
+  // Default: this instance's personal team, listed from the root that minted
+  // it. `--label <label>` lists an eligible (joined or not) workspace team from
+  // the host root that holds it.
+  const argv = process.argv.slice(3);
+  const labelAt = argv.indexOf("--label");
+  const label = labelAt >= 0 ? argv[labelAt + 1] : (argv.find((a) => a.startsWith("--label=")) || "").slice("--label=".length) || undefined;
+  const meta = readCapabilityMeta();
+  let team, root;
+  if (label) {
+    const row = eligibleTeams().find((t) => t.label === label);
+    if (!row) { console.error(`E_TEAM_NOT_ELIGIBLE: ${label} is not an eligible team label for this instance (eligible: ${eligibleTeams().map((t) => t.label).join(", ") || "(none)"})`); process.exit(1); }
+    team = row.team; root = awebRootForTeam(team);
+    if (!root) { console.error(`oats aweb roster: ${awebRootProblem(rootSettingCandidate(team))}, so the roster of ${label} cannot be read from this host`); process.exit(1); }
+  } else {
+    team = meta.personal?.team || meta.identity?.team || meta.team || process.env.OATS_TEAM_ID;
+    root = awebRoot();
+    if (!root) { console.error(`oats aweb roster: ${awebRootProblem(rootSettingCandidate())}`); process.exit(1); }
+    if (!team) team = JSON.parse(run(["aw", "team", "list", "--json"], root)).active_team;
+  }
   if (!team) { console.error(`oats aweb roster: cannot determine team (${teamConfigRemedy()}, or activate a team at the aweb root)`); process.exit(1); }
   const teamFlag = team.includes(":") ? ["--team-id", team] : ["--team", team];
   const r = JSON.parse(run(["aw", "id", "team", "members", ...teamFlag, "--json"], root, 60000));
@@ -1082,7 +1233,7 @@ if (event === "launch") {
   const members = r.members || [];
   if (!members.length) console.log("  (no member certificates visible from this workspace)");
   for (const m of members) console.log(`  ${m.alias || m.name || m.did || JSON.stringify(m)}`);
-  console.log("\nAliases minted by OATS are instance names; message one with `aw mail send --to <alias> --subject \"...\" --body \"...\"`.");
+  console.log(`\nAliases minted by OATS are instance names; message one with \`aw mail send --to <alias> --subject "..." --body-file <file>\`${label ? ` as this team: \`aw --identity-home <identityHome> mail send ...\` (identityHome from \`oats aweb teams --json\`)` : ""}.`);
   process.exit(0);
 } else if (event === "setup") {
   // Guided onboarding — idempotent, prints what it finds and can run one
