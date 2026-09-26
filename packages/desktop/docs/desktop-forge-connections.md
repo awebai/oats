@@ -198,3 +198,20 @@ LOCAL instance's branch, for the roster:
   are cached for 60 s. A remote workspace is `unsupported-remote-operation`.
 - The app proxy classifies it as a forge route (frame guard, epoch header,
   50 s) and pins the verified workspace.
+
+## W6 pull-request facts
+
+The single-PR read (`/api/instance-forge`) carries three more facts. Each is
+null when gh does not report it, never computed or guessed:
+
+- `closingIssues: [{ number, url }] | null`: gh's `closingIssuesReferences`,
+  as https issue pages on the same forge (at most 100). Anything else refuses
+  the PR like any other malformed field.
+- `unresolvedThreads: number | null`: `gh pr view` has no review threads, so
+  one `gh api graphql` read (the host's own auth; typed `-F` variables; the
+  same cap and deadline) counts the unresolved ones. More than 100 threads, or
+  anything unreadable, is `null`. The roster read never makes this call.
+- Each `checks[]` row has `startedAt` and `completedAt` as gh reports them
+  (ISO strings, or null; gh's zero time `0001-…` is null).
+
+The renderer's re-validation (`projectedPullRequest`) round-trips all three.

@@ -130,7 +130,23 @@ export async function ghLogin(cli, host, expected, run, timeout = 10_000) {
   const login = result.stdout.trim();
   return loginName(login) && login === expected ? { ok: true, login } : fail('E_CONNECTION_CHANGED');
 }
-export async function ghPullRequest(cli, { host, path, branch }, run, timeout = 10_000) {
+/* W6: unresolved review threads. `gh pr view` has none, so one GraphQL read (the host's own gh
+   auth, typed -F variables, no token anywhere). More than 100 threads, or anything unreadable,
+   is null: a count is never partial or guessed. */
+export const REVIEW_THREADS_QUERY = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){totalCount pageInfo{hasNextPage} nodes{isResolved}}}}}';
+export async function ghUnresolvedThreads(cli, { host, path, number }, run, timeout = 10_000) {
+  if (!hostName(host) || !repoPath(path) || !Number.isSafeInteger(number) || number <= 0) return null;
+  const [owner, name] = path.split('/');
+  const result = await run(cli.bin, ['api', 'graphql', '--hostname', host, '-f', `query=${REVIEW_THREADS_QUERY}`,
+    '-F', `owner=${owner}`, '-F', `name=${name}`, '-F', `number=${number}`], { timeout, limit: 256 * 1024 });
+  if (!result.ok || result.exitCode !== 0) return null;
+  let raw; try { raw = JSON.parse(result.stdout); } catch { return null; }
+  const threads = raw?.data?.repository?.pullRequest?.reviewThreads;
+  if (!threads || !Array.isArray(threads.nodes) || threads.pageInfo?.hasNextPage !== false || threads.nodes.length > 100
+    || threads.totalCount !== threads.nodes.length || threads.nodes.some(n => typeof n?.isResolved !== 'boolean')) return null;
+  return threads.nodes.filter(n => !n.isResolved).length;
+}
+export async function ghPullRequest(cli, { host, path, branch }, run, timeout = 10_000, { threads = false } = {}) {
   if (!hostName(host) || !repoPath(path) || !branchName(branch)) return fail('E_GH_PROTOCOL');
   const result = await run(cli.bin, ['pr', 'view', '--repo', `${host}/${path}`, '--json', PR_FIELDS, '--', branch], { timeout });
   if (!result.ok) return result;
@@ -141,6 +157,7 @@ export async function ghPullRequest(cli, { host, path, branch }, run, timeout = 
     return fail('E_GH_FAILED');
   }
   let raw; try { raw = JSON.parse(result.stdout); } catch { return fail('E_GH_PROTOCOL'); }
-  const data = pullRequest(raw, { host, path, branch });
+  const unresolvedThreads = threads && Number.isSafeInteger(raw?.number) ? await ghUnresolvedThreads(cli, { host, path, number: raw.number }, run, timeout) : null;
+  const data = pullRequest({ ...raw, unresolvedThreads }, { host, path, branch });
   return data ? { ok: true, data } : fail('E_GH_PROTOCOL');
 }
