@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { checkOkfMirror } from "./check-okf-mirror.mjs";
+import { CAPABILITY_PATHS, checkOkfMirror } from "./check-okf-mirror.mjs";
 import { checkKnowledgeTheoryPackage, treeFiles } from "./check-knowledge-theory-package.mjs";
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -64,7 +64,7 @@ export function checkKernelPackFiles(pack, root = ROOT) {
     "capabilities/oats-authoring/oats.json", "docs/capabilities.md", "docs/capability-manifest.schema.json",
     "package-catalog.json", "package.json", "packages/record/bin/capture.mjs", "packages/record/bin/recall.mjs",
     ...canonicalFiles,
-    ...inventory.entries.filter((entry) => entry.type === "file").map((entry) => `capabilities/oats-okf/${entry.path}`),
+    ...inventory.entries.filter((entry) => entry.type === "file").map((entry) => entry.path),
   ]);
   for (const path of files) {
     if (path === "oats-package" || path.startsWith("oats-package/")) {
@@ -76,22 +76,23 @@ export function checkKernelPackFiles(pack, root = ROOT) {
     }
   }
   const expected = inventory.entries.filter((entry) => entry.type === "file");
-  assert.deepEqual([...files].filter((path) => path.startsWith("capabilities/oats-okf/")).sort(),
-    expected.map((entry) => `capabilities/oats-okf/${entry.path}`).sort(),
+  assert.deepEqual([...files].filter((path) => CAPABILITY_PATHS.some((cap) => path.startsWith(`${cap}/`))).sort(),
+    expected.map((entry) => entry.path).sort(),
     "npm OKF regular file-set drift; source symlinks must be omitted, never synthesized");
   const sizes = new Map(pack.files.map((entry) => [entry.path, entry.size]));
-  for (const entry of expected) assert.equal(sizes.get(`capabilities/oats-okf/${entry.path}`), entry.size, `npm OKF size drift: ${entry.path}`);
+  for (const entry of expected) assert.equal(sizes.get(entry.path), entry.size, `npm OKF size drift: ${entry.path}`);
   return files;
 }
 
 // npm deliberately drops the canonical source symlink. Compare its complete
 // regular-file projection to the verified standalone inventory, WITHOUT calling
 // that projection a self-contained distribution or manufacturing the alias.
-export function checkNpmOkfPayload(capRoot, inventory = checkOkfMirror()) {
+// `root` holds the packed capabilities/oats-okf* directories (the unpacked npm package root).
+export function checkNpmOkfPayload(root, inventory = checkOkfMirror()) {
   const expected = inventory.entries.filter((entry) => entry.type === "file");
-  assert.deepEqual(treeFiles(capRoot), expected.map((entry) => entry.path).sort(), "npm OKF regular file-set drift");
+  assert.deepEqual(CAPABILITY_PATHS.flatMap((cap) => treeFiles(join(root, cap)).map((file) => `${cap}/${file}`)).sort(), expected.map((entry) => entry.path).sort(), "npm OKF regular file-set drift");
   for (const entry of expected) {
-    const path = join(capRoot, entry.path);
+    const path = join(root, entry.path);
     assert.ok(lstatSync(path).isFile(), `npm OKF requires regular bytes: ${entry.path}`);
     const bytes = readFileSync(path);
     assert.equal(bytes.length, entry.size, `npm OKF size drift: ${entry.path}`);
@@ -109,8 +110,8 @@ function checkPackedOkfBytes(root) {
     const [pack] = JSON.parse(execFileSync("npm", ["pack", "--json", "--pack-destination", scratch], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }));
     checkKernelPackFiles(pack, root);
     const unpacked = join(scratch, "unpacked"); mkdirSync(unpacked);
-    execFileSync("tar", ["-xzf", join(scratch, pack.filename), "-C", unpacked, "package/capabilities/oats-okf"], { stdio: "pipe" });
-    return checkNpmOkfPayload(join(unpacked, "package/capabilities/oats-okf"), inventory);
+    execFileSync("tar", ["-xzf", join(scratch, pack.filename), "-C", unpacked, ...CAPABILITY_PATHS.map((cap) => `package/${cap}`)], { stdio: "pipe" });
+    return checkNpmOkfPayload(join(unpacked, "package"), inventory);
   } finally { rmSync(scratch, { recursive: true, force: true }); }
 }
 

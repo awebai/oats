@@ -83,4 +83,4 @@ answers so a reader can see which accepted state you saw.
 | `E_PATH` | escapes the base root, filesystem path, URL, hidden path, symlink or submodule |
 | `E_RECOVERY` | a directory-base publication is pending; retry after it completes |
 | `E_BASE_UNAVAILABLE` | the base can't be read and nothing is cached; report it |
-| `E_REMOVED` | `refresh` no longer exists; use `index` / `cat` |
+| `E_REMOVED` | `refresh` and `read` no longer exist; use `index` / `cat` |

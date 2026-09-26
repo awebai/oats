@@ -8,7 +8,7 @@ import {
   ROOT, checkJavaScript, checkKernelPackFiles, checkNpmOkfPayload, checkReleaseVersions, shippedJavaScript,
 } from "../scripts/check-package-dry-runs.mjs";
 import { CAPABILITY_PATH, EXPERT_PATH, checkKnowledgeTheoryPackage, treeFiles } from "../scripts/check-knowledge-theory-package.mjs";
-import { checkOkfMirror } from "../scripts/check-okf-mirror.mjs";
+import { CAPABILITY_PATHS, checkOkfMirror } from "../scripts/check-okf-mirror.mjs";
 import { acceptProbe } from "../packages/desktop/cli-locator.mjs";
 
 function scratch(t) {
@@ -43,9 +43,11 @@ test("release alignment rejects stale lock metadata even when all three manifest
 });
 
 test("v2 preparation aligns standalone OKF and Git-only theory catalog pins", () => {
-  assert.equal(json("capabilities/oats-okf/oats.json").version, "3.0.0");
-  assert.equal(json("capabilities/oats-okf/oats.json").compatibility.oats, ">=0.26.0", "OKF 3.0.0 declares the workspace-model floor (v2 compatibility enforcement, 0.26.0)");
-  assert.equal(json("package-catalog.json").packages["oats.okf"].ref, "v3.0.0");
+  for (const cap of CAPABILITY_PATHS) {
+    assert.equal(json(`${cap}/oats.json`).version, "4.0.0");
+    assert.equal(json(`${cap}/oats.json`).compatibility.oats, ">=0.29.0", `${cap}: OKF 4.0.0 declares the 0.29.0 floor (package souls with triggers, the harvester spawn by --name)`);
+  }
+  assert.equal(json("package-catalog.json").packages["oats.okf"].ref, "v4.0.0");
   const catalog = json("package-catalog.json");
   assert.equal(catalog.packages["oats.knowledge-theory"], undefined, "the theory package identity was renamed to oats.framework");
   const framework = catalog.packages["oats.framework"];
@@ -100,56 +102,34 @@ test("actual npm OKF regular bytes match inventory; symlink omission is explicit
   const inventory = checkOkfMirror();
   const [pack] = JSON.parse(execFileSync("npm", ["pack", "--json", "--pack-destination", root], { cwd: ROOT, encoding: "utf8" }));
   checkKernelPackFiles(pack);
-  execFileSync("tar", ["-xzf", join(root, pack.filename), "-C", root, "package/capabilities/oats-okf"]);
-  const cap = join(root, "package/capabilities/oats-okf");
-  const result = checkNpmOkfPayload(cap, inventory);
+  execFileSync("tar", ["-xzf", join(root, pack.filename), "-C", root, ...CAPABILITY_PATHS.map((c) => `package/${c}`)]);
+  const pkg = join(root, "package"), cap = join(pkg, "capabilities/oats-okf");
+  const result = checkNpmOkfPayload(pkg, inventory);
   assert.equal(result.selfContainedGitPayload, false);
   assert.deepEqual(result.omittedSourceSymlinks, [], "3.0.0 ships no symlink for npm to omit");
-  assert.ok(!existsSync(join(cap, "agents/memory-harvest/CLAUDE.md")), "no alias, and none repaired");
+  assert.ok(!existsSync(join(cap, "agents")), "okf 4.0.0 has no capability agents, and nothing is synthesized");
   assert.equal(result.regularFiles, inventory.entries.filter((entry) => entry.type === "file").length);
   const file = join(cap, "lib/inspection.mjs");
   const original = readFileSync(file);
   const corrupt = Buffer.from(original); corrupt[0] ^= 1;
   writeFileSync(file, corrupt);
-  assert.throws(() => checkNpmOkfPayload(cap, inventory), /byte drift/, "equal-size corruption must fail actual-byte verification");
+  assert.throws(() => checkNpmOkfPayload(pkg, inventory), /byte drift/, "equal-size corruption must fail actual-byte verification");
   writeFileSync(file, original);
   rmSync(file);
-  assert.throws(() => checkNpmOkfPayload(cap, inventory), /file-set drift/);
+  assert.throws(() => checkNpmOkfPayload(pkg, inventory), /file-set drift/);
   writeFileSync(file, original);
   const extra = join(cap, "obsolete-v1.mjs"); writeFileSync(extra, "obsolete");
-  assert.throws(() => checkNpmOkfPayload(cap, inventory), /file-set drift/);
+  assert.throws(() => checkNpmOkfPayload(pkg, inventory), /file-set drift/);
   rmSync(extra);
-  // Regular compatibility copies are no more acceptable than unexpected links.
-  const alias = join(cap, "agents/memory-harvest/CLAUDE.md");
-  writeFileSync(alias, readFileSync(join(cap, "agents/memory-harvest/AGENTS.md")));
-  assert.throws(() => checkNpmOkfPayload(cap, inventory), /file-set drift/);
+  // A file in another exported capability counts too; regular copies are no more acceptable than links.
+  const alias = join(pkg, "capabilities/oats-okf-harvest/CLAUDE.md");
+  writeFileSync(alias, "stray\n");
+  assert.throws(() => checkNpmOkfPayload(pkg, inventory), /file-set drift/);
   rmSync(alias);
-  assert.deepEqual(checkNpmOkfPayload(cap, inventory), result);
+  assert.deepEqual(checkNpmOkfPayload(pkg, inventory), result);
 });
 
-test("every framework-shipped capability with an inject declares a helperInjection policy", () => {
-  // Second-operator finding (2026-09-21): oats.okf adopted the helper-injection contract while its
-  // siblings oats.core and oats.aweb shipped an inject without a policy, so no edition's harvest
-  // helper could compose and no resolution could publish. The framework's own packages must pass
-  // the contract the kernel imposes; this guards every bundled and exported capability.
-  const manifests = execFileSync("git", ["ls-files", "capabilities/*/oats.json", "oats-package/capabilities/*/oats.json"], { cwd: ROOT, encoding: "utf8" })
-    .split("\n").filter(Boolean);
-  assert.ok(manifests.length >= 5, `expected framework capability manifests, found ${manifests.length}`);
-  // Bundled mirrors of separately-released tasks providers (jira, linear, review) are fixed in their
-  // own repositories; no framework soul edition requires them today, so they cannot block an edition.
-  // Remove an entry here the moment its upstream declares the policy — never add one.
-  const PENDING_UPSTREAM = new Set(["oats.jira", "oats.linear", "oats.review"]);
-  let checked = 0;
-  for (const rel of manifests) {
-    const m = json(rel);
-    if (m.inject === undefined) continue;
-    if (PENDING_UPSTREAM.has(m.capability)) {
-      assert.equal(m.helperInjection, undefined, `${m.capability} now declares helperInjection upstream: drop it from PENDING_UPSTREAM`);
-      continue;
-    }
-    checked += 1;
-    assert.ok(m.helperInjection && m.helperInjection.version === 1 && ["inherit", "omit", "file"].includes(m.helperInjection.mode),
-      `${rel} (${m.capability}) ships inject ${m.inject} without a helperInjection policy`);
-  }
-  assert.ok(checked >= 3, "oats.core, oats.okf and oats.aweb must be checked");
-});
+// Retired 0.29.0: "every framework-shipped capability with an inject declares a helperInjection policy".
+// A manifest's helperInjection has been IGNORED since 0.26 (docs/capabilities.md: it served the captured
+// path 0.26 removed). okf 4.0.0's new capabilities (oats.okf-harvest, oats.okf-maintenance) ship injects
+// without one, legitimately: the guard enforced a contract with no effect.

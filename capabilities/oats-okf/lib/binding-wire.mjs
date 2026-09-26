@@ -115,7 +115,10 @@ function contract(value,{required=false}={}) {
   return value;
 }
 function runtimeSettings(settings) {
-  keys(settings,['bindings-file','state-dir','harvest-runtime','harvest-model'],[], 'OKF settings');
+  // `harvest` (on|off) is read by the lifecycle hooks, not bound: accept it here
+  // so a deployment can set it, and refuse any other value.
+  keys(settings,['bindings-file','state-dir','harvest-runtime','harvest-model','harvest'],[], 'OKF settings');
+  if(settings.harvest!==undefined && !['on','off'].includes(settings.harvest)) wireError('invalid-binding');
   const descriptorFile=settings['bindings-file'],stateDir=settings['state-dir'],runtime=settings['harvest-runtime'],model=settings['harvest-model'] ?? null;
   for(const name of ['bindings-file','state-dir']) {
     if(settings[name]===undefined) settingError(`${name}:missing`);

@@ -24,7 +24,7 @@ test("acceptProbe: exact v1 payload accepted; every deviation rejected with a re
     [{ ...PROBE(), desktopApi: 2 }, /desktopApi 2/],
     [{ ...PROBE(), desktopApi: undefined }, /desktopApi missing/],
     [PROBE("0.25.7"), /outside/],
-    [PROBE("0.29.0"), /outside/],
+    [PROBE("0.30.0"), /outside/],
     [PROBE("1.0.0"), /outside/],
     [PROBE("not-a-version"), /unparsable/],
   ];
@@ -72,29 +72,30 @@ test("the accepted band admits the kernel version this Desktop ships with", () =
 
 test("the human-readable band is derived from the enforced numbers", () => {
   assert.equal(ACCEPT_RANGE_TEXT, `>=${ACCEPT_RANGE.min.join(".")} <${ACCEPT_RANGE.maxExclusive.join(".")}`);
-  assert.match(acceptProbe(PROBE("0.29.0")).reason, new RegExp(ACCEPT_RANGE_TEXT.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(acceptProbe(PROBE("0.30.0")).reason, new RegExp(ACCEPT_RANGE_TEXT.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
 // F2b band contract, spelled with LITERALS on purpose. The tests above
 // derive from ACCEPT_RANGE (so they follow any widening); these pin the exact
 // edges this release promises, so a stray re-narrowing — or a widening past
 // the v1 surface without a deliberate DESKTOP_API decision — fails here.
-test("band edges: 0.25.8 through 0.28.x are accepted; 0.25.7 and 0.29.0 are not (the feature fences are the real gate)", () => {
+test("band edges: 0.25.8 through 0.29.x are accepted; 0.25.7 and 0.30.0 are not (the feature fences are the real gate)", () => {
   // Floor 0.25.8, not 0.26.0: main's kernel reports 0.25.8 until 0.26.0 is
   // tagged. packages-no-approval (workspace + deployment fences) decides.
-  // Ceiling 0.29.0: 0.27 is the harness rename (feature `harness`); 0.28 adds package souls + triggers (additive).
-  assert.deepEqual(ACCEPT_RANGE, { min: [0, 25, 8], maxExclusive: [0, 29, 0] });
-  assert.equal(ACCEPT_RANGE_TEXT, ">=0.25.8 <0.29.0");
+  // Ceiling 0.30.0: 0.27 is the harness rename (feature `harness`); 0.28 adds package souls + triggers; 0.29 adds
+  // workspace automations and desktop facts (all additive, feature-gated).
+  assert.deepEqual(ACCEPT_RANGE, { min: [0, 25, 8], maxExclusive: [0, 30, 0] });
+  assert.equal(ACCEPT_RANGE_TEXT, ">=0.25.8 <0.30.0");
   assert.equal(DESKTOP_API, 1, "Desktop API stays v1 across the v0.25.0 kernel bump (workspace model)");
   // inside — including both edges of the newly admitted minor
-  for (const v of ["0.25.8", "0.25.9", "0.25.99", "0.25.8+build.7", "0.26.0", "0.26.1", "0.26.99", "0.27.0", "0.27.99", "0.28.0", "0.28.99"]) {
+  for (const v of ["0.25.8", "0.25.9", "0.25.99", "0.25.8+build.7", "0.26.0", "0.26.1", "0.26.99", "0.27.0", "0.27.99", "0.28.0", "0.28.99", "0.29.0", "0.29.99"]) {
     assert.equal(acceptProbe(PROBE(v)).ok, true, `${v} must be accepted`);
   }
   // outside — the exclusive ceiling and everything above it
-  for (const v of ["0.22.0", "0.25.0", "0.25.7", "0.29.0", "0.29.1", "1.0.0"]) {
+  for (const v of ["0.22.0", "0.25.0", "0.25.7", "0.30.0", "0.30.1", "1.0.0"]) {
     const r = acceptProbe(PROBE(v));
     assert.equal(r.ok, false, `${v} must be rejected`);
-    assert.match(r.reason, /outside >=0\.25\.8 <0\.29\.0/, v);
+    assert.match(r.reason, /outside >=0\.25\.8 <0\.30\.0/, v);
   }
   // a PRERELEASE of the new minor is still not a released kernel
   const pre = acceptProbe(PROBE("0.26.0-rc.1"));

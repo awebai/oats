@@ -13,7 +13,7 @@
 // Every candidate is canonicalized to an absolute executable and accepted
 // ONLY if executable and `<bin> version --json` returns the v1 probe:
 //   {"schemaVersion":1,"name":"@awebai/oats","version":"0.24.x","desktopApi":1}
-// Desktop accepts desktopApi === 1 and semver >=0.25.8 <0.29.0 (the band is
+// Desktop accepts desktopApi === 1 and semver >=0.25.8 <0.30.0 (the band is
 // spelled ONCE, in ACCEPT_RANGE below — this line only paraphrases it).
 // API version — not source adjacency — is authoritative.
 //
@@ -50,7 +50,7 @@ export const DESKTOP_API = 1;
 // it. The REAL gate is the positive `packages-no-approval` feature fence
 // (workspace-cli WORKSPACE_FEATURES, deployment-contract DEPLOYMENT_FEATURES):
 // released 0.25.x kernels lack it and get the "update OATS" state.
-export const ACCEPT_RANGE = { min: [0, 25, 8], maxExclusive: [0, 29, 0] };
+export const ACCEPT_RANGE = { min: [0, 25, 8], maxExclusive: [0, 30, 0] };
 /** The band as humans read it — derived, never hand-spelled, so the probe
  * rejection reason, the backend's /api status and the degradation card can
  * never disagree with the numbers actually enforced above. */

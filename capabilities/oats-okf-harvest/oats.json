@@ -1,0 +1,26 @@
+{
+  "capability": "oats.okf-harvest",
+  "command": "okf-harvest",
+  "version": "4.0.0",
+  "compatibility": {
+    "oats": ">=0.29.0"
+  },
+  "description": "The OKF knowledge harvester: judges one source instance's captured notes and session transcript by the OKF promotion doctrine, opens the labelled harvest PR with its provenance block, and stays in the okf team until the PR is merged or closed.",
+  "requires": [
+    { "command": "gh", "why": "read the harvest PR's state (harvest-status)" }
+  ],
+  "settings": {
+    "harvester-max-age": {
+      "default": "7d",
+      "description": "How long a harvester stays alive waiting for its PR (a duration like 7d, 48h or 90m, or seconds). At max-age it tells the okf team and retires; it never closes the PR."
+    }
+  },
+  "skills": [
+    "skills"
+  ],
+  "inject": "injects/harvester.md",
+  "commands": {
+    "complete": "bin/okf-harvest.mjs complete",
+    "harvest-status": "bin/okf-harvest.mjs harvest-status"
+  }
+}

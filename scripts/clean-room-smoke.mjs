@@ -19,7 +19,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 // all post-sync reads use installed/materialized bytes after their deletion.
 import { CAPABILITY_PATH, EXPERT_PATH, SKILL_PATH, checkKnowledgeTheoryPackage, checkReferenceClosure, treeFiles } from "./check-knowledge-theory-package.mjs";
 import { checkJavaScript, checkKernelPackFiles, checkNpmOkfPayload } from "./check-package-dry-runs.mjs";
-import { checkOkfMirror, checkOkfPayload, materializeOkfGitPayload, payloadEntries } from "./check-okf-mirror.mjs";
+import { CAPABILITY_PATHS, capabilityEntries, checkOkfMirror, checkOkfPayload, materializeOkfGitPayload, payloadEntries } from "./check-okf-mirror.mjs";
 
 const started = Date.now();
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -121,26 +121,25 @@ try {
   // distribution. Materialize the actual verified source payload instead;
   // never wrap an npm copy, invent wrapper bytes or synthesize CLAUDE.md.
   const inventory = checkOkfMirror({ repoRoot: repo });
-  const npmOkf = checkNpmOkfPayload(join(kernelRoot, "capabilities/oats-okf"), inventory);
+  const npmOkf = checkNpmOkfPayload(kernelRoot, inventory);
   const officialRepo = join(room, "official", "oats-okf");
   const payload = join(officialRepo, "oats-package");
   materializeOkfGitPayload(payload, { repoRoot: repo });
-  checkOkfPayload(join(payload, "capabilities/oats-okf"), inventory);
+  checkOkfPayload(payload, inventory);
   assert.equal(readFileSync(join(payload, "oats-package.json"), "utf8"), inventory.distributionManifestText);
   assert.equal(readFileSync(join(payload, "LICENSE"), "utf8"), inventory.distributionLicenseText);
   const packedCatalog = readJson(join(kernelRoot, "package-catalog.json"));
   const pinnedRef = packedCatalog.packages?.["oats.okf"]?.ref;
   const bundledVersion = readJson(join(kernelRoot, "capabilities/oats-okf/oats.json")).version;
   assert.equal(pinnedRef, `v${bundledVersion}`, "npm mirror and official catalog version drift");
-  assert.equal(bundledVersion, "3.0.0");
+  assert.equal(bundledVersion, "4.0.0");
   const okfCommit = gitRepo(officialRepo, "okf");
   const okfTag = `v${bundledVersion}`;
   run("git", ["-C", officialRepo, "tag", okfTag]);
-  // okf 3.0.0 removed the memory-harvest CLAUDE.md -> AGENTS.md symlink (npm drops symlinks; the
-  // kernel composes each home's CLAUDE.md): absent from the release commit, and none in the packed tree.
-  const trackedAlias = "oats-package/capabilities/oats-okf/agents/memory-harvest/CLAUDE.md";
-  assert.equal(run("git", ["-C", officialRepo, "ls-tree", okfCommit, "--", trackedAlias], { capture: true }).trim(), "", "okf 3.0.0 ships no memory-harvest CLAUDE.md");
-  assert.deepEqual(payloadEntries(join(kernelRoot, "capabilities/oats-okf")).filter((e) => e.type === "symlink"), [], "the packed oats-okf tree has no symlinks");
+  // okf 4.0.0 has no capability agents (the harvester is the package soul oats.okf/knowledge-harvester)
+  // and ships no symlinks: none in the release commit, none in the packed trees.
+  assert.equal(run("git", ["-C", officialRepo, "ls-tree", okfCommit, "--", "oats-package/capabilities/oats-okf/agents"], { capture: true }).trim(), "", "okf 4.0.0 ships no capability agents");
+  for (const cap of CAPABILITY_PATHS) assert.deepEqual(payloadEntries(join(kernelRoot, cap)).filter((e) => e.type === "symlink"), [], `the packed ${cap} tree has no symlinks`);
   assert.deepEqual(npmOkf.omittedSourceSymlinks, []);
 
   // Optional theory uses a DIFFERENT release channel: the exact self-contained
@@ -198,7 +197,7 @@ try {
     "schemaVersion: 2", "name: smoke",
     "members:", `  - ${hostRef}`,
     "packages:", `  oats.okf: ${okfTag}`, `  oats.framework: ${theoryTag}`,
-    "teams:", "  global: { description: all }",
+    "teams:", "  global: { description: all }", "  okf: { description: knowledge operations }",
     "defaults:", "  knowledge:", "    oats.okf: { from: package }",
     "",
   ].join("\n"));
@@ -222,7 +221,7 @@ try {
   write(bindings, JSON.stringify({ version: 1, stateDir: join(room, "okf-state"), bases: {
     project: { id: "smoke-base", kind: "directory", path: accepted },
   } }));
-  write(join(deployment, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${hostRef}\nsettings:\n  oats.okf:\n    bindings-file: ${bindings}\n`);
+  write(join(deployment, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${hostRef}\nsettings:\n  oats.okf:\n    bindings-file: ${bindings}\n    harvest: "on"\n`);
 
   const cliEnv = { ...env, PI_AGENTS_ROOT: agentsRoot };
   const cli = (args, { cwd = deployment, identity = false, env: extra = {}, expectExit = 0 } = {}) => {
@@ -325,20 +324,20 @@ try {
   assert.equal(okfRow.settings?.["bindings-file"], bindings, "effective settings come from oats-local.yaml");
   const okfModule = join(probeHome, ".oats/modules/oats.okf");
   assert.equal(readJson(join(okfModule, "oats.json")).hooks.spawn.required, true);
-  assert.ok(!existsSync(join(okfModule, "agents/memory-harvest/CLAUDE.md")), "okf 3.0.0 ships no alias, and none is synthesized");
+  assert.ok(!existsSync(join(okfModule, "agents")), "okf 4.0.0 ships no capability agents");
   // The materialized module is the ENTIRE verified inventory: nothing added,
   // nothing dropped (3.0.0's has no symlink).
-  const checkOkfModule = () => assert.deepEqual(payloadEntries(okfModule), inventory.entries, "materialized package module must match the OKF source inventory exactly");
+  const checkOkfModule = () => assert.deepEqual(payloadEntries(okfModule), capabilityEntries(inventory), "materialized package module must match the OKF source inventory exactly");
   checkOkfModule();
   // Skills are materialized per module (<home>/.agents/skills/<module>/<skill>)
   // next to the soul's own skills; the harness discovers them from the home.
   const skillsRoot = join(probeHome, ".agents", "skills");
   const skills = readdirSync(skillsRoot).sort();
   assert.deepEqual(skills, ["oats.okf", "private"], "module skill dirs plus the soul's private skill");
-  assert.deepEqual(readdirSync(join(skillsRoot, "oats.okf")).sort(), ["memory-harvest", "okf", "okf-consultation"], "oats.okf → okf + okf-consultation (3.0.0) + memory-harvest");
-  assert.ok(existsSync(join(skillsRoot, "oats.okf/okf/SKILL.md")) && existsSync(join(skillsRoot, "private/SKILL.md")));
+  assert.deepEqual(readdirSync(join(skillsRoot, "oats.okf")).sort(), ["okf-consultation", "okf-instance-knowledge"], "oats.okf 4.0.0 gives a working soul two skills");
+  assert.ok(existsSync(join(skillsRoot, "oats.okf/okf-consultation/SKILL.md")) && existsSync(join(skillsRoot, "private/SKILL.md")));
   // The soul's own skill and each module skill by its `module:<cap>` source (record order is not a contract).
-  assert.deepEqual(meta.skills.map((s) => [s.name, s.source]).sort(), [["memory-harvest", "module:oats.okf"], ["okf", "module:oats.okf"], ["okf-consultation", "module:oats.okf"], ["private", "soul"]]);
+  assert.deepEqual(meta.skills.map((s) => [s.name, s.source]).sort(), [["okf-consultation", "module:oats.okf"], ["okf-instance-knowledge", "module:oats.okf"], ["private", "soul"]]);
   assert.equal(lstatSync(join(probeHome, "AGENTS.md")).isSymbolicLink(), false);
   assert.equal(readlinkSync(join(probeHome, "CLAUDE.md")), "AGENTS.md");
   const composed = readFileSync(join(probeHome, "AGENTS.md"), "utf8");
@@ -420,22 +419,23 @@ try {
   assert.equal(durable.documents.length, 1);
   const refresh = JSON.parse(cli(["okf", "refresh", "--source", marker.source, "--soul", "probe", "--json"], { ...inScope, expectExit: 1 }));
   assert.equal(refresh.error.code, "E_REMOVED", "okf 3.0.0 has no views to refresh");
-  // `read --path` stays in 3.0.0 as an alias of `cat`.
-  const read = boundary(["okf", "read", "--source", marker.source, "--base", "project", "--path", "expert/index.md", "--soul", "probe", "--json"], inScope);
-  assert.equal(read.text, readFileSync(join(accepted, "expert/index.md"), "utf8"));
+  // okf 4.0.0 removed `read` (a 3.0.0 alias of `cat`).
+  const read = JSON.parse(cli(["okf", "read", "--source", marker.source, "--base", "project", "--path", "expert/index.md", "--soul", "probe", "--json"], { ...inScope, expectExit: 1 }));
+  assert.equal(read.error.code, "E_REMOVED", "okf 4.0.0 removed read"); // `cat` is exercised below, from a fresh home
 
   // No source home exists. The real capability asks the installed public CLI
   // for its own independent directory worker, then stages durable evidence.
-  // memory-harvest is a CAPABILITY-DEFINED agent (oats.okf agents/): with no live instance carrying
-  // the module, the kernel resolves it from the deployment's lock (locked package → fetched into
-  // <deployment>/.oats/modules/<cap>@<commit>/) and homes it under <deployment>/agents/memory-harvest/instances/.
+  // okf 4.0.0: the harvester is the PACKAGE SOUL oats.okf/knowledge-harvester (spawned by
+  // `oats spawn oats.okf/knowledge-harvester --name okf-harvester-<run>`), resolved from the
+  // deployment's lock and homed under <deployment>/agents/oats-okf--knowledge-harvester/instances/.
   const requested = boundary(["okf", "run-source", "--source", marker.source, "--manual", "--no-launch", "--soul", "probe", "--json"], inScope);
   assert.equal(requested.status, "ready");
   const workerMeta = readJson(join(requested.home, "instance.json"));
   assert.equal(workerMeta.launched, false);
   assert.equal(workerMeta.work, "directory");
-  assert.equal(workerMeta.kind, "capability");
-  assert.equal(dirname(dirname(realpathSync(requested.home))), realpathSync(join(agentsRoot, "memory-harvest")), "a capability agent homes under the agents root");
+  assert.equal(workerMeta.agent, "oats-okf--knowledge-harvester");
+  assert.equal(workerMeta.instance, `okf-harvester-${requested.run}`);
+  assert.equal(dirname(dirname(realpathSync(requested.home))), realpathSync(join(agentsRoot, "oats-okf--knowledge-harvester")), "a package soul homes under the agents root");
   assert.equal(lstatSync(join(requested.home, "work")).isSymbolicLink(), false);
   assert.ok(!existsSync(join(requested.home, ".okf-source.json")), "service worker must not become another working-memory source");
   const workerWork = join(requested.home, "work");
@@ -454,7 +454,7 @@ try {
   assert.equal(completed.processed, true);
   assert.equal(readFileSync(join(accepted, "expert/decision.md"), "utf8"), concept);
   assert.deepEqual(boundary(["okf", "complete", "--source", marker.source, "--run", requested.run, "--soul", "probe", "--json"], inScope), completed, "completion receipt is idempotent");
-  // A capability agent homes under <deployment>/agents/<name>/instances/; retire through that agents root.
+  // A package soul homes under <deployment>/agents/<package>--<soul>/instances/; retire through that agents root.
   core.retireInstance(agentsRoot, requested.instance, { home: requested.home });
   assert.ok(!existsSync(requested.home), "independent scaffold-only worker retired");
   // A fresh reader of the same soul sees the accepted concept; its modules are
@@ -464,20 +464,18 @@ try {
   assert.ok(!existsSync(join(freshHome, "knowledge")), "no ./knowledge/ view in the fresh home");
   assert.equal(boundary(["okf", "cat", "--base", "project", "expert/decision.md", "--fresh", "--json"], { cwd: freshHome, identity: true }).text, concept, "the fresh reader consults the accepted concept");
   assert.equal(readJson(join(freshHome, "instance.json")).modules["oats.okf"].commit, okfCommit);
-  assert.deepEqual(payloadEntries(join(freshHome, ".oats/modules/oats.okf")), inventory.entries);
+  assert.deepEqual(payloadEntries(join(freshHome, ".oats/modules/oats.okf")), capabilityEntries(inventory));
   retire(fresh.instance, freshHome);
   assert.notEqual(boundary(["schedule", "list", "--dir", deployment, "--json"]).scheduler.active, true);
   assert.deepEqual(readJson(lockPath), locked, "lifecycle never mutates the lock");
   // Module copies are per-instance and gone with their homes; the lock is the
   // durable trust record and the scope copy's module set is still pristine.
-  assert.deepEqual(payloadEntries(join(scopeHome, ".oats/modules/oats.okf")), inventory.entries, "lifecycle never mutates a materialized module");
+  assert.deepEqual(payloadEntries(join(scopeHome, ".oats/modules/oats.okf")), capabilityEntries(inventory), "lifecycle never mutates a materialized module");
   rmSync(scopeHome, { recursive: true });
 
   // ---- Optional theory from the oats.framework package: a soul that opts out
   // of the knowledge default and pulls oats.knowledge-theory from the package.
-  // capability-defined agents (knowledge-theory-expert, memory-harvest as a
-  // spawnable soul) resolve from materialized modules in a later phase; here
-  // the module bytes and the composed instance are what is asserted.
+  // The module bytes and the composed instance are what is asserted here.
   const theoryProbes = [];
   for (const harness of ["pi", "claude"]) {
     const author = boundary(["spawn", "author", "--dir", deployment, "--agents-root", agentsRoot, "--purpose", `theory-${harness}`, "--harness", harness, "--no-launch", "--json"]);

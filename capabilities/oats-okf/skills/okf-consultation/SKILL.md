@@ -8,7 +8,8 @@ description: >-
   decision, lesson or concept, when asked "what do we know about X" or to
   "check the knowledge base", before re-deriving a design decision, when a
   question touches your domain, or when an `oats okf` receipt says STALE or a
-  command errors. Authoring and validating OKF bundles is the okf skill.
+  command errors. What to write in your own notes is the okf-instance-knowledge
+  skill.
 ---
 
 # Consulting your knowledge with `oats okf`
@@ -73,8 +74,8 @@ The start-of-task read is not enough. Consult again:
 | `oats okf links --base A PATH` | the file's outgoing links, resolved, `ok` / `MISSING` / `REFUSED` / `external` |
 | `oats okf search [--base A \| --all] [--node N] [--regex] [--case-sensitive] TEXT` | matching lines `{base, path, line, snippet}` |
 
-All take `--json`. `read --base A --path P` is the okf 2.x spelling of `cat`
-and still works.
+All take `--json`. `read` (the okf 2.x spelling of `cat`) is removed in 4.0.0
+(`E_REMOVED`): use `cat`.
 
 ## Navigating
 
@@ -131,9 +132,10 @@ report it, and do not answer from memory or from an old `./knowledge/`.
   refused (`E_PATH`).
 - Never bulk-`cat` a whole node or loop `cat` over `ls` output. Index first,
   then follow the few relevant links.
-- Don't edit knowledge. The write path is notes/ → harvest → PR or
-  publication. Write insights to notes/, not into a base.
-- `oats okf refresh` is gone (`E_REMOVED`): every read already sees the
+- Don't edit knowledge. The write path is notes/ → the knowledge harvester →
+  a reviewed PR (or a directory publication). Write insights to notes/ (the
+  okf-instance-knowledge skill), not into a base.
+- `oats okf refresh` and `read` are gone (`E_REMOVED`): every read already sees the
   accepted state.
 - `cat` reads `.md` files only (`E_NOT_MARKDOWN` otherwise); `E_NOT_FOUND`
   lists the nearest directory's entries to try instead.

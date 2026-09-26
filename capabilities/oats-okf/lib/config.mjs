@@ -7,7 +7,8 @@ function keys(value, allowed, label, code='E_CONFIG') {
 }
 export function settings() {
   const s = JSON.parse(process.env.OATS_SETTINGS || '{}');
-  keys(s,['bindings-file','state-dir','harvest-runtime','harvest-model','git-timeout','consult-max-age'],'OATS_SETTINGS');
+  keys(s,['bindings-file','state-dir','harvest-runtime','harvest-model','git-timeout','consult-max-age','harvest'],'OATS_SETTINGS');
+  if(s.harvest!==undefined && !['on','off'].includes(s.harvest)) fail('E_CONFIG','harvest must be on or off');
   if(s['git-timeout']!==undefined && (!Number.isInteger(s['git-timeout']) || s['git-timeout']<1)) fail('E_CONFIG','git-timeout must be a positive integer number of seconds');
   if(s['consult-max-age']!==undefined && (!Number.isInteger(s['consult-max-age']) || s['consult-max-age']<0)) fail('E_CONFIG','consult-max-age must be a non-negative integer number of seconds');
   if(s['state-dir']!==undefined && (typeof s['state-dir']!=='string' || !isAbsolute(s['state-dir']) || resolve(s['state-dir'])!==s['state-dir'])) fail('E_CONFIG','state-dir must be a normalized absolute path');

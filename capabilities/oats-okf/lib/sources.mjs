@@ -5,6 +5,7 @@ import { acceptedResolution } from './consult.mjs';
 import { loadInvocationKnowledgeBinding, readPrivateInvocationJson, sourceRuntimeFromKnowledgeBinding } from './binding-wire.mjs';
 import { sameJson } from './portable-binding.mjs';
 import { qualifiedSoulIdentity } from './source-contract.mjs';
+import { harvestSwitch, instanceRecordPath } from './harvest-switch.mjs';
 
 const obj=value=>value!==null && typeof value==='object' && !Array.isArray(value);
 function exact(value,allowed,required,label) {
@@ -94,12 +95,31 @@ export function service(home) {
 // instance consults the bases remotely through `oats okf`. A ./knowledge/ left
 // by okf 2.x is not touched; inspect reports it as a legacy local view.
 const acceptedNodes = view => Object.fromEntries(Object.entries(view).map(([alias,row])=>[alias,row.nodes]));
+/** Instance knowledge (STATE.md, log.md, notes/) exists whether or not this
+ *  instance is harvested: it is the instance's own working memory. */
+export function ensureInstanceKnowledge(home) {
+  for(const [p,text] of [['STATE.md','# Working state\n\n# Task\n\n# Next\n'],['log.md','# Instance log\n']]) if(!fs.existsSync(join(home,p))) atomic(join(home,p),text);
+  fs.mkdirSync(join(home,'notes'),{recursive:true});
+}
 function finishRegistration(source) {
   // A durable home pointer precedes publication. Failures after it was saved
   // resume this same source; they never reset captured evidence or IDs.
-  for(const [p,text] of [['STATE.md','# Working state\n\n# Task\n\n# Next\n'],['log.md','# Instance log\n']]) if(!fs.existsSync(join(source.home,p))) atomic(join(source.home,p),text);
-  fs.mkdirSync(join(source.home,'notes'),{recursive:true});
+  ensureInstanceKnowledge(source.home);
   scheduleSource(source);return source;
+}
+/** Harvest off (okf 4.0.0): no source, no custody, no schedule. The home keeps
+ *  a small record so retire knows there is nothing to capture. */
+function harvestOff(home,sw,extra={}) {
+  const record={version:1,harvest:'off',reason:sw.reason,rows:sw.rows,warnings:sw.warnings,at:new Date().toISOString()};
+  atomic(instanceRecordPath(home),JSON.stringify(record,null,2)+'\n');
+  ensureInstanceKnowledge(home);
+  return {harvestOff:true,switch:sw,home,...extra};
+}
+export const harvestOffRecord = home => fs.existsSync(instanceRecordPath(home))?readJSON(instanceRecordPath(home)):null;
+/** The source's tasks provider (its instance.json tasks-layer capability), or null. */
+function tasksProvider(meta) {
+  const row=Array.isArray(meta?.capabilities)?meta.capabilities.find(c=>c && c.layer==='tasks' && typeof c.id==='string'):null;
+  return row?row.id:null;
 }
 function capturedOwner(bindings,owner,identity) {
   const file=join(bindings.stateDir,'owners.json'),row={schemaVersion:1,kind:'captured-qualified-soul',identity};
@@ -126,6 +146,9 @@ export function registerCaptured(home,receipt) {
     return finishRegistration(source);
   }
   if(['.okf-harvest-record.json','.okf-harvest-record.next.json'].some(path=>fs.existsSync(join(home,path)))) fail('E_MIGRATION','legacy source watermarks require explicit migration before captured registration');
+  // The captured path takes its authority from the frozen binding and never
+  // reads live settings or the soul, so the 4.0.0 harvest switch (a live host
+  // setting) does not apply here. No released kernel drives this path.
   if(overlaps(home,captured.context) && captured.context.startsWith(home)) fail('E_PATH','captured deployment context cannot be in disposable home');
   const {file:bindingsFile,...bindingsDoc}=captured.binding.bindings;
   const bindings={file:bindingsFile,...validateBindings(bindingsDoc,bindingsFile,{sourceHome:home,sourceWork:captured.work})};
@@ -169,6 +192,8 @@ export function register(home) {
   const agent=process.env.OATS_AGENT || meta.agent;
   const instance=process.env.OATS_INSTANCE || meta.instance;
   if(!agent || !instance) fail('E_SOURCE','source instance/agent required');
+  const sw=harvestSwitch({settings:settings(),soulDir:soul});
+  if(sw.effective!=='on') {acceptedResolution(bindings,decl);return harvestOff(home,sw,{decl});}
   fs.mkdirSync(bindings.stateDir,{recursive:true,mode:0o700});
   const ownersFile=join(bindings.stateDir,'owners.json');
   const id=randomUUID(); const dir=join(bindings.stateDir,'sources',id);
@@ -177,7 +202,7 @@ export function register(home) {
   const roleFile=safePath(join(soul,'AGENTS.md'));
   const role=fs.existsSync(roleFile)?fs.readFileSync(roleFile,'utf8'):'';
   if(Buffer.byteLength(role)>128*1024) fail('E_SOURCE','role document exceeds 128KiB; provide a concise role before registering');
-  const source={version:1,id,home,work,context,agent,instance,owner:decl.owner,decl,role,bindings,bindingFingerprint:bindingFingerprint(bindings),execution:{runtime:settings()['harvest-runtime']||'pi',model:settings()['harvest-model']||null},created:new Date().toISOString()};
+  const source={version:1,id,home,work,context,agent,instance,owner:decl.owner,decl,role,bindings,bindingFingerprint:bindingFingerprint(bindings),execution:{runtime:settings()['harvest-runtime']||'pi',model:settings()['harvest-model']||null},soulId,tasksProvider:tasksProvider(meta),created:new Date().toISOString()};
   const file=join(dir,'source.json');
   fs.mkdirSync(dir,{recursive:true,mode:0o700});
   try {
