@@ -55,7 +55,13 @@ const notice = [
 
 if (!desktopReady) console.log(`\n${notice}\n`);
 
-const args = ["--test", ...KERNEL_GLOBS, ...packageGlobs, ...process.argv.slice(2)];
+// Forwarded flags go BEFORE the globs: node --test reads a flag after the first
+// positional as another file pattern, so `npm test -- --test-shard=k/N` silently
+// ran the whole suite in every CI shard. Extra file patterns still work (they
+// only narrow, alongside the default globs).
+const extra = process.argv.slice(2);
+const flags = extra.filter((a) => a.startsWith("-")), files = extra.filter((a) => !a.startsWith("-"));
+const args = ["--test", ...flags, ...KERNEL_GLOBS, ...packageGlobs, ...files];
 const run = spawnSync(process.execPath, args, { cwd: REPO_ROOT, stdio: "inherit" });
 
 if (run.error) throw run.error;
