@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { statusDisagreement } from "../lib/core.mjs";
@@ -437,26 +437,78 @@ test("a status disagreement names the differing rows from both sides — sorted,
   assert.deepEqual(capped.rows.map((r) => r.path), Array.from({ length: 10 }, (_, i) => `f${String(i).padStart(2, "0")}`));
 });
 
+test("retire preserves a worktree judged under the source repository's status settings: core.fileMode=false with mode-only changes, info/attributes, a key the source leaves unset — and in a nested repository", () => {
+  // A recovery clone probes its own core.fileMode/ignoreCase/… and has no info/attributes, so the same bytes
+  // and index read differently there: every retire of such an instance refused. The recovery now takes
+  // the source's settings (recovery.json `statusConfig`).
+  const f = fixture();
+  const spawned = spawn(f, "statuscfg");
+  const work = dirtyWork(spawned.home);
+  write(join(work, "crlf.txt"), "a\r\nb\r\n");
+  execFileSync("git", ["-C", work, "add", "crlf.txt"]);
+  execFileSync("git", ["-C", work, "commit", "-qm", "crlf"]);
+  execFileSync("git", ["-C", f.repo, "config", "core.fileMode", "false"]);
+  chmodSync(join(work, "tracked.txt"), 0o755); // mode-only: clean in the source
+  write(join(f.repo, ".git", "info", "attributes"), "*.txt text\n");
+  utimesSync(join(work, "crlf.txt"), new Date(2020, 0, 1), new Date(2020, 0, 1)); // ` M` (needs normalizing) in the source
+  // Unset in the source; a clone probes its own on macOS. Linux git never sets it (`--unset-all` would exit 5).
+  if (spawnSync("git", ["-C", f.repo, "config", "--local", "--get", "core.precomposeUnicode"]).status === 0) execFileSync("git", ["-C", f.repo, "config", "--local", "--unset-all", "core.precomposeUnicode"]);
+  const nested = join(work, "human-ignored", "nested");
+  mkdirSync(nested, { recursive: true });
+  execFileSync("git", ["init", "-q", nested]);
+  write(join(nested, "run.sh"), "echo\n");
+  execFileSync("git", ["-C", nested, "add", "run.sh"]);
+  execFileSync("git", ["-C", nested, "-c", "user.email=t@example.invalid", "-c", "user.name=T", "commit", "-qm", "nested"]);
+  execFileSync("git", ["-C", nested, "config", "core.fileMode", "false"]);
+  chmodSync(join(nested, "run.sh"), 0o755);
+  const status = porcelain(work), nestedStatus = porcelain(nested);
+  assert.ok(!/ tracked\.txt\0/.test(status) && / M crlf\.txt\0/.test(status), JSON.stringify(status));
+
+  const retired = cli(f, ["retire", "dev-statuscfg", "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const recovery = JSON.parse(retired.stdout).workRecovery;
+  const repo = join(recovery.path, "repo");
+  assert.equal(porcelain(repo), status, "the recovered status equals the source's");
+  assert.equal(porcelain(join(repo, "human-ignored", "nested")), nestedStatus);
+  const local = (r, key) => spawnSync("git", ["-C", r, "config", "--local", "--get", key], { encoding: "utf8" });
+  assert.equal(local(repo, "core.fileMode").stdout.trim(), "false");
+  assert.equal(local(join(repo, "human-ignored", "nested"), "core.fileMode").stdout.trim(), "false");
+  assert.equal(local(repo, "core.precomposeUnicode").status, 1, "a key the source leaves unset is unset in the recovery too");
+  assert.equal(readFileSync(join(repo, ".git", "info", "attributes"), "utf8"), "*.txt text\n");
+  const manifest = JSON.parse(readFileSync(join(recovery.path, "recovery.json"), "utf8"));
+  const rows = manifest.statusConfig.map((c) => [c.repo, c.kind, c.key ?? null, c.value ?? null]);
+  assert.deepEqual(rows.filter((r) => r[0] === "."), [[".", "config", "core.fileMode", "false"], ...(process.platform === "darwin" ? [[".", "config", "core.precomposeUnicode", null]] : []), [".", "info/attributes", null, null]]);
+  assert.deepEqual(rows.filter((r) => r[0] !== "."), [["human-ignored/nested", "config", "core.fileMode", "false"]]);
+});
+
+/** Give `repo` a config-local core.attributesFile marking `files` as text, and make their stat stale so status re-reads them. */
+function staleUnderTextAttribute(repo, base, files, patterns = "*.txt text\n") {
+  const attributes = join(base, `attributes-${files.length}`);
+  write(attributes, patterns);
+  execFileSync("git", ["-C", repo, "config", "core.attributesFile", attributes]);
+  for (const file of files) utimesSync(file, new Date(2020, 0, 1), new Date(2020, 0, 1));
+}
+
 test("E_WORK_PRESERVATION_FAILED names the differing status rows (the first 10, and how many more) in its message and --json details, for the worktree and for a nested repository; the home is kept", () => {
-  // Trigger: core.fileMode=false in the source repository, which a recovery clone does not inherit —
-  // a mode-only change is clean in the source and ` M` in the recovery. (Not yet carried: if a later
-  // fix carries it, pick another disagreement here.)
+  // Trigger: a core.attributesFile set in the source repository's config (`*.txt text`) over files
+  // committed with CRLF, their stat made stale: ` M` (needs normalizing) in the source, clean in the
+  // recovery. A recovery deliberately does not carry that pointer to a host file (see carryStatusConfig);
+  // if it ever does, pick another disagreement here.
   const f = fixture();
   const spawned = spawn(f, "diffrows");
   const work = join(spawned.home, "work");
   const names = Array.from({ length: 11 }, (_, i) => `f${String(i).padStart(2, "0")}.txt`);
-  for (const n of names) write(join(work, n), `${n}\n`);
+  for (const n of names) write(join(work, n), `${n}\r\n`);
   execFileSync("git", ["-C", work, "add", ...names]);
   execFileSync("git", ["-C", work, "commit", "-qm", "eleven files"]);
-  execFileSync("git", ["-C", f.repo, "config", "core.fileMode", "false"]);
-  for (const n of names) chmodSync(join(work, n), 0o755);
+  staleUnderTextAttribute(f.repo, f.base, names.map((n) => join(work, n)));
   write(join(work, "untracked.txt"), "forces a repository recovery\n");
   let retired = cli(f, ["retire", "dev-diffrows", "--json"]);
   assert.equal(retired.status, 1, retired.stdout);
   let error = JSON.parse(retired.stdout).error;
   assert.equal(error.code, "E_WORK_PRESERVATION_FAILED");
-  assert.match(error.message, /recovered Git index\/status disagreed with the source: f00\.txt \(source absent, recovery  M\); f01\.txt .*; f09\.txt \(source absent, recovery  M\); and 1 more$/);
-  assert.deepEqual(error.details, { home: spawned.home, statusDisagreement: { repo: ".", rows: names.slice(0, 10).map((path) => ({ path, source: null, recovery: " M" })), total: 11 } });
+  assert.match(error.message, /recovered Git index\/status disagreed with the source: f00\.txt \(source  M, recovery absent\); f01\.txt .*; f09\.txt \(source  M, recovery absent\); and 1 more$/);
+  assert.deepEqual(error.details, { home: spawned.home, statusDisagreement: { repo: ".", rows: names.slice(0, 10).map((path) => ({ path, source: " M", recovery: null })), total: 11 } });
   assert.equal(existsSync(spawned.home), true, "the home is kept");
 
   // A nested repository's disagreement names that repository.
@@ -465,16 +517,15 @@ test("E_WORK_PRESERVATION_FAILED names the differing status rows (the first 10, 
   const nested = join(nestedSpawn.home, "work", "human-ignored", "nested");
   mkdirSync(nested, { recursive: true });
   execFileSync("git", ["init", "-q", nested]);
-  write(join(nested, "run.sh"), "echo\n");
+  write(join(nested, "run.sh"), "echo\r\n");
   execFileSync("git", ["-C", nested, "add", "run.sh"]);
   execFileSync("git", ["-C", nested, "-c", "user.email=t@example.invalid", "-c", "user.name=T", "commit", "-qm", "nested"]);
-  execFileSync("git", ["-C", nested, "config", "core.fileMode", "false"]);
-  chmodSync(join(nested, "run.sh"), 0o755);
+  staleUnderTextAttribute(nested, g.base, [join(nested, "run.sh")], "*.sh text\n");
   retired = cli(g, ["retire", "dev-nestedrows", "--json"]);
   assert.equal(retired.status, 1, retired.stdout);
   error = JSON.parse(retired.stdout).error;
-  assert.match(error.message, /nested recovery human-ignored\/nested Git state disagreed with source: run\.sh \(source absent, recovery  M\)$/);
-  assert.deepEqual(error.details.statusDisagreement, { repo: "human-ignored/nested", rows: [{ path: "run.sh", source: null, recovery: " M" }], total: 1 });
+  assert.match(error.message, /nested recovery human-ignored\/nested Git state disagreed with source: run\.sh \(source  M, recovery absent\)$/);
+  assert.deepEqual(error.details.statusDisagreement, { repo: "human-ignored/nested", rows: [{ path: "run.sh", source: " M", recovery: null }], total: 1 });
 });
 
 test("branch-only commits are recovered only when retirement deletes their last local ref", () => {
