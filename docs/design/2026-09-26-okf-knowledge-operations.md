@@ -179,20 +179,20 @@ owner: github.com/ana
 
 That makes "exactly one machine" a declared fact, and **consent** explicit: a machine acts for an account only when its operator named it AND is logged in as that account. Declaring the automation in a member is the trust decision for its *definition*, like souls.
 
-**Opting out:** `oats-local.yaml` `automations.disabled: [<member>/<id>, …]` stops a named host from running one, without a commit.
+**Opting out:** per kind, mirroring `souls.disabled`: `oats-local.yaml` `triggers: { disabled: [<member>/<id>, …] }` / `schedules: { disabled: [...] }` stops a named host from running one, without a commit. Triggers and schedules are separate modules (the human), sharing only the kind-neutral pieces.
 
 **Refresh:**
 - The host tick reads a snapshot of the workspace automations taken by `oats sync`, and refreshed by the tick at most every 10 minutes.
 - A definition change reaches the host within ~10 minutes; no fetch happens every minute.
 - The run state (dedup keys, the last poll) stays per host and local.
 
-**Local automations are unchanged:** machine-private, implicitly this host and its own `gh`, so no `runsOn`/`owner`. The ids are namespaced: `local/<id>` vs `<member>/<id>`.
+**Local automations are unchanged:** machine-private, implicitly this host and its own `gh`, so no `runsOn`/`owner`. Workspace ids are `<member>/<id>`. A local schedule row keeps its bare `id` (compatible with existing consumers) plus a `qualifiedId: local/<id>`.
 
 **Safety:** everything in §2.3 still holds (the soul must resolve here; only whitelisted fields are templated; PR text is never interpolated; there's no credential in any definition).
 
 **Schedules are the same contract as triggers** (the human, 2026-09-26):
 - A workspace schedule (`oats-schedules/<id>.yaml`, or `*.oats-schedule.yaml` anywhere) carries `runsOn` + `owner` and runs ONLY on the named host logged in as that account.
-- The same `assigned-elsewhere` / `owner-mismatch` / `host-unnamed` reasons, the same `automations.disabled` opt-out, the same snapshot refresh, and local schedules as `local/<id>`.
+- The same `assigned-elsewhere` / `owner-mismatch` / `host-unnamed` reasons, the same per-kind opt-out (`schedules.disabled`), the same snapshot refresh, and local schedules as `local/<id>`.
 - One rule set for both kinds; the kernel implements them together.
 
 **Desktop: the Schedules tab (existing, redesigned) + a NEW Triggers tab** (the human, 2026-09-26; no unified "Automations" view):
@@ -213,7 +213,7 @@ That makes "exactly one machine" a declared fact, and **consent** explicit: a ma
 - **Where it comes from:** the repo + path + commit of the file, linking to the file.
 - **Actions:**
   - `test` (a dry run on this host);
-  - disable/enable here (`automations.disabled`);
+  - disable/enable here (`triggers.disabled` / `schedules.disabled`);
   - open the defining file;
   - for local ones: add/edit/remove.
 - **Visibility follows repo access:** a member the user can't read contributes nothing (the standalone rule), so the Desktop never shows automations the user couldn't read in Git.
