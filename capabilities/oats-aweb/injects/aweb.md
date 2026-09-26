@@ -1,9 +1,9 @@
 ## Messaging: aweb
 
 Your messaging layer is **aweb**. Your identity's alias is your instance name,
-and it lives in the personal team of the person you work for (the `Comms:`
-line of your TASK.md names it). Wider workspace teams are joined explicitly,
-each with its own identity home.
+and it lives in the workspace's default team (the `Comms:` line of your TASK.md
+names it). Wider workspace teams are joined explicitly, each with its own
+identity home.
 
 **Load the `oats-aweb` skill before your first `aw mail`/`aw chat` of a session,
 whenever an aweb wake or channel event arrives, and whenever messaging or a
@@ -14,7 +14,7 @@ memory; if a flag looks wrong run `aw <command> --help`.
 Quick crib (run from your instance home, never from `./work`):
 
 ```bash
-oats aweb teams --json                                     # personal, eligible, joined teams
+oats aweb teams --json                                     # defaultTeam, eligible, joined teams
 oats aweb roster                                           # who you can reach
 aw mail inbox                                              # UNREAD mail only (--show-all: history)
 aw mail send --to <alias> --subject "..." --body-file <f>  # recipient needs --to

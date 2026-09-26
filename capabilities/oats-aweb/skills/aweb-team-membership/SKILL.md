@@ -23,12 +23,12 @@ retire cleanup, readiness, and Desktop operations consistent.
 Use the provider commands from the instance home (or with `--home <path>`):
 
 ```bash
-oats aweb teams --json                  # personal, eligible, joined, unmapped
+oats aweb teams --json                  # defaultTeam, eligible, joined, unmapped
 oats aweb join --labels <label>[,<label>]   # join eligible workspace labels
 oats aweb leave --labels <label>[,<label>]  # leave joined wider-team labels
 ```
 
-- The personal team cannot be left; attempting it is `E_TEAM_PERSONAL`.
+- The workspace's default team cannot be left; attempting it with label `default` is `E_TEAM_DEFAULT`.
 - A label that is not eligible for this soul/workspace is `E_TEAM_NOT_ELIGIBLE`.
 - Joined wider teams use a local identity home such as
   `<home>/.aweb-identity-<label>`. Joined teams require aw >= 1.36.12. The
@@ -62,15 +62,15 @@ aw id cert show
 
 Interpret common states:
 
-- `teams.personal.team` is the primary identity's team, wired to the harness:
-  the aweb root's active team (`personal.source: root`) or a deployment-pinned
-  team (`setting`). A team per workspace arrives in oats.aweb 1.16.
+- `teams.defaultTeam.team` is the primary identity's team, wired to the harness:
+  the aweb root's active team (`defaultTeam.source: root`) or a deployment-pinned
+  team (`setting`).
 - `eligible[]` are labels this soul/workspace may explicitly join; the primary
   label may appear here and is joinable/leavable like any other wider team.
 - `joined[]` are provider-created wider-team memberships; each has an
   `identityHome`, `since`, and `receive` (`native` or `poll`).
 - `unmapped[]` labels are present on the soul but not mapped by the workspace.
-  An unmapped primary falls back to the personal/root active team with a
+  An unmapped primary falls back to the default/root active team with a
   `team-unmapped` warning; it is not a spawn blocker.
 - `teams-unverified` on launch means the kernel supplied recorded/unknown team
   data, so the provider kept memberships instead of leaving anything.
@@ -81,9 +81,9 @@ Interpret common states:
   `default:oats.aweb.ai`).
 - **Team certificate**: a signed membership statement for an identity; stored in
   `.aw/team-certs/` for native identities.
-- **Personal team**: the default team for the instance's primary identity: the
-  aweb root's active team, or `settings.oats.aweb.team` when the deployment
-  pins one. Per-workspace personal-team enrollment arrives in oats.aweb 1.16.
+- **Default team**: the workspace default team for the instance's primary identity:
+  the aweb root's active team, or `settings.oats.aweb.team` when the deployment
+  pins one.
 - **Joined team**: an explicit wider team joined through `oats aweb join`, with a
   separate local identity home.
 

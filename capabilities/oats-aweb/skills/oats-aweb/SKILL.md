@@ -23,16 +23,16 @@ joined team, put `--identity-home <identityHome>` before the subcommand.
 | Fact | Where to read it |
 |---|---|
 | Your alias | your instance name; the `Comms:` line of `TASK.md`; `aw whoami` |
-| Your personal team | `oats aweb teams --json` → `personal.team` (`personal.source`) |
+| Your default team | `oats aweb teams --json` → `defaultTeam.team` (`defaultTeam.source`) |
 | Teams you may join | `oats aweb teams --json` → `eligible[]` |
 | Teams you have joined | `oats aweb teams --json` → `joined[]` (each with `identityHome`, `receive`) |
 | How mail reaches you | the `Comms:` line of `TASK.md` (see section 4) |
 
-- **Personal team.** Your primary identity lives in the personal team of the
-  person you work for: the aweb root's active team (`personal.source: root`),
-  or the team the deployment pinned (`source: setting`). Everyone this
-  deployment spawns into that team is there with you. (A separate team per
-  workspace arrives in oats.aweb 1.16.)
+- **Default team.** Your primary identity lives in the workspace's default team:
+  the aweb root's active team (`defaultTeam.source: root`), or the team the
+  deployment pinned (`defaultTeam.source: setting`). `defaultTeam.source` is
+  always present and is only `root` or `setting`. Everyone this deployment
+  spawns into that team is there with you.
 - **Joined teams.** A wider team the workspace defines, joined explicitly. Each
   gives you a **separate identity** with the same alias in that team, kept
   under `<home>/.aweb-identity-<label>`. You act as that team only with
@@ -42,7 +42,7 @@ joined team, put `--identity-home <identityHome>` before the subcommand.
 ## 2. Find who to talk to
 
 ```bash
-oats aweb roster                 # your personal team's members (instances + humans), across machines
+oats aweb roster                 # your default team's members (instances + humans), across machines
 oats aweb roster --label <label> # an eligible workspace team's members
 oats status                      # live OATS instances on this machine
 ```
@@ -52,7 +52,7 @@ oats status                      # live OATS instances on this machine
 - Outside your team use a full address, `namespace/alias` (`--to-address`), only
   when you were given one.
 - A name that is not on the roster of the team you send from will not resolve:
-  pick the identity (personal or joined) whose team holds the recipient.
+  pick the identity (default-team or joined) whose team holds the recipient.
 
 ## 3. Send, reply, chat
 
@@ -126,7 +126,7 @@ mail (`--show-all`).
 ## 5. Teams: join and leave
 
 ```bash
-oats aweb teams --json                  # {personal, primary, eligible, joined, unmapped}
+oats aweb teams --json                  # {defaultTeam, primary, eligible, joined, unmapped}
 oats aweb join --labels <label>[,<label>]
 oats aweb leave --labels <label>[,<label>]
 ```
@@ -134,7 +134,7 @@ oats aweb leave --labels <label>[,<label>]
 - Join only when your human, coordinator or task asks you to work with that
   team. Joining mints a new identity for you in that team.
 - You may join only `eligible[]` labels; anything else is `E_TEAM_NOT_ELIGIBLE`.
-- Your personal team cannot be left (`E_TEAM_PERSONAL`).
+- The workspace's default team cannot be left (`E_TEAM_DEFAULT` when the label is `default`).
 - When the workspace stops mapping a team, your next session start leaves it.
 - Do not run native `aw team join|switch|leave|invite` for your identities; the
   provider keeps homes, broker registration and retire cleanup consistent.
@@ -165,7 +165,7 @@ Check your own state first:
 ```bash
 aw whoami                          # identity you act as here
 aw workspace status                # connection of the primary identity
-oats aweb teams --json             # personal/joined teams and receive modes
+oats aweb teams --json             # defaultTeam/joined teams and receive modes
 oats readiness --home "$PWD" --json   # the provider's readiness answer for this home
 ```
 
@@ -173,8 +173,7 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 
 | Code | Meaning | Who fixes it |
 |---|---|---|
-| `personal-root-deferred` | the host set `settings.oats.aweb.roots.personal`; 1.15 ignores it (per-workspace enrollment arrives in 1.16) | nobody; the host may remove the setting |
-| `team-unmapped` | your soul's primary label is not mapped by the workspace; you are in the personal team | workspace owner, if a shared team was meant |
+| `team-unmapped` | your soul's primary label is not mapped by the workspace; you are in the default team | workspace owner, if a shared team was meant |
 | `joined-team-receive` | a joined team receives live through the broker (informational) | nobody |
 | `joined-team-poll-only` | a joined team does not wake you; the message says why | poll that team at task boundaries; human may start the wake daemon |
 | `wake-daemon-not-running` / `-outdated` / `-version-unknown` | host wake broker is down or older than 1.36.5 | human: upgrade aw, restart the host wake daemon |
@@ -185,7 +184,7 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 
 - `E_TEAM_NOT_ELIGIBLE` — the label is not one of your eligible teams; the
   message lists them. Check the spelling against `oats aweb teams --json`.
-- `E_TEAM_PERSONAL` — the personal team cannot be left.
+- `E_TEAM_DEFAULT` — the workspace's default team cannot be left.
 - `E_TEAM_GLOBAL_MODE` — this home acts as a resident identity through a
   session grant; joined teams need local identities. Report it.
 - `E_TEAM_AW_FLOOR` — the host `aw` is too old: joined teams need aw >= 1.36.12.

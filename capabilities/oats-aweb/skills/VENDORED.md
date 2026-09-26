@@ -16,7 +16,7 @@ Vendored trees:
 - `aweb-identity/`
 
 Not vendored: `oats-aweb/` is this package's own OATS playbook (identity,
-personal and joined teams, roster, delivery and wakes, etiquette,
+default and joined teams, roster, delivery and wakes, etiquette,
 troubleshooting). Every `aw` invocation it and the vendored skills cite is
 checked against a real published aw by `test/oats-aweb-1-15.test.mjs`.
 

@@ -1,7 +1,7 @@
 {
   "capability": "oats.aweb",
   "command": "aweb",
-  "version": "1.15.0",
+  "version": "1.16.0",
   "compatibility": {
     "oats": ">=0.26.0"
   },
@@ -142,7 +142,7 @@
       "description": "channel: the native aweb channel packages wake the instance (default). session: delivery is external (AWEB_DELIVERY=session), no channel flag; the host wake broker registers the instance once it exists."
     },
     "team": {
-      "description": "Target aweb team id for the primary personal identity lifecycle. In workspace v2 spawns this payload value wins over OATS_TEAM_ID; if both are set and differ the hook warns and uses this setting. Unset means the aweb root's active team."
+      "description": "Target aweb team id for the primary identity lifecycle. In workspace v2 spawns this payload value wins over OATS_TEAM_ID; if both are set and differ the hook warns and uses this setting. Unset means the aweb root's active team."
     },
     "root": {
       "hostOnly": true,
@@ -150,7 +150,7 @@
     },
     "roots": {
       "hostOnly": true,
-      "description": "Host-owned map of aweb team id to absolute directory whose .aw is that team's minting root, for deployments that mint into several teams. Put this only in oats-local.yaml settings.oats.aweb.roots. The key \"personal\" is reserved for per-workspace personal-team enrollment (oats.aweb 1.16); 1.15 ignores it with a readiness warning."
+      "description": "Host-owned map of aweb team id to absolute directory whose .aw is that team's minting root, for deployments that mint into several teams. Put this only in oats-local.yaml settings.oats.aweb.roots. Keys are team ids only."
     },
     "identity": {
       "default": {

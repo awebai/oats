@@ -76,7 +76,7 @@ members:
 packages:
   oats.framework: v1.3.1
   oats.okf: v4.0.0
-  oats.aweb: v1.15.0
+  oats.aweb: v1.16.0
 teams:
   global: { description: Org-wide }
   engineering: { description: Platform }
