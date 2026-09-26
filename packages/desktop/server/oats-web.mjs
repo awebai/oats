@@ -169,6 +169,10 @@ function projectPanelInstance(i) {
     ...(i.modules !== undefined ? { modules: i.modules } : {}),
     ...(i.soul !== undefined ? { soul: i.soul } : {}),
     ...(i.identity !== undefined ? { identity: i.identity } : {}),
+    // desktop-facts: the last session start, where the model came from, the messaging identity's address.
+    ...(i.startedAt !== undefined ? { startedAt: i.startedAt } : {}),
+    ...(i.modelFrom !== undefined ? { modelFrom: i.modelFrom } : {}),
+    ...(i.identityAddress !== undefined ? { identityAddress: i.identityAddress } : {}),
     ...(i.retirePending ? { retirePending: true } : {}),
     ...(i.rollbackIncomplete ? { rollbackIncomplete: true } : {}),
     ...(i.captured ? { captured: true } : {}),
@@ -197,11 +201,11 @@ function agentsData(wsId) {
       agents.push({
         name: soul.name, description: soul.description || "", kind: "persistent", work: soul.work,
         ...(color ? { color } : {}), ...(soul.team ? { team: soul.team } : {}), ...(Array.isArray(soul.labels) ? { labels: [...soul.labels] } : {}),
+        // desktop-facts: whether a spawn here would refuse (problem), and the soul.yaml (path, url).
+        ...(typeof soul.spawnable === "boolean" ? { spawnable: soul.spawnable, problem: soul.problem ?? null } : {}),
+        ...(Object.hasOwn(soul, "file") ? { file: soul.file } : {}),
         origin: soul.origin || "", soulKind: soul.kind, repo: soul.repoKey || null, capability: null,
         soulSource: { repoKey: soul.repoKey ?? null, commit: soul.commit ?? null, path: soul.path ?? null },
-        // Kernel #217 (desktop-facts): whether a spawn here would refuse, and the soul's file.
-        ...(typeof soul.spawnable === "boolean" ? { spawnable: soul.spawnable, problem: soul.problem ?? null } : {}),
-        ...(soul.file !== undefined ? { file: soul.file } : {}),
         agentsRoot: root, workspace: context,
         repoName: memberNames.get(soul.repoKey) || (soul.kind === "external" ? "external" : soul.repoKey || ""),
       });

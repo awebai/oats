@@ -1,0 +1,229 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "soulsApi": 1,
+    "workspace": {
+      "name": "northwind",
+      "key": "local//fixture/base/fx/remotes/agents.git",
+      "commit": "5ce1d9be306b3517797db2310b1b136e10ee6e33"
+    },
+    "souls": [
+      {
+        "name": "campaign-writer",
+        "origin": "member local//fixture/base/fx/remotes/marketing.git @ ad136e97",
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/marketing.git",
+        "commit": "ad136e97ce9ac5c8361886337d5666451a82460e",
+        "team": "marketing",
+        "labels": [
+          "marketing"
+        ],
+        "private": false,
+        "path": "souls/campaign-writer",
+        "work": "directory",
+        "description": "Drafts launch campaigns from what engineering is actually shipping.",
+        "harness": "pi",
+        "model": null,
+        "harnessFrom": "kernel-default",
+        "file": {
+          "path": "souls/campaign-writer/soul.yaml",
+          "url": null
+        },
+        "spawnable": true,
+        "problem": null
+      },
+      {
+        "name": "data-analyst",
+        "origin": "member local//fixture/base/fx/remotes/data.git @ 5737aecb",
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/data.git",
+        "commit": "5737aecb3121418fdf3d715c642404e2d9cc4526",
+        "team": "engineering",
+        "labels": [
+          "engineering"
+        ],
+        "private": false,
+        "path": "souls/data-analyst",
+        "work": "directory",
+        "description": "Answers questions against the warehouse with attributable evidence.",
+        "harness": "pi",
+        "model": null,
+        "harnessFrom": "kernel-default",
+        "file": {
+          "path": "souls/data-analyst/soul.yaml",
+          "url": null
+        },
+        "spawnable": true,
+        "problem": null
+      },
+      {
+        "name": "platform-engineer",
+        "origin": "member local//fixture/base/fx/remotes/platform.git @ b153c361",
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/platform.git",
+        "commit": "b153c361c006a6ab2f79ce53af5e4efac0ee1592",
+        "team": "engineering",
+        "labels": [
+          "engineering"
+        ],
+        "private": false,
+        "path": "souls/platform-engineer",
+        "work": "worktree",
+        "description": "Implements platform features on a branch and opens PRs.",
+        "harness": "pi",
+        "model": null,
+        "harnessFrom": "kernel-default",
+        "file": {
+          "path": "souls/platform-engineer/soul.yaml",
+          "url": null
+        },
+        "spawnable": true,
+        "problem": null
+      },
+      {
+        "name": "platform-reviewer",
+        "origin": "member local//fixture/base/fx/remotes/platform.git @ b153c361",
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/platform.git",
+        "commit": "b153c361c006a6ab2f79ce53af5e4efac0ee1592",
+        "team": "engineering",
+        "labels": [
+          "engineering"
+        ],
+        "private": false,
+        "path": "souls/platform-reviewer",
+        "work": "checkout",
+        "description": "Reviews platform PRs; internal to this repo.",
+        "harness": "pi",
+        "model": null,
+        "harnessFrom": "kernel-default",
+        "file": {
+          "path": "souls/platform-reviewer/soul.yaml",
+          "url": null
+        },
+        "spawnable": true,
+        "problem": null
+      },
+      {
+        "name": "positioning-analyst",
+        "origin": "member local//fixture/base/fx/remotes/marketing.git @ ad136e97",
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/marketing.git",
+        "commit": "ad136e97ce9ac5c8361886337d5666451a82460e",
+        "team": "marketing",
+        "labels": [
+          "marketing"
+        ],
+        "private": false,
+        "path": "souls/positioning-analyst",
+        "work": "directory",
+        "description": "Analyses market positioning against competitors.",
+        "harness": "pi",
+        "model": null,
+        "harnessFrom": "kernel-default",
+        "file": {
+          "path": "souls/positioning-analyst/soul.yaml",
+          "url": null
+        },
+        "spawnable": true,
+        "problem": null
+      },
+      {
+        "name": "release-manager",
+        "origin": "member local//fixture/base/fx/remotes/agents.git @ 5ce1d9be",
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/agents.git",
+        "commit": "5ce1d9be306b3517797db2310b1b136e10ee6e33",
+        "team": "engineering",
+        "labels": [
+          "engineering"
+        ],
+        "private": false,
+        "path": "souls/release-manager",
+        "work": "worktree",
+        "description": "Cuts, verifies and announces platform releases.",
+        "harness": "pi",
+        "model": null,
+        "harnessFrom": "kernel-default",
+        "file": {
+          "path": "souls/release-manager/soul.yaml",
+          "url": null
+        },
+        "spawnable": true,
+        "problem": null
+      },
+      {
+        "name": "security-reviewer",
+        "origin": "external local//fixture/base/fx/remotes/experts.git @ 3c606e09",
+        "kind": "external",
+        "repoKey": "local//fixture/base/fx/remotes/experts.git",
+        "commit": "3c606e09ea25c9976d9c8371d48e9737564e6896",
+        "team": "unassigned",
+        "labels": [],
+        "private": false,
+        "path": "souls/security-reviewer",
+        "work": "worktree",
+        "description": "Reviews changes for security regressions.",
+        "harness": "pi",
+        "model": null,
+        "harnessFrom": "kernel-default",
+        "file": {
+          "path": "souls/security-reviewer/soul.yaml",
+          "url": null
+        },
+        "spawnable": true,
+        "problem": null
+      },
+      {
+        "name": "support-triager",
+        "origin": "member local//fixture/base/fx/remotes/agents.git @ 5ce1d9be",
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/agents.git",
+        "commit": "5ce1d9be306b3517797db2310b1b136e10ee6e33",
+        "team": "global",
+        "labels": [
+          "global"
+        ],
+        "private": false,
+        "path": "souls/support-triager",
+        "work": "directory",
+        "description": "Triages inbound support issues into Jira.",
+        "harness": "pi",
+        "model": null,
+        "harnessFrom": "kernel-default",
+        "file": {
+          "path": "souls/support-triager/soul.yaml",
+          "url": null
+        },
+        "spawnable": true,
+        "problem": null
+      },
+      {
+        "name": "tools-expert",
+        "origin": "member local//fixture/base/fx/remotes/nw-tools.git @ 371fdf6b",
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/nw-tools.git",
+        "commit": "371fdf6bccafaf545dac017d3342a63770c69957",
+        "team": "engineering",
+        "labels": [
+          "engineering"
+        ],
+        "private": false,
+        "path": "souls/tools-expert",
+        "work": "worktree",
+        "description": "Knows the nw.tools package — its manifests, executables, release tags and consumers; evolves it through PRs.",
+        "harness": "pi",
+        "model": null,
+        "harnessFrom": "kernel-default",
+        "file": {
+          "path": "souls/tools-expert/soul.yaml",
+          "url": null
+        },
+        "spawnable": true,
+        "problem": null
+      }
+    ],
+    "problems": []
+  }
+}
