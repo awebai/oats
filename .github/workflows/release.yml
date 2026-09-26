@@ -9,9 +9,9 @@ name: Release
 #   1. checkout the EXACT tag SHA (never a branch ref);
 #   2. derive X.Y.Z from the tag into root, packages/pi, and packages/desktop
 #      manifests/locks (`npm version --no-git-tag-version --allow-same-version`);
-#   3. run ALL build/test/smoke steps — kernel tests, pack checks, tarball
-#      clean-room smoke, Desktop build + artifact inventory — BEFORE any
-#      publication;
+#   3. run ALL build/test/smoke steps — kernel tests (six parallel shards of
+#      the bumped tree, like PR CI), pack checks, tarball clean-room smoke,
+#      Desktop build + artifact inventory — BEFORE any publication;
 #   4. publish @awebai/oats, then @awebai/oats-pi;
 #   5. create the public GitHub Release LAST (after npm), attaching Desktop
 #      artifacts, SHA256SUMS.txt, and provenance attestations;
@@ -38,6 +38,50 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------- npm side
+  # The suite is ~9 min serial on a 2-vCPU runner; six shards run it in
+  # parallel (node --test --test-shard), as pull-request.yml does, beside
+  # build-and-test. Each shard tests the tag SHA with the tag-derived version
+  # applied, exactly as the serial run did; publication waits for every shard.
+  tests:
+    name: tests (shard ${{ matrix.shard }}/6)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          # The workspace-layout guard reads ancestor commits (git cat-file/show).
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Derive version from tag
+        id: v
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Bump all three packages (root, pi, desktop)
+        run: |
+          npm version "${{ steps.v.outputs.version }}" --no-git-tag-version --allow-same-version
+          (cd packages/pi && npm version "${{ steps.v.outputs.version }}" --no-git-tag-version --allow-same-version)
+          (cd packages/desktop && npm version "${{ steps.v.outputs.version }}" --no-git-tag-version --allow-same-version)
+
+      - name: Test capability resolution and package commands
+        run: |
+          # Release checkout is fresh too: root tests need ajv and expose the
+          # dev-installed pi binary through npm's node_modules/.bin PATH.
+          npm ci --ignore-scripts
+          # Root `npm test` discovers packages/desktop suites (jsdom/marked
+          # imports) — install its dev deps like PR CI does; Electron binary
+          # is not needed for tests.
+          (cd packages/desktop && ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci)
+          npm test -- --test-shard=${{ matrix.shard }}/6
+
   build-and-test:
     runs-on: ubuntu-latest
     steps:
@@ -85,19 +129,15 @@ jobs:
         # capability libs, record, optional package scripts and release tools.
         run: node scripts/check-package-dry-runs.mjs --syntax-only
 
-      - name: Test capability resolution and package commands
+      - name: Check the kernel, the pi adapter and the project
         run: |
-          # Release checkout is fresh too: root tests need ajv and expose the
-          # dev-installed pi binary through npm's node_modules/.bin PATH.
+          # Release checkout is fresh too: the checks need ajv and the
+          # dev-installed pi binary (npm's node_modules/.bin PATH). The test
+          # suite runs in the sharded `tests` job.
           npm ci --ignore-scripts
           npm run check
           npm run check:pi
           npm run validate
-          # Root `npm test` discovers packages/desktop suites (jsdom/marked
-          # imports) — install its dev deps like PR CI does; Electron binary
-          # is not needed for tests.
-          (cd packages/desktop && ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci)
-          npm test
 
       - name: Sanity-check tarballs
         run: |
@@ -230,9 +270,10 @@ jobs:
           if-no-files-found: error
 
   # -------------------------------------------------------------- publication
-  # Publication starts ONLY after every build/test/smoke job above is green.
+  # Publication starts ONLY after every build/test/smoke job above is green
+  # (every test shard included).
   publish:
-    needs: [build-and-test, desktop-build]
+    needs: [build-and-test, tests, desktop-build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -30,7 +30,7 @@ under `stage/<tag>/logs/`; a failing step exits non-zero with the log path.
 
 | Phase | Mirrors in `release.yml` | Writes |
 | --- | --- | --- |
-| `build --tag vX.Y.Z [--sha <commit>]` | job `build-and-test`: notes gate, three-manifest bump, `node --check`, `npm ci`, `npm run check`, Desktop test deps, `npm test`, `pack:check` and the tarball greps, `smoke:tarball`, the `version --json` probe | `npm/*.tgz`, `MANIFEST.json` |
+| `build --tag vX.Y.Z [--sha <commit>]` | jobs `build-and-test` and `tests` (the lane runs the suite unsharded): notes gate, three-manifest bump, `node --check`, `npm ci`, `npm run check`, Desktop test deps, `npm test`, `pack:check` and the tarball greps, `smoke:tarball`, the `version --json` probe | `npm/*.tgz`, `MANIFEST.json` |
 | `desktop --tag vX.Y.Z --arch arm64\|x64` | one `desktop-build` matrix leg: desktop `npm ci`, `npm test`, `npm run dist -- --<arch>`, strict deep `codesign --verify` (macOS), `dist:smoke` in build-verify mode | `assets/oats-desktop-*` |
 | `stage --tag vX.Y.Z` | publish job, "Checksums" (`shasum -a 256`) | `assets/SHA256SUMS.txt` |
 | `publish-npm --tag vX.Y.Z [--dry-run] --yes` | publish job, the two guarded `npm publish --access public` steps, kernel then adapter | — |
