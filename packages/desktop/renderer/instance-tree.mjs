@@ -122,23 +122,18 @@ export function clusterInstances(instances, { links = instanceLinks } = {}) {
   return clusters;
 }
 
-/** Agent-group header for the instances sidebar (Redesign v3): the group's
- * deterministic name and member count, with a real collapse control. The
- * group is the relation cluster (never the repo); unrelated instances share
- * one "independent" group. Importable so the regression exercises the exact
- * builder the shell uses. */
-export function clusterHeader(doc, { label, count, collapsed = false, onToggle } = {}) {
-  const header = doc.createElement("button");
-  header.type = "button"; header.className = "ctx-group"; header.tabIndex = -1;
-  header.dataset.treeControl = "group";
-  header.setAttribute("aria-expanded", String(!collapsed));
-  header.setAttribute("aria-label", `${collapsed ? "Expand" : "Collapse"} ${label}, ${count} ${count === 1 ? "instance" : "instances"}`);
-  const caret = doc.createElement("span"); caret.className = "ctx-group-caret"; caret.setAttribute("aria-hidden", "true");
-  const name = doc.createElement("span"); name.className = "ctx-group-name"; name.textContent = label;
-  const total = doc.createElement("span"); total.className = "ctx-group-count"; total.textContent = String(count);
-  header.append(caret, name, total);
-  if (typeof onToggle === "function") header.addEventListener("click", onToggle);
-  return header;
+/** Agent-group boundary for the instances sidebar (Workspace v4): groups
+ * read from spacing alone — a 14px gap, no title — and the boundary is still
+ * exposed to assistive technology (role=separator with the group's name and
+ * size). The group is the relation cluster (never the repo); unrelated
+ * instances share one "independent" group. Importable so the regression
+ * exercises the exact builder the shell uses. */
+export function clusterSeparator(doc, { label, count } = {}) {
+  const gap = doc.createElement("div");
+  gap.className = "ctx-group"; gap.setAttribute("role", "separator");
+  gap.setAttribute("aria-label", `${label}, ${count} ${count === 1 ? "instance" : "instances"}`);
+  gap.dataset.group = label;
+  return gap;
 }
 
 /** Design connectors for one visible row, drawn from the dots (Redesign v3):

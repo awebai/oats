@@ -143,18 +143,8 @@ body {
               font-family: inherit; font-size: 12px; line-height: 1; }
 .ctx-filter::placeholder { color: var(--muted); }
 .ctx-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 8px 8px; }
-/* Agent-group header (Redesign v3): caret · name · mono count. */
-.ctx-group { display: flex; align-items: center; gap: 6px; width: 100%; height: 26px; margin: 8px 0 2px; padding: 0 6px;
-             border: 0; border-radius: 5px; background: none; color: var(--muted); font: inherit; font-size: 10.5px;
-             font-weight: 600; line-height: 1.45; text-align: left; cursor: pointer; }
-.ctx-group:hover { color: var(--fg); }
-.ctx-group:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-/* The design's small solid caret (▾), drawn, not a glyph or a chevron. */
-.ctx-group-caret { flex: none; width: 0; height: 0; margin: 0 1px; border-left: 3.5px solid transparent;
-                   border-right: 3.5px solid transparent; border-top: 4px solid currentColor; transition: transform .12s; }
-.ctx-group[aria-expanded="false"] .ctx-group-caret { transform: rotate(-90deg); }
-.ctx-group-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ctx-group-count { margin-left: auto; font: 400 10px var(--mono, ui-monospace, Menlo, monospace); }
+/* Agent groups (Workspace v4): a 14px gap, no title; the separator names the group for AT. */
+.ctx-group { height: 14px; }
 /* One instance row: the design's tree at a slightly roomier 50px (human
    preference over the design's 44px), 18px per level; the row (not the
    button) carries hover/selection so it spans the indent like the design. */

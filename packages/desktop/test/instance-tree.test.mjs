@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import {
   collapseKey, hasInstanceChildren, instanceRepoLabel, treeGuideSegments, filterInstanceTree, instanceVisibleInTree,
-  captureTreeRenderState, clusterHeader, treeConnectors, clusterInstances, rosterResponseOwns,
+  captureTreeRenderState, clusterSeparator, treeConnectors, clusterInstances, rosterResponseOwns,
   ROSTER_SORTS, rosterRank, groupRosterFamilies, rosterGroupKey,
 } from "../renderer/instance-tree.mjs";
 
@@ -105,22 +105,16 @@ test("filter includes ancestor paths without mutating persisted collapse state",
   assert.deepEqual([...collapsed], [collapseKey("ws", "root")], "the user's collapse choice survives the filter");
 });
 
-test("agent-group header: named, counted, collapsible — and never a tab stop in the roving roster", () => {
+// Replaces the Redesign v3 group-header test: Workspace v4 separates agent
+// groups by a 14px gap without a title or collapse control.
+test("agent-group separator: a titleless gap that still names the group for assistive technology", () => {
   const dom = new JSDOM("<!doctype html><body></body>");
-  let toggles = 0;
-  const header = clusterHeader(dom.window.document, { label: "docs-writer-1", count: 2, collapsed: false, onToggle: () => toggles++ });
-  assert.equal(header.tagName, "BUTTON"); assert.equal(header.type, "button");
-  assert.equal(header.tabIndex, -1, "group headers stay out of the roving tab order");
-  assert.equal(header.dataset.treeControl, "group");
-  assert.equal(header.getAttribute("aria-expanded"), "true");
-  assert.equal(header.getAttribute("aria-label"), "Collapse docs-writer-1, 2 instances");
-  assert.equal(header.querySelector(".ctx-group-name").textContent, "docs-writer-1");
-  assert.equal(header.querySelector(".ctx-group-count").textContent, "2");
-  assert.equal(header.querySelector(".ctx-group-caret").getAttribute("aria-hidden"), "true", "the caret is decorative");
-  header.click(); assert.equal(toggles, 1);
-  const closed = clusterHeader(dom.window.document, { label: "independent", count: 1, collapsed: true });
-  assert.equal(closed.getAttribute("aria-expanded"), "false");
-  assert.equal(closed.getAttribute("aria-label"), "Expand independent, 1 instance");
+  const gap = clusterSeparator(dom.window.document, { label: "docs-writer-1", count: 2 });
+  assert.equal(gap.tagName, "DIV"); assert.equal(gap.getAttribute("role"), "separator");
+  assert.equal(gap.getAttribute("aria-label"), "docs-writer-1, 2 instances");
+  assert.equal(gap.textContent, "", "no visible title");
+  assert.equal(gap.tabIndex, -1, "never a tab stop");
+  assert.equal(clusterSeparator(dom.window.document, { label: "independent", count: 1 }).getAttribute("aria-label"), "independent, 1 instance");
   dom.window.close();
 });
 
