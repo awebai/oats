@@ -2,6 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
+import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { dirname, join } from "node:path";
 import {
   CAPABILITY_PATH, EXPERT_PATH, REPO_ROOT, SKILL_PATH,
@@ -28,7 +31,7 @@ test("framework distribution validates theory plus core/setup resource-only mani
   const frontmatter = readFileSync(join(CAP_ROOT, SKILL_PATH, "SKILL.md"), "utf8");
   assert.match(frontmatter, /^---\nname: knowledge-capability-authoring\ndescription: >-\n/);
   assert.ok(frontmatter.split("\n").length < 500);
-  assert.equal(readlinkSync(join(CAP_ROOT, EXPERT_PATH, "CLAUDE.md")), "AGENTS.md");
+  assert.equal(readlinkSync(join(PACKAGE_ROOT, EXPERT_PATH, "CLAUDE.md")), "AGENTS.md");
 });
 
 test("canonical references regenerate byte-for-byte; drift and extra copies fail", (t) => {
@@ -70,25 +73,49 @@ test("policy additions and escaping soul compatibility symlinks fail the package
   const copied = copyPackage(base);
   const manifestPath = join(copied, CAPABILITY_PATH, "oats.json");
   const original = JSON.parse(readFileSync(manifestPath, "utf8"));
-  for (const patch of [{ layer: "knowledge" }, { inject: "mandatory.md" }, { hooks: { spawn: "hook.mjs" } }]) {
+  for (const patch of [{ layer: "knowledge" }, { inject: "mandatory.md" }, { hooks: { spawn: "hook.mjs" } }, { agents: ["agents/knowledge-theory-expert"] }]) {
     writeFileSync(manifestPath, JSON.stringify({ ...original, ...patch }));
     assert.throws(() => checkKnowledgeTheoryPackage({ packageRoot: copied, parity: false }), assert.AssertionError);
   }
   writeFileSync(manifestPath, JSON.stringify(original));
-  const alias = join(copied, CAPABILITY_PATH, EXPERT_PATH, "CLAUDE.md");
+  const alias = join(copied, EXPERT_PATH, "CLAUDE.md");
   rmSync(alias);
-  symlinkSync(join(CAP_ROOT, EXPERT_PATH, "AGENTS.md"), alias);
+  symlinkSync(join(PACKAGE_ROOT, EXPERT_PATH, "AGENTS.md"), alias);
   assert.throws(() => checkKnowledgeTheoryPackage({ packageRoot: copied, parity: false }), /absolute symlink/);
 });
 
 test("a missing npm-style source alias or a regular compatibility copy fails the source gate", (t) => {
   const copied = copyPackage(temp(t));
-  const alias = join(copied, CAPABILITY_PATH, EXPERT_PATH, "CLAUDE.md");
+  const alias = join(copied, EXPERT_PATH, "CLAUDE.md");
   rmSync(alias);
   assert.throws(() => checkKnowledgeTheoryPackage({ packageRoot: copied, parity: false }), /source CLAUDE.md must be/);
-  write(alias, readFileSync(join(copied, CAPABILITY_PATH, EXPERT_PATH, "AGENTS.md")));
+  write(alias, readFileSync(join(copied, EXPERT_PATH, "AGENTS.md")));
   assert.throws(() => checkKnowledgeTheoryPackage({ packageRoot: copied, parity: false }), /source CLAUDE.md must be/);
   rmSync(alias);
   symlinkSync("AGENTS.md", alias);
   assert.equal(checkKnowledgeTheoryPackage({ packageRoot: copied, parity: false }).ok, true);
+});
+
+test("knowledge-theory-expert is an oats.framework PACKAGE SOUL: locked with the package, spawned by its qualified name, with the theory skill and no knowledge slot", { timeout: 120_000 }, (t) => {
+  // The shipped oats-package tree as a tagged Git package (the release channel).
+  const base = temp(t);
+  const bare = join(base, "framework.git"), seed = join(base, "seed");
+  const git = (cwd, ...args) => execFileSync("git", args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+  git(base, "init", "-q", "--bare", bare);
+  git(base, "clone", "-q", bare, seed);
+  cpSync(PACKAGE_ROOT, join(seed, "oats-package"), { recursive: true, verbatimSymlinks: true });
+  git(seed, "add", "-A"); git(seed, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "framework");
+  git(seed, "tag", `v${PACKAGE_META.version}`); git(seed, "push", "-q", "origin", "HEAD:main", "--tags");
+  const fx = v2Deployment({ name: "acme", workspace: { packages: { "oats.framework": `git:${pathToFileURL(bare).href}@v${PACKAGE_META.version}` } } });
+  t.after(fx.cleanup);
+  const ok = (r) => { const j = r.json(); assert.equal(j.ok, true, r.stdout + r.stderr); return j.result; };
+  ok(fx.cli(["sync", "--json"]));
+  const lock = JSON.parse(readFileSync(join(fx.dep, "oats-lock.json"), "utf8"));
+  assert.deepEqual(lock.packages["oats.framework"].souls.map((s) => s.name), ["knowledge-theory-expert"]);
+  const spawned = ok(fx.cli(["spawn", "oats.framework/knowledge-theory-expert", "--purpose", "author", "--work", "directory", "--no-launch", "--json"]));
+  assert.equal(spawned.home, join(fx.root, "oats-framework--knowledge-theory-expert", "instances", "oats-framework-knowledge-theory-expert-author"));
+  const meta = JSON.parse(readFileSync(join(spawned.home, "instance.json"), "utf8"));
+  assert.deepEqual(Object.keys(meta.modules), ["oats.knowledge-theory"], "its package's theory capability, no knowledge slot");
+  assert.ok(readFileSync(join(spawned.home, ".agents", "skills", "oats.knowledge-theory", "knowledge-capability-authoring", "SKILL.md"), "utf8").includes("name: knowledge-capability-authoring"));
+  assert.match(readFileSync(join(spawned.home, "AGENTS.md"), "utf8"), /# Knowledge theory expert/);
 });

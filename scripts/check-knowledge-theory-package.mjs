@@ -24,7 +24,8 @@ function validateCapability(value) {
 }
 function parseYaml(text) { yamlParser ??= require("yaml").parse; return yamlParser(text); }
 export const SKILL_PATH = "skills/knowledge-capability-authoring";
-export const EXPERT_PATH = "agents/knowledge-theory-expert";
+// The expert is an oats.framework PACKAGE SOUL (0.29.0: capability-defined agents were removed).
+export const EXPERT_PATH = "souls/knowledge-theory-expert";
 
 function inside(root, path) {
   const rel = relative(realpathSync(root), realpathSync(path));
@@ -169,12 +170,12 @@ export function checkKnowledgeTheoryPackage({ repoRoot = REPO_ROOT, packageRoot 
   const cap = JSON.parse(readFileSync(join(capRoot, "oats.json"), "utf8"));
   // Deliberately narrow: adding any runtime policy, dependency, template or
   // executable surface is a boundary change, not unnoticed manifest growth.
-  assert.deepEqual(Object.keys(pkg).sort(), ["package", "version", "description", "compatibility", "capabilities"].sort());
-  assert.deepEqual(Object.keys(cap).sort(), ["capability", "version", "description", "compatibility", "requires", "skills", "agents"].sort());
+  assert.deepEqual(Object.keys(pkg).sort(), ["package", "version", "description", "compatibility", "capabilities", "souls"].sort());
+  assert.deepEqual(Object.keys(cap).sort(), ["capability", "version", "description", "compatibility", "requires", "skills"].sort());
   assert.equal(pkg.package, DISTRIBUTION_PACKAGE_ID);
   assert.equal(cap.capability, "oats.knowledge-theory");
   assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
-  assert.equal(cap.version, "1.0.1");
+  assert.equal(cap.version, "1.1.0");
   assert.deepEqual(cap.compatibility, { oats: ">=0.22.19" });
   assert.deepEqual(pkg.compatibility, { oats: ">=0.24.0" });
   assert.deepEqual(pkg.capabilities, DISTRIBUTION_CAPABILITIES);
@@ -182,10 +183,13 @@ export function checkKnowledgeTheoryPackage({ repoRoot = REPO_ROOT, packageRoot 
   checkOperationalCapabilities(packageRoot);
   assert.deepEqual(cap.requires, []);
   assert.deepEqual(cap.skills, [SKILL_PATH]);
-  assert.deepEqual(cap.agents, [EXPERT_PATH]);
+  assert.deepEqual(pkg.souls, [EXPERT_PATH]);
   treeFiles(packageRoot);
   treeFiles(capRoot);
-  const soul = join(capRoot, EXPERT_PATH);
+  const soul = join(packageRoot, EXPERT_PATH);
+  const soulYaml = parseYaml(readFileSync(join(soul, "soul.yaml"), "utf8"));
+  assert.equal(soulYaml.name, "knowledge-theory-expert");
+  assert.deepEqual(soulYaml.capabilities, { "oats.knowledge-theory": { from: "here" } }, "the expert reads the authoring skill from its own package");
   const alias = join(soul, "CLAUDE.md");
   assert.ok(existsSync(alias) && lstatSync(alias).isSymbolicLink(), "source CLAUDE.md must be a tracked relative symlink, never omitted or synthesized during acquisition");
   assert.equal(readlinkSync(alias), "AGENTS.md");

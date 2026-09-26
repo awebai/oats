@@ -1,6 +1,5 @@
 import test from "node:test";
 import { fixture as okfFixture } from "./helpers/okf-v2.mjs";
-// Until the lead's Q1 (capability agents spawn prepared on a workspace deployment).
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -12,6 +11,7 @@ import {
 } from "@awebai/oats/core";
 import { inertHarnessPath } from "./helpers/runtime-stub.mjs";
 import { capabilityFiles, soulFiles, v2Deployment } from "./helpers/v2-deployment.mjs";
+import { packageRepo } from "./helpers/package-repo.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 /** Parse a `--json` CLI success envelope (Desktop CLI API v1): stdout must be
@@ -612,25 +612,26 @@ test("spawn lineage is explicit: ambient env never sets parent; --parent and att
   }
 });
 
-test("--parent accepts a capability agent's instance, homed under the agents root", (t) => {
-  const fx = v2(t, {
-    souls: { dev: { soul: { work: "checkout" } } },
-    capabilities: { "acme.rev": cap({ agents: ["agents/reviewer"] }, {
-      "agents/reviewer/soul.yaml": "name: reviewer\nkind: capability\nwork: directory\nharness: pi\ndescription: Reviewer.\n",
-      "agents/reviewer/AGENTS.md": "# Reviewer\n",
-    }) },
-  });
+test("a capability-agent home an earlier kernel left (0.29.0 creates none) stays listed, anchors a --parent spawn, and retires", async (t) => {
+  const fx = v2(t, { souls: { dev: { soul: { work: "directory" } } } });
   const env = { PATH: fakeHarnesses(fx.base) };
-  // A capability agent's instance homes under <root>/reviewer/instances/.
-  const parent = jsonResult(fx.cli(["spawn", "reviewer", "--name", "reviewer-abc", "--no-launch", "--json"], { env }));
-  assert.equal(parent.home, join(fx.root, "reviewer", "instances", "reviewer-abc"));
-  // Coordinator-style spawn: a capability agent's instance passes itself as --parent.
+  // What a 0.28 spawn of a manifest `agents:` soul left, made by the kernel itself: an agent
+  // record of kind "capability" whose dir under the agents root holds no soul, only instances/.
+  const { prepared, agent } = await fx.prepare("dev");
+  const legacy = { ...agent, name: "reviewer", kind: "capability", capability: "acme.rev", _dir: join(fx.root, "reviewer"), _soulDir: agent._soulDir ?? join(agent._dir, "soul") };
+  const made = await fx.inEnv(() => spawnInstanceAsync(fx.root, legacy, { launch: false, prepared, repo: fx.dep, work: "directory", instance: "reviewer-abc" }));
+  assert.equal(made.home, join(fx.root, "reviewer", "instances", "reviewer-abc"));
+  assert.equal(existsSync(join(fx.root, "reviewer", "soul")), false, "a soul-less agent dir");
+
+  const status = JSON.parse(fx.cli(["status", "--json"], { env }).stdout);
+  const row = status.agents.find((a) => a.name === "reviewer");
+  assert.deepEqual([row?.kind, row?.instances.map((i) => i.instance)], ["capability", ["reviewer-abc"]], JSON.stringify(status.agents));
   const r = fx.cli(["spawn", "dev", "--parent", "reviewer-abc", "--task", "child work", "--purpose", "child", "--no-launch", "--json"], { env });
-  assert.equal(r.status, 0, r.stderr);
-  const child = jsonResult(r);
-  assert.equal(child.parent, "reviewer-abc");
-  assert.equal(child.spawnOrigin, "instance");
-  assert.match(readFileSync(join(child.home, "TASK.md"), "utf8"), /child work/);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(jsonResult(r).parent, "reviewer-abc");
+  const retired = fx.cli(["retire", "reviewer-abc", "--json"], { env });
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.equal(existsSync(made.home), false, "retired: the home is gone");
 });
 
 test("spawn relations: child/sibling/parent/unrelated, sugar equivalence, validation", async (t) => {
@@ -2867,19 +2868,21 @@ test("the boundary does not contradict a read-only workspace instance (reviewer-
   assert.doesNotMatch(text, /work` is the repository\b/, "no unqualified 'work is the repository' claim");
 });
 
-test("a REAL spawned packaged reviewer gets the boundary and keeps its own report path (reviewer-focus-c6e3680)", (t) => {
-  // The SHIPPED oats-review capability, spawned through the real CLI as a capability
-  // agent anchored on the instance that declares it — not a synthetic composer call.
-  // Its own instructions require writing a report to a temp file before mailing it,
-  // so a boundary forbidding output outside work/ would contradict the very agent
-  // it ships beside.
-  const src = resolve(new URL("../capabilities/oats-review", import.meta.url).pathname);
-  const fx = v2(t, { souls: { dev: { soul: { work: "checkout", capabilities: here("oats.review") } } }, capabilityDirs: { "oats.review": src } });
+test("a REAL spawned package soul gets the boundary and keeps its own report path (reviewer-focus-c6e3680)", (t) => {
+  // A package soul of the post-commit reviewer's shape (oats.dev/reviewer), spawned through
+  // the real CLI from a tagged package — not a synthetic composer call. Its own instructions
+  // require writing a report to a temp file before delivering it, so a boundary forbidding
+  // output outside work/ would contradict the very agent the package ships.
+  const pkg = packageRepo({ id: "acme.dev", souls: { reviewer: { soul: { knowledge: "none" }, agents: "# reviewer\n\nWrite the report to a temp file first, then deliver it to your spawner.\n" } } });
+  const fx = v2(t, { workspace: { packages: { "acme.dev": `${pkg.ref}@v1.0.0` } } });
+  t.after(pkg.cleanup);
   const env = { PATH: fakeHarnesses(fx.base) };
+  assert.equal(fx.cli(["sync", "--json"], { env }).status, 0);
   const owner = jsonResult(fx.cli(["spawn", "dev", "--name", "dev-owner", "--no-launch", "--json"], { env }));
-  const r = fx.cli(["spawn", "reviewer", "--name", "reviewer-boundary", "--parent", owner.instance, "--work", "checkout", "--repo", fx.member, "--no-launch", "--json"], { env });
+  const r = fx.cli(["spawn", "reviewer", "--purpose", "boundary", "--parent", owner.instance, "--no-launch", "--json"], { env });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   const res = jsonResult(r);
+  assert.equal(res.home, join(fx.root, "acme-dev--reviewer", "instances", "acme-dev-reviewer-boundary"));
   const text = flat(readFileSync(join(res.home, "AGENTS.md"), "utf8"));
   for (const must of BOUNDARY_MUST_SAY) {
     assert.ok(text.includes(flat(must)), `spawned reviewer: must say ${JSON.stringify(must)}`);
@@ -3042,7 +3045,9 @@ test("bundled capabilities carry the versions package-catalog.json pins", () => 
   const review = JSON.parse(readFileSync(join(pkgRoot, "capabilities", "oats-review", "oats.json"), "utf8"));
   assert.equal(review.capability, "oats.review");
   assert.equal(catalog.capabilities["oats.review"], "oats.dev", "oats.review is supplied by the oats.dev package");
-  assert.equal(review.version, "1.2.1", "the oats.dev@v1.0.1 payload ships oats.review at 1.2.1");
+  assert.equal(catalog.packages["oats.dev"].ref, "v1.1.0");
+  assert.equal(review.version, "1.3.0", "the oats.dev@v1.1.0 payload ships oats.review at 1.3.0");
+  assert.equal(Object.hasOwn(review, "agents"), false, "and no capability agent: the reviewer is oats.dev's package soul");
 });
 
 test("no shipped instructional surface teaches settling in the work tree (maintainer contract)", () => {
@@ -3080,20 +3085,16 @@ test("the independently targetable oats.review assumes no knowledge or messaging
   for (const r of manifest.requires || []) {
     assert.ok(!r.capability && !r.layer, `requires must not carry layer dependencies: ${JSON.stringify(r)}`);
   }
-  // The two surfaces that ship INDEPENDENTLY of any layer must issue no
-  // unconditional command belonging to one.
-  for (const f of ["injects/review.md", "agents/reviewer/AGENTS.md"]) {
+  // The surface that ships INDEPENDENTLY of any layer must issue no
+  // unconditional command belonging to one. (The reviewer soul's own AGENTS.md
+  // ships in the oats.dev package, whose tests pin the same properties.)
+  for (const f of ["injects/review.md"]) {
     const text = readFileSync(join(dir, f), "utf8");
     assert.doesNotMatch(text, /\baw\b/i, `${f} commands the aweb CLI`);
     assert.doesNotMatch(text, /\boats okf\b/i, `${f} commands the OKF layer`);
   }
   // Conditional wording plus the transcript fallback: what an instance actually
   // needs to behave correctly with, and without, a messaging layer.
-  const soul = readFileSync(join(dir, "agents", "reviewer", "AGENTS.md"), "utf8");
-  const noLayerPara = soul.split(/\n\s*\n/).find((para) => /none is active/i.test(para));
-  assert.ok(noLayerPara && /print the full report as your final message/i.test(noLayerPara) && /transcript/i.test(noLayerPara),
-    "the reviewer must define transcript delivery in the no-layer instruction itself");
-  assert.match(soul, /If a messaging layer is active/, "and the active-layer path must be conditional");
   const inject = readFileSync(join(dir, "injects", "review.md"), "utf8");
   assert.match(inject, /otherwise in its own session transcript/, "the discipline block states the no-layer delivery");
   assert.match(inject, /when a knowledge\s+layer is active/i, "and makes the promotion step conditional");

@@ -10,7 +10,7 @@ npm root; the kernel npm tarball does not contain it.
 | --- | --- | --- |
 | `oats.core` | `oats-operate`, `oats-souls`, and the capability-owned "You run on OATS" injection | How an agent works inside an instance of the workspace model; no hooks, commands, and not a core capability |
 | `oats.setup` | `oats-onboarding`, `oats-package-pins` | How an operator realizes and pins a deployment; no automatic provisioning |
-| `oats.knowledge-theory` | `knowledge-capability-authoring` and `knowledge-theory-expert` with their complete local references | Optional authoring theory; no mandatory runtime doctrine, harvester or OKF dependency |
+| `oats.knowledge-theory` | `knowledge-capability-authoring` with its complete local references (the package soul `knowledge-theory-expert` uses it) | Optional authoring theory; no mandatory runtime doctrine, harvester or OKF dependency |
 
 ## How a workspace selects them
 

@@ -57,8 +57,14 @@ source. The current authoring-reference patch is package 1.0.1: once framework
 v0.23.1 is published, an explicit initial Git acquisition at that tag selects
 the patch instead. It does not silently change the catalog's 1.0.0 selection
 or an existing lock. For local development, use an explicit complete source
-package path instead. Activation exposes the expert and targets
-the authoring skill, without selecting or replacing a knowledge capability.
+package path instead. Activation targets the authoring skill, without
+selecting or replacing a knowledge capability.
+
+The expert is an oats.framework **package soul** from framework 1.3.0
+(`oats-package/souls/knowledge-theory-expert/`, reading `oats.knowledge-theory`
+1.1.0 from its own package): spawn it by its qualified name in the author's
+repository, `oats spawn oats.framework/knowledge-theory-expert --repo <repo>`.
+Before 1.3.0 it was a capability-defined agent, which OATS 0.29.0 removed.
 There are no executable surfaces to trust in this package. Installed experts
 use their materialized local curriculum, not this repository at runtime.
 

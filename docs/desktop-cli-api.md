@@ -96,7 +96,7 @@ routed commands (`--server`) already translate for such a host, sending
 | `oats inspect --json` `souls[]` rows, remote roster rows | `runtime` | `harness` | Output only; a pre-0.27 host's `runtime` rows are read as `harness` |
 | `oats inspect --home --json` `instance` | `runtime` | `harness` | Output only |
 | The launch plan's package check (`launch-config preview` `problems[]`) | `runtime-packages` | `harness-packages` | Output only |
-| Soul `soul.yaml` (member souls and capability-defined agents) | `runtime:` | `harness:` | Yes, **without** a warning: released capabilities (oats.aweb 1.13.1) ship `runtime:`, and the operator cannot fix a provider's file. Both, disagreeing → `E_BAD_MANIFEST` |
+| Soul `soul.yaml` (member and package souls) | `runtime:` | `harness:` | Yes, **without** a warning: released capabilities (oats.aweb 1.13.1) ship `runtime:`, and the operator cannot fix a provider's file. Both, disagreeing → `E_BAD_MANIFEST` |
 | `oats-local.yaml` `launch-configs.<name>` | `runtime:` | `harness:` | Yes, with the warning. Both, disagreeing → `E_WORKSPACE_SCHEMA`. `launch-config set` writes `harness` (a `runtime` in its `--file` definition too) |
 | `launch-config list/preview --json` rows and `selection` | `runtime` | `harness` | Output only |
 | Home `instance.json` | `runtime`; launch recipe `launch` version 1 `{runtime}` | `harness`; recipe version **2** `{harness}` | Yes, with the warning naming the home: a 0.26.0 home inspects, starts, restarts and retires; its next start or restart records the new names |
@@ -758,7 +758,7 @@ the pre-fix marker and is never accepted for dispatch.
   `agents/<soul>/soul` pointer. (0.25.x previews populated the cache: that stated
   exception is gone.)
 - **Exact root**: `spawn <soul> --agents-root <abs>` binds the soul to that root
-  (as inspect/readiness take it) — no team-soul / capability-agent / importable-
+  (as inspect/readiness take it) — no team-soul / importable-
   def fallback; mismatch → `E_SOUL_UNKNOWN`. The preview echoes
   `subject {soul, agentsRoot|null, dir|null}` **as given, byte-exact**.
 - **Decision binding**: `decision {instance, home, branch, base{ref,oid},
