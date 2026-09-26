@@ -1,6 +1,7 @@
 /** Machine Connections + qualified PR read. No auth mutation is exposed by HTTP. */
 import { createHmac, randomBytes } from 'node:crypto';
 import { isAbsolute } from 'node:path';
+import { realpathSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { cliInstanceGit } from '../cli-adapter.mjs';
 import { gitState, gitTargetKey } from '../renderer/instance-git-contract.mjs';
@@ -8,6 +9,7 @@ import { object, ref, FORGE_API, forgeFailure, forgeReason } from '../renderer/f
 import { createGhRunner, discoverGh, ghStatus, ghLogin, ghPullRequest, forgeEnvironment } from '../forge-cli.mjs';
 import { admitInstanceGit } from './instance-git.mjs';
 import { forgeObservation } from './forge-observation.mjs';
+import { rosterTargets } from './forge-roster.mjs';
 
 export { FORGE_EPOCH_HEADER, validForgeEpoch } from '../forge-proxy.mjs';
 import { validForgeEpoch } from '../forge-proxy.mjs';
@@ -15,7 +17,7 @@ const cliKey = cli => JSON.stringify([cli.bin, cli.version, cli.stamp, cli.profi
 const noObservation = { target: null, observation: null };
 const metadata = (target, o) => ({ target, observation: { key: o.observationKey, revision: o.revision, branch: o.branch } });
 export function createForgeBoundary({ env = forgeEnvironment(), run = createGhRunner({ env }),
-  discover = () => discoverGh({ run, env }), invokeGit = cliInstanceGit, now = () => performance.now() } = {}) {
+  discover = () => discoverGh({ run, env }), invokeGit = cliInstanceGit, now = () => performance.now(), realpath = realpathSync.native } = {}) {
   const secret = randomBytes(32), flights = new Map(), probes = new Map(), statuses = new Map();
   const hosts = new Map(), actions = new Map();
   const digest = fields => createHmac('sha256', secret).update(JSON.stringify(fields)).digest('hex');
@@ -119,6 +121,47 @@ export function createForgeBoundary({ env = forgeEnvironment(), run = createGhRu
       return result;
     }, { ...noObservation, target: admitted.target });
   }
-  return { connections, pull };
+  /* forge-roster: the open/closed/merged PR of each LOCAL instance's branch, for the roster.
+     The repository is the kernel's (clones[] member key, forge-roster.mjs); gh runs as this
+     host's own auth (never a token in argv, env or output); a row is exactly
+     { home, number, state, isDraft, url }, and an instance without a PR has no row. */
+  const rosterCache = new Map(), ROSTER_TTL = 60_000;
+  const rosterDone = (epoch, rows) => ({ forgeApi: FORGE_API, status: 'ok', rows, reason: null, readEpoch: epoch, observedAt: new Date().toISOString() });
+  function roster(request, getContext, epoch = 'standalone:0') {
+    if (!validForgeEpoch(epoch) || !object(request) || Object.keys(request).length) return Promise.resolve(failure('E_BAD_ARGS', 'invalid', { rows: null }));
+    const context = getContext();
+    if (!context?.workspace) return Promise.resolve(failure('E_WORKSPACE_UNKNOWN', epoch, { rows: null }));
+    if (context.workspace.remote) return Promise.resolve(failure('unsupported-remote-operation', epoch, { rows: null }));
+    const targets = rosterTargets({ instances: context.instances, clones: context.clones, realpath });
+    if (!targets.length) return Promise.resolve(rosterDone(epoch, []));
+    return flight(JSON.stringify(['roster', epoch, context.workspace.id]), epoch, async () => {
+      const deadline = now() + 45_000;
+      const conn = await connection({ wantedHost: 'github.com', epoch, deadline });
+      if (conn.status === 'cli-not-installed' || conn.status === 'not-connected') return failure('E_GH_UNAVAILABLE', epoch, { rows: null });
+      if (conn.status !== 'connected') return failure(conn.reason?.code || 'E_GH_FAILED', epoch, { rows: null });
+      for (const [key, value] of rosterCache) if (value.expires <= now()) rosterCache.delete(key);
+      const found = new Map();
+      for (const t of targets) {
+        const key = JSON.stringify([t.host, t.path, t.branch]);
+        if (found.has(key)) continue;
+        let hit = rosterCache.get(key);
+        if (!hit) {
+          if (deadline - now() < 1_000) break; // what did not fit is absent, never guessed
+          const pr = await ghPullRequest(conn.cli, t, run, Math.min(10_000, deadline - now()));
+          if (!pr.ok) { found.set(key, null); continue; }
+          hit = { data: pr.data, expires: now() + ROSTER_TTL };
+          if (rosterCache.size < 256) rosterCache.set(key, hit);
+        }
+        found.set(key, hit.data);
+      }
+      const rows = [];
+      for (const t of targets) {
+        const data = found.get(JSON.stringify([t.host, t.path, t.branch]));
+        if (data) rows.push({ home: t.home, number: data.number, state: data.state, isDraft: data.isDraft, url: data.url });
+      }
+      return rosterDone(epoch, rows);
+    }, { rows: null });
+  }
+  return { connections, pull, roster };
 }
 export const forgeBoundary = createForgeBoundary();

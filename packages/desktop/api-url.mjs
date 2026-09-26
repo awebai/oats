@@ -18,7 +18,8 @@ export function classifyApiRoute(pathname, base) {
       case '/api/schedules': return 'schedules';
       case '/api/automations': return 'automations';
       case '/api/forge-connections':
-      case '/api/instance-forge': return 'forge';
+      case '/api/instance-forge':
+      case '/api/forge-roster': return 'forge';
       case '/api/capabilities': return 'capabilities';
       case '/api/workspace-sync': return 'workspace-sync';
       case '/api/panel': return 'panel';
@@ -62,13 +63,13 @@ export function apiUrl(pathname, base, wsId = null, allowedWs = undefined) {
   // workspace, and same-named instances exist across workspaces. Pinning
   // here makes an omitted ?ws= fail SAFE (verified workspace) even before
   // views append it themselves.
-  const wsScoped = url.pathname === "/api/panel" || url.pathname === "/api/agents" || url.pathname === '/api/spawn' || url.pathname === '/api/automations'
+  const wsScoped = url.pathname === "/api/panel" || url.pathname === "/api/agents" || url.pathname === '/api/spawn' || url.pathname === '/api/automations' || url.pathname === '/api/forge-roster'
     || /^\/api\/(?:instance|workspace)-[a-z-]+$/.test(url.pathname) // entire body-addressed scoped families
     || /^\/api\/(brain|session|keys|interrupt|chat)\//.test(url.pathname);
   if (wsId && wsScoped) {
     // Preserve duplicate selectors for the strict server boundary to REFUSE;
     // set() must not turn malformed requests into an admitted read.
-    if ((url.pathname === '/api/spawn' || url.pathname === '/api/automations' || /^\/api\/(?:instance|workspace)-[a-z-]+$/.test(url.pathname)) && url.searchParams.getAll('ws').length > 1) return url;
+    if ((url.pathname === '/api/spawn' || url.pathname === '/api/automations' || url.pathname === '/api/forge-roster' || /^\/api\/(?:instance|workspace)-[a-z-]+$/.test(url.pathname)) && url.searchParams.getAll('ws').length > 1) return url;
     const asked = url.searchParams.get("ws");
     // Workspace switching is a real feature on shared multi-workspace
     // servers — but only to workspaces the server actually advertises;
