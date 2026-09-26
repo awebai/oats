@@ -8,6 +8,7 @@
  * the kernel's `automations` lists (feature `automations`, automationsApi 1). */
 import {
   automationRows, groupRows, filterRows, placementText, ownerParts, taskParts, cronInWords, onSummary, relativeTime,
+  hostLogin, templateLabel, soulOriginText, testResult, triggerStatus,
 } from '../automation-rows.mjs';
 import { pageCardCSS, pageBar, pageCard, pageFacts, pageSection } from '../capability-page.mjs';
 import { iconElement } from '../shell-icons.mjs';
@@ -110,7 +111,9 @@ const HEADS = ['On', 'Automation', 'Soul', 'When', 'Runs on', 'Last · next', ''
 const TITLES = { schedule: 'Schedules', trigger: 'Triggers' };
 const OUTCOMES = { launched: 'agent launched', active: 'agent active', running: 'agent active', ended: 'run ended', stopped: 'agent stopped', unknown: 'launch state unknown', 'launch-failed': 'launch failed', skipped: 'skipped', delivered: 'wake delivered' };
 
-export function createAutomationsView(host, { kind, read, act = null, openFile = null, now = () => Date.now() } = {}) {
+/** read(): the list JSON · act(verb, row): enable|disable|test|run → kernel JSON · status(row): a trigger's
+ * `oats trigger status` JSON (fire history, live instances) · openFile(row): open its defining file. */
+export function createAutomationsView(host, { kind, read, act = null, status = null, openFile = null, now = () => Date.now() } = {}) {
   const doc = host.ownerDocument;
   const node = (tag, value, cls) => { const el = doc.createElement(tag); if (value !== undefined && value !== null) el.textContent = value; if (cls) el.className = cls; return el; };
   const title = TITLES[kind], noun = kind === 'trigger' ? 'trigger' : 'schedule';
@@ -126,7 +129,9 @@ export function createAutomationsView(host, { kind, read, act = null, openFile =
   root.append(style, header, body, page); host.append(root);
 
   let alive = true, serial = 0, data = null, failure = '', loading = false, origin = 'all', query = '', openId = null, busy = false;
-  const tests = new Map();
+  const tests = new Map(), statuses = new Map();
+  // A workspace item's file opens from its web URL or this machine's clone.
+  const canOpen = row => !!openFile && row.origin.kind === 'workspace' && !!(row.origin.url || row.origin.localPath);
   const rowById = id => data?.rows.find(r => r.id === id) || null;
 
   // ── toolbar (persistent: the search keeps focus across renders) ──
@@ -162,7 +167,7 @@ export function createAutomationsView(host, { kind, read, act = null, openFile =
     try {
       const result = await act(verb, row);
       if (!alive) return;
-      if (verb === 'test') tests.set(row.id, { ok: result?.ok !== false, result });
+      if (verb === 'test') tests.set(row.id, testResult(result, kind) || { ok: false, error: `This OATS did not answer a ${noun} test.` });
       else await refresh();
     } catch (error) { if (alive) { if (verb === 'test') tests.set(row.id, { ok: false, error: error?.message || String(error) }); else failure = error?.message || String(error); } }
     finally { if (alive) { busy = false; render(); } }
@@ -188,20 +193,18 @@ export function createAutomationsView(host, { kind, read, act = null, openFile =
     if (!row.enabledHere && row.group !== 'elsewhere') tags.append(node('span', 'Off here', 'auto-tag muted'));
     const bad = row.invalid || row.unreadable;
     if (bad) { const t = node('span', 'Invalid', 'auto-tag warn'); t.title = bad.message || bad.code || ''; tags.append(t); }
-    if (row.template) { const t = node('span', undefined, 'auto-tag muted'); t.append(iconElement(doc, 'package', { size: 11 }), node('span', [row.template.package, row.template.id].filter(Boolean).join(':') || 'template')); t.title = 'From a package template'; tags.append(t); }
+    const template = templateLabel(row.template);
+    if (template) { const t = node('span', undefined, 'auto-tag muted'); t.append(iconElement(doc, 'package', { size: 11 }), node('span', template)); t.title = `From the package template ${template}${row.template.version ? ` ${row.template.version}` : ''}`; tags.append(t); }
   }
   function soulLine(row) {
     const line = node('span', undefined, 'auto-main-line');
     if (!row.soul) { line.append(node('span', row.run && row.run !== 'spawn' ? `${row.run}` : 'Not reported', 'auto-none')); return line; }
-    const o = row.soul.origin, icon = o?.kind === 'package' ? 'package' : o?.kind === 'ambiguous' ? 'warning' : 'repo';
+    const o = row.soul.origin, icon = o?.kind === 'package' ? 'package' : o?.kind === 'external' ? 'external' : o?.kind === 'ambiguous' || !o ? 'warning' : 'repo';
     line.append(iconElement(doc, icon, { size: 12 }), node('span', row.soul.name, 'auto-mono'));
-    line.title = o?.kind === 'package' ? `${row.soul.name} · package ${[o.package, o.version].filter(Boolean).join(' ')}` : o?.kind === 'member' ? `${row.soul.name} · ${o.member || o.repoKey}` : o?.kind === 'external' ? `${row.soul.name} · external ${o.source || o.repoKey || ''}` : o?.kind === 'ambiguous' ? `${row.soul.name} · more than one soul has this name` : row.soul.name;
+    line.title = `${row.soul.name} · ${soulOriginText(o).long}`;
     return line;
   }
-  function soulSub(row) {
-    const o = row.soul?.origin;
-    return o?.kind === 'package' ? `package ${o.package || ''}` : o?.kind === 'member' ? (o.member || 'member') : o?.kind === 'external' ? 'external' : o?.kind === 'ambiguous' ? 'ambiguous name' : '';
-  }
+  const soulSub = row => row.soul ? soulOriginText(row.soul.origin).short : '';
   function whenCell(row) {
     const cell = node('div', undefined, 'auto-cell');
     if (row.kind === 'schedule') {
@@ -229,7 +232,8 @@ export function createAutomationsView(host, { kind, read, act = null, openFile =
     const cell = node('div', undefined, 'auto-cell');
     if (!row.runsHere && row.group !== 'here') { cell.append(node('span', '—', 'auto-none')); return cell; }
     const next = relativeTime(row.nextDue, now()), last = relativeTime(row.lastRun?.at || row.lastRun?.startedAt || row.lastRun?.scheduledFor, now());
-    const n = node('span', next ? `Next ${next.label}` : row.enabledHere ? 'Next not reported' : 'Off here', 'auto-main-line'); if (next) n.title = next.title;
+    // A trigger that runs here but has not polled yet polls at the next tick (nextDue null).
+    const n = node('span', next ? `Next ${next.label}` : !row.enabledHere ? 'Off here' : row.runsHere && kind === 'trigger' ? 'Polls at the next tick' : 'Next not reported', 'auto-main-line'); if (next) n.title = next.title;
     const l = node('span', last ? `Last ${last.label}${row.lastRun?.outcome ? ` · ${OUTCOMES[row.lastRun.outcome] || row.lastRun.outcome}` : row.lastRun?.number ? ` · #${row.lastRun.number}` : ''}` : 'Not run yet', 'auto-sub'); if (last) l.title = last.title;
     cell.append(n, l); return cell;
   }
@@ -242,7 +246,7 @@ export function createAutomationsView(host, { kind, read, act = null, openFile =
     item('Test', 'test', !!act);
     if (row.kind === 'schedule' && row.runsHere) item('Run now', 'run', !!act);
     if (row.group !== 'elsewhere') item(row.enabledHere ? 'Turn off here' : 'Turn on here', row.enabledHere ? 'disable' : 'enable', !!act);
-    if (row.origin.kind === 'workspace' && openFile) item('Open file', 'file');
+    if (canOpen(row)) item('Open file', 'file');
     menu.append(summary, items); return menu;
   }
   function rowEl(row) {
@@ -267,7 +271,7 @@ export function createAutomationsView(host, { kind, read, act = null, openFile =
     if (failure) notices.append(node('p', failure, 'auto-status error'));
     if (!data) { if (loading) notices.append(node('p', `Reading ${title.toLowerCase()}…`, 'auto-status')); return; }
     if (!data.host.name && rows.some(r => r.reason === 'host-unnamed')) banner(`This computer has no host name, so it runs none of the workspace's ${title.toLowerCase()}. Name it in this deployment's local settings to take on the ones assigned to it.`);
-    if (kind === 'schedule' && data.scheduler && !schedulerOn(data.scheduler) && rows.some(r => r.runsHere)) banner('The scheduler is not running on this computer, so nothing here runs until it is enabled.');
+    if (data.scheduler && !schedulerOn(data.scheduler) && rows.some(r => r.runsHere)) banner('The scheduler is not running on this computer, so nothing here runs until it is enabled.');
     for (const [id, b] of segButtons) { b.setAttribute('aria-pressed', String(id === origin)); setText(b.querySelector('.auto-seg-count'), String(id === 'all' ? rows.length : rows.filter(r => r.origin.kind === id).length)); }
     if (!rows.length) {
       const empty = node('div', undefined, 'auto-empty'); empty.append(node('strong', `No ${title.toLowerCase()} yet`));
@@ -303,7 +307,18 @@ export function createAutomationsView(host, { kind, read, act = null, openFile =
   }
 
   // ── detail page ──
-  function openRow(id) { openId = id; render(); page.querySelector('.page-back')?.focus(); }
+  function openRow(id) { openId = id; render(); page.querySelector('.page-back')?.focus(); void loadStatus(id); }
+  /** A trigger's fire history, read once per open; a stale answer never lands on another page. */
+  async function loadStatus(id) {
+    const row = rowById(id);
+    if (kind !== 'trigger' || !status || !row) return;
+    try {
+      const st = triggerStatus(await status(row), row.id);
+      if (!alive || !st) return;
+      statuses.set(row.id, st);
+      if (openId === id) { const back = doc.activeElement === page.querySelector('.page-back'); render(); if (back) page.querySelector('.page-back')?.focus(); }
+    } catch { /* the row's last fire still shows */ }
+  }
   function closeRow() {
     const id = openId; openId = null; render();
     [...body.querySelectorAll('.auto-row')].find(r => r.dataset.id === id)?.querySelector('.auto-open')?.focus();
@@ -312,7 +327,7 @@ export function createAutomationsView(host, { kind, read, act = null, openFile =
     page.replaceChildren();
     const { bar, actions } = pageBar(doc, { backLabel: title, crumbs: [title], current: row.id, onBack: closeRow });
     const button = (label, verb, primary = false, enabled = true) => { const b = node('button', label, `act${primary ? ' primary' : ''}`); b.type = 'button'; b.dataset.verb = verb; b.disabled = busy || !enabled; b.addEventListener('click', () => verb === 'file' ? openFile?.(row) : perform(verb, row)); actions.append(b); return b; };
-    if (row.origin.kind === 'workspace' && openFile) button('Open file', 'file');
+    if (canOpen(row)) button('Open file', 'file');
     if (row.kind === 'schedule' && row.runsHere) button('Run now', 'run', false, !!act);
     button('Test', 'test', true, !!act);
     const pageBody = node('div', undefined, 'page-body'), main = node('div', undefined, 'page-main'), side = node('div', undefined, 'page-side');
@@ -342,37 +357,46 @@ export function createAutomationsView(host, { kind, read, act = null, openFile =
     const spawns = pageCard(doc, 'Spawns', { icon: 'soul' });
     const conc = row.concurrency ? [Number.isInteger(row.concurrency.max) ? `${row.concurrency.max} at once` : null, Number.isInteger(row.concurrency.perKey) ? `${row.concurrency.perKey} per event` : null].filter(Boolean).join(' · ') : null;
     spawns.body.append(pageFacts(doc, [['Soul', row.soul ? `${row.soul.name}${soulSub(row) ? ` · ${soulSub(row)}` : ''}` : null], ['Purpose', row.spawn?.purpose], ['Teams', row.teams.join(', ')],
-      ['Harness', [row.harness ? harnessName(row.harness) : null, row.model].filter(Boolean).join(' · ')], ['Concurrency', conc]]));
+      ['Launch config', row.launchConfig], ['Harness', [row.harness ? harnessName(row.harness) : null, row.model].filter(Boolean).join(' · ')], ['Concurrency', conc]]));
     cards.append(when.card, spawns.card); main.append(cards);
     // Recent runs (this computer only).
-    const runs = pageSection(doc, kind === 'trigger' ? 'Last fired' : 'Recent runs', 'on this computer');
+    // A trigger's history comes from `trigger status` (fired, live, pending); the row alone has only its last fire.
+    const st = kind === 'trigger' ? statuses.get(row.id) : null;
+    const lead = st ? [st.liveCount !== null ? `${st.liveCount}${st.max !== null ? ` of ${st.max}` : ''} live now` : null, st.firedTotal ? `${st.firedTotal} fired in all` : null, st.pending.length ? `${st.pending.length} waiting` : null].filter(Boolean).join(' · ') : '';
+    const runs = pageSection(doc, kind === 'trigger' ? 'Recent fires' : 'Recent runs', ['on this computer', lead].filter(Boolean).join(' · '));
     const history = node('div', undefined, 'auto-runs');
-    const items = row.recentRuns.length ? row.recentRuns : row.lastRun ? [row.lastRun] : [];
+    if (st?.lastError) history.append(node('p', `Last error: ${st.lastError.message || st.lastError.code}`, 'auto-test-line warn'));
+    const items = st?.fired.length ? st.fired : row.recentRuns.length ? row.recentRuns : row.lastRun ? [row.lastRun] : [];
     for (const run of items.slice(0, 10)) {
       const at = relativeTime(run.at || run.startedAt || run.scheduledFor, now()), line = node('div', undefined, 'auto-run'), time = node('time', at?.label || '—'); if (at) time.title = at.title;
-      line.append(time, node('span', [run.outcome ? OUTCOMES[run.outcome] || run.outcome : null, run.event, run.number ? `#${run.number}` : null, run.instance].filter(Boolean).join(' · ') || 'Recorded'));
+      line.append(time, node('span', [run.outcome ? OUTCOMES[run.outcome] || run.outcome : null, run.event ? String(run.event).replace(/_/g, ' ') : null, run.number ? `#${run.number}` : null, run.instance].filter(Boolean).join(' · ') || 'Recorded'));
       history.append(line);
     }
     if (!items.length) history.append(node('p', row.runsHere ? 'Not run yet on this computer.' : 'Runs are recorded on the computer that runs it.', 'page-note'));
     runs.append(history); main.append(runs);
     // Side: where it runs, where it comes from, the test result.
     const where = pageCard(doc, 'Where it runs', { icon: 'computer' }), p = placementText(row, data.host);
-    where.body.append(pageFacts(doc, row.origin.kind === 'local' ? [['Runs on', 'This computer']] : [['Runs on', row.runsOn], ['This computer', data.host.name || 'no host name'], ['Acts as', row.owner], ['Logged in', data.host.ghUser]]));
+    where.body.append(pageFacts(doc, row.origin.kind === 'local' ? [['Runs on', 'This computer']] : [['Runs on', row.runsOn], ['This computer', data.host.name || 'no host name'], ['Acts as', row.owner], ['Logged in', hostLogin(data.host, row.owner)]]));
     const verdict = node('div', undefined, `auto-verdict${p.tone === 'warn' ? ' warn' : ''}`); verdict.append(node('span', '', `auto-dot ${p.tone}`), node('span', row.runsHere ? 'Runs on this computer' : p.label));
     where.body.append(verdict); if (row.reasonDetail) where.body.append(node('p', row.reasonDetail, 'page-note'));
     const from = pageCard(doc, 'Comes from', { icon: row.origin.kind === 'local' ? 'computer' : 'repo' });
     if (row.origin.kind === 'workspace') {
       from.body.append(pageFacts(doc, [['Member', row.origin.member], ['Repo', row.origin.repoKey], ['Path', row.origin.path], ['Commit', row.origin.commit ? row.origin.commit.slice(0, 7) : null, row.origin.commit]]));
-      if (openFile) { const f = node('button', 'Open file', 'act'); f.type = 'button'; f.addEventListener('click', () => openFile(row)); from.body.append(f); }
+      if (canOpen(row)) { const f = node('button', 'Open file', 'act'); f.type = 'button'; f.title = row.origin.url || row.origin.localPath; f.addEventListener('click', () => openFile(row)); from.body.append(f); }
     } else from.body.append(node('p', 'Local to this computer; not shared through Git.', 'page-note'));
     side.append(where.card, from.card);
     const tested = tests.get(row.id);
     if (tested) {
       const card = pageCard(doc, 'Test result', { icon: 'test' });
       card.body.append(node('p', tested.error || (tested.ok ? 'Ready: it would run here.' : 'Not ready on this computer.'), `auto-test-line${tested.ok ? '' : ' warn'}`));
-      for (const problem of Array.isArray(tested.result?.problems) ? tested.result.problems : []) card.body.append(node('p', problem?.message || problem?.code || String(problem), 'auto-test-line warn'));
-      const fire = Array.isArray(tested.result?.wouldFire) ? tested.result.wouldFire : null;
-      if (fire) card.body.append(node('p', fire.length ? `Would fire now: ${fire.map(f => f.number ? `#${f.number}` : f.key).join(', ')}` : 'Nothing would fire now.', 'auto-test-line'));
+      for (const problem of tested.problems || []) card.body.append(node('p', problem, 'auto-test-line warn'));
+      for (const warning of tested.warnings || []) card.body.append(node('p', warning, 'auto-test-line'));
+      // The soul's own error, unless a problem already says it.
+      if (tested.soul && !tested.soul.resolves && !(tested.problems || []).length) card.body.append(node('p', `The soul does not resolve${tested.soul.error ? `: ${tested.soul.error}` : ''}`, 'auto-test-line warn'));
+      if (tested.account) card.body.append(node('p', `gh acts as ${tested.account}`, 'auto-test-line'));
+      if (tested.wouldFire) card.body.append(node('p', tested.wouldFire.length ? `Would fire now: ${tested.wouldFire.map(f => `${f.number ? `#${f.number}` : f.key}${f.held ? ' (held)' : ''}`).join(', ')}` : 'Nothing would fire now.', 'auto-test-line'));
+      const due = relativeTime(tested.nextDue, now());
+      if (due) card.body.append(node('p', `Next due ${due.label}`, 'auto-test-line'));
       side.append(card.card);
     }
     pageBody.append(main, side); page.append(bar, pageBody);

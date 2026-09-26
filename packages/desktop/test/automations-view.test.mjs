@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { automationRows, groupRows, filterRows, taskParts, cronInWords, onSummary, placementText, ownerParts } from '../renderer/automation-rows.mjs';
+import { automationRows, groupRows, filterRows, taskParts, cronInWords, onSummary, placementText, ownerParts, hostLogin, soulOriginText, testResult, triggerStatus, templateLabel } from '../renderer/automation-rows.mjs';
 import { createAutomationsView } from '../renderer/views/automations.mjs';
 
 // Schedules + Triggers (§2.3a, kernel 0.29.0 `automations`). Fixtures are provisional:
@@ -13,13 +13,16 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 
 test('the adapter reads the kernel rows as placed: groups come from runsHere/reason, never re-derived', () => {
   const t = automationRows(fx('trigger-list'), 'trigger');
-  assert.equal(t.host.name, 'pepe-mbp'); assert.equal(t.scheduler, null, 'the trigger list reports no scheduler (a kernel gap)');
+  assert.deepEqual(t.host, { name: 'pepe-mbp', ghUser: { 'github.com': 'pepe' } });
+  assert.equal(t.scheduler.active, true, 'kernel #215: the trigger list carries the scheduler too');
   assert.deepEqual(t.snapshot, { takenAt: '2026-09-26T13:40:00.000Z', problems: 1 }, 'snapshot.problems is a count');
   assert.deepEqual(t.rows.map(r => [r.id, r.group]), [
     ['platform/okf-harvest-review', 'here'], ['agents/triage-issues', 'attention'],
     ['platform/release-notes', 'elsewhere'], ['local/docs-pr-check', 'here']]);
   const review = t.rows[0];
-  assert.deepEqual(review.origin, { kind: 'workspace', member: 'platform', repoKey: 'github.com/northwind/platform', path: 'oats-triggers/okf-harvest-review.yaml', commit: '4f1c2a9b0e7d6c5b4a39281706f5e4d3c2b1a098', url: null });
+  assert.deepEqual(review.origin, { kind: 'workspace', member: 'platform', repoKey: 'github.com/northwind/platform', path: 'oats-triggers/okf-harvest-review.yaml', commit: '4f1c2a9b0e7d6c5b4a39281706f5e4d3c2b1a098',
+    url: 'https://github.com/northwind/platform/blob/4f1c2a9b0e7d6c5b4a39281706f5e4d3c2b1a098/oats-triggers/okf-harvest-review.yaml', localPath: '/fx/clones/platform/oats-triggers/okf-harvest-review.yaml' });
+  assert.equal(review.launchConfig, 'reviewers'); assert.equal(templateLabel(review.template), 'oats.okf:harvest-review');
   assert.equal(review.soul.origin.kind, 'package'); assert.equal(review.run, 'spawn');
   const off = t.rows[3]; assert.equal(off.origin.kind, 'local'); assert.equal(off.enabledHere, false);
   const s = automationRows(fx('schedule-list'), 'schedule');
@@ -36,6 +39,22 @@ test('groups in page order; the origin filter and search narrow them', () => {
   assert.deepEqual(filterRows(rows, { origin: 'local' }).map(r => r.id), ['local/docs-pr-check']);
   assert.deepEqual(filterRows(rows, { query: 'release-manager' }).map(r => r.id), ['platform/release-notes'], 'search reaches the soul');
   assert.deepEqual(filterRows(rows, { query: 'knowledge-review' }).map(r => r.id), ['platform/okf-harvest-review'], 'and the prompt');
+});
+
+test('kernel #215 facts: who gh is here, soul origins, both test shapes and a trigger status', () => {
+  assert.equal(hostLogin({ ghUser: { 'github.com': 'pepe' } }, 'github.com/northwind-bot'), 'github.com/pepe');
+  assert.equal(hostLogin({ ghUser: { 'github.com': null } }, 'github.com/pepe'), 'not logged in');
+  assert.equal(hostLogin({ ghUser: {} }, 'github.com/pepe'), null, 'not reported: nothing shown');
+  assert.match(soulOriginText({ kind: 'ambiguous', candidates: 2 }).long, /^2 souls answer to this name/);
+  assert.equal(soulOriginText({ kind: 'external', repoKey: 'x', source: 'github.com/acme/souls@v1' }).long, 'An external soul from github.com/acme/souls@v1');
+  assert.equal(soulOriginText(null).short, 'not found here');
+  const trig = testResult(fx('trigger-test'), 'trigger');
+  assert.deepEqual([trig.ok, trig.account, trig.wouldFire.map(f => [f.number, f.held])], [true, 'github.com/pepe', [[43, true]]]);
+  const sched = testResult(fx('schedule-test'), 'schedule');
+  assert.deepEqual([sched.ok, sched.problems, sched.soul, sched.nextDue], [false, ['the soul platform-engineer does not resolve'], { resolves: false, error: 'platform-engineer is not a soul in this workspace' }, '2026-09-28T07:00:00.000Z']);
+  const st = triggerStatus(fx('trigger-status'), 'platform/okf-harvest-review');
+  assert.deepEqual([st.liveCount, st.max, st.firedTotal, st.fired.length, st.pending.length], [1, 2, 7, 2, 1]);
+  assert.equal(triggerStatus(fx('trigger-status'), 'nope'), null);
 });
 
 test('words: cron, the event, the owner, placement and the whitelisted task fields', () => {
@@ -55,7 +74,7 @@ test('words: cron, the event, the owner, placement and the whitelisted task fiel
 function mount(t, kind, { act = null, openFile = null, json = fx(`${kind}-list`) } = {}) {
   const dom = new JSDOM('<!doctype html><body><main></main></body>', { pretendToBeVisual: true });
   const host = dom.window.document.querySelector('main'), calls = [];
-  const view = createAutomationsView(host, { kind, read: async () => json, act: act && (async (verb, row) => { calls.push([verb, row.id]); return act(verb, row); }), openFile, now: () => NOW });
+  const view = createAutomationsView(host, { kind, read: async () => json, act: act && (async (verb, row) => { calls.push([verb, row.id]); return act(verb, row); }), status: kind === 'trigger' ? async () => fx('trigger-status') : null, openFile, now: () => NOW });
   t.after(() => { view.dispose(); dom.window.close(); });
   const $ = s => host.querySelector(s), $$ = s => [...host.querySelectorAll(s)];
   return { dom, host, view, calls, $, $$ };
@@ -64,7 +83,7 @@ function mount(t, kind, { act = null, openFile = null, json = fx(`${kind}-list`)
 test('Triggers page: header, toolbar in the view, three groups of rows with placement and last/next', async t => {
   const u = mount(t, 'trigger', { act: () => ({ ok: true }) }); await tick();
   assert.equal(u.$('.auto-header h2').textContent, 'Triggers4');
-  assert.equal(u.$('.auto-scheduler').hidden, true, 'no scheduler state is reported for triggers');
+  assert.match(u.$('.auto-scheduler').textContent, /Scheduler on/, 'kernel #215: triggers run on the same tick');
   assert.deepEqual(u.$$('.auto-seg button').map(b => [b.dataset.origin, b.textContent, b.getAttribute('aria-pressed')]), [['all', 'All4', 'true'], ['workspace', 'Workspace3', 'false'], ['local', 'Local1', 'false']]);
   assert.deepEqual(u.$$('.auto-group').map(g => g.dataset.group), ['here', 'attention', 'elsewhere']);
   const row = id => u.$$('.auto-row').find(r => r.dataset.id === id);
@@ -108,16 +127,20 @@ test('Schedules page: scheduler state in the header, Run now only where it runs,
 });
 
 test('the detail page: prompt with highlighted fields, where it runs, where it comes from, Test result; Esc returns to the row', async t => {
-  const u = mount(t, 'trigger', { act: (verb) => verb === 'test' ? { ok: false, problems: [{ code: 'E_GH_AUTH', message: 'gh is not logged in' }], wouldFire: [] } : { ok: true }, openFile: () => {} }); await tick();
+  const u = mount(t, 'trigger', { act: (verb) => verb === 'test' ? { ok: false, problems: ['gh is not logged in'], warnings: [], wouldFire: [] } : { ok: true }, openFile: () => {} }); await tick();
   u.$('.auto-row[data-id="platform/okf-harvest-review"] .auto-open').click(); await tick();
   assert.equal(u.$('.auto-page').hidden, false); assert.equal(u.$('.auto-body').hidden, true); assert.equal(u.$('.auto-header').hidden, true, 'the page bar replaces the header');
   assert.equal(u.dom.window.document.activeElement, u.$('.page-back'));
   assert.deepEqual(u.$$('.auto-prompt .auto-token').map(s => s.textContent), ['{repo}', '{number}']);
   assert.equal(u.$('.auto-prompt').textContent, 'Review knowledge-base PR {repo}#{number}. Load knowledge-review first.', 'verbatim');
   const facts = card => Object.fromEntries([...u.$(`.page-card[data-card="${card}"]`).querySelectorAll('.page-kv')].map(r => [r.querySelector('dt').textContent, r.querySelector('dd').textContent]));
-  assert.deepEqual(facts('Where it runs'), { 'Runs on': 'pepe-mbp', 'This computer': 'pepe-mbp', 'Acts as': 'github.com/pepe' });
+  assert.deepEqual(facts('Where it runs'), { 'Runs on': 'pepe-mbp', 'This computer': 'pepe-mbp', 'Acts as': 'github.com/pepe', 'Logged in': 'github.com/pepe' });
+  await tick(); await tick();
+  assert.match(u.$('.page-section[data-section="Recent fires"]').textContent, /on this computer · 1 of 2 live now · 7 fired in all · 1 waiting/, 'trigger status: live, total and pending');
+  assert.equal(u.$$('.auto-run').length, 2, 'the fired history');
+  assert.equal(u.dom.window.document.activeElement, u.$('.page-back'), 'the status read keeps focus on Back');
   assert.deepEqual(facts('Comes from'), { Member: 'platform', Repo: 'github.com/northwind/platform', Path: 'oats-triggers/okf-harvest-review.yaml', Commit: '4f1c2a9' });
-  assert.deepEqual(facts('Spawns'), { Soul: 'oats.okf/knowledge-maintainer · package oats.okf', Purpose: 'review-pr-{number}', Teams: 'okf', Harness: 'Claude · opus', Concurrency: '2 at once · 1 per event' });
+  assert.deepEqual(facts('Spawns'), { Soul: 'oats.okf/knowledge-maintainer · package oats.okf', Purpose: 'review-pr-{number}', Teams: 'okf', 'Launch config': 'reviewers', Harness: 'Claude · opus', Concurrency: '2 at once · 1 per event' });
   assert.deepEqual(u.$$('.page-bar-actions button').map(b => b.textContent), ['Open file', 'Test']);
   u.$('.page-bar-actions button[data-verb=test]').click(); await tick(); await tick();
   assert.match(u.$('.page-card[data-card="Test result"]').textContent, /Not ready on this computer\.gh is not logged inNothing would fire now\./);
@@ -136,4 +159,15 @@ test('host-unnamed is one banner; an empty list explains both levels without nam
   assert.match(b.$('.auto-empty').textContent, /No schedules yet/);
   assert.doesNotMatch(b.host.textContent, /oats-local\.yaml|oats-workspace\.yaml|oats-schedules\.json/);
   assert.match(b.$('.auto-foot').textContent, /Workspace items appear after the next sync/);
+});
+
+test('Schedules detail: Test runs `schedule test` and shows the soul check and next due; a trigger not yet polled says so', async t => {
+  const u = mount(t, 'schedule', { act: verb => verb === 'test' ? fx('schedule-test') : { ok: true } }); await tick();
+  u.view.open('platform/weekly-deps'); await tick();
+  assert.deepEqual(u.$$('.page-bar-actions button').map(b => b.textContent), ['Run now', 'Test'], 'no Open file without an openFile IO');
+  u.$('.page-bar-actions button[data-verb=test]').click(); await tick(); await tick();
+  assert.match(u.$('.page-card[data-card="Test result"]').textContent, /Not ready on this computer\.the soul platform-engineer does not resolveNext due in 2 d/);
+  const json = fx('trigger-list'); json.triggers[0].nextDue = null;
+  const v = mount(t, 'trigger', { json }); await tick();
+  assert.match(v.$('.auto-row[data-id="platform/okf-harvest-review"]').textContent, /Polls at the next tick/);
 });

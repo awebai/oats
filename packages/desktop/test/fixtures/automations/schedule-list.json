@@ -1,57 +1,220 @@
 {
-  "scope": "/fx/northwind", "scheduleApi": 2, "scheduleHistoryApi": 1,
-  "integrity": { "sources": [] },
-  "host": { "name": "pepe-mbp" },
+  "scope": "/fx/northwind",
+  "scheduleApi": 2,
+  "scheduleHistoryApi": 1,
+  "integrity": {
+    "sources": []
+  },
+  "host": {
+    "name": "pepe-mbp",
+    "ghUser": {
+      "github.com": "pepe"
+    }
+  },
   "schedules": [
     {
-      "id": "nightly-digest", "qualifiedId": "local/nightly-digest", "name": "nightly-digest",
-      "kind": "spawn", "agent": "data-analyst", "cron": "0 7 * * *", "tz": "Europe/Madrid", "task": "Write the nightly digest from yesterday's warehouse changes.",
-      "scope": "/fx/northwind", "scheduleApi": 2, "scheduleHistoryApi": 1,
-      "origin": { "kind": "local", "path": "oats-schedules.json" }, "description": null, "owner": null, "runsOn": null,
-      "runsHere": true, "reason": null, "enabledHere": true,
-      "soul": { "name": "data-analyst", "origin": { "kind": "member", "repoKey": "github.com/northwind/data", "member": "data" } },
-      "teams": [], "harness": "claude", "model": null, "concurrency": null,
-      "lastRun": { "outcome": "launched", "startedAt": "2026-09-26T05:00:04.000Z", "scheduledFor": "2026-09-26T05:00:00.000Z" },
+      "id": "nightly-digest",
+      "qualifiedId": "local/nightly-digest",
+      "name": "nightly-digest",
+      "kind": "spawn",
+      "agent": "data-analyst",
+      "cron": "0 7 * * *",
+      "tz": "Europe/Madrid",
+      "task": "Write the nightly digest from yesterday's warehouse changes.",
+      "scope": "/fx/northwind",
+      "scheduleApi": 2,
+      "scheduleHistoryApi": 1,
+      "origin": {
+        "kind": "local",
+        "path": "oats-schedules.json",
+        "url": null,
+        "localPath": "/fx/northwind/oats-schedules.json"
+      },
+      "description": null,
+      "owner": null,
+      "runsOn": null,
+      "runsHere": true,
+      "reason": null,
+      "enabledHere": true,
+      "soul": {
+        "name": "data-analyst",
+        "origin": {
+          "kind": "member",
+          "repoKey": "github.com/northwind/data",
+          "member": "data"
+        }
+      },
+      "teams": [],
+      "harness": "claude",
+      "model": null,
+      "concurrency": null,
+      "lastRun": {
+        "outcome": "launched",
+        "startedAt": "2026-09-26T05:00:04.000Z",
+        "scheduledFor": "2026-09-26T05:00:00.000Z"
+      },
       "recentRuns": [
-        { "outcome": "launched", "startedAt": "2026-09-26T05:00:04.000Z" },
-        { "outcome": "ended", "startedAt": "2026-09-25T05:00:03.000Z" },
-        { "outcome": "launch-failed", "startedAt": "2026-09-24T05:00:02.000Z" }
+        {
+          "outcome": "launched",
+          "startedAt": "2026-09-26T05:00:04.000Z"
+        },
+        {
+          "outcome": "ended",
+          "startedAt": "2026-09-25T05:00:03.000Z"
+        },
+        {
+          "outcome": "launch-failed",
+          "startedAt": "2026-09-24T05:00:02.000Z"
+        }
       ],
-      "nextDue": "2026-09-27T05:00:00.000Z", "enabled": true
+      "nextDue": "2026-09-27T05:00:00.000Z",
+      "enabled": true,
+      "nextRun": "2026-09-27T05:00:00.000Z",
+      "launchConfig": null
     },
     {
-      "id": "platform/weekly-deps", "qualifiedId": "platform/weekly-deps", "name": "weekly-deps",
-      "kind": "spawn", "cron": "0 9 * * 1", "tz": "Europe/Madrid", "task": "Update the platform's dependencies and open a PR.",
-      "origin": { "kind": "workspace", "repoKey": "github.com/northwind/platform", "path": "oats-schedules/weekly-deps.yaml", "commit": "4f1c2a9b0e7d6c5b4a39281706f5e4d3c2b1a098" },
-      "description": "Monday dependency refresh", "owner": "github.com/pepe", "runsOn": "pepe-mbp",
-      "runsHere": true, "reason": null, "enabledHere": true,
-      "soul": { "name": "platform-engineer", "origin": { "kind": "member", "repoKey": "github.com/northwind/platform", "member": "platform" } },
-      "teams": [], "harness": null, "model": null, "concurrency": null,
-      "lastRun": null, "recentRuns": [], "nextDue": "2026-09-28T07:00:00.000Z", "enabled": true
+      "id": "platform/weekly-deps",
+      "qualifiedId": "platform/weekly-deps",
+      "name": "weekly-deps",
+      "kind": "spawn",
+      "cron": "0 9 * * 1",
+      "tz": "Europe/Madrid",
+      "task": "Update the platform's dependencies and open a PR.",
+      "origin": {
+        "kind": "workspace",
+        "repoKey": "github.com/northwind/platform",
+        "path": "oats-schedules/weekly-deps.yaml",
+        "commit": "4f1c2a9b0e7d6c5b4a39281706f5e4d3c2b1a098",
+        "url": "https://github.com/northwind/platform/blob/4f1c2a9b0e7d6c5b4a39281706f5e4d3c2b1a098/oats-schedules/weekly-deps.yaml",
+        "localPath": "/fx/clones/platform/oats-schedules/weekly-deps.yaml"
+      },
+      "description": "Monday dependency refresh",
+      "owner": "github.com/pepe",
+      "runsOn": "pepe-mbp",
+      "runsHere": true,
+      "reason": null,
+      "enabledHere": true,
+      "soul": {
+        "name": "platform-engineer",
+        "origin": {
+          "kind": "member",
+          "repoKey": "github.com/northwind/platform",
+          "member": "platform"
+        }
+      },
+      "teams": [],
+      "harness": null,
+      "model": null,
+      "concurrency": null,
+      "lastRun": null,
+      "recentRuns": [],
+      "nextDue": "2026-09-28T07:00:00.000Z",
+      "enabled": true,
+      "nextRun": "2026-09-28T07:00:00.000Z",
+      "launchConfig": null
     },
     {
-      "id": "agents/inbox-sweep", "qualifiedId": "agents/inbox-sweep", "name": "inbox-sweep",
-      "kind": "spawn", "cron": "0 */2 * *", "tz": "Europe/Madrid", "task": "Sweep the shared inbox.",
-      "origin": { "kind": "workspace", "repoKey": "github.com/northwind/agents", "path": "oats-schedules/inbox-sweep.yaml", "commit": "9a8b7c6d5e4f30211a2b3c4d5e6f708192a3b4c5" },
-      "description": null, "owner": "github.com/pepe", "runsOn": "pepe-mbp",
-      "runsHere": false, "reason": null, "enabledHere": true,
-      "invalid": { "code": "E_AUTOMATION_SCHEMA", "message": "cron: expected 5 fields", "field": "cron" },
-      "soul": { "name": "support-triager", "origin": { "kind": "member", "repoKey": "github.com/northwind/agents", "member": "agents" } },
-      "teams": [], "harness": null, "model": null, "concurrency": null,
-      "lastRun": null, "recentRuns": [], "nextDue": null, "enabled": true
+      "id": "agents/inbox-sweep",
+      "qualifiedId": "agents/inbox-sweep",
+      "name": "inbox-sweep",
+      "kind": "spawn",
+      "cron": "0 */2 * *",
+      "tz": "Europe/Madrid",
+      "task": "Sweep the shared inbox.",
+      "origin": {
+        "kind": "workspace",
+        "repoKey": "github.com/northwind/agents",
+        "path": "oats-schedules/inbox-sweep.yaml",
+        "commit": "9a8b7c6d5e4f30211a2b3c4d5e6f708192a3b4c5",
+        "url": "https://github.com/northwind/agents/blob/9a8b7c6d5e4f30211a2b3c4d5e6f708192a3b4c5/oats-schedules/inbox-sweep.yaml",
+        "localPath": "/fx/clones/agents/oats-schedules/inbox-sweep.yaml"
+      },
+      "description": null,
+      "owner": "github.com/pepe",
+      "runsOn": "pepe-mbp",
+      "runsHere": false,
+      "reason": null,
+      "enabledHere": true,
+      "invalid": {
+        "code": "E_AUTOMATION_SCHEMA",
+        "message": "cron: expected 5 fields",
+        "field": "cron"
+      },
+      "soul": {
+        "name": "support-triager",
+        "origin": {
+          "kind": "member",
+          "repoKey": "github.com/northwind/agents",
+          "member": "agents"
+        }
+      },
+      "teams": [],
+      "harness": null,
+      "model": null,
+      "concurrency": null,
+      "lastRun": null,
+      "recentRuns": [],
+      "nextDue": null,
+      "enabled": true,
+      "nextRun": null,
+      "launchConfig": null
     },
     {
-      "id": "marketing/campaign-metrics", "qualifiedId": "marketing/campaign-metrics", "name": "campaign-metrics",
-      "kind": "spawn", "cron": "30 8 * * 1-5", "tz": "Europe/London", "task": "Collect yesterday's campaign metrics.",
-      "origin": { "kind": "workspace", "repoKey": "github.com/northwind/marketing", "path": "oats-schedules/campaign-metrics.yaml", "commit": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e" },
-      "description": "Weekday metrics pull", "owner": "github.com/ana", "runsOn": "ana-laptop",
-      "runsHere": false, "reason": "assigned-elsewhere", "reasonDetail": "runs on ana-laptop; this host is pepe-mbp", "enabledHere": true,
-      "soul": { "name": "campaign-writer", "origin": { "kind": "member", "repoKey": "github.com/northwind/marketing", "member": "marketing" } },
-      "teams": [], "harness": null, "model": null, "concurrency": null,
-      "lastRun": null, "recentRuns": [], "nextDue": null, "enabled": true
+      "id": "marketing/campaign-metrics",
+      "qualifiedId": "marketing/campaign-metrics",
+      "name": "campaign-metrics",
+      "kind": "spawn",
+      "cron": "30 8 * * 1-5",
+      "tz": "Europe/London",
+      "task": "Collect yesterday's campaign metrics.",
+      "origin": {
+        "kind": "workspace",
+        "repoKey": "github.com/northwind/marketing",
+        "path": "oats-schedules/campaign-metrics.yaml",
+        "commit": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e",
+        "url": "https://github.com/northwind/marketing/blob/1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e/oats-schedules/campaign-metrics.yaml",
+        "localPath": null
+      },
+      "description": "Weekday metrics pull",
+      "owner": "github.com/ana",
+      "runsOn": "ana-laptop",
+      "runsHere": false,
+      "reason": "assigned-elsewhere",
+      "reasonDetail": "runs on ana-laptop; this host is pepe-mbp",
+      "enabledHere": true,
+      "soul": {
+        "name": "campaign-writer",
+        "origin": {
+          "kind": "member",
+          "repoKey": "github.com/northwind/marketing",
+          "member": "marketing"
+        }
+      },
+      "teams": [],
+      "harness": null,
+      "model": null,
+      "concurrency": null,
+      "lastRun": null,
+      "recentRuns": [],
+      "nextDue": null,
+      "enabled": true,
+      "nextRun": null,
+      "launchConfig": null
     }
   ],
-  "triggers": { "count": 4, "command": "oats trigger list" },
-  "snapshot": { "takenAt": "2026-09-26T13:40:00.000Z", "problems": 0 },
-  "scheduler": { "installed": true, "active": true, "registered": true, "lastTick": "2026-09-26T13:59:00.000Z", "maxConcurrent": 3 }
+  "triggers": {
+    "count": 4,
+    "command": "oats trigger list"
+  },
+  "snapshot": {
+    "takenAt": "2026-09-26T13:40:00.000Z",
+    "problems": 0
+  },
+  "scheduler": {
+    "installed": true,
+    "active": true,
+    "registered": true,
+    "lastTick": "2026-09-26T13:59:00.000Z",
+    "maxConcurrent": 3
+  }
 }
