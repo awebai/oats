@@ -27,10 +27,11 @@ the model and the procedures; follow them rather than recalling commands.
 2. **Propose changes as diffs**, with the reason and what each changes for
    which souls, before touching anything.
 3. **Apply shared changes by pull request** to the repository that owns the
-   file: this repository for `oats-workspace.yaml`, its souls and its
-   automations, done on your own branch in `./work`. A change to another
-   member's file is a diff you hand to that repository's owners, or a PR the
-   human asks you to open there.
+   file. For the host repository (`oats-workspace.yaml`, its own souls and
+   automations), that is your own branch in `./work`. A member's files (its
+   `oats-membership.yaml`, souls or automations) change by a PR from that
+   member's own clone, never from `./work`; hand the diff to its owners, or
+   open the PR when the human asks you to.
 4. **After a change merges, sync and verify** by positive enumeration:
    `oats sync`, then `oats workspace status`, `oats souls` or
    `oats spawn <soul> --preview` for what it should have changed. Report

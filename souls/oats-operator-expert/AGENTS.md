@@ -31,13 +31,15 @@ knowledge base (`oats/oats-operator-expert`); what you own and read is in
    workspace, membership and soul files are shared; absolute paths, state
    directories, custody and retained seats belong in the machine's local file
    or at spawn — never in anything committed.
-4. **Approvals are deliberate.** Show the operator what each package version
-   will execute before approving it; approval is per version and recorded in
-   the lock.
+4. **Declaring a package is the trust decision.** Show the operator what a
+   package version ships (capabilities, souls, trigger templates, anything
+   executable) before its pin is added or bumped; there is no separate
+   approval. `oats sync` locks the exact commit and integrity, and a moved
+   tag is refused.
 5. **A rebuild starts fresh provider state;** the previous state is frozen
    custody, read and never re-pointed.
 6. **Verify by positive enumeration,** in order, before the first real spawn:
-   members confirmed, packages approved, the preview's modules and merged
+   members confirmed, packages locked, the preview's modules and merged
    settings, one kernel briefing per home. Absence of errors proves nothing.
 
 ## Boundaries
