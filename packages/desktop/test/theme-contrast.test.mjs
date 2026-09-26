@@ -330,7 +330,9 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
   const facts = { ...status, workspace: { ...status.workspace, file: { path: 'oats-workspace.yaml', url: 'https://github.com/northwind/agents/blob/a/oats-workspace.yaml' } },
     clones: status.members.map((m, i) => m.key === unconfirmed.key ? { key: m.key, name: m.name, path: null, rule: null, problem: { code: 'E_CLONE_MISMATCH', message: 'not a clone of this member' } }
       : { key: m.key, name: m.name, path: i ? null : `${dir}/${m.name}`, rule: i ? null : 'convention' }),
-    disabledSouls: ['campaign-writer'], lock: { path: `${dir}/oats-lock.json`, lockfileVersion: 3 } };
+    disabledSouls: ['campaign-writer'], lock: { path: `${dir}/oats-lock.json`, lockfileVersion: 3 },
+    defaults: { slots: { knowledge: { name: 'oats.okf', from: 'package' }, messaging: 'none', tasks: null }, capabilities: [{ name: 'house-style', from: 'here', off: false }],
+      byTeam: Object.fromEntries((status.workspace.teams || []).map(label => [label, { capabilities: [{ name: 'deploy', from: 'package', off: false }, { name: 'house-style', from: null, off: true }] }])) } };
   renderSetup(doc.querySelector('.sources'), { status: facts, instances: [{ agent: 'a', running: true }], souls: [{ team: 'marketing' }], cli: { version: '0.26.0' }, openExternal() {} });
   renderSetup(doc.querySelector('.graph'), { status: { ...facts, unsynced: ['x.pkg'] }, view: 'graph', selected: unconfirmed.key, openExternal() {} });
   // The sync sheet's refusal text, as createWorkspaceSync builds it.
@@ -370,6 +372,9 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
     ['.setup-kv dt', '.setup-local', 'muted', 'surface-2'], ['.setup-kv dd', '.setup-local', 'fg', 'surface-2'],
     ['.setup-lede-where button.setup-file', '.oats-view', 'accent', 'bg'], ['.setup-local-sub', '.setup-local', 'muted', 'surface-2'],
     ['.setup-kv dd.muted', '.setup-local', 'muted', 'surface-2'], ['.setup-kv dd.warn', '.setup-local', 'warn', 'surface-2'],
+    ['.setup-def dt', '.setup-box', 'muted', 'surface'], ['.setup-def dd.muted', '.setup-box', 'muted', 'surface'],
+    ['.setup-def-cap:not(.off) .setup-def-name', '.setup-box', 'fg', 'surface'], ['.setup-def-from', '.setup-box', 'muted', 'surface'],
+    ['.setup-team-adds', '.setup-box', 'muted', 'surface'], ['.setup-def-cap.off .setup-def-name', '.setup-box', 'muted', 'surface'],
     ['.setup-caption', '.setup-here', 'muted', 'surface-2'], ['.setup-card-title', '.setup-computer', 'fg', 'surface'], ['.setup-card-meta', '.setup-computer', 'muted', 'surface'],
     ['.setup-ws .setup-card-meta', '.setup-ws', 'fg', 'sel'],
     ['.setup-lock.warn', '.oats-view', 'warn', 'bg'],

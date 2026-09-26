@@ -77,3 +77,32 @@ test('an older kernel (no desktop facts) keeps the generic words and shows no cl
   assert.deepEqual([...root.querySelectorAll('.setup-panel .setup-hand-sub')].map(s => s.textContent), ["in agents's workspace file", "The repo's membership file names this workspace"]);
   assert.equal(root.querySelector('.setup-panel [data-clone]'), null);
 });
+
+test('Defaults shows the workspace slots and default capabilities as declared; each team says what it adds or turns off', () => {
+  const root = host();
+  const status = statusOf(r => r.defaults.byTeam.engineering.capabilities.push({ name: 'nw-house-style', from: null, off: true }));
+  renderSetup(root, { status });
+  assert.deepEqual([...root.querySelectorAll('.setup-box, .setup-local')].map(b => b.dataset.box), ['Members', 'Packages', 'Defaults', 'Teams', 'This computer']);
+  const rows = Object.fromEntries([...root.querySelectorAll('[data-box=Defaults] .setup-def')].map(r => [r.dataset.slot, r.querySelector('dd')]));
+  assert.deepEqual(Object.keys(rows), ['knowledge', 'messaging', 'tasks', 'capabilities']);
+  assert.equal(rows.knowledge.textContent, 'oats.okfpackage');
+  assert.equal(rows.messaging.textContent, 'none'); assert.ok(rows.messaging.classList.contains('muted'));
+  assert.deepEqual([...rows.capabilities.querySelectorAll('.setup-def-cap')].map(c => [c.dataset.capability, c.querySelector('.setup-def-from').textContent]),
+    [['nw-house-style', 'agents'], ['oats.core', 'package']], 'a member key reads as the member name');
+  const team = label => root.querySelector(`[data-team-defaults="${label}"]`);
+  assert.equal(team('global'), null, 'a team that adds nothing says nothing');
+  assert.deepEqual([...team('engineering').children].map(part => part.firstChild.textContent), ['adds ', 'turns off ']);
+  const off = team('engineering').querySelector('.setup-def-cap.off');
+  assert.equal(off.dataset.capability, 'nw-house-style'); assert.equal(off.querySelector('.setup-def-from'), null, '"turns off" already says it');
+  assert.equal(team('marketing').textContent, 'adds nw-brand-voicemarketing');
+});
+
+test('Defaults: a null slot reads "not set"; a standalone deployment (no defaults) and an older kernel show no Defaults box', () => {
+  const root = host();
+  renderSetup(root, { status: statusOf(r => { r.defaults.slots.tasks = null; }) });
+  assert.equal(root.querySelector('[data-box=Defaults] [data-slot=tasks] dd').textContent, 'not set');
+  renderSetup(root, { status: statusOf(r => { r.defaults = { slots: { knowledge: null, messaging: null, tasks: null }, capabilities: [], byTeam: {} }; }) });
+  assert.equal(root.querySelector('[data-box=Defaults]'), null, 'standalone: the workspace declares no defaults');
+  renderSetup(root, { status: statusOf(r => { delete r.defaults; }) });
+  assert.equal(root.querySelector('[data-box=Defaults]'), null); assert.equal(root.querySelector('[data-team-defaults]'), null);
+});
