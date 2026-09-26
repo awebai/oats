@@ -11,7 +11,9 @@ permissions:
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # A PR's stale run is cancelled by its next push; main's runs never cancel each other:
+  # with merge-then-fix, every merge commit's CI is the record that main was green.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # The suite is ~470s serial on a 2-vCPU runner; six shards run it in parallel
