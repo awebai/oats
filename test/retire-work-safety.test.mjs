@@ -451,7 +451,8 @@ test("retire preserves a worktree judged under the source repository's status se
   chmodSync(join(work, "tracked.txt"), 0o755); // mode-only: clean in the source
   write(join(f.repo, ".git", "info", "attributes"), "*.txt text\n");
   utimesSync(join(work, "crlf.txt"), new Date(2020, 0, 1), new Date(2020, 0, 1)); // ` M` (needs normalizing) in the source
-  execFileSync("git", ["-C", f.repo, "config", "--unset-all", "core.precomposeUnicode"]); // unset in the source; a clone probes its own on macOS
+  // Unset in the source; a clone probes its own on macOS. Linux git never sets it (`--unset-all` would exit 5).
+  if (spawnSync("git", ["-C", f.repo, "config", "--local", "--get", "core.precomposeUnicode"]).status === 0) execFileSync("git", ["-C", f.repo, "config", "--local", "--unset-all", "core.precomposeUnicode"]);
   const nested = join(work, "human-ignored", "nested");
   mkdirSync(nested, { recursive: true });
   execFileSync("git", ["init", "-q", nested]);
