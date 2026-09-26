@@ -27,6 +27,12 @@ const messages = {
   E_FORBIDDEN_FRAME: 'This window cannot access the sign-in session.', E_AUTH_CANCELLED: 'Sign-in cancelled.',
   E_AUTH_EXPIRED: 'The sign-in session expired.',
   E_GH_UNAVAILABLE: 'Pull requests need GitHub CLI installed and signed in on this computer.',
+  E_THREADS_CHANGED: 'The review threads changed since the preview. Preview them again.',
+  E_NO_THREADS: 'This pull request has no unresolved review threads.',
+  E_REMOTE_TERMINAL: 'Review threads are sent to a local agent only.',
+  E_NOT_RUNNING: 'The agent is not running.',
+  E_TERMINAL_UNSUPPORTED: 'This agent\'s terminal cannot take a paste.',
+  E_PASTE_FAILED: 'The paste into the agent\'s terminal failed. Check the terminal before retrying.',
   E_WORKSPACE_UNKNOWN: 'Select a known workspace.', 'unsupported-remote-operation': 'Remote forge inspection is unavailable. No local fallback was used.',
 };
 export function forgeReason(code) { return { code: Object.hasOwn(messages, code) ? code : 'E_GH_FAILED', message: messages[code] || messages.E_GH_FAILED }; }

@@ -1,0 +1,70 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "reviewThreads": {
+          "totalCount": 3,
+          "pageInfo": {
+            "hasNextPage": false
+          },
+          "nodes": [
+            {
+              "isResolved": false,
+              "isOutdated": false,
+              "path": "internal/config/migration/multi_account.go",
+              "line": 78,
+              "originalLine": 78,
+              "comments": {
+                "nodes": [
+                  {
+                    "author": {
+                      "login": "copilot-pull-request-reviewer"
+                    },
+                    "body": "Retiring the automatic call leaves users who upgrade directly from a pre-v2.40 release with the legacy `hosts.<host>.oauth_token` layout un-migrated. On the next `auth login`, `AuthConfig.activateUser` removes that host-level token before looking under `users.<user>`, so an insecurely stored existing account can be lost, while `auth switch` and `auth logout` see no users. Please retain a one-time migration for configs without the multi-account schema/version, or add an explicit compatibility path before removing it.",
+                    "url": "https://github.com/cli/cli/pull/14430#discussion_r3989338501"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": false,
+              "isOutdated": false,
+              "path": "internal/ghcmd/cmd.go",
+              "line": 134,
+              "originalLine": 134,
+              "comments": {
+                "nodes": [
+                  {
+                    "author": {
+                      "login": "copilot-pull-request-reviewer"
+                    },
+                    "body": "Removing this call leaves users who upgrade directly from a pre-v2.40 release with the old host-level schema (no `version`/`users`) unconverted. The current auth code can still read the active host token, but `UsersForHost` then returns no accounts, so `auth switch`, `auth logout`, and `auth token --user` cannot address the existing account; a subsequent `auth login` also clears the old active token in `activateUser`. Keep a one-time fallback for versionless configs, or provide an equivalent upgrade path before removing this call.",
+                    "url": "https://github.com/cli/cli/pull/14430#discussion_r3989338555"
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "isOutdated": false,
+              "path": "internal/config/migration/multi_account.go",
+              "line": 78,
+              "originalLine": 78,
+              "comments": {
+                "nodes": [
+                  {
+                    "author": {
+                      "login": "copilot-pull-request-reviewer"
+                    },
+                    "body": "`docs/multiple-accounts.md` still states that from v2.40.0 every command attempts this migration and that immutable-config users must add `version: 1`. Once this call is removed, both claims are false, and the documentation does not tell users with an unconverted config what upgrade path remains. Please update that documentation alongside this behavior change.",
+                    "url": "https://github.com/cli/cli/pull/14430#discussion_r3989338586"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

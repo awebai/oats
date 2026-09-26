@@ -10,6 +10,7 @@ import { createGhRunner, discoverGh, ghStatus, ghLogin, ghPullRequest, forgeEnvi
 import { admitInstanceGit } from './instance-git.mjs';
 import { forgeObservation } from './forge-observation.mjs';
 import { rosterTargets } from './forge-roster.mjs';
+import { THREADS_DETAIL_QUERY, unresolvedThreads, composeBlock, digestOf } from './review-threads.mjs';
 
 export { FORGE_EPOCH_HEADER, validForgeEpoch } from '../forge-proxy.mjs';
 import { validForgeEpoch } from '../forge-proxy.mjs';
@@ -162,6 +163,62 @@ export function createForgeBoundary({ env = forgeEnvironment(), run = createGhRu
       return rosterDone(epoch, rows);
     }, { rows: null });
   }
-  return { connections, pull, roster };
+  /* Send review threads (W6 item 4): preview composes the block (review-threads.mjs) from the
+     instance's own PR and answers its exact text + digest; send recomposes, requires the same
+     digest (else E_THREADS_CHANGED), re-verifies the Git observation and pastes through the
+     injected terminal (review-paste.mjs: one bracketed paste, no Enter). The renderer supplies
+     no text, only the selector, the observation key and (for send) the digest. */
+  const noThreads = { target: null, observation: null, text: null, digest: null };
+  function reviewThreads(request, getContext, epoch = 'standalone:0', terminal = null) {
+    const send = request?.action === 'send', keys = send ? ['action', 'selector', 'observationKey', 'digest'] : ['action', 'selector', 'observationKey'];
+    if (!validForgeEpoch(epoch) || !object(request) || !['preview', 'send'].includes(request.action) || Object.keys(request).some(k => !keys.includes(k))
+      || !ref(request.observationKey) || (send && !ref(request.digest)) || !terminal) return Promise.resolve(failure('E_BAD_ARGS', 'invalid', noThreads));
+    const context = getContext();
+    if (context?.workspace?.remote) return Promise.resolve(failure('E_REMOTE_TERMINAL', epoch, noThreads));
+    const admitted = admitInstanceGit({ action: 'git', selector: request.selector }, context);
+    if (admitted.failure) return Promise.resolve({ ...failure('E_GH_FAILED', epoch, noThreads), target: admitted.failure.target, reason: admitted.failure.reason });
+    const refused = terminal.check(admitted.target);
+    if (refused) return Promise.resolve(failure(refused, epoch, { ...noThreads, target: admitted.target }));
+    const key = JSON.stringify([send ? 'threads-send' : 'threads-preview', epoch, gitTargetKey(admitted.target), send ? request.digest : null]);
+    return flight(key, epoch, async () => {
+      const deadline = now() + 45_000, fail = (code, extra = {}) => failure(code, epoch, { ...noThreads, target: admitted.target, ...extra });
+      const observation = await observe(admitted, context.cli, deadline);
+      if (!observation.observationKey) return fail(observation.code);
+      const echo = metadata(admitted.target, observation);
+      if (observation.observationKey !== request.observationKey) return fail('E_OBSERVATION_CHANGED', echo);
+      if (observation.code) return fail(observation.code, echo);
+      const conn = await connection({ wantedHost: observation.route.host, epoch, deadline });
+      if (conn.status === 'cli-not-installed' || conn.status === 'not-connected') return fail('E_GH_UNAVAILABLE', echo);
+      if (conn.status !== 'connected') return fail(conn.reason?.code || 'E_GH_FAILED', echo);
+      const { host, path } = observation.route;
+      const pr = await ghPullRequest(conn.cli, { host, path, branch: observation.branch }, run, Math.min(10_000, deadline - now()));
+      if (!pr.ok) return fail(pr.code, echo);
+      if (!pr.data) return fail('E_NO_THREADS', echo);
+      const [owner, name] = path.split('/');
+      const answer = await run(conn.cli.bin, ['api', 'graphql', '--hostname', host, '-f', `query=${THREADS_DETAIL_QUERY}`,
+        '-F', `owner=${owner}`, '-F', `name=${name}`, '-F', `number=${pr.data.number}`], { timeout: Math.min(10_000, deadline - now()) });
+      if (!answer.ok) return fail(answer.code, echo);
+      if (answer.exitCode !== 0) return fail('E_GH_FAILED', echo);
+      let raw; try { raw = JSON.parse(answer.stdout); } catch { return fail('E_GH_PROTOCOL', echo); }
+      const parsed = unresolvedThreads(raw, host);
+      if (!parsed) return fail('E_GH_PROTOCOL', echo);
+      if (!parsed.threads.length) return fail('E_NO_THREADS', echo);
+      const block = composeBlock({ number: pr.data.number, repo: path, prUrl: pr.data.url, threads: parsed.threads, more: parsed.more });
+      if (!block) return fail('E_GH_PROTOCOL', echo);
+      const digest = digestOf(block.text);
+      const done = extra => ({ forgeApi: FORGE_API, status: 'ok', action: request.action, reason: null, digest, threads: block.shown, omitted: block.omitted,
+        ...echo, readEpoch: epoch, observedAt: new Date().toISOString(), ...extra });
+      if (!send) return done({ text: block.text });
+      if (digest !== request.digest) return fail('E_THREADS_CHANGED', echo);
+      const latest = getContext(), again = admitInstanceGit({ action: 'git', selector: request.selector }, latest);
+      if (again.failure || gitTargetKey(again.target) !== gitTargetKey(admitted.target)) return fail('E_OBSERVATION_CHANGED', echo);
+      const verified = await observe(again, latest.cli, deadline);
+      if (verified.observationKey !== observation.observationKey) return fail('E_OBSERVATION_CHANGED', echo);
+      const pasted = terminal.paste(admitted.target, block.text);
+      if (pasted) return fail(pasted, echo);
+      return done({ sent: true });
+    }, noThreads);
+  }
+  return { connections, pull, roster, reviewThreads };
 }
 export const forgeBoundary = createForgeBoundary();

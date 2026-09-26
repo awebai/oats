@@ -64,6 +64,24 @@
         "number=14430"
       ],
       "fixtureSha256": "3368a5a0e1d270ff09c0632a50233e66212f40cd9c8d24509fd0ae9c95e12ef1"
+    },
+    "threads-detail-14430": {
+      "argv": [
+        "gh",
+        "api",
+        "graphql",
+        "--hostname",
+        "github.com",
+        "-f",
+        "query=<THREADS_DETAIL_QUERY, server/review-threads.mjs>",
+        "-F",
+        "owner=cli",
+        "-F",
+        "name=cli",
+        "-F",
+        "number=14430"
+      ],
+      "fixtureSha256": "add4d408d14959af955fd993c59ba55d2ced06c61b7eb2ceca45ec34c285fe66"
     }
   }
 }
