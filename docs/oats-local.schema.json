@@ -69,9 +69,10 @@
       "additionalProperties": false,
       "properties": {
         "disabled": {
+          "description": "Souls not run on this machine (a spawn is E_SOUL_DISABLED): a bare soul name disables every soul of that name; a qualified name disables one — <package>/<soul> for a package soul, <member name>/<soul> for a member's.",
           "type": "array",
           "uniqueItems": true,
-          "items": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" }
+          "items": { "type": "string", "pattern": "^(?:[a-z0-9][a-z0-9._-]*/)?[a-z0-9]+(?:-[a-z0-9]+)*$" }
         }
       }
     }

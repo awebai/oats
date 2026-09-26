@@ -27,7 +27,9 @@ A Git repository **contains** a package at `oats-package/`:
 ```
 
 `oats-package.json` must declare `package` and `capabilities` (a list of
-directories relative to the package root, each holding an `oats.json`). A
+directories relative to the package root, each holding an `oats.json`). It may
+also declare `souls` (0.28.0): soul directories the package ships, see
+[Package souls](#package-souls). A
 directory entry need not equal the capability's name
 (`capabilities/oats-okf` → capability `oats.okf`). A package declaring one
 capability name twice, a listed directory without a manifest, or a manifest
@@ -172,7 +174,8 @@ same workspace commit hold identical locks.
       "version": "0.4.0",
       "commit": "47f4b81660e4cc9701d373088de52462762585a3",
       "integrity": "sha256-4cd126a7…",
-      "capabilities": ["acme-deploy", "acme-lint"]
+      "capabilities": ["acme-deploy", "acme-lint"],
+      "souls": [{ "name": "release-reviewer", "path": "souls/release-reviewer", "digest": "sha256-9a0f…" }]
     }
   }
 }
@@ -187,6 +190,7 @@ same workspace commit hold identical locks.
 | `commit` | full 40-hex OID the version resolved to |
 | `integrity` | `sha256-<hex>` content digest of the package tree at `path` |
 | `capabilities` | the capability names the package provides (sorted) — what `from: package` looks up |
+| `souls` | the package souls (0.28.0), sorted by name: `name`, `path` (inside the package) and `digest` (`sha256-<hex>` of the soul directory); absent when the package ships none |
 
 A capability provided by **two** locked packages is ambiguous and fails
 closed (`E_PACKAGE_MISSING { ambiguous: [ids] }`): keep one of them in
@@ -219,6 +223,50 @@ against what the fetch reported; skills are copied to
 `{ kind: "package", package, version, commit, integrity, repoKey }`. Bumping
 `packages:` and syncing affects **only new spawns**; `oats status` shows a
 running instance's package module as `moved` once the lock points elsewhere.
+
+## Package souls
+
+A package may ship **souls** as well as capabilities (0.28.0). One pin in
+`packages:` then versions both: nothing drifts, unlike an `external:` soul's
+commit pin.
+
+```
+oats-package/
+├── oats-package.json      # { …, "capabilities": ["capabilities/acme-review"], "souls": ["souls/release-reviewer"] }
+├── capabilities/acme-review/oats.json
+└── souls/release-reviewer/
+    ├── soul.yaml          # an ordinary soul: name = the directory's name
+    ├── AGENTS.md
+    └── skills/…
+```
+
+- **Locked.** `oats sync` records each soul's `name`, `path` and `digest` in
+  the lock entry. A soul without `soul.yaml` or `AGENTS.md`, or whose
+  directory is not a soul name, is `E_PACKAGE_MANIFEST`. On a later sync at
+  the same version the souls must still match (`E_PACKAGE_INTEGRITY { why:
+  "souls" }`); a lock written before 0.28.0 has its `souls` filled in.
+- **Listed.** `oats souls` lists a package soul with `kind: "package"`,
+  `package`, `version`, `qualifiedName` and `origin: "package <id>
+  v<version>"`; `oats sync` / `oats workspace status` list each package's
+  `souls`. Only packages the workspace still declares are listed.
+- **Named.** The qualified name is `<package>/<soul>` (`oats.okf/knowledge-maintainer`).
+  A bare name works when it is unique across member, external and package
+  souls; otherwise `E_SOUL_AMBIGUOUS` names each qualified form
+  (`details.qualified`). A member soul's qualified form is `<member name>/<soul>`.
+- **Resolved** like any soul: the workspace and team defaults apply, `off` and
+  `<slot>: none` work, every `team:` label must be declared (`E_TEAM_UNKNOWN`
+  in discovery), and `from: here` means **this package** at the locked commit
+  (a capability it does not provide is `E_CAPABILITY_MISSING`).
+- **Spawned** at the locked commit: the soul is fetched into the per-commit
+  soul cache and its digest must equal the lock's (`E_PACKAGE_INTEGRITY
+  { why: "soul-digest" }`). The instance's directory is the bare name
+  (`agents/<soul>/`). `instance.json.workspace.soul` records `package: { id,
+  version, commit, digest, path }` and the soul id `package:<id>#<soul>`; in
+  `oats status` the soul is `moved` once the package pin moves.
+- **Disabled** by `oats-local.yaml` `souls.disabled` by its qualified or bare
+  name (`E_SOUL_DISABLED` at spawn).
+- **Trusted** as the package's capabilities are: declaring the package is the
+  trust decision.
 
 ## Compatibility floors
 

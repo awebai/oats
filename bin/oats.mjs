@@ -32,7 +32,7 @@ import {
 import {
   writeFileAtomic, LOCK_FILE, readLock, writeLock, resolvePackages,
   classifyPackageValue, parsePackageRequest } from "../lib/packages.mjs";
-import { loadLocal, validateWorkspace, validateLocal } from "../lib/workspace.mjs";
+import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, workspaceWarnings } from "../lib/workspace.mjs";
 import { parseConfigData } from "../lib/config-data.mjs";
 import * as remoteModule from "../lib/remote.mjs";
 import YAML from "yaml";
@@ -162,7 +162,7 @@ async function doctorComposition(ctx, soulName, ws, bail) {
   // A bail exits the process without unwinding: the temporary copies are removed at exit too.
   process.once("exit", () => { for (const c of cleanups) { try { c(); } catch { /* best effort */ } } });
   try {
-    const discovery = await discoverOrStandalone(loadLocal(deployment).local, { remoteOptions });
+    const discovery = await discoverOrStandalone(loadLocal(deployment).local, { deployment, remoteOptions });
     const prepared = await prepareInstance(deployment, soulName, { remoteOptions, discovery });
     const pv = await previewWorkspaceSoul(prepared, root);
     cleanups.push(pv.cleanup);
@@ -1035,7 +1035,7 @@ function standaloneCatalogVersion(ref) {
 async function discoverForCli(ctx, bail) {
   // The standalone case (decisions 10/25) is a discovery too: the repo's own view
   // plus the kernel's oats.core default — discoverOrStandalone decides.
-  try { const { discoverOrStandalone } = await import("../lib/instance-resolution.mjs"); return await discoverOrStandalone(ctx.local, { remoteOptions: ctx.remoteOptions }); }
+  try { const { discoverOrStandalone } = await import("../lib/instance-resolution.mjs"); return await discoverOrStandalone(ctx.local, { deployment: ctx.deploymentDir, remoteOptions: ctx.remoteOptions }); }
   catch (e) {
     if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details ?? e.provenance);
     throw e;
@@ -1064,6 +1064,9 @@ function workspaceItems(discovery, lock) {
     const s = ext.soul;
     souls.push({ name: s.name, origin: `external ${s.repoKey} @ ${short(s.commit)}`, kind: "external", repoKey: s.repoKey, commit: s.commit, team: teamLabel(s.team), labels: [...(s.labels ?? (s.team ? [s.team] : []))], private: s.private, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null });
   }
+  for (const s of discovery.packageSouls || []) {
+    souls.push({ name: s.name, qualifiedName: s.qualifiedName, origin: originOf(s), kind: "package", package: s.package, version: s.version, repoKey: s.repoKey, commit: s.commit, team: teamLabel(s.team), labels: [...(s.labels ?? [])], private: false, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null });
+  }
   for (const [id, entry] of Object.entries(lock?.packages || {})) {
     for (const name of entry.capabilities) capabilities.push({ name, origin: originOf({ package: id, version: entry.version }), kind: "package", package: id, version: entry.version, commit: entry.commit, team: teamLabel(null), private: false });
   }
@@ -1083,7 +1086,7 @@ function memberRows(discovery) {
 
 /** Package rows for `sync` / `workspace status` from the lock. */
 function packageRows(lock) {
-  return Object.entries(lock.packages).map(([id, p]) => ({ id, version: p.version, source: p.source, commit: p.commit, integrity: p.integrity, capabilities: p.capabilities }));
+  return Object.entries(lock.packages).map(([id, p]) => ({ id, version: p.version, source: p.source, commit: p.commit, integrity: p.integrity, capabilities: p.capabilities, souls: (p.souls ?? []).map((x) => x.name) }));
 }
 
 /** Print a padded table: rows are arrays of strings. */
@@ -1124,6 +1127,17 @@ async function performSync(ctx, bail, { onDiscovered } = {}) {
   const lock = resolved.lock;
   let lockFile;
   try { lockFile = writeLock(ctx.deploymentDir, lock); } catch (e) { return bail(e.code || "E_LOCK_SCHEMA", e.message, e.details); }
+  // Package souls come from the lock: list what THIS sync locked, not what the previous lock held.
+  if (discovery.standalone !== true) {
+    let pkg;
+    try { pkg = await discoverPackageSouls(discovery.workspace, lock, { remoteOptions: ctx.remoteOptions }); }
+    catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details ?? e.provenance); throw e; }
+    const kept = (list) => list.filter((p) => typeof p.package !== "string");
+    discovery.packageSouls = pkg.souls;
+    discovery.problems = [...kept(discovery.problems), ...pkg.problems];
+    discovery.warnings = workspaceWarnings(discovery.workspace, discovery.members, discovery.external || [], pkg.souls);
+    problems.splice(0, problems.length, ...kept(problems), ...pkg.problems);
+  }
   // The deployment's instance root: <deployment>/agents/ (findRoot's marker). A hand-written
   // oats-local.yaml + sync is a complete deployment; spawn must not answer E_NO_DEPLOYMENT after it.
   try { mkdirSync(join(ctx.deploymentDir, "agents"), { recursive: true }); } catch { /* reported by spawn's E_NO_DEPLOYMENT remedy if it matters */ }
@@ -1152,6 +1166,7 @@ function printSyncReport(ctx, synced) {
   const { report, discovery, items, lockFile } = synced;
   const { members, packages, changes } = report;
   const disabled = new Set(ctx.local.souls?.disabled || []);
+  const isDisabled = (s) => disabled.has(s.name) || disabled.has(s.qualifiedName ?? `${memberLabel(s.repoKey)}/${s.name}`);
   console.log(`workspace  ${discovery.workspace?.name ?? `(${standaloneNote(discovery)})`}  (${discovery.key} @ ${short(discovery.commit)})`);
   console.log(`members    ${members.map((m) => m.confirmed ? `${m.name} ✓↔ (@ ${short(m.commit)})` : `${m.name} ✗ (${m.status})`).join("   ") || "(none)"}`);
   console.log(`packages   ${packages.map((p) => `${p.id} ${p.version} ✓ (@ ${short(p.commit)})`).join("   ") || "(none)"}`);
@@ -1162,8 +1177,9 @@ function printSyncReport(ctx, synced) {
   const externalSouls = items.souls.filter((s) => s.kind === "external");
   // Souls have no private mode (0.26.0); the private count is of repo-owned member capabilities.
   const repoOwned = items.capabilities.filter((c) => c.kind === "member" && c.private);
-  const disabledHere = items.souls.filter((s) => disabled.has(s.name));
-  console.log(`souls      ${items.souls.length} discovered (${memberSouls.length} members, ${externalSouls.length} external, ${disabledHere.length} disabled here) · ${repoOwned.length} private capabilit${repoOwned.length === 1 ? "y" : "ies"}${repoOwned.length ? ` (${repoOwned.map((c) => `${c.name}, ${memberLabel(c.repoKey)} only`).join("; ")})` : ""}`);
+  const packageSouls = items.souls.filter((s) => s.kind === "package");
+  const disabledHere = items.souls.filter(isDisabled);
+  console.log(`souls      ${items.souls.length} discovered (${memberSouls.length} members, ${externalSouls.length} external, ${packageSouls.length ? `${packageSouls.length} package, ` : ""}${disabledHere.length} disabled here) · ${repoOwned.length} private capabilit${repoOwned.length === 1 ? "y" : "ies"}${repoOwned.length ? ` (${repoOwned.map((c) => `${c.name}, ${memberLabel(c.repoKey)} only`).join("; ")})` : ""}`);
   const teams = new Map();
   for (const s of items.souls) { const t = teams.get(s.team) || { souls: 0, capabilities: 0 }; t.souls++; teams.set(s.team, t); }
   for (const c of items.capabilities.filter((c) => c.kind === "member")) { const t = teams.get(c.team) || { souls: 0, capabilities: 0 }; t.capabilities++; teams.set(c.team, t); }
@@ -1294,7 +1310,7 @@ async function workspaceCmd() {
   for (const m of members.filter((m) => !m.confirmed)) console.log(`    ${m.name}: ${m.detail}`);
   console.log("\nPackages:");
   if (!packages.length) console.log(unsynced.length ? `  (none locked yet — \`oats sync\` resolves ${unsynced.join(", ")})` : "  (none)");
-  else printTable(["package", "version", "source", "commit", "capabilities"], packages.map((p) => [p.id, p.version, p.source, short(p.commit), p.capabilities.join(",")]));
+  else printTable(["package", "version", "source", "commit", "capabilities", "souls"], packages.map((p) => [p.id, p.version, p.source, short(p.commit), p.capabilities.join(","), p.souls.join(",") || "—"]));
   if (packages.length && unsynced.length) console.log(`  declared but not locked (run \`oats sync\`): ${unsynced.join(", ")}`);
   if (stale.length) console.log(`  locked but no longer declared (run \`oats sync\`): ${stale.join(", ")}`);
   if (result.external.length) console.log(`\nExternal: ${result.external.map((e) => `${e.soul} (${e.source.replace(/@([0-9a-f]{40})$/, (_, o) => `@${short(o)}`)}, ${e.team})`).join("   ")}`);
@@ -1343,7 +1359,7 @@ async function statusDrift(data) {
   const souls = new Map();
   for (const a of data) {
     if (!a.dir) continue;
-    try { const stamp = JSON.parse(readFileSync(join(a.dir, ".oats-soul-source.json"), "utf8")); if (stamp && typeof stamp.repoKey === "string") souls.set(a.name, { repoKey: stamp.repoKey, commit: typeof stamp.commit === "string" ? stamp.commit : null, path: stamp.path ?? null }); }
+    try { const stamp = JSON.parse(readFileSync(join(a.dir, ".oats-soul-source.json"), "utf8")); if (stamp && typeof stamp.repoKey === "string") souls.set(a.name, { repoKey: stamp.repoKey, commit: typeof stamp.commit === "string" ? stamp.commit : null, path: stamp.path ?? null, ...(typeof stamp.package === "string" ? { package: stamp.package, version: stamp.version ?? null } : {}) }); }
     catch { /* not a workspace soul (classic, capability agent, or unreadable stamp) */ }
   }
   const anything = data.some((a) => (a.instances || []).some((i) => hasModules(i) || hasSoul(i)));
@@ -1354,7 +1370,7 @@ async function statusDrift(data) {
   let discovery;
   // The standalone view (decisions 10/25) is a discovery too: drift of a standalone
   // instance is computed against its member's current state, not reported "unreachable".
-  try { const { discoverOrStandalone } = await import("../lib/instance-resolution.mjs"); discovery = await discoverOrStandalone(ctx.local, { remoteOptions: remoteOptionsFromEnv() }); }
+  try { const { discoverOrStandalone } = await import("../lib/instance-resolution.mjs"); discovery = await discoverOrStandalone(ctx.local, { lock, remoteOptions: remoteOptionsFromEnv() }); }
   catch (e) {
     const reason = e?.details?.reason ? `${e.code}: ${e.details.reason}` : (e?.code || e?.message || "unknown");
     return { drift: new Map(), soul: new Map(), souls, unreachable: { code: e?.code ?? null, reason, message: e?.message ?? String(e) } };
@@ -1369,6 +1385,7 @@ async function statusDrift(data) {
   }
   // The roster's soul row reflects the CURRENT member commit too (the pointer may lag a moved member).
   for (const [, stamp] of souls) {
+    if (typeof stamp.package === "string") { const now = (discovery.packageSouls || []).find((p) => p.package === stamp.package && p.path === stamp.path); if (now) stamp.current = now.commit; continue; }
     const member = discovery.members.find((m) => m && m.key === stamp.repoKey);
     if (member && typeof member.commit === "string" && (member.confirmed || (discovery.standalone === true && member.key === discovery.key))) stamp.current = member.commit;
   }
@@ -1385,6 +1402,12 @@ function driftLine(row) {
 }
 /** The `soul:` line of an instance — decision 17 for the soul source. */
 function soulDriftLine(row, agentName) {
+  if (row.package) {
+    const base = `soul: ${row.name ?? agentName} from package ${row.package} v${row.version} @ ${short7(row.commit)}`;
+    if (row.status === "moved") return `${base}  [package moved since (now v${row.current?.version} @ ${short7(row.current?.commit)})]`;
+    if (row.status === "missing") return `${base}  [${row.reason === "soul-absent" ? "soul no longer shipped by the package" : "package no longer locked"}]`;
+    return base;
+  }
   const base = `soul: ${row.name ?? agentName} from ${memberLabel(row.repoKey)} @ ${short7(row.commit)}`;
   if (row.status === "moved") return `${base}  [member moved since (now @ ${short7(row.current?.commit)})]`;
   if (row.status === "missing") return `${base}  [${row.reason === "soul-absent" ? "soul no longer present" : `member ${row.reason || "unconfirmed"}`}]`;
@@ -1394,6 +1417,7 @@ function soulDriftLine(row, agentName) {
 function soulRepoLabel(a, ws) {
   const stamp = ws?.souls?.get(a.name);
   if (!stamp) return a.repo || "?";
+  if (typeof stamp.package === "string") return `package ${stamp.package} v${stamp.version} @ ${short7(stamp.commit)}`;
   const moved = stamp.current && stamp.commit && stamp.current !== stamp.commit ? ` (member now @ ${short7(stamp.current)})` : "";
   return `${memberLabel(stamp.repoKey)} @ ${short7(stamp.commit)}${moved}`;
 }
@@ -1417,7 +1441,7 @@ async function status() {
         const rows = ws.drift.get(key);
         if (rows) i.modules = rows.map((r) => ({ name: r.module, from: r.from, commit: r.recorded?.commit ?? null, current: r.current, status: r.status, ...(r.reason ? { reason: r.reason } : {}) }));
         const s = ws.soul.get(key);
-        if (s) i.soul = { repoKey: s.repoKey, commit: s.commit, current: s.current?.commit ?? null, status: s.status, ...(s.reason ? { reason: s.reason } : {}) };
+        if (s) i.soul = { repoKey: s.repoKey, commit: s.commit, current: s.current?.commit ?? null, status: s.status, ...(s.reason ? { reason: s.reason } : {}), ...(s.package ? { package: s.package, version: s.version, currentVersion: s.current?.version ?? null } : {}) };
       }
     }
     console.log(JSON.stringify({ root, agents: data, ...(ws ? { workspace: ws.unreachable ? { reachable: false, ...ws.unreachable } : { reachable: true } } : {}), ...(problems.length ? { problems } : {}), ...envelopeWarnings() }, null, 2)); return;
@@ -1505,8 +1529,8 @@ async function spawnCmd() {
     try {
       const { prepareInstance, ensureWorkspaceSoul, previewWorkspaceSoul, parseProviderFlags, discoverOrStandalone } = await import("../lib/instance-resolution.mjs");
       const remoteOptions = remoteOptionsFromEnv();
-      const { local } = loadLocal(dirFlag());
-      discovery = wsDiscovery = await discoverOrStandalone(local, { remoteOptions });
+      const { local, path: localPath } = loadLocal(dirFlag());
+      discovery = wsDiscovery = await discoverOrStandalone(local, { deployment: dirname(localPath), remoteOptions });
       wsPrepared = await prepareInstance(dirFlag(), name, { spawn: { providers: parseProviderFlags(providerPairs) }, remoteOptions, discovery });
       const soulName = wsPrepared.soulEntry.name;
       let soulDir;
@@ -2356,7 +2380,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "teams", "settings-declared", "capabilities-private", "layers-from", "harness"], workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2 }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "teams", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls"], workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2 }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);

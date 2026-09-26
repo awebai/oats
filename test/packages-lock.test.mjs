@@ -438,3 +438,14 @@ test("a pre-0.26 lock carrying approved { executables, at } or approved: null va
   for (const e of Object.values(resynced.lock.packages)) assert.ok(!("approved" in e), "resolvePackages drops approved on write");
   assert.ok("approved" in legacy.packages["oats.okf"], "the input lock is untouched");
 });
+
+test("lock v3 souls (0.28.0): validated when present, written sorted, omitted when empty", () => {
+  const entry = { source: "git:github.com/acme/tools@v1.0.0", url: "https://github.com/acme/tools.git", path: "oats-package", version: "1.0.0", commit: "a".repeat(40), integrity: `sha256-${"b".repeat(64)}`, capabilities: ["acme-tool"] };
+  const digest = `sha256-${"c".repeat(64)}`;
+  const lock = { lockfileVersion: 3, packages: { "acme.tools": { ...entry, souls: [{ name: "zed", path: "souls/zed", digest }, { name: "alpha", path: "souls/alpha", digest }] } } };
+  assert.deepEqual(canonicalLock(lock).packages["acme.tools"].souls.map((s) => s.name), ["alpha", "zed"]);
+  assert.equal("souls" in canonicalLock({ lockfileVersion: 3, packages: { "acme.tools": { ...entry, souls: [] } } }).packages["acme.tools"], false);
+  for (const bad of [{ souls: "x" }, { souls: [{ name: "Bad Name", path: "souls/x", digest }] }, { souls: [{ name: "x", path: "../x", digest }] }, { souls: [{ name: "x", path: "souls/x", digest: "sha1-0" }] }]) {
+    assert.throws(() => validateLock({ lockfileVersion: 3, packages: { "acme.tools": { ...entry, ...bad } } }), (e) => e.code === "E_LOCK_SCHEMA" && /souls/.test(e.details.path), JSON.stringify(bad));
+  }
+});

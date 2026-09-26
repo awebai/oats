@@ -1115,8 +1115,8 @@ gate that on the absence of `packages-no-approval`.
              "souls":["tools-expert"],"capabilities":["acme-tools-dev"],"publishes":{"package":"acme.tools","version":"0.4.0"}},
             {"key":"github.com/acme/billing","name":"billing","commit":"<oid>","confirmed":false,"status":"no-backlink","detail":"github.com/acme/billing@… has no oats-membership.yaml","team":null,
              "souls":[],"capabilities":[],"publishes":null}],
- "packages":[{"id":"oats.okf","version":"2.1.3","source":"catalog:oats.okf","commit":"<oid>","integrity":"sha256-…","capabilities":["oats.okf"]},
-             {"id":"acme.tools","version":"0.4.0","source":"git:github.com/acme/tools@v0.4.0","commit":"<oid>","integrity":"sha256-…","capabilities":["acme-deploy","acme-lint"]}],
+ "packages":[{"id":"oats.okf","version":"2.1.3","source":"catalog:oats.okf","commit":"<oid>","integrity":"sha256-…","capabilities":["oats.okf"],"souls":[]},
+             {"id":"acme.tools","version":"0.4.0","source":"git:github.com/acme/tools@v0.4.0","commit":"<oid>","integrity":"sha256-…","capabilities":["acme-deploy","acme-lint"],"souls":["release-reviewer"]}],
  "changes":[{"id":"acme.tools","from":null,"to":"0.4.0","commit":"<oid>"}],
  "problems":[]}
 ```
@@ -1125,6 +1125,8 @@ gate that on the absence of `packages-no-approval`.
   `backlink-elsewhere` | `cannot-read`; `detail` explains an unconfirmed row.
   `publishes` reports a member's `oats-package/` (informational — its
   capabilities are **not** in `capabilities[]`; the non-collapse rule).
+- `packages[].souls` (feature `package-souls`, 0.28.0): the names of the
+  package souls the lock records for that package (`[]` when none).
 - `changes[]`: `from` = previously locked version or `null`; `to` = `null` when
   the package was dropped from `packages:` and from the lock.
 - `problems[]`: `{ code, path, message, repoKey? }` — per-item discovery
@@ -1207,9 +1209,19 @@ or `"unassigned"`.
  "souls":[
    {"name":"release-manager","origin":"member github.com/acme/agents @ 3f2a9c1e","kind":"member","repoKey":"github.com/acme/agents","commit":"<oid>",
     "team":"engineering","private":false,"path":"souls/release-manager","work":"worktree","description":"Cuts, verifies and announces releases."},
-   {"name":"security-reviewer","origin":"external github.com/oss-collective/experts @ 9c4e1f2a","kind":"external",…}],
+   {"name":"security-reviewer","origin":"external github.com/oss-collective/experts @ 9c4e1f2a","kind":"external",…},
+   {"name":"release-reviewer","qualifiedName":"acme.tools/release-reviewer","origin":"package acme.tools v0.4.0","kind":"package","package":"acme.tools","version":"0.4.0",
+    "repoKey":"github.com/acme/tools","commit":"<oid>","team":"engineering","labels":["engineering"],"private":false,"path":"oats-package/souls/release-reviewer","work":"directory","description":"…"}],
  "problems":[]}
 ```
+
+**Package souls** (feature `package-souls`, 0.28.0): a row with `kind:
+"package"` is a soul a locked package ships (listed only while the workspace
+declares the package). It carries `package`, `version` and `qualifiedName`
+(`<package>/<soul>`); spawn it by `qualifiedName` (the bare `name` works when
+it is unique). The Souls page shows it as "from package <id> <version>". A
+problem about a package soul carries `package` (and `repoKey: null`); its
+`path` is `package:<id>:<path in the repo>`.
 
 Package capabilities of declared-but-unsynced packages are absent until `sync`.
 (`oats souls --json` keeps `soulsApi: 1` in 0.26.0: its shape is unchanged.
@@ -1261,9 +1273,13 @@ between preview and apply is `E_DECISION_STALE`):
   key**: legal only at the top level of the workspace file's `messaging:`;
   anywhere else in any payload layer (soul, `oats-local.yaml` `settings`,
   `--provider`, at any depth) it is `E_WORKSPACE_SCHEMA { reason: "reserved-key", path, key }`.
-- Soul lookup: `E_SOUL_UNKNOWN { name, members[] }` (not among confirmed
-  members or externals), `E_SOUL_AMBIGUOUS { name, repos[] }` (name it
-  `<repo>/<soul>`). Resolution errors keep their codes (`E_NOT_A_MEMBER`,
+- Soul lookup: `E_SOUL_UNKNOWN { name, members[], packages[] }` (not among
+  confirmed members, externals or package souls), `E_SOUL_AMBIGUOUS { name,
+  repos[], qualified[] }` (name one of `qualified`: `<member>/<soul>` or
+  `<package>/<soul>`), `E_SOUL_DISABLED { name, qualifiedName, entry }` (the
+  soul is in `oats-local.yaml` `souls.disabled`). A package soul whose fetched
+  content does not match the lock is `E_PACKAGE_INTEGRITY { why:
+  "soul-digest", package, soul, locked, observed }`. Resolution errors keep their codes (`E_NOT_A_MEMBER`,
   `E_MEMBERSHIP_UNCONFIRMED { repoKey, reason }`, `E_CAPABILITY_MISSING { hint? }`,
   `E_CAPABILITY_PRIVATE`, `E_PACKAGE_MISSING`, `E_PACKAGE_INTEGRITY { why: "capabilities", listed, locked }`,
   `E_SLOT_CONFLICT { slot, modules[], reason? }`, `E_SKILL_DUPLICATE { name, modules[] }`,
@@ -1286,6 +1302,7 @@ Written by materialization inside the spawn transaction; read back by
  "providers":{"acme-release-tooling":{},"oats.okf":{"owns":"release-manager","reads":["platform-engineer"],"state-dir":"/Users/ana/.oats/okf"}},
  "workspace":{"key":"github.com/acme/agents","name":"acme","deployment":"/Users/ana/acme-workspace","commit":"<oid>","resolution":"<24 hex>","standalone":false,
               "soul":{"repoKey":"github.com/acme/agents","commit":"<oid>","team":"engineering"}},
+ "…":"a package soul's workspace.soul also records package: {id, version, commit, digest, path}, and its id is package:<id>#<soul>",
  "capabilities":[{"id":"oats.okf","capability":"oats.okf","origin":"package:oats.okf@2.1.3","…":"one row per module"}]}
 ```
 
@@ -1341,6 +1358,13 @@ top-level `workspace` reachability field:
   `oats-local.yaml` has no `workspace` field and `modules` as recorded.
 - Text mode prints `modules: <cap> from <member|package …> @ <7-char>` lines
   for non-current modules (`--verbose` for all).
+- `instances[].soul` is the soul source's drift: `{ repoKey, commit, current,
+  status, reason? }`. For a **package soul** (feature `package-souls`) it also
+  carries `package`, `version` and `currentVersion`; `moved` means the package
+  pin moved (another version/commit is locked now), `missing` has `reason`
+  `package-absent` (no longer locked or declared) or `soul-absent` (the locked
+  package no longer ships it). Text: `soul: <name> from package <id> v<version>
+  @ <7-char>  [package moved since (now v<version> @ <7-char>)]`.
 
 ### Eligible teams (feature `teams`, OATS 0.26.0)
 
