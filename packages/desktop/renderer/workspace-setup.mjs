@@ -1,8 +1,10 @@
 /** Workspace v4 Setup (W1 list, W2 graph): what the workspace declares in git
  * (members, packages, teams) beside what lives only on this computer.
  * Presentation only, from `oats workspace status` (and the roster, the CLI
- * probe, the souls list): nothing is inferred and unreported facts (default
- * capabilities, clones, fix snippets) are not shown. */
+ * probe, the souls list): nothing is inferred and unreported facts are not
+ * shown. Kernel #217 (desktop-facts) adds the files, this computer's clones,
+ * available package versions, disabled souls and the lock file; each is shown
+ * only when reported. */
 import { iconElement } from './shell-icons.mjs';
 import { memberState } from './workspace-catalog.mjs';
 import { packageOrigin } from './capability-page.mjs';
@@ -57,6 +59,11 @@ export const setupCSS = `
 .setup-kv dt { color:var(--muted); font-size:12px; }
 .setup-kv dd { margin:0; color:var(--fg); font:12px var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .setup-kv dd.warn { color:var(--warn); }
+.setup-kv dd.muted { color:var(--muted); }
+.setup-kv dd.wrap { white-space:normal; overflow:visible; overflow-wrap:anywhere; padding:6px 0; line-height:1.45; }
+.setup-local-sub { margin:0; padding:10px 16px 0; border-top:1px dashed var(--border); color:var(--muted); font-size:11px; font-weight:650; letter-spacing:.05em; text-transform:uppercase; }
+.oats-view .setup button.setup-file { height:auto; min-height:0; padding:0; border:0; background:transparent; color:var(--accent); font:inherit; font-family:var(--mono,monospace); text-decoration:underline; text-underline-offset:2px; cursor:pointer; overflow-wrap:anywhere; text-align:left; }
+.oats-view .setup button.setup-file:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:3px; }
 /* W2: this computer → the workspace → its members and packages. */
 .setup-graph-wrap { display:grid; grid-template-columns:minmax(0,1fr); gap:16px; align-items:stretch; min-width:0; }
 .setup-graph-wrap.with-panel { grid-template-columns:minmax(0,1fr) 340px; }
@@ -131,6 +138,9 @@ export const setupCSS = `
 .setup-hand-sub { color:var(--muted); font-size:11.5px; overflow-wrap:anywhere; }
 .setup-panel p { margin:0; color:var(--fg); font-size:12.5px; line-height:1.55; }
 .setup-panel p.muted { color:var(--muted); font-size:11.5px; line-height:1.5; }
+.setup-panel p.warn { color:var(--warn); }
+.setup-panel p.mono { font-size:12px; overflow-wrap:anywhere; }
+.setup-panel-acts { display:flex; flex-wrap:wrap; gap:8px; }
 .setup-panel .mono { font-family:var(--mono,monospace); }
 .setup-detail { padding:10px 12px; border-radius:8px; background:var(--surface-2); color:var(--fg); font:12px/1.6 var(--mono,monospace); overflow-wrap:anywhere; }
 `;
@@ -156,6 +166,20 @@ function stateChip(doc, member) {
   return chip;
 }
 const memberName = member => text(member?.name) || tail(member?.key);
+const webUrl = v => typeof v === 'string' && /^https:\/\//.test(v) ? v : null;
+const fileRef = v => text(v?.path) ? v : null;
+/** A file the kernel names ({ path, url }): its path, a link when it has a web address. */
+function fileName(doc, file, openExternal) {
+  const url = webUrl(file.url);
+  if (!url || !openExternal) { const name = el(doc, 'span', file.path, 'mono'); name.title = file.path; return name; }
+  const link = el(doc, 'button', file.path, 'setup-file'); link.type = 'button'; link.title = url;
+  link.setAttribute('aria-label', `Open ${file.path}`); link.addEventListener('click', () => openExternal(url));
+  return link;
+}
+/** A path under the deployment folder, relative to it. */
+const within = (path, folder) => folder && path.startsWith(`${folder}/`) ? path.slice(folder.length + 1) : path;
+/** A newer version of a catalog package than the lock holds (packages[].latest). */
+const available = pkg => text(pkg?.latest?.version) ? pkg.latest : null;
 /** What a member contributes, or why it contributes nothing yet. */
 function contribution(member) {
   const state = memberState(member), souls = list(member.souls).length, caps = list(member.capabilities).length;
@@ -182,27 +206,29 @@ function box(doc, title, lead, scopeLabel, { local = false, icon = null } = {}) 
 }
 
 /** The whole Setup tab. view: 'list' | 'graph'; selected: a member key (graph panel). */
-export function renderSetup(host, { status, instances = [], souls = [], cli = null, view = 'list', selected = null, onSelect = () => {}, onOpenRepo = null, onOpenPackages = null }) {
+export function renderSetup(host, { status, instances = [], souls = [], cli = null, view = 'list', selected = null, onSelect = () => {}, onOpenRepo = null, onOpenPackages = null, openExternal = null }) {
   const doc = host.ownerDocument;
   host.replaceChildren();
   const root = el(doc, 'div', null, 'setup'); root.dataset.view = view;
-  root.append(lede(doc, status));
-  if (view === 'graph') root.append(graph(doc, { status, instances, selected, onSelect, onOpenRepo, onOpenPackages }));
+  root.append(lede(doc, status, openExternal));
+  if (view === 'graph') root.append(graph(doc, { status, instances, selected, onSelect, onOpenRepo, onOpenPackages, openExternal }));
   else root.append(columns(doc, { status, instances, souls, cli, onSelect, onOpenRepo, onOpenPackages }));
   host.append(root);
   return root;
 }
 
-/** "<name> declared in <host>'s workspace file @ <commit>". The Desktop never names the
- * kernel's files; the kernel reports no workspace-file path to show instead. */
-function lede(doc, status) {
+/** "<name> declared in <host>'s workspace file @ <commit>", naming the file when the
+ * kernel reports it (workspace.file); the Desktop never guesses a file name. */
+function lede(doc, status, openExternal) {
   const ws = status?.workspace || {};
   const line = el(doc, 'div', null, 'setup-lede');
   line.append(el(doc, 'h2', text(ws.name) || 'Workspace'));
   if (text(ws.key)) {
     const host = list(status?.members).find(m => m.key === ws.key);
     const where = el(doc, 'span', null, 'setup-lede-where'); where.title = ws.url || ws.key;
-    where.append('declared in ', el(doc, 'span', host ? memberName(host) : tail(ws.url || ws.key), 'mono strong'), "'s workspace file");
+    where.append('declared in ', el(doc, 'span', host ? memberName(host) : tail(ws.url || ws.key), 'mono strong'));
+    const file = fileRef(ws.file);
+    if (file) where.append("'s ", fileName(doc, file, openExternal)); else where.append("'s workspace file");
     if (text(ws.commit)) { where.append(' @ '); const c = el(doc, 'span', short(ws.commit), 'mono'); c.title = ws.commit; where.append(c); }
     line.append(where);
   }
@@ -248,7 +274,9 @@ function columns(doc, { status, instances, souls, cli, onSelect }) {
     const caps = list(pkg.capabilities).join(' · ');
     const provides = el(doc, 'span', caps, 'setup-cell'); provides.title = caps;
     row.append(name, origin, provides);
-    row.append(el(doc, 'span', 'locked', 'setup-end'));
+    const newer = available(pkg), end = el(doc, 'span', newer ? `${newer.version} available` : 'locked', 'setup-end');
+    if (newer) end.title = `The official catalog has ${pkg.id} ${newer.version}${text(newer.ref) ? ` (${newer.ref})` : ''}; the lock holds ${pkg.version}.`;
+    row.append(end);
     packages.append(row);
   }
   for (const id of list(status?.unsynced)) {
@@ -281,17 +309,40 @@ function columns(doc, { status, instances, souls, cli, onSelect }) {
   const settings = text(ws.local);
   kv('Folder', settings ? settings.replace(/\/[^/]+$/, '') : null);
   kv('Settings', settings ? settings.split('/').pop() : null, '', settings);
+  const folder = settings ? settings.replace(/\/[^/]+$/, '') : null;
   const lock = lockText(status); kv('Lock', lock.text, lock.warn ? 'warn' : '');
+  if (text(status?.lock?.path)) kv('Lock file', within(status.lock.path, folder), '', `${status.lock.path} · lockfile version ${status.lock.lockfileVersion}`);
   kv('CLI', text(cli?.version) ? `oats ${cli.version}` : null);
   const all = list(instances), running = all.filter(i => i?.running === true).length;
   kv('Instances', all.length ? `${all.length} · ${running} running` : 'none yet');
+  const disabled = list(status?.disabledSouls).filter(text);
+  if (disabled.length) kv('Disabled souls', disabled.join(', '), 'wrap');
   local.append(rows);
+  // Clones: where each member is checked out here (clones[]), or why it is not.
+  const clones = list(status?.clones).filter(row => text(row?.key));
+  if (clones.length) {
+    const names = new Map(list(status?.members).map(m => [m.key, memberName(m)]));
+    const list$ = el(doc, 'dl', null, 'setup-local-rows'); list$.setAttribute('aria-label', 'Member clones');
+    for (const clone of clones) {
+      const r = el(doc, 'div', null, 'setup-kv'); r.dataset.clone = clone.key;
+      const where = cloneText(clone, folder), dd = el(doc, 'dd', where.text, where.cls); dd.title = where.title;
+      r.append(el(doc, 'dt', names.get(clone.key) || text(clone.name) || tail(clone.key)), dd); list$.append(r);
+    }
+    local.append(el(doc, 'h4', 'Member clones', 'setup-local-sub'), list$);
+  }
   side.append(teams, local);
   cols.append(main, side);
   return cols;
 }
 
-function graph(doc, { status, instances, selected, onSelect, onOpenRepo, onOpenPackages }) {
+/** One clone row: its path (relative to the deployment), the kernel's refusal, or not cloned. */
+function cloneText(clone, folder) {
+  if (text(clone?.problem?.message)) return { text: clone.problem.message, cls: 'warn wrap', title: clone.problem.code || '' };
+  if (text(clone?.path)) return { text: within(clone.path, folder), cls: '', title: `${clone.path}${clone.rule === 'clones' ? ' · set in this computer\'s settings' : clone.rule === 'convention' ? ' · beside the deployment' : ''}` };
+  return { text: 'not cloned here', cls: 'muted', title: '' };
+}
+
+function graph(doc, { status, instances, selected, onSelect, onOpenRepo, onOpenPackages, openExternal }) {
   const ws = status?.workspace || {};
   const members = list(status?.members), chosen = members.find(m => m.key === selected) || null;
   const wrap = el(doc, 'div', null, `setup-graph-wrap${chosen ? ' with-panel' : ''}`);
@@ -342,7 +393,8 @@ function graph(doc, { status, instances, selected, onSelect, onOpenRepo, onOpenP
   if (packages.length || list(status?.unsynced).length) label('Packages · pinned');
   for (const pkg of packages) {
     const origin = String(pkg.source || '').startsWith('catalog:') ? 'official' : 'git tag';
-    const node = item('package', [pkg.id, pkg.version].filter(text).join(' '), origin,
+    const newer = available(pkg);
+    const node = item('package', [pkg.id, pkg.version].filter(text).join(' '), newer ? `${newer.version} available` : origin, // latest is only reported for catalog packages
       onOpenPackages ? { run: () => onOpenPackages(), aria: `${pkg.id}: show package capabilities` } : {});
     node.dataset.package = pkg.id; leaf(node);
   }
@@ -354,12 +406,12 @@ function graph(doc, { status, instances, selected, onSelect, onOpenRepo, onOpenP
   shared.append(body);
   figure.append(here, link, shared);
   const frame = el(doc, 'div', null, 'setup-graph-box'); frame.append(figure); wrap.append(frame);
-  if (chosen) wrap.append(memberPanel(doc, chosen, { status, onClose: () => onSelect(null), onOpenRepo }));
+  if (chosen) wrap.append(memberPanel(doc, chosen, { status, onClose: () => onSelect(null), onOpenRepo, openExternal }));
   return wrap;
 }
 
 /** The Member panel: the two sides of the handshake, what it means now, and the kernel's own detail. */
-function memberPanel(doc, member, { status, onClose, onOpenRepo }) {
+function memberPanel(doc, member, { status, onClose, onOpenRepo, openExternal }) {
   const ws = status?.workspace || {};
   const state = memberState(member), name = memberName(member);
   const panel = el(doc, 'aside', null, 'setup-panel'); panel.setAttribute('aria-label', `Member ${name}`); panel.dataset.member = member.key;
@@ -374,20 +426,31 @@ function memberPanel(doc, member, { status, onClose, onOpenRepo }) {
   const back = member.status === 'confirmed' ? true : ['no-backlink', 'backlink-elsewhere'].includes(member.status) ? false : null;
   const hand = el(doc, 'section'); hand.append(el(doc, 'h4', 'Handshake'));
   const rows = el(doc, 'div', null, 'setup-hand');
-  const side = (ok, title, sub, mono = false) => {
+  const side = (ok, title, sub) => {
     const row = el(doc, 'div', null, 'setup-hand-row');
     const mark = el(doc, 'span', ok === false ? '○' : ok === null ? '?' : null, `setup-hand-mark${ok === false ? ' warn' : ok === null ? ' unknown' : ''}`);
     mark.dataset.side = ok === true ? 'yes' : ok === false ? 'no' : 'unknown';
     if (ok === true) mark.append(iconElement(doc, 'check', { size: 13 }));
     row.append(mark);
     const copy = el(doc, 'span', null, 'setup-hand-copy'); copy.append(el(doc, 'span', title, 'setup-hand-title'));
-    if (sub) copy.append(el(doc, 'span', sub, `setup-hand-sub${mono ? ' mono' : ''}`));
+    if (sub) { const said = el(doc, 'span', null, 'setup-hand-sub'); said.append(...[sub].flat()); copy.append(said); }
     row.append(copy); rows.append(row);
   };
   const hostName = tail(ws.url || ws.key);
-  side(listed, 'The workspace lists it', text(ws.key) ? `in ${hostName}'s workspace file` : null);
-  side(back, 'The repo points back', back === true ? "The repo's membership file names this workspace" : member.status === 'backlink-elsewhere' ? 'It names a different workspace' : back === false ? "No membership file in the repo names this workspace" : "Can't tell without read access");
+  // The files, by the names the kernel reports (workspace.file, membershipFile); generic words otherwise.
+  const wsFile = fileRef(ws.file), memberFile = fileRef(member.membershipFile);
+  const named = (file, words) => file ? fileName(doc, file, openExternal) : words;
+  side(listed, 'The workspace lists it', text(ws.key) ? [`in ${hostName}'s `, named(wsFile, 'workspace file')] : null);
+  side(back, 'The repo points back', back === true ? ["The repo's ", named(memberFile, 'membership file'), ' names this workspace'] : member.status === 'backlink-elsewhere' ? 'It names a different workspace' : back === false ? ['No ', named(memberFile, 'membership file'), ' in the repo names this workspace'] : "Can't tell without read access");
   hand.append(rows); body.append(hand);
+  // Where it is checked out on this computer (clones[]), when the kernel reports it.
+  const clone = list(status?.clones).find(row => row?.key === member.key);
+  if (clone) {
+    const folder = text(ws.local) ? ws.local.replace(/\/[^/]+$/, '') : null, where = cloneText(clone, folder);
+    const here = el(doc, 'section'); here.dataset.clone = member.key; here.append(el(doc, 'h4', 'On this computer'));
+    const p = el(doc, 'p', where.text, clone.problem ? 'warn' : text(clone.path) ? 'mono' : 'muted'); p.title = where.title; here.append(p);
+    body.append(here);
+  }
   // What this means now.
   const means = el(doc, 'section'); means.append(el(doc, 'h4', 'What this means'));
   const souls = list(member.souls).filter(text);
@@ -409,10 +472,17 @@ function memberPanel(doc, member, { status, onClose, onOpenRepo }) {
     const fix = el(doc, 'section'); fix.append(el(doc, 'h4', state.ok ? 'Detail' : 'Fix'), el(doc, 'div', member.detail, 'setup-detail'));
     body.append(fix);
   }
+  const acts = el(doc, 'div', null, 'setup-panel-acts');
   if (state.ok && list(member.capabilities).length && onOpenRepo) {
     const open = el(doc, 'button', 'Show its capabilities', 'act'); open.type = 'button'; open.addEventListener('click', () => onOpenRepo(member.key));
-    body.append(open);
+    acts.append(open);
   }
+  // The repository on the web (members[].url), when it has a web address.
+  if (webUrl(member.url) && openExternal) {
+    const web = el(doc, 'button', 'Open repository', 'act'); web.type = 'button'; web.title = member.url;
+    web.dataset.verb = 'repo'; web.addEventListener('click', () => openExternal(member.url)); acts.append(web);
+  }
+  if (acts.children.length) body.append(acts);
   body.append(el(doc, 'p', 'Membership is the trust: whoever can push to a member decides its souls and capabilities.', 'muted'));
   panel.append(head, body);
   return panel;

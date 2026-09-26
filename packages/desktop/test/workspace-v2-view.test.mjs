@@ -168,7 +168,7 @@ test('W1 Setup list: members with handshake and contribution, packages with orig
   const ws = statusOf('workspace-status').workspace;
   assert.equal(u.doc.querySelector('.setup-lede h2').textContent, ws.name);
   assert.match(u.doc.querySelector('.setup-lede-where').textContent, new RegExp(`'s workspace file @ ${ws.commit.slice(0, 7)}$`), 'the declaration and its commit');
-  assert.doesNotMatch(u.doc.querySelector('.setup').textContent, /oats-workspace\.yaml|oats-membership\.yaml|oats-lock\.json/, 'the Desktop never names the kernel\'s files');
+  assert.doesNotMatch(u.doc.querySelector('.setup').textContent, /oats-workspace\.yaml|oats-membership\.yaml|oats-lock\.json/, 'a kernel without desktop facts reports no file names, so none is shown (desktop-facts-setup.test.mjs covers the reported ones)');
   assert.deepEqual([...u.doc.querySelectorAll('.setup-box, .setup-local')].map(el => el.dataset.box), ['Members', 'Packages', 'Teams', 'This computer']);
   const repos = [...u.doc.querySelectorAll('[data-box=Members] [data-member]')];
   assert.equal(repos.length, 5);
