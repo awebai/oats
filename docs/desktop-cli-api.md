@@ -679,7 +679,7 @@ unchecked, echoed a stored `definition.id` without checking it, and named a
 ```
 
 **Exact shapes (API 3):**
-- `schedule list --json` → `result = {scope, scheduleApi: 2, scheduleHistoryApi: 3, integrity, schedules: Entry[], scheduler}`.
+- `schedule list --json` → `result = {scope, scheduleApi: 2, scheduleHistoryApi: 3, integrity, schedules: Entry[], triggers: {count, command: "oats trigger list"}, scheduler}` (`triggers`, 0.28.0: the trigger definitions this listing leaves out).
 - `schedule show <id> --json` → `result = {schedule: Entry}` (one level of nesting; `integrity` is NOT on `show` — it is a scope fact reported by `list`).
 - `Entry` (readable) = definition fields (`id, kind, home, message|operation, cron, enabled, …`) + `{scope, scheduleApi: 2, scheduleHistoryApi: 3, executionStatus, nextRun: ISO|null, lastRun: Run|null, history, recentRuns: Run[], running: boolean, attempt?, pendingWake?}`.
 - `Entry` (unreadable, `list` only) = `{id, scope, scheduleApi: 2, scheduleHistoryApi: 3, unreadable: {code, message}, history: {status: "corrupt", stored: null, truncated: false}, recentRuns: []}` — no definition fields.
@@ -1380,6 +1380,53 @@ top-level `workspace` reachability field:
   `package-absent` (no longer locked or declared) or `soul-absent` (the locked
   package no longer ships it). Text: `soul: <name> from package <id> v<version>
   @ <7-char>  [package moved since (now v<version> @ <7-char>)]`.
+
+### Triggers (feature `triggers`, OATS 0.28.0) — `oats trigger … --json` → `triggerApi: 1`
+
+Event-driven spawns of a deployment ([schedules.md#triggers](schedules.md#triggers)).
+Definitions live in `oats-schedules.json` (`kind: "trigger"`); `oats schedule list`
+does not show them.
+
+```json
+{"triggerApi":1,"scope":"/abs/deployment","triggers":[
+  {"id":"okf-harvest-review","enabled":true,"kind":"trigger",
+   "on":{"source":"github.pull_request","repo":"github.com/acme/knowledge","events":["opened","reopened","ready_for_review"],"labels":["okf-harvest"],"base":"main","poll":"2m"},
+   "spawn":{"soul":"oats.okf/knowledge-maintainer","purpose":"review-pr-{number}","task":"…","teams":["okf"],"harness":"claude","model":"opus"},
+   "concurrency":{"max":2,"perKey":1},"template":{"package":"oats.okf","version":"4.0.0","commit":"<oid>","template":"harvest-review"},
+   "triggerApi":1,"scope":"/abs/deployment","createdAt":"<iso>","updatedAt":"<iso>"}]}
+```
+
+- `list` → the document above; `show <id>`, `add`, `enable`, `disable` →
+  `{ trigger }` (one row); a stored definition that no longer validates carries
+  `invalid: { code, message }`. `remove <id>` → `{ removed, live: [instance] }`.
+- `status [<id>]` → `{ triggerApi, scope, triggers: [{ id, enabled, repo, soul,
+  lastPoll: { at, ok, prs, matching } | { at, ok: false, error } | null,
+  nextPollAt, pending: [{ key, event, number, url, observedAt }], fired: [{ key,
+  at, instance, home, event, number }] (newest 50), firedTotal, live: [{
+  instance, home, repo, number, event }], lastError: { at, code, message, key? } | null }] }`.
+- `test <id>` → `{ triggerApi, id, ok, gh: { ok, account, credentialSource:
+  "keyring" | "config" | "env:<VAR>" | "unknown" | null, reachesHostTimer:
+  boolean | null, note, detail }, repo: { key,
+  readable, fullName, permissions: { push, maintain, admin }, canMerge } |
+  { key, readable: false, error }, soul: { resolves, name, agent, messaging } |
+  { resolves: false, name, error }, teams: { requested, undeclared | null,
+  messaging }, wouldFire: [{ key, event, number, url, held? }], pollError?, problems:
+  [string], warnings: [string], spawned: false }`. It writes nothing. `ok`
+  counts `problems` only; a credential the host timer cannot reach
+  (`reachesHostTimer: false`) is a warning.
+- `oats schedule list --json` gains `triggers: { count, command: "oats trigger
+  list" }`: the triggers it does not list.
+- The tick's `considered[]` gains trigger rows `{ workspace, trigger, action,
+  … }` with `action` `not-due`, `poll-failed`, `polled` (`prs`, `matching`;
+  nothing to fire), `held`, `fired` (`key`,
+  `instance`, `home`), `spawn-failed` (`key`, `code`, `error`), `would-fire`
+  (`--dry-run`) or `invalid`.
+- A triggered instance's `instance.json.trigger` is `{ id, key, source, repo,
+  number, url, event, headSha, observedAt, eventFile }`; the event file is
+  `OATS_TRIGGER_EVENT_FILE`.
+- Errors: `E_TRIGGER_INVALID { field }`, `E_TRIGGER_EXISTS`,
+  `E_TRIGGER_UNKNOWN`, `E_BAD_ARGS` (`missing` / `parameters` for a template),
+  `E_PACKAGE_MISSING`, `E_PACKAGE_MANIFEST`, `E_LOCAL_MISSING`.
 
 ### Eligible teams (feature `teams`, OATS 0.26.0)
 

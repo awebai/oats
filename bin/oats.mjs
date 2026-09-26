@@ -38,6 +38,7 @@ import * as remoteModule from "../lib/remote.mjs";
 import YAML from "yaml";
 import { attachArgv, checkRemote, forgetSnapshot, getServer, inspectRemote, startRemote, restartRemote, launchConfigRemote, scheduleRemote, listSnapshots, readServers, rosterGroups, routeCommand, targetOf, validateServer, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
 import { spawnSync as spawnSyncProc } from "node:child_process";
+import { tickTriggers } from "../lib/triggers.mjs";
 import { parseEnvelopeText, scheduleScopeOf, listSchedules, describe as describeSchedule, addSchedule, updateSchedule, setEnabled as setScheduleEnabled, removeSchedule, runNow as runScheduleNow, reconcile as reconcileSchedule, tickHost, tickWorkspace, registerWorkspace, unregisterWorkspace, readRegistry, schedulerStatus, saveWakeForHome, removeWakeForHome, wakeFromFlags, withHostLock, scheduleError, SCHEDULE_API } from "../lib/schedule.mjs";
 import { hostUnitStatus, installHostUnit, uninstallHostUnit } from "../lib/schedule-host.mjs";
 import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } from "../lib/attachments.mjs";
@@ -1662,6 +1663,17 @@ async function spawnCmd() {
   const taskFileFlag = flag("task-file");
   if (taskFileFlag === true) bail("E_BAD_ARGS", "--task-file needs a path");
   if (taskFileFlag && !existsSync(taskFileFlag)) bail("E_BAD_ARGS", `--task-file not found: ${taskFileFlag}`);
+  // --trigger-event <file>: the event a trigger spawns this instance for (lib/triggers.mjs). It is
+  // copied to <home>/.oats/trigger-event.json (OATS_TRIGGER_EVENT_FILE) and recorded as instance.json.trigger.
+  let triggerEvent;
+  { const f = flag("trigger-event");
+    if (f === true) bail("E_BAD_ARGS", "--trigger-event needs a path");
+    if (f !== undefined) {
+      if (!existsSync(f)) bail("E_BAD_ARGS", `--trigger-event not found: ${f}`);
+      try { triggerEvent = JSON.parse(readFileSync(f, "utf8")); } catch (e) { bail("E_BAD_ARGS", `--trigger-event is not valid JSON: ${e.message}`); }
+      const ok = triggerEvent && typeof triggerEvent === "object" && !Array.isArray(triggerEvent) && typeof triggerEvent.trigger === "string" && typeof triggerEvent.source === "string" && typeof triggerEvent.repo === "string" && Number.isInteger(triggerEvent.number) && typeof triggerEvent.event === "string";
+      if (!ok) bail("E_BAD_ARGS", "--trigger-event must hold { trigger, source, repo, number, url, event, headSha, labels, observedAt }");
+    } }
   const relativeRoot = flag("relative-root");
   if (relativeRoot !== undefined && (relativeRoot === true || !String(relativeRoot).trim())) bail("E_BAD_ARGS", "--relative-root needs an agents-root path");
   if (relativeRoot && !relativeTo) bail("E_BAD_ARGS", "--relative-root only qualifies --relative-to/--parent");
@@ -1730,6 +1742,7 @@ async function spawnCmd() {
       work: requestedWork, workDir, harness: harnessFlag(), backend, herdrSocket, yolo, model: flag("model"), branch,
       launchConfig: valueFlag("launch-config"),
       launch: !args.includes("--no-launch"),
+      ...(triggerEvent ? { triggerEvent } : {}),
       // K6: --preview decides everything and touches nothing; --base <ref>
       // selects a worktree's start point; --model @native-default is the
       // explicit "harness's own default" (distinct from omitting --model).
@@ -1943,7 +1956,7 @@ function scheduleCmd() {
   const needId = () => { if (!id) throw scheduleError("E_BAD_ARGS", `oats schedule ${sub} <id>`); return id; };
   try {
     switch (sub) {
-      case "list": return out(listSchedules(ws(), io));
+      case "list": { const r = listSchedules(ws(), io); out(r); if (!JSON_MODE && r.triggers.count) console.log(`${r.triggers.count} trigger${r.triggers.count === 1 ? " is" : "s are"} not listed here: ${r.triggers.command}`); return; }
       case "show": return out({ schedule: describeSchedule(ws(), needId(), io) });
       case "add": { const spec = readSpec(); if (id && spec.id === undefined) spec.id = id; if (id && spec.id !== id) throw scheduleError("E_SCHEDULE_INVALID", `id ${JSON.stringify(spec.id)} in the file does not match ${JSON.stringify(id)}`, { field: "id" }); return out({ schedule: addSchedule(ws(), spec, io) }); }
       case "update": return out({ schedule: updateSchedule(ws(), needId(), readSpec(), io) });
@@ -1956,7 +1969,7 @@ function scheduleCmd() {
         const dryRun = args.includes("--dry-run");
         if (args.includes("--host")) return out(tickHost({ io, dryRun }));
         const reg = readRegistry();
-        const considered = withHostLock(() => tickWorkspace(ws(), { io, reg, wsList: reg.workspaces.includes(ws()) ? reg.workspaces : [...reg.workspaces, ws()], dryRun }));
+        const considered = withHostLock(() => [...tickWorkspace(ws(), { io, reg, wsList: reg.workspaces.includes(ws()) ? reg.workspaces : [...reg.workspaces, ws()], dryRun }), ...tickTriggers(ws(), { io, dryRun })]);
         return out({ tickedAt: new Date().toISOString(), considered, scheduler: schedulerStatus(ws(), io) });
       }
       case "host": {
@@ -1973,6 +1986,98 @@ function scheduleCmd() {
     const details = { ...(e.details && typeof e.details === "object" ? e.details : {}), ...Object.fromEntries(["key", "declared", "source", "field"].filter((k) => e[k] !== undefined).map((k) => [k, e[k]])) };
     if (JSON_MODE) jsonFail(e.code || "E_SCHEDULE_FAILED", e.message, Object.keys(details).length ? details : undefined); else die(e.message);
   }
+}
+
+/** `oats trigger …` (lib/triggers.mjs): event-driven spawns stored beside the schedules of the
+ *  deployment scope and evaluated by the same host tick. Every subcommand answers the envelope. */
+async function triggerCmd() {
+  const sub = args[1];
+  const id = args[2] && !args[2].startsWith("--") ? args[2] : undefined;
+  const T = await import("../lib/triggers.mjs");
+  let scope;
+  const ws = () => (scope ??= scheduleScopeOf(dirFlag()));
+  const out = (result, text) => { if (JSON_MODE) jsonOk(result); else console.log(text ? text(result) : JSON.stringify(result, null, 2)); };
+  const needId = () => { if (!id) throw T.triggerError("E_BAD_ARGS", `oats trigger ${sub} <id>`); return id; };
+  const usage = "usage: oats trigger add (--file <trigger.json> | --from <package>:<template> [--set <name>=<value>]… [--id <id>]) | list | show <id> | enable <id> | disable <id> | remove <id> | test <id> | status [<id>]  [--dir <deployment>] [--json]";
+  const line = (t) => `${t.id}  ${t.enabled ? "enabled " : "disabled"}  ${t.on?.source ?? "?"} ${t.on?.repo ?? "?"} [${(t.on?.events || []).join(",")}]${t.on?.labels?.length ? ` labels ${t.on.labels.join(",")}` : ""} every ${t.on?.poll ?? "?"} → spawn ${t.spawn?.soul ?? "?"}${t.spawn?.teams?.length ? ` in ${t.spawn.teams.join(",")}` : ""}${t.invalid ? `  INVALID: ${t.invalid.message}` : ""}`;
+  try {
+    switch (sub) {
+      case "list": return out(T.listTriggers(ws()), (r) => r.triggers.length ? r.triggers.map(line).join("\n") : "(no triggers — oats trigger add --file <trigger.json> | --from <package>:<template>)");
+      case "show": return out({ trigger: T.describeTrigger(ws(), needId()) });
+      case "enable": return out({ trigger: T.setTriggerEnabled(ws(), needId(), true) }, (r) => line(r.trigger));
+      case "disable": return out({ trigger: T.setTriggerEnabled(ws(), needId(), false) }, (r) => line(r.trigger));
+      case "remove": return out(T.removeTrigger(ws(), needId()), (r) => `removed trigger ${r.removed}${r.live.length ? ` (its live instances keep running: ${r.live.join(", ")})` : ""}`);
+      case "status": return out(T.triggerStatus(ws(), id), (r) => r.triggers.map((t) => `${t.id}  last poll ${t.lastPoll ? `${t.lastPoll.at} ${t.lastPoll.ok ? `ok (${t.lastPoll.matching}/${t.lastPoll.prs} PRs match)` : `FAILED: ${t.lastPoll.error}`}` : "never"}  pending ${t.pending.length}  fired ${t.firedTotal}  live ${t.live.map((l) => l.instance).join(",") || "none"}${t.lastError ? `\n    last error ${t.lastError.at}: ${t.lastError.message}` : ""}`).join("\n") || "(no triggers)");
+      case "test": {
+        let workspaceTeams = null;
+        try {
+          const { observeWorkspace } = await import("../lib/workspace.mjs");
+          const { local } = loadLocal(ws());
+          if (typeof local.workspace === "string") workspaceTeams = Object.keys((await observeWorkspace(local.workspace, { remoteOptions: remoteOptionsFromEnv() })).workspace.teams || {});
+        } catch { /* reported as unknown (null) */ }
+        return out(T.testTrigger(ws(), needId(), { workspaceTeams }), (r) => [
+          `trigger ${r.id}: ${r.ok ? "ready" : "NOT ready"} (nothing was spawned)`,
+          `  gh auth    ${r.gh.ok ? `ok — ${r.gh.account ?? "?"} via ${r.gh.credentialSource}` : `FAILED${r.gh.detail ? ` — ${r.gh.detail}` : ""}`}`,
+          `  repo       ${r.repo.key} ${r.repo.readable ? `readable; push ${r.repo.permissions.push} maintain ${r.repo.permissions.maintain} admin ${r.repo.permissions.admin}` : `NOT readable: ${r.repo.error}`}`,
+          `  soul       ${r.soul.name} ${r.soul.resolves ? `resolves${r.soul.messaging ? ` (messaging ${r.soul.messaging})` : ""}` : `does NOT resolve: ${r.soul.error.code} ${r.soul.error.message}`}`,
+          `  teams      ${r.teams.requested.join(", ") || "(none)"}${r.teams.undeclared?.length ? `  undeclared: ${r.teams.undeclared.join(", ")}` : ""}`,
+          `  would fire ${r.wouldFire.length ? r.wouldFire.map((w) => `${w.event} #${w.number}${w.held ? ` (held: ${w.held})` : ""}`).join(", ") : "nothing now"}`,
+          ...r.problems.map((p) => `  problem    ${p}`),
+          ...(r.warnings ?? []).map((w) => `  warning    ${w}`),
+        ].join("\n"));
+      }
+      case "add": {
+        const file = flag("file"), from = flag("from");
+        if ((file === undefined) === (from === undefined)) throw T.triggerError("E_BAD_ARGS", `oats trigger add needs exactly one of --file <trigger.json> or --from <package>:<template>\n${usage}`);
+        const sets = {};
+        for (let i = 0; i < args.length; i++) if (args[i] === "--set") {
+          const kv = args[i + 1];
+          if (typeof kv !== "string" || !kv.includes("=")) throw T.triggerError("E_BAD_ARGS", "--set needs <name>=<value>");
+          sets[kv.slice(0, kv.indexOf("="))] = kv.slice(kv.indexOf("=") + 1); i++;
+        }
+        const idFlag = flag("id");
+        if (idFlag === true) throw T.triggerError("E_BAD_ARGS", "--id needs a trigger id");
+        let spec;
+        if (file !== undefined) {
+          if (file === true || !existsSync(file)) throw T.triggerError("E_BAD_ARGS", `--file ${file === true ? "needs a path" : `not found: ${file}`}`);
+          if (Object.keys(sets).length) throw T.triggerError("E_BAD_ARGS", "--set fills a package template's parameters; with --file, edit the file");
+          try { spec = JSON.parse(readFileSync(file, "utf8")); } catch (e) { throw T.triggerError("E_TRIGGER_INVALID", `${file} is not valid JSON: ${e.message}`, { details: { field: "file" } }); }
+          if (idFlag !== undefined) spec.id = idFlag;
+        } else spec = await triggerFromPackage(T, String(from), sets, idFlag);
+        return out({ trigger: T.addTrigger(ws(), spec) }, (r) => `added ${line(r.trigger)}\n(\`oats trigger test ${r.trigger.id}\` checks gh, the repository, the soul and the teams on this host)`);
+      }
+      default: throw T.triggerError("E_BAD_ARGS", usage);
+    }
+  } catch (e) {
+    const details = { ...(e.details && typeof e.details === "object" ? e.details : {}), ...(e.field !== undefined ? { field: e.field } : {}) };
+    if (JSON_MODE) jsonFail(e.code || "E_TRIGGER_FAILED", e.message, Object.keys(details).length ? details : undefined); else die(e.message);
+  }
+}
+/** A package trigger template (`triggers: [{ id, file }]` in the locked package's oats-package.json),
+ *  read at the lock's commit and instantiated with the --set parameters. */
+async function triggerFromPackage(T, from, sets, idFlag) {
+  const m = /^([a-z0-9][a-z0-9._-]*):([a-z0-9][a-z0-9._-]*)$/.exec(from);
+  if (!m) throw T.triggerError("E_BAD_ARGS", `--from ${JSON.stringify(from)}: write <package>:<template>, e.g. oats.okf:harvest-review`);
+  const [, pkg, template] = m;
+  const deployment = scheduleScopeOf(dirFlag());
+  const lock = readLock(deployment);
+  const entry = lock.packages[pkg];
+  if (!entry) throw T.triggerError("E_PACKAGE_MISSING", `package ${pkg} is not in ${LOCK_FILE} — declare it in packages: and run \`oats sync\``, { details: { package: pkg } });
+  const { lockedPackageRef, bindRemote } = await import("../lib/packages.mjs");
+  const ref = lockedPackageRef(entry);
+  const remote = bindRemote(remoteModule, remoteOptionsFromEnv());
+  const read = async (rel, what) => {
+    let bytes;
+    try { ({ bytes } = await remote.readRemoteFile(ref, entry.commit, `${entry.path}/${rel}`)); }
+    catch (e) { throw T.triggerError(e?.code === "E_REMOTE_PATH_MISSING" ? "E_PACKAGE_MANIFEST" : (e?.code || "E_REMOTE_UNREADABLE"), `${pkg} v${entry.version}: ${what} ${entry.path}/${rel} cannot be read: ${e.message}`, { details: { package: pkg, path: rel } }); }
+    try { return JSON.parse(Buffer.from(bytes).toString("utf8")); } catch (e) { throw T.triggerError("E_PACKAGE_MANIFEST", `${pkg} v${entry.version}: ${what} ${entry.path}/${rel} is not valid JSON: ${e.message}`, { details: { package: pkg, path: rel } }); }
+  };
+  const manifest = await read("oats-package.json", "the package manifest");
+  const listed = Array.isArray(manifest.triggers) ? manifest.triggers : [];
+  const row = listed.find((t) => t && t.id === template);
+  if (!row || typeof row.file !== "string" || !row.file || row.file.split("/").includes("..") || row.file.startsWith("/")) throw T.triggerError("E_TRIGGER_UNKNOWN", `package ${pkg} v${entry.version} has no trigger template ${JSON.stringify(template)} (templates: ${listed.map((t) => t?.id).filter(Boolean).join(", ") || "none"})`, { details: { package: pkg, template, templates: listed.map((t) => t?.id).filter(Boolean) } });
+  const doc = await read(row.file, `trigger template ${template}`);
+  return T.instantiateTemplate(doc, sets, { id: idFlag, provenance: { package: pkg, version: entry.version, commit: entry.commit, template } });
 }
 
 async function sessionCmd() {
@@ -2402,7 +2507,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "teams", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls"], workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2 }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "teams", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers"], workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2 }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -2817,6 +2922,7 @@ else if (cmd === "version" || cmd === "--version" || cmd === "-v") versionCmd();
 // through the shared boundary, never re-badged as a spawn-mechanism failure.
 else if (cmd === "session") await sessionCmd();
 else if (cmd === "schedule") scheduleCmd();
+else if (cmd === "trigger") await triggerCmd();
 else if (cmd === "spawn") { try { await spawnCmd(); } catch (e) { if (TYPED_CLI_FAILURES.has(e?.code)) throw e; if (JSON_MODE) jsonFail("E_SPAWN_FAILED", e.message || e); throw e; } }
 else if (cmd === "retire") retireCmd();
 else if (cmd === "capture" || cmd === "recall" || cmd === "setup") await recordCmd(cmd);
@@ -2910,6 +3016,10 @@ Usage:
       tick [--dry-run] [--host]                  command or wake jobs on a five-field cron with an
       host install|uninstall|status              explicit IANA tz; see docs/schedules.md); --server
                                                 routes to that host's workspace
+  oats trigger add (--file <json> | --from <package>:<template> [--set k=v]) | list | show | enable
+      | disable | remove <id> | test <id> | status [<id>]   event-driven spawns (github.pull_request
+                                                polled with the host's gh by the schedule tick;
+                                                see docs/schedules.md#triggers)
   oats spawn ... --wake-file <json> | --wake-every <N> --wake-message <text>  save a wake schedule
                                                 bound to the new instance's home (docs/schedules.md)
   oats session upload --file <path>          store a copy of a local file as a private attachment
