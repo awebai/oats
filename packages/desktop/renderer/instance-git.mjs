@@ -53,13 +53,27 @@ export const instanceGitCSS = `
 .instance-git .git-add { color:var(--ok); }
 .instance-git .git-remove { color:var(--danger); }
 .instance-git .git-hunk { color:var(--accent); }
-.instance-git .git-github h3 { margin:0 0 8px; color:var(--muted); font-size:11px; font-weight:650; letter-spacing:.05em; text-transform:uppercase; }
-.instance-git .git-card { border:1px solid var(--border); border-radius:8px; padding:10px 12px; overflow-wrap:anywhere; background:var(--surface-2); }
+.instance-git .git-github { display:flex; flex-direction:column; gap:10px; min-width:0; }
+.instance-git .git-github h3 { margin:0; color:var(--muted); font-size:11px; font-weight:650; letter-spacing:.05em; text-transform:uppercase; }
 .instance-git .git-github button { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:5px 8px; }
-.instance-git .forge-pass { color:var(--ok); }
-.instance-git .forge-fail { color:var(--danger); }
-.instance-git .forge-pending, .instance-git .forge-neutral { color:var(--muted); }
-.instance-git a { color:var(--accent); overflow-wrap:anywhere; }
+/* W6 Pull request (design): title and #/state, the checks and review as rows, then Open on GitHub. */
+.instance-git .forge-pr-card { display:flex; flex-direction:column; gap:10px; min-width:0; }
+.instance-git .forge-head { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.instance-git .forge-title { font-size:13px; font-weight:650; line-height:1.35; overflow-wrap:anywhere; }
+.instance-git .forge-sub { color:var(--muted); font-size:11.5px; }
+.instance-git .forge-checks { display:flex; flex-direction:column; margin:0; padding:0; list-style:none; }
+.instance-git .forge-check { display:flex; align-items:baseline; gap:8px; min-height:28px; padding:6px 0; box-sizing:border-box; border-bottom:1px solid var(--tag-bg); color:var(--fg); font-size:12px; line-height:1.35; }
+.instance-git .forge-mark { flex:none; width:14px; text-align:center; }
+.instance-git .forge-check-name { flex:1; min-width:0; overflow-wrap:anywhere; }
+.instance-git .forge-check-meta { flex:none; margin-left:auto; color:var(--muted); font-size:11.5px; }
+.instance-git .forge-pass .forge-mark { color:var(--ok); }
+.instance-git .forge-fail .forge-mark, .instance-git .forge-review[data-outcome=fail] .forge-mark { color:var(--danger); }
+.instance-git .forge-pending .forge-mark, .instance-git .forge-review[data-outcome=pending] .forge-mark { color:var(--warn); }
+.instance-git .forge-neutral .forge-mark { color:var(--muted); }
+.instance-git .forge-review[data-outcome=pass] .forge-mark { color:var(--ok); }
+.instance-git .git-github button.forge-open { display:inline-flex; align-items:center; justify-content:center; gap:6px; width:100%; height:32px; padding:0 12px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font-size:12.5px; font-weight:600; }
+.instance-git .git-github button.forge-open:hover { background:var(--surface-2); }
+.instance-git .forge-caveat { font-size:11px; }
 `;
 const report = v => v === null || v === undefined ? 'Not reported' : String(v);
 const tail = v => String(v || '').split('/').filter(Boolean).pop() || '';

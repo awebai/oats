@@ -18,9 +18,13 @@ test('PR card renders reported facts/checks, validates external URL, and never c
   const window = dom().window, root = window.document.querySelector('main'), opened = [];
   const panel = createForgePrPanel(root, { request: async (_ws, body) => { assert.deepEqual(Object.keys(body).sort(), ['observationKey', 'selector']); return card(); }, openExternal: url => opened.push(url) });
   await panel.update(selected);
-  assert.match(root.textContent, /#42 · A real PR/); assert.match(root.textContent, /Reported PR checks/);
-  assert.match(root.textContent, /not proof that the local revision was pushed/);
-  root.querySelector('a').click(); assert.deepEqual(opened, [pr().url]);
+  // W6 (design; replaces "#42 · A real PR", the "Reported PR checks" heading and the <a> link):
+  // the title, "#42 · state", the checks list, and an Open on GitHub button.
+  assert.equal(root.querySelector('h3').textContent, 'Pull request');
+  assert.equal(root.querySelector('.forge-title').textContent, 'A real PR'); assert.match(root.querySelector('.forge-sub').textContent, /^#42 · (open|draft|merged|closed)$/);
+  assert.ok(root.querySelector('.forge-checks')); assert.match(root.textContent, /not proof that the local revision was pushed/);
+  assert.equal(root.querySelector('a'), null, 'no raw link: a button opens it');
+  root.querySelector('button.forge-open').click(); assert.deepEqual(opened, [pr().url]);
   panel.dispose(); window.close();
 });
 test('PR stale success and rejection after newer selection never overwrite the newer card (including A→B→A)', async () => {
