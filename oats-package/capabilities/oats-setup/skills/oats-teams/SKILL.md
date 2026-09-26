@@ -64,7 +64,7 @@ messaging:
   where `payload` is the base ⊕ `byTeam[label]`. A declared label without a
   `byTeam` entry is the `unmapped-team-label` warning, and its entry has
   `mapped: false`.
-- **The instance's own identity lives in the personal team by default.** No
+- **The instance's own identity lives in the workspace's default team.** No
   label's `byTeam` entry is merged into the provider's settings, the
   primary's included. The identity mints into the `team` a host
   (`settings.<cap>.team`), the soul or the spawn sets, else the provider's

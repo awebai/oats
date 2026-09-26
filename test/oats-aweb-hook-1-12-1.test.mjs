@@ -204,7 +204,7 @@ test("binding-check reports one v2 problem per missing root/team and ready once 
 // 1.14 reads no team from OATS_TEAM_ID (lead decision K): the team is settings.oats.aweb.team or the root's
 // active team, covered above and below.
 
-test("an unmapped v2 team label uses the personal team (the root's active team) with a team-unmapped warning; with none, the check reports no team", () => {
+test("an unmapped v2 team label uses the workspace's default team (the root's active team) with a team-unmapped warning; with none, the check reports no team", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-1121-"));
   try {
     const bin = fakeAw(base);
@@ -226,7 +226,7 @@ test("an unmapped v2 team label uses the personal team (the root's active team) 
     assert.equal(spawn.doc.warning, "oats-aweb: team-unmapped — workspace label engineering is not mapped; using personal team t:example.test");
     assert.equal(spawn.doc.meta.team, "t:example.test");
     const invite = logLines(base).find((l) => l.argv.join(" ").startsWith("team invite"));
-    assert.deepEqual(invite.argv.slice(2, 4), ["--team-id", "t:example.test"], "minted into the personal team, named explicitly");
+    assert.deepEqual(invite.argv.slice(2, 4), ["--team-id", "t:example.test"], "minted into the workspace's default team, named explicitly");
     assert.equal(JSON.stringify(spawn.doc).includes("TOK-secret"), false, "the invite token never reaches the output");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });

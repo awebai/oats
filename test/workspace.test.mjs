@@ -752,7 +752,7 @@ test("unmapped-team-label: a declared label the workspace's messaging.byTeam doe
   assert.deepEqual(d.warnings.map((x) => x.code), ["unmapped-team-label", "unmapped-team-label", "soul-private-ignored"], "label warnings first, then soul-private-ignored");
   const w = d.warnings.find((x) => x.label === "marketing");
   assert.deepEqual([w.code, w.souls, w.paths], ["unmapped-team-label", ["release-manager"], [`${K.agents}:souls/release-manager/soul.yaml#/team`]]);
-  assert.match(w.message, /team "marketing" has no messaging\.byTeam entry; its souls \(release-manager\) fall back to the personal team for it/);
+  assert.match(w.message, /team "marketing" has no messaging\.byTeam entry; its souls \(release-manager\) fall back to the workspace's default team for it/);
   const global = d.warnings.find((x) => x.label === "global");
   assert.deepEqual(global.souls, ["release-manager", "support-triager"], "several souls, one warning, sorted");
   assert.ok(!d.problems.some((p) => p.code === "unmapped-team-label"), "a warning is not a problem");

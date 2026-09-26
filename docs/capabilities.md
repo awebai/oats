@@ -216,13 +216,12 @@ team: [engineering, reviewers]
 
 - `OATS_TEAM_LABEL` is the primary label. The merged messaging payload takes
   **no** label's `byTeam` entry, the primary's included (teams amendment K), so
-  `OATS_TEAM_ID` (the payload's `team`) is the personal team a host, soul or
-  spawn set; empty means the provider's default.
+  `OATS_TEAM_ID` (the payload's `team`) is the default team a host, soul or spawn set; empty means the provider's default.
 - Every label is an **eligible team**: the kernel hands the messaging provider
   `teams`, one `{ label, team, mapped, payload }` per label in order. `payload`
   is `workspace.messaging` ⊕ `byTeam[<label>]` when the workspace maps the
   label (`team` is then its team id), else the base alone with `mapped: false`
-  and `team: null`. A soul with no label gets `[]` (personal only).
+  and `team: null`. A soul with no label gets `[]` (the workspace's default team only).
 - `teams` travels **beside** a provider's settings, never inside them:
   `OATS_TEAMS` (the JSON), `OATS_TEAM_LABELS` (comma-joined) and
   `OATS_TEAMS_SOURCE` in the environment of every hook, home command and
@@ -518,7 +517,7 @@ passed as arguments; no shell is involved.
   - `OATS_CLI_BIN`;
   - `OATS_WORKSPACE` (the deployment);
   - the team variables `OATS_TEAM_ID` (the messaging payload's `team`: the
-    personal team if one is set; empty = the provider's default),
+    workspace's default team if one is set; empty = the provider's default),
     `OATS_TEAM_SCOPE`, `OATS_TEAM_LABEL`, `OATS_TEAM_NAME`,
     `OATS_TEAM_LABELS`, `OATS_TEAMS`, `OATS_TEAMS_SOURCE`, `OATS_WORKSPACE_NAME` and
     `OATS_WORKSPACE_KEY`;

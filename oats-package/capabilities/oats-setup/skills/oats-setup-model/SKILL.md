@@ -60,7 +60,7 @@ for it (`cannot-read`), and a user who can read a member but not the host sees
 the **standalone** view (that member's souls only, with `oats.core`). A host
 runs a workspace automation only while its `gh` is logged in as the
 automation's `owner`. A messaging identity is separate: each instance gets its
-own, in that person's **personal team** by default.
+own, in the workspace's **default team**.
 
 **The workspace** is one `oats-workspace.yaml` in a host repo (any member),
 declared in Git so it is reviewed and the same for everyone. It lists members,

@@ -129,8 +129,7 @@ spawn would still be refused. Obtain the membership first:
 Joining and initialising act on the messaging service: ask the operator first,
 and let them run it.
 
-Each instance's own identity mints into this root's team, the operator's
-**personal** team, unless the host, the soul or the spawn sets another. The
+Each instance's own identity mints into this root's team, the workspace's **default team**, unless the host, the soul or the spawn sets another. The
 workspace's other messaging teams (`messaging.byTeam`) are only *eligible*:
 an instance joins one explicitly, at spawn or later. Which teams exist, and
 how labels map to them, is **oats-teams**.

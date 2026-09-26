@@ -90,7 +90,7 @@ An unconfirmed member contributes **nothing**: its souls and capabilities are in
 - A soul has one team or several (the first is its **primary**). A repo can set a default team for its souls.
 - A team label can **add default capabilities** for its souls (e.g. every `engineering` soul gets the release tooling).
 - A team label **never** restricts, gates or changes trust. It's organisation, plus optional defaults.
-- For **messaging**, each label a soul carries is a team it's *eligible* to join. By default an instance is only in its person's **personal team**, and joining others is an explicit choice, at spawn or later.
+- For **messaging**, each label a soul carries is a team it's *eligible* to join. By default an instance is only in the workspace's **default team**, and joining others is an explicit choice, at spawn or later.
 
 ---
 
@@ -136,7 +136,7 @@ Plus one **default capability** almost every soul has: **`oats.core`**, which te
 ### 5.2 Messaging, specifically
 
 - Each instance gets a messaging **identity** (its address).
-- By default it's in the person's **personal team**. It can **join** other eligible teams (from its labels) at spawn or later, and **leave** them. The personal team can't be left.
+- By default it's in the workspace's **default team**. It can **join** other eligible teams (from its labels) at spawn or later, and **leave** them. The default team can't be left.
 - Joined teams currently **check mail between tasks**; live delivery for joined teams is **(planned)**.
 - A stopped agent can be **woken** by a message.
 
@@ -196,7 +196,7 @@ When the workspace moves on (a member pushes, a package version is bumped), exis
 2. **Who are my agents?** Souls (what roles exist, grouped by team/repo) and instances (what's running, their hierarchy, their state).
 3. **What is this agent made of, and why?** Its composition, with each capability's source and reason (workspace/team/soul), its core capabilities, harness and work mode.
 4. **Where does it work?** Its work mode, branch, and repo; its Git state and pull requests.
-5. **Who can it talk to?** Its messaging identity, its personal team, eligible teams, joined teams.
+5. **Who can it talk to?** Its messaging identity, the workspace's default team, eligible teams, joined teams.
 6. **What does it know?** Its knowledge nodes (owned/read). **(planned)** A live browser of them.
 7. **Is anything wrong?** Unconfirmed members, missing clones, team conflicts, drift, readiness problems, each with the plain cause and the fix.
 
@@ -231,7 +231,7 @@ When the workspace moves on (a member pushes, a package version is bumped), exis
 - **Official catalog**: the reviewed list of official packages and versions.
 - **Lock**: the exact commit + fingerprint of each package, per deployment.
 - **Team (label)**: an organising label; supplies defaults and eligible messaging teams.
-- **Personal team**: the messaging team every instance is in by default.
+- **Default team**: the workspace's messaging team, which every instance is in by default.
 - **Harness**: what runs the agent session (Claude, Codex, Pi).
 - **Work mode**: where an instance works (worktree, checkout, attached, directory, workspace).
 - **Drift**: an instance built from an older state than the workspace's current one.

@@ -637,12 +637,12 @@ test("0.25.3 OATS_SOUL_ID: hooks of a workspace spawn receive `<repo key>#<soul>
     assert.equal(metaA.workspace.soul.id, expectedId);
     // human decisions 2026-09-24 (messaging default; seamless teams): a workspace spawn's hooks get the
     // v2 team facts — scope = the deployment, the soul's team label, the workspace's name and canonical
-    // key; Northwind maps no shared messaging team, so the team id is empty ("personal").
+    // key; Northwind maps no shared messaging team, so the team id is empty (the workspace's default team).
     assert.equal(envA.OATS_TEAM_SCOPE, dep, "team scope = the deployment directory (as the operator named it)");
     assert.equal(envA.OATS_TEAM_LABEL, "engineering");
     assert.equal(envA.OATS_WORKSPACE_NAME, "northwind");
     assert.equal(envA.OATS_WORKSPACE_KEY, fx.keys.agents);
-    assert.equal(envA.OATS_TEAM_ID, "", "no shared team mapped → personal");
+    assert.equal(envA.OATS_TEAM_ID, "", "no shared team mapped → the workspace's default team");
     // the member commits → a different per-commit directory, the SAME identity
     const moved = await moveMember(fx, "agents", async (work, { fs, path }) => { await fs.appendFile(path.join(work, "souls/release-manager/AGENTS.md"), "\n## moved\n"); });
     r = spawn("b"); assert.equal(r.status, 0, r.stdout + r.stderr);
