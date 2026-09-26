@@ -2109,6 +2109,10 @@ console.log('{}');`,
   } finally { process.env.PATH = oldPath; }
 });
 
+// The workspace facts the kernel's teamEnv exports to every hook since 0.26 (OATS_TEAM_SCOPE alone is
+// the classic environment, which oats.aweb 1.14 refuses up front — a kernel no longer produces it).
+const AWEB_V2_ENV = { OATS_WORKSPACE_KEY: "example.invalid/acme/workspace", OATS_WORKSPACE_NAME: "acme", OATS_TEAM_LABEL: "global", OATS_TEAM_LABELS: "global", OATS_TEAMS: JSON.stringify([{ label: "global", team: null, mapped: false }]) };
+
 test("the SHIPPED aweb spawn hook exits nonzero when it cannot mint an identity", () => {
   // The required-hook contract is worthless if the capability that declares it
   // swallows its own failures. This executes the real hook, not a fixture.
@@ -2116,7 +2120,7 @@ test("the SHIPPED aweb spawn hook exits nonzero when it cannot mint an identity"
   const hook = resolve(new URL("../capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
   const r = spawnSync(process.execPath, [hook, "spawn"], {
     encoding: "utf8",
-    env: { ...process.env, OATS_EVENT: "spawn", OATS_INSTANCE: "probe", OATS_HOME: join(base, "no-such-home"), OATS_WORKSPACE: base, OATS_CONTEXT: base, OATS_TEAM_SCOPE: base },
+    env: { ...process.env, OATS_EVENT: "spawn", OATS_INSTANCE: "probe", OATS_HOME: join(base, "no-such-home"), OATS_WORKSPACE: base, OATS_CONTEXT: base, OATS_TEAM_SCOPE: base, ...AWEB_V2_ENV },
   });
   assert.notEqual(r.status, 0, `no aweb root must be fatal, got exit ${r.status}: ${r.stdout}`);
   assert.match(r.stdout, /no identity could be minted/);
@@ -2152,7 +2156,7 @@ test("the SHIPPED aweb hook is fatal on every terminal pre-mint path (reviewer-5
   const root = join(base, "awroot"); mkdirSync(join(root, ".aw"), { recursive: true });
   const run = (env) => spawnSync(process.execPath, [hook, "spawn"], {
     encoding: "utf8",
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: "spawn", OATS_INSTANCE: "probe", OATS_HOME: root, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_TEAM_SCOPE: root, ...env },
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: "spawn", OATS_INSTANCE: "probe", OATS_HOME: root, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_TEAM_SCOPE: root, ...AWEB_V2_ENV, ...env },
   });
 
   // Root present, no team resolvable at all.
@@ -2160,8 +2164,8 @@ test("the SHIPPED aweb hook is fatal on every terminal pre-mint path (reviewer-5
   assert.notEqual(noTeam.status, 0, `no active team must be fatal, got ${noTeam.status}: ${noTeam.stdout}`);
   assert.match(noTeam.stdout, /no identity could be minted/);
 
-  // A bare team name with no matching membership.
-  const noMatch = run({ OATS_TEAM_NAME: "nosuchteam" });
+  // A bare team name with no matching membership (the team comes from settings since oats.aweb 1.14).
+  const noMatch = run({ OATS_SETTINGS: JSON.stringify({ team: "nosuchteam" }) });
   assert.notEqual(noMatch.status, 0, `unresolved team must be fatal, got ${noMatch.status}: ${noMatch.stdout}`);
   assert.match(noMatch.stdout, /no membership matching team/);
   rmSync(base, { recursive: true, force: true });
@@ -2235,7 +2239,7 @@ test("a name-only team config resolves against the CURRENT aw memberships shape 
   // classified it as "no membership" — and since that path is now fatal, it
   // would block every spawn on a perfectly valid deployment.
   write(join(bin, "aw"), `#!/bin/sh
-if [ "$1" = "team" ] && [ "$2" = "list" ]; then echo '{"active_team":"default:acme.aweb.ai","memberships":[{"team_id":"default:acme.aweb.ai","alias":"x"}]}'; exit 0; fi
+if [ "$1" = "team" ] && [ "$2" = "list" ]; then echo '{"active_team":null,"memberships":[{"team_id":"default:acme.aweb.ai","alias":"x"}]}'; exit 0; fi
 if [ "$1" = "team" ] && [ "$2" = "invite" ]; then echo '{"token":"tok"}'; exit 0; fi
 if [ "$1" = "team" ] && [ "$2" = "join" ]; then echo '{"team_id":"default:acme.aweb.ai","alias":"probe"}'; exit 0; fi
 exit 0
@@ -2244,10 +2248,11 @@ exit 0
   const root = join(base, "awroot"); mkdirSync(join(root, ".aw"), { recursive: true });
   const r = spawnSync(process.execPath, [hook, "spawn"], {
     encoding: "utf8",
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: "spawn", OATS_INSTANCE: "probe", OATS_HOME: root, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_TEAM_SCOPE: root, OATS_TEAM_NAME: "default", OATS_TEAM_ID: "" },
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: "spawn", OATS_INSTANCE: "probe", OATS_HOME: root, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_TEAM_SCOPE: root, ...AWEB_V2_ENV, OATS_SETTINGS: JSON.stringify({ team: "default" }), OATS_TEAM_ID: "" },
   });
   assert.equal(r.status, 0, `a resolvable name-only team must succeed, got ${r.status}: ${r.stdout} ${r.stderr}`);
   assert.match(r.stdout, /"alias":"probe"/);
+  assert.match(r.stdout, /"team":"default:acme\.aweb\.ai"/, "the bare name resolved against memberships (there is no active team to fall back to)");
   rmSync(base, { recursive: true, force: true });
 });
 
@@ -2280,7 +2285,7 @@ exit 0
     const root = join(base, "awroot"); mkdirSync(join(root, ".aw"), { recursive: true });
     const r = spawnSync(process.execPath, [hook, "spawn"], {
       encoding: "utf8",
-      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: "spawn", OATS_INSTANCE: "probe", OATS_HOME: root, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_TEAM_SCOPE: root, OATS_TEAM_NAME: "default", OATS_TEAM_ID: "" },
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: "spawn", OATS_INSTANCE: "probe", OATS_HOME: root, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_TEAM_SCOPE: root, ...AWEB_V2_ENV, OATS_SETTINGS: JSON.stringify({ team: "default" }), OATS_TEAM_ID: "" },
     });
     assert.notEqual(r.status, 0, `${label}: the spawn still fails`);
     assert.doesNotMatch(r.stdout, new RegExp(TOKEN), `${label}: the token must not reach stdout`);
@@ -2309,7 +2314,7 @@ exit 0
   const root = join(base, "awroot"); mkdirSync(join(root, ".aw"), { recursive: true });
   const r = spawnSync(process.execPath, [hook, "spawn"], {
     encoding: "utf8",
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: "spawn", OATS_INSTANCE: "probe", OATS_HOME: root, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_TEAM_SCOPE: root, OATS_TEAM_NAME: "default", OATS_TEAM_ID: "" },
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: "spawn", OATS_INSTANCE: "probe", OATS_HOME: root, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_TEAM_SCOPE: root, ...AWEB_V2_ENV, OATS_SETTINGS: JSON.stringify({ team: "default" }), OATS_TEAM_ID: "" },
   });
   assert.doesNotMatch(r.stdout, new RegExp(TOKEN), "no emitted field may carry the token");
   assert.doesNotMatch(r.stderr, new RegExp(TOKEN));

@@ -224,7 +224,7 @@ test("retire: workspace deleted is reported as retired with aliasReusable false 
     mkdirSync(join(home, ".aw"), { recursive: true });
     const r = runHook(base, bin, "retire", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_META: JSON.stringify({ alias: "probe", team: "t:example.test" }) });
     assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.deepEqual(r.doc.meta, { retired: true, aliasReusable: false });
+    assert.deepEqual(r.doc.meta, { retired: true, aliasReusable: false, joinedTeams: [] });
     assert.match(r.doc.warning, /certificate is not revoked \(aweb-abim\).*different --name \(kernels 0\.26\.0\+\) or a different --purpose/);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
@@ -262,15 +262,15 @@ test("retire on aw 1.36.1: aliasReusable follows aw workspace delete --json (rel
     const meta = { alias: "probe", team: "t:example.test" };
     let r = runHook(base, bin, "retire", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_META: JSON.stringify(meta), FAKE_AW_VERSION: "aw 1.36.1 (commit abc)" });
     assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.deepEqual(r.doc.meta, { retired: true, aliasReusable: true, aliasReason: "revoked" });
+    assert.deepEqual(r.doc.meta, { retired: true, aliasReusable: true, aliasReason: "revoked", joinedTeams: [] });
     assert.equal(r.doc.warning, undefined, "a released alias needs no warning");
     assert.match(readFileSync(join(base, "aw.log"), "utf8"), /workspace delete probe --json/);
     r = runHook(base, bin, "retire", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_META: JSON.stringify(meta), FAKE_AW_VERSION: "aw 1.36.1", FAKE_ALIAS_RELEASED: "false" });
-    assert.deepEqual(r.doc.meta, { retired: true, aliasReusable: false, aliasReason: "no_workspace_credential" });
+    assert.deepEqual(r.doc.meta, { retired: true, aliasReusable: false, aliasReason: "no_workspace_credential", joinedTeams: [] });
     assert.match(r.doc.warning, /not released \(no_workspace_credential\).*different --name \(kernels 0\.26\.0\+\) or a different --purpose/);
     // Below the floor the pre-abim report stands, and --json is never sent.
     r = runHook(base, bin, "retire", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_META: JSON.stringify(meta), FAKE_AW_VERSION: "aw 1.36.0" });
-    assert.deepEqual(r.doc.meta, { retired: true, aliasReusable: false });
+    assert.deepEqual(r.doc.meta, { retired: true, aliasReusable: false, joinedTeams: [] });
     assert.match(r.doc.warning, /aweb-abim/);
     assert.equal(readFileSync(join(base, "aw.log"), "utf8").split("workspace delete probe --json").length - 1, 2);
   } finally { rmSync(base, { recursive: true, force: true }); }
@@ -362,7 +362,7 @@ test("retained identity: authority files copied exactly, coordination reconnecte
     const before = readFileSync(join(base, "aw.log"), "utf8");
     const ret = runHook(base, bin, "retire", { OATS_INSTANCE: "merlin-seat", OATS_HOME: home, OATS_META: JSON.stringify(r.doc.meta) });
     assert.equal(ret.status, 0, ret.stdout + ret.stderr);
-    assert.deepEqual(ret.doc.meta, { retired: true, retained: true, identityReleased: true });
+    assert.deepEqual(ret.doc.meta, { retired: true, retained: true, identityReleased: true, joinedTeams: [] });
     assert.equal(existsSync(join(base, "legacy-home", ".aw-retained-seat.json")), false, "lock released");
     assert.equal(readFileSync(join(base, "aw.log"), "utf8"), before, "retire ran no aw command at all");
     assert.equal(existsSync(join(src, "signing.key")), true, "the source identity is untouched");
@@ -409,7 +409,7 @@ test("retained identity retire releases the lock before global identity dispatch
     assert.equal(spawn.doc.meta.identity.grant, undefined);
     const ret = runHook(base, bin, "retire", { OATS_INSTANCE: "merlin-seat", OATS_HOME: home, OATS_META: JSON.stringify(spawn.doc.meta) });
     assert.equal(ret.status, 0, ret.stdout + ret.stderr);
-    assert.deepEqual(ret.doc.meta, { retired: true, retained: true, identityReleased: true });
+    assert.deepEqual(ret.doc.meta, { retired: true, retained: true, identityReleased: true, joinedTeams: [] });
     assert.equal(existsSync(join(base, "legacy-home", ".aw-retained-seat.json")), false, "retained-seat lock released instead of global no-grant exit");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
