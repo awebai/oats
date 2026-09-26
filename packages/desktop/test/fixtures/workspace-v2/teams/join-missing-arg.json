@@ -3,6 +3,6 @@
   "ok": false,
   "error": {
     "code": "E_BAD_ARGS",
-    "message": "messaging:join needs --arg labels=<value>: Comma-separated eligible team labels"
+    "message": "messaging:join needs --arg labels=<value>: Comma-separated eligible team labels to join."
   }
 }

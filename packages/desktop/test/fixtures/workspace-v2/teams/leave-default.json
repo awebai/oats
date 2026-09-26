@@ -3,7 +3,7 @@
   "ok": false,
   "error": {
     "code": "E_TEAM_DEFAULT",
-    "message": "messaging:leave: the workspace's default team cannot be left",
+    "message": "messaging:leave: E_TEAM_DEFAULT: default is the workspace's default team and cannot be left",
     "details": {
       "exit": 1,
       "envelope": {
@@ -11,7 +11,7 @@
         "ok": false,
         "error": {
           "code": "E_TEAM_DEFAULT",
-          "message": "the workspace's default team cannot be left"
+          "message": "E_TEAM_DEFAULT: default is the workspace's default team and cannot be left"
         }
       }
     }

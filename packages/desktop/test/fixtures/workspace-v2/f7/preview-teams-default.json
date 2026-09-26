@@ -9,7 +9,7 @@
           "kind": "package",
           "package": "nw.tools",
           "version": "0.4.0",
-          "commit": "36a842defb01aa36bf85d4be23b287018d0dd645",
+          "commit": "18e3c359a4f4c2209ddc0cef5d53b8c01a756aa0",
           "integrity": "sha256-4a0ee48230d65cc6c0b9d0c9a3883e64182cfc7b2410e4f5839bacf551fcf1cf",
           "repoKey": "local//fixture/base/fx/remotes/nw-tools.git"
         },
@@ -23,7 +23,7 @@
         "from": {
           "kind": "member",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
-          "commit": "504b717008b2fad05fe578b43479721a316803cc"
+          "commit": "535e5d7c4a7e869e05effd2db237a8de943f2d9e"
         },
         "layer": null,
         "private": false,
@@ -35,7 +35,7 @@
         "from": {
           "kind": "member",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
-          "commit": "504b717008b2fad05fe578b43479721a316803cc"
+          "commit": "535e5d7c4a7e869e05effd2db237a8de943f2d9e"
         },
         "layer": null,
         "private": false,
@@ -43,19 +43,25 @@
         "changedSince": null
       },
       {
-        "name": "nw.teams",
+        "name": "oats.aweb",
         "from": {
           "kind": "package",
-          "package": "nw.teams",
-          "version": "0.1.0",
-          "commit": "2cfc7624f9d5b9cda662eae53d4b1876b62e3356",
-          "integrity": "sha256-966131cd26279ac54be071c34f49fcc7adf8425c7651e800f06e277d54df80ce",
-          "repoKey": "local//fixture/base/fx/remotes/pkg-teams.git"
+          "package": "oats.aweb",
+          "version": "1.16.0",
+          "commit": "52657b677551c9de14d9d6c9417a41653d1ea3cf",
+          "integrity": "sha256-c8694810410bb250ffc5f46bb27ad3f16a3421626964529b176906defde2ca11",
+          "repoKey": "local//fixture/base/fx/remotes/oats-aweb.git"
         },
         "layer": "messaging",
         "private": false,
         "declares": [
-          "join"
+          "delivery",
+          "identity",
+          "join",
+          "residents",
+          "root",
+          "roots",
+          "team"
         ],
         "changedSince": null
       },
@@ -123,9 +129,9 @@
         }
       }
     ],
-    "resolution": "97b8ee60eae0d2322ae0f9ff",
-    "declRevision": "815ba3972c68bdb40414c59e",
-    "payloadRevision": "924992b1e9518a18c1686fec",
+    "resolution": "bc92d02a8c01b09e70b9c890",
+    "declRevision": "71dd61d7d27657d6c97fadbe",
+    "payloadRevision": "831595e18a5d3d5635232f59",
     "workspace": "local//fixture/base/fx/remotes/agents.git",
     "standalone": false,
     "providers": {},
@@ -133,7 +139,11 @@
       "nw-deploy": {},
       "nw-house-style": {},
       "nw-release-tooling": {},
-      "nw.teams": {
+      "oats.aweb": {
+        "delivery": "session",
+        "identity": {
+          "mode": "local"
+        },
         "private": "per-human",
         "channels": [
           "northwind-eng"
@@ -153,7 +163,11 @@
       "nw-deploy": {},
       "nw-house-style": {},
       "nw-release-tooling": {},
-      "nw.teams": {
+      "oats.aweb": {
+        "/identity/mode": {
+          "kind": "manifest-default",
+          "at": "oats.json#/settings/identity/default"
+        },
         "/private": {
           "kind": "workspace",
           "at": "oats-workspace.yaml#/messaging"
@@ -161,6 +175,10 @@
         "/channels": {
           "kind": "soul",
           "at": "soul.yaml#/messaging"
+        },
+        "/delivery": {
+          "kind": "host",
+          "at": "oats-local.yaml#/settings/oats.aweb"
         }
       },
       "oats.core": {},
@@ -198,7 +216,7 @@
       "branch": "agents/release-manager-teams",
       "base": {
         "ref": "HEAD",
-        "oid": "504b717008b2fad05fe578b43479721a316803cc"
+        "oid": "535e5d7c4a7e869e05effd2db237a8de943f2d9e"
       },
       "effective": {
         "repo": "/fixture/base/northwind-workspace/agents-repo",
@@ -214,7 +232,11 @@
           "nw-deploy": {},
           "nw-house-style": {},
           "nw-release-tooling": {},
-          "nw.teams": {
+          "oats.aweb": {
+            "delivery": "session",
+            "identity": {
+              "mode": "local"
+            },
             "private": "per-human",
             "channels": [
               "northwind-eng"
@@ -231,13 +253,13 @@
           }
         }
       },
-      "resolution": "97b8ee60eae0d2322ae0f9ff",
-      "revision": "94bcfad2abe4eda63ed80f85"
+      "resolution": "bc92d02a8c01b09e70b9c890",
+      "revision": "538e016d1a9dd87ed4b92d39"
     },
     "preflight": {
       "status": "complete",
       "budgetMs": 20000,
-      "elapsedMs": 46
+      "elapsedMs": 382
     },
     "backendStatus": {
       "name": "tmux",
@@ -252,7 +274,7 @@
     "branch": "agents/release-manager-teams",
     "base": {
       "ref": "HEAD",
-      "oid": "504b717008b2fad05fe578b43479721a316803cc"
+      "oid": "535e5d7c4a7e869e05effd2db237a8de943f2d9e"
     },
     "worktree": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/work",
     "relation": null,
@@ -274,15 +296,15 @@
       },
       {
         "name": "nw-house-style",
-        "origin": "member:local//fixture/base/fx/remotes/agents.git@504b717008b2fad05fe578b43479721a316803cc"
+        "origin": "member:local//fixture/base/fx/remotes/agents.git@535e5d7c4a7e869e05effd2db237a8de943f2d9e"
       },
       {
         "name": "nw-release-tooling",
-        "origin": "member:local//fixture/base/fx/remotes/agents.git@504b717008b2fad05fe578b43479721a316803cc"
+        "origin": "member:local//fixture/base/fx/remotes/agents.git@535e5d7c4a7e869e05effd2db237a8de943f2d9e"
       },
       {
-        "name": "nw.teams",
-        "origin": "package:nw.teams@0.1.0"
+        "name": "oats.aweb",
+        "origin": "package:oats.aweb@1.16.0"
       },
       {
         "name": "oats.core",
@@ -302,6 +324,22 @@
       {
         "name": "cut-release",
         "source": "module:nw-release-tooling"
+      },
+      {
+        "name": "oats-aweb",
+        "source": "module:oats.aweb"
+      },
+      {
+        "name": "aweb-messaging",
+        "source": "module:oats.aweb"
+      },
+      {
+        "name": "aweb-team-membership",
+        "source": "module:oats.aweb"
+      },
+      {
+        "name": "aweb-identity",
+        "source": "module:oats.aweb"
       },
       {
         "name": "oats-operate",

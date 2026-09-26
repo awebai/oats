@@ -3,19 +3,19 @@
   "ok": true,
   "result": {
     "operationsApi": 2,
-    "kernel": "0.29.2",
+    "kernel": "0.29.3",
     "subject": {
       "kind": "soul",
       "soul": "release-manager",
       "repoKey": "local//fixture/base/fx/remotes/agents.git",
-      "commit": "504b717008b2fad05fe578b43479721a316803cc",
+      "commit": "535e5d7c4a7e869e05effd2db237a8de943f2d9e",
       "team": "engineering"
     },
     "workspace": {
       "key": "local//fixture/base/fx/remotes/agents.git",
       "name": "northwind",
       "deployment": "/fixture/base/northwind-workspace",
-      "commit": "504b717008b2fad05fe578b43479721a316803cc",
+      "commit": "535e5d7c4a7e869e05effd2db237a8de943f2d9e",
       "standalone": false
     },
     "souls": [
@@ -23,7 +23,7 @@
         "soulsApi": 2,
         "name": "release-manager",
         "repoKey": "local//fixture/base/fx/remotes/agents.git",
-        "commit": "504b717008b2fad05fe578b43479721a316803cc",
+        "commit": "535e5d7c4a7e869e05effd2db237a8de943f2d9e",
         "team": "engineering",
         "kind": "member",
         "path": "souls/release-manager",
@@ -63,7 +63,7 @@
         "from": "workspace"
       },
       "messaging": {
-        "id": "nw.teams",
+        "id": "oats.aweb",
         "from": "workspace"
       },
       "tasks": {
@@ -81,7 +81,7 @@
           "kind": "package",
           "package": "nw.tools",
           "version": "0.4.0",
-          "commit": "36a842defb01aa36bf85d4be23b287018d0dd645",
+          "commit": "18e3c359a4f4c2209ddc0cef5d53b8c01a756aa0",
           "integrity": "sha256-4a0ee48230d65cc6c0b9d0c9a3883e64182cfc7b2410e4f5839bacf551fcf1cf",
           "repoKey": "local//fixture/base/fx/remotes/nw-tools.git"
         },
@@ -92,7 +92,7 @@
         "compatibility": {
           "ok": true,
           "range": ">=0.24.0",
-          "kernel": "0.29.2"
+          "kernel": "0.29.3"
         },
         "missingRequires": [],
         "operations": []
@@ -105,7 +105,7 @@
         "from": {
           "kind": "member",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
-          "commit": "504b717008b2fad05fe578b43479721a316803cc"
+          "commit": "535e5d7c4a7e869e05effd2db237a8de943f2d9e"
         },
         "composedFrom": "workspace",
         "dir": null,
@@ -114,7 +114,7 @@
         "compatibility": {
           "ok": true,
           "range": ">=0.24.0",
-          "kernel": "0.29.2"
+          "kernel": "0.29.3"
         },
         "missingRequires": [],
         "operations": []
@@ -127,7 +127,7 @@
         "from": {
           "kind": "member",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
-          "commit": "504b717008b2fad05fe578b43479721a316803cc"
+          "commit": "535e5d7c4a7e869e05effd2db237a8de943f2d9e"
         },
         "composedFrom": "soul",
         "dir": null,
@@ -136,39 +136,49 @@
         "compatibility": {
           "ok": true,
           "range": ">=0.24.0",
-          "kernel": "0.29.2"
+          "kernel": "0.29.3"
         },
         "missingRequires": [],
         "operations": []
       },
       {
-        "id": "nw.teams",
-        "version": "0.1.0",
+        "id": "oats.aweb",
+        "version": "1.16.0",
         "layer": "messaging",
-        "command": null,
+        "command": "aweb",
         "from": {
           "kind": "package",
-          "package": "nw.teams",
-          "version": "0.1.0",
-          "commit": "2cfc7624f9d5b9cda662eae53d4b1876b62e3356",
-          "integrity": "sha256-966131cd26279ac54be071c34f49fcc7adf8425c7651e800f06e277d54df80ce",
-          "repoKey": "local//fixture/base/fx/remotes/pkg-teams.git"
+          "package": "oats.aweb",
+          "version": "1.16.0",
+          "commit": "52657b677551c9de14d9d6c9417a41653d1ea3cf",
+          "integrity": "sha256-c8694810410bb250ffc5f46bb27ad3f16a3421626964529b176906defde2ca11",
+          "repoKey": "local//fixture/base/fx/remotes/oats-aweb.git"
         },
         "composedFrom": "workspace",
         "dir": null,
         "settings": {
+          "delivery": "session",
+          "identity": {
+            "mode": "local"
+          },
           "private": "per-human",
           "channels": [
             "northwind-eng"
           ]
         },
         "declares": [
-          "join"
+          "delivery",
+          "identity",
+          "join",
+          "residents",
+          "root",
+          "roots",
+          "team"
         ],
         "compatibility": {
           "ok": true,
-          "range": ">=0.25.6",
-          "kernel": "0.29.2"
+          "range": ">=0.26.0",
+          "kernel": "0.29.3"
         },
         "missingRequires": [],
         "operations": [
@@ -177,10 +187,10 @@
             "kind": "action",
             "command": "teams",
             "context": "home",
-            "description": "This instance's teams: default, eligible and joined",
+            "description": "Read-only structured JSON summary of eligible and joined aweb teams for this home.",
             "args": [],
             "argv": [
-              null,
+              "aweb",
               "teams"
             ],
             "available": false,
@@ -191,17 +201,17 @@
             "kind": "action",
             "command": "join",
             "context": "home",
-            "description": "Join eligible teams",
+            "description": "Join comma-separated eligible aweb team labels for this home.",
             "args": [
               {
                 "name": "labels",
                 "flag": "--labels",
                 "required": true,
-                "description": "Comma-separated eligible team labels"
+                "description": "Comma-separated eligible team labels to join."
               }
             ],
             "argv": [
-              null,
+              "aweb",
               "join"
             ],
             "available": false,
@@ -212,17 +222,17 @@
             "kind": "action",
             "command": "leave",
             "context": "home",
-            "description": "Leave joined teams",
+            "description": "Leave comma-separated joined aweb team labels for this home.",
             "args": [
               {
                 "name": "labels",
                 "flag": "--labels",
                 "required": true,
-                "description": "Comma-separated joined team labels"
+                "description": "Comma-separated joined team labels to leave."
               }
             ],
             "argv": [
-              null,
+              "aweb",
               "leave"
             ],
             "available": false,
@@ -250,7 +260,7 @@
         "compatibility": {
           "ok": true,
           "range": ">=0.24.0",
-          "kernel": "0.29.2"
+          "kernel": "0.29.3"
         },
         "missingRequires": [],
         "operations": []
@@ -287,7 +297,7 @@
         "compatibility": {
           "ok": true,
           "range": ">=0.24.4",
-          "kernel": "0.29.2"
+          "kernel": "0.29.3"
         },
         "missingRequires": [],
         "operations": [

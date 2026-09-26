@@ -9,7 +9,7 @@
           "kind": "package",
           "package": "nw.tools",
           "version": "0.4.0",
-          "commit": "36a842defb01aa36bf85d4be23b287018d0dd645",
+          "commit": "18e3c359a4f4c2209ddc0cef5d53b8c01a756aa0",
           "integrity": "sha256-4a0ee48230d65cc6c0b9d0c9a3883e64182cfc7b2410e4f5839bacf551fcf1cf",
           "repoKey": "local//fixture/base/fx/remotes/nw-tools.git"
         },
@@ -23,14 +23,14 @@
         "from": {
           "kind": "member",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
-          "commit": "6b3069f67b2a456afd4844e0eab819c12d5015c8"
+          "commit": "5fba3fb499bf15f8bfba2882a3664d007304ab71"
         },
         "layer": null,
         "private": false,
         "declares": [],
         "changedSince": {
           "instance": "release-manager-teams",
-          "was": "504b717008b2fad05fe578b43479721a316803cc"
+          "was": "535e5d7c4a7e869e05effd2db237a8de943f2d9e"
         }
       },
       {
@@ -38,14 +38,14 @@
         "from": {
           "kind": "member",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
-          "commit": "6b3069f67b2a456afd4844e0eab819c12d5015c8"
+          "commit": "5fba3fb499bf15f8bfba2882a3664d007304ab71"
         },
         "layer": null,
         "private": false,
         "declares": [],
         "changedSince": {
           "instance": "release-manager-teams",
-          "was": "504b717008b2fad05fe578b43479721a316803cc"
+          "was": "535e5d7c4a7e869e05effd2db237a8de943f2d9e"
         }
       },
       {
@@ -54,7 +54,7 @@
           "kind": "package",
           "package": "nw.chat",
           "version": "0.1.0",
-          "commit": "490e07aebe3f436bf5675002c8564e12459d7844",
+          "commit": "0a05de5297cf6a63f1fbe9c09586fdfc7f3e8376",
           "integrity": "sha256-f1021844f28d07ccd8f66398726ce73eb893fd277f2268aeb1a2a6ad9db90e75",
           "repoKey": "local//fixture/base/fx/remotes/pkg-chat.git"
         },
@@ -132,8 +132,8 @@
         }
       }
     ],
-    "resolution": "e093da3a47a1fbd138739b40",
-    "declRevision": "4aa6350bb582f48720e6e61b",
+    "resolution": "c14407bff934d8b7e5f1164f",
+    "declRevision": "dd0e4ecc23292ef88833e286",
     "payloadRevision": "c0240e8ed584bfdf48b0ea6d",
     "workspace": "local//fixture/base/fx/remotes/agents.git",
     "standalone": false,
@@ -216,7 +216,7 @@
       "branch": "agents/release-manager-teams-2",
       "base": {
         "ref": "HEAD",
-        "oid": "504b717008b2fad05fe578b43479721a316803cc"
+        "oid": "535e5d7c4a7e869e05effd2db237a8de943f2d9e"
       },
       "effective": {
         "repo": "/fixture/base/northwind-workspace/agents-repo",
@@ -250,13 +250,13 @@
           }
         }
       },
-      "resolution": "e093da3a47a1fbd138739b40",
-      "revision": "5df53512017b8d2c053a7d74"
+      "resolution": "c14407bff934d8b7e5f1164f",
+      "revision": "9d90332b92b8e243418a8b9f"
     },
     "preflight": {
       "status": "complete",
       "budgetMs": 20000,
-      "elapsedMs": 49
+      "elapsedMs": 52
     },
     "backendStatus": {
       "name": "tmux",
@@ -271,7 +271,7 @@
     "branch": "agents/release-manager-teams-2",
     "base": {
       "ref": "HEAD",
-      "oid": "504b717008b2fad05fe578b43479721a316803cc"
+      "oid": "535e5d7c4a7e869e05effd2db237a8de943f2d9e"
     },
     "worktree": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams-2/work",
     "relation": null,
@@ -293,11 +293,11 @@
       },
       {
         "name": "nw-house-style",
-        "origin": "member:local//fixture/base/fx/remotes/agents.git@6b3069f67b2a456afd4844e0eab819c12d5015c8"
+        "origin": "member:local//fixture/base/fx/remotes/agents.git@5fba3fb499bf15f8bfba2882a3664d007304ab71"
       },
       {
         "name": "nw-release-tooling",
-        "origin": "member:local//fixture/base/fx/remotes/agents.git@6b3069f67b2a456afd4844e0eab819c12d5015c8"
+        "origin": "member:local//fixture/base/fx/remotes/agents.git@5fba3fb499bf15f8bfba2882a3664d007304ab71"
       },
       {
         "name": "nw.chat",

@@ -7,7 +7,7 @@
 // would promise joins an older provider ignores (captured: preview-no-join-sent).
 // Kernel captures: test/fixtures/workspace-v2/f7 from main (#181's `declares`,
 // feature settings-declared; contract bdd7e55e), with the stand-in providers
-// nw.teams (declares ["join"]) and nw.chat (declares ["identity"]) — provenance `standIn`.
+// oats.aweb (real, declares ["join"]) and the stand-in nw.chat (declares ["identity"]) — provenance `provider`, `standIn`.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -17,8 +17,8 @@ import { cli as CLI, target } from './helpers/spawn-preview-fixture.mjs';
 
 const f7 = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/f7/${name}.json`, import.meta.url), 'utf8'));
 const provenance = f7('provenance');
-const JOIN = { provider: 'nw.teams', labels: ['engineering'] };
-/** As captured: the kernel's messaging row declares `join` (nw.teams). */
+const JOIN = { provider: 'oats.aweb', labels: ['engineering'] };
+/** As captured: the kernel's messaging row declares `join` (oats.aweb). */
 const declared = envelope => structuredClone(envelope);
 /** A kernel before #181: no `declares` on the rows. */
 const undeclared = envelope => { const v = structuredClone(envelope); for (const m of v.result.modules) delete m.declares; return v; };
@@ -38,10 +38,10 @@ const rows = u => [...u.dialog().querySelectorAll('.spawn-team')].map(r => {
 
 test('join choices: the mapped labels to join, as the provider spawn setting; anything else is refused', () => {
   assert.deepEqual(previewChoices({ join: JOIN }).join, JOIN);
-  assert.deepEqual(previewChoices({ join: { provider: 'nw.teams', labels: ['engineering', 'global'] } }).join.labels, ['engineering', 'global']);
-  for (const bad of [{ provider: 'nw.teams', labels: [] }, { provider: 'nw.teams', labels: ['a', 'a'] }, { provider: 'nw.teams', labels: ['a,b'] },
-    { provider: 'nw.teams', labels: ['-x'] }, { provider: '--dir', labels: ['a'] }, { provider: 'nw.teams' }, { provider: 'nw.teams', labels: ['a'], extra: 1 },
-    { provider: 'nw.teams', labels: Array.from({ length: 17 }, (_, i) => `t${i}`) }, ['engineering'], 'engineering', null])
+  assert.deepEqual(previewChoices({ join: { provider: 'oats.aweb', labels: ['engineering', 'global'] } }).join.labels, ['engineering', 'global']);
+  for (const bad of [{ provider: 'oats.aweb', labels: [] }, { provider: 'oats.aweb', labels: ['a', 'a'] }, { provider: 'oats.aweb', labels: ['a,b'] },
+    { provider: 'oats.aweb', labels: ['-x'] }, { provider: '--dir', labels: ['a'] }, { provider: 'oats.aweb' }, { provider: 'oats.aweb', labels: ['a'], extra: 1 },
+    { provider: 'oats.aweb', labels: Array.from({ length: 17 }, (_, i) => `t${i}`) }, ['engineering'], 'engineering', null])
     assert.equal(previewChoices({ join: bad }), null, JSON.stringify(bad));
 });
 
@@ -55,9 +55,9 @@ test('the projection carries the kernel\'s teams (primary first, no payloads), t
   const t = { ...target, selector: { ...target.selector } };
   const d = previewData(declared(f7('preview-teams-default')).result, t);
   assert.deepEqual(d.teams, [{ label: 'engineering', team: 'northwind:eng', mapped: true }, { label: 'global', team: null, mapped: false }]);
-  assert.equal(d.messaging.provider, 'nw.teams'); assert.equal(d.messaging.join, null); assert.equal(d.messaging.joinDeclared, true);
+  assert.equal(d.messaging.provider, 'oats.aweb'); assert.equal(d.messaging.join, null); assert.equal(d.messaging.joinDeclared, true);
   assert.equal(previewData(declared(f7('preview-teams-join')).result, t).messaging.join, 'engineering');
-  assert.deepEqual(f7('preview-teams-default').result.modules.find(m => m.layer === 'messaging').declares, ['join'], 'the kernel\'s declared fact (#181)');
+  assert.deepEqual(f7('preview-teams-default').result.modules.find(m => m.layer === 'messaging').declares, ['delivery', 'identity', 'join', 'residents', 'root', 'roots', 'team'], 'the kernel\'s declared fact (#181): the real oats.aweb 1.16.0 settings, join among them');
   assert.equal(previewData(undeclared(f7('preview-teams-default')).result, t).messaging.joinDeclared, false, 'a kernel before #181 declares nothing');
   const chat = previewData(f7('preview-teams-no-join').result, t);
   assert.equal(chat.messaging.provider, 'nw.chat'); assert.equal(chat.messaging.joinDeclared, false);
@@ -66,7 +66,7 @@ test('the projection carries the kernel\'s teams (primary first, no payloads), t
   const once = previewData(declared(f7('preview-teams-join')).result, t);
   assert.deepEqual(previewData(once, t), once, "the renderer's re-validation of the server projection keeps it");
   for (const [label, mutate] of [
-    ['bound and shown join disagree', v => { v.settings['nw.teams'].join = 'global'; }],
+    ['bound and shown join disagree', v => { v.settings['oats.aweb'].join = 'global'; }],
     ['mapped without a team', v => { v.teams[0].team = null; }], ['unmapped with a team', v => { v.teams[1].team = 'x:y'; }],
     ['duplicate labels', v => { v.teams[1].label = 'engineering'; }], ['teams not a list', v => { v.teams = {}; }],
   ]) { const v = declared(f7('preview-teams-join')).result; mutate(v); assert.equal(previewData(v, t), null, label); }

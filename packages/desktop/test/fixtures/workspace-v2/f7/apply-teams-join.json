@@ -10,7 +10,7 @@
     "launched": false,
     "warnings": [],
     "tmux": {
-      "session": "none-45264",
+      "session": "none-35904",
       "window": "release-manager-teams"
     },
     "repo": "/fixture/base/northwind-workspace/agents-repo",
@@ -20,14 +20,14 @@
     "sibling": null,
     "relation": null,
     "spawnOrigin": "operator",
-    "attach": "tmux attach -t none-45264",
+    "attach": "tmux attach -t none-35904",
     "decision": {
       "instance": "release-manager-teams",
       "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams",
       "branch": "agents/release-manager-teams",
       "base": {
         "ref": "HEAD",
-        "oid": "504b717008b2fad05fe578b43479721a316803cc"
+        "oid": "535e5d7c4a7e869e05effd2db237a8de943f2d9e"
       },
       "effective": {
         "repo": "/fixture/base/northwind-workspace/agents-repo",
@@ -43,7 +43,11 @@
           "nw-deploy": {},
           "nw-house-style": {},
           "nw-release-tooling": {},
-          "nw.teams": {
+          "oats.aweb": {
+            "delivery": "session",
+            "identity": {
+              "mode": "local"
+            },
             "private": "per-human",
             "channels": [
               "northwind-eng"
@@ -61,8 +65,8 @@
           }
         }
       },
-      "resolution": "6979799c63f915447e690b9f",
-      "revision": "0fa67b18699ac5cef0d8df11"
+      "resolution": "12ab8a98b6686e10d6f0f1ea",
+      "revision": "401db519906df82bd6e63196"
     },
     "replayed": false,
     "wake": {
@@ -84,8 +88,63 @@
       "model": null,
       "hooks": {
         "launch": {},
-        "env": {},
-        "contributions": []
+        "env": {
+          "AWEB_DELIVERY": {
+            "redacted": true
+          },
+          "AWEB_IDENTITY_HOME": {
+            "redacted": true
+          }
+        },
+        "contributions": [
+          {
+            "capability": "oats.aweb",
+            "layer": "messaging",
+            "level": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams",
+            "settings": {
+              "delivery": "session",
+              "identity": {
+                "mode": "local"
+              },
+              "private": "per-human",
+              "channels": [
+                "northwind-eng"
+              ],
+              "join": "engineering"
+            },
+            "settingsOrigins": {
+              "/identity/mode": {
+                "kind": "manifest-default",
+                "at": "oats.json#/settings/identity/default"
+              },
+              "/private": {
+                "kind": "workspace",
+                "at": "oats-workspace.yaml#/messaging"
+              },
+              "/channels": {
+                "kind": "soul",
+                "at": "soul.yaml#/messaging"
+              },
+              "/delivery": {
+                "kind": "host",
+                "at": "oats-local.yaml#/settings/oats.aweb"
+              },
+              "/join": {
+                "kind": "spawn",
+                "at": "--provider oats.aweb"
+              }
+            },
+            "trust": {
+              "trusted": true,
+              "integrity": null
+            },
+            "launch": {},
+            "env": [
+              "AWEB_DELIVERY",
+              "AWEB_IDENTITY_HOME"
+            ]
+          }
+        ]
       },
       "prompt": {
         "kind": "task-file",
