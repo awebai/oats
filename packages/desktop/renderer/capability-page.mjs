@@ -57,6 +57,8 @@ export const pageCardCSS = `
 .page-kv:last-child { border-bottom:0; }
 .page-kv dt { color:var(--muted); font-size:12px; }
 .page-kv dd { margin:0; font:12px var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.page-kv.wrap dd { white-space:normal; overflow:visible; padding:6px 0; }
+.page-kv.wrap .path-part { white-space:nowrap; }
 .page-kv-list { margin:0; }
 .page-table { background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
 .page-table-row { display:grid; gap:12px; align-items:center; min-height:42px; padding:0 16px; box-sizing:border-box; border-top:1px solid var(--tag-bg); }
@@ -145,8 +147,8 @@ export function pageCard(doc, title, { lead = '', count = null, icon = null } = 
 /** key → value rows (the "Comes from" card); only reported values. */
 export function pageFacts(doc, entries) {
   const dl = el(doc, 'dl', null, 'page-kv-list');
-  for (const [key, value, title] of entries) if (text(value)) {
-    const row = el(doc, 'div', null, 'page-kv'); const dd = el(doc, 'dd', value); dd.title = title || value;
+  for (const [key, value, title, cls] of entries) if (text(value)) {
+    const row = el(doc, 'div', null, `page-kv${cls ? ` ${cls}` : ''}`); const dd = el(doc, 'dd', value); dd.title = title || value;
     row.append(el(doc, 'dt', key), dd); dl.append(row);
   }
   return dl;
@@ -242,7 +244,10 @@ export function renderCapabilityPage(host, { row, status, instances, root, backL
   // Kernel #217: its manifest file, as a web page when the repository has one, else its path.
   if (row.file && text(row.file.path)) {
     const web = typeof row.file.url === 'string' && /^https:\/\//.test(row.file.url) ? row.file.url : null;
-    origin.card.append(pageFacts(doc, [['File', row.file.path]]));
+    const facts = pageFacts(doc, [['File', row.file.path, row.file.path, 'wrap']]), dd = facts.querySelector('dd');
+    // A path breaks after its slashes, never inside a name.
+    if (dd) { dd.replaceChildren(); row.file.path.split('/').forEach((part, i, all) => { dd.append(node('span', i < all.length - 1 ? `${part}/` : part, 'path-part')); if (i < all.length - 1) dd.append(doc.createElement('wbr')); }); }
+    origin.card.append(facts);
     if (web && typeof openExternal === 'function') {
       const open = node('button', 'Open file', 'act'); open.type = 'button'; open.title = web; open.dataset.verb = 'file';
       open.addEventListener('click', () => openExternal(web)); origin.card.append(open);

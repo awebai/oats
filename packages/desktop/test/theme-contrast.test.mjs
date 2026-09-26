@@ -316,7 +316,8 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
   const f2 = file => JSON.parse(readFileSync(new URL(`fixtures/workspace-v2/f2/${file}.json`, new URL("./", import.meta.url)), "utf8"));
   const dir = '/fixture/base/northwind-workspace';
   const status = { ...workspaceStatusData(f2('workspace-status'), dir), members: syncData(f2('sync-moved'), dir).members };
-  const rows = f2('capabilities').result.capabilities;
+  // Kernel #217: rows carry a description (rendered as a muted line under the name).
+  const rows = f2('capabilities').result.capabilities.map(r => ({ ...r, description: `About ${r.name}.` }));
   const names = memberNames(status);
   renderFilters(doc.querySelector('.filters'), { ...filterChoices(rows, names), value: { team: 'marketing', repo: null }, shown: 2, total: 5, onChange() {} });
   renderCapabilities(doc.querySelector('.caps'), { rows, status, instances: [], root: dir });
@@ -335,6 +336,7 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
     // Workspace v4 (W5): the table head sits on the table surface; names, source chips and used-by counts.
     ['.catalog-row.head', '.catalog-table', 'muted', 'surface'],
     ['.catalog-name', '.catalog-table', 'fg', 'surface'],
+    ['.catalog-desc', '.catalog-table', 'muted', 'surface'],
     ['.source-chip', '.catalog-table', 'muted', 'surface'], ['.source-chip-name', '.catalog-table', 'fg', 'surface'],
     ['.catalog-used-count', '.catalog-table', 'muted', 'surface'],
     // Filters: "Filter by", a plain dropdown, an active one (Team = marketing), the count and Clear filters.
