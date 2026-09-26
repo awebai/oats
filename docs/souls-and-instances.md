@@ -302,6 +302,16 @@ uncertified capture retains the home for retry. Successful retirement enqueues
 evidence but never waits for a model or GitHub: independent processing and
 source-targeted inspection continue after the home disappears.
 
+Before any retire hook runs, retire preserves the instance's uncommitted and
+unmerged work: a verified recovery under `.oats-retirement/recovery/`, named in
+the summary. A worktree recovery is a standalone clone that carries the
+repository's local exclude rules (`info/exclude`, a configured
+`core.excludesFile`), so its Git status matches the source's. A recovery that
+cannot be verified refuses with `E_WORK_PRESERVATION_FAILED` and keeps the
+home. **`--force` does not skip work preservation.** It forces only past a
+missing or unusable cleanup marker and past incomplete hook cleanup
+([capabilities.md](capabilities.md)).
+
 `oats retire <instance> --self` lets an instance retire itself when the human
 or briefing says it is done. A live harness cannot give a stable final
 inspection of its own work, so the calling process inspects, runs, and removes

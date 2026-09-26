@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { statusDisagreement } from "../lib/core.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const temporaryDirectories = [];
@@ -349,6 +350,131 @@ test("nested repository recovery is standalone after source repositories disappe
   assert.match(execFileSync("git", ["-C", recoveredNested, "log", "-1", "--format=%s"], { encoding: "utf8" }), /nested/);
   assert.match(execFileSync("git", ["-C", recoveredNested, "stash", "list"], { encoding: "utf8" }), /nested stash/);
   assert.equal(existsSync(join(recoveredNested, ".git")), true);
+});
+
+/** Git status as the retire verification reads it. */
+const porcelain = (repo) => execFileSync("git", ["-C", repo, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=matching", "--ignore-submodules=none"], { encoding: "utf8" });
+/** Work that forces a repository recovery: a local-only branch commit, an untracked file and changed home bytes. */
+function dirtyWork(home) {
+  const work = join(home, "work");
+  write(join(work, "commit.txt"), "local-only\n");
+  execFileSync("git", ["-C", work, "add", "commit.txt"]);
+  execFileSync("git", ["-C", work, "commit", "-qm", "local only"]);
+  write(join(work, "untracked.txt"), "untracked\n");
+  write(join(home, "notes.md"), "home bytes\n");
+  return work;
+}
+
+test("retire preserves a worktree whose paths are excluded only by the COMMON dir's info/exclude — an empty directory, a written one and a file; a nested repository's own exclude too", () => {
+  // A fresh recovery clone has no info/exclude: a path excluded only there was `!!` in the source and `??`
+  // (or, for an empty directory, absent) in the clone, so the status comparison refused every retire
+  // with E_WORK_PRESERVATION_FAILED. The recovery now carries the source's effective excludes.
+  const f = fixture();
+  const spawned = spawn(f, "excl");
+  write(join(f.repo, ".git", "info", "exclude"), "# local only\n.scratch/\n.cache-local/\nlocal-notes.txt\n");
+  const work = dirtyWork(spawned.home);
+  mkdirSync(join(work, ".scratch")); // EMPTY and excluded: `!! .scratch/` in the source only (the co-lead's real case)
+  write(join(work, ".cache-local", "blob.bin"), "cache\n");
+  write(join(work, "local-notes.txt"), "notes\n");
+  const nested = join(work, "human-ignored", "nested");
+  mkdirSync(nested, { recursive: true });
+  execFileSync("git", ["init", "-q", nested]);
+  execFileSync("git", ["-C", nested, "-c", "user.email=t@example.invalid", "-c", "user.name=T", "commit", "-q", "--allow-empty", "-m", "nested"]);
+  write(join(nested, ".git", "info", "exclude"), ".nested-scratch/\n");
+  mkdirSync(join(nested, ".nested-scratch"));
+  const status = porcelain(work), nestedStatus = porcelain(nested);
+  assert.match(status, /!! \.scratch\/\0/, "the fixture reproduces the empty excluded directory");
+
+  const retired = cli(f, ["retire", "dev-excl", "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const recovery = JSON.parse(retired.stdout).workRecovery;
+  assert.ok(recovery?.path, retired.stdout);
+  const repo = join(recovery.path, "repo");
+  assert.equal(porcelain(repo), status, "the recovered status equals the source's");
+  assert.equal(porcelain(join(repo, "human-ignored", "nested")), nestedStatus);
+  assert.equal(readFileSync(join(repo, ".cache-local", "blob.bin"), "utf8"), "cache\n");
+  const manifest = JSON.parse(readFileSync(join(recovery.path, "recovery.json"), "utf8"));
+  assert.deepEqual(manifest.excludes.map((e) => [e.repo, e.kind]), [[".", "info/exclude"], ["human-ignored/nested", "info/exclude"]], "the operator sees which exclude sources were carried");
+  assert.equal(realpathSync(manifest.excludes[0].path), realpathSync(join(f.repo, ".git", "info", "exclude")));
+});
+
+test("retire preserves a worktree whose paths are excluded only by the repository's core.excludesFile, with Git's precedence (info/exclude outranks it)", () => {
+  const f = fixture();
+  const spawned = spawn(f, "exfile");
+  const excludesFile = join(f.base, "repo-excludes");
+  write(excludesFile, ".scratch/\n*.log\n");
+  execFileSync("git", ["-C", f.repo, "config", "core.excludesFile", excludesFile]);
+  write(join(f.repo, ".git", "info", "exclude"), "!keep.log\n"); // re-includes what core.excludesFile ignores
+  const work = dirtyWork(spawned.home);
+  mkdirSync(join(work, ".scratch"));
+  write(join(work, "keep.log"), "kept\n");
+  write(join(work, "drop.log"), "dropped\n");
+  const status = porcelain(work);
+  assert.match(status, /!! \.scratch\/\0/);
+  assert.match(status, /\?\? keep\.log\0/); assert.match(status, /!! drop\.log\0/);
+
+  const retired = cli(f, ["retire", "dev-exfile", "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const recovery = JSON.parse(retired.stdout).workRecovery;
+  assert.equal(porcelain(join(recovery.path, "repo")), status);
+  const manifest = JSON.parse(readFileSync(join(recovery.path, "recovery.json"), "utf8"));
+  assert.deepEqual(manifest.excludes.map((e) => e.kind), ["core.excludesFile", "info/exclude"]);
+  assert.equal(spawnSync("git", ["-C", join(recovery.path, "repo"), "config", "--local", "--get", "core.excludesFile"]).status, 1, "self-contained: the recovery carries the patterns, not a config pointer");
+  assert.match(readFileSync(join(recovery.path, "repo", ".git", "info", "exclude"), "utf8"), /^\.scratch\/$/m);
+});
+
+test("a status disagreement names the differing rows from both sides — sorted, absent as null, renames with their source, capped at 10 with the total", () => {
+  assert.deepEqual(statusDisagreement("!! .scratch/\0?? same\0R  new\0old\0", " M x\0?? same\0?? .scratch/x\0"), { total: 4, rows: [
+    { path: ".scratch/", source: "!!", recovery: null },
+    { path: ".scratch/x", source: null, recovery: "??" },
+    { path: "new", source: "R  ← old", recovery: null },
+    { path: "x", source: null, recovery: " M" },
+  ] });
+  assert.deepEqual(statusDisagreement("?? a\0", "?? a\0"), { rows: [], total: 0 });
+  const many = Array.from({ length: 12 }, (_, i) => `!! f${String(i).padStart(2, "0")}\0`).join("");
+  const capped = statusDisagreement(many, "");
+  assert.equal(capped.total, 12);
+  assert.deepEqual(capped.rows.map((r) => r.path), Array.from({ length: 10 }, (_, i) => `f${String(i).padStart(2, "0")}`));
+});
+
+test("E_WORK_PRESERVATION_FAILED names the differing status rows (the first 10, and how many more) in its message and --json details, for the worktree and for a nested repository; the home is kept", () => {
+  // Trigger: core.fileMode=false in the source repository, which a recovery clone does not inherit —
+  // a mode-only change is clean in the source and ` M` in the recovery. (Not yet carried: if a later
+  // fix carries it, pick another disagreement here.)
+  const f = fixture();
+  const spawned = spawn(f, "diffrows");
+  const work = join(spawned.home, "work");
+  const names = Array.from({ length: 11 }, (_, i) => `f${String(i).padStart(2, "0")}.txt`);
+  for (const n of names) write(join(work, n), `${n}\n`);
+  execFileSync("git", ["-C", work, "add", ...names]);
+  execFileSync("git", ["-C", work, "commit", "-qm", "eleven files"]);
+  execFileSync("git", ["-C", f.repo, "config", "core.fileMode", "false"]);
+  for (const n of names) chmodSync(join(work, n), 0o755);
+  write(join(work, "untracked.txt"), "forces a repository recovery\n");
+  let retired = cli(f, ["retire", "dev-diffrows", "--json"]);
+  assert.equal(retired.status, 1, retired.stdout);
+  let error = JSON.parse(retired.stdout).error;
+  assert.equal(error.code, "E_WORK_PRESERVATION_FAILED");
+  assert.match(error.message, /recovered Git index\/status disagreed with the source: f00\.txt \(source absent, recovery  M\); f01\.txt .*; f09\.txt \(source absent, recovery  M\); and 1 more$/);
+  assert.deepEqual(error.details, { home: spawned.home, statusDisagreement: { repo: ".", rows: names.slice(0, 10).map((path) => ({ path, source: null, recovery: " M" })), total: 11 } });
+  assert.equal(existsSync(spawned.home), true, "the home is kept");
+
+  // A nested repository's disagreement names that repository.
+  const g = fixture();
+  const nestedSpawn = spawn(g, "nestedrows");
+  const nested = join(nestedSpawn.home, "work", "human-ignored", "nested");
+  mkdirSync(nested, { recursive: true });
+  execFileSync("git", ["init", "-q", nested]);
+  write(join(nested, "run.sh"), "echo\n");
+  execFileSync("git", ["-C", nested, "add", "run.sh"]);
+  execFileSync("git", ["-C", nested, "-c", "user.email=t@example.invalid", "-c", "user.name=T", "commit", "-qm", "nested"]);
+  execFileSync("git", ["-C", nested, "config", "core.fileMode", "false"]);
+  chmodSync(join(nested, "run.sh"), 0o755);
+  retired = cli(g, ["retire", "dev-nestedrows", "--json"]);
+  assert.equal(retired.status, 1, retired.stdout);
+  error = JSON.parse(retired.stdout).error;
+  assert.match(error.message, /nested recovery human-ignored\/nested Git state disagreed with source: run\.sh \(source absent, recovery  M\)$/);
+  assert.deepEqual(error.details.statusDisagreement, { repo: "human-ignored/nested", rows: [{ path: "run.sh", source: null, recovery: " M" }], total: 1 });
 });
 
 test("branch-only commits are recovered only when retirement deletes their last local ref", () => {

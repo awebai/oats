@@ -953,6 +953,12 @@ location. The receipt says so:
   discarding the worktree (a checked-out branch cannot be deleted).
 - A failed move keeps the home and refuses `E_WORK_PRESERVATION_FAILED` —
   nothing is lost; retry or pass `--discard-worktree`.
+- When a recovery's Git status disagrees with the source's (0.27.2),
+  `E_WORK_PRESERVATION_FAILED` carries `details: {home, statusDisagreement:
+  {repo, rows: [{path, source, recovery}], total}}`. `repo` is `.` or a nested
+  repository's path. `source`/`recovery` are the porcelain `XY` codes, or
+  `null` where that side has no row. `rows` holds the first 10 paths, sorted,
+  and `total` counts all of them. The message names the same rows.
 - Non-worktree modes report `retention: null`. Quarantine/rollback paths keep
   their removal semantics.
 - A recovery (`workRecovery`, `workRecoveries[]`) is `{path, classes, bytes,
