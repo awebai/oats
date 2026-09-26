@@ -351,7 +351,14 @@ existing manifests load, and change nothing.
 
 Hooks receive `OATS_EVENT`, `OATS_CAPABILITY`, `OATS_LAYER`, `OATS_INSTANCE`,
 `OATS_HOME`, `OATS_AGENT`, `OATS_SOUL`, `OATS_CONTEXT`, `OATS_WORKSPACE`,
-`OATS_ROOT`, `OATS_LEVEL`, `OATS_SETTINGS`, and `OATS_META`. A final JSON line may
+`OATS_ROOT`, `OATS_LEVEL`, `OATS_SETTINGS`, `OATS_SETTINGS_ORIGINS`, and
+`OATS_META`. `OATS_SETTINGS_ORIGINS` (0.29.0) says where each leaf of
+`OATS_SETTINGS` came from: a JSON object from a JSON pointer to `{ kind, at }`,
+`kind` being `manifest-default`, `workspace`, `soul`, `host`, `spawn` or
+`anchor` (the last layer that set it), e.g.
+`{"/harvest":{"kind":"soul","at":"soul.yaml#/knowledge"}}`. A provider tells a
+soul-set value from a host-set one there, and never reads `soul.yaml` for it.
+A home spawned before 0.29.0 recorded none: `{}`. A final JSON line may
 return `meta`, `brief`, `warning`, or harness-specific `launch` arguments. A
 **spawn hook only** may also return an `env` object for the launched process;
 returning `env` from retire or soul-scaffold is an explicit contract error.
@@ -498,7 +505,8 @@ passed as arguments; no shell is involved.
 - Every ambient `OATS_*`, `OAS_*` and `PI_*` variable is removed. Other
   variables pass through.
 - The kernel sets:
-  - `OATS_CAPABILITY` and `OATS_SETTINGS` (the payload as JSON);
+  - `OATS_CAPABILITY`, `OATS_SETTINGS` (the payload as JSON) and
+    `OATS_SETTINGS_ORIGINS` (where each leaf came from, as hooks get it);
   - `OATS_CLI_BIN`;
   - `OATS_WORKSPACE` (the deployment);
   - the team variables `OATS_TEAM_ID` (the messaging payload's `team`: the

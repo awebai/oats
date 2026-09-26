@@ -49,6 +49,7 @@
             "layer": "messaging",
             "level": "<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub",
             "settings": {},
+            "settingsOrigins": {},
             "trust": {
               "trusted": true,
               "integrity": null

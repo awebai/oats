@@ -402,7 +402,8 @@ on stdout:
 ```
 
 The environment is the provider's module environment:
-- `OATS_CAPABILITY`, `OATS_SETTINGS`, `OATS_CLI_BIN` and `OATS_WORKSPACE`;
+- `OATS_CAPABILITY`, `OATS_SETTINGS`, `OATS_SETTINGS_ORIGINS` (0.29.0: JSON
+  pointer → `{ kind, at }`), `OATS_CLI_BIN` and `OATS_WORKSPACE`;
 - the team variables (`OATS_TEAM_*`, `OATS_WORKSPACE_NAME`/`_KEY`);
 - `OATS_AGENT` (the soul), and `OATS_SOUL` when the soul directory is known;
 - for a home, `OATS_INSTANCE` and `OATS_INSTANCE_HOME`.

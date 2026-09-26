@@ -49,6 +49,7 @@
             "layer": "messaging",
             "level": "<base>/deployment/agents/dev/instances/dev-claude-checkout-knone-mstub",
             "settings": {},
+            "settingsOrigins": {},
             "trust": {
               "trusted": true,
               "integrity": null

@@ -263,7 +263,13 @@ oats-package/
   `agents/<package>--<soul>/` (the package id with `.` as `-`:
   `agents/oats-okf--knowledge-maintainer/`), which is also its agent name
   (`OATS_AGENT`, the `oats status` row); its instances are named from it
-  (`oats-okf-knowledge-maintainer-<purpose>`). A soul name never holds `--`,
+  (`oats-okf-knowledge-maintainer-<purpose>`). That prefix counts toward the
+  64-character instance-name limit, so a package soul's purposes are short:
+  `oats-okf-knowledge-maintainer-` is 30 characters, which leaves 34 for the
+  purpose (fewer when a `-2` suffix de-duplicates it). A longer one is
+  `E_INSTANCE_NAME_INVALID { prefix, purpose, maxPurpose }`, naming the budget;
+  a trigger's or schedule's purpose template obeys the same limit when it
+  renders. A soul name never holds `--`,
   so a member soul of the same bare name keeps its own `agents/<soul>/`.
   Two packages whose ids sanitise alike (`a.b`, `a-b`) and that ship a
   same-named soul would share a directory: both are listed with an

@@ -1972,7 +1972,7 @@ async function spawnCmd() {
     if (e?.code === "E_IDEMPOTENCY_CONFLICT") { bail(e.code, e.message, { instance: e.instance, home: e.home }); throw e; }
     if (e?.code === "E_PLACEMENT_TAKEN") { bail(e.code, e.message, { instance: e.instance, home: e.home }); throw e; }
     if (e?.code === "E_INSTANCE_NAME_TAKEN") { bail(e.code, e.message, { instance: e.instance, home: e.home ?? null, ...(e.session ? { session: e.session } : {}) }); throw e; }
-    if (e?.code === "E_INSTANCE_NAME_INVALID") { bail(e.code, e.message); throw e; }
+    if (e?.code === "E_INSTANCE_NAME_INVALID") { bail(e.code, e.message, e.details); throw e; }
     if (e?.code === "E_SPAWN_INCOMPLETE") { bail(e.code, e.message, { instance: e.instance, home: e.home, launched: e.launched }); throw e; }
     bail(["E_BAD_ARGS", "E_RELATIVE_AMBIGUOUS"].includes(e.code) ? e.code : "E_SPAWN_FAILED", e.message || e); throw e;
   }
@@ -2544,7 +2544,7 @@ async function capabilityCommand() {
     // No home, so no recorded soul: the soul's per-commit copy is OATS_SOUL when a spawn
     // already fetched exactly this commit; otherwise the command gets none (never ambient).
     const cachedSoul = hit.soul?.commit ? join(hit.deployment, "agents", hit.soul.name, "souls", String(hit.soul.commit).slice(0, 12)) : null;
-    return runManifestCommand({ capability: hit.module.name, ...hit.manifest }, hit.settings, teamCtx, hit.ensureTree, cachedSoul && existsSync(join(cachedSoul, "soul.yaml")) ? realpathSync(cachedSoul) : undefined);
+    return runManifestCommand({ capability: hit.module.name, ...hit.manifest }, { settings: hit.settings, origins: hit.resolution?.payloadOrigins?.[hit.module.name] }, teamCtx, hit.ensureTree, cachedSoul && existsSync(join(cachedSoul, "soul.yaml")) ? realpathSync(cachedSoul) : undefined);
   }
 
   async function dispatch() {
@@ -2558,14 +2558,14 @@ async function capabilityCommand() {
     // braces: the ids come from instance.json, which spawn wrote from resolved
     // manifests. Null-prototype because the dispatcher indexes it with the
     // namespace the operator typed on the command line.
-    let capSettings = Object.create(null);
+    let capSettings = Object.create(null), capOrigins = Object.create(null);
     let deployment = null;
     let soulDir;
     try {
       if (metaFile && existsSync(metaFile)) {
         const meta = JSON.parse(readFileSync(metaFile, "utf8"));
         activeIds = (meta.capabilities || []).map((c) => c.id);
-        for (const c of meta.capabilities || []) capSettings[c.id] = c.settings || {};
+        for (const c of meta.capabilities || []) { capSettings[c.id] = c.settings || {}; capOrigins[c.id] = c.settingsOrigins || {}; }
         // Workspace-model homes only (lead decision c3 Q2).
         if (isCapturedHome(meta)) { const e = capturedHomeRefusal(instanceHome, "nothing was dispatched"); bail(e.code, e.message, e.details); }
         if (!isWorkspaceHome(meta)) { const e = preWorkspaceHome(instanceHome, "nothing was dispatched"); bail(e.code, e.message); }
@@ -2604,14 +2604,14 @@ async function capabilityCommand() {
       const live = await liveTeams(instanceHome, homeMeta.meta, { remoteOptions: remoteOptionsFromEnv() });
       teamCtx = homeTeamCtx(live.teams, live.source);
     }
-    return runManifestCommand(m, capSettings[m.capability] || {}, teamCtx, () => m._dir, soulDir);
+    return runManifestCommand(m, { settings: capSettings[m.capability] || {}, origins: capOrigins[m.capability] }, teamCtx, () => m._dir, soulDir);
   }
 
   /** Help / unknown-command / spec validation / exec — shared by every context.
    *  `m` is the manifest (with `capability`; `_dir` may be absent until `ensureDir`
    *  resolves the directory holding the executable — the operator branch fetches
    *  the module tree only when a command is actually going to run). */
-  async function runManifestCommand(m, settings, teamCtx, ensureDir, soulDir) {
+  async function runManifestCommand(m, { settings, origins }, teamCtx, ensureDir, soulDir) {
     const sub = args[1];
     const cmds = Object.keys(m.commands);
     // `oats <ns> --help` and `oats <ns> <cmd> --help` answer from the manifest
@@ -2656,6 +2656,8 @@ async function capabilityCommand() {
       // lifecycle hooks — capabilities read their settings here instead of
       // importing the kernel resolver.
       OATS_SETTINGS: JSON.stringify(settings || {}),
+      // Where each leaf came from (JSON pointer → { kind, at }), as lifecycle hooks get it.
+      OATS_SETTINGS_ORIGINS: JSON.stringify(origins || {}),
       // PATH is not a trusted runtime boundary (maintainer finding 1): pass the
       // canonical absolute executable of THIS CLI; official consumers execFile
       // it directly and never resolve `oats` from PATH or a shell.
