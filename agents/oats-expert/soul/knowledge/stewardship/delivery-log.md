@@ -22,7 +22,7 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
-## Batch — 2026-09-24 night (PRs 131, 136, 151–200) → toward v0.26.0 (unreleased; main carries breaking changes)
+## Batch — 2026-09-24 night (PRs 131, 136, 151–201) → toward v0.26.0 (unreleased; main carries breaking changes)
 - **Merged:**
   - PR151 packages: approval removed (human decision; declaring a package IS the trust decision) `e62b8f16`, plus the release-note follow-up `f0994882`.
   - PR153 docs for it `b97de554`.
@@ -149,6 +149,8 @@ decisions/ and referenced from here.
   - **v0.27.1 RELEASED**: the tag object `c9f765b4` → `a32e3e05`; release.yml green; npm 0.27.1; 7 assets; published guard probe 6/6.
   - PR199 kernel `ecf5b6af` (the Phase D driver; from a co-lead retire fault on 0.24.6, root-caused to an EMPTY directory excluded only by the common-dir info/exclude; lead mutation killing 2; co-lead ACK; merged after the v0.27.1 tag): the recovery clone carries the source's exclude rules; the refusal names the differing status rows. For 0.27.2.
   - PR200 kernel `87b1fd62` (the Phase D driver; the #199 sibling fault: core.fileMode=false made a mode-only change ` M` in the recovery; lead fileMode mutation killing 1; the first head was CI-red on Linux only, a fixture `--unset-all` of a never-set core.precomposeUnicode (exit 5), fixed test-only; co-lead re-ACK; the watcher re-armed + merged; squash verified): the recovery clone takes the source's status-affecting settings (fileMode, ignoreCase, precomposeUnicode, symlinks, autocrlf, eol) + the common-dir info/attributes. For 0.27.2. Left fail-closed: a conditional include matching only the recovery path.
+  - PR201 `67b955a8` (lead; bump): 0.27.2 pre-alignment + notes (the okf 2.1.6 line moved to Known limitations; 2.1.6 did not make it).
+  - **v0.27.2 RELEASED**: the tag object `409daf15` → `67b955a8` (the co-lead's Class B ACK; main CI green on the SHA; the stewardship commit before it failed only the timing-sensitive Desktop K6d test on the same tree); release.yml green; npm 0.27.2; 7 assets; the published probe: catalog + bundled capabilities == tag, except for the unpacked okf template symlink (npm drops symlinks; pre-existing).
 - **taught us:**
   - (1) **Arm a merge watcher with the full approved oid, never "the current head".** #160's head moved twice after approval while mails crossed. The watcher's named-oid guard refused both mismatches, so nothing unreviewed merged. The loop ends with one FINAL mail per party (author and watcher) naming the full oid and "no pushes", and by ignoring the stale mails that follow.
   - (2) **A native gate must wait for the message, not for a spinner.** Preview in the rig is slow, and fixed waits produced false FAILs in both directions. Poll for the expected sentence with a bound.
