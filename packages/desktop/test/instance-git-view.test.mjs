@@ -218,7 +218,10 @@ function luminance(hex) {
   return c[0] * .2126 + c[1] * .7152 + c[2] * .0722;
 }
 for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: actual Git panel/diff uses computed-token AA backgrounds`, async t => {
-  const u = setup(t); u.host.id = 'context-panel'; u.host.className = 'context-panel';
+  // Line counts (kernel #238): "+3 −1" on one row, "binary" on the other.
+  const counted = () => { const d = data(); Object.assign(d.files[0], { additions: 3, deletions: 1, binary: false }); Object.assign(d.files[1], { additions: null, deletions: null, binary: true });
+    d.files.push(file({ id: 'e'.repeat(24), path: 'third.txt', additions: 5, deletions: 2, binary: false })); d.summary.changed = 3; return d; };
+  const u = setup(t, (_ws, body) => available(body.action === 'git' ? counted() : diff())); u.host.id = 'context-panel'; u.host.className = 'context-panel';
   const style = u.doc.createElement('style'); style.textContent = readFileSync(new URL('../renderer/theme.css', import.meta.url), 'utf8') + contextPanelCSS;
   u.doc.head.append(style); u.doc.documentElement.dataset.theme = theme;
   await u.show(); u.buttons()[0].click(); await tick();
@@ -228,6 +231,9 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: actual Git p
     ['.git-head', '#context-panel', 'muted', 'surface'], ['.git-branch-line', '#context-panel', 'fg', 'surface'],
     ['.git-branch-sub', '#context-panel', 'muted', 'surface'], ['.git-more dt', '#context-panel', 'muted', 'surface'],
     ['.git-file:not([aria-pressed=true]) .git-letter', '#context-panel', 'muted', 'surface'], ['button.git-link', '#context-panel', 'accent', 'surface'],
+    ['.git-file:not([aria-pressed=true]) .git-count-binary', '#context-panel', 'muted', 'surface'],
+    ['.git-file:not([aria-pressed=true]) .git-count-add', '#context-panel', 'ok', 'surface'], ['.git-file:not([aria-pressed=true]) .git-count-del', '#context-panel', 'danger', 'surface'],
+    ['.git-file[aria-pressed=true] .git-count-add', '.git-file[aria-pressed=true]', 'fg', 'sel'], ['.git-file[aria-pressed=true] .git-count-del', '.git-file[aria-pressed=true]', 'fg', 'sel'],
     ['.git-github p', '#context-panel', 'muted', 'surface'], ['.git-file[aria-pressed=true]', '.git-file[aria-pressed=true]', 'fg', 'sel'],
     ['.git-add', '.git-patch', 'ok', 'surface-2'], ['.git-remove', '.git-patch', 'danger', 'surface-2'],
   ]) {
