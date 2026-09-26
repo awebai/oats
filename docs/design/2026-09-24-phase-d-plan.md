@@ -35,6 +35,11 @@ pushes. Agreed by both on 2026-09-24:
   published skills); merges into the other's lane; reverts, force-anything,
   branch or tag deletion. A blocking intent unanswered for about 45 minutes goes
   to the human, never to action.
+- **Amendment (the human, 2026-09-26 ~13:10Z): "lets approve and tag ourselves all of these PRs".**
+  - With the co-lead unresponsive since ~10:30Z, the lead's review + green CI is the full Class B gate, in BOTH lanes: merges, okf/aweb tags, catalog pins, releases.
+  - Every such act is logged, with its head/tag oid, in a running account mailed to the co-lead for after-the-fact review.
+  - The co-lead's objections then go to the human, and a revert follows only on the human's word.
+  - This ends when the co-lead resumes and the lead records that here.
 - Every PR is reviewed by the co-lead who did not author it (a helper's PR is
   reviewed by its own lead, inside that lead's lane). A disagreement not settled
   in two mails goes to the human. Standing rules unchanged: PR CI is the full
