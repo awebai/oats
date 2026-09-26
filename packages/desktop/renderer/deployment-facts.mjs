@@ -33,7 +33,11 @@ export function moduleDriftText(modules) {
     return notCurrent.map(row => {
       const from = row.from?.kind === 'package' ? `package ${row.from.package || '?'}` : `member ${memberLabel(row.from?.repoKey)}`;
       const why = row.status === 'missing' && text(row.reason) ? ` (${row.reason})` : '';
-      return `${row.name}: ${row.status === 'moved' ? 'moved since' : row.status || 'unknown'}${why} — ${from} @ ${short(row.commit) || '?'}`;
+      // A moved row names its versions when the kernel reports them (current.version, kernel #217):
+      // the recorded one from its origin, the current one beside the current commit.
+      const now = row.status === 'moved' ? text(row.current?.version) : null, was = now ? text(row.from?.version) : null;
+      const status = row.status === 'moved' ? (now ? `moved ${was ? `${was} → ${now}` : `to ${now}`}` : 'moved since') : row.status || 'unknown';
+      return `${row.name}: ${status}${why} — ${from} @ ${short(row.commit) || '?'}`;
     }).join('; ') + `; ${modules.length - notCurrent.length} current`;
   }
   if (modules && typeof modules === 'object') return `${Object.keys(modules).length} recorded — drift not observed (workspace unreachable)`;
