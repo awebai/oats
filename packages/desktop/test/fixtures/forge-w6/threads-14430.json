@@ -1,0 +1,25 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "reviewThreads": {
+          "totalCount": 3,
+          "pageInfo": {
+            "hasNextPage": false
+          },
+          "nodes": [
+            {
+              "isResolved": false
+            },
+            {
+              "isResolved": false
+            },
+            {
+              "isResolved": true
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "source": "oats-desktop-engineer for W6 (closing issues, unresolved threads, check durations): real, read-only gh reads of the public repository github.com/cli/cli (awebai/oats has no closing issues or review threads), the host gh auth; nothing redacted (public data, no credential)",
+  "gh": "gh version 2.97.0 (2026-07-31)",
+  "capturedAt": "2026-09-26",
+  "files": {
+    "pr-14516": {
+      "argv": [
+        "gh",
+        "pr",
+        "view",
+        "14516",
+        "--repo",
+        "github.com/cli/cli",
+        "--json",
+        "number,title,state,isDraft,baseRefName,headRefName,url,reviewDecision,statusCheckRollup,updatedAt,closingIssuesReferences"
+      ],
+      "fixtureSha256": "c2b49dbd1b632d720f0c8f080aa147d476d69cf6d0b3892be93dbf36ae216304"
+    },
+    "threads-14516": {
+      "argv": [
+        "gh",
+        "api",
+        "graphql",
+        "--hostname",
+        "github.com",
+        "-f",
+        "query=<REVIEW_THREADS_QUERY, forge-cli.mjs>",
+        "-F",
+        "owner=cli",
+        "-F",
+        "name=cli",
+        "-F",
+        "number=14516"
+      ],
+      "fixtureSha256": "f4f9d6988496f4b89f723b3b576d4d8c716e17226b4011acbbac52d05407e234"
+    },
+    "pr-14430": {
+      "argv": [
+        "gh",
+        "pr",
+        "view",
+        "14430",
+        "--repo",
+        "github.com/cli/cli",
+        "--json",
+        "number,title,state,isDraft,baseRefName,headRefName,url,reviewDecision,statusCheckRollup,updatedAt,closingIssuesReferences"
+      ],
+      "fixtureSha256": "929490f039f00589663f07d379bac8401b231210665a5b2b77d0dc815799b4b2"
+    },
+    "threads-14430": {
+      "argv": [
+        "gh",
+        "api",
+        "graphql",
+        "--hostname",
+        "github.com",
+        "-f",
+        "query=<REVIEW_THREADS_QUERY, forge-cli.mjs>",
+        "-F",
+        "owner=cli",
+        "-F",
+        "name=cli",
+        "-F",
+        "number=14430"
+      ],
+      "fixtureSha256": "3368a5a0e1d270ff09c0632a50233e66212f40cd9c8d24509fd0ae9c95e12ef1"
+    }
+  }
+}

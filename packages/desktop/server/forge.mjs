@@ -109,7 +109,7 @@ export function createForgeBoundary({ env = forgeEnvironment(), run = createGhRu
       let result;
       if (conn.status !== 'connected') result = { ...conn, ...echo };
       else {
-        const pr = await ghPullRequest(conn.cli, { ...observation.route, branch: observation.branch }, run, Math.min(10_000, deadline - now()));
+        const pr = await ghPullRequest(conn.cli, { ...observation.route, branch: observation.branch }, run, Math.min(10_000, deadline - now()), { threads: true });
         result = pr.ok ? { forgeApi: FORGE_API, status: pr.data ? 'available' : 'no-pull-request', data: pr.data, reason: null,
           ...echo, host: conn.host, repository: observation.route.path, hostRef: conn.hostRef, connectionRef: conn.connectionRef, readEpoch: epoch, observedAt: new Date().toISOString() }
           : failure(pr.code, epoch, echo);

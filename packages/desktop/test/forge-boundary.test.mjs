@@ -98,3 +98,17 @@ test('four-flight cap and bounded expiring references cannot be bypassed by dist
   let time = 0; const expiry = fixture({ now: () => time }); const before = await expiry.service.connections({});
   time += 121_000; assert.equal((await expiry.service.connections({ hostRef: before.connectionRef })).reason.code, 'E_CONNECTION_CHANGED');
 });
+test('W6: the single-PR read counts unresolved review threads (GraphQL, the host auth); the count reaches the DTO', async () => {
+  const threads = { data: { repository: { pullRequest: { reviewThreads: { totalCount: 2, pageInfo: { hasNextPage: false }, nodes: [{ isResolved: false }, { isResolved: true }] } } } } };
+  const f = fixture({ run: async (_bin, args) => {
+    f.calls.push(args);
+    if (args[0] === 'auth') return output(status());
+    if (args[0] === 'api' && args[1] === 'graphql') return output(threads);
+    if (args[0] === 'api') return output('operator');
+    return output(pr());
+  } });
+  const result = await f.service.pull(f.request, () => context);
+  assert.equal(result.status, 'available'); assert.equal(result.data.unresolvedThreads, 1);
+  const q = f.calls.find(a => a[0] === 'api' && a[1] === 'graphql');
+  assert.deepEqual(q.slice(-6), ['-F', 'owner=owner', '-F', 'name=repo', '-F', 'number=42']);
+});
