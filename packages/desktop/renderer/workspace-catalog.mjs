@@ -284,8 +284,9 @@ export function lockNotes(status) {
 /** The Capabilities tab: jump pills, then Workspace owned (with its team/repo
  * filters), Packages and, when the kernel lists them (feature
  * capabilities-private), Repo owned grouped by repository. `filterHost` is the
- * discovery's persistent filter row; `query` narrows every section by name. */
-export function renderCapabilitySections(host, { sections, shown, filterHost, privateListed, status, instances, root, onOpen = null, query = '' }) {
+ * discovery's persistent filter row; `query` narrows every section by name.
+ * `navHost`, when given, takes the jump pills (the view's toolbar row). */
+export function renderCapabilitySections(host, { sections, shown, filterHost, navHost = null, privateListed, status, instances, root, onOpen = null, query = '' }) {
   const doc = host.ownerDocument, names = memberNames(status);
   host.replaceChildren();
   const needle = String(query || '').trim().toLowerCase();
@@ -310,7 +311,7 @@ export function renderCapabilitySections(host, { sections, shown, filterHost, pr
     });
     nav.append(jump);
   }
-  host.append(nav);
+  (navHost || host).append(nav);
   const section = def => {
     const el = node(doc, 'section', null, 'capability-section'); el.dataset.section = def.id;
     const head = node(doc, 'h2', null, 'capability-section-title'); head.id = `capability-section-${def.id}`; head.tabIndex = -1;
@@ -331,8 +332,8 @@ export function renderCapabilitySections(host, { sections, shown, filterHost, pr
 }
 
 /** The jump pill for the section at the top of the scroller (called on scroll). */
-export function syncCapabilityNav(host, scroller) {
-  const nav = host.querySelector('.capability-nav'); if (!nav || !scroller?.getBoundingClientRect) return;
+export function syncCapabilityNav(host, scroller, navHost = host) {
+  const nav = navHost.querySelector('.capability-nav'); if (!nav || !scroller?.getBoundingClientRect) return;
   const top = scroller.getBoundingClientRect().top + 24;
   let current = null;
   for (const el of host.querySelectorAll('.capability-section')) if (el.getBoundingClientRect().top <= top) current = el.dataset.section;

@@ -42,9 +42,17 @@ ${syncCSS}
 .oats-view .ws-segmented button + button { border-left:1px solid var(--border); }
 .oats-view .ws-segmented button[aria-pressed=true] { background:var(--chip-bg); color:var(--fg); font-weight:650; }
 .oats-view .ws-segmented button:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
-.ws-search { position:relative; display:flex; align-items:center; min-width:0; }
+/* A view's own toolbar (human, 2026-09-26): its search and controls sit in the view, not in the header. */
+/* A view's toolbar row (human, 2026-09-26): the view's own top row on the left
+   (section pills, first group heading), the search and view controls on the right. */
+.ws-toolbar { display:flex; align-items:center; flex-wrap:wrap; justify-content:flex-end; gap:8px 10px; min-width:0; min-height:28px; margin:0 0 16px; }
+.ws-toolbar[hidden] { display:none; }
+.ws-toolbar-lead { flex:1 1 auto; min-width:0; display:flex; align-items:center; }
+.ws-toolbar-lead .capability-nav { margin:0; }
+.ws-toolbar-label { color:var(--muted); font-size:12px; }
+.ws-search { position:relative; display:flex; align-items:center; min-width:0; flex:0 1 220px; }
 .ws-search .shell-icon { position:absolute; left:10px; color:var(--muted); pointer-events:none; }
-.oats-view .ws-search input.field { width:220px; max-width:100%; height:28px; min-height:28px; padding:0 10px 0 30px; border-radius:7px; background:var(--chip-bg); font-size:12px; }
+.oats-view .ws-search input.field { width:100%; min-width:0; height:28px; min-height:28px; padding:0 10px 0 30px; border:1px solid var(--border); border-radius:7px; background:var(--surface); font-size:12px; box-sizing:border-box; }
 .workspace-discovery { padding:18px 20px; overflow:auto; min-width:0; flex:1; container-type:inline-size; }
 /* Capabilities (W5) reads as one centred column. */
 .workspace-discovery[data-tab=capabilities] { padding:16px 28px 20px; }
@@ -121,13 +129,15 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     viewButtons.set(id, button); views.append(button);
   }
   const syncHost = node('div'); setupTools.append(views, syncHost);
-  const capTools = node('div', undefined, 'workspace-tools'); capTools.dataset.tools = 'capabilities';
+  // The Capabilities search lives in the view itself (human, 2026-09-26): a toolbar row above the sections.
+  const capTools = node('div', undefined, 'ws-toolbar'); capTools.dataset.tools = 'capabilities';
+  const capLead = node('div', undefined, 'ws-toolbar-lead'); capTools.append(capLead);
   const search = node('label', undefined, 'ws-search');
   const searchInput = node('input', undefined, 'field'); searchInput.type = 'search'; searchInput.placeholder = 'Search capabilities'; searchInput.autocomplete = 'off';
   searchInput.setAttribute('aria-label', 'Search capabilities');
   searchInput.addEventListener('input', () => { query = searchInput.value; render(); });
   search.append(iconElement(doc, 'search', { size: 14 }), searchInput); capTools.append(search);
-  header.append(setupTools, capTools);
+  header.append(setupTools);
   const sync = createWorkspaceSync(syncHost, { ctx, onSynced: () => { catalog = null; failure = ''; void load(); } });
   function syncTools() {
     setupTools.hidden = tab !== 'sources'; capTools.hidden = tab !== 'capabilities';
@@ -140,7 +150,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   retry.addEventListener('click', () => { failure = ''; void load(); });
   const notes = node('div', undefined, 'catalog-notes');
   const filterHost = node('div'), body = node('div');
-  panel.append(status, retry, notes, filterHost, body);
+  panel.append(capTools, status, retry, notes, filterHost, body);
 
   const valid = (id, gen) => alive && serial === id && workspaceGeneration() === gen;
   function revealTab(control) {
@@ -203,7 +213,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     const key = JSON.stringify([tab, setupView, setupMember, souls.map(a => a?.team ?? null), query, unavailable, loading, failure, filters, catalog, s, deployment?.withheld, deployment?.reachable, privateListed(), instances.map(i => [i.agent, i.agentsRoot, i.modules, i.running])]);
     if (key === rendered) return;
     rendered = key;
-    notes.replaceChildren(); filterHost.replaceChildren(); body.replaceChildren(); filterHost.className = '';
+    notes.replaceChildren(); filterHost.replaceChildren(); body.replaceChildren(); capLead.replaceChildren(); filterHost.className = '';
     if (unavailable || tab === 'souls') return;
     for (const note of deploymentNotes(deployment)) notes.append(node('p', note.text, `catalog-note${note.warn ? ' warn' : ''}`));
     if (tab === 'sources') {
@@ -226,7 +236,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
         const focused = doc.activeElement?.closest?.('.catalog-select')?.dataset.filterKey || (doc.activeElement?.classList?.contains('catalog-clear') ? 'team' : null);
         filters = next; render(); refocusFilter(focused);
       } });
-    renderCapabilitySections(body, { sections, shown, filterHost, privateListed: privateListed(), query,
+    renderCapabilitySections(body, { sections, shown, filterHost, navHost: capLead, privateListed: privateListed(), query,
       status: s, instances, root: workspace?.id, onOpen: onOpenCapability });
     reveal();
   }
@@ -265,7 +275,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     if (!key) return;
     filterHost.querySelector(`.catalog-select[data-filter-key="${key}"] select`)?.focus({ preventScroll: true });
   }
-  panel.addEventListener('scroll', () => { if (tab === 'capabilities') syncCapabilityNav(body, panel); }, { passive: true });
+  panel.addEventListener('scroll', () => { if (tab === 'capabilities') syncCapabilityNav(body, panel, capLead); }, { passive: true });
   function updateRoster(agents, panelData) {
     const gen = workspaceGeneration();
     if (rosterGen !== gen) { catalog = null; failure = ''; filters = { team: null, repo: null }; setupMember = null; serial++; loading = false; }

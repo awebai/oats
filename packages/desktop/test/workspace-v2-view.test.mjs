@@ -116,15 +116,21 @@ test('team and repo dropdowns filter Workspace owned only (AND), name only what 
   assert.deepEqual(u.syncCalls(), [{ action: 'read' }], 'filtering is local');
 });
 
-test('the header search narrows every section by capability name', async t => {
+// Workspace v4 (human decision 2026-09-26; replaces the header search): the search is
+// the Capabilities view's own toolbar, above the sections.
+test('the view search narrows every section by capability name', async t => {
   const u = await setup(t);
   await u.tab('capabilities');
-  const search = u.doc.querySelector('.workspace-tools[data-tools=capabilities] input');
-  assert.equal(search.closest('.workspace-tools').hidden, false);
+  const search = u.doc.querySelector('.ws-toolbar[data-tools=capabilities] input');
+  assert.equal(search.closest('.workspace-header'), null, 'not in the header');
+  assert.equal(search.closest('.ws-toolbar').hidden, false);
+  assert.ok(search.closest('.ws-toolbar').querySelector('.ws-toolbar-lead .capability-nav'), 'the section pills share the search row');
+  search.focus();
   search.value = 'OKF'; search.dispatchEvent(new u.dom.window.Event('input', { bubbles: true })); await settle();
   assert.deepEqual(u.rows().map(el => el.dataset.capability), ['oats.okf']);
+  assert.equal(u.doc.activeElement, search, 'narrowing rebuilds the pills, never the search under the caret');
   await u.tab('souls');
-  assert.equal(search.closest('.workspace-tools').hidden, true, 'the search belongs to Capabilities');
+  assert.equal(search.closest('.ws-toolbar').hidden, true, 'the search belongs to Capabilities');
 });
 
 test('three sections: Workspace owned, Packages, and Repo owned (grouped by repo) only when the CLI advertises capabilities-private', async t => {

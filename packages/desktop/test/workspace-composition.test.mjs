@@ -70,7 +70,10 @@ test('03 (F7): a soul opens as a page in the main area — it replaces the grid,
   assert.equal(main.firstElementChild, header);
   assert.equal(header.nextElementSibling, u.get('.workspace-recovery'));
   assert.equal(u.get('.workspace-recovery').hidden, true, 'compatible CLI adds no visible row before the cards');
-  assert.equal(u.get('.workspace-recovery').nextElementSibling, u.get('.souls-grid'), 'no toolbar or repo-heading row before the cards');
+  // Workspace v4 (human decision 2026-09-26; replaces the header-placed filter): the
+  // search and Team/Repo control are the view's own toolbar, directly above the cards.
+  assert.equal(u.get('.workspace-recovery').nextElementSibling, u.get('.souls-bar'), 'the Souls toolbar sits in the view, before the cards');
+  assert.equal(u.get('.souls-bar').nextElementSibling, u.get('.souls-grid'), 'no repo-heading row before the cards');
   assert.equal(u.get('.repo-head'), null);
   assert.equal(u.css('.souls-body').display, 'grid');
   assert.equal(u.css('.souls-body').gridTemplateColumns, 'minmax(0,1fr)', 'no side column for a soul');
@@ -84,15 +87,17 @@ test('03 (F7): a soul opens as a page in the main area — it replaces the grid,
   assert.equal(u.css('.workspace-header').flexWrap, 'nowrap', 'ordinary header controls shrink/scroll rather than breaking the 48px baseline');
   assert.equal(u.css('.workspace-tabs').flexWrap, 'nowrap');
   assert.equal(u.css('.workspace-tabs button').flexShrink, '0');
-  assert.equal(u.css('.filter').height, '28px'); assert.equal(u.css('.filter').minHeight, '28px', 'generic 36px field floor is explicitly overridden');
+  assert.equal(u.css('.souls-bar .filter').height, '28px'); assert.equal(u.css('.souls-bar .filter').minHeight, '28px', 'generic 36px field floor is explicitly overridden');
   page.querySelector('.inspector-back').click(); await tick();
   assert.equal(u.get('.souls-grid').hidden, false); assert.equal(header.hidden, false, 'back restores the Workspace header');
-  assert.equal(u.css('.souls-grid').padding, '2px 20px 16px', 'Workspace v4: groups start under the header');
+  assert.equal(u.css('.souls-grid').padding, '0px 20px 16px', 'Workspace v4: groups start under the view toolbar');
+  assert.equal(u.get('.souls-bar-lead .souls-group-title')?.textContent.length > 0, true, 'the first group heading shares the toolbar row');
   assert.equal(u.css('.souls-group-cards').gap, '12px');
-  assert.equal(u.get('.souls-bar').parentElement, header);
+  assert.equal(u.get('.souls-bar').parentElement, main, 'the toolbar belongs to the view, not the header');
+  assert.equal(header.querySelector('.souls-bar, input'), null, 'the header keeps only the tabs');
   assert.equal(u.get('.wssel').parentElement, header);
   assert.equal(u.get('.wssel').style.display, 'none', 'shell still owns its selector');
-  assert.equal(u.css('.souls-bar').minHeight, 'auto', 'no second bar floor');
+  assert.equal(u.css('.souls-bar').minHeight, '28px', 'one control row: no 48px bar floor');
   const rules = [...u.doc.styleSheets].flatMap(sheet => [...sheet.cssRules]);
   const responsive = rules.find(rule => rule.cssText.startsWith('@container (max-width:700px)') || rule.cssText.startsWith('@container (max-width: 700px)'));
   assert.ok(responsive, 'shipped container-width stacking rule');

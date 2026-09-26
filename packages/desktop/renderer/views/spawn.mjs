@@ -32,10 +32,11 @@ const cliProbePending = () => !cliStatus() && !cliKnownUnavailable();
 
 const CSS = `
 .souls { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width:0; background: var(--bg); }
-.souls-bar { display:flex; align-items:center; flex-wrap:nowrap; gap:10px; margin-left:auto; min-width:0; flex:0 1 auto; }
-.souls-bar label { position:relative; display:flex; align-items:center; min-width:0; flex:0 1 200px; }
-.souls-bar label .shell-icon { position:absolute; left:10px; color:var(--muted); pointer-events:none; }
-.oats-view .workspace-header .souls-bar input.filter { width:100%; min-width:0; height:28px; min-height:28px; padding:0 10px 0 30px; border-radius:7px; background:var(--chip-bg); font-size:12px; }
+/* Workspace v4 (human, 2026-09-26): the view's own toolbar row — the first group
+   heading on the left, search and Group by on the right, on one line. */
+.souls-bar { flex:none; margin:0 0 8px; padding:10px 20px 0; }
+.souls-bar .souls-group-title { padding:0 2px; }
+.souls-bar .ws-segmented { margin-left:2px; }
 .workspace-header .wssel { max-width:100%; min-width:0; flex:0 1 140px; }
 .souls-sum { color:var(--muted); font-size:12px; }
 .workspace-recovery { flex:none; min-width:0; padding:18px 20px; }
@@ -45,7 +46,7 @@ const CSS = `
 .workspace-sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
 /* Workspace v4 (W3): cards grouped by primary team (or repository); souls of a
    member that has not joined are listed apart, with the reason. */
-.souls-grid { flex:1; min-height:0; min-width:0; overflow-y:auto; padding:2px 20px 16px; display:flex; flex-direction:column; }
+.souls-grid { flex:1; min-height:0; min-width:0; overflow-y:auto; padding:0 20px 16px; display:flex; flex-direction:column; }
 .souls-group-title { display:flex; align-items:baseline; gap:8px; margin:0; padding:10px 2px 8px; color:var(--fg); font-size:12.5px; font-weight:650; overflow-wrap:anywhere; }
 .souls-group-title.warn { color:var(--warn); }
 .souls-group-note { color:var(--muted); font-weight:500; }
@@ -243,13 +244,15 @@ ${spawnDialogCSS}</style>
         <div class="souls-body">
           <section class="workspace-main" aria-label="Workspace discovery">
             <header class="workspace-header"></header>
-            <div class="souls-bar">
-              <select class="field wssel" aria-label="Workspace" style="display:none"></select>
-              <label><span class="workspace-sr-only">Search souls</span><input class="field filter" type="search" placeholder="Filter souls" autocomplete="off"></label>
+            <select class="field wssel" aria-label="Workspace" style="display:none"></select>
+            <div class="workspace-recovery" hidden></div>
+            <div class="souls-bar ws-toolbar">
+              <div class="ws-toolbar-lead souls-bar-lead"></div>
+              <label class="ws-search"><span class="workspace-sr-only">Search souls</span><input class="field filter" type="search" placeholder="Search souls" autocomplete="off"></label>
+              <span class="ws-toolbar-label" aria-hidden="true">Group by</span>
               <div class="ws-segmented souls-group-by" role="group" aria-label="Group souls by"><button type="button" data-group-by="team" aria-pressed="true">Team</button><button type="button" data-group-by="repo" aria-pressed="false">Repo</button></div>
               <span class="souls-sum workspace-sr-only" role="status"></span>
             </div>
-            <div class="workspace-recovery" hidden></div>
             <div class="souls-grid"><div class="loading-block"><span class="spinner"></span> Loading souls…</div></div>
             <section class="workspace-discovery" hidden></section>
             <section id="workspace-soul-page" class="workspace-page workspace-soul-page" aria-label="Soul details" hidden></section>
@@ -321,7 +324,6 @@ ${spawnDialogCSS}</style>
   tabs.addEventListener("keydown", event => {
     if (s.alive && event.target.closest?.('[role="tab"]') && ["Home", "End", "ArrowRight", "ArrowLeft"].includes(event.key)) nextSelectionIntent();
   }, true);
-  s.q("workspace-header").append(s.q("souls-bar"));
   s.q("workspace-header").append(s.q("wssel")); // standalone switcher stays reachable on every subtab
   applyWorkspaceTab(s);
   s.q("filter").addEventListener("input", (e) => { s.filterText = e.target.value; renderGrid(s); });
@@ -518,6 +520,7 @@ function renderGrid(s, { restoreFocus = true } = {}) {
   }
   if (recovery) recovery.hidden = !cliKnownUnavailable();
   grid.innerHTML = "";
+  const lead = s.q("souls-bar-lead"); lead?.replaceChildren?.();
   const list = s.souls.agents.filter((a) => matches(s, a));
   s.q("souls-sum").classList?.add("workspace-sr-only");
   s.q("souls-sum").textContent = `${list.length} of ${s.souls.agents.length} souls${cliProbePending() ? " · Checking CLI…" : ""}`;
@@ -558,7 +561,11 @@ function renderGrid(s, { restoreFocus = true } = {}) {
     const heading = doc.createElement("h2"); heading.className = `souls-group-title${warn ? " warn" : ""}`; heading.textContent = title;
     if (note) { const extra = doc.createElement("span"); extra.className = "souls-group-note"; extra.textContent = note; heading.append(extra); }
     const body = doc.createElement("div"); body.className = "souls-group-cards";
-    body.append(...cards); section.append(heading, body); grid.append(section);
+    // The first heading shares the toolbar's row; it still names its section.
+    const first = !grid.querySelector(".souls-group") && lead;
+    if (first) { heading.id = "souls-group-first"; section.setAttribute("aria-labelledby", heading.id); lead.append(heading); section.append(body); }
+    else section.append(heading, body);
+    body.append(...cards); grid.append(section);
   };
   for (const [title, agents] of [...groups].sort(([a], [b]) => a.localeCompare(b))) group(title, agents.map((a) => soulCard(s, a)));
   for (const { member, state: why, souls } of unavailableMembers(s)) {
