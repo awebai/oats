@@ -15,13 +15,17 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SKILLS = [
   "oats-package/capabilities/oats-core/skills/oats-operate/SKILL.md",
   "oats-package/capabilities/oats-core/skills/oats-souls/SKILL.md",
+  "oats-package/capabilities/oats-setup/skills/oats-setup-model/SKILL.md",
   "oats-package/capabilities/oats-setup/skills/oats-onboarding/SKILL.md",
+  "oats-package/capabilities/oats-setup/skills/oats-workspace-config/SKILL.md",
+  "oats-package/capabilities/oats-setup/skills/oats-teams/SKILL.md",
   "oats-package/capabilities/oats-setup/skills/oats-package-pins/SKILL.md",
+  "oats-package/capabilities/oats-setup/skills/oats-automations/SKILL.md",
   "skills/oats-getting-started/SKILL.md",
 ];
 // Flags a command's own usage line accepts but the top-level `oats help` omits.
 // Each one must still exist in the CLI source; remove the entry once help lists it.
-const HELP_GAPS = new Set(["--preview"]);
+const HELP_GAPS = new Set(["--preview", "--provider"]);
 const cliSource = readFileSync(join(ROOT, "bin/oats.mjs"), "utf8");
 
 const help = spawnSync(process.execPath, [join(ROOT, "bin/oats.mjs"), "help"], { encoding: "utf8" });

@@ -5,7 +5,9 @@ description: >-
   between a catalog version and a git reference, deciding whether to trust a
   package, reading the lock, or diagnosing a package that will not resolve or
   a spawn refused for a package. This skill is only about packages; member
-  capabilities come from membership.
+  capabilities come from membership. Part of the setup and config of an OATS
+  workspace (oats.setup); day-to-day operation inside an instance is
+  oats.core.
 ---
 
 # Packages, pins and the lock
@@ -42,6 +44,23 @@ packages:
   only that member's `capabilities/`. Never "fix" a package by pointing a soul
   at the publisher's repository.
 
+## What one pin brings
+
+A package's `oats-package.json` lists its **capabilities**, and from kernel
+0.28.0 it may also list **souls** and **trigger templates**. One pin versions
+all of them:
+
+- **Package souls** are listed by `oats souls` as `kind: package`, named
+  `<package>/<soul>` (a bare name when unique), and spawned at the locked
+  commit. Their homes are `agents/<package>--<soul>/` (`.` → `-` in the
+  package id), and `oats status` marks their instances moved once the pin
+  moves. They are trusted with the package and disabled per machine like any
+  soul (`souls.disabled`).
+- **Trigger templates** are instantiated with
+  `oats trigger add --from <package>:<template>` (oats-automations).
+
+Contract: `docs/packages.md` ("Package souls").
+
 ## Change a pin
 
 The workspace file is shared through Git, so a pin change is a reviewed
@@ -66,10 +85,13 @@ oats sync --json                                 # the same, as the machine-read
 - `oats sync` resolves each pin to a commit, fetches the package, computes the
   integrity of its tree and writes the lock; it asks nothing and exits 0 on
   success. Entries dropped from `packages:` are dropped from the lock.
-- The lock is reproducibility: for a pin already locked, the commit and the
-  integrity must be unchanged, else `E_PACKAGE_INTEGRITY`. At spawn the
-  package's capability list at the locked commit must still match the lock,
-  and only packages the workspace still declares are used.
+- The lock (v3) is reproducibility: for a pin already locked, the commit and
+  the integrity must be unchanged, else `E_PACKAGE_INTEGRITY`. It also records
+  each package soul's `name`, `path` and `digest`; a changed soul list is
+  `E_PACKAGE_INTEGRITY` (`why: "souls"`), and a spawned soul whose digest
+  differs is `why: "soul-digest"`. At spawn the package's capability list at
+  the locked commit must still match the lock, and only packages the
+  workspace still declares are used (`E_PACKAGE_MISSING` otherwise).
 - Never edit `oats-lock.json` by hand; it is written by `oats sync` only and
   is identical on every machine that synced the same workspace commit.
 
@@ -82,3 +104,4 @@ oats sync --json                                 # the same, as the machine-read
 | a soul's spawn is refused, package missing | the lock lacks a provider of that capability — run `oats sync` |
 | `E_PACKAGE_INTEGRITY` on sync or spawn | the tag moved or the content changed under the pin — pin a new version (or a full commit) through review |
 | a capability exists only inside a member's package | it is package-tier: `{ from: package }` plus a pin |
+| `E_SOUL_AMBIGUOUS` on a package soul | a member soul shares its bare name: use `<package>/<soul>` |

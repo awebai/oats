@@ -4,16 +4,19 @@ description: >-
   Use when finding which souls the workspace offers and where they come from,
   telling a soul from an instance, reading a soul's definition, choosing how a
   new instance relates to you (child, parent, sibling), naming an instance, or
-  proposing a new soul. For running and inspecting instances use oats-operate.
+  proposing a new soul. Part of oats.core, day-to-day operation from inside an
+  instance; running and inspecting instances is oats-operate, and the setup
+  and config of an OATS workspace is oats.setup.
 ---
 
 # Souls, discovery and relations
 
 A **soul** is a durable role definition kept in Git: `souls/<name>/` in a
-member repository of the workspace, holding `soul.yaml`, `AGENTS.md` (its
+member repository of the workspace (or in a pinned package, or borrowed from
+another repository through the workspace's `external:` list), holding `soul.yaml`, `AGENTS.md` (its
 canonical instructions), `CLAUDE.md → AGENTS.md`, optional `skills/`, and
-whatever its slot providers read (for the `oats.okf` knowledge provider,
-`okf.json`: which knowledge node it owns and which it reads). An **instance**
+whatever files its core-capability providers read (each provider's own
+skill says which). An **instance**
 is one incarnation of a soul, spawned into its own home for a task. Many
 instances of one soul can run at once; each is fixed to the soul commit it was
 spawned from.
@@ -26,8 +29,11 @@ oats souls --json
 oats workspace status        # which members are confirmed (an unconfirmed member contributes no souls)
 ```
 
-Each row names the soul, its origin (`member <repo> @ <commit>`, or an
-external soul pinned by the workspace), its team label and its work mode.
+Each row names the soul, its origin (`member <repo> @ <commit>`,
+`package <id> v<version>`, or an external soul pinned by the workspace), its
+team labels and its work mode. A **package soul** is named
+`<package>/<soul>`; the bare name works unless two souls share it, in which
+case `E_SOUL_AMBIGUOUS` lists the qualified names to use.
 Souls are discovered **at the member's latest state** over the Git remote; no
 local clone is needed to list or spawn them (only a soul's work target needs
 a clone).
@@ -49,7 +55,7 @@ schemaVersion: 2
 name: release-manager                 # must equal the directory name
 description: Cuts, verifies and announces releases.
 work: worktree                        # worktree | checkout | directory | workspace
-team: engineering                     # a label; else the repository's default
+team: engineering                     # a label or a list (the first is the primary); else the repository's default
 capabilities:
   release-tooling: { from: here }     # this soul's own repository
   acme-deploy: { from: package }      # a package the workspace pins
@@ -62,7 +68,8 @@ workspace's `packages:` pins versions once. Workspace defaults fill the rest;
 skills and the merged provider settings — without creating anything.
 
 Team labels organise and may add workspace defaults; they never grant or
-restrict anything.
+restrict anything. Each label is also a messaging team an instance of the
+soul may join (see oats-operate, "Teams to join").
 
 ## Relations: what the new instance is to you
 
@@ -106,6 +113,9 @@ member repository: add `souls/<name>/` with `soul.yaml` (`name`,
 `CLAUDE.md → AGENTS.md` link, commit it on a branch in your work tree and
 open a pull request. Once merged it is discoverable at the member's latest
 state; `oats spawn <name> --preview` verifies it resolves.
+
+Changing the workspace itself (its members, defaults, teams or pins) is
+workspace setup and config, not something a soul proposal does.
 
 Keep a soul universal: role, boundaries and workflow — never machine paths,
 accounts, team ids or task state. Those live with the deployment

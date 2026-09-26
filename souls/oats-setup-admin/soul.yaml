@@ -1,0 +1,10 @@
+schemaVersion: 2
+name: oats-setup-admin
+description: Hands-on admin of this workspace's OATS setup and config — explains it, proposes changes as diffs, applies them by pull request, syncs and verifies.
+# worktree of the host repo (this one): its product is reviewed changes to the files this repo owns
+# (oats-workspace.yaml, souls/, oats-triggers/, oats-schedules/), so it needs its own branch. `workspace`
+# mode forbids edits in members; `checkout` would edit the maintainers' shared tree.
+work: worktree
+team: global
+capabilities:
+  oats.setup: { from: package }   # oats.core, the oats.okf knowledge slot and messaging come from the workspace defaults

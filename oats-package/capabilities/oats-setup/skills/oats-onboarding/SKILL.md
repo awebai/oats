@@ -1,11 +1,13 @@
 ---
 name: oats-onboarding
 description: >-
-  Use when helping an operator realize an OATS workspace on a machine: deciding
-  where the workspace file is hosted, writing or checking the shared
+  Use when helping an operator realize an OATS workspace on a machine:
+  deciding where the workspace file is hosted, writing or checking the shared
   declarations, choosing the deployment directory, running `oats onboard`,
   placing host settings, syncing, setting up messaging, cloning work targets
-  and verifying before the first spawn. For package pins see oats-package-pins.
+  and verifying before the first spawn. For package pins see
+  oats-package-pins. Part of the setup and config of an OATS workspace
+  (oats.setup); day-to-day operation inside an instance is oats.core.
 ---
 
 # Onboarding a deployment
@@ -123,9 +125,13 @@ spawn would still be refused. Obtain the membership first:
    into the wrong one.
 
 Joining and initialising act on the messaging service: ask the operator first,
-and let them run it. oats.aweb 1.12.0's `oats aweb setup` still reads the
-earlier configuration file's team block; in a workspace-model deployment use
-`aw` directly as above.
+and let them run it.
+
+Each instance's own identity mints into this root's team, the operator's
+**personal** team, unless the host, the soul or the spawn sets another. The
+workspace's other messaging teams (`messaging.byTeam`) are only *eligible*:
+an instance joins one explicitly, at spawn or later. Which teams exist, and
+how labels map to them, is **oats-teams**.
 
 ## 7. Clone work targets
 
