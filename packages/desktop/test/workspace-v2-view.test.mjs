@@ -1,6 +1,6 @@
 // The v2 Workspace view (F2, no package approval; F7 sections/Setup): the
 // Capabilities sections from `oats capabilities` (Workspace owned with team/repo
-// pills, Packages, Repo owned behind capabilities-private), Setup (graph + lists)
+// dropdowns, Packages, Repo owned behind capabilities-private), Setup (graph + lists)
 // from `oats workspace status`, and Sync. Fixtures captured from main's kernel (packages-no-approval);
 // the shipped Workspace stage is mounted in jsdom with a
 // fixture ctx.api. No CLI, server, GUI or network.
@@ -56,59 +56,75 @@ async function setup(t, { status = 'workspace-status', cli = CLI, sync, workspac
     tab: async name => { doc.getElementById(`workspace-tab-${name}`).click(); await settle(); },
     rows: () => [...doc.querySelectorAll('.catalog-table .catalog-row:not(.head)')],
     owned: () => [...doc.querySelectorAll('[data-section=workspace] .catalog-row:not(.head)')].map(el => el.dataset.capability),
-    pill: (group, label) => [...doc.querySelectorAll(`.catalog-filter[aria-label="Filter by ${group}"] .catalog-pill`)].find(el => el.textContent === label),
     button: text => [...doc.querySelectorAll('button')].find(el => el.textContent.trim() === text),
     syncCalls: () => calls.filter(call => call.path.startsWith('/api/workspace-sync')).map(call => call.body),
     setStatus: name => { observedStatus = statusOf(name); },
   };
 }
 
-test('Capabilities is the kernel catalog: counts, three design columns and readiness in v2 terms', async t => {
+test('Capabilities is the kernel catalog: counts, jump pills, and Capability | Source | Used by in v2 terms', async t => {
   const u = await setup(t);
   // Workspace v4: the tab bar counts capabilities, so the catalog is read once on mount (any tab).
   assert.deepEqual(u.syncCalls(), [{ action: 'read' }], 'exactly one read; never a sync');
   await u.tab('capabilities');
   assert.deepEqual(u.syncCalls(), [{ action: 'read' }], 'opening the tab does not read again');
   assert.equal(u.doc.querySelector('#workspace-tab-capabilities .workspace-count').textContent, '10');
-  assert.deepEqual([...u.doc.querySelectorAll('[data-section=workspace] .catalog-row.head [role=columnheader]')].map(el => el.textContent), ['Capability', 'Status', 'Used by']);
+  assert.deepEqual([...u.doc.querySelectorAll('.capability-nav button')].map(el => [el.dataset.jump, el.textContent, el.getAttribute('aria-current')]),
+    [['workspace', 'Workspace owned6', 'true'], ['packages', 'Packages4', 'false']]);
+  assert.deepEqual([...u.doc.querySelectorAll('[data-section=workspace] .catalog-row.head [role=columnheader]')].map(el => el.textContent), ['Capability', 'Source', 'Used by']);
   assert.equal(u.rows().length, 10);
   const row = name => u.rows().find(el => el.dataset.capability === name);
-  assert.match(row('oats.okf').querySelector('.catalog-sub').textContent, /^Package · oats\.okf v2\.1\.3$/);
-  assert.equal(row('oats.okf').querySelector('.catalog-chip').textContent, 'locked');
-  assert.match(row('oats.okf').querySelectorAll('.catalog-chip')[1].textContent, /^@[0-9a-f]{7}$/, 'locked, then the commit — no approval state');
+  // Source: the package and its pinned version, or the member repository at its latest.
+  assert.equal(row('oats.okf').querySelector('.source-chip').dataset.source, 'package');
+  assert.equal(row('oats.okf').querySelector('.source-chip').textContent, 'oats.okf2.1.3');
+  assert.equal(row('nw-brand-voice').querySelector('.source-chip').dataset.source, 'member');
+  assert.equal(row('nw-brand-voice').querySelector('.source-chip').textContent, 'marketinglatest');
   assert.doesNotMatch(u.doc.querySelector('.workspace-discovery').textContent, APPROVAL_TEXT);
-  assert.match(row('nw-brand-voice').querySelector('.catalog-sub').textContent, /^Member · marketing$/, 'the team is not repeated when it names the repository');
-  assert.match(row('nw-release-tooling').querySelector('.catalog-sub').textContent, /^Member · agents · engineering$/);
-  assert.equal(row('nw-brand-voice').querySelector('.catalog-chip').textContent, 'member confirmed');
-  assert.match(row('nw-brand-voice').querySelector('.catalog-chip.mono').textContent, /^@[0-9a-f]{7}$/);
   // Used by = souls whose instances record the module (roster module rows).
   const used = capabilityUse(instances, 'nw-release-tooling');
   assert.deepEqual(used.souls.map(s => s.name), ['release-manager']);
-  assert.equal(row('nw-release-tooling').querySelector('.catalog-used-count').textContent, '1 soul');
-  assert.equal(row('nw-brand-voice').querySelector('.catalog-used').textContent, 'No instance yet');
+  assert.equal(row('nw-release-tooling').querySelector('.catalog-used-count').textContent, '1');
+  assert.equal(row('nw-release-tooling').querySelector('.catalog-used-count').title, 'Used by release-manager');
+  assert.equal(row('nw-brand-voice').querySelector('.catalog-used-count').textContent, '—');
   assert.equal(u.doc.querySelector('.workspace-discovery').textContent.includes('Members'), false, 'no Members list in Capabilities');
 });
 
-test('team and repo pills filter Workspace owned only (AND), name only what it holds, and reset to All', async t => {
+test('team and repo dropdowns filter Workspace owned only (AND), name only what it holds, and Clear filters resets', async t => {
   const u = await setup(t);
   await u.tab('capabilities');
   const choices = filterChoices(capabilitySections(f2('capabilities').result.capabilities).workspace, memberNames(statusOf('workspace-status')));
   assert.deepEqual(choices.teams, ['engineering', 'global', 'marketing']);
   assert.deepEqual(choices.repos.map(s => s === 'sep' ? '|' : s.label), ['agents', 'data', 'marketing', 'nw-tools'], 'repositories, never packages');
-  assert.ok(u.doc.querySelector('[data-section=workspace] .catalog-filters'), 'the pills sit in the Workspace owned section');
-  assert.equal(u.pill('team', 'All').getAttribute('aria-pressed'), 'true');
-  u.pill('team', 'marketing').focus(); u.pill('team', 'marketing').click(); await settle();
+  assert.ok(u.doc.querySelector('[data-section=workspace] .catalog-filters'), 'the filters sit in the Workspace owned section');
+  const select = key => u.doc.querySelector(`.catalog-select[data-filter-key=${key}] select`);
+  const choose = async (key, value) => { const el = select(key); el.focus(); el.value = value; el.dispatchEvent(new u.dom.window.Event('change', { bubbles: true })); await settle(); };
+  assert.deepEqual([...select('team').options].map(o => o.textContent), ['All', 'engineering', 'global', 'marketing']);
+  assert.equal(u.doc.querySelector('.catalog-clear'), null, 'nothing to clear yet');
+  await choose('team', 'marketing');
   assert.deepEqual(u.owned(), ['nw-brand-voice', 'nw-campaign-metrics']);
-  assert.equal(u.doc.querySelector('[data-section=workspace] .capability-section-count').textContent, '2 of 6');
+  assert.equal(u.doc.querySelector('.catalog-shown').textContent, '2 of 6 shown');
+  assert.ok(u.doc.querySelector('.catalog-select[data-filter-key=team]').classList.contains('active'));
   assert.equal(u.doc.querySelectorAll('[data-section=packages] .catalog-row:not(.head)').length, 4, 'Packages are not filtered');
-  assert.equal(u.doc.activeElement, u.pill('team', 'marketing'), 'focus stays on the chosen pill across the re-render');
-  u.pill('repo', 'agents').click(); await settle();
+  assert.equal(u.doc.activeElement, select('team'), 'focus stays on the chosen dropdown across the re-render');
+  await choose('repo', 'member:local//fixture/base/fx/remotes/agents.git');
   assert.deepEqual(u.owned(), []); assert.match(u.doc.querySelector('[data-section=workspace] .catalog-empty').textContent, /No capabilities match/);
-  u.pill('team', 'All').click(); await settle();
+  await choose('team', '');
   assert.deepEqual(u.owned(), ['nw-house-style', 'nw-release-tooling']);
-  u.pill('repo', 'All').click(); await settle();
+  u.doc.querySelector('.catalog-clear').click(); await settle();
   assert.equal(u.owned().length, 6);
+  assert.equal(u.doc.querySelector('.catalog-shown'), null);
   assert.deepEqual(u.syncCalls(), [{ action: 'read' }], 'filtering is local');
+});
+
+test('the header search narrows every section by capability name', async t => {
+  const u = await setup(t);
+  await u.tab('capabilities');
+  const search = u.doc.querySelector('.workspace-tools[data-tools=capabilities] input');
+  assert.equal(search.closest('.workspace-tools').hidden, false);
+  search.value = 'OKF'; search.dispatchEvent(new u.dom.window.Event('input', { bubbles: true })); await settle();
+  assert.deepEqual(u.rows().map(el => el.dataset.capability), ['oats.okf']);
+  await u.tab('souls');
+  assert.equal(search.closest('.workspace-tools').hidden, true, 'the search belongs to Capabilities');
 });
 
 test('three sections: Workspace owned, Packages, and Repo owned (grouped by repo) only when the CLI advertises capabilities-private', async t => {
@@ -118,11 +134,15 @@ test('three sections: Workspace owned, Packages, and Repo owned (grouped by repo
   const u = await setup(t, { cli: withFeature, sync: () => catalog('f7/capabilities') });
   await u.tab('capabilities');
   assert.deepEqual([...u.doc.querySelectorAll('.capability-section-title > span:first-child')].map(el => el.textContent), ['Workspace owned', 'Packages', 'Repo owned']);
+  assert.deepEqual([...u.doc.querySelectorAll('.capability-section-lead')].map(el => el.textContent), ['latest from member repos', 'pinned versions, same everywhere', 'only for souls of the same repo']);
+  assert.deepEqual([...u.doc.querySelectorAll('.capability-nav button')].map(el => el.dataset.jump), ['workspace', 'packages', 'repo']);
   assert.ok(!u.owned().includes('nw-platform-runbook'), 'a repo-owned capability is never listed as workspace owned');
-  const group = u.doc.querySelector('[data-section=repo] .capability-repo');
-  assert.equal(group.querySelector('.capability-repo-title').textContent, 'platform');
-  assert.equal(group.querySelector('.capability-repo-title svg').innerHTML, iconElement(u.doc, 'repo').innerHTML, 'the repository icon');
-  assert.deepEqual([...group.querySelectorAll('.catalog-row:not(.head)')].map(el => el.dataset.capability), ['nw-platform-runbook']);
+  const group = u.doc.querySelector('[data-section=repo] .catalog-group');
+  assert.equal(group.textContent, 'platform');
+  assert.equal(group.querySelector('svg').innerHTML, iconElement(u.doc, 'repo').innerHTML, 'the repository icon');
+  const runbook = u.doc.querySelector('[data-section=repo] .catalog-row[data-capability=nw-platform-runbook]');
+  assert.equal(group.nextElementSibling, runbook);
+  assert.equal(runbook.querySelector('.source-chip svg').innerHTML, iconElement(u.doc, 'home').innerHTML, 'repo owned: this soul\'s own repository');
   // Without the feature the section is hidden, never guessed.
   spawn.unmount();
   const v = await setup(t, { sync: () => catalog('f7/capabilities') });
@@ -182,7 +202,8 @@ test('Setup graph: this computer → workspace → repositories, packages and ex
   // A repository opens its capabilities, filtered.
   graph.querySelector('button.setup-node[data-member$="agents.git"]').click(); await settle();
   assert.equal(u.doc.getElementById('workspace-tab-capabilities').getAttribute('aria-selected'), 'true');
-  assert.equal(u.pill('repo', 'agents').getAttribute('aria-pressed'), 'true');
+  assert.match(u.doc.querySelector('.catalog-select[data-filter-key=repo] select').value, /agents\.git$/, 'the Repo filter is that repository');
+  assert.ok(u.doc.querySelector('.catalog-select[data-filter-key=repo]').classList.contains('active'));
   assert.deepEqual(u.owned(), ['nw-house-style', 'nw-release-tooling']);
   assert.equal(u.doc.activeElement, u.doc.getElementById('capability-section-workspace'));
 });

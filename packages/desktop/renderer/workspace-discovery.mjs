@@ -9,7 +9,7 @@
 import { postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
 import { cliStatus, cliKnownUnavailable } from './views/cli-status.mjs';
 import { deploymentUnavailableText } from './deployment-header.mjs';
-import { catalogCSS, renderCapabilitySections, capabilitySections, renderFilters, renderSources, filterChoices, filterCapabilities, memberNames, deploymentNotes } from './workspace-catalog.mjs';
+import { catalogCSS, renderCapabilitySections, capabilitySections, renderFilters, renderSources, filterChoices, filterCapabilities, memberNames, deploymentNotes, syncCapabilityNav } from './workspace-catalog.mjs';
 import { createWorkspaceSync, syncCSS, reasonText } from './workspace-sync-view.mjs';
 import { iconElement } from './shell-icons.mjs';
 
@@ -20,6 +20,7 @@ export const discoveryCSS = `
 ${catalogCSS}
 ${syncCSS}
 .workspace-header { height:var(--bar-h); min-height:48px; flex:none; display:flex; align-items:stretch; flex-wrap:nowrap; gap:22px; padding:0 16px; border-bottom:1px solid var(--border); background:var(--surface); box-sizing:border-box; }
+.workspace-header[hidden] { display:none; }
 .oats-view .workspace-header .field { min-height:28px; height:28px; padding:4px 8px; font-size:12px; }
 .workspace-header h1 { display:flex; align-items:center; margin:0; flex:none; font-size:14px; font-weight:700; }
 .workspace-tabs { display:flex; flex-wrap:nowrap; overflow-x:auto; gap:22px; min-width:0; scrollbar-width:none; }
@@ -43,6 +44,9 @@ ${syncCSS}
 .ws-search .shell-icon { position:absolute; left:10px; color:var(--muted); pointer-events:none; }
 .oats-view .ws-search input.field { width:220px; max-width:100%; height:28px; min-height:28px; padding:0 10px 0 30px; border-radius:7px; background:var(--chip-bg); font-size:12px; }
 .workspace-discovery { padding:18px 20px; overflow:auto; min-width:0; flex:1; container-type:inline-size; }
+/* Capabilities (W5) reads as one centred column. */
+.workspace-discovery[data-tab=capabilities] { padding:16px 28px 20px; }
+.workspace-discovery[data-tab=capabilities] > * { max-width:1000px; margin-inline:auto; }
 .workspace-discovery[hidden], .souls-bar[hidden] { display:none; }
 .discovery-status { margin:0 0 14px; color:var(--muted); font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
 .discovery-status:empty { display:none; }
@@ -159,7 +163,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   function setTab(name) {
     if (!workspaceTabs.includes(name) || !alive) return false;
     const changed = name !== tab; tab = name;
-    panel.id = `workspace-${name === 'souls' ? 'capabilities' : name}`;
+    panel.id = `workspace-${name === 'souls' ? 'capabilities' : name}`; panel.dataset.tab = name;
     panel.setAttribute('aria-labelledby', `workspace-tab-${name}`);
     for (const [key, control] of controls) {
       control.setAttribute('aria-selected', String(key === tab)); control.tabIndex = key === tab ? 0 : -1;
@@ -193,7 +197,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     status.classList.toggle('error', !unavailable && !!failure);
     retry.hidden = !!unavailable || !failure || tab !== 'capabilities';
     // Identical polls never rebuild a settled projection under focus/selection.
-    const key = JSON.stringify([tab, unavailable, loading, failure, filters, catalog, s, deployment?.withheld, deployment?.reachable, privateListed(), instances.map(i => [i.agent, i.agentsRoot, i.modules, i.running])]);
+    const key = JSON.stringify([tab, setupView, query, unavailable, loading, failure, filters, catalog, s, deployment?.withheld, deployment?.reachable, privateListed(), instances.map(i => [i.agent, i.agentsRoot, i.modules, i.running])]);
     if (key === rendered) return;
     rendered = key;
     notes.replaceChildren(); filterHost.replaceChildren(); body.replaceChildren(); filterHost.className = '';
@@ -212,13 +216,13 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     // A remembered choice the catalog no longer offers falls back to All.
     if (filters.team && !choices.teams.includes(filters.team)) filters = { ...filters, team: null };
     if (filters.repo && !choices.repos.some(option => option !== 'sep' && option.value === filters.repo)) filters = { ...filters, repo: null };
-    renderFilters(filterHost, { ...choices, value: filters, refreshing: loading,
+    const shown = filterCapabilities(sections.workspace, filters, names);
+    renderFilters(filterHost, { ...choices, value: filters, shown: shown.length, total: sections.workspace.length,
       onChange: next => {
-        const focused = doc.activeElement?.dataset?.filterKey ? { key: doc.activeElement.dataset.filterKey, value: doc.activeElement.dataset.filterValue } : null;
-        filters = next; render(); refocusPill(focused);
-      },
-      onRefresh: () => { catalog = null; failure = ''; void load(); } });
-    renderCapabilitySections(body, { sections, shown: filterCapabilities(sections.workspace, filters, names), filterHost, privateListed: privateListed(),
+        const focused = doc.activeElement?.closest?.('.catalog-select')?.dataset.filterKey || (doc.activeElement?.classList?.contains('catalog-clear') ? 'team' : null);
+        filters = next; render(); refocusFilter(focused);
+      } });
+    renderCapabilitySections(body, { sections, shown, filterHost, privateListed: privateListed(), query,
       status: s, instances, root: workspace?.id, onOpen: onOpenCapability });
     reveal();
   }
@@ -244,12 +248,12 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     if (!target) return;
     target.tabIndex = -1; target.scrollIntoView?.({ block: 'start' }); target.focus({ preventScroll: true });
   }
-  // The pill row is rebuilt on a filter change; keep focus on the same pill.
-  function refocusPill(focused) {
-    if (!focused) return;
-    const pill = [...filterHost.querySelectorAll('.catalog-pill')].find(el => el.dataset.filterKey === focused.key && el.dataset.filterValue === focused.value);
-    pill?.focus({ preventScroll: true });
+  // The filter row is rebuilt on a change; keep focus on the same dropdown.
+  function refocusFilter(key) {
+    if (!key) return;
+    filterHost.querySelector(`.catalog-select[data-filter-key="${key}"] select`)?.focus({ preventScroll: true });
   }
+  panel.addEventListener('scroll', () => { if (tab === 'capabilities') syncCapabilityNav(body, panel); }, { passive: true });
   function updateRoster(agents, panelData) {
     const gen = workspaceGeneration();
     if (rosterGen !== gen) { catalog = null; failure = ''; filters = { team: null, repo: null }; serial++; loading = false; }

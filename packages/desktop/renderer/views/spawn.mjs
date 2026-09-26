@@ -5,8 +5,8 @@
    Contract: mount(el, ctx) / unmount(). Plain ES module + DOM. */
 import { createSoulInspector, inspectorCSS } from "../soul-inspector.mjs";
 import { createWorkspaceDiscovery, discoveryCSS, workspaceTabs } from "../workspace-discovery.mjs";
-import { renderCapabilities, capabilityRow } from "../workspace-catalog.mjs";
-import { renderCapabilityPage, capabilityPageCSS, pageCardCSS } from "../capability-page.mjs";
+import { capabilityRow } from "../workspace-catalog.mjs";
+import { renderCapabilityPage, renderSoulCapabilities, capabilityPageCSS, pageCardCSS, soulCapabilitiesCSS } from "../capability-page.mjs";
 import { runtimeState } from "../instance-presentation.mjs";
 import { deploymentUnavailableText } from "../deployment-header.mjs";
 import { createSpawnDialog, spawnDialogCSS } from "../spawn-dialog.mjs";
@@ -190,6 +190,8 @@ function showPage(s, mode) {
   const soulPage = s.q("workspace-soul-page"), capPage = s.q("workspace-cap-page");
   if (!soulPage || !capPage) return;
   soulPage.hidden = mode !== "soul"; capPage.hidden = mode !== "capability";
+  // Workspace v4: a page's own bar replaces the Workspace header while it is open.
+  s.q("workspace-header").hidden = !!mode;
   const souls = (s.discovery?.tab ?? "souls") === "souls";
   s.q("souls-grid").hidden = !!mode || !souls;
   s.q("souls-bar").hidden = !!mode || !souls;
@@ -233,6 +235,7 @@ export function mount(el, ctx) {
 ${inspectorCSS}
 ${pageCardCSS}
 ${capabilityPageCSS}
+${soulCapabilitiesCSS}
 ${discoveryCSS}
 ${identityCSS}
 ${spawnDialogCSS}</style>
@@ -285,8 +288,9 @@ ${spawnDialogCSS}</style>
     ...inspectorOptions, layout: "page", backLabel: "Souls",
     openInstance: instance => s.inspector.show({ instance, selector: { home: instance.home } }),
     // A soul's capabilities: the Capabilities view's own table; a row opens the capability's page.
-    capabilityTable: (host, caps, { soul }) => renderCapabilities(host, { rows: caps.map(capabilityRow), ...s.discovery.context(),
+    capabilityTable: (host, entries, { soul }) => renderSoulCapabilities(host, { entries, ...s.discovery.context(),
       onOpen: row => openCapability(s, row, soul) }),
+    openCapability: (cap, soul) => openCapability(s, capabilityRow(cap), soul),
     closed: ({ restoreFocus } = {}) => {
       const ref = s.inspectRef; s.inspectRef = null;
       if (!s.alive) return;

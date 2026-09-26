@@ -64,7 +64,9 @@ test('03 (F7): a soul opens as a page in the main area — it replaces the grid,
   assert.equal(aside.tagName, 'ASIDE'); assert.equal(aside.hidden, true, 'the sidebar is for instances');
   assert.equal(page.parentElement, main); assert.equal(page.hidden, false);
   assert.equal(u.get('.souls-grid').hidden, true, 'the page replaces the grid'); assert.equal(u.get('.souls-bar').hidden, true, 'and its filter');
-  assert.equal(u.css('.workspace-soul-page').padding, '14px 20px 28px');
+  assert.equal(u.css('.workspace-soul-page').padding, '0px', 'Workspace v4 (W4): the page bar is flush; its body pads itself');
+  assert.equal(header.hidden, true, 'the page bar replaces the Workspace header while the page is open');
+  assert.ok(page.querySelector('.page-bar .inspector-back'), 'the back control lives in the page bar');
   assert.equal(main.firstElementChild, header);
   assert.equal(header.nextElementSibling, u.get('.workspace-recovery'));
   assert.equal(u.get('.workspace-recovery').hidden, true, 'compatible CLI adds no visible row before the cards');
@@ -84,7 +86,7 @@ test('03 (F7): a soul opens as a page in the main area — it replaces the grid,
   assert.equal(u.css('.workspace-tabs button').flexShrink, '0');
   assert.equal(u.css('.filter').height, '28px'); assert.equal(u.css('.filter').minHeight, '28px', 'generic 36px field floor is explicitly overridden');
   page.querySelector('.inspector-back').click(); await tick();
-  assert.equal(u.get('.souls-grid').hidden, false);
+  assert.equal(u.get('.souls-grid').hidden, false); assert.equal(header.hidden, false, 'back restores the Workspace header');
   assert.equal(u.css('.souls-grid').padding, '2px 20px 16px', 'Workspace v4: groups start under the header');
   assert.equal(u.css('.souls-group-cards').gap, '12px');
   assert.equal(u.get('.souls-bar').parentElement, header);
@@ -118,7 +120,7 @@ test('03: cards have one semantic Details entry with compact identity, descripti
   assert.equal(u.get('.soul-card .smode').textContent, 'worktree · Pi');
 
   card.focus(); card.dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); await tick();
-  for (const text of ['Launch…', 'Files', 'Schedule…']) assert.ok([...u.get('.workspace-soul-page').querySelectorAll('button')].find(b => b.textContent === text), text);
+  for (const text of ['Preview spawn', 'Files', 'Schedule…']) assert.ok([...u.get('.workspace-soul-page').querySelectorAll('button')].find(b => b.textContent === text), text);
   for (const text of ['Edit defaults', 'Edit instructions']) assert.equal([...u.get('.workspace-soul-page').querySelectorAll('button')].some(b => b.textContent === text), false, `${text}: a v2 soul is edited in its repository`);
   assert.equal(u.get('.inspector-repository'), null, 'no "Edit this soul" block (human, F7)');
   assert.equal(u.get('.spawn-dialog'), null, 'keyboard inspection does not launch');
@@ -128,24 +130,26 @@ test('03: cards have one semantic Details entry with compact identity, descripti
   assert.equal(u.css('.souls-body').gridTemplateColumns, 'minmax(0,1fr)');
 });
 
-test('04: the capability table follows the design grid — 36px head, 56px rows, 32px marks, 22px chips', async t => {
+// Workspace v4 (W5) replaces the frame-04 grid (36px uppercase head, 56px rows, 32px marks, status chips, pills).
+test('W5: the capability table follows the v4 grid — 32px head, 48px rows, mono names, source chips, 20px used-by marks', async t => {
   const u = await fixture(t, { cli: V2_CLI, sync: () => catalogReply() });
   u.get('#workspace-tab-capabilities').click(); await tick(); await tick();
   assert.equal(u.get('.discovery-tools'), null, 'no classic "Filter & scope" selector remains');
   assert.equal(u.get('.readiness-view, .deployment-inventory, .workspace-readiness-entry'), null, 'the 0.24 readiness/inventory blocks are gone');
   const header = u.get('.workspace-header');
   assert.equal(u.get('.ws-sync').closest('.workspace-header'), header, 'sync lives in the Workspace header (Setup tools)');
-  assert.equal(u.css('.catalog-row.head').minHeight, '36px'); assert.equal(u.css('.catalog-row.head').textTransform, 'uppercase');
-  assert.equal(u.css('.catalog-row.head').fontSize, '10.5px');
-  assert.equal(u.css('.catalog-row:not(.head)').minHeight, '56px', 'a minimum: real wrapping can grow a row');
-  assert.equal(u.css('.catalog-row:not(.head)').padding, '8px 16px');
-  assert.equal(u.css('.catalog-row').gridTemplateColumns, 'minmax(0,1.6fr) minmax(0,1fr) minmax(0,1fr)');
-  assert.equal(u.css('.catalog-cap .identity-mark').width, '32px'); assert.equal(u.css('.catalog-cap .identity-mark').borderRadius, '8px');
-  assert.equal(u.css('.catalog-chip').minHeight, '22px'); assert.equal(u.css('.catalog-chip').padding, '0px 7px');
-  assert.equal(u.css('.catalog-chip').borderRadius, '5px'); assert.equal(u.css('.catalog-chip').fontSize, '10.5px');
-  assert.equal(u.css('.catalog-chips').flexWrap, 'wrap');
-  assert.equal(u.css('.catalog-pill').borderRadius, '999px');
-  assert.equal(u.get('.workspace-discovery').querySelectorAll('.catalog-filter').length, 2, 'Team and Source pill groups');
+  assert.equal(u.css('.catalog-row.head').minHeight, '32px'); assert.equal(u.css('.catalog-row.head').textTransform, 'none');
+  assert.equal(u.css('.catalog-row.head').fontSize, '11.5px');
+  assert.equal(u.css('.catalog-row:not(.head)').minHeight, '48px', 'a minimum: real wrapping can grow a row');
+  assert.equal(u.css('.catalog-row:not(.head)').padding, '0px 16px');
+  assert.equal(u.css('.catalog-row').gridTemplateColumns, 'minmax(0,1.7fr) minmax(0,1fr) 150px');
+  assert.match(u.css('.catalog-name').font, /600 13px var\(--mono/, 'mono 13px names');
+  const shipped = [...u.doc.querySelectorAll('style')].map(style => style.textContent).join('\n');
+  assert.match(shipped, /\.catalog-used-marks \.identity-mark \{ width:20px; height:20px; margin-left:-5px; border-radius:6px;/, '20px used-by marks');
+  assert.equal(u.get('.catalog-cap .identity-mark'), null, 'no capability monogram in the table');
+  assert.equal(u.css('.capability-nav button').borderRadius, '999px');
+  assert.equal(u.get('.workspace-discovery').querySelectorAll('.catalog-select').length, 2, 'Team and Repo dropdowns');
+  assert.equal(u.css('.workspace-discovery[data-tab=capabilities] > *').maxWidth, '1000px', 'one centred column');
   u.get('#workspace-tab-sources').click(); await tick();
   assert.equal(u.get('.workspace-discovery').querySelector('.catalog-table button, .catalog-table a, .catalog-table input'), null, 'Sources are read-only');
   for (const { path, body } of u.calls.filter(c => c.body && c.path.startsWith('/api/workspace-sync'))) assert.equal(body.action, 'read', `no mutation from ${path}`);
@@ -215,12 +219,16 @@ test('F7: a Capabilities row opens its page (click or Enter) — "← Capabiliti
   assert.equal(page.hidden, false); assert.equal(u.get('.workspace-discovery').hidden, true, 'the page replaces the table');
   assert.equal(page.querySelector('.page-back').textContent, 'Capabilities');
   assert.equal(u.doc.activeElement, page.querySelector('.page-back'), 'focus moves into the page');
-  assert.equal(page.querySelector('.page-title h2').textContent, 'oats.okf');
-  const source = [...page.querySelectorAll('.page-card')].find(c => c.dataset.card === 'Source');
-  const facts = Object.fromEntries([...source.querySelectorAll('dt')].map(dt => [dt.textContent, dt.nextElementSibling.textContent]));
+  // Workspace v4 (W5b): the page bar (back, breadcrumb), identity, then "Comes from" beside.
+  assert.equal(page.querySelector('h2.page-title > span').textContent, 'oats.okf');
+  assert.equal(page.querySelector('.page-crumb-current').textContent, 'oats.okf');
+  assert.equal(page.querySelector('.page-crumb-current').getAttribute('aria-current'), 'page');
+  const source = [...page.querySelectorAll('.page-card')].find(c => c.dataset.card === 'Comes from');
+  const facts = Object.fromEntries([...source.querySelectorAll('dt')].map(dt => [dt.textContent, dt.nextElementSibling]));
   const catalogRow = f2('capabilities').result.capabilities.find(r => r.name === 'oats.okf');
-  assert.equal(facts.Package, catalogRow.package); assert.equal(facts.Version, catalogRow.version); assert.equal(facts.Commit, catalogRow.commit);
-  assert.equal(facts.Team, catalogRow.team, 'only reported facts');
+  assert.equal(facts.Package.textContent, catalogRow.package); assert.match(facts.Pinned.textContent, new RegExp(`^${catalogRow.version.replace(/\./g, '\\.')}`));
+  assert.equal(facts.Commit.textContent, catalogRow.commit.slice(0, 7)); assert.equal(facts.Commit.title, catalogRow.commit, 'the full commit stays reachable');
+  assert.equal(Object.hasOwn(facts, 'Team'), false, 'the design has no team fact');
   assert.equal([...page.querySelectorAll('.page-card')].some(c => /resolves it/.test(c.dataset.card)), false, 'no soul context from the catalog');
   page.querySelector('.page-back').click();
   assert.equal(page.hidden, true); assert.equal(page.childElementCount, 0); assert.equal(u.get('.workspace-discovery').hidden, false);
@@ -235,26 +243,34 @@ test('F7: a Capabilities row opens its page (click or Enter) — "← Capabiliti
   assert.equal(page.hidden, true); assert.equal(page.childElementCount, 0); assert.equal(u.get('.souls-grid').hidden, false);
 });
 
-test('F7: a soul page lists its capabilities with the Capabilities view\'s own table; a row opens the capability as the soul resolves it, back returns to the soul', async t => {
+// Replaces the F7 test that pinned the Capabilities view's table on the soul
+// page: Workspace v4 (W4) shows core capabilities as cards and the rest as a
+// composition table (Capability | Source | Why it's here).
+test('W4: a soul page shows its core capabilities as cards and the rest with why each is there; a row opens the capability as the soul resolves it, back returns to the soul', async t => {
   const u = await fixture(t, { cli: V2_CLI, sync: () => catalogReply() });
   u.get('.soul-card').click(); await tick(); await tick();
   const soulPage = u.get('.workspace-soul-page');
-  const table = soulPage.querySelector('.inspector-capability-table .catalog-table');
-  assert.ok(table, 'the catalog table component');
-  assert.deepEqual([...table.querySelectorAll('.catalog-row.head span')].map(s => s.textContent), ['Capability', 'Status', 'Used by']);
-  assert.deepEqual([...table.querySelectorAll('.catalog-row:not(.head)')].map(r => r.dataset.capability), inspection.capabilities.map(c => c.id));
-  assert.equal(soulPage.querySelector('.inspector-cap-row'), null, 'the old per-soul list is gone from the page');
-  const first = inspection.capabilities[0];
-  table.querySelector(`.catalog-row[data-capability="${first.id}"]`).click();
+  assert.deepEqual([...soulPage.querySelectorAll('.core-card')].map(c => c.dataset.layer), ['knowledge', 'messaging', 'tasks'], 'one card per core slot');
+  const coreIds = new Set(Object.values(inspection.layers).map(l => l?.id).filter(Boolean));
+  const table = soulPage.querySelector('.inspector-capability-table .soul-caps');
+  assert.ok(table, 'the composition table');
+  assert.deepEqual([...table.querySelectorAll('.soul-cap-row.head span')].map(s => s.textContent), ['Capability', 'Source', "Why it's here"]);
+  const others = inspection.capabilities.filter(c => !coreIds.has(c.id)).map(c => c.id);
+  assert.deepEqual([...table.querySelectorAll('.soul-cap-row:not(.head)')].map(r => r.dataset.capability).sort(), [...others].sort(), 'every non-core capability, once');
+  assert.equal(soulPage.querySelector('.catalog-table, .inspector-cap-row'), null, 'neither the catalog table nor the old per-soul list');
+  for (const row of table.querySelectorAll('.soul-cap-row:not(.head)')) assert.ok(row.querySelector('.why-tag, .why-note'), `${row.dataset.capability} says why it is here`);
+  const first = others[0];
+  table.querySelector(`.soul-cap-row[data-capability="${first}"]`).click();
   const cap = u.get('.workspace-cap-page');
   assert.equal(cap.hidden, false); assert.equal(soulPage.hidden, true);
   assert.equal(cap.querySelector('.page-back').textContent, 'dev');
+  assert.deepEqual([...cap.querySelectorAll('.page-crumbs > span:not(.page-crumb-sep)')].map(s => s.textContent), ['Workspace', 'Souls', 'dev', first]);
   const resolved = [...cap.querySelectorAll('.page-card')].find(c => c.dataset.card === 'As dev resolves it');
   assert.ok(resolved, 'what the soul resolves');
-  assert.match(resolved.textContent, /Missing requirements/);
+  assert.match(resolved.textContent, /Missing/);
   key(u, u.doc.activeElement, 'Escape');
   assert.equal(cap.hidden, true); assert.equal(soulPage.hidden, false, 'back to the soul\'s page');
-  assert.equal(u.doc.activeElement.dataset.capability, first.id);
+  assert.equal(u.doc.activeElement.dataset.capability, first);
 });
 
 test('F7: capabilityRow maps an inspected capability onto the catalog row shape (reported facts only)', () => {
