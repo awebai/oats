@@ -136,10 +136,12 @@ try {
   const okfCommit = gitRepo(officialRepo, "okf");
   const okfTag = `v${bundledVersion}`;
   run("git", ["-C", officialRepo, "tag", okfTag]);
-  const okfAlias = "agents/memory-harvest/CLAUDE.md";
-  const trackedAlias = `oats-package/capabilities/oats-okf/${okfAlias}`;
-  assert.match(run("git", ["-C", officialRepo, "ls-tree", okfCommit, "--", trackedAlias], { capture: true }), /^120000 blob /);
-  assert.equal(run("git", ["-C", officialRepo, "show", `${okfCommit}:${trackedAlias}`], { capture: true }), "AGENTS.md");
+  // okf 3.0.0 removed the memory-harvest CLAUDE.md -> AGENTS.md symlink (npm drops symlinks; the
+  // kernel composes each home's CLAUDE.md): absent from the release commit, and none in the packed tree.
+  const trackedAlias = "oats-package/capabilities/oats-okf/agents/memory-harvest/CLAUDE.md";
+  assert.equal(run("git", ["-C", officialRepo, "ls-tree", okfCommit, "--", trackedAlias], { capture: true }).trim(), "", "okf 3.0.0 ships no memory-harvest CLAUDE.md");
+  assert.deepEqual(payloadEntries(join(kernelRoot, "capabilities/oats-okf")).filter((e) => e.type === "symlink"), [], "the packed oats-okf tree has no symlinks");
+  assert.deepEqual(npmOkf.omittedSourceSymlinks, []);
 
   // Optional theory uses a DIFFERENT release channel: the exact self-contained
   // Git payload (oats.framework), not an npm copy with its source CLAUDE.md
@@ -323,10 +325,9 @@ try {
   assert.equal(okfRow.settings?.["bindings-file"], bindings, "effective settings come from oats-local.yaml");
   const okfModule = join(probeHome, ".oats/modules/oats.okf");
   assert.equal(readJson(join(okfModule, "oats.json")).hooks.spawn.required, true);
-  assert.ok(lstatSync(join(okfModule, okfAlias)).isSymbolicLink(), "tracked alias materialized as a symlink");
-  assert.equal(readlinkSync(join(okfModule, okfAlias)), "AGENTS.md");
+  assert.ok(!existsSync(join(okfModule, "agents/memory-harvest/CLAUDE.md")), "okf 3.0.0 ships no alias, and none is synthesized");
   // The materialized module is the ENTIRE verified inventory: nothing added,
-  // nothing dropped, the alias included.
+  // nothing dropped (3.0.0's has no symlink).
   const checkOkfModule = () => assert.deepEqual(payloadEntries(okfModule), inventory.entries, "materialized package module must match the OKF source inventory exactly");
   checkOkfModule();
   // Skills are materialized per module (<home>/.agents/skills/<module>/<skill>)
@@ -334,10 +335,10 @@ try {
   const skillsRoot = join(probeHome, ".agents", "skills");
   const skills = readdirSync(skillsRoot).sort();
   assert.deepEqual(skills, ["oats.okf", "private"], "module skill dirs plus the soul's private skill");
-  assert.deepEqual(readdirSync(join(skillsRoot, "oats.okf")).sort(), ["memory-harvest", "okf"], "oats.okf → okf + memory-harvest");
+  assert.deepEqual(readdirSync(join(skillsRoot, "oats.okf")).sort(), ["memory-harvest", "okf", "okf-consultation"], "oats.okf → okf + okf-consultation (3.0.0) + memory-harvest");
   assert.ok(existsSync(join(skillsRoot, "oats.okf/okf/SKILL.md")) && existsSync(join(skillsRoot, "private/SKILL.md")));
   // The soul's own skill and each module skill by its `module:<cap>` source (record order is not a contract).
-  assert.deepEqual(meta.skills.map((s) => [s.name, s.source]).sort(), [["memory-harvest", "module:oats.okf"], ["okf", "module:oats.okf"], ["private", "soul"]]);
+  assert.deepEqual(meta.skills.map((s) => [s.name, s.source]).sort(), [["memory-harvest", "module:oats.okf"], ["okf", "module:oats.okf"], ["okf-consultation", "module:oats.okf"], ["private", "soul"]]);
   assert.equal(lstatSync(join(probeHome, "AGENTS.md")).isSymbolicLink(), false);
   assert.equal(readlinkSync(join(probeHome, "CLAUDE.md")), "AGENTS.md");
   const composed = readFileSync(join(probeHome, "AGENTS.md"), "utf8");
@@ -348,7 +349,7 @@ try {
   assert.ok(meta.command.includes(join(probeHome, "AGENTS.md")), meta.command);
   const marker = readJson(join(probeHome, ".okf-source.json"));
   assert.ok(existsSync(marker.source), "required spawn hook registered durable source");
-  assert.ok(existsSync(join(probeHome, "knowledge/view.json")), "required hook built immutable reader view");
+  assert.ok(!existsSync(join(probeHome, "knowledge")), "okf 3.0.0 materializes no ./knowledge/ view: instances consult the accepted state");
   const doctor = JSON.parse(cli(["doctor", deployment, "--json"]));
   assert.equal(doctor.lockError ?? null, null);
 
@@ -417,8 +418,9 @@ try {
   assert.equal(durable.status.retired, true);
   assert.equal(durable.status.lastCapture.complete, true);
   assert.equal(durable.documents.length, 1);
-  const refresh = boundary(["okf", "refresh", "--source", marker.source, "--soul", "probe", "--json"], inScope);
-  assert.equal(dirname(refresh.path), join(dirname(marker.source), "views"));
+  const refresh = JSON.parse(cli(["okf", "refresh", "--source", marker.source, "--soul", "probe", "--json"], { ...inScope, expectExit: 1 }));
+  assert.equal(refresh.error.code, "E_REMOVED", "okf 3.0.0 has no views to refresh");
+  // `read --path` stays in 3.0.0 as an alias of `cat`.
   const read = boundary(["okf", "read", "--source", marker.source, "--base", "project", "--path", "expert/index.md", "--soul", "probe", "--json"], inScope);
   assert.equal(read.text, readFileSync(join(accepted, "expert/index.md"), "utf8"));
 
@@ -459,7 +461,8 @@ try {
   // materialized again from the cache — the source fixture no longer exists.
   const fresh = boundary(["spawn", "probe", "--dir", deployment, "--agents-root", agentsRoot, "--purpose", "fresh", "--no-launch", "--json"]);
   const freshHome = realpathSync(fresh.home);
-  assert.equal(readFileSync(join(freshHome, "knowledge/bases/project/expert/decision.md"), "utf8"), concept);
+  assert.ok(!existsSync(join(freshHome, "knowledge")), "no ./knowledge/ view in the fresh home");
+  assert.equal(boundary(["okf", "cat", "--base", "project", "expert/decision.md", "--fresh", "--json"], { cwd: freshHome, identity: true }).text, concept, "the fresh reader consults the accepted concept");
   assert.equal(readJson(join(freshHome, "instance.json")).modules["oats.okf"].commit, okfCommit);
   assert.deepEqual(payloadEntries(join(freshHome, ".oats/modules/oats.okf")), inventory.entries);
   retire(fresh.instance, freshHome);
