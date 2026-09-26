@@ -6,7 +6,7 @@
 import { createSoulInspector, inspectorCSS } from "../soul-inspector.mjs";
 import { createWorkspaceDiscovery, discoveryCSS, workspaceTabs } from "../workspace-discovery.mjs";
 import { capabilityRow } from "../workspace-catalog.mjs";
-import { renderCapabilityPage, renderSoulCapabilities, capabilityPageCSS, pageCardCSS, soulCapabilitiesCSS } from "../capability-page.mjs";
+import { renderCapabilityPage, renderSoulCapabilities, capabilityPageCSS, pageCardCSS, soulCapabilitiesCSS, desktopFacts } from "../capability-page.mjs";
 import { runtimeState } from "../instance-presentation.mjs";
 import { deploymentUnavailableText } from "../deployment-header.mjs";
 import { createSpawnDialog, spawnDialogCSS } from "../spawn-dialog.mjs";
@@ -72,6 +72,7 @@ const CSS = `
 .soul-card .smode { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
 .soul-card .sactivity { display:inline-flex; align-items:center; gap:6px; margin-left:auto; flex:none; color:var(--muted); font-weight:600; white-space:nowrap; }
 .soul-card .sactivity.running { color:var(--fg); }
+.soul-card .sproblem { display:block; color:var(--warn); font-size:11.5px; font-weight:600; white-space:normal; overflow-wrap:anywhere; min-width:0; }
 .soul-card .sactivity.running::before { content:""; width:6px; height:6px; border-radius:50%; background:var(--live); }
 /* A card and its Spawn button share one grid cell (no nested buttons); the
    button sits in the card's foot, whose facts leave it room. */
@@ -283,7 +284,8 @@ ${spawnDialogCSS}</style>
       inspectSoul(s, matches[0]); return true;
     },
     canLaunch: agent => canLaunchSoul(s, agent),
-    launchReason: () => cliProbePending() ? "Checking for a compatible oats CLI — spawning enables once it is verified" : "Requires a compatible installed OATS CLI and a current standalone soul.",
+    spawnRefusal: agent => spawnRefusal(agent),
+    launchReason: agent => spawnRefusal(agent) ? `Can't spawn here: ${spawnRefusal(agent)}` : cliProbePending() ? "Checking for a compatible oats CLI — spawning enables once it is verified" : "Requires a compatible installed OATS CLI and a current standalone soul.",
     available: () => cliAvailable() && inspectSupported(cliStatus()),
     files: agent => s.ctx.openBrain?.(agent.name),
     canFiles: agent => canOpenFiles(s, agent),
@@ -677,8 +679,13 @@ function focusCard(s, cards, index) {
   target.focus();
 }
 
+/** Kernel #217 (desktop-facts): the reason a spawn of this soul here would refuse, as the kernel
+ * reports it (`spawnable: false` + `problem`), else null. */
+export function spawnRefusal(agent, cli = cliStatus()) {
+  return desktopFacts(cli) && agent?.spawnable === false ? (typeof agent.problem?.message === "string" && agent.problem.message ? agent.problem.message : "A spawn of this soul would be refused here.") : null;
+}
 function canLaunchSoul(s, agent) {
-  return s.alive && s.rosterGen === workspaceGeneration() && cliAvailable() && !!agent?.agentsRoot
+  return !spawnRefusal(agent) && s.alive && s.rosterGen === workspaceGeneration() && cliAvailable() && !!agent?.agentsRoot
     && s.souls.agents.filter(current => current.name === agent.name
       && current.agentsRoot === agent.agentsRoot && (current.server || "") === (agent.server || "")).length === 1
     && s.souls.agents.find(current => current.name === agent.name
@@ -717,6 +724,8 @@ function soulCard(s, a) {
   const teams = span("steams");
   soulTeams(a).forEach((team, index) => teams.append(span(`steam${index === 0 ? " primary" : ""}`, team)));
   if (teams.childElementCount) body.append(teams);
+  const refusal = attached ? null : spawnRefusal(a);
+  if (refusal) { const note = span("sproblem", `Can't spawn here · ${refusal}`); note.title = refusal; body.append(note); }
   // Foot: where it works (and its harness), then what runs now.
   const instances = soulInstances(s, a);
   const running = instances.filter(i => i.running === true).length;
@@ -734,7 +743,7 @@ function soulCard(s, a) {
   spawn.append(iconElement(doc, "plus", { size: 13 }), span("", "Spawn"));
   spawn.setAttribute("aria-label", `Spawn ${a.name}`);
   const can = canLaunchSoul(s, a); spawn.disabled = !can;
-  spawn.title = can ? `Spawn a new ${a.name} instance` : cliAvailable() ? `${a.name} cannot be spawned from here` : "Spawn needs a compatible installed OATS CLI";
+  spawn.title = can ? `Spawn a new ${a.name} instance` : refusal ? `Can't spawn here: ${refusal}` : cliAvailable() ? `${a.name} cannot be spawned from here` : "Spawn needs a compatible installed OATS CLI";
   spawn.addEventListener("click", () => { if (!spawn.disabled && canLaunchSoul(s, a)) { openSpawnModal(s, a); s.spawnFromCard = !!s.modalEl; } });
   tile.append(card, spawn);
   return tile;

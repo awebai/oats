@@ -301,3 +301,42 @@ test('F7: capabilityRow maps an inspected capability onto the catalog row shape 
   if (member) { const m = capabilityRow(member); assert.equal(m.kind, 'member'); assert.equal(m.repoKey, member.from.repoKey); }
   assert.equal(capabilityRow({ id: 'x', from: { kind: 'weird' } }).kind, 'external');
 });
+
+// Kernel #217 via the server pass-through (#230): the /api/agents facts, from the real capture.
+const factsSouls = JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/desktop-facts/souls.json', import.meta.url), 'utf8')).result.souls;
+const factsRow = (name, extra = {}) => { const k = factsSouls.find(r => r.name === name); return { ...soul, name, spawnable: k.spawnable, problem: k.problem, file: k.file, ...extra }; };
+const FACTS_CLI = { ...CLI, features: ['operations', 'desktop-facts'] };
+
+test('kernel #217: a soul a spawn here would refuse says why on its card and page; Spawn is disabled', async t => {
+  const refused = factsRow('campaign-writer'), message = refused.problem.message;
+  assert.equal(refused.problem.code, 'E_SOUL_DISABLED', 'the capture disables campaign-writer on this machine');
+  const u = await fixture(t, { cli: FACTS_CLI, agents: [soul, refused] });
+  const tile = name => u.get(`.soul-card[data-agent="${name}"]`).parentElement;
+  assert.equal(tile('dev').querySelector('.sproblem'), null);
+  assert.equal(tile('campaign-writer').querySelector('.sproblem').textContent, `Can't spawn here · ${message}`);
+  const button = tile('campaign-writer').querySelector('.soul-spawn');
+  assert.equal(button.disabled, true); assert.equal(button.title, `Can't spawn here: ${message}`);
+  assert.equal(tile('dev').querySelector('.soul-spawn').disabled, false);
+  u.get('.soul-card[data-agent="campaign-writer"]').click(); await tick(); await tick();
+  assert.equal(u.get('.inspector-refusal').textContent, `Can't spawn here · ${message}`);
+  const spawnAct = u.get('.spawn-act'); assert.equal(spawnAct.disabled, true); assert.equal(spawnAct.title, `Can't spawn here: ${message}`);
+});
+
+test("kernel #217: a soul's file opens as its web page, or shows its path when the repo has none", async t => {
+  const local = factsRow('data-analyst'), url = 'https://github.com/northwind/agents/blob/abc/souls/release-manager/soul.yaml';
+  assert.equal(local.file.url, null, 'the capture\'s repos are local: no web address');
+  const hosted = factsRow('release-manager', { file: { path: 'souls/release-manager/soul.yaml', url } });
+  const u = await fixture(t, { cli: FACTS_CLI, agents: [local, hosted] });
+  const opened = []; u.ctx.openExternal = link => opened.push(link);
+  u.get('.soul-card[data-agent="data-analyst"]').click(); await tick(); await tick();
+  assert.equal(u.get('.file-act'), null); assert.equal(u.get('.page-fact[data-fact="file"]').textContent, local.file.path);
+  u.get('.page-back').click(); await tick();
+  u.get('.soul-card[data-agent="release-manager"]').click(); await tick(); await tick();
+  assert.equal(u.get('.page-fact[data-fact="file"]'), null);
+  u.get('.file-act').click(); assert.deepEqual(opened, [url]);
+});
+
+test('kernel #217 facts are ignored from a CLI that does not report desktop-facts', async t => {
+  const u = await fixture(t, { agents: [factsRow('campaign-writer')] });
+  assert.equal(u.get('.sproblem'), null); assert.equal(u.get('.soul-spawn').disabled, false);
+});
