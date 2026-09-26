@@ -250,7 +250,7 @@ test("the CLI answers the envelope for add, list, show, update, enable, disable,
   let out = run("add", "nightly", "--file", spec);
   assert.equal(out.ok, true); assert.equal(out.result.schedule.id, "nightly"); assert.ok(out.result.schedule.nextRun);
   out = run("list");
-  assert.deepEqual(Object.keys(out.result), ["scope", "scheduleApi", "scheduleHistoryApi", "integrity", "schedules", "triggers", "scheduler"]); // K8b: scope echo + integrity; 0.28: the triggers pointer
+  assert.deepEqual(Object.keys(out.result), ["scope", "scheduleApi", "scheduleHistoryApi", "integrity", "host", "schedules", "triggers", "snapshot", "scheduler"]); // K8b: scope echo + integrity; 0.28: the triggers pointer; 0.29: host + the workspace snapshot
   assert.equal(out.result.schedules[0].id, "nightly");
   for (const k of ["installed", "active", "lastTick", "maxConcurrent"]) assert.ok(k in out.result.scheduler, k);
   assert.equal(out.result.scheduler.installed, false);

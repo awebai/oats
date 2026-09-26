@@ -1385,7 +1385,9 @@ top-level `workspace` reachability field:
 
 Event-driven spawns of a deployment ([schedules.md#triggers](schedules.md#triggers)).
 Definitions live in `oats-schedules.json` (`kind: "trigger"`); `oats schedule list`
-does not show them.
+does not show them. From 0.29.0 a row's `id` is qualified (`local/<id>` here; a
+workspace trigger's is `<member>/<id>`) and the row carries the shared fields of
+[workspace triggers and schedules](#workspace-triggers-and-schedules-feature-automations-oats-0290-automationsapi-1).
 
 ```json
 {"triggerApi":1,"scope":"/abs/deployment","triggers":[
@@ -1427,6 +1429,53 @@ does not show them.
 - Errors: `E_TRIGGER_INVALID { field }`, `E_TRIGGER_EXISTS`,
   `E_TRIGGER_UNKNOWN`, `E_BAD_ARGS` (`missing` / `parameters` for a template),
   `E_PACKAGE_MISSING`, `E_PACKAGE_MANIFEST`, `E_LOCAL_MISSING`.
+
+### Workspace triggers and schedules (feature `automations`, OATS 0.29.0; `automationsApi: 1`)
+
+See [schedules.md#workspace-triggers-and-schedules](schedules.md#workspace-triggers-and-schedules).
+`oats trigger list --json` and `oats schedule list --json` answer this machine's
+local items and every workspace item defined in a member the user can read. The
+Desktop renders these rows and never re-derives them. The two lists stay separate:
+a trigger never appears in `schedule list`, and a schedule never appears in
+`trigger list`.
+
+- Both lists add `host: { name | null }` and `snapshot: { takenAt, problems } | null`
+  (`null` until `oats sync` has found some).
+- **Identity:**
+  - `id`:
+    - a trigger row's is always qualified (`local/<id>`, `<member>/<id>`);
+    - a local schedule row keeps its bare id (the 0.28 contract);
+    - a workspace schedule row's is `<member>/<id>`.
+  - `qualifiedId` is always the qualified form, and `name` is the bare id.
+  - Every verb accepts `local/<id>` or a bare local id.
+- **Shared fields in every row:**
+  - `origin`: `{ kind: "local", path }` or `{ kind: "workspace", repoKey, path, commit }`;
+  - `description`, `owner`, `runsOn`;
+  - `runsHere`; `reason` (`null` | `host-unnamed` | `assigned-elsewhere` | `owner-mismatch`) with `reasonDetail`;
+  - `enabledHere`;
+  - `soul`: `{ name, origin: { kind: member, repoKey, member } | { kind: package, package, version } | { kind: external, … } | { kind: ambiguous } | null }`;
+  - `task`: the template, verbatim;
+  - `teams`, `harness`, `model`, `concurrency`;
+  - `lastRun`, `nextDue`;
+  - `invalid?: { code, message, field? }`.
+- **A trigger row** also carries `kind: "trigger"`, `on` (the event), `spawn`, and `template?` (the package template it came from).
+  - `lastRun` is the last fired event: `{ at, instance, home, event, number, key }`.
+  - `nextDue` is the next poll, only when it runs here.
+- **A schedule row** keeps every 0.28 field (`scheduleApi: 2`). Its `kind` is the run (`spawn` | `command` | `wake` | `operation`); it also carries `cron` and `tz`.
+  - `nextDue` is the next minute, only when it runs here.
+  - `teams` is `[]` and `concurrency` is `null`.
+  - A workspace schedule another host runs carries its definition and placement only: `lastRun` and `nextRun` are `null`.
+- **Actions:**
+  - `enable` and `disable` on a workspace id edit `oats-local.yaml` `triggers.disabled` or `schedules.disabled`.
+  - `update` and `remove` refuse it with `E_AUTOMATION_WORKSPACE { id, origin }`.
+  - `schedule run` and `schedule reconcile` work when it runs here, else `E_AUTOMATION_NOT_HERE { id, reason, runsOn, owner }`.
+- **`oats trigger test <id>`** adds `placement: { runsOn, owner, host, runsHere, reason, detail?, enabledHere }`. Any reason, or disabled here, is a problem (`ok: false`).
+- **`oats trigger|schedule add … --workspace <member> --runs-on <host> --owner <host>/<login> --json`** answers `{ id, written, file: { member, repoKey, path, content, written? } }`.
+  - Errors: `E_AUTOMATION_MEMBER` (not a confirmed member), `E_TRIGGER_EXISTS` or `E_SCHEDULE_EXISTS` (the file exists), and the kind's validation codes.
+- **`oats automations refresh --json`** answers `{ automationsApi, snapshot, triggers, schedules, problems: [...], takenAt }`.
+- **`oats sync --json`** gains `automations: { triggers, schedules, problems, takenAt }`. Discovery problems join `problems` (`E_AUTOMATION_SCHEMA`, `E_AUTOMATION_DUPLICATE`, each with `kind`, `repoKey` and `path`).
+- **`oats workspace status --json`** gains `automations: { host, snapshot, rows: [{ kind, id, runsOn, owner, runsHere, reason, enabledHere, origin, invalid? }] }`.
+- **The tick's `considered[]`** gains the trigger action `not-here` (`reason: owner-mismatch`, `detail`): a trigger naming this host that this host cannot run. A workspace schedule's row `id` is its state key, `<member>~<id>`. A failed snapshot refresh is `{ action: "error", error: "automations refresh: …" }`.
 
 ### Eligible teams (feature `teams`, OATS 0.26.0)
 
