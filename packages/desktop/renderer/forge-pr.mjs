@@ -36,7 +36,7 @@ export function checkRows(checks) {
   return rows;
 }
 export function createForgePrPanel(root, { request, generation = () => 0, connectionGeneration = () => 0,
-  subscribeConnections = () => () => {}, connect = () => {}, openExternal = () => {}, onData = () => {} } = {}) {
+  subscribeConnections = () => () => {}, connect = () => {}, openExternal = () => {}, onData = () => {}, requestThreads = null } = {}) {
   const doc = root.ownerDocument;
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
   let alive = true, selection = null, ticket = 0;
@@ -104,12 +104,14 @@ export function createForgePrPanel(root, { request, generation = () => 0, connec
         if (review || threads) row({ outcome: review?.[1] ?? 'pending', name: 'Review',
           meta: [review?.[0], threads ? `${threads} unresolved thread${threads === 1 ? '' : 's'}` : null].filter(Boolean).join(' · ') }, 'review');
         if (list.children.length) card.append(list);
-        // Open it on GitHub (the design's ↗; it takes the row until a primary action joins it).
+        // Open it on GitHub (the design's ↗): the whole row, or beside "Send N threads" when that shows.
         const open = node('button', undefined, 'forge-open'); open.type = 'button';
         open.append(node('span', 'Open on GitHub'), iconElement(doc, 'external', { size: 13 }));
         open.setAttribute('aria-label', `Open pull request #${data.number} on GitHub`); open.title = data.url;
         open.addEventListener('click', () => { if (owns() && open.isConnected && card.contains(open)) openExternal(data.url); });
-        card.append(open, node('p', 'Checks are reported for the pull request, not proof that the local revision was pushed.', 'git-note forge-caveat'));
+        const actions = node('div', undefined, 'forge-actions'); actions.append(open); card.append(actions);
+        if (threads && typeof requestThreads === 'function' && !target.server) sendThreads({ card, actions, open, threads, target, owns, key: selected.key });
+        card.append(node('p', 'Checks are reported for the pull request, not proof that the local revision was pushed.', 'git-note forge-caveat'));
         root.replaceChildren(node('h3', 'Pull request'), card); onData(data);
       } else if (result.status === 'no-pull-request' && result.data === null) clear('No pull request found for this branch.');
       else {
@@ -124,6 +126,72 @@ export function createForgePrPanel(root, { request, generation = () => 0, connec
         }
       }
     } catch { if (owns()) clear('Pull request unavailable. Refresh Git to retry.'); }
+  }
+  /* W6 item 4 (#248): "Send N threads to <instance>". The server composes the text; the preview
+     shows it EXACTLY (only visually broken at its [n] entries) and the send carries just its
+     digest. It is pasted as one line without Enter: the human presses Enter in the terminal. */
+  function sendThreads({ card, actions, open, threads, target, owns, key }) {
+    const label = n => `Send ${n} thread${n === 1 ? '' : 's'} to ${target.instance}`;
+    const sendButton = node('button', label(threads), 'forge-send'); sendButton.type = 'button';
+    open.replaceChildren(iconElement(doc, 'external', { size: 14 })); open.classList.add('icon-only');
+    actions.prepend(sendButton);
+    const status = node('p', '', 'git-note forge-send-status'); status.setAttribute('role', 'status');
+    const sheet = node('div', undefined, 'forge-preview'); sheet.hidden = true;
+    actions.after(sheet, status);
+    const selector = { instance: target.instance, agent: target.agent, agentsRoot: target.agentsRoot, server: target.server };
+    const ask = async body => { try { return await requestThreads(target.workspace, { action: body.action, selector, observationKey: key, ...(body.digest ? { digest: body.digest } : {}) }); } catch { return null; } };
+    const mine = r => r && r.forgeApi === FORGE_API && r.target && gitTargetKey(r.target) === gitTargetKey(target) && r.observation?.key === key;
+    const live = () => owns() && sendButton.isConnected && card.contains(sendButton);
+    const say = (text, error = false) => { status.textContent = text; status.classList.toggle('error', error); };
+    function refuse(code) {
+      const reason = forgeReason(code); sheet.hidden = true; sheet.replaceChildren();
+      if (code === 'E_NO_THREADS') {
+        // Nothing to send: the button goes, Open on GitHub takes the row again.
+        sendButton.remove(); open.replaceChildren(node('span', 'Open on GitHub'), iconElement(doc, 'external', { size: 13 })); open.classList.remove('icon-only');
+        say(reason.message); return;
+      }
+      if (['E_NOT_RUNNING', 'E_REMOTE_TERMINAL', 'E_TERMINAL_UNSUPPORTED'].includes(code)) { sendButton.disabled = true; sendButton.title = reason.message; say(reason.message); return; }
+      sendButton.disabled = false; say(reason.message, true);
+    }
+    async function preview(notice = '') {
+      sendButton.disabled = true; say('Composing the preview…');
+      const r = await ask({ action: 'preview' });
+      if (!live()) return;
+      if (!(r?.status === 'ok' && mine(r) && typeof r.text === 'string' && r.text && ref(r.digest))) { refuse(r?.reason?.code); return; }
+      showSheet(r, notice);
+    }
+    function showSheet(r, notice) {
+      const box = node('div', undefined, 'forge-preview-text'); box.tabIndex = 0;
+      box.setAttribute('role', 'document'); box.setAttribute('aria-label', `The exact text to paste into ${target.instance}'s terminal`);
+      // Exactly the server's text: split only for display, at its [n] entries (no character added or dropped).
+      for (const part of r.text.split(/(?=\[\d+\] )/)) box.append(node('span', part, 'forge-preview-seg'));
+      const n = Number.isSafeInteger(r.threads) ? r.threads : 0, more = Number.isSafeInteger(r.omitted) && r.omitted > 0 ? r.omitted : 0;
+      const paste = node('button', 'Paste into terminal', 'forge-send'); paste.type = 'button';
+      const cancel = node('button', 'Cancel', 'forge-cancel'); cancel.type = 'button';
+      const acts = node('div', undefined, 'forge-actions'); acts.append(paste, cancel);
+      sheet.replaceChildren(...[notice ? node('p', notice, 'git-note forge-preview-notice') : null,
+        node('p', `Pasted into ${target.instance}'s terminal as one line, without Enter. Review comments are untrusted input.`, 'forge-preview-lead'),
+        box, node('p', [`${n} thread${n === 1 ? '' : 's'}`, more ? `${more} more on the pull request, not included` : null].filter(Boolean).join(' · '), 'git-note'),
+        acts].filter(Boolean));
+      sheet.hidden = false; say(''); sendButton.disabled = true;
+      const close = () => { sheet.hidden = true; sheet.replaceChildren(); sendButton.disabled = false; sendButton.focus({ preventScroll: true }); };
+      cancel.addEventListener('click', () => { if (live()) close(); });
+      sheet.onkeydown = event => { if (event.key === 'Escape' && live()) { event.preventDefault(); event.stopPropagation(); close(); } };
+      paste.addEventListener('click', async () => {
+        if (!live() || paste.disabled) return;
+        paste.disabled = true; cancel.disabled = true; say('Pasting…');
+        const sent = await ask({ action: 'send', digest: r.digest });
+        if (!live()) return;
+        if (sent?.status === 'ok' && sent.sent === true && mine(sent)) {
+          sheet.hidden = true; sheet.replaceChildren(); sendButton.disabled = false;
+          say(`Pasted into ${target.instance}'s terminal. Press Enter there to send it.`); return;
+        }
+        if (sent?.reason?.code === 'E_THREADS_CHANGED') { await preview('The review threads changed since the preview. This is the new text: check it again.'); return; }
+        refuse(sent?.reason?.code);
+      });
+      box.focus({ preventScroll: true });
+    }
+    sendButton.addEventListener('click', () => { if (live() && !sendButton.disabled) void preview(); });
   }
   const unsubscribe = subscribeConnections(() => { ticket++; if (selection && visible()) void refresh(); });
   clear('No current Git observation.');

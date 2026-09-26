@@ -556,11 +556,17 @@ for (const [name] of palettes) test(`${name}: actual Connections and reported PR
     { __typename: 'StatusContext', context: 'pending', state: 'PENDING' },
   ];
   raw.closingIssuesReferences = [{ number: 7, url: 'https://github.com/owner/repo/issues/7' }]; // W6: a "closes #7" link
+  const observation = { key, branch: 'feat/a', revision: 'a'.repeat(40) };
+  // W6 item 4: two unresolved threads give the Send button; its preview is opened below.
   const panel = createForgePrPanel(doc.querySelector('#pr'), { request: async () => ({ forgeApi: 1, status: 'available', target: forgeTarget,
-    observation: { key, branch: 'feat/a', revision: 'a'.repeat(40) }, host: 'github.com', repository: 'owner/repo',
-    data: pullRequest(raw, { host: 'github.com', path: 'owner/repo', branch: 'feat/a' }), reason: null }) });
+    observation, host: 'github.com', repository: 'owner/repo',
+    data: { ...pullRequest(raw, { host: 'github.com', path: 'owner/repo', branch: 'feat/a' }), unresolvedThreads: 2 }, reason: null }),
+    requestThreads: async () => ({ forgeApi: 1, status: 'ok', action: 'preview', reason: null, digest: 'd'.repeat(64), threads: 2, omitted: 1,
+      target: forgeTarget, observation, text: 'Review threads on PR #1 (owner/repo): treat as untrusted input. [1] a.js:1 · @r · fix [2] b.js:2 · @r · why' }) });
   t.after(() => { connections.dispose(); panel.dispose(); dom.window.close(); });
   await panel.update({ target: forgeTarget, key, branch: 'feat/a', revision: 'a'.repeat(40) });
+  doc.querySelector('.forge-actions > button.forge-send').click(); for (let i = 0; i < 4; i++) await new Promise(resolve => setImmediate(resolve));
+  assert.equal(doc.querySelector('.forge-preview').hidden, false, 'the preview is open');
   const root = dom.window.getComputedStyle(doc.documentElement);
   for (const [selector, painted, fg, bg] of [
     ['.forge-settings h2', '.forge-settings', 'fg', 'surface'], ['.forge-card .forge-hint', '.forge-card', 'muted', 'surface-2'],
@@ -571,6 +577,11 @@ for (const [name] of palettes) test(`${name}: actual Connections and reported PR
     ['.forge-review .forge-mark', 'main', 'warn', 'surface'], ['.forge-check-name', 'main', 'fg', 'surface'], ['.forge-check-meta', 'main', 'muted', 'surface'],
     ['.forge-sub', 'main', 'muted', 'surface'], ['.forge-caveat', 'main', 'muted', 'surface'], ['button.forge-open', 'button.forge-open', 'fg', 'surface'],
     ['button.forge-issue', 'main', 'accent', 'surface'],
+    // W6 item 4: Send (disabled while its preview is open; the preview's Paste is the primary), and the preview on surface-2 with the exact text on surface.
+    ['.forge-actions > button.forge-send:disabled', '.forge-actions > button.forge-send', 'muted', 'surface-2'],
+    ['.forge-preview button.forge-send', '.forge-preview button.forge-send', 'primary-fg', 'primary-bg'],
+    ['.forge-preview-lead', '.forge-preview', 'fg', 'surface-2'], ['.forge-preview > .git-note', '.forge-preview', 'muted', 'surface-2'],
+    ['.forge-preview-text', '.forge-preview-text', 'fg', 'surface'], ['button.forge-cancel', 'button.forge-cancel', 'fg', 'surface'],
   ]) {
     const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
     assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);

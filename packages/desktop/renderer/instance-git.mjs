@@ -80,6 +80,21 @@ export const instanceGitCSS = `
 .instance-git .git-github button.forge-open { display:inline-flex; align-items:center; justify-content:center; gap:6px; width:100%; height:32px; padding:0 12px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font-size:12.5px; font-weight:600; }
 .instance-git .git-github button.forge-open:hover { background:var(--surface-2); }
 .instance-git .forge-caveat { font-size:11px; }
+/* W6 item 4: "Send N threads to <instance>" (the design's primary) beside ↗, and its exact preview. */
+.instance-git .forge-actions { display:flex; gap:6px; min-width:0; }
+.instance-git .git-github button.forge-open.icon-only { flex:none; width:auto; padding:0 12px; }
+.instance-git .git-github button.forge-send { flex:1; min-width:0; height:32px; padding:0 12px; border:1px solid var(--primary-bg); border-radius:7px; background:var(--primary-bg); color:var(--primary-fg); font-size:12.5px; font-weight:650; white-space:normal; line-height:1.2; }
+.instance-git .git-github button.forge-send:disabled { border-color:var(--border); background:var(--surface-2); color:var(--muted); cursor:default; }
+.instance-git .git-github button.forge-cancel { height:32px; padding:0 14px; border-radius:7px; color:var(--fg); font-size:12.5px; font-weight:600; }
+.instance-git .forge-send-status:empty { display:none; }
+.instance-git .forge-send-status.error { color:var(--danger); }
+.instance-git .forge-preview { display:flex; flex-direction:column; gap:8px; padding:10px 12px; border:1px solid var(--border); border-radius:8px; background:var(--surface-2); }
+.instance-git .forge-preview[hidden] { display:none; }
+.instance-git .forge-preview-lead { margin:0; color:var(--fg); font-size:12px; line-height:1.45; }
+.instance-git .forge-preview-text { max-height:260px; overflow:auto; padding:8px 10px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--fg); font:11.5px/1.5 var(--mono,monospace); white-space:pre-wrap; overflow-wrap:anywhere; }
+.instance-git .forge-preview-text:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+.instance-git .forge-preview-seg { display:block; }
+.instance-git .forge-preview-seg + .forge-preview-seg { margin-top:4px; }
 `;
 const report = v => v === null || v === undefined ? 'Not reported' : String(v);
 const tail = v => String(v || '').split('/').filter(Boolean).pop() || '';
@@ -109,7 +124,7 @@ export function lineCounts(file) {
 const countWords = c => c.binary ? 'binary' : [c.add ? `${c.add} line${c.add === 1 ? '' : 's'} added` : null, c.del ? `${c.del} removed` : null].filter(Boolean).join(', ');
 const LETTER_WORD = { M: 'modified', A: 'added', D: 'deleted', R: 'renamed', C: 'copied', T: 'type changed', U: 'unmerged', '?': 'untracked' };
 export function createInstanceGitPanel(parent, { request, generation = () => 0, applyFocus = fn => fn(),
-  requestForge, connectionGeneration = () => 0, subscribeConnections = () => () => {}, connect, openExternal, onObservation = () => {}, onPullRequest = () => {} } = {}) {
+  requestForge, requestThreads = null, connectionGeneration = () => 0, subscribeConnections = () => () => {}, connect, openExternal, onObservation = () => {}, onPullRequest = () => {} } = {}) {
   const doc = parent.ownerDocument;
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
   const root = node('div', undefined, 'instance-git'); parent.append(root);
@@ -138,7 +153,7 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
   // Sections with nothing observed are not shown.
   changesSection.hidden = true; github.hidden = true;
   // The painted PR's unresolved threads go up to the tab (its badge), tagged like onObservation.
-  const pullRequest = createForgePrPanel(github, { request: requestForge, generation, connectionGeneration, subscribeConnections, connect, openExternal,
+  const pullRequest = createForgePrPanel(github, { request: requestForge, requestThreads, generation, connectionGeneration, subscribeConnections, connect, openExternal,
     onData: data => onPullRequest(data ? { identity: summaryIdentity, connection: connectionGeneration(), unresolvedThreads: data.unresolvedThreads ?? null } : null) });
   let alive = true, active = false, epoch = 0, observationTicket = 0, fileTicket = 0;
   let target = null, identity = '', summaryIdentity = '', attempted = false, observation = null, selected = null, busy = false, remote = false;
