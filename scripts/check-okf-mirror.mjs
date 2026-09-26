@@ -145,8 +145,6 @@ function validateInventory(inventory) {
   const paths = inventory.entries.map((entry) => entry.path);
   paths.forEach(safeRelative);
   assert.deepEqual(paths, [...new Set(paths)].sort(compare), "inventory paths must be unique and sorted");
-  const alias = inventory.entries.find((entry) => entry.path === "agents/memory-harvest/CLAUDE.md");
-  assert.ok(alias?.type === "symlink" && alias.target === "AGENTS.md", "standalone must supply canonical CLAUDE.md -> AGENTS.md; never synthesize an alias");
   assert.equal(inventory.snapshotSha256, snapshotHash(inventory), "inventory snapshot hash drift");
   return inventory;
 }

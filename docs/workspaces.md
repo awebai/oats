@@ -60,7 +60,7 @@ members:                                   # repo refs, NO @revision (E_WORKSPAC
 
 packages:                                  # the ONLY versioned things
   oats.framework: v1.1.3                   # bare version → resolves through the official catalog
-  oats.okf: v2.1.5
+  oats.okf: v3.0.0
   acme.tools: git:github.com/acme/tools@v0.4.0   # outside the catalog → git:<repo>@<tag|OID>; still a package
 
 teams:                                     # labels, declared once so they cannot drift

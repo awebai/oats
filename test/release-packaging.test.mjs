@@ -43,9 +43,9 @@ test("release alignment rejects stale lock metadata even when all three manifest
 });
 
 test("v2 preparation aligns standalone OKF and Git-only theory catalog pins", () => {
-  assert.equal(json("capabilities/oats-okf/oats.json").version, "2.1.5");
-  assert.equal(json("capabilities/oats-okf/oats.json").compatibility.oats, ">=0.24.4", "OKF 2.1.x declares binding.reasons, which lib/provider-binding.mjs validates from 0.24.4");
-  assert.equal(json("package-catalog.json").packages["oats.okf"].ref, "v2.1.5");
+  assert.equal(json("capabilities/oats-okf/oats.json").version, "3.0.0");
+  assert.equal(json("capabilities/oats-okf/oats.json").compatibility.oats, ">=0.26.0", "OKF 3.0.0 declares the workspace-model floor (v2 compatibility enforcement, 0.26.0)");
+  assert.equal(json("package-catalog.json").packages["oats.okf"].ref, "v3.0.0");
   const catalog = json("package-catalog.json");
   assert.equal(catalog.packages["oats.knowledge-theory"], undefined, "the theory package identity was renamed to oats.framework");
   const framework = catalog.packages["oats.framework"];
@@ -104,8 +104,8 @@ test("actual npm OKF regular bytes match inventory; symlink omission is explicit
   const cap = join(root, "package/capabilities/oats-okf");
   const result = checkNpmOkfPayload(cap, inventory);
   assert.equal(result.selfContainedGitPayload, false);
-  assert.deepEqual(result.omittedSourceSymlinks, ["agents/memory-harvest/CLAUDE.md"]);
-  assert.ok(!existsSync(join(cap, result.omittedSourceSymlinks[0])), "npm did not ship the source alias; no repair");
+  assert.deepEqual(result.omittedSourceSymlinks, [], "3.0.0 ships no symlink for npm to omit");
+  assert.ok(!existsSync(join(cap, "agents/memory-harvest/CLAUDE.md")), "no alias, and none repaired");
   assert.equal(result.regularFiles, inventory.entries.filter((entry) => entry.type === "file").length);
   const file = join(cap, "lib/inspection.mjs");
   const original = readFileSync(file);

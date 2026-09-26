@@ -52,7 +52,7 @@ test('real directory worker delivers a Git PR without modifying accepted head or
   assert.ok(git('diff', '--name-only', head, receipt.commit).split('\n').every(p => p.startsWith('knowledge/expert/')));
   assert.equal(fs.existsSync(join(f.accepted, 'knowledge/expert/decision.md')), false);
   const reader = f.spawn('before-merge');
-  assert.equal(fs.existsSync(join(reader.home, 'knowledge/bases/project/expert/decision.md')), false);
+  assert.equal(f.consult(reader.home, 'expert/decision.md'), null, 'not accepted before the merge');
   f.retire(reader.instance);
   // Replay reconciles the existing PR; it cannot push a second branch/PR.
   assert.equal(f.complete(run).receipts.project.commit, receipt.commit);
@@ -62,7 +62,8 @@ test('real directory worker delivers a Git PR without modifying accepted head or
   const prs = readJSON(gh.prs); Object.assign(prs[0], { state: 'MERGED', mergedAt: '2026-09-13T12:00:00Z', mergeCommit: { oid: receipt.commit } }); json(gh.prs, prs);
   assert.equal(f.complete(run).receipts.project.status, 'accepted');
   const fresh = f.spawn('after-merge');
-  assert.match(fs.readFileSync(join(fresh.home, 'knowledge/bases/project/expert/decision.md'), 'utf8'), /avoids silent fallback/);
+  // okf 3.0.0 serves the host's clone of the base within consult-max-age: the merge is read with --fresh.
+  assert.match(f.consult(fresh.home, 'expert/decision.md', { fresh: true }), /avoids silent fallback/);
   f.retire(fresh.instance); f.retire(run.instance); f.retire(f.source.instance);
 });
 

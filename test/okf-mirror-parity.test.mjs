@@ -58,6 +58,16 @@ function standaloneFixture(base) {
   return { root, env, git };
 }
 
+/** A mirror whose standalone ships a symlink. 3.0.0 ships none (npm drops them); 2.x shipped the
+ *  memory-harvest CLAUDE.md -> AGENTS.md alias, which gives the symlink rules a real subject. */
+function copyMirrorWithAlias(base) {
+  const fixture = standaloneFixture(base);
+  symlinkSync("AGENTS.md", join(fixture.root, "oats-package", CAPABILITY_PATH, ALIAS));
+  const root = copyMirror(base);
+  syncOkfMirror(fixture.root, { repoRoot: root });
+  assert.ok(lstatSync(join(root, CAPABILITY_PATH, ALIAS)).isSymbolicLink());
+  return root;
+}
 function publishFixture(base, fixture, { annotated = true, publish = true } = {}) {
   const repository = join(base, "origin.git");
   fixture.git("init", "--quiet", "--bare", repository);
@@ -78,7 +88,7 @@ function assertMirrorUnchanged(root, run, pattern) {
 
 test("checked-in mirror is a complete standalone inventory with consistent pending or published provenance", () => {
   const inventory = checkOkfMirror();
-  assert.equal(inventory.version, "2.1.5");
+  assert.equal(inventory.version, "3.0.0");
   assert.equal(inventory.source.repository, "https://github.com/awebai/oats-okf.git");
   assert.equal(inventory.release.plannedTag, `v${inventory.version}`);
   if (inventory.release.status === "pending") {
@@ -97,10 +107,8 @@ test("checked-in mirror is a complete standalone inventory with consistent pendi
   assert.deepEqual(JSON.parse(inventory.distributionManifestText).capabilities, [CAPABILITY_PATH]);
   assert.match(inventory.distributionLicenseText, /^MIT License\n/);
   assert.ok(!JSON.stringify(inventory).includes(REPO_ROOT), "inventory has no machine paths");
-  const alias = inventory.entries.find((entry) => entry.path === ALIAS);
-  assert.equal(alias.type, "symlink");
-  assert.equal(alias.target, "AGENTS.md");
-  assert.equal(alias.size, Buffer.byteLength("AGENTS.md"));
+  // 3.0.0 dropped the memory-harvest CLAUDE.md alias: npm drops symlinks, and the kernel composes a home's CLAUDE.md.
+  assert.deepEqual(inventory.entries.filter((entry) => entry.type === "symlink"), [], "3.0.0 ships no symlink");
 });
 
 test("verification needs only the mirror and checked-in inventory: no source clone or Git", (t) => {
@@ -129,7 +137,7 @@ for (const [label, mutate, pattern] of [
   ["dangling symlink", (cap) => { rmSync(join(cap, ALIAS)); symlinkSync("MISSING.md", join(cap, ALIAS)); }, /ENOENT/],
 ]) {
   test(`mirror rejects ${label}`, (t) => {
-    const root = copyMirror(temp(t));
+    const root = copyMirrorWithAlias(temp(t));
     mutate(join(root, CAPABILITY_PATH));
     assert.throws(() => checkOkfMirror({ repoRoot: root }), pattern);
   });
@@ -137,7 +145,7 @@ for (const [label, mutate, pattern] of [
 
 test("Git payload materialization preserves exact wrappers and symlinks; never repairs a bad mirror", (t) => {
   const base = temp(t);
-  const root = copyMirror(base);
+  const root = copyMirrorWithAlias(base);
   const destination = join(base, "git-repo/oats-package");
   const inventory = materializeOkfGitPayload(destination, { repoRoot: root });
   for (const [file, text] of [["oats-package.json", inventory.distributionManifestText], ["LICENSE", inventory.distributionLicenseText]]) {
@@ -217,9 +225,9 @@ test("generation requires explicit source and safely restricts distribution enum
   assert.throws(() => syncOkfMirror(source, { repoRoot: root }), /new distribution surfaces/);
   writeFileSync(file, JSON.stringify(original));
   const cap = join(source, "oats-package", CAPABILITY_PATH);
-  rmSync(join(cap, ALIAS));
-  assert.throws(() => syncOkfMirror(source, { repoRoot: root }), /must supply canonical CLAUDE.md/);
-  assert.ok(!existsSync(join(cap, ALIAS)), "generation never repairs source aliases");
+  assert.ok(!existsSync(join(cap, ALIAS)), "the 3.0.0 source ships no alias");
+  syncOkfMirror(source, { repoRoot: root });
+  assert.ok(!existsSync(join(cap, ALIAS)) && !existsSync(join(root, CAPABILITY_PATH, ALIAS)), "generation never synthesizes an alias");
   assert.deepEqual(payloadEntries(join(root, CAPABILITY_PATH)), mirrorBefore);
   rmSync(cap, { recursive: true });
   symlinkSync(join(REPO_ROOT, CAPABILITY_PATH), cap);

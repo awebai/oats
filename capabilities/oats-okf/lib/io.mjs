@@ -57,9 +57,16 @@ export function materialize(root, files) {
   safePath(root); fs.mkdirSync(root, { recursive: true });
   for (const [p, content] of Object.entries(files)) atomic(join(root, relPath(p)), Buffer.from(content, 'base64'));
 }
-export function withLock(path, fn) {
+const pause = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+/** Cooperative directory lock. `waitMs` lets a reader queue behind a live
+ *  holder for a bounded time; an abandoned lock is still never reclaimed. */
+export function withLock(path, fn, { waitMs = 0 } = {}) {
   safePath(path); fs.mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  try { fs.mkdirSync(path, { mode: 0o700 }); } catch(e) { if(e.code === 'EEXIST') fail('E_LOCKED', `busy or abandoned lock: ${path}; inspect owner.json, never reclaim by age`); throw e; }
+  const deadline = Date.now() + waitMs;
+  for (let delay = 20;; delay = Math.min(delay * 2, 250)) {
+    try { fs.mkdirSync(path, { mode: 0o700 }); break; }
+    catch(e) { if(e.code !== 'EEXIST') throw e; if(Date.now() >= deadline) fail('E_LOCKED', `busy or abandoned lock: ${path}; inspect owner.json, never reclaim by age`); pause(delay); }
+  }
   const owner = { token: randomUUID(), pid: process.pid, host: hostname() };
   save(join(path, 'owner.json'), owner);
   try { return fn(); } finally { if (readJSON(join(path, 'owner.json')).token === owner.token) { fs.rmSync(path, { recursive: true }); syncDir(dirname(path)); } }

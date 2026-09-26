@@ -1,12 +1,12 @@
 {
   "capability": "oats.okf",
   "command": "okf",
-  "version": "2.1.5",
+  "version": "3.0.0",
   "compatibility": {
-    "oats": ">=0.24.4"
+    "oats": ">=0.26.0"
   },
   "layer": "knowledge",
-  "description": "External OKF bases with owned nodes, immutable reader views, durable per-source evidence, independent workers, verified Git PR and recoverable non-Git directory delivery.",
+  "description": "External OKF bases with owned nodes, consulted remotely at their accepted state (no per-instance copy), durable per-source evidence, independent workers, verified Git PR and recoverable non-Git directory delivery.",
   "requires": [],
   "settings": {
     "harvest-runtime": {
@@ -29,6 +29,9 @@
     },
     "git-timeout": {
       "description": "Seconds allowed for each Git operation that talks to a remote (clone, fetch, push, ls-remote); default 600. Local object reads keep a short fixed limit. Raise it for large repositories behind slow links."
+    },
+    "consult-max-age": {
+      "description": "Seconds a Git base's host-cached accepted commit may age before an `oats okf` consult read refetches the accepted branch; default 300, 0 fetches on every read. `--fresh` always refetches."
     }
   },
   "agents": [
@@ -44,6 +47,12 @@
     "run-source": "bin/oats-okf.mjs run-source",
     "complete": "bin/oats-okf.mjs complete",
     "retry": "bin/oats-okf.mjs retry",
+    "bases": "bin/oats-okf.mjs bases",
+    "index": "bin/oats-okf.mjs index",
+    "cat": "bin/oats-okf.mjs cat",
+    "ls": "bin/oats-okf.mjs ls",
+    "links": "bin/oats-okf.mjs links",
+    "search": "bin/oats-okf.mjs search",
     "read": "bin/oats-okf.mjs read",
     "refresh": "bin/oats-okf.mjs refresh",
     "init": "bin/oats-okf.mjs init",
@@ -107,7 +116,7 @@
       "kind": "view",
       "command": "inspect",
       "context": "home",
-      "description": "Inspect matching live working-memory documents, durable receipts, bindings, registered view freshness and scheduler health."
+      "description": "Inspect matching live working-memory documents, durable receipts, bindings, the accepted resolution, any legacy local view and scheduler health."
     },
     "harvest": {
       "kind": "action",

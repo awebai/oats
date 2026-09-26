@@ -4,11 +4,12 @@ description: >-
   Open Knowledge Format (OKF) craft: how to author, maintain, consume, and
   validate OKF knowledge bundles (directories of markdown concepts with YAML
   frontmatter, per Google Cloud's OKF v0.1 spec). Use when writing or editing
-  concepts in a knowledge/ bundle or notes/, adding or renaming concept files,
+  concepts in a knowledge bundle or notes/, adding or renaming concept files,
   updating index.md or log.md, answering questions from a bundle, triaging a
-  knowledge inbox, or when asked to validate a bundle. This skill is HOW to do
-  OKF well; instance session protocol lives in the okf AGENTS.md injection,
-  and promotion judgment in the memory-harvest skill.
+  knowledge inbox, or when asked to validate a bundle. To consult your own
+  soul's knowledge with `oats okf`, load the okf-consultation skill instead.
+  Instance session protocol lives in the okf AGENTS.md injection, and
+  promotion judgment in the memory-harvest skill.
 ---
 
 # OKF craft — author, maintain, consume
@@ -19,6 +20,13 @@ database, no SDK — plain git-versionable text. Spec: OKF v0.1 (Google Cloud).
 An external base is one bundle and link namespace. Owned nodes are
 nonoverlapping subdirectories, not separate root-link namespaces. Instance
 `notes/` files are task-local concepts; no knowledge lives in the soul.
+
+## Consulting your knowledge
+
+Your soul's knowledge is read remotely with `oats okf` (`index`, `cat`, `ls`,
+`links`, `search`, `bases`): there is no local copy. The **okf-consultation**
+skill teaches the procedure; load it at the start of every task and whenever
+you look something up. This skill is about the format itself.
 
 ## The format in one screen
 
@@ -144,8 +152,8 @@ Those private mode-0600 files exist only for one synchronous captured invocation
 
 ## External bases and native tools
 
-Ordinary working agents consult `oats okf read --base ALIAS --path node/index.md`
-and `oats okf refresh`. When inspecting a source, treat the additive `authority`
+Ordinary working agents consult with `oats okf index` / `cat` / `search`
+(the okf-consultation skill). When inspecting a source, treat the additive `authority`
 object literally: `captured` includes recorded qualified identity/execution;
 `legacy` or `invalid` means migration/evidence is still required. A
 responsible-human status of `disabled` comes only from explicit null; `unknown`

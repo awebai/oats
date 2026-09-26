@@ -99,13 +99,21 @@ export function capturedAuthority(source) {
   return {...base,registration:'captured',capture:'recorded',migrationRequired:false,sourceIdentity:JSON.parse(JSON.stringify(identity)),executionBinding:JSON.parse(JSON.stringify(binding)),
     responsibleHuman:{status:source.responsibleHuman===null?'disabled':'specified'}};
 }
+/** A ./knowledge/ snapshot written by okf 2.x. okf 3.0.0 never reads it
+ *  (knowledge is consulted remotely) and never deletes it. */
+export function legacyLocalView(source,status=loadStatus(source)) {
+  if(!liveHome(source,status).available) return null;
+  const path=join(safePath(source.home),'knowledge');let stat;
+  try {stat=fs.lstatSync(path);} catch(e) {if(missing(e)) return null;throw e;} // never follow it
+  return {status:'legacy-local-view',path,ignored:true,...(stat.isSymbolicLink()?{symlink:true}:{}),note:'okf 3.0.0 ignores this okf 2.x snapshot and reads knowledge remotely; it is safe to delete by hand'};
+}
 export function inspect(source) {
-  const status=loadStatus(source),working=workingDocuments(source,status);
+  const status=loadStatus(source),working=workingDocuments(source,status),legacy=legacyLocalView(source,status);
   let health;try {health=oats(['schedule','list','--dir',source.context,'--json'],source.context).scheduler;} catch(e) {health={active:false,error:e.message};}
   const documents=[...working.documents,{label:'Durable processing receipts',kind:'text',path:join(dirname(source.file),'status.json'),text:JSON.stringify(status,null,2)}];
   return {
-    summary:`OKF ${source.id}: ${status.captured.inputs.length-status.processed.length} unprocessed inputs; ${status.retired?'source retired':'source not retired'}; ${working.liveMemory.available?`${working.documents.length} working-memory documents`:`live memory unavailable (${working.liveMemory.reason})`}`,
+    summary:`OKF ${source.id}: ${status.captured.inputs.length-status.processed.length} unprocessed inputs; ${status.retired?'source retired':'source not retired'}; ${working.liveMemory.available?`${working.documents.length} working-memory documents`:`live memory unavailable (${working.liveMemory.reason})`}${legacy?'; legacy-local-view ./knowledge/ (ignored, safe to delete)':''}`,
     source:source.file,owns:source.decl.owns,reads:source.decl.reads,bases:source.bindings.bases,authority:capturedAuthority(source),
-    acceptedView:source.acceptedView,status,scheduler:health,liveMemory:working.liveMemory,documents
+    acceptedView:source.acceptedView,legacyLocalView:legacy,status,scheduler:health,liveMemory:working.liveMemory,documents
   };
 }

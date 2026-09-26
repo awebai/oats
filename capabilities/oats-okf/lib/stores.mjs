@@ -7,7 +7,7 @@ import { metadata, noGit, gitTimeoutMs } from './config.mjs';
 const validator = fileURLToPath(new URL('../skills/okf/scripts/okf-validate.mjs', import.meta.url));
 // Never let local replace refs reinterpret frozen OIDs, including inside Git's
 // transport subprocesses. Override even an explicitly supplied command env.
-const gitEnv = (env = cleanEnv()) => ({...env,GIT_NO_REPLACE_OBJECTS:'1'});
+export const gitEnv = (env = cleanEnv()) => ({...env,GIT_NO_REPLACE_OBJECTS:'1'});
 export const git = (cwd,args,opts={}) => exec('git',['--no-replace-objects','-c','core.hooksPath=/dev/null','-c','protocol.ext.allow=never','-C',cwd,...args],{cwd,...opts,env:gitEnv(opts.env)});
 function baseError(code,message,base,alias,step,reason) {throw Object.assign(new Error(message),{code,base:alias,repository:base.repository,step,reason});}
 function baseRemedy(alias) {return `fix the binding for base alias "${alias}" in the bindings file, or remove the base from the bindings`;}
@@ -19,22 +19,25 @@ function classifyGitFailure(error) {
   if(/could not resolve host|failed to connect|connection refused|network is unreachable|no route to host|proxy/i.test(text)) return 'network';
   return 'unknown';
 }
-function unavailable(base,alias,step,error) {
+export function unavailable(base,alias,step,error) {
   const reason=classifyGitFailure(error),detail=reason==='unknown'?`; original Git failure: ${String(error?.message || 'unknown failure')}`:'';
   const message=`Git base "${alias}" repository "${base.repository}" is required by the deployment's bindings, but ${step} failed (reason: ${reason}${detail}); ${baseRemedy(alias)}`;
   baseError('E_BASE_UNAVAILABLE',message,base,alias,step,reason);
 }
-function requireNotShallow(base,alias,cwd) {
+export function requireNotShallow(base,alias,cwd) {
   const shallow=git(cwd,['rev-parse','--is-shallow-repository']);
   if(shallow==='true') baseError('E_BASE_SHALLOW',`Git base "${alias}" repository "${base.repository}" is required by the deployment's bindings, but the repository is shallow; oats.okf requires full accepted history before staging; ${baseRemedy(alias)}`,base,alias,'clone','shallow');
 }
-function preflightLocalRepository(base,alias) {
+export function preflightLocalRepository(base,alias) {
   if(!base.repository.startsWith('/')) return;
   if(!fs.existsSync(base.repository)) unavailable(base,alias,'clone',Object.assign(new Error('repository not found'),{code:'ENOENT'}));
   try { requireNotShallow(base,alias,base.repository); }
   catch(e) { if(e.code==='E_BASE_SHALLOW') throw e; unavailable(base,alias,'clone',e); }
 }
 export const baseLock = b => `${b.path}.okf-lock`;
+// okf consult readers hold a directory base's lock briefly; staging and
+// publication queue behind them for a bounded time instead of failing.
+const CONSULT_READER_WAIT_MS = 10000;
 export const journalPath = b => `${b.path}.okf-publication.json`;
 export function validateBase(root, base) {
   const files=tree(root,{git:base.kind==='git' && base.root==='.'}); const meta=metadata(files,base);
@@ -123,7 +126,7 @@ export function stageBase(base, dest, { alias = base.id } = {}) {
     if(fs.existsSync(journalPath(base))) fail('E_RECOVERY',`publication pending: ${journalPath(base)}; retry its recorded run before reading`);
     const result=validateBase(base.path,base); materialize(dest,result.files);
     return {...result,root:dest};
-  });
+  },{waitMs:CONSULT_READER_WAIT_MS});
 }
 export function allowedChanges(before, after, meta, owned) {
   const changed=[...new Set([...Object.keys(before),...Object.keys(after)])].filter(p=>before[p]!==after[p]);
@@ -287,7 +290,7 @@ export function directoryPublish(base, proposal, receipt, persist, { afterWrite 
     receipt.status='accepted'; receipt.acceptedDigest=final.digest; receipt.acceptedAt=new Date().toISOString(); persist();
     fs.rmSync(jp); syncParent(jp);
     return receipt;
-  });
+  },{waitMs:CONSULT_READER_WAIT_MS});
 }
 function syncParent(p) { const fd=fs.openSync(dirname(p),'r'); try {fs.fsyncSync(fd);} finally {fs.closeSync(fd);} }
 function prRows(base,branch,cwd,{identity,allBases=false}={}) {
@@ -303,7 +306,7 @@ function prRows(base,branch,cwd,{identity,allBases=false}={}) {
   const raw=exec('gh',['pr','list','--repo',base.pr.repository,'--head',branch,...(allBases?[]:['--base',base.acceptedBranch]),'--state','all','--json',fields],{cwd,env:gitEnv()});
   const rows=JSON.parse(raw); if(!Array.isArray(rows)) fail('E_PR','invalid gh PR list'); return rows;
 }
-function verifyRemote(base,cwd) {
+export function verifyRemote(base,cwd) {
   for(const mode of [[],['--push']]) {
     const urls=git(cwd,['remote','get-url',...mode,'--all','origin']).split('\n');
     if(!urls.length || urls.some(url=>url!==base.repository)) fail('E_OWNER','worker changed frozen Git publication remote or effective push destination');

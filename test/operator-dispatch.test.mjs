@@ -15,7 +15,7 @@
 // pinned in a local workspace, the pattern of scripts/clean-room-smoke.mjs.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -225,8 +225,8 @@ test("oats okf init --soul probe from the deployment (no home) provisions the ba
     assert.equal(store[0].slice("oats.okf@".length), lock.packages["oats.okf"].commit.slice(0, 12));
     const storeDir = join(dep, MODULES_DIR, store[0]);
     assert.ok(existsSync(join(storeDir, "oats.json")) && existsSync(join(storeDir, "bin", "oats-okf.mjs")));
-    const alias = join(storeDir, "agents", "memory-harvest", "CLAUDE.md");
-    assert.ok(lstatSync(alias).isSymbolicLink(), "the tracked CLAUDE.md alias survives the fetch (OATS_ALIAS_SYMLINK)");
+    // oats.okf 3.0.0 ships no CLAUDE.md alias (the kernel composes a home's); the alias fetch rule is pinned in remote.test.mjs.
+    assert.ok(existsSync(join(storeDir, "agents", "memory-harvest", "AGENTS.md")) && !existsSync(join(storeDir, "agents", "memory-harvest", "CLAUDE.md")));
     assert.deepEqual(readdirSync(join(dep, MODULES_DIR)).filter((n) => n.startsWith(".staging")), []);
     assert.ok(!existsSync(join(dep, "agents", "probe", "instances")), "init ran before any instance existed");
 

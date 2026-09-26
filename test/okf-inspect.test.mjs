@@ -172,9 +172,11 @@ for (const mode of ['retired', 'missing', 'reused', 'invalid-marker']) test(`des
   const out = f.inspect();
   assert.equal(out.liveMemory.available, false); assert.equal(out.documents.length, 1);
   assert.equal(out.status.captured.inputs.length, 1); assert.doesNotMatch(JSON.stringify(out), /DO_NOT_EXPOSE_REUSED_HOME/);
-  const refresh = f.cli(['okf', 'refresh', '--source', f.sourceFile, '--soul', 'source', '--json']);
-  assert.equal(dirname(refresh.path), join(dirname(f.sourceFile), 'views'));
+  // okf 3.0.0 has no views: refresh is removed, and nothing is materialized for the home.
+  const refresh = f.raw(['okf', 'refresh', '--source', f.sourceFile, '--soul', 'source', '--json']);
+  assert.equal(JSON.parse(refresh.stdout).error.code, 'E_REMOVED');
   assert.equal(fs.existsSync(join(f.home, 'knowledge-view')), false);
+  assert.equal(fs.existsSync(join(dirname(f.sourceFile), 'views')), false);
 });
 
 for (const mode of ['symlink', 'hardlink', 'directory', 'notes-file']) test(`inspection fails explicitly for unsafe live ${mode}, never returns partial success`, t => {

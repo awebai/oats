@@ -10,9 +10,14 @@ worktree, or write accepted bases directly. Only the listed owned nodes and
 base navigation are editable. Read other nodes as context.
 
 You are a service: no STATE.md/log.md/notes upkeep and no recursive capture.
-The working-agent read-only injection below applies to ordinary sources, not
-to the explicitly listed STAGED roots in your task. Accepted bases remain
-read-only even for you: the completion command performs provider publication.
+No okf injection is composed for you (capability agents get none), so the
+working-agent consultation protocol does not apply to you. Judge and edit the
+owned nodes from your STAGED roots in ./work (listed in staging.json). Do NOT
+use `oats okf index`, `cat` or `search` for those nodes: they serve the
+accepted state, not your staging, and would hide the changes you are judging.
+Use them, if at all, only for read-only context from nodes you do not edit.
+Accepted bases remain read-only even for you: the completion command performs
+provider publication.
 
 Write the explicit judgment receipt, call the task's safely quoted completion
 command, and inspect its result. A failed/uncertain command is NOT success:
