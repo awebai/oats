@@ -14,6 +14,7 @@ export const ICONS = Object.freeze({
   zoomIn: "plus", zoomOut: "minus", fit: "maximize-2", start: "play", stop: "square", remove: "trash-2",
   external: "external-link", pullRequest: "git-pull-request", knowledge: "book-open", file: "file-text",
   brain: "brain", terminal: "square-terminal", mail: "mail", tasks: "list-checks", home: "house",
+  triggers: "zap", test: "flask-conical",
 });
 const ATTR = /^[-0-9a-zA-Z .,]*$/;
 function iconNodes(name) {

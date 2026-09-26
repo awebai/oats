@@ -26,6 +26,7 @@ import { createSoulInspector, inspectorCSS } from '../renderer/soul-inspector.mj
 import { readinessCSS as readinessViewCSS } from '../renderer/readiness-view.mjs';
 import { createInstanceGitPanel } from '../renderer/instance-git.mjs';
 import { spawnDialogCSS } from '../renderer/spawn-dialog.mjs';
+import { createAutomationsView } from '../renderer/views/automations.mjs';
 import { setWorkspace } from '../renderer/views/common.mjs';
 import { scheduleReadData } from '../renderer/schedule-read-data.mjs';
 import { cli as scheduleCli, scope as scheduleScope, data as scheduleData, entry as scheduleEntry } from './helpers/schedule-read-fixture.mjs';
@@ -374,6 +375,44 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
     ['.ws-sync-state.warn', '.workspace-header', 'warn', 'surface'],
     ['.ws-sync-lead.error', '.ws-sync-dialog', 'danger', 'surface'], ['.ws-sync-lead:not(.error)', '.ws-sync-dialog', 'fg', 'surface'],
     ['.ws-sync-details', '.ws-sync-dialog', 'muted', 'surface'], ['.ws-sync-detail', '.ws-sync-detail', 'muted', 'surface-2'],
+  ]) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted);
+    assert.ok(el && surface, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.equal(dom.window.getComputedStyle(surface).background, `var(--${bg})`, painted);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${selector} on ${bg}`);
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+  }
+});
+
+// Schedules + Triggers (§2.3a): the list (header, toolbar, groups, rows, tags), the host
+// banner and the detail page, rendered from the provisional automations fixtures.
+for (const [name] of palettes) test(`${name}: Schedules and Triggers text uses AA tokens on its computed surfaces`, async t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="a"></div><div class="b"></div><div class="c"></div></body></html>`);
+  const doc = dom.window.document;
+  const style = doc.createElement('style'); style.textContent = css; doc.head.append(style);
+  t.after(() => dom.window.close());
+  const auto = file => JSON.parse(readFileSync(new URL(`fixtures/automations/${file}.json`, new URL('./', import.meta.url)), 'utf8'));
+  const now = () => Date.parse('2026-09-26T14:00:00.000Z');
+  const unnamed = auto('trigger-list'); unnamed.host = { name: null };
+  for (const r of unnamed.triggers) if (r.origin.kind === 'workspace') { r.runsHere = false; r.reason = 'host-unnamed'; }
+  createAutomationsView(doc.querySelector('.a'), { kind: 'schedule', read: async () => auto('schedule-list'), act: async () => ({ ok: true }), now });
+  createAutomationsView(doc.querySelector('.b'), { kind: 'trigger', read: async () => unnamed, now });
+  const page = createAutomationsView(doc.querySelector('.c'), { kind: 'trigger', read: async () => auto('trigger-list'), act: async () => ({ ok: false, problems: [{ message: 'x' }] }), now });
+  await new Promise(r => setTimeout(r, 0));
+  page.open('agents/triage-issues'); doc.querySelector('.c .page-bar-actions button[data-verb=test]').click();
+  await new Promise(r => setTimeout(r, 0)); await new Promise(r => setTimeout(r, 0));
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  for (const [selector, painted, fg, bg] of [
+    ['.a .auto-header h2', '.a .auto-header', 'fg', 'surface'], ['.a .auto-count', '.a .auto-header', 'muted', 'surface'], ['.a .auto-scheduler', '.a .auto-header', 'muted', 'surface'],
+    ['.a .auto-seg button[aria-pressed=true]', '.a .auto-seg button[aria-pressed=true]', 'fg', 'surface-2'], ['.a .auto-seg button[aria-pressed=false]', '.a .auto-seg', 'muted', 'surface'],
+    ['.a .auto-group-title:not(.warn)', '.a .automations', 'fg', 'bg'], ['.a .auto-group-title.warn', '.a .automations', 'warn', 'bg'], ['.a .auto-group-note', '.a .automations', 'muted', 'bg'],
+    ['.a .auto-row.head', '.a .auto-table', 'muted', 'surface'], ['.a .auto-row:not(.off) .auto-id', '.a .auto-table', 'fg', 'surface'], ['.a .auto-sub', '.a .auto-table', 'muted', 'surface'],
+    ['.a .auto-tag:not(.muted):not(.warn)', '.a .auto-tag:not(.muted):not(.warn)', 'fg', 'tag-bg'], ['.a .auto-tag.warn', '.a .auto-tag.warn', 'fg', 'attn-bg'],
+    ['.a .auto-none', '.a .auto-table', 'muted', 'surface'], ['.a .auto-foot', '.a .automations', 'muted', 'bg'],
+    ['.b .auto-banner', '.b .auto-banner', 'fg', 'attn-bg'], ['.b .auto-row.off .auto-id', '.b .auto-table', 'muted', 'surface'], ['.b .auto-tag.muted', '.b .auto-table', 'muted', 'surface'],
+    ['.c .auto-prompt', '.c .auto-prompt', 'fg', 'surface'], ['.c .auto-token', '.c .auto-token', 'fg', 'chip-bg'],
+    ['.c .auto-verdict.warn', '.c .page-card', 'warn', 'surface'], ['.c .auto-test-line.warn', '.c .page-card', 'warn', 'surface'],
   ]) {
     const el = doc.querySelector(selector), surface = doc.querySelector(painted);
     assert.ok(el && surface, selector);
