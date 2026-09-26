@@ -123,6 +123,77 @@
 - **Package trigger templates:** a package may declare `triggers: [{ id, file }]`; `oats trigger add --from oats.okf:harvest-review` instantiates one after asking for the repo. This is how okf ships the default.
 - **Safety:** a trigger spawns only a soul that resolves in this workspace. A disabled soul refuses. The trigger runs with the host's own credentials, and there's no credential in the definition.
 
+### 2.3a Workspace automations: triggers and schedules declared in Git (the human, 2026-09-26)
+
+Triggers and schedules are defined at **one of two levels**:
+- **the workspace level**, committed in any member repo and shared through Git: the default for anything a team relies on;
+- **locally**, in the deployment (§2.3 as built: `oats trigger add`, `oats schedule add`): machine-private, for personal or experimental jobs.
+
+**A human is a GitHub account** (a person or a machine user). Every workspace automation says **which machine runs it** and **which account it acts as**.
+
+**The canonical contract:**
+- **Where it lives:** `triggers/<id>.yaml` and `schedules/<id>.yaml` at a member repo's root, beside `souls/` and `capabilities/`.
+- **Discovery:** they're discovered like souls (over the remote, from CONFIRMED members only), named `<member>/<id>`, and listed by `oats workspace status` / `oats trigger list` / `oats schedule list` with `origin: { kind: "workspace", repoKey, commit }`.
+
+```yaml
+# <member>/triggers/okf-harvest-review.yaml
+schemaVersion: 1
+description: Review every harvest PR on the knowledge base
+from: oats.okf:harvest-review        # optional: a package template (§2.3), then overrides
+set: { repo: github.com/acme/knowledge }
+runsOn: kb-bot-server                # the host name (oats-local.yaml host.name) that runs it
+owner: github.com/acme-kb-bot        # the GitHub account it acts as (a person or a machine user)
+# …or a full definition (on/spawn/concurrency) as in §2.3, instead of from/set
+```
+
+```yaml
+# <member>/schedules/nightly-digest.yaml
+schemaVersion: 1
+kind: spawn                          # spawn | command | wake, as today
+cron: "0 7 * * *"
+tz: Europe/Madrid
+agent: digest-writer
+task: Write the nightly digest.
+runsOn: ana-laptop
+owner: github.com/ana
+```
+
+**Host identity:** `oats-local.yaml` gains `host: { name: <slug> }`. It's a machine fact, never in Git.
+
+**Who runs it:** a host runs a workspace automation ONLY when BOTH are true:
+- `runsOn` equals its `host.name`;
+- the host's authenticated `gh` account equals `owner` (`gh api user`, cached per tick).
+
+**Otherwise** it's listed with the reason:
+- `assigned-elsewhere` (another host);
+- `owner-mismatch` (this host is named but logged in as someone else; nothing runs, and `oats trigger test` says so);
+- `host-unnamed` (the host has no `host.name`).
+
+That makes "exactly one machine" a declared fact, and **consent** explicit: a machine acts for an account only when its operator named it AND is logged in as that account. Declaring the automation in a member is the trust decision for its *definition*, like souls.
+
+**Opting out:** `oats-local.yaml` `automations.disabled: [<member>/<id>, …]` stops a named host from running one, without a commit.
+
+**Refresh:**
+- The host tick reads a snapshot of the workspace automations taken by `oats sync`, and refreshed by the tick at most every 10 minutes.
+- A definition change reaches the host within ~10 minutes; no fetch happens every minute.
+- The run state (dedup keys, the last poll) stays per host and local.
+
+**Local automations are unchanged:** machine-private, implicitly this host and its own `gh`, so no `runsOn`/`owner`. The ids are namespaced: `local/<id>` vs `<member>/<id>`.
+
+**Safety:** everything in §2.3 still holds (the soul must resolve here; only whitelisted fields are templated; PR text is never interpolated; there's no credential in any definition).
+
+**Desktop:** an Automations section lists workspace automations (repo, owner, host, "runs here" or why not) and local ones.
+
+**Onboarding / okf:**
+- The review trigger becomes a **workspace file** (`triggers/okf-harvest-review.yaml` in the host repo, `from: oats.okf:harvest-review`, with `runsOn` + `owner` naming the merge-capable host and account).
+- `oats trigger add --from … --workspace <member>` writes it (or prints it when that repo isn't the current checkout).
+- `oats trigger test <member>/<id>` runs on the named host. This supersedes "install on ONE host" by hand.
+
+**Delivery:**
+- **PR 2b (kernel):** after #205. Discovery + the host identity + the owner/host matching + the snapshot + the CLI/JSON + docs.
+- The target is **0.29.0**, released with okf 4.0.0, whose `okf-trigger-setup` teaches the workspace form first. The floor becomes `oats >= 0.29.0`.
+- 0.28.0 ships the local triggers (#205) as the mechanism.
+
 ### 2.4 The harvester and the maintainer (oats.okf 4.0.0)
 
 **`knowledge-harvester` soul** (a package soul; `work: directory`; `team: okf`; `knowledge: none`, so there's no recursive harvest; capability `oats.okf-harvest`).
