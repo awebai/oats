@@ -76,7 +76,7 @@
 - Each is an ordinary soul directory (`soul.yaml`, `AGENTS.md`, `skills/`).
 - **Versioned and locked with the package:** one pin (`packages: { oats.okf: 4.0.0 }`) versions the capabilities *and* the souls. Nothing drifts, unlike `external:` commit pins.
 - **Discovery:** they're listed with `origin: package` (`oats status --workspace`, and the Desktop Souls page shows "from package oats.okf 4.0.0").
-- **Spawn:** by name.
+- **Spawn:** by name. A package soul's instances live in a qualified directory (not shared with a same-named member soul).
   - Package souls are namespaced `oats.okf/knowledge-maintainer` to avoid collisions with member souls.
   - A bare name works when unambiguous.
 - **Resolution:**
@@ -210,7 +210,7 @@ It extends the 3.0.0 inject into a *work mode*:
 ### 2.6 The `okf` team
 
 - Onboarding (the oats.framework `oats-onboarding` skill + okf's `okf-trigger-setup`) adds `teams: { okf: { description: Knowledge operations } }` and the `messaging.byTeam.okf` mapping.
-- The package souls carry `team: okf`. A workspace that does not declare `okf` gets `E_TEAM_UNKNOWN` on them, a listed-but-unspawnable soul with the remedy. So onboarding must add it, and `oats trigger test` checks it.
+- The package souls carry `team: okf`. A workspace that does not declare `okf` gets the `E_TEAM_UNKNOWN` discovery problem on them (listed with the remedy; as for member souls it's not a spawn refusal, but their instances then land in no messaging team, so harvester↔maintainer talk fails). So onboarding must add it, and `oats trigger test` checks it.
 - The label organises and gates nothing (the teams contract).
 
 ## 3. Delivery plan
