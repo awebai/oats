@@ -404,7 +404,7 @@ test('resolved instance context is committed before pending PTY readiness; panel
   const s = shell(t), resolved = { ...instance('pending'), harness: 'pi', model: 'reported-model' };
   const pending = await s.open({ instance: 'pending' }, false, [resolved]);
   assertPanel(s, resolved);
-  assert.equal(s.field('harness'), 'pi'); assert.equal(s.field('model'), 'reported-model');
+  assert.equal(s.field('harness'), 'Pi', 'Workspace v4: the harness by its display name'); assert.equal(s.field('model'), 'reported-model');
   assert.equal(s.c.tabs.get(pending.id).instanceRef, resolved, 'store the resolver result, not the caller reference');
   assert.equal(pending.term.focuses, 0); assert.equal(s.attachments.length, 1);
   const soul = s.document.querySelector('[data-context-tab="soul"]');

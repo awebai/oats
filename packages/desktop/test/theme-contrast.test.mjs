@@ -620,7 +620,9 @@ for (const [name] of palettes) test(`${name}: F7 inspector cards, teams, compact
     ['#home .teams-card .team-meta', '#home .teams-card', 'muted', 'surface'],
     ['#home .teams-card .team-badge', '#home .teams-card', 'muted', 'surface'],
     ['#home .inspector-spawned button', '#home .inspector-spawned button', 'fg', 'surface'],
-    ['#context-panel .context-panel-path', '#context-panel', 'muted', 'surface'],
+    // Workspace v4 (W6): the Folder row's path reads as a value; Details' home path stays muted.
+    ['#context-panel .context-panel-folder .context-panel-path', '#context-panel', 'fg', 'surface'],
+    ['#context-panel .context-panel-detail .context-panel-path', '#context-panel', 'muted', 'surface'],
     ['#context-panel .context-panel-copy', '#context-panel .context-panel-copy', 'fg', 'surface'],
   ];
   checks.push(['.git-status-details > summary', '#context-panel', 'muted', 'surface']);

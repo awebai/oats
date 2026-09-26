@@ -143,7 +143,9 @@ test("roster DOM contract: named group separators, identity, active state, hidde
   const u = fixture(t);
   assert.deepEqual([...u.doc.querySelectorAll(".ctx-group")].map(g => [g.getAttribute("role"), g.getAttribute("aria-label"), g.textContent]),
     [["separator", "root, 5 instances", ""], ["separator", "independent, 1 instance", ""]]);
-  assert.equal(u.doc.querySelector(".ctx-count").textContent, "5 running · 0 stopped · 1 unknown");
+  // The head shows only the running count (human, 2026-09-26); the full breakdown is its title.
+  assert.equal(u.doc.querySelector(".ctx-count").textContent, "5 running");
+  assert.equal(u.doc.querySelector(".ctx-count").title, "5 running · 0 stopped · 1 unknown");
   for (const row of u.rows) {
     const button = row.querySelector(".ctx-inst"), name = row.querySelector(".ctx-name").textContent;
     assert.equal(button.dataset.treeInstance, `/synthetic/${name}`);

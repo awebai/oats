@@ -518,6 +518,7 @@ export function renderRosterCount(el, instances) {
   const stopped = instances.filter((i) => i.running === false).length;
   const unknown = instances.length - running - stopped;
   const dot = doc.createElement("span"); dot.className = "ctx-count-dot"; dot.setAttribute("aria-hidden", "true");
-  el.replaceChildren(...(running ? [dot] : []), doc.createTextNode(
-    [`${running} running`, `${stopped} stopped`, ...(unknown ? [`${unknown} unknown`] : [])].join(" · ")));
+  // The head says how many are running (human, 2026-09-26); the full breakdown stays in its title.
+  el.replaceChildren(...(running ? [dot] : []), doc.createTextNode(`${running} running`));
+  el.title = [`${running} running`, `${stopped} stopped`, ...(unknown ? [`${unknown} unknown`] : [])].join(" · ");
 }

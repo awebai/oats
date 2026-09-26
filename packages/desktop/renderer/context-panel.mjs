@@ -1,7 +1,7 @@
 import { moduleDriftText, servedIdentityText, soulSourceText } from './deployment-facts.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { ageText } from './age-text.mjs';
-import { createSoulMark } from './identity-marks.mjs';
+import { createSoulMark, createRuntimeBadge, harnessName } from './identity-marks.mjs';
 /** Shell-owned contextual surface. Optional Git reads are delegated to an
  * injected controller; this host performs no IO, lookup or lifecycle actions. */
 export const contextPanelCSS = `
@@ -66,6 +66,53 @@ export const contextPanelCSS = `
 #context-panel .context-panel-facts dd { margin:0; min-width:0; color:var(--fg); overflow-wrap:anywhere; }
 #context-panel .context-panel-facts dd.is-mono { font:11px/1.6 ui-monospace, Menlo, monospace; }
 #context-panel .context-panel-facts dd[data-unreported] { color:var(--muted); }
+/* Workspace v4 (W6): facts are label/value rows on hairlines, not cards. */
+#context-panel .context-panel-page[data-context-page="instance"] { gap:20px; }
+#context-panel .context-panel-section .context-panel-facts { border:0; border-radius:0; background:transparent; }
+#context-panel .context-panel-section .context-panel-fact { grid-template-columns:82px minmax(0,1fr); align-items:center; padding:0; min-height:28px; }
+#context-panel .context-panel-section .context-panel-fact + .context-panel-fact { border-top:1px solid var(--tag-bg); }
+#context-panel .context-panel-section .context-panel-facts dt { font-size:12px; }
+#context-panel .context-panel-section .context-panel-facts dd.is-mono { font:12px/1.5 ui-monospace, Menlo, monospace; }
+#context-panel .context-panel-folder .context-panel-pathline { gap:6px; }
+#context-panel .context-panel-folder .context-panel-path { font-size:12px; color:var(--fg); }
+#context-panel .context-panel-folder .context-panel-copy { padding:3px 6px; font-size:10.5px; }
+#context-panel .context-panel-label { display:flex; align-items:baseline; gap:8px; font-size:11px; letter-spacing:.05em; }
+#context-panel .context-panel-identity-address { margin-left:auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:11px ui-monospace, Menlo, monospace; letter-spacing:0; text-transform:none; color:var(--muted); }
+#context-panel .context-panel-session { display:flex; align-items:center; gap:10px; min-width:0; padding:10px 12px; border:1px solid var(--border); border-radius:8px; background:var(--surface); }
+#context-panel .context-panel-session-badge:empty { display:none; }
+#context-panel .context-panel-session-badge .runtime-badge { width:28px; height:28px; border-radius:7px; font-size:13px; }
+#context-panel .context-panel-session-copy { display:flex; flex-direction:column; min-width:0; flex:1; }
+#context-panel .context-panel-session-harness { font-size:12.5px; font-weight:650; color:var(--fg); }
+#context-panel .context-panel-session-model { font-size:11.5px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#context-panel .context-panel-session-side { display:flex; flex-direction:column; align-items:flex-end; flex:none; font-size:11.5px; color:var(--muted); text-align:right; }
+#context-panel .context-panel-session-tmux { font:11px ui-monospace, Menlo, monospace; color:var(--fg); }
+#context-panel .context-panel-built { padding:6px 12px; border:1px solid var(--border); border-radius:8px; }
+#context-panel .context-panel-built-note { margin:0; font-size:11.5px; line-height:1.5; }
+#context-panel .context-panel-footer { display:flex; gap:8px; flex:none; padding:12px 16px; border-top:1px solid var(--border); background:var(--surface); }
+#context-panel .context-panel-footer-act { flex:1; height:32px; padding:0 10px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font:600 12.5px/1 inherit; cursor:pointer; }
+#context-panel .context-panel-footer-act:hover:not(:disabled) { background:var(--surface-2); }
+#context-panel .context-panel-footer-act.danger { color:var(--danger); }
+#context-panel .context-panel-footer-act:disabled { color:var(--muted); cursor:default; }
+#context-panel .context-panel-footer-act:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+/* Tabs read like the Workspace header's: underlined, no fill. */
+#context-panel .context-panel-header { padding:0 6px 0 16px; gap:18px; }
+#context-panel .context-panel-tabs { gap:18px; align-items:stretch; }
+#context-panel .context-panel-tab { height:100%; min-height:0; padding:0; border-radius:0; font-size:12.5px; color:var(--muted); background:none; }
+#context-panel .context-panel-tab:hover { background:none; color:var(--fg); }
+#context-panel .context-panel-tab[aria-selected="true"] { color:var(--fg); background:none; font-weight:650; box-shadow:inset 0 -2px 0 var(--live); }
+/* Messaging: the design's compact rows — no card, hairlines, Join/Leave as links. */
+#context-panel .teams-panel .teams-intro { display:none; }
+#context-panel .teams-panel .teams-card { border:0; border-radius:0; background:transparent; }
+#context-panel .teams-panel .team-row { padding:4px 0; min-height:34px; }
+#context-panel .teams-panel .team-row + .team-row, #context-panel .teams-panel .teams-card > .teams-note { border-top:1px solid var(--tag-bg); }
+#context-panel .teams-panel .teams-card > .teams-note { padding:8px 0; }
+#context-panel .teams-panel .team-main { flex-direction:row; flex-wrap:wrap; align-items:baseline; column-gap:8px; }
+#context-panel .teams-panel .team-name { font-size:12.5px; font-weight:600; }
+#context-panel .teams-panel .team-meta { font-size:11px; }
+#context-panel .teams-panel .team-badge { border:0; border-radius:0; padding:0; font-weight:500; }
+#context-panel .teams-panel .team-action, #context-panel .teams-panel .teams-refresh { height:auto; padding:2px 0; border:0; background:transparent; color:var(--accent); font-size:12px; font-weight:600; }
+#context-panel .teams-panel .team-action:hover:not(:disabled), #context-panel .teams-panel .teams-refresh:hover:not(:disabled) { background:transparent; text-decoration:underline; }
+#context-panel .teams-panel .team-action:disabled, #context-panel .teams-panel .teams-refresh:disabled { color:var(--muted); }
 #context-panel .context-panel-stage.oats-view { display:flex; flex:1; flex-direction:column; width:100%; min-width:0; min-height:0; overflow:auto; background:var(--surface); }
 #context-panel .context-panel-stage > * { max-width:100%; box-sizing:border-box; }
 `;
@@ -95,7 +142,7 @@ const reported = value => typeof value === 'string' && value.length ? value
  */
 export function createContextPanel({
   document: suppliedDocument, root: suppliedRoot, onIntent = noop,
-  applyFocus = callback => callback(), onFocusModeChange = noop, createGitPanel, createTeamsSection, openSoul,
+  applyFocus = callback => callback(), onFocusModeChange = noop, createGitPanel, createTeamsSection, openSoul, lifecycle = null,
   connectionGeneration = () => 0, subscribeConnections = () => noop,
 } = {}) {
   const document = suppliedDocument ?? suppliedRoot?.ownerDocument ?? globalThis.document;
@@ -248,12 +295,6 @@ export function createContextPanel({
     rows.set(id, line); return line;
   };
   const rows = new Map();
-  const worktree = section('instance', 'Worktree'), card = node('div', 'context-panel-card');
-  const branchLine = node('div', 'context-panel-branch'); branchLine.append(iconElement(document, 'branch', { size: 13 }), field('span', null, 'branch'));
-  card.append(branchLine, pathLine('repo')); worktree.append(card);
-  // Teams (teams contract): injected like Git — this host performs no IO.
-  const teamsHost = section('instance', 'Teams'); teamsHost.dataset.contextSection = 'teams'; teamsHost.hidden = true;
-  const teamsSection = typeof createTeamsSection === 'function' ? createTeamsSection(teamsHost, { onPresence(present) { if (!disposed) teamsHost.hidden = !present; } }) : null;
   // Only what the instance reported: an unreported fact hides its row (the
   // field keeps "Not reported"), and a section with no reported row hides.
   function facts(host, entries) {
@@ -264,14 +305,39 @@ export function createContextPanel({
     }
     host.append(dl); return dl;
   }
+  // Workspace v4 (W6): where it works — mode, repository, branch, folder.
+  const worktree = section('instance', 'Where it works');
+  facts(worktree, [['work', 'Mode'], ['repoName', 'Repo', true], ['branch', 'Branch', true]]);
+  const folder = node('div', 'context-panel-fact context-panel-folder'); folder.dataset.row = 'repo';
+  folder.append(node('dt', null, 'Folder'), pathLine('repo')); rows.set('repo', folder);
+  worktree.querySelector('.context-panel-facts').append(folder);
+  // Session: the harness (and model) it runs, its terminal session and age.
   const session = section('instance', 'Session');
-  facts(session, [['harness', 'Harness'], ['model', 'Model'], ['work', 'Work mode'], ['createdAt', 'Created']]);
+  const sessionCard = node('div', 'context-panel-session');
+  const sessionBadge = node('span', 'context-panel-session-badge'); sessionBadge.setAttribute('aria-hidden', 'true');
+  const sessionCopy = node('div', 'context-panel-session-copy');
+  sessionCopy.append(field('span', 'context-panel-session-harness', 'harness'), field('span', 'context-panel-session-model', 'model'));
+  const sessionSide = node('div', 'context-panel-session-side');
+  const tmuxLine = node('span', 'context-panel-session-tmux'); const createdLine = node('span', 'context-panel-session-age');
+  createdLine.append('created ', field('span', null, 'createdAt'));
+  sessionSide.append(tmuxLine, createdLine);
+  sessionCard.append(sessionBadge, sessionCopy, sessionSide); session.append(sessionCard);
+  // Messaging (teams contract): injected like Git — this host performs no IO.
+  const teamsHost = section('instance', 'Messaging'); teamsHost.dataset.contextSection = 'teams'; teamsHost.hidden = true;
+  const identityLine = field('span', 'context-panel-identity-address', 'identity');
+  teamsHost.firstElementChild.append(identityLine);
+  const teamsSection = typeof createTeamsSection === 'function' ? createTeamsSection(teamsHost, { onPresence(present) { if (!disposed) teamsHost.hidden = !present; } }) : null;
   const lineage = section('instance', 'Lineage');
   facts(lineage, [['parentInstance', 'Parent'], ['siblingInstance', 'Sibling']]);
+  // Built from: the soul commit and capabilities it was spawned with, and the kernel's drift.
+  const built = section('instance', 'Built from');
+  facts(built, [['soulSource', 'Soul', true], ['modules', 'Capabilities']]);
+  built.querySelector('.context-panel-facts').classList.add('context-panel-built');
+  built.append(node('p', 'context-panel-note context-panel-built-note', 'New spawns use the latest. This instance keeps what it was built with.'));
   const details = node('details', 'context-panel-details'); details.append(node('summary', null, 'Details'));
   const homeRow = node('div', 'context-panel-detail'); homeRow.append(node('div', 'context-panel-label', 'Home'), pathLine('home'));
   details.append(homeRow);
-  facts(details, [['team', 'Team label'], ['soulSource', 'Soul source'], ['modules', 'Modules'], ['identity', 'Served identity']]);
+  facts(details, [['team', 'Team label']]);
   pages.get('instance').append(details);
   const soulHead = identityHeader('soul');
   const soulSub = field('div', 'context-panel-identity-sub', 'description');
@@ -302,6 +368,21 @@ export function createContextPanel({
   }
   if (!gitPanel) pages.get('git').append(node('h2', null, 'Git & GitHub'), node('p', 'context-panel-note',
     'Integration unavailable. This host has no K1 Git reader. No changes, diffs, pull requests, or checks are reported here.'));
+  // Workspace v4 (W6): the instance's lifecycle at the foot of its page — the
+  // same plan-backed dialogs as the roster's action menu (nothing runs here).
+  const footer = node('div', 'context-panel-footer');
+  const lifecycleButton = (op, label, cls = '') => {
+    const b = node('button', `context-panel-footer-act${cls ? ` ${cls}` : ''}`, label); b.type = 'button'; b.dataset.lifecycle = op;
+    b.addEventListener('click', event => {
+      const instance = context.instance;
+      if (disposed || !hasGeneric() || !instance || typeof lifecycle?.[op] !== 'function' || b.disabled) return;
+      onIntent(event); lifecycle[op](instance, context.workspace);
+    });
+    footer.append(b); return b;
+  };
+  const restartControl = lifecycleButton('restart', 'Restart…'), startControl = lifecycleButton('start', 'Start…');
+  const stopControl = lifecycleButton('stop', 'Stop…'), retireControl = lifecycleButton('retire', 'Retire…', 'danger');
+  generic.append(footer);
   const stages = node('div', 'context-panel-stages');
   root.classList.add('context-panel');
   if (!root.hasAttribute('aria-label')) root.setAttribute('aria-label', 'Context panel');
@@ -327,6 +408,7 @@ export function createContextPanel({
       tab.setAttribute('aria-selected', String(selected)); tab.tabIndex = selected ? 0 : -1;
       pages.get(id).hidden = !selected;
     }
+    footer.hidden = !expanded || !hasGeneric() || pref().tab !== 'instance' || !context.instance || !lifecycle;
     gitPanel?.update({ active: expanded && hasGeneric() && pref().tab === 'git',
       workspace: context.workspace, instance: context.instance, key: context.key });
     teamsSection?.update({ active: expanded && hasGeneric() && pref().tab === 'instance',
@@ -365,12 +447,22 @@ export function createContextPanel({
     const el = document.getElementById('context-status');
     if (!el) return;
     const parts = [];
-    if (typeof instance?.branch === 'string' && instance.branch) {
+    const reportedText = v => typeof v === 'string' && v ? v : null;
+    // Workspace v4 (W6): branch, then the harness (mark, name, model), then the terminal session.
+    if (reportedText(instance?.branch)) {
       const branch = node('span', 'context-status-branch');
       branch.append(iconElement(document, 'branch', { size: 12 }), node('span', '', instance.branch)); parts.push(branch);
     }
-    const detail = [instance?.harness, instance?.model].filter(v => typeof v === 'string' && v).join(' · ');
-    if (detail) parts.push(node('span', '', detail));
+    if (reportedText(instance?.harness)) {
+      const harness = node('span', 'context-status-harness');
+      harness.append(createRuntimeBadge(document, instance.harness), node('span', '', harnessName(instance.harness)));
+      if (reportedText(instance.model)) harness.append(node('span', 'context-status-muted', instance.model));
+      parts.push(harness);
+    } else if (reportedText(instance?.model)) parts.push(node('span', '', instance.model));
+    if (reportedText(instance?.tmux?.session)) {
+      const tmux = node('span', 'context-status-tmux');
+      tmux.append(iconElement(document, 'terminal', { size: 12 }), node('span', '', `tmux ${instance.tmux.session}`)); parts.push(tmux);
+    }
     el.replaceChildren(...parts);
   }
   function projectMetadata() {
@@ -383,8 +475,14 @@ export function createContextPanel({
     for (const head of [instanceHead, soulHead]) if (head.mark.dataset.markKey !== markKey) {
       head.mark.dataset.markKey = markKey; head.mark.replaceChildren(...(soul ? [createSoulMark(document, soul)] : []));
     }
-    const sub = [instance.agent, instance.harness, instance.model].filter(v => typeof v === 'string' && v).join(' · ');
+    const sub = typeof instance.agent === 'string' && instance.agent ? `instance of ${instance.agent}` : '';
     if (instanceSub.textContent !== sub) instanceSub.textContent = sub;
+    // Session card: the harness mark and name, the model, the terminal session.
+    const harness = typeof instance.harness === 'string' && instance.harness ? instance.harness : null;
+    if (sessionBadge.dataset.harness !== (harness ?? '')) { sessionBadge.dataset.harness = harness ?? ''; sessionBadge.replaceChildren(...(harness ? [createRuntimeBadge(document, harness)] : [])); }
+    const tmux = typeof instance.tmux?.session === 'string' && instance.tmux.session ? `tmux · ${instance.tmux.session}` : '';
+    if (tmuxLine.textContent !== tmux) tmuxLine.textContent = tmux;
+    tmuxLine.hidden = !tmux;
     state.dataset.state = instance.running === true ? 'running' : instance.running === false ? 'stopped' : 'unknown';
     for (const [id, el] of fields) {
       const value = id === 'running' ? instance.running === true ? 'Running'
@@ -393,6 +491,7 @@ export function createContextPanel({
         : id === 'modules' ? moduleDriftText(instance.modules) ?? 'Not reported'
         // Absent identity is the provider's absent fact: nothing is inferred.
         : id === 'identity' ? servedIdentityText(instance.identity) ?? 'Not reported'
+        : id === 'harness' && typeof instance.harness === 'string' && instance.harness ? harnessName(instance.harness)
         : reported(instance[id]);
       const shown = id === 'createdAt' && value !== 'Not reported' ? ageText(value) : value;
       if (el.textContent !== shown) el.textContent = shown;
@@ -400,10 +499,16 @@ export function createContextPanel({
       else if (el.closest('.context-panel-path')) el.closest('.context-panel-path').title = value === 'Not reported' ? '' : value;
       el.toggleAttribute('data-unreported', value === 'Not reported');
       const row = rows.get(id); if (row) row.hidden = value === 'Not reported';
+      else if (['model', 'identity'].includes(id)) el.hidden = value === 'Not reported';
     }
+    createdLine.hidden = fields.get('createdAt').textContent === 'Not reported';
+    session.hidden = !harness && !tmux && createdLine.hidden;
+    const running = instance.running === true, stopped = instance.running === false;
+    restartControl.hidden = !running; startControl.hidden = !stopped; stopControl.hidden = !running;
+    for (const b of [restartControl, startControl, stopControl, retireControl]) b.disabled = !!instance.server && !instance.savedRoute;
     // A section with nothing reported is not shown; the header sub-line omits an unreported description.
     soulSub.hidden = fields.get('description').textContent === 'Not reported';
-    for (const host of [session, lineage]) host.hidden = [...host.querySelectorAll('[data-row]')].every(r => r.hidden);
+    for (const host of [worktree, lineage, built]) host.hidden = [...host.querySelectorAll('[data-row]')].every(r => r.hidden);
     for (const box of [details, soulDetails]) box.hidden = [...box.querySelectorAll('[data-row]')].every(r => r.hidden);
     openSoulControl.disabled = typeof openSoul !== 'function' || typeof instance.agent !== 'string' || !instance.agent;
   }

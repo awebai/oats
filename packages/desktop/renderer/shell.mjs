@@ -636,6 +636,13 @@ const contextPanel = createContextPanel({
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
     }),
   }),
+  // W6 footer: the roster menu's own lifecycle dialogs (plan-backed Stop/Retire, Start/Restart with…).
+  lifecycle: {
+    start: (instance, workspace) => { if (workspace === currentWorkspace()) openInstanceStart(instance); },
+    restart: (instance, workspace) => { if (workspace === currentWorkspace()) openInstanceStart(instance, { restart: true }); },
+    stop: (instance, workspace) => { if (workspace === currentWorkspace()) openLifecycleDialog('stop', instance, workspace); },
+    retire: (instance, workspace) => { if (workspace === currentWorkspace()) openLifecycleDialog('retire', instance, workspace); },
+  },
   // Soul tab → the soul in the Workspace view (same hand-off as Quick Open).
   openSoul: async ({ workspace, name, agentsRoot, server }) => {
     const owns = tabOpenIntents.begin();
@@ -1222,7 +1229,8 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
 
   const made = addTab({
     title: `${name}${inst.server ? ` · ${inst.server}` : ""}`,
-    decor: { dot: inst.running ? "on" : "off", detail: typeof inst.branch === "string" ? inst.branch : null },
+    // Workspace v4 (W6): a terminal tab carries only its name and status; the branch lives in the bottom bar.
+    decor: { dot: inst.running ? "on" : "off" },
     key,
     kind: "terminal",
     workspace: ws,
