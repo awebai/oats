@@ -27,7 +27,7 @@ function fakeGh(dir) {
   writeFileSync(join(bin, "gh"), `#!/bin/sh
 echo "$*" >> "${dir}/calls.log"
 case "$1 $2" in
-  "auth status") code=0; [ -f "${dir}/auth" ] && code=$(cat "${dir}/auth"); echo "Logged in to github.com account fixture"; exit $code ;;
+  "auth status") code=0; [ -f "${dir}/auth" ] && code=$(cat "${dir}/auth"); printf '%s\n' "github.com" "  ✓ Logged in to github.com account fixture (keyring)" "  - Active account: true"; exit $code ;;
 esac
 case "$*" in
   *"/pulls"*) [ -f "${dir}/pulls-fail" ] && { echo "HTTP 502" >&2; exit 1; }; cat "${dir}/pulls.json"; exit 0 ;;
@@ -68,6 +68,18 @@ const tick = (fx, iso) => fx.inEnv(() => {
   try { return T.tickTriggers(fx.dep, { now: new Date(iso), io: { noLaunch: true } }); } finally { process.env.PATH = path; }
 });
 const homes = (fx) => T.liveTriggerInstances(fx.dep, "kb-review");
+
+test("ghCredential: where gh's credential comes from, and whether the host timer's environment reaches it", () => {
+  const status = (...accounts) => ["github.com", ...accounts.flatMap(([login, src, active]) => [`  ✓ Logged in to github.com account ${login} (${src})`, `  - Active account: ${active}`, "  - Token: gho_************"])].join("\n");
+  assert.deepEqual(T.ghCredential(status(["me", "keyring", true]), true), { account: "me", credentialSource: "keyring", reachesHostTimer: true, note: T.ghCredential(status(["me", "keyring", true]), true).note });
+  const env = T.ghCredential(status(["bot", "GH_TOKEN", true], ["me", "keyring", false]), true);
+  assert.deepEqual([env.account, env.credentialSource, env.reachesHostTimer], ["bot", "env:GH_TOKEN", false]);
+  assert.match(env.note, /host timer .* does not carry it/);
+  const active = T.ghCredential(status(["old", "keyring", false], ["me", "/home/me/.config/gh/hosts.yml", true]), true);
+  assert.deepEqual([active.account, active.credentialSource, active.reachesHostTimer], ["me", "config", true], "the active account wins");
+  assert.equal(T.ghCredential("You are not logged into any GitHub hosts.", false).credentialSource, null);
+  assert.equal(T.ghCredential("Logged in somehow", true).credentialSource, "unknown");
+});
 
 test("validateTrigger: only the whitelisted fields are templated; the shape is strict", () => {
   const good = T.validateTrigger(definition());
@@ -178,7 +190,10 @@ test("oats trigger CLI: add/list/show/disable/enable/remove, test (dry run: gh, 
   assert.deepEqual(await tick(fx, "2026-09-26T12:00:10Z"), [], "a disabled trigger is not polled");
   assert.equal(ok(fx.cli(["trigger", "enable", "kb-review", "--json"]), "enable").trigger.enabled, true);
   // Schedules do not list, run or edit triggers.
-  assert.deepEqual(ok(fx.cli(["schedule", "list", "--json"]), "schedule list").schedules, []);
+  const listed = ok(fx.cli(["schedule", "list", "--json"]), "schedule list");
+  assert.deepEqual(listed.schedules, []);
+  assert.deepEqual(listed.triggers, { count: 1, command: "oats trigger list" }, "schedule list points at the triggers it does not list");
+  assert.match(fx.cli(["schedule", "list"]).stdout, /1 trigger is not listed here: oats trigger list/);
   fails(fx.cli(["schedule", "show", "kb-review", "--json"]), "E_SCHEDULE_UNKNOWN", "schedule show of a trigger");
 
   fx.gh.pulls([pr(3), pr(8, { draft: true })]);
@@ -186,6 +201,8 @@ test("oats trigger CLI: add/list/show/disable/enable/remove, test (dry run: gh, 
   assert.equal(report.ok, true, JSON.stringify([report.problems, report.soul]));
   assert.equal(report.spawned, false);
   assert.equal(report.gh.ok, true);
+  assert.deepEqual([report.gh.account, report.gh.credentialSource, report.gh.reachesHostTimer], ["fixture", "keyring", true]);
+  assert.deepEqual(report.warnings, []);
   assert.deepEqual(report.repo.permissions, { push: true, maintain: true, admin: false });
   assert.equal(report.soul.resolves, true);
   assert.equal(report.soul.messaging, "acme-msg");

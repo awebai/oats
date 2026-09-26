@@ -1956,7 +1956,7 @@ function scheduleCmd() {
   const needId = () => { if (!id) throw scheduleError("E_BAD_ARGS", `oats schedule ${sub} <id>`); return id; };
   try {
     switch (sub) {
-      case "list": return out(listSchedules(ws(), io));
+      case "list": { const r = listSchedules(ws(), io); out(r); if (!JSON_MODE && r.triggers.count) console.log(`${r.triggers.count} trigger${r.triggers.count === 1 ? " is" : "s are"} not listed here: ${r.triggers.command}`); return; }
       case "show": return out({ schedule: describeSchedule(ws(), needId(), io) });
       case "add": { const spec = readSpec(); if (id && spec.id === undefined) spec.id = id; if (id && spec.id !== id) throw scheduleError("E_SCHEDULE_INVALID", `id ${JSON.stringify(spec.id)} in the file does not match ${JSON.stringify(id)}`, { field: "id" }); return out({ schedule: addSchedule(ws(), spec, io) }); }
       case "update": return out({ schedule: updateSchedule(ws(), needId(), readSpec(), io) });
@@ -2017,12 +2017,13 @@ async function triggerCmd() {
         } catch { /* reported as unknown (null) */ }
         return out(T.testTrigger(ws(), needId(), { workspaceTeams }), (r) => [
           `trigger ${r.id}: ${r.ok ? "ready" : "NOT ready"} (nothing was spawned)`,
-          `  gh auth    ${r.gh.ok ? "ok" : "FAILED"}${r.gh.detail ? ` — ${r.gh.detail}` : ""}`,
+          `  gh auth    ${r.gh.ok ? `ok — ${r.gh.account ?? "?"} via ${r.gh.credentialSource}` : `FAILED${r.gh.detail ? ` — ${r.gh.detail}` : ""}`}`,
           `  repo       ${r.repo.key} ${r.repo.readable ? `readable; push ${r.repo.permissions.push} maintain ${r.repo.permissions.maintain} admin ${r.repo.permissions.admin}` : `NOT readable: ${r.repo.error}`}`,
           `  soul       ${r.soul.name} ${r.soul.resolves ? `resolves${r.soul.messaging ? ` (messaging ${r.soul.messaging})` : ""}` : `does NOT resolve: ${r.soul.error.code} ${r.soul.error.message}`}`,
           `  teams      ${r.teams.requested.join(", ") || "(none)"}${r.teams.undeclared?.length ? `  undeclared: ${r.teams.undeclared.join(", ")}` : ""}`,
           `  would fire ${r.wouldFire.length ? r.wouldFire.map((w) => `${w.event} #${w.number}${w.held ? ` (held: ${w.held})` : ""}`).join(", ") : "nothing now"}`,
           ...r.problems.map((p) => `  problem    ${p}`),
+          ...(r.warnings ?? []).map((w) => `  warning    ${w}`),
         ].join("\n"));
       }
       case "add": {

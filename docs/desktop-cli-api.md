@@ -679,7 +679,7 @@ unchecked, echoed a stored `definition.id` without checking it, and named a
 ```
 
 **Exact shapes (API 3):**
-- `schedule list --json` → `result = {scope, scheduleApi: 2, scheduleHistoryApi: 3, integrity, schedules: Entry[], scheduler}`.
+- `schedule list --json` → `result = {scope, scheduleApi: 2, scheduleHistoryApi: 3, integrity, schedules: Entry[], triggers: {count, command: "oats trigger list"}, scheduler}` (`triggers`, 0.28.0: the trigger definitions this listing leaves out).
 - `schedule show <id> --json` → `result = {schedule: Entry}` (one level of nesting; `integrity` is NOT on `show` — it is a scope fact reported by `list`).
 - `Entry` (readable) = definition fields (`id, kind, home, message|operation, cron, enabled, …`) + `{scope, scheduleApi: 2, scheduleHistoryApi: 3, executionStatus, nextRun: ISO|null, lastRun: Run|null, history, recentRuns: Run[], running: boolean, attempt?, pendingWake?}`.
 - `Entry` (unreadable, `list` only) = `{id, scope, scheduleApi: 2, scheduleHistoryApi: 3, unreadable: {code, message}, history: {status: "corrupt", stored: null, truncated: false}, recentRuns: []}` — no definition fields.
@@ -1404,12 +1404,18 @@ does not show them.
   nextPollAt, pending: [{ key, event, number, url, observedAt }], fired: [{ key,
   at, instance, home, event, number }] (newest 50), firedTotal, live: [{
   instance, home, repo, number, event }], lastError: { at, code, message, key? } | null }] }`.
-- `test <id>` → `{ triggerApi, id, ok, gh: { ok, detail }, repo: { key,
+- `test <id>` → `{ triggerApi, id, ok, gh: { ok, account, credentialSource:
+  "keyring" | "config" | "env:<VAR>" | "unknown" | null, reachesHostTimer:
+  boolean | null, note, detail }, repo: { key,
   readable, fullName, permissions: { push, maintain, admin }, canMerge } |
   { key, readable: false, error }, soul: { resolves, name, agent, messaging } |
   { resolves: false, name, error }, teams: { requested, undeclared | null,
   messaging }, wouldFire: [{ key, event, number, url, held? }], pollError?, problems:
-  [string], spawned: false }`. It writes nothing.
+  [string], warnings: [string], spawned: false }`. It writes nothing. `ok`
+  counts `problems` only; a credential the host timer cannot reach
+  (`reachesHostTimer: false`) is a warning.
+- `oats schedule list --json` gains `triggers: { count, command: "oats trigger
+  list" }`: the triggers it does not list.
 - The tick's `considered[]` gains trigger rows `{ workspace, trigger, action,
   … }` with `action` `not-due`, `poll-failed`, `polled` (`prs`, `matching`;
   nothing to fire), `held`, `fired` (`key`,

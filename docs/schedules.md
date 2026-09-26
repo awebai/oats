@@ -100,6 +100,14 @@ and `oats schedule tick` for one scope). There is no daemon and no webhook: it
 runs only on the host that holds the scope, with **that host's own
 credentials**; a definition carries none.
 
+**Credentials reach the tick through the host timer, not your shell.** The
+timer (a user LaunchAgent on macOS, a `systemd --user` unit on Linux) runs the
+tick with its own environment, which sets only `PATH` and `OATS_HOME_DIR`. `gh`
+logged in with the keyring or its config file under your HOME works there. A
+`GH_TOKEN` or `GITHUB_TOKEN` exported in your shell does not reach it.
+`oats trigger test` reports where `gh`'s credential comes from (`gh.credentialSource`:
+`keyring`, `config`, `env:<VAR>`) and warns when the timer cannot reach it.
+
 ```json
 { "id": "okf-harvest-review", "enabled": true, "kind": "trigger",
   "on": { "source": "github.pull_request", "repo": "github.com/acme/knowledge",
@@ -126,6 +134,14 @@ credentials**; a definition carries none.
   head SHA for `synchronize`, `updated_at` otherwise). A key is recorded as
   fired **only after a successful spawn**; until then the event stays pending
   and is retried at every poll, and dropped when its PR closes.
+- **At least once, not exactly once.** The fired key is written after the
+  spawn returns. If the tick dies in between (a crash, a kill, the host going
+  down), the spawned instance exists but the key does not, and the next poll
+  spawns the event again. Concurrency still applies to that retry: with the
+  default `perKey: 1` the first instance is live, so the event is `held` rather
+  than spawned twice, and it fires once that instance retires. A trigger's soul
+  should therefore tolerate a second run on the same PR event (a review that
+  finds its own earlier review, for example).
 - **Concurrency.** `max` (default 1) bounds the live instances of the trigger,
   `perKey` (default 1) those of one PR; both are counted from the homes'
   `instance.json.trigger` records, so a retired instance frees its slot. An
@@ -151,13 +167,15 @@ credentials**; a definition carries none.
 oats trigger add --file trigger.json                 # or:
 oats trigger add --from oats.okf:harvest-review --set repo=github.com/acme/knowledge [--id <id>]
 oats trigger list | show <id> | enable <id> | disable <id> | remove <id>
-oats trigger test <id>      # dry run: gh auth, repo + permissions (push/maintain/admin), the soul resolves,
+oats trigger test <id>      # dry run: gh auth + credential source, repo + permissions (push/maintain/admin), the soul resolves,
                             # its messaging capability, the teams declared, what WOULD fire now; spawns nothing
 oats trigger status [<id>]  # last poll, pending, fired keys, live instances, last error
 ```
 
 All take `--dir` and `--json` (`triggerApi: 1`). `remove` leaves the instances
-it spawned running. Errors: `E_TRIGGER_INVALID { field }`, `E_TRIGGER_EXISTS`,
+it spawned running. `oats schedule list` does not list triggers, but it counts
+them (`triggers: { count, command: "oats trigger list" }`, and a line in text
+mode). Errors: `E_TRIGGER_INVALID { field }`, `E_TRIGGER_EXISTS`,
 `E_TRIGGER_UNKNOWN`, `E_BAD_ARGS`.
 
 **Package trigger templates.** A package may declare `triggers: [{ id, file }]`
