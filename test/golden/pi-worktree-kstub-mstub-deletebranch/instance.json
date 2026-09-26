@@ -36,6 +36,7 @@
       "origin": "member:local/<base>/remotes/ws.git@<sha>",
       "level": "<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub-deletebranch",
       "settings": {},
+      "settingsOrigins": {},
       "provenance": [
         "member local/<base>/remotes/ws.git @ <commit12>"
       ],
@@ -53,6 +54,7 @@
       "origin": "member:local/<base>/remotes/ws.git@<sha>",
       "level": "<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub-deletebranch",
       "settings": {},
+      "settingsOrigins": {},
       "provenance": [
         "member local/<base>/remotes/ws.git @ <commit12>"
       ],
@@ -215,6 +217,7 @@
       "layer": "knowledge",
       "level": "<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub-deletebranch",
       "settings": {},
+      "settingsOrigins": {},
       "hooks": {
         "spawn": "node '<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub-deletebranch/.oats/modules/golden.knowledge/hooks/spawn.mjs'"
       },
@@ -233,6 +236,7 @@
       "layer": "messaging",
       "level": "<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub-deletebranch",
       "settings": {},
+      "settingsOrigins": {},
       "hooks": {
         "spawn": "node '<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub-deletebranch/.oats/modules/golden.messaging/hooks/spawn.mjs'",
         "retire": "node '<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub-deletebranch/.oats/modules/golden.messaging/hooks/retire.mjs'"
@@ -281,6 +285,7 @@
           "layer": "messaging",
           "level": "<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub-deletebranch",
           "settings": {},
+          "settingsOrigins": {},
           "trust": {
             "trusted": true,
             "integrity": null

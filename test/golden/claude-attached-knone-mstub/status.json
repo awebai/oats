@@ -49,6 +49,7 @@
               "origin": "member:local/<base>/remotes/ws.git@<sha>",
               "level": "<base>/deployment/agents/dev/instances/dev-claude-attached-knone-mstub",
               "settings": {},
+              "settingsOrigins": {},
               "provenance": [
                 "member local/<base>/remotes/ws.git @ <commit12>"
               ],
@@ -169,6 +170,7 @@
               "layer": "messaging",
               "level": "<base>/deployment/agents/dev/instances/dev-claude-attached-knone-mstub",
               "settings": {},
+              "settingsOrigins": {},
               "hooks": {
                 "spawn": "node '<base>/deployment/agents/dev/instances/dev-claude-attached-knone-mstub/.oats/modules/golden.messaging/hooks/spawn.mjs'",
                 "retire": "node '<base>/deployment/agents/dev/instances/dev-claude-attached-knone-mstub/.oats/modules/golden.messaging/hooks/retire.mjs'"
@@ -219,6 +221,7 @@
                   "layer": "messaging",
                   "level": "<base>/deployment/agents/dev/instances/dev-claude-attached-knone-mstub",
                   "settings": {},
+                  "settingsOrigins": {},
                   "trust": {
                     "trusted": true,
                     "integrity": null
@@ -337,6 +340,7 @@
               "origin": "member:local/<base>/remotes/ws.git@<sha>",
               "level": "<base>/deployment/agents/dev/instances/dev-owner",
               "settings": {},
+              "settingsOrigins": {},
               "provenance": [
                 "member local/<base>/remotes/ws.git @ <commit12>"
               ],
@@ -460,6 +464,7 @@
               "layer": "messaging",
               "level": "<base>/deployment/agents/dev/instances/dev-owner",
               "settings": {},
+              "settingsOrigins": {},
               "hooks": {
                 "spawn": "node '<base>/deployment/agents/dev/instances/dev-owner/.oats/modules/golden.messaging/hooks/spawn.mjs'",
                 "retire": "node '<base>/deployment/agents/dev/instances/dev-owner/.oats/modules/golden.messaging/hooks/retire.mjs'"
@@ -510,6 +515,7 @@
                   "layer": "messaging",
                   "level": "<base>/deployment/agents/dev/instances/dev-owner",
                   "settings": {},
+                  "settingsOrigins": {},
                   "trust": {
                     "trusted": true,
                     "integrity": null

@@ -178,7 +178,7 @@ test("provider-check wire (pinned): the request on stdin, the environment, the c
     assert.deepEqual(seen.argv, ["check", "--wire", "1"], "the manifest command's arguments, no shell");
     const oats = Object.fromEntries(Object.entries(seen.env).filter(([k]) => /^(OATS_|OAS_|PI_)/.test(k)));
     assert.deepEqual(oats, {
-      OATS_CAPABILITY: "fx.provider", OATS_SETTINGS: JSON.stringify(settings), OATS_CLI_BIN: join(fileURLToPath(new URL("..", import.meta.url)), "bin", "oats.mjs"), OATS_WORKSPACE: base,
+      OATS_CAPABILITY: "fx.provider", OATS_SETTINGS: JSON.stringify(settings), OATS_SETTINGS_ORIGINS: "{}", OATS_CLI_BIN: join(fileURLToPath(new URL("..", import.meta.url)), "bin", "oats.mjs"), OATS_WORKSPACE: base,
       OATS_TEAM_NAME: "", OATS_TEAM_ID: "acme:eng", OATS_TEAM_SCOPE: base, OATS_TEAM_LABEL: "engineering", OATS_TEAM_LABELS: "engineering", OATS_TEAMS: JSON.stringify(WIRE_TEAMS), OATS_TEAMS_SOURCE: "live", OATS_WORKSPACE_NAME: "acme", OATS_WORKSPACE_KEY: "github.com/acme/agents",
       OATS_INSTANCE: "rm-1", OATS_INSTANCE_HOME: home, OATS_AGENT: "release-manager", OATS_SOUL: soulDir,
     }, "exactly these OATS_* variables; every ambient OATS_/OAS_/PI_ variable is stripped");

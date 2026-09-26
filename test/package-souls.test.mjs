@@ -99,6 +99,15 @@ test("a bare name shared by a member soul and a package soul is E_SOUL_AMBIGUOUS
   const text = fx.cli(["status"]).stdout;
   assert.match(text, /acme-pkg--keeper {2}\[work: directory, repo: package acme\.pkg v1\.0\.0 @ [0-9a-f]{7}\]/);
   assert.match(text, /^ {2}keeper {2}\[work: directory, repo: ws @ [0-9a-f]{7}\]/m);
+  // A package soul's instance names carry the package id: the purpose budget is smaller, and the
+  // refusal says how small (64 - "acme-pkg-keeper-".length = 48).
+  const long = "x".repeat(49);
+  const e2 = fails(fx.cli(["spawn", "acme.pkg/keeper", "--purpose", long, "--no-launch", "--json"]), "E_INSTANCE_NAME_INVALID", "purpose over budget");
+  assert.match(e2.message, /instances are named acme-pkg-keeper-<purpose>, which leaves at most 48 for the purpose/, e2.message);
+  assert.deepEqual([e2.details?.prefix, e2.details?.maxPurpose], ["acme-pkg-keeper-", 48]);
+  assert.equal(ok(fx.cli(["spawn", "acme.pkg/keeper", "--purpose", "x".repeat(48), "--no-launch", "--json"]), "a purpose at the budget spawns").instance, `acme-pkg-keeper-${"x".repeat(48)}`);
+  // The same purpose again is de-duplicated against the name the home got (not a collision).
+  assert.equal(ok(fx.cli(["spawn", "acme.pkg/keeper", "--purpose", "p", "--no-launch", "--json"]), "same purpose again").instance, "acme-pkg-keeper-p-2");
 });
 
 test("two packages whose ids sanitise to one agent directory (a.b, a-b) and ship a same-named soul: listed, E_SOUL_AMBIGUOUS in discovery and at spawn", (t) => {

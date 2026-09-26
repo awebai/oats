@@ -48,6 +48,7 @@
               "origin": "member:local/<base>/remotes/ws.git@<sha>",
               "level": "<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mnone",
               "settings": {},
+              "settingsOrigins": {},
               "provenance": [
                 "member local/<base>/remotes/ws.git @ <commit12>"
               ],
@@ -167,6 +168,7 @@
               "layer": "knowledge",
               "level": "<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mnone",
               "settings": {},
+              "settingsOrigins": {},
               "hooks": {
                 "spawn": "node '<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mnone/.oats/modules/golden.knowledge/hooks/spawn.mjs'"
               },
