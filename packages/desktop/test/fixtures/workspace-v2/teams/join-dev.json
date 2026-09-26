@@ -4,10 +4,10 @@
   "result": {
     "operationsApi": 2,
     "operation": "messaging:join",
-    "capability": "nw.teams",
-    "version": "0.1.0",
+    "capability": "oats.aweb",
+    "version": "1.16.0",
     "argv": [
-      null,
+      "aweb",
       "join",
       "--labels",
       "dev"
@@ -39,15 +39,21 @@
         {
           "label": "dev",
           "team": "northwind:eng",
-          "since": "2026-09-25T10:00:00.000Z",
           "identityHome": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.aweb-identity-dev",
-          "receive": "poll"
+          "receive": "native",
+          "since": "2026-09-26T20:11:47.452Z"
         }
       ],
       "unmapped": [
         "marketing"
       ],
-      "at": "2026-09-25T10:00:00.000Z"
+      "at": "2026-09-26T20:11:47.486Z",
+      "actions": [
+        {
+          "action": "join",
+          "label": "dev"
+        }
+      ]
     }
   }
 }

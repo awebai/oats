@@ -197,8 +197,9 @@ label (primary marked) with Join, or when joined its date, how its mail
 arrives (`poll` → "Checks this team's mail between tasks", `native` →
 "Receives this team's mail as it arrives", anything else as sent — a poll team
 never reads as live delivery), its identity home and Leave; labels the
-workspace does not map, unavailable. Join/Leave answer the same document, so
-the panel repaints from it; a refusal (`E_TEAM_NOT_ELIGIBLE`,
+workspace does not map, unavailable. Join/Leave answer the same document (plus `actions[{action: join|leave, label,
+released?, receipt?}]`, accepted on those answers only: each label an eligible or
+joined row, the receipt opaque and never shown), so the panel repaints from it; a refusal (`E_TEAM_NOT_ELIGIBLE`,
 `E_TEAM_DEFAULT`) shows the relayed message verbatim under its row with the
 code behind **Details**, keeps the last good state and re-reads. If the re-read
 no longer offers that row (e.g. the mapping was removed between read and

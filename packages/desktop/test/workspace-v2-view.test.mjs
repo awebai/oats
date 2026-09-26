@@ -209,7 +209,7 @@ test('W2 Setup graph: this computer → the lock → the workspace → members a
   assert.equal(ws.querySelector('.setup-card-meta.mono').textContent, 'agents');
   const nodes = [...graph.querySelectorAll('.setup-node')];
   assert.deepEqual(nodes.map(el => el.querySelector('.setup-node-name').textContent),
-    ['agents', 'platform', 'data', 'marketing', 'nw-tools', 'nw.chat 0.1.0', 'nw.teams 0.1.0', 'nw.tools 0.4.0', 'oats.framework 1.1.3', 'oats.okf 2.1.3', 'security-reviewer']);
+    ['agents', 'platform', 'data', 'marketing', 'nw-tools', 'nw.chat 0.1.0', 'nw.tools 0.4.0', 'oats.aweb 1.16.0', 'oats.framework 1.1.3', 'oats.okf 2.1.3', 'security-reviewer']);
   assert.equal(nodes[0].querySelector('.setup-node-meta').textContent, 'host · 2 souls');
   assert.deepEqual(nodes.filter(n => n.dataset.package).map(n => n.querySelector('.setup-node-meta').textContent), ['git tag', 'git tag', 'git tag', 'official', 'official']);
   const repoIcon = iconElement(u.doc, 'repo').innerHTML, packageIcon = iconElement(u.doc, 'package').innerHTML;

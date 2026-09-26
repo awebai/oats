@@ -3,7 +3,7 @@
   "ok": false,
   "error": {
     "code": "E_TEAM_NOT_ELIGIBLE",
-    "message": "messaging:join: not eligible: marketing (eligible: dev, reviewers)",
+    "message": "messaging:join: E_TEAM_NOT_ELIGIBLE: marketing is not an eligible team label for this instance (eligible: dev, reviewers)",
     "details": {
       "exit": 1,
       "envelope": {
@@ -11,7 +11,7 @@
         "ok": false,
         "error": {
           "code": "E_TEAM_NOT_ELIGIBLE",
-          "message": "not eligible: marketing (eligible: dev, reviewers)"
+          "message": "E_TEAM_NOT_ELIGIBLE: marketing is not an eligible team label for this instance (eligible: dev, reviewers)"
         }
       }
     }

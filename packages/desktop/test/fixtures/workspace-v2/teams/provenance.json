@@ -1,93 +1,195 @@
 {
-  "source": "ux-designer (the engineer's capture-teams.mjs, 1.16 stand-in) for the Desktop teams panel (main dc948fa1); test/fixtures/northwind/build.mjs; capture-teams.mjs",
-  "kernel": "0.29.2",
+  "source": "ux-designer for the Desktop teams panel (main 2ea45bfe (0.29.3 pin)); test/fixtures/northwind/build.mjs; capture-teams-real.mjs (from the engineer's capture-teams.mjs)",
+  "kernel": "0.29.3",
   "redactions": [
     "<base> (capture scratch) → /fixture/base",
     "<oats> (checkout) → /fixture/oats"
   ],
-  "standIn": {
-    "reason": "The oats.aweb 1.16.0 wire names (the teams contract AMENDMENT, c129125a: defaultTeam {team, source}, E_TEAM_DEFAULT) are not tagged yet. The stand-in declares the contract's messaging:teams|join|leave home operations and a settings.join declaration, and its tiny executable answers the documented teams document in the 1.16 shape; recapture from oats.aweb 1.16.0 when it lands.",
-    "contract": "docs/design/2026-09-25-teams-contract.md (AMENDMENT c129125a)",
-    "manifest": {
-      "capability": "nw.teams",
-      "version": "0.1.0",
-      "compatibility": {
-        "oats": ">=0.25.6"
-      },
-      "layer": "messaging",
-      "description": "Stand-in messaging provider for Desktop fixtures: the teams contract's messaging:teams|join|leave home operations.",
-      "requires": [],
-      "settings": {
-        "join": {
-          "description": "Teams to join at spawn: comma-separated eligible labels (teams contract)."
-        }
-      },
-      "commands": {
-        "teams": "bin/nw-teams.mjs teams",
-        "join": "bin/nw-teams.mjs join",
-        "leave": "bin/nw-teams.mjs leave"
-      },
-      "operations": {
-        "teams": {
-          "kind": "action",
-          "command": "teams",
-          "context": "home",
-          "description": "This instance's teams: default, eligible and joined"
-        },
-        "join": {
-          "kind": "action",
-          "command": "join",
-          "context": "home",
-          "description": "Join eligible teams",
-          "args": [
-            {
-              "name": "labels",
-              "flag": "--labels",
-              "required": true,
-              "description": "Comma-separated eligible team labels"
-            }
-          ]
-        },
-        "leave": {
-          "kind": "action",
-          "command": "leave",
-          "context": "home",
-          "description": "Leave joined teams",
-          "args": [
-            {
-              "name": "labels",
-              "flag": "--labels",
-              "required": true,
-              "description": "Comma-separated joined team labels"
-            }
-          ]
-        }
+  "provider": {
+    "real": true,
+    "package": "oats.aweb",
+    "version": "1.16.0",
+    "tag": "v1.16.0",
+    "commit": "52657b677551c9de14d9d6c9417a41653d1ea3cf",
+    "hookSha256": "bc7596ec4d01485454a1dd4c09c4e8fd24481b19ae4b656efb2246894e980ae7",
+    "hostSettings": {
+      "oats.aweb": {
+        "delivery": "session"
       }
-    },
-    "manifestSha256": "5c497f1d949a4168ca1c0f1fa42602b7099839771b40f601cbda81881c64a7f5",
-    "executable": "#!/usr/bin/env node\nimport { readFileSync, writeFileSync, existsSync } from \"node:fs\";\nconst [cmd = \"teams\", ...rest] = process.argv.slice(2);\nconst home = process.env.OATS_INSTANCE_HOME || process.cwd(), state = home + \"/.nw-teams.json\";\nconst MAPPED = { dev: \"northwind:eng\", reviewers: \"northwind:review\" }, RECEIVE = { dev: \"poll\", reviewers: \"native\" };\nconst joined = existsSync(state) ? JSON.parse(readFileSync(state, \"utf8\")) : [];\nconst out = v => { process.stdout.write(JSON.stringify(v) + \"\\n\"); };\nconst fail = (code, message) => { out({ schemaVersion: 1, ok: false, error: { code, message } }); process.exit(1); };\nconst doc = () => ({ defaultTeam: { team: \"default:northwind:alice\", source: \"root\" }, primary: \"dev\",\n  eligible: Object.entries(MAPPED).map(([label, team]) => ({ label, team, joined: joined.some(j => j.label === label) })),\n  joined: joined.map(j => ({ ...j })), unmapped: [\"marketing\"], at: \"2026-09-25T10:00:00.000Z\" });\nif (cmd === \"teams\") { out({ schemaVersion: 1, ok: true, result: doc() }); process.exit(0); }\nconst i = rest.indexOf(\"--labels\"), labels = (i >= 0 ? rest[i + 1] ?? \"\" : \"\").split(\",\").filter(Boolean);\nif (!labels.length) fail(\"E_BAD_ARGS\", \"name at least one team label\");\nif (cmd === \"leave\" && labels.includes(\"default\")) fail(\"E_TEAM_DEFAULT\", \"the workspace's default team cannot be left\");\nconst bad = labels.filter(l => !Object.hasOwn(MAPPED, l));\nif (bad.length) fail(\"E_TEAM_NOT_ELIGIBLE\", \"not eligible: \" + bad.join(\", \") + \" (eligible: \" + Object.keys(MAPPED).join(\", \") + \")\");\nlet next = joined;\nif (cmd === \"join\") for (const label of labels) if (!next.some(j => j.label === label))\n  next = [...next, { label, team: MAPPED[label], since: \"2026-09-25T10:0\" + next.length + \":00.000Z\", identityHome: home + \"/.aweb-identity-\" + label, receive: RECEIVE[label] }];\nif (cmd === \"leave\") next = next.filter(j => !labels.includes(j.label));\nwriteFileSync(state, JSON.stringify(next));\njoined.splice(0, joined.length, ...next);\nout({ schemaVersion: 1, ok: true, result: doc() });\n",
-    "executableSha256": "4bff81da3a8847358295abd2be6ee2b70e1bec8326ba16bc87b5b5ff27b7a01d",
-    "package": {
-      "package": "nw.teams",
-      "version": "0.1.0",
-      "description": "Stand-in teams messaging package (Desktop fixture).",
-      "compatibility": {
-        "oats": ">=0.25.6"
-      },
-      "capabilities": [
-        "capabilities/nw-teams"
-      ]
     },
     "binding": {
       "packages": {
-        "nw.teams": "git:<base>/fx/remotes/pkg-teams.git@v0.1.0"
+        "oats.aweb": "git:<base>/fx/remotes/oats-aweb.git@v1.16.0"
       },
       "defaults.messaging": {
-        "nw.teams": {
+        "oats.aweb": {
           "from": "package"
         }
+      },
+      "messaging.byTeam": {
+        "dev": {
+          "team": "northwind:eng"
+        },
+        "reviewers": {
+          "team": "northwind:review"
+        }
+      },
+      "release-manager team": [
+        "dev",
+        "reviewers",
+        "marketing"
+      ]
+    },
+    "root": "<base>/northwind-workspace/.aw (teams.yaml active_team: default:northwind:alice)"
+  },
+  "fakeAw": {
+    "why": "join/leave reach an aweb server (aw team invite, aw id team accept-invite, aw workspace delete). No network and no account: this fake aw answers for the server, modelled on oats-aweb test/oats-aweb-1-15.test.mjs fakeAw115 (aw 1.36.12). The teams documents, labels, eligibility, refusals and joined rows are the real provider's.",
+    "executableSha256": "f062f3749d0e510e0d5772886b2a882a7f55156e73869fbba5bebeadb5dc708e",
+    "calls": [
+      {
+        "args": [
+          "team",
+          "list",
+          "--json"
+        ],
+        "identityHome": null
+      },
+      {
+        "args": [
+          "team",
+          "invite",
+          "--team-id",
+          "default:northwind:alice",
+          "--json"
+        ],
+        "identityHome": null
+      },
+      {
+        "args": [
+          "team",
+          "join",
+          "TOKEN__default:northwind:alice",
+          "--name",
+          "release-manager-teams",
+          "--json"
+        ],
+        "identityHome": null
+      },
+      {
+        "args": [
+          "init",
+          "--do-not-touch-agents-md"
+        ],
+        "identityHome": null
+      },
+      {
+        "args": [
+          "wake",
+          "register",
+          "--home",
+          "<base>/northwind-workspace/agents/release-manager/instances/release-manager-teams",
+          "--identity-home",
+          "<base>/northwind-workspace/agents/release-manager/instances/release-manager-teams/.aw",
+          "--delivery",
+          "session"
+        ],
+        "identityHome": null
+      },
+      {
+        "args": [
+          "version"
+        ],
+        "identityHome": null
+      },
+      {
+        "args": [
+          "team",
+          "invite",
+          "--team-id",
+          "northwind:eng",
+          "--json"
+        ],
+        "identityHome": null
+      },
+      {
+        "args": [
+          "id",
+          "team",
+          "accept-invite",
+          "TOKEN__northwind:eng",
+          "--name",
+          "release-manager-teams",
+          "--local",
+          "--json"
+        ],
+        "identityHome": "<base>/northwind-workspace/agents/release-manager/instances/release-manager-teams/.aweb-identity-dev"
+      },
+      {
+        "args": [
+          "wake",
+          "register",
+          "--registration-json",
+          "-"
+        ],
+        "identityHome": null
+      },
+      {
+        "args": [
+          "version"
+        ],
+        "identityHome": null
+      },
+      {
+        "args": [
+          "team",
+          "invite",
+          "--team-id",
+          "northwind:review",
+          "--json"
+        ],
+        "identityHome": null
+      },
+      {
+        "args": [
+          "id",
+          "team",
+          "accept-invite",
+          "TOKEN__northwind:review",
+          "--name",
+          "release-manager-teams",
+          "--local",
+          "--json"
+        ],
+        "identityHome": "<base>/northwind-workspace/agents/release-manager/instances/release-manager-teams/.aweb-identity-reviewers"
+      },
+      {
+        "args": [
+          "wake",
+          "register",
+          "--registration-json",
+          "-"
+        ],
+        "identityHome": null
+      },
+      {
+        "args": [
+          "workspace",
+          "delete",
+          "release-manager-teams",
+          "--json"
+        ],
+        "identityHome": "<base>/northwind-workspace/agents/release-manager/instances/release-manager-teams/.aweb-identity-reviewers"
+      },
+      {
+        "args": [
+          "wake",
+          "register",
+          "--registration-json",
+          "-"
+        ],
+        "identityHome": null
       }
-    }
+    ]
   },
   "files": {
     "version": {
@@ -97,9 +199,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.29.2",
-      "sourceSha256": "163c0710d9503845f0c29700abfb96001a7260405dce56e47f22022ec3aae20f",
-      "fixtureSha256": "6a56da64fbcd5651f6513dacdd52fa232ab27d38ab6247052fdad0693285cf2d"
+      "kernel": "0.29.3",
+      "sourceSha256": "e0c38e072a8de8a25d8d13546497363cc62c955f6b37e3e163f21150c507d35c",
+      "fixtureSha256": "3c6c6f71c8876f7ade51add5517724a85a9a2b087d06ca80f83f82bfb08f0f8b"
     },
     "inspect-home": {
       "argv": [
@@ -110,9 +212,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.29.2",
-      "sourceSha256": "268ae3418ac7690792c351c600287968d149e37762904eb574a3da66654d3766",
-      "fixtureSha256": "244239d875dec507afdf3eabc8491e5ecbf6b82bccf2048ff1d2c0b72b473d09"
+      "kernel": "0.29.3",
+      "sourceSha256": "5f895681932f06fac31c736f939c50803fda6275f5ddb75ff7acc31b8cfc5ed2",
+      "fixtureSha256": "8f0ed89d76085eb6b5df97fdf5282823b9e4ade6c30d00b520def71ccd11e75d"
     },
     "inspect-soul": {
       "argv": [
@@ -127,9 +229,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.29.2",
-      "sourceSha256": "d5b20c750502228f18d807456236c8e1f8a243c9055d07acdfae8f1959a59c5c",
-      "fixtureSha256": "1b8f120f063e9b576e638d66ae431563ca574fbcb239e06103e9638a474c01d1"
+      "kernel": "0.29.3",
+      "sourceSha256": "91650ecc3c95c3cbd6b69db78d28ebd1870ca8f92752c1e1a32d8e9ebcd57404",
+      "fixtureSha256": "9d58540014efaff8cfc8cdedb9a204e41afa36a7e2b1c9d4978bd057c5897bee"
     },
     "teams-initial": {
       "argv": [
@@ -142,9 +244,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.29.2",
-      "sourceSha256": "2081320a0086b973cf0d443795dcd16c44955357b37155aa14d381ecd6356578",
-      "fixtureSha256": "5093ab93911b34999527c39078e49917ce08e344b7d66eed4eb1357c01517f4f"
+      "kernel": "0.29.3",
+      "sourceSha256": "b9ac82b208c35ee49de1ae033efd9948d17d87f28417625bd79884cfe60dbee3",
+      "fixtureSha256": "507cc918910a4bbc5bb932d632497f59806151d476179d4ee87da7bd7499f1b2"
     },
     "join-dev": {
       "argv": [
@@ -159,9 +261,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.29.2",
-      "sourceSha256": "f036a0d6b5b5b82752c150a30d7c3d4bfcab3e488c0abd44d524a5f625628b2f",
-      "fixtureSha256": "4322b22276a7172da8e032b5e514a802a2902e2c1d3f4f4075af368b220d3f05"
+      "kernel": "0.29.3",
+      "sourceSha256": "4ea70bb87a34bfa67af18024f3a6880653dfda71d8ecac7fe8ddedd1eada79aa",
+      "fixtureSha256": "b8e84d526c73874c36ce180b03b57272ef4bdc8bb1514bec2dfafcada628dd2c"
     },
     "join-reviewers": {
       "argv": [
@@ -176,9 +278,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.29.2",
-      "sourceSha256": "624c711407a7baeb6c1cfbaf556bcff7e53ac8123949edd982087b8f1b55c8ad",
-      "fixtureSha256": "9ceaeede5bb70f695a7c6c7eebe6e5a21c75842543c696cbd7e79b9840efba55"
+      "kernel": "0.29.3",
+      "sourceSha256": "4e97d8469c8bbb10cb264d59dd58530bba708b149109c4982a023baa12b389c3",
+      "fixtureSha256": "d33743a4ce93e15fa65e7eb88f51bc6094f7ada7633a64a327d3f9cb6bcf465d"
     },
     "join-not-eligible": {
       "argv": [
@@ -193,9 +295,9 @@
         "--json"
       ],
       "exit": 1,
-      "kernel": "0.29.2",
-      "sourceSha256": "3887f1b9cba86eed85828e26fe765a57c838e6537e14564b5abc9265b138389e",
-      "fixtureSha256": "193c1c8f47370f3733e9fc6ee4edfeb75888de3aded7a3f8bd2b6968ce93d2aa"
+      "kernel": "0.29.3",
+      "sourceSha256": "8446be6a3fa6003f5c6a651087b6c171b2a547c7208e5748d6cb12667f5467a5",
+      "fixtureSha256": "7832595d6de5ba613d673aa5bc7ffe673afa6920a41291cd4edf7f17f4df2db2"
     },
     "leave-default": {
       "argv": [
@@ -210,9 +312,9 @@
         "--json"
       ],
       "exit": 1,
-      "kernel": "0.29.2",
-      "sourceSha256": "804f4669de22311ed8e9808c65cc828e9d2b13576c9b48647e847439e998e47f",
-      "fixtureSha256": "c4dea1c6ede23810f797056bfcd1f20c9f551807043a3fd27050454202fdbf34"
+      "kernel": "0.29.3",
+      "sourceSha256": "27413ddb4b0297dad598c6a28dc2a83effcf6396c8ae5317b7808eb1be0f92f9",
+      "fixtureSha256": "daee7c515522445c99c3514d24f4e51b435fe9a2d39d2d31bcc1c149b340a828"
     },
     "leave-reviewers": {
       "argv": [
@@ -227,9 +329,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.29.2",
-      "sourceSha256": "24e2078f405b9a50fc97743b825cbd3e17935c92986dbadf1ab05361b3ce37a9",
-      "fixtureSha256": "024175ffe5bc682019b73101354e763e410313a3be171b4d27417042c51eb636"
+      "kernel": "0.29.3",
+      "sourceSha256": "ef5fd9f05fed2c279bd3ff947d51e7f4f05028e13c467032b44879d73ca7d66b",
+      "fixtureSha256": "2144a3b5d1bd6b686756ea936575ed31e21d38a0c470b6e28b613dce54ec1f87"
     },
     "teams-joined": {
       "argv": [
@@ -242,9 +344,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.29.2",
-      "sourceSha256": "0bd11e9d8b384aaa652698c59e8af8afc5b7fe2fe2a846b49a50e1e3994bb54c",
-      "fixtureSha256": "d6736e69f891dee26b2ce6c84bd3e976354e8280ed2e7d79d9619a48d95db309"
+      "kernel": "0.29.3",
+      "sourceSha256": "4b7ee0d74d2bebce812b26accdd667e1b861f2d69c77fc77e7383113a6ea621e",
+      "fixtureSha256": "1c429ea64ff55303cfc2ae81bc6d5cb6637a635e4ee25e00ec54827277046986"
     },
     "join-missing-arg": {
       "argv": [
@@ -257,9 +359,9 @@
         "--json"
       ],
       "exit": 1,
-      "kernel": "0.29.2",
-      "sourceSha256": "83e4f055e47826462aea5d9990f3ccf629ee4f762ace18d0662c01caf93bb6c5",
-      "fixtureSha256": "0bd0b888e73eb7d5b52f2ce26267de99757c5ea6743d7a7053be36ce3a44eb53"
+      "kernel": "0.29.3",
+      "sourceSha256": "147f3bbba2a965678bf0ba25270ada2bb14245e78e1e1d0e50fe11e1a55e732f",
+      "fixtureSha256": "3a78b1ac4abe215339d952c0b12b3e9f36eee11558830d920c1503d582ca8669"
     },
     "teams-on-soul": {
       "argv": [
@@ -276,7 +378,7 @@
         "--json"
       ],
       "exit": 1,
-      "kernel": "0.29.2",
+      "kernel": "0.29.3",
       "sourceSha256": "d6db26663748de8cb0375cce0f3a8b746253e3a30b8807885598696558601658",
       "fixtureSha256": "58bb384ef53f9a2ec65aa2ba14529fe64fe8285ce970d18c8cea3b7409509447"
     }

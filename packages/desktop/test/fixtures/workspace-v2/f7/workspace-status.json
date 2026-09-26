@@ -7,8 +7,8 @@
       "name": "northwind",
       "key": "local//fixture/base/fx/remotes/agents.git",
       "url": "/fixture/base/fx/remotes/agents.git",
-      "commit": "504b717008b2fad05fe578b43479721a316803cc",
-      "observedAt": "2026-09-26T19:54:17.247Z",
+      "commit": "535e5d7c4a7e869e05effd2db237a8de943f2d9e",
+      "observedAt": "2026-09-26T20:13:55.993Z",
       "local": "/fixture/base/northwind-workspace/oats-local.yaml",
       "teams": [
         "global",
@@ -24,7 +24,7 @@
       {
         "key": "local//fixture/base/fx/remotes/agents.git",
         "name": "agents",
-        "commit": "504b717008b2fad05fe578b43479721a316803cc",
+        "commit": "535e5d7c4a7e869e05effd2db237a8de943f2d9e",
         "confirmed": true,
         "status": "confirmed",
         "detail": null,
@@ -47,7 +47,7 @@
       {
         "key": "local//fixture/base/fx/remotes/platform.git",
         "name": "platform",
-        "commit": "8e6d250b85e4afd36ee0f94a2a8656a68d1488f4",
+        "commit": "f745ac02fe85fb957583d59a5f4e38b1c754d753",
         "confirmed": true,
         "status": "confirmed",
         "detail": null,
@@ -69,7 +69,7 @@
       {
         "key": "local//fixture/base/fx/remotes/data.git",
         "name": "data",
-        "commit": "7bb94ce48161afabf7985cd4e2db95adb89ab878",
+        "commit": "6a3610af7b70fd32717565479f8ccc971d94a68c",
         "confirmed": true,
         "status": "confirmed",
         "detail": null,
@@ -90,7 +90,7 @@
       {
         "key": "local//fixture/base/fx/remotes/marketing.git",
         "name": "marketing",
-        "commit": "0d9f78c5e32c4d99a71eb726e9c815a9ef8c54a9",
+        "commit": "7e58b0464dd457a3d81663f6cfe83778d17f2747",
         "confirmed": true,
         "status": "confirmed",
         "detail": null,
@@ -113,7 +113,7 @@
       {
         "key": "local//fixture/base/fx/remotes/nw-tools.git",
         "name": "nw-tools",
-        "commit": "36a842defb01aa36bf85d4be23b287018d0dd645",
+        "commit": "18e3c359a4f4c2209ddc0cef5d53b8c01a756aa0",
         "confirmed": true,
         "status": "confirmed",
         "detail": null,
@@ -140,7 +140,7 @@
         "id": "nw.chat",
         "version": "0.1.0",
         "source": "git:local//fixture/base/fx/remotes/pkg-chat.git@v0.1.0",
-        "commit": "490e07aebe3f436bf5675002c8564e12459d7844",
+        "commit": "0a05de5297cf6a63f1fbe9c09586fdfc7f3e8376",
         "integrity": "sha256-f1021844f28d07ccd8f66398726ce73eb893fd277f2268aeb1a2a6ad9db90e75",
         "capabilities": [
           "nw.chat"
@@ -149,26 +149,26 @@
         "latest": null
       },
       {
-        "id": "nw.teams",
-        "version": "0.1.0",
-        "source": "git:local//fixture/base/fx/remotes/pkg-teams.git@v0.1.0",
-        "commit": "2cfc7624f9d5b9cda662eae53d4b1876b62e3356",
-        "integrity": "sha256-966131cd26279ac54be071c34f49fcc7adf8425c7651e800f06e277d54df80ce",
+        "id": "nw.tools",
+        "version": "0.4.0",
+        "source": "git:local//fixture/base/fx/remotes/nw-tools.git@v0.4.0",
+        "commit": "18e3c359a4f4c2209ddc0cef5d53b8c01a756aa0",
+        "integrity": "sha256-4a0ee48230d65cc6c0b9d0c9a3883e64182cfc7b2410e4f5839bacf551fcf1cf",
         "capabilities": [
-          "nw.teams"
+          "nw-deploy",
+          "nw-lint"
         ],
         "souls": [],
         "latest": null
       },
       {
-        "id": "nw.tools",
-        "version": "0.4.0",
-        "source": "git:local//fixture/base/fx/remotes/nw-tools.git@v0.4.0",
-        "commit": "36a842defb01aa36bf85d4be23b287018d0dd645",
-        "integrity": "sha256-4a0ee48230d65cc6c0b9d0c9a3883e64182cfc7b2410e4f5839bacf551fcf1cf",
+        "id": "oats.aweb",
+        "version": "1.16.0",
+        "source": "git:local//fixture/base/fx/remotes/oats-aweb.git@v1.16.0",
+        "commit": "52657b677551c9de14d9d6c9417a41653d1ea3cf",
+        "integrity": "sha256-c8694810410bb250ffc5f46bb27ad3f16a3421626964529b176906defde2ca11",
         "capabilities": [
-          "nw-deploy",
-          "nw-lint"
+          "oats.aweb"
         ],
         "souls": [],
         "latest": null
@@ -200,8 +200,8 @@
     ],
     "declaredPackages": [
       "nw.chat",
-      "nw.teams",
       "nw.tools",
+      "oats.aweb",
       "oats.framework",
       "oats.okf"
     ],
@@ -255,7 +255,7 @@
           "from": "package"
         },
         "messaging": {
-          "name": "nw.teams",
+          "name": "oats.aweb",
           "from": "package"
         },
         "tasks": "none"

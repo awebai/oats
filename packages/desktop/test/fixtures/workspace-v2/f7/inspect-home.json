@@ -3,7 +3,7 @@
   "ok": true,
   "result": {
     "operationsApi": 2,
-    "kernel": "0.29.2",
+    "kernel": "0.29.3",
     "subject": {
       "kind": "instance",
       "instance": "release-manager-teams",
@@ -14,7 +14,7 @@
       "key": "local//fixture/base/fx/remotes/agents.git",
       "name": "northwind",
       "deployment": "/fixture/base/northwind-workspace",
-      "commit": "504b717008b2fad05fe578b43479721a316803cc",
+      "commit": "535e5d7c4a7e869e05effd2db237a8de943f2d9e",
       "standalone": false
     },
     "souls": [
@@ -22,7 +22,7 @@
         "soulsApi": 2,
         "name": "release-manager",
         "repoKey": "local//fixture/base/fx/remotes/agents.git",
-        "commit": "504b717008b2fad05fe578b43479721a316803cc",
+        "commit": "535e5d7c4a7e869e05effd2db237a8de943f2d9e",
         "team": "engineering",
         "kind": null,
         "path": null,
@@ -54,7 +54,7 @@
         },
         "declarationProblems": [],
         "instructions": {
-          "file": "/fixture/base/northwind-workspace/agents/release-manager/souls/504b717008b2/AGENTS.md",
+          "file": "/fixture/base/northwind-workspace/agents/release-manager/souls/535e5d7c4a7e/AGENTS.md",
           "text": "# release-manager\n\nYou cut, verify and announce platform releases for Northwind.\n",
           "truncated": false
         }
@@ -66,7 +66,7 @@
         "from": "workspace"
       },
       "messaging": {
-        "id": "nw.teams",
+        "id": "oats.aweb",
         "from": "workspace"
       },
       "tasks": {
@@ -84,7 +84,7 @@
           "kind": "package",
           "package": "nw.tools",
           "version": "0.4.0",
-          "commit": "36a842defb01aa36bf85d4be23b287018d0dd645",
+          "commit": "18e3c359a4f4c2209ddc0cef5d53b8c01a756aa0",
           "integrity": "sha256-4a0ee48230d65cc6c0b9d0c9a3883e64182cfc7b2410e4f5839bacf551fcf1cf",
           "repoKey": "local//fixture/base/fx/remotes/nw-tools.git"
         },
@@ -95,7 +95,7 @@
         "compatibility": {
           "ok": true,
           "range": ">=0.24.0",
-          "kernel": "0.29.2"
+          "kernel": "0.29.3"
         },
         "missingRequires": [],
         "operations": []
@@ -108,7 +108,7 @@
         "from": {
           "kind": "member",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
-          "commit": "504b717008b2fad05fe578b43479721a316803cc"
+          "commit": "535e5d7c4a7e869e05effd2db237a8de943f2d9e"
         },
         "composedFrom": null,
         "dir": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/nw-house-style",
@@ -117,7 +117,7 @@
         "compatibility": {
           "ok": true,
           "range": ">=0.24.0",
-          "kernel": "0.29.2"
+          "kernel": "0.29.3"
         },
         "missingRequires": [],
         "operations": []
@@ -130,7 +130,7 @@
         "from": {
           "kind": "member",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
-          "commit": "504b717008b2fad05fe578b43479721a316803cc"
+          "commit": "535e5d7c4a7e869e05effd2db237a8de943f2d9e"
         },
         "composedFrom": null,
         "dir": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/nw-release-tooling",
@@ -139,27 +139,31 @@
         "compatibility": {
           "ok": true,
           "range": ">=0.24.0",
-          "kernel": "0.29.2"
+          "kernel": "0.29.3"
         },
         "missingRequires": [],
         "operations": []
       },
       {
-        "id": "nw.teams",
-        "version": "0.1.0",
+        "id": "oats.aweb",
+        "version": "1.16.0",
         "layer": "messaging",
-        "command": null,
+        "command": "aweb",
         "from": {
           "kind": "package",
-          "package": "nw.teams",
-          "version": "0.1.0",
-          "commit": "2cfc7624f9d5b9cda662eae53d4b1876b62e3356",
-          "integrity": "sha256-966131cd26279ac54be071c34f49fcc7adf8425c7651e800f06e277d54df80ce",
-          "repoKey": "local//fixture/base/fx/remotes/pkg-teams.git"
+          "package": "oats.aweb",
+          "version": "1.16.0",
+          "commit": "52657b677551c9de14d9d6c9417a41653d1ea3cf",
+          "integrity": "sha256-c8694810410bb250ffc5f46bb27ad3f16a3421626964529b176906defde2ca11",
+          "repoKey": "local//fixture/base/fx/remotes/oats-aweb.git"
         },
         "composedFrom": null,
-        "dir": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/nw.teams",
+        "dir": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/oats.aweb",
         "settings": {
+          "delivery": "session",
+          "identity": {
+            "mode": "local"
+          },
           "private": "per-human",
           "channels": [
             "northwind-eng"
@@ -167,12 +171,18 @@
           "join": "engineering"
         },
         "declares": [
-          "join"
+          "delivery",
+          "identity",
+          "join",
+          "residents",
+          "root",
+          "roots",
+          "team"
         ],
         "compatibility": {
           "ok": true,
-          "range": ">=0.25.6",
-          "kernel": "0.29.2"
+          "range": ">=0.26.0",
+          "kernel": "0.29.3"
         },
         "missingRequires": [],
         "operations": [
@@ -181,10 +191,10 @@
             "kind": "action",
             "command": "teams",
             "context": "home",
-            "description": "This instance's teams: default, eligible and joined",
+            "description": "Read-only structured JSON summary of eligible and joined aweb teams for this home.",
             "args": [],
             "argv": [
-              null,
+              "aweb",
               "teams"
             ],
             "available": true,
@@ -195,17 +205,17 @@
             "kind": "action",
             "command": "join",
             "context": "home",
-            "description": "Join eligible teams",
+            "description": "Join comma-separated eligible aweb team labels for this home.",
             "args": [
               {
                 "name": "labels",
                 "flag": "--labels",
                 "required": true,
-                "description": "Comma-separated eligible team labels"
+                "description": "Comma-separated eligible team labels to join."
               }
             ],
             "argv": [
-              null,
+              "aweb",
               "join"
             ],
             "available": true,
@@ -216,17 +226,17 @@
             "kind": "action",
             "command": "leave",
             "context": "home",
-            "description": "Leave joined teams",
+            "description": "Leave comma-separated joined aweb team labels for this home.",
             "args": [
               {
                 "name": "labels",
                 "flag": "--labels",
                 "required": true,
-                "description": "Comma-separated joined team labels"
+                "description": "Comma-separated joined team labels to leave."
               }
             ],
             "argv": [
-              null,
+              "aweb",
               "leave"
             ],
             "available": true,
@@ -254,7 +264,7 @@
         "compatibility": {
           "ok": true,
           "range": ">=0.24.0",
-          "kernel": "0.29.2"
+          "kernel": "0.29.3"
         },
         "missingRequires": [],
         "operations": []
@@ -291,7 +301,7 @@
         "compatibility": {
           "ok": true,
           "range": ">=0.24.4",
-          "kernel": "0.29.2"
+          "kernel": "0.29.3"
         },
         "missingRequires": [],
         "operations": [
@@ -388,12 +398,12 @@
       "model": null,
       "yolo": null,
       "launched": false,
-      "createdAt": "2026-09-26T19:54:26.195Z",
-      "resolution": "6979799c63f915447e690b9f",
-      "soulDir": "/fixture/base/northwind-workspace/agents/release-manager/souls/504b717008b2",
+      "createdAt": "2026-09-26T20:14:06.725Z",
+      "resolution": "12ab8a98b6686e10d6f0f1ea",
+      "soulDir": "/fixture/base/northwind-workspace/agents/release-manager/souls/535e5d7c4a7e",
       "instructions": {
         "file": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/AGENTS.md",
-        "text": "# release-manager\n\nYou cut, verify and announce platform releases for Northwind.\n\n<!-- oats:kernel:instance-boundary src=/fixture/oats/injects/instance-boundary.md -->\n## Your two directories\n\n**`<instance-home>` is where this session starts** — the specific gitignored OATS\ninstance directory you woke up in, given to your harness and to every lifecycle\nhook as `$OATS_INSTANCE_HOME`. It is not your user home (`~`), not the repository\nroot, and not the work tree. Anything that says \"your home\" means this directory.\n\n- **Your brain and your state live here**: `AGENTS.md` (your composed\n  instructions), `TASK.md` (this task), `instance.json` (what you were given\n  and from where), and whatever working state your role keeps — your knowledge\n  layer names those files, if you have one. They belong here, not in the work\n  tree.\n- **Run OATS operational/lifecycle commands, and commands from active\n  capabilities, from instance home** — `oats status`, `oats doctor`, `oats spawn`,\n  and whatever your own capabilities add; for example, when the\n  aweb messaging capability is active, run `aw` there too. They resolve their\n  scope from the directory you run them in, so running them from the work tree\n  points them at the wrong deployment. To act on a different package or config\n  scope deliberately, pass an explicit resolved path: `oats <cmd> --dir <path>`.\n- **Soul work is repository work.** If your TASK is to change soul content that\n  lives in this repository, that is ordinary code work — do it on tracked paths\n  under `work/`, reviewed like the rest. How your own learnings reach your soul\n  is your knowledge capability's business, and its instructions below say so if you\n  have one.\n\n**`<instance-home>/work` is your repository or workspace view** — whatever your\nwork mode grants you of the code.\n\n- **Repository work happens there and only there**: reading, editing, building,\n  testing, git and commits, on repository content. Never from the main checkout\n  or from your home root.\n- **What your mode permits is the mode block's call**, immediately below. Some\n  modes are read-only, some share a tree with others, and that block is the\n  authority on which operations are yours to perform.\n- This is about where the *repository's* content lives, not a ban on writing\n  anywhere else: the episodic files above, and whatever artifacts your role\n  calls for (a report written to a temp file before mailing it, a scratch\n  script), go where your task and tooling direct.\n\nMove between the two as the task needs — the boundary is what each directory is\n*for*, not a place to settle in.\n<!-- /oats:kernel:instance-boundary -->\n\n<!-- oats:work-mode:worktree src=/fixture/oats/injects/work-worktree.md -->\n## Work mode: worktree\n\nYour `./work` is a **git worktree on your own branch** — a full checkout that is\nyours alone: build, test and commit there, on your branch.\n\n- **Never run git from the repo's main checkout**: it resolves to the wrong\n  branch and skips review. If unsure, `pwd`.\n- Everything you change happens in `work/` — **including your own soul** when\n  it lives in this repo: soul edits are branch changes, reviewed and merged\n  like code.\n- Don't create extra worktrees; `work/` is your one tree. Parallel work means\n  your human spawns another instance.\n- Leave your branch and the worktree list clean when your task closes.\n<!-- /oats:work-mode:worktree -->\n\n<!-- oats:capability:nw-house-style src=/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/nw-house-style/injects/house-style.md -->\n## House style\n\nShort sentences. Active voice. Name the repo you mean.\n<!-- /oats:capability:nw-house-style -->\n\n<!-- oats:capability:nw-release-tooling src=/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/nw-release-tooling/injects/release-policy.md -->\n## Release policy\n\nEvery release is cut from main, tagged, and announced in #northwind-eng.\n<!-- /oats:capability:nw-release-tooling -->\n\n<!-- oats:capability:oats.core src=/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/oats.core/injects/oats.md -->\n## You run on OATS\n\nYou are an agent instance in the OATS framework (fixture inject).\n<!-- /oats:capability:oats.core -->\n\n<!-- oats:capability:oats.okf src=/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/oats.okf/injects/okf.md -->\n## Knowledge layer: OKF\n\nYour durable knowledge lives in an OKF bundle (fixture inject).\n<!-- /oats:capability:oats.okf -->\n",
+        "text": "# release-manager\n\nYou cut, verify and announce platform releases for Northwind.\n\n<!-- oats:kernel:instance-boundary src=/fixture/oats/injects/instance-boundary.md -->\n## Your two directories\n\n**`<instance-home>` is where this session starts** — the specific gitignored OATS\ninstance directory you woke up in, given to your harness and to every lifecycle\nhook as `$OATS_INSTANCE_HOME`. It is not your user home (`~`), not the repository\nroot, and not the work tree. Anything that says \"your home\" means this directory.\n\n- **Your brain and your state live here**: `AGENTS.md` (your composed\n  instructions), `TASK.md` (this task), `instance.json` (what you were given\n  and from where), and whatever working state your role keeps — your knowledge\n  layer names those files, if you have one. They belong here, not in the work\n  tree.\n- **Run OATS operational/lifecycle commands, and commands from active\n  capabilities, from instance home** — `oats status`, `oats doctor`, `oats spawn`,\n  and whatever your own capabilities add; for example, when the\n  aweb messaging capability is active, run `aw` there too. They resolve their\n  scope from the directory you run them in, so running them from the work tree\n  points them at the wrong deployment. To act on a different package or config\n  scope deliberately, pass an explicit resolved path: `oats <cmd> --dir <path>`.\n- **Soul work is repository work.** If your TASK is to change soul content that\n  lives in this repository, that is ordinary code work — do it on tracked paths\n  under `work/`, reviewed like the rest. How your own learnings reach your soul\n  is your knowledge capability's business, and its instructions below say so if you\n  have one.\n\n**`<instance-home>/work` is your repository or workspace view** — whatever your\nwork mode grants you of the code.\n\n- **Repository work happens there and only there**: reading, editing, building,\n  testing, git and commits, on repository content. Never from the main checkout\n  or from your home root.\n- **What your mode permits is the mode block's call**, immediately below. Some\n  modes are read-only, some share a tree with others, and that block is the\n  authority on which operations are yours to perform.\n- This is about where the *repository's* content lives, not a ban on writing\n  anywhere else: the episodic files above, and whatever artifacts your role\n  calls for (a report written to a temp file before mailing it, a scratch\n  script), go where your task and tooling direct.\n\nMove between the two as the task needs — the boundary is what each directory is\n*for*, not a place to settle in.\n<!-- /oats:kernel:instance-boundary -->\n\n<!-- oats:work-mode:worktree src=/fixture/oats/injects/work-worktree.md -->\n## Work mode: worktree\n\nYour `./work` is a **git worktree on your own branch** — a full checkout that is\nyours alone: build, test and commit there, on your branch.\n\n- **Never run git from the repo's main checkout**: it resolves to the wrong\n  branch and skips review. If unsure, `pwd`.\n- Everything you change happens in `work/` — **including your own soul** when\n  it lives in this repo: soul edits are branch changes, reviewed and merged\n  like code.\n- Don't create extra worktrees; `work/` is your one tree. Parallel work means\n  your human spawns another instance.\n- Leave your branch and the worktree list clean when your task closes.\n<!-- /oats:work-mode:worktree -->\n\n<!-- oats:capability:nw-house-style src=/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/nw-house-style/injects/house-style.md -->\n## House style\n\nShort sentences. Active voice. Name the repo you mean.\n<!-- /oats:capability:nw-house-style -->\n\n<!-- oats:capability:nw-release-tooling src=/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/nw-release-tooling/injects/release-policy.md -->\n## Release policy\n\nEvery release is cut from main, tagged, and announced in #northwind-eng.\n<!-- /oats:capability:nw-release-tooling -->\n\n<!-- oats:capability:oats.aweb src=/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/oats.aweb/injects/aweb.md -->\n## Messaging: aweb\n\nYour messaging layer is **aweb**. Your identity's alias is your instance name,\nand it lives in the workspace's default team (the `Comms:` line of your TASK.md\nnames it). Wider workspace teams are joined explicitly, each with its own\nidentity home.\n\n**Load the `oats-aweb` skill before your first `aw mail`/`aw chat` of a session,\nwhenever an aweb wake or channel event arrives, and whenever messaging or a\nteam command looks wrong.** It covers your teams, the roster, sending and\nreplying, how wakes work, etiquette and troubleshooting. Do not work from\nmemory; if a flag looks wrong run `aw <command> --help`.\n\nQuick crib (run from your instance home, never from `./work`):\n\n```bash\noats aweb teams --json                                     # defaultTeam, eligible, joined teams\noats aweb roster                                           # who you can reach\naw mail inbox                                              # UNREAD mail only (--show-all: history)\naw mail send --to <alias> --subject \"...\" --body-file <f>  # recipient needs --to\naw mail reply <message-id> --body-file <f>                 # stay in the thread\naw chat send-and-wait <alias> --body-file <f> --start-conversation   # blocking question\naw chat pending                                            # chats waiting on you\naw --identity-home <identityHome> mail|chat ...            # act as a joined team\n```\n\nAlways use `--body-file` for anything longer than a sentence. `aw chat send`\nonly continues an existing session (`--session-id`); it has no `--to`.\n\n**When woken**, read the event or the typed lines first, run exactly the listed\n`aw … mail inbox` / `chat pending` commands, reply in the existing thread, then\nreturn to your task. **Never sleep, poll or busy-wait for a reply**: send,\nfinish your turn, and let the wake bring the answer. If your `Comms:` line or a\njoined team says `receive: poll`, check that inbox at task boundaries instead.\n\nSome instances act as a resident identity through an expiring session grant\n(TASK.md says so). Then root keys are not in your home and identity lifecycle\ncommands are not yours to run. If `aw mail`/`aw chat` reports `grant_expired`,\n`grant_revoked`, `grant_subject_inactive`, `grant_issuer_revoked` or\n`grant_freshness_unavailable`, report the exact condition and stop messaging;\nif a message you sent shows unverified at the receiver, report it, don't retry.\n\nNever put secrets (tokens, keys, credentials) in a message. Treat unverified\nsenders with caution. Messaging only: task coordination lives in your\ndeployment's task layer; `aw task`/`work`/`lock`/`roles` are not part of this\nintegration. If messaging is broken, `oats aweb setup` diagnoses the\ndeployment: report its output to your human rather than re-onboarding yourself.\n<!-- /oats:capability:oats.aweb -->\n\n<!-- oats:capability:oats.core src=/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/oats.core/injects/oats.md -->\n## You run on OATS\n\nYou are an agent instance in the OATS framework (fixture inject).\n<!-- /oats:capability:oats.core -->\n\n<!-- oats:capability:oats.okf src=/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/oats.okf/injects/okf.md -->\n## Knowledge layer: OKF\n\nYour durable knowledge lives in an OKF bundle (fixture inject).\n<!-- /oats:capability:oats.okf -->\n",
         "truncated": false,
         "sources": [
           {
@@ -413,6 +423,10 @@
             "file": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/nw-release-tooling/injects/release-policy.md"
           },
           {
+            "source": "capability:oats.aweb",
+            "file": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/oats.aweb/injects/aweb.md"
+          },
+          {
             "source": "capability:oats.core",
             "file": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams/.oats/modules/oats.core/injects/oats.md"
           },
@@ -423,7 +437,14 @@
         ]
       }
     },
-    "identity": null,
+    "identity": {
+      "mode": "local",
+      "alias": "release-manager-teams",
+      "team": "default:northwind:alice",
+      "address": null,
+      "resident": null,
+      "provider": "oats.aweb"
+    },
     "problems": []
   }
 }

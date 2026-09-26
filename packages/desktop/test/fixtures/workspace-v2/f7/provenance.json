@@ -1,95 +1,141 @@
 {
-  "source": "ux-designer (the engineer's capture-f7.mjs, 1.16 stand-in) for the Desktop F7 side panels + teams (main dc948fa1); test/fixtures/northwind/build.mjs; capture-f7.mjs",
-  "kernel": "0.29.2",
+  "source": "ux-designer for the Desktop F7 side panels + teams (main 2ea45bfe (0.29.3 pin)); test/fixtures/northwind/build.mjs; capture-f7-real.mjs (from the engineer's capture-f7.mjs)",
+  "kernel": "0.29.3",
   "redactions": [
     "<base> (capture scratch) → /fixture/base",
     "<oats> (checkout) → /fixture/oats"
   ],
+  "provider": {
+    "real": true,
+    "package": "oats.aweb",
+    "version": "1.16.0",
+    "tag": "v1.16.0",
+    "commit": "52657b677551c9de14d9d6c9417a41653d1ea3cf",
+    "hookSha256": "bc7596ec4d01485454a1dd4c09c4e8fd24481b19ae4b656efb2246894e980ae7",
+    "hostSettings": {
+      "oats.aweb": {
+        "delivery": "session"
+      }
+    },
+    "root": "<base>/northwind-workspace/.aw (teams.yaml active_team: default:northwind:alice)"
+  },
+  "fakeAw": {
+    "why": "Spawn and join reach an aweb server (aw team invite/join, aw id team accept-invite). No network and no account: this fake aw answers for the server, modelled on oats-aweb test/oats-aweb-1-15.test.mjs fakeAw115 (aw 1.36.12). The documents are the real provider's and the kernel's.",
+    "executableSha256": "562fe8d82a6a4b853c9c7085691f9be0e1cecb52215b6e05afdbf720400fc79c",
+    "calls": [
+      {
+        "args": [
+          "team",
+          "list",
+          "--json"
+        ],
+        "identityHome": null
+      },
+      {
+        "args": [
+          "team",
+          "invite",
+          "--team-id",
+          "default:northwind:alice",
+          "--json"
+        ],
+        "identityHome": null
+      },
+      {
+        "args": [
+          "team",
+          "join",
+          "TOKEN__default:northwind:alice",
+          "--name",
+          "release-manager-teams",
+          "--json"
+        ],
+        "identityHome": null
+      },
+      {
+        "args": [
+          "init",
+          "--do-not-touch-agents-md"
+        ],
+        "identityHome": null
+      },
+      {
+        "args": [
+          "wake",
+          "register",
+          "--home",
+          "<base>/northwind-workspace/agents/release-manager/instances/release-manager-teams",
+          "--identity-home",
+          "<base>/northwind-workspace/agents/release-manager/instances/release-manager-teams/.aw",
+          "--delivery",
+          "session"
+        ],
+        "identityHome": null
+      },
+      {
+        "args": [
+          "version"
+        ],
+        "identityHome": null
+      },
+      {
+        "args": [
+          "version"
+        ],
+        "identityHome": null
+      },
+      {
+        "args": [
+          "team",
+          "invite",
+          "--team-id",
+          "northwind:eng",
+          "--json"
+        ],
+        "identityHome": null
+      },
+      {
+        "args": [
+          "id",
+          "team",
+          "accept-invite",
+          "TOKEN__northwind:eng",
+          "--name",
+          "release-manager-teams",
+          "--local",
+          "--json"
+        ],
+        "identityHome": "<base>/northwind-workspace/agents/release-manager/instances/release-manager-teams/.aweb-identity-engineering"
+      },
+      {
+        "args": [
+          "wake",
+          "register",
+          "--registration-json",
+          "-"
+        ],
+        "identityHome": null
+      }
+    ]
+  },
   "standIn": {
-    "reason": "The oats.aweb 1.16.0 wire names (teams contract AMENDMENT c129125a: defaultTeam {team, source}, E_TEAM_DEFAULT) are not tagged yet; nw.teams answers in the 1.16 shape and declares the contract's settings.join and messaging:teams|join|leave, nw.chat declares neither (like oats.aweb 1.13.1).",
-    "contract": "docs/design/2026-09-25-teams-contract.md (AMENDMENT c129125a)",
-    "manifest": {
-      "capability": "nw.teams",
-      "version": "0.1.0",
-      "compatibility": {
-        "oats": ">=0.25.6"
-      },
-      "layer": "messaging",
-      "description": "Stand-in messaging provider for Desktop fixtures: the teams contract's messaging:teams|join|leave home operations.",
-      "requires": [],
-      "settings": {
-        "join": {
-          "description": "Teams to join at spawn: comma-separated eligible labels (teams contract)."
-        }
-      },
-      "commands": {
-        "teams": "bin/nw-teams.mjs teams",
-        "join": "bin/nw-teams.mjs join",
-        "leave": "bin/nw-teams.mjs leave"
-      },
-      "operations": {
-        "teams": {
-          "kind": "action",
-          "command": "teams",
-          "context": "home",
-          "description": "This instance's teams: default, eligible and joined"
+    "chat": {
+      "reason": "a messaging provider that declares neither settings.join nor team operations (like oats.aweb 1.13.1); no real provider plays that",
+      "manifest": {
+        "capability": "nw.chat",
+        "version": "0.1.0",
+        "compatibility": {
+          "oats": ">=0.25.6"
         },
-        "join": {
-          "kind": "action",
-          "command": "join",
-          "context": "home",
-          "description": "Join eligible teams",
-          "args": [
-            {
-              "name": "labels",
-              "flag": "--labels",
-              "required": true,
-              "description": "Comma-separated eligible team labels"
-            }
-          ]
-        },
-        "leave": {
-          "kind": "action",
-          "command": "leave",
-          "context": "home",
-          "description": "Leave joined teams",
-          "args": [
-            {
-              "name": "labels",
-              "flag": "--labels",
-              "required": true,
-              "description": "Comma-separated joined team labels"
-            }
-          ]
+        "layer": "messaging",
+        "description": "Stand-in messaging provider without the teams contract (no settings.join, no team operations).",
+        "requires": [],
+        "settings": {
+          "identity": {
+            "description": "Identity selection (stand-in)."
+          }
         }
       }
-    },
-    "manifestSha256": "5c497f1d949a4168ca1c0f1fa42602b7099839771b40f601cbda81881c64a7f5",
-    "chatManifest": {
-      "capability": "nw.chat",
-      "version": "0.1.0",
-      "compatibility": {
-        "oats": ">=0.25.6"
-      },
-      "layer": "messaging",
-      "description": "Stand-in messaging provider without the teams contract (no settings.join, no team operations).",
-      "requires": [],
-      "settings": {
-        "identity": {
-          "description": "Identity selection (stand-in)."
-        }
-      }
-    },
-    "package": {
-      "package": "nw.teams",
-      "version": "0.1.0",
-      "description": "Stand-in teams messaging package (Desktop fixture).",
-      "compatibility": {
-        "oats": ">=0.25.6"
-      },
-      "capabilities": [
-        "capabilities/nw-teams"
-      ]
     },
     "privateCapability": {
       "repo": "platform",
@@ -115,9 +161,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.29.2",
-      "sourceSha256": "163c0710d9503845f0c29700abfb96001a7260405dce56e47f22022ec3aae20f",
-      "fixtureSha256": "6a56da64fbcd5651f6513dacdd52fa232ab27d38ab6247052fdad0693285cf2d"
+      "kernel": "0.29.3",
+      "sourceSha256": "e0c38e072a8de8a25d8d13546497363cc62c955f6b37e3e163f21150c507d35c",
+      "fixtureSha256": "3c6c6f71c8876f7ade51add5517724a85a9a2b087d06ca80f83f82bfb08f0f8b"
     },
     "souls": {
       "argv": [
@@ -128,9 +174,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.29.2",
-      "sourceSha256": "39799c762799a7db2b17da45b54a56f555824590afa3d5499172fea4cde56dc7",
-      "fixtureSha256": "0b92156ca14535ba8de90064b82115fe209a9e40514caac4be13318712481084"
+      "kernel": "0.29.3",
+      "sourceSha256": "383e3ec207a3d93738b25a163dc337061ff8beea0c3d9206d1538c2b79d36853",
+      "fixtureSha256": "3d0b0d11a8ca2911541865b5b445629d3e1bc2aa13a5974ee24610eee0f33f36"
     },
     "capabilities": {
       "argv": [
@@ -141,9 +187,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.29.2",
-      "sourceSha256": "d7078b1a8aba5854616b9764bd2557b82c786b4df9262de73bf7ba26ee124eb5",
-      "fixtureSha256": "43152922da72436e7e86a83203a6f250b921e97f23ae69b72175a2eb0673c3ba"
+      "kernel": "0.29.3",
+      "sourceSha256": "3b4f3e59849a0cf57b3484b83138a4c541ab6b105fd9471c396c03b61543464c",
+      "fixtureSha256": "bd7256239182b01e0c9c47db042edf4d383e096a0d95ed5a86b62b7e9e65181a"
     },
     "workspace-status": {
       "argv": [
@@ -155,9 +201,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.29.2",
-      "sourceSha256": "378ee192d59f2dc0147c69b2f914ba4e92b8dc70601e68fdc826202e128f6b6d",
-      "fixtureSha256": "d99ccea8ef4b3e5528e9a493d283656781ac40026310ad979a9623af498ea635"
+      "kernel": "0.29.3",
+      "sourceSha256": "fb0389a36a7a343c3301a72c6c8a428d0766c230b613a9d0fca1e2a850ccf94e",
+      "fixtureSha256": "c04323d02f49cbe2a2d375f617a5fb9eeea1876b8c48c94c1d0a435da97334ff"
     },
     "inspect-soul": {
       "argv": [
@@ -172,9 +218,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.29.2",
-      "sourceSha256": "18e329c73f0081d7248ed671c951664a28ad05f010eee920f3eb6b60cf24da90",
-      "fixtureSha256": "a51ff181f67aba9e5219ed47b293a1ea892b474f281445bcbc7e09097b10dd9e"
+      "kernel": "0.29.3",
+      "sourceSha256": "8460e101d09e9a56564ab874b2a6a4327fa84b7c6c68e67623e8ba4237a2e6df",
+      "fixtureSha256": "957f1e0d047fc6ced87f7f0ae533d23a357586c0c9616d0848878a4cf674a862"
     },
     "preview-teams-default": {
       "argv": [
@@ -191,9 +237,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.29.2",
-      "sourceSha256": "051ef0322b401a4bd63425f11ed0328e66bc2671e1053193a7f87a7e7249da24",
-      "fixtureSha256": "6094f56b3b951166093942802214195b960927ef281c463a999211aab4b05351"
+      "kernel": "0.29.3",
+      "sourceSha256": "715af873498939f22e33e1fecda4aad9e70952e1bafd2192d64fa97407624999",
+      "fixtureSha256": "ca8d9d18f8c6572d3a1f951540d08d2478bf5836e2df14558c4395cbf5200998"
     },
     "preview-teams-join": {
       "argv": [
@@ -207,15 +253,15 @@
         "--purpose",
         "teams",
         "--provider",
-        "nw.teams",
+        "oats.aweb",
         "join=engineering",
         "--preview",
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.29.2",
-      "sourceSha256": "ab610919f99ea257bfb4810ce2a65e1e1b5d94fc474fe1a41cd1ea0bd1e18820",
-      "fixtureSha256": "4b7edc4dc7dfadf8af6353ee798fa44d4cdc49900f0d0e44d32c54ee82ab18c0"
+      "kernel": "0.29.3",
+      "sourceSha256": "4255f556d2f31de06a8246183337c0a4705b3e724a20a889e20f61765fc39b90",
+      "fixtureSha256": "ead71d18e67f64ef5f36cb74b23602322d7b6b0426a866e8772a7c39df1db4c0"
     },
     "preview-teams-join-unmapped": {
       "argv": [
@@ -229,15 +275,15 @@
         "--purpose",
         "teams",
         "--provider",
-        "nw.teams",
+        "oats.aweb",
         "join=global",
         "--preview",
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.29.2",
-      "sourceSha256": "0b391d42aa7eb72b6e57aed8a19afe5917cd55ba89d392be8750f64fb66b4096",
-      "fixtureSha256": "6c23458a1b1824ef5315319f83bf00b25b28299087134987107ecb89f8cf4b2c"
+      "kernel": "0.29.3",
+      "sourceSha256": "5d0cf382677f30e52b56d927dfefcde684d4677480630d15086694a40f6fd9cb",
+      "fixtureSha256": "295302a35bc0fc1eb7efb62d2639b0abcac9215231ceb48e3f1eb30fae4c4bf5"
     },
     "apply-teams-join": {
       "argv": [
@@ -251,19 +297,19 @@
         "--purpose",
         "teams",
         "--provider",
-        "nw.teams",
+        "oats.aweb",
         "join=engineering",
         "--expect-decision",
-        "0fa67b18699ac5cef0d8df11",
+        "401db519906df82bd6e63196",
         "--idempotency-key",
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "--no-launch",
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.29.2",
-      "sourceSha256": "f15c52aca7e1245717e9993ea110c1dbcc456fe8cb510b9ddd7c0b57b120f0c1",
-      "fixtureSha256": "7fa8786105c7ba52d8bbefa7a1c9aad8d5fcae2f7d74906ecae7a273c5c69974"
+      "kernel": "0.29.3",
+      "sourceSha256": "27fbfff77572a727984dd272b3d4a17db73289eee68f0f2c10ec179e17ff07c5",
+      "fixtureSha256": "fe49295c7de303e939fc8693333e569cd88a48c50577dc7eab3c25d4917f3980"
     },
     "inspect-home": {
       "argv": [
@@ -274,9 +320,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.29.2",
-      "sourceSha256": "a54b0d7a83b5b08039fcff5575c2f1049d72c7af6212ad3d491409ca223e848f",
-      "fixtureSha256": "faf85d53436e2b1197baa76c25c4db0c9568f79bb8fcc46e34848a1e522b48cf"
+      "kernel": "0.29.3",
+      "sourceSha256": "718da427a3057f78d6925c219dcac11ed872d883ff453207c2b28e3119a06206",
+      "fixtureSha256": "f02058d5ff1c094dba4cf9127bbf1f00c28bdcbdb1e675a0280a19fff158c29d"
     },
     "teams-initial": {
       "argv": [
@@ -289,9 +335,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.29.2",
-      "sourceSha256": "2081320a0086b973cf0d443795dcd16c44955357b37155aa14d381ecd6356578",
-      "fixtureSha256": "5093ab93911b34999527c39078e49917ce08e344b7d66eed4eb1357c01517f4f"
+      "kernel": "0.29.3",
+      "sourceSha256": "45fb1c346eb43bcbdd92b02fd61cacbaf9a7028e97f62646bfeed6a3af67a3a4",
+      "fixtureSha256": "a0953187877ed33b021f57875da5331c4b3fc3da4837674b3d66fce045e34b33"
     },
     "preview-teams-no-join": {
       "argv": [
@@ -308,9 +354,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.29.2",
-      "sourceSha256": "3dc05a3e63e7358a6f1895d6ae258ffe90591ae534546936a8585c2abf5dafd8",
-      "fixtureSha256": "c974770d8d1e6626f6faf4bb274d26e22c13c2e95fc036e636615d2c74b0c690"
+      "kernel": "0.29.3",
+      "sourceSha256": "4a425f70fd9d88c08fe8722c974212e3f8fd831dfb78d90d6dab840a56b88f7a",
+      "fixtureSha256": "0121068aeee3b3d7f03fac6f8697a2eff4c6b9a8dfa10d5b0c96e4de202c2f27"
     },
     "preview-no-join-sent": {
       "argv": [
@@ -330,9 +376,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.29.2",
-      "sourceSha256": "145ffb5abd39811711da23d7723fc88720cfdc8fac68042684ee40ccd27ced8c",
-      "fixtureSha256": "e9dbd90af1c09f11d7fd5382c585d7be6dab06177f861d2c606f0ddfe81f1030"
+      "kernel": "0.29.3",
+      "sourceSha256": "746cfe6d0a170edf850854d1b64377a1de45a53d5aa05d2a2db3ad5b0b10401b",
+      "fixtureSha256": "9c3a8a7856d59e26d7628fbfbf9f84e21b80754a0f32ddb796241f2fbdd9d406"
     },
     "preview-teams-conflict": {
       "argv": [
@@ -349,7 +395,7 @@
         "--json"
       ],
       "exit": 1,
-      "kernel": "0.29.2",
+      "kernel": "0.29.3",
       "sourceSha256": "7dc551d4bf671cd3e9cc4a7e92e02bf163d94d0e229758ef13627aba1f639add",
       "fixtureSha256": "52bf57ef77586695bab37706a41a83bdd2b4113db5791e197b73b9f01ba56200"
     },
@@ -366,7 +412,7 @@
         "--json"
       ],
       "exit": 1,
-      "kernel": "0.29.2",
+      "kernel": "0.29.3",
       "sourceSha256": "7dc551d4bf671cd3e9cc4a7e92e02bf163d94d0e229758ef13627aba1f639add",
       "fixtureSha256": "52bf57ef77586695bab37706a41a83bdd2b4113db5791e197b73b9f01ba56200"
     }

@@ -1,8 +1,8 @@
-// Team controls on a live instance (teams contract 2026-09-25, e60b4f7c): the
+// Team controls on a live instance (teams contract 2026-09-25, 089cff5c): the
 // messaging provider's declared home operations messaging:teams|join|leave,
 // through the real kernel's `oats operation run`. Kernel captures:
-// test/fixtures/workspace-v2/teams (Northwind + the stand-in nw.teams provider;
-// provenance.json `standIn`). Recaptured from oats.aweb 1.14.0 when it lands.
+// test/fixtures/workspace-v2/teams: Northwind + the REAL oats.aweb 1.16.0 (the 0.29.3
+// pin), with a fake `aw` answering for the aweb server (provenance.json `provider`, `fakeAw`).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -40,7 +40,7 @@ async function mount(t, answer, { inspect = inspection, available = () => true }
   const press = async (verb, label) => { panel().querySelector(`[data-team-action="${verb}"][data-team="${label}"]`).click(); await tick(); };
   return { el, calls, inspector, panel, row, press, runs: () => calls.filter(c => c.action === 'run') };
 }
-// A stateful answer from the captured documents (the stand-in's own join/leave sequence).
+// A stateful answer from the captured documents (the real provider's own join/leave sequence).
 function captured() {
   let state = 'teams-initial';
   return body => {
@@ -55,10 +55,10 @@ function captured() {
 
 test('the gate is what the provider declares: messaging:teams (+ join/leave and their one required argument), never a name or version', () => {
   const ops = teamsOperations(inspection());
-  assert.deepEqual(ops, { provider: 'nw.teams', supported: true, teams: { address: 'messaging:teams', available: true, reason: null },
+  assert.deepEqual(ops, { provider: 'oats.aweb', supported: true, teams: { address: 'messaging:teams', available: true, reason: null },
     join: { address: 'messaging:join', available: true, reason: null, arg: 'labels' }, leave: { address: 'messaging:leave', available: true, reason: null, arg: 'labels' } });
   const without = inspection(); without.capabilities.find(c => c.layer === 'messaging').operations = [];
-  assert.deepEqual(teamsOperations(without), { provider: 'nw.teams', supported: false });
+  assert.deepEqual(teamsOperations(without), { provider: 'oats.aweb', supported: false });
   const none = inspection(); for (const c of none.capabilities) if (c.layer === 'messaging') c.layer = null;
   assert.equal(teamsOperations(none), null, 'no messaging provider: no Teams section');
   const twoArgs = inspection(); twoArgs.capabilities.find(c => c.layer === 'messaging').operations.find(o => o.name === 'join').args.push({ name: 'team', flag: '--team', required: true });
@@ -69,8 +69,22 @@ test('the gate is what the provider declares: messaging:teams (+ join/leave and 
 
 test('the teams document is decoded strictly: exactly the contract fields, bounded, for exactly the operation run', () => {
   assert.deepEqual(teamsDocument(run('teams-initial'), 'messaging:teams'), run('teams-initial').result);
-  const joined = teamsDocument(run('join-reviewers'), 'messaging:join');
-  assert.deepEqual(joined.joined.map(j => [j.label, j.receive]), [['dev', 'poll'], ['reviewers', 'native']]);
+  const joined = teamsDocument(run('join-reviewers'), 'messaging:join', { actions: true });
+  assert.deepEqual(joined.joined.map(j => [j.label, j.receive]), [['dev', 'native'], ['reviewers', 'native']], 'session delivery: both native');
+  assert.deepEqual(joined.actions, [{ action: 'join', label: 'reviewers' }], 'the real answer says what it did');
+  assert.equal(teamsDocument(run('join-reviewers'), 'messaging:join'), null, 'actions are accepted on join/leave answers only');
+  assert.equal(teamsDocument({ ...run('teams-initial'), result: { ...run('teams-initial').result, actions: [] } }, 'messaging:teams', { actions: false }), null, 'never on a read');
+  const left = teamsDocument(run('leave-reviewers'), 'messaging:leave', { actions: true });
+  assert.deepEqual(left.actions.map(a => [a.action, a.label, a.released]), [['leave', 'reviewers', 'released']]);
+  assert.equal(left.actions[0].receipt.alias_released, true, 'the receipt is kept as sent (opaque; never shown)');
+  const acted = () => structuredClone(run('leave-reviewers'));
+  for (const [what, mutate] of [['action verb', v => { v.result.actions[0].action = 'rejoin'; }], ['action label shape', v => { v.result.actions[0].label = 'a b'; }],
+    ['action label not a row', v => { v.result.actions[0].label = 'marketing'; }], ['action extra key', v => { v.result.actions[0].note = 'x'; }],
+    ['released not text', v => { v.result.actions[0].released = true; }], ['receipt not a record', v => { v.result.actions[0].receipt = 'ok'; }],
+    ['receipt oversized', v => { v.result.actions[0].receipt = { blob: 'x'.repeat(5000) }; }], ['actions not a list', v => { v.result.actions = {}; }],
+    ['too many actions', v => { v.result.actions = Array.from({ length: 65 }, () => ({ action: 'leave', label: 'reviewers' })); }]]) {
+    const v = acted(); mutate(v); assert.equal(teamsDocument(v, 'messaging:leave', { actions: true }), null, what);
+  }
   assert.ok(joined.joined.every(j => j.identityHome === `${HOME}/.aweb-identity-${j.label}`));
   assert.equal(teamsDocument(run('teams-initial'), 'messaging:join'), null, 'another operation');
   const doc = () => structuredClone(run('join-reviewers'));
@@ -117,20 +131,25 @@ test('an instance shows its teams: the workspace\'s default team always on (no L
   assert.doesNotMatch([...u.el.querySelectorAll('.inspector-cap h4')].map(h => h.textContent).join('|'), /messaging: (teams|join|leave)/);
 });
 
-test('Join and Leave run the declared operation with the declared argument; poll teams never read as live delivery', async t => {
+test('Join and Leave run the declared operation with the declared argument and repaint from the real answer (with its actions); poll teams never read as live delivery', async t => {
   const u = await mount(t, captured());
   await u.press('join', 'dev');
   assert.deepEqual(u.runs().at(-1), { action: 'run', selector: { home: HOME }, operation: 'messaging:join', args: { labels: 'dev' } });
-  assert.match(u.row('dev').textContent, /Joined 2026-09-25 10:00 UTC/); assert.equal(u.row('dev').querySelector('.team-meta[title]').title, '2026-09-25T10:00:00.000Z');
-  assert.match(u.row('dev').textContent, /Checks this team's mail between tasks/);
-  assert.doesNotMatch(u.row('dev').textContent, /as it arrives|live/);
+  const since = run('join-dev').result.joined[0].since;
+  assert.match(u.row('dev').textContent, new RegExp(`Joined ${whenText(since)}`)); assert.equal(u.row('dev').querySelector('.team-meta[title]').title, since);
+  assert.equal(u.panel().querySelector('.teams-status').textContent, '', 'a successful join is not "unreadable"');
+  assert.match(u.row('dev').textContent, /Receives this team's mail as it arrives/);
   assert.equal(u.row('dev').querySelector('details pre').textContent, `${HOME}/.aweb-identity-dev`);
   await u.press('join', 'reviewers');
   assert.match(u.row('reviewers').textContent, /Receives this team's mail as it arrives/);
   await u.press('leave', 'reviewers');
   assert.deepEqual(u.runs().at(-1).args, { labels: 'reviewers' }); assert.equal(u.runs().at(-1).operation, 'messaging:leave');
   assert.match(u.row('reviewers').textContent, /northwind:review · Not joined/);
-  assert.equal(u.runs().filter(r => r.operation === 'messaging:teams').length, 1, 'join/leave answer the document: no second read');
+  assert.equal(u.runs().filter(r => r.operation === 'messaging:teams').length, 1, 'join/leave answer the document: no second read');  // The rule for a poll team, on the captured answer with only its receive changed (session delivery reports native).
+  const poll = structuredClone(run('join-dev')); poll.result.joined[0].receive = 'poll';
+  const p = await mount(t, body => body.operation === 'messaging:teams' ? run('teams-initial') : poll);
+  await p.press('join', 'dev');
+  assert.match(p.row('dev').textContent, /Checks this team's mail between tasks/); assert.doesNotMatch(p.row('dev').textContent, /as it arrives|live/);
 });
 
 test('while a team action runs, it reads Joining… and every team control is locked', async t => {
@@ -154,7 +173,7 @@ test('a refusal is shown verbatim under its row, the code behind Details; the pa
   assert.equal(u.row('marketing'), null, 'unmapped: not shown');
   const gone = u.panel().querySelector('[data-team-refusal="marketing"]');
   assert.ok(gone, 'the refusal survives the re-read that removed its row');
-  assert.equal(gone.querySelector('.teams-problem p').textContent, 'messaging:join: not eligible: marketing (eligible: dev, reviewers)');
+  assert.equal(gone.querySelector('.teams-problem p').textContent, 'messaging:join: E_TEAM_NOT_ELIGIBLE: marketing is not an eligible team label for this instance (eligible: dev, reviewers)');
   assert.equal(gone.querySelector('details summary').textContent, 'Details'); assert.equal(gone.querySelector('details pre').textContent, 'E_TEAM_NOT_ELIGIBLE');
   assert.match(gone.textContent, /marketing is no longer offered to this instance\./);
   assert.equal(u.panel().querySelector('.teams-card').firstElementChild, gone, 'said first, above the rows');
@@ -162,10 +181,10 @@ test('a refusal is shown verbatim under its row, the code behind Details; the pa
   u.panel().querySelector('.teams-refresh').click(); await tick(); await tick();
   assert.equal(reads, 3); assert.equal(u.panel().querySelector('[data-team-refusal]'), null, 'Refresh clears it');
   // The captured default-team refusal, on a Leave the provider refuses, reads the same way.
-  const v = await mount(t, body => body.operation === 'messaging:teams' ? { ...run('join-dev'), operation: 'messaging:teams' } : refusal('leave-default'));
+  const v = await mount(t, body => body.operation === 'messaging:teams' ? { ...run('join-dev'), operation: 'messaging:teams', result: (({ actions, ...doc }) => doc)(run('join-dev').result) } : refusal('leave-default'));
   await v.press('leave', 'dev');
   const box = v.row('dev').querySelector('.teams-problem');
-  assert.equal(box.querySelector('p').textContent, "messaging:leave: the workspace's default team cannot be left");
+  assert.equal(box.querySelector('p').textContent, "messaging:leave: E_TEAM_DEFAULT: default is the workspace's default team and cannot be left");
   assert.equal(box.querySelector('details summary').textContent, 'Details'); assert.equal(box.querySelector('details pre').textContent, 'E_TEAM_DEFAULT');
   assert.match(v.row('dev').textContent, /Joined 2026/, 'the last good state stays');
 });
@@ -173,7 +192,7 @@ test('a refusal is shown verbatim under its row, the code behind Details; the pa
 test('the not-eligible refusal names the eligible labels (captured) and is shown as relayed', async t => {
   const u = await mount(t, body => body.operation === 'messaging:teams' ? run('teams-initial') : refusal('join-not-eligible'));
   await u.press('join', 'reviewers');
-  assert.equal(u.row('reviewers').querySelector('.teams-problem p').textContent, 'messaging:join: not eligible: marketing (eligible: dev, reviewers)');
+  assert.equal(u.row('reviewers').querySelector('.teams-problem p').textContent, 'messaging:join: E_TEAM_NOT_ELIGIBLE: marketing is not an eligible team label for this instance (eligible: dev, reviewers)');
 });
 
 test('states: not supported, unavailable, eligible none, unreadable and a failed read with Retry', async t => {

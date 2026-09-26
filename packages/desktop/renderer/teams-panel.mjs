@@ -71,11 +71,16 @@ const DEFAULT_SOURCE = Object.freeze({ __proto__: null, setting: 'set by the wor
  * must be `operationsApi: 2` for exactly `address`; the document carries exactly
  * the contract's fields (1.16 names, its AMENDMENT c129125a): `{defaultTeam{team, source: setting|root},
  * primary, eligible[{label, team, joined}],
- * joined[{label, team, since, identityHome, receive}], unmapped[label], at}`. */
-export function teamsDocument(run, address) {
+ * joined[{label, team, since, identityHome, receive}], unmapped[label], at}`.
+ * A join/leave answer (`{ actions: true }`) may also carry what it did, as the
+ * real provider sends it (oats.aweb 1.15+; teams contract 089cff5c): `actions[{action:
+ * join|leave, label, released?, receipt?}]`, each label an eligible or joined row;
+ * the receipt is opaque provider evidence, never shown. The panel repaints from the document. */
+export function teamsDocument(run, address, { actions = false } = {}) {
   if (!record(run) || run.operationsApi !== 2 || run.operation !== address) return null;
-  const d = run.result;
-  if (!exact(d, ['defaultTeam', 'primary', 'eligible', 'joined', 'unmapped', 'at'])) return null;
+  const d = run.result, did = actions && record(d) && Object.hasOwn(d, 'actions');
+  if (!exact(d, ['defaultTeam', 'primary', 'eligible', 'joined', 'unmapped', 'at', ...(did ? ['actions'] : [])])) return null;
+  if (did && !(Array.isArray(d.actions) && d.actions.length <= 64 && d.actions.every(actionRow))) return null;
   // The workspace's default team: its id, and where the provider found it (always sent, a closed set).
   const home = d.defaultTeam;
   if (!exact(home, ['team', 'source']) || !text(home.team) || !Object.hasOwn(DEFAULT_SOURCE, home.source)) return null;
@@ -88,7 +93,19 @@ export function teamsDocument(run, address) {
   if (!d.unmapped.every(label)) return null;
   const unique = xs => new Set(xs).size === xs.length;
   if (!unique(d.eligible.map(e => e.label)) || !unique(d.joined.map(j => j.label)) || !unique(d.unmapped)) return null;
-  return structuredClone({ defaultTeam: d.defaultTeam, primary: d.primary, eligible: d.eligible, joined: d.joined, unmapped: d.unmapped, at: d.at });
+  // Each action names a row this answer reports (eligible or joined), as the contract says.
+  if (did && !d.actions.every(x => d.eligible.some(e => e.label === x.label) || d.joined.some(j => j.label === x.label))) return null;
+  return structuredClone({ defaultTeam: d.defaultTeam, primary: d.primary, eligible: d.eligible, joined: d.joined, unmapped: d.unmapped, at: d.at,
+    ...(did ? { actions: d.actions } : {}) });
+}
+/** One `actions` row of a join/leave answer: the verb and label, an optional
+ * `released` word, an optional provider receipt (a bounded record, kept opaque). */
+function actionRow(a) {
+  if (!record(a) || !['join', 'leave'].includes(a.action) || !label(a.label)) return false;
+  if (!Object.keys(a).every(k => ['action', 'label', 'released', 'receipt'].includes(k))) return false;
+  if (Object.hasOwn(a, 'released') && !text(a.released, 32)) return false;
+  if (Object.hasOwn(a, 'receipt') && !(record(a.receipt) && JSON.stringify(a.receipt).length <= 4096)) return false;
+  return true;
 }
 
 /** A provider timestamp, shown deterministically (UTC minutes); anything else as sent. */
@@ -182,7 +199,7 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
     try {
       const result = await request({ action: 'run', selector, operation: op.address, args: { [op.arg]: target } });
       if (!live() || ticket !== serial) return;
-      const next = teamsDocument(result, op.address);
+      const next = teamsDocument(result, op.address, { actions: true });
       pending = null;
       if (!next) { say(unreadable(result), true); render(); return; }
       current = next; say(''); render();

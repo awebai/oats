@@ -1,8 +1,8 @@
 // Import the F7 kernel capture (kernel #179 86faf9f6, teams contract): soul teams
 // (inspect --soul), spawn preview teams (+ the join choice, bound by value), the
 // apply, a provider without settings.join, and E_TEAM_CONFLICT. Northwind scratch:
-// release-manager team: [engineering, global]; only engineering is mapped; stand-in
-// providers nw.teams / nw.chat (capture-f7.mjs + provenance.json `standIn`). NEVER runs a CLI, runtime or native probe.
+// release-manager team: [engineering, global]; only engineering is mapped; the messaging
+// provider (the REAL oats.aweb, release tag, with a fake aw for the aweb server) + the stand-in nw.chat (capture-f7-real.mjs + provenance.json `provider`, `fakeAw`, `standIn`). NEVER runs a CLI, runtime or native probe.
 // <base>/<oats> placeholders become absolute fixture paths so projections'
 // absolute-path contracts apply unchanged. Refusal documents keep their exit.
 // Usage: node import-capture.mjs CAPTURE_OUT_DIR
@@ -17,8 +17,8 @@ const documents = ['version', 'souls', 'capabilities', 'workspace-status', 'insp
   'inspect-home', 'teams-initial', 'preview-teams-no-join', 'preview-no-join-sent', 'preview-teams-conflict', 'inspect-soul-conflict'];
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const captured = JSON.parse(readFileSync(join(source, 'provenance.json'), 'utf8'));
-const provenance = { source: `${captured.capturedBy}; test/fixtures/northwind/build.mjs; capture-f7.mjs`, kernel: captured.kernel,
-  redactions: ['<base> (capture scratch) → /fixture/base', '<oats> (checkout) → /fixture/oats'], standIn: captured.standIn, files: {} };
+const provenance = { source: `${captured.capturedBy}; test/fixtures/northwind/build.mjs; ${captured.script || 'capture-f7.mjs'}`, kernel: captured.kernel,
+  redactions: ['<base> (capture scratch) → /fixture/base', '<oats> (checkout) → /fixture/oats'], ...(captured.provider ? { provider: captured.provider, fakeAw: captured.fakeAw } : {}), standIn: captured.standIn, files: {} };
 for (const name of documents) {
   const original = readFileSync(join(source, `${name}.json`));
   const run = captured.documents.find(d => d.name === name);

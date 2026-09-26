@@ -26,7 +26,7 @@ test('one read per selection renders the soul head, the three core slots and the
   assert.equal(u.host.querySelector('.soul-tab-name').textContent, 'release-manager');
   const core = [...u.host.querySelectorAll('.soul-tab-core-row')];
   assert.deepEqual(core.map(r => r.dataset.layer), ['knowledge', 'messaging', 'tasks']);
-  assert.match(core[0].textContent, /oats\.okf/); assert.match(core[1].textContent, /nw\.teams/);
+  assert.match(core[0].textContent, /oats\.okf/); assert.match(core[1].textContent, /oats\.aweb/);
   assert.match(core[2].textContent, /None/, 'an empty slot says so');
   const caps = Object.fromEntries([...u.host.querySelectorAll('.soul-tab-cap')].map(r => [r.dataset.capability, r.querySelector('.soul-tab-tag')?.textContent]));
   assert.equal(caps['nw-release-tooling'], 'soul', 'declared by the soul');
