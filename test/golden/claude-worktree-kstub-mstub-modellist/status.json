@@ -28,6 +28,7 @@
           "branch": "agents/dev-claude-worktree-kstub-mstub-modellist",
           "harness": "claude",
           "model": "claude-sonnet-4-5",
+          "modelFrom": "spawn",
           "spawnOrigin": "operator",
           "policy": {
             "childSpawns": {
@@ -330,7 +331,8 @@
               },
               "commit": "<sha>",
               "current": {
-                "commit": "<sha>"
+                "commit": "<sha>",
+                "version": "1.0.0"
               },
               "status": "current"
             },
@@ -343,7 +345,8 @@
               },
               "commit": "<sha>",
               "current": {
-                "commit": "<sha>"
+                "commit": "<sha>",
+                "version": "1.0.0"
               },
               "status": "current"
             }
@@ -389,6 +392,8 @@
             }
           ],
           "launched": false,
+          "startedAt": null,
+          "identityAddress": null,
           "running": false,
           "soul": {
             "repoKey": "local/<base>/remotes/ws.git",

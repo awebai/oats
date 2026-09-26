@@ -457,9 +457,9 @@ test("driftOf: current / moved / missing (unconfirmed member, capability absent)
   assert.deepEqual(rows.map((r) => r.module), ["nw-brand-voice", "nw-house-style", "nw-release-tooling", "nw-warehouse-access", "oats.okf"], "sorted by module");
   assert.equal(byName["nw-release-tooling"].status, "current");
   assert.deepEqual(byName["nw-release-tooling"].recorded, { repoKey: AGENTS_KEY, commit: COMMIT_A });
-  assert.deepEqual(byName["nw-release-tooling"].current, { commit: COMMIT_A });
+  assert.deepEqual(byName["nw-release-tooling"].current, { commit: COMMIT_A, version: null }, "a member capability without a manifest version");
   assert.equal(byName["nw-house-style"].status, "moved");
-  assert.deepEqual(byName["nw-house-style"].current, { commit: NEW });
+  assert.deepEqual(byName["nw-house-style"].current, { commit: NEW, version: null });
   assert.equal(byName["nw-brand-voice"].status, "missing");
   assert.equal(byName["nw-brand-voice"].reason, "capability-absent");
   assert.deepEqual(byName["nw-brand-voice"].current, { commit: NEW }, "the member's current commit is still reported");

@@ -19,6 +19,7 @@
           "work": "checkout",
           "branch": "main",
           "harness": "claude",
+          "modelFrom": "harness-default",
           "spawnOrigin": "operator",
           "policy": {
             "childSpawns": {
@@ -148,6 +149,8 @@
             }
           ],
           "launched": false,
+          "startedAt": null,
+          "identityAddress": null,
           "running": false,
           "soul": {
             "repoKey": "local/<base>/remotes/ws.git",

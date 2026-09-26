@@ -30,7 +30,7 @@ import {
   findInstanceHome, findInstanceHomes, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, launchConfigsAt, explicitInstanceName, findModuleCapabilityAgent, capabilityAgentFromDir, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
 import {
-  writeFileAtomic, LOCK_FILE, readLock, writeLock, resolvePackages,
+  writeFileAtomic, LOCK_FILE, readLock, writeLock, resolvePackages, memoizedRemote,
   classifyPackageValue, parsePackageRequest } from "../lib/packages.mjs";
 import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, workspaceWarnings } from "../lib/workspace.mjs";
 import { parseConfigData } from "../lib/config-data.mjs";
@@ -1073,6 +1073,10 @@ const memberLabel = (key) => String(key).split("/").filter(Boolean).pop()?.repla
 const teamLabel = (team) => team ?? "unassigned";
 const originOf = (item) => (item.package ? `package ${item.package} v${item.version}` : `member ${item.repoKey} @ ${short(item.commit)}`);
 
+/** A soul's spawn default harness and model (feature desktop-facts): its definition's, else the kernel's (pi, the
+ *  harness's native model) — what `oats spawn <soul>` takes with no --harness/--model/--launch-config. */
+const soulDefaults = (def) => ({ harness: def?.harness ?? "pi", model: def?.model ?? null, harnessFrom: def?.harness ? "soul" : "kernel-default" });
+
 /** Rows of every soul and capability of confirmed members (+ external souls) + locked package
  *  capabilities. Souls have no private mode (0.26.0); a private member capability is listed with
  *  `private: true` — repo-owned: usable only by its own repo's souls (E_CAPABILITY_PRIVATE). */
@@ -1081,15 +1085,15 @@ function workspaceItems(discovery, lock) {
   const capabilities = [];
   for (const m of discovery.members) {
     if (!m.confirmed && !(discovery.standalone === true && m.key === discovery.key)) continue;
-    for (const s of m.souls) souls.push({ name: s.name, origin: originOf(s), kind: "member", repoKey: s.repoKey, commit: s.commit, team: teamLabel(s.team), labels: [...(s.labels ?? (s.team ? [s.team] : []))], private: s.private, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null });
+    for (const s of m.souls) souls.push({ name: s.name, origin: originOf(s), kind: "member", repoKey: s.repoKey, commit: s.commit, team: teamLabel(s.team), labels: [...(s.labels ?? (s.team ? [s.team] : []))], private: s.private, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null, ...soulDefaults(s.definition) });
     for (const c of m.capabilities) capabilities.push({ name: c.name, origin: originOf(c), kind: "member", repoKey: c.repoKey, commit: c.commit, team: teamLabel(c.team), private: c.private, path: c.path, layer: c.manifest.layer ?? null, version: c.manifest.version ?? null });
   }
   for (const ext of discovery.external || []) {
     const s = ext.soul;
-    souls.push({ name: s.name, origin: `external ${s.repoKey} @ ${short(s.commit)}`, kind: "external", repoKey: s.repoKey, commit: s.commit, team: teamLabel(s.team), labels: [...(s.labels ?? (s.team ? [s.team] : []))], private: s.private, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null });
+    souls.push({ name: s.name, origin: `external ${s.repoKey} @ ${short(s.commit)}`, kind: "external", repoKey: s.repoKey, commit: s.commit, team: teamLabel(s.team), labels: [...(s.labels ?? (s.team ? [s.team] : []))], private: s.private, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null, ...soulDefaults(s.definition) });
   }
   for (const s of discovery.packageSouls || []) {
-    souls.push({ name: s.name, qualifiedName: s.qualifiedName, origin: originOf(s), kind: "package", package: s.package, version: s.version, repoKey: s.repoKey, commit: s.commit, team: teamLabel(s.team), labels: [...(s.labels ?? [])], private: false, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null });
+    souls.push({ name: s.name, qualifiedName: s.qualifiedName, origin: originOf(s), kind: "package", package: s.package, version: s.version, repoKey: s.repoKey, commit: s.commit, team: teamLabel(s.team), labels: [...(s.labels ?? [])], private: false, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null, ...soulDefaults(s.definition) });
   }
   for (const [id, entry] of Object.entries(lock?.packages || {})) {
     for (const name of entry.capabilities) capabilities.push({ name, origin: originOf({ package: id, version: entry.version }), kind: "package", package: id, version: entry.version, commit: entry.commit, team: teamLabel(null), private: false });
@@ -1415,6 +1419,7 @@ async function workspaceCmd() {
   // Workspace automations (0.29.0), from the snapshot `oats sync` took, placed on this host.
   const actx = scopeAutomations(ctx.deploymentDir, {});
   result.automations = { host: actx.host.name, snapshot: actx.snapshot ? { takenAt: actx.snapshot.takenAt, problems: actx.snapshot.problems.length } : null, rows: [...actx.triggers, ...actx.schedules].map((a) => ({ kind: a.kind, id: a.id, runsOn: a.runsOn, owner: a.owner, runsHere: a.placement.runsHere, reason: a.placement.reason, enabledHere: a.placement.enabledHere, origin: a.origin, ...(a.invalid ? { invalid: a.invalid } : {}) })) };
+  await workspaceStatusFacts(result, discovery, lock, ctx);
   if (JSON_MODE) { jsonOk(result); return; }
   console.log(`workspace ${workspaceName(discovery)}  (${discovery.key} @ ${short(discovery.commit)})  local ${shortPath(ctx.localPath)}\n`);
   if (standalone) console.log(`  (${standaloneNote(discovery)})\n`);
@@ -1435,6 +1440,39 @@ async function workspaceCmd() {
   if (discovery.warnings?.length) { console.log("\nWarnings:"); for (const w of discovery.warnings) console.log(`  ${w.code}  ${w.message}`); }
 }
 
+/** `oats workspace status` facts (feature desktop-facts): the workspace and team defaults as rows; this
+ *  computer (member clones and the rule that found each, disabled souls, the lock); file locations with
+ *  browsable urls; each catalog package's newer version, when the official catalog has one. */
+async function workspaceStatusFacts(result, discovery, lock, ctx) {
+  const { memberCloneOf } = await import("../lib/instance-resolution.mjs");
+  const { browseUrl } = remoteModule;
+  const defaults = discovery.standalone === true ? {} : (discovery.workspace?.defaults ?? {});
+  const rows = (entries) => Object.entries(entries && typeof entries === "object" ? entries : {}).map(([name, v]) => ({ name, from: v === "off" ? null : v?.from ?? null, off: v === "off" })).sort((a, b) => (a.name < b.name ? -1 : 1));
+  const slot = (d) => (d && typeof d === "object" ? Object.entries(d).map(([name, v]) => ({ name, from: v?.from ?? null }))[0] ?? null : d ?? null);
+  result.defaults = {
+    slots: Object.fromEntries(LAYERS.map((l) => [l, slot(defaults[l])])),
+    capabilities: rows(defaults.capabilities),
+    byTeam: Object.fromEntries(Object.entries(defaults.byTeam && typeof defaults.byTeam === "object" ? defaults.byTeam : {}).map(([label, t]) => [label, { capabilities: rows(t?.capabilities) }])),
+  };
+  result.workspace.file = discovery.standalone === true ? null : { path: "oats-workspace.yaml", url: browseUrl(discovery.key, discovery.commit, "oats-workspace.yaml") };
+  for (const m of result.members) Object.assign(m, { url: browseUrl(m.key, m.commit), membershipFile: { path: "oats-membership.yaml", url: browseUrl(m.key, m.commit, "oats-membership.yaml") } });
+  result.clones = result.members.map((m) => {
+    try { return { key: m.key, name: m.name, ...memberCloneOf(ctx.deploymentDir, ctx.local, m.key) }; }
+    catch (e) { if (e?.code === "E_CLONE_MISMATCH") return { key: m.key, name: m.name, path: null, rule: null, problem: { code: e.code, message: e.message } }; throw e; }
+  });
+  result.disabledSouls = [...(Array.isArray(ctx.local?.souls?.disabled) ? ctx.local.souls.disabled : [])];
+  result.lock = { path: join(ctx.deploymentDir, LOCK_FILE), lockfileVersion: lock.lockfileVersion ?? null };
+  const { compareSemver } = await import("../lib/servers.mjs");
+  let catalog = null; try { catalog = officialPackageCatalog(); } catch { catalog = null; }
+  const cat = catalog && typeof catalog === "object" ? (catalog.packages && typeof catalog.packages === "object" && !("url" in catalog.packages) ? catalog.packages : catalog) : {};
+  for (const p of result.packages) {
+    const ref = p.source === `catalog:${p.id}` ? cat[p.id]?.ref : undefined;
+    const tag = standaloneCatalogVersion(ref);
+    const version = tag ? tag.replace(/^v/, "") : null;
+    p.latest = version && typeof p.version === "string" && compareSemver(version, p.version) > 0 ? { version, ref } : null;
+  }
+}
+
 /** `oats capabilities` / `oats souls` [--dir] [--json] — contract §6. */
 async function itemsCmd(kind) {
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
@@ -1443,6 +1481,10 @@ async function itemsCmd(kind) {
   let lock;
   try { lock = readLock(ctx.deploymentDir); } catch (e) { return bail(e.code || "E_LOCK_SCHEMA", e.message, e.details); }
   const items = workspaceItems(discovery, lock)[kind];
+  // One command's reads at a commit are shared: many souls resolve over the same manifests and listings.
+  const remote = memoizedRemote(remoteModule);
+  if (kind === "capabilities") await capabilityFacts(items, discovery, lock, ctx, remote);
+  if (kind === "souls") await soulFacts(items, discovery, lock, ctx, remote);
   const standalone = discovery.standalone === true;
   if (JSON_MODE) { jsonOk({ [`${kind}Api`]: 1, standalone: standalone || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, commit: discovery.commit }, [kind]: items, problems: discovery.problems }); return; }
   console.log(`${kind} of workspace ${workspaceName(discovery)} (${discovery.key} @ ${short(discovery.commit)})${standalone ? `  — ${standaloneNote(discovery)}` : ""}\n`);
@@ -1451,6 +1493,60 @@ async function itemsCmd(kind) {
   else printTable(["name", "origin", "team", "layer"], items.map((c) => [c.private ? `${c.name} (repo-owned)` : c.name, c.origin, c.team, c.layer ?? "—"]));
   const unsynced = Object.keys(discovery.workspace?.packages || {}).filter((id) => !lock.packages[id]);
   if (kind === "capabilities" && unsynced.length) console.log(`\n  package capabilities of ${unsynced.join(", ")} appear after \`oats sync\``);
+}
+
+/** Capability rows' manifest facts (feature desktop-facts): layer, description, and what each provides
+ *  (skills, commands, hooks by name) — member rows from discovery's manifest, package rows from the manifest
+ *  at the locked commit (the sync cache; no network beyond sync's). An unreadable package leaves its rows' facts null. */
+async function capabilityFacts(rows, discovery, lock, ctx, remote = remoteModule) {
+  const { capabilityProvides, lockedPackageCapabilities, memberRef } = await import("../lib/resolve.mjs");
+  const remoteOptions = ctx.remoteOptions;
+  const catalog = (() => { try { return officialPackageCatalog(); } catch { return null; } })();
+  const packages = new Map();
+  for (const [id, entry] of Object.entries(lock?.packages || {})) {
+    try { packages.set(id, await lockedPackageCapabilities(id, entry, { catalog, remote, remoteOptions })); } catch { packages.set(id, null); }
+  }
+  // A member capability's fingerprint is its Git tree at the commit (one listing per member commit); a
+  // package's is the package integrity (the lock).
+  const trees = new Map();
+  const treeOf = async ({ repoKey, commit }, ref, dir) => {
+    const key = `${repoKey}\0${commit}`;
+    if (!trees.has(key)) {
+      const member = discovery.members.find((m) => m.key === repoKey);
+      const dirs = rows.filter((r) => r.kind !== "package" && r.repoKey === repoKey && r.commit === commit).map((r) => member?.capabilities.find((c) => c.name === r.name)?.path).filter(Boolean);
+      trees.set(key, remoteModule.remoteTreeOids(ref, commit, [...new Set(dirs)], remoteOptions).catch(() => new Map()));
+    }
+    return (await trees.get(key)).get(dir) ?? null;
+  };
+  for (const row of rows) {
+    let manifest = null, ref = null, dir = null;
+    if (row.kind === "package") {
+      const read = packages.get(row.package), cap = read?.capabilities.find((c) => c.name === row.name);
+      if (cap) ({ manifest, dir } = cap), ref = read.ref;
+    } else {
+      const cap = discovery.members.find((m) => m.key === row.repoKey)?.capabilities.find((c) => c.name === row.name);
+      if (cap) { manifest = cap.manifest; dir = cap.path; ref = memberRef(discovery, remoteModule, row.repoKey); }
+    }
+    const provides = manifest ? await capabilityProvides({ ref, commit: row.commit, dir, manifest, remote, remoteOptions }) : { skills: null, commands: null, hooks: null };
+    const repoKey = row.kind === "package" && ref ? (() => { try { return remoteModule.parseRepoRef(ref).key; } catch { return null; } })() : row.repoKey;
+    const file = dir ? { path: `${dir}/oats.json`, url: remoteModule.browseUrl(repoKey, row.commit, `${dir}/oats.json`) } : null;
+    const tree = row.kind !== "package" && ref && dir ? await treeOf(row, ref, dir) : null;
+    Object.assign(row, { layer: manifest?.layer ?? row.layer ?? null, description: manifest?.description ?? null, ...provides, file, tree });
+  }
+}
+
+/** Souls rows' spawnability (feature desktop-facts): the refusal a spawn of each would meet, computed from
+ *  discovery and the lock without spawning (soulSpawnability). */
+async function soulFacts(rows, discovery, lock, ctx, remote = remoteModule) {
+  const { soulSpawnability } = await import("../lib/instance-resolution.mjs");
+  const entryOf = (row) => row.kind === "package" ? (discovery.packageSouls || []).find((p) => p.qualifiedName === row.qualifiedName)
+    : row.kind === "external" ? (discovery.external || []).map((e) => e.soul).find((x) => x.name === row.name && x.repoKey === row.repoKey)
+    : discovery.members.find((m) => m.key === row.repoKey)?.souls.find((x) => x.name === row.name);
+  for (const row of rows) {
+    const entry = entryOf(row);
+    row.file = { path: `${row.path}/soul.yaml`, url: remoteModule.browseUrl(row.repoKey, row.commit, `${row.path}/soul.yaml`) };
+    Object.assign(row, entry ? await soulSpawnability(ctx.local, discovery, lock, entry, { remoteOptions: ctx.remoteOptions, remote }) : { spawnable: false, problem: { code: "E_SOUL_UNKNOWN", message: `${row.name} is not in this discovery` } });
+  }
 }
 
 // ---------- roster: status / spawn / retire / create ----------
@@ -2629,7 +2725,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "teams", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2 }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "teams", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2 }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -3183,6 +3279,9 @@ Usage:
       [--name <slug>]                        the exact instance name (no <agent>- prefix;
                                             not with --purpose); must be a slug, not a
                                             soul name, and unused in the deployment
+      [--provider <capability> <key>=<value>]  a provider setting for this spawn only
+                                            (repeatable; dotted keys nest; recorded in
+                                            instance.json providers.<capability>)
   oats retire <instance> [--force]           retire an instance (window, hooks,
       [--self] [--delete-branch]            worktree, home); --self = retire the
       [--keep-dir] [--json]                 CALLING instance: the window dies, then

@@ -27,6 +27,7 @@
           "work": "worktree",
           "branch": "agents/dev-owner",
           "harness": "pi",
+          "modelFrom": "harness-default",
           "spawnOrigin": "operator",
           "policy": {
             "childSpawns": {
@@ -332,7 +333,8 @@
               },
               "commit": "<sha>",
               "current": {
-                "commit": "<sha>"
+                "commit": "<sha>",
+                "version": "1.0.0"
               },
               "status": "current"
             },
@@ -345,7 +347,8 @@
               },
               "commit": "<sha>",
               "current": {
-                "commit": "<sha>"
+                "commit": "<sha>",
+                "version": "1.0.0"
               },
               "status": "current"
             }
@@ -391,6 +394,8 @@
             }
           ],
           "launched": false,
+          "startedAt": null,
+          "identityAddress": null,
           "running": false,
           "soul": {
             "repoKey": "local/<base>/remotes/ws.git",
@@ -409,6 +414,7 @@
           "work": "attached",
           "branch": "agents/dev-owner",
           "harness": "pi",
+          "modelFrom": "harness-default",
           "parentInstance": "dev-owner",
           "spawnOrigin": "instance",
           "policy": {
@@ -715,7 +721,8 @@
               },
               "commit": "<sha>",
               "current": {
-                "commit": "<sha>"
+                "commit": "<sha>",
+                "version": "1.0.0"
               },
               "status": "current"
             },
@@ -728,7 +735,8 @@
               },
               "commit": "<sha>",
               "current": {
-                "commit": "<sha>"
+                "commit": "<sha>",
+                "version": "1.0.0"
               },
               "status": "current"
             }
@@ -774,6 +782,8 @@
             }
           ],
           "launched": false,
+          "startedAt": null,
+          "identityAddress": null,
           "running": false,
           "soul": {
             "repoKey": "local/<base>/remotes/ws.git",
