@@ -39,7 +39,7 @@ see [Captured definitions](#captured-definitions-removed-in-026).
 ## Kinds
 
 - **spawn** `{id, enabled, cron, tz, kind: "spawn", agent, agentsRoot?,
-  repo?, backend?, purpose?, task, harness?, model?, yolo?, wake?}` — every
+  repo?, backend?, purpose?, task, launchConfig?, harness?, model?, yolo?, wake?}` — every
   due minute launches one disposable instance of `agent` with the same
   options `oats spawn` takes. `agentsRoot` names the exact agents root that
   holds the soul (it must lie inside the workspace and defaults to the
@@ -153,7 +153,10 @@ logged in with the keyring or its config file under your HOME works there. A
   request's title and body are untrusted and never reach the task (a template
   naming any other field is refused). `teams` becomes the messaging
   capability's `join=` setting (as `--provider <messaging cap> join=<labels>`).
-  `harness`, `model`, `yolo`, `backend` are as for schedules.
+  `launchConfig` (a launch configuration in the running host's
+  `oats-local.yaml` `launch-configs`), `harness`, `model`, `yolo`, `backend`
+  are as for schedules; a package template may expose any of them as a
+  parameter (`"path": "spawn.launchConfig"`).
 - **The event reaches the instance** as `OATS_TRIGGER_EVENT_FILE`
   (`<home>/.oats/trigger-event.json`: `{ trigger, source, repo, number, url,
   event, headSha, labels, observedAt, key }`), given to the spawn hooks and the
@@ -169,7 +172,7 @@ oats trigger add --from oats.okf:harvest-review --set repo=github.com/acme/knowl
 oats trigger list | show <id> | enable <id> | disable <id> | remove <id>
 oats trigger test <id>      # dry run: gh auth + credential source, repo + permissions (push/maintain/admin), the soul resolves,
                             # its messaging capability, the teams declared, what WOULD fire now; spawns nothing
-oats trigger status [<id>]  # last poll, pending, fired keys, live instances, last error
+oats trigger status [<id>]  # last poll, next due, pending, fired keys (time, instance), live vs max, last error
 ```
 
 All take `--dir` and `--json` (`triggerApi: 1`). `remove` leaves the instances
@@ -206,7 +209,7 @@ kind, its own ids, its own commands, its own list and its own opt-out.
 | canonical folder (at the member's root) | `oats-triggers/` | `oats-schedules/` |
 | file name anywhere in the member | `*.oats-trigger.yaml` | `*.oats-schedule.yaml` |
 | `kind:` | `oats-trigger` | `oats-schedule` |
-| body | `from:` + `set:` (a package template), or `on`, `spawn`, `concurrency` as above | `run: spawn \| command`, `cron`, `tz`, `agent`, `task`, `purpose`, `harness`, `model`, `yolo`, `backend`, `wake`, `argv`, `cwd` |
+| body | `from:` + `set:` (a package template), or `on`, `spawn`, `concurrency` as above | `run: spawn \| command`, `cron`, `tz`, `agent`, `task`, `purpose`, `launchConfig`, `harness`, `model`, `yolo`, `backend`, `wake`, `argv`, `cwd` |
 | commands | `oats trigger …` | `oats schedule …` |
 | opt-out on this host | `triggers.disabled` | `schedules.disabled` |
 
@@ -330,6 +333,7 @@ oats schedule add <id> --file spec.json --dir <workspace> --json
 oats schedule update <id> --file spec.json
 oats schedule list | show <id> | enable <id> | disable <id> | remove <id>
 oats schedule run <id>            # now, under the same lock and bound
+oats schedule test <id>           # dry run: where it runs, whether its soul resolves, when it is next due; spawns nothing
 oats schedule tick --dry-run      # what would run this minute, launching nothing
 oats schedule reconcile <id> [--clear]   # resolve an attempt whose result was never recorded
 oats schedule host install        # register this scope and install the ONE host timer (idempotent while active)
@@ -340,8 +344,9 @@ oats spawn <agent> ... --wake-every 15 --wake-message "Anything new?"   # or --w
 Every subcommand takes `--server <id>` instead of `--dir`: it then runs on
 that host, in its registered workspace, because schedules are host-owned.
 
-`list --json` answers `{schedules: [{id, ...definition, nextRun, lastRun,
-running}], scheduler: {installed, active, lastTick, maxConcurrent, ...}}`.
+`list --json` answers `{schedules: [{id, ...definition, nextDue, lastRun,
+running}], scheduler: {installed, active, lastTick, maxConcurrent, ...}}`
+(`oats trigger list --json` carries the same `scheduler`).
 `active` is what the OS reports about the timer, not whether a file exists.
 
 ## What a run reports

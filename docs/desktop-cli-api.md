@@ -1393,7 +1393,7 @@ workspace trigger's is `<member>/<id>`) and the row carries the shared fields of
 {"triggerApi":1,"scope":"/abs/deployment","triggers":[
   {"id":"okf-harvest-review","enabled":true,"kind":"trigger",
    "on":{"source":"github.pull_request","repo":"github.com/acme/knowledge","events":["opened","reopened","ready_for_review"],"labels":["okf-harvest"],"base":"main","poll":"2m"},
-   "spawn":{"soul":"oats.okf/knowledge-maintainer","purpose":"review-pr-{number}","task":"…","teams":["okf"],"harness":"claude","model":"opus"},
+   "spawn":{"soul":"oats.okf/knowledge-maintainer","purpose":"review-pr-{number}","task":"…","teams":["okf"],"launchConfig":"reviewers","harness":"claude","model":"opus"},
    "concurrency":{"max":2,"perKey":1},"template":{"package":"oats.okf","version":"4.0.0","commit":"<oid>","template":"harvest-review"},
    "triggerApi":1,"scope":"/abs/deployment","createdAt":"<iso>","updatedAt":"<iso>"}]}
 ```
@@ -1401,18 +1401,24 @@ workspace trigger's is `<member>/<id>`) and the row carries the shared fields of
 - `list` → the document above; `show <id>`, `add`, `enable`, `disable` →
   `{ trigger }` (one row); a stored definition that no longer validates carries
   `invalid: { code, message }`. `remove <id>` → `{ removed, live: [instance] }`.
-- `status [<id>]` → `{ triggerApi, scope, triggers: [{ id, enabled, repo, soul,
-  lastPoll: { at, ok, prs, matching } | { at, ok: false, error } | null,
-  nextPollAt, pending: [{ key, event, number, url, observedAt }], fired: [{ key,
-  at, instance, home, event, number }] (newest 50), firedTotal, live: [{
-  instance, home, repo, number, event }], lastError: { at, code, message, key? } | null }] }`.
+- `status [<id>]` → `{ triggerApi, scope, triggers: [Status] }`. It writes
+  nothing. Each `Status`:
+  - `id`, `name`, `enabled`, `runsHere`, `reason`, `enabledHere`, `repo`, `soul` (the soul name);
+  - `concurrency: { max, perKey }` and `liveCount`: live instances against `max`;
+    `live: [{ instance, home, repo, number, event }]`;
+  - `lastPoll: { at, ok: true, prs, matching } | { at, ok: false, error } | null`;
+    `nextPollAt`; `nextDue` (the next poll when it runs here, else `null`);
+  - `pending: [{ key, event, number, url, observedAt }]`: observed, not yet spawned
+    (held, or its spawn failed);
+  - `fired: [{ key, at, instance, home, event, number }]` (newest 50) and `firedTotal`;
+  - `lastError: { at, code, message, key? } | null`.
 - `test <id>` → `{ triggerApi, id, ok, gh: { ok, account, credentialSource:
   "keyring" | "config" | "env:<VAR>" | "unknown" | null, reachesHostTimer:
   boolean | null, note, detail }, repo: { key,
   readable, fullName, permissions: { push, maintain, admin }, canMerge } |
   { key, readable: false, error }, soul: { resolves, name, agent, messaging } |
   { resolves: false, name, error }, teams: { requested, undeclared | null,
-  messaging }, wouldFire: [{ key, event, number, url, held? }], pollError?, problems:
+  messaging }, wouldFire: [{ key, repo, number, event, url, held? }], pollError?, problems:
   [string], warnings: [string], spawned: false }`. It writes nothing. `ok`
   counts `problems` only; a credential the host timer cannot reach
   (`reachesHostTimer: false`) is a warning.
@@ -1439,8 +1445,15 @@ Desktop renders these rows and never re-derives them. The two lists stay separat
 a trigger never appears in `schedule list`, and a schedule never appears in
 `trigger list`.
 
-- Both lists add `host: { name | null }` and `snapshot: { takenAt, problems } | null`
-  (`null` until `oats sync` has found some).
+- Both lists add:
+  - `host: { name | null, ghUser: { <gh host>: <login> | null } }`: this machine's
+    `oats-local.yaml` `host.name`, and who its `gh` is logged in as on every GitHub
+    host the rows name (the owners'; a trigger's repository's) — `null` when `gh`
+    is not authenticated there. The Desktop compares it with a row's `owner`.
+  - `snapshot: { takenAt, problems } | null` (`null` until `oats sync` has found some).
+  - `scheduler: { installed, active, registered, lastTick, maxConcurrent, … }`: the
+    host tick (the same object as `oats schedule host status`). Nothing runs unless
+    it is installed, active and this deployment is registered.
 - **Identity:**
   - `id`:
     - a trigger row's is always qualified (`local/<id>`, `<member>/<id>`);
@@ -1449,27 +1462,55 @@ a trigger never appears in `schedule list`, and a schedule never appears in
   - `qualifiedId` is always the qualified form, and `name` is the bare id.
   - Every verb accepts `local/<id>` or a bare local id.
 - **Shared fields in every row:**
-  - `origin`: `{ kind: "local", path }` or `{ kind: "workspace", repoKey, path, commit }`;
+  - `origin`: where the item is defined, and where to open it:
+    - `{ kind: "local", path: "oats-schedules.json", url: null, localPath }`;
+    - `{ kind: "workspace", repoKey, path, commit, url, localPath }`: `url` is the
+      file's web URL at `commit` (`https://github.com/<owner>/<repo>/blob/<commit>/<path>`
+      for a `github.com` member, else `null`); `localPath` is the file in this
+      machine's clone of the member (`null` when the member is not cloned here).
   - `description`, `owner`, `runsOn`;
   - `runsHere`; `reason` (`null` | `host-unnamed` | `assigned-elsewhere` | `owner-mismatch`) with `reasonDetail`;
   - `enabledHere`;
-  - `soul`: `{ name, origin: { kind: member, repoKey, member } | { kind: package, package, version } | { kind: external, … } | { kind: ambiguous } | null }`;
+  - `soul`: `{ name, origin } | null` (`null` for a command, wake or operation schedule). `origin` is where the name resolves, per the snapshot:
+    - `{ kind: "member", repoKey, member }`: a soul in a workspace member;
+    - `{ kind: "package", package, version }`: a soul of a locked package;
+    - `{ kind: "external", repoKey, source }`: an external soul (`source` is the workspace's `external[].source` ref);
+    - `{ kind: "ambiguous", candidates }`: a bare name several souls answer to (`candidates` is how many); a spawn needs the qualified name;
+    - `null`: not found (or no snapshot yet).
   - `task`: the template, verbatim;
-  - `teams`, `harness`, `model`, `concurrency`;
+  - `teams`, `launchConfig`, `harness`, `model`, `concurrency`;
   - `lastRun`, `nextDue`;
   - `invalid?: { code, message, field? }`.
-- **A trigger row** also carries `kind: "trigger"`, `on` (the event), `spawn`, and `template?` (the package template it came from).
+- **A trigger row** also carries `kind: "trigger"`, `on`, `spawn`, and `template?`:
+  - `on: { source: "github.pull_request", repo: "<host>/<owner>/<repo>", events: [opened | reopened | ready_for_review | labeled | synchronize], labels: [string], base?: string, poll: "<n>s|m|h" }` (`base` absent: any base branch);
+  - `spawn: { soul, purpose, task, teams: [label], launchConfig?, harness?, model?, yolo?, backend? }`
+    (`purpose` and `task` are templates over `{repo}`, `{number}`, `{url}`, `{event}`, `{trigger}`, `{headSha}`;
+    `launchConfig` names a launch configuration in the running host's `oats-local.yaml`);
+  - `template?: { package, version, commit, template }`: the package template it was added from.
   - `lastRun` is the last fired event: `{ at, instance, home, event, number, key }`.
   - `nextDue` is the next poll, only when it runs here.
 - **A schedule row** keeps every 0.28 field (`scheduleApi: 2`). Its `kind` is the run (`spawn` | `command` | `wake` | `operation`); it also carries `cron` and `tz`.
   - `nextDue` is the next minute, only when it runs here.
   - `teams` is `[]` and `concurrency` is `null`.
-  - A workspace schedule another host runs carries its definition and placement only: `lastRun` and `nextRun` are `null`.
+  - A workspace schedule another host runs carries its definition and placement only: `lastRun` and `nextDue` are `null`.
+  - A spawn schedule's `launchConfig` names a launch configuration in the running host's `oats-local.yaml`.
+- **Naming:** `nextDue` is the one name for "when it next runs" in every trigger and
+  schedule row. A schedule row still carries the 0.24 `nextRun` for older readers;
+  they agree whenever it runs here.
 - **Actions:**
   - `enable` and `disable` on a workspace id edit `oats-local.yaml` `triggers.disabled` or `schedules.disabled`.
   - `update` and `remove` refuse it with `E_AUTOMATION_WORKSPACE { id, origin }`.
   - `schedule run` and `schedule reconcile` work when it runs here, else `E_AUTOMATION_NOT_HERE { id, reason, runsOn, owner }`.
 - **`oats trigger test <id>`** adds `placement: { runsOn, owner, host, runsHere, reason, detail?, enabledHere }`. Any reason, or disabled here, is a problem (`ok: false`).
+- **`oats schedule test <id> --json`** (local or workspace) → `{ test: { id, qualifiedId, kind,
+  placement: { runsHere, reason, reasonDetail?, enabledHere, runsOn, owner, host },
+  soul: { name, origin, resolves, error: { code, message } | null } | null, nextDue,
+  spawned: false, problems: [string], ok } }`. `soul` is checked the way the run
+  would start it (`oats spawn <soul> --preview`, which writes nothing); it is `null`
+  for a command, wake or operation. `nextDue` is the next cron match whether or not
+  this host runs it (`placement` says that). Not running here, disabled, invalid or a
+  soul that does not resolve is a problem (`ok: false`). It spawns nothing and records
+  nothing. Errors: `E_SCHEDULE_UNKNOWN`, `E_BAD_ARGS`.
 - **`oats trigger|schedule add … --workspace <member> --runs-on <host> --owner <host>/<login> --json`** answers `{ id, written, file: { member, repoKey, path, content, written? } }`.
   - Errors: `E_AUTOMATION_MEMBER` (not a confirmed member), `E_TRIGGER_EXISTS` or `E_SCHEDULE_EXISTS` (the file exists), and the kind's validation codes.
 - **`oats automations refresh --json`** answers `{ automationsApi, snapshot, triggers, schedules, problems: [...], takenAt }`.

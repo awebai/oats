@@ -40,7 +40,7 @@ import { attachArgv, checkRemote, forgetSnapshot, getServer, inspectRemote, star
 import { spawnSync as spawnSyncProc } from "node:child_process";
 import { tickTriggers } from "../lib/triggers.mjs";
 import * as A from "../lib/automations.mjs";
-import { parseEnvelopeText, scheduleScopeOf, listSchedules, describe as describeSchedule, addSchedule, updateSchedule, setEnabled as setScheduleEnabled, removeSchedule, runNow as runScheduleNow, reconcile as reconcileSchedule, tickHost, tickWorkspace, scopeAutomations, scheduleKind, registerWorkspace, unregisterWorkspace, readRegistry, schedulerStatus, saveWakeForHome, removeWakeForHome, wakeFromFlags, withHostLock, scheduleError, SCHEDULE_API } from "../lib/schedule.mjs";
+import { parseEnvelopeText, scheduleScopeOf, listSchedules, describe as describeSchedule, testSchedule, addSchedule, updateSchedule, setEnabled as setScheduleEnabled, removeSchedule, runNow as runScheduleNow, reconcile as reconcileSchedule, tickHost, tickWorkspace, scopeAutomations, scheduleKind, registerWorkspace, unregisterWorkspace, readRegistry, schedulerStatus, saveWakeForHome, removeWakeForHome, wakeFromFlags, withHostLock, scheduleError, SCHEDULE_API } from "../lib/schedule.mjs";
 import { hostUnitStatus, installHostUnit, uninstallHostUnit } from "../lib/schedule-host.mjs";
 import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } from "../lib/attachments.mjs";
 
@@ -2056,6 +2056,7 @@ async function scheduleCmd() {
     switch (sub) {
       case "list": { const r = listSchedules(ws(), io, { ctx: ctx() }); out(r); if (!JSON_MODE && r.triggers.count) console.log(`${r.triggers.count} trigger${r.triggers.count === 1 ? " is" : "s are"} not listed here: ${r.triggers.command}`); return; }
       case "show": return out({ schedule: describeSchedule(ws(), needId(), io, { ctx: ctx() }) });
+      case "test": return out({ test: testSchedule(ws(), needId(), io, { ctx: ctx() }) }, (r) => `${r.test.qualifiedId}: ${r.test.placement.runsHere ? "runs here" : `not here (${r.test.placement.reason ?? "disabled here"})`}${r.test.soul ? `; soul ${r.test.soul.name} ${r.test.soul.resolves ? "resolves" : `does NOT resolve (${r.test.soul.error?.code})`}` : ""}; next due ${r.test.nextDue ?? "never"}${r.test.problems.length ? `\n  ${r.test.problems.join("\n  ")}` : ""}\n(spawned nothing)`);
       case "add": {
         const spec = readSpec();
         if (flag("workspace") !== undefined) {
@@ -2097,7 +2098,7 @@ async function scheduleCmd() {
         if (op === "status") return out({ scheduler: schedulerStatus(ws(), io) });
         throw scheduleError("E_BAD_ARGS", "oats schedule host install|uninstall|status");
       }
-      default: throw scheduleError("E_BAD_ARGS", "usage: oats schedule list|show <id>|add <id> --file <spec.json> [--workspace <member> --runs-on <host> --owner <host>/<login>]|update <id> --file <spec.json>|enable <id>|disable <id>|run <id> [--force]|remove <id> [--force]|reconcile <id> [--clear]|tick [--dry-run] [--host]|host install|uninstall|status [--dir <workspace>|--server <id>] [--json]");
+      default: throw scheduleError("E_BAD_ARGS", "usage: oats schedule list|show <id>|test <id>|add <id> --file <spec.json> [--workspace <member> --runs-on <host> --owner <host>/<login>]|update <id> --file <spec.json>|enable <id>|disable <id>|run <id> [--force]|remove <id> [--force]|reconcile <id> [--clear]|tick [--dry-run] [--host]|host install|uninstall|status [--dir <workspace>|--server <id>] [--json]");
     }
   } catch (e) {
     // K8b: typed refusal details travel (identity mismatch: key/declared; a refused file: its integrity source).
@@ -2125,7 +2126,7 @@ async function triggerCmd() {
   const isWorkspace = (qid) => A.splitId(qid).scope !== "local";
   try {
     switch (sub) {
-      case "list": return out(T.listTriggers(ws(), ctx()), (r) => r.triggers.length ? r.triggers.map(line).join("\n") : "(no triggers — oats trigger add --file <trigger.json> | --from <package>:<template>)");
+      case "list": return out(T.listTriggers(ws(), ctx(), { io: { hostStatus: () => hostUnitStatus() } }), (r) => r.triggers.length ? r.triggers.map(line).join("\n") : "(no triggers — oats trigger add --file <trigger.json> | --from <package>:<template>)");
       case "show": return out({ trigger: T.describeTrigger(ws(), needId(), ctx()) });
       case "enable":
       case "disable": {
@@ -3133,7 +3134,7 @@ Usage:
                                             next steps (clone members you work IN, spawn
                                             oats-operator-expert); creates no soul, spawns nothing
   oats session inspect|input|attach --home <absolute-home> [--text-file <path>] [--json]
-  oats schedule list|show <id>|add <id> --file <spec.json>|update <id> --file <spec.json>
+  oats schedule list|show <id>|test <id>|add <id> --file <spec.json>|update <id> --file <spec.json>
       enable|disable|run|remove|reconcile <id>   workspace-scoped, host-owned schedules (spawn,
       tick [--dry-run] [--host]                  command or wake jobs on a five-field cron with an
       host install|uninstall|status              explicit IANA tz; see docs/schedules.md); --server

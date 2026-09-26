@@ -145,6 +145,10 @@ test("a tick polls with gh, spawns one instance per matching PR (join= for the t
   assert.equal(status.firedTotal, 3);
   assert.equal(status.pending.length, 0);
   assert.deepEqual(status.live.map((l) => l.number).sort(), [4, 5]);
+  // The Desktop's status contract: live vs the bound, each fired key with its time and instance, when it is next due.
+  assert.deepEqual([status.liveCount, status.concurrency.max], [2, status.concurrency.max]);
+  assert.ok(status.fired.every((f) => f.key && f.at && f.instance), JSON.stringify(status.fired));
+  assert.equal(status.nextDue, status.nextPollAt);
   assert.equal(status.lastPoll.ok, true);
   assert.equal(status.lastError, null);
 });
@@ -208,6 +212,7 @@ test("oats trigger CLI: add/list/show/disable/enable/remove, test (dry run: gh, 
   assert.equal(report.soul.messaging, "acme-msg");
   assert.deepEqual(report.teams, { requested: ["okf"], undeclared: [], messaging: "acme-msg" });
   assert.deepEqual(report.wouldFire.map((w) => [w.event, w.number]), [["opened", 3]]);
+  assert.deepEqual(Object.keys(report.wouldFire[0]).sort(), ["event", "key", "number", "repo", "url"]);
   assert.equal(homes(fx).length, 0, "test spawns nothing");
   assert.equal(ok(fx.cli(["trigger", "status", "--json"]), "status").triggers[0].lastPoll, null, "test writes no state");
   assert.match(fx.cli(["trigger", "test", "kb-review"]).stdout, /trigger local\/kb-review: ready \(nothing was spawned\)[\s\S]*would fire opened #3/);
@@ -236,7 +241,7 @@ test("a poll failure is recorded and retried at the next interval; nothing spawn
 
 test("a package trigger template: --from <package>:<template> --set fills its parameters; a missing required one is E_BAD_ARGS naming it", (t) => {
   const template = {
-    parameters: { repo: { path: "on.repo", required: true, description: "the knowledge-base repository" }, teams: { path: "spawn.teams", default: ["okf"] } },
+    parameters: { repo: { path: "on.repo", required: true, description: "the knowledge-base repository" }, teams: { path: "spawn.teams", default: ["okf"] }, launchConfig: { path: "spawn.launchConfig", description: "the launch configuration the reviewer starts on" } },
     definition: { id: "harvest-review", enabled: true, kind: "trigger",
       on: { source: "github.pull_request", repo: null, events: ["opened", "reopened", "ready_for_review"], labels: ["okf-harvest"], poll: "2m" },
       spawn: { soul: "acme.pkg/keeper", purpose: "review-pr-{number}", task: "Review knowledge-base PR {repo}#{number}." },
@@ -250,7 +255,7 @@ test("a package trigger template: --from <package>:<template> --set fills its pa
   assert.deepEqual(e.details.missing, ["repo"]);
   assert.match(e.message, /--set repo=<the knowledge-base repository>/);
   e = fails(fx.cli(["trigger", "add", "--from", "acme.pkg:harvest-review", "--set", "branch=x", "--json"]), "E_BAD_ARGS", "unknown parameter");
-  assert.deepEqual(e.details.parameters, ["repo", "teams"]);
+  assert.deepEqual(e.details.parameters, ["launchConfig", "repo", "teams"]);
   fails(fx.cli(["trigger", "add", "--from", "acme.pkg:nope", "--json"]), "E_TRIGGER_UNKNOWN", "unknown template");
   const added = ok(fx.cli(["trigger", "add", "--from", "acme.pkg:harvest-review", "--set", "repo=github.com/acme/knowledge", "--json"]), "add from template").trigger;
   assert.equal(added.id, "local/harvest-review");
@@ -260,6 +265,9 @@ test("a package trigger template: --from <package>:<template> --set fills its pa
   assert.equal(added.template.commit, pkg.commit1);
   const second = ok(fx.cli(["trigger", "add", "--from", "acme.pkg:harvest-review", "--set", "repo=acme/other", "--set", "teams=okf,global", "--id", "other-review", "--json"]), "second").trigger;
   assert.deepEqual([second.id, second.on.repo, second.spawn.teams], ["local/other-review", "github.com/acme/other", ["okf", "global"]]);
+  assert.equal(added.launchConfig, null, "an optional parameter left unset sets nothing");
+  const third = ok(fx.cli(["trigger", "add", "--from", "acme.pkg:harvest-review", "--set", "repo=acme/third", "--set", "launchConfig=fast", "--id", "third-review", "--json"]), "launchConfig parameter").trigger;
+  assert.deepEqual([third.spawn.launchConfig, third.launchConfig], ["fast", "fast"]);
 });
 
 function writeJson(fx, doc) { const f = join(fx.base, `spec-${Math.random().toString(36).slice(2)}.json`); writeFileSync(f, JSON.stringify(doc)); return f; }

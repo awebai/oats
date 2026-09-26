@@ -5,7 +5,7 @@
 // PATH answers `api user` and the PR poll; spawns are real children with --no-launch.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import YAML from "yaml";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
@@ -117,7 +117,15 @@ test("the list rows (the Desktop's contract): a trigger and a schedule each answ
   const tr = tl.triggers.find((r) => r.id === "ws/kb-review");
   assert.deepEqual({ kind: tr.kind, qualifiedId: tr.qualifiedId, name: tr.name, owner: tr.owner, runsOn: tr.runsOn, runsHere: tr.runsHere, reason: tr.reason, enabledHere: tr.enabledHere, task: tr.task, teams: tr.teams },
     { kind: "trigger", qualifiedId: "ws/kb-review", name: "kb-review", owner: "github.com/kb-bot", runsOn: "kb-host", runsHere: true, reason: null, enabledHere: true, task: "Review {repo}#{number} ({url}).", teams: [] });
-  assert.deepEqual({ ...tr.origin, commit: typeof tr.origin.commit }, { kind: "workspace", repoKey: fx.key, path: "oats-triggers/kb-review.yaml", commit: "string" });
+  // Where to open it: the web URL (github.com only; this fixture's remote is a local path) and this
+  // machine's clone of the member (the convention clone, <deployment>/<member>).
+  assert.deepEqual({ ...tr.origin, commit: typeof tr.origin.commit }, { kind: "workspace", repoKey: fx.key, path: "oats-triggers/kb-review.yaml", commit: "string", url: null, localPath: join(fx.member, "oats-triggers/kb-review.yaml") });
+  assert.deepEqual(A.originLinks({ kind: "workspace", repoKey: "github.com/acme/knowledge", path: "oats-triggers/x.yaml", commit: "abc123" }, () => null),
+    { url: "https://github.com/acme/knowledge/blob/abc123/oats-triggers/x.yaml", localPath: null });
+  assert.deepEqual(A.originLinks({ kind: "workspace", repoKey: "gitlab.com/acme/knowledge", path: "x.oats-trigger.yaml", commit: "abc123" }, () => { throw new Error("not a clone of it"); }), { url: null, localPath: null });
+  // Who this host's gh is on each GitHub host the rows name, and the host scheduler, on BOTH lists.
+  assert.deepEqual(tl.host.ghUser, { "github.com": "kb-bot" });
+  for (const k of ["installed", "active", "registered", "lastTick", "maxConcurrent"]) assert.ok(k in tl.scheduler, `trigger list scheduler.${k}`);
   assert.deepEqual(tr.soul, { name: "reviewer", origin: { kind: "member", repoKey: fx.key, member: "ws" } });
   assert.equal(tr.on.repo, REPO);
   const sl = ok(fx.cli(["schedule", "list", "--json"]), "schedule list");
@@ -126,9 +134,65 @@ test("the list rows (the Desktop's contract): a trigger and a schedule each answ
   assert.match(sr.nextDue, /T07:00:00/);
   assert.equal(sl.schedules.some((r) => r.kind === "trigger"), false, "a schedule listing never carries a trigger");
   assert.equal(sl.triggers.count, 1);
+  assert.deepEqual(sl.host.ghUser, { "github.com": "kb-bot" });
+  for (const k of ["installed", "active", "registered", "lastTick", "maxConcurrent"]) assert.ok(k in sl.scheduler, `schedule list scheduler.${k}`);
+  assert.equal(sr.origin.localPath, join(fx.member, "ops/nightly.oats-schedule.yaml"));
   // A local schedule keeps its bare id (the 0.28 contract); its qualified form is qualifiedId.
   const mine = ok(fx.cli(["schedule", "add", "mine", "--spec-json", JSON.stringify({ kind: "command", cron: "0 8 * * *", tz: "UTC", cwd: fx.dep, argv: ["oats", "status"] }), "--json"]), "add local").schedule;
   assert.deepEqual([mine.id, mine.qualifiedId, mine.name, mine.origin.kind, mine.runsHere, mine.owner], ["mine", "local/mine", "mine", "local", true, null]);
+  assert.deepEqual(mine.origin, { kind: "local", path: "oats-schedules.json", url: null, localPath: join(fx.dep, "oats-schedules.json") });
+  // gh logged out: the host's login is null, never an error in the listing.
+  fx.gh.login(null);
+  assert.deepEqual(ok(fx.cli(["trigger", "list", "--json"]), "trigger list, logged out").host.ghUser, { "github.com": null });
+});
+
+test("spawn.launchConfig (a trigger) and launchConfig (a spawn schedule) start the soul on that launch configuration; a template may set it", async (t) => {
+  const fx = fixture({
+    local: { host: { name: "kb-host" }, "launch-configs": { fast: { harness: "claude", model: "sonnet" } } },
+    files: {
+      "oats-triggers/kb-review.yaml": { yaml: { ...trigger, spawn: { ...trigger.spawn, launchConfig: "fast" } } },
+      "ops/nightly.oats-schedule.yaml": { yaml: { ...schedule, launchConfig: "fast" } },
+    },
+  });
+  t.after(() => fx.cleanup());
+  ok(fx.cli(["sync", "--json"]), "sync");
+  assert.equal(ok(fx.cli(["trigger", "list", "--json"]), "trigger list").triggers[0].launchConfig, "fast");
+  assert.equal(ok(fx.cli(["schedule", "list", "--json"]), "schedule list").schedules.find((r) => r.qualifiedId === "ws/nightly").launchConfig, "fast");
+  fx.gh.pulls([pr(1)]);
+  const ctx = () => fx.inGh(() => S.scopeAutomations(fx.dep, {}));
+  const fired = await fx.inGh(async () => T.tickTriggers(fx.dep, { now: new Date("2026-09-26T12:00:00Z"), io: { noLaunch: true }, ctx: await ctx() }));
+  assert.deepEqual(fired.map((r) => r.action), ["fired"], JSON.stringify(fired));
+  const ran = await fx.inGh(async () => S.tickWorkspace(fx.dep, { now: new Date("2026-09-27T07:00:10Z"), io: { noLaunch: true }, reg: { maxConcurrent: 4, workspaces: [fx.dep] }, wsList: [fx.dep], ctx: await ctx() }));
+  assert.deepEqual(ran.map((r) => r.action), ["launched"], JSON.stringify(ran));
+  const homes = [T.liveTriggerInstances(fx.dep, "ws/kb-review")[0].home, ok(fx.cli(["schedule", "show", "ws/nightly", "--json"]), "show").schedule.lastRun.home];
+  for (const home of homes) {
+    const meta = JSON.parse(readFileSync(join(home, "instance.json"), "utf8"));
+    assert.deepEqual([meta.harness, meta.model], ["claude", "sonnet"], `${home}: started on launch config fast`);
+  }
+  // A launch configuration name is a name, never a flag or a path.
+  assert.throws(() => T.validateTrigger({ id: "x", kind: "trigger", on: trigger.on, spawn: { ...trigger.spawn, launchConfig: "--yolo" } }), /spawn\.launchConfig/);
+});
+
+test("oats schedule test <id>: placement, whether the soul resolves (a spawn preview) and the next due; it spawns nothing", async (t) => {
+  const fx = fixture({ files: { "ops/ghost.oats-schedule.yaml": { yaml: { ...schedule, agent: "ghost" } } } });
+  t.after(() => fx.cleanup());
+  ok(fx.cli(["sync", "--json"]), "sync");
+  const instances = () => (existsSync(join(fx.root, "reviewer", "instances")) ? readdirSync(join(fx.root, "reviewer", "instances")) : []);
+  const here = ok(fx.cli(["schedule", "test", "ws/nightly", "--json"]), "test here").test;
+  assert.deepEqual({ ...here, nextDue: typeof here.nextDue, soul: { ...here.soul, origin: undefined } }, {
+    id: "ws/nightly", qualifiedId: "ws/nightly", kind: "spawn",
+    placement: { runsHere: true, reason: null, enabledHere: true, runsOn: "kb-host", owner: "github.com/kb-bot", host: "kb-host" },
+    soul: { name: "reviewer", origin: undefined, resolves: true, error: null }, nextDue: "string", spawned: false, problems: [], ok: true,
+  });
+  assert.match(here.nextDue, /T07:00:00/);
+  const ghost = ok(fx.cli(["schedule", "test", "ws/ghost", "--json"]), "test ghost").test;
+  assert.deepEqual([ghost.ok, ghost.soul.resolves, ghost.soul.error.code], [false, false, "E_SOUL_UNKNOWN"], JSON.stringify(ghost));
+  fx.setLocal({ host: { name: "laptop" } });
+  const there = ok(fx.cli(["schedule", "test", "ws/nightly", "--json"]), "test elsewhere").test;
+  assert.deepEqual([there.ok, there.placement.runsHere, there.placement.reason], [false, false, "assigned-elsewhere"]);
+  assert.match(there.problems.join("\n"), /does not run on this host \(assigned-elsewhere/);
+  assert.deepEqual(instances(), [], "a test spawns nothing");
+  fails(fx.cli(["schedule", "test", "ws/nope", "--json"]), "E_SCHEDULE_UNKNOWN", "unknown");
 });
 
 test("placement: runsOn names the host and owner the gh account; otherwise host-unnamed, assigned-elsewhere or owner-mismatch", async (t) => {
