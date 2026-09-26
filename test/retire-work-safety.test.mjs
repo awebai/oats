@@ -351,6 +351,77 @@ test("nested repository recovery is standalone after source repositories disappe
   assert.equal(existsSync(join(recoveredNested, ".git")), true);
 });
 
+/** Git status as the retire verification reads it. */
+const porcelain = (repo) => execFileSync("git", ["-C", repo, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=matching", "--ignore-submodules=none"], { encoding: "utf8" });
+/** Work that forces a repository recovery: a local-only branch commit, an untracked file and changed home bytes. */
+function dirtyWork(home) {
+  const work = join(home, "work");
+  write(join(work, "commit.txt"), "local-only\n");
+  execFileSync("git", ["-C", work, "add", "commit.txt"]);
+  execFileSync("git", ["-C", work, "commit", "-qm", "local only"]);
+  write(join(work, "untracked.txt"), "untracked\n");
+  write(join(home, "notes.md"), "home bytes\n");
+  return work;
+}
+
+test("retire preserves a worktree whose paths are excluded only by the COMMON dir's info/exclude — an empty directory, a written one and a file; a nested repository's own exclude too", () => {
+  // A fresh recovery clone has no info/exclude: a path excluded only there was `!!` in the source and `??`
+  // (or, for an empty directory, absent) in the clone, so the status comparison refused every retire
+  // with E_WORK_PRESERVATION_FAILED. The recovery now carries the source's effective excludes.
+  const f = fixture();
+  const spawned = spawn(f, "excl");
+  write(join(f.repo, ".git", "info", "exclude"), "# local only\n.scratch/\n.cache-local/\nlocal-notes.txt\n");
+  const work = dirtyWork(spawned.home);
+  mkdirSync(join(work, ".scratch")); // EMPTY and excluded: `!! .scratch/` in the source only (the co-lead's real case)
+  write(join(work, ".cache-local", "blob.bin"), "cache\n");
+  write(join(work, "local-notes.txt"), "notes\n");
+  const nested = join(work, "human-ignored", "nested");
+  mkdirSync(nested, { recursive: true });
+  execFileSync("git", ["init", "-q", nested]);
+  execFileSync("git", ["-C", nested, "-c", "user.email=t@example.invalid", "-c", "user.name=T", "commit", "-q", "--allow-empty", "-m", "nested"]);
+  write(join(nested, ".git", "info", "exclude"), ".nested-scratch/\n");
+  mkdirSync(join(nested, ".nested-scratch"));
+  const status = porcelain(work), nestedStatus = porcelain(nested);
+  assert.match(status, /!! \.scratch\/\0/, "the fixture reproduces the empty excluded directory");
+
+  const retired = cli(f, ["retire", "dev-excl", "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const recovery = JSON.parse(retired.stdout).workRecovery;
+  assert.ok(recovery?.path, retired.stdout);
+  const repo = join(recovery.path, "repo");
+  assert.equal(porcelain(repo), status, "the recovered status equals the source's");
+  assert.equal(porcelain(join(repo, "human-ignored", "nested")), nestedStatus);
+  assert.equal(readFileSync(join(repo, ".cache-local", "blob.bin"), "utf8"), "cache\n");
+  const manifest = JSON.parse(readFileSync(join(recovery.path, "recovery.json"), "utf8"));
+  assert.deepEqual(manifest.excludes.map((e) => [e.repo, e.kind]), [[".", "info/exclude"], ["human-ignored/nested", "info/exclude"]], "the operator sees which exclude sources were carried");
+  assert.equal(realpathSync(manifest.excludes[0].path), realpathSync(join(f.repo, ".git", "info", "exclude")));
+});
+
+test("retire preserves a worktree whose paths are excluded only by the repository's core.excludesFile, with Git's precedence (info/exclude outranks it)", () => {
+  const f = fixture();
+  const spawned = spawn(f, "exfile");
+  const excludesFile = join(f.base, "repo-excludes");
+  write(excludesFile, ".scratch/\n*.log\n");
+  execFileSync("git", ["-C", f.repo, "config", "core.excludesFile", excludesFile]);
+  write(join(f.repo, ".git", "info", "exclude"), "!keep.log\n"); // re-includes what core.excludesFile ignores
+  const work = dirtyWork(spawned.home);
+  mkdirSync(join(work, ".scratch"));
+  write(join(work, "keep.log"), "kept\n");
+  write(join(work, "drop.log"), "dropped\n");
+  const status = porcelain(work);
+  assert.match(status, /!! \.scratch\/\0/);
+  assert.match(status, /\?\? keep\.log\0/); assert.match(status, /!! drop\.log\0/);
+
+  const retired = cli(f, ["retire", "dev-exfile", "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const recovery = JSON.parse(retired.stdout).workRecovery;
+  assert.equal(porcelain(join(recovery.path, "repo")), status);
+  const manifest = JSON.parse(readFileSync(join(recovery.path, "recovery.json"), "utf8"));
+  assert.deepEqual(manifest.excludes.map((e) => e.kind), ["core.excludesFile", "info/exclude"]);
+  assert.equal(spawnSync("git", ["-C", join(recovery.path, "repo"), "config", "--local", "--get", "core.excludesFile"]).status, 1, "self-contained: the recovery carries the patterns, not a config pointer");
+  assert.match(readFileSync(join(recovery.path, "repo", ".git", "info", "exclude"), "utf8"), /^\.scratch\/$/m);
+});
+
 test("branch-only commits are recovered only when retirement deletes their last local ref", () => {
   const ordinary = fixture();
   const ordinarySpawn = spawn(ordinary, "branch-kept");

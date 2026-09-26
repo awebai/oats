@@ -118,7 +118,9 @@ A self-contained package has an `oats.json`:
   record can never be empty: a quarantine exists because something is outstanding,
   and one claiming otherwise would give the retry nothing to prove. A marker failing any of
   that is no more retryable than a missing one, and is treated as missing so the
-  escape hatch works.
+  escape hatch works. `--force` never skips work preservation, which runs
+  before the retire hooks and refuses with `E_WORK_PRESERVATION_FAILED` when
+  its recovery cannot be verified.
 - A retry clears the quarantine only by **proving the outstanding work happened**:
   every retire hook the marker records as owing cleanup must have run and reported
   success, and every Git step it records must be re-run and verified. A retry that resolves no
