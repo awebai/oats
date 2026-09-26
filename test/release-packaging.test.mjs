@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import {
   ROOT, checkJavaScript, checkKernelPackFiles, checkNpmOkfPayload, checkReleaseVersions, shippedJavaScript,
 } from "../scripts/check-package-dry-runs.mjs";
-import { CAPABILITY_PATH, EXPERT_PATH, checkKnowledgeTheoryPackage, treeFiles } from "../scripts/check-knowledge-theory-package.mjs";
+import { EXPERT_PATH, checkKnowledgeTheoryPackage, treeFiles } from "../scripts/check-knowledge-theory-package.mjs";
 import { CAPABILITY_PATHS, checkOkfMirror } from "../scripts/check-okf-mirror.mjs";
 import { acceptProbe } from "../packages/desktop/cli-locator.mjs";
 
@@ -91,7 +91,7 @@ test("actual npm inventory ships public docs but no partial optional package; om
   // The separate Git payload remains full and canonical, including its SOURCE
   // alias. No npm hooks, duplicate CLAUDE.md, or acquisition-time alias repair.
   assert.equal(checkKnowledgeTheoryPackage().ok, true);
-  const soul = join(ROOT, "oats-package", CAPABILITY_PATH, EXPERT_PATH);
+  const soul = join(ROOT, "oats-package", EXPERT_PATH);
   assert.equal(readlinkSync(join(soul, "CLAUDE.md")), "AGENTS.md");
   assert.equal(lstatSync(join(soul, "AGENTS.md")).isFile(), true);
 });
