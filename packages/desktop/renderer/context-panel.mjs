@@ -84,6 +84,7 @@ export const contextPanelCSS = `
 #context-panel .context-panel-session-copy { display:flex; flex-direction:column; min-width:0; flex:1; }
 #context-panel .context-panel-session-harness { font-size:12.5px; font-weight:650; color:var(--fg); }
 #context-panel .context-panel-session-model { font-size:11.5px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#context-panel .context-panel-session-from { font-size:11px; color:var(--muted); overflow-wrap:anywhere; }
 #context-panel .context-panel-session-side { display:flex; flex-direction:column; align-items:flex-end; flex:none; font-size:11.5px; color:var(--muted); text-align:right; }
 #context-panel .context-panel-session-tmux { font:11px ui-monospace, Menlo, monospace; color:var(--fg); }
 #context-panel .context-panel-built { padding:6px 12px; border:1px solid var(--border); border-radius:8px; }
@@ -127,6 +128,8 @@ const inertPanel = () => ({
   setContext: noop, attach: inertLease, release: noop, toggle: noop, setCollapsed: noop,
   setFocusMode: noop, toggleFocusMode: noop, isFocusMode: () => false, dispose: noop,
 });
+/** Where the model came from (modelFrom, desktop-facts); null (a pre-0.29 home) says nothing. */
+const MODEL_FROM = { soul: "the soul's choice", spawn: 'chosen at spawn', start: 'chosen at start', 'launch-config': 'from the launch configuration', 'harness-default': "the harness's default" };
 const reported = value => typeof value === 'string' && value.length ? value
   : typeof value === 'number' && Number.isFinite(value) ? String(value)
     : typeof value === 'boolean' ? String(value) : 'Not reported';
@@ -320,11 +323,14 @@ export function createContextPanel({
   const sessionCard = node('div', 'context-panel-session');
   const sessionBadge = node('span', 'context-panel-session-badge'); sessionBadge.setAttribute('aria-hidden', 'true');
   const sessionCopy = node('div', 'context-panel-session-copy');
-  sessionCopy.append(field('span', 'context-panel-session-harness', 'harness'), field('span', 'context-panel-session-model', 'model'));
+  sessionCopy.append(field('span', 'context-panel-session-harness', 'harness'), field('span', 'context-panel-session-model', 'model'), field('span', 'context-panel-session-from', 'modelFrom'));
   const sessionSide = node('div', 'context-panel-session-side');
   const tmuxLine = node('span', 'context-panel-session-tmux'); const createdLine = node('span', 'context-panel-session-age');
   createdLine.append('created ', field('span', null, 'createdAt'));
-  sessionSide.append(tmuxLine, createdLine);
+  // desktop-facts: the last session start; the spawn time moves to its title.
+  const startedLine = node('span', 'context-panel-session-age'); startedLine.dataset.age = 'started';
+  startedLine.append('started ', field('span', null, 'startedAt'));
+  sessionSide.append(tmuxLine, startedLine, createdLine);
   sessionCard.append(sessionBadge, sessionCopy, sessionSide); session.append(sessionCard);
   // Messaging (teams contract): injected like Git — this host performs no IO.
   const teamsHost = section('instance', 'Messaging'); teamsHost.dataset.contextSection = 'teams'; teamsHost.hidden = true;
@@ -341,7 +347,7 @@ export function createContextPanel({
   const details = node('details', 'context-panel-details'); details.append(node('summary', null, 'Details'));
   const homeRow = node('div', 'context-panel-detail'); homeRow.append(node('div', 'context-panel-label', 'Home'), pathLine('home'));
   details.append(homeRow);
-  facts(details, [['team', 'Team label']]);
+  facts(details, [['team', 'Team label'], ['identityAddress', 'Messaging address', true]]);
   pages.get('instance').append(details);
   const soulHead = identityHeader('soul');
   const soulSub = field('div', 'context-panel-identity-sub', 'description');
@@ -502,17 +508,23 @@ export function createContextPanel({
         // Absent identity is the provider's absent fact: nothing is inferred.
         : id === 'identity' ? servedIdentityText(instance.identity) ?? 'Not reported'
         : id === 'harness' && typeof instance.harness === 'string' && instance.harness ? harnessName(instance.harness)
+        // Where the model came from says nothing without the model beside it.
+        : id === 'modelFrom' ? (reported(instance.model) !== 'Not reported' && MODEL_FROM[instance.modelFrom]) || 'Not reported'
         : reported(instance[id]);
-      const shown = id === 'createdAt' && value !== 'Not reported' ? ageText(value) : value;
+      const age = ['createdAt', 'startedAt'].includes(id);
+      const shown = age && value !== 'Not reported' ? ageText(value) : value;
       if (el.textContent !== shown) el.textContent = shown;
       if (id === 'createdAt') el.title = value === 'Not reported' ? '' : value;
+      else if (id === 'startedAt') el.title = value === 'Not reported' ? '' : [value, reported(instance.createdAt) !== 'Not reported' ? `created ${instance.createdAt}` : null].filter(Boolean).join(' · ');
       else if (el.closest('.context-panel-path')) el.closest('.context-panel-path').title = value === 'Not reported' ? '' : value;
       el.toggleAttribute('data-unreported', value === 'Not reported');
       const row = rows.get(id); if (row) row.hidden = value === 'Not reported';
-      else if (['model', 'identity'].includes(id)) el.hidden = value === 'Not reported';
+      else if (['model', 'modelFrom', 'identity'].includes(id)) el.hidden = value === 'Not reported';
     }
-    createdLine.hidden = fields.get('createdAt').textContent === 'Not reported';
-    session.hidden = !harness && !tmux && createdLine.hidden;
+    // A reported start replaces the spawn age (startedAt is null for a home never launched).
+    startedLine.hidden = fields.get('startedAt').textContent === 'Not reported';
+    createdLine.hidden = !startedLine.hidden || fields.get('createdAt').textContent === 'Not reported';
+    session.hidden = !harness && !tmux && createdLine.hidden && startedLine.hidden;
     const running = instance.running === true, stopped = instance.running === false;
     restartControl.hidden = !running; startControl.hidden = !stopped; stopControl.hidden = !running;
     for (const b of [restartControl, startControl, stopControl, retireControl]) b.disabled = !!instance.server && !instance.savedRoute;
