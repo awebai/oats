@@ -120,3 +120,11 @@ and DOM/CSSOM. They cover scope/selector forgery, Host/Origin, byte limits,
 coalescing/cap, degraded CLI states, stale races (mutation-checked), literal
 hostile paths/patches and three-theme computed-token contrast. No GUI, operator
 backend, live model, real terminal or native renderer acceptance is implied.
+
+## Per-file line counts (kernel #238, 0.29.1)
+
+Each status `files[]` entry keeps the kernel's `additions` and `deletions`
+(non-negative integers, or `null` for unknown: binary, untracked and submodule
+entries) and `binary` (boolean or `null`). `null` is unknown, never zero. The
+keys are absent on older kernels, and a malformed count refuses the observation.
+The diff selection keeps its identity fields only.

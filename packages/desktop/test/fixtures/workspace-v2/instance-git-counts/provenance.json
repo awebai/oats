@@ -1,0 +1,38 @@
+{
+  "source": "oats-desktop-engineer for instance git line counts (main 32f43b65); test/fixtures/northwind/build.mjs; capture-git.mjs",
+  "kernel": "0.29.0",
+  "redactions": [
+    "<base> (capture scratch) → /fixture/base",
+    "<oats> (checkout) → /fixture/oats"
+  ],
+  "files": {
+    "version": {
+      "argv": [
+        "oats",
+        "version",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.29.0",
+      "sourceSha256": "9762c83394d77a95fbc03266af93ef7f3a784f54d116f7df8c00e8122abe3d3a",
+      "fixtureSha256": "0502a66d105c6ec97cb99e55c4caf8bc63be025f880dad57e6e3667063699558"
+    },
+    "instance-git": {
+      "argv": [
+        "oats",
+        "instance",
+        "git",
+        "release-manager-git",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--home",
+        "<base>/northwind-workspace/agents/release-manager/instances/release-manager-git",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.29.0",
+      "sourceSha256": "06bb5e86c28ca78b739ae5157be9738c99575ff5d7f7f2089ae4f55a4db46bcd",
+      "fixtureSha256": "2a073b793f610f0c6b916412374a9003039548bbcce1daabfe8f98679fd7c1db"
+    }
+  }
+}

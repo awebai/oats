@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "instanceGitApi": 1,
+    "instance": "release-manager-git",
+    "agent": "release-manager",
+    "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-git",
+    "workMode": "worktree",
+    "observation": {
+      "revision": "ac81b3be028dcc642cc505772fb9b80bbc2d0895",
+      "indexRevision": "fcdf44e0800c504694a5bca9ff639e0b0bf9097c",
+      "at": "2026-09-26T18:28:45.058Z",
+      "worktree": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-git/work",
+      "branch": "agents/release-manager-git",
+      "detached": false,
+      "unborn": false
+    },
+    "recorded": {
+      "branch": "agents/release-manager-git",
+      "repo": "/fixture/base/northwind-workspace/agents-repo",
+      "drift": false
+    },
+    "upstream": {
+      "ref": null,
+      "ahead": null,
+      "behind": null
+    },
+    "base": {
+      "ref": "origin/main",
+      "source": "origin/HEAD",
+      "mergeBase": "8f29288d7da6101626ba7752cea38ef871f586ec",
+      "ahead": 1,
+      "behind": 0
+    },
+    "remote": {
+      "name": "origin",
+      "url": "/fixture/base/fx/remotes/agents.git",
+      "host": null,
+      "path": null,
+      "source": "origin"
+    },
+    "summary": {
+      "changed": 3,
+      "renamed": 0,
+      "copied": 0,
+      "unmerged": 0,
+      "untracked": 1
+    },
+    "files": [
+      {
+        "id": "65c845b615d9a13a49d07741",
+        "kind": "changed",
+        "xy": "A.",
+        "submodule": false,
+        "path": "NEW.md",
+        "origPath": null,
+        "additions": 2,
+        "deletions": 0,
+        "binary": false
+      },
+      {
+        "id": "82e8d37d0a576128f504de92",
+        "kind": "changed",
+        "xy": ".M",
+        "submodule": false,
+        "path": "blob.bin",
+        "origPath": null,
+        "additions": null,
+        "deletions": null,
+        "binary": true
+      },
+      {
+        "id": "63f87634dfde64b08deddaf9",
+        "kind": "changed",
+        "xy": ".M",
+        "submodule": false,
+        "path": "capabilities/nw-house-style/injects/house-style.md",
+        "origPath": null,
+        "additions": 4,
+        "deletions": 1,
+        "binary": false
+      },
+      {
+        "id": "431ea0f549f6bff76b9af897",
+        "kind": "untracked",
+        "xy": "??",
+        "submodule": false,
+        "path": "scratch.txt",
+        "origPath": null,
+        "additions": null,
+        "deletions": null,
+        "binary": null
+      }
+    ],
+    "notes": [
+      "no upstream configured: upstream ahead/behind are unknown, not zero"
+    ]
+  }
+}
