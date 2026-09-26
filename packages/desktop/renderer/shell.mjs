@@ -646,6 +646,10 @@ const contextPanel = createContextPanel({
     requestForge: (workspace, body) => api(`/api/instance-forge?ws=${encodeURIComponent(workspace)}`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
     }),
+    // W6 item 4 (#248): preview / send a PR's review threads to this instance's terminal (the server composes the text).
+    requestThreads: (workspace, body) => api(`/api/instance-review-threads?ws=${encodeURIComponent(workspace)}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    }),
     request: (workspace, body) => api(`/api/instance-git?ws=${encodeURIComponent(workspace)}`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
     }),
