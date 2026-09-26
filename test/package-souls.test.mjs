@@ -84,9 +84,12 @@ test("spawn by the qualified and the bare name materializes the soul at the lock
   ok(fx.cli(["sync", "--json"]), "sync");
   for (const [name, purpose] of [["acme.pkg/keeper", "q"], ["keeper", "b"]]) {
     const r = ok(fx.cli(["spawn", name, "--purpose", purpose, "--no-launch", "--json"]), `spawn ${name}`);
-    const home = r.home ?? join(fx.root, "keeper", "instances", `keeper-${purpose}`);
-    const meta = JSON.parse(readFileSync(join(home, "instance.json"), "utf8"));
-    assert.equal(meta.agent, "keeper");
+    assert.equal(r.home, join(fx.root, "acme-pkg--keeper", "instances", `acme-pkg-keeper-${purpose}`));
+    const meta = JSON.parse(readFileSync(join(r.home, "instance.json"), "utf8"));
+    const home = r.home;
+    assert.equal(meta.agent, "acme-pkg--keeper");
+    assert.equal(meta.workspace.soul.name, "keeper");
+    assert.equal(meta.workspace.soul.qualifiedName, "acme.pkg/keeper");
     const { id, version, commit, path } = meta.workspace.soul.package;
     assert.deepEqual({ id, version, commit, path }, { id: "acme.pkg", version: "1.0.0", commit: fx.pkg.commit1, path: "oats-package/souls/keeper" });
     assert.equal(meta.workspace.soul.id, "package:acme.pkg#keeper");
@@ -97,7 +100,8 @@ test("spawn by the qualified and the bare name materializes the soul at the lock
     assert.match(readFileSync(join(home, "AGENTS.md"), "utf8"), /# keeper \(package 1\.0\.0\)/);
   }
   const status = JSON.parse(fx.cli(["status", "--json"]).stdout);
-  const keeper = status.agents.find((a) => a.name === "keeper");
+  const keeper = status.agents.find((a) => a.name === "acme-pkg--keeper");
+  assert.equal(keeper.instances.length, 2);
   assert.equal(keeper.instances[0].soul.status, "current", JSON.stringify(keeper.instances[0].soul));
   assert.equal(keeper.instances[0].soul.package, "acme.pkg");
 });
@@ -108,8 +112,24 @@ test("a bare name shared by a member soul and a package soul is E_SOUL_AMBIGUOUS
   const e = fails(fx.cli(["spawn", "keeper", "--no-launch", "--json"]), "E_SOUL_AMBIGUOUS", "bare ambiguous");
   assert.deepEqual([...e.details.qualified].sort(), ["acme.pkg/keeper", "ws/keeper"]);
   assert.match(e.message, /acme\.pkg\/keeper/);
-  ok(fx.cli(["spawn", "acme.pkg/keeper", "--purpose", "p", "--no-launch", "--json"]), "qualified package");
-  ok(fx.cli(["spawn", "ws/keeper", "--purpose", "m", "--no-launch", "--json"]), "qualified member");
+  const pkg = ok(fx.cli(["spawn", "acme.pkg/keeper", "--purpose", "p", "--no-launch", "--json"]), "qualified package");
+  const mem = ok(fx.cli(["spawn", "ws/keeper", "--purpose", "m", "--no-launch", "--json"]), "qualified member");
+  // Side by side, in distinct agent directories, each attributed to its own source.
+  assert.equal(pkg.home, join(fx.root, "acme-pkg--keeper", "instances", "acme-pkg-keeper-p"));
+  assert.equal(mem.home, join(fx.root, "keeper", "instances", "keeper-m"));
+  const status = JSON.parse(fx.cli(["status", "--json"]).stdout);
+  const rows = Object.fromEntries(status.agents.map((a) => [a.name, a]));
+  assert.deepEqual(rows["acme-pkg--keeper"].instances.map((i) => i.instance), ["acme-pkg-keeper-p"]);
+  assert.deepEqual(rows.keeper.instances.map((i) => i.instance), ["keeper-m"]);
+  assert.equal(rows["acme-pkg--keeper"].soulSource.repoKey, `local/${fx.pkg.bare}`);
+  assert.equal(rows["acme-pkg--keeper"].instances[0].soul.package, "acme.pkg");
+  assert.equal(rows["acme-pkg--keeper"].instances[0].soul.status, "current");
+  assert.equal(rows.keeper.soulSource.repoKey, fx.key);
+  assert.equal(rows.keeper.instances[0].soul.package, undefined);
+  assert.equal(rows.keeper.instances[0].soul.status, "current");
+  const text = fx.cli(["status"]).stdout;
+  assert.match(text, /acme-pkg--keeper {2}\[work: directory, repo: package acme\.pkg v1\.0\.0 @ [0-9a-f]{7}\]/);
+  assert.match(text, /^ {2}keeper {2}\[work: directory, repo: ws @ [0-9a-f]{7}\]/m);
 });
 
 test("oats-local.yaml souls.disabled refuses a package soul by its qualified name (E_SOUL_DISABLED)", (t) => {
@@ -172,7 +192,7 @@ test("drift: the package pin moving shows the instance's soul as moved", (t) => 
   fx.commit({ "oats-workspace.yaml": YAML.stringify(ws) }, "bump acme.pkg");
   ok(fx.cli(["sync", "--json"]), "sync 1.1.0");
   const status = JSON.parse(fx.cli(["status", "--json"]).stdout);
-  const soul = status.agents.find((a) => a.name === "keeper").instances[0].soul;
+  const soul = status.agents.find((a) => a.name === "acme-pkg--keeper").instances[0].soul;
   assert.equal(soul.status, "moved", JSON.stringify(soul));
   assert.equal(soul.current, c2);
   assert.match(fx.cli(["status"]).stdout, /soul: keeper from package acme\.pkg v1\.0\.0 @ [0-9a-f]{7}\s+\[package moved since \(now v1\.1\.0 @ [0-9a-f]{7}\)\]/);

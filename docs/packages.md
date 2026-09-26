@@ -259,10 +259,15 @@ oats-package/
   (a capability it does not provide is `E_CAPABILITY_MISSING`).
 - **Spawned** at the locked commit: the soul is fetched into the per-commit
   soul cache and its digest must equal the lock's (`E_PACKAGE_INTEGRITY
-  { why: "soul-digest" }`). The instance's directory is the bare name
-  (`agents/<soul>/`). `instance.json.workspace.soul` records `package: { id,
-  version, commit, digest, path }` and the soul id `package:<id>#<soul>`; in
-  `oats status` the soul is `moved` once the package pin moves.
+  { why: "soul-digest" }`). A package soul homes in its own agent directory,
+  `agents/<package>--<soul>/` (the package id with `.` as `-`:
+  `agents/oats-okf--knowledge-maintainer/`), which is also its agent name
+  (`OATS_AGENT`, the `oats status` row); its instances are named from it
+  (`oats-okf-knowledge-maintainer-<purpose>`). A soul name never holds `--`,
+  so a member soul of the same bare name keeps its own `agents/<soul>/`.
+  `instance.json.workspace.soul` records `name`, `qualifiedName`, `package:
+  { id, version, commit, digest, path }` and the soul id `package:<id>#<soul>`;
+  in `oats status` the soul is `moved` once the package pin moves.
 - **Disabled** by `oats-local.yaml` `souls.disabled` by its qualified or bare
   name (`E_SOUL_DISABLED` at spawn).
 - **Trusted** as the package's capabilities are: declaring the package is the

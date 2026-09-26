@@ -1219,7 +1219,10 @@ or `"unassigned"`.
 "package"` is a soul a locked package ships (listed only while the workspace
 declares the package). It carries `package`, `version` and `qualifiedName`
 (`<package>/<soul>`); spawn it by `qualifiedName` (the bare `name` works when
-it is unique). The Souls page shows it as "from package <id> <version>". A
+it is unique). The Souls page shows it as "from package <id> <version>".
+Its instances home under `agents/<package>--<soul>/` (`.` in the package id
+becomes `-`), and that directory is the agent `name` in `oats status --json`
+(`agents[].name`, e.g. `oats-okf--knowledge-maintainer`). A
 problem about a package soul carries `package` (and `repoKey: null`); its
 `path` is `package:<id>:<path in the repo>`.
 

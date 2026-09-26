@@ -154,7 +154,7 @@ function operationalKnowledgeNote(composition, soulName) {
  *  home-relative (`.oats/modules/<cap>/<inject>`), where an instance carries them. */
 async function doctorComposition(ctx, soulName, ws, bail) {
   if (!soulName) return undefined;
-  const { prepareInstance, previewWorkspaceSoul, materializePrepared, discoverOrStandalone } = await import("../lib/instance-resolution.mjs");
+  const { prepareInstance, previewWorkspaceSoul, materializePrepared, discoverOrStandalone, agentDirOf } = await import("../lib/instance-resolution.mjs");
   const deployment = dirname(ws.local.path);
   const root = join(deployment, "agents");
   const remoteOptions = remoteOptionsFromEnv();
@@ -166,7 +166,7 @@ async function doctorComposition(ctx, soulName, ws, bail) {
     const prepared = await prepareInstance(deployment, soulName, { remoteOptions, discovery });
     const pv = await previewWorkspaceSoul(prepared, root);
     cleanups.push(pv.cleanup);
-    const agent = findAgentAt(root, prepared.soulEntry.name, pv.soulDir);
+    const agent = findAgentAt(root, agentDirOf(prepared.soulEntry), pv.soulDir);
     if (!agent) bail("E_SOUL_UNKNOWN", `soul "${soulName}" was fetched but is not readable as a soul`);
     const composition = composeInstanceAgentsMd(pv.soulDir, deployment, agent.name, agent.work || "checkout", agent.kind, prepared);
     const scratch = realpathSync(mkdtempSync(join(tmpdir(), "oats-doctor-home-")));
@@ -1527,12 +1527,12 @@ async function spawnCmd() {
   {
     let discovery = null;
     try {
-      const { prepareInstance, ensureWorkspaceSoul, previewWorkspaceSoul, parseProviderFlags, discoverOrStandalone } = await import("../lib/instance-resolution.mjs");
+      const { prepareInstance, ensureWorkspaceSoul, previewWorkspaceSoul, parseProviderFlags, discoverOrStandalone, agentDirOf } = await import("../lib/instance-resolution.mjs");
       const remoteOptions = remoteOptionsFromEnv();
       const { local, path: localPath } = loadLocal(dirFlag());
       discovery = wsDiscovery = await discoverOrStandalone(local, { deployment: dirname(localPath), remoteOptions });
       wsPrepared = await prepareInstance(dirFlag(), name, { spawn: { providers: parseProviderFlags(providerPairs) }, remoteOptions, discovery });
-      const soulName = wsPrepared.soulEntry.name;
+      const soulName = agentDirOf(wsPrepared.soulEntry);
       let soulDir;
       if (isPreview) {
         // A preview writes nothing in the deployment: the soul comes from the
