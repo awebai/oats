@@ -18,7 +18,7 @@ const callback = source.slice(start, end), base = 'http://127.0.0.1:4820', rende
 const routes = [
   ['/api/workspace-readiness', 'readiness'], ['/api/instance-lifecycle', 'lifecycle'],
   ['/api/forge-connections', 'forge'], ['/api/instance-forge', 'forge'],
-  ['/api/capabilities', 'capabilities'], ['/api/panel', 'panel'],
+  ['/api/capabilities', 'capabilities'], ['/api/panel', 'panel'], ['/api/automations', 'automations'],
 ];
 const guarded = routes.slice(0, 4);
 const slash = String.fromCharCode(92);
@@ -88,7 +88,7 @@ for (const [path, kind] of routes) test(`${path}: valid aliases preserve workspa
     if (kind === 'forge') {
       assert.deepEqual(Object.entries(init.headers).filter(([k]) => k.toLowerCase() === FORGE_EPOCH_HEADER), [[FORGE_EPOCH_HEADER, 'fixture:0']]);
       assert.equal(init.signal.timeout, path === '/api/instance-forge' ? 50000 : 25000);
-    } else if (kind !== 'readiness') assert.equal(init.signal.timeout, kind === 'lifecycle' ? 35000 : kind === 'capabilities' ? 310000 : 20000);
+    } else if (kind !== 'readiness') assert.equal(init.signal.timeout, kind === 'lifecycle' ? 35000 : kind === 'capabilities' ? 310000 : kind === 'automations' ? 90000 : 20000);
     if (kind === 'panel') assert.deepEqual([...f.context.allowedWs], ['team', 'other']);
   }
 });
@@ -134,7 +134,7 @@ test('lifecycle apply backend replacement remains unknown for every normalized a
   }
 });
 test('duplicate workspace query survives normalization for strict backend refusal', async () => {
-  for (const path of ['/api/instance-lifecycle', '/api/instance-forge', '/api/workspace-readiness']) {
+  for (const path of ['/api/instance-lifecycle', '/api/instance-forge', '/api/workspace-readiness', '/api/automations']) {
     const f = fixture(); await f.call(aliases(path)[1] + '?ws=team&ws=other');
     assert.deepEqual(f.calls[0].url.searchParams.getAll('ws'), ['team', 'other']);
   }
@@ -144,4 +144,12 @@ for (const [path, kind] of guarded) test(`mutation: ${kind} ${path} denial fails
   assert.equal(original.split(from).length, 2);
   const mutant = runInNewContext(`(${original.replace(from, "pathname.split(/[?#]/, 1)[0]")})`, { URL });
   await assert.rejects(assertDenied(path, mutant), /specialized main-frame guard must execute BEFORE fetch/);
+});
+
+test('automations: the verified workspace is pinned unless the server advertises the one asked; trigger test gets its deadline', async () => {
+  for (const [suffix, ws] of [['', 'team'], ['?ws=other', 'other'], ['?ws=elsewhere', 'team']]) {
+    const f = fixture(); await f.call('/api/automations' + suffix, { method: 'POST', body: JSON.stringify({ kind: 'trigger', action: 'test', key: 'agents/pr-review' }) });
+    assert.deepEqual(f.calls[0].url.searchParams.getAll('ws'), [ws], suffix || 'no ws');
+    assert.equal(f.calls[0].init.signal.timeout, 90_000);
+  }
 });

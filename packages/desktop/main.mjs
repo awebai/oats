@@ -373,7 +373,8 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   // Provider actions may perform bounded work before returning their receipt.
   // Let the CLI's five-minute limit report the outcome before the proxy times out.
   const forge = route === 'forge' ? forgeProxyOptions(url.pathname, opts, currentForgeEpoch()) : null;
-  const timeout = lifecycle ? mutation ? 610_000 : 35_000 : forge?.timeout ?? (route === 'capabilities' || route === 'workspace-sync' ? 310_000 : 20_000);
+  // automations: `trigger test` polls the forge (the adapter allows the CLI 60 s).
+  const timeout = lifecycle ? mutation ? 610_000 : 35_000 : forge?.timeout ?? (route === 'capabilities' || route === 'workspace-sync' ? 310_000 : route === 'automations' ? 90_000 : 20_000);
   const init = { ...(forge?.init ?? apiInit(opts)), signal: AbortSignal.timeout(timeout) };
   const r = await fetch(url, init);
   const text = await r.text();
