@@ -219,7 +219,7 @@ test("desktop server: 0.25.8 through 0.28.x CLIs are ACCEPTED and 0.29.0 is REJE
     assert.equal(s.ok, false, "0.29.0 is past the exclusive ceiling and must not become the mutation binary");
     const tried = s.tried.find((t) => t.path === next.real);
     assert.ok(tried, "the rejected candidate is in diagnostics");
-    assert.match(tried.reason, /outside >=0\.25\.8 <0\.28\.0/);
+    assert.match(tried.reason, /outside >=0\.25\.8 <0\.29\.0/);
     assert.equal(tried.version, "0.29.0");
   } finally { b.proc.kill(); }
 });
