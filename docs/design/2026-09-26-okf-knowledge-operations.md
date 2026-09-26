@@ -137,6 +137,19 @@
    - It retires on **merged/closed** (the maintainer's message, or its own PR check on each wake).
    - A **max-age** (the setting `harvester-max-age`, default 7d) retires it after telling the team. It never closes the PR itself.
 
+**The harvest switch (lead decision, 2026-09-26; L2 implements it):**
+- **A setting, not a job toggle:** `harvest: on|off` for oats.okf, **default `off`**.
+- **Where it's set:**
+  - Deployment-wide, in `oats-local.yaml` `settings.oats.okf.harvest` (a machine fact: the operator decides whether this host harvests).
+  - Per soul, as the opt-out: `soul.yaml` `knowledge: { harvest: off }`.
+  - **Effective = on only if the deployment says `on` AND the soul does not say `off`.** A soul's `off` cannot be overridden by the host. This deliberately departs from the usual later-wins merge, and L2 must implement it explicitly.
+- **When it's off:** the spawn hook registers no source, and no capture or custody happens. Private transcripts are never accumulated "for later", and nothing drains when the switch flips; harvest starts from the next session. The per-source `run-source` job exists only when harvest is effectively on.
+- **The verbs:**
+  - `oats okf setup --harvest on|off` writes the local setting (else it prints the line to add);
+  - `oats okf harvest-status [--soul X]` reports the effective value and why (the deployment/soul row), plus the registered sources.
+  - `oats schedule enable|disable <job>` remains the per-source emergency brake, not the switch.
+- **The review trigger is independent of the switch:** a trigger host can review PRs from other hosts' harvesters without harvesting itself.
+
 **`knowledge-maintainer` soul** (a package soul; `work: directory`; `team: okf`; `knowledge: none` in v1; capabilities `oats.okf-maintenance` + the workspace's tasks slot, **read-only use**).
 1. Spawned by the trigger, one per PR. It reads `OATS_TRIGGER_EVENT_FILE`, clones/fetches the KB repo and `gh pr checkout`s the PR in its `./work`.
 2. **Situates** the addition:
