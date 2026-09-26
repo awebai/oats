@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "test": {
+      "id": "agents/nightly",
+      "qualifiedId": "agents/nightly",
+      "kind": "spawn",
+      "placement": {
+        "runsHere": true,
+        "reason": null,
+        "enabledHere": true,
+        "runsOn": "fixture-laptop",
+        "owner": "github.com/fixture-bot",
+        "host": "fixture-laptop"
+      },
+      "soul": {
+        "name": "release-manager",
+        "origin": {
+          "kind": "member",
+          "repoKey": "local//fixture/base/fx/remotes/agents.git",
+          "member": "agents"
+        },
+        "resolves": true,
+        "error": null
+      },
+      "nextDue": "2026-09-27T05:00:00.000Z",
+      "spawned": false,
+      "problems": [],
+      "ok": true
+    }
+  }
+}

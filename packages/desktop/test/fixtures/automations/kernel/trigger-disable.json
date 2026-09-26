@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "trigger": {
+      "kind": "trigger",
+      "id": "agents/pr-review",
+      "name": "pr-review",
+      "origin": {
+        "kind": "workspace",
+        "repoKey": "local//fixture/base/fx/remotes/agents.git",
+        "path": "oats-triggers/pr-review.yaml",
+        "commit": "87cea5aa4a1effece415590c7cefc888ed81a57d",
+        "url": null,
+        "localPath": "/fixture/base/northwind-workspace/agents-repo/oats-triggers/pr-review.yaml"
+      },
+      "description": "pr-review on storefront pull requests",
+      "owner": "github.com/fixture-bot",
+      "runsOn": "fixture-laptop",
+      "runsHere": false,
+      "reason": null,
+      "enabledHere": false,
+      "qualifiedId": "agents/pr-review",
+      "soul": {
+        "name": "release-manager",
+        "origin": {
+          "kind": "member",
+          "repoKey": "local//fixture/base/fx/remotes/agents.git",
+          "member": "agents"
+        }
+      },
+      "task": "Review storefront PR {repo}#{number} ({url}).",
+      "on": {
+        "source": "github.pull_request",
+        "repo": "github.com/northwind/storefront",
+        "events": [
+          "opened",
+          "ready_for_review"
+        ],
+        "labels": [],
+        "poll": "2m"
+      },
+      "teams": [
+        "engineering"
+      ],
+      "launchConfig": null,
+      "harness": "claude",
+      "model": null,
+      "concurrency": {
+        "max": 1,
+        "perKey": 1
+      },
+      "lastRun": null,
+      "nextDue": null,
+      "enabled": true,
+      "spawn": {
+        "soul": "release-manager",
+        "purpose": "pr-review-{number}",
+        "task": "Review storefront PR {repo}#{number} ({url}).",
+        "teams": [
+          "engineering"
+        ],
+        "harness": "claude"
+      },
+      "triggerApi": 1,
+      "scope": "/fixture/base/northwind-workspace"
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "test": {
+      "id": "agents/weekly",
+      "qualifiedId": "agents/weekly",
+      "kind": "command",
+      "placement": {
+        "runsHere": false,
+        "reason": "assigned-elsewhere",
+        "reasonDetail": "runs on reports-server; this host is fixture-laptop",
+        "enabledHere": true,
+        "runsOn": "reports-server",
+        "owner": "github.com/reports-bot",
+        "host": "fixture-laptop"
+      },
+      "soul": null,
+      "nextDue": "2026-09-28T09:00:00.000Z",
+      "spawned": false,
+      "problems": [
+        "agents/weekly does not run on this host (assigned-elsewhere: runs on reports-server; this host is fixture-laptop)"
+      ],
+      "ok": false
+    }
+  }
+}

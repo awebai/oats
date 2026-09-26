@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_AUTOMATION_WORKSPACE",
+    "message": "agents/nightly is a workspace schedule, defined in Git: remove its file there, or stop it on this host: oats schedule disable agents/nightly",
+    "details": {
+      "id": "agents/nightly"
+    }
+  }
+}

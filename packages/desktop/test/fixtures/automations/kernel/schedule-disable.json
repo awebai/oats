@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "schedule": {
+      "id": "agents/nightly",
+      "cron": "0 7 * * *",
+      "tz": "Europe/Madrid",
+      "kind": "spawn",
+      "agent": "release-manager",
+      "task": "Check the release branch and report.",
+      "harness": "claude",
+      "scope": "/fixture/base/northwind-workspace",
+      "scheduleApi": 2,
+      "scheduleHistoryApi": 3,
+      "nextRun": null,
+      "lastRun": null,
+      "running": false,
+      "name": "nightly",
+      "origin": {
+        "kind": "workspace",
+        "repoKey": "local//fixture/base/fx/remotes/agents.git",
+        "path": "oats-schedules/nightly.yaml",
+        "commit": "87cea5aa4a1effece415590c7cefc888ed81a57d",
+        "url": null,
+        "localPath": "/fixture/base/northwind-workspace/agents-repo/oats-schedules/nightly.yaml"
+      },
+      "description": "Nightly release check",
+      "owner": "github.com/fixture-bot",
+      "runsOn": "fixture-laptop",
+      "runsHere": false,
+      "reason": null,
+      "enabledHere": false,
+      "qualifiedId": "agents/nightly",
+      "soul": {
+        "name": "release-manager",
+        "origin": {
+          "kind": "member",
+          "repoKey": "local//fixture/base/fx/remotes/agents.git",
+          "member": "agents"
+        }
+      },
+      "teams": [],
+      "launchConfig": null,
+      "model": null,
+      "concurrency": null,
+      "nextDue": null,
+      "enabled": true
+    }
+  }
+}
