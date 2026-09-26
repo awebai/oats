@@ -38,7 +38,7 @@ import { createIntentGate, prepareOwnedOpen, runOpenFlow } from "./open-intent.m
 import { createSelectionOwnership, wirePaneSelection } from "./selection-ownership.mjs";
 import { createWorkspaceSwitcher } from "./workspace-switcher.mjs";
 import { NAV, stageSidebarMode, loadStageView } from "./shell-nav.mjs";
-import { shellIcon, mountShellIcons } from "./shell-icons.mjs";
+import { shellIcon, mountShellIcons, iconElement } from "./shell-icons.mjs";
 import { createRuntimeBadge, identityCSS } from "./identity-marks.mjs";
 import { createContextPanel, contextPanelCSS } from "./context-panel.mjs";
 import { createInstanceTeamsSection, teamsCSS } from "./instance-teams.mjs";
@@ -46,6 +46,7 @@ import { createInstanceSoulSection, instanceSoulCSS } from "./instance-soul.mjs"
 import { createInstanceGitPanel, instanceGitCSS } from "./instance-git.mjs";
 import { createNotificationCenter, notificationCSS } from "./notifications.mjs";
 import { createRosterTip, rosterTipFacts, rosterTipCSS } from "./roster-tip.mjs";
+import { createRosterPrs, prChip, prText, rosterPrCSS } from "./roster-pr.mjs";
 import { createPanelOwner } from "./panel-owner.mjs";
 import {
   collapseKey, hasInstanceChildren, instanceRepoLabel, treeConnectors, filterInstanceTree, instanceVisibleInTree,
@@ -67,8 +68,13 @@ const desk = window.oatsDesktop;
 initTheme();
 mountShellIcons(document);
 const identityStyle = document.createElement("style");
-identityStyle.textContent = identityCSS + contextPanelCSS + teamsCSS + instanceSoulCSS + instanceGitCSS + notificationCSS + connectionsCSS + lifecycleCSS + rosterTipCSS; document.head.append(identityStyle);
+identityStyle.textContent = identityCSS + contextPanelCSS + teamsCSS + instanceSoulCSS + instanceGitCSS + notificationCSS + connectionsCSS + lifecycleCSS + rosterTipCSS + rosterPrCSS; document.head.append(identityStyle);
 const rosterTip = createRosterTip(document);
+// The PR of each local instance's branch (forge-roster), re-read at most once a minute.
+const rosterPrs = createRosterPrs({
+  request: (ws) => api(`/api/forge-roster?ws=${encodeURIComponent(ws)}`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }),
+  onChange: () => renderContextRoster(contextInstances),
+});
 let connectionGeneration = 0;
 const connectionListeners = new Set();
 const subscribeConnections = fn => { connectionListeners.add(fn); return () => connectionListeners.delete(fn); };
@@ -330,6 +336,7 @@ async function refreshContextRoster() {
   if (commitWorkspaceLabel(panel.workspace, panel.workspaces)) renderWorkspaceContext(panel.workspace);
   contextWorkspace = resolvedWs;
   contextInstances = panel.instances || [];
+  void rosterPrs.refresh(panel.workspace?.remote ? null : resolvedWs);
   refreshPanelInstance(contextInstances, resolvedWs);
   renderContextRoster(contextInstances);
   if (panel.error) {
@@ -433,7 +440,8 @@ function renderContextRoster(instances) {
         const why = i.runtimeError || (i.server && !i.savedRoute ? "No saved route for this instance on this machine"
           : i.running ? `Open ${i.instance} terminal` : i.running === false ? `Start ${i.instance}` : `${i.instance}: status unknown`);
         // Workspace v4: an enabled row explains itself in the hover/focus card; a disabled one keeps its reason as a title.
-        if (row.disabled) row.title = why; else rosterTip.bind(row, () => rosterTipFacts(i, why));
+        const pr = i.server || i.remote ? null : rosterPrs.get(i.home);
+        if (row.disabled) row.title = why; else rosterTip.bind(row, () => rosterTipFacts(i, why, pr));
         const dot = document.createElement("span");
         dot.className = `ctx-dot ${state === "running" ? "on" : state === "stopped" ? "off" : "unknown"}`;
         const copy = document.createElement("span");
@@ -445,7 +453,11 @@ function renderContextRoster(instances) {
         meta.className = "ctx-meta ctx-repo-label";
         meta.textContent = [instanceRepoLabel(i), i.branch, state === "unknown" ? "state unknown" : ""].filter(Boolean).join(" · ");
         meta.title = `Repository: ${instanceRepoLabel(i)}${i.branch ? `\nBranch: ${i.branch}` : ""}`;
-        copy.append(name, meta);
+        if (pr) {
+          // Its pull request beside the name; the link itself sits in the row tools (a button holds no link).
+          const line = document.createElement("span"); line.className = "ctx-name-line";
+          line.append(name, prChip(document, pr)); copy.append(line, meta);
+        } else copy.append(name, meta);
         row.append(dot, copy);
         if (typeof i.harness === "string" && i.harness) {
           const runtime = createRuntimeBadge(document, i.harness);
@@ -465,6 +477,13 @@ function renderContextRoster(instances) {
         // Row tools (Start…, actions) overlay the row end on hover/focus only.
         const tools = document.createElement("span");
         tools.className = "ctx-row-tools";
+        if (pr?.url) {
+          const open = document.createElement("button"); open.type = "button"; open.className = "act ctx-pr-open"; open.dataset.verb = "pr";
+          open.append(iconElement(document, "external", { size: 13 })); open.title = `Open pull request ${prText(pr)} on GitHub`;
+          open.setAttribute("aria-label", `Open ${i.instance}'s pull request ${prText(pr)} on GitHub`);
+          open.addEventListener("click", () => ctx.openExternal(pr.url));
+          tools.append(open);
+        }
         if (i.running === false) {
           const start = document.createElement("button"); start.className = "act ctx-start";
           start.textContent = "Start…"; start.setAttribute("aria-label", `Start ${i.instance}`);

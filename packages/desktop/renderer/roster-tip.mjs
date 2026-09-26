@@ -2,6 +2,7 @@
  * shows a card beside the sidebar with what the roster reports about it —
  * Soul, Repo, Branch, Harness, Status. One card per document; presentation
  * only, never a control. */
+import { prText } from './roster-pr.mjs';
 import { createRuntimeBadge, harnessName } from './identity-marks.mjs';
 import { runtimeState } from './instance-presentation.mjs';
 import { instanceRepoLabel } from './instance-tree.mjs';
@@ -21,7 +22,7 @@ export const rosterTipCSS = `
 `;
 
 /** The facts the card shows, from the roster row only (absent facts stay absent). */
-export function rosterTipFacts(instance, why = '') {
+export function rosterTipFacts(instance, why = '', pr = null) {
   const text = v => typeof v === 'string' && v ? v : null;
   const state = runtimeState(instance);
   return {
@@ -32,6 +33,8 @@ export function rosterTipFacts(instance, why = '') {
       ['Branch', text(instance.branch), 'mono'],
       ['Harness', text(instance.harness) ? { harness: instance.harness, model: text(instance.model) } : null],
       ['Status', [state === 'unknown' ? 'status unknown' : state, text(instance.runtimeError)].filter(Boolean).join(' · ')],
+      // forge-roster: the pull request of its branch, when it has one.
+      ['Pull request', pr ? prText(pr) : null, 'mono'],
     ].filter(([, value]) => value),
     why,
   };

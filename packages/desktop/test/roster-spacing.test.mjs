@@ -40,7 +40,7 @@ function fixture(t, stylesheet = css) {
     instanceActionTarget, instanceSplitPlan, connectionGeneration: 0, menuState() {}, runAction: assert.fail,
     applyChordTitles() {}, updateActiveContexts() {}, getBinding: () => null, formatChord: c => c, isMac: true,
     contextRosterEl: doc.querySelector("#instance-roster"), contextFilter: "", contextWorkspace: "A",
-    contextInstances: roster, currentWorkspace: () => "A", workspaceGeneration: () => 0, collapsedInstances: new Set(), rosterTip: { bind() {}, hide() {}, sync() {} }, rosterTipFacts: () => ({}),
+    contextInstances: roster, currentWorkspace: () => "A", workspaceGeneration: () => 0, collapsedInstances: new Set(), rosterTip: { bind() {}, hide() {}, sync() {} }, rosterTipFacts: () => ({}), rosterPrs: { get: () => null, refresh() {} },
     tabs: new Map([[1, { key: tree.terminalKey("A", roster[1]) }]]), activeTab: 1,
     tabOpenIntents: { applyFocus: fn => fn() },
     // Display-only fixture: any attempted navigation/action is a test failure.

@@ -11,6 +11,7 @@ import { createConnections, connectionsCSS } from '../renderer/connections.mjs';
 import { createForgePrPanel } from '../renderer/forge-pr.mjs';
 import { instanceGitCSS } from '../renderer/instance-git.mjs';
 import { createContextPanel, contextPanelCSS } from '../renderer/context-panel.mjs';
+import { prChip, rosterPrCSS } from '../renderer/roster-pr.mjs';
 import { createNotificationCenter, notificationCSS } from '../renderer/notifications.mjs';
 import { createWorkspaceSwitcher } from '../renderer/workspace-switcher.mjs';
 import { instanceActions } from '../renderer/instance-actions.mjs';
@@ -572,8 +573,15 @@ for (const [name] of palettes) test(`${name}: actual Connections and reported PR
 for (const [name] of palettes) test(`${name}: frame10 rail, disabled menu reasons, workspace metadata and explicit Open toast meet computed AA`, async t => {
   const dom = new JSDOM(readFileSync(new URL('index.html', renderer), 'utf8'), { pretendToBeVisual: true }), doc = dom.window.document;
   doc.documentElement.dataset.theme = name;
-  for (const source of [css, readFileSync(new URL('shell.css', renderer), 'utf8'), identityCSS, contextPanelCSS, notificationCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  for (const source of [css, readFileSync(new URL('shell.css', renderer), 'utf8'), identityCSS, contextPanelCSS, notificationCSS, rosterPrCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
   const row = { instance: 'dev-1', agent: 'dev', agentsRoot: '/team/agents', home: '/team/agents/dev/instances/dev-1', createdAt: '2026-09-23T00:00:00.000Z' };
+  // forge-roster: a PR chip in each state on a roster row (a draft also on the active row), and the row's open-PR tool.
+  const list = doc.querySelector('#instance-roster .ctx-list');
+  for (const [state, extra, active] of [['OPEN', false, false], ['OPEN', true, false], ['MERGED', false, false], ['CLOSED', false, false], ['OPEN', true, true]]) {
+    const wrap = doc.createElement('div'); wrap.className = `ctx-tree-row${active ? ' active' : ''}`;
+    wrap.append(prChip(doc, { home: '/h', number: 1, state, isDraft: extra, url: null })); list.append(wrap);
+  }
+  const prOpen = doc.createElement('button'); prOpen.className = 'act ctx-pr-open'; list.append(prOpen);
   const panel = createContextPanel({ document: doc }); panel.setContext({ workspace: 'team', key: 'key', instance: row }); panel.setCollapsed(true);
   const notifications = createNotificationCenter({ document: doc, workspace: () => 'team' });
   notifications.notify('dev-1 spawned', { descriptor: { kind: 'open-instance', target: instanceActionTarget('team', row), connectionEpoch: 0 }, activate: async () => {} });
@@ -588,6 +596,12 @@ for (const [name] of palettes) test(`${name}: frame10 rail, disabled menu reason
     ['.ctx-instance-menu small', '.ctx-instance-menu button:disabled', 'muted', 'surface-2'],
     ['.ws-option-meta', '.ws-option', 'muted', 'sel'],
     ['.app-toast-open', '.app-toast-open', 'primary-fg', 'primary-bg'],
+    ['.ctx-pr[data-pr-state=open]', '.ctx-pr[data-pr-state=open]', 'fg', 'tag-bg'],
+    ['.ctx-pr[data-pr-state=merged]', '.ctx-pr[data-pr-state=merged]', 'fg', 'tag-bg'],
+    ['.ctx-pr[data-pr-state=closed]', '.ctx-pr[data-pr-state=closed]', 'muted', 'tag-bg'],
+    ['.ctx-tree-row:not(.active) .ctx-pr[data-pr-state=draft]', '#sidebar', 'muted', 'surface'],
+    ['.ctx-tree-row.active .ctx-pr[data-pr-state=draft]', '.ctx-tree-row.active', 'muted', 'sel'],
+    ['.ctx-pr-open', '.ctx-pr-open', 'accent', 'surface'],
   ]) {
     const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
     assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector); assert.equal(dom.window.getComputedStyle(surface).background, `var(--${bg})`, painted);
