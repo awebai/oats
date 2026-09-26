@@ -25,13 +25,20 @@ export function gitTarget(v) {
   return Object.fromEntries(['workspace', 'instance', 'agent', 'agentsRoot', 'home', 'server'].map(k => [k, v[k]]));
 }
 export const gitTargetKey = v => JSON.stringify([v.workspace, v.instance, v.agent, v.agentsRoot, v.home, v.server]);
+/* Per-file line counts (kernel #238, 0.29.1): additions/deletions are non-negative integers or
+   null (unknown, NOT zero: binary, untracked, submodules); binary is a boolean or null. Absent on
+   older kernels, so absent here too. */
+const lineCount = v => v === null || (Number.isSafeInteger(v) && v >= 0);
+const lineCounts = v => ['additions', 'deletions'].every(k => v[k] === undefined || lineCount(v[k])) && (v.binary === undefined || v.binary === null || typeof v.binary === 'boolean');
+const counted = v => Object.fromEntries(['additions', 'deletions', 'binary'].filter(k => v[k] !== undefined).map(k => [k, v[k]]));
 export function gitFile(v, full = false) {
   if (!object(v) || !gitFileId(v.id) || !gitKinds.includes(v.kind) || typeof v.xy !== 'string'
     || !/^[.MADRCUT?!]{2}$/.test(v.xy) || !text(v.path) || !nullable(v.origPath)
     || (['renamed', 'copied'].includes(v.kind) && !text(v.origPath))
-    || (full && typeof v.submodule !== 'boolean') || (v.score !== undefined && !text(v.score))) return null;
+    || (full && typeof v.submodule !== 'boolean') || (v.score !== undefined && !text(v.score))
+    || (full && !lineCounts(v))) return null;
   return { id: v.id, kind: v.kind, xy: v.xy, path: v.path, origPath: v.origPath,
-    ...(full ? { submodule: v.submodule, ...(v.score === undefined ? {} : { score: v.score }) } : {}) };
+    ...(full ? { submodule: v.submodule, ...(v.score === undefined ? {} : { score: v.score }), ...counted(v) } : {}) };
 }
 export function gitState(v, target) {
   const observation = gitObservation(v?.observation);
