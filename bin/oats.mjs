@@ -48,10 +48,32 @@ const await_import_lifecycle = () => ({ resolveInstance: resolveInstanceForCli }
 import { homeTarget, soulTarget, isWorkspaceContext, inspectDocument, readinessDocument, policyOf, policySoul, manifestMissingRequires, INSPECT_OPERATIONS_API } from "../lib/instance-inspect.mjs";
 import { readEvents } from "../lib/instance-events.mjs";
 
-const args = process.argv.slice(2);
+const rawArgs = process.argv.slice(2);
+/** The kernel's switches: a value never rides one (`--yolo=false` must not turn yolo on). */
+const KERNEL_SWITCHES = new Set(["allow-child-spawns", "apply", "check", "clear", "delete-branch", "discard-worktree", "dry-run", "ephemeral", "force", "help", "host", "json", "keep-dir", "keep-env", "no-child-spawns", "no-launch", "no-recursive", "no-yolo", "plan", "policy", "preview", "print", "replace", "self", "verbose", "yes", "yolo"]);
+/** `--flag=value` is `--flag value`: every kernel reader (flag(), valueFlag(), the onboard and
+ *  routed-command loops) then applies the spaced form's validation to it. `problem` is an empty
+ *  `--flag=` or a switch given a value. */
+function expandInlineValues(argv) {
+  const out = [];
+  let problem;
+  for (const a of argv) {
+    const eq = a.indexOf("=");
+    if (!a.startsWith("--") || eq <= 2) { out.push(a); continue; }
+    const name = a.slice(2, eq), value = a.slice(eq + 1);
+    problem ??= KERNEL_SWITCHES.has(name) ? `--${name} takes no value (got ${a})` : value === "" ? `--${name}= needs a value` : undefined;
+    out.push(`--${name}`, value);
+  }
+  return { argv: out, problem };
+}
+const { argv: args, problem: argvProblem } = expandInlineValues(rawArgs);
 let cmd = args[0];
 const HELP_WORDS = new Set(["help", "--help", "-h"]);
 const KERNEL_COMMANDS = new Set(["capture", "capabilities", "doctor", "inspect", "instance", "operation", "package", "readiness", "souls", "launch-config", "experimental", "onboard", "pane", "recall", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "sync", "update", "version", "workspace"]);
+/** Commands whose argv another parser reads (packages/record and packages/experimental parse process.argv). */
+const OWN_ARGV_COMMANDS = new Set(["capture", "recall", "setup", "experimental"]);
+/** Commands `--server <id>` runs on a registered server. */
+const ROUTED_COMMANDS = new Set(["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "launch-config"]);
 const flag = (name) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? (args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : true) : undefined;
@@ -2279,7 +2301,7 @@ async function capabilityCommand() {
     // OATS_SOUL is the recorded soul or nothing: an ambient value inherited from the
     // invoking process names some other soul (a coordinator's own), never this one.
     const { OATS_SOUL: _ambientSoul, ...inherited } = process.env;
-    const r = spawnSync("node", [abs, ...rest, ...args.slice(2)], { stdio: "inherit", env: {
+    const r = spawnSync("node", [abs, ...rest, ...rawArgs.slice(2)], { stdio: "inherit", env: {
       ...inherited, OATS_CAPABILITY: m.capability,
       // Package-runtime boundary: dispatched commands receive the active
       // capability's EFFECTIVE settings (instance snapshot, resolved context, or
@@ -2495,7 +2517,7 @@ async function serverRouteCmd() {
   // so its explicit --dir travels; every other routed command takes its
   // scope from the registration.
   const explicitScopeOk = ["inspect", "operation", "launch-config"].includes(cmd);
-  if (!explicitScopeOk && (flag("dir") !== undefined || args.some((a) => a.startsWith("--dir=")))) bail("E_BAD_ARGS", "--dir cannot be combined with --server: the remote workspace comes from the server registration");
+  if (!explicitScopeOk && flag("dir") !== undefined) bail("E_BAD_ARGS", "--dir cannot be combined with --server: the remote workspace comes from the server registration");
   if (cmd === "launch-config") {
     const action = args[1];
     const value = (name) => { const v = flag(name); if (v === true) bail("E_BAD_ARGS", `--${name} needs a value`); return v; };
@@ -2715,13 +2737,16 @@ try {
 // resolved against the current context instead. `version` answers regardless:
 // host protocol negotiation describes this executable.
 {
+  // The kernel's own argv only: a capability command's flags are its provider's to parse.
+  const kernelArgv = (KERNEL_COMMANDS.has(cmd) && !OWN_ARGV_COMMANDS.has(cmd)) || (ROUTED_COMMANDS.has(cmd) && flag("server") !== undefined);
+  if (argvProblem && kernelArgv) cmdFail("E_BAD_ARGS", argvProblem);
   const end = args.indexOf("--"), head = end < 0 ? args : args.slice(0, end);
-  const selector = head.find((a) => /^--(deployment|resolution|artifact-set)(=|$)/.test(a));
+  const selector = head.find((a) => /^--(deployment|resolution|artifact-set)$/.test(a));
   const refuse = (message, details) => { if (JSON_MODE) jsonFail("E_UNSUPPORTED_MODE", message, details); die(message); };
-  if (selector) refuse(`${selector.split("=")[0]}: a captured selector is refused (the captured/portable path was removed in 0.26); run the command in its workspace deployment or instance home instead`, { selector: selector.split("=")[0] });
+  if (selector) refuse(`${selector}: a captured selector is refused (the captured/portable path was removed in 0.26); run the command in its workspace deployment or instance home instead`, { selector });
   const inherited = ["OATS_RESOLUTION", "OATS_DEPLOYMENT"].filter((k) => process.env[k]);
   if (inherited.length && cmd !== "version") refuse(`this environment carries a captured context (${inherited.join(", ")}): the captured/portable path was removed in 0.26, and nothing is run against the current context in its place — retire the captured home and re-spawn it from the deployment`, { inherited });
-  if (cmd === "inspect" && head.some((a) => a === "--request" || a.startsWith("--request="))) {
+  if (cmd === "inspect" && head.includes("--request")) {
     const message = "oats inspect --request (portable onboarding inspection) is gone (the captured/portable path was removed in 0.26); use `oats onboard` / `oats sync` to set up a workspace and `oats spawn <soul> --preview` to see what a spawn would resolve";
     if (JSON_MODE) jsonFail("E_UNKNOWN_COMMAND", message, { removed: "inspect --request", replacement: "oats onboard / oats sync; oats spawn --preview" });
     die(message);
@@ -2738,7 +2763,7 @@ else {
 // `okf harvest --help` spawned a harvester (BeadHub, 2026-09-05).
 const wantsHelp = args.slice(1).some((a) => a === "--help" || a === "-h");
 if (cmd && KERNEL_COMMANDS.has(cmd) && wantsHelp) { if (JSON_MODE) { jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); process.exit(0); } usageFor(cmd); process.exit(0); }
-if (flag("server") !== undefined && ["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "launch-config"].includes(cmd)) await serverRouteCmd();
+if (flag("server") !== undefined && ROUTED_COMMANDS.has(cmd)) await serverRouteCmd();
 else if (cmd === "server") serverCmd();
 else if (cmd === "inspect") await inspectCmd();
 else if (cmd === "operation") await operationCmd();

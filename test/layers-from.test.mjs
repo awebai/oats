@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { resolvedFromHome, resolvedFromPrepared } from "../lib/core.mjs";
 
 const EMPTY = { messaging: { id: null, from: null }, tasks: { id: null, from: null } };
 
@@ -38,4 +39,20 @@ test("layers-from: a soul reports its live origin; a home reports its spawn-time
 
   const v = fx.cli(["version", "--json"]);
   assert.ok(JSON.parse(v.stdout).features.includes("layers-from"));
+});
+
+test("a home's resolved view carries the layers its spawn resolved (the record), and none before layers-from", { timeout: 120_000 }, async (t) => {
+  const fx = v2Deployment({ capabilities: { notes: { manifest: { layer: "knowledge" } } } });
+  t.after(fx.cleanup);
+  fx.commit({ "oats-workspace.yaml": { yaml: { schemaVersion: 2, name: "fixture", members: [fx.ref], teams: { global: { description: "Fixture team" } },
+    defaults: { knowledge: { notes: { from: fx.key } }, messaging: "none", tasks: "none" } } } }, "notes is the knowledge slot default");
+  assert.equal(fx.cli(["sync", "--json"]).status, 0);
+  const { prepared } = await fx.prepare("dev");
+  const planned = resolvedFromPrepared(prepared, fx.dep).layers;
+  assert.deepEqual(planned, { knowledge: { capability: "notes", from: "workspace" }, messaging: null, tasks: null });
+  const { home } = await fx.spawn("dev");
+  const meta = JSON.parse(readFileSync(join(home, "instance.json"), "utf8"));
+  assert.deepEqual(resolvedFromHome(home, meta).layers, planned, "a home answers the layers its spawn resolved");
+  delete meta.workspace.layers;
+  assert.deepEqual(resolvedFromHome(home, meta).layers, {}, "a home spawned before layers-from: none");
 });

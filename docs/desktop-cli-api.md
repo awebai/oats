@@ -54,6 +54,18 @@ something to say. The one warning so far is `deprecated-runtime-name` (see
 --json`, whose document is not an envelope, carries the same `warnings` beside
 its `problems`. In text mode the warning is one `oats: warning: …` line on stderr.
 
+## Flags
+
+A kernel command reads `--flag=value` exactly as `--flag value`, with the
+same validation (0.27.3+; before, the inline form was silently ignored, so
+`--harness=claude` spawned the default harness). The value is everything after
+the first `=`. An empty `--flag=` is `E_BAD_ARGS` ("`--flag=` needs a value"),
+and so is a value on a switch: `--yolo=false` is refused and never turns
+yolo on. A capability command's own flags belong to its provider. They are
+forwarded exactly as typed; the kernel reads only its dispatch flag (`--soul`)
+in either form. There is no feature string: a caller that must work with
+older kernels uses the spaced form.
+
 ## The harness rename (feature `harness`, OATS 0.27.0)
 
 What starts an instance (pi, claude or codex) is its **harness**. 0.27.0 renames
