@@ -199,6 +199,9 @@ function agentsData(wsId) {
         ...(color ? { color } : {}), ...(soul.team ? { team: soul.team } : {}), ...(Array.isArray(soul.labels) ? { labels: [...soul.labels] } : {}),
         origin: soul.origin || "", soulKind: soul.kind, repo: soul.repoKey || null, capability: null,
         soulSource: { repoKey: soul.repoKey ?? null, commit: soul.commit ?? null, path: soul.path ?? null },
+        // Kernel #217 (desktop-facts): whether a spawn here would refuse, and the soul's file.
+        ...(typeof soul.spawnable === "boolean" ? { spawnable: soul.spawnable, problem: soul.problem ?? null } : {}),
+        ...(soul.file !== undefined ? { file: soul.file } : {}),
         agentsRoot: root, workspace: context,
         repoName: memberNames.get(soul.repoKey) || (soul.kind === "external" ? "external" : soul.repoKey || ""),
       });

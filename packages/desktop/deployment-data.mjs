@@ -218,7 +218,10 @@ export function soulsData(document) {
     const out = fields(row, ['name', 'origin', 'kind', 'repoKey', 'commit', 'team', 'path', 'work', 'description']);
     check(SOUL_NAME.test(out.name ?? '') && ['member', 'external'].includes(out.kind)
       && ['worktree', 'checkout', 'directory', 'workspace', 'attached'].includes(out.work));
-    flags(row, ['private'], out);
+    flags(row, ['private', 'spawnable'], out);
+    // Kernel #217 (desktop-facts): why a spawn here would refuse, and the soul's file.
+    if (own(row, 'problem')) out.problem = row.problem === null ? null : fields(row.problem, ['code', 'message']);
+    if (own(row, 'file')) out.file = row.file === null ? null : fields(row.file, ['path', 'url']);
     // Every team label the soul carries (primary first; teams contract), when reported.
     if (own(row, 'labels')) {
       check(Array.isArray(row.labels) && row.labels.length <= 64 && row.labels.every(l => typeof l === 'string' && TEAM_LABEL.test(l)) && new Set(row.labels).size === row.labels.length);
