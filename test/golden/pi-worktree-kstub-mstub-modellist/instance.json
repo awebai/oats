@@ -9,6 +9,7 @@
   "branch": "agents/dev-pi-worktree-kstub-mstub-modellist",
   "harness": "pi",
   "model": "anthropic/claude-sonnet-4-5:thinking",
+  "modelFrom": "spawn",
   "spawnOrigin": "operator",
   "policy": {
     "childSpawns": {

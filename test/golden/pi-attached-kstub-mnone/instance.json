@@ -8,6 +8,7 @@
   "work": "attached",
   "branch": "agents/dev-owner",
   "harness": "pi",
+  "modelFrom": "harness-default",
   "parentInstance": "dev-owner",
   "spawnOrigin": "instance",
   "policy": {

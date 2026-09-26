@@ -9,6 +9,7 @@
   "branch": "agents/dev-pi-worktree-kstub-mstub-model",
   "harness": "pi",
   "model": "anthropic/claude-sonnet-4-5",
+  "modelFrom": "spawn",
   "spawnOrigin": "operator",
   "policy": {
     "childSpawns": {

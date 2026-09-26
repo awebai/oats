@@ -8,6 +8,7 @@
   "work": "worktree",
   "branch": "agents/dev-pi-worktree-kstub-mstub",
   "harness": "pi",
+  "modelFrom": "harness-default",
   "spawnOrigin": "operator",
   "policy": {
     "childSpawns": {

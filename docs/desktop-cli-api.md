@@ -253,6 +253,8 @@ payload the spawn recorded for a home, or the resolution computes for a soul.
   - `operations[].available` is `false` with a `reason` when it cannot run
     here: a `context: "home"` operation for a soul subject says `needs a
     running home (--home)`.
+- `capabilities[].composedFrom` and `capabilitiesOff[]` (feature
+  `desktop-facts`): see [Desktop facts](#desktop-facts-feature-desktop-facts-oats-0290).
 - `instance` is `null` for a soul. For a home, `instructions.sources` names
   each composed inject in order.
 - A soul whose resolution is refused (for example, a package the lock does
@@ -1190,6 +1192,9 @@ souls, paths, message }` — one `unmapped-team-label` per label that is in
 `teams:` but not in `messaging.byTeam`, naming its souls (sorted) and each
 soul's `<repoKey>:<path>#/team`; sorted by label. Never a problem.
 
+`defaults`, `clones`, `disabledSouls`, `lock`, file locations and
+`packages[].latest` (feature `desktop-facts`): see [Desktop facts](#desktop-facts-feature-desktop-facts-oats-0290).
+
 `unsynced` = declared in `packages:` but not in the lock (run `sync`);
 `stale` = locked but no longer declared. Read-only: does not write the lock.
 (0.26.0: the `approval` object is gone with package approval.)
@@ -1237,6 +1242,10 @@ becomes `-`), and that directory is the agent `name` in `oats status --json`
 (`agents[].name`, e.g. `oats-okf--knowledge-maintainer`). A
 problem about a package soul carries `package` (and `repoKey: null`); its
 `path` is `package:<id>:<path in the repo>`.
+
+Souls rows' defaults, spawnability and `file`, and capability rows' `layer`,
+`description`, provides, `file` and `tree` (feature `desktop-facts`): see
+[Desktop facts](#desktop-facts-feature-desktop-facts-oats-0290).
 
 Package capabilities of declared-but-unsynced packages are absent until `sync`.
 (`oats souls --json` keeps `soulsApi: 1` in 0.26.0: its shape is unchanged.
@@ -1517,6 +1526,152 @@ a trigger never appears in `schedule list`, and a schedule never appears in
 - **`oats sync --json`** gains `automations: { triggers, schedules, problems, takenAt }`. Discovery problems join `problems` (`E_AUTOMATION_SCHEMA`, `E_AUTOMATION_DUPLICATE`, each with `kind`, `repoKey` and `path`).
 - **`oats workspace status --json`** gains `automations: { host, snapshot, rows: [{ kind, id, runsOn, owner, runsHere, reason, enabledHere, origin, invalid? }] }`.
 - **The tick's `considered[]`** gains the trigger action `not-here` (`reason: owner-mismatch`, `detail`): a trigger naming this host that this host cannot run. A workspace schedule's row `id` is its state key, `<member>~<id>`. A failed snapshot refresh is `{ action: "error", error: "automations refresh: …" }`.
+
+### Desktop facts (feature `desktop-facts`, OATS 0.29.0)
+
+These are facts the Workspace view shows. The kernel reports them so the
+Desktop never works them out itself. Gate reading every field below on
+`desktop-facts` in `features[]`. No API integer changes, and every field is an
+addition to an existing row.
+
+**`oats inspect --soul <name> --json`: why each capability is there**
+
+- `capabilities[].composedFrom` says which layer put the module in the soul:
+  `"workspace"` (`defaults.<slot>` or `defaults.capabilities`),
+  `"team:<label>"` (`defaults.byTeam.<label>.capabilities`) or `"soul"` (the
+  soul's own `capabilities:`). This is the same vocabulary as
+  `layers.<slot>.from`. It is `null` on `inspect --home`, because a spawn does
+  not record it. `from` stays the module's origin object (`{kind, repoKey,
+  commit}` or the package object), so it is a separate key.
+- `capabilitiesOff[]` lists the capabilities the soul turned off, which a
+  lower layer would otherwise have given it. They are not rows of
+  `capabilities[]`, because those are resolved modules with operations. Each
+  entry is `{ id, off: true, from: "soul", reason, slot?, overrides }`:
+  - `reason: "off"`: the soul wrote `<id>: off` over a workspace or team
+    default.
+  - `reason: "slot-none"`: the soul wrote `<slot>: none` (`slot` names it),
+    which emptied the slot the workspace filled with `<id>`.
+  - `overrides`: the layer whose default was turned off (`"workspace"` or
+    `"team:<label>"`).
+  - Sorted by id. `[]` on `inspect --home`.
+
+**`oats souls --json` rows**
+
+- `harness`, `model`, `harnessFrom`: what a spawn of the soul starts with
+  when no `--harness`/`--model` is given. A v2 `soul.yaml` cannot declare a
+  harness or a model, so today this is always `harness: "pi"`, `model: null`
+  (the harness's native model) and `harnessFrom: "kernel-default"`.
+  `harnessFrom: "soul"` is reserved for a schema that lets a soul declare
+  one.
+- `spawnable`, `problem`: whether a spawn here would refuse.
+  - `problem` is `{ code, message }` when a spawn would refuse, else `null`.
+  - The kernel resolves the soul exactly as a spawn does, but spawns nothing,
+    writes nothing and reads only the sync cache.
+  - Codes: `E_SOUL_DISABLED` (this machine's `souls.disabled`),
+    `E_TEAM_CONFLICT`, `E_CAPABILITY_MISSING`, `E_CAPABILITY_PRIVATE`,
+    `E_CAPABILITY_INCOMPATIBLE`, `E_PACKAGE_MISSING`, `E_PACKAGE_INTEGRITY`,
+    `E_LOCK_SCHEMA`, `E_REMOTE_*`, and any other resolution refusal.
+  - An `E_TEAM_UNKNOWN` problem in `problems[]` is informational. It does not
+    make a soul unspawnable.
+- `file`: `{ path, url }`, the soul's `soul.yaml` in its repository (see
+  **URLs** at the end of this section).
+
+**`oats capabilities --json` rows**
+
+- `layer` on every row. Package rows now carry it too, from the package
+  manifest; `null` for a capability outside the slots.
+- `description`: the manifest's `description`, or `null`.
+- `skills`, `commands`, `hooks`: what the capability provides, by name,
+  sorted.
+  - `skills` is enumerated as a spawn would. It is `null` when the declared
+    skills cannot be listed, which a spawn of it would refuse.
+  - `commands` and `hooks` are the keys of the manifest's `commands` and
+    `hooks`.
+- `file`: `{ path, url }`, the capability's `oats.json`, or `null` when the
+  manifest cannot be read.
+- `tree`: a member capability's fingerprint, the Git tree id of its
+  directory at the member commit. The same bytes give the same id. It is
+  `null` on package rows, whose fingerprint is `integrity` in the lock (see
+  `oats workspace status`).
+- A package whose manifests cannot be read at its locked commit leaves these
+  facts `null` on its rows.
+- Package manifests are read at the locked commit from the sync cache. There
+  is no network beyond what `sync` already fetched.
+
+**`oats workspace status --json`**
+
+```json
+{"workspace":{"…":"…","file":{"path":"oats-workspace.yaml","url":"https://github.com/acme/agents/blob/<oid>/oats-workspace.yaml"}},
+ "members":[{"…":"…","url":"https://github.com/acme/tools/tree/<oid>","membershipFile":{"path":"oats-membership.yaml","url":"https://github.com/acme/tools/blob/<oid>/oats-membership.yaml"}}],
+ "packages":[{"id":"oats.okf","version":"2.1.5","source":"catalog:oats.okf","commit":"<oid>","…":"…","latest":{"version":"3.0.0","ref":"v3.0.0"}}],
+ "defaults":{"slots":{"knowledge":{"name":"oats.okf","from":"package"},"messaging":"none","tasks":null},
+             "capabilities":[{"name":"acme-house-style","from":"github.com/acme/agents","off":false}],
+             "byTeam":{"engineering":{"capabilities":[{"name":"acme-house-style","from":null,"off":true},{"name":"acme-deploy","from":"package","off":false}]}}},
+ "clones":[{"key":"github.com/acme/agents","name":"agents","path":"/abs/acme-workspace/agents","rule":"convention"},
+           {"key":"github.com/acme/tools","name":"tools","path":null,"rule":null}],
+ "disabledSouls":["release-reviewer"],
+ "lock":{"path":"/abs/acme-workspace/oats-lock.json","lockfileVersion":3}}
+```
+
+- `defaults`: the workspace file's defaults, as declared rather than
+  resolved for a soul.
+  - `slots.<slot>` is `{ name, from }` when the workspace fills it, `"none"`
+    when it empties it, and `null` when it says nothing.
+  - `capabilities` and `byTeam.<label>.capabilities` are rows `{ name, from,
+    off }`, sorted by name. `from` is the declared location (`"package"`,
+    `"here"` or a member repo key); an `off` row has `from: null`.
+  - Standalone: slots `null`, `capabilities: []` and `byTeam: {}`.
+- `clones`: this computer's clone of each member.
+  - `path` is the absolute clone, or `null` when this machine has none.
+  - `rule` names what found it: `"clones"` (the `oats-local.yaml` `clones:`
+    entry) or `"convention"` (`<deployment>/<member name>`). It is `null`
+    with no clone.
+  - A path that is not the member's clone gives `path: null, rule: null,
+    problem: { code: "E_CLONE_MISMATCH", message }`, the refusal a spawn
+    would meet.
+  - (`--repo` is a spawn option, so it plays no part here.)
+- `disabledSouls`: `oats-local.yaml` `souls.disabled`, as written.
+- `lock`: `{ path, lockfileVersion }`. The per-package commit is each
+  `packages[]` row's `commit`, and its fingerprint is `integrity`.
+- `packages[].latest`: `{ version, ref }` when the official catalog shipped
+  with this kernel has a newer version of a catalog-sourced package than the
+  lock holds. It is `null` when the pin is current and for `git:` packages.
+  It never reaches the network: the catalog is the kernel's own
+  (`OATS_PACKAGE_CATALOG` overrides it, as for `sync`).
+- `workspace.file` is `{ path, url }` for the workspace file in the
+  workspace repository (at `workspace.key` @ `workspace.commit`). It is
+  `null` for a standalone deployment.
+- `members[].url` is the member repository at its commit.
+  `members[].membershipFile` is `{ path, url }`.
+
+**`oats status --json` instance rows**
+
+- A member module's `modules[].current` gains `version` (the capability's
+  manifest version at the current commit, `null` when it has none) beside
+  `commit`, on `current` and `moved` rows. Package rows already carried it. On a `moved` row, the recorded `commit`/`from` and `current`
+  together say what moved and to what.
+- `startedAt`: the last session start or restart (the session receipt). A
+  home spawned with a launch and never restarted uses `createdAt`. A home
+  never launched is `null`. `createdAt` stays the spawn time.
+- `modelFrom`: where the model the home runs came from.
+  - `"soul"`: the soul's model preference.
+  - `"spawn"` or `"start"`: an explicit `--model` on that command.
+  - `"launch-config"`: a launch configuration's model.
+  - `"harness-default"`: the harness's own model.
+  - A start that reuses the recorded model keeps the recorded answer.
+  - `null` for a home spawned before 0.29.0. `instance.json` records it as
+    `modelFrom`.
+- `identityAddress`: the messaging identity's `address` (else `alias`) that
+  the messaging capability recorded (`capabilityMeta.<messaging>.identity`),
+  passed through unchanged. `null` otherwise.
+
+**URLs.** Every `url` is a browsable page of
+the file (or of the repository, for a member) at the commit the row names.
+Only repositories on `github.com` have one (`https://github.com/<org>/<repo>/blob/<commit>/<path>`,
+or `/tree/<commit>`). Every other host and local repository gives `url:
+null`, with `path` still set. `path` is relative to that repository's root.
+
+**Help.** `oats help` lists `spawn … [--provider <capability> <key>=<value>]`.
 
 ### Eligible teams (feature `teams`, OATS 0.26.0)
 

@@ -19,6 +19,7 @@
           "work": "attached",
           "branch": "agents/dev-owner",
           "harness": "claude",
+          "modelFrom": "harness-default",
           "parentInstance": "dev-owner",
           "spawnOrigin": "instance",
           "policy": {
@@ -149,6 +150,8 @@
             }
           ],
           "launched": false,
+          "startedAt": null,
+          "identityAddress": null,
           "running": false,
           "soul": {
             "repoKey": "local/<base>/remotes/ws.git",
@@ -167,6 +170,7 @@
           "work": "worktree",
           "branch": "agents/dev-owner",
           "harness": "pi",
+          "modelFrom": "harness-default",
           "spawnOrigin": "operator",
           "policy": {
             "childSpawns": {
@@ -299,6 +303,8 @@
             }
           ],
           "launched": false,
+          "startedAt": null,
+          "identityAddress": null,
           "running": false,
           "soul": {
             "repoKey": "local/<base>/remotes/ws.git",

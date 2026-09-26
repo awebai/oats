@@ -8,6 +8,7 @@
   "work": "worktree",
   "branch": "agents/dev-claude-worktree-kstub-mnone",
   "harness": "claude",
+  "modelFrom": "harness-default",
   "spawnOrigin": "operator",
   "policy": {
     "childSpawns": {

@@ -8,6 +8,7 @@
   "work": "attached",
   "branch": "agents/dev-owner",
   "harness": "claude",
+  "modelFrom": "harness-default",
   "parentInstance": "dev-owner",
   "spawnOrigin": "instance",
   "policy": {

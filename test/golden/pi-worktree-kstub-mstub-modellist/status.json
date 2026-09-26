@@ -28,6 +28,7 @@
           "branch": "agents/dev-pi-worktree-kstub-mstub-modellist",
           "harness": "pi",
           "model": "anthropic/claude-sonnet-4-5:thinking",
+          "modelFrom": "spawn",
           "spawnOrigin": "operator",
           "policy": {
             "childSpawns": {
@@ -333,7 +334,8 @@
               },
               "commit": "<sha>",
               "current": {
-                "commit": "<sha>"
+                "commit": "<sha>",
+                "version": "1.0.0"
               },
               "status": "current"
             },
@@ -346,7 +348,8 @@
               },
               "commit": "<sha>",
               "current": {
-                "commit": "<sha>"
+                "commit": "<sha>",
+                "version": "1.0.0"
               },
               "status": "current"
             }
@@ -392,6 +395,8 @@
             }
           ],
           "launched": false,
+          "startedAt": null,
+          "identityAddress": null,
           "running": false,
           "soul": {
             "repoKey": "local/<base>/remotes/ws.git",

@@ -25,7 +25,7 @@ const SKILLS = [
 ];
 // Flags a command's own usage line accepts but the top-level `oats help` omits.
 // Each one must still exist in the CLI source; remove the entry once help lists it.
-const HELP_GAPS = new Set(["--preview", "--provider"]);
+const HELP_GAPS = new Set(["--preview"]);
 const cliSource = readFileSync(join(ROOT, "bin/oats.mjs"), "utf8");
 
 const help = spawnSync(process.execPath, [join(ROOT, "bin/oats.mjs"), "help"], { encoding: "utf8" });
