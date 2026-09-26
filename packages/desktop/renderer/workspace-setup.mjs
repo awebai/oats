@@ -193,7 +193,8 @@ export function renderSetup(host, { status, instances = [], souls = [], cli = nu
   return root;
 }
 
-/** "<name> declared in <host> · oats-workspace.yaml @ <commit>". */
+/** "<name> declared in <host>'s workspace file @ <commit>". The Desktop never names the
+ * kernel's files; the kernel reports no workspace-file path to show instead. */
 function lede(doc, status) {
   const ws = status?.workspace || {};
   const line = el(doc, 'div', null, 'setup-lede');
@@ -201,7 +202,7 @@ function lede(doc, status) {
   if (text(ws.key)) {
     const host = list(status?.members).find(m => m.key === ws.key);
     const where = el(doc, 'span', null, 'setup-lede-where'); where.title = ws.url || ws.key;
-    where.append('declared in ', el(doc, 'span', host ? memberName(host) : tail(ws.url || ws.key), 'mono strong'), ' · ', el(doc, 'span', 'oats-workspace.yaml', 'mono'));
+    where.append('declared in ', el(doc, 'span', host ? memberName(host) : tail(ws.url || ws.key), 'mono strong'), "'s workspace file");
     if (text(ws.commit)) { where.append(' @ '); const c = el(doc, 'span', short(ws.commit), 'mono'); c.title = ws.commit; where.append(c); }
     line.append(where);
   }
@@ -384,8 +385,8 @@ function memberPanel(doc, member, { status, onClose, onOpenRepo }) {
     row.append(copy); rows.append(row);
   };
   const hostName = tail(ws.url || ws.key);
-  side(listed, 'The workspace lists it', text(ws.key) ? `${hostName}/oats-workspace.yaml` : null, true);
-  side(back, 'The repo points back', back === true ? 'oats-membership.yaml names this workspace' : member.status === 'backlink-elsewhere' ? 'It names a different workspace' : back === false ? 'No oats-membership.yaml names this workspace' : "Can't tell without read access");
+  side(listed, 'The workspace lists it', text(ws.key) ? `in ${hostName}'s workspace file` : null);
+  side(back, 'The repo points back', back === true ? "The repo's membership file names this workspace" : member.status === 'backlink-elsewhere' ? 'It names a different workspace' : back === false ? "No membership file in the repo names this workspace" : "Can't tell without read access");
   hand.append(rows); body.append(hand);
   // What this means now.
   const means = el(doc, 'section'); means.append(el(doc, 'h4', 'What this means'));
