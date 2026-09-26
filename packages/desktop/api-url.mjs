@@ -19,7 +19,8 @@ export function classifyApiRoute(pathname, base) {
       case '/api/automations': return 'automations';
       case '/api/forge-connections':
       case '/api/instance-forge':
-      case '/api/forge-roster': return 'forge';
+      case '/api/forge-roster':
+      case '/api/instance-review-threads': return 'forge';
       case '/api/capabilities': return 'capabilities';
       case '/api/workspace-sync': return 'workspace-sync';
       case '/api/panel': return 'panel';

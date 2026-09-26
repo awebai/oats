@@ -54,6 +54,7 @@ import { spawnApplyRequest } from './spawn-apply.mjs';
 import { spawnApplyFailure } from '../renderer/spawn-apply-contract.mjs';
 import { previewFailure } from '../renderer/spawn-preview-contract.mjs';
 import { forgeBoundary, FORGE_EPOCH_HEADER, validForgeEpoch } from "./forge.mjs";
+import { createReviewPaste } from "./review-paste.mjs";
 import { launchConfigRequest } from "./launch-configs.mjs";
 import { automationsRequest, automationsFailure } from "./automations.mjs";
 import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
@@ -1112,7 +1113,7 @@ const server = createServer(async (req, res) => {
         return send(res, 200, result);
       } catch (e) { const { status, body } = spawnErrorPayload(e); return send(res, status, body); }
     }
-    if (["/api/forge-connections", "/api/instance-forge", "/api/forge-roster"].includes(path) && req.method === "POST") {
+    if (["/api/forge-connections", "/api/instance-forge", "/api/forge-roster", "/api/instance-review-threads"].includes(path) && req.method === "POST") {
       try {
         const epoch = req.headers[FORGE_EPOCH_HEADER] ?? "standalone:0";
         if (!validForgeEpoch(epoch)) throw new Error("bad epoch");
@@ -1129,6 +1130,11 @@ const server = createServer(async (req, res) => {
           return { workspace, cli: cliState, instances: observed?.instances || [], clones: observed?.deployment?.workspaceStatus?.clones || [] };
         };
         if (path === "/api/forge-roster") return send(res, 200, await forgeBoundary.roster(request, getContext, epoch));
+        if (path === "/api/instance-review-threads") {
+          // The paste goes to the instance's own anchored tmux target in THIS workspace, looked up fresh.
+          const find = (target) => (getContext().instances || []).find((i) => i.home === target.home && i.instance === target.instance) || null;
+          return send(res, 200, await forgeBoundary.reviewThreads(request, getContext, epoch, createReviewPaste({ find, tmuxTarget })));
+        }
         return send(res, 200, await forgeBoundary.pull(request, getContext, epoch));
       } catch {
         return send(res, 400, { forgeApi: 1, status: "unavailable", data: null,
