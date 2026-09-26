@@ -30,7 +30,7 @@ export function wakeRegistration({home, primaryIdentityHome, delivery, runtime, 
   if (!rt || !joined.length) return null;
   const receive = joined.map((j) => ({identity_home: j.identityHome, label: j.label, event_classes: JOINED_EVENT_CLASSES}));
   const doc = rt === 'external-session'
-    ? {home, delivery: 'session', runtime_delivery: rt, identity_home: primaryIdentityHome, receive_identities: [{identity_home: primaryIdentityHome, label: 'personal', controls: true}, ...receive]}
+    ? {home, delivery: 'session', runtime_delivery: rt, identity_home: primaryIdentityHome, receive_identities: [{identity_home: primaryIdentityHome, label: 'default', controls: true}, ...receive]}
     : {home, delivery: rt, runtime_delivery: rt, primary_identity_home: primaryIdentityHome, receive_identities: receive};
   if (backend) doc.backend = backend;
   return doc;

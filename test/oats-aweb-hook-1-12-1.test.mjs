@@ -223,7 +223,7 @@ test("an unmapped v2 team label uses the workspace's default team (the root's ac
     assert.deepEqual(check.doc.result, { status: "ready", problems: [] });
     const spawn = runHook(bin, "spawn", { ...env, OATS_INSTANCE: "probe", OATS_HOME: home, OATS_CONTEXT: workspace, OATS_SETTINGS: JSON.stringify({}) });
     assert.equal(spawn.status, 0, spawn.stdout + spawn.stderr);
-    assert.equal(spawn.doc.warning, "oats-aweb: team-unmapped — workspace label engineering is not mapped; using personal team t:example.test");
+    assert.equal(spawn.doc.warning, "oats-aweb: team-unmapped — workspace label engineering is not mapped; using the default team t:example.test");
     assert.equal(spawn.doc.meta.team, "t:example.test");
     const invite = logLines(base).find((l) => l.argv.join(" ").startsWith("team invite"));
     assert.deepEqual(invite.argv.slice(2, 4), ["--team-id", "t:example.test"], "minted into the workspace's default team, named explicitly");

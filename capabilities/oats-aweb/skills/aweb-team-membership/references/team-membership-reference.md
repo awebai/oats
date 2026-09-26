@@ -13,7 +13,7 @@ These layers can combine in multiple ways. Do not assume one from another. The c
 
 Fully Hosted means aweb operates namespace and team authority for hosted domains such as `*.aweb.ai`. It can mint hosted team certificates and provide simple onboarding. This is the simple default for most users.
 
-Hosted OAuth/MCP flows provision custodial addressed/global identities, personal team membership, and harness credentials before a local CLI workspace exists. Team API-key CLI bootstrap is different: it creates a local self-custodial CLI workspace in a hosted team. In OAuth/MCP flows, use CLI checks for diagnosis only when a local workspace is actually involved; do not force BYOT setup.
+Hosted OAuth/MCP flows provision custodial addressed/global identities, default team membership, and harness credentials before a local CLI workspace exists. Team API-key CLI bootstrap is different: it creates a local self-custodial CLI workspace in a hosted team. In OAuth/MCP flows, use CLI checks for diagnosis only when a local workspace is actually involved; do not force BYOT setup.
 
 ## BYOT
 

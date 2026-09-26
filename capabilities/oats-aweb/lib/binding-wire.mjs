@@ -4,7 +4,6 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { TextDecoder } from 'node:util';
 import { assessCapturedSessionReadiness } from './session-readiness.mjs';
 import { custodyPreflight } from './grant-custody.mjs';
-import { PERSONAL_ROOT_DEFERRED_WARNING, personalRootDeclared } from './personal-team.mjs';
 import { joinedReceiveModes } from './wake-receive.mjs';
 import {
   MESSAGING_CONTRACT,
@@ -220,9 +219,8 @@ function readinessDetails(settings,{deployment,env=process.env}={}) {
   const initialTeam=typeof settings.team==='string' && settings.team.trim()?settings.team.trim():undefined;
   const candidate=rootCandidate(settings,initialTeam,{deployment,env}),team=teamFromSettings(settings,candidate,{env}),problems=[],warnings=[];
   if(!candidate.root || !isAbsolute(candidate.root) || !existsSync(join(resolve(candidate.root),'.aw'))) problems.push({code:'needs-configuration',message:`no messaging root at ${candidate.root?resolve(candidate.root):process.cwd()}: run oats aweb setup there or set ${candidate.key}`});
-  const unmapped=unmappedPrimary(env);if(unmapped&&team)warnings.push({code:'team-unmapped',message:`workspace label ${unmapped.label} is not mapped; using personal team ${team}`});
+  const unmapped=unmappedPrimary(env);if(unmapped&&team)warnings.push({code:'team-unmapped',message:`workspace label ${unmapped.label} is not mapped; using the default team ${team}`});
   if(!team) problems.push({code:'needs-configuration',message:'no team: set settings.oats.aweb.team or keep an active team at the aweb root'});
-  if(personalRootDeclared(settings)) warnings.push({code:'personal-root-deferred',message:PERSONAL_ROOT_DEFERRED_WARNING});
   return {team,candidate,warnings,result:checkProblems(problems) || {status:'ready',problems:[]}};
 }
 function readinessFromSettings(settings,options) {return readinessDetails(settings,options).result;}
