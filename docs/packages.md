@@ -74,7 +74,7 @@ members:
   - git:github.com/acme/agents
   - git:github.com/acme/platform
 packages:
-  oats.framework: v1.2.0
+  oats.framework: v1.3.0
   oats.okf: v4.0.0
   oats.aweb: v1.14.2
 teams:
@@ -344,8 +344,8 @@ A soul that names one of the package's capabilities with
 }
 ```
 
-`ref` carries the tag convention: a workspace's `oats.framework: v1.2.0`
-resolves to tag `oats-framework/v1.2.0`. Resolving through the catalog never
+`ref` carries the tag convention: a workspace's `oats.framework: v1.3.0`
+resolves to tag `oats-framework/v1.3.0`. Resolving through the catalog never
 advances a lock by itself — `oats sync` does, and
 says so.
 
