@@ -168,11 +168,18 @@ joining is explicit; only the soul's labels that the workspace maps.
 7. **Explicit join, spawn choice, Desktop.**
    - The join/leave/list verbs are the provider's (oats.aweb 1.14.0), run
      inside a home or with `--home <abs>`, all idempotent, all with `--json`:
-     - `oats aweb teams` answers
-       `{ personal: {team}, primary, eligible: [{label, team, joined}], joined: [{label, team, since, identityHome, receive}], unmapped: [label], at }`, where `receive` is `native` or `poll`;
+     - `oats aweb teams` answers (oats.aweb ≥1.16.0 names; see the AMENDMENT at the top)
+       `{ defaultTeam: {team, source}, primary, eligible: [{label, team, joined}], joined: [{label, team, since, identityHome, receive}], unmapped: [label], at }`, where `receive` is `native` or `poll`, and `source` is always `setting` (the team a setting named) or `root` (the messaging root's active team);
      - `oats aweb join <label>[,<label>]` and
-       `oats aweb leave <label>[,<label>]` answer the same document. The
-       personal team can't be left (`E_TEAM_PERSONAL`).
+       `oats aweb leave <label>[,<label>]` answer the same document **plus**
+       `actions: [{action: "join"|"leave", label, released?, receipt?}]`,
+       one row per label acted on, in order (since oats.aweb 1.15.0; added
+       here 2026-09-26 after the Desktop's real-provider capture found it).
+       `released` is the provider's word for what a leave did (e.g.
+       `released`); `receipt` is opaque provider evidence (alias release),
+       for logs, never shown as UI. A consumer accepts `actions` on
+       join/leave answers only, and repaints from the document itself.
+       The workspace's default team can't be left (`E_TEAM_DEFAULT`).
      - The same verbs are declared as home-context operations
        `messaging:teams|join|leave`, so the Desktop uses `oats operation run`
        and needs no new kernel surface.
