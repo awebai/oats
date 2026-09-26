@@ -5,7 +5,7 @@
 // checked it (the only checker lived in the captured loaders).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
@@ -59,19 +59,25 @@ test("a compatible module resolves, and inspect shows every module's range again
   assert.deepEqual([problem?.capability, problem?.range, problem?.kernel], ["acme.tool", ">=99.0.0", KERNEL], JSON.stringify(doc.problems));
 });
 
-test("a capability agent is held to its capability's range too (E_CAPABILITY_INCOMPATIBLE at its spawn)", (t) => {
+test("a capability that declares `agents:` is refused at resolution (E_CAPABILITY_AGENTS_REMOVED, the remedy names souls); its agent is no spawnable soul", (t) => {
   const fx = v2Deployment({
     name: "acme",
-    souls: { dev: { soul: {} } },
-    capabilities: { "acme.rev": { manifest: { compatibility: { oats: ">=99.0.0" }, agents: ["agents/reviewer"] }, files: {
+    souls: { dev: { soul: { capabilities: { "acme.rev": { from: "here" } } } } },
+    capabilities: { "acme.rev": { manifest: { agents: ["agents/reviewer"] }, files: {
       "agents/reviewer/soul.yaml": "name: reviewer\nkind: capability\nwork: directory\nharness: pi\ndescription: Reviewer.\n",
       "agents/reviewer/AGENTS.md": "# Reviewer\n",
     } } },
   });
   t.after(fx.cleanup);
-  const r = fx.cli(["spawn", "reviewer", "--no-launch", "--json"]);
-  const j = r.json();
-  assert.equal(j.ok, false, r.stdout);
-  assert.equal(j.error.code, "E_CAPABILITY_INCOMPATIBLE", r.stdout);
-  assert.deepEqual([j.error.details.capability, j.error.details.range, j.error.details.kernel], ["acme.rev", ">=99.0.0", KERNEL]);
+  let j = fx.cli(["spawn", "dev", "--no-launch", "--json"]).json();
+  assert.equal(j.ok, false, JSON.stringify(j));
+  assert.equal(j.error.code, "E_CAPABILITY_AGENTS_REMOVED", JSON.stringify(j));
+  assert.deepEqual([j.error.details.capability, j.error.details.agents], ["acme.rev", ["agents/reviewer"]]);
+  assert.match(j.error.message, /removed in OATS 0\.29\.0 — in .*: ship each agent as a soul — a package soul .*oats spawn <package>\/<name>.* or a member soul/);
+  assert.equal(existsSync(join(fx.root, "dev", "instances")) && readdirSync(join(fx.root, "dev", "instances")).length > 0, false, "nothing was created");
+  // The agent it declared is not a soul: nothing resolves it by name any more.
+  j = fx.cli(["spawn", "reviewer", "--no-launch", "--json"]).json();
+  assert.equal(j.ok, false, JSON.stringify(j));
+  assert.equal(j.error.code, "E_SOUL_UNKNOWN", JSON.stringify(j));
+  assert.equal(existsSync(join(fx.root, "reviewer")), false);
 });

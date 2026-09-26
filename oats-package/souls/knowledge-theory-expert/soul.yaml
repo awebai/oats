@@ -1,0 +1,9 @@
+schemaVersion: 2
+name: knowledge-theory-expert
+description: Explain reference knowledge theory and help authors build complete, provider-owned knowledge capabilities.
+work: checkout
+# An authoring advisor with no memory protocol of its own (its AGENTS.md covers knowledge disabled).
+knowledge: none
+# The knowledge-capability-authoring skill: this package's own capability at the locked commit.
+capabilities:
+  oats.knowledge-theory: { from: here }

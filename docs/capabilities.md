@@ -72,7 +72,7 @@ A self-contained package has an `oats.json`:
 - `compatibility.oats` is the kernel range the capability runs on. The kernel
   refuses to compose a capability whose range does not admit it
   (`E_CAPABILITY_INCOMPATIBLE`, naming capability, range and kernel) wherever a
-  soul or capability agent resolves (spawn, `spawn --preview`, `inspect
+  soul resolves (spawn, `spawn --preview`, `inspect
   --soul`, operator commands). `oats inspect` shows each module's
   `compatibility: { ok, range, kernel }`; a home whose spawned module no longer
   admits the running kernel reports a `capability-incompatible` problem.
@@ -327,16 +327,24 @@ listed (`private: true`, marked "(repo-owned)"), but usable only from its own
 repo (`E_CAPABILITY_PRIVATE` elsewhere). A member's `oats-package/` is **not** a member capability: it is
 reported as `publishes` and consumed only as a package.
 
-## Capability-defined agents
+## Agents a capability needs
 
-A manifest may declare `agents: ["agents/<name>"]` — package-relative soul
-directories (`soul.yaml` + `AGENTS.md` directly inside). *(Open thread: under
-the workspace model these are re-based on member souls — a package repo's
-expert soul is an ordinary `souls/<name>-expert/` in the member; the classic
-lookup still exists for 0.24 layouts.)* From kernel 0.28.0, **package souls**
-replace them ([packages.md](packages.md#package-souls)); the
-`agents:` path is removed after oats.okf 4.0.0, the last package using it, is
-mirrored.
+A capability declares no agents: `agents:` in a manifest was **removed in
+0.29.0**. Resolution refuses a module that still declares it with
+`E_CAPABILITY_AGENTS_REMOVED { capability, agents }` (spawn, `spawn --preview`,
+`inspect --soul`, operator commands). Ship the agent as a soul instead:
+
+- a **package soul**: `souls/<name>/` beside the package's capabilities, listed
+  in `oats-package.json` `souls:`, spawned as `oats spawn <package>/<name>`
+  (or the bare name when unique), reading the package's capabilities with
+  `from: here` ([packages.md](packages.md#package-souls)). The post-commit
+  `reviewer` is one: oats.dev 1.1.0's `oats.dev/reviewer`, beside `oats.review`;
+- or a **member soul**: `souls/<name>/` in a member repository, using a
+  member capability `from: here`.
+
+A home an earlier kernel spawned from a manifest `agents:` soul (its agent
+directory holds only `instances/`) is still listed by `oats status`, may anchor
+a `--parent`, and retires; nothing creates one any more.
 
 ## Commands and hooks
 

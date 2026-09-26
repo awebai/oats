@@ -25,7 +25,7 @@ packages:
   oats.jira: v1.0.1
   oats.linear: v1.0.1
   oats.authoring: v1.0.3
-  oats.dev: v1.0.1
+  oats.dev: v1.1.0
 
 teams:
   global: { description: The framework's expert souls and its package experts }

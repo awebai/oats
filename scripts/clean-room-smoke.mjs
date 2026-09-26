@@ -156,7 +156,7 @@ try {
   const theoryTag = `v${distribution.version}`;
   const theoryCommit = gitRepo(theoryRepo, "framework");
   run("git", ["-C", theoryRepo, "tag", theoryTag]);
-  const theoryAliasPath = `oats-package/${CAPABILITY_PATH}/${EXPERT_PATH}/CLAUDE.md`;
+  const theoryAliasPath = `oats-package/${EXPERT_PATH}/CLAUDE.md`;
   assert.match(run("git", ["-C", theoryRepo, "ls-tree", theoryCommit, "--", theoryAliasPath], { capture: true }), /^120000 blob /, "Git payload must track the source alias as a symlink");
   assert.equal(run("git", ["-C", theoryRepo, "show", `${theoryCommit}:${theoryAliasPath}`], { capture: true }), "AGENTS.md");
   const theoryCap = join(theorySource, CAPABILITY_PATH);
@@ -167,8 +167,9 @@ try {
   for (const file of canonicalRefs) assert.ok(readFileSync(join(kernelRoot, "docs", file)).equals(readFileSync(join(theorySkill, "references", file))), `packed reference drift: ${file}`);
   const skillFingerprint = fingerprint(theorySkill);
   const capFingerprint = fingerprint(theoryCap);
-  const expertInstructions = readFileSync(join(theoryCap, EXPERT_PATH, "AGENTS.md"), "utf8");
-  assert.equal(readlinkSync(join(theoryCap, EXPERT_PATH, "CLAUDE.md")), "AGENTS.md");
+  // The expert is an oats.framework PACKAGE SOUL (0.29.0: capability-defined agents were removed).
+  const expertInstructions = readFileSync(join(theorySource, EXPERT_PATH, "AGENTS.md"), "utf8");
+  assert.equal(readlinkSync(join(theorySource, EXPERT_PATH, "CLAUDE.md")), "AGENTS.md");
 
   // The offline official catalog: both packages by tag, from file:// fixtures.
   write(catalog, JSON.stringify({ packages: {
@@ -475,7 +476,8 @@ try {
 
   // ---- Optional theory from the oats.framework package: a soul that opts out
   // of the knowledge default and pulls oats.knowledge-theory from the package.
-  // The module bytes and the composed instance are what is asserted here.
+  // The module bytes and the composed instance are what is asserted; the expert
+  // is the package's own soul (spawned below).
   const theoryProbes = [];
   for (const harness of ["pi", "claude"]) {
     const author = boundary(["spawn", "author", "--dir", deployment, "--agents-root", agentsRoot, "--purpose", `theory-${harness}`, "--harness", harness, "--no-launch", "--json"]);
@@ -490,8 +492,7 @@ try {
       assert.equal(authorMeta.modules["oats.knowledge-theory"].from.package, "oats.framework");
       const theoryModule = join(authorHome, ".oats/modules/oats.knowledge-theory");
       assert.deepEqual(fingerprint(theoryModule), capFingerprint, "materialized module preserves the full capability including the source alias");
-      assert.ok(lstatSync(join(theoryModule, EXPERT_PATH, "CLAUDE.md")).isSymbolicLink());
-      assert.equal(readlinkSync(join(theoryModule, EXPERT_PATH, "CLAUDE.md")), "AGENTS.md", "package alias survives Git transport, cache and source deletion");
+      assert.ok(!existsSync(join(theoryModule, "agents")), "the capability ships no agent (the expert is a package soul)");
       const materializedSkill = join(authorHome, ".agents/skills/oats.knowledge-theory", basename(SKILL_PATH));
       assert.deepEqual(fingerprint(materializedSkill), skillFingerprint, "complete packed skill materialized without a source");
       assert.deepEqual(checkReferenceClosure(materializedSkill), expectedClosure);
@@ -508,6 +509,20 @@ try {
     }
     theoryProbes.push(`directory/${harness}`);
   }
+  // The expert: oats.framework's package soul, by its qualified name, at the locked commit.
+  const expert = boundary(["spawn", "oats.framework/knowledge-theory-expert", "--dir", deployment, "--agents-root", agentsRoot, "--purpose", "theory", "--work", "directory", "--harness", "pi", "--no-launch", "--json"]);
+  const expertHome = realpathSync(expert.home);
+  try {
+    assert.equal(expertHome, realpathSync(join(agentsRoot, "oats-framework--knowledge-theory-expert", "instances", "oats-framework-knowledge-theory-expert-theory")));
+    const expertMeta = readJson(join(expertHome, "instance.json"));
+    assert.equal(expertMeta.workspace.soul.package.id, "oats.framework");
+    assert.deepEqual(Object.keys(expertMeta.modules).sort(), ["oats.knowledge-theory"], "knowledge: none; the theory capability from its own package");
+    assert.ok(readFileSync(join(expertHome, "AGENTS.md"), "utf8").includes(expertInstructions.trim()), "the expert's instructions");
+    assert.equal(readlinkSync(join(expertHome, "CLAUDE.md")), "AGENTS.md");
+  } finally {
+    retire(expert.instance, expertHome);
+  }
+  theoryProbes.push("package-soul/knowledge-theory-expert");
   assert.deepEqual(readJson(lockPath), locked, "theory spawns never mutate the lock");
   assert.ok(!existsSync(env.OATS_SMOKE_UNEXPECTED_EXEC), "a runtime/backend/host scheduler was invoked");
 

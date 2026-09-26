@@ -123,7 +123,7 @@ test("a 0.26.0 home's instance.json (`runtime`, a version-1 recipe) is read in t
   resetRuntimeNames();
 });
 
-test("soul.yaml: `harness:` or `runtime:` (released souls and capability agents) are read the same; both, disagreeing, E_BAD_MANIFEST", () => {
+test("soul.yaml: `harness:` or `runtime:` (released souls) are read the same; both, disagreeing, E_BAD_MANIFEST", () => {
   assert.deepEqual(soulHarnessField({ name: "a", runtime: "claude" }, "f"), { name: "a", harness: "claude" });
   assert.deepEqual(soulHarnessField({ name: "a", harness: "codex" }, "f"), { name: "a", harness: "codex" });
   assert.deepEqual(soulHarnessField({ name: "a", harness: "pi", runtime: "pi" }, "f"), { name: "a", harness: "pi" });
@@ -131,29 +131,16 @@ test("soul.yaml: `harness:` or `runtime:` (released souls and capability agents)
     && e.message === "/x/soul.yaml declares harness: pi and runtime: claude; `runtime` is the pre-0.27 name of `harness` — keep one");
 });
 
-test("a 1.13.1-shaped capability (its agents' soul.yaml `runtime:`, requires[].runtime) still syncs, and its agents spawn on the declared harness, without a warning", (t) => {
-  const agent = (name, key) => ({
-    [`agents/${name}/soul.yaml`]: `name: ${name}\nkind: capability\nwork: directory\n${key}: claude\ndescription: ${name}.\n`,
-    [`agents/${name}/AGENTS.md`]: `# ${name}\n`,
-  });
+test("a 1.13.1-shaped capability (requires[].runtime) still syncs without a warning", (t) => {
   const fx = v2Deployment({
     name: "acme",
     capabilities: { "acme.chat": { manifest: {
-      agents: ["agents/old", "agents/new"],
       requires: [{ runtime: "claude", package: "chat@market", why: "channel", when: { delivery: "channel" } }],
-    }, files: { ...agent("old", "runtime"), ...agent("new", "harness") } } },
+    } } },
   });
   t.after(fx.cleanup);
   const synced = fx.cli(["sync", "--json"]);
   ok(synced); quiet(synced);
-  // A capability-defined agent is spawned by name (no preview: it is not a workspace soul).
-  for (const name of ["old", "new"]) {
-    const r = fx.cli(["spawn", name, "--no-launch", "--json"]);
-    ok(r); quiet(r);
-    const meta = JSON.parse(readFileSync(join(ok(r).home, "instance.json"), "utf8"));
-    assert.equal(meta.harness, "claude", `${name}: its soul.yaml's harness`);
-    assert.equal(Object.hasOwn(meta, "runtime"), false);
-  }
 });
 
 test("requires[]: `harness` or `runtime` names the harness package's harness", () => {

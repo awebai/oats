@@ -113,7 +113,7 @@ what they contribute stays with them.
 
 After the canonical soul and kernel text, every generated `AGENTS.md` states the
 runtime-neutral **home/work boundary** (`injects/instance-boundary.md`) — for
-every work mode and for capability service agents alike — immediately before the
+every work mode and for service souls (the post-commit reviewer) alike — immediately before the
 work-mode block it frames: `<instance-home>` (`$OATS_INSTANCE_HOME`) holds the
 brain, task, provenance and working state, and is where OATS operational/lifecycle
 commands are run from — together with the commands of whatever capabilities are

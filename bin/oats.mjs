@@ -27,7 +27,7 @@ import {
   LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
   officialPackageCatalog, officialCatalogFile, officialCapabilityAliases, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, isCapturedHome, capturedHomeRefusal, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
-  findInstanceHome, findInstanceHomes, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, launchConfigsAt, explicitInstanceName, findModuleCapabilityAgent, capabilityAgentFromDir, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
+  findInstanceHome, findInstanceHomes, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, launchConfigsAt, explicitInstanceName, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
 import {
   writeFileAtomic, LOCK_FILE, readLock, writeLock, resolvePackages, memoizedRemote,
@@ -1573,7 +1573,7 @@ async function statusDrift(data) {
   for (const a of data) {
     if (!a.dir) continue;
     try { const stamp = JSON.parse(readFileSync(join(a.dir, ".oats-soul-source.json"), "utf8")); if (stamp && typeof stamp.repoKey === "string") souls.set(a.name, { repoKey: stamp.repoKey, commit: typeof stamp.commit === "string" ? stamp.commit : null, path: stamp.path ?? null, ...(typeof stamp.package === "string" ? { package: stamp.package, version: stamp.version ?? null } : {}) }); }
-    catch { /* not a workspace soul (classic, capability agent, or unreadable stamp) */ }
+    catch { /* not a workspace soul (classic, or an unreadable stamp) */ }
   }
   const anything = data.some((a) => (a.instances || []).some((i) => hasModules(i) || hasSoul(i)));
   if (!anything) return { drift: new Map(), soul: new Map(), souls, unreachable: null };
@@ -1736,7 +1736,7 @@ async function spawnCmd() {
   // the per-commit cache, or fetches it to a temporary copy (reported as soulFetched).
   const providerPairs = [];
   for (let i = 0; i < args.length; i++) if (args[i] === "--provider") { if (!args[i + 1] || !args[i + 2]) bail("E_BAD_ARGS", "--provider needs <capability> <key>=<value>"); providerPairs.push([args[i + 1], args[i + 2]]); i += 2; }
-  let wsPrepared, soulFetched = false, wsSoulUnknown = null, wsDiscovery;
+  let wsPrepared, soulFetched = false, wsDiscovery;
   {
     let discovery = null;
     try {
@@ -1771,50 +1771,12 @@ async function spawnCmd() {
         const file = officialCatalogFile();
         bail(e.code, `${e.details?.capability ?? "oats.core"}: the catalog has no package providing oats.core (OATS_PACKAGE_CATALOG=${file}) — standalone spawns resolve only the kernel's default package from the catalog`, { ...(e.details ?? {}), standalone: true, reason: "no-catalog", catalog: file });
       }
-      // Not a workspace soul: a capability-defined agent (a module's `agents:`
-      // soul, resolved below from a materialized copy) may still answer to this name.
-      if (e?.code === "E_SOUL_UNKNOWN" && !isPreview) { wsSoulUnknown = e; }
-      else if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details);
+      if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details);
       else throw e;
     }
   }
   if (agentsRootFlag !== undefined && !agent) bail("E_SOUL_UNKNOWN", `soul "${name}" is not at agents root ${String(agentsRootFlag)}`);
   if (isPreview && !agent) bail("E_SOUL_UNKNOWN", `soul "${name}" is not in ${shortPath(root)}; a preview never creates or imports a soul (known: ${listAgents(root).map((a) => a.name).join(", ") || "none"})`);
-  // Capability agent (lead decision c3 Q1): a prepared spawn of its providing module only.
-  let capabilityPrepared, capabilityPkg = null;
-  if (!agent) {
-    // Workspace model: the agent is declared by a capability some INSTANCE already
-    // materialized (the --parent home first, then any home under this root) —
-    // OKF's memory-harvest worker spawned by a knowledge source, for example.
-    const anchorName = flag("parent") || flag("relative-to");
-    const anchorHome = anchorName ? (findInstanceHome(root, String(anchorName)) ?? null) : null;
-    let modAgent;
-    try { modAgent = findModuleCapabilityAgent(root, name, { anchorHome }); }
-    catch (e) { bail(e.code || "E_CAPABILITY_BROKEN", e.message, e.details); }
-    if (modAgent) {
-      agent = modAgent;
-      note(`(capability agent: "${name}" from ${modAgent.capability}, materialized in ${shortPath(modAgent._manifestSource)} — fresh soul, instances home under ${shortPath(join(root, name, "instances"))})`);
-    } else {
-      // No instance carries it: resolve from the deployment's LOCK — a locked
-      // package whose capability declares agents/<name> is fetched into the
-      // deployment's module store and read from there.
-      try {
-        const { resolvePackageCapabilityAgent } = await import("../lib/instance-resolution.mjs");
-        const hit = await resolvePackageCapabilityAgent(dirFlag(), name, { remoteOptions: remoteOptionsFromEnv(), discovery: wsDiscovery, catalog: (() => { try { return officialPackageCatalog(); } catch { return null; } })() });
-        if (hit) {
-          agent = capabilityAgentFromDir(hit.dir, name, root, { module: { from: { kind: "package", package: hit.package, version: hit.version, commit: hit.commit } } });
-          if (agent) { capabilityPkg = hit; note(`(capability agent: "${name}" from ${hit.capability} — package ${hit.package} v${hit.version}, fetched to ${shortPath(hit.dir)} — fresh soul, instances home under ${shortPath(join(root, name, "instances"))})`); }
-        }
-      } catch (e) { if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details); throw e; }
-    }
-    if (agent) {
-      try {
-        const { prepareCapabilityAgent } = await import("../lib/instance-resolution.mjs");
-        capabilityPrepared = await prepareCapabilityAgent(dirFlag(), agent, { discovery: wsDiscovery, pkg: capabilityPkg, remoteOptions: remoteOptionsFromEnv(), catalog: (() => { try { return officialPackageCatalog(); } catch { return null; } })() });
-      } catch (e) { if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details); throw e; }
-    }
-  }
-  if (!agent && wsSoulUnknown) bail(wsSoulUnknown.code, wsSoulUnknown.message, wsSoulUnknown.details);
   checkDirectoryOptions(requestedWork || agent?.work);
   if (!agent) bail("E_UNKNOWN_AGENT", `unknown agent "${name}" (known: ${listAgents(root).map((a) => a.name).join(", ") || "none"}) — a soul is a member repository's souls/<name>; add it there and run \`oats sync\``);
   for (const information of agent.notes || []) note(`[${information.code}] ${information.message}`);
@@ -1843,9 +1805,6 @@ async function spawnCmd() {
   if ((flag("work") === "attached") && relation && relation !== "child") bail("E_BAD_ARGS", "attached agents are always children of the work-tree owner — only --parent <instance> (or --relation child) is valid with --work attached");
   // NOTE: explicit "unrelated" is passed through to the kernel.
   if (relativeTo && relation !== "unrelated") {
-    // findInstanceHome also sees capability-defined agents' instance homes
-    // (<root>/<name>/ without a soul) — e.g. a reviewer passing
-    // --parent "$OATS_INSTANCE" from a capability agent.
     if (!findInstanceHome(root, relativeTo)) bail(parent ? "E_PARENT_NOT_FOUND" : "E_RELATIVE_NOT_FOUND", `${parent ? "--parent" : "--relative-to"} "${relativeTo}" does not match any known instance`);
   }
   const taskText = flag("task");
@@ -1905,10 +1864,10 @@ async function spawnCmd() {
   // convention <deployment>/<member name>. Never an ambient Git checkout around the
   // deployment. Resolved once here so a preview sees exactly what the apply would.
   let preparedRepo;
-  if (wsPrepared || capabilityPrepared) {
+  if (wsPrepared) {
     try {
       const { toCapabilityRows, modulesPreview, requireMemberClone } = await import("../lib/instance-resolution.mjs");
-      prepared = wsPrepared ?? capabilityPrepared;
+      prepared = wsPrepared;
       prepared.capabilityRows = []; // filled after materialization (paths live in the home); preview uses modulesPreview
       prepared.preview = modulesPreview(prepared.resolution, root, agent.name);
       prepared.toCapabilityRows = toCapabilityRows;

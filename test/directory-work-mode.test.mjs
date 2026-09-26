@@ -622,33 +622,3 @@ process.exitCode = 1;`);
   assert.deepEqual(readJson(join(home, ".oats-rollback-incomplete.json")).cleanup.capabilityMeta, { "example.worker": { receipt: "external-state" } });
 });
 
-test("a member capability's agent is CLI-spawnable in a non-Git deployment before any instance or agents directory exists", (t) => {
-  const fx = v2Deployment({
-    capabilities: { "example.worker": { manifest: { description: "Provider-neutral execution fixture.", agents: ["agents/worker"], skills: ["skills"], inject: "inject.md" }, files: {
-      "agents/worker/soul.yaml": "name: worker\nkind: capability\nwork: directory\nharness: claude\n",
-      "agents/worker/AGENTS.md": "# Generic worker\n",
-      "skills/worker-skill/SKILL.md": "---\nname: worker-skill\ndescription: Generic worker fixture.\n---\n# Worker skill\n",
-      "inject.md": "## Generic worker capability\n",
-    } } },
-  });
-  t.after(() => fx.cleanup());
-  assert.equal(existsSync(join(fx.root, "worker")), false);
-  const spawned = fx.cli(["spawn", "worker", "--purpose", "cli", "--no-launch", "--json"]);
-  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
-  const result = spawned.json().result;
-  assert.equal(result.work, "directory");
-  assert.equal(result.home, join(fx.root, "worker", "instances", "worker-cli"));
-  assert.throws(() => lstatSync(join(result.home, "soul")), { code: "ENOENT" }, "an instance home carries no soul link");
-  const meta = readJson(join(result.home, "instance.json"));
-  assert.match(meta.soulDir, /\/\.oats\/modules\/example\.worker@[0-9a-f]{12}\/agents\/worker$/, "the soul is read from the deployment's module store");
-  assert.deepEqual(Object.keys(meta.modules), ["example.worker"]);
-  assert.ok(existsSync(join(result.home, ".agents", "skills", "example.worker", "worker-skill", "SKILL.md")), "its capability's skills");
-  assert.match(readFileSync(join(result.home, "AGENTS.md"), "utf8"), /Generic worker capability/, "and its (non-knowledge) capability's inject");
-  const status = fx.cli(["status", "--json"]);
-  assert.equal(status.status, 0, status.stderr);
-  assert.ok(status.stdout.includes(result.instance));
-  const retired = fx.cli(["retire", result.instance, "--json"]);
-  assert.equal(retired.status, 0, retired.stderr);
-  assert.equal(existsSync(result.home), false);
-  assert.equal(readFileSync(join(meta.soulDir, "AGENTS.md"), "utf8"), "# Generic worker\n", "the store copy is untouched");
-});

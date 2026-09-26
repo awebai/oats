@@ -11,8 +11,9 @@ oats spawn reviewer --work attached --work-dir "$PWD/work" \
   --task "Review commit <sha> on branch <branch>. Report to <your-instance> per your operating loop."
 ```
 
-- `--purpose "<short-sha>"` gives the reviewer a unique, commit-relevant
-  instance name (`reviewer-<short-sha>`); attached mode shares your work tree
+- `reviewer` is the oats.dev package's soul (`oats.dev/reviewer`).
+  `--purpose "<short-sha>"` gives it a unique, commit-relevant instance name
+  (`oats-dev-reviewer-<short-sha>`); attached mode shares your work tree
   and automatically makes the reviewer your child (attached agents are always
   children of the work-tree owner — no relation flags needed or allowed).
 - The reviewer reviews **that commit's diff only** and reports its verdict

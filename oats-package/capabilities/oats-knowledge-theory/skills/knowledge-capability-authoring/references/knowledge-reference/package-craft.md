@@ -35,8 +35,7 @@ A knowledge implementation's capability manifest might begin:
   "compatibility": { "oats": ">=0.22.19" },
   "layer": "knowledge",
   "skills": ["skills/native-reader", "skills/native-harvest"],
-  "inject": "injects/knowledge.md",
-  "agents": ["agents/native-harvester"]
+  "inject": "injects/knowledge.md"
 }
 ```
 
@@ -49,14 +48,18 @@ kernel's real manifest validation, not this example as a complete schema.
 
 The optional `oats.knowledge-theory` capability is deliberately **different**:
 it is additive, declares no layer, injection, command or hook, and supplies
-only an expert and its authoring skill. It neither selects knowledge policy nor
+only its authoring skill; the expert that uses it is the oats.framework package
+soul `knowledge-theory-expert`. It neither selects knowledge policy nor
 depends on OKF. A runtime integration should not depend on it just to inherit
 mandatory doctrine. Explicit versioned reuse is a choice, not a requirement.
 
 ## Soul craft
 
-A capability's `agents/<name>/` contains `soul.yaml`, canonical `AGENTS.md` and
-relative `CLAUDE.md -> AGENTS.md`. Keep role instructions to a screen or two:
+An agent a package ships is a **package soul**: `souls/<name>/` beside the
+package's capabilities (listed in `oats-package.json` `souls:`), holding
+`soul.yaml`, canonical `AGENTS.md` and relative `CLAUDE.md -> AGENTS.md`; it
+reads the package's own capabilities with `from: here`. (A capability manifest
+declares no agents: `agents:` was removed in OATS 0.29.0.) Keep role instructions to a screen or two:
 role and boundaries, operating loop, verification, local skill pointer,
 escalation. Do not bury an entire curriculum in always-loaded instructions.
 

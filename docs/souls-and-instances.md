@@ -516,14 +516,12 @@ Default layout:
     docs-expert/         # a workspace soul, defined in a member repository's
       souls/<commit12>/  #   souls/docs-expert/ and copied here per commit
       instances/
-    memory-harvest/      # a capability-defined agent: only instances/, no soul
-      instances/
 ```
 
-A capability-defined agent (declared by a package or member module, such as
-the OKF harvester) homes under the agents root exactly like a soul; its
-directory holds only `instances/`. A name that is both a workspace soul and a
-capability agent is ambiguous (`E_SOUL_AMBIGUOUS`).
+Every agent is a soul — a member soul, or a package soul homed under
+`agents/<package>--<soul>/`. A capability-defined agent (a manifest's
+`agents:`) was removed in 0.29.0; a home an earlier kernel left for one (its
+directory holds only `instances/`) is still listed and retirable.
 
 There are no local souls. A soul is a member repository's `souls/<name>`
 (`soul.yaml` + `AGENTS.md`); author it there and run `oats sync`. OATS 0.25
