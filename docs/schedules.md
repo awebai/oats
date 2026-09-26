@@ -411,8 +411,9 @@ the instance is neither hidden nor spawned again.
 > the same host tick: a workspace file (`oats-triggers/okf-harvest-review.yaml`
 > in a member repo, `kind: oats-trigger`, with `runsOn` and `owner`), or a
 > local one in this file. See
-> [knowledge.md](knowledge.md#knowledge-operations); the trigger commands are
-> `oats trigger …`.
+> [knowledge.md](knowledge.md#knowledge-operations), [Triggers](#triggers) and
+> [Workspace triggers and schedules](#workspace-triggers-and-schedules); the
+> trigger commands are `oats trigger …`.
 
 The [prepared OKF v2 runtime](knowledge.md) registers **one command job per
 source**, not a fleet sweep or a home-bound operation job. It runs from stable

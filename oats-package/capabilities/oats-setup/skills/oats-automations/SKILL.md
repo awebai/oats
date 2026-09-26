@@ -13,7 +13,7 @@ description: >-
 # Automations: triggers and schedules
 
 The contract is `docs/schedules.md` in the installed kernel ("Kinds",
-"Triggers", "Commands"). Read it before writing a definition. Two kinds:
+"Triggers", "Workspace triggers and schedules", "Commands"). Read it before writing a definition. Two kinds:
 
 - a **schedule** spawns an instance, runs an `oats` command or wakes an
   existing instance on a five-field cron with an explicit IANA `tz`;
@@ -94,42 +94,62 @@ running.
 ## Workspace automations (kernel 0.29.0)
 
 Anything a team relies on belongs in Git, reviewed like a soul, and says
-**which machine runs it** and **which GitHub account it acts as**.
+**which machine runs it** and **which GitHub account it acts as**. The
+contract is `docs/schedules.md`, "Workspace triggers and schedules".
+
+| | trigger | schedule |
+|---|---|---|
+| folder at the member's root | `oats-triggers/` | `oats-schedules/` |
+| or anywhere in the member | `*.oats-trigger.yaml` | `*.oats-schedule.yaml` |
+| `kind:` | `oats-trigger` | `oats-schedule` |
+| opt-out on one host | `triggers.disabled` | `schedules.disabled` |
 
 ```yaml
-# <member repo>/oats-triggers/<id>.yaml   (or anywhere in the member: <id>.oats-trigger.yaml)
+# <member repo>/oats-triggers/<id>.yaml
 kind: oats-trigger
 schemaVersion: 1
 description: Review every harvest PR on the knowledge base
-from: oats.okf:harvest-review          # a package template, then overrides; or a full definition
+from: oats.okf:harvest-review          # a package template, then its parameters; or on/spawn/concurrency in full
 set: { repo: github.com/<org>/<repo> }
 runsOn: <host name>                    # a machine's oats-local.yaml host.name
 owner: github.com/<account>            # the account it acts as
 ```
 
-Schedules are the same shape in `oats-schedules/` (`kind: oats-schedule`,
-`run: spawn | command | wake`, `cron`, `tz`, plus `runsOn` and `owner`).
+A workspace schedule is the same shape (`kind: oats-schedule`, `run: spawn`
+or `run: command`, `cron`, `tz`, `agent`, `task`, plus `runsOn` and `owner`).
+`wake` stays local: it targets one machine's instance home.
 
-- **Discovery.** Read like souls, from confirmed members only, and named
-  `<member>/<id>` (the id is `id:`, else the filename stem). Never read from
-  `oats-package/`, `.git/` or `node_modules/`. A wrong `kind` is
-  `E_AUTOMATION_SCHEMA`; a repeated id in one member is
-  `E_AUTOMATION_DUPLICATE`.
+- **Discovery.** Read from confirmed members only, named `<member>/<id>` (the
+  id is `id:`, else the filename stem); local ones are `local/<id>`. Never
+  read from `oats-package/`, `.git/` or `node_modules/`. A wrong or missing
+  `kind` is `E_AUTOMATION_SCHEMA`; a repeated id for one kind in one member is
+  `E_AUTOMATION_DUPLICATE`. A trigger and a schedule may share an id.
 - **Who runs it.** A host runs one only when `runsOn` is its `host.name`
   **and** its `gh` is logged in as `owner`. Otherwise it is listed with why
   not: `assigned-elsewhere`, `owner-mismatch` or `host-unnamed`. So "exactly
   one machine" is a declared fact, and consent is explicit: a machine acts for
   an account only when its operator named it and logged in as that account.
-- **Opting a host out** without a commit: `automations.disabled: [<member>/<id>]`
-  in that host's `oats-local.yaml`.
-- **Refresh.** The tick reads a snapshot taken by `oats sync` and refreshed
-  at most every 10 minutes, so a merged change reaches the host within about
-  10 minutes. Run state (fired keys, the last poll) stays per host.
-- **Writing one.** From 0.29.0, `oats trigger add --from <package>:<template>
-  --workspace <member>` writes the file (or prints it when that repo is not
-  the current checkout). Commit it by PR to that member (oats-workspace-config),
-  then `oats sync`, then run `oats trigger test <member>/<id>` **on the named
-  host**.
+- **Opting a host out** without a commit: `oats trigger disable <member>/<id>`
+  writes `triggers.disabled`, and `oats schedule disable <member>/<id>` writes
+  `schedules.disabled`, in that host's `oats-local.yaml`; `enable` removes
+  the entry. A workspace definition is never edited or removed from a host
+  (`E_AUTOMATION_WORKSPACE`): change the file in Git.
+- **Refresh.** `oats sync` takes a snapshot of the members' automations; the
+  host tick refreshes it when it is more than ten minutes old
+  (`oats automations refresh` does it now). A merged change reaches the named
+  host within about ten minutes. Run state (fired keys, the last poll) stays
+  per host.
+- **Writing one.** In a checkout of the member, this writes
+  `oats-triggers/<id>.yaml` for you to commit; anywhere else it prints the
+  file. Either way it is validated first.
+
+  ```bash
+  oats trigger add --from <package>:<template> --set repo=github.com/<org>/<repo> --workspace <member> --runs-on <host name> --owner github.com/<account>
+  oats automations refresh          # after the PR merges, instead of waiting for the tick
+  oats trigger test <member>/<id>   # on the named host: placement, gh account, repo permissions, soul, teams
+  ```
+
+  Commit it by PR to that member (oats-workspace-config).
 
 ## Gotchas
 

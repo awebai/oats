@@ -349,7 +349,8 @@ would supersede a human-accepted decision.
    NEW `oats.okf/knowledge-maintainer`, joining `okf`. The event reaches it as
    `OATS_TRIGGER_EVENT_FILE`. A local trigger (`oats trigger add`, this host
    only) is the machine-private alternative. Triggers are described in
-   [schedules.md, "Triggers"](schedules.md#triggers).
+   [schedules.md, "Triggers"](schedules.md#triggers), and the workspace
+   file in ["Workspace triggers and schedules"](schedules.md#workspace-triggers-and-schedules).
 4. **Review.** The maintainer checks out the PR and situates it: the
    provenance, the source soul's owned and read nodes, the neighbouring
    concepts, and the source's tickets when a tasks capability can read them.

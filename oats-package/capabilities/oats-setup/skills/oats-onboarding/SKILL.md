@@ -167,7 +167,7 @@ Set this up only after steps 1–8 work, and only when the operator wants harves
 knowledge reviewed and merged by an agent. It needs kernel ≥ 0.29.0 (package
 souls, triggers, workspace automations) and `oats.okf` 4.0.0. The contract is
 `docs/knowledge.md` ("Knowledge operations") and `docs/schedules.md`
-("Triggers") in the installed kernel; read them, and okf's own
+("Triggers", "Workspace triggers and schedules") in the installed kernel; read them, and okf's own
 `okf-trigger-setup` skill, rather than restating either from memory.
 
 ### 1. Pin the package
@@ -240,7 +240,7 @@ owner: github.com/<account>         # the account it acts as; it must be able to
   permission only).
 - The file's contract (required fields, where it may live, its refusals) is
   **oats-automations**, "Workspace automations".
-- `oats trigger add --from oats.okf:harvest-review --workspace <member>`
+- `oats trigger add --from oats.okf:harvest-review --set repo=… --workspace <member> --runs-on <host name> --owner github.com/<account>`
   writes the file, or prints it when that repo is not the current checkout.
   Commit it as a reviewed change, then `oats sync`.
 
@@ -304,7 +304,8 @@ the switch.
 - `oats trigger test` proves only the host it runs on: run it on the
   `runsOn` host, logged in as `owner`.
 - To stop the named host from running a workspace trigger without a commit,
-  list it under `automations.disabled` in that host's `oats-local.yaml`.
+  run `oats trigger disable <member>/okf-harvest-review` there (it writes
+  `triggers.disabled` in that host's `oats-local.yaml`).
 
 ## Never
 
