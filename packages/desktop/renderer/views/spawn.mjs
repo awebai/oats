@@ -209,7 +209,13 @@ function showPage(s, mode) {
 function openCapability(s, row, from = null) {
   if (!s.alive) return;
   s.capOpen = { row, from, gen: workspaceGeneration() };
-  renderCapabilityPage(s.q("workspace-cap-page"), { row, ...s.discovery.context(),
+  const { catalog, ...context } = s.discovery.context();
+  // From a soul page, the catalog's row for the same capability adds what the kernel reports
+  // about it in the workspace (#217: description, what it provides, its file and fingerprint).
+  const listed = from && Array.isArray(catalog) ? catalog.filter(r => r.name === row.name) : [];
+  const facts = listed.length === 1 ? listed[0] : null;
+  renderCapabilityPage(s.q("workspace-cap-page"), { row: facts ? { ...facts, ...row } : row, ...context,
+    openExternal: url => s.ctx.openExternal?.(url),
     backLabel: from ? from.name : "Capabilities", from: from ? { label: from.name } : null,
     onBack: () => closeCapability(s, { restoreFocus: true }),
     openSoul: target => {

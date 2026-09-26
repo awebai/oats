@@ -340,3 +340,16 @@ test('kernel #217 facts are ignored from a CLI that does not report desktop-fact
   const u = await fixture(t, { agents: [factsRow('campaign-writer')] });
   assert.equal(u.get('.sproblem'), null); assert.equal(u.get('.soul-spawn').disabled, false);
 });
+
+test("kernel #217: a capability opened from a soul page adds the catalog's facts for it (description)", async t => {
+  const described = f2('capabilities').result.capabilities.map(r => ({ ...r, description: `About ${r.name}.` }));
+  const u = await fixture(t, { cli: V2_CLI, sync: () => catalogReply(described) });
+  u.get('.soul-card').click(); await tick(); await tick();
+  const coreIds = new Set(Object.values(inspection.layers).map(l => l?.id).filter(Boolean));
+  const other = inspection.capabilities.find(c => !coreIds.has(c.id) && described.filter(r => r.name === c.id).length === 1);
+  assert.ok(other, 'a composed capability the catalog lists once');
+  u.get(`.soul-cap-row[data-capability="${other.id}"]`).click();
+  const cap = u.get('.workspace-cap-page');
+  assert.equal(cap.querySelector('.page-lede').textContent, `About ${other.id}.`);
+  assert.ok([...cap.querySelectorAll('.page-card')].some(c => c.dataset.card === 'As dev resolves it'), 'the soul\'s resolution still leads');
+});

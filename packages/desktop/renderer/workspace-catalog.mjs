@@ -35,7 +35,8 @@ export const catalogCSS = `
 .catalog-row.head + .catalog-row, .catalog-group + .catalog-row { border-top:0; }
 .catalog-row.head > :last-child, .catalog-used { justify-self:end; }
 .catalog-row.head > :last-child { width:94px; }
-.catalog-cap { display:flex; align-items:center; gap:10px; min-width:0; }
+.catalog-cap { display:flex; flex-wrap:wrap; align-items:center; column-gap:10px; row-gap:2px; min-width:0; }
+.catalog-desc { flex-basis:100%; min-width:0; color:var(--muted); font-size:12px; line-height:1.4; white-space:normal; overflow-wrap:anywhere; }
 .catalog-name { color:var(--fg); font:600 13px var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
 .catalog-core { display:inline-flex; align-items:center; flex:none; height:18px; padding:0 6px; border-radius:4px; background:var(--chip-bg); color:var(--fg); font-size:10.5px; font-weight:650; white-space:nowrap; }
 .catalog-group { display:flex; align-items:center; gap:7px; min-height:32px; padding:0 16px; border-top:1px solid var(--tag-bg); color:var(--muted); font:600 11.5px var(--mono,monospace); }
@@ -239,6 +240,8 @@ export function renderCapabilities(host, { rows, groups = null, status, instance
     const name = node(doc, 'span', row.name, 'catalog-name'); name.title = row.name;
     cap.append(name);
     if (text(row.layer)) cap.append(node(doc, 'span', layerLabel(row.layer), 'catalog-core'));
+    // Kernel #217: the manifest's description.
+    if (text(row.description)) cap.append(node(doc, 'span', row.description, 'catalog-desc'));
     const source = node(doc, 'span', null, 'catalog-source'); source.setAttribute('role', 'cell');
     source.style.minWidth = '0'; source.append(sourceChip(doc, row, names));
     const use = capabilityUse(instances, row.name);

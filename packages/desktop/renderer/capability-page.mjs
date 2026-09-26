@@ -57,6 +57,8 @@ export const pageCardCSS = `
 .page-kv:last-child { border-bottom:0; }
 .page-kv dt { color:var(--muted); font-size:12px; }
 .page-kv dd { margin:0; font:12px var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.page-kv.wrap dd { white-space:normal; overflow:visible; padding:6px 0; }
+.page-kv.wrap .path-part { white-space:nowrap; }
 .page-kv-list { margin:0; }
 .page-table { background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
 .page-table-row { display:grid; gap:12px; align-items:center; min-height:42px; padding:0 16px; box-sizing:border-box; border-top:1px solid var(--tag-bg); }
@@ -145,8 +147,8 @@ export function pageCard(doc, title, { lead = '', count = null, icon = null } = 
 /** key → value rows (the "Comes from" card); only reported values. */
 export function pageFacts(doc, entries) {
   const dl = el(doc, 'dl', null, 'page-kv-list');
-  for (const [key, value, title] of entries) if (text(value)) {
-    const row = el(doc, 'div', null, 'page-kv'); const dd = el(doc, 'dd', value); dd.title = title || value;
+  for (const [key, value, title, cls] of entries) if (text(value)) {
+    const row = el(doc, 'div', null, `page-kv${cls ? ` ${cls}` : ''}`); const dd = el(doc, 'dd', value); dd.title = title || value;
     row.append(el(doc, 'dt', key), dd); dl.append(row);
   }
   return dl;
@@ -165,10 +167,11 @@ export function packageOrigin(source) {
 }
 
 /** @param row a catalog row (or capabilityRow(resolved)); from: { label } when opened from a soul page. */
-export function renderCapabilityPage(host, { row, status, instances, root, backLabel = 'Capabilities', onBack, openSoul = null, from = null }) {
+export function renderCapabilityPage(host, { row, status, instances, root, backLabel = 'Capabilities', onBack, openSoul = null, from = null, openExternal = null }) {
   const doc = host.ownerDocument;
   const node = (tag, value, cls) => el(doc, tag, value, cls);
   host.replaceChildren();
+  const resolved = row.resolved;
   const page = node('div', undefined, 'capability-page'); page.dataset.capability = row.name;
   const { bar } = pageBar(doc, { backLabel, crumbs: from ? ['Workspace', 'Souls', from.label] : ['Workspace', 'Capabilities'], current: row.name, onBack });
   const body = node('div', undefined, 'page-body'), main = node('div', undefined, 'page-main'), side = node('div', undefined, 'page-side');
@@ -179,9 +182,24 @@ export function renderCapabilityPage(host, { row, status, instances, root, backL
   const title = node('h2', undefined, 'page-title mono'); title.append(node('span', row.name));
   if (text(row.layer)) title.append(node('span', `Core · ${layerLabel(row.layer)}`, 'page-tag'));
   copy.append(title);
+  // Kernel #217: the manifest's description.
+  if (text(row.description)) copy.append(node('p', row.description, 'page-lede'));
   identity.append(glyph, copy); main.append(identity);
+  // Kernel #217: what it provides, by name (the manifest's skills, commands and hooks).
+  const named = [['Skills', row.skills], ['Commands', row.commands], ['Hooks', row.hooks]].filter(([, v]) => v !== undefined);
+  if (!(from && resolved) && named.length) {
+    const provides = pageSection(doc, 'Provides');
+    const cards = node('div', undefined, 'page-cards3');
+    for (const [label, names] of named) {
+      const c = pageCard(doc, label, { count: Array.isArray(names) ? names.length : null }); c.card.dataset.provides = label.toLowerCase();
+      if (names === null) c.card.append(node('p', 'Not listable: a spawn of it would refuse.', 'page-note'));
+      else if (!names.length) c.card.append(node('p', 'None', 'page-note'));
+      else for (const name of names) c.card.append(node('span', name, 'page-list-item mono'));
+      cards.append(c.card);
+    }
+    provides.append(cards); main.append(provides);
+  }
   // Provides: the commands the resolved capability declares (inspect operations), when opened from a soul.
-  const resolved = row.resolved;
   if (from && resolved) {
     const provides = pageSection(doc, 'Provides');
     const cards = node('div', undefined, 'page-cards3');
@@ -219,8 +237,22 @@ export function renderCapabilityPage(host, { row, status, instances, root, backL
     ['Commit', short(row.commit), row.commit], ['Fingerprint', fingerprint(pkg?.integrity || row.resolved?.from?.integrity), pkg?.integrity || row.resolved?.from?.integrity],
   ] : [
     ['Repository', source.label, row.repoKey], ['Latest', short(row.commit), row.commit], ['Path', row.path],
+    // Kernel #217: a member capability's fingerprint is the Git tree of its directory.
+    ['Fingerprint', short(row.tree), row.tree],
     ...(row.private === true ? [['Owned', 'this repo\'s souls only']] : []),
   ]));
+  // Kernel #217: its manifest file, as a web page when the repository has one, else its path.
+  if (row.file && text(row.file.path)) {
+    const web = typeof row.file.url === 'string' && /^https:\/\//.test(row.file.url) ? row.file.url : null;
+    const facts = pageFacts(doc, [['File', row.file.path, row.file.path, 'wrap']]), dd = facts.querySelector('dd');
+    // A path breaks after its slashes, never inside a name.
+    if (dd) { dd.replaceChildren(); row.file.path.split('/').forEach((part, i, all) => { dd.append(node('span', i < all.length - 1 ? `${part}/` : part, 'path-part')); if (i < all.length - 1) dd.append(doc.createElement('wbr')); }); }
+    origin.card.append(facts);
+    if (web && typeof openExternal === 'function') {
+      const open = node('button', 'Open file', 'act'); open.type = 'button'; open.title = web; open.dataset.verb = 'file';
+      open.addEventListener('click', () => openExternal(web)); origin.card.append(open);
+    }
+  }
   side.append(origin.card);
   // As the soul it was opened from resolves it (inspect): version, requirements, settings.
   if (from && resolved) {
