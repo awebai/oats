@@ -4,3 +4,9 @@ Hand-built, PROVISIONAL. The rows follow the kernel's row builders at 27413bcb
 "Workspace triggers and schedules". Replace them with captures from a real
 `oats trigger list --json` / `oats schedule list --json` once the Desktop
 server serves them (oats-desktop-engineer-1).
+
+Updated to kernel #215 (head 5bf83aea): origin.url/localPath, host.ghUser,
+scheduler on both lists, the template shape, launchConfig and nextRun on
+schedule rows. trigger-status.json, trigger-test.json and schedule-test.json
+follow docs/desktop-cli-api.md at that head. Still hand-built: replace them
+with captures.

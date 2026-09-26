@@ -1,0 +1,34 @@
+{
+  "test": {
+    "id": "platform/weekly-deps",
+    "qualifiedId": "platform/weekly-deps",
+    "kind": "spawn",
+    "placement": {
+      "runsHere": true,
+      "reason": null,
+      "enabledHere": true,
+      "runsOn": "pepe-mbp",
+      "owner": "github.com/pepe",
+      "host": "pepe-mbp"
+    },
+    "soul": {
+      "name": "platform-engineer",
+      "origin": {
+        "kind": "member",
+        "repoKey": "github.com/northwind/platform",
+        "member": "platform"
+      },
+      "resolves": false,
+      "error": {
+        "code": "E_SOUL_UNKNOWN",
+        "message": "platform-engineer is not a soul in this workspace"
+      }
+    },
+    "nextDue": "2026-09-28T07:00:00.000Z",
+    "spawned": false,
+    "problems": [
+      "the soul platform-engineer does not resolve"
+    ],
+    "ok": false
+  }
+}
