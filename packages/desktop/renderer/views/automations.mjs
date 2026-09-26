@@ -141,8 +141,11 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
 
   let alive = true, serial = 0, data = null, failure = '', loading = false, origin = 'all', query = '', openId = null, busy = false, notice = '';
   const tests = new Map(), statuses = new Map();
-  // A workspace item's file opens from its web URL or this machine's clone.
-  const canOpen = row => !!openFile && row.origin.kind === 'workspace' && !!row.origin.url;
+  // An item's defining file opens read-only from this machine (a local item, a cloned member),
+  // else as its web page; the kernel reports both, the Desktop never builds a path.
+  const canOpen = row => !!openFile && !!(row.origin.localPath || row.origin.url);
+  const openTitle = row => row.origin.localPath || row.origin.url
+    || 'This computer has no clone of this member, and the kernel reports no web address for the file';
   const supports = verb => !!act && (!verbs || verbs.includes(verb));
   const rowById = id => data?.rows.find(r => r.id === id) || null;
 
@@ -402,13 +405,12 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     const verdict = node('div', undefined, `auto-verdict${p.tone === 'warn' ? ' warn' : ''}`); verdict.append(node('span', '', `auto-dot ${p.tone}`), node('span', row.runsHere ? 'Runs on this computer' : p.label));
     where.body.append(verdict); if (row.reasonDetail) where.body.append(node('p', row.reasonDetail, 'page-note'));
     const from = pageCard(doc, 'Comes from', { icon: row.origin.kind === 'local' ? 'computer' : 'repo' });
-    if (row.origin.kind === 'workspace') {
-      from.body.append(pageFacts(doc, [['Member', row.origin.member], ['Repo', row.origin.repoKey], ['Path', row.origin.path], ['Commit', row.origin.commit ? row.origin.commit.slice(0, 7) : null, row.origin.commit]]));
-      // Opens the file's web page; a file in this computer's clone waits for a guarded open route.
-      const f = node('button', 'Open file', 'act'); f.type = 'button'; f.disabled = !canOpen(row);
-      f.title = canOpen(row) ? row.origin.url : 'Opening needs the file\'s web address (a github.com member); this member has none';
+    if (row.origin.kind === 'workspace') from.body.append(pageFacts(doc, [['Member', row.origin.member], ['Repo', row.origin.repoKey], ['Path', row.origin.path], ['Commit', row.origin.commit ? row.origin.commit.slice(0, 7) : null, row.origin.commit]]));
+    else from.body.append(node('p', 'Local to this computer; not shared through Git.', 'page-note'));
+    if (openFile) {
+      const f = node('button', 'Open file', 'act'); f.type = 'button'; f.disabled = !canOpen(row); f.title = openTitle(row);
       f.addEventListener('click', () => { if (canOpen(row)) openFile(row); }); from.body.append(f);
-    } else from.body.append(node('p', 'Local to this computer; not shared through Git.', 'page-note'));
+    }
     side.append(where.card, from.card);
     const tested = tests.get(row.id);
     if (tested) {
@@ -492,7 +494,8 @@ export function mountAutomationsPage(el, ctx, kind, extend = () => ({}), { cli: 
       read: () => call({ kind, action: 'list' }),
       act: (verb, row) => call({ kind, action: verb, key: row.key }),
       status: kind === 'trigger' ? row => call({ kind, action: 'status', key: row.key }) : null,
-      openFile: row => { if (row.origin.url) ctx.openExternal?.(row.origin.url); },
+      // Read-only through the contained /api/file; a member without a clone opens its web page.
+      openFile: row => { if (row.origin.localPath) ctx.openFile?.(row.origin.localPath); else if (row.origin.url) ctx.openExternal?.(row.origin.url); },
       ...extend(call),
     });
   }

@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { automationRows, groupRows, filterRows, taskParts, cronInWords, onSummary, placementText, ownerParts, hostLogin, soulOriginText, testResult, triggerStatus, templateLabel, localScheduleDefinition } from '../renderer/automation-rows.mjs';
 import { createAutomationsView, automationsSupported } from '../renderer/views/automations.mjs';
+import { scheduleDraft } from '../renderer/schedule-read-data.mjs';
 
 // Schedules + Triggers (§2.3a, kernel 0.29.0 `automations`), read from the real captured
 // kernel output (fixtures/automations/kernel, see provenance.json). The capture's members are
@@ -54,6 +55,11 @@ test('a local schedule row gives back its stored definition for the editor, with
   assert.equal(def.id, 'digest'); assert.deepEqual([def.kind, def.cron, def.tz, def.argv], ['command', '30 8 * * 1-5', 'UTC', ['oats', 'status', '--json']]);
   for (const key of ['origin', 'runsHere', 'qualifiedId', 'nextDue', 'task', 'harness']) assert.equal(Object.hasOwn(def, key), false, key);
   assert.equal(localScheduleDefinition(nightly), null, 'a workspace schedule is edited in its repository');
+  // The editor's closed field check (scheduleDraft) takes the definition, never the 0.29 row (name, origin, host, …).
+  const list = fx('schedule-list'), { argv, cwd, ...rest } = list.schedules[0];
+  list.schedules[0] = { ...rest, kind: 'wake', home: '/fx/home', message: 'Check.' };
+  assert.deepEqual(scheduleDraft(localScheduleDefinition(automationRows(list, 'schedule').rows[0])),
+    { id: 'digest', kind: 'wake', cron: '30 8 * * 1-5', tz: 'UTC', enabled: true, home: '/fx/home', message: 'Check.' });
 });
 
 test('groups in page order; the origin filter and search narrow them', () => {
@@ -194,12 +200,19 @@ test('the detail page: prompt with highlighted fields, where it runs, where it c
   assert.equal(u.dom.window.document.activeElement, u.$('.auto-row[data-id="agents/pr-review"] .auto-open'), 'focus returns to the row');
 });
 
-test('Open file stays visible but disabled, with the reason, until the kernel reports a link', async t => {
-  const u = mount(t, 'trigger', { openFile: () => {} }); await tick();
+test('Open file: the local file when the kernel reports one, else the web page, else disabled with the reason', async t => {
+  const json = fx('trigger-list'), docs = json.triggers.find(r => r.id === 'agents/docs-sync');
+  docs.origin.localPath = null; docs.origin.url = null; // a member with no clone here and no web address
+  const opened = [], u = mount(t, 'trigger', { json, openFile: row => opened.push(row.origin.localPath) }); await tick();
+  const fileButton = () => [...u.$('.page-card[data-card="Comes from"]').querySelectorAll('button')].find(b => b.textContent === 'Open file');
   u.view.open('agents/pr-review'); await tick();
-  const open = [...u.$('.page-card[data-card="Comes from"]').querySelectorAll('button')].find(b => b.textContent === 'Open file');
-  assert.equal(open.disabled, true); assert.match(open.title, /web address/);
-  assert.equal(u.$('.page-bar-actions button[data-verb=file]'), null, 'no page-bar action without a link');
+  assert.equal(fileButton().disabled, false); assert.equal(fileButton().title, '/fixture/base/northwind-workspace/agents-repo/oats-triggers/pr-review.yaml');
+  u.$('.page-bar-actions button[data-verb=file]').click(); assert.deepEqual(opened, [fileButton().title]);
+  u.view.open('local/hotfix'); await tick();
+  assert.equal(fileButton().disabled, false, 'a local item opens its file too');
+  u.view.open('agents/docs-sync'); await tick();
+  assert.equal(fileButton().disabled, true); assert.match(fileButton().title, /no clone of this member/);
+  assert.equal(u.$('.page-bar-actions button[data-verb=file]'), null, 'no page-bar action without a file');
 });
 
 test('host-unnamed is one banner; an empty list explains both levels without naming a kernel file', async t => {
@@ -228,7 +241,7 @@ test('the mounted page: gates on the CLI, then reads and acts through POST /api/
   const el = dom.window.document.querySelector('main'), bodies = [], opened = [];
   setWorkspace('/team');
   let cli = { ok: true, features: ['schedule'], scheduleApi: 2 }; const listeners = new Set();
-  const ctx = { openExternal: url => opened.push(url), api: async (path, opts) => {
+  const ctx = { openFile: path => opened.push(path), openExternal: url => opened.push(url), api: async (path, opts) => {
     const body = JSON.parse(opts.body); bodies.push([path, body]);
     if (body.action === 'list') return { automationsViewApi: 1, status: 'ok', kind: 'trigger', action: 'list', result: triggers215(), reason: null };
     if (body.action === 'test') return { automationsViewApi: 1, status: 'unavailable', kind: 'trigger', action: 'test', result: null, reason: { code: 'E_X', message: 'gh is missing' } };
@@ -242,7 +255,7 @@ test('the mounted page: gates on the CLI, then reads and acts through POST /api/
   el.querySelector('.auto-row[data-id="agents/pr-review"] .auto-switch').click(); await tick(); await tick();
   assert.deepEqual(bodies[1][1], { kind: 'trigger', action: 'disable', key: 'agents/pr-review' }, 'the row\'s qualified id, as `key`');
   page.view.open('agents/pr-review'); el.querySelector('.page-bar-actions button[data-verb=file]').click();
-  assert.deepEqual(opened, [URL_215], 'Open file opens the kernel-reported web page');
+  assert.deepEqual(opened, ['/fx/clones/agents/oats-triggers/pr-review.yaml'], 'Open file opens the clone\'s file read-only, before the web page');
   el.querySelector('.page-bar-actions button[data-verb=test]').click(); await tick(); await tick();
   assert.match(el.querySelector('.page-card[data-card="Test result"]').textContent, /gh is missing/, 'an unavailable reply shows its reason');
 });
