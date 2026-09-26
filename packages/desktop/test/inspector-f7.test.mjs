@@ -47,7 +47,7 @@ test('soul: only what a person needs — Teams, Harness, Core capabilities, Capa
   assert.equal(u.el.querySelector('.readiness-view'), null);
   const chips = u.el.querySelector('h3.inspector-section + p + .inspector-chips');
   assert.ok(chips, 'one horizontal row of chips follows the one-line explanation');
-  assert.equal(chips.previousElementSibling.textContent, "The teams this soul has access to. Its instances start in their person's personal team only and can join these:");
+  assert.equal(chips.previousElementSibling.textContent, "The teams this soul has access to. Its instances start in the workspace's default team only and can join these:");
   assert.deepEqual([...chips.children].map(c => [c.textContent, c.className, c.title]),
     [['engineering · primary', 'inspector-chip', 'engineering (northwind:eng)']], 'global is not mapped: not shown');
   assert.doesNotMatch(u.el.textContent, /global/);
@@ -56,22 +56,22 @@ test('soul: only what a person needs — Teams, Harness, Core capabilities, Capa
   assert.equal(caps.length, soul.capabilities.length);
 });
 
-test('soul: no teams reported shows nothing; an empty list says personal team only', async t => {
+test('soul: no teams reported shows nothing; an empty list says default team only', async t => {
   const none = structuredClone(soul); delete none.teams;
   const a = await rendered(t, soulSelection, none);
   assert.equal(a.sections()[0], 'Harness');
   const empty = structuredClone(soul); empty.teams = [];
   const b = await rendered(t, soulSelection, empty);
   assert.equal(b.sections()[0], 'Teams');
-  assert.match(b.el.textContent, /Personal team only: this soul has access to no other team\./);
+  assert.match(b.el.textContent, /Default team only: this soul has access to no other team\./);
   const unmapped = structuredClone(soul); unmapped.teams = [{ label: 'global', team: null, mapped: false, payload: {} }];
   const c = await rendered(t, soulSelection, unmapped);
-  assert.match(c.el.textContent, /Personal team only: this soul has access to no other team\./); assert.doesNotMatch(c.el.textContent, /global/);
+  assert.match(c.el.textContent, /Default team only: this soul has access to no other team\./); assert.doesNotMatch(c.el.textContent, /global/);
   assert.equal(b.el.querySelector('.inspector-chips'), null);
 });
 
 test('soul: a declared default harness and model are named; the summary is the description only', async t => {
-  const v = structuredClone(soul); v.souls[0].runtime = 'claude'; v.souls[0].model = 'claude-opus-4';
+  const v = structuredClone(soul); v.souls[0].harness = 'claude'; v.souls[0].model = 'claude-opus-4';
   const u = await rendered(t, { agent: { ...soulSelection.agent, description: 'Ships the releases.' }, selector: soulSelection.selector }, v);
   const harness = [...u.el.querySelectorAll('h3.inspector-section')].find(h => h.textContent === 'Harness').nextElementSibling;
   assert.deepEqual([...harness.querySelectorAll('dt')].map(dt => [dt.textContent, dt.nextElementSibling.textContent]), [['Default harness', 'Claude Code'], ['Default model', 'claude-opus-4']]);

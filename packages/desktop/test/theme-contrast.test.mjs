@@ -730,7 +730,7 @@ for (const [name] of palettes) test(`${name}: F7 inspector cards, teams, compact
 // F7 Part C: the spawn dialog's Teams row — the Relationship segmented control, as toggles.
 for (const [name] of palettes) test(`${name}: the spawn Teams row (fixed, joinable, selected in the accent) meets computed AA`, () => {
   const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="spawn-seg spawn-teams-row spawn-team-list">
-    <label class="spawn-team spawn-team-fixed"><input type="checkbox" checked disabled><span class="spawn-team-name">Personal</span></label>
+    <label class="spawn-team spawn-team-fixed"><input type="checkbox" checked disabled><span class="spawn-team-name">Default</span></label>
     <label class="spawn-team"><input type="checkbox" class="fteam"><span class="spawn-team-name">engineering</span></label>
     <label class="spawn-team picked"><input type="checkbox" class="fteam" checked><span class="spawn-team-name">platform</span></label>
   </div></body></html>`, { pretendToBeVisual: true });

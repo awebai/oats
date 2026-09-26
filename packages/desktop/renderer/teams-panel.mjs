@@ -65,13 +65,17 @@ export function teamsOperations(inspected) {
 
 /** The provider's teams document from an operation run result, or null. The run
  * must be `operationsApi: 2` for exactly `address`; the document carries exactly
- * the contract's fields: `{personal{team}, primary, eligible[{label, team, joined}],
+ * the contract's fields (1.16 names, its AMENDMENT c129125a): `{defaultTeam{team, source?},
+ * primary, eligible[{label, team, joined}],
  * joined[{label, team, since, identityHome, receive}], unmapped[label], at}`. */
 export function teamsDocument(run, address) {
   if (!record(run) || run.operationsApi !== 2 || run.operation !== address) return null;
   const d = run.result;
-  if (!exact(d, ['personal', 'primary', 'eligible', 'joined', 'unmapped', 'at'])) return null;
-  if (!exact(d.personal, ['team']) || !text(d.personal.team) || !(d.primary === null || label(d.primary)) || !text(d.at, 64)) return null;
+  if (!exact(d, ['defaultTeam', 'primary', 'eligible', 'joined', 'unmapped', 'at'])) return null;
+  // The workspace's default team: its id, and where the provider found it (`source`, when it says).
+  const home = d.defaultTeam, sourced = record(home) && Object.hasOwn(home, 'source');
+  if (!exact(home, sourced ? ['team', 'source'] : ['team']) || !text(home.team) || (sourced && !text(home.source, 32))) return null;
+  if (!(d.primary === null || label(d.primary)) || !text(d.at, 64)) return null;
   const list = v => Array.isArray(v) && v.length <= 64;
   if (!list(d.eligible) || !list(d.joined) || !list(d.unmapped)) return null;
   if (!d.eligible.every(e => exact(e, ['label', 'team', 'joined']) && label(e.label) && text(e.team) && typeof e.joined === 'boolean')) return null;
@@ -80,7 +84,7 @@ export function teamsDocument(run, address) {
   if (!d.unmapped.every(label)) return null;
   const unique = xs => new Set(xs).size === xs.length;
   if (!unique(d.eligible.map(e => e.label)) || !unique(d.joined.map(j => j.label)) || !unique(d.unmapped)) return null;
-  return structuredClone({ personal: d.personal, primary: d.primary, eligible: d.eligible, joined: d.joined, unmapped: d.unmapped, at: d.at });
+  return structuredClone({ defaultTeam: d.defaultTeam, primary: d.primary, eligible: d.eligible, joined: d.joined, unmapped: d.unmapped, at: d.at });
 }
 
 /** A provider timestamp, shown deterministically (UTC minutes); anything else as sent. */
@@ -123,8 +127,8 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
   if (!operations.supported) { section.append(node('p', 'Not supported by this messaging provider.', 'teams-status')); return { sync() {}, refresh() {} }; }
   if (!operations.teams.available) { section.append(node('p', operations.teams.reason || 'The provider cannot list teams here.', 'teams-status')); return { sync() {}, refresh() {} }; }
   const status = node('p', '', 'teams-status'); status.setAttribute('role', 'status');
-  // What the list is: the personal team, then the teams the soul has access to (unmapped labels are not shown).
-  const intro = node('p', 'Always in its personal team. It can join the teams its soul has access to.', 'teams-note teams-intro'); intro.hidden = true;
+  // What the list is: the workspace's default team, then the teams the soul has access to (unmapped labels are not shown).
+  const intro = node('p', "Always in the workspace's default team. It can join the teams its soul has access to.", 'teams-note teams-intro'); intro.hidden = true;
   const body = node('div', undefined, 'teams-card');
   const refresh = node('button', 'Refresh teams', 'teams-refresh'); refresh.type = 'button';
   section.append(intro, status, body, refresh);
@@ -199,7 +203,7 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
   function render() {
     body.replaceChildren(); intro.hidden = !current;
     if (!current) return;
-    body.append(teamRow('personal', 'Personal team', [current.personal.team], badge('Always on', "The personal team can't be left.")));
+    body.append(teamRow('default', 'Default team', [current.defaultTeam.team], badge('Always on', "The workspace's default team can't be left.")));
     const joined = new Map(current.joined.map(j => [j.label, j]));
     const rows = [...current.eligible.map(e => ({ label: e.label, team: e.team, eligible: true })),
       ...current.joined.filter(j => !current.eligible.some(e => e.label === j.label)).map(j => ({ label: j.label, team: j.team, eligible: false }))];

@@ -16,8 +16,9 @@
       "instance": "release-manager-teams"
     },
     "result": {
-      "personal": {
-        "team": "personal:northwind:alice"
+      "defaultTeam": {
+        "team": "default:northwind:alice",
+        "source": "root"
       },
       "primary": "dev",
       "eligible": [

@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "name": "@awebai/oats",
-  "version": "0.25.9",
+  "version": "0.29.2",
   "desktopApi": 1,
-  "runtimes": [
+  "harnesses": [
     "pi",
     "claude",
     "codex"
@@ -58,8 +58,18 @@
     "served-identity",
     "packages-no-approval",
     "spawn-name",
-    "settings-origins"
+    "settings-origins",
+    "teams",
+    "settings-declared",
+    "capabilities-private",
+    "layers-from",
+    "harness",
+    "package-souls",
+    "triggers",
+    "automations",
+    "desktop-facts"
   ],
+  "automationsApi": 1,
   "workspaceApi": 2,
   "instanceGitApi": 1,
   "spawnApplyApi": 1,
@@ -70,14 +80,5 @@
   "eventsApi": 2,
   "scheduleHistoryApi": 3,
   "scheduleApi": 2,
-  "operationsApi": 2,
-  "capturedDispatchApi": 1,
-  "capturedDispatchActions": [
-    "inspect",
-    "compose",
-    "command",
-    "operation",
-    "spawn",
-    "trust"
-  ]
+  "operationsApi": 2
 }

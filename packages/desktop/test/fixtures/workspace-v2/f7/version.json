@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "name": "@awebai/oats",
-  "version": "0.26.0",
+  "version": "0.29.2",
   "desktopApi": 1,
-  "runtimes": [
+  "harnesses": [
     "pi",
     "claude",
     "codex"
@@ -62,8 +62,14 @@
     "teams",
     "settings-declared",
     "capabilities-private",
-    "layers-from"
+    "layers-from",
+    "harness",
+    "package-souls",
+    "triggers",
+    "automations",
+    "desktop-facts"
   ],
+  "automationsApi": 1,
   "workspaceApi": 2,
   "instanceGitApi": 1,
   "spawnApplyApi": 1,

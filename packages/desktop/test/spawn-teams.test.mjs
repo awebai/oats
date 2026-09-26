@@ -1,5 +1,5 @@
 // F7 Part C: the spawn dialog's Teams row (teams contract; kernel #179). The
-// personal team is fixed; the soul's mapped teams are unchecked checkboxes;
+// workspace's default team is fixed; the soul's mapped teams are unchecked checkboxes;
 // unmapped ones are greyed with the reason. The choice travels as
 // `--provider <cap> join=<a,b>` and must come back bound (settings echo).
 // Offered only when the provider DECLARES the spawn setting `join` — the
@@ -74,14 +74,14 @@ test('the projection carries the kernel\'s teams (primary first, no payloads), t
   assert.equal(previewData(older, t).teams, null, 'a kernel before #179 reports no teams');
 });
 
-test('the main form shows the Teams row — one line like Relationship: personal team fixed, the teams the soul has access to unchecked, unmapped not shown', async t => {
+test('the main form shows the Teams row — one line like Relationship: the default team fixed, the teams the soul has access to unchecked, unmapped not shown', async t => {
   const u = await dialog(t);
   const field = u.q('.spawn-teams');
   assert.equal(field.hidden, false); assert.equal(field.tagName, 'FIELDSET');
   assert.equal(field.closest('.spawn-advanced'), null, 'the main form, not Developer settings');
   assert.equal(field.querySelector('legend').textContent, 'Teams');
-  assert.equal(u.text('.spawn-teams-hint'), "By default it's only in your personal team. These are the teams release-manager has access to — tick the ones it should also join.");
-  assert.deepEqual(rows(u), [['Personal', "Personal team — always. Every instance is in its person's personal team.", true, true],
+  assert.equal(u.text('.spawn-teams-hint'), "By default it's only in the workspace's default team. These are the teams release-manager has access to — tick the ones it should also join.");
+  assert.deepEqual(rows(u), [['Default', "The workspace's default team — always. Every instance is in it.", true, true],
     ['engineering', 'Join engineering (northwind:eng)', false, false]], 'global is not mapped: not shown');
   const row = u.q('.spawn-teams-row');
   assert.ok(row.classList.contains('spawn-seg'), 'the Relationship segmented control, as toggles');
@@ -144,7 +144,7 @@ test('when the kernel\'s list changes under a tick, the redrawn row keeps it', a
   } });
   await u.change('.fteam[value="engineering"]', true); await settle();
   extra = true; await u.type('.fpurpose', 'teams'); await settle();
-  assert.deepEqual(rows(u).map(r => r[0]), ['Personal', 'engineering', 'platform'], 'redrawn from the kernel\'s new list');
+  assert.deepEqual(rows(u).map(r => r[0]), ['Default', 'engineering', 'platform'], 'redrawn from the kernel\'s new list');
   assert.equal(u.q('.fteam[value="engineering"]').checked, true);
   assert.equal(u.q('.fteam[value="platform"]').checked, false);
 });

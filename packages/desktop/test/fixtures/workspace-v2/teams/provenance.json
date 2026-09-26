@@ -1,13 +1,13 @@
 {
-  "source": "oats-desktop-engineer for the Desktop teams panel (main e60b4f7c); test/fixtures/northwind/build.mjs; capture-teams.mjs",
-  "kernel": "0.25.9",
+  "source": "ux-designer (the engineer's capture-teams.mjs, 1.16 stand-in) for the Desktop teams panel (main dc948fa1); test/fixtures/northwind/build.mjs; capture-teams.mjs",
+  "kernel": "0.29.2",
   "redactions": [
     "<base> (capture scratch) → /fixture/base",
     "<oats> (checkout) → /fixture/oats"
   ],
   "standIn": {
-    "reason": "oats.aweb 1.14.0 (the real teams provider) is not built yet. The stand-in declares the contract's messaging:teams|join|leave home operations and a settings.join declaration, and its tiny executable answers the documented teams document; recapture from oats.aweb 1.14.0 when it lands.",
-    "contract": "docs/design/2026-09-25-teams-contract.md (e60b4f7c)",
+    "reason": "The oats.aweb 1.16.0 wire names (the teams contract AMENDMENT, c129125a: defaultTeam {team, source}, E_TEAM_DEFAULT) are not tagged yet. The stand-in declares the contract's messaging:teams|join|leave home operations and a settings.join declaration, and its tiny executable answers the documented teams document in the 1.16 shape; recapture from oats.aweb 1.16.0 when it lands.",
+    "contract": "docs/design/2026-09-25-teams-contract.md (AMENDMENT c129125a)",
     "manifest": {
       "capability": "nw.teams",
       "version": "0.1.0",
@@ -32,7 +32,7 @@
           "kind": "action",
           "command": "teams",
           "context": "home",
-          "description": "This instance's teams: personal, eligible and joined"
+          "description": "This instance's teams: default, eligible and joined"
         },
         "join": {
           "kind": "action",
@@ -64,9 +64,9 @@
         }
       }
     },
-    "manifestSha256": "4b797c345a12848371b28d38e9ea3bb6ce3bef3968643296f1fbc7433ca17c4c",
-    "executable": "#!/usr/bin/env node\nimport { readFileSync, writeFileSync, existsSync } from \"node:fs\";\nconst [cmd = \"teams\", ...rest] = process.argv.slice(2);\nconst home = process.env.OATS_INSTANCE_HOME || process.cwd(), state = home + \"/.nw-teams.json\";\nconst MAPPED = { dev: \"northwind:eng\", reviewers: \"northwind:review\" }, RECEIVE = { dev: \"poll\", reviewers: \"native\" };\nconst joined = existsSync(state) ? JSON.parse(readFileSync(state, \"utf8\")) : [];\nconst out = v => { process.stdout.write(JSON.stringify(v) + \"\\n\"); };\nconst fail = (code, message) => { out({ schemaVersion: 1, ok: false, error: { code, message } }); process.exit(1); };\nconst doc = () => ({ personal: { team: \"personal:northwind:alice\" }, primary: \"dev\",\n  eligible: Object.entries(MAPPED).map(([label, team]) => ({ label, team, joined: joined.some(j => j.label === label) })),\n  joined: joined.map(j => ({ ...j })), unmapped: [\"marketing\"], at: \"2026-09-25T10:00:00.000Z\" });\nif (cmd === \"teams\") { out({ schemaVersion: 1, ok: true, result: doc() }); process.exit(0); }\nconst i = rest.indexOf(\"--labels\"), labels = (i >= 0 ? rest[i + 1] ?? \"\" : \"\").split(\",\").filter(Boolean);\nif (!labels.length) fail(\"E_BAD_ARGS\", \"name at least one team label\");\nif (cmd === \"leave\" && labels.includes(\"personal\")) fail(\"E_TEAM_PERSONAL\", \"the personal team cannot be left\");\nconst bad = labels.filter(l => !Object.hasOwn(MAPPED, l));\nif (bad.length) fail(\"E_TEAM_NOT_ELIGIBLE\", \"not eligible: \" + bad.join(\", \") + \" (eligible: \" + Object.keys(MAPPED).join(\", \") + \")\");\nlet next = joined;\nif (cmd === \"join\") for (const label of labels) if (!next.some(j => j.label === label))\n  next = [...next, { label, team: MAPPED[label], since: \"2026-09-25T10:0\" + next.length + \":00.000Z\", identityHome: home + \"/.aweb-identity-\" + label, receive: RECEIVE[label] }];\nif (cmd === \"leave\") next = next.filter(j => !labels.includes(j.label));\nwriteFileSync(state, JSON.stringify(next));\njoined.splice(0, joined.length, ...next);\nout({ schemaVersion: 1, ok: true, result: doc() });\n",
-    "executableSha256": "7557020d7d7db6374e2eb5f935e019da8b50d7a9f003175ac422d62deaf65a84",
+    "manifestSha256": "5c497f1d949a4168ca1c0f1fa42602b7099839771b40f601cbda81881c64a7f5",
+    "executable": "#!/usr/bin/env node\nimport { readFileSync, writeFileSync, existsSync } from \"node:fs\";\nconst [cmd = \"teams\", ...rest] = process.argv.slice(2);\nconst home = process.env.OATS_INSTANCE_HOME || process.cwd(), state = home + \"/.nw-teams.json\";\nconst MAPPED = { dev: \"northwind:eng\", reviewers: \"northwind:review\" }, RECEIVE = { dev: \"poll\", reviewers: \"native\" };\nconst joined = existsSync(state) ? JSON.parse(readFileSync(state, \"utf8\")) : [];\nconst out = v => { process.stdout.write(JSON.stringify(v) + \"\\n\"); };\nconst fail = (code, message) => { out({ schemaVersion: 1, ok: false, error: { code, message } }); process.exit(1); };\nconst doc = () => ({ defaultTeam: { team: \"default:northwind:alice\", source: \"root\" }, primary: \"dev\",\n  eligible: Object.entries(MAPPED).map(([label, team]) => ({ label, team, joined: joined.some(j => j.label === label) })),\n  joined: joined.map(j => ({ ...j })), unmapped: [\"marketing\"], at: \"2026-09-25T10:00:00.000Z\" });\nif (cmd === \"teams\") { out({ schemaVersion: 1, ok: true, result: doc() }); process.exit(0); }\nconst i = rest.indexOf(\"--labels\"), labels = (i >= 0 ? rest[i + 1] ?? \"\" : \"\").split(\",\").filter(Boolean);\nif (!labels.length) fail(\"E_BAD_ARGS\", \"name at least one team label\");\nif (cmd === \"leave\" && labels.includes(\"default\")) fail(\"E_TEAM_DEFAULT\", \"the workspace's default team cannot be left\");\nconst bad = labels.filter(l => !Object.hasOwn(MAPPED, l));\nif (bad.length) fail(\"E_TEAM_NOT_ELIGIBLE\", \"not eligible: \" + bad.join(\", \") + \" (eligible: \" + Object.keys(MAPPED).join(\", \") + \")\");\nlet next = joined;\nif (cmd === \"join\") for (const label of labels) if (!next.some(j => j.label === label))\n  next = [...next, { label, team: MAPPED[label], since: \"2026-09-25T10:0\" + next.length + \":00.000Z\", identityHome: home + \"/.aweb-identity-\" + label, receive: RECEIVE[label] }];\nif (cmd === \"leave\") next = next.filter(j => !labels.includes(j.label));\nwriteFileSync(state, JSON.stringify(next));\njoined.splice(0, joined.length, ...next);\nout({ schemaVersion: 1, ok: true, result: doc() });\n",
+    "executableSha256": "4bff81da3a8847358295abd2be6ee2b70e1bec8326ba16bc87b5b5ff27b7a01d",
     "package": {
       "package": "nw.teams",
       "version": "0.1.0",
@@ -97,9 +97,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.9",
-      "sourceSha256": "5f9024ab4e3daf15e9fb7babd1f8feb633f1d0864c81387e818c78f474f06437",
-      "fixtureSha256": "f055cbd5ddc9b80550778dd8ecdf247cfd746e7c711092dd516498d97fb8e6df"
+      "kernel": "0.29.2",
+      "sourceSha256": "163c0710d9503845f0c29700abfb96001a7260405dce56e47f22022ec3aae20f",
+      "fixtureSha256": "6a56da64fbcd5651f6513dacdd52fa232ab27d38ab6247052fdad0693285cf2d"
     },
     "inspect-home": {
       "argv": [
@@ -110,9 +110,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.9",
-      "sourceSha256": "1538d29ae3c3adfe8e3ff920966d956127172c08658d79d7653c2b26488db4aa",
-      "fixtureSha256": "38f92ff9f68d090254d329725b0ac7df14ab44bf89f80a2a32c054e8c8dc0d24"
+      "kernel": "0.29.2",
+      "sourceSha256": "268ae3418ac7690792c351c600287968d149e37762904eb574a3da66654d3766",
+      "fixtureSha256": "244239d875dec507afdf3eabc8491e5ecbf6b82bccf2048ff1d2c0b72b473d09"
     },
     "inspect-soul": {
       "argv": [
@@ -127,9 +127,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.9",
-      "sourceSha256": "cd49b522bfc404c15a1b7c9c6d58ac2cdd5faf74ef6eaf15a4ff6b990b5a776c",
-      "fixtureSha256": "67aff46996a806a0a626ea104a38816882baa7f16d3e5c4b7111c3ef8a8892cd"
+      "kernel": "0.29.2",
+      "sourceSha256": "d5b20c750502228f18d807456236c8e1f8a243c9055d07acdfae8f1959a59c5c",
+      "fixtureSha256": "1b8f120f063e9b576e638d66ae431563ca574fbcb239e06103e9638a474c01d1"
     },
     "teams-initial": {
       "argv": [
@@ -142,9 +142,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.9",
-      "sourceSha256": "79fe835472a59bd329e6476afab64c6f4af5fc6446cb112b302c06f9d2433cb3",
-      "fixtureSha256": "2b9586c5b42cb35e32632414d98ed872bd6611c64dde130a8329727bbf822531"
+      "kernel": "0.29.2",
+      "sourceSha256": "2081320a0086b973cf0d443795dcd16c44955357b37155aa14d381ecd6356578",
+      "fixtureSha256": "5093ab93911b34999527c39078e49917ce08e344b7d66eed4eb1357c01517f4f"
     },
     "join-dev": {
       "argv": [
@@ -159,9 +159,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.9",
-      "sourceSha256": "c4b01e7882681ed12994babc066e216ef870e6e1cd8acfa9c9fcf61065288bcd",
-      "fixtureSha256": "20f8780633c8cf4b380db76acade22ee79a17ccf411f1e34300b4f1d02a90314"
+      "kernel": "0.29.2",
+      "sourceSha256": "f036a0d6b5b5b82752c150a30d7c3d4bfcab3e488c0abd44d524a5f625628b2f",
+      "fixtureSha256": "4322b22276a7172da8e032b5e514a802a2902e2c1d3f4f4075af368b220d3f05"
     },
     "join-reviewers": {
       "argv": [
@@ -176,9 +176,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.9",
-      "sourceSha256": "c3973b78de72e4f73f1319ba29ca154a0fc909d875c70aaf24708c0a5c435893",
-      "fixtureSha256": "b538d994c1dfb15724ed08cb57dbc70c8756f8e4a7e3c5051921e3426099a251"
+      "kernel": "0.29.2",
+      "sourceSha256": "624c711407a7baeb6c1cfbaf556bcff7e53ac8123949edd982087b8f1b55c8ad",
+      "fixtureSha256": "9ceaeede5bb70f695a7c6c7eebe6e5a21c75842543c696cbd7e79b9840efba55"
     },
     "join-not-eligible": {
       "argv": [
@@ -193,11 +193,11 @@
         "--json"
       ],
       "exit": 1,
-      "kernel": "0.25.9",
+      "kernel": "0.29.2",
       "sourceSha256": "3887f1b9cba86eed85828e26fe765a57c838e6537e14564b5abc9265b138389e",
       "fixtureSha256": "193c1c8f47370f3733e9fc6ee4edfeb75888de3aded7a3f8bd2b6968ce93d2aa"
     },
-    "leave-personal": {
+    "leave-default": {
       "argv": [
         "oats",
         "operation",
@@ -206,13 +206,13 @@
         "--home",
         "<base>/northwind-workspace/agents/release-manager/instances/release-manager-teams",
         "--arg",
-        "labels=personal",
+        "labels=default",
         "--json"
       ],
       "exit": 1,
-      "kernel": "0.25.9",
-      "sourceSha256": "6893b38a6917c110299e8d8fbcd4a6d195751007c984c20d3f93e070c3a21b29",
-      "fixtureSha256": "dcfb4a12b3c706d0254d48eac341799bb3196a3992c411fe2f3227946e335d1a"
+      "kernel": "0.29.2",
+      "sourceSha256": "804f4669de22311ed8e9808c65cc828e9d2b13576c9b48647e847439e998e47f",
+      "fixtureSha256": "c4dea1c6ede23810f797056bfcd1f20c9f551807043a3fd27050454202fdbf34"
     },
     "leave-reviewers": {
       "argv": [
@@ -227,9 +227,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.9",
-      "sourceSha256": "5daf30f8800719b486d50b6a90be7f5131b4a3d1a0c18048cb163abb18e669a9",
-      "fixtureSha256": "c76a554d03270262b4e95eb6f2d4aead8e47ab32d4eaf76fcaa968ca688cc7f7"
+      "kernel": "0.29.2",
+      "sourceSha256": "24e2078f405b9a50fc97743b825cbd3e17935c92986dbadf1ab05361b3ce37a9",
+      "fixtureSha256": "024175ffe5bc682019b73101354e763e410313a3be171b4d27417042c51eb636"
     },
     "teams-joined": {
       "argv": [
@@ -242,9 +242,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.9",
-      "sourceSha256": "971e19ac534a1216312df1e76e30d327cfd83317ee0fd2645bbbe977d903371a",
-      "fixtureSha256": "bdc20eda49c4204e48035337e5e030a8519dfb98d0d6c461cf35e6c03ddea3e1"
+      "kernel": "0.29.2",
+      "sourceSha256": "0bd11e9d8b384aaa652698c59e8af8afc5b7fe2fe2a846b49a50e1e3994bb54c",
+      "fixtureSha256": "d6736e69f891dee26b2ce6c84bd3e976354e8280ed2e7d79d9619a48d95db309"
     },
     "join-missing-arg": {
       "argv": [
@@ -257,7 +257,7 @@
         "--json"
       ],
       "exit": 1,
-      "kernel": "0.25.9",
+      "kernel": "0.29.2",
       "sourceSha256": "83e4f055e47826462aea5d9990f3ccf629ee4f762ace18d0662c01caf93bb6c5",
       "fixtureSha256": "0bd0b888e73eb7d5b52f2ce26267de99757c5ea6743d7a7053be36ce3a44eb53"
     },
@@ -276,7 +276,7 @@
         "--json"
       ],
       "exit": 1,
-      "kernel": "0.25.9",
+      "kernel": "0.29.2",
       "sourceSha256": "d6db26663748de8cb0375cce0f3a8b746253e3a30b8807885598696558601658",
       "fixtureSha256": "58bb384ef53f9a2ec65aa2ba14529fe64fe8285ce970d18c8cea3b7409509447"
     }

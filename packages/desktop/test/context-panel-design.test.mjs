@@ -112,7 +112,7 @@ test('the injected Teams section reads once per instance, gates on the declared 
   u.s.update({ active: true, workspace: 'A', instance: teamsInstance() }); await tick(); await tick();
   assert.deepEqual(u.calls.map(c => [c.workspace, c.action, c.operation ?? null]), [['A', 'inspect', null], ['A', 'run', 'messaging:teams']]);
   assert.deepEqual(u.calls[0].selector, { home: TEAMS_HOME });
-  assert.deepEqual(u.presence.at(-1), true); assert.ok(u.host.querySelector('.teams-panel [data-team-row="personal"]'));
+  assert.deepEqual(u.presence.at(-1), true); assert.ok(u.host.querySelector('.teams-panel [data-team-row="default"]'));
   assert.equal(u.host.querySelector('.teams-panel > h3'), null, 'the context panel labels the section itself');
   for (let i = 0; i < 5; i++) u.s.update({ active: true, workspace: 'A', instance: teamsInstance() });
   await tick(); assert.equal(u.calls.length, 2, 'renders are frequent: one inspection per selection');

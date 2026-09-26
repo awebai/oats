@@ -10,29 +10,29 @@
     "launched": false,
     "warnings": [],
     "tmux": {
-      "session": "none-62685",
+      "session": "none-45264",
       "window": "release-manager-teams"
     },
     "repo": "/fixture/base/northwind-workspace/agents-repo",
-    "runtime": "pi",
+    "harness": "pi",
     "model": null,
     "parent": null,
     "sibling": null,
     "relation": null,
     "spawnOrigin": "operator",
-    "attach": "tmux attach -t none-62685",
+    "attach": "tmux attach -t none-45264",
     "decision": {
       "instance": "release-manager-teams",
       "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-teams",
       "branch": "agents/release-manager-teams",
       "base": {
         "ref": "HEAD",
-        "oid": "7eab079d748d3906db69d67e0beb12e784790d19"
+        "oid": "504b717008b2fad05fe578b43479721a316803cc"
       },
       "effective": {
         "repo": "/fixture/base/northwind-workspace/agents-repo",
         "work": "worktree",
-        "runtime": "pi",
+        "harness": "pi",
         "model": null,
         "launchConfig": null,
         "yolo": null,
@@ -61,8 +61,8 @@
           }
         }
       },
-      "resolution": "0bc0d2aa9163fdf3b1877cfd",
-      "revision": "d848ca21d5bd117433a4a3ed"
+      "resolution": "6979799c63f915447e690b9f",
+      "revision": "0fa67b18699ac5cef0d8df11"
     },
     "replayed": false,
     "wake": {
@@ -72,8 +72,8 @@
     },
     "launchConfig": null,
     "launch": {
-      "version": 1,
-      "runtime": "pi",
+      "version": 2,
+      "harness": "pi",
       "launchConfig": null,
       "launchConfigSource": null,
       "executable": "/fixture/base/bin/pi",

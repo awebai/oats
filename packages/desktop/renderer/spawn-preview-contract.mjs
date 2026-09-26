@@ -115,7 +115,7 @@ export function previewChoices(v) {
     else if (exact(i, ['provider', 'mode', 'resident']) && i.mode === 'global' && RESIDENT.test(i.resident ?? '')) out.identity = { provider: i.provider, mode: 'global', resident: i.resident };
     else return null;
   }
-  // Teams to join beyond the personal team (teams contract): the provider's
+  // Teams to join beyond the workspace's default team (teams contract): the provider's
   // spawn setting, sent as --provider <cap> join=<a,b>. Labels are the preview's
   // mapped ones; the kernel/provider decides eligibility (E_TEAM_NOT_ELIGIBLE).
   if (Object.hasOwn(v, 'join')) {
