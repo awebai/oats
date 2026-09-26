@@ -486,7 +486,7 @@ un-materialized tree → `E_NO_WORKTREE`.
  "base":{"ref":"origin/main","source":"origin/HEAD","mergeBase":"<oid>","ahead":2,"behind":0},
  "remote":{"name":"origin","url":"git@github.com:acme/one.git","host":"github.com","path":"acme/one","source":"branch-upstream|origin"},
  "summary":{"changed":1,"renamed":1,"copied":0,"unmerged":0,"untracked":1},
- "files":[{"id":"<24 hex>","kind":"renamed","xy":"R.","submodule":false,"score":"R100","path":"src/new.txt","origPath":"src/old.txt"}],
+ "files":[{"id":"<24 hex>","kind":"renamed","xy":"R.","submodule":false,"score":"R100","path":"src/new.txt","origPath":"src/old.txt","additions":84,"deletions":3,"binary":false}],
  "notes":[]}
 ```
 
@@ -499,6 +499,19 @@ un-materialized tree → `E_NO_WORKTREE`.
   unmerged | untracked. Ignored files are not listed.
 - `files[].id` is **opaque**, minted under (`revision`, `indexRevision`). It is
   the only way to ask for a diff.
+- `files[].additions`, `deletions` and `binary` (0.29.1, additive;
+  `instanceGitApi` stays 1) are each file's line counts.
+  - They come from one `git diff <revision> --numstat -z -M` per observation:
+    the working tree against the observed commit, **staged and unstaged
+    combined**. That is the baseline of the status letters and of
+    `oats instance diff`.
+  - An unborn tree counts against the empty tree. A rename counts on its new
+    `path`.
+  - A binary file is `additions: null, deletions: null, binary: true`. An
+    untracked file (no baseline; its contents are not read) and a submodule
+    are all `null`.
+  - If the count itself fails, every entry is `null` and `notes` says line
+    counts are unavailable. `null` means unknown, never zero.
 - `remote` (0.24.8+): the branch's configured remote (`source: branch-upstream`),
   else `origin`, else `null` — never invented. `host`/`path` are **parsed** from
   the URL (ssh/https forms; `.git` stripped) so an ADE can choose a forge backend
