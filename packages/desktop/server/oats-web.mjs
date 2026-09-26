@@ -50,13 +50,12 @@ import { readinessFailure } from '../renderer/readiness-contract.mjs';
 import { spawnPreviewRequest } from './spawn-preview.mjs';
 import { instanceEventsRequest } from './instance-events.mjs';
 import { eventsFailure } from '../renderer/instance-events-contract.mjs';
-import { scheduleReadRequestBoundary } from './schedule-read.mjs';
-import { scheduleReadAlias, scheduleReadFailure } from '../renderer/schedule-read-contract.mjs';
 import { spawnApplyRequest } from './spawn-apply.mjs';
 import { spawnApplyFailure } from '../renderer/spawn-apply-contract.mjs';
 import { previewFailure } from '../renderer/spawn-preview-contract.mjs';
 import { forgeBoundary, FORGE_EPOCH_HEADER, validForgeEpoch } from "./forge.mjs";
 import { launchConfigRequest } from "./launch-configs.mjs";
+import { automationsRequest, automationsFailure } from "./automations.mjs";
 import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
 import { harnessFlag, HARNESSES } from "../renderer/harness-names.mjs";
 
@@ -471,6 +470,7 @@ function cliStatus() {
     scheduleHistoryApi: cliState.scheduleHistoryApi === 3 ? 3 : null,
     lifecycleApi: cliState.lifecycleApi === 1 ? 1 : null,
     readinessApi: cliState.readinessApi === 2 ? 2 : null,
+    automationsApi: cliState.automationsApi === 1 ? 1 : null,
     // The inspector's gate (inspect on the workspace model); absent before, so
     // the Workspace inspector could never become available.
     operationsApi: cliState.operationsApi === 2 ? 2 : null,
@@ -1224,25 +1224,22 @@ const server = createServer(async (req, res) => {
         return send(res, 200, result);
       } catch (e) { const { status, body } = spawnErrorPayload(e); return send(res, status, body); }
     }
-    if (path === '/api/workspace-schedules' || path === '/api/schedules') {
-      const readFailure = code => ({ ...scheduleReadFailure(code), workspace: null });
-      if (req.method !== 'POST') return send(res, 405, readFailure('E_METHOD_NOT_ALLOWED'));
-      let request, bytes;
-      try {
-        // The legacy path also carries existing <=64KiB mutations. Its shared
-        // decoder stays bounded at that size; read aliases have a strict16KiB
-        // acceptance limit (including whitespace) before admission/dispatch.
-        ({ body: request, bytes } = await readStrictBody(req, path === '/api/schedules' ? 65536 : 16384, true));
-      } catch { return send(res, 400, readFailure('E_BAD_ARGS')); }
-      if (path === '/api/workspace-schedules' || ['list', 'show'].includes(request.operation)) {
-        if (bytes > 16384 || url.searchParams.getAll('ws').length !== 1 || !url.searchParams.get('ws')
-          || [...url.searchParams.keys()].some(k => k !== 'ws')) return send(res, 400, readFailure('E_BAD_ARGS'));
-        const input = path === '/api/schedules' ? scheduleReadAlias(request) : request;
-        const getContext = () => ({ workspace: workspaces().find(w => w.id === url.searchParams.get('ws')), cli: cliState, epoch: cliProbeGeneration });
-        return send(res, 200, await scheduleReadRequestBoundary(input, getContext));
-      }
-      // Mutation admission/CLI contract remains separate. No default workspace,
-      // history-enabled write, or roster/host collection on the read path.
+    if (path === '/api/automations') {
+      // Triggers and schedules (feature automations): one local workspace, the kernel's lists and verbs ({ kind, action, key? }).
+      if (req.method !== 'POST') return send(res, 405, automationsFailure('E_BAD_ARGS'));
+      let request;
+      try { ({ body: request } = await readStrictBody(req, 4096, true)); } catch { return send(res, 400, automationsFailure('E_BAD_ARGS')); }
+      if (url.searchParams.getAll('ws').length !== 1 || !url.searchParams.get('ws') || [...url.searchParams.keys()].some(k => k !== 'ws')) return send(res, 400, automationsFailure('E_BAD_ARGS'));
+      const workspace = workspaces().find(w => w.id === url.searchParams.get('ws'));
+      return send(res, 200, await automationsRequest(request, { workspace, cli: cliState }));
+    }
+    if (path === '/api/schedules') {
+      // The local schedule form's verbs (add/update/remove, reconcile, host-*). Reading and
+      // enable/disable/run/test are the kernel's automations (/api/automations, §2.3a).
+      if (req.method !== 'POST') return send(res, 405, { error: 'Method not allowed', code: 'E_METHOD_NOT_ALLOWED' });
+      let request;
+      try { ({ body: request } = await readStrictBody(req, 65536, true)); } catch { return send(res, 400, { error: 'Invalid schedule request', code: 'E_BAD_ARGS' }); }
+      // No default workspace: a mutation names its workspace.
       const workspace = workspaces().find(w => w.id === url.searchParams.get('ws'));
       try {
         const result = await scheduleRequest(request, {

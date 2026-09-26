@@ -1,8 +1,13 @@
-import { apiJson, postJson, ensureTheme, workspaceGeneration, wsQuery } from "./common.mjs";
+/** Schedules (§2.3a, human 2026-09-26): the workspace's schedules and this computer's own,
+ * grouped by where they run (views/automations.mjs, on the kernel's `oats schedule list`).
+ * This module adds what only local schedules have: the New / Edit form, Delete, the run
+ * state check, and enabling the host scheduler — through the local `/api/schedules` verbs. */
+import { apiJson, postJson, workspaceGeneration, wsQuery, onWorkspaceChange } from "./common.mjs";
 import { wakeScheduleFields } from "../wake-schedule-fields.mjs";
-import { createScheduleObservationView, scheduleObservationCSS } from "../schedule-observation-view.mjs";
-import { scheduleEditReason } from "../schedule-read-data.mjs";
-import { cliCard, cliKnownUnavailable, onCliChange } from "./cli-status.mjs";
+import { scheduleDraft } from "../schedule-read-data.mjs";
+import { localScheduleDefinition } from "../automation-rows.mjs";
+import { mountAutomationsPage } from "./automations.mjs";
+import { cliStatus, onCliChange } from "./cli-status.mjs";
 
 let mounted;
 let preselection;
@@ -10,93 +15,80 @@ export function preselectSchedule(soul) { preselection = { soul, generation: wor
 export function mount(el, ctx) { mounted = createSchedulesView(el, ctx); }
 export function unmount() { mounted?.dispose(); mounted = null; }
 
-const when = value => value ? new Date(value).toLocaleString() : "—";
 export function scheduleOutcome(run) {
   if (!run) return "Not run yet";
   const labels = { launched: "Agent launched", active: "Agent active", running: "Agent active", ended: "Run ended", stopped: "Agent stopped — needs attention", unknown: "Launch state unknown — needs attention", "launch-failed": "Launch failed", skipped: "Skipped", delivered: "Wake message delivered" };
   return [labels[run.outcome] || run.outcome || "Attempt recorded", run.error?.message || run.error, run.reason].filter(Boolean).join(" · ");
 }
 const CSS = `
-.schedules-view { display:block; height:100%; overflow:auto; padding:20px; background:var(--bg); color:var(--fg); }
-.schedules-view header { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-.schedules-view h2 { margin:0; flex:1; font-size:18px; }
-.schedules-view .schedule-status { color:var(--muted); margin:12px 0; }
-.schedules-view .schedule-error { color:var(--danger); }
-.schedules-view .schedule-list { display:grid; gap:12px; margin-top:16px; }
-.schedule-card, .schedule-form { border:1px solid var(--border); border-radius:10px; padding:16px; background:var(--surface); }
-.schedule-card h3 { margin:0 0 8px; font-size:15px; }
-.schedule-card p { margin:6px 0; overflow-wrap:anywhere; }
-.schedule-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
-.schedule-form { max-width:680px; margin-top:16px; display:grid; gap:12px; }
-.schedule-form[hidden], .schedule-form [hidden] { display:none; }
-.schedule-form h3 { margin:0; }
-.schedule-form label { display:grid; gap:5px; }
+.schedules-page { position:relative; height:100%; display:block; }
+.schedule-sheet { position:fixed; z-index:90; inset:0; display:grid; place-items:center; padding:24px; background:var(--scrim); }
+.schedule-sheet[hidden] { display:none; }
+.schedule-form { grid-template-columns:minmax(0, 1fr); width:min(680px, 100%); max-height:calc(100vh - 48px); overflow:auto; box-sizing:border-box; display:grid; gap:12px; padding:18px 20px; border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--fg); box-shadow:var(--shadow-popover); }
+.schedule-form [hidden] { display:none; }
+.schedule-form h3 { margin:0; font-size:15px; }
+.schedule-form label { display:grid; grid-template-columns:minmax(0, 1fr); gap:5px; min-width:0; font-size:12.5px; }
+.schedule-form .field { width:100%; min-width:0; }
 .schedule-form .schedule-check { display:flex; align-items:center; gap:8px; }
-.schedule-form .schedule-pair { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.schedule-form .schedule-pair { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
 .schedule-form fieldset { border:1px solid var(--border); border-radius:8px; margin:12px 0 0; padding:12px; }
 .schedule-form textarea { resize:vertical; min-height:90px; }
 .schedule-form .schedule-hint { color:var(--muted); font-size:12px; margin:0; }
-@media(max-width:650px) { .schedule-form .schedule-pair { grid-template-columns:1fr; } }
+.schedule-form .schedule-error { color:var(--danger); margin:0; font-size:12.5px; }
+.schedule-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.schedule-confirm { width:min(420px, 100%); box-sizing:border-box; display:grid; gap:14px; padding:18px 20px; border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--fg); box-shadow:var(--shadow-popover); font-size:12.5px; }
+.schedule-confirm h3 { margin:0; font-size:15px; }
+.schedule-confirm p { margin:0; color:var(--muted); line-height:1.5; }
+@media(max-width:650px) { .schedule-form .schedule-pair { grid-template-columns:minmax(0, 1fr); } }
 `;
-
-export function createSchedulesView(el, ctx, readOptions = {}) {
-  const doc = el.ownerDocument;
-  ensureTheme(doc);
-  el.innerHTML = `<style>${CSS}${scheduleObservationCSS}</style><section class="oats-view schedules-view">
-    <header><h2>Schedules</h2><button class="act primary schedule-new">New schedule</button><button class="act schedule-refresh">Refresh</button></header>
-    <div class="schedule-cli" hidden></div>
-    <p>Schedules run on this workspace’s server, including while the GUI is closed.</p>
-    <div class="schedule-status" role="status"></div>
-    <div class="schedule-host-actions"></div>
-    <p class="schedule-operation-result" role="status"></p>
-    <p class="schedule-error" role="alert"></p>
-    <form class="schedule-form" hidden>
-      <h3 class="schedule-form-title">New schedule</h3>
-      <label>Name<input class="field" name="id" required pattern="[a-z0-9][a-z0-9-]{0,39}" placeholder="daily-review"></label>
-      <label>Action<select class="field" name="kind"><option value="wake">Wake an existing agent</option><option value="spawn">Launch a new agent</option><option value="operation">Run a provider operation</option></select></label>
-      <label class="schedule-agent-field">Soul<select class="field" name="agent"></select></label>
-      <label class="schedule-home-field">Agent home<select class="field" name="home"></select></label>
-      <label class="schedule-provider-field" hidden>Provider operation<select class="field" name="providerOperation"></select><span class="schedule-provider-note schedule-hint"></span></label>
-      <label class="schedule-task-field"><span class="schedule-task-label">Wake message</span><textarea class="field" name="task" placeholder="What should the agent do each time?"></textarea></label>
-      <div class="schedule-spawn-options">
-        <label>Purpose (optional instance name prefix)<input class="field" name="purpose"></label>
-        <div class="schedule-pair">
-          <label>Harness<select class="field" name="harness"><option value="">Soul default</option><option>pi</option><option>claude</option><option>codex</option></select></label>
-          <label>Model<input class="field" name="model" placeholder="Soul default"></label>
-        </div>
-        <div class="schedule-pair">
-          <label>Session backend<select class="field" name="backend"><option value="">Soul default</option><option value="tmux">tmux</option><option value="herdr">Herdr</option></select></label>
-          <label>Permissions<select class="field" name="yolo"><option value="">Soul / scope setting</option><option value="true">YOLO — skip permission prompts</option><option value="false">Native permission policy</option></select></label>
-        </div>
-      </div>
-      <label>Repeat<select class="field" name="repeat"><option value="*/15 * * * *">Every 15 minutes</option><option value="*/5 * * * *">Every 5 minutes</option><option value="*/30 * * * *">Every 30 minutes</option><option value="0 * * * *">Every hour</option><option value="0 9 * * *">Daily at 09:00</option><option value="0 9 * * 1-5">Weekdays at 09:00</option><option value="custom">Custom cron</option></select></label>
+const FORM = `
+  <form class="schedule-form" aria-labelledby="schedule-form-title">
+    <h3 class="schedule-form-title" id="schedule-form-title">New schedule</h3>
+    <label>Name<input class="field" name="id" required pattern="[a-z0-9][a-z0-9-]{0,39}" placeholder="daily-review"></label>
+    <label>Action<select class="field" name="kind"><option value="wake">Wake an existing agent</option><option value="spawn">Launch a new agent</option><option value="operation">Run a provider operation</option></select></label>
+    <label class="schedule-agent-field">Soul<select class="field" name="agent"></select></label>
+    <label class="schedule-home-field">Agent home<select class="field" name="home"></select></label>
+    <label class="schedule-provider-field" hidden>Provider operation<select class="field" name="providerOperation"></select><span class="schedule-provider-note schedule-hint"></span></label>
+    <label class="schedule-task-field"><span class="schedule-task-label">Wake message</span><textarea class="field" name="task" placeholder="What should the agent do each time?"></textarea></label>
+    <div class="schedule-spawn-options">
+      <label>Purpose (optional instance name prefix)<input class="field" name="purpose"></label>
       <div class="schedule-pair">
-        <label>Cron expression<input class="field" name="cron" required value="*/15 * * * *" aria-describedby="schedule-cron-hint"></label>
-        <label>Time zone<input class="field" name="tz" required placeholder="America/Toronto"></label>
+        <label>Harness<select class="field" name="harness"><option value="">Soul default</option><option>pi</option><option>claude</option><option>codex</option></select></label>
+        <label>Model<input class="field" name="model" placeholder="Soul default"></label>
       </div>
-      <p class="schedule-hint" id="schedule-cron-hint">Minute, hour, day of month, month, day of week. Missed times are skipped. Wake messages use the agent’s terminal; no interrupts are sent.</p>
-      <label class="schedule-check"><input type="checkbox" name="enabled" checked>Enabled</label>
-      <div class="schedule-actions"><button class="act schedule-save" type="submit">Save schedule</button><button class="act schedule-cancel" type="button">Cancel</button></div>
-      <p class="schedule-form-error schedule-error" role="alert"></p>
-    </form><div class="schedule-list"></div></section>`;
+      <div class="schedule-pair">
+        <label>Session backend<select class="field" name="backend"><option value="">Soul default</option><option value="tmux">tmux</option><option value="herdr">Herdr</option></select></label>
+        <label>Permissions<select class="field" name="yolo"><option value="">Soul / scope setting</option><option value="true">YOLO — skip permission prompts</option><option value="false">Native permission policy</option></select></label>
+      </div>
+    </div>
+    <label>Repeat<select class="field" name="repeat"><option value="*/15 * * * *">Every 15 minutes</option><option value="*/5 * * * *">Every 5 minutes</option><option value="*/30 * * * *">Every 30 minutes</option><option value="0 * * * *">Every hour</option><option value="0 9 * * *">Daily at 09:00</option><option value="0 9 * * 1-5">Weekdays at 09:00</option><option value="custom">Custom cron</option></select></label>
+    <div class="schedule-pair">
+      <label>Cron expression<input class="field" name="cron" required value="*/15 * * * *" aria-describedby="schedule-cron-hint"></label>
+      <label>Time zone<input class="field" name="tz" required placeholder="America/Toronto"></label>
+    </div>
+    <p class="schedule-hint" id="schedule-cron-hint">Minute, hour, day of month, month, day of week. Missed times are skipped. Wake messages use the agent’s terminal; no interrupts are sent.</p>
+    <label class="schedule-check"><input type="checkbox" name="enabled" checked>Enabled</label>
+    <div class="schedule-actions"><button class="act primary schedule-save" type="submit">Save schedule</button><button class="act schedule-cancel" type="button">Cancel</button></div>
+    <p class="schedule-form-error schedule-error" role="alert"></p>
+  </form>`;
+
+export function createSchedulesView(el, ctx, { cli = cliStatus, subscribeCli = onCliChange } = {}) {
+  const doc = el.ownerDocument;
+  el.innerHTML = `<style>${CSS}</style><div class="oats-view schedules-page"><div class="schedule-sheet" hidden>${FORM}</div><div class="schedule-sheet schedule-delete-sheet" hidden><div class="schedule-confirm" role="alertdialog" aria-modal="true" aria-labelledby="schedule-delete-title" aria-describedby="schedule-delete-text"><h3 id="schedule-delete-title">Delete schedule</h3><p id="schedule-delete-text"></p><div class="schedule-actions"><button class="act danger schedule-delete-confirm" type="button">Delete schedule</button><button class="act schedule-delete-cancel" type="button">Cancel</button></div></div></div><div class="schedule-stage" style="height:100%"></div></div>`;
   const q = selector => el.querySelector(selector);
-  const form = q("form"), field = name => form.elements.namedItem(name);
-  const card = cliCard(doc, ctx); q('.schedule-cli').append(card.el);
-  const syncCard = () => { q('.schedule-cli').hidden = !cliKnownUnavailable(); };
-  const offCard = onCliChange(syncCard); syncCard();
+  const sheet = q(".schedule-sheet:not(.schedule-delete-sheet)"), deleteSheet = q(".schedule-delete-sheet"), form = q("form"), field = name => form.elements.namedItem(name);
   const nestedWake = wakeScheduleFields(doc);
   q(".schedule-spawn-options").append(nestedWake.el);
-  let alive = true, busy = false, available = false, editing = null, formReady = false;
-  let agents = [], instances = [], original = null, baseline = {}, originalWake = null, definition = null, definitionRevision = null;
-  const definitionKey = job => JSON.stringify(['id', 'scope', 'kind', 'captured', 'createdAt', 'updatedAt', 'agent', 'home', 'operation', 'cron', 'tz', 'enabled'].map(k => job?.[k]));
-  let operationRequest = 0, formOperation = 0, mutationOperation = 0, observation;
-  const ownsForm = (token, lease) => alive && token === formOperation && observation?.owns(lease);
+  let alive = true, busy = false, readOk = false, editing = null, formReady = false, opener = null;
+  let agents = [], instances = [], original = null, baseline = {}, originalWake = null;
+  let operationRequest = 0, formOperation = 0, mutationOperation = 0;
+  // The local verbs need the schedule contract (0.28) on a compatible CLI, and a list that read:
+  // nothing changes what the page could not show.
+  const canMutate = () => { const c = cli(); return alive && readOk && c?.ok === true && [1, 2].includes(c.scheduleApi) && !!c.features?.includes("schedule"); };
+  const owns = (token, gen) => alive && token === formOperation && gen === workspaceGeneration();
   const preserve = (name, key = name) => original && original.kind === field("kind").value && Object.hasOwn(original, key) && field(name).value === baseline[name] ? original[key] : field(name).value;
-  const button = (label, action, disabled = false) => {
-    const b = doc.createElement("button"); b.className = "act"; b.type = "button";
-    b.textContent = label; b.disabled = disabled; b.addEventListener("click", () => { if (alive && b.isConnected && !b.disabled && observation?.canMutate()) action(); }); return b;
-  };
-  const error = message => { q(".schedule-error").textContent = message; };
+  const view = () => page?.view;
+  const notice = text => view()?.setNotice(text);
   const fill = (select, rows, label, value) => {
     select.replaceChildren();
     for (const row of rows) { const o = doc.createElement("option"); o.value = value(row); o.textContent = label(row); select.append(o); }
@@ -116,27 +108,32 @@ export function createSchedulesView(el, ctx, readOptions = {}) {
     void loadOperations(typeof preferred === "string" ? preferred : undefined);
   }
   async function loadOperations(preferred = field("providerOperation").value) {
-    const token = ++operationRequest, formToken = formOperation, lease = observation.lease();
+    const token = ++operationRequest, formToken = formOperation, gen = workspaceGeneration();
     if (field("kind").value !== "operation") return;
     field("providerOperation").replaceChildren();
     q(".schedule-provider-note").textContent = "Loading operations for this home…";
     try {
       const inspection = await postJson(ctx, `/api/capabilities${wsQuery()}`, { action: "inspect", selector: { home: field("home").value } });
-      if (token !== operationRequest || !ownsForm(formToken, lease) || form.hidden) return;
+      if (token !== operationRequest || !owns(formToken, gen) || sheet.hidden) return;
       const operations = (inspection.capabilities || []).filter(cap => cap.layer).flatMap(cap =>
         (cap.operations || []).filter(op => op.kind === "action" && op.available && !op.args?.some(arg => arg.required)).map(op => ({ address: `${cap.layer}:${op.name}`, label: `${cap.layer}: ${op.name} — ${op.description || cap.id}` })));
       fill(field("providerOperation"), operations, op => op.label, op => op.address);
       if (operations.some(op => op.address === preferred)) field("providerOperation").value = preferred;
       q(".schedule-provider-note").textContent = operations.length ? "Resolved through this home's active provider at each run." : "No available provider actions for this home.";
     } catch (error) {
-      if (token === operationRequest && ownsForm(formToken, lease) && !form.hidden) q(".schedule-provider-note").textContent = error.message;
+      if (token === operationRequest && owns(formToken, gen) && !sheet.hidden) q(".schedule-provider-note").textContent = error.message;
     }
   }
   field("home").addEventListener("change", () => void loadOperations());
-  async function openForm(job, soul, observedDefinition = null) {
-    if (!observation?.canMutate() || busy) return;
-    const token = ++formOperation, lease = observation.lease(); ++operationRequest;
-    editing = job?.id || null; original = job ? structuredClone(job) : null; definition = observedDefinition; definitionRevision = observation.revision(); formReady = false; form.reset();
+  function closeForm() {
+    ++formOperation; ++operationRequest; sheet.hidden = true; formReady = false;
+    const back = opener; opener = null; if (back?.isConnected) back.focus();
+  }
+  async function openForm(job, soul) {
+    if (!canMutate() || busy) return;
+    const token = ++formOperation, gen = workspaceGeneration(); ++operationRequest;
+    opener = doc.activeElement;
+    editing = job?.id || null; original = job ? structuredClone(job) : null; formReady = false; form.reset();
     q(".schedule-form-error").textContent = "";
     q(".schedule-form-title").textContent = editing ? `Edit ${editing}` : "New schedule";
     field("agent").replaceChildren(); field("home").replaceChildren();
@@ -146,8 +143,6 @@ export function createSchedulesView(el, ctx, readOptions = {}) {
     field("repeat").value = [...field("repeat").options].some(o => o.value === field("cron").value) ? field("cron").value : "custom";
     field("enabled").checked = job?.enabled ?? true;
     field("kind").value = job?.kind || (soul ? "spawn" : "wake");
-    // Target options are filled by the owned roster read below, never inferred
-    // from a history/session provenance address.
     field("task").value = job?.message || job?.task || "";
     field("purpose").value = job?.purpose || "";
     nestedWake.set(job?.wake);
@@ -155,11 +150,11 @@ export function createSchedulesView(el, ctx, readOptions = {}) {
     field("yolo").value = job?.yolo === undefined ? "" : String(job.yolo);
     baseline = Object.fromEntries([...form.elements].filter(f => f.name).map(f => [f.name, f.value]));
     originalWake = job?.wake ? { ...nestedWake.read() } : null;
-    form.hidden = false; field(editing ? "cron" : "id").focus(); render();
+    sheet.hidden = false; field(editing ? "cron" : "id").focus(); render();
     try {
       const suffix = wsQuery();
       const [roster, panel] = await Promise.all([apiJson(ctx, `/api/agents${suffix}`), apiJson(ctx, `/api/panel${suffix}`)]);
-      if (!ownsForm(token, lease) || form.hidden) return;
+      if (!owns(token, gen) || sheet.hidden) return;
       agents = roster.agents || []; instances = panel.instances || [];
       fill(field("agent"), agents.filter(a => a.work !== "attached"), a => `${a.name} · ${a.agentsRoot}`, a => JSON.stringify([a.name, a.repo || null, a.agentsRoot]));
       fill(field("home"), instances, i => `${i.instance} · ${i.home}`, i => i.home);
@@ -168,61 +163,45 @@ export function createSchedulesView(el, ctx, readOptions = {}) {
       baseline.agent = field("agent").value; baseline.home = field("home").value;
       formReady = true; syncKind(job?.operation); render();
     } catch {
-      if (ownsForm(token, lease)) { q(".schedule-form-error").textContent = "Could not read targets for this form. Reopen it to retry."; render(); }
+      if (owns(token, gen)) { q(".schedule-form-error").textContent = "Could not read targets for this form. Reopen it to retry."; render(); }
     }
   }
-  async function editJob(job) {
-    if (!observation.canMutate() || busy) return;
-    const token = ++formOperation, lease = observation.lease(); ++operationRequest;
-    try {
-      const shown = await observation.show(job.id);
-      if (!ownsForm(token, lease) || !shown) return;
-      if (!shown.draft) { error(scheduleEditReason(shown.schedules[0].editReason) || "This schedule cannot be edited here."); return; }
-      await openForm(shown.draft, null, shown.schedules[0]);
-    } catch (e) { if (ownsForm(token, lease)) error(e.message); }
+  /** Edit a local schedule from its list row: the stored definition, if this editor can preserve it. */
+  function editRow(row) {
+    const draft = scheduleDraft(localScheduleDefinition(row));
+    if (!draft) { notice(`${row.name} carries settings this editor cannot keep; edit it with the CLI.`); return; }
+    void openForm(draft, null);
   }
-  async function mutate(operation, id, spec) {
-    if (busy || !available || !observation.canMutate()) return;
-    const lease = observation.lease(), op = ++mutationOperation, formToken = formOperation;
-    const owns = () => alive && op === mutationOperation && observation.owns(lease);
-    busy = true; observation.setBusy(true); error(""); q(".schedule-operation-result").textContent = ""; render();
-    q(".schedule-save").disabled = true;
+  let automations = null; // the page's POST /api/automations call
+  async function mutate(operation, id, spec, send = body => postJson(ctx, `/api/schedules${wsQuery()}`, body)) {
+    if (busy || !canMutate()) return;
+    const op = ++mutationOperation, formToken = formOperation, gen = workspaceGeneration();
+    const current = () => alive && op === mutationOperation && gen === workspaceGeneration();
+    busy = true; view()?.setBusy(true); notice(""); render();
     try {
-      const result = await postJson(ctx, `/api/schedules${wsQuery()}`, { operation, id, ...(spec ? { spec } : {}) });
-      if (!owns()) return;
-      if ((operation === "add" || operation === "update") && formToken === formOperation) form.hidden = true;
-      if (operation === "run" && result.run) q(".schedule-operation-result").textContent = scheduleOutcome(result.run);
-      if (operation === "reconcile") q(".schedule-operation-result").textContent = [result.reconciled === "unknown" ? "Run state is still unknown." : `Run state: ${result.reconciled || "checked"}.`, result.remedy].filter(Boolean).join(" ");
-      await refresh();
+      const result = await send({ operation, id, ...(spec ? { spec } : {}) });
+      if (!current()) return;
+      if ((operation === "add" || operation === "update") && formToken === formOperation) closeForm();
+      if (operation === "reconcile") notice([result.reconciled === "unknown" ? "Run state is still unknown." : `Run state: ${result.reconciled || "checked"}.`, result.remedy].filter(Boolean).join(" "));
+      busy = false; view()?.setBusy(false);
+      await view()?.refresh();
     } catch (e) {
-      if (owns()) {
-        error(e.message); if (!form.hidden && formToken === formOperation) q(".schedule-form-error").textContent = e.message;
-      }
+      if (current()) { if (!sheet.hidden && formToken === formOperation) q(".schedule-form-error").textContent = e.message; else notice(e.message); }
     } finally {
-      if (owns()) { busy = false; observation.setBusy(false); render(); }
+      if (current()) { busy = false; view()?.setBusy(false); render(); }
     }
   }
   function render() {
-    q(".schedule-new").disabled = busy || !available;
-    q(".schedule-save").disabled = busy || !available || !formReady;
+    newButton.disabled = busy || !canMutate();
+    q(".schedule-save").disabled = busy || !canMutate() || !formReady;
     for (const control of form.querySelectorAll("input, select, textarea")) control.disabled = busy || (control.name === "id" && !!editing)
       || (!formReady && ["agent", "home", "providerOperation"].includes(control.name));
-    q(".schedule-host-actions").querySelectorAll("button").forEach(b => { b.disabled = busy || !available; });
-  }
-  async function refresh() {
-    const lease = observation.lease(), generation = workspaceGeneration();
-    await observation.refresh();
-    if (!alive || !observation.owns(lease)) return;
-    if (preselection && form.hidden && observation.canMutate()) {
-      const selected = preselection; preselection = null;
-      if (selected.generation === generation) void openForm(null, selected.soul);
-    }
   }
   field("kind").addEventListener("change", syncKind);
   field("repeat").addEventListener("change", () => { if (field("repeat").value !== "custom") field("cron").value = field("repeat").value; });
   field("cron").addEventListener("input", () => { field("repeat").value = "custom"; });
   form.addEventListener("submit", event => {
-    event.preventDefault(); if (busy || !available || !formReady || !observation.canMutate() || form.hidden) return;
+    event.preventDefault(); if (busy || !formReady || !canMutate() || sheet.hidden) return;
     const kind = field("kind").value;
     const spec = { kind, cron: preserve("cron"), tz: preserve("tz"), enabled: field("enabled").checked };
     if (kind === "spawn") {
@@ -230,7 +209,7 @@ export function createSchedulesView(el, ctx, readOptions = {}) {
       if (field("purpose").value) spec.purpose = preserve("purpose");
       try {
         const wake = nestedWake.read();
-        if (wake) spec.wake = Object.fromEntries(['cron', 'tz', 'message'].map(key => [key,
+        if (wake) spec.wake = Object.fromEntries(["cron", "tz", "message"].map(key => [key,
           original?.wake && original.kind === kind && wake[key] === originalWake?.[key] ? original.wake[key] : wake[key]]));
       } catch (e) { q(".schedule-form-error").textContent = e.message; return; }
       for (const name of ["harness", "model", "backend"]) if (field(name).value || original && Object.hasOwn(original, name)) spec[name] = preserve(name);
@@ -245,40 +224,65 @@ export function createSchedulesView(el, ctx, readOptions = {}) {
     }
     void mutate(editing ? "update" : "add", field("id").value.trim(), spec);
   });
-  q(".schedule-new").addEventListener("click", () => openForm());
-  q(".schedule-refresh").addEventListener("click", refresh);
-  q(".schedule-cancel").addEventListener("click", () => { ++formOperation; ++operationRequest; form.hidden = true; if (observation.owns(observation.lease())) q(".schedule-new").focus(); });
-  observation = createScheduleObservationView(q(".schedule-list"), ctx, { ...readOptions, onEdit: editJob, onMutate: mutate,
-    onControls(state) {
-      available = state.canMutate;
-      if (!form.hidden && editing && definitionRevision !== state.revision) {
-        definitionRevision = state.revision;
-        const current = state.data?.schedules.find(s => s.id === editing);
-        if (!definition?.createdAt || !definition?.updatedAt || !current || definitionKey(current) !== definitionKey(definition)) {
-          ++formOperation; ++operationRequest; formReady = false;
-          q('.schedule-form-error').textContent = 'Definition observation changed or cannot be matched. Draft retained; reopen Edit before saving.';
-        }
-      }
-      const host = state.scheduler;
-      q(".schedule-status").textContent = !host ? "Scheduler status not observed."
-        : host.installed === false ? "Scheduler is not installed on this host. Saved schedules will not run until it is enabled."
-        : host.registered === false ? "This workspace is not registered with the host scheduler. Enable it to run these schedules."
-        : host.active === false ? "Scheduler is installed but inactive."
-        : host.installed === true && host.active === true && host.registered === true ? `Scheduler enabled · Last check: ${when(host.lastTick)} · Up to ${host.maxConcurrent ?? "unknown"} scheduled agent(s) at once`
-        : "Scheduler state is not fully reported.";
-      const actions = q(".schedule-host-actions");
-      if (host && (host.installed === false || host.active === false || host.registered === false)) {
-        if (!actions.firstChild) actions.append(button("Enable host scheduler", () => mutate("host-install"), !available));
-      } else actions.replaceChildren();
-      render();
-    },
-    onInvalidate(clear) {
-      ++formOperation; ++operationRequest; ++mutationOperation; busy = false; available = false;
-      if (clear) { form.hidden = true; formReady = false; agents = []; instances = []; editing = null; original = null;
-        error(""); q(".schedule-operation-result").textContent = ""; q(".schedule-host-actions").replaceChildren(); }
-      render();
-    },
+  q(".schedule-cancel").addEventListener("click", closeForm);
+  sheet.addEventListener("keydown", e => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeForm(); } });
+  sheet.addEventListener("mousedown", e => { if (e.target === sheet && !busy) closeForm(); });
+
+  // Delete asks first, in the app (a native confirm would block the renderer).
+  let deleting = null, deleteOpener = null;
+  function askDelete(row) {
+    if (busy || !canMutate()) return;
+    deleting = row.name; deleteOpener = doc.activeElement;
+    q("#schedule-delete-text").textContent = `${row.name} is removed from this computer and stops running here.`;
+    deleteSheet.hidden = false; q(".schedule-delete-cancel").focus();
+  }
+  function closeDelete() {
+    deleting = null; deleteSheet.hidden = true;
+    const back = deleteOpener; deleteOpener = null; if (back?.isConnected) back.focus();
+  }
+  q(".schedule-delete-cancel").addEventListener("click", closeDelete);
+  q(".schedule-delete-confirm").addEventListener("click", () => { const id = deleting; closeDelete(); if (id) void mutate("remove", id); });
+  deleteSheet.addEventListener("keydown", e => {
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeDelete(); }
+    if (e.key === "Tab") { // two buttons: keep focus inside the dialog
+      const [first, last] = [q(".schedule-delete-confirm"), q(".schedule-delete-cancel")];
+      if (e.shiftKey ? doc.activeElement === first : doc.activeElement === last) { e.preventDefault(); (e.shiftKey ? last : first).focus(); }
+    }
   });
-  render(); void refresh();
-  return { refresh, dispose() { alive = false; ++formOperation; ++operationRequest; ++mutationOperation; observation.dispose(); offCard(); card.dispose(); el.replaceChildren(); } };
+  deleteSheet.addEventListener("mousedown", e => { if (e.target === deleteSheet) closeDelete(); });
+
+  const newButton = doc.createElement("button"); newButton.type = "button"; newButton.className = "act primary schedule-new"; newButton.textContent = "New schedule";
+  newButton.addEventListener("click", () => openForm());
+  // Edit and Delete are for local rows only: a workspace schedule is edited in its repository.
+  // An unknown last run is checked through the kernel's reconcile, wherever the schedule comes from.
+  const rowActions = row => {
+    if (!canMutate()) return [];
+    const actions = row.origin.kind === "local" ? [{ label: "Edit", verb: "edit", run: () => editRow(row) }] : [];
+    if (row.runsHere && row.lastRun?.outcome === "unknown") actions.push({ label: "Check run state", verb: "reconcile",
+      run: () => mutate("reconcile", row.key, null, () => automations({ kind: "schedule", action: "reconcile", key: row.key })) });
+    if (row.origin.kind === "local") actions.push({ label: "Delete…", verb: "remove", run: () => askDelete(row) });
+    return actions;
+  };
+  const page = mountAutomationsPage(q(".schedule-stage"), ctx, "schedule", call => (automations = call, {
+    read: async () => {
+      try { const list = await call({ kind: "schedule", action: "list" }); readOk = true; return list; }
+      catch (error) { readOk = false; throw error; }
+      finally { render(); }
+    },
+    headerActions: () => [newButton], rowActions,
+    onEnableScheduler: () => mutate("host-install"),
+    onResult: (verb, row, result) => { if (verb === "run" && result?.run) notice(`${row.id}: ${scheduleOutcome(result.run)}`); },
+  }), { cli, subscribeCli });
+  // A workspace switch closes the form: its targets belong to the old workspace.
+  const offWorkspace = onWorkspaceChange(() => { ++mutationOperation; busy = false; readOk = false; closeForm(); if (!deleteSheet.hidden) closeDelete(); render(); });
+  const offCli = subscribeCli(() => render());
+  render();
+  if (preselection) {
+    const selected = preselection; preselection = null;
+    if (selected.generation === workspaceGeneration()) void openForm(null, selected.soul);
+  }
+  return {
+    refresh: () => page.refresh(),
+    dispose() { alive = false; ++formOperation; ++operationRequest; ++mutationOperation; offWorkspace(); offCli?.(); page.dispose(); el.replaceChildren(); },
+  };
 }

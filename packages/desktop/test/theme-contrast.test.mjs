@@ -26,9 +26,8 @@ import { createSoulInspector, inspectorCSS } from '../renderer/soul-inspector.mj
 import { readinessCSS as readinessViewCSS } from '../renderer/readiness-view.mjs';
 import { createInstanceGitPanel } from '../renderer/instance-git.mjs';
 import { spawnDialogCSS } from '../renderer/spawn-dialog.mjs';
+import { createAutomationsView } from '../renderer/views/automations.mjs';
 import { setWorkspace } from '../renderer/views/common.mjs';
-import { scheduleReadData } from '../renderer/schedule-read-data.mjs';
-import { cli as scheduleCli, scope as scheduleScope, data as scheduleData, entry as scheduleEntry } from './helpers/schedule-read-fixture.mjs';
 
 const renderer = new URL("../renderer/", import.meta.url);
 const css = readFileSync(new URL("theme.css", renderer), "utf8");
@@ -384,6 +383,47 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
   }
 });
 
+// Schedules + Triggers (§2.3a): the list (header, toolbar, groups, rows, tags), the host
+// banner and the detail page, rendered from the captured kernel output (automations/kernel).
+for (const [name] of palettes) test(`${name}: Schedules and Triggers text uses AA tokens on its computed surfaces`, async t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="a"></div><div class="b"></div><div class="c"></div></body></html>`);
+  const doc = dom.window.document;
+  const style = doc.createElement('style'); style.textContent = css; doc.head.append(style);
+  t.after(() => dom.window.close());
+  const auto = file => JSON.parse(readFileSync(new URL(`fixtures/automations/kernel/${file}.json`, new URL('./', import.meta.url)), 'utf8')).result;
+  const now = () => Date.parse('2026-09-26T15:20:00.000Z');
+  // One definition made invalid, for the attention tag (the capture has none).
+  const schedules = auto('schedule-list'); schedules.schedules[1].invalid = { code: 'E_AUTOMATION_SCHEMA', message: 'cron: expected 5 fields', field: 'cron' };
+  const unnamed = auto('trigger-list-disabled'); unnamed.host = { name: null };
+  for (const r of unnamed.triggers) if (r.origin.kind === 'workspace') { r.runsHere = false; r.reason = 'host-unnamed'; }
+  unnamed.triggers[0].enabledHere = false;
+  createAutomationsView(doc.querySelector('.a'), { kind: 'schedule', read: async () => schedules, act: async () => ({ ok: true }), now });
+  createAutomationsView(doc.querySelector('.b'), { kind: 'trigger', read: async () => unnamed, now });
+  const page = createAutomationsView(doc.querySelector('.c'), { kind: 'trigger', read: async () => auto('trigger-list'), act: async () => auto('trigger-test-mismatch'), now });
+  await new Promise(r => setTimeout(r, 0));
+  page.open('agents/triage'); doc.querySelector('.c .page-bar-actions button[data-verb=test]').click();
+  await new Promise(r => setTimeout(r, 0)); await new Promise(r => setTimeout(r, 0));
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  for (const [selector, painted, fg, bg] of [
+    ['.a .auto-header h2', '.a .auto-header', 'fg', 'surface'], ['.a .auto-count', '.a .auto-header', 'muted', 'surface'], ['.a .auto-scheduler', '.a .auto-header', 'muted', 'surface'],
+    ['.a .auto-seg button[aria-pressed=true]', '.a .auto-seg button[aria-pressed=true]', 'fg', 'surface-2'], ['.a .auto-seg button[aria-pressed=false]', '.a .auto-seg', 'muted', 'surface'],
+    ['.a .auto-group-title:not(.warn)', '.a .automations', 'fg', 'bg'], ['.a .auto-group-title.warn', '.a .automations', 'warn', 'bg'], ['.a .auto-group-note', '.a .automations', 'muted', 'bg'],
+    ['.a .auto-row.head', '.a .auto-table', 'muted', 'surface'], ['.a .auto-row:not(.off) .auto-id', '.a .auto-table', 'fg', 'surface'], ['.a .auto-sub', '.a .auto-table', 'muted', 'surface'],
+    ['.a .auto-tag:not(.muted):not(.warn)', '.a .auto-tag:not(.muted):not(.warn)', 'fg', 'tag-bg'], ['.a .auto-tag.warn', '.a .auto-tag.warn', 'fg', 'attn-bg'],
+    ['.a .auto-none', '.a .auto-table', 'muted', 'surface'], ['.a .auto-foot', '.a .automations', 'muted', 'bg'],
+    ['.b .auto-banner', '.b .auto-banner', 'fg', 'attn-bg'], ['.b .auto-row.off .auto-id', '.b .auto-table', 'muted', 'surface'], ['.b .auto-tag.muted', '.b .auto-table', 'muted', 'surface'],
+    ['.c .auto-prompt', '.c .auto-prompt', 'fg', 'surface'], ['.c .auto-token', '.c .auto-token', 'fg', 'chip-bg'],
+    ['.c .auto-verdict.warn', '.c .page-card', 'warn', 'surface'], ['.c .auto-test-line.warn', '.c .page-card', 'warn', 'surface'],
+  ]) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted);
+    assert.ok(el && surface, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.equal(dom.window.getComputedStyle(surface).background, `var(--${bg})`, painted);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${selector} on ${bg}`);
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+  }
+});
+
 for (const [name] of palettes) test(`${name}: shipped sidebar shortcut hints meet AA on their actual painted controls`, t => {
   const dom = new JSDOM(readFileSync(new URL("index.html", renderer), "utf8"));
   t.after(() => dom.window.close());
@@ -547,23 +587,27 @@ for (const [name] of palettes) test(`${name}: frame10 rail, disabled menu reason
   }
 });
 
-for (const [name] of palettes) test(`${name}: actual schedule table, native menu and history provenance meet computed AA`, async t => {
+// Replaces the old schedule-table test (the table left with the observation view, §3b): the
+// Schedules page's own surfaces — the New/Edit sheet and the Delete confirmation.
+for (const [name] of palettes) test(`${name}: the schedule form sheet and delete confirmation meet computed AA`, async t => {
   const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main></main></body></html>`, { pretendToBeVisual: true });
   const doc = dom.window.document, style = doc.createElement('style'); style.textContent = css; doc.head.append(style);
   setWorkspace('ws');
-  const raw = scheduleData([scheduleEntry(), scheduleEntry({ id: 'captured', definitionVersion: 2 })]);
-  const view = createSchedulesView(doc.querySelector('main'), { api: async () => ({ scheduleReadViewApi: 1, status: 'available', workspace: 'ws', scope: scheduleScope,
-    data: scheduleReadData(raw, scheduleScope, { action: 'list' }), reason: null }) }, { cli: () => scheduleCli, subscribeCli: () => () => {} });
-  t.after(() => { view.dispose(); dom.window.close(); }); await new Promise(resolve => setImmediate(resolve));
+  const list = JSON.parse(readFileSync(new URL('fixtures/automations/kernel/schedule-list.json', new URL('./', import.meta.url)), 'utf8')).result;
+  const replies = { '/api/automations': { automationsViewApi: 1, status: 'ok', kind: 'schedule', action: 'list', result: list, reason: null }, '/api/agents': { agents: [] }, '/api/panel': { instances: [] } };
+  const cli = { ok: true, features: ['schedule', 'automations'], scheduleApi: 2, automationsApi: 1 };
+  const view = createSchedulesView(doc.querySelector('main'), { api: async url => replies[url.split('?')[0]] }, { cli: () => cli, subscribeCli: () => () => {} });
+  t.after(() => { view.dispose(); dom.window.close(); });
+  for (let i = 0; i < 4; i++) await new Promise(resolve => setImmediate(resolve));
+  doc.querySelector('.auto-row[data-id="local/digest"] .auto-menu button[data-verb=remove]').click();
   const root = dom.window.getComputedStyle(doc.documentElement);
   for (const [selector, painted, fg, bg] of [
-    ['.schedule-table th', '.schedule-table th', 'muted', 'surface-2'],
-    ['.schedule-table small', '.schedule-table-wrap', 'muted', 'surface'],
-    ['.schedule-menu summary', '.schedule-table-wrap', 'fg', 'surface'],
-    ['.schedule-toggle[aria-checked=true]', '.schedule-toggle', 'accent', 'surface'],
-    ['.schedule-history-note', '.schedule-history', 'muted', 'surface'],
-    ['.schedule-run-facts', '.schedule-history', 'muted', 'surface'],
-    ['.schedule-observation-status', '.schedules-view', 'muted', 'bg'],
+    ['.schedule-form label', '.schedule-form', 'fg', 'surface'],
+    ['.schedule-form .schedule-hint', '.schedule-form', 'muted', 'surface'],
+    ['.schedule-form .schedule-error', '.schedule-form', 'danger', 'surface'],
+    ['.schedule-confirm h3', '.schedule-confirm', 'fg', 'surface'],
+    ['.schedule-confirm p', '.schedule-confirm', 'muted', 'surface'],
+    ['.schedule-delete-confirm', '.schedule-delete-confirm', 'danger', 'surface'],
   ]) {
     const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
     assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
@@ -571,6 +615,7 @@ for (const [name] of palettes) test(`${name}: actual schedule table, native menu
     assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
   }
+  assert.equal(doc.querySelector('.schedule-delete-sheet').hidden, false, 'Delete asks in the app');
 });
 
 test("every full-screen modal backdrop uses the shared scrim token, and each theme defines it", () => {
@@ -579,7 +624,7 @@ test("every full-screen modal backdrop uses the shared scrim token, and each the
     if (!/position:\s*fixed/.test(body) || !/inset:\s*0\s*[;}]?/.test(body) || /inset:\s*auto/.test(body)) continue;
     overlays.push({ selector: selector.trim(), path, background: body.match(/background(?:-color)?:\s*([^;]+)/)?.[1].trim() });
   }
-  assert.deepEqual(overlays.map(o => o.selector).sort(), [".instance-start-modal", ".palette-overlay", ".spawn-modal", ".ws-modal", ".ws-sync-sheet"]);
+  assert.deepEqual(overlays.map(o => o.selector).sort(), [".instance-start-modal", ".palette-overlay", ".schedule-sheet", ".spawn-modal", ".ws-modal", ".ws-sync-sheet"]);
   for (const o of overlays) assert.equal(o.background, "var(--scrim)", `${o.selector} (${o.path})`);
   for (const theme of ["dark", "light", "solarized"]) {
     const start = css.indexOf(`[data-theme="${theme}"] {`); assert.ok(start >= 0, theme);

@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "triggerApi": 1,
+    "scope": "/fixture/base/northwind-workspace",
+    "triggers": [
+      {
+        "id": "local/hotfix",
+        "name": "hotfix",
+        "enabled": true,
+        "runsHere": true,
+        "reason": null,
+        "enabledHere": true,
+        "repo": "github.com/northwind/storefront",
+        "soul": "release-manager",
+        "concurrency": {
+          "max": 1,
+          "perKey": 1
+        },
+        "lastPoll": null,
+        "nextPollAt": null,
+        "nextDue": null,
+        "pending": [],
+        "fired": [],
+        "firedTotal": 0,
+        "live": [],
+        "liveCount": 0,
+        "lastError": null
+      },
+      {
+        "id": "agents/docs-sync",
+        "name": "docs-sync",
+        "enabled": true,
+        "runsHere": false,
+        "reason": "assigned-elsewhere",
+        "enabledHere": true,
+        "repo": "github.com/northwind/storefront",
+        "soul": "release-manager",
+        "concurrency": {
+          "max": 1,
+          "perKey": 1
+        },
+        "lastPoll": null,
+        "nextPollAt": null,
+        "nextDue": null,
+        "pending": [],
+        "fired": [],
+        "firedTotal": 0,
+        "live": [],
+        "liveCount": 0,
+        "lastError": null
+      },
+      {
+        "id": "agents/pr-review",
+        "name": "pr-review",
+        "enabled": true,
+        "runsHere": true,
+        "reason": null,
+        "enabledHere": true,
+        "repo": "github.com/northwind/storefront",
+        "soul": "release-manager",
+        "concurrency": {
+          "max": 1,
+          "perKey": 1
+        },
+        "lastPoll": null,
+        "nextPollAt": null,
+        "nextDue": null,
+        "pending": [],
+        "fired": [],
+        "firedTotal": 0,
+        "live": [],
+        "liveCount": 0,
+        "lastError": null
+      },
+      {
+        "id": "agents/triage",
+        "name": "triage",
+        "enabled": true,
+        "runsHere": false,
+        "reason": "owner-mismatch",
+        "enabledHere": true,
+        "repo": "github.com/northwind/storefront",
+        "soul": "release-manager",
+        "concurrency": {
+          "max": 1,
+          "perKey": 1
+        },
+        "lastPoll": null,
+        "nextPollAt": null,
+        "nextDue": null,
+        "pending": [],
+        "fired": [],
+        "firedTotal": 0,
+        "live": [],
+        "liveCount": 0,
+        "lastError": null
+      }
+    ]
+  }
+}

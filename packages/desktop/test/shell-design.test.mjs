@@ -120,8 +120,8 @@ test("provided workspace header structure and brand artwork are decorative; choo
 
 test("only current destinations render, dispatch unchanged stage ids, and project aria-current", t => {
   const s = shell(t), buttons = [...s.document.querySelectorAll("#nav button")];
-  assert.deepEqual(buttons.map(b => b.textContent), ["Active overview", "Workspace", "Schedules"]);
-  assert.deepEqual(buttons.map(b => b.dataset.action), ["stage.hierarchy", "stage.spawn", "stage.schedules"]);
+  assert.deepEqual(buttons.map(b => b.textContent), ["Active overview", "Workspace", "Schedules", "Triggers"]);
+  assert.deepEqual(buttons.map(b => b.dataset.action), ["stage.hierarchy", "stage.spawn", "stage.schedules", "stage.triggers"]);
   for (const button of buttons) {
     assert.equal(button.type, "button"); assert.ok(button.title); assert.ok(button.querySelector("svg"));
     button.click(); assert.deepEqual(s.events.at(-1), ["stage", button.dataset.view]);

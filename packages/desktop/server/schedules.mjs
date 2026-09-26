@@ -6,7 +6,8 @@ import { harnessKey } from "../renderer/harness-names.mjs";
 const fail = (message, code = "E_BAD_ARGS") => { throw Object.assign(new Error(message), { code }); };
 
 export async function scheduleRequest(request, { workspace, cli, agents = [], instances = [], localCwd, invoke = cliSchedule, inspect = capabilityRequest }) {
-  if (["list", "show"].includes(request?.operation)) fail("Schedule reads require the History API 3 boundary", "E_SCHEDULE_READ_UNAVAILABLE");
+  // Reading and switching schedules are the kernel's automations (POST /api/automations, §2.3a).
+  if (["list", "show", "enable", "disable", "run"].includes(request?.operation)) fail("Schedules are read, switched and run through the automations boundary", "E_BAD_ARGS");
   if (!workspace) fail("Select a known workspace", "E_WORKSPACE_UNKNOWN");
   if (!cli?.ok || ![1, 2].includes(cli.scheduleApi) || !cli.features?.includes("schedule")) fail("Update the installed oats CLI to use schedules", "cli-no-schedule");
   const server = workspace.server || undefined;

@@ -12,6 +12,7 @@ export const NAV = [
   { name: "hierarchy", label: "Active overview", icon: "overview", title: "Active overview" },
   { name: "spawn", label: "Workspace", icon: "workspace", title: "Workspace" },
   { name: "schedules", label: "Schedules", icon: "schedules", title: "Schedules" },
+  { name: "triggers", label: "Triggers", icon: "triggers", title: "Triggers" },
 ];
 
 /** Sidebar mode a stage view pairs with (spawn shows the souls context). */

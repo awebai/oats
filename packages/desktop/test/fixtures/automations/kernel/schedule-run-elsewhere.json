@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_AUTOMATION_NOT_HERE",
+    "message": "agents/weekly does not run on this host (assigned-elsewhere: runs on reports-server; this host is fixture-laptop)",
+    "details": {
+      "id": "agents/weekly",
+      "reason": "assigned-elsewhere",
+      "runsOn": "reports-server",
+      "owner": "github.com/reports-bot"
+    }
+  }
+}
