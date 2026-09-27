@@ -86,7 +86,20 @@ oats soul teams <soul> --default <label> | --clear-default
   - creates every declared team that the workspace doesn't map yet;
   - writes the resulting ids into `messaging.byTeam` **as a proposed diff** for the human to commit (oats.setup: config changes by PR).
   - It never runs at spawn, mint, retire or wake.
-- Which aw primitive creates an additional team non-interactively, and with what authority, is the messaging lane's (with aweb). If aweb needs a change, onboarding degrades to: setup prints the exact steps and the ids to fill in.
+- **What aweb allows today** (the messaging lane, from aweb's lead, 2026-09-27):
+  - **The first account and its default team:** fully automatable (`aw init --new-account --username …`).
+  - **An additional team on a BYOD domain:** automatable headlessly with the namespace controller key:
+    1. `aw id team create --name <t> --namespace <domain>`;
+    2. the team key signs `aw id team invite`;
+    3. the root runs `accept-invite --local`.
+
+    `aw id team register` hosts it on aweb.ai. No human login is needed.
+  - **An additional team on a hosted account (`<u>.aweb.ai`):** NO CLI path. Only a logged-in human creates it, in the dashboard. aweb's lead proposes a generic `aw team create <name>` under the logged-in account.
+- **So setup presents three cases:**
+  1. The first team: **creates it**.
+  2. An extra team on BYOD: **creates it**.
+  3. An extra team on hosted: a **guided human step**. It prints the dashboard instruction (create team `<name>`), then joins the root through `aw team admission-invite --team-id <t> --expect-account <acct>` + `aw team join <token>` (after one `aw auth login --scope cli.team_admission`), then proposes the id for `messaging.byTeam`. When aweb ships `aw team create`, case 3 becomes automatic with no OATS model change.
+- Every login setup runs is the human's own, at setup time, never at spawn/mint/retire/wake. It's consistent with "OATS never holds a human login" (the provider consumes the resulting root).
 - The oats.setup skills (`oats-teams`, `oats-onboarding`, `oats-workspace-config`) teach the model and the verbs.
 
 ## Open questions (for the human)
