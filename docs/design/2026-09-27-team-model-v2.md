@@ -95,11 +95,17 @@ oats soul teams <soul> --default <label> | --clear-default
 
     `aw id team register` hosts it on aweb.ai. No human login is needed.
   - **An additional team on a hosted account (`<u>.aweb.ai`):** NO CLI path. Only a logged-in human creates it, in the dashboard. aweb's lead proposes a generic `aw team create <name>` under the logged-in account.
-- **So setup presents three cases:**
-  1. The first team: **creates it**.
-  2. An extra team on BYOD: **creates it**.
-  3. An extra team on hosted: a **guided human step**. It prints the dashboard instruction (create team `<name>`), then joins the root through `aw team admission-invite --team-id <t> --expect-account <acct>` + `aw team join <token>` (after one `aw auth login --scope cli.team_admission`), then proposes the id for `messaging.byTeam`. When aweb ships `aw team create`, case 3 becomes automatic with no OATS model change.
-- Every login setup runs is the human's own, at setup time, never at spawn/mint/retire/wake. It's consistent with "OATS never holds a human login" (the provider consumes the resulting root).
+- **Update (2026-09-27, the human's decision via aweb's lead): the hosted gap closes headlessly** (aweb `aweb-abkh`, pending a Cloud + CLI release).
+  - A member of an org-owned hosted team creates a sibling team in the same account with `aw id team create --name <t>`, which returns the new `team_id` + a **single-use invite token**. The caller doesn't auto-join.
+  - The home that should hold the new team's member runs `aw --identity-home <root> id team accept-invite <token> --name <alias> --local`.
+  - No TTY, no `aw auth`; bounded by the account plan's team limit.
+- **So setup is designed FULLY HEADLESS:**
+  1. The account + the workspace's default team: `aw init --new-account --username …`.
+  2. Every further declared team (hosted or BYOD): `aw id team create --name <label>` + `accept-invite --local` into the deployment's root.
+  3. Setup writes each new id into `messaging.byTeam` as a proposed diff for the human to commit.
+- **The only gate is the aw/Cloud version floor** that ships `aweb-abkh`. Below it, a hosted extra team is refused with the remedy "upgrade aw" (the provider's readiness names the floor), not a guided dashboard step. The model doesn't change.
+- Setup needs no human login at all on this path.
+- Setup never runs at spawn/mint/retire/wake, and OATS holds no human login (the provider consumes the resulting root).
 - The oats.setup skills (`oats-teams`, `oats-onboarding`, `oats-workspace-config`) teach the model and the verbs.
 
 ## Open questions (for the human)
