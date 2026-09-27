@@ -46,7 +46,7 @@ defaultTeam: platform            # NEW, optional: overrides the workspace's; mus
 - **`teams:`** is the eligible labels. Each must be declared by the workspace (`E_TEAM_UNKNOWN`), as today. The list is unordered: **"primary" goes away.**
 - **`defaultTeam:`** is optional. It must be one of the soul's `teams`, else `E_TEAM_NOT_ELIGIBLE`. When omitted, the workspace's `defaultTeam` applies, and the soul is eligible for it implicitly.
 - **Removed:**
-  - a soul's messaging-slot provider team id override;
+  - the provider's `team` setting at EVERY layer: the soul's messaging slot, the host (`oats-local.yaml` `settings.oats.aweb.team`) and a spawn `team=`. That setting is how the host-state/root-active ambiguity came in. A spawn can't pick another default (no `--default-team` until someone needs it);
   - `oats-membership.yaml` `team` (two layers only: the workspace, then the soul);
   - the old `team:` key.
 
@@ -63,6 +63,7 @@ defaultTeam: platform            # NEW, optional: overrides the workspace's; mus
 - **A standalone deployment** (no workspace) sets `teams` / `defaultTeam` / `messaging.byTeam` in its local config, with the same rules.
 
 ### At spawn, and live
+- **The root's role (the provider contract):** setup makes the deployment's messaging root a member of EVERY declared team. At spawn, the provider mints the instance's default-team identity, and each joined team's, from the root's membership in THAT team (`aw team invite --team-id <mapped id>`), never from the root's active team.
 - An instance is **always in its effective default team** (it can't leave it: `E_TEAM_DEFAULT`).
 - It joins other eligible teams explicitly: the spawn choice `join=…`, or the provider's join/leave on a live instance. This is unchanged from the teams contract.
 - **When a soul loses a label**, or the workspace unmaps it, a joined instance leaves it on the next live read. This is unchanged: teams contract §7 decision 6.
@@ -77,7 +78,7 @@ oats soul teams <soul> --default <label> | --clear-default
 ```
 - Each edit validates against the workspace (known label; the default ∈ teams) and writes the file.
 - **For a member soul it edits the clone's working tree and says so:** the change travels by commit/PR, as every config change does (oats.setup). It never pushes.
-- **Package souls are read-only:** their teams are the package's. A workspace adds a package soul to a team through the workspace instead, `teams.<label>.souls: [<pkg>/<soul>]`, which extends that soul's eligible set. Proposed; see Open question 3.
+- **Package souls are read-only:** their eligible teams are the package's labels that the workspace declares, plus the workspace default. **The proposed answer to Q3 (both co-leads' leaning, YAGNI):** no workspace-side `teams.<label>.souls` for now, since it would be a third place membership lives. Add it only when someone needs it.
 - The Desktop gets the same controls on a soul's page (add/remove/default), and the spawn dialog shows the default + eligible teams.
 
 ### Onboarding (setup creates accounts and teams)
@@ -101,17 +102,20 @@ oats soul teams <soul> --default <label> | --clear-default
   - No TTY, no `aw auth`; bounded by the account plan's team limit.
 - **So setup is designed FULLY HEADLESS:**
   1. The account + the workspace's default team: `aw init --new-account --username …`.
-  2. Every further declared team (hosted or BYOD): `aw id team create --name <label>` + `accept-invite --local` into the deployment's root.
+  2. Every further declared team, by kind (the same outcome, different handles):
+     - **Hosted** (`aweb-abkh`): `aw id team create --name <t>` → the team id + a single-use invite TOKEN → `aw --identity-home <root> id team accept-invite <token> --name <alias> --local`.
+     - **BYOD:** `aw id team create --name <t> --namespace <domain>` (the namespace controller key) → the team id + a team KEY → the team key signs `aw id team invite` → `accept-invite --local` → `aw id team register` to host it on aweb.ai.
   3. Setup writes each new id into `messaging.byTeam` as a proposed diff for the human to commit.
+- **A label is the team's name:** setup passes the label as `--name`, so the workspace's label syntax must be a subset of aweb's team-name rule (to confirm with aweb; otherwise setup maps label → name and records the name). A precondition to confirm: the `--new-account` default team counts as org-owned for `aweb-abkh`, so the second hosted team can be created from a fresh root.
 - **The only gate is the aw/Cloud version floor** that ships `aweb-abkh`. Below it, a hosted extra team is refused with the remedy "upgrade aw" (the provider's readiness names the floor), not a guided dashboard step. The model doesn't change.
 - Setup needs no human login at all on this path.
 - Setup never runs at spawn/mint/retire/wake, and OATS holds no human login (the provider consumes the resulting root).
 - The oats.setup skills (`oats-teams`, `oats-onboarding`, `oats-workspace-config`) teach the model and the verbs.
 
 ## Open questions (for the human)
-1. **At spawn:** is an instance in ONLY its default team (others joined explicitly), as proposed? Or does it join every team its soul lists?
-2. **When a soul's team is removed:** do running instances leave on the next live read (proposed, as today), or only when told to?
-3. **Package souls:** is a workspace-side `teams.<label>.souls: [...]` the right way to add a package soul to a team? The alternative is that package souls have only their package's teams.
+1. **At spawn:** is an instance in ONLY its default team (others joined explicitly), as proposed and as both co-leads lean? Or does it join every team its soul lists?
+2. **When a soul's team is removed:** do running instances leave on the next live read (proposed, as today; both co-leads lean this way), or only when told to?
+3. **Package souls:** only their package's teams (+ the workspace default), as both co-leads lean (YAGNI)? Or a workspace-side `teams.<label>.souls: [...]` to add one to more teams?
 
 ## Sequencing (proposed)
 1. **Now, small (the messaging lane):** an oats.aweb release with the setup `--new-account` fix + the dead `helperInjection` key.
