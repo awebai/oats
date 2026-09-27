@@ -55,7 +55,8 @@ const rawArgs = process.argv.slice(2);
 const KERNEL_SWITCHES = new Set(["allow-child-spawns", "apply", "check", "clear", "delete-branch", "discard-worktree", "dry-run", "ephemeral", "force", "help", "host", "json", "keep-dir", "keep-env", "no-child-spawns", "no-launch", "no-recursive", "no-yolo", "plan", "policy", "preview", "print", "replace", "self", "verbose", "yes", "yolo"]);
 /** `--flag=value` is `--flag value`: every kernel reader (flag(), valueFlag(), the onboard and
  *  routed-command loops) then applies the spaced form's validation to it. `problem` is an empty
- *  `--flag=` or a switch given a value. */
+ *  `--flag=`, a switch given a value, or a value that is itself an option (`--model=--yolo`):
+ *  expanded, it would be a flag token every reader sees, which the spaced form can never carry. */
 function expandInlineValues(argv) {
   const out = [];
   let problem;
@@ -63,7 +64,7 @@ function expandInlineValues(argv) {
     const eq = a.indexOf("=");
     if (!a.startsWith("--") || eq <= 2) { out.push(a); continue; }
     const name = a.slice(2, eq), value = a.slice(eq + 1);
-    problem ??= KERNEL_SWITCHES.has(name) ? `--${name} takes no value (got ${a})` : value === "" ? `--${name}= needs a value` : undefined;
+    problem ??= KERNEL_SWITCHES.has(name) ? `--${name} takes no value (got ${a})` : value === "" ? `--${name}= needs a value` : value.startsWith("--") ? `--${name}= takes a value, not an option (got ${a})` : undefined;
     out.push(`--${name}`, value);
   }
   return { argv: out, problem };
