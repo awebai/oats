@@ -173,8 +173,10 @@ test("revision wins: a later note for the same (thread,start) replaces", (t) => 
 test("reader fails loudly on an empty verdict for a substantial window", (t) => {
   const { base, store } = setup(t);
   const thread = seedSession(base, store, ["no markers here", "just chatter", "more", "and more", "even more"]);
+  // Consume the prompt before answering, so the fixture exercises the empty verdict rather than
+  // racing the parent's stdin write with an early exit (an EPIPE surfaces as a LibrarianError).
   assert.throws(
-    () => readThread(store, { thread, engine: `sh -c 'echo {\\"segments\\": []}'` }),
+    () => readThread(store, { thread, engine: `sh -c 'cat >/dev/null; echo {\\"segments\\": []}'` }),
     ReaderError,
   );
 });
