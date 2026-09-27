@@ -196,6 +196,18 @@ decisions/ and referenced from here.
   - **taught us (0.29.3):**
     - (m) A stand-in provider only proves the shapes we assumed: recapture Desktop fixtures from the REAL provider before shipping a contract change (it found `actions[]`, a live bug since 0.29.2).
     - (n) A wire rename between a provider and a strict consumer lands consumer-first (the Desktop PR before the pin), in one release.
+  - **The co-lead's re-review of the lead-only window** (4 parallel read-only reviewers; findings as follow-ups, never reverts):
+    - (A) package souls / capability agents: 5;
+    - (B) automations: 7, incl. a SECURITY flag injection, plus a trust decision for the human;
+    - (C) okf: an URGENT arbitrary file write + 5;
+    - (D) clean + 1 nit.
+  - PR255 `35ee4fe3` (SECURITY: automation-spawned argv can't carry flags; three layers), PR256 `43599933` (A 1–5 + B 2–7; `triggersMaxConcurrent`, unbounded by default), PR257 `c04d872d` (helperInjection deprecated; a first head adding an origins `layers` chain was RETURNED by the co-lead: it broke released Desktops' exact-keys decode), PR258 `1f033dde` (the okf 4.0.1 mirror + pin), PR259 `399e5c30` (a reader EPIPE test race), PR260 `e30fe8ea` (the framework v1.3.2 pin + the ordered notes).
+  - **Tags:** oats-okf v4.0.1 `3be84aa6` → `8fa4fb3a` (SECURITY: a crafted base tree wrote outside scratch; the co-lead ACKed); oats-framework/v1.3.2 `77d7313a` → `c04d872d`; **v0.29.4 RELEASED** `7a602c11` → `e30fe8ea` (the co-lead's tag ACK; release green; npm 0.29.4 both; 7 assets; the published probe 19/19).
+  - **Team model v2 PROPOSED** (`docs/design/2026-09-27-team-model-v2.md`, the human's direction; both co-leads shaped it): the workspace declares teams + `defaultTeam`; a soul declares `teams` + an optional `defaultTeam`; no primary, no membership default, no provider `team` setting at any layer; `oats soul teams`; fully headless onboarding (aweb `aweb-abkh`). It waits on the human's Q1–Q3 + the aw floor.
+  - **taught us (0.29.4):**
+    - (o) A second pair of eyes on a merge-then-fix window finds real defects (two security bugs here): schedule the co-lead's re-review whenever one lead gates alone.
+    - (p) An "additive" field on a closed-shape contract breaks a strict consumer in the field: consumer-tolerant first, then the producer.
+    - (q) A probe carried from release to release goes stale: rebuild its version literals from the tag each time.
     - (d) Stacked PRs conflict after a squash; the author rebases, and `git range-diff` proves an unchanged patch.
 - **taught us:**
   - (1) **Arm a merge watcher with the full approved oid, never "the current head".** #160's head moved twice after approval while mails crossed. The watcher's named-oid guard refused both mismatches, so nothing unreviewed merged. The loop ends with one FINAL mail per party (author and watcher) naming the full oid and "no pushes", and by ignoring the stale mails that follow.

@@ -15,6 +15,9 @@ than letting the file grow stale.
 
 ## On main
 
+- **2026-09-27 — OATS 0.29.4 PUBLISHED: security fixes from the co-lead's re-review** (tag `7a602c11` → `e30fe8ea`; npm 0.29.4 both; 7 assets; the published probe 19/19). Automation argv injection closed; oats.okf 4.0.1 (a crafted-tree file write closed; credentials redacted); a package soul's OATS_SOUL; 0.28 trigger state carried; oats.framework 1.3.2.
+  - **Pins:** okf v4.0.1, aweb v1.16.0, dev v1.1.0, framework v1.3.2, authoring v1.0.3, jira/linear v1.0.1.
+  - **Next:** oats.aweb 1.16.1 (the setup `--new-account`; the aw floor 1.36.13; the co-lead's developer); **team model v2** (PROPOSED; the human's Q1–Q3 + the `aweb-abkh` floor → Decided → kernel 0.30.0 → oats.aweb 1.17 → Desktop); the automation trust decision (the human).
 - **2026-09-26 — OATS 0.29.3 PUBLISHED: the workspace's default team (there is no personal team)** (tag `9112f4a7` → `a918a56c`; release run 36269327994 green; npm 0.29.3 for both packages; 7 assets; the published probe 19/19). The kernel, docs, oats.framework 1.3.1, oats.aweb 1.16.0 (`defaultTeam`, `E_TEAM_DEFAULT`, the receive label `default`) and the Desktop all say "the workspace's default team"; the Desktop accepts the real join/leave answers (`actions[]`).
   - **Pins:** okf v4.0.0, oats.dev v1.1.0, oats-framework/v1.3.1, oats.aweb v1.16.0, authoring v1.0.3, jira/linear v1.0.1.
   - **Next:** the fresh deployment on the human's GO; adopt the okf review trigger on the operator host (waits on its host name / gh login / merge rights). **Enrollment direction (superseding the per-deployment-login design, oats-aweb #21 + the KB decision 'A workspace has a default team'):** OATS consumes an ENROLLED ROOT (bounded to one team, an explicit minting mode, a ledger of minted members) and never holds a human login; creating a workspace's team is the owner's act outside OATS (aweb's optional tooling). OATS work there waits on the human's go on that design.
