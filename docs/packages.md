@@ -75,7 +75,7 @@ members:
   - git:github.com/acme/platform
 packages:
   oats.framework: v1.3.1
-  oats.okf: v4.0.0
+  oats.okf: v4.0.1
   oats.aweb: v1.16.0
 teams:
   global: { description: Org-wide }

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { fs, join, resolve, readJSON, safePath, oats, fail, unlock } from '../lib/io.mjs';
+import { fs, join, resolve, readJSON, safePath, oats, fail, unlock, redactUrls } from '../lib/io.mjs';
 import { loadBindings } from '../lib/config.mjs';
-import { register, registerCaptured, loadInvocationSourceReceipt, homeSource, loadSource, loadStatus, saveStatus, updateStatus, capture, scheduleSource, settleRetiredSchedule, service, markerPath, harvestOffRecord } from '../lib/sources.mjs';
+import { register, registerCaptured, loadInvocationSourceReceipt, homeSource, loadSource, loadStatus, saveStatus, updateStatus, capture, scheduleSource, settleRetiredSchedule, service, markerPath, harvestOffRecord, sourceSwitch, retireHarvestOff } from '../lib/sources.mjs';
 import { harvestStatus, setupHarvest } from '../lib/harvest-status.mjs';
 import { settings } from '../lib/config.mjs';
 import { CONSULT } from '../lib/consult.mjs';
@@ -151,7 +151,10 @@ else {
         if(['STATE.md','log.md','notes','.okf-harvest-record.json','.okf-harvest-record.next.json'].some(p=>fs.existsSync(join(home,p)))) fail('E_MIGRATION','unregistered/legacy source has memory; explicitly migrate/register before retirement');
         result={meta:{retired:true,reason:'nothing-to-delete'}};
       } else {
-        const s=src();scheduleSource(s);const r=capture(s,{final:true});const schedule=settleRetiredSchedule(s);result={meta:{retired:r.complete===true,source:s.file,capture:r,schedule},brief:'Final input is in durable custody. Delivery remains asynchronous.'};
+        const s=src(),sw=sourceSwitch(s);
+        // okf 4.0.1 #6: harvest switched off since spawn (deployment or soul) → no final capture.
+        if(sw.effective!=='on') result={meta:retireHarvestOff(s,sw),brief:`Harvest is now off (${sw.reason}): no final capture was taken; earlier inputs stay in custody.`};
+        else {scheduleSource(s);const r=capture(s,{final:true});const schedule=settleRetiredSchedule(s);result={meta:{retired:r.complete===true,source:s.file,capture:r,schedule},brief:'Final input is in durable custody. Delivery remains asynchronous.'};}
       }
     } else if(event==='harvest') {
       if(capturedHarvest) {
@@ -169,8 +172,8 @@ else {
       // The deployment can switch harvest off after a source registered: the
       // job then captures and processes nothing (the soul's opt-out was already
       // applied at registration). Nothing drains when it is switched back on.
-      const source=src();
-      result=settings().harvest!=='on'?{status:'harvest-off',source:source.file,reason:'the deployment does not switch harvest on (settings.oats.okf.harvest); nothing was captured'}
+      const source=src(),sw=sourceSwitch(source);
+      result=sw.effective!=='on'?{status:'harvest-off',source:source.file,reason:`${sw.reason}; nothing was captured`}
         :runSource(source,{manual:!!flags.manual,noLaunch:!!flags['no-launch']});
     }
     else if(event==='complete') {const s=src();if(captured) retainedRun(s);result=complete(s,flags.run,flags.judgment && resolve(flags.judgment));}
@@ -196,7 +199,7 @@ else {
     } else if(event==='unlock') result=unlock(resolve(flags.lock),flags.token);
     else fail('E_USAGE',`unknown command ${event}; see --help`);
     answer=hook?result:{schemaVersion:1,ok:true,result};
-  } catch(e) {const code=e.code || 'E_OKF';exit=1;answer=hook?{meta:{...(event==='retire'?{retired:false,reason:e.message}:{})},warning:`oats-okf ${code}: ${e.message}`}:{schemaVersion:1,ok:false,error:{code,message:e.message}};}
+  } catch(e) {const code=e.code || 'E_OKF',message=redactUrls(e.message);exit=1;answer=hook?{meta:{...(event==='retire'?{retired:false,reason:message}:{})},warning:`oats-okf ${code}: ${message}`}:{schemaVersion:1,ok:false,error:{code,message}};}
   // Consult commands print text unless --json; every other answer is JSON.
   // Let Node drain the pipe; no process.exit after a possibly large answer.
   if(textMode && exit) process.stderr.write(`oats okf ${event}: ${answer.error.code}: ${answer.error.message}\n`);

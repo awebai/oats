@@ -5,6 +5,8 @@ const FENCE = /^```okf-harvest[ \t]*\r?\n([\s\S]*?)\r?\n```[ \t]*$/m;
 const obj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const str = (v, max = 256) => typeof v === 'string' && v.length > 0 && v.length <= max && !/[\u0000-\u001f\u007f]/.test(v);
 const NODE = /^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*$/;
+/** A base root as a repository-relative directory: no `..`, absolute, backslash or empty segment. */
+export const safeRoot = (r) => r === '.' || (typeof r === 'string' && !r.startsWith('/') && !r.includes('\\') && r.split('/').every((s) => s && s !== '.' && s !== '..'));
 
 /** → { valid, problems[], value|null } for the FIRST okf-harvest block in `body`. */
 export function parseProvenance(body) {
@@ -24,12 +26,15 @@ export function parseProvenance(body) {
   need(Array.isArray(v.input) && v.input.length > 0 && v.input.length <= 1000 && v.input.every((i) => typeof i === 'string' && /^[0-9a-f]{64}$/.test(i)), 'input must be a non-empty list of 64-hex input ids');
   if (need(obj(v.source), 'source must be an object')) {
     const s = v.source;
-    only(s, ['soul', 'soulId', 'instance', 'ownedNodes', 'readNodes', 'bases'], 'source');
+    only(s, ['soul', 'soulId', 'owner', 'instance', 'ownedNodes', 'readNodes', 'bases'], 'source');
+    // okf 4.0.1: the source's okf.json owner (what okf-base.json nodes record); optional for 4.0.0 PRs.
+    need(s.owner === undefined || s.owner === null || str(s.owner, 128), 'source.owner must be a string or null');
     need(str(s.soul, 128), 'source.soul must be a name');
     need(s.soulId === null || str(s.soulId, 512), 'source.soulId must be a string or null');
     need(str(s.instance, 128), 'source.instance must be a name');
     for (const k of ['ownedNodes', 'readNodes']) need(Array.isArray(s[k]) && s[k].length <= 256 && s[k].every((n) => typeof n === 'string' && NODE.test(n)), `source.${k} must be a list of base/node`);
     need(Array.isArray(s.bases) && s.bases.length <= 64 && s.bases.every((b) => obj(b) && Object.keys(b).every((k) => ['alias', 'id', 'kind', 'root', 'repository'].includes(k)) && str(b.alias, 64) && str(b.id, 128) && ['git', 'directory'].includes(b.kind) && (b.root === undefined || str(b.root, 512)) && (b.repository === undefined || str(b.repository, 512))), 'source.bases must be a list of {alias, id, kind, root?, repository?}');
+    need(!Array.isArray(s.bases) || s.bases.every((b) => !obj(b) || b.root === undefined || safeRoot(b.root)), 'source.bases[].root must be a relative directory without ..');
   }
   if (need(obj(v.tasks), 'tasks must be an object')) {
     only(v.tasks, ['provider', 'refs'], 'tasks');

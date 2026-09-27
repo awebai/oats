@@ -202,7 +202,7 @@ export function register(home) {
   const roleFile=safePath(join(soul,'AGENTS.md'));
   const role=fs.existsSync(roleFile)?fs.readFileSync(roleFile,'utf8'):'';
   if(Buffer.byteLength(role)>128*1024) fail('E_SOURCE','role document exceeds 128KiB; provide a concise role before registering');
-  const source={version:1,id,home,work,context,agent,instance,owner:decl.owner,decl,role,bindings,bindingFingerprint:bindingFingerprint(bindings),execution:{runtime:settings()['harvest-runtime']||'pi',model:settings()['harvest-model']||null},soulId,tasksProvider:tasksProvider(meta),created:new Date().toISOString()};
+  const source={version:1,id,home,work,context,agent,instance,owner:decl.owner,soulDir:soul,decl,role,bindings,bindingFingerprint:bindingFingerprint(bindings),execution:{runtime:settings()['harvest-runtime']||'pi',model:settings()['harvest-model']||null},soulId,tasksProvider:tasksProvider(meta),created:new Date().toISOString()};
   const file=join(dir,'source.json');
   fs.mkdirSync(dir,{recursive:true,mode:0o700});
   try {
@@ -256,6 +256,23 @@ export function input(source,id) {
  *  that is still running (or has unresolved effects) stays disabled and is
  *  removed on the worker's next settle. Idempotent; a scheduler failure is
  *  recorded, never thrown — the evidence is already safe. */
+/** okf 4.0.1 #6: the switch for an already registered source, re-read now: the
+ *  deployment setting AND the soul's opt-out (the current OATS_SOUL the kernel
+ *  hands run-source/retire, else the soul directory recorded at registration). */
+export function sourceSwitch(source) {
+  const current = process.env.OATS_SOUL && fs.existsSync(process.env.OATS_SOUL) ? process.env.OATS_SOUL : null;
+  return harvestSwitch({ settings: settings(), soulDir: current || source.soulDir || undefined });
+}
+/** Retire a registered source whose harvest is now off: no final capture; the
+ *  inputs already in custody stay; the schedule is settled as for any retire. */
+export function retireHarvestOff(source, sw) {
+  updateStatus(source, current => {
+    current.retired = true; current.retiredAt = new Date().toISOString(); current.harvestOff = { reason: sw.reason, at: current.retiredAt };
+    // As a final capture would: the schedule stays only while earlier inputs await processing.
+    current.auto = current.auto && !current.captured.inputs.every(id => current.processed.includes(id));
+  });
+  return { retired: true, reason: 'harvest-off', switch: sw.reason, source: source.file, schedule: settleRetiredSchedule(source) };
+}
 export function settleRetiredSchedule(source) {
   const status=loadStatus(source);
   if(status.schedule?.removed===true) return {status:'already-removed',id:status.schedule.id};
