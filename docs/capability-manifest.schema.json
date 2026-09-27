@@ -10,6 +10,8 @@
   ],
   "$defs": {
     "HelperInjection": {
+      "deprecated": true,
+      "description": "DEPRECATED and IGNORED since OATS 0.26: it served the captured path (removed in 0.26). Still accepted so existing manifests validate; it changes nothing. Omit it.",
       "oneOf": [
         {"type":"object","required":["version","mode"],"additionalProperties":false,"properties":{"version":{"const":1},"mode":{"enum":["inherit","omit"]}}},
         {"type":"object","required":["version","mode","path"],"additionalProperties":false,"properties":{"version":{"const":1},"mode":{"const":"file"},"path":{"type":"string","minLength":1,"pattern":"^(?![A-Za-z]:)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^/\\\\\u0000]+(?:/[^/\\\\\u0000]+)*$"}}}
@@ -81,7 +83,7 @@
     "inject": {
       "type": "string"
     },
-    "helperInjection": {"$ref":"#/$defs/HelperInjection"},
+    "helperInjection": {"$ref":"#/$defs/HelperInjection","deprecated":true,"description":"DEPRECATED and IGNORED since OATS 0.26 (accepted so existing manifests validate; changes nothing). Omit it."},
     "environment": {
       "type": "array",
       "items": {
