@@ -51,7 +51,7 @@ The human (Juan): *"i do not want to go against Pepe's design intent. what exact
   - A team id is an address, not a secret.
 - **Local `oats-local.yaml`:** personal teams (`teams: { antares-oats: {team: …} }`), `defaultTeam`, and ALL membership (`souls.teams`, `souls.default`).
 - **Rules:**
-  - a label defined in both files → `E_TEAM_DUPLICATE`;
+  - a label defined in both files is a READINESS problem (`team-label-collision`, naming both definitions and the fix: rename the local label), not a spawn refusal. A teammate's PR adding a shared team must never break another person's deployment on sync; until it's fixed, the COMMITTED definition wins;
   - the default and every membership may name a label from either file;
   - an unknown label → `E_TEAM_UNKNOWN`.
 - **Joining a shared team:** the id is in the committed file. Setup makes the local root a member through the owner's invite (`oats teams join <label> --invite <token>`).
@@ -184,6 +184,13 @@ The Desktop gets the same controls (Setup: this deployment's teams + the default
    - the server passes the new fields (the engineer);
    - Setup's local teams + default, the soul page's local teams, the spawn dialog showing every team the soul joins (the ux-designer).
 6. **The KB + migration** of the two existing deployments (one-shot, by the humans with the setup-admin soul).
+
+**Before the 0.30 tag (the lead's execution conditions, agreed by the co-lead):**
+- the Desktop PR merges before or with the pins, fixtures recaptured from the REAL provider;
+- a LIVE two-deployment rehearsal: one host, a shared `oats` team + two personal defaults, then spawn / opt-in join / leave / soul-loses-team (**the co-lead owns it**);
+- second-person onboarding: joining a shared team by its owner's invite is one clear step, and below the `aweb-abkh` floor setup says exactly what's missing (**the co-lead owns it**);
+- a leave caused by a live read shows in status, readiness and the instance's events (never silent);
+- the oats.setup skills (oats-teams, oats-onboarding, oats-workspace-config) rewritten in the same release.
 
 **Owners (proposed):**
 - the kernel: a cli-dev;
