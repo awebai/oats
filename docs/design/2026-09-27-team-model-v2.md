@@ -12,7 +12,7 @@ Status: **PROPOSED 2026-09-27, revised after the human's answers** (the lead dra
 
 ## Why: today's model has four overlapping ideas
 
-1. The workspace's `teams:` labels + `messaging.byTeam.<label>` map labels to provider teams. This part is right.
+1. The workspace's `teams:` labels + `messaging.byTeam.<label>` map labels to provider teams. They're committed and shared, which the human's answers rule out (below).
 2. **The default team is not the workspace's.** After amendment K it's the provider setting `team`, else the provider's own default. For oats.aweb that's the messaging root's active team: host state, invisible in config.
 3. **"Primary"** (the first of a soul's `team:` labels) sets `OATS_TEAM_LABEL` and ordering but isn't the default team.
 4. **`oats-membership.yaml` `team`** is a repository-level default label layered under the soul's.
@@ -82,7 +82,7 @@ The Desktop gets the same controls (Setup: this deployment's teams + the default
 - **`oats aweb setup`** (the provider's setup verb, a setup-time human act):
   - creates the account (`aw init --new-account --username …`) when none exists;
   - creates every declared team that the workspace doesn't map yet;
-  - writes the resulting ids into `messaging.byTeam` **as a proposed diff** for the human to commit (oats.setup: config changes by PR).
+  - writes each resulting id into THIS deployment's `oats-local.yaml` `teams:` (and `defaultTeam` for the first), directly: it's local config, with no commit and no PR.
   - It never runs at spawn, mint, retire or wake.
 - **What aweb allows today** (the messaging lane, from aweb's lead, 2026-09-27):
   - **The first account and its default team:** fully automatable (`aw init --new-account --username …`).
@@ -102,11 +102,12 @@ The Desktop gets the same controls (Setup: this deployment's teams + the default
   2. Every further declared team, by kind (the same outcome, different handles):
      - **Hosted** (`aweb-abkh`): `aw id team create --name <t>` → the team id + a single-use invite TOKEN → `aw --identity-home <root> id team accept-invite <token> --name <alias> --local`.
      - **BYOD:** `aw id team create --name <t> --namespace <domain>` (the namespace controller key) → the team id + a team KEY → the team key signs `aw id team invite` → `accept-invite --local` → `aw id team register` to host it on aweb.ai.
-  3. Setup writes each new id into `messaging.byTeam` as a proposed diff for the human to commit.
+  3. Setup writes each new id into `oats-local.yaml` `teams.<label>` (and sets `defaultTeam` to the first).
+- **Joining a team someone else created** (a shared team like `oats`): its owner sends an invite. `oats teams add <label> --team <id> --invite <token>` records the label + id, and the root accepts the invite into its membership. Setup never creates a team that's already declared with an id.
 - **A label is NOT passed raw as the team name** (aweb's rule, hosted + BYOD: `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`, 1–128; the id is `<team>:<namespace>`, unique per namespace, 409 on a collision).
   - Setup NORMALIZES the label to that pattern (lowercase; `_`/`.` → `-`; trim hyphens) and passes it as `--name`.
   - **On a 409:** if the existing team is one this deployment's root already belongs to (a re-run of setup), reuse it. Otherwise choose a suffixed name (`<name>-2`, …), and never adopt a team the root isn't a member of.
-  - `messaging.byTeam.<label>.team` holds the real id, so **the mapping, not the name, is the truth.**
+  - `oats-local.yaml` `teams.<label>.team` holds the real id, so **the mapping, not the name, is the truth.**
   - Confirmed: `aw init --new-account` makes the user's `default` team org-owned, so a fresh root can create further hosted teams under `aweb-abkh` with nothing extra.
 - **The only gate is the aw/Cloud version floor** that ships `aweb-abkh`. Below it, a hosted extra team is refused with the remedy "upgrade aw" (the provider's readiness names the floor), not a guided dashboard step. The model doesn't change.
 - Setup needs no human login at all on this path.
