@@ -48,7 +48,7 @@ souls:
 - **Messaging active + no `teams`/`defaultTeam`** → readiness `needs-configuration` ("no teams configured: run `oats aweb setup`"), and spawn is refused (`E_TEAM_UNCONFIGURED`). There's no guessed team and no root-active fallback.
 
 ### Removed (no backwards compatibility)
-- `oats-workspace.yaml` `teams:` and `messaging.byTeam`;
+- `oats-workspace.yaml` `teams:`, `messaging.byTeam` and `defaults.byTeam` (proposed; see the Pepe questions);
 - `soul.yaml` `team:`;
 - `oats-membership.yaml` `team`;
 - "primary";
@@ -68,9 +68,9 @@ Committed files say nothing about teams.
 ### At spawn, and live (the human's Q1 + Q2)
 - **At spawn an instance joins EVERY team its soul belongs to** in this deployment (the human's Q1; this reverses the teams contract's "joining is explicit" default). The default team is its primary identity; each other team gets its own identity (as today's joined teams).
 - **The root's role (the provider contract):** setup makes the deployment's messaging root a member of every declared team. The provider mints each of an instance's identities from the root's membership in THAT team (`aw team invite --team-id <id>`), never from the root's active team.
-- **Live:** when a soul leaves a team in `oats-local.yaml` (or a team is removed), its running instances leave it on the next live read (the human's Q2; the teams contract's live reconciliation, now for membership changes too). When a soul gains a team, its running instances join it on the next live read (symmetry; to confirm with the human, see open question b).
+- **Live:** when a soul leaves a team in `oats-local.yaml` (or a team is removed), its running instances leave it on the next live read (the human's Q2; the teams contract's live reconciliation, now for membership changes too). When a soul gains a team, its running instances join it on the next live read (symmetry; pending the human's (b)). An instance's AD-HOC joins (the per-instance verbs, (c)) are left alone by reconciliation.
 - **Changing `defaultTeam`** doesn't move running instances (their primary identity is fixed): readiness warns `default-team-changed` until respawn.
-- The provider's join/leave verbs stay for an ad-hoc membership of ONE instance. Whether they survive now that membership is soul-level is open question c.
+- The provider's join/leave verbs stay (the human's (c)) for an ad-hoc membership of ONE instance.
 
 ### Verbs (edit `oats-local.yaml`; never a clone, never a PR)
 ```
@@ -119,11 +119,16 @@ The Desktop gets the same controls (Setup: this deployment's teams + the default
 - Setup never runs at spawn/mint/retire/wake, and OATS holds no human login (the provider consumes the resulting root).
 - The oats.setup skills (`oats-teams`, `oats-onboarding`, `oats-workspace-config`) teach the model and the verbs.
 
-## Open questions (for the human; the co-lead is asking)
-- **(a) The file:** the existing `oats-local.yaml` (the deployment's per-machine, uncommitted file), as proposed, or a separate local file?
-- **(b) Purely local?** Nothing about teams in any committed file (no "suggested" team in a soul or the workspace), as proposed. And does a soul GAINING a team make its running instances join it live (symmetric with Q2), as proposed?
-- **(c) The default** = the team an instance's primary identity lives in, which it can't leave. With every team joined at spawn, do we still need a per-instance ad-hoc join/leave (the provider verbs), or is membership only soul-level (the proposal: keep them for one-off use; drop them if the human says so)?
+## The human's answers to (a)–(d), and what remains
 
+- **(a) The file:** `oats-local.yaml` ("we do not need another file"). ✔
+- **(c) Per-instance join/leave:** kept ("we keep the commands per instance"). They're an ad-hoc membership of ONE instance on top of its soul's teams. The next live read doesn't undo an ad-hoc join; it undoes only memberships that come from the soul. ✔
+- **(d) The per-soul default:** kept (`souls.default`). ✔
+- **(b) Purely local:** OPEN. The co-lead explained to the human the current state (the machinery exists, and the only usage is one label `global`, no `byTeam` mapping, one soul `team: global`, so every instance lands in the root's active team) and recommended purely local + gaining a team joins live. The human's answer is pending.
+
+**For the original designer (Pepe), what purely local gives up from the 2026-09-25 teams contract:**
+1. **The shared, committed label vocabulary.** Labels become each deployment's own: a typo is caught against your own `teams:`, and two people may name the same shared team differently. That's harmless, since the id is the truth.
+2. **`defaults.byTeam.<label>.capabilities`** (capabilities composed by team label). With local membership, a soul's composition would vary per person and per machine. **Proposed: DROP it** (unused today). Capabilities stay composed from the committed workspace + soul only, so composition remains reproducible across people.
 ## Sequencing (proposed)
 1. **Now, small (the messaging lane):** an oats.aweb release with the setup `--new-account` fix + the dead `helperInjection` key.
 2. **This design:** the co-lead shapes it → the human answers 1–3 → **Decided**.
