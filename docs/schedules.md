@@ -41,7 +41,11 @@ see [Captured definitions](#captured-definitions-removed-in-026).
 - **spawn** `{id, enabled, cron, tz, kind: "spawn", agent, agentsRoot?,
   repo?, backend?, purpose?, task, launchConfig?, harness?, model?, yolo?, wake?}` — every
   due minute launches one disposable instance of `agent` with the same
-  options `oats spawn` takes. `agentsRoot` names the exact agents root that
+  options `oats spawn` takes. `model` is a model id (a letter or digit, then
+  letters, digits and `. _ : / @ + - [ ]`, at most 128 characters, or
+  `@native-default`), and `agent` and `repo` never start with `-`: an
+  automation's values reach the child `oats spawn` as single `--flag=value`
+  tokens and can never be read as options of their own. `agentsRoot` names the exact agents root that
   holds the soul (it must lie inside the workspace and defaults to the
   workspace's own root); it is what tells same-named souls in different
   member repositories apart. `repo` is the work repository, as `--repo`.

@@ -55,12 +55,14 @@ function stubOats(dep, script) {
   writeFileSync(bin, `
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 const args = process.argv.slice(2);
-const i = args.indexOf("--task-file"); const task = i >= 0 ? readFileSync(args[i + 1], "utf8") : null;
+// Values arrive as ONE \`--flag=value\` token each (re-review B #1).
+const val = (f) => { const t = args.find((a) => a.startsWith(f + "=")); return t === undefined ? undefined : t.slice(f.length + 1); };
+const taskFile = val("--task-file"); const task = taskFile ? readFileSync(taskFile, "utf8") : null;
 const calls = existsSync(${JSON.stringify(log)}) ? JSON.parse(readFileSync(${JSON.stringify(log)}, "utf8")) : [];
 calls.push({ args, cwd: process.cwd(), task, env: Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith("OATS_") || k.startsWith("PI_AGENT"))) });
 writeFileSync(${JSON.stringify(log)}, JSON.stringify(calls));
 const script = ${JSON.stringify(script)};
-const purpose = args[args.indexOf("--purpose") + 1], root = args[args.indexOf("--agents-root") + 1], soul = args[1];
+const purpose = val("--purpose"), root = val("--agents-root"), soul = args[1];
 if (script.mode === "ok") {
   const home = root + "/" + soul + "/instances/" + soul + "-" + purpose;
   mkdirSync(home + "/.oats/modules/oats.core", { recursive: true });
@@ -97,14 +99,16 @@ test("M4: over a workspace deployment the scheduler delegates to `oats spawn --j
     const calls = stub.calls();
     assert.equal(calls.length, 1);
     const a = calls[0].args;
-    assert.deepEqual(a.slice(0, 9), ["spawn", "triager", "--dir", ws, "--agents-root", join(ws, "agents"), "--purpose", "sched-202609071005", "--json"]);
-    for (const [f, v] of [["--harness", "pi"], ["--model", "m1"], ["--backend", "tmux"]]) assert.equal(a[a.indexOf(f) + 1], v, f);
+    // Every value is ONE `--flag=value` token, so no value can be read as a flag (re-review B #1).
+    assert.deepEqual(a.slice(0, 6), ["spawn", "triager", `--dir=${ws}`, `--agents-root=${join(ws, "agents")}`, "--purpose=sched-202609071005", "--json"]);
+    for (const tok of ["--harness=pi", "--model=m1", "--backend=tmux"]) assert.ok(a.includes(tok), tok);
+    for (const f of ["--dir", "--agents-root", "--purpose", "--harness", "--model", "--backend", "--task-file"]) assert.ok(!a.includes(f), `${f} never travels spaced`);
     assert.ok(a.includes("--yolo") && !a.includes("--no-yolo"));
     assert.ok(a.includes("--no-launch"), "io.noLaunch reaches the child as --no-launch");
     assert.ok(!a.includes("--wake-json") && !a.includes("--wake-file"), "the wake is saved by the scheduler from the run record, not by the child");
     assert.ok(!a.includes("--task"), "the task never travels in argv");
     assert.match(calls[0].task, /^Triage the queue\.\n\n## Scheduled run\n[\s\S]*oats retire --self/);
-    assert.ok(!existsSync(a[a.indexOf("--task-file") + 1]), "the private task file is removed after the child answers");
+    assert.ok(!existsSync(a.find((t) => t.startsWith("--task-file=")).slice("--task-file=".length)), "the private task file is removed after the child answers");
     assert.equal(calls[0].cwd, ws, "the child runs in the deployment");
     assert.equal(calls[0].env.OATS_INSTANCE, undefined); assert.equal(calls[0].env.OATS_HOME, undefined); assert.equal(calls[0].env.OATS_TASK, undefined);
     assert.equal(calls[0].env.OATS_HOME_DIR, process.env.OATS_HOME_DIR, "host configuration is kept");
