@@ -340,7 +340,8 @@ function harvesterAlias(run) {
 export function provenance(source,run) {
   const identity=source.sourceIdentity;
   return {version:1,run:run.id,input:[...run.inputs],
-    source:{soul:identity?.name ?? identity?.soul ?? source.agent,soulId:source.soulId ?? (identity?JSON.stringify(identity):null),instance:source.instance,
+    // owner: the source's okf.json owner, which okf-base.json nodes record (okf 4.0.1 #3).
+    source:{soul:identity?.name ?? identity?.soul ?? source.agent,soulId:source.soulId ?? (identity?JSON.stringify(identity):null),owner:source.owner ?? null,instance:source.instance,
       ownedNodes:[...source.decl.owns],readNodes:[...source.decl.reads],
       bases:Object.entries(source.bindings.bases).map(([alias,b])=>({alias,id:b.id,kind:b.kind,...(b.kind==='git'?{root:b.root,repository:b.pr.repository}:{})}))},
     tasks:{provider:source.tasksProvider ?? null,refs:[...new Set(run.judgment?.tasks?.refs || [])]},

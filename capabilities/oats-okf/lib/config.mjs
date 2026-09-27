@@ -1,5 +1,5 @@
 import { isAbsolute } from 'node:path';
-import { fs, join, resolve, dirname, fail, readJSON, safePath, relPath, identifier, overlaps, hash } from './io.mjs';
+import { fs, join, resolve, dirname, fail, readJSON, safePath, relPath, identifier, overlaps, hash, embedsCredential } from './io.mjs';
 const obj = v => v && typeof v === 'object' && !Array.isArray(v);
 function keys(value, allowed, label, code='E_CONFIG') {
   if(!obj(value)) fail(code, `${label} must be an object`);
@@ -48,6 +48,7 @@ export function validateBindings(doc, file, { sourceHome, sourceWork } = {}) {
       keys(raw,['id','kind','repository','root','acceptedBranch','pr'],'git base');
       keys(raw.pr,['repository'],'git pr');
       if(typeof raw.repository !== 'string' || !raw.repository || raw.repository.startsWith('-') || /[\r\n\0]/.test(raw.repository) || 'path' in raw) fail('E_CONFIG', 'git base requires repository');
+      if(embedsCredential(raw.repository)) fail('E_CONFIG', `git base "${alias}": the repository locator embeds a credential (user:token@); bind the plain URL and let a Git credential helper or SSH key supply access`);
       const root = relPath(raw.root, true);
       if (typeof raw.acceptedBranch !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._/-]*$/.test(raw.acceptedBranch) || raw.acceptedBranch.includes('..') || raw.acceptedBranch.endsWith('/') || raw.acceptedBranch.endsWith('.lock')) fail('E_CONFIG','invalid acceptedBranch');
       if (!obj(raw.pr) || typeof raw.pr.repository !== 'string' || !/^[\w.-]+\/[\w.-]+$/.test(raw.pr.repository)) fail('E_CONFIG','git pr requires repository: owner/repo (same-repository PRs)');

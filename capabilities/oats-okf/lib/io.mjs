@@ -8,6 +8,14 @@ export const fail = (code, message) => { throw Object.assign(new Error(message),
 export const hash = value => createHash('sha256').update(typeof value === 'string' || Buffer.isBuffer(value) ? value : JSON.stringify(value)).digest('hex');
 export const readJSON = path => JSON.parse(fs.readFileSync(path, 'utf8'));
 export const within = (root, path) => { const r = relative(root, path); return r === '' || (!r.startsWith('..' + sep) && r !== '..' && !isAbsolute(r)); };
+// okf 4.0.1 #2: a URL's userinfo is a credential (https://user:token@host).
+// Strip it from anything shown to agents or users; an SSH user alone
+// (ssh://git@host) is not a secret and stays.
+const USERINFO = /\b([a-z][a-z0-9+.-]*:\/\/)([^\s/@'"]+)@/gi;
+export const redactUrls = text => String(text).replace(USERINFO, (m, scheme, info) => /^ssh:/i.test(scheme) && !info.includes(':') ? m : scheme);
+export const displayRepo = repository => typeof repository === 'string' ? redactUrls(repository) : repository;
+/** Whether a repository locator embeds a credential (any userinfo except a bare SSH user). */
+export const embedsCredential = repository => { USERINFO.lastIndex = 0; return typeof repository === 'string' && redactUrls(repository) !== repository; };
 export const overlaps = (a, b) => within(a, b) || within(b, a);
 export function safePath(path) {
   path = resolve(path);
@@ -77,7 +85,7 @@ export function unlock(path, token) {
   try { process.kill(o.pid, 0); fail('E_LOCKED', 'lock owner is still alive'); } catch (e) { if(e.code !== 'ESRCH') throw e; }
   fs.rmSync(path, { recursive: true }); syncDir(dirname(path)); return { unlocked: path };
 }
-export const identityKeys = ['OATS_INSTANCE','OATS_INSTANCE_HOME','OATS_HOME','PI_AGENT_HOME','PI_AGENT_NAME','PI_AGENT_INSTANCE','PI_AGENTS_ROOT','OATS_ROOT','OATS_SOUL','OATS_SOUL_ID','OATS_AGENT','OATS_KIND','OATS_EVENT','OATS_CONTEXT','OATS_REPO','OATS_WORK','OATS_BRANCH','OATS_META','OATS_SETTINGS','OATS_BINDING_FILE','OATS_SOURCE_RECEIPT_FILE','OATS_INVOCATION_CONTEXT_FILE','OATS_DEPLOYMENT','OATS_RESOLUTION'];
+export const identityKeys = ['OATS_INSTANCE','OATS_INSTANCE_HOME','OATS_HOME','PI_AGENT_HOME','PI_AGENT_NAME','PI_AGENT_INSTANCE','PI_AGENTS_ROOT','OATS_ROOT','OATS_SOUL','OATS_SOUL_ID','OATS_AGENT','OATS_KIND','OATS_EVENT','OATS_CONTEXT','OATS_REPO','OATS_WORK','OATS_BRANCH','OATS_META','OATS_SETTINGS','OATS_SETTINGS_ORIGINS','OATS_BINDING_FILE','OATS_SOURCE_RECEIPT_FILE','OATS_INVOCATION_CONTEXT_FILE','OATS_DEPLOYMENT','OATS_RESOLUTION'];
 export function cleanEnv(env = process.env) {
   return Object.fromEntries(Object.entries(env).filter(([k]) => !/^(OATS_(?!HOME_DIR$|PACKAGE_CATALOG$)|PI_AGENT|GIT_)/.test(k)));
 }

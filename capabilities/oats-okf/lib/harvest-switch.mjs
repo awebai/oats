@@ -60,11 +60,24 @@ function shaped(value) {
  *  A soul `on` is ignored and reported: a soul cannot switch a host on. It also
  *  hides the host's value (the kernel's merged `harvest` is then the soul's),
  *  so with a soul `on` the switch stays off until the soul drops the line. */
-export function harvestSwitch({ settings = {}, soulDir = process.env.OATS_SOUL } = {}) {
-  const deployment = VALUES.includes(settings.harvest) ? settings.harvest : 'off';
+/** OATS_SETTINGS_ORIGINS (kernel 0.29.0): JSON pointer → { kind, at } of the LAST
+ *  layer that set each leaf. {} when absent or unreadable. */
+export function parseOrigins(text = process.env.OATS_SETTINGS_ORIGINS) {
+  try { const o = JSON.parse(text || '{}'); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; } catch { return {}; }
+}
+/** okf 4.0.1: origins name the last layer only, and the host's settings merge
+ *  AFTER the soul's slot, so a host `harvest: on` hides a soul's `off` there.
+ *  soul.yaml therefore stays the authority for the absolute opt-out; origins
+ *  are an extra signal: a merged value whose origin is the soul is never the
+ *  deployment switching harvest on (a soul `on` is ignored, a soul `off` is off). */
+export function harvestSwitch({ settings = {}, soulDir = process.env.OATS_SOUL, origins = parseOrigins() } = {}) {
+  const origin = origins?.['/harvest'] && typeof origins['/harvest'] === 'object' ? origins['/harvest'] : null;
+  const fromSoul = origin?.kind === 'soul';
+  const deployment = !fromSoul && VALUES.includes(settings.harvest) ? settings.harvest : 'off';
   const soul = soulHarvest(soulDir);
+  if (fromSoul && VALUES.includes(settings.harvest) && soul.value === null) Object.assign(soul, { value: settings.harvest, readable: true, why: `OATS_SETTINGS_ORIGINS: harvest: ${settings.harvest} came from the soul (${String(origin.at || 'soul.yaml')})` });
   const rows = [
-    { layer: 'deployment', value: deployment, why: settings.harvest === undefined ? 'harvest is not set (default off)' : `settings.oats.okf.harvest: ${settings.harvest}` },
+    { layer: 'deployment', value: deployment, ...(origin ? { origin: origin.kind } : {}), why: fromSoul ? 'the merged harvest value came from the soul, so the deployment does not switch harvest on' : settings.harvest === undefined ? 'harvest is not set (default off)' : `settings.oats.okf.harvest: ${settings.harvest}` },
     { layer: 'soul', value: soul.value, readable: soul.readable, why: soul.why },
   ];
   const warnings = [];

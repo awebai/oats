@@ -5,7 +5,7 @@
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { fs, join, dirname, safePath, readJSON, save, digest, tree, withLock, fail, syncDir, identifier } from './io.mjs';
+import { fs, join, dirname, resolve, safePath, readJSON, save, digest, tree, withLock, fail, syncDir, identifier, relPath, within, displayRepo } from './io.mjs';
 import { noGit, gitTimeoutMs, consultMaxAgeMs, splitRef, resolveNodes } from './config.mjs';
 import { git, gitEnv, validateBase, baseLock, journalPath, preflightLocalRepository, requireNotShallow, verifyRemote, unavailable } from './stores.mjs';
 
@@ -248,6 +248,23 @@ export function withBase(bindings, alias, { fresh = false } = {}, fn) {
 }
 
 // ---------------------------------------------------------------- validation
+/** A tree entry name, from an untrusted accepted tree, as a path under the base
+ *  root. Git accepts literal `..`, absolute-looking and control-character entry
+ *  names (`hash-object --literally`), and they survive a partial clone, so every
+ *  name gets relPath's canonical rules (no empty, `.`, `..`, absolute, backslash,
+ *  NUL or `.git` segment) plus no control characters or percent-escapes. */
+export function treeEntryPath(name) {
+  const bad = () => fail('E_PATH', `invalid tree entry in knowledge base: ${JSON.stringify(String(name)).slice(0, 200)}`);
+  if (typeof name !== 'string' || /[\u0000-\u001f\u007f]/.test(name) || /%[0-9a-fA-F]{2}/.test(name)) bad();
+  try { return relPath(name); } catch { return bad(); }
+}
+/** Where a tree entry lands under `root`, refused unless it stays strictly
+ *  inside it after resolution (the second, independent guard). */
+export function containedTarget(root, name) {
+  const target = resolve(root, treeEntryPath(name));
+  if (target === resolve(root) || !within(root, target)) fail('E_PATH', `tree entry escapes its materialization root: ${JSON.stringify(name).slice(0, 200)}`);
+  return safePath(target);
+}
 const VALIDATION_CODES = new Set(['E_VALIDATION', 'E_BASE', 'E_PATH', 'E_ID', 'E_CONFIG']);
 /** Whether the accepted state is a valid OKF base. Git verdicts are cached per
  *  commit inside the host cache; computing one materializes the base root into
@@ -264,10 +281,15 @@ export function verdict(ctx) {
   try {
     const result = judge(() => {
       const rows = lsTree(ctx, '', { recursive: true });
-      for (const r of rows) if (!['100644', '100755'].includes(r.mode) || r.type !== 'blob') fail('E_PATH', 'symlink or submodule in knowledge base is not allowed');
+      // Every entry is judged before anything is written: the first bad name or
+      // mode refuses the whole base, and nothing lands outside the scratch.
+      for (const r of rows) {
+        if (!['100644', '100755'].includes(r.mode) || r.type !== 'blob') fail('E_PATH', 'symlink or submodule in knowledge base is not allowed');
+        r.target = containedTarget(scratch, r.name);
+      }
       prefetch(ctx, '');
       for (const r of rows) {
-        const target = safePath(join(scratch, r.name)); fs.mkdirSync(dirname(target), { recursive: true });
+        const target = r.target; fs.mkdirSync(dirname(target), { recursive: true });
         const fd = fs.openSync(target, 'wx', 0o600);
         let w; try { w = spawnSync('git', ['--no-replace-objects', '-c', 'core.hooksPath=/dev/null', '-C', ctx.cache, 'cat-file', 'blob', r.oid], { env: gitEnv(), timeout: gitTimeoutMs(), stdio: ['ignore', fd, 'pipe'] }); } finally { fs.closeSync(fd); }
         if (w.error || w.status !== 0) unavailable(ctx.base, ctx.alias, 'read', gitError(w));
@@ -346,7 +368,7 @@ export function bases(source, flags) {
   const rows = [], receipts = [];
   for (const [alias, base] of Object.entries(source.bindings.bases)) withBase(source.bindings, alias, { fresh: !!flags.fresh }, ctx => {
     const v = verdict(ctx), mine = relation => source.decl[relation].filter(ref => splitRef(ref)[0] === alias).map(ref => splitRef(ref)[1]);
-    rows.push({ alias, id: base.id, kind: base.kind, ...(base.kind === 'git' ? { repository: base.repository, acceptedBranch: base.acceptedBranch, root: base.root, commit: ctx.commit } : { path: base.path, digest: ctx.receipt.digest }),
+    rows.push({ alias, id: base.id, kind: base.kind, ...(base.kind === 'git' ? { repository: displayRepo(base.repository), acceptedBranch: base.acceptedBranch, root: base.root, commit: ctx.commit } : { path: base.path, digest: ctx.receipt.digest }),
       fetchedAt: ctx.receipt.fetchedAt, stale: ctx.receipt.stale, ...(ctx.receipt.reason ? { reason: ctx.receipt.reason } : {}),
       validated: v.ok ? { ok: true } : { ok: false, error: v.error }, nodes: v.ok ? Object.keys(v.nodes) : null, owns: mine('owns'), reads: mine('reads'), receipt: ctx.receipt });
     receipts.push(ctx.receipt);
