@@ -25,6 +25,37 @@ On top of that, a soul can override the default only by writing a provider team 
 
 **What this changes:** team membership is **LOCAL: per person's OATS deployment, over shared repos and souls.** Two people using the same souls from the same repositories have different sets of teams. Some teams are shared (both map the label to the same provider team), and each has their own default. So **nothing about teams lives in a committed, shared file**: not `soul.yaml`, not `oats-workspace.yaml`. Q3 (package souls) dissolves: every soul, member or package, is treated the same.
 
+## Two shapes for the original designer (Pepe) to choose from
+
+The human (Juan): *"i do not want to go against Pepe's design intent. what exactly do we propose? what's the final shape?"* Membership is LOCAL in both shapes (the human's non-negotiable). They differ on where a SHARED team is declared.
+
+**Option A: everything local** (the model section below as written):
+- `oats-local.yaml` declares every team (shared and personal) with its id, the default, and all membership.
+- Committed files say nothing about teams.
+- One place, one rule. It gives up the shared committed vocabulary: each person hand-copies a shared team's id.
+
+**Option B: shared facts committed, personal choices local** (the co-lead's variant; **both co-leads recommend B**):
+- **Committed `oats-workspace.yaml` `teams:`:** only the SHARED teams, with their provider ids, e.g. `teams: { oats: { team: oats:oats.aweb.ai } }`.
+  - It's one fact, written once, the same for everyone, edited by PR like any committed workspace config.
+  - It REPLACES `messaging.byTeam` (the id moves into the team's own entry).
+  - It keeps the shared vocabulary and "the workspace owns team policy".
+  - A team id is an address, not a secret.
+- **Local `oats-local.yaml`:** personal teams (`teams: { antares-oats: {team: …} }`), `defaultTeam`, and ALL membership (`souls.teams`, `souls.default`).
+- **Rules:**
+  - a label defined in both files → `E_TEAM_DUPLICATE`;
+  - the default and every membership may name a label from either file;
+  - an unknown label → `E_TEAM_UNKNOWN`.
+- **Joining a shared team:** the id is in the committed file. Setup makes the local root a member through the owner's invite (`oats teams join <label> --invite <token>`).
+- **`oats teams add`** writes LOCAL teams only.
+- **In both shapes:**
+  - `defaults.byTeam` capability composition is DROPPED (composition must not vary per person);
+  - soul.yaml / oats-membership.yaml `team` go;
+  - "primary" goes;
+  - the provider `team` setting goes at every layer.
+- **Cost of B:** two places a team can be declared + one merge rule.
+
+The model section below describes A. Under B, only "Where it lives" changes, as above.
+
 ## The model
 
 ### Where it lives: `oats-local.yaml` (the deployment's per-machine file, never committed)
