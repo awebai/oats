@@ -183,6 +183,19 @@ test("events: reopened, synchronize and labeled are inferred poll over poll; a c
   assert.deepEqual(poll([pr(1, { head: { sha: "f".repeat(40) }, updated_at: "2026-09-26T13:00:00Z" })]).map((k) => k.split(":")[2]), ["reopened"]);
 });
 
+test("superseded pushes: only the newest head's synchronize stays pending for a PR (re-review B #6)", () => {
+  const def = T.validateTrigger(definition({ on: { ...definition().on, events: ["opened", "synchronize"] } }));
+  const ts = { prs: {}, pending: {}, fired: {} };
+  const now = new Date("2026-09-26T12:00:00Z");
+  const poll = (list) => T.foldPoll(def, ts, { prs: list.map((p) => ({ number: p.number, url: p.html_url, headSha: p.head.sha, base: p.base.ref, draft: p.draft, labels: p.labels.map((l) => l.name), createdAt: p.created_at, updatedAt: p.updated_at })), complete: true }, now);
+  poll([pr(1), pr(2)]);
+  for (const k of Object.keys(ts.pending)) { ts.fired[k] = { at: now.toISOString() }; delete ts.pending[k]; } // both opened events fired
+  for (const sha of ["b", "c", "d"]) poll([pr(1, { head: { sha: sha.repeat(40) } }), pr(2)]); // three pushes to PR 1, none spawned yet (held)
+  poll([pr(1, { head: { sha: "d".repeat(40) } }), pr(2, { head: { sha: "e".repeat(40) } })]); // one push to PR 2
+  const pending = Object.values(ts.pending).map((p) => [p.number, p.event, p.headSha]).sort();
+  assert.deepEqual(pending, [[1, "synchronize", "d".repeat(40)], [2, "synchronize", "e".repeat(40)]], "stale heads are dropped; each PR keeps its newest");
+});
+
 test("oats trigger CLI: add/list/show/disable/enable/remove, test (dry run: gh, repo permissions, soul, teams, would-fire), schedules stay separate", async (t) => {
   const fx = fixture(); t.after(fx.cleanup);
   const file = writeJson(fx, definition());
@@ -272,3 +285,78 @@ test("a package trigger template: --from <package>:<template> --set fills its pa
 
 function writeJson(fx, doc) { const f = join(fx.base, `spec-${Math.random().toString(36).slice(2)}.json`); writeFileSync(f, JSON.stringify(doc)); return f; }
 void S;
+
+// Re-review B #2: 0.28 kept a local trigger's state (and its event keys) under the bare id and
+// recorded the bare id in the homes it spawned; 0.29 qualifies them as `local/<id>`. Upgrading must
+// not re-fire the open PRs, and the 0.28 homes still count toward concurrency.
+test("upgrading from 0.28: bare-id trigger state and homes carry over to local/<id> — nothing re-fires, 0.28 homes count", async (t) => {
+  const fx = fixture(); t.after(fx.cleanup);
+  ok(fx.cli(["trigger", "add", "--file", writeJson(fx, definition({ concurrency: { max: 1, perKey: 1 } })), "--json"]), "trigger add");
+  fx.gh.pulls([pr(1)]);
+  assert.deepEqual((await tick(fx, "2026-09-26T12:00:10Z")).filter((r) => r.action === "fired").length, 1);
+  // Rewrite what 0.29 wrote into what 0.28 wrote: the bare id everywhere.
+  const stateFile = join(fx.dep, ".agents", "schedules", "triggers.json");
+  const st = JSON.parse(readFileSync(stateFile, "utf8"));
+  const bare = (o) => JSON.parse(JSON.stringify(o).replaceAll("local/kb-review", "kb-review"));
+  st.triggers["kb-review"] = bare(st.triggers["local/kb-review"]); delete st.triggers["local/kb-review"];
+  writeFileSync(stateFile, JSON.stringify(st, null, 2));
+  const [old] = homes(fx);
+  const metaFile = join(old.home, "instance.json");
+  writeFileSync(metaFile, JSON.stringify(bare(JSON.parse(readFileSync(metaFile, "utf8"))), null, 2));
+  assert.equal(JSON.parse(readFileSync(metaFile, "utf8")).trigger.id, "kb-review", "a 0.28 home records the bare id");
+
+  assert.deepEqual(homes(fx).map((h) => h.number), [1], "the 0.28 home is the same local trigger's live instance");
+  const carried = T.readTriggerState(fx.dep).triggers["local/kb-review"];
+  assert.ok(carried?.prs?.[1] && Object.keys(carried.fired).every((k) => k.startsWith("local/kb-review:")), JSON.stringify(carried));
+  // PR 1 is unchanged: nothing fires. PR 2 opens: held, since the 0.28 home fills concurrency.max 1.
+  fx.gh.pulls([pr(1), pr(2)]);
+  const after = await tick(fx, "2026-09-26T12:02:10Z");
+  assert.equal(after.filter((r) => r.action === "fired").length, 0, JSON.stringify(after));
+  assert.deepEqual(after.filter((r) => r.action === "held").map((r) => r.key), [`local/kb-review:${REPO}#2:opened:2026-09-26T10:02:00Z`], JSON.stringify(after));
+  assert.equal(T.readTriggerState(fx.dep).triggers["kb-review"], undefined, "the bare-id state is not written back");
+});
+
+// Re-review B #7: the owner check asks gh on the owner's host; the poll runs on the repo's host.
+test("a workspace trigger whose owner is on one GitHub host and whose repo is on another is E_TRIGGER_INVALID (field owner)", async () => {
+  const kind = T.triggerKind();
+  const { on, spawn } = definition();
+  const entry = (owner, repo = on.repo) => ({ name: "kb-review", owner, source: { definition: { on: { ...on, repo }, spawn } } });
+  assert.equal((await kind.expand(entry("github.com/kb-bot"))).on.repo, REPO, "same host: valid");
+  assert.equal((await kind.expand(entry("ghe.example.com/kb-bot", "ghe.example.com/acme/knowledge"))).on.repo, "ghe.example.com/acme/knowledge", "both on the GHE host: valid");
+  for (const [owner, repo] of [["ghe.example.com/kb-bot", REPO], ["github.com/kb-bot", "ghe.example.com/acme/knowledge"]]) {
+    await assert.rejects(kind.expand(entry(owner, repo)), (e) => e.code === "E_TRIGGER_INVALID" && e.field === "owner" && /repository's own GitHub host/.test(e.message), `${owner} / ${repo}`);
+  }
+});
+
+// Re-review B #5 (lead option c): the host registry's triggersMaxConcurrent caps trigger-spawned
+// live instances host-wide; absent, each trigger's own max applies; schedules never count.
+test("triggersMaxConcurrent: absent = per-trigger max only; 1 = two triggers (max 2 each) fire one instance in total; an invalid value is refused", async (t) => {
+  const run = async (cap) => {
+    const fx = fixture(); t.after(fx.cleanup);
+    for (const id of ["kb-review", "kb-audit"]) ok(fx.cli(["trigger", "add", "--file", writeJson(fx, definition({ id, spawn: { ...definition().spawn, purpose: `${id}-{number}`, teams: [] }, concurrency: { max: 2, perKey: 1 } })), "--json"]), `add ${id}`);
+    fx.gh.pulls([pr(1), pr(2)]);
+    // A running scheduled job (its lock) fills the schedules' maxConcurrent 1 — and holds no trigger.
+    mkdirSync(join(fx.dep, ".agents", "schedules", "locks", "nightly"), { recursive: true });
+    const reg = { version: 1, maxConcurrent: 1, tickIntervalSec: 60, workspaces: [fx.dep], ...(cap === undefined ? {} : { triggersMaxConcurrent: cap }) };
+    return fx.inEnv(() => { const path = process.env.PATH; process.env.PATH = fx.env.PATH; try { return T.tickTriggers(fx.dep, { now: new Date("2026-09-26T12:00:10Z"), io: { noLaunch: true }, reg, wsList: [fx.dep] }); } finally { process.env.PATH = path; } });
+  };
+  const unbounded = await run(undefined);
+  assert.equal(unbounded.filter((r) => r.action === "fired").length, 4, "absent: each trigger fires up to its own max (2 each) " + JSON.stringify(unbounded));
+  const capped = await run(1);
+  assert.equal(capped.filter((r) => r.action === "fired").length, 1, JSON.stringify(capped));
+  assert.ok(capped.filter((r) => r.action === "held").every((r) => /host triggersMaxConcurrent 1 reached/.test(r.reason) || /concurrency/.test(r.reason)), JSON.stringify(capped));
+  assert.ok(capped.some((r) => /host triggersMaxConcurrent 1 reached/.test(r.reason ?? "")));
+  // A hand-edited registry with a bad value is refused loudly.
+  const fx = fixture(); t.after(fx.cleanup);
+  const hostHome = join(fx.base, "registry-host"), hostDir = join(hostHome, "schedules");
+  mkdirSync(hostDir, { recursive: true });
+  const saved = process.env.OATS_HOME_DIR; process.env.OATS_HOME_DIR = hostHome;
+  try {
+    for (const bad of [0, -1, 1.5, "2", null]) {
+      writeFileSync(join(hostDir, "registry.json"), JSON.stringify({ version: 1, workspaces: [], triggersMaxConcurrent: bad }));
+      assert.throws(() => S.readRegistry(), (e) => e.code === "E_SCHEDULE_INVALID" && e.field === "triggersMaxConcurrent", JSON.stringify(bad));
+    }
+    writeFileSync(join(hostDir, "registry.json"), JSON.stringify({ version: 1, workspaces: [], triggersMaxConcurrent: 3 }));
+    assert.equal(S.readRegistry().triggersMaxConcurrent, 3);
+  } finally { if (saved === undefined) delete process.env.OATS_HOME_DIR; else process.env.OATS_HOME_DIR = saved; }
+});

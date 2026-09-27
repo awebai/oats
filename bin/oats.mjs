@@ -2145,7 +2145,7 @@ async function scheduleCmd() {
         if (args.includes("--host")) return out(tickHost({ io, dryRun }));
         const reg = readRegistry();
         const tctx = scopeAutomations(ws(), { io, refresh: !dryRun });
-        const considered = withHostLock(() => [...(tctx.refresh && !tctx.refresh.ok ? [{ workspace: ws(), action: "error", error: `automations refresh: ${tctx.refresh.error}` }] : []), ...tickWorkspace(ws(), { io, reg, wsList: reg.workspaces.includes(ws()) ? reg.workspaces : [...reg.workspaces, ws()], dryRun, ctx: tctx }), ...tickTriggers(ws(), { io, dryRun, ctx: tctx })]);
+        const considered = withHostLock(() => [...(tctx.refresh && !tctx.refresh.ok ? [{ workspace: ws(), action: "error", error: `automations refresh: ${tctx.refresh.error}` }] : []), ...tickWorkspace(ws(), { io, reg, wsList: reg.workspaces.includes(ws()) ? reg.workspaces : [...reg.workspaces, ws()], dryRun, ctx: tctx }), ...tickTriggers(ws(), { io, dryRun, ctx: tctx, reg, wsList: reg.workspaces.includes(ws()) ? reg.workspaces : [...reg.workspaces, ws()] })]);
         return out({ tickedAt: new Date().toISOString(), considered, scheduler: schedulerStatus(ws(), io) });
       }
       case "host": {
@@ -2504,7 +2504,11 @@ async function capabilityCommand() {
     const teamCtx = teamEnv(resolvedFromPrepared(hit.prepared, hit.deployment));
     // No home, so no recorded soul: the soul's per-commit copy is OATS_SOUL when a spawn
     // already fetched exactly this commit; otherwise the command gets none (never ambient).
-    const cachedSoul = hit.soul?.commit ? join(hit.deployment, "agents", hit.soul.name, "souls", String(hit.soul.commit).slice(0, 12)) : null;
+    // The agent directory is the soul entry's own (a package soul's is `<package>--<soul>`), never
+    // the bare name, which a same-named member soul's copy may occupy (as instance-inspect does).
+    const { agentDirOf } = await import("../lib/instance-resolution.mjs");
+    const entry = hit.prepared?.soulEntry;
+    const cachedSoul = entry?.commit ? join(hit.deployment, "agents", agentDirOf(entry), "souls", String(entry.commit).slice(0, 12)) : null;
     return runManifestCommand({ capability: hit.module.name, ...hit.manifest }, { settings: hit.settings, origins: hit.resolution?.payloadOrigins?.[hit.module.name] }, teamCtx, hit.ensureTree, cachedSoul && existsSync(join(cachedSoul, "soul.yaml")) ? realpathSync(cachedSoul) : undefined);
   }
 

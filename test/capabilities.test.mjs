@@ -622,6 +622,21 @@ test("a capability-agent home an earlier kernel left (0.29.0 creates none) stays
   const made = await fx.inEnv(() => spawnInstanceAsync(fx.root, legacy, { launch: false, prepared, repo: fx.dep, work: "directory", instance: "reviewer-abc" }));
   assert.equal(made.home, join(fx.root, "reviewer", "instances", "reviewer-abc"));
   assert.equal(existsSync(join(fx.root, "reviewer", "soul")), false, "a soul-less agent dir");
+  // Then the home is rewritten into the exact 0.28 shape (re-review A #3), since the kernel spawn
+  // above only supplies the independent retirement baseline a real 0.28 spawn also took:
+  // instance.json records NO workspace.soul, and its soulDir is the capability module's copy in
+  // the deployment's store, `.oats/modules/<cap>@<commit12>/agents/<name>`.
+  const commit12 = "0123456789ab";
+  const soulDir = join(fx.dep, ".oats", "modules", `acme.rev@${commit12}`, "agents", "reviewer");
+  mkdirSync(soulDir, { recursive: true });
+  writeFileSync(join(soulDir, "soul.yaml"), "name: reviewer\nkind: capability\nwork: directory\nharness: pi\ndescription: Reviewer.\n");
+  writeFileSync(join(soulDir, "AGENTS.md"), "# Reviewer\n");
+  const metaFile = join(made.home, "instance.json");
+  const meta = JSON.parse(readFileSync(metaFile, "utf8"));
+  if (meta.workspace && typeof meta.workspace === "object") delete meta.workspace.soul;
+  Object.assign(meta, { agent: "reviewer", soulDir });
+  writeFileSync(metaFile, JSON.stringify(meta, null, 2) + "\n");
+  assert.equal(JSON.parse(readFileSync(metaFile, "utf8")).workspace?.soul, undefined, "0.28-shaped: no workspace.soul");
 
   const status = JSON.parse(fx.cli(["status", "--json"], { env }).stdout);
   const row = status.agents.find((a) => a.name === "reviewer");
