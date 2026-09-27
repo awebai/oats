@@ -27,7 +27,11 @@ and no queue.
 - `<workspace>/.agents/schedules/state.json` — last attempted minute and
   last run per job (gitignored), plus one lock directory per running job.
 - `~/.oats/schedules/registry.json` — the host registry: which scopes the
-  host ticks, `maxConcurrent` (default 1) and the tick interval. One host
+  host ticks, `maxConcurrent` (default 1: running scheduled jobs), the tick
+  interval, and `triggersMaxConcurrent` (absent by default: no host cap; a
+  positive integer caps trigger-spawned live instances across the host's
+  scopes). The two caps are separate: a running scheduled job never holds a
+  trigger, and a trigger's instances never hold a schedule. One host
   lock serializes ticks, run-now, reconcile and remove; it is never reclaimed
   by another process: a lock whose owner is unreadable or gone is reported
   with the directory to remove, and the holder removes its own lock on exit
@@ -148,8 +152,14 @@ logged in with the keyring or its config file under your HOME works there. A
   finds its own earlier review, for example).
 - **Concurrency.** `max` (default 1) bounds the live instances of the trigger,
   `perKey` (default 1) those of one PR; both are counted from the homes'
-  `instance.json.trigger` records, so a retired instance frees its slot. An
-  event over the bound stays pending (`held`).
+  `instance.json.trigger` records, so a retired instance frees its slot. The
+  host registry's `triggersMaxConcurrent`, when set, bounds every trigger's
+  live instances together. An event over a bound stays pending (`held`). A
+  newer push supersedes a pending `synchronize` for an older head of the same
+  PR, so only the newest head is reviewed.
+- **The owner acts on the repository's host.** A workspace trigger's `owner`
+  and `on.repo` must be on the same GitHub host (`E_TRIGGER_INVALID`, field
+  `owner`): the owner check and the poll ask gh on that one host.
 - **The spawn** is `oats spawn` (the same path as a scheduled spawn). `soul` is
   bare or qualified (`<package>/<soul>`). `purpose` (default
   `{trigger}-{number}`, must render to a slug) and `task` are templated from

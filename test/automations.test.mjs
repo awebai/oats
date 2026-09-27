@@ -5,7 +5,7 @@
 // PATH answers `api user` and the PR poll; spawns are real children with --no-launch.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import YAML from "yaml";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
@@ -312,4 +312,29 @@ test("the tick refreshes a stale snapshot at most once per interval, keeping the
   assert.equal(calls, 2);
   const refreshed = ok(fx.cli(["automations", "refresh", "--json"]), "automations refresh");
   assert.deepEqual([refreshed.triggers, refreshed.schedules], [1, 1]);
+});
+
+// Re-review B #3: `local/<id>` is this host's own automations (their state, live counts, CLI edits,
+// schedule keys); a member repository labelled `local` would collide with them.
+test("a member labelled `local` is E_AUTOMATION_DUPLICATE (the name is reserved) and none of its automations are listed", async () => {
+  const calls = [];
+  const remote = { async listRemoteTree(...a) { calls.push(a); return [{ type: "blob", path: "oats-triggers/kb-review.yaml" }]; }, async readRemoteFile() { throw new Error("not reached"); } };
+  const discovery = { members: [{ key: "github.com/acme/local", commit: "c".repeat(40), confirmed: true }] };
+  const found = await A.discoverAutomations(discovery, { remote, memberName: (k) => k.split("/").pop(), kinds: [{ kind: "trigger", dir: "oats-triggers" }, { kind: "schedule", dir: "oats-schedules" }] });
+  assert.deepEqual(found.problems.map((p) => [p.code, p.repoKey]), [["E_AUTOMATION_DUPLICATE", "github.com/acme/local"]]);
+  assert.match(found.problems[0].message, /reserved for this host's own triggers and schedules/);
+  assert.deepEqual([found.byKind.trigger, found.byKind.schedule, calls.length], [[], [], 0], "nothing listed; the member's tree is not even read");
+});
+
+// Re-review B #4: a workspace command's cwd comes from Git; it must stay inside the deployment.
+test("a workspace command schedule's cwd stays inside the deployment: `..` and a symlink out are E_SCHEDULE_INVALID", (t) => {
+  const fx = v2Deployment({ name: "acme" }); t.after(fx.cleanup);
+  mkdirSync(join(fx.dep, "tools"), { recursive: true });
+  symlinkSync(fx.base, join(fx.dep, "out"));
+  const spec = (cwd) => ({ name: "sweep", source: { definition: { kind: "command", cron: "0 7 * * *", tz: "UTC", argv: ["oats", "status"], ...(cwd === undefined ? {} : { cwd }) } } });
+  assert.equal(S.validateWorkspaceSchedule(fx.dep, spec("tools")).cwd, join(fx.dep, "tools"));
+  assert.equal(S.validateWorkspaceSchedule(fx.dep, spec(undefined)).cwd, fx.dep);
+  for (const cwd of ["../../..", "tools/../..", "out"]) {
+    assert.throws(() => S.validateWorkspaceSchedule(fx.dep, spec(cwd)), (e) => e.code === "E_SCHEDULE_INVALID" && e.field === "cwd" && /leaves the deployment/.test(e.message), cwd);
+  }
 });

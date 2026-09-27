@@ -5,9 +5,9 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { createHash } from "node:crypto";
 import * as packages from "../lib/packages.mjs";
 import {
@@ -75,7 +75,8 @@ function fakeRemote(repos) {
       }
       return out.sort((a, b) => a.path.localeCompare(b.path));
     },
-    // Same surface as lib/remote.mjs: the digest is what fetchRemoteTree reports (no copy is made here).
+    // Same surface as lib/remote.mjs: it copies the tree into destDir (as the real one does, so a
+    // package soul's files can be checked there), and the digest is what it reports.
     async fetchRemoteTree(ref, commit, dir, destDir) {
       remote.calls.push(["fetchRemoteTree", ref, commit, dir]);
       const prefix = norm(dir) ? norm(dir) + "/" : "";
@@ -83,6 +84,7 @@ function fakeRemote(repos) {
       if (norm(dir) && items.length === 0) { const e = new Error(`missing ${dir}`); e.code = "E_REMOTE_PATH_MISSING"; e.details = { path: dir }; throw e; }
       const h = createHash("sha256");
       for (const [p, bytes] of items) { h.update(`${p.slice(prefix.length)}\0${0o644}\0`); h.update(bytes); h.update("\0"); }
+      if (destDir && destDir !== "/dev/null") for (const [p, bytes] of items) { const out = join(destDir, p.slice(prefix.length)); mkdirSync(dirname(out), { recursive: true }); writeFileSync(out, bytes); }
       return { files: items.length, bytes: items.reduce((n, [, b]) => n + b.length, 0), digest: `sha256-${h.digest("hex")}`, destDir };
     },
   };
@@ -448,4 +450,20 @@ test("lock v3 souls (0.28.0): validated when present, written sorted, omitted wh
   for (const bad of [{ souls: "x" }, { souls: [{ name: "Bad Name", path: "souls/x", digest }] }, { souls: [{ name: "x", path: "../x", digest }] }, { souls: [{ name: "x", path: "souls/x", digest: "sha1-0" }] }]) {
     assert.throws(() => validateLock({ lockfileVersion: 3, packages: { "acme.tools": { ...entry, ...bad } } }), (e) => e.code === "E_LOCK_SCHEMA" && /souls/.test(e.details.path), JSON.stringify(bad));
   }
+});
+
+test("packageSoulDigests checks every fetched package soul for soul.yaml and AGENTS.md (no copy-less shortcut; re-review A #4)", async () => {
+  const files = { "oats-package/souls/keeper/soul.yaml": "name: keeper\n", "oats-package/souls/half/soul.yaml": "name: half\n" };
+  const remote = {
+    async fetchRemoteTree(ref, commit, dir, destDir) {
+      const items = Object.entries(files).filter(([p]) => p.startsWith(dir + "/"));
+      for (const [p, text] of items) { const out = join(destDir, p.slice(dir.length + 1)); mkdirSync(dirname(out), { recursive: true }); writeFileSync(out, text); }
+      return { files: items.length, bytes: 1, digest: `sha256-${"a".repeat(64)}`, destDir };
+    },
+  };
+  files["oats-package/souls/keeper/AGENTS.md"] = "# keeper\n";
+  const ok = await packages.packageSoulDigests(remote, "git:x", "c".repeat(40), [{ name: "keeper", path: "souls/keeper", dir: "oats-package/souls/keeper" }]);
+  assert.deepEqual(ok.map((s) => s.name), ["keeper"]);
+  await assert.rejects(packages.packageSoulDigests(remote, "git:x", "c".repeat(40), [{ name: "half", path: "souls/half", dir: "oats-package/souls/half" }]),
+    (e) => e.code === "E_PACKAGE_MANIFEST" && e.details?.missing === "AGENTS.md" || (e.code === "E_PACKAGE_MANIFEST" && /AGENTS\.md/.test(e.message)));
 });

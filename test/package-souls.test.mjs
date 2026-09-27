@@ -7,17 +7,18 @@
 // Real git: one bare member repo (the v2Deployment helper) plus one bare package repo with tags.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, rmSync, writeFileSync, existsSync, lstatSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync, existsSync, lstatSync, mkdirSync, realpathSync, symlinkSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import YAML from "yaml";
-import { v2Deployment, git } from "./helpers/v2-deployment.mjs";
+import { v2Deployment, git, CLI } from "./helpers/v2-deployment.mjs";
 import { packageRepo } from "./helpers/package-repo.mjs";
 
 const ok = (r, what) => { assert.equal(r.status, 0, `${what}: ${r.stdout}${r.stderr}`); const j = r.json(); assert.equal(j.ok, true, `${what}: ${r.stdout}`); return j.result; };
 const fails = (r, code, what) => { const j = r.json(); assert.equal(j.ok, false, `${what}: ${r.stdout}${r.stderr}`); assert.equal(j.error.code, code, `${what}: ${r.stdout}`); return j.error; };
 
-function fixture({ souls = { dev: {} }, pkgSouls = { keeper: {} }, teams = { global: { description: "Fixture team" } }, local = {} } = {}) {
-  const pkg = packageRepo({ souls: pkgSouls });
+function fixture({ souls = { dev: {} }, pkgSouls = { keeper: {} }, teams = { global: { description: "Fixture team" } }, local = {}, pkg: pkgOpts = {} } = {}) {
+  const pkg = packageRepo({ souls: pkgSouls, ...pkgOpts });
   const fx = v2Deployment({ name: "acme", souls, workspace: { packages: { "acme.pkg": `${pkg.ref}@v1.0.0` }, teams }, local });
   const cleanup = fx.cleanup;
   fx.cleanup = () => { cleanup(); pkg.cleanup(); };
@@ -201,4 +202,75 @@ test("a package soul must carry soul.yaml and AGENTS.md, and its name is its dir
   const e = fails(fx.cli(["sync", "--json"]), "E_PACKAGE_MANIFEST", "sync a soul without AGENTS.md");
   assert.match(e.message, /souls\/keeper/);
   assert.equal(lstatSync(join(fx.dep, "oats-local.yaml")).isFile(), true);
+});
+
+// Re-review A #1: a capability command run from the deployment with `--soul <pkg>/<soul>` reads the
+// soul's per-commit copy from the package soul's own agent directory (`agents/<pkg>--<soul>/`), never
+// the bare name's — where a same-named member soul's copy at the same commit may sit.
+test("operator dispatch: a package soul's command gets OATS_SOUL = the package soul's copy, never a same-named member soul's", (t) => {
+  const show = "import { writeFileSync } from 'node:fs'; console.log(JSON.stringify({ soul: process.env.OATS_SOUL ?? null }));\n";
+  const fx = fixture({
+    pkgSouls: { keeper: { soul: { capabilities: { "acme-cmd": { from: "here" } } } } },
+    pkg: {
+      manifest: { capabilities: ["capabilities/acme-tool", "capabilities/acme-cmd"] },
+      files: {
+        "capabilities/acme-cmd/oats.json": { capability: "acme-cmd", version: "1.0.0", description: "cmd", compatibility: { oats: ">=0.24.0" }, command: "acmecmd", commands: { show: "bin/show.mjs" } },
+        "capabilities/acme-cmd/bin/show.mjs": show,
+      },
+    },
+  });
+  t.after(fx.cleanup);
+  ok(fx.cli(["sync", "--json"]), "sync");
+  // A spawn fetches the package soul's copy at the locked commit.
+  ok(fx.cli(["spawn", "acme.pkg/keeper", "--purpose", "c", "--no-launch", "--json"]), "spawn the package soul");
+  const commit12 = lockOf(fx).packages["acme.pkg"].commit.slice(0, 12);
+  const own = join(fx.root, "acme-pkg--keeper", "souls", commit12);
+  assert.ok(existsSync(join(own, "soul.yaml")), "the package soul's per-commit copy");
+  // A same-named member soul's copy at the SAME commit (a package published from a member repo).
+  const decoy = join(fx.root, "keeper", "souls", commit12);
+  mkdirSync(decoy, { recursive: true });
+  writeFileSync(join(decoy, "soul.yaml"), "schemaVersion: 2\nname: keeper\nwork: directory\n");
+  const soulOf = (name) => {
+    const r = spawnSync(process.execPath, [CLI, "acmecmd", "show", "--soul", name], { cwd: fx.dep, env: fx.env, encoding: "utf8" });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    return JSON.parse(r.stdout.trim().split("\n").pop()).soul;
+  };
+  for (const name of ["acme.pkg/keeper", "keeper"]) assert.equal(soulOf(name), realpathSync(own), `${name}: the package soul's copy, not the member decoy`);
+});
+
+// Re-review A #2: a package's souls are visible only while the workspace declares the package. A lock
+// that still records it (removed from `packages:`, not yet re-synced) must not surface its souls.
+test("a package removed from packages: (its lock entry still there) hides its souls: spawn is E_SOUL_UNKNOWN, oats souls lists none", (t) => {
+  const fx = fixture(); t.after(fx.cleanup);
+  ok(fx.cli(["sync", "--json"]), "sync");
+  const listed = () => ok(fx.cli(["souls", "--json"]), "souls").souls.map((s) => s.qualifiedName ?? s.name);
+  assert.ok(listed().includes("acme.pkg/keeper"), "declared: listed");
+  const ws = YAML.parse(readFileSync(join(fx.member, "oats-workspace.yaml"), "utf8"));
+  delete ws.packages["acme.pkg"];
+  fx.commit({ "oats-workspace.yaml": YAML.stringify(ws) }, "undeclare acme.pkg");
+  assert.ok(lockOf(fx).packages["acme.pkg"]?.souls?.length, "the lock still records the package's souls");
+  assert.equal(listed().some((n) => /keeper/.test(n)), false, "undeclared: not listed");
+  for (const name of ["acme.pkg/keeper", "keeper"]) fails(fx.cli(["spawn", name, "--no-launch", "--json"]), "E_SOUL_UNKNOWN", name);
+});
+
+// Re-review A #5: regression cover for the guards sync already applies to a package's souls.
+test("sync refuses a package soul carrying a non-CLAUDE.md symlink, a CLAUDE.md escaping the soul, or souls: [\"../x\"]", (t) => {
+  const cases = [
+    ["a non-CLAUDE.md symlink", "E_REMOTE_TREE_UNSAFE", /souls\/keeper\/README\.md is a symlink/, (seed) => symlinkSync("AGENTS.md", join(seed, "oats-package/souls/keeper/README.md"))],
+    ["CLAUDE.md -> ../x", "E_REMOTE_TREE_UNSAFE", /CLAUDE\.md is a symlink escaping the fetched tree/, (seed) => symlinkSync("../x", join(seed, "oats-package/souls/keeper/CLAUDE.md"))],
+    ['souls: ["../x"]', "E_PACKAGE_MANIFEST", /souls\[\] must be a relative path inside the package/, (seed) => {
+      const f = join(seed, "oats-package/oats-package.json"); const m = JSON.parse(readFileSync(f, "utf8")); m.souls = ["../x"]; writeFileSync(f, JSON.stringify(m));
+    }],
+  ];
+  for (const [what, code, message, mutate] of cases) {
+    const fx = fixture(); t.after(fx.cleanup);
+    mutate(fx.pkg.seed);
+    git(fx.pkg.seed, "add", "-A"); git(fx.pkg.seed, "commit", "-qm", what); git(fx.pkg.seed, "tag", "v1.0.1"); git(fx.pkg.seed, "push", "-q", "origin", "HEAD:main", "v1.0.1");
+    const ws = YAML.parse(readFileSync(join(fx.member, "oats-workspace.yaml"), "utf8"));
+    ws.packages["acme.pkg"] = `${fx.pkg.ref}@v1.0.1`;
+    fx.commit({ "oats-workspace.yaml": YAML.stringify(ws) }, `pin ${what}`);
+    const e = fails(fx.cli(["sync", "--json"]), code, what);
+    assert.match(e.message, message, what);
+    assert.equal(existsSync(join(fx.dep, "oats-lock.json")) && /v1\.0\.1/.test(readFileSync(join(fx.dep, "oats-lock.json"), "utf8")), false, `${what}: nothing locked`);
+  }
 });
