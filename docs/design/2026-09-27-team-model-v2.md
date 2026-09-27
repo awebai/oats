@@ -38,10 +38,13 @@ souls:
   teams:                                              # which teams each soul belongs to HERE
     "*": [oats]                                       # every soul (optional)
     oats-expert: [oats]                               # per soul (member or package: `<pkg>/<soul>`)
+  default:                                            # optional per-soul override of defaultTeam
+    oats-expert: oats                                 # must be one of that soul's teams here
 ```
 - **`teams:`** declares this deployment's teams: a label → its provider payload (`{team: <provider id>}` for oats.aweb). **This is the ONLY place a provider team id is written.** The label is local vocabulary: another person's deployment may call the same shared team something else, or use the same label for a different team.
 - **`defaultTeam:`** is the team every instance of this deployment lives in: its primary identity, which it can't leave (`E_TEAM_DEFAULT`). It must be a declared label (`E_TEAM_UNKNOWN`). **Every soul is in the default implicitly.**
-- **`souls.teams:`** the extra teams each soul belongs to in this deployment. `"*"` applies to every soul; a soul's own entry adds to it. Unknown label → `E_TEAM_UNKNOWN`. A per-soul default override is omitted (YAGNI; the human didn't ask for it; add `souls.defaultTeam.<soul>` later if needed).
+- **`souls.teams:`** the extra teams each soul belongs to in this deployment. `"*"` applies to every soul; a soul's own entry adds to it. Unknown label → `E_TEAM_UNKNOWN`.
+- **`souls.default:`** `{<soul>: <label>}`, a per-soul override of `defaultTeam` (the human asked for it: *"y un default si quieres override el default de el workspace"*). Local too; it must be one of that soul's teams here (`E_TEAM_NOT_ELIGIBLE`). That soul's instances live in it (their primary identity) and are also in the deployment default only if the soul lists it.
 - **Messaging active + no `teams`/`defaultTeam`** → readiness `needs-configuration` ("no teams configured: run `oats aweb setup`"), and spawn is refused (`E_TEAM_UNCONFIGURED`). There's no guessed team and no root-active fallback.
 
 ### Removed (no backwards compatibility)
@@ -54,7 +57,8 @@ souls:
 Committed files say nothing about teams.
 
 ### Resolution (the kernel)
-- `teamsOf(soul) = {defaultTeam} ∪ souls.teams["*"] ∪ souls.teams[soul]`, each resolved through `teams.<label>` to its provider payload.
+- `defaultOf(soul) = souls.default[soul] ?? defaultTeam`.
+- `teamsOf(soul) = {defaultOf(soul)} ∪ souls.teams["*"] ∪ souls.teams[soul]` (the deployment default is included only when `defaultOf(soul)` is it, or the soul lists it), each resolved through `teams.<label>` to its provider payload.
 - **The env names** (renamed, no aliases):
   - `OATS_DEFAULT_TEAM` (the label) + `OATS_DEFAULT_TEAM_ID` (its id);
   - `OATS_TEAMS` = the JSON `[{label, payload}]` of every team the soul belongs to here.
@@ -75,6 +79,7 @@ oats teams add <label> --team <provider id>  # declare (setup does this for crea
 oats teams remove <label> | oats teams default <label>
 oats soul teams <soul>                       # the teams a soul belongs to here (and why: default / * / its own)
 oats soul teams <soul> --add <label>[,…] | --remove <label>[,…]
+oats soul teams <soul> --default <label> | --clear-default
 oats soul teams '*' --add <label>            # every soul
 ```
 The Desktop gets the same controls (Setup: this deployment's teams + the default; a soul page: its teams here), labelled "on this computer".
