@@ -106,7 +106,11 @@ oats soul teams <soul> --default <label> | --clear-default
      - **Hosted** (`aweb-abkh`): `aw id team create --name <t>` → the team id + a single-use invite TOKEN → `aw --identity-home <root> id team accept-invite <token> --name <alias> --local`.
      - **BYOD:** `aw id team create --name <t> --namespace <domain>` (the namespace controller key) → the team id + a team KEY → the team key signs `aw id team invite` → `accept-invite --local` → `aw id team register` to host it on aweb.ai.
   3. Setup writes each new id into `messaging.byTeam` as a proposed diff for the human to commit.
-- **A label is the team's name:** setup passes the label as `--name`, so the workspace's label syntax must be a subset of aweb's team-name rule (to confirm with aweb; otherwise setup maps label → name and records the name). A precondition to confirm: the `--new-account` default team counts as org-owned for `aweb-abkh`, so the second hosted team can be created from a fresh root.
+- **A label is NOT passed raw as the team name** (aweb's rule, hosted + BYOD: `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`, 1–128; the id is `<team>:<namespace>`, unique per namespace, 409 on a collision).
+  - Setup NORMALIZES the label to that pattern (lowercase; `_`/`.` → `-`; trim hyphens) and passes it as `--name`.
+  - **On a 409:** if the existing team is one this deployment's root already belongs to (a re-run of setup), reuse it. Otherwise choose a suffixed name (`<name>-2`, …), and never adopt a team the root isn't a member of.
+  - `messaging.byTeam.<label>.team` holds the real id, so **the mapping, not the name, is the truth.**
+  - Confirmed: `aw init --new-account` makes the user's `default` team org-owned, so a fresh root can create further hosted teams under `aweb-abkh` with nothing extra.
 - **The only gate is the aw/Cloud version floor** that ships `aweb-abkh`. Below it, a hosted extra team is refused with the remedy "upgrade aw" (the provider's readiness names the floor), not a guided dashboard step. The model doesn't change.
 - Setup needs no human login at all on this path.
 - Setup never runs at spawn/mint/retire/wake, and OATS holds no human login (the provider consumes the resulting root).
