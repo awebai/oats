@@ -110,8 +110,8 @@ oats spawn <soul> --purpose <slug> --no-launch      # scaffold only
 oats spawn <soul> --purpose <slug> --harness claude --model <model>   # pick the harness (pi, claude, codex) and model
 ```
 
-`--runtime` is an older name for `--harness`. A soul shipped by a package is
-named `<package>/<soul>` (the bare name works when no other soul shares it).
+A soul shipped by a package is named `<package>/<soul>` (the bare name works
+when no other soul shares it).
 
 The preview lists the modules with source, commit and `changedSince` the
 newest earlier instance of that soul, its `teams` and `defaultTeam`, the resolution revision, the

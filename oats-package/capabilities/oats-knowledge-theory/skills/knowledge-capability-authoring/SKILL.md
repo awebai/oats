@@ -5,7 +5,7 @@ description: >-
   reference knowledge theory, mapping memory and harvesting to a native store,
   writing reader/capture injections or harvester instructions, or assessing
   adoption versus an alternative learning model. Not for operating an existing
-  harvest, ordinary note taking, or merely activating an installed package.
+  harvest, ordinary note taking, or merely pinning a package.
 ---
 
 # Author a complete knowledge capability
@@ -13,6 +13,9 @@ description: >-
 This is optional authoring guidance, not a runtime protocol. The expert is an
 assistant to authors, not a prerequisite for using their capabilities. This
 skill works with knowledge disabled and requires neither OKF nor network docs.
+A workspace gets it by pinning `oats.framework` in `packages:` and giving a
+soul `oats.knowledge-theory: { from: package }`; declaring the package is the
+trust decision.
 
 ## Read progressively, using only this local curriculum
 
@@ -34,7 +37,8 @@ relative to their containing file, not from the instance home or work tree.
 1. Ask whether the author adopts, adapts, or replaces the reference theory.
    Do not turn its promotion doctrine into a universal compatibility gate.
 2. Inventory the real tool/version and read/write/acceptance guarantees. Mark
-   unknowns explicitly; never invent Omnigraph commands or a transaction API.
+   unknowns explicitly; never invent commands or a transaction API for a tool
+   you have not verified.
 3. Fill the provider mapping and assign every runtime responsibility to the
    new capability. Logical names, physical locations and ownership differ.
 4. Draft a short always-loaded reader/capture injection; put occasional
@@ -43,9 +47,11 @@ relative to their containing file, not from the instance home or work tree.
 5. For reference adoption, keep working instances read/capture-only; preserve
    per-source evidence independently; use PRs for Git and native confirmation
    for non-Git. Instructional no-write is not an OS sandbox.
-6. Package every referenced resource locally. Test acquire/lock, activation,
-   trust where executable, and scaffold in an isolated scope with the intended
-   runtime. A no-launch probe can still run hooks: never use a live deployment.
+6. Package every referenced resource locally. In an isolated workspace, pin
+   the package in `packages:` (declaring it is the trust decision, so show its
+   commands and hooks first), run `oats sync`, give a test soul the capability
+   `{ from: package }`, and scaffold a spawn with the intended harness. A
+   no-launch probe can still run hooks: never use a live deployment.
 7. Test semantic judgment and actual delivery/reader visibility separately.
    Report a proposal as a proposal, not as accepted or queryable knowledge.
 
@@ -55,7 +61,7 @@ Return: model choice and departures; verified tool/version facts; responsibility
 and custody map; proposed package files; behavioral test results; remaining
 unknowns and approvals. No edits to live deployments or silent migrations.
 
-## Gotchas grounded in the knowledge rework
+## Gotchas
 
 - An additive authoring package is not a knowledge-layer implementation. No
   mandatory doctrine injection or dependency on this expert belongs in core.

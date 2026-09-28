@@ -9,8 +9,9 @@ status, retiring) is `oats.core`.
 `oats-workspace.yaml` (the host repo), `oats-membership.yaml` and `souls/` (each
 member), workspace automations (`oats-triggers/`, `oats-schedules/`). *Host*
 facts belong to one machine: its `oats-local.yaml` (settings, clones, launch
-configurations, disabled souls, its host name), `oats-lock.json` (written by
-`oats sync` only) and its clones.
+configurations, disabled souls, its host name, and its teams: local `teams`,
+`defaultTeam`, and `souls.teams` for which teams each soul joins here),
+`oats-lock.json` (written by `oats sync` only) and its clones.
 
 **Read before you change anything** (use `--json` when you parse):
 `oats workspace status`, `oats souls`, `oats capabilities`, `oats trigger list`,
