@@ -109,3 +109,23 @@ test('argv: oats teams and oats soul teams, validated before any exec, never opt
     assert.equal((await cliSoulTeams('/oats', bad, never)).error.code, 'E_BAD_ARGS', JSON.stringify(bad));
   }
 });
+
+test('readiness: team items in checks.configured (no fifth check) keep code, label and default', async () => {
+  const { readinessData } = await import('../renderer/readiness-contract.mjs');
+  const { data, target } = await import('./helpers/readiness-fixture.mjs');
+  const base = { producer: 'team model', evidence: null, remedy: 'its owner runs `oats aweb setup`, then commits the id' };
+  const v = data();
+  v.checks.configured.items.push({ ...base, subject: 'team reviewers', status: 'fail', required: false, code: 'team-unmapped', reason: 'shared team reviewers has no provider id yet', label: 'reviewers', default: false });
+  v.checks.configured.items.push({ ...base, subject: 'team oats', status: 'fail', required: true, code: 'team-unmapped', reason: 'the default team oats has no provider id yet', label: 'oats', default: true });
+  v.summary.required += 1; v.summary.fail += 1;
+  const r = readinessData(v, target);
+  assert.ok(r, 'the four checks, the team items among them');
+  assert.deepEqual(Object.keys(r.checks), ['installed', 'configured', 'member', 'providers']);
+  const items = r.checks.configured.items.slice(-2);
+  assert.deepEqual(items.map(i => [i.subject, i.code, i.label, i.default, i.required]), [['team reviewers', 'team-unmapped', 'reviewers', false, false], ['team oats', 'team-unmapped', 'oats', true, true]]);
+  for (const change of [i => { i.label = '-x'; }, i => { i.default = 'yes'; }]) {
+    const bad = structuredClone(v); change(bad.checks.configured.items.at(-1)); assert.equal(readinessData(bad, target), null);
+  }
+  const plain = readinessData(data(), target);
+  assert.ok(plain.checks.configured.items.every(i => !Object.hasOwn(i, 'label') && !Object.hasOwn(i, 'default')), '0.29 items gain no keys');
+});

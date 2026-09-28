@@ -71,6 +71,10 @@ function item(v) {
     evidence, remedy: nullable(v.remedy) };
   if (v.capability != null) { if (!record(v.capability)) throw Error(); out.capability = { id: text(v.capability.id, 256) }; }
   if (typeof v.code === 'string') out.code = text(v.code, 128);
+  // Team model v2 (0.30, K1 amendment g): team items live in checks.configured (no fifth check),
+  // subject 'team <label>' or 'teams', and carry the team's label and whether it is the default.
+  if (Object.hasOwn(v, 'label')) { if (typeof v.label !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(v.label)) throw Error(); out.label = v.label; }
+  if (Object.hasOwn(v, 'default')) { if (typeof v.default !== 'boolean') throw Error(); out.default = v.default; }
   // The provider's own binding-check answer, relayed verbatim (`providers`):
   // {status, problems, warnings}. Warnings (always emitted, maybe []) never change status.
   if (Object.hasOwn(v, 'result')) {
