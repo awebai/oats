@@ -2,6 +2,7 @@
  * their fixed argv, and the bounded projection of the kernel's preview. */
 import { absolute, record } from './readiness-contract.mjs';
 import { spawnDecision } from './spawn-decision.mjs';
+import { teamRow } from './team-rows.mjs';
 import { harnessOf, harnessFlag, HARNESSES } from './harness-names.mjs';
 export { absolute, record };
 const exact = (v, keys) => record(v) && Object.keys(v).every(k => keys.includes(k));
@@ -29,8 +30,10 @@ function teamsOf(v) {
   if (!Array.isArray(v.teams) || v.teams.length > 64) return undefined;
   const out = [];
   for (const t of v.teams) {
-    if (!record(t) || !TEAM_LABEL.test(t.label ?? '') || typeof t.mapped !== 'boolean' || (t.mapped ? !safe(t.team, 256) || !t.team : t.team !== null)) return undefined;
-    out.push({ label: t.label, team: t.team, mapped: t.mapped });
+    // 0.29 {label, team, mapped} or team model v2 {label, team, default, from} (team-rows.mjs).
+    const row = teamRow(t);
+    if (!row || (row.team !== null && !safe(row.team, 256))) return undefined;
+    out.push(row);
   }
   return new Set(out.map(t => t.label)).size === out.length ? out : undefined;
 }
