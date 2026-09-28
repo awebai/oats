@@ -17,7 +17,13 @@ const documents = ['version', 'teams-initial', 'teams-add', 'teams-add-exists', 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const captured = JSON.parse(readFileSync(join(source, 'provenance.json'), 'utf8'));
 const provenance = { source: `${captured.capturedBy}; ${captured.fixture}; ${captured.script}`, kernelTree: captured.kernelTree, kernel: captured.kernel,
-  redactions: ['<base> (capture scratch) → /fixture/base', '<oats> (kernel tree) → /fixture/oats'], files: {} };
+  redactions: ['<base> (capture scratch) → /fixture/base', '<oats> (kernel tree) → /fixture/oats'],
+  // Not in this capture: the messaging PROVIDER's teams document (`operation run messaging:teams`),
+  // whose v2 shape ships with oats.aweb 1.17. Until its capture exists, team-model-v2-tolerance.test.mjs
+  // reads the real oats.aweb 1.16 capture (workspace-v2/teams/teams-initial) edited to K1's documented
+  // v2 shape; recapture from the 1.17 head and replace that edit.
+  awaiting: [{ document: 'messaging:teams (the provider teams document)', provider: 'oats.aweb 1.17', standIn: 'workspace-v2/teams/teams-initial.json (oats.aweb 1.16.0) edited to the K1 shape in team-model-v2-tolerance.test.mjs' }],
+  files: {} };
 for (const name of documents) {
   const original = readFileSync(join(source, `${name}.json`));
   const run = captured.documents.find(d => d.name === name);

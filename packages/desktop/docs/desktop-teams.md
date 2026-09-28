@@ -65,3 +65,8 @@ Northwind build, using the Desktop's exact argv:
   preview, status, readiness).
 
 `import-capture.mjs` imports them, with provenance and hashes.
+
+**Awaiting oats.aweb 1.17:** the messaging provider's teams document (`operation run
+messaging:teams`). Until its capture exists, `team-model-v2-tolerance.test.mjs` reads the real
+oats.aweb 1.16 capture (`workspace-v2/teams/teams-initial.json`), edited to K1's documented v2
+shape. `provenance.json` records this under `awaiting`.
