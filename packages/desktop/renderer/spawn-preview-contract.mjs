@@ -2,7 +2,7 @@
  * their fixed argv, and the bounded projection of the kernel's preview. */
 import { absolute, record } from './readiness-contract.mjs';
 import { spawnDecision } from './spawn-decision.mjs';
-import { teamRow } from './team-rows.mjs';
+import { teamRow, defaultTeamOf } from './team-rows.mjs';
 import { harnessOf, harnessFlag, HARNESSES } from './harness-names.mjs';
 export { absolute, record };
 const exact = (v, keys) => record(v) && Object.keys(v).every(k => keys.includes(k));
@@ -221,11 +221,14 @@ export function previewData(v, expected) {
     || !record(v.preflight) || !['complete', 'timeout'].includes(v.preflight.status) || !Number.isInteger(v.preflight.budgetMs) || v.preflight.budgetMs <= 0 || v.preflight.budgetMs > 20000
     || !Number.isSafeInteger(v.preflight.elapsedMs) || v.preflight.elapsedMs < 0) return null;
   const messaging = messagingOf(v), teams = teamsOf(v);
-  if (messaging === undefined || teams === undefined) return null;
+  // Team model v2: the soul's default (the kernel's DefaultTeam, or null); absent on 0.29.
+  const defaultTeam = Object.hasOwn(v, 'defaultTeam') ? defaultTeamOf(v.defaultTeam) : undefined;
+  if (messaging === undefined || teams === undefined || (Object.hasOwn(v, 'defaultTeam') && defaultTeam === undefined)) return null;
   return { spawnPreviewApi: 2, preview: true, subject: { soul: v.subject.soul, agentsRoot: v.subject.agentsRoot, dir: v.subject.dir },
     decision: d, resolution: d.resolution, instance: d.instance, home: d.home, branch: d.branch, base: base ? { ...base } : null,
     repo: e.repo, work: e.work, worktree: v.worktree, harness: e.harness, model: e.model, modelSource: v.modelSource, relation: e.relation?.kind ?? null,
     launchConfig: e.launchConfig, yolo: e.yolo, backend: e.backend, team: v.team ?? null,
     backendStatus: { name: v.backendStatus.name, installed: v.backendStatus.installed, started: false },
-    preflight: { status: v.preflight.status, budgetMs: v.preflight.budgetMs, elapsedMs: v.preflight.elapsedMs }, messaging, teams };
+    preflight: { status: v.preflight.status, budgetMs: v.preflight.budgetMs, elapsedMs: v.preflight.elapsedMs }, messaging, teams,
+    ...(defaultTeam !== undefined ? { defaultTeam } : {}) };
 }

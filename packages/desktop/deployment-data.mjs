@@ -4,6 +4,7 @@
 import { dirname, basename, join, isAbsolute, resolve } from 'node:path';
 import { deploymentRecord as record } from './renderer/deployment-contract.mjs';
 import { harnessOf } from './renderer/harness-names.mjs';
+import { teamRow, teamRowsOf, defaultTeamOf } from './renderer/team-rows.mjs';
 const text = value => typeof value === 'string' && value.length <= 8192 && !value.includes('\0');
 const absolute = value => text(value) && isAbsolute(value) && resolve(value) === value;
 const own = (value, key) => Object.hasOwn(value, key);
@@ -277,7 +278,10 @@ export function soulsData(document) {
     // it is always the kernel's today (#217 note 4), never the soul's choice; the spawn preview reports the real one.
     if (own(row, 'problem')) out.problem = problemRef(row.problem);
     if (own(row, 'file')) out.file = fileRef(row.file);
-    // Every team label the soul carries (primary first; teams contract), when reported.
+    // Team model v2 (0.30): the soul's teams here (TeamRow, the default first) and its default.
+    if (own(row, 'teams')) { const teams = teamRowsOf(row.teams); check(teams !== undefined); out.teams = teams; }
+    if (own(row, 'defaultTeam')) { const d = defaultTeamOf(row.defaultTeam); check(d !== undefined); out.defaultTeam = d; }
+    // 0.29: every team label the soul carries (primary first; teams contract), when reported.
     if (own(row, 'labels')) {
       check(Array.isArray(row.labels) && row.labels.length <= 64 && row.labels.every(l => typeof l === 'string' && TEAM_LABEL.test(l)) && new Set(row.labels).size === row.labels.length);
       out.labels = [...row.labels];
@@ -304,4 +308,54 @@ export function onboardData(document, dir) {
     spawn: data.next.spawn === null || data.next.spawn === undefined ? null : (check(text(data.next.spawn)), data.next.spawn),
     souls: own(data.next, 'souls') ? strings(data.next.souls) : [] };
   return out;
+}
+
+/* ── Team model v2 (feature team-model-2, OATS 0.30): the deployment's and a soul's teams.
+   docs/desktop-cli-api.md "Team model v2". Config-only kernel verbs; the kernel's rows are kept
+   within bounds, never re-derived. */
+const labels = value => { const out = array(value, 256); check(out.every(l => typeof l === 'string' && TEAM_LABEL.test(l)) && new Set(out).size === out.length); return [...out]; };
+const labelOrNull = value => { check(value === null || (typeof value === 'string' && TEAM_LABEL.test(value))); return value; };
+const changed = (data, out) => { if (own(data, 'changed')) { check(typeof data.changed === 'boolean'); out.changed = data.changed; } return out; };
+function teamProblems(value) {
+  return array(value, 256).map(row => {
+    const out = fields(row, ['code', 'label', 'severity', 'message', 'fix']);
+    check(text(out.code) && (out.severity === undefined || ['failure', 'warning'].includes(out.severity)));
+    return flags(row, ['default'], out);
+  });
+}
+/** `oats teams [add|remove|default …] --json` (teamsApi 1): this deployment's teams. */
+export function teamsData(document, deployment) {
+  check(absolute(deployment), 'E_BAD_ARGS');
+  check(record(document) && document.schemaVersion === 1 && document.ok === true);
+  const data = document.result;
+  check(record(data) && data.teamsApi === 1);
+  check(data.deployment === deployment, 'E_DEPLOYMENT_SCOPE');
+  const teams = array(data.teams, 256).map(row => {
+    const out = fields(row, ['label', 'team', 'description', 'from', 'at']);
+    check(TEAM_LABEL.test(out.label ?? '') && ['shared', 'local'].includes(out.from) && typeof row.default === 'boolean');
+    out.default = row.default; return out;
+  });
+  check(new Set(teams.map(t => t.label)).size === teams.length && teams.filter(t => t.default).length <= 1);
+  check(record(data.souls) && record(data.souls.teams) && record(data.souls.default));
+  const map = (value, one) => Object.fromEntries(Object.entries(value).map(([key, v]) => { check(text(key) && key.length <= 256); return [key, one ? labelOrNull(v) : labels(v)]; }));
+  return changed(data, { teamsApi: 1, deployment, defaultTeam: labelOrNull(data.defaultTeam), teams,
+    souls: { teams: map(data.souls.teams, false), default: map(data.souls.default, true) }, problems: teamProblems(data.problems) });
+}
+const VIA = ['default', '*', 'soul'];
+/** `oats soul teams <soul>|'*' [--add …] [--remove …] [--default …] [--clear-default] --json` (soulTeamsApi 1). */
+export function soulTeamsData(document) {
+  check(record(document) && document.schemaVersion === 1 && document.ok === true);
+  const data = document.result;
+  check(record(data) && data.soulTeamsApi === 1 && text(data.soul) && text(data.key));
+  const defaultTeam = defaultTeamOf(data.defaultTeam); check(defaultTeam !== undefined);
+  const teams = array(data.teams, 128).map(row => {
+    const out = teamRow(row);
+    check(out && Object.hasOwn(out, 'default') && Array.isArray(row.via) && row.via.length > 0 && row.via.every(v => VIA.includes(v))
+      && new Set(row.via).size === row.via.length && row.via.every((v, i) => i === 0 || VIA.indexOf(row.via[i - 1]) < VIA.indexOf(v)));
+    return { ...out, via: [...row.via] };
+  });
+  check(new Set(teams.map(t => t.label)).size === teams.length);
+  check(record(data.local));
+  return changed(data, { soulTeamsApi: 1, soul: data.soul, key: data.key, defaultTeam, teams,
+    local: { teams: labels(data.local.teams), default: labelOrNull(data.local.default) }, all: labels(data.all) });
 }

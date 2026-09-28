@@ -205,6 +205,9 @@ function agentsData(wsId) {
         // desktop-facts: whether a spawn here would refuse (problem), and the soul.yaml (path, url).
         ...(typeof soul.spawnable === "boolean" ? { spawnable: soul.spawnable, problem: soul.problem ?? null } : {}),
         ...(Object.hasOwn(soul, "file") ? { file: soul.file } : {}),
+        // Team model v2 (0.30): the soul's teams here (the default first) and its default, as the kernel resolved them.
+        ...(Array.isArray(soul.teams) ? { teams: soul.teams.map((t) => ({ ...t })) } : {}),
+        ...(Object.hasOwn(soul, "defaultTeam") ? { defaultTeam: soul.defaultTeam && { ...soul.defaultTeam } } : {}),
         origin: soul.origin || "", soulKind: soul.kind, repo: soul.repoKey || null, capability: null,
         soulSource: { repoKey: soul.repoKey ?? null, commit: soul.commit ?? null, path: soul.path ?? null },
         agentsRoot: root, workspace: context,
