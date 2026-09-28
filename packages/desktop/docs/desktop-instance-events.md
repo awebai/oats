@@ -62,7 +62,7 @@ and clears retained evidence without another command or new IPC surface. A newer
 server coalesces identical commands.
 
 One observation, at most 4 MiB, is retained **only in the current popup** (below
-the approved 32-target upper bound). There is no cross-selection/server cache,
+the 32-target upper bound). There is no cross-selection/server cache,
 persistence or reopening-by-name. A failed refresh keeps the actual older rows
 with explicit stale labeling. Unrelated roster updates keep the visible popup
 connected, preserving controls, focus, disclosure, scroll and native text ranges.
