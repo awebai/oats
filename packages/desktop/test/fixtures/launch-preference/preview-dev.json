@@ -5,8 +5,8 @@
     "modules": [],
     "teams": [],
     "defaultTeam": null,
-    "resolution": "436c25462d085fddeb9a716f",
-    "declRevision": "174edd04e2ffa3ecaa75ba1a",
+    "resolution": "a9b2789472aafaee7f33ee95",
+    "declRevision": "f82043e2a905fe8d7828f152",
     "payloadRevision": "44136fa355b3678a1146ad16",
     "workspace": "local//fixture/base/remotes/ws.git",
     "standalone": false,
@@ -43,13 +43,13 @@
         "relation": null,
         "providers": {}
       },
-      "resolution": "436c25462d085fddeb9a716f",
-      "revision": "e6f9e401bc75e2af7059cd9f"
+      "resolution": "a9b2789472aafaee7f33ee95",
+      "revision": "c65f47495c462d5e60d4fc79"
     },
     "preflight": {
       "status": "complete",
       "budgetMs": 20000,
-      "elapsedMs": 61
+      "elapsedMs": 85
     },
     "backendStatus": {
       "name": "tmux",

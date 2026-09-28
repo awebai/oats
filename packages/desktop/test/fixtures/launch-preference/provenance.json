@@ -1,5 +1,5 @@
 {
-  "source": "oats-desktop-engineer: launch preferences on the real kernel (0.30, feature launch-preference); the kernel's test/helpers/v2-deployment.mjs: souls dev (soul claude/claude-opus-5-5), reviewer (soul codex, local pi), plain (host); later local dev codex; later codex uninstalled; hermetic PATH (inert stubs); capture-launch.mjs",
+  "source": "oats-desktop-engineer, extended by ux-designer: launch preferences on the real kernel (0.30, feature launch-preference); the kernel's test/helpers/v2-deployment.mjs: souls dev (soul claude/claude-opus-5-5), reviewer (soul codex, local pi), plain (host); later local dev codex; later codex uninstalled; later plain spawned from local claude, then that preference removed (reverse drift); a second deployment with team model v2 (local default mine, shared oats/night): dev spawned, then `oats teams default oats` (default-team-changed); hermetic PATH (inert stubs); capture-launch.mjs",
   "kernelTree": "oats main @69d76a910f115f4bd58d149d348909de7d144787 (kernel #290 merged)",
   "redactions": [
     "<base> (deployment scratch) → /fixture/base",
@@ -27,8 +27,8 @@
       ],
       "exit": 0,
       "commit": "69d76a910f115f4bd58d149d348909de7d144787",
-      "sourceSha256": "eec5dd094b19cf7e01ce3bacaec0000aa66e087a08a8e80928def0e5f4d391e5",
-      "fixtureSha256": "0af34e3199f5cbc99f2326563d293a988c4c82970cac9d7905678725c77dcbda"
+      "sourceSha256": "fccb995c612e0bd6824ad25c83374140e7690e726d9614c00e4afe38ecbc4fc6",
+      "fixtureSha256": "0da864fa7619da69e1ed9d00798d7418db570aef076cd7674c11f452fc97a5ce"
     },
     "souls-unavailable": {
       "argv": [
@@ -40,8 +40,8 @@
       ],
       "exit": 0,
       "commit": "69d76a910f115f4bd58d149d348909de7d144787",
-      "sourceSha256": "6038024358a1bb0353c60f2d2b5fdc6f5451c8ef6deac797db9e64cc34f72a67",
-      "fixtureSha256": "b87f9d3b449ddeecfd3bcf4dcbda51915afdf9a1bd6c5d025a8f589a3ad737e0"
+      "sourceSha256": "d96c46dfeefa5f5931b6863b5aa09578b3c8c35626085da50a8756e566e261c5",
+      "fixtureSha256": "e2c1fa1c566550f93d8d4e610c8b8e21b7c88e52cb0b9b29a30e3c20a3c34829"
     },
     "inspect-soul-dev": {
       "argv": [
@@ -57,8 +57,8 @@
       ],
       "exit": 0,
       "commit": "69d76a910f115f4bd58d149d348909de7d144787",
-      "sourceSha256": "109abd4f8ecbb33b4e32fdd653d5f99a4a2003cc70328f4d294d08ebf367bc6e",
-      "fixtureSha256": "daba8b69cdfd2a3d0b581186698a11a6868764e1651bc751def91aadee5ed672"
+      "sourceSha256": "17b23c3571c6c1380716433de8f6fdb79888cfe1738cc1a3f50fefb5bb228f24",
+      "fixtureSha256": "38eeeda34051499ffed6d75d30716efefc03a682a802939d0a99801bc091c7bd"
     },
     "inspect-soul-reviewer": {
       "argv": [
@@ -74,8 +74,8 @@
       ],
       "exit": 0,
       "commit": "69d76a910f115f4bd58d149d348909de7d144787",
-      "sourceSha256": "170108a5b68232deb9b53685c4fb7d8b5152b40b53b6287ee95104ec2c54c216",
-      "fixtureSha256": "7e9d8b7f5c95f4a1acd1525459e43d068081e57f845e7ea94b8bf14ed1bc4975"
+      "sourceSha256": "c2ecdd68dc83885c8a4628cf6ae28b90992cc4dcea8fffac68b9d4fdc978fca3",
+      "fixtureSha256": "4d8c246124002a5765fe739ce20bdf6a795e9d1852ba09a13dd64e9a7723e0ee"
     },
     "preview-dev": {
       "argv": [
@@ -93,8 +93,8 @@
       ],
       "exit": 0,
       "commit": "69d76a910f115f4bd58d149d348909de7d144787",
-      "sourceSha256": "e3fba722e2e823ff339620f84653c0cdb345448ce8fccdcf20b67444bdf40661",
-      "fixtureSha256": "b0d793fbc3253b850ffde560ce26a90a594fef533644f7251d89207bedc4b90a"
+      "sourceSha256": "6fcd43ce258ad6e09d1dc083ab9bc5c7daf6b9161d3e17cb76e8bd75f60de18a",
+      "fixtureSha256": "89dae00a19d055d0de169b1f154ee45bdc3ba3551659fe634c507b13ca648d62"
     },
     "preview-dev-flag": {
       "argv": [
@@ -114,8 +114,8 @@
       ],
       "exit": 0,
       "commit": "69d76a910f115f4bd58d149d348909de7d144787",
-      "sourceSha256": "1d695dd7ba2b5a70a96da26aa7bf90e4240d5ca562bae848ddad1300bd55ccaf",
-      "fixtureSha256": "e2e72846d3b61eea7a610c5afb8ba5169be05e35a75693c36644c4f1a77433f1"
+      "sourceSha256": "a098432a652f98a8a8883c13c2cab8ed70b4232bce8bffee8332166effbe20ae",
+      "fixtureSha256": "7d3b7664da40dc1ab18106c7b4e2986095068c33489155d0f0bfef00a422223b"
     },
     "preview-dev-unavailable": {
       "argv": [
@@ -146,8 +146,8 @@
       ],
       "exit": 0,
       "commit": "69d76a910f115f4bd58d149d348909de7d144787",
-      "sourceSha256": "f6108d2076030ab409fd7db7ef132d40183f887afd020f40d0878a0e59434199",
-      "fixtureSha256": "f74bcb38e422a0212635ad3d0503977e239be6c6fa676e6478896d99a30712ac"
+      "sourceSha256": "571a16e8cfbe9433e183e873917f1a062f3cfe1a724a776cd4d4b66862c3226d",
+      "fixtureSha256": "86ab5aabe5ada2fdebfc3a370fb64ae4082b5829b196fd59f9198f647e5a1e53"
     },
     "inspect-home-drift": {
       "argv": [
@@ -159,8 +159,8 @@
       ],
       "exit": 0,
       "commit": "69d76a910f115f4bd58d149d348909de7d144787",
-      "sourceSha256": "b9756e9a21282ae2e5bf539dbbd6827aa01109d904079a308b935ebff0b97803",
-      "fixtureSha256": "03def64b8975427c3719f7ac1a89bd3c45b3073b37ebbbc9240d7bd0657afd2e"
+      "sourceSha256": "431c650a9dbe58edace9cbcf7deee0a115d3e0e3b885625ce2343ff29ab26a51",
+      "fixtureSha256": "525dcf858146681e47c56810b32ff053ca6510ff2cb605fd0ed1ebd7079f0467"
     },
     "readiness-home-drift": {
       "argv": [
@@ -177,8 +177,8 @@
       ],
       "exit": 0,
       "commit": "69d76a910f115f4bd58d149d348909de7d144787",
-      "sourceSha256": "512f399aa2ad02adb4ffcba58a5aceca511d06e5855183463ee9cfd50175b370",
-      "fixtureSha256": "c25e39c73943f11e84dbb38cfd81cecc97610383f1ea42a1c2a1bb9054cb6606"
+      "sourceSha256": "dd1405cf800a2c3d5cef86a771e8b7c1a3beb356482c89e75383ed24f0b6011c",
+      "fixtureSha256": "45baa77532f10a08edf5d68f965777a1b84ee8791813fcf82bca6b3c593f5916"
     },
     "status": {
       "argv": [
@@ -190,8 +190,70 @@
       ],
       "exit": 0,
       "commit": "69d76a910f115f4bd58d149d348909de7d144787",
-      "sourceSha256": "d435da7719271443c84c3336fa2d8f41e27d95688001bb312faa9e14d2cbf463",
-      "fixtureSha256": "c9efbd118b7b82a31f16bc1128dac4eceeb43c4b4ed017ea29dfb3683f02e416"
+      "sourceSha256": "0e99a0ffca4ce3a248640f7858a66bb02e69f42b1aa31a934e83e90a42770206",
+      "fixtureSha256": "e5cf0f9acf35ea70ee97a579b6fde59039a700c63b421596874be40d5897690b"
+    },
+    "inspect-home-reverse-drift": {
+      "argv": [
+        "oats",
+        "inspect",
+        "--home",
+        "<base>/deployment/agents/plain/instances/plain-q",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "69d76a910f115f4bd58d149d348909de7d144787",
+      "sourceSha256": "972e849456bebe28cd6e2d1987c3ff2205c804782c6df295dd0c8448d94b5787",
+      "fixtureSha256": "624ac6cbf7e011a6b9a00ef1df81bf1a13f2febc2d22e560869c429c23ae54b0"
+    },
+    "readiness-home-reverse-drift": {
+      "argv": [
+        "oats",
+        "readiness",
+        "--home",
+        "<base>/deployment/agents/plain/instances/plain-q",
+        "--soul",
+        "plain",
+        "--agents-root",
+        "<base>/deployment/agents",
+        "--policy",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "69d76a910f115f4bd58d149d348909de7d144787",
+      "sourceSha256": "995d8441160bd76e846f743f415e24fbec146ebcf5f36d90f59a34d516a2b232",
+      "fixtureSha256": "c9c067236eca1caa5569d77a4bda247507005c396399fdc45ff8e8dde3ebf1a6"
+    },
+    "inspect-home-default-team-changed": {
+      "argv": [
+        "oats",
+        "inspect",
+        "--home",
+        "<base>/deployment/agents/dev/instances/dev-q",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "69d76a910f115f4bd58d149d348909de7d144787",
+      "sourceSha256": "5dfe6246fc704cb4fc427679e471282029b93669972f49d00a15f0c8cdff95cf",
+      "fixtureSha256": "ac07335e718ab9a3887ab24edff53037b88a020d3d465b9edb3038d0b28c5fa7"
+    },
+    "readiness-home-default-team-changed": {
+      "argv": [
+        "oats",
+        "readiness",
+        "--home",
+        "<base>/deployment/agents/dev/instances/dev-q",
+        "--soul",
+        "dev",
+        "--agents-root",
+        "<base>/deployment/agents",
+        "--policy",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "69d76a910f115f4bd58d149d348909de7d144787",
+      "sourceSha256": "61ff7f9f1cb048f058af798fc5a5a409b20356594c9e9c8713c430957e1d378e",
+      "fixtureSha256": "0b8c71b4714421437745b3bb40fbe9429988a57e69bdbd236ee675b0944bf1f8"
     }
   }
 }

@@ -5,7 +5,9 @@
 //   plain    no launch                                        -> from host
 // Captures souls, inspect --soul, preview (and --harness, a flag), a spawn and inspect --home; then a
 // changed local preference (readiness launch-changed, launchCurrent); then codex uninstalled
-// (E_HARNESS_UNAVAILABLE as a report problem and as a preview refusal). PATH is hermetic: the
+// (E_HARNESS_UNAVAILABLE as a report problem and as a preview refusal); then the reverse drift (a local
+// preference removed: host, at null); then, in a second deployment of the same helper, default-team-changed
+// (spawn, then `oats teams default` moves the deployment's default). PATH is hermetic: the
 // helper's inert harness stubs + node + /usr/bin:/bin (no host harness leaks in).
 // Usage: OUT=out-launch CAPTURE_COMMIT=<oid> node capture-launch.mjs <kernel-tree>
 import { mkdirSync, writeFileSync, rmSync, readFileSync, unlinkSync } from "node:fs";
@@ -61,7 +63,43 @@ try {
   unlinkSync(join(stubs, "codex"));
   run("souls-unavailable", ["souls", ...d]);
   run("preview-dev-unavailable", [...spawn([]), "--preview", "--json"], { expect: null });
-  writeFileSync(join(OUT, "provenance.json"), JSON.stringify({ capturedBy: "oats-desktop-engineer: launch preferences on the real kernel (0.30, feature launch-preference)",
-    kernelTree: `oats main @${commit} (kernel #290 merged)`, fixture: "the kernel's test/helpers/v2-deployment.mjs: souls dev (soul claude/claude-opus-5-5), reviewer (soul codex, local pi), plain (host); later local dev codex; later codex uninstalled; hermetic PATH (inert stubs)",
-    script: "capture-launch.mjs", documents: prov }, null, 2) + "\n");
+  // The reverse drift (Antares, #292): a home spawned from a LOCAL preference, which is then removed:
+  // the current launch is the host default (`from: "host"`, `at: null`). After the uninstall; claude stays.
+  setLocalLaunch({ reviewer: { harness: "pi" }, dev: { harness: "codex" }, plain: { harness: "claude" } });
+  const spawnPlain = extra => ["spawn", "plain", "--dir", fx.dep, "--agents-root", fx.root, "--purpose", "q", ...extra];
+  const plainPreview = run("preview-plain-local", [...spawnPlain([]), "--preview", "--json"]);
+  const plainApplied = run("apply-plain", [...spawnPlain(["--expect-decision", JSON.parse(plainPreview.stdout).result.decision.revision, "--idempotency-key", "d".repeat(64), "--no-launch"]), "--json"]);
+  const plainHome = JSON.parse(plainApplied.stdout).result.home;
+  setLocalLaunch({ reviewer: { harness: "pi" }, dev: { harness: "codex" } });
+  run("inspect-home-reverse-drift", ["inspect", "--home", plainHome, "--json"]);
+  run("readiness-home-reverse-drift", ["readiness", "--home", plainHome, "--soul", "plain", "--agents-root", fx.root, "--policy", "--json"], { expect: "any" });
 } finally { fx.cleanup(); }
+// default-team-changed (lib/instance-inspect.mjs teamItems): a second deployment of the same helper with
+// team model v2 (shared teams in oats-workspace.yaml, a local default): spawn, then `oats teams default`
+// moves the deployment's default. The home's readiness then carries recorded/current as DefaultTeam objects.
+const tx = v2Deployment({ name: "acme", souls: { dev: {} },
+  local: { teams: { mine: { team: "mine:me.aweb.ai" } }, defaultTeam: "mine" },
+  workspace: { teams: { oats: { team: "oats:oats.aweb.ai", description: "The OATS project" }, night: { description: "Night shift (not created yet)" } } } });
+try {
+  const TPATH = `${join(tx.base, "runtime-stub")}:${dirname(process.execPath)}:/usr/bin:/bin`;
+  const tredact = s => (s || "").split(tx.base).join("<base>").split(REPO).join("<oats>");
+  const trun = (name, args, { expect = 0 } = {}) => {
+    const r = tx.cli(args, { env: { PATH: TPATH } });
+    prov.push({ name, argv: ["oats", ...args].map(tredact), exit: r.status, commit });
+    const ok = expect === "any" || r.status === expect;
+    console.log(`${ok ? "ok  " : "FAIL"} ${name} exit=${r.status}`);
+    writeFileSync(join(OUT, `${name}.json`), tredact(r.stdout));
+    if (!ok) console.log(tredact(r.stdout).slice(0, 1500), tredact(r.stderr).slice(0, 600));
+    return r;
+  };
+  const spawnDev = extra => ["spawn", "dev", "--dir", tx.dep, "--agents-root", tx.root, "--purpose", "q", ...extra];
+  const p = trun("preview-dev-teams", [...spawnDev([]), "--preview", "--json"]);
+  const a = trun("apply-dev-teams", [...spawnDev(["--expect-decision", JSON.parse(p.stdout).result.decision.revision, "--idempotency-key", "e".repeat(64), "--no-launch"]), "--json"]);
+  const teamHome = JSON.parse(a.stdout).result.home;
+  trun("teams-default-oats", ["teams", "default", "oats", "--dir", tx.dep, "--json"]);
+  trun("inspect-home-default-team-changed", ["inspect", "--home", teamHome, "--json"]);
+  trun("readiness-home-default-team-changed", ["readiness", "--home", teamHome, "--soul", "dev", "--agents-root", tx.root, "--policy", "--json"], { expect: "any" });
+} finally { tx.cleanup(); }
+writeFileSync(join(OUT, "provenance.json"), JSON.stringify({ capturedBy: "oats-desktop-engineer, extended by ux-designer: launch preferences on the real kernel (0.30, feature launch-preference)",
+  kernelTree: `oats main @${commit} (kernel #290 merged)`, fixture: "the kernel's test/helpers/v2-deployment.mjs: souls dev (soul claude/claude-opus-5-5), reviewer (soul codex, local pi), plain (host); later local dev codex; later codex uninstalled; later plain spawned from local claude, then that preference removed (reverse drift); a second deployment with team model v2 (local default mine, shared oats/night): dev spawned, then `oats teams default oats` (default-team-changed); hermetic PATH (inert stubs)",
+  script: "capture-launch.mjs", documents: prov }, null, 2) + "\n");

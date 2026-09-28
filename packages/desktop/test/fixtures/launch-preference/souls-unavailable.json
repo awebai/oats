@@ -6,16 +6,16 @@
     "workspace": {
       "name": "acme",
       "key": "local//fixture/base/remotes/ws.git",
-      "commit": "4f2adf446a7b2f91b4ee276a5fc0bca52e3665de"
+      "commit": "5048f113d2665455821233e3f63d89a54c32a133"
     },
     "souls": [
       {
         "name": "dev",
         "key": "dev",
-        "origin": "member local//fixture/base/remotes/ws.git @ 4f2adf44",
+        "origin": "member local//fixture/base/remotes/ws.git @ 5048f113",
         "kind": "member",
         "repoKey": "local//fixture/base/remotes/ws.git",
-        "commit": "4f2adf446a7b2f91b4ee276a5fc0bca52e3665de",
+        "commit": "5048f113d2665455821233e3f63d89a54c32a133",
         "teams": [],
         "defaultTeam": null,
         "private": false,
@@ -53,10 +53,10 @@
       {
         "name": "plain",
         "key": "plain",
-        "origin": "member local//fixture/base/remotes/ws.git @ 4f2adf44",
+        "origin": "member local//fixture/base/remotes/ws.git @ 5048f113",
         "kind": "member",
         "repoKey": "local//fixture/base/remotes/ws.git",
-        "commit": "4f2adf446a7b2f91b4ee276a5fc0bca52e3665de",
+        "commit": "5048f113d2665455821233e3f63d89a54c32a133",
         "teams": [],
         "defaultTeam": null,
         "private": false,
@@ -87,10 +87,10 @@
       {
         "name": "reviewer",
         "key": "reviewer",
-        "origin": "member local//fixture/base/remotes/ws.git @ 4f2adf44",
+        "origin": "member local//fixture/base/remotes/ws.git @ 5048f113",
         "kind": "member",
         "repoKey": "local//fixture/base/remotes/ws.git",
-        "commit": "4f2adf446a7b2f91b4ee276a5fc0bca52e3665de",
+        "commit": "5048f113d2665455821233e3f63d89a54c32a133",
         "teams": [],
         "defaultTeam": null,
         "private": false,

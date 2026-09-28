@@ -5,17 +5,17 @@
     "readinessApi": 2,
     "subject": {
       "kind": "instance",
-      "instance": "dev-q",
-      "home": "/fixture/base/deployment/agents/dev/instances/dev-q",
-      "soul": "dev"
+      "instance": "plain-q",
+      "home": "/fixture/base/deployment/agents/plain/instances/plain-q",
+      "soul": "plain"
     },
     "selector": {
       "kind": "home",
-      "home": "/fixture/base/deployment/agents/dev/instances/dev-q",
-      "soul": "dev",
+      "home": "/fixture/base/deployment/agents/plain/instances/plain-q",
+      "soul": "plain",
       "agentsRoot": "/fixture/base/deployment/agents"
     },
-    "at": "2026-09-28T23:05:45.523Z",
+    "at": "2026-09-28T23:05:51.005Z",
     "checks": {
       "installed": {
         "status": "not-applicable",
@@ -28,23 +28,23 @@
             "subject": "launch",
             "status": "fail",
             "required": false,
-            "reason": "this instance runs claude claude-opus-5-5; its launch preference now says codex (oats-local.yaml#/souls/launch/dev)",
+            "reason": "this instance runs claude; its launch preference now says pi (host)",
             "producer": "launch preference",
             "evidence": null,
             "remedy": "`oats session restart --reselect-launch`, or respawn",
             "code": "launch-changed",
             "recorded": {
               "harness": "claude",
-              "model": "claude-opus-5-5",
-              "launchConfig": null
-            },
-            "current": {
-              "harness": "codex",
               "model": null,
               "launchConfig": null
             },
-            "from": "local",
-            "at": "oats-local.yaml#/souls/launch/dev"
+            "current": {
+              "harness": "pi",
+              "model": null,
+              "launchConfig": null
+            },
+            "from": "host",
+            "at": null
           }
         ]
       },

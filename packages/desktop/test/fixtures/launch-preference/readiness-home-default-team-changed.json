@@ -15,7 +15,7 @@
       "soul": "dev",
       "agentsRoot": "/fixture/base/deployment/agents"
     },
-    "at": "2026-09-28T23:05:45.523Z",
+    "at": "2026-09-28T23:05:54.682Z",
     "checks": {
       "installed": {
         "status": "not-applicable",
@@ -25,26 +25,24 @@
         "status": "not-applicable",
         "items": [
           {
-            "subject": "launch",
+            "subject": "teams",
             "status": "fail",
             "required": false,
-            "reason": "this instance runs claude claude-opus-5-5; its launch preference now says codex (oats-local.yaml#/souls/launch/dev)",
-            "producer": "launch preference",
+            "reason": "this instance was spawned in mine; the default is now oats",
+            "producer": "team model",
             "evidence": null,
-            "remedy": "`oats session restart --reselect-launch`, or respawn",
-            "code": "launch-changed",
+            "remedy": "respawn",
+            "code": "default-team-changed",
             "recorded": {
-              "harness": "claude",
-              "model": "claude-opus-5-5",
-              "launchConfig": null
+              "label": "mine",
+              "team": "mine:me.aweb.ai",
+              "from": "deployment"
             },
             "current": {
-              "harness": "codex",
-              "model": null,
-              "launchConfig": null
-            },
-            "from": "local",
-            "at": "oats-local.yaml#/souls/launch/dev"
+              "label": "oats",
+              "team": "oats:oats.aweb.ai",
+              "from": "deployment"
+            }
           }
         ]
       },
@@ -60,7 +58,7 @@
             "evidence": {
               "repoKey": "local//fixture/base/remotes/ws.git",
               "workspace": "local//fixture/base/remotes/ws.git",
-              "commit": "5048f113d2665455821233e3f63d89a54c32a133"
+              "commit": "aa225ef02299a71d45e1818ef90f972287ceb0d2"
             },
             "remedy": null
           }

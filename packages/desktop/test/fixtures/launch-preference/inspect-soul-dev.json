@@ -8,13 +8,13 @@
       "kind": "soul",
       "soul": "dev",
       "repoKey": "local//fixture/base/remotes/ws.git",
-      "commit": "4f2adf446a7b2f91b4ee276a5fc0bca52e3665de"
+      "commit": "5048f113d2665455821233e3f63d89a54c32a133"
     },
     "workspace": {
       "key": "local//fixture/base/remotes/ws.git",
       "name": "acme",
       "deployment": "/fixture/base/deployment",
-      "commit": "4f2adf446a7b2f91b4ee276a5fc0bca52e3665de",
+      "commit": "5048f113d2665455821233e3f63d89a54c32a133",
       "standalone": false
     },
     "souls": [
@@ -22,7 +22,7 @@
         "soulsApi": 2,
         "name": "dev",
         "repoKey": "local//fixture/base/remotes/ws.git",
-        "commit": "4f2adf446a7b2f91b4ee276a5fc0bca52e3665de",
+        "commit": "5048f113d2665455821233e3f63d89a54c32a133",
         "kind": "member",
         "path": "souls/dev",
         "description": "dev fixture soul.",
