@@ -731,8 +731,10 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     // Suggestions follow the harness the kernel resolved, once it is known.
     if (next.data && !runtime.value && modelsFor !== next.data.harness) void fillModels();
   }
+  // A launch refusal (0.30) may carry the kernel's `fix`, flat on the reason: kept, bounded text.
+  const fixOf = reason => typeof reason?.fix === 'string' && reason.fix.length && reason.fix.length <= 1024 && !/[\x00-\x1f\x7f]/.test(reason.fix) ? { fix: reason.fix } : {};
   const reasonOf = reason => typeof reason?.code === 'string' && typeof reason?.message === 'string' && reason.message.length <= 2048
-    ? { code: reason.code, message: reason.message } : previewFailure(reason?.code).reason;
+    ? { code: reason.code, message: reason.message, ...fixOf(reason) } : previewFailure(reason?.code).reason;
 
   // ── spawn (local): prepare → same decision as shown → apply
   async function run() {

@@ -118,9 +118,30 @@ test('spawn dialog: the run hint says what this spawn runs and what chose it (de
 });
 
 test('spawn dialog: a missing harness is said as the kernel words it, with its fix; the code and message stay behind Details', () => {
-  const p = spawnProblem({ code: 'E_HARNESS_UNAVAILABLE', message: 'harness codex is not installed on this machine.', details: { fix: 'install codex, or choose another --harness / --launch-config' } });
+  // The fix travels flat on the reason (#292: the main-process proxy keeps code, message and fix).
+  const p = spawnProblem({ code: 'E_HARNESS_UNAVAILABLE', message: 'harness codex is not installed on this machine.', fix: 'install codex, or choose another --harness / --launch-config' });
   assert.equal(p.text, 'harness codex is not installed on this machine: install codex, or choose another --harness / --launch-config');
   assert.equal(p.detail, 'E_HARNESS_UNAVAILABLE · harness codex is not installed on this machine.');
   assert.equal(spawnProblem({ code: 'E_HARNESS_UNAVAILABLE', message: 'harness codex is not installed' }).text, 'harness codex is not installed', 'no fix sent: the message alone');
+  assert.equal(spawnProblem({ code: 'E_HARNESS_UNAVAILABLE', message: 'harness codex is not installed', details: { fix: 'x' } }).text, 'harness codex is not installed', 'details.fix never reaches the renderer: not read');
+  // The REAL kernel's message already ends with its fix (fixtures/launch-preference): said once, verbatim.
+  const real = JSON.parse(readFileSync(new URL('./fixtures/launch-preference/preview-dev-unavailable.json', import.meta.url), 'utf8')).error;
+  assert.equal(spawnProblem({ code: real.code, message: real.message, fix: real.details.fix }).text, real.message);
   assert.equal(spawnProblem({ code: 'E_HARNESS_UNAVAILABLE' }).text, 'The harness this soul would run isn’t installed on this machine. Install it, or pick another harness above.');
+});
+
+// End to end (#292's boundary keeps the kernel's words and the flat fix): a preview refused
+// E_HARNESS_UNAVAILABLE reaches the open dialog as "<message>: <fix>", Spawn disabled, the code behind Details.
+test('spawn dialog end to end: a missing harness refusal from the kernel is said in its words with its fix', async t => {
+  const { mountSpawn, settle } = await import('./helpers/spawn-dialog-host.mjs');
+  // The REAL kernel's refusal (its message already ends with the fix), and one whose message does not.
+  const real = JSON.parse(readFileSync(new URL('./fixtures/launch-preference/preview-dev-unavailable.json', import.meta.url), 'utf8'));
+  const terse = structuredClone(real); terse.error.message = 'codex is not installed on this machine';
+  for (const [envelope, said] of [[real, real.error.message], [terse, `codex is not installed on this machine: ${real.error.details.fix}`]]) {
+    const u = await mountSpawn(t, { kernel: () => structuredClone(envelope) });
+    await u.open(); await u.type('.fpurpose', 'launch'); await settle();
+    assert.equal(u.text('.fstatus'), said);
+    assert.equal(u.dialog().querySelector('.fspawn').disabled, true, 'nothing to spawn');
+    assert.ok(u.dialog().textContent.includes(`E_HARNESS_UNAVAILABLE · ${envelope.error.message}`), 'the code and message behind Details');
+  }
 });
