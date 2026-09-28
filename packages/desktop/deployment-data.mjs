@@ -161,6 +161,7 @@ export function deploymentStatusData(document, deployment) {
     check(!seenSouls.has(agent.dir)); seenSouls.add(agent.dir);
     const out = withHarness(agent, fields(agent, ['name', 'description', 'work', 'model', 'backend', 'team', 'dir', 'kind', 'repo', 'capability', 'color', 'launch-config']));
     if (own(agent, 'yolo')) { check(agent.yolo === null || typeof agent.yolo === 'boolean'); out.yolo = agent.yolo; }
+    if (own(agent, 'key')) { check(soulKey(agent.key)); out.key = agent.key; } // the kernel's soul key, when reported
     if (own(agent, 'soulSource')) out.soulSource = soulSource(agent.soulSource);
     if (own(agent, 'retireFailures')) out.retireFailures = array(agent.retireFailures).map(row => fields(row, ['instance', 'completedAt', 'error', 'resultPath']));
     out.instances = array(agent.instances, 10000).flatMap(instance => {
@@ -264,26 +265,32 @@ export function capabilitiesData(document) {
 const SOUL_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/;
 const TEAM_LABEL = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const PACKAGE_ID = /^[a-z0-9][a-z0-9._-]{0,127}$/; // the kernel's package-id grammar, bounded
+// The kernel's soul key (K1's pattern): '*' never names one soul, so it is not a row key.
+const SOUL_KEY = /^(?:[a-z0-9][a-z0-9._-]*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const soulKey = v => typeof v === 'string' && v.length <= 256 && SOUL_KEY.test(v);
 export function soulsData(document) {
   check(record(document) && document.schemaVersion === 1 && document.ok === true);
   const data = document.result;
   check(record(data) && data.soulsApi === 1);
   const workspace = fields(data.workspace, ['name', 'key', 'commit']);
-  const seen = new Map();
+  const seen = new Map(), shown = new Map();
   for (const row of array(data.souls)) {
     const out = fields(row, ['name', 'origin', 'kind', 'repoKey', 'commit', 'team', 'path', 'work', 'description']);
     check(SOUL_NAME.test(out.name ?? '') && ['member', 'external', 'package'].includes(out.kind)
       && ['worktree', 'checkout', 'directory', 'workspace', 'attached'].includes(out.work));
     // Package souls (feature package-souls, 0.28): a soul a locked package ships, addressed by its
-    // qualified name `<package>/<soul>`. Every row carries the kernel's soul key (its soul-key
-    // rule): the qualified name for a package soul, the bare name otherwise. It is what
-    // `oats soul teams <key>` and the souls.teams/souls.default keys take.
+    // qualified name `<package>/<soul>`.
     if (out.kind === 'package') {
       check(typeof row.package === 'string' && PACKAGE_ID.test(row.package) && typeof row.version === 'string' && row.version.length > 0 && row.version.length <= 64
         && row.qualifiedName === `${row.package}/${out.name}`);
       Object.assign(out, { package: row.package, version: row.version, qualifiedName: row.qualifiedName });
     } else check(!own(row, 'qualifiedName') && !own(row, 'package'));
-    out.key = out.kind === 'package' ? out.qualifiedName : out.name;
+    // The soul key (`oats soul teams <key>`, the souls.teams/souls.default keys) is the KERNEL's:
+    // the row's `key` when it reports one (the owner's decision: exactly the name the soul is spawned
+    // by). Until the kernel carries it, a member soul falls back to its bare name; a package or
+    // external soul's key is never derived here, so it has none.
+    if (own(row, 'key')) { check(soulKey(row.key)); out.key = row.key; }
+    else if (out.kind === 'member') out.key = out.name;
     flags(row, ['private', 'spawnable'], out);
     // desktop-facts: whether a spawn here would refuse, and the file. The harness/model default is not kept:
     // it is always the kernel's today (#217 note 4), never the soul's choice; the spawn preview reports the real one.
@@ -297,10 +304,13 @@ export function soulsData(document) {
       check(Array.isArray(row.labels) && row.labels.length <= 64 && row.labels.every(l => typeof l === 'string' && TEAM_LABEL.test(l)) && new Set(row.labels).size === row.labels.length);
       out.labels = [...row.labels];
     }
-    seen.set(out.key, seen.has(out.key) ? null : out); // the kernel's key: a package soul never collides with a member of the same name
+    // One soul per spawn name: the kernel's key, else a package soul's qualified name (spawnable as
+    // such), else the bare name, so a member and an external soul of one name stay ambiguous.
+    const id = out.key ?? out.qualifiedName ?? out.name;
+    seen.set(id, seen.has(id) ? null : out); shown.set(id, out.key ?? out.qualifiedName ?? out.name);
   }
   const souls = [...seen.values()].filter(Boolean);
-  const ambiguous = [...seen].filter(([, row]) => row === null).map(([key]) => key);
+  const ambiguous = [...seen].filter(([, row]) => row === null).map(([id]) => shown.get(id));
   return { soulsApi: 1, workspace, souls, ambiguous, problems: problemRows(data.problems) };
 }
 
