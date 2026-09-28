@@ -324,8 +324,9 @@ A capability declares no agents: `agents:` in a manifest was **removed in
 - a **package soul**: `souls/<name>/` beside the package's capabilities, listed
   in `oats-package.json` `souls:`, spawned as `oats spawn <package>/<name>`
   (or the bare name when unique), reading the package's capabilities with
-  `from: here` ([packages.md](packages.md#package-souls)). The post-commit
-  `reviewer` is one: oats.dev 1.1.0's `oats.dev/reviewer`, beside `oats.review`;
+  `from: here` ([packages.md](packages.md#package-souls)). The adversarial
+  `code-reviewer` is one: oats.engineering's `oats.engineering/code-reviewer`,
+  reading `oats.code-review`;
 - or a **member soul**: `souls/<name>/` in a member repository, using a
   member capability `from: here`.
 

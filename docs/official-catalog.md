@@ -66,9 +66,15 @@ this policy does not invent new catalog or manifest fields.
 ## Listed first set
 
 - Listed capabilities: `oats.okf`, `oats.okf-harvest`, `oats.okf-maintenance`,
-  `oats.aweb`, `oats.authoring`, `oats.jira`, `oats.linear`, `oats.dev`,
+  `oats.aweb`, `oats.authoring`, `oats.jira`, `oats.linear`,
+  `oats.engineering-expert`, `oats.developer`, `oats.code-review`,
   `oats.knowledge-theory`, `oats.core` and `oats.setup`. `oats.okf-harvest` and
   `oats.okf-maintenance` select the `oats.okf` package (4.0.3).
+- **`oats.engineering` 1.0.0** (`awebai/oats-engineering`, payload root
+  `oats-package`): `oats.engineering-expert` for domain experts, `oats.developer`
+  for developers, and `oats.code-review` for its `code-reviewer` package soul,
+  which developers spawn attached to their worktree. It replaces `oats.dev`,
+  which is no longer listed.
 - **`oats.framework` 1.3.2** is listed at tag `oats-framework/v1.3.2` in
   `awebai/oats`, payload root `oats-package`. The `oats.core`, `oats.setup` and
   `oats.knowledge-theory` aliases select that distribution; package identity is

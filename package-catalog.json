@@ -26,9 +26,9 @@
       "ref": "v1.0.3",
       "path": "oats-package"
     },
-    "oats.dev": {
-      "url": "https://github.com/awebai/oats-dev.git",
-      "ref": "v1.1.0",
+    "oats.engineering": {
+      "url": "https://github.com/awebai/oats-engineering.git",
+      "ref": "v1.0.0",
       "path": "oats-package"
     },
     "oats.framework": {
@@ -38,7 +38,6 @@
     }
   },
   "capabilities": {
-    "oats.review": "oats.dev",
     "oas.okf": {
       "package": "oats.okf",
       "capability": "oats.okf"
@@ -59,18 +58,13 @@
       "package": "oats.authoring",
       "capability": "oats.authoring"
     },
-    "oas.dev": {
-      "package": "oats.dev",
-      "capability": "oats.dev"
-    },
-    "oas.review": {
-      "package": "oats.dev",
-      "capability": "oats.review"
-    },
     "oats.knowledge-theory": "oats.framework",
     "oats.core": "oats.framework",
     "oats.setup": "oats.framework",
     "oats.okf-harvest": "oats.okf",
-    "oats.okf-maintenance": "oats.okf"
+    "oats.okf-maintenance": "oats.okf",
+    "oats.engineering-expert": "oats.engineering",
+    "oats.developer": "oats.engineering",
+    "oats.code-review": "oats.engineering"
   }
 }
