@@ -292,6 +292,42 @@ export function cliAutomation(bin, { kind, action, id, workspaceDir }, io = {}) 
   return runJson(bin, argv, { cwd: workspaceDir, exec: io.exec, timeout: io.timeout || (action === "test" ? 60_000 : 30_000) });
 }
 
+/** Team model v2 (feature team-model-2): `oats teams …` and `oats soul teams …`, config-only
+ * kernel verbs, argv only (no shell). Positionals are grammar-bound (a label, a soul key) and so
+ * never option-shaped; every option value travels as ONE `--flag=value` token (the kernel reads
+ * the inline form since 0.28), so a value can never become a flag of its own. A team id is the
+ * aweb `<name>:<namespace>` shape; a description is bounded printable text, never `-`-led. */
+// The kernel's own grammars (feat/030-team-model lib/teams-verbs.mjs LABEL_RE; K1's soul-key
+// pattern), bounded here: a label ≤64, a soul key ≤256.
+const TEAM_LABEL_ARG = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+const argText = (v, max) => typeof v === "string" && v.length > 0 && v.length <= max && !v.startsWith("-") && !/[\x00-\x1f\x7f]/.test(v);
+const TEAM_ID_ARG = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}:[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$/;
+const SOUL_KEY_RE = /^(?:\*|(?:[a-z0-9][a-z0-9._-]*\/)?[a-z0-9]+(?:-[a-z0-9]+)*)$/;
+const SOUL_KEY = { test: v => typeof v === "string" && v.length <= 256 && SOUL_KEY_RE.test(v) };
+const badTeams = () => Promise.resolve({ schemaVersion: 1, ok: false, error: { code: "E_BAD_ARGS", message: "Invalid teams request" } });
+export function cliTeams(bin, { action = "list", label, team, description, workspaceDir }, io = {}) {
+  if (typeof workspaceDir !== "string" || !isAbsolute(workspaceDir) || workspaceDir.includes("\0")) return badTeams();
+  let verb;
+  if (action === "list") { if (label !== undefined || team !== undefined || description !== undefined) return badTeams(); verb = []; }
+  else if (action === "add") {
+    if (!TEAM_LABEL_ARG.test(label ?? "") || !TEAM_ID_ARG.test(team ?? "") || (description !== undefined && !argText(description, 512))) return badTeams();
+    verb = ["add", label, `--team=${team}`, ...(description === undefined ? [] : [`--description=${description}`])];
+  } else if (action === "remove" || action === "default") {
+    if (!TEAM_LABEL_ARG.test(label ?? "") || team !== undefined || description !== undefined) return badTeams();
+    verb = [action, label];
+  } else return badTeams();
+  return runJson(bin, ["teams", ...verb, "--dir", workspaceDir, "--json"], { cwd: workspaceDir, exec: io.exec, timeout: io.timeout || 15_000 /* inside the renderer proxy's 20s deadline */ });
+}
+export function cliSoulTeams(bin, { soul, add, remove, defaultLabel, clearDefault = false, workspaceDir }, io = {}) {
+  const list = v => v === undefined || (Array.isArray(v) && v.length > 0 && v.length <= 64 && v.every(l => TEAM_LABEL_ARG.test(l)) && new Set(v).size === v.length);
+  if (typeof workspaceDir !== "string" || !isAbsolute(workspaceDir) || workspaceDir.includes("\0") || !SOUL_KEY.test(soul ?? "")
+    || !list(add) || !list(remove) || (defaultLabel !== undefined && !TEAM_LABEL_ARG.test(defaultLabel)) || typeof clearDefault !== "boolean"
+    || (clearDefault && defaultLabel !== undefined) || (soul === "*" && (defaultLabel !== undefined || clearDefault))) return badTeams();
+  const argv = ["soul", "teams", soul, ...(add ? [`--add=${add.join(",")}`] : []), ...(remove ? [`--remove=${remove.join(",")}`] : []),
+    ...(defaultLabel !== undefined ? [`--default=${defaultLabel}`] : []), ...(clearDefault ? ["--clear-default"] : []), "--dir", workspaceDir, "--json"];
+  return runJson(bin, argv, { cwd: workspaceDir, exec: io.exec, timeout: io.timeout || 15_000 });
+}
+
 /** One bounded aggregate read; the CLI owns registry and saved-route resolution. */
 export function cliRemoteRoster(bin, io = {}) {
   return runJson(bin, ["server", "roster", "--json"], { cwd: io.cwd || process.cwd(), exec: io.exec, timeout: io.timeout || 60_000 });

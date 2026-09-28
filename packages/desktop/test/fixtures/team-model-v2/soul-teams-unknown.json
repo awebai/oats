@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_TEAM_UNKNOWN",
+    "message": "team \"nope\" is not declared: `oats teams add` it first",
+    "details": {
+      "label": "nope"
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_TEAM_IN_USE",
+    "message": "team mine is still referenced (defaultTeam, souls.teams:release-manager): remove the references first (`oats teams default`, `oats soul teams … --remove mine`)",
+    "details": {
+      "label": "mine",
+      "usedBy": [
+        "defaultTeam",
+        "souls.teams:release-manager"
+      ]
+    }
+  }
+}

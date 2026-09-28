@@ -9,7 +9,10 @@ import { readFileSync } from 'node:fs';
 import { teamsDocument, soulTeams, defaultTeamText } from '../renderer/teams-panel.mjs';
 import { teamRow } from '../renderer/team-rows.mjs';
 import { previewData } from '../renderer/spawn-preview-contract.mjs';
-import { workspaceStatusData } from '../deployment-data.mjs';
+import { workspaceStatusData, deploymentStatusData, capabilitiesData, soulsData } from '../deployment-data.mjs';
+import { inspectData } from '../renderer/inspect-contract.mjs';
+import { readinessData } from '../renderer/readiness-contract.mjs';
+import { data as readinessCapture, target as readinessTarget } from './helpers/readiness-fixture.mjs';
 import { target } from './helpers/spawn-preview-fixture.mjs';
 
 const read = path => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/${path}.json`, import.meta.url), 'utf8'));
@@ -28,6 +31,8 @@ test('teams document: 0.29 unchanged; v2 drops primary/unmapped, adds left[] and
   assert.match(defaultTeamText(d.defaultTeam), /this workspace's default on this computer$/);
   const soul = structuredClone(v2); soul.result.defaultTeam.from = 'soul'; assert.ok(teamsDocument(soul, 'messaging:teams'));
   const unmapped = structuredClone(v2); unmapped.result.defaultTeam.team = null;
+  // K1 addendum 4 (final): an UNMAPPED default is {label, team: null, from}, never null; null only when none is configured.
+  assert.deepEqual(teamsDocument(unmapped, 'messaging:teams').defaultTeam, { label: 'antares-oats', team: null, from: 'deployment' });
   assert.match(defaultTeamText(teamsDocument(unmapped, 'messaging:teams').defaultTeam), /^antares-oats \(no provider id yet\)/, 'an unmapped default names its label');
   const none = structuredClone(v2); none.result.defaultTeam = null; assert.equal(teamsDocument(none, 'messaging:teams').defaultTeam, null, 'none configured');
   assert.match(defaultTeamText(teamsDocument(r29, 'messaging:teams').defaultTeam), / · /, '0.29 words unchanged');
@@ -56,9 +61,11 @@ test('spawn preview teams: the v2 rows keep the spawn Teams choice (not "unreada
   const before = previewData(structuredClone(v29), target);
   assert.ok(before && Array.isArray(before.teams));
   const v2 = structuredClone(v29);
+  delete v2.team; // v2 removes the primary label (K1: "removes team")
   v2.teams = [{ label: 'antares-oats', team: 'a:juan.aweb.ai', default: true, from: 'local' }, { label: 'oats', team: 'oats:oats.aweb.ai', default: false, from: 'shared' }];
   const after = previewData(v2, target);
-  assert.ok(after, 'the preview is read'); assert.deepEqual(after.teams.map(t => [t.label, t.default, t.mapped]), [['antares-oats', true, true], ['oats', false, true]]);
+  assert.ok(after, 'the preview is read, with team removed'); assert.equal(after.team, null);
+  assert.deepEqual(after.teams.map(t => [t.label, t.default, t.mapped]), [['antares-oats', true, true], ['oats', false, true]]);
 });
 
 test('workspace status: defaults.byTeam optional; workspace.teams as strings (0.29) or v2 shared-team rows', () => {
@@ -77,4 +84,63 @@ test('workspace status: defaults.byTeam optional; workspace.teams as strings (0.
     x => { x.result.workspace.teams = [{ label: '-bad', team: null, description: null }]; }, x => { x.result.defaults.byTeam = []; }]) {
     const bad = structuredClone(doc); change(bad); assert.throws(() => workspaceStatusData(bad, DEPLOYMENT), { code: 'E_CLI_PROTOCOL' });
   }
+});
+
+/** Delete `path` (a.b[].c) everywhere in `doc`; returns how many keys it removed. */
+function strip(doc, path) {
+  const parts = path.split('.'); let n = 0;
+  const walk = (v, i) => {
+    if (v === null || typeof v !== 'object') return;
+    const part = parts[i], each = part.endsWith('[]'), key = each ? part.slice(0, -2) : part;
+    if (i === parts.length - 1) { if (Object.hasOwn(v, key)) { delete v[key]; n++; } return; }
+    const next = v[key];
+    if (each) { if (Array.isArray(next)) for (const x of next) walk(x, i + 1); } else walk(next, i + 1);
+  };
+  walk(doc, 0); return n;
+}
+const dropped = (doc, paths) => { for (const p of paths) assert.ok(strip(doc, p) > 0, `the 0.29 capture carries ${p}`); return doc; };
+
+// The DROP lesson (0.30 D1a/D1b): a dropped field breaks a reader harder than an added one. Every key
+// team model v2 REMOVES is deleted from the real 0.29 captures, and every reader still reads.
+test('the DROP lesson: every key team model v2 removes is deleted from the real 0.29 captures, and every reader still reads', () => {
+  // oats spawn --preview: the primary label.
+  const preview = dropped(read('f7/preview-teams-default').result, ['team']);
+  assert.ok(previewData(preview, target), 'preview without team');
+  // oats souls: each soul's primary team and its labels.
+  const souls = dropped(read('desktop-facts/souls'), ['result.souls[].team', 'result.souls[].labels']);
+  assert.deepEqual(soulsData(souls).souls.map(s => s.name), soulsData(read('desktop-facts/souls')).souls.map(s => s.name));
+  // oats status: the soul's team, and the instance's workspace.soul team/labels.
+  const status = dropped(read('desktop-facts/status'), ['agents[].team', 'agents[].instances[].workspace.soul.team', 'agents[].instances[].workspace.soul.labels']);
+  assert.deepEqual(deploymentStatusData(status, DEPLOYMENT).agents.map(a => [a.name, a.instances.length]),
+    deploymentStatusData(read('desktop-facts/status'), DEPLOYMENT).agents.map(a => [a.name, a.instances.length]));
+  // oats workspace status: members[]/external[] team, defaults.byTeam.
+  const ws = dropped(read('desktop-facts/workspace-status'), ['result.members[].team', 'result.external[].team', 'result.defaults.byTeam']);
+  assert.ok(workspaceStatusData(ws, DEPLOYMENT));
+  // oats capabilities: the providing team.
+  const caps = dropped(read('desktop-facts/capabilities'), ['result.capabilities[].team']);
+  assert.deepEqual(capabilitiesData(caps).capabilities.map(c => c.name), capabilitiesData(read('desktop-facts/capabilities')).capabilities.map(c => c.name));
+  // oats inspect (soul): subject.team, souls[].team/labels.
+  const inspect = dropped(read('desktop-facts/inspect-soul').result, ['subject.team', 'souls[].team']);
+  strip(inspect, 'souls[].labels');
+  assert.ok(inspectData(inspect, { agent: { name: inspect.subject.soul } }), 'inspect without the soul team');
+  // oats readiness: subject.team.
+  const readiness = dropped(readinessCapture(), ['subject.team']);
+  assert.ok(readinessData(readiness, readinessTarget), 'readiness without subject.team');
+});
+
+test('the real 0.30 documents (K1 kernel, fixtures/team-model-v2) read in every reader: the removed keys are really gone', () => {
+  const real = name => read(`../team-model-v2/${name}`);
+  const gone = (doc, paths) => { for (const p of paths) assert.equal(strip(structuredClone(doc), p), 0, `0.30 no longer carries ${p}`); return doc; };
+  assert.ok(previewData(gone(real('preview').result, ['team']), target));
+  assert.ok(soulsData(gone(real('souls'), ['result.souls[].team', 'result.souls[].labels'])).souls.length > 0);
+  const status = deploymentStatusData(gone(real('status'), ['agents[].team', 'agents[].instances[].workspace.soul.team', 'agents[].instances[].workspace.soul.labels']), DEPLOYMENT);
+  assert.ok(status.agents.some(a => a.instances.length === 1));
+  assert.ok(workspaceStatusData(gone(real('workspace-status'), ['result.members[].team', 'result.external[].team', 'result.defaults.byTeam']), DEPLOYMENT));
+  assert.ok(capabilitiesData(gone(real('capabilities'), ['result.capabilities[].team'])).capabilities.length > 0);
+  const soul = gone(real('inspect-soul').result, ['subject.team', 'souls[].team', 'souls[].labels']);
+  assert.ok(inspectData(soul, { agent: { name: 'release-manager' } }));
+  const home = real('inspect-home').result;
+  assert.ok(inspectData(home, { instance: {}, selector: { home: home.subject.home } }));
+  const t = { workspace: 'northwind', context: DEPLOYMENT, observedAs: 'soul', selector: { kind: 'soul', soul: 'release-manager', agentsRoot: `${DEPLOYMENT}/agents` } };
+  assert.ok(readinessData(gone(real('readiness-soul').result, ['subject.team']), t));
 });

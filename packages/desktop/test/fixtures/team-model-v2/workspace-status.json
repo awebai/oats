@@ -1,0 +1,262 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "workspaceStatusApi": 1,
+    "workspace": {
+      "name": "northwind",
+      "key": "local//fixture/base/fx/remotes/agents.git",
+      "url": "/fixture/base/fx/remotes/agents.git",
+      "commit": "66566512168e5a8296e789d43e04c837b85969e9",
+      "observedAt": "2026-09-28T10:07:51.783Z",
+      "local": "/fixture/base/northwind-workspace/oats-local.yaml",
+      "teams": [
+        {
+          "label": "engineering",
+          "team": null,
+          "description": "Platform, data and release automation"
+        },
+        {
+          "label": "global",
+          "team": null,
+          "description": "Org-wide souls and house capabilities"
+        },
+        {
+          "label": "marketing",
+          "team": null,
+          "description": "Campaigns, content and positioning"
+        }
+      ],
+      "file": {
+        "path": "oats-workspace.yaml",
+        "url": null
+      }
+    },
+    "members": [
+      {
+        "key": "local//fixture/base/fx/remotes/agents.git",
+        "name": "agents",
+        "commit": "66566512168e5a8296e789d43e04c837b85969e9",
+        "confirmed": true,
+        "status": "confirmed",
+        "detail": null,
+        "souls": [
+          "release-manager",
+          "support-triager"
+        ],
+        "capabilities": [
+          "nw-house-style",
+          "nw-release-tooling"
+        ],
+        "publishes": null,
+        "url": null,
+        "membershipFile": {
+          "path": "oats-membership.yaml",
+          "url": null
+        }
+      },
+      {
+        "key": "local//fixture/base/fx/remotes/platform.git",
+        "name": "platform",
+        "commit": "0b635d90ff96f062a8c0cbd05bf4b22cabbab604",
+        "confirmed": true,
+        "status": "confirmed",
+        "detail": null,
+        "souls": [
+          "platform-engineer",
+          "platform-reviewer"
+        ],
+        "capabilities": [],
+        "publishes": null,
+        "url": null,
+        "membershipFile": {
+          "path": "oats-membership.yaml",
+          "url": null
+        }
+      },
+      {
+        "key": "local//fixture/base/fx/remotes/data.git",
+        "name": "data",
+        "commit": "f32192f6f176917d263c96f07079c6baa368b640",
+        "confirmed": true,
+        "status": "confirmed",
+        "detail": null,
+        "souls": [
+          "data-analyst"
+        ],
+        "capabilities": [
+          "nw-warehouse-access"
+        ],
+        "publishes": null,
+        "url": null,
+        "membershipFile": {
+          "path": "oats-membership.yaml",
+          "url": null
+        }
+      },
+      {
+        "key": "local//fixture/base/fx/remotes/marketing.git",
+        "name": "marketing",
+        "commit": "46b3494afad91c391b935b4e70bbfbbdbb402f11",
+        "confirmed": true,
+        "status": "confirmed",
+        "detail": null,
+        "souls": [
+          "campaign-writer",
+          "positioning-analyst"
+        ],
+        "capabilities": [
+          "nw-brand-voice",
+          "nw-campaign-metrics"
+        ],
+        "publishes": null,
+        "url": null,
+        "membershipFile": {
+          "path": "oats-membership.yaml",
+          "url": null
+        }
+      },
+      {
+        "key": "local//fixture/base/fx/remotes/nw-tools.git",
+        "name": "nw-tools",
+        "commit": "318795402eea95974002b2bad8772ccb24a31e0a",
+        "confirmed": true,
+        "status": "confirmed",
+        "detail": null,
+        "souls": [
+          "tools-expert"
+        ],
+        "capabilities": [
+          "nw-tools-dev"
+        ],
+        "publishes": {
+          "package": "nw.tools",
+          "version": "0.4.0"
+        },
+        "url": null,
+        "membershipFile": {
+          "path": "oats-membership.yaml",
+          "url": null
+        }
+      }
+    ],
+    "packages": [
+      {
+        "id": "nw.tools",
+        "version": "0.4.0",
+        "source": "git:local//fixture/base/fx/remotes/nw-tools.git@v0.4.0",
+        "commit": "318795402eea95974002b2bad8772ccb24a31e0a",
+        "integrity": "sha256-4a0ee48230d65cc6c0b9d0c9a3883e64182cfc7b2410e4f5839bacf551fcf1cf",
+        "capabilities": [
+          "nw-deploy",
+          "nw-lint"
+        ],
+        "souls": [],
+        "latest": null
+      },
+      {
+        "id": "oats.framework",
+        "version": "1.1.3",
+        "source": "catalog:oats.framework",
+        "commit": "b80344dcafd4b614e58bb8dc5d766eca9ea0403c",
+        "integrity": "sha256-8f69a58cef42b8b3a1ab3edbd5eeb15793acb7ed5f23b4604bcf3b8303bc3903",
+        "capabilities": [
+          "oats.core"
+        ],
+        "souls": [],
+        "latest": null
+      },
+      {
+        "id": "oats.okf",
+        "version": "2.1.3",
+        "source": "catalog:oats.okf",
+        "commit": "ab897841b8cbe70c301921daa8f50a33d39f209a",
+        "integrity": "sha256-bada3555413c66f0e9a3f16beec87004cb0c2538d8418f0936a79962cce25a97",
+        "capabilities": [
+          "oats.okf"
+        ],
+        "souls": [],
+        "latest": null
+      }
+    ],
+    "declaredPackages": [
+      "nw.tools",
+      "oats.framework",
+      "oats.okf"
+    ],
+    "unsynced": [],
+    "stale": [],
+    "external": [
+      {
+        "source": "file:///fixture/base/fx/remotes/experts.git@3c606e09ea25c9976d9c8371d48e9737564e6896",
+        "soul": "security-reviewer"
+      }
+    ],
+    "problems": [],
+    "warnings": [],
+    "automations": {
+      "host": null,
+      "snapshot": null,
+      "rows": []
+    },
+    "defaults": {
+      "slots": {
+        "knowledge": {
+          "name": "oats.okf",
+          "from": "package"
+        },
+        "messaging": "none",
+        "tasks": "none"
+      },
+      "capabilities": [
+        {
+          "name": "nw-house-style",
+          "from": "local//fixture/base/fx/remotes/agents.git",
+          "off": false
+        },
+        {
+          "name": "oats.core",
+          "from": "package",
+          "off": false
+        }
+      ]
+    },
+    "clones": [
+      {
+        "key": "local//fixture/base/fx/remotes/agents.git",
+        "name": "agents",
+        "path": "/fixture/base/northwind-workspace/agents-repo",
+        "rule": "convention"
+      },
+      {
+        "key": "local//fixture/base/fx/remotes/platform.git",
+        "name": "platform",
+        "path": "/fixture/base/northwind-workspace/platform",
+        "rule": "convention"
+      },
+      {
+        "key": "local//fixture/base/fx/remotes/data.git",
+        "name": "data",
+        "path": "/fixture/base/northwind-workspace/data",
+        "rule": "convention"
+      },
+      {
+        "key": "local//fixture/base/fx/remotes/marketing.git",
+        "name": "marketing",
+        "path": "/fixture/base/northwind-workspace/marketing",
+        "rule": "convention"
+      },
+      {
+        "key": "local//fixture/base/fx/remotes/nw-tools.git",
+        "name": "nw-tools",
+        "path": "/fixture/base/northwind-workspace/nw-tools",
+        "rule": "convention"
+      }
+    ],
+    "disabledSouls": [],
+    "lock": {
+      "path": "/fixture/base/northwind-workspace/oats-lock.json",
+      "lockfileVersion": 3
+    }
+  }
+}
