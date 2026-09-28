@@ -41,7 +41,8 @@ const trigger = { kind: "oats-trigger", schemaVersion: 1, description: "Review h
   spawn: { soul: "reviewer", purpose: "review-pr-{number}", task: "Review {repo}#{number} ({url})." } };
 const schedule = { kind: "oats-schedule", schemaVersion: 1, runsOn: "kb-host", owner: "github.com/kb-bot", run: "spawn", cron: "0 7 * * *", tz: "UTC", agent: "reviewer", task: "Write the nightly digest." };
 
-function fixture({ local = { host: { name: "kb-host" } }, files = {} } = {}) {
+// The named host trusts every workspace automation placed on it (0.30 automations.trust).
+function fixture({ local = { host: { name: "kb-host" }, automations: { trust: "*" } }, files = {} } = {}) {
   const fx = v2Deployment({
     name: "acme",
     souls: { reviewer: {} },
@@ -148,7 +149,7 @@ test("the list rows (the Desktop's contract): a trigger and a schedule each answ
 
 test("spawn.launchConfig (a trigger) and launchConfig (a spawn schedule) start the soul on that launch configuration; a template may set it", async (t) => {
   const fx = fixture({
-    local: { host: { name: "kb-host" }, "launch-configs": { fast: { harness: "claude", model: "sonnet" } } },
+    local: { host: { name: "kb-host" }, automations: { trust: "*" }, "launch-configs": { fast: { harness: "claude", model: "sonnet" } } },
     files: {
       "oats-triggers/kb-review.yaml": { yaml: { ...trigger, spawn: { ...trigger.spawn, launchConfig: "fast" } } },
       "ops/nightly.oats-schedule.yaml": { yaml: { ...schedule, launchConfig: "fast" } },
@@ -218,6 +219,53 @@ test("placement: runsOn names the host and owner the gh account; otherwise host-
   assert.match(test.problems[0], /not run on this host \(host-unnamed\)/);
 });
 
+test("0.30 automations.trust: a placed automation runs only when this host trusts it; untrusted is listed, reported by the tick and warned in workspace status with the line to add; '*' admits all; a stale entry warns; the committed workspace file refuses the key", async (t) => {
+  const fx = fixture({ local: { host: { name: "kb-host" } } });
+  t.after(() => fx.cleanup());
+  ok(fx.cli(["sync", "--json"]), "sync");
+  const trig = () => ok(fx.cli(["trigger", "show", "ws/kb-review", "--json"]), "show").trigger;
+  const sched = () => ok(fx.cli(["schedule", "show", "ws/nightly", "--json"]), "show").schedule;
+  const status = () => ok(fx.cli(["workspace", "status", "--json"]), "status");
+  const trustWarnings = () => status().warnings.filter((w) => w.code.startsWith("automation-"));
+  // No trust: matched on host and owner, and still nothing runs.
+  assert.deepEqual([trig().runsHere, trig().reason], [false, "untrusted"]);
+  assert.deepEqual([sched().runsHere, sched().reason], [false, "untrusted"]);
+  assert.match(trig().reasonDetail, /declared for this host, not trusted here; to run it, add the line "- ws\/kb-review" under automations: trust: in oats-local\.yaml/);
+  assert.deepEqual(trustWarnings().map((w) => [w.code, w.kind, w.id, w.remedy]), [
+    ["automation-untrusted", "trigger", "ws/kb-review", 'add the line "- ws/kb-review" under automations: trust: in oats-local.yaml'],
+    ["automation-untrusted", "schedule", "ws/nightly", 'add the line "- ws/nightly" under automations: trust: in oats-local.yaml']]);
+  assert.equal(status().automations.rows.find((r) => r.id === "ws/kb-review").reason, "untrusted");
+  const human = fx.cli(["workspace", "status"]);
+  assert.match(human.stdout, /automation-untrusted {2}trigger ws\/kb-review is declared for this host .* but not trusted here, so it does not run\n {4}add the line "- ws\/kb-review"/);
+  // The tick never runs it, and says so (it is this host's to decide).
+  fx.gh.pulls([pr(1)]);
+  const ctx = () => fx.inGh(() => S.scopeAutomations(fx.dep, {}));
+  const now = new Date("2026-09-26T12:00:00Z");
+  const untrusted = await fx.inGh(async () => T.tickTriggers(fx.dep, { now, io: { noLaunch: true }, ctx: await ctx() }));
+  assert.deepEqual(untrusted.map((r) => [r.trigger, r.action, r.reason]), [["ws/kb-review", "not-here", "untrusted"]]);
+  assert.deepEqual(T.liveTriggerInstances(fx.dep, "ws/kb-review"), []);
+  const due = new Date("2026-09-27T07:00:10Z");
+  const ran = await fx.inGh(async () => S.tickWorkspace(fx.dep, { now: due, io: { noLaunch: true }, reg: { maxConcurrent: 4, workspaces: [fx.dep] }, wsList: [fx.dep], ctx: await ctx() }));
+  assert.deepEqual(ran.filter((r) => r.action === "launched"), []);
+  // A trust entry admits exactly that automation; one naming nothing is a warning.
+  fx.setLocal({ host: { name: "kb-host" }, automations: { trust: ["ws/kb-review", "ws/gone"] } });
+  assert.deepEqual([trig().runsHere, trig().reason], [true, null]);
+  assert.deepEqual([sched().runsHere, sched().reason], [false, "untrusted"]);
+  assert.deepEqual(trustWarnings().map((w) => [w.code, w.id ?? w.entry]), [["automation-untrusted", "ws/nightly"], ["automation-trust-stale", "ws/gone"]]);
+  const fired = await fx.inGh(async () => T.tickTriggers(fx.dep, { now: new Date("2026-09-26T13:00:00Z"), io: { noLaunch: true }, ctx: await ctx() }));
+  assert.deepEqual(fired.map((r) => [r.trigger, r.action]), [["ws/kb-review", "fired"]]);
+  // '*' admits every automation placed here; the opt-out still wins on top.
+  fx.setLocal({ host: { name: "kb-host" }, automations: { trust: "*" }, schedules: { disabled: ["ws/nightly"] } });
+  assert.deepEqual([trig().runsHere, trig().reason], [true, null]);
+  assert.deepEqual([sched().runsHere, sched().reason, sched().enabledHere], [false, null, false]);
+  assert.deepEqual(trustWarnings(), []);
+  // Trust is a host fact: the committed workspace file refuses the key.
+  const wsFile = join(fx.member, "oats-workspace.yaml");
+  fx.commit({ "oats-workspace.yaml": { yaml: { ...YAML.parse(readFileSync(wsFile, "utf8")), automations: { trust: "*" } } } }, "trust in the workspace file");
+  const refused = fails(fx.cli(["sync", "--json"]), "E_WORKSPACE_SCHEMA", "a committed automations key");
+  assert.match(JSON.stringify(refused), /automations/);
+});
+
 test("each kind keeps its own opt-out: trigger disable writes triggers.disabled, schedule disable schedules.disabled; Git-defined ones are never edited or removed here", async (t) => {
   const fx = fixture({ files: { "oats-schedules/kb-review.yaml": { yaml: schedule } } });
   t.after(() => fx.cleanup());
@@ -265,7 +313,7 @@ test("the tick runs what this host runs: a workspace trigger fires under its qua
   const elsewhere = await fx.inGh(async () => T.tickTriggers(fx.dep, { now: new Date("2026-09-26T13:00:00Z"), io: { noLaunch: true }, ctx: await ctx() }));
   assert.deepEqual(elsewhere, []);
   // The named host logged in as another account: reported (it is this host's to fix).
-  fx.setLocal({ host: { name: "kb-host" } });
+  fx.setLocal({ host: { name: "kb-host" }, automations: { trust: "*" } });
   fx.gh.login("someone-else");
   const mismatch = await fx.inGh(async () => T.tickTriggers(fx.dep, { now: new Date("2026-09-26T13:00:00Z"), io: { noLaunch: true }, ctx: await ctx() }));
   assert.deepEqual(mismatch.map((r) => [r.trigger, r.action, r.reason]), [["ws/kb-review", "not-here", "owner-mismatch"]]);
@@ -299,7 +347,7 @@ test("the tick refreshes a stale snapshot at most once per interval, keeping the
   const fx = fixture();
   t.after(() => fx.cleanup());
   ok(fx.cli(["sync", "--json"]), "sync");
-  const local = { workspace: fx.ref, host: { name: "kb-host" } };
+  const local = { workspace: fx.ref, host: { name: "kb-host" }, automations: { trust: "*" } };
   let calls = 0;
   const io = { gh: () => ({ status: 0, stdout: "kb-bot\n" }), refresh: () => { calls++; return { ok: false, error: "remote down" }; } };
   const taken = Date.parse(A.readSnapshot(fx.dep).takenAt);
