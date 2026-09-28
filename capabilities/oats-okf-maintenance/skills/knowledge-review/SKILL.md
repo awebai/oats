@@ -7,7 +7,7 @@ description: >-
   through your tasks capability when you can, judge by knowledge-theory, then
   merge, amend and merge, request changes from the harvester, or close — never
   superseding a human-accepted decision silently. Use when TASK.md names a
-  knowledge-base PR, when a harvester answers you in the okf team, or when a
+  knowledge-base PR, when a harvester answers you, or when a
   trigger re-runs you on a PR you may already have reviewed.
 ---
 

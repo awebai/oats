@@ -137,10 +137,10 @@ export function notifyHarvester(flags, env = process.env, { view = viewPr } = {}
     'amend-request': `An amendment request on your harvest PR ${pr.url}: see the okf-review comment and reply with the change you would make.`,
     amended: `I amended your harvest PR ${pr.url}; see the okf-review comment.`,
   }[flags.state];
-  return { to: h.alias || h.instance, instance: h.instance, alias: h.alias, team: 'okf', subject: `okf: ${flags.state} ${pr.url}`, body, send: 'send this with your messaging capability in the okf team' };
+  return { to: h.alias || h.instance, instance: h.instance, alias: h.alias, subject: `okf: ${flags.state} ${pr.url}`, body, send: 'send this with your messaging capability' };
 }
 function text(event, r) {
-  if (event === 'notify-harvester') return `to: ${r.to} (team okf)\nsubject: ${r.subject}\n\n${r.body}`;
+  if (event === 'notify-harvester') return `to: ${r.to}\nsubject: ${r.subject}\n\n${r.body}`;
   const lines = [`${r.pr.url} ${r.pr.state}${r.pr.draft ? ' (draft)' : ''} ${r.pr.head}@${String(r.pr.headSha).slice(0, 12)} → ${r.pr.base} [${r.pr.labels.join(', ')}]`];
   lines.push(r.provenance.valid ? `provenance: run ${r.provenance.value.run}, source ${r.provenance.value.source.soul}/${r.provenance.value.source.instance}, harvester ${r.harvester.alias || r.harvester.instance}` : `provenance INVALID: ${r.provenance.problems.join('; ')}`);
   if (r.tasks) lines.push(`tasks: ${r.tasks.refs.join(', ') || '(none)'} — ${r.tasks.note}`);

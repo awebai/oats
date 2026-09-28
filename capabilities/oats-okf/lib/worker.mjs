@@ -37,7 +37,7 @@ export function completionCommand(source,id,judgmentFile) {return command(source
 // It homes in agents/oats-okf--knowledge-harvester/. Its instances get an
 // exact --name okf-harvester-<run> (50 characters): a derived
 // <agent>-<purpose> name would exceed the kernel's 64-character cap.
-export const HARVESTER_SOUL='oats.okf/knowledge-harvester',HARVESTER_AGENT='oats-okf--knowledge-harvester',HARVESTER_TEAM='okf';
+export const HARVESTER_SOUL='oats.okf/knowledge-harvester',HARVESTER_AGENT='oats-okf--knowledge-harvester';
 export const harvesterInstance=id=>`okf-harvester-${id}`;
 /** The harvester's own completion and status commands (oats.okf-harvest). The
  *  completion wrapper runs this source's frozen `oats okf complete` from the
@@ -46,15 +46,6 @@ export function harvesterCommands(source,id) {
   const tail=['--source',source.file,'--run',id];
   return {complete:['oats','okf-harvest','complete',...tail,'--judgment','<absolute-judgment.json>'].map(quote).join(' '),
     status:['oats','okf-harvest','harvest-status',...tail].map(quote).join(' ')};
-}
-/** The messaging capability the harvester soul resolves (from spawn --preview),
- *  so it can join the okf team; null when it resolves none. */
-function harvesterMessaging(source) {
-  try {
-    const preview=oats(['spawn',HARVESTER_SOUL,'--dir',source.context,'--preview','--json'],source.context,{timeout:90000});
-    const row=(Array.isArray(preview?.modules)?preview.modules:[]).find(m=>m?.layer==='messaging' && typeof m.name==='string');
-    return {messaging:row?row.name:null};
-  } catch(e) {return {messaging:null,error:`${e.code || 'E_RUNTIME'}: ${e.message}`};}
 }
 export function runSource(source,{noLaunch=false,manual=false,capturedInvocation,nativeRequest}={}) {
   const plan=capturedSource(source)?qualifyCapturedWorker(source,{context:capturedInvocation,nativeRequest}):null;
@@ -117,7 +108,7 @@ function spawnWorker(source,run,{parent=false}={}) {
     task=`Process only durable OKF run ${id}. Load the knowledge-harvest skill first.${recovery}\n\n${evidence}\n\nWrite ./work/judgment.json per the skill, then execute the completion command below, replacing only the quoted placeholder with the absolute judgment file path (shell-quote it). A successful command, not this task, is the delivery receipt. On failure retain the worker and report it; do not self-retire. On success report receipt then retire normally.\n\n${complete}\n`;
   } else {
     const cmd=harvesterCommands(source,id);
-    task=`Process only durable OKF run ${id}. Load the knowledge-harvest skill first.${recovery}\n\n${evidence}\n\nWrite ./work/judgment.json per the skill, then run the completion command below, replacing only the quoted placeholder with the absolute judgment file path (shell-quote it). It runs this source's frozen completion in the source deployment. A successful command, not this task, is the delivery receipt. On failure keep your home and report it; do not retire.\n\nAfter a successful completion, stay alive in the okf team until your PR is merged or closed. On every wake run the status command first, and retire only when it says retire or max-age. Never close the PR yourself.\n\nComplete: ${cmd.complete}\nStatus:   ${cmd.status}\n`;
+    task=`Process only durable OKF run ${id}. Load the knowledge-harvest skill first.${recovery}\n\n${evidence}\n\nWrite ./work/judgment.json per the skill, then run the completion command below, replacing only the quoted placeholder with the absolute judgment file path (shell-quote it). It runs this source's frozen completion in the source deployment. A successful command, not this task, is the delivery receipt. On failure keep your home and report it; do not retire.\n\nAfter a successful completion, stay alive until your PR is merged or closed. On every wake run the status command first, and retire only when it says retire or max-age. Never close the PR yourself.\n\nComplete: ${cmd.complete}\nStatus:   ${cmd.status}\n`;
   }
   const taskFile=join(dirname(runPath(source,id)),'TASK.md');
   const actualTask=run.capturedWorker?task.replace('On success report receipt then retire normally.',`On success report the actual receipt and include run ${id} in your final assistant reply. RETAIN this home/history. Public captured retirement is not qualified; never use legacy retirement or self-retire.`) :task;
@@ -143,11 +134,9 @@ function spawnWorker(source,run,{parent=false}={}) {
   const args=['spawn',HARVESTER_SOUL,'--name',harvesterInstance(id),'--dir',source.context,harnessFlag(source),source.execution.runtime,'--no-launch','--task-file',taskFile,'--json'];
   if(source.execution.model) args.push('--model',source.execution.model);
   if(parent) args.push('--parent',source.instance);
-  // Join the okf team through the soul's messaging capability, as a trigger
-  // spawn does; without one the harvester cannot talk to the maintainer.
-  const team=harvesterMessaging(source);
-  if(team.messaging) args.push('--provider',team.messaging,`join=${HARVESTER_TEAM}`);
-  run.team={team:HARVESTER_TEAM,messaging:team.messaging,...(team.error?{error:team.error}:{})};
+  // okf 4.0.2: no team join. The harvester lives in the deployment's default
+  // team, where the maintainer reaches it; a deployment that wants it in
+  // another team opts in locally, as for any soul.
   try {
     run.worker=oats(args,source.context,{timeout:90000});
     if(!run.worker.instance || !run.worker.home) fail('E_RUNTIME','spawn receipt lacks worker identity');

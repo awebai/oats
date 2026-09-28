@@ -74,7 +74,7 @@ export function complete(flags, env = process.env) {
   let answer; try { answer = JSON.parse(r.stdout); } catch { /* below */ }
   if (answer?.schemaVersion === 1 && answer.ok === true) return { deployment: source.context, ...answer.result };
   const code = answer?.error?.code || 'E_COMPLETE', message = answer?.error?.message || (r.error?.message || r.stderr || `exit ${r.status}`).trim();
-  if (INACTIVE.has(code)) fail('E_SOURCE_INACTIVE', `oats.okf cannot run for source soul ${source.agent} in ${source.context} (${code}: ${message}). Nothing was published: report this to the okf team and your operator, and stay.`, { cause: code });
+  if (INACTIVE.has(code)) fail('E_SOURCE_INACTIVE', `oats.okf cannot run for source soul ${source.agent} in ${source.context} (${code}: ${message}). Nothing was published: report this to your operator, and stay.`, { cause: code });
   fail(code, `${message} (completion ran in ${source.context}; keep your home and report)`);
 }
 /** "7d" | "48h" | "90m" | seconds → milliseconds. */
@@ -112,7 +112,7 @@ export function harvestStatus(flags, env = process.env, { now = Date.now(), view
   if (!judged || pending.length) { action = age >= limit ? 'max-age' : 'stay'; reason = !judged ? 'the run is not completed yet' : `destinations not delivered: ${pending.map((d) => d.alias).join(', ')}`; }
   else if (open.length) { action = age >= limit ? 'max-age' : 'stay'; reason = `open PR: ${open.map((d) => d.pr.url).join(', ')}`; }
   else { action = 'retire'; reason = destinations.some((d) => d.pr) ? 'every PR is merged or closed' : 'no PR was needed (no-change or directory publication)'; }
-  if (action === 'max-age') reason += `; older than harvester-max-age (${Math.round(limit / 3600000)}h): tell the okf team and retire, never close the PR`;
+  if (action === 'max-age') reason += `; older than harvester-max-age (${Math.round(limit / 3600000)}h): tell your operator and retire, never close the PR`;
   return { run: run.id, status: run.status, ageSeconds: Math.round(age / 1000), maxAgeSeconds: limit / 1000, destinations, action, reason };
 }
 function text(event, r) {

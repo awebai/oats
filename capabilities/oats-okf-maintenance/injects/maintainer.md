@@ -9,4 +9,4 @@ first, and judge by **knowledge-theory**.
   silently. A PR that would supersede a human-accepted decision gets
   `okf-needs-human` and a human, not a merge.
 - Settle the PR (merge, amend and merge, request changes, close), notify the
-  harvester in the okf team, then retire.
+  harvester, then retire.

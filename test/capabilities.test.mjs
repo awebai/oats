@@ -2978,10 +2978,10 @@ test("harvest briefing and staged inputs give an actual independent worker its c
   const task = readFileSync(join(run.home, "TASK.md"), "utf8");
   assert.match(task, /Never attach to or interview the source/);
   // okf 4.0.0: the package-soul harvester completes through its own capability (oats.okf-harvest),
-  // keeps its home on failure and stays in the okf team until its PR is merged or closed.
+  // keeps its home on failure and stays alive until its PR is merged or closed (okf 4.0.2: no okf team).
   assert.match(task, /'oats' 'okf-harvest' 'complete' '--source'/);
   assert.match(task, /On failure keep your home and report it/);
-  assert.match(task, /stay alive in the okf team until your PR is merged or closed/);
+  assert.match(task, /stay alive until your PR is merged or closed/); assert.doesNotMatch(task, /okf team/);
   assert.ok(existsSync(join(run.home, "work/input.json")));
   assert.ok(existsSync(join(run.home, "work/staging.json")));
   const result = f.complete(run, f.judgment(run, { drop: true }));
