@@ -221,7 +221,7 @@ test('soul page: team-model-2 shows "Teams here" from the soul teams route; with
   assert.equal(urls.some(([url]) => url === '/api/workspace-soul-teams'), false);
 });
 
-test("soul page: 'Teams here' is keyed by the roster row's kernel key: a package soul sends <package>/<soul>; a row without a key names the CLI (#275, #276)", async t => {
+test("soul page: 'Teams here' is keyed by the roster row's kernel key (always present, #276): a package soul sends <package>/<soul>, an external soul its name; a row without one names the CLI", async t => {
   const previous = currentWorkspace(); setWorkspace('/team');
   t.after(() => { setWorkspace(previous); resetCliStateForTests(); });
   await refreshCli({ api: async () => ({ ...doc('version'), features: [...doc('version').features, 'team-model-2'], ok: true, bin: '/fixture/bin/oats' }) });
@@ -242,7 +242,7 @@ test("soul page: 'Teams here' is keyed by the roster row's kernel key: a package
   const external = await open({ key: 'release-manager' }, 'external');
   assert.deepEqual(external.bodies, [{ soul: 'release-manager', action: 'show' }], 'the kind does not matter: the key does');
   const unkeyed = await open({}, 'package');
-  assert.equal(unkeyed.card.querySelector('.page-note').textContent, "For now, set this soul's teams with the CLI (oats soul teams): this OATS does not report its key yet.");
+  assert.equal(unkeyed.card.querySelector('.page-note').textContent, "Set this soul's teams with the CLI (oats soul teams): this Desktop's server does not report the soul's key.", 'a server from before #275');
   assert.equal(unkeyed.card.querySelector('button'), null);
   assert.deepEqual(unkeyed.bodies, [], 'nothing asked without the kernel key');
 });

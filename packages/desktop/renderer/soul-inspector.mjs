@@ -494,13 +494,13 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     // (kernel feature team-model-2): "Teams here", this computer's membership, editable.
     teamsHere?.dispose(); teamsHere = null;
     const teamModel2 = (cliStatus()?.features || []).includes('team-model-2');
-    // `oats soul teams` takes the kernel's soul key (the roster row's `key`: the bare name for a member
-    // soul, <package>/<soul> for a package soul). A row without one (the kernel does not report it yet)
-    // gets no card: the CLI says it. It opens by itself once the kernel carries the key (#275, #276).
+    // `oats soul teams` takes the kernel's soul key, on every roster row as `key` (#275, #276): the
+    // bare name for a member or external soul, <package>/<soul> for a package soul. A row without one
+    // (a Desktop server from before #275) gets no card: the CLI says it, and nothing is sent.
     const soulKey = typeof selection?.agent?.key === 'string' && selection.agent.key ? selection.agent.key : null;
     if (teamModel2 && !soulKey) {
       const { card: note } = pageCard(doc, 'Teams here', { lead: 'on this computer' });
-      note.append(node('p', "For now, set this soul's teams with the CLI (oats soul teams): this OATS does not report its key yet.", 'page-note'));
+      note.append(node('p', "Set this soul's teams with the CLI (oats soul teams): this Desktop's server does not report the soul's key.", 'page-note'));
       side.append(note);
     } else if (teamModel2) {
       const soulTeamsRoute = async body => teamsAnswer(await postJson(ctx, `/api/workspace-soul-teams${wsQuery()}`, body), 'soulTeams', 'The teams of this soul could not be read.');
