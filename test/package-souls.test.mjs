@@ -41,6 +41,7 @@ test("sync locks each package soul (name + digest); souls/workspace status list 
   const row = souls.find((s) => s.name === "keeper");
   assert.deepEqual({ kind: row.kind, package: row.package, version: row.version, commit: row.commit, qualifiedName: row.qualifiedName, origin: row.origin, work: row.work },
     { kind: "package", package: "acme.pkg", version: "1.0.0", commit: fx.pkg.commit1, qualifiedName: "acme.pkg/keeper", origin: "package acme.pkg v1.0.0", work: "directory" });
+  assert.equal(row.key, "acme.pkg/keeper", "a package soul's key is its qualified name");
   const text = fx.cli(["souls"]);
   assert.match(text.stdout, /keeper\s+package acme\.pkg v1\.0\.0/);
 
@@ -72,6 +73,7 @@ test("spawn by the qualified and the bare name materializes the soul at the lock
   const status = JSON.parse(fx.cli(["status", "--json"]).stdout);
   const keeper = status.agents.find((a) => a.name === "acme-pkg--keeper");
   assert.equal(keeper.instances.length, 2);
+  assert.equal(keeper.key, "acme.pkg/keeper", "the roster agent row carries the soul key (its dir name is acme-pkg--keeper)");
   assert.equal(keeper.instances[0].soul.status, "current", JSON.stringify(keeper.instances[0].soul));
   assert.equal(keeper.instances[0].soul.package, "acme.pkg");
 });
@@ -97,6 +99,7 @@ test("a bare name shared by a member soul and a package soul is E_SOUL_AMBIGUOUS
   assert.equal(rows.keeper.soulSource.repoKey, fx.key);
   assert.equal(rows.keeper.instances[0].soul.package, undefined);
   assert.equal(rows.keeper.instances[0].soul.status, "current");
+  assert.deepEqual([rows["acme-pkg--keeper"].key, rows.keeper.key], ["acme.pkg/keeper", "keeper"], "each agent row's soul key");
   const text = fx.cli(["status"]).stdout;
   assert.match(text, /acme-pkg--keeper {2}\[work: directory, repo: package acme\.pkg v1\.0\.0 @ [0-9a-f]{7}\]/);
   assert.match(text, /^ {2}keeper {2}\[work: directory, repo: ws @ [0-9a-f]{7}\]/m);

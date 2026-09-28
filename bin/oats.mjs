@@ -1093,15 +1093,15 @@ function workspaceItems(discovery, lock, local) {
   };
   for (const m of discovery.members) {
     if (!m.confirmed && !(discovery.standalone === true && m.key === discovery.key)) continue;
-    for (const s of m.souls) souls.push({ name: s.name, origin: originOf(s), kind: "member", repoKey: s.repoKey, commit: s.commit, ...teamsHere(s), private: s.private, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null, ...soulDefaults(s.definition) });
+    for (const s of m.souls) souls.push({ name: s.name, key: soulKeyOf(s), origin: originOf(s), kind: "member", repoKey: s.repoKey, commit: s.commit, ...teamsHere(s), private: s.private, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null, ...soulDefaults(s.definition) });
     for (const c of m.capabilities) capabilities.push({ name: c.name, origin: originOf(c), kind: "member", repoKey: c.repoKey, commit: c.commit, private: c.private, path: c.path, layer: c.manifest.layer ?? null, version: c.manifest.version ?? null });
   }
   for (const ext of discovery.external || []) {
     const s = ext.soul;
-    souls.push({ name: s.name, origin: `external ${s.repoKey} @ ${short(s.commit)}`, kind: "external", repoKey: s.repoKey, commit: s.commit, ...teamsHere(s), private: s.private, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null, ...soulDefaults(s.definition) });
+    souls.push({ name: s.name, key: soulKeyOf(s), origin: `external ${s.repoKey} @ ${short(s.commit)}`, kind: "external", repoKey: s.repoKey, commit: s.commit, ...teamsHere(s), private: s.private, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null, ...soulDefaults(s.definition) });
   }
   for (const s of discovery.packageSouls || []) {
-    souls.push({ name: s.name, qualifiedName: s.qualifiedName, origin: originOf(s), kind: "package", package: s.package, version: s.version, repoKey: s.repoKey, commit: s.commit, ...teamsHere(s), private: false, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null, ...soulDefaults(s.definition) });
+    souls.push({ name: s.name, key: soulKeyOf(s), qualifiedName: s.qualifiedName, origin: originOf(s), kind: "package", package: s.package, version: s.version, repoKey: s.repoKey, commit: s.commit, ...teamsHere(s), private: false, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null, ...soulDefaults(s.definition) });
   }
   for (const [id, entry] of Object.entries(lock?.packages || {})) {
     for (const name of entry.capabilities) capabilities.push({ name, origin: originOf({ package: id, version: entry.version }), kind: "package", package: id, version: entry.version, commit: entry.commit, private: false });
@@ -1727,6 +1727,16 @@ function soulRepoLabel(a, ws) {
   const moved = stamp.current && stamp.commit && stamp.current !== stamp.commit ? ` (member now @ ${short7(stamp.current)})` : "";
   return `${memberLabel(stamp.repoKey)} @ ${short7(stamp.commit)}${moved}`;
 }
+/** A roster agent's soul key: the qualified name of a package soul, else the recorded agent (soul) name;
+ *  null when no instance records a workspace soul. Exactly soulKeyOf for the soul it was spawned from. */
+function agentSoulKey(a) {
+  for (const i of a.instances || []) {
+    const soul = i?.workspace?.soul;
+    if (!soul || typeof soul !== "object") continue;
+    return soul.package && typeof soul.qualifiedName === "string" ? soul.qualifiedName : (typeof i.agent === "string" ? i.agent : a.name);
+  }
+  return null;
+}
 const short7 = (oid) => (typeof oid === "string" ? oid.slice(0, 7) : "?");
 
 async function status() {
@@ -1739,6 +1749,9 @@ async function status() {
   const verbose = args.includes("--verbose");
   const problems = legacyLayoutProblems(root);
   if (args.includes("--json")) {
+    // The soul key (feature launch-preference): what souls.teams / souls.default / souls.launch and
+    // `oats soul teams <key>` use — from the instances' records, so it needs no remote.
+    for (const a of data) a.key = agentSoulKey(a);
     if (ws) for (const a of data) {
       const stamp = ws.souls.get(a.name);
       if (stamp) a.soulSource = { repoKey: stamp.repoKey, commit: stamp.commit, path: stamp.path, ...(stamp.current ? { current: stamp.current, status: stamp.current === stamp.commit ? "current" : "moved" } : {}) };

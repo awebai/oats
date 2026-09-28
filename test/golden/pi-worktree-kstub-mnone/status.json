@@ -264,6 +264,7 @@
           }
         }
       ],
+      "key": "dev",
       "soulSource": {
         "repoKey": "local/<base>/remotes/ws.git",
         "commit": "<sha>",
