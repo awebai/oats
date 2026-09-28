@@ -275,7 +275,7 @@ using the durable descriptor and source soul selector. Dispatch remains activati
 and trust gated after retirement, without inheriting another instance's identity.
 Registration idempotently creates/verifies the job; setup failures are retryable,
 and disabled jobs are not silently re-enabled. No host timer is installed without
-explicit operator consent. See [schedules](schedules.md#okf-v2-source-jobs).
+explicit operator consent. See [schedules](schedules.md#knowledge-harvest-jobs).
 
 ## Independent judgment and delivery
 

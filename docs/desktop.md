@@ -1,9 +1,10 @@
 # OATS Desktop
 
-The OATS Desktop app is the control panel for OATS deployments: the agent
-roster and hierarchy, brain/markdown/task/state views, and real terminal
-attach to running agents' tmux sessions. With a compatible `oats` CLI
-installed it can also spawn agents from the Soul roster.
+The OATS Desktop app is the control panel for an OATS deployment: the
+workspace and its souls, the agent roster and hierarchy, each instance's
+files, state and knowledge, and real terminals attached to running agents'
+sessions. With a compatible `oats` CLI installed it also spawns, starts,
+retires and schedules agents.
 
 ## Install
 
@@ -16,7 +17,7 @@ Download the installer for your platform from the
 | macOS x64 (Intel) | DMG + ZIP | ad-hoc signed — see below |
 | Linux x64 | AppImage + DEB | requires `tmux` |
 
-**Windows and Linux arm64 are not supported in 0.19.x.**
+Windows and Linux arm64 are not supported.
 
 Verify downloads against the release's `SHA256SUMS.txt`. GitHub
 build-provenance attestations are published for every asset
@@ -44,11 +45,10 @@ it, but opening a terminal will fail until tmux is installed. The DEB
 declares the dependency; for the AppImage install it yourself
 (`apt install tmux`, `dnf install tmux`, …) and verify with `tmux -V`.
 
-### The `oats` CLI (for Spawn)
+### The `oats` CLI
 
-Reads — roster, hierarchy, brain, files, terminals — work with no CLI at
-all. Spawning agents runs through an installed `oats` CLI with Desktop API
-v1:
+Reads (roster, hierarchy, files, terminals) work with no CLI at all.
+Everything else runs through an installed `oats` CLI:
 
 ```bash
 npm install -g @awebai/oats
@@ -59,26 +59,16 @@ the one with **this Desktop's own version** — the app's degradation card
 shows that exact `npm install -g @awebai/oats@<version>` command, and
 copying it from the card is the reliable route.
 
-Each Desktop accepts a band of released CLI versions around its own —
-prereleases are never accepted — and individual features may sit behind a
-higher floor (spawn-time agent relations do; the relation controls fail closed
-naming the version they need). **The app states both**: the degradation card
-shows the accepted range and the exact install command, and the relation note
-names its floor. This guide deliberately does not repeat those numbers — it is
-rolling documentation and would go stale against the app; the versioned
-[release notes](release-notes/) record the band for each release, and
-[docs/desktop-cli-api.md](desktop-cli-api.md) is the contract of record beside
-the code that enforces it. The app discovers the CLI automatically
+Each Desktop accepts a band of released CLI versions around its own
+(prereleases never), and a feature may need a higher floor; the app states
+both, so this guide does not repeat the numbers. The contract is
+[desktop-cli-api.md](desktop-cli-api.md). The app discovers the CLI automatically
 (your PATH, the npm global prefix, a login shell) and re-probes on launch,
 app focus, and Retry. Until a compatible CLI is verified, the Soul roster's
 **Spawn** buttons are disabled behind one card showing what was detected,
 what is required, **Choose oats…** (pick the binary yourself — the choice
 persists), **Retry**, a docs link, and the copyable install command. The
-app never installs the CLI itself. Memory harvest runs through the same
-CLI boundary and is available from an instance's action menu.
-
-The probe/mutation contract is specified in
-[desktop-cli-api.md](desktop-cli-api.md).
+app never installs the CLI itself.
 
 ## Opening a workspace
 
@@ -89,7 +79,7 @@ the directory (the operator's choice) holding `oats-local.yaml` and `agents/`.
 A picked folder without `oats-local.yaml` is offered onboarding instead. The
 Desktop never parses the deployment: its members, lock state and header come
 from `oats workspace status`, and its instances from the deployment's one
-`agents/` root. There is no team scope and no `oats-config.yaml`.
+`agents/` root.
 Added workspaces are remembered and offered as suggestions next time.
 
 Launch flags for scripted use: `--dir <workspace>` and `OATS_DESKTOP_PORT`.
@@ -99,7 +89,7 @@ Launch flags for scripted use: `--dir <workspace>` and `OATS_DESKTOP_PORT`.
 Open **Schedules** in the selected workspace to launch a new agent on a cron,
 wake an existing agent with a message, or harvest its knowledge. **Schedule…**
 on a Soul roster card preselects that soul. Choose the task or message, repeat
-pattern and time zone; new agent jobs also offer runtime, model, permissions
+pattern and time zone; new agent jobs also offer harness, model, permissions
 and session backend. The list shows the next run, last observed outcome and
 whether the host scheduler is enabled. Pause, edit, run now and delete operate
 on that workspace's saved jobs. Launching an agent is reported separately from
@@ -120,19 +110,21 @@ registered remote workspace the timer and definitions live on that server, so
 they do not depend on the Mac staying awake. See [Schedules](schedules.md) for
 the CLI, cron semantics, observed outcomes and recovery commands.
 
-## Migrating from the web panel / TUI pane
+## Attach files and screenshots
 
-0.18.2 removes the legacy `oats.web` browser panel, `oats pane`, and the
-`@awebai/oats/control-pane` export. The Desktop app replaces all
-three. Migration:
+Drop a file onto an agent terminal to insert its path into that agent's draft.
+Pasting an image from the clipboard uses the same attachment path. Neither
+operation presses Enter. Text paste continues to use the terminal's normal
+paste behavior. A drop targets the pane under the pointer, including a visible
+pane in a split.
 
-1. Update the CLI everywhere: `npm install -g @awebai/oats`.
-2. Run `oats doctor` at each workspace scope and follow its guidance to
-   remove stale `oats.web` config entries, locks, and installed artifacts.
-3. Install the Desktop app (above) and open your workspace.
-
-The full breaking-change list is in the
-[v0.18.2 release notes](release-notes/v0.18.2.md).
+Local files are referenced in place. Clipboard images are saved privately in
+Desktop's application-data `attachments` directory and retained so an agent can
+read them later. For remote terminals, Desktop calls the installed CLI's
+`session upload` operation; it inserts the returned path only after the file
+has reached the execution host. Both CLI installations must advertise
+`session-upload`. A failed transfer leaves the draft unchanged and shows an
+error in the terminal. Each drop/paste accepts up to 16 files totaling 25 MB.
 
 ## Security posture
 
@@ -158,47 +150,10 @@ The full breaking-change list is in the
 | Terminals fail to open ("could not attach") | tmux missing, or no live session for that instance. Install tmux (`tmux -V`); check `tmux ls`. |
 | Can't select/copy text in a terminal tab | The terminal runs with tmux mouse handling, so a plain drag scrolls/passes through. Hold **Option** (macOS) or **Shift** while dragging to make a local selection, then copy (Cmd+C / right-click → Copy). |
 | macOS "app is damaged / can't be opened" | Ad-hoc-signed (not notarized) build + quarantine. Right-click → Open, or clear the quarantine attribute (above). If it persists, verify the bundle: `codesign --verify --deep --strict --verbose=2 "/Applications/OATS Desktop.app"` — a non-zero exit means a broken artifact, report it. |
-| Roster empty | The opened directory isn't an OATS workspace (needs `agents/`, or a team scope). Use the workspace switcher → Add workspace to select the right root. |
+| Roster empty | The opened directory isn't an OATS deployment (it needs `oats-local.yaml` and `agents/`). Use the workspace switcher → Add workspace to select the right folder. |
 
 For bugs, attach the terminal output of the app (`OATS Desktop` prints
 server and CLI-discovery logs to stdout) and your platform/arch.
-
-## Release verification ownership
-
-Installer CI gates what headless runners can prove reliably for every
-published platform/architecture: electron-builder completes, the expected
-DMG/ZIP/AppImage/DEB artifacts exist, both packaged macOS `.app` bundles
-pass strict deep codesign verification of their complete ad-hoc signatures
-(`codesign --verify --deep --strict`), node-pty's packaged `spawn-helper` is
-executable, and node-pty loads and spawns under the packaged Electron ABI.
-The macOS x64 leg cross-builds on macos-14 and installs Rosetta 2 so that its
-x64 Electron + node-pty ABI probe really executes; a wrong-architecture
-native module fails that leg.
-
-CI does **not** gate the packaged GUI launch: ad-hoc-signed, non-notarized
-Electron apps do not
-have a reliable interactive windowserver in headless CI. Post-publish launch
-acceptance is therefore owned by the operator/maintainer, using the actual
-released installers (not a source checkout):
-
-1. Verify the asset checksum/attestation, install it outside the source tree,
-   and on macOS use right-click → **Open** for the Gatekeeper step (ad-hoc
-   signatures carry no identified-developer identity).
-2. Launch OATS Desktop and open a real deployment; verify roster, brain and
-   Markdown reads.
-3. Attach an existing tmux terminal, confirm input/output, and close the tab
-   (the durable tmux window must survive).
-4. Verify the released global CLI is detected and Spawn is enabled; hide or
-   mismatch the CLI and confirm reads/terminal still work while Spawn disables
-   with recovery guidance.
-5. Repeat per published architecture where hardware is available. In
-   particular, launch-check macOS x64 on an Intel Mac if one is available;
-   CI's Rosetta ABI probe is the native-module proof, while this is the actual
-   shipped-installer/user-launch proof.
-
-Record the installed version, platform/architecture and outcome in the
-release verification notes. This post-publish check is acceptance — it does
-not weaken the pre-publish build/inventory/ABI gates.
 
 ## Building from source
 
@@ -210,19 +165,3 @@ certificate auto-discovery disabled) and
 marked build-verify mode (inventory + strict codesign verification +
 node-pty ABI, no GUI launch); a local
 interactive run may also exercise the launch phase.
-
-### Attach files and screenshots
-
-Drop a file onto an agent terminal to insert its path into that agent's draft.
-Pasting an image from the clipboard uses the same attachment path. Neither
-operation presses Enter. Text paste continues to use the terminal's normal
-paste behavior. A drop targets the pane under the pointer, including a visible
-pane in a split.
-
-Local files are referenced in place. Clipboard images are saved privately in
-Desktop's application-data `attachments` directory and retained so an agent can
-read them later. For remote terminals, Desktop calls the installed CLI's
-`session upload` operation; it inserts the returned path only after the file
-has reached the execution host. Both CLI installations must advertise
-`session-upload`. A failed transfer leaves the draft unchanged and shows an
-error in the terminal. Each drop/paste accepts up to 16 files totaling 25 MB.
