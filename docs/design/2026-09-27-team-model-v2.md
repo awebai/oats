@@ -140,6 +140,10 @@ The Desktop gets the same controls (Setup: this deployment's teams + the default
   - creates the account (`aw init --new-account --username …`) when none exists;
   - creates every declared team that the workspace doesn't map yet;
   - writes each resulting id into THIS deployment's `oats-local.yaml` `teams:` (and `defaultTeam` for the first), directly: it's local config, with no commit and no PR.
+  - **Three setup acts, by what the team is** (the co-lead found this gap while writing the onboarding skill, 2026-09-28; provider-side only, no kernel change):
+    - **A new LOCAL (personal) team:** `oats aweb setup --create <label>` creates it at the provider (the label normalized per aweb's name rule), then records it with `oats teams add <label> --team <id>`. This is the ONLY way to get a new personal team: `oats teams add` needs an existing id, so a local team is never declared without one.
+    - **A committed SHARED team without an id** (declared in `oats-workspace.yaml`, not yet created): its OWNER's `oats aweb setup` creates it and PRINTS the id with the exact line to commit (`teams: { <label>: { team: <id> } }`, by PR). Setup never edits the committed file.
+    - **An existing SHARED team the root isn't in:** `oats aweb setup --join <label> --invite <token>` (the owner's invite).
   - It never runs at spawn, mint, retire or wake.
 - **What aweb allows today** (the messaging lane, from aweb's lead, 2026-09-27):
   - **The first account and its default team:** fully automatable (`aw init --new-account --username …`).
