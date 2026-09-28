@@ -3137,7 +3137,7 @@ async function serverRouteCmd() {
 // blame` pointing at the commit that last changed each command.
 const TYPED_CLI_FAILURES = new Set(["unsafe-config-key", "unsafe-config-value"]);
 /** Removed 0.24 verbs → their v2 replacement (workspace model v2, decision 5). Checked before capability dispatch. */
-const REMOVED_VERBS = { prepare: "`oats onboard` / `oats sync` to set up a workspace, and `oats spawn <soul> --preview` to see what a spawn would resolve (the captured/portable path was removed in 0.26)", create: "author souls/<name>/soul.yaml + AGENTS.md in a member repository, then `oats sync`", type: "the soul's own soul.yaml in its member repository (agent types were a classic config block)", soul: "the soul's soul.yaml / AGENTS.md in its member repository, then `oats sync` (per-spawn choices: spawn flags or a launch configuration)", install: "oats sync", restore: "oats sync", init: "oats-local.yaml + oats sync", use: "soul.yaml capabilities: { <cap>: { from } } + workspace defaults", trust: "declaring the package in packages: (package approval was removed; oats sync locks commit + integrity)", list: "oats workspace status | oats capabilities", catalog: "oats package add <id> <version> (bare versions resolve through package-catalog.json)", remove: "oats package remove <id>", migrate: "a rebuild (no migration: docs/design/2026-09-23-workspace-module-contracts.md)", config: "oats-local.yaml (host settings) and oats-workspace.yaml (shared)", inject: "injection overrides are not part of the workspace model yet; edit the capability inject in its member repo" };
+const REMOVED_VERBS = { prepare: "`oats onboard` / `oats sync` to set up a workspace, and `oats spawn <soul> --preview` to see what a spawn would resolve (the captured/portable path was removed in 0.26)", create: "author souls/<name>/soul.yaml + AGENTS.md in a member repository, then `oats sync`", type: "the soul's own soul.yaml in its member repository (agent types were a classic config block)", install: "oats sync", restore: "oats sync", init: "oats-local.yaml + oats sync", use: "soul.yaml capabilities: { <cap>: { from } } + workspace defaults", trust: "declaring the package in packages: (package approval was removed; oats sync locks commit + integrity)", list: "oats workspace status | oats capabilities", catalog: "oats package add <id> <version> (bare versions resolve through package-catalog.json)", remove: "oats package remove <id>", migrate: "a rebuild (no migration: docs/design/2026-09-23-workspace-module-contracts.md)", config: "oats-local.yaml (host settings) and oats-workspace.yaml (shared)", inject: "injection overrides are not part of the workspace model yet; edit the capability inject in its member repo" };
 try {
 // The captured/portable path was removed in 0.26 (lead decisions on (e), D2/D3):
 // its selectors and an inherited captured context are refused, never quietly
@@ -3397,7 +3397,13 @@ Usage:
                                             its own repo's souls) + the locked packages
   oats souls [--dir <d>] [--json]            every soul of every confirmed member + external souls
                                             (souls have no private mode), with origin
-                                            (member <key> @ <commit> | package <id> v<ver>) and team
+                                            (member <key> @ <commit> | package <id> v<ver>) and its
+                                            teams on this deployment
+  oats teams [--json] | add <label> --team <id> [--description <d>] | remove <label>
+      | default <label>  [--dir <d>]        this deployment's teams (shared + local), the
+                                            default; add/remove/default edit oats-local.yaml
+  oats soul teams <soul>|'*' [--add a,b] [--remove a,b] [--default <l> | --clear-default]
+      [--dir <d>] [--json]                  which teams a soul (or every soul) belongs to here
   oats instance git <instance> [--home <abs>] [--dir <d>] [--json]
                                              read-only Git observation of the instance's work
                                              tree: branch, status (renames kept), ahead/behind
