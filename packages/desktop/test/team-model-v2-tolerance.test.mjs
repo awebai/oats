@@ -31,6 +31,8 @@ test('teams document: 0.29 unchanged; v2 drops primary/unmapped, adds left[] and
   assert.match(defaultTeamText(d.defaultTeam), /this workspace's default on this computer$/);
   const soul = structuredClone(v2); soul.result.defaultTeam.from = 'soul'; assert.ok(teamsDocument(soul, 'messaging:teams'));
   const unmapped = structuredClone(v2); unmapped.result.defaultTeam.team = null;
+  // K1 addendum 4 (final): an UNMAPPED default is {label, team: null, from}, never null; null only when none is configured.
+  assert.deepEqual(teamsDocument(unmapped, 'messaging:teams').defaultTeam, { label: 'antares-oats', team: null, from: 'deployment' });
   assert.match(defaultTeamText(teamsDocument(unmapped, 'messaging:teams').defaultTeam), /^antares-oats \(no provider id yet\)/, 'an unmapped default names its label');
   const none = structuredClone(v2); none.result.defaultTeam = null; assert.equal(teamsDocument(none, 'messaging:teams').defaultTeam, null, 'none configured');
   assert.match(defaultTeamText(teamsDocument(r29, 'messaging:teams').defaultTeam), / · /, '0.29 words unchanged');
