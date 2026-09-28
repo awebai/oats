@@ -1,37 +1,24 @@
 # Knowledge, instances and evolving expertise
 
-This is the canonical explanation of OATS’s knowledge and specialisation model, consolidated from the founder’s knowledge doctrine, the September 16 topology/speciation exploration and the subsequent design decisions of September 19, 2026.
-
-The [README](../README.md) introduces the framework. This document explains the reasoning behind its default knowledge model and the freedom other capabilities must retain. It records design direction, not a claim that every mechanism is implemented; see [implementation boundaries](#implementation-boundaries).
+This is the canonical explanation of the OATS knowledge and specialization model: the reference theory behind the default `oats.okf` capability, and the freedom other knowledge capabilities retain. The [README](../README.md) introduces the framework. This page describes the model, not every mechanism that implements it; see [implementation boundaries](#implementation-boundaries).
 
 ## The central distinction
 
-> **A soul defines a reusable specialisation. An instance develops expertise in a particular situation. Knowledge preserves learning that should survive that situation.**
+> **A soul defines a reusable specialization. An instance develops expertise in a particular situation. Knowledge preserves learning that should survive that situation.**
 
-OATS separates these things so that a team can retain useful learning without making its expertise inseparable from one conversation, machine, model or knowledge system.
+Separating them lets a team retain learning without tying its expertise to one conversation, machine, model or knowledge system.
 
 - A **soul** is an enduring identity and reviewed curriculum: responsibilities, boundaries, capabilities, skills and knowledge interests.
 - An **instance** is a particular working continuity, with its own assignment, context, state and lifecycle.
 - A **knowledge capability** determines how relevant knowledge is provided, how experience is captured and how learning is retained or shared.
 
-The soul is not the complete mind of a running agent. Nor is its definition a place to paste everything an instance has learned.
+The soul is not the complete mind of a running agent, nor a place to paste everything an instance has learned.
 
 ## Instances can be short-lived or long-running
 
-An instance is not necessarily a single task or chat session. An assignment may span many tasks and supported session continuations.
+An instance is not necessarily a single task or chat session; an assignment may span many tasks and session continuations. Short-lived developer and reviewer instances suit bounded implementation work; longer-running instances of expertise souls suit planning, investigation and sustained work on a domain. These are examples, not rules.
 
-Short-lived developer and reviewer instances are useful for bounded implementation work. Longer-running instances of expertise souls are useful for planning, investigation and sustained work on a domain. These are examples, not rules preventing experts from implementing changes or temporary instances from producing valuable learning.
-
-Over time, an instance may develop:
-
-- Familiarity with the systems and people relevant to its assignment.
-- Verified observations, provisional hypotheses and unresolved questions.
-- An understanding of what has already been tried and why it failed.
-- Effective procedures and a sense of which details matter together.
-
-This is **situated expertise**. It is valuable even when some of it belongs only to that assignment.
-
-“Disposable instance” describes a lifecycle possibility, not a recommendation to discard context frequently. Retirement should preserve required learning, work and handoff evidence. Duration alone does not turn an instance into a soul.
+Over time, an instance develops familiarity with the relevant systems and people, verified observations and open questions, an understanding of what has been tried and why it failed, and effective procedures. This is **situated expertise**, valuable even when some of it belongs only to that assignment. "Disposable" describes a lifecycle possibility, not a recommendation to discard context often. Retirement should preserve required learning, work and handoff evidence, and duration alone does not turn an instance into a soul.
 
 ### Four different kinds of value
 
@@ -42,32 +29,26 @@ This is **situated expertise**. It is valuable even when some of it belongs only
 | A working understanding of the particular problem | Instance context |
 | Unfinished work, current experiments and next steps | Instance state |
 
-The same investigation can produce all four. A new verification procedure may become a skill; the reason it is necessary may become a lesson; the current experiment and next action remain local state.
-
-Persistence is not the only distinction. Information may remain useful for months and still be specific to an investigation. Conversely, a narrowly applicable lesson may deserve preservation because an appropriate future instance will need it.
+One investigation can produce all four: a new verification procedure may become a skill, the reason it is necessary a lesson, and the current experiment and next action remain local state. Persistence is not the distinction: information may stay useful for months and still be specific to one investigation.
 
 ## Shared souls do not imply identical instances
 
-Several developers can use instances of the same semantic-layer expert. One studies revenue definitions, another investigates performance, and another supports a warehouse transition.
+Several developers can use instances of the same semantic-layer expert: one studies revenue definitions, another investigates performance, another supports a warehouse transition. They share a specialization but develop different working understanding. Neither person-to-instance nor instance-to-task needs to be one-to-one.
 
-They share a specialisation but develop different working understanding. A person may have several instances; one instance may handle many tasks. Neither relationship needs to be one-to-one.
-
-A shared knowledge base is not a shared active mind. Making a finding available does not mean every instance has read or understood it. In the reference model, instances obtain relevant orientation at session start, after context compaction and when a decision may already have been made. They fetch detail selectively rather than loading the whole base.
-
-The knowledge capability can choose different conventions for that reading and refresh process. It also determines which experience remains with an instance and which becomes available to future instances. It does not redefine the kernel’s source or instance identity.
+A shared knowledge base is not a shared active mind: making a finding available does not mean every instance has read it. In the reference model, instances consult relevant knowledge at session start, after context compaction and when a decision may already have been made, fetching detail selectively. The knowledge capability chooses these conventions and decides which experience stays with an instance; it does not redefine the kernel's source or instance identity.
 
 ## What deserves to become knowledge
 
 > **Knowledge is what makes an expert an expert in a subject or project. It is not a description of what lives in the code.**
 
-Code is the truth about code. A stored description of modules, functions or configuration competes with the repository and becomes misleading when it drifts. Information already implicit and quickly learnable from the repository should not be duplicated in a knowledge base.
+Code is the truth about code. A stored description of modules, functions or configuration competes with the repository and misleads once it drifts.
 
 The reference promotion test asks:
 
 1. **Would an appropriate future instance act differently for knowing this?**
 2. **Could it not have obtained this simply by reading the repository?**
 
-Both should be yes. Appropriate does not mean every instance: specialised learning can be valuable without becoming everyone’s initial context.
+Both answers must be yes. "Appropriate" does not mean every instance: specialized learning can be valuable without becoming everyone's initial context.
 
 ### Preserve judgment
 
@@ -83,7 +64,7 @@ The reference model accepts:
 - **Review and process patterns:** verified judgment that code alone does not communicate.
 - **Maintained slow state:** a dated interpretation of an area that orients future work.
 
-Human-accepted decisions pass the promotion bar by construction. Preserve their meaning, scope and acceptance evidence rather than having a harvester re-judge the person. This does not remove confidentiality, provenance or duplication checks.
+Human-accepted decisions pass the promotion bar by construction: preserve their meaning, scope and acceptance evidence rather than having a harvester re-judge the person. Confidentiality, provenance and duplication checks still apply.
 
 ### Keep the larger picture, not a second issue tracker
 
@@ -91,9 +72,7 @@ A useful slow-state record might explain:
 
 > We are replacing approach A with B because of this limitation. These parts are established; this unresolved question prevents the next stage.
 
-It must have a clear scope, a responsible maintenance process, an as-of date and an update or supersession rule. An owning soul’s role is to consume the relevant context and capture evidence; ownership does not make each working instance responsible for directly maintaining the base.
-
-The task tracker remains authoritative for issue status. Knowledge can link a decision to the work that established it, or explain why a blocker matters, without copying lists of open issues into permanent prose.
+It needs a clear scope, a responsible maintenance process, an as-of date and an update or supersession rule. Ownership does not make each working instance responsible for maintaining the base directly. The task tracker remains authoritative for issue status; knowledge can link a decision to the work that established it without copying lists of open issues into permanent prose.
 
 ### Put other material elsewhere
 
@@ -105,17 +84,13 @@ The task tracker remains authoritative for issue status. Knowledge can link a de
 | Current investigation, provisional reasoning and next action | Instance context and state |
 | Raw records and notes awaiting judgment | Evidence, not accepted knowledge |
 
-A reasoned approach can be a Playbook; a bare sequence of commands belongs in a skill. If an insight already has an authoritative home, point to it rather than copying it.
+A bare sequence of commands belongs in a skill; if an insight already has an authoritative home, point to it. Exclude secrets, improperly disclosed private material, wholesale copies of third-party messages, tool noise and ordinary task residue. If code, a test or a clearer contract can eliminate a recurring problem, fix it instead of writing it down.
 
-Exclude secrets, improperly disclosed private material, indiscriminate third-party message copying, tool noise and ordinary task residue. A review pattern may cite the verified, disclosure-appropriate evidence that established it; that is not permission to ingest messages wholesale.
+"Invariant across incarnations" means useful beyond its author, not true forever. Date and scope contingent claims, and supersede changed decisions explicitly rather than leaving contradictory truths or erasing their history.
 
-If code, a test or a clearer contract can eliminate a recurring problem, pursue that fix. A knowledge entry is not a substitute for removing a preventable defect.
+## Default organization: centralized and per soul
 
-“Invariant across incarnations” means useful beyond its author, not true for every task forever. Date and scope contingent claims. Supersede changed decisions explicitly rather than leaving contradictory truths or erasing their history.
-
-## Default organisation: centralised and per soul
-
-The chosen default is a shared knowledge base with a stable knowledge home for each adopted soul. It provides a simple starting point without requiring a team to design a topic taxonomy first.
+The default is a shared knowledge base with a stable knowledge home for each adopted soul, so a team need not design a topic taxonomy first.
 
 ```text
 A team's chosen knowledge base
@@ -124,33 +99,27 @@ A team's chosen knowledge base
   customer-support-expert
 ```
 
-This is an illustrative organisation, not a kernel schema or a requirement to use those folder names.
+The layout is illustrative, not a kernel schema.
 
 - Instances of a soul consult its accepted expertise and relevant shared material.
 - Their harvests have explicit destinations; task context is not published wholesale.
-- A claim has one canonical home. Other readers use references rather than copies.
-- A public soul’s publisher does not become the default recipient of an adopter’s private learning.
-- Knowledge identity and lifetime must not depend on one instance or merely on a changeable display name.
+- A claim has one canonical home; other readers use references rather than copies.
+- A public soul's publisher does not become the default recipient of an adopter's private learning.
+- Knowledge identity and lifetime do not depend on one instance or on a changeable display name.
 
-In the reference model, **owns is harvest routing**, not personal authorship, an access right or a duty for ordinary souls to keep the base honest. **Reads is context selection**, not an access list. Actual repository/service access still governs what can be read.
-
-Centralisation simplifies the initial destination of a harvest. It does not remove the need for judgment, deduplication, freshness or acceptance.
+In the reference model, **owns is harvest routing**, not authorship, an access right or a duty to keep the base honest. **Reads is context selection**, not an access list; repository or service access still governs what can be read. Centralization simplifies where a harvest goes; it does not remove the need for judgment, deduplication, freshness or acceptance.
 
 ## Per-soul knowledge can evolve
 
-Fluidity depends on being able to revise expertise boundaries, not on naming the top-level collections after topics rather than souls.
+Fluidity depends on being able to revise expertise boundaries, not on naming collections after topics rather than souls.
 
 ### Grow without creating another soul
 
-A kernel expert starts with decisions about capability boundaries and execution authority. Its knowledge later develops sections for runtime behaviour, capabilities and packaging.
+A kernel expert that starts with capability boundaries may later develop sections for runtime behavior and packaging. It can remain one soul while its instances routinely need those subjects together; size alone is not evidence for a split.
 
-It can remain one soul if its instances routinely need those subjects together. A large collection or a new section is not sufficient evidence for a split.
+### Split a recurring specialization
 
-### Split a recurring specialisation
-
-An overall expert initially handles project direction and some UX work. Over time, UX assignments consistently require different skills and reading context.
-
-A reviewed change can establish a UX-expert soul:
+An overall expert handles project direction and some UX work until UX assignments consistently require different skills and reading context. A reviewed change can then establish a UX-expert soul:
 
 ```text
 Before                              After
@@ -161,50 +130,34 @@ project-expert                      project-expert
                                       UX decisions
 ```
 
-The specialist material has one canonical home, not a copy in both collections. Role instructions, skills and knowledge declarations are reconciled together.
+The specialist material keeps one canonical home, and role instructions, skills and knowledge declarations are reconciled together.
 
 ### Merge or widen
 
-Separate CLI and runtime experts may repeatedly need the same knowledge and skills. Their boundary may create more handoffs than useful specialisation.
-
-A reviewed change can consolidate them into a kernel expert. Reconcile overlapping claims, preserve provenance and references, and deliberately retire or revise the former definitions. Do not concatenate conflicting collections and call the result accepted knowledge.
+Separate CLI and runtime experts whose boundary creates more handoffs than useful specialization can be consolidated into a kernel expert by a reviewed change. Reconcile overlapping claims, preserve provenance and references, and deliberately retire or revise the former definitions; concatenating conflicting collections is not accepted knowledge.
 
 ### Reassign a concept without changing the roster
 
-A kernel decision may initially land with the overall expert because that instance investigated it. Moving its canonical home to the kernel expert need not create a new soul. Other readers keep access through the capability’s supported reference or migration mechanism.
+A kernel decision may first land with the overall expert because that instance investigated it. Moving its canonical home to the kernel expert needs no new soul; other readers keep access through the capability's reference or migration mechanism.
 
-## Speciation: changing the reusable specialisation
+## Speciation: changing the reusable specialization
 
-**Speciation is one soul becoming two or more because a distinct, reusable specialisation has emerged from its work.**
-
-Useful signals include:
-
-- Sustained differences in the skills instances need.
-- Sustained differences in the knowledge they consult and produce.
-- A recurring class of work that would benefit from a different charter.
-
-Repeated spawning is evidence, not a requirement. One long-running instance can handle recurring specialised work without ever being replaced. The counterfactual is more useful than a spawn count:
+**Speciation is one soul becoming two or more because a distinct, reusable specialization has emerged from its work.** Signals include sustained differences in the skills instances need or the knowledge they consult and produce, and a recurring class of work that would benefit from a different charter. Repeated spawning is evidence, not a requirement. The useful counterfactual is:
 
 > Would we deliberately want future instances to start with this narrower charter, skill set and reading context?
 
-A busy fortnight, an epic ending or a large set of notes is not enough on its own. Widening or retaining the existing soul may be the right conclusion.
-
-Harvesters can supply evidence. Maintenance can compare it across instances and propose changes. A person accepts structural change in the reference model; any future auto-acceptance policy needs separate agreement and evidence. Souls do not split themselves.
-
-There is no need for a separate “geneticist” agent with the same inputs and responsibilities as the knowledge maintainer. Drafting a soul can be a skill used during a maintenance proposal.
+A busy two weeks or a large set of notes is not enough; widening or keeping the existing soul may be right. Harvesters supply evidence and maintenance can propose changes, but a person accepts structural change: souls do not split themselves. Drafting a new soul is a skill used in a maintenance proposal, not a separate agent's job.
 
 ### Maintenance is a responsibility, not a compulsory background agent
 
-Separate two kinds of judgment:
-
 | Responsibility | Focus |
 |---|---|
-| Harvesting | What an instance’s evidence contributes to accepted knowledge |
+| Harvesting | What an instance's evidence contributes to accepted knowledge |
 | Maintenance | Consistency, freshness, structure, ownership and declarations across the base |
 
-A maintainer must not silently accept a structural change merely because it proposed it. A human can initially perform maintenance; automated maintenance is an additional capability behaviour, not a prerequisite for basic per-soul knowledge.
+In the default capability, the `knowledge-harvester` package soul harvests and the `knowledge-maintainer` package soul maintains a base by reviewing the harvester's proposals. A human can perform maintenance instead; automation is optional, not a prerequisite for per-soul knowledge. A maintainer never silently accepts its own structural proposal or supersedes a human-accepted decision.
 
-Proposed incarnation profiles would summarise evidence such as purpose, relevant skills and knowledge consulted. They are operational evidence, not knowledge concepts or copies of private transcripts. Their exact collection, privacy and retention rules remain implementation work.
+Evidence of what instances actually used, such as their purpose, skills and knowledge consulted, can inform these proposals. It is operational evidence, not knowledge or a copy of private transcripts.
 
 ### Changing structure must preserve running work
 
@@ -213,50 +166,31 @@ A knowledge move or soul split must account for references, pending harvests and
 - Update ownership and reading declarations in the same reviewed change.
 - Preserve a single canonical home and the provenance of claims.
 - Use explicit migration or redirects where the capability supports them; path changes are not free.
-- Do not silently rewrite an active instance’s retained role or skills.
-- Do not silently retarget a pending write because ownership has changed. Reconcile it through a supported transition, or hold it for review.
+- Do not silently rewrite an active instance's retained role or skills, or retarget its pending write because ownership changed; reconcile it through a supported transition or hold it for review.
 
-A soul definition can evolve while an existing instance continues with its retained curriculum. Refreshing accepted knowledge and changing that curriculum are separate operations.
+Refreshing accepted knowledge and changing an instance's retained curriculum are separate operations.
 
 ## Topic-first knowledge is an alternative, not a requirement
 
-A topic-first model organises the base around subjects and then maps souls to them. A soul can own several topics and consult others.
-
-For example, a base might contain runtime execution, capability contracts and interface accessibility. Ownership can change while those subject identities remain stable.
-
-The distinction is which boundary leads:
-
-- **Per soul:** start from the expert’s current scope and organise knowledge within it.
-- **Per topic:** start from subjects and assign ownership and reading interests over them.
-
-They can initially look similar when souls are named for expertise. Topic-first organisation becomes useful when subjects evolve independently of the roster, but it adds explicit structure and maintenance. A deployment need not use one uniform shape everywhere.
-
-The earlier topology exploration favoured topics from the outset and proposed shallow subtopics, redirects and evidence-driven restructuring. The subsequent decision selects centralised per-soul knowledge as the default. The topic-first approach remains valid for a capability or supported profile, not a universal kernel rule.
+A topic-first model organizes the base around subjects, such as runtime execution or interface accessibility, and maps souls to them; ownership can change while subject identities stay stable. Per soul starts from an expert's scope and organizes knowledge within it; per topic starts from subjects and assigns ownership and reading interests over them. Topic-first organization helps when subjects evolve independently of the roster, at the cost of explicit structure and maintenance. It is valid for a capability or profile, not a universal kernel rule, and a deployment need not use one shape everywhere.
 
 ## Knowledge procedures and learning are capability choices
 
-OATS supplies contracts and a default implementation. Users can adapt existing capabilities or write their own knowledge procedures and ways of working and learning.
-
-For example, a capability might arrange that:
-
-- A new instance starts with relevant expertise accumulated by previous instances of its soul.
-- Two instances share a foundation but develop different working understanding of their assignments.
-- A long-running instance retains investigations and unresolved questions across many tasks.
-- Selected, reviewed learning becomes available to other instances while task-specific context stays local.
+OATS supplies contracts and a default implementation; users can adapt capabilities or write their own procedures for working and learning. A capability might, for example, start new instances with expertise accumulated by earlier instances of their soul, keep a long-running instance's investigations across many tasks, or share selected, reviewed learning while task context stays local.
 
 Three choices should remain independent:
 
 | Choice | Examples |
 |---|---|
-| Organisation | Per soul, per topic, per project |
+| Organization | Per soul, per topic, per project |
 | Placement | Shared repository, co-located directories, multiple stores, graph system |
 | Learning and governance | Reading, capture, judgment, review, maintenance and acceptance workflows |
 
-This does not require an overwhelming set of user-facing switches. A capability can offer coherent profiles. Changing a directory layout should not necessarily require writing a whole new integration.
+A capability can offer coherent profiles rather than many switches, and changing a directory layout should not require a new integration.
 
-### OAS-style co-location remains a valid model
+### Co-located knowledge remains a valid model
 
-A capability could keep mutable knowledge alongside the editable definition:
+A capability could keep mutable knowledge alongside the editable soul definition:
 
 ```text
 agents/example/soul/
@@ -265,89 +199,51 @@ agents/example/soul/
   knowledge/
 ```
 
-The architecture must allow this choice; it is not a claim that current `oats.okf` supports that layout. The chosen capability needs explicit, supported read/write destinations and custody.
+The architecture allows this; `oats.okf` does not support that layout. Such a capability needs explicit read and write destinations and custody, and co-location means an editable authoring repository, not writes into whatever copy of the soul an instance runs from. "All knowledge leaves souls" is a default integration choice, not a kernel prohibition. A relocated or unavailable store must produce an honest readiness outcome, not a fabricated replacement.
 
-**An immutable captured source artifact is not a live writable knowledge store.** It may contain a knowledge snapshot, but that does not authorise modifying the retained artifact or make it the destination of future harvests. Co-location in an editable authoring repository and mutation of a retained execution snapshot are different things.
+## Kernel contracts and capability behavior
 
-Thus “all knowledge leaves souls” is a default integration choice, not a universal kernel prohibition. A relocated or unavailable live store must produce an honest readiness or transition outcome, not a fabricated replacement.
-
-## Kernel contracts and capability behaviour
-
-The kernel supplies the common boundary; it must not contain one mandatory knowledge pipeline disguised as an interface.
+The kernel supplies the common boundary; it must not hide one mandatory knowledge pipeline behind an interface.
 
 | Kernel responsibilities | Knowledge capability responsibilities |
 |---|---|
-| Source, soul and instance identity | Knowledge organisation and destination semantics |
+| Source, soul and instance identity | Knowledge organization and destination semantics |
 | Configuration resolution and declared requirements | Storage, retrieval and reading context |
 | Selected resources, exactly locked | Capture conventions and evidence selection |
-| Lifecycle/invocation context and provenance | Judgment, harvesting and maintenance where used |
-| Safe helper/job execution when required | Proposals, delivery, acceptance and recovery policies |
-| Retained-artifact integrity and truthful outcomes | Its complete runtime instructions, skills and tools |
+| Lifecycle and invocation context, and provenance | Judgment, harvesting and maintenance where used |
+| Safe helper and job execution when required | Proposals, delivery, acceptance and recovery policies |
+| Resource integrity and truthful outcomes | Its complete runtime instructions, skills and tools |
 
-A knowledge capability is more than a storage adapter underneath a kernel-owned judge. The kernel does not require OKF, a node taxonomy, particular memory filenames, Git publication, a harvester or a maintainer for every integration.
-
-The reference capability retains its promotion doctrine and Git PR-only delivery. Alternative models do not weaken framework safety, repository governance, secret handling or declared authority. A binding must validate its own semantics and reject incompatible requirements, not quietly substitute another provider or destination.
-
-This is the same principle used for messaging and tasks: common contracts with independently chosen implementations. Skills and capability resources are portable artifacts, not inherently tied to a model vendor’s distribution system.
+A knowledge capability is more than a storage adapter under a kernel-owned judge. The kernel does not require OKF, a node taxonomy, particular memory filenames, Git publication, a harvester or a maintainer. Alternative models must not weaken framework safety, repository governance, secret handling or declared authority, and a capability rejects incompatible requirements rather than quietly substituting another provider or destination. Messaging and tasks follow the same principle: common contracts, independently chosen implementations.
 
 ## How the default OKF capability works
 
-`oats.okf` represents accepted expertise as Markdown concepts with metadata, indexes and history. Its runtime owns bindings, input custody, read views, worker execution and delivery.
+`oats.okf` keeps accepted expertise as Markdown concepts with metadata, indexes and history in external knowledge bases. Its runtime owns bindings, consultation, evidence custody, harvest execution and delivery.
 
-Conceptually:
+1. A working instance consults the accepted state of its soul's bases remotely with `oats okf bases`, `index`, `cat`, `ls`, `links` and `search`; no knowledge is copied into its home. It captures observations in its own instance knowledge without self-censoring against the promotion bar.
+2. A `knowledge-harvester` instance receives frozen evidence with provenance. It does not borrow the source's worktree or identity, and the source may already be retired.
+3. The harvester judges additions, merges, supersessions and exclusions by the reference doctrine and delivers only through the capability: a pull request on a Git base.
+4. A `knowledge-maintainer` instance reviews that pull request and merges, amends, requests changes, closes, or escalates to a human.
+5. Accepted learning becomes available to later consultation; it is not automatically in every instance's active context.
 
-1. A working instance consults relevant accepted knowledge and captures observations without self-censoring against the promotion bar.
-2. An independent worker receives bounded evidence with provenance. It need not borrow the source instance’s live worktree or identity.
-3. The worker judges additions, merges, supersessions or exclusions, using the reference doctrine.
-4. The capability validates and delivers the proposal under the selected store’s policy.
-5. Accepted learning becomes available for subsequent reads; it is not automatically present in every instance’s active context.
-
-Git delivery uses pull requests, with merge-visible acceptance distinct from proposal delivery. Plain-directory delivery uses its own recoverable publication mechanism. A receipt must state what actually happened: capture, judgment, delivery and acceptance are different facts, and successful directory publication does not prove human review.
-
-The [operational guide](knowledge.md) describes version-scoped commands and constraints. A new knowledge model or acceptance policy must not be inferred from a successful storage test or from this conceptual description.
+Directory bases use their own recoverable publication mechanism. Receipts state what actually happened: capture, judgment, delivery and acceptance are different facts, and directory publication does not prove human review. The [operational guide](knowledge.md) describes commands and constraints.
 
 ## Reusing working understanding: context handoffs and cloning
 
-Harvesting does not necessarily reproduce the combined understanding that makes a long-running instance effective. Preserving a few good concepts can preserve real learning without preserving the whole working picture.
-
-Context reuse is complementary to harvesting. A handoff or clone could carry selected:
-
-- References to relevant accepted concepts.
-- Verified observations with scope and freshness.
-- Problem framing and clearly labelled provisional reasoning.
-- Useful procedural context, pending separate review if it should become a skill.
-
-This selected context has been called **clothes** in design discussions. It is not another canonical knowledge store. Copying it does not promote it or make it true indefinitely.
-
-A clone needs its own identity. It must not automatically inherit credentials, message identity, child instances, a worktree or ownership of unfinished operations. Cross-developer sharing needs explicit selection and privacy boundaries; a shared soul does not authorise copying an entire private session.
-
-The selection, consent, freshness and lifecycle protocol remains design work. The principle is that shared learning and situated continuity deserve different preservation mechanisms.
+Harvesting preserves individual lessons, not the combined working picture that makes a long-running instance effective; a handoff or clone could carry selected references, verified observations and labeled provisional reasoning, but that is not a knowledge store and copying it promotes nothing. A clone would need its own identity, credentials and ownership, and no protocol for selecting and sharing such context is defined.
 
 ## Implementation boundaries
 
-The following are accepted directions:
+The model's settled positions are those above: short- and long-running instances are both legitimate; the default is centralized, per-soul knowledge open to reviewed structural evolution; capabilities own their model and runtime behavior; the doctrine preserves expertise, not code descriptions or task residue; and structural change preserves provenance and running work. These are not CLI flags or configuration schemas.
 
-- Both ephemeral and long-running instances are legitimate.
-- The default is centralised, per-soul knowledge, with room for reviewed structural evolution.
-- Knowledge capabilities own their model and complete runtime behaviour, including support for alternative placement and learning procedures.
-- The default doctrine preserves expertise rather than code descriptions or task residue.
-- Structural change must preserve provenance and running work.
-
-These statements are not new CLI flags, configuration schemas or claims of universal runtime support.
-
-The released framework and default OKF capability supply an implementation foundation, including scoped retained execution and knowledge capture/judgment/delivery. See the [release notes](release-notes/v0.24.0.md) for the bounded 0.24.0/2.1.0 scope. Do not infer automatic per-soul provisioning, a supported co-located OKF profile, automatic speciation, a complete maintenance service, redirects or safe context cloning from that release.
-
-A convincing flexibility test needs the same kernel to support the centralised per-soul model, an explicitly writable co-located model, and a genuinely different organisation/learning model. Git and directory storage within OKF alone do not prove the last case.
-
-Existing deployments must not be silently migrated by updating this document. Implementations, skills and operational guidance must be reconciled deliberately with these decisions.
+The default OKF capability implements consultation, capture, independent harvest and maintainer review; it does not provide automatic per-soul provisioning, a co-located profile, automatic speciation, redirects or context cloning. Proving the kernel's flexibility needs a genuinely different organization and learning model, not only Git and directory storage within OKF. Updating this document does not migrate existing deployments.
 
 ## Related documentation
 
 - [OATS overview](../README.md)
 - [Souls and instances](souls-and-instances.md)
 - [Knowledge operations](knowledge.md)
+- [Knowledge reference model](knowledge-reference/model.md)
 - [Layer contracts](layers.md)
 - [Knowledge capability authoring](knowledge-capability-authoring.md)
 - [Packages](packages.md)
-
-The September 16 exploration and September 19 discussion inform this consolidated account. This document supersedes a mandatory topic-first interpretation and a kernel-wide prohibition on co-located knowledge; it does not silently approve pending bootstrap, identity, permission or source-layout proposals.
