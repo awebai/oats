@@ -133,7 +133,8 @@ souls:
   problem.
 - **Existing homes keep their launch.** A changed preference does not affect
   a running or stopped home until `oats session restart --reselect-launch`
-  (or `start --reselect-launch`) or a respawn. `oats readiness --home` shows
+  (or `start --reselect-launch`) or a respawn. `session start|restart --model`
+  keeps the recorded harness and replaces only the model. `oats readiness --home` shows
   the drift as the `launch-changed` warning; `oats inspect --home` shows
   `launch` (the record) beside `launchCurrent`.
 - `oats souls`, `oats inspect --soul` and `oats spawn … --preview` show each
