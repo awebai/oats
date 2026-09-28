@@ -291,9 +291,10 @@ soul messaging, `oats-local.yaml` `settings.oats.aweb`, then per-spawn
   socket is refused. It then runs `aw id grant mint --team <team-id> --scope
   <comma-list> --ttl <ttl> --label oats:<instance> --out
   <home>/.aweb-identity --custody-socket <preflight-socket> --json` from the
-  custody directory when aw is 1.36.2 or later for `--team`; grants need aw >=
-  1.36.3 (`CUSTODY_ATTACH_MIN`) with aweb server >= 1.27.5 for
-  `--custody-socket`. `AWEB_IDENTITY_HOME`
+  custody directory. oats.aweb 1.16.1 has one aw floor, aw >= 1.36.13, checked
+  before any other aw call (spawn, retire, setup and readiness refuse an older
+  aw with that floor); `--custody-socket` also needs aweb server >= 1.27.5.
+  `AWEB_IDENTITY_HOME`
   is removed from mint/revoke child environments: grant commands are not
   identity-home-aware and intentionally refuse both `--identity-home` and
   external `AWEB_IDENTITY_HOME`, so cwd selects the custody identity. The hook
@@ -310,7 +311,7 @@ soul messaging, `oats-local.yaml` `settings.oats.aweb`, then per-spawn
   and `aw whoami` work through a grant. On aw 1.36.1 the server rejected mail
   or chat sent through a grant with 422 (`from_did must match the authenticated
   sender`) because the client signed with the grant-key DID. aw 1.36.2 with
-  aweb server 1.27.5, the floor, fixes this; grant mail and chat sends passed
+  aweb server 1.27.5 fixed this (today the aw floor is 1.36.13); grant mail and chat sends passed
   real-server acceptance there. A hosted team whose server has not yet adopted
   1.27.5 still refuses grant sends; the custody preflight reports that as
   needs-configuration before spawn through `grant_status_endpoint_ready`.

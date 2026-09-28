@@ -1,7 +1,7 @@
 {
   "capability": "oats.aweb",
   "command": "aweb",
-  "version": "1.16.0",
+  "version": "1.16.1",
   "compatibility": {
     "oats": ">=0.26.0"
   },
@@ -10,13 +10,13 @@
   "requires": [
     {
       "command": "aw",
-      "why": "identity minting at spawn (joined teams: aw >= 1.36.12), self-delete at retire, live receive registration, and all agent messaging",
+      "why": "aw >= 1.36.13: identity minting at spawn, self-delete at retire, live receive registration, onboarding, and all agent messaging",
       "install": "https://aweb.ai/docs (aw CLI)"
     },
     {
       "runtime": "pi",
       "package": "npm:@awebai/pi",
-      "why": "the aweb channel extension for pi sessions \u2014 real-time mail/chat awakenings; without it a pi instance can send with `aw` but is never woken by incoming messages",
+      "why": "the aweb channel extension for pi sessions — real-time mail/chat awakenings; without it a pi instance can send with `aw` but is never woken by incoming messages",
       "install": "https://aweb.ai/docs (installed into pi with `pi install npm:@awebai/pi`)",
       "when": {
         "delivery": "channel"
@@ -26,7 +26,7 @@
       "runtime": "claude",
       "package": "aweb-channel@awebai-marketplace",
       "marketplace": "awebai/claude-plugins",
-      "why": "the aweb channel plugin for Claude Code sessions \u2014 real-time mail/chat awakenings; without it a Claude instance can send with `aw` but is never woken by incoming messages",
+      "why": "the aweb channel plugin for Claude Code sessions — real-time mail/chat awakenings; without it a Claude instance can send with `aw` but is never woken by incoming messages",
       "install": "https://aweb.ai/docs (installs the awebai marketplace and the aweb-channel plugin into Claude Code)",
       "when": {
         "delivery": "channel"
@@ -63,10 +63,6 @@
     "skills/aweb-identity"
   ],
   "inject": "injects/aweb.md",
-  "helperInjection": {
-    "version": 1,
-    "mode": "omit"
-  },
   "commands": {
     "roster": "bin/oats-aweb.mjs roster",
     "setup": "bin/oats-aweb.mjs setup",

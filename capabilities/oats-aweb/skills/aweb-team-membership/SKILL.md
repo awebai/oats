@@ -31,7 +31,7 @@ oats aweb leave --labels <label>[,<label>]  # leave joined wider-team labels
 - The workspace's default team cannot be left; attempting it with label `default` is `E_TEAM_DEFAULT`.
 - A label that is not eligible for this soul/workspace is `E_TEAM_NOT_ELIGIBLE`.
 - Joined wider teams use a local identity home such as
-  `<home>/.aweb-identity-<label>`. Joined teams require aw >= 1.36.12. The
+  `<home>/.aweb-identity-<label>`. The host aw CLI must be >= 1.36.13. The
   provider creates joined homes with `aw id team accept-invite` under
   `--identity-home`, verifies the root auto-connected, and does not run
   `aw init` inside the per-team home.

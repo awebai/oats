@@ -176,7 +176,7 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `team-unmapped` | your soul's primary label is not mapped by the workspace; you are in the default team | workspace owner, if a shared team was meant |
 | `joined-team-receive` | a joined team receives live through the broker (informational) | nobody |
 | `joined-team-poll-only` | a joined team does not wake you; the message says why | poll that team at task boundaries; human may start the wake daemon |
-| `wake-daemon-not-running` / `-outdated` / `-version-unknown` | host wake broker is down or older than 1.36.5 | human: upgrade aw, restart the host wake daemon |
+| `wake-daemon-not-running` / `-outdated` / `-version-unknown` | host wake broker is down or older than 1.36.13 | human: upgrade aw, restart the host wake daemon |
 | `custody`, `e2ee-disabled` | resident-grant mode custody/encryption issue | human |
 | `teams-unverified` (launch) | live team data was unavailable; memberships were kept | nobody |
 
@@ -187,8 +187,6 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 - `E_TEAM_DEFAULT` — the workspace's default team cannot be left.
 - `E_TEAM_GLOBAL_MODE` — this home acts as a resident identity through a
   session grant; joined teams need local identities. Report it.
-- `E_TEAM_AW_FLOOR` — the host `aw` is too old: joined teams need aw >= 1.36.12.
-  Report it; don't work around it.
 - "failed to leave team … kept …" — the release was not confirmed; the identity
   home was kept on purpose so leave can be retried. Retry later or report.
 

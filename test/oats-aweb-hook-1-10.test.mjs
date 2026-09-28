@@ -38,7 +38,7 @@ if (a.startsWith("team join")) {
   console.log(JSON.stringify({ alias: "probe", team_id: "t:example.test" })); process.exit(0);
 }
 if (a.startsWith("init")) process.exit(0);
-if (a === "version") { console.log(process.env.FAKE_AW_VERSION || "aw 1.34.11"); process.exit(0); }
+if (a === "version") { console.log(process.env.FAKE_AW_VERSION || "aw 1.36.13"); process.exit(0); }
 if (a.startsWith("custody status")) {
   if (process.env.AWEB_IDENTITY_HOME) {
     let text = ""; try { text = fs.readFileSync(p.join(process.env.AWEB_IDENTITY_HOME, "grant.yaml"), "utf8"); } catch {}
@@ -116,17 +116,9 @@ test("global grant spawn attaches the preflight custody socket, verifies grant.y
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-test("global grant spawn refuses below the custody attach floor before minting", () => {
-  const base = mkdtempSync(join(tmpdir(), "oats-aweb-grant-"));
-  try {
-    const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
-    const r = runHook(base, bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "pi", OATS_SETTINGS: globalSettings(custody), FAKE_AW_VERSION: "aw 1.36.1" });
-    assert.notEqual(r.status, 0);
-    assert.match(r.doc.warning, /cannot attach a grant to custody \(--custody-socket\); grants need aw >= 1\.36\.3/);
-    assert.doesNotMatch(readFileSync(join(base, "aw.log"), "utf8"), /id grant mint/, "nothing minted below the floor");
-    assert.equal(existsSync(join(home, ".aweb-identity")), false);
-  } finally { rmSync(base, { recursive: true, force: true }); }
-});
+// RETIRED (oats.aweb 1.16.1): "global grant spawn refuses below the custody attach floor before minting".
+// 1.16.1 has one aw floor (>= 1.36.13) and no per-feature floors; the floor refusal before any mint is
+// covered once, in oats-aweb-hook-1-13.test.mjs ("single aw floor refuses older aw before grant mint").
 
 test("global grant spawn revokes and removes the home when grant.yaml custody socket mismatches", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-grant-"));
@@ -164,7 +156,7 @@ test("readiness reports existing grant homes without custody.socket_path as not 
     const missing = runBindingCheck(bin, globalSettings(custody), ctx);
     assert.equal(missing.status, 0, missing.stderr);
     assert.equal(missing.doc.result.status, "needs-configuration");
-    assert.deepEqual(missing.doc.result.problems.find((p) => p.code === "custody")?.message, "grant old is not attached to custody; retire and respawn on aw >= 1.36.3");
+    assert.deepEqual(missing.doc.result.problems.find((p) => p.code === "custody")?.message, "grant old is not attached to custody; retire and respawn on aw >= 1.36.13");
     write(join(home, ".aweb-identity", "grant.yaml"), "grant_id: old\nteam_id: t:example.test\nexpires_at: old\ncustody:\n  socket_path: attached.sock\n");
     const attached = runBindingCheck(bin, globalSettings(custody), ctx);
     assert.equal(attached.doc.result.status, "ready");
@@ -177,8 +169,8 @@ test("real aw fixture: unattached grant home reports the released custody locato
   if (!fixture) return t.skip("AW_REAL_GRANT_FIXTURE not set; skipping real aw grant-home regression");
   const version = spawnSync(realAw, ["version"], { encoding: "utf8", timeout: 10000 });
   const parsed = /aw\s+v?(\d+)\.(\d+)\.(\d+)/.exec(version.stdout + version.stderr);
-  const atLeast = parsed && parsed.slice(1, 4).map(Number).reduce((ok, part, i, arr) => ok || (arr.slice(0, i).every((n, j) => n === [1, 36, 3][j]) && part > [1, 36, 3][i]), parsed.slice(1, 4).map(Number).every((n, i) => n === [1, 36, 3][i]));
-  if (version.status !== 0 || !atLeast) return t.skip(`real aw is not 1.36.3+: ${version.stdout || version.stderr}`);
+  const atLeast = parsed && parsed.slice(1, 4).map(Number).reduce((ok, part, i, arr) => ok || (arr.slice(0, i).every((n, j) => n === [1, 36, 13][j]) && part > [1, 36, 13][i]), parsed.slice(1, 4).map(Number).every((n, i) => n === [1, 36, 13][i]));
+  if (version.status !== 0 || !atLeast) return t.skip(`real aw is not 1.36.13+: ${version.stdout || version.stderr}`);
   const r = spawnSync(realAw, ["custody", "status", "--json"], { cwd: fixture, encoding: "utf8", env: { ...process.env, AWEB_IDENTITY_HOME: fixture } });
   assert.notEqual(r.status, 0);
   assert.match(r.stderr + r.stdout, /grant home has no custody\.socket_path locator/);
@@ -217,17 +209,9 @@ test("spawn with delivery=session: AWEB_DELIVERY in the launch env, no Claude ch
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-test("retire: workspace deleted is reported as retired with aliasReusable false and a warning naming aweb-abim and the remedy", () => {
-  const base = mkdtempSync(join(tmpdir(), "oats-aweb-110-"));
-  try {
-    const bin = fakeAw(base); const { home } = deployment(base);
-    mkdirSync(join(home, ".aw"), { recursive: true });
-    const r = runHook(base, bin, "retire", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_META: JSON.stringify({ alias: "probe", team: "t:example.test" }) });
-    assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.deepEqual(r.doc.meta, { retired: true, aliasReusable: false, joinedTeams: [] });
-    assert.match(r.doc.warning, /certificate is not revoked \(aweb-abim\).*different --name \(kernels 0\.26\.0\+\) or a different --purpose/);
-  } finally { rmSync(base, { recursive: true, force: true }); }
-});
+// RETIRED (oats.aweb 1.16.1): "retire: workspace deleted is reported as retired with aliasReusable false and a
+// warning naming aweb-abim". That was the pre-abim retire (aw below 1.36.1, no --json), a branch 1.16.1 removed;
+// retire on a supported aw is covered by "retire: aliasReusable follows aw workspace delete --json" below.
 
 test("spawn: a join killed on timeout that completed server-side is reported as minted, so compensation retires it", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-110-"));
@@ -254,24 +238,21 @@ test("retire: with no alias in its meta the hook reads the home's workspace bind
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-test("retire on aw 1.36.1: aliasReusable follows aw workspace delete --json (released, or not with the reason)", () => {
+test("retire: aliasReusable follows aw workspace delete --json (released, or not with the reason)", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-110-"));
   try {
     const bin = fakeAw(base); const { home } = deployment(base);
     mkdirSync(join(home, ".aw"), { recursive: true });
     const meta = { alias: "probe", team: "t:example.test" };
-    let r = runHook(base, bin, "retire", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_META: JSON.stringify(meta), FAKE_AW_VERSION: "aw 1.36.1 (commit abc)" });
+    let r = runHook(base, bin, "retire", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_META: JSON.stringify(meta), FAKE_AW_VERSION: "aw 1.36.13 (commit abc)" });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.deepEqual(r.doc.meta, { retired: true, aliasReusable: true, aliasReason: "revoked", joinedTeams: [] });
     assert.equal(r.doc.warning, undefined, "a released alias needs no warning");
     assert.match(readFileSync(join(base, "aw.log"), "utf8"), /workspace delete probe --json/);
-    r = runHook(base, bin, "retire", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_META: JSON.stringify(meta), FAKE_AW_VERSION: "aw 1.36.1", FAKE_ALIAS_RELEASED: "false" });
+    r = runHook(base, bin, "retire", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_META: JSON.stringify(meta), FAKE_AW_VERSION: "aw 1.36.13", FAKE_ALIAS_RELEASED: "false" });
     assert.deepEqual(r.doc.meta, { retired: true, aliasReusable: false, aliasReason: "no_workspace_credential", joinedTeams: [] });
     assert.match(r.doc.warning, /not released \(no_workspace_credential\).*different --name \(kernels 0\.26\.0\+\) or a different --purpose/);
-    // Below the floor the pre-abim report stands, and --json is never sent.
-    r = runHook(base, bin, "retire", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_META: JSON.stringify(meta), FAKE_AW_VERSION: "aw 1.36.0" });
-    assert.deepEqual(r.doc.meta, { retired: true, aliasReusable: false, joinedTeams: [] });
-    assert.match(r.doc.warning, /aweb-abim/);
+    // RETIRED (oats.aweb 1.16.1): the aw 1.36.0 pre-abim retire without --json (a removed older-aw branch).
     assert.equal(readFileSync(join(base, "aw.log"), "utf8").split("workspace delete probe --json").length - 1, 2);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
