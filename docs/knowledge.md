@@ -392,23 +392,15 @@ brake for one source, not the switch. The review trigger does not depend on the
 switch: a host can review harvest PRs from other hosts without harvesting.
 Keep harvest off until the end-to-end check in `okf-trigger-setup` passes.
 
-### The `okf` team
+### Where the harvester and the maintainer talk
 
-Harvesters and maintainers talk in a messaging team of their own (subjects
-prefixed `okf:` with the PR's URL) without writing into the working teams.
-Since okf 4.0.2 no package soul carries a team (0.30.0 made team membership
-local): the operator declares the team and puts both package souls in it, on
-every host that runs them.
-
-```
-oats teams add okf --team <messaging team id>        # a local team; or commit teams.okf.team in oats-workspace.yaml (shared)
-oats soul teams oats.okf/knowledge-harvester --add okf
-oats soul teams oats.okf/knowledge-maintainer --add okf
-```
-
-`oats aweb setup` can create the team and record it for you. Like every team it
-organises and gates nothing. Without it the harvester and the maintainer cannot
-talk, and `oats trigger test` fails its team check.
+Since oats.okf 4.0.2 the package souls carry no team, and okf joins no team of
+its own: the harvester and the maintainer live in the deployment's default
+team, where the maintainer reaches the harvester (subjects prefixed `okf:` with
+the PR's URL). A deployment that wants them in another team opts them in
+locally, as for any soul: `oats soul teams oats.okf/knowledge-harvester --add
+<label>` (and the same for `oats.okf/knowledge-maintainer`), then joins at
+spawn. Team membership never gates what they can do.
 
 ## Inspection and operator commands
 

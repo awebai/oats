@@ -6,7 +6,7 @@ description: >-
   declarations, choosing the deployment directory, running `oats onboard`,
   placing host settings, syncing, setting up messaging, cloning work targets
   and verifying before the first spawn. Also use it to set up okf knowledge
-  operations (the okf team, the knowledge maintainer and harvester, the
+  operations (the knowledge maintainer and harvester, the
   harvest review trigger, turning harvest on). For package pins see
   oats-package-pins. Part of the setup and config of an OATS workspace
   (oats.setup); day-to-day operation inside an instance is oats.core.
@@ -92,55 +92,47 @@ a member, a default), run `oats sync`: it resolves every package to a commit,
 fetches it, verifies its integrity and writes `oats-lock.json`. See
 **oats-package-pins**.
 
-## 6. Set up messaging before the first spawn
+## 6. Set up messaging and teams before the first spawn
 
 If the workspace's messaging default, or any soul, uses `oats.aweb`, its spawn
-hook is required: with no initialised aweb root among the places it looks, the
-spawn is rolled back. With messaging as the workspace default that is **every**
-soul, the operator expert included. So set the root up now, after sync and
-before any spawn.
+hook is required: with no messaging root, or no default team, the spawn is
+rolled back. With messaging as the workspace default that is **every** soul,
+the operator expert included. So set it up now, after sync and before any
+spawn.
 
-Put the root **in the deployment directory**. The hook looks in the parent of
-`agents/`, which is the deployment directory when `agents/` sits directly in it
-(the layout `oats onboard` creates). Where the root sits decides which team
-the instances join.
+Put the root **in the deployment directory** (the layout `oats onboard`
+creates), or name it in `oats-local.yaml` `settings.oats.aweb.root`.
 *Rationale:* operator node, lesson "messaging root placement decides the
-team" — read it before choosing another place.
+team": read it before choosing another place.
 
-The root must be a **member of the deployment's default team** (`oats teams`
-shows it; it is `defaultTeam` in `oats-local.yaml`). `aw init`
-alone in a clean directory creates a hosted account and joins no team, so every
-spawn would still be refused. Obtain the membership first:
+Teams are this person's, and they live in `oats-local.yaml` (**oats-teams**).
+`oats aweb setup` is the one command that creates messaging accounts and teams,
+and it records what it creates there. It runs only when asked, never at spawn.
+Ask the operator first: it acts on the messaging service.
 
-1. **Join the team** from the clean deployment directory. An existing member
-   of that team creates an invite; the operator joins here. (Or, for a new
-   team, create it here.)
+1. **No account yet:** `oats aweb setup --username <u>` creates the hosted
+   account and its first team at the root, and records that team as this
+   deployment's `defaultTeam`. (With a team API key: `AWEB_API_KEY=<key> oats
+   aweb setup`. To start in an existing team: `oats aweb setup --invite
+   <token>`, with an invite from one of its members.)
+2. **More teams of your own:** `oats aweb setup --create <label>` creates a new
+   team and records it as a local team (`oats teams add <label> --team <id>`).
+   An existing team you already belong to is declared directly with `oats teams
+   add <label> --team <id>`.
+3. **A shared team** (declared in `oats-workspace.yaml`): if it has an id, ask
+   its owner for an invite, then `oats aweb setup --join <label> --invite
+   <token>`. If it has no id yet, its owner runs `oats aweb setup`, which
+   creates it, and commits the printed id to `oats-workspace.yaml` by a PR.
+4. **Choose what each soul may join** (offered at spawn, never joined
+   automatically): `oats soul teams '*' --add <label>`, `oats soul teams <soul>
+   --add <label>`.
+5. **Check:** `oats teams` shows the teams, their ids and the default, and
+   `oats readiness --soul <soul>` shows no team problem in the `configured`
+   check.
 
-   ```bash
-   aw team invite --team-id <team id>              # run by an existing member, where their root is
-   cd <deployment-dir>
-   aw team join <invite-token> --name <alias>      # the operator, in the clean deployment directory
-   oats teams add <label> --team <team id>         # record it here; the first team added becomes the default
-   ```
-
-   `oats aweb setup` (oats.aweb ≥ 1.17) does the creating and the
-   `oats teams add` for you. A shared team is already declared in the
-   workspace file: then only `oats teams default <label>` if it is not yet the
-   default.
-2. **Connect**, only if the join did not: `aw init --do-not-touch-agents-md`.
-3. **Check**: `aw check --online`, then `aw team list --json` must show the
-   default team's id as the active one, and `oats teams` must report no
-   problems. A root in another team mints instances
-   into the wrong one.
-
-Joining and initialising act on the messaging service: ask the operator first,
-and let them run it.
-
-Each instance's own identity mints into its soul's **default team** (the
-deployment's `defaultTeam`, unless `oats soul teams <soul> --default` names
-another). A soul's other teams are only *eligible*: an instance joins one
-explicitly, at spawn or later. Which teams exist, and which souls are in them,
-is **oats-teams**.
+Each instance's own identity lives in the default team. The soul's other teams
+are only offered: the instance joins one at spawn (`join=`, or the Desktop's
+checkboxes) or later.
 
 ## 7. Clone work targets
 
@@ -193,34 +185,14 @@ souls, triggers, workspace automations) and `oats.okf` 4.0.0. The contract is
 Show the operator what the package runs before pinning (its manifests'
 `commands` and `hooks`): declaring it is the trust decision, for its souls too.
 
-### 2. Declare the `okf` team and put the package souls in it
+### 2. The harvester and the maintainer live in the default team
 
-The `okf` team is a local or a shared team the operator declares: no package
-soul carries a team (since `oats.okf` 4.0.2). Local, on the deployment that
-runs them:
-
-```bash
-oats teams add okf --team <aweb team id> --description "Knowledge operations"
-oats soul teams oats.okf/knowledge-harvester --add okf
-oats soul teams oats.okf/knowledge-maintainer --add okf
-```
-
-Shared instead: `teams: { okf: { description: Knowledge operations, team:
-<aweb team id> } }` in `oats-workspace.yaml` by PR, then the same two
-`oats soul teams` lines on each deployment.
-
-- **Why:** the harvester and the maintainer talk to each other (questions,
-  amendment requests, "merged") without writing into the working teams'
-  conversations.
-- **It is a label, not a wall:** it organises and gates nothing.
-- **Without it harvester and maintainer cannot talk**: they live only in the
-  default team with everyone else. To join `okf` at spawn, pass
-  `join=okf` (it is eligible, not the default), or make it their default with
-  `oats soul teams <soul> --default okf`.
-- The aweb team id is an operator fact, like the working teams' ids. Create or
-  join that team as in step 6 (or `oats aweb setup`), with the operator
-  running the `aw` commands. Teams, souls in them and joining are
-  **oats-teams**.
+Since oats.okf 4.0.2 okf declares and joins no team of its own: the harvester
+and the maintainer live in the deployment's default team, where they talk
+(questions, amendment requests, "merged"). There is nothing to declare. To put
+them in another team, opt them in like any soul: `oats soul teams
+oats.okf/knowledge-harvester --add <label>` (and the maintainer), then join at
+spawn (**oats-teams**).
 
 ### 3. Declare the review trigger for ONE host that can merge
 
@@ -261,7 +233,7 @@ owner: github.com/<account>         # the account it acts as; it must be able to
 Then, **on the named host**, from its deployment directory:
 
 ```bash
-oats trigger test <member>/okf-harvest-review   # must pass: runs here, owner = this gh login, merge permission, the soul resolvable, the okf team declared
+oats trigger test <member>/okf-harvest-review   # must pass: runs here, owner = this gh login, merge permission, the soul resolvable
 oats schedule host install                      # the ONE host timer, if this host has none yet (docs/schedules.md)
 ```
 

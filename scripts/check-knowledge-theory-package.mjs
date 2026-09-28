@@ -142,7 +142,7 @@ export function checkOperationalCapabilities(packageRoot) {
     assert.deepEqual(Object.keys(cap).filter((key) => key !== "helperInjection").sort(), ["capability", "version", "description", "compatibility", "requires", "skills", ...(injection ? ["inject"] : [])].sort());
     assert.equal(cap.capability, slug.replace("oats-", "oats."));
     assert.match(cap.version, /^\d+\.\d+\.\d+$/);
-    assert.deepEqual(cap.compatibility, { oats: ">=0.25.5" }); // the workspace-model surface these skills teach
+    assert.deepEqual(cap.compatibility, { oats: ">=0.30.0" }); // the workspace-model surface these skills teach (team model v2)
     assert.deepEqual(cap.requires, []);
     assert.deepEqual(cap.skills, names.map(name => `skills/${name}`));
     assert.deepEqual(treeFiles(root), ["oats.json", ...names.map(name => `skills/${name}/SKILL.md`), ...(injection ? [injection] : [])].sort());
