@@ -26,16 +26,19 @@ harness" for every soul.
        oats-expert: opus                          # a launch configuration's name, or
        oats.engineering/code-reviewer: { harness: codex, model: <model> }   # an inline preference
    ```
-3. **Precedence at spawn / start / restart:** explicit flags (`--launch-config`, `--harness`,
+3. **Precedence for a new selection** (a spawn, or a start/restart given `--launch-config`/`--harness`/`--model`/`--reselect-launch`): explicit flags (`--launch-config`, `--harness`,
    `--model`) → the machine's `souls.launch.<soul>` → its `souls.launch."*"` → the soul's `launch:` →
    today's host default. A launch configuration named by an override supplies its full recipe; an
    inline or soul preference supplies harness and model on top of the host's baseline for that harness.
+   **A home's recorded launch stays frozen:** a plain start/restart runs it as recorded (`from:
+   recorded`). A preference is a default for new instances, not a live setting; a drifted
+   preference shows in `inspect --home` (`launch.current`), and a restart never changes it silently.
 4. **Unavailable harness:** if the chosen harness isn't installed on the machine, the spawn refuses
    with a clear error naming the source (soul / local / flag) and the fix (install it, or override in
    `oats-local.yaml`). No silent fallback to another harness.
 5. **Reported everywhere a launch is shown:** `spawn --preview`, `inspect --soul` and `oats souls`
    carry the soul's declared `launch` and the effective one with its `from` (`flag` | `local` |
-   `local-default` | `soul` | `host`); `instance.json` records the effective one.
+   `local-default` | `soul` | `host` | `recorded`); `instance.json` records the effective one.
 
 ## Migration (binding): the same hazard as the team model
 0.29.4's `soul.yaml` schema refuses unknown keys, and members are read at their latest commit.
