@@ -263,7 +263,7 @@ export function capabilitiesData(document) {
  * ambiguous bare name with E_SOUL_AMBIGUOUS; such a soul is not offered). */
 const SOUL_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/;
 const TEAM_LABEL = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
-const PACKAGE_ID = /^[a-z0-9][a-z0-9._-]{0,127}$/; // the kernel's package id (lib/core.mjs PACKAGE_ID_RE), bounded
+const PACKAGE_ID = /^[a-z0-9][a-z0-9._-]{0,127}$/; // the kernel's package-id grammar, bounded
 export function soulsData(document) {
   check(record(document) && document.schemaVersion === 1 && document.ok === true);
   const data = document.result;
@@ -275,8 +275,8 @@ export function soulsData(document) {
     check(SOUL_NAME.test(out.name ?? '') && ['member', 'external', 'package'].includes(out.kind)
       && ['worktree', 'checkout', 'directory', 'workspace', 'attached'].includes(out.work));
     // Package souls (feature package-souls, 0.28): a soul a locked package ships, addressed by its
-    // qualified name `<package>/<soul>`. Every row carries the kernel's soul key (lib/teams.mjs
-    // soulKeyOf): the qualified name for a package soul, the bare name otherwise. It is what
+    // qualified name `<package>/<soul>`. Every row carries the kernel's soul key (its soul-key
+    // rule): the qualified name for a package soul, the bare name otherwise. It is what
     // `oats soul teams <key>` and the souls.teams/souls.default keys take.
     if (out.kind === 'package') {
       check(typeof row.package === 'string' && PACKAGE_ID.test(row.package) && typeof row.version === 'string' && row.version.length > 0 && row.version.length <= 64
