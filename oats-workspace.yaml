@@ -20,7 +20,7 @@ members:
 # decision to trust it; oats-lock.json records its commit and integrity.
 packages:
   oats.framework: v1.3.2
-  oats.okf: v4.0.2
+  oats.okf: v4.0.3
   oats.aweb: v1.16.1
   oats.jira: v1.0.1
   oats.linear: v1.0.1
@@ -47,8 +47,10 @@ defaults:
 # the bases in its knowledge bindings file. The store names below are also the
 # BASE ALIASES the souls' okf.json files commit to ("oats/<node>",
 # "aweb/<node>"), so every machine must bind them under exactly these names:
-#   oats → the OATS central base   (root knowledge/, accepted branch main)
-#   aweb → the aweb project's base, read-only (root knowledge/, accepted branch main)
+#   oats → the OATS central base   (root knowledge/, accepted branch main, id oats-knowledge)
+#   aweb → the aweb project's base, read-only (root knowledge/, accepted branch main, id aweb-oss-knowledge)
+# Each binding's "id" is the base's own: it must equal the id in that base's
+# knowledge/okf-base.json (above), or every read of the base fails with E_BASE.
 stores:
   oats: git:github.com/awebai/oats-knowledge
   aweb: git:github.com/awebai/aweb

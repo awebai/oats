@@ -53,10 +53,8 @@ function liveHome(source,status) {
     return {available:false,reason:'unverified-home',error:{code:e.code || 'E_SOURCE',message:e.message}};
   }
 }
-export function workingDocuments(source,status=loadStatus(source)) {
-  const before=liveHome(source,status),observedAt=new Date().toISOString();
-  const unavailable=state=>({liveMemory:{available:false,reason:state.reason,observedAt,...(state.error?{error:state.error}:{})},documents:[]});
-  if(!before.available) return unavailable(before);
+/** The home's working memory (STATE.md, log.md, notes/*.md), each capped. */
+function homeDocuments(home) {
   const documents=[];
   const doc=(label,file)=>{
     const content=regular(file,DOCUMENT_BYTES);
@@ -64,9 +62,9 @@ export function workingDocuments(source,status=loadStatus(source)) {
   };
   let error;
   try {
-    doc('Working state (STATE.md)',join(source.home,'STATE.md'));
-    doc('Log (log.md)',join(source.home,'log.md'));
-    const notes=safePath(join(source.home,'notes'));
+    doc('Working state (STATE.md)',join(home,'STATE.md'));
+    doc('Log (log.md)',join(home,'log.md'));
+    const notes=safePath(join(home,'notes'));
     function walk(dir,prefix='') {
       let entries;try {entries=fs.readdirSync(dir,{withFileTypes:true});} catch(e) {if(e.code==='ENOENT') return;throw e;}
       for(const entry of entries.sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0)) {
@@ -79,6 +77,13 @@ export function workingDocuments(source,status=loadStatus(source)) {
     }
     walk(notes);
   } catch(e) {error=e;}
+  return {documents,error};
+}
+export function workingDocuments(source,status=loadStatus(source)) {
+  const before=liveHome(source,status),observedAt=new Date().toISOString();
+  const unavailable=state=>({liveMemory:{available:false,reason:state.reason,observedAt,...(state.error?{error:state.error}:{})},documents:[]});
+  if(!before.available) return unavailable(before);
+  const {documents,error}=homeDocuments(source.home);
   const after=liveHome(source,loadStatus(source));
   if(!after.available) return unavailable(after);
   if(before.dev!==after.dev || before.ino!==after.ino) return unavailable({reason:'home-changed'});
@@ -115,5 +120,19 @@ export function inspect(source) {
     summary:`OKF ${source.id}: ${status.captured.inputs.length-status.processed.length} unprocessed inputs; ${status.retired?'source retired':'source not retired'}; ${working.liveMemory.available?`${working.documents.length} working-memory documents`:`live memory unavailable (${working.liveMemory.reason})`}${legacy?'; legacy-local-view ./knowledge/ (ignored, safe to delete)':''}`,
     source:source.file,owns:source.decl.owns,reads:source.decl.reads,bases:source.bindings.bases,authority:capturedAuthority(source),
     acceptedView:source.acceptedView,legacyLocalView:legacy,status,scheduler:health,liveMemory:working.liveMemory,documents
+  };
+}
+/** okf 4.0.3: inspect a harvest-off home (consultSource): its declaration, the
+ *  bases it reads, and its own working memory. There is no source, custody or
+ *  schedule to report; `oats okf bases` shows the accepted state it reads. */
+export function inspectConsultOnly(source) {
+  const {documents,error}=homeDocuments(source.home),observedAt=new Date().toISOString();
+  if(error) fail(error.code==='E_PATH'?'E_PATH':'E_INSPECT_FAILED',error.message);
+  const path=join(source.home,'knowledge');let legacy=null;
+  try {const stat=fs.lstatSync(path);legacy={status:'legacy-local-view',path,ignored:true,...(stat.isSymbolicLink()?{symlink:true}:{}),note:'okf 3.0.0 ignores this okf 2.x snapshot and reads knowledge remotely; it is safe to delete by hand'};} catch(e) {if(!missing(e)) throw e;}
+  return {
+    summary:`OKF harvest off for this instance (${source.harvest.reason}): no source is registered and nothing is captured; ${documents.length} working-memory documents${legacy?'; legacy-local-view ./knowledge/ (ignored, safe to delete)':''}`,
+    source:null,harvest:source.harvest,owns:source.decl.owns,reads:source.decl.reads,bases:source.bindings.bases,
+    acceptedView:null,legacyLocalView:legacy,status:null,scheduler:null,liveMemory:{available:true,reason:'live',observedAt},documents
   };
 }

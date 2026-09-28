@@ -108,14 +108,28 @@ function finishRegistration(source) {
   scheduleSource(source);return source;
 }
 /** Harvest off (okf 4.0.0): no source, no custody, no schedule. The home keeps
- *  a small record so retire knows there is nothing to capture. */
+ *  a small record so retire knows there is nothing to capture, and (4.0.3) the
+ *  soul's declaration, so consultation works without a source. */
 function harvestOff(home,sw,extra={}) {
-  const record={version:1,harvest:'off',reason:sw.reason,rows:sw.rows,warnings:sw.warnings,at:new Date().toISOString()};
+  const record={version:1,harvest:'off',reason:sw.reason,rows:sw.rows,warnings:sw.warnings,...(extra.decl?{decl:extra.decl}:{}),at:new Date().toISOString()};
   atomic(instanceRecordPath(home),JSON.stringify(record,null,2)+'\n');
   ensureInstanceKnowledge(home);
   return {harvestOff:true,switch:sw,home,...extra};
 }
 export const harvestOffRecord = home => fs.existsSync(instanceRecordPath(home))?readJSON(instanceRecordPath(home)):null;
+/** okf 4.0.3: what a harvest-off home consults. Consultation never depends on
+ *  the harvest switch: such a home has no registered source by design, so it
+ *  reads its soul's declaration (recorded at spawn; the kernel's OATS_SOUL for
+ *  a home spawned before 4.0.3) and the deployment's bindings as they are now.
+ *  Nothing is registered, captured or scheduled. */
+export function consultSource(home) {
+  home=safePath(home);
+  const record=harvestOffRecord(home);
+  if(!record) fail('E_SOURCE',`no okf source for ${home}: it was not spawned with oats.okf as its knowledge capability`);
+  const decl=record.decl || (process.env.OATS_SOUL?declaration(fs.realpathSync(process.env.OATS_SOUL)):fail('E_OATS_SOUL_MISSING','OATS_SOUL is not set; oats.okf commands run only under the OATS kernel'));
+  const work=fs.existsSync(join(home,'work'))?fs.realpathSync(join(home,'work')):join(home,'work');
+  return {home,work,decl,bindings:loadBindings(undefined,{sourceHome:home,sourceWork:work}),harvest:{status:'off',reason:record.reason,at:record.at}};
+}
 /** The source's tasks provider (its instance.json tasks-layer capability), or null. */
 function tasksProvider(meta) {
   const row=Array.isArray(meta?.capabilities)?meta.capabilities.find(c=>c && c.layer==='tasks' && typeof c.id==='string'):null;
