@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn as spawnProcess, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { linkExecutables, waitUntil as waitFor } from "./helpers/host-fixture.mjs";
 import { statusDisagreement } from "../lib/core.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
@@ -369,6 +370,61 @@ test("0.30 a home without its session receipt (before 0.25.9) retires when its s
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.equal(existsSync(live.home), false); assert.ok(hookRan(live.home));
   } finally { try { tmux("kill-server"); } catch { /* not running */ } }
+});
+
+test("0.30 a home without its session receipt is absent only when no live process works in it: a process on no tmux at all refuses (named by pid), with or without a recorded launch, --force included; a failed process scan refuses as ambiguous", async () => {
+  const hook = "import {writeFileSync} from 'node:fs'; import {basename, dirname, join} from 'node:path'; writeFileSync(join(dirname(process.env.OATS_HOME), `retire-hook-ran-${basename(process.env.OATS_HOME)}`), 'ran\\n'); console.log(JSON.stringify({meta:{retired:true}}));\n";
+  const f = fixture({ capabilities: { "acme.undo": { manifest: { description: "undo", hooks: { retire: "hook.mjs" } }, files: { "hook.mjs": hook } } } });
+  const socket = join(f.base, "gone-tmux.sock");
+  const baselines = join(f.root, "dev", "instances", ".oats-retirement", "baselines");
+  /** A pre-0.25.9 home: no receipt; `launched` records a tmux endpoint on a server that is gone. */
+  const legacy = (purpose, { launched }) => {
+    const before = new Set(existsSync(baselines) ? readdirSync(baselines) : []);
+    const spawned = spawn(f, purpose);
+    for (const b of readdirSync(baselines)) if (!before.has(b)) rmSync(join(baselines, b));
+    const metaPath = join(spawned.home, "instance.json");
+    const meta = JSON.parse(readFileSync(metaPath, "utf8"));
+    if (launched) write(metaPath, JSON.stringify({ ...meta, launched: true, tmux: { session: "legacy", window: spawned.instance, socket } }, null, 2) + "\n");
+    return spawned;
+  };
+  const hookRan = (home) => existsSync(join(dirname(home), `retire-hook-ran-${basename(home)}`));
+  const refusedWith = (instance, extra, re) => {
+    const r = cli(f, ["retire", instance, ...extra, "--json"]);
+    assert.notEqual(r.status, 0, `retired ${instance} ${extra.join(" ")}: ${r.stdout}`);
+    const err = JSON.parse(r.stdout).error;
+    assert.equal(err.code, "E_RUNTIME_ENDPOINT_UNKNOWN");
+    assert.match(err.message, re);
+  };
+  const children = [];
+  const worker = (cwd) => { const c = spawnProcess("sleep", ["600"], { cwd, stdio: "ignore" }); children.push(c); return c; };
+  try {
+    for (const launched of [true, false]) {
+      // (a) the recorded server is gone / (b) no launch recorded — and a harness started by hand works in the home, on no tmux at all.
+      const home = legacy(launched ? "handrun" : "unlaunched-handrun", { launched });
+      const w = worker(home.home);
+      await waitFor(() => { const r = cli(f, ["retire", home.instance, "--plan", "--json"]); return JSON.parse(r.stdout).result?.facts.session.note?.includes(`pid ${w.pid}`); }, "the plan names the worker");
+      const p = JSON.parse(cli(f, ["retire", home.instance, "--plan", "--json"]).stdout).result;
+      assert.equal(p.facts.session.established, false);
+      assert.match(p.facts.session.note, new RegExp(`a process works in this home \\(pid ${w.pid} sleep\\); stop it, then retire`));
+      for (const extra of [[], ["--force"]]) refusedWith(home.instance, extra, new RegExp(`not observably absent \\(a process works in this home \\(pid ${w.pid} sleep\\)`));
+      assert.equal(existsSync(home.home), true); assert.equal(hookRan(home.home), false);
+      // (c) once it stops, the same home retires.
+      w.kill("SIGKILL");
+      await waitFor(() => !JSON.stringify(JSON.parse(cli(f, ["retire", home.instance, "--plan", "--json"]).stdout).result.facts.session).includes("a process works"));
+      const r = cli(f, ["retire", home.instance, "--json"]);
+      assert.equal(r.status, 0, r.stdout + r.stderr);
+      assert.equal(existsSync(home.home), false); assert.ok(hookRan(home.home));
+    }
+    // (d) the scan cannot run (no lsof on PATH): ambiguous, refused, --force included.
+    const blind = legacy("blind", { launched: false });
+    const bin = join(f.base, "no-lsof-bin");
+    linkExecutables(bin, ["node", "git"]);
+    const saved = f.env.PATH;
+    f.env.PATH = `${join(f.base, "bin")}:${bin}`;
+    try { for (const extra of [[], ["--force"]]) refusedWith(blind.instance, extra, /could not scan for a process working in this home \(lsof is not on PATH\)/); }
+    finally { f.env.PATH = saved; }
+    assert.equal(existsSync(blind.home), true); assert.equal(hookRan(blind.home), false);
+  } finally { for (const c of children) try { c.kill("SIGKILL"); } catch { /* gone */ } }
 });
 
 test("retire-hook bytes are caught by the final post-hook inspection", () => {
