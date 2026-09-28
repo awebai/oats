@@ -5,6 +5,7 @@ import { dirname, basename, join, isAbsolute, resolve } from 'node:path';
 import { deploymentRecord as record } from './renderer/deployment-contract.mjs';
 import { harnessOf } from './renderer/harness-names.mjs';
 import { teamRow, teamRowsOf, defaultTeamOf } from './renderer/team-rows.mjs';
+import { launchOf, REPORT_FROM } from './renderer/launch-contract.mjs';
 const text = value => typeof value === 'string' && value.length <= 8192 && !value.includes('\0');
 const absolute = value => text(value) && isAbsolute(value) && resolve(value) === value;
 const own = (value, key) => Object.hasOwn(value, key);
@@ -299,6 +300,8 @@ export function soulsData(document) {
     // Team model v2 (0.30): the soul's teams here (TeamRow, the default first) and its default.
     if (own(row, 'teams')) { const teams = teamRowsOf(row.teams); check(teams !== undefined); out.teams = teams; }
     if (own(row, 'defaultTeam')) { const d = defaultTeamOf(row.defaultTeam); check(d !== undefined); out.defaultTeam = d; }
+    // Launch preferences (0.30, feature launch-preference): what a spawn with no flags would decide here.
+    if (own(row, 'launch')) { const l = launchOf(row.launch, REPORT_FROM); check(l !== undefined); out.launch = l; }
     // 0.29: every team label the soul carries (primary first; teams contract), when reported.
     if (own(row, 'labels')) {
       check(Array.isArray(row.labels) && row.labels.length <= 64 && row.labels.every(l => typeof l === 'string' && TEAM_LABEL.test(l)) && new Set(row.labels).size === row.labels.length);

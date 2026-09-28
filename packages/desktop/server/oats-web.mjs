@@ -209,6 +209,8 @@ function agentsData(wsId) {
         // Team model v2 (0.30): the soul's teams here (the default first) and its default, as the kernel resolved them.
         ...(Array.isArray(soul.teams) ? { teams: soul.teams.map((t) => ({ ...t })) } : {}),
         ...(Object.hasOwn(soul, "defaultTeam") ? { defaultTeam: soul.defaultTeam && { ...soul.defaultTeam } } : {}),
+        // Launch preferences (0.30): the soul's declared and effective harness + model, and where it came from.
+        ...(soul.launch ? { launch: structuredClone(soul.launch) } : {}),
         // The kernel's soul key (`oats soul teams <key>`): the qualified name for a package soul, the bare name otherwise.
         ...(typeof soul.key === "string" ? { key: soul.key } : {}),
         ...(soul.kind === "package" ? { package: soul.package, version: soul.version, qualifiedName: soul.qualifiedName } : {}),
