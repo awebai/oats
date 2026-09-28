@@ -4,3 +4,5 @@ description: Deployment operator expert — onboarding, rebuilds, multi-machine 
 work: directory
 capabilities:
   oats.setup: { from: package }   # oats.core and the oats.okf knowledge slot come from the workspace defaults
+  oats.engineering-expert: { from: package }   # plan, spec, coordinate developers and experts, verify, land
+  oats.workspace-experts: { from: here }       # this repository's surfaces, developers and delivery

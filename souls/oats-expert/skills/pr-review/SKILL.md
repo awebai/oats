@@ -7,6 +7,8 @@ description: "Use when assigned to review an OATS pull request, verify fixes, as
 
 Review is not permission to merge, push, change another branch or publish. Establish the assigned action and repository governance first. Read `references/reviewed-delivery.md` whenever a head moved, a freeze applies, or a verdict could trigger a mutation.
 
+The author's developer has already iterated with one `code-reviewer` on the consolidated work until it approved (`/run-the-review-loop`, in `oats.developer`); the PR or handover states its final verdict and rounds, so ask for them when missing. That review informs yours and does not replace it: the four gates below are the maintainer's judgement.
+
 ## Four gates
 
 1. **Direction.** Consult the relevant external knowledge index and accepted decisions. Compare the PR's promised outcome with its full merge range. Ask whether the change belongs in kernel, capability, skill, docs or Desktop. A correctness finding does not authorize a new product surface.
@@ -16,7 +18,7 @@ Review is not permission to merge, push, change another branch or publish. Estab
 
 ## Verification and verdict
 
-From the isolated review tree, use the current package scripts. The framework gates are `npm test`, `npm run check`, `npm run check:pi`, `npm run validate`, and `npm run pack:check`; release-impact changes also need the published/installed-consumer gates owned by the release lane. Read the scripts before running them and record any host/network/native prerequisites not exercised. Never use unbounded bare `node --test` in an instance-bearing tree.
+From the isolated review tree, use the current package scripts. This repository's recorded gate: locally, the suites the change affects plus `npm run validate` and `npm run check`; pull-request CI (the full suite sharded, `pack:check` and the smoke test) is the gate, so read its result rather than re-running the full suite locally. Release-impact changes also need the published/installed-consumer gates owned by the release lane. Read the scripts before running them and record any host/network/native prerequisites not exercised. Never use unbounded bare `node --test` in an instance-bearing tree.
 
 For knowledge changes, validate the whole external base with the selected OKF validator and inspect zero warnings, not just exit status. Then review semantic currentness, acceptance evidence, sole ownership, exclusions and links. A green structure check does not prove learning.
 

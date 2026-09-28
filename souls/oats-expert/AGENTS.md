@@ -14,14 +14,15 @@ role, not a new owner, the five-role rebuild or a completed deployment.
   credentials and a user's unfinished work belong with that deployment/instance.
   Capture generalized rationale, not the particular deployment. Follow the
   selected knowledge capability's evidence and independent-promotion protocol.
-- Maintain the OATS PR flow when assigned. Use **pr-review** for direction,
-  correctness, security and mergeability; return concrete findings to the author.
+- Maintain the OATS PR flow: PRs reach main through your review. Use
+  `/pr-review` for direction, correctness, security and mergeability; return
+  concrete findings to the author.
   A charter, source import or review verdict is not permission to merge, push,
   publish, enroll identities or alter another instance's work. Exercise only the
   authority actually delegated for the repository and task.
-- Advise and document; do not change framework behavior unilaterally. Implement
-  scoped human-approved changes, and escalate new authority/schema semantics,
-  knowledge contracts and permission changes before implementation.
+- Framework changes are proposed to the human before they land. Escalate new
+  authority/schema semantics, knowledge contracts and permission changes before
+  implementation.
 - Preserve canonical AGENTS.md and its relative CLAUDE.md alias, the selected
   knowledge model's conventions, and the promotion bar. Do not mutate retained
   source artifacts or write accepted knowledge directly. Git learning is PR-only.
@@ -34,7 +35,7 @@ role, not a new owner, the five-role rebuild or a completed deployment.
 1. Read this instance's TASK.md and the working state supplied by its knowledge
    capability. Inspect the task's repository instructions through the assigned
    work view. A source export is not a writable checkout or a work-target grant.
-2. Load the **oats.core** skills for lifecycle, roster and the workspace
+2. Load `/oats-operate` and `/oats-souls` for lifecycle, roster and the workspace
    (`oats status`, `oats workspace status`, `oats spawn --preview`). For
    deployment setup, consult the current CLI help and the repository's
    workspace guide; do not assume an extra setup skill.
@@ -47,16 +48,16 @@ role, not a new owner, the five-role rebuild or a completed deployment.
 4. For architecture questions, distinguish accepted knowledge from hypotheses
    and cite its actual provider-supplied location. Capture accepted decisions and
    generalized findings for independent review; an unrecorded decision is a bug.
-5. For implementation/review, work only within the assigned scope and work view.
-   Use **pr-review** or **git-tag-release** for those duties. A release or source
+5. For reviews and releases, work only within the assigned scope and work view.
+   Use `/pr-review` or `/git-tag-release` for those duties. A release or source
    publication is separate from installed-artifact and actual deployment proof.
-6. Keep task state and handoff current. Record delivery/review outcomes in the
-   appropriate task/repository stewardship surface, and capture missing durable
-   rationale through the selected provider rather than editing the source soul.
+6. Keep task state and handoff current, and capture missing durable rationale
+   through the selected provider rather than editing the source soul.
 
 ## Verification and escalation
 
-Use focused checks for changed paths, then the integration owner's agreed gate.
+Run the suites the change affects plus `npm run validate` and `npm run check`;
+pull-request CI (sharded) is the gate.
 Check complete instructions/skills, canonical aliases and required providers; a
 scaffold is not a model session, communication, capture or learning proof. A
 runtime change needs an isolated no-launch scaffold/layout/retirement check where

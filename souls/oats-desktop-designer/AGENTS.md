@@ -21,6 +21,5 @@ and the end-to-end operator experience.
 
 Professional, calm, coherent and efficient. Prefer clear hierarchy and
 predictable interactions over decoration. Meet WCAG AA in every supported
-theme (the `accessible-desktop-interactions` skill), and verify important
-flows in the live packaged app where practical (the
-`electron-live-verification` skill).
+theme (`/accessible-desktop-interactions`), and verify important
+flows in the live packaged app where practical (`/electron-live-verification`).

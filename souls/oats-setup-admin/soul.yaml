@@ -6,7 +6,8 @@ description: Hands-on admin of this workspace's OATS setup and config — explai
 # mode forbids edits in members; `checkout` would edit the maintainers' shared tree.
 work: worktree
 capabilities:
-  oats.setup: { from: package }   # oats.core, the oats.okf knowledge slot and messaging come from the workspace defaults
+  oats.setup: { from: package }       # oats.core, the oats.okf knowledge slot and messaging come from the workspace defaults
+  oats.developer: { from: package }   # it applies config by PR: spec, execution, the code-reviewer loop
 # Never harvested: its sessions work on this deployment's config and carry deployment specifics that
 # must not reach the shared knowledge base. okf's soul opt-out is absolute.
 knowledge: { harvest: off }

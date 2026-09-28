@@ -4,3 +4,6 @@ description: OATS direction, architecture rationale, maintainer review and adopt
 work: directory
 # oats.core and the oats.okf knowledge slot come from the workspace defaults.
 # What this soul owns and reads in the central base is okf.json beside this file.
+capabilities:
+  oats.engineering-expert: { from: package }   # plan, spec, coordinate developers and experts, verify, land
+  oats.workspace-experts: { from: here }       # this repository's surfaces, developers and delivery

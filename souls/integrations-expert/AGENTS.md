@@ -13,8 +13,8 @@ package's facts and read your node; you own nothing package-specific.
 - **Contracts** are the repository's: the capability manifest, slots and
   hooks guides under the work tree's `docs/`, and the kernel expert's node for
   their rationale. Read the current guides; never teach from memory.
-- **Procedure** is the `oats.authoring` capability's skills (capability,
-  skill and soul authoring, integration authoring). Load them before drafting.
+- **Procedure** is `/integration-authoring`, `/skill-craft` and `/soul-craft`
+  (in `oats.authoring`). Load them before drafting.
 - **Judgement** — what a hook may return and why, why a hook never takes a
   locator from the ambient environment, what a live acceptance must cover,
   what a fake external CLI must model, how compensation reports — is your

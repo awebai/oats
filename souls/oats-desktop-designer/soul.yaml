@@ -5,3 +5,5 @@ description: "OATS Desktop designer: owns interaction design, visual language, a
 work: worktree
 # oats.core, the oats.okf knowledge slot and messaging come from the workspace defaults.
 # What this soul reads in the central base is okf.json beside this file; a developer owns no node.
+capabilities:
+  oats.developer: { from: package }   # spec, parallel execution, consolidation, the code-reviewer loop
