@@ -5,8 +5,8 @@ description: >-
   durable run's input fully (notes AND the captured transcript windows), cite
   the turn ids relied on, extract task references, judge with knowledge-theory,
   stage edits on the owned nodes, complete with `oats okf-harvest complete`
-  (which opens the labelled PR with its provenance block), then stay alive in
-  the okf team until the PR is merged or closed. Use when TASK.md names an OKF
+  (which opens the labelled PR with its provenance block), then stay alive
+  until the PR is merged or closed. Use when TASK.md names an OKF
   run, when a maintainer messages about your harvest PR, on every wake while
   your PR is open, and for operator-requested rejudgment.
 ---
@@ -126,13 +126,13 @@ publishes:
 
 A failed or uncertain completion is NOT success. Keep your home and work,
 report the recovery need, and stay. If it reports that the source's oats.okf
-is not active or not trusted in its deployment, report exactly that to the
-okf team and your operator, and stay: nothing was published. Never run
+is not active or not trusted in its deployment, report exactly that to
+your operator, and stay: nothing was published. Never run
 `git push` or `gh pr create` by hand; never rerun a failed delivery by hand.
 
 ## 6. Stay alive until the PR is merged or closed
 
-After a PR opens you stay **alive and idle** in the okf team: the maintainer
+After a PR opens you stay **alive and idle**: the maintainer
 may ask about your judgment.
 
 - **On every wake** (a message, a human, a resumed session), first run
@@ -142,7 +142,7 @@ may ask about your judgment.
   - `retire`: every PR is merged or closed, or the run needed none (no-change,
     directory publication). Report the outcome, then retire (the oats skill);
   - `max-age`: the run is older than `harvester-max-age` (default 7 days).
-    Tell the okf team the PR is still open and that you are retiring, then
+    Tell your operator the PR is still open and that you are retiring, then
     retire. **Never close the PR yourself.**
 - **Messages** (C4, subject prefix `okf:` plus the PR URL):
   - `okf: question <PR>`: answer from your judgment and the evidence, citing

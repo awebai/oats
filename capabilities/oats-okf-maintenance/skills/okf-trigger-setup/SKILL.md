@@ -6,7 +6,7 @@ description: >-
   (`oats-triggers/okf-harvest-review.yaml` in a member repo, `from:
   oats.okf:harvest-review`, with `runsOn` naming the one host and `owner` the
   GitHub account that can merge on the knowledge-base repo), or locally with
-  `oats trigger add` for a machine-private setup. Covers the okf team, the
+  `oats trigger add` for a machine-private setup. Covers messaging, the
   self-approval limit and `oats trigger test`. Use when setting up knowledge
   operations, when harvest PRs are not being reviewed, when moving the
   reviewer to another host, or when asked whether a host may run the
@@ -17,7 +17,7 @@ description: >-
 
 The trigger makes a harvest PR get reviewed: when a PR labelled `okf-harvest`
 opens on the knowledge-base (KB) repository, the host tick spawns a new
-`oats.okf/knowledge-maintainer` in the `okf` team to review it. It runs on one
+`oats.okf/knowledge-maintainer` to review it. It runs on one
 machine, acting as one GitHub account, and that account must be able to
 **merge** on the KB repository.
 
@@ -43,28 +43,16 @@ the reviewer's account are the same GitHub account, then either:
 
 Say which one applies when you report the setup.
 
-## 3. The okf team
+## 3. Messaging
 
-The package souls carry `team: okf`. The workspace must declare it, with its
-messaging mapping. Messaging is aweb (`oats.aweb`, the workspace default);
-it needs oats.aweb 1.15.0 or later, which honours the `join=okf` the
-harvester spawn and the trigger's `teams: [okf]` pass:
+The harvester and the maintainer message each other through the soul's
+messaging capability (`oats.aweb`, the workspace default). Both live in the
+deployment's default team, like every instance: there is no okf team to
+declare or map. A deployment that wants them in another team opts them in
+locally, as for any soul.
 
-```yaml
-# oats-workspace.yaml
-teams:
-  okf: { description: Knowledge operations }
-defaults:
-  messaging: { oats.aweb: { from: package } }
-messaging:
-  byTeam:
-    okf: { team: aweb:<your-org>.okf }
-```
-
-Another messaging provider works the same way if it honours `join`.
-
-Without it, the souls list with `E_TEAM_UNKNOWN`, and the harvester and the
-maintainer cannot message each other.
+Without a messaging capability they cannot message each other: the
+maintainer's notices and questions do not reach the harvester.
 
 ## 4. Declare it in the workspace (the default)
 
@@ -126,7 +114,7 @@ oats trigger status
 
 - `oats trigger test` checks gh auth and where its credential comes from, the
   repository and your merge permissions, the soul, its messaging capability,
-  the okf team, the host/owner match, and what would fire now. It spawns
+  the host/owner match, and what would fire now. It spawns
   nothing. It must pass before you report the setup done; fix what it names.
 - **Credentials reach the tick through the host timer, not your shell.** A
   `GH_TOKEN` exported in your shell does not reach it; `gh auth login` with the
