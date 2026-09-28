@@ -149,7 +149,7 @@ The Desktop gets the same controls (Setup: this deployment's teams + the default
      - **BYOD:** `aw id team create --name <t> --namespace <domain>` (the namespace controller key) → the team id + a team KEY → the team key signs `aw id team invite` → `accept-invite --local` → `aw id team register` to host it on aweb.ai.
   3. Setup writes each new id into `oats-local.yaml` `teams.<label>` (and sets `defaultTeam` to the first).
 - **Joining a team someone else created** (a shared team like `oats`): its owner sends an invite. `oats teams add <label> --team <id> --invite <token>` records the label + id, and the root accepts the invite into its membership. Setup never creates a team that's already declared with an id.
-- **A label is NOT passed raw as the team name** (aweb's rule, hosted + BYOD: `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`, 1–128; the id is `<team>:<namespace>`, unique per namespace, 409 on a collision).
+- **A label is NOT passed raw as the team name** (aweb's rule, hosted + BYOD: lowercase letters, digits and inner hyphens; it starts and ends with a letter or digit; 1–128 characters; the id is `<team>:<namespace>`, unique per namespace, 409 on a collision).
   - Setup NORMALIZES the label to that pattern (lowercase; `_`/`.` → `-`; trim hyphens) and passes it as `--name`.
   - **On a 409:** if the existing team is one this deployment's root already belongs to (a re-run of setup), reuse it. Otherwise choose a suffixed name (`<name>-2`, …), and never adopt a team the root isn't a member of.
   - `oats-local.yaml` `teams.<label>.team` holds the real id, so **the mapping, not the name, is the truth.**
