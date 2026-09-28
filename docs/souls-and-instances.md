@@ -2,7 +2,7 @@
 
 Souls and instances are the two layers the OATS kernel owns. A soul defines a
 reusable specialisation. An instance is a named working incarnation, with its own
-ID, home, work view and lifecycle—not necessarily one task or chat session.
+ID, home, work view and lifecycle; not necessarily one task or chat session.
 
 An instance may be ephemeral, such as a developer or reviewer doing bounded work,
 or long-running, carrying planning, investigation and domain understanding across
@@ -15,6 +15,22 @@ discovered over Git; their capabilities are resolved by `from:` and copied whole
 into each instance. This page is the soul's and the instance's anatomy under
 that model.
 
+## Quick map
+
+| Thing | Location |
+|---|---|
+| Shared declaration | `oats-workspace.yaml` in the host repo; `oats-membership.yaml` in every member |
+| Per-machine config | `<deployment>/oats-local.yaml` (uncommitted; [configuration.md](configuration.md)) |
+| Package lock | `<deployment>/oats-lock.json` ([packages.md](packages.md#lock-v3)) |
+| Soul | `<member repo>/souls/<name>/`: `soul.yaml`, `AGENTS.md`, `CLAUDE.md → AGENTS.md`, `skills/` |
+| Member capability | `<member repo>/capabilities/<name>/oats.json` (latest state) |
+| Package capability | `<package repo>/oats-package/capabilities/<name>/` (versioned) |
+| Instance home | `<deployment>/agents/<soul>/instances/<instance>/` |
+| Instance operating doc | `<home>/AGENTS.md` (generated) |
+| Instance skills | `<home>/.agents/skills/` |
+| Instance modules | `<home>/.oats/modules/<capability>/` (the copies this instance runs) |
+| Instance record | `<home>/instance.json` (`modules`, `providers`, `workspace`, `teams`) |
+
 ## Soul anatomy
 
 A soul is durable and committed. It is the part you review, improve, and keep.
@@ -25,7 +41,7 @@ A soul is durable and committed. It is the part you review, improve, and keep.
   AGENTS.md            # canonical operating doc
   CLAUDE.md → AGENTS.md
   skills/              # skills specific to this expert
-  okf.json             # if the soul uses oats.okf: { version: 1, owner, owns: ["<base>/<node>"], reads: […] } — the provider's, not the kernel's
+  okf.json             # if the soul uses oats.okf: { version: 1, owner, owns: ["<base>/<node>"], reads: […] } (the provider's, not the kernel's)
 ```
 
 (A deployment's `agents/<name>/souls/<commit12>/` has the same shape; a member
@@ -40,36 +56,33 @@ name: release-manager                     # must equal the directory name
 description: Cuts, verifies and announces releases.
 work: worktree                            # worktree | checkout | directory | workspace
 
-capabilities:                             # WHERE each capability comes from — a location, never a version
+capabilities:                             # WHERE each capability comes from: a location, never a version
   acme-release-tooling: { from: here }    # here = this soul's own repo
   acme-warehouse-access: { from: github.com/acme/data }   # a canonical repo key of a confirmed member
   acme-deploy: { from: package }          # provided by a package pinned in the workspace's packages:
   acme-house-style: off                   # removes a workspace default
 
-knowledge:                                # provider payloads — opaque to the kernel, consumed by the slot's capability
-  harvest-runtime: claude                 #   (oats.okf 2.1.3 reads only its binding's settings keys here; what the soul
-                                          #    owns/reads is in this directory's okf.json — see "Soul anatomy")
+knowledge:                                # provider payloads: opaque to the kernel, consumed by the slot's capability
+  harvest: off                            #   (what the soul owns and reads is in this directory's okf.json)
 messaging:
   channels: [acme-eng]
 tasks: none                               # `none` empties the slot (drops the workspace default)
 
-compatibility:                            # optional floors on PACKAGE versions — constraints, not sources
-  oats.okf: ">=2.1"
+compatibility:                            # optional floors on PACKAGE versions: constraints, not sources
+  oats.okf: ">=4.0"
 ```
 
 | Key | Meaning |
 |---|---|
 | `name`, `description`, `work` | Required. `work` is the work mode below. |
-| `team` | **Removed in 0.30.0** (`E_WORKSPACE_SCHEMA`: "team membership is local since 0.30: `oats soul teams`"). Which teams a soul belongs to is the deployment's `oats-local.yaml` (`souls.teams`, `souls.default`) — see [workspaces.md](workspaces.md#teams). |
-| `private` | **Ignored since 0.26.0:** souls have no private mode. Every soul of a confirmed member is listed and spawnable; a soul that still carries the field gets a `soul-private-ignored` warning. Remove it. |
 | `capabilities` | `<cap>: { from: here \| <repo key> \| package }` or `<cap>: off`. Composed over `defaults.<slot>` ⊕ `defaults.capabilities`; the soul wins. |
-| `knowledge` / `messaging` / `tasks` | The slot's provider payload (true of every instance of the soul), or `none`. Merged with `oats-local.yaml` `settings.<cap>` and `spawn --provider <cap>`; the provider's `binding` contract validates the result — and refuses keys it does not declare. For `oats.okf` 2.1.3 the admitted keys are its settings (`bindings-file`, `state-dir`, `harvest-runtime`, `harvest-model`); the soul's `owns`/`reads` live in `souls/<name>/okf.json`, which OKF reads from the soul directory. |
+| `knowledge` / `messaging` / `tasks` | The slot's provider payload (true of every instance of the soul), or `none`. Merged with `oats-local.yaml` `settings.<cap>` and `spawn --provider <cap>`; the provider refuses keys its manifest does not declare. For `oats.okf`, what the soul owns and reads lives in `souls/<name>/okf.json`. |
 | `compatibility` | `<cap>: <semver range>` checked against the locked package version (`E_COMPATIBILITY`). |
 
-Schema: [`soul.schema.json`](soul.schema.json). Not in v2: `kind`, `type`,
-`repo`, `harness`, `model`, `backend`, `yolo`, `launch-config`, `children`,
-`requires`, `source:`, `stores.inherit`. Runtime, model, backend, yolo and the
-launch configuration are spawn-time host choices (`--harness`, `--model`,
+Schema: [`soul.schema.json`](soul.schema.json). Which teams a soul joins is the
+deployment's choice (`oats-local.yaml`, [workspaces.md](workspaces.md#teams)),
+and the harness, model, backend, yolo and launch configuration are spawn-time
+host choices (`--harness`, `--model`,
 `--backend`, `--yolo`, `--launch-config`, or a launch configuration in
 `oats-local.yaml`), not soul identity: a soul is model-agnostic as an artifact.
 A child-spawn policy is a spawn flag too (`--no-child-spawns`).
@@ -79,16 +92,15 @@ is a code change, reviewed in its repo.
 
 ### OATS operational knowledge is a capability
 
-An agent's knowledge of OATS itself — status, spawn, retire, finding other
-souls — is ordinary capability content: **`oats.core`** (package
+An agent's knowledge of OATS itself (status, spawn, retire, finding other
+souls) is ordinary capability content: **`oats.core`** (package
 `oats.framework`). Workspaces give it to every soul through
 `defaults.capabilities: { oats.core: { from: package } }`; a soul may say
 `oats.core: off`. **`oats.setup`** (same package) carries the whole-architecture
 knowledge an onboarding expert needs. Neither is kernel magic; the kernel still
 composes its own instance-boundary and work-mode briefings, and the "You run
-on OATS" briefing is `oats.core`'s inject (the kernel ships no copy since 0.26:
-a soul without `oats.core` gets no OATS operating instructions, and
-`oats doctor --soul` says so).
+on OATS" briefing is `oats.core`'s inject: a soul without `oats.core` gets no
+OATS operating instructions, and `oats doctor --soul` says so.
 
 ## Instance anatomy
 
@@ -116,15 +128,15 @@ full copy** of every capability the soul resolved to:
   STATE.md, log.md, notes/         # optional, from the knowledge capability
 ```
 
-Instances are transient and normally gitignored (`agents/*/instances/`). Expert
-souls travel with the repo; different teams instantiate them into their own
-local agent teams without collisions, because instance homes, logs, notes,
-branches and messaging identities are local runtime state.
+Instances are local runtime state and normally gitignored
+(`agents/*/instances/`). Souls travel with their repository; several
+deployments can incarnate the same soul without collisions, because instance
+homes, logs, notes, branches and messaging identities are local.
 
-### `instance.json` — provenance is recorded, not declared
+### `instance.json`: provenance is recorded, not declared
 
-Besides the classic fields (repo, branch, lineage, launch recipe, composed
-skills and instructions), a workspace spawn records:
+Besides the instance's identity, repository, branch, lineage, launch recipe and
+composed skills and instructions, a spawn records:
 
 ```json
 {
@@ -134,8 +146,8 @@ skills and instructions), a workspace spawn records:
       "commit": "3f2a9c1e…", "digest": "sha256-…", "materializedAt": "2026-09-24T10:12:44.118Z"
     },
     "oats.okf": {
-      "from": { "kind": "package", "package": "oats.okf", "version": "2.1.3", "commit": "b2e16f2e…", "integrity": "sha256-…", "repoKey": "github.com/awebai/oats-okf" },
-      "commit": "b2e16f2e…", "digest": "sha256-…", "materializedAt": "2026-09-24T10:12:44.201Z"
+      "from": { "kind": "package", "package": "oats.okf", "version": "4.0.3", "commit": "559835bc…", "integrity": "sha256-…", "repoKey": "github.com/awebai/oats-okf" },
+      "commit": "559835bc…", "digest": "sha256-…", "materializedAt": "2026-09-24T10:12:44.201Z"
     }
   },
   "providers": {
@@ -152,19 +164,19 @@ skills and instructions), a workspace spawn records:
 }
 ```
 
-- `modules.<cap>` — where the copy came from, at which commit, and its content
+- `modules.<cap>`: where the copy came from, at which commit, and its content
   digest. `oats status` compares these with the workspace's current state and
   shows `moved` / `missing` per module (drift is shown, not prevented).
-- `providers.<cap>` — the merged provider payload the capability was bound with
+- `providers.<cap>`: the merged provider payload the capability was bound with
   (soul ⊕ machine settings ⊕ `--provider`), so a later inspection can tell
   which instance holds a retained seat or a one-off state root. `spawn
   --preview` shows the same map before anything exists, as `settings.<cap>`,
   beside `providers` (the `--provider` flags as given).
-- `workspace` — the workspace commit observed at spawn, the soul's repo/commit,
+- `workspace`: the workspace commit observed at spawn, the soul's repo/commit,
   and the **resolution revision** the spawn decision bound. `oats status`
   compares `workspace.soul` with the member's current commit too: `soul: <name>
   from <member> @ <c7>  [member moved since …]` (`--json`: `instances[].soul`).
-- `teams` / `defaultTeam` — the soul's teams at spawn, exactly as the providers
+- `teams` / `defaultTeam`: the soul's teams at spawn, exactly as the providers
   received them (mapped teams only) and its default: evidence, never rewritten.
   A running home's hooks and messaging commands read the teams live
   ([capabilities.md](capabilities.md#teams-in-the-provider-environment)).
@@ -232,11 +244,12 @@ needs a workspace deployment. The full DTOs are in
 
 Examples of spawn hooks:
 
-- `oats.okf` v2 requires explicit bindings and owner declarations, validates
-  accepted bases, creates episodic files and an immutable reader view, and
-  registers a durable source plus its per-source schedule definition. Missing
-  knowledge is an error, not permission to bootstrap an empty substitute.
-- `oats.aweb` mints a messaging identity — or, with
+- `oats.okf` validates the soul's declaration and the bindings, and creates the
+  instance knowledge files. With harvest on, it also registers a durable source
+  and its harvest schedule; with harvest off (the default) it registers nothing.
+  Missing knowledge configuration is an error, never permission to bootstrap an
+  empty substitute.
+- `oats.aweb` mints a messaging identity or, with
   `--provider oats.aweb identity.source=/abs/path/of/the/.aw/to/retain`, re-takes a retained
   one for exactly this instance.
 
@@ -246,21 +259,11 @@ The instance works in `./work`. With `oats.okf` it also keeps `STATE.md`
 current, appends milestones to `log.md`, and captures non-obvious insights in
 `notes/`.
 
-It reads accepted external knowledge through `./knowledge/view.json` and
-`./knowledge/bases/<alias>/`, index-first. It never writes accepted knowledge;
-this is instruction, not an OS sandbox. `oats okf read`/`refresh` obtains a new
-accepted view while old snapshots remain stable. Git PRs are unread as accepted
-knowledge until their merge is visible; pending directory publication blocks
-fresh reads rather than exposing partial bytes.
-
-An independent worker judges durable **notes and full record windows**, not only
-notes or a watermark left in the live home. Each source has a command job rooted
-in durable deployment context; the operator may also request `oats okf harvest`.
-Workers use their own `work: directory`, never the source branch or an attached
-worktree. Validated Git output goes through real PR delivery; non-Git output
-uses recoverable directory publication. Captured, processed, delivered and
-accepted are distinct receipts; spawning a worker is not successful learning.
-See [knowledge](knowledge.md).
+It consults accepted knowledge remotely, at its accepted state, with
+`oats okf index`, `cat` and `search` (the `okf-consultation` skill), and never
+writes accepted knowledge; this is instruction, not an OS sandbox. With harvest
+on, an independent harvester judges the instance's notes and session record and
+proposes promotions by pull request. See [knowledge](knowledge.md).
 
 ### Spawning and coordinating with other agents
 
@@ -273,29 +276,29 @@ Spawn lineage is **explicit** and relation-based:
 declares what the new instance IS to an existing one (`--parent <instance>` is
 sugar for `--relative-to <instance> --relation child`):
 
-- **child** — nests under the anchor: `parentInstance` = anchor,
+- **child**: nests under the anchor: `parentInstance` = anchor,
   `spawnOrigin: instance`.
-- **parent** — the NEW instance becomes the anchor's parent: it inherits the
+- **parent**: the NEW instance becomes the anchor's parent: it inherits the
   anchor's old lineage slot, and the anchor's `instance.json` is re-pointed so
   its `parentInstance` is the new instance (a reviewer/maintainer of your work
   sits above you). Retirement splices lineage: when any instance retires,
   instances pointing at it (parent or sibling links) inherit its COMPLETE
-  surviving lineage — both its parent and sibling links, whichever edge type
-  pointed at it — so a retired parent-relation maintainer hands its children
+  surviving lineage (both its parent and sibling links, whichever edge type
+  pointed at it), so a retired parent-relation maintainer hands its children
   back to the parent it displaced (restoring absorbed sibling links too), and
-  no instance is left pointing at a missing one. The splice scans every agents
-  root in the team scope, since relations can cross member repos.
-- **sibling** — a peer in the anchor's cluster: it shares the anchor's parent
+  no instance is left pointing at a missing one. The splice scans the
+  deployment's agents root.
+- **sibling**: a peer in the anchor's cluster: it shares the anchor's parent
   when one exists; when the anchor is a root, the new instance records an
   explicit `siblingInstance` link so the cluster is still derivable from
   `oats status --json` (`parentInstance` + `siblingInstance` edges).
-- **unrelated** (default) — no link, operator-origin, top-level.
+- **unrelated** (default): no link, operator-origin, top-level.
 
-Attached-mode spawns are ALWAYS children of the owner of the shared work tree
-(design decision: an attached agent serves that owner); relation flags other
-than a redundant child-of-owner are rejected. Any other spawn — including one
-from a shell that inherited
-an agent's environment variables — is operator-origin and appears top-level.
+Attached-mode spawns are ALWAYS children of the owner of the shared work tree,
+because an attached agent serves that owner; relation flags other than a
+redundant child-of-owner are rejected. Any other spawn, including one from a
+shell that inherited an agent's environment variables, is operator-origin and
+appears top-level.
 Agents spawning sub-agents should pass `--parent "$OATS_INSTANCE"` (or the
 relation that fits).
 
@@ -306,11 +309,10 @@ tasks capability can provide shared work state while messaging provides conversa
 ### Retire
 
 Retirement runs active capability retire hooks in reverse spawn order before the home disappears. The aweb
-integration self-deletes the instance identity here. OKF v2 performs final
-notes-and-record capture into durable external custody. An incomplete or
-uncertified capture retains the home for retry. Successful retirement enqueues
-evidence but never waits for a model or GitHub: independent processing and
-source-targeted inspection continue after the home disappears.
+integration deletes the instance identity here. With harvest on, `oats.okf`
+takes a final capture of notes and the session record into durable custody; an
+incomplete capture keeps the home for a retry. Retirement never waits for a
+model or GitHub: processing continues after the home is gone.
 
 Before any retire hook runs, retire preserves the instance's uncommitted and
 unmerged work: a verified recovery under `.oats-retirement/recovery/`, named in
@@ -358,8 +360,8 @@ instructions state first (`injects/instance-boundary.md`):
   soul's instructions, and `instance.json` `soulDir` records the (read-only,
   per-commit) soul directory every hook and dispatched command receives as
   `OATS_SOUL`. Durable soul edits go through tracked paths under `work/` under
-  the applicable review rules. OKF v2 harvest edits external
-  owned knowledge, not canonical soul files or skills.
+  the applicable review rules. The knowledge harvester proposes changes to the
+  external knowledge base, never to soul files or skills.
 
 Agents move between the two as the task needs; the boundary is what each
 directory is for, not a place to settle in.
@@ -382,9 +384,6 @@ Rules:
 - Do not create extra worktrees. Ask for another instance if parallel work is
   needed.
 
-A config may define `work-modes.worktree.setup`. The kernel runs that command
-inside each fresh worktree. Failures warn but do not block spawn.
-
 ### `checkout` — shared current branch
 
 `work/` is a symlink to the repo checkout itself (the member clone, found as for
@@ -403,9 +402,8 @@ Rules:
 
 `work/` points at **another instance's work tree** — same branch, same
 uncommitted state. Spawning attached requires `workDir` (the owning
-instance's `<home>/work`); it is usually a spawn-time choice for service
-agents such as reviewers, but a soul whose role is always-attached
-service work may declare it as identity too.
+instance's `<home>/work`); it is a spawn-time choice (`--work attached`) for
+service agents such as reviewers.
 
 Attached agents are guests: never switch branches or rewrite history, touch
 only what the briefing names, keep commits small and attributable. Retiring
@@ -421,66 +419,57 @@ directory; without it, the deployment directory (where `oats-local.yaml` is) is
 used. No implicit fallback changes the other modes.
 
 `--work-dir` and `--branch` are rejected. Canonical instructions, skill
-composition, provider trust and harness preflight still apply. No worktree setup
-runs. Retirement preserves nonempty work in verified recovery storage beside the
+composition, provider trust and harness preflight still apply. Retirement preserves nonempty work in verified recovery storage beside the
 home (`workRecovery.path/work`) before deleting it, including files created by
 hooks; directory work has no disposable-root exemptions. The work-root cannot be
 exchanged for a symlink. Recovery does not replace the worker's delivery protocol.
 
 ### `workspace` — cross-repo coordinator
 
-`work/` is a symlink to the **whole deployment** — the directory holding
-`oats-local.yaml`, with `agents/` and the member clones that sit beside it —
-not a repo (0.25.1; a member cloned elsewhere is reached through
-`oats-local.yaml` `clones:`). Every
+`work/` is a symlink to the **whole deployment**: the directory holding
+`oats-local.yaml`, with `agents/` and the member clones that sit beside it, not
+a repo (a member cloned elsewhere is reached through `oats-local.yaml`
+`clones:`). Every
 member repo is read-context; the instance's product is coordination:
 routing, analysis, task-writing, messaging, spawning specialists.
 
 Use this for free agents that support cross-repo work but are not tied to
-any one repo — coordinators, dispatchers, architects. The soul itself still
-lives in (and is committed to) its home repo (e.g. a workspace's
-`lfx-agents/` repo); where the soul lives and where it works are decoupled.
+any one repo: coordinators, dispatchers, architects. The soul itself still
+lives in (and is committed to) its member repository; where the soul lives and
+where it works are decoupled.
 
 Rules:
 
 - Read freely across member repos; **never edit or commit inside them** —
   route changes to the owning repo's agents or the human.
 - No git state operations in any member repo.
-- Knowledge promotion follows the selected capability's custody protocol,
-  never direct edits through the workspace view. In OKF v2 an independent
-  worker publishes external knowledge through PRs for every Git base,
-  irrespective of the source's work mode or the soul's repository.
+- Knowledge promotion follows the knowledge capability's own protocol, never
+  direct edits through the workspace view.
 
-Spawning workspace mode requires a deployment boundary for `./work`; the
-instance records no branch — the workspace is not a git tree. *(Open thread:
-the kernel still derives this boundary from the classic `team:` scope; binding
-it to the `oats-local.yaml` directory is tracked in
-[design/README.md](design/README.md).)*
+The instance records no branch: the workspace is not a Git tree.
 
 ## Agents root
 
-The agents root is the nearest `agents/` directory walking upward from the
-current directory. `PI_AGENTS_ROOT` overrides the search.
-
-**Where instances are stored is a separate question from where you invoked
-OATS.** Discovery finds the root from your current directory, but instance homes
-always live in the **soul-owning repo's primary checkout**: when the root you
-discovered is inside a *linked git worktree*, storage maps to the equivalent
-path in that repository's primary checkout, so homes survive the worktree, stay
-visible to the whole deployment, and never depend on where a command happened to
-run. An agent that spawns after `cd work/` reaches the same home as one spawning
-from the deployment root.
+Instance homes live under the deployment's agents root,
+`<deployment>/agents/<soul>/instances/<instance>/`. Commands find the
+deployment by walking up to `oats-local.yaml`, so an agent that spawns after
+`cd work/` reaches the same agents root as one spawning from the deployment
+directory. `PI_AGENTS_ROOT` overrides the root.
 
 Three things stay independent, and are meant to:
 
-- **Invocation** — where you ran the command;
-- **Config/package scope** — resolved from the context directory, and steerable
-  with an explicit `--dir <path>`;
-- **`work/`** — the instance's repository view, which may well be a linked
-  worktree; only *storage* is redirected, never your work tree.
+- **Invocation**: where you ran the command;
+- **Scope**: the deployment, resolved from the context directory, and
+  steerable with an explicit `--dir <path>`;
+- **`work/`**: the instance's repository view, which may well be a linked
+  worktree.
 
-Roots that Git does not own are unaffected: a non-Git agents root stores
-instances exactly where it sits.
+If an agents root sits inside a linked Git worktree, homes land in the
+soul-owning repo's primary checkout instead: storage maps to the equivalent
+path there, so homes never depend on a disposable worktree. When placement cannot be established (Git owns the
+location but the repository cannot be read, the primary checkout is missing,
+or the destination falls outside the agent's own directory), the spawn fails
+closed with **`E_NO_CANONICAL_ROOT`** and creates nothing.
 
 Every instance is told its own home as **`OATS_INSTANCE_HOME`** (absolute), and
 instructions refer to it as `<instance-home>`. The two environments differ, so
@@ -492,14 +481,6 @@ they are stated separately:
 - **Lifecycle hooks**: `OATS_INSTANCE_HOME` and `OATS_HOME`, alongside the rest of
   the hook contract. `OATS_HOME` predates `OATS_INSTANCE_HOME` and is kept because
   shipped capability hooks read it; it is **not** exported to harness sessions.
-
-Neither is `OATS_HOME_DIR`, which is the package store root — do not conflate
-them.
-
-When placement cannot be established — Git owns the location but the repository
-cannot be read, a linked worktree whose primary checkout is missing, or a
-resolved destination outside the agent's own directory — the spawn fails closed
-with **`E_NO_CANONICAL_ROOT`** and creates nothing.
 
 ### Deployment prerequisite: the agents directory must be operator-owned
 
@@ -524,28 +505,12 @@ Default layout:
       instances/
 ```
 
-Every agent is a soul — a member soul, or a package soul homed under
-`agents/<package>--<soul>/`. A capability-defined agent (a manifest's
-`agents:`) was removed in 0.29.0; a home an earlier kernel left for one (its
-directory holds only `instances/`) is still listed and retirable.
+Every agent is a soul: a member soul, or a package soul homed under
+`agents/<package>--<soul>/`. There are no local souls: author a soul in a
+member repository's `souls/<name>` (`soul.yaml` + `AGENTS.md`) and run
+`oats sync`.
 
-There are no local souls. A soul is a member repository's `souls/<name>`
-(`soul.yaml` + `AGENTS.md`); author it there and run `oats sync`. OATS 0.25
-and earlier kept local souls and capability-agent homes under
-`<scope>/local-agents/`: this kernel never reads, spawns into or retires from
-that directory; it only detects it. Onboarding refuses into a directory that
-holds one, and `oats status` and `oats doctor` report it once, as the
-`legacy-local-agents` problem naming the instances found there; retire them
-with the 0.25 kernel, or delete the directory once they are stopped.
-
-A *captured home* (spawned through 0.24–0.25's captured path, removed in 0.26:
-its `instance.json` records `executionBinding`, `incarnationId` or `captured`) is
-reported by `oats status` and `oats doctor` as the `legacy-captured-home`
-problem. It has no 0.26 runtime: start, restart, inspect/readiness/operation
-`--home` and its in-home commands refuse it (`E_UNSUPPORTED_MODE`). `oats retire`
-still works; it warns once per capability whose retire hook did NOT run, since
-identities and memberships those capabilities created are not revoked — remove
-them with the provider's own tooling. Re-spawn the soul from the deployment.
-
-Alternative agents-root layouts are planned but not built. Today the default
-layout is the only implemented layout.
+Homes left by mechanisms earlier releases removed are reported once by
+`oats status` and `oats doctor`: `legacy-local-agents` (a `local-agents/`
+directory) and `legacy-captured-home`. Retire such instances and re-spawn the
+soul from the deployment.

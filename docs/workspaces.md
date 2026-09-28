@@ -1,4 +1,4 @@
-# Workspaces — one workspace per organisation, members are trust, nothing is installed
+# Workspaces: one workspace per organisation, members are trust, nothing is installed
 
 This is the OATS workspace model. The module contracts the kernel is built
 against are in
@@ -39,7 +39,7 @@ shapes; domain rules (declared teams, duplicate members, canonical `from:` keys,
 the two `packages:` value forms) live in the kernel's `validateWorkspace` /
 `validateSoul`, which are the authority.
 
-### `oats-workspace.yaml` — the one shared declaration
+### `oats-workspace.yaml`: the one shared declaration
 
 Lives in the repository that **hosts** the workspace (often a dedicated
 `agents` repo, but any member can host it). One per organisation.
@@ -89,17 +89,17 @@ exactly as the kernel spells it (`parseRepoRef(ref).key`: lowercase host,
 file/bare-directory remote). Any other spelling is a schema error at
 validation, not a late membership error.
 
-### `oats-membership.yaml` — the backlink, in every member
+### `oats-membership.yaml`: the backlink, in every member
 
 ```yaml
 schemaVersion: 2
 workspace: git:github.com/acme/agents      # "I am a member of acme"
 ```
 
-Nothing else. It replaces `oats.yaml`; there are no export lists. (`team:` was
-removed in 0.30.0: team membership is local — see [Teams](#teams).)
+Nothing else: there are no export lists, and team membership is local to each
+deployment ([Teams](#teams)).
 
-### `souls/<name>/soul.yaml` — where each capability comes from
+### `souls/<name>/soul.yaml`: where each capability comes from
 
 ```yaml
 schemaVersion: 2
@@ -112,78 +112,45 @@ capabilities:
   acme-deploy: { from: package }           # provided by acme.tools, pinned in packages:
   acme-house-style: off                    # removes a workspace default
 
-knowledge:                                 # provider payload, opaque to the kernel — the slot capability's BINDING keys
-  harvest-runtime: claude                  # (oats.okf 2.1.3: what this soul owns/reads is in souls/<name>/okf.json, not here — see below)
+knowledge:                                 # provider payload, opaque to the kernel: the slot capability's settings
+  harvest: off                             # (what this soul owns and reads is in souls/<name>/okf.json, not here)
 messaging:
   channels: [acme-eng]
 tasks: none                                # empties the slot
 
-compatibility:                             # optional FLOORS on package versions — constraints, not sources
-  oats.okf: ">=2.1"
+compatibility:                             # optional FLOORS on package versions: constraints, not sources
+  oats.okf: ">=4.0"
 ```
 
 Beside it: `AGENTS.md` (canonical), `CLAUDE.md → AGENTS.md`, `skills/`, and
-whatever the slot providers read from the soul directory — for `oats.okf`
-2.1.3 that is **`okf.json`** (`{ version: 1, owner, owns: ["<base>/<node>"],
-reads: […] }`, written by `oats okf init|migrate`), the soul's knowledge
-declaration; it travels with the soul into the per-commit soul cache. The
-`knowledge:` payload on `soul.yaml` reaches OKF as `OATS_SETTINGS` and may
-carry only the binding's settings keys (`bindings-file`, `state-dir`,
-`harvest-runtime`, `harvest-model`); `owns`/`reads`/`root` there are refused by
-the provider, not read (a soul payload grammar is an OKF follow-up). Every
-`souls/*/soul.yaml` in a member is listed and spawnable — souls have no
-private mode (`private:` in a soul.yaml is ignored since 0.26.0, with a
-`soul-private-ignored` warning). A soul's
-`name` must equal its directory name; the first of two souls declaring one
-name (by path) is listed, the second is a problem.
+whatever the slot providers read from the soul directory. For `oats.okf` that
+is **`okf.json`** (`{ version: 1, owner, owns: ["<base>/<node>"], reads: […] }`),
+the soul's knowledge declaration; it travels with the soul into the per-commit
+soul cache ([knowledge.md](knowledge.md)). A slot payload on `soul.yaml` reaches
+the provider as `OATS_SETTINGS` and may carry only the settings the provider's
+manifest declares; the provider refuses any other key.
 
-### `capabilities/<name>/oats.json` — the manifest, unchanged shape
+Every `souls/*/soul.yaml` in a member is listed and spawnable; souls have no
+private mode. A soul's `name` must equal its directory name; the first of two
+souls declaring one name (by path) is listed, the second is a problem.
 
-The capability manifest is the one file that did not change (see
-[capabilities.md](capabilities.md)). Discovery relies on `capability` (the same
+### `capabilities/<name>/oats.json`: the manifest
+
+The capability manifest is described in [capabilities.md](capabilities.md).
+Discovery relies on `capability` (the same
 `^[a-z0-9][a-z0-9._-]*$` grammar every `capabilities:` key uses), `version`,
 `layer`, and may read `private: true` (a **repo-owned** capability). `version` is
 informational for member capabilities — a materialized copy is identified by
 its content digest.
 
-### `oats-local.yaml` — the only per-machine file
+### `oats-local.yaml`: the only per-machine file
 
-```yaml
-schemaVersion: 2
-workspace: git:github.com/acme/agents      # observed over the remote; need not be cloned
-clones:                                    # optional: where member clones live, if not the convention
-  github.com/acme/platform: /Users/ana/src/acme-platform
-settings:                                  # host-owned values the manifests ask for
-  oats.okf:
-    bindings-file: /Users/ana/.oats/okf-bindings.json
-    state-dir: /Users/ana/.oats/okf
-souls:
-  disabled: [data-analyst]                 # not run on this machine (E_SOUL_DISABLED); oats.okf/knowledge-harvester names a package soul
-  teams:                                   # which teams each soul belongs to HERE (oats soul teams)
-    "*": [engineering]                     # every soul
-    oats.okf/knowledge-harvester: [okf]    # a package soul's key is <package>/<soul>
-  default:                                 # a per-soul override of defaultTeam (oats soul teams <soul> --default)
-    release-manager: engineering
-teams:                                     # LOCAL teams: only this deployment uses them (oats teams add)
-  ana-acme: { team: "ana-acme:ana.aweb.ai" }
-  okf:      { team: "okf:ana.aweb.ai", description: Knowledge operations }
-defaultTeam: ana-acme                      # every instance's default team, unless souls.default says otherwise
-host:
-  name: ana-laptop                         # this machine's name: runs the workspace triggers/schedules whose runsOn names it
-triggers:
-  disabled: [knowledge/okf-harvest-review] # workspace triggers this host does not run (oats trigger disable)
-schedules:
-  disabled: [platform/nightly-digest]      # workspace schedules this host does not run (oats schedule disable)
-```
+Which workspace this machine realizes, where member clones live, host-owned
+provider settings, this deployment's local teams and team membership, host
+facts for automations, and launch configurations. The full reference is
+[configuration.md](configuration.md).
 
-`teams`, `defaultTeam`, `souls.teams` and `souls.default` (0.30.0) are this
-deployment's team membership: see [Teams](#teams).
-`host`, `triggers.disabled` and `schedules.disabled` (0.29.0) are machine facts:
-see [schedules.md#workspace-triggers-and-schedules](schedules.md#workspace-triggers-and-schedules).
-
-See [configuration.md](configuration.md). `oats-config.yaml` no longer exists.
-
-### `oats-lock.json` — lock v3
+### `oats-lock.json`: lock v3
 
 Written by `oats sync`; the only persisted state at the deployment besides
 `oats-local.yaml`. See [packages.md](packages.md).
@@ -195,16 +162,11 @@ Written by `oats sync`; the only persisted state at the deployment besides
 the workspace back. One file per side; a copied backlink in a fork, or a folder
 with the right name, is not admission.
 
-**Membership is the whole trust decision for member capabilities** — the same
+**Membership is the whole trust decision for member capabilities**, the same
 model as a repo's committed `.agents/skills/`: whoever can push to the repo
-decides what runs, and the branch's latest state is what runs. No per-operator
-trust lists, no per-capability approval for members. Packages come from
-*outside* that boundary, and **declaring one in the workspace's `packages:` is
-the trust decision** (human decision, 2026-09-24): people install a package only
-when they trust it, so there is no second, per-version approval step. The lock
-is reproducibility, not approval — it pins the exact commit and content
-integrity, and `oats sync` refuses drift (a moved tag, changed content, an
-edited capability list). A spawn admits only a locked package the workspace
+decides what runs, and the branch's latest state is what runs. Packages come
+from *outside* that boundary, and **declaring one in the workspace's
+`packages:` is the trust decision** ([packages.md](packages.md#trust)). A spawn admits only a locked package the workspace
 **still declares**: one removed from `packages:` but left in a stale lock is
 `E_PACKAGE_MISSING { reason: "undeclared" }` until `oats sync` drops it.
 
@@ -240,13 +202,13 @@ read; the soul gets no member-tier capabilities of its own repo; it is
 "source-complete" (its skills travel with it) and the workspace's defaults fill
 its slots.
 
-**Package souls.** A package may ship souls (`souls:` in `oats-package.json`,
-0.28.0): they are listed from the lock for each package the workspace declares,
+**Package souls.** A package may ship souls (`souls:` in `oats-package.json`):
+they are listed from the lock for each package the workspace declares,
 named `<package>/<soul>` (a bare name when unique), resolved like any soul
 (`from: here` = their own package at the locked commit) and trusted as the
 package is. See [packages](packages.md#package-souls).
 
-## Member tier vs package tier — the non-collapse rule
+## Member tier vs package tier: the non-collapse rule
 
 A repository may be a **member** (it completed the handshake; its `souls/*` and
 `capabilities/*` are member-tier: latest state, trusted by membership) **and** a
@@ -265,39 +227,19 @@ A repository may be a **member** (it completed the handshake; its `souls/*` and
   package's capabilities as member capabilities.
 
 So the framework's own souls say `oats.okf: { from: package }` even though
-`oats-okf` is a member of the OATS workspace — and every package repo carries a
-member soul that is the expert in that capability (`okf-expert`, `aweb-expert`,
-…), discoverable at latest state like any member soul.
+`oats-okf` is a member of the OATS workspace, and every package repo carries a
+member soul that is the expert in that capability (`oats-okf-expert`,
+`oats-aweb-expert`, …), discoverable at latest state like any member soul.
 
 ## Packages, lock, catalog
 
-`packages:` values have exactly two forms:
-
-- a **bare version** (`v2.1.3`, `2.1.3`, `v1.0.0-rc.1`) — resolved through the
-  official catalog (`package-catalog.json` in the `oats` repo; the reviewed
-  list, see [official-catalog.md](official-catalog.md)). This is
-  the only way a package becomes *pinnable by id*.
-- **`git:<repo>@<ref>`** — a direct package ref: `<repo>` is any ref the kernel
-  understands (`github.com/org/repo`, `https://…`, `git@host:…`, `/abs/bare.git`,
-  `file:///…`), `<ref>` a tag name or a full commit OID. The package is read at
-  `oats-package/` inside that repo.
-
-Both are packages: versioned and locked. A ref that resolves to a **branch** is
-refused (`E_PACKAGE_INTEGRITY { why: "branch" }`) — versions are immutable. A
-tag that moved (same version string, different commit), or content that no
-longer matches the locked integrity, fails with `E_PACKAGE_INTEGRITY` on the
-next `oats sync`.
-
-**There is no package approval** (human decision, 2026-09-24). Declaring a
-package in `packages:` is the trust decision; `oats sync` asks nothing and
-`--approve` is `E_BAD_ARGS`. `oats sync` confirms membership, resolves every
-`packages:` entry to a commit + content digest, writes `oats-lock.json`
-(lockfileVersion 3), creates `agents/` if absent, reports what changed and
-exits `0`. A lock written by an earlier kernel may still carry an `approved`
-record per entry: it is ignored, and the next write drops it. `oats package add <id> <version|git:…@…>` / `oats package remove <id>` edit
-`packages:` in the workspace file when it is tracked by the current checkout,
-else print the line to add — the workspace file is shared through Git. Details:
-[packages.md](packages.md).
+`packages:` values have two forms, a **bare version** resolved through the
+official catalog and a **`git:<repo>@<ref>`** direct ref; both are versioned
+and locked, and a ref that resolves to a branch is refused. `oats sync`
+confirms membership, resolves every entry to a commit and content digest,
+writes `oats-lock.json`, creates `agents/` if absent and reports what changed.
+`oats package add | remove` edit `packages:`. The grammar, the lock, trust and
+the catalog are in [packages.md](packages.md).
 
 ## Resolution, spelled out
 
@@ -327,30 +269,13 @@ preview and apply is `E_DECISION_STALE`, not a silent drift.
 
 ## Materialization and the instance home
 
-At spawn every resolved capability is **copied whole** into the instance home —
-skills, injects, scripts, hooks — from the remote at the recorded commit.
-Nothing is symlinked, nothing is shared between instances.
-
-```
-<agents-root>/<soul>/instances/<instance>/
-├── AGENTS.md                          # composed: soul AGENTS.md + kernel/work-mode blocks + each module's inject
-│                                      #   (the "You run on OATS" block is oats.core's inject; the kernel ships no copy)
-├── CLAUDE.md → AGENTS.md
-├── .agents/skills/<capability>/<skill>/SKILL.md    # full copies; where pi/codex look
-├── .claude/skills → ../.agents/skills
-├── .oats/modules/<capability>/        # the full capability copy: oats.json, bin/, injects/, skills/
-├── instance.json                      # modules{}, providers{}, workspace{} recorded here
-├── TASK.md
-└── work/
-```
-
-`instance.json.modules.<cap>` records `from` (`{ kind: "member", repoKey,
-commit }` or `{ kind: "package", package, version, commit, integrity, repoKey }`),
-`commit`, `digest` (sha256 of the copied tree) and `materializedAt`;
-`instance.json.providers.<cap>` records the merged provider payload. A running
-instance never changes under itself: a member moving or `packages:` being
-bumped affects only new spawns. Details and DTOs:
-[souls-and-instances.md](souls-and-instances.md), [desktop-cli-api.md](desktop-cli-api.md).
+At spawn every resolved capability is **copied whole** into the instance home
+(skills, injects, scripts, hooks) from the remote at the recorded commit, and
+`instance.json` records each module's source, commit and digest. Nothing is
+symlinked or shared between instances, and a running instance never changes
+under itself: a member moving or `packages:` being bumped affects only new
+spawns. The home's layout and records are in
+[souls-and-instances.md](souls-and-instances.md).
 
 **Drift is shown, not prevented.** `oats status` compares each instance's
 recorded modules — and its recorded **soul source** (`instance.json.workspace.soul`)
@@ -362,50 +287,44 @@ carries `instances[].soul`. `oats spawn --preview` lists `changedSince` the
 newest previous instance of the same soul, plus `providers` (the `--provider`
 map as given) and `settings.<cap>` (the merged payload each provider receives).
 
-**Harnesses start normally.** OATS is a skill contributor, not a skill sandbox:
-cwd = the instance home, the harness's own skill discovery intact
-(`~/.pi/agent/skills`, `.agents/skills` up the tree, `.claude/`, …); machine-
-and repo-level skills resolve exactly as they would without OATS. OATS
-composes instructions (`AGENTS.md`) and pins model/provider settings; it does
-not exclude anything.
+Harnesses start normally, with their own skill discovery intact
+([souls-and-instances.md](souls-and-instances.md)).
 
 ## Teams
 
-Team model v2 (0.30.0). A team is a messaging-provider team (for oats.aweb, an
+A team is a messaging-provider team (for oats.aweb, an
 aweb team id `<team>:<namespace>`) under a **label**. Two files declare them:
 
-- **Shared teams** — the committed `oats-workspace.yaml` `teams.<label> =
+- **Shared teams**: the committed `oats-workspace.yaml` `teams.<label> =
   { description?, team? }`: the same provider team for everyone, edited by a PR.
   A shared team without `team` is declared but not created yet (readiness
-  `team-unmapped`: its owner runs `oats aweb setup`, then commits the id).
-- **Local teams** — the deployment's `oats-local.yaml` `teams.<label> = { team,
+  `team-unmapped`): its owner creates it with the messaging provider, then
+  commits the id.
+- **Local teams**: the deployment's `oats-local.yaml` `teams.<label> = { team,
   description? }`: a team only this deployment uses (a personal team). A label in
   both files is `team-label-collision` (a warning); the **shared** definition
   wins, and the fix is renaming the local label.
 
 `oats-local.yaml` also says which teams each soul belongs to **here**:
 
-- `defaultTeam: <label>` — the team every instance of this deployment lives in
+- `defaultTeam: <label>`: the team every instance of this deployment lives in
   (its default-team identity);
-- `souls.teams` — `"*"` for every soul, and a soul's own entry (its bare name, or
+- `souls.teams`: `"*"` for every soul, and a soul's own entry (its bare name, or
   `<package>/<soul>` for a package soul) adds to it;
-- `souls.default` — a per-soul override of `defaultTeam`; it must be one of that
+- `souls.default`: a per-soul override of `defaultTeam`; it must be one of that
   soul's teams (`E_TEAM_NOT_ELIGIBLE`).
 
 A soul's default is `souls.default[soul] ?? defaultTeam`; its teams are that
 default ∪ `souls.teams["*"]` ∪ `souls.teams[soul]`. A label no file declares is
 `E_TEAM_UNKNOWN` (a spawn, preview or `inspect --soul` of that soul is
 refused). At spawn an instance joins its **default** only; the others are
-eligible — offered, joined on request through the provider (`join=` at spawn, or
-its own verbs later). Nothing committed besides the shared `teams:` says anything
-about teams: soul.yaml `team`, oats-membership.yaml `team`, `external[].team`,
-`messaging.byTeam` and `defaults.byTeam` were removed in 0.30.0 (a schema error
-naming the replacement), and capabilities compose from the workspace defaults
+eligible: offered, and joined on request through the provider (`join=` at
+spawn, or its own verbs later). Nothing committed besides the shared `teams:`
+says anything about teams, and capabilities compose from the workspace defaults
 and the soul only, the same for everyone. **A label never gates, restricts,
 changes trust or partitions the knowledge store.**
 
-The verbs edit `oats-local.yaml` in place (config only — they never call a
-provider):
+The verbs edit `oats-local.yaml` in place; they never call a provider:
 
 ```
 oats teams [--json]                                  # this deployment's teams, ids, the default, problems
@@ -415,8 +334,8 @@ oats teams default <label>
 oats soul teams <soul>|'*' [--add a,b] [--remove a,b] [--default <label> | --clear-default] [--json]
 ```
 
-`oats aweb setup` (oats.aweb 1.17) creates the teams and records them with
-`oats teams add`. The spawn preview, `inspect` and `oats souls` report a soul's
+The messaging provider's own setup creates provider teams and records them with
+`oats teams add` (see the provider's documentation). The spawn preview, `inspect` and `oats souls` report a soul's
 `teams` and `defaultTeam`; readiness reports the team problems in
 `checks.configured` (`E_TEAM_UNCONFIGURED` when a messaging layer is active and
 there is no default; `team-unmapped`, blocking when it is the default;
@@ -435,19 +354,14 @@ Exact shapes: [desktop-cli-api.md](desktop-cli-api.md#team-model-v2-feature-team
 The merged payload is `workspace.messaging` (messaging slot only) ⊕ soul slot
 payload ⊕ `local.settings[cap]` ⊕ `spawn.providers[cap]` — objects deep-merge,
 later wins on scalars and arrays. The provider's own `binding` contract
-(`normalize → bind → check`) runs over the merged payload exactly as before.
-Teams are **not** settings: they reach the provider beside them, in its
-environment ([Teams](#teams)). What the payload does not change is **where the
-`.aw` root is found**: the oats.aweb hook searches bounded candidates, first hit
-wins — the instance home, the Git repository containing it, the soul's work
-repository and the Git repository containing it, then the deployment directory
-(`OATS_WORKSPACE`); never the user home or above the deployment. A local root
-holds exactly one team, so an instance's identity for team T is minted from
-`settings.oats.aweb.roots[<T's id>]` (else that root); `oats aweb setup` creates
-one root per team it creates or joins, and records it there.
+(its readiness check) runs over the merged payload. Teams are **not** settings:
+they reach the provider beside them, in its environment ([Teams](#teams)).
+Where a provider keeps its own state (for oats.aweb, its identity roots) is the
+provider's concern; see its documentation.
+
 A store (`stores: { <name>: <repo ref> }`) names a repository; where a
-knowledge base lives inside it is the knowledge provider's own concern — for
-OKF 2.1.3 that is the **bindings file** (`bases.<alias>.repository` + `root`,
+knowledge base lives inside it is the knowledge provider's own concern. For
+oats.okf that is the **bindings file** (`bases.<alias>.repository` + `root`,
 `oats-local.yaml settings.oats.okf.bindings-file`), not a soul payload key; a
 repo ref never carries a `#path`.
 
@@ -475,11 +389,11 @@ different repo → `E_CLONE_MISMATCH`. Spawning a soul whose repo is not yet
 cloned is a guided clone-then-spawn, a job for the onboarding skill, not the
 kernel.
 
-The deployment directory is **yours to choose** (decision 9) — an existing folder that already holds your member clones is the usual case; `oats onboard <dir>` adds what the kernel needs and nothing else:
+The deployment directory is **yours to choose**: an existing folder that already holds your member clones is the usual case, and `oats onboard <dir>` adds what the kernel needs and nothing else ([configuration.md](configuration.md#the-deployment-directory)):
 
 ```
 ~/acme/                           ← the directory you chose
-├── oats-local.yaml               ← which workspace this machine realizes + host paths + disabled souls
+├── oats-local.yaml               ← which workspace this machine realizes, and host facts
 ├── oats-lock.json                ← exact commit + integrity per package
 ├── agents/                       ← instance homes (each self-contained) + fetched soul sources
 ├── platform/                     ← clone of github.com/acme/platform (only if someone works IN it; may live elsewhere — see clones:)
@@ -515,7 +429,7 @@ that view explicitly). `oats onboard` lists the host among the clones to make
 like any member (the host is a member; its souls may need a work clone); under
 an explicit `standalone:` header its next steps say so and name that one repo.
 
-**Executables from public members.** Membership is the trust (decision 2): a
+**Executables from public members.** Membership is the trust: a
 member capability's hooks and command scripts run on every operator's machine at
 spawn, gated by nothing but the handshake. In a mixed public/private
 organisation keep **souls only** in public members and let executable
@@ -535,26 +449,14 @@ onboarding skill asks this question first.
 - **Members.** A member is always its latest state; there is no `@revision`
   on `members:`. A team that wants frozen capabilities publishes them as a
   package and pins that.
-- **Member capabilities' `version` field** — informational; the content digest
+- **Member capabilities' `version` field**: informational; the content digest
   recorded at spawn identifies a copy.
 - **Souls in members.** A soul is spawned from its repo's current state; the
   commit is recorded in `instance.json.workspace.soul`.
-- **The deployment layout** — the operator's; only the convention is taught.
+- **The deployment layout**: the operator's; only the convention is taught.
 
 What **is** versioned: `packages:` (the workspace's one list), the lock's exact
 commits and digests, and `external:` pins (a stranger's repo is never "latest").
-
-## Removed
-
-Per-soul `source: git:…@v#…` lines and the `git:`/`repo:`/`path:` grammar;
-`imports:` of member souls; `exports:` lists; `oats.yaml`; the
-installed-capability tier (`.agents/capabilities/installed/`) and
-`oats-config.yaml` entirely; `oats init` / `use` / `install` / `restore` /
-`trust` / `list` / `catalog` / `remove` / `migrate` / `config` (each answers
-`E_UNKNOWN_COMMAND` naming its replacement); per-soul `stores.<x>.inherit`;
-ambient-skill exclusion at launch. Lock v1/v2 files are `E_LOCK_SCHEMA`.
-There is no converter and no dual-schema reader: a 0.24.x kernel keeps
-spawning 0.24.x deployments.
 
 ## Related
 

@@ -1,12 +1,8 @@
 # Run your first OATS team
 
-> **Workspace model (0.25).** This page is the v2 first-team guide. The 0.24
-> surface it used to describe (`oats-config.yaml`, `oats init` / `install` /
-> `use` / `trust`, the 0.24 `oats onboard --dir` bootstrap that created a local
-> `oats-setup-expert`) no longer exists; those verbs answer `E_UNKNOWN_COMMAND`
-> naming their replacement. Model: [workspaces.md](workspaces.md) ·
-> packages: [packages.md](packages.md) · the deployment layout this page
-> creates: [configuration.md](configuration.md).
+The model is in [workspaces.md](workspaces.md), packages in
+[packages.md](packages.md), and the deployment layout this page creates in
+[configuration.md](configuration.md).
 
 Start with one workspace, one member repository and one small, real task. A
 soul keeps the role and its curated skills; an instance gets a working session
@@ -43,8 +39,9 @@ Three files, all committed ([workspaces.md](workspaces.md) shows each field):
 
 The smallest real setup is one repository that is host **and** member: it
 carries the workspace file, its own `oats-membership.yaml` pointing at itself,
-one soul and, optionally, one capability. Every soul gets `oats.core` from the
-`oats.framework` package by default.
+one soul and, optionally, one capability. Give every soul `oats.core` with
+`defaults: { capabilities: { oats.core: { from: package } } }` and an
+`oats.framework` pin.
 
 ## 2. Realize it on this machine — `oats onboard`
 
@@ -83,7 +80,24 @@ Host-owned provider values (absolute paths, state roots) go under `settings:` in
 `oats-local.yaml` afterwards — never in the workspace file, whose schema refuses
 them. Do not commit `oats-local.yaml`.
 
-## 3. Look before you spawn
+## 3. Give the deployment a team
+
+With a messaging capability in the soul's composition, every instance lives in
+a team, and readiness fails with `E_TEAM_UNCONFIGURED` until there is a
+default. Create the team with your messaging provider (its own docs say how;
+for `oats.aweb`, see its skills), then record it here:
+
+```bash
+oats teams add research --team <provider team id>   # a local team; the first one becomes the default
+oats teams                                           # shared and local teams, and the default
+```
+
+A team the whole workspace uses is committed as a **shared** team in
+`oats-workspace.yaml`; which souls join which team on this machine is
+`oats soul teams` ([workspaces.md](workspaces.md#teams)). Without messaging,
+skip this step.
+
+## 4. Look before you spawn
 
 ```bash
 oats souls                    # every soul of every confirmed member, with origin and its teams here
@@ -96,7 +110,7 @@ The preview is where a skill-name clash between two composed capabilities
 (`E_SKILL_DUPLICATE`) or a package missing from the lock (`E_PACKAGE_MISSING`)
 shows up, before anything is created.
 
-## 4. Give an instance a real task
+## 5. Give an instance a real task
 
 ```bash
 oats spawn backend-expert --purpose first-fix --task "Fix one small issue, run the relevant checks, commit the code change, and report what changed."
@@ -116,7 +130,7 @@ Instance-specific provider values belong to the spawn:
 `oats spawn <soul> --provider <cap> key=value` (repeatable; dotted keys nest),
 recorded under `instance.json.providers.<cap>`.
 
-## 5. Judge and retire
+## 6. Judge and retire
 
 Review the instance's code through the repository's ordinary PR workflow. Then:
 
@@ -134,7 +148,7 @@ soul's `capabilities:`.
 ## The standalone case
 
 If you can read a member repository but not its workspace host (a public member
-of a privately hosted workspace — decision 26), point `oats-local.yaml` at the
+of a privately hosted workspace), point `oats-local.yaml` at the
 member: `oats sync` and `oats spawn` then give the **standalone view** — the
 repo's own souls with their `from: here` capabilities plus `oats.core`, marked
 `standalone: true` in `sync --json` and `instance.json.workspace.standalone`.

@@ -81,16 +81,15 @@ A self-contained package has an `oats.json`:
   slot.
 - `skills` entries can be skill directories or roots containing skills.
 - `inject` is optional instance instruction Markdown.
-- Only `soul-scaffold`, `spawn`, and `retire` hooks are accepted. A hook is a
+- The hooks are `spawn`, `launch` and `retire`. A hook is a
   command string, or `{ command, required }`. `required: true` is valid **only
   on `spawn`**: the hook's failure then fails the spawn and rolls it back,
   instead of producing an instance whose capability never configured itself —
   an aweb identity that could not be minted leaves an agent believing it can be
   woken by mail. Every other hook stays best-effort and only warns, so advisory
-  work never becomes a spawn blocker. `retire` and `soul-scaffold` cannot be
+  work never becomes a spawn blocker. `launch` and `retire` cannot be
   required: they run outside a spawn transaction, so there is no moment to
-  enforce them. The kernel no longer runs `soul-scaffold` (it ran when
-  `oats create` wrote a soul); a manifest may still declare it.
+  enforce them. A `soul-scaffold` hook is tolerated and ignored.
 - A capability declaring a **required** spawn hook should declare a `retire` hook
   too. Without one, OATS has no way to undo what the spawn hook did and no way to
   know whether it did anything, so a failure quarantines the home rather than
@@ -156,8 +155,7 @@ A self-contained package has an `oats.json`:
 
 `capability` is the only manifest identity field; it may also carry
 `private: true` (a **repo-owned** capability: listed, but usable only by souls
-of its own repo). (`team:` in a manifest was removed in 0.30.0: a capability is
-listed under no team.) The machine-readable contract is
+of its own repo). The machine-readable contract is
 [`capability-manifest.schema.json`](capability-manifest.schema.json).
 
 ## Who gets a capability
@@ -178,15 +176,13 @@ capabilities:
   acme-deploy: { from: package }
   acme-house-style: off
 knowledge:
-  owns: release-manager
+  harvest: off                                        # this soul's knowledge-slot payload
 ```
 
 Composition order: `defaults.<slot>` ⊕ `defaults.capabilities` ⊕
 `soul.capabilities` — later wins, `off` removes, a soul `<slot>: none` drops
-the workspace's slot default. Teams compose nothing (`defaults.byTeam` was
-removed in 0.30.0), so a soul's composition is the same for every person and
-machine. A resolved
-capability whose manifest says `layer: X` fills slot X; two for one slot are
+the workspace's slot default. Teams compose nothing, so a soul's composition
+is the same for every person and machine. A resolved capability whose manifest says `layer: X` fills slot X; two for one slot are
 `E_SLOT_CONFLICT`. Provider settings start from the manifest's own declared
 defaults (`settings.<key>.default`, the lowest layer), then take the workspace's
 `messaging` payload for the messaging slot, the soul's
@@ -196,8 +192,7 @@ per-deployment activation or exclusion maps.
 
 ### Teams in the provider environment
 
-A soul's teams here (team model v2, 0.30.0: the committed shared teams, and the
-deployment's `oats-local.yaml` `teams`, `defaultTeam`, `souls.teams`,
+A soul's teams here (the committed shared teams, and the deployment's `oats-local.yaml` `teams`, `defaultTeam`, `souls.teams`,
 `souls.default` — see [workspaces.md](workspaces.md#teams)) travel **beside** a
 provider's settings, never inside them, in the environment of every hook, home
 command and provider check:
@@ -207,19 +202,18 @@ command and provider check:
   (`souls.default`).
 - No default configured: none of the three is set. An **unmapped** default (a
   shared team declared without an id): `OATS_DEFAULT_TEAM` and
-  `OATS_DEFAULT_TEAM_FROM` are set and `OATS_DEFAULT_TEAM_ID` is not. A provider
-  refuses the spawn naming the label in the first case, "no teams configured"
-  in the second.
+  `OATS_DEFAULT_TEAM_FROM` are set and `OATS_DEFAULT_TEAM_ID` is not. What a
+  provider does then is its own contract; a messaging provider typically
+  refuses the spawn, naming the unmapped label, or saying no team is
+  configured.
 - `OATS_TEAMS` — JSON `[{label, team, default, from: "shared"|"local"}]`: every
   mapped team the soul may be in here, the default included (`default: true`),
   default first, then by label. Eligible to join = the rows with `default: false`.
-  Unset when a home's teams are unknown (spawned before 0.30.0 and unreadable now).
+  Unset when a home's teams are unknown (none recorded, and unreadable now).
 - `OATS_TEAMS_SOURCE` — `live` (the workspace and `oats-local.yaml` read now, or
   a fresh resolution) or `recorded` (the spawn-time record). **A provider leaves
   a joined team only on a `live` list**: a recorded one lacks every change since
   the spawn.
-- `OATS_TEAM_LABEL`, `OATS_TEAM_LABELS` and `OATS_TEAM_ID` were removed in 0.30.0
-  and are never set (an ambient value is cleared).
 
 The environment is their only channel: a check's stdin request stays the
 released binding wire, which providers decode strictly. Joining a team other
@@ -239,36 +233,18 @@ reached. A scheduled wake's session start uses the recorded teams, so its
 launch hook leaves nothing; the next operator start or messaging command is
 live.
 
-## Exact harness composition
+## What an instance receives
 
-Every spawned instance receives:
-
-- canonical soul skills;
-- a **full copy** of every capability the soul resolved to, under
-  `<instance>/.oats/modules/<capability>/` (manifest, `bin/`, injects, skills);
-- those capabilities' skills copied to `<instance>/.agents/skills/<capability>/<skill>/`.
-
-`instance.json` records per module its source (`from`), commit and content
-digest, and the composed skill names with their source. `.claude/skills` points
-to the same canonical directory. **The harness starts normally**: pi, Claude
-Code and Codex run their own skill discovery with cwd = the instance home;
-ambient skills (user-level, the work tree's `.agents/skills/`) coexist with the
-OATS-composed set. `instance.json` records what OATS composed, not everything
-the harness may discover.
-
-Duplicate skill names **within the composed set** fail the spawn naming both
-capabilities (`E_SKILL_DUPLICATE`). A composed skill and an ambient skill with
-one name is the harness's own precedence, not an error.
-
-The instance's `AGENTS.md` is a generated regular file containing:
-
-1. the canonical soul `AGENTS.md`;
-2. the kernel and work-mode blocks;
-3. each module's inject, in deterministic (name) order.
-
-Its `CLAUDE.md` symlinks to `AGENTS.md`. The committed soul remains unchanged.
-Edit the canonical soul or the capability's inject in its repo, then spawn a
-new instance; do not edit generated blocks as source-of-truth changes.
+Every spawned instance gets a **full copy** of each capability its soul
+resolved to, under `<home>/.oats/modules/<capability>/` (manifest, `bin/`,
+injects, skills), and those skills under
+`<home>/.agents/skills/<capability>/<skill>/`. Its generated `AGENTS.md` is the
+soul's `AGENTS.md`, the kernel and work-mode blocks, then each module's inject
+in name order. Two composed skills with one name fail the spawn
+(`E_SKILL_DUPLICATE`). The harness then starts normally, with its own skill
+discovery; the details are in [souls-and-instances.md](souls-and-instances.md).
+Change a capability's inject or skills in its repository, then spawn a new
+instance: the generated files are not a source.
 
 Inspect a composition before it exists:
 
@@ -290,7 +266,7 @@ packages is in [packages.md](packages.md). There is no installed
 copy at a deployment and no `oats install`/`trust`/`update`/`remove`.
 
 One package can carry capabilities meant for **different souls**. oats.okf
-4.0.0 ships three:
+ships three:
 
 - `oats.okf` fills every working soul's knowledge slot;
 - `oats.okf-harvest` is composed only into its harvester soul;
@@ -316,22 +292,11 @@ reported as `publishes` and consumed only as a package.
 
 ## Agents a capability needs
 
-A capability declares no agents: `agents:` in a manifest was **removed in
-0.29.0**. Resolution refuses a module that still declares it with
-`E_CAPABILITY_AGENTS_REMOVED { capability, agents }` (spawn, `spawn --preview`,
-`inspect --soul`, operator commands). Ship the agent as a soul instead:
-
-- a **package soul**: `souls/<name>/` beside the package's capabilities, listed
-  in `oats-package.json` `souls:`, spawned as `oats spawn <package>/<name>`
-  (or the bare name when unique), reading the package's capabilities with
-  `from: here` ([packages.md](packages.md#package-souls)). The post-commit
-  `reviewer` is one: oats.dev 1.1.0's `oats.dev/reviewer`, beside `oats.review`;
-- or a **member soul**: `souls/<name>/` in a member repository, using a
-  member capability `from: here`.
-
-A home an earlier kernel spawned from a manifest `agents:` soul (its agent
-directory holds only `instances/`) is still listed by `oats status`, may anchor
-a `--parent`, and retires; nothing creates one any more.
+A capability declares no agents (a manifest `agents:` is refused with
+`E_CAPABILITY_AGENTS_REMOVED`). Ship the agent as a soul: a **package soul**
+beside the package's capabilities ([packages.md](packages.md#package-souls)),
+such as oats.dev's `reviewer` beside `oats.review`, or a **member soul** in a
+member repository, using the capability `from: here`.
 
 ## Commands and hooks
 
@@ -340,23 +305,36 @@ instance's modules (or the soul's resolved set). Workspace commands (`sync`,
 `package`, `workspace status`, `capabilities`, `souls`, `doctor`) are always
 available.
 
-A manifest's `helperInjection` and a hook's `inputs` are **ignored since 0.26**:
-they served the captured path (removed in 0.26), are still accepted so that
-existing manifests load, and change nothing.
+A manifest's `helperInjection` and a hook's `inputs` are tolerated and ignored.
 
-Hooks receive `OATS_EVENT`, `OATS_CAPABILITY`, `OATS_LAYER`, `OATS_INSTANCE`,
-`OATS_HOME`, `OATS_AGENT`, `OATS_SOUL`, `OATS_CONTEXT`, `OATS_WORKSPACE`,
-`OATS_ROOT`, `OATS_LEVEL`, `OATS_SETTINGS`, `OATS_SETTINGS_ORIGINS`, and
-`OATS_META`. `OATS_SETTINGS_ORIGINS` (0.29.0) says where each leaf of
+Hooks receive:
+
+- `OATS_EVENT`, `OATS_CAPABILITY`, `OATS_LAYER`, `OATS_LEVEL`;
+- `OATS_INSTANCE`, `OATS_INSTANCE_HOME` (the home, absolute; `OATS_HOME` is a
+  compatibility alias), `OATS_AGENT`, `OATS_SOUL`, `OATS_SOUL_ID`,
+  `OATS_CONTEXT`, `OATS_WORKSPACE`, `OATS_ROOT`;
+- `OATS_CLI_BIN` (the running kernel's `bin/oats.mjs`);
+- `OATS_SETTINGS`, `OATS_SETTINGS_ORIGINS`, `OATS_META`;
+- the team and workspace variables of
+  [Teams in the provider environment](#teams-in-the-provider-environment),
+  plus `OATS_WORKSPACE_NAME`, `OATS_WORKSPACE_KEY` and `OATS_TEAM_SCOPE`
+  (the deployment directory). `OATS_TEAM_NAME` is always empty.
+
+A spawn hook also gets `OATS_TASK`, `OATS_REPO`, `OATS_BRANCH`, `OATS_WORK`,
+`OATS_HARNESS`, `OATS_KIND` and, for a spawn a trigger started,
+`OATS_TRIGGER_EVENT_FILE`. A launch hook also gets `OATS_HARNESS` and
+`OATS_PREVIOUS_HARNESS`.
+
+`OATS_SETTINGS_ORIGINS` says where each leaf of
 `OATS_SETTINGS` came from: a JSON object from a JSON pointer to `{ kind, at }`,
 `kind` being `manifest-default`, `workspace`, `soul`, `host`, `spawn` or
 `anchor` (the last layer that set it), e.g.
 `{"/harvest":{"kind":"soul","at":"soul.yaml#/knowledge"}}`. A provider tells a
-soul-set value from a host-set one there, and never reads `soul.yaml` for it.
-A home spawned before 0.29.0 recorded none: `{}`. A final JSON line may
-return `meta`, `brief`, `warning`, or harness-specific `launch` arguments. A
-**spawn hook only** may also return an `env` object for the launched process;
-returning `env` from retire or soul-scaffold is an explicit contract error.
+soul-set value from a host-set one there, and never reads `soul.yaml` for it;
+a home with none recorded gives `{}`. A final JSON line may return `meta`,
+`brief`, `warning`, or harness-specific `launch` arguments. A **spawn or
+launch hook** may also return an `env` object for the launched process;
+returning `env` from a retire hook is an explicit contract error.
 
 A **launch hook** runs at every start and restart of a home for each provider
 recorded at spawn (under its recorded settings). Its `launch` arguments and
@@ -366,8 +344,7 @@ after the start succeeds — the same record the spawn hook wrote and the retire
 hook later reads as `OATS_META` — so a provider that re-issues a credential at
 start (a renewed session grant, for example) leaves the CURRENT one on record. A
 launch hook that answers without `meta` keeps its previous entry; a start whose
-preparation fails changes nothing. (Kernel ≥ 0.25.5; earlier kernels collected
-launch `meta` and discarded it.)
+preparation fails changes nothing.
 
 Hook environment values are strings, at most 8192 UTF-8 bytes, with no NUL or
 newlines. Names use the portable environment grammar and must belong to an
@@ -378,7 +355,7 @@ for this contract. Hyphenated vendors are also excluded because translating a
 hyphen to `_` would let `aweb-evil.*` collide with names already inside
 `aweb.*`'s `AWEB_*` namespace.
 
-A manifest's `settings.<key>` may carry `hostOnly: true` (decision 27). Such a
+A manifest's `settings.<key>` may carry `hostOnly: true`. Such a
 key is a fact about the machine — a custody directory, a state root — and the
 resolver accepts it only from the deployment's own `oats-local.yaml`
 `settings.<capability>`; a committed workspace or soul file or a
@@ -412,11 +389,11 @@ A failed compensation, unverifiable topology removal, or reported spawn state
 without a retire hook uses the standard retryable quarantine instead. Ordinary
 advisory hook execution failure itself contributes no environment.
 
-The environment prefix applies to the initial Pi or Claude process. `--no-launch`
-validates command preparation but launches no harness. The fallback shell
-after that process exits does not inherit command-scoped assignments, and OATS
-has no restart command or replay policy yet. The generated command is persisted
-as before; hooks must contribute locators, selectors, or broker endpoints—not
+The environment prefix applies to the harness process (pi, Claude Code or
+Codex). `--no-launch` validates command preparation but launches no harness.
+The fallback shell after that process exits does not inherit command-scoped
+assignments; `oats session start|restart` runs the launch hooks again. The
+generated command is persisted; hooks must contribute locators, selectors, or broker endpoints—not
 bearer tokens or private key material. An instance-lifetime local principal may
 be selected by a home locator. A replaceable execution serving a durable global
 identity must instead use a custody/action broker or equivalent narrow adapter;
@@ -430,21 +407,12 @@ spawn order. Hooks run from the instance's own copy
 
 ## Official packages
 
-| Capability | Kind | Provides | Package |
-|---|---|---|---|
-| `oats.core` | additive | day-to-day OATS operation for an instance | `oats.framework` |
-| `oats.setup` | additive | whole-architecture knowledge for an onboarding expert | `oats.framework` |
-| `oats.okf` | knowledge core capability | External owned OKF bases, durable notes/record custody, independent judgment and inspection | `oats.okf` |
-| `oats.aweb` | messaging core capability | aweb identity lifecycle and messaging skills | `oats.aweb` |
-| `oats.jira` | tasks core capability | Jira task protocol via `acli` | `oats.jira` |
-| `oats.linear` | tasks core capability | Linear GraphQL task commands and workflow | `oats.linear` |
-| `oats.authoring` | additive | capability, skill, and soul authoring guidance | `oats.authoring` |
-
-Each is pinned by a bare version in `packages:` and resolved through the
-[official catalog](official-catalog.md); each package repo is also a member
-of the OATS workspace carrying its expert soul (`okf-expert`, `aweb-expert`, …).
-The framework's own souls say `oats.okf: { from: package }` — membership never
-turns a package into a latest-state capability.
+The official packages and the capabilities and souls each carries are listed
+in the [official catalog](official-catalog.md#the-packages). Each is pinned by a bare version in
+`packages:`; each package repository is also a member of the OATS workspace,
+carrying its expert soul. The framework's own souls say
+`oats.okf: { from: package }`: membership never turns a package into a
+latest-state capability.
 
 ## Operations a capability declares
 
@@ -523,7 +491,7 @@ passed as arguments; no shell is involved.
 - The request has exactly these keys; a provider may decode it strictly. The
   soul's teams (see [Teams in the provider environment](#teams-in-the-provider-environment))
   are not on stdin: the check reads them from `OATS_DEFAULT_TEAM*`, `OATS_TEAMS`
-  and `OATS_TEAMS_SOURCE`. (`context.team` was removed in 0.30.0.)
+  and `OATS_TEAMS_SOURCE`.
 - `instance` and `home` are `null` for a soul subject.
 
 **Environment:**
@@ -542,8 +510,8 @@ passed as arguments; no shell is involved.
   - `OATS_AGENT` (the soul);
   - `OATS_SOUL` when the soul directory is known;
   - for a home, `OATS_INSTANCE` and `OATS_INSTANCE_HOME`.
-- A home's `OATS_WORKSPACE_NAME` is `""` until spawn records the workspace
-  name.
+- `OATS_TEAM_SCOPE` is the deployment directory; `OATS_TEAM_NAME` is always
+  empty.
 
 **Answer** — exit 0, and exactly one JSON document on stdout (whitespace
 around it is fine; progress text is not):
