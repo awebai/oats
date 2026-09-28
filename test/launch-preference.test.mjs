@@ -12,6 +12,9 @@ import YAML from "yaml";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { launchLayers, selectionFrom, soulLaunchAt } from "../lib/launch-preference.mjs";
 import { homeLaunchLayers, planLaunch } from "../lib/core.mjs";
+// The Desktop's released decoder is the consumer: every Launch the kernel emits must decode under it.
+import { launchOf, PREVIEW_FROM, RECORD_FROM, REPORT_FROM } from "../packages/desktop/renderer/launch-contract.mjs";
+const decodes = (launch, from = REPORT_FROM) => assert.notEqual(launchOf(launch, from), undefined, `the Desktop refuses ${JSON.stringify(launch)}`);
 
 const OPUS = { harness: "claude", model: "claude-opus-5-5" };
 const LOCAL = "oats-local.yaml";
@@ -65,6 +68,7 @@ test("oats souls / inspect --soul / spawn --preview report the launch: declared,
   assert.deepEqual(souls.writer.launch, { declared: OPUS, effective: { harness: "codex", model: null, launchConfig: null }, from: "local-default", at: `${LOCAL}#/souls/launch/*`, problem: null });
   assert.deepEqual(souls.runner.launch, { declared: null, effective: { harness: "claude", model: "claude-opus-5-5", launchConfig: "opus" }, from: "local", at: `${LOCAL}#/souls/launch/runner`, problem: null });
   assert.deepEqual([souls.runner.harness, souls.runner.model, souls.runner.harnessFrom], ["claude", "claude-opus-5-5", "local"], "the desktop facts equal the effective launch");
+  for (const s of Object.values(souls)) decodes(s.launch);
   // Without the "*" entry, writer's own launch decides.
   setLocal(fx, (v) => { delete v.souls.launch["*"]; });
   const writer = ok(fx.cli(["inspect", "--soul", "writer", "--json"]), "inspect --soul").launch;
@@ -75,9 +79,11 @@ test("oats souls / inspect --soul / spawn --preview report the launch: declared,
   // The preview carries the same report, flags applied; its top-level harness/model/launchConfig agree.
   const preview = ok(fx.cli(["spawn", "writer", "--preview", "--json"]), "preview");
   assert.deepEqual(preview.launch, writer);
+  decodes(preview.launch, PREVIEW_FROM);
   assert.deepEqual([preview.harness, preview.model, preview.launchConfig, preview.modelSource], ["claude", "claude-opus-5-5", null, "soul preference"]);
   const flagged = ok(fx.cli(["spawn", "writer", "--harness", "pi", "--preview", "--json"]), "preview --harness");
   assert.deepEqual([flagged.launch.from, flagged.launch.at, flagged.launch.effective], ["flag", null, { harness: "pi", model: null, launchConfig: null }], "a flag decides; the soul's model never crosses to pi");
+  decodes(flagged.launch, PREVIEW_FROM);
   const modelOnly = ok(fx.cli(["spawn", "writer", "--model", "sonnet", "--preview", "--json"]), "preview --model");
   assert.deepEqual([modelOnly.launch.from, modelOnly.launch.effective.harness, modelOnly.launch.effective.model], ["soul", "claude", "sonnet"], "--model alone keeps the soul's harness");
 
@@ -100,6 +106,7 @@ test("an unavailable harness is refused naming its source and the fix — never 
   assert.deepEqual(e.details, { harness: "codex", from: "local", at: `${LOCAL}#/souls/launch/dev`, fix: `install codex, or change ${LOCAL} souls.launch` });
   const row = ok(fx.cli(["souls", "--json"], { env: { PATH } }), "souls").souls.find((s) => s.name === "dev");
   assert.deepEqual([row.launch.problem.code, row.launch.problem.fix], ["E_HARNESS_UNAVAILABLE", `install codex, or change ${LOCAL} souls.launch`], "the soul still lists");
+  decodes(row.launch);
   // From a flag, the fix names the flags; the soul's own launch names the override.
   const f = refused(fx.cli(["spawn", "dev", "--harness", "codex", "--preview", "--json"], { env: { PATH } }), "E_HARNESS_UNAVAILABLE", "flag");
   assert.deepEqual([f.details.from, f.details.at, f.details.fix], ["flag", null, "install codex, or choose another --harness / --launch-config"]);
@@ -123,6 +130,7 @@ test("a home's recorded launch is frozen: a changed preference shows as launchCu
   setLocal(fx, (v) => { v.souls = { launch: { dev: OPUS } }; });
   doc = ok(fx.cli(["inspect", "--home", home, "--json"]), "inspect --home");
   assert.deepEqual([doc.launch.effective.harness, doc.launchCurrent.effective, doc.launchCurrent.from], ["pi", { harness: "claude", model: "claude-opus-5-5", launchConfig: null }, "local"]);
+  decodes(doc.launch, RECORD_FROM); decodes(doc.launchCurrent);
   const [changed] = items();
   assert.deepEqual([changed.code, changed.required, changed.subject, changed.recorded.harness, changed.current.harness, changed.from, changed.at, changed.remedy],
     ["launch-changed", false, "launch", "pi", "claude", "local", `${LOCAL}#/souls/launch/dev`, "`oats session restart --reselect-launch`, or respawn"]);
@@ -140,4 +148,11 @@ test("a home's recorded launch is frozen: a changed preference shows as launchCu
   const r = fx.cli(["session", "start", "--home", home, "--reselect-launch", "--launch-config", "opus", "--json"]);
   assert.equal(r.json().ok, false);
   mkdirSync(join(fx.base, "unused"), { recursive: true });
+});
+
+test("a report naming a missing configuration keeps a real effective launch (the host default) with the problem — never a null harness", (t) => {
+  const fx = fixture({ local: { souls: { launch: { dev: "gone" } } } }); t.after(fx.cleanup);
+  const row = ok(fx.cli(["souls", "--json"]), "souls").souls.find((s) => s.name === "dev");
+  assert.deepEqual([row.launch.effective, row.launch.from, row.launch.problem.code], [{ harness: "pi", model: null, launchConfig: null }, "local", "E_LAUNCH_CONFIG_UNKNOWN"]);
+  decodes(row.launch);
 });

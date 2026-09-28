@@ -1003,7 +1003,8 @@ shows the drift as `launch-changed`.
   (`E_HARNESS_UNAVAILABLE`, `E_LAUNCH_CONFIG_UNKNOWN`, or `E_LAUNCH_EXECUTABLE`
   for a configuration whose own executable is missing). Only reports carry it;
   spawn and preview refuse instead. With `E_LAUNCH_CONFIG_UNKNOWN`,
-  `effective.harness` is `null`.
+  `effective` is the host default (`pi`, `null`, `null`): the named
+  configuration launches nothing here.
 - In listings (`oats souls`, `inspect --soul`, `launchCurrent`) `model` is the
   configured id: no model catalogue is probed. The preview's `model` is the
   resolved one.
