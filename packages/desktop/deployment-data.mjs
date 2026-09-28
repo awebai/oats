@@ -273,7 +273,7 @@ export function soulsData(document) {
   const data = document.result;
   check(record(data) && data.soulsApi === 1);
   const workspace = fields(data.workspace, ['name', 'key', 'commit']);
-  const seen = new Map(), shown = new Map();
+  const seen = new Map();
   for (const row of array(data.souls)) {
     const out = fields(row, ['name', 'origin', 'kind', 'repoKey', 'commit', 'team', 'path', 'work', 'description']);
     check(SOUL_NAME.test(out.name ?? '') && ['member', 'external', 'package'].includes(out.kind)
@@ -285,12 +285,12 @@ export function soulsData(document) {
         && row.qualifiedName === `${row.package}/${out.name}`);
       Object.assign(out, { package: row.package, version: row.version, qualifiedName: row.qualifiedName });
     } else check(!own(row, 'qualifiedName') && !own(row, 'package'));
-    // The soul key (`oats soul teams <key>`, the souls.teams/souls.default keys) is the KERNEL's:
-    // the row's `key` when it reports one (the owner's decision: exactly the name the soul is spawned
-    // by). Until the kernel carries it, a member soul falls back to its bare name; a package or
-    // external soul's key is never derived here, so it has none.
-    if (own(row, 'key')) { check(soulKey(row.key)); out.key = row.key; }
-    else if (out.kind === 'member') out.key = out.name;
+    // The soul key (`oats soul teams <key>`, the souls.teams/souls.default keys) is the kernel's
+    // soul-key rule, exactly: a package soul's qualified name, every other soul's bare name
+    // (external included). When the row reports `key`, it must BE that key: a mismatch refuses the
+    // document (a kernel/contract defect, never papered over).
+    out.key = out.kind === 'package' ? out.qualifiedName : out.name;
+    if (own(row, 'key')) check(soulKey(row.key) && row.key === out.key);
     flags(row, ['private', 'spawnable'], out);
     // desktop-facts: whether a spawn here would refuse, and the file. The harness/model default is not kept:
     // it is always the kernel's today (#217 note 4), never the soul's choice; the spawn preview reports the real one.
@@ -304,13 +304,13 @@ export function soulsData(document) {
       check(Array.isArray(row.labels) && row.labels.length <= 64 && row.labels.every(l => typeof l === 'string' && TEAM_LABEL.test(l)) && new Set(row.labels).size === row.labels.length);
       out.labels = [...row.labels];
     }
-    // One soul per spawn name: the kernel's key, else a package soul's qualified name (spawnable as
-    // such), else the bare name, so a member and an external soul of one name stay ambiguous.
-    const id = out.key ?? out.qualifiedName ?? out.name;
-    seen.set(id, seen.has(id) ? null : out); shown.set(id, out.key ?? out.qualifiedName ?? out.name);
+    // One soul per key: a package soul never collides with a member of the same bare name, while a
+    // member and an external soul of one name stay ambiguous (never guess which one spawns).
+    const id = out.key;
+    seen.set(id, seen.has(id) ? null : out);
   }
   const souls = [...seen.values()].filter(Boolean);
-  const ambiguous = [...seen].filter(([, row]) => row === null).map(([id]) => shown.get(id));
+  const ambiguous = [...seen].filter(([, row]) => row === null).map(([key]) => key);
   return { soulsApi: 1, workspace, souls, ambiguous, problems: problemRows(data.problems) };
 }
 
