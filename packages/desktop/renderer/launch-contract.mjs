@@ -25,6 +25,14 @@ function preference(v) {
   return { harness: v.harness, model: v.model };
 }
 
+/** An effective launch `{harness, model|null, launchConfig|null}` (also readiness `launch-changed`'s
+ * `recorded`/`current`), or `undefined` when malformed. */
+export function effectiveOf(e) {
+  if (!exact(e, ['harness', 'model', 'launchConfig']) || !HARNESSES.includes(e.harness) || !model(e.model)
+    || !(e.launchConfig === null || (typeof e.launchConfig === 'string' && LAUNCH_CONFIG.test(e.launchConfig)))) return undefined;
+  return { harness: e.harness, model: e.model, launchConfig: e.launchConfig };
+}
+
 /** The Launch object, closed, or `undefined` when malformed (the reader then refuses its document). */
 export function launchOf(v, from = REPORT_FROM) {
   if (!exact(v, ['declared', 'effective', 'from', 'at', 'problem'])) return undefined;

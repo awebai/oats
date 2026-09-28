@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "soulsApi": 1,
+    "workspace": {
+      "name": "acme",
+      "key": "local//fixture/base/remotes/ws.git",
+      "commit": "5048f113d2665455821233e3f63d89a54c32a133"
+    },
+    "souls": [
+      {
+        "name": "dev",
+        "key": "dev",
+        "origin": "member local//fixture/base/remotes/ws.git @ 5048f113",
+        "kind": "member",
+        "repoKey": "local//fixture/base/remotes/ws.git",
+        "commit": "5048f113d2665455821233e3f63d89a54c32a133",
+        "teams": [],
+        "defaultTeam": null,
+        "private": false,
+        "path": "souls/dev",
+        "work": "directory",
+        "description": "dev fixture soul.",
+        "harness": "claude",
+        "model": "claude-opus-5-5",
+        "harnessFrom": "soul",
+        "launch": {
+          "declared": {
+            "harness": "claude",
+            "model": "claude-opus-5-5"
+          },
+          "effective": {
+            "harness": "claude",
+            "model": "claude-opus-5-5",
+            "launchConfig": null
+          },
+          "from": "soul",
+          "at": "local//fixture/base/remotes/ws.git:souls/dev/soul.yaml#/launch",
+          "problem": null
+        },
+        "file": {
+          "path": "souls/dev/soul.yaml",
+          "url": null
+        },
+        "spawnable": true,
+        "problem": null
+      },
+      {
+        "name": "plain",
+        "key": "plain",
+        "origin": "member local//fixture/base/remotes/ws.git @ 5048f113",
+        "kind": "member",
+        "repoKey": "local//fixture/base/remotes/ws.git",
+        "commit": "5048f113d2665455821233e3f63d89a54c32a133",
+        "teams": [],
+        "defaultTeam": null,
+        "private": false,
+        "path": "souls/plain",
+        "work": "directory",
+        "description": "plain fixture soul.",
+        "harness": "pi",
+        "model": null,
+        "harnessFrom": "kernel-default",
+        "launch": {
+          "declared": null,
+          "effective": {
+            "harness": "pi",
+            "model": null,
+            "launchConfig": null
+          },
+          "from": "host",
+          "at": null,
+          "problem": null
+        },
+        "file": {
+          "path": "souls/plain/soul.yaml",
+          "url": null
+        },
+        "spawnable": true,
+        "problem": null
+      },
+      {
+        "name": "reviewer",
+        "key": "reviewer",
+        "origin": "member local//fixture/base/remotes/ws.git @ 5048f113",
+        "kind": "member",
+        "repoKey": "local//fixture/base/remotes/ws.git",
+        "commit": "5048f113d2665455821233e3f63d89a54c32a133",
+        "teams": [],
+        "defaultTeam": null,
+        "private": false,
+        "path": "souls/reviewer",
+        "work": "directory",
+        "description": "reviewer fixture soul.",
+        "harness": "pi",
+        "model": null,
+        "harnessFrom": "local",
+        "launch": {
+          "declared": {
+            "harness": "codex",
+            "model": null
+          },
+          "effective": {
+            "harness": "pi",
+            "model": null,
+            "launchConfig": null
+          },
+          "from": "local",
+          "at": "oats-local.yaml#/souls/launch/reviewer",
+          "problem": null
+        },
+        "file": {
+          "path": "souls/reviewer/soul.yaml",
+          "url": null
+        },
+        "spawnable": true,
+        "problem": null
+      }
+    ],
+    "problems": []
+  }
+}

@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "readinessApi": 2,
+    "subject": {
+      "kind": "instance",
+      "instance": "dev-q",
+      "home": "/fixture/base/deployment/agents/dev/instances/dev-q",
+      "soul": "dev"
+    },
+    "selector": {
+      "kind": "home",
+      "home": "/fixture/base/deployment/agents/dev/instances/dev-q",
+      "soul": "dev",
+      "agentsRoot": "/fixture/base/deployment/agents"
+    },
+    "at": "2026-09-28T23:05:54.682Z",
+    "checks": {
+      "installed": {
+        "status": "not-applicable",
+        "items": []
+      },
+      "configured": {
+        "status": "not-applicable",
+        "items": [
+          {
+            "subject": "teams",
+            "status": "fail",
+            "required": false,
+            "reason": "this instance was spawned in mine; the default is now oats",
+            "producer": "team model",
+            "evidence": null,
+            "remedy": "respawn",
+            "code": "default-team-changed",
+            "recorded": {
+              "label": "mine",
+              "team": "mine:me.aweb.ai",
+              "from": "deployment"
+            },
+            "current": {
+              "label": "oats",
+              "team": "oats:oats.aweb.ai",
+              "from": "deployment"
+            }
+          }
+        ]
+      },
+      "member": {
+        "status": "pass",
+        "items": [
+          {
+            "subject": "member local//fixture/base/remotes/ws.git",
+            "status": "pass",
+            "required": true,
+            "reason": null,
+            "producer": "workspace discovery",
+            "evidence": {
+              "repoKey": "local//fixture/base/remotes/ws.git",
+              "workspace": "local//fixture/base/remotes/ws.git",
+              "commit": "aa225ef02299a71d45e1818ef90f972287ceb0d2"
+            },
+            "remedy": null
+          }
+        ]
+      },
+      "providers": {
+        "status": "not-applicable",
+        "items": []
+      }
+    },
+    "summary": {
+      "ready": true,
+      "required": 1,
+      "pass": 1,
+      "fail": 0,
+      "unknown": 0,
+      "byCapability": [],
+      "subjectBlockers": []
+    },
+    "notes": [
+      "ready means every REQUIRED check passes; it is never inferred from an empty set",
+      "member is the soul's member repository confirmed in the workspace (oats-membership.yaml), never login or team registration",
+      "providers relays each provider's own binding check verbatim; the spawn's fail-closed hooks are unchanged",
+      "policy: a lifecycle-authority claim enforced by the spawn route, not an OS sandbox"
+    ],
+    "policy": {
+      "childSpawns": {
+        "allowed": true,
+        "enforced": true,
+        "origin": {
+          "kind": "default",
+          "detail": "no spawn option: children allowed"
+        }
+      },
+      "worktrees": {
+        "allowed": false,
+        "mode": "directory",
+        "enforced": true,
+        "origin": {
+          "kind": "work-mode",
+          "detail": "work: directory"
+        }
+      }
+    }
+  }
+}
