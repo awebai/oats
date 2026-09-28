@@ -962,9 +962,11 @@ Every object shape here is closed.
 
 **Existing homes.** A home's recorded launch is frozen. A plain `session
 start`/`restart` runs it unchanged. The precedence decides only a new
-selection: a spawn, a start/restart with `--launch-config`, `--harness` or
-`--model`, or a start/restart with `--reselect-launch`, which applies the
-current layers without naming anything. **A changed preference does not affect
+selection: a spawn, a start/restart with `--launch-config` or `--harness`, or
+a start/restart with `--reselect-launch`, which applies the current layers
+without naming anything. A start/restart with `--model` alone is not a new
+selection: it keeps the recorded harness (and configuration) and replaces only
+the model (`modelFrom: "start"`; `launchFrom` is unchanged). **A changed preference does not affect
 a running or existing home until `--reselect-launch` or a respawn.** Readiness
 shows the drift as `launch-changed`.
 
