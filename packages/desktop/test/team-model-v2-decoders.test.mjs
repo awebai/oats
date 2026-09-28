@@ -1,6 +1,8 @@
 // Team model v2 (feature team-model-2, OATS 0.30) decoders (D1b): `oats teams`, `oats soul teams`,
-// the souls/preview teams + defaultTeam, and the argv adapters. Fixtures: team-model-v2/ (stand-ins,
-// PROVENANCE.md) and the real 0.29 captures with the v2 keys edited in.
+// the souls/preview/status teams + defaultTeam, readiness team items, and the argv adapters.
+// Fixtures: team-model-v2/ are REAL captures from the K1 kernel (provenance.json: oats
+// feat/030-team-model, capture-teams-v2.mjs, the Desktop's exact argv), replacing the doc
+// stand-ins teams.json / soul-teams.json.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -14,70 +16,71 @@ import { normalizeSoulColor } from '../renderer/soul-colors.mjs';
 import { target } from './helpers/spawn-preview-fixture.mjs';
 
 const read = path => JSON.parse(readFileSync(new URL(`./fixtures/${path}.json`, import.meta.url), 'utf8'));
-const ROWS = [{ label: 'antares-oats', team: 'antares-oats:juan.aweb.ai', default: true, from: 'local' }, { label: 'oats', team: 'oats:oats.aweb.ai', default: false, from: 'shared' },
-  { label: 'reviewers', team: null, default: false, from: 'shared' }];
-const DEFAULT = { label: 'antares-oats', team: 'antares-oats:juan.aweb.ai', from: 'deployment' };
+const v2 = name => read(`team-model-v2/${name}`);
+const DEPLOYMENT = '/fixture/base/northwind-workspace';
 
-test('oats teams: this deployment\'s teams, souls.teams/default as written, problems; bound to the deployment', () => {
-  const t = teamsData(read('team-model-v2/teams'), '/w');
-  assert.equal(t.defaultTeam, 'antares-oats');
-  assert.deepEqual(t.teams.map(r => [r.label, r.team, r.from, r.default]), [['antares-oats', 'antares-oats:juan.aweb.ai', 'local', true], ['oats', 'oats:oats.aweb.ai', 'shared', false], ['reviewers', null, 'shared', false]]);
-  assert.equal(t.teams[1].description, 'The OATS project'); assert.match(t.teams[0].at, /^oats-local\.yaml#/);
-  assert.deepEqual(t.souls, { teams: { '*': ['oats'], 'oats-expert': ['reviewers'] }, default: { 'oats-expert': 'oats' } });
-  assert.deepEqual(t.problems, [{ code: 'team-unmapped', label: 'reviewers', message: 'shared team reviewers has no provider id yet', fix: 'its owner runs `oats aweb setup`, then commits the id', default: false }]);
-  const mutated = structuredClone(read('team-model-v2/teams')); mutated.result.changed = true;
-  assert.equal(teamsData(mutated, '/w').changed, true);
-  assert.throws(() => teamsData(read('team-model-v2/teams'), '/other'), { code: 'E_DEPLOYMENT_SCOPE' });
-  for (const change of [d => { d.result.teams[0].from = 'global'; }, d => { d.result.teams[1].default = true; }, d => { d.result.teams[0].label = '-x'; },
-    d => { d.result.souls.teams['*'] = ['oats', 'oats']; }, d => { d.result.teamsApi = 2; }, d => { d.result.changed = 'yes'; }, d => { d.result.problems[0].severity = 'meh'; }]) {
-    const bad = structuredClone(read('team-model-v2/teams')); change(bad); assert.throws(() => teamsData(bad, '/w'), { code: 'E_CLI_PROTOCOL' });
+test('oats teams (real): shared + local teams, the default, souls as written, problems; mutations carry changed; bound to the deployment', () => {
+  const t = teamsData(v2('teams-after'), DEPLOYMENT);
+  assert.equal(t.defaultTeam, 'mine');
+  assert.deepEqual(t.teams.map(r => [r.label, r.team, r.from, r.default]), [['engineering', null, 'shared', false], ['global', null, 'shared', false],
+    ['marketing', null, 'shared', false], ['mine', 'mine:juan.aweb.ai', 'local', true]]);
+  assert.deepEqual([t.teams[3].description, t.teams[3].at], ['My own team', 'oats-local.yaml#/teams/mine']);
+  assert.match(t.teams[0].at, /oats-workspace\.yaml#\/teams\/engineering$/);
+  assert.deepEqual(t.souls, { teams: { 'release-manager': ['mine', 'engineering'], '*': ['global'] }, default: { 'release-manager': 'engineering' } });
+  assert.deepEqual(t.problems.map(p => [p.code, p.label, p.default]), [['team-unmapped', 'engineering', false], ['team-unmapped', 'global', false], ['team-unmapped', 'marketing', false]]);
+  assert.equal(teamsData(v2('teams-add'), DEPLOYMENT).changed, true, 'a mutation');
+  assert.equal(teamsData(v2('teams-initial'), DEPLOYMENT).defaultTeam, null, 'no default yet');
+  assert.throws(() => teamsData(v2('teams-after'), '/other'), { code: 'E_DEPLOYMENT_SCOPE' });
+  for (const change of [d => { d.result.teams[0].from = 'global'; }, d => { d.result.teams[0].default = true; }, d => { d.result.teams[0].label = '-x'; },
+    d => { d.result.souls.teams['*'] = ['global', 'global']; }, d => { d.result.teamsApi = 2; }, d => { d.result.changed = 'yes'; }, d => { d.result.problems[0].severity = 'meh'; }]) {
+    const bad = v2('teams-after'); change(bad); assert.throws(() => teamsData(bad, DEPLOYMENT), { code: 'E_CLI_PROTOCOL' });
   }
 });
 
-test('oats soul teams: rows with via (in the kernel\'s order), the default, local and all', () => {
-  const s = soulTeamsData(read('team-model-v2/soul-teams'));
-  assert.deepEqual([s.soul, s.key, s.defaultTeam], ['oats-expert', 'oats-expert', { label: 'oats', team: 'oats:oats.aweb.ai', from: 'soul' }]);
-  assert.deepEqual(s.teams.map(r => [r.label, r.default, r.via]), [['oats', true, ['default', '*']], ['reviewers', false, ['soul']]]);
-  assert.equal(s.teams[1].mapped, false, 'an unmapped shared team');
-  assert.deepEqual([s.local, s.all], [{ teams: ['reviewers'], default: 'oats' }, ['oats']]);
-  const none = structuredClone(read('team-model-v2/soul-teams')); none.result.defaultTeam = null; assert.equal(soulTeamsData(none).defaultTeam, null);
-  for (const change of [d => { d.result.teams[0].via = ['*', 'default']; }, d => { d.result.teams[0].via = []; }, d => { d.result.teams[0].via = ['team']; },
+test('oats soul teams (real): rows with via in the kernel\'s order, the default, local and all; the * key', () => {
+  const s = soulTeamsData(v2('soul-teams-default'));
+  assert.deepEqual([s.soul, s.key, s.defaultTeam, s.changed], ['release-manager', 'release-manager', { label: 'engineering', team: null, from: 'soul' }, true]);
+  assert.deepEqual(s.teams.map(r => [r.label, r.default, r.mapped, r.via]), [['engineering', true, false, ['default', 'soul']], ['mine', false, true, ['soul']]]);
+  assert.deepEqual([s.local, s.all], [{ teams: ['mine', 'engineering'], default: 'engineering' }, []]);
+  const star = soulTeamsData(v2('soul-teams-star-show'));
+  assert.deepEqual([star.key, star.defaultTeam.from, star.teams.map(r => r.via)], ['*', 'deployment', [['default'], ['*']]]);
+  assert.equal(soulTeamsData(v2('soul-teams-clear-default')).changed, true);
+  for (const change of [d => { d.result.teams[0].via = ['soul', 'default']; }, d => { d.result.teams[0].via = []; }, d => { d.result.teams[0].via = ['team']; },
     d => { d.result.defaultTeam.from = 'setting'; }, d => { delete d.result.teams[0].default; }, d => { d.result.local.default = 7; }]) {
-    const bad = structuredClone(read('team-model-v2/soul-teams')); change(bad); assert.throws(() => soulTeamsData(bad), { code: 'E_CLI_PROTOCOL' });
+    const bad = v2('soul-teams-default'); change(bad); assert.throws(() => soulTeamsData(bad), { code: 'E_CLI_PROTOCOL' });
   }
 });
 
-test('souls rows and /api/agents: teams (the default first) and defaultTeam pass through; 0.29 rows unchanged', () => {
-  const doc = read('workspace-v2/desktop-facts/souls'), v2 = structuredClone(doc);
-  for (const row of v2.result.souls) { delete row.team; delete row.labels; row.teams = structuredClone(ROWS); row.defaultTeam = { ...DEFAULT }; }
-  const souls = soulsData(v2).souls;
-  assert.deepEqual(souls[0].teams.map(t => [t.label, t.default, t.mapped]), [['antares-oats', true, true], ['oats', false, true], ['reviewers', false, false]]);
-  assert.deepEqual(souls[0].defaultTeam, DEFAULT);
-  for (const s of soulsData(doc).souls) assert.equal(Object.hasOwn(s, 'teams') || Object.hasOwn(s, 'defaultTeam'), false, '0.29: no v2 keys invented');
-  const bad = structuredClone(v2); bad.result.souls[0].teams[0] = { label: 'x', team: 't', mapped: true }; // a 0.29 row in a v2 list
+test('souls rows and /api/agents (real): teams and defaultTeam pass through; 0.29 rows gain no keys', () => {
+  const souls = soulsData(v2('souls')).souls, rm = souls.find(s => s.name === 'release-manager');
+  assert.deepEqual(rm.teams.map(t => [t.label, t.team, t.default, t.from, t.mapped]), [['engineering', null, true, 'shared', false], ['global', null, false, 'shared', false],
+    ['mine', 'mine:juan.aweb.ai', false, 'local', true]]);
+  assert.deepEqual(rm.defaultTeam, { label: 'engineering', team: null, from: 'soul' }, 'an unmapped default names its label');
+  for (const s of soulsData(read('workspace-v2/desktop-facts/souls')).souls) assert.equal(Object.hasOwn(s, 'teams') || Object.hasOwn(s, 'defaultTeam'), false, '0.29: no v2 keys invented');
+  const bad = v2('souls'); bad.result.souls.find(s => s.name === 'release-manager').teams[0] = { label: 'x', team: 't', mapped: true }; // a 0.29 row in a v2 list
   assert.throws(() => soulsData(bad), { code: 'E_CLI_PROTOCOL' });
-  const badDefault = structuredClone(v2); badDefault.result.souls[0].defaultTeam = { team: 't', source: 'root' };
+  const badDefault = v2('souls'); badDefault.result.souls.find(s => s.name === 'release-manager').defaultTeam = { team: 't', source: 'root' };
   assert.throws(() => soulsData(badDefault), { code: 'E_CLI_PROTOCOL' });
-  // /api/agents carries them.
+  // /api/agents carries them (the real v2 status + souls).
   const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
   const start = source.indexOf('function agentsData('), end = source.indexOf('/* ── Model catalog', start);
   const agentsData = new Function('workspaceById', 'workspaces', 'snapshot', 'remote', 'dirname', 'resolve', 'normalizeSoulColor', `${source.slice(start, end)}; return agentsData;`);
-  const DEPLOYMENT = '/fixture/base/northwind-workspace', roster = deploymentStatusData(read('workspace-v2/desktop-facts/status'), DEPLOYMENT);
+  const roster = deploymentStatusData(v2('status'), DEPLOYMENT);
   const snapshot = { byWs: new Map([[DEPLOYMENT, { deployment: { status: 'observed', root: roster.root, souls: roster.agents.map(({ instances: _i, ...s }) => s), catalog: { souls, ambiguous: [], reason: null } } }]]) };
   const ws = { id: DEPLOYMENT, name: 'northwind', roots: [roster.root] };
-  const agent = agentsData(() => ws, () => [ws], snapshot, remote, dirname, resolve, normalizeSoulColor)().agents[0];
-  assert.deepEqual([agent.teams.length, agent.teams[0].default, agent.defaultTeam.label], [3, true, 'antares-oats']);
+  const agent = agentsData(() => ws, () => [ws], snapshot, remote, dirname, resolve, normalizeSoulColor)().agents.find(a => a.name === 'release-manager');
+  assert.deepEqual([agent.teams.length, agent.teams[0].default, agent.defaultTeam.label], [3, true, 'engineering']);
 });
 
-test('spawn preview: defaultTeam is the kernel\'s DefaultTeam (or null); absent on 0.29; malformed refuses the preview', () => {
-  const v29 = read('workspace-v2/f7/preview-teams-default').result;
-  assert.equal(Object.hasOwn(previewData(structuredClone(v29), target), 'defaultTeam'), false);
-  const v2 = structuredClone(v29); delete v2.team; v2.teams = structuredClone(ROWS); v2.defaultTeam = { ...DEFAULT };
-  assert.deepEqual(previewData(v2, target).defaultTeam, DEFAULT);
-  const unmapped = structuredClone(v2); unmapped.defaultTeam = { label: 'reviewers', team: null, from: 'soul' };
-  assert.deepEqual(previewData(unmapped, target).defaultTeam, { label: 'reviewers', team: null, from: 'soul' });
-  const none = structuredClone(v2); none.defaultTeam = null; assert.equal(previewData(none, target).defaultTeam, null);
-  const bad = structuredClone(v2); bad.defaultTeam = { label: 'x', team: 't', from: 'root' }; assert.equal(previewData(bad, target), null);
+test('spawn preview (real): no team, teams + defaultTeam (an unmapped soul default); absent on 0.29; malformed refuses the preview', () => {
+  const real = v2('preview').result;
+  assert.equal(Object.hasOwn(real, 'team'), false, 'the real 0.30 preview has no team');
+  const p = previewData(structuredClone(real), target);
+  assert.ok(p, 'the real 0.30 preview reads');
+  assert.deepEqual(p.defaultTeam, { label: 'engineering', team: null, from: 'soul' });
+  assert.equal(Object.hasOwn(previewData(read('workspace-v2/f7/preview-teams-default').result, target), 'defaultTeam'), false, '0.29: none');
+  const none = structuredClone(real); none.defaultTeam = null; assert.equal(previewData(none, target).defaultTeam, null);
+  const bad = structuredClone(real); bad.defaultTeam = { label: 'x', team: 't', from: 'root' }; assert.equal(previewData(bad, target), null);
   assert.equal(defaultTeamOf({ label: 'x', team: 't' }), undefined);
 });
 
@@ -113,22 +116,20 @@ test('argv: oats teams and oats soul teams, validated before any exec, never opt
   }
 });
 
-test('readiness: team items in checks.configured (no fifth check) keep code, label and default', async () => {
+test('readiness (real): team items in checks.configured (no fifth check) keep code, label, default and at', async () => {
   const { readinessData } = await import('../renderer/readiness-contract.mjs');
-  const { data, target } = await import('./helpers/readiness-fixture.mjs');
-  const base = { producer: 'team model', evidence: null, remedy: 'its owner runs `oats aweb setup`, then commits the id' };
-  const v = data();
-  v.checks.configured.items.push({ ...base, subject: 'team reviewers', status: 'fail', required: false, code: 'team-unmapped', reason: 'shared team reviewers has no provider id yet', label: 'reviewers', default: false });
-  v.checks.configured.items.push({ ...base, subject: 'team oats', status: 'fail', required: true, code: 'team-unmapped', reason: 'the default team oats has no provider id yet', label: 'oats', default: true });
-  v.summary.required += 1; v.summary.fail += 1;
-  const r = readinessData(v, target);
-  assert.ok(r, 'the four checks, the team items among them');
+  const { data } = await import('./helpers/readiness-fixture.mjs');
+  const t = { workspace: 'northwind', context: DEPLOYMENT, observedAs: 'soul', selector: { kind: 'soul', soul: 'release-manager', agentsRoot: `${DEPLOYMENT}/agents` } };
+  const real = v2('readiness-soul').result, r = readinessData(structuredClone(real), t);
+  assert.ok(r, 'the real 0.30 readiness reads');
   assert.deepEqual(Object.keys(r.checks), ['installed', 'configured', 'member', 'providers']);
-  const items = r.checks.configured.items.slice(-2);
-  assert.deepEqual(items.map(i => [i.subject, i.code, i.label, i.default, i.required]), [['team reviewers', 'team-unmapped', 'reviewers', false, false], ['team oats', 'team-unmapped', 'oats', true, true]]);
-  for (const change of [i => { i.label = '-x'; }, i => { i.default = 'yes'; }]) {
-    const bad = structuredClone(v); change(bad.checks.configured.items.at(-1)); assert.equal(readinessData(bad, target), null);
+  const items = r.checks.configured.items.filter(i => i.label !== undefined);
+  assert.deepEqual(items.map(i => [i.subject, i.code, i.label, i.default, i.required]), [['team engineering', 'team-unmapped', 'engineering', true, true], ['team global', 'team-unmapped', 'global', false, false]]);
+  assert.equal(items[0].reason, 'the default team engineering has no provider id yet', 'the blocking copy names the label');
+  assert.match(items[0].at, /oats-workspace\.yaml#\/teams\/engineering$/);
+  for (const change of [i => { i.label = '-x'; }, i => { i.default = 'yes'; }, i => { i.at = 7; }]) {
+    const bad = structuredClone(real); change(bad.checks.configured.items.find(i => i.label === 'engineering')); assert.equal(readinessData(bad, t), null);
   }
-  const plain = readinessData(data(), target);
-  assert.ok(plain.checks.configured.items.every(i => !Object.hasOwn(i, 'label') && !Object.hasOwn(i, 'default')), '0.29 items gain no keys');
+  const plain = readinessData(data(), (await import('./helpers/readiness-fixture.mjs')).target);
+  assert.ok(plain.checks.configured.items.every(i => !Object.hasOwn(i, 'label') && !Object.hasOwn(i, 'default') && !Object.hasOwn(i, 'at')), '0.29 items gain no keys');
 });

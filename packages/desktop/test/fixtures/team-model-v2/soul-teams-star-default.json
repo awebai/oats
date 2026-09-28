@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_BAD_ARGS",
+    "message": "a default is per soul: --default / --clear-default need a soul, not '*' (the deployment's default is `oats teams default`)",
+    "details": {
+      "soul": "*"
+    }
+  }
+}

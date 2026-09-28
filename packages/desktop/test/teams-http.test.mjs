@@ -1,6 +1,7 @@
 // Team model v2 routes (0.30 D1b): /api/workspace-teams and /api/workspace-soul-teams, through the
 // SHIPPED server handler (sliced from server/oats-web.mjs), the real boundary and the real argv
-// adapters, with only the kernel process faked (the stand-in documents in fixtures/team-model-v2/).
+// adapters, with only the kernel process faked: it answers with the REAL K1 kernel documents
+// (fixtures/team-model-v2/, provenance.json).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -10,16 +11,17 @@ import { apiUrl, classifyApiRoute } from '../api-url.mjs';
 import { createTeamsBoundary, teamsFailure } from '../server/teams.mjs';
 
 const read = path => JSON.parse(readFileSync(new URL(`./fixtures/${path}.json`, import.meta.url), 'utf8'));
+const DEPLOYMENT = '/fixture/base/northwind-workspace';
 const HEADERS = { host: '127.0.0.1:4820', origin: 'http://localhost:4820' };
 function http({ reply } = {}) {
   const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
   const start = source.indexOf('const send = (res, code, body, type'), end = source.indexOf('\nserver.on("error",');
-  const calls = [], workspace = { id: 'team', name: 'team', scope: '/w', roots: ['/w'] };
+  const calls = [], workspace = { id: 'team', name: 'team', scope: DEPLOYMENT, roots: [DEPLOYMENT] };
   const cliState = { bin: '/oats', version: '0.30.0', features: ['team-model-2'] };
   // The kernel process: records argv, answers with the stand-in document (or `reply(argv)`).
   const exec = (bin, argv, opts, done) => {
     calls.push(argv);
-    const out = reply ? reply(argv) : argv[0] === 'teams' ? read('team-model-v2/teams') : read('team-model-v2/soul-teams');
+    const out = reply ? reply(argv) : argv[0] === 'teams' ? read('team-model-v2/teams-after') : read('team-model-v2/soul-teams-default');
     Promise.resolve(out).then(v => done(null, JSON.stringify(v)));
   };
   const boundary = createTeamsBoundary({ teams: (bin, a) => cliTeams(bin, a, { exec }), soulTeams: (bin, a) => cliSoulTeams(bin, a, { exec }) });
@@ -49,26 +51,28 @@ test('Host/Origin/method/query/body guards refuse before any kernel process (CSR
 test('oats teams: list/add/remove/default as one argv each (option values as single --flag=value tokens); the document decoded', async () => {
   const h = http();
   const listed = await h.request();
-  assert.deepEqual([listed.status, listed.body.status, listed.body.teams.teamsApi, listed.body.teams.deployment, listed.body.teams.defaultTeam, listed.headers['cache-control']], [200, 'ok', 1, '/w', 'antares-oats', 'no-store']);
+  assert.deepEqual([listed.status, listed.body.status, listed.body.teams.teamsApi, listed.body.teams.deployment, listed.body.teams.defaultTeam, listed.headers['cache-control']], [200, 'ok', 1, DEPLOYMENT, 'mine', 'no-store']);
   assert.deepEqual(Object.keys(listed.body), ['status', 'teams']);
   await h.request({ body: { action: 'add', label: 'antares-oats', team: 'antares-oats:juan.aweb.ai', description: 'Mine' } });
   await h.request({ body: { action: 'remove', label: 'old' } });
   await h.request({ body: { action: 'default', label: 'oats' } });
-  assert.deepEqual(h.calls, [['teams', '--dir', '/w', '--json'], ['teams', 'add', 'antares-oats', '--team=antares-oats:juan.aweb.ai', '--description=Mine', '--dir', '/w', '--json'],
-    ['teams', 'remove', 'old', '--dir', '/w', '--json'], ['teams', 'default', 'oats', '--dir', '/w', '--json']]);
+  assert.deepEqual(h.calls, [['teams', '--dir', DEPLOYMENT, '--json'], ['teams', 'add', 'antares-oats', '--team=antares-oats:juan.aweb.ai', '--description=Mine', '--dir', DEPLOYMENT, '--json'],
+    ['teams', 'remove', 'old', '--dir', DEPLOYMENT, '--json'], ['teams', 'default', 'oats', '--dir', DEPLOYMENT, '--json']]);
 });
 
 test('no flag injection: option-shaped or out-of-grammar values are refused before any process', async () => {
   const h = http();
   for (const body of [{ action: 'default', label: '--default' }, { action: 'add', label: 'x', team: '--json' }, { action: 'add', label: 'x', team: 't:ns', description: '--json' },
-    { action: 'add', label: 'x', team: 'no-namespace' }, { action: 'add', label: 'x', team: 'a b:ns' }, { action: 'add', label: 'x y', team: 't:ns' }, { action: 'list', label: 'x' },
+    { action: 'add', label: 'x', team: 'no-namespace' }, { action: 'add', label: 'x', team: 'a b:ns' }, { action: 'add', label: 'x y', team: 't:ns' }, { action: 'add', label: 'Oats', team: 't:ns' }, { action: 'default', label: 'x'.repeat(65) }, { action: 'list', label: 'x' },
     { action: 'add', label: 'x', team: 't:ns', dir: '/etc' }, { action: 'join', label: 'x' }]) {
     assert.equal((await h.request({ body })).body.reason.code, 'E_BAD_ARGS', JSON.stringify(body));
   }
   const url = '/api/workspace-soul-teams?ws=team';
   for (const body of [{ action: 'default', soul: 'a', label: '--default' }, { action: 'add', soul: '--all', labels: ['x'] }, { action: 'add', soul: 'a', labels: ['--json'] },
     { action: 'add', soul: 'a' }, { action: 'add', soul: 'a', labels: [] }, { action: 'add', soul: 'a', labels: Array.from({ length: 65 }, (_, i) => `t${i}`) },
-    { action: 'default', soul: '*', label: 'oats' }, { action: 'clear-default', soul: '*' }, { action: 'show', soul: 'a', labels: ['x'] }, { action: 'show', soul: 'a/b/c' }, { action: 'show' }]) {
+    { action: 'default', soul: '*', label: 'oats' }, { action: 'clear-default', soul: '*' }, { action: 'show', soul: 'a', labels: ['x'] }, { action: 'show', soul: 'a/b/c' }, { action: 'show' },
+    { action: 'show', soul: 'Dev' }, { action: 'show', soul: 'pkg/Soul' }, { action: 'show', soul: 'a_b' }, { action: 'show', soul: 'a--b' }, { action: 'show', soul: `${'a'.repeat(257)}` },
+    { action: 'add', soul: 'a', labels: ['Oats'] }]) {
     assert.equal((await h.request({ url, body })).body.reason.code, 'E_BAD_ARGS', JSON.stringify(body));
   }
   assert.equal(h.calls.length, 0);
@@ -77,15 +81,27 @@ test('no flag injection: option-shaped or out-of-grammar values are refused befo
 test('oats soul teams: show/add/remove/default/clear-default argv; the document decoded', async () => {
   const h = http(), url = '/api/workspace-soul-teams?ws=team';
   const shown = await h.request({ url, body: { action: 'show', soul: 'oats-expert' } });
-  assert.deepEqual([shown.body.status, shown.body.soulTeams.soulTeamsApi, shown.body.soulTeams.soul, shown.body.soulTeams.teams.map(t => t.via)], ['ok', 1, 'oats-expert', [['default', '*'], ['soul']]]);
+  assert.deepEqual([shown.body.status, shown.body.soulTeams.soulTeamsApi, shown.body.soulTeams.soul, shown.body.soulTeams.teams.map(t => t.via)], ['ok', 1, 'release-manager', [['default', 'soul'], ['soul']]]);
   assert.deepEqual(Object.keys(shown.body), ['status', 'soulTeams']);
   await h.request({ url, body: { action: 'add', soul: '*', labels: ['oats', 'reviewers'] } });
   await h.request({ url, body: { action: 'remove', soul: 'oats.okf/harvester', labels: ['old'] } });
   await h.request({ url, body: { action: 'default', soul: 'oats-expert', label: 'oats' } });
   await h.request({ url, body: { action: 'clear-default', soul: 'oats-expert' } });
-  assert.deepEqual(h.calls, [['soul', 'teams', 'oats-expert', '--dir', '/w', '--json'], ['soul', 'teams', '*', '--add=oats,reviewers', '--dir', '/w', '--json'],
-    ['soul', 'teams', 'oats.okf/harvester', '--remove=old', '--dir', '/w', '--json'], ['soul', 'teams', 'oats-expert', '--default=oats', '--dir', '/w', '--json'],
-    ['soul', 'teams', 'oats-expert', '--clear-default', '--dir', '/w', '--json']]);
+  assert.deepEqual(h.calls, [['soul', 'teams', 'oats-expert', '--dir', DEPLOYMENT, '--json'], ['soul', 'teams', '*', '--add=oats,reviewers', '--dir', DEPLOYMENT, '--json'],
+    ['soul', 'teams', 'oats.okf/harvester', '--remove=old', '--dir', DEPLOYMENT, '--json'], ['soul', 'teams', 'oats-expert', '--default=oats', '--dir', DEPLOYMENT, '--json'],
+    ['soul', 'teams', 'oats-expert', '--clear-default', '--dir', DEPLOYMENT, '--json']]);
+});
+
+test('the REAL kernel refusals pass through verbatim (E_TEAM_IN_USE usedBy, E_TEAM_SHARED at, E_TEAM_EXISTS, E_TEAM_UNKNOWN)', async () => {
+  let doc; const h = http({ reply: () => doc }), url = '/api/workspace-soul-teams?ws=team';
+  for (const [name, request, route] of [['teams-remove-in-use', { action: 'remove', label: 'mine' }], ['teams-remove-shared', { action: 'remove', label: 'engineering' }],
+    ['teams-add-exists', { action: 'add', label: 'mine', team: 'mine:juan.aweb.ai' }], ['teams-add-shared', { action: 'add', label: 'engineering', team: 'eng:northwind.aweb.ai' }],
+    ['soul-teams-unknown', { action: 'add', soul: 'release-manager', labels: ['nope'] }, url]]) {
+    doc = read(`team-model-v2/${name}`);
+    const r = await h.request({ ...(route ? { url: route } : {}), body: request });
+    assert.deepEqual(r.body, { status: 'refused', reason: { code: doc.error.code, message: doc.error.message, details: doc.error.details } }, name);
+  }
+  assert.deepEqual(read('team-model-v2/teams-remove-in-use').error.details.usedBy, ['defaultTeam', 'souls.teams:release-manager']);
 });
 
 test('kernel refusals pass through verbatim with their bounded details; unknown detail keys dropped', async () => {
@@ -111,12 +127,12 @@ test('gates: team-model-2, local workspaces, known ws; a malformed document is E
   h.workspace.remote = false; assert.equal((await h.request({ url: '/api/workspace-teams?ws=other' })).body.reason.code, 'E_WORKSPACE_UNKNOWN');
   assert.equal(h.calls.length, 0);
   h.workspace.scope = '/elsewhere'; assert.equal((await h.request()).body.reason.code, 'E_DEPLOYMENT_SCOPE', 'a document for another deployment');
-  h.workspace.scope = '/w';
-  const broken = http({ reply: () => { const d = read('team-model-v2/teams'); d.result.teams[0].from = 'global'; return d; } });
+  h.workspace.scope = DEPLOYMENT;
+  const broken = http({ reply: () => { const d = read('team-model-v2/teams-after'); d.result.teams[0].from = 'global'; return d; } });
   assert.equal((await broken.request()).body.reason.code, 'E_CLI_PROTOCOL');
-  h.workspace.scope = '/w';
+  h.workspace.scope = DEPLOYMENT;
   let release; const gate = new Promise(r => { release = r; });
-  const slow = http({ reply: argv => argv[1] === 'add' ? gate.then(() => read('team-model-v2/teams')) : read('team-model-v2/teams') });
+  const slow = http({ reply: argv => argv[1] === 'add' ? gate.then(() => read('team-model-v2/teams-after')) : read('team-model-v2/teams-after') });
   const first = slow.request({ body: { action: 'add', label: 'x', team: 't:ns' } });
   await new Promise(r => setImmediate(r));
   assert.equal((await slow.request({ body: { action: 'default', label: 'oats' } })).body.reason.code, 'E_BUSY');

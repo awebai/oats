@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "teamsApi": 1,
+    "deployment": "/fixture/base/northwind-workspace",
+    "defaultTeam": null,
+    "teams": [
+      {
+        "label": "engineering",
+        "team": null,
+        "description": "Platform, data and release automation",
+        "from": "shared",
+        "default": false,
+        "at": "local//fixture/base/fx/remotes/agents.git:oats-workspace.yaml#/teams/engineering"
+      },
+      {
+        "label": "global",
+        "team": null,
+        "description": "Org-wide souls and house capabilities",
+        "from": "shared",
+        "default": false,
+        "at": "local//fixture/base/fx/remotes/agents.git:oats-workspace.yaml#/teams/global"
+      },
+      {
+        "label": "marketing",
+        "team": null,
+        "description": "Campaigns, content and positioning",
+        "from": "shared",
+        "default": false,
+        "at": "local//fixture/base/fx/remotes/agents.git:oats-workspace.yaml#/teams/marketing"
+      }
+    ],
+    "souls": {
+      "teams": {},
+      "default": {}
+    },
+    "problems": [
+      {
+        "code": "team-unmapped",
+        "label": "engineering",
+        "default": false,
+        "severity": "warning",
+        "at": "local//fixture/base/fx/remotes/agents.git:oats-workspace.yaml#/teams/engineering",
+        "message": "shared team engineering has no provider id yet",
+        "fix": "its owner runs `oats aweb setup`, then commits the id"
+      },
+      {
+        "code": "team-unmapped",
+        "label": "global",
+        "default": false,
+        "severity": "warning",
+        "at": "local//fixture/base/fx/remotes/agents.git:oats-workspace.yaml#/teams/global",
+        "message": "shared team global has no provider id yet",
+        "fix": "its owner runs `oats aweb setup`, then commits the id"
+      },
+      {
+        "code": "team-unmapped",
+        "label": "marketing",
+        "default": false,
+        "severity": "warning",
+        "at": "local//fixture/base/fx/remotes/agents.git:oats-workspace.yaml#/teams/marketing",
+        "message": "shared team marketing has no provider id yet",
+        "fix": "its owner runs `oats aweb setup`, then commits the id"
+      }
+    ]
+  }
+}

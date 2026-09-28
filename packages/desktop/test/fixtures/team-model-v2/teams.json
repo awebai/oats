@@ -1,7 +1,0 @@
-{"schemaVersion":1,"ok":true,"result":{"teamsApi":1,"deployment":"/w","defaultTeam":"antares-oats",
- "teams":[
-  {"label":"antares-oats","team":"antares-oats:juan.aweb.ai","description":null,"from":"local","default":true,"at":"oats-local.yaml#/teams/antares-oats"},
-  {"label":"oats","team":"oats:oats.aweb.ai","description":"The OATS project","from":"shared","default":false,"at":"github.com/awebai/oats:oats-workspace.yaml#/teams/oats"},
-  {"label":"reviewers","team":null,"description":null,"from":"shared","default":false,"at":"github.com/awebai/oats:oats-workspace.yaml#/teams/reviewers"}],
- "souls":{"teams":{"*":["oats"],"oats-expert":["reviewers"]},"default":{"oats-expert":"oats"}},
- "problems":[{"code":"team-unmapped","label":"reviewers","default":false,"message":"shared team reviewers has no provider id yet","fix":"its owner runs `oats aweb setup`, then commits the id"}]}}

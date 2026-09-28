@@ -297,10 +297,13 @@ export function cliAutomation(bin, { kind, action, id, workspaceDir }, io = {}) 
  * never option-shaped; every option value travels as ONE `--flag=value` token (the kernel reads
  * the inline form since 0.28), so a value can never become a flag of its own. A team id is the
  * aweb `<name>:<namespace>` shape; a description is bounded printable text, never `-`-led. */
-const TEAM_LABEL_ARG = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+// The kernel's own grammars (feat/030-team-model lib/teams-verbs.mjs LABEL_RE; K1's soul-key
+// pattern), bounded here: a label ≤64, a soul key ≤256.
+const TEAM_LABEL_ARG = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const argText = (v, max) => typeof v === "string" && v.length > 0 && v.length <= max && !v.startsWith("-") && !/[\x00-\x1f\x7f]/.test(v);
 const TEAM_ID_ARG = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}:[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$/;
-const SOUL_KEY = /^(?:\*|[A-Za-z0-9][A-Za-z0-9._-]{0,127}(?:\/[A-Za-z0-9][A-Za-z0-9._-]{0,127})?)$/;
+const SOUL_KEY_RE = /^(?:\*|(?:[a-z0-9][a-z0-9._-]*\/)?[a-z0-9]+(?:-[a-z0-9]+)*)$/;
+const SOUL_KEY = { test: v => typeof v === "string" && v.length <= 256 && SOUL_KEY_RE.test(v) };
 const badTeams = () => Promise.resolve({ schemaVersion: 1, ok: false, error: { code: "E_BAD_ARGS", message: "Invalid teams request" } });
 export function cliTeams(bin, { action = "list", label, team, description, workspaceDir }, io = {}) {
   if (typeof workspaceDir !== "string" || !isAbsolute(workspaceDir) || workspaceDir.includes("\0")) return badTeams();

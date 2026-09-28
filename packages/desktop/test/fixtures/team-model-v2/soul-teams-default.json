@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "soulTeamsApi": 1,
+    "soul": "release-manager",
+    "key": "release-manager",
+    "defaultTeam": {
+      "label": "engineering",
+      "team": null,
+      "from": "soul"
+    },
+    "teams": [
+      {
+        "label": "engineering",
+        "team": null,
+        "default": true,
+        "from": "shared",
+        "via": [
+          "default",
+          "soul"
+        ]
+      },
+      {
+        "label": "mine",
+        "team": "mine:juan.aweb.ai",
+        "default": false,
+        "from": "local",
+        "via": [
+          "soul"
+        ]
+      }
+    ],
+    "local": {
+      "teams": [
+        "mine",
+        "engineering"
+      ],
+      "default": "engineering"
+    },
+    "all": [],
+    "changed": true
+  }
+}

@@ -1,5 +1,0 @@
-{"schemaVersion":1,"ok":true,"result":{"soulTeamsApi":1,"soul":"oats-expert","key":"oats-expert",
- "defaultTeam":{"label":"oats","team":"oats:oats.aweb.ai","from":"soul"},
- "teams":[{"label":"oats","team":"oats:oats.aweb.ai","default":true,"from":"shared","via":["default","*"]},
-          {"label":"reviewers","team":null,"default":false,"from":"shared","via":["soul"]}],
- "local":{"teams":["reviewers"],"default":"oats"},"all":["oats"]}}

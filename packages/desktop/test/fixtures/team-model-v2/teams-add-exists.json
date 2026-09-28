@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_TEAM_EXISTS",
+    "message": "team mine is already declared (local, in oats-local.yaml): remove it first (`oats teams remove`) to redefine it",
+    "details": {
+      "label": "mine",
+      "from": "local"
+    }
+  }
+}

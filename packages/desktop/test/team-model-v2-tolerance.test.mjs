@@ -125,3 +125,20 @@ test('the DROP lesson: every key team model v2 removes is deleted from the real 
   const readiness = dropped(readinessCapture(), ['subject.team']);
   assert.ok(readinessData(readiness, readinessTarget), 'readiness without subject.team');
 });
+
+test('the real 0.30 documents (K1 kernel, fixtures/team-model-v2) read in every reader: the removed keys are really gone', () => {
+  const real = name => read(`../team-model-v2/${name}`);
+  const gone = (doc, paths) => { for (const p of paths) assert.equal(strip(structuredClone(doc), p), 0, `0.30 no longer carries ${p}`); return doc; };
+  assert.ok(previewData(gone(real('preview').result, ['team']), target));
+  assert.ok(soulsData(gone(real('souls'), ['result.souls[].team', 'result.souls[].labels'])).souls.length > 0);
+  const status = deploymentStatusData(gone(real('status'), ['agents[].team', 'agents[].instances[].workspace.soul.team', 'agents[].instances[].workspace.soul.labels']), DEPLOYMENT);
+  assert.ok(status.agents.some(a => a.instances.length === 1));
+  assert.ok(workspaceStatusData(gone(real('workspace-status'), ['result.members[].team', 'result.external[].team', 'result.defaults.byTeam']), DEPLOYMENT));
+  assert.ok(capabilitiesData(gone(real('capabilities'), ['result.capabilities[].team'])).capabilities.length > 0);
+  const soul = gone(real('inspect-soul').result, ['subject.team', 'souls[].team', 'souls[].labels']);
+  assert.ok(inspectData(soul, { agent: { name: 'release-manager' } }));
+  const home = real('inspect-home').result;
+  assert.ok(inspectData(home, { instance: {}, selector: { home: home.subject.home } }));
+  const t = { workspace: 'northwind', context: DEPLOYMENT, observedAs: 'soul', selector: { kind: 'soul', soul: 'release-manager', agentsRoot: `${DEPLOYMENT}/agents` } };
+  assert.ok(readinessData(gone(real('readiness-soul').result, ['subject.team']), t));
+});

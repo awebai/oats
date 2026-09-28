@@ -57,5 +57,11 @@ The shape is the lead's (0.30 D2 review):
 
 ## Fixtures
 
-`test/fixtures/team-model-v2/` holds **stand-ins** copied from K1's contract examples (see its
-PROVENANCE.md). Real 0.30 kernel captures replace them when the kernel lands.
+`test/fixtures/team-model-v2/` holds **real captures** from the K1 kernel (oats
+`feat/030-team-model`, commit in `provenance.json`). `capture-teams-v2.mjs` ran them on a scratch
+Northwind build, using the Desktop's exact argv:
+- the verbs and their real refusals;
+- every other v2 document the Desktop reads (souls, workspace status, capabilities, inspect,
+  preview, status, readiness).
+
+`import-capture.mjs` imports them, with provenance and hashes.

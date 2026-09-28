@@ -1,0 +1,308 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "readinessApi": 2,
+    "subject": {
+      "kind": "soul",
+      "soul": "release-manager",
+      "repoKey": "local//fixture/base/fx/remotes/agents.git",
+      "commit": "66566512168e5a8296e789d43e04c837b85969e9"
+    },
+    "selector": {
+      "kind": "soul",
+      "soul": "release-manager",
+      "agentsRoot": "/fixture/base/northwind-workspace/agents",
+      "dir": "/fixture/base/northwind-workspace"
+    },
+    "at": "2026-09-28T10:07:57.549Z",
+    "checks": {
+      "installed": {
+        "status": "pass",
+        "items": [
+          {
+            "subject": "nw-deploy",
+            "status": "pass",
+            "required": true,
+            "reason": null,
+            "producer": "workspace resolution",
+            "evidence": {
+              "from": {
+                "kind": "package",
+                "package": "nw.tools",
+                "version": "0.4.0",
+                "commit": "318795402eea95974002b2bad8772ccb24a31e0a",
+                "integrity": "sha256-4a0ee48230d65cc6c0b9d0c9a3883e64182cfc7b2410e4f5839bacf551fcf1cf",
+                "repoKey": "local//fixture/base/fx/remotes/nw-tools.git"
+              }
+            },
+            "remedy": null,
+            "capability": {
+              "id": "nw-deploy"
+            }
+          },
+          {
+            "subject": "nw-house-style",
+            "status": "pass",
+            "required": true,
+            "reason": null,
+            "producer": "workspace resolution",
+            "evidence": {
+              "from": {
+                "kind": "member",
+                "repoKey": "local//fixture/base/fx/remotes/agents.git",
+                "commit": "66566512168e5a8296e789d43e04c837b85969e9"
+              }
+            },
+            "remedy": null,
+            "capability": {
+              "id": "nw-house-style"
+            }
+          },
+          {
+            "subject": "nw-release-tooling",
+            "status": "pass",
+            "required": true,
+            "reason": null,
+            "producer": "workspace resolution",
+            "evidence": {
+              "from": {
+                "kind": "member",
+                "repoKey": "local//fixture/base/fx/remotes/agents.git",
+                "commit": "66566512168e5a8296e789d43e04c837b85969e9"
+              }
+            },
+            "remedy": null,
+            "capability": {
+              "id": "nw-release-tooling"
+            }
+          },
+          {
+            "subject": "oats.core",
+            "status": "pass",
+            "required": true,
+            "reason": null,
+            "producer": "workspace resolution",
+            "evidence": {
+              "from": {
+                "kind": "package",
+                "package": "oats.framework",
+                "version": "1.1.3",
+                "commit": "b80344dcafd4b614e58bb8dc5d766eca9ea0403c",
+                "integrity": "sha256-8f69a58cef42b8b3a1ab3edbd5eeb15793acb7ed5f23b4604bcf3b8303bc3903",
+                "repoKey": "local//fixture/base/fx/remotes/pkg-framework.git"
+              }
+            },
+            "remedy": null,
+            "capability": {
+              "id": "oats.core"
+            }
+          },
+          {
+            "subject": "oats.okf",
+            "status": "pass",
+            "required": true,
+            "reason": null,
+            "producer": "workspace resolution",
+            "evidence": {
+              "from": {
+                "kind": "package",
+                "package": "oats.okf",
+                "version": "2.1.3",
+                "commit": "ab897841b8cbe70c301921daa8f50a33d39f209a",
+                "integrity": "sha256-bada3555413c66f0e9a3f16beec87004cb0c2538d8418f0936a79962cce25a97",
+                "repoKey": "local//fixture/base/fx/remotes/pkg-okf.git"
+              }
+            },
+            "remedy": null,
+            "capability": {
+              "id": "oats.okf"
+            }
+          }
+        ]
+      },
+      "configured": {
+        "status": "fail",
+        "items": [
+          {
+            "subject": "team engineering",
+            "status": "fail",
+            "required": true,
+            "reason": "the default team engineering has no provider id yet",
+            "producer": "team model",
+            "evidence": null,
+            "remedy": "its owner runs `oats aweb setup`, then commits the id; or choose another default with `oats teams default`",
+            "code": "team-unmapped",
+            "label": "engineering",
+            "default": true,
+            "at": "local//fixture/base/fx/remotes/agents.git:oats-workspace.yaml#/teams/engineering"
+          },
+          {
+            "subject": "team global",
+            "status": "fail",
+            "required": false,
+            "reason": "shared team global has no provider id yet",
+            "producer": "team model",
+            "evidence": null,
+            "remedy": "its owner runs `oats aweb setup`, then commits the id",
+            "code": "team-unmapped",
+            "label": "global",
+            "default": false,
+            "at": "local//fixture/base/fx/remotes/agents.git:oats-workspace.yaml#/teams/global"
+          }
+        ]
+      },
+      "member": {
+        "status": "pass",
+        "items": [
+          {
+            "subject": "member local//fixture/base/fx/remotes/agents.git",
+            "status": "pass",
+            "required": true,
+            "reason": null,
+            "producer": "workspace discovery",
+            "evidence": {
+              "repoKey": "local//fixture/base/fx/remotes/agents.git",
+              "workspace": "local//fixture/base/fx/remotes/agents.git",
+              "commit": "66566512168e5a8296e789d43e04c837b85969e9"
+            },
+            "remedy": null
+          }
+        ]
+      },
+      "providers": {
+        "status": "fail",
+        "items": [
+          {
+            "subject": "oats.okf",
+            "status": "fail",
+            "required": true,
+            "reason": "setting state-dir is required (absolute host path)",
+            "producer": "provider binding check",
+            "evidence": null,
+            "remedy": null,
+            "result": {
+              "status": "needs-configuration",
+              "problems": [
+                {
+                  "code": "needs-configuration",
+                  "message": "setting state-dir is required (absolute host path)"
+                }
+              ],
+              "warnings": []
+            },
+            "capability": {
+              "id": "oats.okf"
+            }
+          }
+        ]
+      }
+    },
+    "summary": {
+      "ready": false,
+      "required": 8,
+      "pass": 6,
+      "fail": 2,
+      "unknown": 0,
+      "byCapability": [
+        {
+          "capability": {
+            "id": "nw-deploy"
+          },
+          "checks": {
+            "installed": "pass",
+            "configured": "not-applicable",
+            "member": "not-applicable",
+            "providers": "not-applicable"
+          },
+          "ownReady": true,
+          "ready": false
+        },
+        {
+          "capability": {
+            "id": "nw-house-style"
+          },
+          "checks": {
+            "installed": "pass",
+            "configured": "not-applicable",
+            "member": "not-applicable",
+            "providers": "not-applicable"
+          },
+          "ownReady": true,
+          "ready": false
+        },
+        {
+          "capability": {
+            "id": "nw-release-tooling"
+          },
+          "checks": {
+            "installed": "pass",
+            "configured": "not-applicable",
+            "member": "not-applicable",
+            "providers": "not-applicable"
+          },
+          "ownReady": true,
+          "ready": false
+        },
+        {
+          "capability": {
+            "id": "oats.core"
+          },
+          "checks": {
+            "installed": "pass",
+            "configured": "not-applicable",
+            "member": "not-applicable",
+            "providers": "not-applicable"
+          },
+          "ownReady": true,
+          "ready": false
+        },
+        {
+          "capability": {
+            "id": "oats.okf"
+          },
+          "checks": {
+            "installed": "pass",
+            "configured": "not-applicable",
+            "member": "not-applicable",
+            "providers": "fail"
+          },
+          "ownReady": false,
+          "ready": false
+        }
+      ],
+      "subjectBlockers": [
+        {
+          "check": "configured",
+          "subject": "team engineering",
+          "status": "fail"
+        }
+      ]
+    },
+    "notes": [
+      "ready means every REQUIRED check passes; it is never inferred from an empty set",
+      "member is the soul's member repository confirmed in the workspace (oats-membership.yaml), never login or team registration",
+      "providers relays each provider's own binding check verbatim; the spawn's fail-closed hooks are unchanged",
+      "policy: a lifecycle-authority claim enforced by the spawn route, not an OS sandbox"
+    ],
+    "policy": {
+      "childSpawns": {
+        "allowed": true,
+        "enforced": false,
+        "origin": {
+          "kind": "default",
+          "detail": "no declaration: children allowed"
+        }
+      },
+      "worktrees": {
+        "allowed": true,
+        "mode": "worktree",
+        "enforced": false,
+        "origin": {
+          "kind": "soul",
+          "detail": "work: worktree"
+        }
+      }
+    }
+  }
+}
