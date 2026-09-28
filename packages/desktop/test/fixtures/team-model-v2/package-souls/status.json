@@ -1,0 +1,289 @@
+{
+  "root": "/fixture/base/deployment/agents",
+  "agents": [
+    {
+      "schemaVersion": 2,
+      "name": "acme-pkg--keeper",
+      "description": "keeper package soul.",
+      "work": "directory",
+      "capabilities": {
+        "acme-tool": {
+          "from": "here"
+        }
+      },
+      "kind": "persistent",
+      "dir": "/fixture/base/deployment/agents/acme-pkg--keeper",
+      "instances": [
+        {
+          "agent": "acme-pkg--keeper",
+          "kind": "persistent",
+          "instance": "acme-pkg-keeper-q",
+          "home": "/fixture/base/deployment/agents/acme-pkg--keeper/instances/acme-pkg-keeper-q",
+          "soulDir": "/fixture/base/deployment/agents/acme-pkg--keeper/souls/efbeaad930fc",
+          "repo": "/fixture/base/deployment",
+          "work": "directory",
+          "harness": "pi",
+          "modelFrom": "harness-default",
+          "spawnOrigin": "operator",
+          "policy": {
+            "childSpawns": {
+              "allowed": true,
+              "origin": {
+                "kind": "default",
+                "detail": "no spawn option: children allowed"
+              }
+            }
+          },
+          "decision": {
+            "instance": "acme-pkg-keeper-q",
+            "home": "/fixture/base/deployment/agents/acme-pkg--keeper/instances/acme-pkg-keeper-q",
+            "branch": null,
+            "base": null,
+            "effective": {
+              "repo": "/fixture/base/deployment",
+              "work": "directory",
+              "harness": "pi",
+              "model": null,
+              "launchConfig": null,
+              "yolo": null,
+              "backend": "tmux",
+              "childSpawns": true,
+              "relation": null,
+              "providers": {
+                "acme-tool": {}
+              }
+            },
+            "resolution": "d7223c212d53082a83d66d62",
+            "revision": "995311fe850048fcbe6be7a7"
+          },
+          "spawnIdempotencyKey": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "spawnCompleted": true,
+          "capabilities": [
+            {
+              "id": "acme-tool",
+              "origin": "package:acme.pkg@1.0.0",
+              "level": "/fixture/base/deployment/agents/acme-pkg--keeper/instances/acme-pkg-keeper-q",
+              "settings": {},
+              "settingsOrigins": {},
+              "provenance": [
+                "package acme.pkg v1.0.0"
+              ],
+              "skills": [
+                "/fixture/base/deployment/agents/acme-pkg--keeper/instances/acme-pkg-keeper-q/.agents/skills/acme-tool/tool-skill"
+              ],
+              "hooks": [],
+              "trusted": true
+            }
+          ],
+          "skills": [
+            {
+              "name": "tool-skill",
+              "source": "module:acme-tool"
+            }
+          ],
+          "instructions": [
+            {
+              "source": "kernel:instance-boundary",
+              "file": "/fixture/oats/injects/instance-boundary.md"
+            },
+            {
+              "source": "work-mode:directory",
+              "file": "/fixture/oats/injects/work-directory.md"
+            }
+          ],
+          "composition": {
+            "expected": [
+              {
+                "type": "skill-tree",
+                "source": "acme-tool",
+                "declared": "skills",
+                "resolved": "/fixture/base/deployment/agents/acme-pkg--keeper/instances/acme-pkg-keeper-q/.agents/skills/acme-tool",
+                "origin": "package:acme.pkg@1.0.0",
+                "deferred": "materialize"
+              },
+              {
+                "type": "instruction-block",
+                "source": "kernel:instance-boundary",
+                "declared": "/fixture/oats/injects/instance-boundary.md",
+                "resolved": "/fixture/oats/injects/instance-boundary.md"
+              },
+              {
+                "type": "instruction-block",
+                "source": "work-mode:directory",
+                "declared": "/fixture/oats/injects/work-directory.md",
+                "resolved": "/fixture/oats/injects/work-directory.md"
+              }
+            ],
+            "materialized": {
+              "skills": [
+                {
+                  "name": "tool-skill",
+                  "source": "module:acme-tool",
+                  "from": "/fixture/base/deployment/agents/acme-pkg--keeper/instances/acme-pkg-keeper-q/.oats/modules/acme-tool/skills/tool-skill"
+                }
+              ],
+              "instructions": [
+                {
+                  "source": "kernel:instance-boundary",
+                  "file": "/fixture/oats/injects/instance-boundary.md"
+                },
+                {
+                  "source": "work-mode:directory",
+                  "file": "/fixture/oats/injects/work-directory.md"
+                }
+              ],
+              "harnessPackages": [],
+              "harnessPosture": {
+                "oatsComposed": "skills via --skill <instance-home>/.agents/skills; instructions via --append-system-prompt",
+                "curtailed": [
+                  "user skills",
+                  "project and ancestor skills",
+                  "package skills",
+                  "ambient AGENTS.md/CLAUDE.md discovery",
+                  "ambient prompt templates"
+                ],
+                "ambient": [
+                  "globally configured pi extensions, and any resources they contribute"
+                ],
+                "why": "founder ruling: shared cross-agent pi extensions (web search, output formatting) stay available to every instance."
+              },
+              "canonicalSkillTree": "/fixture/base/deployment/agents/acme-pkg--keeper/instances/acme-pkg-keeper-q/.agents/skills",
+              "skillAlias": {
+                "path": "/fixture/base/deployment/agents/acme-pkg--keeper/instances/acme-pkg-keeper-q/.claude/skills",
+                "target": "../.agents/skills"
+              }
+            }
+          },
+          "capabilityRuntime": [
+            {
+              "id": "acme-tool",
+              "level": "/fixture/base/deployment/agents/acme-pkg--keeper/instances/acme-pkg-keeper-q",
+              "settings": {},
+              "settingsOrigins": {},
+              "hooks": {},
+              "requiredHooks": [],
+              "environment": [],
+              "environmentNamespaces": [],
+              "missingRequires": [],
+              "trust": {
+                "trusted": true,
+                "reason": "declared workspace package"
+              },
+              "executable": false
+            }
+          ],
+          "tmux": {
+            "session": "none-58487",
+            "window": "acme-pkg-keeper-q"
+          },
+          "launch": {
+            "version": 2,
+            "harness": "pi",
+            "launchConfig": null,
+            "launchConfigSource": null,
+            "executable": "/fixture/base/runtime-stub/pi",
+            "executableDeclared": null,
+            "executableResolvedFrom": "PATH",
+            "args": [],
+            "env": {},
+            "model": null,
+            "hooks": {
+              "launch": {},
+              "env": {},
+              "contributions": []
+            },
+            "prompt": {
+              "kind": "task-file",
+              "file": "TASK.md"
+            }
+          },
+          "command": "OATS_INSTANCE='acme-pkg-keeper-q' OATS_INSTANCE_HOME='/fixture/base/deployment/agents/acme-pkg--keeper/instances/acme-pkg-keeper-q' PI_AGENT_INSTANCE='acme-pkg-keeper-q' PI_AGENT_HOME='/fixture/base/deployment/agents/acme-pkg--keeper/instances/acme-pkg-keeper-q' '/fixture/base/runtime-stub/pi' --append-system-prompt '/fixture/base/deployment/agents/acme-pkg--keeper/instances/acme-pkg-keeper-q/AGENTS.md' --approve --name 'acme-pkg-keeper-q' '@TASK.md'",
+          "createdAt": "2026-09-28T10:52:39.771Z",
+          "modules": [
+            {
+              "name": "acme-tool",
+              "from": {
+                "kind": "package",
+                "package": "acme.pkg",
+                "version": "1.0.0",
+                "commit": "efbeaad930fc3e966aa455a3667e20aa7b1fb23e",
+                "integrity": "sha256-7eead38e348966d544a3f400ff53f6b57669694cd2ee2a74897416e9d274d445",
+                "repoKey": "local//fixture/pkg/pkg.git"
+              },
+              "commit": "efbeaad930fc3e966aa455a3667e20aa7b1fb23e",
+              "current": {
+                "commit": "efbeaad930fc3e966aa455a3667e20aa7b1fb23e",
+                "version": "1.0.0"
+              },
+              "status": "current"
+            }
+          ],
+          "providers": {
+            "acme-tool": {}
+          },
+          "workspace": {
+            "key": "local//fixture/base/remotes/ws.git",
+            "name": "acme",
+            "deployment": "/fixture/base/deployment",
+            "commit": "a8d1c8f244915b2513764d77f950cd7b8e44254b",
+            "resolution": "d7223c212d53082a83d66d62",
+            "standalone": false,
+            "soul": {
+              "id": "package:acme.pkg#keeper",
+              "repoKey": "local//fixture/pkg/pkg.git",
+              "commit": "efbeaad930fc3e966aa455a3667e20aa7b1fb23e",
+              "name": "keeper",
+              "qualifiedName": "acme.pkg/keeper",
+              "package": {
+                "id": "acme.pkg",
+                "version": "1.0.0",
+                "commit": "efbeaad930fc3e966aa455a3667e20aa7b1fb23e",
+                "digest": "sha256-4a34b49645002c85c5034495688686ff542a0580745cc00a195eeb37014d3738",
+                "path": "oats-package/souls/keeper"
+              }
+            },
+            "layers": {
+              "knowledge": null,
+              "messaging": null,
+              "tasks": null
+            }
+          },
+          "teams": [],
+          "defaultTeam": {
+            "label": "global",
+            "team": null,
+            "from": "soul"
+          },
+          "launched": false,
+          "wake": {
+            "requested": false,
+            "saved": null,
+            "error": null
+          },
+          "startedAt": null,
+          "identityAddress": null,
+          "running": false,
+          "soul": {
+            "repoKey": "local//fixture/pkg/pkg.git",
+            "commit": "efbeaad930fc3e966aa455a3667e20aa7b1fb23e",
+            "current": "efbeaad930fc3e966aa455a3667e20aa7b1fb23e",
+            "status": "current",
+            "package": "acme.pkg",
+            "version": "1.0.0",
+            "currentVersion": "1.0.0"
+          }
+        }
+      ],
+      "soulSource": {
+        "repoKey": "local//fixture/pkg/pkg.git",
+        "commit": "efbeaad930fc3e966aa455a3667e20aa7b1fb23e",
+        "path": "oats-package/souls/keeper",
+        "current": "efbeaad930fc3e966aa455a3667e20aa7b1fb23e",
+        "status": "current"
+      }
+    }
+  ],
+  "workspace": {
+    "reachable": true
+  }
+}

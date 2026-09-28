@@ -209,10 +209,13 @@ function agentsData(wsId) {
         // Team model v2 (0.30): the soul's teams here (the default first) and its default, as the kernel resolved them.
         ...(Array.isArray(soul.teams) ? { teams: soul.teams.map((t) => ({ ...t })) } : {}),
         ...(Object.hasOwn(soul, "defaultTeam") ? { defaultTeam: soul.defaultTeam && { ...soul.defaultTeam } } : {}),
+        // The kernel's soul key (`oats soul teams <key>`): the qualified name for a package soul, the bare name otherwise.
+        ...(typeof soul.key === "string" ? { key: soul.key } : {}),
+        ...(soul.kind === "package" ? { package: soul.package, version: soul.version, qualifiedName: soul.qualifiedName } : {}),
         origin: soul.origin || "", soulKind: soul.kind, repo: soul.repoKey || null, capability: null,
         soulSource: { repoKey: soul.repoKey ?? null, commit: soul.commit ?? null, path: soul.path ?? null },
         agentsRoot: root, workspace: context,
-        repoName: memberNames.get(soul.repoKey) || (soul.kind === "external" ? "external" : soul.repoKey || ""),
+        repoName: memberNames.get(soul.repoKey) || (soul.kind === "external" ? "external" : soul.kind === "package" ? `package ${soul.package}` : soul.repoKey || ""),
       });
     }
   }

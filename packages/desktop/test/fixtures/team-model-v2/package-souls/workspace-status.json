@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "workspaceStatusApi": 1,
+    "workspace": {
+      "name": "acme",
+      "key": "local//fixture/base/remotes/ws.git",
+      "url": "/fixture/base/remotes/ws.git",
+      "commit": "a8d1c8f244915b2513764d77f950cd7b8e44254b",
+      "observedAt": "2026-09-28T10:52:36.524Z",
+      "local": "/fixture/base/deployment/oats-local.yaml",
+      "teams": [
+        {
+          "label": "global",
+          "team": null,
+          "description": "Fixture team"
+        }
+      ],
+      "file": {
+        "path": "oats-workspace.yaml",
+        "url": null
+      }
+    },
+    "members": [
+      {
+        "key": "local//fixture/base/remotes/ws.git",
+        "name": "ws",
+        "commit": "a8d1c8f244915b2513764d77f950cd7b8e44254b",
+        "confirmed": true,
+        "status": "confirmed",
+        "detail": null,
+        "souls": [
+          "dev"
+        ],
+        "capabilities": [],
+        "publishes": null,
+        "url": null,
+        "membershipFile": {
+          "path": "oats-membership.yaml",
+          "url": null
+        }
+      }
+    ],
+    "packages": [
+      {
+        "id": "acme.pkg",
+        "version": "1.0.0",
+        "source": "git:local//fixture/pkg/pkg.git@v1.0.0",
+        "commit": "efbeaad930fc3e966aa455a3667e20aa7b1fb23e",
+        "integrity": "sha256-7eead38e348966d544a3f400ff53f6b57669694cd2ee2a74897416e9d274d445",
+        "capabilities": [
+          "acme-tool"
+        ],
+        "souls": [
+          "keeper"
+        ],
+        "latest": null
+      }
+    ],
+    "declaredPackages": [
+      "acme.pkg"
+    ],
+    "unsynced": [],
+    "stale": [],
+    "external": [],
+    "problems": [],
+    "warnings": [],
+    "automations": {
+      "host": null,
+      "snapshot": null,
+      "rows": []
+    },
+    "defaults": {
+      "slots": {
+        "knowledge": "none",
+        "messaging": "none",
+        "tasks": "none"
+      },
+      "capabilities": []
+    },
+    "clones": [
+      {
+        "key": "local//fixture/base/remotes/ws.git",
+        "name": "ws",
+        "path": "/fixture/base/deployment/ws",
+        "rule": "convention"
+      }
+    ],
+    "disabledSouls": [],
+    "lock": {
+      "path": "/fixture/base/deployment/oats-lock.json",
+      "lockfileVersion": 3
+    }
+  }
+}

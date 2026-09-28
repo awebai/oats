@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "modules": [
+      {
+        "name": "acme-tool",
+        "from": {
+          "kind": "package",
+          "package": "acme.pkg",
+          "version": "1.0.0",
+          "commit": "efbeaad930fc3e966aa455a3667e20aa7b1fb23e",
+          "integrity": "sha256-7eead38e348966d544a3f400ff53f6b57669694cd2ee2a74897416e9d274d445",
+          "repoKey": "local//fixture/pkg/pkg.git"
+        },
+        "layer": null,
+        "private": false,
+        "declares": [],
+        "changedSince": null
+      }
+    ],
+    "teams": [
+      {
+        "label": "global",
+        "team": null,
+        "default": true,
+        "from": "shared"
+      }
+    ],
+    "defaultTeam": {
+      "label": "global",
+      "team": null,
+      "from": "soul"
+    },
+    "resolution": "d7223c212d53082a83d66d62",
+    "declRevision": "2e7bde5e30ceac0d8690ea9f",
+    "payloadRevision": "28a1e19146ff8f40294adb1f",
+    "workspace": "local//fixture/base/remotes/ws.git",
+    "standalone": false,
+    "providers": {},
+    "settings": {
+      "acme-tool": {}
+    },
+    "settingsOrigins": {
+      "acme-tool": {}
+    },
+    "spawnPreviewApi": 2,
+    "preview": true,
+    "agent": "acme-pkg--keeper",
+    "kind": "persistent",
+    "instance": "acme-pkg-keeper-q",
+    "home": "/fixture/base/deployment/agents/acme-pkg--keeper/instances/acme-pkg-keeper-q",
+    "repo": "/fixture/base/deployment",
+    "work": "directory",
+    "subject": {
+      "soul": "acme.pkg/keeper",
+      "agentsRoot": null,
+      "dir": "/fixture/base/deployment"
+    },
+    "decision": {
+      "instance": "acme-pkg-keeper-q",
+      "home": "/fixture/base/deployment/agents/acme-pkg--keeper/instances/acme-pkg-keeper-q",
+      "branch": null,
+      "base": null,
+      "effective": {
+        "repo": "/fixture/base/deployment",
+        "work": "directory",
+        "harness": "pi",
+        "model": null,
+        "launchConfig": null,
+        "yolo": null,
+        "backend": "tmux",
+        "childSpawns": true,
+        "relation": null,
+        "providers": {
+          "acme-tool": {}
+        }
+      },
+      "resolution": "d7223c212d53082a83d66d62",
+      "revision": "995311fe850048fcbe6be7a7"
+    },
+    "preflight": {
+      "status": "complete",
+      "budgetMs": 20000,
+      "elapsedMs": 47
+    },
+    "backendStatus": {
+      "name": "tmux",
+      "installed": true,
+      "started": false
+    },
+    "harness": "pi",
+    "model": null,
+    "modelSource": "native default",
+    "launchConfig": null,
+    "backend": "tmux",
+    "branch": null,
+    "base": null,
+    "worktree": null,
+    "relation": null,
+    "parentInstance": null,
+    "policy": {
+      "childSpawns": {
+        "allowed": true,
+        "origin": {
+          "kind": "default",
+          "detail": "no spawn option: children allowed"
+        }
+      }
+    },
+    "executable": "/fixture/base/runtime-stub/pi",
+    "capabilities": [
+      {
+        "name": "acme-tool",
+        "origin": "package:acme.pkg@1.0.0"
+      }
+    ],
+    "skills": [
+      {
+        "name": "skills",
+        "source": "module:acme-tool"
+      }
+    ],
+    "task": null,
+    "soulFetched": true
+  }
+}
