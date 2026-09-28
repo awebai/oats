@@ -18,7 +18,7 @@ function foreignMember(fx) {
   const seed = join(fx.base, "other-seed");
   git(fx.base, "clone", "-q", bare, seed);
   mkdirSync(join(seed, "souls", "outsider"), { recursive: true });
-  writeFileSync(join(seed, "oats-membership.yaml"), `schemaVersion: 2\nworkspace: ${fx.ref}\nteam: global\n`);
+  writeFileSync(join(seed, "oats-membership.yaml"), `schemaVersion: 2\nworkspace: ${fx.ref}\n`);
   writeFileSync(join(seed, "souls", "outsider", "soul.yaml"),
     `schemaVersion: 2\nname: outsider\ndescription: Lives in another repo.\nwork: directory\ncapabilities:\n  repo-cap: { from: ${fx.key} }\n`);
   writeFileSync(join(seed, "souls", "outsider", "AGENTS.md"), "# outsider\n");

@@ -306,7 +306,7 @@ function platformRepo({ refs, keys }) {
   };
 }
 
-function dataRepo({ refs, keys }) {
+function dataRepo({ refs }) {
   return {
     "warehouse/README.md": "# warehouse\n\nAnalytics models.\n",
     "oats-membership.yaml": membership(refs.agents),
@@ -316,7 +316,7 @@ function dataRepo({ refs, keys }) {
         name: "data-analyst",
         description: "Answers questions against the warehouse with attributable evidence.",
         work: "directory",
-        capabilities: { "nw-warehouse-access": { from: "here" }, "nw-release-tooling": { from: keys.agents } },
+        capabilities: { "nw-warehouse-access": { from: "here" } },
         knowledge: { owns: "data-analyst" },
       },
       agents: "# data-analyst\n\nYou answer questions against the warehouse with attributable evidence.\n",

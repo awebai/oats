@@ -136,20 +136,18 @@ test("oats-local.yaml souls.disabled refuses a package soul by its qualified nam
   assert.match(fx.cli(["sync"]).stdout, /1 disabled here/);
 });
 
-test("a package soul's undeclared team is E_TEAM_UNKNOWN in discovery; workspace defaults and off apply as for any soul", (t) => {
-  const fx = fixture({ pkgSouls: { keeper: { soul: { team: "okf" } }, loner: { soul: { capabilities: { "acme-tool": { from: "here" }, house: "off" } } } } }); t.after(fx.cleanup);
+test("a package soul still carrying `team:` (removed in 0.30) is refused, naming the move; workspace defaults and off apply as for any soul", (t) => {
+  const fx = fixture({ pkgSouls: { keeper: {}, stale: { soul: { team: "okf" } }, loner: { soul: { capabilities: { "acme-tool": { from: "here" }, house: "off" } } } } }); t.after(fx.cleanup);
   const ws = YAML.parse(readFileSync(join(fx.member, "oats-workspace.yaml"), "utf8"));
   ws.defaults.capabilities = { house: { from: fx.key } };
   fx.commit({ "oats-workspace.yaml": YAML.stringify(ws), "capabilities/house/oats.json": JSON.stringify({ capability: "house", version: "0.0.0", description: "house style", compatibility: { oats: ">=0.24.0" } }) }, "house default");
   ok(fx.cli(["sync", "--json"]), "sync");
   const souls = ok(fx.cli(["souls", "--json"]), "souls");
-  assert.ok(souls.problems.some((p) => p.code === "E_TEAM_UNKNOWN" && p.package === "acme.pkg" && p.path.includes("souls/keeper/soul.yaml")), JSON.stringify(souls.problems));
-  assert.equal(souls.souls.find((s) => s.name === "keeper").team, "okf");
+  const stale = souls.problems.find((p) => p.package === "acme.pkg" && p.path.includes("souls/stale/soul.yaml"));
+  assert.deepEqual([stale?.code, stale?.message], ["E_WORKSPACE_SCHEMA", "team membership is local since 0.30: `oats soul teams`"], JSON.stringify(souls.problems));
+  assert.equal(souls.souls.some((s) => s.name === "stale"), false, "not listed");
   const modules = (name) => ok(fx.cli(["spawn", name, "--preview", "--json"]), `preview ${name}`).modules.map((m) => m.name).sort();
   assert.deepEqual(modules("acme.pkg/loner"), ["acme-tool"], "house: off drops the workspace default");
-  // The team is declared: the soul spawns and the workspace default applies.
-  ws.teams.okf = { description: "Knowledge operations" };
-  fx.commit({ "oats-workspace.yaml": YAML.stringify(ws) }, "declare okf");
   assert.deepEqual(modules("acme.pkg/keeper"), ["acme-tool", "house"]);
 });
 

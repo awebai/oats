@@ -124,7 +124,7 @@ test("H1/M3/M11/S1: a prepared spawn runs with the resolution's capability rows 
     assert.equal(meta.workspace.key, d.fx.keys.agents, "M11: instance.json.workspace.key");
     assert.equal(meta.workspace.standalone, false, "M11: instance.json.workspace.standalone");
     assert.match(meta.workspace.commit, HEX40); assert.match(meta.workspace.resolution, /^[0-9a-f]{24}$/);
-    assert.equal(meta.workspace.soul.team, "engineering");
+    assert.equal("team" in meta.workspace.soul, false, "team membership is local since 0.30");
     // S1: instructions and composition.expected include the materialized capability blocks.
     const capabilityMarkers = (readFileSync(join(home, "AGENTS.md"), "utf8").match(/<!-- oats:capability:[^\s]+ src=/g) || []).map((m) => m.slice("<!-- oats:".length, -" src=".length));
     assert.deepEqual(capabilityMarkers, ["capability:nw-house-style", "capability:nw-release-tooling", "capability:oats.core", "capability:oats.okf"]);

@@ -10,18 +10,17 @@ import { packageRepo } from "./helpers/package-repo.mjs";
 
 const ok = (r) => { assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`); const j = r.json(); assert.equal(j.ok, true, r.stdout); return j.result; };
 
-/** A workspace that composes a capability for dev from each place: the workspace, its team, the soul; the
+/** A workspace that composes a capability for dev from each place: the workspace, the soul (no team since 0.30); the
  *  soul turns one workspace default off and empties the knowledge slot the workspace fills. */
 function composition() {
-  const caps = Object.fromEntries(["acme.kept", "acme.ws", "acme.team", "acme.own"].map((id) => [id, { manifest: {} }]));
+  const caps = Object.fromEntries(["acme.kept", "acme.ws", "acme.own"].map((id) => [id, { manifest: {} }]));
   const fx = v2Deployment({
     souls: { dev: { soul: { knowledge: "none", capabilities: { "acme.ws": "off", "acme.own": { from: "here" } } } } },
     capabilities: { ...caps, notes: { manifest: { layer: "knowledge" } } },
   });
   fx.commit({ "oats-workspace.yaml": { yaml: { schemaVersion: 2, name: "fixture", members: [fx.ref], teams: { global: { description: "Fixture team" } },
     defaults: { knowledge: { notes: { from: fx.key } }, messaging: "none", tasks: "none",
-      capabilities: { "acme.kept": { from: fx.key }, "acme.ws": { from: fx.key } },
-      byTeam: { global: { capabilities: { "acme.team": { from: fx.key } } } } } } } }, "composition");
+      capabilities: { "acme.kept": { from: fx.key }, "acme.ws": { from: fx.key } } } } } }, "composition");
   assert.equal(fx.cli(["sync", "--json"]).status, 0);
   return fx;
 }
@@ -30,7 +29,7 @@ test("1. inspect --soul: each capability's composedFrom, and the capabilities th
   const fx = composition(); t.after(fx.cleanup);
   const doc = ok(fx.cli(["inspect", "--soul", "dev", "--json"]));
   assert.deepEqual(Object.fromEntries(doc.capabilities.map((c) => [c.id, c.composedFrom])),
-    { "acme.kept": "workspace", "acme.own": "soul", "acme.team": "team:global" });
+    { "acme.kept": "workspace", "acme.own": "soul" });
   assert.equal(typeof doc.capabilities[0].from, "object", "`from` stays the module's origin");
   assert.deepEqual(doc.capabilitiesOff, [
     { id: "acme.ws", off: true, from: "soul", reason: "off", overrides: "workspace" },
@@ -71,18 +70,18 @@ test("3 + 11. oats capabilities: layer and description on every row, package row
 
 test("4. oats souls: spawnable, or the refusal a spawn would meet (resolution, souls.disabled), computed without spawning", (t) => {
   const fx = v2Deployment({
-    souls: { dev: {}, broken: { soul: { capabilities: { nope: { from: "here" } } } }, clash: { soul: { team: ["a", "b"] } }, off: {} },
+    souls: { dev: {}, broken: { soul: { capabilities: { nope: { from: "here" } } } }, clash: {}, off: {} },
     capabilities: { "acme.x": { manifest: {} } },
-    local: { souls: { disabled: ["off"] } },
+    // clash's default is a team it is not in here: the refusal its spawn meets (team model v2).
+    local: { souls: { disabled: ["off"], default: { clash: "a" } } },
   });
   t.after(fx.cleanup);
   fx.commit({ "oats-workspace.yaml": { yaml: { schemaVersion: 2, name: "fixture", members: [fx.ref], teams: { global: { description: "g" }, a: { description: "a" }, b: { description: "b" } },
-    defaults: { knowledge: "none", messaging: "none", tasks: "none",
-      byTeam: { a: { capabilities: { "acme.x": { from: fx.key } } }, b: { capabilities: { "acme.x": "off" } } } } } } }, "labels a and b disagree on acme.x");
+    defaults: { knowledge: "none", messaging: "none", tasks: "none" } } } }, "shared teams a and b");
   assert.equal(fx.cli(["sync", "--json"]).status, 0);
   const rows = Object.fromEntries(ok(fx.cli(["souls", "--json"])).souls.map((s) => [s.name, s]));
   assert.deepEqual([rows.dev.spawnable, rows.dev.problem], [true, null]);
-  for (const [name, code] of [["broken", "E_CAPABILITY_MISSING"], ["clash", "E_TEAM_CONFLICT"], ["off", "E_SOUL_DISABLED"]]) {
+  for (const [name, code] of [["broken", "E_CAPABILITY_MISSING"], ["clash", "E_TEAM_NOT_ELIGIBLE"], ["off", "E_SOUL_DISABLED"]]) {
     assert.equal(rows[name].spawnable, false, name);
     assert.equal(rows[name].problem.code, code, `${name}: ${JSON.stringify(rows[name].problem)}`);
     assert.equal(typeof rows[name].problem.message, "string");
@@ -92,19 +91,17 @@ test("4. oats souls: spawnable, or the refusal a spawn would meet (resolution, s
   }
 });
 
-test("5 + 6. workspace status: the workspace and team defaults as rows; this computer's clones (and the rule that found each), disabled souls and lock", (t) => {
+test("5 + 6. workspace status: the workspace defaults as rows; this computer's clones (and the rule that found each), disabled souls and lock", (t) => {
   const fx = v2Deployment({ capabilities: { "acme.x": { manifest: {} }, "acme.y": { manifest: {} }, notes: { manifest: { layer: "knowledge" } } }, local: { souls: { disabled: ["dev"] } } });
   t.after(fx.cleanup);
   fx.commit({ "oats-workspace.yaml": { yaml: { schemaVersion: 2, name: "fixture", members: [fx.ref], teams: { global: { description: "g" } },
-    defaults: { knowledge: { notes: { from: fx.key } }, messaging: "none", tasks: "none", capabilities: { "acme.x": { from: fx.key } },
-      byTeam: { global: { capabilities: { "acme.y": { from: fx.key }, "acme.x": "off" } } } } } } }, "defaults");
+    defaults: { knowledge: { notes: { from: fx.key } }, messaging: "none", tasks: "none", capabilities: { "acme.x": { from: fx.key } } } } } }, "defaults");
   assert.equal(fx.cli(["sync", "--json"]).status, 0);
   const doc = ok(fx.cli(["workspace", "status", "--json"]));
   assert.deepEqual(doc.defaults, {
     slots: { knowledge: { name: "notes", from: fx.key }, messaging: "none", tasks: "none" },
     capabilities: [{ name: "acme.x", from: fx.key, off: false }],
-    byTeam: { global: { capabilities: [{ name: "acme.x", from: null, off: true }, { name: "acme.y", from: fx.key, off: false }] } },
-  });
+  }, "defaults.byTeam is no longer reported (removed in 0.30)");
   // The fixture's member clone sits at the convention path <deployment>/<member name>.
   assert.deepEqual(doc.clones, [{ key: fx.key, name: "ws", path: fx.member, rule: "convention" }]);
   assert.deepEqual(doc.disabledSouls, ["dev"]);
