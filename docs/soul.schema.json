@@ -12,7 +12,7 @@
     "description": { "type": "string" },
     "work": { "enum": ["worktree", "checkout", "directory", "workspace"] },
     "private": { "type": "boolean", "deprecated": true,
-      "description": "Ignored since 0.26.0: souls have no private mode. Every soul of a confirmed member is listed and spawnable; discovery warns soul-private-ignored. Accepted so existing files still validate; remove it." },
+      "description": "Tolerated and ignored: souls have no private mode. Every soul of a confirmed member is listed and spawnable; discovery warns soul-private-ignored. Accepted so existing files still validate; remove it." },
     "capabilities": {
       "type": "object",
       "propertyNames": { "$ref": "#/$defs/capabilityName" },

@@ -54,7 +54,7 @@
       "uniqueItems": true
     },
     "souls": {
-      "description": "Package souls (OATS 0.28.0): package-relative soul directories, each an ordinary soul (soul.yaml + AGENTS.md, optional skills/). A soul's name is its directory's. They are versioned and locked with the package (oats-lock.json records each soul's name, path and digest), listed with their package origin, and spawned by the qualified name <package>/<soul> (or the bare name when unique). `from: here` in a package soul is its own package at the locked commit.",
+      "description": "Package souls: package-relative soul directories, each an ordinary soul (soul.yaml + AGENTS.md, optional skills/). A soul's name is its directory's. They are versioned and locked with the package (oats-lock.json records each soul's name, path and digest), listed with their package origin, and spawned by the qualified name <package>/<soul> (or the bare name when unique). `from: here` in a package soul is its own package at the locked commit.",
       "type": "array",
       "items": {
         "type": "string",
@@ -67,7 +67,7 @@
       "uniqueItems": true
     },
     "triggers": {
-      "description": "Trigger templates (OATS 0.28.0): `oats trigger add --from <package>:<id> [--set <name>=<value>]…` instantiates one from the locked package. Each file is { parameters: { <name>: { path, required?, default?, description? } }, definition: { …a trigger definition… } }; see docs/schedules.md#triggers.",
+      "description": "Trigger templates: `oats trigger add --from <package>:<id> [--set <name>=<value>]…` instantiates one from the locked package. Each file is { parameters: { <name>: { path, required?, default?, description? } }, definition: { …a trigger definition… } }; see docs/schedules.md#triggers.",
       "type": "array",
       "items": {
         "type": "object",
@@ -93,7 +93,7 @@
       }
     },
     "configTemplates": {
-      "description": "Named config TEMPLATES: complete reference oats-config.yaml files of the classic line, whose adoption verb is removed under the workspace model. A template is a recommended starting point that becomes ordinary local policy on adoption — adopters may change every copied setting, and package updates never rewrite an adopted config. Templates must stay portable: no secret, credential, account, machine path or provider-local ID. Installation applies none of them. This is the canonical spelling; a manifest may not carry both this and the legacy `configs`.",
+      "description": "Tolerated and ignored: named classic config templates, accepted so published packages still validate; the workspace model reads nothing from them.",
       "type": "object",
       "propertyNames": {
         "pattern": "^[a-z0-9][a-z0-9._-]*$"
@@ -125,7 +125,7 @@
       }
     },
     "configs": {
-      "description": "DEPRECATED 0.19 spelling of `configTemplates`, readable only so immutable published 0.19 package tags stay consumable. Both spellings normalize to one descriptor shape; the diagnostic `legacySpelling` flag records which was used. It is NOT the discriminator for a \".\" capability root — published legacy packages exist with neither spelling. New authoring must emit `configTemplates`; carrying both spellings is an invalid manifest.",
+      "description": "Tolerated and ignored: the old spelling of `configTemplates`.",
       "type": "object",
       "propertyNames": {
         "pattern": "^[a-z0-9][a-z0-9._-]*$"
@@ -155,7 +155,7 @@
       }
     },
     "dependencies": {
-      "description": "Package source specifications (NOT capability IDs): official catalog selectors (e.g. \"oats.okf@v1.4.0\"), git:host/org/repo@ref, raw HTTPS/SSH git URLs with @ref, or local paths. No general semver ranges; the resolved closure is exact-locked.",
+      "description": "Tolerated and ignored: package source specifications from the classic line. The workspace model resolves only the workspace's `packages:`; a package's dependencies are not followed.",
       "type": "array",
       "items": {
         "type": "string",
