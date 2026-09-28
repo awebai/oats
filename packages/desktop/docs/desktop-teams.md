@@ -44,14 +44,16 @@ the connected server's workspaces, 20 s deadline; the verbs run with a 15 s time
 
 ## Results
 
-- **Success:** `{teamsViewApi: 1, status: "available", action, data, reason: null}`. `data` is the decoded document:
-  - `teamsData` for `oats teams`: its `deployment` must be this workspace's, or the result is `E_DEPLOYMENT_SCOPE`;
-  - `soulTeamsData` for `oats soul teams`.
+The shape is the lead's (0.30 D2 review):
 
-  A mutation's document carries `changed`.
-- **Failure:** `{teamsViewApi: 1, status: "unavailable", data: null, reason: {code, message?, details?}}`.
-  - **The kernel's team refusals** pass through verbatim with their bounded details: `E_TEAM_IN_USE` (`label`, `usedBy`: `defaultTeam`, `souls.teams:<key>`, `souls.default:<key>`), `E_TEAM_SHARED` (`label`, `at`), `E_TEAM_EXISTS`, `E_TEAM_UNKNOWN` and `E_TEAM_NOT_ELIGIBLE`.
-  - **The Desktop's own codes:** `E_TEAMS_UNAVAILABLE` (no `team-model-2`), `unsupported-remote-operation`, `E_WORKSPACE_UNKNOWN`, `E_BUSY` (one mutation per deployment at a time; reads are not blocked), and `E_CLI_PROTOCOL`.
+- **Success:** `{status: "ok", teams}` (`/api/workspace-teams`) or `{status: "ok", soulTeams}` (`/api/workspace-soul-teams`). The value is the decoded kernel result:
+  - `teams` is `teamsData`, with `teamsApi`, `deployment`, `defaultTeam`, `teams`, `souls`, `problems`, and `changed` on a mutation. Its `deployment` must be this workspace's, or the answer is `E_DEPLOYMENT_SCOPE`.
+  - `soulTeams` is `soulTeamsData`, with `soulTeamsApi`, `soul`, `key`, `defaultTeam`, `teams` (+ `via`), `local`, `all`, and `changed`.
+- **Refusal:** `{status: "refused", reason: {code, message, details?}}`.
+  - **The kernel's code and message** pass through verbatim, and a message is always present.
+  - **The team refusals** carry their bounded details: `E_TEAM_IN_USE` (`label`, `usedBy`: `defaultTeam`, `souls.teams:<key>`, `souls.default:<key>`), `E_TEAM_SHARED` (`label`, `at`), `E_TEAM_EXISTS`, `E_TEAM_UNKNOWN` and `E_TEAM_NOT_ELIGIBLE`.
+  - **The Desktop's own codes** come with a plain message: `E_TEAMS_UNAVAILABLE` (no `team-model-2`, e.g. on 0.29: a clear refusal, no kernel call), `unsupported-remote-operation`, `E_WORKSPACE_UNKNOWN`, `E_BUSY` (one mutation per deployment at a time; reads are not blocked), and `E_CLI_PROTOCOL`.
+- **Actions** come from a closed allow-list: each builds its own argv, and the action string is never passed through.
 
 ## Fixtures
 

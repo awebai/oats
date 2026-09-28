@@ -6,7 +6,13 @@ import { isAbsolute } from 'node:path';
 import { cliTeams, cliSoulTeams } from '../cli-adapter.mjs';
 import { teamsData, soulTeamsData } from '../deployment-data.mjs';
 
-export const TEAMS_VIEW_API = 1;
+// The answer shape is the lead's (0.30 D2 review): {status: 'ok', teams | soulTeams: <the decoded
+// kernel result>}; a refusal is {status: 'refused', reason: {code, message, details?}}, the
+// kernel's code and message verbatim, and the Desktop's own codes with a plain message.
+const MESSAGES = { E_BAD_ARGS: 'Invalid teams request', E_TEAMS_UNAVAILABLE: 'This OATS CLI has no team model v2 (feature team-model-2, OATS 0.30)',
+  'unsupported-remote-operation': 'Teams are edited on the computer that runs the workspace', E_WORKSPACE_UNKNOWN: 'Select a known workspace',
+  E_BUSY: 'Another team change is in progress; try again', E_CLI_PROTOCOL: 'The OATS CLI answered in an unexpected shape',
+  E_DEPLOYMENT_SCOPE: 'The OATS CLI answered for another deployment', E_CLI_FAILED: 'The OATS CLI failed' };
 const TEAM_ACTIONS = ['list', 'add', 'remove', 'default'], SOUL_ACTIONS = ['show', 'add', 'remove', 'default', 'clear-default'];
 const TEAM_CODES = new Set(['E_TEAM_IN_USE', 'E_TEAM_SHARED', 'E_TEAM_EXISTS', 'E_TEAM_UNKNOWN', 'E_TEAM_NOT_ELIGIBLE']);
 const CODE = /^(?:E_[A-Z0-9_]{1,62}|[a-z][a-z0-9-]{1,63})$/, LABEL = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
@@ -24,8 +30,8 @@ function refusalDetails(code, d) {
 }
 export function teamsFailure(code, message, details) {
   const c = CODE.test(code ?? '') ? code : 'E_CLI_FAILED';
-  return { teamsViewApi: TEAMS_VIEW_API, status: 'unavailable', data: null,
-    reason: { code: c, ...(text(message, 512) ? { message } : {}), ...(refusalDetails(c, details) ? { details: refusalDetails(c, details) } : {}) } };
+  const said = text(message, 512) ? message : MESSAGES[c] ?? `The OATS CLI refused the request (${c})`;
+  return { status: 'refused', reason: { code: c, message: said, ...(refusalDetails(c, details) ? { details: refusalDetails(c, details) } : {}) } };
 }
 function admit({ workspace: w, cli } = {}) {
   if (!w || typeof w.id !== 'string' || !w.id || typeof w.scope !== 'string' || !isAbsolute(w.scope)) return 'E_WORKSPACE_UNKNOWN';
@@ -52,7 +58,7 @@ function soulTeamsArgs(r) {
 
 export function createTeamsBoundary({ teams = cliTeams, soulTeams = cliSoulTeams } = {}) {
   const writing = new Set(); // one mutation per deployment at a time; the kernel serializes the file
-  const run = async (request, getContext, { args, invoke, decode, read }) => {
+  const run = async (request, getContext, { args, invoke, decode, read, key }) => {
     try {
       const parsed = args(request);
       if (!parsed) return teamsFailure('E_BAD_ARGS');
@@ -66,13 +72,13 @@ export function createTeamsBoundary({ teams = cliTeams, soulTeams = cliSoulTeams
         if (envelope?.schemaVersion !== 1 || envelope.ok !== true) return teamsFailure(envelope?.error?.code, envelope?.error?.message, envelope?.error?.details);
         let data;
         try { data = decode(envelope, workspace.scope); } catch (e) { return teamsFailure(e?.code === 'E_DEPLOYMENT_SCOPE' ? e.code : 'E_CLI_PROTOCOL'); }
-        return { teamsViewApi: TEAMS_VIEW_API, status: 'available', action: request.action, data, reason: null };
+        return { status: 'ok', [key]: data };
       } finally { if (mutation) writing.delete(workspace.id); }
     } catch { return teamsFailure('E_CLI_FAILED'); }
   };
   return {
-    teams: (request, getContext) => run(request, getContext, { args: teamsArgs, invoke: teams, decode: (e, dir) => teamsData(e, dir), read: r => r.action === 'list' }),
-    soulTeams: (request, getContext) => run(request, getContext, { args: soulTeamsArgs, invoke: soulTeams, decode: e => soulTeamsData(e), read: r => r.action === 'show' }),
+    teams: (request, getContext) => run(request, getContext, { args: teamsArgs, invoke: teams, decode: (e, dir) => teamsData(e, dir), read: r => r.action === 'list', key: 'teams' }),
+    soulTeams: (request, getContext) => run(request, getContext, { args: soulTeamsArgs, invoke: soulTeams, decode: e => soulTeamsData(e), read: r => r.action === 'show', key: 'soulTeams' }),
   };
 }
 const boundary = createTeamsBoundary();
