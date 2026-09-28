@@ -1,294 +1,82 @@
 # Implementation reference
 
-The reference implementation publishes two npm packages:
+A map of this repository for contributors. What OATS does is in the
+reference pages ([workspaces](workspaces.md), [souls and instances](souls-and-instances.md),
+[capabilities](capabilities.md)); the normative module contracts are in
+[the workspace module contracts](design/2026-09-23-workspace-module-contracts.md).
 
-- **`@awebai/oats`**: runtime-neutral kernel, universal `oats` CLI,
-  bootstrap skills, instruction sources, and the official package catalog.
-- **`@awebai/oats-pi`**: minimal pi adapter for instance-local resource
-  exposure and memory session events. It registers no agent tools.
+## What is published
 
-Claude instances consume the generated standard files directly through the
-instance home's `.claude/` and `CLAUDE.md` symlinks. OATS does **not** redirect
-Claude's config home: an isolated one cannot authenticate, and the operator's
-own Claude configuration is deliberately left enabled.
+- **`@awebai/oats`**: the runtime-neutral kernel (`lib/`), the `oats` CLI
+  (`bin/oats.mjs`), the kernel and work-mode instruction sources
+  (`injects/`), the bootstrap skills, the docs and the official package
+  catalog (`package-catalog.json`). It has no runtime dependencies.
+- **`@awebai/oats-pi`** (`packages/pi/`): a thin pi adapter that exposes an
+  instance's own resources. It registers no agent tools.
+- **`oats.framework`** (`oats-package/`): the `oats.core`, `oats.setup` and
+  `oats.knowledge-theory` capabilities and the `knowledge-theory-expert` soul,
+  released as a package under its own `oats-framework/v<version>` tags.
+
+The OATS Desktop (`packages/desktop/`) is an Electron app with a bundled,
+dependency-free localhost server; it is released with the kernel but not
+published to npm. Its developer docs are in
+[`packages/desktop/README.md`](../packages/desktop/README.md).
 
 ## Repository layout
 
-| Path | Purpose |
+| path | contents |
 |---|---|
-| `lib/core.mjs` | Souls, instances, config/target resolver, capability discovery, composition, locks/trust, hooks. |
-| `bin/oats.mjs` | Agent lifecycle, config, acquisition/trust/activation, doctor, and operational command dispatch. |
-| `capabilities/` | Bundled package copies — core capabilities and others — each with `oats.json`. |
-| `skills/` | Kernel/bootstrap and package-authoring skills. |
-| `injects/` | Kernel and work-mode instruction sources. |
-| `packages/pi/` | Thin pi adapter. |
-| `packages/desktop/` | OATS Desktop — the Electron control panel and its bundled zero-dependency backend server (private, not published). |
-| `test/` | Capability resolver/composition/security lifecycle tests. |
-| `agents/` | The framework's own portable expert souls. |
+| `bin/oats.mjs` | the CLI: argument parsing, JSON envelopes, the verbs |
+| `lib/` | the kernel (below) |
+| `injects/` | the kernel and work-mode instruction blocks composed into every instance |
+| `skills/` | bootstrap skills shipped with the kernel |
+| `capabilities/` | generated mirrors of released package capabilities (for example `oats-okf*`), checked by `scripts/check-okf-mirror.mjs` |
+| `oats-package/` | the `oats.framework` package |
+| `souls/` | this repository's own souls (a workspace member) |
+| `docs/` | the reference pages, schemas, design records and release notes |
+| `packages/` | the pi adapter, the Desktop, the turn-record package and experiments |
+| `scripts/` | the test runner, validators, packaging checks and the release lane |
+| `test/` | the kernel and CLI suites, with their fixtures |
 
-Capabilities have two sources and one destination: a member repo's
-`capabilities/<name>/` (latest state, trusted by membership) or a package pinned
-in the workspace's `packages:` and locked in `oats-lock.json` (v3); at spawn each
-is copied whole into the instance's `.oats/modules/<name>/`. Nothing is
-installed at a deployment (`lib/remote.mjs`, `lib/workspace.mjs`,
-`lib/resolve.mjs`, `lib/packages.mjs`, `lib/materialize.mjs`).
+## Kernel modules
 
-The live control panel is the OATS Desktop app (`packages/desktop/`): an
-Electron shell over a bundled zero-dependency localhost server that uses
-plain OATS metadata/files plus git and tmux; no pi APIs cross into the
-feature, so the same surface works for pi and Claude instances. (`oats pane`
-and the `oats.web` browser panel were retired in its favor.)
+| module | owns |
+|---|---|
+| `remote.mjs` | repo refs, reading Git remotes, content digests |
+| `workspace.mjs` | workspace, membership and soul files; discovery |
+| `resolve.mjs` | a soul's resolution: capabilities, slots, provenance |
+| `packages.mjs` | `packages:`, the catalog, `oats sync`, `oats-lock.json` |
+| `materialize.mjs` | copying modules into a home and composing it |
+| `core.mjs` | spawn, retire, sessions, hooks, launch recipes, instance metadata |
+| `instruction-composition.mjs` | the generated `AGENTS.md` |
+| `teams.mjs`, `teams-verbs.mjs` | the team model and the `oats teams` verbs |
+| `schedule.mjs`, `schedule-host.mjs`, `triggers.mjs`, `automations.mjs` | schedules, triggers and the host timer |
+| `operator-dispatch.mjs` | capability commands run from a deployment, and its module store |
+| `instance-*.mjs` | inspection, lifecycle, events and Git views of an instance |
+| `herdr.mjs`, `tmux-config.mjs`, `session-*.mjs` | session backends and terminal input |
+| `capability-contract.mjs`, `provider-binding.mjs` | manifest validation, the hook environment rules, the readiness wire |
+| `servers.mjs` | routing commands to a registered server |
 
-## Instance layout
+The kernel is runtime-neutral: nothing in `lib/` depends on a harness or on
+a provider. Provider behaviour lives in capabilities; the kernel supplies
+their contracts ([layers](layers.md)).
 
-```text
-<agents-root>/<agent>/
-  soul/
-    soul.yaml
-    AGENTS.md                 # canonical role instructions
-    CLAUDE.md -> AGENTS.md
-    skills/                   # soul-private skills
-  instances/<instance>/
-    AGENTS.md                 # generated composition (regular file)
-    CLAUDE.md -> AGENTS.md
-    .agents/skills/           # exact materialized set
-    .claude/skills -> ../.agents/skills
-    work/
-    TASK.md
-    instance.json             # capabilities, skills, instruction sources, lifecycle metadata
-```
+## Tests and gates
 
-The knowledge capability's hooks may add memory files. The kernel does not assume
-their names.
+| command | what it checks |
+|---|---|
+| `npm test` | every suite under `test/` (`node --test`), through `scripts/run-tests.mjs` |
+| `npm run check` | syntax of every shipped file |
+| `npm run check:pi` | the pi adapter's TypeScript |
+| `npm run validate` | the JSON schemas, the example manifests and configs, and every local link and anchor in the public docs |
+| `npm run pack:check` | an `npm pack` dry run of both packages: nothing missing, nothing leaked |
+| `npm run smoke:tarball` | installs the packed tarballs outside the checkout and exercises them |
 
-## Resolution
+Locally, run the suites your change affects, plus `validate` and `check`; run
+`smoke:tarball` when you change the smoke script or packaging. Pull-request CI
+runs the full suite (sharded), `check`, `validate`, `pack:check` and the smoke
+test, and is the gate. Tests use local bare repositories and fakes; none
+contacts GitHub, aweb, Jira or Linear.
 
-**Workspace model (0.25, current).** `lib/instance-resolution.mjs#prepareInstance(dir, soul)`
-loads `oats-local.yaml`, discovers the workspace over its Git remotes
-(`lib/workspace.mjs#discoverWorkspace`, or the standalone view), finds the
-soul among the confirmed members / external souls, and calls
-`lib/resolve.mjs#resolveSoul` → an immutable Resolution: `modules[]` (each
-`from: member|package` with commit and digest), `slots`, merged provider
-`payloads`, `skills`, `injects`, `revision`. Capability order is
-`defaults.<slot>` ⊕ `defaults.capabilities` ⊕
-`soul.capabilities` (soul wins; `off` removes; a soul's `<slot>: none` empties
-the slot). `lib/materialize.mjs` then copies every module whole into the home.
-The normative contract is
-[docs/design/2026-09-23-workspace-module-contracts.md](design/2026-09-23-workspace-module-contracts.md).
-
-**Classic 0.24 (removed in 0.26.0).** The `oats-config.yaml` chain and its
-resolvers are gone. A legacy `oats-config.yaml` between the invocation
-directory and the deployment is refused with `E_CONFIG_BROKEN`
-(`reason: "legacy-config"`), and the message names the files that replace it.
-
-## Spawn composition
-
-`spawnInstance` resolves against the soul's repository and soul name. It:
-
-0. resolves and validates WHERE the home will be created, before any side
-   effect: the destination must be the agent directory's own `instances/`
-   child, that agent directory must lie inside this deployment, and a linked
-   worktree maps to the primary checkout — otherwise `E_NO_CANONICAL_ROOT` and
-   nothing is created. The check is repeated on the created directory before
-   anything is written into it. See
-   [souls-and-instances.md](souls-and-instances.md#deployment-prerequisite-the-agents-directory-must-be-operator-owned)
-   for the deployment prerequisite this rests on;
-1. calls `composeInstanceAgentsMd` without writing the soul;
-2. writes generated `AGENTS.md` and canonical compatibility symlinks;
-3. copies kernel + soul + active package skill trees into real directories in
-   one instance-local root, failing duplicate names unless `skill-overrides`
-   chooses a source;
-4. creates the selected work topology;
-5. runs active hooks in deterministic order; and
-6. records capabilities, settings, trust, skill names/sources, instruction
-   files, hooks, capability metadata, and forward-only spawn lineage in
-   `instance.json`.
-
-Pi launches with `--no-skills --skill <instance-home>/.agents/skills
---no-context-files --no-prompt-templates --append-system-prompt
-<instance-home>/AGENTS.md`. The OATS-managed skill set is exactly the composed
-one: no user, project, ancestor or package skill catalogs. It is not a claim
-that nothing else can reach the session — extensions stay ambient (below), and
-what they contribute stays with them.
-
-After the canonical soul and kernel text, every generated `AGENTS.md` states the
-runtime-neutral **home/work boundary** (`injects/instance-boundary.md`) — for
-every work mode and for service souls (the post-commit reviewer) alike — immediately before the
-work-mode block it frames: `<instance-home>` (`$OATS_INSTANCE_HOME`) holds the
-brain, task, provenance and working state, and is where OATS operational/lifecycle
-commands are run from — together with the commands of whatever capabilities are
-active, `aw` among them when aweb messaging is — since they resolve scope from
-the working directory (`--dir <path>` reaches another deliberately); the home
-carries no soul link (the composed AGENTS.md holds the soul's instructions, and
-hooks receive the recorded soul directory as `OATS_SOUL`); and `<instance-home>/work` is the repository or workspace
-view where repository reading, editing, building, testing, git and commits
-happen. It bounds *repository* work rather than forbidding all output elsewhere —
-episodic state lives in the home, and a service agent's own artifacts (a report
-written to a temp file before mailing it) are its role's business. What each mode
-actually permits is the work-mode block's call, which follows immediately.
-
-`--no-context-files` also suppresses the instance's *own* composed `AGENTS.md`,
-so that is delivered explicitly; the work tree's `AGENTS.md` stays readable by
-the file tools — readable, not auto-injected.
-
-Pi **extensions stay ambient**: operators run cross-agent extensions (web
-search, output formatting) that every instance should keep, so OATS does not
-pass `--no-extensions`. The accepted residue is narrow but real — an
-extension's `resources_discover` hook can contribute skill paths that survive
-`--no-skills`. Today only the OATS bridge does that, and inside an instance it
-contributes that instance's own `.agents/skills`, leaving the composed set
-unchanged.
-
-Runtime packages that active capabilities declare (see
-[capabilities](capabilities.md)) are verified at spawn and recorded in
-`instance.json`; a missing one fails the spawn with the consent command to fix
-it, rather than starting an agent whose instructions promise a capability it
-does not have. OATS does not resolve their extension entry points — pi owns that
-resolution, including globs and conventional directories.
-
-Claude discovers the same set natively through the instance's `.claude/skills`
-symlink, and its composed instructions through `CLAUDE.md -> AGENTS.md`.
-
-Claude Code's **own configuration stays enabled**: user and project skills,
-plugins, settings and `CLAUDE.md` all resolve into an OATS session as they
-normally would. That is a deliberate product choice — those mechanisms are
-powerful and the operator decides whether to use them; a deployment that wants
-only the OATS-composed surface achieves it by configuring everything OATS-side.
-So OATS passes no `--setting-sources`, no exclusions, and no synthetic plugin.
-
-Measured behavior worth knowing when reasoning about an instance: project
-skills resolve from the working directory up to the **repository root**, so an
-instance homed inside a repository with its own `.claude/skills` sees those
-too. Project *settings* — hooks, plugins, permissions, custom agents — resolve
-from the instance home rather than from ancestors.
-
-Codex is available with `--harness codex`. It starts in the instance home,
-reads `AGENTS.md` and `.agents/skills` natively, and receives `TASK.md` as its
-initial prompt. User configuration, approval policy, ancestor instructions and
-ambient skill sources remain native. Worktrees are already below the instance
-home; checkout/attached paths outside it use Codex's normal approval handling
-and may require approval for writes, depending on the operator's policy.
-OATS does not pass `--add-dir`, which Codex refuses under some native policies.
-OpenAI-prefixed model preferences are translated to
-Codex ids; other provider preferences fall back to its configured default.
-The Desktop model field accepts a native id without using Pi's model catalog.
-This launch support does not supply an aweb channel for Codex: agents can use
-`aw` from their home, with automatic wake delivery tracked separately.
-
-All harnesses record what they actually expose in `instance.json` under
-`composition.materialized.harnessPosture`: the OATS-composed set, what is
-curtailed, and what remains ambient. The deviation from strict composition is
-auditable rather than implied.
-
-## Instructions
-
-The generated order is:
-
-1. canonical soul content;
-2. kernel OATS block;
-3. **home/work boundary block** — runtime-neutral, every mode and every kind;
-4. actual spawn work-mode block;
-5. active capability blocks in resolver order; and
-6. unconditional config blocks outermost to innermost.
-
-Every generated block carries its source path. `oats doctor --soul <name>` uses
-the same composer and prints/returns the final text. Config-dependent prose is
-never reconciled into committed souls.
-
-## Acquisition and trust
-
-**Workspace model (0.25, current).** Nothing is installed. `oats sync`
-(`lib/packages.mjs#resolvePackages`) resolves every `packages:` entry of
-`oats-workspace.yaml` to a commit, computes the package tree's integrity and
-writes `oats-lock.json` **lockfileVersion 3** (`packages.<id>: { source, url,
-path, version, commit, integrity, capabilities[] }`). A package is trusted by
-its declaration in `packages:` (human decision, 2026-09-24); member-tier
-capabilities are trusted by membership (decision 2). The lock is
-reproducibility: a moved tag or drifted content is `E_PACKAGE_INTEGRITY`, at
-spawn the lock's capability list must match what the package declares at the
-locked commit, and a spawn uses only packages the workspace still declares. The
-verbs `oats install|trust|list|restore|use|migrate` are removed
-(`E_UNKNOWN_COMMAND` naming the replacement).
-
-**Classic 0.24 (removed in 0.26).** The installed tier
-(`.agents/capabilities/installed/`, the `lockfileVersion: 2` lock, per-artifact
-approval) and its last writer went with the captured path; the
-[0.24 release notes](release-notes/v0.24.0.md) describe what it was.
-
-## Hooks and scaffold ownership
-
-Only `soul-scaffold`, `spawn`, and `retire` manifest hooks are accepted. The
-kernel no longer runs `soul-scaffold`: it ran when `oats create` wrote a soul,
-and souls are now authored in member repositories.
-Spawn uses outer-scope then capability-ID order; retire reverses it.
-Each hook receives package identity/layer plus structured OATS environment and
-may emit a final JSON object containing `meta`, `brief`, `warning`, or `launch`.
-Only a spawn hook may add `env`; other lifecycle events reject it rather than
-silently discard it. Launch environment is string-only,
-size/control-character checked, owned by an unambiguous dotted capability
-vendor, and restricted to the manifest's exact trust-visible `environment`
-declaration. Capabilities that request this authority must use the stricter
-dotted ID form even though capabilities without environment authority retain
-the wider namespaced-ID compatibility contract. Explicit and automatic trust
-disclose the declaration before persisting authority. Known process-bootstrap
-names are denied in depth, not treated as an
-exhaustive authority list. Aggregation is deterministic, shell-quoted, and
-collision-fatal. It prefixes only the initial runtime command;
-values are persisted with that command, so the contract is for non-secret
-locators and broker endpoints, never bearer credentials or durable principal
-root keys. No restart/replay contract exists. A fatal environment contract error enters
-the required-spawn rollback transaction. It runs compensation in reverse,
-removes and verifies rollback-owned Git topology, and removes the home only
-when cleanup completed. Failed compensation or reported state with no retire
-hook uses the same retryable quarantine as every other incomplete spawn.
-
-## Commands
-
-Kernel/package-management commands are always available. Operational
-namespaces are discovered from manifest `command`, but dispatch verifies that
-`instance.json` or current soul resolution contains the package and that its
-locked executable surface is trusted.
-
-## Verification
-
-```bash
-npm test
-npm run check
-npm run check:pi
-npm run validate
-npm run validate:okf
-npm run pack:check
-npm run smoke:tarball
-```
-
-Pull-request CI runs this matrix on supported Node 22. `validate` compiles both
-public JSON schemas, validates clean-contract manifests, parses documented
-OATS config examples with the production parser, and checks maintainable public
-local links/anchors. `pack:check` dry-runs both npm packages and rejects missing
-runtime surfaces or leaked workspace/test state.
-
-The clean-room smoke test packs both packages, installs their tarballs outside
-the checkout, verifies the adapter resolves that installed kernel, runs
-`init`/`doctor`, and creates/retires a clean-contract scaffold while checking
-exact skills, generated instructions, canonical soul immutability, and
-metadata.
-
-One manual probe is required after every release and before 0.19.0 ships: from
-the **published** kernel (not a checkout), install `oats.authoring` into a fresh
-scope, activate it for a framework-author soul, and spawn that soul. The spawn
-must succeed with `integration-authoring`, `skill-craft`, and `soul-craft`
-materialized in the instance's `.agents/skills/`. Framework-hoisted resources
-are resolved by path arithmetic against the installed kernel's own layout, so a
-source-tree run can pass while every installed deployment fails.
-
-These deterministic checks deliberately do **not** contact real aweb, Jira, or
-Linear services, validate remote git hosting/auth flows, or publish npm
-artifacts. Adapter/discovery changes additionally require a disposable real pi
-session from the packed artifacts; external services remain credentialed,
-out-of-scope probes. Release CI publishes both
-packages from one tag; keep versions synchronized because exact pi isolation
-depends on both kernel launch and adapter discovery behavior.
-
-Runtime-neutral token/cost/model/tool telemetry for Control Pane remains a
-follow-up; it requires an adapter-neutral event contract rather than pi-specific
-inspection in the universal CLI.
+Tests pin behaviour, so a change that alters behaviour changes its test in the
+same commit. Never weaken an assertion to make a change pass.

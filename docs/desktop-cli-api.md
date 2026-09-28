@@ -1,2212 +1,1766 @@
-# Desktop CLI API v1
+# Desktop CLI API
 
-The contract between the OATS Desktop app and the `oats` CLI. Desktop never
-imports kernel code; it shells out (via `execFile`, argv, absolute binary — no
-shell) to a discovered `oats` and speaks this JSON protocol. **API version, not
-source adjacency, is authoritative.**
+The JSON contract between the `oats` CLI and the OATS Desktop.
 
-## Probe
+## Scope
 
-```
-oats version --json
-```
+The Desktop never imports kernel code. Its server runs a discovered `oats`
+binary with `execFile` (absolute path, argv, no shell) and decodes the JSON it
+prints, strictly. This page describes one current shape per command, as the
+kernel emits it.
 
-prints exactly one JSON object on stdout:
+- **Versioning is by capability, never by version string.** The probe lists
+  `features` and per-API integers. Gate every read and mutation on them; an
+  absent feature means the kernel cannot do it.
+- **A document carries its own integer** where one exists (`operationsApi`,
+  `readinessApi`, `eventsApi`, …). Dispatch on the payload's integer.
+- **The envelope is authoritative over this prose.** If a captured payload
+  and this page disagree, this page is the bug.
+- **Shapes are closed.** The Desktop decodes many documents with exact key
+  sets, so a new key is a contract change and is announced here first.
+
+Conventions: paths are absolute; a `commit` is a full 40-hex id; `integrity`
+and `digest` are `sha256-<hex>`; times are ISO-8601 UTC; repository keys are
+canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
+`/w` as the deployment and shorten ids and digests with `…`.
+
+## The probe
+
+`oats version --json` prints one object (not an envelope):
 
 ```json
-{"schemaVersion":1,"name":"@awebai/oats","version":"<installed version>","desktopApi":1}
+{"schemaVersion":1,"name":"@awebai/oats","version":"0.30.0","desktopApi":1,
+ "harnesses":["pi","claude","codex"],"sessionBackends":["tmux","herdr"],"launchOptions":["yolo"],
+ "remote":["spawn","retire","status","session","session-start","session-restart","launch-config","roster","harvest","schedule","session-upload","operations"],
+ "features":["retire-home","session-start","session-restart","launch-config","schedule","session-upload","operations","instance-git",
+             "instance-git-remote","souls-declarations","lifecycle-plans","retire-retention","readiness","spawn-preview","instance-events",
+             "instance-events-2","schedule-history","schedule-read-2","spawn-preview-2","spawn-idempotency","spawn-idempotency-2","spawn-apply-2",
+             "workspace-v2","instance-modules","spawn-provider-payload","served-identity","packages-no-approval","spawn-name","settings-origins",
+             "team-model-2","settings-declared","capabilities-private","layers-from","harness","package-souls","triggers","automations","desktop-facts"],
+ "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
+ "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2}
 ```
 
-`version` is the installed package's exact semver (e.g. `0.20.0`).
-The Desktop accepts `desktopApi === 1` and gates on the kernel feature
-`packages-no-approval` (semver range `>=0.25.8 <0.31.0`, spelled once in
-`packages/desktop/cli-locator.mjs` `ACCEPT_RANGE`: the floor admits the
-main-branch kernel before 0.26.0 was tagged; the feature fences are the real gate:
-0.29's reads are gated on `automations` and `desktop-facts`, and 0.30's team
-model v2 reads on `team-model-2`, with the 0.29 team shapes still read).
-Earlier bands were `>=0.25.8 <0.30.0` (Desktop 0.29), `<0.29.0` (Desktop 0.28), `<0.28.0` (Desktop 0.27),
-`<0.27.0` (Desktop 0.26), `>=0.22.0 <0.26.0` (Desktop 0.25) and `>=0.22.0 <0.24.0`
-(Desktop 0.23). It does not establish complete
-UI, backend, plugin, retirement or recovery parity; capability checks and explicit
-refusals below remain authoritative.
+- The Desktop accepts `desktopApi === 1` and a released `version` inside
+  `ACCEPT_RANGE` (`packages/desktop/cli-locator.mjs`); a prerelease is never
+  accepted. The real gate is the feature list; its minimum is
+  `packages-no-approval`.
+- `harnesses` is what `--harness` accepts; `sessionBackends` what `--backend`
+  accepts. A host without the `harness` feature lists `runtimes` instead.
+- `remote` is the routed surface: the commands `--server <id>` sends to a
+  registered server, plus `roster`. The Desktop checks the execution host's
+  probe before a routed mutation.
+- In text mode the command prints `@awebai/oats <version> (desktop API v1)`.
 
-Optional features are negotiated from the probe's `features` array. Starting
-an existing home requires `session-start`; named launch configurations and
-harness/permission overrides require `launch-config`; restarting a running
-home also requires `session-restart`. Desktop checks the corresponding
-`remote` entries before offering these operations for a server. The router
-then probes the execution host before sending a mutation. An absent feature
-means an update is needed; it is not inferred from the version number.
+### Features
 
-The band is widened one kernel minor at a time, after confirming this v1
-surface is unchanged, and always admits the kernel published by the same
-release — Desktop and the CLI are built from one tag, so a band excluding its
-own kernel would degrade the shipped app to observation-only. Prereleases are
-never accepted.
-
-## Envelope
-
-Every other `--json` command emits **exactly one JSON object on stdout** and
-no progress prose (progress goes to stderr):
-
-- success (exit 0): `{"schemaVersion":1,"ok":true,"result":{...}}`
-- failure (nonzero exit): `{"schemaVersion":1,"ok":false,"error":{"code":"...","message":"..."}}`
-
-Either may also carry `"warnings":[…]` (0.27.0+), present only when there is
-something to say. The one warning so far is `deprecated-runtime-name` (see
-[the harness rename](#the-harness-rename-feature-harness-oats-0270)). `oats status
---json`, whose document is not an envelope, carries the same `warnings` beside
-its `problems`. In text mode the warning is one `oats: warning: …` line on stderr.
-
-## Flags
-
-A kernel command reads `--flag=value` exactly as `--flag value`, with the
-same validation (0.27.3+; before, the inline form was silently ignored, so
-`--harness=claude` spawned the default harness). The value is everything after
-the first `=`. An empty `--flag=` is `E_BAD_ARGS` ("`--flag=` needs a value"),
-and so is a value on a switch: `--yolo=false` is refused and never turns
-yolo on. A capability command's own flags belong to its provider. They are
-forwarded exactly as typed; the kernel reads only its dispatch flag (`--soul`)
-in either form. There is no feature string: a caller that must work with
-older kernels uses the spaced form.
-
-## The harness rename (feature `harness`, OATS 0.27.0)
-
-What starts an instance (pi, claude or codex) is its **harness**. 0.27.0 renames
-the kernel's `runtime` to `harness` everywhere it means that:
-
-- Outputs speak only the new names.
-- Every input written before 0.27.0 still works. The rule is read either,
-  write new: the old spelling is read as the new one, and the next write
-  records the new one.
-- A command that read an old spelling answers **one** warning:
-  `{"code":"deprecated-runtime-name","key":"runtime","replacement":"harness","sources":[…],"message":"…"}`.
-  `sources` names each place it read the old spelling (a flag, a file and its
-  key, a home).
-- A pair that disagrees is refused rather than guessed, for example
-  `--harness pi --runtime claude`, or both keys with different values.
-- A later release drops the old spellings.
-
-Gate on the feature `harness`. A kernel without it speaks the old names: the
-routed commands (`--server`) already translate for such a host, sending
-`--runtime` and `runtime` keys to it and reading its `runtimes` list.
-
-| Surface | Before 0.27.0 | 0.27.0 | Old spelling still accepted? |
-|---|---|---|---|
-| `oats version --json` | `runtimes: [pi, claude, codex]` | `harnesses: [...]`, feature `harness` | **Dropped**: no `runtimes` alias; gate on the feature |
-| Flag on `spawn` (and `--preview`), `session start`/`restart`, `launch-config preview`, and their `--server` forms | `--runtime <h>` | `--harness <h>` | Yes, with the warning (the okf 2.1.5 harvest worker passes `--runtime` to spawn). Both flags disagreeing → `E_BAD_ARGS` |
-| `oats status --json`: `agents[]` rows (soul default) and `agents[].instances[]` rows | `runtime` | `harness` | Output only |
-| `oats status --json`: instance rows' `composition.materialized` | `runtimePackages`, `runtimePosture` | `harnessPackages`, `harnessPosture` | Output only |
-| `oats inspect --json` `souls[]` rows, remote roster rows | `runtime` | `harness` | Output only; a pre-0.27 host's `runtime` rows are read as `harness` |
-| `oats inspect --home --json` `instance` | `runtime` | `harness` | Output only |
-| The launch plan's package check (`launch-config preview` `problems[]`) | `runtime-packages` | `harness-packages` | Output only |
-| Soul `soul.yaml` (member and package souls) | `runtime:` | `harness:` | Yes, **without** a warning: released capabilities (oats.aweb 1.13.1) ship `runtime:`, and the operator cannot fix a provider's file. Both, disagreeing → `E_BAD_MANIFEST` |
-| `oats-local.yaml` `launch-configs.<name>` | `runtime:` | `harness:` | Yes, with the warning. Both, disagreeing → `E_WORKSPACE_SCHEMA`. `launch-config set` writes `harness` (a `runtime` in its `--file` definition too) |
-| `launch-config list/preview --json` rows and `selection` | `runtime` | `harness` | Output only |
-| Home `instance.json` | `runtime`; launch recipe `launch` version 1 `{runtime}` | `harness`; recipe version **2** `{harness}` | Yes, with the warning naming the home: a 0.26.0 home inspects, starts, restarts and retires; its next start or restart records the new names |
-| `oats spawn … --preview` decision | `effective.runtime` | `effective.harness` | Output only. The revision digests the key names, so a decision previewed by a 0.26 kernel is `E_DECISION_STALE` at apply (with the fresh decision) |
-| `spawn`/`session` results, `spawned` event `data` | `runtime` | `harness` | Output only |
-| Schedule definitions (`schedule add/update --spec-json`, stored jobs, `schedule list`) | `runtime` | `harness` | Yes, with the warning. A stored job is read in the new name and saved in it next time. Both, disagreeing → `E_SCHEDULE_INVALID` (a stored job: invalid on its own) |
-| Schedule run records (`lastRun`, `recentRuns`) | `startedRuntime` | `startedHarness` | Output; a 0.26.0 record's `startedRuntime` is still read |
-| Error codes | `E_UNSUPPORTED_RUNTIME`, `E_RUNTIME_PACKAGE`, `E_RUNTIME_RESOURCE_MISSING` | `E_UNSUPPORTED_HARNESS`, `E_HARNESS_PACKAGE`, `E_HARNESS_RESOURCE_MISSING` | Output only |
-| Hook environment (spawn and launch hooks) | `OATS_RUNTIME`, `OATS_PREVIOUS_RUNTIME` | `OATS_HARNESS`, `OATS_PREVIOUS_HARNESS` | Both are set, with the same values, for released hooks |
-| Capability manifest `requires[]` harness package | `runtime` | `harness` | Yes, **without** a warning (a provider's file); a row naming both is refused |
-| Package verification `loadedBy` | `runtime-discovery` | `harness-discovery` | Output only |
-
-Unchanged, because they do not name the harness: the session endpoint
-vocabulary (`runtimeAuthority`, `runtimeState`/`runtimeError` in liveness,
-`E_RUNTIME_ENDPOINT_UNKNOWN`, `E_RUNTIME_AUTHORITY_MISMATCH`,
-`E_RUNTIME_QUIESCE_FAILED`); `capabilityRuntime`; the retirement baseline's
-`runtime`; oats.okf's `harvest-runtime` setting; and the kernel's
-"runtime-neutral" design. Hook stdin carries no `launch.runtime` (no 0.26 hook
-emitter wrote it).
-
-## Inspect, readiness and operation run on the workspace model (`operationsApi: 2`, `soulsApi: 2`, `readinessApi: 2`, OATS 0.26.0)
-
-On a workspace deployment (an `oats-local.yaml` in reach of `--dir`), and for
-any home whose `instance.json` records `modules`, these three commands read the
-workspace model's own records and **never the classic config chain**. The probe
-integers are the gate; there is no feature string. The probe's integer says
-this kernel CAN answer the v2 shape. **Dispatch on the payload's own integer**.
-There is no v1 shape any more (0.26.0 removed the classic chain's answers):
-with no `oats-local.yaml` in reach and no `--home`, the three commands answer
-`E_LOCAL_MISSING`; a `--home` whose `instance.json` records no `modules`
-(spawned by an earlier kernel) answers `E_UNSUPPORTED_MODE` (re-spawn it from
-the deployment); an unreadable `--home` answers `E_SESSION_UNKNOWN`.
-
-**The captured/portable path was removed in 0.26.** A *captured home* (its `instance.json`
-records `executionBinding`, `incarnationId` or `captured`: spawned through
-0.24–0.25's `prepare` / `--deployment --resolution`) answers `E_UNSUPPORTED_MODE`
-(`details: {home, captured: true}`) to these three commands, to `session
-start|restart` and to its in-home commands; `oats retire` still works on it, and
-its result's `warnings[]` names each capability whose retire hook did NOT run
-(what it created is not revoked). `oats status --json` / `oats doctor --json`
-name captured homes once, in `problems[]`, as `legacy-captured-home` `{instances,
-homes, message}`. The captured selectors `--deployment`, `--resolution` and
-`--artifact-set`, and an inherited `OATS_DEPLOYMENT`/`OATS_RESOLUTION`, are refused
-by every command except `version` (`E_UNSUPPORTED_MODE`, `details.selector` or
-`details.inherited`); `oats prepare` and `oats inspect --request` are removed
-verbs (`E_UNKNOWN_COMMAND`, `details: {removed, replacement}`). The version
-document no longer carries `capturedDispatchApi` / `capturedDispatchActions`.
-
-| Command | Integer (probe and payload) | 0.25.x value |
+| Feature | What it enables | API number |
 |---|---|---|
-| `oats inspect --json` | `operationsApi: 2` (top level); each `souls[]` row `soulsApi: 2` | 1 / 1 |
-| `oats readiness --json` | `readinessApi: 2` | 1 |
-| `oats operation run --json` | `operationsApi: 2` on the result | absent |
+| `retire-home` | `oats retire <instance> --home <abs>` | |
+| `session-start`, `session-restart` | `oats session start/restart --home` | |
+| `launch-config` | `oats launch-config …`; the selection flags on start and restart | |
+| `schedule` | `oats schedule …` | `scheduleApi: 2` |
+| `session-upload` | `oats session upload` (and the host's `session receive`) | |
+| `operations` | `oats operation run`; `operations[]` in inspect | `operationsApi: 2` |
+| `instance-git`, `instance-git-remote` | `oats instance git/diff`; the observation's `remote` | `instanceGitApi: 1` |
+| `souls-declarations` | `souls[].declarations` in inspect | `soulsApi: 2` |
+| `lifecycle-plans`, `retire-retention` | stop and retire plans and guarded applies; retire keeps a worktree | `lifecycleApi: 1` |
+| `readiness` | `oats readiness` | `readinessApi: 2` |
+| `spawn-preview`, `spawn-preview-2` | the no-write preview with a bound `decision` (gate on `-2`) | `spawnPreviewApi: 2` |
+| `spawn-apply-2` | `--expect-decision` apply | `spawnApplyApi: 1` |
+| `spawn-idempotency`, `spawn-idempotency-2` | `--idempotency-key`; recovery before placement (gate on `-2`) | `spawnApplyApi: 1` |
+| `instance-events`, `instance-events-2` | the bounded events read (gate on `-2`) | `eventsApi: 2` |
+| `schedule-history`, `schedule-read-2` | run history with identity and provenance (gate on `schedule-read-2`) | `scheduleHistoryApi: 3` |
+| `workspace-v2` | `onboard`, `sync`, `package`, `workspace status`, `capabilities`, `souls` | `workspaceApi: 2` |
+| `instance-modules` | `instance.json` `modules`/`providers`/`workspace`; module drift in status; preview `modules[]` | |
+| `spawn-provider-payload` | `oats spawn … --provider <cap> <key>=<value>` | |
+| `served-identity` | `decision.effective.providers`; the served `identity` in inspect and status | |
+| `packages-no-approval` | no package approval anywhere | |
+| `spawn-name` | `oats spawn --name <slug>` | |
+| `settings-origins` | preview `settingsOrigins` | |
+| `settings-declared` | `declares` on inspect capabilities and preview modules | |
+| `capabilities-private` | `private` on `oats capabilities` rows | |
+| `layers-from` | `layers.<slot>.from` in inspect | |
+| `team-model-2` | every team field; `oats teams`, `oats soul teams` | `teamsApi: 1`, `soulTeamsApi: 1` (payload only) |
+| `harness` | the harness names ([Harness input spellings](#the-harness-rename-feature-harness-oats-0270)) | |
+| `package-souls` | package soul rows, `qualifiedName`, `packages[].souls` | |
+| `triggers` | `oats trigger …` | `triggerApi: 1` (payload only) |
+| `automations` | workspace triggers and schedules; `oats automations refresh` | `automationsApi: 1` |
+| `desktop-facts` | the facts under [Desktop facts](#desktop-facts-feature-desktop-facts-oats-0290) | |
 
-The probe's `soulsApi` follows the inspect soul rows. The `oats souls --json`
-document keeps its own `soulsApi: 1`, because its shape did not change (see
-[`oats souls`](#oats-capabilities---dir---json-capabilitiesapi-1-oats-souls---dir---json-soulsapi-1)).
+Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
+`workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
+`soulsApi: 1`, `teamsApi: 1`, `soulTeamsApi: 1`, `triggerApi: 1`.
 
-**The subject is an instance or a soul, never a scope.** Pass `--home <abs>`
-or `--soul <name>`. A workspace deployment with neither is `E_BAD_ARGS`. An
-`oats-local.yaml` that exists but cannot be read is reported with its own
-error code, never answered from the classic chain. For
-inspect, the message points to `oats souls` and `oats capabilities`, the
-scope-wide lists.
-- `--home` selects the instance, from its `instance.json` and the module copies
-  under `<home>/.oats/modules/`. Everything is as spawned.
-- `--soul` selects the soul, resolved exactly as a spawn of it would be:
-  discovery, then soul `capabilities:` plus workspace defaults, then the lock.
-- A v2 home lives at `<deployment>/agents/<soul>/instances/<name>`, and its
-  deployment is derived from that path. `<deployment>/oats-local.yaml` must
-  exist exactly there (never found by walking up), otherwise
-  `E_HOME_MISMATCH`. A v2 spawn ignores an ambient `PI_AGENTS_ROOT` /
-  `OATS_ROOT`, so its homes always have this layout.
-- `--dir`, if given with `--home`, must be that home's deployment
-  (`E_HOME_MISMATCH`). `--agents-root`, if given, must be
-  `<deployment>/agents` (`E_HOME_MISMATCH` with `--home`, `E_SOUL_UNKNOWN`
-  with `--soul`).
+**Gate on the probe, never by trying.** An older kernel can ignore an unknown
+flag and act: without `lifecycle-plans`, `retire --plan` retires.
 
-**Gone from every payload:** `scope` (`context`, `chain`, `team`,
-`agentsRoots`), config `levels`, `activation {declaredAt, target, level,
-source}`, `currentConfig`, `snapshot.drift`, `health {trusted, approved,
-locked, installedIntegrity}`, soul `provenance`/`readiness`, and the scope's
-portable `sources`. A capability's origin is its module's `from` (member
-commit, or package version + commit + integrity). Its settings are the merged
-payload the spawn recorded for a home, or the resolution computes for a soul.
+## The envelope and dispatch errors
 
-### `oats inspect (--home <abs> | --soul <name> [--dir <d>]) --json` → `operationsApi: 2`
+Every `--json` command except those below prints exactly one JSON object on
+stdout (progress goes to stderr):
 
 ```json
-{"operationsApi":2,"kernel":"0.26.0",
- "subject":{"kind":"instance","instance":"release-manager-x","home":"/w/agents/release-manager/instances/release-manager-x","soul":"release-manager"},
- "workspace":{"key":"github.com/northwind/agents","name":null,"deployment":"/w","commit":"461b9c24…","standalone":false},
- "souls":[{"soulsApi":2,"name":"release-manager","repoKey":"github.com/northwind/agents","commit":"461b9c24…","team":"engineering",
-   "kind":null,"path":null,"description":"Cuts, verifies and announces platform releases.","work":"worktree","harness":null,"model":null,
-   "declarations":{"requires":null,"defaults":null,"knowledge":{"owns":"release-manager","reads":["platform-engineer"]},"teams":null,"resources":null,"children":null,
-                   "capabilities":{"nw-release-tooling":{"from":"here"},"nw-deploy":{"from":"package"}}},
-   "declarationProblems":[],
-   "instructions":{"file":"/w/agents/release-manager/souls/461b9c24929c/AGENTS.md","text":"# release-manager\n…","truncated":false}}],
- "layers":{"knowledge":{"id":"oats.okf","from":"workspace"},"messaging":{"id":null,"from":null},"tasks":{"id":null,"from":null}},
- "capabilities":[
-   {"id":"nw-house-style","version":"0.0.0-workspace","layer":null,"command":null,
-    "from":{"kind":"member","repoKey":"github.com/northwind/agents","commit":"461b9c24…"},
-    "dir":"/w/agents/release-manager/instances/release-manager-x/.oats/modules/nw-house-style","settings":{},"declares":[],"compatibility":{"ok":true,"range":">=0.25.0","kernel":"0.26.0"},"missingRequires":[],"operations":[]},
-   {"id":"oats.okf","version":"2.1.3","layer":"knowledge","command":"okf",
-    "from":{"kind":"package","package":"oats.okf","version":"2.1.3","commit":"71f53649…","integrity":"sha256-5019…","repoKey":"github.com/awebai/oats-okf"},
-    "dir":"/w/agents/release-manager/instances/release-manager-x/.oats/modules/oats.okf",
-    "settings":{"owns":"release-manager","reads":["platform-engineer"],"state-dir":"/srv/okf"},"declares":["bindings-file","git-timeout","harvest-model","harvest-runtime","state-dir"],"compatibility":{"ok":true,"range":">=0.24.4","kernel":"0.26.0"},"missingRequires":[],
-    "operations":[{"name":"inspect","kind":"view","command":"inspect","context":"home","description":"…","args":[],"argv":["okf","inspect"],"available":true,"reason":null}]}],
- "knowledge":{"provider":"oats.okf","version":"2.1.3","operations":[{"name":"inspect","kind":"view","available":true,"reason":null}]},
- "instance":{"home":"/w/agents/release-manager/instances/release-manager-x","instance":"release-manager-x","agent":"release-manager",
-   "harness":"pi","model":null,"yolo":null,"launched":false,"createdAt":"<iso>","resolution":"7217670b…",
-   "soulDir":"/w/agents/release-manager/souls/461b9c24929c",
-   "instructions":{"file":"/w/agents/release-manager/instances/release-manager-x/AGENTS.md","text":"…","truncated":false,
-                   "sources":[{"source":"kernel:instance-boundary","file":"…"},{"source":"capability:oats.okf","file":"…/.oats/modules/oats.okf/injects/okf.md"}]}},
- "identity":null,"problems":[]}
+{"schemaVersion":1,"ok":true,"result":{}}
 ```
 
-- `subject` is `{kind:"instance", instance, home, soul}` for `--home` (the
-  `home` as you passed it) or `{kind:"soul", soul, repoKey, commit, team}` for
-  `--soul`.
-- `workspace.deployment` is canonical (realpath). `workspace.name` is
-  observed, so it is `null` on `inspect --home`: that command never contacts
-  the remotes, and `instance.json` records the workspace `key`, not its name.
-  Identify the workspace by `key`.
-- `souls` holds exactly the subject's soul. For a home, it is read from the
-  recorded `soulDir` (the per-commit copy the instance incarnates), with
-  `path: null`. For a soul, it is the member's current definition, with
-  `path` inside the member repository. `kind` is `member` or `external`.
-  It is observed from discovery, so it is `null` on `inspect --home`
-  (readiness `--home` observes it).
-  `declarations` gains `capabilities` (the soul's own `capabilities:`).
-- `layers.<layer>` is `{ id, from }`: the capability filling the slot
-  (`null` when empty) and where it came from (feature `layers-from`):
-  `"soul"` (the soul's own `capabilities:`), `"workspace"`
-  (`defaults.<slot>` or `defaults.capabilities`) or `"team:<label>"`
-  (`defaults.byTeam.<label>.capabilities`). `from` is `null` for an empty
-  slot. A soul answers from its resolution now. A home answers what its spawn
-  recorded, even after the workspace changes. A home spawned before
-  `layers-from` recorded nothing, so its `from` is `null`.
-- `capabilities[]` lists the subject's resolved modules, sorted by id:
-  - `dir` is the home's module copy, or `null` for a soul (nothing is
-    materialized to answer inspect).
-  - `settings` is the merged provider payload.
-  - `compatibility` is `{ ok, range, kernel }`: the manifest's
-    `compatibility.oats` (`null` when none) against the running kernel. A
-    soul's resolution refuses an incompatible module (`E_CAPABILITY_INCOMPATIBLE`),
-    so `ok: false` appears only for a home, together with a
-    `capability-incompatible` entry in `problems`.
-  - `declares` lists the setting keys the manifest declares (`settings.<key>`),
-    sorted; names only, never descriptions or defaults; `[]` when it declares
-    none. Gate on feature `settings-declared` (e.g. offer a Teams choice only
-    when the messaging module declares `join`).
-  - `missingRequires` lists the manifest `requires` commands absent from PATH.
-  - `operations[].available` is `false` with a `reason` when it cannot run
-    here: a `context: "home"` operation for a soul subject says `needs a
-    running home (--home)`.
-- `capabilities[].composedFrom` and `capabilitiesOff[]` (feature
-  `desktop-facts`): see [Desktop facts](#desktop-facts-feature-desktop-facts-oats-0290).
-- `instance` is `null` for a soul. For a home, `instructions.sources` names
-  each composed inject in order.
-- A soul whose resolution is refused (for example, a package the lock does
-  not provide) is an error for inspect (`E_PACKAGE_MISSING`,
-  `E_PACKAGE_INTEGRITY`, `E_CAPABILITY_MISSING`, `E_LOCK_SCHEMA`). Readiness
-  reports the same condition as a failing item.
+```json
+{"schemaVersion":1,"ok":false,"error":{"code":"E_BAD_ARGS","message":"--home needs an absolute instance home"}}
+```
 
-### `oats readiness (--home <abs> | --soul <name> [--dir <d>]) [--policy] --json` → `readinessApi: 2`
+- Success exits 0, failure nonzero. `error.details` is present only when the
+  command has details.
+- Either envelope may carry `warnings: [ … ]`, only when there is something
+  to say. The one warning is `deprecated-runtime-name`
+  ([Harness input spellings](#the-harness-rename-feature-harness-oats-0270));
+  in text mode it is an `oats: warning: …` line on stderr.
+- `<kernel command> --help --json` answers `{command, usage}` and runs
+  nothing.
+
+| Not an envelope | stdout |
+|---|---|
+| `oats version --json` | the probe |
+| `oats status --json` | the [roster document](#the-roster-oats-status---json) |
+| a first `oats retire --json`, and a deferred self-retire | the raw [retire receipt](#retire) |
+
+<a id="flags"></a>
+### Flag syntax
+
+A kernel command reads `--flag=value` exactly as `--flag value` (the value is
+everything after the first `=`). `E_BAD_ARGS` for an empty `--flag=`, a value
+on a switch (`--yolo=false` never turns yolo on) and a value that is itself an
+option (`--model=--yolo`). A capability command's own flags are forwarded as
+typed; the kernel reads only its dispatch flag (`--soul`). There is no feature
+string for this: to support older kernels, use the spaced form.
+
+### Dispatch errors
+
+| Code | When |
+|---|---|
+| `E_UNKNOWN_COMMAND` | No kernel command or capability namespace matches; an unknown capability subcommand; a [removed verb](#removed-verbs-and-flags) (`details: {removed, replacement}`) |
+| `E_CAPABILITY_INACTIVE` | In a home: the namespace's module is not one of the home's recorded capabilities |
+| `E_CAPABILITY_BLOCKED` | In a home: the manifest claiming the namespace is not a workspace module copy of that home. There is no package trust gate |
+| `E_CAPABILITY_BROKEN` | The manifest command is not a non-empty string, its script is missing or outside the module, or the dispatcher failed |
+| `E_DUPLICATE_NAMESPACE` | Two modules claim the namespace |
+| `E_CONFIG_BROKEN` | The home's `instance.json` or the deployment's configuration cannot be read |
+| `E_LOCAL_MISSING` | No `oats-local.yaml` in reach of `--dir` or the working directory |
+| `E_UNSUPPORTED_MODE` | A home or selector the kernel no longer runs (below) |
+
+Capability dispatch inside a home uses the home's module copies; from a
+deployment it resolves the module as `oats spawn --soul <x>` would and runs it
+with the soul's merged payload. `oats <namespace> --help --json` answers
+`{capability, namespace, command, commands, description, help}`.
+
+`E_UNSUPPORTED_MODE` covers a home with no recorded `modules` (re-spawn it), a
+captured home (`details: {home, captured: true}`), the selectors
+`--deployment`, `--resolution` and `--artifact-set` (`details.selector`), and
+an inherited `OATS_DEPLOYMENT` or `OATS_RESOLUTION` (`details.inherited`).
+`oats version` and `oats retire` still work. `oats status --json` names such
+homes in `problems[]`: `legacy-captured-home {code, instances, homes,
+message}` and `legacy-local-agents {code, dirs, instances, message}`.
+
+<a id="inspect-readiness-and-operation-run-on-the-workspace-model-operationsapi-2-soulsapi-2-readinessapi-2-oats-0260"></a>
+## Inspect, readiness and operation run
+
+These answer about one **subject**: an instance home (`--home <abs>`) or a
+soul of a deployment (`--soul <name> [--dir <d>]`).
+
+| Command | Integer |
+|---|---|
+| `oats inspect --json` | `operationsApi: 2`; each `souls[]` row `soulsApi: 2` |
+| `oats readiness --json` | `readinessApi: 2` |
+| `oats operation run --json` | `operationsApi: 2` |
+
+**Addressing.**
+- `--home` reads the home's `instance.json` and its module copies under
+  `<home>/.oats/modules/`. The home must be
+  `<deployment>/agents/<soul>/instances/<name>` with
+  `<deployment>/oats-local.yaml` exactly there, else `E_HOME_MISMATCH
+  {home, expected}`. A `--dir`, `--agents-root` or `--soul` that disagrees
+  with it is `E_HOME_MISMATCH`. An unreadable home is `E_SESSION_UNKNOWN`; a
+  home without `modules`, or a captured one, is `E_UNSUPPORTED_MODE`.
+- `--soul` resolves the soul exactly as a spawn would (discovery, the soul's
+  `capabilities:` plus workspace defaults, the lock). No `oats-local.yaml` is
+  `E_LOCAL_MISSING`; an `--agents-root` other than `<deployment>/agents` is
+  `E_SOUL_UNKNOWN`.
+- Neither is `E_BAD_ARGS`. `PI_AGENTS_ROOT` is ignored.
+
+A module's origin (`from`) is `{kind: "member", repoKey, commit}` or `{kind:
+"package", package, version, commit, integrity, repoKey}`.
+
+<a id="oats-inspect---home-----soul----dir----json--operationsapi-2"></a>
+### `oats inspect`
+
+```text
+oats inspect (--home <abs> | --soul <name> [--dir <d>]) --json
+```
+
+An instance subject, abridged:
+
+```json
+{"operationsApi":2,"kernel":"0.30.0",
+ "subject":{"kind":"instance","instance":"rm-1","home":"/w/agents/rm/instances/rm-1","soul":"rm"},
+ "workspace":{"key":"github.com/nw/agents","name":"northwind","deployment":"/w","commit":"66566512…","standalone":false},
+ "souls":[{"soulsApi":2,"name":"rm","repoKey":"github.com/nw/agents","commit":"66566512…","kind":null,"path":null,
+   "description":"Cuts releases.","work":"worktree","harness":null,"model":null,
+   "declarations":{"requires":null,"defaults":null,"knowledge":{"owns":"rm","reads":[]},"resources":null,"children":null,"capabilities":{"oats.okf":{"from":"package"}}},
+   "declarationProblems":[],"instructions":{"file":"/w/agents/rm/souls/66566512168e/AGENTS.md","text":"# rm\n","truncated":false}}],
+ "layers":{"knowledge":{"id":"oats.okf","from":"workspace"},"messaging":{"id":null,"from":null},"tasks":{"id":null,"from":null}},
+ "capabilities":[{"id":"oats.okf","version":"2.1.3","layer":"knowledge","command":"okf",
+   "from":{"kind":"package","package":"oats.okf","version":"2.1.3","commit":"ab897841…","integrity":"sha256-bada35…","repoKey":"github.com/awebai/oats-okf"},
+   "composedFrom":null,"dir":"/w/agents/rm/instances/rm-1/.oats/modules/oats.okf","settings":{"owns":"rm","reads":[]},
+   "declares":["state-dir"],"compatibility":{"ok":true,"range":">=0.24.0","kernel":"0.30.0"},"missingRequires":[],
+   "operations":[{"name":"status","kind":"view","command":"status","context":"home","description":"Knowledge status","args":[],
+                  "argv":["okf","status"],"available":true,"reason":null}]}],
+ "capabilitiesOff":[],
+ "teams":[{"label":"eng","team":null,"default":true,"from":"shared"},{"label":"mine","team":"mine:ana.aweb.ai","default":false,"from":"local"}],
+ "defaultTeam":{"label":"eng","team":null,"from":"soul"},"teamsSource":"live",
+ "recordedDefaultTeam":{"label":"eng","team":null,"from":"soul"},
+ "knowledge":{"provider":"oats.okf","version":"2.1.3","operations":[{"name":"status","kind":"view","available":true,"reason":null}]},
+ "instance":{"home":"/w/agents/rm/instances/rm-1","instance":"rm-1","agent":"rm","harness":"pi","model":null,"yolo":null,"launched":false,
+   "createdAt":"2026-09-28T10:08:01.281Z","resolution":"abacbdb5a7975098d77007c8","soulDir":"/w/agents/rm/souls/66566512168e",
+   "instructions":{"file":"/w/agents/rm/instances/rm-1/AGENTS.md","text":"…","truncated":false,
+                   "sources":[{"source":"capability:oats.okf","file":"/w/agents/rm/instances/rm-1/.oats/modules/oats.okf/injects/okf.md"}]}},
+ "identity":null,
+ "problems":[]}
+```
+
+| Key | Meaning |
+|---|---|
+| `subject` | `{kind: "instance", instance, home, soul}` or `{kind: "soul", soul, repoKey, commit}` |
+| `workspace` | `{key, name, deployment, commit, standalone}`; for a home, `name` is the recorded name (`null` if the spawn predates it) |
+| `souls` | exactly the subject's soul |
+| `layers` | `{knowledge, messaging, tasks}`, each `{id, from}` |
+| `capabilities`, `capabilitiesOff` | the resolved modules (by id) and the ones the soul turned off |
+| `teams`, `defaultTeam`, `teamsSource`, `recordedDefaultTeam` | [Where teams appear](#where-teams-appear); `recordedDefaultTeam` is home only |
+| `knowledge` | `{provider, version, operations: [{name, kind, available, reason}]}` for the knowledge slot (`null`s and `[]` when empty) |
+| `instance` | `null` for a soul; the home's facts above. `instructions.sources` lists each composed inject in order |
+| `identity` | home only (absent for a soul): the served identity a messaging provider recorded, `{…, provider}`, or `null` |
+| `problems` | below |
+
+**Soul row** (`soulsApi: 2`). For a home it is read from the recorded
+`soulDir` (`path` and `kind` are `null`); for a soul it is the member's current
+definition (`kind` is `member` or `external`, `path` inside the member).
+`declarations` is `{requires, defaults, knowledge, resources, children,
+capabilities}`, each the soul.yaml section as written or `null`.
+`instructions` is `{file, text, truncated}` of the soul's `AGENTS.md`, or
+`null` before a spawn has copied the soul. `declarationProblems` holds
+`soul-declarations-unreadable` when soul.yaml does not parse.
+
+**Layers.** `id` is the capability filling the slot or `null`. `from`
+(feature `layers-from`) is `"soul"` or `"workspace"`, `null` for an empty slot
+or a home spawned before it was recorded.
+
+**Capability rows.**
+- `dir` is the home's module copy, `null` for a soul.
+- `composedFrom` (feature `desktop-facts`): `"workspace"` or `"soul"` for a
+  soul subject; `null` for a home.
+- `settings` is the merged provider payload; `declares` (feature
+  `settings-declared`) the manifest's setting keys, sorted.
+- `compatibility` is `{ok, range, kernel}` (`range` is the manifest's
+  `compatibility.oats` or `null`). A soul's resolution refuses an incompatible
+  module, so `ok: false` appears only for a home.
+- `missingRequires`: `{command, why, install}` for each manifest `requires`
+  command absent from `PATH`.
+- `operations[]`: the declared operation (`name`, `kind`, `command`,
+  `context`, `description`, `args`) plus `argv`, `available` and `reason`
+  (for example a missing command, or a `context: "home"` operation on a soul).
+
+**`capabilitiesOff[]`** (feature `desktop-facts`): `{id, off: true, from:
+"soul", reason, slot?, overrides}`, sorted by id. `reason` is `"off"` (the
+soul wrote `<id>: off`) or `"slot-none"` (the soul wrote `<slot>: none`,
+emptying the slot the workspace filled with `<id>`). `overrides` is the layer
+whose default was turned off (`"workspace"`). `[]` for a home.
+
+**Problems:** `soul-declarations-unreadable`, `module-manifest-invalid`,
+`module-missing {capability}`, `capability-incompatible {capability, range,
+kernel}`, and for a home whose discovery failed, that error's `{code,
+message}`.
+
+A soul whose resolution is refused is an inspect error with the resolver's
+code and details (`E_PACKAGE_MISSING`, `E_PACKAGE_INTEGRITY`,
+`E_CAPABILITY_MISSING`, `E_LOCK_SCHEMA`, `E_REQUIREMENT_INACTIVE`,
+`E_TEAM_UNKNOWN`, `E_TEAM_NOT_ELIGIBLE`); readiness reports the same condition
+as an item. Soul lookup errors are those of [spawn](#spawn-errors).
+
+<a id="oats-readiness---home-----soul----dir----policy---json--readinessapi-2"></a>
+### `oats readiness`
+
+```text
+oats readiness (--home <abs> | --soul <name> [--dir <d>]) [--policy] --json
+```
 
 ```json
 {"readinessApi":2,
- "subject":{"kind":"soul","soul":"release-manager","repoKey":"github.com/northwind/agents","commit":"461b9c24…","team":"engineering"},
- "selector":{"kind":"soul","soul":"release-manager","agentsRoot":null,"dir":"/w"},"at":"<iso>",
+ "subject":{"kind":"soul","soul":"rm","repoKey":"github.com/nw/agents","commit":"66566512…"},
+ "selector":{"kind":"soul","soul":"rm","agentsRoot":null,"dir":"/w"},
+ "at":"2026-09-28T10:07:57.549Z",
  "checks":{
-  "installed":{"status":"pass","items":[
-    {"subject":"oats.okf","status":"pass","required":true,"reason":null,"producer":"workspace resolution",
-     "evidence":{"from":{"kind":"package","package":"oats.okf","version":"2.1.3","commit":"71f53649…","integrity":"sha256-5019…"}},"remedy":null,"capability":{"id":"oats.okf"}}]},
+  "installed":{"status":"pass","items":[{"subject":"oats.okf","status":"pass","required":true,"reason":null,"producer":"workspace resolution",
+    "evidence":{"from":{"kind":"package","package":"oats.okf","version":"2.1.3","commit":"ab897841…","integrity":"sha256-bada35…","repoKey":"github.com/awebai/oats-okf"}},
+    "remedy":null,"capability":{"id":"oats.okf"}}]},
   "configured":{"status":"not-applicable","items":[]},
-  "member":{"status":"pass","items":[
-    {"subject":"member github.com/northwind/agents","status":"pass","required":true,"reason":null,"producer":"workspace discovery",
-     "evidence":{"repoKey":"github.com/northwind/agents","workspace":"github.com/northwind/agents","commit":"461b9c24…"},"remedy":null}]},
-  "providers":{"status":"fail","items":[
-    {"subject":"oats.okf","status":"fail","required":true,"reason":"setting state-dir is required (absolute host path)","producer":"provider binding check",
-     "evidence":null,"remedy":null,"capability":{"id":"oats.okf"},
-     "result":{"status":"needs-configuration","problems":[{"code":"needs-configuration","message":"setting state-dir is required (absolute host path)"}],"warnings":[]}}]}},
+  "member":{"status":"pass","items":[{"subject":"member github.com/nw/agents","status":"pass","required":true,"reason":null,
+    "producer":"workspace discovery","evidence":{"repoKey":"github.com/nw/agents","workspace":"github.com/nw/agents","commit":"66566512…"},"remedy":null}]},
+  "providers":{"status":"fail","items":[{"subject":"oats.okf","status":"fail","required":true,"reason":"setting state-dir is required",
+    "producer":"provider binding check","evidence":null,"remedy":null,
+    "result":{"status":"needs-configuration","problems":[{"code":"needs-configuration","message":"setting state-dir is required"}],"warnings":[]},
+    "capability":{"id":"oats.okf"}}]}},
  "summary":{"ready":false,"required":3,"pass":2,"fail":1,"unknown":0,
    "byCapability":[{"capability":{"id":"oats.okf"},"checks":{"installed":"pass","configured":"not-applicable","member":"not-applicable","providers":"fail"},"ownReady":false,"ready":false}],
    "subjectBlockers":[]},
- "notes":["…"]}
+ "notes":["ready means every REQUIRED check passes; it is never inferred from an empty set"]}
 ```
 
-For `--home`, `subject` is `{kind:"instance", instance, home, soul}`, and
-`selector` is `{kind:"home", home, soul, agentsRoot}`. The selector echoes
-your arguments byte-exact, as before. It is now a top-level field, not
-`subject.selector`.
+- `selector` echoes the arguments byte-exact: `{kind: "soul", soul,
+  agentsRoot, dir}` or `{kind: "home", home, soul, agentsRoot}`.
+- Four checks, each `{status, items}`. An item is `{subject, status,
+  required, reason, producer, evidence, remedy}`, plus `capability: {id}` on a
+  per-capability item and the keys named below. Statuses are `pass | fail |
+  unknown | not-applicable`.
+- A check's status rolls up its required items (any `fail` → `fail`, else any
+  `unknown` → `unknown`, else `pass`; `not-applicable` with none required).
+- `summary.ready` is true when every required item passes or is
+  not-applicable and at least one required item exists; the counts are over
+  required items. `byCapability[]` is `{capability, checks, ownReady,
+  ready}` (`ready` also needs no subject blocker). `subjectBlockers[]` is
+  `{check, subject, status}` for each failing required item not about a
+  capability. `notes` is prose.
 
-The four checks are `installed | configured | member | providers`, each
-`{status, items}` with the item fields as before (`subject, status, required,
-reason, producer, evidence, remedy`, plus `capability {id}` on
-per-capability items). Item and check statuses are `pass | fail | unknown |
-not-applicable`. **`summary.ready`** means every required item passes or is
-not-applicable, and at least one required item exists. `byCapability` and
-`subjectBlockers` keep their 0.24.9 meaning over the four new checks.
+**`installed`**, one item per module with `evidence: {from}`. `--home`
+(producer `instance modules`): passes when the home's copy holds `oats.json`
+(remedy on failure: spawn a new instance). `--soul` (producer `workspace
+resolution`): each resolved module. A resolution refusal is one failing item about the soul
+with `code`, the message as `reason`, the details as `evidence` and a remedy
+naming `oats sync`; team refusals go under `configured` instead.
 
-- **`installed`**:
-  - For `--home` (producer `instance modules`): each recorded module, `pass`
-    when its copy under `<home>/.oats/modules/<id>/` holds its `oats.json`.
-    A missing copy fails, with remedy "spawn a new instance".
-  - For `--soul` (producer `workspace resolution`): each resolved module, with
-    its `from` as evidence.
-  - A resolution refusal is one failing item carrying `code` (`E_PACKAGE_MISSING`,
-    `E_PACKAGE_INTEGRITY`, `E_CAPABILITY_MISSING`, `E_LOCK_SCHEMA` or
-    `E_REQUIREMENT_INACTIVE`), the kernel's message as `reason`, its details as
-    `evidence`, and `remedy: "oats sync (…)"`. That covers a soul whose
-    packages are not locked, or whose lock no longer matches. The item's
-    `subject` is the soul; it lands in `summary.subjectBlockers`.
-- **`configured`** (producer `capability manifest`): each module's manifest
-  `requires` command (`evidence.command`), `pass` on PATH and `fail`
-  otherwise, with the manifest's `install` hint as the remedy. It is `not-applicable` when nothing declares a
-  requirement. Settings problems are the provider's to say, in `providers`.
-- **`member`** (producer `workspace discovery`): the soul's member
-  repository is confirmed in the workspace. It is the host's `members:` with
-  the member's `oats-membership.yaml` backlink, as `oats workspace status`
-  reports it. The kernel never reads `oats.yaml` here.
-  - `fail` when the backlink is not confirmed; the remedy names
-    `oats-membership.yaml`.
-  - `unknown` when discovery could not be read.
-  - `not-applicable` (`required: false`) for an external soul (it has no
-    member backlink) and on a standalone view (decision 10, an allowed mode:
-    membership is declared there, never confirmed). The reason starts with
-    `standalone view (explicit | unreadable-host)`, and
-    `evidence.standaloneReason` carries the reason code. A standalone soul can
-    therefore read Ready.
-  - Never login, never team registration.
-- **`providers`** (producer `provider binding check`): for each module whose
-  manifest declares `binding`, the kernel runs the provider's own check
-  (`binding.check`). It relays **the provider's answer verbatim** as
-  `item.result: {status, problems: [{code, message}], warnings: [{code,
-  message}]}`. The status maps to the item:
+**`configured`.** Producer `capability manifest`: each manifest `requires`
+command, `evidence: {command}`, the manifest's `install` hint as remedy.
+Producer `team model`: the soul's [team readiness items](#team-readiness-items).
 
-  | `result.status` | item `status` |
-  |---|---|
-  | `ready` | `pass` |
-  | `needs-configuration` | `fail` |
-  | `authorization-required` | `fail` |
-  | `unavailable` | `unknown` |
+**`member`** (producer `workspace discovery`): the soul's repository is a
+confirmed member (`evidence: {repoKey, workspace, commit}`); `fail` when not
+(the remedy names `oats-membership.yaml`); `unknown` when the workspace could
+not be read. External souls and standalone views are `not-applicable`,
+`required: false` (a standalone item carries `evidence.standaloneReason`).
 
-  The reason is the first problem's message (`null` on pass).
-  `authorization-required` and `unavailable` were added in 0.26.0 (additive):
-  treat an unrecognized status as `unknown` and show `result` as sent.
-  - `warnings` is always present (`[]` when the provider sends none). It
-    **never changes the status** and is not counted in `summary`. A ready
-    binding can still say, for example, that end-to-end encryption is off:
-    show it next to the pass. A `warnings` that is not an array of `{code,
-    message}` strings makes the whole answer `unknown`, the same as a
-    malformed `problems`.
-  - A provider that cannot answer is `unknown`, with `item.problems` carrying
-    its error `{code, message}` and `result: null`. That covers:
-    - a refusal (`ok:false`, whose code is relayed);
-    - an invalid answer (`provider-unavailable`, see the wire below);
-    - a timeout;
-    - a module tree that cannot be made available.
-  - **One time budget per readiness read**: 60 s for all provider checks
-    together, and at most 30 s for each. Checks the budget does not reach are
-    not run; they are `unknown` with code `time-budget-exhausted`.
-  - For `--home` the check runs from the home's module copy, as the home's
-    hooks do. For `--soul` it runs from the module in the deployment's module
-    store (the tree `oats <ns> …` dispatch uses). A store tree is used only
-    while its content digest matches the digest verified when it was fetched
-    at the locked commit. A drifted tree is fetched again, and a fetch that
-    does not verify is `E_PACKAGE_INTEGRITY` (the item is `unknown` with that
-    code).
-  - A module without `binding` has no item; the check is `not-applicable`
-    when there are none.
-  - This check reads the provider; it does not bind. A spawn's fail-closed
-    hooks are unchanged.
-- **Removed:** `trusted` and its `signature` block (declaring a package in
-  `packages:` is the trust decision). `--verify-signatures` answers
-  `E_BAD_ARGS`. `enrolled` is now `member`.
+**`providers`** (producer `provider binding check`): for each module whose
+manifest declares `binding`, the kernel runs its `binding.check` and relays
+the answer as `item.result: {status, problems, warnings}`. The request,
+environment and validation are in
+[capabilities.md](capabilities.md#readiness-check-bindingcheck).
 
-`--policy` is **kept**: it means the same without the chain. With `--home` it
-is the instance's recorded, enforced policy (`instance.json` `policy`, plus
-the recorded work mode). With `--soul` it is the soul's declaration
-(`children.spawn`, `work`), `enforced: false`. The shape is unchanged:
+| `result.status` | item `status` |
+|---|---|
+| `ready` | `pass` |
+| `needs-configuration`, `authorization-required` | `fail` |
+| `unavailable` | `unknown` |
+
+- `reason` is the first problem's message. `warnings` is always present and
+  never changes the status.
+- A provider that cannot answer is `unknown` with `result: null` and
+  `item.problems: [{code, message}]`: its refusal code,
+  `provider-unavailable`, `resource-not-found` (the check executable is not a
+  regular file in the module, or a member module checked from `--soul`),
+  `provider-not-qualified`, or a module-store error.
+- One budget per read: 60 s total, 30 s per check; an unreached check is
+  `unknown` with `time-budget-exhausted`.
+
+**`--policy`** adds `policy` and a note:
 
 ```json
-"policy":{"childSpawns":{"allowed":true,"enforced":true,"origin":{"kind":"default","detail":"no declaration: children allowed"}},
-          "worktrees":{"allowed":false,"mode":"directory","enforced":true,"origin":{"kind":"work-mode","detail":"work: directory"}}}
+{"childSpawns":{"allowed":true,"enforced":true,"origin":{"kind":"default","detail":"no recorded policy: children allowed (pre-0.24.8 instance)"}},
+ "worktrees":{"allowed":false,"mode":"directory","enforced":true,"origin":{"kind":"work-mode","detail":"work: directory"}}}
 ```
 
-**The provider check wire (the request `binding.check` receives).** The
-request is one JSON line on stdin, and the provider answers one envelope line
-on stdout:
+With `--home` it is the recorded, enforced policy; with `--soul`, the soul's
+declaration (`children.spawn`, `work`) with `enforced: false`. The spawn route
+enforces `childSpawns`: a child spawn under a parent whose policy is off is
+`E_CHILD_SPAWNS_DISABLED {parent, policy}`, before anything is created.
 
-```json
-{"schemaVersion":1,"phase":"check","slot":"knowledge","capability":"oats.okf","settings":{"…":"the merged payload"},
- "input":{"context":{"kind":"workspace","workspace":"<workspace key>","deployment":"/w","soul":"release-manager","team":"engineering",
-                     "instance":"release-manager-x","home":"/w/agents/…/release-manager-x"},
-          "action":{"kind":"readiness"}}}
+### `oats operation run`
+
+```text
+oats operation run <layer>:<name> (--home <abs> | --soul <name> [--dir <d>]) [--arg k=v …] --json
 ```
 
 ```json
-{"schemaVersion":1,"phase":"check","slot":"knowledge","capability":"oats.okf","ok":true,
- "result":{"status":"ready","problems":[],"warnings":[]}}
+{"operationsApi":2,"operation":"knowledge:status","capability":"oats.okf","version":"2.1.3","argv":["okf","status"],
+ "cwd":"/w/agents/rm/instances/rm-1","target":{"home":"/w/agents/rm/instances/rm-1","instance":"rm-1"},
+ "result":{"documents":[{"label":"Working state","kind":"markdown","text":"…"}]}}
 ```
 
-The environment is the provider's module environment:
-- `OATS_CAPABILITY`, `OATS_SETTINGS`, `OATS_SETTINGS_ORIGINS` (0.29.0: JSON
-  pointer → `{ kind, at }`), `OATS_CLI_BIN` and `OATS_WORKSPACE`;
-- the team variables (`OATS_TEAM_*`, `OATS_WORKSPACE_NAME`/`_KEY`);
-- `OATS_AGENT` (the soul), and `OATS_SOUL` when the soul directory is known;
-- for a home, `OATS_INSTANCE` and `OATS_INSTANCE_HOME`.
-
-For a home, `OATS_WORKSPACE_NAME` is `""` until spawn records the workspace
-name (planned).
-
-Ambient `OATS_*`/`PI_*` is removed. For a soul, `instance` and `home` are
-`null`. The answer is decoded by the binding wire's response rules:
-- the process exits 0;
-- stdout is exactly one JSON document within the wire limits;
-- the envelope has exactly `schemaVersion`, `phase`, `slot`, `capability`,
-  `ok` and `result` (or `error`), echoing the request's first four;
-- `result` has `status`, `problems` and optionally `warnings`, and nothing else;
-- `ready` carries no problems;
-- problems and warnings are `{code, message}` strings. Their codes are the
-  provider's own and are not checked against `binding.reasons`.
-
-Anything else is `unknown` (`provider-unavailable`). The check executable must
-resolve (realpath) inside its module directory and be a regular file; otherwise
-the item is `unknown` (`resource-not-found`). The request carries no
-`binding`. A provider whose check
-still requires one answers `invalid-binding`, and readiness reports it as
-`unknown`.
-
-### `oats operation run <layer>:<name> (--home <abs> | --soul <name> [--dir <d>]) [--arg k=v …] --json` → `operationsApi: 2`
-
-```json
-{"operationsApi":2,"operation":"knowledge:inspect","capability":"oats.okf","version":"2.1.3","argv":["okf","inspect"],
- "cwd":"/w/agents/release-manager/instances/release-manager-x",
- "target":{"home":"/w/agents/release-manager/instances/release-manager-x","instance":"release-manager-x"},
- "result":{"documents":[{"label":"Working state (STATE.md)","kind":"markdown","text":"…"}]}}
-```
-
-The provider is the module that fills `<layer>`:
-- for `--home`, the home's module copy, with its recorded settings;
-- for `--soul`, the resolved module, materialized into the deployment's module
-  store if needed.
-
-The rest of the contract is unchanged ([operations contract](design/operations-contract.md)):
-- errors: `E_OPERATION_UNKNOWN`, `E_OPERATION_UNAVAILABLE` (also a
-  `context: "home"` operation without `--home`), `E_CAPABILITY_REQUIRES`;
-- the receipt rules and the `E_OPERATION_TIMEOUT` / `E_OPERATION_RESULT`
-  unconfirmed outcomes.
-
-There is no `E_CAPABILITY_BLOCKED` (no trust gate). `cwd` is the home for a
-`context: "home"` operation, and the deployment otherwise.
-
-**Remote.** `--server` routes as before. The destination must advertise
-`operations` with `operationsApi` 1 or 2; a 0.26 CLI routes to either.
-Payload shapes are the destination kernel's.
-
-## Souls and sources (`oats inspect --json`, `soulsApi: 1`) — removed in 0.26.0
-
-The classic scope document (`souls[].provenance`, `souls[].readiness`, the
-scope's portable `sources`) was removed with the classic config chain.
-`oats inspect` answers only [`soulsApi: 2`](#oats-inspect---home---soul---dir---json-operationsapi-2)
-rows; the soul's declarations are in `oats souls --json`.
-
-## Instance Git state (`oats instance git|diff`, `instanceGitApi: 1`, OATS 0.24.7+)
-
-Read-only observation of one instance's **work tree**. Truth comes from the
-tree — the branch the tree is on, not the branch recorded at spawn (that is
-reported under `recorded` with a `drift` flag). Fixed-argv `git`, no shell.
-
-Address the instance qualified: `oats instance git <instance> --dir <scope>`
-resolves the name under the scope's agents roots (team roots included) and
-**refuses when several homes match** (`E_AMBIGUOUS_INSTANCE`, `details.candidates`);
-pass `--home <abs>` to pick one. Unknown → `E_SESSION_UNKNOWN`; retired or
-un-materialized tree → `E_NO_WORKTREE`.
-
-```json
-{"instanceGitApi":1,"instance":"dev-1","agent":"dev","home":"/abs/home","workMode":"worktree",
- "observation":{"revision":"<HEAD oid|unborn>","indexRevision":"<index tree oid>","at":"<iso>","worktree":"/abs/work","branch":"feat/y","detached":false,"unborn":false},
- "recorded":{"branch":"feat/x","repo":"/abs/repo","drift":true},
- "upstream":{"ref":"origin/feat/y","ahead":1,"behind":0},
- "base":{"ref":"origin/main","source":"origin/HEAD","mergeBase":"<oid>","ahead":2,"behind":0},
- "remote":{"name":"origin","url":"git@github.com:acme/one.git","host":"github.com","path":"acme/one","source":"branch-upstream|origin"},
- "summary":{"changed":1,"renamed":1,"copied":0,"unmerged":0,"untracked":1},
- "files":[{"id":"<24 hex>","kind":"renamed","xy":"R.","submodule":false,"score":"R100","path":"src/new.txt","origPath":"src/old.txt","additions":84,"deletions":3,"binary":false}],
- "notes":[]}
-```
-
-- `upstream` and `base` are **two separate comparisons**. No upstream →
-  `upstream: {ref:null, ahead:null, behind:null}` — unknown, **not 0/0**. `base`
-  is against the merge-base with the default branch (`origin/HEAD`, else a
-  well-known name; `source` says which); none found → all `null` plus a note.
-- Status is porcelain v2, NUL-delimited: renames/copies carry `origPath`;
-  paths with spaces/newlines are intact. `kind` ∈ changed | renamed | copied |
-  unmerged | untracked. Ignored files are not listed.
-- `files[].id` is **opaque**, minted under (`revision`, `indexRevision`). It is
-  the only way to ask for a diff.
-- `files[].additions`, `deletions` and `binary` (0.29.1, additive;
-  `instanceGitApi` stays 1) are each file's line counts.
-  - They come from one `git diff <revision> --numstat -z -M` per observation:
-    the working tree against the observed commit, **staged and unstaged
-    combined**. That is the baseline of the status letters and of
-    `oats instance diff`.
-  - An unborn tree counts against the empty tree. A rename counts on its new
-    `path`.
-  - A binary file is `additions: null, deletions: null, binary: true`. An
-    untracked file (no baseline; its contents are not read) and a submodule
-    are all `null`.
-  - If the count itself fails, every entry is `null` and `notes` says line
-    counts are unavailable. `null` means unknown, never zero.
-- `remote` (0.24.8+): the branch's configured remote (`source: branch-upstream`),
-  else `origin`, else `null` — never invented. `host`/`path` are **parsed** from
-  the URL (ssh/https forms; `.git` stripped) so an ADE can choose a forge backend
-  and a `owner/repo` **without running Git**; a local path has `host: null`. No
-  network, no forge knowledge in the kernel.
-
-`oats instance diff <instance> --file <id> --revision <rev> [--index-revision <idx>] --json`
-returns a bounded unified diff:
-
-```json
-{"instanceGitApi":1,"observation":{…},"file":{"id":"…","kind":"changed","xy":".M","path":"README.md","origPath":null},
- "against":"<captured revision oid>","binary":false,"bytes":2683,"truncated":false,"limit":262144,"patch":"diff --git …",
- "readOnly":{"helpers":"disabled","optionalLocks":"off","objectsWritten":0}}
-```
-
-- `against` is the **captured revision oid** for tracked changes (working tree
-  vs that exact commit, index included — never the moving `HEAD`) and `empty`
-  for untracked files. Binary → `binary: true`, empty patch. Over 256 KiB →
-  `truncated: true` at the byte limit.
-- **Read-only, helper-free, consistent across the read** (`readOnly` echoes
-  it): the observed tree may carry a hostile repo config, so external diff,
-  textconv, fsmonitor and hooks are disabled and the caller's Git environment
-  and global config are not inherited; `--no-optional-locks` means no index
-  refresh and no object is written (`ls-files --stage` hash, not `write-tree`).
-  After producing the patch the CLI re-checks HEAD, index and the file's own
-  content against the observation and refuses `E_STALE_OBSERVATION` if any
-  moved mid-read — the result is never internally inconsistent.
-- If HEAD or the index moved since the id was minted, or the id is not in the
-  current observation, the CLI **refuses** with `E_STALE_OBSERVATION` and
-  attaches the current `observation` in `error.details` — re-observe, never
-  render a diff against a tree that is not the one on screen. A path in
-  `--file` is `E_BAD_ARGS`.
-
-No forge (PR/checks/reviews) data here: forge connections are an ADE/workstation integration (P1 decision), read by the Desktop server through the forge's own CLI; the kernel only reports the instance's `remote` so the ADE can pick a backend.
-
-## Instance events (`oats instance events`, `eventsApi: 1` → **2**, OATS 0.24.8+) — K7
-
-Typed lifecycle events per instance, **written by the kernel action that made
-them true**, with the receipt it produced. Nothing is inferred from
-transcripts, TASK/STATE files or prose. Append-only, two logs: `<home>/.oats-events.jsonl`
-and `<workspace>/.agents/events/<agent>--<instance>.jsonl` (survives the
-home's removal, so a retired instance's `retired` event is still readable).
-
-`oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--dir <d>] --json`
-
-```json
-{"eventsApi":1,"instance":"dev-1","home":"/abs/home","count":7,"returned":7,"truncated":false,
- "events":[{"eventsApi":1,"at":"<iso>","instance":"dev-1","home":"/abs/home","producer":"kernel","kind":"spawned","data":{"agent":"dev","work":"worktree","branch":"agents/dev-1","harness":"claude","model":null,"parentInstance":null,"relation":null,"launched":true}},
-           {"…":"launched | restarted | stopped | stop-refused | retire-planned | worktree-retained | worktree-removed | branch-deleted | retired | child-spawn-refused"}],
- "lastEvent":{"kind":"stopped","at":"<iso>","producer":"kernel"},
- "waitingOnYou":null,
- "notes":["…"]}
-```
-
-- `kind` is a closed set (unknown kinds are refused at write). `producer` is
-  `kernel` for lifecycle facts; a capability may append its own events with
-  its id as producer (the write API is `appendEvent`, not the renderer).
-- **`waitingOnYou` is `null` unless a producer reported it** (`data.waitingOnYou:
-  true` with a `reason`). `null` means *unknown*, not "not waiting". Today no
-  kernel path claims it; the Active overview keeps rendering unknown until a
-  producer (a messaging or review capability) does.
-- Window is bounded (`--limit`, default 200; `truncated` says so). A torn line
-  appears as `kind: "unreadable"` rather than vanishing.
-
-### Events API 2 (`eventsApi: 2`, feature `instance-events-2`, OATS 0.24.12+) — K7b
-
-Gate a Desktop read on **both** `eventsApi === 2` and `"instance-events-2"` in
-`features[]`. API 1 is not a sufficient fence for a bounded read: its reader
-opened and read a source whole, followed symlinks, kept foreign rows and lost
-torn lines and cleared claims silently. API 2:
-
-- **Bounded, descriptor-safe read.** Each source (`home` =
-  `<home>/.oats-events.jsonl`, `workspace` = `<ws>/.agents/events/<agent>--<instance>.jsonl`)
-  is `lstat`ed first; anything but a regular file is **refused unopened**.
-  The open itself is `O_RDONLY|O_NOFOLLOW|O_NONBLOCK` and the descriptor is
-  `fstat`ed: it must be a regular file with the same device+inode lstat saw
-  (closes the lstat→open swap). At most the last 4 MiB is read by descriptor.
-  **Canonical source shape**: `{path: "home"|"workspace", status: "ok"|"absent"|"refused"|"tail", bytes}`
-  — `"tail"` means only the last 4 MiB was read (partial first line dropped);
-  there is no separate `tail` boolean.
-- **Row fields.** `incarnation` is the writing home's `instance.json.createdAt`
-  (ISO) or `null` for rows written before the tag; the result's top-level
-  `incarnation` is the current home's `createdAt` or `null` if unreadable. A
-  row with `incarnation: null` never matches the current incarnation, so it
-  cannot contribute a current waiting claim. **An unknown current incarnation
-  (top-level `incarnation: null`) admits NO claim**: `waitingOnYou: null`,
-  `waitingClaims: []`, rows still returned as history. A consumer must refuse
-  a null-incarnation response that nevertheless carries claims. Dedup identity is
-  `producer|at|kind|incarnation|data`.
-- **`waitingClaims[]` row shape**: `{producer: string, waiting: boolean, since: ISO, reason: string|null}`
-  — one row per producer with a claim in the current incarnation, INCLUDING
-  cleared ones (`waiting: false`, `reason: null`, `since` = the clearing row's
-  `at`). `waitingOnYou` = the newest `waiting: true` row or `null`.
-- **Address history.** `--home <abs>` must be a home of exactly `<instance>` under
-  the scope (`E_HOME_MISMATCH` otherwise, like K1). Rows whose `instance`/`home`
-  are not the admitted address are dropped and counted (`integrity.foreignRows`).
-  Every row carries `incarnation` (the writing home's `instance.json.createdAt`);
-  the result echoes the current home's `incarnation`. Rows tagged with an earlier
-  incarnation ARE returned — they are this address's history — so a consumer can
-  label them "earlier instance at this address". No current home → no read
-  (archived access is a separate contract).
-- **`waitingOnYou` is a producer STATE for the current incarnation**, decided per
-  producer by that producer's latest row that carries the field: an explicit
-  `false` clears, a row without the field does not; earlier incarnations never
-  contribute; computed over the FULL admitted read (a `--limit` window cannot
-  hide a clear). `waitingClaims[]` lists every producer's current claim
-  (`{producer, waiting, since, reason}`); `waitingOnYou` is the newest positive.
-  Still `null` today — no producer emits it.
-- **Provenance and corruption never disappear.** Dedup is by
-  `producer|at|kind|incarnation|data` (the same facts from two producers are two
-  rows). `integrity.unreadableRows` counts torn/invalid lines regardless of
-  `--since` or the window. `count` = admitted rows after `--since`, `returned` =
-  the window, `truncated` = window cut OR any source read as a tail.
-
-```
-{"eventsApi":2,"instance":"dev-1","home":"/abs/home","incarnation":"<iso>","count":7,"returned":7,"truncated":false,
- "integrity":{"unreadableRows":0,"foreignRows":0,"sources":[{"path":"home","status":"ok","bytes":1234},{"path":"workspace","status":"ok","bytes":1234}]},
- "events":[{"eventsApi":2,"at":"<iso>","instance":"dev-1","home":"/abs/home","incarnation":"<iso>","producer":"kernel","kind":"spawned","data":{...}}, ...],
- "lastEvent":{"kind":"launched","at":"<iso>","producer":"kernel","incarnation":"<iso>"},
- "waitingOnYou":null,"waitingClaims":[],"notes":[...]}
-```
-
-Desktop passes `--limit` (50|100|200) only; `--since` remains a human flag.
-
-## Schedule run history (`scheduleApi: 2`, `scheduleHistoryApi: 2` → **3**, OATS 0.24.8+) — K8
-
-`oats schedule show|list --json` entries gain **`recentRuns`**: the last 50
-settled runs (newest first) — every `lastRun` the scheduler recorded once its
-outcome settled (`ended | stopped | blocked | invalid | delivered | skipped |
-unknown …`, never `active`/`starting`), exactly as the producer wrote it,
-deduplicated per run. Where the run launched or targeted an instance, a
-`transcript: {instance, home, kind: "session"}` pointer says which home's
-session to open (the existing `oats session` surface); the kernel does not
-copy transcripts. `nextRun`/`lastRun`/`executionStatus` are unchanged. The
-Schedules view (frame 08) renders `recentRuns` as the recent-runs list and the
-transcript pointer as the handoff (definition fields are untouched by this
-addition). A stored captured definition (removed in 0.26) lists as `invalid`.
-
-### History API 3 (`scheduleHistoryApi: 3`, feature `schedule-read-2`, OATS 0.24.13+) — K8b
-
-Gate a Desktop history read on **both** `scheduleHistoryApi === 3` and
-`"schedule-read-2"` in `features[]` (`scheduleApi` stays 2 — mutation verbs are
-unchanged). API 2's reader keyed runs by outcome, read state files whole and
-unchecked, echoed a stored `definition.id` without checking it, and named a
-`transcript` that no reader backs. API 3:
-
-- **Run identity is time, not outcome.** `runId = sha256(scheduledFor|startedAt|attemptId)[0:24]`.
-  A run's later facts update its one row; `transitions[]` keeps the outcome
-  sequence (`["started","unknown","ended"]`); `settled: boolean`
-  (`pending: true` is never settled); `recordedAt`. Pre-API-3 rows are returned
-  with `runId: null, legacy: true, settled: null, transitions: null` and are
-  never merged. `lastRun` carries the same `runId` as its history row.
-- **Bounded, descriptor-safe state.** `oats-schedules.json` and
-  `.agents/schedules/state.json` are `lstat`ed (regular file only), opened
-  `O_NOFOLLOW|O_NONBLOCK`, `fstat`-verified (dev+ino), and read whole **only
-  within a 1 MiB budget** — over budget is a typed `E_SCHEDULE_STATE_OVERSIZE`
-  refusal with `details.source`, never truncated JSON. `list`/`show` carry
-  `integrity: {sources: [{path: "definitions"|"state", status: "ok"|"absent"|"refused"|"oversize"|"corrupt", bytes}]}`.
-  History is capped at 50 rows **at read** (`history: {status, stored, truncated}`);
-  one job's corrupt history (`history.status: "corrupt"`, `recentRuns: []`) or
-  bad identity (`unreadable: {code, message}`) never fails the other jobs in `list`.
-- **Subject truth.** `list` and `show` echo `scope` (the resolved schedule-owning
-  workspace) and canonical `id`. A definition whose own `id` differs from its
-  key → `E_SCHEDULE_IDENTITY` (`details.key`, `details.declared`). IDs must match
-  `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$` (`E_BAD_ARGS` otherwise, before any read).
-- **Session provenance, never a transcript.** The `transcript` key is gone.
-  Each run (and `lastRun`) carries
-  `session: {instance: string|null, home: string|null, incarnation: string|null, server: string|null, delivery: "launched"|"delivered-active"|"none"}`
-  — facts the recorder had at write time (an active-session wake names the
-  instance only when the input result did; `incarnation` = the home's
-  `instance.json.createdAt` at record time; `server` = the answering peer for a
-  remote command). **There is no reader behind this block**: a consumer renders
-  provenance and a precise unavailable reason. A read-only transcript verb is a
-  separate seam (K12), not implied by this API.
-
-```
-{"scope":"/abs/ws","scheduleApi":2,"scheduleHistoryApi":3,
- "integrity":{"sources":[{"path":"definitions","status":"ok","bytes":812},{"path":"state","status":"ok","bytes":4410}]},
- "schedules":[{"id":"nightly","scope":"/abs/ws","scheduleApi":2,"scheduleHistoryApi":3,…,
-   "history":{"status":"ok","stored":7,"truncated":false},
-   "recentRuns":[{"runId":"3f…","scheduledFor":"<iso>","startedAt":"<iso>","outcome":"ended","settled":true,"transitions":["started","ended"],"recordedAt":"<iso>",
-                  "session":{"instance":"dev-1","home":"/abs/home","incarnation":"<iso>","server":null,"delivery":"launched"}}]}],
- "scheduler":{…}}
-```
-
-**Exact shapes (API 3):**
-- `schedule list --json` → `result = {scope, scheduleApi: 2, scheduleHistoryApi: 3, integrity, schedules: Entry[], triggers: {count, command: "oats trigger list"}, scheduler}` (`triggers`, 0.28.0: the trigger definitions this listing leaves out).
-- `schedule show <id> --json` → `result = {schedule: Entry}` (one level of nesting; `integrity` is NOT on `show` — it is a scope fact reported by `list`).
-- `Entry` (readable) = definition fields (`id, kind, home, message|operation, cron, enabled, …`) + `{scope, scheduleApi: 2, scheduleHistoryApi: 3, executionStatus, nextRun: ISO|null, lastRun: Run|null, history, recentRuns: Run[], running: boolean, attempt?, pendingWake?}`.
-- `Entry` (unreadable, `list` only) = `{id, scope, scheduleApi: 2, scheduleHistoryApi: 3, unreadable: {code, message}, history: {status: "corrupt", stored: null, truncated: false}, recentRuns: []}` — no definition fields.
-- `history` = `{status: "ok", stored: integer, truncated: boolean}` | `{status: "corrupt", stored: null, truncated: false}`.
-- `Run` (API 3 row) = producer-written fields (`scheduledFor, startedAt, kind, outcome, …`) + `{runId: string, legacy: false, settled: boolean, recordedAt: ISO, transitions: string[], session}`; `transitions[]` elements are outcome strings in write order, first element = the first recorded outcome.
-- `Run` (legacy row) = producer-written fields + `{runId: null, legacy: true, settled: null, transitions: null, session}` — no `recordedAt`, no `key`.
-- `Run` (corrupt element) = `{runId: null, legacy: true, corrupt: true}` only.
-- `session` = `{instance: string|null, home: string|null, incarnation: ISO|null, server: string|null, delivery: "launched"|"delivered-active"|"none"}`; always present on rows and on `lastRun`.
-- `runId` is opaque to consumers: never recompute, never dedup client-side.
-- **Refusals** (`ok:false`): `E_SCHEDULE_STATE_OVERSIZE` / `E_SCHEDULE_INVALID` carry `error.details.source = {path, status, bytes}` (+ `field`); `E_SCHEDULE_IDENTITY` carries `error.details.key` and `error.details.declared`; `E_BAD_ARGS` (id shape) carries no details. A refusal has no `integrity` block — `list` refuses as a whole only when a scope file itself is unreadable.
-- **Open path** (both files): `lstat` → regular file → `open(O_RDONLY|O_NOFOLLOW|O_NONBLOCK)` → `fstat` regular + same dev/ino + `size ≤ 1 MiB` → read exactly `fstat.size` bytes by descriptor (a file that grows past the budget between lstat and fstat is refused, never partially read).
-
-## Spawn preview (`oats spawn … --preview`, `spawnPreviewApi: 1`, OATS 0.24.8+)
-
-The Spawn modal's fields are backed by the kernel's own decision, taken **before
-any side effect**: `oats spawn <agent> [same flags as a real spawn] --preview --json`
-runs every preflight a spawn runs (placement, composition, resources,
-executable, harness packages, child-spawn policy) and returns what the spawn
-*would* do — then returns without creating a home, branch or worktree.
-
-```json
-{"spawnPreviewApi":1,"preview":true,"agent":"dev","kind":"persistent","instance":"dev-fix-login","home":"/abs/agents/dev/instances/dev-fix-login",
- "repo":"/abs/repo","work":"worktree","harness":"claude","model":"opus","modelSource":"explicit","launchConfig":null,"yolo":false,"backend":"tmux",
- "branch":"agents/dev-fix-login","base":{"ref":"HEAD","oid":"<oid>"},"worktree":"/abs/agents/dev/instances/dev-fix-login/work",
- "relation":null,"parentInstance":null,"policy":{"childSpawns":{"allowed":true,"origin":{"kind":"default","detail":"…"}}},
- "executable":"/abs/bin/claude","capabilities":["oats.core"],"skills":["oats-operate","oats-souls"],"task":"…"}
-```
-
-- **Name / work area**: `instance` is the name: by default the derived shape
-  `<agent>-<purpose>` (de-duplicated with `-2`, `-3`…), or exactly the
-  `--name <slug>` the caller gave (see *Instance names* below); `home` and
-  `worktree` are the canonical paths. The renderer never derives paths.
-- **Branch / base** (worktree mode): `branch` defaults to `agents/<instance>`
-  (`--branch <name>` overrides; validated); `base` is `--base <ref>` resolved
-  to its commit oid (default `HEAD`). `E_BRANCH_EXISTS` and `E_BASE_UNKNOWN`
-  are refused in preview and in apply, before anything exists. Apply creates
-  the worktree **from that exact oid**.
-- **Model**: `model`/`modelSource` are the resolved selection. Omitting
-  `--model` **inherits** the launch configuration's or soul's preference;
-  `--model @native-default` is the explicit "use the harness's own default"
-  (`modelSource: "native default (explicit)"`). These are different requests
-  and the UI must not relabel one as the other.
-- **Policy**: `policy.childSpawns` is what this instance will record (soul
-  declaration / spawn option / default), enforced later by the spawn route for
-  its children (see readiness).
-- **Apply** = the same command without `--preview`; the same inputs yield the
-  same decisions (instance, branch, base oid). If the world moved between
-  preview and apply (name taken, branch created, base gone) the apply refuses
-  with the same typed codes — the preview is a statement, not a reservation.
-- Not in preview (later K6 follow-ups): attach-knowledge refs from the
-  knowledge provider (05 excluded, attach stays), auto-PR intent (ADE-owned,
-  P1).
-
-### Preview API 2 (0.24.9+, feature `spawn-preview-2`) — the safe-mode fence
-
-**API 1 previews wrote before they returned** (a refused child spawn appended an
-event to the parent; a Herdr backend could be started; an unknown soul could be
-imported from an importable def). A consumer must therefore gate on
-**`spawnPreviewApi === 2` AND `features.includes("spawn-preview-2")`** — API 1 is
-the pre-fix marker and is never accepted for dispatch.
-
-- **No writes, success or refusal.** A preview appends no event, starts no
-  daemon (`backendStatus {name, installed, started:false}` reports what it
-  observed), and never creates/updates a soul (`E_SOUL_UNKNOWN` instead of an
-  import; `--instructions-file`/`--def-file` refused with `E_BAD_ARGS`). Test:
-  the deployment tree is byte-identical after a success, a refusal and an
-  unknown-soul preview.
-  **Workspace deployments (0.26.0+)**: this holds for the FIRST preview of a
-  soul or commit too. A preview reads the soul from the deployment's per-commit
-  cache (`agents/<soul>/souls/<commit>/`) when a spawn already filled it, else
-  fetches it to a temporary copy outside the deployment and removes it
-  (`soulFetched: true` in the result). Only a spawn fills the cache or moves the
-  `agents/<soul>/soul` pointer. (0.25.x previews populated the cache: that stated
-  exception is gone.)
-- **Exact root**: `spawn <soul> --agents-root <abs>` binds the soul to that root
-  (as inspect/readiness take it) — no team-soul / importable-
-  def fallback; mismatch → `E_SOUL_UNKNOWN`. The preview echoes
-  `subject {soul, agentsRoot|null, dir|null}` **as given, byte-exact**.
-- **Decision binding**: `decision {instance, home, branch, base{ref,oid},
-  effective{…, providers}, resolution, revision}` (24-hex). From 0.25.6
-  (`features: served-identity`) `effective.providers` is the merged
-  per-module payload each provider will receive (`{ "<cap>": {…} }`, exactly
-  `settings.<cap>` of the preview) — so a confirmed apply binds every
-  provider fact (an identity choice, a delivery mode) **by value**; a Desktop
-  that changes a provider field re-previews. From 0.26.0 the merged payload
-  includes the manifest's declared setting defaults (`settings.<key>.default`,
-  the lowest layer), and the preview's **`settingsOrigins.<cap>`** maps each
-  leaf of `settings.<cap>` (a JSON pointer, e.g. `/identity/mode`) to
-  `{ kind, at }`: `kind` is `manifest-default` | `workspace` | `soul` |
-  `host` | `spawn` — the last layer that set it. (`workspace-team` no longer
-  appears; from 0.30.0 there is no `byTeam`, and the messaging provider takes
-  its team from the kernel, not from a `team` setting:
-  see [Team model v2](#team-model-v2-feature-team-model-2-oats-0300-replaces-feature-teams).) —
-  and `at` names where (`oats.json#/settings/identity/default`,
-  `soul.yaml#/messaging`, `oats-local.yaml#/settings/<cap>`,
-  `--provider <cap>`, …). A Desktop labels `manifest-default` values
-  "Default" from this, instead of hardcoding them (feature
-  **`settings-origins`**). `instances[].identity` (status)
-  and `selected.identity` (inspect) carry the served principal a messaging
-  provider reported: `{ mode: "local"|"global", alias, team, address|null,
-  resident|null, grant?: { id, expiresAt, scopes }, provider }`; absent when
-  no provider emitted one. A Desktop offers the identity choice as
-  `--provider <cap> identity.mode=… identity.resident=…` — there is no
-  kernel flag for it. Apply with `spawn … --expect-decision <revision>`: the
-  kernel recomputes name/home/branch/base under the same placement path and
-  refuses **`E_DECISION_STALE`** with `details.decision` (the fresh one) on ANY
-  drift — no auto-suffix, no silent re-base, nothing created. A GUI re-previews
-  and re-confirms; it never second-guesses names or paths. Without the flag the
-  CLI keeps its legacy auto-suffix for humans.
-- **Bounded preflight**: every native probe a preview runs (`pi --list-models`,
-  `pi list`, `claude plugin list`) shares ONE budget (20 s default), runs in its
-  own process group and is group-killed on timeout; `preflight {status:
-  complete|timeout, budgetMs, elapsedMs}` says which. A hanging harness CLI cannot
-  hang a preview.
-- **Confirmed apply contract** (0.24.10+, feature `spawn-apply-2`,
-  `spawnApplyApi: 1`) — what a GUI may promise at "Confirm spawn":
-  - `decision` gains **`effective {repo, work, harness, model, launchConfig,
-    yolo, backend, childSpawns, relation{kind, anchor{instance, agentsRoot}}}`**
-    and `revision` hashes placement + effective. An inherited default that would
-    change what launches (the soul's model edited between preview and apply,
-    say) → `E_DECISION_STALE`. A GUI does not re-resolve anything itself.
-  - **No effect before the fence**: backend presence and `ensureHerdr` run only
-    AFTER a successful `--expect-decision` binding and after the placement
-    reservation. A stale apply with `--backend herdr` starts nothing. (The
-    parent-policy refusal still appends `child-spawn-refused` to the PARENT's
-    log on a non-preview apply — that is an audit of a real refusal, not an
-    effect on the target.)
-  - **Exclusive placement**: the home is reserved with a non-recursive `mkdir`
-    immediately after the decision check; a concurrent spawn that lost refuses
-    **`E_PLACEMENT_TAKEN`** having touched nothing. Two concurrent applies of
-    one decision yield exactly one home. There is no wider lock; this
-    reservation is the guarantee. Instance names are deployment-wide
-    (0.26.0), so right after its reservation a spawn re-checks the whole agents
-    root: when another soul's concurrent spawn reserved the same name, it
-    removes its own empty reservation and refuses (`E_INSTANCE_NAME_TAKEN` for a
-    `--name`, `E_PLACEMENT_TAKEN` for a derived name). At most one wins, and
-    possibly neither.
-  - Gate confirmation AND the exec owner on `spawn-preview-2` +
-    `spawn-apply-2` + `spawn-idempotency`; a legacy local request on such a CLI
-    is refused by the Desktop (`E_PLAN_REQUIRED`), not routed around the fence.
-- **Replay custody** (0.24.10+, feature **`spawn-idempotency-2`** — gate on
-  this, not on `spawn-idempotency`, whose replay could be blocked by
-  `E_BRANCH_EXISTS`): key recovery runs **first**, right after the name is
-  decided and before any placement/branch/base/preflight/backend work — so a
-  retry of a spawn that created its explicit branch still reaches its receipt.
-  The key-bearing home records `spawnCompleted:false` at its first write and
-  `true` only after launch + lineage + final events; a same-key retry of an
-  unfinished spawn refuses **`E_SPAWN_INCOMPLETE`** (`details.{instance, home,
-  launched}`; remedy is the session surface, never another spawn). The key
-  lives in the home by design: durable across the GUI's restart, gone with a
-  retired home — after a retire, "check result" is a roster question. The wake
-  outcome is recorded (`wake {requested, saved, error}`) and returned on
-  replay; `saved:null` means *not recorded* (crash in the interval) — render
-  "Agent created; wake outcome unavailable — check Schedules", never
-  saved/not-saved without the record.
-- **Retention stays clean**: the completion marker and the wake record are
-  kernel writes to `instance.json` made after the spawn's retirement baseline;
-  the kernel re-stamps the baseline's home fingerprint after each, so a fresh
-  keyed home retires with **no** `changed instance-home bytes` — only the
-  agent's own changes ever read as work to recover.
-- **Idempotent apply** (0.24.10+, feature `spawn-idempotency`): `spawn …
-  --expect-decision <rev> --idempotency-key <key>` records the key and the
-  decision in the new home's `instance.json`; a **retry with the same key**
-  replays the recorded receipt (`replayed: true`, same instance/home, no second
-  spawn, no wake re-saved) — found by key across the soul's instances, never by
-  name (the planned name may have been auto-suffixed past it, which is exactly
-  the retry case). The same key with a *different* decision refuses
-  **`E_IDEMPOTENCY_CONFLICT`** (`details.instance/home` of the prior spawn); a
-  different key with a fresh decision is a genuinely new confirmation. Mint the
-  key server-side on the first confirmation and keep it for that intent's
-  retries (as 2c does); a lost response is a replay, never a guess by name.
-- Still absent (named follow-ups, not parity-done): attach-knowledge node refs
-  (provider contract), auto-PR (P1/ADE write approval), branch enumeration
-  (producer seam).
-
-## Readiness quartet (`readinessApi: 1`) — removed in 0.26.0
-
-The quartet (`installed | trusted | configured | enrolled`), its signature
-verification (`--verify-signatures`, feature `readiness-verify`) and the
-scope subject were removed with the classic config chain. `oats readiness`
-answers only [`readinessApi: 2`](#oats-readiness---home---soul---dir---policy---json-readinessapi-2);
-`--verify-signatures` is `E_BAD_ARGS`.
-
-### Enforced child-spawn policy (`--policy`)
-
-`childSpawns` is **enforced by the spawn route**: `soul.yaml` may declare
-`children: {spawn: false}`; `oats spawn --allow-child-spawns | --no-child-spawns`
-overrides per spawn; the result is recorded in `instance.json`
-`policy.childSpawns {allowed, origin}`. A spawn with `--parent <p>` (or
-`--relation child --relative-to <p>`) under a parent whose recorded policy is
-off refuses **`E_CHILD_SPAWNS_DISABLED`** (`details.parent`, `details.policy`)
-before anything is created. Absent policy (pre-0.24.8 instances) = allowed,
-reported as `origin.kind: "default"`. With `--home <abs>` the policy is the
-instance's recorded (enforced) one; with only `--soul` it is the declaration
-(`enforced: false`). It is a lifecycle-authority claim, not an OS sandbox —
-the UI says so.
-
-## Lifecycle plans — Stop and Remove (`lifecycleApi: 1`, OATS 0.24.8+)
-
-The Desktop's Stop and Remove confirmations render **plans**: a read-only
-statement of what the action would touch, with the facts a human needs, and a
-`planRevision` hashed from the facts that make the action safe. Apply carries
-the revision back; if reality moved, apply **refuses with the fresh plan**
-(`E_PLAN_STALE`, `details.plan`) instead of acting on a world the human did
-not see. An `idempotencyKey` makes a retried apply return the first receipt.
-
-### `oats instance stop <instance> --plan [--no-recursive] [--home <abs>] [--dir <d>] --json`
-
-```json
-{"lifecycleApi":1,"action":"stop","instance":"dev-1","home":"/abs/home","recursive":true,"at":"<iso>",
- "targets":[{"instance":"dev-1-child","agent":"dev","home":"/abs/child","depth":1,"workMode":"worktree","launched":true,
-   "session":{"state":"unknown","present":true,"backend":"tmux","established":true},
-   "work":{"observed":true,"revision":"<oid>","branch":"feat/x","detached":false,"drift":false,"changed":2,"untracked":1,"upstream":{"ref":null,"ahead":null,"behind":null},"base":{"ref":"origin/main","ahead":1,"behind":0},"remote":{"host":"github.com","path":"acme/one"}},
-   "retiring":false,"stopPending":false,"midTask":true}],
- "skipped":[],"planRevision":"<24 hex>","notes":[]}
-```
-
-- `targets` are the instance's **recorded descendants deepest-first, then the
-  instance** (recorded parentage — `parentInstance` — is the only relation the
-  kernel knows). `--no-recursive` lists them under `skipped` instead.
-- `session.state` is the backend's word: `shell`/`stopped`/`not-launched` are
-  idle; `unknown` means a non-shell process is running whose identity tmux
-  cannot name (the ordinary state of a launched harness). If the state **could
-  not be established**, `established:false`, `present:null`,
-  `state:"unestablished"`, with a `reason` — render that as unknown, never as
-  idle.
-- `work` is K1's observation (`observed:false` with a `reason` when there is no
-  work tree or it cannot be read — not "clean").
-- `midTask` is **reported** activity: `true` (running session or dirty work),
-  `false` (established idle and observed clean), or `"unknown"`.
-
-### `oats instance stop <instance> --apply --plan-revision <rev> --idempotency-key <key> [--no-recursive] [--grace-ms <n>] --json`
-
-Quiesces each target (SIGTERM to the harness processes, bounded wait, **never
-escalated**), children first, under a per-home stop marker; retains home, work
-tree, transcript and launch configuration so `oats session restart` brings the
-instance back. Refuses `E_PLAN_STALE` (fresh plan attached),
-`E_INSTANCE_RETIRING`, `E_LIFECYCLE_BUSY`.
-
-```json
-{"lifecycleApi":1,"action":"stop","instance":"dev-1","home":"/abs/home","idempotencyKey":"k","planRevision":"<rev>","at":"<iso>",
- "ok":false,"results":[{"instance":"dev-1-child","home":"/abs/child","ok":false,"code":"E_SESSION_STOP_FAILED","message":"…still running after 1500 ms; nothing was escalated","stillRunning":[4242]},
-                       {"instance":"dev-1","home":"/abs/home","ok":true,"stopped":true,"alreadyIdle":false,"state":"shell"}],
- "retained":["home","work","transcript","launch"],"replayed":false}
-```
-
-`ok:false` means at least one target is still running; the receipt says which
-pid. Nothing was killed harder. A replay (`replayed:true`) is the recorded
-receipt for that key, not a second action.
-
-### `oats retire <instance> --plan [--home <abs>] [--dir <d>] --json`
-
-What Remove would touch, with the design's defaults. Read-only.
-
-```json
-{"lifecycleApi":1,"action":"retire","instance":"dev-1","home":"/abs/home","at":"<iso>",
- "facts":{"session":{…},"work":{…K1 summary…},"workMode":"worktree","repo":"/abs/repo","recordedBranch":"agents/dev-1",
-          "children":[{"instance":"dev-1-child","agent":"dev","home":"/abs/child","session":{…}}],"pullRequest":"unknown"},
- "defaults":{"retainWorktree":true,"deleteBranch":false,"stopChildren":true,"retainChildren":true},
- "planRevision":"<24 hex>","notes":["the worktree is on feat/x, not the recorded agents/dev-1; branch actions use the worktree's branch", "…"]}
-```
-
-`pullRequest` is **always `"unknown"` from the kernel**: forge facts belong to
-the ADE's connection (P1). Branch actions use the **worktree's** branch
-(`facts.work.branch`), never `recordedBranch`.
-
-### `oats retire <instance> [--discard-worktree] [--delete-branch] --json` — retention is the default (K3b)
-
-Plain `retire` now **retains** a worktree-mode instance's work: the worktree
-cannot stay under the removed home, so it is **re-homed** with
-`git worktree move` to `<workspace>/.agents/worktrees/<repo>/<branch>` (a
-`-2`, `-3` suffix if taken; detached → `detached-<oid12>`), with staged,
-unstaged and untracked state intact, and the repository knows the new
-location. The receipt says so:
-
-```json
-{"retired":"dev-1","retention":{"worktree":"retained","movedTo":"/ws/.agents/worktrees/repo/feat-x","branch":"feat/x","detachedAt":null,"recordedBranch":"agents/dev-1"},
- "worktreeRemoved":false,"branchDeleted":false, "workRecovery":{…}}
-```
-
-- `--discard-worktree` restores removal (`retention.worktree: "removed"`).
-- `--delete-branch` deletes the **worktree's verified branch**
-  (`retention.branchDeleted`), never the recorded spawn name, and implies
-  discarding the worktree (a checked-out branch cannot be deleted).
-- A failed move keeps the home and refuses `E_WORK_PRESERVATION_FAILED` —
-  nothing is lost; retry or pass `--discard-worktree`.
-- When a recovery's Git status disagrees with the source's (0.27.2),
-  `E_WORK_PRESERVATION_FAILED` carries `details: {home, statusDisagreement:
-  {repo, rows: [{path, source, recovery}], total}}`. `repo` is `.` or a nested
-  repository's path. `source`/`recovery` are the porcelain `XY` codes, or
-  `null` where that side has no row. `rows` holds the first 10 paths, sorted,
-  and `total` counts all of them. The message names the same rows.
-- Non-worktree modes report `retention: null`. Quarantine/rollback paths keep
-  their removal semantics.
-- A recovery (`workRecovery`, `workRecoveries[]`) is `{path, classes, bytes,
-  outputs?, repoCopy?}` (0.26.0: `bytes`, `outputs`): `bytes` is the recovery's
-  own size; `outputs: {paths: [{path, bytes}], bytes}` names what it copied
-  beyond tracked state — a worktree's untracked and ignored paths, or a
-  directory's work entries — grouped by top-level entry, largest first. Absent
-  when only home bytes were copied.
-- The Remove dialog's "also delete worktree / branch" checkboxes map to these
-  two flags; the kernel never touches a PR.
-- **Guarded apply** (what a GUI sends): `oats retire <i> --plan-revision <rev>
-  --idempotency-key <key> [--discard-worktree] [--delete-branch] --json`. The
-  revision is revalidated against a fresh plan first — facts moved →
-  `E_PLAN_STALE` with `details.plan` (re-render, re-confirm; nothing retired);
-  a repeated key **replays** the recorded receipt (`replayed: true`, JSON-v1
-  envelope) instead of retiring twice. A first retire prints its raw receipt
-  (pre-existing shape) with `planRevision`/`idempotencyKey`/`replayed:false`
-  added. Mint the key server-side per confirmation intent and keep it for that
-  intent's retries.
-  - **Children first, kernel-owned.** The plan's `facts.children` are stopped
-    by the kernel before retirement (bounded SIGTERM, never escalated) and
-    retained; the receipt lists `childrenStopped[]`. A child still running
-    after the grace **refuses the whole retirement** — `E_CHILDREN_RUNNING`
-    with `details.childrenStopped` (pids) and `details.plan`; nothing retired.
-  - **Branch deletion is bound to the confirmed branch.** The kernel re-verifies
-    the worktree's branch at the moment of deletion, after hooks (which may
-    mutate the tree); a mismatch deletes nothing and reports
-    `retention.branchDeletionSkipped {expected, actual, reason}`.
-  - **Ambiguous parentage is reported, never acted on.** Recorded parentage is
-    a bare name; if a child's parent name resolves to several homes under the
-    root, that child appears under `ambiguous[]` — `plan.ambiguous` on a stop
-    plan, `plan.facts.ambiguous` on a retire plan — with the reason, and is
-    excluded from `targets`/`children`.
-- **Stop replay horizon**: stop receipts are stored **per idempotency key**
-  (`<home>/.oats-stop-receipt.<key>.json`); any earlier key replays its own
-  receipt for as long as the home exists. Retire receipts live beside the
-  instances directory and replay after the home is gone.
-
-### Feature advertisement — gate every new command on the probe
-
-`oats version --json` `features` now lists: `instance-git`,
-`instance-git-remote`, `souls-declarations`, `lifecycle-plans`,
-`retire-retention`, `readiness`, `spawn-preview`, `instance-events`,
-`schedule-history`, and carries the API integers (`instanceGitApi`, `soulsApi`,
-`lifecycleApi`, `readinessApi`, `spawnPreviewApi`, `eventsApi`,
-`scheduleHistoryApi`, `operationsApi`). In 0.26.0, `soulsApi`, `readinessApi`
-and `operationsApi` are **2** ([the workspace-model inspect](#inspect-readiness-and-operation-run-on-the-workspace-model-operationsapi-2-soulsapi-2-readinessapi-2-oats-0260)). **Gate on these, never on a version string and never by
-optimistic invocation**: an older CLI ignores an unknown `--plan` on `retire`
-and *retires*. Absent feature → the view is unavailable. (`catalog` was the
-0.24 `oats catalog` verb's flag; the verb is removed under the workspace model
-and the flag is no longer advertised — the official catalog is reached through
-`packages:` + `oats sync`, not a command.)
-
-## Workspace model (`workspaceApi: 2`)
-
-Features: **`workspace-v2`** (the declaration files, `sync`, `package`,
-`workspace status`, `capabilities`, `souls`; `init`/`use`/`install`/`restore`
-removed), **`instance-modules`** (`instance.json.modules` / `providers` /
-`workspace`; `status --json` module drift; preview `modules[]`),
-**`spawn-provider-payload`** (`oats spawn … --provider <cap> k=v`). The probe
-carries `workspaceApi: 2`. Model: [workspaces.md](workspaces.md).
-
-Every command below needs a deployment with `oats-local.yaml` (walked up from
-`--dir`/cwd) — else `E_LOCAL_MISSING { dir, searched[] }` — and reads the
-workspace over Git remotes with the operator's credentials, never prompting
-(`E_REMOTE_UNREADABLE { url, reason: "auth"|"not-found"|"network"|"timeout" }`).
-Every `commit` is a full 40-hex OID; every digest is `sha256-<hex>`; every
-`at`/`observedAt` is ISO-8601 UTC. Repo keys are canonical
-(`github.com/org/repo`; `local/<abs-path>` for file remotes).
-
-### Removed verbs answer `E_UNKNOWN_COMMAND` with a replacement
-
-`install`, `restore`, `init`, `use`, `trust`, `list`, `catalog`, `remove`,
-`migrate`, `config` — checked before capability dispatch, both modes:
+- `<layer>` is `knowledge`, `messaging` or `tasks`; `<name>` matches
+  `[a-z][a-z0-9-]*` (`E_BAD_ARGS` otherwise).
+- The provider is the module filling the slot. `cwd` is the home for a
+  `context: "home"` operation, else the deployment; `target` is `{home,
+  instance}` or `null`.
+- A launched `instance` or `home` named by the provider's result is repeated
+  at the top level; `stderr` appears when the provider wrote any.
+- A `view` operation must answer `{documents: [{label, kind?, path?, text?}]}`
+  (`kind` `markdown` or `text`), else `E_OPERATION_RESULT`.
+- Errors: `E_OPERATION_UNKNOWN`, `E_OPERATION_UNAVAILABLE` (empty slot, or a
+  home operation without `--home`), `E_CAPABILITY_REQUIRES`, `E_BAD_ARGS`
+  (undeclared or missing `--arg`), `E_CAPABILITY_BROKEN`. A provider's `ok:
+  false` is relayed with its code and `details: {exit, envelope,
+  unconfirmed?}`. `E_OPERATION_TIMEOUT` (240 s) and `E_OPERATION_RESULT` are
+  unconfirmed outcomes: `details: {exit, signal, unconfirmed: true,
+  envelope?, stderr?, cleanup?}`.
+
+`--server <id>` routes inspect and operation run when the destination
+advertises `operations`.
+
+**Knowledge operations.** Discover a knowledge provider's operations from
+inspect; the provider's version owns their result shapes. For oats.okf, see
+[knowledge.md](knowledge.md#knowledge-operations).
+
+<a id="workspace-model-workspaceapi-2"></a>
+## Workspace
+
+Feature `workspace-v2`, `workspaceApi: 2`. Model: [workspaces.md](workspaces.md).
+
+- Each command needs an `oats-local.yaml` found walking up from `--dir`, else
+  `E_LOCAL_MISSING {dir, searched}`.
+- The workspace is read over Git remotes with the operator's credentials,
+  never prompting: `E_REMOTE_UNREADABLE {url, reason: "auth" | "not-found" |
+  "network" | "timeout"}`.
+- There is no package approval: declaring a package is the trust decision.
+  No payload carries `approvalNeeded`, `approval` or `approved`.
+- A **standalone view** is a member repository whose workspace is not read
+  (`standalone:` in `oats-local.yaml`, or an unreadable host): its own souls
+  plus `oats.core`. Documents then carry `standalone: true`; otherwise the key
+  is absent.
+
+### Removed verbs and flags
+
+A removed verb answers, before any namespace can claim it:
 
 ```json
 {"schemaVersion":1,"ok":false,"error":{"code":"E_UNKNOWN_COMMAND","message":"unknown command \"install\" — removed by the workspace model v2; use oats sync","details":{"removed":"install","replacement":"oats sync"}}}
 ```
 
-### oats onboard (onboardApi 2)
+| Removed | Code | Replacement |
+|---|---|---|
+| `install`, `restore` | `E_UNKNOWN_COMMAND` | `oats sync` |
+| `init` | `E_UNKNOWN_COMMAND` | `oats-local.yaml` + `oats sync` |
+| `use` | `E_UNKNOWN_COMMAND` | soul.yaml `capabilities:` + workspace defaults |
+| `trust` | `E_UNKNOWN_COMMAND` | declaring the package in `packages:` |
+| `list` | `E_UNKNOWN_COMMAND` | `oats workspace status` / `oats capabilities` |
+| `catalog` | `E_UNKNOWN_COMMAND` | `oats package add <id> <version>` |
+| `remove` | `E_UNKNOWN_COMMAND` | `oats package remove <id>` |
+| `migrate` | `E_UNKNOWN_COMMAND` | a rebuild |
+| `config` | `E_UNKNOWN_COMMAND` | `oats-local.yaml` and `oats-workspace.yaml` |
+| `create`, `type` | `E_UNKNOWN_COMMAND` | the soul's `soul.yaml` in its member repository |
+| `inject` | `E_UNKNOWN_COMMAND` | the capability's inject in its member repository |
+| `prepare` | `E_UNKNOWN_COMMAND` | `oats onboard` / `oats sync`; `oats spawn <soul> --preview` |
+| `inspect --request` | `E_UNKNOWN_COMMAND` | `oats onboard / oats sync; oats spawn --preview` |
+| `session recompose` | `E_UNKNOWN_COMMAND` (no details) | a re-spawn |
+| `readiness --verify-signatures` | `E_BAD_ARGS` | none |
+| `sync --approve`, `onboard --approve` | `E_BAD_ARGS` (`details: {flag}`) | none |
+| `status --team` | `E_BAD_ARGS` | `oats status` in the deployment |
+| `spawn --instance` | `E_BAD_ARGS` | `--purpose` or `--name` |
+| `spawn --ephemeral`, `--instructions-file`, `--def-file` | `E_BAD_ARGS` | a soul in a member repository |
+| `session … --native-record` | `E_BAD_ARGS` | none |
 
-`oats onboard [<dir>] --workspace <repo ref> [--json]`
+`details.replacement` is the kernel's prose (shortened above): show it, do not
+parse it.
 
-The **bootstrap** of a deployment (decision 9): realizes a workspace on this
-machine in the directory the operator chooses (any existing folder). It writes
-`<dir>/oats-local.yaml` (`{ schemaVersion: 2, workspace: <ref> }`), creates
-`<dir>/agents/` (the instance homes), then runs exactly the `oats sync` body
-over the directory just written — discover over the remotes, confirm
-membership, resolve `packages:`, write `oats-lock.json`. It installs nothing, creates no soul, spawns nothing
-and writes no `oats-config.yaml`; the member clones and the setup-expert spawn
-are printed as next steps. `<dir>` defaults to cwd; `--dir <d>` is the same
-argument (give it once). `--workspace` is required and must be a ref
-`lib/remote.mjs` parses (`E_REPO_REF`) — checked **before** anything is
-written. Captured selectors are refused (`E_UNSUPPORTED_MODE`: the captured/portable path was removed in 0.26).
+<a id="oats-onboard-onboardapi-2"></a>
+### `oats onboard`
 
-```json
-{"onboardApi":2,
- "local":"/abs/acme-workspace/oats-local.yaml","dir":"/abs/acme-workspace","agents":"/abs/acme-workspace/agents",
- "lock":"/abs/acme-workspace/oats-lock.json",
- "sync":{"syncApi":1,"…":"the full sync report (next section)"},
- "hosting":{"host":"github.com/acme/agents","hostIsMember":true,
-            "rule":"If any member is private, host oats-workspace.yaml in a private repo that is not a public member (a dedicated <org>/workspace repo); public contributors then use the standalone case (from: here capabilities + oats.core)."},
- "next":{"clone":[{"key":"github.com/acme/agents","name":"agents","url":"https://github.com/acme/agents.git","dir":"/abs/acme-workspace/agents-repo"},
-                  {"key":"github.com/acme/platform","name":"platform","url":"https://github.com/acme/platform.git","dir":"/abs/acme-workspace/platform"}],
-         "spawn":"oats spawn oats-setup-expert --dir /abs/acme-workspace"}}
+```text
+oats onboard [<dir>] --workspace <repo ref> [--json]
 ```
 
-- `sync` is the `syncApi: 1` report of the first sync (members, packages,
-  changes, `problems`); `lock` is the lock it wrote. Exit `0` on success —
-  there is no approval-pending outcome (0.26.0, feature
-  `packages-no-approval`; earlier kernels exited `2` with `approvalNeeded`).
-- `hosting` states decision 26 (the kernel cannot see forge visibility, so it
-  reports `hostIsMember` and the rule rather than judging).
-- `next.clone[]` is one row per **confirmed** member (`url` = what the
-  workspace's `members:` ref resolves to; `dir` = `<dir>/<name>`, or
-  `<dir>/agents-repo` for a member called `agents`, since `agents/` is the
-  instance homes). `next.spawn` is the setup-expert spawn command string.
-- Errors (all `E_*`): `E_BAD_ARGS` (usage; missing `--workspace`; dir given
-  twice), `E_REPO_REF`, `E_ALREADY_ONBOARDED { local, dir }` — **this**
-  directory already has `oats-local.yaml` (an enclosing deployment's file does
-  not count; run `oats sync` there instead), `E_ONBOARD_FAILED { dir }`
-  (cannot inspect/write the directory; `<dir>` exists and is not a directory).
-  Failures while **discovering** — `E_REMOTE_UNREADABLE`, `E_WORKSPACE_SCHEMA`
-  (not a workspace host), `E_LOCAL_MISSING`, plus `E_PACKAGE_MISSING` /
-  `E_PACKAGE_INTEGRITY` / `E_LOCK_SCHEMA` and the other `sync` errors raised
-  before the workspace was read — roll back the files onboarding created and
-  carry `details.rolledBack: true` and `details.dir`; a typo'd ref never
-  leaves a half-onboarded directory that looks finished. Once the workspace
-  has been read, a later failure keeps the files (a lock may exist) and
-  carries `details.dir` + `details.local` instead.
-
-### `oats sync [--dir <d>] --json` → `syncApi: 1`
-
-Discovers, confirms membership, resolves `packages:` to commits + integrity,
-writes `oats-lock.json` (lockfileVersion 3), reports; exit `0` on success.
-**No package approval** (0.26.0, human decision 2026-09-24; feature
-`packages-no-approval`): declaring a package in `packages:` is the trust
-decision. The report has no `approvalNeeded`, package rows no `approved`,
-`changes[]` rows no `approvalNeeded`; there is no prompt and no exit `2`, and
-`--approve` is `E_BAD_ARGS`. A lock written by an earlier kernel keeps working
-(its `approved` records are ignored and dropped on the next write). The fields
-went away without an API-number bump — `syncApi`, `workspaceStatusApi` and
-`capabilitiesApi` stay `1`; the removal is signalled by the feature string
-alone — so a consumer reading `approvalNeeded`, `approval` or `approved` must
-gate that on the absence of `packages-no-approval`.
+Writes `<dir>/oats-local.yaml` (`{schemaVersion: 2, workspace: <ref>}`),
+creates `<dir>/agents/`, then runs the `oats sync` body. It creates no soul
+and spawns nothing. `<dir>` defaults to the working directory (`--dir` is the
+same argument, given once). The ref is checked before anything is written.
 
 ```json
-{"syncApi":1,
- "workspace":{"name":"acme","key":"github.com/acme/agents","url":"https://github.com/acme/agents.git","commit":"<oid>","observedAt":"<iso>",
-              "local":"/abs/acme-workspace/oats-local.yaml","lock":"/abs/acme-workspace/oats-lock.json"},
- "members":[{"key":"github.com/acme/agents","name":"agents","commit":"<oid>","confirmed":true,"status":"confirmed","detail":null,"team":"global",
-             "souls":["release-manager"],"capabilities":["acme-house-style"],"publishes":null},
-            {"key":"github.com/acme/tools","name":"tools","commit":"<oid>","confirmed":true,"status":"confirmed","detail":null,"team":"engineering",
+{"onboardApi":2,"local":"/w/oats-local.yaml","dir":"/w","agents":"/w/agents","lock":"/w/oats-lock.json",
+ "sync":{"syncApi":1,"workspace":{"name":"acme","key":"github.com/acme/agents"},"members":[],"packages":[],"changes":[],"problems":[],"warnings":[]},
+ "hosting":{"host":"github.com/acme/agents","hostIsMember":true,"rule":"If any member is private, host oats-workspace.yaml in a private repo …"},
+ "next":{"clone":[{"key":"github.com/acme/agents","name":"agents","url":"https://github.com/acme/agents.git","dir":"/w/agents-repo","present":false,"host":true},
+                  {"key":"github.com/acme/platform","name":"platform","url":"https://github.com/acme/platform.git","dir":"/w/platform","present":true,"host":false}],
+         "spawn":"oats spawn oats-operator-expert --dir /w",
+         "souls":["oats-operator-expert","platform-engineer","release-manager"]}}
+```
+
+- `sync` is the full [`oats sync`](#oats-sync) report (abridged above).
+  `standalone: true` is present on a standalone view.
+- `hosting`: whether the host is itself a member, and the hosting rule (the
+  kernel cannot see forge visibility).
+- `next.clone[]`: one row per confirmed member (or, standalone, the
+  repository itself): `{key, name, url, dir, present, host}`. `dir` is the
+  existing clone (the `clones:` entry, else `<dir>/<name>`), else where to
+  clone it: `<dir>/<name>`, or `<dir>/agents-repo` for a member named
+  `agents`. `url` is `null` when unknown.
+- `next.spawn` is `oats spawn oats-operator-expert --dir <dir>` when the
+  workspace has a soul by that name, else `null`. `next.souls` is the first
+  three soul names, sorted.
+- Errors: `E_BAD_ARGS` (usage, no `--workspace`, a repeated directory, an
+  unknown flag), `E_REPO_REF`, `E_ALREADY_ONBOARDED {local, dir}` (this
+  directory already has `oats-local.yaml`), `E_ONBOARD_FAILED {dir}`. A
+  failure before the workspace was read removes what onboarding created and
+  carries `details: {…, dir, rolledBack: true}`; a later failure keeps the
+  files and carries `details: {…, dir, local}`.
+
+### `oats sync`
+
+```text
+oats sync [--dir <d>] --json
+```
+
+Discovers the workspace, confirms membership, resolves `packages:`, writes
+`oats-lock.json` (lockfileVersion 3), takes the automations snapshot and
+reports. It creates `agents/` if missing.
+
+```json
+{"syncApi":1,"automations":{"triggers":3,"schedules":2,"problems":1,"takenAt":"2026-09-26T19:58:09.281Z"},
+ "workspace":{"name":"acme","key":"github.com/acme/agents","url":"https://github.com/acme/agents.git","commit":"45b86f64…",
+              "observedAt":"2026-09-26T19:58:07.810Z","local":"/w/oats-local.yaml","lock":"/w/oats-lock.json"},
+ "members":[{"key":"github.com/acme/tools","name":"tools","commit":"19839f9e…","confirmed":true,"status":"confirmed","detail":null,
              "souls":["tools-expert"],"capabilities":["acme-tools-dev"],"publishes":{"package":"acme.tools","version":"0.4.0"}},
-            {"key":"github.com/acme/billing","name":"billing","commit":"<oid>","confirmed":false,"status":"no-backlink","detail":"github.com/acme/billing@… has no oats-membership.yaml","team":null,
-             "souls":[],"capabilities":[],"publishes":null}],
- "packages":[{"id":"oats.okf","version":"2.1.3","source":"catalog:oats.okf","commit":"<oid>","integrity":"sha256-…","capabilities":["oats.okf"],"souls":[]},
-             {"id":"acme.tools","version":"0.4.0","source":"git:github.com/acme/tools@v0.4.0","commit":"<oid>","integrity":"sha256-…","capabilities":["acme-deploy","acme-lint"],"souls":["release-reviewer"]}],
- "changes":[{"id":"acme.tools","from":null,"to":"0.4.0","commit":"<oid>"}],
- "problems":[]}
+            {"key":"github.com/acme/billing","name":"billing","commit":"8f2c0d1e…","confirmed":false,"status":"no-backlink",
+             "detail":"github.com/acme/billing has no oats-membership.yaml","souls":[],"capabilities":[],"publishes":null}],
+ "packages":[{"id":"oats.okf","version":"2.1.3","source":"catalog:oats.okf","commit":"ab897841…","integrity":"sha256-bada35…",
+              "capabilities":["oats.okf"],"souls":["knowledge-maintainer"]}],
+ "changes":[{"id":"oats.okf","from":null,"to":"2.1.3","commit":"ab897841…"}],
+ "problems":[],"warnings":[]}
 ```
 
-- `members[].status`: `confirmed` | `not-listed` | `no-backlink` |
-  `backlink-elsewhere` | `cannot-read`; `detail` explains an unconfirmed row.
-  `publishes` reports a member's `oats-package/` (informational — its
-  capabilities are **not** in `capabilities[]`; the non-collapse rule).
-- `packages[].souls` (feature `package-souls`, 0.28.0): the names of the
-  package souls the lock records for that package (`[]` when none).
-- `changes[]`: `from` = previously locked version or `null`; `to` = `null` when
-  the package was dropped from `packages:` and from the lock.
-- `problems[]`: `{ code, path, message, repoKey? }` — per-item discovery
-  problems (`E_WORKSPACE_SCHEMA`, `E_TEAM_UNKNOWN`, `E_REMOTE_*`, …). Never an
-  abort: an unreadable member directory is a problem of that member.
-- Errors: `E_LOCAL_MISSING`, `E_WORKSPACE_SCHEMA { path, problems[] }`,
-  `E_REMOTE_UNREADABLE`, `E_LOCK_SCHEMA`, `E_PACKAGE_MISSING` (catalog has no
-  such id), `E_PACKAGE_INTEGRITY { why: "branch" | locked/observed }`,
-  `E_PACKAGE_MANIFEST`, `E_REPO_REF`, `E_BAD_ARGS` (`--approve`: package
-  approval was removed).
+- `automations`: counts from the snapshot this sync took.
+- `workspace.name` is `standalone:<repo>` on a standalone view.
+- `members[]`: `status` is `confirmed | not-listed | no-backlink |
+  backlink-elsewhere | cannot-read`, `detail` explains an unconfirmed row.
+  `publishes` reports a member's `oats-package/` (informational).
+- `packages[]` are the lock rows; `souls` (feature `package-souls`) the
+  package souls it records. `changes[]`: `{id, from, to, commit}`, `to: null`
+  when a package left.
+- `problems[]`: `{code, path, message, repoKey?, …}`, for example
+  `E_WORKSPACE_SCHEMA`, `E_REMOTE_*`, `E_SOUL_AMBIGUOUS` (colliding package
+  souls), `E_PACKAGE_MISSING` (a standalone catalog gap: `{code, id, reason:
+  "no-catalog", catalog, path, message}`), `E_AUTOMATION_SCHEMA` and
+  `E_AUTOMATION_DUPLICATE` (with `kind`). A problem never aborts the sync.
+- `warnings[]`: `soul-private-ignored {code, soul, repoKey, path, message}`
+  for a soul.yaml still carrying `private`.
+- Errors: `E_LOCAL_MISSING`, `E_WORKSPACE_SCHEMA {path, problems}`,
+  `E_REMOTE_UNREADABLE`, `E_LOCK_SCHEMA`, `E_PACKAGE_MISSING`,
+  `E_PACKAGE_INTEGRITY`, `E_PACKAGE_MANIFEST`, `E_REPO_REF`, `E_BAD_ARGS`.
 
-### `oats package add <id> <version|git:<repo>@<ref>> | remove <id> [--dir] --json`
+### `oats package add` and `remove`
 
-Edits `packages:` **only** when `oats-workspace.yaml` is tracked by the Git
-checkout walked up from `--dir`; otherwise reports the line to add.
+```text
+oats package add <id> <version | git:<repo>@<ref>> [--dir <d>] --json
+oats package remove <id> [--dir <d>] --json
+```
+
+Edits `packages:` only when `oats-workspace.yaml` is tracked by the checkout
+found from `--dir`; otherwise it reports the change to make.
 
 ```json
-{"action":"add","id":"oats.aweb","value":"v1.11.2","previous":null,"edited":true,"file":"/abs/agents/oats-workspace.yaml"}
-{"action":"add","id":"oats.aweb","value":"v1.11.2","edited":false,"file":null,"line":"packages:\n  oats.aweb: v1.11.2","hint":"oats-workspace.yaml is not in this checkout; commit the change in the workspace repo, then `oats sync`"}
+{"action":"add","id":"oats.aweb","value":"v1.17.0","previous":null,"edited":true,"file":"/w/agents-repo/oats-workspace.yaml"}
 ```
 
-`remove` → `{ action: "remove", id, value: null, previous: "<old value>", edited: true, file }`
-on the tracked branch. On the untracked branch the shape is
-`{ action: "remove", id, value: null, edited: false, file: null, line: null, hint }`
-— **no `previous`** (nothing was read), `line: null` (there is no line to add
-for a removal). **Both branches** answer `E_PACKAGE_MISSING { id, path? }` when
-`<id>` is not declared in `packages:` — the untracked branch reads the file it
-found to check the declaration even though it does not edit it. `E_USAGE`,
-`E_WORKSPACE_SCHEMA` (bad id/value, or the edit would make the file invalid),
-`E_REPO_REF`. No network.
+```json
+{"action":"add","id":"oats.aweb","value":"v1.17.0","edited":false,"file":null,"line":"packages:\n  oats.aweb: v1.17.0","hint":"oats-workspace.yaml is not in this checkout; commit the change in the workspace repo, then `oats sync`"}
+```
 
-### `oats workspace status [--dir] --json` → `workspaceStatusApi: 1`
+`remove` answers `value: null` (and `line: null` when not tracked). An id that
+is not declared is `E_PACKAGE_MISSING {id, …}`; an untracked `remove`
+discovers the workspace over the network to check. Other errors: `E_USAGE`,
+`E_WORKSPACE_SCHEMA` (a bad id or value), `E_REPO_REF`.
+
+### `oats workspace status`
+
+```text
+oats workspace status [--dir <d>] --json
+```
+
+Read-only (it writes no lock):
 
 ```json
 {"workspaceStatusApi":1,
- "workspace":{"name":"acme","key":"github.com/acme/agents","url":"…","commit":"<oid>","observedAt":"<iso>","local":"/abs/…/oats-local.yaml","teams":["global","engineering"]},
- "members":[ … same rows as sync … ],
- "packages":[ … same rows as sync (from the lock) … ],
- "declaredPackages":["acme.tools","oats.okf"],
- "unsynced":[],
- "stale":[],
- "external":[{"source":"git:github.com/oss-collective/experts@<oid>","soul":"security-reviewer","team":"unassigned"}],
- "problems":[],
- "warnings":[]}
+ "workspace":{"name":"northwind","key":"github.com/nw/agents","url":"https://github.com/nw/agents.git","commit":"66566512…",
+              "observedAt":"2026-09-28T10:07:51.783Z","local":"/w/oats-local.yaml",
+              "teams":[{"label":"eng","team":null,"description":"Platform engineering"},{"label":"oats","team":"oats:oats.aweb.ai","description":"The OATS project"}],
+              "file":{"path":"oats-workspace.yaml","url":"https://github.com/nw/agents/blob/66566512…/oats-workspace.yaml"}},
+ "members":[{"key":"github.com/nw/agents","name":"agents","commit":"66566512…","confirmed":true,"status":"confirmed","detail":null,
+             "souls":["rm"],"capabilities":["nw-house-style"],"publishes":null,"url":"https://github.com/nw/agents/tree/66566512…",
+             "membershipFile":{"path":"oats-membership.yaml","url":"https://github.com/nw/agents/blob/66566512…/oats-membership.yaml"}}],
+ "packages":[{"id":"oats.okf","version":"3.0.0","source":"catalog:oats.okf","commit":"ab897841…","integrity":"sha256-bada35…",
+              "capabilities":["oats.okf"],"souls":[],"latest":{"version":"4.0.3","ref":"v4.0.3"}}],
+ "declaredPackages":["oats.framework","oats.okf"],"unsynced":["oats.framework"],"stale":[],
+ "external":[{"source":"git:github.com/oss/experts@3c606e09…","soul":"security-reviewer"}],
+ "problems":[],"warnings":[],
+ "automations":{"host":"ana-laptop","snapshot":{"takenAt":"2026-09-28T10:00:00.000Z","problems":0},
+                "rows":[{"kind":"schedule","id":"agents/nightly","runsOn":"ana-laptop","owner":"github.com/ana","runsHere":true,"reason":null,"enabledHere":true,
+                         "origin":{"kind":"workspace","repoKey":"github.com/nw/agents","path":"oats-schedules/nightly.yaml","commit":"66566512…","url":null,"localPath":null}}]},
+ "defaults":{"slots":{"knowledge":{"name":"oats.okf","from":"package"},"messaging":"none","tasks":null},
+             "capabilities":[{"name":"oats.core","from":"package","off":false}]},
+ "clones":[{"key":"github.com/nw/agents","name":"agents","path":"/w/agents-repo","rule":"convention"}],
+ "disabledSouls":[],"lock":{"path":"/w/oats-lock.json","lockfileVersion":3}}
 ```
 
-`warnings[]` (feature `teams`; **removed in 0.30.0**, where these problems are readiness items: see
-[Team model v2](#team-model-v2-feature-team-model-2-oats-0300-replaces-feature-teams)) (also in the `sync` report): `{ code, label,
-souls, paths, message }` — one `unmapped-team-label` per label that is in
-`teams:` but not in `messaging.byTeam`, naming its souls (sorted) and each
-soul's `<repoKey>:<path>#/team`; sorted by label. Never a problem.
+- `members[]` and `packages[]` are the sync rows (packages from the lock).
+- `declaredPackages`: the ids in `packages:` (standalone: the kernel's
+  default). `unsynced`: declared, not locked. `stale`: locked, no longer
+  declared. `external[]`: `{source, soul}`.
+- `workspace.teams` (feature `team-model-2`): the shared teams `{label, team,
+  description}` by label; `[]` standalone.
+- `problems`, `warnings`: as in sync.
+- `automations` (feature `automations`): `{host, snapshot: {takenAt,
+  problems (a count)} | null, rows: [{kind, id, runsOn, owner, runsHere,
+  reason, enabledHere, origin, invalid?}]}`.
+- The rest are [Desktop facts](#desktop-facts-feature-desktop-facts-oats-0290).
 
-`defaults`, `clones`, `disabledSouls`, `lock`, file locations and
-`packages[].latest` (feature `desktop-facts`): see [Desktop facts](#desktop-facts-feature-desktop-facts-oats-0290).
+<a id="oats-capabilities---dir---json--capabilitiesapi-1--oats-souls---dir---json--soulsapi-1"></a>
+### `oats capabilities` and `oats souls`
 
-`unsynced` = declared in `packages:` but not in the lock (run `sync`);
-`stale` = locked but no longer declared. Read-only: does not write the lock.
-(0.26.0: the `approval` object is gone with package approval.)
-
-### `oats capabilities [--dir] --json` → `capabilitiesApi: 1` · `oats souls [--dir] --json` → `soulsApi: 1`
-
-Every item of every confirmed member, external souls, and locked package
-capabilities, sorted by name then origin. Souls have no private mode (their
-`private` is always `false`); a repo-owned capability is listed with
-`private: true` — usable only by its own repo's souls. The Desktop shows its
-"Repo owned" section when `version --json` lists the `capabilities-private`
-feature. `origin` is the
-human string (`member <key> @ <8-char commit>` | `package <id> v<version>` |
-`external <key> @ <commit>`); `kind` is the machine field. `team` is the label
-or `"unassigned"`.
-
-```json
-{"capabilitiesApi":1,"workspace":{"name":"acme","key":"github.com/acme/agents","commit":"<oid>"},
- "capabilities":[
-   {"name":"acme-house-style","origin":"member github.com/acme/agents @ 3f2a9c1e","kind":"member","repoKey":"github.com/acme/agents","commit":"<oid>",
-    "team":"global","private":false,"path":"capabilities/acme-house-style","layer":null,"version":"0.0.0-workspace"},
-   {"name":"oats.okf","origin":"package oats.okf v2.1.3","kind":"package","package":"oats.okf","version":"2.1.3","commit":"<oid>",
-    "team":"unassigned","private":false}],
- "problems":[]}
+```text
+oats capabilities [--dir <d>] --json
+oats souls [--dir <d>] --json
 ```
 
+Every item of every confirmed member, the external souls, and the locked
+packages' capabilities and souls, sorted by name, then origin. Both carry
+`workspace: {name, key, commit}`, `problems` and, on a standalone view,
+`standalone: true`.
+
 ```json
-{"soulsApi":1,"workspace":{…},
+{"soulsApi":1,"workspace":{"name":"northwind","key":"github.com/nw/agents","commit":"66566512…"},
  "souls":[
-   {"name":"release-manager","origin":"member github.com/acme/agents @ 3f2a9c1e","kind":"member","repoKey":"github.com/acme/agents","commit":"<oid>",
-    "team":"engineering","private":false,"path":"souls/release-manager","work":"worktree","description":"Cuts, verifies and announces releases."},
-   {"name":"security-reviewer","origin":"external github.com/oss-collective/experts @ 9c4e1f2a","kind":"external",…},
-   {"name":"release-reviewer","qualifiedName":"acme.tools/release-reviewer","origin":"package acme.tools v0.4.0","kind":"package","package":"acme.tools","version":"0.4.0",
-    "repoKey":"github.com/acme/tools","commit":"<oid>","team":"engineering","labels":["engineering"],"private":false,"path":"oats-package/souls/release-reviewer","work":"directory","description":"…"}],
+   {"name":"writer","origin":"member github.com/nw/mkt @ 46b3494a","kind":"member","repoKey":"github.com/nw/mkt","commit":"46b3494a…",
+    "teams":[{"label":"mine","team":"mine:ana.aweb.ai","default":true,"from":"local"},{"label":"global","team":null,"default":false,"from":"shared"}],
+    "defaultTeam":{"label":"mine","team":"mine:ana.aweb.ai","from":"deployment"},
+    "private":false,"path":"souls/writer","work":"directory","description":"Drafts campaigns.","harness":"pi","model":null,"harnessFrom":"kernel-default",
+    "file":{"path":"souls/writer/soul.yaml","url":null},"spawnable":true,"problem":null},
+   {"name":"knowledge-maintainer","qualifiedName":"oats.okf/knowledge-maintainer","origin":"package oats.okf v4.0.3","kind":"package","package":"oats.okf",
+    "version":"4.0.3","repoKey":"github.com/awebai/oats-okf","commit":"71f53649…","teams":null,"defaultTeam":null,"private":false,
+    "path":"oats-package/souls/knowledge-maintainer","work":"directory","description":"Reviews harvested knowledge.","harness":"pi","model":null,
+    "harnessFrom":"kernel-default","file":{"path":"oats-package/souls/knowledge-maintainer/soul.yaml","url":null},
+    "spawnable":false,"problem":{"code":"E_TEAM_UNKNOWN","message":"team \"reviewers\" is not declared (oats-local.yaml#/souls/teams/…)"}}],
  "problems":[]}
 ```
 
-**Package souls** (feature `package-souls`, 0.28.0): a row with `kind:
-"package"` is a soul a locked package ships (listed only while the workspace
-declares the package). It carries `package`, `version` and `qualifiedName`
-(`<package>/<soul>`); spawn it by `qualifiedName` (the bare `name` works when
-it is unique). The Souls page shows it as "from package <id> <version>".
-Its instances home under `agents/<package>--<soul>/` (`.` in the package id
-becomes `-`), and that directory is the agent `name` in `oats status --json`
-(`agents[].name`, e.g. `oats-okf--knowledge-maintainer`). A
-problem about a package soul carries `package` (and `repoKey: null`); its
-`path` is `package:<id>:<path in the repo>`.
+**Capability rows:** `name`, `origin` (display text), `kind`, then for a
+member `repoKey, commit, private, path, layer, version`, for a package
+`package, version, commit, private: false, layer`; plus the Desktop facts
+`description, skills, commands, hooks, file, tree`. `private: true` (feature
+`capabilities-private`) marks a capability usable only by its own repository's
+souls (`E_CAPABILITY_PRIVATE` otherwise). An unsynced package's capabilities
+are absent until `sync`.
 
-Souls rows' defaults, spawnability and `file`, and capability rows' `layer`,
-`description`, provides, `file` and `tree` (feature `desktop-facts`): see
-[Desktop facts](#desktop-facts-feature-desktop-facts-oats-0290).
+**Soul rows:** `name, origin, kind (member | external | package), repoKey,
+commit, teams, defaultTeam, private (always false), path, work, description`,
+plus the Desktop facts `harness, model, harnessFrom, file, spawnable,
+problem`.
+- `teams` and `defaultTeam` (feature `team-model-2`) are a
+  [TeamRow](#the-team-row-teamrow) list and a
+  [DefaultTeam](#the-default-defaultteam); both `null` when the soul's teams
+  do not resolve (`problem` names the `E_TEAM_*` code).
+- Package souls (feature `package-souls`) add `qualifiedName`
+  (`<package>/<soul>`), `package` and `version`. Spawn one by
+  `qualifiedName` (the bare name when unique). Its instances live under
+  `agents/<package>--<soul>/` with `.` written `-` (for example
+  `oats-okf--knowledge-maintainer`), which is its agent `name` in the roster.
 
-Package capabilities of declared-but-unsynced packages are absent until `sync`.
-(`oats souls --json` keeps `soulsApi: 1` in 0.26.0: its shape is unchanged.
-The probe's `soulsApi` is **2** because it tracks the `oats inspect --json`
-soul rows. The two payloads are distinguished by their command.)
+This document keeps `soulsApi: 1`; the probe's `soulsApi: 2` is the inspect
+soul row's.
 
-### `oats spawn <soul> … --preview --json` — additions (Preview API 2 unchanged)
+<a id="desktop-facts-feature-desktop-facts-oats-0290"></a>
+### Desktop facts
 
-On a workspace deployment the preview carries four extra top-level fields, and
-`decision.resolution` binds the resolution revision (so a member that moved
-between preview and apply is `E_DECISION_STALE`):
+Feature `desktop-facts`: facts the kernel reports so the Desktop never derives
+them. Gate each field below on it.
+
+| Document | Fields |
+|---|---|
+| `oats inspect --soul` | `capabilities[].composedFrom`, `capabilitiesOff[]` |
+| `oats souls` rows | `harness`, `model`, `harnessFrom`, `spawnable`, `problem`, `file` |
+| `oats capabilities` rows | `layer`, `description`, `skills`, `commands`, `hooks`, `file`, `tree` |
+| `oats workspace status` | `workspace.file`, `members[].url`, `members[].membershipFile`, `packages[].latest`, `defaults`, `clones`, `disabledSouls`, `lock` |
+| `oats status` instance rows | `startedAt`, `modelFrom`, `identityAddress`; `modules[].current.version` on member rows |
+
+- **Souls.** `harness`, `model`, `harnessFrom`: what a spawn starts with when
+  no selection flag is given, else `harness: "pi"`, `model: null`,
+  `harnessFrom: "kernel-default"` (`"soul"` when the definition names one; a
+  v2 soul.yaml cannot). `spawnable`/`problem`: whether a spawn here would
+  refuse, resolved without spawning, writing or reaching past the sync cache;
+  `problem` is `{code, message}` or `null` (`E_SOUL_DISABLED`,
+  `E_TEAM_UNKNOWN`, `E_TEAM_NOT_ELIGIBLE`, `E_CAPABILITY_*`, `E_PACKAGE_*`,
+  `E_LOCK_SCHEMA`, `E_REMOTE_*`, …). `file`: `{path, url}` of soul.yaml.
+- **Capabilities.** `layer` on every row, `null` outside the slots.
+  `description` or `null`. `skills`, `commands`, `hooks`: names, sorted
+  (`skills` is `null` when they cannot be listed). `file`: `{path, url}` of
+  `oats.json`, or `null` when unreadable. `tree`: a member capability's Git
+  tree id at the member commit; `null` for a package (its fingerprint is the
+  lock's `integrity`). Package facts are read from the sync cache; unreadable
+  manifests leave them `null`.
+- **`defaults`**: the workspace file's defaults as declared. `slots.<slot>` is
+  `{name, from}`, `"none"` or `null`; `capabilities` are `{name, from, off}`
+  by name (`from` is `"package"`, `"here"` or a member key; `null` when off).
+  Standalone: every slot `null`, `capabilities: []`.
+- **`clones[]`**: `{key, name, path, rule}` with `rule` `"clones"`,
+  `"convention"` or `null`. A path that is not the member's clone gives
+  `path: null, rule: null, problem: {code: "E_CLONE_MISMATCH", message}`.
+- **`disabledSouls`**: `souls.disabled` as written. **`lock`**: `{path,
+  lockfileVersion}`.
+- **`packages[].latest`**: `{version, ref}` when the kernel's bundled catalog
+  has a newer version of a catalog package; `null` otherwise and for `git:`
+  packages. No network (`OATS_PACKAGE_CATALOG` overrides the catalog).
+- **`workspace.file`**, **`members[].url`**, **`members[].membershipFile`**:
+  `{path, url}` at the named commit (`workspace.file` is `null` standalone).
+- **URLs** exist only for `github.com` (`…/blob/<commit>/<path>` or
+  `…/tree/<commit>`); any other host gives `url: null` with `path` set.
+  `path` is repository-relative.
+
+<a id="team-model-v2-feature-team-model-2-oats-0300-replaces-feature-teams"></a>
+## Teams
+
+Feature `team-model-2`: gate every team field and verb on it. Design:
+[team model v2](design/2026-09-27-team-model-v2.md); operator guide:
+[workspaces.md](workspaces.md).
+
+- **Shared teams** live in the committed `oats-workspace.yaml`:
+  `teams.<label> = {description?, team?}`. A shared team without `team` (the
+  provider id) is **unmapped**.
+- **Local** configuration lives in `oats-local.yaml`: `teams.<label> = {team,
+  description?}`, `defaultTeam: <label>`, `souls.teams: {"*": [labels],
+  "<soul>": [labels]}` and `souls.default: {"<soul>": <label>}`. A soul key is
+  the spawn name (`<package>/<soul>` for a package soul). A label matches
+  `[a-z0-9][a-z0-9._-]*`.
+- **Resolution.** The soul's default is `souls.default[soul] ??
+  defaultTeam`; its teams are that default plus `souls.teams["*"]` plus
+  `souls.teams[soul]`. A label in both files is a `team-label-collision`
+  warning, and the shared definition wins. An undeclared label is
+  `E_TEAM_UNKNOWN`; a `souls.default` outside the soul's teams is
+  `E_TEAM_NOT_ELIGIBLE`.
+- **Removed keys** are `E_WORKSPACE_SCHEMA` with `reason: "removed-key"`:
+  `messaging.byTeam`, `defaults.byTeam`, a soul.yaml `team`, an
+  oats-membership.yaml `team`, and `byTeam` in any provider payload layer.
+  Other payload keys are opaque (a `team` setting passes through).
+
+### The team row (`TeamRow`)
+
+Exactly `{label, team, default, from}`:
+
+```json
+[{"label":"antares","team":"antares:ana.aweb.ai","default":true,"from":"local"},
+ {"label":"oats","team":"oats:oats.aweb.ai","default":false,"from":"shared"},
+ {"label":"reviewers","team":null,"default":false,"from":"shared"}]
+```
+
+`team` is `null` for an unmapped team. `default` is true on exactly the
+soul's default row; the others are teams an instance may join (offered, never
+joined automatically). `from` is `"shared"` or `"local"`. The default row
+comes first, then the rest by label (codepoint order). Reports include
+unmapped rows; `OATS_TEAMS` and `instance.json.teams` carry mapped rows only.
+
+### The default (`DefaultTeam`)
+
+```json
+{"label":"antares","team":"antares:ana.aweb.ai","from":"deployment"}
+```
+
+`from` is `"deployment"` (`defaultTeam`) or `"soul"` (`souls.default`). It is
+`null` only when no default is configured (with messaging active, that is
+`E_TEAM_UNCONFIGURED`). An unmapped default is `{label, team: null, from}`,
+the blocking problem `team-unmapped`.
+
+<a id="where-teams-appear"></a>
+### Where teams appear
+
+| Document | Team fields |
+|---|---|
+| `oats spawn … --preview` | `teams` (unmapped included), `defaultTeam` |
+| `oats inspect --soul` | `teams`, `defaultTeam`, `teamsSource: "live"` |
+| `oats inspect --home` | `teams`, `defaultTeam`, `teamsSource` (`"live"`, or `"recorded"` when the workspace cannot be read; `teams: null` when none was recorded), `recordedDefaultTeam` |
+| `oats readiness` | items under `checks.configured` |
+| `oats souls` rows | `teams`, `defaultTeam` (`null` when they do not resolve) |
+| `oats workspace status` | `workspace.teams` |
+| `instance.json` | `teams` (mapped rows), `defaultTeam` |
+
+A home's live teams are the files as they are now; a running instance keeps
+its spawn-time default until respawned (readiness says so with
+`default-team-changed`). No document carries a soul-level `team`, `labels`,
+`primary`, `mapped` or `byTeam`, and no capability origin is `team:<label>`.
+
+**Provider environment.** Hooks, commands, operations and provider checks get
+the teams in `OATS_DEFAULT_TEAM`, `OATS_DEFAULT_TEAM_ID`,
+`OATS_DEFAULT_TEAM_FROM`, `OATS_TEAMS` and `OATS_TEAMS_SOURCE`:
+[capabilities.md](capabilities.md#teams-in-the-provider-environment).
+`OATS_WORKSPACE_NAME` is the recorded workspace name (the discovered one for a
+soul subject), `""` when unknown.
+
+### `oats teams`
+
+```text
+oats teams [--dir <d>] --json
+oats teams add <label> --team <id> [--description <d>] --json
+oats teams remove <label> --json
+oats teams default <label> --json
+```
+
+```json
+{"teamsApi":1,"deployment":"/w","defaultTeam":"antares",
+ "teams":[{"label":"antares","team":"antares:ana.aweb.ai","description":null,"from":"local","default":true,"at":"oats-local.yaml#/teams/antares"},
+          {"label":"reviewers","team":null,"description":null,"from":"shared","default":false,"at":"github.com/awebai/oats:oats-workspace.yaml#/teams/reviewers"}],
+ "souls":{"teams":{"*":["oats"],"oats-expert":["reviewers"]},"default":{"oats-expert":"oats"}},
+ "problems":[{"code":"team-unmapped","label":"reviewers","default":false,"severity":"warning","at":"github.com/awebai/oats:oats-workspace.yaml#/teams/reviewers",
+              "message":"shared team reviewers has no provider id yet","fix":"its owner runs `oats aweb setup`, then commits the id"}]}
+```
+
+- `defaultTeam` is the deployment's label (or `null`), not a `DefaultTeam`.
+- `teams[]`: every declared team by label, `{label, team, description, from,
+  default, at}`; `at` is a pointer into `oats-local.yaml` or
+  `<workspace key>:oats-workspace.yaml#/teams/<label>`. A collision shows the
+  shared definition.
+- `souls`: `souls.teams` and `souls.default` as written. `problems`: the
+  deployment's [team readiness items](#team-readiness-items).
+- The verbs never call a provider. They validate, rewrite `oats-local.yaml` in
+  place, and answer the document plus `changed: bool`.
+- **`add`**: the first team added also becomes `defaultTeam`. A label already
+  declared is `E_TEAM_EXISTS {label, from}`; a bad label or no `--team` is
+  `E_BAD_ARGS`.
+- **`remove`**: a referenced label is `E_TEAM_IN_USE {label, usedBy}` (each
+  `"defaultTeam"`, `"souls.teams:<key>"` or `"souls.default:<key>"`); a shared
+  label is `E_TEAM_SHARED {label, at}` (a label in both files can be removed
+  locally); unknown is `E_TEAM_UNKNOWN {label}`.
+- **`default`**: any declared label, else `E_TEAM_UNKNOWN`.
+- A write that would introduce an unknown or ineligible reference is refused
+  with that code; an invalid result is `E_WORKSPACE_SCHEMA`.
+
+### `oats soul teams`
+
+```text
+oats soul teams <soul>|'*' [--add a,b] [--remove a,b] [--default <label> | --clear-default] [--dir <d>] --json
+```
+
+```json
+{"soulTeamsApi":1,"soul":"oats-expert","key":"oats-expert","defaultTeam":{"label":"oats","team":"oats:oats.aweb.ai","from":"soul"},
+ "teams":[{"label":"oats","team":"oats:oats.aweb.ai","default":true,"from":"shared","via":["default","*"]},
+          {"label":"reviewers","team":null,"default":false,"from":"shared","via":["soul"]}],
+ "local":{"teams":["reviewers"],"default":"oats"},"all":["oats"]}
+```
+
+- Rows are `TeamRow` plus `via`, a non-empty ordered subset of `"default"`,
+  `"*"` and `"soul"`. `key` is the soul's `souls.*` key; `local` its own
+  entries; `all` is `souls.teams["*"]`.
+- For `'*'`: `soul` and `key` are `"*"`, `teams` the deployment default plus
+  `souls.teams["*"]`, `local.default: null`.
+- Mutations answer the document plus `changed`. Unknown label:
+  `E_TEAM_UNKNOWN {label}`. A `--default` outside the soul's teams:
+  `E_TEAM_NOT_ELIGIBLE {soul, label}`. `--default`/`--clear-default` with
+  `'*'`, or both together: `E_BAD_ARGS`. Soul lookup: `E_SOUL_UNKNOWN`,
+  `E_SOUL_AMBIGUOUS`.
+
+### The messaging provider's teams document
+
+The messaging provider's `teams` operation (`messaging:teams`) is produced by
+the provider (oats.aweb 1.17 or later), not the kernel:
+
+```json
+{"defaultTeam":{"label":"antares","team":"antares:ana.aweb.ai","from":"deployment"},
+ "eligible":[{"label":"oats","team":"oats:oats.aweb.ai","joined":true}],
+ "joined":[{"label":"oats","team":"oats:oats.aweb.ai","identityHome":"/w/agents/oe/instances/oe-1/.aw-teams/oats","receive":"live","since":"2026-09-28T09:00:00.000Z"}],
+ "left":[{"label":"reviewers","team":"reviewers:acme.aweb.ai","at":"2026-09-28T09:30:00.000Z","reason":"no-longer-eligible"}],
+ "at":"2026-09-28T10:00:00.000Z"}
+```
+
+`defaultTeam` is the kernel's `DefaultTeam` from the environment. `eligible`
+are the non-default `OATS_TEAMS` rows; `joined[].receive` is `live` or
+`poll`; `left` holds the last 20 leaves. A join or leave answer adds
+`actions: [{action: "join" | "leave", label, released?, receipt?}]`. There is
+no `primary` and no `unmapped`: unmapped teams are kernel readiness items.
+
+<a id="team-readiness-items"></a>
+### Team readiness items
+
+`oats teams` lists them under `problems[]` as `{code, severity: "failure" |
+"warning", message, fix, …}`. `oats readiness` lists the soul's under
+`checks.configured` with `subject` `"team <label>"` (or `"teams"`), `producer:
+"team model"`, `code`, `reason`, `remedy`, `status: "fail"`, `required: true`
+for a failure and `false` for a warning, plus the problem's own keys.
+
+| Code | Severity | Keys | When |
+|---|---|---|---|
+| `E_TEAM_UNCONFIGURED` | failure | | messaging is active and the soul has no default |
+| `team-unmapped` | failure if `default`, else warning | `label`, `default`, `at` | a shared team without `team` |
+| `team-label-collision` | warning | `label`, `shared`, `local` (each `{team, description, at}`) | a label in both files |
+| `default-team-changed` | warning | `recorded`, `current` | `--home` with live teams: the default changed since the spawn |
+| `E_TEAM_UNKNOWN` | failure | `label`, `at` | a reference to an undeclared label |
+| `E_TEAM_NOT_ELIGIBLE` | failure | `soul`, `label`, `at` | `souls.default` outside the soul's teams |
+
+The last two are also spawn, preview and inspect refusals, with the same
+details.
+
+## Spawn
+
+### The preview
+
+```text
+oats spawn <soul> [the flags of a real spawn] --preview --json
+```
+
+Feature `spawn-preview-2`, `spawnPreviewApi: 2`. The preview runs every
+preflight a spawn runs and writes nothing, on success or refusal. It reads the
+soul from the per-commit cache (`agents/<soul>/souls/<commit12>/`) or fetches
+it to a temporary copy (`soulFetched: true`).
 
 ```json
 {"modules":[
-   {"name":"acme-release-tooling","from":{"kind":"member","repoKey":"github.com/acme/agents","commit":"<oid>"},"layer":null,"private":false,"declares":[],
-    "changedSince":{"instance":"release-manager-v2","was":"<old oid>"}},
-   {"name":"oats.okf","from":{"kind":"package","package":"oats.okf","version":"2.1.3","commit":"<oid>","integrity":"sha256-…","repoKey":"github.com/awebai/oats-okf"},
-    "layer":"knowledge","private":false,"declares":["bindings-file","git-timeout","harvest-model","harvest-runtime","state-dir"],"changedSince":false}],
- "team":"engineering",
- "resolution":"6e3050c0d005879441ab017d",
- "workspace":"github.com/acme/agents",
- "spawnPreviewApi":2,"preview":true,"agent":"release-manager","instance":"release-manager-cut","home":"/abs/…",
- "decision":{"instance":"…","home":"…","branch":"…","base":{…},"effective":{…},"resolution":"6e3050c0d005879441ab017d","revision":"<24 hex>"},
- "…":"every Preview API 2 field as before"}
+   {"name":"nw-tools","from":{"kind":"member","repoKey":"github.com/nw/agents","commit":"66566512…"},"layer":null,"private":false,"declares":[],
+    "changedSince":{"instance":"rm-2","was":"45b86f64…"}},
+   {"name":"oats.okf","from":{"kind":"package","package":"oats.okf","version":"2.1.3","commit":"ab897841…","integrity":"sha256-bada35…","repoKey":"github.com/awebai/oats-okf"},
+    "layer":"knowledge","private":false,"declares":["state-dir"],"changedSince":false}],
+ "teams":[{"label":"eng","team":"eng:nw.aweb.ai","default":true,"from":"shared"}],
+ "defaultTeam":{"label":"eng","team":"eng:nw.aweb.ai","from":"soul"},
+ "resolution":"abacbdb5a7975098d77007c8","declRevision":"068a0d3f1311a9e84e9aff2e","payloadRevision":"81a368006c610194aa35dbe0",
+ "workspace":"github.com/nw/agents","standalone":false,"providers":{},
+ "settings":{"nw-tools":{},"oats.okf":{"owns":"rm"}},
+ "settingsOrigins":{"nw-tools":{},"oats.okf":{"/owns":{"kind":"soul","at":"soul.yaml#/knowledge"}}},
+ "spawnPreviewApi":2,"preview":true,"agent":"rm","kind":"persistent","instance":"rm-api","home":"/w/agents/rm/instances/rm-api",
+ "repo":"/w/agents-repo","work":"worktree","subject":{"soul":"rm","agentsRoot":null,"dir":"/w"},
+ "decision":{"instance":"rm-api","home":"/w/agents/rm/instances/rm-api","branch":"agents/rm-api","base":{"ref":"HEAD","oid":"66566512…"},
+             "effective":{"repo":"/w/agents-repo","work":"worktree","harness":"pi","model":null,"launchConfig":null,"yolo":null,"backend":"tmux",
+                          "childSpawns":true,"relation":null,"providers":{"nw-tools":{},"oats.okf":{"owns":"rm"}}},
+             "resolution":"abacbdb5a7975098d77007c8","revision":"c557d8ec9a272ba1c1739dc3"},
+ "preflight":{"status":"complete","budgetMs":20000,"elapsedMs":53},"backendStatus":{"name":"tmux","installed":true,"started":false},
+ "harness":"pi","model":null,"modelSource":"native default","launchConfig":null,"backend":"tmux",
+ "branch":"agents/rm-api","base":{"ref":"HEAD","oid":"66566512…"},"worktree":"/w/agents/rm/instances/rm-api/work",
+ "relation":null,"parentInstance":null,"policy":{"childSpawns":{"allowed":true,"origin":{"kind":"default","detail":"no spawn option: children allowed"}}},
+ "executable":"/usr/local/bin/pi",
+ "capabilities":[{"name":"nw-tools","origin":"member:github.com/nw/agents@66566512…"},{"name":"oats.okf","origin":"package:oats.okf@2.1.3"}],
+ "skills":["release-checklist",{"name":"okf","source":"module:oats.okf"}],
+ "task":null,"soulFetched":true}
 ```
 
-- `modules[].from` is exactly the `from` recorded in `instance.json` on apply.
-- `modules[].declares`: the manifest's declared setting keys, as in `inspect`
-  (feature `settings-declared`).
-- `changedSince`: `null` (no previous instance of this soul), `false`
-  (unchanged since the newest previous instance), or
-  `{ instance, was }` (`was` = the previous commit, or `null` when the previous
-  instance had no such module).
-- `capabilities[]` / `skills[]` on a **workspace** spawn are **objects**, not
-  Preview-1's strings: `capabilities[]` is `{ name, origin }` (`origin` =
-  `package:<id>@<version>` or `member:<repoKey>@<commit>`), and `skills[]` is
-  `{ name, source }`. Neither is a binding surface, because the authoritative
-  module set is `modules[]` and what apply binds is `decision.effective` /
-  `decision.resolution`. Consumers should read those fields, not project
-  `capabilities[]` / `skills[]`. (Corrected 2026-09-24: this said "keep their
-  Preview-1 meaning", which read as strings; found by the Desktop engineer in
-  F3.)
-- `workspace` is the workspace host's canonical key, `team` the soul's label
-  (or `null`), `resolution` the 24-hex revision `decision.resolution` binds.
-- `--provider <cap> <key>=<value>` (repeatable; `a.b=c` nests) is accepted by
-  preview and apply. `E_BAD_ARGS` for a malformed pair or when the deployment
-  has no `oats-local.yaml`; `E_CAPABILITY_MISSING { capability, soul, modules[] }`
-  when the soul does not resolve that capability. `byTeam` is a **reserved
-  key**: legal only at the top level of the workspace file's `messaging:`;
-  anywhere else in any payload layer (soul, `oats-local.yaml` `settings`,
-  `--provider`, at any depth) it is `E_WORKSPACE_SCHEMA { reason: "reserved-key", path, key }`.
-- Soul lookup: `E_SOUL_UNKNOWN { name, members[], packages[] }` (not among
-  confirmed members, externals or package souls), `E_SOUL_AMBIGUOUS { name,
-  repos[], qualified[] }` (name one of `qualified`: `<member>/<soul>` or
-  `<package>/<soul>`), `E_SOUL_DISABLED { name, qualifiedName, entry }` (the
-  soul is in `oats-local.yaml` `souls.disabled`). A package soul whose fetched
-  content does not match the lock is `E_PACKAGE_INTEGRITY { why:
-  "soul-digest", package, soul, locked, observed }`. Resolution errors keep their codes (`E_NOT_A_MEMBER`,
-  `E_MEMBERSHIP_UNCONFIRMED { repoKey, reason }`, `E_CAPABILITY_MISSING { hint? }`,
-  `E_CAPABILITY_PRIVATE`, `E_PACKAGE_MISSING`, `E_PACKAGE_INTEGRITY { why: "capabilities", listed, locked }`,
-  `E_SLOT_CONFLICT { slot, modules[], reason? }`, `E_SKILL_DUPLICATE { name, modules[] }`,
-  `E_COMPATIBILITY { capability, package, version, range, why? }`).
+**Placement.**
+- `instance`: `<agent>-<purpose>` with `--purpose`, else `<agent>-<n>`,
+  de-duplicated across the deployment; or exactly `--name`
+  ([Instance names](#instance-names)). `home` and `worktree` (worktree mode,
+  else `null`) are canonical: never derive paths.
+- `repo`: `--repo`, else the `clones:` entry, else `<deployment>/<member>`.
+- `branch` defaults to `agents/<instance>` (`--branch` overrides); `base` is
+  `--base` (default `HEAD`) resolved to `oid`. `E_BRANCH_EXISTS` and
+  `E_BASE_UNKNOWN` refuse preview and apply alike.
+- `subject` echoes `{soul, agentsRoot, dir}` byte-exact.
 
-The apply result (`oats spawn … --json`) is unchanged in shape; the new facts
-live in the home's `instance.json`.
+**Launch.**
+- `harness`, `model`, `modelSource`, `launchConfig`, `backend`, `yolo`
+  (absent when nothing sets it) are the resolved selection.
+  `backendStatus` is `{name, installed, started: false}`, `null` with
+  `--no-launch`. `executable` is the resolved harness binary.
+- `modelSource` is `"explicit"`, `"soul default"`, `"launch-config <name>"`,
+  `"native default"` or `"native default (explicit)"` (`--model
+  @native-default`). Omitting `--model` and asking for the native default are
+  different requests.
+- `preflight`: `{status: "complete" | "timeout", budgetMs, elapsedMs}`; all
+  native probes share one 20 s budget.
+- `policy.childSpawns` is what the instance will record.
 
-### `instance.json` — `modules`, `providers`, `workspace` (feature `instance-modules`)
+**Composition.**
+- `modules[]` (feature `instance-modules`): `{name, from, layer, private,
+  declares, changedSince}`; `from` is what `instance.json` will record.
+  `changedSince` is `null` (no previous instance), `false` (unchanged since the
+  newest one) or `{instance, was}`.
+- `capabilities[]` (`{name, origin}`, `origin` `package:<id>@<v>` or
+  `member:<repoKey>@<commit>`) and `skills[]` (the soul's own skills as
+  strings, module skills as `{name, source: "module:<cap>"}`) are display
+  only: bind to `modules[]` and `decision`.
+- `resolution` (24 hex) hashes `declRevision` (the declarations) and
+  `payloadRevision` (the merged payloads). `workspace` is the host key;
+  `standalone` marks a standalone view. `task` is the task text or `null`.
 
-Written by materialization inside the spawn transaction; read back by
-`oats status --json` and the roster.
+**Provider settings.**
+- `providers` is the `--provider` map as typed.
+- `settings.<cap>`: the merged payload (manifest defaults, then workspace,
+  soul, `oats-local.yaml` `settings.<cap>`, `--provider`).
+- `settingsOrigins.<cap>` (feature `settings-origins`) maps each leaf pointer
+  (`/identity/mode`) to `{kind, at}`: `kind` is `manifest-default | workspace |
+  soul | host | spawn`, `at` names the place.
+- `--provider <cap> <key>=<value>` (feature `spawn-provider-payload`,
+  repeatable, `a.b=c` nests): a malformed pair is `E_BAD_ARGS`; a capability
+  the soul does not resolve is `E_CAPABILITY_MISSING {capability, soul,
+  modules}`.
+
+### The decision
+
+`decision` is `{instance, home, branch, base, effective, resolution,
+revision}`. `effective` (feature `spawn-apply-2`) is `{repo, work, harness,
+model, launchConfig, yolo, backend, childSpawns, relation, providers}`;
+`relation` is `null` or `{kind, anchor: {instance, agentsRoot}}`; `providers`
+(feature `served-identity`) equals `settings`. `revision` (24 hex) hashes the
+decision.
+
+Apply with `oats spawn <soul> … --expect-decision <revision> --json`. Any drift
+refuses `E_DECISION_STALE` with the fresh `details.decision`; nothing is
+created. Without `--expect-decision` the CLI keeps its interactive
+auto-suffix.
+
+### Apply
+
+Feature `spawn-apply-2`, `spawnApplyApi: 1`. The Desktop gates on
+`spawn-preview-2`, `spawn-apply-2` and `spawn-idempotency-2`.
+
+- Backend startup runs only after the decision check and the placement
+  reservation; a missing backend binary is refused before placement.
+- The home is reserved with a non-recursive `mkdir`. A concurrent loser
+  refuses `E_PLACEMENT_TAKEN {instance, home}` having touched nothing. Names
+  are deployment-wide: a same-name race with another soul ends in
+  `E_INSTANCE_NAME_TAKEN` (for `--name`) or `E_PLACEMENT_TAKEN`.
+- A refused child spawn appends `child-spawn-refused` to the parent's log (on
+  apply only).
+
+**Idempotency** (feature `spawn-idempotency-2`): `--idempotency-key <key>`
+with `--expect-decision` records the key and decision in `instance.json`.
+- Recovery runs right after naming, before placement or preflight. A retry
+  with the same key replays the receipt (`replayed: true`, no second spawn,
+  no second wake). The same key with another decision is
+  `E_IDEMPOTENCY_CONFLICT {instance, home}`.
+- `spawnCompleted` is `false` until launch, lineage and events are done; a
+  retry of an unfinished spawn is `E_SPAWN_INCOMPLETE {instance, home,
+  launched}` (recover through the session surface).
+- The key lives in the home. Mint it on the first confirmation and keep it
+  for that intent's retries.
+- `wake: {requested, saved, error}` is recorded and replayed; `saved: null`
+  means the outcome was not recorded.
+
+**Result** (`oats spawn <soul> … --json`):
 
 ```json
-{"modules":{
-   "acme-release-tooling":{"from":{"kind":"member","repoKey":"github.com/acme/agents","commit":"<oid>"},
-                           "commit":"<oid>","digest":"sha256-…","materializedAt":"<iso>"},
-   "oats.okf":{"from":{"kind":"package","package":"oats.okf","version":"2.1.3","commit":"<oid>","integrity":"sha256-…","repoKey":"github.com/awebai/oats-okf"},
-               "commit":"<oid>","digest":"sha256-…","materializedAt":"<iso>"}},
- "providers":{"acme-release-tooling":{},"oats.okf":{"owns":"release-manager","reads":["platform-engineer"],"state-dir":"/Users/ana/.oats/okf"}},
- "workspace":{"key":"github.com/acme/agents","name":"acme","deployment":"/Users/ana/acme-workspace","commit":"<oid>","resolution":"<24 hex>","standalone":false,
-              "soul":{"repoKey":"github.com/acme/agents","commit":"<oid>","team":"engineering"}},
- "…":"a package soul's workspace.soul also records package: {id, version, commit, digest, path}, and its id is package:<id>#<soul>",
- "capabilities":[{"id":"oats.okf","capability":"oats.okf","origin":"package:oats.okf@2.1.3","…":"one row per module"}]}
+{"instance":"rm-api","agent":"rm","home":"/w/agents/rm/instances/rm-api","work":"worktree","branch":"agents/rm-api","launched":true,"warnings":[],
+ "tmux":{"session":"pi-agents","window":"rm-api"},"repo":"/w/agents-repo","harness":"pi","model":null,"parent":null,"sibling":null,"relation":null,
+ "spawnOrigin":"operator","attach":"tmux attach -t pi-agents","decision":{"instance":"rm-api","revision":"c557d8ec9a272ba1c1739dc3"},"replayed":false,
+ "wake":{"requested":false,"saved":null,"error":null},"launchConfig":null,
+ "launch":{"version":2,"harness":"pi","launchConfig":null,"launchConfigSource":null,"executable":"/usr/local/bin/pi","executableDeclared":null,
+           "executableResolvedFrom":"PATH","args":[],"env":{},"model":null,"hooks":{"launch":{},"env":{},"contributions":[]},"prompt":{"kind":"task-file","file":"TASK.md"}}}
 ```
 
-`workspace.name` (the workspace file's `name`) and `workspace.deployment` (the
-directory holding the deployment's `oats-local.yaml`) are recorded from 0.26.0,
-so a home answers them without discovery: `oats inspect --home` reports the
-recorded name, and `oats operation run --home` hands it to the provider as
-`OATS_WORKSPACE_NAME`. Homes spawned
-before 0.26.0 lack both; the name is then discovered, or `null`.
+(`decision` is abridged: it is the full bound decision.)
 
-`workspace.standalone` is `true` when the instance was spawned from the
-**standalone view** (decisions 10/25: a *member* whose workspace could not be
-read — `workspace.key` is then the member repo's key, and `modules` holds the
-soul's `from: here` capabilities plus `oats.core`); `false` for a workspace
-spawn. The same view is marked `standalone: true` in `oats sync --json` (with
-`workspace.name` = `standalone:<repo>`) and in the roster. `capabilities[]` is
-the per-module row set (`toCapabilityRows`) that `oats inspect`/`status` read.
+- Always present: `instance, agent, home, work, branch, launched, warnings
+  (array), tmux ({session, window} | null), repo, harness, model, parent,
+  sibling, relation, spawnOrigin (operator | instance), attach, launchConfig,
+  launch` (the redacted recipe).
+- When they apply: `sessionTarget` (Herdr), `yolo`, `decision` and
+  `replayed` (bound apply), `wake` (keyed apply), `wakeSchedule` and
+  `wakeScheduleError` (a requested wake).
 
-`soulDir` (0.26.0) is the absolute soul directory the instance incarnates — a
-workspace soul's per-commit copy `<deployment>/agents/<soul>/souls/<commit12>`, or
-the read-only soul inside a capability package — and is what every classic
-lifecycle hook and dispatched command receives as `OATS_SOUL`. Instance homes carry no `soul` link.
+<a id="instance-names"></a>
+### Instance names
 
-`digest` is the sha256 of the copied module tree (`<home>/.oats/modules/<cap>/`);
-`providers.<cap>` is the merged payload (manifest defaults ⊕ soul ⊕
-`oats-local.yaml` `settings.<cap>` ⊕ `--provider`), `{}` for a capability with none. Copies live at
-`<home>/.oats/modules/<cap>/` and `<home>/.agents/skills/<cap>/<skill>/`.
+Feature `spawn-name`. `--name <slug>` is the exact name, with no prefix.
+- `--name` with `--purpose`, or without a value: `E_BAD_ARGS`.
+- A name that is not a slug (lowercase letters and digits, single dashes),
+  equals a soul name, or exceeds 64 characters (derived names included, with
+  their suffix) is `E_INSTANCE_NAME_INVALID`.
+- A name any soul's `instances/` holds, or a live tmux window carries, is
+  `E_INSTANCE_NAME_TAKEN {instance, home, session?}`; a typed name never gets
+  a silent `-2`.
+- The name is part of the decision.
 
-### `oats status [--dir] --json` — module drift
+<a id="spawn-errors"></a>
+### Spawn errors
 
-On a workspace deployment the roster does one discovery and rewrites each
-instance's `modules` from the recorded map into **drift rows**, and adds a
-top-level `workspace` reachability field:
+| Code | Details | When |
+|---|---|---|
+| `E_USAGE`, `E_BAD_ARGS` | | no soul; bad, contradictory or removed flags |
+| `E_LOCAL_MISSING`, `E_NO_DEPLOYMENT` | | no `oats-local.yaml`; no `agents/` root |
+| `E_SOUL_UNKNOWN` | `{name, members, packages}` | no such soul, or not at `--agents-root` |
+| `E_SOUL_AMBIGUOUS` | `{name, repos, qualified}` | several souls answer the bare name; use one of `qualified` |
+| `E_SOUL_DISABLED` | `{name, qualifiedName, entry}` | listed in `souls.disabled` |
+| `E_UNKNOWN_AGENT` | | the resolved soul is not under the deployment's agents root |
+| `E_TEAM_UNKNOWN`, `E_TEAM_NOT_ELIGIBLE` | `{label, at}`, `{soul, label, at}` | the soul's teams do not resolve |
+| `E_NOT_A_MEMBER`, `E_MEMBERSHIP_UNCONFIRMED` | | the soul's repository is not a confirmed member |
+| `E_CAPABILITY_MISSING`, `E_CAPABILITY_PRIVATE`, `E_CAPABILITY_INCOMPATIBLE`, `E_COMPATIBILITY` | | a capability cannot be resolved |
+| `E_PACKAGE_MISSING`, `E_PACKAGE_INTEGRITY`, `E_LOCK_SCHEMA` | | the lock does not provide it (standalone: `{…, standalone: true, reason: "no-catalog", catalog}`) |
+| `E_SLOT_CONFLICT`, `E_SKILL_DUPLICATE` | | the composition conflicts |
+| `E_WORKSPACE_SCHEMA` | `{path, key, reason}` | a removed key or invalid payload |
+| `E_CLONE_MISSING`, `E_CLONE_MISMATCH` | | the member's clone is missing or wrong |
+| `E_REQUIREMENT_INACTIVE` | `{soul, capabilities, context, remedy}` | a declared requirement is not active |
+| `E_CHILD_SPAWNS_DISABLED` | `{parent, policy}` | the parent's policy is off |
+| `E_PARENT_NOT_FOUND`, `E_RELATIVE_NOT_FOUND` | | the anchor name matches no instance |
+| `E_RELATIVE_AMBIGUOUS` | | the anchor matches several instances (`--relative-root` picks one) or a same-named instance would shadow the edge |
+| `E_BRANCH_EXISTS`, `E_BASE_UNKNOWN` | | |
+| `E_INSTANCE_NAME_INVALID`, `E_INSTANCE_NAME_TAKEN` | see above | |
+| `E_DECISION_STALE` | `{decision}` | |
+| `E_PLACEMENT_TAKEN`, `E_IDEMPOTENCY_CONFLICT` | `{instance, home}` | |
+| `E_SPAWN_INCOMPLETE` | `{instance, home, launched}` | |
+| `E_LAUNCH_*`, `E_MODEL_UNKNOWN`, `E_UNSUPPORTED_HARNESS` | | the launch selection is refused |
+| `E_SCHEDULE_INVALID` | | a bad wake (`--wake-json`, `--wake-file`, `--wake-*`) |
+| `E_SPAWN_FAILED` | | anything else |
+
+## `instance.json` and the roster
+
+<a id="instancejson"></a>
+### `instance.json`
+
+Written by the spawn; read by the roster and every `--home` command. The
+workspace-model fields (feature `instance-modules`):
 
 ```json
-{"root":"/abs/acme-workspace/agents",
- "agents":[{"name":"release-manager",…,"instances":[{"instance":"release-manager-cut",…,
-   "modules":[
-     {"name":"acme-release-tooling","from":{"kind":"member","repoKey":"github.com/acme/agents","commit":"<oid>"},"commit":"<oid>",
-      "current":{"commit":"<new oid>"},"status":"moved"},
-     {"name":"acme-house-style","from":{…},"commit":"<oid>","current":{"commit":"<oid>"},"status":"missing","reason":"capability-absent"},
-     {"name":"oats.okf","from":{"kind":"package",…},"commit":"<oid>","current":{"commit":"<oid>","version":"2.1.3"},"status":"current"}]}]}],
+{"agent":"rm","kind":"persistent","instance":"rm-api","home":"/w/agents/rm/instances/rm-api","soulDir":"/w/agents/rm/souls/66566512168e",
+ "repo":"/w/agents-repo","work":"worktree","branch":"agents/rm-api","harness":"pi","modelFrom":"harness-default","spawnOrigin":"operator",
+ "policy":{"childSpawns":{"allowed":true,"origin":{"kind":"default","detail":"no spawn option: children allowed"}}},
+ "modules":{"oats.okf":{"from":{"kind":"package","package":"oats.okf","version":"2.1.3","commit":"ab897841…","integrity":"sha256-bada35…","repoKey":"github.com/awebai/oats-okf"},
+                        "commit":"ab897841…","digest":"sha256-9a0e…","materializedAt":"2026-09-28T10:08:01.100Z"}},
+ "providers":{"oats.okf":{"owns":"rm","state-dir":"/Users/ana/.oats/okf"}},
+ "workspace":{"key":"github.com/nw/agents","name":"northwind","deployment":"/w","commit":"66566512…","resolution":"abacbdb5a7975098d77007c8","standalone":false,
+              "soul":{"id":"github.com/nw/agents#rm","repoKey":"github.com/nw/agents","commit":"66566512…"},
+              "layers":{"knowledge":{"capability":"oats.okf","from":"workspace"},"messaging":null,"tasks":null}},
+ "teams":[{"label":"mine","team":"mine:ana.aweb.ai","default":false,"from":"local"}],
+ "defaultTeam":{"label":"eng","team":null,"from":"soul"},
+ "capabilities":[{"id":"oats.okf","layer":"knowledge","command":"okf","origin":"package:oats.okf@2.1.3","level":"/w/agents/rm/instances/rm-api",
+                  "settings":{"owns":"rm","state-dir":"/Users/ana/.oats/okf"},"settingsOrigins":{},"provenance":["package oats.okf v2.1.3"],
+                  "skills":["/w/agents/rm/instances/rm-api/.agents/skills/oats.okf/okf"],"hooks":["retire","spawn"],"trusted":true}],
+ "skills":[{"name":"release-checklist","source":"soul"},{"name":"okf","source":"module:oats.okf"}],
+ "createdAt":"2026-09-28T10:08:01.281Z"}
+```
+
+Abridged: the record also carries the launch recipe and command,
+composition evidence, the capability runtime, the tmux or Herdr target,
+lineage (`parentInstance`, `siblingInstance`, `relation`, `relativeTo`), and
+the keyed-spawn fields `decision`, `spawnIdempotencyKey`, `spawnCompleted` and
+`wake`; later starts add `restarts` and `restartCount`.
+
+- `modules.<cap>`: `{from, commit, digest, materializedAt}`; `digest` hashes
+  the copy at `<home>/.oats/modules/<cap>/`. Module skills are copied to
+  `<home>/.agents/skills/<cap>/<skill>/`.
+- `providers.<cap>`: the merged payload (`{}` when none).
+- `workspace`: `{key, name, deployment, commit, resolution, standalone, soul,
+  layers}`. `name` is recorded, and every hook, command and operation of the
+  home receives it as `OATS_WORKSPACE_NAME`. `soul.id` is `<repoKey>#<soul>`,
+  or `package:<id>#<soul>` for a package soul, which also records `name`,
+  `qualifiedName` and `package: {id, version, commit, digest, path}`.
+  `layers.<slot>` is `{capability, from}` or `null`. A standalone spawn
+  records `standalone: true` and the member's key.
+- `teams` (mapped rows, as the providers received them) and `defaultTeam`
+  are never rewritten.
+- `soulDir` is the soul the instance incarnates; hooks receive it as
+  `OATS_SOUL`. Homes carry no `soul` link.
+- `modelFrom`: see the roster. `trigger` (a triggered instance): `{id, key,
+  source, repo, number, url, event, headSha, observedAt, eventFile}`.
+  `capabilityMeta.<cap>.identity`: the served identity a provider recorded.
+
+<a id="the-roster-oats-status---json"></a>
+### The roster (`oats status --json`)
+
+```text
+oats status [--dir <d>] --json
+```
+
+Not an envelope: `{root, agents, workspace?, problems?, warnings?}`.
+
+```json
+{"root":"/w/agents",
+ "agents":[{"name":"rm","description":"Cuts releases.","work":"worktree","kind":"persistent","dir":"/w/agents/rm",
+            "soulSource":{"repoKey":"github.com/nw/agents","commit":"66566512…","path":"souls/rm","current":"66566512…","status":"current"},
+            "instances":[{"agent":"rm","instance":"rm-api","home":"/w/agents/rm/instances/rm-api","harness":"pi","launched":true,
+                          "createdAt":"2026-09-28T10:08:01.281Z","modelFrom":"harness-default","startedAt":"2026-09-28T10:08:01.281Z","identityAddress":null,"running":true,
+                          "modules":[{"name":"oats.okf","from":{"kind":"package","package":"oats.okf","version":"2.1.3","commit":"ab897841…","integrity":"sha256-bada35…","repoKey":"github.com/awebai/oats-okf"},
+                                      "commit":"ab897841…","current":{"commit":"ab897841…","version":"2.1.3"},"status":"current"}],
+                          "soul":{"repoKey":"github.com/nw/agents","commit":"66566512…","current":"66566512…","status":"current"}}]}],
  "workspace":{"reachable":true}}
 ```
 
-- `status`: `current` | `moved` (member or locked package now at another
-  commit) | `missing` with `reason`: `capability-absent` (gone from the member /
-  package), `package-absent` (no longer locked), or the member's unconfirmed
-  reason (`no-backlink`, `cannot-read`, `unconfirmed`, …; `current: null`).
-- Package modules without a lock are reported `current`.
-- Offline: `"workspace":{"reachable":false,"code":"E_REMOTE_UNREADABLE","reason":"E_REMOTE_UNREADABLE: network","message":"…"}`
-  and `modules` stays the recorded map (no drift rows). A deployment without
-  `oats-local.yaml` has no `workspace` field and `modules` as recorded.
-- Text mode prints `modules: <cap> from <member|package …> @ <7-char>` lines
-  for non-current modules (`--verbose` for all).
-- `instances[].soul` is the soul source's drift: `{ repoKey, commit, current,
-  status, reason? }`. For a **package soul** (feature `package-souls`) it also
-  carries `package`, `version` and `currentVersion`; `moved` means the package
-  pin moved (another version/commit is locked now), `missing` has `reason`
-  `package-absent` (no longer locked or declared) or `soul-absent` (the locked
-  package no longer ships it). Text: `soul: <name> from package <id> v<version>
-  @ <7-char>  [package moved since (now v<version> @ <7-char>)]`.
-
-### Triggers (feature `triggers`, OATS 0.28.0) — `oats trigger … --json` → `triggerApi: 1`
-
-Event-driven spawns of a deployment ([schedules.md#triggers](schedules.md#triggers)).
-Definitions live in `oats-schedules.json` (`kind: "trigger"`); `oats schedule list`
-does not show them. From 0.29.0 a row's `id` is qualified (`local/<id>` here; a
-workspace trigger's is `<member>/<id>`) and the row carries the shared fields of
-[workspace triggers and schedules](#workspace-triggers-and-schedules-feature-automations-oats-0290-automationsapi-1).
-
-```json
-{"triggerApi":1,"scope":"/abs/deployment","triggers":[
-  {"id":"okf-harvest-review","enabled":true,"kind":"trigger",
-   "on":{"source":"github.pull_request","repo":"github.com/acme/knowledge","events":["opened","reopened","ready_for_review"],"labels":["okf-harvest"],"base":"main","poll":"2m"},
-   "spawn":{"soul":"oats.okf/knowledge-maintainer","purpose":"review-pr-{number}","task":"…","teams":["okf"],"launchConfig":"reviewers","harness":"claude","model":"opus"},
-   "concurrency":{"max":2,"perKey":1},"template":{"package":"oats.okf","version":"4.0.0","commit":"<oid>","template":"harvest-review"},
-   "triggerApi":1,"scope":"/abs/deployment","createdAt":"<iso>","updatedAt":"<iso>"}]}
-```
-
-- `list` → the document above; `show <id>`, `add`, `enable`, `disable` →
-  `{ trigger }` (one row); a stored definition that no longer validates carries
-  `invalid: { code, message }`. `remove <id>` → `{ removed, live: [instance] }`.
-- `status [<id>]` → `{ triggerApi, scope, triggers: [Status] }`. It writes
-  nothing. Each `Status`:
-  - `id`, `name`, `enabled`, `runsHere`, `reason`, `enabledHere`, `repo`, `soul` (the soul name);
-  - `concurrency: { max, perKey }` and `liveCount`: live instances against `max`;
-    `live: [{ instance, home, repo, number, event }]`;
-  - `lastPoll: { at, ok: true, prs, matching } | { at, ok: false, error } | null`;
-    `nextPollAt`; `nextDue` (the next poll when it runs here, else `null`);
-  - `pending: [{ key, event, number, url, observedAt }]`: observed, not yet spawned
-    (held, or its spawn failed);
-  - `fired: [{ key, at, instance, home, event, number }]` (newest 50) and `firedTotal`;
-  - `lastError: { at, code, message, key? } | null`.
-- `test <id>` → `{ triggerApi, id, ok, gh: { ok, account, credentialSource:
-  "keyring" | "config" | "env:<VAR>" | "unknown" | null, reachesHostTimer:
-  boolean | null, note, detail }, repo: { key,
-  readable, fullName, permissions: { push, maintain, admin }, canMerge } |
-  { key, readable: false, error }, soul: { resolves, name, agent, messaging } |
-  { resolves: false, name, error }, teams: { requested, undeclared | null,
-  messaging }, wouldFire: [{ key, repo, number, event, url, held? }], pollError?, problems:
-  [string], warnings: [string], spawned: false }`. It writes nothing. `ok`
-  counts `problems` only; a credential the host timer cannot reach
-  (`reachesHostTimer: false`) is a warning.
-- `oats schedule list --json` gains `triggers: { count, command: "oats trigger
-  list" }`: the triggers it does not list.
-- The tick's `considered[]` gains trigger rows `{ workspace, trigger, action,
-  … }` with `action` `not-due`, `poll-failed`, `polled` (`prs`, `matching`;
-  nothing to fire), `held`, `fired` (`key`,
-  `instance`, `home`), `spawn-failed` (`key`, `code`, `error`), `would-fire`
-  (`--dry-run`) or `invalid`.
-- A triggered instance's `instance.json.trigger` is `{ id, key, source, repo,
-  number, url, event, headSha, observedAt, eventFile }`; the event file is
-  `OATS_TRIGGER_EVENT_FILE`.
-- Errors: `E_TRIGGER_INVALID { field }`, `E_TRIGGER_EXISTS`,
-  `E_TRIGGER_UNKNOWN`, `E_BAD_ARGS` (`missing` / `parameters` for a template),
-  `E_PACKAGE_MISSING`, `E_PACKAGE_MANIFEST`, `E_LOCAL_MISSING`.
-
-### Workspace triggers and schedules (feature `automations`, OATS 0.29.0; `automationsApi: 1`)
-
-See [schedules.md#workspace-triggers-and-schedules](schedules.md#workspace-triggers-and-schedules).
-`oats trigger list --json` and `oats schedule list --json` answer this machine's
-local items and every workspace item defined in a member the user can read. The
-Desktop renders these rows and never re-derives them. The two lists stay separate:
-a trigger never appears in `schedule list`, and a schedule never appears in
-`trigger list`.
-
-- Both lists add:
-  - `host: { name | null, ghUser: { <gh host>: <login> | null } }`: this machine's
-    `oats-local.yaml` `host.name`, and who its `gh` is logged in as on every GitHub
-    host the rows name (the owners'; a trigger's repository's) — `null` when `gh`
-    is not authenticated there. The Desktop compares it with a row's `owner`.
-  - `snapshot: { takenAt, problems } | null` (`null` until `oats sync` has found some).
-  - `scheduler: { installed, active, registered, lastTick, maxConcurrent, … }`: the
-    host tick (the same object as `oats schedule host status`). Nothing runs unless
-    it is installed, active and this deployment is registered.
-- **Identity:**
-  - `id`:
-    - a trigger row's is always qualified (`local/<id>`, `<member>/<id>`);
-    - a local schedule row keeps its bare id (the 0.28 contract);
-    - a workspace schedule row's is `<member>/<id>`.
-  - `qualifiedId` is always the qualified form, and `name` is the bare id.
-  - Every verb accepts `local/<id>` or a bare local id.
-- **Shared fields in every row:**
-  - `origin`: where the item is defined, and where to open it:
-    - `{ kind: "local", path: "oats-schedules.json", url: null, localPath }`;
-    - `{ kind: "workspace", repoKey, path, commit, url, localPath }`: `url` is the
-      file's web URL at `commit` (`https://github.com/<owner>/<repo>/blob/<commit>/<path>`
-      for a `github.com` member, else `null`); `localPath` is the file in this
-      machine's clone of the member (`null` when the member is not cloned here).
-  - `description`, `owner`, `runsOn`;
-  - `runsHere`; `reason` (`null` | `host-unnamed` | `assigned-elsewhere` | `owner-mismatch`) with `reasonDetail`;
-  - `enabledHere`;
-  - `soul`: `{ name, origin } | null` (`null` for a command, wake or operation schedule). `origin` is where the name resolves, per the snapshot:
-    - `{ kind: "member", repoKey, member }`: a soul in a workspace member;
-    - `{ kind: "package", package, version }`: a soul of a locked package;
-    - `{ kind: "external", repoKey, source }`: an external soul (`source` is the workspace's `external[].source` ref);
-    - `{ kind: "ambiguous", candidates }`: a bare name several souls answer to (`candidates` is how many); a spawn needs the qualified name;
-    - `null`: not found (or no snapshot yet).
-  - `task`: the template, verbatim;
-  - `teams`, `launchConfig`, `harness`, `model`, `concurrency`;
-  - `lastRun`, `nextDue`;
-  - `invalid?: { code, message, field? }`.
-- **A trigger row** also carries `kind: "trigger"`, `on`, `spawn`, and `template?`:
-  - `on: { source: "github.pull_request", repo: "<host>/<owner>/<repo>", events: [opened | reopened | ready_for_review | labeled | synchronize], labels: [string], base?: string, poll: "<n>s|m|h" }` (`base` absent: any base branch);
-  - `spawn: { soul, purpose, task, teams: [label], launchConfig?, harness?, model?, yolo?, backend? }`
-    (`purpose` and `task` are templates over `{repo}`, `{number}`, `{url}`, `{event}`, `{trigger}`, `{headSha}`;
-    `launchConfig` names a launch configuration in the running host's `oats-local.yaml`);
-  - `template?: { package, version, commit, template }`: the package template it was added from.
-  - `lastRun` is the last fired event: `{ at, instance, home, event, number, key }`.
-  - `nextDue` is the next poll, only when it runs here; `null` before its first poll (it polls at the next tick).
-- **A schedule row** keeps every 0.28 field (`scheduleApi: 2`). Its `kind` is the run (`spawn` | `command` | `wake` | `operation`); it also carries `cron` and `tz`.
-  - `nextDue` is the next minute, only when it runs here.
-  - `teams` is `[]` and `concurrency` is `null`.
-  - A workspace schedule another host runs carries its definition and placement only: `lastRun` and `nextDue` are `null`.
-  - A spawn schedule's `launchConfig` names a launch configuration in the running host's `oats-local.yaml`.
-- **Naming:** `nextDue` is the one name for "when it next runs" in every trigger and
-  schedule row. A schedule row still carries the 0.24 `nextRun` for older readers;
-  they agree whenever it runs here.
-- **Actions:**
-  - `enable` and `disable` on a workspace id edit `oats-local.yaml` `triggers.disabled` or `schedules.disabled`.
-  - `update` and `remove` refuse it with `E_AUTOMATION_WORKSPACE { id, origin }`.
-  - `schedule run` and `schedule reconcile` work when it runs here, else `E_AUTOMATION_NOT_HERE { id, reason, runsOn, owner }`.
-- **`oats trigger test <id>`** adds `placement: { runsOn, owner, host, runsHere, reason, detail?, enabledHere }`. Any reason, or disabled here, is a problem (`ok: false`).
-- **`oats schedule test <id> --json`** (local or workspace) → `{ test: { id, qualifiedId, kind,
-  placement: { runsHere, reason, reasonDetail?, enabledHere, runsOn, owner, host },
-  soul: { name, origin, resolves, error: { code, message } | null } | null, nextDue,
-  spawned: false, problems: [string], ok } }`. `soul` is checked the way the run
-  would start it (`oats spawn <soul> --preview`, which writes nothing); it is `null`
-  for a command, wake or operation. `nextDue` is the next cron match whether or not
-  this host runs it (`placement` says that). Not running here, disabled, invalid or a
-  soul that does not resolve is a problem (`ok: false`). It spawns nothing and records
-  nothing. Errors: `E_SCHEDULE_UNKNOWN`, `E_BAD_ARGS`.
-- **`oats trigger|schedule add … --workspace <member> --runs-on <host> --owner <host>/<login> --json`** answers `{ id, written, file: { member, repoKey, path, content, written? } }`.
-  - Errors: `E_AUTOMATION_MEMBER` (not a confirmed member), `E_TRIGGER_EXISTS` or `E_SCHEDULE_EXISTS` (the file exists), and the kind's validation codes.
-- **`oats automations refresh --json`** answers `{ automationsApi, snapshot, triggers, schedules, problems: [...], takenAt }`.
-- **`oats sync --json`** gains `automations: { triggers, schedules, problems, takenAt }`. Discovery problems join `problems` (`E_AUTOMATION_SCHEMA`, `E_AUTOMATION_DUPLICATE`, each with `kind`, `repoKey` and `path`).
-- **`oats workspace status --json`** gains `automations: { host, snapshot, rows: [{ kind, id, runsOn, owner, runsHere, reason, enabledHere, origin, invalid? }] }`.
-- **The tick's `considered[]`** gains the trigger action `not-here` (`reason: owner-mismatch`, `detail`): a trigger naming this host that this host cannot run. A workspace schedule's row `id` is its state key, `<member>~<id>`. A failed snapshot refresh is `{ action: "error", error: "automations refresh: …" }`.
-
-### Desktop facts (feature `desktop-facts`, OATS 0.29.0)
-
-These are facts the Workspace view shows. The kernel reports them so the
-Desktop never works them out itself. Gate reading every field below on
-`desktop-facts` in `features[]`. No API integer changes, and every field is an
-addition to an existing row.
-
-**`oats inspect --soul <name> --json`: why each capability is there**
-
-- `capabilities[].composedFrom` says which layer put the module in the soul:
-  `"workspace"` (`defaults.<slot>` or `defaults.capabilities`),
-  `"team:<label>"` (`defaults.byTeam.<label>.capabilities`) or `"soul"` (the
-  soul's own `capabilities:`). This is the same vocabulary as
-  `layers.<slot>.from`. It is `null` on `inspect --home`, because a spawn does
-  not record it. `from` stays the module's origin object (`{kind, repoKey,
-  commit}` or the package object), so it is a separate key.
-- `capabilitiesOff[]` lists the capabilities the soul turned off, which a
-  lower layer would otherwise have given it. They are not rows of
-  `capabilities[]`, because those are resolved modules with operations. Each
-  entry is `{ id, off: true, from: "soul", reason, slot?, overrides }`:
-  - `reason: "off"`: the soul wrote `<id>: off` over a workspace or team
-    default.
-  - `reason: "slot-none"`: the soul wrote `<slot>: none` (`slot` names it),
-    which emptied the slot the workspace filled with `<id>`.
-  - `overrides`: the layer whose default was turned off (`"workspace"` or
-    `"team:<label>"`).
-  - Sorted by id. `[]` on `inspect --home`.
-
-**`oats souls --json` rows**
-
-- `harness`, `model`, `harnessFrom`: what a spawn of the soul starts with
-  when no `--harness`/`--model` is given. A v2 `soul.yaml` cannot declare a
-  harness or a model, so today this is always `harness: "pi"`, `model: null`
-  (the harness's native model) and `harnessFrom: "kernel-default"`.
-  `harnessFrom: "soul"` is reserved for a schema that lets a soul declare
-  one.
-- `spawnable`, `problem`: whether a spawn here would refuse.
-  - `problem` is `{ code, message }` when a spawn would refuse, else `null`.
-  - The kernel resolves the soul exactly as a spawn does, but spawns nothing,
-    writes nothing and reads only the sync cache.
-  - Codes: `E_SOUL_DISABLED` (this machine's `souls.disabled`),
-    `E_TEAM_CONFLICT`, `E_CAPABILITY_MISSING`, `E_CAPABILITY_PRIVATE`,
-    `E_CAPABILITY_INCOMPATIBLE`, `E_PACKAGE_MISSING`, `E_PACKAGE_INTEGRITY`,
-    `E_LOCK_SCHEMA`, `E_REMOTE_*`, and any other resolution refusal.
-  - An `E_TEAM_UNKNOWN` problem in `problems[]` is informational. It does not
-    make a soul unspawnable.
-- `file`: `{ path, url }`, the soul's `soul.yaml` in its repository (see
-  **URLs** at the end of this section).
-
-**`oats capabilities --json` rows**
-
-- `layer` on every row. Package rows now carry it too, from the package
-  manifest; `null` for a capability outside the slots.
-- `description`: the manifest's `description`, or `null`.
-- `skills`, `commands`, `hooks`: what the capability provides, by name,
-  sorted.
-  - `skills` is enumerated as a spawn would. It is `null` when the declared
-    skills cannot be listed, which a spawn of it would refuse.
-  - `commands` and `hooks` are the keys of the manifest's `commands` and
-    `hooks`.
-- `file`: `{ path, url }`, the capability's `oats.json`, or `null` when the
-  manifest cannot be read.
-- `tree`: a member capability's fingerprint, the Git tree id of its
-  directory at the member commit. The same bytes give the same id. It is
-  `null` on package rows, whose fingerprint is `integrity` in the lock (see
-  `oats workspace status`).
-- A package whose manifests cannot be read at its locked commit leaves these
-  facts `null` on its rows.
-- Package manifests are read at the locked commit from the sync cache. There
-  is no network beyond what `sync` already fetched.
-
-**`oats workspace status --json`**
-
-```json
-{"workspace":{"…":"…","file":{"path":"oats-workspace.yaml","url":"https://github.com/acme/agents/blob/<oid>/oats-workspace.yaml"}},
- "members":[{"…":"…","url":"https://github.com/acme/tools/tree/<oid>","membershipFile":{"path":"oats-membership.yaml","url":"https://github.com/acme/tools/blob/<oid>/oats-membership.yaml"}}],
- "packages":[{"id":"oats.okf","version":"3.0.0","source":"catalog:oats.okf","commit":"<oid>","…":"…","latest":{"version":"4.0.0","ref":"v4.0.0"}}],
- "defaults":{"slots":{"knowledge":{"name":"oats.okf","from":"package"},"messaging":"none","tasks":null},
-             "capabilities":[{"name":"acme-house-style","from":"github.com/acme/agents","off":false}],
-             "byTeam":{"engineering":{"capabilities":[{"name":"acme-house-style","from":null,"off":true},{"name":"acme-deploy","from":"package","off":false}]}}},
- "clones":[{"key":"github.com/acme/agents","name":"agents","path":"/abs/acme-workspace/agents","rule":"convention"},
-           {"key":"github.com/acme/tools","name":"tools","path":null,"rule":null}],
- "disabledSouls":["release-reviewer"],
- "lock":{"path":"/abs/acme-workspace/oats-lock.json","lockfileVersion":3}}
-```
-
-- `defaults`: the workspace file's defaults, as declared rather than
-  resolved for a soul.
-  - `slots.<slot>` is `{ name, from }` when the workspace fills it, `"none"`
-    when it empties it, and `null` when it says nothing.
-  - `capabilities` and `byTeam.<label>.capabilities` are rows `{ name, from,
-    off }`, sorted by name. `from` is the declared location (`"package"`,
-    `"here"` or a member repo key); an `off` row has `from: null`.
-  - Standalone: slots `null`, `capabilities: []` and `byTeam: {}`.
-- `clones`: this computer's clone of each member.
-  - `path` is the absolute clone, or `null` when this machine has none.
-  - `rule` names what found it: `"clones"` (the `oats-local.yaml` `clones:`
-    entry) or `"convention"` (`<deployment>/<member name>`). It is `null`
-    with no clone.
-  - A path that is not the member's clone gives `path: null, rule: null,
-    problem: { code: "E_CLONE_MISMATCH", message }`, the refusal a spawn
-    would meet.
-  - (`--repo` is a spawn option, so it plays no part here.)
-- `disabledSouls`: `oats-local.yaml` `souls.disabled`, as written.
-- `lock`: `{ path, lockfileVersion }`. The per-package commit is each
-  `packages[]` row's `commit`, and its fingerprint is `integrity`.
-- `packages[].latest`: `{ version, ref }` when the official catalog shipped
-  with this kernel has a newer version of a catalog-sourced package than the
-  lock holds. It is `null` when the pin is current and for `git:` packages.
-  It never reaches the network: the catalog is the kernel's own
-  (`OATS_PACKAGE_CATALOG` overrides it, as for `sync`).
-- `workspace.file` is `{ path, url }` for the workspace file in the
-  workspace repository (at `workspace.key` @ `workspace.commit`). It is
-  `null` for a standalone deployment.
-- `members[].url` is the member repository at its commit.
-  `members[].membershipFile` is `{ path, url }`.
-
-**`oats status --json` instance rows**
-
-- A member module's `modules[].current` gains `version` (the capability's
-  manifest version at the current commit, `null` when it has none) beside
-  `commit`, on `current` and `moved` rows. Package rows already carried it. On a `moved` row, the recorded `commit`/`from` and `current`
-  together say what moved and to what.
-- `startedAt`: the last session start or restart (the session receipt). A
-  home spawned with a launch and never restarted uses `createdAt`. A home
-  never launched is `null`. `createdAt` stays the spawn time.
-- `modelFrom`: where the model the home runs came from.
-  - `"soul"`: the soul's model preference.
-  - `"spawn"` or `"start"`: an explicit `--model` on that command.
-  - `"launch-config"`: a launch configuration's model.
-  - `"harness-default"`: the harness's own model.
-  - A start that reuses the recorded model keeps the recorded answer.
-  - `null` for a home spawned before 0.29.0. `instance.json` records it as
-    `modelFrom`.
-- `identityAddress`: the messaging identity's `address` (else `alias`) that
-  the messaging capability recorded (`capabilityMeta.<messaging>.identity`),
-  passed through unchanged. `null` otherwise.
-
-**URLs.** Every `url` is a browsable page of
-the file (or of the repository, for a member) at the commit the row names.
-Only repositories on `github.com` have one (`https://github.com/<org>/<repo>/blob/<commit>/<path>`,
-or `/tree/<commit>`). Every other host and local repository gives `url:
-null`, with `path` still set. `path` is relative to that repository's root.
-
-**Help.** `oats help` lists `spawn … [--provider <capability> <key>=<value>]`.
-
-### Team model v2 (feature `team-model-2`, OATS 0.30.0; replaces feature `teams`)
-
-Spec: [team model v2](design/2026-09-27-team-model-v2.md) (DECIDED, option B).
-**Breaking, no aliases:** a 0.30 kernel no longer lists the `teams` feature, and
-every field below marked *removed* is absent (not `null`). Gate every read
-below on `features.includes("team-model-2")`. **Every object shape here is
-closed**: an unknown key is a contract change announced in this document first.
-
-**Where teams live.**
-- The committed `oats-workspace.yaml` `teams.<label> = { description?, team? }`
-  holds the SHARED teams. `team` is the provider team id; a shared team without
-  one is declared, not yet created.
-- `oats-local.yaml` holds everything personal:
-  - `teams.<label> = { team, description? }`: the LOCAL teams;
-  - `defaultTeam: <label>`;
-  - `souls.teams: { "*": [labels], "<soul>": [labels] }`;
-  - `souls.default: { "<soul>": <label> }`.
-- A soul key is the name the soul is spawned by: the bare name for a member
-  soul, `<package>/<soul>` for a package soul.
-- *Removed*: `messaging.byTeam`, `defaults.byTeam`, a soul.yaml `team`, an
-  oats-membership.yaml `team`, and "primary". Each is `E_WORKSPACE_SCHEMA`
-  (reason `removed-key`) naming its replacement.
-- A provider payload stays opaque to the kernel: a `team` key in it passes
-  through like any other setting (other providers use one, e.g. the tasks
-  example's `team: ENG`). The messaging provider's `team` setting is removed by
-  the provider: oats.aweb 1.17 no longer declares it, and its binding refuses
-  the undeclared key.
-
-**Resolution.**
-- The soul's default is `souls.default[soul] ?? defaultTeam`.
-- The soul's teams are `{default} ∪ souls.teams["*"] ∪ souls.teams[soul]`.
-- A label is looked up in the committed teams, then in the local teams. A label
-  in both files is the readiness problem `team-label-collision`; the COMMITTED
-  definition wins.
-
-#### The team row (`TeamRow`): exactly `{label, team, default, from}`
-
-```json
-{"label":"antares-oats","team":"antares-oats:juan.aweb.ai","default":true,"from":"local"}
-{"label":"oats","team":"oats:oats.aweb.ai","default":false,"from":"shared"}
-{"label":"reviewers","team":null,"default":false,"from":"shared"}
-```
-
-- `label`: the workspace label.
-- `team`: the provider team id, or `null` for a committed team with no id yet
-  (unmapped).
-- `default`: `true` on exactly the soul's default row. The other rows are the
-  teams an instance MAY join (offered at spawn, never auto-joined).
-- `from`: `"shared"` (committed `oats-workspace.yaml`) or `"local"`
-  (`oats-local.yaml`).
-- **Order:** the default row first, then the rest by label (codepoint order).
-- The same four keys are the rows of `OATS_TEAMS` and `instance.json.teams`,
-  which exclude unmapped rows.
-- `oats soul teams` rows add one key, `via` (below).
-
-#### The default (`DefaultTeam`)
-
-```json
-{"label":"antares-oats","team":"antares-oats:juan.aweb.ai","from":"deployment"}
-```
-
-- `from` is `"deployment"` (`defaultTeam`) or `"soul"` (`souls.default[<soul>]`).
-- The value is `null` when no default is configured. With a messaging layer
-  active, that is the readiness problem `E_TEAM_UNCONFIGURED`, and the messaging
-  provider refuses the spawn.
-- When the default is an UNMAPPED shared team (declared, no provider id yet),
-  the value is `{label, team: null, from}`, NOT `null`, so the reader can name
-  the label. That is the blocking readiness problem `team-unmapped` with
-  `default: true` (below), not `E_TEAM_UNCONFIGURED`. The same holds for every
-  document carrying a `DefaultTeam`: the preview, `inspect`, `souls`,
-  `instance.json` and the provider's teams document.
-
-#### Where they appear
-
-**`oats spawn … --preview --json`:**
-- adds `teams: [TeamRow]` (unmapped rows included) and `defaultTeam: DefaultTeam | null`;
-- *removes* `team` (the primary label) and the 0.26 `teams` rows
-  (`{label, team, mapped, payload}`);
-- `settings.<messaging>` is the merged provider payload as before; from oats.aweb
-  1.17 it no longer carries a `team`, because that provider stops declaring one.
-
-**`oats inspect --soul <name> --json`:**
-- `teams`, `defaultTeam` (as in the preview), and `teamsSource: "live"`;
-- *removes* `souls[].team`, `subject.team` and `souls[].declarations.teams`.
-
-**`oats inspect --home <abs> --json`:**
-- `teams`, `defaultTeam` and `teamsSource`. They are live (the committed
-  teams + `oats-local.yaml` as they are now): `"live"`, or the spawn-time
-  record with `"recorded"` when the workspace cannot be read now.
-- It adds `recordedDefaultTeam: DefaultTeam | null` (from `instance.json`).
-  When it differs from `defaultTeam`, readiness reports `default-team-changed`:
-  a running instance keeps its default-team identity until it is respawned.
-
-**`oats readiness … --json`:** `subject.team` is *removed*.
-
-**`oats souls --json` rows (member, package and external souls alike):**
-- add `teams: [TeamRow]` and `defaultTeam: DefaultTeam | null`, resolved for
-  this deployment;
-- *remove* `team` and `labels`.
-
-**`oats workspace status --json`:**
-- `workspace.teams` changes from a list of label strings to rows for the
-  committed (shared) teams, in label order:
-  `[{"label":"oats","team":"oats:oats.aweb.ai","description":"The OATS project"},{"label":"reviewers","team":null,"description":null}]`;
-- **`defaults.byTeam` is no longer reported anywhere**: not in
-  `workspace status`, not in desktop-facts (its `byTeam` capability rows go),
-  and not in `capabilitiesFrom` (no `"team:<label>"` origin). Capability
-  composition is committed workspace + soul only;
-- `members[].team`, `external[].team` and the capability rows' `team` are
-  *removed*;
-- the `unmapped-team-label` warning is *removed* (see readiness);
-- `E_TEAM_CONFLICT` no longer exists.
-
-**`instance.json`** (the spawn-time record, never rewritten):
-- `teams`: the rows the providers received as `OATS_TEAMS`, i.e.
-  `{label, team, default, from}` with mapped teams only;
-- `defaultTeam`: `DefaultTeam | null`;
-- `workspace.soul.team` and `workspace.soul.labels` are *removed*.
-
-**The provider readiness request:** `input.context.team` is *removed*.
-Providers read the environment below.
-
-#### The provider environment (hooks, commands, readiness)
-
-- `OATS_DEFAULT_TEAM`: the default label.
-- `OATS_DEFAULT_TEAM_ID`: its provider id.
-- `OATS_DEFAULT_TEAM_FROM`: `deployment` | `soul`.
-- No default configured: none of the three is set.
-- An UNMAPPED default: `OATS_DEFAULT_TEAM` and `OATS_DEFAULT_TEAM_FROM` are set,
-  and `OATS_DEFAULT_TEAM_ID` is UNSET.
-- The provider rule: the label set with the id unset is an unmapped default
-  (refuse, naming the label: "the default team <label> has no provider id
-  yet"); the label unset is none configured ("no teams configured").
-- `OATS_TEAMS`: JSON `[{label, team, default, from}]`:
-  - every MAPPED team the soul may be in here, the default included
-    (`default: true`); unmapped rows are excluded;
-  - eligible to join = the rows with `default: false`;
-  - the order is the TeamRow order.
-- `OATS_TEAMS_SOURCE`: `live` | `recorded` (kept). A provider leaves a team only
-  on a `live` list.
-- *Removed:* `OATS_TEAM_LABEL`, `OATS_TEAM_LABELS`, `OATS_TEAM_ID`.
-- `OATS_TEAM_SCOPE`, `OATS_TEAM_NAME` (always empty), `OATS_WORKSPACE_NAME`
-  and `OATS_WORKSPACE_KEY` are unchanged.
-
-#### `oats teams --json` (this deployment's teams)
-
-```json
-{"schemaVersion":1,"ok":true,"result":{"teamsApi":1,"deployment":"/w","defaultTeam":"antares-oats",
- "teams":[
-  {"label":"antares-oats","team":"antares-oats:juan.aweb.ai","description":null,"from":"local","default":true,"at":"oats-local.yaml#/teams/antares-oats"},
-  {"label":"oats","team":"oats:oats.aweb.ai","description":"The OATS project","from":"shared","default":false,"at":"github.com/awebai/oats:oats-workspace.yaml#/teams/oats"},
-  {"label":"reviewers","team":null,"description":null,"from":"shared","default":false,"at":"github.com/awebai/oats:oats-workspace.yaml#/teams/reviewers"}],
- "souls":{"teams":{"*":["oats"],"oats-expert":["reviewers"]},"default":{"oats-expert":"oats"}},
- "problems":[{"code":"team-unmapped","label":"reviewers","default":false,"message":"shared team reviewers has no provider id yet","fix":"its owner runs `oats aweb setup`, then commits the id"}]}}
-```
-
-- `teams`: the effective teams, ordered by label. A collision shows the
-  committed definition, plus the problem below.
-- `souls`: `oats-local.yaml`'s `souls.teams` and `souls.default` as written.
-- `problems[]`: the same items readiness reports (below).
-- **`oats teams add <label> --team <id> [--description <d>] --json`:** declares
-  a LOCAL team.
-  - A label that is already declared, in either file, is `E_TEAM_EXISTS
-    { label, from }`.
-  - The first team added also becomes `defaultTeam`.
-- **`oats teams remove <label> --json`:** removes a LOCAL team that nothing
-  references. It refuses, with no cascade:
-  - a label still referenced is `E_TEAM_IN_USE { label, usedBy }`. `usedBy`
-    names EVERY reference, e.g.
-    `["defaultTeam", "souls.teams:*", "souls.teams:oats-expert", "souls.default:oats-expert"]`
-    (`souls.teams:<key>` / `souls.default:<key>`, `<key>` as written).
-    Remove the references first (`oats teams default`, `oats soul teams`);
-  - a committed (shared) label is `E_TEAM_SHARED { label, at }`: it is edited
-    by a PR to `oats-workspace.yaml`;
-  - an unknown label is `E_TEAM_UNKNOWN { label }`.
-- **`oats teams default <label> --json`:** sets `defaultTeam` to a label of
-  either file. An unknown label is `E_TEAM_UNKNOWN`.
-- A mutation answers the document after the write, plus `changed: bool`. The
-  verbs are config only (they never call a provider), validate before writing,
-  and rewrite `oats-local.yaml` in place, keeping its other content.
-
-#### `oats soul teams <soul>|'*' --json` (a soul's teams here)
-
-Its rows are `TeamRow` plus `via`: why the soul has the team, a non-empty
-subset in this order of:
-- `"default"`: the soul's default;
-- `"*"`: `souls.teams["*"]`;
-- `"soul"`: `souls.teams[<soul>]`.
-
-```json
-{"schemaVersion":1,"ok":true,"result":{"soulTeamsApi":1,"soul":"oats-expert","key":"oats-expert",
- "defaultTeam":{"label":"oats","team":"oats:oats.aweb.ai","from":"soul"},
- "teams":[{"label":"oats","team":"oats:oats.aweb.ai","default":true,"from":"shared","via":["default","*"]},
-          {"label":"reviewers","team":null,"default":false,"from":"shared","via":["soul"]}],
- "local":{"teams":["reviewers"],"default":"oats"},"all":["oats"]}}
-```
-
-- `key`: the `souls.teams` / `souls.default` key: the bare name for a member
-  soul, `<package>/<soul>` for a package soul.
-- `local`: that key's own entries as written.
-- `all`: `souls.teams["*"]`.
-- For `'*'`:
-  - `soul` and `key` are `"*"`;
-  - `teams` are the deployment default's row + `souls.teams["*"]`;
-  - `local` is `{teams: souls.teams["*"], default: null}`.
-- **Mutations:** `--add a,b`, `--remove a,b`, `--default <label>` and
-  `--clear-default`, combinable.
-  - An unknown label is `E_TEAM_UNKNOWN { label }`.
-  - `--default` must name one of the soul's teams after the write:
-    `E_TEAM_NOT_ELIGIBLE { soul, label }`.
-  - `--default` with `'*'` is `E_BAD_ARGS`.
-  - An unknown or ambiguous soul is `E_SOUL_UNKNOWN` or `E_SOUL_AMBIGUOUS`,
-    as for `spawn`.
-  - The answer is the document after the write, plus `changed: bool`.
-
-#### The messaging provider's teams document (oats.aweb ≥ 1.17, with kernel 0.30)
-
-This is the answer of the provider's teams operation (`oats aweb teams --json`,
-and the `teams` operation the Desktop runs). It is produced by the provider,
-not the kernel. This is its 0.30 contract, and its key set is exact:
-
-```json
-{"defaultTeam":{"label":"antares-oats","team":"antares-oats:juan.aweb.ai","from":"deployment"},
- "eligible":[{"label":"oats","team":"oats:oats.aweb.ai","joined":true}],
- "joined":[{"label":"oats","team":"oats:oats.aweb.ai","identityHome":"/w/agents/…/.aw-teams/oats","receive":"live","since":"<iso>"}],
- "left":[{"label":"reviewers","team":"reviewers:acme.aweb.ai","at":"<iso>","reason":"no-longer-eligible"}],
- "at":"<iso>"}
-```
-
-- **`defaultTeam`** is exactly the kernel's `DefaultTeam`, `{label, team, from}`,
-  one shape in both places:
-  - `label`, `team` and `from` are the kernel's `OATS_DEFAULT_TEAM`,
-    `OATS_DEFAULT_TEAM_ID` and `OATS_DEFAULT_TEAM_FROM` (`"deployment"` | `"soul"`);
-  - an unmapped default (`OATS_DEFAULT_TEAM` set, `OATS_DEFAULT_TEAM_ID` unset)
-    is `{label, team: null, from}`;
-  - it is `null` only when no default is configured (`OATS_DEFAULT_TEAM` unset).
-  - *Changed from 0.29:* `source` is renamed `from` (no alias), `label` is new,
-    and the 0.29 sources `"setting"` and `"root"` are gone.
-- **`eligible`** is `[{label, team, joined}]`: the `OATS_TEAMS` rows with
-  `default: false`.
-- **`joined`** is `[{label, team, identityHome, receive: "live"|"poll", since}]`,
-  unchanged.
-- **`left`** is `[{label, team, at, reason: "no-longer-eligible"}]`: the last 20
-  leaves caused by a live read (NEW; additive).
-- **`at`**: when the document was produced.
-- ***Removed:*** `primary` (no primary label exists) and `unmapped` (unmapped
-  committed teams are kernel readiness items, `team-unmapped`, and never reach
-  the provider).
-
-#### Readiness items (kernel)
-
-`oats teams --json` reports them under `problems[]` as
-`{ code, label?, severity: "failure"|"warning", message, fix, … }`.
-
-`oats readiness … --json` reports the ones that concern the subject's soul in the
-EXISTING `checks.configured.items[]` (there is no fifth check: released Desktops
-recompute the summary from the four checks). Each is a readiness item:
-- `subject`: `"team <label>"`, or `"teams"` for `E_TEAM_UNCONFIGURED`;
-- `producer`: `"team model"`; `code`: the code below;
-- `reason`: the message; `remedy`: the fix;
-- a failure is `status: "fail", required: true` (it blocks `ready`); a warning is
-  `status: "fail", required: false`;
-- plus the problem's own keys (`label`, `default`, `shared`, `local`,
-  `recorded`, `current`).
-
-- **`E_TEAM_UNCONFIGURED`** (a failure, when a messaging layer is active and
-  there is no default at all): "no teams configured: run `oats aweb setup`".
-- **`team-label-collision`** (a warning), with `shared: {team, description, at}`
-  and `local: {team, description, at}`. The committed definition wins; the fix
-  is to rename the local label.
-- **`team-unmapped`**: a committed team without `team`.
-  - Not the default: a warning, "shared team <label> has no provider id yet";
-    the fix: its owner runs `oats aweb setup`, then commits the id.
-  - The default (`default: true`): a failure (blocking), "the default team
-    <label> has no provider id yet"; the fix: its owner runs `oats aweb setup`,
-    then commits the id, or choose another default with `oats teams default`.
-    The messaging provider's spawn refusal names the same.
-- **`default-team-changed`** (a warning, `--home` only), with
-  `recorded: DefaultTeam`, `current: DefaultTeam` and the fix "respawn".
-
-#### Errors
-
-- `E_TEAM_UNKNOWN { label, at }`: a label no file declares, whether in
-  `defaultTeam`, `souls.teams`, `souls.default` or a verb.
-- `E_TEAM_NOT_ELIGIBLE { soul, label }`: `souls.default[soul]` is not one of
-  the soul's teams.
-- The verbs' own errors:
-  - `E_TEAM_EXISTS { label, from }`;
-  - `E_TEAM_IN_USE { label, usedBy }`: every reference that blocks
-    `oats teams remove`;
-  - `E_TEAM_SHARED { label, at }`: a committed team cannot be removed locally.
-- `E_WORKSPACE_SCHEMA` for any removed key, naming its replacement.
-
-`E_TEAM_UNKNOWN` and `E_TEAM_NOT_ELIGIBLE` are spawn/preview/inspect refusals
-when they come from `oats-local.yaml`. They are also reported by readiness.
-`E_TEAM_CONFLICT` and the `unmapped-team-label` warning are gone.
-
-### Probe
-
-```json
-{"…":"…","features":["…","workspace-v2","instance-modules","spawn-provider-payload","packages-no-approval","spawn-name","settings-origins","team-model-2"],"workspaceApi":2}
-```
-
-A feature is listed only once the binary implements it. Gate `sync`/`package`/
-`workspace status`/`capabilities`/`souls` on `workspace-v2`; gate reading
-`instance.json.modules` and preview `modules[]` on `instance-modules`; gate
-`--provider` on `spawn-provider-payload`; gate every team field and the
-`oats teams` / `oats soul teams` verbs on `team-model-2` (0.30.0; the 0.26
-`teams` feature is no longer listed); gate reading `declares` on
-`settings-declared`.
-
-## Instruction refresh (`oats session recompose`) — removed in 0.26.0
-
-`oats session recompose` answers `E_UNKNOWN_COMMAND`, and the
-`session-recompose` feature is no longer advertised. An instance never changes
-under itself: the refresh path is a re-spawn (preview → apply of the same
-soul/purpose, then retire the old instance), which fetches the soul at the
-member's current commit.
-
-## Mutations exposed to Desktop v1
-
-The commands below use the same envelope. Additional capability operations
-are described in [the operations contract](design/operations-contract.md).
-
-### Existing-home launch and restart
+- **Agent rows**: the soul's recorded definition plus `dir` and `instances`;
+  `soulSource` (`{repoKey, commit, path, current?, status?}`, `current` or
+  `moved`) for a workspace soul; `retireFailures[]` (`{instance, completedAt,
+  error, incomplete, retry, resultPath}`) when a deferred self-retire failed.
+  A capability agent's row is `{name, kind: "capability", capability,
+  description, dir, instances}`.
+- **Instance rows**: the home's `instance.json` (launch recipe and command
+  redacted) plus `home` and `instance` (from the directory; a disagreeing
+  claim is kept as `recordedHome`/`recordedInstance`), `running` (`null` when
+  a Herdr session is unreachable, with `runtimeState`/`runtimeError`),
+  `identity` when a provider recorded one, `rollbackIncomplete` and
+  `retirePending` when present, and the Desktop facts below.
+- **`modules`** becomes drift rows `{name, from, commit, current, status,
+  reason?}` when the workspace was read. `status` is `current`, `moved` or
+  `missing` (`reason`: `capability-absent`, `package-absent`, or the member's
+  unconfirmed reason; `current: null`). `current` is `{commit, version}`
+  (`version` on member rows is a Desktop fact). A package module without a
+  lock reads `current`.
+- **`soul`** is the soul source's drift `{repoKey, commit, current, status,
+  reason?}`; a package soul adds `package`, `version`, `currentVersion`
+  (`missing` reasons: `package-absent`, `soul-absent`).
+- **`workspace`**: `{reachable: true}`, or `{reachable: false, code, reason,
+  message}` (modules then stay the recorded map). Absent without
+  `oats-local.yaml`.
+- `problems`: the legacy-home rows ([dispatch errors](#dispatch-errors)).
+  `warnings`: envelope warnings. `--team` is `E_BAD_ARGS` (an envelope).
+
+**Desktop facts** (feature `desktop-facts`): `startedAt` is the last start or
+restart, else `createdAt` for a launched home, else `null`. `modelFrom` is
+`"soul"`, `"spawn"` or `"start"` (an explicit `--model`), `"launch-config"`,
+`"harness-default"`, or `null` for an older home. `identityAddress` is the
+messaging identity's `address` (else `alias`), or `null`.
+
+<a id="instance-git-state-oats-instance-gitdiff-instancegitapi-1-oats-0247"></a>
+## Git and diff
+
+Feature `instance-git` (`instance-git-remote` for `remote`),
+`instanceGitApi: 1`. A read-only observation of one instance's work tree: the
+branch the tree is on, not the recorded one (reported under `recorded`).
 
 ```text
-oats session start --home /absolute/home [--server id] \
-  [--launch-config name] [--harness pi|claude|codex] \
-  [--model id] [--yolo|--no-yolo] --json
-oats session restart --home /absolute/home [the same options] --json
+oats instance git <instance> [--home <abs>] [--dir <d>] --json
+oats instance diff <instance> --file <id> --revision <rev> [--index-revision <idx>] [--home <abs>] [--dir <d>] --json
 ```
 
-Desktop addresses the exact existing home from the selected workspace's
-roster. Restart is one kernel command. The kernel owns configuration
-validation, stop observation, the lifecycle lock, launch recovery and session
-metadata. Desktop does not implement restart by retiring and spawning.
-Failure or timeout requires a fresh status check before retrying: a lost
-response does not establish that launch failed.
+`<instance>` is resolved under the deployment's agents root. Several homes of
+that name: `E_AMBIGUOUS_INSTANCE {candidates: [{root, agent, home}]}` (pass
+`--home`; a wrong one is `E_HOME_MISMATCH`). Unknown: `E_SESSION_UNKNOWN`. No
+tree: `E_NO_WORKTREE`.
 
-For a remote home, its saved route supplies the execution host even if its
-registration has subsequently changed. The remote kernel validates the new
-configuration before stopping the current harness. A missing feature fails
-before any stop/start command is sent.
+```json
+{"instanceGitApi":1,"instance":"dev-1","agent":"dev","home":"/w/agents/dev/instances/dev-1","workMode":"worktree",
+ "observation":{"revision":"46c20668…","indexRevision":"3147fef2…","at":"2026-09-26T18:15:26.487Z","worktree":"/w/agents/dev/instances/dev-1/work",
+                "branch":"feat/y","detached":false,"unborn":false},
+ "recorded":{"branch":"agents/dev-1","repo":"/w/one","drift":true},
+ "upstream":{"ref":"origin/feat/y","ahead":1,"behind":0},
+ "base":{"ref":"origin/main","source":"origin/HEAD","mergeBase":"46c20668…","ahead":2,"behind":0},
+ "remote":{"name":"origin","url":"git@github.com:acme/one.git","host":"github.com","path":"acme/one","source":"branch-upstream"},
+ "summary":{"changed":1,"renamed":1,"copied":0,"unmerged":0,"untracked":1},
+ "files":[{"id":"0d0cd6557e40c03eba2abd46","kind":"renamed","xy":"R.","submodule":false,"score":"R100","path":"src/new.txt","origPath":"src/old.txt",
+           "additions":84,"deletions":3,"binary":false}],
+ "notes":[]}
+```
+
+- `observation.revision` is the HEAD oid (or `unborn`); `branch` is `null`
+  when detached.
+- `upstream` without one is all `null` (unknown, not zero). `base` compares
+  with the default branch's merge-base; `source` is `origin/HEAD` or
+  `well-known`; none found is all `null` plus a note.
+- `remote` (feature `instance-git-remote`): the branch's remote (`source:
+  "branch-upstream"`), else `origin` (`"origin"`), else `null`; `host` and
+  `path` are parsed from the URL (`host: null` for a local path). The kernel
+  has no forge data.
+- `files[]` come from porcelain v2: `kind` is `changed | renamed | copied |
+  unmerged | untracked`; renames and copies carry `origPath` and `score`;
+  ignored files are omitted. `summary` counts rows per kind.
+- `files[].id` is opaque, minted under (`revision`, `indexRevision`); it is
+  the only way to ask for a diff.
+- `additions`, `deletions`, `binary`: line counts of the working tree against
+  the observed commit. A binary file is `{null, null, true}`; an untracked
+  file or submodule is all `null`; if counting fails every entry is `null`
+  with a note. `null` means unknown.
+
+The diff answers `{instanceGitApi: 1, observation, file: {id, kind, xy,
+path, origPath}, against, binary, bytes, truncated, limit: 262144, patch,
+readOnly: {helpers: "disabled", optionalLocks: "off", objectsWritten: 0}}`.
+
+- `against` is the observed revision (the working tree against that commit,
+  index included) or `"empty"` for an untracked file. A binary file has an
+  empty patch; over 256 KiB, `truncated: true`.
+- The read runs without external diff, textconv, fsmonitor, hooks, the
+  caller's Git environment or global config, and writes nothing (`readOnly`).
+- If HEAD or the index moved, the id is not in the current observation, or
+  anything moved during the read: `E_STALE_OBSERVATION` with
+  `details.observation`. Re-observe; never render a diff of another tree.
+- A `--file` that is not 24 hex, or no `--revision`: `E_BAD_ARGS`. Git
+  failure: `E_GIT_FAILED`.
+
+## Events
+
+Feature `instance-events-2`, `eventsApi: 2`: typed lifecycle events, written
+by the kernel action that made them true.
+
+```text
+oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--dir <d>] --json
+```
+
+```json
+{"eventsApi":2,"instance":"dev-1","home":"/w/agents/dev/instances/dev-1","incarnation":"2026-09-28T10:08:01.281Z",
+ "count":1,"returned":1,"truncated":false,
+ "integrity":{"unreadableRows":0,"foreignRows":0,"sources":[{"path":"home","status":"ok","bytes":612},{"path":"workspace","status":"ok","bytes":612}]},
+ "events":[{"eventsApi":2,"at":"2026-09-28T10:08:02.000Z","instance":"dev-1","home":"/w/agents/dev/instances/dev-1","incarnation":"2026-09-28T10:08:01.281Z",
+            "producer":"kernel","kind":"spawned",
+            "data":{"agent":"dev","work":"worktree","branch":"agents/dev-1","harness":"claude","model":null,"parentInstance":null,"relation":null,"launched":true}}],
+ "lastEvent":{"kind":"spawned","at":"2026-09-28T10:08:02.000Z","producer":"kernel","incarnation":"2026-09-28T10:08:01.281Z"},
+ "waitingOnYou":null,"waitingClaims":[],"notes":["…"]}
+```
+
+- **Sources.** `home` is `<home>/.oats-events.jsonl`; `workspace` is
+  `<deployment>/.agents/events/<agent>--<instance>.jsonl` (it survives the
+  home). Each is `{path, status: "ok" | "absent" | "refused" | "tail",
+  bytes}`. Only a regular file is opened (no symlinks, same device and inode
+  after open), and at most its last 4 MiB is read (`"tail"`).
+- **Kinds:** `spawned`, `launched`, `restarted`, `stopped`, `stop-refused`,
+  `retire-planned`, `retired`, `worktree-retained`, `worktree-removed`,
+  `branch-deleted`, `child-spawn-refused`, `recomposed` (from earlier
+  kernels). `producer` is `kernel` or a capability id. Older rows may carry
+  `eventsApi: 1`.
+- **Incarnation.** Each row carries the writing home's `createdAt` (or
+  `null` for old rows); the top-level `incarnation` is the current home's (or
+  `null`). Earlier incarnations are returned as this address's history.
+- **Address.** `--home` must be a home of `<instance>` (`E_HOME_MISMATCH`).
+  Rows for another address are dropped and counted in
+  `integrity.foreignRows`; torn or invalid lines are counted in
+  `integrity.unreadableRows`. Duplicates are removed.
+- **Window.** `count` is the rows after `--since`; `returned` the window
+  (`--limit`, default 200, 1–2000); `truncated` means rows were cut or a
+  source was a tail. `lastEvent` is `{kind, at, producer, incarnation}` of
+  the last returned row, or `null`.
+- **Waiting.** `waitingClaims[]` is `{producer, waiting, since, reason}` per
+  producer with a claim in the current incarnation (cleared ones included).
+  A producer's latest row with `data.waitingOnYou` decides. `waitingOnYou` is
+  `{since, producer, reason}` of the newest positive claim, or `null`
+  (unknown, not "not waiting"). No kernel path claims waiting today.
+- Errors: `E_SESSION_UNKNOWN`, `E_AMBIGUOUS_INSTANCE`, `E_HOME_MISMATCH`,
+  `E_BAD_ARGS`, `E_EVENTS_FAILED`.
+
+## Lifecycle: stop and retire
+
+Feature `lifecycle-plans` (and `retire-retention`), `lifecycleApi: 1`. A
+**plan** lists what an action would touch, with a `planRevision` (24 hex)
+hashed from the facts that make it safe. Apply carries the revision back; if
+reality moved it refuses `E_PLAN_STALE` with the fresh `details.plan`. An
+idempotency key (`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`) makes a retried apply
+return the first receipt. Recorded parentage (`parentInstance`) is the only
+relation followed; a child whose parent name matches several homes is listed
+under `ambiguous` and never acted on.
+
+### Stop
+
+```text
+oats instance stop <instance> --plan [--no-recursive] [--home <abs>] [--dir <d>] --json
+```
+
+```json
+{"lifecycleApi":1,"action":"stop","instance":"dev-1","home":"/w/agents/dev/instances/dev-1","recursive":true,"at":"2026-09-28T11:00:00.000Z",
+ "targets":[{"instance":"dev-1","agent":"dev","home":"/w/agents/dev/instances/dev-1","depth":0,"workMode":"worktree","launched":true,
+             "session":{"state":"unknown","present":true,"backend":"tmux","established":true},
+             "work":{"observed":true,"revision":"46c20668…","branch":"feat/x","detached":false,"drift":false,"changed":2,"untracked":1,
+                     "upstream":{"ref":null,"ahead":null,"behind":null},"base":{"ref":"origin/main","ahead":1,"behind":0},"remote":{"host":"github.com","path":"acme/one"}},
+             "retiring":false,"stopPending":false,"midTask":true}],
+ "skipped":[],"ambiguous":[],"planRevision":"9c1f2e3d4b5a69788796a5b4","notes":[]}
+```
+
+- `targets`: the recorded descendants, deepest first, then the instance
+  (`depth: 0`). With `--no-recursive` descendants go to `skipped` (`{instance,
+  agent, home, reason: "recursive=false"}`). `ambiguous[]`: `{instance, agent,
+  home, reason}`.
+- `session.state` is the backend's word: `shell`, `stopped` and
+  `not-launched` are idle; `unknown` is a running process tmux cannot name
+  (the normal state of a harness). Not established: `{state:
+  "unestablished", present: null, backend: null, established: false,
+  reason}`; render it as unknown, never idle.
+- `work` is the Git observation summarized (`changed` counts changed,
+  renamed, copied and unmerged rows), or `{observed: false, reason}`.
+- `midTask`: `true`, `false` or `"unknown"`.
+
+```text
+oats instance stop <instance> --apply --plan-revision <rev> --idempotency-key <key> [--no-recursive] [--grace-ms <n>] [--home <abs>] --json
+```
+
+Children first: SIGTERM to the harness processes and a bounded wait
+(`--grace-ms`, 1–300000, default 20000), never escalated. Home, work,
+transcript and launch configuration are kept; `oats session restart` brings
+the instance back.
+
+- The receipt is `{lifecycleApi: 1, action: "stop", instance, home,
+  idempotencyKey, planRevision, at, ok, results, retained: ["home", "work",
+  "transcript", "launch"], replayed: false}`. A result is `{instance, home,
+  ok: true, stopped, alreadyIdle, state}` or `{instance, home, ok: false,
+  code, message, stillRunning: [pid]}`.
+- `ok: false`: at least one target still runs (text mode exits 1).
+- A replay is the stored receipt (`<home>/.oats-stop-receipt.<key>.json`)
+  with `replayed: true`.
+- Refusals: `E_BAD_ARGS` (no `--plan-revision`, a bad key, not exactly one of
+  `--plan`/`--apply`), `E_PLAN_STALE`, `E_INSTANCE_RETIRING` and
+  `E_LIFECYCLE_BUSY` (each with `details.plan`), `E_SESSION_UNKNOWN`,
+  `E_AMBIGUOUS_INSTANCE`, `E_HOME_MISMATCH`, `E_LIFECYCLE_FAILED`.
+
+<a id="retire"></a>
+### Retire
+
+```text
+oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
+```
+
+```json
+{"lifecycleApi":1,"action":"retire","instance":"dev-1","home":"/w/agents/dev/instances/dev-1","at":"2026-09-28T11:10:00.000Z",
+ "facts":{"session":{"state":"shell","present":true,"backend":"tmux","established":true},
+          "work":{"observed":true,"revision":"46c20668…","branch":"feat/x","detached":false,"drift":true,"changed":0,"untracked":1,
+                  "upstream":{"ref":null,"ahead":null,"behind":null},"base":{"ref":null,"ahead":null,"behind":null},"remote":null},
+          "workMode":"worktree","repo":"/w/one","recordedBranch":"agents/dev-1",
+          "children":[{"instance":"dev-1-child","agent":"dev","home":"/w/agents/dev/instances/dev-1-child","session":{"state":"shell","present":true,"backend":"tmux","established":true}}],
+          "ambiguous":[],"pullRequest":"unknown"},
+ "defaults":{"retainWorktree":true,"deleteBranch":false,"stopChildren":true,"retainChildren":true},
+ "planRevision":"4e5f6a7b8c9d0e1f2a3b4c5d","notes":["the worktree is on feat/x, not the recorded agents/dev-1; …"]}
+```
+
+- The plan changes nothing except appending a `retire-planned` event to the
+  workspace log. `pullRequest` is always `"unknown"`. Branch actions use the
+  worktree's branch, never `recordedBranch`.
+
+Plain `retire` keeps a worktree-mode instance's work: the worktree is moved
+(`git worktree move`) to `<deployment>/.agents/worktrees/<repo>/<branch>` (a
+`-2` suffix if taken; `detached-<oid12>` when detached), state intact.
+
+```text
+oats retire <instance> [--plan-revision <rev> --idempotency-key <key>] [--discard-worktree] [--delete-branch] [--home <abs>] --json
+```
+
+A first retire prints the **raw receipt**, not an envelope:
+
+```json
+{"retired":"dev-1","agent":"dev",
+ "retention":{"worktree":"retained","movedTo":"/w/.agents/worktrees/one/feat-x","branch":"feat/x","detachedAt":null,"recordedBranch":"agents/dev-1"},
+ "worktreeRemoved":false,"branchDeleted":false,"removedDir":true,
+ "workRecovery":{"path":"/w/.agents/recovered/dev-1-20260928T111000Z","classes":["untracked"],"bytes":2048,
+                 "outputs":{"paths":[{"path":"notes.md","bytes":2048}],"bytes":2048}},
+ "childrenStopped":[{"instance":"dev-1-child","home":"/w/agents/dev/instances/dev-1-child","ok":true,"stopped":false,"alreadyIdle":true}],
+ "planRevision":"4e5f6a7b8c9d0e1f2a3b4c5d","idempotencyKey":"r1","replayed":false}
+```
+
+- `retention`: `{worktree: "retained" | "removed" | "absent", movedTo?,
+  branch, detachedAt?, recordedBranch, branchDeleted?,
+  branchDeletionSkipped?: {expected, actual, reason}}`, or `null` for a
+  non-worktree mode.
+- `--discard-worktree` removes the worktree. `--delete-branch` deletes the
+  worktree's verified branch (re-verified at deletion time) and implies
+  discarding; a mismatch deletes nothing and reports
+  `branchDeletionSkipped`.
+- `workRecovery` (or `workRecoveries[]`): `{path, classes, bytes, outputs?,
+  repoCopy?}`; `outputs: {paths: [{path, bytes}], bytes}` names what was
+  copied beyond tracked state, largest first.
+- When they apply: `rollbackIncomplete` and `retainedHome` (cleanup
+  incomplete, home kept, exit 1), `forcedIncomplete`, `relinked`,
+  `capabilityMeta`, `warnings`, `wakeSchedulesRemoved`.
+- A deferred self-retire (`--self`) prints `{retired, agent, deferred: true,
+  pendingMarker, resultPath, logPath, completesInSec, completionPid}`, or
+  `{…, alreadyScheduled: true, requestedAt}`.
+
+**Guarded apply** (what the Desktop sends): `--plan-revision` and
+`--idempotency-key` together.
+- A used key replays its receipt as an **envelope** with `replayed: true`
+  (receipts live beside the instances directory and outlive the home).
+- The revision is checked against a fresh plan: `E_PLAN_STALE {plan}`.
+- Children are stopped first (never escalated) and kept; `childrenStopped[]`
+  lists them. One still running refuses everything: `E_CHILDREN_RUNNING
+  {childrenStopped, plan}`.
+- A first guarded retire prints the raw receipt with `planRevision`,
+  `idempotencyKey` and `replayed: false`.
+
+Refusals (envelopes): `E_PLAN_STALE`, `E_CHILDREN_RUNNING`,
+`E_WORK_PRESERVATION_FAILED` (the home is kept; retry or
+`--discard-worktree`), `E_SESSION_UNKNOWN`, `E_AMBIGUOUS_INSTANCE`,
+`E_NO_ROOT`, `E_LIFECYCLE_FAILED`. A recovery whose Git status disagrees with
+the source's carries `details: {home, statusDisagreement: {repo, rows: [{path,
+source, recovery}], total}}` (the first 10 paths). Usage errors are text on
+stderr, not envelopes.
+
+## Sessions and launch configurations
+
+### Start and restart
+
+```text
+oats session start --home <abs> [--launch-config <name>|none] [--harness pi|claude|codex] [--model <id>] [--yolo|--no-yolo] [--server <id>] --json
+oats session restart --home <abs> [the same options] [--stop-grace <1-300 s>] --json
+```
+
+Features `session-start`, `session-restart`, and `launch-config` for the
+selection flags. See [the start workflow](desktop-instance-start.md).
+
+- The result is `{instance, agent, home, harness, backend, model,
+  launchConfig, yolo, target, startedAt, restartCount, reused}`, plus
+  `nativeRecordId` and `stop` (a restart's stop receipt) when they apply.
+- Restart is one command: the kernel validates the new selection before
+  stopping, and owns the stop, lock, launch recovery and metadata. Never
+  restart by retiring and spawning.
+- A lost response does not mean the launch failed: check status before a
+  retry. A remote home's saved route names its execution host.
+- Errors: `E_BAD_ARGS`, `E_SESSION_UNKNOWN`, `E_UNSUPPORTED_MODE`,
+  `E_SESSION_START_BUSY`, `E_INSTANCE_RETIRING`, `E_LAUNCH_*`,
+  `E_MODEL_UNKNOWN`, `E_UNSUPPORTED_HARNESS`, `E_SESSION_FAILED`.
+
+### Upload
+
+```text
+oats session upload (--home <abs> | --server <id> --instance <name> | --server <id> --home <abs>) --file <path> --json
+```
+
+Feature `session-upload`: copies a file (at most 64 MiB) into the instance's
+attachments. Remotely the bytes go on ssh stdin to the host's `session
+receive`, and the sha256 is verified.
+
+The result is `{path, bytes, sha256, name, home, source}` (`path` is the
+stored file); a remote upload adds `server`, `instance` and `stderr?`. Errors:
+`E_BAD_ARGS`, `E_UPLOAD_TOO_LARGE`, `E_UPLOAD_FAILED` (including a remote
+sha256 mismatch; the remote file is left), `E_SESSION_UNKNOWN`,
+`E_REMOTE_INCOMPATIBLE`.
 
 ### Launch configurations
 
 ```text
-oats launch-config list [--dir /scope | --home /home | --soul name --agents-root /scope/agents] --json
-oats launch-config set name --file /private/definition.json [--keep-env] --dir /scope --json
-oats launch-config remove name --dir /scope --json
-oats launch-config preview (--home /home | --soul name --agents-root /scope/agents --dir /scope) \
-  [--launch-config name] [--harness harness] [--model id] [--yolo|--no-yolo] --json
+oats launch-config list [--dir <d> | --home <abs> | --soul <name> [--dir <d>] [--agents-root <abs>]] --json
+oats launch-config set <name> --file <definition.json | -> [--keep-env] [--dir <d>] --json
+oats launch-config remove <name> [--dir <d>] --json
+oats launch-config preview (--home <abs> | --soul <name> [--dir <d>]) [--launch-config <name>|none] [--harness <h>] [--model <id>] [--yolo|--no-yolo] --json
 ```
 
-All accept `--server id`. Scope edits follow the registration; inspection and
-preview of an existing home follow its saved route. A local definition file
-is serialized to SSH stdin and read on the host with `--file -`; the local
-filename is never passed to the server as though it existed there.
-
-The list result supplies `context`, `selected` and `configurations`. Each
-configuration has a name, harness, executable, literal argument array,
-environment, model, permission choice and declaring `source`. Environment
-literals appear as `{ "redacted": true }`; references appear as
-`{ "fromEnv": "VARIABLE_NAME" }`. Optional executable/model/yolo fields can be
-null. An editor must not write redaction markers back. `--keep-env`, with
-`env` omitted from the replacement definition, copies the effective named
-configuration's environment once into the complete replacement.
-
-Preview is read-only and returns a redacted invocation plus `preflight`
-checks. A successful inspection envelope can contain `result.ok: false`:
-the selected launch is not ready. Desktop displays the failed checks rather
-than treating successful inspection as permission to launch. Environment
-references resolve on the execution host at launch, including subsequent
-starts of the saved recipe. Editing a named definition does not change a
-running instance or silently update its frozen launch recipe. Select the
-configuration explicitly on a later start/restart to apply the new definition.
-
-See [launch configuration syntax](configuration.md) and
-[the Desktop start/restart workflow](desktop-instance-start.md).
-
-### `oats spawn <agent> … --json`
-
-`result` fields (always present):
-
-| field      | type            | meaning                                    |
-| ---------- | --------------- | ------------------------------------------ |
-| `instance` | string          | new instance name                          |
-| `agent`    | string          | soul/agent name                            |
-| `home`     | string          | absolute instance home path                |
-| `work`     | string          | work mode (worktree/checkout/attached/workspace/directory) |
-| `branch`   | string \| null  | work branch when applicable                |
-| `launched` | boolean         | whether a tmux window was started          |
-| `warnings` | string[]        | non-fatal warnings (always an array)       |
-| `tmux`     | {session,window} \| null | tmux target                       |
-
-Additional informative fields: `repo`, `harness`, `model`, `parent`,
-`sibling` (explicit sibling cluster link when a root-level sibling relation
-was declared, else null), `relation` (`child`/`sibling`/`parent` when a
-relation was declared at spawn, else null), `spawnOrigin`, `attach`.
-
-Stable error codes: `E_USAGE`, `E_LOCAL_MISSING` (no `oats-local.yaml` in reach:
-a spawn needs a workspace deployment), `E_NO_DEPLOYMENT` (the deployment's
-`agents/` root is missing), `E_SOUL_UNKNOWN`, `E_UNKNOWN_AGENT`,
-`E_AMBIGUOUS_SOUL`, `E_PARENT_NOT_FOUND`, `E_RELATIVE_NOT_FOUND`,
-`E_RELATIVE_AMBIGUOUS` (a `--relative-to`/`--parent` anchor name matches
-multiple team instances — disambiguate with `--relative-root <agents-root>`
-— or the chosen anchor is shadowed by a same-named instance so the lineage
-edge would resolve wrongly), `E_BAD_ARGS`,
-`E_INSTANCE_NAME_INVALID`, `E_INSTANCE_NAME_TAKEN`, `E_SPAWN_FAILED`.
-
-**Instance names** (0.26.0, feature `spawn-name`). By default the name is
-derived: `<agent>-<purpose>` with `--purpose <slug>`, else `<agent>-<n>`.
-`--name <slug>` (human decision 2026-09-24) is the explicit opt-in: the
-instance name is **exactly** `<slug>`, with no `<agent>-` prefix.
-
-- `--name` and `--purpose` are mutually exclusive (`E_BAD_ARGS`), and
-  `--name` needs a value (`E_BAD_ARGS`).
-- The name is never rewritten. Input that is not already a slug (lowercase
-  letters and digits, single dashes between them) is
-  `E_INSTANCE_NAME_INVALID`, and so is a name equal to any soul name of the
-  deployment (souls on the agents root, and every soul the workspace
-  declares, fetched or not). Soul and instance references stay unambiguous.
-- **Instance names are at most 64 characters** (0.26.0; the tightest
-  consumer is the messaging alias, which allows 1–64). This covers every
-  name, explicit and derived. A longer name is `E_INSTANCE_NAME_INVALID`
-  ("instance names are at most 64 characters"), in preview and apply alike,
-  and is never truncated. For a derived name the refusal names the purpose
-  to shorten, and the de-duplication suffix counts: when `<agent>-<purpose>`
-  is taken and `<agent>-<purpose>-2` would exceed 64, the spawn is refused.
-- **Names are unique across the deployment.** An explicit name that any
-  `<agents-root>/<soul>/instances/` already holds (including homes whose soul
-  was since removed), or that a live window in the target tmux session carries
-  (tmux backend, launched or `--no-launch`), is `E_INSTANCE_NAME_TAKEN`
-  (`details.instance`, `details.home` or `details.session`). There is never a
-  silent `-2` for a name the operator typed. These checks run after
-  idempotency-key recovery (a keyed retry replays its receipt), and a
-  concurrent spawn of another soul under the same name is caught after
-  placement (see *Exclusive placement*). The invariant covers spawns through
-  the CLI. Homes from earlier kernels may already share a name.
-- Derived names de-duplicate deployment-wide too (`-2`, `-3`, …), against
-  every soul's instances and every soul name. Two souls never derive the same
-  name (soul `a` with `--purpose b-c` against soul `a-b` with `--purpose c`).
-- `--preview` reports the final name (`instance`, `decision.instance`) and
-  refuses with the same codes. The name is part of the decision revision, so
-  `--expect-decision` binds it: another name under a confirmed decision is
-  `E_DECISION_STALE`.
-
-Dispatch-level failures (any `--json` command): `E_UNKNOWN_COMMAND` (no
-kernel subcommand or capability namespace matches, or unknown capability
-subcommand), `E_CAPABILITY_INACTIVE`, `E_CAPABILITY_BLOCKED` (untrusted),
-`E_CAPABILITY_BROKEN`, `E_DUPLICATE_NAMESPACE`, `E_CONFIG_BROKEN` — all still
-exactly one stdout envelope with a nonzero exit.
-
-### Knowledge operations and OKF v2
-
-Discover provider-declared operations rather than assuming a particular memory
-format. The knowledge capability's version owns its result shape; CLI API v1
-does not freeze the old OKF v1 `harvest: spawned|skipped` body for every provider.
-See [knowledge](knowledge.md) for the prepared OKF 2.0.0 version scope.
-
-```bash
-oats operation run knowledge:inspect --home /absolute/source-home --json
-oats operation run knowledge:harvest --home /absolute/source-home --json
-```
-
-The operation runner preserves the provider view/action through the ordinary
-operations contract. Direct `oats okf inspect` returns the standard JSON-v1
-success/error envelope. Its result includes:
-
-- `summary`, durable `source`, frozen `owns`, `reads`, `bases`;
-- `acceptedView` (the registered snapshot, not a fresh read), `status` with
-  capture/processing/delivery/acceptance receipts, and `scheduler` diagnostics;
-- `liveMemory: {available, reason, observedAt}` and labeled `documents`.
-
-Live Markdown documents are `Working state (STATE.md)`, `Log (log.md)` and
-sorted `Pending note: <relative-name>`, including nested notes. Missing files
-are omitted; durable receipts follow as a text document. Only a live source
-whose pointer/metadata still matches may supply live memory. Retired, missing,
-reused or unverified homes return durable documents and explicit unavailability.
-Unsafe live documents fail instead of returning a partial success. Inspection is
-read-only and does not capture, refresh, schedule or launch a model.
-
-The explicit preview limit is **256 KiB per document**, with `truncated: true`
-and original `bytes` for larger files. Smaller files are byte-exact. The complete
-JSON envelope drains stdout; consumers must not clip it at a small output-buffer
-limit. Provider `read` returns full Markdown, not this inspection preview.
-
-After the home disappears, operate from durable deployment context:
-
-```bash
-oats okf inspect --source /absolute/state/sources/UUID/source.json --soul domain-expert --json
-oats okf refresh --source /absolute/state/sources/UUID/source.json --soul domain-expert --json
-```
-
-Every descriptor-selected read/refresh creates its new view under that source's
-state directory, not the invoking repository or a replacement home.
-
-Direct `oats okf harvest --json` captures notes and record and requests an
-independent directory worker. Representative result shapes (not exhaustive):
+Feature `launch-config`. Configurations are a host choice in
+`oats-local.yaml` `launch-configs:` ([syntax](configuration.md)). All four
+accept `--server <id>`.
 
 ```json
-{"status":"running","run":"<run-id>","instance":"<worker-instance>","home":"/absolute/worker-home"}
+{"context":"/w","level":"/w","file":"/w/oats-local.yaml","selected":null,
+ "configurations":[{"name":"reviewers","harness":"claude","executable":null,"args":["--permission-mode","plan"],
+                    "env":{"ANTHROPIC_API_KEY":{"fromEnv":"REVIEW_KEY"},"REVIEW_MODE":{"redacted":true}},
+                    "model":"opus","yolo":null,"source":"/w/oats-local.yaml","shadows":[]}]}
+```
+
+- **list**: `selected` is `null`, `{home, instance}` or `{soul, agentsRoot}`;
+  `level` and `file` are `null` without an `oats-local.yaml` (the set is then
+  empty). An environment literal is `{redacted: true}`, a reference
+  `{fromEnv}`; values never leave the file.
+- **set**/**remove**: `{name, action, level, file, before, after,
+  effective}`. `set --file` takes `{harness, executable?, args?, env?, model?,
+  yolo?}` (`-` reads stdin). `--keep-env` keeps the declared environment when
+  `env` is omitted. Errors: `E_LOCAL_MISSING`, `E_BAD_ARGS` (including
+  `--home`/`--soul`), `E_LAUNCH_CONFIG_UNKNOWN`, `E_LAUNCH_CONFIG_INVALID`,
+  `E_CONFIG_BROKEN`, `E_HOME_UNKNOWN`.
+- **preview** (read-only) answers `{context, selected, selection: {source,
+  launchConfig, harness, model, yolo}, harness, model, modelSource, yolo,
+  launchConfig, launchConfigSource, executable: {path, declared,
+  resolvedFrom}, argv, environment: [{name, fromEnv} | {name, redacted:
+  true} | {name, reference: true}], command (redacted), prompt, hooks,
+  preflight: [{check, ok, detail}], ok}`.
+
+A successful envelope can carry `ok: false`: show the failed `preflight`
+checks. The prompt is named, never the task body. A home predating launch
+recipes answers its frozen command with `selection.source: "frozen-command"`
+and `hooks: null`; a selection on it is `E_LAUNCH_LEGACY`. Editing a
+definition never changes a running instance's recipe.
+
+<a id="schedules-and-triggers"></a>
+## Schedules and triggers
+
+Schedules (feature `schedule`, `scheduleApi: 2`; history feature
+`schedule-read-2`, `scheduleHistoryApi: 3`), triggers (feature `triggers`,
+`triggerApi: 1`) and workspace automations (feature `automations`,
+`automationsApi: 1`). Model: [schedules.md](schedules.md#triggers).
+
+The lists stay separate: a trigger never appears in `schedule list`, nor a
+schedule in `trigger list`. Each answers this machine's local items and every
+workspace item of a readable member. Render the rows; never re-derive them.
+
+### `oats schedule`
+
+```text
+oats schedule list [--dir <d>] --json
+oats schedule show <id> --json
 ```
 
 ```json
-{"status":"empty","processed":true}
+{"scope":"/w","scheduleApi":2,"scheduleHistoryApi":3,
+ "integrity":{"sources":[{"path":"definitions","status":"ok","bytes":1206},{"path":"state","status":"ok","bytes":4410}]},
+ "host":{"name":"ana-laptop","ghUser":{"github.com":"ana"}},"triggers":{"count":4,"command":"oats trigger list"},
+ "snapshot":{"takenAt":"2026-09-26T19:58:09.281Z","problems":1},
+ "schedules":[{"id":"nightly","kind":"spawn","cron":"0 7 * * *","tz":"Europe/Madrid","agent":"rm","task":"Check the release branch.","purpose":"nightly",
+               "enabled":true,"createdAt":"2026-09-26T19:58:09.380Z","updatedAt":"2026-09-26T19:58:09.380Z","scope":"/w","scheduleApi":2,"scheduleHistoryApi":3,
+               "executionStatus":{"kind":"legacy","capture":"unknown","migrationRequired":true},
+               "nextRun":"2026-09-29T05:00:00.000Z","nextDue":"2026-09-29T05:00:00.000Z","lastRun":null,
+               "history":{"status":"ok","stored":1,"truncated":false},
+               "recentRuns":[{"scheduledFor":"2026-09-28T05:00:00.000Z","startedAt":"2026-09-28T05:00:01.000Z","kind":"spawn","outcome":"ended",
+                              "runId":"3f9a0b1c2d3e4f5a6b7c8d9e","legacy":false,"settled":true,"recordedAt":"2026-09-28T05:40:00.000Z","transitions":["started","ended"],
+                              "session":{"instance":"rm-nightly","home":"/w/agents/rm/instances/rm-nightly","incarnation":"2026-09-28T05:00:01.000Z","server":null,"delivery":"launched"}}],
+               "running":false,"name":"nightly","qualifiedId":"local/nightly",
+               "origin":{"kind":"local","path":"oats-schedules.json","url":null,"localPath":"/w/oats-schedules.json"},
+               "description":null,"owner":null,"runsOn":null,"runsHere":true,"reason":null,"enabledHere":true,
+               "soul":{"name":"rm","origin":{"kind":"member","repoKey":"github.com/nw/agents","member":"agents"}},
+               "teams":[],"launchConfig":null,"harness":null,"model":null,"concurrency":null}],
+ "scheduler":{"installed":true,"active":true,"registered":true,"lastTick":"2026-09-28T11:59:00.000Z","maxConcurrent":2}}
 ```
 
-An explicit `--no-launch` request can return `status: "ready"` without starting
-a model; existing runs report their current status without starting duplicates.
-Nonzero errors use the ordinary JSON-v1 error envelope. `running`/`ready` are not
-successful knowledge delivery. Inspect and reconcile provider receipts; never
-infer acceptance from a launch or from a worker disappearing.
+- `list`: `{scope, scheduleApi, scheduleHistoryApi, integrity, host,
+  triggers, snapshot, schedules, scheduler}`; `triggers` counts the trigger
+  definitions left out. `show <id>`: `{schedule}`, without `integrity`.
+- **A readable row**: the definition (`id, kind, cron, tz, enabled, …`, and
+  `agent/task/purpose/harness` for a spawn, `argv/cwd` for a command, the
+  message for a wake, the operation for an operation) plus `scope,
+  scheduleApi, scheduleHistoryApi, executionStatus, nextRun, lastRun, history,
+  recentRuns, running, attempt?, pendingWake?` and the
+  [shared row fields](#automations-shared-rows).
+  `executionStatus` is `{kind: "legacy" | "invalid", capture: "unknown",
+  migrationRequired: true, reason?, intent?}`; only `legacy` runs.
+- **An unreadable row** (`list` only): `{id, scope, scheduleApi,
+  scheduleHistoryApi, unreadable: {code, message}, history: {status:
+  "corrupt", stored: null, truncated: false}, recentRuns: []}`. One bad job
+  never fails the others.
+- `history`: `{status: "ok", stored, truncated}` or the corrupt form; capped
+  at 50 rows.
+- **A run** (`recentRuns[]`, `lastRun`): the producer's fields
+  (`scheduledFor, startedAt, kind, outcome, …`) plus `runId, legacy: false,
+  settled, recordedAt, transitions, session`.
+  - `runId` = `sha256(scheduledFor|startedAt|attemptId)[0:24]`, opaque: never
+    recompute or dedupe by it. `lastRun` shares its history row's `runId`.
+  - `transitions` is the outcome sequence; `settled` a boolean. `outcome` is
+    the producer's word (`ended`, `stopped`, `blocked`, `invalid`,
+    `delivered`, `skipped`, `unknown`, …).
+  - A pre-API-3 row: `runId: null, legacy: true, settled: null, transitions:
+    null`, `session`, no `recordedAt`. A corrupt element: `{runId: null,
+    legacy: true, corrupt: true}`.
+  - `session` is `{instance, home, incarnation, server, delivery: "launched"
+    | "delivered-active" | "none"}`: recorded provenance, not a transcript
+    reader.
+- `nextDue` is "when it next runs" in every row (`null` when another host
+  runs it); a schedule row also keeps `nextRun`.
+- **Integrity.** `oats-schedules.json` and `.agents/schedules/state.json` are
+  opened as regular files only, at most 1 MiB. `integrity.sources[]` is
+  `{path: "definitions" | "state", status: "ok" | "absent" | "refused" |
+  "oversize" | "corrupt", bytes}`.
+- Refusals: `E_SCHEDULE_STATE_OVERSIZE` and `E_SCHEDULE_INVALID` (`details:
+  {source, field?}`), `E_SCHEDULE_IDENTITY` (`details: {key, declared}`), and
+  `E_BAD_ARGS` for an id not matching `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`.
+  `list` refuses as a whole only when a scope file is unreadable.
 
-Kernel envelope/dispatch tests live in `test/cli-json-contract.test.mjs`;
-provider-specific behavior is qualified against the exported OKF runtime.
+**Other verbs** (envelopes):
+- `add <id> (--file <spec.json> | --spec-json <json>)`, `update`, `enable`,
+  `disable` → `{schedule}`. `run [--force]`, `remove [--force]`, `reconcile
+  [--clear]` → the action's receipt. `tick [--dry-run] [--host]` →
+  `{tickedAt, considered, scheduler}`; `host install | uninstall | status` →
+  `{scheduler}`.
+- `test <id>` → `{test: {id, qualifiedId, kind, placement: {runsHere, reason,
+  reasonDetail?, enabledHere, runsOn, owner, host}, soul: {name, origin,
+  resolves, error} | null, nextDue, spawned: false, problems, ok}}`. The soul
+  is checked as the run would start it; not running here, disabled, invalid
+  or unresolved is a problem. It runs nothing.
+- Errors: `E_SCHEDULE_UNKNOWN`, `E_SCHEDULE_EXISTS`, `E_SCHEDULE_INVALID`,
+  `E_SCHEDULE_RUNNING`, `E_SCHEDULE_DISABLED`, `E_SCHEDULE_UNRESOLVED`,
+  `E_SCHEDULE_FAILED`, `E_LOCAL_MISSING`, `E_BAD_ARGS`.
+
+### `oats trigger`
+
+```text
+oats trigger list | show <id> | status [<id>] | test <id> | add (--file <json> | --from <package>:<template> [--set k=v]) | enable <id> | disable <id> | remove <id> --json
+```
+
+Event-driven spawns. Local definitions live in `oats-schedules.json` (`kind:
+"trigger"`).
+
+- `list`: `{triggerApi, scope, host, snapshot, triggers, scheduler}`.
+  `show`, `add`, `enable`, `disable` → `{trigger}`; `remove` → `{removed,
+  live: [instance]}`. A stored definition that no longer validates carries
+  `invalid: {code, message, field?}`.
+- **A trigger row**: the [shared row fields](#automations-shared-rows) plus
+  `kind: "trigger", on, spawn, template?, enabled, triggerApi, scope,
+  createdAt, updatedAt`.
+  - `id` is always qualified (`local/<id>` or `<member>/<id>`); verbs accept
+    `local/<id>` or a bare local id.
+  - `on`: `{source: "github.pull_request", repo, events: [opened | reopened |
+    ready_for_review | labeled | synchronize], labels, base?, poll}`.
+  - `spawn`: `{soul, purpose, task, teams, launchConfig?, harness?, model?,
+    yolo?, backend?}`. `purpose` and `task` template over `{repo}`,
+    `{number}`, `{url}`, `{event}`, `{trigger}`, `{headSha}`. `teams` are
+    distinct labels passed as `--provider <messaging cap> join=<labels>`; a
+    soul without messaging refuses `E_TRIGGER_TEAMS {soul, teams}`.
+  - `template?`: `{package, version, commit, template}`.
+  - `lastRun`: `{at, instance, home, event, number, key}`; `nextDue`: the
+    next poll here, `null` before the first.
+- `status [<id>]` → `{triggerApi, scope, triggers: [{id, name, enabled,
+  runsHere, reason, enabledHere, repo, soul, concurrency: {max, perKey},
+  liveCount, live: [{instance, home, repo, number, event}], lastPoll: {at, ok:
+  true, prs, matching} | {at, ok: false, error} | null, nextPollAt, nextDue,
+  pending: [{key, event, number, url, observedAt}], fired: [{key, at,
+  instance, home, event, number}] (newest 50), firedTotal, lastError: {at,
+  code, message, key?} | null}]}`. It writes nothing.
+- `test <id>` → `{triggerApi, id, ok, placement: {runsOn, owner, host,
+  runsHere, reason, detail?, enabledHere}, gh: {ok, account,
+  credentialSource, reachesHostTimer, note, detail}, repo: {key, readable,
+  fullName, permissions: {push, maintain, admin}, canMerge} | {key, readable:
+  false, error}, soul: {resolves, name, agent, messaging} | {resolves: false,
+  name, error}, teams: {requested, undeclared | null, messaging}, wouldFire:
+  [{key, repo, number, event, url, held?}], pollError?, problems, warnings,
+  spawned: false}`. `ok` counts `problems` only; a credential the host timer
+  cannot reach is a warning.
+- A triggered instance records `instance.json.trigger`; its event file is
+  `OATS_TRIGGER_EVENT_FILE`.
+- Errors: `E_TRIGGER_INVALID {field}`, `E_TRIGGER_EXISTS`,
+  `E_TRIGGER_UNKNOWN`, `E_TRIGGER_TEAMS`, `E_TRIGGER_POLL`,
+  `E_TRIGGER_FAILED`, `E_BAD_ARGS`, `E_PACKAGE_MISSING`,
+  `E_PACKAGE_MANIFEST`, `E_LOCAL_MISSING`.
+
+<a id="automations-shared-rows"></a>
+### Shared row fields and workspace automations
+
+Details: [schedules.md](schedules.md#workspace-triggers-and-schedules).
+
+**Both lists** carry `host: {name | null, ghUser: {<gh host>: <login> |
+null}}` (this machine's `host.name` and its `gh` logins, compared with a
+row's `owner`), `snapshot: {takenAt, problems (a count)} | null` (the last
+`oats sync` snapshot), and `scheduler: {installed, active, registered,
+lastTick, maxConcurrent, …}` (nothing runs unless installed, active and
+registered).
+
+**Every row** carries:
+- `id` (a local schedule keeps its bare id; a workspace item is
+  `<member>/<id>`), `qualifiedId` (always qualified), `name` (the bare id).
+- `origin`: `{kind: "local", path: "oats-schedules.json", url: null,
+  localPath}` or `{kind: "workspace", repoKey, path, commit, url,
+  localPath}` (`url` for `github.com` only; `localPath` `null` when the
+  member is not cloned here).
+- `description`, `owner`, `runsOn`, `runsHere`, `reason` (`null` |
+  `host-unnamed` | `assigned-elsewhere` | `owner-mismatch`), `reasonDetail`,
+  `enabledHere`.
+- `soul: {name, origin} | null` (`null` for command, wake and operation
+  schedules). `origin` is `{kind: "member", repoKey, member}`, `{kind:
+  "package", package, version}`, `{kind: "external", repoKey, source}`,
+  `{kind: "ambiguous", candidates (a count)}`, or `null`.
+- `task`, `teams`, `launchConfig`, `harness`, `model`, `concurrency`,
+  `lastRun`, `nextDue`, `invalid?`. A schedule row's `kind` is its run
+  (`spawn | command | wake | operation`), its `teams` is `[]` and
+  `concurrency` `null`. A workspace item another host runs carries its
+  definition and placement only.
+
+**Workspace items:**
+- `enable`/`disable` edit `oats-local.yaml` `triggers.disabled` or
+  `schedules.disabled`. `update` and `remove` refuse `E_AUTOMATION_WORKSPACE
+  {id, origin}`. `schedule run`/`reconcile` elsewhere refuse
+  `E_AUTOMATION_NOT_HERE {id, reason, runsOn, owner}`.
+- `oats trigger|schedule add … --workspace <member> --runs-on <host> --owner
+  <host>/<login> --json` writes the file in the member clone and answers
+  `{id, written, file: {member, repoKey, path, content, written?}}`. Errors:
+  `E_AUTOMATION_MEMBER`, `E_TRIGGER_EXISTS`/`E_SCHEDULE_EXISTS`, and the
+  kind's validation codes.
+- `oats automations refresh --json` → `{automationsApi, snapshot (the file's
+  path), triggers, schedules (counts), problems, takenAt}`.
+- The tick's `considered[]` holds schedule rows and trigger rows `{workspace,
+  trigger, action, …}` with actions `not-due`, `poll-failed`, `polled`
+  (`prs`, `matching`), `held`, `fired` (`key`, `instance`, `home`),
+  `spawn-failed` (`key`, `code`, `error`), `would-fire`, `invalid` and
+  `not-here`. A workspace schedule's state key is `<member>~<id>`. A failed
+  snapshot refresh is `{workspace, action: "error", error}`.
+
+<a id="the-harness-rename-feature-harness-oats-0270"></a>
+## Harness input spellings
+
+What starts an instance (pi, claude or codex) is its **harness** (feature
+`harness`), and every output uses that name. These inputs still accept the
+older `runtime` spelling: it is read as `harness`, and the next write records
+`harness`. A pair that disagrees is refused.
+
+| Input | Old spelling | Warning | Both, disagreeing |
+|---|---|---|---|
+| `spawn` (and `--preview`), `session start`/`restart`, `launch-config preview`, and their `--server` forms | `--runtime <h>` | yes | `E_BAD_ARGS` |
+| `oats-local.yaml` `launch-configs.<name>` | `runtime:` | yes | `E_WORKSPACE_SCHEMA` (`reason: "harness-conflict"`) |
+| `launch-config set --file` | `runtime` | yes; written as `harness` | `E_LAUNCH_CONFIG_INVALID` |
+| a home's `instance.json` and launch recipe `version: 1` | `runtime` | yes, naming the home; the next start records `harness` | |
+| schedule definitions (`add`/`update`, stored jobs) | `runtime` | yes | `E_SCHEDULE_INVALID` |
+| schedule run records | `startedRuntime` | no | |
+| a flat soul.yaml (a capability-defined agent) | `runtime:` | no | `E_BAD_MANIFEST` |
+| a manifest `requires[]` harness-package row | `runtime` | no | a spawn problem |
+
+One warning per command, however many old spellings it read:
+
+```json
+{"code":"deprecated-runtime-name","key":"runtime","replacement":"harness","sources":["the --runtime flag (use --harness)"],"message":"`runtime` was renamed to `harness` in 0.27.0; the old name is still read here (the --runtime flag (use --harness)) and a later release drops it"}
+```
+
+The `--server` routes translate for a host without the `harness` feature:
+they send `--runtime` and `runtime` keys and read its `runtimes` list.

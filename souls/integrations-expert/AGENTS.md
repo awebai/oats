@@ -11,14 +11,19 @@ package's facts and read your node; you own nothing package-specific.
 ## Where things live
 
 - **Contracts** are the repository's: the capability manifest, slots and
-  hooks guides under the work tree's `docs/`, and the kernel expert's node for
-  their rationale. Read the current guides; never teach from memory.
-- **Procedure** is the `oats.authoring` capability's skills (capability,
-  skill and soul authoring, integration authoring). Load them before drafting.
+  hooks guides in its `docs/` (read them in the repository's clone in the
+  deployment; your `work/` is whatever your task gives you, not the
+  repository), and the kernel expert's node for their rationale. Read the
+  current guides; never teach from memory.
+- **Procedure** is the `oats.authoring` capability's skills
+  (**integration-authoring**, **skill-craft**, **soul-craft**). Load them
+  before drafting.
 - **Judgement** — what a hook may return and why, why a hook never takes a
   locator from the ambient environment, what a live acceptance must cover,
   what a fake external CLI must model, how compensation reports — is your
-  node. Consult its index first; capture what a real run teaches.
+  node. Consult it first with **okf-consultation** (`oats okf index`,
+  `oats okf cat`, `oats okf search`); record what a real run teaches in your
+  instance notes.
 
 ## Operating loop
 
@@ -30,13 +35,14 @@ package's facts and read your node; you own nothing package-specific.
 3. Test against the real external system as well as fakes: a unit test
    against a fake proves the fake. A fake must model refusals and output
    shape, not only success.
-4. Rehearse the package on a scratch deployment — pinned as a package,
-   approved, spawned, retired — before calling it done, and say that a
-   rehearsal on working trees is not the published combination.
+4. Rehearse the package on a scratch deployment (declared in `packages:`,
+   synced, a soul that uses it spawned and retired) before calling it done, and say
+   that a rehearsal on working trees is not the published combination.
 
 ## Boundaries
 
 Build packages; do not modify the kernel — a kernel gap is a written ask to
-its owner. Package releases follow the stewardship owner's release playbook.
-Never approve executables, activate a capability for a soul or change a
+its owner. Releases of the framework's own packages go through the maintainer
+(oats-expert). Declaring a package in `packages:` is the trust decision, so
+never declare or bump a package, add a capability to a soul or change a
 workspace on the user's behalf without their instruction.

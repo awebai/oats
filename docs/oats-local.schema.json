@@ -18,7 +18,7 @@
       "type": "string",
       "minLength": 1,
       "pattern": "^(?:git@[^@\\s]+|[^@\\s]+)$",
-      "description": "Repo ref to realize in the STANDALONE view (decision 10): its own souls and from: here capabilities plus oats.core (decision 25), no workspace lookup. Use when the repo's workspace cannot be read; `workspace:` still names the repo you point the kernel at."
+      "description": "Repo ref to realize in the STANDALONE view: its own souls and from: here capabilities plus oats.core, no workspace lookup. Use when the repo's workspace cannot be read; `workspace:` still names the repo you point the kernel at."
     },
     "clones": {
       "type": "object",
@@ -37,15 +37,15 @@
     },
     "launch-configs": {
       "type": "object",
-      "description": "Named ways to start a harness on this host, independent of any soul (lead decision 2: a spawn-time host choice). Selected by name at spawn or session start/restart; explicit flags override its fields. Written by `oats launch-config set|remove`.",
+      "description": "Named ways to start a harness on this host, independent of any soul (a spawn-time host choice). Selected by name at spawn or session start/restart; explicit flags override its fields. Written by `oats launch-config set|remove`.",
       "propertyNames": { "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" },
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
         "anyOf": [{ "required": ["harness"] }, { "required": ["runtime"] }],
         "properties": {
-          "harness": { "type": "string", "enum": ["pi", "claude", "codex"], "description": "The harness this configuration starts (named `runtime` before 0.27.0); it decides the kernel's own baseline arguments (skills, instructions, task) and how model/yolo are expressed." },
-          "runtime": { "type": "string", "enum": ["pi", "claude", "codex"], "deprecated": true, "description": "The pre-0.27 name of `harness`, still read (a deprecation warning); both, disagreeing, are refused. `oats launch-config set` writes `harness`." },
+          "harness": { "type": "string", "enum": ["pi", "claude", "codex"], "description": "The harness this configuration starts; it decides the kernel's own baseline arguments (skills, instructions, task) and how model/yolo are expressed." },
+          "runtime": { "type": "string", "enum": ["pi", "claude", "codex"], "deprecated": true, "description": "The old name of `harness`, still read (a deprecation warning); both, disagreeing, are refused. `oats launch-config set` writes `harness`." },
           "executable": { "type": "string", "minLength": 1, "description": "The program to run instead of the harness's default binary: a bare name is looked up on PATH on the execution host; a path containing a slash is resolved against the deployment directory (where this oats-local.yaml lives) when relative. Checked to exist and be executable before any start; never executed just to probe it." },
           "args": { "type": "array", "items": { "type": "string" }, "description": "Extra arguments, each passed literally (no shell interpretation): native configuration files or profiles go here as ordinary arguments." },
           "env": {
@@ -69,7 +69,7 @@
       "additionalProperties": false,
       "required": ["name"],
       "properties": {
-        "name": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$", "description": "This machine's name (0.29.0). A workspace trigger or schedule runs on the host whose name is its `runsOn` (and only when this host's gh account is its `owner`). A machine fact, never in Git." }
+        "name": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$", "description": "This machine's name. A workspace trigger or schedule runs on the host whose name is its `runsOn` (and only when this host's gh account is its `owner`). A machine fact, never in Git." }
       }
     },
     "triggers": {
@@ -105,7 +105,7 @@
           "items": { "type": "string", "pattern": "^(?:[a-z0-9][a-z0-9._-]*/)?[a-z0-9]+(?:-[a-z0-9]+)*$" }
         },
         "teams": {
-          "description": "Which teams each soul belongs to on this deployment (team model v2, 0.30; `oats soul teams` writes it): \"*\" applies to every soul; a soul's own entry (its bare name, or <package>/<soul> for a package soul) adds to it. Every soul is also in its default. Eligible, never auto-joined: an instance joins its default at spawn and the others on request.",
+          "description": "Which teams each soul belongs to on this deployment (`oats soul teams` writes it): \"*\" applies to every soul; a soul's own entry (its bare name, or <package>/<soul> for a package soul) adds to it. Every soul is also in its default. Eligible, never auto-joined: an instance joins its default at spawn and the others on request.",
           "type": "object",
           "propertyNames": { "type": "string", "pattern": "^(?:\\*|(?:[a-z0-9][a-z0-9._-]*/)?[a-z0-9]+(?:-[a-z0-9]+)*)$" },
           "additionalProperties": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/label" } }
@@ -119,7 +119,7 @@
       }
     },
     "teams": {
-      "description": "LOCAL teams (team model v2, 0.30; `oats teams add` writes it): <label>: { team, description? }, the messaging provider's team id for a team only this deployment uses. Shared teams are committed in oats-workspace.yaml teams:; a label in both is team-label-collision (the shared one wins).",
+      "description": "LOCAL teams (`oats teams add` writes it): <label>: { team, description? }, the messaging provider's team id for a team only this deployment uses. Shared teams are committed in oats-workspace.yaml teams:; a label in both is team-label-collision (the shared one wins).",
       "type": "object",
       "propertyNames": { "$ref": "#/$defs/label" },
       "additionalProperties": {

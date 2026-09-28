@@ -1,239 +1,116 @@
-# Team model v2: the workspace defines teams and the default; souls declare which they may join
+# Team model v2: shared and local teams, the default team, and membership per deployment
 
-Status: **DECIDED 2026-09-27: Option B**, with opt-in joining at spawn and `defaults.byTeam` + the committed soul/membership `team` labels dropped. Decided by the human (Juan) and confirmed by the original designer (Pepe): *"Okay, I agree with the design. Let's go ahead and get it implemented."* Implementation is owned by the messaging co-lead; the lead reviews every PR (the lead drafts; the messaging co-lead shapes it; the human confirms (a)–(c)). It supersedes the teams contract's model: the workspace/soul team labels, amendment K's default rule, "primary", and "joining is explicit". Kept from `2026-09-25-teams-contract.md`: live reconciliation and the provider's multi-identity receive.
+**Status:** decided and implemented (kernel 0.30.0, feature `team-model-2`). This record decides where teams, the default team and team membership live, how the kernel resolves them, and what the kernel hands a messaging provider. The reference pages ([workspaces.md](../workspaces.md#teams), [capabilities.md](../capabilities.md#teams-in-the-provider-environment), [desktop-cli-api.md](../desktop-cli-api.md#team-model-v2-feature-team-model-2-oats-0300-replaces-feature-teams)) win on operator-visible behaviour.
 
-## The human's direction (2026-09-27, verbatim)
+## Why
 
-> "El workspace define los equipos que hay, y a que equipo se instancian los souls por default. Y luego en el soul.yaml defines a que equipos se puede unir ese soul, y un default si quieres override el default de el workspace."
->
-> "we do not need aweb primitives for this, we already have teams. we need to be able to add and remove souls to teams."
->
-> "only pepe and i are using this for now, just clean up and do the right thing. no backwards comp required. setup may require creating accounts and teams, we need to support onboarding."
+Team membership is **local to each deployment**, over shared repositories and souls. Two people running the same souls from the same repositories have different sets of teams: some are shared (both map the label to the same provider team), some are personal, and each has their own default. Membership therefore never lives in a committed file, and every soul, member or package, is treated the same.
 
-## Why: today's model has four overlapping ideas
+What is shared is a fact, not a choice: a shared team's provider id is the same for everyone. That fact is committed once; everything personal is local.
 
-1. The workspace's `teams:` labels + `messaging.byTeam.<label>` map labels to provider teams. They're committed and shared, which the human's answers rule out (below).
-2. **The default team is not the workspace's.** After amendment K it's the provider setting `team`, else the provider's own default. For oats.aweb that's the messaging root's active team: host state, invisible in config.
-3. **"Primary"** (the first of a soul's `team:` labels) sets `OATS_TEAM_LABEL` and ordering but isn't the default team.
-4. **`oats-membership.yaml` `team`** is a repository-level default label layered under the soul's.
+## The model (option B)
 
-On top of that, a soul can override the default only by writing a provider team *id* in its messaging slot, not a workspace label. And adding or removing a soul's teams means hand-editing YAML.
+The chosen model is **option B: shared facts committed, personal choices local**. The committed `oats-workspace.yaml` `teams:` declares the shared teams with their provider ids; each deployment's `oats-local.yaml` declares its local teams, its default team and all membership.
 
-## The human's answers (2026-09-27, verbatim)
+### Where it lives
 
-> "q1: every team. q2: the instances also leave. but be very careful: belonging of a soul to a team is a local thing, stored in the local conf for the oats workspace. it is not shared among the workspaces using the soul. if pepe and i both have workspaces using a given soul my set of teams will be generally different than his. some of the teams may be the same. our particular conf will be my souls will belong to an antares-oats team, as well as to the oats team to which pepe's souls will also belong, and he will have his own personal oats team. for me antares-team will the the default, he will have another name. but we will both be working in the same repos with the same souls."
+Committed `oats-workspace.yaml` (shared teams only; edited by PR):
 
-**What this changes:** team membership is **LOCAL: per person's OATS deployment, over shared repos and souls.** Two people using the same souls from the same repositories have different sets of teams. Some teams are shared (both map the label to the same provider team), and each has their own default. So **nothing about teams lives in a committed, shared file**: not `soul.yaml`, not `oats-workspace.yaml`. Q3 (package souls) dissolves: every soul, member or package, is treated the same.
-
-## Two shapes for the original designer (Pepe) to choose from
-
-**The human (Juan) decided B, with Q1 revised** (verbatim): *"i agree with b, but we should keep the shared teams opt-in per instance. when a new instance is spawned only the default team is joined by default, but the shared and other local teams should be offered as opt-in (for example as checkboxes in the ui). does that fit better with pepe's intent?"* That restores the 2026-09-25 contract's "default only; joining is explicit; the Desktop has controls at spawn". So:
-- **`souls.teams` = the teams a soul's instances MAY join here** (eligible), shared or local; it's not "join at spawn".
-- **At spawn:** an instance joins its default team only. Every other eligible team is OFFERED: the spawn's `join=<labels>` choice, and checkboxes in the Desktop spawn dialog.
-- **Live:**
-  - a team GAINED by the soul is offered, never auto-joined (the human's (b) settled);
-  - a team LOST (removed from the soul's list, or the team removed) makes the instances joined to it leave on the next live read (Q2);
-  - the per-instance join/leave verbs are the way to opt in or out later.
-
-
-The human (Juan): *"i do not want to go against Pepe's design intent. what exactly do we propose? what's the final shape?"* Membership is LOCAL in both shapes (the human's non-negotiable). They differ on where a SHARED team is declared.
-
-**Option A: everything local** (the model section below as written):
-- `oats-local.yaml` declares every team (shared and personal) with its id, the default, and all membership.
-- Committed files say nothing about teams.
-- One place, one rule. It gives up the shared committed vocabulary: each person hand-copies a shared team's id.
-
-**Option B: shared facts committed, personal choices local** (the co-lead's variant; **both co-leads recommend B**):
-- **Committed `oats-workspace.yaml` `teams:`:** only the SHARED teams, with their provider ids, e.g. `teams: { oats: { team: oats:oats.aweb.ai } }`.
-  - It's one fact, written once, the same for everyone, edited by PR like any committed workspace config.
-  - It REPLACES `messaging.byTeam` (the id moves into the team's own entry).
-  - It keeps the shared vocabulary and "the workspace owns team policy".
-  - A team id is an address, not a secret.
-- **Local `oats-local.yaml`:** personal teams (`teams: { antares-oats: {team: …} }`), `defaultTeam`, and ALL membership (`souls.teams`, `souls.default`).
-- **Rules:**
-  - a label defined in both files is a READINESS problem (`team-label-collision`, naming both definitions and the fix: rename the local label), not a spawn refusal. A teammate's PR adding a shared team must never break another person's deployment on sync; until it's fixed, the COMMITTED definition wins;
-  - the default and every membership may name a label from either file;
-  - an unknown label → `E_TEAM_UNKNOWN`.
-- **Joining a shared team:** the id is in the committed file. Setup makes the local root a member through the owner's invite (`oats teams join <label> --invite <token>`).
-- **`oats teams add`** writes LOCAL teams only.
-- **In both shapes:**
-  - `defaults.byTeam` capability composition is DROPPED (composition must not vary per person);
-  - soul.yaml / oats-membership.yaml `team` go;
-  - "primary" goes;
-  - the provider `team` setting goes at every layer.
-- **Cost of B:** two places a team can be declared + one merge rule.
-
-**The model section below is written for the DECIDED option B:** shared teams (+ ids) in the committed `oats-workspace.yaml` `teams:`, and personal teams + the default + all membership in `oats-local.yaml`.
-
-## The model
-
-### Where it lives (option B)
-Committed `oats-workspace.yaml` (SHARED teams only; edited by PR):
 ```yaml
 teams:
-  oats: { team: oats:oats.aweb.ai }                   # a shared team: the same id for everyone
+  oats: { team: oats:example.aweb.ai }        # a shared team: the same provider id for everyone
 ```
+
 Local `oats-local.yaml` (the deployment's per-machine file, never committed):
+
 ```yaml
 teams:
-  antares-oats: { team: antares-oats:juan.aweb.ai }   # a PERSONAL team: label → the provider team id
-defaultTeam: antares-oats                             # required once any team is declared
+  antares-oats: { team: antares-oats:ana.aweb.ai }   # a local (personal) team: label → provider id
+defaultTeam: antares-oats
 souls:
-  disabled: [...]                                     # (existing)
-  teams:                                              # which teams each soul belongs to HERE
-    "*": [oats]                                       # every soul (optional)
-    oats-expert: [oats]                               # per soul (member or package: `<pkg>/<soul>`)
-  default:                                            # optional per-soul override of defaultTeam
-    oats-expert: oats                                 # must be one of that soul's teams here
+  disabled: [...]
+  teams:                        # the extra teams each soul's instances MAY join here
+    "*": [oats]                 # every soul
+    oats-expert: [oats]         # one soul: its bare name, or <package>/<soul> for a package soul
+  default:                      # an optional per-soul override of defaultTeam
+    oats-expert: oats
 ```
-- **`teams:`** (committed = shared; local = personal) declares a label → its provider payload (`{team: <provider id>}` for oats.aweb). **These are the ONLY places a provider team id is written.** A label in both files is `team-label-collision` (a readiness problem; the committed wins).
-- **`defaultTeam:`** is the team every instance of this deployment lives in: its primary identity, which it can't leave (`E_TEAM_DEFAULT`). It must be a declared label (`E_TEAM_UNKNOWN`). **Every soul is in the default implicitly.**
-- **`souls.teams:`** the extra teams each soul's instances MAY join in this deployment (eligible; offered at spawn, never auto-joined). `"*"` applies to every soul; a soul's own entry adds to it. Unknown label → `E_TEAM_UNKNOWN`.
-- **`souls.default:`** `{<soul>: <label>}`, a per-soul override of `defaultTeam` (the human asked for it: *"y un default si quieres override el default de el workspace"*). Local too; it must be one of that soul's teams here (`E_TEAM_NOT_ELIGIBLE`). That soul's instances live in it (their primary identity) and are also in the deployment default only if the soul lists it.
-- **Messaging active + no `teams`/`defaultTeam`** → readiness `needs-configuration` ("no teams configured: run `oats aweb setup`"), and spawn is refused (`E_TEAM_UNCONFIGURED`). There's no guessed team and no root-active fallback.
 
-### Removed (no backwards compatibility)
-- `oats-workspace.yaml` `messaging.byTeam` (the id moves into `teams.<label>.team`) and `defaults.byTeam`;
-- `soul.yaml` `team:`;
-- `oats-membership.yaml` `team`;
-- "primary";
-- the provider's `team` setting at EVERY layer: the soul slot, the host `settings.oats.aweb.team`, and a spawn `team=`.
+- **`teams.<label>`** is `{ team?, description? }` in the committed file and `{ team, description? }` locally. These are the only places a provider team id is written. A shared team without `team` is declared but not yet created: readiness `team-unmapped`, a failure when it is the default, a warning otherwise.
+- **A label in both files** is `team-label-collision`, a readiness warning and never a spawn refusal: the shared definition wins, and the fix is renaming the local label. A teammate's PR adding a shared team never breaks another deployment on sync.
+- **`defaultTeam`** is the team every instance of this deployment lives in: its default-team identity. It names a label from either file. `oats teams add` of the first team sets it.
+- **`souls.teams`** lists the teams a soul's instances are eligible to join here: `"*"` for every soul, and a soul's own entry adds to it. Eligible teams are offered, never auto-joined.
+- **`souls.default`** overrides `defaultTeam` for one soul; it must be one of that soul's teams (`E_TEAM_NOT_ELIGIBLE`).
+- **An undeclared label** anywhere is `E_TEAM_UNKNOWN`: a spawn, preview or `inspect --soul` refusal, and a readiness item.
+- **Messaging active and no default** is `E_TEAM_UNCONFIGURED` (a readiness failure). There is no guessed team and no fallback to a provider's own active team.
+- **A label never gates, restricts, changes trust or partitions the knowledge store.**
 
-The committed workspace's `teams:` keeps SHARED teams only; nothing else committed says anything about teams.
+### Not part of the model
 
-### Migration order (the co-lead; binding)
-Members are read at their LATEST commit by every deployment, including the 0.29.4 ones in use now. 0.29.4's committed team entry is `{description}` only (`additionalProperties: false`), so:
-1. **Before the 0.30 tag:** remove `team: global` from every member's `oats-membership.yaml`, and ship okf 4.0.2 without `team: okf` on its package souls. First prove on a 0.29.4 fixture that removal is harmless (the soul reads as unassigned).
-2. **At 0.30:** the oats workspace drops `global` and `okf`. No shared teams yet.
-3. **Flag day** (both humans on 0.30): add the shared team WITH its id (`teams: { oats: { team: <id> } }`). A committed `team:` id before that would break every 0.29.4 deployment.
+These keys are refused with `E_WORKSPACE_SCHEMA` (reason `removed-key`), naming the replacement; there are no aliases:
 
-### Resolution (the kernel)
+- `oats-workspace.yaml` `messaging.byTeam` (the id is `teams.<label>.team`) and `defaults.byTeam` (capabilities compose from the committed workspace and the soul only, so composition is the same for everyone);
+- `soul.yaml` `team:` and `oats-membership.yaml` `team`;
+- the "primary" label;
+- the messaging provider's own `team` setting, at every layer.
+
+### Resolution
+
 - `defaultOf(soul) = souls.default[soul] ?? defaultTeam`.
-- `teamsOf(soul) = {defaultOf(soul)} ∪ souls.teams["*"] ∪ souls.teams[soul]` (the deployment default is included only when `defaultOf(soul)` is it, or the soul lists it), each resolved through `teams.<label>` to its provider payload.
-- **The env names** (renamed, no aliases):
-  - `OATS_DEFAULT_TEAM` (the label) + `OATS_DEFAULT_TEAM_ID` (its id);
-  - `OATS_TEAMS` = the JSON `[{label, payload}]` of every team the soul belongs to here.
-  - `OATS_TEAM_LABEL(S)` / `OATS_TEAM_ID` go.
-- The spawn preview, `inspect --soul` and `oats souls` report a soul's teams + the default, with `from: local`.
+- `teamsOf(soul) = {defaultOf(soul)} ∪ souls.teams["*"] ∪ souls.teams[soul]`, each label resolved through `teams.<label>`. The deployment default is among a soul's teams only when it is that soul's default or the soul lists it.
+- A soul's teams are rows `{label, team, default, from: "shared"|"local"}`, the default first, then by label; its default is `{label, team, from: "deployment"|"soul"}`. The spawn preview, `inspect --soul`, `oats souls` and readiness report them; `instance.json` records them at spawn.
+- **Changing `defaultTeam`** does not move running instances (their default-team identity is fixed): readiness `--home` warns `default-team-changed` until respawn.
 
-### At spawn, and live (the human's Q1 + Q2)
-- **At spawn an instance joins its DEFAULT team only** (its primary identity). The soul's other eligible teams (`souls.teams`, shared or local) are offered: `join=<labels>` at spawn, checkboxes in the Desktop. Each joined team gets its own identity (as today). This is the human's final Q1, restoring "joining is explicit".
-- **The roots (the provider contract; corrected 2026-09-28 from the co-lead's rehearsal on aw 1.36.13):** ONE ROOT PER TEAM.
-  - A local aweb identity is one team's member: accepting a second team into the same `.aw` is refused ("refusing to overwrite existing …/.aw/identity.yaml"). So "one root that is a member of every team" can't work.
-  - oats.aweb already models this: `settings.oats.aweb.roots: { <team id>: <absolute dir> }`, where `roots[team]` wins over `root`.
-  - Setup's `--create <label>` and `--join <label> --invite <token>` accept into a NEW root directory for that team, e.g. `<deployment>/.aweb-roots/<label>/.aw` (a real path, no symlinked parent). They then record `roots[<team id>]` in `oats-local.yaml` settings, and connect it (`aw workspace connect --service <url> --team <id>`). They never accept into an existing root.
-  - The provider mints each of an instance's identities from THAT team's root (`roots[T]`, else `root`), with `aw team invite --team-id <id>`, never from a root's active team.
-  - A declared team with no root that is a member of it is a readiness problem: the shared-team "ask its owner for an invite" message, or `--create` for a local one.
-- **Live:** when a soul loses an eligible team in `oats-local.yaml` (or a team is removed), its running instances joined to it leave on the next live read (the human's Q2). A team GAINED is offered, never auto-joined (the human's (b)). An instance joins or leaves any eligible team with the per-instance verbs (c).
-- **`oats teams remove <label>` of a label still referenced** (it's `defaultTeam`, or appears in `souls.teams` / `souls.default`) is REFUSED with `E_TEAM_IN_USE`, naming every reference; no cascade. The human removes the references first (`oats teams default …`, `oats soul teams … --remove`). A committed (shared) label is not removable by the verb at all (`E_TEAM_SHARED`: "edited by PR").
-- **Changing `defaultTeam`** doesn't move running instances (their primary identity is fixed): readiness warns `default-team-changed` until respawn.
-- The provider's join/leave verbs stay (the human's (c)) for an ad-hoc membership of ONE instance.
+### At spawn, and live
 
-### Verbs (edit `oats-local.yaml`; never a clone, never a PR)
+- **At spawn an instance joins its default team only.** Every other eligible team is offered: the spawn's `join=<labels>` provider setting (a trigger's `spawn.teams` becomes it), and checkboxes in the Desktop spawn dialog. Each joined team gets its own identity.
+- **Later**, the provider's per-instance join and leave verbs opt one instance in or out of an eligible team. The default team is the instance's identity and is not left.
+- **Live rule:** a joined team that is no longer eligible (removed from the soul's list, or the team removed) is left on the next live read. A newly eligible team is offered, never auto-joined. Nothing else is undone.
+
+### Verbs
+
+The kernel verbs edit `oats-local.yaml` in place; they never call a provider, clone, or open a PR.
+
 ```
-oats teams                                   # this deployment's teams, ids, the default
-oats teams add <label> --team <provider id>  # declare (setup does this for created teams)
-oats teams remove <label> | oats teams default <label>
-oats soul teams <soul>                       # the teams a soul belongs to here (and why: default / * / its own)
-oats soul teams <soul> --add <label>[,…] | --remove <label>[,…]
-oats soul teams <soul> --default <label> | --clear-default
-oats soul teams '*' --add <label>            # every soul
+oats teams [--json]                                   # this deployment's teams, ids, the default, problems
+oats teams add <label> --team <id> [--description d]  # declare a local team
+oats teams remove <label>                             # a local team nothing references
+oats teams default <label>
+oats soul teams <soul>|'*' [--add a,b] [--remove a,b] [--default <label> | --clear-default]
 ```
-The Desktop gets the same controls (Setup: this deployment's teams + the default; a soul page: its teams here), labelled "on this computer".
-### Onboarding (setup creates accounts and teams)
-- **`oats aweb setup`** (the provider's setup verb, a setup-time human act):
-  - creates the account (`aw init --new-account --username …`) when none exists;
-  - creates every declared team that the workspace doesn't map yet;
-  - writes each resulting id into THIS deployment's `oats-local.yaml` `teams:` (and `defaultTeam` for the first), directly: it's local config, with no commit and no PR.
-  - **Three setup acts, by what the team is** (the co-lead found this gap while writing the onboarding skill, 2026-09-28; provider-side only, no kernel change):
-    - **A new LOCAL (personal) team:** `oats aweb setup --create <label>` creates it at the provider (the label normalized per aweb's name rule), then records it with `oats teams add <label> --team <id>`. This is the ONLY way to get a new personal team: `oats teams add` needs an existing id, so a local team is never declared without one.
-    - **A committed SHARED team without an id** (declared in `oats-workspace.yaml`, not yet created): its OWNER's `oats aweb setup` creates it and PRINTS the id with the exact line to commit (`teams: { <label>: { team: <id> } }`, by PR). Setup never edits the committed file.
-    - **An existing SHARED team the root isn't in:** `oats aweb setup --join <label> --invite <token>` (the owner's invite).
-  - It never runs at spawn, mint, retire or wake.
-- **What aweb allows today** (the messaging lane, from aweb's lead, 2026-09-27):
-  - **The first account and its default team:** fully automatable (`aw init --new-account --username …`).
-  - **An additional team on a BYOD domain:** automatable headlessly with the namespace controller key:
-    1. `aw id team create --name <t> --namespace <domain>`;
-    2. the team key signs `aw id team invite`;
-    3. the root runs `accept-invite --local`.
 
-    `aw id team register` hosts it on aweb.ai. No human login is needed.
-  - **An additional team on a hosted account (`<u>.aweb.ai`):** NO CLI path. Only a logged-in human creates it, in the dashboard. aweb's lead proposes a generic `aw team create <name>` under the logged-in account.
-- **Update (2026-09-27, the human's decision via aweb's lead): the hosted gap closes headlessly** (aweb `aweb-abkh`, pending a Cloud + CLI release).
-  - A member of an org-owned hosted team creates a sibling team in the same account with `aw id team create --name <t>`, which returns the new `team_id` + a **single-use invite token**. The caller doesn't auto-join.
-  - The home that should hold the new team's member runs `aw --identity-home <root> id team accept-invite <token> --name <alias> --local`.
-  - No TTY, no `aw auth`; bounded by the account plan's team limit.
-- **So setup is designed FULLY HEADLESS:**
-  1. The account + the workspace's default team: `aw init --new-account --username …`.
-  2. Every further declared team, by kind (the same outcome, different handles):
-     - **Hosted** (`aweb-abkh`): `aw id team create --name <t>` → the team id + a single-use invite TOKEN → `aw --identity-home <that team's NEW root> id team accept-invite <token> --name <alias> --local`.
-     - **BYOD:** `aw id team create --name <t> --namespace <domain>` (the namespace controller key) → the team id + a team KEY → the team key signs `aw id team invite` → `accept-invite --local` → `aw id team register` to host it on aweb.ai.
-  3. Setup writes each new id into `oats-local.yaml` `teams.<label>` (and sets `defaultTeam` to the first).
-- **Joining a team someone else created** (a shared team like `oats`): its owner sends an invite. `oats aweb setup --join <label> --invite <token>` accepts the invite into a NEW root for that team (see "The roots") and records `roots[<id>]`. The label + id come from the committed `teams:` (shared) or `oats teams add` (local). Setup never creates a team that's already declared with an id.
-- **A label is NOT passed raw as the team name** (aweb's rule, hosted + BYOD: lowercase letters, digits and inner hyphens; it starts and ends with a letter or digit; 1–128 characters; the id is `<team>:<namespace>`, unique per namespace, 409 on a collision).
-  - Setup NORMALIZES the label to that pattern (lowercase; `_`/`.` → `-`; trim hyphens) and passes it as `--name`.
-  - **On a 409:** if the existing team is one this deployment's root already belongs to (a re-run of setup), reuse it. Otherwise choose a suffixed name (`<name>-2`, …), and never adopt a team the root isn't a member of.
-  - `oats-local.yaml` `teams.<label>.team` holds the real id, so **the mapping, not the name, is the truth.**
-  - Confirmed: `aw init --new-account` makes the user's `default` team org-owned, so a fresh root can create further hosted teams under `aweb-abkh` with nothing extra.
-- **The only gate is the aw/Cloud version floor** that ships `aweb-abkh`. Below it, a hosted extra team is refused with the remedy "upgrade aw" (the provider's readiness names the floor), not a guided dashboard step. The model doesn't change.
-- Setup needs no human login at all on this path.
-- Setup never runs at spawn/mint/retire/wake, and OATS holds no human login (the provider consumes the resulting root).
-- The oats.setup skills (`oats-teams`, `oats-onboarding`, `oats-workspace-config`) teach the model and the verbs.
+- `oats teams add` of a label already declared in either file is `E_TEAM_EXISTS`.
+- `oats teams remove` of a label still referenced (`defaultTeam`, `souls.teams`, `souls.default`) is `E_TEAM_IN_USE`, naming every reference; there is no cascade. A shared label is not removable here (`E_TEAM_SHARED`: it is edited by PR).
+- `oats soul teams` with an unknown label is `E_TEAM_UNKNOWN`; a `--default` outside the soul's teams after the write is `E_TEAM_NOT_ELIGIBLE`; `--default` with `'*'` is `E_BAD_ARGS`.
+- The Desktop offers the same controls, labelled "on this computer": the deployment's teams and default, and a soul's teams here.
 
-## The human's answers to (a)–(d), and what remains
+### Onboarding
 
-- **(a) The file:** `oats-local.yaml` ("we do not need another file"). ✔
-- **(c) Per-instance join/leave:** kept ("we keep the commands per instance"). Every join (at spawn by `join=`, or later with the per-instance verbs) is of an ELIGIBLE label. The live rule is simple: **a joined team that is no longer eligible is left**; nothing else is undone. ✔
-- **(d) The per-soul default:** kept (`souls.default`). ✔
-- **(b) Purely local:** SETTLED by Option B (below); a gained team is offered, not auto-joined. ✔ The co-lead explained to the human the current state (the machinery exists, and the only usage is one label `global`, no `byTeam` mapping, one soul `team: global`, so every instance lands in the root's active team) and recommended purely local + gaining a team joins live. The human's answer is pending.
+Setup is the messaging provider's act, run by a human at setup time, never at spawn, mint, retire or wake. OATS holds no human login. The provider's setup is expected to:
 
-**For the original designer (Pepe), what purely local gives up from the 2026-09-25 teams contract:**
-1. **The shared, committed label vocabulary.** Labels become each deployment's own: a typo is caught against your own `teams:`, and two people may name the same shared team differently. That's harmless, since the id is the truth.
-2. **`defaults.byTeam.<label>.capabilities`** (capabilities composed by team label). With local membership, a soul's composition would vary per person and per machine. **Proposed: DROP it** (unused today). Capabilities stay composed from the committed workspace + soul only, so composition remains reproducible across people.
-## The kernel ↔ provider contract (fixed 2026-09-27 for the 0.30 kernel + oats.aweb 1.17 developers)
-- **Env (every provider context: hooks, commands, readiness):**
-  - `OATS_DEFAULT_TEAM` = the effective default label; `OATS_DEFAULT_TEAM_ID` = its provider id (`teams.<label>.team`);
-  - `OATS_DEFAULT_TEAM_FROM` = `deployment` (`defaultTeam`) | `soul` (`souls.default`) → the teams document's `defaultTeam.source`;
-  - `OATS_TEAMS` = JSON `[{label, team, default: bool, from: "shared"|"local"}]`: EVERY team the soul may be in here, the default INCLUDED (flagged `default: true`). `team` is the provider id. Eligible to join = the rows with `default: false`.
-  - Gone: `OATS_TEAM_LABEL`, `OATS_TEAM_LABELS`, `OATS_TEAM_ID`, `primary`, `settings.team`.
-- **No default configured** (messaging active, no `defaultTeam`): the kernel's readiness reports `E_TEAM_UNCONFIGURED`, it sets none of these env vars, and the provider also answers readiness `needs-configuration` ("no teams configured: run `oats aweb setup`") and refuses spawn.
-- **Kernel verbs are CONFIG ONLY** (they never call the provider):
-  - `oats teams add <label> --team <id>` / `remove` / `default` write `oats-local.yaml` `teams`/`defaultTeam`;
-  - `oats soul teams …` writes `souls.teams`/`souls.default`.
-  - `oats aweb setup` CALLS `oats teams add` / `oats teams default` (via `OATS_CLI_BIN`) to record what it created.
-- **Joining a SHARED team's membership for the root is a PROVIDER act:** `oats aweb setup --join <label> --invite <token>` (the id comes from the committed `teams.<label>`; the root accepts the owner's invite). There is no kernel `oats teams join`.
-- **A visible leave:** a live-read leave appears in:
-  - the hook/command output (a warning);
-  - the teams document `left: [{label, team, at, reason: "no-longer-eligible"}]` (the last 20);
-  - the instance's events (`oats instance events`).
+- create the account and the first team when none exists, and record it locally with `oats teams add` (which makes it the default);
+- create a new **local** team at the provider, then record it with `oats teams add <label> --team <id>`. A local team is never declared without an existing id;
+- for a **shared** team declared without an id, let its owner create it and print the exact line to commit (`teams: { <label>: { team: <id> } }`), by PR; setup never edits the committed file;
+- join an **existing shared** team through its owner's invite;
+- normalize a label to the provider's team-name rules rather than passing it raw; the local mapping, not the name, is the truth.
 
-  There's NO acknowledge state; readiness doesn't nag. `left[]` is additive to the teams document; the Desktop reader must accept it before the provider ships it (consumer-first).
+## The kernel ↔ provider contract
 
-## Sequencing (proposed)
-1. **Now, small (the messaging lane):** an oats.aweb release with the setup `--new-account` fix + the dead `helperInjection` key.
-2. **This design:** the co-lead shapes it → the human answers 1–3 → **Decided**.
-3. **Kernel 0.30.0 (breaking):**
-   - the schemas (the team keys out of the committed files; `teams`/`defaultTeam`/`souls.teams` in oats-local.yaml);
-   - resolution + env;
-   - the `oats teams` + `oats soul teams` verbs;
-   - readiness;
-   - the oats.setup skills;
-   - docs.
-4. **oats.aweb 1.17:** the default from the kernel (no root-active fallback); `oats aweb setup` onboarding.
-5. **Desktop:**
-   - the server passes the new fields (the engineer);
-   - Setup's local teams + default, the soul page's local teams, the spawn dialog showing every team the soul joins (the ux-designer).
-6. **The KB + migration** of the two existing deployments (one-shot, by the humans with the setup-admin soul).
+**Environment** (every provider context: lifecycle hooks, home commands, operations and readiness checks). Teams travel beside a provider's settings, never inside them.
 
-**Before the 0.30 tag (the lead's execution conditions, agreed by the co-lead):**
-- the Desktop PR merges before or with the pins, fixtures recaptured from the REAL provider;
-- a LIVE two-deployment rehearsal: one host, a shared `oats` team + two personal defaults, then spawn / opt-in join / leave / soul-loses-team (**the co-lead owns it**);
-- second-person onboarding: joining a shared team by its owner's invite is one clear step, and below the `aweb-abkh` floor setup says exactly what's missing (**the co-lead owns it**);
-- a leave caused by a live read is visible: the hook/command warning, the teams document `left[]`, and the instance's events (never silent; readiness doesn't nag, per the contract);
-- the oats.setup skills (oats-teams, oats-onboarding, oats-workspace-config) rewritten in the same release.
+- `OATS_DEFAULT_TEAM`: the soul's default label. `OATS_DEFAULT_TEAM_ID`: its provider id. `OATS_DEFAULT_TEAM_FROM`: `deployment` (`defaultTeam`) or `soul` (`souls.default`).
+- No default configured: none of the three is set. An unmapped default: `OATS_DEFAULT_TEAM` and `OATS_DEFAULT_TEAM_FROM` are set, `OATS_DEFAULT_TEAM_ID` is not.
+- `OATS_TEAMS`: JSON `[{label, team, default, from: "shared"|"local"}]`, every **mapped** team the soul may be in here, the default included (`default: true`), default first, then by label. Eligible to join = the rows with `default: false`. Unset when a home's teams are unknown (none recorded and unreadable now).
+- `OATS_TEAMS_SOURCE`: `live` (the workspace and `oats-local.yaml` read now, or a fresh resolution) or `recorded` (the spawn-time record in `instance.json`). **A provider leaves a joined team only on a `live` list**: a recorded list lacks every change since the spawn.
+- Live reads happen where teams are acted on: a home's launch hook (`oats session start|restart`), its messaging module's commands and operations, `oats inspect --home` and `oats readiness --home`. Every other context gets the recorded teams. A scheduled wake's session start uses the recorded teams, so it leaves nothing.
+- The pre-0.30 names `OATS_TEAM_LABEL`, `OATS_TEAM_LABELS` and `OATS_TEAM_ID` are always unset.
 
-**Owners (proposed):**
-- the kernel: a cli-dev;
-- oats.aweb + onboarding: the messaging co-lead's developer;
-- the Desktop: the engineer + the ux-designer;
-- this doc, the review and the release: the lead.
+**What the messaging provider does with it:**
+
+- mint an instance's default-team identity from `OATS_DEFAULT_TEAM_ID`, and join the other eligible teams only when asked (`join=` at spawn, or its per-instance verbs);
+- refuse the spawn, naming the problem, when no default is configured or the default is unmapped;
+- keep one identity root per team and mint each identity from that team's root, never from whatever team a root happens to have active; report a declared team with no member root as its own readiness problem;
+- make a leave caused by a live read visible: a warning in the hook or command output, a `left: [{label, team, at, reason: "no-longer-eligible"}]` list (the last 20) in its teams document, and the instance's events (`oats instance events`). There is no acknowledge state, and readiness does not nag;
+- report its teams document with `defaultTeam` in exactly the kernel's shape, `{label, team, from}`.
+
+**Kernel verbs are config only.** `oats teams add | remove | default` write `oats-local.yaml` `teams` and `defaultTeam`; `oats soul teams` writes `souls.teams` and `souls.default`. A provider's setup records what it created by calling `oats teams add` and `oats teams default` through `OATS_CLI_BIN`. Joining a shared team's membership is a provider act; there is no kernel `oats teams join`.

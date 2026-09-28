@@ -79,13 +79,15 @@ function slugHeadings(text) {
   const counts = new Map();
   const slugs = new Set();
   for (const line of text.split("\n")) {
+    // Explicit anchors (<a id="…"></a>) keep an inbound link stable across a heading rename.
+    for (const [, id] of line.matchAll(/<a\s+(?:name|id)="([^"]+)"/g)) slugs.add(id);
     const match = line.match(/^#{1,6}\s+(.+?)\s*#*\s*$/);
     if (!match) continue;
     let slug = match[1].toLowerCase()
       .replace(/<[^>]+>/g, "")
       .replace(/[`*_~]/g, "")
       .replace(/[^\p{L}\p{N}\s-]/gu, "")
-      .trim().replace(/\s+/g, "-");
+      .trim().replace(/\s/g, "-");
     const count = counts.get(slug) || 0;
     counts.set(slug, count + 1);
     if (count) slug += `-${count}`;
@@ -126,7 +128,8 @@ function exampleKind(parsed) {
   const keys = Object.keys(parsed);
   const has = (k) => keys.includes(k);
   if (parsed.schemaVersion === 2) {
-    if (has("members") || has("teams") || has("defaults") || has("stores") || has("external")) return has("name") ? "oats-workspace" : null;
+    // A local file names its workspace; the workspace file never does (both may carry `teams`).
+    if (!has("workspace") && !has("standalone") && (has("members") || has("teams") || has("defaults") || has("stores") || has("external"))) return has("name") ? "oats-workspace" : null;
     // `team` stays in the membership set so a stale (pre-0.30) example is still caught.
     if (has("workspace") && keys.every((k) => ["schemaVersion", "workspace", "team"].includes(k))) return "oats-membership";
     if (has("workspace") || has("standalone") || has("clones") || has("settings") || has("souls") || has("teams") || has("defaultTeam")) return has("name") ? null : "oats-local";

@@ -2,9 +2,9 @@
 
 These are reusable authoring cases for the [reference model](model.md), plus
 generic package isolation checks. They are not compulsory theoretical
-conformance tests for an [alternative model](adoption.md). The default OKF
-workstream must exercise both Git and real non-Git custody; Omnigraph is not a
-required dependency. Record provider/kernel versions and checks actually run.
+conformance tests for an [alternative model](adoption.md). OKF's cases exercise
+both Git and real non-Git custody. Record provider/kernel versions and checks
+actually run.
 
 ## Package and policy isolation
 

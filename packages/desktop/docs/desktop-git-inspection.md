@@ -2,7 +2,7 @@
 
 The selected terminal's Git & GitHub panel is a read-only consumer of the
 installed OATS CLI's **instanceGitApi 1** contract. GitHub/PR/check/review data is
-not part of K1: it uses the separate, approved [forge Connections boundary](desktop-forge-connections.md).
+not part of K1: it uses the separate [forge Connections boundary](desktop-forge-connections.md).
 K1 supplies routing metadata only, never forge facts. No Git command,
 filesystem diff reader, kernel import, editor action, terminal mutation or
 acquisition/trust operation is implemented in this view.
@@ -21,7 +21,7 @@ Local roster collection now explicitly sets `git: null`, overriding any stale
 or forged `instance.json` aggregate. No renderer consumes the legacy aggregate;
 unknown/unavailable Git is visibly unknown, never clean or zero. Remote legacy
 projection stays inert for compatibility and is not promoted into a K1
-observation. The approved installed-CLI route is on-demand, helper-free and
+observation. The installed-CLI route is on-demand, helper-free and
 truthful about unavailable and unknown facts.
 
 ## Admission and execution
@@ -121,7 +121,7 @@ coalescing/cap, degraded CLI states, stale races (mutation-checked), literal
 hostile paths/patches and three-theme computed-token contrast. No GUI, operator
 backend, live model, real terminal or native renderer acceptance is implied.
 
-## Per-file line counts (kernel #238, 0.29.1)
+## Per-file line counts
 
 Each status `files[]` entry keeps the kernel's `additions` and `deletions`
 (non-negative integers, or `null` for unknown: binary, untracked and submodule

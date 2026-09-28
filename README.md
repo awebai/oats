@@ -13,8 +13,6 @@ OATS—**Open Agent Team Specification**—is a framework for building, running 
 
 The [official catalog](docs/official-catalog.md) is the reviewed list of official packages; a workspace trusts a package by declaring it, and listing does not declare it for you.
 
-**oats.aweb 1.13.1** attaches resident session-grant homes to the resident custody service during minting, verifies the written `grant.yaml` custody locator, and fails closed if an installed `aw` cannot write or prove that attachment. If a grant-sent message ever arrives as unverified, report the missing custody attachment instead of retrying.
-
 For example, a kernel expert, a UX expert and a customer-support expert can share capabilities for learning and coordination, while each has specific capabilities for its own area of expertise.
 
 Through your capabilities, you remain in control of:
@@ -179,7 +177,7 @@ For example, you might want:
 - **Long-running instances to retain working understanding.** A customer-support instance carries its investigations, observations and unresolved questions across many tasks.
 - **Selected learning to become shared knowledge.** Useful findings are reviewed and made available to other instances, while task-specific context stays with the instance that needs it.
 
-Your knowledge capability determines what context an instance receives, how it builds on experience, and which learning is retained or shared. It can organise knowledge per soul, per topic or per project, centrally or alongside soul definitions, provided that it actually supports the chosen arrangement. Mutable knowledge must not be written into immutable captured source artifacts.
+Your knowledge capability determines what context an instance receives, how it builds on experience, and which learning is retained or shared. It can organise knowledge per soul, per topic or per project, centrally or alongside soul definitions, provided that it actually supports the chosen arrangement.
 
 The same principle applies to messaging and tasks: **OATS provides the contracts; you choose how your team works through them.**
 
@@ -210,7 +208,15 @@ Begin with a small team and a real piece of work:
 4. Create instances for their assignments.
 5. Verify that work, communication, learning and handoff behave as intended.
 
-Start with the [first-team guide](docs/first-team.md) and the [release notes](docs/release-notes/) for the supported scope of your chosen versions.
+On a machine with Node.js 22+, Git and tmux, and a workspace repository to point at:
+
+```bash
+npm install -g @awebai/oats
+oats onboard ~/acme --workspace git:github.com/acme/agents   # this machine's deployment
+oats spawn <soul> --task "First concrete task"
+```
+
+The [first-team guide](docs/first-team.md) walks through writing the workspace, its members and a first soul; the [release notes](docs/release-notes/) state the supported scope of each version.
 
 Further documentation:
 
@@ -220,10 +226,10 @@ Further documentation:
 - [Knowledge operations](docs/knowledge.md)
 - [Knowledge, instances and evolving expertise](docs/knowledge-theory.md)
 - [Packages](docs/packages.md)
-- [Execution targets](docs/execution-targets.md)
+- [Sessions](docs/execution-targets.md)
 - [OATS Desktop](docs/desktop.md)
 
-This README explains the framework and its direction. Advanced mechanisms such as automatic speciation and context cloning require their own implementation and verification; the architectural model is not a claim that every feature or capability combination already works. Alternative knowledge layouts require a compatible capability, not a change to an undocumented kernel switch.
+This README explains the framework and its direction. Advanced mechanisms such as automatic speciation and context cloning require their own implementation and verification; the model is not a claim that every feature or capability combination already works.
 
 ## Contributing and releases
 

@@ -25,7 +25,7 @@
       "type": "object",
       "propertyNames": { "$ref": "#/$defs/label" },
       "additionalProperties": { "$ref": "#/$defs/team" },
-      "description": "SHARED teams (team model v2, 0.30): <label>: { description?, team? }. `team` is the messaging provider's team id, the same for everyone; without it the team is declared but not yet created (readiness team-unmapped). Local teams, the default and which teams each soul belongs to live in the deployment's oats-local.yaml (`oats teams`, `oats soul teams`). A label never gates, restricts or partitions anything."
+      "description": "SHARED teams: <label>: { description?, team? }. `team` is the messaging provider's team id, the same for everyone; without it the team is declared but not yet created (readiness team-unmapped). Local teams, the default and which teams each soul belongs to live in the deployment's oats-local.yaml (`oats teams`, `oats soul teams`). A label never gates, restricts or partitions anything."
     },
     "defaults": { "$ref": "#/$defs/defaults" },
     "stores": {
@@ -36,7 +36,7 @@
     },
     "messaging": {
       "type": "object",
-      "description": "Opaque provider payload consumed by the messaging core capability. (`byTeam` was removed in 0.30: a team's provider id is teams.<label>.team.)"
+      "description": "Opaque provider payload consumed by the messaging core capability. A team's provider id is teams.<label>.team."
     },
     "external": {
       "type": "array",

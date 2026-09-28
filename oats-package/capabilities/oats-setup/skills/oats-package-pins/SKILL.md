@@ -29,7 +29,7 @@ trust.
 
 ```yaml
 packages:
-  oats.okf: v2.1.5                                    # bare version: resolved through the official catalog
+  oats.okf: v4.0.3                                    # bare version: resolved through the official catalog
   acme.tools: git:github.com/acme/tools@v0.4.0        # outside the catalog: git:<repo>@<tag or full commit>
 ```
 
@@ -46,9 +46,8 @@ packages:
 
 ## What one pin brings
 
-A package's `oats-package.json` lists its **capabilities**, and from kernel
-0.28.0 it may also list **souls** and **trigger templates**. One pin versions
-all of them:
+A package's `oats-package.json` lists its **capabilities**, and it may also
+list **souls** and **trigger templates**. One pin versions all of them:
 
 - **Package souls** are listed by `oats souls` as `kind: package`, named
   `<package>/<soul>` (a bare name when unique), and spawned at the locked

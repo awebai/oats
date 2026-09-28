@@ -1,6 +1,6 @@
 // Northwind test fixture — workspace-model v2 (module contracts §7).
 //
-// Builds the imaginary company from docs/design/2026-09-23-simplified-workspace-model.md
+// Builds an imaginary company (three teams, members, packages)
 // as real bare Git repositories under <baseDir>/remotes/, so every v2 kernel module
 // (remote, workspace, resolve, packages, materialize) can be tested against actual
 // remotes without ever touching a network or invoking bare `oats setup`.

@@ -7,7 +7,6 @@
   "reads": [
     "oats/oats-expert",
     "oats/oats-kernel-expert",
-    "oats/market-research-expert",
-    "oats/oats-assistant"
+    "oats/market-research-expert"
   ]
 }

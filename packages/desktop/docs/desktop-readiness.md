@@ -106,10 +106,10 @@ paths, subject binding and every typed state. Computed contrast of actual
 readiness markup is checked in all three themes; this is not native GUI
 acceptance.
 
-## Classic scopes answer v1 shapes
+## Older kernels answer v1 shapes
 
-Until the kernel deletes its classic path, a classic scope still answers
-`readinessApi: 1` / `operationsApi: 1` even from a kernel whose probe reports 2.
+A classic scope on an older kernel in the accepted band answers
+`readinessApi: 1` / `operationsApi: 1`, even when the probe reports 2.
 The Desktop dispatches on the payload's own integer, not only on the probe: a
 v1 readiness answer is `classic-workspace` ("still uses the classic layout"),
 and a v1 inspection says the same in the inspector. Neither is read, and any
