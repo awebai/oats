@@ -53,6 +53,14 @@ test("the CLI help is readable", () => {
   assert.ok(commands.has("spawn") && commands.has("sync") && commands.has("workspace status"));
 });
 
+// A reader concluded from the help that --task-file did not exist: the spawn help line names it.
+test("oats spawn --help names both task inputs, --task and --task-file", () => {
+  for (const argv of [["help"], ["spawn", "--help"]]) {
+    const r = spawnSync(process.execPath, [join(ROOT, "bin/oats.mjs"), ...argv], { encoding: "utf8" });
+    assert.match(`${r.stdout}${r.stderr}`, /^ {2}oats spawn <agent> \[--task <text> \| --task-file <f>\]/m, argv.join(" "));
+  }
+});
+
 // oats-operate quotes the drift markers `oats status` prints; they must be the CLI's own strings.
 test("oats-operate quotes only drift markers the CLI renders", () => {
   const text = readFileSync(join(ROOT, SKILLS[0]), "utf8");

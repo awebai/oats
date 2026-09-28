@@ -113,6 +113,14 @@ member repository: add `souls/<name>/` with `soul.yaml` (`name`,
 open a pull request. Once merged it is discoverable at the member's latest
 state; `oats spawn <name> --preview` verifies it resolves.
 
+A soul may say what its role should run on with `launch: { harness, model? }`
+(0.30). Each machine overrides it in `oats-local.yaml` `souls.launch`, and
+spawn flags win over both; `oats spawn <name> --preview` shows the effective
+launch and which layer chose it (`launch.from`, `launch.at`). Commit a soul's
+`launch:` only once every deployment of the workspace runs 0.30, because 0.29
+refuses the key. A changed preference reaches an existing home only through
+`oats session restart --reselect-launch` or a respawn.
+
 Changing the workspace itself (its members, defaults, teams or pins) is
 workspace setup and config, not something a soul proposal does.
 

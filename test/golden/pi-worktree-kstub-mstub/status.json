@@ -28,6 +28,9 @@
           "branch": "agents/dev-pi-worktree-kstub-mstub",
           "harness": "pi",
           "modelFrom": "harness-default",
+          "launchFrom": "flag",
+          "launchAt": null,
+          "launchDeclared": null,
           "spawnOrigin": "operator",
           "policy": {
             "childSpawns": {
@@ -400,6 +403,7 @@
           }
         }
       ],
+      "key": "dev",
       "soulSource": {
         "repoKey": "local/<base>/remotes/ws.git",
         "commit": "<sha>",

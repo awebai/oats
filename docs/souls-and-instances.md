@@ -70,6 +70,8 @@ tasks: none                               # `none` empties the slot (drops the w
 
 compatibility:                            # optional floors on PACKAGE versions: constraints, not sources
   oats.okf: ">=4.0"
+
+launch: { harness: claude, model: claude-opus-5-5 }   # optional (0.30): what the role should run on
 ```
 
 | Key | Meaning |
@@ -78,13 +80,15 @@ compatibility:                            # optional floors on PACKAGE versions:
 | `capabilities` | `<cap>: { from: here \| <repo key> \| package }` or `<cap>: off`. Composed over `defaults.<slot>` ⊕ `defaults.capabilities`; the soul wins. |
 | `knowledge` / `messaging` / `tasks` | The slot's provider payload (true of every instance of the soul), or `none`. Merged with `oats-local.yaml` `settings.<cap>` and `spawn --provider <cap>`; the provider refuses keys its manifest does not declare. For `oats.okf`, what the soul owns and reads lives in `souls/<name>/okf.json`. |
 | `compatibility` | `<cap>: <semver range>` checked against the locked package version (`E_COMPATIBILITY`). |
+| `launch` | Optional (0.30): `{ harness: pi \| claude \| codex, model? }`, the role's launch preference. Only a harness and a model: args, env, yolo and the executable stay host facts. Each machine may override it (`oats-local.yaml` `souls.launch`), and spawn flags win over both ([launch preferences](configuration.md#launch-preferences)). Add it to a committed soul only once every deployment runs 0.30. |
 
 Schema: [`soul.schema.json`](soul.schema.json). Which teams a soul joins is the
 deployment's choice (`oats-local.yaml`, [workspaces.md](workspaces.md#teams)),
-and the harness, model, backend, yolo and launch configuration are spawn-time
-host choices (`--harness`, `--model`,
-`--backend`, `--yolo`, `--launch-config`, or a launch configuration in
-`oats-local.yaml`), not soul identity: a soul is model-agnostic as an artifact.
+and the backend, yolo and launch configuration are spawn-time host choices
+(`--backend`, `--yolo`, `--launch-config`, or a launch configuration in
+`oats-local.yaml`), not soul identity. The harness and model are a soul's
+*preference* at most (`launch:`), which each machine overrides and spawn flags
+(`--harness`, `--model`) win over.
 A child-spawn policy is a spawn flag too (`--no-child-spawns`).
 
 A soul never runs by itself. It is incarnated as an instance. Editing a soul

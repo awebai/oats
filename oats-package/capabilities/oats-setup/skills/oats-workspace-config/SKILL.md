@@ -43,7 +43,7 @@ by default.
 | "this repo is a member" | `oats-membership.yaml` in **each** member | shared (Git) |
 | a soul's role, work mode, capability sources, slot payloads, floors | `souls/<name>/soul.yaml` (+ `AGENTS.md`, `skills/`, `okf.json`) | shared (Git) |
 | workspace triggers and schedules | `oats-triggers/`, `oats-schedules/` in a member (kernel 0.29.0; see `/oats-automations`) | shared (Git) |
-| host paths, custody, settings a manifest marks host-owned, clones, launch configurations, souls disabled here; local teams, the default team, which souls are in which teams (`oats teams`, `oats soul teams`) | `oats-local.yaml` in the deployment directory | **this machine** |
+| host paths, custody, settings a manifest marks host-owned, clones, launch configurations and launch preferences (`souls.launch`), souls disabled here; local teams, the default team, which souls are in which teams (`oats teams`, `oats soul teams`) | `oats-local.yaml` in the deployment directory | **this machine** |
 | exact package commits and integrity | `oats-lock.json` | this machine, written by `oats sync` only |
 | a fact about one spawn (a retained seat, a team to join now) | `oats spawn … --provider <cap> key=value` | one instance |
 
@@ -140,6 +140,8 @@ reports this deployment's local file and lock.
 | `E_TEAM_NOT_ELIGIBLE` | a soul's `souls.default` is not one of its teams | `oats soul teams <soul> --add <label>` first, or `--clear-default` |
 | `E_TEAM_UNCONFIGURED` | messaging is active and the deployment has no default team | `oats teams add` (the first becomes the default) or `oats teams default <label>` |
 | `E_TEAM_IN_USE`, `E_TEAM_SHARED`, `E_TEAM_EXISTS` | `oats teams remove`/`add` refused: still referenced, shared (edit by PR), or already declared | see `/oats-teams` |
+| `E_HARNESS_UNAVAILABLE` | the harness a launch preference (or flag) chose is not installed here; `details.from`/`at` name the layer | install it, or override it on this machine in `oats-local.yaml` `souls.launch` |
+| `E_LAUNCH_CONFIG_UNKNOWN` | `souls.launch` names a launch configuration this `oats-local.yaml` lacks | declare it (`oats launch-config set`), or change `souls.launch` |
 | `E_SLOT_CONFLICT` | two capabilities fill one slot, a slot default of the wrong layer, or `none` beside the soul's own capability of that layer | keep one per slot |
 | `E_CAPABILITY_MISSING` | a capability is not where `from:` says, or `--provider` names one the soul does not resolve | `oats capabilities`; correct the `from:` or pin the package |
 | `E_CAPABILITY_PRIVATE` | a repo-owned capability used by another repo's soul | use it only from its own repo, or ask its owners to share it |

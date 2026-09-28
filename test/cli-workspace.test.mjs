@@ -159,6 +159,9 @@ test("workspace v2 CLI over the Northwind fixture: sync (exit 0, lock v3 written
     const tools = souls.find((s) => s.name === "tools-expert");
     assert.deepEqual([tools.teams, tools.defaultTeam], [[], null], "no teams configured on this deployment"); assert.equal(tools.origin, `member ${fx.keys["nw-tools"]} @ ${fx.commits["nw-tools"].slice(0, 8)}`);
     assert.equal(souls.find((s) => s.name === "security-reviewer").kind, "external");
+    // The soul key (feature launch-preference): the bare name for a member or external soul.
+    assert.equal(tools.key, "tools-expert", "member");
+    assert.equal(souls.find((s) => s.name === "security-reviewer").key, "security-reviewer", "external: the name it is spawned by");
 
     r = oats(["souls"], { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stderr);

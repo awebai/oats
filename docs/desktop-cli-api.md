@@ -36,7 +36,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
              "instance-git-remote","souls-declarations","lifecycle-plans","retire-retention","readiness","spawn-preview","instance-events",
              "instance-events-2","schedule-history","schedule-read-2","spawn-preview-2","spawn-idempotency","spawn-idempotency-2","spawn-apply-2",
              "workspace-v2","instance-modules","spawn-provider-payload","served-identity","packages-no-approval","spawn-name","settings-origins",
-             "team-model-2","settings-declared","capabilities-private","layers-from","harness","package-souls","triggers","automations","desktop-facts"],
+             "team-model-2","settings-declared","capabilities-private","layers-from","harness","package-souls","triggers","automations","desktop-facts","launch-preference"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2}
 ```
@@ -87,6 +87,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
 | `triggers` | `oats trigger …` | `triggerApi: 1` (payload only) |
 | `automations` | workspace triggers and schedules; `oats automations refresh` | `automationsApi: 1` |
 | `desktop-facts` | the facts under [Desktop facts](#desktop-facts-feature-desktop-facts-oats-0290) | |
+| `launch-preference` | soul and local launch preferences; `launch`, `launchCurrent`, `launchFrom`; `--reselect-launch`; `key` on soul and agent rows ([Launch preferences](#soul-launch-preferences-feature-launch-preference-oats-0300)) | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -655,7 +656,13 @@ are absent until `sync`.
 **Soul rows:** `name, origin, kind (member | external | package), repoKey,
 commit, teams, defaultTeam, private (always false), path, work, description`,
 plus the Desktop facts `harness, model, harnessFrom, file, spawnable,
-problem`.
+problem`, and (feature `launch-preference`) `key` and `launch`.
+- `key` is the soul key that `souls.teams`, `souls.default` and `souls.launch`
+  use, and that `oats soul teams <key>` takes: `qualifiedName` for a package
+  soul, the bare `name` for a member or external soul. Two member souls that
+  share a bare name share one entry (spawning that name is
+  `E_SOUL_AMBIGUOUS`).
+- `launch` is a [Launch](#the-launch-report-launch).
 - `teams` and `defaultTeam` (feature `team-model-2`) are a
   [TeamRow](#the-team-row-teamrow) list and a
   [DefaultTeam](#the-default-defaultteam); both `null` when the soul's teams
@@ -731,6 +738,11 @@ Feature `team-model-2`: gate every team field and verb on it. Design:
   "<soul>": [labels]}` and `souls.default: {"<soul>": <label>}`. A soul key is
   the spawn name (`<package>/<soul>` for a package soul). A label matches
   `[a-z0-9][a-z0-9._-]*`.
+- **Team ids.** A `team` value (in either file, and `oats teams add --team`)
+  matches `^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,255}$`: the kernel's safety rule
+  (never `-`-led, no whitespace or control characters, bounded). Otherwise
+  `E_WORKSPACE_SCHEMA` (a file) or `E_BAD_ARGS` (the verb). The messaging
+  provider validates its own id shape (oats.aweb: `<name>:<namespace>`).
 - **Resolution.** The soul's default is `souls.default[soul] ??
   defaultTeam`; its teams are that default plus `souls.teams["*"]` plus
   `souls.teams[soul]`. A label in both files is a `team-label-collision`
@@ -852,9 +864,17 @@ oats soul teams <soul>|'*' [--add a,b] [--remove a,b] [--default <label> | --cle
   `souls.teams["*"]`, `local.default: null`.
 - Mutations answer the document plus `changed`. Unknown label:
   `E_TEAM_UNKNOWN {label}`. A `--default` outside the soul's teams:
-  `E_TEAM_NOT_ELIGIBLE {soul, label}`. `--default`/`--clear-default` with
+  `E_TEAM_NOT_ELIGIBLE {soul, label, at}` (`at`: `oats-local.yaml#/souls/default/<key>`,
+  `/` written `~1`). `--default`/`--clear-default` with
   `'*'`, or both together: `E_BAD_ARGS`. Soul lookup: `E_SOUL_UNKNOWN`,
   `E_SOUL_AMBIGUOUS`.
+- **Writes** (`oats teams add|remove|default`, `oats soul teams`) edit
+  `oats-local.yaml` in place and touch only the entries that change: comments
+  and styles elsewhere, including inline comments on sibling entries and flow
+  lists, are kept. Each verb re-reads the file and judges its refusals on it
+  as it is now, and writes only if the file did not change meanwhile (else it
+  redoes the edit on the new content). A file that keeps changing is
+  `E_LOCAL_CHANGED {path}`; nothing was written.
 
 ### The messaging provider's teams document
 
@@ -895,6 +915,140 @@ for a failure and `false` for a warning, plus the problem's own keys.
 
 The last two are also spawn, preview and inspect refusals, with the same
 details.
+
+<a id="soul-launch-preferences-feature-launch-preference-oats-0300"></a>
+## Launch preferences
+
+Feature `launch-preference` (OATS 0.30.0): gate every field and flag below on
+it. Design: [soul launch preferences](design/2026-09-28-soul-launch-preference.md).
+Every object shape here is closed.
+
+- **The soul** may declare `launch: {harness, model?}` in soul.yaml.
+  - `harness` is `pi`, `claude` or `codex`. `model` is a non-empty model id for
+    that harness.
+  - Nothing else is allowed (no args, env, yolo or executable; those stay host
+    facts, in launch configurations). Another key is `E_WORKSPACE_SCHEMA`.
+  - A package soul may declare one too.
+- **The machine** may override it in `oats-local.yaml` `souls.launch`. A key is
+  a soul key (as for `souls.teams`: `"*"`, a bare soul name, or
+  `<package>/<soul>`). A value is a `launch-configs` name in the same file, or
+  an inline `{harness, model?}` with the soul's rules.
+  ```yaml
+  souls:
+    launch:
+      "*": opus                                          # every soul on this machine
+      oats-expert: opus                                  # a launch configuration
+      oats.engineering/code-reviewer: {harness: codex}   # an inline preference
+  ```
+- **Migration.** 0.29.x refuses an unknown soul.yaml key, and members are read
+  at their latest commit. A committed soul gains `launch:` only on the flag day
+  (every deployment of the workspace runs 0.30). Until then, use `souls.launch`
+  or `--launch-config`.
+
+**Precedence** for a new selection. The first layer with a value decides:
+1. The flags: `--launch-config` or `--harness` (`from: "flag"`). `--model`
+   alone keeps the next deciding layer's harness and replaces only its model.
+2. `souls.launch.<key>` (`"local"`).
+3. `souls.launch."*"` (`"local-default"`).
+4. The soul's `launch` (`"soul"`).
+5. The host default: `pi`, its own model, no configuration (`"host"`).
+
+- A **launch configuration** name runs that configuration's full recipe.
+- An **inline or soul preference** runs its harness with this host's baseline
+  for it (the executable the host resolves; no args, no env) and its `model`.
+- A preference is a unit. Without `model`, the harness's own model runs; a
+  lower layer's model is never borrowed. A model never crosses harnesses
+  (`E_MODEL_UNKNOWN`, as before).
+
+**Existing homes.** A home's recorded launch is frozen. A plain `session
+start`/`restart` runs it unchanged. The precedence decides only a new
+selection: a spawn, a start/restart with `--launch-config`, `--harness` or
+`--model`, or a start/restart with `--reselect-launch`, which applies the
+current layers without naming anything. **A changed preference does not affect
+a running or existing home until `--reselect-launch` or a respawn.** Readiness
+shows the drift as `launch-changed`.
+
+**Refusals** (spawn, preview, and a reselecting start):
+- `E_HARNESS_UNAVAILABLE {harness, from, at, fix}`: the chosen harness has no
+  executable on this machine. There is no fallback to another harness. `fix`
+  is "install <harness>, or override it on this machine in oats-local.yaml
+  souls.launch" (from the soul or the host), "install <harness>, or change
+  oats-local.yaml souls.launch" (from local layers), or "install <harness>, or
+  choose another --harness / --launch-config" (from a flag).
+- `E_LAUNCH_CONFIG_UNKNOWN {name, from, at}`: `souls.launch` names a launch
+  configuration this `oats-local.yaml` does not declare.
+- `E_WORKSPACE_SCHEMA`: a malformed `launch` or `souls.launch`, path named.
+
+### The launch report (`Launch`)
+
+```json
+{"declared":{"harness":"claude","model":"claude-opus-5-5"},
+ "effective":{"harness":"codex","model":null,"launchConfig":null},
+ "from":"local","at":"oats-local.yaml#/souls/launch/oats.engineering~1code-reviewer",
+ "problem":null}
+```
+
+- `declared`: the soul's own `launch` as `{harness, model}` (`model` may be
+  `null`), or `null` when the soul declares none.
+- `effective`: `{harness, model, launchConfig}`. `model` is the id passed to the
+  harness, or `null` (the harness's own). `launchConfig` is a configuration
+  name or `null`.
+- `from`: `"flag"`, `"local"`, `"local-default"`, `"soul"` or `"host"`; on a
+  home, also `"recorded"` (a home from before 0.30).
+- `at`: where the deciding value lives, or `null` (a flag, the host):
+  `"oats-local.yaml#/souls/launch/<key>"` (JSON-pointer escaped: `/` is `~1`),
+  `"oats-local.yaml#/souls/launch/*"`, `"<repoKey>:<path>/soul.yaml#/launch"`,
+  or `"package:<id>:<path>/soul.yaml#/launch"`.
+- `problem`: `null`, or `{code, message, fix}` when a spawn would refuse
+  (`E_HARNESS_UNAVAILABLE`, `E_LAUNCH_CONFIG_UNKNOWN`, or `E_LAUNCH_EXECUTABLE`
+  for a configuration whose own executable is missing). Only reports carry it;
+  spawn and preview refuse instead. With `E_LAUNCH_CONFIG_UNKNOWN`,
+  `effective` is the host default (`pi`, `null`, `null`): the named
+  configuration launches nothing here.
+- In listings (`oats souls`, `inspect --soul`, `launchCurrent`) `model` is the
+  configured id: no model catalogue is probed. The preview's `model` is the
+  resolved one.
+
+### Where the launch appears
+
+- **`oats spawn … --preview --json`**: `launch`, flags applied. The existing
+  `harness`, `model`, `launchConfig` equal `launch.effective`, and
+  `decision.effective` binds them (a preference edited between preview and
+  apply is `E_DECISION_STALE`).
+- **`oats inspect --soul <name>`** and **`oats souls` rows**: `launch` as a
+  spawn with no flags would decide it here (`from` is never `"flag"`). A soul
+  whose harness is missing still lists, with `problem` set. The souls rows'
+  Desktop facts `harness`, `model`, `harnessFrom` equal `launch.effective`;
+  `harnessFrom` is `"soul"`, `"local"`, `"local-default"` or `"kernel-default"`
+  (the host default).
+- **`oats inspect --home <abs>`**: `launch` is the record (`from` the recorded
+  layer; `declared` the soul's preference then), and `launchCurrent: Launch |
+  null` is what `--reselect-launch` would choose now: the home's recorded soul
+  copy's `launch` and this deployment's `souls.launch` as they are now (`null`
+  when `oats-local.yaml` cannot be read).
+- **`instance.json`** (a spawn, and a start that makes a new selection):
+  `launchFrom` (a `from` value), `launchAt` (its `at`) and `launchDeclared`
+  (the soul's own preference then, `{harness, model}` or `null`). All three
+  are absent on a home from before 0.30. A start with `--launch-config` or
+  `--harness` records `launchFrom: "flag"`; a plain or `--model`-only start
+  keeps them. `harness`, `model`, `launchConfig` and the recipe
+  record the effective launch as before.
+- **`modelFrom`** (instance.json and roster rows) gains `"local"` and
+  `"local-default"` (an inline override's model). `"soul"` is the soul's
+  `launch.model`.
+- **Readiness** (`--home` only), in `checks.configured`: `launch-changed`, a
+  warning (`required: false`), `subject: "launch"`, `producer: "launch
+  preference"`, with `recorded` and `current` (each `{harness, model,
+  launchConfig}`), `from` and `at` (the current layer's). `remedy`:
+  "`oats session restart --reselect-launch`, or respawn". Only a home whose
+  recorded launch a layer chose (`launchFrom` `local`, `local-default`,
+  `soul` or `host`) is compared: one launched with explicit flags, or from
+  before 0.30, never warns.
+- **`--reselect-launch`** with `--launch-config` is `E_BAD_ARGS` (choose one);
+  with `--harness` the flag decides, as at spawn.
+
+No verb writes `souls.launch`; it is plain YAML. A GUI that edits it checks
+the result with `oats inspect --soul <name> --json`.
 
 ## Spawn
 
@@ -1166,7 +1320,10 @@ Not an envelope: `{root, agents, workspace?, problems?, warnings?}`.
  "workspace":{"reachable":true}}
 ```
 
-- **Agent rows**: the soul's recorded definition plus `dir` and `instances`;
+- **Agent rows**: the soul's recorded definition plus `dir` and `instances`,
+  and (feature `launch-preference`) `key`: the soul key, as on
+  [soul rows](#oats-capabilities-and-oats-souls), or `null` when no instance
+  records a workspace soul;
   `soulSource` (`{repoKey, commit, path, current?, status?}`, `current` or
   `moved`) for a workspace soul; `retireFailures[]` (`{instance, completedAt,
   error, incomplete, retry, resultPath}`) when a deferred self-retire failed.

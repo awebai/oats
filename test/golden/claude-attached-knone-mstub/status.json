@@ -25,6 +25,9 @@
           "branch": "agents/dev-owner",
           "harness": "claude",
           "modelFrom": "harness-default",
+          "launchFrom": "flag",
+          "launchAt": null,
+          "launchDeclared": null,
           "parentInstance": "dev-owner",
           "spawnOrigin": "instance",
           "policy": {
@@ -307,6 +310,9 @@
           "branch": "agents/dev-owner",
           "harness": "pi",
           "modelFrom": "harness-default",
+          "launchFrom": "flag",
+          "launchAt": null,
+          "launchDeclared": null,
           "spawnOrigin": "operator",
           "policy": {
             "childSpawns": {
@@ -581,6 +587,7 @@
           }
         }
       ],
+      "key": "dev",
       "soulSource": {
         "repoKey": "local/<base>/remotes/ws.git",
         "commit": "<sha>",

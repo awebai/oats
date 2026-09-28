@@ -67,6 +67,7 @@ refused (`E_WORKSPACE_SCHEMA`).
 | `host.name` | This machine's name. A workspace trigger or schedule runs only on the host named by its `runsOn` ([schedules.md](schedules.md)). |
 | `triggers.disabled`, `schedules.disabled` | Workspace triggers and schedules (`<member>/<id>`) this host does not run, without a commit. Written by `oats trigger disable` / `oats schedule disable`. |
 | `launch-configs.<name>` | A named way to start a harness on this host, chosen at spawn or session start, never by the soul. See [Launch configurations](#launch-configurations). |
+| `souls.launch` | This machine's launch preference per soul (0.30): `"*"` for every soul, a soul's own entry (its name, or `<package>/<soul>`) over it. A value is a `launch-configs` name or an inline `{ harness, model? }`. It overrides the soul's own `launch:`; explicit spawn flags win over both. See [Launch preferences](#launch-preferences). |
 
 How teams are resolved, and what a messaging provider does with them, is in
 [workspaces.md](workspaces.md#teams).
@@ -83,8 +84,9 @@ launch configuration is a host choice: a soul never names one.
   `oats session start` and `oats session restart`. A named configuration is
   a unit: a `--harness` that disagrees with it is refused
   (`E_LAUNCH_CONFIG_MISMATCH`); `--model` and `--yolo` override its fields.
-- Without `--launch-config`, a spawn uses the harness's defaults, and an
-  existing home keeps what it recorded. `--harness` alone leaves the recorded
+- Without `--launch-config` or `--harness`, a spawn follows the soul's
+  [launch preference](#launch-preferences) (else `pi` with its defaults), and
+  an existing home keeps what it recorded. `--harness` alone leaves the recorded
   configuration behind and uses the new harness's defaults. A model never
   crosses harnesses.
 - The executable must be a regular executable file; it is never run to probe
@@ -97,6 +99,49 @@ launch configuration is a host choice: a soul never names one.
   environment, command and preflight checks) and starts nothing.
 - The old key `runtime` is still read as `harness`, with a
   `deprecated-runtime-name` warning.
+
+### Launch preferences
+
+A soul says what its role should run on, and each machine may override it
+(0.30; the design is
+[soul launch preferences](design/2026-09-28-soul-launch-preference.md)):
+
+```yaml
+# souls/<soul>/soul.yaml — only a harness and a model
+launch: { harness: claude, model: claude-opus-5-5 }
+
+# oats-local.yaml
+souls:
+  launch:
+    "*": personal                                    # a launch configuration, for every soul here
+    oats-expert: { harness: claude, model: claude-opus-5-5 }
+    oats.engineering/code-reviewer: { harness: codex }   # a package soul
+```
+
+- **Precedence for a new launch:** `--launch-config` or `--harness`, then
+  `souls.launch.<soul>`, then `souls.launch."*"`, then the soul's `launch:`,
+  then `pi` with its defaults. `--model` alone keeps the deciding layer's
+  harness and replaces only its model.
+- A **launch configuration** name runs that configuration's full recipe. An
+  **inline or soul preference** runs its harness the way this host starts it
+  without a configuration (the executable on `PATH`, no args, no env), with
+  its `model`. A preference without `model` uses the harness's own model; it
+  never borrows a lower layer's.
+- **A missing harness is refused**, never replaced: `E_HARNESS_UNAVAILABLE`
+  names the layer that chose it and the fix (install the harness, or override
+  it here in `souls.launch`). `oats souls` still lists the soul, with the
+  problem.
+- **Existing homes keep their launch.** A changed preference does not affect
+  a running or stopped home until `oats session restart --reselect-launch`
+  (or `start --reselect-launch`) or a respawn. `oats readiness --home` shows
+  the drift as the `launch-changed` warning; `oats inspect --home` shows
+  `launch` (the record) beside `launchCurrent`.
+- `oats souls`, `oats inspect --soul` and `oats spawn … --preview` show each
+  soul's `launch`: its own preference, the effective launch, and which layer
+  decided (`from`) and where (`at`).
+- **Migration.** 0.29 refuses a soul.yaml it does not know, so a committed
+  soul gains `launch:` only once every deployment of the workspace runs 0.30.
+  Until then, set the preference in `souls.launch` on each machine.
 
 **Environment references.** `{ fromEnv: SRC }` is rendered as a reference,
 never a value, in the recorded command and in every answer. At start each
@@ -114,7 +159,8 @@ before capability arguments; every argument is single-quoted.
 **Starting and restarting a home.** `oats session start --home <abs>` runs
 the recorded recipe. With `--launch-config`, `--harness` or `--yolo`, the
 recipe is resolved again against the home's recorded context and every check
-runs first. A capability that contributed harness-specific arguments must
+runs first. With `--reselect-launch`, the launch preferences decide again
+(the home's recorded soul and this deployment's `souls.launch`). A capability that contributed harness-specific arguments must
 declare a `launch` hook to follow a harness change; otherwise the start is
 refused (`E_LAUNCH_PREPARATION`). `oats session restart` runs the same
 checks, then sends SIGTERM to the harness and what it started, waits

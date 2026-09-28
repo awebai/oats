@@ -778,3 +778,30 @@ test("live teams of a home read ONE repository (the host) and the deployment's o
     assert.deepEqual([old.source, old.teams, old.defaultTeam], ["recorded", null, null]);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
+
+test("live teams of a STANDALONE deployment come from its oats-local.yaml alone: no remote is read, and there are no shared teams", async () => {
+  const { liveTeams } = await import("../lib/instance-resolution.mjs");
+  const touched = [];
+  const remote = new Proxy({}, { get: (_t, fn) => (...a) => { touched.push(fn); throw new Error(`a standalone deployment read the remote (${String(fn)})`); } });
+  const base = mkdtempSync(join(tmpdir(), "oats-live-teams-standalone-"));
+  try {
+    const dep = join(base, "dep"), home = join(dep, "agents", "dev", "instances", "dev-1");
+    mkdirSync(home, { recursive: true });
+    const local = { schemaVersion: 2, workspace: WS, standalone: "git:github.com/acme/tools", teams: { mine: { team: "mine:me.aweb.ai" }, ops: { team: "ops:me.aweb.ai" } },
+      defaultTeam: "mine", souls: { teams: { "*": ["ops"] } } };
+    writeFileSync(join(dep, "oats-local.yaml"), YAML.stringify(local));
+    const meta = { agent: "dev", workspace: { soul: { repoKey: "github.com/acme/tools" } }, teams: [], defaultTeam: null };
+    const MINE = { label: "mine", team: "mine:me.aweb.ai", default: true, from: "local" };
+    const OPS = { label: "ops", team: "ops:me.aweb.ai", default: false, from: "local" };
+    assert.deepEqual(await liveTeams(home, meta, { remote }), { teams: [MINE, OPS], defaultTeam: { label: "mine", team: "mine:me.aweb.ai", from: "deployment" }, source: "live" });
+    assert.deepEqual(touched, [], "no remote call at all");
+    // …and live means live: the local file changes, the answer follows (the spawn record does not matter).
+    writeFileSync(join(dep, "oats-local.yaml"), YAML.stringify({ ...local, souls: { default: { dev: "ops" }, teams: { dev: ["ops"] } } }));
+    const next = await liveTeams(home, meta, { remote });
+    assert.deepEqual([next.defaultTeam, next.teams.map((r) => [r.label, r.default])], [{ label: "ops", team: "ops:me.aweb.ai", from: "soul" }, [["ops", true]]]);
+    // A shared label cannot exist standalone: a reference to one is an invalid local file, and the record answers.
+    writeFileSync(join(dep, "oats-local.yaml"), YAML.stringify({ ...local, souls: { teams: { dev: ["engineering"] } } }));
+    const bad = await liveTeams(home, meta, { remote });
+    assert.deepEqual([bad.source, bad.reason, bad.error.code], ["recorded", "invalid-teams", "E_TEAM_UNKNOWN"]);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
