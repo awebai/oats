@@ -317,15 +317,22 @@ test('receive "live" (oats.aweb 1.17) reads as live delivery; "poll" never does'
   assert.equal(receiveText('poll'), "checks this team's mail between tasks");
 });
 
-test("v2 default row: the kernel's DefaultTeam by label, with its id or 'no provider id yet' and where it was set; none configured says what to do", async t => {
+test("v2 default row: the kernel's DefaultTeam by label, with its id and where it was set; unmapped is a blocking problem; none configured says what to do", async t => {
   const v2 = defaultTeam => { const d = structuredClone(run('teams-initial')); delete d.result.primary; delete d.result.unmapped; d.result.defaultTeam = defaultTeam; return d; };
   const deployment = await mount(t, () => v2({ label: 'antares-oats', team: 'antares-oats:juan.aweb.ai', from: 'deployment' }));
   const row = deployment.row('default');
   assert.equal(row.querySelector('.team-name').textContent, 'Default team · antares-oats');
   assert.equal(row.querySelector('.team-meta').textContent, "antares-oats:juan.aweb.ai · this workspace's default on this computer");
   assert.equal(row.querySelector('.team-badge').title, "The default team can't be left.");
+  // Unmapped (K1 addendum 4 + the lead's ruling): a blocking problem, not a membership: no "Always on".
   const unmapped = await mount(t, () => v2({ label: 'oats', team: null, from: 'soul' }));
-  assert.equal(unmapped.row('default').querySelector('.team-meta').textContent, "no provider id yet · this soul's own default on this computer");
+  const blocked = unmapped.row('default');
+  assert.equal(blocked.querySelector('.team-meta').textContent, "this soul's own default on this computer");
+  assert.equal(blocked.querySelector('.team-badge'), null, 'no "Always on" for a team nothing can be in yet');
+  assert.equal(blocked.querySelector('.teams-blocking').getAttribute('role'), 'alert');
+  assert.deepEqual([...blocked.querySelectorAll('.teams-blocking p')].map(p => p.textContent), ['The default team oats has no provider id yet.',
+    'Its owner runs oats aweb setup, then commits the id; or choose another default in Workspace › Teams (oats teams default).']);
+  assert.equal(blocked.querySelector('button'), null, 'nothing to join or leave');
   const none = await mount(t, () => v2(null));
   assert.equal(none.row('default').querySelector('.team-meta').textContent, 'None configured on this computer: run oats aweb setup.');
   assert.equal(none.row('default').querySelector('.team-badge'), null, 'nothing to be always on');

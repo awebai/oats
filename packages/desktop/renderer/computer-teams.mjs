@@ -23,6 +23,8 @@ export const computerTeamsCSS = `
 .computer-teams .ct-id.none, .computer-teams .ct-warn { color:var(--warn); }
 .computer-teams .ct-desc, .computer-teams .ct-why { color:var(--muted); font-size:11.5px; line-height:1.45; overflow-wrap:anywhere; }
 .computer-teams .ct-warn { font-size:11.5px; line-height:1.45; overflow-wrap:anywhere; }
+.computer-teams .ct-blocking { display:flex; flex-direction:column; gap:2px; margin-top:4px; padding-left:8px; border-left:2px solid var(--danger); color:var(--muted); font-size:11.5px; line-height:1.45; overflow-wrap:anywhere; }
+.computer-teams .ct-blocking strong { color:var(--fg); font-size:12px; font-weight:650; }
 .computer-teams .ct-fix { display:block; color:var(--fg); font:11px var(--mono,monospace); overflow-wrap:anywhere; }
 .computer-teams .ct-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; }
 .oats-view .computer-teams button.ct-act { height:26px; min-height:26px; padding:0 10px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--fg); font:600 11.5px var(--sans,system-ui); white-space:nowrap; cursor:pointer; }
@@ -124,9 +126,13 @@ export function createComputerTeams(doc, { request, onDocument = null }) {
     return b;
   }
   function kernelProblem(problem) {
-    const line = el(doc, 'div', null, 'ct-warn'); line.dataset.problem = problem.code || '';
+    // The default team's problem blocks every spawn here (the kernel's `default: true`): said as such.
+    const blocking = problem.default === true && text(problem.label);
+    const line = el(doc, 'div', null, blocking ? 'ct-blocking' : 'ct-warn'); line.dataset.problem = problem.code || '';
+    if (blocking) { line.setAttribute('role', 'alert'); line.append(el(doc, 'strong', `The default team ${problem.label} has no provider id yet: nothing can be spawned until it has one.`)); }
     line.append(el(doc, 'span', problem.message || problem.code || 'A problem was reported.'));
     if (text(problem.fix)) line.append(el(doc, 'span', problem.fix, 'ct-fix'));
+    if (blocking) line.append(el(doc, 'span', 'Or make another team the default.', 'ct-why'));
     return line;
   }
 

@@ -122,3 +122,16 @@ test('a failed or malformed read says so', async t => {
   const malformed = await mount(t, () => ({ soulTeamsApi: 1 }));
   assert.equal(malformed.q('.sth-error p').textContent, 'The teams of oats-expert on this computer could not be read.');
 });
+
+test('an unmapped default blocks this soul\'s spawns here: said under the default line, with what to do', async t => {
+  const doc = K1(); doc.defaultTeam = { label: 'reviewers', team: null, from: 'soul' };
+  doc.teams = [{ label: 'reviewers', team: null, default: true, from: 'shared', via: ['default', 'soul'] }, { ...K1().teams[0], default: false, via: ['*'] }];
+  const u = await mount(t, () => structuredClone(doc));
+  const block = u.q('.sth-blocking');
+  assert.equal(block.getAttribute('role'), 'alert');
+  assert.deepEqual([...block.children].map(c => c.textContent), ["The default team reviewers has no provider id yet, so oats-expert can't be spawned here.",
+    "Its owner runs oats aweb setup, then commits the id; or make another team this soul's default."]);
+  assert.ok(u.act('oats', 'Make default'), 'the way out is on the page');
+  const fine = await mount(t);
+  assert.equal(fine.q('.sth-blocking'), null);
+});

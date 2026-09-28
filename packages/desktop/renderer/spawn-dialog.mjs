@@ -446,7 +446,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       const c = chip('spawn-team spawn-team-fixed', `${home.label} · default`, fixed, home.team
         ? `The default team (${home.team}): every instance of ${soul.name} is in it and can't leave it.`
         : `The default team ${home.label} has no provider id yet.`);
-      c.dataset.team = home.label;
+      c.dataset.team = home.label; if (!home.team) c.classList.add('spawn-team-blocked');
     } else chip('spawn-team spawn-team-fixed', 'Default', fixed, "The workspace's default team — always. Every instance is in it.");
     for (const t of rows.filter(t => t.default !== true && (t.mapped || t.default === false))) {
       const box = el('input'); box.type = 'checkbox'; box.value = t.label; box.className = 'fteam';
@@ -455,7 +455,11 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       c.dataset.team = t.label;
     }
     const open = rows.filter(joinable).length;
-    teamsHint.textContent = home
+    // An unmapped default blocks the spawn (the kernel refuses it): say so and what to do, not the opt-ins.
+    teamsHint.classList.toggle('err', !!home && !home.team);
+    teamsHint.textContent = home && !home.team
+      ? `The default team ${home.label} has no provider id yet, so ${soul.name} can't be spawned here. Its owner runs oats aweb setup, then commits the id; or choose another default in Workspace › Teams.`
+      : home
       ? (open ? `It joins its default team, ${home.label}. Tick any other team it should also join.` : `It joins its default team, ${home.label}. No other team is open to ${soul.name} on this computer.`)
       : `By default it's only in the workspace's default team. These are the teams ${soul.name} has access to — tick the ones it should also join.`;
   }
@@ -642,6 +646,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     relDesc.textContent = !related ? 'Independent — not linked to another instance.' : relTo.value ? `Spawns as a ${rel.value} of ${relTo.value}.` : `Pick the instance this one is a ${rel.value} of.`;
     syncButton();
   }
+  /** The default team has no provider id yet: the spawn is refused (team model v2, the lead's ruling). */
+  const defaultBlocked = () => (teamsNow || []).some(t => t.default === true && !t.team);
   function syncButton() {
     if (!alive) return;
     const draftChoice = choices(), ready = local() ? !!shown?.data && shown.key === choiceKey(draftChoice.value) && !reading && joinBound(shown.data) : true;
@@ -649,7 +655,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       : ['unknown', 'pending'].includes(phase) ? 'Check result' : ['complete', 'partial'].includes(phase) ? 'Created' : phase === 'incomplete' ? 'Spawn incomplete' : 'Spawn';
     const recovering = ['unknown', 'pending'].includes(phase);
     spawn.disabled = !current() || busy() || ['complete', 'partial', 'incomplete'].includes(phase)
-      || !recovering && (!!draftChoice.error || (local() ? !applicable() || !ready : false));
+      || !recovering && (!!draftChoice.error || defaultBlocked() || (local() ? !applicable() || !ready : false));
   }
   /** A problem shows one plain sentence; its code and technical text wait behind Details. */
   function setStatus(text, error = false, problem = null) {

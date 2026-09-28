@@ -164,7 +164,9 @@ const V2_ROWS = [{ label: 'antares-oats', team: 'antares-oats:juan.aweb.ai', def
 const v2 = (envelope, join = null) => {
   const v = declared(envelope); v.result.teams = structuredClone(V2_ROWS);
   v.result.defaultTeam = { label: 'antares-oats', team: 'antares-oats:juan.aweb.ai', from: 'deployment' };
-  delete v.result.team; if (v.result.settings?.['oats.aweb']) { if (join) v.result.settings['oats.aweb'].join = join; else delete v.result.settings['oats.aweb'].join; }
+  delete v.result.team;
+  // The bound join (decision.effective.providers) and its settings echo move together, as the kernel sends them.
+  for (const at of [v.result.settings?.['oats.aweb'], v.result.decision?.effective?.providers?.['oats.aweb']]) if (at) { if (join) at.join = join; else delete at.join; }
   return v;
 };
 
@@ -189,4 +191,15 @@ test('v2: a soul with only its default team shows it, with nothing to tick', asy
   const u = await dialog(t, { kernel: choices => only(f7(previewFor(choices))) });
   assert.deepEqual(rows(u).map(r => r[0]), ['antares-oats · default']);
   assert.equal(u.text('.spawn-teams-hint'), 'It joins its default team, antares-oats. No other team is open to release-manager on this computer.');
+});
+
+test('v2: an unmapped default team blocks the spawn: the dialog says why and what to do, and Spawn is off (the lead\'s ruling)', async t => {
+  const blocked = envelope => { const v = v2(envelope); v.result.teams[0].team = null; v.result.defaultTeam.team = null; return v; };
+  const u = await dialog(t, { kernel: choices => blocked(f7(previewFor(choices))) });
+  const home = u.q('.spawn-team[data-team="antares-oats"]');
+  assert.ok(home.classList.contains('spawn-team-blocked')); assert.equal(home.title, 'The default team antares-oats has no provider id yet.');
+  assert.equal(u.text('.spawn-teams-hint'), "The default team antares-oats has no provider id yet, so release-manager can't be spawned here. Its owner runs oats aweb setup, then commits the id; or choose another default in Workspace › Teams.");
+  assert.ok(u.q('.spawn-teams-hint').classList.contains('err'));
+  assert.equal(u.q('.fspawn').disabled, true, 'nothing to spawn into');
+  assert.doesNotMatch(u.q('.spawn-teams').textContent, /Always on|primary|personal/i);
 });

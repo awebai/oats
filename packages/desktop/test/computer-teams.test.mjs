@@ -121,3 +121,15 @@ test('Setup has no Teams box: teams live on the Workspace Teams tab (workspace-v
   const box = teamsBox(doc, { status });
   assert.equal(box.dataset.box, 'Teams'); assert.deepEqual([...box.querySelectorAll('[data-team]')].map(r => r.dataset.team), ['global']);
 });
+
+test("the default team's problem (default: true) is blocking: said as such, with the kernel's words and fix, and another default offered", async t => {
+  const doc = K1(); doc.teams[0].team = null;
+  doc.problems.push({ code: 'team-unmapped', label: 'antares-oats', default: true, message: 'local team antares-oats has no provider id yet', fix: 'run `oats aweb setup` for it' });
+  const u = await mount(t, () => structuredClone(doc));
+  const block = u.row('antares-oats').querySelector('.ct-blocking');
+  assert.equal(block.getAttribute('role'), 'alert');
+  assert.deepEqual([...block.children].map(c => c.textContent), ['The default team antares-oats has no provider id yet: nothing can be spawned until it has one.',
+    'local team antares-oats has no provider id yet', 'run `oats aweb setup` for it', 'Or make another team the default.']);
+  assert.equal(u.row('reviewers').querySelector('.ct-blocking'), null, 'a non-default unmapped team only warns');
+  assert.ok(u.row('reviewers').querySelector('.ct-warn'));
+});

@@ -30,6 +30,8 @@ export const teamsCSS = `
 .teams-panel details pre { margin:4px 0 0; font:11px/1.55 ui-monospace, Menlo, monospace; white-space:pre-wrap; overflow-wrap:anywhere; color:var(--fg); }
 .teams-panel .teams-problem { border-left:2px solid var(--danger); padding-left:8px; font-size:12px; color:var(--fg); }
 .teams-panel .teams-problem > p { margin:0; }
+.teams-panel .team-main > .teams-problem { margin-top:4px; }
+.teams-panel .teams-problem > p.teams-fix { margin-top:2px; color:var(--muted); font-size:11.5px; }
 .teams-panel .teams-refusal { padding:9px 12px; }
 .teams-panel .teams-note { margin:0; padding:9px 12px; font-size:12px; color:var(--muted); }
 .teams-panel .teams-refresh { align-self:flex-start; font:600 11.5px/1 inherit; height:26px; padding:0 10px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--fg); cursor:pointer; }
@@ -292,7 +294,12 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
     const always = badge('Always on', "The default team can't be left.");
     if (home === null) return teamRow('default', 'Default team', ['None configured on this computer: run oats aweb setup.']);
     if (!Object.hasOwn(home, 'from')) return teamRow('default', 'Default team', [defaultTeamText(home)], always);
-    return teamRow('default', `Default team · ${home.label}`, [`${home.team ?? 'no provider id yet'} · ${DEFAULT_FROM[home.from]}`], always);
+    if (home.team) return teamRow('default', `Default team · ${home.label}`, [`${home.team} · ${DEFAULT_FROM[home.from]}`], always);
+    // Unmapped: a blocking problem, not a membership (no "Always on"): nothing can be spawned into it.
+    const block = node('div', undefined, 'teams-problem teams-blocking'); block.setAttribute('role', 'alert');
+    block.append(node('p', `The default team ${home.label} has no provider id yet.`),
+      node('p', 'Its owner runs oats aweb setup, then commits the id; or choose another default in Workspace › Teams (oats teams default).', 'teams-fix'));
+    return teamRow('default', `Default team · ${home.label}`, [DEFAULT_FROM[home.from], block]);
   }
   function sync() {
     refresh.disabled = !!pending || !available() || !live();

@@ -12,6 +12,8 @@ import { pageCard } from './capability-page.mjs';
 export const soulTeamsHereCSS = `
 .soul-teams-here .sth-default { margin:0; color:var(--fg); font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
 .soul-teams-here .sth-default .sth-why { color:var(--muted); }
+.soul-teams-here .sth-blocking { display:flex; flex-direction:column; gap:2px; padding-left:8px; border-left:2px solid var(--danger); color:var(--muted); font-size:11.5px; line-height:1.45; overflow-wrap:anywhere; }
+.soul-teams-here .sth-blocking strong { color:var(--fg); font-size:12px; font-weight:650; }
 .soul-teams-here .sth-row { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:10px; row-gap:4px; align-items:start; padding:8px 0; border-top:1px solid var(--tag-bg); }
 .soul-teams-here .sth-main { display:flex; flex-direction:column; gap:2px; min-width:0; }
 .soul-teams-here .sth-head { display:flex; align-items:center; flex-wrap:wrap; gap:4px 8px; min-width:0; }
@@ -100,6 +102,13 @@ export function createSoulTeamsHere(doc, { soul, request, listTeams = null }) {
       line.append(el(doc, 'span', home.from === 'soul' ? "(this soul's own)" : "(the workspace's default on this computer)", 'sth-why'));
     } else line.append('No default team on this computer: run oats aweb setup.');
     body.append(line);
+    // An unmapped default blocks every spawn of this soul here: said, with what to do.
+    if (home && !home.team) {
+      const block = el(doc, 'div', null, 'sth-blocking'); block.setAttribute('role', 'alert');
+      block.append(el(doc, 'strong', `The default team ${home.label} has no provider id yet, so ${soul} can't be spawned here.`),
+        el(doc, 'span', "Its owner runs oats aweb setup, then commits the id; or make another team this soul's default."));
+      body.append(block);
+    }
     for (const team of list(current.teams)) {
       const row = el(doc, 'div', null, 'sth-row'); row.dataset.team = team.label;
       const main = el(doc, 'div', null, 'sth-main'), head = el(doc, 'div', null, 'sth-head');
