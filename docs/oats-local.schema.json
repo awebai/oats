@@ -94,6 +94,19 @@
         }
       }
     },
+    "automations": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "trust": {
+          "description": "The workspace triggers and schedules this host agrees to run, by qualified id <member>/<id>, or \"*\" for every one the workspace places on this host (0.30). A workspace automation runs only when its runsOn is host.name, its owner is this host's gh account AND trust admits it; absent or empty, none runs. A host fact: the committed workspace file refuses it. Local triggers and schedules need no trust.",
+          "oneOf": [
+            { "const": "*" },
+            { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*/[a-z0-9-]{1,40}$" } }
+          ]
+        }
+      }
+    },
     "souls": {
       "type": "object",
       "additionalProperties": false,

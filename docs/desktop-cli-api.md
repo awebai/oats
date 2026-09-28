@@ -614,6 +614,11 @@ Read-only (it writes no lock):
 - `automations` (feature `automations`): `{host, snapshot: {takenAt,
   problems (a count)} | null, rows: [{kind, id, runsOn, owner, runsHere,
   reason, enabledHere, origin, invalid?}]}`.
+- Automation trust (0.30) adds to `warnings`:
+  - `{code: "automation-untrusted", kind, id, message, remedy}` for each row
+    whose reason is `untrusted`. `remedy` is the `oats-local.yaml` line.
+  - `{code: "automation-trust-stale", entry, message}` for a trust entry that
+    names no workspace trigger or schedule (a member may not have synced yet).
 - The rest are [Desktop facts](#desktop-facts-feature-desktop-facts-oats-0290).
 
 <a id="oats-capabilities---dir---json--capabilitiesapi-1--oats-souls---dir---json--soulsapi-1"></a>
@@ -1872,8 +1877,14 @@ registered).
   localPath}` (`url` for `github.com` only; `localPath` `null` when the
   member is not cloned here).
 - `description`, `owner`, `runsOn`, `runsHere`, `reason` (`null` |
-  `host-unnamed` | `assigned-elsewhere` | `owner-mismatch`), `reasonDetail`,
-  `enabledHere`.
+  `host-unnamed` | `assigned-elsewhere` | `owner-mismatch` | `untrusted`),
+  `reasonDetail`, `enabledHere`.
+- `untrusted` (0.30, [automations.trust](configuration.md#who-runs-workspace-automations)):
+  placed on this host (`runsOn` and `owner` match) but `oats-local.yaml`
+  `automations.trust` does not admit it, so it never runs here. Its
+  `reasonDetail` names the line to add. Group it as needing attention, like
+  `owner-mismatch`. A kernel before 0.30 never sends it; treat an unknown
+  reason as "does not run here".
 - `soul: {name, origin} | null` (`null` for command, wake and operation
   schedules). `origin` is `{kind: "member", repoKey, member}`, `{kind:
   "package", package, version}`, `{kind: "external", repoKey, source}`,

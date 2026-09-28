@@ -225,17 +225,30 @@ owner: github.com/ana
 - **A workspace trigger's `owner` and `on.repo` must be on the same GitHub
   host** (`E_TRIGGER_INVALID`, field `owner`).
 
-**Who runs it.** A host runs a workspace trigger or schedule only when both
-hold:
+**Who runs it.** A host runs a workspace trigger or schedule only when all
+three hold:
 
 1. its `runsOn` is this host's `host.name` in `oats-local.yaml`;
 2. the host's authenticated `gh` account (`gh api user`, asked once per tick)
-   is its `owner`.
+   is its `owner`;
+3. this host's `oats-local.yaml` trusts it (0.30):
+
+   ```yaml
+   automations:
+     trust:
+       - agents/pr-review    # <member>/<id>, as the list names it
+   # or  trust: "*"          # every automation the workspace places on this host
+   ```
 
 Otherwise the item is listed with a reason: `assigned-elsewhere`,
 `owner-mismatch` (this host is named, but its `gh` is logged in as someone
-else or not at all) or `host-unnamed`. Exactly one machine runs it, and its
-operator consented by naming the host and logging in as the account.
+else or not at all), `host-unnamed`, or `untrusted` (placed here but not
+trusted: it never runs, and `oats workspace status` warns with the exact
+line to add). Both names come from a commit, so anyone who can commit to a
+member could name your host; trust is the operator's own yes. A trust entry
+that names no workspace automation is a warning (`automation-trust-stale`),
+not an error: its member may not have synced yet. Your own `oats trigger
+add` / `oats schedule add` definitions need no trust.
 
 **Opting out on one host.** `oats trigger disable <member>/<id>` writes
 `triggers.disabled`, and `oats schedule disable <member>/<id>` writes

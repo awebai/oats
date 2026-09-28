@@ -65,6 +65,7 @@ refused (`E_WORKSPACE_SCHEMA`).
 | `souls.default` | A per-soul override of `defaultTeam`; it must be one of that soul's teams here (`E_TEAM_NOT_ELIGIBLE`). Written by `oats soul teams <soul> --default <label>`. |
 | `souls.disabled` | Souls not run on this machine; a spawn is refused with `E_SOUL_DISABLED`. A bare name disables every soul of that name; `<package>/<soul>` or `<member>/<soul>` disables one. |
 | `host.name` | This machine's name. A workspace trigger or schedule runs only on the host named by its `runsOn` ([schedules.md](schedules.md)). |
+| `automations.trust` | The workspace triggers and schedules (`<member>/<id>`) this host agrees to run, or `"*"` for every one the workspace places here (0.30). Absent or empty: none runs. See [Who runs workspace automations](#who-runs-workspace-automations). |
 | `triggers.disabled`, `schedules.disabled` | Workspace triggers and schedules (`<member>/<id>`) this host does not run, without a commit. Written by `oats trigger disable` / `oats schedule disable`. |
 | `launch-configs.<name>` | A named way to start a harness on this host, chosen at spawn or session start, never by the soul. See [Launch configurations](#launch-configurations). |
 | `souls.launch` | This machine's launch preference per soul (0.30): `"*"` for every soul, a soul's own entry (its name, or `<package>/<soul>`) over it. A value is a `launch-configs` name or an inline `{ harness, model? }`. It overrides the soul's own `launch:`; explicit spawn flags win over both. See [Launch preferences](#launch-preferences). |
@@ -174,6 +175,33 @@ place. It never escalates: a harness still running is reported
 (`E_SESSION_STOP_FAILED`) and nothing is launched. What a harness saves on
 SIGTERM is its own; a wrapper script should `exec` the harness or forward
 signals.
+
+## Who runs workspace automations
+
+A workspace trigger or schedule names the host that runs it (`runsOn`) and
+the GitHub account it acts as (`owner`). Both come from a commit, so a host
+also has to say yes itself (0.30):
+
+```yaml
+automations:
+  trust:
+    - agents/pr-review          # <member>/<id>
+    - agents/nightly-digest
+# or: trust: "*"                # every automation the workspace places on this host
+```
+
+- It runs only if `runsOn` is this host's `host.name`, its `owner` is this
+  host's `gh` account, **and** `trust` admits it. `triggers.disabled` and
+  `schedules.disabled` still opt out on top.
+- A placed but untrusted one never runs. Its row has reason `untrusted`, and
+  `oats workspace status` warns with the line to add.
+- An entry that names nothing is a warning, not an error.
+- `automations` is a host key: the committed `oats-workspace.yaml` refuses
+  it.
+- **Upgrading to 0.30:** a host that ran workspace automations must add its
+  `trust` lines; until then they do not run there.
+- Your own triggers and schedules (`oats trigger add`, `oats schedule add`)
+  need no trust. Details: [schedules.md](schedules.md#workspace-triggers-and-schedules).
 
 ## The deployment directory
 
