@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "owner": "3597c085-e70b-4d70-bbcf-c362285e2075",
+  "owns": [],
+  "reads": [
+    "oats/oats-desktop-expert",
+    "oats/oats-kernel-expert",
+    "oats/oats-expert",
+    "oats/oats-operator-expert"
+  ]
+}
