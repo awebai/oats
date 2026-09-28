@@ -62,8 +62,6 @@ members:
 packages:
   oats.framework: v1.1.3                # bare versions resolve through the official catalog
   oats.okf: v2.1.5
-teams:
-  global: { description: Org-wide souls }
 defaults:
   capabilities: { oats.core: { from: package } }
   knowledge: { oats.okf: { from: package } }
@@ -72,7 +70,9 @@ defaults:
 Take the current package versions from the official catalog
 (`package-catalog.json` in the OATS repository); ask which slots the user wants
 filled (knowledge, messaging, tasks) instead of copying the example. No absolute
-paths, accounts or team ids go in this file.
+paths or accounts go in this file. Teams come with messaging: a shared team is
+`teams.<label>` here, a local one and which souls are in it are
+`oats teams` / `oats soul teams` (the `oats.setup` skill oats-teams).
 
 Declaring a package in `packages:` is the decision to trust it: its commands
 and hooks run on every machine that spawns a soul using it. Show the user what
@@ -84,7 +84,6 @@ In **every** member repository, including the host, `oats-membership.yaml`:
 ```yaml
 schemaVersion: 2
 workspace: git:github.com/acme/agents
-team: global
 ```
 
 Membership is reciprocal: the workspace lists the repository and the
@@ -141,7 +140,7 @@ A soul with `work: worktree | checkout` needs a clone of its repository at
 `<dir>/<repo name>` (or named in `oats-local.yaml` `clones:`).
 
 ```bash
-oats souls --dir <dir>                                  # what the workspace offers, with origin and team
+oats souls --dir <dir>                                  # what the workspace offers, with origin and teams
 oats spawn backend-expert --preview                     # modules, commits, merged provider settings — nothing created
 oats spawn backend-expert --task "First concrete task"
 oats status

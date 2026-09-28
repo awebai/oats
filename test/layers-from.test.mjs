@@ -1,5 +1,5 @@
 // layers.<layer>.from (feature layers-from): `oats inspect --json` names where each filled slot's
-// capability came from — "soul" | "workspace" | "team:<label>". A soul answers from its resolution;
+// capability came from — "soul" | "workspace" (no team origin since 0.30). A soul answers from its resolution;
 // a home answers what its spawn recorded (instance.json workspace.layers), never re-derived.
 //
 // The real CLI over a v2 deployment (test/helpers/v2-deployment.mjs). Never bare `oats setup`; no network.
@@ -7,7 +7,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { soulFiles, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { resolvedFromHome, resolvedFromPrepared } from "../lib/core.mjs";
 
 const EMPTY = { messaging: { id: null, from: null }, tasks: { id: null, from: null } };
@@ -26,10 +26,10 @@ test("layers-from: a soul reports its live origin; a home reports its spawn-time
   assert.deepEqual(JSON.parse(readFileSync(join(home, "instance.json"), "utf8")).workspace.layers,
     { knowledge: { capability: "notes", from: "workspace" }, messaging: null, tasks: null }, "the spawn records its slot rows");
 
-  // The workspace now gives notes through the team's defaults: the soul follows, the home keeps its record.
-  fx.commit(ws({ byTeam: { global: { capabilities: { notes: { from: fx.key } } } } }), "notes via the global team");
+  // The soul now names notes itself: the soul follows, the home keeps its record.
+  fx.commit(soulFiles("dev", { soul: { capabilities: { notes: { from: "here" } } } }), "dev names notes itself");
   assert.equal(fx.cli(["sync", "--json"]).status, 0);
-  assert.deepEqual(inspect("--soul", "dev").layers.knowledge, { id: "notes", from: "team:global" });
+  assert.deepEqual(inspect("--soul", "dev").layers.knowledge, { id: "notes", from: "soul" });
   assert.deepEqual(inspect("--home", home).layers, { knowledge: { id: "notes", from: "workspace" }, ...EMPTY });
 
   // A home spawned before the kernel recorded it: no guess.

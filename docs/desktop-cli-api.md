@@ -789,8 +789,9 @@ the pre-fix marker and is never accepted for dispatch.
   leaf of `settings.<cap>` (a JSON pointer, e.g. `/identity/mode`) to
   `{ kind, at }`: `kind` is `manifest-default` | `workspace` | `soul` |
   `host` | `spawn` — the last layer that set it. (`workspace-team` no longer
-  appears since teams amendment K: a label's `byTeam` entry is not merged into
-  the settings; it is in `teams[].payload`.) —
+  appears; from 0.30.0 there is no `byTeam`, and the messaging provider takes
+  its team from the kernel, not from a `team` setting:
+  see [Team model v2](#team-model-v2-feature-team-model-2-oats-0300-replaces-feature-teams).) —
   and `at` names where (`oats.json#/settings/identity/default`,
   `soul.yaml#/messaging`, `oats-local.yaml#/settings/<cap>`,
   `--provider <cap>`, …). A Desktop labels `manifest-default` values
@@ -1204,7 +1205,8 @@ found to check the declaration even though it does not edit it. `E_USAGE`,
  "warnings":[]}
 ```
 
-`warnings[]` (feature `teams`, also in the `sync` report): `{ code, label,
+`warnings[]` (feature `teams`; **removed in 0.30.0**, where these problems are readiness items: see
+[Team model v2](#team-model-v2-feature-team-model-2-oats-0300-replaces-feature-teams)) (also in the `sync` report): `{ code, label,
 souls, paths, message }` — one `unmapped-team-label` per label that is in
 `teams:` but not in `messaging.byTeam`, naming its souls (sorted) and each
 soul's `<repoKey>:<path>#/team`; sorted by label. Never a problem.
@@ -1690,50 +1692,315 @@ null`, with `path` still set. `path` is relative to that repository's root.
 
 **Help.** `oats help` lists `spawn … [--provider <capability> <key>=<value>]`.
 
-### Eligible teams (feature `teams`, OATS 0.26.0)
+### Team model v2 (feature `team-model-2`, OATS 0.30.0; replaces feature `teams`)
 
-A soul's `team` may be a list of labels; the first is the primary
-([teams contract](design/2026-09-25-teams-contract.md)). Every label is an
-**eligible** team — which the messaging provider may join on an explicit
-request (a spawn provider setting, or its own join/leave verbs); the kernel
-joins nothing. One entry per label, in soul order:
+Spec: [team model v2](design/2026-09-27-team-model-v2.md) (DECIDED, option B).
+**Breaking, no aliases:** a 0.30 kernel no longer lists the `teams` feature, and
+every field below marked *removed* is absent (not `null`). Gate every read
+below on `features.includes("team-model-2")`. **Every object shape here is
+closed**: an unknown key is a contract change announced in this document first.
+
+**Where teams live.**
+- The committed `oats-workspace.yaml` `teams.<label> = { description?, team? }`
+  holds the SHARED teams. `team` is the provider team id; a shared team without
+  one is declared, not yet created.
+- `oats-local.yaml` holds everything personal:
+  - `teams.<label> = { team, description? }`: the LOCAL teams;
+  - `defaultTeam: <label>`;
+  - `souls.teams: { "*": [labels], "<soul>": [labels] }`;
+  - `souls.default: { "<soul>": <label> }`.
+- A soul key is the name the soul is spawned by: the bare name for a member
+  soul, `<package>/<soul>` for a package soul.
+- *Removed*: `messaging.byTeam`, `defaults.byTeam`, a soul.yaml `team`, an
+  oats-membership.yaml `team`, and "primary". Each is `E_WORKSPACE_SCHEMA`
+  (reason `removed-key`) naming its replacement.
+- A provider payload stays opaque to the kernel: a `team` key in it passes
+  through like any other setting (other providers use one, e.g. the tasks
+  example's `team: ENG`). The messaging provider's `team` setting is removed by
+  the provider: oats.aweb 1.17 no longer declares it, and its binding refuses
+  the undeclared key.
+
+**Resolution.**
+- The soul's default is `souls.default[soul] ?? defaultTeam`.
+- The soul's teams are `{default} ∪ souls.teams["*"] ∪ souls.teams[soul]`.
+- A label is looked up in the committed teams, then in the local teams. A label
+  in both files is the readiness problem `team-label-collision`; the COMMITTED
+  definition wins.
+
+#### The team row (`TeamRow`): exactly `{label, team, default, from}`
 
 ```json
-{"label":"engineering","team":"aweb:acme.eng","mapped":true,"payload":{"private":"per-human","team":"aweb:acme.eng"}}
-{"label":"reviewers","team":null,"mapped":false,"payload":{"private":"per-human"}}
+{"label":"antares-oats","team":"antares-oats:juan.aweb.ai","default":true,"from":"local"}
+{"label":"oats","team":"oats:oats.aweb.ai","default":false,"from":"shared"}
+{"label":"reviewers","team":null,"default":false,"from":"shared"}
 ```
 
-`payload` = `workspace.messaging` ⊕ `byTeam[label]` (base alone when unmapped);
-`team` = the mapped payload's team id, else `null`. No label → `[]`.
+- `label`: the workspace label.
+- `team`: the provider team id, or `null` for a committed team with no id yet
+  (unmapped).
+- `default`: `true` on exactly the soul's default row. The other rows are the
+  teams an instance MAY join (offered at spawn, never auto-joined).
+- `from`: `"shared"` (committed `oats-workspace.yaml`) or `"local"`
+  (`oats-local.yaml`).
+- **Order:** the default row first, then the rest by label (codepoint order).
+- The same four keys are the rows of `OATS_TEAMS` and `instance.json.teams`,
+  which exclude unmapped rows.
+- `oats soul teams` rows add one key, `via` (below).
 
-Where it appears:
-- `oats spawn … --preview --json`: top-level `teams` (next to `team`, which
-  stays the primary label). `settings.<messaging>` stays the primary's merged
-  payload and never carries `teams`.
-- `oats inspect --soul|--home --json`: top-level `teams` and `teamsSource`.
-  For `--home` the teams are **live** (the soul's labels and the workspace's
-  `messaging` as the deployment resolves them now, in two repository reads;
-  the home's modules are unchanged): `teamsSource: "live"`, or `"recorded"`
-  with the spawn-time list when the workspace cannot be read now. Providers
-  get the same marker as `OATS_TEAMS_SOURCE`.
-- `instance.json`: `teams` (the spawn-time list, kept as evidence; never
-  rewritten) and `workspace.soul.labels`.
-- `oats souls --json`: each row carries `labels` (`team` stays the primary).
-- A spawn, preview or `inspect --soul` whose labels give one capability
-  different `defaults.byTeam` entries answers `E_TEAM_CONFLICT { capability,
-  labels: [a, b], entries, paths }`.
+#### The default (`DefaultTeam`)
+
+```json
+{"label":"antares-oats","team":"antares-oats:juan.aweb.ai","from":"deployment"}
+```
+
+- `from` is `"deployment"` (`defaultTeam`) or `"soul"` (`souls.default[<soul>]`).
+- The value is `null` when no default is configured. With a messaging layer
+  active, that is the readiness problem `E_TEAM_UNCONFIGURED`, and the messaging
+  provider refuses the spawn.
+- When the default is an UNMAPPED shared team (declared, no provider id yet),
+  the value is `{label, team: null, from}`, NOT `null`, so the reader can name
+  the label. That is the blocking readiness problem `team-unmapped` with
+  `default: true` (below), not `E_TEAM_UNCONFIGURED`. The same holds for every
+  document carrying a `DefaultTeam`: the preview, `inspect`, `souls`,
+  `instance.json` and the provider's teams document.
+
+#### Where they appear
+
+**`oats spawn … --preview --json`:**
+- adds `teams: [TeamRow]` (unmapped rows included) and `defaultTeam: DefaultTeam | null`;
+- *removes* `team` (the primary label) and the 0.26 `teams` rows
+  (`{label, team, mapped, payload}`);
+- `settings.<messaging>` is the merged provider payload as before; from oats.aweb
+  1.17 it no longer carries a `team`, because that provider stops declaring one.
+
+**`oats inspect --soul <name> --json`:**
+- `teams`, `defaultTeam` (as in the preview), and `teamsSource: "live"`;
+- *removes* `souls[].team`, `subject.team` and `souls[].declarations.teams`.
+
+**`oats inspect --home <abs> --json`:**
+- `teams`, `defaultTeam` and `teamsSource`. They are live (the committed
+  teams + `oats-local.yaml` as they are now): `"live"`, or the spawn-time
+  record with `"recorded"` when the workspace cannot be read now.
+- It adds `recordedDefaultTeam: DefaultTeam | null` (from `instance.json`).
+  When it differs from `defaultTeam`, readiness reports `default-team-changed`:
+  a running instance keeps its default-team identity until it is respawned.
+
+**`oats readiness … --json`:** `subject.team` is *removed*.
+
+**`oats souls --json` rows (member, package and external souls alike):**
+- add `teams: [TeamRow]` and `defaultTeam: DefaultTeam | null`, resolved for
+  this deployment;
+- *remove* `team` and `labels`.
+
+**`oats workspace status --json`:**
+- `workspace.teams` changes from a list of label strings to rows for the
+  committed (shared) teams, in label order:
+  `[{"label":"oats","team":"oats:oats.aweb.ai","description":"The OATS project"},{"label":"reviewers","team":null,"description":null}]`;
+- **`defaults.byTeam` is no longer reported anywhere**: not in
+  `workspace status`, not in desktop-facts (its `byTeam` capability rows go),
+  and not in `capabilitiesFrom` (no `"team:<label>"` origin). Capability
+  composition is committed workspace + soul only;
+- `members[].team`, `external[].team` and the capability rows' `team` are
+  *removed*;
+- the `unmapped-team-label` warning is *removed* (see readiness);
+- `E_TEAM_CONFLICT` no longer exists.
+
+**`instance.json`** (the spawn-time record, never rewritten):
+- `teams`: the rows the providers received as `OATS_TEAMS`, i.e.
+  `{label, team, default, from}` with mapped teams only;
+- `defaultTeam`: `DefaultTeam | null`;
+- `workspace.soul.team` and `workspace.soul.labels` are *removed*.
+
+**The provider readiness request:** `input.context.team` is *removed*.
+Providers read the environment below.
+
+#### The provider environment (hooks, commands, readiness)
+
+- `OATS_DEFAULT_TEAM`: the default label.
+- `OATS_DEFAULT_TEAM_ID`: its provider id.
+- `OATS_DEFAULT_TEAM_FROM`: `deployment` | `soul`.
+- No default configured: none of the three is set.
+- An UNMAPPED default: `OATS_DEFAULT_TEAM` and `OATS_DEFAULT_TEAM_FROM` are set,
+  and `OATS_DEFAULT_TEAM_ID` is UNSET.
+- The provider rule: the label set with the id unset is an unmapped default
+  (refuse, naming the label: "the default team <label> has no provider id
+  yet"); the label unset is none configured ("no teams configured").
+- `OATS_TEAMS`: JSON `[{label, team, default, from}]`:
+  - every MAPPED team the soul may be in here, the default included
+    (`default: true`); unmapped rows are excluded;
+  - eligible to join = the rows with `default: false`;
+  - the order is the TeamRow order.
+- `OATS_TEAMS_SOURCE`: `live` | `recorded` (kept). A provider leaves a team only
+  on a `live` list.
+- *Removed:* `OATS_TEAM_LABEL`, `OATS_TEAM_LABELS`, `OATS_TEAM_ID`.
+- `OATS_TEAM_SCOPE`, `OATS_TEAM_NAME` (always empty), `OATS_WORKSPACE_NAME`
+  and `OATS_WORKSPACE_KEY` are unchanged.
+
+#### `oats teams --json` (this deployment's teams)
+
+```json
+{"schemaVersion":1,"ok":true,"result":{"teamsApi":1,"deployment":"/w","defaultTeam":"antares-oats",
+ "teams":[
+  {"label":"antares-oats","team":"antares-oats:juan.aweb.ai","description":null,"from":"local","default":true,"at":"oats-local.yaml#/teams/antares-oats"},
+  {"label":"oats","team":"oats:oats.aweb.ai","description":"The OATS project","from":"shared","default":false,"at":"github.com/awebai/oats:oats-workspace.yaml#/teams/oats"},
+  {"label":"reviewers","team":null,"description":null,"from":"shared","default":false,"at":"github.com/awebai/oats:oats-workspace.yaml#/teams/reviewers"}],
+ "souls":{"teams":{"*":["oats"],"oats-expert":["reviewers"]},"default":{"oats-expert":"oats"}},
+ "problems":[{"code":"team-unmapped","label":"reviewers","default":false,"message":"shared team reviewers has no provider id yet","fix":"its owner runs `oats aweb setup`, then commits the id"}]}}
+```
+
+- `teams`: the effective teams, ordered by label. A collision shows the
+  committed definition, plus the problem below.
+- `souls`: `oats-local.yaml`'s `souls.teams` and `souls.default` as written.
+- `problems[]`: the same items readiness reports (below).
+- **`oats teams add <label> --team <id> [--description <d>] --json`:** declares
+  a LOCAL team.
+  - A label that is already declared, in either file, is `E_TEAM_EXISTS
+    { label, from }`.
+  - The first team added also becomes `defaultTeam`.
+- **`oats teams remove <label> --json`:** removes a LOCAL team that nothing
+  references. It refuses, with no cascade:
+  - a label still referenced is `E_TEAM_IN_USE { label, usedBy }`. `usedBy`
+    names EVERY reference, e.g.
+    `["defaultTeam", "souls.teams:*", "souls.teams:oats-expert", "souls.default:oats-expert"]`
+    (`souls.teams:<key>` / `souls.default:<key>`, `<key>` as written).
+    Remove the references first (`oats teams default`, `oats soul teams`);
+  - a committed (shared) label is `E_TEAM_SHARED { label, at }`: it is edited
+    by a PR to `oats-workspace.yaml`;
+  - an unknown label is `E_TEAM_UNKNOWN { label }`.
+- **`oats teams default <label> --json`:** sets `defaultTeam` to a label of
+  either file. An unknown label is `E_TEAM_UNKNOWN`.
+- A mutation answers the document after the write, plus `changed: bool`. The
+  verbs are config only (they never call a provider), validate before writing,
+  and rewrite `oats-local.yaml` in place, keeping its other content.
+
+#### `oats soul teams <soul>|'*' --json` (a soul's teams here)
+
+Its rows are `TeamRow` plus `via`: why the soul has the team, a non-empty
+subset in this order of:
+- `"default"`: the soul's default;
+- `"*"`: `souls.teams["*"]`;
+- `"soul"`: `souls.teams[<soul>]`.
+
+```json
+{"schemaVersion":1,"ok":true,"result":{"soulTeamsApi":1,"soul":"oats-expert","key":"oats-expert",
+ "defaultTeam":{"label":"oats","team":"oats:oats.aweb.ai","from":"soul"},
+ "teams":[{"label":"oats","team":"oats:oats.aweb.ai","default":true,"from":"shared","via":["default","*"]},
+          {"label":"reviewers","team":null,"default":false,"from":"shared","via":["soul"]}],
+ "local":{"teams":["reviewers"],"default":"oats"},"all":["oats"]}}
+```
+
+- `key`: the `souls.teams` / `souls.default` key: the bare name for a member
+  soul, `<package>/<soul>` for a package soul.
+- `local`: that key's own entries as written.
+- `all`: `souls.teams["*"]`.
+- For `'*'`:
+  - `soul` and `key` are `"*"`;
+  - `teams` are the deployment default's row + `souls.teams["*"]`;
+  - `local` is `{teams: souls.teams["*"], default: null}`.
+- **Mutations:** `--add a,b`, `--remove a,b`, `--default <label>` and
+  `--clear-default`, combinable.
+  - An unknown label is `E_TEAM_UNKNOWN { label }`.
+  - `--default` must name one of the soul's teams after the write:
+    `E_TEAM_NOT_ELIGIBLE { soul, label }`.
+  - `--default` with `'*'` is `E_BAD_ARGS`.
+  - An unknown or ambiguous soul is `E_SOUL_UNKNOWN` or `E_SOUL_AMBIGUOUS`,
+    as for `spawn`.
+  - The answer is the document after the write, plus `changed: bool`.
+
+#### The messaging provider's teams document (oats.aweb ≥ 1.17, with kernel 0.30)
+
+This is the answer of the provider's teams operation (`oats aweb teams --json`,
+and the `teams` operation the Desktop runs). It is produced by the provider,
+not the kernel. This is its 0.30 contract, and its key set is exact:
+
+```json
+{"defaultTeam":{"label":"antares-oats","team":"antares-oats:juan.aweb.ai","from":"deployment"},
+ "eligible":[{"label":"oats","team":"oats:oats.aweb.ai","joined":true}],
+ "joined":[{"label":"oats","team":"oats:oats.aweb.ai","identityHome":"/w/agents/…/.aw-teams/oats","receive":"live","since":"<iso>"}],
+ "left":[{"label":"reviewers","team":"reviewers:acme.aweb.ai","at":"<iso>","reason":"no-longer-eligible"}],
+ "at":"<iso>"}
+```
+
+- **`defaultTeam`** is exactly the kernel's `DefaultTeam`, `{label, team, from}`,
+  one shape in both places:
+  - `label`, `team` and `from` are the kernel's `OATS_DEFAULT_TEAM`,
+    `OATS_DEFAULT_TEAM_ID` and `OATS_DEFAULT_TEAM_FROM` (`"deployment"` | `"soul"`);
+  - an unmapped default (`OATS_DEFAULT_TEAM` set, `OATS_DEFAULT_TEAM_ID` unset)
+    is `{label, team: null, from}`;
+  - it is `null` only when no default is configured (`OATS_DEFAULT_TEAM` unset).
+  - *Changed from 0.29:* `source` is renamed `from` (no alias), `label` is new,
+    and the 0.29 sources `"setting"` and `"root"` are gone.
+- **`eligible`** is `[{label, team, joined}]`: the `OATS_TEAMS` rows with
+  `default: false`.
+- **`joined`** is `[{label, team, identityHome, receive: "live"|"poll", since}]`,
+  unchanged.
+- **`left`** is `[{label, team, at, reason: "no-longer-eligible"}]`: the last 20
+  leaves caused by a live read (NEW; additive).
+- **`at`**: when the document was produced.
+- ***Removed:*** `primary` (no primary label exists) and `unmapped` (unmapped
+  committed teams are kernel readiness items, `team-unmapped`, and never reach
+  the provider).
+
+#### Readiness items (kernel)
+
+`oats teams --json` reports them under `problems[]` as
+`{ code, label?, severity: "failure"|"warning", message, fix, … }`.
+
+`oats readiness … --json` reports the ones that concern the subject's soul in the
+EXISTING `checks.configured.items[]` (there is no fifth check: released Desktops
+recompute the summary from the four checks). Each is a readiness item:
+- `subject`: `"team <label>"`, or `"teams"` for `E_TEAM_UNCONFIGURED`;
+- `producer`: `"team model"`; `code`: the code below;
+- `reason`: the message; `remedy`: the fix;
+- a failure is `status: "fail", required: true` (it blocks `ready`); a warning is
+  `status: "fail", required: false`;
+- plus the problem's own keys (`label`, `default`, `shared`, `local`,
+  `recorded`, `current`).
+
+- **`E_TEAM_UNCONFIGURED`** (a failure, when a messaging layer is active and
+  there is no default at all): "no teams configured: run `oats aweb setup`".
+- **`team-label-collision`** (a warning), with `shared: {team, description, at}`
+  and `local: {team, description, at}`. The committed definition wins; the fix
+  is to rename the local label.
+- **`team-unmapped`**: a committed team without `team`.
+  - Not the default: a warning, "shared team <label> has no provider id yet";
+    the fix: its owner runs `oats aweb setup`, then commits the id.
+  - The default (`default: true`): a failure (blocking), "the default team
+    <label> has no provider id yet"; the fix: its owner runs `oats aweb setup`,
+    then commits the id, or choose another default with `oats teams default`.
+    The messaging provider's spawn refusal names the same.
+- **`default-team-changed`** (a warning, `--home` only), with
+  `recorded: DefaultTeam`, `current: DefaultTeam` and the fix "respawn".
+
+#### Errors
+
+- `E_TEAM_UNKNOWN { label, at }`: a label no file declares, whether in
+  `defaultTeam`, `souls.teams`, `souls.default` or a verb.
+- `E_TEAM_NOT_ELIGIBLE { soul, label }`: `souls.default[soul]` is not one of
+  the soul's teams.
+- The verbs' own errors:
+  - `E_TEAM_EXISTS { label, from }`;
+  - `E_TEAM_IN_USE { label, usedBy }`: every reference that blocks
+    `oats teams remove`;
+  - `E_TEAM_SHARED { label, at }`: a committed team cannot be removed locally.
+- `E_WORKSPACE_SCHEMA` for any removed key, naming its replacement.
+
+`E_TEAM_UNKNOWN` and `E_TEAM_NOT_ELIGIBLE` are spawn/preview/inspect refusals
+when they come from `oats-local.yaml`. They are also reported by readiness.
+`E_TEAM_CONFLICT` and the `unmapped-team-label` warning are gone.
 
 ### Probe
 
 ```json
-{"…":"…","features":["…","workspace-v2","instance-modules","spawn-provider-payload","packages-no-approval","spawn-name","settings-origins","teams"],"workspaceApi":2}
+{"…":"…","features":["…","workspace-v2","instance-modules","spawn-provider-payload","packages-no-approval","spawn-name","settings-origins","team-model-2"],"workspaceApi":2}
 ```
 
 A feature is listed only once the binary implements it. Gate `sync`/`package`/
 `workspace status`/`capabilities`/`souls` on `workspace-v2`; gate reading
 `instance.json.modules` and preview `modules[]` on `instance-modules`; gate
-`--provider` on `spawn-provider-payload`; gate reading `teams`, `teamsSource`,
-`labels` and `warnings[]` on `teams`; gate reading `declares` on
+`--provider` on `spawn-provider-payload`; gate every team field and the
+`oats teams` / `oats soul teams` verbs on `team-model-2` (0.30.0; the 0.26
+`teams` feature is no longer listed); gate reading `declares` on
 `settings-declared`.
 
 ## Instruction refresh (`oats session recompose`) — removed in 0.26.0

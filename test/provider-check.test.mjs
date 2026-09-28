@@ -20,7 +20,7 @@ function target(base, answer, { script = "bin/check.mjs", body = null } = {}) {
   const mod = { name: "fx.provider", from: null, manifest, dir };
   const t = { kind: "instance", home, meta: { instance: "fx-1", agent: "fx" }, deployment: base, agentsRoot: join(base, "agents"),
     subject: { kind: "instance", instance: "fx-1", home, soul: "fx" },
-    soul: { name: "fx", repoKey: null, commit: null, team: null, external: true, path: null, soulDir: null, definition: null, problems: [] },
+    soul: { name: "fx", repoKey: null, commit: null, external: true, path: null, soulDir: null, definition: null, problems: [] },
     workspace: { key: null, name: null, deployment: base, commit: null, standalone: false },
     modules: [mod], payloads: {}, slots: { knowledge: null, messaging: "fx.provider", tasks: null }, discovery: null, discoveryError: null, resolutionError: null, lock: null, prepared: null };
   return { t, mod, dir };
@@ -142,13 +142,14 @@ process.stdout.write(JSON.stringify({ schemaVersion: req.schemaVersion, phase: r
 `);
   return { dir, mod: { name: "fx.provider", from: null, manifest, dir } };
 }
-/** The eligible teams a target carries (teams contract decision 3): here one mapped label. */
-const WIRE_TEAMS = [{ label: "engineering", team: "acme:eng", mapped: true, payload: { team: "acme:eng" } }];
-function wireTarget(base, { home = null, soulDir = null, team = "engineering", teams = WIRE_TEAMS } = {}) {
+/** The teams a target carries (team model v2): the default (mapped) and one unmapped shared team. */
+const WIRE_DEFAULT = { label: "engineering", team: "acme:eng", from: "deployment" };
+const WIRE_TEAMS = [{ label: "engineering", team: "acme:eng", default: true, from: "local" }, { label: "night", team: null, default: false, from: "shared" }];
+function wireTarget(base, { home = null, soulDir = null, teams = WIRE_TEAMS, defaultTeam = WIRE_DEFAULT } = {}) {
   return { kind: home ? "instance" : "soul", home, meta: home ? { instance: "rm-1", agent: "release-manager" } : null, deployment: base, agentsRoot: join(base, "agents"),
-    soul: { name: "release-manager", repoKey: "github.com/acme/agents", commit: "c".repeat(40), team, external: false, path: null, soulDir, definition: null, problems: [] },
+    soul: { name: "release-manager", repoKey: "github.com/acme/agents", commit: "c".repeat(40), external: false, path: null, soulDir, definition: null, problems: [] },
     workspace: { key: "github.com/acme/agents", name: "acme", deployment: base, commit: "c".repeat(40), standalone: false },
-    payloads: { "fx.provider": { team: "acme:eng", root: "/srv/aw" } }, slots: { knowledge: null, messaging: "fx.provider", tasks: null }, teams, teamsSource: "live" };
+    payloads: { "fx.provider": { root: "/srv/aw" } }, slots: { knowledge: null, messaging: "fx.provider", tasks: null }, teams, defaultTeam, teamsSource: "live" };
 }
 const AMBIENT = { OATS_INSTANCE: "ambient-instance", OATS_SOUL: "/ambient/soul", OATS_ROOT: "/ambient/agents", OAS_HOME: "/ambient/oas", PI_AGENTS_ROOT: "/ambient/pi", PI_AGENT_HOME: "/ambient/home", OATS_PROVIDER_WIRE_KEEP: "no", PROVIDER_WIRE_AMBIENT: "kept" };
 function withAmbient(fn) {
@@ -162,7 +163,7 @@ test("provider-check wire (pinned): the request on stdin, the environment, the c
   try {
     const record = join(base, "record.json");
     const { dir, mod } = recordingProvider(base, record);
-    const settings = { team: "acme:eng", root: "/srv/aw" };
+    const settings = { root: "/srv/aw" };
 
     // ---- an instance home subject ----
     const home = join(base, "agents", "release-manager", "instances", "rm-1"), soulDir = join(base, "agents", "release-manager", "souls", "cccccccccccc");
@@ -171,7 +172,7 @@ test("provider-check wire (pinned): the request on stdin, the environment, the c
     let seen = JSON.parse(readFileSync(record, "utf8"));
     assert.deepEqual(JSON.parse(seen.stdin), {
       schemaVersion: 1, phase: "check", slot: "messaging", capability: "fx.provider", settings,
-      input: { context: { kind: "workspace", workspace: "github.com/acme/agents", deployment: base, soul: "release-manager", team: "engineering", instance: "rm-1", home },
+      input: { context: { kind: "workspace", workspace: "github.com/acme/agents", deployment: base, soul: "release-manager", instance: "rm-1", home },
         action: { kind: "readiness" } },
     }, "the stdin request, exactly: the released binding wire (the teams travel in the env only; a strict decoder refuses any other key)");
     assert.equal(seen.cwd, dir, "cwd is the module directory");
@@ -179,20 +180,22 @@ test("provider-check wire (pinned): the request on stdin, the environment, the c
     const oats = Object.fromEntries(Object.entries(seen.env).filter(([k]) => /^(OATS_|OAS_|PI_)/.test(k)));
     assert.deepEqual(oats, {
       OATS_CAPABILITY: "fx.provider", OATS_SETTINGS: JSON.stringify(settings), OATS_SETTINGS_ORIGINS: "{}", OATS_CLI_BIN: join(fileURLToPath(new URL("..", import.meta.url)), "bin", "oats.mjs"), OATS_WORKSPACE: base,
-      OATS_TEAM_NAME: "", OATS_TEAM_ID: "acme:eng", OATS_TEAM_SCOPE: base, OATS_TEAM_LABEL: "engineering", OATS_TEAM_LABELS: "engineering", OATS_TEAMS: JSON.stringify(WIRE_TEAMS), OATS_TEAMS_SOURCE: "live", OATS_WORKSPACE_NAME: "acme", OATS_WORKSPACE_KEY: "github.com/acme/agents",
+      OATS_TEAM_NAME: "", OATS_TEAM_SCOPE: base, OATS_DEFAULT_TEAM: "engineering", OATS_DEFAULT_TEAM_ID: "acme:eng", OATS_DEFAULT_TEAM_FROM: "deployment",
+      OATS_TEAMS: JSON.stringify([WIRE_TEAMS[0]]), OATS_TEAMS_SOURCE: "live", OATS_WORKSPACE_NAME: "acme", OATS_WORKSPACE_KEY: "github.com/acme/agents",
       OATS_INSTANCE: "rm-1", OATS_INSTANCE_HOME: home, OATS_AGENT: "release-manager", OATS_SOUL: soulDir,
     }, "exactly these OATS_* variables; every ambient OATS_/OAS_/PI_ variable is stripped");
     assert.equal(seen.env.PROVIDER_WIRE_AMBIENT, "kept", "an ambient non-OATS variable passes through (as for the broker)");
 
-    // ---- a soul subject: no instance/home, no soul directory known, team null ----
+    // ---- a soul subject: no instance/home, no soul directory known, no teams configured ----
     rmSync(record);
-    withAmbient(() => runProviderCheck(wireTarget(base, { team: null, teams: [] }), mod, dir));
+    withAmbient(() => runProviderCheck(wireTarget(base, { teams: [], defaultTeam: null }), mod, dir));
     seen = JSON.parse(readFileSync(record, "utf8"));
     assert.equal("teams" in JSON.parse(seen.stdin), false, "never on stdin");
-    assert.equal(seen.env.OATS_TEAMS, "[]", "no label: [] (the workspace's default team only)");
-    assert.deepEqual(JSON.parse(seen.stdin).input.context, { kind: "workspace", workspace: "github.com/acme/agents", deployment: base, soul: "release-manager", team: null, instance: null, home: null });
+    assert.equal(seen.env.OATS_TEAMS, "[]", "no teams configured here");
+    assert.equal(seen.env.OATS_DEFAULT_TEAM, undefined, "no default: none of the default names is set");
+    assert.deepEqual(JSON.parse(seen.stdin).input.context, { kind: "workspace", workspace: "github.com/acme/agents", deployment: base, soul: "release-manager", instance: null, home: null });
     for (const k of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_SOUL", "OATS_ROOT", "OAS_HOME", "PI_AGENTS_ROOT", "PI_AGENT_HOME", "OATS_PROVIDER_WIRE_KEEP"]) assert.equal(seen.env[k], undefined, `${k} is not passed for a soul subject`);
-    assert.equal(seen.env.OATS_AGENT, "release-manager"); assert.equal(seen.env.OATS_TEAM_LABEL, "");
+    assert.equal(seen.env.OATS_AGENT, "release-manager"); assert.equal(seen.env.OATS_TEAM_LABEL, undefined);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 

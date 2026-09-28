@@ -99,7 +99,7 @@ export function v2Deployment({ souls = { dev: {} }, capabilities = {}, capabilit
   const spec = {
     "oats-workspace.yaml": { yaml: { schemaVersion: 2, name, members: [ref], teams: { global: { description: "Fixture team" } },
       defaults: { knowledge: "none", messaging: "none", tasks: "none", ...(extraDefaults || {}) }, ...extraWorkspace } },
-    "oats-membership.yaml": { yaml: { schemaVersion: 2, workspace: ref, team: "global" } },
+    "oats-membership.yaml": { yaml: { schemaVersion: 2, workspace: ref } },
     ...files,
   };
   for (const [soul, def] of Object.entries(souls)) Object.assign(spec, soulFiles(soul, def));

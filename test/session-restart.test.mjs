@@ -46,7 +46,7 @@ const fx = v2Deployment({
     hooked: { soul: { capabilities: { "test.extra": { from: "here" }, "test.two": { from: "here" } } } },
     renew: { soul: { capabilities: { "test.renew": { from: "here" } } } },
     req: { soul: { capabilities: { "test.req": { from: "here" } } } },
-    teamed: { soul: { team: ["global", "night"], capabilities: { "test.teams": { from: "here" } } } },
+    teamed: { soul: { capabilities: { "test.teams": { from: "here" } } } },
   },
   capabilities: {
     "test.extra": { manifest: { hooks: { launch: "bin/launch.mjs" }, environment: ["TEST_NEWVAR", "TEST_OLDVAR", "TEST_SHARED"], settings: { mode: { description: "m", default: "current" } } },
@@ -55,16 +55,18 @@ const fx = v2Deployment({
     "test.renew": { manifest: { hooks: { launch: "bin/launch.mjs" }, environment: [], settings: {} }, files: { "bin/launch.mjs": answerHook() } },
     "test.req": { manifest: { hooks: { launch: "bin/launch.mjs" }, requires: [{ harness: "claude", package: "chan@acme-marketplace", marketplace: "acme/claude-plugins", when: { mode: "on" } }], settings: { mode: { description: "m" } } },
       files: { "bin/launch.mjs": `process.stdout.write(JSON.stringify({ launch: { claude: "--req-hook" }, env: {} }) + "\\n");\n` } },
-    // Records the eligible teams its launch hook was given (teams contract decision 6).
+    // Records the teams its launch hook was given (team model v2).
     "test.teams": { manifest: { hooks: { launch: "bin/launch.mjs" }, environment: [], settings: {} },
-      files: { "bin/launch.mjs": `import { writeFileSync } from "node:fs"; import { join } from "node:path";\nwriteFileSync(join(process.env.OATS_HOME, "teams-env.json"), JSON.stringify({ labels: process.env.OATS_TEAM_LABELS, label: process.env.OATS_TEAM_LABEL, source: process.env.OATS_TEAMS_SOURCE, teams: JSON.parse(process.env.OATS_TEAMS) }));\nprocess.stdout.write("{}\\n");\n` } },
+      files: { "bin/launch.mjs": `import { writeFileSync } from "node:fs"; import { join } from "node:path";\nwriteFileSync(join(process.env.OATS_HOME, "teams-env.json"), JSON.stringify({ old: [process.env.OATS_TEAM_LABELS ?? null, process.env.OATS_TEAM_LABEL ?? null], def: process.env.OATS_DEFAULT_TEAM ?? null, source: process.env.OATS_TEAMS_SOURCE, teams: JSON.parse(process.env.OATS_TEAMS) }));\nprocess.stdout.write("{}\\n");\n` } },
   },
   workspace: { teams: { global: { description: "Fixture team" }, night: { description: "Night shift" } } },
   local: { "launch-configs": {
     polite: { harness: "claude", executable: join(binDir, "polite"), args: ["--flag", "a b c"], env: { KEY: { fromEnv: "RESTART_TEST_SRC" }, LIT: "plain" }, model: "claude-opus-5" },
     stubborn: { harness: "claude", executable: join(binDir, "stubborn") },
     codexy: { harness: "codex", executable: join(binDir, "polite") },
-  } },
+  },
+  // Team model v2: teamed belongs to a local team and to the shared night team (not created yet).
+  teams: { mine: { team: "aweb:fixture.mine" } }, souls: { teams: { teamed: ["mine", "night"] } } },
 });
 test.after(() => fx.cleanup());
 const repo = fx.dep; // the deployment: the scope lifecycle verbs resolve from
@@ -539,15 +541,17 @@ test("session recompose is removed (0.26): E_UNKNOWN_COMMAND naming the re-spawn
   assert.ok(!oats(["version"]).json.features.includes("session-recompose"));
 });
 
-test("teams contract decision 6: a session start's launch hook gets the home's LIVE eligible teams — a mapping the workspace adds after the spawn is seen, one it removes disappears — while modules and the spawn-time record stay frozen", async () => {
+test("team model v2: a session start's launch hook gets the home's LIVE teams — a shared team created after the spawn is seen, a team the soul loses locally disappears — while modules and the spawn-time record stay frozen", async () => {
   const name = "teamed-live";
   const home = homeOf(name, "teamed");
   await makeHome(name, { soul: "teamed", command: renderFor(home, name, join(binDir, "polite")), launch: recipeFor(home, name, { executable: join(binDir, "polite") }) });
+  const MINE = { label: "mine", team: "aweb:fixture.mine", default: false, from: "local" };
+  const NIGHT = { label: "night", team: "aweb:fixture.night", default: false, from: "shared" };
   const spawned = readJson(join(home, "instance.json"));
-  assert.deepEqual(spawned.teams.map((t) => [t.label, t.mapped]), [["global", false], ["night", false]], "spawn records the eligible teams as evidence");
+  assert.deepEqual([spawned.teams, spawned.defaultTeam], [[MINE], null], "spawn records the mapped teams as evidence (night has no id yet)");
   const seedWorkspace = join(fx.base, "seed", "oats-workspace.yaml");
+  const localFile = join(fx.dep, "oats-local.yaml");
   const { parse, stringify } = await import("yaml");
-  const workspaceWith = (messaging) => { const ws = parse(readFileSync(seedWorkspace, "utf8")); if (messaging) ws.messaging = messaging; else delete ws.messaging; return { "oats-workspace.yaml": stringify(ws, { lineWidth: 0 }) }; };
   const restart = async () => {
     rmSync(join(home, "teams-env.json"), { force: true });
     const r = spawnSync(process.execPath, [CLI, "session", "restart", "--home", home, "--json"], { encoding: "utf8", env: env({ OATS_REMOTE_CACHE: fx.remoteOptions.cacheDir }) });
@@ -558,20 +562,18 @@ test("teams contract decision 6: a session start's launch hook gets the home's L
   try { tmux("has-session", "-t", session); } catch { tmux("new-session", "-d", "-s", session, "-n", "hq", "-c", home); }
   tmux("new-window", "-t", `${session}:`, "-n", name, "-c", home, "exec /bin/sh");
   await waitFor(() => inspectInstanceSession(home).state === "shell", "idle pane shell");
-  // The workspace maps "night" AFTER the spawn: the next start's hook sees it eligible and mapped.
-  fx.commit(workspaceWith({ private: "per-human", byTeam: { night: { team: "aweb:fixture.night" } } }), "map night");
+  // The shared night team gets its id AFTER the spawn: the next start's hook sees it.
+  const ws = parse(readFileSync(seedWorkspace, "utf8"));
+  ws.teams.night = { ...ws.teams.night, team: "aweb:fixture.night" };
+  fx.commit({ "oats-workspace.yaml": stringify(ws, { lineWidth: 0 }) }, "create night");
   let seen = await restart();
-  assert.equal(seen.labels, "global,night");
-  assert.equal(seen.label, "global", "OATS_TEAM_LABEL stays the primary's");
-  assert.equal(seen.source, "live", "the launch hook may act on leaves: the list is live");
-  assert.deepEqual(seen.teams, [
-    { label: "global", team: null, mapped: false, payload: { private: "per-human" } },
-    { label: "night", team: "aweb:fixture.night", mapped: true, payload: { private: "per-human", team: "aweb:fixture.night" } },
-  ]);
-  // …and removing the mapping takes it away again.
-  fx.commit(workspaceWith(null), "unmap night");
+  assert.deepEqual(seen, { old: [null, null], def: null, source: "live", teams: [MINE, NIGHT] }, "the launch hook may act on leaves: the list is live");
+  // …and the soul losing night on this deployment takes it away again.
+  const local = parse(readFileSync(localFile, "utf8"));
+  local.souls.teams.teamed = ["mine"];
+  writeFileSync(localFile, stringify(local, { lineWidth: 0 }));
   seen = await restart();
-  assert.deepEqual(seen.teams.map((t) => [t.label, t.mapped, t.team]), [["global", false, null], ["night", false, null]]);
+  assert.deepEqual(seen.teams, [MINE]);
   const after = readJson(join(home, "instance.json"));
   assert.deepEqual(after.modules, spawned.modules, "modules stay frozen");
   assert.deepEqual(after.teams, spawned.teams, "the spawn-time record is evidence, never rewritten");

@@ -88,7 +88,7 @@ test("workspace v2 CLI over the Northwind fixture: sync (exit 0, lock v3 written
     assert.match(r.stdout, /^packages {3}.*oats\.okf 2\.1\.3 ✓ \(@ [0-9a-f]{8}\)/m);
     assert.match(r.stdout, /^changed {4}/m);
     assert.match(r.stdout, /^souls {6}9 discovered \(8 members, 1 external, 1 disabled here\) · 0 private capabilities$/m, "souls have no private mode: the count is of repo-owned capabilities (Northwind has none)");
-    assert.match(r.stdout, /^teams {6}.*engineering 5 souls, 3 capabilities.*marketing 2 souls, 2 capabilities/m);
+    assert.match(r.stdout, /^teams {6}engineering, global, marketing \(shared\) · this deployment's: oats teams$/m);
     assert.match(r.stdout, /^lock {7}/m);
     assert.doesNotMatch(r.stdout, /approv/i, "the report never mentions approval");
     // A second sync is idempotent: the lock already describes the workspace (nothing changed).
@@ -107,18 +107,18 @@ test("workspace v2 CLI over the Northwind fixture: sync (exit 0, lock v3 written
     doc = envelope(r);
     const st = doc.result;
     assert.equal(st.workspaceStatusApi, 1);
-    assert.deepEqual(st.workspace.teams, ["global", "engineering", "marketing"]);
+    assert.deepEqual(st.workspace.teams.map((t) => [t.label, t.team]), [["engineering", null], ["global", null], ["marketing", null]], "shared teams as rows, in label order");
     assert.equal(st.members.length, 5);
     const platform = st.members.find((m) => m.name === "platform");
-    assert.equal(platform.status, "confirmed"); assert.equal(platform.team, "engineering");
+    assert.equal(platform.status, "confirmed"); assert.equal("team" in platform, false);
     assert.deepEqual(platform.souls, ["platform-engineer", "platform-reviewer"], "status lists every soul (souls have no private mode)");
     assert.ok(!Object.hasOwn(st, "approval"), "workspace status has no approval section");
     assert.deepEqual(st.unsynced, []); assert.deepEqual(st.stale, []);
     assert.deepEqual(st.external.map((e) => e.soul), ["security-reviewer"]);
     r = oats(["workspace", "status"], { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /member\s+status\s+commit\s+team/);
-    assert.match(r.stdout, /nw-tools\s+confirmed\s+[0-9a-f]{8}\s+engineering.*nw\.tools v0\.4\.0/);
+    assert.match(r.stdout, /member\s+status\s+commit\s+souls/);
+    assert.match(r.stdout, /nw-tools\s+confirmed\s+[0-9a-f]{8}\s+tools-expert.*nw\.tools v0\.4\.0/);
     assert.match(r.stdout, /oats\.okf\s+2\.1\.3\s+catalog:oats\.okf\s+[0-9a-f]{8}\s+oats\.okf/);
     r = oats(["workspace", "--json"], { cwd: dep, env, base });
     assert.equal(r.status, 1); assert.equal(envelope(r).error.code, "E_USAGE");
@@ -130,7 +130,7 @@ test("workspace v2 CLI over the Northwind fixture: sync (exit 0, lock v3 written
     const caps = doc.result.capabilities;
     const brand = caps.find((c) => c.name === "nw-brand-voice");
     assert.ok(brand, "nw-brand-voice is listed");
-    assert.equal(brand.kind, "member"); assert.equal(brand.repoKey, fx.keys.marketing); assert.equal(brand.team, "marketing");
+    assert.equal(brand.kind, "member"); assert.equal(brand.repoKey, fx.keys.marketing); assert.equal("team" in brand, false);
     assert.equal(brand.origin, `member ${fx.keys.marketing} @ ${fx.commits.marketing.slice(0, 8)}`);
     const okf = caps.find((c) => c.name === "oats.okf");
     assert.ok(okf, "oats.okf is listed from the lock");
@@ -142,8 +142,8 @@ test("workspace v2 CLI over the Northwind fixture: sync (exit 0, lock v3 written
     assert.ok(caps.every((c) => c.private === false), "Northwind has no private capability; test/visibility.test.mjs lists one as repo-owned");
     r = oats(["capabilities"], { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /name\s+origin\s+team\s+layer/);
-    assert.match(r.stdout, /nw-brand-voice\s+member .*marketing\.git @ [0-9a-f]{8}\s+marketing/);
+    assert.match(r.stdout, /name\s+origin\s+layer/);
+    assert.match(r.stdout, /nw-brand-voice\s+member .*marketing\.git @ [0-9a-f]{8}/);
     assert.match(r.stdout, /oats\.okf\s+package oats\.okf v2\.1\.3/);
 
     // ---- oats souls --json ----
@@ -157,12 +157,12 @@ test("workspace v2 CLI over the Northwind fixture: sync (exit 0, lock v3 written
     assert.ok(names.includes("platform-engineer"));
     assert.ok(names.includes("security-reviewer"), "the pinned external soul is visible");
     const tools = souls.find((s) => s.name === "tools-expert");
-    assert.equal(tools.team, "engineering"); assert.equal(tools.origin, `member ${fx.keys["nw-tools"]} @ ${fx.commits["nw-tools"].slice(0, 8)}`);
+    assert.deepEqual([tools.teams, tools.defaultTeam], [[], null], "no teams configured on this deployment"); assert.equal(tools.origin, `member ${fx.keys["nw-tools"]} @ ${fx.commits["nw-tools"].slice(0, 8)}`);
     assert.equal(souls.find((s) => s.name === "security-reviewer").kind, "external");
-    assert.equal(souls.find((s) => s.name === "support-triager").team, "global", "team falls back to the repo's oats-membership.yaml default");
+
     r = oats(["souls"], { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /tools-expert\s+member .*nw-tools\.git @ [0-9a-f]{8}\s+engineering\s+worktree/);
+    assert.match(r.stdout, /tools-expert\s+member .*nw-tools\.git @ [0-9a-f]{8}\s+—\s+worktree/);
     assert.match(r.stdout, /platform-reviewer\s+member /);
 
     // ---- oats package add outside a workspace checkout prints the line ----

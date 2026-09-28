@@ -109,16 +109,19 @@ test("oats schedule outside a deployment is E_LOCAL_MISSING, whatever ambient ro
 });
 
 test("a capability command gets the same team and workspace facts from a home as from the deployment", async (t) => {
-  const probe = "console.log(JSON.stringify({schemaVersion:1,ok:true,result:Object.fromEntries(Object.entries(process.env).filter(([k])=>/^OATS_(TEAM|WORKSPACE)_|^OATS_TEAMS$/.test(k)))}))\n";
+  const probe = "console.log(JSON.stringify({schemaVersion:1,ok:true,result:Object.fromEntries(Object.entries(process.env).filter(([k])=>/^OATS_(TEAM|WORKSPACE|DEFAULT_TEAM)_|^OATS_(TEAMS|DEFAULT_TEAM)$/.test(k)))}))\n";
   const fx = v2Deployment({
     name: "northwind",
     souls: { dev: { soul: { capabilities: { "acme.env": { from: "here" } } } } },
     capabilities: { "acme.env": { manifest: { command: "envprobe", commands: { show: "show.mjs" } }, files: { "show.mjs": probe } } },
+    local: { teams: { mine: { team: "mine:me.aweb.ai" } }, defaultTeam: "mine" },
   });
   t.after(fx.cleanup);
-  const expected = { OATS_TEAM_NAME: "", OATS_TEAM_ID: "", OATS_TEAM_SCOPE: fx.dep, OATS_TEAM_LABEL: "global", OATS_WORKSPACE_NAME: "northwind", OATS_WORKSPACE_KEY: fx.key,
-    OATS_TEAM_LABELS: "global", OATS_TEAMS: JSON.stringify([{ label: "global", team: null, mapped: false, payload: {} }]) };
-  const noHome = { OATS_INSTANCE_HOME: "", PI_AGENT_HOME: "", OATS_HOME: "", OATS_TEAM_NAME: "ambient", OATS_WORKSPACE_NAME: "ambient" };
+  // Team model v2: the default and the soul's teams here; the pre-0.30 names never reach it, even ambient.
+  const expected = { OATS_TEAM_NAME: "", OATS_TEAM_SCOPE: fx.dep, OATS_WORKSPACE_NAME: "northwind", OATS_WORKSPACE_KEY: fx.key,
+    OATS_DEFAULT_TEAM: "mine", OATS_DEFAULT_TEAM_ID: "mine:me.aweb.ai", OATS_DEFAULT_TEAM_FROM: "deployment",
+    OATS_TEAMS: JSON.stringify([{ label: "mine", team: "mine:me.aweb.ai", default: true, from: "local" }]) };
+  const noHome = { OATS_INSTANCE_HOME: "", PI_AGENT_HOME: "", OATS_HOME: "", OATS_TEAM_NAME: "ambient", OATS_WORKSPACE_NAME: "ambient", OATS_TEAM_ID: "ambient", OATS_TEAM_LABEL: "ambient" };
   const fromDeployment = fx.cli(["envprobe", "show", "--soul", "dev", "--json"], { env: noHome });
   assert.equal(fromDeployment.status, 0, fromDeployment.stdout + fromDeployment.stderr);
   assert.deepEqual(envelope(fromDeployment).result, expected);

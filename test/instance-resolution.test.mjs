@@ -74,7 +74,7 @@ function repos({ host = {} } = {}) {
     [K.data]: {
       commit: OID("c"),
       files: {
-        "oats-membership.yaml": { schemaVersion: 2, workspace: R.agents, team: "engineering" },
+        "oats-membership.yaml": { schemaVersion: 2, workspace: R.agents },
         "souls/data-analyst/soul.yaml": soul("data-analyst", { capabilities: { "nw-warehouse-access": { from: "here" }, "oats.core": "off" } }),
         "capabilities/nw-warehouse-access/oats.json": manifest("nw-warehouse-access", { skills: ["skills/query"] }),
         "capabilities/nw-warehouse-access/skills/query/SKILL.md": "---\nname: query\ndescription: q\n---\n",
@@ -114,9 +114,9 @@ test("M5: parseProviderFlags never writes through to Object.prototype — poison
   assert.equal(JSON.stringify(Object.getOwnPropertyNames(Object.prototype).sort()), before, "Object.prototype untouched after parsing");
   // dotted nesting and later-wins still work; a scalar re-nested becomes an object (own-key check, not truthiness)
   assert.deepEqual(parseProviderFlags([["oats.aweb", "identity.mode=retained"], ["oats.aweb", "identity.seat=a@b"], ["oats.aweb", "x=1"], ["oats.aweb", "x.y=2"]]), { "oats.aweb": { identity: { mode: "retained", seat: "a@b" }, x: { y: "2" } } });
-  // M9 at the flag: byTeam is reserved in a spawn payload, any depth
+  // At the flag: byTeam (removed in 0.30) is refused in a spawn payload, any depth
   for (const kv of ["byTeam=1", "byTeam.engineering=1", "a.byTeam.x=1"]) {
-    assert.throws(() => parseProviderFlags([["oats.aweb", kv]]), (e) => e.code === "E_WORKSPACE_SCHEMA" && e.details.reason === "reserved-key" && e.details.key === "byTeam", `key ${kv}`);
+    assert.throws(() => parseProviderFlags([["oats.aweb", kv]]), (e) => e.code === "E_WORKSPACE_SCHEMA" && e.details.reason === "removed-key" && e.details.key === "byTeam" && /removed in 0\.30/.test(e.message), `key ${kv}`);
   }
   // still E_BAD_ARGS for malformed input
   assert.throws(() => parseProviderFlags([["oats.okf", "novalue"]]), (e) => e.code === "E_BAD_ARGS");

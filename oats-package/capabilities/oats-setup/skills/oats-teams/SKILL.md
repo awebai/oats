@@ -1,109 +1,125 @@
 ---
 name: oats-teams
 description: >-
-  Use when adding or changing team labels, mapping a label to a messaging team
-  (messaging.byTeam), deciding which messaging team an instance joins, joining
-  or leaving a team at spawn or later, or diagnosing E_TEAM_UNKNOWN,
-  E_TEAM_CONFLICT or the unmapped-team-label warning. Also when someone
-  expects a team label to restrict or grant access (it never does). Part of
-  the setup and config of an OATS workspace (oats.setup); day-to-day operation
-  inside an instance is oats.core.
+  Use when declaring a team (shared in oats-workspace.yaml or local with
+  `oats teams add`), choosing the deployment's default team, putting souls in
+  teams (`oats soul teams`), deciding which messaging team an instance joins,
+  joining or leaving a team at spawn or later, or diagnosing E_TEAM_UNKNOWN,
+  E_TEAM_NOT_ELIGIBLE, E_TEAM_UNCONFIGURED, E_TEAM_IN_USE, E_TEAM_SHARED,
+  E_TEAM_EXISTS, team-unmapped, team-label-collision or default-team-changed.
+  Also when an old config still has messaging.byTeam, defaults.byTeam or a
+  soul/membership `team:` (removed in 0.30), and when someone expects a team
+  to restrict or grant access (it never does). Part of the setup and config of
+  an OATS workspace (oats.setup); day-to-day operation inside an instance is
+  oats.core.
 ---
 
-# Teams: labels and messaging teams
+# Teams (team model v2, OATS 0.30)
 
-The contract is `docs/workspaces.md` ("Teams", "Provider payloads have three
-homes") and `docs/capabilities.md` ("Several team labels") in the installed
-kernel. Two different things share the word "team":
+The contract is `docs/workspaces.md` ("Teams") and `docs/capabilities.md`
+("Teams in the provider environment") in the installed kernel. A **team** is a
+messaging-provider team (for oats.aweb, an aweb team id) under a **label**
+(`engineering`, `okf`). **A team organises and routes messages; it never
+gates, restricts, grants trust or partitions knowledge.**
 
-- a **team label** (`engineering`, `okf`): a workspace-declared name that
-  organises souls and capabilities and can add default capabilities;
-- a **messaging team**: the messaging provider's team (for oats.aweb, an aweb
-  team id) that an instance's identity belongs to.
-
-`messaging.byTeam` is the only bridge between them. **A label organises; it
-never gates, restricts, grants trust or partitions knowledge.**
-
-## Labels
+## Where teams are declared
 
 ```yaml
-# oats-workspace.yaml
+# oats-workspace.yaml (committed, shared: edited by a PR)
 teams:
-  engineering: { description: Platform and release automation }
-  okf:         { description: Knowledge operations }
-defaults:
-  byTeam:
-    engineering:
-      capabilities: { acme-release-tooling: { from: github.com/acme/agents } }
+  engineering: { description: Platform and release automation, team: <team id> }
+  reviewers:   { description: Review rota }        # no id yet: team-unmapped
 ```
-
-- A soul's `team:` is a label or a list (`team: [engineering, reviewers]`); the
-  first is the **primary**. Without one it takes its repo's default from
-  `oats-membership.yaml`, else `unassigned`. A capability carries one label.
-- A label must be declared in `teams:`. Otherwise it is `E_TEAM_UNKNOWN`, a
-  discovery problem: the soul is still listed and spawnable, but its instances
-  land in no messaging team for that label.
-- `defaults.byTeam.<label>.capabilities` adds capabilities for each label in
-  order (`off` removes). Two labels that give one capability different entries
-  are `E_TEAM_CONFLICT`: make the entries agree, or name the capability in the
-  soul, whose own entry wins.
-
-## Messaging teams
 
 ```yaml
-# oats-workspace.yaml
-messaging:
-  private: per-human                      # the base payload every soul's provider receives
-  byTeam:
-    engineering: { team: <messaging team id> }
-    okf:         { team: <messaging team id> }
+# oats-local.yaml (this deployment only: edited by the verbs below)
+teams:
+  mine: { team: <team id>, description: My personal team }
+defaultTeam: engineering
+souls:
+  teams:
+    "*": [engineering]               # every soul
+    reviewer: [reviewers]            # a soul by bare name
+    oats.okf/knowledge-harvester: [okf]   # a package soul
+  default:
+    reviewer: reviewers              # must be one of that soul's teams
 ```
 
-- **Every label is an eligible team.** The kernel hands the messaging
-  provider one entry per label, in order: `{ label, team, mapped, payload }`,
-  where `payload` is the base ⊕ `byTeam[label]`. A declared label without a
-  `byTeam` entry is the `unmapped-team-label` warning, and its entry has
-  `mapped: false`.
-- **The instance's own identity lives in the workspace's default team.** No
-  label's `byTeam` entry is merged into the provider's settings, the
-  primary's included. The identity mints into the `team` a host
-  (`settings.<cap>.team`), the soul or the spawn sets, else the provider's
-  default (for oats.aweb, the active team of the `.aw` root it finds).
-- **Joining an eligible team is an explicit act; the kernel never joins
-  anything.** At spawn:
+- A **shared** team is the same provider team for everyone. Without `team` it
+  is unmapped: `team-unmapped` (a warning; blocking when it is the default).
+  Its owner creates the team (`oats aweb setup`) and commits the id.
+- A **local** team always has `team`. A label in both files is
+  `team-label-collision` (a warning): the shared one wins; rename the local one.
+- Which souls are in which teams is **local**. Nothing committed besides the
+  shared `teams:` mentions teams: soul.yaml `team`, oats-membership.yaml
+  `team`, `external[].team`, `messaging.byTeam` and `defaults.byTeam` were
+  removed in 0.30 and are schema errors naming the replacement.
+
+## Resolution
+
+- A soul's default: `souls.default[soul] ?? defaultTeam`.
+- A soul's teams: its default ∪ `souls.teams["*"]` ∪ `souls.teams[soul]`.
+- An undeclared label is `E_TEAM_UNKNOWN`: a spawn, preview or
+  `inspect --soul` of that soul is refused.
+- A `souls.default` that is not one of the soul's teams is
+  `E_TEAM_NOT_ELIGIBLE`.
+- Messaging active and no default at all is `E_TEAM_UNCONFIGURED`.
+- Capabilities compose from the workspace defaults and the soul only; a team
+  adds none.
+
+## The verbs
+
+Config only: they rewrite `oats-local.yaml` in place (comments kept) and never
+call a provider. Run them from the deployment.
+
+```bash
+oats teams [--json]                                   # teams, ids, the default, problems
+oats teams add <label> --team <id> [--description d]  # a local team; the first add sets the default
+oats teams remove <label>                             # a local team nothing references
+oats teams default <label>                            # a label of either file
+oats soul teams <soul>|'*' [--add a,b] [--remove a,b] [--default <label> | --clear-default] [--json]
+```
+
+- `E_TEAM_EXISTS`: the label is already declared (`from` says where).
+- `E_TEAM_SHARED`: you tried to remove a shared team; edit
+  `oats-workspace.yaml` by PR instead.
+- `E_TEAM_IN_USE`: `usedBy` lists the references (`defaultTeam`,
+  `souls.teams:<soul>`, `souls.default:<soul>`). Nothing cascades: clear them
+  first (`oats teams default`, `oats soul teams … --remove`).
+- `'*'` takes no `--default`: the deployment's default is `oats teams default`.
+
+## Joining
+
+- **At spawn an instance joins its default team only.** Its identity lives
+  there. The other teams are eligible: offered, joined only on request.
 
   ```bash
-  oats spawn <soul> --preview --provider oats.aweb join=engineering,okf   # check the teams and settings first
+  oats spawn <soul> --preview                                   # teams + defaultTeam
   oats spawn <soul> --purpose <slug> --provider oats.aweb join=engineering,okf
   ```
 
-  Later, from the instance's home (oats.aweb's own commands):
-  `oats aweb teams` lists eligible and joined teams, `oats aweb join --labels
-  <a,b>` joins, `oats aweb leave --labels <a,b>` leaves. A provider leaves a
-  team only on a live team list, never a recorded one.
-- A team id is an operator fact about the messaging service. It is shared
-  through the workspace file (all machines use the same team), but creating
-  the team or joining the deployment's root to it is done with the messaging
-  provider's own tools, by the operator (oats-onboarding, step 6).
+- Later, the provider's own verbs join and leave (for oats.aweb, see its
+  skill). A provider leaves a team only on a live team list, never a
+  recorded one. A scheduled wake uses the teams recorded at spawn.
+- The kernel never joins anything. It hands the provider `OATS_DEFAULT_TEAM`,
+  `OATS_DEFAULT_TEAM_ID`, `OATS_DEFAULT_TEAM_FROM`, `OATS_TEAMS` (mapped rows)
+  and `OATS_TEAMS_SOURCE` (`live` or `recorded`).
 
 ## Add a team
 
-1. Declare the label in `teams:`, and map it under `messaging.byTeam` if
-   instances should be able to join a messaging team for it. Add
-   `defaults.byTeam.<label>` only if souls with it need extra capabilities.
-2. Give souls the label (`team:` in their `soul.yaml`, or the repo default in
-   `oats-membership.yaml`).
-3. Change each file by PR to the repo that owns it (oats-workspace-config).
-   After the merge: `oats sync`, `oats souls` (the label appears, with no
-   `E_TEAM_UNKNOWN`), and `oats spawn <soul> --preview` (the `teams` entry is
-   `mapped: true` with the team id).
+1. Shared: add `teams.<label>` to `oats-workspace.yaml` by PR (with `team`
+   once the provider team exists). Local: `oats aweb setup` creates it and runs
+   `oats teams add`, or run `oats teams add <label> --team <id>` yourself.
+2. Put souls in it: `oats soul teams <soul> --add <label>` (or `'*'` for all).
+3. Check: `oats teams` (no problems), `oats spawn <soul> --preview` (the
+   label is in `teams` with its id).
 
 ## Gotchas
 
-- Expecting a label to hide a soul or restrict a capability: it does
-  neither. Visibility comes from membership, and repo-owned capabilities are
-  `private: true` in their manifest.
-- A `byTeam` label that is not declared in `teams:` is `E_WORKSPACE_SCHEMA`,
-  not a warning.
-- A scheduled wake's session start uses the teams recorded at spawn, so it
-  joins or leaves nothing; the next operator `oats session start` is live.
+- Changing a soul's default does not move a running instance:
+  `oats inspect --home` reports `default-team-changed`; respawn.
+- A team never hides a soul or restricts a capability. Visibility comes from
+  membership, and repo-owned capabilities are `private: true` in their
+  manifest.
+- Migrating from 0.29: move each `byTeam` id into `teams.<label>.team`, and each
+  soul/membership `team:` into `oats soul teams` on each deployment.

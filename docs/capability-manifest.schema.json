@@ -61,11 +61,6 @@
       "type": "boolean",
       "description": "Workspace discovery: true makes this member capability repo-owned — listed (private: true) but usable only by souls of its own repository (E_CAPABILITY_PRIVATE elsewhere)."
     },
-    "team": {
-      "type": "string",
-      "pattern": "^[a-z0-9][a-z0-9._-]*$",
-      "description": "Workspace discovery: the team label for this capability; else the repository's default from oats-membership.yaml."
-    },
     "layer": {
       "enum": [
         "knowledge",
@@ -281,7 +276,7 @@
           },
           "hostOnly": {
             "type": "boolean",
-            "description": "When true, this key is a host fact (a custody path, a state directory): the resolver accepts it only from the deployment's oats-local.yaml settings.<capability> and refuses it in the workspace file, byTeam payloads, a soul's slot payload and --provider flags (E_WORKSPACE_SCHEMA reason host-only-key). Decision 27."
+            "description": "When true, this key is a host fact (a custody path, a state directory): the resolver accepts it only from the deployment's oats-local.yaml settings.<capability> and refuses it in the workspace file, a soul's slot payload and --provider flags (E_WORKSPACE_SCHEMA reason host-only-key). Decision 27."
           }
         },
         "additionalProperties": false

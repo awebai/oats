@@ -54,7 +54,7 @@ test("builds nine bare repos with default branch main and full-OID commits", () 
   assert.match(lsRemote, /^ref: refs\/heads\/main\tHEAD$/m);
 });
 
-test("workspace host carries the v2 workspace file with members, packages, teams, byTeam defaults, store, external", () => {
+test("workspace host carries the v2 workspace file with members, packages, shared teams, defaults, store, external", () => {
   const bare = fixture.refs.agents;
   const ws = YAML.parse(show(bare, "HEAD:oats-workspace.yaml"));
   assert.equal(ws.schemaVersion, 2);
@@ -68,21 +68,19 @@ test("workspace host carries the v2 workspace file with members, packages, teams
   assert.deepEqual(ws.defaults.knowledge, { "oats.okf": { from: "package" } });
   assert.equal(ws.defaults.messaging, "none");
   assert.equal(ws.defaults.tasks, "none");
-  assert.deepEqual(ws.defaults.byTeam.engineering.capabilities, { "nw-release-tooling": { from: fixture.keys.agents } });
-  assert.deepEqual(ws.defaults.byTeam.marketing.capabilities, { "nw-brand-voice": { from: fixture.keys.marketing } });
+  assert.equal("byTeam" in ws.defaults, false, "defaults.byTeam was removed in 0.30: each soul names its own");
   assert.deepEqual(ws.stores, { org: fixture.urls.knowledge });
   assert.deepEqual(ws.messaging, { private: "per-human", channels: ["northwind-eng", "northwind-mkt"] });
   assert.deepEqual(ws.external, [{ source: `${fixture.urls.experts}@${fixture.commits.experts}`, soul: "souls/security-reviewer" }]);
 
   const membership = YAML.parse(show(bare, "HEAD:oats-membership.yaml"));
-  assert.deepEqual(membership, { schemaVersion: 2, workspace: fixture.urls.agents, team: "global" });
+  assert.deepEqual(membership, { schemaVersion: 2, workspace: fixture.urls.agents });
 });
 
-test("every member backlinks to the workspace with its team; the store has no membership file", () => {
-  const teams = { platform: "engineering", data: "engineering", marketing: "marketing", "nw-tools": "engineering" };
-  for (const [name, team] of Object.entries(teams)) {
+test("every member backlinks to the workspace (no team: membership is local since 0.30); the store has no membership file", () => {
+  for (const name of ["platform", "data", "marketing", "nw-tools"]) {
     const m = YAML.parse(show(fixture.refs[name], "HEAD:oats-membership.yaml"));
-    assert.deepEqual(m, { schemaVersion: 2, workspace: fixture.urls.agents, team });
+    assert.deepEqual(m, { schemaVersion: 2, workspace: fixture.urls.agents });
   }
   const knowledgeTree = git(fixture.refs.knowledge, "ls-tree", "-r", "--name-only", "HEAD").split("\n");
   assert.deepEqual(knowledgeTree, ["README.md"]);
@@ -117,7 +115,7 @@ test("souls: every soul dir has soul.yaml v2, AGENTS.md, a relative CLAUDE.md sy
   }
 
   const rm = YAML.parse(show(fixture.refs.agents, "HEAD:souls/release-manager/soul.yaml"));
-  assert.equal(rm.team, "engineering");
+  assert.equal("team" in rm, false);
   assert.deepEqual(rm.capabilities, { "nw-release-tooling": { from: "here" }, "nw-deploy": { from: "package" } }, "nw-deploy comes from the package, never from the member repo (example §3.5)");
   const st = YAML.parse(show(fixture.refs.agents, "HEAD:souls/support-triager/soul.yaml"));
   assert.equal(st.capabilities["nw-house-style"], "off");
@@ -128,19 +126,19 @@ test("souls: every soul dir has soul.yaml v2, AGENTS.md, a relative CLAUDE.md sy
   assert.deepEqual(sr.compatibility, { "oats.okf": ">=2.1" });
 });
 
-test("capabilities: manifests, teams, executables (mode 100755)", () => {
+test("capabilities: manifests, executables (mode 100755)", () => {
   const caps = {
-    agents: { "nw-release-tooling": { team: "engineering", bin: "bin/nw-release.mjs" }, "nw-house-style": { team: undefined, bin: null } },
-    data: { "nw-warehouse-access": { team: "engineering", bin: "bin/nw-wh.mjs" } },
-    marketing: { "nw-brand-voice": { team: "marketing", bin: null }, "nw-campaign-metrics": { team: "marketing", bin: "bin/nw-cm.mjs" } },
-    "nw-tools": { "nw-tools-dev": { team: "engineering", bin: null } },
+    agents: { "nw-release-tooling": { bin: "bin/nw-release.mjs" }, "nw-house-style": { bin: null } },
+    data: { "nw-warehouse-access": { bin: "bin/nw-wh.mjs" } },
+    marketing: { "nw-brand-voice": { bin: null }, "nw-campaign-metrics": { bin: "bin/nw-cm.mjs" } },
+    "nw-tools": { "nw-tools-dev": { bin: null } },
   };
   for (const [repo, byName] of Object.entries(caps)) {
     const bare = fixture.refs[repo];
     for (const [name, want] of Object.entries(byName)) {
       const manifest = JSON.parse(show(bare, `HEAD:capabilities/${name}/oats.json`));
       assert.equal(manifest.capability, name);
-      assert.equal(manifest.team, want.team);
+      assert.equal("team" in manifest, false);
       if (want.bin) {
         const entry = git(bare, "ls-tree", "HEAD", `capabilities/${name}/${want.bin}`);
         assert.match(entry, /^100755 blob /, `${name} executable bit`);
@@ -282,7 +280,7 @@ test("determinism: two builds of the same fixture produce identical commit OIDs"
   assert.notEqual(a.commits.agents, fixture.commits.agents);
 });
 
-test("nw-tools: a member (team engineering, tools-expert, nw-tools-dev) that ALSO publishes package nw.tools v0.4.0 — pinned as git:<ref>@v0.4.0, not in the catalog", () => {
+test("nw-tools: a member (tools-expert, nw-tools-dev) that ALSO publishes package nw.tools v0.4.0 — pinned as git:<ref>@v0.4.0, not in the catalog", () => {
   const bare = fixture.refs["nw-tools"];
   assert.equal(PACKAGE_TAGS["nw-tools"], "v0.4.0");
   assert.deepEqual(fixture.tags["nw-tools"], { tag: "v0.4.0", commit: fixture.commits["nw-tools"] });
@@ -292,7 +290,7 @@ test("nw-tools: a member (team engineering, tools-expert, nw-tools-dev) that ALS
 
   const soul = YAML.parse(show(bare, "HEAD:souls/tools-expert/soul.yaml"));
   assert.equal(soul.work, "worktree");
-  assert.deepEqual(soul.capabilities, { "nw-tools-dev": { from: "here" }, "nw-lint": { from: "package" } });
+  assert.deepEqual(soul.capabilities, { "nw-tools-dev": { from: "here" }, "nw-lint": { from: "package" }, "nw-release-tooling": { from: fixture.keys.agents } });
 
   const pkg = JSON.parse(show(bare, "HEAD:oats-package/oats-package.json"));
   assert.deepEqual({ package: pkg.package, version: pkg.version, capabilities: pkg.capabilities }, { package: "nw.tools", version: "0.4.0", capabilities: ["capabilities/nw-lint", "capabilities/nw-deploy"] });

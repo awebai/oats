@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import Ajv2020 from "ajv/dist/2020.js";
 import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
-import { basename, dirname, extname, join, relative, resolve } from "node:path";
+import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYamlFull } from "yaml";
 import { checkOkfMirror } from "./check-okf-mirror.mjs";
@@ -67,8 +67,10 @@ for (const dir of walk(join(root, "capabilities"), (p) => basename(p) === "READM
 markdown.push(join(root, "packages", "pi", "README.md"));
 markdown.push(...walk(join(root, "oats-package"), (p) => extname(p) === ".md"));
 const publicMarkdown = [...new Set(markdown.filter(existsSync))].sort();
+// Design records (docs/design/) are dated: their YAML shows the model of their date, so only
+// their links are checked, never their examples against today's schemas.
 const exampleMarkdown = [...new Set([
-  ...publicMarkdown,
+  ...publicMarkdown.filter((p) => !relative(root, p).startsWith(`docs${sep}design${sep}`)),
   ...walk(join(root, "skills"), (p) => basename(p) === "SKILL.md"),
   ...walk(join(root, "capabilities"), (p) => basename(p) === "SKILL.md"),
 ].filter(existsSync))].sort();
@@ -125,8 +127,9 @@ function exampleKind(parsed) {
   const has = (k) => keys.includes(k);
   if (parsed.schemaVersion === 2) {
     if (has("members") || has("teams") || has("defaults") || has("stores") || has("external")) return has("name") ? "oats-workspace" : null;
+    // `team` stays in the membership set so a stale (pre-0.30) example is still caught.
     if (has("workspace") && keys.every((k) => ["schemaVersion", "workspace", "team"].includes(k))) return "oats-membership";
-    if (has("workspace") || has("standalone") || has("clones") || has("settings") || has("souls")) return "oats-local";
+    if (has("workspace") || has("standalone") || has("clones") || has("settings") || has("souls") || has("teams") || has("defaultTeam")) return has("name") ? null : "oats-local";
     if (has("name") && has("description") && has("work")) return "soul";
     return null;
   }

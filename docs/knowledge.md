@@ -394,23 +394,21 @@ Keep harvest off until the end-to-end check in `okf-trigger-setup` passes.
 
 ### The `okf` team
 
-The package souls carry `team: okf`. The workspace declares the label and maps
-it to a messaging team:
+Harvesters and maintainers talk in a messaging team of their own (subjects
+prefixed `okf:` with the PR's URL) without writing into the working teams.
+Since okf 4.0.2 no package soul carries a team (0.30.0 made team membership
+local): the operator declares the team and puts both package souls in it, on
+every host that runs them.
 
-```yaml
-teams:
-  okf: { description: Knowledge operations }
-messaging:
-  byTeam:
-    okf: { team: <messaging team id> }
+```
+oats teams add okf --team <messaging team id>        # a local team; or commit teams.okf.team in oats-workspace.yaml (shared)
+oats soul teams oats.okf/knowledge-harvester --add okf
+oats soul teams oats.okf/knowledge-maintainer --add okf
 ```
 
-Harvesters and maintainers talk there (subjects prefixed `okf:` with the PR's
-URL) without writing into the working teams. Like every label it organises and
-gates nothing. A workspace without it reports `E_TEAM_UNKNOWN` on both package
-souls in discovery. They still spawn, but into no messaging team, so the
-harvester and the maintainer cannot talk, and `oats trigger test` fails its
-team check.
+`oats aweb setup` can create the team and record it for you. Like every team it
+organises and gates nothing. Without it the harvester and the maintainer cannot
+talk, and `oats trigger test` fails its team check.
 
 ## Inspection and operator commands
 

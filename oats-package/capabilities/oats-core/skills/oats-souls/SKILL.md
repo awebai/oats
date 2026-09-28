@@ -24,14 +24,14 @@ spawned from.
 ## Find souls
 
 ```bash
-oats souls                   # every soul of every confirmed member, with origin and team
+oats souls                   # every soul of every confirmed member, with origin and teams
 oats souls --json
 oats workspace status        # which members are confirmed (an unconfirmed member contributes no souls)
 ```
 
 Each row names the soul, its origin (`member <repo> @ <commit>`,
 `package <id> v<version>`, or an external soul pinned by the workspace), its
-team labels and its work mode. A **package soul** is named
+teams and default team on this deployment, and its work mode. A **package soul** is named
 `<package>/<soul>`; the bare name works unless two souls share it, in which
 case `E_SOUL_AMBIGUOUS` lists the qualified names to use.
 Souls are discovered **at the member's latest state** over the Git remote; no
@@ -55,7 +55,6 @@ schemaVersion: 2
 name: release-manager                 # must equal the directory name
 description: Cuts, verifies and announces releases.
 work: worktree                        # worktree | checkout | directory | workspace
-team: engineering                     # a label or a list (the first is the primary); else the repository's default
 capabilities:
   release-tooling: { from: here }     # this soul's own repository
   acme-deploy: { from: package }      # a package the workspace pins
@@ -67,9 +66,9 @@ workspace's `packages:` pins versions once. Workspace defaults fill the rest;
 `oats spawn <soul> --preview` shows the exact result — modules, commits,
 skills and the merged provider settings — without creating anything.
 
-Team labels organise and may add workspace defaults; they never grant or
-restrict anything. Each label is also a messaging team an instance of the
-soul may join (see oats-operate, "Teams to join").
+A soul file names no team. Which teams a soul is in is local to each
+deployment (`oats soul teams`, set by the operator); teams organise messaging
+and never grant or restrict anything (see oats-operate, "Teams to join").
 
 ## Relations: what the new instance is to you
 

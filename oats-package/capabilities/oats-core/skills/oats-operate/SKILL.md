@@ -68,8 +68,10 @@ member moving or a package being bumped affects only new spawns.
 
 **Why you have what you have:** `oats inspect --home "$OATS_INSTANCE_HOME"
 --json` reports each core capability with `layers.<slot>.from`: `soul` (your
-soul asked for it), `workspace` (a workspace default) or `team:<label>` (a
-default of one of your team labels), as recorded when you were spawned.
+soul asked for it) or `workspace` (a workspace default), as recorded when
+you were spawned. It also reports your `teams` and `defaultTeam` as recorded,
+and `recordedDefaultTeam` beside the live one: `default-team-changed` means
+the deployment's default moved since your spawn (respawn to follow it).
 
 ## Status and drift
 
@@ -91,7 +93,7 @@ Other read-only views:
 ```bash
 oats workspace status        # members confirmed or why not; locked packages
 oats souls                   # souls the workspace offers (see oats-souls)
-oats capabilities            # capabilities, member or package, with origin and team
+oats capabilities            # capabilities, member or package, with origin
 oats instance events <instance>          # what happened to an instance, as recorded
 oats instance git <instance>             # its work tree: branch, status, ahead/behind
 oats doctor                  # this deployment's local file and lock, plus diagnostics
@@ -112,7 +114,7 @@ oats spawn <soul> --purpose <slug> --harness claude --model <model>   # pick the
 named `<package>/<soul>` (the bare name works when no other soul shares it).
 
 The preview lists the modules with source, commit and `changedSince` the
-newest earlier instance of that soul, the team, the resolution revision, the
+newest earlier instance of that soul, its `teams` and `defaultTeam`, the resolution revision, the
 composed skill names and `settings.<capability>` — the merged payload each
 provider will receive. Read it before creating anything; a spawn that uses a
 preview's decision is refused if the member moved in between.
@@ -126,11 +128,12 @@ top-level. Ask your human when the relation is unclear.
 **Naming.** `--purpose <slug>` names the instance `<soul>-<slug>`; `--name
 <slug>` gives an exact name instead. Without either the kernel numbers it.
 
-**Teams to join.** The preview's `teams` lists the messaging teams the new
-instance is *eligible* for (one per team label of the soul). Its identity
-starts in the workspace's default team; to join eligible teams at spawn, pass
+**Teams to join.** The preview's `teams` lists the soul's teams on this
+deployment (`default` first), and `defaultTeam` the one its identity starts
+in. The others are *eligible*: to join them at spawn, pass
 `--provider <messaging capability> join=<label,label>`. Joining or leaving
-later is your messaging capability's skill.
+later is your messaging capability's skill. Which souls are in which teams is
+the operator's local config (`oats soul teams`, oats.setup's oats-teams).
 
 A soul with `work: worktree | checkout` needs a clone of its repository on
 this machine; the kernel finds it through `--repo <path>`, the local file's

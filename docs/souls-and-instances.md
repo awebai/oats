@@ -21,7 +21,7 @@ A soul is durable and committed. It is the part you review, improve, and keep.
 
 ```text
 <member-repo>/souls/<name>/          # discoverable in the workspace by convention
-  soul.yaml            # schemaVersion 2: name, description, work, team, capabilities, provider payloads
+  soul.yaml            # schemaVersion 2: name, description, work, capabilities, provider payloads
   AGENTS.md            # canonical operating doc
   CLAUDE.md → AGENTS.md
   skills/              # skills specific to this expert
@@ -39,13 +39,12 @@ schemaVersion: 2
 name: release-manager                     # must equal the directory name
 description: Cuts, verifies and announces releases.
 work: worktree                            # worktree | checkout | directory | workspace
-team: engineering                         # optional label; else the repo's default (oats-membership.yaml); else unassigned
 
 capabilities:                             # WHERE each capability comes from — a location, never a version
   acme-release-tooling: { from: here }    # here = this soul's own repo
   acme-warehouse-access: { from: github.com/acme/data }   # a canonical repo key of a confirmed member
   acme-deploy: { from: package }          # provided by a package pinned in the workspace's packages:
-  acme-house-style: off                   # removes a workspace/team default
+  acme-house-style: off                   # removes a workspace default
 
 knowledge:                                # provider payloads — opaque to the kernel, consumed by the slot's capability
   harvest-runtime: claude                 #   (oats.okf 2.1.3 reads only its binding's settings keys here; what the soul
@@ -61,9 +60,9 @@ compatibility:                            # optional floors on PACKAGE versions 
 | Key | Meaning |
 |---|---|
 | `name`, `description`, `work` | Required. `work` is the work mode below. |
-| `team` | A label, or a list of labels (the first the primary), declared in the workspace's `teams:`; each may add `defaults.byTeam` capabilities and is an eligible messaging team. Never gates or restricts. |
+| `team` | **Removed in 0.30.0** (`E_WORKSPACE_SCHEMA`: "team membership is local since 0.30: `oats soul teams`"). Which teams a soul belongs to is the deployment's `oats-local.yaml` (`souls.teams`, `souls.default`) — see [workspaces.md](workspaces.md#teams). |
 | `private` | **Ignored since 0.26.0:** souls have no private mode. Every soul of a confirmed member is listed and spawnable; a soul that still carries the field gets a `soul-private-ignored` warning. Remove it. |
-| `capabilities` | `<cap>: { from: here \| <repo key> \| package }` or `<cap>: off`. Composed over `defaults.<slot>` ⊕ `defaults.capabilities` ⊕ `defaults.byTeam[team]`; the soul wins. |
+| `capabilities` | `<cap>: { from: here \| <repo key> \| package }` or `<cap>: off`. Composed over `defaults.<slot>` ⊕ `defaults.capabilities`; the soul wins. |
 | `knowledge` / `messaging` / `tasks` | The slot's provider payload (true of every instance of the soul), or `none`. Merged with `oats-local.yaml` `settings.<cap>` and `spawn --provider <cap>`; the provider's `binding` contract validates the result — and refuses keys it does not declare. For `oats.okf` 2.1.3 the admitted keys are its settings (`bindings-file`, `state-dir`, `harvest-runtime`, `harvest-model`); the soul's `owns`/`reads` live in `souls/<name>/okf.json`, which OKF reads from the soul directory. |
 | `compatibility` | `<cap>: <semver range>` checked against the locked package version (`E_COMPATIBILITY`). |
 
@@ -145,8 +144,11 @@ skills and instructions), a workspace spawn records:
   },
   "workspace": {
     "key": "github.com/acme/agents", "commit": "3f2a9c1e…", "resolution": "20ec8ec527311d71d0973086",
-    "soul": { "repoKey": "github.com/acme/agents", "commit": "3f2a9c1e…", "team": "engineering" }
-  }
+    "soul": { "repoKey": "github.com/acme/agents", "commit": "3f2a9c1e…" }
+  },
+  "teams": [{ "label": "ana-acme", "team": "ana-acme:ana.aweb.ai", "default": true, "from": "local" },
+            { "label": "engineering", "team": "engineering:acme.aweb.ai", "default": false, "from": "shared" }],
+  "defaultTeam": { "label": "ana-acme", "team": "ana-acme:ana.aweb.ai", "from": "deployment" }
 }
 ```
 
@@ -158,10 +160,14 @@ skills and instructions), a workspace spawn records:
   which instance holds a retained seat or a one-off state root. `spawn
   --preview` shows the same map before anything exists, as `settings.<cap>`,
   beside `providers` (the `--provider` flags as given).
-- `workspace` — the workspace commit observed at spawn, the soul's repo/commit/
-  team, and the **resolution revision** the spawn decision bound. `oats status`
+- `workspace` — the workspace commit observed at spawn, the soul's repo/commit,
+  and the **resolution revision** the spawn decision bound. `oats status`
   compares `workspace.soul` with the member's current commit too: `soul: <name>
   from <member> @ <c7>  [member moved since …]` (`--json`: `instances[].soul`).
+- `teams` / `defaultTeam` — the soul's teams at spawn, exactly as the providers
+  received them (mapped teams only) and its default: evidence, never rewritten.
+  A running home's hooks and messaging commands read the teams live
+  ([capabilities.md](capabilities.md#teams-in-the-provider-environment)).
 
 A running instance never changes under itself: a member moving or a package
 bump affects only new spawns.
@@ -215,7 +221,7 @@ unchanged. This is a normal agent process with its own home and tools, not a
 subagent call.
 
 `--preview` reports `modules[]` (`from`, `layer`, `changedSince` the newest
-previous instance of the soul), `team`, the `resolution` revision, the decision
+previous instance of the soul), `teams` and `defaultTeam` (the soul's teams here), the `resolution` revision, the decision
 it would bind, `providers` (the `--provider` map exactly as given) and
 `settings.<cap>` (the merged payload each provider's binding will receive);
 the apply refuses with `E_DECISION_STALE` if a member
