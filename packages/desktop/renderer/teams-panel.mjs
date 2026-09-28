@@ -32,7 +32,8 @@ export const teamsCSS = `
 .teams-panel .teams-problem > p { margin:0; }
 .teams-panel .team-main > .teams-problem { margin-top:4px; }
 .teams-panel .teams-problem > p.teams-fix { margin-top:2px; color:var(--muted); font-size:11.5px; }
-.teams-panel .teams-refusal { padding:9px 12px; }
+.teams-panel .teams-refusal, .teams-panel .teams-warnings { padding:9px 12px; }
+.teams-panel .teams-warnings + .team-row { border-top:1px solid var(--border); }
 .teams-panel .teams-problem.teams-warning { border-left-color:var(--warn); }
 .teams-panel .teams-problem > p.teams-warning-head { color:var(--warn); font-weight:650; }
 .teams-panel .teams-note { margin:0; padding:9px 12px; font-size:12px; color:var(--muted); }
@@ -268,12 +269,19 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
   function render() {
     body.replaceChildren(); intro.hidden = !current;
     if (!current) return;
+    // The provider's non-fatal problems (oats.aweb 1.17 `warnings[]`), verbatim, above the rows.
+    if (current.warnings?.length) {
+      const said = node('div', undefined, 'teams-warnings'), box = node('div', undefined, 'teams-problem teams-warning'); box.setAttribute('role', 'status');
+      box.append(node('p', current.warnings.length === 1 ? 'A warning from the messaging provider:' : 'Warnings from the messaging provider:', 'teams-warning-head'),
+        ...current.warnings.map(w => node('p', w, 'teams-warning-text')));
+      said.append(box); body.append(said);
+    }
     body.append(defaultRow(current.defaultTeam));
     const joined = new Map(current.joined.map(j => [j.label, j]));
     // What the provider did, with its non-fatal warnings (join/leave answers only; the next read
     // clears them). Every action names an eligible or joined row (teamsDocument), so each has its row.
     const warned = (current.actions || []).filter(a => a.warning);
-    const rows = [...current.eligible.map(e => ({ label: e.label, team: e.team, eligible: true })),
+    const rows = [...current.eligible.map(e => ({ label: e.label, team: e.team, eligible: true, from: e.from ?? null })),
       ...current.joined.filter(j => !current.eligible.some(e => e.label === j.label)).map(j => ({ label: j.label, team: j.team, eligible: false }))];
     // A refusal whose row the re-read no longer offers is said at panel level, never dropped.
     if (rowError && !rows.some(row => row.label === rowError.label)) {
@@ -283,14 +291,16 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
     }
     for (const row of rows) {
       const j = joined.get(row.label), name = row.label;
+      // Where the team is declared (1.17 eligible[].from), in Workspace › Teams' words; absent says nothing.
+      const team = row.from ? `${row.team} · ${row.from}` : row.team;
       let el;
       if (j) {
-        const since = node('div', `${row.team} · Joined ${whenText(j.since)}`, 'team-meta'); since.title = j.since;
+        const since = node('div', `${team} · Joined ${whenText(j.since)}`, 'team-meta'); since.title = j.since;
         const metas = [since, receiveText(j.receive).replace(/^./, c => c.toUpperCase())];
         if (!row.eligible) metas.push('No longer eligible in this workspace.');
         el = teamRow(row.label, name, metas, control('leave', row.label));
         const where = node('details'); where.append(node('summary', 'Identity home'), node('pre', j.identityHome)); el.append(where);
-      } else el = teamRow(row.label, name, [`${row.team} · Not joined`], control('join', row.label));
+      } else el = teamRow(row.label, name, [`${team} · Not joined`], control('join', row.label));
       if (rowError?.label === row.label) el.append(problem(rowError.error, 'The messaging provider refused.'));
       for (const a of warned.filter(a => a.label === row.label)) el.append(warning(a));
       body.append(el);
