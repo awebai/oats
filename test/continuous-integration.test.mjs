@@ -12,9 +12,12 @@ test("direct main pushes retain the same read-only CI gates as pull requests", (
   assert.equal(workflow.permissions.contents, "read");
   assert.match(workflow.concurrency.group, /github\.event\.pull_request\.number \|\| github\.sha/);
   const steps = workflow.jobs.verify.steps, commands = steps.map((step) => step.run);
-  for (const command of ["npm run check", "npm run check:pi", "npm run validate", "npm run validate:okf", "npm run pack:check", "npm run smoke:tarball"]) {
+  for (const command of ["npm run check", "npm run check:pi", "npm run validate", "npm run pack:check", "npm run smoke:tarball"]) {
     assert.ok(commands.includes(command), `missing gate: ${command}`);
   }
+  // The legacy soul knowledge bundles (agents/*/soul/knowledge) moved to the central base,
+  // which validates itself; the repository no longer carries a validate:okf gate.
+  assert.ok(!commands.includes("npm run validate:okf"), "no gate for the removed soul bundles");
   // The suite runs sharded: every shard of the matrix runs `npm test -- --test-shard=k/N`,
   // and each shard installs the desktop deps (no Desktop suite silently skipped).
   const tests = workflow.jobs.tests, shards = tests.strategy.matrix.shard;

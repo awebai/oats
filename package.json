@@ -18,7 +18,6 @@
     "check": "node scripts/check-package-dry-runs.mjs --syntax-only",
     "check:pi": "node --experimental-strip-types --check packages/pi/extension/index.ts",
     "validate": "node scripts/validate-project.mjs",
-    "validate:okf": "node scripts/validate-okf.mjs",
     "pack:check": "node scripts/check-package-dry-runs.mjs",
     "smoke:tarball": "node scripts/clean-room-smoke.mjs"
   },

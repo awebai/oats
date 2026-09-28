@@ -1,8 +1,0 @@
-name: cli-dev
-kind: persistent
-description: Kernel and CLI expert developer — owns lib/core.mjs and bin/oats.mjs
-type: developers
-repo: .
-work: worktree
-runtime: claude
-model: opus
