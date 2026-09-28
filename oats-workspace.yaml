@@ -27,9 +27,10 @@ packages:
   oats.authoring: v1.0.3
   oats.dev: v1.1.0
 
-teams:
-  global: { description: The framework's expert souls and its package experts }
-  okf: { description: The okf knowledge operations team (oats.okf's harvester and maintainer package souls) }
+# No shared teams yet (team model v2). A shared team is committed here WITH its
+# provider id (`teams: { oats: { team: <id> } }`) once every deployment using
+# this workspace runs OATS 0.30; personal teams, the default team and which
+# souls join which team live in each deployment's own oats-local.yaml.
 
 # The framework's own souls consume the official core, knowledge and messaging
 # providers as packages, exactly as an adopter does. Every soul gets messaging:
