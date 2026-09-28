@@ -2163,7 +2163,7 @@ test("the SHIPPED aweb hook is fatal on every terminal pre-mint path (reviewer-5
   const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
   // CURRENT aw shape: memberships, not teams. Using the stale key here is what
   // let a real field drift pass review (reviewer-602627c).
-  write(join(bin, "aw"), `#!/bin/sh\nif [ "$1" = "team" ] && [ "$2" = "list" ]; then echo '{"memberships":[],"active_team":null}'; exit 0; fi\nexit 0\n`);
+  write(join(bin, "aw"), `#!/bin/sh\nif [ "$1" = "version" ]; then echo "aw 1.36.13"; exit 0; fi\nif [ "$1" = "team" ] && [ "$2" = "list" ]; then echo '{"memberships":[],"active_team":null}'; exit 0; fi\nexit 0\n`);
   execFileSync("chmod", ["+x", join(bin, "aw")]);
   const root = join(base, "awroot"); mkdirSync(join(root, ".aw"), { recursive: true });
   const run = (env) => spawnSync(process.execPath, [hook, "spawn"], {
@@ -2251,6 +2251,7 @@ test("a name-only team config resolves against the CURRENT aw memberships shape 
   // classified it as "no membership" — and since that path is now fatal, it
   // would block every spawn on a perfectly valid deployment.
   write(join(bin, "aw"), `#!/bin/sh
+if [ "$1" = "version" ]; then echo "aw 1.36.13"; exit 0; fi
 if [ "$1" = "team" ] && [ "$2" = "list" ]; then echo '{"active_team":null,"memberships":[{"team_id":"default:acme.aweb.ai","alias":"x"}]}'; exit 0; fi
 if [ "$1" = "team" ] && [ "$2" = "invite" ]; then echo '{"token":"tok"}'; exit 0; fi
 if [ "$1" = "team" ] && [ "$2" = "join" ]; then echo '{"team_id":"default:acme.aweb.ai","alias":"probe"}'; exit 0; fi
@@ -2289,6 +2290,7 @@ if [ "$1" = "team" ] && [ "$2" = "join" ]; then echo '{"alias":"probe" ${TOKEN}'
     const base = temp();
     const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
     write(join(bin, "aw"), `#!/bin/sh
+if [ "$1" = "version" ]; then echo "aw 1.36.13"; exit 0; fi
 if [ "$1" = "team" ] && [ "$2" = "list" ]; then echo '{"active_team":"default:acme.aweb.ai","memberships":[{"team_id":"default:acme.aweb.ai","alias":"x"}]}'; exit 0; fi
 ${script}
 exit 0
@@ -2317,6 +2319,7 @@ test("a WELL-FORMED join response cannot reflect the invite token into the outpu
   // alias, and the hook printed it twice on exit 0.
   const TOKEN = "inv_SUPERSECRET_TOKEN_9f3a";
   write(join(bin, "aw"), `#!/bin/sh
+if [ "$1" = "version" ]; then echo "aw 1.36.13"; exit 0; fi
 if [ "$1" = "team" ] && [ "$2" = "list" ]; then echo '{"active_team":"default:acme.aweb.ai","memberships":[{"team_id":"default:acme.aweb.ai","alias":"x"}]}'; exit 0; fi
 if [ "$1" = "team" ] && [ "$2" = "invite" ]; then echo '{"token":"${TOKEN}"}'; exit 0; fi
 if [ "$1" = "team" ] && [ "$2" = "join" ]; then echo '{"team_id":"${TOKEN}","alias":"${TOKEN}"}'; exit 0; fi

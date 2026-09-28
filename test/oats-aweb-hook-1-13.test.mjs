@@ -11,7 +11,6 @@ import { dirname, join, resolve } from "node:path";
 
 const HOOK = resolve(new URL("../capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
 const BINDING = resolve(new URL("../capabilities/oats-aweb/bin/oats-aweb-binding.mjs", import.meta.url).pathname);
-const TEAM_FLAG_FLOOR = "1.36.2";
 const NORMAL_SCOPES = ["mail.read", "mail.send", "chat.read", "chat.send", "events.read", "coord.read", "coord.write", "presence.write", "contacts.read", "contacts.write"];
 const REVIEWER_SCOPES = ["mail.read", "chat.read", "events.read", "coord.read", "presence.write"];
 
@@ -25,7 +24,6 @@ const path = require("node:path");
 const a = process.argv.slice(2);
 const s = a.join(" ");
 const log = ${JSON.stringify(join(base, "aw.log"))};
-const floor = ${JSON.stringify(TEAM_FLAG_FLOOR)};
 const j = (obj) => JSON.stringify(obj, null, 2);
 function versionTuple(v) { return String(v || "0.0.0").replace(/^aw\\s+v?/, "").replace(/^v/, "").split(".").slice(0, 3).map(n => Number(n) || 0); }
 function atLeast(v, f) { const A = versionTuple(v), B = versionTuple(f); for (let i = 0; i < 3; i++) if (A[i] !== B[i]) return A[i] > B[i]; return true; }
@@ -33,7 +31,7 @@ function val(flag) { const i = a.indexOf(flag); return i >= 0 ? a[i + 1] : undef
 function csv(name, fallback) { return String(process.env[name] || fallback).split(",").map(s => s.trim()).filter(Boolean); }
 fs.appendFileSync(log, JSON.stringify({ argv: a, cwd: process.cwd(), identityHome: process.env.AWEB_IDENTITY_HOME || null }) + "\\n");
 if (a[0] === "id" && a[1] === "grant" && process.env.AWEB_IDENTITY_HOME) { console.error("grant command refuses external identity home"); process.exit(2); }
-if (s === "version") { console.log("aw " + (process.env.FAKE_AW_VERSION || "1.36.3")); process.exit(0); }
+if (s === "version") { console.log("aw " + (process.env.FAKE_AW_VERSION || "1.36.13")); process.exit(0); }
 if (s.startsWith("wake ")) process.exit(0);
 if (a[0] === "custody" && a[1] === "status" && a.includes("--json")) {
   const team = process.env.FAKE_CUSTODY_TEAM || "t:example.test";
@@ -60,7 +58,6 @@ if (a[0] === "custody" && a[1] === "status" && a.includes("--json")) {
   console.log(j(doc)); process.exit(0);
 }
 if (a[0] === "id" && a[1] === "grant" && a[2] === "mint") {
-  if (a.includes("--team") && !atLeast(process.env.FAKE_AW_VERSION || "1.36.3", floor)) { console.error("unknown flag: --team"); process.exit(2); }
   if (process.env.FAKE_MINT_FAIL) { console.error("mint unavailable"); process.exit(1); }
   const out = val("--out");
   const socket = val("--custody-socket");
@@ -215,11 +212,11 @@ test("custody preflight requires team grant-status endpoint when reported, allow
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-test("real aw 1.36.3 custody preflight reports needs-configuration instead of faking a pass", (t) => {
+test("real aw 1.36.13 custody preflight reports needs-configuration instead of faking a pass", (t) => {
   const realAw = process.env.AW_REAL_CLI_BIN;
-  if (!realAw) { t.skip("set AW_REAL_CLI_BIN to a real aw 1.36.3+ binary to exercise native custody status"); return; }
+  if (!realAw) { t.skip("set AW_REAL_CLI_BIN to a real aw 1.36.13+ binary to exercise native custody status"); return; }
   const version = spawnSync(realAw, ["version"], { encoding: "utf8", timeout: 10000 });
-  if (version.status !== 0 || !awAtLeast(version.stdout + version.stderr, "1.36.3")) { t.skip(`real aw is not 1.36.3+: ${version.stdout || version.stderr}`); return; }
+  if (version.status !== 0 || !awAtLeast(version.stdout + version.stderr, "1.36.13")) { t.skip(`real aw is not 1.36.13+: ${version.stdout || version.stderr}`); return; }
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-113-real-"));
   try {
     const { root, home } = deployment(base); const custody = resident(base);
@@ -238,7 +235,7 @@ test("real aw fixture: unattached grant home reports the released custody locato
   const realAw = process.env.AW_REAL_CLI_BIN || "aw";
   if (!fixture) { t.skip("set AW_REAL_GRANT_FIXTURE to an unattached real grant home"); return; }
   const version = spawnSync(realAw, ["version"], { encoding: "utf8", timeout: 10000 });
-  if (version.status !== 0 || !awAtLeast(version.stdout + version.stderr, "1.36.3")) { t.skip(`real aw is not 1.36.3+: ${version.stdout || version.stderr}`); return; }
+  if (version.status !== 0 || !awAtLeast(version.stdout + version.stderr, "1.36.13")) { t.skip(`real aw is not 1.36.13+: ${version.stdout || version.stderr}`); return; }
   const r = spawnSync(realAw, ["custody", "status", "--json"], { cwd: fixture, encoding: "utf8", env: { ...process.env, AWEB_IDENTITY_HOME: fixture }, timeout: 10000 });
   assert.notEqual(r.status, 0);
   assert.match(r.stderr + r.stdout, /grant home has no custody\.socket_path locator/);
@@ -260,18 +257,18 @@ test("custody preflight requires e2ee operations by default; identity.e2ee false
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-test("grant mint passes --team and refuses below the custody-attach floor before mint", () => {
+test("single aw floor refuses older aw before grant mint and always passes --team", () => {
   let base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
   try {
-    const { home, r } = spawnGrant(base, {}, { FAKE_AW_VERSION: TEAM_FLAG_FLOOR });
+    const { home, r } = spawnGrant(base, {}, { FAKE_AW_VERSION: "1.36.12" });
     assert.notEqual(r.status, 0);
-    assert.match(r.doc.warning, /cannot attach a grant to custody \(--custody-socket\); grants need aw >= 1\.36\.3/);
-    assert.equal(logLines(base).some((l) => l.argv.slice(0, 3).join(" ") === "id grant mint"), false);
+    assert.match(r.doc.warning, /aw 1\.36\.12 is older than required 1\.36\.13/);
+    assert.equal(existsSync(join(base, "aw.log")) && logLines(base).some((l) => l.argv.slice(0, 3).join(" ") === "id grant mint"), false);
     assert.equal(existsSync(join(home, ".aweb-identity")), false);
   } finally { rmSync(base, { recursive: true, force: true }); }
   base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
   try {
-    const { r } = spawnGrant(base, {}, { FAKE_AW_VERSION: "1.36.3" });
+    const { r } = spawnGrant(base, {}, { FAKE_AW_VERSION: "1.36.13" });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     const mint = logLines(base).find((l) => l.argv.slice(0, 3).join(" ") === "id grant mint").argv;
     assert.equal(mint[mint.indexOf("--team") + 1], "t:example.test");
@@ -340,7 +337,7 @@ test("readiness checks the newest grant home for custody attachment", () => {
     const checked = runBindingCheck(bin, settings(custody), ctx);
     assert.equal(checked.status, 0, checked.stderr);
     assert.equal(checked.doc.result.status, "needs-configuration");
-    assert.deepEqual(checked.doc.result.problems.find((p) => p.code === "custody")?.message, "grant newer is not attached to custody; retire and respawn on aw >= 1.36.3");
+    assert.deepEqual(checked.doc.result.problems.find((p) => p.code === "custody")?.message, "grant newer is not attached to custody; retire and respawn on aw >= 1.36.13");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 

@@ -23,7 +23,7 @@ const s = a.join(" ");
 const log = ${JSON.stringify(join(base, "aw.log"))};
 fs.appendFileSync(log, JSON.stringify({ argv: a, cwd: process.cwd(), identityHome: process.env.AWEB_IDENTITY_HOME || null }) + "\\n");
 const j = (obj) => JSON.stringify(obj, null, 2);
-if (s === "version") { console.log("aw 1.36.1"); process.exit(0); }
+if (s === "version") { console.log("aw 1.36.13"); process.exit(0); }
 if (s.startsWith("wake ")) process.exit(0);
 if (s.startsWith("team list")) { console.log(j({ active_team: "t:example.test", memberships: [{ team_id: "t:example.test" }] })); process.exit(0); }
 if (s.startsWith("team invite")) { console.log(j({ token: "TOK-secret" })); process.exit(0); }
@@ -75,8 +75,26 @@ function bindingRequest(settings = {}) {
   };
 }
 
+/** oats.aweb 1.16.1 checks the aw floor (>= 1.36.13) in readiness too. The binding check gets
+ *  an aw that answers only `version` (and logs every call), so the check never reads the host's
+ *  own aw and otherwise runs exactly as before the floor. */
+function versionOnlyAw() {
+  const bin = mkdtempSync(join(tmpdir(), "oats-aweb-1121-aw-"));
+  write(join(bin, "aw"), `#!/usr/bin/env node
+const s = process.argv.slice(2).join(" ");
+require("node:fs").appendFileSync(${JSON.stringify(join(bin, "calls.log"))}, s + "\\n");
+if (s === "version") { console.log("aw 1.36.13"); process.exit(0); }
+console.error("version-only aw: unexpected " + s); process.exit(2);
+`);
+  chmodSync(join(bin, "aw"), 0o755);
+  return bin;
+}
 function runBinding(input, env = {}) {
-  const r = spawnSync(process.execPath, [BINDING, "check"], { input: JSON.stringify(input), encoding: "utf8", env: { ...process.env, ...env } });
+  const bin = versionOnlyAw();
+  const r = spawnSync(process.execPath, [BINDING, "check"], { input: JSON.stringify(input), encoding: "utf8", env: { ...process.env, ...env, PATH: `${bin}:${process.env.PATH}` } });
+  const calls = existsSync(join(bin, "calls.log")) ? readFileSync(join(bin, "calls.log"), "utf8").split("\n").filter(Boolean) : [];
+  rmSync(bin, { recursive: true, force: true });
+  assert.deepEqual(calls.filter((c) => c !== "version"), [], "the binding check calls aw only for its version");
   let doc; try { doc = JSON.parse(r.stdout); } catch { doc = undefined; }
   return { ...r, doc };
 }
