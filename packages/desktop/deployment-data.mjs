@@ -161,6 +161,7 @@ export function deploymentStatusData(document, deployment) {
     check(!seenSouls.has(agent.dir)); seenSouls.add(agent.dir);
     const out = withHarness(agent, fields(agent, ['name', 'description', 'work', 'model', 'backend', 'team', 'dir', 'kind', 'repo', 'capability', 'color', 'launch-config']));
     if (own(agent, 'yolo')) { check(agent.yolo === null || typeof agent.yolo === 'boolean'); out.yolo = agent.yolo; }
+    if (own(agent, 'key')) { check(soulKey(agent.key)); out.key = agent.key; } // the kernel's soul key, when reported
     if (own(agent, 'soulSource')) out.soulSource = soulSource(agent.soulSource);
     if (own(agent, 'retireFailures')) out.retireFailures = array(agent.retireFailures).map(row => fields(row, ['instance', 'completedAt', 'error', 'resultPath']));
     out.instances = array(agent.instances, 10000).flatMap(instance => {
@@ -264,6 +265,9 @@ export function capabilitiesData(document) {
 const SOUL_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/;
 const TEAM_LABEL = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const PACKAGE_ID = /^[a-z0-9][a-z0-9._-]{0,127}$/; // the kernel's package-id grammar, bounded
+// The kernel's soul key (K1's pattern): '*' never names one soul, so it is not a row key.
+const SOUL_KEY = /^(?:[a-z0-9][a-z0-9._-]*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const soulKey = v => typeof v === 'string' && v.length <= 256 && SOUL_KEY.test(v);
 export function soulsData(document) {
   check(record(document) && document.schemaVersion === 1 && document.ok === true);
   const data = document.result;
@@ -275,15 +279,18 @@ export function soulsData(document) {
     check(SOUL_NAME.test(out.name ?? '') && ['member', 'external', 'package'].includes(out.kind)
       && ['worktree', 'checkout', 'directory', 'workspace', 'attached'].includes(out.work));
     // Package souls (feature package-souls, 0.28): a soul a locked package ships, addressed by its
-    // qualified name `<package>/<soul>`. Every row carries the kernel's soul key (its soul-key
-    // rule): the qualified name for a package soul, the bare name otherwise. It is what
-    // `oats soul teams <key>` and the souls.teams/souls.default keys take.
+    // qualified name `<package>/<soul>`.
     if (out.kind === 'package') {
       check(typeof row.package === 'string' && PACKAGE_ID.test(row.package) && typeof row.version === 'string' && row.version.length > 0 && row.version.length <= 64
         && row.qualifiedName === `${row.package}/${out.name}`);
       Object.assign(out, { package: row.package, version: row.version, qualifiedName: row.qualifiedName });
     } else check(!own(row, 'qualifiedName') && !own(row, 'package'));
+    // The soul key (`oats soul teams <key>`, the souls.teams/souls.default keys) is the kernel's
+    // soul-key rule, exactly: a package soul's qualified name, every other soul's bare name
+    // (external included). When the row reports `key`, it must BE that key: a mismatch refuses the
+    // document (a kernel/contract defect, never papered over).
     out.key = out.kind === 'package' ? out.qualifiedName : out.name;
+    if (own(row, 'key')) check(soulKey(row.key) && row.key === out.key);
     flags(row, ['private', 'spawnable'], out);
     // desktop-facts: whether a spawn here would refuse, and the file. The harness/model default is not kept:
     // it is always the kernel's today (#217 note 4), never the soul's choice; the spawn preview reports the real one.
@@ -297,7 +304,10 @@ export function soulsData(document) {
       check(Array.isArray(row.labels) && row.labels.length <= 64 && row.labels.every(l => typeof l === 'string' && TEAM_LABEL.test(l)) && new Set(row.labels).size === row.labels.length);
       out.labels = [...row.labels];
     }
-    seen.set(out.key, seen.has(out.key) ? null : out); // the kernel's key: a package soul never collides with a member of the same name
+    // One soul per key: a package soul never collides with a member of the same bare name, while a
+    // member and an external soul of one name stay ambiguous (never guess which one spawns).
+    const id = out.key;
+    seen.set(id, seen.has(id) ? null : out);
   }
   const souls = [...seen.values()].filter(Boolean);
   const ambiguous = [...seen].filter(([, row]) => row === null).map(([key]) => key);
