@@ -561,11 +561,12 @@ function renderGrid(s, { restoreFocus = true } = {}) {
     grid.append(empty);
     return;
   }
-  // Workspace v4: grouped by primary team (the kernel's `team`) or by repository;
-  // groups and cards in name order. Souls of a member that is not confirmed are
-  // listed last, apart, with the member's reason (workspace status).
+  // Workspace v4: grouped by the soul's default team (team model v2 `defaultTeam`,
+  // else 0.29's `team`) or by repository; groups and cards in name order. Souls of
+  // a member that is not confirmed are listed last, apart, with the member's reason
+  // (workspace status).
   const doc = grid.ownerDocument;
-  const key = (a) => s.groupBy === "repo" ? repoLabel(a) : (a.team || "No team");
+  const key = (a) => s.groupBy === "repo" ? repoLabel(a) : teamGroup(a);
   const groups = new Map();
   for (const a of [...list].sort((a, b) => String(a.name).localeCompare(String(b.name)))) {
     if (!groups.has(key(a))) groups.set(key(a), []);
@@ -700,9 +701,19 @@ function canLaunchSoul(s, agent) {
 }
 
 const repoLabel = (a) => a.repoName || (a.repo ? String(a.repo).split("/").filter(Boolean).at(-1) : "") || "workspace";
-/** A soul's team labels as reported: `labels` (primary first) when the roster
- * carries them, else its primary `team` alone. */
-const soulTeams = (a) => Array.isArray(a.labels) && a.labels.length ? a.labels : a.team ? [a.team] : [];
+/** A soul's team labels, its default first. Team model v2 (0.30) rows carry `teams`
+ * [{label, team|null, default, from, mapped}]; 0.29 rows carried `labels` (default
+ * first) and `team`, which 0.30 removed. */
+const v2Teams = (a) => Array.isArray(a.teams) && a.teams.every((t) => typeof t?.label === "string" && t.label);
+const soulTeams = (a) => v2Teams(a) ? [...a.teams].sort((x, y) => (y.default === true) - (x.default === true)).map((t) => t.label)
+  : Array.isArray(a.labels) && a.labels.length ? a.labels : a.team ? [a.team] : [];
+/** The group a soul sits in by team: its default team's label. A v2 soul with no default
+ * team configured on this computer says so; a 0.29 soul with none reads "No team". */
+const teamGroup = (a) => {
+  if (typeof a.defaultTeam?.label === "string" && a.defaultTeam.label) return a.defaultTeam.label;
+  if (v2Teams(a)) return a.teams.find((t) => t.default === true)?.label || "No default team";
+  return a.team || "No team";
+};
 
 function soulCard(s, a) {
   const attached = a.work === "attached";
