@@ -100,8 +100,9 @@ export function teamsDocument(run, address, { actions = false } = {}) {
   if (!record(run) || run.operationsApi !== 2 || run.operation !== address) return null;
   const d = run.result, did = actions && record(d) && Object.hasOwn(d, 'actions');
   // Required: defaultTeam, eligible, joined, at. 0.29-only (optional, absent on team model v2):
-  // primary, unmapped. Additive (v2, oats.aweb 1.17): left, the last ≤20 live-read leaves.
-  const allowed = ['defaultTeam', 'eligible', 'joined', 'at', 'primary', 'unmapped', 'left', ...(did ? ['actions'] : [])];
+  // primary, unmapped. Additive (v2, oats.aweb 1.17): left, the last ≤20 live-read leaves; warnings,
+  // the provider's non-fatal problems (strings, as worded); eligible rows' from (shared|local).
+  const allowed = ['defaultTeam', 'eligible', 'joined', 'at', 'primary', 'unmapped', 'left', 'warnings', ...(did ? ['actions'] : [])];
   if (!record(d) || !['defaultTeam', 'eligible', 'joined', 'at'].every(k => Object.hasOwn(d, k)) || Object.keys(d).some(k => !allowed.includes(k))) return null;
   if (did && !(Array.isArray(d.actions) && d.actions.length <= 64 && d.actions.every(actionRow))) return null;
   // The default team: 0.29 {team, source} or team model v2's DefaultTeam (or null), each a closed set.
@@ -112,7 +113,9 @@ export function teamsDocument(run, address, { actions = false } = {}) {
   if (!list(d.eligible) || !list(d.joined) || !list(unmapped)) return null;
   if (Object.hasOwn(d, 'left') && !(Array.isArray(d.left) && d.left.length <= 20 && d.left.every(l => exact(l, ['label', 'team', 'at', 'reason'])
     && label(l.label) && text(l.team) && text(l.at, 64) && text(l.reason, 64)))) return null;
-  if (!d.eligible.every(e => exact(e, ['label', 'team', 'joined']) && label(e.label) && text(e.team) && typeof e.joined === 'boolean')) return null;
+  if (!d.eligible.every(e => exact(e, ['label', 'team', 'joined', ...(Object.hasOwn(e, 'from') ? ['from'] : [])]) && label(e.label) && text(e.team)
+    && typeof e.joined === 'boolean' && (!Object.hasOwn(e, 'from') || ['shared', 'local'].includes(e.from)))) return null;
+  if (Object.hasOwn(d, 'warnings') && !(Array.isArray(d.warnings) && d.warnings.length <= 64 && d.warnings.every(w => text(w, 512)))) return null;
   if (!d.joined.every(j => exact(j, ['label', 'team', 'since', 'identityHome', 'receive']) && label(j.label) && text(j.team) && text(j.since, 64)
     && text(j.identityHome, 4096) && j.identityHome.startsWith('/') && text(j.receive, 32))) return null;
   if (!unmapped.every(label)) return null;
@@ -121,7 +124,7 @@ export function teamsDocument(run, address, { actions = false } = {}) {
   // Each action names a row this answer reports (eligible or joined), as the contract says.
   if (did && !d.actions.every(x => d.eligible.some(e => e.label === x.label) || d.joined.some(j => j.label === x.label))) return null;
   return structuredClone({ defaultTeam: d.defaultTeam, primary: Object.hasOwn(d, 'primary') ? d.primary : null, eligible: d.eligible, joined: d.joined, unmapped, at: d.at,
-    ...(Object.hasOwn(d, 'left') ? { left: d.left } : {}), ...(did ? { actions: d.actions } : {}) });
+    ...(Object.hasOwn(d, 'left') ? { left: d.left } : {}), ...(Object.hasOwn(d, 'warnings') ? { warnings: d.warnings } : {}), ...(did ? { actions: d.actions } : {}) });
 }
 /** One `actions` row of a join/leave answer: the verb and label, an optional
  * `released` word, an optional provider receipt (a bounded record, kept opaque), and an optional
