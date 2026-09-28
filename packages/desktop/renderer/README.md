@@ -485,7 +485,8 @@ and embedded resources are disabled rather than guessed. Existing guarded
 `ctx.openFile(path)` links keep their path-backed behavior. Files stay alongside
 terminal/brain tabs without becoming a primary navigation surface.
 
-There is no agent-facing CLI command for opening a file.
+There is no agent-facing CLI command for opening a file. The read route's guards and the
+renderer's sanitizing are in [the file viewer](../docs/desktop-file-viewer.md).
 
 ## Terminal focus discipline (shell-level)
 
