@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "operationsApi": 2,
+    "kernel": "0.29.4",
+    "subject": {
+      "kind": "instance",
+      "instance": "dev-q",
+      "home": "/fixture/base/deployment/agents/dev/instances/dev-q",
+      "soul": "dev"
+    },
+    "workspace": {
+      "key": "local//fixture/base/remotes/ws.git",
+      "name": "acme",
+      "deployment": "/fixture/base/deployment",
+      "commit": "5048f113d2665455821233e3f63d89a54c32a133",
+      "standalone": false
+    },
+    "souls": [
+      {
+        "soulsApi": 2,
+        "name": "dev",
+        "repoKey": "local//fixture/base/remotes/ws.git",
+        "commit": "5048f113d2665455821233e3f63d89a54c32a133",
+        "kind": null,
+        "path": null,
+        "description": "dev fixture soul.",
+        "work": "directory",
+        "harness": null,
+        "model": null,
+        "declarations": {
+          "requires": null,
+          "defaults": null,
+          "knowledge": null,
+          "resources": null,
+          "children": null,
+          "capabilities": null
+        },
+        "declarationProblems": [],
+        "instructions": {
+          "file": "/fixture/base/deployment/agents/dev/souls/5048f113d266/AGENTS.md",
+          "text": "# dev\n",
+          "truncated": false
+        }
+      }
+    ],
+    "layers": {
+      "knowledge": {
+        "id": null,
+        "from": null
+      },
+      "messaging": {
+        "id": null,
+        "from": null
+      },
+      "tasks": {
+        "id": null,
+        "from": null
+      }
+    },
+    "capabilities": [],
+    "capabilitiesOff": [],
+    "teams": [],
+    "defaultTeam": null,
+    "teamsSource": "live",
+    "recordedDefaultTeam": null,
+    "launch": {
+      "declared": {
+        "harness": "claude",
+        "model": "claude-opus-5-5"
+      },
+      "effective": {
+        "harness": "claude",
+        "model": "claude-opus-5-5",
+        "launchConfig": null
+      },
+      "from": "soul",
+      "at": "local//fixture/base/remotes/ws.git:souls/dev/soul.yaml#/launch",
+      "problem": null
+    },
+    "launchCurrent": {
+      "declared": {
+        "harness": "claude",
+        "model": "claude-opus-5-5"
+      },
+      "effective": {
+        "harness": "codex",
+        "model": null,
+        "launchConfig": null
+      },
+      "from": "local",
+      "at": "oats-local.yaml#/souls/launch/dev",
+      "problem": null
+    },
+    "knowledge": {
+      "provider": null,
+      "version": null,
+      "operations": []
+    },
+    "instance": {
+      "home": "/fixture/base/deployment/agents/dev/instances/dev-q",
+      "instance": "dev-q",
+      "agent": "dev",
+      "harness": "claude",
+      "model": "claude-opus-5-5",
+      "yolo": null,
+      "launched": false,
+      "createdAt": "2026-09-28T23:05:44.284Z",
+      "resolution": "a9b2789472aafaee7f33ee95",
+      "soulDir": "/fixture/base/deployment/agents/dev/souls/5048f113d266",
+      "instructions": {
+        "file": "/fixture/base/deployment/agents/dev/instances/dev-q/AGENTS.md",
+        "text": "# dev\n\n<!-- oats:kernel:instance-boundary src=/fixture/oats/injects/instance-boundary.md -->\n## Your two directories\n\n**`<instance-home>` is where this session starts** — the specific gitignored OATS\ninstance directory you woke up in, given to your harness and to every lifecycle\nhook as `$OATS_INSTANCE_HOME`. It is not your user home (`~`), not the repository\nroot, and not the work tree. Anything that says \"your home\" means this directory.\n\n- **Your brain and your state live here**: `AGENTS.md` (your composed\n  instructions), `TASK.md` (this task), `instance.json` (what you were given\n  and from where), and whatever working state your role keeps — your knowledge\n  layer names those files, if you have one. They belong here, not in the work\n  tree.\n- **Run OATS operational/lifecycle commands, and commands from active\n  capabilities, from instance home** — `oats status`, `oats doctor`, `oats spawn`,\n  and whatever your own capabilities add; for example, when the\n  aweb messaging capability is active, run `aw` there too. They resolve their\n  scope from the directory you run them in, so running them from the work tree\n  points them at the wrong deployment. To act on a different package or config\n  scope deliberately, pass an explicit resolved path: `oats <cmd> --dir <path>`.\n- **Soul work is repository work.** If your TASK is to change soul content that\n  lives in this repository, that is ordinary code work — do it on tracked paths\n  under `work/`, reviewed like the rest. How your own learnings reach your soul\n  is your knowledge capability's business, and its instructions below say so if you\n  have one.\n\n**`<instance-home>/work` is your repository or workspace view** — whatever your\nwork mode grants you of the code.\n\n- **Repository work happens there and only there**: reading, editing, building,\n  testing, git and commits, on repository content. Never from the main checkout\n  or from your home root.\n- **What your mode permits is the mode block's call**, immediately below. Some\n  modes are read-only, some share a tree with others, and that block is the\n  authority on which operations are yours to perform.\n- This is about where the *repository's* content lives, not a ban on writing\n  anywhere else: the episodic files above, and whatever artifacts your role\n  calls for (a report written to a temp file before mailing it, a scratch\n  script), go where your task and tooling direct.\n\nMove between the two as the task needs — the boundary is what each directory is\n*for*, not a place to settle in.\n<!-- /oats:kernel:instance-boundary -->\n\n<!-- oats:work-mode:directory src=/fixture/oats/injects/work-directory.md -->\n## Work mode: directory\n\nYour `./work` is an **instance-owned execution directory**. It is not a Git\nworktree, a checkout, or a link to the source instance or deployment context.\nThe context recorded as `repo` supplies configuration; it grants no permission\nto edit that directory.\n\n- Do task work inside `./work`. No Git repository or branch is created for you;\n  do not initialize a fake repository to satisfy a workflow. Git might discover\n  a containing repository; that does not authorize work in the containing tree.\n- Access external inputs and destinations only as explicitly authorized by the\n  task and active capabilities. This mode does not impose a storage provider or\n  a publication protocol.\n- Keep canonical instructions in the instance's `AGENTS.md`; `CLAUDE.md` is its\n  compatibility symlink. Run OATS lifecycle/capability commands from home.\n- Retirement removes the execution directory only after nonempty work has a\n  verified copy in the reported recovery storage beside the home. Recovery is\n  not publication: deliver your results through the task's own protocol first.\n<!-- /oats:work-mode:directory -->\n",
+        "truncated": false,
+        "sources": [
+          {
+            "source": "kernel:instance-boundary",
+            "file": "/fixture/oats/injects/instance-boundary.md"
+          },
+          {
+            "source": "work-mode:directory",
+            "file": "/fixture/oats/injects/work-directory.md"
+          }
+        ]
+      }
+    },
+    "identity": null,
+    "problems": []
+  }
+}

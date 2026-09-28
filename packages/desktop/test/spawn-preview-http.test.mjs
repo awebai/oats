@@ -93,3 +93,18 @@ test('public status forwards only integer API2, never API1/string/future', () =>
     assert.equal(r.spawnPreviewApi, value === 2 ? 2 : null);
   }
 });
+
+test('a kernel preview refusal reaches the dialog with its words: code, message, and a launch refusal\'s fix (boundary → proxy)', async () => {
+  const refusal = { schemaVersion: 1, ok: false, error: { code: 'E_HARNESS_UNAVAILABLE', message: 'harness codex is not installed on this machine',
+    details: { harness: 'codex', from: 'local', at: 'oats-local.yaml#/souls/launch/release-manager', fix: 'install codex, or change oats-local.yaml souls.launch' } } };
+  const read = createSpawnPreviewBoundary({ invoke: async () => structuredClone(refusal) });
+  const served = await read(structuredClone(request()), () => context());
+  assert.deepEqual(served.reason, { code: 'E_HARNESS_UNAVAILABLE', message: refusal.error.message, fix: refusal.error.details.fix }, 'the server keeps the kernel\'s words');
+  const through = async body => (await proxySpawnPreview(proxy().event, '/api/workspace-spawn-preview', proxy().opts,
+    { ...proxy().deps, fetch: async () => ({ ok: true, status: 200, text: async () => JSON.stringify(body) }) })).body.reason;
+  assert.deepEqual(await through(served), served.reason, 'the proxy carries them to the dialog (it used to drop them: E_CLI_FAILED)');
+  const hostile = structuredClone(served); hostile.reason.fix = 'a\u0007b';
+  assert.deepEqual(await through(hostile), { code: 'E_HARNESS_UNAVAILABLE', message: refusal.error.message }, 'an unsafe fix is dropped');
+  const noMessage = structuredClone(served); noMessage.reason.message = 'x\u0000'; delete noMessage.reason.fix;
+  assert.equal((await through(noMessage)).code, 'E_CLI_FAILED', 'without safe kernel words, the Desktop\'s own');
+});

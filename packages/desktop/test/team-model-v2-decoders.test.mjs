@@ -133,3 +133,17 @@ test('readiness (real): team items in checks.configured (no fifth check) keep co
   const plain = readinessData(data(), (await import('./helpers/readiness-fixture.mjs')).target);
   assert.ok(plain.checks.configured.items.every(i => !Object.hasOwn(i, 'label') && !Object.hasOwn(i, 'default') && !Object.hasOwn(i, 'at')), '0.29 items gain no keys');
 });
+
+test('team ids follow the kernel\'s provider-neutral rule in every generic reader (the aweb form stays the route\'s)', async () => {
+  const { teamRow, defaultTeamOf, TEAM_ID } = await import('../renderer/team-rows.mjs');
+  for (const id of ['mine:juan.aweb.ai', 'team@example.org', 'org/team+eng', 'a', 'A'.repeat(256)]) {
+    assert.ok(TEAM_ID.test(id), id);
+    assert.ok(teamRow({ label: 'x', team: id, default: false, from: 'local' }), id);
+    assert.ok(defaultTeamOf({ label: 'x', team: id, from: 'soul' }), id);
+  }
+  for (const id of ['-x', 'a b', 'a;b', '<script>', 'a\nb', '', 'A'.repeat(257), 7]) {
+    assert.equal(teamRow({ label: 'x', team: id, default: false, from: 'local' }), null, String(id));
+    assert.equal(defaultTeamOf({ label: 'x', team: id, from: 'soul' }), undefined, String(id));
+    const doc = v2('teams-after'); doc.result.teams[3].team = id; assert.throws(() => teamsData(doc, DEPLOYMENT), { code: 'E_CLI_PROTOCOL' }, String(id));
+  }
+});

@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "operationsApi": 2,
+    "kernel": "0.29.4",
+    "subject": {
+      "kind": "soul",
+      "soul": "dev",
+      "repoKey": "local//fixture/base/remotes/ws.git",
+      "commit": "5048f113d2665455821233e3f63d89a54c32a133"
+    },
+    "workspace": {
+      "key": "local//fixture/base/remotes/ws.git",
+      "name": "acme",
+      "deployment": "/fixture/base/deployment",
+      "commit": "5048f113d2665455821233e3f63d89a54c32a133",
+      "standalone": false
+    },
+    "souls": [
+      {
+        "soulsApi": 2,
+        "name": "dev",
+        "repoKey": "local//fixture/base/remotes/ws.git",
+        "commit": "5048f113d2665455821233e3f63d89a54c32a133",
+        "kind": "member",
+        "path": "souls/dev",
+        "description": "dev fixture soul.",
+        "work": "directory",
+        "harness": null,
+        "model": null,
+        "declarations": {
+          "requires": null,
+          "defaults": null,
+          "knowledge": null,
+          "resources": null,
+          "children": null,
+          "capabilities": null
+        },
+        "declarationProblems": [],
+        "instructions": null
+      }
+    ],
+    "layers": {
+      "knowledge": {
+        "id": null,
+        "from": null
+      },
+      "messaging": {
+        "id": null,
+        "from": null
+      },
+      "tasks": {
+        "id": null,
+        "from": null
+      }
+    },
+    "capabilities": [],
+    "capabilitiesOff": [],
+    "teams": [],
+    "defaultTeam": null,
+    "teamsSource": "live",
+    "launch": {
+      "declared": {
+        "harness": "claude",
+        "model": "claude-opus-5-5"
+      },
+      "effective": {
+        "harness": "claude",
+        "model": "claude-opus-5-5",
+        "launchConfig": null
+      },
+      "from": "soul",
+      "at": "local//fixture/base/remotes/ws.git:souls/dev/soul.yaml#/launch",
+      "problem": null
+    },
+    "knowledge": {
+      "provider": null,
+      "version": null,
+      "operations": []
+    },
+    "instance": null,
+    "problems": []
+  }
+}

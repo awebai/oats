@@ -1,0 +1,203 @@
+{
+  "root": "/fixture/base/deployment/agents",
+  "agents": [
+    {
+      "schemaVersion": 2,
+      "name": "dev",
+      "description": "dev fixture soul.",
+      "work": "directory",
+      "launch": {
+        "harness": "claude",
+        "model": "claude-opus-5-5"
+      },
+      "kind": "persistent",
+      "dir": "/fixture/base/deployment/agents/dev",
+      "instances": [
+        {
+          "agent": "dev",
+          "kind": "persistent",
+          "instance": "dev-q",
+          "home": "/fixture/base/deployment/agents/dev/instances/dev-q",
+          "soulDir": "/fixture/base/deployment/agents/dev/souls/5048f113d266",
+          "repo": "/fixture/base/deployment",
+          "work": "directory",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "modelFrom": "soul",
+          "launchFrom": "soul",
+          "launchAt": "local//fixture/base/remotes/ws.git:souls/dev/soul.yaml#/launch",
+          "launchDeclared": {
+            "harness": "claude",
+            "model": "claude-opus-5-5"
+          },
+          "spawnOrigin": "operator",
+          "policy": {
+            "childSpawns": {
+              "allowed": true,
+              "origin": {
+                "kind": "default",
+                "detail": "no spawn option: children allowed"
+              }
+            }
+          },
+          "decision": {
+            "instance": "dev-q",
+            "home": "/fixture/base/deployment/agents/dev/instances/dev-q",
+            "branch": null,
+            "base": null,
+            "effective": {
+              "repo": "/fixture/base/deployment",
+              "work": "directory",
+              "harness": "claude",
+              "model": "claude-opus-5-5",
+              "launchConfig": null,
+              "yolo": null,
+              "backend": "tmux",
+              "childSpawns": true,
+              "relation": null,
+              "providers": {}
+            },
+            "resolution": "a9b2789472aafaee7f33ee95",
+            "revision": "c65f47495c462d5e60d4fc79"
+          },
+          "spawnIdempotencyKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "spawnCompleted": true,
+          "capabilities": [],
+          "skills": [],
+          "instructions": [
+            {
+              "source": "kernel:instance-boundary",
+              "file": "/fixture/oats/injects/instance-boundary.md"
+            },
+            {
+              "source": "work-mode:directory",
+              "file": "/fixture/oats/injects/work-directory.md"
+            }
+          ],
+          "composition": {
+            "expected": [
+              {
+                "type": "instruction-block",
+                "source": "kernel:instance-boundary",
+                "declared": "/fixture/oats/injects/instance-boundary.md",
+                "resolved": "/fixture/oats/injects/instance-boundary.md"
+              },
+              {
+                "type": "instruction-block",
+                "source": "work-mode:directory",
+                "declared": "/fixture/oats/injects/work-directory.md",
+                "resolved": "/fixture/oats/injects/work-directory.md"
+              }
+            ],
+            "materialized": {
+              "skills": [],
+              "instructions": [
+                {
+                  "source": "kernel:instance-boundary",
+                  "file": "/fixture/oats/injects/instance-boundary.md"
+                },
+                {
+                  "source": "work-mode:directory",
+                  "file": "/fixture/oats/injects/work-directory.md"
+                }
+              ],
+              "harnessPackages": [],
+              "harnessPosture": {
+                "oatsComposed": "skills via .claude/skills -> ../.agents/skills; instructions via CLAUDE.md -> AGENTS.md",
+                "ambient": [
+                  "user skills",
+                  "project and ancestor skills to the repository root",
+                  "user and project plugins",
+                  "user and project settings",
+                  "user and ancestor CLAUDE.md"
+                ],
+                "why": "founder ruling: Claude Code's own global and per-repo configuration stays enabled — it is powerful, and the operator decides. An all-OATS setup is the way to opt out."
+              },
+              "canonicalSkillTree": "/fixture/base/deployment/agents/dev/instances/dev-q/.agents/skills",
+              "skillAlias": {
+                "path": "/fixture/base/deployment/agents/dev/instances/dev-q/.claude/skills",
+                "target": "../.agents/skills"
+              }
+            }
+          },
+          "capabilityRuntime": [],
+          "tmux": {
+            "session": "none-47905",
+            "window": "dev-q"
+          },
+          "launch": {
+            "version": 2,
+            "harness": "claude",
+            "launchConfig": null,
+            "launchConfigSource": null,
+            "executable": "/fixture/base/runtime-stub/claude",
+            "executableDeclared": null,
+            "executableResolvedFrom": "PATH",
+            "args": [],
+            "env": {},
+            "model": "claude-opus-5-5",
+            "hooks": {
+              "launch": {},
+              "env": {},
+              "contributions": []
+            },
+            "prompt": {
+              "kind": "task-file",
+              "file": "TASK.md"
+            }
+          },
+          "command": "OATS_INSTANCE='dev-q' OATS_INSTANCE_HOME='/fixture/base/deployment/agents/dev/instances/dev-q' PI_AGENT_INSTANCE='dev-q' PI_AGENT_HOME='/fixture/base/deployment/agents/dev/instances/dev-q' '/fixture/base/runtime-stub/claude' --model 'claude-opus-5-5' -- \"$(cat TASK.md)\"",
+          "createdAt": "2026-09-28T23:05:44.284Z",
+          "modules": {},
+          "providers": {},
+          "workspace": {
+            "key": "local//fixture/base/remotes/ws.git",
+            "name": "acme",
+            "deployment": "/fixture/base/deployment",
+            "commit": "5048f113d2665455821233e3f63d89a54c32a133",
+            "resolution": "a9b2789472aafaee7f33ee95",
+            "standalone": false,
+            "soul": {
+              "id": "local//fixture/base/remotes/ws.git#dev",
+              "repoKey": "local//fixture/base/remotes/ws.git",
+              "commit": "5048f113d2665455821233e3f63d89a54c32a133"
+            },
+            "layers": {
+              "knowledge": null,
+              "messaging": null,
+              "tasks": null
+            }
+          },
+          "teams": [],
+          "defaultTeam": null,
+          "launched": false,
+          "wake": {
+            "requested": false,
+            "saved": null,
+            "error": null
+          },
+          "startedAt": null,
+          "identityAddress": null,
+          "running": false,
+          "soul": {
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "commit": "5048f113d2665455821233e3f63d89a54c32a133",
+            "current": "5048f113d2665455821233e3f63d89a54c32a133",
+            "status": "current"
+          }
+        }
+      ],
+      "key": "dev",
+      "soulSource": {
+        "repoKey": "local//fixture/base/remotes/ws.git",
+        "commit": "5048f113d2665455821233e3f63d89a54c32a133",
+        "path": "souls/dev",
+        "current": "5048f113d2665455821233e3f63d89a54c32a133",
+        "status": "current"
+      }
+    }
+  ],
+  "workspace": {
+    "reachable": true
+  }
+}
