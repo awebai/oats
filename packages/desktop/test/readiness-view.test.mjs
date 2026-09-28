@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { createReadinessView } from '../renderer/readiness-view.mjs';
+import { readFileSync } from 'node:fs';
+import { createReadinessView, declaredIn } from '../renderer/readiness-view.mjs';
 import { createSoulInspector } from '../renderer/soul-inspector.mjs';
 import { currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
 import { refreshCli, resetCliStateForTests } from '../renderer/views/cli-status.mjs';
@@ -174,4 +175,22 @@ test('an unrecognised provider answer is shown as sent, under the item status th
   const u = setup(t, () => view(target, raw)); await u.update();
   const check = providerCheck(u);
   assert.equal(check.querySelector('.readiness-item summary').textContent, 'oats.okf · unknown · required'); assert.match(check.textContent, /The provider answered: rate-limited\./);
+});
+
+// Team model v2 (0.30): readiness team items say where the team is declared (the kernel's `at`), on
+// the REAL K1 capture (test/fixtures/team-model-v2/readiness-soul, #269): release-manager's own
+// default engineering has no provider id yet (required, blocking); global only warns.
+test("real 0.30 capture: a team item names where the team is declared, beside the kernel's reason and remedy", async t => {
+  const v = JSON.parse(readFileSync(new URL('./fixtures/team-model-v2/readiness-soul.json', import.meta.url), 'utf8')).result;
+  v.subject = { ...v.subject, soul: target.selector.soul };
+  v.selector = { kind: 'soul', soul: target.selector.soul, agentsRoot: target.selector.agentsRoot, dir: target.context };
+  const u = setup(t, () => view(target, v)); await u.update(); await tick(); await tick();
+  const item = [...u.host.querySelectorAll('.readiness-item')].find(i => i.querySelector('summary').textContent.startsWith('team engineering'));
+  assert.ok(item, 'the team item');
+  const facts = Object.fromEntries([...item.querySelectorAll('dt')].map(dt => [dt.textContent, dt.nextElementSibling.textContent]));
+  assert.equal(facts.Reason, 'the default team engineering has no provider id yet');
+  assert.equal(facts['Declared in'], 'oats-workspace.yaml › teams › engineering, in local//fixture/base/fx/remotes/agents.git');
+  assert.equal(facts['Remedy (display only)'], 'its owner runs `oats aweb setup`, then commits the id; or choose another default with `oats teams default`');
+  assert.equal(declaredIn('oats-local.yaml#/teams/mine'), 'oats-local.yaml › teams › mine, on this computer');
+  assert.equal(declaredIn('something else'), 'something else', 'unrecognised: as sent');
 });

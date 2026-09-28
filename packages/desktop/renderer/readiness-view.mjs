@@ -35,6 +35,14 @@ export const readinessCSS = `
 .soul-inspector .readiness-check { padding:12px 8px; }
 `;
 const label = v => v[0].toUpperCase() + v.slice(1);
+/** A readiness item's `at` in words: `[<repoKey>:]<file>#/<json pointer>` → "oats-workspace.yaml ›
+ * teams › engineering, in <repoKey>"; a file with no repo is this computer's. Unrecognised: as sent. */
+export function declaredIn(at) {
+  const m = /^(?:(.+):)?([^:#/][^:#]*)#\/(.+)$/.exec(at);
+  if (!m) return at;
+  const where = `${m[2]} › ${m[3].split('/').join(' › ')}`;
+  return m[1] ? `${where}, in ${m[1]}` : `${where}, on this computer`;
+}
 const PROVIDER_SAYS = {
   ready: 'The provider says: ready.', 'needs-configuration': 'The provider says: needs configuration.',
   'authorization-required': 'Sign in needed: the provider is set up but is not signed in.', unavailable: 'The provider says: unavailable right now.',
@@ -94,7 +102,9 @@ export function createReadinessView(host, { ctx, compact = false } = {}) {
         item.append(node('summary', `${i.subject} · ${signIn(i) ? 'sign in needed' : i.status} · ${i.required ? 'required' : 'optional'}${warned ? ` · ${warned} warning${warned === 1 ? '' : 's'}` : ''}`));
         const facts = node('dl'); item.append(facts);
         const evidence = Object.entries(i.evidence).map(([k, v]) => k === 'from' ? ['Origin', originText(v)] : [k, v]);
-        for (const [name, content] of [['Producer', i.producer], ['Reason', i.reason], ...(i.code ? [['Code', i.code]] : []), ...evidence, ['Remedy (display only)', i.remedy]]) {
+        // Team model v2: where the team is declared (the kernel's `at`), the place to fix it.
+        const declared = typeof i.at === 'string' && i.at ? [['Declared in', declaredIn(i.at)]] : [];
+        for (const [name, content] of [['Producer', i.producer], ['Reason', i.reason], ...(i.code ? [['Code', i.code]] : []), ...declared, ...evidence, ['Remedy (display only)', i.remedy]]) {
           if (content !== null && content !== undefined) facts.append(node('dt', name), node('dd', content));
         }
         // providers: the provider's own answer, verbatim; "unknown" stays unknown.
