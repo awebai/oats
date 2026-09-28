@@ -5,7 +5,6 @@ description: Hands-on admin of this workspace's OATS setup and config — explai
 # (oats-workspace.yaml, souls/, oats-triggers/, oats-schedules/), so it needs its own branch. `workspace`
 # mode forbids edits in members; `checkout` would edit the maintainers' shared tree.
 work: worktree
-team: global
 capabilities:
   oats.setup: { from: package }   # oats.core, the oats.okf knowledge slot and messaging come from the workspace defaults
 # Never harvested: its sessions work on this deployment's config and carry deployment specifics that
