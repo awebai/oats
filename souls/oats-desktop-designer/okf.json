@@ -5,6 +5,6 @@
   "reads": [
     "oats/oats-desktop-expert",
     "oats/oats-expert",
-    "oats/oats-assistant"
+    "oats/oats-operator-expert"
   ]
 }

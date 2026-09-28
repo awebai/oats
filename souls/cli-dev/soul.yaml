@@ -1,8 +1,0 @@
-schemaVersion: 2
-name: cli-dev
-description: "Kernel and CLI developer: owns lib/ and bin/oats.mjs (workspace model, capabilities, souls and instances, spawn and retire, hooks, packages, teams, schedules and triggers)."
-# A developer: its product is reviewed changes on its own branch.
-work: worktree
-capabilities:
-  oats.review: { from: package }   # oats.dev's review discipline; oats.core, the oats.okf knowledge slot and messaging come from the workspace defaults
-# What this soul reads in the central base is okf.json beside this file; a developer owns no node.

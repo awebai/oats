@@ -1,8 +1,0 @@
-schemaVersion: 2
-name: ux-designer
-description: "OATS product UX developer: owns interaction design, visual language, accessibility and experience coherence, especially in OATS Desktop."
-# A developer: its product is reviewed changes on its own branch.
-work: worktree
-capabilities:
-  oats.review: { from: package }   # oats.dev's review discipline; oats.core, the oats.okf knowledge slot and messaging come from the workspace defaults
-# What this soul reads in the central base is okf.json beside this file; a developer owns no node.
