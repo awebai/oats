@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { createComputerTeams, computerTeamsCSS, teamInUse } from '../renderer/computer-teams.mjs';
+import { createComputerTeams, computerTeamsCSS, teamInUse, teamsAnswer } from '../renderer/computer-teams.mjs';
 import { renderSetup, setupCSS, teamsBox } from '../renderer/workspace-setup.mjs';
 
 const K1 = () => ({ teamsApi: 1, deployment: '/w', defaultTeam: 'antares-oats',
@@ -132,4 +132,16 @@ test("the default team's problem (default: true) is blocking: said as such, with
     'local team antares-oats has no provider id yet', 'run `oats aweb setup` for it', 'Or make another team the default.']);
   assert.equal(u.row('reviewers').querySelector('.ct-blocking'), null, 'a non-default unmapped team only warns');
   assert.ok(u.row('reviewers').querySelector('.ct-warn'));
+});
+
+test("the routes' answer (#269, docs/desktop-teams.md): available → the decoded document; unavailable → the reason, verbatim", () => {
+  const doc = K1();
+  assert.equal(teamsAnswer({ teamsViewApi: 1, status: 'available', action: 'list', data: doc, reason: null }, 'x'), doc);
+  const refused = reason => { try { teamsAnswer({ teamsViewApi: 1, status: 'unavailable', data: null, reason }, 'The teams on this computer could not be read.'); } catch (e) { return [e.code, e.message]; } return null; };
+  assert.deepEqual(refused({ code: 'E_TEAM_IN_USE', message: 'team scratch is in use: souls.teams:pepe-helper', details: { label: 'scratch', usedBy: ['souls.teams:pepe-helper'] } }),
+    ['E_TEAM_IN_USE', 'team scratch is in use: souls.teams:pepe-helper'], "the kernel's words");
+  assert.deepEqual(refused({ code: 'E_BUSY' }), ['E_BUSY', 'Another change to the teams on this computer is still running. Try again in a moment.']);
+  assert.deepEqual(refused({ code: 'E_TEAMS_UNAVAILABLE' }), ['E_TEAMS_UNAVAILABLE', 'Team settings need OATS 0.30 or later.']);
+  assert.deepEqual(refused({ code: 'E_CLI_PROTOCOL' }), ['E_CLI_PROTOCOL', 'The teams on this computer could not be read.']);
+  assert.throws(() => teamsAnswer({ status: 'ok', teams: doc }, 'x'), /x/, 'the pre-#269 shape is not accepted');
 });

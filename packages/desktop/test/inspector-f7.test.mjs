@@ -195,7 +195,7 @@ test('soul page: team-model-2 shows "Teams here" from the soul teams route; with
     const dom = new JSDOM('<body><main><aside hidden></aside></main></body>'), el = dom.window.document.querySelector('aside');
     const inspector = createSoulInspector(el, { layout: 'page', ctx: { api: async (url, opts) => {
       urls.push([url.replace(/\?.*$/, ''), JSON.parse(opts.body)]);
-      return url.startsWith('/api/workspace-soul-teams') ? { status: 'ok', soulTeams: structuredClone(soulTeamsDoc) } : structuredClone(soul);
+      return url.startsWith('/api/workspace-soul-teams') ? { teamsViewApi: 1, status: 'available', action: 'show', data: structuredClone(soulTeamsDoc), reason: null } : structuredClone(soul);
     } } });
     t.after(() => { inspector.dispose(); dom.window.close(); setWorkspace(previous); });
     await inspector.show(soulSelection); for (let i = 0; i < 4; i++) await tick();

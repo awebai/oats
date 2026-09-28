@@ -11,6 +11,7 @@ import { iconElement } from './shell-icons.mjs';
 import { inspectData, inspectFacts, originText } from './inspect-contract.mjs';
 import { createTeamsPanel, teamsOperations, teamsCSS, soulTeams, teamLabels } from './teams-panel.mjs';
 import { createSoulTeamsHere, soulTeamsHereCSS } from './soul-teams-here.mjs';
+import { teamsAnswer } from './computer-teams.mjs';
 import { ageText } from './age-text.mjs';
 import { pageBar, pageCard, pageSection, capabilityIcon, compositionEntries, coreWhy, desktopFacts } from './capability-page.mjs';
 import { layerLabel } from './workspace-catalog.mjs';
@@ -493,16 +494,8 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     // (kernel feature team-model-2): "Teams here", this computer's membership, editable.
     teamsHere?.dispose(); teamsHere = null;
     if ((cliStatus()?.features || []).includes('team-model-2') && typeof selection?.agent?.name === 'string') {
-      const soulTeamsRoute = async body => {
-        const answer = await postJson(ctx, `/api/workspace-soul-teams${wsQuery()}`, body);
-        if (answer?.status === 'ok' && answer.soulTeams) return answer.soulTeams;
-        throw Object.assign(new Error(answer?.reason?.message || 'The teams of this soul could not be read.'), { code: answer?.reason?.code || null });
-      };
-      const teamsRoute = async () => {
-        const answer = await postJson(ctx, `/api/workspace-teams${wsQuery()}`, { action: 'list' });
-        if (answer?.status === 'ok' && answer.teams) return answer.teams;
-        throw new Error(answer?.reason?.message || 'The teams on this computer could not be read.');
-      };
+      const soulTeamsRoute = async body => teamsAnswer(await postJson(ctx, `/api/workspace-soul-teams${wsQuery()}`, body), 'The teams of this soul could not be read.');
+      const teamsRoute = async () => teamsAnswer(await postJson(ctx, `/api/workspace-teams${wsQuery()}`, { action: 'list' }), 'The teams on this computer could not be read.');
       teamsHere = createSoulTeamsHere(doc, { soul: selection.agent.name, request: soulTeamsRoute, listTeams: teamsRoute });
       side.append(teamsHere.element);
     } else if (teams) {

@@ -10,7 +10,7 @@ import { postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
 import { cliStatus, cliKnownUnavailable } from './views/cli-status.mjs';
 import { deploymentUnavailableText } from './deployment-header.mjs';
 import { setupCSS, renderSetup, teamsBox } from './workspace-setup.mjs';
-import { computerTeamsCSS, createComputerTeams } from './computer-teams.mjs';
+import { computerTeamsCSS, createComputerTeams, teamsAnswer } from './computer-teams.mjs';
 import { catalogCSS, renderCapabilitySections, capabilitySections, renderFilters, filterChoices, filterCapabilities, memberNames, deploymentNotes, syncCapabilityNav } from './workspace-catalog.mjs';
 import { createWorkspaceSync, syncCSS, reasonText } from './workspace-sync-view.mjs';
 import { iconElement } from './shell-icons.mjs';
@@ -110,9 +110,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     if (computerTeams && computerTeamsGen === gen) return computerTeams.element;
     computerTeams?.dispose(); computerTeamsGen = gen; teamProblems = 0;
     computerTeams = createComputerTeams(doc, { onDocument: teams => { teamProblems = list(teams?.problems).length; updateCounts(); }, request: async body => {
-      const answer = await postJson(ctx, `/api/workspace-teams${wsQuery()}`, body);
-      if (answer?.status === 'ok' && answer.teams) return answer.teams;
-      throw Object.assign(new Error(answer?.reason?.message || 'The teams on this computer could not be read.'), { code: answer?.reason?.code || null });
+      return teamsAnswer(await postJson(ctx, `/api/workspace-teams${wsQuery()}`, body), 'The teams on this computer could not be read.');
     } });
     return computerTeams.element;
   }
