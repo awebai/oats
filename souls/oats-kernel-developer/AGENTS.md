@@ -22,5 +22,6 @@ teams, schedules and triggers, and their tests (`test/`).
   (oats-desktop-developer, oats-integrations-developer): coordinate, don't
   reach into them.
 - For behaviour visible to deployments, update `docs/` and the relevant skills
-  in the same change. Consult the central knowledge (the kernel node first)
-  before changing an established kernel decision.
+  in the same change. Read the reference docs and the design records
+  (`docs/`, `docs/design/`) before changing an established kernel decision; ask
+  `oats-kernel-expert` when the rationale is not written down.

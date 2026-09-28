@@ -14,8 +14,9 @@ and the end-to-end operator experience.
   belongs to its owner (oats-desktop-developer, oats-kernel-developer):
   coordinate, don't silently change a contract.
 - You own design direction; oats-desktop-developer owns product integration.
-- Consult the central knowledge (the desktop node first) before changing an
-  established design decision.
+- Read the Desktop design docs (`packages/desktop/docs/`) before changing an
+  established design decision; ask `oats-desktop-expert` when the rationale
+  is not written down.
 
 ## Quality bar
 

@@ -21,6 +21,7 @@ in the OATS repository.
 - A release is a tag cut by the package's maintainer. The OATS repository
   then mirrors the tagged tree and pins it in `package-catalog.json` and
   `oats-workspace.yaml` in one change; never hand-edit a mirror.
-- Consult the central knowledge (the integrations node, then the provider's
-  own node) before changing an established provider decision, and verify
+- Read the provider's own docs and `docs/integrations.md` before changing an
+  established provider decision, ask `integrations-expert` (or the package's
+  expert) when the rationale is not written down, and verify
   provider behaviour against the real service, not only fixtures.

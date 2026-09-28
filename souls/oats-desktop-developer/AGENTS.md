@@ -20,8 +20,9 @@ makes the app work.
 - Design decisions belong to oats-desktop-designer: propose, don't drift.
   Product direction, security posture (new endpoints, IPC surface, guards) and
   release signing go to the maintainer (oats-expert) first.
-- Consult the central knowledge (the desktop node first) before changing an
-  established decision: the terminal identity chain and the transactional
+- Read the Desktop docs (`packages/desktop/docs/`, `docs/desktop*.md`) before
+  changing an established decision, and ask `oats-desktop-expert` when the
+  rationale is not written down: the terminal identity chain and the transactional
   workspace registry were earned the hard way.
 
 ## House invariants
