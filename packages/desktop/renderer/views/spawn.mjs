@@ -12,6 +12,7 @@ import { deploymentUnavailableText } from "../deployment-header.mjs";
 import { createSpawnDialog, spawnDialogCSS } from "../spawn-dialog.mjs";
 import { spawnProblem, catalogProblem } from "../spawn-messages.mjs";
 import { createSoulMark, createRuntimeBadge, harnessName, identityCSS } from "../identity-marks.mjs";
+import { shownLaunch } from "../launch-view.mjs";
 import { harnessOf } from "../harness-names.mjs";
 import { memberState } from "../workspace-catalog.mjs";
 import { iconElement } from "../shell-icons.mjs";
@@ -735,7 +736,8 @@ function soulCard(s, a) {
   const identity = span("sidentity");
   identity.append(span("stitle", a.name), span("scontext", a.repoName || a.workspace || "Workspace soul"));
   name.append(avatar, identity);
-  const harness = harnessOf(a);
+  // 0.30: the harness a spawn here runs (launch preferences); a kernel before it reports the soul's own.
+  const harness = shownLaunch(a.launch, cliStatus())?.effective.harness ?? harnessOf(a);
   if (typeof harness === "string" && harness) name.append(createRuntimeBadge(doc, harness));
   const body = span("sbody");
   body.append(span("sdesc", a.description || ""));
