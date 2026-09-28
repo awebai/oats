@@ -102,7 +102,7 @@ export const contextPanelCSS = `
 /* Tabs read like the Workspace header's: underlined, no fill. */
 #context-panel .context-panel-header { padding:0 6px 0 16px; gap:18px; }
 #context-panel .context-panel-tabs { gap:18px; align-items:stretch; }
-#context-panel .context-panel-tab { height:100%; min-height:0; padding:0; border-radius:0; font-size:12.5px; color:var(--muted); background:none; }
+#context-panel .context-panel-tab { height:100%; min-height:0; padding:0; border-radius:0; font-size:13px; color:var(--nav-fg); background:none; }
 #context-panel .context-panel-tab:hover { background:none; color:var(--fg); }
 #context-panel .context-panel-tab[aria-selected="true"] { color:var(--fg); background:none; font-weight:650; box-shadow:inset 0 -2px 0 var(--live); }
 /* W6: the Git & GitHub tab's count of unresolved review threads (design: "Git & GitHub 2"). */
