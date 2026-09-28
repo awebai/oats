@@ -1751,6 +1751,9 @@ closed**: an unknown key is a contract change announced in this document first.
 - The value is `null` when no default is configured. With a messaging layer
   active, that is the readiness problem `E_TEAM_UNCONFIGURED`, and the messaging
   provider refuses the spawn.
+- When the default is an UNMAPPED shared team (declared, no provider id yet),
+  `team` is `null`. That is the blocking readiness problem `team-unmapped` with
+  `default: true` (below), not `E_TEAM_UNCONFIGURED`.
 
 #### Where they appear
 
@@ -1828,7 +1831,7 @@ Providers read the environment below.
   {"label":"oats","team":"oats:oats.aweb.ai","description":"The OATS project","from":"shared","default":false,"at":"github.com/awebai/oats:oats-workspace.yaml#/teams/oats"},
   {"label":"reviewers","team":null,"description":null,"from":"shared","default":false,"at":"github.com/awebai/oats:oats-workspace.yaml#/teams/reviewers"}],
  "souls":{"teams":{"*":["oats"],"oats-expert":["reviewers"]},"default":{"oats-expert":"oats"}},
- "problems":[{"code":"team-unmapped","label":"reviewers","message":"shared team reviewers has no provider id yet","fix":"its owner runs `oats aweb setup`, then commits the id"}]}}
+ "problems":[{"code":"team-unmapped","label":"reviewers","default":false,"message":"shared team reviewers has no provider id yet","fix":"its owner runs `oats aweb setup`, then commits the id"}]}}
 ```
 
 - `teams`: the effective teams, ordered by label. A collision shows the
@@ -1844,7 +1847,8 @@ Providers read the environment below.
   references. It refuses, with no cascade:
   - a label still referenced is `E_TEAM_IN_USE { label, usedBy }`. `usedBy`
     names EVERY reference, e.g.
-    `["defaultTeam", "souls.teams.*", "souls.teams.oats-expert", "souls.default.oats-expert"]`.
+    `["defaultTeam", "souls.teams:*", "souls.teams:oats-expert", "souls.default:oats-expert"]`
+    (`souls.teams:<key>` / `souls.default:<key>`, `<key>` as written).
     Remove the references first (`oats teams default`, `oats soul teams`);
   - a committed (shared) label is `E_TEAM_SHARED { label, at }`: it is edited
     by a PR to `oats-workspace.yaml`;
@@ -1896,17 +1900,21 @@ and the `teams` operation the Desktop runs). It is produced by the provider,
 not the kernel. This is its 0.30 contract, and its key set is exact:
 
 ```json
-{"defaultTeam":{"team":"antares-oats:juan.aweb.ai","source":"deployment"},
+{"defaultTeam":{"label":"antares-oats","team":"antares-oats:juan.aweb.ai","from":"deployment"},
  "eligible":[{"label":"oats","team":"oats:oats.aweb.ai","joined":true}],
  "joined":[{"label":"oats","team":"oats:oats.aweb.ai","identityHome":"/w/agents/…/.aw-teams/oats","receive":"live","since":"<iso>"}],
  "left":[{"label":"reviewers","team":"reviewers:acme.aweb.ai","at":"<iso>","reason":"no-longer-eligible"}],
  "at":"<iso>"}
 ```
 
-- **`defaultTeam`** is `{team, source}`:
-  - `source` is `"deployment"` or `"soul"`, the kernel's `OATS_DEFAULT_TEAM_FROM`;
-  - it is `null` when no default is configured.
-  - The 0.29 sources `"setting"` and `"root"` are gone.
+- **`defaultTeam`** is exactly the kernel's `DefaultTeam`, `{label, team, from}`,
+  one shape in both places:
+  - `label`, `team` and `from` are the kernel's `OATS_DEFAULT_TEAM`,
+    `OATS_DEFAULT_TEAM_ID` and `OATS_DEFAULT_TEAM_FROM` (`"deployment"` | `"soul"`);
+  - it is `null` when the environment carries no default (none configured, or
+    an unmapped one).
+  - *Changed from 0.29:* `source` is renamed `from` (no alias), `label` is new,
+    and the 0.29 sources `"setting"` and `"root"` are gone.
 - **`eligible`** is `[{label, team, joined}]`: the `OATS_TEAMS` rows with
   `default: false`.
 - **`joined`** is `[{label, team, identityHome, receive: "live"|"poll", since}]`,
@@ -1925,12 +1933,17 @@ not the kernel. This is its 0.30 contract, and its key set is exact:
 `{ code, label?, message, fix, … }`:
 
 - **`E_TEAM_UNCONFIGURED`** (a failure, when a messaging layer is active and
-  there is no default): "no teams configured: run `oats aweb setup`".
+  there is no default at all): "no teams configured: run `oats aweb setup`".
 - **`team-label-collision`** (a warning), with `shared: {team, description, at}`
   and `local: {team, description, at}`. The committed definition wins; the fix
   is to rename the local label.
-- **`team-unmapped`** (a warning): a committed team without `team`. Its owner
-  runs `oats aweb setup`, then commits the id.
+- **`team-unmapped`**: a committed team without `team`.
+  - Not the default: a warning, "shared team <label> has no provider id yet";
+    the fix: its owner runs `oats aweb setup`, then commits the id.
+  - The default (`default: true`): a failure (blocking), "the default team
+    <label> has no provider id yet"; the fix: its owner runs `oats aweb setup`,
+    then commits the id, or choose another default with `oats teams default`.
+    The messaging provider's spawn refusal names the same.
 - **`default-team-changed`** (a warning, `--home` only), with
   `recorded: DefaultTeam`, `current: DefaultTeam` and the fix "respawn".
 
