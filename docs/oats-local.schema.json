@@ -127,7 +127,7 @@
         "required": ["team"],
         "additionalProperties": false,
         "properties": {
-          "team": { "type": "string", "minLength": 1, "description": "The messaging provider's team id (for oats.aweb, <team>:<namespace>)." },
+          "team": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,255}$", "description": "The messaging provider's team id (for oats.aweb, <team>:<namespace>). The kernel's safety rule: never '-'-led, no whitespace or control characters, at most 256 characters; the provider validates its own shape." },
           "description": { "type": "string" }
         }
       }

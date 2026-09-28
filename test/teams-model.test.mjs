@@ -145,3 +145,23 @@ test("the removed team keys are schema problems naming their replacement (no ali
   ]);
   assert.deepEqual(validateWorkspace({ schemaVersion: 2, name: "acme", teams: { oats: { team: "oats:oats.aweb.ai", description: "d" }, later: {} } }), [], "a shared team with or without its id");
 });
+
+test("a team id must pass the kernel's safety rule in BOTH files: never '-'-led, no whitespace or control characters, bounded (the provider checks its own shape)", async () => {
+  const { validateWorkspace, validateLocal } = await import("../lib/workspace.mjs");
+  const { TEAM_ID_RE } = await import("../lib/teams.mjs");
+  const hostile = ["--json", "-x", "a b", "a\tb", "a\nb", "a\u0007b", "x".repeat(257), " lead", ""];
+  const fine = ["oats:oats.aweb.ai", "ENG", "team@host/ns+1", "a", "x".repeat(256)];
+  for (const id of hostile) {
+    assert.equal(TEAM_ID_RE.test(id), false, JSON.stringify(id));
+    assert.ok(validateWorkspace({ schemaVersion: 2, name: "acme", teams: { t: { team: id } } }).some((p) => p.path === "/teams/t/team"), `workspace refuses ${JSON.stringify(id)}`);
+    assert.ok(validateLocal({ schemaVersion: 2, workspace: "git:github.com/a/b", teams: { t: { team: id } } }).some((p) => p.path === "/teams/t/team"), `local refuses ${JSON.stringify(id)}`);
+  }
+  for (const id of fine) {
+    assert.equal(TEAM_ID_RE.test(id), true, id);
+    assert.deepEqual(validateWorkspace({ schemaVersion: 2, name: "acme", teams: { t: { team: id } } }), []);
+    assert.deepEqual(validateLocal({ schemaVersion: 2, workspace: "git:github.com/a/b", teams: { t: { team: id } } }), []);
+  }
+  // The schemas and the kernel's constant are one rule.
+  const { readFileSync } = await import("node:fs");
+  for (const f of ["oats-local.schema.json", "oats-workspace.schema.json"]) assert.ok(readFileSync(new URL(`../docs/${f}`, import.meta.url), "utf8").includes(JSON.stringify(TEAM_ID_RE.source).slice(1, -1)), f);
+});

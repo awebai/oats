@@ -64,6 +64,13 @@ test("oats teams: the deployment's teams; add (the first becomes the default), d
   assert.deepEqual(refused(fx.cli(["teams", "add", "oats", "--team", "x:y", "--json"]), "E_TEAM_EXISTS", "add a shared label").details, { label: "oats", from: "shared" });
   assert.deepEqual(refused(fx.cli(["teams", "add", "mine", "--team", "x:y", "--json"]), "E_TEAM_EXISTS", "add twice").details, { label: "mine", from: "local" });
   ok(fx.cli(["teams", "add", "spare", "--team", "spare:me.aweb.ai", "--json"]), "add a second");
+  // A hostile provider id never reaches oats-local.yaml (the provider's argv later): the kernel's safety rule.
+  const localBefore = readFileSync(join(fx.dep, "oats-local.yaml"), "utf8");
+  for (const id of ["--json", "-x"]) refused(fx.cli(["teams", "add", "bad", `--team=${id}`, "--json"]), "E_BAD_ARGS", `option-like id ${id} (the CLI's own guard)`);
+  for (const id of ["a b", "a\nb", "x".repeat(257)]) {
+    assert.deepEqual(refused(fx.cli(["teams", "add", "bad", "--team", id, "--json"]), "E_BAD_ARGS", `hostile id ${JSON.stringify(id)}`).details, { label: "bad", team: id });
+  }
+  assert.equal(readFileSync(join(fx.dep, "oats-local.yaml"), "utf8"), localBefore, "nothing was written");
   assert.equal(localYaml(fx).defaultTeam, "mine", "only the first add sets the default");
 
   ok(fx.cli(["soul", "teams", "*", "--add", "oats", "--json"]), "every soul in oats");
