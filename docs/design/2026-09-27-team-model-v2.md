@@ -169,6 +169,25 @@ The Desktop gets the same controls (Setup: this deployment's teams + the default
 **For the original designer (Pepe), what purely local gives up from the 2026-09-25 teams contract:**
 1. **The shared, committed label vocabulary.** Labels become each deployment's own: a typo is caught against your own `teams:`, and two people may name the same shared team differently. That's harmless, since the id is the truth.
 2. **`defaults.byTeam.<label>.capabilities`** (capabilities composed by team label). With local membership, a soul's composition would vary per person and per machine. **Proposed: DROP it** (unused today). Capabilities stay composed from the committed workspace + soul only, so composition remains reproducible across people.
+## The kernel ↔ provider contract (fixed 2026-09-27 for the 0.30 kernel + oats.aweb 1.17 developers)
+- **Env (every provider context: hooks, commands, readiness):**
+  - `OATS_DEFAULT_TEAM` = the effective default label; `OATS_DEFAULT_TEAM_ID` = its provider id (`teams.<label>.team`);
+  - `OATS_DEFAULT_TEAM_FROM` = `deployment` (`defaultTeam`) | `soul` (`souls.default`) → the teams document's `defaultTeam.source`;
+  - `OATS_TEAMS` = JSON `[{label, team, default: bool, from: "shared"|"local"}]`: EVERY team the soul may be in here, the default INCLUDED (flagged `default: true`). `team` is the provider id. Eligible to join = the rows with `default: false`.
+  - Gone: `OATS_TEAM_LABEL`, `OATS_TEAM_LABELS`, `OATS_TEAM_ID`, `primary`, `settings.team`.
+- **No default configured** (messaging active, no `defaultTeam`): the kernel sets none of these, and the provider answers readiness `needs-configuration` ("no teams configured: run `oats aweb setup`") and refuses spawn.
+- **Kernel verbs are CONFIG ONLY** (they never call the provider):
+  - `oats teams add <label> --team <id>` / `remove` / `default` write `oats-local.yaml` `teams`/`defaultTeam`;
+  - `oats soul teams …` writes `souls.teams`/`souls.default`.
+  - `oats aweb setup` CALLS `oats teams add` / `oats teams default` (via `OATS_CLI_BIN`) to record what it created.
+- **Joining a SHARED team's membership for the root is a PROVIDER act:** `oats aweb setup --join <label> --invite <token>` (the id comes from the committed `teams.<label>`; the root accepts the owner's invite). There is no kernel `oats teams join`.
+- **A visible leave:** a live-read leave appears in:
+  - the hook/command output (a warning);
+  - the teams document `left: [{label, team, at, reason: "no-longer-eligible"}]` (the last 20);
+  - the instance's events (`oats instance events`).
+
+  There's NO acknowledge state; readiness doesn't nag. `left[]` is additive to the teams document; the Desktop reader must accept it before the provider ships it (consumer-first).
+
 ## Sequencing (proposed)
 1. **Now, small (the messaging lane):** an oats.aweb release with the setup `--new-account` fix + the dead `helperInjection` key.
 2. **This design:** the co-lead shapes it → the human answers 1–3 → **Decided**.
