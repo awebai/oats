@@ -1556,6 +1556,15 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
 - The plan changes nothing except appending a `retire-planned` event to the
   workspace log. `pullRequest` is always `"unknown"`. Branch actions use the
   worktree's branch, never `recordedBranch`.
+- A home spawned before 0.25.9 has no session receipt (0.30). Its
+  `facts.session` is `{state: "absent", present: false, backend, established:
+  true, note}` when the session is observably gone: instance.json records no
+  launch, or the recorded tmux server is not running, or the recorded window
+  is gone and no pane on that server works in the home. Retire then proceeds
+  without quiescing (hooks run, work is preserved). Otherwise it stays
+  `unestablished`, with a `note` saying why, and retire refuses with
+  `E_RUNTIME_ENDPOINT_UNKNOWN`, `--force` included. `notes` repeats either
+  case. Read an unknown `state` as not idle.
 
 Plain `retire` keeps a worktree-mode instance's work: the worktree is moved
 (`git worktree move`) to `<deployment>/.agents/worktrees/<repo>/<branch>` (a
