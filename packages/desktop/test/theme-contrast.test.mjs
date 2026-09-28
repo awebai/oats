@@ -823,28 +823,28 @@ for (const [name] of palettes) test(`${name}: team model v2 cards, left entries 
     <div class="spawn-seg spawn-teams-row spawn-team-list"><label class="spawn-team spawn-team-off"><input type="checkbox" disabled><span class="spawn-team-name">reviewers</span></label></div></div></body></html>`, { pretendToBeVisual: true });
   const doc = dom.window.document;
   for (const source of [css, setupCSS, pageCardCSS, computerTeamsCSS, soulTeamsHereCSS, inspectorCSS, teamsCSS, spawnDialogCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
-  const teams = { teamsApi: 1, deployment: '/w', defaultTeam: 'antares-oats', teams: [
-    { label: 'antares-oats', team: 'antares-oats:juan.aweb.ai', description: null, from: 'local', default: true, at: 'oats-local.yaml#/teams/antares-oats' },
-    { label: 'oats', team: 'oats:oats.aweb.ai', description: 'The OATS project', from: 'shared', default: false, at: 'oats-workspace.yaml#/teams/oats' },
-    { label: 'reviewers', team: null, description: null, from: 'shared', default: false, at: 'oats-workspace.yaml#/teams/reviewers' }],
-    souls: { teams: { '*': ['oats'] }, default: {} }, problems: [{ code: 'team-unmapped', label: 'reviewers', default: false, message: 'shared team reviewers has no provider id yet', fix: 'its owner runs `oats aweb setup`, then commits the id' }] };
-  const soulTeams = { soulTeamsApi: 1, soul: 'oats-expert', key: 'oats-expert', defaultTeam: { label: 'oats', team: 'oats:oats.aweb.ai', from: 'soul' },
-    teams: [{ label: 'oats', team: 'oats:oats.aweb.ai', default: true, from: 'shared', via: ['default', '*'] },
-      { label: 'reviewers', team: null, default: false, from: 'shared', via: ['soul'] }], local: { teams: ['reviewers'], default: 'oats' }, all: ['oats'] };
+  // The REAL 0.30 kernel (K1 @bba0a9b8, test/fixtures/team-model-v2, #269): shared teams with no id
+  // yet (warnings) and release-manager's own unmapped default (the soul page's blocking notice).
+  const { teamsData, soulTeamsData } = await import('../deployment-data.mjs');
+  const v2 = name => JSON.parse(readFileSync(new URL(`./fixtures/team-model-v2/${name}.json`, import.meta.url), 'utf8'));
+  const teams = teamsData(v2('teams-after'), '/fixture/base/northwind-workspace'), soulTeams = soulTeamsData(v2('soul-teams-default'));
+  teams.defaultTeam = 'engineering'; for (const r of teams.teams) r.default = r.label === 'engineering'; for (const p of teams.problems) if (p.label === 'engineering') p.default = true; // DERIVED: a blocking default
   const setup = createComputerTeams(doc, { request: async () => structuredClone(teams) });
-  const soul = createSoulTeamsHere(doc, { soul: 'oats-expert', request: async () => structuredClone(soulTeams), listTeams: async () => structuredClone(teams) });
+  const soul = createSoulTeamsHere(doc, { soul: 'release-manager', request: async () => structuredClone(soulTeams), listTeams: async () => structuredClone(teams) });
   doc.querySelector('#setup').append(setup.element); doc.querySelector('#soul').append(soul.element);
   t.after(() => { setup.dispose(); soul.dispose(); dom.window.close(); });
   for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve));
   const root = dom.window.getComputedStyle(doc.documentElement);
   for (const [selector, painted, fg, bg] of [
     ['.ct-label', '.computer-teams', 'fg', 'surface-2'], ['.ct-from', '.computer-teams', 'muted', 'surface-2'],
-    ['[data-team="oats"] .ct-id', '.computer-teams', 'fg', 'surface-2'], ['.ct-id.none', '.computer-teams', 'warn', 'surface-2'],
+    ['[data-team="mine"] .ct-id', '.computer-teams', 'fg', 'surface-2'], ['.ct-id.none', '.computer-teams', 'warn', 'surface-2'],
     ['.ct-chip', '.ct-chip', 'fg', 'tag-bg'], ['.ct-why', '.computer-teams', 'muted', 'surface-2'],
     ['button.ct-act:not(:disabled)', 'button.ct-act:not(:disabled)', 'fg', 'surface'], ['button.ct-act:disabled', 'button.ct-act:disabled', 'muted', 'surface'],
     ['.sth-default', '.soul-teams-here', 'fg', 'surface'], ['.sth-default .sth-why', '.soul-teams-here', 'muted', 'surface'],
     ['.sth-label', '.soul-teams-here', 'fg', 'surface'], ['.sth-meta:not(.warn)', '.soul-teams-here', 'muted', 'surface'],
     ['.sth-meta.warn', '.soul-teams-here', 'warn', 'surface'], ['button.sth-act', 'button.sth-act', 'fg', 'surface'],
+    ['.ct-blocking', '.computer-teams', 'muted', 'surface-2'], ['.ct-blocking strong', '.computer-teams', 'fg', 'surface-2'],
+    ['.sth-blocking', '.soul-teams-here', 'muted', 'surface'], ['.sth-blocking strong', '.soul-teams-here', 'fg', 'surface'],
     ['.teams-subhead', '.soul-inspector', 'muted', 'surface'],
     ['.spawn-team-off .spawn-team-name', '.spawn-teams-row', 'muted', 'surface-2'],
   ]) {

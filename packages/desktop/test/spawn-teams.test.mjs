@@ -203,3 +203,16 @@ test('v2: an unmapped default team blocks the spawn: the dialog says why and wha
   assert.equal(u.q('.fspawn').disabled, true, 'nothing to spawn into');
   assert.doesNotMatch(u.q('.spawn-teams').textContent, /Always on|primary|personal/i);
 });
+
+// The REAL 0.30 kernel (K1, feat/030-team-model @bba0a9b8; test/fixtures/team-model-v2, #269):
+// release-manager's own default team, engineering, has no provider id yet, so its spawn is refused.
+const v2cap = name => JSON.parse(readFileSync(new URL(`./fixtures/team-model-v2/${name}.json`, import.meta.url), 'utf8'));
+test('real 0.30 preview: the soul\'s own default (engineering) has no provider id yet: the dialog says so, and Spawn is off', async t => {
+  const u = await dialog(t, { kernel: () => v2cap('preview') });
+  const preview = v2cap('preview').result;
+  assert.deepEqual(preview.defaultTeam, { label: 'engineering', team: null, from: 'soul' }, 'the capture');
+  assert.equal(u.q('.spawn-teams').hidden, false, 'shown although no provider declares join here: a disabled Spawn is never unexplained');
+  assert.deepEqual(rows(u), [['engineering · default', 'The default team engineering has no provider id yet.', true, true]], 'the default only: no opt-ins while blocked');
+  assert.equal(u.text('.spawn-teams-hint'), "The default team engineering has no provider id yet, so release-manager can't be spawned here. Its owner runs oats aweb setup, then commits the id; or choose another default for release-manager on its page (Teams here).");
+  assert.equal(u.q('.fspawn').disabled, true);
+});

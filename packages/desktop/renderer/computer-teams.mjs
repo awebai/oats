@@ -187,7 +187,7 @@ export function createComputerTeams(doc, { request, onDocument = null }) {
       input.addEventListener('input', () => { draft[name] = input.value; });
       label.append(input); form.append(label); return input;
     };
-    const first = field('label', 'Label', 'antares-oats'); field('team', 'Team id', 'antares-oats:juan.aweb.ai'); field('description', 'Description (optional)', '', 'wide');
+    const first = field('label', 'Label', 'mine'); field('team', 'Team id', 'mine:you.aweb.ai'); field('description', 'Description (optional)', '', 'wide');
     const actions = el(doc, 'div', null, 'ct-actions');
     const submit = button('Add team', 'primary', () => {});
     submit.type = 'submit'; submit.disabled = pending;
@@ -198,6 +198,8 @@ export function createComputerTeams(doc, { request, onDocument = null }) {
       event.preventDefault();
       const label = draft.label.trim(), team = draft.team.trim(), description = draft.description.trim();
       if (!label || !team) { cardError = { message: 'A local team needs a label and its provider team id.' }; render(); return; }
+      // The kernel's label grammar (lowercase only); said here instead of a bare E_BAD_ARGS from the route.
+      if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(label)) { cardError = { message: 'A label is lowercase letters and digits, with . _ or - after the first character.' }; render(); return; }
       void run({ action: 'add', label, team, ...(description ? { description } : {}) });
     });
     queueMicrotask(() => { if (first.isConnected && !first.value) first.focus(); });

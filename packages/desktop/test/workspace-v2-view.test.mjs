@@ -387,12 +387,9 @@ test('a failed catalog read names the failure and offers an explicit retry', asy
 // Team model v2 (0.30, D2): the Workspace's Teams tab, first (human, 2026-09-28), holds "Teams on this
 // computer" from the kernel's `oats teams` (K1's example document, feat/030-team-model 8dd82158);
 // its problems light the tab's dot. A workspace on another computer keeps its teams there.
-const K1_TEAMS = () => ({ teamsApi: 1, deployment: dir, defaultTeam: 'antares-oats',
-  teams: [{ label: 'antares-oats', team: 'antares-oats:juan.aweb.ai', description: null, from: 'local', default: true, at: 'oats-local.yaml#/teams/antares-oats' },
-    { label: 'oats', team: 'oats:oats.aweb.ai', description: 'The OATS project', from: 'shared', default: false, at: 'github.com/awebai/oats:oats-workspace.yaml#/teams/oats' },
-    { label: 'reviewers', team: null, description: null, from: 'shared', default: false, at: 'github.com/awebai/oats:oats-workspace.yaml#/teams/reviewers' }],
-  souls: { teams: { '*': ['oats'] }, default: {} },
-  problems: [{ code: 'team-unmapped', label: 'reviewers', default: false, message: 'shared team reviewers has no provider id yet', fix: 'its owner runs `oats aweb setup`, then commits the id' }] });
+const { teamsData } = await import('../deployment-data.mjs');
+// The REAL 0.30 kernel's `oats teams` (K1 @bba0a9b8, test/fixtures/team-model-v2/teams-after, #269), decoded as the route answers it.
+const K1_TEAMS = () => teamsData(JSON.parse(readFileSync(new URL('./fixtures/team-model-v2/teams-after.json', import.meta.url), 'utf8')), dir);
 test('Teams tab (team-model-2): first, before Souls; "Teams on this computer" from oats teams; its problems light the dot; Setup has no teams', async t => {
   const u = await setup(t, { cli: { ...CLI, features: [...CLI.features, 'team-model-2'] }, teams: () => ({ status: 'ok', teams: K1_TEAMS() }) });
   assert.deepEqual([...u.doc.querySelectorAll('.workspace-tabs [role=tab]')].map(tab => tab.id), ['workspace-tab-teams', 'workspace-tab-souls', 'workspace-tab-capabilities', 'workspace-tab-sources']);
@@ -401,10 +398,10 @@ test('Teams tab (team-model-2): first, before Souls; "Teams on this computer" fr
   const card = u.doc.querySelector('.workspace-discovery .computer-teams');
   assert.ok(card, 'the card'); assert.equal(card.dataset.box, 'Teams on this computer');
   assert.equal(u.doc.querySelector('.workspace-discovery').dataset.tab, 'teams');
-  assert.deepEqual([...card.querySelectorAll('.ct-row')].map(r => r.dataset.team), ['antares-oats', 'oats', 'reviewers']);
+  assert.deepEqual([...card.querySelectorAll('.ct-row')].map(r => r.dataset.team), ['engineering', 'global', 'marketing', 'mine']);
   assert.deepEqual(u.calls.filter(c => c.path.startsWith('/api/workspace-teams')).map(c => c.body), [{ action: 'list' }], 'one read');
   assert.equal(u.doc.querySelector('#workspace-tab-teams .workspace-attn').hidden, false);
-  assert.equal(u.doc.querySelector('#workspace-tab-teams .workspace-sr-only').textContent, ' — 1 item needs attention');
+  assert.equal(u.doc.querySelector('#workspace-tab-teams .workspace-sr-only').textContent, ' — 3 items need attention', 'the three shared teams with no provider id yet');
   await u.tab('sources');
   assert.equal(u.doc.querySelector('.computer-teams'), null);
   assert.deepEqual([...u.doc.querySelectorAll('.setup-box, .setup-local')].map(el => el.dataset.box), ['Members', 'Packages', 'This computer']);

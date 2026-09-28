@@ -426,7 +426,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const teamsHint = el('p', '', 'spawn-hint spawn-teams-hint'); teamsHint.setAttribute('aria-live', 'polite');
   const teamsError = el('p', '', 'spawn-hint spawn-teams-error err'); teamsError.setAttribute('aria-live', 'polite');
   teamsField.append(el('legend', 'Teams'), teamsList, teamsHint, teamsError);
-  let teamsNow = null, joinDeclaredNow = false, teamsDrawn = '';
+  let teamsNow = null, joinDeclaredNow = false, teamsDrawn = '', defaultFromNow = null;
   const joinPicked = new Set();
   // A team the operator may opt into: mapped, and not the soul's default (v2 rows say `default`).
   const joinable = t => t.mapped && t.default !== true;
@@ -436,7 +436,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     if (box.checked) joinPicked.add(box.value); else joinPicked.delete(box.value);
   }); // before the form's own change listener: the choice is current when it re-reads
   function drawTeams() {
-    const key = JSON.stringify(teamsNow);
+    const key = JSON.stringify([teamsNow, defaultFromNow]);
     if (key === teamsDrawn) return;
     teamsDrawn = key; teamsList.replaceChildren();
     const chip = (cls, name, box, title) => { const c = el('label', undefined, cls); c.append(box, el('span', name, 'spawn-team-name')); c.title = title; teamsList.append(c); return c; };
@@ -448,7 +448,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
         : `The default team ${home.label} has no provider id yet.`);
       c.dataset.team = home.label; if (!home.team) c.classList.add('spawn-team-blocked');
     } else chip('spawn-team spawn-team-fixed', 'Default', fixed, "The workspace's default team — always. Every instance is in it.");
-    for (const t of rows.filter(t => t.default !== true && (t.mapped || t.default === false))) {
+    // Blocked: nothing to join into, so no opt-ins.
+    for (const t of home && !home.team ? [] : rows.filter(t => t.default !== true && (t.mapped || t.default === false))) {
       const box = el('input'); box.type = 'checkbox'; box.value = t.label; box.className = 'fteam';
       box.checked = t.mapped && joinPicked.has(t.label); box.disabled = !t.mapped;
       const c = chip(`spawn-team${t.mapped ? '' : ' spawn-team-off'}`, t.label, box, t.mapped ? `Join ${t.label} (${t.team})` : `${t.label} has no provider id yet: its owner runs oats aweb setup, then commits the id.`);
@@ -458,7 +459,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     // An unmapped default blocks the spawn (the kernel refuses it): say so and what to do, not the opt-ins.
     teamsHint.classList.toggle('err', !!home && !home.team);
     teamsHint.textContent = home && !home.team
-      ? `The default team ${home.label} has no provider id yet, so ${soul.name} can't be spawned here. Its owner runs oats aweb setup, then commits the id; or choose another default in Workspace › Teams.`
+      ? `The default team ${home.label} has no provider id yet, so ${soul.name} can't be spawned here. Its owner runs oats aweb setup, then commits the id; or choose another default ${defaultFromNow === 'soul' ? `for ${soul.name} on its page (Teams here)` : 'in Workspace › Teams'}.`
       : home
       ? (open ? `It joins its default team, ${home.label}. Tick any other team it should also join.` : `It joins its default team, ${home.label}. No other team is open to ${soul.name} on this computer.`)
       : `By default it's only in the workspace's default team. These are the teams ${soul.name} has access to — tick the ones it should also join.`;
@@ -625,10 +626,12 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     branch.placeholder = data?.branch && !branch.value ? data.branch : `agents/${soul.name}-…`;
     base.placeholder = data?.base ? `${data.base.ref} · ${short(data.base.oid)}` : 'HEAD';
     // Messaging identity: what the kernel bound for this spawn, and the choice.
-    if (data) { messagingProvider = data.messaging?.provider ?? null; teamsNow = data.teams ?? null; joinDeclaredNow = data.messaging?.joinDeclared === true; }
-    teamsField.hidden = !teamsOffered();
+    if (data) { messagingProvider = data.messaging?.provider ?? null; teamsNow = data.teams ?? null; joinDeclaredNow = data.messaging?.joinDeclared === true; defaultFromNow = data.defaultTeam?.from ?? null; }
+    // An unmapped default blocks the spawn even where joins are not offered (no provider declares
+    // `join`): the row then shows the default and why, so a disabled Spawn never goes unexplained.
+    teamsField.hidden = !teamsOffered() && !defaultBlocked();
+    if (!teamsField.hidden) drawTeams();
     if (teamsOffered()) {
-      drawTeams();
       teamsError.textContent = data && shown?.key === choiceKey(draftChoice.value) && !joinBound(data)
         ? "The kernel didn't bind the ticked teams. Spawn waits until it does." : '';
     }

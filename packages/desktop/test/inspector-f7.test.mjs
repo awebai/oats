@@ -187,8 +187,9 @@ test('Core capabilities name where each provider came from, only with feature la
 // "Teams here" (this computer's membership, editable) through /api/workspace-soul-teams, in
 // place of the 0.29 read-only Teams card; without the feature, the 0.29 card stays.
 test('soul page: team-model-2 shows "Teams here" from the soul teams route; without it, the 0.29 Teams card', async t => {
-  const soulTeamsDoc = { soulTeamsApi: 1, soul: 'release-manager', key: 'release-manager', defaultTeam: { label: 'engineering', team: 'northwind:eng', from: 'deployment' },
-    teams: [{ label: 'engineering', team: 'northwind:eng', default: true, from: 'local', via: ['default'] }], local: { teams: [], default: null }, all: [] };
+  // The REAL 0.30 kernel's `oats soul teams release-manager` (K1 @bba0a9b8, test/fixtures/team-model-v2/soul-teams-show, #269).
+  const { soulTeamsData } = await import('../deployment-data.mjs');
+  const soulTeamsDoc = soulTeamsData(JSON.parse(readFileSync(new URL('./fixtures/team-model-v2/soul-teams-show.json', import.meta.url), 'utf8')));
   const urls = [];
   const page = async () => {
     const previous = currentWorkspace(); setWorkspace('/team');
@@ -208,7 +209,7 @@ test('soul page: team-model-2 shows "Teams here" from the soul teams route; with
   assert.ok(card, 'the Teams here card');
   assert.equal(v2.querySelector('[data-card="Teams"]'), null, 'in place of the 0.29 card');
   assert.deepEqual(urls.filter(([url]) => url === '/api/workspace-soul-teams'), [['/api/workspace-soul-teams', { soul: 'release-manager', action: 'show' }]]);
-  assert.equal(card.querySelector('.sth-default').textContent, "Default: engineering (the workspace's default on this computer)");
+  assert.equal(card.querySelector('.sth-default').textContent, "Default: mine (the workspace's default on this computer)");
   assert.doesNotMatch(v2.textContent, /primary|personal/i);
   await refreshCli({ api: async () => ({ ...doc('version'), ok: true, bin: '/fixture/bin/oats' }) });
   urls.length = 0;
