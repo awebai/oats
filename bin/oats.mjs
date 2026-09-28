@@ -2421,7 +2421,12 @@ async function sessionCmd() {
       if (!file || file === true) throw Object.assign(new Error("session upload needs --file <local path>"), { code: "E_BAD_ARGS" });
       result = uploadAttachment({ file, home: home === true ? undefined : home });
     } else throw Object.assign(new Error("usage: oats session inspect|input|attach|start|restart|receive|upload --home /absolute/home [--text-file path] [--model id] [--launch-config name|none | --reselect-launch] [--harness pi|claude|codex] [--yolo|--no-yolo] [--stop-grace seconds] [--name file] [--file path] [--json]"), { code: "E_BAD_ARGS" });
-    if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2));
+    if (JSON_MODE) jsonOk(result);
+    else {
+      console.log(JSON.stringify(result, null, 2));
+      // A start's launch-hook warnings, as spawn prints its own (stderr keeps stdout one JSON document).
+      for (const w of result?.warnings || []) console.error(`  WARNING: ${w}`);
+    }
   } catch (e) { cmdFail(e.code || "E_SESSION_FAILED", e.message, e.details); }
 }
 

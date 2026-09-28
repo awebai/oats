@@ -1450,8 +1450,9 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
   after open), and at most its last 4 MiB is read (`"tail"`).
 - **Kinds:** `spawned`, `launched`, `restarted`, `stopped`, `stop-refused`,
   `retire-planned`, `retired`, `worktree-retained`, `worktree-removed`,
-  `branch-deleted`, `child-spawn-refused`, `recomposed` (from earlier
-  kernels). `producer` is `kernel` or a capability id. Older rows may carry
+  `branch-deleted`, `child-spawn-refused`, `launch-warning` (0.30: a
+  `launch` hook's warning at session start/restart, `data: {message}`),
+  `recomposed` (from earlier kernels). `producer` is `kernel` or a capability id. Older rows may carry
   `eventsApi: 1`.
 - **Incarnation.** Each row carries the writing home's `createdAt` (or
   `null` for old rows); the top-level `incarnation` is the current home's (or
@@ -1627,8 +1628,14 @@ Features `session-start`, `session-restart`, and `launch-config` for the
 selection flags. See [the start workflow](desktop-instance-start.md).
 
 - The result is `{instance, agent, home, harness, backend, model,
-  launchConfig, yolo, target, startedAt, restartCount, reused}`, plus
-  `nativeRecordId` and `stop` (a restart's stop receipt) when they apply.
+  launchConfig, yolo, target, startedAt, restartCount, reused, warnings}`,
+  plus `nativeRecordId` and `stop` (a restart's stop receipt) when they apply.
+- `warnings` (0.30) is always present: an array of strings, the warnings the
+  capabilities' `launch` hooks returned for this start (as spawn's
+  `warnings`), `[]` when there are none. Each is also appended to the
+  instance's events as a `launch-warning` row, `data: {message}`. They are
+  advisory: the start went ahead. Earlier kernels omit the field; read a
+  missing `warnings` as `[]`.
 - Restart is one command: the kernel validates the new selection before
   stopping, and owns the stop, lock, launch recovery and metadata. Never
   restart by retiring and spawning.
