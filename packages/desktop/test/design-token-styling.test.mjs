@@ -84,7 +84,7 @@ test("visual shell geometry: 264px sidebar, aligned 48px bars, 24px brand and 16
 
 test("nav/footer rhythm stays separate from the 50px roster rows", t => {
   const u = fixture(t);
-  assert.equal(u.style("#nav").padding, "8px 8px 6px");
+  assert.equal(u.style("#nav").padding, "8px 8px 14px", "room before the Instances separator (human, 2026-09-28)");
   assert.equal(u.style("#nav").gap, "1px");
   assert.equal(u.style("#nav .nav-item").minHeight, "30px");
   assert.equal(u.style("#nav .nav-item").gap, "9px");

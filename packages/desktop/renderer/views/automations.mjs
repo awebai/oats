@@ -29,7 +29,7 @@ export const automationsCSS = `
 .auto-header.auto-framed > .auto-spacer { margin-left:-10px; }
 .auto-heading { display:flex; align-items:stretch; gap:22px; min-width:0; }
 .auto-tabs { display:flex; flex-wrap:nowrap; overflow-x:auto; gap:22px; min-width:0; scrollbar-width:none; }
-.oats-view .auto-tabs button { flex:none; display:inline-flex; align-items:center; gap:6px; height:auto; min-height:0; padding:0; border:0; border-radius:0; background:none; color:var(--muted); font:500 12.5px var(--sans,system-ui); cursor:pointer; }
+.oats-view .auto-tabs button { flex:none; display:inline-flex; align-items:center; gap:6px; height:auto; min-height:0; padding:0; border:0; border-radius:0; background:none; color:var(--nav-fg); font:500 13px var(--sans,system-ui); cursor:pointer; }
 .oats-view .auto-tabs button:hover { color:var(--fg); }
 .oats-view .auto-tabs button[aria-selected=true] { color:var(--fg); font-weight:650; box-shadow:inset 0 -2px 0 var(--live); }
 .oats-view .auto-tabs button:focus-visible { outline:2px solid var(--accent); outline-offset:-4px; border-radius:6px; }

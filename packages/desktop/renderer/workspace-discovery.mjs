@@ -25,7 +25,8 @@ ${syncCSS}
 .workspace-header[hidden] { display:none; }
 .oats-view .workspace-header .field { min-height:28px; height:28px; padding:4px 8px; font-size:12px; }
 .workspace-tabs { display:flex; flex-wrap:nowrap; overflow-x:auto; gap:22px; min-width:0; scrollbar-width:none; }
-.workspace-tabs button { flex:none; display:inline-flex; align-items:center; gap:6px; padding:0; border:0; border-radius:0; background:none; color:var(--muted); font:500 12.5px var(--sans,system-ui); cursor:pointer; }
+/* Unselected tabs read like the sidebar's items (human, 2026-09-28): its ink and size, not muted grey. */
+.workspace-tabs button { flex:none; display:inline-flex; align-items:center; gap:6px; padding:0; border:0; border-radius:0; background:none; color:var(--nav-fg); font:500 13px var(--sans,system-ui); cursor:pointer; }
 .workspace-tabs button:hover { color:var(--fg); }
 .workspace-tabs button[aria-selected=true] { color:var(--fg); font-weight:650; box-shadow:inset 0 -2px 0 var(--live); }
 .workspace-tabs button:focus-visible { outline:2px solid var(--accent); outline-offset:-4px; border-radius:6px; }
