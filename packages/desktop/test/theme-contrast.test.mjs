@@ -810,6 +810,25 @@ for (const [name] of palettes) test(`${name}: the can't-spawn-here notes meet co
   }
 });
 
+// 0.30 launch preferences: the soul page's notes under the facts and the side panel's Harness card
+// (where it is set, the soul's own preference, a missing harness), each on its actual painted surface.
+for (const [name] of palettes) test(`${name}: launch preference notes meet computed AA`, t => {
+  const notes = '<p class="launch-declared">The soul prefers Claude Code</p><p class="launch-at">Set in oats-local.yaml</p><div class="launch-problem"><p class="launch-problem-message">harness claude is not installed</p><p class="launch-problem-fix">install claude</p><details><summary>Details</summary></details></div>';
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"><aside class="soul-inspector soul-page" id="page"><div class="inspector-head"><div class="launch-notes">${notes}</div></div></aside>
+    <aside class="soul-inspector" id="side"><div class="inspector-content"><div class="inspector-card inspector-launch">${notes}</div></div></aside></div></body></html>`);
+  t.after(() => dom.window.close());
+  const doc = dom.window.document;
+  for (const source of [css, inspectorCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  const painted = el => { for (let p = el; p; p = p.parentElement) { const bg = dom.window.getComputedStyle(p).background; if (/^var\(--/.test(bg)) return bg.slice(6, -1); } return null; };
+  for (const host of ['#page', '#side']) for (const [selector, fg] of [['.launch-declared', 'fg'], ['.launch-at', 'muted'], ['.launch-problem-message', 'warn'], ['.launch-problem-fix', 'fg'], ['.launch-problem details', 'muted']]) {
+    const el = doc.querySelector(`${host} ${selector}`), bg = painted(el);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, `${host} ${selector}`); assert.ok(bg, `${host} ${selector} painted`);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${host} ${selector} on ${bg}`);
+    for (let p = el; p; p = p.parentElement) assert.equal(dom.window.getComputedStyle(p).opacity, '1');
+  }
+});
+
 // Team model v2 (0.30, D2): Setup's "Teams on this computer", the soul page's "Teams here",
 // the teams panel's "Recently left" head and a spawn team with no provider id yet, on K1's
 // example documents (docs/desktop-cli-api.md "Team model v2", feat/030-team-model 8dd82158).

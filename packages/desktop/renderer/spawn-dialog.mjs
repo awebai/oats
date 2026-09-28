@@ -22,6 +22,7 @@ import { sameSpawnDecision } from './spawn-decision.mjs';
 import { spawnProblem } from './spawn-messages.mjs';
 import { wakeScheduleFields } from './wake-schedule-fields.mjs';
 import { iconElement } from './shell-icons.mjs';
+import { shownLaunch, launchHarnessName, launchModelText, launchFromText, preferenceText, declaredDiffers } from './launch-view.mjs';
 
 export const PREVIEW_DEBOUNCE_MS = 250;
 export const RUNTIME_NAMES = Object.freeze({ pi: 'Pi', claude: 'Claude Code', codex: 'Codex' });
@@ -210,6 +211,14 @@ function identityHintText(m, origins) {
       : `Messaging through ${m.provider}: gets its own team identity.`;
   if (!origins || !m.origin || m.origin.kind === 'spawn') return said;
   return `${said} ${m.origin.kind === 'manifest-default' ? "This is the provider's default" : `Set by ${originName(m.origin.kind)}`} (${m.origin.at}).`;
+}
+/** 0.30 launch preferences: what this spawn runs and where that choice came from (the preview's
+ * Launch, flags applied), plus the soul's own preference when this spawn runs something else. */
+export function launchHint(data, cli) {
+  const launch = shownLaunch(data?.launch, cli);
+  if (!launch) return null;
+  const said = `Launches ${launchHarnessName(launch.effective.harness)} with ${launchModelText(launch.effective)} · ${launchFromText(launch.from)}.`;
+  return declaredDiffers(launch) ? `${said} The soul prefers ${preferenceText(launch.declared)}.` : said;
 }
 export function modelText(data) {
   if (!data) return '';
@@ -604,8 +613,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     modelTag.title = data?.modelSource || '';
     model.setAttribute('aria-label', model.value ? 'Model' : `Model — empty uses ${defaultModel || 'the default'}`);
     syncRuntime(data);
-    runHint.textContent = !local() ? `Harness and model defaults are decided on ${remoteTarget()}.`
-      : data ? `Launches ${runtimeName(data.harness)} with ${modelText(data)}.` : '';
+    runHint.textContent = !local() ? `Harness and model defaults are decided on ${remoteTarget()}.` : launchHint(data, cli()) ?? (data ? `Launches ${runtimeName(data.harness)} with ${modelText(data)}.` : '');
     // Work.
     worktreeLabel.hidden = soul.work !== 'checkout';
     const worktreeMode = effectiveWork() === 'worktree' && local();

@@ -35,13 +35,15 @@ export const readinessCSS = `
 .soul-inspector .readiness-check { padding:12px 8px; }
 `;
 const label = v => v[0].toUpperCase() + v.slice(1);
-/** A readiness item's `at` in words: `[<repoKey>:]<file>#/<json pointer>` → "oats-workspace.yaml ›
- * teams › engineering, in <repoKey>"; a file with no repo is this computer's. Unrecognised: as sent. */
+/** A kernel `at` in words: `[<repoKey>:]<file>#/<json pointer>` → "oats-workspace.yaml ›
+ * teams › engineering, in <repoKey>"; a file with no repo is this computer's; `package:<id>:` is
+ * that package's. Pointer segments are unescaped (`~1` is `/`, `~0` is `~`). Unrecognised: as sent. */
 export function declaredIn(at) {
   const m = /^(?:(.+):)?([^:#/][^:#]*)#\/(.+)$/.exec(at);
   if (!m) return at;
-  const where = `${m[2]} › ${m[3].split('/').join(' › ')}`;
-  return m[1] ? `${where}, in ${m[1]}` : `${where}, on this computer`;
+  const where = `${m[2]} › ${m[3].split('/').map(p => p.replace(/~1/g, '/').replace(/~0/g, '~')).join(' › ')}`;
+  const pkg = /^package:(.+)$/.exec(m[1] ?? '');
+  return pkg ? `${where}, in the ${pkg[1]} package` : m[1] ? `${where}, in ${m[1]}` : `${where}, on this computer`;
 }
 const PROVIDER_SAYS = {
   ready: 'The provider says: ready.', 'needs-configuration': 'The provider says: needs configuration.',

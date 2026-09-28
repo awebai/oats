@@ -15,6 +15,7 @@ import { teamsAnswer } from './computer-teams.mjs';
 import { ageText } from './age-text.mjs';
 import { pageBar, pageCard, pageSection, capabilityIcon, compositionEntries, coreWhy, desktopFacts } from './capability-page.mjs';
 import { layerLabel } from './workspace-catalog.mjs';
+import { shownLaunch, launchHarnessName, launchModelText, launchFromText, launchAtText, declaredText, preferenceText, declaredDiffers } from './launch-view.mjs';
 
 
 const HARNESS_NAMES = { pi: 'Pi', claude: 'Claude Code', codex: 'Codex' };
@@ -135,6 +136,17 @@ ${soulTeamsHereCSS}
 .inspector-readiness { padding-bottom:0; }
 .inspector-readiness .readiness-view { margin-bottom:0; }
 .inspector-lede { margin:6px 0 0; font-size:12.5px; line-height:1.5; color:var(--fg); }
+/* 0.30 launch preferences: where the choice is set, the soul's own preference, a problem (tokens only). */
+.launch-notes { display:flex; flex-direction:column; gap:4px; margin-top:8px; min-width:0; }
+.launch-notes > p, .inspector-launch > p { margin:0; font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
+.launch-declared { color:var(--fg); }
+.launch-at { color:var(--muted); }
+.inspector-launch > .launch-at, .inspector-launch > .launch-problem { margin-top:8px; }
+.launch-problem { border-left:2px solid var(--warn); padding-left:8px; font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
+.launch-problem > p { margin:0; }
+.launch-problem-message { color:var(--warn); font-weight:600; }
+.launch-problem-fix { color:var(--fg); }
+.launch-problem details { color:var(--muted); font-size:11.5px; }
 .inspector-refusal { margin:6px 0 0; color:var(--warn); font-size:12.5px; font-weight:600; line-height:1.45; overflow-wrap:anywhere; }
 .inspector-card { border:1px solid var(--border); border-radius:8px; background:var(--surface); padding:10px 12px; }
 .inspector-card .inspector-facts { font-size:12px; margin:0; }
@@ -313,9 +325,19 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     } else if (soul && layout === 'page') renderSoulPage(inspected, soul);
     else if (soul) {
       renderSoulTeams(inspected);
-      // The harness it declares by default, and the model within it (if any).
       section('Harness');
-      if (typeof harnessOf(soul) === 'string' && harnessOf(soul)) card([['Default harness', harnessName(harnessOf(soul))], ...(typeof soul.model === 'string' && soul.model ? [['Default model', soul.model]] : [])]);
+      const launch = soulLaunch(inspected);
+      if (launch) {
+        // 0.30 launch preferences: what a spawn here runs, where that choice came from, and where to change it.
+        const box = card([['Harness', launchHarnessName(launch.effective.harness)], ['Model', launchModelText(launch.effective)],
+          ...(launch.effective.launchConfig ? [['Launch configuration', launch.effective.launchConfig]] : []), ['Chosen by', launchFromText(launch.from)],
+          ...(declaredDiffers(launch) ? [['The soul prefers', preferenceText(launch.declared)]] : [])]);
+        box.classList.add('inspector-launch');
+        const at = launchAtText(launch.at); if (at) box.append(node('p', at, 'launch-at'));
+        if (launch.problem) box.append(launchProblem(launch.problem));
+      }
+      // The harness it declares by default (a kernel before 0.30), and the model within it (if any).
+      else if (typeof harnessOf(soul) === 'string' && harnessOf(soul)) card([['Default harness', harnessName(harnessOf(soul))], ...(typeof soul.model === 'string' && soul.model ? [['Default model', soul.model]] : [])]);
       else content.append(node('p', 'No default harness: you choose one when you launch it.', 'muted'));
       renderCapabilities(inspected);
     } else content.append(node('p', 'The kernel did not report this soul. Refresh to retry.', 'muted'));
@@ -437,6 +459,15 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     }
     summary.append(roster);
   }
+  /** The soul's launch (0.30): `inspect --soul`'s own, else its roster row's; null without the feature. */
+  function soulLaunch(inspected) { return shownLaunch(inspected.launch ?? selection?.agent?.launch, cliStatus()); }
+  /** A launch a spawn here would refuse (E_HARNESS_UNAVAILABLE…): the kernel's message and fix, verbatim. */
+  function launchProblem(p) {
+    const box = node('div', undefined, 'launch-problem'); box.setAttribute('role', 'note');
+    box.append(node('p', p.message, 'launch-problem-message'), node('p', p.fix, 'launch-problem-fix'));
+    const more = node('details'); more.append(node('summary', 'Details'), node('p', p.code, 'muted')); box.append(more);
+    return box;
+  }
   function pageFact(icon, value, cls) {
     const fact = node('span', undefined, 'page-fact');
     fact.dataset.fact = icon; fact.append(iconElement(doc, icon, { size: 15 }), node('span', value, cls)); return fact;
@@ -446,8 +477,22 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
   // teams and knowledge beside. Only reported facts: what the kernel does not
   // say (which default a capability came from) is said as not reported.
   function renderSoulPage(inspected, soul) {
-    const harness = harnessOf(soul);
-    if (typeof harness === 'string' && harness) {
+    const harness = harnessOf(soul), launch = soulLaunch(inspected);
+    if (launch) {
+      // 0.30 launch preferences: the effective harness and model with where that came from; below the
+      // facts, the soul's own preference when this computer runs something else, where to change it,
+      // and a problem a spawn would hit (the kernel's words).
+      const e = launch.effective, fact = node('span', undefined, 'page-fact'); fact.dataset.fact = 'harness';
+      fact.append(createRuntimeBadge(doc, e.harness), node('span', launchHarnessName(e.harness), 'strong'),
+        node('span', [launchModelText(e), e.launchConfig ? `launch configuration ${e.launchConfig}` : null, launchFromText(launch.from)].filter(Boolean).join(' · '), 'muted'));
+      const work = facts$.querySelector('[data-fact="branch"]'); if (work) work.before(fact); else facts$.append(fact);
+      const notes = node('div', undefined, 'launch-notes'); notes.dataset.launchNotes = '';
+      const differs = declaredText(launch), at = launchAtText(launch.at);
+      if (differs) notes.append(node('p', differs, 'launch-declared'));
+      if (at) notes.append(node('p', at, 'launch-at'));
+      if (launch.problem) notes.append(launchProblem(launch.problem));
+      if (notes.childElementCount) facts$.after(notes);
+    } else if (typeof harness === 'string' && harness) {
       const fact = node('span', undefined, 'page-fact'); fact.dataset.fact = 'harness';
       fact.append(createRuntimeBadge(doc, harness), node('span', harnessName(harness), 'strong'));
       if (typeof soul.model === 'string' && soul.model) fact.append(node('span', `${soul.model} by default`, 'muted'));

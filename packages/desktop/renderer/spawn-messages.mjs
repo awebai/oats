@@ -30,6 +30,9 @@ const COMMON = {
   E_LAUNCH_EXECUTABLE: 'The chosen launch configuration can’t start on this machine. Choose another in Developer settings.',
   E_LAUNCH_PROBE_UNSUPPORTED: 'The chosen launch configuration can’t be checked safely. Choose another in Developer settings.',
   E_LAUNCH_CONFIG_UNKNOWN: 'That launch configuration no longer exists. Choose another in Developer settings.',
+  // 0.30 launch preferences: shown in the kernel's own words when it sends them (spawnProblem), which
+  // name the harness, where it was chosen and the fix; this is the fallback.
+  E_HARNESS_UNAVAILABLE: 'The harness this soul would run isn’t installed on this machine. Install it, or pick another harness above.',
   E_MODEL_UNKNOWN: 'That model isn’t available for this harness. Pick another model, or keep the default.',
   E_INSTANCE_NAME_INVALID: 'Use lowercase letters, numbers and dashes, at most 64 characters, and don’t reuse a soul’s name.',
   E_INSTANCE_NAME_TAKEN: 'An instance with this name already exists. Choose another name.',
@@ -69,8 +72,11 @@ const SPAWN = {
 export function spawnProblem(reason, stage = 'preview') {
   const code = typeof reason?.code === 'string' ? reason.code : 'E_CLI_FAILED';
   const own = stage === 'spawn' ? SPAWN : PREVIEW;
-  const text = own[code] ?? COMMON[code] ?? (stage === 'spawn' ? SPAWN.E_CLI_FAILED : PREVIEW.E_CLI_FAILED);
   const message = typeof reason?.message === 'string' ? reason.message.trim() : '';
+  // A missing harness is said as the kernel words it, with its fix (launch preferences, 0.30).
+  const fix = typeof reason?.details?.fix === 'string' ? reason.details.fix.trim() : '';
+  const kernelWords = code === 'E_HARNESS_UNAVAILABLE' && message ? (fix ? `${message.replace(/[.\s]+$/, '')}: ${fix}` : message) : null;
+  const text = kernelWords ?? own[code] ?? COMMON[code] ?? (stage === 'spawn' ? SPAWN.E_CLI_FAILED : PREVIEW.E_CLI_FAILED);
   return { text, code, detail: message ? `${code} · ${message}` : code };
 }
 
