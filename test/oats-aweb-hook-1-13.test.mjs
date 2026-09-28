@@ -27,7 +27,7 @@ const log = ${JSON.stringify(join(base, "aw.log"))};
 const j = (obj) => JSON.stringify(obj, null, 2);
 function versionTuple(v) { return String(v || "0.0.0").replace(/^aw\\s+v?/, "").replace(/^v/, "").split(".").slice(0, 3).map(n => Number(n) || 0); }
 function atLeast(v, f) { const A = versionTuple(v), B = versionTuple(f); for (let i = 0; i < 3; i++) if (A[i] !== B[i]) return A[i] > B[i]; return true; }
-function val(flag) { const i = a.indexOf(flag); return i >= 0 ? a[i + 1] : undefined; }
+function val(flag) { const eq = a.find((x) => x.startsWith(flag + "=")); if (eq) return eq.slice(flag.length + 1); const i = a.indexOf(flag); return i >= 0 ? a[i + 1] : undefined; }
 function csv(name, fallback) { return String(process.env[name] || fallback).split(",").map(s => s.trim()).filter(Boolean); }
 fs.appendFileSync(log, JSON.stringify({ argv: a, cwd: process.cwd(), identityHome: process.env.AWEB_IDENTITY_HOME || null }) + "\\n");
 if (a[0] === "id" && a[1] === "grant" && process.env.AWEB_IDENTITY_HOME) { console.error("grant command refuses external identity home"); process.exit(2); }
@@ -99,11 +99,17 @@ function resident(base, name = "merlin") {
 }
 
 function settings(custody, identity = {}) {
-  return { team: "t:example.test", identity: { mode: "global", resident: "merlin", ...identity }, residents: { merlin: custody } };
+  return { identity: { mode: "global", resident: "merlin", ...identity }, residents: { merlin: custody } };
+}
+
+// oats.aweb 1.17 (team model v2): the primary team is the kernel's default-team env, never a
+// provider setting; OATS_TEAMS rows are { label, team, default, from }.
+function defaultTeamEnv(team = "t:example.test") {
+  return { OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: team, OATS_DEFAULT_TEAM_FROM: "deployment", OATS_TEAMS: JSON.stringify([{ label: "default", team, default: true, from: "local" }]) };
 }
 
 function runHook(bin, event, env) {
-  const r = spawnSync(process.execPath, [HOOK, event], { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: event, ...env } });
+  const r = spawnSync(process.execPath, [HOOK, event], { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: event, ...defaultTeamEnv(), ...env } });
   let doc; try { doc = JSON.parse(r.stdout.trim().split(/\n/).at(-1)); } catch { doc = undefined; }
   return { ...r, doc };
 }
@@ -111,10 +117,14 @@ function runHook(bin, event, env) {
 function logLines(base) {
   return readFileSync(join(base, "aw.log"), "utf8").trim().split(/\n/).filter(Boolean).map((l) => JSON.parse(l));
 }
+// oats.aweb 1.17 passes aw value flags as one `--flag=value` argument.
+function argvValue(argv, flag) {
+  return argv.find((a) => a.startsWith(`${flag}=`))?.slice(flag.length + 1) ?? argv[argv.indexOf(flag) + 1];
+}
 
 function runBindingCheck(bin, settings, context, env = {}) {
   const input = { schemaVersion: 1, phase: "check", slot: "messaging", capability: "oats.aweb", settings, input: { action: { kind: "readiness" }, context } };
-  const r = spawnSync(process.execPath, [BINDING, "check"], { input: JSON.stringify(input), encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, ...env } });
+  const r = spawnSync(process.execPath, [BINDING, "check"], { input: JSON.stringify(input), encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, ...defaultTeamEnv(), ...env } });
   let doc; try { doc = JSON.parse(r.stdout); } catch { doc = undefined; }
   return { ...r, doc };
 }
@@ -148,9 +158,9 @@ test("normal global grants use the 1.13 concrete default scopes and preflight cu
     const mint = lines[mintIdx];
     assert.equal(mint.cwd, realpathSync(custody));
     assert.equal(mint.identityHome, null);
-    assert.equal(mint.argv[mint.argv.indexOf("--scope") + 1], NORMAL_SCOPES.join(","));
-    assert.equal(mint.argv[mint.argv.indexOf("--custody-socket") + 1], join(realpathSync(custody), "custody.sock"));
-    assert.equal(mint.argv[mint.argv.indexOf("--team") + 1], "t:example.test");
+    assert.equal(argvValue(mint.argv, "--scope"), NORMAL_SCOPES.join(","));
+    assert.equal(argvValue(mint.argv, "--custody-socket"), join(realpathSync(custody), "custody.sock"));
+    assert.equal(argvValue(mint.argv, "--team"), "t:example.test");
     assert.equal(existsSync(join(home, ".aweb-identity", "grant.yaml")), true);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
@@ -271,7 +281,7 @@ test("single aw floor refuses older aw before grant mint and always passes --tea
     const { r } = spawnGrant(base, {}, { FAKE_AW_VERSION: "1.36.13" });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     const mint = logLines(base).find((l) => l.argv.slice(0, 3).join(" ") === "id grant mint").argv;
-    assert.equal(mint[mint.indexOf("--team") + 1], "t:example.test");
+    assert.equal(argvValue(mint, "--team"), "t:example.test");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
@@ -421,7 +431,7 @@ test("launch renewal keeps the old grant when attachment verification or preflig
       assert.match(r.doc.warning, pattern);
       const minted = logLines(base).filter((l) => l.argv.slice(0, 3).join(" ") === "id grant mint");
       if (minted.length) {
-        const newHome = minted[0].argv[minted[0].argv.indexOf("--out") + 1];
+        const newHome = argvValue(minted[0].argv, "--out");
         assert.equal(existsSync(newHome), false, "failed renewal grant home removed");
         assert.ok(logLines(base).some((l) => l.argv.join(" ") === "id grant revoke grant-" + newHome.split(".aweb-identity-").at(-1) + " --json"));
       }

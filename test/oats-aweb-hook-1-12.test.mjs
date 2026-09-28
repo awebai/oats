@@ -28,7 +28,7 @@ if (grantCmd[0] === "id" && grantCmd[1] === "grant" && (a[0] === "--identity-hom
   process.exit(2);
 }
 const cmd = a;
-function val(flag) { const i = a.indexOf(flag); return i >= 0 ? a[i + 1] : undefined; }
+function val(flag) { const eq = a.find((x) => x.startsWith(flag + "=")); if (eq) return eq.slice(flag.length + 1); const i = a.indexOf(flag); return i >= 0 ? a[i + 1] : undefined; }
 if (s === "version") { console.log(process.env.FAKE_AW_VERSION || "aw 9.9.9"); process.exit(0); }
 if (s.startsWith("wake ")) { if (process.env.FAKE_NO_WAKE) { console.error("aw: unknown command wake"); process.exit(2); } process.exit(0); }
 if (cmd[0] === "custody" && cmd[1] === "status" && cmd.includes("--json")) {
@@ -88,8 +88,14 @@ function resident(base, name = "merlin") {
   return custody;
 }
 
+// oats.aweb 1.17 (team model v2): the primary team is the kernel's default-team env, never a
+// provider `team` setting (a stale one is refused); OATS_TEAMS rows are { label, team, default, from }.
+function defaultTeamEnv(team = "t:example.test") {
+  return { OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: team, OATS_DEFAULT_TEAM_FROM: "deployment", OATS_TEAMS: JSON.stringify([{ label: "default", team, default: true, from: "local" }]) };
+}
+
 function runHook(bin, event, env) {
-  const r = spawnSync(process.execPath, [HOOK, event], { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: event, ...env } });
+  const r = spawnSync(process.execPath, [HOOK, event], { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: event, ...defaultTeamEnv(), ...env } });
   let doc; try { doc = JSON.parse(r.stdout.trim().split(/\n/).at(-1)); } catch { doc = undefined; }
   return { ...r, doc };
 }
@@ -102,7 +108,7 @@ test("local mode keeps existing behaviour and adds messaging-layer meta.identity
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-112-"));
   try {
     const bin = fakeAw(base); const { root, home } = deployment(base);
-    const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_TEAM_ID: "t:example.test", OATS_SETTINGS: JSON.stringify({}) });
+    const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify({}) });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.equal(r.doc.meta.alias, "probe");
     assert.equal(r.doc.meta.team, "t:example.test");
@@ -116,11 +122,11 @@ test("global mode requires a named resident resolved from host settings and name
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-112-"));
   try {
     const bin = fakeAw(base); const { root, home } = deployment(base);
-    let r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify({ team: "t:example.test", identity: { mode: "global" }, residents: {} }) });
+    let r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify({ identity: { mode: "global" }, residents: {} }) });
     assert.notEqual(r.status, 0);
     assert.match(r.stdout, /identity\.resident/);
     assert.match(r.stdout, /oats-local\.yaml settings\.oats\.aweb\.residents\.<name>/);
-    r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify({ team: "t:example.test", identity: { mode: "global", resident: "merlin" }, residents: {} }) });
+    r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify({ identity: { mode: "global", resident: "merlin" }, residents: {} }) });
     assert.notEqual(r.status, 0);
     assert.match(r.doc.warning, /resident "merlin"/);
     assert.match(r.doc.warning, /oats-local\.yaml settings\.oats\.aweb\.residents\.merlin/);
@@ -131,7 +137,7 @@ test("global mode rejects identity.source because source belongs to retained-sea
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-112-"));
   try {
     const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
-    const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify({ team: "t:example.test", identity: { mode: "global", source: join(custody, ".aw"), resident: "merlin" }, residents: { merlin: custody } }) });
+    const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify({ identity: { mode: "global", source: join(custody, ".aw"), resident: "merlin" }, residents: { merlin: custody } }) });
     assert.notEqual(r.status, 0);
     assert.match(r.doc.warning, /identity\.mode.*global/);
     assert.match(r.doc.warning, /identity\.source/);
@@ -142,7 +148,7 @@ test("global mode mints a grant from custody, returns AWEB_IDENTITY_HOME and ide
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-112-"));
   try {
     const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
-    const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_TEAM_ID: "", OATS_TEAM_NAME: "", OATS_SETTINGS: JSON.stringify({ team: "t:example.test", delivery: "session", identity: { mode: "global", resident: "merlin", scopes: ["mail.read", "chat.send"], ttl: "90m" }, residents: { merlin: custody } }), AWEB_IDENTITY_HOME: join(base, "ambient-grant-home") });
+    const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_TEAM_NAME: "", OATS_SETTINGS: JSON.stringify({ delivery: "session", identity: { mode: "global", resident: "merlin", scopes: ["mail.read", "chat.send"], ttl: "90m" }, residents: { merlin: custody } }), AWEB_IDENTITY_HOME: join(base, "ambient-grant-home") });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.deepEqual(r.doc.env, { AWEB_DELIVERY: "session", AWEB_IDENTITY_HOME: join(home, ".aweb-identity") });
     assert.deepEqual(r.doc.meta.identity, { mode: "global", alias: "resident-alias", team: "t:example.test", address: "oats.aweb.ai/resident-alias", resident: "merlin", grant: { id: "grant-123", expiresAt: "2026-09-24T07:00:00Z", scopes: ["mail.read", "chat.send"], home: join(home, ".aweb-identity") } });
@@ -154,7 +160,7 @@ test("global mode mints a grant from custody, returns AWEB_IDENTITY_HOME and ide
     assert.equal(existsSync(join(home, ".aweb-identity", "grant.yaml")), true);
     const lines = logLines(base);
     const mint = lines.find((l) => l.argv.join(" ").includes("id grant mint"));
-    assert.deepEqual(mint.argv, ["id", "grant", "mint", "--team", "t:example.test", "--scope", "mail.read,chat.send", "--ttl", "90m", "--label", "oats:probe", "--out", join(home, ".aweb-identity"), "--custody-socket", join(base, "custody.sock"), "--json"]);
+    assert.deepEqual(mint.argv, ["id", "grant", "mint", "--team=t:example.test", "--scope=mail.read,chat.send", "--ttl=90m", "--label=oats:probe", `--out=${join(home, ".aweb-identity")}`, `--custody-socket=${join(base, "custody.sock")}`, "--json"]);
     assert.equal(mint.cwd, realpathSync(custody));
     assert.equal(mint.identityHome, null);
     const wake = lines.find((l) => l.argv[0] === "wake" && l.argv[1] === "register");
@@ -166,7 +172,7 @@ test("global mode revokes and removes the grant when the minted team differs fro
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-112-"));
   try {
     const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
-    const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify({ team: "expected:team", identity: { mode: "global", resident: "merlin" }, residents: { merlin: custody } }), FAKE_GRANT_TEAM: "wrong:team" });
+    const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify({ identity: { mode: "global", resident: "merlin" }, residents: { merlin: custody } }), ...defaultTeamEnv("expected:team"), FAKE_GRANT_TEAM: "wrong:team" });
     assert.notEqual(r.status, 0);
     assert.equal(existsSync(join(home, ".aweb-identity")), false, "mismatched grant home removed after revoke");
     assert.equal(r.doc.meta.identity.grant.id, "grant-123", "meta is still emitted for idempotent retire compensation");
@@ -182,7 +188,7 @@ test("global mode compensates if wake registration fails after mint", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-112-"));
   try {
     const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
-    const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify({ team: "t:example.test", delivery: "session", identity: { mode: "global", resident: "merlin" }, residents: { merlin: custody } }), FAKE_NO_WAKE: "1" });
+    const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify({ delivery: "session", identity: { mode: "global", resident: "merlin" }, residents: { merlin: custody } }), FAKE_NO_WAKE: "1" });
     assert.notEqual(r.status, 0);
     assert.equal(r.doc.meta.identity.grant.id, "grant-123");
     assert.equal(existsSync(join(home, ".aweb-identity")), false, "grant home removed after wake registration failure");
@@ -196,7 +202,7 @@ test("global mode compensates when mint writes a grant home but prints no JSON",
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-112-"));
   try {
     const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
-    const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify({ team: "t:example.test", identity: { mode: "global", resident: "merlin" }, residents: { merlin: custody } }), FAKE_MINT_NO_JSON: "1" });
+    const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify({ identity: { mode: "global", resident: "merlin" }, residents: { merlin: custody } }), FAKE_MINT_NO_JSON: "1" });
     assert.notEqual(r.status, 0);
     assert.equal(r.doc.meta.identity.grant.id, "grant-123");
     assert.equal(existsSync(join(home, ".aweb-identity")), false, "grant home removed after malformed mint output");
@@ -210,7 +216,7 @@ test("global mode reports a failed recovery revoke truthfully while keeping gran
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-112-"));
   try {
     const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
-    const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify({ team: "t:example.test", identity: { mode: "global", resident: "merlin" }, residents: { merlin: custody } }), FAKE_MINT_NO_JSON: "1", FAKE_REVOKE_FAIL: "1" });
+    const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify({ identity: { mode: "global", resident: "merlin" }, residents: { merlin: custody } }), FAKE_MINT_NO_JSON: "1", FAKE_REVOKE_FAIL: "1" });
     assert.notEqual(r.status, 0);
     assert.equal(r.doc.meta.identity.grant.id, "grant-123", "meta kept for retire compensation retry");
     assert.equal(existsSync(join(home, ".aweb-identity")), false, "grant home removed even when revoke failed");

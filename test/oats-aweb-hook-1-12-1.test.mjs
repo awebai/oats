@@ -36,6 +36,12 @@ console.error("fake aw: unexpected " + s); process.exit(2);
   return bin;
 }
 
+// oats.aweb 1.17 (team model v2): the primary team is the kernel's default-team env (OATS_DEFAULT_TEAM*,
+// OATS_TEAMS rows { label, team, default, from }), never a provider `team` setting (a stale one is refused).
+function defaultTeamEnv(team = "t:example.test") {
+  return { OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: team, OATS_DEFAULT_TEAM_FROM: "deployment", OATS_TEAMS: JSON.stringify([{ label: "default", team, default: true, from: "local" }]) };
+}
+
 function runHook(bin, event, env) {
   const r = spawnSync(process.execPath, [HOOK, event], { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: event, ...env } });
   let doc; try { doc = JSON.parse(r.stdout.trim().split(/\n/).at(-1)); } catch { doc = undefined; }
@@ -112,7 +118,8 @@ test("spawn uses roots[team] before root/workspace and local mode exports AWEB_I
       OATS_HOME: home,
       OATS_WORKSPACE: workspace,
       OATS_CONTEXT: workspace,
-      OATS_SETTINGS: JSON.stringify({ team: "t:example.test", root: declaredRoot, roots: { "t:example.test": teamRoot } }),
+      OATS_SETTINGS: JSON.stringify({ root: declaredRoot, roots: { "t:example.test": teamRoot } }),
+      ...defaultTeamEnv(),
     });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.deepEqual(r.doc.env, { AWEB_IDENTITY_HOME: join(home, ".aw") });
@@ -133,7 +140,8 @@ test("declared root without .aw is fatal and names the v2 root remedy without bo
       OATS_HOME: home,
       OATS_WORKSPACE: workspace,
       OATS_CONTEXT: workspace,
-      OATS_SETTINGS: JSON.stringify({ team: "t:example.test", root: declaredRoot }),
+      OATS_SETTINGS: JSON.stringify({ root: declaredRoot }),
+      ...defaultTeamEnv(),
     });
     assert.notEqual(r.status, 0);
     assert.match(r.doc.warning, new RegExp(`no messaging root at ${declaredRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
@@ -155,7 +163,8 @@ test("v2 spawn does not search above OATS_WORKSPACE when no root is declared", (
       OATS_HOME: home,
       OATS_WORKSPACE: workspace,
       OATS_CONTEXT: workspace,
-      OATS_SETTINGS: JSON.stringify({ team: "t:example.test" }),
+      OATS_SETTINGS: JSON.stringify({}),
+      ...defaultTeamEnv(),
     });
     assert.notEqual(r.status, 0);
     assert.match(r.doc.warning, new RegExp(`no messaging root at ${workspace.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
@@ -180,21 +189,21 @@ test("a classic environment (OATS_TEAM_SCOPE without workspace facts) is refused
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-test("setup in v2 reads settings root/team and prints v2 remedies", () => {
+test("setup in v2 reads the settings root and the default team, and prints v2 remedies", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-1121-"));
   try {
     const bin = fakeAw(base);
     const workspace = join(base, "workspace"); mkdirSync(workspace, { recursive: true });
     let r = runHook(bin, "setup", { OATS_WORKSPACE: workspace, OATS_SETTINGS: JSON.stringify({}) });
     assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.match(r.stdout, /set settings\.oats\.aweb\.team or keep an active team at the aweb root/);
+    assert.match(r.stdout, /no teams configured: run `oats aweb setup`/);
     assert.doesNotMatch(r.stdout, /oats-config\.yaml|messaging\.byTeam|team:/);
     const root = join(base, "declared-root"); mkdirSync(root, { recursive: true });
-    r = runHook(bin, "setup", { OATS_WORKSPACE: workspace, OATS_SETTINGS: JSON.stringify({ team: "t:example.test", root }) });
+    r = runHook(bin, "setup", { OATS_WORKSPACE: workspace, OATS_SETTINGS: JSON.stringify({ root }), ...defaultTeamEnv() });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.match(r.stdout, /oats aweb setup --username <u>/);
     assert.match(r.stdout, /AWEB_API_KEY=<key> oats aweb setup/);
-    assert.match(r.stdout, /oats aweb setup --invite <token>/);
+    assert.match(r.stdout, /oats aweb setup --join <label> --invite <token>/);
     assert.match(r.stdout, /settings\.oats\.aweb\.root/);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
@@ -208,11 +217,11 @@ test("binding-check reports one v2 problem per missing root/team and ready once 
     assert.equal(r.doc.ok, true);
     assert.equal(r.doc.result.status, "needs-configuration");
     assert.deepEqual(r.doc.result.problems.map((p) => p.message), [
+      "no teams configured: run `oats aweb setup`",
       `no messaging root at ${workspace}: run oats aweb setup there or set settings.oats.aweb.root`,
-      "no team: set settings.oats.aweb.team or keep an active team at the aweb root",
     ]);
     awRoot(workspace);
-    r = runBinding(bindingRequest({ delivery: "session", team: "t:example.test" }), { OATS_WORKSPACE: workspace });
+    r = runBinding(bindingRequest({ delivery: "session" }), { OATS_WORKSPACE: workspace, ...defaultTeamEnv() });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.deepEqual(r.doc.result, { status: "ready", problems: [] });
   } finally { rmSync(base, { recursive: true, force: true }); }
@@ -222,29 +231,60 @@ test("binding-check reports one v2 problem per missing root/team and ready once 
 // 1.14 reads no team from OATS_TEAM_ID (lead decision K): the team is settings.oats.aweb.team or the root's
 // active team, covered above and below.
 
-test("an unmapped v2 team label uses the workspace's default team (the root's active team) with a team-unmapped warning; with none, the check reports no team", () => {
+// RETIRED (oats.aweb 1.17): "an unmapped v2 team label uses the workspace's default team (the root's active team)
+// with a team-unmapped warning; with none, the check reports no team". 1.17 takes the primary team only from the
+// kernel's OATS_DEFAULT_TEAM_ID: an unmapped default is refused, never replaced by the root's active team. Floor below.
+test("an unmapped default team is refused by binding-check and spawn, never replaced by the root's active team", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-1121-"));
   try {
     const bin = fakeAw(base);
     const workspace = join(base, "workspace"); awRoot(workspace);
-    const teamScope = join(base, "deployment-dir"); awRoot(teamScope);
-    const home = join(workspace, "agents", "dev", "instances", "probe"); mkdirSync(home, { recursive: true });
-    // What the kernel's teamEnv exports for a home whose primary label has no messaging.byTeam mapping.
-    const env = { OATS_WORKSPACE: workspace, OATS_TEAM_SCOPE: teamScope, OATS_WORKSPACE_KEY: "fixture-workspace", OATS_WORKSPACE_NAME: "Fixture Workspace", OATS_TEAM_LABEL: "engineering", OATS_TEAM_LABELS: "engineering", OATS_TEAMS: JSON.stringify([{ label: "engineering", team: null, mapped: false }]), OATS_TEAM_ID: "" };
-    // No active team at the root: nothing to fall back to.
-    let check = runBinding(bindingRequest({ delivery: "session" }), env);
-    assert.equal(check.status, 0, check.stdout + check.stderr);
-    assert.deepEqual(check.doc.result, { status: "needs-configuration", problems: [{ code: "needs-configuration", message: "no team: set settings.oats.aweb.team or keep an active team at the aweb root" }] });
-    // The root keeps an active team: the label falls back to it and readiness stays ready.
+    // The root keeps an active team: 1.16 fell back to it; 1.17 must not.
     write(join(workspace, ".aw", "teams.yaml"), "active_team: t:example.test\n");
-    check = runBinding(bindingRequest({ delivery: "session" }), env);
-    assert.deepEqual(check.doc.result, { status: "ready", problems: [] });
+    const home = join(workspace, "agents", "dev", "instances", "probe"); mkdirSync(home, { recursive: true });
+    // What the kernel's teamsEnv exports when the default label has no provider id: the label, no id, mapped rows only.
+    const env = { OATS_WORKSPACE: workspace, OATS_WORKSPACE_KEY: "fixture-workspace", OATS_WORKSPACE_NAME: "Fixture Workspace", OATS_DEFAULT_TEAM: "engineering", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_TEAMS: "[]", OATS_TEAMS_SOURCE: "live" };
+    const unmapped = "the default team engineering has no provider id yet: its owner runs oats aweb setup, then commits the id, or choose another default with oats teams default";
+    const check = runBinding(bindingRequest({ delivery: "session" }), env);
+    assert.equal(check.status, 0, check.stdout + check.stderr);
+    assert.deepEqual(check.doc.result, { status: "needs-configuration", problems: [{ code: "needs-configuration", message: unmapped }] });
     const spawn = runHook(bin, "spawn", { ...env, OATS_INSTANCE: "probe", OATS_HOME: home, OATS_CONTEXT: workspace, OATS_SETTINGS: JSON.stringify({}) });
-    assert.equal(spawn.status, 0, spawn.stdout + spawn.stderr);
-    assert.equal(spawn.doc.warning, "oats-aweb: team-unmapped — workspace label engineering is not mapped; using the default team t:example.test");
-    assert.equal(spawn.doc.meta.team, "t:example.test");
-    const invite = logLines(base).find((l) => l.argv.join(" ").startsWith("team invite"));
-    assert.deepEqual(invite.argv.slice(2, 4), ["--team-id", "t:example.test"], "minted into the workspace's default team, named explicitly");
-    assert.equal(JSON.stringify(spawn.doc).includes("TOK-secret"), false, "the invite token never reaches the output");
+    assert.notEqual(spawn.status, 0, spawn.stdout + spawn.stderr);
+    assert.equal(spawn.doc.warning, `oats-aweb: ${unmapped}`);
+    assert.equal(logLines(base).some((l) => /^team (list|invite|join)\b/.test(l.argv.join(" "))), false, "nothing was minted and the root's active team was never consulted");
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+// oats.aweb 1.17 removed the provider `team` setting (settings.oats.aweb.team, the pre-0.30 team selector).
+test("a stale settings.oats.aweb.team is refused by spawn (before any aw call) and by binding-check", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-1121-"));
+  try {
+    const bin = fakeAw(base);
+    const workspace = join(base, "workspace"); awRoot(workspace);
+    const home = join(workspace, "agents", "dev", "instances", "probe"); mkdirSync(home, { recursive: true });
+    const refusal = "teams are not a setting since oats.aweb 1.17 / OATS 0.30: use oats teams / oats soul teams";
+    const spawn = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: workspace, OATS_CONTEXT: workspace, OATS_SETTINGS: JSON.stringify({ team: "t:example.test" }), ...defaultTeamEnv() });
+    assert.notEqual(spawn.status, 0, spawn.stdout + spawn.stderr);
+    assert.equal(spawn.doc.warning, `oats-aweb: ${refusal}`);
+    assert.equal(existsSync(join(base, "aw.log")), false, "refused before any aw call, so nothing was minted");
+    const check = runBinding(bindingRequest({ delivery: "session", team: "t:example.test" }), { OATS_WORKSPACE: workspace, ...defaultTeamEnv() });
+    assert.equal(check.doc.ok, false, check.stdout + check.stderr);
+    assert.equal(check.doc.error.code, "needs-configuration");
+    assert.equal(check.doc.error.message, refusal);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+// oats.aweb 1.17 removed `oats aweb setup --invite <token>` joining at the single messaging root: an invite now
+// needs --join <label>, so the team gets its own root.
+test("setup --invite without --join is refused and spends no invite", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-1121-"));
+  try {
+    const bin = fakeAw(base);
+    const workspace = join(base, "workspace"); awRoot(workspace);
+    const refused = spawnSync(process.execPath, [HOOK, "setup", "--invite", "TOK-secret"], { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: "setup", OATS_WORKSPACE: workspace, OATS_SETTINGS: "{}", ...defaultTeamEnv() } });
+    assert.equal(refused.status, 2, refused.stdout + refused.stderr);
+    assert.match(refused.stderr, /--invite requires --join <label> so the team gets its own root/);
+    assert.equal(existsSync(join(base, "aw.log")) && logLines(base).some((l) => /^(team join|id team accept-invite)/.test(l.argv.join(" "))), false, "no invite was spent");
+    assert.equal((refused.stdout + refused.stderr).includes("TOK-secret"), false);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
