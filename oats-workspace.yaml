@@ -24,7 +24,7 @@ packages:
   oats.jira: v1.0.1
   oats.linear: v1.0.1
   oats.authoring: v1.0.3
-  oats.engineering: v1.0.0
+  oats.engineering: v1.1.0
 
 # No shared teams yet (team model v2). A shared team is committed here WITH its
 # provider id (`teams: { oats: { team: <id> } }`) once every deployment using

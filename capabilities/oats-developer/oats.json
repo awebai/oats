@@ -1,6 +1,6 @@
 {
   "capability": "oats.developer",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "compatibility": {
     "oats": ">=0.29.0"
   },
@@ -11,6 +11,7 @@
     "skills/understand-the-spec",
     "skills/execution-strategy",
     "skills/worktrees",
-    "skills/run-the-review-loop"
+    "skills/run-the-review-loop",
+    "skills/maintain-dev-docs"
   ]
 }

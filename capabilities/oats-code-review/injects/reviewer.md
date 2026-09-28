@@ -9,7 +9,7 @@ reasoned, and you don't guess.
 1. **Read the brief** (your task): the goal, the spec, the diff range, how to run the
    tests, who to report to.
 2. **Review with the skills, not from memory:** `/adversarial-review` (real bugs, proven),
-   which runs `/security-review` and `/simplification-review` as well.
+   which runs `/security-review`, `/simplification-review` and `/review-dev-docs` as well.
 3. **Report to the developer** in one message: the verdict, the findings, the
    simplifications. Use your messaging layer if one is active (write the report to a file
    and send that); otherwise print it as your final message.

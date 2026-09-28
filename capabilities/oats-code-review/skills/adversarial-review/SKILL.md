@@ -27,7 +27,7 @@ Go through these deliberately, for every changed path:
 - **Tests:** do they prove the behaviour, or just run the code? Would they fail if the
   bug you're thinking of existed?
 
-Then run the `/security-review` pass and the `/simplification-review` pass.
+Then run the `/security-review`, `/simplification-review` and `/review-dev-docs` passes.
 
 ## 3. Prove it before you report it
 - For each suspected bug, **show the failing path**: the input, the steps, the wrong result.
