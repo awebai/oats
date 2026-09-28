@@ -1,4 +1,4 @@
-/** Setup's "Teams on this computer" (team model v2, OATS 0.30; spec
+/** The Workspace Teams tab's "Teams on this computer" (team model v2, OATS 0.30; spec
  * docs/design/2026-09-27-team-model-v2.md, option B). The shared teams (the committed
  * workspace, read-only here: edited by PR) and the local ones (this computer's
  * oats-local.yaml), each with its id; the default team (changeable); add or remove a
@@ -7,7 +7,8 @@
  * {action: 'list'} | {action: 'add', label, team, description?} | {action: 'remove', label}
  * | {action: 'default', label}, each answering the document after the write. A refusal
  * (E_TEAM_IN_USE, E_TEAM_EXISTS, …) is shown verbatim with its code. The card owns its
- * state, so the Setup view mounts it once and keeps it across re-renders. */
+ * state, so the Teams tab mounts it once and keeps it across re-renders; `onDocument(doc)`
+ * hears each document read (the tab's attention dot counts its problems). */
 import { box } from './workspace-setup.mjs';
 
 export const computerTeamsCSS = `
@@ -78,7 +79,7 @@ export function teamInUse(document, label) {
 /** Where a team is declared, in words. */
 const fromText = from => from === 'shared' ? 'shared · from the workspace' : from === 'local' ? 'local · on this computer' : `from: ${from}`;
 
-export function createComputerTeams(doc, { request }) {
+export function createComputerTeams(doc, { request, onDocument = null }) {
   const card = box(doc, 'Teams on this computer', 'shared and local', 'Not shared', { local: true, icon: 'computer' });
   card.classList.add('computer-teams');
   const status = el(doc, 'p', '', 'ct-status'); status.setAttribute('role', 'status');
@@ -99,6 +100,7 @@ export function createComputerTeams(doc, { request }) {
       if (action.action === 'add') { adding = false; Object.assign(draft, { label: '', team: '', description: '' }); }
       if (action.action === 'default') confirming = null;
       status.textContent = ''; render();
+      onDocument?.(current);
     } catch (error) {
       if (disposed || ticket !== serial) return;
       pending = false;

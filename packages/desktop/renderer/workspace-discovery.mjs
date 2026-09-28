@@ -1,4 +1,4 @@
-/** Workspace view header and its Capabilities / Setup (id: sources) tabs, natively on
+/** Workspace view header and its Teams / Capabilities / Setup (id: sources) tabs, natively on
  * workspace model v2. Facts come from the installed kernel only:
  *   - `oats workspace status` + `oats status` (the roster observation) for
  *     sources, lock state and which instances carry a module;
@@ -9,15 +9,16 @@
 import { postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
 import { cliStatus, cliKnownUnavailable } from './views/cli-status.mjs';
 import { deploymentUnavailableText } from './deployment-header.mjs';
-import { setupCSS, renderSetup } from './workspace-setup.mjs';
+import { setupCSS, renderSetup, teamsBox } from './workspace-setup.mjs';
 import { computerTeamsCSS, createComputerTeams } from './computer-teams.mjs';
 import { catalogCSS, renderCapabilitySections, capabilitySections, renderFilters, filterChoices, filterCapabilities, memberNames, deploymentNotes, syncCapabilityNav } from './workspace-catalog.mjs';
 import { createWorkspaceSync, syncCSS, reasonText } from './workspace-sync-view.mjs';
 import { iconElement } from './shell-icons.mjs';
 
-export const workspaceTabs = ['souls', 'capabilities', 'sources'];
-// What a person reads (the ids stay stable): Setup is what the workspace is built from (repos, packages, external souls).
-const TAB_LABELS = { souls: 'Souls', capabilities: 'Capabilities', sources: 'Setup' };
+export const workspaceTabs = ['teams', 'souls', 'capabilities', 'sources'];
+// What a person reads (the ids stay stable): Teams is who can work together (human, 2026-09-28: first,
+// before Souls); Setup is what the workspace is built from (repos, packages, external souls).
+const TAB_LABELS = { teams: 'Teams', souls: 'Souls', capabilities: 'Capabilities', sources: 'Setup' };
 export const discoveryCSS = `
 ${catalogCSS}
 ${setupCSS}
@@ -60,6 +61,9 @@ ${syncCSS}
 .workspace-discovery[data-tab=capabilities] { padding:16px 28px 20px; }
 .workspace-discovery[data-tab=capabilities] > * { max-width:1000px; margin-inline:auto; }
 .workspace-discovery[data-tab=sources] { padding:20px 24px; }
+/* Teams reads as one centred column: the teams card is a list, not a dashboard. */
+.workspace-discovery[data-tab=teams] { padding:20px 24px; }
+.workspace-discovery[data-tab=teams] > * { max-width:760px; margin-inline:auto; }
 .workspace-discovery[hidden], .souls-bar[hidden] { display:none; }
 .discovery-status { margin:0 0 14px; color:var(--muted); font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
 .discovery-status:empty { display:none; }
@@ -74,8 +78,10 @@ const list = value => Array.isArray(value) ? value : [];
 export function setupAttention(status) {
   if (!status) return 0;
   return list(status.members).filter(member => member?.status !== 'confirmed').length
-    + list(status.unsynced).length + list(status.stale).length + list(status.problems).length + list(status.warnings).length;
+    + list(status.unsynced).length + list(status.stale).length + list(status.problems).length + list(status.warnings).filter(w => !teamWarning(w)).length;
 }
+/** A kernel workspace warning about a team label: said on the Teams tab, not Setup. */
+const teamWarning = w => w?.code === 'unmapped-team-label';
 
 /** Why the catalog cannot be read right now (probe facts only). */
 function gate(workspace, deployment) {
@@ -95,15 +101,15 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   let alive = true, serial = 0, rosterGen = null, workspace = null, deployment = null, instances = [], tab = 'souls';
   let catalog = null, loading = false, failure = '', filters = { team: null, repo: null }, rendered = null;
   let setupView = 'list', query = '', setupMember = null, souls = [];
-  // Team model v2 (kernel feature team-model-2): Setup's "Teams on this computer", one card per
-  // workspace generation, kept across renders so a half-typed form survives the status polls.
-  let computerTeams = null, computerTeamsGen = null;
+  // Team model v2 (kernel feature team-model-2): the Teams tab's "Teams on this computer", one card
+  // per workspace generation, kept across renders so a half-typed form survives the status polls.
+  let computerTeams = null, computerTeamsGen = null, teamProblems = 0;
   function teamsCard() {
     if (!list(cliStatus()?.features).includes('team-model-2') || !workspace?.id || workspace.remote || workspace.server) return null;
     const gen = workspaceGeneration();
     if (computerTeams && computerTeamsGen === gen) return computerTeams.element;
-    computerTeams?.dispose(); computerTeamsGen = gen;
-    computerTeams = createComputerTeams(doc, { request: async body => {
+    computerTeams?.dispose(); computerTeamsGen = gen; teamProblems = 0;
+    computerTeams = createComputerTeams(doc, { onDocument: teams => { teamProblems = list(teams?.problems).length; updateCounts(); }, request: async body => {
       const answer = await postJson(ctx, `/api/workspace-teams${wsQuery()}`, body);
       if (answer?.status === 'ok' && answer.teams) return answer.teams;
       throw Object.assign(new Error(answer?.reason?.message || 'The teams on this computer could not be read.'), { code: answer?.reason?.code || null });
@@ -114,21 +120,22 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   // No title in the bar (human, 2026-09-28): the sidebar already says Workspace; the tabs lead.
   const tabs = node('div', undefined, 'workspace-tabs'); tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Workspace sections'); header.append(tabs);
   const controls = new Map(), counts = new Map();
-  let attn = null, attnText = null;
+  const attns = new Map();
   for (const name of workspaceTabs) {
     const control = node('button', TAB_LABELS[name]); control.type = 'button';
     control.id = `workspace-tab-${name}`; control.setAttribute('role', 'tab');
     const count = node('span', '', 'workspace-count'); control.append(count); counts.set(name, count);
-    if (name === 'sources') {
-      // Setup needs attention: a dot, and the same words for assistive tech.
-      attn = node('span', undefined, 'workspace-attn'); attn.hidden = true; attn.setAttribute('aria-hidden', 'true');
-      attnText = node('span', '', 'workspace-sr-only'); control.append(attn, attnText);
+    if (name === 'sources' || name === 'teams') {
+      // Setup or Teams needs attention: a dot, and the same words for assistive tech.
+      const dot = node('span', undefined, 'workspace-attn'); dot.hidden = true; dot.setAttribute('aria-hidden', 'true');
+      const words = node('span', '', 'workspace-sr-only'); control.append(dot, words);
+      attns.set(name, [dot, words]);
     }
     control.addEventListener('click', () => setTab(name));
     control.addEventListener('focus', () => revealTab(control));
     control.addEventListener('keydown', event => {
-      const at = workspaceTabs.indexOf(name);
-      const index = event.key === 'Home' ? 0 : event.key === 'End' ? 2 : event.key === 'ArrowRight' ? (at + 1) % 3 : event.key === 'ArrowLeft' ? (at + 2) % 3 : -1;
+      const at = workspaceTabs.indexOf(name), n = workspaceTabs.length;
+      const index = event.key === 'Home' ? 0 : event.key === 'End' ? n - 1 : event.key === 'ArrowRight' ? (at + 1) % n : event.key === 'ArrowLeft' ? (at + n - 1) % n : -1;
       if (index < 0) return;
       event.preventDefault(); setTab(workspaceTabs[index]); controls.get(workspaceTabs[index]).focus({ preventScroll: true });
     });
@@ -182,9 +189,10 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     if (souls !== undefined) counts.get('souls').textContent = souls === null ? '' : String(souls);
     counts.get('capabilities').textContent = catalog ? String(catalog.capabilities.length) : '';
     const s = observed();
-    // Setup carries no count: a dot says when something there needs attention.
-    const needs = s ? setupAttention(s) : 0;
-    if (attn) { attn.hidden = !needs; attnText.textContent = needs ? ` — ${needs} ${needs === 1 ? 'item needs' : 'items need'} attention` : ''; }
+    // Setup and Teams carry no count: a dot says when something there needs attention.
+    const teamsV2 = !!teamsCard();
+    const needs = { sources: s ? setupAttention(s) : 0, teams: teamsV2 ? teamProblems : list(s?.warnings).filter(teamWarning).length };
+    for (const [name, [dot, words]] of attns) { const n = needs[name]; dot.hidden = !n; words.textContent = n ? ` — ${n} ${n === 1 ? 'item needs' : 'items need'} attention` : ''; }
   }
   function syncHeader() {
     const s = observed();
@@ -233,10 +241,22 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     notes.replaceChildren(); filterHost.replaceChildren(); body.replaceChildren(); capLead.replaceChildren(); filterHost.className = '';
     if (unavailable || tab === 'souls') return;
     for (const note of deploymentNotes(deployment)) notes.append(node('p', note.text, `catalog-note${note.warn ? ' warn' : ''}`));
+    if (tab === 'teams') {
+      // Team model v2: this computer's teams (the kernel's `oats teams`), editable here. A workspace
+      // on another computer keeps its teams there. Before v2: the labels the workspace declares.
+      const card = teamsCard();
+      if (card) body.append(card);
+      else if (list(cliStatus()?.features).includes('team-model-2')) body.append(node('p', "Teams are set on the computer that runs this workspace.", 'catalog-note'));
+      else {
+        for (const warning of list(s?.warnings)) if (teamWarning(warning) && typeof warning.message === 'string' && warning.message && !list(s?.workspace?.teams).includes(warning.label)) notes.append(node('p', warning.message, 'catalog-note warn'));
+        body.append(teamsBox(doc, { status: s, souls }));
+      }
+      return;
+    }
     if (tab === 'sources') {
-      // The kernel's workspace warnings, verbatim; an unmapped team label is said on its team's row.
-      for (const warning of list(s?.warnings)) if (typeof warning?.message === 'string' && warning.message && !(warning.code === 'unmapped-team-label' && list(s?.workspace?.teams).includes(warning.label))) notes.append(node('p', warning.message, 'catalog-note warn'));
-      renderSetup(body, { status: s, instances, souls, cli: cliStatus(), view: setupView, selected: setupMember, teamsCard: teamsCard(),
+      // The kernel's workspace warnings, verbatim; a team's warning is said on the Teams tab.
+      for (const warning of list(s?.warnings)) if (typeof warning?.message === 'string' && warning.message && !teamWarning(warning)) notes.append(node('p', warning.message, 'catalog-note warn'));
+      renderSetup(body, { status: s, instances, souls, cli: cliStatus(), view: setupView, selected: setupMember,
         onSelect: key => selectMember(key), onOpenRepo: openRepo, onOpenPackages: openPackages, openExternal: url => ctx.openExternal?.(url) }); return;
     }
     if (!catalog) return;

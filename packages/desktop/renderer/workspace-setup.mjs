@@ -1,5 +1,5 @@
 /** Workspace v4 Setup (W1 list, W2 graph): what the workspace declares in git
- * (members, packages, teams) beside what lives only on this computer.
+ * (members, packages) beside what lives only on this computer.
  * Presentation only, from `oats workspace status` (and the roster, the CLI
  * probe, the souls list): nothing is inferred and unreported facts are not
  * shown. Kernel #217 (desktop-facts) adds the files, this computer's clones,
@@ -218,13 +218,13 @@ export function box(doc, title, lead, scopeLabel, { local = false, icon = null }
 }
 
 /** The whole Setup tab. view: 'list' | 'graph'; selected: a member key (graph panel). */
-export function renderSetup(host, { status, instances = [], souls = [], cli = null, view = 'list', selected = null, onSelect = () => {}, onOpenRepo = null, onOpenPackages = null, openExternal = null, teamsCard = null }) {
+export function renderSetup(host, { status, instances = [], souls = [], cli = null, view = 'list', selected = null, onSelect = () => {}, onOpenRepo = null, onOpenPackages = null, openExternal = null }) {
   const doc = host.ownerDocument;
   host.replaceChildren();
   const root = el(doc, 'div', null, 'setup'); root.dataset.view = view;
   root.append(lede(doc, status, openExternal));
   if (view === 'graph') root.append(graph(doc, { status, instances, selected, onSelect, onOpenRepo, onOpenPackages, openExternal }));
-  else root.append(columns(doc, { status, instances, souls, cli, onSelect, onOpenRepo, onOpenPackages, teamsCard }));
+  else root.append(columns(doc, { status, instances, souls, cli, onSelect, onOpenRepo, onOpenPackages }));
   host.append(root);
   return root;
 }
@@ -247,7 +247,7 @@ function lede(doc, status, openExternal) {
   return line;
 }
 
-function columns(doc, { status, instances, souls, cli, onSelect, teamsCard = null }) {
+function columns(doc, { status, instances, souls, cli, onSelect }) {
   const ws = status?.workspace || {};
   const cols = el(doc, 'div', null, 'setup-cols'), main = el(doc, 'div', null, 'setup-col'), side = el(doc, 'div', null, 'setup-col');
   // Members: the repositories that contribute souls and capabilities, always at their latest.
@@ -301,28 +301,6 @@ function columns(doc, { status, instances, souls, cli, onSelect, teamsCard = nul
   main.append(members, packages);
   // Defaults: as the workspace file declares them (defaults), not resolved for a soul.
   const defaults = defaultsBox(doc, status);
-  // Team model v2 (0.30): "Teams on this computer" (the shared and local teams, the default)
-  // replaces the 0.29 Teams box; the card is the caller's, kept across renders.
-  // 0.29: the labels the workspace declares, how many souls take each, and the kernel's warnings about them.
-  const teams = teamsCard || box(doc, 'Teams', null, 'Shared · Git');
-  const unmapped = new Map(list(status?.warnings).filter(w => w?.code === 'unmapped-team-label' && text(w.label)).map(w => [w.label, w]));
-  if (!teamsCard) for (const label of list(ws.teams).filter(text)) {
-    const row = el(doc, 'div', null, 'setup-team'); row.dataset.team = label;
-    const head = el(doc, 'div', null, 'setup-team-head'); head.append(el(doc, 'span', label, 'setup-team-label'));
-    const count = list(souls).filter(s => s?.team === label).length;
-    head.append(el(doc, 'span', plural(count, 'soul'), 'setup-team-meta'));
-    row.append(head);
-    // What the team adds to (or turns off from) the workspace defaults (defaults.byTeam).
-    const adds = teamDefaults(doc, status, label);
-    if (adds) row.append(adds);
-    // The kernel's own warning about this label, verbatim.
-    if (text(unmapped.get(label)?.message)) row.append(el(doc, 'span', unmapped.get(label).message, 'setup-team-warn'));
-    teams.append(row);
-  }
-  if (!teamsCard) {
-    if (!list(ws.teams).length) teams.append(el(doc, 'p', 'The workspace declares no teams.', 'setup-empty'));
-    teams.append(el(doc, 'p', 'Teams organise and add defaults. They never restrict what a soul can do.', 'setup-team-note'));
-  }
   // This computer: what is not shared.
   const local = box(doc, 'This computer', null, 'Not shared', { local: true, icon: 'computer' });
   const rows = el(doc, 'dl', null, 'setup-local-rows');
@@ -351,9 +329,33 @@ function columns(doc, { status, instances, souls, cli, onSelect, teamsCard = nul
     }
     local.append(el(doc, 'h4', 'Member clones', 'setup-local-sub'), list$);
   }
-  side.append(...[defaults, teams, local].filter(Boolean));
+  side.append(...[defaults, local].filter(Boolean));
   cols.append(main, side);
   return cols;
+}
+
+/** The Workspace's Teams tab before team model v2 (0.29): the labels the workspace declares,
+ * how many souls take each, what each adds to the defaults, and the kernel's warnings about them. */
+export function teamsBox(doc, { status, souls = [] }) {
+  const ws = status?.workspace || {};
+  const teams = box(doc, 'Teams', null, 'Shared · Git');
+  const unmapped = new Map(list(status?.warnings).filter(w => w?.code === 'unmapped-team-label' && text(w.label)).map(w => [w.label, w]));
+  for (const label of list(ws.teams).filter(text)) {
+    const row = el(doc, 'div', null, 'setup-team'); row.dataset.team = label;
+    const head = el(doc, 'div', null, 'setup-team-head'); head.append(el(doc, 'span', label, 'setup-team-label'));
+    const count = list(souls).filter(s => s?.team === label).length;
+    head.append(el(doc, 'span', plural(count, 'soul'), 'setup-team-meta'));
+    row.append(head);
+    // What the team adds to (or turns off from) the workspace defaults (defaults.byTeam).
+    const adds = teamDefaults(doc, status, label);
+    if (adds) row.append(adds);
+    // The kernel's own warning about this label, verbatim.
+    if (text(unmapped.get(label)?.message)) row.append(el(doc, 'span', unmapped.get(label).message, 'setup-team-warn'));
+    teams.append(row);
+  }
+  if (!list(ws.teams).length) teams.append(el(doc, 'p', 'The workspace declares no teams.', 'setup-empty'));
+  teams.append(el(doc, 'p', 'Teams organise and add defaults. They never restrict what a soul can do.', 'setup-team-note'));
+  return teams;
 }
 
 /** One clone row: its path (relative to the deployment), the kernel's refusal, or not cloned. */

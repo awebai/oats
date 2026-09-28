@@ -1,4 +1,4 @@
-// Team model v2 (0.30, D2 screen 1): Setup's "Teams on this computer". The document is K1's
+// Team model v2 (0.30, D2 screen 1): the Workspace Teams tab's "Teams on this computer". The document is K1's
 // `oats teams --json` example verbatim (docs/desktop-cli-api.md "Team model v2",
 // feat/030-team-model 8dd82158) until the real 0.30 capture exists; the IO is the proposed
 // /api/workspace-teams route (list | add | remove | default), faked here.
@@ -6,7 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { createComputerTeams, computerTeamsCSS, teamInUse } from '../renderer/computer-teams.mjs';
-import { renderSetup, setupCSS } from '../renderer/workspace-setup.mjs';
+import { renderSetup, setupCSS, teamsBox } from '../renderer/workspace-setup.mjs';
 
 const K1 = () => ({ teamsApi: 1, deployment: '/w', defaultTeam: 'antares-oats',
   teams: [
@@ -112,14 +112,12 @@ test('no teams yet says what to do; a failed read says so', async t => {
   assert.equal(failed.q('.ct-error p').textContent, 'oats teams failed');
 });
 
-test('Setup puts the card in place of the 0.29 Teams box; without it, the 0.29 box stays', async t => {
+test('Setup has no Teams box: teams live on the Workspace Teams tab (workspace-v2-view.test.mjs); the 0.29 box is teamsBox', async t => {
   const dom = new JSDOM('<!doctype html><body><div></div></body>'), doc = dom.window.document; t.after(() => dom.window.close());
   const status = { workspace: { name: 'oats', key: 'k', teams: ['global'] }, members: [], packages: [] };
-  const card = doc.createElement('section'); card.dataset.box = 'Teams on this computer';
   const host = doc.querySelector('div');
-  renderSetup(host, { status, teamsCard: card });
-  assert.deepEqual([...host.querySelectorAll('[data-box]')].map(b => b.dataset.box).filter(b => /Teams/.test(b)), ['Teams on this computer']);
-  assert.equal(card.querySelector('[data-team]'), null, 'nothing of the 0.29 box is added to the card');
   renderSetup(host, { status });
-  assert.deepEqual([...host.querySelectorAll('[data-box]')].map(b => b.dataset.box).filter(b => /Teams/.test(b)), ['Teams']);
+  assert.deepEqual([...host.querySelectorAll('[data-box]')].map(b => b.dataset.box).filter(b => /Teams/.test(b)), []);
+  const box = teamsBox(doc, { status });
+  assert.equal(box.dataset.box, 'Teams'); assert.deepEqual([...box.querySelectorAll('[data-team]')].map(r => r.dataset.team), ['global']);
 });
