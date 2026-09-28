@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 import { fs, join, resolve, readJSON, safePath, oats, fail, unlock, redactUrls } from '../lib/io.mjs';
 import { loadBindings } from '../lib/config.mjs';
-import { register, registerCaptured, loadInvocationSourceReceipt, homeSource, loadSource, loadStatus, saveStatus, updateStatus, capture, scheduleSource, settleRetiredSchedule, service, markerPath, harvestOffRecord, sourceSwitch, retireHarvestOff } from '../lib/sources.mjs';
+import { register, registerCaptured, loadInvocationSourceReceipt, homeSource, loadSource, loadStatus, saveStatus, updateStatus, capture, scheduleSource, settleRetiredSchedule, service, markerPath, harvestOffRecord, sourceSwitch, retireHarvestOff, consultSource } from '../lib/sources.mjs';
 import { harvestStatus, setupHarvest } from '../lib/harvest-status.mjs';
 import { settings } from '../lib/config.mjs';
 import { CONSULT } from '../lib/consult.mjs';
 import { runSource, complete, retry, readRun, requireQualifiedHelper } from '../lib/worker.mjs';
 import { initBase, migrate, deliverMigration, cutoverMigration, migrateSource, forgetMigration } from '../lib/migration.mjs';
-import { inspect } from '../lib/inspection.mjs';
+import { inspect, inspectConsultOnly } from '../lib/inspection.mjs';
 import { loadInvocationKnowledgeBinding } from '../lib/binding-wire.mjs';
 import { loadCapturedOkfInvocation, loadOkfSourceReceiptInput, assertOkfInvocationAction, requireOkfAdmittedAction, assertOkfSourceContext, assertOkfRegisteredSourceReplay } from '../lib/invocation-context.mjs';
 const HELP=`oats okf inspect [--home PATH | --source FILE] [--json]
@@ -98,6 +98,10 @@ else {
         return source;
       } catch(error) {if(captured && ['ENOENT','ENOTDIR'].includes(error.code)) fail('E_SOURCE','captured command requires its durable registered source descriptor');throw error;}
     };
+    // okf 4.0.3: consultation never depends on harvest. A home spawned with
+    // harvest off has no registered source by design; it consults through its
+    // soul's declaration and the deployment's bindings (consultSource).
+    const consultOnly=!flags.source && !captured && !execution && !fs.existsSync(markerPath(home)) && !!harvestOffRecord(home);
     // Deliberate old registered-source replay is a separate qualified contract,
     // never a way to create a source or synthesize generic admission. A present
     // invalid/unadmitted generic invocation cannot enter this compatibility path.
@@ -123,7 +127,7 @@ else {
     };
     let result;
     if(event==='read') fail('E_REMOVED','okf 4.0.0 removed read: use `oats okf cat --base ALIAS PATH` (same path, text and receipt)');
-    if(consult) {const answer=CONSULT[event](src(),flags,positionals);result=answer.result;text=answer.text;}
+    if(consult) {const answer=CONSULT[event](consultOnly?consultSource(home):src(),flags,positionals);result=answer.result;text=answer.text;}
     else if(event==='refresh') fail('E_REMOVED','okf 3.0.0 has no per-instance views; index/cat always read the accepted state: run `oats okf index`, then `oats okf cat --base ALIAS PATH`');
     else if(event==='harvest-status') result=harvestStatus({home,flags});
     else if(event==='soul-scaffold') {
@@ -178,7 +182,7 @@ else {
     }
     else if(event==='complete') {const s=src();if(captured) retainedRun(s);result=complete(s,flags.run,flags.judgment && resolve(flags.judgment));}
     else if(event==='retry') {const s=src();if(captured && !flags.run && !flags.rejudge && !flags.launch && !flags['adopt-home']) retainedRun(s);result=retry(s,{run:flags.run,rejudge:!!flags.rejudge,launch:!!flags.launch,adoptHome:flags['adopt-home']});}
-    else if(event==='inspect') result=inspect(src());
+    else if(event==='inspect') result=consultOnly?inspectConsultOnly(consultSource(home)):inspect(src());
     else if(event==='setup' && flags.harvest!==undefined) {
       if(flags.source || flags.enable || flags.disable || flags['install-host']) fail('E_USAGE','setup --harvest takes no other setup flag');
       result=setupHarvest(flags.harvest);
