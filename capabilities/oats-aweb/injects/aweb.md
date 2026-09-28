@@ -5,7 +5,7 @@ and it lives in the workspace's default team (the `Comms:` line of your TASK.md
 names it). Wider workspace teams are joined explicitly, each with its own
 identity home.
 
-**Load the `oats-aweb` skill before your first `aw mail`/`aw chat` of a session,
+**Run /oats-aweb before your first `aw mail`/`aw chat` of a session,
 whenever an aweb wake or channel event arrives, and whenever messaging or a
 team command looks wrong.** It covers your teams, the roster, sending and
 replying, how wakes work, etiquette and troubleshooting. Do not work from

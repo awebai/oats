@@ -561,11 +561,11 @@ Edits `packages:` only when `oats-workspace.yaml` is tracked by the checkout
 found from `--dir`; otherwise it reports the change to make.
 
 ```json
-{"action":"add","id":"oats.aweb","value":"v1.17.0","previous":null,"edited":true,"file":"/w/agents-repo/oats-workspace.yaml"}
+{"action":"add","id":"oats.aweb","value":"v1.17.1","previous":null,"edited":true,"file":"/w/agents-repo/oats-workspace.yaml"}
 ```
 
 ```json
-{"action":"add","id":"oats.aweb","value":"v1.17.0","edited":false,"file":null,"line":"packages:\n  oats.aweb: v1.17.0","hint":"oats-workspace.yaml is not in this checkout; commit the change in the workspace repo, then `oats sync`"}
+{"action":"add","id":"oats.aweb","value":"v1.17.1","edited":false,"file":null,"line":"packages:\n  oats.aweb: v1.17.1","hint":"oats-workspace.yaml is not in this checkout; commit the change in the workspace repo, then `oats sync`"}
 ```
 
 `remove` answers `value: null` (and `line: null` when not tracked). An id that

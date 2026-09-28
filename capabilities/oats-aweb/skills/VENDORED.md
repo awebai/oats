@@ -11,11 +11,11 @@ These reviewed resources are vendored from the MIT-licensed aweb repository:
 
 Vendored trees:
 
-- `aweb-messaging/`
-- `aweb-team-membership/` (adapted for OATS: team changes go through `oats aweb teams|join|leave`)
-- `aweb-identity/`
+- /aweb-messaging (directory `skills/aweb-messaging/`)
+- /aweb-team-membership (directory `skills/aweb-team-membership/`, adapted for OATS: team changes go through `oats aweb teams|join|leave`)
+- /aweb-identity (directory `skills/aweb-identity/`)
 
-Not vendored: `oats-aweb/` is this package's own OATS playbook (identity,
+Not vendored: /oats-aweb (directory `skills/oats-aweb/`) is this package's own OATS playbook (identity,
 default and joined teams, roster, delivery and wakes, etiquette,
 troubleshooting). Every `aw` invocation it and the vendored skills cite is
 checked against a real published aw by `test/oats-aweb-1-15.test.mjs`.
