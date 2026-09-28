@@ -1,0 +1,7 @@
+schemaVersion: 2
+name: oats-desktop-developer
+description: "OATS Desktop developer: owns packages/desktop (the Electron app, its bundled backend, packaging and release automation)."
+# A developer: its product is reviewed changes on its own branch.
+work: worktree
+# oats.core, the oats.okf knowledge slot and messaging come from the workspace defaults.
+# What this soul reads in the central base is okf.json beside this file; a developer owns no node.

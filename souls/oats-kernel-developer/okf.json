@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "owner": "8e5522cb-0ddd-4377-8442-bfc782200043",
+  "owns": [],
+  "reads": [
+    "oats/oats-kernel-expert",
+    "oats/oats-expert",
+    "oats/oats-operator-expert",
+    "oats/integrations-expert",
+    "oats/oats-okf-expert",
+    "oats/oats-aweb-expert"
+  ]
+}

@@ -1,0 +1,7 @@
+schemaVersion: 2
+name: oats-integrations-developer
+description: "OATS integrations developer: owns the provider packages (oats-okf, oats-aweb, oats-jira, oats-linear, oats-authoring) and their mirrors and pins in the OATS repository."
+# A developer: its product is reviewed changes on its own branch.
+work: worktree
+# oats.core, the oats.okf knowledge slot and messaging come from the workspace defaults.
+# What this soul reads in the central base is okf.json beside this file; a developer owns no node.
