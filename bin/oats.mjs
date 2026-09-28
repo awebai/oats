@@ -2406,8 +2406,8 @@ async function paneCmd() {
 
 /** `oats onboard [<dir>] --workspace <repo ref> [--json]` — workspace model v2 (decision 9).
  *
- * Realizes a workspace on this machine in the directory the operator chooses (decision 9)
- * (docs/design/2026-09-23-simplified-workspace-model.md §4): writes
+ * Realizes a workspace on this machine in the directory the operator chooses
+ * (docs/workspaces.md): writes
  * `<dir>/oats-local.yaml` naming the workspace, creates `<dir>/agents/` (the
  * instance homes), then runs exactly the `oats sync` path — discover over the
  * remotes, confirm membership, resolve `packages:`, write `oats-lock.json`. Nothing is installed, no soul

@@ -1,6 +1,0 @@
-schemaVersion: 2
-name: oats-assistant
-description: "Persistent deployment-owned onboarding expertise, practical adoption/configuration and expert handoff."
-work: directory
-# oats.core and the oats.okf knowledge slot come from the workspace defaults.
-# What this soul owns and reads in the central base is okf.json beside this file.

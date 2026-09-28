@@ -17,7 +17,7 @@ The contract is `docs/schedules.md` in the installed kernel ("Kinds",
 
 - a **schedule** spawns an instance, runs an `oats` command or wakes an
   existing instance on a five-field cron with an explicit IANA `tz`;
-- a **trigger** (kernel 0.28.0) spawns a NEW instance when a GitHub pull
+- a **trigger** spawns a NEW instance when a GitHub pull
   request event matches: "when EVENT, spawn SOUL with TASK, in TEAMS".
 
 ## One host timer, no daemon
@@ -72,7 +72,7 @@ running.
           "labels": ["okf-harvest"], "base": "main", "poll": "2m" },
   "spawn": { "soul": "oats.okf/knowledge-maintainer", "purpose": "review-pr-{number}",
              "task": "Review knowledge-base PR {repo}#{number}.",
-             "teams": ["okf"], "harness": "claude", "model": "opus" },
+             "harness": "claude", "model": "opus" },
   "concurrency": { "max": 2, "perKey": 1 } }
 ```
 
@@ -86,12 +86,14 @@ running.
   successful spawn, so a crash can spawn an event twice; `perKey: 1` holds the
   second until the first instance retires. The soul must tolerate a second
   run on the same event.
-- **`teams`** becomes the messaging capability's `join=` for the spawn (see
-  `/oats-teams`); every label must be declared.
+- **`teams`** (optional) becomes the messaging capability's `join=` for the
+  spawn (see oats-teams); every label must be declared, and the soul needs a
+  messaging capability (`E_TRIGGER_TEAMS`). Without it the instance lives in
+  its default team only.
 - The spawned instance gets the event as `OATS_TRIGGER_EVENT_FILE`, and its
   task ends with a "Triggered run" block naming it.
 
-## Workspace automations (kernel 0.29.0)
+## Workspace automations
 
 Anything a team relies on belongs in Git, reviewed like a soul, and says
 **which machine runs it** and **which GitHub account it acts as**. The
@@ -149,7 +151,7 @@ or `run: command`, `cron`, `tz`, `agent`, `task`, plus `runsOn` and `owner`).
   oats trigger test <member>/<id>   # on the named host: placement, gh account, repo permissions, soul, teams
   ```
 
-  Commit it by PR to that member (`/oats-workspace-config`).
+  Commit it by PR to that member (oats-workspace-config).
 
 ## Gotchas
 
@@ -161,5 +163,3 @@ or `run: command`, `cron`, `tz`, `agent`, `task`, plus `runsOn` and `owner`).
 - A trigger's `owner` that cannot merge (or approve) on the repo will spawn
   reviewers that cannot finish. GitHub forbids approving your own PR, so a
   reviewer bot needs its own account.
-- The Desktop shows schedules in its Schedules tab; a Triggers tab (workspace
-  and local) is planned for after the redesign.

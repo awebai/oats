@@ -144,3 +144,26 @@ test('the real 0.30 documents (K1 kernel, fixtures/team-model-v2) read in every 
   const t = { workspace: 'northwind', context: DEPLOYMENT, observedAs: 'soul', selector: { kind: 'soul', soul: 'release-manager', agentsRoot: `${DEPLOYMENT}/agents` } };
   assert.ok(readinessData(gone(real('readiness-soul').result, ['subject.team']), t));
 });
+
+// oats.aweb 1.17's exact teams-document surface (the provider developer's, relayed by the owner),
+// consumer-first: a STAND-IN on the real 1.16 capture until the 1.17 head exists (provenance `awaiting`).
+test('oats.aweb 1.17 teams document: eligible rows\' from, top-level warnings[], actions\' warning; 0.29 unchanged', () => {
+  const r29 = run('teams-initial');
+  assert.deepEqual(teamsDocument(r29, 'messaging:teams'), r29.result, '0.29 as captured');
+  const v117 = structuredClone(r29); delete v117.result.primary; delete v117.result.unmapped;
+  v117.result.defaultTeam = { label: v117.result.defaultTeam.team.split(':')[0], team: null, from: 'deployment' };
+  v117.result.eligible = v117.result.eligible.map((e, i) => ({ ...e, from: i === 0 ? 'local' : 'shared' }));
+  v117.result.left = [];
+  v117.result.warnings = ['oats-aweb: team reviewers has no provider id yet'];
+  const d = teamsDocument(v117, 'messaging:teams');
+  assert.ok(d, 'the 1.17 surface reads');
+  assert.deepEqual(d.eligible.map(e => e.from), v117.result.eligible.map(e => e.from), 'eligible rows keep from');
+  assert.deepEqual(d.warnings, ['oats-aweb: team reviewers has no provider id yet'], 'top-level warnings kept as worded');
+  assert.equal(Object.hasOwn(teamsDocument(r29, 'messaging:teams'), 'warnings'), false, 'not invented');
+  for (const [what, change] of [['from outside shared|local', x => { x.result.eligible[0].from = 'global'; }], ['eligible extra key', x => { x.result.eligible[0].extra = 1; }],
+    ['warnings not a list', x => { x.result.warnings = 'w'; }], ['warning not text', x => { x.result.warnings = [7]; }],
+    ['warning oversized', x => { x.result.warnings = ['w'.repeat(513)]; }], ['too many warnings', x => { x.result.warnings = Array.from({ length: 65 }, () => 'w'); }],
+    ['warning control char', x => { x.result.warnings = ['a\nb']; }]]) {
+    const bad = structuredClone(v117); change(bad); assert.equal(teamsDocument(bad, 'messaging:teams'), null, what);
+  }
+});

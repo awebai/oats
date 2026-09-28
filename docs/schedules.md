@@ -1,120 +1,102 @@
 # Schedules
 
 A schedule launches an agent, runs an oats command, or wakes an existing
-instance on a cron. Definitions belong to a scope and are committable; every
-`oats schedule` command run anywhere inside that scope, including from an
-instance home, reads and writes the same file. The scope is the deployment
-directory ([workspaces.md](workspaces.md)) — the one holding `oats-local.yaml`
-and the `agents/` root, found walking up; with none in reach, `oats schedule`
-is `E_LOCAL_MISSING`. Scheduled spawns materialize exactly like `oats spawn`.
-Execution belongs to the host that holds the scope, so a schedule on a
-registered server keeps running while your laptop sleeps.
+instance on a cron. A [trigger](#triggers) spawns an agent when a GitHub pull
+request event matches. Both are defined at one of two levels:
 
-[Triggers](#triggers) are evaluated by the same tick. There is no daemon. One host timer (a launchd user agent on macOS, a systemd
-user timer on Linux) runs `oats schedule tick --host` once a minute; the tick
-is a short-lived process that evaluates only the current minute, launches
-what is due through the same `spawn`, `session start` and `session input`
-paths you use by hand, records what it observed, and exits. Minutes missed
-while the machine slept are skipped, never replayed. There are no retries
-and no queue.
+- **In the workspace**: a YAML file committed in a member repository, shared
+  through Git, addressed `<member>/<id>`, and run only on the host its
+  `runsOn` names. See [Workspace triggers and schedules](#workspace-triggers-and-schedules).
+- **Locally**: in `<deployment>/oats-schedules.json`, addressed `local/<id>`
+  (or the bare `<id>`). This file belongs to one machine, like the
+  `oats-local.yaml` beside it: its definitions name absolute paths on that
+  machine, and only that machine runs them.
+
+The deployment is the directory holding `oats-local.yaml`, found walking up
+from the current directory or `--dir` ([configuration.md](configuration.md#the-deployment-directory));
+with none in reach, the commands answer `E_LOCAL_MISSING`. Every command run
+inside the deployment, including from an instance home, sees the same
+definitions.
+
+There is no daemon. One host timer (a launchd user agent on macOS, a systemd
+user timer on Linux) runs `oats schedule tick --host` once a minute. The tick
+evaluates only the current minute, launches what is due through the same
+`spawn`, `session start` and `session input` paths you use by hand, polls the
+triggers that are due, records what it observed, and exits. Minutes missed
+while the machine slept are skipped, never replayed; there are no retries and
+no queue. A schedule on a registered server keeps running while your laptop
+sleeps.
+
+The design is in the
+[knowledge-operations design record](design/2026-09-26-okf-knowledge-operations.md#23-triggers)
+(§2.3 and §2.3a).
 
 ## Files
 
-- `<workspace>/oats-schedules.json` — the definitions (`{version: 1|2, jobs:
-  {<id>: ...}}`). A new file is version 1. A version-2 file (written by 0.24–0.25
-  for captured definitions) is still read; it is never rewritten to version 1.
-  Commit the file if you want the schedule shared with the team.
-- `<workspace>/.agents/schedules/state.json` — last attempted minute and
-  last run per job (gitignored), plus one lock directory per running job.
-- `~/.oats/schedules/registry.json` — the host registry: which scopes the
-  host ticks, `maxConcurrent` (default 1: running scheduled jobs), the tick
-  interval, and `triggersMaxConcurrent` (absent by default: no host cap; a
-  positive integer caps trigger-spawned live instances across the host's
-  scopes). The two caps are separate: a running scheduled job never holds a
-  trigger, and a trigger's instances never hold a schedule. One host
-  lock serializes ticks, run-now, reconcile and remove; it is never reclaimed
-  by another process: a lock whose owner is unreadable or gone is reported
-  with the directory to remove, and the holder removes its own lock on exit
-  and on SIGINT/SIGTERM. Definition edits take a short per-scope lock.
+| File | Holds |
+| --- | --- |
+| `<deployment>/oats-schedules.json` | This machine's local definitions, `{version: 1, jobs: {<id>: …}}`, local triggers included (`kind: "trigger"`). |
+| `<deployment>/.agents/automations/snapshot.json` | The workspace definitions discovered from the members. |
+| `<deployment>/.agents/schedules/` | Run state: `state.json` (last minute and recent runs per job), `triggers.json` (polls, pending events, fired keys) and one lock directory per running job. |
+| `~/.oats/schedules/registry.json` | The deployments this host ticks, `maxConcurrent` (default 1: running scheduled jobs) and `triggersMaxConcurrent` (absent: no host cap on trigger-spawned live instances). The two caps are separate. |
 
-Captured (versioned) definitions are refused (the captured/portable path was removed in 0.26):
-see [Captured definitions](#captured-definitions-removed-in-026).
+One host lock serializes ticks, run-now, reconcile and remove. It is never
+reclaimed by another process: a lock whose owner is gone is reported with the
+directory to remove.
 
 ## Kinds
 
-- **spawn** `{id, enabled, cron, tz, kind: "spawn", agent, agentsRoot?,
-  repo?, backend?, purpose?, task, launchConfig?, harness?, model?, yolo?, wake?}` — every
-  due minute launches one disposable instance of `agent` with the same
-  options `oats spawn` takes. `model` is a model id (a letter or digit, then
-  letters, digits and `. _ : / @ + - [ ]`, at most 128 characters, or
-  `@native-default`), and `agent` and `repo` never start with `-`: an
-  automation's values reach the child `oats spawn` as single `--flag=value`
-  tokens and can never be read as options of their own. `agentsRoot` names the exact agents root that
-  holds the soul (it must lie inside the workspace and defaults to the
-  workspace's own root); it is what tells same-named souls in different
-  member repositories apart. `repo` is the work repository, as `--repo`.
-  Each run is named `<agent>-<purpose or id>-<YYYYMMDDHHMM>`. Instance names
-  are at most 64 characters, so a definition whose run names would be longer
-  is refused when it is saved (`E_SCHEDULE_INVALID`, field `purpose` or `id`). The task gets a trailing schedule block naming the job and the
-  minute and ending with `oats retire --self`. An optional `wake` object
-  (`{cron, tz, message}`) attaches a wake schedule to each launched instance;
-  nothing is attached unless you ask.
-- **command** `{id, enabled, cron, tz, kind: "command", cwd, argv}` — runs
-  an oats-only argv (`argv[0]` is `oats`, no shell) in `cwd`, which must be
-  inside the workspace. The runner parses the command's envelope and tracks
-  any instance it names. A provider can return an independent worker launched
-  from durable context; the job follows that worker until its home is gone.
-  Command return is not task completion. Avoid binding durable work to a
-  disposable source-home cwd; see [OKF v2 source jobs](#okf-v2-source-jobs).
-  An argv carrying a captured selector (`--deployment`, `--resolution`,
-  `--artifact-set`) is refused when saved (`E_SCHEDULE_INVALID`, field `argv`).
-- **wake** `{id, enabled, cron, tz, kind: "wake", home, message}` — every
-  due minute inspects the instance at `home` through its session receipts.
-  Running: `message` is delivered once with `session input`. Not running
-  (absent, dead pane or fallback shell): the same home is started with
-  `session start` and the message becomes the job's one pending delivery,
-  completed on a later tick, any tick, as soon as the session is active; the
-  home is started again only at due minutes, never every minute, so a
-  harness that keeps exiting is not restarted in a loop. A job holds at most
-  one pending delivery: a due minute while one is pending adds nothing.
-- **operation** `{id, enabled, cron, tz, kind: "operation", operation, home}`
-  — runs a provider operation such as `knowledge:harvest` in the instance at
-  `home` through `oats operation run <layer>:<name> --home <home>`. The
-  provider is whatever fills that layer for the home when the job runs (its
-  snapshot), not something stored in the job, so the job stays valid across
-  provider changes and a GUI can list and edit it without parsing argv.
-  Admission, tracking and reconciliation are those of a command job: a
-  launch receipt the provider answers (a harvester it spawned) is followed
-  until that home is gone; the source home is never treated as a launch.
-  Unobservable or still starting: skipped with the reason, delivery kept
-  pending. Whether a running harness is busy cannot be seen from the
-  terminal: delivery is terminal input (bracketed paste plus Enter), never an
-  interrupt, never Ctrl-C, never into a stopped or starting shell. Word wake
-  messages so that receiving one again is harmless.
+Every definition carries `id`, `enabled`, `cron`, `tz` and `kind`. `cron` has
+five fields (minute hour day month weekday) and `tz` is a required IANA zone;
+both are evaluated by the croner library.
 
-`cron` has five fields (minute hour day month weekday) and `tz` is a
-required IANA zone; both are evaluated by the croner library. `--wake-every
-N` at spawn time means `*/N * * * *`: every 7 fires at :00, :07, ... :56 and
-then :00 again, so 1, 5, 10, 15 and 30 give an even cadence.
+- **spawn** `{…, agent, agentsRoot?, repo?, backend?, purpose?, task,
+  launchConfig?, harness?, model?, yolo?, wake?}` — every due minute launches
+  one disposable instance of `agent` with the options `oats spawn` takes.
+  `agentsRoot`, when given, must be the deployment's `agents/` root; `repo`
+  is the work repository, as `--repo`. `model` is a model id (a letter or
+  digit, then letters, digits and `. _ : / @ + - [ ]`, at most 128
+  characters) or `@native-default`; `agent` and `repo` never start with `-`,
+  so no value can be read as an option of the child `oats spawn`. Each run is
+  named `<agent>-<purpose or id>-<YYYYMMDDHHMM>`, at most 64 characters (a
+  longer one is refused when saved, `E_SCHEDULE_INVALID`). The task gets a
+  trailing block naming the job and the minute and ending with `oats retire
+  --self`. `wake` (`{cron, tz, message}`) attaches a wake schedule to each
+  launched instance.
+- **command** `{…, cwd, argv}` — runs an oats-only argv (`argv[0]` is `oats`,
+  no shell; `oats schedule` itself is refused) in `cwd`, an existing directory
+  inside the deployment. The runner tracks any instance the command's
+  envelope names, including an independent worker it reports, until its home
+  is gone. A command's return is not task completion.
+- **wake** `{…, home, message}` — every due minute inspects the instance at
+  `home`. Running: `message` is delivered once as terminal input (bracketed
+  paste plus Enter), never an interrupt. Not running: the home is started with
+  `session start` and the message becomes the job's one pending delivery,
+  completed on a later tick once the session is active; the home is started
+  again only at due minutes, so a harness that keeps exiting is not restarted
+  in a loop. Unobservable or still starting: skipped, delivery kept pending.
+  Word wake messages so that receiving one again is harmless.
+- **operation** `{…, operation, home}` — runs a provider operation such as
+  `knowledge:harvest` in the instance at `home` through `oats operation run
+  <layer>:<name> --home <home>`. The provider is whatever fills that layer
+  when the job runs. Tracking is that of a command job.
+
+`--wake-every N` at spawn time means `*/N * * * *`: every 7 fires at :00, :07,
+… :56 and then :00 again, so 1, 5, 10, 15 and 30 give an even cadence.
 
 ## Triggers
 
-A **trigger** (OATS 0.28.0, feature `triggers`) is an event-driven schedule:
-"when EVENT matches, spawn a NEW instance of SOUL with TASK, in TEAMS". It is
-stored in the same `oats-schedules.json` as a job of `kind: "trigger"`,
-managed with `oats trigger …` (never `oats schedule …`, which neither lists nor
-edits one), and evaluated by the same host tick (`oats schedule tick --host`,
-and `oats schedule tick` for one scope). There is no daemon and no webhook: it
-runs only on the host that holds the scope, with **that host's own
-credentials**; a definition carries none.
+A **trigger** is an event-driven spawn: "when EVENT matches, spawn a NEW
+instance of SOUL with TASK". It is managed with `oats trigger …` (`oats
+schedule …` neither lists nor edits one) and evaluated by the same host tick.
+There is no webhook. It runs only on the host that holds it, with **that
+host's own credentials**; a definition carries none.
 
-**Credentials reach the tick through the host timer, not your shell.** The
-timer (a user LaunchAgent on macOS, a `systemd --user` unit on Linux) runs the
-tick with its own environment, which sets only `PATH` and `OATS_HOME_DIR`. `gh`
-logged in with the keyring or its config file under your HOME works there. A
-`GH_TOKEN` or `GITHUB_TOKEN` exported in your shell does not reach it.
-`oats trigger test` reports where `gh`'s credential comes from (`gh.credentialSource`:
-`keyring`, `config`, `env:<VAR>`) and warns when the timer cannot reach it.
+The host timer runs the tick with its own environment (only `PATH` and
+`OATS_HOME_DIR`): `gh` logged in with the keyring or its config file works
+there, but a `GH_TOKEN` exported in your shell does not. `oats trigger test`
+reports `gh.credentialSource` (`keyring`, `config`, `env:<VAR>`) and warns
+when the timer cannot reach it.
 
 ```json
 { "id": "okf-harvest-review", "enabled": true, "kind": "trigger",
@@ -123,100 +105,74 @@ logged in with the keyring or its config file under your HOME works there. A
           "labels": ["okf-harvest"], "base": "main", "poll": "2m" },
   "spawn": { "soul": "oats.okf/knowledge-maintainer", "purpose": "review-pr-{number}",
              "task": "Review knowledge-base PR {repo}#{number}. Load knowledge-review first.",
-             "teams": ["okf"], "harness": "claude", "model": "opus" },
+             "harness": "claude", "model": "opus" },
   "concurrency": { "max": 2, "perKey": 1 } }
 ```
 
-- **Source** `github.pull_request` (the only one in v1): the tick polls the
-  repository's open pull requests with the host's `gh` (`gh api repos/<owner>/<repo>/pulls`,
-  `state=open`, most recently updated first) every `poll` (default `2m`, at
-  least `1m`). `labels` (all must be present) and `base` filter them. A repo is
-  `github.com/<owner>/<repo>`; another host is passed to `gh` as `--hostname`.
+- **Source.** `github.pull_request` is the only source. The tick polls the
+  repository's open pull requests with the host's `gh` (`gh api
+  repos/<owner>/<repo>/pulls`, `state=open`, most recently updated first)
+  every `poll` (default `2m`, at least `1m`). `labels` (all must be present)
+  and `base` filter them. A repo is `github.com/<owner>/<repo>`; another host
+  is passed to `gh` as `--hostname`.
 - **Events** are inferred poll over poll: `opened` (a PR first seen, not a
   draft; the first poll sees every open PR), `reopened` (seen closed, open
   again), `ready_for_review` (was a draft), `labeled` (now carries the filter
-  labels it lacked; without a filter, any new label), `synchronize` (a new
+  labels it lacked; without a filter, any new label) and `synchronize` (a new
   head commit).
-- **Dedup and retry.** Each event has a key
+- **Dedup, at least once.** Each event has a key
   `<trigger>:<repo>#<number>:<event>:<stamp>` (`created_at` for `opened`, the
-  head SHA for `synchronize`, `updated_at` otherwise). A key is recorded as
-  fired **only after a successful spawn**; until then the event stays pending
-  and is retried at every poll, and dropped when its PR closes.
-- **At least once, not exactly once.** The fired key is written after the
-  spawn returns. If the tick dies in between (a crash, a kill, the host going
-  down), the spawned instance exists but the key does not, and the next poll
-  spawns the event again. Concurrency still applies to that retry: with the
-  default `perKey: 1` the first instance is live, so the event is `held` rather
-  than spawned twice, and it fires once that instance retires. A trigger's soul
-  should therefore tolerate a second run on the same PR event (a review that
-  finds its own earlier review, for example).
-- **Concurrency.** `max` (default 1) bounds the live instances of the trigger,
-  `perKey` (default 1) those of one PR; both are counted from the homes'
-  `instance.json.trigger` records, so a retired instance frees its slot. The
-  host registry's `triggersMaxConcurrent`, when set, bounds every trigger's
-  live instances together. An event over a bound stays pending (`held`). A
-  newer push supersedes a pending `synchronize` for an older head of the same
-  PR, so only the newest head is reviewed.
-- **The owner acts on the repository's host.** A workspace trigger's `owner`
-  and `on.repo` must be on the same GitHub host (`E_TRIGGER_INVALID`, field
-  `owner`): the owner check and the poll ask gh on that one host.
-- **The spawn** is `oats spawn` (the same path as a scheduled spawn). `soul` is
-  bare or qualified (`<package>/<soul>`). `purpose` (default
-  `{trigger}-{number}`, must render to a slug) and `task` are templated from
-  **only** `{repo} {number} {url} {event} {headSha} {trigger}`: a pull
-  request's title and body are untrusted and never reach the task (a template
-  naming any other field is refused). `teams` becomes the messaging
-  capability's `join=` setting (as `--provider <messaging cap> join=<labels>`).
-  `launchConfig` (a launch configuration in the running host's
-  `oats-local.yaml` `launch-configs`), `harness`, `model`, `yolo`, `backend`
-  are as for schedules; a package template may expose any of them as a
-  parameter (`"path": "spawn.launchConfig"`).
+  head SHA for `synchronize`, `updated_at` otherwise), recorded as fired
+  **only after a successful spawn**. Until then the event stays pending, is
+  retried at every poll, and is dropped when its PR closes. A tick that dies
+  between the spawn and the record spawns the event again on the next poll
+  (held by `perKey` while the first instance lives), so a trigger's soul
+  should tolerate a second run on the same event.
+- **Concurrency.** `max` (default 1) bounds the trigger's live instances and
+  `perKey` (default 1) those of one PR, counted from the homes'
+  `instance.json.trigger` records; a retired instance frees its slot. An event
+  over a bound stays pending (`held`). A newer push supersedes a pending
+  `synchronize` for an older head of the same PR.
+- **The spawn** is `oats spawn`. `soul` is bare or qualified
+  (`<package>/<soul>`). `purpose` (default `{trigger}-{number}`) and `task`
+  are templated from **only** `{repo} {number} {url} {event} {headSha}
+  {trigger}`: a pull request's title and body are untrusted and never reach
+  the task. `teams` (optional) becomes the messaging capability's `join=`
+  setting (`E_TRIGGER_TEAMS` when the soul has no messaging capability).
+  `launchConfig`, `harness`, `model`, `yolo` and `backend` are as for
+  schedules.
 - **The event reaches the instance** as `OATS_TRIGGER_EVENT_FILE`
   (`<home>/.oats/trigger-event.json`: `{ trigger, source, repo, number, url,
   event, headSha, labels, observedAt, key }`), given to the spawn hooks and the
-  harness; `instance.json.trigger` records `{ id, key, source, repo, number,
-  url, event, headSha, observedAt, eventFile }`. The task ends with a short
-  block naming the event file.
-- **State** lives in `<scope>/.agents/schedules/triggers.json` (last poll, the
-  PRs seen, pending events, fired keys, the last error).
+  harness, and is recorded in `instance.json.trigger`.
 
 ```sh
 oats trigger add --file trigger.json                 # or:
 oats trigger add --from oats.okf:harvest-review --set repo=github.com/acme/knowledge [--id <id>]
 oats trigger list | show <id> | enable <id> | disable <id> | remove <id>
-oats trigger test <id>      # dry run: gh auth + credential source, repo + permissions (push/maintain/admin), the soul resolves,
-                            # its messaging capability, the teams declared, what WOULD fire now; spawns nothing
-oats trigger status [<id>]  # last poll, next due, pending, fired keys (time, instance), live vs max, last error
+oats trigger test <id>      # dry run: gh credentials, repo permissions, the soul, what WOULD fire
+oats trigger status [<id>]  # last poll, next due, pending and fired events, live vs max, last error
 ```
 
 All take `--dir` and `--json` (`triggerApi: 1`). `remove` leaves the instances
-it spawned running. `oats schedule list` does not list triggers, but it counts
+it spawned running. `oats schedule list` does not list triggers but counts
 them (`triggers: { count, command: "oats trigger list" }`, and a line in text
 mode). Errors: `E_TRIGGER_INVALID { field }`, `E_TRIGGER_EXISTS`,
-`E_TRIGGER_UNKNOWN`, `E_BAD_ARGS`.
+`E_TRIGGER_UNKNOWN`, `E_TRIGGER_TEAMS`, `E_BAD_ARGS`.
 
 **Package trigger templates.** A package may declare `triggers: [{ id, file }]`
-in `oats-package.json`. Each file is `{ parameters: { <name>: { path,
-required?, default?, description? } }, definition: { …a trigger… } }`.
-`oats trigger add --from <package>:<id>` reads it at the locked commit;
-`--set <name>=<value>` fills a parameter at its dotted `path` (a list value is
-comma-separated); a required parameter without a value is `E_BAD_ARGS
-{ missing }` naming it. The trigger records `template: { package, version,
-commit, template }`.
+in `oats-package.json`, each file `{ parameters: { <name>: { path, required?,
+default?, description? } }, definition }`. `oats trigger add --from
+<package>:<id>` reads it at the locked commit, and `--set <name>=<value>`
+fills a parameter at its dotted `path` (a list value is comma-separated; a
+missing required one is `E_BAD_ARGS { missing }`). See
+[packages.md](packages.md#trigger-templates).
 
 ## Workspace triggers and schedules
 
-(OATS 0.29.0, feature `automations`.) A trigger or a schedule is defined at one of
-two levels:
-
-- **in the workspace**: a file committed in a confirmed member repository, shared
-  through Git and named `<member>/<id>`. This is the default for anything a team
-  relies on.
-- **locally**: in the deployment's `oats-schedules.json` (`oats trigger add`,
-  `oats schedule add`), machine-private and named `local/<id>`.
-
-The two kinds stay separate at every step. Each has its own folder, its own file
-kind, its own ids, its own commands, its own list and its own opt-out.
+Anything a team relies on belongs in a confirmed member repository, shared
+through Git and addressed `<member>/<id>`. The two kinds stay separate: each
+has its own folder, file kind, ids, commands, list and opt-out.
 
 | | trigger | schedule |
 | --- | --- | --- |
@@ -224,11 +180,10 @@ kind, its own ids, its own commands, its own list and its own opt-out.
 | file name anywhere in the member | `*.oats-trigger.yaml` | `*.oats-schedule.yaml` |
 | `kind:` | `oats-trigger` | `oats-schedule` |
 | body | `from:` + `set:` (a package template), or `on`, `spawn`, `concurrency` as above | `run: spawn \| command`, `cron`, `tz`, `agent`, `task`, `purpose`, `launchConfig`, `harness`, `model`, `yolo`, `backend`, `wake`, `argv`, `cwd` |
-| commands | `oats trigger …` | `oats schedule …` |
 | opt-out on this host | `triggers.disabled` | `schedules.disabled` |
 
-Every `.yaml`/`.yml` under a canonical folder is a candidate, and so is a file with
-the kind's suffix anywhere in the member (`.yml` works too), e.g.
+Every `.yaml`/`.yml` under a canonical folder is a candidate, and so is a file
+with the kind's suffix anywhere in the member (`.yml` works too), for example
 `services/billing/nightly.oats-schedule.yaml` beside the code it concerns.
 `oats-package/`, `.git/` and `node_modules/` are never scanned.
 
@@ -256,216 +211,165 @@ runsOn: ana-laptop
 owner: github.com/ana
 ```
 
-- **The file describes itself.** It carries `kind` and `schemaVersion: 1`. A
-  candidate of the wrong kind (a schedule in `oats-triggers/`) or without one is an
-  `E_AUTOMATION_SCHEMA` problem, never silently skipped.
-- **The id** is `id:`, else the filename stem. The same id twice in one member for
-  one kind is `E_AUTOMATION_DUPLICATE`, naming both paths; the second file is not
-  listed. A trigger and a schedule may share an id: they are different things.
-- **A workspace schedule is `run: spawn` or `run: command`.** A `command`'s `cwd` is
-  relative to the deployment. `wake` and `operation` target an instance home on one
-  machine, so they stay local.
+- **The header.** Every file carries `kind` and `schemaVersion: 1`, plus
+  `runsOn` and `owner`, and optionally `id`, `description` and `enabled`. A
+  candidate of the wrong kind (a schedule in `oats-triggers/`) or without one
+  is an `E_AUTOMATION_SCHEMA` problem, never silently skipped.
+- **The id** is `id:`, else the filename stem. The same id twice in one member
+  for one kind is `E_AUTOMATION_DUPLICATE`, naming both paths; the second file
+  is not listed. A trigger and a schedule may share an id. A member named
+  `local` is refused, because `local/<id>` names this host's own definitions.
+- **A workspace schedule is `run: spawn` or `run: command`.** A command's
+  `cwd` is relative to the deployment and must stay inside it. `wake` and
+  `operation` target an instance home on one machine, so they stay local.
+- **A workspace trigger's `owner` and `on.repo` must be on the same GitHub
+  host** (`E_TRIGGER_INVALID`, field `owner`).
 
-**Who runs it.** A host runs a workspace trigger or schedule only when both of these
+**Who runs it.** A host runs a workspace trigger or schedule only when both
 hold:
 
 1. its `runsOn` is this host's `host.name` in `oats-local.yaml`;
-2. the host's authenticated `gh` account (`gh api user`, asked once per tick) is its
-   `owner`.
+2. the host's authenticated `gh` account (`gh api user`, asked once per tick)
+   is its `owner`.
 
-Otherwise the item is listed with a reason:
+Otherwise the item is listed with a reason: `assigned-elsewhere`,
+`owner-mismatch` (this host is named, but its `gh` is logged in as someone
+else or not at all) or `host-unnamed`. Exactly one machine runs it, and its
+operator consented by naming the host and logging in as the account.
 
-- `assigned-elsewhere`: another host runs it;
-- `owner-mismatch`: this host is named, but its `gh` is logged in as someone else or
-  not at all. Nothing runs, the tick reports it, and `oats trigger test` says so;
-- `host-unnamed`: this host has no `host.name`.
-
-So exactly one machine runs it, and consent is explicit: the machine's operator
-named the host and is logged in as the account.
-
-**Opting out** without a commit: `oats trigger disable <member>/<id>` writes
+**Opting out on one host.** `oats trigger disable <member>/<id>` writes
 `triggers.disabled`, and `oats schedule disable <member>/<id>` writes
-`schedules.disabled`, in `oats-local.yaml`. `enable` removes the entry. A
-workspace definition is never edited or removed here (`update` and `remove` are
-`E_AUTOMATION_WORKSPACE`): change the file in Git.
+`schedules.disabled`, in `oats-local.yaml`; `enable` removes the entry. A
+workspace definition is never edited or removed from the CLI (`update` and
+`remove` answer `E_AUTOMATION_WORKSPACE`): change the file in Git.
 
 **Refresh.**
 
-- `oats sync` discovers the workspace triggers and schedules of the confirmed
-  members into a snapshot, `.agents/automations/snapshot.json` in the deployment,
-  with one list per kind. It takes one tree listing per member commit.
-- The host tick reads that snapshot. It refreshes it (`oats automations refresh`)
-  when the snapshot is more than ten minutes old, at most once per interval. When
-  the refresh fails, the last good snapshot keeps serving.
-- A change in Git therefore reaches the named host within about ten minutes.
-- The run state (dedup keys, last poll, last run) stays per host and local. A
-  workspace schedule's job lock and state are keyed `<member>~<id>`.
-- A trigger template (`from:`) is instantiated when the snapshot is taken, at the
-  commit the host's lock pins.
+- `oats sync` (or `oats automations refresh`) discovers the confirmed
+  members' definitions into `.agents/automations/snapshot.json`. A trigger
+  template (`from:`) is instantiated then, at the commit the lock pins.
+- The host tick refreshes the snapshot when it is more than ten minutes old;
+  when a refresh fails, the last good snapshot keeps serving. A change in Git
+  reaches the named host within about ten minutes.
+- Run state stays local to each host; a workspace schedule's lock and state
+  are keyed `<member>~<id>`.
 
-**Writing one.** Add `--workspace <member> --runs-on <host> --owner <host>/<login>`
-to `oats trigger add` or `oats schedule add`:
-
-- Run inside a checkout of that member, it writes `oats-triggers/<id>.yaml` or
-  `oats-schedules/<id>.yaml` there, for you to commit and push.
-- Anywhere else, it prints the file.
-- Either way, the file is read back and validated first.
-- `oats trigger test <member>/<id>` checks the placement, and everything else it
-  checked before, on this host.
-
-Everything above still holds: the soul must resolve here, templates name only the
-whitelisted fields, a PR's text is never interpolated, and no definition carries a
-credential.
-
-## Captured definitions (removed in 0.26)
-
-0.24–0.25 could save captured command definitions: `definitionVersion`,
-`recurrencePolicy` (`capture` or `prepare-on-tick`), an `execution` template and a
-`preparation` request, run against a captured deployment/resolution. That path
-was removed in 0.26:
-
-- `add` and `update` refuse any of those four keys (`E_SCHEDULE_INVALID`, the
-  key as `field`), locally and, with `--server`, before anything is forwarded.
-- A stored captured definition is invalid on its own job: every tick reports it
-  (`invalid`, "captured schedules are refused (the captured/portable path was removed in 0.26) …") and never runs it;
-  the rest of the scope's jobs continue. `list`/`show` report its
-  `executionStatus` as `{kind:"invalid", …, reason}`.
-- A captured attempt or job lock left mid-run by 0.25 is reported on that job
-  (`executionStatus.intent`, `reconcile` refuses with `E_SCHEDULE_INVALID`) and is
-  never run, adopted or released. A held captured lock keeps its launch slot
-  until the job is gone: remove it with `oats schedule remove --force <id>`, or
-  re-add it without the captured keys.
-
-Every other definition is a plain one; `list`/`show` report its `executionStatus`
-as `{kind:"legacy",capture:"unknown",migrationRequired:true}` (a released wire,
-kept as it was).
+**Writing one.** `oats trigger add` or `oats schedule add` with `--workspace
+<member> --runs-on <host> --owner <host>/<login>` validates the file, then
+writes `oats-triggers/<id>.yaml` or `oats-schedules/<id>.yaml` inside a
+checkout of that member (for you to commit and push), or prints it anywhere
+else. `oats trigger test <member>/<id>` and `oats schedule test <member>/<id>`
+check the placement and everything else on this host.
 
 ## Commands
 
 ```sh
-oats schedule add <id> --file spec.json --dir <workspace> --json
+oats schedule add <id> --file spec.json [--dir <deployment>] [--json]
 oats schedule update <id> --file spec.json
-oats schedule list | show <id> | enable <id> | disable <id> | remove <id>
-oats schedule run <id>            # now, under the same lock and bound
-oats schedule test <id>           # dry run: where it runs, whether its soul resolves, when it is next due; spawns nothing
-oats schedule tick --dry-run      # what would run this minute, launching nothing
+oats schedule list | show <id> | enable <id> | disable <id> | remove <id> [--force]
+oats schedule run <id> [--force]  # now, under the same lock and bound
+oats schedule test <id>           # dry run: where it runs, whether its soul resolves, when it is next due
+oats schedule tick [--dry-run]    # evaluate this deployment now; --dry-run launches nothing
 oats schedule reconcile <id> [--clear]   # resolve an attempt whose result was never recorded
-oats schedule host install        # register this scope and install the ONE host timer (idempotent while active)
+oats schedule host install        # register this deployment and install the one host timer (idempotent)
 oats schedule host status | uninstall
 oats spawn <agent> ... --wake-every 15 --wake-message "Anything new?"   # or --wake-file spec.json
 ```
 
-Every subcommand takes `--server <id>` instead of `--dir`: it then runs on
-that host, in its registered workspace, because schedules are host-owned.
+`<id>` is `local/<id>` (or the bare id) or `<member>/<id>`. `host uninstall`
+unregisters the deployment and removes the timer once none is registered.
+Every `oats schedule` subcommand takes `--server <id>` instead of `--dir` to
+run on that registered server.
 
-`list --json` answers `{schedules: [{id, ...definition, nextDue, lastRun,
-running}], scheduler: {installed, active, lastTick, maxConcurrent, ...}}`
-(`oats trigger list --json` carries the same `scheduler`).
-`active` is what the OS reports about the timer, not whether a file exists.
+`oats schedule list --json` answers:
+
+```text
+{ scope, scheduleApi: 2, scheduleHistoryApi: 3,
+  integrity: { sources: [{ path, status, bytes }] },
+  host: { name, ghUser: { <gh host>: <login> | null } },
+  schedules: [ <row> ],
+  triggers: { count, command: "oats trigger list" },
+  snapshot: { takenAt, problems } | null,
+  scheduler: { installed, active, unit?, lastTick, maxConcurrent, tickIntervalSec,
+               workspace, registered, workspaces, live } }
+```
+
+Each row is the stored definition plus `id` (bare for a local schedule,
+`<member>/<id>` for a workspace one), `qualifiedId`, `origin`, `owner`,
+`runsOn`, `runsHere`, `reason`, `enabledHere`, `soul`, `nextDue`, `lastRun`,
+`recentRuns` and `running`; an unreadable row carries `unreadable: { code,
+message }` instead of failing the list. `scheduler.active` is what the OS
+reports about the timer. `oats trigger list --json` carries the same
+`scheduler`. The field-level contract is in
+[desktop-cli-api.md](desktop-cli-api.md).
 
 ## What a run reports
 
-`launched` (spawn or command returned), `active` (the instance is running;
-a home whose retirement is pending still counts, its harness may be alive),
-`ended` (its home is gone), `stopped` (home present, nothing running: needs
-attention, never removed for you), `launch-failed`, `unknown`, and for wake
-jobs `delivered`, `started` or `skipped`. The kernel never claims a task
-succeeded.
+`launched` (spawn or command returned), `active` (the instance is running; a
+home whose retirement is pending still counts), `ended` (its home is gone),
+`stopped` (home present, nothing running: needs attention, never removed for
+you), `launch-failed`, `unknown`, and for wake jobs `delivered`, `started` or
+`skipped`. The kernel never claims a task succeeded.
 
-A run recorded by 0.24–0.25 may also read `blocked` (a captured admission that
-refused before a launch slot); 0.26 never produces it.
+`unknown` means the launch's side effects are unconfirmed: a command timed out
+or answered no envelope, or an attempt was never recorded. The job keeps its
+slot and is skipped until `oats schedule reconcile <id>`, which adopts only an
+attributable receipt (a spawn job's instance, named for its minute, or the
+instance a command's answer named). When nothing is attributable, check the
+roster and the host by hand, then `reconcile <id> --clear` records
+`launch-failed` and frees the slot.
 
-`unknown` means the launch's side effects are unconfirmed: a command timed
-out or answered no envelope, an envelope named an instance the roster
-cannot place, or an attempt was never recorded. The job keeps its slot and
-is skipped until `oats schedule reconcile <id>`. Reconcile adopts only an
-attributable receipt: a spawn job's instance is named deterministically for its
-minute; a command job's, only the instance its answer named. Nothing is inferred
-from file times. Observation validates custody before releasing
-slots, and unresolved attempts remain held even in the crash gap before a lock
-exists. Ordinary removal refuses those attempts; force-forget remains explicit. A command whose answer named nothing stays
-unknown; check the roster and the host by hand, then
-`oats schedule reconcile <id> --clear` records launch-failed and frees the
-slot (or `remove --force` forgets the job).
-
-A wake job that starts a stopped home holds a launch slot while that
-harness is starting, active, retiring or unobservable, and releases it when
-the harness is proven stopped (the session start receipt's exit marker for
-that launch, or a home that no longer has a session) or the home is gone.
-A persistent home that outlives its process does not keep a slot. Delivering
-a message to a home that is already running takes no slot. The host tick
-observes every registered scope first, then admits due jobs in one
-host-wide order, least recently launched first (only an actual harness
-launch counts; a skipped or pending job keeps its place at the front), so
-one frequent job in one scope cannot keep the only slot forever. An invalid
-or malformed definition is reported on that job and the rest of the tick
+**Slots.** A wake job that starts a stopped home holds a launch slot until the
+harness is proven stopped or the home is gone; delivering to a running home
+takes none. The host tick admits due jobs in one host-wide order, least
+recently launched first, so one frequent job cannot keep the only slot
+forever. An invalid definition is reported on its job; the rest of the tick
 continues.
 
-`disable` never stops anything. `update` never touches a running instance,
-and while a job holds a slot or has an unresolved attempt its complete
-execution identity, kind and target cannot
-change; cron, tz and enabled can. A cold wake persists its slot before
-the session start runs and keeps it on any start exception, whatever its code
-(the kernel can refuse while recording, after the session exists); the next
-observation releases it once the harness is proven stopped or absent, one tick
-at worst.
-`remove` refuses while the job's instance is still tracked (`--force`
-forgets the job without stopping anything). Retiring an instance removes the
-wake jobs bound to its home; a wake whose home is gone otherwise stays
-listed with its skipped reason.
+**Changing a job.** `disable` never stops anything. `update` never touches a
+running instance, and while a job holds a slot or has an unresolved attempt
+only `cron`, `tz` and `enabled` can change. `remove` refuses while the job's
+instance is tracked or its effects are unresolved (`--force` forgets the job
+without stopping anything). Retiring an instance removes the wake jobs bound
+to its home.
 
 ## Wake at spawn
 
-`oats spawn ... --wake-file <private JSON {cron, tz, message, enabled}>`
-saves a wake job `wake-<instance>` bound to the new home after the spawn
-succeeded. If the spawn succeeds but the save fails, the spawn result still
-carries the full instance receipt, plus `wakeScheduleError` and a warning;
-the instance is neither hidden nor spawned again.
+`oats spawn ... --wake-file <JSON {cron, tz, message, enabled}>` (or
+`--wake-every N --wake-message <text>`) saves a local wake job
+`wake-<instance>` bound to the new home once the spawn succeeds. If the save
+fails, the spawn result still carries the instance receipt, plus
+`wakeScheduleError` and a warning.
 
-## OKF v2 source jobs
+## Knowledge harvest jobs
 
-> **oats.okf 4.0.0:** a source and its job exist only where harvest is
-> effectively on (`harvest: on|off`, default off), and the job spawns the
-> harvester package soul. The review of its PR runs as a **trigger**, run by
-> the same host tick: a workspace file (`oats-triggers/okf-harvest-review.yaml`
-> in a member repo, `kind: oats-trigger`, with `runsOn` and `owner`), or a
-> local one in this file. See
-> [knowledge.md](knowledge.md#knowledge-operations), [Triggers](#triggers) and
-> [Workspace triggers and schedules](#workspace-triggers-and-schedules); the
-> trigger commands are `oats trigger …`.
+oats.okf uses both mechanisms. The flow, the harvest switch and the package
+souls are described in [knowledge.md](knowledge.md#knowledge-operations).
 
-The [prepared OKF v2 runtime](knowledge.md) registers **one command job per
-source**, not a fleet sweep or a home-bound operation job. It runs from stable
-deployment context with argv equivalent to:
+- **Harvest.** A source exists only where harvest is on (`oats-local.yaml`
+  `settings.oats.okf.harvest: on`; default off). oats.okf then registers one
+  local **command job per source**, `okf-<source id>`, which runs from the
+  deployment with argv equivalent to:
 
-```text
-oats okf run-source --source /absolute/state/sources/UUID/source.json --soul domain-expert --json
-```
+  ```text
+  oats okf run-source --source /absolute/state/sources/UUID/source.json --soul domain-expert --json
+  ```
 
-The descriptor and captured evidence live outside the disposable source.
-Registration (including explicit harvest after source migration) idempotently
-creates/verifies the definition; setup failures are reported for retry. A
-pre-existing disabled job is not silently re-enabled. Command execution clears
-invoking-instance identity and still passes normal capability activation/trust
-gates after source retirement.
+  The job spawns the package soul `oats.okf/knowledge-harvester`. The source's
+  evidence lives outside its home, so the job keeps working after the source
+  instance retires; once a retired source is drained, oats.okf removes the
+  job. Registration never re-enables a disabled job.
+  `oats schedule disable okf-<source id>` is the emergency brake for one
+  source.
+- **Review.** Each harvest PR is reviewed by a new
+  `oats.okf/knowledge-maintainer`, spawned by a trigger from the package
+  template `oats.okf:harvest-review`: a workspace file
+  (`oats-triggers/okf-harvest-review.yaml`) or a local `oats trigger add
+  --from oats.okf:harvest-review`.
 
-No timer is installed by registering a source or its job. An operator can
-inspect or explicitly install one from deployment context:
-
-```bash
-oats okf inspect --source /absolute/state/sources/UUID/source.json --soul domain-expert --json
-oats okf setup --source /absolute/state/sources/UUID/source.json --soul domain-expert --json
-# Explicit host change; never part of a scaffold-only test:
-oats okf setup --source /absolute/state/sources/UUID/source.json --install-host --soul domain-expert --json
-# Definition-only disable; does not stop a worker or reconcile an executing job:
-oats okf setup --source /absolute/state/sources/UUID/source.json --disable --soul domain-expert --json
-```
-
-Retirement captures/enqueues final evidence and does not synchronously remove
-its job under the scheduler's host lock or wait for a model/GitHub. A drained
-retired source returns empty; disable its job explicitly when appropriate.
-Source no-launch guards prevent automatic model starts, and final capture of
-a no-launch source disables its automatic processing. `inspect` distinguishes
-job definition from actual timer activity; an absent or inactive timer is not
-reported as enabled automation. The scheduler's launch/liveness receipts do not
-replace OKF's processing, delivery and merge-visible acceptance receipts.
+Registering a source never installs the host timer. `oats okf inspect
+--source <source.json> --soul <soul>` reports the job and whether the timer is
+actually active; `oats okf setup --source <source.json> --soul <soul>
+--install-host` installs it, and `--disable` disables the job without
+stopping a running worker. The scheduler's launch receipts do not replace
+oats.okf's own processing, delivery and acceptance receipts.

@@ -2,7 +2,7 @@
 
 **Audience:** a product designer redesigning the OATS Desktop. You don't need to read code. After this you should be able to answer the questions a user will ask the Desktop: *what is OATS, what is my setup, where does each thing come from, and why is it that way?*
 
-**Status:** the model described here is what ships in OATS 0.27.x. Things that are planned but not shipped are marked **(planned)**.
+**Status:** the model described here is what OATS ships today. Things that are planned but not shipped are marked **(planned)**.
 
 ---
 
@@ -41,11 +41,11 @@ A workspace is **declared in Git**, not configured in an app. The Desktop *reads
 
 | File | Lives in | Shared? | Says |
 |---|---|---|---|
-| `oats-workspace.yaml` | the **host** repo (any member; often a dedicated `agents` repo) | yes, via Git | the members, the pinned packages, the teams, the defaults, the knowledge stores |
-| `oats-membership.yaml` | **every** member repo | yes, via Git | "I belong to workspace X" (+ an optional default team) |
-| `souls/<name>/soul.yaml` | a member repo | yes, via Git | this role's work mode, team(s), capabilities, and where each comes from |
+| `oats-workspace.yaml` | the **host** repo (any member; often a dedicated `agents` repo) | yes, via Git | the members, the pinned packages, the shared teams, the defaults, the knowledge stores |
+| `oats-membership.yaml` | **every** member repo | yes, via Git | "I belong to workspace X" |
+| `souls/<name>/soul.yaml` | a member repo | yes, via Git | this role's work mode, capabilities, and where each comes from |
 | `capabilities/<name>/oats.json` | a member repo | yes, via Git | the capability's manifest (what it provides, optional core-capability "layer", optional repo-owned flag) |
-| `oats-local.yaml` | the user's **deployment folder** | **no, per machine** | which workspace this machine runs, where clones live, host-only settings (paths, keys), souls disabled here |
+| `oats-local.yaml` | the user's **deployment folder** | **no, per machine** | which workspace this machine runs, where clones live, host-only settings (paths, keys), this machine's own teams and which souls join which team, souls disabled here |
 | `oats-lock.json` | the deployment folder | per machine (but identical wherever the same workspace commit was synced) | the exact commit + content fingerprint of every pinned package |
 
 **Design implication:** show clearly **what is shared** (Git, the same for everyone in the org) versus **what is this machine** (local settings, clones, running instances). Users get confused when the two blur.
@@ -84,13 +84,13 @@ An unconfirmed member contributes **nothing**: its souls and capabilities are in
 
 **Design implication:** every capability shown should say **where it comes from**: a member repo (latest), a package (with its pinned version), or "this soul's own repo". This is the single most important fact for a user to understand their setup.
 
-### 3.4 Teams: labels that organise, never walls
+### 3.4 Teams: where agents talk, never walls
 
-- The workspace declares team labels once (e.g. `global`, `engineering`, `marketing`).
-- A soul has one team or several (the first is its **primary**). A repo can set a default team for its souls.
-- A team label can **add default capabilities** for its souls (e.g. every `engineering` soul gets the release tooling).
-- A team label **never** restricts, gates or changes trust. It's organisation, plus optional defaults.
-- For **messaging**, each label a soul carries is a team it's *eligible* to join. By default an instance is only in the workspace's **default team**, and joining others is an explicit choice, at spawn or later.
+- A **team** is a messaging team, named here by a short label (`research`) mapped to the provider's team id.
+- **Shared teams** are committed in `oats-workspace.yaml`, so everyone in the organisation sees them. **Local teams** live in one machine's `oats-local.yaml`.
+- Each machine has a **default team**; every instance is in it. A soul can have its own default on that machine, and can be made eligible for other teams there.
+- An instance **joins** other eligible teams by an explicit choice, at spawn or later, and can leave them.
+- A team **never** adds capabilities, restricts or changes trust. It decides who an agent can talk to, nothing else.
 
 ---
 
@@ -99,14 +99,14 @@ An unconfirmed member contributes **nothing**: its souls and capabilities are in
 When you spawn an instance, OATS assembles the soul's capability list from layers, later layers winning:
 
 ```
-workspace defaults  →  team defaults (per label)  →  the soul's own list
+workspace defaults  →  the soul's own list
 ```
 
 - A soul can **add** capabilities, **turn off** a default (`off`), or empty a core-capability slot (`none`).
-- If two of a soul's teams disagree about a capability, that's a **team conflict**, and the soul can't be spawned until the workspace fixes it. The Desktop shows the two labels.
+- Teams play no part: a soul gets the same capabilities for every person and machine.
 - The result is an exact, fingerprinted **resolution**. Preview shows it before anything is created; if something changed between preview and spawn, OATS refuses and asks you to preview again.
 
-**Design implication:** for any soul, the Desktop can show a **composition view**: each capability, and **why it's there** (a workspace default, a team default via label X, or the soul's own choice). The kernel reports this per core capability as `from: soul | workspace | team:<label>`.
+**Design implication:** for any soul, the Desktop can show a **composition view**: each capability, and **why it's there** (a workspace default or the soul's own choice). The kernel reports this per core capability as `from: soul | workspace`.
 
 ---
 
@@ -131,12 +131,12 @@ Plus one **default capability** almost every soul has: **`oats.core`**, which te
 - Knowledge lives in **knowledge bases**: Markdown "concepts" organised in **nodes**, usually in a Git repo like `org/knowledge`.
 - A soul **owns** some nodes (its responsibility) and **reads** others (its starting context).
 - Agents propose knowledge through **pull requests**. Nothing is accepted until merged. Agents never write accepted knowledge directly.
-- **(planned, oats.okf 3.0.0, in progress)** Agents consult knowledge **remotely** through commands (`index`, `cat`, `search`, `links`), with **no copy inside each agent's folder**. They're told to consult it at the start of every task and regularly while working. For the Desktop this means a soul's knowledge can be browsed live, at its accepted state, from one shared place.
+- Agents consult knowledge **remotely** through commands (`index`, `cat`, `search`, `links`), with **no copy inside each agent's folder**. They're told to consult it at the start of every task and regularly while working. For the Desktop this means a soul's knowledge can be browsed live, at its accepted state, from one shared place.
 
 ### 5.2 Messaging, specifically
 
 - Each instance gets a messaging **identity** (its address).
-- By default it's in the workspace's **default team**. It can **join** other eligible teams (from its labels) at spawn or later, and **leave** them. The default team can't be left.
+- It's in its **default team** on this machine. It can **join** the other teams it's eligible for there, at spawn or later, and **leave** them. The default team can't be left.
 - Joined teams currently **check mail between tasks**; live delivery for joined teams is **(planned)**.
 - A stopped agent can be **woken** by a message.
 
@@ -230,12 +230,12 @@ When the workspace moves on (a member pushes, a package version is bumped), exis
 - **Package**: a versioned, pinned bundle of capabilities.
 - **Official catalog**: the reviewed list of official packages and versions.
 - **Lock**: the exact commit + fingerprint of each package, per deployment.
-- **Team (label)**: an organising label; supplies defaults and eligible messaging teams.
-- **Default team**: the workspace's messaging team, which every instance is in by default.
+- **Team**: a messaging team, by its label; shared (in the workspace) or local (one machine).
+- **Default team**: the team every instance on a machine is in; a soul may have its own default there.
 - **Harness**: what runs the agent session (Claude, Codex, Pi).
 - **Work mode**: where an instance works (worktree, checkout, attached, directory, workspace).
 - **Drift**: an instance built from an older state than the workspace's current one.
 - **Repo-owned capability**: usable only by souls of its own repo.
 - **Accepted knowledge**: knowledge merged into its base's accepted branch.
 
-**Further reading (technical):** `docs/workspaces.md`, `docs/souls-and-instances.md`, `docs/capabilities.md`, `docs/desktop-cli-api.md`, and the Desktop Phase F boundary `docs/design/2026-09-24-desktop-phase-f-boundary.md`.
+**Further reading (technical):** `docs/workspaces.md`, `docs/souls-and-instances.md`, `docs/capabilities.md`, and `docs/desktop-cli-api.md`.

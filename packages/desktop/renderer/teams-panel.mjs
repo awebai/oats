@@ -33,6 +33,8 @@ export const teamsCSS = `
 .teams-panel .team-main > .teams-problem { margin-top:4px; }
 .teams-panel .teams-problem > p.teams-fix { margin-top:2px; color:var(--muted); font-size:11.5px; }
 .teams-panel .teams-refusal { padding:9px 12px; }
+.teams-panel .teams-problem.teams-warning { border-left-color:var(--warn); }
+.teams-panel .teams-problem > p.teams-warning-head { color:var(--warn); font-weight:650; }
 .teams-panel .teams-note { margin:0; padding:9px 12px; font-size:12px; color:var(--muted); }
 .teams-panel .teams-refresh { align-self:flex-start; font:600 11.5px/1 inherit; height:26px; padding:0 10px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--fg); cursor:pointer; }
 .teams-panel .teams-refresh:disabled { color:var(--muted); cursor:default; }
@@ -98,8 +100,9 @@ export function teamsDocument(run, address, { actions = false } = {}) {
   if (!record(run) || run.operationsApi !== 2 || run.operation !== address) return null;
   const d = run.result, did = actions && record(d) && Object.hasOwn(d, 'actions');
   // Required: defaultTeam, eligible, joined, at. 0.29-only (optional, absent on team model v2):
-  // primary, unmapped. Additive (v2, oats.aweb 1.17): left, the last ≤20 live-read leaves.
-  const allowed = ['defaultTeam', 'eligible', 'joined', 'at', 'primary', 'unmapped', 'left', ...(did ? ['actions'] : [])];
+  // primary, unmapped. Additive (v2, oats.aweb 1.17): left, the last ≤20 live-read leaves; warnings,
+  // the provider's non-fatal problems (strings, as worded); eligible rows' from (shared|local).
+  const allowed = ['defaultTeam', 'eligible', 'joined', 'at', 'primary', 'unmapped', 'left', 'warnings', ...(did ? ['actions'] : [])];
   if (!record(d) || !['defaultTeam', 'eligible', 'joined', 'at'].every(k => Object.hasOwn(d, k)) || Object.keys(d).some(k => !allowed.includes(k))) return null;
   if (did && !(Array.isArray(d.actions) && d.actions.length <= 64 && d.actions.every(actionRow))) return null;
   // The default team: 0.29 {team, source} or team model v2's DefaultTeam (or null), each a closed set.
@@ -110,7 +113,9 @@ export function teamsDocument(run, address, { actions = false } = {}) {
   if (!list(d.eligible) || !list(d.joined) || !list(unmapped)) return null;
   if (Object.hasOwn(d, 'left') && !(Array.isArray(d.left) && d.left.length <= 20 && d.left.every(l => exact(l, ['label', 'team', 'at', 'reason'])
     && label(l.label) && text(l.team) && text(l.at, 64) && text(l.reason, 64)))) return null;
-  if (!d.eligible.every(e => exact(e, ['label', 'team', 'joined']) && label(e.label) && text(e.team) && typeof e.joined === 'boolean')) return null;
+  if (!d.eligible.every(e => exact(e, ['label', 'team', 'joined', ...(Object.hasOwn(e, 'from') ? ['from'] : [])]) && label(e.label) && text(e.team)
+    && typeof e.joined === 'boolean' && (!Object.hasOwn(e, 'from') || ['shared', 'local'].includes(e.from)))) return null;
+  if (Object.hasOwn(d, 'warnings') && !(Array.isArray(d.warnings) && d.warnings.length <= 64 && d.warnings.every(w => text(w, 512)))) return null;
   if (!d.joined.every(j => exact(j, ['label', 'team', 'since', 'identityHome', 'receive']) && label(j.label) && text(j.team) && text(j.since, 64)
     && text(j.identityHome, 4096) && j.identityHome.startsWith('/') && text(j.receive, 32))) return null;
   if (!unmapped.every(label)) return null;
@@ -119,13 +124,16 @@ export function teamsDocument(run, address, { actions = false } = {}) {
   // Each action names a row this answer reports (eligible or joined), as the contract says.
   if (did && !d.actions.every(x => d.eligible.some(e => e.label === x.label) || d.joined.some(j => j.label === x.label))) return null;
   return structuredClone({ defaultTeam: d.defaultTeam, primary: Object.hasOwn(d, 'primary') ? d.primary : null, eligible: d.eligible, joined: d.joined, unmapped, at: d.at,
-    ...(Object.hasOwn(d, 'left') ? { left: d.left } : {}), ...(did ? { actions: d.actions } : {}) });
+    ...(Object.hasOwn(d, 'left') ? { left: d.left } : {}), ...(Object.hasOwn(d, 'warnings') ? { warnings: d.warnings } : {}), ...(did ? { actions: d.actions } : {}) });
 }
 /** One `actions` row of a join/leave answer: the verb and label, an optional
- * `released` word, an optional provider receipt (a bounded record, kept opaque). */
+ * `released` word, an optional provider receipt (a bounded record, kept opaque), and an optional
+ * non-fatal `warning` (bounded text, as the provider words it; e.g. a join accepted without a
+ * workspace connection, with its recovery). */
 function actionRow(a) {
   if (!record(a) || !['join', 'leave'].includes(a.action) || !label(a.label)) return false;
-  if (!Object.keys(a).every(k => ['action', 'label', 'released', 'receipt'].includes(k))) return false;
+  if (!Object.keys(a).every(k => ['action', 'label', 'released', 'receipt', 'warning'].includes(k))) return false;
+  if (Object.hasOwn(a, 'warning') && !text(a.warning, 1024)) return false;
   if (Object.hasOwn(a, 'released') && !text(a.released, 32)) return false;
   if (Object.hasOwn(a, 'receipt') && !(record(a.receipt) && JSON.stringify(a.receipt).length <= 4096)) return false;
   return true;
@@ -200,6 +208,13 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
     if (code) { const more = node('details'); more.append(node('summary', 'Details'), node('pre', code)); box.append(more); }
     return box;
   }
+  // A join/leave the provider did with a non-fatal warning: said under the team's row, verbatim.
+  function warning(a) {
+    const box = node('div', undefined, 'teams-problem teams-warning'); box.setAttribute('role', 'status'); box.dataset.teamWarningFor = a.label;
+    const done = a.action === 'join' ? 'Joined' : 'Left';
+    box.append(node('p', `${done}, with a warning from the messaging provider:`, 'teams-warning-head'), node('p', a.warning, 'teams-warning-text'));
+    return box;
+  }
   function unreadable(result) {
     return result?.operationsApi === 1 ? 'This workspace still uses the classic layout, which answers an older operation result.'
       : 'The messaging provider answered teams this Desktop cannot read.';
@@ -255,6 +270,9 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
     if (!current) return;
     body.append(defaultRow(current.defaultTeam));
     const joined = new Map(current.joined.map(j => [j.label, j]));
+    // What the provider did, with its non-fatal warnings (join/leave answers only; the next read
+    // clears them). Every action names an eligible or joined row (teamsDocument), so each has its row.
+    const warned = (current.actions || []).filter(a => a.warning);
     const rows = [...current.eligible.map(e => ({ label: e.label, team: e.team, eligible: true })),
       ...current.joined.filter(j => !current.eligible.some(e => e.label === j.label)).map(j => ({ label: j.label, team: j.team, eligible: false }))];
     // A refusal whose row the re-read no longer offers is said at panel level, never dropped.
@@ -274,6 +292,7 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
         const where = node('details'); where.append(node('summary', 'Identity home'), node('pre', j.identityHome)); el.append(where);
       } else el = teamRow(row.label, name, [`${row.team} · Not joined`], control('join', row.label));
       if (rowError?.label === row.label) el.append(problem(rowError.error, 'The messaging provider refused.'));
+      for (const a of warned.filter(a => a.label === row.label)) el.append(warning(a));
       body.append(el);
     }
     if (!rows.length) body.append(node('p', 'Its soul has access to no other team.', 'teams-note'));

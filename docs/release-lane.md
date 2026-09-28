@@ -9,6 +9,9 @@ The policy it satisfies: no release capability may permanently depend on
 GitHub or GitHub Actions. Registry publish works on its own; tags and hosted
 release assets can follow later.
 
+The last two sections cover the post-publish Desktop check and mirroring a
+released `oats.okf`.
+
 ## When to use it
 
 - **Runner outage.** GitHub Actions is down, queued, or a runner image has
@@ -130,3 +133,77 @@ contract; `test/release-lane.test.mjs` covers the lane's gates and phase
 logic against fixtures, with `npm` stubbed. The two can run in either order:
 a lane release followed by a workflow run, or a broken workflow run finished
 by the lane, and neither republishes what the other already did.
+
+## Desktop release verification
+
+Installer CI gates what headless runners can prove reliably for every
+published platform/architecture: electron-builder completes, the expected
+DMG/ZIP/AppImage/DEB artifacts exist, both packaged macOS `.app` bundles
+pass strict deep codesign verification of their complete ad-hoc signatures
+(`codesign --verify --deep --strict`), node-pty's packaged `spawn-helper` is
+executable, and node-pty loads and spawns under the packaged Electron ABI.
+The macOS x64 leg cross-builds on macos-14 and installs Rosetta 2 so that its
+x64 Electron + node-pty ABI probe really executes; a wrong-architecture
+native module fails that leg.
+
+CI does **not** gate the packaged GUI launch: ad-hoc-signed, non-notarized
+Electron apps do not
+have a reliable interactive windowserver in headless CI. Post-publish launch
+acceptance is therefore owned by the operator/maintainer, using the actual
+released installers (not a source checkout):
+
+1. Verify the asset checksum/attestation, install it outside the source tree,
+   and on macOS use right-click → **Open** for the Gatekeeper step (ad-hoc
+   signatures carry no identified-developer identity).
+2. Launch OATS Desktop and open a real deployment; verify roster, brain and
+   Markdown reads.
+3. Attach an existing tmux terminal, confirm input/output, and close the tab
+   (the durable tmux window must survive).
+4. Verify the released global CLI is detected and Spawn is enabled; hide or
+   mismatch the CLI and confirm reads/terminal still work while Spawn disables
+   with recovery guidance.
+5. Repeat per published architecture where hardware is available. In
+   particular, launch-check macOS x64 on an Intel Mac if one is available;
+   CI's Rosetta ABI probe is the native-module proof, while this is the actual
+   shipped-installer/user-launch proof.
+
+Record the installed version, platform/architecture and outcome in the
+release verification notes. This post-publish check is acceptance — it does
+not weaken the pre-publish build/inventory/ABI gates.
+
+## Mirroring a released `oats.okf`
+
+The standalone `awebai/oats-okf` repository is authoritative. This repository
+carries a generated mirror of its capabilities under `capabilities/oats-okf*/`
+and the inventory `scripts/okf-source-inventory.json`; neither is edited by
+hand. After an okf release is tagged:
+
+1. Check out the release in a clean clone of `awebai/oats-okf` at the tagged
+   commit, with the tag present locally and `origin` pointing at the official
+   repository.
+2. From this repository:
+
+   ```bash
+   node scripts/check-okf-mirror.mjs --finalize --source <clone> \
+     --final-tag v<version> --final-commit <full merged commit id>
+   node scripts/check-okf-mirror.mjs --verify
+   node scripts/check-okf-mirror.mjs --verify-source --source <clone>
+   ```
+
+3. Pin the same version in `package-catalog.json` and `oats-workspace.yaml`,
+   update the version literals the tests and smoke script carry, and review
+   the diff as one PR.
+
+`--finalize` stamps `release.status: published` only when every check passes:
+the tag is exactly `v<package version>` and resolves to the given commit; the
+source tree is clean, with no masked index entries; the exported files, modes
+and symlink targets equal the raw objects at that commit; `origin` is the
+official repository, and a fresh `ls-remote` advertises the same tag object
+and commit. A failed check leaves the mirror and inventory untouched.
+
+`--verify` needs no network: it checks the checked-in mirror against the
+inventory (file set, bytes, modes, symlinks, wrapper hashes). `--verify-source`
+re-checks a published inventory against the source and its origin; it attests
+what the remote advertised when queried, so released tags must never move.
+`--generate --source <clone>` captures a working tree for development and
+always records `release.status: pending`.

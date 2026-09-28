@@ -102,6 +102,6 @@ when input is captured/prepared, not by consulting changed config at retry time.
 A durable proposal can count as delivered judgment without being reader-visible.
 Keep proposal/acceptance/freshness state inspectable and retain evidence for
 rejected or failed delivery. Do not advance a watermark on skipped, held or
-incompletely read inputs. First-version default custody retains evidence without
-automatic garbage collection. Test failures before and after publication,
+incompletely read inputs. OKF retains evidence without automatic garbage
+collection. Test failures before and after publication,
 concurrent writers and retries as [acceptance cases](acceptance.md).

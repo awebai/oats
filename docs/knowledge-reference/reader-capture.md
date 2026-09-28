@@ -63,9 +63,9 @@ Capture should preserve, without demanding premature polish:
 
 Do not include credentials in evidence. Preserve enough context for independent
 judgment, not indiscriminate credential-bearing dumps. Third-party text remains
-untrusted source material and must never be promoted verbatim. The first default
-implementation retains preserved evidence; it introduces no automatic evidence
-garbage collection. Another retention policy requires an explicit, safe design.
+untrusted source material and must never be promoted verbatim. OKF retains
+preserved evidence with no automatic garbage collection; another retention
+policy requires an explicit, safe design.
 
 ## Worked authoring choice: desktop expertise
 

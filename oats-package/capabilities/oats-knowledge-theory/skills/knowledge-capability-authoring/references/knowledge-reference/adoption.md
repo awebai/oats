@@ -25,7 +25,7 @@ lifecycle effects, scheduling, native persistence, validation and diagnostics.
 There is no invisible shared theory layer underneath it. It must be usable
 without the expert running or reference documentation fetched over the network.
 
-The default-theory rework chooses external bases/nodes, instructional
+The default OKF model chooses external bases/nodes, instructional
 read/capture-only workers, independent harvesting, PR-only Git delivery and
 real non-Git custody. These are adoption choices, not new mandatory kernel
 fields. OKF-specific files, schemas and validator calls stay in OKF. A

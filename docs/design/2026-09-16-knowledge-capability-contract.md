@@ -1,61 +1,47 @@
 ---
 type: Decision
 status: accepted-boundary
-title: Knowledge and harvesting capability contract boundary
-description: OATS provides generic context, binding, lifecycle and execution contracts; capabilities implement knowledge and harvesting functionality.
+title: Knowledge and messaging capability contract boundary
+description: OATS provides generic selection, lifecycle and execution contracts; knowledge and messaging capabilities implement their own behaviour.
 timestamp: 2026-09-16
 ---
 
-# Knowledge and harvesting capability contract boundary
+# Knowledge and messaging capability contract boundary
 
-**OATS provides contracts; capabilities provide functionality.** Knowledge and
-harvesting follow the same separation as the
-[messaging capability contract](2026-09-16-messaging-capability-contract.md).
-The reference knowledge theory remains optional authoring guidance, not a mandatory
-runtime model or a kernel-owned harvester.
+**OATS provides contracts; capabilities provide functionality.** The kernel
+has no knowledge model, harvester, messaging backend or identity system of its
+own. The official providers are `oats.okf` (knowledge) and `oats.aweb`
+(messaging); any other capability may fill either slot with a different model.
 
 ## Responsibilities
 
-| Kernel contract/support | Capability functionality |
+| Kernel supplies | The capability owns |
 |---|---|
-| Selection, exact executable approval and the shared resolver | Interpret provider-owned declarations; validate and render its nonsecret bindings |
-| Verified captured source/instance/context and bounded invocation data | Select/read the knowledge relevant to that context through its own model/tools |
-| Generic lifecycle events, hook outcomes and cleanup custody | Initialize its memory protocol, capture/freeze inputs and perform its own retirement handoff |
-| Generic native evidence APIs where applicable | Choose which evidence to collect, how to interpret it and its durable source/cursor format |
-| Source-independent helper/job execution, exact artifact/record references and admission identity | Supply harvester helpers, prompts, runtime conventions, schedules and input/destination receipts |
-| Truthful execution/uncertainty and declared operation result contracts | Judge promotion, validate, retry, publish and establish provider-specific acceptance |
+| Selection: one provider per slot, resolved from the soul and the workspace defaults, copied into the home at its locked commit | Interpreting its own settings and declarations; the kernel treats them as opaque |
+| Lifecycle hooks (`spawn`, `launch`, `retire`) with the hook environment: settings and their origins, the home, the soul, the teams | What happens at each event: registering a source, minting an identity, joining a team, handing off at retirement |
+| A required spawn hook's failure rolls the spawn back; every other hook is advisory | Reporting its own outcome truthfully in the hook answer |
+| Command and operation dispatch from the copied module, and the readiness relay (`binding.check`) | Its commands, operations and readiness answer |
+| The soul's teams, as declarations | Enrolment, membership, transport and wake delivery; a declared team is not proof of enrolment |
 
-Reuse ProviderBinding, captured invocation/lifecycle, declared operations and
-execution capsules. Any missing generic field is reviewed/versioned once. Do not
-introduce a second config parser, resolver, command registry or harvesting engine.
-Capability-specific data remains opaque to the kernel.
+The contracts themselves are in [capabilities.md](../capabilities.md): hooks
+and their environment, commands, operations and the readiness check.
 
-## Default OKF versus alternatives
+## Rules
 
-`oats.okf` owns stores/nodes, reads/owns, immutable views, STATE/log/notes conventions,
-durable source descriptors, harvester judgment and store-specific delivery. Its
-existing promotion bar and PR-only Git knowledge publication remain in force.
-Other capabilities may use different models, stores and harvesting machinery;
-they are not required to imitate OKF's filesystem or workflow.
-
-The knowledge-theory expert is an authoring aid, not a runtime dispatcher,
-universal harvester or required approval service. Capability ownership does not
-waive repository governance, work boundaries, secret exclusions, exact executable
-approval or truthful lifecycle/custody reporting.
-
-## Integration checks
-
-- Audit helper memory/injection suppression and source handoff projection for
-  accidental kernel-owned knowledge policy. Move new behavior behind neutral
-  contracts or capability declarations as appropriate; do not blindly enable
-  recursive harvesting or weaken existing fail-closed guards.
-- A knowledge-specific source receipt may remain a compatibility input for a
-  provider, but must not become the mandatory shape for every alternative.
-- Retirement must honor required capture/handoff outcomes before deleting their
-  source. The capability supplies the evidence and outcome; the kernel does not
-  implement the provider's memory/promotion algorithm.
-- Independent work must retain everything it needs through the existing execution
-  and provider custody contracts, without a live source/config fallback.
-
-This records the boundary and remaining audit, not a claim that every consumer is
-already refactored or that a fresh deployment/live harvester is qualified.
+- **No second engine.** A capability does not get its own resolver, config
+  parser or command registry in the kernel; a missing generic field is added
+  once, to the shared contract, and versioned.
+- **Knowledge.** The provider decides where knowledge lives, who reads and
+  owns what, how evidence is captured and judged, and how accepted knowledge
+  is delivered. `oats.okf`'s model (owned nodes in central bases, independent
+  harvest, PR-only Git delivery) is the reference, not a requirement for
+  alternatives ([knowledge theory](../knowledge-theory.md)).
+- **Messaging.** The provider owns identity, addressing, teams and delivery,
+  using only the authority it is given. Configuration never implies privacy or
+  access: contact, delivery and history are verified through the provider's
+  own mechanisms.
+- **No secrets in the contract.** Hooks contribute locators and endpoints,
+  never credentials, and nothing credential-bearing is recorded in
+  `instance.json` or logs.
+- Capability ownership does not waive repository governance, work
+  boundaries or truthful lifecycle reporting.

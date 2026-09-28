@@ -28,7 +28,7 @@ Access to a repository does not automatically bind it as a knowledge base.
 Record an unambiguous resolved destination and owner before reads or harvest.
 Do not derive custody from the source's cwd, feature branch, writable checkout,
 work mode or the soul's location. Relative locators resolve from their declaring
-scope with containment checks. For the first OKF implementation specifically,
+scope with containment checks. For OKF specifically,
 configuration uses one absolute `bindings-file`; paths in it resolve from that
 file's directory, and `soul/okf.json` holds capability-owned declarations. That
 is an implementation choice, not generic OATS YAML or a graph-provider schema.
@@ -67,11 +67,8 @@ Git. Initial cooperative single-host coordination is not a distributed lock.
 For OKF, each base is one link namespace; nodes are nonoverlapping owned
 subdirectories. A graph uses its own representation validator, not an OKF check.
 
-Omnigraph is a motivating scenario, not a verified integration. Before proposing
-commands, obtain its actual versioned command help and data-model behavior in
-an authorized investigation. Verify discovery, ownership addressing, provenance,
-supersession, write acknowledgment, concurrency and retry semantics. This guide
-asserts no Omnigraph flags, identifiers, schema, atomicity or transaction API.
+Omnigraph is a motivating scenario, not a verified integration: obtain a graph
+provider's actual command help and guarantees before proposing any command.
 
 See [harvester instructions](harvester.md) and [acceptance cases](acceptance.md)
 for source-independent execution and delivery/failure probes.

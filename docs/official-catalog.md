@@ -5,19 +5,33 @@ list in [awebai/oats](https://github.com/awebai/oats), not a separate registry
 service. **A package listed there is official.** A name, logo, repository owner
 or workspace membership alone does not make a package official.
 
+## The packages
+
+| package | release | capabilities | package souls |
+|---|---|---|---|
+| `oats.framework` | `oats-framework/v1.3.2` (this repository) | `oats.core`, `oats.setup`, `oats.knowledge-theory` | `knowledge-theory-expert` |
+| `oats.okf` | `v4.0.3` | `oats.okf` (knowledge), `oats.okf-harvest`, `oats.okf-maintenance` | `knowledge-harvester`, `knowledge-maintainer` |
+| `oats.aweb` | `v1.16.1` | `oats.aweb` (messaging) | |
+| `oats.engineering` | `v1.0.0` | `oats.engineering-expert`, `oats.developer`, `oats.code-review` | `code-reviewer` |
+| `oats.authoring` | `v1.0.3` | `oats.authoring` | |
+| `oats.jira` | `v1.0.1` | `oats.jira` (tasks) | |
+| `oats.linear` | `v1.0.1` | `oats.linear` (tasks) | |
+
+Each package lives in its own `awebai/oats-*` repository except
+`oats.framework`, whose payload root is `oats-package/` here. A capability id
+names the package that supplies it through the catalog's aliases, so
+`oats.developer: { from: package }` selects `oats.engineering`. This catalog ships with
+the CLI: an older installed CLI keeps its own copy, and a change here rewrites
+no lock and adds nothing to an existing workspace.
+
 ## Find and use packages
 
-- Browse the catalog for the kernel/source version you use. Each package entry
-  identifies its repository, release ref and payload root; capability aliases
-  can point to the package that supplies them.
 - A workspace pins an official package by **bare version** in its
-  `packages:` map (`oats.okf: v2.1.3`); `oats sync` resolves it through the
+  `packages:` map (`oats.okf: v4.0.3`); `oats sync` resolves it through the
   catalog to an exact commit, fetches it, verifies its integrity and locks it.
-  A package outside the catalog is written `git:<repo>@<ref>`.
-  Pinning does not enroll a team or adopt the publisher's workspace. See
+  A package outside the catalog is written `git:<repo>@<ref>`. Pinning does
+  not join a team or adopt the publisher's workspace. See
   [packages](packages.md).
-- The Desktop catalog view/search is **planned for the parity phase**, not
-  shipped by this policy. There is no catalog CLI verb.
 - **Discoverable ≠ declared.** A catalog listing grants nothing; a
   `packages:` pin is the workspace's decision to trust that package at that
   version, and the lock pins it to an exact commit and integrity. Nothing is
@@ -63,33 +77,10 @@ or workspace membership alone does not make a package official.
 Contact and license evidence may live in the package/repository documentation;
 this policy does not invent new catalog or manifest fields.
 
-## Listed first set
-
-- Listed capabilities: `oats.okf`, `oats.okf-harvest`, `oats.okf-maintenance`,
-  `oats.aweb`, `oats.authoring`, `oats.jira`, `oats.linear`,
-  `oats.engineering-expert`, `oats.developer`, `oats.code-review`,
-  `oats.knowledge-theory`, `oats.core` and `oats.setup`. `oats.okf-harvest` and
-  `oats.okf-maintenance` select the `oats.okf` package (4.0.3).
-- **`oats.engineering` 1.0.0** (`awebai/oats-engineering`, payload root
-  `oats-package`): `oats.engineering-expert` for domain experts, `oats.developer`
-  for developers, and `oats.code-review` for its `code-reviewer` package soul,
-  which developers spawn attached to their worktree. It replaces `oats.dev`,
-  which is no longer listed.
-- **`oats.framework` 1.3.2** is listed at tag `oats-framework/v1.3.2` in
-  `awebai/oats`, payload root `oats-package`. The `oats.core`, `oats.setup` and
-  `oats.knowledge-theory` aliases select that distribution; package identity is
-  distinct from capability identity. Core supplies operation/soul guidance;
-  setup supplies OATS Soul Setup, configuration and package guidance. The
-  package also ships the `knowledge-theory-expert` package soul.
-
-These entries are in the current repository catalog. An older installed CLI keeps
-its bundled catalog; publication here does not update that installation or rewrite
-locks or tags. No package is silently added to an existing workspace.
-
 ## Updates, deprecation and removal
 
 Use the same catalog PR and maintainer-review path to update, deprecate or remove
 an entry. State the reason, affected releases and supported replacement or hold,
-and assess existing locks/restores before changing discovery. Preserve immutable
-release history. A list change is not permission to rewrite a deployment's locks,
-change what a workspace declares, uninstall packages or delete retained resources.
+and assess existing locks before changing discovery. Preserve immutable
+release history. A list change is not permission to rewrite a deployment's
+lock or change what a workspace declares.

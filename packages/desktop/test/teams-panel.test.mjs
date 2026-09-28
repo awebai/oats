@@ -77,11 +77,17 @@ test('the teams document is decoded strictly: exactly the contract fields, bound
   const left = teamsDocument(run('leave-reviewers'), 'messaging:leave', { actions: true });
   assert.deepEqual(left.actions.map(a => [a.action, a.label, a.released]), [['leave', 'reviewers', 'released']]);
   assert.equal(left.actions[0].receipt.alias_released, true, 'the receipt is kept as sent (opaque; never shown)');
+  // oats.aweb's join/leave rows may carry a non-fatal warning (provider bin/oats-aweb.mjs actions rows);
+  // derived scenario on the real leave answer until the 1.17 capture exists.
+  const warned = structuredClone(run('leave-reviewers')); warned.result.actions[0].warning = 'oats-aweb: team reviewers left, but its alias was not released; rerun `oats operation run messaging:leave`';
+  assert.equal(teamsDocument(warned, 'messaging:leave', { actions: true }).actions[0].warning, warned.result.actions[0].warning, 'a warning is kept as worded');
   const acted = () => structuredClone(run('leave-reviewers'));
   for (const [what, mutate] of [['action verb', v => { v.result.actions[0].action = 'rejoin'; }], ['action label shape', v => { v.result.actions[0].label = 'a b'; }],
     ['action label not a row', v => { v.result.actions[0].label = 'marketing'; }], ['action extra key', v => { v.result.actions[0].note = 'x'; }],
     ['released not text', v => { v.result.actions[0].released = true; }], ['receipt not a record', v => { v.result.actions[0].receipt = 'ok'; }],
     ['receipt oversized', v => { v.result.actions[0].receipt = { blob: 'x'.repeat(5000) }; }], ['actions not a list', v => { v.result.actions = {}; }],
+    ['warning not text', v => { v.result.actions[0].warning = { x: 1 }; }], ['warning control char', v => { v.result.actions[0].warning = 'a\nb'; }],
+    ['warning empty', v => { v.result.actions[0].warning = ''; }], ['warning oversized', v => { v.result.actions[0].warning = 'w'.repeat(1025); }],
     ['too many actions', v => { v.result.actions = Array.from({ length: 65 }, () => ({ action: 'leave', label: 'reviewers' })); }]]) {
     const v = acted(); mutate(v); assert.equal(teamsDocument(v, 'messaging:leave', { actions: true }), null, what);
   }
@@ -150,6 +156,37 @@ test('Join and Leave run the declared operation with the declared argument and r
   const p = await mount(t, body => body.operation === 'messaging:teams' ? run('teams-initial') : poll);
   await p.press('join', 'dev');
   assert.match(p.row('dev').textContent, /Checks this team's mail between tasks/); assert.doesNotMatch(p.row('dev').textContent, /as it arrives|live/);
+});
+
+// oats.aweb's join/leave rows may carry a non-fatal `warning` (#281: kept by the decoder, the
+// provider's own words). On the captured leave answer with only a warning added, until the real
+// 1.17 capture pins one: shown under its team's row, verbatim, as a warning; the next read clears it.
+test('a join/leave warning is shown under its row, verbatim, as a warning (not a refusal); the next read clears it', async t => {
+  const words = 'oats-aweb: team reviewers left, but its alias was not released; rerun `oats operation run messaging:leave` <b>now</b>';
+  const answer = captured();
+  const u = await mount(t, body => { const out = answer(body); if (body.operation !== 'messaging:leave') return out;
+    const warned = structuredClone(out); warned.result.actions[0].warning = words; return warned; });
+  await u.press('join', 'reviewers');
+  assert.equal(u.panel().querySelector('.teams-warning'), null, 'no warning, nothing said');
+  await u.press('leave', 'reviewers');
+  const box = u.row('reviewers').querySelector('.teams-warning');
+  assert.ok(box, 'said on the row the action names');
+  assert.equal(box.getAttribute('role'), 'status', 'announced politely: the leave happened');
+  assert.equal(box.dataset.teamWarningFor, 'reviewers');
+  assert.equal(box.querySelector('.teams-warning-head').textContent, 'Left, with a warning from the messaging provider:');
+  assert.equal(box.querySelector('.teams-warning-text').textContent, words, 'verbatim');
+  assert.equal(box.querySelector('b'), null, 'as text, never markup');
+  assert.match(u.row('reviewers').textContent, /northwind:review · Not joined/, 'the leave itself is shown as done');
+  assert.equal(u.panel().querySelectorAll('.teams-warning').length, 1, 'only on its own row');
+  assert.equal(u.panel().querySelector('.teams-status').textContent, '', 'not an error');
+  u.panel().querySelector('.teams-refresh').click(); await tick(); await tick();
+  assert.equal(u.panel().querySelector('.teams-warning'), null, 'a read has no actions: Refresh clears it');
+  // A join warning reads "Joined".
+  const joined = structuredClone(run('join-dev')); joined.result.actions[0].warning = 'joined without live delivery';
+  const j = await mount(t, body => body.operation === 'messaging:teams' ? run('teams-initial') : joined);
+  await j.press('join', 'dev');
+  assert.equal(j.row('dev').querySelector('.teams-warning-head').textContent, 'Joined, with a warning from the messaging provider:');
+  assert.equal(j.row('dev').querySelector('.teams-warning').lastElementChild.textContent, 'joined without live delivery');
 });
 
 test('while a team action runs, it reads Joining… and every team control is locked', async t => {

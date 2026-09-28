@@ -817,9 +817,9 @@ import { createComputerTeams, computerTeamsCSS } from '../renderer/computer-team
 import { createSoulTeamsHere, soulTeamsHereCSS } from '../renderer/soul-teams-here.mjs';
 import { teamsCSS } from '../renderer/teams-panel.mjs';
 import { setupCSS } from '../renderer/workspace-setup.mjs';
-for (const [name] of palettes) test(`${name}: team model v2 cards, left entries and unmapped spawn teams meet computed AA`, async t => {
+for (const [name] of palettes) test(`${name}: team model v2 cards, left entries, join/leave warnings and unmapped spawn teams meet computed AA`, async t => {
   const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"><div id="setup"></div><div id="soul"></div>
-    <aside class="soul-inspector"><div class="teams-card"><div class="teams-panel"><p class="teams-subhead">Recently left</p></div></div></aside>
+    <aside class="soul-inspector"><div class="teams-card"><div class="teams-panel"><p class="teams-subhead">Recently left</p><div class="teams-problem teams-warning"><p class="teams-warning-head">Left, with a warning from the messaging provider:</p><p class="teams-warning-text">alias not released</p></div></div></div></aside>
     <div class="spawn-seg spawn-teams-row spawn-team-list"><label class="spawn-team spawn-team-off"><input type="checkbox" disabled><span class="spawn-team-name">reviewers</span></label></div></div></body></html>`, { pretendToBeVisual: true });
   const doc = dom.window.document;
   for (const source of [css, setupCSS, pageCardCSS, computerTeamsCSS, soulTeamsHereCSS, inspectorCSS, teamsCSS, spawnDialogCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
@@ -846,6 +846,7 @@ for (const [name] of palettes) test(`${name}: team model v2 cards, left entries 
     ['.ct-blocking', '.computer-teams', 'muted', 'surface-2'], ['.ct-blocking strong', '.computer-teams', 'fg', 'surface-2'],
     ['.sth-blocking', '.soul-teams-here', 'muted', 'surface'], ['.sth-blocking strong', '.soul-teams-here', 'fg', 'surface'],
     ['.teams-subhead', '.soul-inspector', 'muted', 'surface'],
+    ['.teams-warning-head', '.soul-inspector', 'warn', 'surface'], ['.teams-warning-text', '.soul-inspector', 'fg', 'surface'],
     ['.spawn-team-off .spawn-team-name', '.spawn-teams-row', 'muted', 'surface-2'],
   ]) {
     const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);

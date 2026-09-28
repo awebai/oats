@@ -11,7 +11,7 @@
   "$defs": {
     "HelperInjection": {
       "deprecated": true,
-      "description": "DEPRECATED and IGNORED since OATS 0.26: it served the captured path (removed in 0.26). Still accepted so existing manifests validate; it changes nothing. Omit it.",
+      "description": "Tolerated and ignored: accepted so existing manifests validate; it changes nothing. Omit it.",
       "oneOf": [
         {"type":"object","required":["version","mode"],"additionalProperties":false,"properties":{"version":{"const":1},"mode":{"enum":["inherit","omit"]}}},
         {"type":"object","required":["version","mode","path"],"additionalProperties":false,"properties":{"version":{"const":1},"mode":{"const":"file"},"path":{"type":"string","minLength":1,"pattern":"^(?![A-Za-z]:)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^/\\\\\u0000]+(?:/[^/\\\\\u0000]+)*$"}}}
@@ -78,7 +78,7 @@
     "inject": {
       "type": "string"
     },
-    "helperInjection": {"$ref":"#/$defs/HelperInjection","deprecated":true,"description":"DEPRECATED and IGNORED since OATS 0.26 (accepted so existing manifests validate; changes nothing). Omit it."},
+    "helperInjection": {"$ref":"#/$defs/HelperInjection","deprecated":true,"description":"Tolerated and ignored (accepted so existing manifests validate; changes nothing). Omit it."},
     "environment": {
       "type": "array",
       "items": {
@@ -115,7 +115,7 @@
           },
           {
             "title": "harness package requirement",
-            "description": "A package that must be installed into a specific harness's own package manager. Raised only for deployments using that harness, satisfied by the harness's package list rather than by PATH, and installed only with explicit consent. The harness is named by `harness` (0.27.0) or by `runtime`, its pre-0.27 name that released manifests use: exactly one of the two.",
+            "description": "A package that must be installed into a specific harness's own package manager. Raised only for deployments using that harness, satisfied by the harness's package list rather than by PATH, and installed only with explicit consent. The harness is named by `harness` or by `runtime`, its old name that released manifests use: exactly one of the two.",
             "type": "object",
             "required": [
               "package",
@@ -135,7 +135,7 @@
               },
               "runtime": {
                 "type": "string",
-                "description": "The pre-0.27 name of `harness`, accepted for released manifests.",
+                "description": "The old name of `harness`, accepted for released manifests.",
                 "enum": [
                   "pi",
                   "claude"
@@ -205,7 +205,7 @@
           "items": { "type": "string", "minLength": 1, "maxLength": 200, "not": { "pattern": "[{}]|[^\\x20-\\x7e]" } }
         },
         "keys": {
-          "description": "Owned operator-key declarations: exact names or trailing-dot namespaces, no other pattern syntax. Kernel 0.24.4 validates shape only; filtering, overlap checks and ownership attribution are deferred to 0.25. Providers must ignore foreign keys themselves.",
+          "description": "Owned operator-key declarations: exact names or trailing-dot namespaces, no other pattern syntax. The kernel validates their shape only; providers must ignore foreign keys themselves.",
           "type": "array",
           "uniqueItems": true,
           "items": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*\\.?$(?![\\s\\S])" }

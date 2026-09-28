@@ -1,10 +1,11 @@
-# Packages — the versioned tier
+# Packages: the versioned tier
 
 A **package** is a place to fetch capabilities from *with a version attached*.
 It is one of the two kinds of capability source in the
 [workspace model](workspaces.md); the other — a member repo — is never
 versioned. Nothing is installed: a package is resolved to an exact commit by
-`oats sync`, recorded in `oats-lock.json`, and **copied whole into each instance at spawn** (`<home>/.oats/modules/<cap>/`).
+`oats sync`, recorded in `oats-lock.json`, and **copied whole into each
+instance at spawn** (`<home>/.oats/modules/<cap>/`).
 
 Ground truth: [`oats-package.schema.json`](oats-package.schema.json) (the
 package manifest), the [lock v3 format](#lock-v3) below (`validateLock` in
@@ -28,7 +29,7 @@ A Git repository **contains** a package at `oats-package/`:
 
 `oats-package.json` must declare `package` and `capabilities` (a list of
 directories relative to the package root, each holding an `oats.json`). It may
-also declare `souls` (0.28.0): soul directories the package ships, see
+also declare `souls`: soul directories the package ships, see
 [Package souls](#package-souls). A
 directory entry need not equal the capability's name
 (`capabilities/oats-okf` → capability `oats.okf`). A package declaring one
@@ -36,22 +37,21 @@ capability name twice, a listed directory without a manifest, or a manifest
 without `capability` is `E_PACKAGE_MANIFEST`. Catalog entries may name another
 `path` than `oats-package`; a `git:` ref always reads `oats-package/`.
 
-## Declaring packages — two forms, in one place
+## Declaring packages
 
 The workspace file's `packages:` map is the **only** list of versions in the
 whole organisation:
 
 ```yaml
 packages:
-  oats.framework: v1.1.3                              # bare version → the official catalog
-  oats.okf: v2.1.3
+  oats.okf: v4.0.3                                    # bare version → the official catalog
   acme.tools: git:github.com/acme/tools@v0.4.0        # direct ref: git:<repo>@<tag or full OID>
 ```
 
-- **Bare version** (`v2.1.3`, `2.1.3`, `1.0.0-rc.1`): the id is looked up in
+- **Bare version** (`v4.0.3`, `4.0.3`, `1.0.0-rc.1`): the id is looked up in
   the official catalog — `package-catalog.json` in the `oats` repo, or the file
   named by `OATS_PACKAGE_CATALOG` — which supplies the repo url, the tag
-  convention (`v2.1.3` or `oats-framework/v1.1.3`) and the payload path. An id
+  convention (`v4.0.3` or `oats-framework/v1.3.2`) and the payload path. An id
   the catalog does not know is `E_PACKAGE_MISSING` ("use `git:<repo>@<ref>` for
   a package outside the catalog"). The catalog is the reviewed official list
   ([official-catalog.md](official-catalog.md)) and the only way a
@@ -78,8 +78,7 @@ packages:
   oats.okf: v4.0.3
   oats.aweb: v1.16.1
 teams:
-  global: { description: Org-wide }
-  engineering: { description: Platform }
+  platform: { team: "platform:acme.aweb.ai", description: Platform engineering }
 defaults:
   capabilities: { oats.core: { from: package } }
   knowledge: { oats.okf: { from: package } }
@@ -105,11 +104,11 @@ decision recorded in the lock.
 ```
 $ oats sync
 workspace  acme  (github.com/acme/agents @ 3f2a9c1e)
-members    agents ✓↔ (@ 3f2a9c1e)   platform ✓↔ (@ 77c0a1b2)   tools ✓↔ (@ 47f4b816)   billing ✗ (no-backlink)
-packages   acme.tools 0.4.0 ✓ (@ 47f4b816)   oats.framework 1.1.3 ✓ (@ 9c3e27aa)   oats.okf 2.1.3 ✓ (@ b2e16f2e)
+members    agents ✓↔ (@ 3f2a9c1e)   platform ✓↔ (@ 77c0a1b2)   billing ✗ (no-backlink)
+packages   acme.tools 0.4.0 ✓ (@ 47f4b816)   oats.okf 4.0.3 ✓ (@ 559835bc)
 changed    acme.tools  — → 0.4.0 (@ 47f4b816)
-souls      7 discovered (6 members, 1 external, 0 disabled here) · 0 private capabilities
-teams      engineering 4 souls, 3 capabilities · global 2 souls, 2 capabilities · unassigned 1 soul
+souls      9 discovered (6 members, 1 external, 2 package, 0 disabled here) · 0 private capabilities
+teams      platform (shared) · this deployment's: oats teams
 
 lock       oats-lock.json
 ```
@@ -127,16 +126,15 @@ lock       oats-lock.json
 4. writes `oats-lock.json` and reports the diff. Entries dropped from
    `packages:` are dropped from the lock.
 
-There is **no approval step** (human decision, 2026-09-24): declaring a package
-in the workspace's `packages:` is the trust decision, so `sync` asks nothing,
-exits `0` on success, and `--approve` is `E_BAD_ARGS`. `--json` emits the
+Declaring a package in the workspace's `packages:` is the trust decision
+([Trust](#trust)): `sync` asks nothing and exits `0` on success. `--json` emits the
 `syncApi: 1` envelope documented in
 [desktop-cli-api.md](desktop-cli-api.md#workspace-model-workspaceapi-2).
 
 ## `oats package add | remove`
 
 ```bash
-oats package add oats.aweb v1.11.2                         # a catalog version
+oats package add oats.aweb v1.16.1                         # a catalog version
 oats package add acme.tools git:github.com/acme/tools@v0.4.0
 oats package remove acme.tools
 ```
@@ -144,8 +142,8 @@ oats package remove acme.tools
 Both edit `packages:` in `oats-workspace.yaml` **when the file is tracked by
 the Git checkout the command runs in** (the workspace host repo); the edit is
 validated against the full workspace schema before it is written, and the
-receipt tells you to commit and `oats sync`. Anywhere else — a deployment folder,
-a member clone — the command prints the line to add (`--json`: `edited: false`,
+receipt tells you to commit and `oats sync`. Anywhere else (a deployment folder,
+a member clone) the command prints the line to add (`--json`: `edited: false`,
 `line`) because the workspace file is shared through Git, not through this
 machine. Nothing network-bound happens in `package add`; `sync` resolves.
 
@@ -162,10 +160,10 @@ same workspace commit hold identical locks.
       "source": "catalog:oats.okf",
       "url": "https://github.com/awebai/oats-okf.git",
       "path": "oats-package",
-      "version": "2.1.3",
-      "commit": "b2e16f2ea1555be519db76fda30cd0bea06f8609",
-      "integrity": "sha256-1c34dbe9c1cc3826dbe6ecbafbd9a1e189ed36a74bfb2ba8fb6f46a382e95c2d",
-      "capabilities": ["oats.okf"]
+      "version": "4.0.3",
+      "commit": "559835bc992c5b94ee2f85e8c1e1d4e13e1601e6",
+      "integrity": "sha256-…",
+      "capabilities": ["oats.okf", "oats.okf-harvest", "oats.okf-maintenance"]
     },
     "acme.tools": {
       "source": "git:github.com/acme/tools@v0.4.0",
@@ -183,31 +181,26 @@ same workspace commit hold identical locks.
 
 | field | meaning |
 |---|---|
-| `source` | `catalog:<id>` or `git:<repo key>@<ref>` — how the workspace asked for it |
+| `source` | `catalog:<id>` or `git:<repo key>@<ref>`: how the workspace asked for it |
 | `url` | the repo url the package was read from; travels in the lock so spawn needs no catalog |
 | `path` | the package root inside the repo |
 | `version` | the version string without a leading `v` (a `git:…@<OID>` pin records the OID) |
 | `commit` | full 40-hex OID the version resolved to |
 | `integrity` | `sha256-<hex>` content digest of the package tree at `path` |
-| `capabilities` | the capability names the package provides (sorted) — what `from: package` looks up |
-| `souls` | the package souls (0.28.0), sorted by name: `name`, `path` (inside the package) and `digest` (`sha256-<hex>` of the soul directory); absent when the package ships none |
+| `capabilities` | the capability names the package provides (sorted): what `from: package` looks up |
+| `souls` | the package souls, sorted by name: `name`, `path` (inside the package) and `digest` (`sha256-<hex>` of the soul directory); absent when the package ships none |
 
 A capability provided by **two** locked packages is ambiguous and fails
 closed (`E_PACKAGE_MISSING { ambiguous: [ids] }`): keep one of them in
-`packages:`. A lock that is not v3 (a 0.24 lock, an unreadable file) is
-`E_LOCK_SCHEMA`; it is never auto-repaired — delete it and `oats sync`. A v3
-lock written before 0.26.0 may carry an `approved` record per entry: it is read
-with the field ignored, and the next write drops it. The reverse does not hold:
-a kernel before 0.26.0 refuses a lock 0.26.0 wrote (`E_LOCK_SCHEMA "approved:
-must be null or { executables, at }"`) — keep every kernel that reads one
-deployment on 0.26.0 or later. Agents never hand-edit the lock.
+`packages:`. A lock that is not v3, or cannot be read, is `E_LOCK_SCHEMA`; it
+is never repaired automatically: delete it and `oats sync`. Agents never
+hand-edit the lock.
 
 ## Trust
 
 Member capabilities are trusted by membership; **a package is trusted by its
-declaration in the workspace's `packages:`** (human decision, 2026-09-24) —
-people install a package only when they trust it, so there is no second,
-per-version approval step. The lock is reproducibility, not approval: it pins
+declaration in the workspace's `packages:`**. People declare a package only
+when they trust it, so there is no second, per-version approval step. The lock is reproducibility, not approval: it pins
 the exact commit and the content integrity, a moved tag or drifted content is
 `E_PACKAGE_INTEGRITY`, and at spawn the lock's capability list must match what
 the package declares at the locked commit (`E_PACKAGE_INTEGRITY { why:
@@ -226,7 +219,7 @@ running instance's package module as `moved` once the lock points elsewhere.
 
 ## Package souls
 
-A package may ship **souls** as well as capabilities (0.28.0). One pin in
+A package may ship **souls** as well as capabilities. One pin in
 `packages:` then versions both: nothing drifts, unlike an `external:` soul's
 commit pin.
 
@@ -244,7 +237,7 @@ oats-package/
   the lock entry. A soul without `soul.yaml` or `AGENTS.md`, or whose
   directory is not a soul name, is `E_PACKAGE_MANIFEST`. On a later sync at
   the same version the souls must still match (`E_PACKAGE_INTEGRITY { why:
-  "souls" }`); a lock written before 0.28.0 has its `souls` filled in.
+  "souls" }`).
 - **Listed.** `oats souls` lists a package soul with `kind: "package"`,
   `package`, `version`, `qualifiedName` and `origin: "package <id>
   v<version>"`; `oats sync` / `oats workspace status` list each package's
@@ -255,8 +248,7 @@ oats-package/
   (`details.qualified`). A member soul's qualified form is `<member name>/<soul>`.
 - **Resolved** like any soul: the workspace defaults apply, `off` and
   `<slot>: none` work, its teams here are keyed `<package>/<soul>` in
-  `oats-local.yaml` `souls.teams` (a package soul.yaml carrying `team:` is
-  refused since 0.30), and `from: here` means **this package** at the locked commit
+  `oats-local.yaml` `souls.teams`, and `from: here` means **this package** at the locked commit
   (a capability it does not provide is `E_CAPABILITY_MISSING`).
 - **Spawned** at the locked commit: the soul is fetched into the per-commit
   soul cache and its digest must equal the lock's (`E_PACKAGE_INTEGRITY
@@ -286,7 +278,7 @@ oats-package/
 
 ## Trigger templates
 
-A package may also ship **trigger templates** (0.28.0): `triggers: [{ id,
+A package may also ship **trigger templates**: `triggers: [{ id,
 file }]` in `oats-package.json`, each file `{ parameters, definition }`.
 `oats trigger add --from <package>:<id> --set <name>=<value>` instantiates one
 at the locked commit; see [schedules.md#triggers](schedules.md#triggers).
@@ -297,7 +289,7 @@ A soul may state floors on package versions — constraints, not sources:
 
 ```yaml
 compatibility:
-  oats.okf: ">=2.1"
+  oats.okf: ">=4.0"
 ```
 
 Checked at resolution against the locked version (`E_COMPATIBILITY`,
@@ -339,23 +331,12 @@ A soul that names one of the package's capabilities with
 {
   "policy": "docs/official-catalog.md",
   "packages": {
-    "oats.okf":       { "url": "https://github.com/awebai/oats-okf.git", "ref": "v2.1.3", "path": "oats-package" },
-    "oats.framework": { "url": "https://github.com/awebai/oats.git", "ref": "oats-framework/v1.1.3", "path": "oats-package" }
+    "oats.okf":       { "url": "https://github.com/awebai/oats-okf.git", "ref": "v4.0.3", "path": "oats-package" },
+    "oats.framework": { "url": "https://github.com/awebai/oats.git", "ref": "oats-framework/v1.3.2", "path": "oats-package" }
   }
 }
 ```
 
 `ref` carries the tag convention: a workspace's `oats.framework: v1.3.2`
 resolves to tag `oats-framework/v1.3.2`. Resolving through the catalog never
-advances a lock by itself — `oats sync` does, and
-says so.
-
-## Removed verbs
-
-`oats install`, `restore`, `init`, `use`, `trust`, `list`, `catalog`, `remove`,
-`migrate`, `config` are gone; each answers `E_UNKNOWN_COMMAND` naming its
-replacement (`details.removed` / `details.replacement` in `--json`). There is
-no installed-capability directory, no config template adoption, no host
-requirement installer. A manifest's `requires` still describes what must exist
-on the host (harness packages are verified at spawn; host commands are the
-operator's to install).
+advances a lock by itself: `oats sync` does, and says so.

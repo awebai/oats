@@ -78,9 +78,8 @@ Members are read at their **latest** default-branch state, not versioned.
 
 **Packages** are the only versioned things: pinned in `packages:`, resolved by
 `oats sync` to an exact commit and content fingerprint in `oats-lock.json`.
-A package ships capabilities, and from kernel 0.28.0 souls and trigger
-templates; **one pin versions all of it**. Declaring a package is the trust
-decision. Why two tiers: your repos move fast and you trust them; shared
+A package ships capabilities, souls and trigger templates; **one pin
+versions all of it**. Declaring a package is the trust decision. Why two tiers: your repos move fast and you trust them; shared
 tooling must not change under you. A repo can be a member **and** publish a
 package; the two never merge (`from: <repo>` reads its latest `capabilities/`,
 `from: package` reads the lock).
@@ -110,6 +109,15 @@ Which souls are in which teams is local to each deployment (`oats soul
 teams`); an instance joins its default team at spawn, and the soul's other
 teams are *eligible*, joined explicitly (`/oats-teams`). A team adds no
 capabilities, grants no trust, restricts no one and partitions no knowledge.
+The kernel reads and writes these local facts:
+
+```bash
+oats teams [--json]                                      # shared and local teams, and the default
+oats teams add <label> --team <id> [--description <d>]   # a local team; the first one becomes the default
+oats teams remove <label>
+oats teams default <label>                               # the deployment's default team
+oats soul teams <soul>|'*' [--add a,b] [--remove a,b] [--default <label> | --clear-default]
+```
 
 **Instances** are incarnations of a soul on one machine: a **home** (its
 instructions, task and state) and **`./work`** (per the soul's work mode:
@@ -122,7 +130,7 @@ model.
 
 **Automations** spawn or wake instances without a person. **Local** ones live
 in this deployment's `oats-schedules.json`, run on this machine with its own
-`gh`, and are machine-private. **Workspace** ones (kernel 0.29.0) are committed
+`gh`, and are machine-private. **Workspace** ones are committed
 in a member (`oats-triggers/`, `oats-schedules/`, or a `*.oats-trigger.yaml` /
 `*.oats-schedule.yaml` file) and
 name **where** they run (`runsOn`, a host's `host.name`) and **as whom**
@@ -131,8 +139,9 @@ them. One host timer per machine runs every due automation (`/oats-automations`)
 
 **This machine** is the deployment directory: `oats-local.yaml` (which
 workspace, host-owned settings such as paths and custody, clones, launch
-configurations, souls disabled here, and from 0.29.0 its `host.name` and
-`triggers.disabled` / `schedules.disabled`), `oats-lock.json` (written by `oats sync`), `agents/`
+configurations, souls disabled here, its `host.name`, its teams (local
+`teams`, `defaultTeam`, `souls.teams`) and `triggers.disabled` /
+`schedules.disabled`), `oats-lock.json` (written by `oats sync`), `agents/`
 (the instance homes) and the host timer. None of it is in Git.
 
 ## Where does X come from, why is X here, why can't I Y
@@ -149,8 +158,9 @@ configurations, souls disabled here, and from 0.29.0 its `host.name` and
 | Why can't I spawn soul X? | `oats spawn X --preview` | the refusal code and path; `/oats-workspace-config` maps it to the fix |
 | Which instances run here, and are they current? | `oats status` | each instance's soul source, modules and drift marks |
 | What was an instance given, and why? | `oats inspect --home <abs home> --json` | recorded modules, payloads, `layers.<slot>.from` as recorded at spawn |
-| Which teams can an instance join? | `oats spawn X --preview` or `oats soul teams X`; in a home, `oats aweb teams` | the `teams` rows with `default: false` (label, team id, shared or local) |
-| What runs automatically, and where? | `oats trigger list`, `oats schedule list` | local and (0.29.0) workspace automations; for a workspace one, whether it runs here or why not |
+| Which teams does this deployment have? | `oats teams` | shared and local teams (label, team id), and the default |
+| Which teams can an instance of X join? | `oats soul teams X` or `oats spawn X --preview` | the soul's teams here; those other than its default are eligible |
+| What runs automatically, and where? | `oats trigger list`, `oats schedule list` | local and workspace automations; for a workspace one, whether it runs here or why not |
 | Would this trigger work on this host? | `oats trigger test <id>` | `gh` credentials, repo permissions, the soul resolving, the teams declared, what would fire |
 | What is configured on this machine? | `oats doctor` | this deployment's local file and lock |
 

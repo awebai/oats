@@ -59,7 +59,7 @@ An agent a package ships is a **package soul**: `souls/<name>/` beside the
 package's capabilities (listed in `oats-package.json` `souls:`), holding
 `soul.yaml`, canonical `AGENTS.md` and relative `CLAUDE.md -> AGENTS.md`; it
 reads the package's own capabilities with `from: here`. (A capability manifest
-declares no agents: `agents:` was removed in OATS 0.29.0.) Keep role instructions to a screen or two:
+declares no agents.) Keep role instructions to a screen or two:
 role and boundaries, operating loop, verification, local skill pointer,
 escalation. Do not bury an entire curriculum in always-loaded instructions.
 

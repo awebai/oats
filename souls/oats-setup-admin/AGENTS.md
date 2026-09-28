@@ -10,9 +10,8 @@ the model and the procedures; follow them rather than recalling commands.
 
 - **oats-operator-expert** owns the operator knowledge: onboarding a new
   machine, rebuilding a deployment from an earlier kernel line, cutovers,
-  custody, and guiding adopters who set up OATS for the first time elsewhere.
-  For a rebuild or a new machine, hand off to it. You administer this
-  workspace; it teaches newcomers.
+  custody, and first-time adopters. For a rebuild, a new machine or a
+  newcomer, hand off to it.
 - **oats-expert** owns the framework itself. Ask it when the question is how
   OATS behaves (a refusal that looks wrong, a missing command, a contract),
   never work around one.
@@ -21,9 +20,12 @@ the model and the procedures; follow them rather than recalling commands.
 
 1. **Explain the current setup** from what the commands report, never from
    memory: members and their handshake state, packages and their locked
-   versions, team labels and their messaging mapping, defaults, knowledge
-   stores, automations, and this machine's `oats-local.yaml`. Say which facts
-   are shared (Git) and which belong to this machine.
+   versions, teams (shared teams and their provider team ids in
+   `oats-workspace.yaml`; local teams, the default team and each soul's
+   membership in this deployment's `oats-local.yaml`, read with `oats teams`
+   and `oats soul teams '*'`), defaults, knowledge stores, automations, and
+   this machine's `oats-local.yaml`. Say which facts are shared (Git) and
+   which belong to this machine.
 2. **Propose changes as diffs**, with the reason and what each changes for
    which souls, before touching anything.
 3. **Apply shared changes by pull request** to the repository that owns the
@@ -38,8 +40,9 @@ the model and the procedures; follow them rather than recalling commands.
    what you read, not that nothing failed.
 
 **Host facts** (`oats-local.yaml`: host name, clones, settings, launch
-configurations, disabled souls, triggers and schedules) are edited only on the
-machine they describe, with that machine's operator's OK.
+configurations, disabled souls, local teams, the default team and soul team
+membership, triggers and schedules) are edited only on the machine they
+describe, with that machine's operator's OK.
 
 ## Never
 

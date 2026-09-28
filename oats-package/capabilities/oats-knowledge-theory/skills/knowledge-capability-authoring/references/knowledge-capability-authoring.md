@@ -7,66 +7,40 @@ The released skill includes checked copies of this set; authors and the
 
 ## Authority and scope
 
-OATS offers an opinionated reference knowledge theory. Default OKF follows it;
-other capabilities may adopt, adapt, or replace it. The kernel owns generic
-layer selection, configuration, composition, lifecycle, work-mode boundaries
-and executable trust, not a compulsory memory ontology or universal judge.
+OATS offers an opinionated reference knowledge theory. The default provider,
+OKF, follows it; other capabilities may adopt, adapt or replace it. The kernel
+owns slot selection, composition, lifecycle, work-mode boundaries and the
+hook contract, not a memory model or a judge.
 
-This guide distills the approved 2026-09-13 knowledge scoping session. The
-reference derivation comes from OATS's knowledge theory; its historical
-references to physical soul bundles are replaced here by external knowledge
-custody. The approved implementation plan settles plain-directory OKF as the
-first non-Git path and keeps Omnigraph an uninvestigated authoring scenario.
-Earlier drafts' open choices are not implementation facts. The curriculum is
-a design/authoring reference, not a claim that all default runtime behavior
-has already shipped. Verify the capability version actually being evaluated.
+Every implementing capability supplies its full runtime: reader tools,
+injections, capture conventions, judgment instructions, a harvester if any,
+lifecycle and scheduling, validation, delivery and diagnostics. Reuse may be
+explicit and versioned, never a hidden fetch of mutable doctrine. The theory
+expert advises authors; it does not operate their stores or approve their
+compatibility. Composing this capability selects no knowledge provider.
 
-Every implementing capability supplies its full runtime package: reader tools,
-injections, capture conventions, judgment instructions, harvester if any,
-lifecycle/scheduling machinery, validation, delivery and diagnostics. Reuse
-may be explicit and versioned, never a hidden fetch of mutable doctrine.
-The theory expert advises authors; it does not operate their stores or approve
-their compatibility. Installing the theory package activates nothing.
+## Getting the authoring package
 
-## Install the optional authoring package
-
-The kernel's npm package ships this public guide and the CLI, **not** the
-optional expert payload. The catalog selects `oats.knowledge-theory` 1.0.0
-from the already-published framework v0.23.0 Git `oats-package/` subtree. Git preserves the canonical
-source `CLAUDE.md -> AGENTS.md` symlink; npm omits symlinks, so a partial npm
-copy is not a supported distribution. Acquisition does not repair source
-aliases or relax installed-artifact integrity checks.
-
-Select a deployment scope explicitly and acquire the published source, then
-opt in for an author soul:
+`oats.knowledge-theory` ships in the `oats.framework` package, read from Git
+(npm omits the package's `CLAUDE.md -> AGENTS.md` symlink, so an npm copy is
+not a supported distribution). Pin the framework and give the capability to
+an author soul:
 
 ```yaml
 # oats-workspace.yaml
 packages:
-  oats.framework: v1.1.3            # provides oats.core, oats.setup, oats.knowledge-theory
+  oats.framework: v1.3.2            # provides oats.core, oats.setup, oats.knowledge-theory
 
 # souls/<author-soul>/soul.yaml
 capabilities:
   oats.knowledge-theory: { from: package }
 ```
 
-`oats sync` resolves the version to a commit and locks it; the package is read
-at `oats-package/` of its repository.
-The `oats.knowledge-theory` catalog shortcut uses that same published v0.23.0
-source. The current authoring-reference patch is package 1.0.1: once framework
-v0.23.1 is published, an explicit initial Git acquisition at that tag selects
-the patch instead. It does not silently change the catalog's 1.0.0 selection
-or an existing lock. For local development, use an explicit complete source
-package path instead. Activation targets the authoring skill, without
-selecting or replacing a knowledge capability.
-
-The expert is an oats.framework **package soul** from framework 1.3.0
-(`oats-package/souls/knowledge-theory-expert/`, reading `oats.knowledge-theory`
-1.1.0 from its own package): spawn it by its qualified name in the author's
-repository, `oats spawn oats.framework/knowledge-theory-expert --repo <repo>`.
-Before 1.3.0 it was a capability-defined agent, which OATS 0.29.0 removed.
-There are no executable surfaces to trust in this package. Installed experts
-use their materialized local curriculum, not this repository at runtime.
+The expert is the framework's package soul `knowledge-theory-expert`, which
+reads `oats.knowledge-theory` from its own package. Spawn it in the author's
+repository: `oats spawn oats.framework/knowledge-theory-expert --repo <repo>`.
+The package has no commands or hooks, and an expert uses its copied local
+curriculum, not this repository.
 
 ## A bounded authoring session
 
@@ -98,9 +72,9 @@ use their materialized local curriculum, not this repository at runtime.
 - Custody: named destinations, owner identity, accepted state, concurrency,
   retry and reader-refresh semantics. No credentials in the report.
 - Proposed artifacts: capability manifest, local resources, instructions,
-  skills, optional agent, hooks/operations and declared trust surface.
+  skills, package souls, hooks and operations, and the declared environment.
 - Verification: tests run, actual receipts/visibility, failures, untested claims
-  and the next required approvals. Do not call scaffold-only an agent trial.
+  and the next required reviews. Do not call scaffold-only an agent trial.
 
 ## Maintaining these references
 
@@ -108,6 +82,5 @@ Edit this file and `docs/knowledge-reference/` in the framework source, then
 run `node scripts/check-knowledge-theory-package.mjs --write` from that checkout.
 Run `node scripts/check-knowledge-theory-package.mjs` and
 `node --test test/knowledge-theory-package.test.mjs` to verify parity and the
-installed artifact. These are maintainer commands, not tools required in an
-installed expert's work tree. The copies belong to a package release; edits to
-repository docs do not change any installed capability at runtime.
+packaged copy. The copies ship with the next framework release; editing the
+docs changes no deployed capability.

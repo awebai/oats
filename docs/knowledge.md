@@ -1,101 +1,59 @@
-# Knowledge — layer 2
+# Knowledge
 
-For the canonical design, defaults and alternatives, start with
-[Knowledge, instances and evolving expertise](knowledge-theory.md). This page is
-an operational guide to the version-scoped OKF implementation below, not a universal
-knowledge layout or learning policy. The default direction is centralised per-soul
-knowledge; other capabilities may provide different procedures and placements,
-including co-location, without writing into a home's read-only module copies.
+The **knowledge slot** gives a working soul durable, reviewed expertise:
+decisions and their rationale, rejected alternatives, discovered limits. The
+kernel owns the slot, its configuration and command dispatch; the capability
+that fills it owns the format, the instructions and how knowledge is promoted.
+The model is in [Knowledge, instances and evolving expertise](knowledge-theory.md).
 
-Specialization is accumulated judgment: decisions and rationale, rejected
-alternatives, discovered limits, and maintained context that changes what a
-future instance does. It is not a second description of the code.
+This page is the operator guide for the default filler, the `oats.okf` package.
+Its runtime internals (custody, publication, locks) are in the
+[oats-okf README](https://github.com/awebai/oats-okf).
 
-OATS keeps knowledge pluggable. The kernel supplies lifecycle, configuration,
-trusted command dispatch and independent execution; each knowledge capability
-owns its format, reader/capture instructions, judgment and delivery. The
-[reference theory](knowledge-theory.md) and [authoring guide](knowledge-capability-authoring.md)
-are optional author resources, not mandatory runtime policy.
-
-> **Version scope:** this guide describes published **oats.okf 2.0.0**, requiring
-> the published OATS >=0.23.0 kernel. Framework v0.23.1 integrates its catalog
-> and mirror; publishing packages does not activate or deploy them automatically.
-> See [release notes](release-notes/v0.23.1.md).
-
-## What lives where
-
-| Surface | Purpose |
+| Surface | What it holds |
 |---|---|
-| `soul/AGENTS.md`, `soul/skills/` | Curated specialist identity and procedures, reviewed as soul artifacts. |
-| `soul/okf.json` | Stable owner ID and external `owns`/`reads` node references; no knowledge bytes. |
-| External accepted bases | Durable OKF knowledge, either Git PR-only or a recoverable plain directory. |
-| Instance `knowledge/` | Immutable accepted reader snapshot with `view.json` and `bases/<alias>/`. |
-| Instance `STATE.md`, `log.md`, `notes/` | Rewritable task state, append-only milestones and captured insights. |
-| External `stateDir` | Durable per-source evidence, frozen descriptors, runs, proposals and receipts. |
-| Worker `work/` | Independent directory execution with staged bases and explicit judgment. |
+| Accepted bases (Git or directory) | Soul knowledge: OKF concepts in nodes, each node owned by one soul. |
+| `souls/<name>/okf.json` | The nodes the soul owns and reads. |
+| Instance home: `STATE.md`, `log.md`, `notes/` | Instance knowledge. |
+| The bindings file and its `stateDir` | Where each base lives on this machine; durable harvest evidence. |
 
-The turn record is episodic evidence, not accepted expertise. OKF captures both
-notes **and** attributed record content, then judges them separately from capture.
-V2 never automatically edits soul skills; a procedure candidate may become an
-external Playbook for separate human review.
+## Setup
 
-## Acquire, bind and provision explicitly
+### Pin and select the package
 
-The authoritative distribution is [awebai/oats-okf](https://github.com/awebai/oats-okf),
-whose `oats-package/oats-package.json` exports exactly
-`oats-package/capabilities/oats-okf/`. The framework's `capabilities/oats-okf/`
-is a bundled mirror, **not a self-contained Git distribution in the npm
-artifact**: npm drops the source worker's `CLAUDE.md -> AGENTS.md` symlink.
-Acquire the catalog Git payload; do not install a copied npm mirror as a local
-package or repair missing aliases in installed artifacts.
-
-Under the 0.25 workspace model OKF is a **package**: pin it once in the
-workspace file, let `oats sync` resolve, verify and lock it, and let every soul that
-fills the knowledge slot say (or inherit) `oats.okf: { from: package }`.
-Operator-level `oats okf` commands run from the deployment directory with
-`--soul <name>` (an explicit `--soul` does not override an invoking instance's
-saved settings — use a clean shell). The pinned version resolves through the
-official catalog:
+The workspace pins the package and fills the slot for every soul by default:
 
 ```yaml
-# oats-workspace.yaml
+# oats-workspace.yaml (excerpt)
 packages:
-  oats.okf: v2.1.3
+  oats.okf: v4.0.3
 defaults:
   knowledge: { oats.okf: { from: package } }
+stores:
+  org: git:github.com/acme/knowledge
+```
 
-# souls/domain-expert/soul.yaml — nothing under knowledge: for oats.okf; the default fills the slot.
-# What the soul owns/reads is souls/domain-expert/okf.json (below), not a soul.yaml payload.
-# A soul-true binding setting is the one thing the payload may carry, e.g.:
-knowledge:
-  harvest-runtime: claude
+- `oats sync` locks the pin. `oats spawn <soul> --preview --json` shows the
+  module a soul resolves and its merged `settings.oats.okf`.
+- A soul without knowledge says `knowledge: none`.
+- `stores:` names the workspace's knowledge repositories; the kernel validates
+  them as repo refs. oats.okf does not read `stores:`: the bindings file says
+  where each base lives.
 
-# oats-local.yaml (this machine)
+Each machine points the package at its bindings file in `oats-local.yaml`:
+
+```yaml
+# oats-local.yaml (excerpt)
 settings:
   oats.okf:
-    bindings-file: /absolute/config/okf-bindings.json
-    state-dir: /absolute/state/okf
+    bindings-file: /Users/ana/.oats/okf-bindings.json
+    state-dir: /Users/ana/.oats/okf
 ```
-
-```bash
-oats sync                                  # resolves v2.1.3 to a commit, verifies its integrity, writes the lock
-oats spawn domain-expert --preview --json  # the exact oats.okf module (package, version, commit) + settings.oats.okf (the merged payload)
-```
-
-Pinning activates nothing by itself: the soul's `okf.json` must exist and the
-merged payload (soul `knowledge:` ⊕ `settings.oats.okf` ⊕ `--provider`) must be
-bindable — it may carry **only** the four settings below (`bindings-file`,
-`state-dir`, `harvest-runtime`, `harvest-model`); `owns`/`reads`/`root` on the
-soul payload are refused by 2.1.3, not read. The lock stays exact until the
-workspace bumps `packages.oats.okf`; v1 operators must plan migration before
-that bump. Executable changes come with a new version, reviewed as a new pin. A
-service worker need not itself fill the knowledge slot (`knowledge: none`).
 
 ### Bindings document
 
-`bindings-file` must be an **absolute path**. Its capability-owned JSON is not a
-new kernel configuration schema. Paths inside it resolve relative to the file's
-directory, not the current working directory:
+Capability-owned JSON at an absolute path; relative paths inside it resolve
+from its own directory:
 
 ```json
 {
@@ -110,365 +68,238 @@ directory, not the current working directory:
       "repository": "https://github.com/example/project.git",
       "root": "knowledge",
       "acceptedBranch": "main",
-      "pr": {"repository": "example/project"}
+      "pr": { "repository": "example/project" }
     },
-    "team": {
-      "id": "team-knowledge",
-      "kind": "directory",
-      "path": "../team-knowledge"
-    }
+    "team": { "id": "team-knowledge", "kind": "directory", "path": "../team-knowledge" }
   }
 }
 ```
 
-- Git supports HTTPS, SSH and durable local repositories. `root: "."` selects
-  a dedicated knowledge repository. Initial PR delivery uses same-repository
-  branches with native `git`, `gh` and ordinary operator credentials. There is
-  no fork-routing or direct-write fallback.
-- Directory custody needs no Git, `gh`, `.git` or fabricated repository.
-  A directory inside **any Git working tree**, even ignored, is rejected:
-  relabeling Git custody cannot bypass review.
-- Use physical, non-symlinked, nonoverlapping paths. Keep state outside bases and
-  source homes/worktrees; keep the bindings file outside state and bases. Local
-  Git locators must not be disposable linked worktrees. Directory lock/journal
-  artifacts also must not overlap state, sources or another base.
-- Settings are `bindings-file`, `state-dir` (both required, absolute host
-  paths), `harvest-runtime` (`pi`, `claude`, `codex`, default `pi`), and
-  optional `harvest-model` — the complete list a 2.1.3 payload may carry.
-  Choose an installed, authenticated
-  worker runtime independently of the source; omitted models use that runtime's
-  configured default. V1 record-window settings are not v2 settings.
+- **The `id` must match the base.** The alias (`project`) is yours, and souls'
+  `okf.json` names it. The `id` must equal the `id` in the base's
+  `okf-base.json` at its root (here `knowledge/okf-base.json`), or every read
+  of that base fails with `E_BASE` ("base identity/nodes mismatch").
+- **Git bases** (HTTPS, SSH or a durable local repository; `root: "."` for a
+  dedicated repository) are delivered to only by same-repository PR, through
+  `git` and `gh`. A URL with embedded credentials is refused.
+- **Directory bases** need no Git and must not sit inside a Git working tree.
+- **Paths** are physical and nonoverlapping: state outside every base and
+  instance home, the bindings file outside state and bases.
+- `stateDir` holds per-source evidence and the consult cache; `cron` and `tz`
+  schedule each source's harvest job (defaults shown).
+- Every base must be usable at spawn: one bad base blocks every knowledge-slot
+  spawn on the machine, and the error names its alias.
 
-### Owner and base descriptors
+### Settings
 
-Each persistent soul declares `soul/okf.json`:
+`oats.okf` declares seven settings; the harvester capability declares one.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `bindings-file` | none (required) | Absolute path of the bindings document. |
+| `state-dir` | none | Absolute path; required by the package's readiness check. Evidence lives at the bindings `stateDir`. |
+| `harvest` | `off` | The harvest switch, a host setting ([below](#the-harvest-switch)). |
+| `harvest-runtime` | `pi` | The harvester's harness: `pi`, `claude` or `codex`. |
+| `harvest-model` | the harness default | A model pin for the harvester. |
+| `git-timeout` | `600` | Seconds for each remote Git operation. |
+| `consult-max-age` | `300` | Seconds a cached accepted commit may age before a consult refetches; `0` always refetches. |
+| `harvester-max-age` (`oats.okf-harvest`) | `7d` | How long a harvester waits for its PR before it retires. |
+
+Host facts go in `oats-local.yaml` `settings.oats.okf`; a soul's `knowledge:`
+payload carries only what is true of all its instances, such as
+`harvest-runtime` or the harvest opt-out.
+
+## The soul's okf.json
+
+Each soul that uses oats.okf has an `okf.json` beside its `soul.yaml`:
 
 ```json
-{"version":1,"owner":"domain-expert-stable-id","owns":["project/expert"],"reads":["project/steward","team/operations"]}
+{ "version": 1, "owner": "domain-expert", "owns": ["project/expert"], "reads": ["project/steward", "team/operations"] }
 ```
 
-The accepted project base declares `okf-base.json`:
+- `owner` is the soul's stable owner ID, which the base's `okf-base.json`
+  names as the owner of each of its nodes.
+- `owns` lists the `alias/node` destinations the harvester may write; `reads`
+  lists the nodes the soul consults first. **Neither is an access control
+  list:** every configured base is readable.
+- A missing `okf.json`, base metadata or index fails the spawn; nothing is
+  bootstrapped empty. A legacy `soul/knowledge/` fails it with a migration
+  diagnostic.
 
-```json
-{"version":1,"id":"project-knowledge","nodes":{"expert":{"path":"expert","owner":"domain-expert-stable-id"},"steward":{"path":"steward","owner":"steward-stable-id"}}}
-```
+`oats okf init` creates a base ([operator commands](#operator-level-commands)):
+a directory base directly (`--confirm`), a Git base as a proposal (`--output`)
+that you merge through a PR.
 
-The team base similarly declares its ID and `operations` node. Nodes are
-nonoverlapping subdirectories with an `index.md` and `log.md`; each has one stable
-owner. Base roots have their own index and append-only log. Stable owner IDs must
-not ambiguously identify different souls within one state namespace.
+## The harvest switch
 
-`owns` identifies harvest destinations; it does not make a working instance the
-author or direct maintainer of the base. `reads` selects initial context.
-**Neither is an ACL.** All configured bases are discoverable/readable. Missing
-bindings, owner declarations, base metadata or indexes fail required spawn rather
-than silently bootstrapping empty knowledge.
+Harvest is off unless the **host** switches it on:
 
-Provisioning is an explicit operator action. Prepare node-map files (the
-`nodes` object above, without its wrapper), then run from the **deployment
-directory** (the one holding `oats-local.yaml`), naming the soul whose
-`knowledge:` payload and `settings.oats.okf` the command should run with:
+| Where | Setting | Effect |
+|---|---|---|
+| `oats-local.yaml` | `settings.oats.okf.harvest: on` (default `off`) | This host harvests the working souls it spawns. |
+| `soul.yaml` | `knowledge: { harvest: off }` | This soul is never harvested. The opt-out is absolute. |
 
-```bash
-# New directory base: refuses an existing destination.
-oats okf init --base team --nodes /absolute/config/team-nodes.json --confirm --soul domain-expert --json
-# Git: writes an operator proposal, never pushes or claims acceptance.
-oats okf init --base project --nodes /absolute/config/project-nodes.json --output /absolute/new-bundle-stage --soul domain-expert --json
-```
-
-These run **before any instance exists**. Outside an instance home the kernel
-resolves `oats okf … --soul <name>` exactly as `oats spawn <name>` would
-(discover → resolve → the soul's `oats.okf` module at its locked commit and
-integrity), fetches that module into the deployment's module store
-(`<deployment>/.oats/modules/oats.okf@<commit12>/`) and dispatches to that copy
-with the soul's merged payload as `OATS_SETTINGS`; `--soul` is required
-(`E_BAD_ARGS` names it) unless the namespace's capability is a workspace
-default. It never runs "the newest instance's copy" and never a cache read the
-lock does not pin (`E_PACKAGE_MISSING` until `oats sync` locks the declared
-version; drifted content is `E_PACKAGE_INTEGRITY`).
-*0.25.0 still answers `E_CAPABILITY_INACTIVE` here (the operator-level dispatch
-lands in 0.25.1); the interim is to run the module binary directly with
-`OATS_SETTINGS` and `OATS_CLI_BIN` set, as the tarball smoke does.*
-
-Put the Git proposal at the configured root in an operator-owned checkout and
-review/merge it through a PR before spawning working sources. Existing ownership
-changes require an explicit reviewed operator change, not harvest. The standalone
-capability includes JSON Schemas; filesystem containment, ownership and full OKF
-validation remain additional runtime checks.
-
-## Working-agent reads and capture
-
-At session start, after compaction and on resume, read `STATE.md` and the relevant
-knowledge indexes. `knowledge/view.json` identifies each base's relative path,
-digest and Git accepted head. Content lives under `knowledge/bases/<alias>/`.
-Follow relevant links only; do not bulk-load bases. A link `/expert/decision.md`
-is rooted in **that base**, not filesystem `/`. Consult prior decisions before
-re-deriving them and cite base/node/concept paths.
-
-**Working agents never write accepted knowledge or soul knowledge.** This is an
-instruction boundary, not an OS sandbox; tools still have the operator's access.
-Snapshots are immutable by protocol, not live mounts. For current accepted text:
-
-```bash
-# From the source home:
-oats okf read --base project --path expert/index.md --json
-oats okf refresh --json
-# From the deployment directory (oats-local.yaml), even after source retirement — --soul selects the resolution:
-oats okf read --source /absolute/state/sources/UUID/source.json --base project --path expert/index.md --soul domain-expert --json
-oats okf refresh --source /absolute/state/sources/UUID/source.json --soul domain-expert --json
-```
-
-Home-selected commands create a new `knowledge-view-<uuid>/` in that home.
-**Every `--source` read/refresh** places its view under
-`<stateDir>/sources/<source-id>/views/`, even while the source is live. It never
-writes a cache into the invoking repository, a retired home or a replacement
-home. Results identify the actual path and provider receipts. Choose `--home`
-or `--source`, not both. `read` returns full Markdown text; it has no preview cap.
-
-A Git PR is not accepted until its merge is visible on the accepted branch.
-Directory reads hold the cooperative publication lock while copying; a pending
-journal blocks fresh views, not existing snapshots. All bases and references
-validate before a view is published. Old views remain available; there is no
-automatic garbage collection.
-
-Working agents keep state current, append milestones and capture non-obvious
-insights as Markdown notes with provenance. They are not instructed to run a
-harvest after commits or taught worker mechanics. Capture should be cheap;
-importance is the independent judge's decision.
-
-## Durable evidence and retirement
-
-Required spawn registers a random source ID outside the home; the home retains
-only a pointer. The durable descriptor freezes bindings, owner destinations,
-source role and allowlisted provenance, not credentials or wholesale launch
-metadata. State includes:
-
-```text
-<stateDir>/owners.json
-<stateDir>/sources/<uuid>/source.json
-<stateDir>/sources/<uuid>/status.json
-<stateDir>/sources/<uuid>/inputs/<hash>.json
-<stateDir>/sources/<uuid>/runs/<uuid>/
-<stateDir>/sources/<uuid>/views/
-<stateDir>/migrations/<uuid>/
-```
-
-Every capture includes content-versioned **notes AND record**. Changed live notes
-remain untouched. Through the supported `OATS_CLI_BIN` boundary, capture uses
-native `capture --home`, then `recall --ids-only` byte metadata to plan bounded
-windows before fetching full text. Full returned record text is copied into
-custody, not saved as commands that still need the source home. Privacy-excluded
-sessions remain excluded; raw excluded transcripts are not copied.
-
-Final capture drains the visible backlog before certifying custody. The capture
-budget is 85 seconds; timeouts, holds, skips, malformed/incomplete records or a
-single turn over 1 MiB fail closed and retain the source home for retry rather
-than truncate evidence. A genuinely empty record is reported honestly.
-Retirement captures/enqueues; **it does not wait for a model or GitHub**.
-After successful custody transfer the home may disappear while judgment and
-publication continue. Unexpected disappearance leaves existing evidence usable
-but reports `finalCaptureUncertified`, not fictitious final capture success.
-Durable evidence has no automatic deletion.
-
-One scheduler **command job per source** runs from stable deployment context,
-using the durable descriptor and source soul selector. Dispatch remains activation
-and trust gated after retirement, without inheriting another instance's identity.
-Registration idempotently creates/verifies the job; setup failures are retryable,
-and disabled jobs are not silently re-enabled. No host timer is installed without
-explicit operator consent. See [schedules](schedules.md#okf-v2-source-jobs).
-
-## Independent judgment and delivery
-
-A worker uses **`work: directory`**, never an attached source tree. It stages
-`work/bases/<alias>/` independently of the source branch, runtime and lifetime.
-It reads durable `input.json` and `staging.json`, edits only owned staged nodes
-and allowed navigation, and writes `judgment.json`. A scaffold-only request
-stops before any model launch. Service agents do not register/capture themselves;
-no-launch sources cannot cause scheduled model launches.
-
-OKF's two-part promotion test is: would a future instance act differently, **and**
-could it not discover this by reading the repository? Decisions and rationale,
-rejected alternatives, discovered limits and owned/freshness-marked slow state
-qualify. Code descriptions, task residue, secrets and verbatim third-party
-messages do not. Preserve explicit human acceptance evidence instead of
-re-judging accepted decisions. These are OKF choices, not kernel-wide doctrine.
-
-Each input gets `promote`, `merge` or `drop`, a reason and actual concept paths.
-Concepts cite input hashes and record turn IDs. Completion validates ownership,
-base navigation/history, full OKF conformance, baseline, provenance and explicit
-judgment; credential-shaped output checks do not replace human/model judgment.
-Deleting a staged concept requires an explicit removal reason. Workers never
-edit live notes, accepted bases or soul skills themselves.
-
-| Provider | Successful delivery |
-|---|---|
-| Git | Verified content delta, real commit/push and same-repository PR through native `git`/`gh`. No force push, source-branch commit or direct fallback. Merge-visible acceptance is separate from PR delivery. |
-| Directory | Durable proposal, cooperative base lock, baseline comparison, publication journal, file-by-file atomic replacement and full validation/digest receipt. Pending publication blocks fresh reads. No Git dependency. |
-
-Directory recovery is single-host cooperative recovery, not a distributed
-transaction. Multiple destinations can be partially delivered with separate
-receipts. Inputs are processed only when required destinations resolve. All-drop
-or no-change judgment can be successful without inventing a PR. Enqueue, worker
-spawn and command exit alone are not successful learning.
+- A soul can only opt out. A soul's `harvest: on` is ignored with a warning,
+  and keeps that soul off until the line is removed. An unreadable opt-out
+  counts as off.
+- **Off means no capture at all:** no source, custody or schedule, and no
+  final capture at retire. A manual `oats okf harvest` answers
+  `E_HARVEST_OFF`. Consultation works either way.
+- On applies to new spawns. Off (host or soul) stops capture at a source's
+  next scheduled run; evidence already in custody stays.
+- `oats okf setup --harvest on|off` writes the host setting;
+  `oats okf harvest-status` reports the effective value, the row that decided
+  it and the registered sources.
 
 ## Knowledge operations
 
-> **Version scope:** oats.okf **4.0.0** on kernel **0.29.0** (package souls,
-> triggers and workspace automations). Everything above describes the 2.x runtime, which 4.0.0 keeps for
-> capture, custody and delivery. The design and its decisions are in
-> [the knowledge-operations plan](design/2026-09-26-okf-knowledge-operations.md).
-> The setup procedure is the `oats-onboarding` skill ("Knowledge operations with
-> OKF") and okf's `okf-trigger-setup`.
-
-From 4.0.0, harvested knowledge is judged by a harvester, reviewed by a
-maintainer and merged without an operator in the loop, except where a merge
-would supersede a human-accepted decision.
+The rationale is in the
+[knowledge-operations design record](design/2026-09-26-okf-knowledge-operations.md).
 
 ### The flow
 
-1. **Capture.** A working soul whose knowledge slot is `oats.okf`, on a host
-   where harvest is on (below), registers a source at spawn. Capture and
-   custody are as above: notes and bounded transcript windows, copied outside
-   the home.
-2. **Harvest.** The source's `run-source` job spawns the package soul
-   `oats.okf/knowledge-harvester` (team `okf`). It reads the input in full,
-   transcript windows included, and judges it with the OKF promotion
-   doctrine. It stages edits on the owned nodes and opens a PR on the
-   knowledge-base repo, labelled `okf-harvest`, whose body carries a fenced
-   `okf-harvest` provenance block (the run, the source soul and instance, the
-   owned and read nodes, the task references, the harvester's alias). It
-   stays alive, answering questions in `okf`, until the PR is merged or
-   closed, then retires. `harvester-max-age` (default 7d) bounds it; it never
-   closes its own PR.
-3. **Trigger.** The workspace declares the trigger in a member repo,
-   `oats-triggers/okf-harvest-review.yaml` (`kind: oats-trigger`), from the package template
-   `oats.okf:harvest-review`. It names the host that runs it (`runsOn`, that
-   machine's `host.name`) and the GitHub account it acts as (`owner`, which
-   must be able to merge on the knowledge-base repo). Only that host, logged
-   in to `gh` as that account, polls for such PRs. For each one it spawns a
-   NEW `oats.okf/knowledge-maintainer`, joining `okf`. The event reaches it as
-   `OATS_TRIGGER_EVENT_FILE`. A local trigger (`oats trigger add`, this host
-   only) is the machine-private alternative. Triggers are described in
-   [schedules.md, "Triggers"](schedules.md#triggers), and the workspace
-   file in ["Workspace triggers and schedules"](schedules.md#workspace-triggers-and-schedules).
-4. **Review.** The maintainer checks out the PR and situates it: the
-   provenance, the source soul's owned and read nodes, the neighbouring
-   concepts, and the source's tickets when a tasks capability can read them.
-   It records a verdict on the PR (`merge`, `amend+merge`, `request-changes`
-   or `close`), amends what needs amending, and merges with the host's `gh`. A
-   PR that would supersede a concept with human acceptance evidence is not
-   merged: it is labelled `okf-needs-human` for the workspace's human. The
-   maintainer tells the harvester the outcome and retires.
+1. **Consult.** A working instance reads its soul's bases remotely at their
+   accepted state (no local copy): at task start, after compaction and before
+   decisions. It keeps its own `STATE.md`, `log.md` and `notes/`, and never
+   writes accepted knowledge (an instruction boundary, not a sandbox).
+2. **Capture** (harvest on). Spawn registers a durable source outside the home
+   and a scheduler job, `okf-<source id>`. Each job run, and the final capture
+   at retire, copies notes and bounded transcript windows into custody.
+   Retire never waits for judgment or GitHub.
+3. **Harvest.** The job spawns the package soul `oats.okf/knowledge-harvester`
+   (harness from `harvest-runtime`). It judges the input, edits only the
+   source's owned nodes and delivers: for a Git base, a PR labelled
+   `okf-harvest` with a fenced `okf-harvest` provenance block. It stays until
+   the PR is merged or closed and never closes it. A directory base gets a
+   journalled publication instead.
+4. **Review.** A trigger spawns a new `oats.okf/knowledge-maintainer` per
+   harvest PR. It records a verdict (`merge`, `amend+merge`,
+   `request-changes` or `close`), merges with the host's `gh` and tells the
+   harvester. A PR that would supersede a human-accepted decision gets
+   `okf-needs-human` and waits for a human.
+
+The promotion test is in
+[What deserves to become knowledge](knowledge-theory.md#what-deserves-to-become-knowledge).
+Both package souls hold `knowledge: none`, so nothing harvests them. They
+message each other through the messaging capability, in the deployment's
+default team.
+
+### Triggers
+
+- **Source jobs** run from the deployment and outlive the source instance.
+  Registration never installs a host timer: `oats schedule host install` is
+  an explicit step. A drained, retired source's job is removed.
+  `oats schedule disable okf-<source id>` brakes one source; it is not the
+  switch. See [Knowledge harvest jobs](schedules.md#knowledge-harvest-jobs).
+- **The review trigger** comes from the package template
+  `oats.okf:harvest-review`: one workspace file
+  (`oats-triggers/okf-harvest-review.yaml`, `runsOn` the host, `owner` a
+  GitHub account that can merge on the knowledge-base repo), or
+  `oats trigger add --from oats.okf:harvest-review --set repo=github.com/<owner>/<repo>`
+  on one machine. It is independent of the harvest switch. See
+  [Triggers](schedules.md#triggers) and
+  [Workspace triggers and schedules](schedules.md#workspace-triggers-and-schedules).
+
+The setup procedure is the `okf-trigger-setup` skill. Keep harvest off until
+its `oats trigger test` passes.
 
 ### Who gets which okf skills
 
 | Capability | Composed into | Skills | Inject |
 |---|---|---|---|
-| `oats.okf` | every working soul whose knowledge slot it fills | `okf-consultation` (reading soul knowledge and citing it); `okf-instance-knowledge` (what instance knowledge is worth capturing, and the form of `STATE.md`, `log.md` and `notes/`) | the work mode: consult instance memory and soul knowledge at task start, after compaction and before decisions; capture before compaction |
-| `oats.okf-harvest` | `oats.okf/knowledge-harvester` only | `knowledge-theory` (the OKF promotion doctrine); `knowledge-harvest` (the procedure, through the PR's lifetime); `okf-authoring` | the harvester's: a judge, not a worker; the staged roots are its only write surface |
-| `oats.okf-maintenance` | `oats.okf/knowledge-maintainer` only | `knowledge-theory`; `knowledge-review`; `okf-authoring`; `okf-trigger-setup` | the maintainer's: one PR per instance; supersede explicitly, never silently |
+| `oats.okf` | every working soul it serves | [`okf-consultation`](../capabilities/oats-okf/skills/okf-consultation/SKILL.md), [`okf-instance-knowledge`](../capabilities/oats-okf/skills/okf-instance-knowledge/SKILL.md) | Consult soul and instance knowledge; capture with judgment. |
+| `oats.okf-harvest` | `oats.okf/knowledge-harvester` | `knowledge-theory`, [`knowledge-harvest`](../capabilities/oats-okf-harvest/skills/knowledge-harvest/SKILL.md), `okf-authoring` | A judge; its staged roots are its only write surface. |
+| `oats.okf-maintenance` | `oats.okf/knowledge-maintainer` | `knowledge-theory`, [`knowledge-review`](../capabilities/oats-okf-maintenance/skills/knowledge-review/SKILL.md), `okf-authoring`, [`okf-trigger-setup`](../capabilities/oats-okf-maintenance/skills/okf-trigger-setup/SKILL.md) | One PR per instance; never supersede silently. |
 
-Working souls get no promotion doctrine: the harvester is the only judge of
-what is promoted, and the maintainer the only one who merges. The shared
-skills ship as identical copies in each capability. The harvester and the
-maintainer hold no knowledge slot, so nothing harvests them.
-
-### The harvest switch
-
-Harvest is off unless both the host and the soul allow it:
-
-| Where | Setting | Effect |
-|---|---|---|
-| The host, `oats-local.yaml` | `settings.oats.okf.harvest: on` (default `off`) | This host harvests its working souls. |
-| A soul, `soul.yaml` | `knowledge: { harvest: off }` | This soul is never harvested, whatever the host says. |
-
-Off means **no capture at all**: no source is registered and no transcript or
-notes enter custody, so nothing accumulates for later. Turning it on starts
-with the next session. `oats okf setup --harvest on|off` writes the host
-setting, and `oats okf harvest-status [--soul <soul>]` reports the effective
-value, the row that decided it and the registered sources.
-`oats schedule disable <job>` on a source's `run-source` job is an emergency
-brake for one source, not the switch. The review trigger does not depend on the
-switch: a host can review harvest PRs from other hosts without harvesting.
-Keep harvest off until the end-to-end check in `okf-trigger-setup` passes.
-
-### Where the harvester and the maintainer talk
-
-Since oats.okf 4.0.2 the package souls carry no team, and okf joins no team of
-its own: the harvester and the maintainer live in the deployment's default
-team, where the maintainer reaches the harvester (subjects prefixed `okf:` with
-the PR's URL). A deployment that wants them in another team opts them in
-locally, as for any soul: `oats soul teams oats.okf/knowledge-harvester --add
-<label>` (and the same for `oats.okf/knowledge-maintainer`), then joins at
-spawn. Team membership never gates what they can do.
+Working souls get no promotion doctrine: only the harvester judges and only
+the maintainer merges. `knowledge-theory` and `okf-authoring` ship as
+identical copies in both role capabilities.
 
 ## Inspection and operator commands
 
-Run home-local commands from that source home: inside an instance the
-dispatcher resolves `okf` from the home's materialized module
-(`instance.json.modules` → `<home>/.oats/modules/oats.okf/`). For cross-source
-or retired-source commands, run from the **deployment directory** (the one
-holding `oats-local.yaml`) in a clean operator shell without another instance's
-`OATS_*`/`PI_*` identity, and select the source soul with `--soul <name>`: the
-kernel resolves that soul as a spawn would and dispatches to the deployment's
-copy of its `oats.okf` module with the soul's merged payload (see
-[Acquire, bind and provision explicitly](#acquire-bind-and-provision-explicitly)).
-No `oats-config.yaml` chain is consulted; a namespace no module of the soul
-provides is `E_UNKNOWN_COMMAND`.
+- **From an instance home**, `oats okf …` runs the home's copy of the module
+  with the settings recorded at spawn.
+- **From the deployment directory** (holding `oats-local.yaml`), in a shell
+  without another instance's `OATS_*` identity, every capability command
+  needs `--soul <name>` (`E_BAD_ARGS` without it). The kernel resolves the
+  soul as a spawn would, fetches its module at the locked commit into
+  `<deployment>/.oats/modules/` and runs it with the soul's merged settings.
+  An unlocked package is `E_PACKAGE_MISSING` until `oats sync`.
+
+### Consult
+
+Consult commands read the accepted state, never an open PR. All take `--json`
+and `--fresh` (refetch the accepted branch now):
 
 ```bash
-# Read-only; no capture, refresh, scheduling or worker launch:
-oats okf inspect --home /absolute/instance-home --json
-oats operation run knowledge:inspect --home /absolute/instance-home --json
-# Durable source selection after the home disappears:
+oats okf bases                        # accepted commit or digest, freshness, validity
+oats okf index [--base ALIAS] [NODE]  # owned, then read, nodes' indexes
+oats okf cat --base project /expert/decisions/retry-policy.md [--from PATH]
+oats okf ls --base project /expert/lessons
+oats okf links --base project /expert/decisions/retry-policy.md
+oats okf search backoff [--base ALIAS | --all] [--node NODE] [--regex] [--case-sensitive]
+```
+
+- They run from an instance home, or from the deployment with `--soul NAME`
+  and `--home PATH` or `--source FILE` (the source form works after the
+  instance retired).
+- `/node/x.md` is rooted in the base; paths never leave it. A failed fetch
+  serves the cached commit with `stale: true`.
+- `oats okf read` and `refresh` answer `E_REMOVED`: use `cat` and `index`.
+- `okf-consultation` teaches navigation, search and citation.
+
+### Inspect
+
+```bash
+oats okf inspect --home /absolute/instance-home --soul domain-expert --json
 oats okf inspect --source /absolute/state/sources/UUID/source.json --soul domain-expert --json
-# Explicit manual request; --no-launch still captures and creates a worker scaffold:
-oats okf harvest --no-launch --json
-oats okf run-source --source /absolute/state/sources/UUID/source.json --manual --no-launch --soul domain-expert --json
+oats okf harvest-status --soul domain-expert --json
 ```
 
-`inspect` reports frozen `owns`, `reads`, `bases`, the registered `acceptedView`
-(not a fresh accepted-branch read), durable capture/processing/delivery/acceptance
-receipts and scheduler health. `status.lastCapture` is the last attempt, not
-proof the source is still present.
+`inspect` is read-only: frozen `owns`, `reads` and bases, the accepted
+resolution registered at spawn, durable receipts (capture, processing,
+delivery, acceptance) and scheduler health. A live home adds `STATE.md`,
+`log.md` and pending notes (256 KiB preview each, `truncated: true` beyond);
+a retired home shows durable records only; a harvest-off home shows its
+declaration, bases and working memory. `oats operation run knowledge:inspect
+--home PATH --json` is the same view through the generic operation interface.
 
-For a **live identity-matching source**, `documents` includes labeled Markdown:
-`Working state (STATE.md)`, `Log (log.md)` and sorted `Pending note: <name>`
-entries, including nested notes. Missing documents are omitted. A
-`Durable processing receipts` text document follows. `liveMemory` supplies
-`available`, `reason` and `observedAt`. Retired, missing, reused or unverified
-homes expose only durable documents, with an explicit reason. Inspection checks
-the source pointer and any instance metadata before and after reading; it rejects
-unsafe live files/symlinks/hard links instead of returning a partial success.
-Unsafe home identity withholds live memory but retains durable inspection. This
-is a best-effort live observation, not a locked multi-file snapshot.
+### Operator-level commands
 
-Inspection retains the **explicit 256 KiB per-document preview cap**. Larger
-documents report `truncated: true` and original `bytes`; smaller documents are
-byte-exact. The **whole JSON envelope drains through stdout**, even with large
-receipts or multiple Markdown documents. Do not confuse this labeled preview
-with evidence capture or `read`: those preserve full returned text.
+Run these from the deployment with `--soul <name>`:
 
-Completion uses the worker's generated, safely quoted command:
+| Command | Purpose |
+|---|---|
+| `setup --harvest on\|off` | Write `settings.oats.okf.harvest` in `oats-local.yaml`. |
+| `setup --source FILE [--enable \| --disable] [--install-host]` | Verify, toggle or host-install a source's job. |
+| `run-source --source FILE [--manual] [--no-launch]` | Run a source's job by hand; `--no-launch` stops at a scaffold. |
+| `init --base ALIAS --nodes FILE (--confirm \| --output PATH)` | Provision a directory base or stage a Git proposal. |
+| `migrate …` | Move a legacy `soul/knowledge/` into a base. |
+| `unlock --lock PATH --token TOKEN` | Release a directory-base lock of a dead local process. |
+
+From an instance home, `oats okf harvest [--no-launch]` captures now and
+requests a harvester.
+
+### Completion and recovery
+
+The harvester completes its run with `oats okf-harvest complete`, which calls
+the source's `oats okf complete`. The operator forms are for recovery:
 
 ```bash
-oats okf complete --source /absolute/state/sources/UUID/source.json --run RUN_UUID --judgment /absolute/worker/work/judgment.json --soul domain-expert --json
-oats okf retry --source /absolute/state/sources/UUID/source.json --soul domain-expert --json
+oats okf complete --source /absolute/state/sources/UUID/source.json --run RUN_UUID [--judgment FILE] --soul domain-expert --json
+oats okf retry --source /absolute/state/sources/UUID/source.json [--launch | --rejudge | --run ID --rejudge | --adopt-home PATH] --soul domain-expert --json
 ```
 
-Retry preserves uncertain delivery. `--launch` explicitly starts a ready worker;
-`--rejudge` preserves old proposals and refreshes only outstanding destinations,
-never redelivering settled ones. A pending directory journal must recover, not
-be removed to force rejudgment. After a PR merges, repeat `complete` for the
-same source/run without `--judgment` to reconcile acceptance. If launch status
-is unknown, inspect the worker session before retrying. See the
-[standalone runtime guide](https://github.com/awebai/oats-okf#independent-worker-and-completion)
-for exact recovery, adoption and lock-release procedures.
+`retry` never discards an uncertain delivery; `--rejudge` keeps old proposals
+and refreshes only unresolved destinations. After a PR merges, `complete` for
+the run without `--judgment` records acceptance. Never remove a pending
+directory journal to force progress. Exact recovery, adoption and migration
+procedures are in the
+[oats-okf README](https://github.com/awebai/oats-okf#independent-worker-and-completion).
 
 ## Without a knowledge capability
 
-`capabilities.layers.knowledge: none` is valid. The kernel creates no OKF state,
-notes, bundle or harvest flow. Other capabilities may adopt, adapt or replace
-the reference model; they do not inherit OKF's directories or judge. Native
-record capture remains a separate surface. Selecting `none` is not a data
-migration and does not erase existing memory.
+`knowledge: none`, on a soul or as the workspace default, is valid: no OKF
+state, instructions or harvest source. Another capability may fill the slot
+with its own model ([authoring guide](knowledge-capability-authoring.md)).
+Switching slots migrates and erases nothing.

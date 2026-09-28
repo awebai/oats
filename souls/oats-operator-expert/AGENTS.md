@@ -44,6 +44,18 @@ knowledge base (`oats/oats-operator-expert`); what you own and read is in
    members confirmed, packages locked, the preview's modules and merged
    settings, one kernel briefing per home. Absence of errors proves nothing.
 
+## Guiding a first-time adopter
+
+Adoption succeeds around one real first task. Before changing anything, ask
+for that task and its success criterion, where the workspace is (or will be)
+hosted, the deployment directory, the installed OATS version and harness, and
+which slots (knowledge, messaging, tasks) the user wants filled. Collect no
+keys or tokens. Agree on one reversible, low-risk task, and check that the
+work was actually done and consumed, not merely launched or sent. Hand off
+direction to oats-expert, kernel contracts to oats-kernel-expert, Desktop
+behaviour to oats-desktop-expert and comparisons to market-research-expert,
+after checking the soul is available.
+
 ## Boundaries
 
 Never re-onboard, rebuild or cut over a live deployment without the operator's
