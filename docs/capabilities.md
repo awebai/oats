@@ -508,7 +508,10 @@ passed as arguments; no shell is involved.
     `OATS_TEAM_SCOPE`, `OATS_TEAM_NAME`, `OATS_WORKSPACE_NAME` and
     `OATS_WORKSPACE_KEY`;
   - `OATS_AGENT` (the soul);
-  - `OATS_SOUL` when the soul directory is known;
+  - `OATS_SOUL`, the soul directory: a home's recorded one, or for a soul
+    (`readiness --soul`, `inspect --soul`) its copy at the resolved commit,
+    which the kernel materialises first as a spawn would (0.30; a copy that
+    cannot be made fails readiness under `installed`, producer `soul copy`);
   - for a home, `OATS_INSTANCE` and `OATS_INSTANCE_HOME`.
 - `OATS_TEAM_SCOPE` is the deployment directory; `OATS_TEAM_NAME` is always
   empty.
