@@ -1,4 +1,5 @@
-/** Schedules and Triggers pages (§2.3a, human 2026-09-26: one tab each, one layout).
+/** Automations (human 2026-09-28: ONE nav item, with Schedules | Triggers subtabs in the
+ * Workspace's tab style; no title in the bar) over the Schedules and Triggers pages (§2.3a: one layout).
  * Rows are grouped by where they run — this computer, needs attention here, elsewhere —
  * because the first question is what THIS computer does. Workspace (Git) and local
  * items sit together, each marked with its origin. A row opens its detail page.
@@ -22,6 +23,18 @@ export const automationsCSS = `
 .auto-header { flex:none; display:flex; align-items:center; gap:12px; height:48px; padding:0 16px; box-sizing:border-box; border-bottom:1px solid var(--border); background:var(--surface); }
 .auto-header h2 { display:flex; align-items:baseline; gap:8px; margin:0; font-size:14px; font-weight:700; }
 .auto-count { color:var(--muted); font:10.5px var(--mono,monospace); font-weight:400; }
+/* The Automations bar, in the Workspace's tab style: Schedules | Triggers, then the page's tools. */
+.auto-header.auto-framed { align-items:stretch; gap:22px; }
+.auto-header.auto-framed > :not(.auto-heading) { align-self:center; }
+.auto-header.auto-framed > .auto-spacer { margin-left:-10px; }
+.auto-heading { display:flex; align-items:stretch; gap:22px; min-width:0; }
+.auto-tabs { display:flex; flex-wrap:nowrap; overflow-x:auto; gap:22px; min-width:0; scrollbar-width:none; }
+.oats-view .auto-tabs button { flex:none; display:inline-flex; align-items:center; gap:6px; height:auto; min-height:0; padding:0; border:0; border-radius:0; background:none; color:var(--muted); font:500 12.5px var(--sans,system-ui); cursor:pointer; }
+.oats-view .auto-tabs button:hover { color:var(--fg); }
+.oats-view .auto-tabs button[aria-selected=true] { color:var(--fg); font-weight:650; box-shadow:inset 0 -2px 0 var(--live); }
+.oats-view .auto-tabs button:focus-visible { outline:2px solid var(--accent); outline-offset:-4px; border-radius:6px; }
+.auto-tab-count { color:var(--muted); font:10.5px var(--mono,monospace); }
+.auto-tab-count:empty { display:none; }
 .auto-spacer { flex:1; }
 .auto-scheduler { display:inline-flex; align-items:center; gap:7px; color:var(--muted); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
 .auto-dot { width:7px; height:7px; flex:none; border-radius:50%; background:var(--faint); }
@@ -123,8 +136,9 @@ const OUTCOMES = { launched: 'agent launched', active: 'agent active', running: 
  * `oats trigger status` JSON (fire history, live instances) · openFile(row): open its defining file. */
 /** verbs: the act verbs this server serves (default all) · headerActions(doc): extra header controls ·
  * rowActions(row): extra { label, run, enabled } for a row's menu and page · onEnableScheduler: the banner's action. */
+/** heading: the Automations title + subtabs, in place of the page's own title (its count then goes to `onCount(n)`). */
 export function createAutomationsView(host, { kind, read, act = null, status = null, openFile = null, now = () => Date.now(),
-  verbs = null, headerActions = null, rowActions = null, onEnableScheduler = null, onResult = null } = {}) {
+  verbs = null, headerActions = null, rowActions = null, onEnableScheduler = null, onResult = null, heading = null, onCount = null } = {}) {
   const doc = host.ownerDocument;
   const node = (tag, value, cls) => { const el = doc.createElement(tag); if (value !== undefined && value !== null) el.textContent = value; if (cls) el.className = cls; return el; };
   const title = TITLES[kind], noun = kind === 'trigger' ? 'trigger' : 'schedule';
@@ -135,7 +149,8 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
   const scheduler = node('span', '', 'auto-scheduler'); scheduler.hidden = true;
   const refreshButton = node('button', undefined, 'act auto-icon'); refreshButton.type = 'button';
   refreshButton.append(iconElement(doc, 'refresh', { size: 14 })); refreshButton.setAttribute('aria-label', `Refresh ${title.toLowerCase()}`); refreshButton.title = 'Refresh';
-  header.append(h2, node('span', undefined, 'auto-spacer'), scheduler, ...(headerActions ? headerActions(doc) : []), refreshButton);
+  if (heading) header.classList.add('auto-framed');
+  header.append(heading || h2, node('span', undefined, 'auto-spacer'), scheduler, ...(headerActions ? headerActions(doc) : []), refreshButton);
   const body = node('div', undefined, 'auto-body'), page = node('div', undefined, 'auto-page'); page.hidden = true;
   root.append(style, header, body, page); host.append(root);
 
@@ -285,7 +300,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     notices.replaceChildren(); listHost.replaceChildren();
     const rows = data?.rows || [];
     toolbar.hidden = !data;
-    setText(count, data ? String(rows.length) : '');
+    setText(count, data ? String(rows.length) : ''); onCount?.(data ? rows.length : null);
     renderScheduler();
     if (failure) notices.append(node('p', failure, 'auto-status error'));
     if (notice) { const n = node('p', notice, 'auto-status auto-notice'); n.setAttribute('role', 'status'); notices.append(n); }
@@ -456,7 +471,8 @@ export const AUTOMATION_VERBS = Object.freeze({ trigger: ['enable', 'disable', '
 /** A Schedules or Triggers stage: the gate (CLI + workspace), the /api/automations IO, and
  * a fresh view per workspace. `extend(call)` adds page-specific options (the local form).
  * `call({ kind, action, key? })`: `key` is the row's qualified id. */
-export function mountAutomationsPage(el, ctx, kind, extend = () => ({}), { cli: readCli = cliStatus, subscribeCli = onCliChange } = {}) {
+/** frame: { heading(doc), onCount(kind, n) } from the Automations stage (its title + subtabs). */
+export function mountAutomationsPage(el, ctx, kind, extend = () => ({}), { cli: readCli = cliStatus, subscribeCli = onCliChange, frame = null } = {}) {
   const doc = el.ownerDocument; ensureTheme(doc);
   const title = TITLES[kind];
   const root = doc.createElement('div'); root.className = 'automations-stage'; root.style.height = '100%';
@@ -470,7 +486,9 @@ export function mountAutomationsPage(el, ctx, kind, extend = () => ({}), { cli: 
   function gate(message, detail) {
     const section = doc.createElement('section'); section.className = 'oats-view automations';
     const style = doc.createElement('style'); style.textContent = automationsCSS;
-    const header = doc.createElement('header'); header.className = 'auto-header'; const h = doc.createElement('h2'); h.textContent = title; header.append(h);
+    const header = doc.createElement('header'); header.className = 'auto-header';
+    if (frame) { header.classList.add('auto-framed'); header.append(frame.heading(doc)); frame.onCount(kind, null); }
+    else { const h = doc.createElement('h2'); h.textContent = title; header.append(h); }
     const body = doc.createElement('div'); body.className = 'auto-body';
     const empty = doc.createElement('div'); empty.className = 'auto-empty auto-gate';
     const strong = doc.createElement('strong'); strong.textContent = message; empty.append(strong);
@@ -491,6 +509,7 @@ export function mountAutomationsPage(el, ctx, kind, extend = () => ({}), { cli: 
     root.replaceChildren();
     view = createAutomationsView(root, {
       kind, now: () => Date.now(), verbs: AUTOMATION_VERBS[kind],
+      heading: frame ? frame.heading(doc) : null, onCount: frame ? n => frame.onCount(kind, n) : null,
       read: () => call({ kind, action: 'list' }),
       act: (verb, row) => call({ kind, action: verb, key: row.key }),
       status: kind === 'trigger' ? row => call({ kind, action: 'status', key: row.key }) : null,
@@ -505,5 +524,90 @@ export function mountAutomationsPage(el, ctx, kind, extend = () => ({}), { cli: 
     refresh: () => view?.refresh(),
     get view() { return view; },
     dispose() { alive = false; offCli(); offWs(); view?.dispose(); card?.dispose?.(); root.remove(); },
+  };
+}
+
+// ── The Automations stage: one nav item, Schedules | Triggers as subtabs (human, 2026-09-28) ──
+export const AUTOMATION_KINDS = Object.freeze(['schedule', 'trigger']);
+let chosenKind = 'schedule', stage = null;
+/** Open the stage on a subtab (a soul's "Schedule…" opens Schedules); the choice persists for the session. */
+export function preselectAutomationsTab(kind) { if (AUTOMATION_KINDS.includes(kind)) chosenKind = kind; }
+export function mount(el, ctx) { stage = createAutomationsStage(el, ctx); }
+export function unmount() { stage?.dispose(); stage = null; }
+
+/** The stage: a bar with the subtabs (the page's own tools at its right), and
+ * the chosen page below. Each tab counts its rows: the shown page reports its own, and the other
+ * kind is read once for its count (a list read, never a change). `pages` injects the two pages. */
+export function createAutomationsStage(el, ctx, { cli: readCli = cliStatus, subscribeCli = onCliChange, pages = null } = {}) {
+  const doc = el.ownerDocument; ensureTheme(doc);
+  const host = doc.createElement('div'); host.className = 'automations-host'; host.style.height = '100%'; el.append(host);
+  const counts = new Map(), tabNodes = new Set();
+  let kind = chosenKind, page = null, alive = true, op = 0, focusTab = false, countSerial = 0;
+  const open = pages || {
+    schedule: async (target, frame) => (await import('./schedules.mjs')).createSchedulesView(target, ctx, { cli: readCli, subscribeCli, frame }),
+    trigger: async (target, frame) => mountAutomationsPage(target, ctx, 'trigger', undefined, { cli: readCli, subscribeCli, frame }),
+  };
+  function paintCounts() {
+    for (const [k, span] of tabNodes) if (span.isConnected) { const n = counts.get(k); span.textContent = n === null || n === undefined ? '' : String(n); }
+  }
+  const frame = {
+    heading(d) {
+      // No title in the bar (human, 2026-09-28): the sidebar already says Automations; the tabs lead.
+      const wrap = d.createElement('div'); wrap.className = 'auto-heading';
+      const tabs = d.createElement('div'); tabs.className = 'auto-tabs'; tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Automations');
+      for (const k of AUTOMATION_KINDS) {
+        const b = d.createElement('button'); b.type = 'button'; b.id = `automations-tab-${k}`; b.dataset.kind = k; b.setAttribute('role', 'tab');
+        b.setAttribute('aria-selected', String(k === kind)); b.tabIndex = k === kind ? 0 : -1;
+        const label = d.createElement('span'); label.textContent = TITLES[k];
+        const count = d.createElement('span'); count.className = 'auto-tab-count'; b.append(label, count); tabNodes.add([k, count]);
+        b.addEventListener('click', () => select(k));
+        b.addEventListener('keydown', e => {
+          const at = AUTOMATION_KINDS.indexOf(k), n = AUTOMATION_KINDS.length;
+          const i = e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : e.key === 'ArrowRight' ? (at + 1) % n : e.key === 'ArrowLeft' ? (at + n - 1) % n : -1;
+          if (i < 0) return;
+          e.preventDefault(); focusTab = true; select(AUTOMATION_KINDS[i]);
+        });
+        tabs.append(b);
+      }
+      wrap.append(tabs);
+      queueMicrotask(() => {
+        paintCounts();
+        if (focusTab && wrap.isConnected) { focusTab = false; wrap.querySelector('[aria-selected=true]')?.focus({ preventScroll: true }); }
+      });
+      return wrap;
+    },
+    onCount(k, n) { if (n !== null || !counts.has(k)) counts.set(k, n); paintCounts(); },
+  };
+  // The tab's panel: the page below the bar, labelled by the chosen tab.
+  async function select(next, { force = false } = {}) {
+    if (!alive || !AUTOMATION_KINDS.includes(next) || (next === kind && page && !force)) {
+      if (focusTab) { focusTab = false; host.querySelector(`#automations-tab-${next}`)?.focus({ preventScroll: true }); }
+      return;
+    }
+    kind = next; chosenKind = next; const my = ++op;
+    page?.dispose(); page = null; tabNodes.clear();
+    const target = doc.createElement('div'); target.style.height = '100%'; target.setAttribute('role', 'tabpanel');
+    target.setAttribute('aria-labelledby', `automations-tab-${next}`); host.replaceChildren(target);
+    const made = await open[next](target, frame);
+    if (!alive || my !== op) { made?.dispose(); return; }
+    page = made;
+    void countOther();
+  }
+  // The other tab's count: one quiet list read for its kind (only for an OATS that serves automations).
+  async function countOther() {
+    const other = AUTOMATION_KINDS.find(k => k !== kind), my = ++countSerial, ws = currentWorkspace();
+    if (pages || counts.get(other) !== undefined || !ws || !automationsSupported(readCli())) return;
+    try {
+      const r = await postJson(ctx, `/api/automations${wsQuery()}`, { kind: other, action: 'list' });
+      if (!alive || my !== countSerial || ws !== currentWorkspace() || r?.status !== 'ok') return;
+      const read = automationRows(r.result, other); if (!read) return;
+      counts.set(other, read.rows.length); paintCounts();
+    } catch { /* the count stays empty; the tab still opens its page */ }
+  }
+  const offWs = onWorkspaceChange(() => { counts.clear(); paintCounts(); void countOther(); });
+  void select(kind, { force: true });
+  return {
+    get kind() { return kind; }, select,
+    dispose() { alive = false; op++; countSerial++; offWs(); page?.dispose(); page = null; host.remove(); },
   };
 }

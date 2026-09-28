@@ -24,7 +24,6 @@ ${syncCSS}
 .workspace-header { height:var(--bar-h); min-height:48px; flex:none; display:flex; align-items:stretch; flex-wrap:nowrap; gap:22px; padding:0 16px; border-bottom:1px solid var(--border); background:var(--surface); box-sizing:border-box; }
 .workspace-header[hidden] { display:none; }
 .oats-view .workspace-header .field { min-height:28px; height:28px; padding:4px 8px; font-size:12px; }
-.workspace-header h1 { display:flex; align-items:center; margin:0; flex:none; font-size:14px; font-weight:700; }
 .workspace-tabs { display:flex; flex-wrap:nowrap; overflow-x:auto; gap:22px; min-width:0; scrollbar-width:none; }
 .workspace-tabs button { flex:none; display:inline-flex; align-items:center; gap:6px; padding:0; border:0; border-radius:0; background:none; color:var(--muted); font:500 12.5px var(--sans,system-ui); cursor:pointer; }
 .workspace-tabs button:hover { color:var(--fg); }
@@ -94,7 +93,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   let catalog = null, loading = false, failure = '', filters = { team: null, repo: null }, rendered = null;
   let setupView = 'list', query = '', setupMember = null, souls = [];
   header.className = 'workspace-header';
-  const title = node('h1', 'Workspace'); header.append(title);
+  // No title in the bar (human, 2026-09-28): the sidebar already says Workspace; the tabs lead.
   const tabs = node('div', undefined, 'workspace-tabs'); tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Workspace sections'); header.append(tabs);
   const controls = new Map(), counts = new Map();
   let attn = null, attnText = null;
@@ -296,7 +295,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     context: () => ({ status: observed(), instances, root: workspace?.id, catalog: catalog?.capabilities ?? null }),
     reset() {
       serial++; rosterGen = null; workspace = null; deployment = null; instances = []; catalog = null; loading = false; failure = '';
-      filters = { team: null, repo: null }; title.textContent = 'Workspace'; sync.reset(); updateCounts(null); render();
+      filters = { team: null, repo: null }; sync.reset(); updateCounts(null); render();
     },
     dispose() { alive = false; serial++; sync.dispose(); },
   };
