@@ -49,7 +49,7 @@ test('soul: only what a person needs — Teams, Harness, Core capabilities, Capa
   assert.ok(chips, 'one horizontal row of chips follows the one-line explanation');
   assert.equal(chips.previousElementSibling.textContent, "The teams this soul has access to. Its instances start in the workspace's default team only and can join these:");
   assert.deepEqual([...chips.children].map(c => [c.textContent, c.className, c.title]),
-    [['engineering · primary', 'inspector-chip', 'engineering (northwind:eng)']], 'global is not mapped: not shown');
+    [['engineering', 'inspector-chip', 'engineering (northwind:eng)']], 'global is not mapped: not shown');
   assert.doesNotMatch(u.el.textContent, /global/);
   assert.equal(u.el.querySelector('form, input, select, textarea'), null, 'read-only: joining is per instance');
   const caps = [...u.el.querySelectorAll('.inspector-cap-row')];
@@ -181,4 +181,55 @@ test('Core capabilities name where each provider came from, only with feature la
   await refreshCli({ api: async () => ({ ...doc('version'), features: doc('version').features.filter(f => f !== 'layers-from'), ok: true, bin: '/fixture/bin/oats' }) });
   const without = await rendered(t, soulSelection, soul);
   assert.deepEqual(core(without.el), { Knowledge: 'oats.okf', Messaging: 'oats.aweb', Tasks: 'None' }, 'no origin without the feature');
+});
+
+// Team model v2 (0.30, D2 screen 2): with kernel feature team-model-2 the soul page shows
+// "Teams here" (this computer's membership, editable) through /api/workspace-soul-teams, in
+// place of the 0.29 read-only Teams card; without the feature, the 0.29 card stays.
+test('soul page: team-model-2 shows "Teams here" from the soul teams route; without it, the 0.29 Teams card', async t => {
+  // The REAL 0.30 kernel's `oats soul teams release-manager` (K1 @bba0a9b8, test/fixtures/team-model-v2/soul-teams-show, #269).
+  const { soulTeamsData } = await import('../deployment-data.mjs');
+  const soulTeamsDoc = soulTeamsData(JSON.parse(readFileSync(new URL('./fixtures/team-model-v2/soul-teams-show.json', import.meta.url), 'utf8')));
+  const urls = [];
+  const page = async () => {
+    const previous = currentWorkspace(); setWorkspace('/team');
+    const dom = new JSDOM('<body><main><aside hidden></aside></main></body>'), el = dom.window.document.querySelector('aside');
+    const inspector = createSoulInspector(el, { layout: 'page', ctx: { api: async (url, opts) => {
+      urls.push([url.replace(/\?.*$/, ''), JSON.parse(opts.body)]);
+      return url.startsWith('/api/workspace-soul-teams') ? { status: 'ok', soulTeams: structuredClone(soulTeamsDoc) } : structuredClone(soul);
+    } } });
+    t.after(() => { inspector.dispose(); dom.window.close(); setWorkspace(previous); });
+    await inspector.show(soulSelection); for (let i = 0; i < 4; i++) await tick();
+    return el;
+  };
+  t.after(() => resetCliStateForTests());
+  await refreshCli({ api: async () => ({ ...doc('version'), features: [...doc('version').features, 'team-model-2'], ok: true, bin: '/fixture/bin/oats' }) });
+  const v2 = await page();
+  const card = v2.querySelector('[data-card="Teams here"]');
+  assert.ok(card, 'the Teams here card');
+  assert.equal(v2.querySelector('[data-card="Teams"]'), null, 'in place of the 0.29 card');
+  assert.deepEqual(urls.filter(([url]) => url === '/api/workspace-soul-teams'), [['/api/workspace-soul-teams', { soul: 'release-manager', action: 'show' }]]);
+  assert.equal(card.querySelector('.sth-default').textContent, "Default: mine (the workspace's default on this computer)");
+  assert.doesNotMatch(v2.textContent, /primary|personal/i);
+  await refreshCli({ api: async () => ({ ...doc('version'), ok: true, bin: '/fixture/bin/oats' }) });
+  urls.length = 0;
+  const v1 = await page();
+  assert.equal(v1.querySelector('[data-card="Teams here"]'), null);
+  assert.ok(v1.querySelector('[data-card="Teams"]'), 'the 0.29 card');
+  assert.equal(urls.some(([url]) => url === '/api/workspace-soul-teams'), false);
+});
+
+test('soul page: a package soul (not a member) gets no editable "Teams here" yet: the CLI is named instead (#269: the kernel key is not on the roster)', async t => {
+  const pkg = structuredClone(soul); pkg.souls[0].kind = 'package';
+  const urls = [];
+  const previous = currentWorkspace(); setWorkspace('/team');
+  const dom = new JSDOM('<body><main><aside hidden></aside></main></body>'), el = dom.window.document.querySelector('aside');
+  const inspector = createSoulInspector(el, { layout: 'page', ctx: { api: async (url, opts) => { urls.push(url.replace(/\?.*$/, '')); return structuredClone(pkg); } } });
+  t.after(() => { inspector.dispose(); dom.window.close(); setWorkspace(previous); resetCliStateForTests(); });
+  await refreshCli({ api: async () => ({ ...doc('version'), features: [...doc('version').features, 'team-model-2'], ok: true, bin: '/fixture/bin/oats' }) });
+  await inspector.show(soulSelection); for (let i = 0; i < 4; i++) await tick();
+  const card = el.querySelector('[data-card="Teams here"]');
+  assert.equal(card.querySelector('.page-note').textContent, 'For now, set this soul\'s teams here with the CLI: oats soul teams <package>/release-manager.');
+  assert.equal(card.querySelector('button'), null);
+  assert.equal(urls.includes('/api/workspace-soul-teams'), false, 'nothing asked with a key that may be wrong');
 });

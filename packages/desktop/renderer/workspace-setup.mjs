@@ -1,5 +1,5 @@
 /** Workspace v4 Setup (W1 list, W2 graph): what the workspace declares in git
- * (members, packages, teams) beside what lives only on this computer.
+ * (members, packages) beside what lives only on this computer.
  * Presentation only, from `oats workspace status` (and the roster, the CLI
  * probe, the souls list): nothing is inferred and unreported facts are not
  * shown. Kernel #217 (desktop-facts) adds the files, this computer's clones,
@@ -206,7 +206,7 @@ export function lockText(status) {
   return { text: ['out of date', unsynced ? `${unsynced} not locked` : null, stale ? `${stale} no longer declared` : null].filter(Boolean).join(' · '), warn: true };
 }
 const scope = (doc, label, icon) => { const tag = el(doc, 'span', null, 'setup-scope'); tag.append(iconElement(doc, icon, { size: 12 }), el(doc, 'span', label)); return tag; };
-function box(doc, title, lead, scopeLabel, { local = false, icon = null } = {}) {
+export function box(doc, title, lead, scopeLabel, { local = false, icon = null } = {}) {
   const card = el(doc, 'section', null, local ? 'setup-local' : 'setup-box'); card.dataset.box = title;
   const head = el(doc, 'div', null, 'setup-box-head');
   if (icon) head.append(iconElement(doc, icon, { size: 15 }));
@@ -301,24 +301,6 @@ function columns(doc, { status, instances, souls, cli, onSelect }) {
   main.append(members, packages);
   // Defaults: as the workspace file declares them (defaults), not resolved for a soul.
   const defaults = defaultsBox(doc, status);
-  // Teams: the labels the workspace declares, how many souls take each as primary, and the kernel's warnings about them.
-  const teams = box(doc, 'Teams', null, 'Shared · Git');
-  const unmapped = new Map(list(status?.warnings).filter(w => w?.code === 'unmapped-team-label' && text(w.label)).map(w => [w.label, w]));
-  for (const label of list(ws.teams).filter(text)) {
-    const row = el(doc, 'div', null, 'setup-team'); row.dataset.team = label;
-    const head = el(doc, 'div', null, 'setup-team-head'); head.append(el(doc, 'span', label, 'setup-team-label'));
-    const count = list(souls).filter(s => s?.team === label).length;
-    head.append(el(doc, 'span', plural(count, 'soul'), 'setup-team-meta'));
-    row.append(head);
-    // What the team adds to (or turns off from) the workspace defaults (defaults.byTeam).
-    const adds = teamDefaults(doc, status, label);
-    if (adds) row.append(adds);
-    // The kernel's own warning about this label, verbatim.
-    if (text(unmapped.get(label)?.message)) row.append(el(doc, 'span', unmapped.get(label).message, 'setup-team-warn'));
-    teams.append(row);
-  }
-  if (!list(ws.teams).length) teams.append(el(doc, 'p', 'The workspace declares no teams.', 'setup-empty'));
-  teams.append(el(doc, 'p', 'Teams organise and add defaults. They never restrict what a soul can do.', 'setup-team-note'));
   // This computer: what is not shared.
   const local = box(doc, 'This computer', null, 'Not shared', { local: true, icon: 'computer' });
   const rows = el(doc, 'dl', null, 'setup-local-rows');
@@ -347,9 +329,33 @@ function columns(doc, { status, instances, souls, cli, onSelect }) {
     }
     local.append(el(doc, 'h4', 'Member clones', 'setup-local-sub'), list$);
   }
-  side.append(...[defaults, teams, local].filter(Boolean));
+  side.append(...[defaults, local].filter(Boolean));
   cols.append(main, side);
   return cols;
+}
+
+/** The Workspace's Teams tab before team model v2 (0.29): the labels the workspace declares,
+ * how many souls take each, what each adds to the defaults, and the kernel's warnings about them. */
+export function teamsBox(doc, { status, souls = [] }) {
+  const ws = status?.workspace || {};
+  const teams = box(doc, 'Teams', null, 'Shared · Git');
+  const unmapped = new Map(list(status?.warnings).filter(w => w?.code === 'unmapped-team-label' && text(w.label)).map(w => [w.label, w]));
+  for (const label of list(ws.teams).filter(text)) {
+    const row = el(doc, 'div', null, 'setup-team'); row.dataset.team = label;
+    const head = el(doc, 'div', null, 'setup-team-head'); head.append(el(doc, 'span', label, 'setup-team-label'));
+    const count = list(souls).filter(s => s?.team === label).length;
+    head.append(el(doc, 'span', plural(count, 'soul'), 'setup-team-meta'));
+    row.append(head);
+    // What the team adds to (or turns off from) the workspace defaults (defaults.byTeam).
+    const adds = teamDefaults(doc, status, label);
+    if (adds) row.append(adds);
+    // The kernel's own warning about this label, verbatim.
+    if (text(unmapped.get(label)?.message)) row.append(el(doc, 'span', unmapped.get(label).message, 'setup-team-warn'));
+    teams.append(row);
+  }
+  if (!list(ws.teams).length) teams.append(el(doc, 'p', 'The workspace declares no teams.', 'setup-empty'));
+  teams.append(el(doc, 'p', 'Teams organise and add defaults. They never restrict what a soul can do.', 'setup-team-note'));
+  return teams;
 }
 
 /** One clone row: its path (relative to the deployment), the kernel's refusal, or not cloned. */

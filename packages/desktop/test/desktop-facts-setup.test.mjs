@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { workspaceStatusData } from '../deployment-data.mjs';
-import { renderSetup } from '../renderer/workspace-setup.mjs';
+import { renderSetup, teamsBox } from '../renderer/workspace-setup.mjs';
 
 const DEPLOYMENT = '/fixture/base/northwind-workspace';
 const capture = () => JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/desktop-facts/workspace-status.json', import.meta.url), 'utf8'));
@@ -84,7 +84,9 @@ test('Defaults shows the workspace slots and default capabilities as declared; e
   const root = host();
   const status = statusOf(r => r.defaults.byTeam.engineering.capabilities.push({ name: 'nw-house-style', from: null, off: true }));
   renderSetup(root, { status });
-  assert.deepEqual([...root.querySelectorAll('.setup-box, .setup-local')].map(b => b.dataset.box), ['Members', 'Packages', 'Defaults', 'Teams', 'This computer']);
+  // Teams moved to the Workspace's own Teams tab (human, 2026-09-28): Setup no longer has the box.
+  assert.deepEqual([...root.querySelectorAll('.setup-box, .setup-local')].map(b => b.dataset.box), ['Members', 'Packages', 'Defaults', 'This computer']);
+  root.append(teamsBox(root.ownerDocument, { status }));
   const rows = Object.fromEntries([...root.querySelectorAll('[data-box=Defaults] .setup-def')].map(r => [r.dataset.slot, r.querySelector('dd')]));
   assert.deepEqual(Object.keys(rows), ['knowledge', 'messaging', 'tasks', 'capabilities']);
   assert.equal(rows.knowledge.textContent, 'oats.okfpackage');

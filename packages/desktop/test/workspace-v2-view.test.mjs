@@ -30,7 +30,7 @@ const instances = roster.agents.flatMap(agent => agent.instances.map(i => ({ ...
 const catalog = name => ({ workspaceSyncApi: 1, status: 'ok', report: null, capabilities: { capabilitiesApi: 1, ...fx(name).result }, reason: null });
 const report = (name, status) => ({ workspaceSyncApi: 1, status, report: syncData(f2(name), dir), capabilities: null, reason: null });
 
-async function setup(t, { status = 'workspace-status', cli = CLI, sync, workspace = {}, deployment } = {}) {
+async function setup(t, { status = 'workspace-status', cli = CLI, sync, teams, workspace = {}, deployment } = {}) {
   const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>', { url: 'http://localhost' });
   const previous = { document: globalThis.document, window: globalThis.window, setInterval: globalThis.setInterval, ws: currentWorkspace() };
   globalThis.document = dom.window.document; globalThis.window = dom.window; globalThis.setInterval = () => 0;
@@ -44,6 +44,7 @@ async function setup(t, { status = 'workspace-status', cli = CLI, sync, workspac
     if (path.startsWith('/api/agents')) return { agents: roster.agents.map(({ instances: _i, ...soul }) => ({ ...soul, agentsRoot: roster.root })) };
     if (path.startsWith('/api/panel')) return panel();
     if (path.startsWith('/api/workspace-sync')) return sync ? sync(body, calls) : catalog('capabilities');
+    if (teams && path.startsWith('/api/workspace-teams')) return teams(body, calls);
     if (path === '/api/servers') return { servers: [] };
     throw new Error(`Unexpected fixture API request: ${path}`);
   } };
@@ -169,7 +170,7 @@ test('W1 Setup list: members with handshake and contribution, packages with orig
   assert.equal(u.doc.querySelector('.setup-lede h2').textContent, ws.name);
   assert.match(u.doc.querySelector('.setup-lede-where').textContent, new RegExp(`'s workspace file @ ${ws.commit.slice(0, 7)}$`), 'the declaration and its commit');
   assert.doesNotMatch(u.doc.querySelector('.setup').textContent, /oats-workspace\.yaml|oats-membership\.yaml|oats-lock\.json/, 'a kernel without desktop facts reports no file names, so none is shown (desktop-facts-setup.test.mjs covers the reported ones)');
-  assert.deepEqual([...u.doc.querySelectorAll('.setup-box, .setup-local')].map(el => el.dataset.box), ['Members', 'Packages', 'Teams', 'This computer']);
+  assert.deepEqual([...u.doc.querySelectorAll('.setup-box, .setup-local')].map(el => el.dataset.box), ['Members', 'Packages', 'This computer'], 'Teams has its own tab (human, 2026-09-28)');
   const repos = [...u.doc.querySelectorAll('[data-box=Members] [data-member]')];
   assert.equal(repos.length, 5);
   assert.ok(repos.every(row => row.querySelector('.setup-state').textContent === 'confirmed' && row.querySelector('.setup-state svg')));
@@ -217,12 +218,19 @@ test('W2 Setup graph: this computer → the lock → the workspace → members a
   // The kernel's workspace warnings, verbatim (#185 warnings[]); a kernel before #185 sends none.
   assert.deepEqual(statusOf('workspace-status').warnings, []);
   assert.equal(statusOf('f7/workspace-status').warnings[0].code, 'unmapped-team-label');
-  // An unmapped team label is said on its team's row in the list, in the kernel's words (not repeated as a note).
-  u.doc.querySelector('.ws-segmented [data-setup-view=list]').click(); await settle();
+  // An unmapped team label is said on its team's row on the Teams tab (first, before Souls), in the
+  // kernel's words; Teams carries the attention dot for it, and Setup neither repeats it nor counts it.
+  assert.equal(u.doc.querySelector('#workspace-tab-teams .workspace-attn').hidden, false);
+  assert.equal(u.doc.querySelector('#workspace-tab-teams .workspace-sr-only').textContent, ' — 2 items need attention', 'global and marketing');
+  assert.equal(u.doc.querySelector('#workspace-tab-sources .workspace-attn').hidden, true);
+  assert.equal([...u.doc.querySelectorAll('.catalog-note.warn')].some(el => /messaging\.byTeam/.test(el.textContent)), false, 'not a Setup note');
+  await u.tab('teams');
+  assert.deepEqual([...u.doc.querySelectorAll('.workspace-tabs [role=tab]')].map(tab => tab.firstChild.textContent), ['Teams', 'Souls', 'Capabilities', 'Setup']);
+  assert.deepEqual([...u.doc.querySelectorAll('.workspace-discovery .setup-box')].map(el => el.dataset.box), ['Teams']);
   assert.match(u.doc.querySelector('.setup-team[data-team=global] .setup-team-warn').textContent, /team "global" has no messaging\.byTeam entry/);
   assert.equal(u.doc.querySelector('.setup-team[data-team=engineering] .setup-team-warn'), null);
-  assert.equal([...u.doc.querySelectorAll('.catalog-note.warn')].some(el => /messaging\.byTeam/.test(el.textContent)), false);
-  u.doc.querySelector('.ws-segmented [data-setup-view=graph]').click(); await settle();
+  assert.equal([...u.doc.querySelectorAll('.catalog-note.warn')].some(el => /messaging\.byTeam/.test(el.textContent)), false, 'said once, on its row');
+  await u.tab('sources');
   // A member opens its Member panel; the panel opens its capabilities, filtered.
   u.doc.querySelector('button.setup-node[data-member$="agents.git"]').click(); await settle();
   const panel = u.doc.querySelector('.setup-panel');
@@ -374,4 +382,31 @@ test('a failed catalog read names the failure and offers an explicit retry', asy
   fail = false; retry.click(); await settle();
   assert.equal(u.rows().length, 10); assert.equal(retry.hidden, true);
   assert.deepEqual(u.syncCalls(), [{ action: 'read' }, { action: 'read' }]);
+});
+
+// Team model v2 (0.30, D2): the Workspace's Teams tab, first (human, 2026-09-28), holds "Teams on this
+// computer" from the kernel's `oats teams` (K1's example document, feat/030-team-model 8dd82158);
+// its problems light the tab's dot. A workspace on another computer keeps its teams there.
+const { teamsData } = await import('../deployment-data.mjs');
+// The REAL 0.30 kernel's `oats teams` (K1 @bba0a9b8, test/fixtures/team-model-v2/teams-after, #269), decoded as the route answers it.
+const K1_TEAMS = () => teamsData(JSON.parse(readFileSync(new URL('./fixtures/team-model-v2/teams-after.json', import.meta.url), 'utf8')), dir);
+test('Teams tab (team-model-2): first, before Souls; "Teams on this computer" from oats teams; its problems light the dot; Setup has no teams', async t => {
+  const u = await setup(t, { cli: { ...CLI, features: [...CLI.features, 'team-model-2'] }, teams: () => ({ status: 'ok', teams: K1_TEAMS() }) });
+  assert.deepEqual([...u.doc.querySelectorAll('.workspace-tabs [role=tab]')].map(tab => tab.id), ['workspace-tab-teams', 'workspace-tab-souls', 'workspace-tab-capabilities', 'workspace-tab-sources']);
+  assert.equal(u.doc.getElementById('workspace-tab-souls').getAttribute('aria-selected'), 'true', 'Souls stays where the Workspace opens');
+  await u.tab('teams');
+  const card = u.doc.querySelector('.workspace-discovery .computer-teams');
+  assert.ok(card, 'the card'); assert.equal(card.dataset.box, 'Teams on this computer');
+  assert.equal(u.doc.querySelector('.workspace-discovery').dataset.tab, 'teams');
+  assert.deepEqual([...card.querySelectorAll('.ct-row')].map(r => r.dataset.team), ['engineering', 'global', 'marketing', 'mine']);
+  assert.deepEqual(u.calls.filter(c => c.path.startsWith('/api/workspace-teams')).map(c => c.body), [{ action: 'list' }], 'one read');
+  assert.equal(u.doc.querySelector('#workspace-tab-teams .workspace-attn').hidden, false);
+  assert.equal(u.doc.querySelector('#workspace-tab-teams .workspace-sr-only').textContent, ' — 3 items need attention', 'the three shared teams with no provider id yet');
+  await u.tab('sources');
+  assert.equal(u.doc.querySelector('.computer-teams'), null);
+  assert.deepEqual([...u.doc.querySelectorAll('.setup-box, .setup-local')].map(el => el.dataset.box), ['Members', 'Packages', 'This computer']);
+  await u.tab('teams');
+  assert.equal(u.doc.querySelector('.workspace-discovery .computer-teams'), card, 'the same card: a half-typed form survives');
+  assert.equal(u.calls.filter(c => c.path.startsWith('/api/workspace-teams')).length, 1, 'not re-read by switching tabs');
+  assert.doesNotMatch(u.doc.querySelector('.workspace-discovery').textContent, /primary|personal/i);
 });

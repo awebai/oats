@@ -1,0 +1,146 @@
+/** The soul page's "Teams here" (team model v2, OATS 0.30): the teams this soul may join
+ * on this computer and its default, inherited (the workspace's default here) or its own,
+ * with add/remove and set/clear the default. The document is the kernel's
+ * `oats soul teams <soul> --json` (K1's shapes, docs/desktop-cli-api.md "Team model v2"),
+ * read and changed through `request(body)`: {action: 'show', soul} |
+ * {action: 'add'|'remove', soul, labels} | {action: 'default', soul, label} |
+ * {action: 'clear-default', soul}, each answering the document after the write.
+ * `listTeams()` answers `oats teams --json` for the labels Add can offer. Refusals are
+ * shown verbatim with their code. Membership is local: nothing here is shared. */
+import { pageCard } from './capability-page.mjs';
+
+export const soulTeamsHereCSS = `
+.soul-teams-here .sth-default { margin:0; color:var(--fg); font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
+.soul-teams-here .sth-default .sth-why { color:var(--muted); }
+.soul-teams-here .sth-blocking { display:flex; flex-direction:column; gap:2px; padding-left:8px; border-left:2px solid var(--danger); color:var(--muted); font-size:11.5px; line-height:1.45; overflow-wrap:anywhere; }
+.soul-teams-here .sth-blocking strong { color:var(--fg); font-size:12px; font-weight:650; }
+.soul-teams-here .sth-row { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:10px; row-gap:4px; align-items:start; padding:8px 0; border-top:1px solid var(--tag-bg); }
+.soul-teams-here .sth-main { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.soul-teams-here .sth-head { display:flex; align-items:center; flex-wrap:wrap; gap:4px 8px; min-width:0; }
+.soul-teams-here .sth-label { color:var(--fg); font:650 12.5px var(--mono,monospace); overflow-wrap:anywhere; }
+.soul-teams-here .sth-meta { color:var(--muted); font-size:11.5px; line-height:1.45; overflow-wrap:anywhere; }
+.soul-teams-here .sth-meta.warn { color:var(--warn); }
+.soul-teams-here .sth-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; }
+.oats-view .soul-teams-here button.sth-act { height:26px; min-height:26px; padding:0 10px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--fg); font:600 11.5px var(--sans,system-ui); white-space:nowrap; cursor:pointer; }
+.oats-view .soul-teams-here button.sth-act:hover:not(:disabled) { background:var(--surface-2); }
+.oats-view .soul-teams-here button.sth-act:disabled { color:var(--muted); cursor:default; }
+.oats-view .soul-teams-here button.sth-act.primary:not(:disabled) { background:var(--primary-bg); border-color:var(--primary-bg); color:var(--primary-fg); }
+.oats-view .soul-teams-here button.sth-act:focus-visible, .soul-teams-here select:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+.soul-teams-here .sth-add { display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding-top:8px; border-top:1px solid var(--tag-bg); }
+.soul-teams-here .sth-add select { height:26px; min-width:0; max-width:100%; padding:0 6px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--fg); font:12px var(--mono,monospace); }
+.soul-teams-here .sth-error { grid-column:1 / -1; border-left:2px solid var(--danger); padding-left:8px; color:var(--fg); font-size:12px; line-height:1.45; }
+.soul-teams-here .sth-error p { margin:0; overflow-wrap:anywhere; }
+.soul-teams-here .sth-error summary { color:var(--muted); font-size:11.5px; cursor:pointer; }
+.soul-teams-here .sth-error pre { margin:4px 0 0; color:var(--fg); font:11px var(--mono,monospace); white-space:pre-wrap; overflow-wrap:anywhere; }
+`;
+
+const text = v => typeof v === 'string' && v ? v : null;
+const list = v => Array.isArray(v) ? v : [];
+function el(doc, tag, value, cls) {
+  const node = doc.createElement(tag);
+  if (value !== undefined && value !== null) node.textContent = value;
+  if (cls) node.className = cls;
+  return node;
+}
+
+/** Why the soul has a team (the kernel's `via`), in words. */
+export function viaText(via, defaultFrom) {
+  const words = list(via).map(v => v === 'default' ? (defaultFrom === 'soul' ? "its own default" : "the workspace's default here")
+    : v === '*' ? 'every soul may join it' : v === 'soul' ? 'added for this soul' : v);
+  return words.join(' · ');
+}
+const fromText = from => from === 'shared' ? 'shared' : from === 'local' ? 'local' : from;
+
+export function createSoulTeamsHere(doc, { soul, request, listTeams = null }) {
+  const { card } = pageCard(doc, 'Teams here', { lead: 'on this computer' });
+  card.classList.add('soul-teams-here');
+  const body = el(doc, 'div', null, 'sth-body'); card.append(body);
+  let current = null, pending = false, serial = 0, disposed = false, rowError = null, cardError = null, choices = null, focusAdd = false;
+
+  async function run(action, { label = null } = {}) {
+    const ticket = ++serial; pending = true; rowError = null; cardError = null; render();
+    try {
+      const next = await request({ soul, ...action });
+      if (disposed || ticket !== serial) return;
+      pending = false;
+      if (!next || !Array.isArray(next.teams)) { cardError = { message: `The teams of ${soul} on this computer could not be read.` }; render(); return; }
+      current = next; render();
+    } catch (error) {
+      if (disposed || ticket !== serial) return;
+      pending = false;
+      const shown = { code: text(error?.code), message: text(error?.message) || 'The change was refused.' };
+      if (label) rowError = { label, ...shown }; else cardError = shown;
+      render();
+    }
+  }
+  async function loadChoices() {
+    if (typeof listTeams !== 'function') return;
+    try { const all = await listTeams(); if (!disposed) { choices = list(all?.teams).filter(t => text(t?.label)); focusAdd = true; render(); } }
+    catch { if (!disposed) { choices = []; render(); } }
+  }
+  function button(label, cls, onClick, { disabled = false, title = '', aria = '' } = {}) {
+    const b = el(doc, 'button', label, `sth-act${cls ? ` ${cls}` : ''}`); b.type = 'button';
+    b.disabled = disabled || pending; if (title) b.title = title; if (aria) b.setAttribute('aria-label', aria);
+    b.addEventListener('click', () => { if (!b.disabled) onClick(); });
+    return b;
+  }
+  function problemBox(error) {
+    const wrap = el(doc, 'div', null, 'sth-error'); wrap.setAttribute('role', 'alert');
+    wrap.append(el(doc, 'p', error.message));
+    if (error.code) { const more = el(doc, 'details'); more.append(el(doc, 'summary', 'Details'), el(doc, 'pre', error.code)); wrap.append(more); }
+    return wrap;
+  }
+
+  function render() {
+    if (disposed) return;
+    body.replaceChildren();
+    if (!current) { body.append(el(doc, 'p', pending ? `Reading the teams of ${soul} (oats soul teams)…` : '', 'page-note')); if (cardError) body.append(problemBox(cardError)); return; }
+    const home = current.defaultTeam;
+    const line = el(doc, 'p', null, 'sth-default');
+    if (home) {
+      line.append('Default: ', el(doc, 'strong', home.label), ' ');
+      line.append(el(doc, 'span', home.from === 'soul' ? "(this soul's own)" : "(the workspace's default on this computer)", 'sth-why'));
+    } else line.append('No default team on this computer: run oats aweb setup.');
+    body.append(line);
+    // An unmapped default blocks every spawn of this soul here: said, with what to do.
+    if (home && !home.team) {
+      const block = el(doc, 'div', null, 'sth-blocking'); block.setAttribute('role', 'alert');
+      block.append(el(doc, 'strong', `The default team ${home.label} has no provider id yet, so ${soul} can't be spawned here.`),
+        el(doc, 'span', "Its owner runs oats aweb setup, then commits the id; or make another team this soul's default."));
+      body.append(block);
+    }
+    for (const team of list(current.teams)) {
+      const row = el(doc, 'div', null, 'sth-row'); row.dataset.team = team.label;
+      const main = el(doc, 'div', null, 'sth-main'), head = el(doc, 'div', null, 'sth-head');
+      head.append(el(doc, 'span', team.label, 'sth-label'));
+      if (team.default) head.append(el(doc, 'span', 'default', 'page-tag'));
+      main.append(head);
+      main.append(el(doc, 'span', `${team.team ?? 'no provider id yet'} · ${fromText(team.from)}`, `sth-meta${team.team ? '' : ' warn'}`));
+      main.append(el(doc, 'span', viaText(team.via, home?.from), 'sth-meta'));
+      const actions = el(doc, 'div', null, 'sth-actions');
+      if (!team.default && team.team) actions.append(button('Make default', '', () => run({ action: 'default', label: team.label }, { label: team.label }), { aria: `Make ${team.label} the default team of ${soul}` }));
+      if (team.default && home?.from === 'soul') actions.append(button('Use workspace default', '', () => run({ action: 'clear-default' }, { label: team.label }), { aria: `Use the workspace's default team for ${soul}` }));
+      if (list(team.via).includes('soul')) actions.append(button('Remove', '', () => run({ action: 'remove', labels: [team.label] }, { label: team.label }), { aria: `Remove ${team.label} from ${soul}` }));
+      row.append(main, actions);
+      if (rowError?.label === team.label) row.append(problemBox(rowError));
+      body.append(row);
+    }
+    // Add: a team on this computer the soul is not in yet.
+    const have = new Set(list(current.teams).map(t => t.label));
+    const offer = (choices || []).filter(t => !have.has(t.label));
+    const add = el(doc, 'div', null, 'sth-add');
+    if (choices === null) add.append(button('Add a team', '', () => { void loadChoices(); }));
+    else if (!offer.length) add.append(el(doc, 'span', `${soul} is in every team on this computer.`, 'sth-meta'));
+    else {
+      const select = el(doc, 'select'); select.setAttribute('aria-label', `Team to add to ${soul}`);
+      for (const t of offer) { const o = el(doc, 'option', t.team ? t.label : `${t.label} (no provider id yet)`); o.value = t.label; select.append(o); }
+      add.append(select, button('Add', 'primary', () => run({ action: 'add', labels: [select.value] })));
+      if (focusAdd) { focusAdd = false; queueMicrotask(() => { if (select.isConnected) select.focus(); }); }
+    }
+    if (cardError) add.append(problemBox(cardError));
+    body.append(add);
+  }
+
+  void run({ action: 'show' });
+  return { element: card, refresh: () => run({ action: 'show' }), dispose() { disposed = true; serial++; } };
+}

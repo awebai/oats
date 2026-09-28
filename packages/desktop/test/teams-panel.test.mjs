@@ -119,9 +119,9 @@ test('an instance shows its teams: the workspace\'s default team always on (no L
   assert.equal(u.panel().previousElementSibling.textContent, 'Teams', 'the inspector labels the section'); assert.equal(u.panel().querySelector('h3'), null);
   const home = u.row('default');
   assert.equal(home.querySelector('.team-meta').textContent, "default:northwind:alice · the messaging root's active team", 'source "root", in words');
-  assert.match(home.textContent, /Default team.*default:northwind:alice.*Always on/s); assert.equal(home.querySelector('.team-badge').title, "The workspace's default team can't be left.");
+  assert.match(home.textContent, /Default team.*default:northwind:alice.*Always on/s); assert.equal(home.querySelector('.team-badge').title, "The default team can't be left.");
   assert.equal(home.querySelector('button'), null, 'the default team has no Leave');
-  assert.equal(u.row('dev').querySelector('.team-name').textContent, 'dev · primary');
+  assert.equal(u.row('dev').querySelector('.team-name').textContent, 'dev', 'no "primary" marker (team model v2: there is no primary)');
   assert.equal(u.row('dev').querySelector('[data-team-action]').textContent, 'Join');
   assert.equal(u.row('reviewers').querySelector('[data-team-action]').textContent, 'Join');
   assert.equal(u.row('marketing'), null, 'an unmapped label is not shown');
@@ -288,4 +288,53 @@ test('a refusal whose row disappears is cleared by the next team action, not by 
   await u.press('join', 'dev'); await tick();
   assert.equal(u.panel().querySelector('[data-team-refusal]'), null, 'the next action clears it');
   assert.match(u.row('dev').textContent, /Joined 2026/);
+});
+
+// Team model v2 (0.30, D2): the teams this instance LEFT on a live read (left[], oats.aweb 1.17;
+// K1's shapes doc, feat/030-team-model 8dd82158), on the real captured document plus left[]
+// until the 1.17 capture exists. Newest first, with the time and the reason in words.
+test('left entries: "Recently left", newest first, each with its team, when, and why; no action on them', async t => {
+  const withLeft = structuredClone(run('teams-initial'));
+  withLeft.result.left = [{ label: 'reviewers', team: 'northwind:review', at: '2026-09-27T09:00:00.000Z', reason: 'no-longer-eligible' },
+    { label: 'ops', team: 'northwind:ops', at: '2026-09-27T11:30:00.000Z', reason: 'no-longer-eligible' },
+    { label: 'legacy', team: 'northwind:legacy', at: '2026-09-26T08:00:00.000Z', reason: 'provider-moved' }];
+  const u = await mount(t, () => withLeft);
+  const head = u.panel().querySelector('.teams-subhead');
+  assert.equal(head.textContent, 'Recently left');
+  const left = [...u.panel().querySelectorAll('[data-team-left]')];
+  assert.deepEqual(left.map(r => r.dataset.teamLeft), ['ops', 'reviewers', 'legacy'], 'newest first');
+  assert.deepEqual([...left[0].querySelectorAll('.team-meta')].map(m => m.textContent), ['northwind:ops · Left 2026-09-27 11:30 UTC', 'The soul no longer belongs to it.']);
+  assert.equal(left[0].querySelector('.team-meta').title, '2026-09-27T11:30:00.000Z', 'the exact time on hover');
+  assert.equal(left[2].querySelectorAll('.team-meta')[1].textContent, 'reason: provider-moved', 'an unknown reason is shown as sent');
+  assert.ok(left.every(r => !r.querySelector('button')), 'nothing to do on a left team');
+  assert.equal(head.previousElementSibling.dataset.teamRow, 'reviewers', 'after the current teams');
+  const none = await mount(t, captured());
+  assert.equal(none.panel().querySelector('.teams-subhead'), null, 'no left[]: no section');
+});
+
+test('receive "live" (oats.aweb 1.17) reads as live delivery; "poll" never does', () => {
+  assert.equal(receiveText('live'), "receives this team's mail as it arrives");
+  assert.equal(receiveText('poll'), "checks this team's mail between tasks");
+});
+
+test("v2 default row: the kernel's DefaultTeam by label, with its id and where it was set; unmapped is a blocking problem; none configured says what to do", async t => {
+  const v2 = defaultTeam => { const d = structuredClone(run('teams-initial')); delete d.result.primary; delete d.result.unmapped; d.result.defaultTeam = defaultTeam; return d; };
+  const deployment = await mount(t, () => v2({ label: 'antares-oats', team: 'antares-oats:juan.aweb.ai', from: 'deployment' }));
+  const row = deployment.row('default');
+  assert.equal(row.querySelector('.team-name').textContent, 'Default team · antares-oats');
+  assert.equal(row.querySelector('.team-meta').textContent, "antares-oats:juan.aweb.ai · this workspace's default on this computer");
+  assert.equal(row.querySelector('.team-badge').title, "The default team can't be left.");
+  // Unmapped (K1 addendum 4 + the lead's ruling): a blocking problem, not a membership: no "Always on".
+  const unmapped = await mount(t, () => v2({ label: 'oats', team: null, from: 'soul' }));
+  const blocked = unmapped.row('default');
+  assert.equal(blocked.querySelector('.team-meta').textContent, "this soul's own default on this computer");
+  assert.equal(blocked.querySelector('.team-badge'), null, 'no "Always on" for a team nothing can be in yet');
+  assert.equal(blocked.querySelector('.teams-blocking').getAttribute('role'), 'alert');
+  assert.deepEqual([...blocked.querySelectorAll('.teams-blocking p')].map(p => p.textContent), ['The default team oats has no provider id yet.',
+    'Its owner runs oats aweb setup, then commits the id; or choose another default in Workspace › Teams (oats teams default).']);
+  assert.equal(blocked.querySelector('button'), null, 'nothing to join or leave');
+  const none = await mount(t, () => v2(null));
+  assert.equal(none.row('default').querySelector('.team-meta').textContent, 'None configured on this computer: run oats aweb setup.');
+  assert.equal(none.row('default').querySelector('.team-badge'), null, 'nothing to be always on');
+  for (const u of [deployment, unmapped, none]) assert.doesNotMatch(u.panel().textContent, /primary|personal/i);
 });

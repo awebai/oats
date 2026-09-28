@@ -5,7 +5,7 @@ import { JSDOM } from "jsdom";
 import { createSoulMark, createRuntimeBadge, identityCSS } from "../renderer/identity-marks.mjs";
 import { workspaceStatusData, syncData } from "../deployment-data.mjs";
 import { renderCapabilities, renderCapabilitySections, capabilitySections, renderFilters, filterChoices, memberNames } from "../renderer/workspace-catalog.mjs";
-import { renderSetup } from "../renderer/workspace-setup.mjs";
+import { renderSetup, teamsBox } from "../renderer/workspace-setup.mjs";
 import { discoveryCSS } from "../renderer/workspace-discovery.mjs";
 import { createConnections, connectionsCSS } from '../renderer/connections.mjs';
 import { createForgePrPanel } from '../renderer/forge-pr.mjs';
@@ -334,6 +334,8 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
     defaults: { slots: { knowledge: { name: 'oats.okf', from: 'package' }, messaging: 'none', tasks: null }, capabilities: [{ name: 'house-style', from: 'here', off: false }],
       byTeam: Object.fromEntries((status.workspace.teams || []).map(label => [label, { capabilities: [{ name: 'deploy', from: 'package', off: false }, { name: 'house-style', from: null, off: true }] }])) } };
   renderSetup(doc.querySelector('.sources'), { status: facts, instances: [{ agent: 'a', running: true }], souls: [{ team: 'marketing' }], cli: { version: '0.26.0' }, openExternal() {} });
+  // The Workspace's Teams tab (0.29 box; first tab since 2026-09-28), beside Setup.
+  doc.querySelector('.sources').append(teamsBox(doc, { status: facts, souls: [{ team: 'marketing' }] }));
   renderSetup(doc.querySelector('.graph'), { status: { ...facts, unsynced: ['x.pkg'] }, view: 'graph', selected: unconfirmed.key, openExternal() {} });
   // The sync sheet's refusal text, as createWorkspaceSync builds it.
   const sheet = doc.createElement('section'); sheet.className = 'ws-sync-dialog';
@@ -805,5 +807,51 @@ for (const [name] of palettes) test(`${name}: the can't-spawn-here notes meet co
     assert.equal(dom.window.getComputedStyle(el).color, 'var(--warn)', selector); assert.ok(bg, selector);
     assert.ok(contrast(opaqueChannels(root.getPropertyValue('--warn').trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${selector} on ${bg}`);
     for (let p = el; p; p = p.parentElement) assert.equal(dom.window.getComputedStyle(p).opacity, '1');
+  }
+});
+
+// Team model v2 (0.30, D2): Setup's "Teams on this computer", the soul page's "Teams here",
+// the teams panel's "Recently left" head and a spawn team with no provider id yet, on K1's
+// example documents (docs/desktop-cli-api.md "Team model v2", feat/030-team-model 8dd82158).
+import { createComputerTeams, computerTeamsCSS } from '../renderer/computer-teams.mjs';
+import { createSoulTeamsHere, soulTeamsHereCSS } from '../renderer/soul-teams-here.mjs';
+import { teamsCSS } from '../renderer/teams-panel.mjs';
+import { setupCSS } from '../renderer/workspace-setup.mjs';
+for (const [name] of palettes) test(`${name}: team model v2 cards, left entries and unmapped spawn teams meet computed AA`, async t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"><div id="setup"></div><div id="soul"></div>
+    <aside class="soul-inspector"><div class="teams-card"><div class="teams-panel"><p class="teams-subhead">Recently left</p></div></div></aside>
+    <div class="spawn-seg spawn-teams-row spawn-team-list"><label class="spawn-team spawn-team-off"><input type="checkbox" disabled><span class="spawn-team-name">reviewers</span></label></div></div></body></html>`, { pretendToBeVisual: true });
+  const doc = dom.window.document;
+  for (const source of [css, setupCSS, pageCardCSS, computerTeamsCSS, soulTeamsHereCSS, inspectorCSS, teamsCSS, spawnDialogCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  // The REAL 0.30 kernel (K1 @bba0a9b8, test/fixtures/team-model-v2, #269): shared teams with no id
+  // yet (warnings) and release-manager's own unmapped default (the soul page's blocking notice).
+  const { teamsData, soulTeamsData } = await import('../deployment-data.mjs');
+  const v2 = name => JSON.parse(readFileSync(new URL(`./fixtures/team-model-v2/${name}.json`, import.meta.url), 'utf8'));
+  const teams = teamsData(v2('teams-after'), '/fixture/base/northwind-workspace'), soulTeams = soulTeamsData(v2('soul-teams-default'));
+  teams.defaultTeam = 'engineering'; for (const r of teams.teams) r.default = r.label === 'engineering'; for (const p of teams.problems) if (p.label === 'engineering') p.default = true; // DERIVED: a blocking default
+  const setup = createComputerTeams(doc, { request: async () => structuredClone(teams) });
+  const soul = createSoulTeamsHere(doc, { soul: 'release-manager', request: async () => structuredClone(soulTeams), listTeams: async () => structuredClone(teams) });
+  doc.querySelector('#setup').append(setup.element); doc.querySelector('#soul').append(soul.element);
+  t.after(() => { setup.dispose(); soul.dispose(); dom.window.close(); });
+  for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve));
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  for (const [selector, painted, fg, bg] of [
+    ['.ct-label', '.computer-teams', 'fg', 'surface-2'], ['.ct-from', '.computer-teams', 'muted', 'surface-2'],
+    ['[data-team="mine"] .ct-id', '.computer-teams', 'fg', 'surface-2'], ['.ct-id.none', '.computer-teams', 'warn', 'surface-2'],
+    ['.ct-chip', '.ct-chip', 'fg', 'tag-bg'], ['.ct-why', '.computer-teams', 'muted', 'surface-2'],
+    ['button.ct-act:not(:disabled)', 'button.ct-act:not(:disabled)', 'fg', 'surface'], ['button.ct-act:disabled', 'button.ct-act:disabled', 'muted', 'surface'],
+    ['.sth-default', '.soul-teams-here', 'fg', 'surface'], ['.sth-default .sth-why', '.soul-teams-here', 'muted', 'surface'],
+    ['.sth-label', '.soul-teams-here', 'fg', 'surface'], ['.sth-meta:not(.warn)', '.soul-teams-here', 'muted', 'surface'],
+    ['.sth-meta.warn', '.soul-teams-here', 'warn', 'surface'], ['button.sth-act', 'button.sth-act', 'fg', 'surface'],
+    ['.ct-blocking', '.computer-teams', 'muted', 'surface-2'], ['.ct-blocking strong', '.computer-teams', 'fg', 'surface-2'],
+    ['.sth-blocking', '.soul-teams-here', 'muted', 'surface'], ['.sth-blocking strong', '.soul-teams-here', 'fg', 'surface'],
+    ['.teams-subhead', '.soul-inspector', 'muted', 'surface'],
+    ['.spawn-team-off .spawn-team-name', '.spawn-teams-row', 'muted', 'surface-2'],
+  ]) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.equal(dom.window.getComputedStyle(surface).background.replace(/^.*(var\(--[\w-]+\)).*$/, '$1'), `var(--${bg})`, painted);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
   }
 });
