@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "soulTeamsApi": 1,
+    "soul": "keeper",
+    "key": "acme.pkg/keeper",
+    "defaultTeam": {
+      "label": "global",
+      "team": null,
+      "from": "soul"
+    },
+    "teams": [
+      {
+        "label": "global",
+        "team": null,
+        "default": true,
+        "from": "shared",
+        "via": [
+          "default",
+          "soul"
+        ]
+      }
+    ],
+    "local": {
+      "teams": [
+        "global"
+      ],
+      "default": "global"
+    },
+    "all": []
+  }
+}

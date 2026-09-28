@@ -263,6 +263,7 @@ export function capabilitiesData(document) {
  * ambiguous bare name with E_SOUL_AMBIGUOUS; such a soul is not offered). */
 const SOUL_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/;
 const TEAM_LABEL = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const PACKAGE_ID = /^[a-z0-9][a-z0-9._-]{0,127}$/; // the kernel's package id (lib/core.mjs PACKAGE_ID_RE), bounded
 export function soulsData(document) {
   check(record(document) && document.schemaVersion === 1 && document.ok === true);
   const data = document.result;
@@ -271,8 +272,18 @@ export function soulsData(document) {
   const seen = new Map();
   for (const row of array(data.souls)) {
     const out = fields(row, ['name', 'origin', 'kind', 'repoKey', 'commit', 'team', 'path', 'work', 'description']);
-    check(SOUL_NAME.test(out.name ?? '') && ['member', 'external'].includes(out.kind)
+    check(SOUL_NAME.test(out.name ?? '') && ['member', 'external', 'package'].includes(out.kind)
       && ['worktree', 'checkout', 'directory', 'workspace', 'attached'].includes(out.work));
+    // Package souls (feature package-souls, 0.28): a soul a locked package ships, addressed by its
+    // qualified name `<package>/<soul>`. Every row carries the kernel's soul key (lib/teams.mjs
+    // soulKeyOf): the qualified name for a package soul, the bare name otherwise. It is what
+    // `oats soul teams <key>` and the souls.teams/souls.default keys take.
+    if (out.kind === 'package') {
+      check(typeof row.package === 'string' && PACKAGE_ID.test(row.package) && typeof row.version === 'string' && row.version.length > 0 && row.version.length <= 64
+        && row.qualifiedName === `${row.package}/${out.name}`);
+      Object.assign(out, { package: row.package, version: row.version, qualifiedName: row.qualifiedName });
+    } else check(!own(row, 'qualifiedName') && !own(row, 'package'));
+    out.key = out.kind === 'package' ? out.qualifiedName : out.name;
     flags(row, ['private', 'spawnable'], out);
     // desktop-facts: whether a spawn here would refuse, and the file. The harness/model default is not kept:
     // it is always the kernel's today (#217 note 4), never the soul's choice; the spawn preview reports the real one.
@@ -286,10 +297,10 @@ export function soulsData(document) {
       check(Array.isArray(row.labels) && row.labels.length <= 64 && row.labels.every(l => typeof l === 'string' && TEAM_LABEL.test(l)) && new Set(row.labels).size === row.labels.length);
       out.labels = [...row.labels];
     }
-    seen.set(out.name, seen.has(out.name) ? null : out);
+    seen.set(out.key, seen.has(out.key) ? null : out); // the kernel's key: a package soul never collides with a member of the same name
   }
   const souls = [...seen.values()].filter(Boolean);
-  const ambiguous = [...seen].filter(([, row]) => row === null).map(([name]) => name);
+  const ambiguous = [...seen].filter(([, row]) => row === null).map(([key]) => key);
   return { soulsApi: 1, workspace, souls, ambiguous, problems: problemRows(data.problems) };
 }
 

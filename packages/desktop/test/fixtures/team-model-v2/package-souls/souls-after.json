@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "soulsApi": 1,
+    "workspace": {
+      "name": "acme",
+      "key": "local//fixture/base/remotes/ws.git",
+      "commit": "a8d1c8f244915b2513764d77f950cd7b8e44254b"
+    },
+    "souls": [
+      {
+        "name": "dev",
+        "origin": "member local//fixture/base/remotes/ws.git @ a8d1c8f2",
+        "kind": "member",
+        "repoKey": "local//fixture/base/remotes/ws.git",
+        "commit": "a8d1c8f244915b2513764d77f950cd7b8e44254b",
+        "teams": [],
+        "defaultTeam": null,
+        "private": false,
+        "path": "souls/dev",
+        "work": "directory",
+        "description": "dev fixture soul.",
+        "harness": "pi",
+        "model": null,
+        "harnessFrom": "kernel-default",
+        "file": {
+          "path": "souls/dev/soul.yaml",
+          "url": null
+        },
+        "spawnable": true,
+        "problem": null
+      },
+      {
+        "name": "keeper",
+        "qualifiedName": "acme.pkg/keeper",
+        "origin": "package acme.pkg v1.0.0",
+        "kind": "package",
+        "package": "acme.pkg",
+        "version": "1.0.0",
+        "repoKey": "local//fixture/pkg/pkg.git",
+        "commit": "efbeaad930fc3e966aa455a3667e20aa7b1fb23e",
+        "teams": [
+          {
+            "label": "global",
+            "team": null,
+            "default": true,
+            "from": "shared"
+          }
+        ],
+        "defaultTeam": {
+          "label": "global",
+          "team": null,
+          "from": "soul"
+        },
+        "private": false,
+        "path": "oats-package/souls/keeper",
+        "work": "directory",
+        "description": "keeper package soul.",
+        "harness": "pi",
+        "model": null,
+        "harnessFrom": "kernel-default",
+        "file": {
+          "path": "oats-package/souls/keeper/soul.yaml",
+          "url": null
+        },
+        "spawnable": true,
+        "problem": null
+      }
+    ],
+    "problems": []
+  }
+}

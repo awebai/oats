@@ -1,0 +1,156 @@
+{
+  "source": "oats-desktop-engineer: package souls under team model v2 (the roster's soul key); the kernel's test/helpers/v2-deployment.mjs + package-repo.mjs: member soul dev, package acme.pkg v1.0.0 shipping soul keeper, shared team global; capture-package-souls.mjs",
+  "kernelTree": "oats main @ca03feccb1e2c8238727e910dd8f2ca748944710",
+  "redactions": [
+    "<base> (deployment scratch) → /fixture/base",
+    "<pkg> (package repo scratch) → /fixture/pkg",
+    "<oats> (kernel tree) → /fixture/oats"
+  ],
+  "files": {
+    "souls": {
+      "argv": [
+        "oats",
+        "souls",
+        "--dir",
+        "<base>/deployment",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "ca03feccb1e2c8238727e910dd8f2ca748944710",
+      "sourceSha256": "8e975dbd0a173f47db982ce40b74131a3434fd3a4080d1e05b36275a6b9d15c7",
+      "fixtureSha256": "13169b27e7ed00cb9a5d6deafafd3b47061ad1f29c16fcaf9a0999d4b6b7f127"
+    },
+    "souls-after": {
+      "argv": [
+        "oats",
+        "souls",
+        "--dir",
+        "<base>/deployment",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "ca03feccb1e2c8238727e910dd8f2ca748944710",
+      "sourceSha256": "9fcf2e81925f4e6f7aaae12807fed9878c0390abd41ab86b819e4ef395615501",
+      "fixtureSha256": "ea64fccdcf10559f93eae3888d4bd32b7a18509fc379fddcb2d45bc75b776928"
+    },
+    "workspace-status": {
+      "argv": [
+        "oats",
+        "workspace",
+        "status",
+        "--dir",
+        "<base>/deployment",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "ca03feccb1e2c8238727e910dd8f2ca748944710",
+      "sourceSha256": "662226fc9bb7530bc57d95bd9cb5910b6434795a00d41b1501b1a6f5c5f6d6d5",
+      "fixtureSha256": "c4ab70a65e0abf9550d35a11fb1f2430ddd19b5152bce0ab98dd2e1b1d67146e"
+    },
+    "soul-teams-package-add": {
+      "argv": [
+        "oats",
+        "soul",
+        "teams",
+        "acme.pkg/keeper",
+        "--add=global",
+        "--dir",
+        "<base>/deployment",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "ca03feccb1e2c8238727e910dd8f2ca748944710",
+      "sourceSha256": "077591f8598a3b54e266841a07a354a8f5b8fc4fd6d35d44355caa7a73ff8955",
+      "fixtureSha256": "4e71794f7ac3d67804b906cb95ceb82584ba4a080cd32ce59468531a14c9a717"
+    },
+    "soul-teams-package-default": {
+      "argv": [
+        "oats",
+        "soul",
+        "teams",
+        "acme.pkg/keeper",
+        "--default=global",
+        "--dir",
+        "<base>/deployment",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "ca03feccb1e2c8238727e910dd8f2ca748944710",
+      "sourceSha256": "fe18fc723fcfdbae1cd5d2ef31a2410d98dfd99773f146918e71c1dff6a04a7b",
+      "fixtureSha256": "4fc9c071ba1a2aca9654a760b724f68f3bc93ce74af06dc9d85a131551709d8a"
+    },
+    "soul-teams-package-show": {
+      "argv": [
+        "oats",
+        "soul",
+        "teams",
+        "acme.pkg/keeper",
+        "--dir",
+        "<base>/deployment",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "ca03feccb1e2c8238727e910dd8f2ca748944710",
+      "sourceSha256": "8b4a1cca551313267acefb08592ee6c7756619b1d075222ce44cda1d6288adcf",
+      "fixtureSha256": "290a464f16bdcb263a4d7af82767950ecc763d7f1fd2623b757acf48843c2b3d"
+    },
+    "soul-teams-bare-show": {
+      "argv": [
+        "oats",
+        "soul",
+        "teams",
+        "keeper",
+        "--dir",
+        "<base>/deployment",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "ca03feccb1e2c8238727e910dd8f2ca748944710",
+      "sourceSha256": "8b4a1cca551313267acefb08592ee6c7756619b1d075222ce44cda1d6288adcf",
+      "fixtureSha256": "290a464f16bdcb263a4d7af82767950ecc763d7f1fd2623b757acf48843c2b3d"
+    },
+    "preview": {
+      "argv": [
+        "oats",
+        "spawn",
+        "acme.pkg/keeper",
+        "--dir",
+        "<base>/deployment",
+        "--purpose",
+        "q",
+        "--preview",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "ca03feccb1e2c8238727e910dd8f2ca748944710",
+      "sourceSha256": "b6129163405dd74db21bc5ee33d2a44dd1d734c0173693ddb0ddf84c5d781fa2",
+      "fixtureSha256": "5855e4cfd7fc9ee933782bde0285b7c4d84fd6614a91ab3264b6d54b9edf016a"
+    },
+    "status": {
+      "argv": [
+        "oats",
+        "status",
+        "--dir",
+        "<base>/deployment",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "ca03feccb1e2c8238727e910dd8f2ca748944710",
+      "sourceSha256": "1d69a740a1655afe950fdc9a129dcdc63965e973f5683776d4161bd2fbd05ccd",
+      "fixtureSha256": "96dfe462f774acb079b010a0ce1bf143d2531ba801940d558f7e1220cbee22f0"
+    },
+    "inspect-home": {
+      "argv": [
+        "oats",
+        "inspect",
+        "--home",
+        "<base>/deployment/agents/acme-pkg--keeper/instances/acme-pkg-keeper-q",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "ca03feccb1e2c8238727e910dd8f2ca748944710",
+      "sourceSha256": "603d07de25f22619d4b118c9058ec2c7ba589e740dc9faba100cc34f6a5a55b1",
+      "fixtureSha256": "238194b5803d2b6697562bd46738ad51b627d1c440438bbccbbaa91d739e309b"
+    }
+  }
+}
