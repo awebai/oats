@@ -16,3 +16,19 @@ export function teamRow(t) {
   if (typeof t.mapped !== 'boolean' || (t.mapped ? t.team === null : t.team !== null)) return null;
   return { label: t.label, team: t.team, mapped: t.mapped };
 }
+
+/** The kernel's DefaultTeam (team model v2): `{label, team: <id>|null (unmapped), from: deployment|soul}`,
+ * null when none is configured, or undefined when the value is not that shape. */
+export function defaultTeamOf(v) {
+  if (v === null) return null;
+  if (!record(v) || typeof v.label !== 'string' || !LABEL.test(v.label) || !(v.team === null || text(v.team)) || !['deployment', 'soul'].includes(v.from)) return undefined;
+  return { label: v.label, team: v.team, from: v.from };
+}
+/** A list of v2 TeamRows (the default first), or undefined when any row is not one. */
+export function teamRowsOf(v, { v2 = true } = {}) {
+  if (!Array.isArray(v) || v.length > 128) return undefined;
+  const rows = v.map(teamRow);
+  if (rows.some(r => !r || (v2 && !Object.hasOwn(r, 'default'))) || new Set(rows.map(r => r.label)).size !== rows.length) return undefined;
+  return rows;
+}
+export const TEAM_LABEL_PATTERN = LABEL;
