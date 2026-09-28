@@ -242,8 +242,10 @@ soul payloads and `--provider` flags with `E_WORKSPACE_SCHEMA` reason
   a `team` key from the host, the soul or a spawn is refused ("teams are not a
   setting since oats.aweb 1.17 / OATS 0.30: use oats teams / oats soul teams"). An instance's own identity is minted
   into its default team; each joined team gets its own identity. Every
-  identity is minted from the root's membership in THAT team, never from the
-  root's active team.
+  identity is minted from a root that is a member of THAT team, never from a
+  root's active team. A local root holds exactly one team (aw refuses a second
+  accept into the same `.aw`), so a deployment has **one root per team**:
+  `roots: { <team id>: /absolute/dir }`, with `root` for the first.
 - `root: /absolute/dir`. Host-owned absolute directory whose `.aw` is the aweb
   minting root. A declared root without `.aw` is fatal; run `oats aweb setup`
   there or set `settings.oats.aweb.root` to the initialized root.
@@ -282,15 +284,19 @@ soul payloads and `--provider` flags with `E_WORKSPACE_SCHEMA` reason
     existing team;
   - `--create <label> [--namespace <domain>]`: creates a new team of this
     deployment's own (hosted, or on a BYOD domain with its namespace controller
-    key), with the label normalised to aweb's team-name rule, makes the root a
-    member, and records it with `oats teams add <label> --team <id>`. A name
-    already taken by a team the root belongs to is reused (a re-run), otherwise
-    suffixed; a team the root isn't in is never adopted;
+    key), with the label normalised to aweb's team-name rule. It accepts the
+    team into a NEW root for it (`<deployment>/.aweb-roots/<label>/.aw`, whose
+    parents are not symlinks), connects it, records `roots[<team id>]` in
+    `oats-local.yaml` settings, and records the team with `oats teams add
+    <label> --team <id>`. A name already taken by a team one of this
+    deployment's roots belongs to is reused (a re-run), otherwise suffixed; a
+    team no root of this deployment is in is never adopted;
   - a shared team the workspace declares without an id (run by its owner):
     creates it and prints the id and the line to commit to
     `oats-workspace.yaml` by a PR; setup never edits the committed file;
-  - `--join <label> --invite <token>`: the root accepts a shared team owner's
-    invite.
+  - `--join <label> --invite <token>`: accepts a shared team owner's invite
+    into a NEW root for that team (as `--create` does), connects it, and
+    records `roots[<team id>]`.
 
   It never prints the API key or an invite token, and it prints the same
   verdict as binding-check.

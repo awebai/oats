@@ -446,9 +446,10 @@ environment ([Teams](#teams)). What the payload does not change is **where the
 `.aw` root is found**: the oats.aweb hook searches bounded candidates, first hit
 wins — the instance home, the Git repository containing it, the soul's work
 repository and the Git repository containing it, then the deployment directory
-(`OATS_WORKSPACE`); never the user home or above the deployment — and that root
-must hold a membership of every team its instances join (`oats aweb setup` makes
-the deployment's root a member of every declared team).
+(`OATS_WORKSPACE`); never the user home or above the deployment. A local root
+holds exactly one team, so an instance's identity for team T is minted from
+`settings.oats.aweb.roots[<T's id>]` (else that root); `oats aweb setup` creates
+one root per team it creates or joins, and records it there.
 A store (`stores: { <name>: <repo ref> }`) names a repository; where a
 knowledge base lives inside it is the knowledge provider's own concern — for
 OKF 2.1.3 that is the **bindings file** (`bases.<alias>.repository` + `root`,
