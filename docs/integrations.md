@@ -220,19 +220,7 @@ warning naming the fresh-purpose remedy. On an older `aw` the pre-1.36.1
 report stands (`aliasReusable: false`, warning naming aweb-abim), because
 that CLI cannot revoke the certificate.
 
-## oats.aweb settings (1.12.2)
-
-> **Kernel 0.30.0 (team model v2).** Teams are no longer provider settings. The
-> kernel declares them in the committed `oats-workspace.yaml` `teams` and the
-> deployment's `oats-local.yaml` ([workspaces.md](workspaces.md#teams)) and hands
-> them to the provider as `OATS_DEFAULT_TEAM`, `OATS_DEFAULT_TEAM_ID`,
-> `OATS_DEFAULT_TEAM_FROM`, `OATS_TEAMS` and `OATS_TEAMS_SOURCE`
-> ([capabilities.md](capabilities.md#teams-in-the-provider-environment)). It no
-> longer sets `OATS_TEAM_ID`, `OATS_TEAM_LABEL` or `OATS_TEAM_LABELS`, and
-> `messaging.byTeam` is a schema error. The provider's own `team` setting is
-> removed by the provider, not the kernel (payloads are opaque to it): oats.aweb
-> 1.17 no longer declares `team` and its binding refuses the undeclared key; it
-> takes the default team from the kernel. The text below describes the 1.12.2 release and its settings.
+## oats.aweb settings (1.17)
 
 Set portable team policy in the workspace/soul `messaging:` payload; set host
 facts in `oats-local.yaml` under `settings.oats.aweb.<key>`. Per-spawn
@@ -245,11 +233,17 @@ soul messaging, `oats-local.yaml` `settings.oats.aweb`, then per-spawn
 soul payloads and `--provider` flags with `E_WORKSPACE_SCHEMA` reason
 `host-only-key`.
 
-- `team: <team id>` (1.12.2; removed from the 0.30 contract, see above). The
-  payload team wins over the pre-0.30 `OATS_TEAM_ID`/`OATS_TEAM_NAME`; if both
-  are set and differ, the hook warns and uses the payload. It is set in the
-  workspace file's `messaging:` or in `settings.oats.aweb.team` for a host
-  override.
+- **Teams are not a setting** (1.17; OATS 0.30 team model v2). The default team
+  and the teams an instance may join come from the kernel
+  (`OATS_DEFAULT_TEAM*`, `OATS_TEAMS`): the committed workspace's shared teams
+  and this deployment's `oats-local.yaml` (see
+  [workspaces.md](workspaces.md#teams)). The kernel keeps provider payloads
+  opaque, so the provider removes its own setting: 1.17 declares no `team`, and
+  a `team` key from the host, the soul or a spawn is refused ("teams are not a
+  setting since oats.aweb 1.17 / OATS 0.30: use oats teams / oats soul teams"). An instance's own identity is minted
+  into its default team; each joined team gets its own identity. Every
+  identity is minted from the root's membership in THAT team, never from the
+  root's active team.
 - `root: /absolute/dir`. Host-owned absolute directory whose `.aw` is the aweb
   minting root. A declared root without `.aw` is fatal; run `oats aweb setup`
   there or set `settings.oats.aweb.root` to the initialized root.
@@ -263,24 +257,43 @@ soul payloads and `--provider` flags with `E_WORKSPACE_SCHEMA` reason
   historical bounded candidate search order exactly (team scope, home, home git
   root, context, context git root, then workspace).
 - `binding-check` answers `needs-configuration` before spawn with one problem
-  per missing item: `no messaging root at <dir>: run oats aweb setup there or
-  set settings.oats.aweb.root`; a missing team (1.12.2 names its `team`
-  setting). With both present it answers
-  `ready`.
-  In classic deployments this readiness check approximates the full bounded
-  spawn search by checking `OATS_TEAM_SCOPE` before `OATS_WORKSPACE`; the spawn
-  hook itself still keeps the exact 1.12.0 bounded candidate order. With no
-  explicit team and no workspace team label, readiness follows spawn: an active
-  aweb team at the root is enough to answer ready; an unmapped workspace team
-  label still reports the team-setting remedy above.
-- `oats aweb setup` is idempotent and uses existing aw primitives. With
-  `--username <u>` it runs `aw init --username <u>` at the messaging root and
-  tells the operator to map the workspace team to `default:<u>.aweb.ai` when
-  that team is not already the configured target. With `AWEB_API_KEY` in the
-  environment it runs `aw init` at the root for the hosted team behind the key.
-  With `--invite <token>` it runs `aw team join <token>`. It never prints the
-  API key or invite token, re-reads `aw team list --json` after the action, and
-  prints the same ready/needs-configuration verdict as binding-check.
+  per missing item:
+  - `no messaging root at <dir>: run oats aweb setup there or set
+    settings.oats.aweb.root`;
+  - with no default team at all: `no teams configured: run oats aweb setup`;
+  - with an unmapped default: `the default team <label> has no provider id
+    yet: its owner runs oats aweb setup, then commits the id, or choose another
+    default with oats teams default`;
+  - a team the root is not a member of: `team <label> (<id>) is shared: ask its
+    owner for an invite, then run oats aweb setup --join <label> --invite
+    <token>`.
+
+  With everything present it answers `ready`. A spawn refuses on the same
+  problems.
+- `oats aweb setup` is idempotent, runs only when asked (never at spawn, mint,
+  retire or wake), and records what it creates through the kernel's config
+  verbs (`oats teams add`, `oats teams default`):
+  - `--username <u>`: `aw init --new-account --username <u>` at the messaging
+    root creates the hosted account and its first team, recorded as the
+    default;
+  - `AWEB_API_KEY` in the environment: `aw init` at the root, for the hosted
+    team behind the key;
+  - `--invite <token>`: `aw team join <token>` makes the root a member of an
+    existing team;
+  - `--create <label> [--namespace <domain>]`: creates a new team of this
+    deployment's own (hosted, or on a BYOD domain with its namespace controller
+    key), with the label normalised to aweb's team-name rule, makes the root a
+    member, and records it with `oats teams add <label> --team <id>`. A name
+    already taken by a team the root belongs to is reused (a re-run), otherwise
+    suffixed; a team the root isn't in is never adopted;
+  - a shared team the workspace declares without an id (run by its owner):
+    creates it and prints the id and the line to commit to
+    `oats-workspace.yaml` by a PR; setup never edits the committed file;
+  - `--join <label> --invite <token>`: the root accepts a shared team owner's
+    invite.
+
+  It never prints the API key or an invite token, and it prints the same
+  verdict as binding-check.
 - `identity.mode: local | global` (default `local`). Any other value is fatal.
   Local mode is the historical behavior: a spawned team identity is minted for
   the instance, or `identity.source` uses the existing retained-seat flow below.

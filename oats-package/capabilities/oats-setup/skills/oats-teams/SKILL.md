@@ -108,11 +108,27 @@ oats soul teams <soul>|'*' [--add a,b] [--remove a,b] [--default <label> | --cle
 ## Add a team
 
 1. Shared: add `teams.<label>` to `oats-workspace.yaml` by PR (with `team`
-   once the provider team exists). Local: `oats aweb setup` creates it and runs
-   `oats teams add`, or run `oats teams add <label> --team <id>` yourself.
+   once the provider team exists; its owner creates it with `oats aweb setup`,
+   which prints the id to commit). Local: `oats aweb setup --create <label>`
+   creates a new team and runs `oats teams add` for you; an existing team you
+   already belong to is `oats teams add <label> --team <id>`.
 2. Put souls in it: `oats soul teams <soul> --add <label>` (or `'*'` for all).
 3. Check: `oats teams` (no problems), `oats spawn <soul> --preview` (the
    label is in `teams` with its id).
+
+## Create a team, or join a shared one (onboarding)
+
+`oats aweb setup` (oats.aweb 1.17) is the one command that creates messaging
+accounts and teams, and it records what it creates in `oats-local.yaml`. It
+runs only when asked, never at spawn:
+
+- **Nothing configured yet:** `oats aweb setup --username <u>` creates the
+  account and its first team, recorded as the default.
+- **A new team of your own:** `oats aweb setup --create <label>`.
+- **A shared team without an id yet** (its owner): `oats aweb setup` creates it
+  and prints the id; commit it to `oats-workspace.yaml` by a PR.
+- **A shared team someone else created:** ask its owner for an invite, then
+  `oats aweb setup --join <label> --invite <token>`.
 
 ## Gotchas
 
