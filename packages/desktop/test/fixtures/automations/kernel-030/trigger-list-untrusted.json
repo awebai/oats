@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "triggerApi": 1,
+    "scope": "/fixture/base/deployment",
+    "host": {
+      "name": "fixture-laptop",
+      "ghUser": {
+        "github.com": "fixture-bot"
+      }
+    },
+    "triggers": [
+      {
+        "kind": "trigger",
+        "id": "ws/okf-review",
+        "name": "okf-review",
+        "origin": {
+          "kind": "workspace",
+          "repoKey": "local//fixture/base/remotes/ws.git",
+          "path": "oats-triggers/okf-review.yaml",
+          "commit": "98e336d36b35eb28e934dcb60f949b429f1b7094",
+          "url": null,
+          "localPath": "/fixture/base/deployment/ws/oats-triggers/okf-review.yaml"
+        },
+        "description": "Review knowledge PRs",
+        "owner": "github.com/fixture-bot",
+        "runsOn": "fixture-laptop",
+        "runsHere": false,
+        "reason": "untrusted",
+        "reasonDetail": "declared for this host, not trusted here; to run it, add the line \"- ws/okf-review\" under automations: trust: in oats-local.yaml",
+        "enabledHere": true,
+        "qualifiedId": "ws/okf-review",
+        "soul": {
+          "name": "reviewer",
+          "origin": {
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "member": "ws"
+          }
+        },
+        "task": "Review {repo}#{number} ({url}).",
+        "on": {
+          "source": "github.pull_request",
+          "repo": "github.com/northwind/knowledge",
+          "events": [
+            "opened"
+          ],
+          "labels": [
+            "okf-harvest"
+          ],
+          "poll": "5m"
+        },
+        "teams": [],
+        "launchConfig": null,
+        "harness": null,
+        "model": null,
+        "concurrency": {
+          "max": 1,
+          "perKey": 1
+        },
+        "lastRun": null,
+        "nextDue": null,
+        "enabled": true,
+        "spawn": {
+          "soul": "reviewer",
+          "purpose": "review-pr-{number}",
+          "task": "Review {repo}#{number} ({url}).",
+          "teams": []
+        },
+        "triggerApi": 1,
+        "scope": "/fixture/base/deployment"
+      }
+    ],
+    "snapshot": {
+      "takenAt": "2026-09-28T23:54:06.520Z",
+      "problems": 0
+    },
+    "scheduler": {
+      "installed": false,
+      "active": false,
+      "unit": "/fixture/base/home/Library/LaunchAgents/ai.oats.schedule-tick.plist",
+      "lastTick": null,
+      "maxConcurrent": 1,
+      "tickIntervalSec": 60,
+      "workspace": "/fixture/base/deployment",
+      "registered": false,
+      "workspaces": [],
+      "live": 0
+    }
+  }
+}

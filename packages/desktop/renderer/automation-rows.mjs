@@ -8,17 +8,18 @@
 const text = v => typeof v === 'string' && v ? v : null;
 const list = v => Array.isArray(v) ? v : [];
 const record = v => !!v && typeof v === 'object' && !Array.isArray(v);
-const REASONS = new Set(['host-unnamed', 'assigned-elsewhere', 'owner-mismatch']);
+const REASONS = new Set(['host-unnamed', 'assigned-elsewhere', 'owner-mismatch', 'untrusted']);
 /** The whitelisted template fields (§2.3): the only ones the kernel substitutes. */
 export const TASK_FIELDS = Object.freeze(['repo', 'number', 'url', 'event', 'headSha']);
 
 /** Which group a row belongs to, from the kernel's placement:
  * here: this computer runs it, or would but it is off / invalid here;
- * attention: named for this computer but it cannot run (owner-mismatch), or an invalid definition placed here;
+ * attention: named for this computer but it cannot run (owner-mismatch, or untrusted: kernel 0.30
+ *   automations.trust does not admit it), or an invalid definition placed here;
  * elsewhere: another host, or this host has no name. */
 export function automationGroup(row) {
   if (row.reason === 'assigned-elsewhere' || row.reason === 'host-unnamed') return 'elsewhere';
-  if (row.reason === 'owner-mismatch') return 'attention';
+  if (row.reason === 'owner-mismatch' || row.reason === 'untrusted') return 'attention';
   if (row.invalid || row.unreadable) return 'attention';
   return 'here';
 }
@@ -118,6 +119,8 @@ export function hostLogin(host, owner) {
 export function placementText(row, host) {
   if (row.origin.kind === 'local') return { label: 'This computer', tone: row.enabledHere ? 'ok' : 'muted', detail: 'Local: runs on this computer as its own gh login' };
   if (row.reason === 'owner-mismatch') return { label: 'Wrong account here', tone: 'warn', detail: row.reasonDetail };
+  // The kernel's reasonDetail names the oats-local.yaml line that trusts it.
+  if (row.reason === 'untrusted') return { label: 'Not trusted here', tone: 'warn', detail: row.reasonDetail };
   if (row.reason === 'host-unnamed') return { label: row.runsOn || 'Not named', tone: 'muted', detail: 'This computer has no host name' };
   if (row.reason === 'assigned-elsewhere') return { label: row.runsOn || 'Another host', tone: 'muted', detail: row.reasonDetail };
   return { label: 'This computer', tone: row.enabledHere ? 'ok' : 'muted', detail: host?.name ? `This computer is ${host.name}` : null };

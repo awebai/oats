@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { automationRows, groupRows, filterRows, taskParts, cronInWords, onSummary, placementText, ownerParts, hostLogin, soulOriginText, testResult, triggerStatus, templateLabel, localScheduleDefinition } from '../renderer/automation-rows.mjs';
+import { automationRows, automationGroup, groupRows, filterRows, taskParts, cronInWords, onSummary, placementText, ownerParts, hostLogin, soulOriginText, testResult, triggerStatus, templateLabel, localScheduleDefinition } from '../renderer/automation-rows.mjs';
 import { createAutomationsView, automationsSupported } from '../renderer/views/automations.mjs';
 import { scheduleDraft } from '../renderer/schedule-read-data.mjs';
 
@@ -260,4 +260,34 @@ test('the mounted page: gates on the CLI, then reads and acts through POST /api/
   assert.deepEqual(opened, ['/fx/clones/agents/oats-triggers/pr-review.yaml'], 'Open file opens the clone\'s file read-only, before the web page');
   el.querySelector('.page-bar-actions button[data-verb=test]').click(); await tick(); await tick();
   assert.match(el.querySelector('.page-card[data-card="Test result"]').textContent, /gh is missing/, 'an unavailable reply shows its reason');
+});
+
+// Kernel 0.30 automations.trust (#300), from a REAL capture (fixtures/automations/kernel-030,
+// capture-untrusted.mjs + provenance.json): a workspace trigger and schedule placed on this
+// computer (runsOn + owner match) that its oats-local.yaml does not trust. They never run
+// here, so they are never shown as running here: they need attention, with the line to add.
+const raw030 = name => JSON.parse(readFileSync(new URL(`./fixtures/automations/kernel-030/${name}.json`, import.meta.url), 'utf8'));
+test('untrusted (0.30): a placed but untrusted automation needs attention here and shows the oats-local.yaml line; never "runs here"', async t => {
+  for (const kind of ['trigger', 'schedule']) {
+    const json = raw030(`${kind}-list-untrusted`);
+    assert.equal(json.ok, true);
+    const rows = automationRows(json.result, kind).rows.filter(r => r.origin.kind === 'workspace');
+    assert.equal(rows.length, 1);
+    const [row] = rows;
+    assert.deepEqual([row.runsHere, row.reason], [false, 'untrusted']);
+    assert.equal(automationGroup(row), 'attention');
+    assert.deepEqual(groupRows(rows).map(g => [g.id, g.rows.map(r => r.id)]), [['attention', [row.id]]]);
+    const place = placementText(row, json.result.host);
+    assert.deepEqual([place.label, place.tone], ['Not trusted here', 'warn']);
+    assert.equal(place.detail, `declared for this host, not trusted here; to run it, add the line "- ${row.id}" under automations: trust: in oats-local.yaml`);
+    const u = mount(t, kind, { json: json.result }); await tick();
+    const el = u.$$('.auto-row').find(r => r.dataset.id === row.id);
+    assert.equal(el.closest('.auto-group').dataset.group, 'attention');
+    assert.match(el.querySelector('.auto-place').textContent, /Not trusted here/);
+    assert.match(el.querySelector('.auto-place').title, /add the line "- ws\/(okf-review|nightly)" under automations: trust:/);
+  }
+  // The same host's workspace status names each missing line (warnings the Desktop shows verbatim).
+  const status = raw030('workspace-status-untrusted').result;
+  assert.deepEqual(status.warnings.map(w => [w.code, w.kind, w.id]), [['automation-untrusted', 'trigger', 'ws/okf-review'], ['automation-untrusted', 'schedule', 'ws/nightly']]);
+  assert.deepEqual(status.automations.rows.map(r => [r.id, r.runsHere, r.reason]), [['ws/okf-review', false, 'untrusted'], ['ws/nightly', false, 'untrusted']]);
 });

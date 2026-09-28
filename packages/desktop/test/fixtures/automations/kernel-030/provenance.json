@@ -1,0 +1,51 @@
+{
+  "source": "cli-dev-okf-ops for #300 (automations.trust); capture-untrusted.mjs (node capture-untrusted.mjs <repo> <out>)",
+  "kernel": "0.29.4 + #300",
+  "redactions": [
+    "<base> (capture scratch) → /fixture/base"
+  ],
+  "files": {
+    "trigger-list-untrusted": {
+      "argv": [
+        "oats",
+        "trigger",
+        "list",
+        "--dir",
+        "<base>/deployment",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.29.4 + #300",
+      "sourceSha256": "715702bcbd12b8d0be94ba734a41e82f9320f8beaebd431baf3c4cb1347fc4d3",
+      "fixtureSha256": "0b733376a0087cd002890dcb3ce10352b0e2a00e6383c8275e353a9ec9aa9f00"
+    },
+    "schedule-list-untrusted": {
+      "argv": [
+        "oats",
+        "schedule",
+        "list",
+        "--dir",
+        "<base>/deployment",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.29.4 + #300",
+      "sourceSha256": "fc167f6e112a909acd558257b100bf9fc1382d051cc315285258acc646811525",
+      "fixtureSha256": "e6fe56ff748b6c6537c8990879918535c460b79a612ab246e6bf2700883eea86"
+    },
+    "workspace-status-untrusted": {
+      "argv": [
+        "oats",
+        "workspace",
+        "status",
+        "--dir",
+        "<base>/deployment",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.29.4 + #300",
+      "sourceSha256": "433e31a50a9ed77b79d6039488c228ddfad5aca25ad3f6816b41468bac619876",
+      "fixtureSha256": "59e2dae7f27ef9081d25c84b6ec6f245ea190883c67a194c5e80a872e7aeb415"
+    }
+  }
+}
