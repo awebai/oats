@@ -29,6 +29,7 @@ packages:
 
 teams:
   global: { description: The framework's expert souls and its package experts }
+  okf: { description: The okf knowledge operations team (oats.okf's harvester and maintainer package souls) }
 
 # The framework's own souls consume the official core, knowledge and messaging
 # providers as packages, exactly as an adopter does. Every soul gets messaging:
