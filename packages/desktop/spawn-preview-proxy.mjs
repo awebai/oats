@@ -22,7 +22,8 @@ export async function proxySpawnPreview(event, path, opts, { rendererURL, connec
     if (typeof raw !== 'string' || Buffer.byteLength(raw) > 4 * 1024 * 1024) return reply('E_CLI_OUTPUT_LIMIT');
     let value; try { value = JSON.parse(raw); } catch { return reply('E_CLI_PROTOCOL'); }
     if (value?.spawnPreviewViewApi !== 1) return reply('E_CLI_PROTOCOL');
-    if (value.status === 'unavailable') return { ok: response.ok, status: response.status, body: previewFailure(value.reason?.code, value.target) };
+    // The kernel's refusal words (and a launch refusal's fix) travel to the dialog, re-validated here.
+    if (value.status === 'unavailable') return { ok: response.ok, status: response.status, body: previewFailure(value.reason?.code, value.target, value.reason?.message, value.reason?.fix) };
     const target = previewTarget(value.target), data = previewData(value.data, target);
     if (!response.ok || value.status !== 'available' || !data || target.workspace !== url.searchParams.get('ws')) return reply('E_CLI_PROTOCOL');
     return { ok: true, status: response.status, body: { spawnPreviewViewApi: 1, status: 'available', target, data, reason: null } };

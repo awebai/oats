@@ -54,7 +54,7 @@ export function createSpawnPreviewBoundary({ invoke = cliSpawnPreview } = {}) {
         if (flights.size >= 2) return previewFailure('E_BUSY', target);
         const slot = {}; flights.add(slot);
         const flight = Promise.resolve().then(() => invoke(cli, { target, choices })).then(envelope => {
-          if (envelope?.schemaVersion !== 1 || envelope.ok !== true) return previewFailure(envelope?.error?.code, target, envelope?.error?.message);
+          if (envelope?.schemaVersion !== 1 || envelope.ok !== true) return previewFailure(envelope?.error?.code, target, envelope?.error?.message, envelope?.error?.details?.fix);
           const data = previewData(envelope.result, target);
           return data ? { spawnPreviewViewApi: 1, status: 'available', target, data, reason: null } : previewFailure('E_CLI_PROTOCOL', target);
         }).catch(() => previewFailure('E_CLI_FAILED', target)).finally(() => { flights.delete(slot); pending.delete(identity); });

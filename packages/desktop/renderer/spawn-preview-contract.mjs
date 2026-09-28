@@ -192,10 +192,12 @@ const KERNEL_CODE = /^E_[A-Z0-9_]{1,63}$/;
 /** A kernel refusal keeps its own code and message (bounded, printable): the
  * kernel's remedy — "git clone … " for E_CLONE_MISSING — is the useful part.
  * Desktop-side codes use the fixed table. */
-export function previewFailure(code, target = null, kernelMessage) {
+export function previewFailure(code, target = null, kernelMessage, kernelFix) {
   const kernel = typeof code === 'string' && KERNEL_CODE.test(code) && typeof kernelMessage === 'string'
     && kernelMessage.trim() && kernelMessage.length <= 2048 && safe(kernelMessage.replace(/\n/g, ' '), 2048);
-  if (kernel) return { spawnPreviewViewApi: 1, status: 'unavailable', target: previewTarget(target), data: null, reason: { code, message: kernelMessage } };
+  // A launch refusal's `fix` (E_HARNESS_UNAVAILABLE, E_LAUNCH_CONFIG_UNKNOWN: the kernel's own words) travels with it.
+  const fix = kernel && typeof kernelFix === 'string' && kernelFix.trim() && safe(kernelFix, 1024) ? { fix: kernelFix } : {};
+  if (kernel) return { spawnPreviewViewApi: 1, status: 'unavailable', target: previewTarget(target), data: null, reason: { code, message: kernelMessage, ...fix } };
   if (!Object.hasOwn(errors, code)) code = 'E_CLI_FAILED';
   return { spawnPreviewViewApi: 1, status: 'unavailable', target: previewTarget(target), data: null, reason: { code, message: errors[code] } };
 }
