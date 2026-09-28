@@ -1429,10 +1429,18 @@ async function workspaceCmd() {
   const locked = new Set(packages.map((p) => p.id));
   const unsynced = declared.filter((id) => !locked.has(id));
   const stale = packages.filter((p) => !declared.includes(p.id)).map((p) => p.id);
-  const result = { workspaceStatusApi: 1, standalone: standalone || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, teams: sharedTeamRows(discovery) }, members, packages, declaredPackages: declared, unsynced, stale, external: (discovery.external || []).map((e) => ({ source: e.source, soul: e.soul.name })), problems: discovery.problems, warnings: discovery.warnings ?? [] };
+  const result = { workspaceStatusApi: 1, standalone: standalone || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, teams: sharedTeamRows(discovery) }, members, packages, declaredPackages: declared, unsynced, stale, external: (discovery.external || []).map((e) => ({ source: e.source, soul: e.soul.name })), problems: discovery.problems, warnings: [...(discovery.warnings ?? [])] };
   // Workspace automations (0.29.0), from the snapshot `oats sync` took, placed on this host.
   const actx = scopeAutomations(ctx.deploymentDir, {});
   result.automations = { host: actx.host.name, snapshot: actx.snapshot ? { takenAt: actx.snapshot.takenAt, problems: actx.snapshot.problems.length } : null, rows: [...actx.triggers, ...actx.schedules].map((a) => ({ kind: a.kind, id: a.id, runsOn: a.runsOn, owner: a.owner, runsHere: a.placement.runsHere, reason: a.placement.reason, enabledHere: a.placement.enabledHere, origin: a.origin, ...(a.invalid ? { invalid: a.invalid } : {}) })) };
+  // Automation trust (0.30): a workspace automation placed here but not trusted, and a trust entry
+  // that names none, are warnings the operator acts on in oats-local.yaml.
+  for (const a of [...actx.triggers, ...actx.schedules].filter((x) => x.placement.reason === "untrusted")) {
+    result.warnings.push({ code: "automation-untrusted", kind: a.kind, id: a.id, message: `${a.kind} ${a.id} is declared for this host (${a.runsOn}, as ${a.owner}) but not trusted here, so it does not run`, remedy: A.trustRemedy(a.id) });
+  }
+  for (const entry of A.staleTrust(actx.host, [...actx.triggers, ...actx.schedules])) {
+    result.warnings.push({ code: "automation-trust-stale", entry, message: `oats-local.yaml automations.trust names ${entry}, which is no workspace trigger or schedule${actx.snapshot ? "" : " (no automations snapshot yet: run oats sync)"}; its member may not have synced yet` });
+  }
   await workspaceStatusFacts(result, discovery, lock, ctx);
   if (JSON_MODE) { jsonOk(result); return; }
   console.log(`workspace ${workspaceName(discovery)}  (${discovery.key} @ ${short(discovery.commit)})  local ${shortPath(ctx.localPath)}\n`);
@@ -1451,7 +1459,7 @@ async function workspaceCmd() {
     printTable(["kind", "id", "runs on", "owner", "here"], result.automations.rows.map((r) => [r.kind, r.id, r.runsOn, r.owner, r.runsHere ? "runs here" : r.invalid ? "invalid" : r.reason ?? "disabled here"]));
   }
   if (discovery.problems.length) { console.log("\nProblems:"); for (const p of discovery.problems) console.log(`  ${p.code}  ${p.repoKey ? `${memberLabel(p.repoKey)}:` : ""}${p.path}  ${p.message}`); }
-  if (discovery.warnings?.length) { console.log("\nWarnings:"); for (const w of discovery.warnings) console.log(`  ${w.code}  ${w.message}`); }
+  if (result.warnings.length) { console.log("\nWarnings:"); for (const w of result.warnings) console.log(`  ${w.code}  ${w.message}${w.remedy ? `\n    ${w.remedy}` : ""}`); }
 }
 
 /** The committed (shared) teams as `workspace status` reports them: rows in label order (team model v2). */
