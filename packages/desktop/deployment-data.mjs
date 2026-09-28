@@ -135,7 +135,8 @@ export function workspaceStatusData(document, deployment) {
     declaredPackages: strings(data.declaredPackages), unsynced: strings(data.unsynced), stale: strings(data.stale),
     external: array(data.external).map(row => fields(row, ['source', 'soul', 'team'])),
     problems: problemRows(data.problems), // warnings[] since kernel #185 (for example an unmapped team label); absent before.
-    warnings: own(data, 'warnings') ? array(data.warnings).map(row => fields(row, ['code', 'message', 'label', 'soul', 'repoKey'])) : [] });
+    // 0.30 automation trust adds automation-untrusted {kind, id, remedy} and automation-trust-stale {entry}.
+    warnings: own(data, 'warnings') ? array(data.warnings).map(row => fields(row, ['code', 'message', 'label', 'soul', 'repoKey', 'kind', 'id', 'remedy', 'entry'])) : [] });
 }
 
 /** status stays a native {root,agents,workspace} observation. No task/state

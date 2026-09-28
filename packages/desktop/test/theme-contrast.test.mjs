@@ -308,7 +308,7 @@ for (const [name] of palettes) test(`${name}: actual identity/runtime markup win
 });
 
 for (const [name] of palettes) test(`${name}: workspace catalog, sources and sync text use AA tokens on their computed surfaces`, t => {
-  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"><header class="workspace-header"><div class="ws-sync"><span class="ws-sync-state warn">Lock out of date</span></div></header><p class="catalog-note warn">note</p><div class="filters"></div><div class="caps"></div><div class="sections"></div><div class="sources"></div><div class="graph"></div></main></body></html>`);
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"><header class="workspace-header"><div class="ws-sync"><span class="ws-sync-state warn">Lock out of date</span></div></header><p class="catalog-note warn">note</p><p class="catalog-note catalog-remedy">add the line</p><div class="filters"></div><div class="caps"></div><div class="sections"></div><div class="sources"></div><div class="graph"></div></main></body></html>`);
   const doc = dom.window.document;
   for (const source of [css, identityCSS, discoveryCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
   t.after(() => dom.window.close());
@@ -356,7 +356,7 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
     ['.catalog-select.active .catalog-select-key', '.catalog-select.active', 'accent', 'sel'],
     ['.catalog-select.active select', '.catalog-select.active', 'fg', 'sel'],
     ['.catalog-shown', '.oats-view', 'muted', 'bg'], ['.catalog-clear', '.oats-view', 'accent', 'bg'],
-    ['.catalog-note.warn', '.oats-view', 'warn', 'bg'],
+    ['.catalog-note.warn', '.oats-view', 'warn', 'bg'], ['.catalog-note.catalog-remedy', '.oats-view', 'muted', 'bg'],
     // Sections: jump pills (current = ink), titles with their lead, repo sub-headings.
     ['.capability-nav button[aria-current=true]', '.capability-nav button[aria-current=true]', 'primary-fg', 'primary-bg'],
     ['.capability-nav button[aria-current=false]', '.capability-nav button[aria-current=false]', 'fg', 'surface'],
