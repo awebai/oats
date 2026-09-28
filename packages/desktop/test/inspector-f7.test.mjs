@@ -191,6 +191,8 @@ test('soul page: team-model-2 shows "Teams here" from the soul teams route; with
   const { soulTeamsData } = await import('../deployment-data.mjs');
   const soulTeamsDoc = soulTeamsData(JSON.parse(readFileSync(new URL('./fixtures/team-model-v2/soul-teams-show.json', import.meta.url), 'utf8')));
   const urls = [];
+  // The roster row carries the kernel's soul key (#275): the bare name for a member soul.
+  const keyed = { ...soulSelection, agent: { ...soulSelection.agent, key: 'release-manager' } };
   const page = async () => {
     const previous = currentWorkspace(); setWorkspace('/team');
     const dom = new JSDOM('<body><main><aside hidden></aside></main></body>'), el = dom.window.document.querySelector('aside');
@@ -199,7 +201,7 @@ test('soul page: team-model-2 shows "Teams here" from the soul teams route; with
       return url.startsWith('/api/workspace-soul-teams') ? { status: 'ok', soulTeams: structuredClone(soulTeamsDoc) } : structuredClone(soul);
     } } });
     t.after(() => { inspector.dispose(); dom.window.close(); setWorkspace(previous); });
-    await inspector.show(soulSelection); for (let i = 0; i < 4; i++) await tick();
+    await inspector.show(keyed); for (let i = 0; i < 4; i++) await tick();
     return el;
   };
   t.after(() => resetCliStateForTests());
@@ -219,17 +221,28 @@ test('soul page: team-model-2 shows "Teams here" from the soul teams route; with
   assert.equal(urls.some(([url]) => url === '/api/workspace-soul-teams'), false);
 });
 
-test('soul page: a package soul (not a member) gets no editable "Teams here" yet: the CLI is named instead (#269: the kernel key is not on the roster)', async t => {
-  const pkg = structuredClone(soul); pkg.souls[0].kind = 'package';
-  const urls = [];
+test("soul page: 'Teams here' is keyed by the roster row's kernel key: a package soul sends <package>/<soul>; a row without a key names the CLI (#275, #276)", async t => {
   const previous = currentWorkspace(); setWorkspace('/team');
-  const dom = new JSDOM('<body><main><aside hidden></aside></main></body>'), el = dom.window.document.querySelector('aside');
-  const inspector = createSoulInspector(el, { layout: 'page', ctx: { api: async (url, opts) => { urls.push(url.replace(/\?.*$/, '')); return structuredClone(pkg); } } });
-  t.after(() => { inspector.dispose(); dom.window.close(); setWorkspace(previous); resetCliStateForTests(); });
+  t.after(() => { setWorkspace(previous); resetCliStateForTests(); });
   await refreshCli({ api: async () => ({ ...doc('version'), features: [...doc('version').features, 'team-model-2'], ok: true, bin: '/fixture/bin/oats' }) });
-  await inspector.show(soulSelection); for (let i = 0; i < 4; i++) await tick();
-  const card = el.querySelector('[data-card="Teams here"]');
-  assert.equal(card.querySelector('.page-note').textContent, 'For now, set this soul\'s teams here with the CLI: oats soul teams <package>/release-manager.');
-  assert.equal(card.querySelector('button'), null);
-  assert.equal(urls.includes('/api/workspace-soul-teams'), false, 'nothing asked with a key that may be wrong');
+  const open = async (agent, kind) => {
+    const inspected = structuredClone(soul); inspected.souls[0].kind = kind; const bodies = [];
+    const dom = new JSDOM('<body><main><aside hidden></aside></main></body>'), el = dom.window.document.querySelector('aside');
+    const inspector = createSoulInspector(el, { layout: 'page', ctx: { api: async (url, opts) => {
+      if (!url.startsWith('/api/workspace-soul-teams')) return structuredClone(inspected);
+      const body = JSON.parse(opts.body); bodies.push(body);
+      return { status: 'refused', reason: { code: 'E_SOUL_UNKNOWN', message: `no soul ${body.soul} here` } };
+    } } });
+    t.after(() => { inspector.dispose(); dom.window.close(); });
+    await inspector.show({ ...soulSelection, agent: { ...soulSelection.agent, ...agent } }); for (let i = 0; i < 4; i++) await tick();
+    return { card: el.querySelector('[data-card="Teams here"]'), bodies };
+  };
+  const pkg = await open({ key: 'acme.pkg/release-manager' }, 'package');
+  assert.deepEqual(pkg.bodies, [{ soul: 'acme.pkg/release-manager', action: 'show' }], "the kernel's key, never a name the Desktop builds");
+  const external = await open({ key: 'release-manager' }, 'external');
+  assert.deepEqual(external.bodies, [{ soul: 'release-manager', action: 'show' }], 'the kind does not matter: the key does');
+  const unkeyed = await open({}, 'package');
+  assert.equal(unkeyed.card.querySelector('.page-note').textContent, "For now, set this soul's teams with the CLI (oats soul teams): this OATS does not report its key yet.");
+  assert.equal(unkeyed.card.querySelector('button'), null);
+  assert.deepEqual(unkeyed.bodies, [], 'nothing asked without the kernel key');
 });

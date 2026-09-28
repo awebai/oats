@@ -494,16 +494,18 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     // (kernel feature team-model-2): "Teams here", this computer's membership, editable.
     teamsHere?.dispose(); teamsHere = null;
     const teamModel2 = (cliStatus()?.features || []).includes('team-model-2');
-    // The kernel keys a soul's teams by its name for a member soul; a package or external soul's key
-    // is not on the roster yet (the engineer, #269), so its card is not offered: the CLI says it.
-    if (teamModel2 && soul.kind !== 'member') {
+    // `oats soul teams` takes the kernel's soul key (the roster row's `key`: the bare name for a member
+    // soul, <package>/<soul> for a package soul). A row without one (the kernel does not report it yet)
+    // gets no card: the CLI says it. It opens by itself once the kernel carries the key (#275, #276).
+    const soulKey = typeof selection?.agent?.key === 'string' && selection.agent.key ? selection.agent.key : null;
+    if (teamModel2 && !soulKey) {
       const { card: note } = pageCard(doc, 'Teams here', { lead: 'on this computer' });
-      note.append(node('p', `For now, set this soul's teams here with the CLI: oats soul teams <package>/${selection?.agent?.name ?? '<soul>'}.`, 'page-note'));
+      note.append(node('p', "For now, set this soul's teams with the CLI (oats soul teams): this OATS does not report its key yet.", 'page-note'));
       side.append(note);
-    } else if (teamModel2 && typeof selection?.agent?.name === 'string') {
+    } else if (teamModel2) {
       const soulTeamsRoute = async body => teamsAnswer(await postJson(ctx, `/api/workspace-soul-teams${wsQuery()}`, body), 'soulTeams', 'The teams of this soul could not be read.');
       const teamsRoute = async () => teamsAnswer(await postJson(ctx, `/api/workspace-teams${wsQuery()}`, { action: 'list' }), 'teams', 'The teams on this computer could not be read.');
-      teamsHere = createSoulTeamsHere(doc, { soul: selection.agent.name, request: soulTeamsRoute, listTeams: teamsRoute });
+      teamsHere = createSoulTeamsHere(doc, { soul: soulKey, request: soulTeamsRoute, listTeams: teamsRoute });
       side.append(teamsHere.element);
     } else if (teams) {
       const card = pageCard(doc, 'Teams', { lead: 'organise · add defaults · never restrict' });
