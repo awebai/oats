@@ -56,9 +56,11 @@ test('spawn preview teams: the v2 rows keep the spawn Teams choice (not "unreada
   const before = previewData(structuredClone(v29), target);
   assert.ok(before && Array.isArray(before.teams));
   const v2 = structuredClone(v29);
+  delete v2.team; // v2 removes the primary label (K1: "removes team")
   v2.teams = [{ label: 'antares-oats', team: 'a:juan.aweb.ai', default: true, from: 'local' }, { label: 'oats', team: 'oats:oats.aweb.ai', default: false, from: 'shared' }];
   const after = previewData(v2, target);
-  assert.ok(after, 'the preview is read'); assert.deepEqual(after.teams.map(t => [t.label, t.default, t.mapped]), [['antares-oats', true, true], ['oats', false, true]]);
+  assert.ok(after, 'the preview is read, with team removed'); assert.equal(after.team, null);
+  assert.deepEqual(after.teams.map(t => [t.label, t.default, t.mapped]), [['antares-oats', true, true], ['oats', false, true]]);
 });
 
 test('workspace status: defaults.byTeam optional; workspace.teams as strings (0.29) or v2 shared-team rows', () => {

@@ -215,7 +215,8 @@ export function previewData(v, expected) {
     || v.work !== e.work || v.repo !== e.repo || harnessOf(v) !== e.harness || v.model !== e.model || v.launchConfig !== e.launchConfig
     || (v.yolo ?? null) !== e.yolo || v.backend !== e.backend || (v.relation ?? null) !== (e.relation?.kind ?? null)
     || Object.hasOwn(v, 'policy') && v.policy?.childSpawns?.allowed !== e.childSpawns) return null;
-  if (!safe(v.modelSource) || !v.modelSource || v.team !== null && !safe(v.team, 256)
+  // `team` (the primary label) is 0.29's; team model v2 (0.30) removes it: absent reads as null.
+  if (!safe(v.modelSource) || !v.modelSource || v.team != null && !safe(v.team, 256)
     || (e.work === 'worktree' ? !absolute(v.worktree) : v.worktree !== null)
     || !record(v.backendStatus) || v.backendStatus.name !== v.backend || typeof v.backendStatus.installed !== 'boolean' || v.backendStatus.started !== false
     || !record(v.preflight) || !['complete', 'timeout'].includes(v.preflight.status) || !Number.isInteger(v.preflight.budgetMs) || v.preflight.budgetMs <= 0 || v.preflight.budgetMs > 20000
