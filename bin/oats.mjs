@@ -3338,7 +3338,7 @@ Usage:
       [--model <m>] [--json]                 (same identity, worktree, notes and launch env; no
                                             spawn hooks); --model replaces the recorded model
                                             for this and later starts; a live harness is refused
-  oats spawn <agent> [--task <text>]         spawn an instance (tmux/Herdr; --no-launch
+  oats spawn <agent> [--task <text> | --task-file <f>]  spawn an instance (tmux/Herdr; --no-launch
       [--purpose <slug>] [--repo <r>]       = scaffold only); the agent is a workspace
       [--parent <instance>]                 soul or a capability-defined agent
       [--relation child|sibling|parent|unrelated]    --relation + --relative-to anchor the
