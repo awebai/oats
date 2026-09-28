@@ -6,8 +6,9 @@ description: >-
   stores, external), oats-membership.yaml or a soul.yaml; adding a
   member, a team or a default capability; deciding whether a fact belongs in a
   shared file or on one machine; or explaining a refusal like "why can't I
-  spawn X" or an E_* code. For package pins use oats-package-pins, for teams
-  (shared or local, and which souls are in them) oats-teams, for triggers and schedules oats-automations.
+  spawn X" or an E_* code. For package pins use `/oats-package-pins`, for
+  teams (shared or local, and which souls are in them) `/oats-teams`, for
+  triggers and schedules `/oats-automations`.
   Part of the setup and config of an OATS workspace (oats.setup); day-to-day
   operation inside an instance is oats.core.
 ---
@@ -41,7 +42,7 @@ by default.
 | members, package pins, shared teams, defaults, stores, external souls, the messaging payload | `oats-workspace.yaml` in the **host** repo | shared (Git) |
 | "this repo is a member" | `oats-membership.yaml` in **each** member | shared (Git) |
 | a soul's role, work mode, capability sources, slot payloads, floors | `souls/<name>/soul.yaml` (+ `AGENTS.md`, `skills/`, `okf.json`) | shared (Git) |
-| workspace triggers and schedules | `oats-triggers/`, `oats-schedules/` in a member (kernel 0.29.0; see oats-automations) | shared (Git) |
+| workspace triggers and schedules | `oats-triggers/`, `oats-schedules/` in a member (kernel 0.29.0; see `/oats-automations`) | shared (Git) |
 | host paths, custody, settings a manifest marks host-owned, clones, launch configurations, souls disabled here; local teams, the default team, which souls are in which teams (`oats teams`, `oats soul teams`) | `oats-local.yaml` in the deployment directory | **this machine** |
 | exact package commits and integrity | `oats-lock.json` | this machine, written by `oats sync` only |
 | a fact about one spawn (a retained seat, a team to join now) | `oats spawn … --provider <cap> key=value` | one instance |
@@ -57,8 +58,8 @@ is wrong on every other machine.
 |---|---|---|
 | `schemaVersion: 2`, `name` | required | missing, or another version |
 | `members:` | repo refs (`git:github.com/<org>/<repo>`), **no `@revision`**; the host lists itself | a revision, a duplicate |
-| `packages:` | `<id>: v<version>` (official catalog) or `git:<repo>@<tag or full commit>`; see oats-package-pins | a branch, an id outside the catalog in bare form |
-| `teams:` | shared teams: `<label>: { description?, team? }` (`team` is the provider team id; without it the team is unmapped) | a label referenced but declared nowhere (`E_TEAM_UNKNOWN`, see oats-teams) |
+| `packages:` | `<id>: v<version>` (official catalog) or `git:<repo>@<tag or full commit>`; see `/oats-package-pins` | a branch, an id outside the catalog in bare form |
+| `teams:` | shared teams: `<label>: { description?, team? }` (`team` is the provider team id; without it the team is unmapped) | a label referenced but declared nowhere (`E_TEAM_UNKNOWN`, see `/oats-teams`) |
 | `defaults.capabilities` | `<capability>: { from: package \| <repo key> }` for every soul | `from: here` (souls only), a non-canonical repo key |
 | `defaults.knowledge` / `messaging` / `tasks` | at most one capability per slot, or `none` | two capabilities, a capability of another layer (`E_SLOT_CONFLICT`) |
 | `messaging:` | the messaging provider's payload | `byTeam` (removed in 0.30: the id is `teams.<label>.team`) |
@@ -130,20 +131,20 @@ reports this deployment's local file and lock.
 | Code | Usually means | Fix |
 |---|---|---|
 | `E_WORKSPACE_SCHEMA` | a declaration file is malformed; the path is named | fix that field (a member `@revision`, a non-canonical `from:`, an absolute path, a `hostOnly` key in a committed payload, a removed team key: `byTeam`, a soul or membership `team`, `external[].team`) |
-| `E_LOCAL_MISSING` | no `oats-local.yaml` in reach | run from the deployment directory or pass `--dir`; on a new machine, oats-onboarding |
+| `E_LOCAL_MISSING` | no `oats-local.yaml` in reach | run from the deployment directory or pass `--dir`; on a new machine, `/oats-onboarding` |
 | `E_MEMBERSHIP_UNCONFIRMED`, `E_NOT_A_MEMBER` | the soul or capability belongs to a repo that is not a confirmed member | `oats workspace status`; fix the listing, the backlink or the Git access |
 | `E_SOUL_UNKNOWN` | no confirmed member, external entry or package ships that soul | `oats souls`; the soul is merged on the member's default branch, its member is confirmed, its package is pinned and synced |
 | `E_SOUL_AMBIGUOUS` | two souls share the bare name | use the qualified name it lists (`<member>/<soul>`, `<package>/<soul>`) |
 | `E_SOUL_DISABLED` | `souls.disabled` in this machine's `oats-local.yaml` | re-enable there, if the operator agrees |
-| `E_TEAM_UNKNOWN` | a label in `oats-local.yaml` (`defaultTeam`, `souls.teams`, `souls.default`) declared in neither file; that soul's spawn is refused | `oats teams add` it, or remove the reference; see oats-teams |
+| `E_TEAM_UNKNOWN` | a label in `oats-local.yaml` (`defaultTeam`, `souls.teams`, `souls.default`) declared in neither file; that soul's spawn is refused | `oats teams add` it, or remove the reference; see `/oats-teams` |
 | `E_TEAM_NOT_ELIGIBLE` | a soul's `souls.default` is not one of its teams | `oats soul teams <soul> --add <label>` first, or `--clear-default` |
 | `E_TEAM_UNCONFIGURED` | messaging is active and the deployment has no default team | `oats teams add` (the first becomes the default) or `oats teams default <label>` |
-| `E_TEAM_IN_USE`, `E_TEAM_SHARED`, `E_TEAM_EXISTS` | `oats teams remove`/`add` refused: still referenced, shared (edit by PR), or already declared | see oats-teams |
+| `E_TEAM_IN_USE`, `E_TEAM_SHARED`, `E_TEAM_EXISTS` | `oats teams remove`/`add` refused: still referenced, shared (edit by PR), or already declared | see `/oats-teams` |
 | `E_SLOT_CONFLICT` | two capabilities fill one slot, a slot default of the wrong layer, or `none` beside the soul's own capability of that layer | keep one per slot |
 | `E_CAPABILITY_MISSING` | a capability is not where `from:` says, or `--provider` names one the soul does not resolve | `oats capabilities`; correct the `from:` or pin the package |
 | `E_CAPABILITY_PRIVATE` | a repo-owned capability used by another repo's soul | use it only from its own repo, or ask its owners to share it |
-| `E_PACKAGE_MISSING` | `from: package` but the lock lacks it, or the package is no longer declared | pin it (oats-package-pins), then `oats sync` |
-| `E_PACKAGE_INTEGRITY` | a tag moved or the content changed under a pin | pin a new version; see oats-package-pins |
+| `E_PACKAGE_MISSING` | `from: package` but the lock lacks it, or the package is no longer declared | pin it (`/oats-package-pins`), then `oats sync` |
+| `E_PACKAGE_INTEGRITY` | a tag moved or the content changed under a pin | pin a new version; see `/oats-package-pins` |
 | `E_COMPATIBILITY` | a soul's `compatibility` floor is above the pinned version | bump the pin, or relax the floor, by PR |
 | `E_CAPABILITY_INCOMPATIBLE` | a module's `compatibility.oats` excludes this kernel | update the kernel (`oats update`) or pin a compatible version |
 | `E_SKILL_DUPLICATE` | two modules contribute a skill of the same name | drop one capability from the soul (`off`) |

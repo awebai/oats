@@ -87,7 +87,7 @@ running.
   second until the first instance retires. The soul must tolerate a second
   run on the same event.
 - **`teams`** becomes the messaging capability's `join=` for the spawn (see
-  oats-teams); every label must be declared.
+  `/oats-teams`); every label must be declared.
 - The spawned instance gets the event as `OATS_TRIGGER_EVENT_FILE`, and its
   task ends with a "Triggered run" block naming it.
 
@@ -149,7 +149,7 @@ or `run: command`, `cron`, `tz`, `agent`, `task`, plus `runsOn` and `owner`).
   oats trigger test <member>/<id>   # on the named host: placement, gh account, repo permissions, soul, teams
   ```
 
-  Commit it by PR to that member (oats-workspace-config).
+  Commit it by PR to that member (`/oats-workspace-config`).
 
 ## Gotchas
 

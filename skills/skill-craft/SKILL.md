@@ -25,7 +25,7 @@ the task** — the description carries the entire burden of triggering.
   concept** in the knowledge base (see `okf` skill). Skills may reference
   concepts for the why.
 - **Applies to every session of this agent** (role, boundaries, core workflow)
-  → **AGENTS.md** (see `soul-craft`). Rule of thumb: AGENTS.md is loaded
+  → **AGENTS.md** (see `/soul-craft`). Rule of thumb: AGENTS.md is loaded
   always — keep it minimal; skills load on demand — put domain workflows there.
 
 ## Creating a skill

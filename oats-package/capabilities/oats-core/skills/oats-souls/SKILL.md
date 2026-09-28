@@ -5,7 +5,7 @@ description: >-
   telling a soul from an instance, reading a soul's definition, choosing how a
   new instance relates to you (child, parent, sibling), naming an instance, or
   proposing a new soul. Part of oats.core, day-to-day operation from inside an
-  instance; running and inspecting instances is oats-operate, and the setup
+  instance; running and inspecting instances is `/oats-operate`, and the setup
   and config of an OATS workspace is oats.setup.
 ---
 
@@ -68,7 +68,7 @@ skills and the merged provider settings — without creating anything.
 
 A soul file names no team. Which teams a soul is in is local to each
 deployment (`oats soul teams`, set by the operator); teams organise messaging
-and never grant or restrict anything (see oats-operate, "Teams to join").
+and never grant or restrict anything (see `/oats-operate`, "Teams to join").
 
 ## Relations: what the new instance is to you
 

@@ -27,7 +27,7 @@ real CLAUDE.md file diverging from AGENTS.md, that's a defect: merge and relink)
 | Layer | Loaded | Belongs there |
 |---|---|---|
 | **AGENTS.md** | always | Role, boundaries, the default workflow, memory pointers — only what applies to *every* session |
-| **skills/** | on demand (description match) | Domain workflows, repeatable procedures ("how") — see `skill-craft` |
+| **skills/** | on demand (description match) | Domain workflows, repeatable procedures ("how") — see `/skill-craft` |
 | **knowledge/** | on demand (index-first) | Facts, decisions, lessons ("what/why") — format per the knowledge capability (default okf) |
 
 The test for every AGENTS.md line: **"would removing this cause mistakes in

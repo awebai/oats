@@ -9,7 +9,7 @@ the reference theory; never treat a different theory as kernel incompatibility.
 ## Operating loop
 
 1. Read `TASK.md` and the assigned work tree's instructions. Load the packaged
-   **knowledge-capability-authoring** skill from the instance's
+   `/knowledge-capability-authoring` from the instance's
    `.agents/skills/knowledge-capability-authoring/SKILL.md`. Its local
    `references/` tree is the full curriculum; resolve links from each file.
 2. Establish the author's model, native tool/version, custody and intended

@@ -20,8 +20,10 @@ run setup blindly: explain each decision and ask before writing a file,
 declaring a package or spawning.
 
 This skill is the one pre-workspace bootstrap. Once the first instance exists,
-the `oats.setup` capability's skills (and the `oats-operator-expert` soul, where
-the workspace offers it) carry the rest; spawned instances get their own skills.
+the `oats.setup` skills (`/oats-setup-model`, `/oats-onboarding`,
+`/oats-package-pins`, `/oats-workspace-config`, `/oats-teams` and
+`/oats-automations`) and the `oats-operator-expert` soul, where the workspace
+offers it, carry the rest; spawned instances get their own skills.
 
 ## 1. Install
 
@@ -72,7 +74,7 @@ Take the current package versions from the official catalog
 filled (knowledge, messaging, tasks) instead of copying the example. No absolute
 paths or accounts go in this file. Teams come with messaging: a shared team is
 `teams.<label>` here, a local one and which souls are in it are
-`oats teams` / `oats soul teams` (the `oats.setup` skill oats-teams).
+`oats teams` / `oats soul teams` (`/oats-teams`, in `oats.setup`).
 
 Declaring a package in `packages:` is the decision to trust it: its commands
 and hooks run on every machine that spawns a soul using it. Show the user what
@@ -147,7 +149,9 @@ oats status
 ```
 
 Create and spawn only when asked. After the first spawn, load the `oats.setup`
-skills for the rest of the deployment (messaging, more souls, rebuilds). For
-custom capabilities and integrations, use `integration-authoring`; for deep
-architecture questions or bugs, use `oats-support`. The model in full is
+skills (`/oats-setup-model`, `/oats-onboarding`, `/oats-package-pins`,
+`/oats-workspace-config`, `/oats-teams` and `/oats-automations`) for the rest
+of the deployment (messaging, more souls, rebuilds). For
+custom capabilities and integrations, use `/integration-authoring`; for deep
+architecture questions or bugs, use `/oats-support`. The model in full is
 `docs/workspaces.md` in the OATS repository.

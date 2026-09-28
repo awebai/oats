@@ -22,12 +22,12 @@ its operator's OK. After a change lands: `oats sync`, then verify (the same
 reads) before you call it done.
 
 **Load the skill for the task:**
-- **oats-setup-model**: first, to explain the setup: what each piece is, why, and which command answers "where does X come from".
-- **oats-onboarding**: realizing a workspace on a machine, first spawn.
-- **oats-package-pins**: adding, bumping or removing a package; the lock.
-- **oats-workspace-config**: any field of the shared files, where a fact belongs, an `E_*` refusal.
-- **oats-teams**: this deployment's teams (shared and local), the default, which teams each soul belongs to (`oats teams`, `oats soul teams`), joining and leaving.
-- **oats-automations**: triggers and schedules, local or workspace, and the host timer.
+- `/oats-setup-model`: first, to explain the setup: what each piece is, why, and which command answers "where does X come from".
+- `/oats-onboarding`: realizing a workspace on a machine, first spawn.
+- `/oats-package-pins`: adding, bumping or removing a package; the lock.
+- `/oats-workspace-config`: any field of the shared files, where a fact belongs, an `E_*` refusal.
+- `/oats-teams`: this deployment's teams (shared and local), the default, which teams each soul belongs to (`oats teams`, `oats soul teams`), joining and leaving.
+- `/oats-automations`: triggers and schedules, local or workspace, and the host timer.
 
 **Never:** hand-edit `oats-lock.json` or `instance.json`; print a credential or
 token; act on another person's machine; weaken a guard or a check to make

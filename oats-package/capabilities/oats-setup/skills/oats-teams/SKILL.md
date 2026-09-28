@@ -98,8 +98,8 @@ oats soul teams <soul>|'*' [--add a,b] [--remove a,b] [--default <label> | --cle
   oats spawn <soul> --purpose <slug> --provider oats.aweb join=engineering,okf
   ```
 
-- Later, the provider's own verbs join and leave (for oats.aweb, see its
-  skill). A provider leaves a team only on a live team list, never a
+- Later, the provider's own verbs join and leave (for oats.aweb, see
+  `/aweb-team-membership`). A provider leaves a team only on a live team list, never a
   recorded one. A scheduled wake uses the teams recorded at spawn.
 - The kernel never joins anything. It hands the provider `OATS_DEFAULT_TEAM`,
   `OATS_DEFAULT_TEAM_ID`, `OATS_DEFAULT_TEAM_FROM`, `OATS_TEAMS` (mapped rows)

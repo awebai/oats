@@ -31,8 +31,8 @@ capabilities:
   vendor.review: { from: package }
 ```
 
-Then run `oats sync` (fetch, verify integrity, lock). The oats.setup
-capability's **oats-package-pins** skill has the procedure.
+Then run `oats sync` (fetch, verify integrity, lock). `/oats-package-pins`
+(in `oats.setup`) has the procedure.
 
 ## 1. Verify the expert is available
 
