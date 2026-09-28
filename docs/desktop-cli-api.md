@@ -1840,12 +1840,15 @@ Providers read the environment below.
   - A label that is already declared, in either file, is `E_TEAM_EXISTS
     { label, from }`.
   - The first team added also becomes `defaultTeam`.
-- **`oats teams remove <label> --json`:** removes a LOCAL team.
-  - It also removes the label from `souls.teams` and `souls.default`, listed in
-    `removedFrom: ["souls.teams.*", "souls.default.oats-expert", …]`.
-  - Refusals: a shared or unknown label is `E_TEAM_UNKNOWN { label }`; the
-    current `defaultTeam` is `E_TEAM_IN_USE { label, usedBy: ["defaultTeam"] }`
-    (set another default first).
+- **`oats teams remove <label> --json`:** removes a LOCAL team that nothing
+  references. It refuses, with no cascade:
+  - a label still referenced is `E_TEAM_IN_USE { label, usedBy }`. `usedBy`
+    names EVERY reference, e.g.
+    `["defaultTeam", "souls.teams.*", "souls.teams.oats-expert", "souls.default.oats-expert"]`.
+    Remove the references first (`oats teams default`, `oats soul teams`);
+  - a committed (shared) label is `E_TEAM_SHARED { label, at }`: it is edited
+    by a PR to `oats-workspace.yaml`;
+  - an unknown label is `E_TEAM_UNKNOWN { label }`.
 - **`oats teams default <label> --json`:** sets `defaultTeam` to a label of
   either file. An unknown label is `E_TEAM_UNKNOWN`.
 - A mutation answers the document after the write, plus `changed: bool`. The
@@ -1937,8 +1940,11 @@ not the kernel. This is its 0.30 contract, and its key set is exact:
   `defaultTeam`, `souls.teams`, `souls.default` or a verb.
 - `E_TEAM_NOT_ELIGIBLE { soul, label }`: `souls.default[soul]` is not one of
   the soul's teams.
-- `E_TEAM_EXISTS { label, from }` and `E_TEAM_IN_USE { label, usedBy }` (the
-  verbs).
+- The verbs' own errors:
+  - `E_TEAM_EXISTS { label, from }`;
+  - `E_TEAM_IN_USE { label, usedBy }`: every reference that blocks
+    `oats teams remove`;
+  - `E_TEAM_SHARED { label, at }`: a committed team cannot be removed locally.
 - `E_WORKSPACE_SCHEMA` for any removed key, naming its replacement.
 
 `E_TEAM_UNKNOWN` and `E_TEAM_NOT_ELIGIBLE` are spawn/preview/inspect refusals
