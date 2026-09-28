@@ -134,14 +134,13 @@ test("the default team's problem (default: true) is blocking: said as such, with
   assert.ok(u.row('reviewers').querySelector('.ct-warn'));
 });
 
-test("the routes' answer (#269, docs/desktop-teams.md): available → the decoded document; unavailable → the reason, verbatim", () => {
+test("the routes' answer (#269 df06befe, docs/desktop-teams.md): ok → the decoded document under its key; refused → the reason, verbatim", () => {
   const doc = K1();
-  assert.equal(teamsAnswer({ teamsViewApi: 1, status: 'available', action: 'list', data: doc, reason: null }, 'x'), doc);
-  const refused = reason => { try { teamsAnswer({ teamsViewApi: 1, status: 'unavailable', data: null, reason }, 'The teams on this computer could not be read.'); } catch (e) { return [e.code, e.message]; } return null; };
+  assert.equal(teamsAnswer({ status: 'ok', teams: doc }, 'teams', 'x'), doc);
+  assert.throws(() => teamsAnswer({ status: 'ok', soulTeams: doc }, 'teams', 'The teams on this computer could not be read.'), /could not be read/, 'the wrong key is not read');
+  const refused = reason => { try { teamsAnswer({ status: 'refused', reason }, 'teams', 'The teams on this computer could not be read.'); } catch (e) { return [e.code, e.message]; } return null; };
   assert.deepEqual(refused({ code: 'E_TEAM_IN_USE', message: 'team scratch is in use: souls.teams:pepe-helper', details: { label: 'scratch', usedBy: ['souls.teams:pepe-helper'] } }),
     ['E_TEAM_IN_USE', 'team scratch is in use: souls.teams:pepe-helper'], "the kernel's words");
-  assert.deepEqual(refused({ code: 'E_BUSY' }), ['E_BUSY', 'Another change to the teams on this computer is still running. Try again in a moment.']);
-  assert.deepEqual(refused({ code: 'E_TEAMS_UNAVAILABLE' }), ['E_TEAMS_UNAVAILABLE', 'Team settings need OATS 0.30 or later.']);
-  assert.deepEqual(refused({ code: 'E_CLI_PROTOCOL' }), ['E_CLI_PROTOCOL', 'The teams on this computer could not be read.']);
-  assert.throws(() => teamsAnswer({ status: 'ok', teams: doc }, 'x'), /x/, 'the pre-#269 shape is not accepted');
+  assert.deepEqual(refused({ code: 'E_BUSY', message: 'Another change is in progress. Try again.' }), ['E_BUSY', 'Another change is in progress. Try again.'], "the Desktop's own words");
+  assert.deepEqual(refused({ code: 'E_CLI_PROTOCOL' }), ['E_CLI_PROTOCOL', 'The teams on this computer could not be read.'], 'no message: the fallback, with the code');
 });

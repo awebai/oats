@@ -11,16 +11,15 @@
  * hears each document read (the tab's attention dot counts its problems). */
 import { box } from './workspace-setup.mjs';
 
-/** The Desktop's teams routes (/api/workspace-teams, /api/workspace-soul-teams; #269,
- * packages/desktop/docs/desktop-teams.md): `{teamsViewApi: 1, status: 'available', data}`
- * answers the decoded kernel document; anything else throws the reason (the kernel's words
- * and code, verbatim), with plain words for the Desktop's own codes when it sends none. */
-const OWN_CODES = { E_BUSY: 'Another change to the teams on this computer is still running. Try again in a moment.',
-  E_TEAMS_UNAVAILABLE: 'Team settings need OATS 0.30 or later.', 'unsupported-remote-operation': 'Teams are set on the computer that runs this workspace.' };
-export function teamsAnswer(answer, fallback) {
-  if (answer?.teamsViewApi === 1 && answer.status === 'available' && answer.data && typeof answer.data === 'object') return answer.data;
+/** The Desktop's teams routes (#269, packages/desktop/docs/desktop-teams.md): `{status: 'ok',
+ * teams}` (/api/workspace-teams) or `{status: 'ok', soulTeams}` (/api/workspace-soul-teams) answer
+ * the decoded kernel document under `key`; `{status: 'refused', reason: {code, message}}` throws
+ * the reason verbatim (the kernel's words, or the Desktop's own plain ones), with its code. */
+export function teamsAnswer(answer, key, fallback) {
+  const doc = answer?.status === 'ok' ? answer[key] : null;
+  if (doc && typeof doc === 'object' && !Array.isArray(doc)) return doc;
   const code = typeof answer?.reason?.code === 'string' ? answer.reason.code : null;
-  const message = typeof answer?.reason?.message === 'string' && answer.reason.message ? answer.reason.message : OWN_CODES[code] || fallback;
+  const message = typeof answer?.reason?.message === 'string' && answer.reason.message ? answer.reason.message : fallback;
   throw Object.assign(new Error(message), { code });
 }
 

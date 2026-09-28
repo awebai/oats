@@ -195,7 +195,7 @@ test('soul page: team-model-2 shows "Teams here" from the soul teams route; with
     const dom = new JSDOM('<body><main><aside hidden></aside></main></body>'), el = dom.window.document.querySelector('aside');
     const inspector = createSoulInspector(el, { layout: 'page', ctx: { api: async (url, opts) => {
       urls.push([url.replace(/\?.*$/, ''), JSON.parse(opts.body)]);
-      return url.startsWith('/api/workspace-soul-teams') ? { teamsViewApi: 1, status: 'available', action: 'show', data: structuredClone(soulTeamsDoc), reason: null } : structuredClone(soul);
+      return url.startsWith('/api/workspace-soul-teams') ? { status: 'ok', soulTeams: structuredClone(soulTeamsDoc) } : structuredClone(soul);
     } } });
     t.after(() => { inspector.dispose(); dom.window.close(); setWorkspace(previous); });
     await inspector.show(soulSelection); for (let i = 0; i < 4; i++) await tick();
@@ -216,4 +216,19 @@ test('soul page: team-model-2 shows "Teams here" from the soul teams route; with
   assert.equal(v1.querySelector('[data-card="Teams here"]'), null);
   assert.ok(v1.querySelector('[data-card="Teams"]'), 'the 0.29 card');
   assert.equal(urls.some(([url]) => url === '/api/workspace-soul-teams'), false);
+});
+
+test('soul page: a package soul (not a member) gets no editable "Teams here" yet: the CLI is named instead (#269: the kernel key is not on the roster)', async t => {
+  const pkg = structuredClone(soul); pkg.souls[0].kind = 'package';
+  const urls = [];
+  const previous = currentWorkspace(); setWorkspace('/team');
+  const dom = new JSDOM('<body><main><aside hidden></aside></main></body>'), el = dom.window.document.querySelector('aside');
+  const inspector = createSoulInspector(el, { layout: 'page', ctx: { api: async (url, opts) => { urls.push(url.replace(/\?.*$/, '')); return structuredClone(pkg); } } });
+  t.after(() => { inspector.dispose(); dom.window.close(); setWorkspace(previous); resetCliStateForTests(); });
+  await refreshCli({ api: async () => ({ ...doc('version'), features: [...doc('version').features, 'team-model-2'], ok: true, bin: '/fixture/bin/oats' }) });
+  await inspector.show(soulSelection); for (let i = 0; i < 4; i++) await tick();
+  const card = el.querySelector('[data-card="Teams here"]');
+  assert.equal(card.querySelector('.page-note').textContent, 'For now, set this soul\'s teams here with the CLI: oats soul teams <package>/release-manager.');
+  assert.equal(card.querySelector('button'), null);
+  assert.equal(urls.includes('/api/workspace-soul-teams'), false, 'nothing asked with a key that may be wrong');
 });

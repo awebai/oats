@@ -493,9 +493,16 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     // Beside: its teams (joining is per instance) and its knowledge nodes. Team model v2
     // (kernel feature team-model-2): "Teams here", this computer's membership, editable.
     teamsHere?.dispose(); teamsHere = null;
-    if ((cliStatus()?.features || []).includes('team-model-2') && typeof selection?.agent?.name === 'string') {
-      const soulTeamsRoute = async body => teamsAnswer(await postJson(ctx, `/api/workspace-soul-teams${wsQuery()}`, body), 'The teams of this soul could not be read.');
-      const teamsRoute = async () => teamsAnswer(await postJson(ctx, `/api/workspace-teams${wsQuery()}`, { action: 'list' }), 'The teams on this computer could not be read.');
+    const teamModel2 = (cliStatus()?.features || []).includes('team-model-2');
+    // The kernel keys a soul's teams by its name for a member soul; a package or external soul's key
+    // is not on the roster yet (the engineer, #269), so its card is not offered: the CLI says it.
+    if (teamModel2 && soul.kind !== 'member') {
+      const { card: note } = pageCard(doc, 'Teams here', { lead: 'on this computer' });
+      note.append(node('p', `For now, set this soul's teams here with the CLI: oats soul teams <package>/${selection?.agent?.name ?? '<soul>'}.`, 'page-note'));
+      side.append(note);
+    } else if (teamModel2 && typeof selection?.agent?.name === 'string') {
+      const soulTeamsRoute = async body => teamsAnswer(await postJson(ctx, `/api/workspace-soul-teams${wsQuery()}`, body), 'soulTeams', 'The teams of this soul could not be read.');
+      const teamsRoute = async () => teamsAnswer(await postJson(ctx, `/api/workspace-teams${wsQuery()}`, { action: 'list' }), 'teams', 'The teams on this computer could not be read.');
       teamsHere = createSoulTeamsHere(doc, { soul: selection.agent.name, request: soulTeamsRoute, listTeams: teamsRoute });
       side.append(teamsHere.element);
     } else if (teams) {

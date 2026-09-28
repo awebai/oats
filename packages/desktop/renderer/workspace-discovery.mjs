@@ -110,7 +110,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     if (computerTeams && computerTeamsGen === gen) return computerTeams.element;
     computerTeams?.dispose(); computerTeamsGen = gen; teamProblems = 0;
     computerTeams = createComputerTeams(doc, { onDocument: teams => { teamProblems = list(teams?.problems).length; updateCounts(); }, request: async body => {
-      return teamsAnswer(await postJson(ctx, `/api/workspace-teams${wsQuery()}`, body), 'The teams on this computer could not be read.');
+      return teamsAnswer(await postJson(ctx, `/api/workspace-teams${wsQuery()}`, body), 'teams', 'The teams on this computer could not be read.');
     } });
     return computerTeams.element;
   }

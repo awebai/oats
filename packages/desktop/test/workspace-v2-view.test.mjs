@@ -394,7 +394,7 @@ const K1_TEAMS = () => ({ teamsApi: 1, deployment: dir, defaultTeam: 'antares-oa
   souls: { teams: { '*': ['oats'] }, default: {} },
   problems: [{ code: 'team-unmapped', label: 'reviewers', default: false, message: 'shared team reviewers has no provider id yet', fix: 'its owner runs `oats aweb setup`, then commits the id' }] });
 test('Teams tab (team-model-2): first, before Souls; "Teams on this computer" from oats teams; its problems light the dot; Setup has no teams', async t => {
-  const u = await setup(t, { cli: { ...CLI, features: [...CLI.features, 'team-model-2'] }, teams: body => ({ teamsViewApi: 1, status: 'available', action: body.action, data: K1_TEAMS(), reason: null }) });
+  const u = await setup(t, { cli: { ...CLI, features: [...CLI.features, 'team-model-2'] }, teams: () => ({ status: 'ok', teams: K1_TEAMS() }) });
   assert.deepEqual([...u.doc.querySelectorAll('.workspace-tabs [role=tab]')].map(tab => tab.id), ['workspace-tab-teams', 'workspace-tab-souls', 'workspace-tab-capabilities', 'workspace-tab-sources']);
   assert.equal(u.doc.getElementById('workspace-tab-souls').getAttribute('aria-selected'), 'true', 'Souls stays where the Workspace opens');
   await u.tab('teams');
