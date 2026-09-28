@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "operationsApi": 2,
+    "kernel": "0.29.4",
+    "subject": {
+      "kind": "soul",
+      "soul": "reviewer",
+      "repoKey": "local//fixture/base/remotes/ws.git",
+      "commit": "4f2adf446a7b2f91b4ee276a5fc0bca52e3665de"
+    },
+    "workspace": {
+      "key": "local//fixture/base/remotes/ws.git",
+      "name": "acme",
+      "deployment": "/fixture/base/deployment",
+      "commit": "4f2adf446a7b2f91b4ee276a5fc0bca52e3665de",
+      "standalone": false
+    },
+    "souls": [
+      {
+        "soulsApi": 2,
+        "name": "reviewer",
+        "repoKey": "local//fixture/base/remotes/ws.git",
+        "commit": "4f2adf446a7b2f91b4ee276a5fc0bca52e3665de",
+        "kind": "member",
+        "path": "souls/reviewer",
+        "description": "reviewer fixture soul.",
+        "work": "directory",
+        "harness": null,
+        "model": null,
+        "declarations": {
+          "requires": null,
+          "defaults": null,
+          "knowledge": null,
+          "resources": null,
+          "children": null,
+          "capabilities": null
+        },
+        "declarationProblems": [],
+        "instructions": null
+      }
+    ],
+    "layers": {
+      "knowledge": {
+        "id": null,
+        "from": null
+      },
+      "messaging": {
+        "id": null,
+        "from": null
+      },
+      "tasks": {
+        "id": null,
+        "from": null
+      }
+    },
+    "capabilities": [],
+    "capabilitiesOff": [],
+    "teams": [],
+    "defaultTeam": null,
+    "teamsSource": "live",
+    "launch": {
+      "declared": {
+        "harness": "codex",
+        "model": null
+      },
+      "effective": {
+        "harness": "pi",
+        "model": null,
+        "launchConfig": null
+      },
+      "from": "local",
+      "at": "oats-local.yaml#/souls/launch/reviewer",
+      "problem": null
+    },
+    "knowledge": {
+      "provider": null,
+      "version": null,
+      "operations": []
+    },
+    "instance": null,
+    "problems": []
+  }
+}

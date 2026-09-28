@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "readinessApi": 2,
+    "subject": {
+      "kind": "instance",
+      "instance": "dev-q",
+      "home": "/fixture/base/deployment/agents/dev/instances/dev-q",
+      "soul": "dev"
+    },
+    "selector": {
+      "kind": "home",
+      "home": "/fixture/base/deployment/agents/dev/instances/dev-q",
+      "soul": "dev",
+      "agentsRoot": "/fixture/base/deployment/agents"
+    },
+    "at": "2026-09-28T17:54:20.334Z",
+    "checks": {
+      "installed": {
+        "status": "not-applicable",
+        "items": []
+      },
+      "configured": {
+        "status": "not-applicable",
+        "items": [
+          {
+            "subject": "launch",
+            "status": "fail",
+            "required": false,
+            "reason": "this instance runs claude claude-opus-5-5; its launch preference now says codex (oats-local.yaml#/souls/launch/dev)",
+            "producer": "launch preference",
+            "evidence": null,
+            "remedy": "`oats session restart --reselect-launch`, or respawn",
+            "code": "launch-changed",
+            "recorded": {
+              "harness": "claude",
+              "model": "claude-opus-5-5",
+              "launchConfig": null
+            },
+            "current": {
+              "harness": "codex",
+              "model": null,
+              "launchConfig": null
+            },
+            "from": "local",
+            "at": "oats-local.yaml#/souls/launch/dev"
+          }
+        ]
+      },
+      "member": {
+        "status": "pass",
+        "items": [
+          {
+            "subject": "member local//fixture/base/remotes/ws.git",
+            "status": "pass",
+            "required": true,
+            "reason": null,
+            "producer": "workspace discovery",
+            "evidence": {
+              "repoKey": "local//fixture/base/remotes/ws.git",
+              "workspace": "local//fixture/base/remotes/ws.git",
+              "commit": "4f2adf446a7b2f91b4ee276a5fc0bca52e3665de"
+            },
+            "remedy": null
+          }
+        ]
+      },
+      "providers": {
+        "status": "not-applicable",
+        "items": []
+      }
+    },
+    "summary": {
+      "ready": true,
+      "required": 1,
+      "pass": 1,
+      "fail": 0,
+      "unknown": 0,
+      "byCapability": [],
+      "subjectBlockers": []
+    },
+    "notes": [
+      "ready means every REQUIRED check passes; it is never inferred from an empty set",
+      "member is the soul's member repository confirmed in the workspace (oats-membership.yaml), never login or team registration",
+      "providers relays each provider's own binding check verbatim; the spawn's fail-closed hooks are unchanged",
+      "policy: a lifecycle-authority claim enforced by the spawn route, not an OS sandbox"
+    ],
+    "policy": {
+      "childSpawns": {
+        "allowed": true,
+        "enforced": true,
+        "origin": {
+          "kind": "default",
+          "detail": "no spawn option: children allowed"
+        }
+      },
+      "worktrees": {
+        "allowed": false,
+        "mode": "directory",
+        "enforced": true,
+        "origin": {
+          "kind": "work-mode",
+          "detail": "work: directory"
+        }
+      }
+    }
+  }
+}

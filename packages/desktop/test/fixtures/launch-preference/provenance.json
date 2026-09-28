@@ -1,0 +1,197 @@
+{
+  "source": "oats-desktop-engineer: launch preferences on the real kernel (0.30, feature launch-preference); the kernel's test/helpers/v2-deployment.mjs: souls dev (soul claude/claude-opus-5-5), reviewer (soul codex, local pi), plain (host); later local dev codex; later codex uninstalled; hermetic PATH (inert stubs); capture-launch.mjs",
+  "kernelTree": "oats main @69d76a910f115f4bd58d149d348909de7d144787 (kernel #290 merged)",
+  "redactions": [
+    "<base> (deployment scratch) → /fixture/base",
+    "<oats> (kernel tree) → /fixture/oats"
+  ],
+  "files": {
+    "version": {
+      "argv": [
+        "oats",
+        "version",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "69d76a910f115f4bd58d149d348909de7d144787",
+      "sourceSha256": "e67df3fa054de8319874485519063240b69fe2cc69b09fddcab4e9502ee7d5d2",
+      "fixtureSha256": "3f8ec64e1bd6d92a3a861d3e9cad7bd559eee265fa4a10cfe9b3d90b668df13a"
+    },
+    "souls": {
+      "argv": [
+        "oats",
+        "souls",
+        "--dir",
+        "<base>/deployment",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "69d76a910f115f4bd58d149d348909de7d144787",
+      "sourceSha256": "eec5dd094b19cf7e01ce3bacaec0000aa66e087a08a8e80928def0e5f4d391e5",
+      "fixtureSha256": "0af34e3199f5cbc99f2326563d293a988c4c82970cac9d7905678725c77dcbda"
+    },
+    "souls-unavailable": {
+      "argv": [
+        "oats",
+        "souls",
+        "--dir",
+        "<base>/deployment",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "69d76a910f115f4bd58d149d348909de7d144787",
+      "sourceSha256": "6038024358a1bb0353c60f2d2b5fdc6f5451c8ef6deac797db9e64cc34f72a67",
+      "fixtureSha256": "b87f9d3b449ddeecfd3bcf4dcbda51915afdf9a1bd6c5d025a8f589a3ad737e0"
+    },
+    "inspect-soul-dev": {
+      "argv": [
+        "oats",
+        "inspect",
+        "--dir",
+        "<base>/deployment",
+        "--soul",
+        "dev",
+        "--agents-root",
+        "<base>/deployment/agents",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "69d76a910f115f4bd58d149d348909de7d144787",
+      "sourceSha256": "109abd4f8ecbb33b4e32fdd653d5f99a4a2003cc70328f4d294d08ebf367bc6e",
+      "fixtureSha256": "daba8b69cdfd2a3d0b581186698a11a6868764e1651bc751def91aadee5ed672"
+    },
+    "inspect-soul-reviewer": {
+      "argv": [
+        "oats",
+        "inspect",
+        "--dir",
+        "<base>/deployment",
+        "--soul",
+        "reviewer",
+        "--agents-root",
+        "<base>/deployment/agents",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "69d76a910f115f4bd58d149d348909de7d144787",
+      "sourceSha256": "170108a5b68232deb9b53685c4fb7d8b5152b40b53b6287ee95104ec2c54c216",
+      "fixtureSha256": "7e9d8b7f5c95f4a1acd1525459e43d068081e57f845e7ea94b8bf14ed1bc4975"
+    },
+    "preview-dev": {
+      "argv": [
+        "oats",
+        "spawn",
+        "dev",
+        "--dir",
+        "<base>/deployment",
+        "--agents-root",
+        "<base>/deployment/agents",
+        "--purpose",
+        "q",
+        "--preview",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "69d76a910f115f4bd58d149d348909de7d144787",
+      "sourceSha256": "e3fba722e2e823ff339620f84653c0cdb345448ce8fccdcf20b67444bdf40661",
+      "fixtureSha256": "b0d793fbc3253b850ffde560ce26a90a594fef533644f7251d89207bedc4b90a"
+    },
+    "preview-dev-flag": {
+      "argv": [
+        "oats",
+        "spawn",
+        "dev",
+        "--dir",
+        "<base>/deployment",
+        "--agents-root",
+        "<base>/deployment/agents",
+        "--purpose",
+        "q",
+        "--harness",
+        "pi",
+        "--preview",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "69d76a910f115f4bd58d149d348909de7d144787",
+      "sourceSha256": "1d695dd7ba2b5a70a96da26aa7bf90e4240d5ca562bae848ddad1300bd55ccaf",
+      "fixtureSha256": "e2e72846d3b61eea7a610c5afb8ba5169be05e35a75693c36644c4f1a77433f1"
+    },
+    "preview-dev-unavailable": {
+      "argv": [
+        "oats",
+        "spawn",
+        "dev",
+        "--dir",
+        "<base>/deployment",
+        "--agents-root",
+        "<base>/deployment/agents",
+        "--purpose",
+        "q",
+        "--preview",
+        "--json"
+      ],
+      "exit": 1,
+      "commit": "69d76a910f115f4bd58d149d348909de7d144787",
+      "sourceSha256": "32dab76f26aca7747f2a5442e0e27debaad16e5965f17286405fae3899850ec6",
+      "fixtureSha256": "7e0af658af601a7291ef5a5f35a63d8841dc2da1db550c0055d7b9eea524345d"
+    },
+    "inspect-home": {
+      "argv": [
+        "oats",
+        "inspect",
+        "--home",
+        "<base>/deployment/agents/dev/instances/dev-q",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "69d76a910f115f4bd58d149d348909de7d144787",
+      "sourceSha256": "f6108d2076030ab409fd7db7ef132d40183f887afd020f40d0878a0e59434199",
+      "fixtureSha256": "f74bcb38e422a0212635ad3d0503977e239be6c6fa676e6478896d99a30712ac"
+    },
+    "inspect-home-drift": {
+      "argv": [
+        "oats",
+        "inspect",
+        "--home",
+        "<base>/deployment/agents/dev/instances/dev-q",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "69d76a910f115f4bd58d149d348909de7d144787",
+      "sourceSha256": "b9756e9a21282ae2e5bf539dbbd6827aa01109d904079a308b935ebff0b97803",
+      "fixtureSha256": "03def64b8975427c3719f7ac1a89bd3c45b3073b37ebbbc9240d7bd0657afd2e"
+    },
+    "readiness-home-drift": {
+      "argv": [
+        "oats",
+        "readiness",
+        "--home",
+        "<base>/deployment/agents/dev/instances/dev-q",
+        "--soul",
+        "dev",
+        "--agents-root",
+        "<base>/deployment/agents",
+        "--policy",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "69d76a910f115f4bd58d149d348909de7d144787",
+      "sourceSha256": "512f399aa2ad02adb4ffcba58a5aceca511d06e5855183463ee9cfd50175b370",
+      "fixtureSha256": "c25e39c73943f11e84dbb38cfd81cecc97610383f1ea42a1c2a1bb9054cb6606"
+    },
+    "status": {
+      "argv": [
+        "oats",
+        "status",
+        "--dir",
+        "<base>/deployment",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "69d76a910f115f4bd58d149d348909de7d144787",
+      "sourceSha256": "d435da7719271443c84c3336fa2d8f41e27d95688001bb312faa9e14d2cbf463",
+      "fixtureSha256": "c9efbd118b7b82a31f16bc1128dac4eceeb43c4b4ed017ea29dfb3683f02e416"
+    }
+  }
+}

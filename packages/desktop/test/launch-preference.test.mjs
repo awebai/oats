@@ -1,7 +1,7 @@
 // Soul launch preferences (feature launch-preference, OATS 0.30; docs/desktop-cli-api.md "Soul
-// launch preferences", oats feat/030-launch-preference @88eeb102). Consumer-first: the kernel does
-// not emit `launch` yet, so each case is a DERIVED scenario (marked): the contract's Launch example
-// added to a REAL 0.30 capture (fixtures/team-model-v2). Recapture from the real kernel when it lands.
+// launch preferences"). The REAL kernel's documents (fixtures/launch-preference, main with #290:
+// every from layer, a drift, a missing harness) are the ground truth below; the shape-edge cases are
+// DERIVED scenarios (marked): the contract's Launch example on a real 0.30 capture.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -104,4 +104,42 @@ test('readiness launch-changed (--home; derived on the real instance readiness c
   assert.deepEqual([hosted.checks.configured.items.at(-1).at, hosted.checks.configured.items.at(-1).from], [null, 'host']);
   for (const bad of [7, '', 'a\nb']) { const v = doc(); v.checks.configured.items.at(-1).at = bad; assert.equal(readinessData(v, instanceTarget), null, `at ${JSON.stringify(bad)}`); }
   assert.ok(readinessData(data(instanceTarget), instanceTarget).checks.configured.items.every(i => !Object.hasOwn(i, 'recorded') && !Object.hasOwn(i, 'from')), 'no keys invented');
+});
+
+// ── The REAL kernel (fixtures/launch-preference/provenance.json) ──
+const real = name => JSON.parse(readFileSync(new URL(`./fixtures/launch-preference/${name}.json`, import.meta.url), 'utf8'));
+const LP = '/fixture/base/deployment';
+
+test('real: oats souls rows carry every from layer (soul, local, host) and a missing harness as a report problem', () => {
+  const byName = Object.fromEntries(soulsData(real('souls')).souls.map(s => [s.name, s.launch]));
+  assert.deepEqual([byName.dev.from, byName.dev.effective, byName.dev.declared], ['soul', { harness: 'claude', model: 'claude-opus-5-5', launchConfig: null }, { harness: 'claude', model: 'claude-opus-5-5' }]);
+  assert.match(byName.dev.at, /souls\/dev\/soul\.yaml#\/launch$/);
+  assert.deepEqual([byName.reviewer.from, byName.reviewer.declared.harness, byName.reviewer.effective.harness, byName.reviewer.at], ['local', 'codex', 'pi', 'oats-local.yaml#/souls/launch/reviewer'], 'the machine overrides the soul');
+  assert.deepEqual([byName.plain.from, byName.plain.declared, byName.plain.at, byName.plain.effective.model], ['host', null, null, null]);
+  const dev = soulsData(real('souls-unavailable')).souls.find(s => s.name === 'dev').launch;
+  assert.deepEqual([dev.problem.code, dev.problem.fix, dev.from], ['E_HARNESS_UNAVAILABLE', 'install codex, or change oats-local.yaml souls.launch', 'local'], 'a soul whose harness is missing still lists');
+});
+
+test('real: the preview carries launch (and a flag), and its refusal\'s fix reaches the dialog through the proxy', async () => {
+  const p = real('preview-dev').result, t = { workspace: 'w', context: p.subject.dir, selector: { soul: 'dev', agentsRoot: p.subject.agentsRoot } };
+  assert.equal(previewData(structuredClone(p), t).launch.from, 'soul');
+  const flag = previewData(real('preview-dev-flag').result, t);
+  assert.deepEqual([flag.launch.from, flag.launch.effective.harness, flag.harness], ['flag', 'pi', 'pi']);
+  const { previewFailure } = await import('../renderer/spawn-preview-contract.mjs');
+  const e = real('preview-dev-unavailable').error;
+  assert.deepEqual(previewFailure(e.code, null, e.message, e.details.fix).reason, { code: 'E_HARNESS_UNAVAILABLE', message: e.message, fix: e.details.fix });
+});
+
+test('real: inspect --soul and --home (the record, launchCurrent, and a drift); readiness launch-changed', async () => {
+  const soul = real('inspect-soul-dev').result;
+  assert.ok(inspectData(soul, { agent: { name: 'dev' } }));
+  assert.equal(soul.launch.from, 'soul', 'inspect --soul carries launch at the top level');
+  for (const name of ['inspect-home', 'inspect-home-drift']) { const h = real(name).result; assert.ok(inspectData(h, { instance: {}, selector: { home: h.subject.home } }), name); }
+  const drift = real('inspect-home-drift').result;
+  assert.deepEqual([drift.launch.from, drift.launch.effective.harness, drift.launchCurrent.from, drift.launchCurrent.effective.harness], ['soul', 'claude', 'local', 'codex']);
+  const { readinessData } = await import('../renderer/readiness-contract.mjs');
+  const r = real('readiness-home-drift').result, s = r.subject;
+  const target = { workspace: 'w', context: LP, observedAs: 'instance', home: s.home, selector: { kind: 'instance', instance: s.instance, agent: s.soul, agentsRoot: r.selector.agentsRoot } };
+  const item = readinessData(r, target).checks.configured.items.find(i => i.code === 'launch-changed');
+  assert.deepEqual([item.required, item.recorded.harness, item.current.harness, item.from, item.at], [false, 'claude', 'codex', 'local', 'oats-local.yaml#/souls/launch/dev']);
 });
