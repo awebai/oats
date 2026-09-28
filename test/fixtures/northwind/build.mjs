@@ -5,11 +5,11 @@
 // (remote, workspace, resolve, packages, materialize) can be tested against actual
 // remotes without ever touching a network or invoking bare `oats setup`.
 //
-//   remotes/agents.git       workspace host: oats-workspace.yaml + membership (team global)
-//   remotes/platform.git     member, team engineering: platform-engineer, platform-reviewer
-//   remotes/data.git         member, team engineering: data-analyst + nw-warehouse-access (executable)
-//   remotes/marketing.git    member, team marketing: campaign-writer, positioning-analyst + 2 capabilities
-//   remotes/nw-tools.git     member, team engineering: tools-expert + nw-tools-dev — AND publishes package
+//   remotes/agents.git       workspace host: oats-workspace.yaml + membership
+//   remotes/platform.git     member: platform-engineer, platform-reviewer
+//   remotes/data.git         member: data-analyst + nw-warehouse-access (executable)
+//   remotes/marketing.git    member: campaign-writer, positioning-analyst + 2 capabilities
+//   remotes/nw-tools.git     member: tools-expert + nw-tools-dev — AND publishes package
 //                            nw.tools v0.4.0 under oats-package/ (nw-lint, nw-deploy with bin/), tag v0.4.0;
 //                            the workspace pins it as `nw.tools: git:<nw-tools ref>@v0.4.0` (non-collapse rule)
 //   remotes/knowledge.git    a store (not a member): README only
@@ -185,8 +185,8 @@ ${extra}process.stdout.write(JSON.stringify({ tool: ${JSON.stringify(label)}, cm
   };
 }
 
-function membership(workspaceRef, team) {
-  return { yaml: { schemaVersion: 2, workspace: workspaceRef, team } };
+function membership(workspaceRef) {
+  return { yaml: { schemaVersion: 2, workspace: workspaceRef } };
 }
 
 function agentsRepo({ refs, keys, expertsCommit }) {
@@ -213,24 +213,19 @@ function agentsRepo({ refs, keys, expertsCommit }) {
           knowledge: { "oats.okf": { from: "package" } },
           messaging: "none",
           tasks: "none",
-          byTeam: {
-            engineering: { capabilities: { "nw-release-tooling": { from: keys.agents } } },
-            marketing: { capabilities: { "nw-brand-voice": { from: keys.marketing } } },
-          },
         },
         stores: { org: refs.knowledge },
         messaging: { private: "per-human", channels: ["northwind-eng", "northwind-mkt"] },
         external: [{ source: `${refs.experts}@${expertsCommit}`, soul: "souls/security-reviewer" }],
       },
     },
-    "oats-membership.yaml": membership(workspaceRef, "global"),
+    "oats-membership.yaml": membership(workspaceRef),
     ...soulDir("souls/release-manager", {
       soul: {
         schemaVersion: 2,
         name: "release-manager",
         description: "Cuts, verifies and announces platform releases.",
         work: "worktree",
-        team: "engineering",
         // nw-deploy comes from the PACKAGE, never `from: <nw-tools key>` — even though nw-tools is a member.
         capabilities: { "nw-release-tooling": { from: "here" }, "nw-deploy": { from: "package" } },
         knowledge: { owns: "release-manager", reads: ["platform-engineer", "data-analyst"] },
@@ -254,7 +249,6 @@ function agentsRepo({ refs, keys, expertsCommit }) {
     "capabilities/nw-release-tooling/oats.json": {
       json: {
         capability: "nw-release-tooling",
-        team: "engineering",
         version: "0.0.0-workspace",
         description: "Northwind release checklist, changelog and tag automation.",
         compatibility: { oats: ">=0.24.0" },
@@ -281,17 +275,17 @@ function agentsRepo({ refs, keys, expertsCommit }) {
   };
 }
 
-function platformRepo({ refs }) {
+function platformRepo({ refs, keys }) {
   return {
     "src/index.mjs": "export const platform = 'northwind';\n",
-    "oats-membership.yaml": membership(refs.agents, "engineering"),
+    "oats-membership.yaml": membership(refs.agents),
     ...soulDir("souls/platform-engineer", {
       soul: {
         schemaVersion: 2,
         name: "platform-engineer",
         description: "Implements platform features on a branch and opens PRs.",
         work: "worktree",
-        capabilities: {},
+        capabilities: { "nw-release-tooling": { from: keys.agents } },
         knowledge: { owns: "platform-engineer", reads: ["release-manager"] },
       },
       agents: "# platform-engineer\n\nYou implement platform features on a branch and open PRs.\n",
@@ -303,7 +297,7 @@ function platformRepo({ refs }) {
         name: "platform-reviewer",
         description: "Reviews platform PRs; internal to this repo.",
         work: "checkout",
-        capabilities: {},
+        capabilities: { "nw-release-tooling": { from: keys.agents } },
         knowledge: { owns: "platform-reviewer" },
       },
       agents: "# platform-reviewer\n\nYou review platform PRs from within the platform repo.\n",
@@ -312,17 +306,17 @@ function platformRepo({ refs }) {
   };
 }
 
-function dataRepo({ refs }) {
+function dataRepo({ refs, keys }) {
   return {
     "warehouse/README.md": "# warehouse\n\nAnalytics models.\n",
-    "oats-membership.yaml": membership(refs.agents, "engineering"),
+    "oats-membership.yaml": membership(refs.agents),
     ...soulDir("souls/data-analyst", {
       soul: {
         schemaVersion: 2,
         name: "data-analyst",
         description: "Answers questions against the warehouse with attributable evidence.",
         work: "directory",
-        capabilities: { "nw-warehouse-access": { from: "here" } },
+        capabilities: { "nw-warehouse-access": { from: "here" }, "nw-release-tooling": { from: keys.agents } },
         knowledge: { owns: "data-analyst" },
       },
       agents: "# data-analyst\n\nYou answer questions against the warehouse with attributable evidence.\n",
@@ -331,7 +325,6 @@ function dataRepo({ refs }) {
     "capabilities/nw-warehouse-access/oats.json": {
       json: {
         capability: "nw-warehouse-access",
-        team: "engineering",
         version: "0.0.0-workspace",
         description: "Read access to the Northwind warehouse.",
         compatibility: { oats: ">=0.24.0" },
@@ -348,7 +341,7 @@ function dataRepo({ refs }) {
 function marketingRepo({ refs, keys }) {
   return {
     "campaigns/README.md": "# campaigns\n",
-    "oats-membership.yaml": membership(refs.agents, "marketing"),
+    "oats-membership.yaml": membership(refs.agents),
     ...soulDir("souls/campaign-writer", {
       soul: {
         schemaVersion: 2,
@@ -358,6 +351,7 @@ function marketingRepo({ refs, keys }) {
         capabilities: {
           "nw-campaign-metrics": { from: "here" },
           "nw-release-tooling": { from: keys.agents },
+          "nw-brand-voice": { from: keys.marketing },
         },
         knowledge: { owns: "campaign-writer", reads: ["release-manager", "platform-engineer"] },
         messaging: { channels: ["northwind-mkt"] },
@@ -371,7 +365,7 @@ function marketingRepo({ refs, keys }) {
         name: "positioning-analyst",
         description: "Analyses market positioning against competitors.",
         work: "directory",
-        capabilities: { "nw-campaign-metrics": { from: "here" } },
+        capabilities: { "nw-campaign-metrics": { from: "here" }, "nw-brand-voice": { from: keys.marketing } },
         knowledge: { owns: "positioning-analyst" },
       },
       agents: "# positioning-analyst\n\nYou analyse Northwind's positioning against competitors.\n",
@@ -380,7 +374,6 @@ function marketingRepo({ refs, keys }) {
     "capabilities/nw-brand-voice/oats.json": {
       json: {
         capability: "nw-brand-voice",
-        team: "marketing",
         version: "0.0.0-workspace",
         description: "Northwind brand voice guidance and tone checks.",
         compatibility: { oats: ">=0.24.0" },
@@ -394,7 +387,6 @@ function marketingRepo({ refs, keys }) {
     "capabilities/nw-campaign-metrics/oats.json": {
       json: {
         capability: "nw-campaign-metrics",
-        team: "marketing",
         version: "0.0.0-workspace",
         description: "Queries the ads APIs for campaign metrics.",
         compatibility: { oats: ">=0.24.0" },
@@ -408,10 +400,10 @@ function marketingRepo({ refs, keys }) {
   };
 }
 
-function nwToolsRepo({ refs }) {
+function nwToolsRepo({ refs, keys }) {
   return {
     "README.md": "# nw-tools\n\nNorthwind's own tooling: a member repo that ALSO publishes the `nw.tools` package.\n",
-    "oats-membership.yaml": membership(refs.agents, "engineering"),
+    "oats-membership.yaml": membership(refs.agents),
     ...soulDir("souls/tools-expert", {
       soul: {
         schemaVersion: 2,
@@ -421,6 +413,7 @@ function nwToolsRepo({ refs }) {
         capabilities: {
           "nw-tools-dev": { from: "here" },
           "nw-lint": { from: "package" },
+          "nw-release-tooling": { from: keys.agents },
         },
         knowledge: { owns: "tools-expert", reads: ["release-manager"] },
       },
@@ -431,7 +424,6 @@ function nwToolsRepo({ refs }) {
     "capabilities/nw-tools-dev/oats.json": {
       json: {
         capability: "nw-tools-dev",
-        team: "engineering",
         version: "0.0.0-workspace",
         description: "Developer conventions for working on the nw.tools package itself.",
         compatibility: { oats: ">=0.24.0" },

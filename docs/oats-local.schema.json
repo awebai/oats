@@ -103,8 +103,41 @@
           "type": "array",
           "uniqueItems": true,
           "items": { "type": "string", "pattern": "^(?:[a-z0-9][a-z0-9._-]*/)?[a-z0-9]+(?:-[a-z0-9]+)*$" }
+        },
+        "teams": {
+          "description": "Which teams each soul belongs to on this deployment (team model v2, 0.30; `oats soul teams` writes it): \"*\" applies to every soul; a soul's own entry (its bare name, or <package>/<soul> for a package soul) adds to it. Every soul is also in its default. Eligible, never auto-joined: an instance joins its default at spawn and the others on request.",
+          "type": "object",
+          "propertyNames": { "type": "string", "pattern": "^(?:\\*|(?:[a-z0-9][a-z0-9._-]*/)?[a-z0-9]+(?:-[a-z0-9]+)*)$" },
+          "additionalProperties": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/label" } }
+        },
+        "default": {
+          "description": "A per-soul override of defaultTeam (`oats soul teams <soul> --default <label>`); it must be one of that soul's teams here (E_TEAM_NOT_ELIGIBLE).",
+          "type": "object",
+          "propertyNames": { "type": "string", "pattern": "^(?:[a-z0-9][a-z0-9._-]*/)?[a-z0-9]+(?:-[a-z0-9]+)*$" },
+          "additionalProperties": { "$ref": "#/$defs/label" }
         }
       }
+    },
+    "teams": {
+      "description": "LOCAL teams (team model v2, 0.30; `oats teams add` writes it): <label>: { team, description? }, the messaging provider's team id for a team only this deployment uses. Shared teams are committed in oats-workspace.yaml teams:; a label in both is team-label-collision (the shared one wins).",
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/label" },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["team"],
+        "additionalProperties": false,
+        "properties": {
+          "team": { "type": "string", "minLength": 1, "description": "The messaging provider's team id (for oats.aweb, <team>:<namespace>)." },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "defaultTeam": {
+      "$ref": "#/$defs/label",
+      "description": "The team every instance of this deployment lives in (its primary identity), unless souls.default overrides it for a soul: a label of teams here or in oats-workspace.yaml (`oats teams default` writes it; the first `oats teams add` sets it)."
     }
+  },
+  "$defs": {
+    "label": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" }
   }
 }

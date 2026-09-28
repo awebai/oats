@@ -33,6 +33,7 @@ import {
   writeFileAtomic, LOCK_FILE, readLock, writeLock, resolvePackages, memoizedRemote,
   classifyPackageValue, parsePackageRequest } from "../lib/packages.mjs";
 import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, workspaceWarnings } from "../lib/workspace.mjs";
+import { recordedTeams, reportRows, soulKeyOf, soulTeams, teamModel } from "../lib/teams.mjs";
 import { parseConfigData } from "../lib/config-data.mjs";
 import * as remoteModule from "../lib/remote.mjs";
 import YAML from "yaml";
@@ -72,7 +73,7 @@ function expandInlineValues(argv) {
 const { argv: args, problem: argvProblem } = expandInlineValues(rawArgs);
 let cmd = args[0];
 const HELP_WORDS = new Set(["help", "--help", "-h"]);
-const KERNEL_COMMANDS = new Set(["automations", "trigger", "capture", "capabilities", "doctor", "inspect", "instance", "operation", "package", "readiness", "souls", "launch-config", "experimental", "onboard", "pane", "recall", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "sync", "update", "version", "workspace"]);
+const KERNEL_COMMANDS = new Set(["automations", "trigger", "capture", "capabilities", "doctor", "inspect", "instance", "operation", "package", "readiness", "souls", "soul", "teams", "launch-config", "experimental", "onboard", "pane", "recall", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "sync", "update", "version", "workspace"]);
 /** Commands whose argv another parser reads (packages/record and packages/experimental parse process.argv). */
 const OWN_ARGV_COMMANDS = new Set(["capture", "recall", "setup", "experimental"]);
 /** Commands `--server <id>` runs on a registered server. */
@@ -411,18 +412,17 @@ function printWorkspaceInspect(doc) {
   for (const p of doc.problems) console.log(`  ! ${p.code}: ${p.message}`);
 }
 
-/** `{ teams, teamsSource }` for a session start of a workspace home: its eligible teams read
- *  live (two repository reads), which the launch hook re-checks joined memberships against
- *  (teams contract decision 6) — or the spawn record, marked `recorded`, when the read cannot
- *  answer. Anything that is not a readable workspace home gets nothing here — the start
+/** `{ teams, defaultTeam, teamsSource }` for a session start of a workspace home: its teams read
+ *  live (the workspace host + oats-local.yaml), which the launch hook re-checks joined memberships
+ *  against — or the spawn record, marked `recorded`, when the read cannot answer. Anything that is not a readable workspace home gets nothing here — the start
  *  itself refuses it. */
 async function homeLiveTeams(home) {
   let meta;
   try { meta = JSON.parse(readFileSync(join(home, "instance.json"), "utf8")); } catch { return {}; }
   if (!isWorkspaceHome(meta)) return {};
   const { liveTeams } = await import("../lib/instance-resolution.mjs");
-  const { teams, source } = await liveTeams(home, meta, { remoteOptions: remoteOptionsFromEnv() });
-  return Array.isArray(teams) ? { teams, teamsSource: source } : {};
+  const { teams, defaultTeam, source } = await liveTeams(home, meta, { remoteOptions: remoteOptionsFromEnv() });
+  return Array.isArray(teams) ? { teams, defaultTeam, teamsSource: source } : {};
 }
 
 // ---------- operation run: generic invoke through the capability engine ----------
@@ -1072,7 +1072,6 @@ const short = (oid) => (typeof oid === "string" ? oid.slice(0, 8) : "?");
 /** Display name of a discovery: the workspace's name, or the standalone label (decision 10). */
 const workspaceName = (discovery) => discovery.workspace?.name ?? `standalone:${memberLabel(discovery.key)}`;
 const memberLabel = (key) => String(key).split("/").filter(Boolean).pop()?.replace(/\.git$/, "") || String(key);
-const teamLabel = (team) => team ?? "unassigned";
 const originOf = (item) => (item.package ? `package ${item.package} v${item.version}` : `member ${item.repoKey} @ ${short(item.commit)}`);
 
 /** A soul's spawn default harness and model (feature desktop-facts): its definition's, else the kernel's (pi, the
@@ -1081,24 +1080,31 @@ const soulDefaults = (def) => ({ harness: def?.harness ?? "pi", model: def?.mode
 
 /** Rows of every soul and capability of confirmed members (+ external souls) + locked package
  *  capabilities. Souls have no private mode (0.26.0); a private member capability is listed with
- *  `private: true` — repo-owned: usable only by its own repo's souls (E_CAPABILITY_PRIVATE). */
-function workspaceItems(discovery, lock) {
+ *  `private: true` — repo-owned: usable only by its own repo's souls (E_CAPABILITY_PRIVATE).
+ *  Each soul row carries its teams HERE (team model v2: `teams`, `defaultTeam`), from the committed
+ *  shared teams and `local` (oats-local.yaml); both null when its teams do not resolve (E_TEAM_*). */
+function workspaceItems(discovery, lock, local) {
   const souls = [];
   const capabilities = [];
+  const model = teamModel(discovery.standalone === true ? null : discovery.workspace, local, { workspaceKey: discovery.key ?? null });
+  const teamsHere = (entry) => {
+    try { const t = soulTeams(model, soulKeyOf(entry)); return { teams: reportRows(t.teams), defaultTeam: t.defaultTeam }; }
+    catch (e) { if (String(e?.code).startsWith("E_TEAM_")) return { teams: null, defaultTeam: null }; throw e; }
+  };
   for (const m of discovery.members) {
     if (!m.confirmed && !(discovery.standalone === true && m.key === discovery.key)) continue;
-    for (const s of m.souls) souls.push({ name: s.name, origin: originOf(s), kind: "member", repoKey: s.repoKey, commit: s.commit, team: teamLabel(s.team), labels: [...(s.labels ?? (s.team ? [s.team] : []))], private: s.private, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null, ...soulDefaults(s.definition) });
-    for (const c of m.capabilities) capabilities.push({ name: c.name, origin: originOf(c), kind: "member", repoKey: c.repoKey, commit: c.commit, team: teamLabel(c.team), private: c.private, path: c.path, layer: c.manifest.layer ?? null, version: c.manifest.version ?? null });
+    for (const s of m.souls) souls.push({ name: s.name, origin: originOf(s), kind: "member", repoKey: s.repoKey, commit: s.commit, ...teamsHere(s), private: s.private, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null, ...soulDefaults(s.definition) });
+    for (const c of m.capabilities) capabilities.push({ name: c.name, origin: originOf(c), kind: "member", repoKey: c.repoKey, commit: c.commit, private: c.private, path: c.path, layer: c.manifest.layer ?? null, version: c.manifest.version ?? null });
   }
   for (const ext of discovery.external || []) {
     const s = ext.soul;
-    souls.push({ name: s.name, origin: `external ${s.repoKey} @ ${short(s.commit)}`, kind: "external", repoKey: s.repoKey, commit: s.commit, team: teamLabel(s.team), labels: [...(s.labels ?? (s.team ? [s.team] : []))], private: s.private, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null, ...soulDefaults(s.definition) });
+    souls.push({ name: s.name, origin: `external ${s.repoKey} @ ${short(s.commit)}`, kind: "external", repoKey: s.repoKey, commit: s.commit, ...teamsHere(s), private: s.private, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null, ...soulDefaults(s.definition) });
   }
   for (const s of discovery.packageSouls || []) {
-    souls.push({ name: s.name, qualifiedName: s.qualifiedName, origin: originOf(s), kind: "package", package: s.package, version: s.version, repoKey: s.repoKey, commit: s.commit, team: teamLabel(s.team), labels: [...(s.labels ?? [])], private: false, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null, ...soulDefaults(s.definition) });
+    souls.push({ name: s.name, qualifiedName: s.qualifiedName, origin: originOf(s), kind: "package", package: s.package, version: s.version, repoKey: s.repoKey, commit: s.commit, ...teamsHere(s), private: false, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null, ...soulDefaults(s.definition) });
   }
   for (const [id, entry] of Object.entries(lock?.packages || {})) {
-    for (const name of entry.capabilities) capabilities.push({ name, origin: originOf({ package: id, version: entry.version }), kind: "package", package: id, version: entry.version, commit: entry.commit, team: teamLabel(null), private: false });
+    for (const name of entry.capabilities) capabilities.push({ name, origin: originOf({ package: id, version: entry.version }), kind: "package", package: id, version: entry.version, commit: entry.commit, private: false });
   }
   const byName = (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : a.origin < b.origin ? -1 : a.origin > b.origin ? 1 : 0);
   souls.sort(byName);
@@ -1109,7 +1115,7 @@ function workspaceItems(discovery, lock) {
 /** Membership rows for `sync` / `workspace status`. */
 function memberRows(discovery) {
   return discovery.members.map((m) => ({
-    key: m.key, name: memberLabel(m.key), commit: m.commit ?? null, confirmed: m.confirmed, status: m.confirmed ? "confirmed" : m.reason, detail: m.detail ?? null, team: m.team ?? null,
+    key: m.key, name: memberLabel(m.key), commit: m.commit ?? null, confirmed: m.confirmed, status: m.confirmed ? "confirmed" : m.reason, detail: m.detail ?? null,
     souls: m.souls.map((s) => s.name), capabilities: m.capabilities.map((c) => c.name), publishes: m.publishes ?? null,
   }));
 }
@@ -1180,7 +1186,7 @@ async function performSync(ctx, bail, { onDiscovered } = {}) {
   const members = memberRows(discovery);
   const packages = packageRows(lock);
   const changes = resolved.changes;
-  const items = workspaceItems(discovery, lock);
+  const items = workspaceItems(discovery, lock, ctx.local);
   const report = { syncApi: 1, automations: automationCounts(automations), standalone: discovery.standalone === true || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, lock: lockFile }, members, packages, changes, problems, warnings: discovery.warnings ?? [] };
   return { report, lock, discovery, items, lockFile, problems };
 }
@@ -1216,10 +1222,8 @@ function printSyncReport(ctx, synced) {
   const packageSouls = items.souls.filter((s) => s.kind === "package");
   const disabledHere = items.souls.filter(isDisabled);
   console.log(`souls      ${items.souls.length} discovered (${memberSouls.length} members, ${externalSouls.length} external, ${packageSouls.length ? `${packageSouls.length} package, ` : ""}${disabledHere.length} disabled here) · ${repoOwned.length} private capabilit${repoOwned.length === 1 ? "y" : "ies"}${repoOwned.length ? ` (${repoOwned.map((c) => `${c.name}, ${memberLabel(c.repoKey)} only`).join("; ")})` : ""}`);
-  const teams = new Map();
-  for (const s of items.souls) { const t = teams.get(s.team) || { souls: 0, capabilities: 0 }; t.souls++; teams.set(s.team, t); }
-  for (const c of items.capabilities.filter((c) => c.kind === "member")) { const t = teams.get(c.team) || { souls: 0, capabilities: 0 }; t.capabilities++; teams.set(c.team, t); }
-  console.log(`teams      ${[...teams.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([team, n]) => `${team} ${n.souls} soul${n.souls === 1 ? "" : "s"}${n.capabilities ? `, ${n.capabilities} capabilit${n.capabilities === 1 ? "y" : "ies"}` : ""}`).join(" · ") || "(none)"}`);
+  const sharedTeams = Object.keys(discovery.workspace?.teams || {}).sort();
+  console.log(`teams      ${sharedTeams.length ? `${sharedTeams.join(", ")} (shared)` : "(no shared teams)"} · this deployment's: oats teams`);
   const ac = report.automations;
   if (ac.triggers || ac.schedules) console.log(`automations ${ac.triggers} trigger${ac.triggers === 1 ? "" : "s"}, ${ac.schedules} schedule${ac.schedules === 1 ? "" : "s"} in the members (oats trigger list · oats schedule list)`);
   for (const p of synced.problems ?? discovery.problems) console.log(`problem    ${p.code}  ${p.repoKey ? `${memberLabel(p.repoKey)}:` : ""}${p.path}  ${p.message}`);
@@ -1417,7 +1421,7 @@ async function workspaceCmd() {
   const locked = new Set(packages.map((p) => p.id));
   const unsynced = declared.filter((id) => !locked.has(id));
   const stale = packages.filter((p) => !declared.includes(p.id)).map((p) => p.id);
-  const result = { workspaceStatusApi: 1, standalone: standalone || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, teams: Object.keys(discovery.workspace?.teams || {}) }, members, packages, declaredPackages: declared, unsynced, stale, external: (discovery.external || []).map((e) => ({ source: e.source, soul: e.soul.name, team: teamLabel(e.soul.team) })), problems: discovery.problems, warnings: discovery.warnings ?? [] };
+  const result = { workspaceStatusApi: 1, standalone: standalone || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, teams: sharedTeamRows(discovery) }, members, packages, declaredPackages: declared, unsynced, stale, external: (discovery.external || []).map((e) => ({ source: e.source, soul: e.soul.name })), problems: discovery.problems, warnings: discovery.warnings ?? [] };
   // Workspace automations (0.29.0), from the snapshot `oats sync` took, placed on this host.
   const actx = scopeAutomations(ctx.deploymentDir, {});
   result.automations = { host: actx.host.name, snapshot: actx.snapshot ? { takenAt: actx.snapshot.takenAt, problems: actx.snapshot.problems.length } : null, rows: [...actx.triggers, ...actx.schedules].map((a) => ({ kind: a.kind, id: a.id, runsOn: a.runsOn, owner: a.owner, runsHere: a.placement.runsHere, reason: a.placement.reason, enabledHere: a.placement.enabledHere, origin: a.origin, ...(a.invalid ? { invalid: a.invalid } : {}) })) };
@@ -1426,14 +1430,14 @@ async function workspaceCmd() {
   console.log(`workspace ${workspaceName(discovery)}  (${discovery.key} @ ${short(discovery.commit)})  local ${shortPath(ctx.localPath)}\n`);
   if (standalone) console.log(`  (${standaloneNote(discovery)})\n`);
   console.log("Members:");
-  printTable(["member", "status", "commit", "team", "souls", "capabilities", "publishes"], members.map((m) => [m.name, m.status, short(m.commit), m.team ?? "—", m.souls.join(",") || "—", m.capabilities.join(",") || "—", m.publishes ? `${m.publishes.package} v${m.publishes.version ?? "?"}` : "—"]));
+  printTable(["member", "status", "commit", "souls", "capabilities", "publishes"], members.map((m) => [m.name, m.status, short(m.commit), m.souls.join(",") || "—", m.capabilities.join(",") || "—", m.publishes ? `${m.publishes.package} v${m.publishes.version ?? "?"}` : "—"]));
   for (const m of members.filter((m) => !m.confirmed)) console.log(`    ${m.name}: ${m.detail}`);
   console.log("\nPackages:");
   if (!packages.length) console.log(unsynced.length ? `  (none locked yet — \`oats sync\` resolves ${unsynced.join(", ")})` : "  (none)");
   else printTable(["package", "version", "source", "commit", "capabilities", "souls"], packages.map((p) => [p.id, p.version, p.source, short(p.commit), p.capabilities.join(","), p.souls.join(",") || "—"]));
   if (packages.length && unsynced.length) console.log(`  declared but not locked (run \`oats sync\`): ${unsynced.join(", ")}`);
   if (stale.length) console.log(`  locked but no longer declared (run \`oats sync\`): ${stale.join(", ")}`);
-  if (result.external.length) console.log(`\nExternal: ${result.external.map((e) => `${e.soul} (${e.source.replace(/@([0-9a-f]{40})$/, (_, o) => `@${short(o)}`)}, ${e.team})`).join("   ")}`);
+  if (result.external.length) console.log(`\nExternal: ${result.external.map((e) => `${e.soul} (${e.source.replace(/@([0-9a-f]{40})$/, (_, o) => `@${short(o)}`)})`).join("   ")}`);
   if (result.automations.rows.length) {
     console.log(`\nAutomations (this host: ${result.automations.host ?? "unnamed — set host.name in oats-local.yaml"}):`);
     printTable(["kind", "id", "runs on", "owner", "here"], result.automations.rows.map((r) => [r.kind, r.id, r.runsOn, r.owner, r.runsHere ? "runs here" : r.invalid ? "invalid" : r.reason ?? "disabled here"]));
@@ -1442,7 +1446,13 @@ async function workspaceCmd() {
   if (discovery.warnings?.length) { console.log("\nWarnings:"); for (const w of discovery.warnings) console.log(`  ${w.code}  ${w.message}`); }
 }
 
-/** `oats workspace status` facts (feature desktop-facts): the workspace and team defaults as rows; this
+/** The committed (shared) teams as `workspace status` reports them: rows in label order (team model v2). */
+function sharedTeamRows(discovery) {
+  const teams = discovery.standalone === true ? {} : discovery.workspace?.teams || {};
+  return Object.keys(teams).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)).map((label) => ({ label, team: typeof teams[label]?.team === "string" ? teams[label].team : null, description: typeof teams[label]?.description === "string" ? teams[label].description : null }));
+}
+
+/** `oats workspace status` facts (feature desktop-facts): the workspace defaults as rows; this
  *  computer (member clones and the rule that found each, disabled souls, the lock); file locations with
  *  browsable urls; each catalog package's newer version, when the official catalog has one. */
 async function workspaceStatusFacts(result, discovery, lock, ctx) {
@@ -1454,7 +1464,6 @@ async function workspaceStatusFacts(result, discovery, lock, ctx) {
   result.defaults = {
     slots: Object.fromEntries(LAYERS.map((l) => [l, slot(defaults[l])])),
     capabilities: rows(defaults.capabilities),
-    byTeam: Object.fromEntries(Object.entries(defaults.byTeam && typeof defaults.byTeam === "object" ? defaults.byTeam : {}).map(([label, t]) => [label, { capabilities: rows(t?.capabilities) }])),
   };
   result.workspace.file = discovery.standalone === true ? null : { path: "oats-workspace.yaml", url: browseUrl(discovery.key, discovery.commit, "oats-workspace.yaml") };
   for (const m of result.members) Object.assign(m, { url: browseUrl(m.key, m.commit), membershipFile: { path: "oats-membership.yaml", url: browseUrl(m.key, m.commit, "oats-membership.yaml") } });
@@ -1475,6 +1484,88 @@ async function workspaceStatusFacts(result, discovery, lock, ctx) {
   }
 }
 
+/** The deployment's team facts for the team verbs: oats-local.yaml and the committed shared teams
+ *  (the workspace host read now; none in a standalone view). */
+async function teamsContext(bail) {
+  const ctx = workspaceContext(bail);
+  let workspace = null, workspaceKey = null;
+  if (!(typeof ctx.local.standalone === "string" && ctx.local.standalone)) {
+    try { const { observeWorkspace } = await import("../lib/workspace.mjs"); const obs = await observeWorkspace(ctx.local.workspace, { remoteOptions: ctx.remoteOptions }); workspace = obs.workspace; workspaceKey = obs.key; }
+    catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details ?? e.provenance); throw e; }
+  }
+  return { deployment: ctx.deploymentDir, localPath: ctx.localPath, local: ctx.local, workspace, workspaceKey, remoteOptions: ctx.remoteOptions };
+}
+const labelsFlag = (name) => { const v = valueFlag(name); return v === undefined ? [] : String(v).split(",").map((l) => l.trim()).filter(Boolean); };
+const positional = (i) => (args[i] !== undefined && !args[i].startsWith("--") ? args[i] : undefined);
+
+/** `oats teams [--json] | add <label> --team <id> [--description <d>] | remove <label> | default <label>` —
+ *  this deployment's teams (team model v2). Config only: never a provider call. */
+async function teamsCmd() {
+  const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
+  const usage = "usage: oats teams [--json] | oats teams add <label> --team <id> [--description <d>] | oats teams remove <label> | oats teams default <label>  [--dir <deployment>] [--json]";
+  const sub = positional(1);
+  if (sub !== undefined && !["add", "remove", "default"].includes(sub)) bail("E_USAGE", usage);
+  const label = sub ? positional(2) : undefined;
+  if (sub && label === undefined) bail("E_BAD_ARGS", `oats teams ${sub} needs a team label — ${usage}`);
+  const ctx = await teamsContext(bail);
+  const V = await import("../lib/teams-verbs.mjs");
+  let result = null;
+  try {
+    if (sub === "add") result = V.teamsAdd(ctx, label, { team: valueFlag("team"), description: valueFlag("description") });
+    else if (sub === "remove") result = V.teamsRemove(ctx, label);
+    else if (sub === "default") result = V.teamsDefault(ctx, label);
+  } catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details); throw e; }
+  const doc = V.teamsDocument(result ? { ...ctx, local: result.local } : ctx);
+  if (JSON_MODE) { jsonOk(result ? { ...doc, changed: result.changed } : doc); return; }
+  if (result) console.log(result.changed ? `${sub === "add" ? `Declared team ${label}` : sub === "remove" ? `Removed team ${label}` : `The default team is now ${label}`} in ${shortPath(ctx.localPath)}` : "Nothing to change");
+  console.log(`default   ${doc.defaultTeam ?? "(none)"}`);
+  if (!doc.teams.length) console.log("teams     (none: `oats aweb setup` creates them, or `oats teams add <label> --team <id>`)");
+  else printTable(["team", "id", "from", ""], doc.teams.map((t) => [t.label, t.team ?? "(no id yet)", t.from, t.default ? "default" : ""]));
+  const souls = Object.entries(doc.souls.teams).map(([k, l]) => `${k}: ${l.join(",")}`);
+  if (souls.length) console.log(`souls     ${souls.join(" · ")}`);
+  const defaults = Object.entries(doc.souls.default).map(([k, l]) => `${k}: ${l}`);
+  if (defaults.length) console.log(`defaults  ${defaults.join(" · ")}`);
+  for (const p of doc.problems) console.log(`${p.severity === "failure" ? "problem" : "warning"}   ${p.code}  ${p.message} — ${p.fix}`);
+}
+
+/** `oats soul teams <soul>|'*' [--add a,b] [--remove a,b] [--default <label> | --clear-default] [--json]` —
+ *  which teams a soul belongs to here, and why (team model v2). Config only. */
+async function soulCmd() {
+  const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
+  const usage = "usage: oats soul teams <soul>|'*' [--add <label>[,…]] [--remove <label>[,…]] [--default <label> | --clear-default]  [--dir <deployment>] [--json]";
+  if (positional(1) !== "teams") bail("E_USAGE", usage);
+  const name = positional(2);
+  if (name === undefined) bail("E_BAD_ARGS", `oats soul teams needs a soul (or '*' for every soul) — ${usage}`);
+  const edit = { add: labelsFlag("add"), remove: labelsFlag("remove"), setDefault: valueFlag("default") ?? null, clearDefault: args.includes("--clear-default") };
+  const ctx = workspaceContext(bail);
+  let teamsCtx, soul = "*", key = "*";
+  if (name === "*") teamsCtx = await teamsContext(bail);
+  else {
+    // The soul is named as for spawn: E_SOUL_UNKNOWN / E_SOUL_AMBIGUOUS; package souls come from the lock.
+    let lock = null;
+    try { lock = existsSync(join(ctx.deploymentDir, LOCK_FILE)) ? readLock(ctx.deploymentDir) : null; } catch (e) { return bail(e.code || "E_LOCK_SCHEMA", e.message, e.details); }
+    let discovery, entry;
+    try {
+      const { discoverOrStandalone, findSoulEntry } = await import("../lib/instance-resolution.mjs");
+      discovery = await discoverOrStandalone(ctx.local, { lock, deployment: ctx.deploymentDir, remoteOptions: ctx.remoteOptions });
+      entry = findSoulEntry(discovery, name);
+    } catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details ?? e.provenance); throw e; }
+    soul = entry.name; key = soulKeyOf(entry);
+    teamsCtx = { deployment: ctx.deploymentDir, localPath: ctx.localPath, local: ctx.local, workspace: discovery.standalone === true ? null : discovery.workspace, workspaceKey: discovery.key ?? null };
+  }
+  const V = await import("../lib/teams-verbs.mjs");
+  const mutating = edit.add.length || edit.remove.length || edit.setDefault !== null || edit.clearDefault;
+  let result = null, doc;
+  try {
+    if (mutating) result = V.soulTeamsEdit(teamsCtx, key, edit);
+    doc = V.soulTeamsDocument(result ? { ...teamsCtx, local: result.local } : teamsCtx, { soul, key });
+  } catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details); throw e; }
+  if (JSON_MODE) { jsonOk(result ? { ...doc, changed: result.changed } : doc); return; }
+  if (result) console.log(result.changed ? `Updated the teams of ${key === "*" ? "every soul" : key} in ${shortPath(teamsCtx.localPath)}` : "Nothing to change");
+  console.log(`${key === "*" ? "every soul" : key} on this computer: default ${doc.defaultTeam ? `${doc.defaultTeam.label} (${doc.defaultTeam.from})` : "(none)"}`);
+  if (doc.teams.length) printTable(["team", "id", "from", "why"], doc.teams.map((t) => [t.default ? `${t.label} (default)` : t.label, t.team ?? "(no id yet)", t.from, t.via.join(",")]));
+}
+
 /** `oats capabilities` / `oats souls` [--dir] [--json] — contract §6. */
 async function itemsCmd(kind) {
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
@@ -1482,7 +1573,7 @@ async function itemsCmd(kind) {
   const discovery = await discoverForCli(ctx, bail);
   let lock;
   try { lock = readLock(ctx.deploymentDir); } catch (e) { return bail(e.code || "E_LOCK_SCHEMA", e.message, e.details); }
-  const items = workspaceItems(discovery, lock)[kind];
+  const items = workspaceItems(discovery, lock, ctx.local)[kind];
   // One command's reads at a commit are shared: many souls resolve over the same manifests and listings.
   const remote = memoizedRemote(remoteModule);
   if (kind === "capabilities") await capabilityFacts(items, discovery, lock, ctx, remote);
@@ -1491,8 +1582,8 @@ async function itemsCmd(kind) {
   if (JSON_MODE) { jsonOk({ [`${kind}Api`]: 1, standalone: standalone || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, commit: discovery.commit }, [kind]: items, problems: discovery.problems }); return; }
   console.log(`${kind} of workspace ${workspaceName(discovery)} (${discovery.key} @ ${short(discovery.commit)})${standalone ? `  — ${standaloneNote(discovery)}` : ""}\n`);
   if (!items.length) console.log("  (none)");
-  else if (kind === "souls") printTable(["name", "origin", "team", "work"], items.map((s) => [s.name, s.origin, s.labels?.length > 1 ? s.labels.join(",") : s.team, s.work ?? "—"]));
-  else printTable(["name", "origin", "team", "layer"], items.map((c) => [c.private ? `${c.name} (repo-owned)` : c.name, c.origin, c.team, c.layer ?? "—"]));
+  else if (kind === "souls") printTable(["name", "origin", "teams here", "work"], items.map((s) => [s.name, s.origin, s.teams === null ? "(invalid: oats teams)" : s.teams.map((t) => (t.default ? `${t.label}*` : t.label)).join(",") || "—", s.work ?? "—"]));
+  else printTable(["name", "origin", "layer"], items.map((c) => [c.private ? `${c.name} (repo-owned)` : c.name, c.origin, c.layer ?? "—"]));
   const unsynced = Object.keys(discovery.workspace?.packages || {}).filter((id) => !lock.packages[id]);
   if (kind === "capabilities" && unsynced.length) console.log(`\n  package capabilities of ${unsynced.join(", ")} appear after \`oats sync\``);
 }
@@ -1764,7 +1855,7 @@ async function spawnCmd() {
         if (!agent || soulFetched || agent._dir !== dirname(soulDir)) agent = findAgent(root, soulName);
       }
       if (!agent) bail("E_SOUL_UNKNOWN", `soul "${name}" was fetched to ${shortPath(soulDir)} but is not readable as a soul there`);
-      note(`(workspace soul: "${name}" from ${wsPrepared.soulEntry.repoKey} @ ${String(wsPrepared.soulEntry.commit).slice(0, 12)}${wsPrepared.soulEntry.team ? `, team ${wsPrepared.soulEntry.team}` : ""}${soulFetched ? "; soul source fetched" : ""})`);
+      note(`(workspace soul: "${name}" from ${wsPrepared.soulEntry.repoKey} @ ${String(wsPrepared.soulEntry.commit).slice(0, 12)}${wsPrepared.resolution.defaultTeam ? `, team ${wsPrepared.resolution.defaultTeam.label}` : ""}${soulFetched ? "; soul source fetched" : ""})`);
     } catch (e) {
       // Standalone (decisions 10/25): the ONLY package request is the kernel's own
       // default; when the catalog cannot name it, say so instead of "add it to packages:"
@@ -2201,7 +2292,9 @@ async function triggerCmd() {
         try {
           const { observeWorkspace } = await import("../lib/workspace.mjs");
           const { local } = loadLocal(ws());
-          if (typeof local.workspace === "string") workspaceTeams = Object.keys((await observeWorkspace(local.workspace, { remoteOptions: remoteOptionsFromEnv() })).workspace.teams || {});
+          // The labels declared here: the committed shared teams and this deployment's local ones.
+          const shared = typeof local.workspace === "string" && !local.standalone ? (await observeWorkspace(local.workspace, { remoteOptions: remoteOptionsFromEnv() })).workspace : null;
+          workspaceTeams = [...teamModel(shared, local).labels.keys()];
         } catch { /* reported as unknown (null) */ }
         return out(T.testTrigger(ws(), needId(), { workspaceTeams, ctx: ctx() }), (r) => [
           `trigger ${r.id}: ${r.ok ? "ready" : "NOT ready"} (nothing was spawned)`,
@@ -2543,8 +2636,8 @@ async function capabilityCommand() {
         const ws = meta.workspace && typeof meta.workspace === "object" ? meta.workspace : {};
         const messaging = (meta.capabilities || []).find((c) => c.layer === "messaging")?.id;
         homeMeta = { meta, messaging };
-        homeTeamCtx = (teams, teamsSource) => teamEnv({ workspace: { key: ws.key, name: ws.name, deployment: ws.deployment, team: ws.soul?.team, slots: { messaging } }, payloads: meta.providers, teams, teamsSource });
-        teamCtx = homeTeamCtx(meta.teams, "recorded");
+        homeTeamCtx = (t) => teamEnv({ workspace: { key: ws.key, name: ws.name, deployment: ws.deployment }, teams: t.teams, defaultTeam: t.defaultTeam, teamsSource: t.source });
+        teamCtx = homeTeamCtx({ ...recordedTeams(meta), source: "recorded" });
       } else {
         // Not inside a home: a v2 deployment (oats-local.yaml in reach) resolves
         // through the workspace, exactly as a spawn of --soul would (below).
@@ -2567,7 +2660,7 @@ async function capabilityCommand() {
     if (homeMeta && m.capability === homeMeta.messaging) {
       const { liveTeams } = await import("../lib/instance-resolution.mjs");
       const live = await liveTeams(instanceHome, homeMeta.meta, { remoteOptions: remoteOptionsFromEnv() });
-      teamCtx = homeTeamCtx(live.teams, live.source);
+      teamCtx = homeTeamCtx(live);
     }
     return runManifestCommand(m, { settings: capSettings[m.capability] || {}, origins: capOrigins[m.capability] }, teamCtx, () => m._dir, soulDir);
   }
@@ -2692,7 +2785,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "teams", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2 }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-2", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2 }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -3100,6 +3193,8 @@ else if (cmd === "sync") await syncCmd();
 else if (cmd === "package") await packageCmd();
 else if (cmd === "workspace") await workspaceCmd();
 else if (cmd === "capabilities" || cmd === "souls") await itemsCmd(cmd);
+else if (cmd === "teams") await teamsCmd();
+else if (cmd === "soul") await soulCmd();
 else if (cmd === "status") await status();
 else if (cmd === "pane") await paneCmd();
 else if (cmd === "version" || cmd === "--version" || cmd === "-v") versionCmd();
