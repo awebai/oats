@@ -1,5 +1,5 @@
 // Automations (human 2026-09-28): ONE nav item, with Schedules | Triggers as subtabs in the
-// Workspace's tab style — the bar holds "Automations", the two tabs (each with its row count), then
+// Workspace's tab style — the bar holds (no title) the two tabs (each with its row count), then
 // the shown page's own tools. On the captured kernel lists (test/fixtures/automations/kernel).
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -29,13 +29,13 @@ async function mount(t, { cli = CLI } = {}) {
   return { dom, doc, el, stage, bodies, tabs, tab };
 }
 
-test('one bar: "Automations", then Schedules | Triggers with their counts, then the page\'s own tools; Schedules first', async t => {
+test('one bar: no title, Schedules | Triggers with their counts, then the page\'s own tools; Schedules first', async t => {
   preselectAutomationsTab('schedule');
   const u = await mount(t);
   const header = u.el.querySelector('.auto-header');
   assert.ok(header.classList.contains('auto-framed'));
-  assert.equal(header.querySelector('.auto-heading h1').textContent, 'Automations');
-  assert.equal(header.querySelector('h2'), null, 'the page title is the selected tab, not a second heading');
+  assert.equal(header.querySelector('h1, h2'), null, 'no title in the bar (human, 2026-09-28): the selected tab names the page');
+  assert.equal(header.firstElementChild.className, 'auto-heading', 'the tabs lead the bar');
   const schedules = fx('schedule-list').schedules.length, triggers = fx('trigger-list').triggers.length;
   assert.deepEqual(u.tabs().map(b => [b.firstChild.textContent, b.querySelector('.auto-tab-count').textContent, b.getAttribute('aria-selected'), b.tabIndex]),
     [['Schedules', String(schedules), 'true', 0], ['Triggers', String(triggers), 'false', -1]]);
@@ -68,7 +68,7 @@ test("a soul's Schedule… opens Automations on Schedules; an older OATS gets ea
   preselectAutomationsTab('trigger'); preselectAutomationsTab('schedule');
   const old = await mount(t, { cli: { ok: true, features: ['schedule'], scheduleApi: 2 } });
   assert.equal(old.tab('schedule').getAttribute('aria-selected'), 'true');
-  assert.equal(old.el.querySelector('.auto-heading h1').textContent, 'Automations');
+  assert.equal(old.el.querySelector('.auto-header h1, .auto-header h2'), null);
   assert.match(old.el.textContent, /Schedules need OATS 0\.29 or later/);
   assert.deepEqual(old.bodies.filter(([p]) => p === '/api/automations'), [], 'nothing read from an older OATS, not even a count');
   old.tab('trigger').click(); await settle();

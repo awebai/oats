@@ -75,7 +75,7 @@ for (const [name, deployment, expected] of [
   ['pending', { status: 'pending' }, /Reading the deployment/],
 ]) test(`unobserved deployment (${name}) is explained in the header and the soul roster, never shown as empty`, async t => {
   const u = await setup(t, { agents: [], deployment: () => deployment });
-  assert.equal(u.doc.querySelector('h1').textContent, 'Workspace');
+  assert.equal(u.doc.querySelector('.workspace-header h1'), null, 'no title in the bar (human, 2026-09-28): the tabs lead');
   assert.match(u.doc.querySelector('.souls-grid').textContent, expected);
   u.tab('capabilities'); await tick();
   const status = u.doc.querySelector('.discovery-status');

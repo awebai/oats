@@ -1,5 +1,5 @@
 /** Automations (human 2026-09-28: ONE nav item, with Schedules | Triggers subtabs in the
- * Workspace's tab style) over the Schedules and Triggers pages (§2.3a: one layout).
+ * Workspace's tab style; no title in the bar) over the Schedules and Triggers pages (§2.3a: one layout).
  * Rows are grouped by where they run — this computer, needs attention here, elsewhere —
  * because the first question is what THIS computer does. Workspace (Git) and local
  * items sit together, each marked with its origin. A row opens its detail page.
@@ -23,12 +23,11 @@ export const automationsCSS = `
 .auto-header { flex:none; display:flex; align-items:center; gap:12px; height:48px; padding:0 16px; box-sizing:border-box; border-bottom:1px solid var(--border); background:var(--surface); }
 .auto-header h2 { display:flex; align-items:baseline; gap:8px; margin:0; font-size:14px; font-weight:700; }
 .auto-count { color:var(--muted); font:10.5px var(--mono,monospace); font-weight:400; }
-/* The Automations bar, in the Workspace's tab style: its title, then Schedules | Triggers, then the page's tools. */
+/* The Automations bar, in the Workspace's tab style: Schedules | Triggers, then the page's tools. */
 .auto-header.auto-framed { align-items:stretch; gap:22px; }
 .auto-header.auto-framed > :not(.auto-heading) { align-self:center; }
 .auto-header.auto-framed > .auto-spacer { margin-left:-10px; }
 .auto-heading { display:flex; align-items:stretch; gap:22px; min-width:0; }
-.auto-heading h1 { display:flex; align-items:center; margin:0; flex:none; font-size:14px; font-weight:700; }
 .auto-tabs { display:flex; flex-wrap:nowrap; overflow-x:auto; gap:22px; min-width:0; scrollbar-width:none; }
 .oats-view .auto-tabs button { flex:none; display:inline-flex; align-items:center; gap:6px; height:auto; min-height:0; padding:0; border:0; border-radius:0; background:none; color:var(--muted); font:500 12.5px var(--sans,system-ui); cursor:pointer; }
 .oats-view .auto-tabs button:hover { color:var(--fg); }
@@ -536,7 +535,7 @@ export function preselectAutomationsTab(kind) { if (AUTOMATION_KINDS.includes(ki
 export function mount(el, ctx) { stage = createAutomationsStage(el, ctx); }
 export function unmount() { stage?.dispose(); stage = null; }
 
-/** The stage: a bar with "Automations" and the subtabs (the page's own tools at its right), and
+/** The stage: a bar with the subtabs (the page's own tools at its right), and
  * the chosen page below. Each tab counts its rows: the shown page reports its own, and the other
  * kind is read once for its count (a list read, never a change). `pages` injects the two pages. */
 export function createAutomationsStage(el, ctx, { cli: readCli = cliStatus, subscribeCli = onCliChange, pages = null } = {}) {
@@ -553,8 +552,8 @@ export function createAutomationsStage(el, ctx, { cli: readCli = cliStatus, subs
   }
   const frame = {
     heading(d) {
+      // No title in the bar (human, 2026-09-28): the sidebar already says Automations; the tabs lead.
       const wrap = d.createElement('div'); wrap.className = 'auto-heading';
-      const h1 = d.createElement('h1'); h1.textContent = 'Automations';
       const tabs = d.createElement('div'); tabs.className = 'auto-tabs'; tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Automations');
       for (const k of AUTOMATION_KINDS) {
         const b = d.createElement('button'); b.type = 'button'; b.id = `automations-tab-${k}`; b.dataset.kind = k; b.setAttribute('role', 'tab');
@@ -570,7 +569,7 @@ export function createAutomationsStage(el, ctx, { cli: readCli = cliStatus, subs
         });
         tabs.append(b);
       }
-      wrap.append(h1, tabs);
+      wrap.append(tabs);
       queueMicrotask(() => {
         paintCounts();
         if (focusTab && wrap.isConnected) { focusTab = false; wrap.querySelector('[aria-selected=true]')?.focus({ preventScroll: true }); }
