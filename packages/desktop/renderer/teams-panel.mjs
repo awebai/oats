@@ -122,10 +122,13 @@ export function teamsDocument(run, address, { actions = false } = {}) {
     ...(Object.hasOwn(d, 'left') ? { left: d.left } : {}), ...(did ? { actions: d.actions } : {}) });
 }
 /** One `actions` row of a join/leave answer: the verb and label, an optional
- * `released` word, an optional provider receipt (a bounded record, kept opaque). */
+ * `released` word, an optional provider receipt (a bounded record, kept opaque), and an optional
+ * non-fatal `warning` (bounded text, as the provider words it; e.g. a join accepted without a
+ * workspace connection, with its recovery). */
 function actionRow(a) {
   if (!record(a) || !['join', 'leave'].includes(a.action) || !label(a.label)) return false;
-  if (!Object.keys(a).every(k => ['action', 'label', 'released', 'receipt'].includes(k))) return false;
+  if (!Object.keys(a).every(k => ['action', 'label', 'released', 'receipt', 'warning'].includes(k))) return false;
+  if (Object.hasOwn(a, 'warning') && !text(a.warning, 1024)) return false;
   if (Object.hasOwn(a, 'released') && !text(a.released, 32)) return false;
   if (Object.hasOwn(a, 'receipt') && !(record(a.receipt) && JSON.stringify(a.receipt).length <= 4096)) return false;
   return true;

@@ -77,11 +77,17 @@ test('the teams document is decoded strictly: exactly the contract fields, bound
   const left = teamsDocument(run('leave-reviewers'), 'messaging:leave', { actions: true });
   assert.deepEqual(left.actions.map(a => [a.action, a.label, a.released]), [['leave', 'reviewers', 'released']]);
   assert.equal(left.actions[0].receipt.alias_released, true, 'the receipt is kept as sent (opaque; never shown)');
+  // oats.aweb's join/leave rows may carry a non-fatal warning (provider bin/oats-aweb.mjs actions rows);
+  // derived scenario on the real leave answer until the 1.17 capture exists.
+  const warned = structuredClone(run('leave-reviewers')); warned.result.actions[0].warning = 'oats-aweb: team reviewers left, but its alias was not released; rerun `oats operation run messaging:leave`';
+  assert.equal(teamsDocument(warned, 'messaging:leave', { actions: true }).actions[0].warning, warned.result.actions[0].warning, 'a warning is kept as worded');
   const acted = () => structuredClone(run('leave-reviewers'));
   for (const [what, mutate] of [['action verb', v => { v.result.actions[0].action = 'rejoin'; }], ['action label shape', v => { v.result.actions[0].label = 'a b'; }],
     ['action label not a row', v => { v.result.actions[0].label = 'marketing'; }], ['action extra key', v => { v.result.actions[0].note = 'x'; }],
     ['released not text', v => { v.result.actions[0].released = true; }], ['receipt not a record', v => { v.result.actions[0].receipt = 'ok'; }],
     ['receipt oversized', v => { v.result.actions[0].receipt = { blob: 'x'.repeat(5000) }; }], ['actions not a list', v => { v.result.actions = {}; }],
+    ['warning not text', v => { v.result.actions[0].warning = { x: 1 }; }], ['warning control char', v => { v.result.actions[0].warning = 'a\nb'; }],
+    ['warning empty', v => { v.result.actions[0].warning = ''; }], ['warning oversized', v => { v.result.actions[0].warning = 'w'.repeat(1025); }],
     ['too many actions', v => { v.result.actions = Array.from({ length: 65 }, () => ({ action: 'leave', label: 'reviewers' })); }]]) {
     const v = acted(); mutate(v); assert.equal(teamsDocument(v, 'messaging:leave', { actions: true }), null, what);
   }
