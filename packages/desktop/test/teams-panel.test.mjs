@@ -189,6 +189,35 @@ test('a join/leave warning is shown under its row, verbatim, as a warning (not a
   assert.equal(j.row('dev').querySelector('.teams-warning').lastElementChild.textContent, 'joined without live delivery');
 });
 
+// oats.aweb 1.17's teams document (#284): eligible rows' `from` (shared|local) and top-level
+// `warnings[]`. A STAND-IN on the real 1.16 capture (as team-model-v2-tolerance does) until the
+// 1.17 capture exists: `from` reads in Workspace › Teams' words; warnings show verbatim, above the rows.
+test("1.17: an eligible team says whether it is shared or local; the provider's warnings show verbatim above the rows; absent says nothing", async t => {
+  const v117 = structuredClone(run('teams-initial'));
+  v117.result.eligible = v117.result.eligible.map((e, i) => ({ ...e, from: i === 0 ? 'local' : 'shared' }));
+  v117.result.warnings = ['oats-aweb: team reviewers has no provider id yet', 'oats-aweb: <i>second</i> warning'];
+  const u = await mount(t, () => v117);
+  assert.match(u.row('dev').textContent, /northwind:eng · local · Not joined/);
+  assert.match(u.row('reviewers').textContent, /northwind:review · shared · Not joined/);
+  const box = u.panel().querySelector('.teams-warnings .teams-warning');
+  assert.equal(box.getAttribute('role'), 'status');
+  assert.equal(box.querySelector('.teams-warning-head').textContent, 'Warnings from the messaging provider:');
+  assert.deepEqual([...box.querySelectorAll('.teams-warning-text')].map(p => p.textContent), v117.result.warnings, 'verbatim, in order');
+  assert.equal(box.querySelector('i'), null, 'as text, never markup');
+  assert.equal(u.panel().querySelector('.teams-card').firstElementChild, box.parentElement, 'said first, above the default team');
+  assert.equal(u.panel().querySelector('.teams-status').textContent, '', 'not an error');
+  // One warning reads in the singular; a joined row keeps its from too.
+  const joined = structuredClone(run('join-dev')); joined.result.eligible = joined.result.eligible.map(e => ({ ...e, from: 'shared' })); joined.result.warnings = ['only one'];
+  const j = await mount(t, body => body.operation === 'messaging:teams' ? v117 : joined);
+  await j.press('join', 'dev');
+  assert.match(j.row('dev').textContent, /northwind:eng · shared · Joined 2026/);
+  assert.equal(j.panel().querySelector('.teams-warning-head').textContent, 'A warning from the messaging provider:');
+  // The 1.16 capture has neither: no from word, no warnings.
+  const old = await mount(t, () => run('teams-initial'));
+  assert.match(old.row('dev').textContent, /northwind:eng · Not joined/);
+  assert.equal(old.panel().querySelector('.teams-warnings'), null);
+});
+
 test('while a team action runs, it reads Joining… and every team control is locked', async t => {
   const gate = deferred(), answer = captured();
   const u = await mount(t, body => body.operation === 'messaging:join' ? gate.promise.then(() => answer(body)) : answer(body));
