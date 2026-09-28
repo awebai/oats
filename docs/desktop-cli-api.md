@@ -1936,9 +1936,19 @@ not the kernel. This is its 0.30 contract, and its key set is exact:
 
 #### Readiness items (kernel)
 
-`oats readiness … --json` reports them under `checks.teams.items[]`, and
-`oats teams --json` under `problems[]`, as
-`{ code, label?, message, fix, … }`:
+`oats teams --json` reports them under `problems[]` as
+`{ code, label?, severity: "failure"|"warning", message, fix, … }`.
+
+`oats readiness … --json` reports the ones that concern the subject's soul in the
+EXISTING `checks.configured.items[]` (there is no fifth check: released Desktops
+recompute the summary from the four checks). Each is a readiness item:
+- `subject`: `"team <label>"`, or `"teams"` for `E_TEAM_UNCONFIGURED`;
+- `producer`: `"team model"`; `code`: the code below;
+- `reason`: the message; `remedy`: the fix;
+- a failure is `status: "fail", required: true` (it blocks `ready`); a warning is
+  `status: "fail", required: false`;
+- plus the problem's own keys (`label`, `default`, `shared`, `local`,
+  `recorded`, `current`).
 
 - **`E_TEAM_UNCONFIGURED`** (a failure, when a messaging layer is active and
   there is no default at all): "no teams configured: run `oats aweb setup`".
