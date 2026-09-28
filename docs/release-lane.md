@@ -130,3 +130,40 @@ contract; `test/release-lane.test.mjs` covers the lane's gates and phase
 logic against fixtures, with `npm` stubbed. The two can run in either order:
 a lane release followed by a workflow run, or a broken workflow run finished
 by the lane, and neither republishes what the other already did.
+
+## Mirroring a released `oats.okf`
+
+The standalone `awebai/oats-okf` repository is authoritative. This repository
+carries a generated mirror of its capabilities under `capabilities/oats-okf*/`
+and the inventory `scripts/okf-source-inventory.json`; neither is edited by
+hand. After an okf release is tagged:
+
+1. Check out the release in a clean clone of `awebai/oats-okf` at the tagged
+   commit, with the tag present locally and `origin` pointing at the official
+   repository.
+2. From this repository:
+
+   ```bash
+   node scripts/check-okf-mirror.mjs --finalize --source <clone> \
+     --final-tag v<version> --final-commit <full merged commit id>
+   node scripts/check-okf-mirror.mjs --verify
+   node scripts/check-okf-mirror.mjs --verify-source --source <clone>
+   ```
+
+3. Pin the same version in `package-catalog.json` and `oats-workspace.yaml`,
+   update the version literals the tests and smoke script carry, and review
+   the diff as one PR.
+
+`--finalize` stamps `release.status: published` only when every check passes:
+the tag is exactly `v<package version>` and resolves to the given commit; the
+source tree is clean, with no masked index entries; the exported files, modes
+and symlink targets equal the raw objects at that commit; `origin` is the
+official repository, and a fresh `ls-remote` advertises the same tag object
+and commit. A failed check leaves the mirror and inventory untouched.
+
+`--verify` needs no network: it checks the checked-in mirror against the
+inventory (file set, bytes, modes, symlinks, wrapper hashes). `--verify-source`
+re-checks a published inventory against the source and its origin; it attests
+what the remote advertised when queried, so released tags must never move.
+`--generate --source <clone>` captures a working tree for development and
+always records `release.status: pending`.

@@ -448,10 +448,41 @@ turns a package into a latest-state capability.
 
 ## Operations a capability declares
 
-A manifest may declare `operations` (named actions or views delegating to
-its own commands) that a GUI or a schedule invokes through `oats operation
-run <layer>:<name>`; `oats inspect --json` reports them with availability.
-See [docs/design/operations-contract.md](design/operations-contract.md).
+A manifest may declare `operations`: named actions or views that a GUI, a
+schedule or an operator invokes without knowing the provider.
+
+```json
+"operations": {
+  "harvest": { "kind": "action", "command": "harvest", "context": "home", "description": "Promote this instance's notes" },
+  "inspect": { "kind": "view",   "command": "inspect", "context": "home", "description": "Show this instance's working knowledge" }
+}
+```
+
+- `command` names one of the manifest's `commands`. `kind` is `action`
+  (default) or `view`; `context` is `home` (default: runs in an instance
+  home) or `scope`.
+- Optional `args` declare `{ name, flag, required, description }`; the runner
+  passes `--arg name=value` as those flags and refuses unknown or missing
+  required ones.
+- A view answers `{ documents: [{ label, kind: "markdown"|"text", path?, text? }], summary? }`;
+  the kernel validates that shape and relays it.
+
+`oats inspect --json` lists each operation with its availability.
+`oats operation run <layer>:<name> (--home <abs> | --soul <name>) [--arg k=v …] --json`
+resolves the provider that fills `<layer>` for the subject and runs its
+command exactly as `oats <namespace> <command>` would, with the hook
+identity variables of that subject and the invoking process's own identity
+removed. It refuses an undeclared operation (`E_OPERATION_UNKNOWN`), a slot
+with no provider or a home operation without `--home`
+(`E_OPERATION_UNAVAILABLE`), and a missing host command
+(`E_CAPABILITY_REQUIRES`).
+
+The provider must exit 0 with exactly one JSON envelope on stdout. Otherwise
+the outcome is **unconfirmed**: `E_OPERATION_TIMEOUT` (after 240 s) or
+`E_OPERATION_RESULT`, with `error.details { unconfirmed: true, exit, envelope?, stderr? }`.
+A provider's own `ok: false` is relayed with its code. A schedule of kind
+`operation` runs the same command ([schedules.md](schedules.md)). The JSON
+shapes are in [desktop-cli-api.md](desktop-cli-api.md#inspect-readiness-and-operation-run-on-the-workspace-model-operationsapi-2-soulsapi-2-readinessapi-2-oats-0260).
 
 ## Readiness check (`binding.check`)
 
@@ -460,7 +491,7 @@ manifest is asked by `oats readiness` whether it is ready for the subject. The
 subject is an instance home (`--home`) or a soul (`--soul`). The command named
 by `binding.check` receives one request and answers once. The kernel relays
 that answer to consumers as it came: readiness `providers` items. For the
-consumer side, see [desktop-cli-api.md](desktop-cli-api.md#oats-readiness---home---soul---dir---policy---json-readinessapi-2).
+consumer side, see [desktop-cli-api.md](desktop-cli-api.md#oats-readiness---home-----soul----dir----policy---json--readinessapi-2).
 This check reads configuration only; it binds nothing and does not change a
 spawn's fail-closed hooks.
 

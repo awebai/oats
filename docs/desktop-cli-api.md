@@ -157,7 +157,7 @@ document no longer carries `capturedDispatchApi` / `capturedDispatchActions`.
 
 The probe's `soulsApi` follows the inspect soul rows. The `oats souls --json`
 document keeps its own `soulsApi: 1`, because its shape did not change (see
-[`oats souls`](#oats-capabilities---dir---json-capabilitiesapi-1-oats-souls---dir---json-soulsapi-1)).
+[`oats souls`](#oats-capabilities---dir---json--capabilitiesapi-1--oats-souls---dir---json--soulsapi-1)).
 
 **The subject is an instance or a soul, never a scope.** Pass `--home <abs>`
 or `--soul <name>`. A workspace deployment with neither is `E_BAD_ARGS`. An
@@ -447,7 +447,7 @@ The provider is the module that fills `<layer>`:
 - for `--soul`, the resolved module, materialized into the deployment's module
   store if needed.
 
-The rest of the contract is unchanged ([operations contract](design/operations-contract.md)):
+The rest of the contract is unchanged ([capabilities.md](capabilities.md#operations-a-capability-declares)):
 - errors: `E_OPERATION_UNKNOWN`, `E_OPERATION_UNAVAILABLE` (also a
   `context: "home"` operation without `--home`), `E_CAPABILITY_REQUIRES`;
 - the receipt rules and the `E_OPERATION_TIMEOUT` / `E_OPERATION_RESULT`
@@ -464,7 +464,7 @@ Payload shapes are the destination kernel's.
 
 The classic scope document (`souls[].provenance`, `souls[].readiness`, the
 scope's portable `sources`) was removed with the classic config chain.
-`oats inspect` answers only [`soulsApi: 2`](#oats-inspect---home---soul---dir---json-operationsapi-2)
+`oats inspect` answers only [`soulsApi: 2`](#oats-inspect---home-----soul----dir----json--operationsapi-2)
 rows; the soul's declarations are in `oats souls --json`.
 
 ## Instance Git state (`oats instance git|diff`, `instanceGitApi: 1`, OATS 0.24.7+)
@@ -880,7 +880,7 @@ the pre-fix marker and is never accepted for dispatch.
 The quartet (`installed | trusted | configured | enrolled`), its signature
 verification (`--verify-signatures`, feature `readiness-verify`) and the
 scope subject were removed with the classic config chain. `oats readiness`
-answers only [`readinessApi: 2`](#oats-readiness---home---soul---dir---policy---json-readinessapi-2);
+answers only [`readinessApi: 2`](#oats-readiness---home-----soul----dir----policy---json--readinessapi-2);
 `--verify-signatures` is `E_BAD_ARGS`.
 
 ### Enforced child-spawn policy (`--policy`)
@@ -2015,7 +2015,7 @@ member's current commit.
 ## Mutations exposed to Desktop v1
 
 The commands below use the same envelope. Additional capability operations
-are described in [the operations contract](design/operations-contract.md).
+are described in [capabilities.md](capabilities.md#operations-a-capability-declares).
 
 ### Existing-home launch and restart
 

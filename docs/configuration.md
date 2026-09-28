@@ -109,3 +109,56 @@ oats doctor                    # this deployment's oats-local.yaml and lock, plu
 
 Environment knobs the kernel honours: `OATS_REMOTE_CACHE` (relocates the
 invisible fetch cache), `OATS_PACKAGE_CATALOG` (an alternative catalog file).
+
+## Launch configurations
+
+An entry has `harness` (`pi` \| `claude` \| `codex`, required), `executable`
+(a bare name looked up on `PATH`, or a path relative to this deployment
+directory), `args` (literal, no shell), `env` (a literal string, or
+`{ fromEnv: NAME }` resolved on the host at start), `model` and `yolo`. A
+launch configuration is a host choice: a soul never names one.
+
+- Select one with `--launch-config <name>` on `oats spawn`,
+  `oats session start` and `oats session restart`. A named configuration is
+  a unit: a `--harness` that disagrees with it is refused
+  (`E_LAUNCH_CONFIG_MISMATCH`); `--model` and `--yolo` override its fields.
+- Without `--launch-config`, a spawn uses the harness's defaults, and an
+  existing home keeps what it recorded. `--harness` alone leaves the recorded
+  configuration behind and uses the new harness's defaults. A model never
+  crosses harnesses.
+- The executable must be a regular executable file; it is never run to probe
+  it.
+- `oats launch-config list` shows the effective entries;
+  `oats launch-config set <name> --file <json>` and
+  `oats launch-config remove <name>` rewrite only this block;
+  `oats launch-config preview (--home <abs> | --soul <name>) --json` shows
+  what a start would run (harness, model, executable, argv, redacted
+  environment, command and preflight checks) and starts nothing.
+- The old key `runtime` is still read as `harness`, with a
+  `deprecated-runtime-name` warning.
+
+**Environment references.** `{ fromEnv: SRC }` is rendered as a reference,
+never a value, in the recorded command and in every answer. At start each
+source variable must be set on the host (`E_LAUNCH_ENV_MISSING`, before
+anything is created or stopped), and only the harness's pane receives it.
+`list` and `preview` redact every environment value, literals included.
+
+**The launch recipe.** A spawn records what a start is made of in
+`instance.json` under `launch`: the harness, the configuration and where it
+came from, the executable, args, env, model, yolo, and each capability's
+launch contribution with its settings and trust. One renderer turns it into
+the `command`. Configuration `args` go after the harness's own options and
+before capability arguments; every argument is single-quoted.
+
+**Starting and restarting a home.** `oats session start --home <abs>` runs
+the recorded recipe. With `--launch-config`, `--harness` or `--yolo`, the
+recipe is resolved again against the home's recorded context and every check
+runs first. A capability that contributed harness-specific arguments must
+declare a `launch` hook to follow a harness change; otherwise the start is
+refused (`E_LAUNCH_PREPARATION`). `oats session restart` runs the same
+checks, then sends SIGTERM to the harness and what it started, waits
+(`--stop-grace <seconds>`, default 20) for them to exit, and starts again in
+place. It never escalates: a harness still running is reported
+(`E_SESSION_STOP_FAILED`) and nothing is launched. What a harness saves on
+SIGTERM is its own; a wrapper script should `exec` the harness or forward
+signals.

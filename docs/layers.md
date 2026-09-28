@@ -40,7 +40,7 @@ Classic `kind`/`type`/`repo` declarations and config-targeted agent types are a 
 - External source import does not adopt the publisher's workspace. A framework repository may host its own development workspace without imposing it on consumers.
 - Operator choices and workspace defaults must respect source requirements. Git read access is not write permission, a trust declaration or messaging enrollment.
 
-The [workspace guide](workspaces.md) explains these boundaries and the [declaration contract](design/2026-09-15-portable-declarations.md) defines their versioned forms.
+The [workspace guide](workspaces.md) explains these boundaries and the [schemas](oats-workspace.schema.json) define their forms.
 
 ## Capability manifest and lifecycle events
 
@@ -53,7 +53,7 @@ The current [manifest schema](capability-manifest.schema.json) includes the publ
 - `helperInjection` and hook `inputs` are accepted and ignored since 0.26 (they served the removed captured path).
 - Required setup/capture outcomes cannot be silently omitted to make a launch or cleanup appear successful.
 
-Use [capability details](capabilities.md) and the [provider wire](design/2026-09-16-provider-binding-wire.md).
+Use [capability details](capabilities.md) and the [readiness check](capabilities.md#readiness-check-bindingcheck).
 
 ## The three core capabilities
 
@@ -81,7 +81,7 @@ The current slot name is **`messaging`**. The capability owns native identity, a
 
 aweb 1.10.3 supports its setup/lifecycle path but lacks the provider-binding interface. **aweb 1.11.0** (OATS >=0.24.2) adds it (1.11.2, OATS >=0.24.4, is code-identical and declares its fixed reasons and `helperInjection: omit`): `check` qualifies HOME-route operational custody for an input-capable Claude/Codex primary with an explicit private team and `delivery: session`; a strict-Pi print primary reports `needs-configuration` rather than dropping the requirement. Qualification is not account delegation, broker delivery or model consumption.
 
-The earlier proposed `reach` ladder is **not an enforced universal field**. In particular, aweb's `team_and_contacts` includes verified same-team senders; the compatibility spellings `contacts-only` and `contacts_only` do not establish owner-only admission. A config command succeeding proves neither inbound/outbound restrictions nor knowledge visibility. See the [identity/membership amendment](design/2026-09-08-expert-assisted-deployment-proposal.md#membership-reach-and-visibility-are-separate) and [messaging boundary](design/2026-09-16-messaging-capability-contract.md).
+The earlier proposed `reach` ladder is **not an enforced universal field**. In particular, aweb's `team_and_contacts` includes verified same-team senders; the compatibility spellings `contacts-only` and `contacts_only` do not establish owner-only admission. A config command succeeding proves neither inbound/outbound restrictions nor knowledge visibility. See the [messaging boundary](design/2026-09-16-knowledge-capability-contract.md).
 
 Roster membership is not a live process or a responsive session. Retirement may leave provider-side records or incomplete cleanup; inspect the actual outcome rather than promising aliases disappear.
 

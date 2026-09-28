@@ -1,13 +1,8 @@
 # Workspaces — one workspace per organisation, members are trust, nothing is installed
 
-This is the OATS workspace model (v2, the 0.25 line). It replaces the per-soul
-`source:` grammar, the installed-capability tier and `oats-config.yaml`. The
-normative record is the Decision concept
-`agents/oats-expert/soul/knowledge/decisions/workspace-model-v2.md`; the module
-contracts the kernel is built against are in
-[design/2026-09-23-workspace-module-contracts.md](design/2026-09-23-workspace-module-contracts.md);
-a full worked example (an imaginary company with three teams) is in
-[design/2026-09-23-simplified-workspace-model.md](design/2026-09-23-simplified-workspace-model.md).
+This is the OATS workspace model. The module contracts the kernel is built
+against are in
+[design/2026-09-23-workspace-module-contracts.md](design/2026-09-23-workspace-module-contracts.md).
 
 ## The rule
 

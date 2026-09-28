@@ -1,99 +1,41 @@
 # OKF knowledge operations: harvest, maintenance, triggers, and the working-soul surface
 
-**Status:** APPROVED by the human, 2026-09-26 ("perfect, I like it … get it moving and implemented and deployed as fast as possible"). Planned by the lead; the co-lead's amendments are folded in as they arrive.
-**Targets:** kernel **0.28.0**, oats.okf **4.0.0**, oats.framework **1.2.0**. okf **3.0.0** (the remote consult, in flight) ships first and unchanged in scope.
+**Status:** decided and implemented (kernel 0.28.0 and 0.29.0, oats.okf 4.x). This record decides how knowledge operations are split across the oats.okf package and which kernel mechanisms carry them: package souls, triggers and workspace automations. The reference pages ([knowledge.md](../knowledge.md#knowledge-operations), [schedules.md](../schedules.md#triggers), [packages.md](../packages.md#package-souls)) win on operator-visible behaviour.
 
-## 0. The human's direction, restated
+## 2. Design
 
-1. **Knowledge operations are split across three capabilities.**
-   - **oats.okf**: the working-soul surface.
-   - **oats.okf-harvest**: the harvester.
-   - **oats.okf-maintenance**: the maintainer.
-   - The harvester and the maintainer share a renamed **knowledge-theory** skill (today `memory-harvest`), and each has its own skills too.
-   - **oats.okf ships no harvest doctrine at all.**
-2. **Working souls using OKF get exactly two okf skills and one inject.**
-   - A skill for *instance knowledge maintenance* (STATE/log/notes), **teaching the judgment and theory of what useful instance knowledge to capture** (amended by the human, 2026-09-26).
-   - A skill for *soul knowledge consultation* (`okf-consultation`).
-   - The inject teaches the work mode: query both before starting a task, before compaction, and every so often while working, to decide, situate and work coherently with the soul's knowledge.
-3. **The harvester**:
-   - reads the harvested instance's **session transcript** (not only its notes), so its judgment has full context;
-   - opens a PR to the knowledge-base repo;
-   - **stays alive until that PR is merged (or closed), then self-retires.**
-4. **The maintainer**: a **knowledge-maintainer soul** reviews each harvest PR.
-   - It situates the addition in the base.
-   - It reads the harvested instance's tasks, if that instance had a tasks capability.
-   - It reads the existing soul knowledge.
-   - It judges soundness, amends whatever needs amending, and merges.
-5. **Triggers** (new concept).
-   - A deployment (laptop or server) can declare "on an event, spawn a NEW instance of soul X with this instruction, in these teams".
-   - The first use: *on a harvest PR opened → spawn the knowledge maintainer to review it.*
-6. **Fully defined in the okf repo.**
-   - The maintainer (and harvester) souls live in oats-okf.
-   - Users who onboard with the defaults get the trigger that launches the maintainer, **sourced from the okf package**.
-   - The skills insist the trigger runs on a deployment whose GitHub credentials can approve/merge PRs on the KB repo.
-7. **An `okf` team.**
-   - Workspaces using OKF get an `okf` team, so harvesters and maintainers talk without polluting the working teams.
-   - The okf onboarding teaches it.
+### 2.1 Capabilities in the oats.okf package
 
-## 1. What already exists (verified 2026-09-26)
+The package ships three capabilities, two package souls (§2.2) and one trigger template (`harvest-review`, §2.3).
 
-- **Scheduler** (`docs/schedules.md`).
-  - Committable definitions per deployment scope.
-  - One host timer runs `oats schedule tick --host` every minute; there's no daemon.
-  - Kinds: `spawn`, `command`, `wake`.
-  - Scheduled spawns materialize exactly like `oats spawn`.
-  - okf already registers one `command` job per source (`oats okf run-source`).
-- **Transcript capture.** okf's custody already copies **notes AND the record** (bounded `recall` windows of the session transcript, full text) into `<stateDir>/sources/<uuid>/inputs/<hash>.json`. It excludes privacy-excluded sessions. The harvester therefore needs no live source home. The gap is **doctrine and procedure**: the current skill does not make reading the transcript windows mandatory and systematic.
-- **PR delivery.** okf's `complete` pushes a branch and runs `gh pr create` on the base's repository (title `memory-harvest: <run>`). It already tracks PR state by `gh pr view/list`.
-- **The harvester today is a *capability agent*** (`agents/memory-harvest` in the okf manifest).
-  - It gets the whole oats.okf module (so every okf skill), no okf inject, and no hooks, so no messaging identity.
-  - It retires as soon as the completion receipt is written.
-- **Souls from a non-member repo** exist only as `external:` (commit-pinned, not versioned with a package). **Packages cannot ship souls today.** This is the one real kernel gap for (6).
-- **Teams:**
-  - labels are declared in `teams:`;
-  - `join=` at spawn exists (0.27.x);
-  - a soul's label must be declared, or it's `E_TEAM_UNKNOWN`.
-
-## 2. Target design
-
-### 2.1 Capabilities in the oats.okf package (4.0.0)
-
-| Capability | Who gets it | Skills | Inject | Commands, hooks and the rest |
+| Capability | Who gets it | Skills | Inject | Commands and hooks |
 |---|---|---|---|---|
-| **oats.okf** (knowledge slot) | every working soul with OKF knowledge | `okf-consultation` (soul knowledge: bases/index/cat/ls/links/search, receipts, citing); **`okf-instance-knowledge`** (instance memory: **the theory and judgment of what is worth capturing**, plus STATE.md/log.md/notes form and compaction discipline; §2.5a) | **the work-mode inject** (§2.5) | the consult commands; `setup`/`init`/`migrate`/binding; the spawn hook (source registration) and retire hook (custody) |
-| **oats.okf-harvest** (additive) | the harvester soul only | **`knowledge-theory`** (the doctrine, renamed from `memory-harvest` §3.x); **`knowledge-harvest`** (the procedure: read input fully, transcript windows first-class, situate, stage, PR, lifecycle until merged); **`okf-authoring`** (OKF Markdown craft, today's `okf` skill) | a harvester inject: you are a judge, not a worker; the staged roots are your only write surface; stay alive until the PR is merged/closed | `complete`, `harvest-status`; no source registration |
-| **oats.okf-maintenance** (additive) | the maintainer soul only | **`knowledge-theory`** (identical copy); **`knowledge-review`** (situate a PR, read provenance, the source soul's knowledge, its tasks, verdicts, amend, merge, notify); **`okf-authoring`** (identical copy); **`okf-trigger-setup`** (install/verify the review trigger on a host with merge-capable GitHub credentials) | a maintainer inject: one PR per instance; never merge what fails the doctrine; supersede, never silently overwrite | `review-context` (the PR's provenance → the reading list), `notify-harvester` |
+| **oats.okf** (knowledge slot) | every working soul with OKF knowledge | `okf-consultation` (soul knowledge); `okf-instance-knowledge` (what instance knowledge is worth capturing, and its form; §2.5a) | the work mode (§2.5) | the consult commands; `setup`, `init`, `migrate`, the binding; `run-source`, `complete`, `harvest-status`; the spawn hook (source registration) and retire hook (custody) |
+| **oats.okf-harvest** | the harvester soul only | `knowledge-theory` (the OKF promotion doctrine); `knowledge-harvest` (the procedure); `okf-authoring` (OKF Markdown craft) | a judge, not a worker; the staged roots are the only write surface; stay alive until the PR is merged or closed | `complete`, `harvest-status` |
+| **oats.okf-maintenance** | the maintainer soul only | `knowledge-theory` and `okf-authoring` (identical copies); `knowledge-review` (situate, judge, amend, merge, notify); `okf-trigger-setup` (declare and verify the review trigger) | one PR per instance; never merge what fails the doctrine; supersede explicitly | `review-context`, `notify-harvester` |
 
-**Shared skills are shipped as identical copies** in each capability (a package is a Git tree; there's no build step). A package test fails if the copies differ. There's no `E_SKILL_DUPLICATE` risk, because no soul composes both harvest and maintenance.
+- **Shared skills are identical copies** (a package is a Git tree with no build step); a package test fails if they differ. No soul composes both capabilities, so they never collide.
+- **oats.okf ships no harvest doctrine.** Working souls get consultation and capture judgment only; the promotion doctrine belongs to the harvester and the maintainer.
+- **Naming:** oats.framework ships an unrelated *capability* `oats.knowledge-theory` (for capability authors). The okf *skill* `knowledge-theory` describes itself as the OKF promotion doctrine so triggering does not confuse the two.
 
-**Removed from oats.okf:** `memory-harvest` (it becomes `knowledge-theory` + `knowledge-harvest` in oats.okf-harvest), the `okf` authoring skill (→ `okf-authoring`, maintenance/harvest only), and the `agents/memory-harvest` capability agent (→ a package soul).
+### 2.2 Package souls
 
-**Name note:** oats.framework already ships a *capability* `oats.knowledge-theory` (the skill `knowledge-capability-authoring`, for capability authors). The new *skill* `knowledge-theory` is unrelated and lives in okf's namespace. Its description must say "OKF promotion doctrine" so triggering doesn't confuse the two.
+A package ships souls beside its capabilities, so "sourced from the okf package" is one versioned pin.
 
-### 2.2 Package souls (kernel 0.28.0), the enabler for "sourced from the okf package"
+- A package manifest declares `souls: ["souls/knowledge-harvester", "souls/knowledge-maintainer"]`. Each is an ordinary soul directory (`soul.yaml`, `AGENTS.md`, `skills/`).
+- **Versioned and locked with the package:** one pin (`packages: { oats.okf: <version> }`) versions the capabilities and the souls. The lock records each soul's name, path and digest; nothing drifts, unlike an `external:` commit pin.
+- **Listed** with `kind: "package"` and its package origin (`oats souls`, the Desktop Souls page).
+- **Named** `<package>/<soul>` (`oats.okf/knowledge-maintainer`); a bare name works when unique, otherwise `E_SOUL_AMBIGUOUS`. It homes in `agents/<package>--<soul>/`, never shared with a same-named member soul.
+- **Resolved** like any soul (workspace defaults, `off`, `<slot>: none`, `souls.disabled`); `from: here` means *this package* at the locked commit.
+- **Trusted** as the package's capabilities are: declaring the package is the trust decision.
+- **Package souls replace capability agents.** A capability manifest that declares `agents:` is refused (`E_CAPABILITY_AGENTS_REMOVED`) with a remedy naming package souls.
 
-- A package manifest may declare `souls: ["souls/knowledge-maintainer", "souls/knowledge-harvester"]`.
-- Each is an ordinary soul directory (`soul.yaml`, `AGENTS.md`, `skills/`).
-- **Versioned and locked with the package:** one pin (`packages: { oats.okf: 4.0.0 }`) versions the capabilities *and* the souls. Nothing drifts, unlike `external:` commit pins.
-- **Discovery:** they're listed with `origin: package` (`oats status --workspace`, and the Desktop Souls page shows "from package oats.okf 4.0.0").
-- **Spawn:** by name. A package soul's instances live in a qualified directory (not shared with a same-named member soul).
-  - Package souls are namespaced `oats.okf/knowledge-maintainer` to avoid collisions with member souls.
-  - A bare name works when unambiguous.
-- **Resolution:**
-  - `from: here` inside a package soul means *this package*.
-  - Workspace/team defaults apply as for any soul (the soul can opt out with `off`/`none`).
-- **Workspace control:** `disabled:` in `oats-local.yaml` works as for member souls.
-- **Trust:** the same as the package's capabilities. Declaring the package is the trust decision.
-- **This replaces capability agents** (`agents:` in a capability manifest) once okf 4.0.0 is pinned. Removing the capability-agent path is a separate kernel PR, per "v2 becomes the classic" (no dual path), after the okf 4.0.0 mirror.
+### 2.3 Triggers
 
-### 2.3 Triggers (kernel 0.28.0)
+A trigger is an **event-driven schedule**: "when EVENT matches, spawn a NEW instance of SOUL with TASK, in TEAMS".
 
-**The concept:**
-- A trigger is **an event-driven schedule**: "when EVENT matches, spawn a NEW instance of SOUL with TASK, in TEAMS".
-- It lives beside schedules: the same deployment scope, file and host tick (`oats schedule tick --host`), and the same spawn path. There's no new daemon, and it runs only on the host that holds the scope.
-- Triggers are **per-deployment by design**: they need that machine's credentials.
-
-**Definition** (stored in the schedules file as `kind: "trigger"`, managed by `oats trigger …`):
+- It lives beside schedules: the same deployment scope and file (`oats-schedules.json`, `kind: "trigger"`), the same host tick (`oats schedule tick --host`) and the same spawn path. There is no daemon and no webhook; it runs only on the host that holds the scope.
+- Triggers are per-host by design: they act with that machine's `gh` credentials, and a definition carries none.
 
 ```json
 { "id": "okf-harvest-review", "enabled": true, "kind": "trigger",
@@ -101,289 +43,122 @@
           "events": ["opened", "reopened", "ready_for_review"],
           "labels": ["okf-harvest"], "base": "main", "poll": "2m" },
   "spawn": { "soul": "oats.okf/knowledge-maintainer", "purpose": "review-pr-{number}",
-             "task": "Review knowledge-base PR {repo}#{number}. Load knowledge-review first.",
-             "teams": ["okf"], "harness": "claude", "model": "opus" },
+             "task": "Review knowledge-base PR {repo}#{number} ({url}). Load the knowledge-review skill first.",
+             "harness": "claude", "model": "opus" },
   "concurrency": { "max": 2, "perKey": 1 } }
 ```
 
-- **Sources, v1:** `github.pull_request` only (polled with the host's `gh` auth; a laptop has no webhook). The shape is open to `github.issue`, `aweb.mail` and `okf.harvest` later.
-- **Dedup and delivery:**
-  - An event key (`<trigger>:<repo>#<number>:<event>:<updated_at>`) is recorded in the trigger state; each key spawns at most once.
-  - The key is recorded *after* a successful spawn, so a failed spawn is retried on the next poll.
-  - `perKey: 1` means one live instance per PR.
-- **The event reaches the instance** as `OATS_TRIGGER_EVENT_FILE` (a JSON file in the home: `{trigger, source, repo, number, url, event, headSha, labels}`), plus the templated task.
-- **Templates substitute ONLY whitelisted structured fields** (`{repo} {number} {url} {event} {headSha}`). PR titles and bodies are **never** interpolated into the task. They're untrusted data, which the soul reads from the event file and GitHub.
-- **Teams:** `spawn.teams` → the spawn's `join=` (0.27.x) for the messaging provider.
-- **CLI:**
-  - `oats trigger add --from <package>:<template> | --file <json>`;
-  - `list`, `show`, `enable`/`disable`, `remove`;
-  - `test <id>` (a dry run: check gh auth, repo access and the soul's resolvability, and list what WOULD fire now);
-  - `status` (the last polls, fired keys, live instances).
-  - Also in `--json` and `oats capabilities` (`features: ["triggers"]`) for the Desktop.
-- **Package trigger templates:** a package may declare `triggers: [{ id, file }]`; `oats trigger add --from oats.okf:harvest-review` instantiates one after asking for the repo. This is how okf ships the default.
-- **Safety:** a trigger spawns only a soul that resolves in this workspace. A disabled soul refuses. The trigger runs with the host's own credentials, and there's no credential in the definition.
+- **Source:** `github.pull_request` only, polled with the host's `gh` every `poll` (default `2m`, at least `1m`). Events are inferred poll over poll: `opened`, `reopened`, `ready_for_review`, `labeled`, `synchronize`. The shape stays open to other sources.
+- **Dedup and delivery:** each event has a key `<trigger>:<repo>#<number>:<event>:<stamp>`. A key is recorded as fired only after a successful spawn, so a failed spawn is retried on the next poll. Delivery is at least once; `concurrency.perKey` (default 1) keeps one live instance per PR, and `concurrency.max` (default 1) bounds the trigger.
+- **The event reaches the instance** as `OATS_TRIGGER_EVENT_FILE` (`<home>/.oats/trigger-event.json`: `{trigger, source, repo, number, url, event, headSha, labels, observedAt, key}`), plus the templated task.
+- **Templates substitute only whitelisted structured fields:** `{repo} {number} {url} {event} {headSha} {trigger}`. A template naming any other field is refused. PR titles and bodies are never interpolated: they are untrusted data the soul reads from the event file and GitHub.
+- **Teams:** `spawn.teams` becomes the messaging capability's `join=` provider setting at spawn.
+- **CLI:** `oats trigger add | list | show | enable | disable | remove | test | status`, all with `--json`; `test` is a dry run (gh auth, repository permissions, the soul resolves, what would fire now). The kernel advertises feature `triggers` in `oats version --json`.
+- **Package trigger templates:** a package declares `triggers: [{ id, file }]`, each file `{ parameters, definition }`. `oats trigger add --from oats.okf:harvest-review --set repo=…` instantiates one at the locked commit. This is how okf ships the review trigger.
+- **Safety:** a trigger spawns only a soul that resolves in this workspace; a disabled soul refuses. The trigger runs with the host's own credentials.
 
-### 2.3a Workspace automations: triggers and schedules declared in Git (the human, 2026-09-26)
+### 2.3a Workspace automations: triggers and schedules declared in Git
 
-Triggers and schedules are defined at **one of two levels** (the canonical folders are `oats-triggers/` and `oats-schedules/`; any file following the contract is picked up):
-- **the workspace level**, committed in any member repo and shared through Git: the default for anything a team relies on;
-- **locally**, in the deployment (§2.3 as built: `oats trigger add`, `oats schedule add`): machine-private, for personal or experimental jobs.
+Triggers and schedules are defined at one of two levels:
 
-**A human is a GitHub account** (a person or a machine user). Every workspace automation says **which machine runs it** and **which account it acts as**.
+- **the workspace level**, a file committed in a confirmed member repository and shared through Git, named `<member>/<id>`: the default for anything a team relies on;
+- **locally**, in the deployment's `oats-schedules.json` (`oats trigger add`, `oats schedule add`): machine-private, named `local/<id>`. A local schedule row keeps its bare `id` plus `qualifiedId: local/<id>`.
 
-**The canonical contract:**
-- **Where it lives (the human, amended):**
-  - **Canonical folder:** `oats-triggers/` (and `oats-schedules/`) at a member's root. Every `*.yaml`/`*.yml` there is a candidate.
-  - **Also picked up anywhere in the repo:** any file that follows the contract by name, `*.oats-trigger.yaml` / `*.oats-schedule.yaml` (`.yml` too), e.g. `services/billing/nightly.oats-schedule.yaml` beside the code it concerns.
-  - **The contract is self-describing:** the file carries `kind: oats-trigger` (or `oats-schedule`) + `schemaVersion: 1`. A candidate without the right `kind` is an `E_AUTOMATION_SCHEMA` discovery problem, not silently ignored.
-  - **The id** is the file's `id:`, else the filename stem (without `.oats-trigger`). Two files in one member with the same id → `E_AUTOMATION_DUPLICATE`, naming both paths.
-  - **Discovery cost:** one recursive tree listing per member commit (names only, no blobs; cached per commit), then blob reads of the candidates only.
-  - **Never scanned:** `oats-package/` (package templates are not workspace automations), `.git/`, `node_modules/`.
-- **Discovery:** they're discovered like souls (over the remote, from CONFIRMED members only), named `<member>/<id>`, and listed by `oats workspace status` / `oats trigger list` / `oats schedule list` with `origin: { kind: "workspace", repoKey, commit }`.
+Triggers and schedules are separate modules sharing only the kind-neutral pieces (`lib/automations.mjs`): one contract, one rule set, one layout.
+
+**Where a file lives:** every `*.yaml`/`*.yml` under the canonical folders `oats-triggers/` and `oats-schedules/` at a member's root, and any file named `*.oats-trigger.yaml` or `*.oats-schedule.yaml` anywhere in the member (beside the code it concerns). `oats-package/` (package templates are not workspace automations), `.git/` and `node_modules/` are never scanned. Discovery costs one tree listing per member commit, then blob reads of the candidates.
+
+**The file describes itself.** It carries `kind: oats-trigger` (or `oats-schedule`) and `schemaVersion: 1`; a candidate without the right kind is an `E_AUTOMATION_SCHEMA` problem, never silently skipped. The id is `id:`, else the filename stem; the same id twice in one member and kind is `E_AUTOMATION_DUPLICATE`, naming both paths.
 
 ```yaml
 # <member>/oats-triggers/okf-harvest-review.yaml
 kind: oats-trigger
 schemaVersion: 1
 description: Review every harvest PR on the knowledge base
-from: oats.okf:harvest-review        # optional: a package template (§2.3), then overrides
+from: oats.okf:harvest-review        # a package template, then its parameters
 set: { repo: github.com/acme/knowledge }
-runsOn: kb-bot-server                # the host name (oats-local.yaml host.name) that runs it
-owner: github.com/acme-kb-bot        # the GitHub account it acts as (a person or a machine user)
-# …or a full definition (on/spawn/concurrency) as in §2.3, instead of from/set
+runsOn: kb-bot-server                # the host.name that runs it
+owner: github.com/acme-kb-bot        # the GitHub account it acts as, <host>/<login>
+# …or a full definition (on, spawn, concurrency) as in §2.3, instead of from/set
 ```
 
-```yaml
-# <member>/oats-schedules/nightly-digest.yaml   (or anywhere: …/nightly-digest.oats-schedule.yaml)
-kind: oats-schedule
-schemaVersion: 1
-run: spawn                           # spawn | command | wake, as today
-cron: "0 7 * * *"
-tz: Europe/Madrid
-agent: digest-writer
-task: Write the nightly digest.
-runsOn: ana-laptop
-owner: github.com/ana
-```
+A workspace schedule has the same header with `run: spawn | command`, `cron`, `tz`, `agent`, `task` and the spawn options; `wake` targets an instance home on one machine, so it stays local.
 
-**Host identity:** `oats-local.yaml` gains `host: { name: <slug> }`. It's a machine fact, never in Git.
+**Who runs it.** A GitHub account (a person or a machine user) acts; a named host runs. A host runs a workspace automation only when both hold:
 
-**Who runs it:** a host runs a workspace automation ONLY when BOTH are true:
-- `runsOn` equals its `host.name`;
-- the host's authenticated `gh` account equals `owner` (`gh api user`, cached per tick).
+- `runsOn` equals its `oats-local.yaml` `host: { name }` (a machine fact, never in Git);
+- its authenticated `gh` account equals `owner` (asked once per tick).
 
-**Otherwise** it's listed with the reason:
-- `assigned-elsewhere` (another host);
-- `owner-mismatch` (this host is named but logged in as someone else; nothing runs, and `oats trigger test` says so);
-- `host-unnamed` (the host has no `host.name`).
+Otherwise it is listed with the reason `assigned-elsewhere`, `owner-mismatch` (named here but logged in as someone else; nothing runs, and `oats trigger test` says so) or `host-unnamed`. So exactly one machine runs it, and consent is explicit: its operator named the host and is logged in as the account. Declaring the automation in a member is the trust decision for its definition, as for souls. A workspace trigger's `owner` and `on.repo` must be on the same GitHub host.
 
-That makes "exactly one machine" a declared fact, and **consent** explicit: a machine acts for an account only when its operator named it AND is logged in as that account. Declaring the automation in a member is the trust decision for its *definition*, like souls.
+**Opting out** without a commit: `oats trigger disable <member>/<id>` and `oats schedule disable <member>/<id>` write `triggers.disabled` / `schedules.disabled` in `oats-local.yaml`. A workspace definition is never edited or removed locally (`E_AUTOMATION_WORKSPACE`): change the file in Git.
 
-**Opting out:** per kind, mirroring `souls.disabled`: `oats-local.yaml` `triggers: { disabled: [<member>/<id>, …] }` / `schedules: { disabled: [...] }` stops a named host from running one, without a commit. Triggers and schedules are separate modules (the human), sharing only the kind-neutral pieces.
+**Refresh.** `oats sync` discovers the workspace automations into a snapshot (`.agents/automations/snapshot.json`); the host tick reads it and refreshes it (`oats automations refresh`) when it is more than ten minutes old, so a change in Git reaches the named host within about ten minutes. A trigger template is instantiated when the snapshot is taken, at the locked commit. The run state (dedup keys, last poll, last run) stays per host and local.
 
-**Refresh:**
-- The host tick reads a snapshot of the workspace automations taken by `oats sync`, and refreshed by the tick at most every 10 minutes.
-- A definition change reaches the host within ~10 minutes; no fetch happens every minute.
-- The run state (dedup keys, the last poll) stays per host and local.
+**Writing one:** `oats trigger add` / `oats schedule add --workspace <member> --runs-on <host> --owner <host>/<login>` writes the file into a checkout of that member, or prints it. Everything in §2.3 still holds for workspace triggers.
 
-**Local automations are unchanged:** machine-private, implicitly this host and its own `gh`, so no `runsOn`/`owner`. Workspace ids are `<member>/<id>`. A local schedule row keeps its bare `id` (compatible with existing consumers) plus a `qualifiedId: local/<id>`.
+**Data and Desktop.** `oats trigger list --json` and `oats schedule list --json` carry workspace and local items together, each with its origin, owner, `runsOn`, `runsHere` and reason, soul, task and last/next run. The Desktop renders these rows and never re-derives placement: one Automations item, Schedules and Triggers subtabs in one layout, rows grouped by where they run and marked with their origin. A member the user cannot read contributes nothing.
 
-**Safety:** everything in §2.3 still holds (the soul must resolve here; only whitelisted fields are templated; PR text is never interpolated; there's no credential in any definition).
+**okf onboarding.** The review trigger is a workspace file (`oats-triggers/okf-harvest-review.yaml`, `from: oats.okf:harvest-review`, with `runsOn` and `owner` naming the merge-capable host and account). `okf-trigger-setup` teaches this form first, and `oats trigger test <member>/<id>` verifies it on the named host.
 
-**Schedules are the same contract as triggers** (the human, 2026-09-26):
-- A workspace schedule (`oats-schedules/<id>.yaml`, or `*.oats-schedule.yaml` anywhere) carries `runsOn` + `owner` and runs ONLY on the named host logged in as that account.
-- The same `assigned-elsewhere` / `owner-mismatch` / `host-unnamed` reasons, the same per-kind opt-out (`schedules.disabled`), the same snapshot refresh, and local schedules as `local/<id>`.
-- One rule set for both kinds; the kernel implements them together.
+### 2.4 The harvester and the maintainer
 
-**Desktop: the Schedules tab (existing, redesigned) + a NEW Triggers tab** (the human, 2026-09-26; no unified "Automations" view):
-- The existing **Schedules** tab is redesigned in place, and a new **Triggers** tab sits beside it.
-- **Both show workspace AND local items together**, each row marked with its origin.
-- **Sequencing:** the Desktop engineer's finished redesign ships FIRST (in 0.28.0). These tabs come after, on the kernel's `automations` JSON (0.29.0).
-- In each tab the user sees **every workspace item defined in the member repos they can read**, plus their own machine's local ones.
-- **Each row:**
-  - the id (`<member>/<id>` or `local/<id>`) and its origin (workspace/local);
-  - **the owner** (the GitHub account);
-  - **where it runs** (`runsOn`, and whether that's THIS machine, with the reason when not);
-  - **the soul** it spawns (with its origin: member/package);
-  - **the prompt** (the task template, shown verbatim, with the whitelisted fields highlighted);
-  - the event (a trigger's `on`) or the cron+tz (a schedule);
-  - teams, harness/model, concurrency;
-  - enabled/disabled here;
-  - the last run/fire and the next due (for automations this machine runs).
-- **Where it comes from:** the repo + path + commit of the file, linking to the file.
-- **Actions:**
-  - `test` (a dry run on this host);
-  - disable/enable here (`triggers.disabled` / `schedules.disabled`);
-  - open the defining file;
-  - for local ones: add/edit/remove.
-- **Visibility follows repo access:** a member the user can't read contributes nothing (the standalone rule), so the Desktop never shows automations the user couldn't read in Git.
-- **Data:** `oats trigger list --json` / `oats schedule list --json` (workspace + local, with origin, owner, runsOn, runsHere + reason, soul, task, and the last/next run). This JSON is part of PR 2b's contract, so the Desktop renders it and never re-derives it.
+**`knowledge-harvester`** (a package soul; `work: directory`; `knowledge: none`, so there is no recursive harvest; capability `oats.okf-harvest`).
 
-**Onboarding / okf:**
-- The review trigger becomes a **workspace file** (`oats-triggers/okf-harvest-review.yaml` in the host repo, `from: oats.okf:harvest-review`, with `runsOn` + `owner` naming the merge-capable host and account).
-- `oats trigger add --from … --workspace <member>` writes it (or prints it when that repo isn't the current checkout).
-- `oats trigger test <member>/<id>` runs on the named host. This supersedes "install on ONE host" by hand.
+1. okf's per-source `run-source` job captures custody and spawns `oats.okf/knowledge-harvester` with the frozen input, as a child of the source instance. Its harness is the oats.okf `harvest-runtime` setting (optionally `harvest-model`).
+2. It reads the input fully, the notes and the transcript windows; the judgment receipt cites the turn ids it relied on. It also extracts task references (ticket ids and URLs).
+3. It judges with `knowledge-theory`, stages edits on the owned nodes, and `complete` opens the PR (title `okf-harvest: <run>`, label `okf-harvest`) with a **provenance block** in the body: a fenced `okf-harvest` JSON block, `{ version: 1, run, input[], source: { soul, soulId, owner, instance, ownedNodes, readNodes, bases }, tasks: { provider, refs[] }, harvester: { instance, alias } }`.
+4. It stays alive, woken by messages, to answer the maintainer and push amendments. It retires when every PR is merged or closed (`oats okf-harvest harvest-status` says `retire`), or at `harvester-max-age` (default 7d) after telling its operator. It never closes the PR.
 
-**Delivery:**
-- **PR 2b (kernel):** after #205. Discovery + the host identity + the owner/host matching + the snapshot + the CLI/JSON + docs.
-- The target is **0.29.0**, released with okf 4.0.0, whose `okf-trigger-setup` teaches the workspace form first. The floor becomes `oats >= 0.29.0`.
-- 0.28.0 ships the local triggers (#205) as the mechanism.
+**The harvest switch.**
 
-### 2.4 The harvester and the maintainer (oats.okf 4.0.0)
-
-**`knowledge-harvester` soul** (a package soul; `work: directory`; `team: okf`; `knowledge: none`, so there's no recursive harvest; capability `oats.okf-harvest`).
-1. okf's `run-source` job captures custody (unchanged) and **spawns the harvester soul** (not a capability agent) with the frozen input, joining `okf`.
-2. **Reads the input fully:** notes AND the **transcript windows**. This is mandatory, and the judgment receipt must cite the turn ids it relied on.
-   - It also extracts **task references** (ticket ids/URLs seen in the transcript, notes and the source's `instance.json` tasks provider).
-3. Judges with `knowledge-theory`; stages edits on the owned nodes; `complete` opens the PR:
-   - label `okf-harvest`;
-   - a **provenance block** in the body: a fenced `okf-harvest` JSON block, `{ run, input, source: { soul, soulId, instance, ownedNodes, readNodes, bases }, tasks: { provider, refs[] }, harvester: { instance, alias } }`.
-4. **Stays alive** (idle; woken by messages in `okf`):
-   - It answers the maintainer's questions and pushes amendments on request.
-   - It retires on **merged/closed** (the maintainer's message, or its own PR check on each wake).
-   - A **max-age** (the setting `harvester-max-age`, default 7d) retires it after telling the team. It never closes the PR itself.
-
-**The harvest switch (lead decision, 2026-09-26; L2 implements it):**
-- **A setting, not a job toggle:** `harvest: on|off` for oats.okf, **default `off`**.
-- **Where it's set:**
-  - Deployment-wide, in `oats-local.yaml` `settings.oats.okf.harvest` (a machine fact: the operator decides whether this host harvests).
-  - Per soul, as the opt-out: `soul.yaml` `knowledge: { harvest: off }`.
-  - **Effective = on only if the deployment says `on` AND the soul does not say `off`.** A soul's `off` cannot be overridden by the host. This deliberately departs from the usual later-wins merge, and L2 must implement it explicitly.
-- **When it's off:** the spawn hook registers no source, and no capture or custody happens. Private transcripts are never accumulated "for later", and nothing drains when the switch flips; harvest starts from the next session. The per-source `run-source` job exists only when harvest is effectively on.
-- **The verbs:**
-  - `oats okf setup --harvest on|off` writes the local setting (else it prints the line to add);
-  - `oats okf harvest-status [--soul X]` reports the effective value and why (the deployment/soul row), plus the registered sources.
-  - `oats schedule enable|disable <job>` remains the per-source emergency brake, not the switch.
+- `harvest: on|off` is an oats.okf setting, **default `off`**: a host fact, set in `oats-local.yaml` `settings.oats.okf.harvest`.
+- A soul may only opt out, with `soul.yaml` `knowledge: { harvest: off }`, and that opt-out is absolute. **Effective = on only if the deployment says `on` and the soul does not say `off`.** A soul `on` is ignored. This departs deliberately from the later-wins settings merge, so okf reads the soul's own value from its `soul.yaml` and fails closed when it cannot read it with certainty.
+- **Off** means no source registration, capture or custody (and no `run-source` job): private transcripts are never accumulated for later.
+- **The verbs:** `oats okf setup --harvest on|off` writes the local setting; `oats okf harvest-status [--soul X]` reports the effective value, why, and the registered sources. `oats schedule enable|disable <job>` remains the per-source emergency brake, not the switch.
 - **The review trigger is independent of the switch:** a trigger host can review PRs from other hosts' harvesters without harvesting itself.
 
-**`knowledge-maintainer` soul** (a package soul; `work: directory`; `team: okf`; `knowledge: none` in v1; capabilities `oats.okf-maintenance` + the workspace's tasks slot, **read-only use**).
-1. Spawned by the trigger, one per PR. It reads `OATS_TRIGGER_EVENT_FILE`, clones/fetches the KB repo and `gh pr checkout`s the PR in its `./work`.
-2. **Situates** the addition:
-   - the provenance → the source soul's owned/read nodes at the accepted base;
-   - the whole node index and neighbouring concepts (duplicates, supersession candidates, the canonical home);
-   - the source soul's other knowledge.
-3. **Tasks:** if the provenance names a tasks provider and refs, it reads those tickets through its own tasks capability (when the workspace's tasks slot matches). Otherwise it notes "tasks unavailable" in the verdict. This is never a blocker.
-4. **Verdict** (recorded as a PR review comment, as structured JSON + prose):
-   - `merge`;
-   - `amend+merge` (it pushes commits to the PR branch: fixes, supersession edits in other concepts of the same base, index/log);
-   - `request-changes` (it messages the harvester in `okf`; waits bounded);
-   - `close` (with the reason).
-   - The doctrine's two-part test, one canonical home, explicit supersession, and provenance are all checked.
-5. **Human-accepted decisions are never superseded silently.** If a PR would supersede a concept with human acceptance evidence, the maintainer does not merge. It labels `okf-needs-human` and messages the workspace's human channel.
-6. Merges with the host's `gh` (squash); notifies the harvester (`merged`/`closed`); self-retires.
+**`knowledge-maintainer`** (a package soul; `work: directory`; `knowledge: none`; capability `oats.okf-maintenance`, plus the workspace's tasks capability when there is one, used read-only).
 
-**GitHub credentials:** the maintainer's host must be able to **merge** on the KB repo. `okf-trigger-setup` and `oats trigger test` verify it (`gh api repos/{repo} --jq .permissions`). **If the harvester and maintainer use the same GitHub account, GitHub forbids self-approval.** The skill says so: either use a separate reviewer account/bot on the maintainer's host, or rely on merge permissions without required approvals on the KB repo's `main`.
+1. The trigger spawns one per PR. It reads `OATS_TRIGGER_EVENT_FILE`, fetches the knowledge-base repository and checks out the PR in its `./work`.
+2. It **situates** the addition: from the provenance, the source soul's owned and read nodes at the accepted base, the neighbouring concepts (duplicates, supersession candidates, the canonical home) and the source soul's other knowledge.
+3. **Tasks:** if the provenance names a tasks provider and refs, and its own tasks capability matches, it reads those tickets. Otherwise the verdict records `tasks: "unavailable"`. This is never a blocker.
+4. **Verdict**, recorded as a structured `okf-review` PR comment: `merge`; `amend+merge` (it pushes fixes, supersession edits in other concepts of the same base, index and log to the PR branch); `request-changes` (it messages the harvester and waits, bounded); `close` (with the reason); `needs-human`. It checks the doctrine's two-part test, one canonical home, explicit supersession and provenance.
+5. **Human-accepted decisions are never superseded silently.** A PR that would supersede a concept with human acceptance evidence is not merged: the maintainer labels it `okf-needs-human` and asks a human. That label is a hard stop that only a human removes.
+6. It merges with the host's `gh` (squash, pinned to the reviewed head), notifies the harvester (`merged` or `closed`) and retires.
 
-### 2.5 The working-soul inject (oats.okf 4.0.0)
+**Messaging:** the harvester and the maintainer talk through the soul's messaging capability, in the deployment's default team like every instance. There is no dedicated team to declare; a deployment that wants them in another team opts them in locally, as for any soul (see [the team model](2026-09-27-team-model-v2.md)).
 
-It extends the 3.0.0 inject into a *work mode*:
-- **At task start and after compaction:** read instance memory (`STATE.md`, recent `log.md`, relevant `notes/`), then consult soul knowledge (`oats okf index`, then `cat` what's relevant).
-- **Before compaction:** update `STATE.md`/`log.md`/`notes/` first.
-- **Every so often while working, and always before a design decision or re-deriving something:** `oats okf search`/`cat`, and re-read your own notes.
-- Use both to situate the task and stay coherent with the soul's accepted decisions. Cite what you relied on.
-- **Capture with judgment** (§2.5a). The harvester still decides what is *promoted*. Never write accepted knowledge.
+**GitHub credentials:** the maintainer's host must be able to merge on the knowledge-base repository (`oats trigger test` checks). GitHub forbids self-approval, so with one account for both, either `main` requires no approving review or the trigger's `owner` is a separate reviewer account.
 
-### 2.5a Instance-knowledge judgment (the human, 2026-09-26)
+### 2.5 The working-soul inject
 
-`okf-instance-knowledge` teaches **what useful instance knowledge is**, not only where to put it. This replaces "capture without judging importance" in today's inject. The **capture bar** is lower than the **promotion bar** (`knowledge-theory`), and they don't compete.
+The oats.okf inject teaches a work mode over both kinds of knowledge:
 
-- **The capture test:** *would my future self after compaction, or the harvester judging this session, decide or act better for having it, and is it absent from the code, the tracker and the repo docs?*
-- **Capture:**
-  - decisions taken, and **why**;
-  - alternatives rejected, and why;
-  - discoveries that cost effort;
-  - limitations and the workaround that worked;
-  - conclusions of an investigation (not its transcript);
-  - blockers, with what unblocks them;
-  - human direction and corrections, as the instance understood them;
-  - surprises (the world behaved differently from what the soul's knowledge says: a *candidate supersession*, flagged as such);
-  - process and environment lessons.
-- **Don't capture:**
-  - descriptions of the code, and maps of the repo;
-  - command logs and tool output;
-  - retries that taught nothing;
-  - secrets;
-  - third-party messages verbatim;
-  - things already in the tracker or the docs (link instead).
-- **Form:**
-  - `STATE.md` = the current task picture (rewritten);
-  - `log.md` = dated events (append-only);
-  - `notes/` = **one concept per insight**, with type (Decision / Rejected / Discovery / Limitation / Conclusion / Lesson / Blocker), a one-line claim, the *why*, the evidence and provenance (what was observed, when, from what), and its **generality** (instance-only vs likely true for the soul, a hint to the harvester, not a verdict).
-- **Timing:** capture as it happens, at the decision, not reconstructed at the end; update before compaction and before task boundaries.
-- **Relation to soul knowledge:** consult first; a note that confirms, refines or contradicts an existing concept cites it (`alias/node/concept.md@oid`). That is what lets the harvester situate it.
-- **The theory it teaches in brief:** decision vs description (descriptions drift and lie; decisions are superseded explicitly), code is truth about code, and indexical residue dies with the instance. This is a short version of `knowledge-theory`, taught from the capture side. **Working souls do NOT get the full promotion doctrine**, so there's no duplicate judge.
+- **At task start and after compaction:** read instance memory (`STATE.md`, recent `log.md`, relevant `notes/`), then consult soul knowledge (`oats okf index`, then `cat` what is relevant; follow links, do not bulk-load).
+- **Before compaction and before a task boundary:** update `STATE.md`, `log.md` and `notes/` first.
+- **Every so often while working, and always before a design decision or re-deriving something:** `oats okf search` / `cat`, and re-read your own notes.
+- Use both to situate the task and stay coherent with the soul's accepted decisions. Cite what you relied on (`alias/node/concept.md@<short-oid>`).
+- **Capture with judgment** (§2.5a). The harvester decides what is promoted. Never write accepted knowledge or soul knowledge.
 
-### 2.6 The `okf` team
+### 2.5a Instance-knowledge judgment
 
-- Onboarding (the oats.framework `oats-onboarding` skill + okf's `okf-trigger-setup`) adds `teams: { okf: { description: Knowledge operations } }` and the `messaging.byTeam.okf` mapping.
-- The package souls carry `team: okf`. A workspace that does not declare `okf` gets the `E_TEAM_UNKNOWN` discovery problem on them (listed with the remedy; as for member souls it's not a spawn refusal, but their instances then land in no messaging team, so harvester↔maintainer talk fails). So onboarding must add it, and `oats trigger test` checks it.
-- The label organises and gates nothing (the teams contract).
+`okf-instance-knowledge` teaches **what useful instance knowledge is**, not only where to put it. The capture bar is lower than the promotion bar (`knowledge-theory`); they do not compete.
 
-## 3. Delivery plan
+- **The capture test:** would my future self after compaction, or the harvester judging this session, decide or act better for having it, and is it absent from the code, the tracker and the repository docs?
+- **Capture:** decisions and why; rejected alternatives; costly discoveries; limitations and the workaround that worked; conclusions (not the investigation's transcript); blockers; human direction and corrections; surprises that contradict soul knowledge (flagged as candidate supersessions); process and environment lessons.
+- **Do not capture:** code descriptions or repository maps; command logs and tool output; retries that taught nothing; secrets; third-party messages verbatim; what the tracker or docs already hold (link instead).
+- **Form:** `STATE.md` is the current task picture (rewritten); `log.md` is dated events (append-only); `notes/` holds one concept per insight, with a type (Decision, Rejected, Discovery, Limitation, Conclusion, Lesson, Blocker), a one-line claim, the why, the evidence and provenance, and its generality (instance-only or likely true for the soul: a hint to the harvester, not a verdict).
+- **Timing:** capture as it happens, at the decision; update before compaction and before task boundaries.
+- **Relation to soul knowledge:** consult first; a note that confirms, refines or contradicts an existing concept cites it, which lets the harvester situate it.
+- **The theory, from the capture side:** decisions versus descriptions (descriptions drift; decisions are superseded explicitly), code is the truth about code, and indexical residue dies with the instance. Working souls do not get the full promotion doctrine, so there is no second judge.
 
-**Order:** 3.0.0 (in flight) → kernel 0.28.0 contracts (C1, C2) frozen → the three lanes in parallel → okf 4.0.0 → the 0.28.0 release with the mirror + pin + onboarding.
+## 4. Decisions
 
-**Contracts frozen first** (in this doc, by the lead; the co-lead ACKs):
-- **C1, package souls:** §2.2.
-- **C2, triggers:** §2.3 (the definition, the event file, the dedup, the CLI).
-- **C3, the harvest provenance block:** §2.4.3.
-- **C4, the okf-team messages:** `question`/`amend-request`/`amended`/`merged`/`closed` (a subject prefix `okf:` + a PR URL). This is prose-level and is owned by the skills.
-
-**L1, kernel.** A **Claude kernel developer** (`cli-dev`, a new instance, Opus), in a worktree. Three PRs, each Class B, reviewed by the lead:
-1. **Package souls** (C1): discovery, resolution, spawn by name, status/Desktop JSON `origin: package`, `oats capabilities` feature `package-souls`.
-2. **Triggers** (C2): `kind: "trigger"`, `github.pull_request` polling in the host tick, dedup state, `OATS_TRIGGER_EVENT_FILE`, `oats trigger …`, package trigger templates, feature `triggers`.
-3. **Remove capability agents** (after okf 4.0.0 is mirrored): `agents:` in manifests is refused with a remedy naming package souls.
-
-Gates:
-- test-first;
-- scaffold-only probes;
-- a real `gh` poll against a scratch repo in the PR's evidence;
-- the full glob + `smoke:tarball` (kernel dev).
-
-**L2, okf** (oats-okf; **the okf expert**, a new `integrations-expert` instance, or the 3.0.0 child continuing once 3.0.0 is tagged, lead's pick; the co-lead reviews and tags):
-- the three capabilities (§2.1);
-- the skill rework:
-  - rename memory-harvest → knowledge-theory;
-  - new knowledge-harvest, knowledge-review, okf-instance-knowledge, okf-trigger-setup;
-  - okf → okf-authoring;
-- the two package souls;
-- the trigger template `harvest-review`;
-- the harvester lifecycle (spawn as a soul, stay alive, retire on merge);
-- the provenance block (C3);
-- the inject (§2.5);
-- the identical-copy test;
-- no symlinks.
-
-Gate: **a real end-to-end run** against a scratch KB repo: a source is harvested → the PR opens with provenance → the trigger spawns the maintainer → it amends + merges → the harvester retires. Every step is read back. It requires kernel ≥ 0.28.0.
-
-**L3, onboarding** (oats.framework `oats-setup`; **the Phase D driver** `oats-expert-phase-d`):
-- `oats-onboarding` gains "Knowledge operations with OKF":
-  - the package pin;
-  - the `okf` team + mapping;
-  - where to install the trigger (a host with merge-capable credentials; `oats trigger add --from oats.okf:harvest-review`; `oats trigger test`);
-  - harvest stays opt-in.
-- `docs/knowledge.md`, `docs/schedules.md` (triggers) and `docs/packages.md` (package souls) get updated.
-- A framework 1.2.0 PR.
-
-**L4, Desktop (later):** a Triggers section under the deployment (list, status, test, enable/disable), and package souls on the Souls page with their package origin.
-
-**Review:**
-- The lead reviews L1 and L3 and cross-reviews L2.
-- The co-lead reviews and tags L2 and cross-reviews L1.
-- The release: 0.28.0 = L1 + the L2 mirror/pin + L3 pin.
-
-## 4. Decisions taken (lead, delegated authority), revisit on request
-
-1. **Package souls, not `external:`**, for "sourced from the okf package". One pin versions everything.
-2. **Triggers are schedules of `kind: trigger`**: the same store, tick and spawn path. There's no daemon and no webhook in v1.
-3. **The harvester becomes a package soul** (it needs messaging + a lifetime past its PR). Capability agents are removed after okf 4.0.0.
-4. **The maintainer merges autonomously** when the doctrine passes, **except** where it would supersede a human-accepted decision (`okf-needs-human`).
-5. **The harvester and the maintainer hold no knowledge slot in v1** (no recursive harvest). Revisit when a maintainer's own lessons are wanted.
-6. **okf 3.0.0 is not widened.** The working-soul skill split lands in 4.0.0 with the new capabilities. Removing `memory-harvest` from oats.okf before the harvester has another home would break harvest.
-7. **Harvest stays OFF on the development deployment** until 0.28.0 + okf 4.0.0 pass the end-to-end gate.
-
-## 5. Open questions
-
-- The maintainer's `work` mode: `directory` + `gh pr checkout` (planned) vs a registered KB clone in worktree mode. The L2 implementer confirms in the first PR.
-- Multi-base PRs: v1 keeps one base per PR (today's delivery). The maintainer's cross-base supersession is out of scope.
-- `aweb.mail` as a trigger source (e.g. "on a mail to `okf-review`") is left for after v1.
+1. **Package souls, not `external:`**, for "sourced from the okf package": one pin versions everything.
+2. **Triggers are schedules of `kind: trigger`:** the same store, tick and spawn path; no daemon and no webhook.
+3. **Workspace automations are placed by declaration:** `runsOn` names the one host, `owner` the account it acts as, and a host runs one only when both match.
+4. **The harvester is a package soul** (it needs messaging and a lifetime past its PR); capability agents are removed.
+5. **The maintainer merges autonomously** when the doctrine passes, except where it would supersede a human-accepted decision (`okf-needs-human`).
+6. **The harvester and the maintainer hold no knowledge slot** (no recursive harvest).
+7. **Harvest is opt-in per host and opt-out per soul**, and the soul's opt-out is absolute.
