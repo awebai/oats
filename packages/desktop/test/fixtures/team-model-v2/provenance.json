@@ -6,6 +6,13 @@
     "<base> (capture scratch) → /fixture/base",
     "<oats> (kernel tree) → /fixture/oats"
   ],
+  "awaiting": [
+    {
+      "document": "messaging:teams (the provider teams document)",
+      "provider": "oats.aweb 1.17",
+      "standIn": "workspace-v2/teams/teams-initial.json (oats.aweb 1.16.0) edited to the K1 shape in team-model-v2-tolerance.test.mjs"
+    }
+  ],
   "files": {
     "version": {
       "argv": [
