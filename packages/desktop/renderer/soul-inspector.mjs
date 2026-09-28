@@ -10,6 +10,7 @@ import { cliStatus } from './views/cli-status.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { inspectData, inspectFacts, originText } from './inspect-contract.mjs';
 import { createTeamsPanel, teamsOperations, teamsCSS, soulTeams, teamLabels } from './teams-panel.mjs';
+import { createSoulTeamsHere, soulTeamsHereCSS } from './soul-teams-here.mjs';
 import { ageText } from './age-text.mjs';
 import { pageBar, pageCard, pageSection, capabilityIcon, compositionEntries, coreWhy, desktopFacts } from './capability-page.mjs';
 import { layerLabel } from './workspace-catalog.mjs';
@@ -40,6 +41,7 @@ export function buildState(instance) {
 export const inspectorCSS = `
 ${readinessCSS}
 ${teamsCSS}
+${soulTeamsHereCSS}
 .souls { container-type:inline-size; }
 .souls-body { display:grid; grid-template-columns:minmax(0,1fr); flex:1; min-height:0; min-width:0; }
 .souls-body.inspecting { grid-template-columns:minmax(0,1fr) 340px; }
@@ -159,7 +161,7 @@ ${teamsCSS}
  * effective visibility/collapse belongs to the host, not request completions. */
 export function createSoulInspector(container, { ctx, presentation, openSoul = null, layout = 'sidebar', backLabel = 'Souls', openInstance = null, capabilityTable = null, openCapability = null, launch, schedule, files, canFiles = () => false, canLaunch = () => true, spawnRefusal = () => null, launchReason = () => 'Requires a compatible installed OATS CLI.', available = () => true, instances = () => [], workspace = () => null, closed }) {
   const doc = container.ownerDocument;
-  let alive = true, serial = 0, operationSerial = 0, selectionGen = null, selection, data, teamsPanel = null;
+  let alive = true, serial = 0, operationSerial = 0, selectionGen = null, selection, data, teamsPanel = null, teamsHere = null;
   const pendingOperations = new WeakMap();
   const node = (tag, text, cls) => {
     const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el;
@@ -237,7 +239,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     if (alive) reset(restoreFocus);
   }
   function reset(restoreFocus = false) {
-    serial++; selection = null; selectionGen = null; data = null; teamsPanel = null; container.hidden = true;
+    serial++; selection = null; selectionGen = null; data = null; teamsPanel = null; teamsHere?.dispose(); teamsHere = null; container.hidden = true;
     readiness?.dispose(); readiness = null;
     container.replaceChildren();
     if (presentation) presentation.setPresent(false);
@@ -282,7 +284,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     if (doc?.truncated) content.append(node('p', truncatedNote, 'muted'));
   }
   function render() {
-    operationSerial++; teamsPanel = null;
+    operationSerial++; teamsPanel = null; teamsHere?.dispose(); teamsHere = null;
     content.replaceChildren(); side?.replaceChildren();
     const inspected = inspectData(data, selection);
     if (!inspected) {
@@ -346,8 +348,8 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     }
     content.append(box);
   }
-  // The soul's teams (kernel `teams`): one row of chips, primary first and marked;
-  // unmapped ones greyed, with the reason on one line. Joining is per instance.
+  // The soul's teams (kernel `teams`): one row of chips, the default (v2) first and marked;
+  // unmapped ones are not shown. Joining is per instance. There is no "primary" (team model v2).
   function renderSoulTeams(inspected) {
     const all = soulTeams(inspected.teams);
     if (!all) return;
@@ -358,7 +360,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     content.append(node('p', "The teams this soul has access to. Its instances start in the workspace's default team only and can join these:", 'muted inspector-teams-lede'));
     const row = node('div', undefined, 'inspector-chips');
     teams.forEach(t => {
-      const chip = node('span', t.label === all[0].label ? `${t.label} · primary` : t.label, 'inspector-chip');
+      const chip = node('span', t.default === true ? `${t.label} · default` : t.label, 'inspector-chip');
       chip.title = `${t.label} (${t.team})`;
       row.append(chip);
     });
@@ -487,13 +489,28 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     const composition = pageSection(doc, 'Capabilities', 'workspace defaults → team defaults → this soul · later wins');
     const table = node('div', undefined, 'inspector-capability-table'); composition.append(table); content.append(composition);
     if (typeof capabilityTable === 'function') capabilityTable(table, entries, { soul: selection.agent });
-    // Beside: its teams (joining is per instance) and its knowledge nodes.
-    if (teams) {
+    // Beside: its teams (joining is per instance) and its knowledge nodes. Team model v2
+    // (kernel feature team-model-2): "Teams here", this computer's membership, editable.
+    teamsHere?.dispose(); teamsHere = null;
+    if ((cliStatus()?.features || []).includes('team-model-2') && typeof selection?.agent?.name === 'string') {
+      const soulTeamsRoute = async body => {
+        const answer = await postJson(ctx, `/api/workspace-soul-teams${wsQuery()}`, body);
+        if (answer?.status === 'ok' && answer.soulTeams) return answer.soulTeams;
+        throw Object.assign(new Error(answer?.reason?.message || 'The teams of this soul could not be read.'), { code: answer?.reason?.code || null });
+      };
+      const teamsRoute = async () => {
+        const answer = await postJson(ctx, `/api/workspace-teams${wsQuery()}`, { action: 'list' });
+        if (answer?.status === 'ok' && answer.teams) return answer.teams;
+        throw new Error(answer?.reason?.message || 'The teams on this computer could not be read.');
+      };
+      teamsHere = createSoulTeamsHere(doc, { soul: selection.agent.name, request: soulTeamsRoute, listTeams: teamsRoute });
+      side.append(teamsHere.element);
+    } else if (teams) {
       const card = pageCard(doc, 'Teams', { lead: 'organise · add defaults · never restrict' });
       if (!mapped.length) card.card.append(node('p', 'Default team only: this soul has access to no other team.', 'page-note'));
       for (const team of mapped) {
         const row = node('div', undefined, 'soul-team'), name = node('span', undefined, 'soul-team-name');
-        name.append(node('span', team.label)); if (team.label === teams[0].label) name.append(node('span', 'primary', 'page-tag'));
+        name.append(node('span', team.label)); if (team.default === true) name.append(node('span', 'default', 'page-tag'));
         row.title = `${team.label} (${team.team})`;
         row.append(name, node('span', `Instances can join the ${team.label} team chat`, 'soul-team-note'));
         card.card.append(row);

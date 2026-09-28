@@ -206,7 +206,7 @@ export function lockText(status) {
   return { text: ['out of date', unsynced ? `${unsynced} not locked` : null, stale ? `${stale} no longer declared` : null].filter(Boolean).join(' · '), warn: true };
 }
 const scope = (doc, label, icon) => { const tag = el(doc, 'span', null, 'setup-scope'); tag.append(iconElement(doc, icon, { size: 12 }), el(doc, 'span', label)); return tag; };
-function box(doc, title, lead, scopeLabel, { local = false, icon = null } = {}) {
+export function box(doc, title, lead, scopeLabel, { local = false, icon = null } = {}) {
   const card = el(doc, 'section', null, local ? 'setup-local' : 'setup-box'); card.dataset.box = title;
   const head = el(doc, 'div', null, 'setup-box-head');
   if (icon) head.append(iconElement(doc, icon, { size: 15 }));
@@ -218,13 +218,13 @@ function box(doc, title, lead, scopeLabel, { local = false, icon = null } = {}) 
 }
 
 /** The whole Setup tab. view: 'list' | 'graph'; selected: a member key (graph panel). */
-export function renderSetup(host, { status, instances = [], souls = [], cli = null, view = 'list', selected = null, onSelect = () => {}, onOpenRepo = null, onOpenPackages = null, openExternal = null }) {
+export function renderSetup(host, { status, instances = [], souls = [], cli = null, view = 'list', selected = null, onSelect = () => {}, onOpenRepo = null, onOpenPackages = null, openExternal = null, teamsCard = null }) {
   const doc = host.ownerDocument;
   host.replaceChildren();
   const root = el(doc, 'div', null, 'setup'); root.dataset.view = view;
   root.append(lede(doc, status, openExternal));
   if (view === 'graph') root.append(graph(doc, { status, instances, selected, onSelect, onOpenRepo, onOpenPackages, openExternal }));
-  else root.append(columns(doc, { status, instances, souls, cli, onSelect, onOpenRepo, onOpenPackages }));
+  else root.append(columns(doc, { status, instances, souls, cli, onSelect, onOpenRepo, onOpenPackages, teamsCard }));
   host.append(root);
   return root;
 }
@@ -247,7 +247,7 @@ function lede(doc, status, openExternal) {
   return line;
 }
 
-function columns(doc, { status, instances, souls, cli, onSelect }) {
+function columns(doc, { status, instances, souls, cli, onSelect, teamsCard = null }) {
   const ws = status?.workspace || {};
   const cols = el(doc, 'div', null, 'setup-cols'), main = el(doc, 'div', null, 'setup-col'), side = el(doc, 'div', null, 'setup-col');
   // Members: the repositories that contribute souls and capabilities, always at their latest.
@@ -301,10 +301,12 @@ function columns(doc, { status, instances, souls, cli, onSelect }) {
   main.append(members, packages);
   // Defaults: as the workspace file declares them (defaults), not resolved for a soul.
   const defaults = defaultsBox(doc, status);
-  // Teams: the labels the workspace declares, how many souls take each as primary, and the kernel's warnings about them.
-  const teams = box(doc, 'Teams', null, 'Shared · Git');
+  // Team model v2 (0.30): "Teams on this computer" (the shared and local teams, the default)
+  // replaces the 0.29 Teams box; the card is the caller's, kept across renders.
+  // 0.29: the labels the workspace declares, how many souls take each, and the kernel's warnings about them.
+  const teams = teamsCard || box(doc, 'Teams', null, 'Shared · Git');
   const unmapped = new Map(list(status?.warnings).filter(w => w?.code === 'unmapped-team-label' && text(w.label)).map(w => [w.label, w]));
-  for (const label of list(ws.teams).filter(text)) {
+  if (!teamsCard) for (const label of list(ws.teams).filter(text)) {
     const row = el(doc, 'div', null, 'setup-team'); row.dataset.team = label;
     const head = el(doc, 'div', null, 'setup-team-head'); head.append(el(doc, 'span', label, 'setup-team-label'));
     const count = list(souls).filter(s => s?.team === label).length;
@@ -317,8 +319,10 @@ function columns(doc, { status, instances, souls, cli, onSelect }) {
     if (text(unmapped.get(label)?.message)) row.append(el(doc, 'span', unmapped.get(label).message, 'setup-team-warn'));
     teams.append(row);
   }
-  if (!list(ws.teams).length) teams.append(el(doc, 'p', 'The workspace declares no teams.', 'setup-empty'));
-  teams.append(el(doc, 'p', 'Teams organise and add defaults. They never restrict what a soul can do.', 'setup-team-note'));
+  if (!teamsCard) {
+    if (!list(ws.teams).length) teams.append(el(doc, 'p', 'The workspace declares no teams.', 'setup-empty'));
+    teams.append(el(doc, 'p', 'Teams organise and add defaults. They never restrict what a soul can do.', 'setup-team-note'));
+  }
   // This computer: what is not shared.
   const local = box(doc, 'This computer', null, 'Not shared', { local: true, icon: 'computer' });
   const rows = el(doc, 'dl', null, 'setup-local-rows');

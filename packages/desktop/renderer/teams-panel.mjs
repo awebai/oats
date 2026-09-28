@@ -34,6 +34,8 @@ export const teamsCSS = `
 .teams-panel .teams-note { margin:0; padding:9px 12px; font-size:12px; color:var(--muted); }
 .teams-panel .teams-refresh { align-self:flex-start; font:600 11.5px/1 inherit; height:26px; padding:0 10px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--fg); cursor:pointer; }
 .teams-panel .teams-refresh:disabled { color:var(--muted); cursor:default; }
+.teams-panel .teams-subhead { margin:0; padding:9px 12px 0; border-top:1px solid var(--border); font-size:11px; font-weight:650; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); }
+.teams-panel .teams-subhead + .team-row { border-top:0; }
 `;
 
 const record = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -149,10 +151,15 @@ export function soulTeams(v) {
   }
   return new Set(out.map(t => t.label)).size === out.length ? out : null;
 }
+/** Why an instance left a team (left[].reason); an unknown reason is shown as sent. */
+export function leftReason(reason) {
+  return reason === 'no-longer-eligible' ? 'The soul no longer belongs to it.' : `reason: ${reason}`;
+}
+
 /** How a joined team's mail reaches the instance — never implying live delivery for a poll team. */
 export function receiveText(receive) {
   if (receive === 'poll') return "checks this team's mail between tasks";
-  if (receive === 'native') return "receives this team's mail as it arrives";
+  if (receive === 'native' || receive === 'live') return "receives this team's mail as it arrives";
   return `receive: ${receive}`;
 }
 
@@ -244,7 +251,7 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
   function render() {
     body.replaceChildren(); intro.hidden = !current;
     if (!current) return;
-    if (current.defaultTeam) body.append(teamRow('default', 'Default team', [defaultTeamText(current.defaultTeam)], badge('Always on', "The workspace's default team can't be left.")));
+    body.append(defaultRow(current.defaultTeam));
     const joined = new Map(current.joined.map(j => [j.label, j]));
     const rows = [...current.eligible.map(e => ({ label: e.label, team: e.team, eligible: true })),
       ...current.joined.filter(j => !current.eligible.some(e => e.label === j.label)).map(j => ({ label: j.label, team: j.team, eligible: false }))];
@@ -255,7 +262,7 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
       body.prepend(gone);
     }
     for (const row of rows) {
-      const j = joined.get(row.label), name = row.label === current.primary ? `${row.label} · primary` : row.label;
+      const j = joined.get(row.label), name = row.label;
       let el;
       if (j) {
         const since = node('div', `${row.team} · Joined ${whenText(j.since)}`, 'team-meta'); since.title = j.since;
@@ -268,7 +275,24 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
       body.append(el);
     }
     if (!rows.length) body.append(node('p', 'Its soul has access to no other team.', 'teams-note'));
+    // Team model v2: the teams this instance left on a live read (the soul lost them), newest first.
+    const left = [...(current.left || [])].sort((a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0));
+    if (left.length) {
+      body.append(node('p', 'Recently left', 'teams-subhead'));
+      for (const l of left) {
+        const when = node('div', `${l.team} · Left ${whenText(l.at)}`, 'team-meta'); when.title = l.at;
+        const el = teamRow(l.label, l.label, [when, leftReason(l.reason)]); el.classList.add('team-left'); el.dataset.teamLeft = l.label;
+        body.append(el);
+      }
+    }
     sync();
+  }
+  /** The default team's row. 0.29: {team, source}. Team model v2: {label, team|null, from}, or null (none configured). */
+  function defaultRow(home) {
+    const always = badge('Always on', "The default team can't be left.");
+    if (home === null) return teamRow('default', 'Default team', ['None configured on this computer: run oats aweb setup.']);
+    if (!Object.hasOwn(home, 'from')) return teamRow('default', 'Default team', [defaultTeamText(home)], always);
+    return teamRow('default', `Default team · ${home.label}`, [`${home.team ?? 'no provider id yet'} · ${DEFAULT_FROM[home.from]}`], always);
   }
   function sync() {
     refresh.disabled = !!pending || !available() || !live();

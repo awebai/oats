@@ -807,3 +807,49 @@ for (const [name] of palettes) test(`${name}: the can't-spawn-here notes meet co
     for (let p = el; p; p = p.parentElement) assert.equal(dom.window.getComputedStyle(p).opacity, '1');
   }
 });
+
+// Team model v2 (0.30, D2): Setup's "Teams on this computer", the soul page's "Teams here",
+// the teams panel's "Recently left" head and a spawn team with no provider id yet, on K1's
+// example documents (docs/desktop-cli-api.md "Team model v2", feat/030-team-model 8dd82158).
+import { createComputerTeams, computerTeamsCSS } from '../renderer/computer-teams.mjs';
+import { createSoulTeamsHere, soulTeamsHereCSS } from '../renderer/soul-teams-here.mjs';
+import { teamsCSS } from '../renderer/teams-panel.mjs';
+import { setupCSS } from '../renderer/workspace-setup.mjs';
+for (const [name] of palettes) test(`${name}: team model v2 cards, left entries and unmapped spawn teams meet computed AA`, async t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"><div id="setup"></div><div id="soul"></div>
+    <aside class="soul-inspector"><div class="teams-card"><div class="teams-panel"><p class="teams-subhead">Recently left</p></div></div></aside>
+    <div class="spawn-seg spawn-teams-row spawn-team-list"><label class="spawn-team spawn-team-off"><input type="checkbox" disabled><span class="spawn-team-name">reviewers</span></label></div></div></body></html>`, { pretendToBeVisual: true });
+  const doc = dom.window.document;
+  for (const source of [css, setupCSS, pageCardCSS, computerTeamsCSS, soulTeamsHereCSS, inspectorCSS, teamsCSS, spawnDialogCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  const teams = { teamsApi: 1, deployment: '/w', defaultTeam: 'antares-oats', teams: [
+    { label: 'antares-oats', team: 'antares-oats:juan.aweb.ai', description: null, from: 'local', default: true, at: 'oats-local.yaml#/teams/antares-oats' },
+    { label: 'oats', team: 'oats:oats.aweb.ai', description: 'The OATS project', from: 'shared', default: false, at: 'oats-workspace.yaml#/teams/oats' },
+    { label: 'reviewers', team: null, description: null, from: 'shared', default: false, at: 'oats-workspace.yaml#/teams/reviewers' }],
+    souls: { teams: { '*': ['oats'] }, default: {} }, problems: [{ code: 'team-unmapped', label: 'reviewers', default: false, message: 'shared team reviewers has no provider id yet', fix: 'its owner runs `oats aweb setup`, then commits the id' }] };
+  const soulTeams = { soulTeamsApi: 1, soul: 'oats-expert', key: 'oats-expert', defaultTeam: { label: 'oats', team: 'oats:oats.aweb.ai', from: 'soul' },
+    teams: [{ label: 'oats', team: 'oats:oats.aweb.ai', default: true, from: 'shared', via: ['default', '*'] },
+      { label: 'reviewers', team: null, default: false, from: 'shared', via: ['soul'] }], local: { teams: ['reviewers'], default: 'oats' }, all: ['oats'] };
+  const setup = createComputerTeams(doc, { request: async () => structuredClone(teams) });
+  const soul = createSoulTeamsHere(doc, { soul: 'oats-expert', request: async () => structuredClone(soulTeams), listTeams: async () => structuredClone(teams) });
+  doc.querySelector('#setup').append(setup.element); doc.querySelector('#soul').append(soul.element);
+  t.after(() => { setup.dispose(); soul.dispose(); dom.window.close(); });
+  for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve));
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  for (const [selector, painted, fg, bg] of [
+    ['.ct-label', '.computer-teams', 'fg', 'surface-2'], ['.ct-from', '.computer-teams', 'muted', 'surface-2'],
+    ['[data-team="oats"] .ct-id', '.computer-teams', 'fg', 'surface-2'], ['.ct-id.none', '.computer-teams', 'warn', 'surface-2'],
+    ['.ct-chip', '.ct-chip', 'fg', 'tag-bg'], ['.ct-why', '.computer-teams', 'muted', 'surface-2'],
+    ['button.ct-act:not(:disabled)', 'button.ct-act:not(:disabled)', 'fg', 'surface'], ['button.ct-act:disabled', 'button.ct-act:disabled', 'muted', 'surface'],
+    ['.sth-default', '.soul-teams-here', 'fg', 'surface'], ['.sth-default .sth-why', '.soul-teams-here', 'muted', 'surface'],
+    ['.sth-label', '.soul-teams-here', 'fg', 'surface'], ['.sth-meta:not(.warn)', '.soul-teams-here', 'muted', 'surface'],
+    ['.sth-meta.warn', '.soul-teams-here', 'warn', 'surface'], ['button.sth-act', 'button.sth-act', 'fg', 'surface'],
+    ['.teams-subhead', '.soul-inspector', 'muted', 'surface'],
+    ['.spawn-team-off .spawn-team-name', '.spawn-teams-row', 'muted', 'surface-2'],
+  ]) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.equal(dom.window.getComputedStyle(surface).background.replace(/^.*(var\(--[\w-]+\)).*$/, '$1'), `var(--${bg})`, painted);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+  }
+});

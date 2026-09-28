@@ -83,6 +83,8 @@ export const spawnDialogCSS = `
 /* Teams (teams contract): one line like Relationship — Default fixed on, mapped teams toggle, unmapped greyed. */
 .spawn-teams-row { flex-wrap:wrap; align-self:flex-start; max-width:100%; box-sizing:border-box; }
 .spawn-seg input:disabled { cursor:default; }
+/* A shared team with no provider id yet: shown, not choosable (muted text, still AA; no opacity). */
+.spawn-seg .spawn-team-off .spawn-team-name { color:var(--muted); cursor:default; }
 /* Default is fixed, not a choice: a quiet neutral chip, not the accent. */
 .spawn-seg .spawn-team-fixed input:checked + span { background:var(--surface); color:var(--fg); box-shadow:none; cursor:default; }
 /* Runtime picker and model field */
@@ -414,8 +416,11 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const identityHint = el('p', '', 'spawn-hint spawn-identity-hint'); identityHint.setAttribute('aria-live', 'polite');
   identityField.append(identityRow, identityHint);
   let messagingProvider = null; // the capability the latest preview reported on layer messaging
-  // Teams (teams contract): offered only when the provider declares the spawn
-  // setting `join`; the list is the kernel's (primary first), never computed here.
+  // Teams: offered only when the provider declares the spawn setting `join`; the
+  // list is the kernel's, never computed here. Team model v2 (0.30): the default
+  // row (`default: true`) is fixed; every other mapped row is an unchecked box
+  // (opt-in, sent as join=); a shared team with no provider id yet is shown, disabled.
+  // 0.29 rows carry no `default`: a fixed "Default" chip, then the mapped rows.
   const teamsField = el('fieldset', undefined, 'spawn-field spawn-teams'); teamsField.hidden = true;
   const teamsList = el('div', undefined, 'spawn-seg spawn-teams-row spawn-team-list'); teamsList.setAttribute('role', 'group'); teamsList.setAttribute('aria-label', 'Teams');
   const teamsHint = el('p', '', 'spawn-hint spawn-teams-hint'); teamsHint.setAttribute('aria-live', 'polite');
@@ -423,6 +428,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   teamsField.append(el('legend', 'Teams'), teamsList, teamsHint, teamsError);
   let teamsNow = null, joinDeclaredNow = false, teamsDrawn = '';
   const joinPicked = new Set();
+  // A team the operator may opt into: mapped, and not the soul's default (v2 rows say `default`).
+  const joinable = t => t.mapped && t.default !== true;
   teamsList.addEventListener('change', event => {
     const box = event.target;
     if (box?.type !== 'checkbox' || !box.value || box.disabled) return;
@@ -433,14 +440,24 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     if (key === teamsDrawn) return;
     teamsDrawn = key; teamsList.replaceChildren();
     const chip = (cls, name, box, title) => { const c = el('label', undefined, cls); c.append(box, el('span', name, 'spawn-team-name')); c.title = title; teamsList.append(c); return c; };
+    const rows = teamsNow || [], home = rows.find(t => t.default === true);
     const fixed = el('input'); fixed.type = 'checkbox'; fixed.checked = true; fixed.disabled = true;
-    chip('spawn-team spawn-team-fixed', 'Default', fixed, "The workspace's default team — always. Every instance is in it.");
-    for (const t of (teamsNow || []).filter(t => t.mapped)) {
+    if (home) {
+      const c = chip('spawn-team spawn-team-fixed', `${home.label} · default`, fixed, home.team
+        ? `The default team (${home.team}): every instance of ${soul.name} is in it and can't leave it.`
+        : `The default team ${home.label} has no provider id yet.`);
+      c.dataset.team = home.label;
+    } else chip('spawn-team spawn-team-fixed', 'Default', fixed, "The workspace's default team — always. Every instance is in it.");
+    for (const t of rows.filter(t => t.default !== true && (t.mapped || t.default === false))) {
       const box = el('input'); box.type = 'checkbox'; box.value = t.label; box.className = 'fteam';
-      box.checked = joinPicked.has(t.label);
-      chip('spawn-team', t.label, box, `Join ${t.label} (${t.team})`);
+      box.checked = t.mapped && joinPicked.has(t.label); box.disabled = !t.mapped;
+      const c = chip(`spawn-team${t.mapped ? '' : ' spawn-team-off'}`, t.label, box, t.mapped ? `Join ${t.label} (${t.team})` : `${t.label} has no provider id yet: its owner runs oats aweb setup, then commits the id.`);
+      c.dataset.team = t.label;
     }
-    teamsHint.textContent = `By default it's only in the workspace's default team. These are the teams ${soul.name} has access to — tick the ones it should also join.`;
+    const open = rows.filter(joinable).length;
+    teamsHint.textContent = home
+      ? (open ? `It joins its default team, ${home.label}. Tick any other team it should also join.` : `It joins its default team, ${home.label}. No other team is open to ${soul.name} on this computer.`)
+      : `By default it's only in the workspace's default team. These are the teams ${soul.name} has access to — tick the ones it should also join.`;
   }
   const hostRow = el('div', undefined, 'spawn-row');
   const backendLabel = el('label', 'Session backend'), backend = el('select', undefined, 'field fbackend'); backendLabel.append(backend);
@@ -503,11 +520,11 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const busy = () => !!flight || remoteBusy;
   const effectiveWork = () => worktree.checked && soul.work === 'checkout' ? 'worktree' : soul.work;
   const identityOffered = () => local() && !!messagingProvider && !!cli()?.features?.includes('spawn-provider-payload');
-  // Only the teams the soul has access to (mapped); with none, there is nothing to choose and no row.
+  // The row shows the teams the soul has access to: a joinable one, or (v2) its default; with neither, no row.
   // Gate (teams contract bdd7e55e): feature settings-declared, and the messaging row declares `join`.
-  const teamsOffered = () => identityOffered() && !!cli()?.features?.includes('settings-declared') && joinDeclaredNow && Array.isArray(teamsNow) && teamsNow.some(t => t.mapped);
-  // What the operator ticked, in the kernel's order, mapped labels only.
-  const joinLabels = () => teamsOffered() ? teamsNow.filter(t => t.mapped && joinPicked.has(t.label)).map(t => t.label) : [];
+  const teamsOffered = () => identityOffered() && !!cli()?.features?.includes('settings-declared') && joinDeclaredNow && Array.isArray(teamsNow) && teamsNow.some(t => joinable(t) || t.default === true);
+  // What the operator ticked, in the kernel's order, joinable labels only (never the default).
+  const joinLabels = () => teamsOffered() ? teamsNow.filter(t => joinable(t) && joinPicked.has(t.label)).map(t => t.label) : [];
   // The preview for these choices must bind exactly the ticked teams (settings echo).
   const joinBound = data => { const labels = joinLabels(); return !labels.length || data?.messaging?.join === labels.join(','); };
   const selector = { soul: soul.name, agentsRoot: soul.agentsRoot };

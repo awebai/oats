@@ -10,6 +10,7 @@ import { postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
 import { cliStatus, cliKnownUnavailable } from './views/cli-status.mjs';
 import { deploymentUnavailableText } from './deployment-header.mjs';
 import { setupCSS, renderSetup } from './workspace-setup.mjs';
+import { computerTeamsCSS, createComputerTeams } from './computer-teams.mjs';
 import { catalogCSS, renderCapabilitySections, capabilitySections, renderFilters, filterChoices, filterCapabilities, memberNames, deploymentNotes, syncCapabilityNav } from './workspace-catalog.mjs';
 import { createWorkspaceSync, syncCSS, reasonText } from './workspace-sync-view.mjs';
 import { iconElement } from './shell-icons.mjs';
@@ -20,6 +21,7 @@ const TAB_LABELS = { souls: 'Souls', capabilities: 'Capabilities', sources: 'Set
 export const discoveryCSS = `
 ${catalogCSS}
 ${setupCSS}
+${computerTeamsCSS}
 ${syncCSS}
 .workspace-header { height:var(--bar-h); min-height:48px; flex:none; display:flex; align-items:stretch; flex-wrap:nowrap; gap:22px; padding:0 16px; border-bottom:1px solid var(--border); background:var(--surface); box-sizing:border-box; }
 .workspace-header[hidden] { display:none; }
@@ -93,6 +95,21 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   let alive = true, serial = 0, rosterGen = null, workspace = null, deployment = null, instances = [], tab = 'souls';
   let catalog = null, loading = false, failure = '', filters = { team: null, repo: null }, rendered = null;
   let setupView = 'list', query = '', setupMember = null, souls = [];
+  // Team model v2 (kernel feature team-model-2): Setup's "Teams on this computer", one card per
+  // workspace generation, kept across renders so a half-typed form survives the status polls.
+  let computerTeams = null, computerTeamsGen = null;
+  function teamsCard() {
+    if (!list(cliStatus()?.features).includes('team-model-2') || !workspace?.id || workspace.remote || workspace.server) return null;
+    const gen = workspaceGeneration();
+    if (computerTeams && computerTeamsGen === gen) return computerTeams.element;
+    computerTeams?.dispose(); computerTeamsGen = gen;
+    computerTeams = createComputerTeams(doc, { request: async body => {
+      const answer = await postJson(ctx, `/api/workspace-teams${wsQuery()}`, body);
+      if (answer?.status === 'ok' && answer.teams) return answer.teams;
+      throw Object.assign(new Error(answer?.reason?.message || 'The teams on this computer could not be read.'), { code: answer?.reason?.code || null });
+    } });
+    return computerTeams.element;
+  }
   header.className = 'workspace-header';
   // No title in the bar (human, 2026-09-28): the sidebar already says Workspace; the tabs lead.
   const tabs = node('div', undefined, 'workspace-tabs'); tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Workspace sections'); header.append(tabs);
@@ -219,7 +236,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     if (tab === 'sources') {
       // The kernel's workspace warnings, verbatim; an unmapped team label is said on its team's row.
       for (const warning of list(s?.warnings)) if (typeof warning?.message === 'string' && warning.message && !(warning.code === 'unmapped-team-label' && list(s?.workspace?.teams).includes(warning.label))) notes.append(node('p', warning.message, 'catalog-note warn'));
-      renderSetup(body, { status: s, instances, souls, cli: cliStatus(), view: setupView, selected: setupMember,
+      renderSetup(body, { status: s, instances, souls, cli: cliStatus(), view: setupView, selected: setupMember, teamsCard: teamsCard(),
         onSelect: key => selectMember(key), onOpenRepo: openRepo, onOpenPackages: openPackages, openExternal: url => ctx.openExternal?.(url) }); return;
     }
     if (!catalog) return;
@@ -298,6 +315,6 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
       serial++; rosterGen = null; workspace = null; deployment = null; instances = []; catalog = null; loading = false; failure = '';
       filters = { team: null, repo: null }; sync.reset(); updateCounts(null); render();
     },
-    dispose() { alive = false; serial++; sync.dispose(); },
+    dispose() { alive = false; serial++; sync.dispose(); computerTeams?.dispose(); },
   };
 }
