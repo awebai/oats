@@ -80,3 +80,20 @@ test('inspect --soul / --home (derived on the real 0.30 captures): launch, launc
   assert.equal(inspectData({ ...structuredClone(home), launch: LAUNCH(), launchCurrent: { ...LAUNCH(), from: 'recorded' } }, selectHome), null, 'launchCurrent is what reselect WOULD choose');
   assert.equal(inspectData({ ...structuredClone(home), launch: { ...LAUNCH(), extra: 1 } }, selectHome), null);
 });
+
+test('readiness launch-changed (--home; derived on the real instance readiness capture): recorded, current and from kept', async () => {
+  const { readinessData } = await import('../renderer/readiness-contract.mjs');
+  const { data, instanceTarget } = await import('./helpers/readiness-fixture.mjs');
+  const item = { subject: 'launch', status: 'fail', required: false, producer: 'launch preference', code: 'launch-changed', evidence: null,
+    reason: 'this home launches pi; the current preference is claude', remedy: '`oats session restart --reselect-launch`, or respawn',
+    recorded: { harness: 'pi', model: null, launchConfig: null }, current: { harness: 'claude', model: 'claude-opus-5-5', launchConfig: null },
+    from: 'local-default', at: 'oats-local.yaml#/souls/launch/*' };
+  const doc = () => { const v = data(instanceTarget); v.checks.configured.items.push(structuredClone(item)); return v; };
+  const got = readinessData(doc(), instanceTarget).checks.configured.items.find(i => i.code === 'launch-changed');
+  assert.deepEqual([got.recorded, got.current, got.from, got.at, got.required], [item.recorded, item.current, 'local-default', item.at, false]);
+  for (const [what, change] of [['recorded shape', i => { i.recorded = { harness: 'pi' }; }], ['current harness', i => { i.current.harness = 'emacs'; }],
+    ['from flag', i => { i.from = 'flag'; }], ['from unknown', i => { i.from = 'guess'; }]]) {
+    const v = doc(); change(v.checks.configured.items.at(-1)); assert.equal(readinessData(v, instanceTarget), null, what);
+  }
+  assert.ok(readinessData(data(instanceTarget), instanceTarget).checks.configured.items.every(i => !Object.hasOwn(i, 'recorded') && !Object.hasOwn(i, 'from')), 'no keys invented');
+});

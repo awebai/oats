@@ -4,7 +4,7 @@
 import { dirname, basename, join, isAbsolute, resolve } from 'node:path';
 import { deploymentRecord as record } from './renderer/deployment-contract.mjs';
 import { harnessOf } from './renderer/harness-names.mjs';
-import { teamRow, teamRowsOf, defaultTeamOf } from './renderer/team-rows.mjs';
+import { teamRow, teamRowsOf, defaultTeamOf, TEAM_ID } from './renderer/team-rows.mjs';
 import { launchOf, REPORT_FROM } from './renderer/launch-contract.mjs';
 const text = value => typeof value === 'string' && value.length <= 8192 && !value.includes('\0');
 const absolute = value => text(value) && isAbsolute(value) && resolve(value) === value;
@@ -356,7 +356,7 @@ export function teamsData(document, deployment) {
   check(data.deployment === deployment, 'E_DEPLOYMENT_SCOPE');
   const teams = array(data.teams, 256).map(row => {
     const out = fields(row, ['label', 'team', 'description', 'from', 'at']);
-    check(TEAM_LABEL.test(out.label ?? '') && ['shared', 'local'].includes(out.from) && typeof row.default === 'boolean');
+    check(TEAM_LABEL.test(out.label ?? '') && ['shared', 'local'].includes(out.from) && typeof row.default === 'boolean' && (out.team === null || TEAM_ID.test(out.team)));
     out.default = row.default; return out;
   });
   check(new Set(teams.map(t => t.label)).size === teams.length && teams.filter(t => t.default).length <= 1);
