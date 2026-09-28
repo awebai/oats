@@ -118,7 +118,12 @@ Members are read at their LATEST commit by every deployment, including the 0.29.
 
 ### At spawn, and live (the human's Q1 + Q2)
 - **At spawn an instance joins its DEFAULT team only** (its primary identity). The soul's other eligible teams (`souls.teams`, shared or local) are offered: `join=<labels>` at spawn, checkboxes in the Desktop. Each joined team gets its own identity (as today). This is the human's final Q1, restoring "joining is explicit".
-- **The root's role (the provider contract):** setup makes the deployment's messaging root a member of every declared team. The provider mints each of an instance's identities from the root's membership in THAT team (`aw team invite --team-id <id>`), never from the root's active team.
+- **The roots (the provider contract; corrected 2026-09-28 from the co-lead's rehearsal on aw 1.36.13):** ONE ROOT PER TEAM.
+  - A local aweb identity is one team's member: accepting a second team into the same `.aw` is refused ("refusing to overwrite existing …/.aw/identity.yaml"). So "one root that is a member of every team" can't work.
+  - oats.aweb already models this: `settings.oats.aweb.roots: { <team id>: <absolute dir> }`, where `roots[team]` wins over `root`.
+  - Setup's `--create <label>` and `--join <label> --invite <token>` accept into a NEW root directory for that team, e.g. `<deployment>/.aweb-roots/<label>/.aw` (a real path, no symlinked parent). They then record `roots[<team id>]` in `oats-local.yaml` settings, and connect it (`aw workspace connect --service <url> --team <id>`). They never accept into an existing root.
+  - The provider mints each of an instance's identities from THAT team's root (`roots[T]`, else `root`), with `aw team invite --team-id <id>`, never from a root's active team.
+  - A declared team with no root that is a member of it is a readiness problem: the shared-team "ask its owner for an invite" message, or `--create` for a local one.
 - **Live:** when a soul loses an eligible team in `oats-local.yaml` (or a team is removed), its running instances joined to it leave on the next live read (the human's Q2). A team GAINED is offered, never auto-joined (the human's (b)). An instance joins or leaves any eligible team with the per-instance verbs (c).
 - **`oats teams remove <label>` of a label still referenced** (it's `defaultTeam`, or appears in `souls.teams` / `souls.default`) is REFUSED with `E_TEAM_IN_USE`, naming every reference; no cascade. The human removes the references first (`oats teams default …`, `oats soul teams … --remove`). A committed (shared) label is not removable by the verb at all (`E_TEAM_SHARED`: "edited by PR").
 - **Changing `defaultTeam`** doesn't move running instances (their primary identity is fixed): readiness warns `default-team-changed` until respawn.
@@ -161,10 +166,10 @@ The Desktop gets the same controls (Setup: this deployment's teams + the default
 - **So setup is designed FULLY HEADLESS:**
   1. The account + the workspace's default team: `aw init --new-account --username …`.
   2. Every further declared team, by kind (the same outcome, different handles):
-     - **Hosted** (`aweb-abkh`): `aw id team create --name <t>` → the team id + a single-use invite TOKEN → `aw --identity-home <root> id team accept-invite <token> --name <alias> --local`.
+     - **Hosted** (`aweb-abkh`): `aw id team create --name <t>` → the team id + a single-use invite TOKEN → `aw --identity-home <that team's NEW root> id team accept-invite <token> --name <alias> --local`.
      - **BYOD:** `aw id team create --name <t> --namespace <domain>` (the namespace controller key) → the team id + a team KEY → the team key signs `aw id team invite` → `accept-invite --local` → `aw id team register` to host it on aweb.ai.
   3. Setup writes each new id into `oats-local.yaml` `teams.<label>` (and sets `defaultTeam` to the first).
-- **Joining a team someone else created** (a shared team like `oats`): its owner sends an invite. `oats teams add <label> --team <id> --invite <token>` records the label + id, and the root accepts the invite into its membership. Setup never creates a team that's already declared with an id.
+- **Joining a team someone else created** (a shared team like `oats`): its owner sends an invite. `oats aweb setup --join <label> --invite <token>` accepts the invite into a NEW root for that team (see "The roots") and records `roots[<id>]`. The label + id come from the committed `teams:` (shared) or `oats teams add` (local). Setup never creates a team that's already declared with an id.
 - **A label is NOT passed raw as the team name** (aweb's rule, hosted + BYOD: lowercase letters, digits and inner hyphens; it starts and ends with a letter or digit; 1–128 characters; the id is `<team>:<namespace>`, unique per namespace, 409 on a collision).
   - Setup NORMALIZES the label to that pattern (lowercase; `_`/`.` → `-`; trim hyphens) and passes it as `--name`.
   - **On a 409:** if the existing team is one this deployment's root already belongs to (a re-run of setup), reuse it. Otherwise choose a suffixed name (`<name>-2`, …), and never adopt a team the root isn't a member of.
