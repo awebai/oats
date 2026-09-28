@@ -23,6 +23,7 @@ import { registerAction, getBinding, formatChord, onKeymapChange } from "../keyb
 import { resolveViewKey } from "../view-keys.mjs";
 import { cliAvailable, cliKnownUnavailable, cliStatus, refreshCli, onCliChange, cliCard } from "./cli-status.mjs";
 import { preselectSchedule } from "./schedules.mjs";
+import { preselectAutomationsTab } from "./automations.mjs";
 import { inspectSupported } from "../inspect-contract.mjs";
 
 /** True while the CLI probe has never SETTLED (no response classified yet).
@@ -296,7 +297,7 @@ ${spawnDialogCSS}</style>
     files: agent => s.ctx.openBrain?.(agent.name),
     canFiles: agent => canOpenFiles(s, agent),
     instances: agent => soulInstances(s, agent), workspace: () => s.workspace,
-    schedule: agent => { if (canLaunchSoul(s, agent)) { preselectSchedule(agent); ctx.openView?.("schedules"); } },
+    schedule: agent => { if (canLaunchSoul(s, agent)) { preselectSchedule(agent); preselectAutomationsTab("schedule"); ctx.openView?.("automations"); } },
   };
   // Instances: the right-panel sidebar (it sits beside a running terminal).
   s.inspector = createSoulInspector(inspectorElement, { ...inspectorOptions, presentation: s.presentation });
@@ -841,7 +842,7 @@ function openSpawnModal(s, a, draft = {}) {
       if (view.status === "partial") {
         if (!ui.dialog.querySelector(".guarded-schedules")) {
           const manage = doc.createElement("button"); manage.className = "act guarded-schedules"; manage.type = "button"; manage.textContent = "View schedules";
-          manage.addEventListener("click", () => { if (!ownsModal()) return; closeSpawnModal(s); s.ctx.openView?.("schedules"); });
+          manage.addEventListener("click", () => { if (!ownsModal()) return; closeSpawnModal(s); preselectAutomationsTab("schedule"); s.ctx.openView?.("automations"); });
           ui.dialog.querySelector(".spawn-footer").insertBefore(manage, ui.spawn);
         }
         return; // creation succeeded; never retry spawn to repair a wake

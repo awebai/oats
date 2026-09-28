@@ -9,11 +9,9 @@ import { localScheduleDefinition } from "../automation-rows.mjs";
 import { mountAutomationsPage } from "./automations.mjs";
 import { cliStatus, onCliChange } from "./cli-status.mjs";
 
-let mounted;
+// Mounted as the Automations stage's Schedules subtab (views/automations.mjs).
 let preselection;
 export function preselectSchedule(soul) { preselection = { soul, generation: workspaceGeneration() }; }
-export function mount(el, ctx) { mounted = createSchedulesView(el, ctx); }
-export function unmount() { mounted?.dispose(); mounted = null; }
 
 export function scheduleOutcome(run) {
   if (!run) return "Not run yet";
@@ -72,7 +70,7 @@ const FORM = `
     <p class="schedule-form-error schedule-error" role="alert"></p>
   </form>`;
 
-export function createSchedulesView(el, ctx, { cli = cliStatus, subscribeCli = onCliChange } = {}) {
+export function createSchedulesView(el, ctx, { cli = cliStatus, subscribeCli = onCliChange, frame = null } = {}) {
   const doc = el.ownerDocument;
   el.innerHTML = `<style>${CSS}</style><div class="oats-view schedules-page"><div class="schedule-sheet" hidden>${FORM}</div><div class="schedule-sheet schedule-delete-sheet" hidden><div class="schedule-confirm" role="alertdialog" aria-modal="true" aria-labelledby="schedule-delete-title" aria-describedby="schedule-delete-text"><h3 id="schedule-delete-title">Delete schedule</h3><p id="schedule-delete-text"></p><div class="schedule-actions"><button class="act danger schedule-delete-confirm" type="button">Delete schedule</button><button class="act schedule-delete-cancel" type="button">Cancel</button></div></div></div><div class="schedule-stage" style="height:100%"></div></div>`;
   const q = selector => el.querySelector(selector);
@@ -272,7 +270,7 @@ export function createSchedulesView(el, ctx, { cli = cliStatus, subscribeCli = o
     headerActions: () => [newButton], rowActions,
     onEnableScheduler: () => mutate("host-install"),
     onResult: (verb, row, result) => { if (verb === "run" && result?.run) notice(`${row.id}: ${scheduleOutcome(result.run)}`); },
-  }), { cli, subscribeCli });
+  }), { cli, subscribeCli, frame });
   // A workspace switch closes the form: its targets belong to the old workspace.
   const offWorkspace = onWorkspaceChange(() => { ++mutationOperation; busy = false; readOk = false; closeForm(); if (!deleteSheet.hidden) closeDelete(); render(); });
   const offCli = subscribeCli(() => render());

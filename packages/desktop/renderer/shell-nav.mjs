@@ -11,8 +11,8 @@
 export const NAV = [
   { name: "hierarchy", label: "Active overview", icon: "overview", title: "Active overview" },
   { name: "spawn", label: "Workspace", icon: "workspace", title: "Workspace" },
-  { name: "schedules", label: "Schedules", icon: "schedules", title: "Schedules" },
-  { name: "triggers", label: "Triggers", icon: "triggers", title: "Triggers" },
+  // Schedules and Triggers are one destination with two subtabs (human, 2026-09-28).
+  { name: "automations", label: "Automations", icon: "automations", title: "Automations" },
 ];
 
 /** Sidebar mode a stage view pairs with (spawn shows the souls context). */

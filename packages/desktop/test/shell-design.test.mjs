@@ -120,8 +120,8 @@ test("provided workspace header structure and brand artwork are decorative; choo
 
 test("only current destinations render, dispatch unchanged stage ids, and project aria-current", t => {
   const s = shell(t), buttons = [...s.document.querySelectorAll("#nav button")];
-  assert.deepEqual(buttons.map(b => b.textContent), ["Active overview", "Workspace", "Schedules", "Triggers"]);
-  assert.deepEqual(buttons.map(b => b.dataset.action), ["stage.hierarchy", "stage.spawn", "stage.schedules", "stage.triggers"]);
+  assert.deepEqual(buttons.map(b => b.textContent), ["Active overview", "Workspace", "Automations"]);
+  assert.deepEqual(buttons.map(b => b.dataset.action), ["stage.hierarchy", "stage.spawn", "stage.automations"]);
   for (const button of buttons) {
     assert.equal(button.type, "button"); assert.ok(button.title); assert.ok(button.querySelector("svg"));
     button.click(); assert.deepEqual(s.events.at(-1), ["stage", button.dataset.view]);
@@ -251,7 +251,7 @@ async function staleChooser(t, outcome, superseder, shellSource = source) {
   s.document.getElementById("sidebar-spawn").click(); const older = s.loads[0];
   if (superseder === "visit") { s.switchTo("B"); s.switchTo("A"); }
   if (superseder === "selection") s.c.tabOpenIntents.begin();
-  if (superseder === "stage") s.document.querySelector('#nav [data-view="schedules"]').click();
+  if (superseder === "stage") s.document.querySelector('#nav [data-view="automations"]').click();
   if (superseder === "palette") { runAction("app.palette"); runAction("app.palette"); }
   if (superseder === "shortcuts") runAction("app.shortcuts");
   if (superseder === "modal") s.document.getElementById("ws-modal").hidden = false;

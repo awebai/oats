@@ -142,7 +142,7 @@ test('03: cards have one semantic Details entry with compact identity, descripti
   for (const text of ['Edit defaults', 'Edit instructions']) assert.equal([...u.get('.workspace-soul-page').querySelectorAll('button')].some(b => b.textContent === text), false, `${text}: a v2 soul is edited in its repository`);
   assert.equal(u.get('.inspector-repository'), null, 'no "Edit this soul" block (human, F7)');
   assert.equal(u.get('.spawn-dialog'), null, 'keyboard inspection does not launch');
-  u.click('Schedule…'); assert.deepEqual(u.views, ['schedules']);
+  u.click('Schedule…'); assert.deepEqual(u.views, ['automations'], 'Automations, on its Schedules subtab');
   u.get('.workspace-soul-page .inspector-back').click();
   assert.equal(u.doc.activeElement, u.get('.soul-card'), 'back returns to the roving card');
   assert.equal(u.css('.souls-body').gridTemplateColumns, 'minmax(0,1fr)');

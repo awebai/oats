@@ -182,13 +182,13 @@ for (const boundary of ["load", "mount"]) for (const outcome of ["resolve", "rej
     const old = s.showStage("hierarchy"); await tick();
     const gate = boundary === "load" ? s.loads.at(-1) : deferred();
     if (boundary === "mount") { s.loads.at(-1).resolve({ mount: () => gate.promise }); await tick(); }
-    const newer = s.showStage("schedules");
+    const newer = s.showStage("automations");
     if (outcome === "resolve") gate.resolve(boundary === "load" ? { mount() {} } : undefined);
     else gate.reject(new Error("superseded stage failure"));
     await old; await tick();
-    assert.equal(s.loads.at(-1).name, "schedules");
+    assert.equal(s.loads.at(-1).name, "automations");
     s.loads.at(-1).resolve({ mount() {} }); await newer;
-    assert.deepEqual(s.nav(), ["schedules"]); assert.deepEqual(s.contexts, ["stage:schedules"]);
+    assert.deepEqual(s.nav(), ["automations"]); assert.deepEqual(s.contexts, ["stage:automations"]);
     assert.equal(s.c.tabLayerVisible, false);
   });
 }
