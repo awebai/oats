@@ -48,6 +48,7 @@ import { lifecycleRequest } from "./instance-lifecycle.mjs";
 import { readinessRequest } from './readiness.mjs';
 import { readinessFailure } from '../renderer/readiness-contract.mjs';
 import { spawnPreviewRequest } from './spawn-preview.mjs';
+import { teamsRequest, soulTeamsRequest, teamsFailure } from './teams.mjs';
 import { instanceEventsRequest } from './instance-events.mjs';
 import { eventsFailure } from '../renderer/instance-events-contract.mjs';
 import { spawnApplyRequest } from './spawn-apply.mjs';
@@ -1179,6 +1180,16 @@ const server = createServer(async (req, res) => {
         };
         return send(res, 200, await readinessRequest(request, getContext));
       } catch { return send(res, 400, readinessFailure('E_BAD_ARGS')); }
+    }
+    // Team model v2: the deployment's teams and a soul's teams, through the kernel verbs (the
+    // only writer of oats-local.yaml). POST, so the Origin guard above covers every action.
+    if ((path === '/api/workspace-teams' || path === '/api/workspace-soul-teams') && req.method === 'POST') {
+      try {
+        if (url.searchParams.getAll('ws').length !== 1 || !url.searchParams.get('ws') || [...url.searchParams.keys()].some(k => k !== 'ws')) throw new Error('bad query');
+        const request = await readStrictBody(req, 4096);
+        const getContext = () => ({ workspace: workspaces().find(w => w.id === url.searchParams.get('ws')), cli: cliState });
+        return send(res, 200, await (path === '/api/workspace-teams' ? teamsRequest : soulTeamsRequest)(request, getContext));
+      } catch { return send(res, 400, teamsFailure('E_BAD_ARGS')); }
     }
     if (path === '/api/instance-lifecycle' && req.method === 'POST') {
       try {

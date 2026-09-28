@@ -93,19 +93,22 @@ test('argv: oats teams and oats soul teams, validated before any exec, never opt
   await cliSoulTeams('/oats', { soul: '*', add: ['oats'], workspaceDir: ws }, { exec });
   assert.deepEqual(calls, [
     ['teams', '--dir', ws, '--json'],
-    ['teams', 'add', 'antares-oats', '--team', 'antares-oats:juan.aweb.ai', '--description', 'Mine', '--dir', ws, '--json'],
+    ['teams', 'add', 'antares-oats', '--team=antares-oats:juan.aweb.ai', '--description=Mine', '--dir', ws, '--json'],
     ['teams', 'remove', 'old', '--dir', ws, '--json'], ['teams', 'default', 'oats', '--dir', ws, '--json'],
-    ['soul', 'teams', 'oats-expert', '--add', 'oats,reviewers', '--remove', 'old', '--default', 'oats', '--dir', ws, '--json'],
+    ['soul', 'teams', 'oats-expert', '--add=oats,reviewers', '--remove=old', '--default=oats', '--dir', ws, '--json'],
     ['soul', 'teams', 'oats.okf/harvester', '--clear-default', '--dir', ws, '--json'],
-    ['soul', 'teams', '*', '--add', 'oats', '--dir', ws, '--json']]);
+    ['soul', 'teams', '*', '--add=oats', '--dir', ws, '--json']]);
   const never = { exec: () => assert.fail('must not execute') };
-  for (const bad of [{ action: 'add', label: 'x', team: '-rf', workspaceDir: ws }, { action: 'add', label: '-x', team: 't', workspaceDir: ws },
-    { action: 'add', label: 'x', team: 't', description: 'two\nlines', workspaceDir: ws }, { action: 'join', label: 'x', workspaceDir: ws },
-    { action: 'remove', label: 'x', team: 't', workspaceDir: ws }, { workspaceDir: 'relative' }, { label: 'x', workspaceDir: ws }]) {
+  for (const bad of [{ action: 'add', label: 'x', team: '-rf', workspaceDir: ws }, { action: 'add', label: 'x', team: '--json', workspaceDir: ws },
+    { action: 'default', label: '--default', workspaceDir: ws }, { action: 'add', label: 'x', team: 'no-namespace', workspaceDir: ws },
+    { action: 'add', label: 'x', team: 'a b:c.d', workspaceDir: ws }, { action: 'add', label: 'x', team: 't:ns', description: '--json', workspaceDir: ws }, { action: 'add', label: '-x', team: 't:ns', workspaceDir: ws },
+    { action: 'add', label: 'x', team: 't:ns', description: 'two\nlines', workspaceDir: ws }, { action: 'join', label: 'x', workspaceDir: ws },
+    { action: 'remove', label: 'x', team: 't:ns', workspaceDir: ws }, { workspaceDir: 'relative' }, { label: 'x', workspaceDir: ws }]) {
     assert.equal((await cliTeams('/oats', bad, never)).error.code, 'E_BAD_ARGS', JSON.stringify(bad));
   }
   for (const bad of [{ soul: '*', defaultLabel: 'x', workspaceDir: ws }, { soul: '*', clearDefault: true, workspaceDir: ws }, { soul: 'a', defaultLabel: 'x', clearDefault: true, workspaceDir: ws },
-    { soul: '--all', workspaceDir: ws }, { soul: 'a', add: [], workspaceDir: ws }, { soul: 'a', add: ['x', 'x'], workspaceDir: ws }, { soul: 'a/b/c', workspaceDir: ws }, { soul: 'a', add: ['-x'], workspaceDir: ws }]) {
+    { soul: '--all', workspaceDir: ws }, { soul: 'a', add: [], workspaceDir: ws }, { soul: 'a', add: ['x', 'x'], workspaceDir: ws }, { soul: 'a/b/c', workspaceDir: ws }, { soul: 'a', add: ['-x'], workspaceDir: ws },
+    { soul: 'a', defaultLabel: '--default', workspaceDir: ws }, { soul: 'a', add: Array.from({ length: 65 }, (_, i) => `t${i}`), workspaceDir: ws }]) {
     assert.equal((await cliSoulTeams('/oats', bad, never)).error.code, 'E_BAD_ARGS', JSON.stringify(bad));
   }
 });
