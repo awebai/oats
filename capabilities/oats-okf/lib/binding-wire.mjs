@@ -1,5 +1,4 @@
 import { TextDecoder } from 'node:util';
-import { validateInvocationShape } from './invocation-shape.mjs';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { fs, safePath } from './io.mjs';
@@ -14,7 +13,7 @@ import {
   renderKnowledgeRuntime,
   sameJson,
 } from './portable-binding.mjs';
-import { validateBindings } from './config.mjs';
+import { declaration as soulDeclaration, loadBindings, validateBindings } from './config.mjs';
 import { stageBase, validateBase } from './stores.mjs';
 
 export const BINDING_WIRE_LIMITS=Object.freeze({bytes:1024*1024,depth:32,entries:16384});
@@ -254,14 +253,20 @@ export function loadInvocationKnowledgeBinding(env=process.env) {
 // binding.reasons (byte-exact) — the manifest test pins that.
 const checkReasons=Object.freeze({
   'action:not-admitted':'check action is not an admitted knowledge operation',
-  'bindings:invalid':'bound runtime bindings file is missing or invalid',
+  'settings:missing':'OKF settings missing bindings-file: set settings.oats.okf bindings-file, or deactivate oats.okf',
+  'soul:missing':'OKF soul declaration missing: create okf.json for this soul, or deactivate oats.okf',
+  'harvest-runtime:missing':settingMessages['harvest-runtime:missing'],
+  'harvest-runtime:invalid':settingMessages['harvest-runtime:invalid'],
+  'harvest-model:invalid':settingMessages['harvest-model:invalid'],
+  'binding:not-configured':'OKF binding missing or invalid: provision soul OKF declaration and bindings file, or deactivate oats.okf',
+  'bindings:invalid':'OKF bindings file missing or invalid: repair configured bindings file, or deactivate oats.okf',
   'bases:too-many':'more than 64 git knowledge bases declared',
   'base:stage-failed':'declared knowledge base could not be staged from its git source',
   'base:not-validated':'declared knowledge base is not a validated knowledge tree',
   'base:owner-unmet':'knowledge base owner or remote custody requirement not met',
   'base:source-mismatch':'staged git source does not match the declared knowledge base',
   'runtime:command-missing':'harvest runtime command is not installed on this host',
-  'runtime:not-qualified':'harvest runtime could not be qualified against the accepted bases',
+  'runtime:not-qualified':'harvest runtime is not qualified: install/configure the selected harvest runtime or set harvest off',
 });
 function problem(code,reason) {
   if(reason===undefined) return {code};
@@ -276,15 +281,40 @@ function providerActionName(action) {
   if(typeof action.name==='string' && action.name.startsWith('okf:')) return action.name.slice(4);
   return null;
 }
+function readinessRuntime(settings,env=process.env) {
+  if(Object.hasOwn(settings,'bindings-file')) {
+    try {
+      if(typeof settings['bindings-file']!=='string' || !absolute(settings['bindings-file'])) return {problem:problem('needs-configuration','settings:missing')};
+      if(settings.harvest!==undefined && !['on','off'].includes(settings.harvest)) return {problem:problem('needs-configuration','runtime:not-qualified')};
+      if(settings.harvest!=='off') {
+        if(settings['harvest-runtime']===undefined) return {problem:problem('needs-configuration','harvest-runtime:missing')};
+        if(!['pi','claude','codex'].includes(settings['harvest-runtime'])) return {problem:problem('needs-configuration','harvest-runtime:invalid')};
+        if(settings['harvest-model']!==undefined && (typeof settings['harvest-model']!=='string' || !settings['harvest-model'].trim())) return {problem:problem('needs-configuration','harvest-model:invalid')};
+      }
+      const bindings=loadBindings(settings['bindings-file']);
+      if(!env.OATS_SOUL) return {problem:problem('needs-configuration','soul:missing')};
+      const decl=soulDeclaration(env.OATS_SOUL);
+      return {runtime:{descriptorFile:bindings.file,bindings:{version:1,stateDir:bindings.stateDir,bases:bindings.bases},declaration:decl}};
+    } catch(error) {
+      const message=String(error?.message || '');
+      if(error?.code==='E_CONFIG' && /okf\.json|soul has no/.test(message)) return {problem:problem('needs-configuration','soul:missing')};
+      return {problem:problem('needs-configuration','bindings:invalid')};
+    }
+  }
+  if(settings.schemaVersion!==undefined) {
+    try { return {runtime:bindingPayload(settings,{diagnoseSettings:true}).runtime}; }
+    catch(error) {if(['invalid-binding','needs-configuration'].includes(error?.wireCode)) return {problem:problem('needs-configuration','binding:not-configured')};throw error;}
+  }
+  return {problem:problem('needs-configuration','settings:missing')};
+}
 function checkPhase(req) {
-  keys(req.input,['binding','context','action','invocation'],['binding','context','action'],'check input');
+  keys(req.input,['context','action'],['context','action'],'check input');
   if(!obj(req.input.context) || !obj(req.input.action)) wireError('invalid-binding');
-  if(Object.hasOwn(req.input,'invocation')) validateInvocationShape(req.input.invocation,{capability:CAPABILITY,context:req.input.context,action:req.input.action});
-  const {runtime}=bindingPayload(req.input.binding,{diagnoseSettings:true}),action=req.input.action,name=providerActionName(action);
-  const harvestInvocation=req.input.invocation;
-  const admittedHarvest=name==='harvest' && action.kind==='operation' && action.slot==='knowledge' && action.name==='harvest'
-    && harvestInvocation?.subject.kind==='persistent' && harvestInvocation.instance!==null && !!harvestInvocation.intent;
-  if(name && (unsupportedCapturedCommands.has(name) || name==='run-source' || (name==='harvest' && !admittedHarvest))) return {status:'needs-configuration',problems:[problem('provider-not-qualified','action:not-admitted')]};
+  const action=req.input.action,name=providerActionName(action);
+  const prepared=readinessRuntime(req.settings);
+  if(prepared.problem) return {status:'needs-configuration',problems:[prepared.problem]};
+  const runtime=prepared.runtime;
+  if(name && (unsupportedCapturedCommands.has(name) || name==='run-source' || name==='harvest')) return {status:'needs-configuration',problems:[problem('provider-not-qualified','action:not-admitted')]};
   if(action.kind==='hook' && action.name==='soul-scaffold') return {status:'ready',problems:[]};
   let bindings;try{bindings=validateBindings(runtime.bindings,runtime.descriptorFile);}catch{return {status:'needs-configuration',problems:[problem('needs-configuration','bindings:invalid')]};}
   const accepted={},gitBases=Object.entries(bindings.bases).filter(([,base])=>base.kind==='git');
@@ -296,14 +326,16 @@ function checkPhase(req) {
       stage=base.kind==='directory'?'validate':'stage';
       accepted[alias]=(base.kind==='directory'?validateBase(base.path,base):stageBase(base,join(scratch,alias),{alias})).meta;
     }
-    stage='runtime';
-    checkKnowledgeRuntime({rendered:runtime,accepted});
+    if(req.settings.harvest!=='off') {
+      stage='runtime';
+      checkKnowledgeRuntime({rendered:runtime,accepted});
+    }
   } catch(error) {
-    if(error.code==='E_COMMAND') return {status:'unavailable',problems:[problem('provider-unavailable','runtime:command-missing')]};
+    if(error.code==='E_COMMAND') return {status:'needs-configuration',problems:[problem('needs-configuration','runtime:command-missing')]};
     if(error.code==='E_OWNER') return {status:'needs-configuration',problems:[problem('provider-not-qualified','base:owner-unmet')]};
     if(error.code==='E_CONFIRM') return {status:'needs-configuration',problems:[problem('provider-not-qualified','base:source-mismatch')]};
     if(['E_BASE','E_VALIDATION','E_DIRECTORY_GIT'].includes(error.code)) return {status:'needs-configuration',problems:[problem('provider-not-qualified',stage==='stage'?'base:stage-failed':'base:not-validated')]};
-    if(stage==='runtime') return {status:'unavailable',problems:[problem('provider-unavailable','runtime:not-qualified')]};
+    if(stage==='runtime') return {status:'needs-configuration',problems:[problem('needs-configuration','runtime:not-qualified')]};
     return {status:'unavailable',problems:[problem('provider-unavailable')]};
   } finally {
     if(scratch) fs.rmSync(scratch,{recursive:true,force:true});

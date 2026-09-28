@@ -1,7 +1,7 @@
 {
   "capability": "oats.okf",
   "command": "okf",
-  "version": "4.0.3",
+  "version": "4.0.4",
   "compatibility": {
     "oats": ">=0.29.0"
   },
@@ -82,14 +82,17 @@
       "setting harvest-runtime must be pi, claude or codex",
       "setting harvest-model must be null or a non-empty string",
       "check action is not an admitted knowledge operation",
-      "bound runtime bindings file is missing or invalid",
+      "OKF settings missing bindings-file: set settings.oats.okf bindings-file, or deactivate oats.okf",
+      "OKF soul declaration missing: create okf.json for this soul, or deactivate oats.okf",
+      "OKF binding missing or invalid: provision soul OKF declaration and bindings file, or deactivate oats.okf",
+      "OKF bindings file missing or invalid: repair configured bindings file, or deactivate oats.okf",
       "more than 64 git knowledge bases declared",
       "declared knowledge base could not be staged from its git source",
       "declared knowledge base is not a validated knowledge tree",
       "knowledge base owner or remote custody requirement not met",
       "staged git source does not match the declared knowledge base",
       "harvest runtime command is not installed on this host",
-      "harvest runtime could not be qualified against the accepted bases"
+      "harvest runtime is not qualified: install/configure the selected harvest runtime or set harvest off"
     ]
   },
   "inject": "injects/okf.md",
