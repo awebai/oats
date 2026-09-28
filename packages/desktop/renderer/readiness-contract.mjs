@@ -3,6 +3,7 @@
  * never a scope. The four checks are the kernel's; a provider's binding check
  * is relayed verbatim. An admitted read is not a lease or spawn authority. */
 import { effectiveOf, REPORT_FROM } from './launch-contract.mjs';
+import { defaultTeamOf } from './team-rows.mjs';
 export const READINESS_API = 2;
 export const CHECKS = ['installed', 'configured', 'member', 'providers'];
 export const record = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -80,10 +81,18 @@ function item(v) {
   // Where the value is declared (a team; launch-changed's current layer), or null: launch-changed's `at`
   // is null when the current launch comes from a flag or the host default.
   if (Object.hasOwn(v, 'at')) { if (v.at !== null && (typeof v.at !== 'string' || !v.at || v.at.length > 512 || /[\x00-\x1f\x7f]/.test(v.at))) throw Error(); out.at = v.at; }
-  // Launch preferences (0.30, `launch-changed`, --home only): the recorded and the current effective
-  // launch, and the current layer's from (its `at` is above).
-  for (const key of ['recorded', 'current']) if (Object.hasOwn(v, key)) { const l = effectiveOf(v[key]); if (!l) throw Error(); out[key] = l; }
-  if (Object.hasOwn(v, 'from')) { if (!REPORT_FROM.includes(v.from)) throw Error(); out.from = v.from; }
+  // `recorded`/`current` mean what the item's code says (--home only), so they are decoded per code:
+  // - launch-changed (launch preferences): each an effective launch {harness, model, launchConfig}, plus
+  //   the current layer's `from` (its `at` is above: null when that layer is the host default);
+  // - default-team-changed (team model v2): each the kernel's DefaultTeam {label, team, from}, or null.
+  // Another code's recorded/current/from are not read (they may be anything; the item still shows).
+  if (v.code === 'launch-changed') {
+    for (const key of ['recorded', 'current']) { const l = effectiveOf(v[key]); if (!l) throw Error(); out[key] = l; }
+    if (!REPORT_FROM.includes(v.from)) throw Error(); out.from = v.from;
+    if (!Object.hasOwn(v, 'at')) throw Error();
+  } else if (v.code === 'default-team-changed') {
+    for (const key of ['recorded', 'current']) { const d = Object.hasOwn(v, key) ? defaultTeamOf(v[key]) : undefined; if (d === undefined) throw Error(); out[key] = d; }
+  }
   // The provider's own binding-check answer, relayed verbatim (`providers`):
   // {status, problems, warnings}. Warnings (always emitted, maybe []) never change status.
   if (Object.hasOwn(v, 'result')) {

@@ -143,3 +143,47 @@ test('real: inspect --soul and --home (the record, launchCurrent, and a drift); 
   const item = readinessData(r, target).checks.configured.items.find(i => i.code === 'launch-changed');
   assert.deepEqual([item.required, item.recorded.harness, item.current.harness, item.from, item.at], [false, 'claude', 'codex', 'local', 'oats-local.yaml#/souls/launch/dev']);
 });
+
+// #292's review (Antares): readiness `recorded`/`current` mean what the item's CODE says. The REAL kernel
+// (capture-launch.mjs, main 69d76a91 = main's lib/) emits three shapes; each reads, and a mutant per rule refuses.
+const readinessOf = name => {
+  const r = real(name).result, s = r.subject;
+  return { r, target: { workspace: 'w', context: s.home.slice(0, s.home.indexOf('/agents/')), observedAs: 'instance', home: s.home,
+    selector: { kind: 'instance', instance: s.instance, agent: s.soul, agentsRoot: r.selector.agentsRoot } } };
+};
+const itemsOf = doc => doc.checks.configured.items;
+
+test('real readiness: launch-changed forward (a layer, at a string), reverse (host, at null), and default-team-changed (DefaultTeam objects) all read', async () => {
+  const { readinessData } = await import('../renderer/readiness-contract.mjs');
+  const forward = readinessOf('readiness-home-drift'), f = itemsOf(readinessData(forward.r, forward.target)).find(i => i.code === 'launch-changed');
+  assert.deepEqual([f.from, f.at, f.recorded, f.current], ['local', 'oats-local.yaml#/souls/launch/dev',
+    { harness: 'claude', model: 'claude-opus-5-5', launchConfig: null }, { harness: 'codex', model: null, launchConfig: null }]);
+  // A preference removed after the spawn: the current launch is the host default, from nowhere.
+  const reverse = readinessOf('readiness-home-reverse-drift'), rv = itemsOf(readinessData(reverse.r, reverse.target)).find(i => i.code === 'launch-changed');
+  assert.deepEqual([rv.from, rv.at, rv.recorded.harness, rv.current.harness], ['host', null, 'claude', 'pi']);
+  // The team item carries recorded/current too, as the kernel's DefaultTeam: the home's readiness still reads (it went blank).
+  const team = readinessOf('readiness-home-default-team-changed'), doc = readinessData(team.r, team.target);
+  assert.ok(doc, 'the whole readiness view reads');
+  const t = itemsOf(doc).find(i => i.code === 'default-team-changed');
+  assert.deepEqual([t.subject, t.required, t.recorded, t.current, t.remedy, Object.hasOwn(t, 'from')],
+    ['teams', false, { label: 'mine', team: 'mine:me.aweb.ai', from: 'deployment' }, { label: 'oats', team: 'oats:oats.aweb.ai', from: 'deployment' }, 'respawn', false]);
+});
+
+test('real readiness mutants: each code decodes its own recorded/current; another code\'s are not read', async () => {
+  const { readinessData } = await import('../renderer/readiness-contract.mjs');
+  const mutate = (name, change) => { const { r, target } = readinessOf(name); const v = structuredClone(r); change(v.checks.configured.items.find(i => /-changed$/.test(i.code ?? ''))); return readinessData(v, target); };
+  for (const [what, change] of [['launch recorded a DefaultTeam', i => { i.recorded = { label: 'mine', team: null, from: 'deployment' }; }],
+    ['launch current null', i => { i.current = null; }], ['launch from missing', i => { delete i.from; }], ['launch from flag', i => { i.from = 'flag'; }],
+    ['launch at missing', i => { delete i.at; }], ['launch at control', i => { i.at = 'a\nb'; }]])
+    assert.equal(mutate('readiness-home-drift', change), null, what);
+  assert.ok(mutate('readiness-home-reverse-drift', i => { i.at = null; }), 'host with at null reads');
+  for (const [what, change] of [['team recorded a launch', i => { i.recorded = { harness: 'pi', model: null, launchConfig: null }; }],
+    ['team current label', i => { i.current.label = 'a b'; }], ['team current from', i => { i.current.from = 'shared'; }], ['team recorded missing', i => { delete i.recorded; }]])
+    assert.equal(mutate('readiness-home-default-team-changed', change), null, what);
+  const none = mutate('readiness-home-default-team-changed', i => { i.recorded = null; i.current = null; });
+  assert.deepEqual([itemsOf(none).find(i => i.code === 'default-team-changed').recorded, itemsOf(none).find(i => i.code === 'default-team-changed').current], [null, null], 'no default team (null) on either side reads');
+  // Another code carrying these keys: not decoded, not kept; the item and the document still read.
+  const other = mutate('readiness-home-default-team-changed', i => { i.code = 'something-new'; i.from = 'somewhere'; });
+  const kept = itemsOf(other).find(i => i.code === 'something-new');
+  assert.deepEqual([Object.hasOwn(kept, 'recorded'), Object.hasOwn(kept, 'current'), Object.hasOwn(kept, 'from')], [false, false, false]);
+});
