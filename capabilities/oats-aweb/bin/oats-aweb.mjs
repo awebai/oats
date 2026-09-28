@@ -43,7 +43,7 @@ import { join, dirname, resolve, delimiter, isAbsolute } from "node:path";
 import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/captured-execution.mjs";
 import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/session-readiness.mjs";
 import { runCapturedNative } from "../lib/captured-native.mjs";
-import { CUSTODY_ATTACH_MIN, grantYamlCustodySocket, parseBindingJson } from "../lib/binding-wire.mjs";
+import { AW_MIN, grantYamlCustodySocket, parseBindingJson } from "../lib/binding-wire.mjs";
 import { custodyPreflight } from "../lib/grant-custody.mjs";
 import { runtimeDeliveryFor, wakeRegistration } from "../lib/wake-receive.mjs";
 
@@ -100,21 +100,18 @@ const parseSecretJson = (text, what) => {
  * `command -v`, which is a SHELL BUILTIN — spawning it as a program depends on
  * a /usr/bin/command binary that many systems do not ship, and its absence
  * would read as "aw is missing" on every such host. */
-/** The installed aw's version from `aw version` ("aw 1.36.1 ..."), or
- *  undefined when it cannot be read; compared as numeric triples. */
+/** The installed aw version from `aw version`, or undefined when it cannot be read. */
 function awVersionTriple() {
   try { return /aw\s+v?(\d+)\.(\d+)\.(\d+)/.exec(run(["aw", "version"], undefined, 10000)); } catch { return undefined; }
 }
-function awAtLeast(floor) {
-  const v = awVersionTriple();
-  if (!v) return false;
-  const a = v.slice(1, 4).map(Number), b = floor.split(".").map(Number);
-  for (let i = 0; i < 3; i++) { if (a[i] !== b[i]) return a[i] > b[i]; }
+function semverAtLeast(version, floor) {
+  const a = version.split(".").map(Number), b = floor.split(".").map(Number);
+  for (let i = 0; i < 3; i++) { if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0); }
   return true;
 }
 function awVersionLabel() {
   const v = awVersionTriple();
-  return v ? v.slice(1, 4).join(".") : "unknown";
+  return v ? v.slice(1, 4).join(".") : undefined;
 }
 
 function onPath(cmd) {
@@ -269,12 +266,27 @@ function awebRoot() { return resolveAwebRoot(); }
 const teamMemberships = (listed) => listed?.memberships || listed?.teams || [];
 const teamIdsOf = (listed) => teamMemberships(listed).map((m) => m.team_id || m.id || m);
 
+function awFloorProblem() {
+  if (!onPath("aw")) return `aw CLI not on PATH; install aw >= ${AW_MIN}`;
+  const version = awVersionLabel();
+  if (!version) return `aw version could not be read; install aw >= ${AW_MIN}`;
+  if (semverAtLeast(version, AW_MIN)) return undefined;
+  return `aw ${version} is older than required ${AW_MIN}; install aw >= ${AW_MIN}`;
+}
+
 const AW_INSTALL = "install the aw CLI first — see https://aweb.ai/docs (or `oats aweb setup` for guided onboarding)";
 const isCommand = ["roster", "setup", "teams", "join", "leave"].includes(event);
 if (!onPath("aw")) {
   if (isCommand) { console.error(`oats aweb ${event}: aw CLI not on PATH — ${AW_INSTALL}`); process.exit(1); }
   if (event === "spawn") fatal(`aw CLI not on PATH, so no identity could be minted and this instance would have no messaging — ${AW_INSTALL}`);
   warn(`aw CLI not on PATH — no identity minted; ${AW_INSTALL}`);
+}
+if (isCommand || event === "spawn") {
+  const floorProblem = awFloorProblem();
+  if (floorProblem) {
+    if (isCommand) { console.error(`oats aweb ${event}: ${floorProblem}`); process.exit(1); }
+    fatal(`${floorProblem}, so no identity could be minted and this instance would not meet the messaging contract`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -307,10 +319,6 @@ function wakeRegister(instanceHome, identityHome) {
 function wakeDeregister(instanceHome) {
   try { run(["aw", "wake", "deregister", "--home", instanceHome], instanceHome, 60000); return true; } catch { return false; }
 }
-// The first aw release whose grant subtree accepts `aw id grant mint --team
-// <team-id>` (and the full normal/reviewer scope lists): aw 1.36.2, paired with
-// aweb server 1.27.5 for complete custody operations. aw 1.36.1 has neither.
-const GRANT_TEAM_FLAG_MIN = "1.36.2";
 const NORMAL_GRANT_SCOPES = ["mail.read", "mail.send", "chat.read", "chat.send", "events.read", "coord.read", "coord.write", "presence.write", "contacts.read", "contacts.write"];
 const REVIEWER_GRANT_SCOPES = ["mail.read", "chat.read", "events.read", "coord.read", "presence.write"];
 const residentKeyHint = (name) => `oats-local.yaml settings.oats.aweb.residents.${name || "<name>"}`;
@@ -428,7 +436,7 @@ function retainedLaunchOutput(meta = {}, identityHome = priorGrantHome(meta)) {
   return { ...(Object.keys(env).length ? { env } : {}), ...(launch ? { launch } : {}) };
 }
 function grantMintArgv({ team, scopes, ttl, grantHome, custodySocket }) {
-  return ["aw", "id", "grant", "mint", ...(awAtLeast(GRANT_TEAM_FLAG_MIN) ? ["--team", team] : []), "--scope", scopes.join(","), "--ttl", ttl, "--label", `oats:${instance}`, "--out", grantHome, "--custody-socket", custodySocket, "--json"];
+  return ["aw", "id", "grant", "mint", "--team", team, "--scope", scopes.join(","), "--ttl", ttl, "--label", `oats:${instance}`, "--out", grantHome, "--custody-socket", custodySocket, "--json"];
 }
 function validateMintedGrant(minted, grantHome) {
   const grantId = typeof minted.grant_id === "string" ? minted.grant_id : undefined;
@@ -458,7 +466,6 @@ function globalGrantRenew() {
   catch (e) { out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta, oldHome), warning: `oats-aweb: renewal custody preflight failed (${e.message || e}); keeping previous grant ${oldMeta.identity.grant.id}` }); }
   const custodySocket = preflightCustodySocket(preflight);
   if (!custodySocket) out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta, oldHome), warning: `oats-aweb: renewal custody preflight reported no socket_path, so the grant cannot be attached to custody; keeping previous grant ${oldMeta.identity.grant.id}` });
-  if (!awAtLeast(CUSTODY_ATTACH_MIN)) out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta, oldHome), warning: `oats-aweb: aw ${awVersionLabel()} cannot attach a grant to custody (--custody-socket); grants need aw >= ${CUSTODY_ATTACH_MIN}; keeping previous grant ${oldMeta.identity.grant.id}` });
   let stamp = Math.floor(Date.now() / 1000);
   let grantHome = join(home, `.aweb-identity-${stamp}`);
   while (existsSync(grantHome)) grantHome = join(home, `.aweb-identity-${++stamp}`);
@@ -505,7 +512,6 @@ function globalGrantSpawn() {
   const ttl = identitySettings.ttl === undefined || identitySettings.ttl === null || identitySettings.ttl === "" ? "8h" : String(identitySettings.ttl);
   const preflight = custodyPreflight({ custody, resident, team, e2eeRequired: grantE2eeRequired(), runAw: (argv, cwd, options) => run(argv, cwd, 60000, options), fatal });
   const custodySocket = requirePreflightCustodySocket(preflight);
-  if (!awAtLeast(CUSTODY_ATTACH_MIN)) fatal(`aw ${awVersionLabel()} cannot attach a grant to custody (--custody-socket); grants need aw >= ${CUSTODY_ATTACH_MIN}`);
   let meta;
   const cleanup = () => { try { rmSync(grantHome, { recursive: true, force: true }); } catch { /* best effort */ } };
   const failAfterMint = (message, code = 1) => { cleanup(); out({ ...(meta ? { meta } : {}), warning: `oats-aweb: ${String(message).slice(0, 300)}` }, code); };
@@ -590,22 +596,6 @@ const workspaceAliasOf = (homeDir) => {
  *  signing key, a team certificate and a workspace binding. */
 const joinedLate = (homeDir) => existsSync(join(homeDir, ".aw", "signing.key")) && existsSync(join(homeDir, ".aw", "team-certs")) && !!workspaceAliasOf(homeDir);
 const JOIN_TIMEOUT_MS = Number(process.env.OATS_AWEB_JOIN_TIMEOUT_MS) > 0 ? Number(process.env.OATS_AWEB_JOIN_TIMEOUT_MS) : 120000;
-// The first aw whose joined-team external homes are fully operable: local
-// accept-invite under --identity-home, hosted workspace auto-connect, self-release
-// and joined-root E2E key publication.
-const JOINED_TEAMS_AW_MIN = "1.36.12";
-function joinedTeamsAwFloorProblem() {
-  if (/^\d+\.\d+\.\d+$/.test(JOINED_TEAMS_AW_MIN) && awAtLeast(JOINED_TEAMS_AW_MIN)) return undefined;
-  if (!/^\d+\.\d+\.\d+$/.test(JOINED_TEAMS_AW_MIN)) return `E_TEAM_AW_FLOOR: joined-team identities need an aw release that admits local accept-invite under --identity-home, auto-connects the joined workspace and publishes the joined-root E2E key; installed aw is ${awVersionLabel()}. join= and oats aweb join are gated until that aw release exists`;
-  return `E_TEAM_AW_FLOOR: joined-team identities require aw >= ${JOINED_TEAMS_AW_MIN}; installed aw is ${awVersionLabel()}. join= and oats aweb join are gated until aw admits local accept-invite under --identity-home, auto-connects the joined workspace and publishes the joined-root E2E key`;
-}
-function requireJoinedTeamsAwFloor() {
-  const problem = joinedTeamsAwFloorProblem();
-  if (!problem) return;
-  const error = new Error(problem.replace(/^E_TEAM_AW_FLOOR: /, ""));
-  error.code = "E_TEAM_AW_FLOOR";
-  throw error;
-}
 const yamlScalar = (text, key) => {
   const m = String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`, "m"));
   return m ? m[1].trim() : undefined;
@@ -823,7 +813,6 @@ function teamsDocument(meta = readCapabilityMeta()) {
 function mintJoinedTeam(row, meta) {
   const existing = joinedTeamsOf(meta).find((j) => j.label === row.label);
   if (existing) return { meta, joined: existing, changed: false };
-  requireJoinedTeamsAwFloor();
   const identityHome = identityHomeForLabel(row.label);
   const root = awebRootForTeam(row.team);
   if (!root) throw new Error(`${awebRootProblem(rootSettingCandidate(row.team))}, so team ${row.label} could not be joined`);
@@ -1112,9 +1101,7 @@ if (event === "launch") {
       ? ` Notification delivery: external (AWEB_DELIVERY=session): the host wake broker (aw wake) is registered for this home and nudges you when mail or chat arrives; the native aweb channel is not running. If you have waited long with nothing arriving, check \`aw mail inbox\` and \`aw chat pending\` yourself at task boundaries.`
       : "";
     let meta = { team: joined.team_id, alias, delivery: deliveryMode, defaultTeam: { team: joined.team_id, source: primary.source }, ...(process.env.OATS_RUNTIME ? { runtime: process.env.OATS_RUNTIME } : {}), identity: identityMeta({ mode: "local", alias, team: joined.team_id }) };
-    const joinFloorProblem = joinRows.length ? joinedTeamsAwFloorProblem() : undefined;
-    if (joinFloorProblem) warnings.push(`oats-aweb: ${joinFloorProblem}`);
-    else for (const row of joinRows) { const result = mintJoinedTeam(row, meta); meta = result.meta; spawnMeta = meta; writeProviderTeamsState(meta); if (result.warning) warnings.push(`oats-aweb: ${result.warning}`); }
+    for (const row of joinRows) { const result = mintJoinedTeam(row, meta); meta = result.meta; spawnMeta = meta; writeProviderTeamsState(meta); if (result.warning) warnings.push(`oats-aweb: ${result.warning}`); }
     if (joinedTeamsOf(meta).length) { const synced = syncWakeReceive(meta); meta = synced.meta; for (const w of synced.warnings) warnings.push(`oats-aweb: ${w}`); }
     writeProviderTeamsState(meta);
     const defaultTeamBrief = meta.defaultTeam.source === "setting" ? "the team this deployment configured for you" : "the workspace's default team (the messaging root's active team)";
@@ -1169,26 +1156,13 @@ if (event === "launch") {
   }
   try {
     // Self-delete from inside the home, authenticated by its own key — a remote
-    // delete would 409 until the server marks the workspace stale.
-    // aw 1.36.1 (aweb-abim) revokes the member's certificate on delete and
-    // says so: `--json` prints alias_released true|false with a reason, and
-    // a released alias may be reused by a later spawn. An older aw cannot
-    // revoke, so the alias stays unusable and the report says that instead.
-    if (awAtLeast("1.36.1")) {
-      const raw = run(["aw", "workspace", "delete", meta.alias, "--json"], home);
-      let doc; try { doc = JSON.parse(raw); } catch { doc = undefined; }
-      const released = doc?.alias_released === true;
-      // aw 1.36.1 prints the cause as alias_released_reason (workspace.go,
-      // workspace_self_retire.go); `reason` is tolerated for a later rename.
-      const reason = typeof doc?.alias_released_reason === "string" ? doc.alias_released_reason : typeof doc?.reason === "string" ? doc.reason : (doc ? "unstated" : "no JSON answer");
-      out({ meta: { retired: true, aliasReusable: released, aliasReason: reason, joinedTeams: joinedTeamsOf(meta) }, ...(retireWarnings.length ? { warning: `oats-aweb: ${retireWarnings.join(" | ")}` } : released ? {} : { warning: `oats-aweb: workspace "${meta.alias}" deleted but its alias was not released (${reason}); spawn successors with a different --name (kernels 0.26.0+) or a different --purpose until it is` }) });
-    }
-    run(["aw", "workspace", "delete", meta.alias], home);
-    // Honest: the workspace row is deleted, but a hosted local member cannot
-    // revoke its own AWID certificate (aweb-abim), so the alias is NOT
-    // reusable. retired stays true because the cleanup is as complete as the
-    // platform allows; the field and the line carry the truth.
-    out({ meta: { retired: true, aliasReusable: false, joinedTeams: joinedTeamsOf(meta) }, warning: `oats-aweb: ${[...retireWarnings, `workspace "${meta.alias}" deleted; its certificate is not revoked (aweb-abim), so the alias is not reusable — spawn successors with a different --name (kernels 0.26.0+) or a different --purpose`].join(" | ")}` });
+    // delete would 409 until the server marks the workspace stale. aw >= 1.36.13
+    // reports whether the certificate was revoked and the alias was released.
+    const raw = run(["aw", "workspace", "delete", meta.alias, "--json"], home);
+    let doc; try { doc = JSON.parse(raw); } catch { doc = undefined; }
+    const released = doc?.alias_released === true;
+    const reason = typeof doc?.alias_released_reason === "string" ? doc.alias_released_reason : typeof doc?.reason === "string" ? doc.reason : (doc ? "unstated" : "no JSON answer");
+    out({ meta: { retired: true, aliasReusable: released, aliasReason: reason, joinedTeams: joinedTeamsOf(meta) }, ...(retireWarnings.length ? { warning: `oats-aweb: ${retireWarnings.join(" | ")}` } : released ? {} : { warning: `oats-aweb: workspace "${meta.alias}" deleted but its alias was not released (${reason}); spawn successors with a different --name (kernels 0.26.0+) or a different --purpose until it is` }) });
   } catch (e) {
     // Exit nonzero: during a required-hook rollback this is the signal that
     // compensation did NOT complete, so the spawn is not reported as cleanly
@@ -1295,7 +1269,7 @@ if (event === "launch") {
     if (defaultTeamForUsername) console.log(`  New hosted users create ${defaultTeamForUsername}; set settings.oats.aweb.team to that id, then re-run setup.`);
     console.log("  Existing team path: ask a member for an invite token, then run `oats aweb setup --invite <token>` (uses `aw team join <token>` at the root).");
     console.log("  Team API-key path: set AWEB_API_KEY in the environment and run `oats aweb setup` (uses `aw init` at the root; the key is never printed).");
-    console.log("  New hosted-account path: run `oats aweb setup --username <u>` (uses `aw init --username <u>` and creates default:<u>.aweb.ai).");
+    console.log("  New hosted-account path: run `oats aweb setup --username <u>` (uses `aw init --new-account --username <u>` and creates default:<u>.aweb.ai).");
   };
 
   try {
@@ -1304,7 +1278,7 @@ if (event === "launch") {
       console.log(`No aweb workspace at the messaging root yet (${candidate?.key || "settings.oats.aweb.root"}).`);
       if (!want) console.log(`  Also choose the aweb team for this deployment: ${teamConfigRemedy()}.`);
       console.log("  Choose one guided setup path:");
-      console.log("    oats aweb setup --username <u>     # runs `aw init --username <u>` and creates default:<u>.aweb.ai");
+      console.log("    oats aweb setup --username <u>     # runs `aw init --new-account --username <u>` and creates default:<u>.aweb.ai");
       console.log("    AWEB_API_KEY=<key> oats aweb setup  # runs `aw init` for the hosted team behind the key");
       console.log("    oats aweb setup --invite <token>    # runs `aw team join <token>` from an existing-team invite");
       console.log("  Or set settings.oats.aweb.root to an absolute directory whose .aw is the aweb minting root, then re-run setup.");
@@ -1316,8 +1290,8 @@ if (event === "launch") {
     if (!hasRoot || !matchingTeam(teams)) {
       if (actions.length) mkdirSync(scope, { recursive: true });
       if (username) {
-        console.log(`Running aw init --username <u> at ${scope} (username withheld from repeated logs).`);
-        run(["aw", "init", "--username", username], scope, 120000, { secrets: [username], unsetEnv: ["AWEB_API_KEY"] });
+        console.log(`Running aw init --new-account --username <u> at ${scope} (username withheld from repeated logs).`);
+        run(["aw", "init", "--new-account", "--username", username], scope, 120000, { secrets: [username], unsetEnv: ["AWEB_API_KEY"] });
       } else if (invite) {
         console.log(`Running aw team join <token> at ${scope} (token withheld).`);
         run(["aw", "team", "join", invite], scope, 120000, { secrets: [invite], secretSafe: true });

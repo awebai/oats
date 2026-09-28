@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { isAbsolute, join, resolve } from 'node:path';
+import { delimiter, isAbsolute, join, resolve } from 'node:path';
 import { TextDecoder } from 'node:util';
 import { assessCapturedSessionReadiness } from './session-readiness.mjs';
 import { custodyPreflight } from './grant-custody.mjs';
@@ -165,8 +165,7 @@ function workspaceReadinessContext(value) {
   return value;
 }
 function yamlScalar(text,key){const m=String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`,'m'));return m?m[1].trim():undefined;}
-export const CUSTODY_ATTACH_MIN = '1.36.3';
-export const WAKE_STREAM_MIN = '1.36.5';
+export const AW_MIN = '1.36.13';
 const CLASSIC_REFUSAL = 'oats.aweb 1.14 needs OATS 0.26.0 or newer (workspace model); on an older kernel pin oats.aweb v1.13.x';
 function classicEnv(env=process.env) {return !!env.OATS_TEAM_SCOPE && !(env.OATS_WORKSPACE_KEY || env.OATS_WORKSPACE_NAME || env.OATS_TEAM_LABEL);}
 export function grantYamlCustodySocket(text) {
@@ -192,7 +191,7 @@ function grantAttachmentProblem(home) {
   let text;try{text=readFileSync(grantYaml,'utf8');}catch{return null;}
   if(grantYamlCustodySocket(text)) return null;
   const id=yamlScalar(text,'grant_id')||'<unknown>';
-  return {code:'custody',message:`grant ${id} is not attached to custody; retire and respawn on aw >= ${CUSTODY_ATTACH_MIN}`};
+  return {code:'custody',message:`grant ${id} is not attached to custody; retire and respawn on aw >= ${AW_MIN}`};
 }
 function activeTeamAt(root){try{const text=readFileSync(join(resolve(root),'.aw','teams.yaml'),'utf8');return yamlScalar(text,'active_team')||yamlScalar(text,'active');}catch{return undefined;}}
 function residentCustodyRoot(settings){const identity=obj(settings.identity)?settings.identity:{},residents=obj(settings.residents)?settings.residents:{};const name=typeof identity.resident==='string'?identity.resident:'';const root=name&&typeof residents[name]==='string'?residents[name]:undefined;return identity.mode==='global'&&root&&isAbsolute(root)?root:undefined;}
@@ -218,6 +217,7 @@ function readinessDetails(settings,{deployment,env=process.env}={}) {
   if(classicEnv(env)) return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:CLASSIC_REFUSAL}]}};
   const initialTeam=typeof settings.team==='string' && settings.team.trim()?settings.team.trim():undefined;
   const candidate=rootCandidate(settings,initialTeam,{deployment,env}),team=teamFromSettings(settings,candidate,{env}),problems=[],warnings=[];
+  const awProblem=awFloorProblem();if(awProblem) problems.push(awProblem);
   if(!candidate.root || !isAbsolute(candidate.root) || !existsSync(join(resolve(candidate.root),'.aw'))) problems.push({code:'needs-configuration',message:`no messaging root at ${candidate.root?resolve(candidate.root):process.cwd()}: run oats aweb setup there or set ${candidate.key}`});
   const unmapped=unmappedPrimary(env);if(unmapped&&team)warnings.push({code:'team-unmapped',message:`workspace label ${unmapped.label} is not mapped; using the default team ${team}`});
   if(!team) problems.push({code:'needs-configuration',message:'no team: set settings.oats.aweb.team or keep an active team at the aweb root'});
@@ -231,6 +231,9 @@ function runAw(argv,cwd,{unsetEnv=[],timeout=60000}={}) {
   catch(e) {throw new Error(`${argv.slice(0,3).join(' ')} failed${e.status===undefined?'':` (exit ${e.status})`}`);}
 }
 function semverLt(a,b) {const A=String(a||'0.0.0').split('.').map(n=>Number(n)||0),B=String(b).split('.').map(n=>Number(n)||0);for(let i=0;i<3;i++){if((A[i]||0)!==(B[i]||0)) return (A[i]||0)<(B[i]||0);}return false;}
+function onPath(cmd,env=process.env){for(const dir of String(env.PATH||'').split(delimiter)){if(!dir)continue;try{const st=statSync(join(dir,cmd));if(st.isFile()&&(st.mode&0o111))return true;}catch{}}return false;}
+function awVersionLabel(){try{const text=runAw(['aw','version'],process.cwd(),{timeout:10000});const m=/aw\s+v?(\d+\.\d+\.\d+)/.exec(text);return m?m[1]:undefined;}catch{return undefined;}}
+function awFloorProblem(){if(!onPath('aw'))return{code:'needs-configuration',message:`aw CLI not on PATH; install aw >= ${AW_MIN}`};const installed=awVersionLabel();if(!installed)return{code:'needs-configuration',message:`aw version could not be read; install aw >= ${AW_MIN}`};return !semverLt(installed,AW_MIN)?null:{code:'needs-configuration',message:`aw ${installed} is older than required ${AW_MIN}; install aw >= ${AW_MIN}`};}
 function wakeReadiness(home,{reliedOn=false}={}) {
   if(!home || !reliedOn) return {problems:[],warnings:[]};
   try {
@@ -238,12 +241,12 @@ function wakeReadiness(home,{reliedOn=false}={}) {
     const state=doc.daemon_version_state || (doc.daemon_running===false?'not_running':doc.daemon_version?'reported':'unknown');
     if(state==='reported') {
       const running=String(doc.daemon_version||'unknown');
-      if(semverLt(running,WAKE_STREAM_MIN)) return {problems:[{code:'wake-daemon-outdated',message:`host wake daemon is running ${running}; required ${WAKE_STREAM_MIN}; upgrade aw, then restart the host wake daemon`}],warnings:[]};
+      if(semverLt(running,AW_MIN)) return {problems:[{code:'wake-daemon-outdated',message:`host wake daemon is running ${running}; required ${AW_MIN}; upgrade aw, then restart the host wake daemon`}],warnings:[]};
       return {problems:[],warnings:[]};
     }
     if(state==='not_running') return {problems:[{code:'wake-daemon-not-running',message:'host wake daemon is not running; session delivery relies on it'}],warnings:[]};
-    return {problems:[],warnings:[{code:'wake-daemon-version-unknown',message:`host wake daemon version is unknown; compatibility unproven; required ${WAKE_STREAM_MIN}; upgrade aw, then restart the host wake daemon`}]};
-  } catch {return {problems:[],warnings:[{code:'wake-daemon-version-unknown',message:`host wake daemon version is unknown; compatibility unproven; required ${WAKE_STREAM_MIN}; upgrade aw, then restart the host wake daemon`}]};}
+    return {problems:[],warnings:[{code:'wake-daemon-version-unknown',message:`host wake daemon version is unknown; compatibility unproven; required ${AW_MIN}; upgrade aw, then restart the host wake daemon`}]};
+  } catch {return {problems:[],warnings:[{code:'wake-daemon-version-unknown',message:`host wake daemon version is unknown; compatibility unproven; required ${AW_MIN}; upgrade aw, then restart the host wake daemon`}]};}
 }
 function workspaceReadinessPhase(req) {
   const ctx=workspaceReadinessContext(req.input.context);

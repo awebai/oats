@@ -21,7 +21,7 @@ members:
 packages:
   oats.framework: v1.3.2
   oats.okf: v4.0.2
-  oats.aweb: v1.16.0
+  oats.aweb: v1.16.1
   oats.jira: v1.0.1
   oats.linear: v1.0.1
   oats.authoring: v1.0.3
