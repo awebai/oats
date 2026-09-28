@@ -4,6 +4,7 @@ import { absolute, record } from './readiness-contract.mjs';
 import { spawnDecision } from './spawn-decision.mjs';
 import { teamRow, defaultTeamOf } from './team-rows.mjs';
 import { harnessOf, harnessFlag, HARNESSES } from './harness-names.mjs';
+import { launchOf, PREVIEW_FROM } from './launch-contract.mjs';
 export { absolute, record };
 const exact = (v, keys) => record(v) && Object.keys(v).every(k => keys.includes(k));
 const name = v => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(v);
@@ -225,11 +226,15 @@ export function previewData(v, expected) {
   // Team model v2: the soul's default (the kernel's DefaultTeam, or null); absent on 0.29.
   const defaultTeam = Object.hasOwn(v, 'defaultTeam') ? defaultTeamOf(v.defaultTeam) : undefined;
   if (messaging === undefined || teams === undefined || (Object.hasOwn(v, 'defaultTeam') && defaultTeam === undefined)) return null;
+  // Launch preferences (0.30): the Launch with flags applied; its effective launch IS the preview's.
+  const launch = Object.hasOwn(v, 'launch') ? launchOf(v.launch, PREVIEW_FROM) : undefined;
+  if (Object.hasOwn(v, 'launch') && (launch === undefined || launch.effective.harness !== e.harness || launch.effective.model !== e.model
+    || launch.effective.launchConfig !== e.launchConfig)) return null;
   return { spawnPreviewApi: 2, preview: true, subject: { soul: v.subject.soul, agentsRoot: v.subject.agentsRoot, dir: v.subject.dir },
     decision: d, resolution: d.resolution, instance: d.instance, home: d.home, branch: d.branch, base: base ? { ...base } : null,
     repo: e.repo, work: e.work, worktree: v.worktree, harness: e.harness, model: e.model, modelSource: v.modelSource, relation: e.relation?.kind ?? null,
     launchConfig: e.launchConfig, yolo: e.yolo, backend: e.backend, team: v.team ?? null,
     backendStatus: { name: v.backendStatus.name, installed: v.backendStatus.installed, started: false },
     preflight: { status: v.preflight.status, budgetMs: v.preflight.budgetMs, elapsedMs: v.preflight.elapsedMs }, messaging, teams,
-    ...(defaultTeam !== undefined ? { defaultTeam } : {}) };
+    ...(defaultTeam !== undefined ? { defaultTeam } : {}), ...(launch ? { launch } : {}) };
 }

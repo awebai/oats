@@ -5,6 +5,7 @@
  * Presentation-only; no classic field (scope chain, activation, trust,
  * snapshot drift, sources provenance) is read. */
 import { harnessOf } from './harness-names.mjs';
+import { launchOf, REPORT_FROM, RECORD_FROM } from './launch-contract.mjs';
 import { memberLabel } from './deployment-facts.mjs';
 
 export const OPERATIONS_API = 2;
@@ -29,6 +30,13 @@ export function inspectData(v, selection) {
   } else return null;
   if (v.souls.some(row => !record(row) || row.soulsApi !== SOULS_API)) return null;
   if (v.capabilities.some(cap => !record(cap) || !str(cap.id) || !Array.isArray(cap.operations ?? []))) return null;
+  // Launch preferences (0.30, feature launch-preference): a soul's is what a spawn with no flags would
+  // decide; a home's is its record (a pre-0.30 home reads `recorded`), with `launchCurrent` (what
+  // --reselect-launch would choose now, or null).
+  const home = s.kind === 'instance', ok = (x, from) => launchOf(x, from) !== undefined;
+  if (Object.hasOwn(v, 'launch') && !ok(v.launch, home ? RECORD_FROM : REPORT_FROM)) return null;
+  if (Object.hasOwn(v, 'launchCurrent') && !(home && (v.launchCurrent === null || ok(v.launchCurrent, REPORT_FROM)))) return null;
+  if (v.souls.some(row => Object.hasOwn(row, 'launch') && !ok(row.launch, REPORT_FROM))) return null;
   return v;
 }
 
