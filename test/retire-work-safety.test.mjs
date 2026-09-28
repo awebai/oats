@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { statusDisagreement } from "../lib/core.mjs";
 
@@ -296,20 +296,79 @@ test("production recovery reopens staged index state after the original worktree
   assert.equal(readFileSync(join(recoveryRepo, "tracked.txt"), "utf8"), "staged-human-bytes\n");
 });
 
-test("missing or corrupt independent authority fails closed before quiescence or deletion", () => {
-  for (const corrupt of [false, true]) {
-    const f = fixture();
-    const spawned = spawn(f, corrupt ? "receipt-corrupt" : "receipt-missing");
-    write(join(spawned.home, "work", "cache", "later.bin"), "generated-later\n");
-    const baselineDir = join(dirname(spawned.home), ".oats-retirement", "baselines");
-    const baseline = join(baselineDir, readdirSync(baselineDir)[0]);
-    if (corrupt) write(baseline, "{not-json\n");
-    else rmSync(baseline);
-    const retired = cli(f, ["retire", corrupt ? "dev-receipt-corrupt" : "dev-receipt-missing", "--json"]);
-    assert.notEqual(retired.status, 0, `${corrupt ? "corrupt" : "missing"} authority did not fail closed`);
-    assert.equal(JSON.parse(retired.stdout).error.code, corrupt ? "E_WORK_INSPECTION_FAILED" : "E_RUNTIME_ENDPOINT_UNKNOWN", retired.stdout);
-    assert.equal(existsSync(spawned.home), true);
-  }
+test("corrupt independent authority fails closed before quiescence or deletion", () => {
+  const f = fixture();
+  const spawned = spawn(f, "receipt-corrupt");
+  write(join(spawned.home, "work", "cache", "later.bin"), "generated-later\n");
+  const baselineDir = join(dirname(spawned.home), ".oats-retirement", "baselines");
+  write(join(baselineDir, readdirSync(baselineDir)[0]), "{not-json\n");
+  const retired = cli(f, ["retire", "dev-receipt-corrupt", "--json"]);
+  assert.notEqual(retired.status, 0, "corrupt authority did not fail closed");
+  assert.equal(JSON.parse(retired.stdout).error.code, "E_WORK_INSPECTION_FAILED", retired.stdout);
+  assert.equal(existsSync(spawned.home), true);
+});
+
+test("0.30 a home without its session receipt (before 0.25.9) retires when its session is observably absent — hooks run, work is preserved, --force too — and refuses a live or ambiguous one, --force included", () => {
+  const hook = "import {writeFileSync} from 'node:fs'; import {basename, dirname, join} from 'node:path'; writeFileSync(join(dirname(process.env.OATS_HOME), `retire-hook-ran-${basename(process.env.OATS_HOME)}`), 'ran\\n'); console.log(JSON.stringify({meta:{retired:true}}));\n";
+  const f = fixture({ capabilities: { "acme.undo": { manifest: { description: "undo", hooks: { retire: "hook.mjs" } }, files: { "hook.mjs": hook } } } });
+  const socket = join(f.base, "legacy-tmux.sock");
+  const tmux = (...args) => execFileSync("tmux", ["-u", "-S", socket, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const baselineDir = (home) => join(dirname(home), ".oats-retirement", "baselines");
+  /** A launched home as a pre-0.25.9 kernel left it: an endpoint in instance.json and no receipt. */
+  const legacy = (purpose) => {
+    const before = new Set(existsSync(join(f.root, "dev", "instances", ".oats-retirement", "baselines")) ? readdirSync(join(f.root, "dev", "instances", ".oats-retirement", "baselines")) : []);
+    const spawned = spawn(f, purpose);
+    for (const b of readdirSync(baselineDir(spawned.home))) if (!before.has(b)) rmSync(join(baselineDir(spawned.home), b));
+    const metaPath = join(spawned.home, "instance.json");
+    const meta = JSON.parse(readFileSync(metaPath, "utf8"));
+    write(metaPath, JSON.stringify({ ...meta, launched: true, tmux: { session: "legacy", window: spawned.instance, socket } }, null, 2) + "\n");
+    return spawned;
+  };
+  const plan = (instance) => { const r = cli(f, ["retire", instance, "--plan", "--json"]); assert.equal(r.status, 0, r.stdout + r.stderr); return JSON.parse(r.stdout).result; };
+  const hookRan = (home) => existsSync(join(dirname(home), `retire-hook-ran-${basename(home)}`));
+  try {
+    // Absent: the recorded tmux server is not running. The plan says so; retire runs the hook and preserves the work.
+    const gone = legacy("gone");
+    write(join(gone.home, "work", "notes.txt"), "human-bytes\n");
+    let p = plan(gone.instance);
+    assert.equal(p.facts.session.state, "absent"); assert.equal(p.facts.session.present, false); assert.equal(p.facts.session.established, true);
+    assert.match(p.facts.session.note, /before 0\.25\.9.*tmux server .* is not running/);
+    assert.ok(p.notes.some((n) => /^session absent: .*nothing needs quiescing$/.test(n)), JSON.stringify(p.notes));
+    let r = cli(f, ["retire", gone.instance, "--json"]);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(existsSync(gone.home), false);
+    assert.ok(hookRan(gone.home), "the retire hook ran");
+    const recovery = JSON.parse(r.stdout).workRecovery;
+    assert.ok(recovery?.path && existsSync(recovery.path), "the home's work was preserved");
+
+    // Live: the recorded window is there. Refused, --force included; the plan says it is not observably absent.
+    tmux("new-session", "-d", "-s", "legacy", "-n", "keeper", "sleep 600");
+    const live = legacy("live");
+    tmux("new-window", "-d", "-t", "legacy:", "-n", live.instance, "sleep 600");
+    p = plan(live.instance);
+    assert.equal(p.facts.session.state, "unestablished"); assert.equal(p.facts.session.established, false);
+    assert.match(p.facts.session.note, /recorded window legacy:.* is still present/);
+    for (const extra of [[], ["--force"]]) {
+      r = cli(f, ["retire", live.instance, ...extra, "--json"]);
+      assert.notEqual(r.status, 0, `retired a live session ${extra.join(" ")}`);
+      const err = JSON.parse(r.stdout).error;
+      assert.equal(err.code, "E_RUNTIME_ENDPOINT_UNKNOWN");
+      assert.match(err.message, /not observably absent \(the recorded window .* is still present\); stop that session yourself/);
+      assert.equal(existsSync(live.home), true); assert.equal(hookRan(live.home), false);
+    }
+    // Ambiguous: the recorded window is gone, but a pane it cannot identify works in the home. Refused.
+    tmux("kill-window", "-t", `=legacy:=${live.instance}`);
+    tmux("new-window", "-d", "-t", "legacy:", "-n", "renamed", "-c", live.home, "sleep 600");
+    r = cli(f, ["retire", live.instance, "--force", "--json"]);
+    assert.notEqual(r.status, 0);
+    assert.match(JSON.parse(r.stdout).error.message, /a tmux pane \(legacy:renamed\) on .* works in this home/);
+    assert.equal(existsSync(live.home), true);
+    // Once nothing works in the home, the same home retires with --force.
+    tmux("kill-window", "-t", "=legacy:=renamed");
+    r = cli(f, ["retire", live.instance, "--force", "--json"]);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(existsSync(live.home), false); assert.ok(hookRan(live.home));
+  } finally { try { tmux("kill-server"); } catch { /* not running */ } }
 });
 
 test("retire-hook bytes are caught by the final post-hook inspection", () => {
