@@ -864,9 +864,17 @@ oats soul teams <soul>|'*' [--add a,b] [--remove a,b] [--default <label> | --cle
   `souls.teams["*"]`, `local.default: null`.
 - Mutations answer the document plus `changed`. Unknown label:
   `E_TEAM_UNKNOWN {label}`. A `--default` outside the soul's teams:
-  `E_TEAM_NOT_ELIGIBLE {soul, label}`. `--default`/`--clear-default` with
+  `E_TEAM_NOT_ELIGIBLE {soul, label, at}` (`at`: `oats-local.yaml#/souls/default/<key>`,
+  `/` written `~1`). `--default`/`--clear-default` with
   `'*'`, or both together: `E_BAD_ARGS`. Soul lookup: `E_SOUL_UNKNOWN`,
   `E_SOUL_AMBIGUOUS`.
+- **Writes** (`oats teams add|remove|default`, `oats soul teams`) edit
+  `oats-local.yaml` in place and touch only the entries that change: comments
+  and styles elsewhere, including inline comments on sibling entries and flow
+  lists, are kept. Each verb re-reads the file and judges its refusals on it
+  as it is now, and writes only if the file did not change meanwhile (else it
+  redoes the edit on the new content). A file that keeps changing is
+  `E_LOCAL_CHANGED {path}`; nothing was written.
 
 ### The messaging provider's teams document
 
