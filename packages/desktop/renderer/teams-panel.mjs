@@ -3,6 +3,7 @@
  * operation run`. Gated on what the provider DECLARES (the operation rows in the
  * home's inspection), never on a provider name or version. The provider's teams
  * document is decoded strictly and bounded; its refusals are shown verbatim. */
+import { teamRow } from './team-rows.mjs';
 
 /** One card, the same in the Workspace inspector and the context panel:
  * tokens only (computed-AA inventory in theme-contrast), no opacity. */
@@ -65,7 +66,9 @@ export function teamsOperations(inspected) {
 
 /** Where the provider found the workspace's default team (1.16 `defaultTeam.source`):
  * `setting` = settings.oats.aweb.team named it; `root` = the messaging root's active team. */
-const DEFAULT_SOURCE = Object.freeze({ __proto__: null, setting: 'set by the workspace or host setting', root: "the messaging root's active team" });
+const DEFAULT_SOURCE = Object.freeze({ __proto__: null, setting: 'set by the workspace or host setting', root: "the messaging root's active team",
+  // Team model v2 (0.30): the kernel's default, from this computer's oats-local.yaml.
+  deployment: "this workspace's default on this computer", soul: "this soul's own default on this computer" });
 
 /** The provider's teams document from an operation run result, or null. The run
  * must be `operationsApi: 2` for exactly `address`; the document carries exactly
@@ -79,24 +82,30 @@ const DEFAULT_SOURCE = Object.freeze({ __proto__: null, setting: 'set by the wor
 export function teamsDocument(run, address, { actions = false } = {}) {
   if (!record(run) || run.operationsApi !== 2 || run.operation !== address) return null;
   const d = run.result, did = actions && record(d) && Object.hasOwn(d, 'actions');
-  if (!exact(d, ['defaultTeam', 'primary', 'eligible', 'joined', 'unmapped', 'at', ...(did ? ['actions'] : [])])) return null;
+  // Required: defaultTeam, eligible, joined, at. 0.29-only (optional, absent on team model v2):
+  // primary, unmapped. Additive (v2, oats.aweb 1.17): left, the last ≤20 live-read leaves.
+  const allowed = ['defaultTeam', 'eligible', 'joined', 'at', 'primary', 'unmapped', 'left', ...(did ? ['actions'] : [])];
+  if (!record(d) || !['defaultTeam', 'eligible', 'joined', 'at'].every(k => Object.hasOwn(d, k)) || Object.keys(d).some(k => !allowed.includes(k))) return null;
   if (did && !(Array.isArray(d.actions) && d.actions.length <= 64 && d.actions.every(actionRow))) return null;
   // The workspace's default team: its id, and where the provider found it (always sent, a closed set).
   const home = d.defaultTeam;
   if (!exact(home, ['team', 'source']) || !text(home.team) || !Object.hasOwn(DEFAULT_SOURCE, home.source)) return null;
-  if (!(d.primary === null || label(d.primary)) || !text(d.at, 64)) return null;
+  if ((Object.hasOwn(d, 'primary') && !(d.primary === null || label(d.primary))) || !text(d.at, 64)) return null;
   const list = v => Array.isArray(v) && v.length <= 64;
-  if (!list(d.eligible) || !list(d.joined) || !list(d.unmapped)) return null;
+  const unmapped = Object.hasOwn(d, 'unmapped') ? d.unmapped : [];
+  if (!list(d.eligible) || !list(d.joined) || !list(unmapped)) return null;
+  if (Object.hasOwn(d, 'left') && !(Array.isArray(d.left) && d.left.length <= 20 && d.left.every(l => exact(l, ['label', 'team', 'at', 'reason'])
+    && label(l.label) && text(l.team) && text(l.at, 64) && text(l.reason, 64)))) return null;
   if (!d.eligible.every(e => exact(e, ['label', 'team', 'joined']) && label(e.label) && text(e.team) && typeof e.joined === 'boolean')) return null;
   if (!d.joined.every(j => exact(j, ['label', 'team', 'since', 'identityHome', 'receive']) && label(j.label) && text(j.team) && text(j.since, 64)
     && text(j.identityHome, 4096) && j.identityHome.startsWith('/') && text(j.receive, 32))) return null;
-  if (!d.unmapped.every(label)) return null;
+  if (!unmapped.every(label)) return null;
   const unique = xs => new Set(xs).size === xs.length;
-  if (!unique(d.eligible.map(e => e.label)) || !unique(d.joined.map(j => j.label)) || !unique(d.unmapped)) return null;
+  if (!unique(d.eligible.map(e => e.label)) || !unique(d.joined.map(j => j.label)) || !unique(unmapped)) return null;
   // Each action names a row this answer reports (eligible or joined), as the contract says.
   if (did && !d.actions.every(x => d.eligible.some(e => e.label === x.label) || d.joined.some(j => j.label === x.label))) return null;
-  return structuredClone({ defaultTeam: d.defaultTeam, primary: d.primary, eligible: d.eligible, joined: d.joined, unmapped: d.unmapped, at: d.at,
-    ...(did ? { actions: d.actions } : {}) });
+  return structuredClone({ defaultTeam: d.defaultTeam, primary: Object.hasOwn(d, 'primary') ? d.primary : null, eligible: d.eligible, joined: d.joined, unmapped, at: d.at,
+    ...(Object.hasOwn(d, 'left') ? { left: d.left } : {}), ...(did ? { actions: d.actions } : {}) });
 }
 /** One `actions` row of a join/leave answer: the verb and label, an optional
  * `released` word, an optional provider receipt (a bounded record, kept opaque). */
@@ -124,8 +133,9 @@ export function soulTeams(v) {
   if (!Array.isArray(v) || v.length > 64) return null;
   const out = [];
   for (const t of v) {
-    if (!record(t) || !label(t.label) || typeof t.mapped !== 'boolean' || (t.mapped ? !text(t.team) : t.team !== null)) return null;
-    out.push({ label: t.label, team: t.team, mapped: t.mapped });
+    const row = teamRow(t);
+    if (!row) return null;
+    out.push(row);
   }
   return new Set(out.map(t => t.label)).size === out.length ? out : null;
 }

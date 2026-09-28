@@ -34,11 +34,14 @@ function nameRows(value) {
   return array(value, 500).map(row => { const out = fields(row, ['name', 'from']); check(text(out.name)); flags(row, ['off'], out); return out; });
 }
 function defaultsFacts(value) {
-  check(record(value) && record(value.slots) && record(value.byTeam) && Object.keys(value.slots).length <= 64 && Object.keys(value.byTeam).length <= 256);
+  // defaults.byTeam is 0.29's; team model v2 (0.30) drops it, so it is optional (absent stays absent).
+  const hasByTeam = own(value, 'byTeam');
+  check(record(value) && record(value.slots) && (!hasByTeam || record(value.byTeam)) && Object.keys(value.slots).length <= 64 && (!hasByTeam || Object.keys(value.byTeam).length <= 256));
   const slots = Object.fromEntries(Object.entries(value.slots).map(([slot, v]) => {
     check(text(slot) && slot.length > 0);
     return [slot, v === null || v === 'none' ? v : fields(v, ['name', 'from'])];
   }));
+  if (!hasByTeam) return { slots, capabilities: nameRows(value.capabilities) };
   const byTeam = Object.fromEntries(Object.entries(value.byTeam).map(([label, v]) => { check(text(label) && label.length > 0 && record(v)); return [label, { capabilities: nameRows(v.capabilities) }]; }));
   return { slots, capabilities: nameRows(value.capabilities), byTeam };
 }
@@ -106,7 +109,18 @@ export function workspaceStatusData(document, deployment) {
   check(data.workspace.local === join(deployment, 'oats-local.yaml'), 'E_DEPLOYMENT_SCOPE');
   const workspace = fields(data.workspace, ['name', 'key', 'url', 'commit', 'observedAt', 'local']);
   check(text(workspace.name) && text(workspace.key));
-  if (own(data.workspace, 'teams')) workspace.teams = strings(data.workspace.teams);
+  if (own(data.workspace, 'teams')) {
+    // 0.29: the declared labels (strings). Team model v2 (0.30): the committed SHARED teams as rows
+    // {label, team: <id>|null, description|null}; `teams` stays the labels (what Setup lists) and
+    // the rows travel as `sharedTeams`. A mixed or malformed list fails the read.
+    const rows = array(data.workspace.teams, 256);
+    if (rows.every(r => typeof r === 'string')) workspace.teams = strings(rows);
+    else {
+      workspace.sharedTeams = rows.map(r => { const out = fields(r, ['label', 'team', 'description']); check(TEAM_LABEL.test(out.label ?? '')); return out; });
+      check(new Set(workspace.sharedTeams.map(r => r.label)).size === rows.length);
+      workspace.teams = workspace.sharedTeams.map(r => r.label);
+    }
+  }
   if (own(data.workspace, 'file')) workspace.file = fileRef(data.workspace.file);
   const members = array(data.members).map(memberRow);
   const packages = array(data.packages).map(packageRow);
