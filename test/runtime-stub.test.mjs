@@ -24,7 +24,10 @@ for (const harness of RUNTIME_STUBS) {
 
     const refused = spawn(minimal, "bare");
     assert.equal(refused.ok, false, JSON.stringify(refused));
-    assert.match(refused.error.message, new RegExp(`^${harness} binary not found on PATH`));
+    // Typed since 0.30 (feature launch-preference): the harness the flag chose is not installed, with the fix.
+    assert.equal(refused.error.code, "E_HARNESS_UNAVAILABLE", JSON.stringify(refused));
+    assert.deepEqual(refused.error.details, { harness, from: "flag", at: null, fix: `install ${harness}, or choose another --harness / --launch-config` });
+    assert.match(refused.error.message, new RegExp(`\\(${harness} binary not found on PATH\\)`));
     assert.deepEqual(instances(), [], "a refused spawn creates no home");
 
     const stubbed = spawn(`${inertHarnessDir(fx.base)}:${minimal}`, "stubbed");

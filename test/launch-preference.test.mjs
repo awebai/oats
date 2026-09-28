@@ -6,8 +6,9 @@
 // only --reselect-launch or a respawn applies a changed preference.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import YAML from "yaml";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { launchLayers, selectionFrom, soulLaunchAt } from "../lib/launch-preference.mjs";
@@ -58,10 +59,13 @@ function fixture({ local = {}, souls } = {}) {
 }
 const ok = (r, what) => { assert.equal(r.status, 0, `${what}: ${r.stdout}${r.stderr}`); const j = r.json(); assert.equal(j.ok, true, `${what}: ${r.stdout}`); return j.result; };
 const refused = (r, code, what) => { const j = r.json(); assert.equal(j.ok, false, `${what}: ${r.stdout}`); assert.equal(j.error.code, code, `${what}: ${r.stdout}`); return j.error; };
+/** In-process spawns read process.env.PATH: give them the fixture's (the inert harness stubs first), never the
+ *  host's, whose harnesses differ between machines. */
+function stubbedPath(t, fx) { const saved = process.env.PATH; process.env.PATH = fx.env.PATH; t.after(() => { process.env.PATH = saved; }); }
 const setLocal = (fx, edit) => { const p = join(fx.dep, LOCAL); const v = YAML.parse(readFileSync(p, "utf8")); edit(v); writeFileSync(p, YAML.stringify(v, { lineWidth: 0 })); };
 
 test("oats souls / inspect --soul / spawn --preview report the launch: declared, effective, from, at; spawn records it", async (t) => {
-  const fx = fixture({ local: { souls: { launch: { runner: "opus", "*": { harness: "codex" } } } } }); t.after(fx.cleanup);
+  const fx = fixture({ local: { souls: { launch: { runner: "opus", "*": { harness: "codex" } } } } }); t.after(fx.cleanup); stubbedPath(t, fx);
   const souls = Object.fromEntries(ok(fx.cli(["souls", "--json"]), "souls").souls.map((s) => [s.name, s]));
   const soulAt = `${fx.key}:souls/writer/soul.yaml#/launch`;
   // writer: the "*" override wins over its own launch; runner: its own entry names a configuration.
@@ -98,10 +102,14 @@ test("oats souls / inspect --soul / spawn --preview report the launch: declared,
 
 test("an unavailable harness is refused naming its source and the fix — never a fallback; reports carry it as problem", (t) => {
   const fx = fixture({ local: { souls: { launch: { dev: { harness: "codex" } } } } }); t.after(fx.cleanup);
-  // A PATH where codex does not exist (the stub removed; no host directories that could hold one).
+  // A PATH where codex does not exist: the stubs without codex, plus node and git alone (never node's own
+  // directory, where nvm installs global harnesses).
   const stubs = join(fx.base, "runtime-stub");
   rmSync(join(stubs, "codex"));
-  const PATH = `${stubs}:${dirname(process.execPath)}:/usr/bin:/bin`;
+  const minimal = join(fx.base, "node-only"); mkdirSync(minimal);
+  symlinkSync(process.execPath, join(minimal, "node"));
+  symlinkSync(execFileSync("which", ["git"], { encoding: "utf8" }).trim(), join(minimal, "git"));
+  const PATH = `${stubs}:${minimal}`;
   const e = refused(fx.cli(["spawn", "dev", "--preview", "--json"], { env: { PATH } }), "E_HARNESS_UNAVAILABLE", "preview");
   assert.deepEqual(e.details, { harness: "codex", from: "local", at: `${LOCAL}#/souls/launch/dev`, fix: `install codex, or change ${LOCAL} souls.launch` });
   const row = ok(fx.cli(["souls", "--json"], { env: { PATH } }), "souls").souls.find((s) => s.name === "dev");
@@ -120,7 +128,7 @@ test("an unavailable harness is refused naming its source and the fix — never 
 });
 
 test("a home's recorded launch is frozen: a changed preference shows as launchCurrent and launch-changed until --reselect-launch", async (t) => {
-  const fx = fixture(); t.after(fx.cleanup);
+  const fx = fixture(); t.after(fx.cleanup); stubbedPath(t, fx);
   const { home } = await fx.spawn("dev", { instance: "dev-1" });
   let doc = ok(fx.cli(["inspect", "--home", home, "--json"]), "inspect --home");
   assert.deepEqual([doc.launch.effective, doc.launch.from, doc.launchCurrent.effective], [{ harness: "pi", model: null, launchConfig: null }, "host", { harness: "pi", model: null, launchConfig: null }]);
@@ -147,7 +155,6 @@ test("a home's recorded launch is frozen: a changed preference shows as launchCu
   // The CLI flag is refused beside --launch-config (one selection at a time).
   const r = fx.cli(["session", "start", "--home", home, "--reselect-launch", "--launch-config", "opus", "--json"]);
   assert.equal(r.json().ok, false);
-  mkdirSync(join(fx.base, "unused"), { recursive: true });
 });
 
 test("a report naming a missing configuration keeps a real effective launch (the host default) with the problem — never a null harness", (t) => {
