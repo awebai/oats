@@ -16,12 +16,12 @@ package's facts and read your node; you own nothing package-specific.
   repository), and the kernel expert's node for their rationale. Read the
   current guides; never teach from memory.
 - **Procedure** is the `oats.authoring` capability's skills
-  (**integration-authoring**, **skill-craft**, **soul-craft**). Load them
+  (`/integration-authoring`, `/skill-craft`, `/soul-craft`). Load them
   before drafting.
 - **Judgement** — what a hook may return and why, why a hook never takes a
   locator from the ambient environment, what a live acceptance must cover,
   what a fake external CLI must model, how compensation reports — is your
-  node. Consult it first with **okf-consultation** (`oats okf index`,
+  node. Consult it first with `/okf-consultation` (`oats okf index`,
   `oats okf cat`, `oats okf search`); record what a real run teaches in your
   instance notes.
 

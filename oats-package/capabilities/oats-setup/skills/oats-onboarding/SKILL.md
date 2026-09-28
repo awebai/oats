@@ -8,7 +8,7 @@ description: >-
   and verifying before the first spawn. Also use it to set up okf knowledge
   operations (the knowledge maintainer and harvester, the
   harvest review trigger, turning harvest on). For package pins see
-  oats-package-pins. Part of the setup and config of an OATS workspace
+  `/oats-package-pins`. Part of the setup and config of an OATS workspace
   (oats.setup); day-to-day operation inside an instance is oats.core.
 ---
 
@@ -90,7 +90,7 @@ lesson "the installed provider is the authority for a setting".
 `oats onboard` already synced. After any change to the workspace file (a pin,
 a member, a default), run `oats sync`: it resolves every package to a commit,
 fetches it, verifies its integrity and writes `oats-lock.json`. See
-**oats-package-pins**.
+`/oats-package-pins`.
 
 ## 6. Set up messaging and teams before the first spawn
 
@@ -105,7 +105,7 @@ creates), or name it in `oats-local.yaml` `settings.oats.aweb.root`.
 *Rationale:* operator node, lesson "messaging root placement decides the
 team": read it before choosing another place.
 
-Teams are this person's, and they live in `oats-local.yaml` (**oats-teams**).
+Teams are this person's, and they live in `oats-local.yaml` (`/oats-teams`).
 `oats aweb setup` is the one command that creates messaging accounts and teams,
 and it records what it creates there. It runs only when asked, never at spawn.
 Ask the operator first: it acts on the messaging service.
@@ -168,12 +168,12 @@ knowledge reviewed and merged by an agent. It needs kernel ≥ 0.29.0 (package
 souls, triggers, workspace automations) and `oats.okf` 4.0.0. The contract is
 `docs/knowledge.md` ("Knowledge operations") and `docs/schedules.md`
 ("Triggers", "Workspace triggers and schedules") in the installed kernel; read them, and okf's own
-`okf-trigger-setup` skill, rather than restating either from memory.
+`/okf-trigger-setup`, rather than restating either from memory.
 
 ### 1. Pin the package
 
 `packages: { oats.okf: 4.0.0 }` in the workspace file, then `oats sync`
-(**oats-package-pins**). One pin brings, versioned and locked together:
+(`/oats-package-pins`). One pin brings, versioned and locked together:
 
 - the three capabilities: `oats.okf` (every working soul's knowledge slot),
   `oats.okf-harvest` (the harvester's) and `oats.okf-maintenance` (the
@@ -192,7 +192,7 @@ and the maintainer live in the deployment's default team, where they talk
 (questions, amendment requests, "merged"). There is nothing to declare. To put
 them in another team, opt them in like any soul: `oats soul teams
 oats.okf/knowledge-harvester --add <label>` (and the maintainer), then join at
-spawn (**oats-teams**).
+spawn (`/oats-teams`).
 
 ### 3. Declare the review trigger for ONE host that can merge
 
@@ -225,7 +225,7 @@ owner: github.com/<account>         # the account it acts as; it must be able to
   knowledge-base repo's accepted branch to need no approving review (merge
   permission only).
 - The file's contract (required fields, where it may live, its refusals) is
-  **oats-automations**, "Workspace automations".
+  `/oats-automations`, "Workspace automations".
 - `oats trigger add --from oats.okf:harvest-review --set repo=… --workspace <member> --runs-on <host name> --owner github.com/<account>`
   writes the file, or prints it when that repo is not the current checkout.
   Commit it as a reviewed change, then `oats sync`.
@@ -266,7 +266,7 @@ Harvest is a setting of `oats.okf`, **`harvest: on|off`, default `off`**
 Order:
 
 1. Leave harvest off everywhere. Run okf's end-to-end check against a scratch
-   knowledge-base repo (see `okf-trigger-setup`): a harvest PR opens with its
+   knowledge-base repo (see `/okf-trigger-setup`): a harvest PR opens with its
    provenance block, the trigger spawns the maintainer, it merges, and the
    harvester retires. Read every step back.
 2. Only then turn it on, per host, with the operator's consent (it captures

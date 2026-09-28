@@ -4,3 +4,5 @@ description: Cross-package provider integration — capability and hook contract
 work: directory
 capabilities:
   oats.authoring: { from: package }   # capability, skill and soul authoring procedures; oats.core and oats.okf come from the workspace defaults
+  oats.engineering-expert: { from: package }   # plan, spec, coordinate developers and experts, verify, land
+  oats.workspace-experts: { from: here }       # this repository's surfaces, developers and delivery

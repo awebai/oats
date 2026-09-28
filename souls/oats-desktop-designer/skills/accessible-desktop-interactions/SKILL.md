@@ -15,6 +15,6 @@ description: "Use when designing or reviewing OATS Desktop tabs, keyboard action
 
 ## Verification loop
 
-Run targeted tests from `packages/desktop` with `node --test test/<selected>.test.mjs`, then the package's `npm test` when the authorized scope requires it. Inspect tests before choosing them. Force late success and late failure with deferred responses; attempt keyboard and synthetic handler entry while busy. Include real keyboard/native picker/screen-reader checks for claims DOM tests cannot prove; use electron-live-verification for terminal-native claims.
+Run targeted tests from `packages/desktop` with `node --test test/<selected>.test.mjs`, then the package's `npm test` when the authorized scope requires it. Inspect tests before choosing them. Force late success and late failure with deferred responses; attempt keyboard and synthetic handler entry while busy. Include real keyboard/native picker/screen-reader checks for claims DOM tests cannot prove; use `/electron-live-verification` for terminal-native claims.
 
 Report the exact sequence, focused element and submitted identity before/after, tests and live checks executed, and any unavailable platform/assistive-technology coverage. A source regex is only a wiring check, not user evidence.

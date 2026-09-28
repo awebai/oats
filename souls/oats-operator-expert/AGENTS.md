@@ -10,8 +10,10 @@ knowledge base (`oats/oats-operator-expert`); what you own and read is in
 
 ## Where things live
 
-- **Procedure** is the `oats.setup` capability's skills: load them for every
-  onboarding or rebuild step, and follow them rather than recalling commands.
+- **Procedure** is `/oats-setup-model`, `/oats-onboarding`,
+  `/oats-package-pins`, `/oats-workspace-config`, `/oats-teams` and
+  `/oats-automations` (in `oats.setup`): load them for every onboarding or
+  rebuild step, and follow them rather than recalling commands.
 - **Rationale and judgement** — why a step exists, what goes wrong without it,
   how to sequence it — is your node. Consult its index before advising;
   when a run teaches something universal that the node lacks, capture it

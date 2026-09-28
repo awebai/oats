@@ -1,6 +1,6 @@
 # Packaging the authoring result
 
-This guide combines the framework's soul-craft/skill-craft rules with the
+This guide combines the `/soul-craft` and `/skill-craft` rules with the
 approved optional-theory boundary. It covers the local closure needed for a
 knowledge-authoring hand-off; it does not invent a native provider API.
 
@@ -123,7 +123,7 @@ oats spawn <soul> --preview --json           # the module as it would be materia
 ```
 
 These are illustrative user operations, not instructions to change a live
-deployment. The `oats.setup` capability's **oats-package-pins** skill describes
+deployment. `/oats-package-pins` (in `oats.setup`) describes
 the operational commands. Declaring the package in `packages:` is the trust
 decision: its commands and hooks run at spawn, so whoever adds the pin reviews
 them first. Syncing exact-locks the package (commit and integrity) and activates

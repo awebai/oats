@@ -12,7 +12,7 @@ or workspace membership alone does not make a package official.
 | `oats.framework` | `oats-framework/v1.3.2` (this repository) | `oats.core`, `oats.setup`, `oats.knowledge-theory` | `knowledge-theory-expert` |
 | `oats.okf` | `v4.0.3` | `oats.okf` (knowledge), `oats.okf-harvest`, `oats.okf-maintenance` | `knowledge-harvester`, `knowledge-maintainer` |
 | `oats.aweb` | `v1.16.1` | `oats.aweb` (messaging) | |
-| `oats.dev` | `v1.1.0` | `oats.review` | `reviewer` |
+| `oats.engineering` | `v1.0.0` | `oats.engineering-expert`, `oats.developer`, `oats.code-review` | `code-reviewer` |
 | `oats.authoring` | `v1.0.3` | `oats.authoring` | |
 | `oats.jira` | `v1.0.1` | `oats.jira` (tasks) | |
 | `oats.linear` | `v1.0.1` | `oats.linear` (tasks) | |
@@ -20,7 +20,7 @@ or workspace membership alone does not make a package official.
 Each package lives in its own `awebai/oats-*` repository except
 `oats.framework`, whose payload root is `oats-package/` here. A capability id
 names the package that supplies it through the catalog's aliases, so
-`oats.review: { from: package }` selects `oats.dev`. This catalog ships with
+`oats.developer: { from: package }` selects `oats.engineering`. This catalog ships with
 the CLI: an older installed CLI keeps its own copy, and a change here rewrites
 no lock and adds nothing to an existing workspace.
 

@@ -56,7 +56,7 @@ list **souls** and **trigger templates**. One pin versions all of them:
   moves. They are trusted with the package and disabled per machine like any
   soul (`souls.disabled`).
 - **Trigger templates** are instantiated with
-  `oats trigger add --from <package>:<template>` (oats-automations).
+  `oats trigger add --from <package>:<template>` (`/oats-automations`).
 
 Contract: `docs/packages.md` ("Package souls").
 

@@ -9,7 +9,7 @@ the reference theory; never treat a different theory as kernel incompatibility.
 ## Operating loop
 
 1. Read `TASK.md` and the assigned work tree's instructions. Load the
-   **knowledge-capability-authoring** skill from
+   `/knowledge-capability-authoring` from
    `<instance-home>/.agents/skills/oats.knowledge-theory/knowledge-capability-authoring/SKILL.md`.
    Its local `references/` tree is the full curriculum; resolve links from
    each file.

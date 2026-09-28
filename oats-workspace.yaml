@@ -8,7 +8,6 @@ name: oats
 # consumed only through `packages:` below (member and publisher never collapse).
 members:
   - git:github.com/awebai/oats          # the host is a member too
-  - git:github.com/awebai/oats-dev
   - git:github.com/awebai/oats-okf
   - git:github.com/awebai/oats-aweb
   - git:github.com/awebai/oats-authoring
@@ -25,7 +24,7 @@ packages:
   oats.jira: v1.0.1
   oats.linear: v1.0.1
   oats.authoring: v1.0.3
-  oats.dev: v1.1.0
+  oats.engineering: v1.0.0
 
 # No shared teams yet (team model v2). A shared team is committed here WITH its
 # provider id (`teams: { oats: { team: <id> } }`) once every deployment using

@@ -6,7 +6,7 @@ description: >-
   drift), spawning with preview then apply, relations, stopping or retiring
   instances you spawned, being spawned by a trigger, lifecycle events and
   doctor. oats.core is day-to-day OATS operation, working with OATS from
-  inside an instance; which souls exist is oats-souls, and the setup and
+  inside an instance; which souls exist is `/oats-souls`, and the setup and
   config of an OATS workspace is oats.setup.
 ---
 
@@ -92,7 +92,7 @@ Other read-only views:
 
 ```bash
 oats workspace status        # members confirmed or why not; locked packages
-oats souls                   # souls the workspace offers (see oats-souls)
+oats souls                   # souls the workspace offers (see /oats-souls)
 oats capabilities            # capabilities, member or package, with origin
 oats instance events <instance>          # what happened to an instance, as recorded
 oats instance git <instance>             # its work tree: branch, status, ahead/behind
@@ -133,7 +133,7 @@ deployment (`default` first), and `defaultTeam` the one its identity starts
 in. The others are *eligible*: to join them at spawn, pass
 `--provider <messaging capability> join=<label,label>`. Joining or leaving
 later is your messaging capability's skill. Which souls are in which teams is
-the operator's local config (`oats soul teams`, oats.setup's oats-teams).
+the operator's local config (`oats soul teams`; `/oats-teams` in `oats.setup`).
 
 A soul with `work: worktree | checkout` needs a clone of its repository on
 this machine; the kernel finds it through `--repo <path>`, the local file's

@@ -9,6 +9,8 @@ Pin the base and head SHAs before you read the diff. Read
 `references/reviewed-delivery.md` when the head moved, a HOLD applies, or you
 are about to merge.
 
+The author's developer has already iterated with one `code-reviewer` on the consolidated work until it approved (`/run-the-review-loop`, in `oats.developer`); the PR or handover states its final verdict and rounds, so ask for them when missing. That review informs yours and does not replace it: the four gates below are the maintainer's judgement.
+
 ## Four gates
 
 1. **Direction.** Does the change belong where it is: kernel, capability,

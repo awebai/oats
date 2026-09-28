@@ -146,7 +146,7 @@ oats teams
 
 A team the whole organisation uses is committed in `oats-workspace.yaml` as
 `teams.<label>` with its provider id; which souls join which team on this
-machine is `oats soul teams` (the `oats.setup` skill `oats-teams`).
+machine is `oats soul teams` (`/oats-teams`, in `oats.setup`).
 
 ## 7. Spawn the first soul
 

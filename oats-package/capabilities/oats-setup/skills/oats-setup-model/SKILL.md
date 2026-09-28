@@ -7,7 +7,8 @@ description: >-
   X here", "why can't I see / spawn / join Y", "who is this agent acting as",
   "what runs on this machine". Explains the model and names the command that
   answers each question. To change something, continue with
-  oats-workspace-config, oats-teams, oats-package-pins or oats-automations.
+  `/oats-workspace-config`, `/oats-teams`, `/oats-package-pins` or
+  `/oats-automations`.
   Part of the setup and config of an OATS workspace (oats.setup); day-to-day
   operation inside an instance is oats.core.
 ---
@@ -106,7 +107,7 @@ not in the soul.
 under a label: shared (the workspace file) or local (`oats-local.yaml`).
 Which souls are in which teams is local to each deployment (`oats soul
 teams`); an instance joins its default team at spawn, and the soul's other
-teams are *eligible*, joined explicitly (oats-teams). A team adds no
+teams are *eligible*, joined explicitly (`/oats-teams`). A team adds no
 capabilities, grants no trust, restricts no one and partitions no knowledge.
 The kernel reads and writes these local facts:
 
@@ -134,7 +135,7 @@ in a member (`oats-triggers/`, `oats-schedules/`, or a `*.oats-trigger.yaml` /
 `*.oats-schedule.yaml` file) and
 name **where** they run (`runsOn`, a host's `host.name`) and **as whom**
 (`owner`, a GitHub account); only that host, logged in as that account, runs
-them. One host timer per machine runs every due automation (oats-automations).
+them. One host timer per machine runs every due automation (`/oats-automations`).
 
 **This machine** is the deployment directory: `oats-local.yaml` (which
 workspace, host-owned settings such as paths and custody, clones, launch
@@ -154,7 +155,7 @@ configurations, souls disabled here, its `host.name`, its teams (local
 | Which capabilities exist, and from where? | `oats capabilities` | origin (member or package), repo-owned marks |
 | What exactly would soul X get? | `oats spawn X --preview` | modules at their commits, skills, merged `settings.<cap>` with their origins, `teams` and `defaultTeam` |
 | Why does soul X have capability C? | `oats inspect --soul X --json` | `layers.<slot>.from`; for additive ones, compare the soul's own list with the workspace defaults |
-| Why can't I spawn soul X? | `oats spawn X --preview` | the refusal code and path; oats-workspace-config maps it to the fix |
+| Why can't I spawn soul X? | `oats spawn X --preview` | the refusal code and path; `/oats-workspace-config` maps it to the fix |
 | Which instances run here, and are they current? | `oats status` | each instance's soul source, modules and drift marks |
 | What was an instance given, and why? | `oats inspect --home <abs home> --json` | recorded modules, payloads, `layers.<slot>.from` as recorded at spawn |
 | Which teams does this deployment have? | `oats teams` | shared and local teams (label, team id), and the default |

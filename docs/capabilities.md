@@ -295,7 +295,7 @@ reported as `publishes` and consumed only as a package.
 A capability declares no agents (a manifest `agents:` is refused with
 `E_CAPABILITY_AGENTS_REMOVED`). Ship the agent as a soul: a **package soul**
 beside the package's capabilities ([packages.md](packages.md#package-souls)),
-such as oats.dev's `reviewer` beside `oats.review`, or a **member soul** in a
+such as oats.engineering's `code-reviewer` beside `oats.code-review`, or a **member soul** in a
 member repository, using the capability `from: here`.
 
 ## Commands and hooks

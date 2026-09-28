@@ -2887,7 +2887,7 @@ test("the boundary does not contradict a read-only workspace instance (reviewer-
 });
 
 test("a REAL spawned package soul gets the boundary and keeps its own report path (reviewer-focus-c6e3680)", (t) => {
-  // A package soul of the post-commit reviewer's shape (oats.dev/reviewer), spawned through
+  // A package soul of the attached reviewer's shape (oats.engineering/code-reviewer), spawned through
   // the real CLI from a tagged package — not a synthetic composer call. Its own instructions
   // require writing a report to a temp file before delivering it, so a boundary forbidding
   // output outside work/ would contradict the very agent the package ships.
@@ -3049,23 +3049,31 @@ test("bundled capabilities carry the versions package-catalog.json pins", () => 
   const catalog = JSON.parse(readFileSync(join(pkgRoot, "package-catalog.json"), "utf8"));
   // Capability version == package version only where the package says so; the
   // catalog pins a PACKAGE ref, so compare against the package that supplies
-  // each capability. oats.review is supplied by oats.dev and versions
-  // independently of it, which is exactly why this maps rather than assumes.
-  const expected = { "oats-okf": "oats.okf", "oats-aweb": "oats.aweb", "oats-jira": "oats.jira", "oats-linear": "oats.linear", "oats-authoring": "oats.authoring" };
+  // each capability; a capability a package exports under another identity is
+  // mapped, not assumed.
+  const expected = { "oats-okf": "oats.okf", "oats-aweb": "oats.aweb", "oats-jira": "oats.jira", "oats-linear": "oats.linear", "oats-authoring": "oats.authoring",
+    "oats-engineering-expert": "oats.engineering", "oats-developer": "oats.engineering", "oats-code-review": "oats.engineering" };
   for (const [slug, pkg] of Object.entries(expected)) {
     const ref = catalog.packages[pkg]?.ref;
     assert.ok(ref, `package-catalog.json pins no ref for ${pkg}`);
     const manifest = JSON.parse(readFileSync(join(pkgRoot, "capabilities", slug, "oats.json"), "utf8"));
     assert.equal(manifest.version, String(ref).replace(/^v/, ""), `capabilities/${slug} must carry the version ${pkg} is pinned at`);
   }
-  // oats.review ships inside the oats.dev package; the capability manifest is
-  // the authority on ITS version, and the bundled copy must match the payload.
-  const review = JSON.parse(readFileSync(join(pkgRoot, "capabilities", "oats-review", "oats.json"), "utf8"));
-  assert.equal(review.capability, "oats.review");
-  assert.equal(catalog.capabilities["oats.review"], "oats.dev", "oats.review is supplied by the oats.dev package");
-  assert.equal(catalog.packages["oats.dev"].ref, "v1.1.0");
-  assert.equal(review.version, "1.3.0", "the oats.dev@v1.1.0 payload ships oats.review at 1.3.0");
-  assert.equal(Object.hasOwn(review, "agents"), false, "and no capability agent: the reviewer is oats.dev's package soul");
+  // oats.engineering exports three capabilities under their own ids; the
+  // catalog aliases each to the package, and the reviewer is a package soul.
+  for (const [slug, id] of [["oats-engineering-expert", "oats.engineering-expert"], ["oats-developer", "oats.developer"], ["oats-code-review", "oats.code-review"]]) {
+    const manifest = JSON.parse(readFileSync(join(pkgRoot, "capabilities", slug, "oats.json"), "utf8"));
+    assert.equal(manifest.capability, id);
+    assert.equal(catalog.capabilities[id], "oats.engineering", `${id} is supplied by the oats.engineering package`);
+    assert.equal(Object.hasOwn(manifest, "agents"), false, `${id} declares no capability agent: the code-reviewer is oats.engineering's package soul`);
+  }
+  assert.equal(catalog.packages["oats.engineering"].ref, "v1.0.0");
+  // oats.dev is retired: no package, alias or bundled copy remains.
+  assert.equal(catalog.packages["oats.dev"], undefined, "oats.dev is no longer listed");
+  for (const [alias, target] of Object.entries(catalog.capabilities)) {
+    assert.notEqual(typeof target === "string" ? target : target.package, "oats.dev", `alias ${alias} still points at the retired oats.dev`);
+  }
+  assert.equal(existsSync(join(pkgRoot, "capabilities", "oats-review")), false, "the oats.review copy is gone");
 });
 
 test("no shipped instructional surface teaches settling in the work tree (maintainer contract)", () => {
@@ -3091,31 +3099,32 @@ test("no shipped instructional surface teaches settling in the work tree (mainta
   }
 });
 
-test("the independently targetable oats.review assumes no knowledge or messaging layer", () => {
-  // oats.review may be composed into a deployment that has replaced or disabled
-  // either layer — `requires` is for host commands and harness packages, never
+test("the independently targetable oats.engineering capabilities assume no knowledge or messaging layer", () => {
+  // Each may be composed into a deployment that has replaced or disabled either
+  // layer — `requires` is for host commands and harness packages, never
   // capability dependencies (maintainer ruling). These are BOUNDED, observable
   // properties. Provider neutrality as a whole is not machine-decidable from
   // prose: when these surfaces change, it needs semantic review by the
   // maintainer, which the PR process already provides.
-  const dir = resolve(new URL("../capabilities/oats-review", import.meta.url).pathname);
-  const manifest = JSON.parse(readFileSync(join(dir, "oats.json"), "utf8"));
-  for (const r of manifest.requires || []) {
-    assert.ok(!r.capability && !r.layer, `requires must not carry layer dependencies: ${JSON.stringify(r)}`);
+  for (const slug of ["oats-engineering-expert", "oats-developer", "oats-code-review"]) {
+    const dir = resolve(new URL(`../capabilities/${slug}`, import.meta.url).pathname);
+    const manifest = JSON.parse(readFileSync(join(dir, "oats.json"), "utf8"));
+    for (const r of manifest.requires || []) {
+      assert.ok(!r.capability && !r.layer, `${slug}: requires must not carry layer dependencies: ${JSON.stringify(r)}`);
+    }
+    // The surfaces that ship INDEPENDENTLY of any layer issue no command
+    // belonging to one.
+    const files = [manifest.inject, ...manifest.skills.map((s) => `${s}/SKILL.md`)];
+    for (const f of files) {
+      const text = readFileSync(join(dir, f), "utf8");
+      assert.doesNotMatch(text, /\baw\b/i, `${slug}/${f} commands the aweb CLI`);
+      assert.doesNotMatch(text, /\boats okf\b/i, `${slug}/${f} commands the OKF layer`);
+    }
   }
-  // The surface that ships INDEPENDENTLY of any layer must issue no
-  // unconditional command belonging to one. (The reviewer soul's own AGENTS.md
-  // ships in the oats.dev package, whose tests pin the same properties.)
-  for (const f of ["injects/review.md"]) {
-    const text = readFileSync(join(dir, f), "utf8");
-    assert.doesNotMatch(text, /\baw\b/i, `${f} commands the aweb CLI`);
-    assert.doesNotMatch(text, /\boats okf\b/i, `${f} commands the OKF layer`);
-  }
-  // Conditional wording plus the transcript fallback: what an instance actually
-  // needs to behave correctly with, and without, a messaging layer.
-  const inject = readFileSync(join(dir, "injects", "review.md"), "utf8");
-  assert.match(inject, /otherwise in its own session transcript/, "the discipline block states the no-layer delivery");
-  assert.match(inject, /when a knowledge\s+layer is active/i, "and makes the promotion step conditional");
+  // The reviewer's report states the no-layer delivery: what an instance needs
+  // to behave correctly with, and without, a messaging layer.
+  const reviewer = readFileSync(resolve(new URL("../capabilities/oats-code-review/injects/reviewer.md", import.meta.url).pathname), "utf8");
+  assert.match(reviewer, /messaging layer if one is active[\s\S]*otherwise print it as your final message/, "the reviewer's report falls back to its own session");
 });
 
 test("the accepted trust boundary is DOCUMENTED, not left as a code comment (maintainer contract)", () => {
