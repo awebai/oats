@@ -162,6 +162,15 @@ test('desktop facts: a reported start replaces the spawn age, the model says whe
   assert.equal(u.field('startedAt').title, `${started} · created ${created}`);
   assert.equal(u.field('modelFrom').textContent, "the soul's choice");
   assert.equal(u.row('identityAddress').hidden, false); assert.equal(u.field('identityAddress').textContent, 'northwind/web-developer-1');
+  // 0.30 launch preferences: an inline override on this computer, for the soul or for every soul.
+  for (const [from, words] of [['local', 'set for this soul on this computer'], ['local-default', "this computer's default for every soul"]]) {
+    u.select(instance({ createdAt: created, model: 'gpt-codex-astra', modelFrom: from }));
+    assert.equal(u.field('modelFrom').textContent, words, from); assert.equal(u.field('modelFrom').hidden, false, from);
+  }
+  for (const odd of ['later', 'constructor', '__proto__']) {
+    u.select(instance({ createdAt: created, model: 'm', modelFrom: odd }));
+    assert.equal(u.field('modelFrom').hidden, true, `${odd}: an unknown source says nothing`);
+  }
   // An older kernel (none of the keys) or a pre-0.29 home (modelFrom null): as before.
   u.select(instance({ createdAt: created, modelFrom: 'soul' }));
   assert.equal(u.field('modelFrom').hidden, true, 'no model reported: its source alone says nothing');

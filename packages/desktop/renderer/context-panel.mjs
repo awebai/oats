@@ -131,8 +131,11 @@ const inertPanel = () => ({
   setContext: noop, attach: inertLease, release: noop, toggle: noop, setCollapsed: noop,
   setFocusMode: noop, toggleFocusMode: noop, isFocusMode: () => false, dispose: noop,
 });
-/** Where the model came from (modelFrom, desktop-facts); null (a pre-0.29 home) says nothing. */
-const MODEL_FROM = { soul: "the soul's choice", spawn: 'chosen at spawn', start: 'chosen at start', 'launch-config': 'from the launch configuration', 'harness-default': "the harness's default" };
+/** Where the model came from (modelFrom, desktop-facts); null (a pre-0.29 home) says nothing.
+ * 0.30 launch preferences add this computer's override for the soul (`local`) and for every soul
+ * (`local-default`), in the soul page's words (launch-view.mjs). An unknown value says nothing. */
+const MODEL_FROM = Object.freeze({ __proto__: null, soul: "the soul's choice", spawn: 'chosen at spawn', start: 'chosen at start', 'launch-config': 'from the launch configuration', 'harness-default': "the harness's default",
+  local: 'set for this soul on this computer', 'local-default': "this computer's default for every soul" });
 const reported = value => typeof value === 'string' && value.length ? value
   : typeof value === 'number' && Number.isFinite(value) ? String(value)
     : typeof value === 'boolean' ? String(value) : 'Not reported';
