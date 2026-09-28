@@ -228,7 +228,8 @@ export function previewData(v, expected) {
   if (messaging === undefined || teams === undefined || (Object.hasOwn(v, 'defaultTeam') && defaultTeam === undefined)) return null;
   // Launch preferences (0.30): the Launch with flags applied; its effective launch IS the preview's.
   const launch = Object.hasOwn(v, 'launch') ? launchOf(v.launch, PREVIEW_FROM) : undefined;
-  if (Object.hasOwn(v, 'launch') && (launch === undefined || launch.effective.harness !== e.harness || launch.effective.model !== e.model
+  // Only reports carry `problem`: a preview that would hit one refuses with the error instead.
+  if (Object.hasOwn(v, 'launch') && (launch === undefined || launch.problem !== null || launch.effective.harness !== e.harness || launch.effective.model !== e.model
     || launch.effective.launchConfig !== e.launchConfig)) return null;
   return { spawnPreviewApi: 2, preview: true, subject: { soul: v.subject.soul, agentsRoot: v.subject.agentsRoot, dir: v.subject.dir },
     decision: d, resolution: d.resolution, instance: d.instance, home: d.home, branch: d.branch, base: base ? { ...base } : null,

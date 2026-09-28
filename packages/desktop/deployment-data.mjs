@@ -293,8 +293,9 @@ export function soulsData(document) {
     out.key = out.kind === 'package' ? out.qualifiedName : out.name;
     if (own(row, 'key')) check(soulKey(row.key) && row.key === out.key);
     flags(row, ['private', 'spawnable'], out);
-    // desktop-facts: whether a spawn here would refuse, and the file. The harness/model default is not kept:
-    // it is always the kernel's today (#217 note 4), never the soul's choice; the spawn preview reports the real one.
+    // desktop-facts: whether a spawn here would refuse, and the file. The row's flat harness/model/harnessFrom
+    // are not kept: with launch-preference (0.30) the soul and this machine choose them, and the row's `launch`
+    // (below) carries the kernel's report of that choice; before 0.30 they were always the kernel's default.
     if (own(row, 'problem')) out.problem = problemRef(row.problem);
     if (own(row, 'file')) out.file = fileRef(row.file);
     // Team model v2 (0.30): the soul's teams here (TeamRow, the default first) and its default.

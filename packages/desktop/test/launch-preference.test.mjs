@@ -65,6 +65,8 @@ test('spawn --preview (derived on the real 0.30 preview): launch with flags; its
   assert.equal(previewData(other, target), null, 'a launch that disagrees with the preview refuses it');
   const model = withLaunch('local'); model.launch.effective.model = 'another-model'; assert.equal(previewData(model, target), null);
   assert.equal(previewData(withLaunch('recorded'), target), null, 'a preview is never a record');
+  const problem = withLaunch('soul'); problem.launch.problem = { code: 'E_HARNESS_UNAVAILABLE', message: 'm', fix: 'f' };
+  assert.equal(previewData(problem, target), null, 'only reports carry a problem: a preview refuses instead');
 });
 
 test('inspect --soul / --home (derived on the real 0.30 captures): launch, launchCurrent; recorded only on a home', () => {
@@ -95,5 +97,11 @@ test('readiness launch-changed (--home; derived on the real instance readiness c
     ['from flag', i => { i.from = 'flag'; }], ['from unknown', i => { i.from = 'guess'; }]]) {
     const v = doc(); change(v.checks.configured.items.at(-1)); assert.equal(readinessData(v, instanceTarget), null, what);
   }
+  // The current launch from the host default (the soul dropped its `launch:` after the spawn): `at` is null.
+  const host = doc(); Object.assign(host.checks.configured.items.at(-1), { from: 'host', at: null, current: { harness: 'pi', model: null, launchConfig: null } });
+  const hosted = readinessData(host, instanceTarget);
+  assert.ok(hosted, 'the whole readiness document still reads');
+  assert.deepEqual([hosted.checks.configured.items.at(-1).at, hosted.checks.configured.items.at(-1).from], [null, 'host']);
+  for (const bad of [7, '', 'a\nb']) { const v = doc(); v.checks.configured.items.at(-1).at = bad; assert.equal(readinessData(v, instanceTarget), null, `at ${JSON.stringify(bad)}`); }
   assert.ok(readinessData(data(instanceTarget), instanceTarget).checks.configured.items.every(i => !Object.hasOwn(i, 'recorded') && !Object.hasOwn(i, 'from')), 'no keys invented');
 });

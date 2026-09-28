@@ -77,7 +77,9 @@ function item(v) {
   // where it is declared (at).
   if (Object.hasOwn(v, 'label')) { if (typeof v.label !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(v.label)) throw Error(); out.label = v.label; }
   if (Object.hasOwn(v, 'default')) { if (typeof v.default !== 'boolean') throw Error(); out.default = v.default; }
-  if (Object.hasOwn(v, 'at')) { if (typeof v.at !== 'string' || !v.at || v.at.length > 512 || /[\x00-\x1f\x7f]/.test(v.at)) throw Error(); out.at = v.at; } // where the team is declared
+  // Where the value is declared (a team; launch-changed's current layer), or null: launch-changed's `at`
+  // is null when the current launch comes from a flag or the host default.
+  if (Object.hasOwn(v, 'at')) { if (v.at !== null && (typeof v.at !== 'string' || !v.at || v.at.length > 512 || /[\x00-\x1f\x7f]/.test(v.at))) throw Error(); out.at = v.at; }
   // Launch preferences (0.30, `launch-changed`, --home only): the recorded and the current effective
   // launch, and the current layer's from (its `at` is above).
   for (const key of ['recorded', 'current']) if (Object.hasOwn(v, key)) { const l = effectiveOf(v[key]); if (!l) throw Error(); out[key] = l; }
