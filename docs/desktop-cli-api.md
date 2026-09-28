@@ -1752,8 +1752,11 @@ closed**: an unknown key is a contract change announced in this document first.
   active, that is the readiness problem `E_TEAM_UNCONFIGURED`, and the messaging
   provider refuses the spawn.
 - When the default is an UNMAPPED shared team (declared, no provider id yet),
-  `team` is `null`. That is the blocking readiness problem `team-unmapped` with
-  `default: true` (below), not `E_TEAM_UNCONFIGURED`.
+  the value is `{label, team: null, from}`, NOT `null`, so the reader can name
+  the label. That is the blocking readiness problem `team-unmapped` with
+  `default: true` (below), not `E_TEAM_UNCONFIGURED`. The same holds for every
+  document carrying a `DefaultTeam`: the preview, `inspect`, `souls`,
+  `instance.json` and the provider's teams document.
 
 #### Where they appear
 
@@ -1809,8 +1812,12 @@ Providers read the environment below.
 - `OATS_DEFAULT_TEAM`: the default label.
 - `OATS_DEFAULT_TEAM_ID`: its provider id.
 - `OATS_DEFAULT_TEAM_FROM`: `deployment` | `soul`.
-- None of the three is set when there is no default, or when the default is an
-  unmapped team.
+- No default configured: none of the three is set.
+- An UNMAPPED default: `OATS_DEFAULT_TEAM` and `OATS_DEFAULT_TEAM_FROM` are set,
+  and `OATS_DEFAULT_TEAM_ID` is UNSET.
+- The provider rule: the label set with the id unset is an unmapped default
+  (refuse, naming the label: "the default team <label> has no provider id
+  yet"); the label unset is none configured ("no teams configured").
 - `OATS_TEAMS`: JSON `[{label, team, default, from}]`:
   - every MAPPED team the soul may be in here, the default included
     (`default: true`); unmapped rows are excluded;
@@ -1911,8 +1918,9 @@ not the kernel. This is its 0.30 contract, and its key set is exact:
   one shape in both places:
   - `label`, `team` and `from` are the kernel's `OATS_DEFAULT_TEAM`,
     `OATS_DEFAULT_TEAM_ID` and `OATS_DEFAULT_TEAM_FROM` (`"deployment"` | `"soul"`);
-  - it is `null` when the environment carries no default (none configured, or
-    an unmapped one).
+  - an unmapped default (`OATS_DEFAULT_TEAM` set, `OATS_DEFAULT_TEAM_ID` unset)
+    is `{label, team: null, from}`;
+  - it is `null` only when no default is configured (`OATS_DEFAULT_TEAM` unset).
   - *Changed from 0.29:* `source` is renamed `from` (no alias), `label` is new,
     and the 0.29 sources `"setting"` and `"root"` are gone.
 - **`eligible`** is `[{label, team, joined}]`: the `OATS_TEAMS` rows with
