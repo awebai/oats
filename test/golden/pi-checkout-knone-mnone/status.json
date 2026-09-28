@@ -20,6 +20,9 @@
           "branch": "main",
           "harness": "pi",
           "modelFrom": "harness-default",
+          "launchFrom": "flag",
+          "launchAt": null,
+          "launchDeclared": null,
           "spawnOrigin": "operator",
           "policy": {
             "childSpawns": {

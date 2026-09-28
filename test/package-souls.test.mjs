@@ -275,3 +275,18 @@ test("sync refuses a package soul carrying a non-CLAUDE.md symlink, a CLAUDE.md 
     assert.equal(existsSync(join(fx.dep, "oats-lock.json")) && /v1\.0\.1/.test(readFileSync(join(fx.dep, "oats-lock.json"), "utf8")), false, `${what}: nothing locked`);
   }
 });
+
+test("a package soul's launch preference (feature launch-preference): its own launch, overridden by souls.launch.<package>/<soul>", (t) => {
+  const OPUS = { harness: "claude", model: "claude-opus-5-5" };
+  const fx = fixture({ pkgSouls: { keeper: { soul: { launch: { harness: "codex" } } } } }); t.after(fx.cleanup);
+  ok(fx.cli(["sync", "--json"]), "sync");
+  const row = () => ok(fx.cli(["souls", "--json"]), "souls").souls.find((s) => s.name === "keeper");
+  assert.deepEqual(row().launch, { declared: { harness: "codex", model: null }, effective: { harness: "codex", model: null, launchConfig: null }, from: "soul",
+    at: "package:acme.pkg:oats-package/souls/keeper/soul.yaml#/launch", problem: null });
+  const localPath = join(fx.dep, "oats-local.yaml");
+  writeFileSync(localPath, `${readFileSync(localPath, "utf8")}souls:\n  launch:\n    acme.pkg/keeper: { harness: claude, model: claude-opus-5-5 }\n`);
+  assert.deepEqual(row().launch, { declared: { harness: "codex", model: null }, effective: { ...OPUS, launchConfig: null }, from: "local",
+    at: "oats-local.yaml#/souls/launch/acme.pkg~1keeper", problem: null });
+  const preview = ok(fx.cli(["spawn", "acme.pkg/keeper", "--preview", "--json"]), "preview");
+  assert.deepEqual([preview.harness, preview.model, preview.launch.from], ["claude", "claude-opus-5-5", "local"]);
+});

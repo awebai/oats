@@ -27,13 +27,14 @@ import {
   LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
   officialPackageCatalog, officialCatalogFile, officialCapabilityAliases, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, isCapturedHome, capturedHomeRefusal, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
-  findInstanceHome, findInstanceHomes, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, launchConfigsAt, explicitInstanceName, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
+  findInstanceHome, findInstanceHomes, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, launchConfigsAt, launchReportFor, explicitInstanceName, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
 import {
   writeFileAtomic, LOCK_FILE, readLock, writeLock, resolvePackages, memoizedRemote,
   classifyPackageValue, parsePackageRequest } from "../lib/packages.mjs";
 import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, workspaceWarnings } from "../lib/workspace.mjs";
 import { recordedTeams, reportRows, soulKeyOf, soulTeams, teamModel } from "../lib/teams.mjs";
+import { launchLayers } from "../lib/launch-preference.mjs";
 import { parseConfigData } from "../lib/config-data.mjs";
 import * as remoteModule from "../lib/remote.mjs";
 import YAML from "yaml";
@@ -1074,17 +1075,24 @@ const workspaceName = (discovery) => discovery.workspace?.name ?? `standalone:${
 const memberLabel = (key) => String(key).split("/").filter(Boolean).pop()?.replace(/\.git$/, "") || String(key);
 const originOf = (item) => (item.package ? `package ${item.package} v${item.version}` : `member ${item.repoKey} @ ${short(item.commit)}`);
 
-/** A soul's spawn default harness and model (feature desktop-facts): its definition's, else the kernel's (pi, the
- *  harness's native model) — what `oats spawn <soul>` takes with no --harness/--model/--launch-config. */
-const soulDefaults = (def) => ({ harness: def?.harness ?? "pi", model: def?.model ?? null, harnessFrom: def?.harness ? "soul" : "kernel-default" });
+/** A soul's launch here (feature launch-preference): the `Launch` report a spawn with no flags would decide
+ *  (souls.launch, the soul's own launch, the host default), and the desktop-facts `harness`, `model`,
+ *  `harnessFrom` equal to its effective launch (`harnessFrom` "kernel-default" for the host default). */
+function soulLaunchFacts(entry, local, { launchConfigs, contextDir }) {
+  const launch = launchReportFor({ layers: launchLayers({ definition: entry.definition, entry, key: soulKeyOf(entry), local }), launchConfigs, contextDir });
+  return { harness: launch.effective.harness, model: launch.effective.model, harnessFrom: launch.from === "host" ? "kernel-default" : launch.from, launch };
+}
 
 /** Rows of every soul and capability of confirmed members (+ external souls) + locked package
  *  capabilities. Souls have no private mode (0.26.0); a private member capability is listed with
  *  `private: true` — repo-owned: usable only by its own repo's souls (E_CAPABILITY_PRIVATE).
  *  Each soul row carries its teams HERE (team model v2: `teams`, `defaultTeam`), from the committed
  *  shared teams and `local` (oats-local.yaml); both null when its teams do not resolve (E_TEAM_*). */
-function workspaceItems(discovery, lock, local) {
+function workspaceItems(discovery, lock, local, deploymentDir) {
   const souls = [];
+  let launchConfigs = {};
+  try { launchConfigs = deploymentDir ? launchConfigsAt(deploymentDir) : {}; } catch { launchConfigs = {}; }
+  const soulDefaults = (entry) => soulLaunchFacts(entry, local, { launchConfigs, contextDir: deploymentDir });
   const capabilities = [];
   const model = teamModel(discovery.standalone === true ? null : discovery.workspace, local, { workspaceKey: discovery.key ?? null });
   const teamsHere = (entry) => {
@@ -1093,15 +1101,15 @@ function workspaceItems(discovery, lock, local) {
   };
   for (const m of discovery.members) {
     if (!m.confirmed && !(discovery.standalone === true && m.key === discovery.key)) continue;
-    for (const s of m.souls) souls.push({ name: s.name, key: soulKeyOf(s), origin: originOf(s), kind: "member", repoKey: s.repoKey, commit: s.commit, ...teamsHere(s), private: s.private, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null, ...soulDefaults(s.definition) });
+    for (const s of m.souls) souls.push({ name: s.name, key: soulKeyOf(s), origin: originOf(s), kind: "member", repoKey: s.repoKey, commit: s.commit, ...teamsHere(s), private: s.private, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null, ...soulDefaults(s) });
     for (const c of m.capabilities) capabilities.push({ name: c.name, origin: originOf(c), kind: "member", repoKey: c.repoKey, commit: c.commit, private: c.private, path: c.path, layer: c.manifest.layer ?? null, version: c.manifest.version ?? null });
   }
   for (const ext of discovery.external || []) {
     const s = ext.soul;
-    souls.push({ name: s.name, key: soulKeyOf(s), origin: `external ${s.repoKey} @ ${short(s.commit)}`, kind: "external", repoKey: s.repoKey, commit: s.commit, ...teamsHere(s), private: s.private, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null, ...soulDefaults(s.definition) });
+    souls.push({ name: s.name, key: soulKeyOf(s), origin: `external ${s.repoKey} @ ${short(s.commit)}`, kind: "external", repoKey: s.repoKey, commit: s.commit, ...teamsHere(s), private: s.private, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null, ...soulDefaults(s) });
   }
   for (const s of discovery.packageSouls || []) {
-    souls.push({ name: s.name, key: soulKeyOf(s), qualifiedName: s.qualifiedName, origin: originOf(s), kind: "package", package: s.package, version: s.version, repoKey: s.repoKey, commit: s.commit, ...teamsHere(s), private: false, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null, ...soulDefaults(s.definition) });
+    souls.push({ name: s.name, key: soulKeyOf(s), qualifiedName: s.qualifiedName, origin: originOf(s), kind: "package", package: s.package, version: s.version, repoKey: s.repoKey, commit: s.commit, ...teamsHere(s), private: false, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null, ...soulDefaults(s) });
   }
   for (const [id, entry] of Object.entries(lock?.packages || {})) {
     for (const name of entry.capabilities) capabilities.push({ name, origin: originOf({ package: id, version: entry.version }), kind: "package", package: id, version: entry.version, commit: entry.commit, private: false });
@@ -1186,7 +1194,7 @@ async function performSync(ctx, bail, { onDiscovered } = {}) {
   const members = memberRows(discovery);
   const packages = packageRows(lock);
   const changes = resolved.changes;
-  const items = workspaceItems(discovery, lock, ctx.local);
+  const items = workspaceItems(discovery, lock, ctx.local, ctx.deploymentDir);
   const report = { syncApi: 1, automations: automationCounts(automations), standalone: discovery.standalone === true || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, lock: lockFile }, members, packages, changes, problems, warnings: discovery.warnings ?? [] };
   return { report, lock, discovery, items, lockFile, problems };
 }
@@ -1573,7 +1581,7 @@ async function itemsCmd(kind) {
   const discovery = await discoverForCli(ctx, bail);
   let lock;
   try { lock = readLock(ctx.deploymentDir); } catch (e) { return bail(e.code || "E_LOCK_SCHEMA", e.message, e.details); }
-  const items = workspaceItems(discovery, lock, ctx.local)[kind];
+  const items = workspaceItems(discovery, lock, ctx.local, ctx.deploymentDir)[kind];
   // One command's reads at a commit are shared: many souls resolve over the same manifests and listings.
   const remote = memoizedRemote(remoteModule);
   if (kind === "capabilities") await capabilityFacts(items, discovery, lock, ctx, remote);
@@ -2026,7 +2034,7 @@ async function spawnCmd() {
     // A launch refusal (configuration, executable, environment reference,
     // model, harness) is a fact about the selection, not a spawn-mechanism
     // failure: it keeps its own code so a GUI can act on it.
-    if (typeof e?.code === "string" && /^E_LAUNCH_|^E_MODEL_UNKNOWN$|^E_UNSUPPORTED_HARNESS$/.test(e.code)) { bail(e.code, e.message); throw e; }
+    if (typeof e?.code === "string" && /^E_LAUNCH_|^E_MODEL_UNKNOWN$|^E_UNSUPPORTED_HARNESS$|^E_HARNESS_UNAVAILABLE$/.test(e.code)) { bail(e.code, e.message, e.details); throw e; }
     // An unmet declared requirement is a fact about the soul's configuration
     // (with a remedy), not a spawn-mechanism failure: keep its code and details.
     if (e?.code === "E_REQUIREMENT_INACTIVE") { bail(e.code, e.message, { soul: e.soul, capabilities: e.capabilities, context: e.context, remedy: e.remedy }); throw e; }
@@ -2385,7 +2393,11 @@ async function sessionCmd() {
       if (launchConfig === true) bad("--launch-config needs a configuration name, or none");
       const harness = harnessFlag();
       if (harness === true || (harness !== undefined && !LAUNCH_HARNESSES.includes(harness))) bad(`--harness must be one of ${LAUNCH_HARNESSES.join(", ")}`);
-      const opts = { model: model || undefined, launchConfig, harness, yolo: yoloFlag(), env: process.env, ...(await homeLiveTeams(home)) };
+      // --reselect-launch (feature launch-preference): the home's launch layers decide again; without it a
+      // recorded launch stays frozen (a changed preference never reaches an existing home on its own).
+      const reselectLaunch = args.includes("--reselect-launch");
+      if (reselectLaunch && launchConfig !== undefined) bad("--reselect-launch applies the launch preferences; --launch-config names one explicitly — choose one");
+      const opts = { model: model || undefined, launchConfig, harness, yolo: yoloFlag(), ...(reselectLaunch ? { reselectLaunch: true } : {}), env: process.env, ...(await homeLiveTeams(home)) };
       if (args[1] === "restart") {
         const grace = flag("stop-grace");
         if (grace !== undefined) { if (grace === true || !/^\d+$/.test(String(grace)) || Number(grace) < 1 || Number(grace) > 300) bad("--stop-grace needs a number of seconds (1..300) to wait for the harness after SIGTERM"); opts.stopGraceMs = Number(grace) * 1000; }
@@ -2408,7 +2420,7 @@ async function sessionCmd() {
       const file = flag("file");
       if (!file || file === true) throw Object.assign(new Error("session upload needs --file <local path>"), { code: "E_BAD_ARGS" });
       result = uploadAttachment({ file, home: home === true ? undefined : home });
-    } else throw Object.assign(new Error("usage: oats session inspect|input|attach|start|restart|receive|upload --home /absolute/home [--text-file path] [--model id] [--launch-config name|none] [--harness pi|claude|codex] [--yolo|--no-yolo] [--stop-grace seconds] [--name file] [--file path] [--json]"), { code: "E_BAD_ARGS" });
+    } else throw Object.assign(new Error("usage: oats session inspect|input|attach|start|restart|receive|upload --home /absolute/home [--text-file path] [--model id] [--launch-config name|none | --reselect-launch] [--harness pi|claude|codex] [--yolo|--no-yolo] [--stop-grace seconds] [--name file] [--file path] [--json]"), { code: "E_BAD_ARGS" });
     if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2));
   } catch (e) { cmdFail(e.code || "E_SESSION_FAILED", e.message, e.details); }
 }
@@ -2798,7 +2810,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-2", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2 }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-2", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2 }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -3331,6 +3343,9 @@ Usage:
   oats session start --home <absolute-home>  start a STOPPED instance again in its existing home
       [--model m] [--launch-config n|none]  (recorded recipe as is; a selection re-resolves it
       [--harness r] [--yolo|--no-yolo]      against the scope; a named configuration is a unit)
+      [--reselect-launch]                   applies the launch preferences now (oats-local.yaml
+                                            souls.launch, the soul's launch); a changed preference
+                                            never reaches an existing home without it or a respawn
   oats session restart --home <abs-home>     stop the running harness (SIGTERM, bounded wait,
       [same flags] [--stop-grace <s>]        never escalated) and start it again in place under
                                             the same lock; a stop that is not observed is
@@ -3346,7 +3361,9 @@ Usage:
       [--relative-root <agents-root>]       disambiguates same-named team anchors
       [--work worktree|checkout|attached|workspace|directory]  = sugar for --relative-to X --relation
       [--work-dir <owner-work>] [--harness pi|claude|codex] [--backend tmux|herdr] [--herdr-socket <path>] [--yolo|--no-yolo] [--model <m>] [--branch <b>]  child (default: unrelated, top-level)
-      [--no-launch] [--json]
+      [--no-launch] [--json]                 without --launch-config/--harness the launch is the
+                                            soul's preference: oats-local.yaml souls.launch.<soul>,
+                                            then souls.launch."*", then the soul's launch:, then pi
                                             with team: declared, unknown souls
                                             resolve across the team scope's repos
                                             directory: owned home/work, config context may

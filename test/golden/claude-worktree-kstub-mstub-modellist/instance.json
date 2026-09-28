@@ -10,6 +10,9 @@
   "harness": "claude",
   "model": "claude-sonnet-4-5",
   "modelFrom": "spawn",
+  "launchFrom": "flag",
+  "launchAt": null,
+  "launchDeclared": null,
   "spawnOrigin": "operator",
   "policy": {
     "childSpawns": {

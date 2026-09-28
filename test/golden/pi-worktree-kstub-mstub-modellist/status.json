@@ -29,6 +29,9 @@
           "harness": "pi",
           "model": "anthropic/claude-sonnet-4-5:thinking",
           "modelFrom": "spawn",
+          "launchFrom": "flag",
+          "launchAt": null,
+          "launchDeclared": null,
           "spawnOrigin": "operator",
           "policy": {
             "childSpawns": {

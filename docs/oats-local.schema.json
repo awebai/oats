@@ -110,6 +110,12 @@
           "propertyNames": { "type": "string", "pattern": "^(?:\\*|(?:[a-z0-9][a-z0-9._-]*/)?[a-z0-9]+(?:-[a-z0-9]+)*)$" },
           "additionalProperties": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/label" } }
         },
+        "launch": {
+          "description": "Launch preferences on this machine (0.30; feature launch-preference), overriding the soul's own launch: \"*\" applies to every soul; a soul's own entry (its bare name, or <package>/<soul>) wins over it. A value is a launch configuration's name (in launch-configs of this file) or an inline { harness, model? }. Explicit spawn flags win over both. A changed preference affects no existing home until --reselect-launch or a respawn.",
+          "type": "object",
+          "propertyNames": { "type": "string", "pattern": "^(?:\\*|(?:[a-z0-9][a-z0-9._-]*/)?[a-z0-9]+(?:-[a-z0-9]+)*)$" },
+          "additionalProperties": { "oneOf": [ { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" }, { "$ref": "#/$defs/launchPreference" } ] }
+        },
         "default": {
           "description": "A per-soul override of defaultTeam (`oats soul teams <soul> --default <label>`); it must be one of that soul's teams here (E_TEAM_NOT_ELIGIBLE).",
           "type": "object",
@@ -138,6 +144,7 @@
     }
   },
   "$defs": {
+    "launchPreference": { "type": "object", "additionalProperties": false, "required": ["harness"], "properties": { "harness": { "enum": ["pi", "claude", "codex"], "description": "The harness the role should run on." }, "model": { "type": "string", "minLength": 1, "pattern": "^[^\\s-][^\\s]*$", "description": "A model id for that harness; absent: the harness's own model." } } },
     "label": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" }
   }
 }

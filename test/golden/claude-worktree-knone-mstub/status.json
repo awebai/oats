@@ -25,6 +25,9 @@
           "branch": "agents/dev-claude-worktree-knone-mstub",
           "harness": "claude",
           "modelFrom": "harness-default",
+          "launchFrom": "flag",
+          "launchAt": null,
+          "launchDeclared": null,
           "spawnOrigin": "operator",
           "policy": {
             "childSpawns": {
