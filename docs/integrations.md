@@ -229,10 +229,10 @@ that CLI cannot revoke the certificate.
 > `OATS_DEFAULT_TEAM_FROM`, `OATS_TEAMS` and `OATS_TEAMS_SOURCE`
 > ([capabilities.md](capabilities.md#teams-in-the-provider-environment)). It no
 > longer sets `OATS_TEAM_ID`, `OATS_TEAM_LABEL` or `OATS_TEAM_LABELS`, and
-> `messaging.byTeam` is a schema error. Per the 0.30 design, the provider's own
-> `team` setting is removed at every layer (the soul slot, the host
-> `settings.oats.aweb.team`, a spawn `team=`); oats.aweb 1.17 takes the default
-> from the kernel. The text below describes the 1.12.2 release and its settings.
+> `messaging.byTeam` is a schema error. The provider's own `team` setting is
+> removed by the provider, not the kernel (payloads are opaque to it): oats.aweb
+> 1.17 no longer declares `team` and its binding refuses the undeclared key; it
+> takes the default team from the kernel. The text below describes the 1.12.2 release and its settings.
 
 Set portable team policy in the workspace/soul `messaging:` payload; set host
 facts in `oats-local.yaml` under `settings.oats.aweb.<key>`. Per-spawn

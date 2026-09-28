@@ -789,7 +789,8 @@ the pre-fix marker and is never accepted for dispatch.
   leaf of `settings.<cap>` (a JSON pointer, e.g. `/identity/mode`) to
   `{ kind, at }`: `kind` is `manifest-default` | `workspace` | `soul` |
   `host` | `spawn` — the last layer that set it. (`workspace-team` no longer
-  appears; from 0.30.0 there is no `byTeam` and no provider `team` setting:
+  appears; from 0.30.0 there is no `byTeam`, and the messaging provider takes
+  its team from the kernel, not from a `team` setting:
   see [Team model v2](#team-model-v2-feature-team-model-2-oats-0300-replaces-feature-teams).) —
   and `at` names where (`oats.json#/settings/identity/default`,
   `soul.yaml#/messaging`, `oats-local.yaml#/settings/<cap>`,
@@ -1711,8 +1712,13 @@ closed**: an unknown key is a contract change announced in this document first.
 - A soul key is the name the soul is spawned by: the bare name for a member
   soul, `<package>/<soul>` for a package soul.
 - *Removed*: `messaging.byTeam`, `defaults.byTeam`, a soul.yaml `team`, an
-  oats-membership.yaml `team`, "primary", and the messaging provider's `team`
-  setting at every layer. Each is `E_WORKSPACE_SCHEMA` naming its replacement.
+  oats-membership.yaml `team`, and "primary". Each is `E_WORKSPACE_SCHEMA`
+  (reason `removed-key`) naming its replacement.
+- A provider payload stays opaque to the kernel: a `team` key in it passes
+  through like any other setting (other providers use one, e.g. the tasks
+  example's `team: ENG`). The messaging provider's `team` setting is removed by
+  the provider: oats.aweb 1.17 no longer declares it, and its binding refuses
+  the undeclared key.
 
 **Resolution.**
 - The soul's default is `souls.default[soul] ?? defaultTeam`.
@@ -1764,7 +1770,8 @@ closed**: an unknown key is a contract change announced in this document first.
 - adds `teams: [TeamRow]` (unmapped rows included) and `defaultTeam: DefaultTeam | null`;
 - *removes* `team` (the primary label) and the 0.26 `teams` rows
   (`{label, team, mapped, payload}`);
-- `settings.<messaging>` no longer carries a `team`.
+- `settings.<messaging>` is the merged provider payload as before; from oats.aweb
+  1.17 it no longer carries a `team`, because that provider stops declaring one.
 
 **`oats inspect --soul <name> --json`:**
 - `teams`, `defaultTeam` (as in the preview), and `teamsSource: "live"`;

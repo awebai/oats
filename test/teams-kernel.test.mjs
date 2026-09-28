@@ -180,6 +180,12 @@ test("a home's teams are LIVE: its commands, operations, inspect --home and a pr
   assert.deepEqual([seen.def, seen.from, seen.teams], ["oats", "soul", [{ ...OATS, default: true }]]);
   seen = inHome("envprobe", "show");
   assert.deepEqual([seen.def, seen.teams, seen.source], ["mine", [MINE, OATS], "recorded"], "a non-messaging command reads no remote: the record");
+  // The same split for provider operations run on the home: the messaging layer's live, others recorded.
+  const operation = (address) => ok(fx.cli(["operation", "run", address, "--home", home, "--json"]), `operation run ${address}`).result;
+  seen = operation("messaging:teams");
+  assert.deepEqual([seen.def, seen.from, seen.teams, seen.source], ["oats", "soul", [{ ...OATS, default: true }], "live"]);
+  seen = operation("knowledge:show");
+  assert.deepEqual([seen.def, seen.teams, seen.source], ["mine", [MINE, OATS], "recorded"], "a non-messaging operation reads no remote: the record");
   const doc = ok(fx.cli(["inspect", "--home", home, "--json"]), "inspect --home");
   assert.deepEqual([doc.defaultTeam, doc.recordedDefaultTeam, doc.teamsSource], [{ label: "oats", team: "oats:oats.aweb.ai", from: "soul" }, meta0.defaultTeam, "live"]);
   assert.deepEqual(doc.teams, [{ ...OATS, default: true }, NIGHT], "live report rows include the unmapped one");
@@ -195,6 +201,8 @@ test("a home's teams are LIVE: its commands, operations, inspect --home and a pr
   try {
     seen = inHome("chat", "teams");
     assert.deepEqual([seen.def, seen.teams, seen.source], ["mine", [MINE, OATS], "recorded"]);
+    const off = ok(fx.cli(["inspect", "--home", home, "--json"]), "inspect --home, host unreachable");
+    assert.deepEqual([off.teams, off.defaultTeam, off.teamsSource], [[MINE, OATS], meta0.defaultTeam, "recorded"], "the record, marked recorded");
   } finally { renameSync(parked, bare); }
   assert.deepEqual(JSON.parse(readFileSync(join(home, "instance.json"), "utf8")).teams, meta0.teams, "the spawn record is evidence, never rewritten");
   const out = join(fx.base, "retire-teams.json");
@@ -223,8 +231,19 @@ test("the REAL bundled oats.aweb binding check decodes the kernel's check reques
   assert.equal(`v${manifest.version}`, catalog.packages["oats.aweb"].ref, "the bundled provider is the catalog's pinned release");
   const aweb = { ...target, payloads: { ...target.payloads, "oats.aweb": {} }, slots: { ...target.slots, messaging: "oats.aweb" } };
   const out = runProviderCheck(aweb, { name: "oats.aweb", manifest }, dir);
+  // Its decoder accepted the request: the answer is one of its check statuses, never its wire refusal
+  // (`invalid-binding` / `provider-not-qualified`).
   assert.equal(out.outcome, "result", JSON.stringify(out));
   assert.equal(out.result.problems.some((p) => ["invalid-binding", "provider-not-qualified"].includes(p.code)), false, JSON.stringify(out));
+  // What the bundled 1.16.1 answers under the 0.30 env: needs-configuration — no messaging root here, and
+  // no team, because it reads the removed OATS_TEAM_ID and not OATS_DEFAULT_TEAM_ID (1.17 reads the
+  // kernel's default; re-pin this when its mirror lands). An `aw` version problem depends on the machine.
+  assert.equal(out.result.status, "needs-configuration", JSON.stringify(out));
+  const reasons = out.result.problems.filter((p) => !/^aw /.test(p.message)).map((p) => [p.code, p.message.replace(/ at \S+:/, " at <deployment>:")]);
+  assert.deepEqual(reasons, [
+    ["needs-configuration", "no messaging root at <deployment>: run oats aweb setup there or set settings.oats.aweb.root"],
+    ["needs-configuration", "no team: set settings.oats.aweb.team or keep an active team at the aweb root"],
+  ], JSON.stringify(out));
 });
 
 test("the spawn preview's modules and inspect's capabilities list the setting keys each manifest DECLARES (names only); feature settings-declared", async (t) => {
