@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { teamsDocument, soulTeams } from '../renderer/teams-panel.mjs';
+import { teamsDocument, soulTeams, defaultTeamText } from '../renderer/teams-panel.mjs';
 import { teamRow } from '../renderer/team-rows.mjs';
 import { previewData } from '../renderer/spawn-preview-contract.mjs';
 import { workspaceStatusData } from '../deployment-data.mjs';
@@ -20,15 +20,21 @@ test('teams document: 0.29 unchanged; v2 drops primary/unmapped, adds left[] and
   const r29 = run('teams-initial');
   assert.deepEqual(teamsDocument(r29, 'messaging:teams'), r29.result, '0.29 as captured');
   const v2 = structuredClone(r29); delete v2.result.primary; delete v2.result.unmapped;
-  v2.result.defaultTeam = { team: v2.result.defaultTeam.team, source: 'deployment' };
+  v2.result.defaultTeam = { label: 'antares-oats', team: v2.result.defaultTeam.team, from: 'deployment' }; // the kernel's DefaultTeam (K1 @8dd82158)
   v2.result.left = [{ label: 'reviewers', team: 'northwind:reviewers', at: '2026-09-27T10:00:00Z', reason: 'no-longer-eligible' }];
   const d = teamsDocument(v2, 'messaging:teams');
   assert.ok(d, 'the v2 document is read, not blanked');
-  assert.deepEqual([d.primary, d.unmapped, d.left.length, d.defaultTeam.source], [null, [], 1, 'deployment']);
-  for (const source of ['soul']) { const s = structuredClone(v2); s.result.defaultTeam.source = source; assert.ok(teamsDocument(s, 'messaging:teams')); }
+  assert.deepEqual([d.primary, d.unmapped, d.left.length, d.defaultTeam.from], [null, [], 1, 'deployment']);
+  assert.match(defaultTeamText(d.defaultTeam), /this workspace's default on this computer$/);
+  const soul = structuredClone(v2); soul.result.defaultTeam.from = 'soul'; assert.ok(teamsDocument(soul, 'messaging:teams'));
+  const unmapped = structuredClone(v2); unmapped.result.defaultTeam.team = null;
+  assert.match(defaultTeamText(teamsDocument(unmapped, 'messaging:teams').defaultTeam), /^antares-oats \(no provider id yet\)/, 'an unmapped default names its label');
+  const none = structuredClone(v2); none.result.defaultTeam = null; assert.equal(teamsDocument(none, 'messaging:teams').defaultTeam, null, 'none configured');
+  assert.match(defaultTeamText(teamsDocument(r29, 'messaging:teams').defaultTeam), / · /, '0.29 words unchanged');
   // Still strict: bounded, well-formed, and an unknown key or source is refused.
   for (const change of [x => { x.result.left = Array.from({ length: 21 }, () => x.result.left[0]); }, x => { x.result.left[0].reason = ''; },
-    x => { x.result.left[0].extra = 1; }, x => { x.result.surprise = true; }, x => { x.result.defaultTeam.source = 'guess'; }, x => { delete x.result.joined; }]) {
+    x => { x.result.left[0].extra = 1; }, x => { x.result.surprise = true; }, x => { x.result.defaultTeam.from = 'guess'; }, x => { delete x.result.joined; },
+    x => { x.result.defaultTeam = { team: 't', source: 'deployment' }; }, x => { x.result.defaultTeam.extra = 1; }, x => { x.result.defaultTeam.label = '-bad'; }]) {
     const bad = structuredClone(v2); change(bad); assert.equal(teamsDocument(bad, 'messaging:teams'), null);
   }
 });
