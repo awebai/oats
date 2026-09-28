@@ -330,6 +330,51 @@ test("0.25.5 launch-hook meta is persisted: after a successful start, each capab
   assert.deepEqual(after.capabilityMeta["test.renew"], { grant: { id: "grant-renewed-1" } }, "failed launch → record untouched");
 });
 
+test("0.30 launch-hook warnings: session start and restart answer them (JSON `warnings`, human output on stderr) and append each as a launch-warning event; a hook without warnings adds nothing", async () => {
+  const name = "dev-warned";
+  const home = homeOf(name, "renew");
+  await makeHome(name, { soul: "renew", command: renderFor(home, name, join(binDir, "polite")), launch: recipeFor(home, name, { executable: join(binDir, "polite") }) });
+  const meta0 = readJson(join(home, "instance.json"));
+  const captured = { capability: "test.renew", layer: null, level: home, settings: {}, trust: { trusted: true, integrity: null }, launch: {}, env: [] };
+  write(join(home, "instance.json"), JSON.stringify({ ...meta0, launch: { ...meta0.launch, hooks: { launch: {}, env: {}, contributions: [captured] } }, capabilityRuntime: [{ id: "test.renew", layer: null, level: repo, settings: {}, trust: { trusted: true, integrity: null }, hooks: { launch: "bin/launch.mjs" }, environment: [] }] }));
+  const hook = (answer) => write(join(home, "answer.json"), JSON.stringify(answer));
+  const run = (verb, json = true) => spawnSync(process.execPath, [CLI, "session", verb, "--home", home, ...(json ? ["--json"] : [])], { encoding: "utf8", env: env() });
+  const warningEvents = () => readFileSync(join(home, ".oats-events.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((e) => e.kind === "launch-warning");
+  hook({ warning: "grant expires in 2 days; renew it" });
+  tmux("new-window", "-t", `${session}:`, "-n", name, "-c", home, "exec /bin/sh");
+  await waitFor(() => inspectInstanceSession(home).state === "shell", "idle pane shell");
+  // start --json
+  let r = run("start"), out = JSON.parse(r.stdout.trim());
+  assert.equal(out.ok, true, r.stdout + r.stderr);
+  assert.deepEqual(out.result.warnings, ["grant expires in 2 days; renew it"]);
+  assert.ok(await waitFor(() => runningPid(home) !== null));
+  assert.deepEqual(warningEvents().map((e) => [e.producer, e.data]), [["kernel", { message: "grant expires in 2 days; renew it" }]]);
+  // restart --json
+  r = run("restart"); out = JSON.parse(r.stdout.trim());
+  assert.equal(out.ok, true, r.stdout + r.stderr);
+  assert.deepEqual(out.result.warnings, ["grant expires in 2 days; renew it"]);
+  assert.ok(await waitFor(() => runningPid(home) !== null));
+  assert.equal(warningEvents().length, 2);
+  // Human output: the result, and each warning on stderr as spawn prints it.
+  r = run("restart", false);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual(JSON.parse(r.stdout).warnings, ["grant expires in 2 days; renew it"], "stdout stays one JSON document");
+  assert.match(r.stderr, /^ {2}WARNING: grant expires in 2 days; renew it$/m);
+  assert.ok(await waitFor(() => runningPid(home) !== null));
+  assert.equal(warningEvents().length, 3);
+  // A hook with no warning: an empty list, no event, nothing printed.
+  hook({});
+  r = run("restart"); out = JSON.parse(r.stdout.trim());
+  assert.equal(out.ok, true, r.stdout + r.stderr);
+  assert.deepEqual(out.result.warnings, []);
+  assert.ok(await waitFor(() => runningPid(home) !== null));
+  r = run("restart", false);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.doesNotMatch(r.stderr, /WARNING/);
+  assert.ok(await waitFor(() => runningPid(home) !== null));
+  assert.equal(warningEvents().length, 3, "no event for a hook without warnings");
+});
+
 test("a captured provider with no contribution at spawn still takes part (launch hook, conditional requirement); package probes run under the launch's effective environment, not the ambient one", async () => {
   // A wrapper that answers claude's plugin list only under the SELECTED environment; otherwise it is the polite harness.
   const wrapper = join(binDir, "claude-wrapper"); write(wrapper, `#!/bin/sh\nif [ "$1" = "plugin" ] && [ "$2" = "list" ]; then\n  if [ "$TEST_PROBE_TOKEN" = "selected" ]; then printf '[{"id":"chan@acme-marketplace","scope":"user","enabled":true}]'; else printf '[]'; fi\n  exit 0\nfi\nexec ${JSON.stringify(join(binDir, "polite"))} "$@"\n`); chmodSync(wrapper, 0o755);
