@@ -8,17 +8,19 @@
 const text = v => typeof v === 'string' && v ? v : null;
 const list = v => Array.isArray(v) ? v : [];
 const record = v => !!v && typeof v === 'object' && !Array.isArray(v);
-const REASONS = new Set(['host-unnamed', 'assigned-elsewhere', 'owner-mismatch']);
+// 0.30 adds `untrusted` (automations.trust): placed on this host, but oats-local.yaml does not admit it.
+const REASONS = new Set(['host-unnamed', 'assigned-elsewhere', 'owner-mismatch', 'untrusted']);
 /** The whitelisted template fields (§2.3): the only ones the kernel substitutes. */
 export const TASK_FIELDS = Object.freeze(['repo', 'number', 'url', 'event', 'headSha']);
 
 /** Which group a row belongs to, from the kernel's placement:
  * here: this computer runs it, or would but it is off / invalid here;
- * attention: named for this computer but it cannot run (owner-mismatch), or an invalid definition placed here;
+ * attention: named for this computer but it cannot run (owner-mismatch, untrusted), a reason this Desktop
+ *   does not know (the contract: it does not run here), or an invalid definition placed here;
  * elsewhere: another host, or this host has no name. */
 export function automationGroup(row) {
   if (row.reason === 'assigned-elsewhere' || row.reason === 'host-unnamed') return 'elsewhere';
-  if (row.reason === 'owner-mismatch') return 'attention';
+  if (row.reason === 'owner-mismatch' || row.reason === 'untrusted' || row.reason === 'other') return 'attention';
   if (row.invalid || row.unreadable) return 'attention';
   return 'here';
 }
@@ -50,7 +52,9 @@ export function automationRow(raw, kind) {
     origin: origin(raw.origin, qualifiedId),
     description: text(raw.description), owner: text(raw.owner), runsOn: text(raw.runsOn),
     runsHere: raw.runsHere === true,
-    reason: REASONS.has(raw.reason) ? raw.reason : null, reasonDetail: text(raw.reasonDetail),
+    // An unknown reason (a newer kernel) is kept as `other`: it does not run here, as sent.
+    reason: REASONS.has(raw.reason) ? raw.reason : text(raw.reason) ? 'other' : null, reasonDetail: text(raw.reasonDetail),
+    ...(text(raw.reason) && !REASONS.has(raw.reason) ? { reasonCode: raw.reason.slice(0, 64) } : {}),
     enabledHere: raw.enabledHere !== false, enabled: raw.enabled !== false,
     soul: soul(raw.soul), task: text(raw.task),
     on: kind === 'trigger' && record(raw.on) ? raw.on : null,
@@ -118,6 +122,8 @@ export function hostLogin(host, owner) {
 export function placementText(row, host) {
   if (row.origin.kind === 'local') return { label: 'This computer', tone: row.enabledHere ? 'ok' : 'muted', detail: 'Local: runs on this computer as its own gh login' };
   if (row.reason === 'owner-mismatch') return { label: 'Wrong account here', tone: 'warn', detail: row.reasonDetail };
+  if (row.reason === 'untrusted') return { label: 'Not trusted here', tone: 'warn', detail: row.reasonDetail };
+  if (row.reason === 'other') return { label: "Doesn't run here", tone: 'warn', detail: row.reasonDetail || `reason: ${row.reasonCode}` };
   if (row.reason === 'host-unnamed') return { label: row.runsOn || 'Not named', tone: 'muted', detail: 'This computer has no host name' };
   if (row.reason === 'assigned-elsewhere') return { label: row.runsOn || 'Another host', tone: 'muted', detail: row.reasonDetail };
   return { label: 'This computer', tone: row.enabledHere ? 'ok' : 'muted', detail: host?.name ? `This computer is ${host.name}` : null };

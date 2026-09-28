@@ -253,7 +253,11 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     }
     if (tab === 'sources') {
       // The kernel's workspace warnings, verbatim; a team's warning is said on the Teams tab.
-      for (const warning of list(s?.warnings)) if (typeof warning?.message === 'string' && warning.message && !teamWarning(warning)) notes.append(node('p', warning.message, 'catalog-note warn'));
+      for (const warning of list(s?.warnings)) if (typeof warning?.message === 'string' && warning.message && !teamWarning(warning)) {
+        notes.append(node('p', warning.message, 'catalog-note warn'));
+        // A warning's remedy (0.30 automation-untrusted: the oats-local.yaml line to add), verbatim.
+        if (typeof warning.remedy === 'string' && warning.remedy) notes.append(node('p', warning.remedy, 'catalog-note catalog-remedy'));
+      }
       renderSetup(body, { status: s, instances, souls, cli: cliStatus(), view: setupView, selected: setupMember,
         onSelect: key => selectMember(key), onOpenRepo: openRepo, onOpenPackages: openPackages, openExternal: url => ctx.openExternal?.(url) }); return;
     }

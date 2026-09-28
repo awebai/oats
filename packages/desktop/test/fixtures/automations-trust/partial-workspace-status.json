@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "workspaceStatusApi": 1,
+    "workspace": {
+      "name": "acme",
+      "key": "local//fixture/base/remotes/ws.git",
+      "url": "/fixture/base/remotes/ws.git",
+      "commit": "57dcb6f2b7273ea4e2c185d40b4707230a0920d6",
+      "observedAt": "2026-09-28T23:46:34.128Z",
+      "local": "/fixture/base/deployment/oats-local.yaml",
+      "teams": [
+        {
+          "label": "global",
+          "team": null,
+          "description": "Fixture team"
+        }
+      ],
+      "file": {
+        "path": "oats-workspace.yaml",
+        "url": null
+      }
+    },
+    "members": [
+      {
+        "key": "local//fixture/base/remotes/ws.git",
+        "name": "ws",
+        "commit": "57dcb6f2b7273ea4e2c185d40b4707230a0920d6",
+        "confirmed": true,
+        "status": "confirmed",
+        "detail": null,
+        "souls": [
+          "reviewer"
+        ],
+        "capabilities": [],
+        "publishes": null,
+        "url": null,
+        "membershipFile": {
+          "path": "oats-membership.yaml",
+          "url": null
+        }
+      }
+    ],
+    "packages": [],
+    "declaredPackages": [],
+    "unsynced": [],
+    "stale": [],
+    "external": [],
+    "problems": [],
+    "warnings": [
+      {
+        "code": "automation-untrusted",
+        "kind": "schedule",
+        "id": "ws/nightly",
+        "message": "schedule ws/nightly is declared for this host (kb-host, as github.com/kb-bot) but not trusted here, so it does not run",
+        "remedy": "add the line \"- ws/nightly\" under automations: trust: in oats-local.yaml"
+      },
+      {
+        "code": "automation-trust-stale",
+        "entry": "ws/gone",
+        "message": "oats-local.yaml automations.trust names ws/gone, which is no workspace trigger or schedule; its member may not have synced yet"
+      }
+    ],
+    "automations": {
+      "host": "kb-host",
+      "snapshot": {
+        "takenAt": "2026-09-28T23:46:29.891Z",
+        "problems": 0
+      },
+      "rows": [
+        {
+          "kind": "trigger",
+          "id": "ws/kb-review",
+          "runsOn": "kb-host",
+          "owner": "github.com/kb-bot",
+          "runsHere": true,
+          "reason": null,
+          "enabledHere": true,
+          "origin": {
+            "kind": "workspace",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "path": "oats-triggers/kb-review.yaml",
+            "commit": "57dcb6f2b7273ea4e2c185d40b4707230a0920d6",
+            "url": null,
+            "localPath": "/fixture/base/deployment/ws/oats-triggers/kb-review.yaml"
+          }
+        },
+        {
+          "kind": "schedule",
+          "id": "ws/nightly",
+          "runsOn": "kb-host",
+          "owner": "github.com/kb-bot",
+          "runsHere": false,
+          "reason": "untrusted",
+          "enabledHere": true,
+          "origin": {
+            "kind": "workspace",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "path": "ops/nightly.oats-schedule.yaml",
+            "commit": "57dcb6f2b7273ea4e2c185d40b4707230a0920d6",
+            "url": null,
+            "localPath": "/fixture/base/deployment/ws/ops/nightly.oats-schedule.yaml"
+          }
+        }
+      ]
+    },
+    "defaults": {
+      "slots": {
+        "knowledge": "none",
+        "messaging": "none",
+        "tasks": "none"
+      },
+      "capabilities": []
+    },
+    "clones": [
+      {
+        "key": "local//fixture/base/remotes/ws.git",
+        "name": "ws",
+        "path": "/fixture/base/deployment/ws",
+        "rule": "convention"
+      }
+    ],
+    "disabledSouls": [],
+    "lock": {
+      "path": "/fixture/base/deployment/oats-lock.json",
+      "lockfileVersion": 3
+    }
+  }
+}
