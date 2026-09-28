@@ -1,6 +1,6 @@
 # Team model v2: the workspace defines teams and the default; souls declare which they may join
 
-Status: **Option B DECIDED by the human (Juan) 2026-09-27; awaiting the original designer's (Pepe's) confirmation** (the lead drafts; the messaging co-lead shapes it; the human confirms (a)–(c)). It supersedes the teams contract's model: the workspace/soul team labels, amendment K's default rule, "primary", and "joining is explicit". Kept from `2026-09-25-teams-contract.md`: live reconciliation and the provider's multi-identity receive.
+Status: **DECIDED 2026-09-27: Option B**, with opt-in joining at spawn and `defaults.byTeam` + the committed soul/membership `team` labels dropped. Decided by the human (Juan) and confirmed by the original designer (Pepe): *"Okay, I agree with the design. Let's go ahead and get it implemented."* Implementation is owned by the messaging co-lead; the lead reviews every PR (the lead drafts; the messaging co-lead shapes it; the human confirms (a)–(c)). It supersedes the teams contract's model: the workspace/soul team labels, amendment K's default rule, "primary", and "joining is explicit". Kept from `2026-09-25-teams-contract.md`: live reconciliation and the provider's multi-identity receive.
 
 ## The human's direction (2026-09-27, verbatim)
 
