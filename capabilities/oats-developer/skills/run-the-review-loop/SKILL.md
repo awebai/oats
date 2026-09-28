@@ -22,6 +22,17 @@ oats spawn code-reviewer --work attached --work-dir <the consolidated worktree> 
 Attached mode shares your worktree (so it can read the code and run the tests) and makes
 it your child. It must not edit the tree.
 
+## Pick a different model
+A reviewer on the same model as you tends to share your blind spots. Before spawning:
+1. **Your model:** your own launch record (`instance.json` → `launch.runtime` (the harness) and `launch.model`).
+2. **The reviewer's default:** `oats spawn code-reviewer --preview --json` → its harness and
+   model.
+3. **If they're the same model**, spawn the reviewer on another state-of-the-art model, on
+   another harness when you can: currently **Codex with Astra, Claude Code with Opus 5.5,
+   Fable, or the latest Grok**. Use a launch configuration this host defines
+   (`oats launch-config list`), or `--harness`/`--model`. If none is available, use the
+   default and say so in your handback.
+
 ## Brief it: context, not conclusions
 The brief (`review-brief.md`) contains **exactly**:
 1. **The goal** in two or three sentences: what the change is for.

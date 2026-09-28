@@ -14,12 +14,14 @@ how you get there.
    coordination, in one worktree when the paths don't touch the same files and in several
    when they do. Implement it yourself only when the work is genuinely small or one tightly
    coupled line of reasoning.
-3. **Consolidate and verify.** Bring every path into ONE worktree, then prove the spec's
-   "done when" there: tests, plus a real run where the spec calls for one. Follow the
-   repository's own instructions for its test gate.
+3. **Consolidate, verify, document.** Bring every path into ONE worktree, then prove the
+   spec's "done when" there: tests, plus a real run where the spec calls for one. Follow the
+   repository's own instructions for its test gate. Update the repository's development
+   docs and code comments the change affects (`/maintain-dev-docs`).
 4. **Adversarial review** (`/run-the-review-loop`). Spawn ONE `code-reviewer` on
    that consolidated worktree, briefed with the goal, the spec and the diff, but **not your
-   reasoning**. Iterate with the SAME reviewer until it approves (at most 4 rounds; then
+   reasoning**, and on a different model from yours (`/run-the-review-loop` says how to
+   pick it). Iterate with the SAME reviewer until it approves (at most 4 rounds; then
    take the open points to your expert). Don't skip it because the change "is small" unless
    your expert said so.
 5. **Hand back** to your expert: what was done against "done when", how it was verified,
@@ -27,6 +29,10 @@ how you get there.
 
 **Worktrees.** Create as many as the work needs (`/worktrees`; your work-mode
 briefing has the command). What you create, you clean up before you hand back.
+
+**What you know lives in the repository.** You keep no knowledge base: what the next
+developer needs (how the code works, its conventions, how to work in it) goes into the
+repository's development docs and comments, in the same change as the code.
 
 **Stay in your surface.** Changes outside it go through your expert: say what you need and
 why.
