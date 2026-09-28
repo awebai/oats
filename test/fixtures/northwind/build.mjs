@@ -613,7 +613,7 @@ if (cmd === "reindex") {
 }
 if (cmd === "spawn" && process.env.OATS_INSTANCE_HOME) {
   // Record the identity the kernel handed the hook (what a real provider keys durable state on).
-  (await import("node:fs")).writeFileSync(process.env.OATS_INSTANCE_HOME + "/.okf-hook-env.json", JSON.stringify({ OATS_SOUL: process.env.OATS_SOUL, OATS_SOUL_ID: process.env.OATS_SOUL_ID, OATS_AGENT: process.env.OATS_AGENT, OATS_TEAM_ID: process.env.OATS_TEAM_ID, OATS_TEAM_SCOPE: process.env.OATS_TEAM_SCOPE, OATS_TEAM_LABEL: process.env.OATS_TEAM_LABEL, OATS_WORKSPACE_NAME: process.env.OATS_WORKSPACE_NAME, OATS_WORKSPACE_KEY: process.env.OATS_WORKSPACE_KEY }));
+  (await import("node:fs")).writeFileSync(process.env.OATS_INSTANCE_HOME + "/.okf-hook-env.json", JSON.stringify({ OATS_SOUL: process.env.OATS_SOUL, OATS_SOUL_ID: process.env.OATS_SOUL_ID, OATS_AGENT: process.env.OATS_AGENT, OATS_TEAM_SCOPE: process.env.OATS_TEAM_SCOPE, OATS_DEFAULT_TEAM: process.env.OATS_DEFAULT_TEAM, OATS_DEFAULT_TEAM_ID: process.env.OATS_DEFAULT_TEAM_ID, OATS_DEFAULT_TEAM_FROM: process.env.OATS_DEFAULT_TEAM_FROM, OATS_TEAMS: process.env.OATS_TEAMS, OATS_TEAM_LABEL: process.env.OATS_TEAM_LABEL, OATS_TEAM_LABELS: process.env.OATS_TEAM_LABELS, OATS_TEAM_ID: process.env.OATS_TEAM_ID, OATS_WORKSPACE_NAME: process.env.OATS_WORKSPACE_NAME, OATS_WORKSPACE_KEY: process.env.OATS_WORKSPACE_KEY }));
 }
 `,
     ),

@@ -10,8 +10,7 @@ import {
   canonicalJson, composeCapabilities, manifestDefaultsPayload, mergePayload, parseVersion, payloadOrigins, refForKey, resolveSoul, revisionOf,
   satisfiesRange, skillsInListing,
 } from "../lib/resolve.mjs";
-// The teams-contract exports are reached through the namespace so this file also loads against a
-// resolver that predates them (the single-label pin below was checked against main's resolver).
+// Secondary exports (fromOfVia, KERNEL_VERSION, kernelCompatibility) are reached through the namespace.
 import * as resolveLib from "../lib/resolve.mjs";
 
 /* ───────────────────────────── identities ─────────────────────────────── */
@@ -93,12 +92,12 @@ const soulDef = (name, extra = {}) => ({ schemaVersion: 2, name, description: `$
 const manifest = (capability, extra = {}) => ({ capability, version: "0.0.0-workspace", description: `${capability} capability`, ...extra });
 
 const M = {
-  releaseTooling: manifest("nw-release-tooling", { team: "engineering", skills: ["skills/cut-release"], inject: "injects/release-policy.md", commands: { cut: "bin/nw-release.mjs cut" } }),
+  releaseTooling: manifest("nw-release-tooling", { skills: ["skills/cut-release"], inject: "injects/release-policy.md", commands: { cut: "bin/nw-release.mjs cut" } }),
   houseStyle: manifest("nw-house-style", { inject: "injects/house-style.md" }),
   secrets: manifest("nw-secrets", { private: true, skills: ["skills/rotate-secrets"] }),
-  warehouse: manifest("nw-warehouse-access", { team: "engineering", skills: ["skills/query-warehouse"], commands: { query: "bin/nw-wh.mjs query" } }),
-  brandVoice: manifest("nw-brand-voice", { team: "marketing", inject: "injects/brand-voice.md", skills: ["skills/tone-check"] }),
-  toolsDev: manifest("nw-tools-dev", { team: "engineering", skills: ["skills/package-conventions"], inject: "injects/nw-tools-dev.md" }),
+  warehouse: manifest("nw-warehouse-access", { skills: ["skills/query-warehouse"], commands: { query: "bin/nw-wh.mjs query" } }),
+  brandVoice: manifest("nw-brand-voice", { inject: "injects/brand-voice.md", skills: ["skills/tone-check"] }),
+  toolsDev: manifest("nw-tools-dev", { skills: ["skills/package-conventions"], inject: "injects/nw-tools-dev.md" }),
   altOkf: manifest("nw-notes", { layer: "knowledge", skills: ["skills/notes"] }),
   chat: manifest("nw-chat", { layer: "messaging", skills: ["skills/chat"] }),
   // Package-tier manifests (read over the remote from oats-package/)
@@ -195,10 +194,6 @@ function workspaceFile(overrides = {}) {
       knowledge: { "oats.okf": { from: "package" } },
       messaging: "none",
       tasks: "none",
-      byTeam: {
-        engineering: { capabilities: { "nw-release-tooling": { from: K.agents } } },
-        marketing: { capabilities: { "nw-brand-voice": { from: K.marketing } } },
-      },
     },
     stores: { org: "git:github.com/northwind/knowledge" },
     messaging: { private: "per-human", channels: ["northwind-eng", "northwind-mkt"] },
@@ -207,30 +202,30 @@ function workspaceFile(overrides = {}) {
   };
 }
 
-const soulEntry = (repoKey, commit, team, definition, path = `souls/${definition.name}`) => ({ name: definition.name, path, repoKey, commit, team, private: definition.private === true, definition });
-const capEntry = (repoKey, commit, m, team = m.team ?? null) => ({ name: m.capability, path: `capabilities/${m.capability}`, repoKey, commit, team, private: m.private === true, manifest: m });
+const soulEntry = (repoKey, commit, definition, path = `souls/${definition.name}`) => ({ name: definition.name, path, repoKey, commit, private: definition.private === true, definition });
+const capEntry = (repoKey, commit, m) => ({ name: m.capability, path: `capabilities/${m.capability}`, repoKey, commit, private: m.private === true, manifest: m });
 
 /** discoverWorkspace(...)-shaped picture. `souls` lets a test add/replace soul definitions in agents. */
 function discovery({ workspace = workspaceFile(), souls = {}, agentsCaps = null } = {}) {
   const agentsSouls = {
-    "release-manager": soulDef("release-manager", { work: "worktree", team: "engineering", capabilities: { "nw-release-tooling": { from: "here" }, "nw-deploy": { from: "package" } }, knowledge: { owns: "release-manager", reads: ["platform-engineer"] }, messaging: { channels: ["northwind-eng"] } }),
+    "release-manager": soulDef("release-manager", { work: "worktree", capabilities: { "nw-release-tooling": { from: "here" }, "nw-deploy": { from: "package" } }, knowledge: { owns: "release-manager", reads: ["platform-engineer"] }, messaging: { channels: ["northwind-eng"] } }),
     "support-triager": soulDef("support-triager", { capabilities: { "nw-house-style": "off" }, knowledge: "none" }),
     ...souls,
   };
-  const row = (key, commit, team, soulsList, caps, publishes = null) => ({ key, commit, confirmed: true, team, souls: soulsList, capabilities: caps, publishes });
+  const row = (key, commit, soulsList, caps, publishes = null) => ({ key, commit, confirmed: true, souls: soulsList, capabilities: caps, publishes });
   return {
     workspace, key: K.agents, url: parseRepoRef(R.agents).url, commit: C.agents, observedAt: "2026-09-23T10:00:00.000Z", local: null,
     members: [
-      row(K.agents, C.agents, "global",
-        Object.values(agentsSouls).map((d) => soulEntry(K.agents, C.agents, d.team ?? "global", d)),
-        agentsCaps ?? [capEntry(K.agents, C.agents, M.releaseTooling), capEntry(K.agents, C.agents, M.houseStyle, "global"), capEntry(K.agents, C.agents, M.secrets, "global"), capEntry(K.agents, C.agents, M.chat, "global"), capEntry(K.agents, C.agents, M.altOkf, "global")]),
-      row(K.platform, C.platform, "engineering", [soulEntry(K.platform, C.platform, "engineering", soulDef("platform-engineer", { team: "engineering" }))], []),
-      row(K.data, C.data, "engineering", [soulEntry(K.data, C.data, "engineering", soulDef("data-analyst", { capabilities: { "nw-warehouse-access": { from: "here" } } }))], [capEntry(K.data, C.data, M.warehouse)]),
-      row(K.marketing, C.marketing, "marketing", [soulEntry(K.marketing, C.marketing, "marketing", soulDef("campaign-writer", { capabilities: { "nw-brand-voice": { from: "here" } } }))], [capEntry(K.marketing, C.marketing, M.brandVoice)]),
-      { key: K.billing, commit: null, confirmed: false, reason: "no-backlink", detail: `${K.billing} has no oats-membership.yaml`, team: null, souls: [], capabilities: [], publishes: null },
-      row(K.tools, C.tools, "engineering", [soulEntry(K.tools, C.tools, "engineering", soulDef("tools-expert", { capabilities: { "nw-tools-dev": { from: "here" } } }))], [capEntry(K.tools, C.tools, M.toolsDev)], { package: "nw.tools", version: "0.4.0" }),
+      row(K.agents, C.agents,
+        Object.values(agentsSouls).map((d) => soulEntry(K.agents, C.agents, d)),
+        agentsCaps ?? [capEntry(K.agents, C.agents, M.releaseTooling), capEntry(K.agents, C.agents, M.houseStyle), capEntry(K.agents, C.agents, M.secrets), capEntry(K.agents, C.agents, M.chat), capEntry(K.agents, C.agents, M.altOkf)]),
+      row(K.platform, C.platform, [soulEntry(K.platform, C.platform, soulDef("platform-engineer"))], []),
+      row(K.data, C.data, [soulEntry(K.data, C.data, soulDef("data-analyst", { capabilities: { "nw-warehouse-access": { from: "here" } } }))], [capEntry(K.data, C.data, M.warehouse)]),
+      row(K.marketing, C.marketing, [soulEntry(K.marketing, C.marketing, soulDef("campaign-writer", { capabilities: { "nw-brand-voice": { from: "here" } } }))], [capEntry(K.marketing, C.marketing, M.brandVoice)]),
+      { key: K.billing, commit: null, confirmed: false, reason: "no-backlink", detail: `${K.billing} has no oats-membership.yaml`, souls: [], capabilities: [], publishes: null },
+      row(K.tools, C.tools, [soulEntry(K.tools, C.tools, soulDef("tools-expert", { capabilities: { "nw-tools-dev": { from: "here" } } }))], [capEntry(K.tools, C.tools, M.toolsDev)], { package: "nw.tools", version: "0.4.0" }),
     ],
-    external: [{ source: `${R.experts}@${C.experts}`, key: K.experts, commit: C.experts, soul: soulEntry(K.experts, C.experts, null, soulDef("security-reviewer", { capabilities: {} })) }],
+    external: [{ source: `${R.experts}@${C.experts}`, key: K.experts, commit: C.experts, soul: soulEntry(K.experts, C.experts, soulDef("security-reviewer", { capabilities: {} })) }],
     problems: [],
   };
 }
@@ -250,11 +245,13 @@ const opts = (extra = {}) => ({ lock: lockV3(), catalog, remote: fakeRemote(remo
 
 /* ───────────────────────────── happy path ─────────────────────────────── */
 
-test("happy path: release-manager = workspace defaults ⊕ engineering team default ⊕ soul (here + package), slots filled", async () => {
+test("happy path: release-manager = workspace defaults ⊕ soul (here + package), slots filled", async () => {
   const d = discovery();
   const r = await resolveSoul(d, findSoul(d, "release-manager"), opts());
   assert.equal(r.resolutionApi, 1);
-  assert.deepEqual(r.soul, { name: "release-manager", repoKey: K.agents, commit: C.agents, team: "engineering", path: "souls/release-manager" });
+  assert.deepEqual(r.soul, { name: "release-manager", repoKey: K.agents, commit: C.agents, path: "souls/release-manager" });
+  // Team model v2: no team is configured here (no oats-local.yaml teams) — none, no default.
+  assert.deepEqual([r.teams, r.defaultTeam], [[], null]);
   assert.deepEqual(r.modules.map((m) => m.name), ["nw-deploy", "nw-house-style", "nw-release-tooling", "oats.core", "oats.okf"], "sorted by name");
   const byName = Object.fromEntries(r.modules.map((m) => [m.name, m]));
   // member modules: latest commit of the confirmed member
@@ -304,10 +301,10 @@ test("`off` removes a workspace default; `none` empties the slot instead of the 
   const r = await resolveSoul(d, findSoul(d, "support-triager"), opts());
   assert.deepEqual(r.modules.map((m) => m.name), ["oats.core"], "nw-house-style is off, knowledge none → no oats.okf");
   assert.deepEqual(r.slots, { knowledge: null, messaging: null, tasks: null });
-  assert.equal(r.soul.team, "global", "the repo's default team applies");
+  assert.equal("team" in r.soul, false, "a soul carries no team (team membership is local since 0.30)");
 });
 
-test("team defaults: marketing byTeam adds nw-brand-voice; engineering byTeam does not leak to marketing", async () => {
+test("no team composes anything (0.30): campaign-writer gets its own nw-brand-voice; release-manager's tooling does not leak to it", async () => {
   const d = discovery();
   const r = await resolveSoul(d, findSoul(d, "campaign-writer"), opts());
   assert.deepEqual(r.modules.map((m) => m.name), ["nw-brand-voice", "nw-house-style", "oats.core", "oats.okf"]);
@@ -315,10 +312,10 @@ test("team defaults: marketing byTeam adds nw-brand-voice; engineering byTeam do
   assert.ok(!r.modules.some((m) => m.name === "nw-release-tooling"));
 });
 
-test("a soul may add a team default of another team explicitly and override a default's `from`", async () => {
-  const d = discovery({ souls: { "release-manager": soulDef("release-manager", { team: "engineering", capabilities: { "nw-brand-voice": { from: K.marketing }, "nw-warehouse-access": { from: K.data } } }) } });
+test("a soul may add another member's capability explicitly", async () => {
+  const d = discovery({ souls: { "release-manager": soulDef("release-manager", { capabilities: { "nw-brand-voice": { from: K.marketing }, "nw-warehouse-access": { from: K.data } } }) } });
   const r = await resolveSoul(d, findSoul(d, "release-manager"), opts());
-  assert.deepEqual(r.modules.map((m) => m.name), ["nw-brand-voice", "nw-house-style", "nw-release-tooling", "nw-warehouse-access", "oats.core", "oats.okf"]);
+  assert.deepEqual(r.modules.map((m) => m.name), ["nw-brand-voice", "nw-house-style", "nw-warehouse-access", "oats.core", "oats.okf"]);
 });
 
 test("from:here resolves to the soul's own repo (data-analyst → northwind/data)", async () => {
@@ -331,15 +328,15 @@ test("from:here resolves to the soul's own repo (data-analyst → northwind/data
 
 test("composeCapabilities: order and `off` semantics, soul wins", () => {
   const ws = workspaceFile();
-  const rows = composeCapabilities(ws, { capabilities: { "nw-release-tooling": { from: "here" }, "oats.core": "off" } }, { team: "engineering" });
+  const rows = composeCapabilities(ws, { capabilities: { "nw-release-tooling": { from: "here" }, "oats.core": "off" } });
   assert.deepEqual(rows, [
     { name: "nw-house-style", from: K.agents, via: "defaults.capabilities" },
     { name: "nw-release-tooling", from: "here", via: "soul" },
     { name: "oats.okf", from: "package", via: "defaults.knowledge" },
   ]);
-  // byTeam `off` removes a workspace default for every soul of the team
-  const ws2 = workspaceFile({ defaults: { ...ws.defaults, byTeam: { engineering: { capabilities: { "nw-house-style": "off" } } } } });
-  assert.deepEqual(composeCapabilities(ws2, { capabilities: {} }, { team: "engineering" }).map((r) => r.name), ["oats.core", "oats.okf"]);
+  // 0.30: a team label composes nothing — an in-memory defaults.byTeam (refused by validation) is never read
+  const ws2 = workspaceFile({ defaults: { ...ws.defaults, byTeam: { engineering: { capabilities: { "nw-house-style": "off", x: { from: K.agents } } } } } });
+  assert.deepEqual(composeCapabilities(ws2, { capabilities: {} }).map((r) => r.name), ["nw-house-style", "oats.core", "oats.okf"]);
   // no workspace (standalone) → only the soul's own
   assert.deepEqual(composeCapabilities(null, { capabilities: { x: { from: "here" } } }).map((r) => r.name), ["x"]);
 });
@@ -481,7 +478,7 @@ test("E_SKILL_DUPLICATE names both modules", async () => {
   const repos = remoteRepos();
   // give nw-warehouse-access a second skill dir named like nw-release-tooling's
   repos[K.data][C.data]["capabilities/nw-warehouse-access/skills/cut-release/SKILL.md"] = skillDoc("cut-release");
-  const d = discovery({ souls: { s: soulDef("s", { team: "engineering", capabilities: { "nw-warehouse-access": { from: K.data } } }) } });
+  const d = discovery({ souls: { s: soulDef("s", { capabilities: { "nw-release-tooling": { from: K.agents }, "nw-warehouse-access": { from: K.data } } }) } });
   d.members[2].capabilities[0].manifest = { ...M.warehouse, skills: ["skills/query-warehouse", "skills/cut-release"] };
   await rejectsCode(resolveSoul(d, findSoul(d, "s"), opts({ remote: fakeRemote(repos) })), "E_SKILL_DUPLICATE", (e) => {
     assert.equal(e.details.name, "cut-release");
@@ -690,7 +687,7 @@ test("satisfiesRange: >=, ^, ~, exact, partial, *, AND, ||, prereleases (no depe
 
 test("standalone discovery: from:here resolves against the soul's own repo; defaults do not apply", async () => {
   // standaloneRepo(...) output for northwind/data whose workspace cannot be read
-  const enumeration = { key: K.data, commit: C.data, membership: { schemaVersion: 2, workspace: R.agents, team: "engineering" }, souls: [soulEntry(K.data, C.data, "engineering", soulDef("data-analyst", { capabilities: { "nw-warehouse-access": { from: "here" }, "nw-house-style": { from: K.agents } } }))], capabilities: [capEntry(K.data, C.data, M.warehouse)], publishes: null, problems: [] };
+  const enumeration = { key: K.data, commit: C.data, membership: { schemaVersion: 2, workspace: R.agents }, souls: [soulEntry(K.data, C.data, soulDef("data-analyst", { capabilities: { "nw-warehouse-access": { from: "here" }, "nw-house-style": { from: K.agents } } }))], capabilities: [capEntry(K.data, C.data, M.warehouse)], publishes: null, problems: [] };
   const sd = standaloneRepo(R.data, C.data, enumeration);
   assert.equal(sd.standalone, true);
   const r = await resolveSoul(sd, sd.members[0].souls[0], opts());
@@ -700,43 +697,47 @@ test("standalone discovery: from:here resolves against the soul's own repo; defa
 });
 
 test("decision 25: standalone `oats.core: off` opts out; standalone without a lock is E_PACKAGE_UNLOCKED, not a silent hollow spawn", async () => {
-  const off = { key: K.data, commit: C.data, membership: null, souls: [soulEntry(K.data, C.data, null, soulDef("lone", { capabilities: { "oats.core": "off", "nw-warehouse-access": { from: "here" } } }))], capabilities: [capEntry(K.data, C.data, M.warehouse)], problems: [] };
+  const off = { key: K.data, commit: C.data, membership: null, souls: [soulEntry(K.data, C.data, soulDef("lone", { capabilities: { "oats.core": "off", "nw-warehouse-access": { from: "here" } } }))], capabilities: [capEntry(K.data, C.data, M.warehouse)], problems: [] };
   const sd = standaloneRepo(R.data, C.data, off);
   const r = await resolveSoul(sd, sd.members[0].souls[0], opts());
   assert.deepEqual(r.modules.map((m) => m.name), ["nw-warehouse-access"]);
-  const on = { ...off, souls: [soulEntry(K.data, C.data, null, soulDef("lone", { capabilities: { "nw-warehouse-access": { from: "here" } } }))] };
+  const on = { ...off, souls: [soulEntry(K.data, C.data, soulDef("lone", { capabilities: { "nw-warehouse-access": { from: "here" } } }))] };
   const sd2 = standaloneRepo(R.data, C.data, on);
   const err = await resolveSoul(sd2, sd2.members[0].souls[0], opts({ lock: null })).then(() => null, (e) => e);
   assert.ok(err && /^E_PACKAGE_/.test(err.code), `a missing lock refuses with a package error, got ${err?.code}`);
 });
 
-test("decision 23 + teams amendment K: byTeam is stripped and NEVER merged into the provider's settings (the primary's included); each label's base ⊕ byTeam[label] is only in teams[].payload; a host team still reaches settings", async () => {
+test("team model v2: teams are never settings — the messaging payload is base ⊕ soul ⊕ host ⊕ spawn; teams/defaultTeam come from the committed teams and oats-local.yaml, outside every fingerprint", async () => {
   const ws = workspaceFile();
-  ws.teams = { ...ws.teams, cloud: { description: "hosted" } };
+  ws.teams = { ...ws.teams, engineering: { description: "Platform + data", team: "aweb:example.oss" } };
   ws.defaults = { ...ws.defaults, messaging: { "nw-chat": { from: K.agents } } };
-  ws.messaging = { private: "per-human", byTeam: { engineering: { team: "aweb:example.oss", channels: ["eng"] }, cloud: { team: "aweb:example.cloud" } } };
-  const d = discovery({ workspace: ws, souls: { hosted: soulDef("hosted", { team: "cloud" }), untagged: soulDef("untagged", {}) } });
-  const rm = await resolveSoul(d, findSoul(d, "release-manager"), opts());
-  // base ⊕ the soul's own messaging payload: the mapped primary (engineering) contributes NOTHING to settings…
-  assert.deepEqual(rm.payloads["nw-chat"], { private: "per-human", channels: ["northwind-eng"] });
-  assert.equal(Object.values(rm.payloadOrigins["nw-chat"]).some((o) => o.kind === "workspace-team"), false, "no byTeam origin row");
-  // …its payload is the eligible team's, beside the settings.
-  assert.deepEqual(rm.teams[0], { label: "engineering", team: "aweb:example.oss", mapped: true, payload: { private: "per-human", team: "aweb:example.oss", channels: ["eng"] } });
-  const hosted = await resolveSoul(d, findSoul(d, "hosted"), opts());
-  assert.deepEqual(hosted.payloads["nw-chat"], { private: "per-human" }, "the mapped cloud team is not in settings");
-  assert.equal(hosted.teams[0].payload.team, "aweb:example.cloud");
-  const plain = await resolveSoul(d, findSoul(d, "untagged"), opts());
-  assert.deepEqual(plain.payloads["nw-chat"], { private: "per-human" }, "no team → base only");
-  for (const r of [rm, hosted, plain]) assert.equal("byTeam" in r.payloads["nw-chat"], false);
-  // The team a HOST sets still reaches settings.team (→ OATS_TEAM_ID), whatever the label maps.
-  const hostSet = await resolveSoul(d, findSoul(d, "hosted"), opts({ local: { schemaVersion: 2, settings: { "nw-chat": { team: "aweb:me.default" } } } }));
-  assert.equal(hostSet.payloads["nw-chat"].team, "aweb:me.default");
+  ws.messaging = { private: "per-human" };
+  const local = { schemaVersion: 2, workspace: R.agents, teams: { mine: { team: "aweb:me.default" } }, defaultTeam: "mine",
+    souls: { teams: { "*": ["engineering"], "release-manager": ["marketing"] }, default: { "release-manager": "engineering" } } };
+  const d = discovery({ workspace: ws });
+  const rm = await resolveSoul(d, findSoul(d, "release-manager"), opts({ local }));
+  assert.deepEqual(rm.payloads["nw-chat"], { private: "per-human", channels: ["northwind-eng"] }, "no team in the settings");
+  assert.deepEqual(rm.defaultTeam, { label: "engineering", team: "aweb:example.oss", from: "soul" });
+  assert.deepEqual(rm.teams, [{ label: "engineering", team: "aweb:example.oss", default: true, from: "shared" }, { label: "marketing", team: null, default: false, from: "shared" }],
+    "default first, then by label; the unmapped shared team reported (team null); the deployment default is not this soul's");
+  const triager = await resolveSoul(d, findSoul(d, "support-triager"), opts({ local }));
+  assert.deepEqual(triager.defaultTeam, { label: "mine", team: "aweb:me.default", from: "deployment" });
+  assert.deepEqual(triager.teams.map((t) => [t.label, t.from]), [["mine", "local"], ["engineering", "shared"]]);
+  // Teams are deployment-local state, not composition: no fingerprint moves with them.
+  const bare = await resolveSoul(d, findSoul(d, "support-triager"), opts());
+  assert.deepEqual([bare.teams, bare.defaultTeam], [[], null]);
+  assert.equal(bare.revision, triager.revision);
+  // A team a HOST sets as a provider setting is an opaque setting like any other (the provider's business).
+  const hostSet = await resolveSoul(d, findSoul(d, "support-triager"), opts({ local: { ...local, settings: { "nw-chat": { team: "aweb:me.other" } } } }));
+  assert.equal(hostSet.payloads["nw-chat"].team, "aweb:me.other");
   assert.equal(hostSet.payloadOrigins["nw-chat"]["/team"].kind, "host");
-  assert.equal(hostSet.teams[0].payload.team, "aweb:example.cloud", "the label's own payload is untouched");
-  // A byTeam entry is still validated where it would be delivered: a nested byTeam is refused.
-  const bad = structuredClone(ws); bad.messaging.byTeam.cloud = { team: "aweb:x", byTeam: {} };
-  const d2 = discovery({ workspace: bad, souls: { hosted: soulDef("hosted", { team: "cloud" }) } });
-  await rejectsCode(resolveSoul(d2, findSoul(d2, "hosted"), opts()), "E_WORKSPACE_SCHEMA");
+  // An undeclared label, or a soul default outside its teams, refuses the soul.
+  await rejectsCode(resolveSoul(d, findSoul(d, "support-triager"), opts({ local: { ...local, defaultTeam: "ghost" } })), "E_TEAM_UNKNOWN", (e) => assert.deepEqual(e.details, { label: "ghost", at: "oats-local.yaml#/defaultTeam" }));
+  await rejectsCode(resolveSoul(d, findSoul(d, "support-triager"), opts({ local: { ...local, souls: { default: { "support-triager": "marketing" } } } })), "E_TEAM_NOT_ELIGIBLE", (e) => assert.deepEqual([e.details.soul, e.details.label], ["support-triager", "marketing"]));
+  // A byTeam left in the workspace's messaging payload is refused where it would reach the provider (removed in 0.30).
+  const bad = structuredClone(ws); bad.messaging.byTeam = { engineering: { channels: ["eng"] } };
+  const d2 = discovery({ workspace: bad });
+  await rejectsCode(resolveSoul(d2, findSoul(d2, "release-manager"), opts()), "E_WORKSPACE_SCHEMA", (e) => { assert.equal(e.details.reason, "removed-key"); assert.equal(e.details.path, "/messaging/byTeam"); });
 });
 
 test("refForKey round-trips hosted and local keys through parseRepoRef", () => {
@@ -775,14 +776,14 @@ test("HIGH: a `__proto__` payload key (yaml/JSON produce it as an own key) is re
 
 test("MED: the soul must be one discovery listed — unconfirmed member → E_MEMBERSHIP_UNCONFIRMED; unknown repo → E_NOT_A_MEMBER; stale entry → stale", async () => {
   const d = discovery();
-  const rogue = soulEntry(K.billing, null, null, soulDef("rogue"));
+  const rogue = soulEntry(K.billing, null, soulDef("rogue"));
   await rejectsCode(resolveSoul(d, rogue, opts()), "E_MEMBERSHIP_UNCONFIRMED", (e) => { assert.equal(e.details.repoKey, K.billing); assert.equal(e.details.reason, "no-backlink"); });
-  const fabricated = soulEntry(K.stranger, OID("7"), "engineering", soulDef("ghost"));
+  const fabricated = soulEntry(K.stranger, OID("7"), soulDef("ghost"));
   await rejectsCode(resolveSoul(d, fabricated, opts()), "E_NOT_A_MEMBER", (e) => assert.equal(e.details.reason, "not-listed"));
   // a confirmed member that does not carry this soul at this commit (fabricated name or another observation)
-  const stale = soulEntry(K.agents, OID("5"), "engineering", soulDef("release-manager"));
+  const stale = soulEntry(K.agents, OID("5"), soulDef("release-manager"));
   await rejectsCode(resolveSoul(d, stale, opts()), "E_MEMBERSHIP_UNCONFIRMED", (e) => assert.equal(e.details.reason, "stale"));
-  const notThere = soulEntry(K.agents, C.agents, "engineering", soulDef("invented"));
+  const notThere = soulEntry(K.agents, C.agents, soulDef("invented"));
   await rejectsCode(resolveSoul(d, notThere, opts()), "E_MEMBERSHIP_UNCONFIRMED", (e) => assert.equal(e.details.reason, "stale"));
   // external souls and member souls pass the gate as before
   assert.ok(await resolveSoul(d, findSoul(d, "security-reviewer"), opts()));
@@ -791,7 +792,7 @@ test("MED: the soul must be one discovery listed — unconfirmed member → E_ME
 
 test("MED: a slot default must be a capability of THAT layer — no layer / wrong layer → E_SLOT_CONFLICT layer-mismatch", async () => {
   const noLayer = { ...M.altOkf }; delete noLayer.layer;
-  const caps = (notes) => [capEntry(K.agents, C.agents, M.releaseTooling), capEntry(K.agents, C.agents, M.houseStyle, "global"), capEntry(K.agents, C.agents, notes, "global")];
+  const caps = (notes) => [capEntry(K.agents, C.agents, M.releaseTooling), capEntry(K.agents, C.agents, M.houseStyle), capEntry(K.agents, C.agents, notes)];
   const ws = workspaceFile({ defaults: { ...workspaceFile().defaults, knowledge: { "nw-notes": { from: K.agents } } } });
   const d1 = discovery({ workspace: ws, agentsCaps: caps(noLayer) });
   await rejectsCode(resolveSoul(d1, findSoul(d1, "release-manager"), opts()), "E_SLOT_CONFLICT", (e) => { assert.equal(e.details.reason, "layer-mismatch"); assert.equal(e.details.slot, "knowledge"); assert.equal(e.details.layer, null); });
@@ -818,7 +819,6 @@ test("MED: compatibility floors: an unversioned package (git:<repo>@<OID>, even 
 
 test("LOW: `from: here` in a WORKSPACE default (any tier) is E_WORKSPACE_SCHEMA; in a soul it is fine", async () => {
   assert.throws(() => composeCapabilities(workspaceFile({ defaults: { capabilities: { "nw-house-style": { from: "here" } } } }), {}), (e) => e.code === "E_WORKSPACE_SCHEMA" && e.details.path === "/defaults/capabilities/nw-house-style/from");
-  assert.throws(() => composeCapabilities(workspaceFile({ defaults: { byTeam: { engineering: { capabilities: { x: { from: "here" } } } } } }), {}, { team: "engineering" }), (e) => e.code === "E_WORKSPACE_SCHEMA");
   assert.equal(composeCapabilities(null, { capabilities: { x: { from: "here" } } })[0].from, "here");
 });
 
@@ -847,33 +847,28 @@ test("e2e MED: a catalog-locked package resolves from the lock's recorded url wi
 
 /* ───────────────────────────── Phase C regressions (adversarial review) ── */
 
-test("M9: `byTeam` is reserved — refused (E_WORKSPACE_SCHEMA reason reserved-key, path named) in spawn.providers[cap], local.settings[cap], a soul slot payload and NESTED inside workspace.messaging.byTeam[label]", async () => {
+test("M9 (0.30): `byTeam` was removed — refused (E_WORKSPACE_SCHEMA reason removed-key, path named) in spawn.providers[cap], local.settings[cap], a soul slot payload and the workspace's messaging", async () => {
   const ws = workspaceFile();
   ws.defaults = { ...ws.defaults, messaging: { "nw-chat": { from: K.agents } } };
-  ws.messaging = { private: "per-human", byTeam: { engineering: { channels: ["eng"] } } };
+  ws.messaging = { private: "per-human" };
   const d = discovery({ workspace: ws });
   const rm = () => findSoul(d, "release-manager");
+  const removed = (path) => (e) => { assert.equal(e.details.reason, "removed-key"); assert.equal(e.details.path, path); assert.match(e.message, /byTeam was removed in 0\.30: a team's provider id is teams\.<label>\.team/); };
   // spawn --provider
-  await rejectsCode(resolveSoul(d, rm(), opts({ spawn: { providers: { "nw-chat": { byTeam: { engineering: { channels: ["hijack"] } } } } } })), "E_WORKSPACE_SCHEMA", (e) => {
-    assert.equal(e.details.reason, "reserved-key"); assert.equal(e.details.path, "/spawn/providers/nw-chat/byTeam");
-  });
+  await rejectsCode(resolveSoul(d, rm(), opts({ spawn: { providers: { "nw-chat": { byTeam: { engineering: { channels: ["hijack"] } } } } } })), "E_WORKSPACE_SCHEMA", removed("/spawn/providers/nw-chat/byTeam"));
   // oats-local.yaml settings
-  await rejectsCode(resolveSoul(d, rm(), opts({ local: { schemaVersion: 2, workspace: R.agents, settings: { "nw-chat": { byTeam: {} } } } })), "E_WORKSPACE_SCHEMA", (e) => {
-    assert.equal(e.details.reason, "reserved-key"); assert.equal(e.details.path, "/settings/nw-chat/byTeam");
-  });
+  await rejectsCode(resolveSoul(d, rm(), opts({ local: { schemaVersion: 2, workspace: R.agents, settings: { "nw-chat": { byTeam: {} } } } })), "E_WORKSPACE_SCHEMA", removed("/settings/nw-chat/byTeam"));
   // soul slot payload — even when the slot resolves to no module
-  const d2 = discovery({ workspace: ws, souls: { s: soulDef("s", { team: "engineering", messaging: { byTeam: { engineering: {} } } }) } });
-  await rejectsCode(resolveSoul(d2, findSoul(d2, "s"), opts()), "E_WORKSPACE_SCHEMA", (e) => { assert.equal(e.details.reason, "reserved-key"); assert.equal(e.details.path, "/messaging/byTeam"); });
+  const d2 = discovery({ workspace: ws, souls: { s: soulDef("s", { messaging: { byTeam: { engineering: {} } } }) } });
+  await rejectsCode(resolveSoul(d2, findSoul(d2, "s"), opts()), "E_WORKSPACE_SCHEMA", removed("/messaging/byTeam"));
   const d3 = discovery({ souls: { s: soulDef("s", { knowledge: { byTeam: { x: 1 } } }) } });
-  await rejectsCode(resolveSoul(d3, findSoul(d3, "s"), opts()), "E_WORKSPACE_SCHEMA", (e) => { assert.equal(e.details.reason, "reserved-key"); assert.equal(e.details.path, "/knowledge/byTeam"); });
-  // nested inside a team's own payload (the top-level byTeam is the legal one; a second level is not)
-  const ws4 = { ...ws, messaging: { private: "per-human", byTeam: { engineering: { channels: ["eng"], byTeam: { engineering: { channels: ["deeper"] } } } } } };
-  const d4 = discovery({ workspace: ws4 });
-  await rejectsCode(resolveSoul(d4, findSoul(d4, "release-manager"), opts()), "E_WORKSPACE_SCHEMA", (e) => { assert.equal(e.details.reason, "reserved-key"); assert.equal(e.details.path, "/messaging/byTeam/engineering/byTeam"); });
-  // the legal top-level byTeam still works and never reaches the provider
+  await rejectsCode(resolveSoul(d3, findSoul(d3, "s"), opts()), "E_WORKSPACE_SCHEMA", removed("/knowledge/byTeam"));
+  // the workspace's messaging payload: no longer a legal place either
+  const d4 = discovery({ workspace: { ...ws, messaging: { private: "per-human", byTeam: { engineering: { channels: ["eng"] } } } } });
+  await rejectsCode(resolveSoul(d4, findSoul(d4, "release-manager"), opts()), "E_WORKSPACE_SCHEMA", removed("/messaging/byTeam"));
+  // without it the payload is base ⊕ soul, untouched
   const ok = await resolveSoul(d, rm(), opts());
   assert.deepEqual(ok.payloads["nw-chat"], { private: "per-human", channels: ["northwind-eng"] });
-  assert.equal("byTeam" in ok.payloads["nw-chat"], false);
 });
 
 test("M5: spawn.providers keyed by a poison name (constructor) is E_WORKSPACE_SCHEMA poison-key; an inherited (non-own) provider key is not a request", async () => {
@@ -907,27 +902,27 @@ test("an edited lock pointing at another commit: resolves when that commit decla
   });
 });
 
-test("L1: a soul's `<slot>: none` EMPTIES the slot — it drops a layer-bearing capability the WORKSPACE DEFAULTS contributed (defaults.capabilities and defaults.byTeam); a layer-bearing capability the SOUL declares beside none stays E_SLOT_CONFLICT reason none", async () => {
+test("L1: a soul's `<slot>: none` EMPTIES the slot — it drops a layer-bearing capability the WORKSPACE DEFAULTS contributed (defaults.capabilities and defaults.<slot>); a layer-bearing capability the SOUL declares beside none stays E_SLOT_CONFLICT reason none", async () => {
   // defaults.capabilities carries a knowledge-layer capability (nw-notes, a member cap of agents); defaults.knowledge is off
-  const ws = workspaceFile({ defaults: { capabilities: { "oats.core": { from: "package" }, "nw-notes": { from: K.agents } }, knowledge: "none", messaging: "none", tasks: "none", byTeam: { engineering: { capabilities: { "nw-chat": { from: K.agents } } } } } });
+  const ws = workspaceFile({ defaults: { capabilities: { "oats.core": { from: "package" }, "nw-notes": { from: K.agents } }, knowledge: "none", messaging: { "nw-chat": { from: K.agents } }, tasks: "none" } });
   const d = discovery({ workspace: ws, souls: {
-    quiet: soulDef("quiet", { team: "engineering", knowledge: "none", messaging: "none" }),
-    talkative: soulDef("talkative", { team: "engineering", knowledge: "none" }),
-    contradictory: soulDef("contradictory", { team: "engineering", knowledge: "none", capabilities: { "nw-notes": { from: K.agents } } }),
-    redeclared: soulDef("redeclared", { team: "engineering", messaging: "none", capabilities: { "nw-chat": { from: K.agents } } }),
+    quiet: soulDef("quiet", { knowledge: "none", messaging: "none" }),
+    talkative: soulDef("talkative", { knowledge: "none" }),
+    contradictory: soulDef("contradictory", { knowledge: "none", capabilities: { "nw-notes": { from: K.agents } } }),
+    redeclared: soulDef("redeclared", { messaging: "none", capabilities: { "nw-chat": { from: K.agents } } }),
   } });
-  // none on knowledge drops defaults.capabilities' nw-notes; none on messaging drops byTeam's nw-chat → both slots empty, no conflict
+  // none on knowledge drops defaults.capabilities' nw-notes; none on messaging drops defaults.messaging's nw-chat → both slots empty, no conflict
   const quiet = await resolveSoul(d, findSoul(d, "quiet"), opts());
   assert.deepEqual(quiet.modules.map((m) => m.name), ["oats.core"]);
   assert.deepEqual(quiet.slots, { knowledge: null, messaging: null, tasks: null });
   assert.ok(!("nw-notes" in quiet.payloads) && !("nw-chat" in quiet.payloads) && !quiet.skills.some((s) => s.module === "nw-notes" || s.module === "nw-chat"), "a dropped capability leaves no payload, skill or inject behind");
-  // only knowledge is none: the byTeam messaging capability still fills its slot
+  // only knowledge is none: the defaults.messaging capability still fills its slot
   const talkative = await resolveSoul(d, findSoul(d, "talkative"), opts());
   assert.deepEqual(talkative.modules.map((m) => m.name), ["nw-chat", "oats.core"]);
   assert.deepEqual(talkative.slots, { knowledge: null, messaging: "nw-chat", tasks: null });
   // the soul ITSELF names a knowledge capability next to knowledge: none → contradiction, loud
   await rejectsCode(resolveSoul(d, findSoul(d, "contradictory"), opts()), "E_SLOT_CONFLICT", (e) => { assert.equal(e.details.reason, "none"); assert.equal(e.details.slot, "knowledge"); assert.deepEqual(e.details.modules, ["nw-notes"]); assert.equal(e.details.via, "soul"); });
-  // re-declaring a byTeam default in the soul makes it the soul's own: `none` on that slot is a conflict, not a silent drop
+  // re-declaring a slot default in the soul makes it the soul's own: `none` on that slot is a conflict, not a silent drop
   await rejectsCode(resolveSoul(d, findSoul(d, "redeclared"), opts()), "E_SLOT_CONFLICT", (e) => { assert.equal(e.details.reason, "none"); assert.equal(e.details.slot, "messaging"); });
   // the default workspace file (knowledge default via defaults.knowledge) keeps behaving: none empties, off removes (regression guard)
   const d0 = discovery();
@@ -964,54 +959,38 @@ test("L6: declRevision and payloadRevision are fingerprinted apart; revision = h
   assert.ok(Object.isFrozen(a)); assert.deepEqual(JSON.parse(JSON.stringify(a)), a);
 });
 
-/* ─────────────────── teams contract 2026-09-25 (several labels) ─────────────────── */
+/* ─────────────────── team model v2 (0.30): teams compose nothing ─────────────────── */
 
-// decl: pinned before teams (129bcbf3), unchanged. payload/revision: re-pinned for amendment K (were 1e84c24d04acb86a36a46494 / 41a494f695699d3afbe615be).
-const PIN_SINGLE_LABEL = { decl: "ce27f0e0fa837d02d037d752", payload: "a1b3a13c66f57295da2e910f", revision: "b0ac0ddcc0398857d686a839" };
-/** A soul entry carrying several labels, as discovery lists one (`team` is the primary). */
-const labelled = (d, name, labels) => {
-  const entry = { ...findSoul(d, name), team: labels[0] ?? null, labels };
-  for (const m of d.members) m.souls = m.souls.map((s) => (s.name === name ? entry : s));
-  return entry;
-};
+// decl/revision: re-pinned for 0.30 — resolution.soul lost `team` (and the fixture manifest its ignored `team`);
+// the test proves those are the ONLY moves (re-inserting them gives the pre-0.30 decl ce27f0e0fa837d02d037d752).
+// payload: unchanged since amendment K.
+const PIN_TEAMS = { decl: "36e5f09b512a15d6400d8062", payload: "a1b3a13c66f57295da2e910f", revision: "b65e3332f322c8eece145568" };
 const teamsWorkspace = () => {
   const ws = workspaceFile();
-  ws.teams = { ...ws.teams, cloud: { description: "hosted" } };
+  ws.teams = { ...ws.teams, engineering: { description: "Platform + data", team: "aweb:example.oss" }, cloud: { description: "hosted", team: "aweb:example.cloud" } };
   ws.defaults = { ...ws.defaults, messaging: { "nw-chat": { from: K.agents } } };
-  ws.messaging = { private: "per-human", byTeam: { engineering: { team: "aweb:example.oss", channels: ["eng"] }, cloud: { team: "aweb:example.cloud" } } };
+  ws.messaging = { private: "per-human" };
   return ws;
 };
 
-test("single label: composition and declRevision are byte-identical to the pre-teams resolver (pinned); the payload moves only by amendment K", async () => {
-  // declRevision pinned from origin/main's lib/resolve.mjs (129bcbf3) on this fixture: a one-label soul's
-  // COMPOSITION must not move. Amendment K (teams contract, co-lead ruling) drops the mapped primary's
-  // byTeam entry from the messaging settings, so payloadRevision and revision were re-pinned for it.
+test("composition, declRevision and the payload do not move with a soul's teams (pinned); the only 0.30 move is resolution.soul losing `team`", async () => {
   const d = discovery({ workspace: teamsWorkspace() });
   const r = await resolveSoul(d, findSoul(d, "release-manager"), opts());
   assert.deepEqual(r.payloads["nw-chat"], { private: "per-human", channels: ["northwind-eng"] });
-  assert.deepEqual({ decl: r.declRevision, payload: r.payloadRevision, revision: r.revision }, PIN_SINGLE_LABEL);
+  assert.deepEqual({ decl: r.declRevision, payload: r.payloadRevision, revision: r.revision }, PIN_TEAMS);
   assert.deepEqual(r.modules.map((m) => m.name), ["nw-chat", "nw-deploy", "nw-house-style", "nw-release-tooling", "oats.core", "oats.okf"]);
+  // Re-inserting what 0.30 dropped — the soul's `team`, and the fixture manifest's `team` (a key the kernel
+  // now ignores) — gives back the pre-0.30 pin: nothing else moved.
+  const { name, repoKey, commit, path } = r.soul;
+  const modules = r.modules.map((m) => (m.name === "nw-release-tooling" ? { ...m, manifest: { capability: m.manifest.capability, version: m.manifest.version, description: m.manifest.description, team: "engineering", ...m.manifest } } : m));
+  assert.equal(revisionOf({ resolutionApi: 1, soul: { name, repoKey, commit, team: "engineering", path }, modules, slots: r.slots, skills: r.skills, injects: r.injects }), "ce27f0e0fa837d02d037d752");
+  const local = { schemaVersion: 2, workspace: R.agents, teams: { mine: { team: "aweb:me.x" } }, defaultTeam: "mine", souls: { teams: { "release-manager": ["engineering", "cloud"] } } };
+  const withTeams = await resolveSoul(d, findSoul(d, "release-manager"), opts({ local }));
+  assert.deepEqual({ decl: withTeams.declRevision, payload: withTeams.payloadRevision, revision: withTeams.revision }, PIN_TEAMS, "teams are outside every fingerprint");
+  assert.deepEqual(withTeams.modules, r.modules, "a team composes nothing");
 });
 
-test("several labels: byTeam capabilities apply for each label in soul order, `via` names the label; the soul still wins", async () => {
-  const d = discovery({ workspace: teamsWorkspace() });
-  const entry = labelled(d, "release-manager", ["engineering", "marketing"]);
-  const r = await resolveSoul(d, entry, opts());
-  assert.equal(r.soul.team, "engineering", "the first label is the primary");
-  assert.ok(r.modules.some((m) => m.name === "nw-brand-voice"), "marketing's team default applies too");
-  assert.ok(r.modules.some((m) => m.name === "nw-release-tooling"));
-  const vias = Object.fromEntries(composeCapabilities(teamsWorkspace(), { capabilities: {} }, { labels: ["engineering", "marketing"] }).map((c) => [c.name, c.via]));
-  assert.equal(vias["nw-release-tooling"], "defaults.byTeam.engineering");
-  assert.equal(vias["nw-brand-voice"], "defaults.byTeam.marketing");
-  // …and the soul's own `off` still removes a label's default.
-  assert.ok(!composeCapabilities(teamsWorkspace(), { capabilities: { "nw-brand-voice": "off" } }, { labels: ["engineering", "marketing"] }).some((c) => c.name === "nw-brand-voice"));
-  // Amendment K: no label's byTeam entry is merged into the messaging settings, the primary's included;
-  // both labels' payloads are in teams[], in soul order.
-  assert.deepEqual(r.payloads["nw-chat"], { private: "per-human", channels: ["northwind-eng"] });
-  assert.deepEqual(r.teams.map((t) => [t.label, t.team]), [["engineering", "aweb:example.oss"], ["marketing", null]]);
-});
-
-test("layers-from: each filled slot records where its capability came from — slot default / defaults.capabilities → workspace, defaults.byTeam.<label> → team:<label>, the soul's own → soul; an empty slot → null; outside every fingerprint", async () => {
+test("layers-from: each filled slot records where its capability came from — slot default / defaults.capabilities → workspace, the soul's own → soul; an empty slot → null; outside every fingerprint", async () => {
   // slot default (defaults.knowledge)
   const d = discovery();
   const rm = await resolveSoul(d, findSoul(d, "release-manager"), opts());
@@ -1020,12 +999,6 @@ test("layers-from: each filled slot records where its capability came from — s
   const wsCaps = workspaceFile(); wsCaps.defaults = { ...wsCaps.defaults, capabilities: { ...wsCaps.defaults.capabilities, "nw-chat": { from: K.agents } } };
   const dc = discovery({ workspace: wsCaps });
   assert.equal((await resolveSoul(dc, findSoul(dc, "release-manager"), opts())).slotsFrom.messaging, "workspace");
-  // defaults.byTeam.<label>: on a two-label soul, the label that gave it
-  const wsTeam = teamsWorkspace(); wsTeam.defaults = { ...wsTeam.defaults, messaging: "none", byTeam: { ...wsTeam.defaults.byTeam, cloud: { capabilities: { "nw-chat": { from: K.agents } } } } };
-  const dt = discovery({ workspace: wsTeam });
-  const two = await resolveSoul(dt, labelled(dt, "release-manager", ["engineering", "cloud"]), opts());
-  assert.equal(two.slots.messaging, "nw-chat");
-  assert.deepEqual(two.slotsFrom, { knowledge: "workspace", messaging: "team:cloud", tasks: null });
   // the soul's own entry (it wins over the workspace default of the same capability)
   const ds = discovery({ workspace: wsCaps, souls: { s: soulDef("s", { capabilities: { "nw-chat": { from: "here" } } }) } });
   assert.equal((await resolveSoul(ds, findSoul(ds, "s"), opts())).slotsFrom.messaging, "soul");
@@ -1038,75 +1011,46 @@ test("layers-from: each filled slot records where its capability came from — s
   const viaWs = await resolveSoul(dw, findSoul(dw, "s"), opts());
   assert.equal(viaWs.slotsFrom.messaging, "workspace");
   assert.equal(viaWs.declRevision, same.declRevision);
-  assert.deepEqual(["soul", "defaults.knowledge", "defaults.capabilities", "defaults.byTeam.a.b", undefined].map(resolveLib.fromOfVia), ["soul", "workspace", "workspace", "team:a.b", null]);
+  assert.deepEqual(["soul", "defaults.knowledge", "defaults.capabilities", undefined].map(resolveLib.fromOfVia), ["soul", "workspace", "workspace", null], "no team:<label> origin since 0.30");
 });
 
-test("E_TEAM_CONFLICT: two labels giving one capability different entries is refused naming both; identical entries are not a conflict", () => {
-  const ws = workspaceFile({ defaults: { ...workspaceFile().defaults, byTeam: {
-    engineering: { capabilities: { "nw-shared": { from: K.agents } } },
-    marketing: { capabilities: { "nw-shared": "off" } },
-    global: { capabilities: { "nw-shared": { from: K.agents } } },
-  } } });
-  assert.throws(() => composeCapabilities(ws, {}, { labels: ["engineering", "marketing"] }), (e) => {
-    assert.equal(e.code, "E_TEAM_CONFLICT");
-    assert.deepEqual(e.details.labels, ["engineering", "marketing"]);
-    assert.equal(e.details.capability, "nw-shared");
-    assert.match(e.message, /"engineering" and "marketing"/);
-    return true;
-  });
-  assert.throws(() => composeCapabilities(ws, {}, { labels: ["marketing", "engineering"] }), (e) => e.code === "E_TEAM_CONFLICT" && e.details.labels.join() === "marketing,engineering");
-  const same = composeCapabilities(ws, {}, { labels: ["engineering", "global"] });
-  assert.equal(same.find((c) => c.name === "nw-shared").via, "defaults.byTeam.global", "identical entries: the later label is recorded, nothing refused");
-  // The soul's own entry wins over every label, so naming the capability settles it (the remedy the message names).
-  const settled = composeCapabilities(ws, { capabilities: { "nw-shared": "off" } }, { labels: ["engineering", "marketing"] });
-  assert.ok(!settled.some((c) => c.name === "nw-shared"));
-});
-
-test("teams: one eligible entry per label in soul order — mapped (base ⊕ byTeam, team id) or unmapped (base, team null); no label → []", async () => {
+test("teams: the soul's rows here — default first, then by label; unmapped shared rows reported; a package soul keyed <package>/<soul>; standalone reads local teams only", async () => {
   const d = discovery({ workspace: teamsWorkspace() });
-  const r = await resolveSoul(d, labelled(d, "release-manager", ["engineering", "marketing", "cloud"]), opts());
+  const local = { schemaVersion: 2, workspace: R.agents, teams: { mine: { team: "aweb:me.x", description: "mine" } }, defaultTeam: "mine",
+    souls: { teams: { "*": ["cloud"], "release-manager": ["marketing", "engineering"], "nw.tools/tools-expert": ["engineering"] } } };
+  const r = await resolveSoul(d, findSoul(d, "release-manager"), opts({ local }));
+  assert.deepEqual(r.defaultTeam, { label: "mine", team: "aweb:me.x", from: "deployment" });
   assert.deepEqual(r.teams, [
-    { label: "engineering", team: "aweb:example.oss", mapped: true, payload: { private: "per-human", team: "aweb:example.oss", channels: ["eng"] } },
-    { label: "marketing", team: null, mapped: false, payload: { private: "per-human" } },
-    { label: "cloud", team: "aweb:example.cloud", mapped: true, payload: { private: "per-human", team: "aweb:example.cloud" } },
+    { label: "mine", team: "aweb:me.x", default: true, from: "local" },
+    { label: "cloud", team: "aweb:example.cloud", default: false, from: "shared" },
+    { label: "engineering", team: "aweb:example.oss", default: false, from: "shared" },
+    { label: "marketing", team: null, default: false, from: "shared" },
   ]);
-  for (const t of r.teams) assert.equal("byTeam" in t.payload, false, "byTeam never reaches a provider");
-  const none = await resolveSoul(d, labelled(d, "release-manager", []), opts());
-  assert.deepEqual(none.teams, []);
-  assert.equal(none.soul.team, null);
-  // Teams are live messaging state, not composition: changing a non-primary label's mapping moves no fingerprint.
-  const ws2 = teamsWorkspace(); ws2.messaging.byTeam.marketing = { team: "aweb:example.mkt" };
-  const d2 = discovery({ workspace: ws2 });
-  const r2 = await resolveSoul(d2, labelled(d2, "release-manager", ["engineering", "marketing", "cloud"]), opts());
-  assert.equal(r2.teams[1].team, "aweb:example.mkt");
-  assert.equal(r2.revision, r.revision);
-  assert.deepEqual(resolveLib.teamsOf(null, ["x"]), [{ label: "x", team: null, mapped: false, payload: {} }], "no workspace (standalone): every label unmapped");
+  // A soul with no entry of its own: the default and "*".
+  const t = await resolveSoul(d, findSoul(d, "support-triager"), opts({ local }));
+  assert.deepEqual(t.teams.map((x) => x.label), ["mine", "cloud"]);
+  // A package soul is keyed <package>/<soul> (a hand-built package entry: the key is all that matters here).
+  const { soulTeams, teamModel, soulKeyOf } = await import("../lib/teams.mjs");
+  assert.equal(soulKeyOf({ name: "tools-expert", package: "nw.tools", qualifiedName: "nw.tools/tools-expert" }), "nw.tools/tools-expert");
+  assert.deepEqual(soulTeams(teamModel(teamsWorkspace(), local), "nw.tools/tools-expert").teams.map((x) => x.label), ["mine", "cloud", "engineering"]);
+  // Standalone: no committed teams are read — a label only the workspace declares is unknown there.
+  const enumeration = { key: K.data, commit: C.data, membership: { schemaVersion: 2, workspace: R.agents }, souls: [soulEntry(K.data, C.data, soulDef("data-analyst", { capabilities: { "nw-warehouse-access": { from: "here" } } }))], capabilities: [capEntry(K.data, C.data, M.warehouse)], publishes: null, problems: [] };
+  const sd = standaloneRepo(R.data, C.data, enumeration);
+  const solo = await resolveSoul(sd, sd.members[0].souls[0], opts({ local: { schemaVersion: 2, workspace: R.agents, teams: { mine: { team: "aweb:me.x" } }, defaultTeam: "mine" } }));
+  assert.deepEqual([solo.teams, solo.defaultTeam], [[{ label: "mine", team: "aweb:me.x", default: true, from: "local" }], { label: "mine", team: "aweb:me.x", from: "deployment" }]);
+  await rejectsCode(resolveSoul(sd, sd.members[0].souls[0], opts({ local })), "E_TEAM_UNKNOWN", (e) => assert.equal(e.details.label, "cloud"));
 });
 
-test("teams: EVERY carried label's byTeam entry is validated like the primary's — a hostOnly key or a nested byTeam in a secondary label's entry is refused, path named", async () => {
-  // Each label's base ⊕ byTeam[label] reaches the provider in OATS_TEAMS, so a secondary label's entry
-  // meets the primary's bar: same error, same reason, pointer /messaging/byTeam/<label>.
+test("a hostOnly key in the workspace's messaging payload is refused, path named; the host layer may carry it", async () => {
   const chat = { ...M.chat, settings: { root: { hostOnly: true, description: "host-owned root" } } };
-  const caps = [capEntry(K.agents, C.agents, M.releaseTooling), capEntry(K.agents, C.agents, M.houseStyle, "global"), capEntry(K.agents, C.agents, chat, "global")];
-  const withEntry = (label, entry) => { const ws = teamsWorkspace(); ws.messaging.byTeam[label] = entry; return ws; };
-  for (const label of ["engineering", "cloud"]) { // the primary, then a secondary
-    const d = discovery({ workspace: withEntry(label, { team: "aweb:x", root: "/evil" }), agentsCaps: caps });
-    await rejectsCode(resolveSoul(d, labelled(d, "release-manager", ["engineering", "cloud"]), opts()), "E_WORKSPACE_SCHEMA", (e) => {
-      assert.equal(e.details.reason, "host-only-key"); assert.equal(e.details.key, "root"); assert.equal(e.details.capability, "nw-chat");
-      assert.equal(e.details.path, `/messaging/byTeam/${label}/root`);
-    });
-    const n = discovery({ workspace: withEntry(label, { team: "aweb:x", byTeam: { cloud: {} } }), agentsCaps: caps });
-    await rejectsCode(resolveSoul(n, labelled(n, "release-manager", ["engineering", "cloud"]), opts()), "E_WORKSPACE_SCHEMA", (e) => {
-      assert.equal(e.details.reason, "reserved-key"); assert.equal(e.details.path, `/messaging/byTeam/${label}/byTeam`);
-    });
-  }
-  // A label the soul does NOT carry is not its payload: a bad entry there does not block this soul.
-  const other = discovery({ workspace: withEntry("marketing", { root: "/evil", byTeam: {} }), agentsCaps: caps });
-  const ok = await resolveSoul(other, labelled(other, "release-manager", ["engineering", "cloud"]), opts());
-  assert.deepEqual(ok.teams.map((t) => t.label), ["engineering", "cloud"]);
-  // A clean secondary entry still resolves, and the host layer may carry the hostOnly key.
+  const caps = [capEntry(K.agents, C.agents, M.releaseTooling), capEntry(K.agents, C.agents, M.houseStyle), capEntry(K.agents, C.agents, chat)];
+  const ws = teamsWorkspace(); ws.messaging = { private: "per-human", root: "/evil" };
+  const d = discovery({ workspace: ws, agentsCaps: caps });
+  await rejectsCode(resolveSoul(d, findSoul(d, "release-manager"), opts()), "E_WORKSPACE_SCHEMA", (e) => {
+    assert.equal(e.details.reason, "host-only-key"); assert.equal(e.details.key, "root"); assert.equal(e.details.capability, "nw-chat");
+    assert.equal(e.details.path, "/messaging/root");
+  });
   const clean = discovery({ workspace: teamsWorkspace(), agentsCaps: caps });
-  const r = await resolveSoul(clean, labelled(clean, "release-manager", ["engineering", "cloud"]), opts({ local: { schemaVersion: 2, workspace: R.agents, settings: { "nw-chat": { root: "/srv/aweb" } } } }));
+  const r = await resolveSoul(clean, findSoul(clean, "release-manager"), opts({ local: { schemaVersion: 2, workspace: R.agents, settings: { "nw-chat": { root: "/srv/aweb" } } } }));
   assert.equal(r.payloads["nw-chat"].root, "/srv/aweb");
-  assert.deepEqual(r.teams[1], { label: "cloud", team: "aweb:example.cloud", mapped: true, payload: { private: "per-human", team: "aweb:example.cloud" } });
 });

@@ -125,7 +125,7 @@ test("workspace spawn chain over Northwind: sync → spawn materializes whole mo
     const spawned = doc.result;
     assert.equal(spawned.instance, "release-manager-x");
     assert.equal(spawned.launched, false);
-    assert.match(r.stderr, /workspace soul: "release-manager" from .*agents\.git @ [0-9a-f]{12}, team engineering; soul source fetched\)/, "progress goes to stderr (the spawn, not the previews, fills the soul cache)");
+    assert.match(r.stderr, /workspace soul: "release-manager" from .*agents\.git @ [0-9a-f]{12}; soul source fetched\)/, "progress goes to stderr (the spawn, not the previews, fills the soul cache)");
     const home = spawned.home;
     assert.equal(home, join(agentsRoot, "release-manager", "instances", "release-manager-x"));
     r = oats(spawnArgs("release-manager", "--preview", "--provider", "oats.okf", "state-dir=/tmp/x"), { cwd: dep, env, base });
@@ -178,7 +178,8 @@ test("workspace spawn chain over Northwind: sync → spawn materializes whole mo
     assert.equal(meta.providers["oats.okf"]["harvest-runtime"], "pi", "the provider receives the manifest default it was previewed with");
     assert.equal(meta.providers["oats.okf"].owns, "release-manager", "…merged over the soul's own payload");
     assert.match(meta.workspace.resolution, /^[0-9a-f]{24}$/, "the resolution revision is recorded");
-    assert.equal(meta.workspace.soul.repoKey, fx.keys.agents); assert.equal(meta.workspace.soul.team, "engineering");
+    assert.equal(meta.workspace.soul.repoKey, fx.keys.agents); assert.equal("team" in meta.workspace.soul, false, "team membership is local since 0.30");
+    assert.deepEqual([meta.teams, meta.defaultTeam], [[], null], "this deployment declares no teams");
     // M5/3a: the workspace's name and the deployment directory are recorded at spawn.
     assert.equal(meta.workspace.name, "northwind"); assert.equal(meta.workspace.deployment, dep);
     // Harness starts normally: no ambient-skill exclusion anywhere in the launch.
@@ -200,7 +201,7 @@ test("workspace spawn chain over Northwind: sync → spawn materializes whole mo
     assert.notEqual(soulMove.commit, stampBefore.commit);
     r = oats(spawnArgs("release-manager", "--provider", "oats.okf", "state-dir=/tmp/x").map((a) => (a === "x" ? "h2" : a)), { cwd: dep, env, base });
     assert.equal(r.status, 0, `second spawn after the soul moved\n${r.stdout}\n${r.stderr}`);
-    assert.match(r.stderr, /workspace soul: "release-manager" from .*agents\.git @ [0-9a-f]{12}, team engineering; soul source fetched\)/, "the moved soul is fetched again");
+    assert.match(r.stderr, /workspace soul: "release-manager" from .*agents\.git @ [0-9a-f]{12}; soul source fetched\)/, "the moved soul is fetched again");
     const homeH2 = envelope(r).result.home;
     assert.equal(homeH2, join(agentsRoot, "release-manager", "instances", "release-manager-h2"));
     assert.match(readFileSync(join(homeH2, "AGENTS.md"), "utf8"), /H2: release policy revised after the first spawn\./, "the new home is composed from the CURRENT soul");
@@ -220,7 +221,8 @@ test("workspace spawn chain over Northwind: sync → spawn materializes whole mo
     doc = envelope(r);
     let preview = doc.result;
     assert.equal(preview.preview, true); assert.equal(preview.spawnPreviewApi, 2);
-    assert.equal(preview.team, "engineering");
+    assert.equal("team" in preview, false, "no primary label since 0.30");
+    assert.deepEqual([preview.teams, preview.defaultTeam], [[], null]);
     assert.equal(preview.resolution, metaH2.workspace.resolution, "same inputs (incl. the provider payload) → same revision");
     assert.equal(preview.decision?.resolution, metaH2.workspace.resolution, "the decision binds the resolution revision");
     assert.notEqual(metaH2.workspace.resolution, meta.workspace.resolution, "the member move changed the revision of the member-tier modules");
@@ -380,10 +382,10 @@ test("B2: a v2 `work: workspace` soul spawns on a plain deployment — home/work
     mkdirSync(agentsRoot, { recursive: true });
     writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.agents}\n`);
     assert.ok(!existsSync(join(dep, ".git")) && !existsSync(join(dep, "oats-config.yaml")), "the deployment is a plain directory: no Git, no oats-config.yaml");
-    // The coordination soul lives in the agents member (team engineering, so byTeam defaults resolve).
+    // The coordination soul lives in the agents member.
     const added = await moveMember(fx, "agents", async (work, { fs, path }) => {
       await fs.mkdir(path.join(work, "souls", "coordinator"), { recursive: true });
-      await fs.writeFile(path.join(work, "souls", "coordinator", "soul.yaml"), "schemaVersion: 2\nname: coordinator\ndescription: cross-repo coordinator — routes work, edits nothing\nwork: workspace\nteam: engineering\ncapabilities:\n  oats.core: { from: package }\n");
+      await fs.writeFile(path.join(work, "souls", "coordinator", "soul.yaml"), "schemaVersion: 2\nname: coordinator\ndescription: cross-repo coordinator — routes work, edits nothing\nwork: workspace\ncapabilities:\n  oats.core: { from: package }\n");
       await fs.writeFile(path.join(work, "souls", "coordinator", "AGENTS.md"), "# coordinator\n\nYou coordinate across member clones; ./work is the deployment boundary.\n");
     }, { message: "agents: add coordinator (work: workspace)" });
     assert.match(added.commit, HEX40);
@@ -404,7 +406,7 @@ test("B2: a v2 `work: workspace` soul spawns on a plain deployment — home/work
     assert.equal(meta.work, "workspace");
     assert.ok(meta.branch === undefined || meta.branch === null, `no branch is recorded for a workspace boundary (got ${JSON.stringify(meta.branch)})`);
     assert.equal(meta.workspace.soul.commit, added.commit);
-    assert.equal(meta.workspace.soul.team, "engineering");
+    assert.equal("team" in meta.workspace.soul, false);
     assert.match(readFileSync(join(home, "AGENTS.md"), "utf8"), /oats:work-mode:workspace/, "the workspace work-mode briefing is composed in");
     // The M1 soul cache shape holds for this soul too: the home records souls/<commit12>/ (no soul link), agents/<name>/soul is the pointer.
     assert.throws(() => lstatSync(join(home, "soul")), { code: "ENOENT" }, "an instance home carries no soul link");
@@ -635,14 +637,14 @@ test("0.25.3 OATS_SOUL_ID: hooks of a workspace spawn receive `<repo key>#<soul>
     assert.match(envA.OATS_SOUL, /\/souls\/[0-9a-f]{12}$/, "OATS_SOUL is the per-commit content directory");
     const metaA = JSON.parse(readFileSync(join(homeA, "instance.json"), "utf8"));
     assert.equal(metaA.workspace.soul.id, expectedId);
-    // human decisions 2026-09-24 (messaging default; seamless teams): a workspace spawn's hooks get the
-    // v2 team facts — scope = the deployment, the soul's team label, the workspace's name and canonical
-    // key; Northwind maps no shared messaging team, so the team id is empty (the workspace's default team).
+    // A workspace spawn's hooks get the team and workspace facts — scope = the deployment, the
+    // workspace's name and canonical key, and the soul's teams here (team model v2): this deployment
+    // declares none, so no default is set and OATS_TEAMS is empty; the pre-0.30 names are never set.
     assert.equal(envA.OATS_TEAM_SCOPE, dep, "team scope = the deployment directory (as the operator named it)");
-    assert.equal(envA.OATS_TEAM_LABEL, "engineering");
     assert.equal(envA.OATS_WORKSPACE_NAME, "northwind");
     assert.equal(envA.OATS_WORKSPACE_KEY, fx.keys.agents);
-    assert.equal(envA.OATS_TEAM_ID, "", "no shared team mapped → the workspace's default team");
+    assert.equal(envA.OATS_TEAMS, "[]");
+    for (const k of ["OATS_DEFAULT_TEAM", "OATS_DEFAULT_TEAM_ID", "OATS_DEFAULT_TEAM_FROM", "OATS_TEAM_LABEL", "OATS_TEAM_LABELS", "OATS_TEAM_ID"]) assert.equal(k in envA, false, `${k} unset`);
     // the member commits → a different per-commit directory, the SAME identity
     const moved = await moveMember(fx, "agents", async (work, { fs, path }) => { await fs.appendFile(path.join(work, "souls/release-manager/AGENTS.md"), "\n## moved\n"); });
     r = spawn("b"); assert.equal(r.status, 0, r.stdout + r.stderr);

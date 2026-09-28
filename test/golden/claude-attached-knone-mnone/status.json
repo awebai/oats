@@ -129,11 +129,7 @@
             "soul": {
               "id": "local/<base>/remotes/ws.git#dev",
               "repoKey": "local/<base>/remotes/ws.git",
-              "commit": "<sha>",
-              "team": "global",
-              "labels": [
-                "global"
-              ]
+              "commit": "<sha>"
             },
             "layers": {
               "knowledge": null,
@@ -141,14 +137,8 @@
               "tasks": null
             }
           },
-          "teams": [
-            {
-              "label": "global",
-              "team": null,
-              "mapped": false,
-              "payload": {}
-            }
-          ],
+          "teams": [],
+          "defaultTeam": null,
           "launched": false,
           "startedAt": null,
           "identityAddress": null,
@@ -282,11 +272,7 @@
             "soul": {
               "id": "local/<base>/remotes/ws.git#dev",
               "repoKey": "local/<base>/remotes/ws.git",
-              "commit": "<sha>",
-              "team": "global",
-              "labels": [
-                "global"
-              ]
+              "commit": "<sha>"
             },
             "layers": {
               "knowledge": null,
@@ -294,14 +280,8 @@
               "tasks": null
             }
           },
-          "teams": [
-            {
-              "label": "global",
-              "team": null,
-              "mapped": false,
-              "payload": {}
-            }
-          ],
+          "teams": [],
+          "defaultTeam": null,
           "launched": false,
           "startedAt": null,
           "identityAddress": null,
