@@ -107,8 +107,8 @@ the instances join.
 *Rationale:* operator node, lesson "messaging root placement decides the
 team" — read it before choosing another place.
 
-The root must be a **member of the team the workspace's messaging payload
-names** (`messaging:` / `messaging.byTeam` in the workspace file). `aw init`
+The root must be a **member of the deployment's default team** (`oats teams`
+shows it; it is `defaultTeam` in `oats-local.yaml`). `aw init`
 alone in a clean directory creates a hosted account and joins no team, so every
 spawn would still be refused. Obtain the membership first:
 
@@ -120,19 +120,27 @@ spawn would still be refused. Obtain the membership first:
    aw team invite --team-id <team id>              # run by an existing member, where their root is
    cd <deployment-dir>
    aw team join <invite-token> --name <alias>      # the operator, in the clean deployment directory
+   oats teams add <label> --team <team id>         # record it here; the first team added becomes the default
    ```
+
+   `oats aweb setup` (oats.aweb ≥ 1.17) does the creating and the
+   `oats teams add` for you. A shared team is already declared in the
+   workspace file: then only `oats teams default <label>` if it is not yet the
+   default.
 2. **Connect**, only if the join did not: `aw init --do-not-touch-agents-md`.
 3. **Check**: `aw check --online`, then `aw team list --json` must show the
-   payload's team as the active one. A root in another team mints instances
+   default team's id as the active one, and `oats teams` must report no
+   problems. A root in another team mints instances
    into the wrong one.
 
 Joining and initialising act on the messaging service: ask the operator first,
 and let them run it.
 
-Each instance's own identity mints into this root's team, the workspace's **default team**, unless the host, the soul or the spawn sets another. The
-workspace's other messaging teams (`messaging.byTeam`) are only *eligible*:
-an instance joins one explicitly, at spawn or later. Which teams exist, and
-how labels map to them, is **oats-teams**.
+Each instance's own identity mints into its soul's **default team** (the
+deployment's `defaultTeam`, unless `oats soul teams <soul> --default` names
+another). A soul's other teams are only *eligible*: an instance joins one
+explicitly, at spawn or later. Which teams exist, and which souls are in them,
+is **oats-teams**.
 
 ## 7. Clone work targets
 
@@ -149,7 +157,7 @@ Positive enumeration, in order — absence of errors proves nothing
 
 ```bash
 oats workspace status --dir <deployment-dir>   # every member confirmed, every package locked
-oats souls --dir <deployment-dir>              # every expected soul, with origin and team
+oats souls --dir <deployment-dir>              # every expected soul, with origin, teams and default team
 oats spawn <soul> --preview                    # modules at locked commits; merged settings show the host values
 ```
 
@@ -157,7 +165,8 @@ Then spawn one soul with `--no-launch` and check its home: exactly one "You run
 on OATS" block in `AGENTS.md` (two means `oats.core` did not resolve), the
 expected skills under `.agents/skills/`, and — with messaging — a spawn the
 aweb hook did not roll back: its output carries a `Comms:` line, and
-`instance.json` → `capabilityMeta["oats.aweb"].team` equals the payload's team.
+`instance.json` → `defaultTeam.team` equals the default team's id (and
+`capabilityMeta["oats.aweb"].team` agrees).
 Only then spawn for real.
 
 ## Knowledge operations with OKF
@@ -184,28 +193,34 @@ souls, triggers, workspace automations) and `oats.okf` 4.0.0. The contract is
 Show the operator what the package runs before pinning (its manifests'
 `commands` and `hooks`): declaring it is the trust decision, for its souls too.
 
-### 2. Declare the `okf` team
+### 2. Declare the `okf` team and put the package souls in it
 
-```yaml
-# oats-workspace.yaml
-teams:
-  okf: { description: Knowledge operations }
-messaging:
-  byTeam:
-    okf: { team: <aweb team id> }
+The `okf` team is a local or a shared team the operator declares: no package
+soul carries a team (since `oats.okf` 4.0.2). Local, on the deployment that
+runs them:
+
+```bash
+oats teams add okf --team <aweb team id> --description "Knowledge operations"
+oats soul teams oats.okf/knowledge-harvester --add okf
+oats soul teams oats.okf/knowledge-maintainer --add okf
 ```
+
+Shared instead: `teams: { okf: { description: Knowledge operations, team:
+<aweb team id> } }` in `oats-workspace.yaml` by PR, then the same two
+`oats soul teams` lines on each deployment.
 
 - **Why:** the harvester and the maintainer talk to each other (questions,
   amendment requests, "merged") without writing into the working teams'
   conversations.
 - **It is a label, not a wall:** it organises and gates nothing.
-- **Without it harvester and maintainer cannot talk.** The package souls carry
-  `team: okf`, so discovery reports `E_TEAM_UNKNOWN` on them with the remedy.
-  They still spawn, but into no messaging team, and `oats trigger test` fails
-  its team check.
+- **Without it harvester and maintainer cannot talk**: they live only in the
+  default team with everyone else. To join `okf` at spawn, pass
+  `join=okf` (it is eligible, not the default), or make it their default with
+  `oats soul teams <soul> --default okf`.
 - The aweb team id is an operator fact, like the working teams' ids. Create or
-  join that team as in step 6, with the operator running the `aw` commands.
-  Labels, messaging teams and joining are **oats-teams**.
+  join that team as in step 6 (or `oats aweb setup`), with the operator
+  running the `aw` commands. Teams, souls in them and joining are
+  **oats-teams**.
 
 ### 3. Declare the review trigger for ONE host that can merge
 

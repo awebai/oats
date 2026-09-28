@@ -154,7 +154,7 @@ spawn decision's `effective.providers`.
 A provider whose settings include a **host fact** — a custody directory, a
 state root — declares that key `hostOnly: true` in its manifest. The
 resolver then accepts it **only** from the deployment's `oats-local.yaml`
-`settings.<cap>` and refuses it in the workspace file, `byTeam` payloads, a
+`settings.<cap>` and refuses it in the workspace file, a
 soul's slot payload and `--provider` flags (`E_WORKSPACE_SCHEMA`, reason
 `host-only-key`, path and key named). The provider cannot enforce this
 itself: it receives one merged payload without provenance.
@@ -222,22 +222,34 @@ that CLI cannot revoke the certificate.
 
 ## oats.aweb settings (1.12.2)
 
+> **Kernel 0.30.0 (team model v2).** Teams are no longer provider settings. The
+> kernel declares them in the committed `oats-workspace.yaml` `teams` and the
+> deployment's `oats-local.yaml` ([workspaces.md](workspaces.md#teams)) and hands
+> them to the provider as `OATS_DEFAULT_TEAM`, `OATS_DEFAULT_TEAM_ID`,
+> `OATS_DEFAULT_TEAM_FROM`, `OATS_TEAMS` and `OATS_TEAMS_SOURCE`
+> ([capabilities.md](capabilities.md#teams-in-the-provider-environment)). It no
+> longer sets `OATS_TEAM_ID`, `OATS_TEAM_LABEL` or `OATS_TEAM_LABELS`, and
+> `messaging.byTeam` is a schema error. Per the 0.30 design, the provider's own
+> `team` setting is removed at every layer (the soul slot, the host
+> `settings.oats.aweb.team`, a spawn `team=`); oats.aweb 1.17 takes the default
+> from the kernel. The text below describes the 1.12.2 release and its settings.
+
 Set portable team policy in the workspace/soul `messaging:` payload; set host
 facts in `oats-local.yaml` under `settings.oats.aweb.<key>`. Per-spawn
 `oats spawn … --provider oats.aweb <key>=<value>` is for non-host settings only.
-The effective payload is merged in order: workspace messaging, `byTeam[<primary label>]`,
+The effective payload is merged in order: workspace messaging,
 soul messaging, `oats-local.yaml` `settings.oats.aweb`, then per-spawn
 `--provider` values. `root`, `roots`, and `residents` are manifest-declared
 `hostOnly: true`: absolute root/custody paths are accepted only from
 `oats-local.yaml`; kernels since 0.25.6 refuse those keys in the workspace file,
-`byTeam`, soul payloads and `--provider` flags with `E_WORKSPACE_SCHEMA` reason
+soul payloads and `--provider` flags with `E_WORKSPACE_SCHEMA` reason
 `host-only-key`.
 
-- `team: <team id>`. The payload team wins over `OATS_TEAM_ID`/
-  `OATS_TEAM_NAME`; if both are set and differ, the hook warns and uses the
-  payload. Workspace v2 spawns can have an empty `OATS_TEAM_ID`, so set this in
-  the workspace file's `messaging:` / `messaging.byTeam.<label>.team`, or in
-  `settings.oats.aweb.team` for a host override.
+- `team: <team id>` (1.12.2; removed from the 0.30 contract, see above). The
+  payload team wins over the pre-0.30 `OATS_TEAM_ID`/`OATS_TEAM_NAME`; if both
+  are set and differ, the hook warns and uses the payload. It is set in the
+  workspace file's `messaging:` or in `settings.oats.aweb.team` for a host
+  override.
 - `root: /absolute/dir`. Host-owned absolute directory whose `.aw` is the aweb
   minting root. A declared root without `.aw` is fatal; run `oats aweb setup`
   there or set `settings.oats.aweb.root` to the initialized root.
@@ -252,8 +264,8 @@ soul messaging, `oats-local.yaml` `settings.oats.aweb`, then per-spawn
   root, context, context git root, then workspace).
 - `binding-check` answers `needs-configuration` before spawn with one problem
   per missing item: `no messaging root at <dir>: run oats aweb setup there or
-  set settings.oats.aweb.root`; `no team: set messaging.byTeam.<label>.team in
-  the workspace file or settings.oats.aweb.team`. With both present it answers
+  set settings.oats.aweb.root`; a missing team (1.12.2 names its `team`
+  setting). With both present it answers
   `ready`.
   In classic deployments this readiness check approximates the full bounded
   spawn search by checking `OATS_TEAM_SCOPE` before `OATS_WORKSPACE`; the spawn

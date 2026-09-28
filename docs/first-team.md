@@ -31,9 +31,9 @@ node --version && tmux -V && oats version --json   # features must list workspac
 Three files, all committed ([workspaces.md](workspaces.md) shows each field):
 
 - `oats-workspace.yaml` (`schemaVersion: 2`) in **one** host repository: `name`,
-  `members: [<repo ref>, …]`, `teams:`, `packages: { oats.framework: v<x>, … }`,
+  `members: [<repo ref>, …]`, `teams:` (the shared teams), `packages: { oats.framework: v<x>, … }`,
   `defaults:`. A member is a repo ref, never a revision.
-- `oats-membership.yaml` (`{ schemaVersion: 2, workspace: <host ref>, team? }`)
+- `oats-membership.yaml` (`{ schemaVersion: 2, workspace: <host ref> }`)
   in **every** member — the backlink half of the handshake. A repo listed
   without a backlink is `no-backlink` and contributes nothing.
 - `souls/<name>/soul.yaml` (`schemaVersion: 2`) in the member that owns the
@@ -86,10 +86,10 @@ them. Do not commit `oats-local.yaml`.
 ## 3. Look before you spawn
 
 ```bash
-oats souls                    # every non-private soul of every confirmed member, with origin and team
+oats souls                    # every soul of every confirmed member, with origin and its teams here
 oats capabilities             # member (origin: member <key> @ <commit>) and package (package <id> v<ver>) capabilities
 oats workspace status         # membership table, locked packages
-oats spawn backend-expert --preview   # modules[] with from/commit/changedSince, composed skill names, team
+oats spawn backend-expert --preview   # modules[] with from/commit/changedSince, composed skill names, teams + default
 ```
 
 The preview is where a skill-name clash between two composed capabilities

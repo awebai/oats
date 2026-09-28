@@ -23,7 +23,7 @@ reads:
 
 ```bash
 oats workspace status     # members and why each is in or out, locked packages
-oats souls                # every soul, its origin and its team labels
+oats souls                # every soul, its origin, its teams and default team
 oats capabilities         # every capability, its origin
 oats status               # the instances on this machine, and their drift
 ```
@@ -39,16 +39,18 @@ oats status               # the instances on this machine, and their drift
    ├─ members ◄──two-way handshake──► oats-membership.yaml in each member   (= trust)
    │     each member contributes:  souls/  capabilities/  oats-triggers/ oats-schedules/
    ├─ packages (pinned) ──► capabilities + souls + trigger templates, at one locked commit
-   ├─ teams (labels) ──► defaults.byTeam (capabilities)   messaging.byTeam (messaging teams)
+   ├─ shared teams (label ──► provider team id)
    ├─ defaults ──► capabilities every soul gets, one per core slot
    ├─ stores ──► knowledge bases, bound on each machine
    └─ external ──► souls borrowed from non-members, commit-pinned
                                 │
- SOUL (a durable role) = workspace defaults → team defaults per label → its own list
+ SOUL (a durable role) = workspace defaults → its own list
                                 │ spawned by a person, an agent or an automation
  INSTANCE (one incarnation) = a home + ./work, on ONE machine, fixed to what it was given
                                 │
- THIS MACHINE (the deployment directory): oats-local.yaml, oats-lock.json, agents/, clones, the host timer
+ THIS MACHINE (the deployment directory): oats-local.yaml (+ local teams, the default team,
+                                           which souls are in which teams), oats-lock.json, agents/,
+                                           clones, the host timer
 ```
 
 ## The pieces, and why they are that way
@@ -60,11 +62,11 @@ for it (`cannot-read`), and a user who can read a member but not the host sees
 the **standalone** view (that member's souls only, with `oats.core`). A host
 runs a workspace automation only while its `gh` is logged in as the
 automation's `owner`. A messaging identity is separate: each instance gets its
-own, in the workspace's **default team**.
+own, in its soul's **default team** on this deployment.
 
 **The workspace** is one `oats-workspace.yaml` in a host repo (any member),
 declared in Git so it is reviewed and the same for everyone. It lists members,
-pins packages, declares team labels, sets defaults, names knowledge stores and
+pins packages, declares shared teams, sets defaults, names knowledge stores and
 borrows external souls. Nothing is installed globally.
 
 **Members and trust.** A repo is a member only when the workspace lists it
@@ -94,17 +96,19 @@ only by that repo's souls.
 
 **Souls** are durable roles: `souls/<name>/` in a member, in a package
 (`<package>/<soul>`), or borrowed through `external:`. **Composition** is
-`workspace defaults → team defaults for each label → the soul's own list`,
+`workspace defaults → the soul's own list`,
 later wins; `off` drops a default and `<slot>: none` empties a core slot.
 `oats inspect --soul <name>` reports why each core capability is there
-(`layers.<slot>.from`: `soul`, `workspace` or `team:<label>`). A soul's
+(`layers.<slot>.from`: `soul` or `workspace`). A soul's
 knowledge (the nodes it owns and reads) lives in an external knowledge base,
 not in the soul.
 
-**Team labels organise; they never gate.** A label can add default
-capabilities and makes a messaging team *eligible*. It grants no trust,
-restricts no one and partitions no knowledge. Joining a messaging team is
-explicit, at spawn or later (oats-teams).
+**Teams organise; they never gate.** A team is a messaging-provider team
+under a label: shared (the workspace file) or local (`oats-local.yaml`).
+Which souls are in which teams is local to each deployment (`oats soul
+teams`); an instance joins its default team at spawn, and the soul's other
+teams are *eligible*, joined explicitly (oats-teams). A team adds no
+capabilities, grants no trust, restricts no one and partitions no knowledge.
 
 **Instances** are incarnations of a soul on one machine: a **home** (its
 instructions, task and state) and **`./work`** (per the soul's work mode:
@@ -136,15 +140,15 @@ configurations, souls disabled here, and from 0.29.0 its `host.name` and
 |---|---|---|
 | Which repos are in, and which are not and why? | `oats workspace status` | each member's state: `confirmed`, `not-listed`, `no-backlink`, `backlink-elsewhere`, `cannot-read` |
 | Which package versions are in use? | `oats workspace status` | the locked packages (commit and integrity) |
-| Which souls exist, and from where? | `oats souls` | origin (`member <repo> @ <commit>`, `package <id> v<version>`, external) and team labels |
+| Which souls exist, and from where? | `oats souls` | origin (`member <repo> @ <commit>`, `package <id> v<version>`, external) and teams + default team |
 | Why can't I see soul X? | `oats workspace status`, `oats souls` | its member is unconfirmed or unreadable for this account; its package is not pinned or synced |
 | Which capabilities exist, and from where? | `oats capabilities` | origin (member or package), repo-owned marks |
-| What exactly would soul X get? | `oats spawn X --preview` | modules at their commits, skills, merged `settings.<cap>` with their origins, eligible `teams` |
-| Why does soul X have capability C? | `oats inspect --soul X --json` | `layers.<slot>.from`; for additive ones, compare the soul's own list with the workspace and team defaults |
+| What exactly would soul X get? | `oats spawn X --preview` | modules at their commits, skills, merged `settings.<cap>` with their origins, `teams` and `defaultTeam` |
+| Why does soul X have capability C? | `oats inspect --soul X --json` | `layers.<slot>.from`; for additive ones, compare the soul's own list with the workspace defaults |
 | Why can't I spawn soul X? | `oats spawn X --preview` | the refusal code and path; oats-workspace-config maps it to the fix |
 | Which instances run here, and are they current? | `oats status` | each instance's soul source, modules and drift marks |
 | What was an instance given, and why? | `oats inspect --home <abs home> --json` | recorded modules, payloads, `layers.<slot>.from` as recorded at spawn |
-| Which teams can an instance join? | `oats spawn X --preview`; in a home, `oats aweb teams` | the eligible `teams` entries (`mapped`, team id) |
+| Which teams can an instance join? | `oats spawn X --preview` or `oats soul teams X`; in a home, `oats aweb teams` | the `teams` rows with `default: false` (label, team id, shared or local) |
 | What runs automatically, and where? | `oats trigger list`, `oats schedule list` | local and (0.29.0) workspace automations; for a workspace one, whether it runs here or why not |
 | Would this trigger work on this host? | `oats trigger test <id>` | `gh` credentials, repo permissions, the soul resolving, the teams declared, what would fire |
 | What is configured on this machine? | `oats doctor` | this deployment's local file and lock |

@@ -63,9 +63,9 @@ packages:                                  # the ONLY versioned things
   oats.okf: v4.0.2
   acme.tools: git:github.com/acme/tools@v0.4.0   # outside the catalog → git:<repo>@<tag|OID>; still a package
 
-teams:                                     # labels, declared once so they cannot drift
-  global:      { description: Org-wide souls and house capabilities }
-  engineering: { description: Platform and release automation }
+teams:                                     # SHARED teams: the same provider team for everyone
+  engineering: { description: Platform and release automation, team: "engineering:acme.aweb.ai" }
+  reviewers:   { description: Code review }   # declared, not created yet (no `team` id): readiness team-unmapped
 
 defaults:
   capabilities:
@@ -74,9 +74,6 @@ defaults:
   knowledge: { oats.okf: { from: package } }             # one slot default at most; a soul may say `none`
   messaging: none
   tasks: none
-  byTeam:
-    engineering:
-      capabilities: { acme-release-tooling: { from: github.com/acme/agents } }
 
 stores:                                    # knowledge stores, declared once
   org: git:github.com/acme/knowledge
@@ -102,10 +99,10 @@ validation, not a late membership error.
 ```yaml
 schemaVersion: 2
 workspace: git:github.com/acme/agents      # "I am a member of acme"
-team: engineering                          # optional: default team label for this repo's items
 ```
 
-Nothing else. It replaces `oats.yaml`; there are no export lists.
+Nothing else. It replaces `oats.yaml`; there are no export lists. (`team:` was
+removed in 0.30.0: team membership is local — see [Teams](#teams).)
 
 ### `souls/<name>/soul.yaml` — where each capability comes from
 
@@ -114,7 +111,6 @@ schemaVersion: 2
 name: release-manager
 description: Cuts, verifies and announces releases.
 work: worktree                             # worktree | checkout | directory | workspace
-team: engineering                          # optional; else the repo's default; else "unassigned"
 
 capabilities:
   acme-release-tooling: { from: here }     # `here` = the repo this soul.yaml lives in
@@ -151,8 +147,7 @@ name (by path) is listed, the second is a problem.
 The capability manifest is the one file that did not change (see
 [capabilities.md](capabilities.md)). Discovery relies on `capability` (the same
 `^[a-z0-9][a-z0-9._-]*$` grammar every `capabilities:` key uses), `version`,
-`layer`, and may read `private: true` (a **repo-owned** capability) and
-`team: <label>`. `version` is
+`layer`, and may read `private: true` (a **repo-owned** capability). `version` is
 informational for member capabilities — a materialized copy is identified by
 its content digest.
 
@@ -169,6 +164,15 @@ settings:                                  # host-owned values the manifests ask
     state-dir: /Users/ana/.oats/okf
 souls:
   disabled: [data-analyst]                 # not run on this machine (E_SOUL_DISABLED); oats.okf/knowledge-harvester names a package soul
+  teams:                                   # which teams each soul belongs to HERE (oats soul teams)
+    "*": [engineering]                     # every soul
+    oats.okf/knowledge-harvester: [okf]    # a package soul's key is <package>/<soul>
+  default:                                 # a per-soul override of defaultTeam (oats soul teams <soul> --default)
+    release-manager: engineering
+teams:                                     # LOCAL teams: only this deployment uses them (oats teams add)
+  ana-acme: { team: "ana-acme:ana.aweb.ai" }
+  okf:      { team: "okf:ana.aweb.ai", description: Knowledge operations }
+defaultTeam: ana-acme                      # every instance's default team, unless souls.default says otherwise
 host:
   name: ana-laptop                         # this machine's name: runs the workspace triggers/schedules whose runsOn names it
 triggers:
@@ -177,6 +181,8 @@ schedules:
   disabled: [platform/nightly-digest]      # workspace schedules this host does not run (oats schedule disable)
 ```
 
+`teams`, `defaultTeam`, `souls.teams` and `souls.default` (0.30.0) are this
+deployment's team membership: see [Teams](#teams).
 `host`, `triggers.disabled` and `schedules.disabled` (0.29.0) are machine facts:
 see [schedules.md#workspace-triggers-and-schedules](schedules.md#workspace-triggers-and-schedules).
 
@@ -237,7 +243,7 @@ no private mode: every soul of a confirmed member is listed and spawnable.
 **not** a member, pinned to a full commit. No handshake is asked for and none is
 read; the soul gets no member-tier capabilities of its own repo; it is
 "source-complete" (its skills travel with it) and the workspace's defaults fill
-its slots. An `external[].team` overrides the soul's own `team`.
+its slots.
 
 **Package souls.** A package may ship souls (`souls:` in `oats-package.json`,
 0.28.0): they are listed from the lock for each package the workspace declares,
@@ -301,7 +307,7 @@ else print the line to add — the workspace file is shared through Git. Details
 ## Resolution, spelled out
 
 For each `(name, from)` in
-`defaults.<slot>` ⊕ `defaults.capabilities` ⊕ `defaults.byTeam[<soul team>]` ⊕
+`defaults.<slot>` ⊕ `defaults.capabilities` ⊕
 `soul.capabilities` (later wins; `off` removes; a soul `<slot>: none` drops
 the workspace's slot default):
 
@@ -370,20 +376,58 @@ not exclude anything.
 
 ## Teams
 
-`teams:` declares labels once (`global`, `engineering`, …) so they cannot drift
-into typos. A soul carries `team:` — one label or a list (`team: [engineering,
-reviewers]`, the first the primary) — else its repo's default from
-`oats-membership.yaml` (same shape), else `unassigned`; a capability carries one
-label. A label not declared in `teams:` is `E_TEAM_UNKNOWN` (the item is still
-listed); a declared label without a `messaging.byTeam` entry is the
-`unmapped-team-label` warning. `defaults.byTeam.<team>.capabilities` adds
-capabilities additively for souls with that label, for each label in order
-(`off` removes; two labels that disagree are `E_TEAM_CONFLICT`). Each label is
-an *eligible* messaging team the provider may join on request — see
-[capabilities.md](capabilities.md#several-team-labels). **A
-label never gates, restricts, changes trust or partitions the knowledge
-store** — it organises and can supply defaults. The messaging provider's payload
-(private teams, channels) lives under `messaging:`, so "team" means one thing.
+Team model v2 (0.30.0). A team is a messaging-provider team (for oats.aweb, an
+aweb team id `<team>:<namespace>`) under a **label**. Two files declare them:
+
+- **Shared teams** — the committed `oats-workspace.yaml` `teams.<label> =
+  { description?, team? }`: the same provider team for everyone, edited by a PR.
+  A shared team without `team` is declared but not created yet (readiness
+  `team-unmapped`: its owner runs `oats aweb setup`, then commits the id).
+- **Local teams** — the deployment's `oats-local.yaml` `teams.<label> = { team,
+  description? }`: a team only this deployment uses (a personal team). A label in
+  both files is `team-label-collision` (a warning); the **shared** definition
+  wins, and the fix is renaming the local label.
+
+`oats-local.yaml` also says which teams each soul belongs to **here**:
+
+- `defaultTeam: <label>` — the team every instance of this deployment lives in
+  (its default-team identity);
+- `souls.teams` — `"*"` for every soul, and a soul's own entry (its bare name, or
+  `<package>/<soul>` for a package soul) adds to it;
+- `souls.default` — a per-soul override of `defaultTeam`; it must be one of that
+  soul's teams (`E_TEAM_NOT_ELIGIBLE`).
+
+A soul's default is `souls.default[soul] ?? defaultTeam`; its teams are that
+default ∪ `souls.teams["*"]` ∪ `souls.teams[soul]`. A label no file declares is
+`E_TEAM_UNKNOWN` (a spawn, preview or `inspect --soul` of that soul is
+refused). At spawn an instance joins its **default** only; the others are
+eligible — offered, joined on request through the provider (`join=` at spawn, or
+its own verbs later). Nothing committed besides the shared `teams:` says anything
+about teams: soul.yaml `team`, oats-membership.yaml `team`, `external[].team`,
+`messaging.byTeam` and `defaults.byTeam` were removed in 0.30.0 (a schema error
+naming the replacement), and capabilities compose from the workspace defaults
+and the soul only, the same for everyone. **A label never gates, restricts,
+changes trust or partitions the knowledge store.**
+
+The verbs edit `oats-local.yaml` in place (config only — they never call a
+provider):
+
+```
+oats teams [--json]                                  # this deployment's teams, ids, the default, problems
+oats teams add <label> --team <id> [--description d] # declare a local team (the first one becomes the default)
+oats teams remove <label>                            # refused while referenced (E_TEAM_IN_USE) or shared (E_TEAM_SHARED)
+oats teams default <label>
+oats soul teams <soul>|'*' [--add a,b] [--remove a,b] [--default <label> | --clear-default] [--json]
+```
+
+`oats aweb setup` (oats.aweb 1.17) creates the teams and records them with
+`oats teams add`. The spawn preview, `inspect` and `oats souls` report a soul's
+`teams` and `defaultTeam`; readiness reports the team problems in
+`checks.configured` (`E_TEAM_UNCONFIGURED` when a messaging layer is active and
+there is no default; `team-unmapped`, blocking when it is the default;
+`default-team-changed` for a running instance). The provider receives them in
+its environment — see [capabilities.md](capabilities.md#teams-in-the-provider-environment).
+Exact shapes: [desktop-cli-api.md](desktop-cli-api.md#team-model-v2-feature-team-model-2-oats-0300-replaces-feature-teams).
 
 ## Provider payloads have three homes
 
@@ -393,43 +437,18 @@ store** — it organises and can supply defaults. The messaging provider's paylo
 | A fact about this machine | `oats-local.yaml` → `settings.<cap>.<key>` (absolute paths are refused in the workspace file) | `settings.oats.okf.state-dir: /Users/ana/.oats/okf` |
 | A fact about **this spawn** | `oats spawn … --provider <cap> key=value` (repeatable; dotted keys nest) → `instance.json.providers.<cap>` | `--provider oats.aweb identity.source=/abs/path/to/retained/.aw` |
 
-The merged payload is `workspace.messaging` (messaging slot only; its base
-keys, with `byTeam` stripped) ⊕ soul slot payload ⊕ `local.settings[cap]` ⊕
-`spawn.providers[cap]` — objects deep-merge, later wins on scalars and arrays.
-**No `byTeam[<label>]` is merged into it, the primary's included** (teams
-amendment K): each label's `base ⊕ byTeam[label]` reaches the provider only as
-that label's entry in `OATS_TEAMS` (the preview's `teams`). So `settings.team`
-(and `OATS_TEAM_ID`) is the workspace's default team if the host, the soul or the spawn
-set one; empty means the provider's own default. The provider's own `binding` contract
+The merged payload is `workspace.messaging` (messaging slot only) ⊕ soul slot
+payload ⊕ `local.settings[cap]` ⊕ `spawn.providers[cap]` — objects deep-merge,
+later wins on scalars and arrays. The provider's own `binding` contract
 (`normalize → bind → check`) runs over the merged payload exactly as before.
-Two teams, two messaging identities, one workspace:
-
-```yaml
-teams: { oss: { description: Open protocol }, cloud: { description: Hosted application } }
-messaging:
-  byTeam:
-    oss:   { team: aweb:example.oss }
-    cloud: { team: aweb:example.cloud }
-```
-
-A soul with `team: cloud` hands its messaging provider the eligible team
-`{ label: cloud, team: aweb:example.cloud, mapped: true, payload: { team: aweb:example.cloud, … } }`
-in `OATS_TEAMS`; its settings carry no `team` unless the host, soul or spawn set
-one. A label under `byTeam` that is not declared in `teams:` is
-`E_WORKSPACE_SCHEMA`. **Joining an eligible team is the provider's explicit
-act.** `spawn --preview` shows the merged `settings.<cap>` and the `teams`, so
-the delivery is verifiable, and `instance.json` records both. With oats.aweb
-1.13.1 (which reads `team` from its settings and ignores `OATS_TEAMS`) the
-primary identity therefore mints into the workspace's default team: the `.aw` root's
-active team, or the one the host set. What the payload does not change is
-**where the `.aw` root is found**: the hook still searches
-bounded candidates, first hit wins — the instance home, the Git repository
-containing it, the soul's work repository and the Git repository containing
-it, then the deployment directory (`OATS_WORKSPACE`); never the user home or
-above the deployment — and that root must hold a membership of the named team (the deployment's `.aw`
-joined to every team its labels name is the simple layout). On oats.aweb
-1.11.2 `team` was ignored (the root's active team won), so `byTeam` there is
-a recorded intent only.
+Teams are **not** settings: they reach the provider beside them, in its
+environment ([Teams](#teams)). What the payload does not change is **where the
+`.aw` root is found**: the oats.aweb hook searches bounded candidates, first hit
+wins — the instance home, the Git repository containing it, the soul's work
+repository and the Git repository containing it, then the deployment directory
+(`OATS_WORKSPACE`); never the user home or above the deployment — and that root
+must hold a membership of every team its instances join (`oats aweb setup` makes
+the deployment's root a member of every declared team).
 A store (`stores: { <name>: <repo ref> }`) names a repository; where a
 knowledge base lives inside it is the knowledge provider's own concern — for
 OKF 2.1.3 that is the **bindings file** (`bases.<alias>.repository` + `root`,

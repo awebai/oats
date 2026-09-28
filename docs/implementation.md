@@ -70,7 +70,7 @@ soul among the confirmed members / external souls, and calls
 `lib/resolve.mjs#resolveSoul` → an immutable Resolution: `modules[]` (each
 `from: member|package` with commit and digest), `slots`, merged provider
 `payloads`, `skills`, `injects`, `revision`. Capability order is
-`defaults.<slot>` ⊕ `defaults.capabilities` ⊕ `defaults.byTeam[team]` ⊕
+`defaults.<slot>` ⊕ `defaults.capabilities` ⊕
 `soul.capabilities` (soul wins; `off` removes; a soul's `<slot>: none` empties
 the slot). `lib/materialize.mjs` then copies every module whole into the home.
 The normative contract is

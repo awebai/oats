@@ -34,8 +34,8 @@ Classic `kind`/`type`/`repo` declarations and config-targeted agent types are a 
 
 ## Workspace, repository and adoption contracts
 
-- `oats-workspace.yaml` (v2) declares members, the pinned `packages:`, team labels, defaults per slot and per team, stores, the messaging payload and pinned `external:` souls.
-- `oats-membership.yaml` is a repository's half of the handshake: the workspace backlink plus an optional default team label. Everything under `souls/` and `capabilities/` is discoverable by convention (`private: true` opts out); there are no export lists.
+- `oats-workspace.yaml` (v2) declares members, the pinned `packages:`, the shared teams, defaults per slot, stores, the messaging payload and pinned `external:` souls.
+- `oats-membership.yaml` is a repository's half of the handshake: the workspace backlink, nothing else (team membership is local since 0.30: the deployment's `oats-local.yaml`). Everything under `souls/` and `capabilities/` is discoverable by convention (`private: true` opts out); there are no export lists.
 - Membership requires compatible observations on both sides; folder adjacency or a copied declaration is not admission.
 - External source import does not adopt the publisher's workspace. A framework repository may host its own development workspace without imposing it on consumers.
 - Operator choices and workspace defaults must respect source requirements. Git read access is not write permission, a trust declaration or messaging enrollment.

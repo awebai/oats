@@ -84,8 +84,10 @@ nothing else.
 ## What is NOT in it
 
 - **Which capabilities a soul gets** — the soul's `capabilities:` plus the
-  workspace `defaults` (and `defaults.byTeam`). There is no per-deployment
-  activation or targeting.
+  workspace `defaults`. There is no per-deployment activation or targeting.
+  (Which *teams* a soul belongs to on this machine IS here: `teams`,
+  `defaultTeam`, `souls.teams`, `souls.default` — see
+  [workspaces.md](workspaces.md#teams).)
 - **Versions** — `packages:` in the workspace file; exact commits in
   `oats-lock.json`.
 - **Trust** — membership for members; the declaration in the workspace's

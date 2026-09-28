@@ -1776,7 +1776,7 @@ closed**: an unknown key is a contract change announced in this document first.
   record with `"recorded"` when the workspace cannot be read now.
 - It adds `recordedDefaultTeam: DefaultTeam | null` (from `instance.json`).
   When it differs from `defaultTeam`, readiness reports `default-team-changed`:
-  a running instance keeps its primary identity until it is respawned.
+  a running instance keeps its default-team identity until it is respawned.
 
 **`oats readiness … --json`:** `subject.team` is *removed*.
 
