@@ -1000,8 +1000,13 @@ shows the drift as `launch-changed`.
   `"oats-local.yaml#/souls/launch/*"`, `"<repoKey>:<path>/soul.yaml#/launch"`,
   or `"package:<id>:<path>/soul.yaml#/launch"`.
 - `problem`: `null`, or `{code, message, fix}` when a spawn would refuse
-  (`E_HARNESS_UNAVAILABLE`, `E_LAUNCH_CONFIG_UNKNOWN`). Only reports carry it;
-  spawn and preview refuse instead.
+  (`E_HARNESS_UNAVAILABLE`, `E_LAUNCH_CONFIG_UNKNOWN`, or `E_LAUNCH_EXECUTABLE`
+  for a configuration whose own executable is missing). Only reports carry it;
+  spawn and preview refuse instead. With `E_LAUNCH_CONFIG_UNKNOWN`,
+  `effective.harness` is `null`.
+- In listings (`oats souls`, `inspect --soul`, `launchCurrent`) `model` is the
+  configured id: no model catalogue is probed. The preview's `model` is the
+  resolved one.
 
 ### Where the launch appears
 
@@ -1016,11 +1021,16 @@ shows the drift as `launch-changed`.
   `harnessFrom` is `"soul"`, `"local"`, `"local-default"` or `"kernel-default"`
   (the host default).
 - **`oats inspect --home <abs>`**: `launch` is the record (`from` the recorded
-  layer), and `launchCurrent: Launch | null` is what `--reselect-launch` would
-  choose now (`null` when the soul no longer resolves).
+  layer; `declared` the soul's preference then), and `launchCurrent: Launch |
+  null` is what `--reselect-launch` would choose now: the home's recorded soul
+  copy's `launch` and this deployment's `souls.launch` as they are now (`null`
+  when `oats-local.yaml` cannot be read).
 - **`instance.json`** (a spawn, and a start that makes a new selection):
-  `launchFrom` (a `from` value) and `launchAt` (its `at`). Both are absent on a
-  home from before 0.30. `harness`, `model`, `launchConfig` and the recipe
+  `launchFrom` (a `from` value), `launchAt` (its `at`) and `launchDeclared`
+  (the soul's own preference then, `{harness, model}` or `null`). All three
+  are absent on a home from before 0.30. A start with `--launch-config` or
+  `--harness` records `launchFrom: "flag"`; a plain or `--model`-only start
+  keeps them. `harness`, `model`, `launchConfig` and the recipe
   record the effective launch as before.
 - **`modelFrom`** (instance.json and roster rows) gains `"local"` and
   `"local-default"` (an inline override's model). `"soul"` is the soul's
@@ -1029,7 +1039,12 @@ shows the drift as `launch-changed`.
   warning (`required: false`), `subject: "launch"`, `producer: "launch
   preference"`, with `recorded` and `current` (each `{harness, model,
   launchConfig}`), `from` and `at` (the current layer's). `remedy`:
-  "`oats session restart --reselect-launch`, or respawn".
+  "`oats session restart --reselect-launch`, or respawn". Only a home whose
+  recorded launch a layer chose (`launchFrom` `local`, `local-default`,
+  `soul` or `host`) is compared: one launched with explicit flags, or from
+  before 0.30, never warns.
+- **`--reselect-launch`** with `--launch-config` is `E_BAD_ARGS` (choose one);
+  with `--harness` the flag decides, as at spawn.
 
 No verb writes `souls.launch`; it is plain YAML. A GUI that edits it checks
 the result with `oats inspect --soul <name> --json`.
