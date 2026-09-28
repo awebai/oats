@@ -163,7 +163,11 @@ recipe is resolved again against the home's recorded context and every check
 runs first. With `--reselect-launch`, the launch preferences decide again
 (the home's recorded soul and this deployment's `souls.launch`). A capability that contributed harness-specific arguments must
 declare a `launch` hook to follow a harness change; otherwise the start is
-refused (`E_LAUNCH_PREPARATION`). `oats session restart` runs the same
+refused (`E_LAUNCH_PREPARATION`). A launch hook's warnings do not stop
+the start: `session start|restart` print them (and answer them as
+`warnings` under `--json`), as spawn does, and each is kept as a
+`launch-warning` instance event (`oats instance events`).
+`oats session restart` runs the same
 checks, then sends SIGTERM to the harness and what it started, waits
 (`--stop-grace <seconds>`, default 20) for them to exit, and starts again in
 place. It never escalates: a harness still running is reported

@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "modules": [],
+    "teams": [],
+    "defaultTeam": null,
+    "resolution": "a9b2789472aafaee7f33ee95",
+    "declRevision": "f82043e2a905fe8d7828f152",
+    "payloadRevision": "44136fa355b3678a1146ad16",
+    "workspace": "local//fixture/base/remotes/ws.git",
+    "standalone": false,
+    "providers": {},
+    "settings": {},
+    "settingsOrigins": {},
+    "spawnPreviewApi": 2,
+    "preview": true,
+    "agent": "dev",
+    "kind": "persistent",
+    "instance": "dev-q",
+    "home": "/fixture/base/deployment/agents/dev/instances/dev-q",
+    "repo": "/fixture/base/deployment",
+    "work": "directory",
+    "subject": {
+      "soul": "dev",
+      "agentsRoot": "/fixture/base/deployment/agents",
+      "dir": "/fixture/base/deployment"
+    },
+    "decision": {
+      "instance": "dev-q",
+      "home": "/fixture/base/deployment/agents/dev/instances/dev-q",
+      "branch": null,
+      "base": null,
+      "effective": {
+        "repo": "/fixture/base/deployment",
+        "work": "directory",
+        "harness": "claude",
+        "model": "claude-opus-5-5",
+        "launchConfig": null,
+        "yolo": null,
+        "backend": "tmux",
+        "childSpawns": true,
+        "relation": null,
+        "providers": {}
+      },
+      "resolution": "a9b2789472aafaee7f33ee95",
+      "revision": "c65f47495c462d5e60d4fc79"
+    },
+    "preflight": {
+      "status": "complete",
+      "budgetMs": 20000,
+      "elapsedMs": 85
+    },
+    "backendStatus": {
+      "name": "tmux",
+      "installed": false,
+      "started": false
+    },
+    "harness": "claude",
+    "model": "claude-opus-5-5",
+    "modelSource": "soul preference",
+    "launchConfig": null,
+    "backend": "tmux",
+    "launch": {
+      "declared": {
+        "harness": "claude",
+        "model": "claude-opus-5-5"
+      },
+      "effective": {
+        "harness": "claude",
+        "model": "claude-opus-5-5",
+        "launchConfig": null
+      },
+      "from": "soul",
+      "at": "local//fixture/base/remotes/ws.git:souls/dev/soul.yaml#/launch",
+      "problem": null
+    },
+    "branch": null,
+    "base": null,
+    "worktree": null,
+    "relation": null,
+    "parentInstance": null,
+    "policy": {
+      "childSpawns": {
+        "allowed": true,
+        "origin": {
+          "kind": "default",
+          "detail": "no spawn option: children allowed"
+        }
+      }
+    },
+    "executable": "/fixture/base/runtime-stub/claude",
+    "capabilities": [],
+    "skills": [],
+    "task": null,
+    "soulFetched": true
+  }
+}

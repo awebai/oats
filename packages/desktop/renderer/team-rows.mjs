@@ -3,11 +3,15 @@
 const record = v => !!v && typeof v === 'object' && !Array.isArray(v);
 const LABEL = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const text = (v, max = 256) => typeof v === 'string' && v.length > 0 && v.length <= max && !/[\x00-\x1f\x7f]/.test(v);
+/** The kernel's team-id rule (provider-neutral, a safety rule): what every generic reader accepts.
+ * Only the Desktop's aweb team form (the teams route's argv) keeps the stricter `<name>:<namespace>`. */
+export const TEAM_ID = /^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,255}$/;
+const teamId = v => typeof v === 'string' && TEAM_ID.test(v);
 /** One soul team row: 0.29 {label, team, mapped} or team model v2 (0.30) {label, team, default, from}.
  * A v2 row keeps `default`/`from` and gains `mapped` = (team !== null), the same fact the 0.29 row
  * states, so existing views read both. Idempotent: a projected v2 row re-validates. */
 export function teamRow(t) {
-  if (!record(t) || typeof t.label !== 'string' || !LABEL.test(t.label) || !(t.team === null || text(t.team))) return null;
+  if (!record(t) || typeof t.label !== 'string' || !LABEL.test(t.label) || !(t.team === null || teamId(t.team))) return null;
   if (Object.hasOwn(t, 'default')) {
     // The known keys are validated; others (a payload, as 0.29 rows carry) are ignored, never passed on.
     if (typeof t.default !== 'boolean' || !text(t.from, 32) || (Object.hasOwn(t, 'mapped') && t.mapped !== (t.team !== null))) return null;
@@ -21,7 +25,7 @@ export function teamRow(t) {
  * null when none is configured, or undefined when the value is not that shape. */
 export function defaultTeamOf(v) {
   if (v === null) return null;
-  if (!record(v) || typeof v.label !== 'string' || !LABEL.test(v.label) || !(v.team === null || text(v.team)) || !['deployment', 'soul'].includes(v.from)) return undefined;
+  if (!record(v) || typeof v.label !== 'string' || !LABEL.test(v.label) || !(v.team === null || teamId(v.team)) || !['deployment', 'soul'].includes(v.from)) return undefined;
   return { label: v.label, team: v.team, from: v.from };
 }
 /** A list of v2 TeamRows (the default first), or undefined when any row is not one. */

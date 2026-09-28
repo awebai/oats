@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_HARNESS_UNAVAILABLE",
+    "message": "codex is not installed on this machine (codex binary not found on PATH); oats-local.yaml#/souls/launch/dev chose it — install codex, or change oats-local.yaml souls.launch",
+    "details": {
+      "harness": "codex",
+      "from": "local",
+      "at": "oats-local.yaml#/souls/launch/dev",
+      "fix": "install codex, or change oats-local.yaml souls.launch"
+    }
+  }
+}

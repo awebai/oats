@@ -192,10 +192,12 @@ const KERNEL_CODE = /^E_[A-Z0-9_]{1,63}$/;
 /** A kernel refusal keeps its own code and message (bounded, printable): the
  * kernel's remedy — "git clone … " for E_CLONE_MISSING — is the useful part.
  * Desktop-side codes use the fixed table. */
-export function previewFailure(code, target = null, kernelMessage) {
+export function previewFailure(code, target = null, kernelMessage, kernelFix) {
   const kernel = typeof code === 'string' && KERNEL_CODE.test(code) && typeof kernelMessage === 'string'
     && kernelMessage.trim() && kernelMessage.length <= 2048 && safe(kernelMessage.replace(/\n/g, ' '), 2048);
-  if (kernel) return { spawnPreviewViewApi: 1, status: 'unavailable', target: previewTarget(target), data: null, reason: { code, message: kernelMessage } };
+  // A launch refusal's `fix` (E_HARNESS_UNAVAILABLE, E_LAUNCH_CONFIG_UNKNOWN: the kernel's own words) travels with it.
+  const fix = kernel && typeof kernelFix === 'string' && kernelFix.trim() && safe(kernelFix, 1024) ? { fix: kernelFix } : {};
+  if (kernel) return { spawnPreviewViewApi: 1, status: 'unavailable', target: previewTarget(target), data: null, reason: { code, message: kernelMessage, ...fix } };
   if (!Object.hasOwn(errors, code)) code = 'E_CLI_FAILED';
   return { spawnPreviewViewApi: 1, status: 'unavailable', target: previewTarget(target), data: null, reason: { code, message: errors[code] } };
 }
@@ -228,7 +230,8 @@ export function previewData(v, expected) {
   if (messaging === undefined || teams === undefined || (Object.hasOwn(v, 'defaultTeam') && defaultTeam === undefined)) return null;
   // Launch preferences (0.30): the Launch with flags applied; its effective launch IS the preview's.
   const launch = Object.hasOwn(v, 'launch') ? launchOf(v.launch, PREVIEW_FROM) : undefined;
-  if (Object.hasOwn(v, 'launch') && (launch === undefined || launch.effective.harness !== e.harness || launch.effective.model !== e.model
+  // Only reports carry `problem`: a preview that would hit one refuses with the error instead.
+  if (Object.hasOwn(v, 'launch') && (launch === undefined || launch.problem !== null || launch.effective.harness !== e.harness || launch.effective.model !== e.model
     || launch.effective.launchConfig !== e.launchConfig)) return null;
   return { spawnPreviewApi: 2, preview: true, subject: { soul: v.subject.soul, agentsRoot: v.subject.agentsRoot, dir: v.subject.dir },
     decision: d, resolution: d.resolution, instance: d.instance, home: d.home, branch: d.branch, base: base ? { ...base } : null,
