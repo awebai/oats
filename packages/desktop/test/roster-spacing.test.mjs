@@ -132,7 +132,8 @@ function assertConnectors(u) {
   assert.equal(u.rule(".ctx-guide.down").top, "50%", "a parent's line leaves from its own dot");
   assert.equal(u.rule(".ctx-guide.link-in, .ctx-guide.link-out, .ctx-guide.link-through").borderLeft,
     "1.5px dotted var(--tree-link)", "sibling links are dotted");
-  assert.equal(u.rule(".ctx-dot").boxShadow, "0 0 0 2px var(--surface)", "the dot's ring hides the line under it");
+  assert.equal(u.rule(".ctx-dot").boxShadow, "0 0 0 2px var(--row-solid, var(--surface))",
+    "the dot's ring hides the line under it, in the row's own solid colour");
 }
 
 test("tree connectors (non-layout): lines leave the dots, no disclosure arrows", t => {
@@ -212,4 +213,23 @@ for (const [label, before, after, check, message] of [
   assert.ok(css.includes(before), "mutate the shipped declaration");
   const u = fixture(t, css.replace(before, after));
   assert.throws(() => check(u), { code: "ERR_ASSERTION", message });
+});
+
+// Human, 2026-09-29: a running dot stays solid on a selected or hovered row. Its knockout ring takes the
+// row's own solid colour, so on the tint it never reads as a hollow dot inside a white halo.
+test("running dot stays solid --accent on selected and hovered rows; its ring is the row's colour", t => {
+  const u = fixture(t);
+  const active = u.doc.querySelector(".ctx-tree-row.active");
+  assert.ok(active, "the fixture has a selected row");
+  const dot = active.querySelector(".ctx-dot");
+  assert.equal(dot.className, "ctx-dot on", "the selected fixture row is running");
+  const style = u.computed(dot);
+  assert.equal(style.background, "var(--accent)", "solid fill");
+  assert.equal(u.rule(".ctx-dot.on").borderColor, "var(--accent)", "jsdom keeps var() only in the shorthand, so the border is read from the rule");
+  assert.equal(style.boxShadow, "0 0 0 2px var(--row-solid, var(--surface))", "the ring follows the row's solid colour");
+  assert.equal(u.rule(".ctx-tree-row.active").getPropertyValue("--row-solid"), "var(--sel)", "the ring on a selected row is the tint");
+  assert.equal(u.rule(".ctx-tree-row:hover").getPropertyValue("--row-solid"), "var(--surface-2)", "and on hover the hover surface");
+  assert.equal(u.computed(active).getPropertyValue("--row-solid").trim(), "var(--sel)", "the selected row resolves its own solid colour");
+  assert.equal(u.rule(".ctx-dot").background, "var(--surface)", "only a stopped dot is hollow");
+  assert.equal(u.rule(".ctx-dot.on").background, "var(--accent)");
 });
