@@ -27,7 +27,7 @@ import {
   LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
   officialPackageCatalog, officialCatalogFile, officialCapabilityAliases, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, isCapturedHome, capturedHomeRefusal, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
-  findInstanceHome, findInstanceHomes, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, launchConfigsAt, launchReportFor, explicitInstanceName, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
+  findInstanceHome, findInstanceHomes, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, recordedKernelBin, launchConfigsAt, launchReportFor, explicitInstanceName, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
 import {
   writeFileAtomic, LOCK_FILE, readLock, writeLock, resolvePackages, memoizedRemote,
@@ -1792,6 +1792,9 @@ async function status() {
       console.log(`      • ${i.instance}  ${i.retirePending ? "RETIRING" : i.running ? "RUNNING" : "idle"}  (branch ${i.branch || "?"}, ${i.work || "?"})`);
       const key = i.home ?? `${a.name}/${i.instance}`;
       if (i.identity) console.log(`          identity: ${servedIdentityLine(i.identity)}`);
+      // The kernel the home's plain `oats` runs (its last launch's), when it is not this one.
+      const launchedBy = i.home ? recordedKernelBin(i.home) : null;
+      if (typeof launchedBy === "string" && (verbose || launchedBy !== CLI_BIN)) console.log(`          kernel: ${launchedBy}${launchedBy !== CLI_BIN ? " (not this oats)" : ""}`);
       const s = ws?.soul.get(key);
       if (s && (verbose || s.status !== "current")) console.log(`          ${soulDriftLine(s, a.name)}`);
       const rows = ws?.drift.get(key) || [];

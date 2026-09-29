@@ -1265,6 +1265,7 @@ Feature `spawn-name`. `--name <slug>` is the exact name, with no prefix.
 | `E_PLACEMENT_TAKEN`, `E_IDEMPOTENCY_CONFLICT` | `{instance, home}` | |
 | `E_SPAWN_INCOMPLETE` | `{instance, home, launched}` | |
 | `E_LAUNCH_*`, `E_MODEL_UNKNOWN`, `E_UNSUPPORTED_HARNESS` | | the launch selection is refused |
+| `E_LAUNCH_SHIM` | | the home's `oats` (`<home>/.oats/bin/oats`) cannot be written; the spawn is rolled back |
 | `E_SCHEDULE_INVALID` | | a bad wake (`--wake-json`, `--wake-file`, `--wake-*`) |
 | `E_SPAWN_FAILED` | | anything else |
 
@@ -1673,8 +1674,9 @@ selection flags. See [the start workflow](desktop-instance-start.md).
 - A lost response does not mean the launch failed: check status before a
   retry. A remote home's saved route names its execution host.
 - Errors: `E_BAD_ARGS`, `E_SESSION_UNKNOWN`, `E_UNSUPPORTED_MODE`,
-  `E_SESSION_START_BUSY`, `E_INSTANCE_RETIRING`, `E_LAUNCH_*`,
-  `E_MODEL_UNKNOWN`, `E_UNSUPPORTED_HARNESS`, `E_SESSION_FAILED`.
+  `E_SESSION_START_BUSY`, `E_INSTANCE_RETIRING`, `E_LAUNCH_*` (among them
+  `E_LAUNCH_SHIM`: the home's `oats` link cannot be written, nothing was
+  started), `E_MODEL_UNKNOWN`, `E_UNSUPPORTED_HARNESS`, `E_SESSION_FAILED`.
 
 ### Upload
 
