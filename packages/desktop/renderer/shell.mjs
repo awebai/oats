@@ -14,7 +14,7 @@ import { instanceActionTarget, sameInstanceActionTarget } from "./instance-actio
 import { createInstancePrAction } from "./instance-pr-action.mjs";
 import { instanceSplitPlan, instanceSplitIdentity } from "./instance-split.mjs";
 import { createInstanceStarter } from "./start-instance.mjs";
-import { retirementSummary, runtimeState } from "./instance-presentation.mjs";
+import { retirementSummary, runtimeState, unsupportedSession } from "./instance-presentation.mjs";
 import { deploymentUnavailableText } from "./deployment-header.mjs";
 import {
   initTheme, toggleTheme, setTheme, THEMES, xtermTheme, onThemeChange,
@@ -622,7 +622,7 @@ function renderContextRoster(instances) {
           shortcut: id => { const chord = getBinding(id, isMac); return chord ? formatChord(chord, isMac) : ''; },
           extra: [
             { action: 'open-split', actionId: 'instance.openSplit', label: 'Open in split', reason: () => !actionTarget ? 'Instance identity is not fully reported.'
-              : i.running !== true ? 'No live terminal is reported.' : instanceSplitPlan(splitOpenState()).reason },
+              : unsupportedSession(i) || (i.running !== true ? 'No live terminal is reported.' : instanceSplitPlan(splitOpenState()).reason) },
             { action: 'open-pr', actionId: 'instance.openPullRequest', label: 'Open pull request…', reason: !actionTarget ? 'Instance identity is not fully reported.'
               : i.server || i.remote ? 'Remote PR inspection is unavailable; no local fallback.' : '' },
           ],
@@ -1352,7 +1352,7 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
   if (!owns()) return;
   const name = inst.instance;
   if (inst.server && !inst.savedRoute) return notify("No saved route for this remote instance on this machine");
-  if (!inst.running || (!inst.server && !inst.tmux?.session && !inst.sessionTarget)) return notify(inst.runtimeError || `"${name}" has no live terminal session`);
+  if (!inst.running || (!inst.server && !inst.tmux?.session)) return notify(inst.runtimeError || `"${name}" has no live terminal session`);
 
   if (!commitDestination()) return notify('The terminal destination changed. Select the instance again.');
   const wrap = document.createElement("div");
@@ -1380,7 +1380,6 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
     desk,
     term,
     tmux: inst.tmux,
-    sessionTarget: inst.sessionTarget,
     remote: inst.server ? { serverId: inst.server, instance: inst.instance, home: inst.home } : undefined,
     wrap,
     isActive: () => made.paneEl.classList.contains("active"),

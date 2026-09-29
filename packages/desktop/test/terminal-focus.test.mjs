@@ -100,7 +100,7 @@ test("post-spawn auto-open is QUIET: openTerminalTab failures route through noti
   // both user-facing refusals inside the open path go through notify
   assert.match(src, /return notify\(r\.error === "ambiguous"/,
     "resolution refusals use notify");
-  assert.match(src, /if \(!inst\.running \|\| \(!inst\.server && !inst\.tmux\?\.session && !inst\.sessionTarget\)\) return notify\(inst\.runtimeError \|\| `"\$\{name\}" has no live terminal session`\);/,
+  assert.match(src, /if \(!inst\.running \|\| \(!inst\.server && !inst\.tmux\?\.session\)\) return notify\(inst\.runtimeError \|\| `"\$\{name\}" has no live terminal session`\);/,
     "the no-live-terminal refusal uses notify (the original stuck-modal alert)");
   // and the spawn view's handoff actually asks for quiet + closes the modal first
   const spawnSrc = read("renderer/views/spawn.mjs");

@@ -174,3 +174,11 @@ test('CLI fixes every argv, caps timeout/output, supports raw/replayed retire an
     const result = await cliLifecycle(cli.bin, args, { exec: (_b, _a, _o, done) => done(error, 'PRIVATE') }); assert.equal(result.ok, false); assert.doesNotMatch(JSON.stringify(result), /PRIVATE/);
   }
 });
+test('a Herdr-recorded instance still plans and applies Retire: the kernel decides, the Desktop never blocks it', async () => {
+  const f = fixture(), reason = 'E_HERDR_REMOVED: Herdr is no longer supported by OATS (removed in 0.31.0); tmux is the only session backend.';
+  Object.assign(f.ctx.instances[0], { running: null, runtimeState: 'unsupported', runtimeError: reason, sessionTarget: { backend: 'herdr' } });
+  const plan = await f.plan('retire');
+  assert.equal(plan.status, 'plan');
+  assert.equal((await f.apply(plan.planRef)).status, 'complete');
+  assert.deepEqual(f.calls.map(c => [c.args.operation, c.args.phase]), [['retire', 'plan'], ['retire', 'apply']]);
+});

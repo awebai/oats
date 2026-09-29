@@ -10,7 +10,7 @@ import * as tree from '../renderer/instance-tree.mjs';
 import { instanceActions, captureInstanceActionMenu } from '../renderer/instance-actions.mjs';
 import { instanceActionTarget, sameInstanceActionTarget } from '../renderer/instance-action-target.mjs';
 import { instanceSplitPlan } from '../renderer/instance-split.mjs';
-import { runtimeState } from '../renderer/instance-presentation.mjs';
+import { runtimeState, unsupportedSession } from '../renderer/instance-presentation.mjs';
 import { createRuntimeBadge } from '../renderer/identity-marks.mjs';
 import { iconElement } from '../renderer/shell-icons.mjs';
 import { rosterTipFacts } from '../renderer/roster-tip.mjs';
@@ -75,7 +75,7 @@ test('the shipped roster row: the chip beside the name, the link in the row tool
   const rows = new Map([[roster[0].home, pr(roster[0].home)], [roster[1].home, pr(roster[1].home, { number: 7, isDraft: true, url: null })], [roster[3].home, pr(roster[3].home)]]);
   const opened = [], tips = new Map();
   const context = {
-    ...tree, document: doc, instanceActions, captureInstanceActionMenu, runtimeState, createRuntimeBadge, instanceActionTarget, instanceSplitPlan,
+    ...tree, document: doc, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, createRuntimeBadge, instanceActionTarget, instanceSplitPlan,
     iconElement, prChip, prText, rosterPrs: { get: home => rows.get(home) ?? null }, ctx: { openExternal: url => opened.push(url) },
     rosterTip: { bind(el, facts) { tips.set(el.dataset.treeInstance, facts); }, hide() {}, sync() {} }, rosterTipFacts,
     connectionGeneration: 0, menuState() {}, runAction: assert.fail, getBinding: () => null, formatChord: c => c, isMac: true,

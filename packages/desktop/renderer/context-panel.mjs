@@ -2,6 +2,7 @@ import { servedIdentityText } from './deployment-facts.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { ageText } from './age-text.mjs';
 import { createSoulMark, createRuntimeBadge, harnessName } from './identity-marks.mjs';
+import { unsupportedSession } from './instance-presentation.mjs';
 /** Shell-owned contextual surface. Optional Git reads are delegated to an
  * injected controller; this host performs no IO, lookup or lifecycle actions. */
 export const contextPanelCSS = `
@@ -630,9 +631,12 @@ export function createContextPanel({
     startedLine.hidden = fields.get('startedAt').textContent === 'Not reported';
     createdLine.hidden = !startedLine.hidden || fields.get('createdAt').textContent === 'Not reported';
     session.hidden = !harness && !tmux && createdLine.hidden && startedLine.hidden;
-    const running = instance.running === true, stopped = instance.running === false;
-    restartControl.hidden = !running; startControl.hidden = !stopped; stopControl.hidden = !running;
+    const running = instance.running === true, stopped = instance.running === false, unsupported = unsupportedSession(instance);
+    restartControl.hidden = !running; startControl.hidden = !stopped && !unsupported; stopControl.hidden = !running;
     for (const b of [restartControl, startControl, stopControl, retireControl]) b.disabled = !!instance.server && !instance.savedRoute;
+    // A Herdr-recorded instance cannot start: Start stays visible, disabled, with the kernel's reason.
+    if (unsupported) startControl.disabled = true;
+    startControl.title = unsupported || '';
     // A section with nothing reported is not shown; the header sub-line omits an unreported description.
     soulSub.hidden = fields.get('description').textContent === 'Not reported';
     for (const host of [worktree, lineage]) host.hidden = [...host.querySelectorAll('[data-row]')].every(r => r.hidden);

@@ -32,7 +32,7 @@
    Contract: mount(el, ctx) / unmount(); roster from GET /api/panel, explicit
    selected activity from the guarded K7 POST /api/instance-events boundary. */
 import { computeClusters, siblingEdges } from "./clusters.mjs";
-import { runtimeState, runtimeCounts } from "../instance-presentation.mjs";
+import { runtimeState, runtimeCounts, unsupportedSession } from "../instance-presentation.mjs";
 import { createInstanceEventsView, instanceEventsCSS } from "../instance-events-view.mjs";
 import { instanceId, resolveLinkId } from "../instance-tree.mjs";
 import { projectActivePanel, activeSignature, activeTargetLabel, canAddressInstance, BRAIN_UNAVAILABLE } from "../active-observation.mjs";
@@ -1009,8 +1009,9 @@ function updatePop(s) {
   const terminal = pop.querySelector('.pterm');
   setText(terminal, i.running === false ? 'Start…' : 'Terminal');
   terminal.disabled = !allowed || (i.running === true ? !s.ctx.openTerminal : i.running === false ? !s.ctx.startInstance : true);
-  terminal.title = terminal.disabled ? 'Requires a current, addressed instance with known runtime state and an available route.' : i.running === false ? 'Open the existing Start dialog' : 'Open this exact instance terminal';
-  const restart = pop.querySelector('.prestart'); if (restart) restart.disabled = !allowed || i.running !== true;
+  const unsupported = unsupportedSession(i);
+  terminal.title = unsupported || (terminal.disabled ? 'Requires a current, addressed instance with known runtime state and an available route.' : i.running === false ? 'Open the existing Start dialog' : 'Open this exact instance terminal');
+  const restart = pop.querySelector('.prestart'); if (restart) { restart.disabled = !allowed || i.running !== true; restart.title = unsupported || ''; }
   s.activity?.sync();
   positionPop(s);
 }

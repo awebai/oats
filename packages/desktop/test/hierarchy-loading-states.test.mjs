@@ -212,3 +212,12 @@ test('a panel that reports an error beside its instances is announced as stale o
   u.setRead(() => panel([instance()])); await u.poll(); await tick();
   assert.equal(u.notice(), ''); assert.equal(u.status(), '');
 });
+
+test('a Herdr-recorded instance: the popover disables Terminal and Restart with the kernel reason as their title', async t => {
+  const reason = 'E_HERDR_REMOVED: Herdr is no longer supported by OATS (removed in 0.31.0); tmux is the only session backend.';
+  const u = await setup(t, { instances: [instance('h1', { running: null, runtimeState: 'unsupported', runtimeError: reason })] }); await tick();
+  u.mouse(u.nodes()[0], 'click');
+  const terminal = u.one('.pterm'), restart = u.one('.prestart');
+  assert.equal(terminal.disabled, true); assert.equal(terminal.title, reason);
+  assert.equal(restart.disabled, true); assert.equal(restart.title, reason);
+});
