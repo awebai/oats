@@ -29,6 +29,7 @@ that model.
 | Instance operating doc | `<home>/AGENTS.md` (generated) |
 | Instance skills | `<home>/.agents/skills/` |
 | Instance modules | `<home>/.oats/modules/<capability>/` (the copies this instance runs) |
+| Instance `oats` | `<home>/.oats/bin/oats` (a link to the kernel that last launched it) |
 | Instance record | `<home>/instance.json` (`modules`, `providers`, `workspace`, `teams`) |
 
 ## Soul anatomy
@@ -126,6 +127,7 @@ full copy** of every capability the soul resolved to:
     <skill>/SKILL.md               # one level deep, where every harness discovers skills
   .claude/skills → ../.agents/skills
   .oats/modules/<capability>/      # the whole capability: oats.json, bin/, injects/, skills/ (hooks run from here)
+  .oats/bin/oats → <kernel>/bin/oats.mjs  # the kernel that last launched this home: first on the harness's PATH
   work/                            # worktree, checkout symlink, attached tree, or private directory
   TASK.md                          # briefing and task
   instance.json                    # provenance (below); `soulDir` = the soul directory hooks get as OATS_SOUL
@@ -244,7 +246,10 @@ it would bind, `providers` (the `--provider` map exactly as given) and
 the apply refuses with `E_DECISION_STALE` if a member
 moved in between. `--provider <cap> key=value` (repeatable; dotted keys nest)
 must name a capability the soul resolves (`E_CAPABILITY_MISSING` otherwise) and
-needs a workspace deployment. The full DTOs are in
+needs a workspace deployment. Spawn takes one soul and the flags it reads:
+another positional, or a flag it does not know, is `E_BAD_ARGS` naming the
+argument, before anything is created (a bare `key=value` is a provider
+setting given without `--provider <capability>`). The full DTOs are in
 [desktop-cli-api.md](desktop-cli-api.md#workspace-model-workspaceapi-2).
 
 Examples of spawn hooks:

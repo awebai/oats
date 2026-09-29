@@ -3,6 +3,8 @@
 .claude/
 .claude/skills -> ../.agents/skills
 .oats/
+.oats/bin/
+.oats/bin/oats -> <kernel>/bin/oats.mjs
 .oats/modules/
 .oats-events.jsonl
 AGENTS.md
