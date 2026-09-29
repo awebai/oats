@@ -1207,8 +1207,8 @@ with `--expect-decision` records the key and decision in `instance.json`.
 
 ```json
 {"instance":"rm-api","agent":"rm","home":"/w/agents/rm/instances/rm-api","work":"worktree","branch":"agents/rm-api","launched":true,"warnings":[],
- "tmux":{"session":"pi-agents","window":"rm-api"},"repo":"/w/agents-repo","harness":"pi","model":null,"parent":null,"sibling":null,"relation":null,
- "spawnOrigin":"operator","attach":"tmux attach -t pi-agents","decision":{"instance":"rm-api","revision":"c557d8ec9a272ba1c1739dc3"},"replayed":false,
+ "tmux":{"session":"oats-agents","window":"rm-api"},"repo":"/w/agents-repo","harness":"pi","model":null,"parent":null,"sibling":null,"relation":null,
+ "spawnOrigin":"operator","attach":"tmux attach -t oats-agents","decision":{"instance":"rm-api","revision":"c557d8ec9a272ba1c1739dc3"},"replayed":false,
  "wake":{"requested":false,"saved":null,"error":null},"launchConfig":null,
  "launch":{"version":2,"harness":"pi","launchConfig":null,"launchConfigSource":null,"executable":"/usr/local/bin/pi","executableDeclared":null,
            "executableResolvedFrom":"PATH","args":[],"env":{},"model":null,"hooks":{"launch":{},"env":{},"contributions":[]},"prompt":{"kind":"task-file","file":"TASK.md"}}}

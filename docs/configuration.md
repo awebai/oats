@@ -34,6 +34,8 @@ souls:
 
 host:
   name: ana-laptop                           # which workspace triggers and schedules run here
+session:                                     # terminal defaults for NEW launches on this host (0.31)
+  tmuxSession: oats-agents                   # the tmux session new tmux instances open in
 triggers:
   disabled: [platform/nightly-review]
 schedules:
@@ -64,6 +66,7 @@ refused (`E_WORKSPACE_SCHEMA`).
 | `souls.teams` | Which teams each soul joins here: `"*"` applies to every soul; a soul's own entry (its name, or `<package>/<soul>`) adds to it. Every soul is also in its default team. Written by `oats soul teams <soul>\|'*' --add … --remove …`. |
 | `souls.default` | A per-soul override of `defaultTeam`; it must be one of that soul's teams here (`E_TEAM_NOT_ELIGIBLE`). Written by `oats soul teams <soul> --default <label>`. |
 | `souls.disabled` | Souls not run on this machine; a spawn is refused with `E_SOUL_DISABLED`. A bare name disables every soul of that name; `<package>/<soul>` or `<member>/<soul>` disables one. |
+| `session.tmuxSession` | The tmux session new tmux instances open their windows in (0.31). Absent: `OATS_TMUX_SESSION`, else `PI_AGENTS_TMUX_SESSION` (the pre-0.31 variable), else `oats-agents`. `session: { tmuxSession: pi-agents }` keeps the pre-0.31 layout. `oats inspect --json` reports it as `session`. |
 | `host.name` | This machine's name. A workspace trigger or schedule runs only on the host named by its `runsOn` ([schedules.md](schedules.md)). |
 | `automations.trust` | The workspace triggers and schedules (`<member>/<id>`) this host agrees to run, or `"*"` for every one the workspace places here (0.30). Absent or empty: none runs. See [Who runs workspace automations](#who-runs-workspace-automations). |
 | `triggers.disabled`, `schedules.disabled` | Workspace triggers and schedules (`<member>/<id>`) this host does not run, without a commit. Written by `oats trigger disable` / `oats schedule disable`. |

@@ -5,9 +5,9 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { readHerdrTarget } from '../herdr-target.mjs';
-import { createTmuxStatusReader } from './tmux-status.mjs';
+import { createTmuxStatusReader, DEFAULT_TMUX_SESSION } from './tmux-status.mjs';
 
-export const DEFAULT_TMUX_SESSION = process.env.PI_AGENTS_TMUX_SESSION || 'pi-agents';
+export { DEFAULT_TMUX_SESSION };
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 /** rows: [{ instance, tmux?, sessionTarget? }] in, one liveness per row out. */

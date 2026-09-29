@@ -36,15 +36,31 @@ variables point at are described in
 ## Backends
 
 `oats spawn --backend tmux|herdr` chooses the backend (default `tmux`). The
-backend binary must be installed on the execution host. The chosen session
+backend binary must be installed on the execution host. A launched home keeps
+the backend and session it recorded: `session start` and `restart` never
+re-read the defaults. A `--no-launch` spawn on Herdr records no Herdr server;
+its first `session start` finds or starts the host's Herdr server exactly as a
+launched spawn does and records the endpoint and protocol, which are strict
+from then on (0.31). Without `herdr` installed that start is refused
+(`E_RUNTIME_ENDPOINT_UNKNOWN`), never moved to tmux. The chosen session
 target is recorded twice: in `instance.json` and in an independent lifecycle
 receipt. Every session command checks that the two agree
 (`E_RUNTIME_AUTHORITY_MISMATCH` otherwise).
 
 ### tmux
 
-Each instance is a window named after the instance in the tmux session
-`pi-agents` (override with `PI_AGENTS_TMUX_SESSION`). The receipt records the
+Each instance is a window named after the instance in a tmux session: the
+deployment's `session.tmuxSession`, else `OATS_TMUX_SESSION`, else
+`PI_AGENTS_TMUX_SESSION` (the pre-0.31 variable), else `oats-agents`. Before
+0.31 the default was `pi-agents`; a home launched then keeps the `pi-agents`
+session it recorded, and `oats status` reads each home in its recorded
+session. The environment variables are read when the spawn runs, and `oats
+inspect --json` reports the session a new spawn would open in as `session`
+(`{tmuxSession}`). A spawn refuses an instance name that is a live window in the
+session it would open in (`E_INSTANCE_NAME_TAKEN`); a live window of that name
+in another session, such as a `pi-agents` window after the default moved, does
+not block it. Session commands target each home's exact recorded window, so
+the two never mix. The receipt records the
 session, window and socket. The spawn result prints the attach command.
 
 ### Herdr
