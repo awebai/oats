@@ -10,7 +10,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { checkRemote, dropRemoteProbes, rosterGroups, runRemote, sshArgv, writeServers } from "../lib/servers.mjs";
+import { checkRemote, dropRemoteProbes, rosterGroups, routeCommand, runRemote, sshArgv, writeServers } from "../lib/servers.mjs";
 
 // ssh binds the control socket at `<ControlPath>.<16 random>`: a short
 // OATS_HOME_DIR keeps it inside the 104-byte socket path limit (macOS).
@@ -464,4 +464,59 @@ test("version --json advertises the new routed surfaces", () => {
   const r = spawnSync(process.execPath, [CLI, "version", "--json"], { encoding: "utf8" });
   const probe = JSON.parse(r.stdout);
   for (const name of ["readiness", "instance-events", "instance-git", "lifecycle-plans"]) assert.ok(probe.remote.includes(name), name);
+});
+
+// ---- review round 1 (items 3-5): the Desktop's exact argv, a removed registration, a replayed receipt ----
+
+test("retire --plan and the guarded apply take the Desktop's exact arguments, --dir on the host included", () => {
+  const { env, host } = surfaceSetup("desk-retire");
+  let r = cli(env, ["retire", "dev-a", "--plan", "--home", HOME_A, "--dir", WS, "--json", "--server", "build"]);
+  assert.equal(r.status, 0, r.stdout + r.stderr); assert.deepEqual(r.json(), ENVELOPES.retirePlan);
+  writeFileSync(join(env.OATS_HOME_DIR, "servers.json"), JSON.stringify({ servers: { build: { sshHost: "build-host", workspace: WS, oatsPath: fakeHost(mkdtempSync(join(base, "desk-apply-")), { probe: SURFACE_PROBE, answers: {
+    [`retire dev-a --plan-revision r2 --idempotency-key k2 --discard-worktree --home ${HOME_A} --dir /srv/member --json`]: { stdout: JSON.stringify({ retired: "dev-a", agent: "dev", removedDir: true, planRevision: "r2", idempotencyKey: "k2", replayed: false }) },
+  } }).oatsPath } } }));
+  r = cli(env, ["retire", "dev-a", "--plan-revision", "r2", "--idempotency-key", "k2", "--discard-worktree", "--home", HOME_A, "--dir", "/srv/member", "--json", "--server", "build"]);
+  assert.equal(r.status, 0, r.stdout + r.stderr); assert.equal(r.json().result.retired, "dev-a");
+  // An unguarded routed retire still takes its scope from the registration.
+  r = cli(env, ["retire", "dev-a", "--dir", WS, "--json", "--server", "build"]);
+  assert.equal(r.json().error.code, "E_BAD_ARGS");
+  void host;
+});
+
+test("the routed reads and plans follow a saved route after the registration is removed, by name and by home", () => {
+  const { env, host } = surfaceSetup("frozen");
+  const reg = JSON.parse(readFileSync(join(env.OATS_HOME_DIR, "servers.json"), "utf8")).servers.build;
+  mkdirSync(join(env.OATS_HOME_DIR, "remote", "build"), { recursive: true });
+  writeFileSync(join(env.OATS_HOME_DIR, "remote", "build", "dev-a.json"), JSON.stringify({ serverId: "build", instance: "dev-a", agent: "dev", home: HOME_A, agentsRoot: `${WS}/agents`, target: { sshHost: "build-host", workspace: WS, oatsPath: reg.oatsPath } }));
+  writeFileSync(join(env.OATS_HOME_DIR, "servers.json"), JSON.stringify({ servers: {} }));
+  for (const [, argv, envelope] of SURFACE_CALLS.filter(([, argv]) => !argv.includes("--soul") || argv.includes("--home"))) {
+    const r = cli(env, argv);
+    assert.equal(r.status, 0, `${argv.join(" ")}: ${r.stdout}${r.stderr}`);
+    assert.deepEqual(r.json(), envelope, argv.join(" "));
+  }
+  assert.equal(host.calls().filter((c) => c.includes("status --json")).length, 0, "a saved route needs no roster read");
+});
+
+test("a repeated guarded retire reaches the host's receipt replay after the instance is gone", () => {
+  let retired = false;
+  const sent = [];
+  const receipt = { retired: "dev-a", agent: "dev", removedDir: true, planRevision: "r1", idempotencyKey: "k1", replayed: false };
+  const exec = (bin, argv) => {
+    const word = String(argv.at(-1));
+    sent.push(word);
+    if (word.endsWith("version --json")) return JSON.stringify(SURFACE_PROBE);
+    if (word.includes(" status --json")) return JSON.stringify(retired ? { root: `${WS}/agents`, agents: [{ name: "dev", instances: [] }] } : ROSTER);
+    if (word.includes(" retire dev-a")) { const out = retired ? { ...receipt, replayed: true } : receipt; retired = true; return JSON.stringify(out); }
+    throw new Error(`unexpected: ${word}`);
+  };
+  const server = { id: "build", sshHost: "build-host", workspace: WS, oatsPath: "oats" };
+  const args = ["dev-a", "--plan-revision", "r1", "--idempotency-key", "k1"];
+  let out = routeCommand("build", "retire", args, { server, execFileSync: exec });
+  assert.equal(out.envelope.ok, true); assert.equal(out.envelope.result.replayed, false);
+  assert.ok(sent.some((w) => w.includes(`retire dev-a --plan-revision r1 --idempotency-key k1 --home ${HOME_A}`)), sent.join("\n"));
+  out = routeCommand("build", "retire", args, { server, execFileSync: exec });
+  assert.equal(out.envelope.ok, true, JSON.stringify(out.envelope)); assert.equal(out.envelope.result.replayed, true);
+  assert.ok(sent.at(-1).includes("retire dev-a --plan-revision r1 --idempotency-key k1 --dir"), `the key goes to the host, which replays or refuses: ${sent.at(-1)}`);
+  // Without a key there is nothing to replay: a name the host does not list is still refused here.
+  assert.throws(() => routeCommand("build", "retire", ["dev-a"], { server, execFileSync: exec }), (e) => e.code === "E_SNAPSHOT_UNKNOWN");
 });

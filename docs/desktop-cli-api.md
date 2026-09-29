@@ -1444,8 +1444,11 @@ instance's own machine: the local command, with `--server <id>` added.
   given, else the name through its saved route or the host's roster, sent
   as `--home`. `--dir` names a directory on the host and travels as is;
   without it the registered workspace is sent (not for `readiness --home`,
-  whose home is its own context). `retire` takes its scope from the
-  registration and refuses `--dir`.
+  whose home is its own context). A retire plan and its guarded apply take
+  `--dir` like the rest; an unguarded `retire --server` refuses it.
+- An instance with a saved route is reached through it, registration or not.
+  A guarded retire apply whose name the host no longer lists is sent by name,
+  so a repeated key gets the host's recorded receipt (or its refusal).
 - The host's envelope is relayed unchanged, success or failure: the same
   document the local command answers, with no routing keys added. The
   guarded retire apply is the routed `retire`, whose result carries

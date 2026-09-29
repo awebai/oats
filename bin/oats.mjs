@@ -2987,10 +2987,13 @@ async function serverRouteCmd() {
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   const id = flag("server");
   if (id === true || !id) bail("E_BAD_ARGS", "--server needs a registered server id (oats server list)");
-  // The operations contract addresses an exact member context on the host,
-  // so its explicit --dir travels; every other routed command takes its
-  // scope from the registration.
-  const explicitScopeOk = ["inspect", "operation", "launch-config", "readiness", "instance"].includes(cmd);
+  // The operations contract, launch-config and the host's reads address an
+  // exact member context on the host, so their explicit --dir travels, as
+  // does a retire plan's or guarded apply's (the lifecycle contract's own
+  // arguments); every other routed command takes its scope from the
+  // registration.
+  const explicitScopeOk = ["inspect", "operation", "launch-config", "readiness", "instance"].includes(cmd)
+    || (cmd === "retire" && ["--plan", "--plan-revision", "--idempotency-key"].some((f) => args.includes(f)));
   if (!explicitScopeOk && flag("dir") !== undefined) bail("E_BAD_ARGS", "--dir cannot be combined with --server: the remote workspace comes from the server registration");
   if (cmd === "launch-config") {
     const action = args[1];

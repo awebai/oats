@@ -123,9 +123,10 @@ server, whoever spawned it, by `--home </remote/home>` or by name
   (`E_HOME_MISMATCH`).
 
 **`--dir` with `--server`.** For `inspect`, `operation`, `launch-config`,
-`readiness` and `instance`, an explicit `--dir` names a directory on the
-server and travels as is. Every other routed command refuses `--dir`; its
-scope comes from the registration.
+`readiness`, `instance`, and a `retire --plan` or guarded retire apply, an
+explicit `--dir` names a directory on the server and travels as is. Every
+other routed command refuses `--dir`; its scope comes from the
+registration.
 
 **Not routed.** `session input` runs on the execution host, where schedules
 and messaging capabilities call it. `session restart --stop-grace` is refused
