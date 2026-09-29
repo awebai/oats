@@ -78,7 +78,7 @@ const KERNEL_COMMANDS = new Set(["automations", "trigger", "capture", "capabilit
 /** Commands whose argv another parser reads (packages/record and packages/experimental parse process.argv). */
 const OWN_ARGV_COMMANDS = new Set(["capture", "recall", "setup", "experimental"]);
 /** Commands `--server <id>` runs on a registered server. */
-const ROUTED_COMMANDS = new Set(["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "launch-config"]);
+const ROUTED_COMMANDS = new Set(["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "launch-config", "readiness", "instance"]);
 const flag = (name) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? (args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : true) : undefined;
@@ -2852,7 +2852,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-2", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2 }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-2", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2 }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -2990,7 +2990,7 @@ async function serverRouteCmd() {
   // The operations contract addresses an exact member context on the host,
   // so its explicit --dir travels; every other routed command takes its
   // scope from the registration.
-  const explicitScopeOk = ["inspect", "operation", "launch-config"].includes(cmd);
+  const explicitScopeOk = ["inspect", "operation", "launch-config", "readiness", "instance"].includes(cmd);
   if (!explicitScopeOk && flag("dir") !== undefined) bail("E_BAD_ARGS", "--dir cannot be combined with --server: the remote workspace comes from the server registration");
   if (cmd === "launch-config") {
     const action = args[1];
@@ -3163,6 +3163,13 @@ async function serverRouteCmd() {
   catch (e) { bail(e.code || "E_SSH", e.message, e.details); }
   const { envelope, stderr } = routed;
   if (stderr && stderr.trim()) process.stderr.write(stderr.endsWith("\n") ? stderr : stderr + "\n");
+  // The host's own reads and plans: its envelope, relayed unchanged.
+  if (cmd === "readiness" || cmd === "instance" || (cmd === "retire" && rest.includes("--plan"))) {
+    if (JSON_MODE) { console.log(JSON.stringify(withLocalWarnings(envelope), null, 2)); if (!envelope.ok) process.exit(1); return; }
+    if (!envelope.ok) die(`${id}: ${envelope.error?.message || "remote command failed"} (${envelope.error?.code || "E_REMOTE"})`);
+    console.log(JSON.stringify(envelope.result, null, 2));
+    return;
+  }
   if (JSON_MODE) { console.log(JSON.stringify(withLocalWarnings(envelope), null, 2)); if (!envelope.ok || envelope.result?.rollbackIncomplete) process.exit(1); return; }
   if (!envelope.ok && !(cmd === "retire" && envelope.result)) die(`${id}: ${envelope.error?.message || "remote command failed"} (${envelope.error?.code || "E_REMOTE"})`);
   const r = envelope.result;
@@ -3359,6 +3366,9 @@ Usage:
       ... [--dir <remote member>] [--home <abs>]  instance home (an explicit --dir travels as is; a --home
                                             is its own context; else the registered workspace);
                                             the server must advertise operations (oats 0.22.16 or later)
+  oats readiness|instance events|git|diff|stop  the Desktop's reads and lifecycle plans, and retire --plan,
+      ... --server <id>                      run on the instance's own machine; the host's envelope is
+                                            relayed unchanged (the host must advertise the feature)
   oats session upload --server <id>          copy a local file into a remote instance's private
       --instance <name> | --home <abs>       attachments, by its home or name (bytes stream on
       --file <path> [--json]                 ssh stdin; sha256 verified); the server must

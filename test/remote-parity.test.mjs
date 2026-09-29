@@ -369,3 +369,99 @@ test("a remote without the session commands: the fallback hint names the instanc
   r = cli(env, ["session", "inspect", "--server", "build", "--home", homeOf("dev", "dev-b"), "--json"]);
   assert.match(r.json().error.message, /attach with ssh -t build-host tmux attach -t pi-agents$/, "a kernel before 0.22.2 opened its windows in pi-agents");
 });
+
+// ---- item 4: the Desktop's reads and lifecycle plans, routed ----
+
+const SURFACE_PROBE = { ...FULL_PROBE, remote: [...FULL_PROBE.remote, "readiness", "instance-events", "instance-git", "lifecycle-plans"],
+  features: [...FULL_PROBE.features, "readiness", "instance-events-2", "instance-git", "lifecycle-plans", "retire-retention"],
+  readinessApi: 2, eventsApi: 2, instanceGitApi: 1, lifecycleApi: 1 };
+const HOME_A = homeOf("dev", "dev-a");
+const ENVELOPES = {
+  readiness: { schemaVersion: 1, ok: true, result: { subject: { kind: "instance", instance: "dev-a", home: HOME_A, soul: "dev" }, summary: { ready: true }, checks: {}, notes: [] } },
+  readinessSoul: { schemaVersion: 1, ok: true, result: { subject: { kind: "soul", soul: "dev" }, summary: { ready: false }, checks: {}, notes: [] } },
+  events: { schemaVersion: 1, ok: true, result: { eventsApi: 2, instance: "dev-a", home: HOME_A, count: 1, returned: 1, truncated: false, events: [{ at: "2026-09-29T10:00:00.000Z", kind: "spawned", producer: "kernel" }] } },
+  git: { schemaVersion: 1, ok: true, result: { instance: "dev-a", home: HOME_A, observation: { branch: "main" }, files: [], summary: {}, notes: [] } },
+  diff: { schemaVersion: 1, ok: true, result: { file: { id: "f1", path: "a.txt", kind: "modified" }, against: "index", patch: "@@\n", binary: false, truncated: false } },
+  stopPlan: { schemaVersion: 1, ok: true, result: { planRevision: "r1", targets: [], notes: [] } },
+  stopApply: { schemaVersion: 1, ok: true, result: { ok: true, results: [], replayed: false } },
+  retirePlan: { schemaVersion: 1, ok: true, result: { planRevision: "r2", home: HOME_A, facts: {}, defaults: {}, notes: [] } },
+};
+const answer = (envelope) => ({ stdout: JSON.stringify(envelope) });
+
+function surfaceSetup(name, probe = SURFACE_PROBE) {
+  const dir = mkdtempSync(join(base, `${name}-`));
+  const host = fakeHost(dir, { probe, answers: {
+    [`status --json --dir ${WS}`]: { stdout: JSON.stringify(ROSTER) },
+    [`readiness --home ${HOME_A} --soul dev --agents-root ${WS}/agents --policy --json`]: answer(ENVELOPES.readiness),
+    [`readiness --soul dev --agents-root ${WS}/agents --policy --dir ${WS} --json`]: answer(ENVELOPES.readinessSoul),
+    [`instance events dev-a --limit 50 --home ${HOME_A} --dir ${WS} --json`]: answer(ENVELOPES.events),
+    [`instance git dev-a --home ${HOME_A} --dir ${WS} --json`]: answer(ENVELOPES.git),
+    [`instance diff dev-a --file f1 --revision r --index-revision i --home ${HOME_A} --dir ${WS} --json`]: answer(ENVELOPES.diff),
+    [`instance stop dev-a --plan --home ${HOME_A} --dir ${WS} --json`]: answer(ENVELOPES.stopPlan),
+    [`instance stop dev-a --apply --plan-revision r1 --idempotency-key k1 --home ${HOME_A} --dir ${WS} --json`]: answer(ENVELOPES.stopApply),
+    [`retire dev-a --plan --home ${HOME_A} --dir ${WS} --json`]: answer(ENVELOPES.retirePlan),
+    [`instance events dev-a --home /srv/elsewhere/dev-a --dir ${WS} --json`]: { stdout: JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_HOME_MISMATCH", message: "not a home of dev-a under /srv/ws" } }), exit: 1 },
+  } });
+  const env = cliEnv(dir, host);
+  mkdirSync(env.OATS_HOME_DIR, { recursive: true });
+  writeFileSync(join(env.OATS_HOME_DIR, "servers.json"), JSON.stringify({ servers: { build: { sshHost: "build-host", workspace: WS, oatsPath: host.oatsPath } } }));
+  return { env, host };
+}
+
+const SURFACE_CALLS = [
+  ["readiness", ["readiness", "--server", "build", "--home", HOME_A, "--soul", "dev", "--agents-root", `${WS}/agents`, "--policy", "--json"], ENVELOPES.readiness],
+  ["readiness", ["readiness", "--server", "build", "--soul", "dev", "--agents-root", `${WS}/agents`, "--policy", "--json"], ENVELOPES.readinessSoul],
+  ["instance-events-2", ["instance", "events", "dev-a", "--server", "build", "--limit", "50", "--json"], ENVELOPES.events],
+  ["instance-git", ["instance", "git", "dev-a", "--server", "build", "--json"], ENVELOPES.git],
+  ["instance-git", ["instance", "diff", "dev-a", "--server", "build", "--file", "f1", "--revision", "r", "--index-revision", "i", "--json"], ENVELOPES.diff],
+  ["lifecycle-plans", ["instance", "stop", "dev-a", "--server", "build", "--plan", "--json"], ENVELOPES.stopPlan],
+  ["lifecycle-plans", ["instance", "stop", "dev-a", "--server", "build", "--apply", "--plan-revision", "r1", "--idempotency-key", "k1", "--json"], ENVELOPES.stopApply],
+  ["lifecycle-plans", ["retire", "dev-a", "--server", "build", "--plan", "--json"], ENVELOPES.retirePlan],
+];
+
+test("routed readiness, instance events, git, diff, stop and retire plans: run on the host, their envelope relayed unchanged", () => {
+  const { env, host } = surfaceSetup("surf");
+  for (const [, argv, envelope] of SURFACE_CALLS) {
+    const r = cli(env, argv);
+    assert.equal(r.status, 0, `${argv.join(" ")}: ${r.stdout}${r.stderr}`);
+    assert.deepEqual(r.json(), envelope, argv.join(" "));
+  }
+  // An explicit --dir on the host travels as is.
+  const r = cli(env, ["instance", "git", "dev-a", "--server", "build", "--home", HOME_A, "--dir", "/srv/other", "--json"]);
+  assert.ok(host.calls().some((c) => c.includes(`instance git dev-a --home ${HOME_A} --dir /srv/other --json`)), host.calls().join("\n"));
+  void r;
+});
+
+test("routed Desktop reads and plans: a host without the feature is refused before anything is sent; a bad home is refused here or relayed from the host", () => {
+  for (const [feature, argv] of SURFACE_CALLS) {
+    const probe = { ...SURFACE_PROBE, version: "0.31.0", features: SURFACE_PROBE.features.filter((f) => f !== feature) };
+    const { env, host } = surfaceSetup(`old-${feature}`, probe);
+    const r = cli(env, argv);
+    assert.equal(r.status, 1, argv.join(" "));
+    assert.equal(r.json().error.code, "E_REMOTE_INCOMPATIBLE");
+    assert.match(r.json().error.message, new RegExp(`remote oats 0\\.31\\.0 at build-host does not advertise ${feature}`));
+    const verb = argv[0] === "instance" ? `instance ${argv[1]}` : argv[0];
+    assert.equal(host.calls().filter((c) => c.includes(` ${verb} `) && !c.includes("status --json")).length, 0, `nothing sent: ${host.calls().join("\n")}`);
+  }
+  // The API number must match too, not only the feature.
+  const { env: envApi } = surfaceSetup("old-api", { ...SURFACE_PROBE, eventsApi: 1 });
+  assert.equal(cli(envApi, ["instance", "events", "dev-a", "--server", "build", "--json"]).json().error.code, "E_REMOTE_INCOMPATIBLE");
+  const { env } = surfaceSetup("bad-home");
+  let r = cli(env, ["instance", "git", "dev-a", "--server", "build", "--home", "relative/dev-a", "--json"]);
+  assert.equal(r.json().error.code, "E_BAD_ARGS");
+  r = cli(env, ["instance", "git", "dev-a", "--server", "build", "--home", homeOf("dev", "twin"), "--json"]);
+  assert.equal(r.json().error.code, "E_HOME_MISMATCH");
+  r = cli(env, ["instance", "events", "twin", "--server", "build", "--json"]);
+  assert.equal(r.json().error.code, "E_AMBIGUOUS");
+  r = cli(env, ["instance", "events", "dev-a", "--server", "build", "--home", "/srv/elsewhere/dev-a", "--json"]);
+  assert.equal(r.status, 1); assert.deepEqual(r.json().error, { code: "E_HOME_MISMATCH", message: "not a home of dev-a under /srv/ws" }, "the host's refusal, relayed");
+  assert.equal(r.stderr, "", "a refusal with an envelope and a silent stderr adds nothing on stderr");
+  r = cli(env, ["instance", "input", "dev-a", "--server", "build", "--json"]);
+  assert.equal(r.json().error.code, "E_USAGE");
+});
+
+test("version --json advertises the new routed surfaces", () => {
+  const r = spawnSync(process.execPath, [CLI, "version", "--json"], { encoding: "utf8" });
+  const probe = JSON.parse(r.stdout);
+  for (const name of ["readiness", "instance-events", "instance-git", "lifecycle-plans"]) assert.ok(probe.remote.includes(name), name);
+});

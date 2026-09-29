@@ -93,6 +93,10 @@ sent as text or on stdin, never as paths.
 | `schedule ...` | registered workspace | `schedule` |
 | `launch-config list\|set\|remove\|preview` | `--dir`, the instance's home, or the registered workspace | `launch-config` |
 | `inspect`, `operation run` | `--dir`, the instance's home, or the registered workspace | `operations` |
+| `readiness` | the instance's home, `--dir`, or the registered workspace | `readiness` (`readinessApi: 2`) |
+| `instance events` | the instance's home | `instance-events-2` (`eventsApi: 2`) |
+| `instance git`, `instance diff` | the instance's home; the Git runs there | `instance-git` (`instanceGitApi: 1`) |
+| `instance stop --plan\|--apply`, `retire --plan`, `retire --plan-revision … --idempotency-key …` | the instance's home | `lifecycle-plans` (`lifecycleApi: 1`) |
 
 Before every routed command except `status`, the kernel reads the server's
 `oats version --json`. A remote OATS older than 0.22.1 is refused, and so is a
@@ -118,9 +122,10 @@ server, whoever spawned it, by `--home </remote/home>` or by name
   same-named instances. A name and a home that disagree are refused
   (`E_HOME_MISMATCH`).
 
-**`--dir` with `--server`.** For `inspect`, `operation` and `launch-config`,
-an explicit `--dir` names a directory on the server and travels as is. Every
-other routed command refuses `--dir`; its scope comes from the registration.
+**`--dir` with `--server`.** For `inspect`, `operation`, `launch-config`,
+`readiness` and `instance`, an explicit `--dir` names a directory on the
+server and travels as is. Every other routed command refuses `--dir`; its
+scope comes from the registration.
 
 **Not routed.** `session input` runs on the execution host, where schedules
 and messaging capabilities call it. `session restart --stop-grace` is refused
