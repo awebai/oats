@@ -29,6 +29,7 @@ that model.
 | Instance operating doc | `<home>/AGENTS.md` (generated) |
 | Instance skills | `<home>/.agents/skills/` |
 | Instance modules | `<home>/.oats/modules/<capability>/` (the copies this instance runs) |
+| Instance `oats` | `<home>/.oats/bin/oats` (a link to the kernel that last launched it) |
 | Instance record | `<home>/instance.json` (`modules`, `providers`, `workspace`, `teams`) |
 
 ## Soul anatomy
@@ -126,6 +127,7 @@ full copy** of every capability the soul resolved to:
     <skill>/SKILL.md               # one level deep, where every harness discovers skills
   .claude/skills → ../.agents/skills
   .oats/modules/<capability>/      # the whole capability: oats.json, bin/, injects/, skills/ (hooks run from here)
+  .oats/bin/oats → <kernel>/bin/oats.mjs  # the kernel that last launched this home: first on the harness's PATH
   work/                            # worktree, checkout symlink, attached tree, or private directory
   TASK.md                          # briefing and task
   instance.json                    # provenance (below); `soulDir` = the soul directory hooks get as OATS_SOUL

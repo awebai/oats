@@ -151,10 +151,26 @@ source variable must be set on the host (`E_LAUNCH_ENV_MISSING`, before
 anything is created or stopped), and only the harness's pane receives it.
 `list` and `preview` redact every environment value, literals included.
 
+**The instance's `oats`.** Every launch (`oats spawn`, `session start`,
+`session restart`, locally or through `--server`) writes `<home>/.oats/bin/oats`,
+a link to the launching kernel's `bin/oats.mjs`, and runs the harness with
+`<home>/.oats/bin` first on `PATH` and the rest of `PATH` unchanged. Plain
+`oats` inside an instance is therefore the kernel that launched it, even on a
+machine whose `PATH` finds another kernel first. A launch configuration's own
+`PATH` (literal or `fromEnv`) comes after it. A restart by a different kernel
+re-points the link to that kernel; `spawn --no-launch` writes it too. The
+recipe records the target as `launch.kernelBin`; `oats status` prints it
+(`kernel:`) under `--verbose`, or when it is not the `oats` running the status.
+A launch that cannot write the link fails with `E_LAUNCH_SHIM` naming the path
+and the cause: a spawn is rolled back, a start starts nothing. The recorded
+`command` does not carry the `PATH`; the kernel adds it when it runs the
+command. Hooks still receive `OATS_CLI_BIN`, unchanged.
+
 **The launch recipe.** A spawn records what a start is made of in
 `instance.json` under `launch`: the harness, the configuration and where it
 came from, the executable, args, env, model, yolo, and each capability's
-launch contribution with its settings and trust. One renderer turns it into
+launch contribution with its settings and trust, and the kernel that launched
+it (`kernelBin`, re-written by every start). One renderer turns it into
 the `command`. Configuration `args` go after the harness's own options and
 before capability arguments; every argument is single-quoted.
 

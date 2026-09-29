@@ -1792,6 +1792,9 @@ async function status() {
       console.log(`      • ${i.instance}  ${i.retirePending ? "RETIRING" : i.running ? "RUNNING" : "idle"}  (branch ${i.branch || "?"}, ${i.work || "?"})`);
       const key = i.home ?? `${a.name}/${i.instance}`;
       if (i.identity) console.log(`          identity: ${servedIdentityLine(i.identity)}`);
+      // The kernel the home's plain `oats` runs (its last launch's), when it is not this one.
+      const launchedBy = i.launch?.kernelBin;
+      if (typeof launchedBy === "string" && (verbose || launchedBy !== CLI_BIN)) console.log(`          kernel: ${launchedBy}${launchedBy !== CLI_BIN ? " (not this oats)" : ""}`);
       const s = ws?.soul.get(key);
       if (s && (verbose || s.status !== "current")) console.log(`          ${soulDriftLine(s, a.name)}`);
       const rows = ws?.drift.get(key) || [];

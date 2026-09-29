@@ -16,6 +16,8 @@ instances/dev-owner/.agents/skills/
 instances/dev-owner/.claude/
 instances/dev-owner/.claude/skills -> ../.agents/skills
 instances/dev-owner/.oats/
+instances/dev-owner/.oats/bin/
+instances/dev-owner/.oats/bin/oats -> <kernel>/bin/oats.mjs
 instances/dev-owner/.oats/modules/
 instances/dev-owner/.oats-events.jsonl
 instances/dev-owner/AGENTS.md

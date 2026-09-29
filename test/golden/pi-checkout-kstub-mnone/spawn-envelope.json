@@ -41,7 +41,8 @@
       "prompt": {
         "kind": "task-file",
         "file": "TASK.md"
-      }
+      },
+      "kernelBin": "<kernel>/bin/oats.mjs"
     }
   }
 }
