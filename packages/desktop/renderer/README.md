@@ -284,7 +284,8 @@ workspace is observed through its server and never synced from here.
 
 - **Capabilities** is `oats capabilities --dir <deployment> --json`
   (capabilitiesApi 1), held by the server and re-read when the workspace
-  state it was read under moves (`docs/desktop-load-path.md`); the tab reads
+  state it was read under moves and at least every 60 s
+  (`docs/desktop-load-path.md`); the tab reads
   the held table via `POST /api/workspace-sync?ws=<id>` `{action:"read"}`
   when it opens (`refresh: true` forces a live read; after a sync the table
   is re-read). A

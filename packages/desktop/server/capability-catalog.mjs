@@ -54,16 +54,19 @@ export function createCapabilityCatalog({ invoke = cliWorkspace, now = () => Dat
     /** Bind this cycle's key: a read starts only when the held table is not for this state (or its
      * failure is old enough to retry) and none is in flight. Never awaits. */
     ensure(deployment, cli, workspaceStatus, options = {}) { catalog.settle(deployment, cli, key(cli, workspaceStatus), options); },
-    /** The held table, immediately, when it is a healthy answer inside its TTL; otherwise awaited: a
-     * first read, a held failure (table behind it or not — the boundary shows it as a failure and
-     * today's Retry is a plain read, so it reads now whatever the retry window says; the window
-     * throttles background cycles only), a table past HELD_TTL_MS, or a forced live read
+    /** The held table, immediately, whenever it is a healthy answer — a table past HELD_TTL_MS
+     * included: `settle` has started its re-read behind it and the answer says `refreshing`
+     * (stale-while-revalidate: a Workspace-tab visit never waits for an `oats capabilities` run
+     * while the key is unchanged; the change lands within TTL + one read). Awaited only when
+     * nothing healthy is held: a first read, a held failure (table behind it or not — the boundary
+     * shows it as a failure and today's Retry is a plain read, so it reads now whatever the retry
+     * window says; the window throttles background cycles only), or a forced live read
      * (refresh: true → maxAge 0). */
     async read(deployment, cli, workspaceStatus, { refresh = false, maxAge } = {}) {
       const k = key(cli, workspaceStatus), options = maxAge !== undefined ? { maxAge } : {};
       if (refresh) return project(deployment, await catalog.refresh(deployment, cli, k));
       const { entry } = catalog.settle(deployment, cli, k, options);
-      return project(deployment, entry?.value && !entry.reason && !entry.stale ? entry : await catalog.demand(deployment, cli, k, options));
+      return project(deployment, entry?.value && !entry.reason ? entry : await catalog.demand(deployment, cli, k, options));
     },
     /** Read-only view of what is held (tests and diagnostics); nothing reads it on the request path. */
     held(deployment) { return project(deployment, catalog.held(deployment)); },

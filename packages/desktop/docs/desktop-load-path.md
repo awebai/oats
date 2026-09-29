@@ -58,12 +58,18 @@ catalogs are thin wrappers over it (`soul-catalog.mjs`,
 Every held result also has an **age bound**: `HELD_TTL_MS` (60 s, the
 background max-age; `server/keyed-catalog.mjs`) from the time it was stored,
 for the souls catalog, the capabilities table and inspections alike. Past it
-the entry is `stale`: it no longer answers for its key, so the next cycle
-re-reads it (the stale value is still shown while the re-read flies) and a
-request awaits the re-read. The key sees what `workspace status` reports; the
-TTL bounds what it cannot — local configuration edited outside Desktop
-(`oats teams`, `oats soul teams`, `oats sync` from a terminal, an agent editing
-its own teams) is seen within 60 s. The Desktop does not stat, name or parse
+the entry is `stale`: it no longer answers for its key, so the next cycle (or
+the next request) starts a re-read. The request path is
+**stale-while-revalidate**: a healthy table is answered at once with
+`refreshing: true` and the re-read behind it — a Workspace-tab visit never
+waits for an `oats capabilities` run (26–34 s on a real deployment) while the
+key is unchanged; only an inspect miss awaits its (per-subject, ~7 s) read.
+The key sees what `workspace status` reports; the TTL bounds what it cannot —
+local configuration edited outside Desktop (`oats teams`, `oats soul teams`,
+`oats sync` from a terminal, an agent editing its own teams) is seen within
+the TTL plus one read. The steady cost is one `souls` and one `capabilities`
+run per observed deployment about every TTL + read, focused or blurred. The
+Desktop does not stat, name or parse
 any deployment file to find out sooner: which files hold local configuration
 is the kernel's to know (`test/desktop-package-boundary.test.mjs` enforces
 it), and a kernel-computed local-configuration revision is the maintainer's
@@ -83,11 +89,11 @@ else in `workspace status` changes it.
   the renderer shows the error and Retry exactly as before) with the additive
   `lastGood: { capabilities, observedAt } | null` beside it for a renderer that
   can label a stale table; a healthy shape is never a stale one. A request
-  that finds no healthy table held — a first read, a held failure, table
-  behind it or not (today's Retry button is a plain read), or a table past
-  `HELD_TTL_MS` — reads now, whatever the retry window says, and answers with
-  what lands. `refresh: true` forces a live read. An ok `sync` forgets the
-  held table.
+  that finds no healthy table held — a first read, or a held failure, table
+  behind it or not (today's Retry button is a plain read) — reads now,
+  whatever the retry window says, and answers with what lands; a healthy table
+  past `HELD_TTL_MS` is answered at once with its re-read announced.
+  `refresh: true` forces a live read. An ok `sync` forgets the held table.
 - `POST /api/capabilities {action:"inspect"}` goes through a bounded LRU with
   in-flight coalescing (`server/inspect-cache.mjs`, 256 entries): two identical
   concurrent inspections are one kernel process; a repeat is a hit for at

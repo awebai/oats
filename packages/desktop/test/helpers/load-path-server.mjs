@@ -15,7 +15,7 @@
 // feature list and the gated set can change mid-run.
 // Nothing here touches tmux state: the fixture's tmux target does not exist, so
 // the liveness child reports the seat as not running.
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync, realpathSync, readFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, realpathSync, readFileSync, renameSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -34,7 +34,7 @@ const FAKE = `#!${process.execPath}
 import { appendFileSync, readFileSync, existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 const [scriptDir, log] = [process.env.FAKE_SCRIPT_DIR, process.env.FAKE_LOG];
-const config = () => JSON.parse(readFileSync(scriptDir + '/config.json', 'utf8'));
+const config = () => JSON.parse(readFileSync(scriptDir + '/config.json', 'utf8')); // written atomically (rename) by the helper
 const a = process.argv.slice(2);
 const verb = a[0] === 'workspace' && a[1] === 'status' ? 'workspace-status' : a[0] === 'operation' ? 'operation-run' : a[0];
 const id = randomUUID(), start = Date.now();
@@ -81,7 +81,8 @@ export async function startLoadPathServer({ probe = v => v, gated = [] } = {}) {
   for (const name of ['status', 'workspace-status', 'souls', 'capabilities', 'inspect-soul', 'inspect-home']) writeFileSync(join(script, `${name}.json`), readFileSync(join(FIXTURES, `${name}.json`)));
   const version = probe(JSON.parse(readFileSync(join(FIXTURES, 'version.json'), 'utf8')));
   const config = { version, gated: [...gated], deployment };
-  const writeConfig = () => writeFileSync(join(script, 'config.json'), JSON.stringify(config));
+  // Atomic: fakes read the config at every start and every gate poll; a truncate-then-write would let one read it half-written.
+  const writeConfig = () => { writeFileSync(join(script, 'config.json.tmp'), JSON.stringify(config)); renameSync(join(script, 'config.json.tmp'), join(script, 'config.json')); };
   writeConfig();
   const log = join(temp, 'calls.jsonl'); writeFileSync(log, '');
   const fake = join(temp, 'oats'); writeFileSync(fake, FAKE, { mode: 0o700 });

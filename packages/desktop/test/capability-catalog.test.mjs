@@ -283,12 +283,15 @@ test('boundary: a held table is served inside HELD_TTL_MS and re-read past it â€
   const inside = await b.request({ action: 'read' }, { workspace, cli: CLI });
   assert.deepEqual([inside.status, inside.refreshing, b.calls.length], ['ok', false, 1], 'inside the TTL: the held table, no kernel run');
   const changed = CAPS(); changed.result.capabilities = changed.result.capabilities.slice(1); // the kernel now reports one capability fewer
-  b.answers.push({ ok: true, document: changed });
+  let land; b.answers.push(() => new Promise(resolve => { land = () => resolve({ ok: true, document: changed }); }));
   b.now(HELD_TTL_MS);
   const past = await b.request({ action: 'read' }, { workspace, cli: CLI });
-  assert.deepEqual([past.status, past.capabilities.capabilities.length, b.calls.length], ['ok', TABLE.capabilities.length - 1, 2], 'past the TTL: the request awaited a re-read and sees the change');
+  assert.deepEqual([past.status, past.capabilities.capabilities.length, past.refreshing, b.calls.length], ['ok', TABLE.capabilities.length, true, 2],
+    'past the TTL: the held table at once, the re-read announced behind it (stale-while-revalidate) â€” a tab visit never waits for an oats capabilities run');
   assert.deepEqual(b.calls[1], { action: 'capabilities', context: deployment, maxAge: 60 }, 'a TTL re-read is a background-grade read');
-  assert.equal((await b.request({ action: 'read' }, { workspace, cli: CLI })).capabilities.capabilities.length, TABLE.capabilities.length - 1); assert.equal(b.calls.length, 2, 'held again');
+  land(); await settle();
+  const landed = await b.request({ action: 'read' }, { workspace, cli: CLI });
+  assert.deepEqual([landed.capabilities.capabilities.length, landed.refreshing, b.calls.length], [TABLE.capabilities.length - 1, false, 2], 'the change is visible once the re-read lands; held again');
   await b.request({ action: 'read', refresh: true }, { workspace, cli: CLI });
   assert.deepEqual(b.calls[2], { action: 'capabilities', context: deployment, maxAge: 0 }, 'Refresh is live whatever the age');
 });
