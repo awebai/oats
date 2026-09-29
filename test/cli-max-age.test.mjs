@@ -7,7 +7,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { closeSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildNorthwind } from "./fixtures/northwind/build.mjs";
@@ -173,18 +173,20 @@ test("the observation store names no url: records carry a sha256 url digest, nev
   }
 });
 
-/** Help read through a file: `oats --help` exits right after writing ~20 KB, which a pipe truncates
- *  at 8 KB (as 0.30.0 does) — a file receives all of it. */
+/** Help as a consumer reads it: through a pipe (the full ~20 KB, not the first 8 KB). */
 function helpText(args) {
-  const out = join(base, "help.txt");
-  const fd = openSync(out, "w");
-  try { spawnSync(process.execPath, [CLI, ...args], { cwd: base, stdio: ["ignore", fd, "ignore"], env }); } finally { closeSync(fd); }
-  return readFileSync(out, "utf8");
+  const r = oats(args, { cwd: base });
+  assert.equal(r.status, 0, `${args.join(" ")}: ${r.stderr}`);
+  return r.stdout;
 }
 
 test("feature and help surface: observe-max-age in `oats version --json` features; `oats --help` and each read verb's help name the flag", () => {
   assert.ok(json(oats(["version", "--json"], { cwd: base })).features.includes("observe-max-age"));
-  assert.match(helpText(["--help"]), /Observation reuse \(feature observe-max-age\):\n  --max-age <seconds> /);
+  for (const top of [["--help"], ["help"], []]) {
+    const text = helpText(top);
+    assert.match(text, /Observation reuse \(feature observe-max-age\):\n  --max-age <seconds> /, `oats ${top.join(" ")} through a pipe`);
+    assert.match(text, /\nLayers: .*\n$/, `oats ${top.join(" ")}: the usage's last line arrives`);
+  }
   for (const [command, verb] of [["status", "status"], ["workspace", "workspace status"], ["souls", "souls"], ["capabilities", "capabilities"], ["inspect", "inspect"], ["teams", "teams"], ["soul", "soul teams"]]) {
     const lines = helpText([command, "--help"]).split("\n");
     const at = lines.findIndex((l) => l.startsWith(`  oats ${verb} `));

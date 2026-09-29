@@ -3400,7 +3400,8 @@ else if (cmd && !cmd.startsWith("--") && !HELP_WORDS.has(cmd) && JSON_MODE) json
 else {
   if (cmd && !HELP_WORDS.has(cmd) && !cmd.startsWith("--")) console.error(`oats: unknown command "${cmd}" — no kernel subcommand or active capability namespace matches\n`);
   console.log(usageText());
-  process.exit(cmd && !HELP_WORDS.has(cmd) ? 1 : 0);
+  // exitCode, not exit(): the usage is ~20 KB, and exit() cuts off whatever a pipe has not drained yet.
+  process.exitCode = cmd && !HELP_WORDS.has(cmd) ? 1 : 0;
 }
 } // end: every command but onboard
 
