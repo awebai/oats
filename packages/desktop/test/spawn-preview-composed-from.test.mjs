@@ -132,6 +132,10 @@ test('the reason tag reuses the source chip\'s muted tag pair (--muted on --tag-
   assert.ok(rule, 'one rule for both tags');
   assert.match(rule[1], /background:var\(--tag-bg\); color:var\(--muted\);/);
   assert.equal(spawnDialogCSS.match(/\.spawn-cap-why/g).length, 1, 'no rule, colour or opacity of its own');
+  // A long name beside a package source and a reason: the tags wrap to a right-aligned line of their own
+  // instead of squeezing the name to one character per line (seen in a 360px column, fixed here).
+  assert.match(spawnDialogCSS, /\.spawn-cap-row \{ display:flex; flex-wrap:wrap; justify-content:flex-end;/);
+  assert.match(spawnDialogCSS, /\.spawn-cap-row \.mono \{ flex:1 1 auto; min-width:0; overflow-wrap:anywhere; \}/);
   const contrast = readFileSync(new URL('./theme-contrast.test.mjs', import.meta.url), 'utf8');
   assert.match(contrast, /\["fg", "muted"\]\.map\(\(fg\) => \[fg, "tag-bg"\]\)/, 'muted on tag-bg is in the computed contrast inventory');
 });

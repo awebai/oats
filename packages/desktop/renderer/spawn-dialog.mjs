@@ -77,8 +77,8 @@ export const spawnDialogCSS = `
 .spawn-core-row .mono, .spawn-core-row .muted { min-width:0; overflow-wrap:anywhere; }
 .spawn-core-row .muted { color:var(--muted); }
 .spawn-cap-list { display:flex; flex-direction:column; gap:5px; font-size:12px; color:var(--fg); }
-.spawn-cap-row { display:flex; align-items:center; gap:8px; min-width:0; }
-.spawn-cap-row .mono { flex:1; min-width:0; overflow-wrap:anywhere; }
+.spawn-cap-row { display:flex; flex-wrap:wrap; justify-content:flex-end; align-items:center; gap:3px 8px; min-width:0; }
+.spawn-cap-row .mono { flex:1 1 auto; min-width:0; overflow-wrap:anywhere; }
 .spawn-cap-source, .spawn-cap-why { flex:none; padding:1px 6px; border-radius:4px; background:var(--tag-bg); color:var(--muted); font-size:10.5px; font-weight:600; white-space:nowrap; }
 .spawn-preview-note { margin:auto 0 0; font-size:11.5px; line-height:1.5; color:var(--muted); }
 .spawn-chooser { border-right:1px solid var(--border); min-width:0; min-height:0; overflow:auto; padding:16px 10px 12px; }
