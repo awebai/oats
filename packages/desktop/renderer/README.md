@@ -270,6 +270,9 @@ skeletons.
 
 Skeleton shapes (`skeleton(doc, shape)` / `skeletonBlock`): `roster-row`,
 `soul-card`, `table-row`, `detail-section`, plus `pill` for counts and `line`.
+The roster-row skeleton wears the real row classes (`.ctx-tree-row`,
+`.ctx-inst`, …) so shell.css owns its geometry: a row redesign moves the
+skeleton with it, and no pixel value is copied into loading.css.
 `loading.css` (linked from `index.html` and the harness) derives their fill
 from the theme tokens (`color-mix` of `--fg` over the host), shimmers at 1.6s
 and stops every animation — including the older `.spinner` — under

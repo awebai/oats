@@ -25,12 +25,15 @@
 .skeleton-line.short { width: 40%; }
 .skeleton-pill { display: inline-block; vertical-align: middle; width: 4.5em; height: 1em; border-radius: 999px; }
 
-/* Roster row: mirrors .ctx-tree-row / .ctx-inst (50px, dot + name + repo label). */
-.skeleton-roster-row { display: flex; align-items: center; gap: 9px; min-height: 50px; padding: 0 8px 0 10px; }
-.skeleton-roster-row .skeleton-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; }
-.skeleton-roster-row .skeleton-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 6px; }
-.skeleton-roster-row .skeleton-name { height: 12px; width: 55%; }
-.skeleton-roster-row .skeleton-meta { height: 9px; width: 38%; }
+/* Roster row: the skeleton carries the real row classes (.ctx-tree-row, .ctx-inst, .ctx-dot, .ctx-copy,
+   .ctx-name, .ctx-repo-label — shell.css), so height, gap, padding and line rhythm are the row's own.
+   Only what makes it a skeleton is set here: inert, no hover, bones instead of text and the dot fill. */
+.skeleton-roster-row { pointer-events: none; }
+.skeleton-roster-row.ctx-tree-row:hover { background: none; }
+.skeleton-roster-row .skeleton-inst { cursor: default; }
+.skeleton-roster-row .skeleton-dot.ctx-dot { border: 0; box-shadow: none; background: color-mix(in srgb, var(--fg) 14%, transparent); }
+.skeleton-roster-row .skeleton-name { width: 55%; height: 12px; }
+.skeleton-roster-row .skeleton-meta { width: 38%; height: 9px; }
 
 /* Soul card: the Souls grid card at its real size (the grid sets --skeleton-card-h). */
 .skeleton-soul-card { display: flex; flex-direction: column; gap: 10px; min-height: var(--skeleton-card-h, 132px); padding: 14px;

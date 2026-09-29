@@ -260,3 +260,15 @@ test('defer: a read that settled without an observation stays pending without a 
   u.ds.succeed({ empty: true }); assert.equal(u.ds.state, 'empty'); assert.equal(u.region.hasAttribute('aria-busy'), false);
   u.ds.begin(); u.ds.defer(); assert.equal(u.ds.state, 'empty', 'with data present defer is a cancel'); assert.equal(u.ds.busy, false);
 });
+
+test('the roster-row skeleton wears the real row classes, so shell.css owns its geometry; it is inert', t => {
+  const doc = new JSDOM('').window.document; t.after(() => doc.defaultView.close());
+  const row = skeleton(doc, 'roster-row');
+  assert.ok(row.classList.contains('ctx-tree-row')); assert.equal(row.style.getPropertyValue('--depth'), '0');
+  const inst = row.querySelector('.ctx-inst'); assert.ok(inst); assert.equal(inst.tagName, 'SPAN', 'not a button: nothing to focus or click');
+  assert.ok(inst.querySelector('.skeleton-dot.ctx-dot')); assert.ok(inst.querySelector('.ctx-copy > .skeleton-name.ctx-name')); assert.ok(inst.querySelector('.ctx-copy > .skeleton-meta.ctx-repo-label'));
+  const css = readFileSync(new URL('../renderer/loading.css', import.meta.url), 'utf8');
+  const block = css.match(/\.skeleton-roster-row[^{]*\{[^}]*\}/g).join('\n');
+  assert.doesNotMatch(block, /min-height|padding|gap/, 'no copied row pixels: the row classes decide');
+  assert.match(block, /pointer-events: none/);
+});

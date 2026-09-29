@@ -165,7 +165,7 @@ function shell(t) {
   return {
     ...s, c, context, doc, dom, rosterEl, requests, list,
     count: () => rosterEl.querySelector('.ctx-count'), status: () => rosterEl.querySelector('.ctx-status'), live: () => rosterEl.querySelector('[role="status"].loading-sr'),
-    rows: () => [...list().querySelectorAll('.ctx-tree-row')], names: () => [...list().querySelectorAll('.ctx-name')].map(n => n.textContent),
+    rows: () => [...list().querySelectorAll('.ctx-tree-row:not(.skeleton-roster-row)')], /* the skeleton wears the row class too */ names: () => [...list().querySelectorAll('.ctx-name')].map(n => n.textContent),
     text: () => list().textContent,
     async reply(index, panel) { requests[index].resolve(panel); await tick(); },
     async fail(index, error) { requests[index].reject(error); await tick(); },
