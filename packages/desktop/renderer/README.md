@@ -275,9 +275,14 @@ skeletons.
 
 Skeleton shapes (`skeleton(doc, shape)` / `skeletonBlock`): `roster-row`,
 `soul-card`, `table-row`, `detail-section`, plus `pill` for counts and `line`.
-The roster-row skeleton wears the real row classes (`.ctx-tree-row`,
-`.ctx-inst`, …) so shell.css owns its geometry: a row redesign moves the
-skeleton with it, and no pixel value is copied into loading.css.
+The roster-row and soul-card skeletons wear the real classes (`.ctx-tree-row`,
+`.ctx-inst`, …; `.soul-tile > .soul-card > .sbody / .sfoot`) so shell.css and the
+Souls grid's CSS own their geometry: a redesign moves the skeleton with it, and
+no pixel value is copied into loading.css. The Capabilities table's skeleton
+(`catalogSkeleton` in `workspace-discovery.mjs`) is a disabled, `aria-hidden`
+`button.catalog-row` for the same reason. `defer({ keepSkeleton: true })` is
+for a server that answers "still reading" (`refreshing: true` with nothing
+held): the subject is loading, so the skeleton stays.
 `loading.css` (linked from `index.html` and the harness) derives their fill
 from the theme tokens (`color-mix` of `--fg` over the host), shimmers at 1.6s
 and stops every animation — including the older `.spinner` — under
@@ -304,6 +309,91 @@ repainted behind its own signature, and "Teams here" is created with the frame
 so `soul teams` runs beside `inspect`) and `soul-teams-here.mjs`; readiness in `readiness-view.mjs` (the
 summary line is separate from the status line so an announcement never
 overwrites it).
+
+The Workspace view (`views/spawn.mjs`): the Souls grid's controller
+(`s.gridState`) paints card skeletons in the grid (one row plus one, at the
+real card size), the failed block in the grid and the stale line in
+`.souls-notice` above it; `settleGridState()` reads the reply — the kernel's
+`catalog.reason` is a failed read (stale beside a partial list, failed with
+none), an unobserved deployment defers with the deployment's own copy, and
+`refreshing: true` with no souls keeps the skeleton. `renderGrid()` leaves the
+grid to the controller while there is no data (the one exception is the
+unobserved deployment's copy) and skips an unchanged paint behind
+`s.gridSignature`. The Capabilities tab (`workspace-discovery.mjs`): the held
+table is never set to null within one workspace generation — a CLI emit or a
+sync re-reads it in place (live after a sync, `refresh: true`), a failed
+re-read marks it stale with Retry, and spec 02's held-table shapes (`status:
+'ok'` with `reason`; non-ok with `lastGood: { capabilities, observedAt }`) are
+shown stale. Both tab counts reserve their width with a pill while the count is
+expected (`paintCount`); a failed roster read leaves the Souls count empty and
+still (`rosterUnavailable()`). The capability page (`capability-page.mjs`,
+painted by `paintCapabilityPage` in `views/spawn.mjs`): opened from a soul
+before the catalog is read, the lede and the Comes-from facts are skeletons
+filled in place when the discovery's `onCatalog` fires; a catalog refresh
+while the page is open repaints it behind a signature over the content only,
+with focus kept by `data-focus-key` (`used:<soul>:<root>`, `file`; a vanished
+control hands focus to Back); the catalog's age line under the page bar is
+the controller's own notice (`noticeElement` / `updateNotice` in loading.mjs,
+through `catalogNotice` / `updateCatalogNotice`), updated in place on every
+catalog event and on the roster poll (`touchCapabilityPage`), so its Retry
+keeps focus, wears the busy mark while the re-read runs, and its age ticks.
+A failed read that carries data (the kernel's `catalog.reason` beside a list;
+a non-ok capabilities read with `lastGood`) calls `succeed()` only when
+nothing was shown yet, then `fail(error, { observedAt })`: with data on screen
+`fail()` alone updates the stale line in place — one node, one announcement,
+a focused Retry kept. The spawn dialog's harness, model and launch hints (`matched()` in
+`spawn-dialog.mjs`) read only a preview for the choices on screen, like the
+name and work hints.
+
+The terminal-side context panel's Soul tab (`instance-soul.mjs`) and its
+Messaging section (`instance-teams.mjs`): the roster-derived header is the
+context panel's and stays put; each section owns a body under it
+(`context-panel.mjs` mounts the Soul section on `.context-panel-soul-body`;
+the Teams section appends `.instance-teams-body` to its host) where the
+controller paints the skeleton (rows wearing the real classes), the failed
+block with Retry (`refresh: true`) and, for the soul, the stale line — never
+a silent absence, nothing prepended above. Both re-read the same selection
+when `instanceStatusIdentity(instance)` (`instance-status-identity.mjs`:
+home, last start, running, module drift rows, soul source) changes: the soul
+as a refresh that keeps its content, the teams by refreshing the card's list
+(or inspecting again when there is no card). An inspection without the soul,
+or without a messaging provider, is an empty read: the header stands, the
+Messaging section hides. The Messaging section claims its place during the
+inspection only when the roster row already reports `identityAddress` (or a
+failure is on screen), never again after a no-provider answer, so nothing
+under it shifts. Every controller has a `focusFallback` (the section head or
+the card's Refresh; the Soul body host; the Souls search field; the
+Capabilities search field): a focused Retry whose line or block leaves on
+success never lands on `<body>`.
+
+Roster-derived claims follow the roster's *settled* state
+(`rosterSettledState(s)` in `views/spawn.mjs`: the controller's `settled`
+while a re-read runs — a refresh over a stale roster is still stale — else
+its `state`), synced after every poll, settled or failed: the soul
+inspector's Instances card (`instancesState()` → `syncRoster()`) says "No
+instances yet." only after a good read, shows a skeleton line while pending
+and makes no claim (no count) while failed or stale; the Capabilities table's
+"Used by" cell (`renderCapabilities`'s `rosterState`, through the discovery's
+`syncRoster()` and render key) and the capability page's "Used by" section
+show a muted "—" carrying `ROSTER_STALE_TITLE` (`loading.mjs`, re-exported by
+`instance-tree.mjs`) as their accessible description instead of "Not used" /
+"No instance carries it yet." while the roster is not settled-good. A
+roster failure discarded because the selection moved still `cancel()`s the
+grid's read, so nothing is left "refreshing". A catalog that failed with
+nothing held shows the failed treatment on an open capability page
+(`failedElement` / `updateFailed`, shared with the controller's own block:
+cause, Details, Retry), never silence; a Retry over it paints no skeleton
+(`catalogPending` only before the first read settles). The Messaging section
+treats a no-provider answer as a settled absence (`cancel()`, not data), so a
+later failed re-read is the failed block with Retry, never a header over an
+empty body.
+
+Spawn stays enabled over a stale Souls grid: a local spawn goes through the
+dialog's live kernel preview (the preview boundary binds the choices to the
+kernel's decision at spawn time), so the grid's staleness cannot make it act
+on old facts. A remote spawn (`runRemote` → `doSpawn`) has no preview binding;
+that path is unchanged by the loading-states work. Filed for a later a11y
+pass: consolidating each surface's several live regions into one.
 
 ## Team controls on a live instance (teams contract 2026-09-25)
 
