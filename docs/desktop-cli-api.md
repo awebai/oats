@@ -31,7 +31,8 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
 ```json
 {"schemaVersion":1,"name":"@awebai/oats","version":"0.30.0","desktopApi":1,
  "harnesses":["pi","claude","codex"],"sessionBackends":["tmux","herdr"],"launchOptions":["yolo"],
- "remote":["spawn","retire","status","session","session-start","session-restart","launch-config","roster","harvest","schedule","session-upload","operations"],
+ "remote":["spawn","retire","status","session","session-start","session-restart","launch-config","roster","harvest","schedule","session-upload","operations",
+           "readiness","instance-events","instance-git","lifecycle-plans"],
  "features":["retire-home","session-start","session-restart","launch-config","schedule","session-upload","operations","instance-git",
              "instance-git-remote","souls-declarations","lifecycle-plans","retire-retention","readiness","spawn-preview","instance-events",
              "instance-events-2","schedule-history","schedule-read-2","spawn-preview-2","spawn-idempotency","spawn-idempotency-2","spawn-apply-2",
@@ -50,7 +51,9 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
   accepts. A host without the `harness` feature lists `runtimes` instead.
 - `remote` is the routed surface: the commands `--server <id>` sends to a
   registered server, plus `roster`. The Desktop checks the execution host's
-  probe before a routed mutation.
+  probe before a routed mutation. From 0.31: `readiness`, `instance-events`,
+  `instance-git` and `lifecycle-plans` name the
+  [routed reads and plans](#routed-reads-and-plans).
 - In text mode the command prints `@awebai/oats <version> (desktop API v1)`.
 
 ### Features
@@ -1401,7 +1404,7 @@ route target:
                "teams":[{"label":"default","team":"acme:team"}],"startedAt":"2026-09-29T10:00:00.000Z","createdAt":"2026-09-29T09:58:12.004Z",
                "model":"opus","runtimeState":null,"parentInstance":"lead","siblingInstance":null,"relation":"child","relativeTo":"lead",
                "spawnOrigin":"instance","retirePending":false,"rollbackIncomplete":false,
-               "savedRoute":false,"missingRemotely":false}],
+               "savedRoute":false,"addressable":true,"missingRemotely":false}],
  "retireFailures":[]}
 ```
 
@@ -1409,12 +1412,50 @@ route target:
   `identityAddress`, `teams`, `startedAt`, `createdAt`, `model`,
   `runtimeState`, `parentInstance`, `siblingInstance`, `relation`,
   `relativeTo` and `spawnOrigin` are always present, `null` when the host
-  does not supply them (a host before 0.32, a fact it never recorded, or a
+  does not supply them (a host before 0.31, a fact it never recorded, or a
   saved route the host no longer lists). Nothing is derived on this side.
+- **`addressable`** (0.31): `true` for every row the host reports. Routed
+  session and lifecycle commands reach it by `--home`, or by name when the
+  name is unique on the host ([addressing](servers.md#run-there); a shared
+  name is `E_AMBIGUOUS` with `error.details.candidates: [{agent, home}]`). A
+  saved-route row the host did not list is addressable only while the host's
+  answer is unknown (`missingRemotely: false`).
 - **`savedRoute`**: the instance was spawned from this machine and has a
-  saved route here.
+  saved route here. Information only; no action depends on it.
 - `running` is `null` when unknown; `backend`, `tmux`, `sessionTarget` and
   `runtimeError` are as the host reports them.
+
+<a id="routed-reads-and-plans"></a>
+### Routed reads and plans (`--server`, 0.31)
+
+The Desktop's per-instance reads and the lifecycle plans run on the
+instance's own machine: the local command, with `--server <id>` added.
+
+| Command | `remote` entry | The host must advertise |
+|---|---|---|
+| `oats readiness --server <id> (--home <abs> \| --soul <n>) …` | `readiness` | `readiness`, `readinessApi: 2` |
+| `oats instance events <name> --server <id> …` | `instance-events` | `instance-events-2`, `eventsApi: 2` |
+| `oats instance git\|diff <name> --server <id> …` | `instance-git` | `instance-git`, `instanceGitApi: 1` |
+| `oats instance stop <name> --server <id> (--plan \| --apply …)` | `lifecycle-plans` | `lifecycle-plans`, `lifecycleApi: 1` |
+| `oats retire <name> --server <id> --plan`, and the guarded apply (`--plan-revision`, `--idempotency-key`) | `lifecycle-plans` | `lifecycle-plans`, `lifecycleApi: 1` |
+
+- The flags are the local command's. The instance is addressed like every
+  routed instance command ([servers.md](servers.md#run-there)): `--home` as
+  given, else the name through its saved route or the host's roster, sent
+  as `--home`. `--dir` names a directory on the host and travels as is;
+  without it the registered workspace is sent (not for `readiness --home`,
+  whose home is its own context). A retire plan and its guarded apply take
+  `--dir` like the rest; an unguarded `retire --server` refuses it.
+- An instance with a saved route is reached through it, registration or not.
+  A guarded retire apply whose name the host no longer lists is sent by name,
+  so a repeated key gets the host's recorded receipt (or its refusal).
+- The host's envelope is relayed unchanged, success or failure: the same
+  document the local command answers, with no routing keys added. The
+  guarded retire apply is the routed `retire`, whose result carries
+  `server` and `target` as before.
+- A host that does not advertise the feature and API number is refused with
+  `E_REMOTE_INCOMPATIBLE`, naming both and the host's version, before
+  anything is sent. A name two homes share on the host is `E_AMBIGUOUS`.
 
 <a id="instance-git-state-oats-instance-gitdiff-instancegitapi-1-oats-0247"></a>
 ## Git and diff

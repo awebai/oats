@@ -1,4 +1,4 @@
-// Remote parity (0.32.0): every routed ssh call shares a per-user control
+// Remote parity (0.31.0): every routed ssh call shares a per-user control
 // master and detects a dead link; the version probe is asked once per process
 // per server and target; remote roster rows carry the facts a local row has.
 // The ssh contract is exercised with fake transports; the live proof over
@@ -10,7 +10,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { checkRemote, dropRemoteProbes, rosterGroups, runRemote, sshArgv, writeServers } from "../lib/servers.mjs";
+import { checkRemote, dropRemoteProbes, rosterGroups, routeCommand, runRemote, sshArgv, writeServers } from "../lib/servers.mjs";
 
 // ssh binds the control socket at `<ControlPath>.<16 random>`: a short
 // OATS_HOME_DIR keeps it inside the 104-byte socket path limit (macOS).
@@ -22,7 +22,7 @@ test.after(() => {
   rmSync(base, { recursive: true, force: true });
 });
 
-const PROBE = { schemaVersion: 1, name: "@awebai/oats", version: "0.32.0", desktopApi: 1, harnesses: ["pi"], sessionBackends: ["tmux"], launchOptions: [], remote: ["session"], features: ["harness"] };
+const PROBE = { schemaVersion: 1, name: "@awebai/oats", version: "0.31.0", desktopApi: 1, harnesses: ["pi"], sessionBackends: ["tmux"], launchOptions: [], remote: ["session"], features: ["harness"] };
 const target = { sshHost: "h", workspace: "/w", oatsPath: "oats" };
 
 /** A transport that answers the version probe and counts it. */
@@ -250,4 +250,273 @@ test("session attach --server: one version probe at most, every call through the
   r = cli({ ...env, PATH: `${dead.bin}:${dirname(process.execPath)}:/usr/bin:/bin` }, ["session", "attach", "--server", "build", "--home", home]);
   assert.equal(r.status, 255);
   assert.match(r.stderr, /ssh to build-host ended with an error \(exit 255\); if the link was lost, the instance keeps running on build\. Reattach with: oats session attach --server build --home \/srv\/ws\/agents\/dev\/instances\/dev-a/);
+});
+
+// ---- item 3: foreign instances are first-class ----
+
+const FULL_PROBE = { ...PROBE, remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "session-upload"], features: ["harness", "retire-home", "session-start", "session-restart", "session-upload", "launch-config"] };
+const WS = "/srv/ws";
+const homeOf = (agent, name) => `${WS}/agents/${agent}/instances/${name}`;
+const ROSTER = { root: `${WS}/agents`, agents: [
+  { name: "dev", instances: [{ instance: "dev-a", home: homeOf("dev", "dev-a"), running: true }, { instance: "twin", home: homeOf("dev", "twin"), running: false }] },
+  { name: "ops", instances: [{ instance: "twin", home: homeOf("ops", "twin"), running: false }] },
+] };
+const ok = (result) => ({ stdout: JSON.stringify({ schemaVersion: 1, ok: true, result }) });
+
+function foreignSetup(name, answers = {}) {
+  const dir = mkdtempSync(join(base, `${name}-`));
+  const host = fakeHost(dir, { probe: FULL_PROBE, answers: { [`status --json --dir ${WS}`]: { stdout: JSON.stringify(ROSTER) }, ...answers } });
+  const env = cliEnv(dir, host);
+  mkdirSync(env.OATS_HOME_DIR, { recursive: true });
+  writeFileSync(join(env.OATS_HOME_DIR, "servers.json"), JSON.stringify({ servers: { build: { sshHost: "build-host", workspace: WS, oatsPath: host.oatsPath } } }));
+  return { dir, host, env, sent: (pattern) => host.calls().filter((c) => c.includes(pattern)) };
+}
+
+test("foreign instances: every routed session command and retire reach a home with no saved route, by --home or by a name unique on the host", () => {
+  const home = homeOf("dev", "dev-a");
+  const { env, host, sent, dir } = foreignSetup("foreign", {
+    [`session inspect --home ${home} --json`]: ok({ home, present: true, state: "running", backend: "tmux" }),
+    [`session start --home ${home} --json`]: ok({ instance: "dev-a", home, backend: "tmux", reused: "pane" }),
+    [`session restart --home ${home} --json`]: ok({ instance: "dev-a", home, backend: "tmux", reused: "pane" }),
+    [`session attach --home ${home}`]: { stdout: "attached" },
+    [`retire dev-a --home ${home} --dir ${WS} --json`]: ok({ retired: "dev-a", agent: "dev", removedDir: true }),
+  });
+  for (const addr of [["--home", home], ["--instance", "dev-a"]]) {
+    let r = cli(env, ["session", "inspect", "--server", "build", ...addr, "--json"]);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(r.json().result.home, home); assert.equal(r.json().result.server, "build");
+    r = cli(env, ["session", "start", "--server", "build", ...addr, "--json"]);
+    assert.equal(r.status, 0, r.stdout + r.stderr); assert.equal(r.json().result.instance, "dev-a");
+    r = cli(env, ["session", "restart", "--server", "build", ...addr, "--json"]);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    r = cli(env, ["session", "attach", "--server", "build", ...addr]);
+    assert.equal(r.status, 0, r.stdout + r.stderr); assert.equal(r.stdout, "attached");
+  }
+  // Upload: the bytes go to the host's receiver for that home.
+  const file = join(dir, "note.txt"); writeFileSync(file, "hello");
+  const sha = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
+  writeFileSync(join(env.OATS_HOME_DIR, "servers.json"), JSON.stringify({ servers: { build: { sshHost: "build-host", workspace: WS, oatsPath: fakeHost(mkdtempSync(join(dir, "upload-")), { probe: FULL_PROBE, answers: {
+    [`status --json --dir ${WS}`]: { stdout: JSON.stringify(ROSTER) },
+    [`session receive --home ${home} --name note.txt --json`]: ok({ path: `${home}/.oats-attachments/note.txt`, bytes: 5, sha256: sha }),
+  } }).oatsPath } } }));
+  let r = cli(env, ["session", "upload", "--server", "build", "--instance", "dev-a", "--file", file, "--json"]);
+  assert.equal(r.status, 0, r.stdout + r.stderr); assert.equal(r.json().result.home, home);
+  // Retire by name: the name resolves through the host's roster to its exact home.
+  writeFileSync(join(env.OATS_HOME_DIR, "servers.json"), JSON.stringify({ servers: { build: { sshHost: "build-host", workspace: WS, oatsPath: host.oatsPath } } }));
+  r = cli(env, ["retire", "dev-a", "--server", "build", "--json"]);
+  assert.equal(r.status, 0, r.stdout + r.stderr); assert.equal(r.json().result.retired, "dev-a");
+  assert.equal(sent(`retire dev-a --home ${home} --dir ${WS} --json`).length, 1, host.calls().join("\n"));
+  r = cli(env, ["retire", "dev-a", "--server", "build", "--home", home, "--json"]);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  // One status read resolves a name; the probe is asked once per command.
+  const before = host.calls().length;
+  cli(env, ["session", "inspect", "--server", "build", "--instance", "dev-a", "--json"]);
+  const calls = host.calls().slice(before);
+  assert.deepEqual(calls.map((c) => (c.includes("version --json") ? "probe" : c.includes("status --json") ? "status" : "inspect")), ["status", "probe", "inspect"]);
+});
+
+test("foreign instances: an ambiguous name lists its homes, an unknown one says the host lists none, a mismatched home is refused, the host's own refusal is relayed", () => {
+  const bad = "/srv/elsewhere/x";
+  const { env, sent } = foreignSetup("foreign-err", {
+    [`session start --home ${bad} --json`]: { stdout: JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_NOT_INSTANCE_HOME", message: `${bad} is not an instance home` } }), exit: 1 },
+  });
+  for (const cmd of [["session", "inspect"], ["session", "start"], ["session", "attach"]]) {
+    let r = cli(env, [...cmd, "--server", "build", "--instance", "twin", "--json"]);
+    assert.notEqual(r.status, 0);
+    const err = r.stdout.trim() ? r.json().error : { code: null, message: r.stderr };
+    if (err.code) assert.equal(err.code, "E_AMBIGUOUS");
+    assert.ok(err.message.includes(homeOf("dev", "twin")) && err.message.includes(homeOf("ops", "twin")), err.message);
+    r = cli(env, [...cmd, "--server", "build", "--instance", "ghost", "--json"]);
+    assert.notEqual(r.status, 0);
+    if (r.stdout.trim()) { assert.equal(r.json().error.code, "E_SNAPSHOT_UNKNOWN"); assert.match(r.json().error.message, /no instance "ghost" on server build: neither a saved route here nor its roster names one/); }
+    else assert.match(r.stderr, /no instance "ghost" on server build/);
+  }
+  let r = cli(env, ["retire", "twin", "--server", "build", "--json"]);
+  assert.equal(r.json().error.code, "E_AMBIGUOUS");
+  assert.deepEqual(r.json().error.details?.candidates?.map((c) => c.home), [homeOf("dev", "twin"), homeOf("ops", "twin")]);
+  assert.equal(sent("retire twin").length, 0, "nothing retired on an ambiguous name");
+  r = cli(env, ["retire", "ghost", "--server", "build", "--json"]);
+  assert.equal(r.json().error.code, "E_SNAPSHOT_UNKNOWN");
+  r = cli(env, ["session", "inspect", "--server", "build", "--instance", "dev-a", "--home", homeOf("dev", "twin"), "--json"]);
+  assert.equal(r.json().error.code, "E_HOME_MISMATCH");
+  r = cli(env, ["session", "start", "--server", "build", "--home", bad, "--json"]);
+  assert.equal(r.status, 1); assert.equal(r.json().error.code, "E_NOT_INSTANCE_HOME", "the host's refusal is relayed as is");
+});
+
+test("server roster: every row the host reports is addressable; savedRoute is information only", () => {
+  const { env } = foreignSetup("addr");
+  const r = cli(env, ["server", "roster", "--json"]);
+  assert.equal(r.status, 0, r.stderr);
+  const rows = r.json().result.groups[0].instances;
+  assert.equal(rows.length, 3);
+  for (const row of rows) { assert.equal(row.addressable, true); assert.equal(row.savedRoute, false); }
+});
+
+test("a remote without the session commands: the fallback hint names the instance's recorded tmux session, else the remote's default", () => {
+  const old = { ...FULL_PROBE, version: "0.22.1", remote: ["spawn", "retire", "status"], features: [] };
+  const dir = mkdtempSync(join(base, "hint-"));
+  const roster = { root: `${WS}/agents`, agents: [{ name: "dev", instances: [
+    { instance: "dev-a", home: homeOf("dev", "dev-a"), tmux: { session: "team-x", window: "dev-a" } },
+    { instance: "dev-b", home: homeOf("dev", "dev-b") },
+  ] }] };
+  const host = fakeHost(dir, { probe: old, answers: { [`status --json --dir ${WS}`]: { stdout: JSON.stringify(roster) } } });
+  const env = cliEnv(dir, host);
+  mkdirSync(env.OATS_HOME_DIR, { recursive: true });
+  writeFileSync(join(env.OATS_HOME_DIR, "servers.json"), JSON.stringify({ servers: { build: { sshHost: "build-host", workspace: WS, oatsPath: host.oatsPath } } }));
+  let r = cli(env, ["session", "inspect", "--server", "build", "--home", homeOf("dev", "dev-a"), "--json"]);
+  assert.equal(r.json().error.code, "E_REMOTE_INCOMPATIBLE");
+  assert.match(r.json().error.message, /attach with ssh -t build-host tmux attach -t team-x:dev-a$/);
+  r = cli(env, ["session", "inspect", "--server", "build", "--home", homeOf("dev", "dev-b"), "--json"]);
+  assert.match(r.json().error.message, /attach with ssh -t build-host tmux attach -t pi-agents$/, "a kernel before 0.22.2 opened its windows in pi-agents");
+});
+
+// ---- item 4: the Desktop's reads and lifecycle plans, routed ----
+
+const SURFACE_PROBE = { ...FULL_PROBE, remote: [...FULL_PROBE.remote, "readiness", "instance-events", "instance-git", "lifecycle-plans"],
+  features: [...FULL_PROBE.features, "readiness", "instance-events-2", "instance-git", "lifecycle-plans", "retire-retention"],
+  readinessApi: 2, eventsApi: 2, instanceGitApi: 1, lifecycleApi: 1 };
+const HOME_A = homeOf("dev", "dev-a");
+const ENVELOPES = {
+  readiness: { schemaVersion: 1, ok: true, result: { subject: { kind: "instance", instance: "dev-a", home: HOME_A, soul: "dev" }, summary: { ready: true }, checks: {}, notes: [] } },
+  readinessSoul: { schemaVersion: 1, ok: true, result: { subject: { kind: "soul", soul: "dev" }, summary: { ready: false }, checks: {}, notes: [] } },
+  events: { schemaVersion: 1, ok: true, result: { eventsApi: 2, instance: "dev-a", home: HOME_A, count: 1, returned: 1, truncated: false, events: [{ at: "2026-09-29T10:00:00.000Z", kind: "spawned", producer: "kernel" }] } },
+  git: { schemaVersion: 1, ok: true, result: { instance: "dev-a", home: HOME_A, observation: { branch: "main" }, files: [], summary: {}, notes: [] } },
+  diff: { schemaVersion: 1, ok: true, result: { file: { id: "f1", path: "a.txt", kind: "modified" }, against: "index", patch: "@@\n", binary: false, truncated: false } },
+  stopPlan: { schemaVersion: 1, ok: true, result: { planRevision: "r1", targets: [], notes: [] } },
+  stopApply: { schemaVersion: 1, ok: true, result: { ok: true, results: [], replayed: false } },
+  retirePlan: { schemaVersion: 1, ok: true, result: { planRevision: "r2", home: HOME_A, facts: {}, defaults: {}, notes: [] } },
+};
+const answer = (envelope) => ({ stdout: JSON.stringify(envelope) });
+
+function surfaceSetup(name, probe = SURFACE_PROBE) {
+  const dir = mkdtempSync(join(base, `${name}-`));
+  const host = fakeHost(dir, { probe, answers: {
+    [`status --json --dir ${WS}`]: { stdout: JSON.stringify(ROSTER) },
+    [`readiness --home ${HOME_A} --soul dev --agents-root ${WS}/agents --policy --json`]: answer(ENVELOPES.readiness),
+    [`readiness --soul dev --agents-root ${WS}/agents --policy --dir ${WS} --json`]: answer(ENVELOPES.readinessSoul),
+    [`instance events dev-a --limit 50 --home ${HOME_A} --dir ${WS} --json`]: answer(ENVELOPES.events),
+    [`instance git dev-a --home ${HOME_A} --dir ${WS} --json`]: answer(ENVELOPES.git),
+    [`instance diff dev-a --file f1 --revision r --index-revision i --home ${HOME_A} --dir ${WS} --json`]: answer(ENVELOPES.diff),
+    [`instance stop dev-a --plan --home ${HOME_A} --dir ${WS} --json`]: answer(ENVELOPES.stopPlan),
+    [`instance stop dev-a --apply --plan-revision r1 --idempotency-key k1 --home ${HOME_A} --dir ${WS} --json`]: answer(ENVELOPES.stopApply),
+    [`retire dev-a --plan --home ${HOME_A} --dir ${WS} --json`]: answer(ENVELOPES.retirePlan),
+    [`instance events dev-a --home /srv/elsewhere/dev-a --dir ${WS} --json`]: { stdout: JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_HOME_MISMATCH", message: "not a home of dev-a under /srv/ws" } }), exit: 1 },
+  } });
+  const env = cliEnv(dir, host);
+  mkdirSync(env.OATS_HOME_DIR, { recursive: true });
+  writeFileSync(join(env.OATS_HOME_DIR, "servers.json"), JSON.stringify({ servers: { build: { sshHost: "build-host", workspace: WS, oatsPath: host.oatsPath } } }));
+  return { env, host };
+}
+
+const SURFACE_CALLS = [
+  ["readiness", ["readiness", "--server", "build", "--home", HOME_A, "--soul", "dev", "--agents-root", `${WS}/agents`, "--policy", "--json"], ENVELOPES.readiness],
+  ["readiness", ["readiness", "--server", "build", "--soul", "dev", "--agents-root", `${WS}/agents`, "--policy", "--json"], ENVELOPES.readinessSoul],
+  ["instance-events-2", ["instance", "events", "dev-a", "--server", "build", "--limit", "50", "--json"], ENVELOPES.events],
+  ["instance-git", ["instance", "git", "dev-a", "--server", "build", "--json"], ENVELOPES.git],
+  ["instance-git", ["instance", "diff", "dev-a", "--server", "build", "--file", "f1", "--revision", "r", "--index-revision", "i", "--json"], ENVELOPES.diff],
+  ["lifecycle-plans", ["instance", "stop", "dev-a", "--server", "build", "--plan", "--json"], ENVELOPES.stopPlan],
+  ["lifecycle-plans", ["instance", "stop", "dev-a", "--server", "build", "--apply", "--plan-revision", "r1", "--idempotency-key", "k1", "--json"], ENVELOPES.stopApply],
+  ["lifecycle-plans", ["retire", "dev-a", "--server", "build", "--plan", "--json"], ENVELOPES.retirePlan],
+];
+
+test("routed readiness, instance events, git, diff, stop and retire plans: run on the host, their envelope relayed unchanged", () => {
+  const { env, host } = surfaceSetup("surf");
+  for (const [, argv, envelope] of SURFACE_CALLS) {
+    const r = cli(env, argv);
+    assert.equal(r.status, 0, `${argv.join(" ")}: ${r.stdout}${r.stderr}`);
+    assert.deepEqual(r.json(), envelope, argv.join(" "));
+  }
+  // An explicit --dir on the host travels as is.
+  const r = cli(env, ["instance", "git", "dev-a", "--server", "build", "--home", HOME_A, "--dir", "/srv/other", "--json"]);
+  assert.ok(host.calls().some((c) => c.includes(`instance git dev-a --home ${HOME_A} --dir /srv/other --json`)), host.calls().join("\n"));
+  void r;
+});
+
+test("routed Desktop reads and plans: a host without the feature is refused before anything is sent; a bad home is refused here or relayed from the host", () => {
+  for (const [feature, argv] of SURFACE_CALLS) {
+    const probe = { ...SURFACE_PROBE, version: "0.30.3", features: SURFACE_PROBE.features.filter((f) => f !== feature) };
+    const { env, host } = surfaceSetup(`old-${feature}`, probe);
+    const r = cli(env, argv);
+    assert.equal(r.status, 1, argv.join(" "));
+    assert.equal(r.json().error.code, "E_REMOTE_INCOMPATIBLE");
+    assert.match(r.json().error.message, new RegExp(`remote oats 0\\.30\\.3 at build-host does not advertise ${feature}`));
+    const verb = argv[0] === "instance" ? `instance ${argv[1]}` : argv[0];
+    assert.equal(host.calls().filter((c) => c.includes(` ${verb} `) && !c.includes("status --json")).length, 0, `nothing sent: ${host.calls().join("\n")}`);
+  }
+  // The API number must match too, not only the feature.
+  const { env: envApi } = surfaceSetup("old-api", { ...SURFACE_PROBE, eventsApi: 1 });
+  assert.equal(cli(envApi, ["instance", "events", "dev-a", "--server", "build", "--json"]).json().error.code, "E_REMOTE_INCOMPATIBLE");
+  const { env } = surfaceSetup("bad-home");
+  let r = cli(env, ["instance", "git", "dev-a", "--server", "build", "--home", "relative/dev-a", "--json"]);
+  assert.equal(r.json().error.code, "E_BAD_ARGS");
+  r = cli(env, ["instance", "git", "dev-a", "--server", "build", "--home", homeOf("dev", "twin"), "--json"]);
+  assert.equal(r.json().error.code, "E_HOME_MISMATCH");
+  r = cli(env, ["instance", "events", "twin", "--server", "build", "--json"]);
+  assert.equal(r.json().error.code, "E_AMBIGUOUS");
+  r = cli(env, ["instance", "events", "dev-a", "--server", "build", "--home", "/srv/elsewhere/dev-a", "--json"]);
+  assert.equal(r.status, 1); assert.deepEqual(r.json().error, { code: "E_HOME_MISMATCH", message: "not a home of dev-a under /srv/ws" }, "the host's refusal, relayed");
+  assert.equal(r.stderr, "", "a refusal with an envelope and a silent stderr adds nothing on stderr");
+  r = cli(env, ["instance", "input", "dev-a", "--server", "build", "--json"]);
+  assert.equal(r.json().error.code, "E_USAGE");
+});
+
+test("version --json advertises the new routed surfaces", () => {
+  const r = spawnSync(process.execPath, [CLI, "version", "--json"], { encoding: "utf8" });
+  const probe = JSON.parse(r.stdout);
+  for (const name of ["readiness", "instance-events", "instance-git", "lifecycle-plans"]) assert.ok(probe.remote.includes(name), name);
+});
+
+// ---- review round 1 (items 3-5): the Desktop's exact argv, a removed registration, a replayed receipt ----
+
+test("retire --plan and the guarded apply take the Desktop's exact arguments, --dir on the host included", () => {
+  const { env, host } = surfaceSetup("desk-retire");
+  let r = cli(env, ["retire", "dev-a", "--plan", "--home", HOME_A, "--dir", WS, "--json", "--server", "build"]);
+  assert.equal(r.status, 0, r.stdout + r.stderr); assert.deepEqual(r.json(), ENVELOPES.retirePlan);
+  writeFileSync(join(env.OATS_HOME_DIR, "servers.json"), JSON.stringify({ servers: { build: { sshHost: "build-host", workspace: WS, oatsPath: fakeHost(mkdtempSync(join(base, "desk-apply-")), { probe: SURFACE_PROBE, answers: {
+    [`retire dev-a --plan-revision r2 --idempotency-key k2 --discard-worktree --home ${HOME_A} --dir /srv/member --json`]: { stdout: JSON.stringify({ retired: "dev-a", agent: "dev", removedDir: true, planRevision: "r2", idempotencyKey: "k2", replayed: false }) },
+  } }).oatsPath } } }));
+  r = cli(env, ["retire", "dev-a", "--plan-revision", "r2", "--idempotency-key", "k2", "--discard-worktree", "--home", HOME_A, "--dir", "/srv/member", "--json", "--server", "build"]);
+  assert.equal(r.status, 0, r.stdout + r.stderr); assert.equal(r.json().result.retired, "dev-a");
+  // An unguarded routed retire still takes its scope from the registration.
+  r = cli(env, ["retire", "dev-a", "--dir", WS, "--json", "--server", "build"]);
+  assert.equal(r.json().error.code, "E_BAD_ARGS");
+  void host;
+});
+
+test("the routed reads and plans follow a saved route after the registration is removed, by name and by home", () => {
+  const { env, host } = surfaceSetup("frozen");
+  const reg = JSON.parse(readFileSync(join(env.OATS_HOME_DIR, "servers.json"), "utf8")).servers.build;
+  mkdirSync(join(env.OATS_HOME_DIR, "remote", "build"), { recursive: true });
+  writeFileSync(join(env.OATS_HOME_DIR, "remote", "build", "dev-a.json"), JSON.stringify({ serverId: "build", instance: "dev-a", agent: "dev", home: HOME_A, agentsRoot: `${WS}/agents`, target: { sshHost: "build-host", workspace: WS, oatsPath: reg.oatsPath } }));
+  writeFileSync(join(env.OATS_HOME_DIR, "servers.json"), JSON.stringify({ servers: {} }));
+  for (const [, argv, envelope] of SURFACE_CALLS.filter(([, argv]) => !argv.includes("--soul") || argv.includes("--home"))) {
+    const r = cli(env, argv);
+    assert.equal(r.status, 0, `${argv.join(" ")}: ${r.stdout}${r.stderr}`);
+    assert.deepEqual(r.json(), envelope, argv.join(" "));
+  }
+  assert.equal(host.calls().filter((c) => c.includes("status --json")).length, 0, "a saved route needs no roster read");
+});
+
+test("a repeated guarded retire reaches the host's receipt replay after the instance is gone", () => {
+  let retired = false;
+  const sent = [];
+  const receipt = { retired: "dev-a", agent: "dev", removedDir: true, planRevision: "r1", idempotencyKey: "k1", replayed: false };
+  const exec = (bin, argv) => {
+    const word = String(argv.at(-1));
+    sent.push(word);
+    if (word.endsWith("version --json")) return JSON.stringify(SURFACE_PROBE);
+    if (word.includes(" status --json")) return JSON.stringify(retired ? { root: `${WS}/agents`, agents: [{ name: "dev", instances: [] }] } : ROSTER);
+    if (word.includes(" retire dev-a")) { const out = retired ? { ...receipt, replayed: true } : receipt; retired = true; return JSON.stringify(out); }
+    throw new Error(`unexpected: ${word}`);
+  };
+  const server = { id: "build", sshHost: "build-host", workspace: WS, oatsPath: "oats" };
+  const args = ["dev-a", "--plan-revision", "r1", "--idempotency-key", "k1"];
+  let out = routeCommand("build", "retire", args, { server, execFileSync: exec });
+  assert.equal(out.envelope.ok, true); assert.equal(out.envelope.result.replayed, false);
+  assert.ok(sent.some((w) => w.includes(`retire dev-a --plan-revision r1 --idempotency-key k1 --home ${HOME_A}`)), sent.join("\n"));
+  out = routeCommand("build", "retire", args, { server, execFileSync: exec });
+  assert.equal(out.envelope.ok, true, JSON.stringify(out.envelope)); assert.equal(out.envelope.result.replayed, true);
+  assert.ok(sent.at(-1).includes("retire dev-a --plan-revision r1 --idempotency-key k1 --dir"), `the key goes to the host, which replays or refuses: ${sent.at(-1)}`);
+  // Without a key there is nothing to replay: a name the host does not list is still refused here.
+  assert.throws(() => routeCommand("build", "retire", ["dev-a"], { server, execFileSync: exec }), (e) => e.code === "E_SNAPSHOT_UNKNOWN");
 });
