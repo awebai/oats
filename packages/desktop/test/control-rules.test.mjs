@@ -163,7 +163,11 @@ test("focus: controls with their own opaque pair keep it and show the edge only"
     assert.equal(s.background, `var(--${bg})`, `${selector} background`);
     assert.equal(s.color, `var(--${fg})`, `${selector} colour`);
     assert.equal(s.outline, `1px solid var(--${edge})`, `${selector} edge`);
+    // On its own opaque fill the edge would be invisible (accent on --primary-bg/--danger < 3:1), so
+    // it sits 1px outside, on the surrounding surface (theme-contrast.test.mjs checks those pairs).
+    assert.equal(s.outlineOffset, "1px", `${selector} edge sits outside its own fill`);
   }
+  assert.equal(u.focused(".oats-view .act.danger").outlineOffset, "-1px", "danger ink on --surface keeps the inset edge");
   assert.equal(u.focused(".split-empty").background, "var(--term-bg)", "an empty pane never tints as a whole");
   assert.equal(u.focused(".oats-view .act.danger").background, "var(--surface)", "danger ink is not AA on the dark tint: edge only");
   assert.equal(u.focused(".oats-view .act.danger").color, "var(--danger)");

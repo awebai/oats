@@ -189,6 +189,21 @@ for (const [name, palette] of palettes) {
   });
 }
 
+// Control rule 2: keyboard focus is a 1px edge (WCAG 1.4.11 non-text, 3:1). Controls that paint their own
+// opaque pair (primary, danger fill) carry it 1px OUTSIDE, so it is measured against the surfaces those
+// buttons sit on; inset it would sit on their own fill, which fails in every theme. The toast's edge is
+// --primary-fg outside its inverted buttons, on the toast's --primary-bg.
+for (const [name, palette] of palettes) test(`${name}: focus edges outside opaque-pair controls meet 3:1 on the surfaces around them`, () => {
+  const ratio = (fg, bg) => contrast(opaqueChannels(palette.get(fg)), backgroundChannels(bg, palette));
+  for (const bg of ["bg", "surface", "surface-2", "term-bg", "sel"]) {
+    assert.ok(ratio("accent", bg) >= 3, `${name} accent edge on --${bg}: ${ratio("accent", bg).toFixed(2)}:1`);
+  }
+  assert.ok(ratio("primary-fg", "primary-bg") >= 3, `${name} toast edge --primary-fg on --primary-bg: ${ratio("primary-fg", "primary-bg").toFixed(2)}:1`);
+  // Why the edge moved outside: inset on a danger fill it is below 3:1 in every theme (and on
+  // --primary-bg in dark and solarized; light's 3.38:1 is too thin to rely on).
+  assert.ok(ratio("accent", "danger") < 3, `${name} accent on --danger would need the outside edge`);
+});
+
 // Color fixtures are local: no external reference paths, renderer startup or
 // installed theme is needed to detect drift from the approved visual port.
 test("White uses neutral surfaces, ink primaries and AA-safe orange distinct from errors", () => {

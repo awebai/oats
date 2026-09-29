@@ -58,7 +58,10 @@ global part, views follow them in their own CSS). `test/control-rules.test.mjs` 
    (the edge overlays a bordered control's border and is the inner pixel of a borderless
    one) plus `background: var(--sel)` on `button`, `a` and `summary`. The tint rule has
    (0,1,1) specificity on purpose: a control that paints its own opaque pair (primaries,
-   danger, the toast) keeps it and shows the edge only; a control whose base rule has an
+   danger, the toast) keeps it and shows the edge only, drawn 1px *outside* (`outline-offset:
+   1px`) because inset it would sit on the control's own fill (accent on `--primary-bg` is
+   1.52-3.38:1, on `--danger` about 1.1:1). `theme.css` lists those controls in one
+   `:where(…):focus-visible` rule; a new opaque-fill control joins it. A control whose base rule has an
    id or two classes and should tint declares its own `:focus-visible { background:
    var(--sel) }` (`#ws-trigger`, `#tab-actions button`, `.ws-dialog-foot .secondary`).
    Do not add per-component `outline: 2px` rings. Large focusable panels (tabpanels,

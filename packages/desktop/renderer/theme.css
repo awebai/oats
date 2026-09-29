@@ -180,9 +180,16 @@
    bordered control it overlays the border (the border turns accent), on a
    borderless one it is the inner pixel, and it never fights a component's own
    box-shadow. The tint is deliberately low-specificity ((0,1,1)): a control that
-   paints its own opaque pair (primary, danger) keeps it and shows the edge only. */
+   paints its own opaque pair (primary, danger) keeps it and shows the edge only.
+   On such a fill the inset edge would be invisible (accent on --primary-bg is
+   1.52-3.38:1, on --danger 1.08-1.19:1), so there the same 1px edge sits 1px
+   OUTSIDE, on the surface around the control (accent on --bg, --surface,
+   --surface-2, --term-bg and --sel is AA in every theme). A new control that
+   paints its own opaque fill joins this list (or restates the offset itself). */
 :focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 :is(button, a, summary):focus-visible { background: var(--sel); }
+:where(button.primary, .lifecycle-confirm, button.fspawn, button.spawn-act, button.forge-send, .context-panel-action,
+  .capability-nav button[aria-current="true"], button.auto-switch[aria-checked="true"]):focus-visible { outline-offset: 1px; }
 /* Checkboxes and radios are too small for an inset edge: the same 1px line sits just outside. */
 input:is([type="checkbox"], [type="radio"]):focus-visible { outline-offset: 1px; }
 /* Fields (rule 3). A text field has one frame: its own border, or its wrapper's
