@@ -90,7 +90,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
 | `desktop-facts` | the facts under [Desktop facts](#desktop-facts-feature-desktop-facts-oats-0290) | |
 | `launch-preference` | soul and local launch preferences; `launch`, `launchCurrent`, `launchFrom`; `--reselect-launch`; `key` on soul and agent rows ([Launch preferences](#soul-launch-preferences-feature-launch-preference-oats-0300)) | |
 | `preview-composed-from` | `composedFrom` on preview `modules[]` ([Composition](#the-preview)) | |
-| `session-backend-config` | oats-local.yaml `session.backend` / `session.tmuxSession`; `backendFrom` (`flag`, `local`, `env` or `default`) on the spawn result, the spawn preview and the `launched` event ([Backends](execution-targets.md#backends)) | |
+| `session-backend-config` | oats-local.yaml `session.backend` / `session.tmuxSession`; `backendFrom` (`flag`, `local`, `env` or `default`) on the spawn result, the spawn preview and the `launched` event; `session` (`{backend, backendFrom, tmuxSession}`, or null) in `oats inspect --json` ([Backends](execution-targets.md#backends)) | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's

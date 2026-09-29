@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseLaunchCommand, renderLaunchCommand, withLaunchModel, startInstanceSession, inspectInstanceSession } from "../lib/core.mjs";
+import { parseLaunchCommand, renderLaunchCommand, withLaunchModel, startInstanceSession, restartInstanceSession, inspectInstanceSession } from "../lib/core.mjs";
 import { startRemote } from "../lib/servers.mjs";
 import { isolateSessionEnvironment, waitUntil } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
@@ -214,6 +214,11 @@ test("a pre-0.31 home recorded in pi-agents starts in pi-agents, whatever the 0.
     assert.deepEqual(r.target, { backend: "tmux", session: "pi-agents", window: "legacy", socket: resolve(socket) });
     assert.ok(tmux("list-windows", "-t", "pi-agents", "-F", "#{window_name}").split("\n").includes("legacy"));
     assert.deepEqual(readJson(f.baselinePath).runtime.tmux, { session: "pi-agents", window: "legacy", socket: resolve(socket) });
+    await harnessReady(f, "legacy");
+    // A restart of the running pre-0.31 home stays in its recorded session too.
+    const again = restartInstanceSession(f.home, { stopGraceMs: 5000 });
+    assert.equal(again.target.session, "pi-agents");
+    assert.equal(readJson(f.baselinePath).runtime.tmux.session, "pi-agents");
     await harnessReady(f, "legacy");
     releaseHarness(f.home);
   } finally {
@@ -443,13 +448,61 @@ test("simultaneous CLI starts produce one launch and preserve a never-launched h
   assert.equal(readJson(join(f.home, "instance.json")).tmux.socket, socket);
 });
 
-test("a never-launched Herdr home without an endpoint cannot silently switch to tmux", async () => {
+test("a never-launched Herdr home on a host without herdr is refused by name, never switched to tmux", async () => {
   const f = await makeHome("herdr-no-launch", { launched: false });
   const meta = { ...f.meta, backend: "herdr" };
   delete meta.tmux;
   writeFileSync(join(f.home, "instance.json"), JSON.stringify(meta));
-  assert.throws(() => startInstanceSession(f.home), (e) => e.code === "E_RUNTIME_ENDPOINT_UNKNOWN");
+  const path = process.env.PATH;
+  process.env.PATH = "/nonexistent-bin";
+  try { assert.throws(() => startInstanceSession(f.home), (e) => e.code === "E_RUNTIME_ENDPOINT_UNKNOWN" && /needs herdr/.test(e.message)); }
+  finally { process.env.PATH = path; }
   assert.deepEqual(readJson(join(f.home, "instance.json")), meta);
+  assert.ok(!windows().includes("herdr-no-launch"), "no tmux fallback");
+});
+
+test("the first start of a never-launched Herdr home (the harvester's --no-launch then start) records its server, strict from then on", async () => {
+  const f = await makeHome("herdr-first-start", { launched: false });
+  const meta = { ...f.meta, backend: "herdr" };
+  delete meta.tmux;
+  writeFileSync(join(f.home, "instance.json"), JSON.stringify(meta));
+  const bin = join(base, "herdr-bin"); mkdirSync(bin, { recursive: true });
+  writeFileSync(join(bin, "herdr"), "#!/bin/sh\nexit 1\n"); chmodSync(join(bin, "herdr"), 0o755);
+  const socket = join(process.env.XDG_CONFIG_HOME || join(process.env.HOME, ".config"), "herdr", "sessions", "oats", "herdr.sock");
+  let panes = [], agent = false, allocations = 0, runs = 0, serverUp = true;
+  const io = { exec: (binary, args, options) => {
+    assert.equal(binary, join(bin, "herdr"));
+    assert.equal(options.env.HERDR_SOCKET_PATH, socket);
+    if (!serverUp) throw new Error("connect ECONNREFUSED");
+    let result;
+    if (args.join(" ") === "api snapshot") result = { snapshot: { protocol: 22, panes, agents: agent ? [{ terminal_id: "t1", agent_status: "working" }] : [] } };
+    else if (args[0] === "workspace") { allocations++; panes = [{ pane_id: "p1", terminal_id: "t1", workspace_id: "w1" }]; result = { root_pane: panes[0] }; }
+    else if (args[1] === "read") return "➜ home\n";
+    else if (args[1] === "process-info") result = { process_info: { foreground_processes: [{ name: "zsh" }] } };
+    else if (args[1] === "run") { runs++; agent = true; result = {}; }
+    else assert.fail(`unexpected Herdr call: ${args}`);
+    return JSON.stringify({ result });
+  } };
+  const path = process.env.PATH;
+  process.env.PATH = `${bin}:${path}`;
+  try {
+    const first = startInstanceSession(f.home, { io });
+    assert.equal(first.backend, "herdr");
+    const recorded = { backend: "herdr", binary: join(bin, "herdr"), socket, protocol: 22, workspaceId: "w1", paneId: "p1", terminalId: "t1" };
+    assert.deepEqual(first.target, recorded);
+    assert.deepEqual(readJson(join(f.home, "instance.json")).sessionTarget, recorded, "the endpoint is recorded in the home");
+    assert.deepEqual(readJson(f.baselinePath).runtime.sessionTarget, recorded, "and in the independent receipt");
+    assert.equal(allocations, 1); assert.equal(runs, 1);
+    // A second start reuses the recorded target: it is strict now, never re-found.
+    writeFileSync(join(f.home, ".oats-start-exited"), readJson(join(f.home, "instance.json")).startId);
+    agent = false;
+    assert.equal(startInstanceSession(f.home, { io }).reused, "pane");
+    assert.equal(allocations, 1);
+    // A recorded target whose server is gone is the named refusal, not a new server.
+    panes = []; serverUp = false;
+    assert.throws(() => startInstanceSession(f.home, { io }), (e) => e.code === "E_SESSION_UNKNOWN" || e.code === "E_SESSION_UNAVAILABLE");
+    assert.equal(allocations, 1);
+  } finally { process.env.PATH = path; }
 });
 
 test("a live startup shell is protected until its command actually exits", async () => {

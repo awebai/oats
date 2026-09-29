@@ -44,10 +44,14 @@ event name the deciding layer as `backendFrom`: `flag`, `local`, `env` or
 `default` (feature `session-backend-config`, 0.31). The backend binary must be
 installed on the execution host. A launched home keeps the backend and session
 it recorded: `session start` and `restart` never re-read these layers. A
-`--no-launch` spawn on Herdr records no Herdr server yet, so `session start`
-refuses it (`E_RUNTIME_ENDPOINT_UNKNOWN`); on a host whose `session.backend` is
-`herdr`, spawn launched, or pass `--backend tmux` for a home started later. A
-replayed keyed spawn returns the recorded instance without `backendFrom`. The chosen session
+`--no-launch` spawn on Herdr records no Herdr server; its first `session start`
+finds or starts the host's Herdr server exactly as a launched spawn does and
+records the endpoint and protocol, which are strict from then on. Without
+`herdr` installed that start is refused (`E_RUNTIME_ENDPOINT_UNKNOWN`), never
+moved to tmux. The environment variables are read when the spawn runs.
+`oats inspect --json` reports what a new spawn would get as `session`
+(`{backend, backendFrom, tmuxSession}`). A replayed keyed spawn returns the
+recorded instance without `backendFrom`. The chosen session
 target is recorded twice: in `instance.json` and in an independent lifecycle
 receipt. Every session command checks that the two agree
 (`E_RUNTIME_AUTHORITY_MISMATCH` otherwise).
@@ -59,7 +63,11 @@ deployment's `session.tmuxSession`, else `OATS_TMUX_SESSION`, else
 `PI_AGENTS_TMUX_SESSION` (the pre-0.31 variable), else `oats-agents`. Before
 0.31 the default was `pi-agents`; a home launched then keeps the `pi-agents`
 session it recorded, and `oats status` reads each home in its recorded
-session. The receipt records the
+session. A spawn refuses an instance name that is a live window in the
+session it would open in (`E_INSTANCE_NAME_TAKEN`); a live window of that name
+in another session, such as a `pi-agents` window after the default moved, does
+not block it. Session commands target each home's exact recorded window, so
+the two never mix. The receipt records the
 session, window and socket. The spawn result prints the attach command.
 
 ### Herdr
