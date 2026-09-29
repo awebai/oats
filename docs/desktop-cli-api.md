@@ -30,7 +30,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
 
 ```json
 {"schemaVersion":1,"name":"@awebai/oats","version":"0.30.0","desktopApi":1,
- "harnesses":["pi","claude","codex"],"sessionBackends":["tmux","herdr"],"launchOptions":["yolo"],
+ "harnesses":["pi","claude","codex"],"sessionBackends":["tmux"],"launchOptions":["yolo"],
  "remote":["spawn","retire","status","session","session-start","session-restart","launch-config","roster","harvest","schedule","session-upload","operations",
            "readiness","instance-events","instance-git","lifecycle-plans"],
  "features":["retire-home","session-start","session-restart","launch-config","schedule","session-upload","operations","instance-git",
@@ -48,7 +48,9 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
   accepted. The real gate is the feature list; its minimum is
   `packages-no-approval`.
 - `harnesses` is what `--harness` accepts; `sessionBackends` what `--backend`
-  accepts. A host without the `harness` feature lists `runtimes` instead.
+  accepts: `["tmux"]` since 0.31.0, when Herdr was removed (`--backend herdr`
+  is refused with `E_HERDR_REMOVED`). A host without the `harness` feature
+  lists `runtimes` instead.
 - `remote` is the routed surface: the commands `--server <id>` sends to a
   registered server, plus `roster`. The Desktop checks the execution host's
   probe before a routed mutation. From 0.31: `readiness`, `instance-events`,
@@ -1210,7 +1212,7 @@ with `--expect-decision` records the key and decision in `instance.json`.
 
 ```json
 {"instance":"rm-api","agent":"rm","home":"/w/agents/rm/instances/rm-api","work":"worktree","branch":"agents/rm-api","launched":true,"warnings":[],
- "tmux":{"session":"oats-agents","window":"rm-api"},"repo":"/w/agents-repo","harness":"pi","model":null,"parent":null,"sibling":null,"relation":null,
+ "tmux":{"session":"oats-agents","window":"rm-api"},"backend":"tmux","repo":"/w/agents-repo","harness":"pi","model":null,"parent":null,"sibling":null,"relation":null,
  "spawnOrigin":"operator","attach":"tmux attach -t oats-agents","decision":{"instance":"rm-api","revision":"c557d8ec9a272ba1c1739dc3"},"replayed":false,
  "wake":{"requested":false,"saved":null,"error":null},"launchConfig":null,
  "launch":{"version":2,"harness":"pi","launchConfig":null,"launchConfigSource":null,"executable":"/usr/local/bin/pi","executableDeclared":null,
@@ -1220,10 +1222,11 @@ with `--expect-decision` records the key and decision in `instance.json`.
 (`decision` is abridged: it is the full bound decision.)
 
 - Always present: `instance, agent, home, work, branch, launched, warnings
-  (array), tmux ({session, window} | null), repo, harness, model, parent,
+  (array), tmux ({session, window} | null), backend ("tmux"), repo, harness,
+  model, parent,
   sibling, relation, spawnOrigin (operator | instance), attach, launchConfig,
   launch` (the redacted recipe).
-- When they apply: `sessionTarget` (Herdr), `yolo`, `decision` and
+- When they apply: `yolo`, `decision` and
   `replayed` (bound apply), `wake` (keyed apply), `wakeSchedule` and
   `wakeScheduleError` (a requested wake).
 
@@ -1300,7 +1303,7 @@ workspace-model fields (feature `instance-modules`):
 ```
 
 Abridged: the record also carries the launch recipe and command,
-composition evidence, the capability runtime, the tmux or Herdr target,
+composition evidence, the capability runtime, the tmux target,
 lineage (`parentInstance`, `siblingInstance`, `relation`, `relativeTo`), and
 the keyed-spawn fields `decision`, `spawnIdempotencyKey`, `spawnCompleted` and
 `wake`; later starts add `restarts` and `restartCount`.
@@ -1357,8 +1360,10 @@ Not an envelope: `{root, agents, workspace?, problems?, warnings?}`.
   description, dir, instances}`.
 - **Instance rows**: the home's `instance.json` (launch recipe and command
   redacted) plus `home` and `instance` (from the directory; a disagreeing
-  claim is kept as `recordedHome`/`recordedInstance`), `running` (`null` when
-  a Herdr session is unreachable, with `runtimeState`/`runtimeError`),
+  claim is kept as `recordedHome`/`recordedInstance`), `running` (`null` for a
+  home a Herdr-era kernel recorded, with `runtimeState: "unsupported"` and
+  `runtimeError: "E_HERDR_REMOVED: …"`; the recorded `sessionTarget` stays in
+  the row),
   `identity` when a provider recorded one, `rollbackIncomplete` and
   `retirePending` when present, and the Desktop facts below.
 - **`modules`** becomes drift rows `{name, from, commit, current, status,
@@ -1422,8 +1427,9 @@ route target:
   answer is unknown (`missingRemotely: false`).
 - **`savedRoute`**: the instance was spawned from this machine and has a
   saved route here. Information only; no action depends on it.
-- `running` is `null` when unknown; `backend`, `tmux`, `sessionTarget` and
-  `runtimeError` are as the host reports them.
+- `running` is `null` when unknown; `backend` is `tmux` for a row with a tmux
+  target, else `null`; `tmux`, `sessionTarget` (the recorded target of a home
+  a Herdr-era kernel opened) and `runtimeError` are as the host reports them.
 
 <a id="routed-reads-and-plans"></a>
 ### Routed reads and plans (`--server`, 0.31)

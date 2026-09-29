@@ -5,9 +5,8 @@ import { chmodSync, existsSync, readdirSync, symlinkSync, mkdirSync, mkdtempSync
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
-import { restartInstanceSession, startInstanceSession, inspectInstanceSession, stopHarness } from "../lib/core.mjs";
+import { restartInstanceSession, startInstanceSession, inspectInstanceSession } from "../lib/core.mjs";
 import { soulFiles, v2Deployment } from "./helpers/v2-deployment.mjs";
-import { spawn as spawnProcess } from "node:child_process";
 import { isolateSessionEnvironment, waitUntil } from "./helpers/host-fixture.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
@@ -202,46 +201,6 @@ test("a restart to another harness whose metadata write is interrupted is recove
   assert.throws(() => startInstanceSession(home, { env: env() }), (e) => e.code === "E_SESSION_UNKNOWN" && /invalid receipt/.test(e.message));
   write(join(home, ".oats-start-pending.json"), JSON.stringify(pending));
   process.kill(runningPid(home), "SIGTERM");
-});
-
-test("Herdr: the pane shell's verified process tree is signalled (never the shell itself, never a fabricated pid); exit is observed through Herdr; a timeout reports the process still running; an unverifiable pid refuses", async () => {
-  // A real launcher shell with a real polite harness child stands in for the pane (as Herdr's `exec /bin/sh -c` leaves it); Herdr's answers come from a fake transport.
-  const home = join(base, "herdr-home"); mkdirSync(home, { recursive: true });
-  const child = spawnProcess("/bin/sh", ["-c", `${JSON.stringify(join(binDir, "polite"))}; exit 0`], { stdio: "ignore", env: { ...process.env, OATS_INSTANCE_HOME: home } });
-  try {
-    assert.ok(await waitFor(() => runningPid(home) !== null), "the harness child is up");
-    const harnessPid = runningPid(home);
-    const target = { backend: "herdr", binary: "/fake/herdr", socket: join(base, "herdr.sock"), protocol: 20, workspaceId: "w0", paneId: "p0", terminalId: "t0" };
-    const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
-    let info = () => ({ shell_pid: child.pid, foreground_process_group_id: child.pid, foreground_processes: [{ name: "sh", pid: alive(harnessPid) ? harnessPid : child.pid }] });
-    const calls = [];
-    const fakeExec = (binary, args, options) => {
-      if (binary === "ps") return execFileSync(binary, args, options);
-      calls.push(args.join(" "));
-      let result;
-      if (args.join(" ") === "api snapshot") result = { snapshot: { protocol: 20, panes: [{ pane_id: "p0", terminal_id: "t0", workspace_id: "w0" }], agents: alive(harnessPid) ? [{ terminal_id: "t0", agent_status: "working" }] : [] } };
-      else if (args[1] === "process-info") result = { process_info: info() };
-      else assert.fail(`unexpected Herdr call: ${args}`);
-      return JSON.stringify({ result });
-    };
-    const io = { exec: fakeExec };
-    // Timeout first: the injected kill withholds the signal, so the process stays and nothing is escalated.
-    let r = stopHarness(target, { graceMs: 600, io, kill: (pid, sig) => { if (sig === 0) return process.kill(pid, 0); calls.push(`kill ${pid} ${sig}`); } });
-    assert.equal(r.exited, false); assert.ok(r.requested.some((x) => x.pid === harnessPid) && !r.requested.some((x) => x.pid === child.pid), "the harness under the pane shell, not the shell");
-    assert.deepEqual(r.stillRunning.includes(harnessPid), true);
-    assert.ok(calls.includes(`kill ${harnessPid} SIGTERM`) && !calls.some((c) => /SIGKILL/.test(c)));
-    assert.ok(alive(harnessPid), "still there");
-    // The real SIGTERM: the harness ends, the launcher shell finishes, Herdr's snapshot loses the agent, exit is observed.
-    r = stopHarness(target, { graceMs: 5000, io });
-    assert.equal(r.exited, true); assert.ok(r.requested.some((x) => x.pid === harnessPid)); assert.ok(!alive(harnessPid));
-    // An unverifiable pane shell pid is refused before any signal.
-    info = () => ({ shell_pid: 999999, foreground_process_group_id: null, foreground_processes: [] });
-    const running = { exec: (b, a, o) => b === "ps" ? execFileSync(b, a, o) : a.join(" ") === "api snapshot" ? JSON.stringify({ result: { snapshot: { protocol: 20, panes: [{ pane_id: "p0", terminal_id: "t0", workspace_id: "w0" }], agents: [{ terminal_id: "t0", agent_status: "working" }] } } }) : fakeExec(b, a, o) };
-    assert.throws(() => stopHarness(target, { graceMs: 100, io: running }), (e) => e.code === "E_SESSION_UNKNOWN" && /no such process/.test(e.message));
-  } finally {
-    try { child.kill("SIGKILL"); } catch { /* gone */ }
-    try { const pid = runningPid(home); if (pid) process.kill(pid, "SIGKILL"); } catch { /* gone */ }
-  }
 });
 
 test("launch hooks: only capabilities captured for the home take part; a hook answers args + env under the captured settings with the same environment rules as spawn; its answer, even empty, replaces the provider's previous contribution", async () => {

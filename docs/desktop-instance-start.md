@@ -67,4 +67,6 @@ before launch. Desktop does not scaffold a home or execute a launcher itself.
 Status collection reads each instance's recorded tmux socket and session,
 with one query per socket per collection. A launcher shell with a harness
 child remains running; a fallback shell or dead pane is stopped. Errors that
-prevent a reliable observation remain unknown. Herdr uses its saved target.
+prevent a reliable observation remain unknown. A row that records a Herdr
+target (Herdr was removed in 0.31.0) is never observed: it shows the kernel's
+`E_HERDR_REMOVED` text, and Open and Start are disabled.

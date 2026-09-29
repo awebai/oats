@@ -148,7 +148,7 @@ test("ordinary native launch retains complete OATS homes for pi, Claude and Code
   const bin = join(base, "bin"); mkdirSync(bin);
   const events = join(base, "hook-events.jsonl"), tripwire = join(base, "native-invoked");
   // Tripwires in place of every harness/backend executable; node and git are the real ones.
-  for (const name of ["claude", "codex", "pi", "tmux", "herdr"]) {
+  for (const name of ["claude", "codex", "pi", "tmux"]) {
     const file = join(bin, name);
     writeFileSync(file, `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(tripwire)}, 'unexpected native invocation');process.exit(99);\n`);
     chmodSync(file, 0o755);

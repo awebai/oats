@@ -277,7 +277,7 @@ test("an injected metadata write failure after allocation is recovered by the ne
 });
 
 test("a recorded pending target that differs from the metadata is reconciled before the equality gate", async () => {
-  // The shape a Herdr reallocation (new pane) leaves after a metadata write failure:
+  // The shape a start into a new window leaves after a metadata write failure:
   // receipt and pending name the new target, metadata still names the old one.
   const f = await makeHome("diverged");
   await heldWindow(f, "diverged-2");
@@ -298,11 +298,17 @@ test("a recorded pending target that differs from the metadata is reconciled bef
 
 test("a pending target that cannot be observed is kept and the start refuses; a dead pane restarts in place", async () => {
   const f = await makeHome("unobservable");
-  // A Herdr target with an unreachable server: not absence, no allocation, receipt kept.
-  writeFileSync(join(f.home, ".oats-start-pending.json"), JSON.stringify(pendingFor(f, { backend: "herdr", binary: join(base, "no-such-herdr"), socket: join(base, "no.sock"), protocol: 20, workspaceId: "w", paneId: "p", terminalId: "t" })));
-  assert.throws(() => startInstanceSession(f.home), (e) => e.code === "E_SESSION_UNKNOWN" && /receipt .* is kept/.test(e.message));
-  assert.equal(existsSync(join(f.home, ".oats-start-pending.json")), true);
-  assert.deepEqual(windows().filter((w) => w === "unobservable"), []);
+  // A recorded tmux window on a reachable server that tmux answers but OATS cannot read as one
+  // agent pane (it was split): not absence, no allocation, receipt kept.
+  try { tmux("has-session", "-t", session); } catch { tmux("new-session", "-d", "-s", session, "-n", "hq", "-c", base); }
+  tmux("new-window", "-t", session, "-n", "unobservable-split", "-c", base, "sleep 60");
+  tmux("split-window", "-t", `=${session}:=unobservable-split`, "sleep 60");
+  writeFileSync(join(f.home, ".oats-start-pending.json"), JSON.stringify(pendingFor(f, { backend: "tmux", session, window: "unobservable-split", socket })));
+  try {
+    assert.throws(() => startInstanceSession(f.home), (e) => e.code === "E_SESSION_UNKNOWN" && /receipt .* is kept/.test(e.message));
+    assert.equal(existsSync(join(f.home, ".oats-start-pending.json")), true);
+    assert.deepEqual(windows().filter((w) => w === "unobservable"), []);
+  } finally { tmux("kill-window", "-t", `=${session}:=unobservable-split`); }
   rmSync(join(f.home, ".oats-start-pending.json"));
   // Dead pane: the harness exited and tmux retained the pane (remain-on-exit).
   const d = await makeHome("deadpane");
@@ -389,50 +395,6 @@ test("invalid recovery receipts and tmux permission errors preserve evidence and
   assert.deepEqual(readJson(join(f.home, "instance.json")), f.meta);
 });
 
-test("Herdr restarts in the saved server, writes recovery before launching, and restores cwd", async () => {
-  const f = await makeHome("herdr-restart");
-  const old = { backend: "herdr", binary: "/fake/herdr", socket: join(base, "herdr.sock"), protocol: 20, workspaceId: "w0", paneId: "p0", terminalId: "t0" };
-  const meta = { ...f.meta, backend: "herdr", sessionTarget: old };
-  delete meta.tmux;
-  writeFileSync(join(f.home, "instance.json"), JSON.stringify(meta));
-  writeFileSync(f.baselinePath, JSON.stringify({ ...readJson(f.baselinePath), runtime: { launched: true, sessionTarget: old } }));
-  let panes = [], agent = false, allocations = 0, runs = 0;
-  const io = { exec: (binary, args, options) => {
-    assert.equal(binary, old.binary);
-    assert.equal(options.env.HERDR_SOCKET_PATH, old.socket);
-    let result;
-    if (args.join(" ") === "api snapshot") result = { snapshot: { protocol: 20, panes, agents: agent ? [{ terminal_id: "t1", agent_status: "working" }] : [] } };
-    else if (args[0] === "workspace") {
-      allocations++;
-      assert.ok(args.includes(f.home));
-      panes = [{ pane_id: "p1", terminal_id: "t1", workspace_id: "w1" }];
-      result = { root_pane: panes[0] };
-    } else if (args[1] === "process-info") result = { process_info: { foreground_processes: [{ name: "zsh" }] } };
-    else if (args[1] === "run") {
-      runs++;
-      const pending = readJson(join(f.home, ".oats-start-pending.json"));
-      assert.equal(pending.target.paneId, "p1");
-      assert.ok(args[3].includes("cd "));
-      assert.ok(args[3].includes(f.home));
-      agent = true;
-      result = {};
-    } else assert.fail(`unexpected Herdr call: ${args}`);
-    return JSON.stringify({ result });
-  } };
-  assert.throws(() => startInstanceSession(f.home, { model: "claude-herdr", io: { ...io, failBeforeMetadataWrite: true } }), (e) => e.code === "E_SESSION_START_INCOMPLETE");
-  const recovered = startInstanceSession(f.home, { io });
-  assert.equal(recovered.reused, "adopted");
-  assert.equal(recovered.model, "claude-herdr");
-  assert.equal(allocations, 1);
-  assert.equal(runs, 1);
-  writeFileSync(join(f.home, ".oats-start-exited"), readJson(join(f.home, "instance.json")).startId);
-  agent = false; // an idle fallback shell after the command completed
-  assert.equal(startInstanceSession(f.home, { model: "claude-next", io }).reused, "pane");
-  assert.equal(allocations, 1);
-  assert.equal(runs, 2);
-  assert.equal(readJson(f.baselinePath).runtime.sessionTarget.terminalId, "t1");
-});
-
 test("simultaneous CLI starts produce one launch and preserve a never-launched home's saved socket", async () => {
   const f = await makeHome("concurrent", { launched: false });
   const invoke = () => new Promise((resolveRun, reject) => {
@@ -446,63 +408,6 @@ test("simultaneous CLI starts produce one launch and preserve a never-launched h
   assert.deepEqual(windows().filter((w) => w === "concurrent"), ["concurrent"]);
   assert.equal(readJson(join(f.home, "instance.json")).restartCount, 1);
   assert.equal(readJson(join(f.home, "instance.json")).tmux.socket, socket);
-});
-
-test("a never-launched Herdr home on a host without herdr is refused by name, never switched to tmux", async () => {
-  const f = await makeHome("herdr-no-launch", { launched: false });
-  const meta = { ...f.meta, backend: "herdr" };
-  delete meta.tmux;
-  writeFileSync(join(f.home, "instance.json"), JSON.stringify(meta));
-  const path = process.env.PATH;
-  process.env.PATH = "/nonexistent-bin";
-  try { assert.throws(() => startInstanceSession(f.home), (e) => e.code === "E_RUNTIME_ENDPOINT_UNKNOWN" && /needs herdr/.test(e.message)); }
-  finally { process.env.PATH = path; }
-  assert.deepEqual(readJson(join(f.home, "instance.json")), meta);
-  assert.ok(!windows().includes("herdr-no-launch"), "no tmux fallback");
-});
-
-test("the first start of a never-launched Herdr home (the harvester's --no-launch then start) records its server, strict from then on", async () => {
-  const f = await makeHome("herdr-first-start", { launched: false });
-  const meta = { ...f.meta, backend: "herdr" };
-  delete meta.tmux;
-  writeFileSync(join(f.home, "instance.json"), JSON.stringify(meta));
-  const bin = join(base, "herdr-bin"); mkdirSync(bin, { recursive: true });
-  writeFileSync(join(bin, "herdr"), "#!/bin/sh\nexit 1\n"); chmodSync(join(bin, "herdr"), 0o755);
-  const socket = join(process.env.XDG_CONFIG_HOME || join(process.env.HOME, ".config"), "herdr", "sessions", "oats", "herdr.sock");
-  let panes = [], agent = false, allocations = 0, runs = 0, serverUp = true;
-  const io = { exec: (binary, args, options) => {
-    assert.equal(binary, join(bin, "herdr"));
-    assert.equal(options.env.HERDR_SOCKET_PATH, socket);
-    if (!serverUp) throw new Error("connect ECONNREFUSED");
-    let result;
-    if (args.join(" ") === "api snapshot") result = { snapshot: { protocol: 22, panes, agents: agent ? [{ terminal_id: "t1", agent_status: "working" }] : [] } };
-    else if (args[0] === "workspace") { allocations++; panes = [{ pane_id: "p1", terminal_id: "t1", workspace_id: "w1" }]; result = { root_pane: panes[0] }; }
-    else if (args[1] === "read") return "➜ home\n";
-    else if (args[1] === "process-info") result = { process_info: { foreground_processes: [{ name: "zsh" }] } };
-    else if (args[1] === "run") { runs++; agent = true; result = {}; }
-    else assert.fail(`unexpected Herdr call: ${args}`);
-    return JSON.stringify({ result });
-  } };
-  const path = process.env.PATH;
-  process.env.PATH = `${bin}:${path}`;
-  try {
-    const first = startInstanceSession(f.home, { io });
-    assert.equal(first.backend, "herdr");
-    const recorded = { backend: "herdr", binary: join(bin, "herdr"), socket, protocol: 22, workspaceId: "w1", paneId: "p1", terminalId: "t1" };
-    assert.deepEqual(first.target, recorded);
-    assert.deepEqual(readJson(join(f.home, "instance.json")).sessionTarget, recorded, "the endpoint is recorded in the home");
-    assert.deepEqual(readJson(f.baselinePath).runtime.sessionTarget, recorded, "and in the independent receipt");
-    assert.equal(allocations, 1); assert.equal(runs, 1);
-    // A second start reuses the recorded target: it is strict now, never re-found.
-    writeFileSync(join(f.home, ".oats-start-exited"), readJson(join(f.home, "instance.json")).startId);
-    agent = false;
-    assert.equal(startInstanceSession(f.home, { io }).reused, "pane");
-    assert.equal(allocations, 1);
-    // A recorded target whose server is gone is the named refusal, not a new server.
-    panes = []; serverUp = false;
-    assert.throws(() => startInstanceSession(f.home, { io }), (e) => e.code === "E_SESSION_UNKNOWN" || e.code === "E_SESSION_UNAVAILABLE");
-    assert.equal(allocations, 1);
-  } finally { process.env.PATH = path; }
 });
 
 test("a live startup shell is protected until its command actually exits", async () => {
@@ -569,18 +474,12 @@ test("a transient startup child does not discard the startup guard", async () =>
   assert.equal(readJson(join(f.home, "instance.json")).restartCount, 1);
 });
 
-test("launch errors never expose saved commands through tmux or Herdr diagnostics", async () => {
+test("launch errors never expose saved commands through tmux diagnostics", async () => {
   const secret = "SYNTHETIC_START_SECRET";
-  for (const backend of ["respawn", "new-window", "herdr"]) {
+  for (const backend of ["respawn", "new-window"]) {
     for (const failure of [{ stderr: secret }, { stderr: "" }, { code: "ENOENT" }, { code: "ETIMEDOUT" }, { signal: "SIGTERM" }]) {
       const f = await makeHome(`redact-${backend}-${Object.keys(failure)[0]}-${String(failure.stderr ?? failure.code ?? failure.signal).length}`);
-      let meta = { ...f.meta, command: `REVIEW_TOKEN=${shq(secret)} ${f.command}` };
-      const target = { backend: "herdr", binary: "/fake/herdr", socket: join(base, "h.sock"), protocol: 20, workspaceId: "w", paneId: "p", terminalId: "t" };
-      if (backend === "herdr") {
-        meta = { ...meta, backend: "herdr", sessionTarget: target };
-        delete meta.tmux;
-        writeFileSync(f.baselinePath, JSON.stringify({ ...readJson(f.baselinePath), runtime: { launched: true, sessionTarget: target } }));
-      }
+      const meta = { ...f.meta, command: `REVIEW_TOKEN=${shq(secret)} ${f.command}` };
       writeFileSync(join(f.home, "instance.json"), JSON.stringify(meta));
       const baseline = readFileSync(f.baselinePath, "utf8");
       const io = { exec: (binary, args) => {
@@ -590,9 +489,7 @@ test("launch errors never expose saved commands through tmux or Herdr diagnostic
           return "%1\t0\tzsh\t100\n";
         }
         if (args.includes("list-windows")) return "hq\n";
-        if (args.join(" ") === "api snapshot") return JSON.stringify({ result: { snapshot: { protocol: 20, panes: [{ pane_id: "p", terminal_id: "t" }] } } });
-        if (args[1] === "process-info") return JSON.stringify({ result: { process_info: { foreground_processes: [{ name: "zsh" }] } } });
-        assert.ok(args.includes("respawn-pane") || args.includes("new-window") || args[1] === "run");
+        assert.ok(args.includes("respawn-pane") || args.includes("new-window"));
         throw Object.assign(new Error(`Command failed: ${binary} ${args.join(" ")}`), failure);
       } };
       assert.throws(() => startInstanceSession(f.home, { io }), (e) => e.code === "E_SESSION_START_FAILED" && !e.message.includes(secret) && /evidence is retained/.test(e.message));

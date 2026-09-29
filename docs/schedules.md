@@ -54,7 +54,10 @@ both are evaluated by the croner library.
   launchConfig?, harness?, model?, yolo?, wake?}` — every due minute launches
   one disposable instance of `agent` with the options `oats spawn` takes.
   `agentsRoot`, when given, must be the deployment's `agents/` root; `repo`
-  is the work repository, as `--repo`. `model` is a model id (a letter or
+  is the work repository, as `--repo`. `backend` is `tmux`; `backend: herdr`
+  is refused (`E_HERDR_REMOVED`, naming the file and key: Herdr was removed in
+  0.31.0), and a stored job that names it is reported invalid and never runs.
+  `model` is a model id (a letter or
   digit, then letters, digits and `. _ : / @ + - [ ]`, at most 128
   characters) or `@native-default`; `agent` and `repo` never start with `-`,
   so no value can be read as an option of the child `oats spawn`. Each run is

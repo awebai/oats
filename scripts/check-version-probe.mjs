@@ -9,12 +9,13 @@ export function checkVersionProbe(probe, version) {
     assert.equal(probe[key], value, `version --json probe mismatch: ${key}`);
   }
   for (const [key, values] of Object.entries({
-    harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"],
+    harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"],
     launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "roster", "harvest"], features: ["retire-home", "harness"],
   })) {
     assert.ok(Array.isArray(probe[key]), `version --json probe mismatch: ${key}`);
     for (const value of values) assert.ok(probe[key].includes(value), `version --json probe mismatch: ${key}.${value}`);
   }
+  assert.deepEqual(probe.sessionBackends, ["tmux"], "version --json probe mismatch: tmux is the only session backend");
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

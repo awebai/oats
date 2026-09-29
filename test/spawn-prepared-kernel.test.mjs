@@ -186,8 +186,8 @@ test("M1: materialize → launch is one rollback — a failure after the home is
     const pathBefore = process.env.PATH; process.env.PATH = bin;
     let materializeCalls = 0;
     try {
-      await assert.rejects(spawnInstanceAsync(d.root, agent, { prepared, purpose: "m1c", work: "directory", repo: d.dep, launch: true, backend: "herdr", materialize: async () => { materializeCalls++; throw new Error("must not be reached"); } }),
-        (e) => /herdr not installed/.test(e.message) && /nothing was created/.test(e.message));
+      await assert.rejects(spawnInstanceAsync(d.root, agent, { prepared, purpose: "m1c", work: "directory", repo: d.dep, launch: true, materialize: async () => { materializeCalls++; throw new Error("must not be reached"); } }),
+        (e) => /tmux not installed/.test(e.message) && /nothing was created/.test(e.message));
     } finally { process.env.PATH = pathBefore; }
     assert.equal(materializeCalls, 0, "M1: backend presence is checked before placement/materialize");
     assert.deepEqual(left(), [], "M1: an absent backend leaves no home");

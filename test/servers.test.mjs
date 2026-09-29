@@ -135,7 +135,7 @@ test("runRemote: a bare retire answer with cleanup still owed is not ok, so a ro
 
 test("checkRemoteSupport: a request is held to what the remote kernel advertises, soul defaults included", () => {
   const legacy = { version: "0.22.1", harnesses: ["pi", "claude"], sessionBackends: [], launchOptions: [], features: [], advertised: false };
-  const modern = { version: "0.22.2", harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], features: [], advertised: true };
+  const modern = { version: "0.22.2", harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], features: [], advertised: true };
   const current = { ...modern, version: "0.27.0", features: ["harness"] };
   const target = { sshHost: "h" };
   const roster = { agents: [{ name: "dev", harness: "codex" }, { name: "rev", harness: "claude" }] };
@@ -148,8 +148,8 @@ test("checkRemoteSupport: a request is held to what the remote kernel advertises
   assert.deepEqual(checkRemoteSupport(legacy, target, ["rev", "--runtime", "pi"], roster), { harness: "pi", backend: undefined, yolo: false });
   assert.deepEqual(checkRemoteSupport(current, target, ["rev", "--harness", "codex"], roster), { harness: "codex", backend: undefined, yolo: false });
   assert.throws(() => checkRemoteSupport(legacy, target, ["rev", "--yolo"], roster), /yolo launch option/);
-  assert.throws(() => checkRemoteSupport(legacy, target, ["rev", "--backend", "herdr"], roster), /session backend herdr/);
-  assert.deepEqual(checkRemoteSupport(modern, target, ["dev", "--backend", "herdr", "--yolo"], roster), { harness: "codex", backend: "herdr", yolo: true });
+  assert.throws(() => checkRemoteSupport(legacy, target, ["rev", "--backend", "tmux"], roster), /session backend tmux/);
+  assert.deepEqual(checkRemoteSupport(modern, target, ["dev", "--backend", "tmux", "--yolo"], roster), { harness: "codex", backend: "tmux", yolo: true });
   assert.throws(() => checkRemoteSupport(modern, target, ["dev", "--backend", "screen"], roster), /session backend screen/);
 });
 
@@ -216,7 +216,7 @@ test("oats server + --server: registry, check, remote spawn with a hostile task,
     assert.equal(snap.agentsRoot, join(repo, "agents"), "the agents root comes from the remote roster, not guessed from the workspace");
     // A request beyond what the remote advertises is refused BEFORE any spawn
     // reaches it. This fake remote is this kernel, which advertises pi, claude
-    // and codex on tmux and herdr with the yolo option; ask for what it lacks.
+    // and codex on tmux with the yolo option; ask for what it lacks.
     const before = readFileSync(log, "utf8");
     r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "nope", "--harness", "gemini", "--no-launch", "--json"]);
     assert.equal(r.json().error.code, "E_REMOTE_INCOMPATIBLE");

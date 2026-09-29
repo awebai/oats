@@ -14,7 +14,7 @@ const write = (path, text, mode) => {
   writeFileSync(path, text, mode ? { mode } : undefined);
 };
 
-function fixture({ harness = true, harnessName = "pi", backend = "tmux", platform = true, taskDirectory = false, retireFailure = false, stubbornWindow = false, launchFailure = false, allocationFailure = false } = {}) {
+function fixture({ harness = true, harnessName = "pi", platform = true, taskDirectory = false, retireFailure = false, stubbornWindow = false, launchFailure = false } = {}) {
   const resourceHolder = mkdtempSync(join(tmpdir(), "oats-spawn-compensation-"));
   directories.push(resourceHolder);
   const resource = join(resourceHolder, "external-resource");
@@ -78,25 +78,10 @@ if (command === 'new-window') {
 }
 if (command === 'kill-window' && !${stubbornWindow}) rmSync(state, {force:true});
 `, 0o755);
-  if (platform && backend === "herdr") write(join(bin, "herdr"), `#!${process.execPath}
-const { existsSync, writeFileSync, rmSync } = require('node:fs');
-const args = process.argv.slice(2);
-const state = ${JSON.stringify(window)};
-const pane = {pane_id:'w1:p1', terminal_id:'term_fixture', workspace_id:'w1'};
-if (args[0] === 'api') console.log(JSON.stringify({result:{snapshot:{protocol:20,panes:existsSync(state)?[pane]:[],agents:[]}}}));
-if (args[1] === 'process-info') console.log(JSON.stringify({result:{process_info:{foreground_processes:[{name:'codex'}]}}}));
-if (args[0] === 'workspace') {
-  writeFileSync(state, 'allocated');
-  if (${allocationFailure}) { console.error('lost allocation receipt'); process.exit(1); }
-  console.log(JSON.stringify({result:{root_pane:pane}}));
-}
-if (args[1] === 'run' && ${launchFailure}) {console.error('launch failed after creating pane'); process.exit(1);}
-if (args[1] === 'close' && !${stubbornWindow}) rmSync(state, {force:true});
-`, 0o755);
   const run = (args) => spawnSync(process.execPath, [CLI, ...args, "--dir", dep, "--json"], { cwd: dep, env, encoding: "utf8" });
   // The harness is a spawn choice (a v2 soul declares none); pi is the default.
   const harnessFlag = harnessName === "pi" ? [] : ["--harness", harnessName];
-  const spawn = (launch = true) => run(["spawn", "dev", "--purpose", "probe", ...harnessFlag, ...(launch ? [] : ["--no-launch"]), ...(backend === "herdr" ? ["--backend", "herdr", "--herdr-socket", join(base, "herdr.sock")] : [])]);
+  const spawn = (launch = true) => run(["spawn", "dev", "--purpose", "probe", ...harnessFlag, ...(launch ? [] : ["--no-launch"])]);
   return { base, dep, repo, root, home, resource, events, window, spawn, run, env, harnessFlag };
 }
 
@@ -203,60 +188,6 @@ test("unsupported harness fails before provisioning external state", () => {
   assertClean(f);
 });
 
-test("Herdr spawn persists a receipt and retirement proves quiescence before releasing identity", () => {
-  const f = fixture({ backend: "herdr" });
-  const spawned = f.spawn();
-  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
-  const meta = JSON.parse(readFileSync(join(f.home, "instance.json"), "utf8"));
-  assert.equal(meta.sessionTarget.terminalId, "term_fixture");
-  assert.equal(meta.tmux, undefined);
-  const retired = f.run(["retire", "dev-probe"]);
-  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
-  assert.equal(existsSync(f.window), false);
-  assert.equal(existsSync(f.resource), false);
-  assert.equal(existsSync(f.home), false);
-});
-
-test("Herdr spawn compensation keeps credentials when the original terminal cannot be stopped", () => {
-  const f = fixture({ backend: "herdr", launchFailure: true, stubbornWindow: true });
-  const result = f.spawn();
-  assert.notEqual(result.status, 0);
-  assert.match(result.stdout, /rollback INCOMPLETE/);
-  assert.equal(existsSync(f.resource), true);
-  const marker = JSON.parse(readFileSync(join(f.home, ".oats-rollback-incomplete.json"), "utf8"));
-  assert.equal(marker.cleanup.sessionTarget.terminalId, "term_fixture");
-  assert.equal(readFileSync(f.events, "utf8"), "spawn\n");
-});
-
-test("Herdr retirement refuses mutable metadata that redirects its endpoint", () => {
-  const f = fixture({ backend: "herdr" });
-  assert.equal(f.spawn().status, 0);
-  const file = join(f.home, "instance.json");
-  const meta = JSON.parse(readFileSync(file, "utf8"));
-  meta.sessionTarget.terminalId = "term_someone_else";
-  writeFileSync(file, JSON.stringify(meta));
-  const result = f.run(["retire", "dev-probe"]);
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr + result.stdout, /disagrees with independent runtime endpoint/);
-  assert.equal(existsSync(f.resource), true);
-  assert.equal(existsSync(f.window), true);
-});
-
-test("Herdr self-retirement completes in the detached child without an operator", async () => {
-  const f = fixture({ backend: "herdr" });
-  assert.equal(f.spawn().status, 0);
-  f.env.OATS_INSTANCE = "dev-probe";
-  const result = f.run(["retire", "dev-probe", "--self"]);
-  assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.match(result.stdout, /deferred/);
-  assert.equal(existsSync(f.home), true, "caller gets a chance to finish before retirement");
-  const deadline = Date.now() + 15000;
-  while (existsSync(f.home) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 100));
-  assert.equal(existsSync(f.home), false, "detached child completed retirement");
-  assert.equal(existsSync(f.window), false);
-  assert.equal(existsSync(f.resource), false, "identity hook ran after quiescence");
-});
-
 test.after(() => { for (const dir of directories) rmSync(dir, { recursive: true, force: true }); });
 
 for (const harnessName of ["codex", "claude", "pi"]) {
@@ -279,51 +210,13 @@ test("contradictory yolo fails before provisioning", () => {
   assert.equal(existsSync(f.resource), false);
   assert.equal(existsSync(f.home), false);
 });
-test("session CLI uses original Herdr receipt and rejects metadata drift", () => {
-  const f = fixture({ backend: "herdr" });
-  assert.equal(f.spawn().status, 0);
-  let result = f.run(["session", "inspect", "--home", f.home]);
-  assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.equal(JSON.parse(result.stdout).result.present, true);
-  const file = join(f.base, "message.txt");
-  write(file, "literal $(touch NO)\nnext line");
-  result = f.run(["session", "input", "--home", f.home, "--text-file", file]);
-  assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.equal(JSON.parse(result.stdout).result.submitted, true);
-  const path = join(f.home, "instance.json");
-  const meta = JSON.parse(readFileSync(path, "utf8"));
-  meta.sessionTarget.terminalId = "term_other";
-  write(path, JSON.stringify(meta));
-  result = f.run(["session", "input", "--home", f.home, "--text-file", file]);
-  assert.notEqual(result.status, 0);
-  assert.equal(JSON.parse(result.stdout).error.code, "E_RUNTIME_AUTHORITY_MISMATCH");
-});
-
 test("bad spawn flags and the removed local-soul flags fail as argument errors before anything is written", () => {
   const f = fixture();
   const instructions = join(f.base, "instructions.md"); write(instructions, "probe");
-  for (const flags of [["--yolo", "--no-yolo"], ["--backend"], ["--herdr-socket"], ["--instructions-file", instructions], ["--def-file", instructions]]) {
+  for (const flags of [["--yolo", "--no-yolo"], ["--backend"], ["--instructions-file", instructions], ["--def-file", instructions]]) {
     const r = f.run(["spawn", "dev", "--purpose", "flags", ...flags]);
     assert.notEqual(r.status, 0);
     assert.equal(JSON.parse(r.stdout).error.code, "E_BAD_ARGS", flags.join(" "));
     assert.equal(existsSync(join(f.root, "dev", "instances", "dev-flags")), false);
   }
-});
-test("status uses the host Herdr executable, never the mutable metadata binary", () => {
-  const f = fixture({ backend: "herdr" }); assert.equal(f.spawn().status, 0);
-  const path = join(f.home, "instance.json"), meta = JSON.parse(readFileSync(path, "utf8"));
-  const marker = join(f.base, "unexpected-execution");
-  const executable = join(f.base, "bad-binary");
-  write(executable, `#!${process.execPath}\nrequire('node:fs').writeFileSync(${JSON.stringify(marker)},'bad');\n`, 0o755);
-  meta.sessionTarget.binary = executable; write(path, JSON.stringify(meta));
-  const result = f.run(["status"]); assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.equal(existsSync(marker), false);
-});
-test("lost Herdr allocation receipt reports the potentially remaining empty workspace", () => {
-  const f = fixture({ backend: "herdr", allocationFailure: true });
-  const result = f.spawn(); assert.notEqual(result.status, 0);
-  assert.match(result.stdout, /allocation may have completed/);
-  assert.equal(existsSync(f.window), true);
-  assert.equal(existsSync(f.resource), false, "harness never launched; external hooks compensated");
-  assert.equal(existsSync(f.home), false);
 });

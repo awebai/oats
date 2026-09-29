@@ -54,7 +54,7 @@ published to npm. Its developer docs are in
 | `schedule.mjs`, `schedule-host.mjs`, `triggers.mjs`, `automations.mjs` | schedules, triggers and the host timer |
 | `operator-dispatch.mjs` | capability commands run from a deployment, and its module store |
 | `instance-*.mjs` | inspection, lifecycle, events and Git views of an instance |
-| `herdr.mjs`, `tmux-config.mjs`, `session-*.mjs` | session backends and terminal input |
+| `tmux-config.mjs`, `session-*.mjs` | the tmux session backend and terminal input |
 | `capability-contract.mjs`, `provider-binding.mjs` | manifest validation, the hook environment rules, the readiness wire |
 | `servers.mjs` | routing commands to a registered server |
 

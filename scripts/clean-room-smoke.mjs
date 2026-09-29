@@ -62,7 +62,7 @@ try {
   const unexpectedExec = join(room, "unexpected-exec");
   const statusProbes = join(room, "stubbed-status-probes");
   const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
-  for (const name of ["pi", "claude", "codex", "tmux", "herdr", "gh", "launchctl", "systemctl", "crontab", "schtasks"]) {
+  for (const name of ["pi", "claude", "codex", "tmux", "gh", "launchctl", "systemctl", "crontab", "schtasks"]) {
     // Public CLI discovery can query session/timer status even for no-launch.
     // Answer only those read-only probes locally (inactive); every other
     // invocation still fails the no-runtime/no-host-mutation marker. Embed the

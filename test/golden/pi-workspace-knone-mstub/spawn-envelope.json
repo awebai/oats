@@ -13,6 +13,7 @@
       "session": "oats-golden",
       "window": "dev-pi-workspace-knone-mstub"
     },
+    "backend": "tmux",
     "repo": "<base>/deployment",
     "harness": "pi",
     "model": null,

@@ -85,8 +85,8 @@ launch: { harness: claude, model: claude-opus-5-5 }   # optional (0.30): what th
 
 Schema: [`soul.schema.json`](soul.schema.json). Which teams a soul joins is the
 deployment's choice (`oats-local.yaml`, [workspaces.md](workspaces.md#teams)),
-and the backend, yolo and launch configuration are spawn-time host choices
-(`--backend`, `--yolo`, `--launch-config`, or a launch configuration in
+and yolo and the launch configuration are spawn-time host choices
+(`--yolo`, `--launch-config`, or a launch configuration in
 `oats-local.yaml`), not soul identity. The harness and model are a soul's
 *preference* at most (`launch:`), which each machine overrides and spawn flags
 (`--harness`, `--model`) win over.

@@ -120,11 +120,6 @@ exit 1
       refused(oats(["spawn", "release-manager", "--dir", dep, "--agents-root", agentsRoot, "--work", "directory", "--no-launch", "--provider", "oats.okf", "state-dir=/tmp/x", "--name", "rm-live", ...extra, "--json"],
         { cwd: dep, env: { ...env, OATS_TMUX_SESSION: `live-${process.pid}`, PI_AGENTS_TMUX_SESSION: `live-${process.pid}` }, base }), "E_INSTANCE_NAME_TAKEN", `a live tmux window rm-live ${extra.join(" ")}`);
     }
-    // The window check is the tmux backend's: a herdr spawn is not refused by a tmux window.
-    r = oats(["spawn", "release-manager", "--dir", dep, "--agents-root", agentsRoot, "--work", "directory", "--no-launch", "--backend", "herdr", "--provider", "oats.okf", "state-dir=/tmp/x", "--name", "rm-live", "--preview", "--json"],
-      { cwd: dep, env: { ...env, OATS_TMUX_SESSION: `live-${process.pid}`, PI_AGENTS_TMUX_SESSION: `live-${process.pid}` }, base });
-    assert.equal(r.status, 0, `herdr preview ignores tmux windows\n${r.stdout}\n${r.stderr}`);
-    assert.equal(envelope(r).result.instance, "rm-live");
 
     // ---- derived names de-duplicate deployment-wide (the latent collision) ----
     // release-manager takes the name support-triager-x; support-triager --purpose x would derive the same.
