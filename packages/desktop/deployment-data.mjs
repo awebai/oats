@@ -158,11 +158,10 @@ export function observationData(document) {
  * Liveness here is the kernel's report; terminal-target observation is a
  * separate v2-agnostic Desktop concern. */
 const inside = (path, parent) => path.startsWith(parent.endsWith('/') ? parent : parent + '/');
+/** A Herdr-recorded row's sessionTarget, reduced to what recognises it as unsupported.
+ * Nothing connects with it, so no socket, pane or terminal id is forwarded. */
 function sessionTarget(value) {
-  check(record(value));
-  const out = fields(value, ['backend', 'socket', 'paneId', 'terminalId']);
-  if (own(value, 'protocol')) { check(Number.isSafeInteger(value.protocol)); out.protocol = value.protocol; }
-  return out;
+  return fields(value, ['backend']);
 }
 export function deploymentStatusData(document, deployment) {
   check(absolute(deployment), 'E_BAD_ARGS'); check(record(document));
