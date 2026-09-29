@@ -1,6 +1,6 @@
 schemaVersion: 2
 name: oats-desktop-developer
-description: "OATS Desktop developer: owns packages/desktop (the Electron app, its bundled backend, packaging and release automation)."
+description: "OATS Desktop developer: builds all of packages/desktop (the Electron app, its renderer views, styles and themes, its bundled backend, packaging and release automation)."
 # A developer: its product is reviewed changes on its own branch.
 work: worktree
 # oats.core and messaging come from the workspace defaults. A developer has no knowledge

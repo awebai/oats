@@ -10,8 +10,7 @@ the surface; for work across surfaces, one developer per surface.
 | Surface | Paths | Developer soul | Expert |
 |---|---|---|---|
 | Kernel & CLI | `lib/`, `bin/`, `docs/*.schema.json` | `oats-kernel-developer` | `oats-kernel-expert` |
-| Desktop app & server | `packages/desktop/` (not views) | `oats-desktop-developer` | `oats-desktop-expert` |
-| Desktop design | `packages/desktop/renderer/` views, styles, copy | `oats-desktop-designer` | `oats-desktop-expert` |
+| Desktop | `packages/desktop/` (incl. renderer views, styles, copy) | `oats-desktop-developer` | `oats-desktop-expert` |
 | Provider packages | `oats-aweb`, `oats-okf`, and the other package repos | `oats-integrations-developer` | `integrations-expert` (and the package's own expert) |
 | Docs & skills | `docs/`, `oats-package/`, `skills/` | the developer of the surface they document | the owning expert |
 
