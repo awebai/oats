@@ -265,3 +265,31 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: the scoped d
   assert.match(spawnDialogCSS, /\.spawn-preview-skeleton span \{[^}]*background:var\(--tag-bg\)/);
   assert.doesNotMatch(spawnDialogCSS, /#[0-9a-f]{3,8}\b|rgba?\(/i, 'tokens only');
 });
+
+test('roster polls (sync) with unchanged facts never supersede the read in flight; a changed fact re-reads under latest intent', async t => {
+  // A preview slower than the poll: each read waits on its own gate.
+  const gates = [], cli = structuredClone(CLI);
+  const u = mount(t, { layout: 'scoped', cli, previews: async () => { const gate = deferred(); gates.push(gate); await gate.promise; return view(target, preview(['preview-worktree-default', 'preview-name', 'preview-worktree-purpose'][gates.length - 1])); } });
+  await settle();
+  const reads = () => u.calls.filter(c => c.path.startsWith('/api/workspace-spawn-preview')).length;
+  assert.equal(reads(), 1); assert.equal(u.q('.spawn-preview').getAttribute('aria-busy'), 'true');
+  for (let i = 0; i < 3; i++) { u.ui.sync(); await settle(); } // three polls while the read is in flight
+  assert.equal(reads(), 1, 'a routine poll does not re-read');
+  gates[0].resolve(); await settle(12);
+  assert.equal(reads(), 1, 'nor restart the read when it settles'); assert.equal(u.q('.spawn-preview').getAttribute('aria-busy'), 'false');
+  assert.equal(u.facts().Name, preview('preview-worktree-default').instance, 'the read settled and its facts are shown');
+  u.ui.sync(); await settle(); assert.equal(reads(), 1, 'a settled preview stays put under polls');
+  // A fact the preview depends on changes (the CLI's features): the next poll reads again.
+  cli.features = [...cli.features, 'a-new-feature'];
+  u.ui.sync(); await settle();
+  assert.equal(reads(), 2);
+  assert.equal(u.facts().Name, 'release-manager-1', 'the same choices: the last facts stay while it reads (no flash)');
+  // It changes again while that read is in flight: latest intent wins, the superseded answer is never shown.
+  cli.features = [...cli.features, 'another'];
+  u.ui.sync(); await settle();
+  gates[1].resolve(); await settle(12);
+  assert.equal(reads(), 3, 'the superseded read is followed by one for the latest facts');
+  assert.equal(u.facts().Name, 'release-manager-1', 'the superseded answer (api-gateway) is never shown');
+  gates[2].resolve(); await settle(12);
+  assert.equal(u.facts().Name, 'release-manager-api-v2', 'the latest read is shown'); assert.equal(reads(), 3);
+});

@@ -654,6 +654,17 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   // The preview for these choices must bind exactly the ticked teams (settings echo).
   const joinBound = data => { const labels = joinLabels(); return !labels.length || data?.messaging?.join === labels.join(','); };
   const selector = { soul: soul.name, agentsRoot: soul.agentsRoot };
+  /** The facts a preview depends on from outside the form: the CLI (identity and features), the
+   * workspace and the relation anchor's roster rows. sync() re-reads only when one changed: the
+   * roster polls every few seconds, and a routine poll must never supersede a read in flight
+   * (a preview slower than the poll would otherwise never settle). */
+  const factsKey = () => {
+    const c = cli(), w = workspace(), anchor = rel.value === 'unrelated' ? null : relTo.value;
+    return JSON.stringify([c?.ok ?? null, c?.bin ?? null, c?.version ?? null, c?.spawnPreviewApi ?? null, c?.spawnApplyApi ?? null, c?.features ?? null,
+      w?.id ?? null, w?.remote ?? null, w?.server ?? null,
+      anchor === null ? null : (instances() || []).filter(i => i.instance === anchor).map(i => [i.instance, i.agent, i.agentsRoot, i.home ?? null, i.remote ?? null, i.server ?? null])]);
+  };
+  let factsSeen = factsKey();
 
   function relationChoice() {
     if (rel.value === 'unrelated') return { kind: 'unrelated' };
@@ -789,7 +800,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   let previewDrawn = '';
   function renderPreview() {
     const state = previewState(), data = state.data;
-    const signature = state.kind === 'data' ? `data:${state.key}:${data.resolution}:${JSON.stringify(data.modules ?? null)}` : `${state.kind}:${state.text || ''}`;
+    // The whole (bounded) projection: a re-read for the same choices may answer different facts.
+    const signature = state.kind === 'data' ? `data:${state.key}:${JSON.stringify(data)}` : `${state.kind}:${state.text || ''}`;
     preview.setAttribute('aria-busy', String(state.kind === 'reading'));
     if (signature === previewDrawn) return;
     previewDrawn = signature; factsBody.replaceChildren();
@@ -873,7 +885,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     if (reading) return; // the settling read re-reads if it was superseded
     const ticket = serial, key = choiceKey(draftChoice.value), ws = workspace().id, owner = mount;
     const valid = () => current() && owner === mount && ticket === serial;
-    reading = { ticket }; if (!shown || shown.key !== key) setStatus('Reading defaults…'); syncButton();
+    reading = { ticket }; factsSeen = factsKey(); // the facts this read is based on
+    if (!shown || shown.key !== key) setStatus('Reading defaults…'); syncButton();
     let next = null;
     try {
       const response = await postJson(ctx, `/api/workspace-spawn-preview?ws=${encodeURIComponent(ws)}`, { action: 'preview', selector, choices: draftChoice.value });
@@ -1084,7 +1097,13 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     submit: () => { if (!spawn.disabled) void run(); },
     busy,
     /** CLI/roster/workspace facts changed under the open dialog. */
-    sync() { if (!alive) return; if (!current()) { syncButton(); return; } if (!flight && !submitted) schedule(0); else syncButton(); },
+    sync() {
+      if (!alive) return;
+      if (!current() || flight || submitted) { syncButton(); return; }
+      const facts = factsKey();
+      if (facts === factsSeen) { syncButton(); return; } // a routine poll: the read in flight stands
+      factsSeen = facts; schedule(0);
+    },
     closePopups() { models.close(); runtimePicker.close(); },
     dispose() { alive = false; clearTimeout(timer); serial++; modelsReq++; configsReq++; models.dispose(); runtimePicker.dispose(); form.removeEventListener('input', onEdit); form.removeEventListener('change', onEdit); },
   };
