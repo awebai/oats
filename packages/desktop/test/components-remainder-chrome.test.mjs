@@ -12,7 +12,7 @@ const birth = '2026-09-23T00:00:00.000Z';
 const selected = () => ({ ...instance, createdAt: birth });
 const git = () => { const data = state(); data.summary.changed = 1; data.files = [{ id: 'c'.repeat(24), kind: 'changed', xy: '.M', path: 'file', origPath: null, submodule: false }]; return { instanceGitApi: 1, minimumVersion: '0.24.7', status: 'available', target, data, observationKey: 'e'.repeat(64), reason: null }; };
 function rail(t, request = async () => git()) {
-  const dom = new JSDOM('<body><div id="app"><input id="outside"><aside id="context-panel"></aside><button id="focus-mode-toggle">Focus</button></div></body>', { pretendToBeVisual: true });
+  const dom = new JSDOM('<body><div id="app"><input id="outside"><aside id="context-panel"></aside></div></body>', { pretendToBeVisual: true });
   const doc = dom.window.document, style = doc.createElement('style'); style.textContent = contextPanelCSS; doc.head.append(style);
   let connection = 0; const listeners = new Set(), calls = [];
   const subscribeConnections = fn => { listeners.add(fn); return () => listeners.delete(fn); };
@@ -26,7 +26,7 @@ function rail(t, request = async () => git()) {
 test('44px rail has real Instance/Git/Soul buttons; clicking selects/expands, collapse never reads, accepted Git dot survives only its owner', async t => {
   const u = rail(t); u.panel.setCollapsed(true);
   assert.equal(u.dom.window.getComputedStyle(u.q('#context-panel')).width, '44px');
-  assert.deepEqual([...u.doc.querySelectorAll('[data-context-rail]')].map(b => b.dataset.contextRail), ['instance', 'soul', 'git'], 'Git & GitHub is the last section'); assert.equal(u.calls.length, 0);
+  assert.deepEqual([...u.doc.querySelectorAll('[data-context-rail]')].map(b => b.dataset.contextRail), ['instance', 'soul', 'git'], 'Developer is the last section'); assert.equal(u.calls.length, 0);
   u.q('[data-context-rail=git]').click(); await tick(); assert.equal(u.calls.length, 1); assert.equal(u.q('[data-context-tab=git]').getAttribute('aria-selected'), 'true');
   u.panel.setCollapsed(true); assert.equal(u.calls.length, 1); assert.equal(u.q('.context-panel-dot').hidden, false);
   for (let i = 0; i < 4; i++) u.panel.setContext({ workspace: 'team', key: 'target', instance: selected() });

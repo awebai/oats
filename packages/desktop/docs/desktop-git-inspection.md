@@ -1,6 +1,6 @@
 # Desktop instance Git inspection
 
-The selected terminal's Git & GitHub panel is a read-only consumer of the
+The selected terminal's Developer tab (Git and GitHub) is a read-only consumer of the
 installed OATS CLI's **instanceGitApi 1** contract. GitHub/PR/check/review data is
 not part of K1: it uses the separate [forge Connections boundary](desktop-forge-connections.md).
 K1 supplies routing metadata only, never forge facts. No Git command,
@@ -100,6 +100,23 @@ Important codes include `E_BAD_ARGS`, `E_WORKSPACE_UNKNOWN`,
 error details are never sent to the view. Only a validated current observation
 from a stale refusal is preserved; it is diagnostic, not a replacement patch.
 
+The view renders `E_NO_WORKTREE` as the calm "No Git for this instance" state
+only when the roster's work mode is `directory` or `workspace` (no work tree by
+design); its sentence names that mode. For any other mode (a worktree, checkout
+or attached instance whose tree is gone, or an unknown mode) it is a failure
+like every other refusal: red, with the kernel's message, its code behind
+**Details** and Refresh.
+
+The branch card's subline carries the two comparisons, labelled apart so they
+cannot be confused: the base distance (`↑6 from main`, `up to date with main`)
+and, when the kernel reports an upstream, the upstream one (`↑2 unpushed`,
+`↓1 behind upstream`, `pushed` at an observed 0/0). An unknown upstream shows
+nothing. A healthy read shows no **Details**; of the kernel's `notes` (plain
+strings, no codes) only "no upstream configured…" is hidden, matched on its
+prefix, because it is true of every agent branch. The others stay as muted lines:
+"line counts unavailable…" under Changes, the rest (e.g. "no default branch
+found…") under the branch card.
+
 Stale diff selection clears the patch and starts a newly owned observation.
 The user must select again. Neither an old patch nor an automatically rebound
 file selection may be rendered. Null upstream/base comparisons stay unknown;
@@ -108,7 +125,7 @@ line totals, file authorship or lifecycle state from the patch.
 
 ## Ownership and verification
 
-The controller is active only for the foreground terminal's visible Git tab.
+The controller is active only for the foreground terminal's visible Developer tab.
 Context epoch, global workspace generation and separate observation/file tickets
 guard success and rejection. Collapse, focus mode, stage cover, selection change
 and disposal revoke old controls. Identical roster updates preserve DOM/focus

@@ -1,4 +1,4 @@
-import { moduleDriftText, servedIdentityText, soulSourceText } from './deployment-facts.mjs';
+import { servedIdentityText } from './deployment-facts.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { ageText } from './age-text.mjs';
 import { createSoulMark, createRuntimeBadge, harnessName } from './identity-marks.mjs';
@@ -14,7 +14,6 @@ export const contextPanelCSS = `
 #context-panel .context-panel-tab { font-size:12px; white-space:nowrap; min-height:32px; }
 #context-panel .context-panel-tab[aria-selected="true"] { color:var(--accent); background:var(--sel); }
 #context-panel .context-panel-control:hover { background:var(--surface-2); color:var(--fg); }
-#context-panel .context-panel-control:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
 #context-panel .context-panel-rail { display:flex; flex-direction:column; align-items:center; flex:1; min-height:0; }
 #context-panel .context-panel-rail { gap:4px; padding:8px 0; box-sizing:border-box; }
 #context-panel .context-panel-rail-tab { position:relative; width:30px; height:30px; padding:0; }
@@ -25,76 +24,92 @@ export const contextPanelCSS = `
 #context-panel .context-panel-page { flex:1; min-height:0; overflow:auto; padding:16px; box-sizing:border-box; overflow-wrap:anywhere; }
 #context-panel .context-panel-page h2 { font-size:14px; margin:0 0 12px; }
 #context-panel .context-panel-note { color:var(--muted); }
-/* Redesign v3 instance page: identity header, then labelled sections. */
-#context-panel .context-panel-page[data-context-page="instance"], #context-panel .context-panel-page[data-context-page="soul"] { display:flex; flex-direction:column; gap:var(--section-gap); }
+/* v4.1 instance page (board 1): identity header, then labelled sections. */
+#context-panel .context-panel-page[data-context-page="instance"], #context-panel .context-panel-page[data-context-page="soul"] { display:flex; flex-direction:column; gap:20px; }
 #context-panel .context-panel-page[hidden] { display:none; }
-#context-panel .context-panel-identity { display:flex; align-items:center; gap:10px; min-width:0; }
+#context-panel .context-panel-identity { display:flex; align-items:center; gap:11px; min-width:0; }
 #context-panel .context-panel-identity .identity-mark { width:36px; height:36px; border-radius:9px; font-size:15px; font-weight:700; }
 #context-panel .context-panel-identity-copy { display:flex; flex-direction:column; min-width:0; flex:1; }
-#context-panel .context-panel-identity-name { font-size:13.5px; font-weight:700; line-height:1.45; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-#context-panel .context-panel-identity-sub { font-size:11.5px; line-height:1.45; color:var(--muted); overflow-wrap:anywhere; }
-#context-panel .context-panel-state { flex:none; display:flex; align-items:center; gap:5px; font-size:11.5px; font-weight:650; color:var(--muted); }
+#context-panel .context-panel-identity-name { font-size:13.5px; font-weight:650; line-height:1.45; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#context-panel .context-panel-identity-sub { display:flex; flex-wrap:wrap; align-items:center; gap:2px 6px; min-width:0; font-size:11.5px; line-height:1.45; color:var(--muted); }
+/* "instance of" keeps its place; the soul name (a button, so it ellipsizes its own text) gives way. */
+#context-panel .context-panel-soul-line { display:flex; align-items:baseline; gap:.3em; flex:0 1 auto; min-width:0; white-space:nowrap; }
+#context-panel .context-panel-soul-line > span { flex:none; }
+/* The Instance tab's header is a two-row grid: tile | name (ellipsis) | state, then "instance of <soul>" + the
+   drift chip spanning the name and state columns, so the state never squeezes the soul line. */
+#context-panel .context-panel-identity.is-instance { display:grid; grid-template-columns:36px minmax(0,1fr) auto; column-gap:11px; align-items:center; }
+#context-panel .context-panel-identity.is-instance > .context-panel-mark { grid-column:1; grid-row:1 / span 2; align-self:center; }
+#context-panel .context-panel-identity.is-instance > .context-panel-identity-copy { display:contents; }
+#context-panel .context-panel-identity.is-instance .context-panel-identity-name { grid-column:2; grid-row:1; }
+#context-panel .context-panel-identity.is-instance > .context-panel-state { grid-column:3; grid-row:1; }
+#context-panel .context-panel-identity.is-instance .context-panel-identity-sub { grid-column:2 / 4; grid-row:2; flex-wrap:nowrap; }
+#context-panel .context-panel-identity-sub:empty { display:none; }
+/* "instance of <soul>": the soul name opens the Soul tab. */
+#context-panel button.context-panel-soul-link { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; padding:0; border:0; border-radius:3px; background:none; font:inherit; color:var(--accent); cursor:pointer; text-align:left; white-space:nowrap; }
+#context-panel button.context-panel-soul-link:hover { text-decoration:underline; }
+/* "older build": one neutral chip when the kernel reports drift; its title says what changed. */
+#context-panel .context-panel-drift { flex:none; padding:0 6px; border-radius:4px; background:var(--tag-bg); color:var(--fg); font-size:10.5px; font-weight:600; line-height:18px; white-space:nowrap; cursor:default; }
+#context-panel .context-panel-state { flex:none; display:flex; align-items:center; gap:5px; font-size:11.5px; font-weight:600; color:var(--muted); white-space:nowrap; }
 #context-panel .context-panel-state[data-state="running"] { color:var(--accent); }
-#context-panel .context-panel-state::before { content:''; width:6px; height:6px; border-radius:50%; box-sizing:border-box; border:1.5px solid currentColor; }
+#context-panel .context-panel-state::before { content:''; width:7px; height:7px; border-radius:50%; box-sizing:border-box; border:1.5px solid currentColor; }
 #context-panel .context-panel-state[data-state="running"]::before { background:currentColor; }
-#context-panel .context-panel-section { display:flex; flex-direction:column; gap:var(--title-gap); min-width:0; }
-#context-panel .context-panel-label { font-size:10.5px; font-weight:650; line-height:1.45; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
-#context-panel .context-panel-card { display:flex; flex-direction:column; gap:5px; padding:10px 12px; min-width:0; border:1px solid var(--border); border-radius:8px; background:var(--surface-2); }
-#context-panel .context-panel-branch { display:flex; align-items:center; gap:8px; min-width:0; font:700 12px ui-monospace, Menlo, monospace; }
-#context-panel .context-panel-branch > .shell-icon { width:13px; height:13px; flex:none; color:var(--muted); }
-#context-panel .context-panel-branch > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-/* A path: one line, clipped at the start so its meaningful end shows (full value in the title), plus Copy. */
-#context-panel .context-panel-pathline { display:flex; align-items:center; gap:8px; min-width:0; }
-#context-panel .context-panel-path { flex:1; min-width:0; font:11px/1.55 ui-monospace, Menlo, monospace; color:var(--muted); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; text-align:left; }
-#context-panel .context-panel-copy { flex:none; font:600 11px/1 inherit; color:var(--fg); background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:5px 8px; cursor:pointer; }
-#context-panel .context-panel-copy:hover { background:var(--surface-2); }
-#context-panel .context-panel-copy:focus-visible, #context-panel .context-panel-action:focus-visible, #context-panel .context-panel-details > summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+#context-panel .context-panel-section { display:flex; flex-direction:column; gap:8px; min-width:0; }
+#context-panel .context-panel-label { display:flex; align-items:center; gap:8px; font-size:10.5px; font-weight:650; line-height:1.45; letter-spacing:.065em; text-transform:uppercase; color:var(--muted); }
+/* A section header with tools at its right (Messaging's icon Refresh). */
+#context-panel .context-panel-section-head { display:flex; align-items:center; gap:8px; min-width:0; min-height:24px; }
+#context-panel .context-panel-tools { display:flex; align-items:center; gap:2px; margin-left:auto; }
+#context-panel .context-panel-tools:empty { display:none; }
+#context-panel .context-panel-address { margin-top:-4px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:11.5px ui-monospace, Menlo, monospace; color:var(--muted); }
+/* Where it works: one card; the work mode on a band, then the facts grid. */
+#context-panel .context-panel-where { min-width:0; border:1px solid var(--border); border-radius:9px; overflow:hidden; background:var(--surface); }
+#context-panel .context-panel-mode { display:flex; align-items:center; gap:10px; min-width:0; padding:10px 12px; background:var(--surface-2); }
+#context-panel .context-panel-mode + .context-panel-facts { border-top:1px solid var(--border); }
+#context-panel .context-panel-mode-tile { flex:none; display:grid; place-items:center; width:26px; height:26px; border-radius:7px; background:var(--soul-sage-bg); color:var(--soul-sage-fg); }
+#context-panel .context-panel-mode-tile[data-work="directory"], #context-panel .context-panel-mode-tile[data-work="workspace"] { background:var(--soul-slate-bg); color:var(--soul-slate-fg); }
+#context-panel .context-panel-mode-copy { display:flex; flex-direction:column; min-width:0; flex:1; }
+#context-panel .context-panel-mode-title { font-size:13px; font-weight:600; color:var(--fg); }
+#context-panel .context-panel-mode-meaning { font-size:11.5px; color:var(--muted); overflow-wrap:anywhere; }
+/* Facts: a label column (64px, muted) and a value column; Where it works and Lineage share it. */
+#context-panel .context-panel-facts { display:grid; grid-template-columns:64px minmax(0,1fr); gap:7px 10px; align-items:center; margin:0; min-width:0; font-size:12px; line-height:1.45; }
+#context-panel .context-panel-where .context-panel-facts { padding:10px 12px; }
+#context-panel .context-panel-fact { display:contents; }
+#context-panel .context-panel-facts dt { color:var(--muted); }
+#context-panel .context-panel-facts dd { margin:0; min-width:0; color:var(--fg); overflow-wrap:anywhere; }
+#context-panel .context-panel-facts .is-mono { font:12px/1.45 ui-monospace, Menlo, monospace; }
+#context-panel .context-panel-facts [data-unreported] { color:var(--muted); }
+/* Branch: one line, ellipsis (the full name in its title), then ↑/↓. */
+#context-panel .context-panel-branch-value { display:flex; align-items:baseline; min-width:0; }
+#context-panel .context-panel-branch-value > [data-context-field] { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#context-panel .context-panel-ahead { flex:none; margin-left:6px; color:var(--muted); white-space:nowrap; }
+/* A path: one line, clipped at the start so its meaningful end shows (full value in the title), plus an icon Copy. */
+#context-panel .context-panel-pathline { display:flex; align-items:center; gap:6px; min-width:0; }
+#context-panel .context-panel-path { flex:1; min-width:0; font:12px/1.45 ui-monospace, Menlo, monospace; color:var(--fg); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; text-align:left; }
+#context-panel button.context-panel-copy { flex:none; display:grid; place-items:center; width:22px; height:22px; padding:0; border:0; border-radius:5px; background:transparent; color:var(--muted); cursor:pointer; }
+#context-panel button.context-panel-copy:hover { background:var(--surface-2); color:var(--fg); }
 #context-panel .context-panel-details { border-top:1px solid var(--border); padding-top:12px; min-width:0; }
 #context-panel .context-panel-details > summary { cursor:pointer; font-size:12px; font-weight:650; color:var(--fg); }
 #context-panel .context-panel-details[open] > summary { margin-bottom:12px; }
 #context-panel .context-panel-detail { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; min-width:0; }
+#context-panel .context-panel-detail .context-panel-path { color:var(--muted); }
 #context-panel .context-panel-actions { display:flex; gap:8px; flex-wrap:wrap; }
 #context-panel .context-panel-action { font:600 12.5px/1 inherit; height:32px; padding:0 14px; border-radius:7px; background:var(--primary-bg); color:var(--primary-fg); border:1px solid var(--primary-bg); cursor:pointer; }
 #context-panel .context-panel-action:disabled { background:var(--surface-2); color:var(--muted); border-color:var(--border); cursor:default; }
-/* Facts are cards of hairline-separated rows (like the design's Changes
-   card): label column, value column; nothing is clipped — long paths and
-   ids wrap on any character in mono. */
-#context-panel .context-panel-facts { margin:0; border:1px solid var(--border); border-radius:8px; overflow:hidden; background:var(--surface); font-size:12px; line-height:1.45; }
-#context-panel .context-panel-fact { display:grid; grid-template-columns:minmax(76px,30%) minmax(0,1fr); gap:12px; align-items:baseline; padding:7px 12px; min-height:32px; box-sizing:border-box; }
-#context-panel .context-panel-fact + .context-panel-fact { border-top:1px solid var(--border); }
-#context-panel .context-panel-facts dt { color:var(--muted); font-size:11.5px; }
-#context-panel .context-panel-facts dd { margin:0; min-width:0; color:var(--fg); overflow-wrap:anywhere; }
-#context-panel .context-panel-facts dd.is-mono { font:11px/1.6 ui-monospace, Menlo, monospace; }
-#context-panel .context-panel-facts dd[data-unreported] { color:var(--muted); }
-/* Workspace v4 (W6): facts are label/value rows on hairlines, not cards. */
-#context-panel .context-panel-page[data-context-page="instance"] { gap:20px; }
-#context-panel .context-panel-section .context-panel-facts { border:0; border-radius:0; background:transparent; }
-#context-panel .context-panel-section .context-panel-fact { grid-template-columns:82px minmax(0,1fr); align-items:center; padding:0; min-height:28px; }
-#context-panel .context-panel-section .context-panel-fact + .context-panel-fact { border-top:1px solid var(--tag-bg); }
-#context-panel .context-panel-section .context-panel-facts dt { font-size:12px; }
-#context-panel .context-panel-section .context-panel-facts dd.is-mono { font:12px/1.5 ui-monospace, Menlo, monospace; }
-#context-panel .context-panel-folder .context-panel-pathline { gap:6px; }
-#context-panel .context-panel-folder .context-panel-path { font-size:12px; color:var(--fg); }
-#context-panel .context-panel-folder .context-panel-copy { padding:3px 6px; font-size:10.5px; }
-#context-panel .context-panel-label { display:flex; align-items:baseline; gap:8px; font-size:11px; letter-spacing:.05em; }
-#context-panel .context-panel-identity-address { margin-left:auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:11px ui-monospace, Menlo, monospace; letter-spacing:0; text-transform:none; color:var(--muted); }
-#context-panel .context-panel-session { display:flex; align-items:center; gap:10px; min-width:0; padding:10px 12px; border:1px solid var(--border); border-radius:8px; background:var(--surface); }
+/* Session: the harness mark and name, the model and where it came from, the terminal target and its age. */
+#context-panel .context-panel-session { display:flex; align-items:center; gap:10px; min-width:0; padding:10px 12px; border:1px solid var(--border); border-radius:9px; background:var(--surface); }
+#context-panel .context-panel-session-badge { flex:none; }
 #context-panel .context-panel-session-badge:empty { display:none; }
-#context-panel .context-panel-session-badge .runtime-badge { width:28px; height:28px; border-radius:7px; font-size:13px; }
+#context-panel .context-panel-session-badge .runtime-badge { width:26px; height:26px; border-radius:7px; font-size:11px; }
 #context-panel .context-panel-session-copy { display:flex; flex-direction:column; min-width:0; flex:1; }
-#context-panel .context-panel-session-harness { font-size:12.5px; font-weight:650; color:var(--fg); }
+#context-panel .context-panel-session-harness { font-size:13px; font-weight:600; color:var(--fg); }
 #context-panel .context-panel-session-model { font-size:11.5px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-#context-panel .context-panel-session-from { font-size:11px; color:var(--muted); overflow-wrap:anywhere; }
-#context-panel .context-panel-session-side { display:flex; flex-direction:column; align-items:flex-end; flex:none; font-size:11.5px; color:var(--muted); text-align:right; }
-#context-panel .context-panel-session-tmux { font:11px ui-monospace, Menlo, monospace; color:var(--fg); }
-#context-panel .context-panel-built { padding:6px 12px; border:1px solid var(--border); border-radius:8px; }
-#context-panel .context-panel-built-note { margin:0; font-size:11.5px; line-height:1.5; }
+#context-panel .context-panel-session-from::before { content:' · '; }
+#context-panel .context-panel-session-side { display:flex; flex-direction:column; align-items:flex-end; flex:none; max-width:45%; font-size:11.5px; color:var(--muted); text-align:right; }
+#context-panel .context-panel-session-tmux { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:11.5px ui-monospace, Menlo, monospace; color:var(--fg); }
 #context-panel .context-panel-footer { display:flex; gap:8px; flex:none; padding:12px 16px; border-top:1px solid var(--border); background:var(--surface); }
-#context-panel .context-panel-footer-act { flex:1; height:32px; padding:0 10px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font:600 12.5px/1 inherit; cursor:pointer; }
+#context-panel .context-panel-footer-act { flex:1 1 0; min-width:0; height:32px; box-sizing:border-box; padding:0 10px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font:600 12.5px/1 inherit; cursor:pointer; }
 #context-panel .context-panel-footer-act:hover:not(:disabled) { background:var(--surface-2); }
 #context-panel .context-panel-footer-act.danger { color:var(--danger); }
 #context-panel .context-panel-footer-act:disabled { color:var(--muted); cursor:default; }
-#context-panel .context-panel-footer-act:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 /* Soul tab: "Open soul page" is an outline control at the page foot. */
 #context-panel .context-panel-page[data-context-page="soul"] .context-panel-actions { margin-top:auto; }
 #context-panel .context-panel-open-soul:not(:disabled) { flex:1; background:var(--surface); color:var(--fg); border-color:var(--border); }
@@ -102,25 +117,16 @@ export const contextPanelCSS = `
 /* Tabs read like the Workspace header's: underlined, no fill. */
 #context-panel .context-panel-header { padding:0 6px 0 16px; gap:18px; }
 #context-panel .context-panel-tabs { gap:18px; align-items:stretch; }
-#context-panel .context-panel-tab { height:100%; min-height:0; padding:0; border-radius:0; font-size:13px; color:var(--nav-fg); background:none; }
+#context-panel .context-panel-tab { height:100%; min-height:0; padding:0; border-radius:0; font-size:12.5px; color:var(--nav-fg); background:none; }
 #context-panel .context-panel-tab:hover { background:none; color:var(--fg); }
 #context-panel .context-panel-tab[aria-selected="true"] { color:var(--fg); background:none; font-weight:650; box-shadow:inset 0 -2px 0 var(--live); }
-/* W6: the Git & GitHub tab's count of unresolved review threads (design: "Git & GitHub 2"). */
+/* W6: the Developer tab's (Git and GitHub) count of unresolved review threads (design: "Developer 2"). */
 #context-panel .context-panel-tab-count { margin-left:5px; color:var(--muted); font:400 10.5px ui-monospace, Menlo, monospace; }
 #context-panel .context-panel-tab-count:empty { display:none; }
-/* Messaging: the design's compact rows — no card, hairlines, Join/Leave as links. */
-#context-panel .teams-panel .teams-intro { display:none; }
-#context-panel .teams-panel .teams-card { border:0; border-radius:0; background:transparent; }
-#context-panel .teams-panel .team-row { padding:4px 0; min-height:34px; }
-#context-panel .teams-panel .team-row + .team-row, #context-panel .teams-panel .teams-card > .teams-note { border-top:1px solid var(--tag-bg); }
-#context-panel .teams-panel .teams-card > .teams-note { padding:8px 0; }
-#context-panel .teams-panel .team-main { flex-direction:row; flex-wrap:wrap; align-items:baseline; column-gap:8px; }
-#context-panel .teams-panel .team-name { font-size:12.5px; font-weight:600; }
-#context-panel .teams-panel .team-meta { font-size:11px; }
-#context-panel .teams-panel .team-badge { border:0; border-radius:0; padding:0; font-weight:500; }
-#context-panel .teams-panel .team-action, #context-panel .teams-panel .teams-refresh { height:auto; padding:2px 0; border:0; background:transparent; color:var(--accent); font-size:12px; font-weight:600; }
-#context-panel .teams-panel .team-action:hover:not(:disabled), #context-panel .teams-panel .teams-refresh:hover:not(:disabled) { background:transparent; text-decoration:underline; }
-#context-panel .teams-panel .team-action:disabled, #context-panel .teams-panel .teams-refresh:disabled { color:var(--muted); }
+/* The editor tab bar's instance-panel toggle (index.html #tab-actions): pressed is the brand tint,
+   after a hairline that separates it from the split controls. */
+#tab-actions .tab-actions-sep { flex:none; width:1px; height:18px; margin:0 4px; background:var(--border); }
+#tab-actions #panel-toggle[aria-pressed="true"] { background:var(--sel); color:var(--accent); }
 #context-panel .context-panel-stage.oats-view { display:flex; flex:1; flex-direction:column; width:100%; min-width:0; min-height:0; overflow:auto; background:var(--surface); }
 #context-panel .context-panel-stage > * { max-width:100%; box-sizing:border-box; }
 `;
@@ -136,6 +142,39 @@ const inertPanel = () => ({
  * (`local-default`), in the soul page's words (launch-view.mjs). An unknown value says nothing. */
 const MODEL_FROM = Object.freeze({ __proto__: null, soul: "the soul's choice", spawn: 'chosen at spawn', start: 'chosen at start', 'launch-config': 'from the launch configuration', 'harness-default': "the harness's default",
   local: 'set for this soul on this computer', 'local-default': "this computer's default for every soul" });
+/** Work modes in plain words (board 1): the tile's icon, the label and its one-line meaning. */
+const WORK_MODES = Object.freeze({ __proto__: null,
+  worktree: { icon: 'branch', label: 'Own worktree', meaning: "isolated branch in a clone of the soul's repo" },
+  checkout: { icon: 'branch', label: 'Shared checkout', meaning: "the repo's current branch" },
+  attached: { icon: 'link', label: 'Attached', meaning: null },
+  directory: { icon: 'folder', label: 'Plain folder', meaning: 'no Git' },
+  workspace: { icon: 'layers', label: 'Workspace view', meaning: 'reads across member repos' } });
+const NO_GIT = new Set(['directory', 'workspace']);
+/** How long ago, compactly ("42m", "3h", "2d"); null when not a timestamp. */
+function shortAge(iso, now = Date.now()) {
+  const at = typeof iso === 'string' ? Date.parse(iso) : NaN;
+  if (!Number.isFinite(at)) return null;
+  const m = Math.max(0, Math.floor((now - at) / 60000));
+  return m < 1 ? '<1m' : m < 60 ? `${m}m` : m < 1440 ? `${Math.floor(m / 60)}h` : `${Math.floor(m / 1440)}d`;
+}
+/** The "older build" chip's tooltip, in plain words, from the kernel's drift (a soul status or module
+ * rows other than current). null when current, unreported, or a recorded map (drift not observed). */
+export function driftText(instance) {
+  const drifted = status => typeof status === 'string' && status !== 'current';
+  const said = [], soul = instance?.soul;
+  if (soul && typeof soul === 'object' && drifted(soul.status)) said.push(soul.status === 'moved'
+    ? "Its soul's repository has moved on since it was spawned." : soul.status === 'missing'
+      ? 'The soul commit it was spawned from is no longer found.' : `Its soul is ${soul.status}.`);
+  if (Array.isArray(instance?.modules)) for (const row of instance.modules) {
+    if (!row || typeof row !== 'object' || !drifted(row.status)) continue;
+    const name = typeof row.name === 'string' && row.name ? row.name : 'A capability';
+    const now = typeof row.current?.version === 'string' ? row.current.version : null, was = typeof row.from?.version === 'string' ? row.from.version : null;
+    said.push(row.status === 'moved' ? `${name} has changed since${now ? ` (${was ? `${was} → ` : 'now '}${now})` : ''}.`
+      : row.status === 'missing' ? `${name} is no longer available${typeof row.reason === 'string' && row.reason ? ` (${row.reason})` : ''}.` : `${name} is ${row.status}.`);
+  }
+  if (!said.length) return null;
+  return ['Built from an older state of the workspace:', ...said.map(line => `• ${line}`), 'Re-spawning picks up the new state; this instance keeps what it was built with.'].join('\n');
+}
 const reported = value => typeof value === 'string' && value.length ? value
   : typeof value === 'number' && Number.isFinite(value) ? String(value)
     : typeof value === 'boolean' ? String(value) : 'Not reported';
@@ -155,7 +194,7 @@ const reported = value => typeof value === 'string' && value.length ? value
  */
 export function createContextPanel({
   document: suppliedDocument, root: suppliedRoot, onIntent = noop,
-  applyFocus = callback => callback(), onFocusModeChange = noop, createGitPanel, createTeamsSection, createSoulSection, openSoul, lifecycle = null,
+  applyFocus = callback => callback(), onFocusModeChange = noop, fallbackFocus = () => null, shortcutHint = () => '', createGitPanel, createTeamsSection, createSoulSection, openSoul, lifecycle = null,
   connectionGeneration = () => 0, subscribeConnections = () => noop,
 } = {}) {
   const document = suppliedDocument ?? suppliedRoot?.ownerDocument ?? globalThis.document;
@@ -212,7 +251,7 @@ export function createContextPanel({
   });
   expand.setAttribute('aria-expanded', 'false'); expand.setAttribute('aria-controls', 'context-panel'); expand.dataset.action = 'panel.toggle';
   const railTabs = new Map();
-  for (const [id, glyph, label] of [['instance', 'info', 'Instance'], ['soul', 'soul', 'Soul'], ['git', 'branch', 'Git & GitHub']]) {
+  for (const [id, glyph, label] of [['instance', 'info', 'Instance'], ['soul', 'soul', 'Soul'], ['git', 'branch', 'Developer']]) {
     const button = control('context-panel-rail-tab', glyph, label, event => {
       if (disposed || root.hidden || !hasGeneric() || !pref().collapsed || !visible(button)) return;
       onIntent(event);
@@ -242,7 +281,7 @@ export function createContextPanel({
   collapse.setAttribute('aria-expanded', 'true'); collapse.setAttribute('aria-controls', 'context-panel');
   header.append(tablist, collapse); generic.append(header);
   const tabs = new Map(), pages = new Map();
-  for (const [id, label] of [['instance', 'Instance'], ['soul', 'Soul'], ['git', 'Git & GitHub']]) {
+  for (const [id, label] of [['instance', 'Instance'], ['soul', 'Soul'], ['git', 'Developer']]) {
     const tab = control('context-panel-tab', null, label, event => selectTab(id, event)); tab.textContent = label;
     tab.id = `context-panel-tab-${id}`; tab.dataset.contextTab = id;
     tab.setAttribute('role', 'tab'); tab.setAttribute('aria-controls', `context-panel-page-${id}`);
@@ -262,17 +301,10 @@ export function createContextPanel({
     pages.set(id, page); generic.append(page);
   }
   const fields = new Map();
-  function facts(pageId, entries) {
-    const dl = node('dl', 'context-panel-facts');
-    for (const [id, label] of entries) {
-      const value = node('dd', null, 'Not reported'); value.dataset.contextField = id;
-      fields.set(id, value); dl.append(node('dt', null, label), value);
-    }
-    pages.get(pageId).append(dl);
-  }
-  // Instance page (Redesign v3): identity header — soul mark, name, "soul ·
-  // harness · model", state — then Worktree and Details. Every value is the
-  // roster row's own reported fact; unreported facts read "Not reported".
+  // Instance page (v4.1 board 1): identity header — soul mark, name, "instance
+  // of <soul>" (+ "older build" on drift), state — then Where it works, Session,
+  // Messaging and Lineage. Every value is the roster row's own reported fact;
+  // an unreported fact keeps "Not reported" in its field and hides its row.
   const identityHeader = (pageId) => {
     const wrap = node('div', 'context-panel-identity'), mark = node('span', 'context-panel-mark');
     const copy = node('div', 'context-panel-identity-copy');
@@ -285,52 +317,80 @@ export function createContextPanel({
   };
   const field = (tag, className, id) => { const el = node(tag, className, 'Not reported'); el.dataset.contextField = id; fields.set(id, el); return el; };
   pages.get('instance').dataset.contextPage = 'instance'; pages.get('soul').dataset.contextPage = 'soul';
-  const instanceHead = identityHeader('instance');
-  const instanceSub = node('div', 'context-panel-identity-sub');
+  const instanceHead = identityHeader('instance'); instanceHead.wrap.classList.add('is-instance');
+  // "instance of <soul>": the soul name opens the Soul tab; the drift chip follows it.
+  const instanceSub = node('div', 'context-panel-identity-sub'), soulLine = node('span', 'context-panel-soul-line');
+  const soulLink = node('button', 'context-panel-soul-link'); soulLink.type = 'button'; soulLink.dataset.contextSoulLink = '';
+  soulLink.title = 'Show the Soul tab';
+  soulLink.addEventListener('click', event => { selectTab('soul', event); focus(tabs.get('soul')); });
+  soulLine.append(node('span', null, 'instance of'), soulLink);
+  const drift = node('span', 'context-panel-drift', 'older build'); drift.dataset.contextDrift = ''; drift.setAttribute('role', 'note');
+  instanceSub.append(soulLine, drift);
   instanceHead.copy.append(field('div', 'context-panel-identity-name', 'instance'), instanceSub);
-  const state = field('span', 'context-panel-state', 'running');
+  // State at the right: "Running · 42m" (the age of the last start) or "Stopped".
+  const state = node('span', 'context-panel-state'), stateAge = node('span', 'context-panel-state-age');
+  state.append(field('span', null, 'running'), stateAge);
   instanceHead.copy.after(state);
   // A path shows its meaningful end (clipped at the start, full in the title)
-  // with a Copy control; the field keeps the full reported value.
-  const copyControl = (id) => {
-    const b = node('button', 'context-panel-copy', 'Copy'); b.type = 'button'; b.dataset.copy = id;
-    b.setAttribute('aria-label', 'Copy path'); b.title = 'Copy path';
+  // with an icon Copy control; the field keeps the full reported value.
+  const copyControl = (id, label) => {
+    const b = node('button', 'context-panel-copy'); b.type = 'button'; b.dataset.copy = id;
+    const say = (text, icon) => { b.setAttribute('aria-label', text); b.title = text; b.replaceChildren(iconElement(document, icon, { size: 13 })); };
+    say(label, 'copy');
     b.addEventListener('click', async () => {
       const text = fields.get(id)?.textContent;
       if (!text || text === 'Not reported') return;
-      try { await document.defaultView?.navigator?.clipboard?.writeText(text); b.textContent = 'Copied'; } catch { b.textContent = 'Copy failed'; }
-      setTimeout(() => { if (b.isConnected) b.textContent = 'Copy'; }, 1500);
+      try { await document.defaultView?.navigator?.clipboard?.writeText(text); say('Copied', 'check'); } catch { say('Copy failed', 'copy'); }
+      setTimeout(() => { if (b.isConnected) say(label, 'copy'); }, 1500);
     });
     return b;
   };
-  const pathLine = (id) => {
+  // own: the line is its own row (hidden when unreported); otherwise its fact row is.
+  const pathLine = (id, label, { own = true } = {}) => {
     const line = node('div', 'context-panel-pathline'), clip = node('div', 'context-panel-path');
-    clip.dir = 'rtl'; clip.append(field('bdi', null, id)); line.dataset.row = id; line.append(clip, copyControl(id));
-    rows.set(id, line); return line;
+    clip.dir = 'rtl'; clip.append(field('bdi', null, id)); line.append(clip, copyControl(id, label));
+    if (own) { line.dataset.row = id; rows.set(id, line); }
+    return line;
   };
   const rows = new Map();
-  // Only what the instance reported: an unreported fact hides its row (the
-  // field keeps "Not reported"), and a section with no reported row hides.
+  // Facts: a label column and a value column. Only what the instance reported:
+  // an unreported fact hides its row, and a section with no reported row hides.
+  const factRow = (dl, id, label, value) => {
+    const row = node('div', 'context-panel-fact'); row.dataset.row = id; rows.set(id, row);
+    row.append(node('dt', null, label), value); dl.append(row); return row;
+  };
   function facts(host, entries) {
     const dl = node('dl', 'context-panel-facts');
-    for (const [id, label, mono] of entries) {
-      const row = node('div', 'context-panel-fact'); row.dataset.row = id; rows.set(id, row);
-      row.append(node('dt', null, label), field('dd', mono ? 'is-mono' : null, id)); dl.append(row);
-    }
+    for (const [id, label, mono] of entries) factRow(dl, id, label, field('dd', mono ? 'is-mono' : null, id));
     host.append(dl); return dl;
   }
-  // Workspace v4 (W6): where it works — mode, repository, branch, folder.
+  // Where it works (board 1): one card — the work mode on a band (its tile, its
+  // plain-language label and meaning), then Repo, Branch (Git modes) and Home.
   const worktree = section('instance', 'Where it works');
-  facts(worktree, [['work', 'Mode'], ['repoName', 'Repo', true], ['branch', 'Branch', true]]);
-  const folder = node('div', 'context-panel-fact context-panel-folder'); folder.dataset.row = 'repo';
-  folder.append(node('dt', null, 'Folder'), pathLine('repo')); rows.set('repo', folder);
-  worktree.querySelector('.context-panel-facts').append(folder);
+  const whereCard = node('div', 'context-panel-where');
+  const mode = node('div', 'context-panel-mode'), modeTile = node('span', 'context-panel-mode-tile'), modeCopy = node('div', 'context-panel-mode-copy');
+  modeTile.setAttribute('aria-hidden', 'true'); mode.dataset.row = 'work'; rows.set('work', mode);
+  const modeTitle = node('span', 'context-panel-mode-title'), modeMeaning = node('span', 'context-panel-mode-meaning');
+  modeCopy.append(modeTitle, modeMeaning); mode.append(modeTile, modeCopy);
+  const whereFacts = node('dl', 'context-panel-facts');
+  factRow(whereFacts, 'repoName', 'Repo', field('dd', 'is-mono', 'repoName'));
+  // Branch: the reported branch, then ↑/↓ from the default branch once the Git tab has observed them.
+  const branchValue = node('dd', 'is-mono context-panel-branch-value'), ahead = node('span', 'context-panel-ahead');
+  branchValue.append(field('span', null, 'branch'), ahead);
+  const branchRow = factRow(whereFacts, 'branch', 'Branch', branchValue);
+  // Home: the instance home, where its files and work/ live (the roster reports no work folder).
+  const homeValue = node('dd'); homeValue.append(pathLine('home', 'Copy home path', { own: false }));
+  factRow(whereFacts, 'home', 'Home', homeValue);
+  whereCard.append(mode, whereFacts); worktree.append(whereCard);
   // Session: the harness (and model) it runs, its terminal session and age.
   const session = section('instance', 'Session');
   const sessionCard = node('div', 'context-panel-session');
   const sessionBadge = node('span', 'context-panel-session-badge'); sessionBadge.setAttribute('aria-hidden', 'true');
   const sessionCopy = node('div', 'context-panel-session-copy');
-  sessionCopy.append(field('span', 'context-panel-session-harness', 'harness'), field('span', 'context-panel-session-model', 'model'), field('span', 'context-panel-session-from', 'modelFrom'));
+  // "<model> · <where the choice came from>" on one line under the harness.
+  const modelLine = node('span', 'context-panel-session-model');
+  modelLine.append(field('span', null, 'model'), field('span', 'context-panel-session-from', 'modelFrom'));
+  sessionCopy.append(field('span', 'context-panel-session-harness', 'harness'), modelLine);
   const sessionSide = node('div', 'context-panel-session-side');
   const tmuxLine = node('span', 'context-panel-session-tmux'); const createdLine = node('span', 'context-panel-session-age');
   createdLine.append('created ', field('span', null, 'createdAt'));
@@ -340,22 +400,17 @@ export function createContextPanel({
   sessionSide.append(tmuxLine, startedLine, createdLine);
   sessionCard.append(sessionBadge, sessionCopy, sessionSide); session.append(sessionCard);
   // Messaging (teams contract): injected like Git — this host performs no IO.
-  const teamsHost = section('instance', 'Messaging'); teamsHost.dataset.contextSection = 'teams'; teamsHost.hidden = true;
-  const identityLine = field('span', 'context-panel-identity-address', 'identity');
-  teamsHost.firstElementChild.append(identityLine);
-  const teamsSection = typeof createTeamsSection === 'function' ? createTeamsSection(teamsHost, { onPresence(present) { if (!disposed) teamsHost.hidden = !present; } }) : null;
+  // Header: the label and a tools slot (the section's icon Refresh); then the
+  // identity address alone on its line; then the teams list.
+  const teamsHost = node('section', 'context-panel-section'); teamsHost.dataset.contextSection = 'teams'; teamsHost.hidden = true;
+  const teamsHead = node('div', 'context-panel-section-head'), teamsTools = node('div', 'context-panel-tools');
+  teamsHead.append(node('div', 'context-panel-label', 'Messaging'), teamsTools);
+  const identityLine = field('div', 'context-panel-address', 'identity');
+  teamsHost.append(teamsHead, identityLine); pages.get('instance').append(teamsHost);
+  const teamsSection = typeof createTeamsSection === 'function' ? createTeamsSection(teamsHost, { tools: teamsTools,
+    onPresence(present) { if (!disposed) teamsHost.hidden = !present; } }) : null;
   const lineage = section('instance', 'Lineage');
   facts(lineage, [['parentInstance', 'Parent'], ['siblingInstance', 'Sibling']]);
-  // Built from: the soul commit and capabilities it was spawned with, and the kernel's drift.
-  const built = section('instance', 'Built from');
-  facts(built, [['soulSource', 'Soul', true], ['modules', 'Capabilities']]);
-  built.querySelector('.context-panel-facts').classList.add('context-panel-built');
-  built.append(node('p', 'context-panel-note context-panel-built-note', 'New spawns use the latest. This instance keeps what it was built with.'));
-  const details = node('details', 'context-panel-details'); details.append(node('summary', null, 'Details'));
-  const homeRow = node('div', 'context-panel-detail'); homeRow.append(node('div', 'context-panel-label', 'Home'), pathLine('home'));
-  details.append(homeRow);
-  facts(details, [['team', 'Team label'], ['identityAddress', 'Messaging address', true]]);
-  pages.get('instance').append(details);
   const soulHead = identityHeader('soul');
   const soulSub = field('div', 'context-panel-identity-sub', 'description');
   soulHead.copy.append(field('div', 'context-panel-identity-name', 'agent'), soulSub);
@@ -368,7 +423,7 @@ export function createContextPanel({
   });
   soulActions.append(openSoulControl);
   const soulDetails = node('details', 'context-panel-details'); soulDetails.append(node('summary', null, 'Details'));
-  const rootRow = node('div', 'context-panel-detail'); rootRow.append(node('div', 'context-panel-label', 'Agents root'), pathLine('agentsRoot'));
+  const rootRow = node('div', 'context-panel-detail'); rootRow.append(node('div', 'context-panel-label', 'Agents root'), pathLine('agentsRoot', 'Copy agents root path'));
   soulDetails.append(rootRow); pages.get('soul').append(soulDetails, soulActions);
   // Workspace v4 (W6): the soul as this instance was spawned from it — injected like Teams (this host performs no IO).
   // While it shows, its own header replaces the roster-only one above.
@@ -394,11 +449,21 @@ export function createContextPanel({
       && Number.isSafeInteger(prSummary.unresolvedThreads) && prSummary.unresolvedThreads > 0 ? prSummary.unresolvedThreads : 0;
     const said = threads ? `${threads} unresolved review thread${threads === 1 ? '' : 's'}` : '';
     const count = tabs.get('git').querySelector('.context-panel-tab-count'); count.textContent = threads ? String(threads) : '';
-    if (said) tabs.get('git').setAttribute('aria-label', `Git & GitHub, ${said}`); else tabs.get('git').removeAttribute('aria-label');
-    const label = [changed ? 'Git & GitHub — changes in the last accepted observation' : 'Git & GitHub', said].filter(Boolean).join(', ');
+    if (said) tabs.get('git').setAttribute('aria-label', `Developer, ${said}`); else tabs.get('git').removeAttribute('aria-label');
+    const label = [changed ? 'Developer — changes in the last accepted observation' : 'Developer', said].filter(Boolean).join(', ');
     railTabs.get('git').title = label; railTabs.get('git').setAttribute('aria-label', label);
+    paintAhead();
   }
-  if (!gitPanel) pages.get('git').append(node('h2', null, 'Git & GitHub'), node('p', 'context-panel-note',
+  // The Branch row's ↑/↓ from the default branch: only from this selection's accepted Git observation.
+  function paintAhead() {
+    const current = hasGeneric() && gitSummary?.identity === contextIdentity() && gitSummary.connection === connectionGeneration();
+    const count = (n, glyph) => current && Number.isSafeInteger(n) && n > 0 ? `${glyph}${n}` : null;
+    const text = [count(gitSummary?.ahead, '↑'), count(gitSummary?.behind, '↓')].filter(Boolean).join(' ');
+    if (ahead.textContent !== text) ahead.textContent = text;
+    ahead.hidden = !text;
+    ahead.title = text ? 'Commits ahead of (↑) and behind (↓) the default branch, as last observed in the Developer tab' : '';
+  }
+  if (!gitPanel) pages.get('git').append(node('h2', null, 'Developer'), node('p', 'context-panel-note',
     'Integration unavailable. This host has no K1 Git reader. No changes, diffs, pull requests, or checks are reported here.'));
   // Workspace v4 (W6): the instance's lifecycle at the foot of its page — the
   // same plan-backed dialogs as the roster's action menu (nothing runs here).
@@ -447,18 +512,16 @@ export function createContextPanel({
       workspace: context.workspace, instance: context.instance, key: context.key });
     teamsSection?.update({ active: expanded && hasGeneric() && pref().tab === 'instance',
       workspace: context.workspace, instance: context.instance, key: context.key });
+    // The editor tab bar's toggle (index.html #panel-toggle): a constant name with aria-pressed while the
+    // panel is expanded; disabled only with nothing to show. It stays enabled in focus mode, where it is the
+    // visible exit (toggle() leaves focus mode and shows the panel). Its tooltip names the chord.
     const toggle = document.getElementById('panel-toggle');
     if (toggle) {
-      toggle.disabled = !present || focusMode;
-      toggle.setAttribute('aria-expanded', String(expanded));
+      toggle.disabled = !present;
+      toggle.setAttribute('aria-pressed', String(expanded));
       toggle.setAttribute('aria-controls', 'context-panel');
-    }
-    const mode = document.getElementById('focus-mode-toggle');
-    if (mode) {
-      mode.setAttribute('aria-pressed', String(focusMode));
-      const text = focusMode ? 'Exit focus mode' : 'Focus mode';
-      if (mode.textContent !== text) mode.textContent = text;
-      mode.setAttribute('aria-label', text);
+      const chord = shortcutHint();
+      toggle.setAttribute('aria-label', 'Instance panel'); toggle.title = chord ? `Instance panel (${chord})` : 'Instance panel';
     }
   }
   // Restore only when this projection hides/removes the focused container.
@@ -469,48 +532,39 @@ export function createContextPanel({
     const inside = root.contains(active);
     const inSidebar = document.getElementById('sidebar')?.contains(active)
       || document.getElementById('sidebar-restore')?.contains(active);
+    // Focus already lost (the palette removes its input before running a command) counts too, but only on
+    // an explicit focus-mode change, so a command never leaves focus on <body>.
+    const lost = !active || active === document.body || !active.isConnected;
     const wasFocusMode = focusMode;
     change(); render(); changed();
-    if ((inside && !visible(active)) || (inSidebar && !wasFocusMode && focusMode)) {
-      focus(visible(expand) ? expand : document.getElementById('focus-mode-toggle'));
+    if ((inside && !visible(active)) || (inSidebar && !wasFocusMode && focusMode) || (lost && wasFocusMode !== focusMode)) {
+      focus(visible(expand) ? expand : fallbackFocus());
     }
-  }
-  /** Status bar (Redesign v3): the focused terminal's reported branch and
-   * "harness · model" — the row's own facts, nothing inferred or fetched. */
-  function projectStatus(instance) {
-    const el = document.getElementById('context-status');
-    if (!el) return;
-    const parts = [];
-    const reportedText = v => typeof v === 'string' && v ? v : null;
-    // Workspace v4 (W6): branch, then the harness (mark, name, model), then the terminal session.
-    if (reportedText(instance?.branch)) {
-      const branch = node('span', 'context-status-branch');
-      branch.append(iconElement(document, 'branch', { size: 12 }), node('span', '', instance.branch)); parts.push(branch);
-    }
-    if (reportedText(instance?.harness)) {
-      const harness = node('span', 'context-status-harness');
-      harness.append(createRuntimeBadge(document, instance.harness), node('span', '', harnessName(instance.harness)));
-      if (reportedText(instance.model)) harness.append(node('span', 'context-status-muted', instance.model));
-      parts.push(harness);
-    } else if (reportedText(instance?.model)) parts.push(node('span', '', instance.model));
-    if (reportedText(instance?.tmux?.session)) {
-      const tmux = node('span', 'context-status-tmux');
-      tmux.append(iconElement(document, 'terminal', { size: 12 }), node('span', '', `tmux ${instance.tmux.session}`)); parts.push(tmux);
-    }
-    el.replaceChildren(...parts);
   }
   function projectMetadata() {
-    projectStatus(context.instance);
     const instance = context.instance ?? {};
-    // Header: soul mark and the "soul · harness · model" line omit what the
-    // row did not report (Details still says "Not reported" for each).
+    // Header: the soul mark, "instance of <soul>" and the drift chip omit what the row did not report.
     const soul = typeof instance.agent === 'string' && instance.agent ? { name: instance.agent, agentsRoot: instance.agentsRoot } : null;
     const markKey = JSON.stringify([soul?.name ?? null, soul?.agentsRoot ?? null]);
     for (const head of [instanceHead, soulHead]) if (head.mark.dataset.markKey !== markKey) {
       head.mark.dataset.markKey = markKey; head.mark.replaceChildren(...(soul ? [createSoulMark(document, soul)] : []));
     }
-    const sub = typeof instance.agent === 'string' && instance.agent ? `instance of ${instance.agent}` : '';
-    if (instanceSub.textContent !== sub) instanceSub.textContent = sub;
+    const agent = typeof instance.agent === 'string' && instance.agent ? instance.agent : '';
+    if (soulLink.textContent !== agent) { soulLink.textContent = agent; soulLink.title = agent ? `${agent}: show the Soul tab` : 'Show the Soul tab'; }
+    soulLine.hidden = !agent;
+    const drifted = driftText(instance);
+    drift.hidden = !drifted; drift.title = drifted || '';
+    if (drifted) drift.setAttribute('aria-label', `older build: ${drifted}`); else drift.removeAttribute('aria-label');
+    // Where it works: the work mode's tile, label and meaning; Branch only for Git modes.
+    const work = WORK_MODES[instance.work] ? instance.work : null;
+    mode.hidden = !work;
+    if (work && modeTile.dataset.work !== work) {
+      modeTile.dataset.work = work; modeTile.replaceChildren(iconElement(document, WORK_MODES[work].icon, { size: 14 }));
+    }
+    if (work) {
+      modeTitle.textContent = WORK_MODES[work].label;
+      modeMeaning.textContent = work === 'attached' ? `works in ${typeof instance.parentInstance === 'string' && instance.parentInstance ? `${instance.parentInstance}'s` : "its parent's"} tree` : WORK_MODES[work].meaning;
+    }
     // Session card: the harness mark and name, the model, the terminal session.
     const harness = typeof instance.harness === 'string' && instance.harness ? instance.harness : null;
     if (sessionBadge.dataset.harness !== (harness ?? '')) { sessionBadge.dataset.harness = harness ?? ''; sessionBadge.replaceChildren(...(harness ? [createRuntimeBadge(document, harness)] : [])); }
@@ -518,13 +572,15 @@ export function createContextPanel({
     if (tmuxLine.textContent !== tmux) tmuxLine.textContent = tmux;
     tmuxLine.hidden = !tmux;
     state.dataset.state = instance.running === true ? 'running' : instance.running === false ? 'stopped' : 'unknown';
+    // "Running · 42m": how long since its last start, when both are reported.
+    const since = instance.running === true ? shortAge(instance.startedAt) : null;
+    stateAge.textContent = since ? `· ${since}` : ''; stateAge.hidden = !since; state.title = since ? `started ${instance.startedAt}` : '';
+    state.hidden = typeof instance.running !== 'boolean'; // an unknown state is not shown
     for (const [id, el] of fields) {
       const value = id === 'running' ? instance.running === true ? 'Running'
         : instance.running === false ? 'Stopped' : 'Not reported'
-        : id === 'soulSource' ? soulSourceText(instance.soul) ?? 'Not reported'
-        : id === 'modules' ? moduleDriftText(instance.modules) ?? 'Not reported'
-        // Absent identity is the provider's absent fact: nothing is inferred.
-        : id === 'identity' ? servedIdentityText(instance.identity) ?? 'Not reported'
+        // The messaging address (desktop-facts), else the served identity; absent is the provider's absent fact.
+        : id === 'identity' ? (typeof instance.identityAddress === 'string' && instance.identityAddress) || servedIdentityText(instance.identity) || 'Not reported'
         : id === 'harness' && typeof instance.harness === 'string' && instance.harness ? harnessName(instance.harness)
         // Where the model came from says nothing without the model beside it.
         : id === 'modelFrom' ? (reported(instance.model) !== 'Not reported' && MODEL_FROM[instance.modelFrom]) || 'Not reported'
@@ -538,7 +594,12 @@ export function createContextPanel({
       el.toggleAttribute('data-unreported', value === 'Not reported');
       const row = rows.get(id); if (row) row.hidden = value === 'Not reported';
       else if (['model', 'modelFrom', 'identity'].includes(id)) el.hidden = value === 'Not reported';
+      if (id === 'identity' || id === 'branch' || id === 'instance') el.title = value === 'Not reported' ? '' : value;
+      if (id === 'model' || id === 'modelFrom') modelLine.title = [fields.get('model')?.textContent, fields.get('modelFrom')?.textContent].filter(t => t && t !== 'Not reported').join(' · ');
     }
+    // Branch: not a fact of a plain folder or a workspace view.
+    if (NO_GIT.has(instance.work)) branchRow.hidden = true;
+    paintAhead();
     // A reported start replaces the spawn age (startedAt is null for a home never launched).
     startedLine.hidden = fields.get('startedAt').textContent === 'Not reported';
     createdLine.hidden = !startedLine.hidden || fields.get('createdAt').textContent === 'Not reported';
@@ -548,8 +609,9 @@ export function createContextPanel({
     for (const b of [restartControl, startControl, stopControl, retireControl]) b.disabled = !!instance.server && !instance.savedRoute;
     // A section with nothing reported is not shown; the header sub-line omits an unreported description.
     soulSub.hidden = fields.get('description').textContent === 'Not reported';
-    for (const host of [worktree, lineage, built]) host.hidden = [...host.querySelectorAll('[data-row]')].every(r => r.hidden);
-    for (const box of [details, soulDetails]) box.hidden = [...box.querySelectorAll('[data-row]')].every(r => r.hidden);
+    for (const host of [worktree, lineage]) host.hidden = [...host.querySelectorAll('[data-row]')].every(r => r.hidden);
+    whereFacts.hidden = [...whereFacts.querySelectorAll('[data-row]')].every(r => r.hidden);
+    soulDetails.hidden = [...soulDetails.querySelectorAll('[data-row]')].every(r => r.hidden);
     openSoulControl.disabled = typeof openSoul !== 'function' || typeof instance.agent !== 'string' || !instance.agent;
   }
   function selectTab(id, event) {
@@ -613,7 +675,12 @@ export function createContextPanel({
       const slot = slots.get(owner);
       if (slot) project(() => { slots.delete(owner); slot.wrapper.remove(); });
     },
-    toggle() { if (!disposed && hasContent() && !focusMode) setCollapsed(!pref().collapsed); },
+    // In focus mode the toggle is the way out: it leaves focus mode and shows the panel.
+    toggle() {
+      if (disposed || !hasContent()) return;
+      if (focusMode) project(() => { focusMode = false; app?.classList.remove('focus-mode'); pref().collapsed = false; }, () => onFocusModeChange(false));
+      else setCollapsed(!pref().collapsed);
+    },
     setCollapsed,
     setFocusMode,
     toggleFocusMode() { setFocusMode(!focusMode); },

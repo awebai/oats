@@ -14,6 +14,7 @@ import { createInstanceGitPanel, instanceGitCSS } from '../renderer/instance-git
 import { createInstanceTeamsSection } from '../renderer/instance-teams.mjs';
 import { createInstanceSoulSection } from '../renderer/instance-soul.mjs';
 import { createSelectionOwnership } from '../renderer/selection-ownership.mjs';
+import { getBinding, formatChord } from '../renderer/keybindings.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
@@ -110,11 +111,12 @@ test('privileged proxy pins the new instance-addressed route and never admits fo
 });
 
 function shell(t) {
-  const dom = new JSDOM('<div id="app"><input id="terminal"><aside id="context-panel"></aside><button id="panel-toggle"></button><button id="focus-mode-toggle"></button></div>');
+  const dom = new JSDOM('<div id="app"><input id="terminal"><aside id="context-panel"></aside><button id="panel-toggle"></button></div>');
   const document = dom.window.document; const style = document.createElement('style'); style.textContent = contextPanelCSS + instanceGitCSS; document.head.append(style);
   const calls = [], pending = [];
   const c = { document, window: dom.window, createContextPanel, createInstanceGitPanel, createInstanceTeamsSection, createInstanceSoulSection, workspace: '/A', gen: 0, currentWorkspace: () => c.workspace,
     connectionGeneration: 0, subscribeConnections: () => () => {}, ctx: { openExternal: assert.fail }, openConnections: assert.fail,
+    getBinding, formatChord, stableFocusTarget: () => null,
     workspaceGeneration: () => c.gen, updateSidebarControls() {}, api(path, opts) {
       const d = deferred(); calls.push({ path, ...opts, body: JSON.parse(opts.body) }); pending.push(d); return d.promise;
     } };

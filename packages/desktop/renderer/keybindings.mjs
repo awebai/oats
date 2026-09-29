@@ -155,6 +155,9 @@ export const DEFAULT_KEYMAP = Object.freeze({
   "split.vertical": "Mod+\\",
   "split.horizontal": "Mod+Shift+\\",
   "split.close": "Mod+Alt+W",
+  // The instance panel (the tab bar's panel-right toggle). Not terminal-allowlisted: on
+  // Linux/Windows Ctrl+Alt+B stays with the program in the terminal (macOS ⌘⌥B fires there).
+  "panel.toggle": "Mod+Alt+B",
   "terminal.fontBigger": "Mod+=",
   "terminal.fontSmaller": "Mod+-",
   "terminal.fontReset": "Mod+0",

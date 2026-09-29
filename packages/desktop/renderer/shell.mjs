@@ -87,7 +87,7 @@ const notifications = createNotificationCenter({ document, generation: workspace
   workspace: currentWorkspace, connectionGeneration: () => connectionGeneration, subscribeConnections,
   onIntent: () => { if (!tabOpenIntents.isApplyingFocus()) tabOpenIntents.invalidate(); },
   applyFocus: callback => tabOpenIntents.applyFocus(callback),
-  fallbackFocus: () => document.getElementById('focus-mode-toggle'),
+  fallbackFocus: () => stableFocusTarget(),
 });
 window.addEventListener('pagehide', () => notifications.dispose(), { once: true });
 
@@ -665,7 +665,7 @@ const contextPanel = createContextPanel({
     }),
   }),
   // Teams (teams contract): the instance's own teams through its messaging provider's operations.
-  createTeamsSection: (host, { onPresence }) => createInstanceTeamsSection(host, { onPresence, generation: workspaceGeneration,
+  createTeamsSection: (host, options) => createInstanceTeamsSection(host, { ...options, generation: workspaceGeneration,
     request: (workspace, body) => api(`/api/capabilities?ws=${encodeURIComponent(workspace)}`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
     }),
@@ -698,6 +698,10 @@ const contextPanel = createContextPanel({
   onIntent: () => { if (!tabOpenIntents.isApplyingFocus()) tabOpenIntents.invalidate(); },
   applyFocus: callback => tabOpenIntents.applyFocus(callback),
   onFocusModeChange: () => updateSidebarControls(),
+  // Focus mode hides the sidebar: focus that was there lands on the active tab, else a stable visible control.
+  fallbackFocus: () => stableFocusTarget(),
+  // (isMac is declared with the palette, after this first render: read the platform here.)
+  shortcutHint: () => { const chord = getBinding("panel.toggle"); return chord ? formatChord(chord, !!globalThis.navigator?.platform?.includes("Mac")) : ""; },
 });
 window.addEventListener("pagehide", () => contextPanel.dispose(), { once: true });
 
@@ -707,6 +711,21 @@ function syncContextPanel() {
   const terminal = tab?.kind === "terminal" && canActivateTab(tab, currentWorkspace());
   contextPanel.setContext({ workspace: currentWorkspace(), owner: tabLayerVisible ? null : stage,
     instance: terminal ? tab.instanceRef : null, key: terminal && tab.instanceRef ? tab.key : null });
+}
+onKeymapChange(() => syncContextPanel()); // the panel toggle's tooltip names its chord
+function activeTabTrigger() { return activeTab != null ? tabs.get(activeTab)?.triggerEl ?? null : null; }
+/** Where focus goes when the control holding it disappears: the active tab's trigger when it is shown, else a
+ * stable visible control (the panel toggle, the sidebar toggle, or the restore edge that focus mode and a
+ * hidden sidebar show), never <body>. */
+function stableFocusTarget() {
+  const shown = el => {
+    if (!el?.isConnected || el.disabled) return false;
+    for (let node = el; node; node = node.parentElement) {
+      if (node.hidden || node.inert || document.defaultView.getComputedStyle(node).display === "none") return false;
+    }
+    return true;
+  };
+  return [activeTabTrigger(), ...["panel-toggle", "sidebar-toggle", "sidebar-restore"].map(id => document.getElementById(id))].find(shown) ?? null;
 }
 function refreshPanelInstance(instances, workspace) {
   const tab = tabs.get(activeTab);
@@ -1362,7 +1381,7 @@ const palette = createPalette({
     { label: "Workspace: switch…", detail: chordDetail("app.workspaces"), run: () => workspaceLabel.openMenu() },
     { label: "Instances: focus the sidebar roster", detail: chordDetail("sidebar.focusFilter"), run: () => focusRoster() },
     { label: "Sidebar: toggle (hide/show)", detail: chordDetail("sidebar.toggle"), run: () => toggleSidebar() },
-    { label: "Context panel: toggle", detail: chordDetail("panel.toggle"), run: () => runAction("panel.toggle") },
+    { label: "Instance panel: show / hide", detail: chordDetail("panel.toggle"), run: () => runAction("panel.toggle") },
     { label: "Focus mode: toggle", detail: chordDetail("app.focusMode"), run: () => runAction("app.focusMode") },
     { label: "Split: terminal right (side by side)", detail: chordDetail("split.vertical"), run: () => splitPane("row") },
     { label: "Split: terminal down (stacked)", detail: chordDetail("split.horizontal"), run: () => splitPane("col") },
@@ -1561,11 +1580,10 @@ THEMES.forEach(({ id, label }) => registerAction({
 registerAction({ id: "app.workspaces", label: "Open the workspace switcher", context: "global", run: () => workspaceLabel.openMenu() });
 registerAction({ id: "sidebar.focusFilter", label: "Focus the instance roster filter", context: "global", run: () => focusRoster() });
 registerAction({ id: "sidebar.toggle", label: "Toggle the sidebar", context: "global", run: () => toggleSidebar() });
-registerAction({ id: "panel.toggle", label: "Toggle the context panel", context: "global", run: () => { tabOpenIntents.invalidate(); contextPanel.toggle(); } });
-registerAction({ id: "app.focusMode", label: "Toggle focus mode (sidebar and context panel)", context: "global", run: () => { tabOpenIntents.invalidate(); contextPanel.toggleFocusMode(); } });
-for (const [id, action] of [["panel-toggle", "panel.toggle"], ["focus-mode-toggle", "app.focusMode"]]) {
-  document.getElementById(id).addEventListener("click", () => runAction(action));
-}
+registerAction({ id: "panel.toggle", label: "Show or hide the instance panel", context: "global", run: () => { tabOpenIntents.invalidate(); contextPanel.toggle(); } });
+// Focus mode lives on the keyboard (rebindable, no default chord) and the palette.
+registerAction({ id: "app.focusMode", label: "Toggle focus mode (sidebar and instance panel)", context: "global", run: () => { tabOpenIntents.invalidate(); contextPanel.toggleFocusMode(); } });
+document.getElementById("panel-toggle").addEventListener("click", () => runAction("panel.toggle"));
 // splits live on the tab layer (they arrange terminal tabs); the actions
 // are terminal-allowlisted so the chords work inside xterm too.
 registerAction({ id: "split.vertical", label: "Split terminal right (side by side)", context: "tabs", run: () => splitPane("row") });

@@ -1,4 +1,4 @@
-// W6 (design: "Git & GitHub 2"): the tab counts the pull request's unresolved review
+// W6 (design: "Developer 2"): the tab counts the pull request's unresolved review
 // threads, as the forge read reports them (#241); unknown, none, or another instance's
 // read shows nothing.
 import test from 'node:test';
@@ -35,13 +35,13 @@ test('the tab shows the count beside its name, and says it in words; unknown or 
   const report = n => u.hooks().onPullRequest({ identity: u.identity(instance()), connection: u.gen(), unresolvedThreads: n });
   report(2);
   assert.equal(u.tab().querySelector('.context-panel-tab-count').textContent, '2');
-  assert.equal(u.tab().getAttribute('aria-label'), 'Git & GitHub, 2 unresolved review threads');
-  assert.match(u.rail().getAttribute('aria-label'), /2 unresolved review threads$/, 'the collapsed rail says it too');
+  assert.equal(u.tab().getAttribute('aria-label'), 'Developer, 2 unresolved review threads');
+  assert.equal(u.rail().getAttribute('aria-label'), 'Developer, 2 unresolved review threads', 'the collapsed rail says it too'); assert.equal(u.rail().title, 'Developer, 2 unresolved review threads');
   for (const n of [null, 0]) {
     report(n);
     assert.equal(u.tab().querySelector('.context-panel-tab-count').textContent, ''); assert.equal(u.tab().hasAttribute('aria-label'), false);
   }
-  report(1); assert.equal(u.tab().getAttribute('aria-label'), 'Git & GitHub, 1 unresolved review thread');
+  report(1); assert.equal(u.tab().getAttribute('aria-label'), 'Developer, 1 unresolved review thread');
   u.hooks().onPullRequest(null); assert.equal(u.tab().querySelector('.context-panel-tab-count').textContent, '', 'no PR painted: no badge');
 });
 

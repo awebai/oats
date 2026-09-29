@@ -19,7 +19,7 @@ import { createInstanceSoulSection } from '../renderer/instance-soul.mjs';
 import { resolveTerminalOpen, terminalKey } from "../renderer/instance-tree.mjs";
 import { createWorkspaceTabMemory } from "../renderer/workspace-tab-memory.mjs";
 import { projectSplitDom } from "../renderer/split-dom.mjs";
-import { DEFAULT_KEYMAP } from "../renderer/keybindings.mjs";
+import { DEFAULT_KEYMAP, getBinding, formatChord } from "../renderer/keybindings.mjs";
 import { splitControlsState } from "../renderer/split-controls.mjs";
 import { instanceSplitPlan, instanceSplitIdentity } from '../renderer/instance-split.mjs';
 import { instanceActionTarget, sameInstanceActionTarget } from '../renderer/instance-action-target.mjs';
@@ -37,14 +37,15 @@ const instance = name => ({ instance: name, running: true, home: `/synthetic/${n
   tmux: { session: "synthetic-only", window: name } });
 
 function shell(t, shellSource = source) {
-  const dom = new JSDOM(`<div id="app"><aside id="context-panel"></aside><button id="panel-toggle"></button><button id="focus-mode-toggle"></button><span id="ws-context"></span><div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div>
-    <div id="tab-actions"><button id="split-right"></button><button id="split-down"></button><button id="split-close"></button></div>
+  const dom = new JSDOM(`<div id="app"><aside id="context-panel"></aside><span id="ws-context"></span><div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div>
+    <div id="tab-actions"><button id="split-right"></button><button id="split-down"></button><button id="split-close"></button><button id="panel-toggle"></button></div>
     </div></div><div id="tabhost"></div><aside id="roster"><input class="ctx-filter"></aside>
     <nav id="nav"><button class="nav-item active">Overview</button></nav><button id="workspace">Workspace</button></div>`);
   t.after(() => dom.window.close());
   const document = dom.window.document, requests = [], attachments = [], terms = [], detached = [], projections = [], actions = new Map();
   const c = {
     document, window: dom.window, createContextPanel, createInstanceGitPanel, createInstanceTeamsSection, createInstanceSoulSection, console, navigator: { platform: "MacIntel" },
+    getBinding, formatChord, stableFocusTarget: () => null,
     connectionGeneration: 0, subscribeConnections: () => () => {}, ctx: { openExternal: assert.fail }, openConnections: assert.fail,
     workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A",
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "instances", tabLayerVisible: false,

@@ -22,9 +22,9 @@ export const instanceSoulCSS = `
 #context-panel .soul-tab-name { color:var(--fg); font-size:13.5px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 #context-panel .soul-tab-meta { color:var(--muted); font:11.5px ui-monospace, Menlo, monospace; overflow-wrap:anywhere; }
 #context-panel .soul-tab-section { display:flex; flex-direction:column; gap:8px; min-width:0; }
-#context-panel .soul-tab-core { border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+#context-panel .soul-tab-core { border:1px solid var(--border); border-radius:9px; overflow:hidden; }
 #context-panel .soul-tab-core-row { display:grid; grid-template-columns:88px minmax(0,1fr); gap:10px; align-items:center; min-height:48px; padding:8px 12px; box-sizing:border-box; }
-#context-panel .soul-tab-core-row + .soul-tab-core-row { border-top:1px solid var(--tag-bg); }
+#context-panel .soul-tab-core-row + .soul-tab-core-row { border-top:1px solid var(--border); }
 #context-panel .soul-tab-slot { color:var(--fg); font-size:12.5px; font-weight:650; }
 #context-panel .soul-tab-provider { display:flex; flex-direction:column; gap:2px; min-width:0; }
 #context-panel .soul-tab-source { display:flex; align-items:center; gap:6px; min-width:0; color:var(--fg); font:12px ui-monospace, Menlo, monospace; }

@@ -635,7 +635,7 @@ for (const [name] of palettes) test(`${name}: frame10 rail, disabled menu reason
   for (const [selector, painted, fg, bg] of [
     ['.context-panel-rail-tab[aria-pressed=true]', '.context-panel-rail-tab[aria-pressed=true]', 'accent', 'sel'],
     ['.context-panel-rail-tab[aria-pressed=false]', '#context-panel', 'muted', 'surface'],
-    ['.context-panel-tab-count', '#context-panel', 'muted', 'surface'], // W6: the Git & GitHub tab's thread count
+    ['.context-panel-tab-count', '#context-panel', 'muted', 'surface'], // W6: the Developer tab's thread count
     ['.ctx-instance-menu small', '.ctx-instance-menu button:disabled', 'muted', 'surface-2'],
     ['.ws-option-meta', '.ws-option', 'muted', 'sel'],
     ['.app-toast-open', '.app-toast-open', 'primary-fg', 'primary-bg'],
@@ -731,12 +731,12 @@ for (const [name] of palettes) test(`${name}: F7 inspector cards, teams, compact
     ['#home .teams-card .team-meta', '#home .teams-card', 'muted', 'surface'],
     ['#home .teams-card .team-badge', '#home .teams-card', 'muted', 'surface'],
     ['#home .inspector-spawned button', '#home .inspector-spawned button', 'fg', 'surface'],
-    // Workspace v4 (W6): the Folder row's path reads as a value; Details' home path stays muted.
-    ['#context-panel .context-panel-folder .context-panel-path', '#context-panel', 'fg', 'surface'],
+    // v4.1: the Home row's path reads as a value in the Where it works card; the Soul tab's Details path stays muted.
+    ['#context-panel .context-panel-where .context-panel-path', '#context-panel .context-panel-where', 'fg', 'surface'],
     // desktop-facts: where the model came from, under the model in the Session card.
     ['#context-panel .context-panel-session-from', '#context-panel .context-panel-session', 'muted', 'surface'],
     ['#context-panel .context-panel-detail .context-panel-path', '#context-panel', 'muted', 'surface'],
-    ['#context-panel .context-panel-copy', '#context-panel .context-panel-copy', 'fg', 'surface'],
+    ['#context-panel .context-panel-copy', '#context-panel', 'muted', 'surface'],
   ];
   checks.push(['.git-status-details > summary', '#context-panel', 'muted', 'surface']);
   for (const [selector, painted, fg, bg] of checks) {
@@ -936,6 +936,76 @@ for (const [name] of palettes) test(`${name}: team model v2 cards, left entries,
     assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
     assert.equal(dom.window.getComputedStyle(surface).background.replace(/^.*(var\(--[\w-]+\)).*$/, '$1'), `var(--${bg})`, painted);
     assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+  }
+});
+
+// v4.1 cleanup (boards 1 and 2): the instance panel's header chip and soul link, the Where it works band
+// and grid, the Messaging address and compact team rows, and the Git tab's cards, badges and empty state.
+for (const [name] of palettes) test(`${name}: v4.1 instance panel, compact Messaging rows and Git tab cards meet computed AA`, t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div id="context-panel" class="context-panel"><div class="context-panel-page">
+    <div class="context-panel-identity"><span class="context-panel-identity-sub"><button class="context-panel-soul-link">dev</button><span class="context-panel-drift">older build</span></span>
+      <span class="context-panel-state" data-state="running"><span>Running</span><span>· 42m</span></span><span id="stopped" class="context-panel-state" data-state="stopped">Stopped</span></div>
+    <div class="context-panel-where"><div class="context-panel-mode"><span class="context-panel-mode-copy"><span class="context-panel-mode-title">Own worktree</span><span class="context-panel-mode-meaning">isolated branch</span></span></div>
+      <dl class="context-panel-facts"><div class="context-panel-fact"><dt>Branch</dt><dd class="is-mono"><span>main</span><span class="context-panel-ahead">↑3</span></dd></div></dl></div>
+    <section class="context-panel-section"><div class="context-panel-section-head"><div class="context-panel-label">Messaging</div></div><div class="context-panel-address">team/dev-1</div>
+      <section class="teams-panel is-compact"><div class="teams-card"><div class="team-row"><div class="team-main"><div class="team-name">oats<span class="team-tag">default</span></div><div class="team-meta">oats:team</div></div><span class="team-badge">Always on</span></div>
+        <div class="team-row"><div class="team-main"><div class="team-name">eng</div></div><button class="team-action" data-team-action="leave">Leave</button></div>
+        <div class="team-row"><div class="team-main"><div class="team-name">product</div><div class="team-meta">eligible</div></div><button class="team-action" data-team-action="join">Join</button></div>
+        <p class="teams-note">No other teams available to this soul.</p></div></section></section>
+    <div class="instance-git"><div class="git-files git-card"><button class="git-file"><span class="git-letter git-letter-add">A</span><span class="git-file-path">a</span></button>
+      <button class="git-file"><span class="git-letter git-letter-mod">M</span></button><button class="git-file"><span class="git-letter git-letter-del">D</span></button><button class="git-file"><span id="rename" class="git-letter">R</span></button></div>
+      <p class="git-note git-dashed">No uncommitted changes.</p>
+      <div class="git-empty git-dashed"><span class="git-empty-title">No Git for this instance</span><span class="git-empty-why">plain folder</span></div><p class="git-empty-note">in <b>worktree</b> mode</p>
+      <div class="git-footer"><span>Checked just now</span><button class="git-link">Refresh</button></div>
+      <section class="git-github"><div class="forge-pr-card git-card"><div class="forge-head"><span class="forge-title-row"><span class="forge-state">Open</span><span class="forge-title">Title</span></span><span class="forge-sub">#1</span></div></div></section></div>
+  </div></div></body></html>`, { pretendToBeVisual: true });
+  const doc = dom.window.document;
+  for (const source of [css, contextPanelCSS, teamsCSS, instanceGitCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  t.after(() => dom.window.close());
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  for (const [selector, painted, fg, bg] of [
+    ['.context-panel-soul-link', '#context-panel', 'accent', 'surface'],
+    ['.context-panel-drift', '.context-panel-drift', 'fg', 'tag-bg'],
+    ['.context-panel-state[data-state=running]', '#context-panel', 'accent', 'surface'],
+    ['#stopped', '#context-panel', 'muted', 'surface'],
+    ['.context-panel-mode-title', '.context-panel-mode', 'fg', 'surface-2'],
+    ['.context-panel-mode-meaning', '.context-panel-mode', 'muted', 'surface-2'],
+    ['.context-panel-where dt', '.context-panel-where', 'muted', 'surface'],
+    ['.context-panel-where dd', '.context-panel-where', 'fg', 'surface'],
+    ['.context-panel-ahead', '.context-panel-where', 'muted', 'surface'],
+    ['.context-panel-label', '#context-panel', 'muted', 'surface'],
+    ['.context-panel-address', '#context-panel', 'muted', 'surface'],
+    ['.is-compact .team-name', '#context-panel', 'fg', 'surface'],
+    ['.is-compact .team-tag', '.is-compact .team-tag', 'muted', 'tag-bg'],
+    ['.is-compact .team-meta', '#context-panel', 'muted', 'surface'],
+    ['.is-compact .team-badge', '#context-panel', 'muted', 'surface'],
+    ['.is-compact .team-action[data-team-action=leave]', '#context-panel', 'muted', 'surface'],
+    ['.is-compact .team-action[data-team-action=join]', '#context-panel', 'accent', 'surface'],
+    ['.is-compact .teams-note', '#context-panel', 'muted', 'surface'],
+    ['.git-letter-add', '#context-panel', 'ok', 'surface'],
+    ['.git-letter-mod', '#context-panel', 'warn', 'surface'],
+    ['.git-letter-del', '#context-panel', 'danger', 'surface'],
+    ['#rename', '#context-panel', 'muted', 'surface'],
+    ['.git-note.git-dashed', '#context-panel', 'muted', 'surface'],
+    ['.git-empty-title', '#context-panel', 'fg', 'surface'],
+    ['.git-empty-why', '#context-panel', 'muted', 'surface'],
+    ['.git-empty-note', '#context-panel', 'muted', 'surface'],
+    ['.git-empty-note b', '#context-panel', 'fg', 'surface'],
+    ['.git-footer', '#context-panel', 'muted', 'surface'],
+    ['.git-footer .git-link', '#context-panel', 'accent', 'surface'],
+    ['.forge-state', '.forge-state', 'fg', 'tag-bg'],
+    ['.forge-sub', '#context-panel', 'muted', 'surface'],
+  ]) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.equal(dom.window.getComputedStyle(surface).background.replace(/^.*(var\(--[\w-]+\)).*$/, '$1'), `var(--${bg})`, painted);
+    // Every surface between the text and its painted ground is transparent (no other ground intervenes).
+    if (surface !== el) for (let parent = el.parentElement; parent && parent !== surface; parent = parent.parentElement) {
+      const background = dom.window.getComputedStyle(parent).background;
+      assert.ok(!/var\(--/.test(background) || background.includes(`var(--${bg})`), `${selector}: ${parent.className} paints ${background}`);
+    }
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${selector}: ${fg} on ${bg}`);
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
   }
 });
