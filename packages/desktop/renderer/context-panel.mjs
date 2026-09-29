@@ -512,15 +512,16 @@ export function createContextPanel({
       workspace: context.workspace, instance: context.instance, key: context.key });
     teamsSection?.update({ active: expanded && hasGeneric() && pref().tab === 'instance',
       workspace: context.workspace, instance: context.instance, key: context.key });
-    // The editor tab bar's toggle (index.html #panel-toggle): pressed while the panel is expanded;
-    // disabled (and not pressed) with nothing to show or in focus mode. Its tooltip names the chord.
+    // The editor tab bar's toggle (index.html #panel-toggle): a constant name with aria-pressed while the
+    // panel is expanded; disabled only with nothing to show. It stays enabled in focus mode, where it is the
+    // visible exit (toggle() leaves focus mode and shows the panel). Its tooltip names the chord.
     const toggle = document.getElementById('panel-toggle');
     if (toggle) {
-      toggle.disabled = !present || focusMode;
+      toggle.disabled = !present;
       toggle.setAttribute('aria-pressed', String(expanded));
       toggle.setAttribute('aria-controls', 'context-panel');
-      const label = expanded ? 'Hide instance panel' : 'Show instance panel', chord = shortcutHint();
-      toggle.setAttribute('aria-label', label); toggle.title = chord ? `${label} (${chord})` : label;
+      const chord = shortcutHint();
+      toggle.setAttribute('aria-label', 'Instance panel'); toggle.title = chord ? `Instance panel (${chord})` : 'Instance panel';
     }
   }
   // Restore only when this projection hides/removes the focused container.
@@ -671,7 +672,12 @@ export function createContextPanel({
       const slot = slots.get(owner);
       if (slot) project(() => { slots.delete(owner); slot.wrapper.remove(); });
     },
-    toggle() { if (!disposed && hasContent() && !focusMode) setCollapsed(!pref().collapsed); },
+    // In focus mode the toggle is the way out: it leaves focus mode and shows the panel.
+    toggle() {
+      if (disposed || !hasContent()) return;
+      if (focusMode) project(() => { focusMode = false; app?.classList.remove('focus-mode'); pref().collapsed = false; }, () => onFocusModeChange(false));
+      else setCollapsed(!pref().collapsed);
+    },
     setCollapsed,
     setFocusMode,
     toggleFocusMode() { setFocusMode(!focusMode); },

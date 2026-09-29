@@ -12,7 +12,7 @@ const birth = '2026-09-23T00:00:00.000Z';
 const selected = () => ({ ...instance, createdAt: birth });
 const git = () => { const data = state(); data.summary.changed = 1; data.files = [{ id: 'c'.repeat(24), kind: 'changed', xy: '.M', path: 'file', origPath: null, submodule: false }]; return { instanceGitApi: 1, minimumVersion: '0.24.7', status: 'available', target, data, observationKey: 'e'.repeat(64), reason: null }; };
 function rail(t, request = async () => git()) {
-  const dom = new JSDOM('<body><div id="app"><input id="outside"><aside id="context-panel"></aside><button id="focus-mode-toggle">Focus</button></div></body>', { pretendToBeVisual: true });
+  const dom = new JSDOM('<body><div id="app"><input id="outside"><aside id="context-panel"></aside></div></body>', { pretendToBeVisual: true });
   const doc = dom.window.document, style = doc.createElement('style'); style.textContent = contextPanelCSS; doc.head.append(style);
   let connection = 0; const listeners = new Set(), calls = [];
   const subscribeConnections = fn => { listeners.add(fn); return () => listeners.delete(fn); };

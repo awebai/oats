@@ -20,7 +20,14 @@ body {
   #workbench > #context-panel .context-panel-expand { min-height: 32px; }
 }
 #context-panel .soul-inspector { width: 100%; max-width: none; flex: 1; border: 0; overflow: auto; }
-#app.focus-mode #sidebar, #app.focus-mode.sidebar-hidden #sidebar-restore { display: none; }
+#app.focus-mode #sidebar { display: none; }
+/* Focus mode hides the sidebar, so the restore edge (below) is also its visible exit: sidebar.toggle leaves focus mode. */
+#app.focus-mode #sidebar-restore {
+  display: flex; align-items: center; justify-content: center;
+  width: 14px; min-width: 14px; padding: 0; border: 0; border-right: 1px solid var(--border);
+  background: var(--surface); color: var(--muted); font-size: 13px; cursor: pointer;
+}
+#app.focus-mode #sidebar-restore:hover { color: var(--fg); background: var(--surface-2); }
 /* Hideable sidebar: terminals get the full window width. Class-driven so the
    toggle is one line of JS; every terminal tab's ResizeObserver refits xterm
    when the panes change size. */

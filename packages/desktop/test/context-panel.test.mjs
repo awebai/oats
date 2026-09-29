@@ -62,7 +62,7 @@ test('exact APIs, safe absent-host defaults, shell-owned root and no toggle clic
   const toggle = u.query('#panel-toggle');
   assert.equal(toggle.disabled, true);
   assert.equal(toggle.getAttribute('aria-pressed'), 'false'); assert.equal(toggle.hasAttribute('aria-expanded'), false);
-  assert.equal(toggle.getAttribute('aria-label'), 'Show instance panel'); assert.equal(toggle.title, 'Show instance panel (⌘⌥B)');
+  assert.equal(toggle.getAttribute('aria-label'), 'Instance panel'); assert.equal(toggle.title, 'Instance panel (⌘⌥B)');
   assert.equal(toggle.getAttribute('aria-controls'), 'context-panel');
   u.select(instance('/A/one'));
   toggle.click();
@@ -70,9 +70,9 @@ test('exact APIs, safe absent-host defaults, shell-owned root and no toggle clic
   assert.equal(u.panel.isFocusMode(), false);
   assert.equal(toggle.disabled, false);
   assert.equal(toggle.getAttribute('aria-pressed'), 'true');
-  assert.equal(toggle.getAttribute('aria-label'), 'Hide instance panel'); assert.equal(toggle.title, 'Hide instance panel (⌘⌥B)');
+  assert.equal(toggle.getAttribute('aria-label'), 'Instance panel', 'a constant name'); assert.equal(toggle.title, 'Instance panel (⌘⌥B)');
   u.panel.setCollapsed(true);
-  assert.equal(toggle.getAttribute('aria-pressed'), 'false'); assert.equal(toggle.getAttribute('aria-label'), 'Show instance panel');
+  assert.equal(toggle.getAttribute('aria-pressed'), 'false'); assert.equal(toggle.getAttribute('aria-label'), 'Instance panel');
 });
 
 test('attach never selects; replacement invalidates old leases without disposing content', t => {
@@ -294,7 +294,7 @@ test('focus mode hides panel/sidebar rails, preserves preferences and stage form
   assert.equal(lease.isVisible(), false);
   assert.equal(u.query('#app').classList.contains('focus-mode'), true);
   assert.equal(u.query('#app').classList.contains('sidebar-hidden'), true, 'sidebar preference untouched');
-  assert.equal(u.query('#panel-toggle').disabled, true);
+  assert.equal(u.query('#panel-toggle').disabled, false, 'the toggle is focus mode\'s visible exit');
   assert.equal(u.query('#panel-toggle').getAttribute('aria-pressed'), 'false');
   assert.equal(u.document.activeElement, u.query('#active-tab'), 'the hidden form\'s focus lands on the active tab');
   assert.equal(u.intents.length, count);

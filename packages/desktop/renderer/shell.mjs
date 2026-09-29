@@ -87,7 +87,7 @@ const notifications = createNotificationCenter({ document, generation: workspace
   workspace: currentWorkspace, connectionGeneration: () => connectionGeneration, subscribeConnections,
   onIntent: () => { if (!tabOpenIntents.isApplyingFocus()) tabOpenIntents.invalidate(); },
   applyFocus: callback => tabOpenIntents.applyFocus(callback),
-  fallbackFocus: () => activeTabTrigger(),
+  fallbackFocus: () => stableFocusTarget(),
 });
 window.addEventListener('pagehide', () => notifications.dispose(), { once: true });
 
@@ -698,8 +698,8 @@ const contextPanel = createContextPanel({
   onIntent: () => { if (!tabOpenIntents.isApplyingFocus()) tabOpenIntents.invalidate(); },
   applyFocus: callback => tabOpenIntents.applyFocus(callback),
   onFocusModeChange: () => updateSidebarControls(),
-  // Focus mode hides the sidebar: focus that was there lands on the active tab (no tab: it stays).
-  fallbackFocus: () => activeTabTrigger(),
+  // Focus mode hides the sidebar: focus that was there lands on the active tab, else a stable visible control.
+  fallbackFocus: () => stableFocusTarget(),
   // (isMac is declared with the palette, after this first render: read the platform here.)
   shortcutHint: () => { const chord = getBinding("panel.toggle"); return chord ? formatChord(chord, !!globalThis.navigator?.platform?.includes("Mac")) : ""; },
 });
@@ -714,6 +714,19 @@ function syncContextPanel() {
 }
 onKeymapChange(() => syncContextPanel()); // the panel toggle's tooltip names its chord
 function activeTabTrigger() { return activeTab != null ? tabs.get(activeTab)?.triggerEl ?? null : null; }
+/** Where focus goes when the control holding it disappears: the active tab's trigger when it is shown, else a
+ * stable visible control (the panel toggle, the sidebar toggle, or the restore edge that focus mode and a
+ * hidden sidebar show), never <body>. */
+function stableFocusTarget() {
+  const shown = el => {
+    if (!el?.isConnected || el.disabled) return false;
+    for (let node = el; node; node = node.parentElement) {
+      if (node.hidden || node.inert || document.defaultView.getComputedStyle(node).display === "none") return false;
+    }
+    return true;
+  };
+  return [activeTabTrigger(), ...["panel-toggle", "sidebar-toggle", "sidebar-restore"].map(id => document.getElementById(id))].find(shown) ?? null;
+}
 function refreshPanelInstance(instances, workspace) {
   const tab = tabs.get(activeTab);
   if (!tabLayerVisible || tab?.kind !== "terminal" || tab.workspace !== workspace) return;

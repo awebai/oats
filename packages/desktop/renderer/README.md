@@ -440,14 +440,19 @@ inspector fallback.
 There is no status bar under the editor groups. The editor tab bar's action
 cluster ends with a `panel-right` toggle (`#panel-toggle`, after the split
 controls): it runs `panel.toggle` (default **Mod+Alt+B**, not terminal-allowlisted,
-so Ctrl+Alt+B stays with the program in a Linux/Windows terminal), reports
-`aria-pressed` while the panel is expanded, names its chord in its tooltip (the
-panel owns that title, so the button carries no `data-action`) and is disabled with
-nothing to show or in focus mode. **Focus mode** (`app.focusMode`: palette and a
-rebindable action, no default chord) hides the sidebar and right panel without
-closing tabs or changing split weights; exit restores the existing sidebar/panel
-preferences. Focus that was in the hidden sidebar moves to the active tab's
-trigger (`fallbackFocus`); with no tab it stays put. Mod+F and Mod+B leave focus
+so Ctrl+Alt+B stays with the program in a Linux/Windows terminal). Its accessible
+name is the constant "Instance panel" with `aria-pressed` while the panel is
+expanded; its tooltip names the chord (the panel owns that title, so the button
+carries no `data-action`). It is disabled only with nothing to show. **Focus mode**
+(`app.focusMode`: palette and a rebindable action, no default chord) hides the
+sidebar and right panel without closing tabs or changing split weights; exit
+restores the existing sidebar/panel preferences. Focus mode always has a visible
+exit: the panel toggle stays enabled and, in focus mode, leaves it and shows the
+panel; the `#sidebar-restore` edge is shown in focus mode too (the only exit on a
+stage, where there is no tab bar) and runs `sidebar.toggle`, which leaves it.
+Focus that was in the hidden sidebar moves to the active tab's trigger, else to a
+stable visible control (`stableFocusTarget` in `shell.mjs`: the panel toggle, the
+sidebar toggle or the restore edge), never `<body>`. Mod+F and Mod+B leave focus
 mode. Panel collapse and selected tab are session-local per workspace; focus mode
 is a temporary presentation override. Native terminal input and per-window
 lifecycle policies are unchanged.

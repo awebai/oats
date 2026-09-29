@@ -45,7 +45,7 @@ function shell(t, shellSource = source) {
   const document = dom.window.document, requests = [], attachments = [], terms = [], detached = [], projections = [], actions = new Map();
   const c = {
     document, window: dom.window, createContextPanel, createInstanceGitPanel, createInstanceTeamsSection, createInstanceSoulSection, console, navigator: { platform: "MacIntel" },
-    getBinding, formatChord, activeTabTrigger: () => null,
+    getBinding, formatChord, stableFocusTarget: () => null,
     connectionGeneration: 0, subscribeConnections: () => () => {}, ctx: { openExternal: assert.fail }, openConnections: assert.fail,
     workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A",
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "instances", tabLayerVisible: false,

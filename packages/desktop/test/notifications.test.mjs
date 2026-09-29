@@ -98,7 +98,7 @@ test('a short-window stack reveals its focused content only inside its own scrol
 });
 
 test('shipped shell uses the actual center, clears scope, and treats real notification entry as selection intent', t => {
-  const dom = new JSDOM('<body><input id="terminal"><button id="focus-mode-toggle">Focus</button></body>'); t.after(() => dom.window.close());
+  const dom = new JSDOM('<body><input id="terminal"></body>'); t.after(() => dom.window.close());
   const doc = dom.window.document; let gen = 0, changed;
   const c = { document: doc, window: dom.window, createNotificationCenter, workspaceGeneration: () => gen,
     onWorkspaceChange: fn => { changed = fn; return () => {}; }, currentWorkspace: () => 'workspace',

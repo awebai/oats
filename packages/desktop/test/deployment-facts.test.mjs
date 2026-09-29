@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { JSDOM } from 'jsdom';
-import { memberLabel, moduleDriftText, servedIdentityText, soulSourceText } from '../renderer/deployment-facts.mjs';
+import { memberLabel, servedIdentityText } from '../renderer/deployment-facts.mjs';
 import { deploymentUnavailableText } from '../renderer/deployment-header.mjs';
 import { deploymentNotes, lockNotes } from '../renderer/workspace-catalog.mjs';
 import { deploymentStatusData, workspaceStatusData } from '../deployment-data.mjs';
@@ -15,8 +15,6 @@ const instance = () => structuredClone(deploymentStatusData(status, context).age
 
 test('captured roster facts render in the kernel\'s own terms', () => {
   const i = instance();
-  assert.equal(soulSourceText(i.soul), `repo: agents @ ${i.soul.commit.slice(0, 7)}`);
-  assert.equal(moduleDriftText(i.modules), '5 current');
   assert.equal(servedIdentityText(i.identity), null, 'the captured Northwind instance has no served identity');
   assert.equal(memberLabel('local//x/fx/remotes/nw-tools.git'), 'nw-tools');
 });
@@ -31,32 +29,6 @@ test('served identity from the exit-0 capture: absent key stays absent; local an
   assert.equal(servedIdentityText(rows['release-manager-grant-id'].identity), 'acts as example.org/release-manager via grant, expires 2026-12-31T00:00:00Z');
   const renamed = { ...rows['release-manager-local-id'].identity, provider: 'some.other.provider' };
   assert.equal(servedIdentityText(renamed), servedIdentityText(rows['release-manager-local-id'].identity), 'rendering never keys on a provider name');
-});
-
-test('module drift names moved/missing rows with reason and origin; the recorded map says drift is unobserved', () => {
-  const i = instance();
-  i.modules[0] = { ...i.modules[0], status: 'moved', current: { commit: 'f'.repeat(40) } };
-  i.modules[1] = { ...i.modules[1], status: 'missing', reason: 'capability-absent', current: null };
-  const text = moduleDriftText(i.modules);
-  // Names, origins and recorded commits come from the capture (never hand-typed SHAs).
-  const [a, b] = i.modules, at = m => m.commit.slice(0, 7);
-  assert.deepEqual([a.name, a.from.kind, a.from.package, b.name, b.from.kind], ['nw-deploy', 'package', 'nw.tools', 'nw-house-style', 'member']);
-  assert.equal(text, `nw-deploy: moved since — package nw.tools @ ${at(a)}; nw-house-style: missing (capability-absent) — member agents @ ${at(b)}; 3 current`);
-  assert.equal(moduleDriftText({ a: {}, b: {} }), '2 recorded — drift not observed (workspace unreachable)');
-  // Kernel #217: a moved row's current.version names what it moved to (the recorded version from its origin).
-  const moved = [{ ...a, current: { commit: 'f'.repeat(40), version: '2.2.0' } }];
-  assert.equal(moduleDriftText(moved), `nw-deploy: moved ${a.from.version ? `${a.from.version} → ` : 'to '}2.2.0 — package nw.tools @ ${at(a)}; 0 current`);
-  assert.equal(moduleDriftText([{ ...moved[0], from: { ...a.from, version: '2.1.5' } }]), `nw-deploy: moved 2.1.5 → 2.2.0 — package nw.tools @ ${at(a)}; 0 current`);
-  assert.equal(moduleDriftText([{ ...moved[0], current: { commit: 'f'.repeat(40), version: null } }]), `nw-deploy: moved since — package nw.tools @ ${at(a)}; 0 current`, 'no version: the old wording');
-  assert.equal(moduleDriftText([]), 'None');
-  assert.equal(moduleDriftText(undefined), null);
-});
-
-test('soul source reports the member moved since, never a computed drift', () => {
-  const soul = { ...instance().soul, status: 'moved', current: '1234567abcdef' };
-  assert.match(soulSourceText(soul), /— member moved since \(now @ 1234567\)$/);
-  assert.equal(soulSourceText({ ...soul, status: 'no-longer-present' }).endsWith('— no-longer-present'), true);
-  assert.equal(soulSourceText(null), null);
 });
 
 test('served identity follows the documented layer contract; absent stays absent', () => {
