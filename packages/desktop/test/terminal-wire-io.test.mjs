@@ -27,6 +27,16 @@ test('preload chunks UTF8 at codepoint boundaries, keeps Ctrl bytes; caller over
   assert.equal(bridge.termWrite(1, 'bad').ok, false); assert.equal(calls.length, 0);
 });
 
+test('preload forwards a term:open E_HERDR_REMOVED refusal with its code and message; any other non-terminal code stays a transport failure', async () => {
+  const message = 'Herdr is no longer supported by OATS (removed in 0.31.0); tmux is the only session backend.';
+  for (const [code, expected] of [['E_HERDR_REMOVED', 'E_HERDR_REMOVED'], ['E_HERDR_OTHER', 'E_TERM_TRANSPORT'], ['E_SECRET', 'E_TERM_TRANSPORT']]) {
+    const ipc = { send() {}, invoke: async () => ({ terminalApi: 2, ok: false, code, message }) };
+    const result = await createTerminalBridge(ipc, {}).termOpen({ sessionTarget: { backend: 'herdr' } });
+    assert.equal(result.code, expected, code);
+    if (expected === code) assert.equal(result.message, message);
+  }
+});
+
 test('preload resolving results, copied handles and lease channels do not implement a mutable id->lease alias', async () => {
   const ipc = new EventEmitter(), calls = [];
   ipc.send = (...args) => calls.push(args);

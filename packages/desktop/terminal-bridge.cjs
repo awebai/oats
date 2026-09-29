@@ -20,7 +20,8 @@ function createTerminalBridge(ipc, webUtils) {
     try {
       const r = await ipc.invoke(channel, ...args);
       if (r?.terminalApi !== 2 || typeof r.ok !== 'boolean') return fail('E_TERM_TRANSPORT');
-      if (!r.ok) return typeof r.code === 'string' && /^E_TERM_[A-Z_]+$/.test(r.code) && typeof r.message === 'string' && r.message.length <= 256
+      // Terminal codes, plus the one domain refusal term:open carries: a Herdr target (E_HERDR_REMOVED).
+      if (!r.ok) return typeof r.code === 'string' && /^(E_TERM_[A-Z_]+|E_HERDR_REMOVED)$/.test(r.code) && typeof r.message === 'string' && r.message.length <= 256
         ? { terminalApi: 2, ok: false, code: r.code, message: r.message } : fail('E_TERM_TRANSPORT');
       if (channel === 'term:attachments') {
         if (!Array.isArray(r.paths) || r.paths.length > 16 || r.paths.some(p => typeof p !== 'string' || p.length > 4096)) return fail('E_TERM_TRANSPORT');
