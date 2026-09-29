@@ -1360,10 +1360,13 @@ Not an envelope: `{root, agents, workspace?, problems?, warnings?}`.
   description, dir, instances}`.
 - **Instance rows**: the home's `instance.json` (launch recipe and command
   redacted) plus `home` and `instance` (from the directory; a disagreeing
-  claim is kept as `recordedHome`/`recordedInstance`), `running` (`null` for a
-  home a Herdr-era kernel recorded, with `runtimeState: "unsupported"` and
-  `runtimeError: "E_HERDR_REMOVED: …"`; the recorded `sessionTarget` stays in
-  the row),
+  claim is kept as `recordedHome`/`recordedInstance`), `running` (read from
+  the row's recorded tmux socket and session, never the caller's `$TMUX`;
+  `null` with `runtimeState: "unreachable"` and the tmux error as
+  `runtimeError` when that server cannot be read; `null` for a home a
+  Herdr-era kernel recorded, with `runtimeState: "unsupported"` and
+  `runtimeError: "E_HERDR_REMOVED: …"`, the recorded `sessionTarget` staying
+  in the row),
   `identity` when a provider recorded one, `rollbackIncomplete` and
   `retirePending` when present, and the Desktop facts below.
 - **`modules`** becomes drift rows `{name, from, commit, current, status,

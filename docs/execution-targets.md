@@ -48,8 +48,11 @@ Each instance is a window named after the instance in a tmux session: the
 deployment's `session.tmuxSession`, else `OATS_TMUX_SESSION`, else
 `PI_AGENTS_TMUX_SESSION` (the pre-0.31 variable), else `oats-agents`. Before
 0.31 the default was `pi-agents`; a home launched then keeps the `pi-agents`
-session it recorded, and `oats status` reads each home in its recorded
-session. The environment variables are read when the spawn runs, and `oats
+session it recorded, and `oats status` reads each home on its recorded tmux
+socket and session, never the caller's `$TMUX` server: a caller outside the
+agents' tmux (ssh, cron, a plain terminal) sees the same liveness as `session
+inspect`. A recorded server that cannot be read gives `running: null` with
+`runtimeState: "unreachable"`. The environment variables are read when the spawn runs, and `oats
 inspect --json` reports the session a new spawn would open in as `session`
 (`{tmuxSession}`). A spawn refuses an instance name that is a live window in the
 session it would open in (`E_INSTANCE_NAME_TAKEN`); a live window of that name
