@@ -16,7 +16,7 @@ function http() {
   const start = source.indexOf('const send = (res, code, body, type'), end = source.indexOf('\nserver.on("error",');
   const c = context(), calls = [];
   const deps = { createServer: fn => fn, eventsFailure, instanceEventsRequest: createInstanceEventsBoundary({ invoke: async (_cli, opts) => { calls.push(opts); return envelope(); } }),
-    workspaces: () => [c.workspace], cliState: c.cli, cliProbeGeneration: 1, snapshot: { byWs: new Map([['ws', { instances: c.instances }]]) } };
+    workspaces: () => [c.workspace], ctxs: ['/Users/me/work'], cliState: c.cli, cliProbeGeneration: 1, snapshot: { byWs: new Map([['ws', { instances: c.instances }]]) } };
   const handler = new Function(...Object.keys(deps), `${source.slice(start, end)}\nreturn server;`)(...Object.values(deps));
   return { c, calls, async request({ url = '/api/instance-events?ws=ws', method = 'POST', body = JSON.stringify(request()), headers = { host: 'localhost:4820', origin: 'http://localhost:4820' } } = {}) {
     const req = new EventEmitter(); Object.assign(req, { url, method, headers }); let result;
@@ -37,7 +37,12 @@ test('shipped POST handler: Host/Origin/method/query/16KiB gates precede any pro
 test('shipped handler refuses old CLI/remote/extra paths/flags/write actions without fallback', async () => {
   const h = http(); h.c.cli.eventsApi = 1;
   assert.equal((await h.request()).body.reason.code, 'E_EVENTS_UNAVAILABLE'); h.c.cli.eventsApi = 2;
-  h.c.workspace.remote = true; assert.equal((await h.request()).body.reason.code, 'unsupported-remote-operation'); h.c.workspace.remote = false;
+  // A local selector never resolves in a remote workspace; a remote row without this machine's remote entry is refused.
+  Object.assign(h.c.workspace, { remote: true, server: 'build', name: 'Build box' }); assert.equal((await h.request()).body.reason.code, 'E_SESSION_UNKNOWN');
+  h.c.instances[0].server = 'build'; h.c.instances[0].addressable = true;
+  const unroutable = (await h.request({ body: JSON.stringify(request({ selector: { ...request().selector, server: 'build' } })) })).body.reason;
+  assert.equal(unroutable.code, 'unsupported-remote-operation'); assert.equal(unroutable.message, "This computer's OATS can't route this to Build box. Update OATS here.");
+  h.c.workspace.remote = false; delete h.c.workspace.server; delete h.c.instances[0].server;
   for (const bad of [{ ...request(), action: 'clear' }, { ...request(), action: 'watch' }, { ...request(), home: '/log' }, { ...request(), since: 'today' }, { ...request(), limit: 500 }]) {
     assert.equal((await h.request({ body: JSON.stringify(bad) })).body.reason.code, 'E_BAD_ARGS');
   }

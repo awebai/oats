@@ -1,5 +1,6 @@
 /** K7 API2 consumer input contract. Pure data validation; no log/kernel IO. */
 import { absolute, record } from './readiness-contract.mjs';
+import { remoteReason } from './remote-address.mjs';
 const exact = (v, keys) => record(v) && Object.keys(v).every(k => keys.includes(k));
 const name = v => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(v);
 const text = (v, max = 4096) => typeof v === 'string' && !!v && v.length <= max && !/[\x00-\x1f\x7f]/.test(v);
@@ -10,11 +11,11 @@ export const eventsTimestamp = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}
 export const eventsLimit = v => EVENTS_LIMITS.includes(v) ? v : null;
 export const eventsSupported = cli => cli?.ok === true && absolute(cli.bin) && cli.eventsApi === 2
   && Array.isArray(cli.features) && cli.features.includes('instance-events-2');
-/** Renderer supplies a qualified local selector, never a home or log path. */
+/** Renderer supplies a qualified selector (a server id for a remote row), never a home or log path. */
 export function eventsSelector(v) {
   return exact(v, ['instance', 'agent', 'agentsRoot', 'server']) && name(v.instance) && name(v.agent)
-    && absolute(v.agentsRoot) && v.server === null
-    ? { instance: v.instance, agent: v.agent, agentsRoot: v.agentsRoot, server: null } : null;
+    && absolute(v.agentsRoot) && (v.server === null || typeof v.server === 'string' && /^[a-z0-9][a-z0-9-]{0,63}$/.test(v.server))
+    ? { instance: v.instance, agent: v.agent, agentsRoot: v.agentsRoot, server: v.server } : null;
 }
 export function eventsRequest(v) {
   if (!exact(v, ['action', 'selector', 'limit']) || v.action !== 'read') return null;
@@ -40,7 +41,7 @@ const errors = {
   E_NOT_IN_SCOPE: 'The selected instance is outside this workspace scope.',
   E_TARGET_CHANGED: 'The workspace, instance or CLI changed. Load activity again.',
   'cli-unavailable': 'Choose a compatible installed OATS CLI.',
-  'unsupported-remote-operation': 'Activity is local only; no remote-to-local substitution.',
+  'unsupported-remote-operation': "This computer's OATS can't route this to the server. Update OATS here.",
   E_UNSUPPORTED_MODE: 'Activity is unavailable for this execution mode; no classic fallback.',
   'unsupported-action': 'This CLI cannot read activity for the selected execution mode.',
   E_BUSY: 'Two activity reads are already in progress. Retry when one finishes.',
@@ -50,8 +51,11 @@ const errors = {
   E_CLI_PROTOCOL: 'The CLI returned invalid or mismatched activity data.',
   E_CLI_FAILED: 'The installed CLI could not complete the activity read.',
 };
-export function eventsFailure(code, target = null) {
+/** `reason`: a remote read's reason (remote-address.mjs), kept only when it validates. */
+export function eventsFailure(code, target = null, reason = null) {
   if (!Object.hasOwn(errors, code)) code = 'E_CLI_FAILED';
   return { instanceEventsViewApi: 1, status: 'unavailable', target: eventsTarget(target), data: null,
-    reason: { code, message: errors[code] } };
+    reason: remoteReason(reason) || { code, message: errors[code] } };
 }
+/** The fixed sentence for an activity code: the headline of a host refusal outside the remote table. */
+export const eventsMessage = code => eventsFailure(code).reason.message;

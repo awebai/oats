@@ -55,7 +55,7 @@ export async function proxyInstanceEvents(event, path, opts, { rendererURL, conn
     const same = target && target.workspace === url.searchParams.get('ws')
       && Object.keys(input.selector).every(k => target.selector[k] === input.selector[k]);
     if (value.target !== null && !same) return reply('E_CLI_PROTOCOL');
-    if (value.status === 'unavailable') return { ok: response.ok, status: response.status, body: eventsFailure(value.reason?.code, target) };
+    if (value.status === 'unavailable') return { ok: response.ok, status: response.status, body: eventsFailure(value.reason?.code, target, value.reason) };
     const data = same && eventsData(value.data, target, input.limit, { publicView: true });
     if (!response.ok || value.status !== 'available' || !data) return reply('E_CLI_PROTOCOL');
     return { ok: true, status: response.status, body: { instanceEventsViewApi: 1, status: 'available', target, data, reason: null } };

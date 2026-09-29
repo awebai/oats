@@ -1272,7 +1272,7 @@ const server = createServer(async (req, res) => {
         const request = await readStrictBody(req, 16384);
         const getContext = () => {
           const workspace = workspaces().find(w => w.id === url.searchParams.get('ws'));
-          return { workspace, cli: cliState, epoch: cliProbeGeneration,
+          return { workspace, cli: cliState, epoch: cliProbeGeneration, localCwd: ctxs[0],
             instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
         };
         return send(res, 200, await instanceEventsRequest(request, getContext));

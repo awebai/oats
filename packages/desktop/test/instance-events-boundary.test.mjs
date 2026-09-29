@@ -23,9 +23,10 @@ for (const [label, alter, code] of [
   ['duplicate exact selection', c => c.instances.push({ ...c.instances[0] }), 'E_AMBIGUOUS_INSTANCE'],
   ['other root', c => c.instances[0].agentsRoot = '/other/agents', 'E_SESSION_UNKNOWN'],
   ['wrong home', c => c.instances[0].home = '/other/instance', 'E_HOME_MISMATCH'],
-  ['remote workspace', c => c.workspace.remote = true, 'unsupported-remote-operation'],
-  ['server workspace', c => c.workspace.server = 'other', 'unsupported-remote-operation'],
-  ['remote instance', c => c.instances[0].remote = true, 'unsupported-remote-operation'],
+  // A local selector never resolves against a remote workspace or row (remote reads: remote-events.test.mjs).
+  ['local selector, remote workspace', c => c.workspace.remote = true, 'E_SESSION_UNKNOWN'],
+  ['local selector, server workspace', c => c.workspace.server = 'other', 'E_SESSION_UNKNOWN'],
+  ['local selector, remote-marked row', c => c.instances[0].remote = true, 'E_SESSION_UNKNOWN'],
   ['captured instance', c => c.instances[0].captured = true, 'E_UNSUPPORTED_MODE'],
   ['captured workspace', c => c.workspace.captured = true, 'E_UNSUPPORTED_MODE'],
   ['unknown CLI', c => c.cli.ok = false, 'cli-unavailable'],

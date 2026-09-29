@@ -4,6 +4,7 @@ import { postJson, workspaceGeneration } from './views/common.mjs';
 import { cliStatus, onCliChange } from './views/cli-status.mjs';
 import { absolute } from './readiness-contract.mjs';
 import { eventsSelector, eventsSupported, eventsTarget, eventsFailure, eventsTimestamp } from './instance-events-contract.mjs';
+import { readingFrom, remoteReason } from './remote-address.mjs';
 import { eventsData, eventsIncomplete, eventIncarnation, EVENT_TITLES } from './instance-events-data.mjs';
 export const instanceEventsCSS = `
 .events-view { color:var(--fg); margin-top:10px; padding-top:10px; border-top:1px solid var(--border); font-size:11px; line-height:1.5; }
@@ -55,9 +56,11 @@ export function createInstanceEventsView(host, { ctx, selection, owner = () => t
   }
   function selected() {
     const s = selection?.(), selector = eventsSelector(s?.selector);
-    if (!s || s.remote || !selector || !s.workspace || !absolute(s.home) || s.home.split('/').at(-1) !== selector.instance
+    // A remote row is read on its own machine; the server admits it (addressable, routed), not this view.
+    if (!s || !selector || !s.workspace || !absolute(s.home) || s.home.split('/').at(-1) !== selector.instance
       || !(s.incarnation == null || eventsTimestamp(s.incarnation))) return null;
-    return { workspace: s.workspace, selector, home: s.home, incarnation: s.incarnation ?? null };
+    return { workspace: s.workspace, selector, home: s.home, incarnation: s.incarnation ?? null,
+      ...(selector.server ? { serverLabel: typeof s.serverLabel === 'string' && s.serverLabel ? s.serverLabel : selector.server } : {}) };
   }
   const selectedKey = s => s ? JSON.stringify([generation(), connectionGeneration(), s]) : null;
   const cliKey = () => { const c = cli(); return JSON.stringify([cliEpoch, c?.ok, c?.bin, c?.version, c?.eventsApi, c?.features, c?.probedAt]); };
@@ -126,13 +129,14 @@ export function createInstanceEventsView(host, { ctx, selection, owner = () => t
     sync();
     if (!validTarget() || !eventsSupported(cli())) return;
     const selectedAtStart = selected(), selectedIdentity = key, cliIdentity = cliKey(), ticket = ++serial;
-    attempted = true; busy = true; stale = !!value; message = 'Reading reported lifecycle activity…'; controls();
+    attempted = true; busy = true; stale = !!value;
+    message = selectedAtStart.serverLabel ? readingFrom(selectedAtStart.serverLabel) : 'Reading reported lifecycle activity…'; controls();
     const owns = () => alive && serial === ticket && validTarget() && selectedKey(selected()) === selectedIdentity && cliKey() === cliIdentity;
     try {
       const response = await postJson(ctx, `/api/instance-events?ws=${encodeURIComponent(selectedAtStart.workspace)}`, { action: 'read', selector: selectedAtStart.selector, limit: 100 });
       if (!owns()) return;
       if (response?.instanceEventsViewApi !== 1) throw { code: 'E_CLI_PROTOCOL' };
-      if (response.status !== 'available') throw { code: response.reason?.code };
+      if (response.status !== 'available') throw { code: response.reason?.code, reason: remoteReason(response.reason) };
       const target = eventsTarget(response.target);
       if (!target || target.workspace !== selectedAtStart.workspace || target.home !== selectedAtStart.home || target.incarnation !== selectedAtStart.incarnation
         || Object.keys(selectedAtStart.selector).some(k => target.selector[k] !== selectedAtStart.selector[k])) throw { code: 'E_CLI_PROTOCOL' };
@@ -142,7 +146,9 @@ export function createInstanceEventsView(host, { ctx, selection, owner = () => t
       render();
     } catch (error) {
       if (!owns()) return;
-      stale = !!value; message = `${eventsFailure(error?.code).reason.message}${value ? ' Last observation retained — refresh required.' : ''}`;
+      // A remote read's reason: the host's headline, then its code and message.
+      const reason = error?.reason || eventsFailure(error?.code).reason;
+      stale = !!value; message = `${reason.message}${reason.remote && reason.code !== 'unsupported-remote-operation' ? ` (${reason.detail ? `${reason.code}: ${reason.detail}` : reason.code})` : ''}${value ? ' Last observation retained — refresh required.' : ''}`;
     } finally { if (owns()) { busy = false; controls(); } }
   }
   load.addEventListener('click', () => { if (!load.disabled) void read(); });
