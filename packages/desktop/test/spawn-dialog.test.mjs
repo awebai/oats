@@ -268,6 +268,22 @@ test('a launch configuration is listed for this soul and sent only when chosen',
   await u.change('.flaunch', 'fast'); assert.equal(last(u).launchConfig, 'fast');
 });
 
+test('the harness, model and launch hints describe the preview for the choices on screen only: blank while a new preview is in flight, like the name hint (desktop/loading-states item 9)', async t => {
+  const gate = deferred(); let hold = false;
+  const u = await mountSpawn(t, { previewGate: () => hold ? gate.promise : undefined });
+  await u.open();
+  assert.equal(u.text('.spawn-run-hint'), 'Launches Pi with its own default model.'); assert.equal(u.text('.spawn-model-default'), "Pi's default model");
+  assert.equal(u.q('.spawn-run .spawn-choice-trigger .spawn-trigger-tag')?.textContent, 'default');
+  hold = true; await u.change('.fyolo', 'true'); // a new choice: the preview on screen is for another spawn
+  assert.equal(u.text('.spawn-run-hint'), '', 'no launch sentence from the previous choices');
+  assert.equal(u.text('.spawn-model-default'), ''); assert.equal(u.text('.spawn-input-tag'), '');
+  assert.equal(u.q('.spawn-run .spawn-choice-trigger .spawn-trigger-tag'), null, 'no "default" tag from the previous preview');
+  assert.equal(u.q('.spawn-run .spawn-choice-trigger').getAttribute('aria-label'), 'Harness: default (default)');
+  gate.resolve(); await settle(20);
+  assert.equal(u.text('.spawn-run-hint'), 'Launches Pi with its own default model.', 'the hint returns with the matching preview');
+  assert.equal(u.text('.spawn-model-default'), "Pi's default model"); assert.equal(u.text('.spawn-input-tag'), 'default');
+});
+
 test('permissions default to what the kernel reports and are sent only when chosen', async t => {
   const u = await mountSpawn(t);
   await u.open(); await u.type('.fpurpose', 'api-v2');
