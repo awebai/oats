@@ -1,4 +1,4 @@
-// Remote parity (0.32.0): every routed ssh call shares a per-user control
+// Remote parity (0.31.0): every routed ssh call shares a per-user control
 // master and detects a dead link; the version probe is asked once per process
 // per server and target; remote roster rows carry the facts a local row has.
 // The ssh contract is exercised with fake transports; the live proof over
@@ -22,7 +22,7 @@ test.after(() => {
   rmSync(base, { recursive: true, force: true });
 });
 
-const PROBE = { schemaVersion: 1, name: "@awebai/oats", version: "0.32.0", desktopApi: 1, harnesses: ["pi"], sessionBackends: ["tmux"], launchOptions: [], remote: ["session"], features: ["harness"] };
+const PROBE = { schemaVersion: 1, name: "@awebai/oats", version: "0.31.0", desktopApi: 1, harnesses: ["pi"], sessionBackends: ["tmux"], launchOptions: [], remote: ["session"], features: ["harness"] };
 const target = { sshHost: "h", workspace: "/w", oatsPath: "oats" };
 
 /** A transport that answers the version probe and counts it. */
@@ -434,12 +434,12 @@ test("routed readiness, instance events, git, diff, stop and retire plans: run o
 
 test("routed Desktop reads and plans: a host without the feature is refused before anything is sent; a bad home is refused here or relayed from the host", () => {
   for (const [feature, argv] of SURFACE_CALLS) {
-    const probe = { ...SURFACE_PROBE, version: "0.31.0", features: SURFACE_PROBE.features.filter((f) => f !== feature) };
+    const probe = { ...SURFACE_PROBE, version: "0.30.3", features: SURFACE_PROBE.features.filter((f) => f !== feature) };
     const { env, host } = surfaceSetup(`old-${feature}`, probe);
     const r = cli(env, argv);
     assert.equal(r.status, 1, argv.join(" "));
     assert.equal(r.json().error.code, "E_REMOTE_INCOMPATIBLE");
-    assert.match(r.json().error.message, new RegExp(`remote oats 0\\.31\\.0 at build-host does not advertise ${feature}`));
+    assert.match(r.json().error.message, new RegExp(`remote oats 0\\.30\\.3 at build-host does not advertise ${feature}`));
     const verb = argv[0] === "instance" ? `instance ${argv[1]}` : argv[0];
     assert.equal(host.calls().filter((c) => c.includes(` ${verb} `) && !c.includes("status --json")).length, 0, `nothing sent: ${host.calls().join("\n")}`);
   }

@@ -51,7 +51,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
   accepts. A host without the `harness` feature lists `runtimes` instead.
 - `remote` is the routed surface: the commands `--server <id>` sends to a
   registered server, plus `roster`. The Desktop checks the execution host's
-  probe before a routed mutation. From 0.32: `readiness`, `instance-events`,
+  probe before a routed mutation. From 0.31: `readiness`, `instance-events`,
   `instance-git` and `lifecycle-plans` name the
   [routed reads and plans](#routed-reads-and-plans).
 - In text mode the command prints `@awebai/oats <version> (desktop API v1)`.
@@ -1412,9 +1412,9 @@ route target:
   `identityAddress`, `teams`, `startedAt`, `createdAt`, `model`,
   `runtimeState`, `parentInstance`, `siblingInstance`, `relation`,
   `relativeTo` and `spawnOrigin` are always present, `null` when the host
-  does not supply them (a host before 0.32, a fact it never recorded, or a
+  does not supply them (a host before 0.31, a fact it never recorded, or a
   saved route the host no longer lists). Nothing is derived on this side.
-- **`addressable`** (0.32): `true` for every row the host reports. Routed
+- **`addressable`** (0.31): `true` for every row the host reports. Routed
   session and lifecycle commands reach it by `--home`, or by name when the
   name is unique on the host ([addressing](servers.md#run-there); a shared
   name is `E_AMBIGUOUS` with `error.details.candidates: [{agent, home}]`). A
@@ -1426,7 +1426,7 @@ route target:
   `runtimeError` are as the host reports them.
 
 <a id="routed-reads-and-plans"></a>
-### Routed reads and plans (`--server`, 0.32)
+### Routed reads and plans (`--server`, 0.31)
 
 The Desktop's per-instance reads and the lifecycle plans run on the
 instance's own machine: the local command, with `--server <id>` added.
