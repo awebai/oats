@@ -38,7 +38,9 @@ export const computerTeamsCSS = `
 .computer-teams .ct-title { margin:0; color:var(--fg); font-size:17px; font-weight:700; line-height:1.3; }
 .computer-teams .ct-lead { margin:0; color:var(--muted); font-size:12.5px; line-height:1.45; }
 .computer-teams .ct-section { display:flex; flex-direction:column; gap:12px; min-width:0; }
-.computer-teams .ct-section + .ct-section { margin-top:6px; }
+/* Sections (and any problem above them) stack at the page's own gap, so the second section sits as far
+   below the first as the first sits below the page head. */
+.computer-teams .ct-body { display:flex; flex-direction:column; gap:18px; min-width:0; }
 .computer-teams .ct-section-head { display:flex; align-items:center; gap:8px; }
 .computer-teams .ct-section-title { margin:0; color:var(--muted); font-size:10.5px; font-weight:650; letter-spacing:.065em; text-transform:uppercase; }
 .computer-teams .ct-scope { display:inline-flex; align-items:center; gap:5px; height:20px; padding:0 7px; border:1px solid var(--border); border-radius:5px; background:var(--surface); color:var(--muted); font-size:10.5px; font-weight:600; white-space:nowrap; }

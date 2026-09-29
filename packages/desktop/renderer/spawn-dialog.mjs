@@ -75,6 +75,7 @@ export const spawnDialogCSS = `
 .spawn-core-row:last-child { border-bottom:0; }
 .spawn-core-row .spawn-core-layer { flex:none; width:84px; color:var(--muted); }
 .spawn-core-row .mono, .spawn-core-row .muted { min-width:0; overflow-wrap:anywhere; }
+.spawn-core-row .muted { color:var(--muted); }
 .spawn-cap-list { display:flex; flex-direction:column; gap:5px; font-size:12px; color:var(--fg); }
 .spawn-cap-row { display:flex; align-items:center; gap:8px; min-width:0; }
 .spawn-cap-row .mono { flex:1; min-width:0; overflow-wrap:anywhere; }
@@ -313,7 +314,7 @@ export function composePreviewModules(doc, modules) {
   const coreBox = el('div', undefined, 'spawn-core-box');
   for (const [layer, label] of [['knowledge', 'Knowledge'], ['messaging', 'Messaging'], ['tasks', 'Tasks']]) {
     const row = el('span', undefined, 'spawn-core-row'), m = rows.find(x => x.layer === layer);
-    row.append(el('span', label, 'spawn-core-layer'), m ? el('span', `${m.name}${m.from?.version ? ` ${m.from.version}` : ''}`, 'mono') : el('span', 'none', 'muted'));
+    row.append(el('span', label, 'spawn-core-layer'), m ? el('span', `${m.name}${m.from?.version ? ` ${m.from.version}` : ''}`, 'mono') : el('span', 'None', 'muted')); // an empty slot, not a provider named "none"
     coreBox.append(row);
   }
   const capsList = el('div', undefined, 'spawn-cap-list');

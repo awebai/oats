@@ -131,7 +131,7 @@ test('the preview column: a skeleton with aria-busy while reading, then the fact
   assert.equal(u.style(harness.querySelector('.runtime-badge')).width, '16px');
   // The captured kernel's modules[] (projected as names and sources): Core capabilities and the Capabilities list.
   assert.equal(u.hidden(u.q('.spawn-preview-core')), false); assert.equal(u.q('.spawn-preview-core h3').textContent, 'Core capabilities');
-  assert.deepEqual([...u.q('.spawn-preview-core').querySelectorAll('.spawn-core-row')].map(row => row.textContent), ['Knowledgeoats.okf 2.1.3', 'Messagingnone', 'Tasksnone']);
+  assert.deepEqual([...u.q('.spawn-preview-core').querySelectorAll('.spawn-core-row')].map(row => row.textContent), ['Knowledgeoats.okf 2.1.3', 'MessagingNone', 'TasksNone']);
   assert.equal(u.hidden(u.q('.spawn-preview-caps')), false); assert.equal(u.q('.spawn-preview-caps h3').textContent, `Capabilities · ${data.modules.length}`);
   assert.deepEqual([...u.q('.spawn-preview-caps').querySelectorAll('.spawn-cap-row')].map(row => row.dataset.module), data.modules.map(m => m.name).sort());
   // A kernel without modules[]: neither section exists, not even a title.
@@ -189,7 +189,9 @@ test('Core capabilities and Capabilities come from the preview\'s modules only',
   const { core, caps } = composePreviewModules(doc, modules);
   assert.equal(core[0].textContent, 'Core capabilities');
   assert.deepEqual([...core[1].querySelectorAll('.spawn-core-row')].map(row => [row.firstChild.textContent, row.lastChild.textContent, row.lastChild.className]),
-    [['Knowledge', 'oats.okf 2.1.3', 'mono'], ['Messaging', 'none', 'muted'], ['Tasks', 'none', 'muted']]);
+    [['Knowledge', 'oats.okf 2.1.3', 'mono'], ['Messaging', 'None', 'muted'], ['Tasks', 'None', 'muted']]);
+  // An empty slot reads as an absence (muted "None"), never as a provider named "none".
+  assert.match(spawnDialogCSS, /\.spawn-core-row \.muted \{ color:var\(--muted\); \}/);
   assert.equal(caps[0].textContent, 'Capabilities · 5');
   assert.deepEqual([...caps[1].querySelectorAll('.spawn-cap-row')].map(row => [row.querySelector('.mono').textContent, row.querySelector('.spawn-cap-source').textContent]),
     [['nw-deploy', 'package nw.tools 0.4.0'], ['nw-house-style', 'agents · latest'], ['nw-release-tooling', 'agents · latest'], ['oats.core', 'package oats.framework 1.1.3'], ['oats.okf', 'package oats.okf 2.1.3']]);

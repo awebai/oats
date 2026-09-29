@@ -84,6 +84,9 @@ test('the board\'s measures and the shared control rules, in the page\'s own CSS
   assert.match(rule('.workspace-discovery[data-tab=teams] > :has(> .computer-teams)'), /max-width:1120px/, 'the board is one wide column (the box holding the page)');
   assert.match(rule('.computer-teams .ct-title'), /font-size:17px; font-weight:700/); assert.match(rule('.computer-teams .ct-lead'), /font-size:12.5px/);
   assert.match(rule('.oats-view .computer-teams button.ct-add'), /height:32px;.*border-radius:7px; font-size:12.5px/);
+  // The sections stack at the page's gap: the second as far below the first as the first below the head.
+  assert.match(rule('.computer-teams'), /gap:18px/); assert.match(rule('.computer-teams .ct-body'), /display:flex; flex-direction:column; gap:18px/);
+  assert.doesNotMatch(computerTeamsCSS, /\.ct-section \+ \.ct-section/, 'no tighter margin of its own');
   assert.match(rule('.computer-teams .ct-section-title'), /font-size:10.5px; font-weight:650; letter-spacing:.065em; text-transform:uppercase/);
   assert.match(rule('.computer-teams .ct-scope'), /height:20px;.*border:1px solid var\(--border\); border-radius:5px; background:var\(--surface\); color:var\(--muted\); font-size:10.5px; font-weight:600/);
   assert.match(rule('.computer-teams .ct-scope.dashed'), /border:1px dashed var\(--tree-line\)/);
