@@ -2,14 +2,17 @@
  * scrubbed instance environment. Only the kernel's JSON crosses back; a
  * refusal is its bounded error envelope (code + message, plus onboarding's
  * rolledBack flag), never stderr, argv, stacks or details objects.
- *   capabilities → `oats capabilities --dir D --json`        (capabilitiesApi 1)
- *   souls        → `oats souls --dir D --json`               (soulsApi 1, the spawn catalog)
+ *   capabilities → `oats capabilities --dir D [--max-age S] --json`  (capabilitiesApi 1)
+ *   souls        → `oats souls --dir D [--max-age S] --json`         (soulsApi 1, the spawn catalog)
  *   sync         → `oats sync --dir D --json`                (syncApi 1)
  *   onboard      → `oats onboard DIR --workspace REF --json` (onboardApi 2)
  * There is no package approval (packages-no-approval): declaring a package
- * is the trust decision, so every success exits 0. */
+ * is the trust decision, so every success exits 0. `--max-age` (feature
+ * observe-max-age) belongs to the two reads only and reaches argv only when
+ * the probe declares the feature; cliWorkspace drops it otherwise. */
 import { execFile } from 'node:child_process';
 import { isAbsolute, resolve } from 'node:path';
+import { OBSERVE_MAX_AGE_FEATURE, validMaxAge } from './renderer/deployment-contract.mjs';
 
 export const WORKSPACE_READ_TIMEOUT = 60_000;
 export const WORKSPACE_WRITE_TIMEOUT = 300_000; // discovery reads every member remote
@@ -50,20 +53,32 @@ export function workspaceGate(cli) {
 export function workspaceArgv(options) {
   if (!record(options) || !WORKSPACE_ACTIONS.includes(options.action)) return null;
   const { action } = options;
-  const allowed = { capabilities: ['action', 'context'], souls: ['action', 'context'], sync: ['action', 'context'], onboard: ['action', 'dir', 'workspace'] }[action];
+  const allowed = { capabilities: ['action', 'context', 'maxAge'], souls: ['action', 'context', 'maxAge'], sync: ['action', 'context'], onboard: ['action', 'dir', 'workspace'] }[action];
   if (Object.keys(options).some(key => !allowed.includes(key))) return null;
   if (action === 'onboard') {
     if (!absolute(options.dir) || !validWorkspaceRef(options.workspace)) return null;
     return { argv: ['onboard', options.dir, '--workspace', options.workspace, '--json'], cwd: options.dir, timeout: WORKSPACE_WRITE_TIMEOUT };
   }
   if (!absolute(options.context)) return null;
-  if (action === 'capabilities' || action === 'souls') return { argv: [action, '--dir', options.context, '--json'], cwd: options.context, timeout: WORKSPACE_READ_TIMEOUT };
+  if (action === 'capabilities' || action === 'souls') {
+    if (!validMaxAge(options.maxAge)) return null;
+    const maxAge = options.maxAge === undefined ? [] : ['--max-age', String(options.maxAge)];
+    return { argv: [action, '--dir', options.context, ...maxAge, '--json'], cwd: options.context, timeout: WORKSPACE_READ_TIMEOUT };
+  }
   return { argv: ['sync', '--dir', options.context, '--json'], cwd: options.context, timeout: WORKSPACE_WRITE_TIMEOUT };
 }
 
 export function cliWorkspace(cli, options, io = {}) {
   const gate = workspaceGate(cli);
   if (gate) return Promise.resolve(gate);
+  // An invalid value is a bad request whatever the kernel. A valid one on a kernel without
+  // observe-max-age names a flag that does not exist there: drop it (on a copy; the caller's
+  // request is not ours to edit) so the read runs flagless. Only the two reads take it, so the
+  // drop never lets a mutating verb past workspaceArgv's allowlist.
+  if (record(options) && Object.hasOwn(options, 'maxAge')) {
+    if (!validMaxAge(options.maxAge)) return Promise.resolve(workspaceFailure('E_BAD_ARGS'));
+    if (!cli.features.includes(OBSERVE_MAX_AGE_FEATURE) && ['capabilities', 'souls'].includes(options.action)) { const { maxAge, ...rest } = options; options = rest; }
+  }
   const plan = workspaceArgv(options);
   if (!plan) return Promise.resolve(workspaceFailure('E_BAD_ARGS'));
   const env = { ...(io.env ?? process.env) };

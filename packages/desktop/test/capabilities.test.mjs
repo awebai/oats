@@ -38,6 +38,12 @@ test('scope boundary keeps same-named souls distinct, rejects foreign homes and 
   await capabilityRequest({ action: 'inspect', selector: { soul: 'dev', agentsRoot: agents[1].agentsRoot } }, { ...options, workspace: { ...workspace, remote: true, server: 'hetzner', registrationPresent: true } });
   assert.equal(calls.at(-1).server, 'hetzner'); assert.equal(calls.at(-1).context, '/team/two'); assert.equal(calls.at(-1).localCwd, '/local');
   assert.ok(calls.every(call => ['inspect', 'run'].includes(call.action)), 'only read and provider-operation calls reach the CLI');
+  // observe-max-age contract: the probe's features travel so the adapter can decide on --max-age; without a
+  // configured max-age the key is absent, and every inspect result reports when it was observed.
+  assert.ok(calls.every(call => call.features === cli.features && !Object.hasOwn(call, 'maxAge')));
+  const observed = await capabilityRequest({ action: 'inspect', selector: { home } }, options);
+  assert.match(observed.observedAt, /^\d{4}-\d{2}-\d{2}T.*Z$/); assert.equal(observed.refreshing, false);
+  await assert.rejects(capabilityRequest({ action: 'run', selector: { home }, operation: 'knowledge:reindex', refresh: true }, options), { code: 'E_BAD_ARGS' });
 });
 
 test('adapter: inspect and provider operations only — soul set and use are refused before any CLI call', async () => {

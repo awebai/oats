@@ -1,6 +1,12 @@
 /** POST /api/workspace-sync — the Desktop's workspace-v2 sync surface.
- *   { action: "read" }  → `oats capabilities` (the catalog table)
- *   { action: "sync" }  → `oats sync` (resolve, fetch and write the lock)
+ *   { action: "read", refresh? } → `oats capabilities` (the catalog table)
+ *   { action: "sync" }           → `oats sync` (resolve, fetch and write the lock)
+ * A read answers from the capability catalog (server/capability-catalog.mjs)
+ * when one is given and the deployment's workspace status is already
+ * observed: the held table comes back at once, with `observedAt` (when the
+ * kernel observed the remotes) and `refreshing` (a re-read is running behind
+ * it); refresh:true forces a live kernel read. Without a catalog, or before
+ * the first observation, the read goes straight to the kernel as before.
  * Results RESOLVE with a stable shape; nothing here re-derives kernel logic.
  * There is no package approval: declaring a package in `packages:` is the
  * trust decision (packages-no-approval). */
@@ -25,7 +31,15 @@ const kernelRefusal = result => typeof result?.reason?.code === 'string' && !LOC
   && typeof result.reason.message === 'string';
 const cliStamp = cli => JSON.stringify([cli?.bin ?? null, cli?.version ?? null]);
 
-export function createWorkspaceSyncBoundary({ invoke = cliWorkspace } = {}) {
+const observedStamp = (document, now) => {
+  const stamp = document?.result?.observation?.observedAt;
+  return typeof stamp === 'string' ? stamp : new Date(now()).toISOString();
+};
+
+/** `catalog` is a capability catalog; `observed(deployment)` yields that
+ * deployment's projected workspace status (the catalog key) or null; `maxAge`
+ * (seconds) is what a non-forced miss may accept from the kernel's cache. */
+export function createWorkspaceSyncBoundary({ invoke = cliWorkspace, catalog = null, observed = () => null, maxAge, now = () => Date.now() } = {}) {
   const running = new Set();              // deployments with a sync in flight
   const reads = new Map();                // stamp → pending catalog read (coalesced)
 
@@ -38,15 +52,28 @@ export function createWorkspaceSyncBoundary({ invoke = cliWorkspace } = {}) {
   function refusal(result) {
     return { workspaceSyncApi: WORKSPACE_SYNC_API, status: 'refused', report: null, capabilities: null, reason: result.reason };
   }
-  async function read(ctx) {
+  async function heldRead(ctx, workspaceStatus, refresh) {
+    const entry = await catalog.read(ctx.deployment, ctx.cli, workspaceStatus, refresh ? { refresh: true } : maxAge !== undefined ? { maxAge } : {});
+    const { refreshing } = entry;
+    // A stale table with the failure next to it beats an empty view.
+    if (entry.capabilities) return { workspaceSyncApi: WORKSPACE_SYNC_API, status: 'ok', report: null, capabilities: entry.capabilities,
+      reason: entry.reason ? { code: entry.reason.code, message: entry.reason.message } : null, observedAt: entry.observedAt, refreshing };
+    const reason = entry.reason || { code: 'E_CLI_FAILED', message: '', kernel: false };
+    const failure = reason.kernel ? refusal({ reason: { code: reason.code, message: reason.message } }) : syncFailure(reason.code);
+    return { ...failure, observedAt: null, refreshing };
+  }
+  async function read(ctx, refresh) {
+    const workspaceStatus = catalog ? observed(ctx.deployment) : null;
+    if (catalog && workspaceStatus) return heldRead(ctx, workspaceStatus, refresh);
     const key = JSON.stringify([ctx.deployment, cliStamp(ctx.cli)]);
     if (!reads.has(key)) {
-      reads.set(key, Promise.resolve().then(() => invoke(ctx.cli, { action: 'capabilities', context: ctx.deployment }))
+      const options = { action: 'capabilities', context: ctx.deployment, ...(refresh ? { maxAge: 0 } : maxAge !== undefined ? { maxAge } : {}) };
+      reads.set(key, Promise.resolve().then(() => invoke(ctx.cli, options))
         .then(result => {
-          if (!result?.ok) return kernelRefusal(result) ? refusal(result) : syncFailure(result?.reason?.code || 'E_CLI_FAILED');
-          try { return { workspaceSyncApi: WORKSPACE_SYNC_API, status: 'ok', report: null, capabilities: capabilitiesData(result.document), reason: null }; }
-          catch { return syncFailure('E_CLI_PROTOCOL'); }
-        }, () => syncFailure('E_CLI_FAILED'))
+          if (!result?.ok) return { ...(kernelRefusal(result) ? refusal(result) : syncFailure(result?.reason?.code || 'E_CLI_FAILED')), observedAt: null, refreshing: false };
+          try { return { workspaceSyncApi: WORKSPACE_SYNC_API, status: 'ok', report: null, capabilities: capabilitiesData(result.document), reason: null, observedAt: observedStamp(result.document, now), refreshing: false }; }
+          catch { return { ...syncFailure('E_CLI_PROTOCOL'), observedAt: null, refreshing: false }; }
+        }, () => ({ ...syncFailure('E_CLI_FAILED'), observedAt: null, refreshing: false }))
         .finally(() => reads.delete(key)));
     }
     return structuredClone(await reads.get(key));
@@ -61,15 +88,18 @@ export function createWorkspaceSyncBoundary({ invoke = cliWorkspace } = {}) {
       if (!result?.ok) return kernelRefusal(result) ? refusal(result) : syncFailure(result?.reason?.code || 'E_CLI_FAILED');
       let report;
       try { report = syncData(result.document, ctx.deployment); } catch { return syncFailure('E_CLI_PROTOCOL'); }
+      catalog?.forget(ctx.deployment); // the lock moved: the held table is for the old state
       return { workspaceSyncApi: WORKSPACE_SYNC_API, status: 'ok', report, capabilities: null, reason: null };
     } finally { running.delete(ctx.deployment); }
   }
   return async function workspaceSyncRequest(request, { workspace, cli } = {}) {
     if (!record(request) || !['read', 'sync'].includes(request.action)) return syncFailure('E_BAD_ARGS');
-    if (Object.keys(request).some(key => key !== 'action')) return syncFailure('E_BAD_ARGS');
+    const allowed = request.action === 'read' ? ['action', 'refresh'] : ['action'];
+    if (Object.keys(request).some(key => !allowed.includes(key))) return syncFailure('E_BAD_ARGS');
+    if (Object.hasOwn(request, 'refresh') && typeof request.refresh !== 'boolean') return syncFailure('E_BAD_ARGS');
     const ctx = context(workspace, cli);
     if (ctx.failure) return ctx.failure;
-    if (request.action === 'read') return read(ctx);
+    if (request.action === 'read') return read(ctx, request.refresh === true);
     return mutate(ctx, { action: 'sync', context: ctx.deployment });
   };
 }

@@ -1,0 +1,123 @@
+# Desktop load path: parallel cycle, held catalogs, focus-safe cadence
+
+How the backend (`server/oats-web.mjs`) turns kernel reads into what the
+renderer sees, and why it is shaped this way. The kernel stays the model
+(`docs/desktop-deployment-model.md`); this page is about *when* the backend
+asks it and *what it keeps*.
+
+## The observation cycle
+
+One cycle per registered deployment (`observeDeployment`):
+
+1. `oats status` and `oats workspace status` run together
+   (`server/deployment-observer.mjs`). On a **cold** cycle (nothing held for
+   the deployment) `oats souls` and `oats capabilities` start in the same tick,
+   *unbound*: their key is not known until the workspace status lands.
+2. When the two roster reads land, the roster snapshot is published. It never
+   waits on souls or capabilities.
+3. The cycle's key (`soulCatalogKey`: CLI bin/version, workspace commit,
+   member commits/status, externals) binds the unbound reads (`settle`). A
+   read that already landed is bound the same way. The souls catalog is
+   attached to the published snapshot entry when it lands; `/api/agents`
+   reports `refreshing: true` until then.
+4. On a **warm** cycle nothing but the two roster reads runs. Souls and
+   capabilities are re-read only when their key moves.
+
+The holding rules live once, in `server/keyed-catalog.mjs`, and the two
+catalogs are thin wrappers over it (`soul-catalog.mjs`,
+`capability-catalog.mjs`):
+
+- one flight per deployment; a failed read keeps the last good value with the
+  failure next to it and retries after 60 s;
+- an unbound prefetch is bound **only by the same cycle's settle**. Every
+  prefetch opens a cycle; a flight (or a landed value) from an older cycle —
+  its roster reads failed — is never bound to a state it was not read under,
+  and the cycle reads again. A value held under `null` answers for no key.
+- `observedAt` is the kernel's `observation.observedAt` when reported, else the
+  read's completion time; a failure keeps the previous stamp.
+
+The capabilities key (`capabilityCatalogKey`) is the souls key plus package
+identity (id, version, commit, integrity from the lock rows) and lock currency
+(`declaredPackages`, `unsynced`, `stale`, lock path/version): the table lists
+member and package capabilities and whether the lock is current, and nothing
+else in `workspace status` changes it.
+
+## The request path never runs a kernel read it can avoid
+
+- `POST /api/workspace-sync {action:"read"}` answers from the held table at
+  once (with `reason` beside it when the latest re-read failed); a cold
+  request awaits the admission read. `refresh: true` forces a live read and
+  joins one already in flight. An ok `sync` forgets the held table.
+- `POST /api/capabilities {action:"inspect"}` goes through a bounded LRU with
+  in-flight coalescing (`server/inspect-cache.mjs`, 256 entries): two identical
+  concurrent inspections are one kernel process; a repeat is a hit. Keys:
+  `inspect --soul` → (deployment, server, soul, agents root, souls key);
+  `inspect --home` → (deployment, server, home, instance, and the status row's
+  identity and drift facts: createdAt, startedAt, soul, modules), so a retire,
+  restart or drift change is another subject. `refresh: true` bypasses the
+  entry. `run` never reads or fills the cache.
+- Every mutation the backend performs for a deployment (`observeMutation`:
+  lifecycle apply, spawn apply, session start/restart, operation run, sync,
+  teams and soul-teams writes) drops that deployment's inspect entries and
+  observes the roster live. A real CLI change drops everything.
+
+## Cadence and window state
+
+`server/refresh-loop.mjs` owns when a cycle runs: the next one starts a fixed
+interval **after** the previous completed — 5 s while a window is focused,
+30 s while every window is blurred or hidden — so a slow kernel is never asked
+twice at once and an idle app costs little. A cycle requested during a cycle
+(a mutation's follow-up) runs exactly once right after.
+
+The Electron main process posts `{ focused }` to `POST /api/window-state` when
+the reduction of its windows flips (`window-activity.mjs`: visible, not
+minimized, focused). Focus returning runs one prompt cycle. A headless server
+assumes "focused".
+
+## The CLI probe is compared, not trusted by identity
+
+A window focus re-probes the CLI (`POST /api/cli/reprobe`). The probe
+generation — the revision every pending deployment read is admitted under —
+moves only when `probeSignature` (`renderer/cli-probe-contract.mjs`:
+everything but `probedAt`, `tried`, `source`) changes. An unchanged probe
+updates the diagnostics in place, cancels nothing and wipes nothing. The
+renderer's `cli-status.mjs` applies the same rule before notifying its
+subscribers (which treat a notification as "the CLI changed"), so the focus
+reprobe is a no-op end to end. A changed bin, version, feature list, API
+integer or remote list still invalidates as before.
+
+## `--max-age` (kernel feature `observe-max-age`)
+
+When the probe declares the feature, the read adapters
+(`deployment-read-cli.mjs`, `workspace-cli.mjs`, `cli-adapter.mjs
+cliCapability`) append `--max-age <seconds>` to status, workspace status,
+souls, capabilities and inspect: `0` for the first cycle of a deployment
+(admission), a mutation's follow-up and any `refresh: true`; `60` for
+background cycles, key-change re-reads, inspect cache misses and the focus
+prompt cycle. Without the feature the argv is byte-identical to the flagless
+one whatever the caller asked, and mutating verbs refuse the option
+(`renderer/deployment-contract.mjs`: `maxAgeArgv`, `validMaxAge`).
+
+## Contract additions (renderer-facing, additive)
+
+`/api/panel`, `/api/agents`, `/api/workspace-sync` read and `/api/capabilities`
+inspect carry `observedAt` (ISO string or null) and `refreshing` (boolean).
+Existing fields are unchanged.
+
+## Testing
+
+- Unit: `test/keyed-catalog` behaviour through `test/soul-catalog.test.mjs` and
+  `test/capability-catalog.test.mjs`; `test/inspect-cache.test.mjs`;
+  `test/refresh-loop.test.mjs` (fake timers); `test/max-age.test.mjs` (flag
+  gate per adapter); `test/cli-probe-signature.test.mjs`,
+  `test/cli-status-parity.test.mjs` (emit on change);
+  `test/window-activity.test.mjs`.
+- The shipped server with a scripted fake kernel:
+  `test/load-path-server.test.mjs` on `test/helpers/load-path-server.mjs`
+  (per-verb delays, a reconfigurable probe, argv/timing log). It proves the
+  cold cycle, held catalogs, coalescing, the unchanged-focus no-op, the
+  cadence and blur back-off, and the `--max-age` gate on and off. It takes
+  ~30 s because cadence is measured in real time.
+- Against a real deployment: `node server/oats-web.mjs start --port <p> --dir
+  <deployment> --oats-bin <timing shim>` and poll the endpoints; never launch
+  the packaged app for this.

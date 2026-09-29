@@ -28,6 +28,7 @@ module.exports = {
     "api-url.mjs",
     "app-menu.mjs",
     "single-instance.mjs",
+    "window-activity.mjs",
     "cli-adapter.mjs",
     "cli-locator.mjs",
     "forge-cli.mjs", "forge-auth.mjs", "forge-auth-output.mjs", "forge-proxy.mjs",

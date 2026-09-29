@@ -28,3 +28,16 @@ export function deploymentReadGate(cli, action) {
   for (const name of required) if (!features.includes(name)) return deploymentFailure('E_DEPLOYMENT_FEATURE', name);
   return null;
 }
+/** Bounded observation reuse (kernel feature observe-max-age): the read-only verbs status,
+ * workspace status, souls, capabilities and inspect accept `--max-age <seconds>` (0 = live,
+ * N = the kernel may reuse remote-head observations up to N seconds old). The flag exists
+ * only when the probe declares the feature: an older kernel would refuse it as unknown, so
+ * the argv is byte-identical to the flagless one whenever the feature is absent. Mutating
+ * verbs never take it; that refusal is each adapter's. Bounded to one day: a larger value
+ * has no product meaning and a non-integer would not be one clean argv token. */
+export const OBSERVE_MAX_AGE_FEATURE = 'observe-max-age';
+export const validMaxAge = v => v === undefined || (Number.isSafeInteger(v) && v >= 0 && v <= 86400);
+export function maxAgeArgv(features, maxAge) {
+  if (maxAge === undefined || !Array.isArray(features) || !features.includes(OBSERVE_MAX_AGE_FEATURE)) return [];
+  return ['--max-age', String(maxAge)];
+}

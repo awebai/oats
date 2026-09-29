@@ -139,6 +139,21 @@ export function workspaceStatusData(document, deployment) {
     warnings: own(data, 'warnings') ? array(data.warnings).map(row => fields(row, ['code', 'message', 'label', 'soul', 'repoKey', 'kind', 'id', 'remedy', 'entry'])) : [] });
 }
 
+/** The kernel's observation provenance (feature observe-max-age): `observation` sits at the
+ * top of the raw `status` object and under `result` in a schemaVersion:1 envelope; its shape
+ * is {observedAt: ISO-8601, reused: boolean}. Absent is the kernel not reporting (an older
+ * kernel, or a live read), projected as nulls so the UI never invents a time; present but
+ * malformed refuses the document like any other producer defect. */
+export function observationData(document) {
+  check(record(document));
+  const holder = document.schemaVersion === 1 ? document.result : document;
+  if (!record(holder) || !own(holder, 'observation')) return { observedAt: null, reused: null };
+  const value = holder.observation;
+  check(record(value) && typeof value.observedAt === 'string' && value.observedAt.length <= 64 && !Number.isNaN(Date.parse(value.observedAt))
+    && typeof value.reused === 'boolean');
+  return { observedAt: value.observedAt, reused: value.reused };
+}
+
 /** status stays a native {root,agents,workspace} observation. No task/state
  * parsing, file counts, runtime defaults, metadata hydration or v1 card DTO.
  * Liveness here is the kernel's report; terminal-target observation is a

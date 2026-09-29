@@ -106,3 +106,108 @@ test('kernel #217 (desktop-facts): spawnable, problem and file pass through; the
   assert.equal(Object.hasOwn(a, 'harnessFrom'), false, "the kernel default is not the soul's choice (#217 note 4)");
   second.spawnable = 'no'; refused(() => soulsData(doc));
 });
+
+// observe-max-age: a harness whose invoke is gated and records every request, so the tests can
+// assert what argv the kernel would see and that settle() decides before any read completes.
+function gated() {
+  let clock = 1000, next = () => ({ ok: true, document: copy() });
+  const requests = [], opens = [];
+  const catalog = createSoulCatalog({ now: () => clock, invoke: (cli, request) => new Promise(resolve => {
+    requests.push(request); opens.push(() => resolve(next()));
+  }) });
+  return { catalog, requests, open: () => opens.shift()(), tick: ms => { clock += ms; }, answer: fn => { next = fn; } };
+}
+const settled = () => new Promise(r => setImmediate(r));
+
+test('prefetch starts one unbound read; an observe in the same cycle adopts it instead of starting another', async () => {
+  const h = gated();
+  const first = h.catalog.prefetch('/dep', CLI);
+  assert.ok(first instanceof Promise);
+  assert.equal(h.catalog.refreshing('/dep'), true);
+  const observed = h.catalog.observe('/dep', CLI, WS);
+  assert.equal(h.requests.length, 1); assert.deepEqual(h.requests[0], { action: 'souls', context: '/dep' });
+  h.open(); const [a, b] = await Promise.all([first, observed]);
+  assert.deepEqual(a, b); assert.equal(a.key, soulCatalogKey(CLI, WS), 'observe adopted the unbound flight');
+  assert.equal(h.catalog.refreshing('/dep'), false);
+  assert.equal(h.catalog.prefetch('/dep', CLI), null, 'a held catalog needs no prefetch');
+});
+
+test('settle adopts the unbound flight under its key, never blocks, and its pending resolves to the held entry', async () => {
+  const h = gated(); h.catalog.prefetch('/dep', CLI);
+  const { entry, pending } = h.catalog.settle('/dep', CLI, WS);
+  assert.equal(entry, null, 'nothing held yet on a cold cycle'); assert.ok(pending instanceof Promise);
+  assert.equal(h.requests.length, 1, 'the read that already runs is the catalog of this cycle');
+  let resolved = false; pending.then(() => { resolved = true; });
+  await settled(); assert.equal(resolved, false, 'settle returned while the kernel is still answering');
+  h.open(); const result = await pending;
+  assert.equal(result.key, soulCatalogKey(CLI, WS)); assert.equal(result.reason, null);
+  assert.deepEqual(h.catalog.held('/dep'), result);
+  result.souls.pop(); assert.equal(h.catalog.held('/dep').souls.length, SOULS.result.souls.length, 'pending hands out a copy');
+  const again = h.catalog.settle('/dep', CLI, structuredClone(WS));
+  assert.equal(again.pending, null); assert.deepEqual(again.entry, h.catalog.held('/dep')); assert.equal(h.requests.length, 1);
+});
+
+test('a prefetch that lands before settle is held under no key, and the same cycle\'s settle binds it without a second read', async () => {
+  const h = gated(); const flight = h.catalog.prefetch('/dep', CLI); h.open(); await flight;
+  assert.equal(h.catalog.held('/dep').key, null, 'unbound until the cycle\'s workspace status is known');
+  const { entry, pending } = h.catalog.settle('/dep', CLI, WS);
+  assert.equal(pending, null); assert.equal(entry.key, soulCatalogKey(CLI, WS)); assert.equal(h.requests.length, 1);
+});
+
+test('a flight from an earlier cycle is never bound to a later cycle\'s key; the later cycle reads again', async () => {
+  // In flight across cycles: cycle 1's roster reads failed, cycle 2 finds the souls read still running.
+  const h = gated(); h.catalog.prefetch('/dep', CLI);
+  assert.equal(h.catalog.prefetch('/dep', CLI), null, 'nothing to start while a read is in flight');
+  const { entry, pending } = h.catalog.settle('/dep', CLI, WS);
+  assert.equal(entry, null); assert.equal(h.requests.length, 2, 'cycle 2 reads under its own key');
+  h.open(); h.open(); assert.equal((await pending).key, soulCatalogKey(CLI, WS));
+  // Landed across cycles: the leftover under no key is not usable, so the new cycle prefetches again and adopts THAT.
+  const g = gated(); const first = g.catalog.prefetch('/dep', CLI); g.open(); await first;
+  assert.equal(g.catalog.held('/dep').key, null);
+  assert.ok(g.catalog.prefetch('/dep', CLI) instanceof Promise);
+  const again = g.catalog.settle('/dep', CLI, WS);
+  assert.equal(again.entry.key, null, 'the leftover is shown but not bound'); assert.equal(g.requests.length, 2);
+  g.open(); assert.equal((await again.pending).key, soulCatalogKey(CLI, WS));
+});
+
+test('settle on a moved workspace starts a keyed read once; concurrent settles share it', async () => {
+  const h = gated(); const a = h.catalog.settle('/dep', CLI, WS), b = h.catalog.settle('/dep', CLI, WS);
+  assert.equal(h.requests.length, 1); assert.equal(h.catalog.refreshing('/dep'), true);
+  h.open(); assert.deepEqual(await a.pending, await b.pending);
+  const moved = { ...WS, workspace: { key: 'k', commit: 'c2' } };
+  const c = h.catalog.settle('/dep', CLI, moved);
+  assert.equal(c.entry.key, soulCatalogKey(CLI, WS), 'the last catalog stays in place'); assert.equal(h.requests.length, 2);
+  h.open(); assert.equal((await c.pending).key, soulCatalogKey(CLI, moved));
+});
+
+test('maxAge is forwarded as its own request field, only when given', async () => {
+  const h = gated();
+  h.catalog.prefetch('/dep', CLI, { maxAge: 30 }); h.open(); await h.catalog.settle('/dep', CLI, WS).pending;
+  const moved = h.catalog.settle('/dep', CLI, { ...WS, workspace: { key: 'k', commit: 'c2' } }, { maxAge: 0 }); h.open(); await moved.pending;
+  const observed = h.catalog.observe('/dep', CLI, { ...WS, workspace: { key: 'k', commit: 'c3' } }, { maxAge: 5 }); h.open(); await observed;
+  const other = h.catalog.prefetch('/dep2', CLI); h.open(); await other;
+  assert.deepEqual(h.requests.map(r => r.maxAge), [30, 0, 5, undefined]);
+  assert.equal(Object.hasOwn(h.requests[3], 'maxAge'), false);
+});
+
+test('observedAt is the kernel observation stamp when present, else the completion time; a failure keeps the previous stamp', async () => {
+  const h = gated();
+  h.answer(() => { const d = copy(); d.result.observation = { observedAt: '2026-01-02T03:04:05.000Z', reused: true }; return { ok: true, document: d }; });
+  const a = h.catalog.settle('/dep', CLI, WS); h.open();
+  assert.equal((await a.pending).observedAt, '2026-01-02T03:04:05.000Z');
+  h.answer(() => ({ ok: true, document: copy() })); h.tick(500);
+  const b = h.catalog.settle('/dep', CLI, { ...WS, workspace: { key: 'k', commit: 'c2' } }); h.open();
+  assert.equal((await b.pending).observedAt, new Date(1500).toISOString());
+  h.answer(() => ({ ok: false, reason: { code: 'E_WORKSPACE', message: 'busy' } }));
+  const c = h.catalog.settle('/dep', CLI, { ...WS, workspace: { key: 'k', commit: 'c3' } }); h.open();
+  const failed = await c.pending;
+  assert.deepEqual([failed.reason.code, failed.observedAt], ['E_WORKSPACE', new Date(1500).toISOString()]);
+  assert.equal(h.catalog.refreshing('/dep'), false);
+});
+
+test('prefetch retries a held failure only after the retry window', async () => {
+  const h = gated(); h.answer(() => ({ ok: false, reason: { code: 'E_WORKSPACE', message: 'busy' } }));
+  await (h.catalog.prefetch('/dep', CLI), h.open(), h.catalog.settle('/dep', CLI, WS).pending);
+  assert.equal(h.catalog.prefetch('/dep', CLI), null);
+  h.tick(SOUL_CATALOG_RETRY_MS); assert.ok(h.catalog.prefetch('/dep', CLI) instanceof Promise); assert.equal(h.requests.length, 2);
+});

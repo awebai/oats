@@ -19,7 +19,7 @@ function http({ remote = false, missing = false } = {}) {
       : args.operation === 'stop' ? stopReceipt(args) : retireReceipt(args));
   } });
   const deps = { createServer: fn => fn, lifecycleRequest: service, cliState: ctx.cli, workspaces: () => [ctx.workspace],
-    snapshot: { byWs: new Map([['team', { instances: ctx.instances }]]) }, refreshSnapshot() {},
+    snapshot: { byWs: new Map([['team', { instances: ctx.instances }]]) }, observeMutation() {},
     resolveInstanceOr: assert.fail, panelData: assert.fail, snapshotPanel: assert.fail, collectNow: assert.fail };
   const handler = new Function(...Object.keys(deps), `${source.slice(start, end)}\nreturn server;`)(...Object.values(deps));
   return { calls, async request({ url = '/api/instance-lifecycle?ws=team', method = 'POST', body = JSON.stringify(request()),

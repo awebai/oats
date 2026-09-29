@@ -37,6 +37,7 @@ import { proxySpawnPreview } from './spawn-preview-proxy.mjs';
 import { proxyInstanceEvents } from './instance-events-proxy.mjs';
 import { proxySpawnApply } from './spawn-apply-proxy.mjs';
 import { startSingleInstance } from "./single-instance.mjs";
+import { createActivityNotifier } from "./window-activity.mjs";
 
 const require = createRequire(import.meta.url);
 const pty = require("node-pty");
@@ -45,6 +46,19 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 
 let port = Number(process.env.OATS_DESKTOP_PORT || 4820);
 const base = () => `http://127.0.0.1:${port}`;
+// Window activity → backend refresh cadence: the server backs its kernel
+// polling off while every window is blurred/hidden and refreshes promptly
+// when one returns. Main posts directly (as it already does for /api/panel
+// and /api/cli): it alone sees all windows, and the renderer must not gain a
+// new IPC surface for a fact main already holds. Edge-triggered in
+// window-activity.mjs so an event burst is one POST.
+const activity = createActivityNotifier({
+  post: body => fetch(`${base()}/api/window-state`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify(body), signal: AbortSignal.timeout(1500),
+  }),
+});
+const noteWindowActivity = () => { activity.update(BrowserWindow.getAllWindows()); };
 // Workspace the panel shows: --dir <path> or OATS_DESKTOP_DIR or the cwd the
 // app was launched from. The packaged app never infers a framework repo root
 // — with no OATS deployment in view the renderer shows the workspace picker.
@@ -547,6 +561,11 @@ const primaryInstance = startSingleInstance(app, () => BrowserWindow.getAllWindo
     if (serverHost.owned()) saveWorkspaceDirs(OPEN_WORKSPACES_FILE(), workspaceDirs);
   }
   catch (e) { console.error(`oats-desktop: ${e.message}`); }
+  // Window activity: visibility flips that are not focus flips, hooked on
+  // every window BEFORE the first one exists (focus/blur are app-level below).
+  app.on("browser-window-created", (_event, win) => {
+    for (const ev of ["show", "hide", "minimize", "restore"]) win.on(ev, noteWindowActivity);
+  });
   await createWindow();
   // Contract re-probe trigger "app focus": notify the renderer, which calls
   // POST /api/cli/reprobe (the server owns probe state and rate semantics).
@@ -554,7 +573,9 @@ const primaryInstance = startSingleInstance(app, () => BrowserWindow.getAllWindo
     for (const w of BrowserWindow.getAllWindows()) {
       if (!w.webContents.isDestroyed()) w.webContents.send("app:focus");
     }
+    noteWindowActivity();
   });
+  app.on("browser-window-blur", noteWindowActivity);
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 

@@ -134,6 +134,7 @@ test('read returns the projected catalog; sync returns the lock it wrote', async
   const b = boundary(['capabilities', 'sync-current']);
   const read = await b.request({ action: 'read' }, { workspace, cli: cli() });
   assert.equal(read.status, 'ok'); assert.equal(read.capabilities.capabilities.length, 10);
+  assert.equal(read.refreshing, false); assert.equal(typeof read.observedAt, 'string', 'a direct read stamps its completion time');
   const sync = await b.request({ action: 'sync' }, { workspace, cli: cli() });
   assert.equal(sync.status, 'ok'); assert.deepEqual(sync.report, syncData(fixture('sync-current'), deployment));
   assert.deepEqual(b.calls, [{ action: 'capabilities', context: deployment }, { action: 'sync', context: deployment }]);
@@ -172,7 +173,7 @@ test('remote, unknown, pre-v2 or pre-no-approval contexts never dispatch', async
     const result = await b.request({ action: 'sync' }, { workspace: ws, cli: state });
     assert.notEqual(result.status, 'ok');
   }
-  for (const bad of [null, { action: 'list' }, { action: 'sync', extra: 1 }, { action: 'read', approvals: [] }])
+  for (const bad of [null, { action: 'list' }, { action: 'sync', extra: 1 }, { action: 'read', approvals: [] }, { action: 'sync', refresh: true }, { action: 'read', refresh: 'now' }])
     assert.equal((await b.request(bad, { workspace, cli: cli() })).reason.code, 'E_BAD_ARGS');
   assert.equal(b.calls.length, 0);
 });
@@ -187,7 +188,7 @@ function httpHarness(workspaceSyncRequest) {
   const { syncFailure } = { syncFailure: code => ({ workspaceSyncApi: 1, status: 'unavailable', reason: { code } }) };
   let refreshes = 0;
   const dependencies = {
-    createServer: callback => callback, workspaceSyncRequest, syncFailure, refreshSnapshot: () => { refreshes++; },
+    createServer: callback => callback, workspaceSyncRequest, syncFailure, observeMutation: () => { refreshes++; },
     cliState: cli(), ctxs: [deployment], workspaces: () => [workspace],
   };
   const handler = new Function(...Object.keys(dependencies), `${source.slice(errorStart, errorEnd)}\n${source.slice(start, end)}\nreturn server;`)(...Object.values(dependencies));
