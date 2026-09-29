@@ -42,6 +42,14 @@ export function createSoulCatalog({ invoke = cliWorkspace, now = () => Date.now(
     const { entry, pending } = catalog.settle(deployment, cli, soulCatalogKey(cli, workspaceStatus), options);
     return { entry: project(entry), pending: pending && pending.then(project) };
   }
+  /** The request path (/api/agents) found the held catalog for this state past its TTL: start one re-read
+   * behind the answer (or join the one in flight) and resolve with the landed, projected entry — null when
+   * nothing stale is held for this key (fresh, missing or another state's: the cycle owns those). */
+  function revalidate(deployment, cli, workspaceStatus, options = {}) {
+    const key = soulCatalogKey(cli, workspaceStatus), held = catalog.held(deployment);
+    if (!held || held.key !== key || held.reason || !held.stale) return null;
+    return catalog.revalidate(deployment, cli, key, options).then(project);
+  }
   return {
     /** The catalog for this workspace state, reading it only when needed. */
     async observe(deployment, cli, workspaceStatus, options = {}) {
@@ -50,6 +58,7 @@ export function createSoulCatalog({ invoke = cliWorkspace, now = () => Date.now(
     },
     /** Synchronous decision for this workspace state: what is held now, and what (if anything) is still coming. */
     settle,
+    revalidate,
     /** Start an unbound read when nothing usable is held and nothing is in flight; null when nothing started. */
     prefetch(deployment, cli, options = {}) { const flight = catalog.prefetch(deployment, cli, options); return flight && flight.then(project); },
     refreshing: catalog.refreshing,

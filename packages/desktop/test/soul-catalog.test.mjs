@@ -53,11 +53,9 @@ test('the catalog is read once per workspace state; concurrent observers share o
   const pending = [h.catalog.observe('/dep', CLI, WS), h.catalog.observe('/dep', CLI, WS)];
   open(); const [a, b] = await Promise.all(pending);
   assert.equal(h.calls(), 1); assert.deepEqual(a, b); assert.equal(a.reason, null);
-  await h.catalog.observe('/dep', CLI, structuredClone(WS)); h.tick(HELD_TTL_MS - 1);
+  await h.catalog.observe('/dep', CLI, structuredClone(WS)); h.tick(10 * HELD_TTL_MS);
   await h.catalog.observe('/dep', CLI, WS);
-  assert.equal(h.calls(), 1, 'roster polls never re-read an unchanged workspace inside the TTL');
-  h.tick(1); await h.catalog.observe('/dep', CLI, WS);
-  assert.equal(h.calls(), 2, 'past HELD_TTL_MS the next cycle re-reads even an unchanged workspace');
+  assert.equal(h.calls(), 1, 'roster polls never re-read an unchanged workspace, however old the catalog: age is a request\'s concern');
   a.souls.pop(); assert.equal(h.catalog.held('/dep').souls.length, SOULS.result.souls.length, 'callers get copies');
 });
 
@@ -180,10 +178,8 @@ test('a deployment whose roster reads keep failing costs one souls read per retr
     const first = h.catalog.prefetch('/dep', CLI); h.open(); await first; // cycle 1: souls landed unbound, the roster failed
     for (let cycle = 2; cycle <= 6; cycle++) { assert.equal(h.catalog.prefetch('/dep', CLI), null, `cycle ${cycle} starts nothing`); h.tick(SOUL_CATALOG_RETRY_MS / 10); }
     assert.equal(h.requests.length, 1);
-    h.tick(SOUL_CATALOG_RETRY_MS / 2 - 1); // 59 999 ms: inside the retry window and inside the TTL (both are 60 s)
-    assert.equal(h.catalog.prefetch('/dep', CLI), null, 'a leftover inside its window and TTL, good or failed, is not read again');
-    h.tick(1); // 60 s: a failed leftover is past its retry window, a good one past its TTL — either way the cycle reads again
-    assert.ok(h.catalog.prefetch('/dep', CLI) instanceof Promise, 'past 60 s the leftover is read again');
+    h.tick(SOUL_CATALOG_RETRY_MS);
+    assert.equal(h.catalog.prefetch('/dep', CLI) instanceof Promise, !outcome().ok, 'past the window only a FAILED leftover is read again; a good one waits for settle, however old');
   }
 });
 
@@ -229,21 +225,23 @@ test('prefetch retries a held failure only after the retry window', async () => 
   h.tick(SOUL_CATALOG_RETRY_MS); assert.ok(h.catalog.prefetch('/dep', CLI) instanceof Promise); assert.equal(h.requests.length, 2);
 });
 
-test('a held catalog is served inside HELD_TTL_MS and re-read by the next cycle past it: an out-of-band local-config edit is seen within 60 s, without the Desktop touching any file', async () => {
-  const h = gated();
+test('the TTL is request-driven: past it, no cycle re-reads on its own; a request (revalidate) answers from the held catalog and starts exactly one re-read, shared by concurrent requests', async () => {
+  const h = gated(), n = SOULS.result.souls.length;
   const a = h.catalog.settle('/dep', CLI, WS); h.open(); await a.pending;
   h.tick(HELD_TTL_MS - 1);
-  const inside = h.catalog.settle('/dep', CLI, WS);
-  const n = SOULS.result.souls.length;
-  assert.deepEqual([inside.pending, inside.entry.stale, inside.entry.souls.length, h.requests.length], [null, false, n, 1], 'inside the TTL: held, no kernel run');
+  assert.equal(h.catalog.revalidate('/dep', CLI, WS), null, 'inside the TTL a request has nothing to revalidate');
   h.tick(1);
-  const past = h.catalog.settle('/dep', CLI, WS); // `oats teams add` ran from a terminal meanwhile: same key, older result
-  assert.ok(past.pending, 'past the TTL: the cycle re-reads'); assert.equal(h.requests.length, 2);
-  assert.deepEqual([past.entry.stale, past.entry.souls.length], [true, n], 'the stale catalog is still shown while the re-read flies');
+  for (let cycle = 0; cycle < 5; cycle++) { assert.equal(h.catalog.settle('/dep', CLI, WS).pending, null, `cycle ${cycle}: a stale catalog is still the cycle's answer`); h.tick(1000); }
+  assert.equal(h.requests.length, 1, 'past the TTL with no request: no kernel run');
+  assert.deepEqual([h.catalog.held('/dep').stale, h.catalog.held('/dep').souls.length], [true, n]);
+  const first = h.catalog.revalidate('/dep', CLI, WS), second = h.catalog.revalidate('/dep', CLI, WS); // two lookers while it flies
+  assert.ok(first && second); assert.equal(h.requests.length, 2, 'exactly one re-read for both'); assert.equal(h.catalog.refreshing('/dep'), true);
+  assert.equal(h.catalog.settle('/dep', CLI, WS).pending, null, 'the cycle still answers from the held catalog while the request\'s re-read flies');
   h.answer(() => { const d = copy(); d.result.souls = d.result.souls.slice(1); return { ok: true, document: d }; });
-  h.open(); const landed = await past.pending;
-  assert.deepEqual([landed.stale, landed.souls.length, h.catalog.held('/dep').souls.length], [false, n - 1, n - 1]);
-  assert.equal(h.catalog.settle('/dep', CLI, WS).pending, null, 'held again for another TTL');
+  h.open(); const [x, y] = await Promise.all([first, second]);
+  assert.deepEqual([x.souls.length, y.souls.length, x.stale, h.catalog.held('/dep').souls.length, h.catalog.refreshing('/dep')], [n - 1, n - 1, false, n - 1, false]);
+  assert.equal(h.catalog.revalidate('/dep', CLI, WS), null, 'fresh again');
+  assert.equal(h.catalog.revalidate('/dep', CLI, { ...WS, workspace: { key: 'k', commit: 'other' } }), null, 'another state\'s key is the cycle\'s business, not a request\'s');
 });
 
 test('a flight under an old key that lands after the key moved does not overwrite the newer state\'s entry', async () => {

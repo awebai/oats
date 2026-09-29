@@ -619,9 +619,9 @@ async function observeDeployment(id, { live = false } = {}) {
     admitted.add(id);
     const { roster, workspaceStatus, observedAt } = result;
     const catalogKey = soulCatalogKey(cli, workspaceStatus);
-    // Bind (or start) the souls read for this workspace state; never wait for it here. A held catalog past
-    // its TTL is re-read by this settle too: what the key cannot see (local configuration edited outside
-    // Desktop) is bounded by HELD_TTL_MS, not by any file the Desktop would have to name.
+    // Bind (or start) the souls read for this workspace state; never wait for it here. Age alone never
+    // makes this cycle re-read: a catalog past HELD_TTL_MS is re-read when someone looks (/api/agents →
+    // revalidateCatalog), so an idle app costs nothing and no deployment file is ever named to find out.
     const { entry: catalogEntry, pending } = soulCatalog.settle(id, cli, workspaceStatus, { maxAge });
     capabilityCatalog.ensure(id, cli, workspaceStatus, { maxAge });
     const rows = roster.agents.flatMap((agent) => agent.instances.map((instance) => ({
@@ -640,16 +640,33 @@ async function observeDeployment(id, { live = false } = {}) {
     };
     // Attach the catalog when it lands: to THIS cycle's entry (it may land before the entry is published —
     // publication still waits on the liveness child and on the other deployments) and to whatever entry is
-    // published by then. Only an entry read under the same key takes it (an unadopted flight lands under
-    // null and is re-read next cycle).
-    if (pending) pending.then((landed) => {
-      const projection = catalogProjection(landed, soulCatalog.refreshing(id));
-      for (const target of [entry, snapshot.byWs.get(id)]) {
-        if (target?.deployment?.status === "observed" && landed?.key === target.deployment.catalogKey) target.deployment.catalog = projection;
-      }
-    }).catch(() => { /* the entry keeps the last good catalog; the next cycle re-reads */ });
+    // published by then.
+    if (pending) attachCatalog(id, pending, entry);
     return entry;
   } finally { observing.delete(id); }
+}
+/** Put a landed souls catalog on the entries that were read under its key: `entry` (a cycle's, possibly not yet
+ * published) and whatever is published for the deployment by then. Only an entry read under the same key takes
+ * it (an unadopted flight lands under null and is re-read next cycle). */
+function attachCatalog(id, pending, entry = null) {
+  pending.then((landed) => {
+    const projection = catalogProjection(landed, soulCatalog.refreshing(id));
+    for (const target of [entry, snapshot.byWs.get(id)]) {
+      if (target?.deployment?.status === "observed" && landed?.key === target.deployment.catalogKey) target.deployment.catalog = projection;
+    }
+  }).catch(() => { /* the entry keeps the last good catalog; the next cycle re-reads */ });
+}
+/** /api/agents found a held catalog past its TTL: answer from it (the caller projects it, with `refreshing`)
+ * and start one re-read behind the answer, attached to the published entry when it lands. Request-driven on
+ * purpose: age never starts a kernel run while nobody is looking. */
+function revalidateCatalog(wsId) {
+  const ws = wsId ? workspaceById(wsId) : workspaces()[0];
+  const published = ws && !ws.remote ? snapshot.byWs.get(ws.id) : null, d = published?.deployment;
+  if (d?.status !== "observed" || !cliState.ok) return;
+  const pending = soulCatalog.revalidate(ws.id, cliState, d.workspaceStatus, { maxAge: BACKGROUND_MAX_AGE });
+  if (!pending) return;
+  d.catalog = { ...d.catalog, refreshing: true }; // this answer says a re-read is in flight
+  attachCatalog(ws.id, pending);
 }
 function mergeRemotePanels(byWs) {
   for (const id of byWs.keys()) if (id.startsWith("remote:")) byWs.delete(id);
@@ -1205,7 +1222,7 @@ const server = createServer(async (req, res) => {
       // Served from the latest kernel observation; never waits on a CLI read.
       return send(res, 200, panelData(url.searchParams.get("ws") || undefined));
     }
-    if (req.method === "GET" && path === "/api/agents") return send(res, 200, agentsData(url.searchParams.get("ws") || undefined));
+    if (req.method === "GET" && path === "/api/agents") { revalidateCatalog(url.searchParams.get("ws") || undefined); return send(res, 200, agentsData(url.searchParams.get("ws") || undefined)); }
     if (path === "/api/launch-configs" && req.method === "POST") {
       const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
       try {

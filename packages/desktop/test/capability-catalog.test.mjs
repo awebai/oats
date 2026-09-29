@@ -60,13 +60,14 @@ test('ensure() reads once per key; a repeat read() of an unchanged key answers w
   assert.deepEqual(h.calls[0], { action: 'capabilities', context: deployment }, 'maxAge travels only when given');
   const first = await h.catalog.read(deployment, CLI, WS);
   assert.deepEqual(first.capabilities, TABLE); assert.equal(first.reason, null); assert.equal(first.refreshing, false);
-  for (let i = 0; i < 50; i++) { h.catalog.ensure(deployment, CLI, structuredClone(WS)); h.tick(HELD_TTL_MS / 100); }
-  assert.equal(h.calls.length, 1, 'polls never re-read an unchanged workspace inside HELD_TTL_MS');
-  const started = process.hrtime.bigint();
-  const again = await h.catalog.read(deployment, CLI, WS);
-  assert.ok(Number(process.hrtime.bigint() - started) / 1e6 < 50, 'a held table is immediate');
-  assert.equal(h.calls.length, 1); assert.deepEqual(again.capabilities, TABLE);
-  h.catalog.ensure(deployment, CLI, WS, { maxAge: 30 }); assert.equal(h.calls.length, 1);
+  for (let i = 0; i < 50; i++) { h.catalog.ensure(deployment, CLI, structuredClone(WS)); h.tick(HELD_TTL_MS); }
+  assert.equal(h.calls.length, 1, 'polls never re-read an unchanged workspace, however old the table: age is a request\'s concern');
+  let land; h.gate(new Promise(resolve => { land = resolve; }));
+  const again = await h.catalog.read(deployment, CLI, WS); // the first LOOK at a table this old: answered at once, one re-read behind it
+  assert.deepEqual([again.capabilities, again.refreshing, h.calls.length], [TABLE, true, 2], 'a held table is immediate even past its TTL; the request starts the re-read');
+  h.catalog.ensure(deployment, CLI, WS, { maxAge: 30 }); assert.equal(h.calls.length, 2, 'a cycle joins it');
+  land(); await settle();
+  assert.equal((await h.catalog.read(deployment, CLI, WS)).refreshing, false); assert.equal(h.calls.length, 2);
 });
 
 test('a changed key re-reads and the new table replaces the old; a poll passes maxAge through', async () => {
@@ -275,20 +276,23 @@ test('boundary: refresh: true forces a live read; a failed re-read is today\'s f
   assert.deepEqual(timedOut.lastGood.capabilities, TABLE);
 });
 
-test('boundary: a held table is served inside HELD_TTL_MS and re-read past it — an out-of-band `oats teams`/`sync` is seen within 60 s with no file access; Refresh stays live', async () => {
+test('boundary: the TTL is request-driven — past HELD_TTL_MS no cycle re-reads on its own; a read answers the held table at once with refreshing:true and starts exactly one re-read, shared by concurrent reads; Refresh stays live', async () => {
   const b = boundary({ maxAge: 60 });
   const first = await b.request({ action: 'read' }, { workspace, cli: CLI });
   assert.deepEqual([first.status, b.calls.length], ['ok', 1]);
   b.now(HELD_TTL_MS - 1);
   const inside = await b.request({ action: 'read' }, { workspace, cli: CLI });
   assert.deepEqual([inside.status, inside.refreshing, b.calls.length], ['ok', false, 1], 'inside the TTL: the held table, no kernel run');
-  const changed = CAPS(); changed.result.capabilities = changed.result.capabilities.slice(1); // the kernel now reports one capability fewer
-  let land; b.answers.push(() => new Promise(resolve => { land = () => resolve({ ok: true, document: changed }); }));
   b.now(HELD_TTL_MS);
-  const past = await b.request({ action: 'read' }, { workspace, cli: CLI });
-  assert.deepEqual([past.status, past.capabilities.capabilities.length, past.refreshing, b.calls.length], ['ok', TABLE.capabilities.length, true, 2],
-    'past the TTL: the held table at once, the re-read announced behind it (stale-while-revalidate) — a tab visit never waits for an oats capabilities run');
+  for (let cycle = 0; cycle < 5; cycle++) { b.catalog.ensure(deployment, CLI, WS, { maxAge: 60 }); b.now(HELD_TTL_MS + (cycle + 1) * 5000); }
+  assert.equal(b.calls.length, 1, 'past the TTL with no request: cycles start no kernel run (nobody looking costs nothing)');
+  const changed = CAPS(); changed.result.capabilities = changed.result.capabilities.slice(1); // `oats teams` ran from a terminal meanwhile
+  let land; b.answers.push(() => new Promise(resolve => { land = () => resolve({ ok: true, document: changed }); }));
+  const [past, twin] = await Promise.all([b.request({ action: 'read' }, { workspace, cli: CLI }), b.request({ action: 'read' }, { workspace, cli: CLI })]);
+  assert.deepEqual([past.status, past.capabilities.capabilities.length, past.refreshing, twin.refreshing, b.calls.length], ['ok', TABLE.capabilities.length, true, true, 2],
+    'past the TTL: both requests get the held table at once with the re-read announced; exactly one re-read for both (stale-while-revalidate, single flight)');
   assert.deepEqual(b.calls[1], { action: 'capabilities', context: deployment, maxAge: 60 }, 'a TTL re-read is a background-grade read');
+  b.catalog.ensure(deployment, CLI, WS, { maxAge: 60 }); assert.equal(b.calls.length, 2, 'a cycle during the re-read joins it');
   land(); await settle();
   const landed = await b.request({ action: 'read' }, { workspace, cli: CLI });
   assert.deepEqual([landed.capabilities.capabilities.length, landed.refreshing, b.calls.length], [TABLE.capabilities.length - 1, false, 2], 'the change is visible once the re-read lands; held again');

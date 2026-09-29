@@ -22,11 +22,15 @@
  * - `observedAt` is the kernel's observation stamp when it reports one, else the read's
  *   completion time; a failure keeps the previous stamp.
  * - Every held result has an AGE BOUND: `ttlMs` (HELD_TTL_MS, the background max-age) from the
- *   time it was stored. Past it the entry is `stale`: it no longer answers for its key, so the
- *   next cycle re-reads and a request awaits the re-read. The key sees what `workspace status`
- *   reports; the TTL bounds what it cannot (local configuration edited outside Desktop: `oats
- *   teams`, `oats soul teams`, `oats sync` from a terminal) without the Desktop naming or
- *   touching any deployment file — that is the kernel's to know.
+ *   time it was stored. Past it the entry is `stale` — and that is REQUEST-DRIVEN: the cycle's
+ *   `settle` still answers from a stale entry (age alone never starts a kernel run in the
+ *   background; a `souls` plus an `oats capabilities` run per deployment every minute, focused or
+ *   blurred, is exactly the churn the app must not cause), while a request that finds it stale
+ *   answers at once and `revalidate`s: one single-flight re-read behind the answer, joined by
+ *   every request until it lands. The key sees what `workspace status` reports; the TTL bounds
+ *   what it cannot (local configuration edited outside Desktop: `oats teams`, `oats soul teams`,
+ *   `oats sync` from a terminal) to "TTL + one read of the next time someone looks", without the
+ *   Desktop naming or touching any deployment file — that is the kernel's to know.
  *
  * `read(deployment, cli, { maxAge })` is the catalog's kernel read; it resolves
  * `{ value, reason, observedAt }` (value null on failure) and must not throw. */
@@ -41,10 +45,10 @@ export function createKeyedCatalog({ read, retryMs, ttlMs = HELD_TTL_MS, now = (
   const iso = ms => new Date(ms).toISOString();
   const inWindow = entry => !entry.reason || now() - entry.at < retryMs;
   const fresh = entry => now() - entry.at < ttlMs;
-  /** A held entry answers for `key` while it is inside its TTL and good, or its failure is inside the retry window. */
-  const answers = (last, key) => !!last && last.key === key && fresh(last) && inWindow(last);
-  /** Anything held inside its window and TTL (bound or not) makes a prefetch pointless. */
-  const usable = last => !!last && fresh(last) && inWindow(last);
+  /** A held entry answers a CYCLE for `key` while it is good (age is a request's concern), or its failure is inside the retry window. */
+  const answers = (last, key) => !!last && last.key === key && inWindow(last);
+  /** Anything held inside its window (bound or not) makes a prefetch pointless. */
+  const usable = last => !!last && inWindow(last);
   /** Build the flight's entry and hold it — unless the flight is keyed and the key moved on while it
    * flew (a newer settle/demand/refresh under another key has its own flight): then the newer state's
    * entry is not overwritten. Either way the flight resolves with the entry IT built, so a request
@@ -100,6 +104,13 @@ export function createKeyedCatalog({ read, retryMs, ttlMs = HELD_TTL_MS, now = (
      * start one with `maxAge`, ignoring the retry window. */
     async demand(deployment, cli, key, { maxAge } = {}) {
       current.set(deployment, key);
+      const flight = flights.get(deployment);
+      return (flight?.key === key ? flight : start(deployment, cli, key, maxAge)).promise;
+    },
+    /** The request path with a STALE good entry: start one same-key re-read behind the answer (or
+     * join the one in flight); never awaited by the caller, whose answer is the held entry with
+     * `refreshing`. Resolves with the landed entry for whoever attaches it. */
+    revalidate(deployment, cli, key, { maxAge } = {}) {
       const flight = flights.get(deployment);
       return (flight?.key === key ? flight : start(deployment, cli, key, maxAge)).promise;
     },
