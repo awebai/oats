@@ -3111,10 +3111,10 @@ async function serverRouteCmd() {
     catch (e) { bail(e.code || "E_BAD_ARGS", e.message); }
     if (args.includes("--print")) { console.log(route.argv.map(shellQuote).join(" ")); return; }
     const r = spawnSyncProc(route.argv[0], route.argv.slice(1), { stdio: "inherit" });
-    // ssh exits 255 for its own failures: here a link that died under the
-    // viewer (keepalives unanswered, the master or the host's sshd gone). The
-    // instance keeps running there; say so rather than ending silently.
-    if (r.status === 255) console.error(`\noats: the ssh link to ${route.target.sshHost} was lost; the instance keeps running on ${id}. Reattach with: oats session attach --server ${id} --home ${shellQuote(route.home)}`);
+    // ssh exits 255 for its own failures: a link that died under the viewer
+    // (keepalives unanswered, the master or the host's sshd gone), or one
+    // never made. Say what is known rather than ending silently.
+    if (r.status === 255) console.error(`\noats: ssh to ${route.target.sshHost} ended with an error (exit 255); if the link was lost, the instance keeps running on ${id}. Reattach with: oats session attach --server ${id} --home ${shellQuote(route.home)}`);
     process.exit(r.status ?? 1);
   }
   // A spawn's argv is checked here, before the server is contacted.

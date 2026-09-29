@@ -64,9 +64,9 @@ Every routed ssh call carries these options, before `--` and the host:
 - A master left stale by a network drop is replaced by ssh on the next call.
 - The version probe (`oats version --json`) is asked once per process per
   server and target. `server add --replace` to another target forgets it.
-- When an attached viewer's link dies, `session attach --server` exits 255
-  and prints that the instance keeps running on the server, with the command
-  to reattach.
+- When ssh fails under an attached viewer (a lost link, or one never made),
+  `session attach --server` exits 255 and says that, if the link was lost,
+  the instance keeps running on the server, with the command to reattach.
 
 ## Run there
 

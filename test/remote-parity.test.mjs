@@ -37,7 +37,9 @@ function countingExec(answer = () => JSON.stringify({ root: "/w/agents", agents:
 }
 
 test("sshArgv: every routed call is non-interactive, keeps the link alive and shares the per-user control master", () => {
-  const argv = sshArgv(target, ["version", "--json"]);
+  // Sharing is off unless the caller has checked the control directory (controlUsable).
+  assert.deepEqual(sshArgv(target, ["version"]).filter((a) => a.startsWith("Control")), ["ControlPath=none"]);
+  const argv = sshArgv(target, ["version", "--json"], { control: true });
   const end = argv.indexOf("--");
   assert.deepEqual(argv.slice(0, end), [
     "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15",
@@ -94,7 +96,7 @@ test("control master: the socket path fits the 104-byte limit at 86 bytes and no
     runRemote(target, ["status"], io("other"));
     assert.equal(warnings.length, 2, "another server id is warned on its own");
     process.env.OATS_HOME_DIR = "/" + "x".repeat(120);
-    assert.deepEqual(sshArgv(target, ["version"]).filter((a) => a.startsWith("Control")), ["ControlPath=none"], "the argv builder alone never names a path ssh cannot bind");
+    assert.deepEqual(sshArgv(target, ["version"], { control: true }).filter((a) => a.startsWith("Control")), ["ControlPath=none"], "the argv builder alone never names a path ssh cannot bind");
   } finally { process.env.OATS_HOME_DIR = prev; }
 });
 
@@ -112,11 +114,11 @@ test("control master, read by the real ssh: the path is exactly the one checked;
   const warnings = [];
   const { exec, calls } = countingExec();
   try {
-    const eff = sshEffective(sshArgv(target, ["version"]), "/dev/null");
+    const eff = sshEffective(sshArgv(target, ["version"], { control: true }), "/dev/null");
     assert.equal(eff.controlmaster, "auto"); assert.equal(eff.controlpersist, "60");
     assert.match(eff.controlpath, new RegExp(`^${join(process.env.OATS_HOME_DIR, "ssh").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/[0-9a-f]{40}$`));
     assert.equal(Buffer.byteLength(eff.controlpath), Buffer.byteLength(join(process.env.OATS_HOME_DIR, "ssh", "x".repeat(40))), "the length checked is the length ssh binds");
-    assert.equal(sshEffective(sshArgv(target, ["version"]), userConfig).controlpath, eff.controlpath, "explicit -o wins over the user's ControlPath");
+    assert.equal(sshEffective(sshArgv(target, ["version"], { control: true }), userConfig).controlpath, eff.controlpath, "explicit -o wins over the user's ControlPath");
     for (const dir of ["a b", "a%z", "a${HOME}b", "a\"b", "a'b", "a#b"]) {
       process.env.OATS_HOME_DIR = join(base, dir);
       runRemote(target, ["status"], { execFileSync: exec, serverId: `syntax-${dir}`, warn: (m) => warnings.push(m) });
@@ -242,10 +244,10 @@ test("session attach --server: one version probe at most, every call through the
   assert.ok(calls.at(-1).startsWith("-t "), "the viewer gets a PTY");
   assert.equal(r.stderr, "", "no fallback warning with a private, short control directory");
 
-  // ssh's own failure under the viewer (exit 255): the instance keeps running there; say so.
+  // ssh's own failure (exit 255), a lost link or one never made: say what is known.
   const dead = fakeHost(mkdtempSync(join(base, "dead-")), { answers: { "session attach --home": { exit: 255 } } });
   writeFileSync(join(env.OATS_HOME_DIR, "servers.json"), JSON.stringify({ servers: { build: { sshHost: "build-host", workspace: "/srv/ws", oatsPath: dead.oatsPath } } }));
   r = cli({ ...env, PATH: `${dead.bin}:${dirname(process.execPath)}:/usr/bin:/bin` }, ["session", "attach", "--server", "build", "--home", home]);
   assert.equal(r.status, 255);
-  assert.match(r.stderr, /the ssh link to build-host was lost; the instance keeps running on build\. Reattach with: oats session attach --server build --home \/srv\/ws\/agents\/dev\/instances\/dev-a/);
+  assert.match(r.stderr, /ssh to build-host ended with an error \(exit 255\); if the link was lost, the instance keeps running on build\. Reattach with: oats session attach --server build --home \/srv\/ws\/agents\/dev\/instances\/dev-a/);
 });
