@@ -1231,7 +1231,7 @@ Feature `spawn-name`. `--name <slug>` is the exact name, with no prefix.
 
 | Code | Details | When |
 |---|---|---|
-| `E_USAGE`, `E_BAD_ARGS` | | no soul; bad, contradictory or removed flags |
+| `E_USAGE`, `E_BAD_ARGS` | | no soul; bad, contradictory, removed or unknown flags; an argument after the soul |
 | `E_LOCAL_MISSING`, `E_NO_DEPLOYMENT` | | no `oats-local.yaml`; no `agents/` root |
 | `E_SOUL_UNKNOWN` | `{name, members, packages}` | no such soul, or not at `--agents-root` |
 | `E_SOUL_AMBIGUOUS` | `{name, repos, qualified}` | several souls answer the bare name; use one of `qualified` |
