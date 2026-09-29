@@ -48,7 +48,8 @@ export function createSoulCatalog({ invoke = cliWorkspace, now = () => Date.now(
   function revalidate(deployment, cli, workspaceStatus, options = {}) {
     const key = soulCatalogKey(cli, workspaceStatus), held = catalog.held(deployment);
     if (!held || held.key !== key || held.reason || !held.stale) return null;
-    return catalog.revalidate(deployment, cli, key, options).then(project);
+    const pending = catalog.revalidate(deployment, cli, key, options);
+    return pending && pending.then(project);
   }
   return {
     /** The catalog for this workspace state, reading it only when needed. */

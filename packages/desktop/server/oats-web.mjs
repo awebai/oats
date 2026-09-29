@@ -658,8 +658,11 @@ function attachCatalog(id, pending, entry = null) {
 }
 /** /api/agents found a held catalog past its TTL: answer from it (the caller projects it, with `refreshing`)
  * and start one re-read behind the answer, attached to the published entry when it lands. Request-driven on
- * purpose: age never starts a kernel run while nobody is looking. */
+ * purpose, and gated on window focus: the renderer's Spawn/Workspace view polls /api/agents every 8 s while
+ * mounted, blurred or minimized included, so without the gate age would become a periodic `oats souls` run
+ * again. Focused with that view open, the catalog is re-read about once per TTL + read; blurred, never. */
 function revalidateCatalog(wsId) {
+  if (!refreshLoop.focused()) return;
   const ws = wsId ? workspaceById(wsId) : workspaces()[0];
   const published = ws && !ws.remote ? snapshot.byWs.get(ws.id) : null, d = published?.deployment;
   if (d?.status !== "observed" || !cliState.ok) return;

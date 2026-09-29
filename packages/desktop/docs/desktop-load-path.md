@@ -67,10 +67,16 @@ re-read as before). A *request* that finds the entry stale — `/api/agents`
 (`revalidateCatalog`), a `/api/workspace-sync` read — answers at once from
 the held value with `refreshing: true` and starts **one** re-read behind it
 (`revalidate`: single-flight, joined by every request and cycle until it
-lands, attached to the published entry when it does). An inspect past its TTL
-is a miss and awaits its per-subject read (~7 s). So a table is re-read when
+lands, attached to the published entry when it does; it starts nothing while
+another key's flight is in the air — that read answers). An inspect past its
+TTL is a miss and awaits its per-subject read (~7 s). `/api/agents` is
+*polled* by the renderer's Spawn/Workspace view every 8 s while mounted, so
+its revalidation is gated on window focus (`refreshLoop.focused()`):
+focused with that view open, the souls catalog is re-read about once per TTL
++ read; blurred or minimized, never. The capabilities table is read on tab
+open and Retry only, so it needs no gate. So a catalog is re-read when
 *viewed* after 60 s: a Workspace-tab visit never waits for a kernel run while
-the key is unchanged, and nobody looking costs nothing. The key sees what
+the key is unchanged, and a blurred app costs nothing. The key sees what
 `workspace status` reports; the TTL bounds what it cannot — local
 configuration edited outside Desktop (`oats teams`, `oats soul teams`, `oats
 sync` from a terminal, an agent editing its own teams) is seen within the TTL

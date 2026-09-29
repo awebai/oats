@@ -67,7 +67,7 @@ export function createCapabilityCatalog({ invoke = cliWorkspace, now = () => Dat
       if (refresh) return project(deployment, await catalog.refresh(deployment, cli, k));
       const { entry } = catalog.settle(deployment, cli, k, options);
       if (!entry?.value || entry.reason) return project(deployment, await catalog.demand(deployment, cli, k, options));
-      if (entry.stale) void catalog.revalidate(deployment, cli, k, options).catch(() => {});
+      if (entry.stale) void catalog.revalidate(deployment, cli, k, options)?.catch(() => {});
       return project(deployment, entry);
     },
     /** Read-only view of what is held (tests and diagnostics); nothing reads it on the request path. */

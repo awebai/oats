@@ -264,3 +264,17 @@ test('a flight under an old key that lands after the key moved does not overwrit
   const kept = g.catalog.held('/dep');
   assert.equal(kept.key, soulCatalogKey(CLI, moved)); assert.equal(kept.reason, null, 'the late K1 failure did not overwrite K2\'s good entry');
 });
+
+test('revalidate starts nothing while another key\'s flight is in the air: the cycle\'s read answers, and no stale-key read displaces it', async () => {
+  const h = gated();
+  const a = h.catalog.settle('/dep', CLI, WS); h.open(); await a.pending;
+  h.tick(HELD_TTL_MS);
+  const moved = { ...WS, workspace: { key: 'k', commit: 'c2' } };
+  const cycle = h.catalog.settle('/dep', CLI, moved); // the state moved on; its read flies; the published entry still says WS
+  assert.ok(cycle.pending); assert.equal(h.requests.length, 2);
+  assert.equal(h.catalog.revalidate('/dep', CLI, WS), null, 'a request under the published (stale, old) key starts nothing');
+  assert.equal(h.requests.length, 2, 'one flight per deployment');
+  h.open(); const landed = await cycle.pending;
+  assert.equal(landed.key, soulCatalogKey(CLI, moved)); assert.equal(h.catalog.refreshing('/dep'), false);
+  assert.equal(h.catalog.settle('/dep', CLI, moved).pending, null, 'the next cycle finds the new key held: no duplicate read');
+});

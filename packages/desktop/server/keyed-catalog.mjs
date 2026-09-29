@@ -107,12 +107,15 @@ export function createKeyedCatalog({ read, retryMs, ttlMs = HELD_TTL_MS, now = (
       const flight = flights.get(deployment);
       return (flight?.key === key ? flight : start(deployment, cli, key, maxAge)).promise;
     },
-    /** The request path with a STALE good entry: start one same-key re-read behind the answer (or
-     * join the one in flight); never awaited by the caller, whose answer is the held entry with
-     * `refreshing`. Resolves with the landed entry for whoever attaches it. */
+    /** The request path with a STALE good entry: start one same-key re-read behind the answer, or
+     * join the one in flight; never awaited by the caller, whose answer is the held entry with
+     * `refreshing`. Resolves with the landed entry for whoever attaches it — null when another
+     * key's flight is in the air (a cycle moved the state on and is reading it: that read answers,
+     * and starting a stale-key read beside it would displace it and cost a duplicate). */
     revalidate(deployment, cli, key, { maxAge } = {}) {
       const flight = flights.get(deployment);
-      return (flight?.key === key ? flight : start(deployment, cli, key, maxAge)).promise;
+      if (flight) return flight.key === key ? flight.promise : null;
+      return start(deployment, cli, key, maxAge).promise;
     },
     /** A LIVE read for `key` (maxAge 0): joins only a live same-key flight; a background flight in
      * the air is not it (its heads may be up to maxAge old), so a live one starts beside it. */
