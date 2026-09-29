@@ -1381,6 +1381,8 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
     term,
     tmux: inst.tmux,
     remote: inst.server ? { serverId: inst.server, instance: inst.instance, home: inst.home } : undefined,
+    // A remote row's repoName is its server's registered label, else the server id.
+    serverLabel: inst.server ? inst.repoName || inst.server : undefined,
     wrap,
     isActive: () => made.paneEl.classList.contains("active"),
     // Visibility is a fit concern, not permission to focus. Consult the

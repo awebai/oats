@@ -432,6 +432,19 @@ body {
   padding: 10px 14px; background: var(--surface); color: var(--fg); border: 1px solid var(--border);
   border-radius: 8px; z-index: 6; font-size: 13px; }
 .term-attachment-status[hidden] { display: none; }
+/* A lost remote link: the strip overlays the pane's top rows, so the terminal keeps its
+   geometry (no refit) and its scrollback stays readable, undimmed, under it. */
+.term-reconnect { position: absolute; top: 0; left: 0; right: 0; z-index: 6; display: flex; align-items: center; gap: 12px;
+  padding: 6px 10px 6px 16px; background: var(--surface); color: var(--fg); border-bottom: 1px solid var(--border); font-size: 13px; }
+.term-reconnect-text { flex: 1; min-width: 0; color: var(--fg); }
+.term-reconnect button { flex: none; min-height: 26px; padding: 0 11px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--fg); font-family: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
+.term-reconnect button:hover { background: var(--surface-2); }
+.term-reconnect button:focus-visible { background: var(--sel); }
+.term-reconnect button[aria-disabled="true"] { cursor: default; }
+/* Visually hidden, announced: the pane's reconnect state changes. */
+.term-sr-only { position: absolute; top: 0; left: 0; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap; }
 
 /* ── command palette (⌘K) ── */
 .palette-overlay {
