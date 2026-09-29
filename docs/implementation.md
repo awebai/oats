@@ -103,7 +103,7 @@ listing) and `tree-oids` (the tree ids of a set of directories). An entry is onl
 code, never local state and never a transient error; it is written
 atomically, a corrupt one is a miss, and `pruneStores` bounds the store
 (`PARSED_LIMITS`, least recently used first). `--max-age` adds the observation
-store `<cache>/.observed/` ([Observation reuse](desktop-cli-api.md#observation-reuse-feature-observe-max-age-oats-0302)):
+store `<cache>/.observed/` ([Observation reuse](desktop-cli-api.md#observation-reuse-feature-observe-max-age-oats-0303)):
 one record per (repo key, ref args, url digest), so two spellings of one repo
 keep a record each; the url itself is never written. Adding a cached item
 means choosing an item name unique to its producer (the item string its
