@@ -34,7 +34,7 @@ function http({ exec = (_b, _a, _o, done) => done(null, JSON.stringify(envelope(
   assert.ok(start > 0 && end > start);
   let executions = 0, lookups = 0; const seen = [];
   const read = createInstanceGitBoundary({ invoke: (bin, opts) => cliInstanceGit(bin, opts, { exec(...args) { executions++; seen.push({ bin: args[0], argv: args[1], opts: args[2] }); return exec(...args); } }) });
-  const deps = { createServer: fn => fn, instanceGitRequest: read, cliState: cli,
+  const deps = { createServer: fn => fn, instanceGitRequest: read, cliState: cli, ctxs: ['/Users/me/work'],
     workspaces: () => { lookups++; return [{ id: '/A', scope: '/server-scope' }, { id: '/B', scope: '/other-scope' }]; },
     snapshot: { byWs: snapshots ?? new Map([['/A', { instances: [instance()] }], ['/B', { instances: [instance('dev-1', '/B/agents')] }]]) },
     panelData: assert.fail, snapshotPanel: assert.fail, collectNow: assert.fail,

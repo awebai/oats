@@ -1346,7 +1346,7 @@ const server = createServer(async (req, res) => {
         // Never collect Git here or fall back to another workspace.
         // An absent exact snapshot is unavailable; refreshing the roster is
         // the existing collector's job, not an authority to infer another home.
-        const result = await instanceGitRequest(request, { workspace, cli: cliState,
+        const result = await instanceGitRequest(request, { workspace, cli: cliState, localCwd: ctxs[0],
           instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] });
         return send(res, 200, result);
       } catch (error) {

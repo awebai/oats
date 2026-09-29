@@ -95,7 +95,10 @@ export function createForgeBoundary({ env = forgeEnvironment(), run = createGhRu
     if (!validForgeEpoch(epoch) || !object(request) || Object.keys(request).some(k => !['selector', 'observationKey'].includes(k)) || !ref(request.observationKey)) {
       return Promise.resolve(failure('E_BAD_ARGS', 'invalid', noObservation));
     }
-    const context = getContext(), admitted = admitInstanceGit({ action: 'git', selector: request.selector }, context);
+    const context = getContext();
+    // A pull request is read from this machine's clone of the work; a remote row has none here.
+    if (context?.workspace?.remote) return Promise.resolve(failure('unsupported-remote-operation', epoch, noObservation));
+    const admitted = admitInstanceGit({ action: 'git', selector: request.selector }, context);
     if (admitted.failure) return Promise.resolve({ ...failure('E_GH_FAILED', epoch, noObservation),
       target: admitted.failure.target, reason: admitted.failure.reason });
     const key = JSON.stringify(['pr', epoch, admitted.bin, context.cli.version, admitted.context, gitTargetKey(admitted.target), request.observationKey]);

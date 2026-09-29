@@ -4,6 +4,7 @@ import { gitTarget, gitTargetKey, gitState, gitDiff, gitObservation, gitKinds, I
 import { createForgePrPanel } from './forge-pr.mjs';
 import { ageText } from './age-text.mjs';
 import { iconElement } from './shell-icons.mjs';
+import { readingFrom, serverLabel } from './remote-address.mjs';
 
 export const instanceGitCSS = `
 /* v4.1 Developer tab (Git and GitHub; board 2): Branch, Changes and Pull request cards under small-caps labels,
@@ -201,6 +202,8 @@ export function noGitReason(work) {
   if (work === 'workspace') return "It works across the workspace's member repositories (workspace mode), so there is no single branch or pull request to show.";
   return null;
 }
+/** A refusal's code, and the kernel's own message when a remote host sent one. */
+const codeLine = reason => typeof reason.detail === 'string' && reason.detail ? `${reason.code}: ${reason.detail}` : reason.code;
 export function createInstanceGitPanel(parent, { request, generation = () => 0, applyFocus = fn => fn(),
   requestForge, requestThreads = null, connectionGeneration = () => 0, subscribeConnections = () => () => {}, connect, openExternal, onObservation = () => {}, onPullRequest = () => {} } = {}) {
   const doc = parent.ownerDocument;
@@ -247,7 +250,7 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
   const pullRequest = createForgePrPanel(github, { request: requestForge, requestThreads, generation, connectionGeneration, subscribeConnections, connect, openExternal,
     onData: data => onPullRequest(data ? { identity: summaryIdentity, connection: connectionGeneration(), unresolvedThreads: data.unresolvedThreads ?? null } : null) });
   let alive = true, active = false, epoch = 0, observationTicket = 0, fileTicket = 0;
-  let target = null, identity = '', summaryIdentity = '', attempted = false, observation = null, selected = null, busy = false, remote = false, work = null;
+  let target = null, identity = '', summaryIdentity = '', attempted = false, observation = null, selected = null, busy = false, server = null, work = null;
   const controls = new Map();
   function visible() {
     if (!root.isConnected) return false;
@@ -269,8 +272,8 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
   const clearDiff = () => { selected = null; fileTicket++; diffBody.replaceChildren(); message(diffStatus); for (const b of controls.values()) b.setAttribute('aria-pressed', 'false'); };
   const clear = (summary = true) => { if (summary) onObservation(null); observation = null; pullRequest.update(); clearDiff(); controls.clear(); facts.replaceChildren(); files.replaceChildren(); changesNotes.replaceChildren(); files.classList.remove('git-card'); changesCount.textContent = ''; workMode.textContent = ''; message(status); setChecked(null); noGit(false); changesSection.hidden = true; openDiff.hidden = true; github.hidden = true; };
   const locks = () => {
-    refreshButton.disabled = !alive || !active || !target || remote || busy;
-    footer.hidden = !alive || !active || !target || remote || !empty.hidden;
+    refreshButton.disabled = !alive || !active || !target || busy;
+    footer.hidden = !alive || !active || !target || !empty.hidden;
     for (const b of [...controls.values(), openDiff]) b.disabled = !active || busy || !observation;
   };
   function send(ref, action, extra = {}) {
@@ -347,14 +350,15 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
     void pullRequest.update({ target: ref.target, key: observationKey, revision: o.revision, branch: o.branch });
   }
   async function refresh({ notice = '' } = {}) {
-    if (!alive || !active || !target || remote || !visible()) return;
+    if (!alive || !active || !target || !visible()) return;
     const ref = capture(), ticket = ++observationTicket;
     attempted = true; busy = true;
     // When an expired file triggers re-observation, keep keyboard focus in the
     // same owned panel rather than dropping it onto the terminal/body.
     if (files.contains(doc.activeElement)) applyFocus(() => refreshButton.focus({ preventScroll: true }));
     observation = null; onObservation(null); pullRequest.update(); clearDiff(); message(diffStatus, notice); noGit(false); setChecked(null); locks();
-    message(status, facts.childElementCount ? 'Refreshing — previous observation is stale; file actions are disabled.' : 'Reading worktree…');
+    // A remote row's worktree is read on its own machine: say so while it is in flight.
+    message(status, facts.childElementCount ? 'Refreshing — previous observation is stale; file actions are disabled.' : server ? readingFrom(server) : 'Reading worktree…');
     try {
       const raw = await send(ref, 'git');
       if (!canPaint(ref) || ticket !== observationTicket) return;
@@ -364,7 +368,7 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
         // including E_NO_WORKTREE for a mode that should have a tree (a lost worktree), stays red with its code.
         const calm = result.reason.code === 'E_NO_WORKTREE' && !facts.childElementCount ? noGitReason(work) : null;
         if (calm) { message(status); emptyWhy.textContent = calm; noGit(true); locks(); return; }
-        unavailable(result.reason.message, result.reason.code); return;
+        unavailable(result.reason.message, codeLine(result.reason)); return;
       }
       const data = gitState(result.data, ref.target);
       if (!data) throw new Error('Invalid Git observation');
@@ -379,7 +383,7 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
   }
   async function selectFile(file, ref, snapshot) {
     const ticket = ++fileTicket; selected = file;
-    diffBody.replaceChildren(); message(diffStatus, 'Reading diff…');
+    diffBody.replaceChildren(); message(diffStatus, server ? readingFrom(server) : 'Reading diff…');
     for (const [id, b] of controls) b.setAttribute('aria-pressed', String(id === file.id));
     const current = () => canPaint(ref) && ticket === fileTicket && observation === snapshot && selected === file;
     try {
@@ -392,7 +396,7 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
         await refresh({ notice: `The file observation changed${fresh ? ` (current revision ${fresh.revision})` : ''}. Select a file from the refreshed observation.` });
         return;
       }
-      if (result.status !== 'available') { message(diffStatus, `${result.reason.message} (${result.reason.code})`, true); return; }
+      if (result.status !== 'available') { message(diffStatus, `${result.reason.message} (${codeLine(result.reason)})`, true); return; }
       const data = gitDiff(result.data, { fileId: file.id, revision: snapshot.observation.revision, indexRevision: snapshot.observation.indexRevision, observation: snapshot.observation, file });
       if (!data) throw new Error('Invalid diff');
       const against = node('p', `Against: ${/^[0-9a-f]{40,64}$/.test(data.against) ? data.against.slice(0, 7) : data.against} · ${data.bytes} patch bytes${data.truncated ? ` · truncated at ${data.limit} bytes` : ''}`, 'git-note'); against.title = data.against;
@@ -418,9 +422,9 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
   function update({ active: nextActive = false, workspace, instance, key } = {}) {
     if (!alive) return;
     const next = gitTarget({ workspace, instance: instance?.instance, agent: instance?.agent, agentsRoot: instance?.agentsRoot, home: instance?.home, server: instance?.server || null });
-    const nextIdentity = JSON.stringify([generation(), connectionGeneration(), key, next && gitTargetKey(next), instance?.createdAt ?? null, !!instance?.remote]);
+    const nextIdentity = JSON.stringify([generation(), connectionGeneration(), key, next && gitTargetKey(next), instance?.createdAt ?? null]);
     summaryIdentity = JSON.stringify([workspace, key, instance?.home, instance?.agent, instance?.agentsRoot, instance?.server || null, instance?.createdAt ?? null]);
-    remote = !!(next?.server || instance?.remote);
+    server = next?.server ? serverLabel(instance) : null;
     work = typeof instance?.work === 'string' ? instance.work : null;
     if (nextIdentity !== identity || active !== !!nextActive) {
       epoch++; observationTicket++; fileTicket++; busy = false; attempted = false;
@@ -429,10 +433,6 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
     }
     if (!active) { locks(); return; }
     if (!target) { message(status, 'Select a current, fully qualified instance to inspect its worktree.'); locks(); return; }
-    if (remote) {
-      attempted = true; message(status, 'Remote Git inspection is unavailable: K1 has no negotiated remote dispatch. No local fallback was used.');
-      locks(); return;
-    }
     locks();
     if (!attempted && visible()) return refresh();
   }
