@@ -1,8 +1,8 @@
 {
   "capability": "oats.developer",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "compatibility": {
-    "oats": ">=0.29.0"
+    "oats": ">=0.30.0"
   },
   "description": "Developers deliver a piece of work end to end: evaluate the spec (or write one), execute it (preferring parallel dynamic workflows in one or several worktrees), consolidate, and iterate with ONE code-reviewer (this package's soul) until it is satisfied before handing back.",
   "requires": [],
