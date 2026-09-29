@@ -48,7 +48,8 @@
   --ansi-bright-cyan: #70e0e8; --ansi-bright-white: #f5f9ff;
   /* ── component tokens (thin aliases — themes rarely override) ── */
   --md-code-bg: #ffffff10; --md-rule: #ffffff2e;
-  --graph-edge: #2d333c; --graph-edge-coord: #4493f8;
+  /* --graph-edge draws connectors, which are meaningful graphics: ≥3:1 on bg/surface/surface-2 (WCAG 1.4.11). */
+  --graph-edge: #636c79; --graph-edge-coord: #4493f8;
   /* Opaque identity pairs: fixed names only, never CSS supplied by a soul. */
   --soul-sand-bg: #393128; --soul-sand-fg: #d4b991;
   --soul-sage-bg: #29392e; --soul-sage-fg: #a9c6ad;
@@ -104,7 +105,7 @@
   /* White over canvas paints approximately --surface-2. A dark overlay on
      this canvas would fail AA for syntax accent/violet. Keep alpha tested. */
   --md-code-bg: #ffffff60; --md-rule: #1a1a182e;
-  --graph-edge: #e3e3df; --graph-edge-coord: #ad5500;
+  --graph-edge: #8c8c86; --graph-edge-coord: #ad5500;
   /* Opaque identity pairs: fixed names only, never CSS supplied by a soul. */
   --soul-sand-bg: #eee5d7; --soul-sand-fg: #665239;
   --soul-sage-bg: #e2ebe2; --soul-sage-fg: #46634b;
@@ -155,7 +156,7 @@
   --ansi-bright-yellow: #725500; --ansi-bright-blue: #155f96; --ansi-bright-magenta: #9d2b61;
   --ansi-bright-cyan: #0f6863; --ansi-bright-white: #37424a;
   --md-code-bg: #58637510; --md-rule: #5863752e;
-  --graph-edge: #ddd4bc; --graph-edge-coord: #1f6fb2;
+  --graph-edge: #8e846f; --graph-edge-coord: #1f6fb2;
   /* Opaque identity pairs: fixed names only, never CSS supplied by a soul. */
   --soul-sand-bg: #eee5d7; --soul-sand-fg: #665239;
   --soul-sage-bg: #e2ebe2; --soul-sage-fg: #46634b;

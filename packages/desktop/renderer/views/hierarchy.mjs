@@ -2,8 +2,9 @@
    observations, not an inferred activity feed. Agent clusters — connected
    components of parent/child/sibling links (see clusters.mjs) — are the
    primary visual unit: each multi-member cluster renders as a card with its
-   internal tidy tree (parent/child solid elbows; sibling links as
-   dotted horizontal edges between peers — never color alone). Unrelated
+   internal tidy tree (parent/child solid S-curves, bottom-centre to
+   top-centre; sibling links as dashed shallow arcs between peers — never
+   color alone). Unrelated
    single instances collect in a visually quieter "Independent" strip below.
    Layout inside a cluster is a layered tidy tree, deliberately NOT
    force-directed: deterministic, no jitter.
@@ -84,7 +85,7 @@ export const hierarchyCSS = `
 .hier-zoom button:focus-visible { background: var(--sel); }
 .hier-edges { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
 .hier-edges path { stroke: var(--graph-edge); stroke-width: 1.5; fill: none; }
-.hier-edges path.sib { stroke-dasharray:2 4; }
+.hier-edges path.sib { stroke-dasharray:5 4; }
 .hier-edges path.lit { stroke: var(--accent); stroke-width: 2; }
 .hier-ws { position: absolute; color: var(--faint); font-size: 11px; font-weight: 650;
            text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; }
@@ -751,23 +752,25 @@ function openTerm(s, id) {
   if (i) invokeInstance(s, id, i.running === false ? 'start' : 'terminal');
 }
 
-/* Edge between a parent and child node, from their FINAL (fx/fy) positions. */
+/* Edge between a parent and child node, from their FINAL (fx/fy) positions:
+   a smooth cubic S-curve from the parent's bottom-centre to the child's
+   top-centre (OAS's connector), both control points on the vertical midpoint. */
 function drawEdge(p, parent, child) {
-  const x1 = parent.fx + 20, y1 = parent.fy + NODE_H;
-  const x2 = child.fx, y2 = child.fy + NODE_H / 2;
-  const middle = (y1 + child.fy) / 2, trunk = Math.min(x1, x2 - 20);
-  p.setAttribute('d', `M ${x1} ${y1} V ${middle} H ${trunk} V ${y2} H ${x2}`);
+  const x1 = parent.fx + NODE_W / 2, y1 = parent.fy + NODE_H;
+  const x2 = child.fx + NODE_W / 2, y2 = child.fy;
+  const my = (y1 + y2) / 2;
+  p.setAttribute('d', `M ${x1} ${y1} C ${x1} ${my}, ${x2} ${my}, ${x2} ${y2}`);
 }
 
-/* Sibling peer edge: a dotted connection between two boxes' vertical
-   midpoints — distinguishable from parent edges by STYLE (dotted peer line),
-   not color alone. */
+/* Sibling peer edge: a shallow dashed arc between the two boxes' facing
+   vertical midpoints — distinguishable from parent edges by STYLE (dash + flat
+   arc), not color alone. */
 function drawSiblingEdge(p, a, b) {
   const [l, r] = a.fx <= b.fx ? [a, b] : [b, a];
   const x1 = l.fx + NODE_W, y1 = l.fy + NODE_H / 2;
   const x2 = r.fx, y2 = r.fy + NODE_H / 2;
   const mx = (x1 + x2) / 2;
-  p.setAttribute('d', `M ${x1} ${y1} H ${mx} V ${y2} H ${x2}`);
+  p.setAttribute('d', `M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`);
 }
 
 /* Redraw one edge path from its endpoints' final positions. */

@@ -17,6 +17,10 @@ export const contextPanelCSS = `
 #context-panel .context-panel-rail { display:flex; flex-direction:column; align-items:center; flex:1; min-height:0; }
 #context-panel .context-panel-rail { gap:4px; padding:8px 0; box-sizing:border-box; }
 #context-panel .context-panel-rail-tab { position:relative; width:30px; height:30px; padding:0; }
+/* Rail icons sit on the rail's centre line: .shell-icon is display:block, which text-align cannot centre,
+   so each rail control centres its icon as a flex box; the rail centres the controls on its cross axis
+   (inside the 1px border, whatever the placement). No rail control may carry a cross-axis auto margin. */
+#context-panel :is(.context-panel-rail-tab, .context-panel-expand) { display:flex; align-items:center; justify-content:center; }
 #context-panel .context-panel-rail-tab[aria-pressed=true] { color:var(--accent); background:var(--sel); }
 #context-panel .context-panel-dot { position:absolute; right:1px; top:1px; width:7px; height:7px; border-radius:50%; background:var(--accent); border:1px solid var(--surface); }
 #context-panel .context-panel-expand { width:30px; min-height:30px; padding:0; margin-top:auto; }

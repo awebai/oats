@@ -77,9 +77,9 @@ export const spawnDialogCSS = `
 .spawn-core-row .mono, .spawn-core-row .muted { min-width:0; overflow-wrap:anywhere; }
 .spawn-core-row .muted { color:var(--muted); }
 .spawn-cap-list { display:flex; flex-direction:column; gap:5px; font-size:12px; color:var(--fg); }
-.spawn-cap-row { display:flex; align-items:center; gap:8px; min-width:0; }
-.spawn-cap-row .mono { flex:1; min-width:0; overflow-wrap:anywhere; }
-.spawn-cap-source { flex:none; padding:1px 6px; border-radius:4px; background:var(--tag-bg); color:var(--muted); font-size:10.5px; font-weight:600; white-space:nowrap; }
+.spawn-cap-row { display:flex; flex-wrap:wrap; justify-content:flex-end; align-items:center; gap:3px 8px; min-width:0; }
+.spawn-cap-row .mono { flex:1 1 auto; min-width:0; overflow-wrap:anywhere; }
+.spawn-cap-source, .spawn-cap-why { flex:none; padding:1px 6px; border-radius:4px; background:var(--tag-bg); color:var(--muted); font-size:10.5px; font-weight:600; white-space:nowrap; }
 .spawn-preview-note { margin:auto 0 0; font-size:11.5px; line-height:1.5; color:var(--muted); }
 .spawn-chooser { border-right:1px solid var(--border); min-width:0; min-height:0; overflow:auto; padding:16px 10px 12px; }
 .spawn-chooser-head { display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin:0 6px 10px; }
@@ -303,14 +303,25 @@ export function soulOriginText(soul) {
 const WORK_PHRASES = Object.freeze({ __proto__: null, worktree: 'own worktree', checkout: 'shared checkout', attached: "a parent's worktree", directory: 'a folder', workspace: 'all member repos' });
 export const worksInText = work => WORK_PHRASES[work] ?? work;
 /** A preview module's source, as the Capabilities tag says it: the package and version, the member
- * repository, or the kind verbatim. Never a reason ("soul", "workspace default"): the preview has none. */
+ * repository, or the kind verbatim. Never a reason: that is moduleWhyText's, beside it. */
 export function moduleSourceText(from) {
   if (from?.kind === 'package') return `package ${from.package ?? ''}${from.version ? ` ${from.version}` : ''}`.trimEnd();
   if (from?.kind === 'member') return `${String(from.repoKey ?? '').split('/').pop().replace(/\.git$/, '') || 'member'} · latest`;
   return typeof from?.kind === 'string' ? from.kind : '';
 }
+/** Why a preview module is there, as the reason tag beside its source says it: the projection's
+ * `composedFrom` (feature preview-composed-from) — "Soul", or "Workspace default" with the core slot
+ * a workspace default fills ("Workspace default · messaging"). '' (no tag) when the preview does not
+ * say: an older CLI, or a value the projection dropped. Never guessed from the soul. */
+const CORE_LAYERS = ['knowledge', 'messaging', 'tasks'];
+export function moduleWhyText(m) {
+  if (m?.composedFrom === 'soul') return 'Soul';
+  if (m?.composedFrom === 'workspace') return CORE_LAYERS.includes(m.layer) ? `Workspace default · ${m.layer}` : 'Workspace default';
+  return '';
+}
 /** The preview column's Core capabilities and Capabilities sections (their children), from the
- * preview's `modules` rows [{name, layer, from}]; null when the preview carries none (no placeholder). */
+ * preview's `modules` rows [{name, layer, from, composedFrom?}]; null when the preview carries none
+ * (no placeholder). */
 export function composePreviewModules(doc, modules) {
   if (!Array.isArray(modules)) return null;
   const el = (tag, text, cls) => node(doc, tag, text, cls);
@@ -325,6 +336,8 @@ export function composePreviewModules(doc, modules) {
   for (const m of [...rows].sort((a, b) => a.name.localeCompare(b.name))) {
     const row = el('span', undefined, 'spawn-cap-row'); row.dataset.module = m.name;
     row.append(el('span', m.name, 'mono'), el('span', moduleSourceText(m.from), 'spawn-cap-source'));
+    // The reason is plain text in the row: part of what a screen reader reads for it.
+    const why = moduleWhyText(m); if (why) row.append(el('span', why, 'spawn-cap-why'));
     capsList.append(row);
   }
   return { core: [el('h3', 'Core capabilities', 'spawn-preview-title'), coreBox], caps: [el('h3', `Capabilities · ${rows.length}`, 'spawn-preview-title'), capsList] };

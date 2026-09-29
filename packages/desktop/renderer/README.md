@@ -105,8 +105,11 @@ are connected components of the shared parent/sibling resolver across roots and
 repositories, never repository buckets. Groups remain anonymous/count-labeled;
 reported context is metadata, not a derived group name. Header counts distinguish
 multi-member groups from independent instances and keep unknown runtime state
-separate from stopped. Parent/child elbows and dotted sibling lines do not rely
-on color alone. The 220px cards show reported context/runtime/branch—not guessed
+separate from stopped. Parent/child edges are OAS-style cubic S-curves from the
+parent's bottom-centre to the child's top-centre; sibling edges are shallow arcs
+dashed `5 4`, so the two kinds do not rely on color alone. `--graph-edge` holds
+3:1 against every surface it is drawn on (WCAG 1.4.11, pinned in
+`theme-contrast`); the lit lineage is `--accent`. The 220px cards show reported context/runtime/branch—not guessed
 PRs, worktree health or task activity. Same-named nodes carry visible root/home
 suffixes and host qualifiers; their popup exposes the full reported address.
 Those are per-instance identity cues, never invented group names.
@@ -497,6 +500,36 @@ workspace is observed through its server and never synced from here.
   --workspace <ref> --json`, then the ordinary transactional add. A refused ref
   gets a fresh offer for the same folder; `rolledBack` is reported.
 
+**Pinned tops and one scroller per tab (spec G, `sticky-top.mjs`).** The view
+is one fixed-height column that never scrolls: the tab row (`.workspace-header`,
+which also carries Setup's List/Graph switch) and the Souls bar sit outside the
+content scrollers (`.souls-grid`, `.workspace-discovery`). Each scroller is
+positioned, `min-height:0` and `overscroll-behavior: contain`; the view root
+(`.souls`) is `position:relative; overflow:clip`. Inside the Capabilities
+scroller the section pills + search (`.ws-toolbar.ws-sticky`) and the Teams page
+head (`.ct-page-head.ws-sticky`) are `position:sticky` on the opaque `--bg`.
+Chromium insets a sticky box by its scroller's padding, so they pin at
+`top: -var(--ws-pad-top)` (flush with the scrollport; nothing shows above
+them) and keep an 8px inner top. Their 1px bottom edge is always there,
+transparent until content has scrolled under the block (`.is-stuck`), so the
+block never changes height; the Souls grid does the same with a top edge
+(`.is-scrolled`). `trackStickyTop` also writes the pinned block's height to
+`--ws-sticky-h`, the `scroll-margin-top` of the section heads, rows and the
+Teams page's controls, so a pill jump or a focused row never lands under it.
+"Filter by Team / Repo" stays in the Workspace owned header: it filters only
+that section, so it scrolls with it. Section and group headers scroll. This
+holds at every width: soul-inspector's narrow `@container(max-width:700px)`
+block restacks only `.souls-body.inspecting` (the side inspector under the
+list, scrolling together); without it the view keeps the layout above.
+
+Why the containment matters: an absolutely positioned element with no
+positioned ancestor (the `*-sr-only` / `loading-sr` words) escapes a scroller's
+clip and stretches the document; wheel chaining, `scrollIntoView` and End then
+scroll the whole app, headers included. The sr-only utilities are anchored
+(`top:0; left:0`) and the shell's `body` is positioned and clipped, so the
+document never has anything to scroll (`workspace-sticky.test.mjs`; the
+browser behaviour is verified live over CDP).
+
 All awaited reads and mutations carry latest-intent ownership (request serial +
 workspace generation) checked on success and rejection, mutation-verified in
 `workspace-v2-view.test.mjs`. Fixtures are kernel captures
@@ -645,7 +678,11 @@ sidebar toggle or the restore edge), never `<body>`; a focus-mode change made
 after focus was already lost (the palette removes its input before running the
 command) lands there too. Mod+F and Mod+B leave focus
 mode. Panel collapse and selected tab are session-local per workspace; focus mode
-is a temporary presentation override. Native terminal input and per-window
+is a temporary presentation override. Collapsed, the panel is a rail (a 44px column, or a
+34px row when the workbench stacks): the rail centres its controls on its cross
+axis, each control centres its block `.shell-icon` as a flex box, and no control
+has a cross-axis auto margin (the stacked expand drops its `margin-top:auto`), so
+every icon sits on the rail's centre line (`context-panel-rail.test.mjs`). Native terminal input and per-window
 lifecycle policies are unchanged.
 
 ### Git inspection (slice 2a)
