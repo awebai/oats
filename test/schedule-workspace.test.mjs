@@ -211,8 +211,9 @@ test("M4 live: a schedule over a Northwind deployment with a workspace soul mate
   assert.ok(modules.includes("oats.core"), `oats.core is materialized (${modules})`);
   const skills = readdirSync(join(home, ".agents", "skills")).sort();
   for (const retired of ["oats", "oats-config", "oats-packages"]) assert.ok(!skills.includes(retired), `the retired kernel skill ${retired} is not copied (${skills})`);
-  assert.ok(skills.includes("oats.core") && skills.includes("triage-issue"), `module and soul skills present (${skills})`);
   const meta = readJson(join(home, "instance.json"));
+  assert.ok(skills.includes("oats-operate") && skills.includes("triage-issue"), `module and soul skills present, flat (${skills})`);
+  assert.deepEqual(skills, meta.skills.map((s) => s.name).sort(), "every composed skill, and only those, flat under .agents/skills");
   assert.deepEqual(Object.keys(meta.modules).sort(), modules, "instance.json records every materialized module");
   assert.equal(meta.workspace.soul.repoKey, readJson(join(agentsRoot, "support-triager", ".oats-soul-source.json")).repoKey);
   assert.ok(typeof meta.workspace.resolution === "string" && meta.workspace.resolution.length > 0);

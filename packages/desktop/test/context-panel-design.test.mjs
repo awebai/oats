@@ -240,7 +240,9 @@ test('the injected Teams section reads once per instance, gates on the declared 
 test('no messaging provider, no compatible CLI, a remote instance or an inactive tab: no section and no read', async t => {
   const none = fx('inspect-home').result; for (const c of none.capabilities) if (c.layer === 'messaging') c.layer = null;
   const a = section(t, () => none); a.s.update({ active: true, workspace: 'A', instance: teamsInstance() }); await tick();
-  assert.equal(a.calls.length, 1); assert.deepEqual(a.presence, [false]); assert.equal(a.host.querySelector('.teams-panel'), null);
+  // desktop/loading-states: the roster row says nothing of messaging (no identityAddress), so the section never claims its place — no flash that would shift Lineage.
+  assert.equal(a.calls.length, 1); assert.deepEqual(a.presence, [false, false]); assert.equal(a.host.querySelector('.teams-panel'), null);
+  assert.equal(a.host.querySelector('.loading-failed'), null, 'no provider is not a failure');
   const b = section(t, () => assert.fail('no read'), () => ({ ok: true, operationsApi: 1 }));
   b.s.update({ active: true, workspace: 'A', instance: teamsInstance() });
   const c = section(t, () => assert.fail('no read')); c.s.update({ active: true, workspace: 'A', instance: teamsInstance(TEAMS_HOME, { server: 'host' }) });

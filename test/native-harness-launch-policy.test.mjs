@@ -4,7 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -131,7 +131,16 @@ test("policy pinning does not rewrite frozen recipes or current launch configura
   }
 });
 
-test("ordinary native launch retains complete OATS homes for Claude and Codex: module skills and inject, required spawn hook, normal retire", async t => {
+/** The strictest harness discovery, Claude Code's: each child of a skills root that holds a
+ *  regular SKILL.md, ONE level deep (.claude/skills/<name>/SKILL.md). A skill nested any deeper
+ *  is invisible to it (pi's loader recurses, so one level deep satisfies every harness). */
+function discoverSkills(root) {
+  let entries = [];
+  try { entries = readdirSync(root, { withFileTypes: true }); } catch { return []; }
+  return entries.filter((e) => { try { return statSync(join(root, e.name, "SKILL.md")).isFile(); } catch { return false; } }).map((e) => e.name).sort();
+}
+
+test("ordinary native launch retains complete OATS homes for pi, Claude and Codex: module skills and inject, required spawn hook, normal retire", async t => {
   // A workspace deployment (the shared v2 fixture): the capability is a member module the soul
   // declares; declaring it is the trust (no per-artifact approval on the workspace model).
   const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-native-full-home-")));
@@ -169,7 +178,7 @@ test("ordinary native launch retains complete OATS homes for Claude and Codex: m
   const saved = { ...process.env };
   Object.assign(process.env, { HOME: fx.env.HOME, OATS_HOME_DIR: fx.env.OATS_HOME_DIR, OATS_REMOTE_CACHE: fx.env.OATS_REMOTE_CACHE, PATH: bin });
   try {
-    for (const harness of ["claude", "codex"]) {
+    for (const harness of ["pi", "claude", "codex"]) {
       const task = `Bounded ${harness} fixture task`, instance = `probe-native-${harness}`;
       const result = await fx.spawn("probe", { instance, harness, task });
       const home = result.home, meta = JSON.parse(readFileSync(join(home, "instance.json"), "utf8"));
@@ -183,12 +192,15 @@ test("ordinary native launch retains complete OATS homes for Claude and Codex: m
       const instructions = readFileSync(join(home, "AGENTS.md"), "utf8");
       assert.ok(instructions.includes(canonical.trim())); assert.match(instructions, /Resolved native capability instructions/); assert.match(instructions, /Work mode: directory/);
       const names = readdirSync(join(home, ".agents", "skills")).sort();
-      // Soul skills at .agents/skills/<skill>; a module's skills under .agents/skills/<module>/<skill>.
-      assert.deepEqual(names, ["native-private", capability].sort(), "module and soul skills; no kernel-shipped legacy skills");
+      // Every composed skill — the soul's and each module's — flat at .agents/skills/<skill>.
+      assert.deepEqual(names, ["native-cap", "native-private"], "module and soul skills, flat; no kernel-shipped legacy skills");
+      const composed = meta.skills.map((sk) => sk.name).sort();
+      assert.deepEqual(discoverSkills(join(home, ".agents", "skills")), composed, `${harness}: every composed skill is discoverable at .agents/skills/<name>/SKILL.md`);
+      assert.deepEqual(discoverSkills(join(home, ".claude", "skills")), composed, `${harness}: every composed skill is discoverable at .claude/skills/<name>/SKILL.md through the link`);
       assert.deepEqual(meta.skills, [{ name: "native-private", source: "soul" }, { name: "native-cap", source: `module:${capability}` }], "soul skills, then each module's skills by source");
       assert.deepEqual(meta.composition.materialized.skills.map((sk) => [sk.name, sk.source]), [["native-private", "soul"], ["native-cap", `module:${capability}`]]);
       for (const name of names) assert.equal(lstatSync(join(home, ".agents", "skills", name)).isDirectory(), true);
-      assert.equal(readFileSync(join(home, ".agents", "skills", capability, "native-cap", "references", "resource.txt"), "utf8"), "capability resource bytes");
+      assert.equal(readFileSync(join(home, ".agents", "skills", "native-cap", "references", "resource.txt"), "utf8"), "capability resource bytes");
       assert.equal(readFileSync(join(home, ".agents", "skills", "native-private", "references", "detail.txt"), "utf8"), "private resource bytes");
       assert.deepEqual(meta.composition.materialized.instructions, meta.instructions);
       assert.deepEqual(Object.keys(meta.modules), [capability]);
@@ -198,15 +210,16 @@ test("ordinary native launch retains complete OATS homes for Claude and Codex: m
       const briefing = readFileSync(join(home, "TASK.md"), "utf8"); assert.ok(briefing.includes(task)); assert.match(briefing, /fixture capability briefing/);
       assert.equal(readFileSync(join(home, "work", "from-hook.txt"), "utf8"), "hook work retained");
       assert.ok(meta.composition.materialized.harnessPosture.ambient.length > 0, "native coexistence remains explicit");
-      assert.equal(Object.hasOwn(meta.composition.materialized.harnessPosture, "curtailed"), false);
+      if (harness !== "pi") assert.equal(Object.hasOwn(meta.composition.materialized.harnessPosture, "curtailed"), false);
       const argv = describeLaunchCommand(meta.command).argv;
-      assert.deepEqual(argv, [...(harness === "codex" ? ["--cd", home] : []), "--", '"$(cat TASK.md)"']);
+      if (harness === "pi") assert.match(meta.command, /--append-system-prompt/);
+      else assert.deepEqual(argv, [...(harness === "codex" ? ["--cd", home] : []), "--", '"$(cat TASK.md)"']);
       assert.doesNotMatch(meta.command, /--no-skills|--no-context-files|dangerously-skip-permissions|--yolo|trust_level|oats-pi-sdk-host/);
       const retired = retireInstance(fx.root, result.instance);
       assert.equal(existsSync(home), false); assert.equal(retired.worktreeRemoved, false);
       assert.equal(readFileSync(join(retired.workRecovery.path, "work", "from-hook.txt"), "utf8"), "hook work retained");
     }
-    assert.deepEqual(readFileSync(events, "utf8").trim().split("\n"), ["probe-native-claude", "probe-native-codex"]);
+    assert.deepEqual(readFileSync(events, "utf8").trim().split("\n"), ["probe-native-pi", "probe-native-claude", "probe-native-codex"]);
     assert.equal(readFileSync(join(fx.member, "souls", "probe", "AGENTS.md"), "utf8"), canonical, "canonical source was not rewritten");
     assert.equal(existsSync(tripwire), false, "no native harness/backend was invoked");
   } finally {

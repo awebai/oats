@@ -37,6 +37,12 @@ const fixtures = {
     "oats.json": JSON.stringify({ capability: "nw-house-style", version: "0.2.0", inject: "injects/house-style.md" }),
     "injects/house-style.md": "## House style\n\nShort sentences.\n",
   },
+  // Two skill directories whose SKILL.md live at different paths: a flat home cannot hold both under one name.
+  [`${PLATFORM_KEY}@${COMMIT_B}:capabilities/nw-twins`]: {
+    "oats.json": JSON.stringify({ capability: "nw-twins", version: "0.1.0", skills: ["skills/twin", "extra/twin"] }),
+    "skills/twin/SKILL.md": "---\nname: twin\ndescription: One.\n---\n",
+    "extra/twin/SKILL.md": "---\nname: twin\ndescription: Two.\n---\n",
+  },
   [`${PKG_KEY}@${COMMIT_P}:oats-package/capabilities/oats.okf`]: {
     "oats.json": JSON.stringify({ capability: "oats.okf", version: "2.1.3", layer: "knowledge", skills: ["skills"], inject: "injects/okf.md" }),
     "skills/okf/SKILL.md": "---\nname: okf\ndescription: Knowledge bundles.\n---\n\nValidate with okf-validate.\n",
@@ -155,18 +161,18 @@ test("materialize: whole-copy layout — modules, skills copied (not linked), ex
   assert.deepEqual(out.modules.map((m) => m.name), ["nw-release-tooling", "nw-house-style", "oats.okf"]);
   assert.equal(out.modules[2].from.kind, "package");
 
-  // Skills: FULL copies under .agents/skills/<module>/<skill>/, nested dirs and exec bits preserved.
+  // Skills: FULL copies FLAT under .agents/skills/<skill>/ (one level deep, where harnesses
+  // discover them), nested dirs and exec bits preserved.
   const skillsRoot = join(home, ".agents", "skills");
-  assert.deepEqual(readdirSync(skillsRoot).sort(), ["nw-release-tooling", "oats.okf"], "a module without skills gets no skills dir");
-  const cut = join(skillsRoot, "nw-release-tooling", "cut-release");
-  assert.ok(lstatSync(join(skillsRoot, "nw-release-tooling")).isDirectory() && !lstatSync(join(skillsRoot, "nw-release-tooling")).isSymbolicLink());
+  assert.deepEqual(readdirSync(skillsRoot).sort(), ["cut-release", "okf"], "every module's skills flat; a module without skills adds none");
+  const cut = join(skillsRoot, "cut-release");
   assert.ok(lstatSync(cut).isDirectory() && !lstatSync(cut).isSymbolicLink(), "skill dir is a real directory");
   assert.ok(lstatSync(join(cut, "SKILL.md")).isFile() && !lstatSync(join(cut, "SKILL.md")).isSymbolicLink(), "skill files are copies");
   assert.equal(readFileSync(join(cut, "SKILL.md"), "utf8"), fixtures[`${AGENTS_KEY}@${COMMIT_A}:capabilities/nw-release-tooling`]["skills/cut-release/SKILL.md"]);
   assert.equal(readFileSync(join(cut, "reference", "notes", "steps.md"), "utf8"), "1. tag\n2. push\n", "nested dirs copied");
   assert.equal(statSync(join(cut, "scripts", "cut.sh")).mode & 0o111, 0o111, "executable bit kept on the copied script");
   assert.equal(statSync(join(cut, "SKILL.md")).mode & 0o111, 0, "non-executables stay non-executable");
-  assert.equal(statSync(join(skillsRoot, "oats.okf", "okf", "scripts", "okf-validate.mjs")).mode & 0o111, 0o111);
+  assert.equal(statSync(join(skillsRoot, "okf", "scripts", "okf-validate.mjs")).mode & 0o111, 0o111);
   assert.deepEqual(out.skills.map((s) => [s.module, s.name]), [["nw-release-tooling", "cut-release"], ["oats.okf", "okf"]]);
   assert.equal(out.skills[0].path, cut);
   assert.ok(!listAll(home).some((p) => p.endsWith("@") && !/^(CLAUDE\.md|\.claude\/skills)@$/.test(p)), `no symlinks besides the two aliases: ${listAll(home).filter((p) => p.endsWith("@"))}`);
@@ -191,7 +197,7 @@ test("materialize: whole-copy layout — modules, skills copied (not linked), ex
   assert.equal(readlinkSync(join(home, "CLAUDE.md")), "AGENTS.md");
   assert.ok(lstatSync(join(home, ".claude", "skills")).isSymbolicLink());
   assert.equal(readlinkSync(join(home, ".claude", "skills")), join("..", ".agents", "skills"));
-  assert.equal(readFileSync(join(home, ".claude", "skills", "nw-release-tooling", "cut-release", "SKILL.md"), "utf8"), readFileSync(join(cut, "SKILL.md"), "utf8"));
+  assert.equal(readFileSync(join(home, ".claude", "skills", "cut-release", "SKILL.md"), "utf8"), readFileSync(join(cut, "SKILL.md"), "utf8"));
 
   // instance.json: modules + providers recorded, existing keys preserved.
   const ij = JSON.parse(readFileSync(join(home, "instance.json"), "utf8"));
@@ -368,6 +374,45 @@ test("materialize: duplicate skill names across modules → E_SKILL_DUPLICATE na
   assert.deepEqual(listAll(home), []);
 });
 
+test("materialize: skills are flat, so one name from two paths of ONE module is E_SKILL_DUPLICATE; a repeated row is one skill; an existing skill dir is never overwritten", async () => {
+  const twins = { name: "nw-twins", from: { kind: "member", repoKey: PLATFORM_KEY, commit: COMMIT_B }, manifest: { capability: "nw-twins", version: "0.1.0", skills: ["skills/twin", "extra/twin"] }, layer: null, private: false };
+  const base = scratch();
+  const home = makeHome(base);
+  const viaManifest = await caughtAsync(materialize(resolution({ modules: [twins], skills: [], injects: [], payloads: {} }), home, { fetch: memoryFetch(), lock: LOCK }));
+  assert.equal(viaManifest.code, "E_SKILL_DUPLICATE");
+  assert.deepEqual(viaManifest.details, { name: "twin", modules: ["nw-twins", "nw-twins"] });
+  assert.match(viaManifest.message, /nw-twins \(skills\/twin and extra\/twin\)/);
+  assert.deepEqual(listAll(home), []);
+
+  const repeated = resolution({ skills: [
+    { module: "nw-release-tooling", name: "cut-release", path: "skills/cut-release" },
+    { module: "nw-release-tooling", name: "cut-release", path: "skills/cut-release" },
+  ] });
+  const out = await materialize(repeated, home, { fetch: memoryFetch(), lock: LOCK });
+  assert.deepEqual(out.skills.map((s) => s.name), ["cut-release", "okf"], "the repeated row lands once (okf comes from its manifest)");
+
+  // Case-only differences are one directory on APFS/NTFS: refused, never merged.
+  const cased = resolution({ skills: [
+    { module: "nw-release-tooling", name: "cut-release", path: "skills/cut-release" },
+    { module: "oats.okf", name: "Cut-Release", path: "skills/okf" },
+  ] });
+  const home3 = makeHome(scratch());
+  const caseDup = await caughtAsync(materialize(cased, home3, { fetch: memoryFetch(), lock: LOCK }));
+  assert.equal(caseDup.code, "E_SKILL_DUPLICATE");
+  assert.deepEqual(caseDup.details, { name: "Cut-Release", modules: ["nw-release-tooling", "oats.okf"] });
+  assert.deepEqual(listAll(home3), []);
+
+  const home2 = makeHome(scratch());
+  mkdirSync(join(home2, ".agents", "skills", "okf"), { recursive: true });
+  writeFileSync(join(home2, ".agents", "skills", "okf", "SKILL.md"), "mine");
+  const taken = await caughtAsync(materialize(resolution(), home2, { fetch: memoryFetch(), lock: LOCK }));
+  assert.equal(taken.code, "E_MATERIALIZE_HOME");
+  assert.equal(taken.details.skill, "okf");
+  assert.equal(readFileSync(join(home2, ".agents", "skills", "okf", "SKILL.md"), "utf8"), "mine", "the existing skill is untouched");
+  assert.deepEqual(readdirSync(join(home2, ".agents", "skills")), ["okf"], "nothing else placed");
+  assert.ok(!existsSync(join(home2, "AGENTS.md")) && !existsSync(join(home2, ".oats", "modules", "oats.okf")), "no partial commit");
+});
+
 test("materialize: refuses to overwrite a module already in the home; invalid resolution / missing home are named errors", async () => {
   const base = scratch();
   const home = makeHome(base);
@@ -516,7 +561,7 @@ test("materialize: default fetch (remote.fetchRemoteTree) copies a member capabi
   const out = await materialize(res, home, { remoteOptions: { cacheDir } });
   assert.ok(existsSync(cacheDir), "the remote cache lives where remoteOptions said, not under ~/.cache");
   assert.equal(out.modules[0].digest, contentDigest(join(home, ".oats", "modules", "nw-x")));
-  assert.equal(statSync(join(home, ".agents", "skills", "nw-x", "do-x", "scripts", "x.sh")).mode & 0o111, 0o111);
+  assert.equal(statSync(join(home, ".agents", "skills", "do-x", "scripts", "x.sh")).mode & 0o111, 0o111);
   assert.ok(readFileSync(join(home, "AGENTS.md"), "utf8").includes("<!-- oats:capability:nw-x src="));
   assert.equal(JSON.parse(readFileSync(join(home, "instance.json"), "utf8")).modules["nw-x"].from.repoKey, key);
 });

@@ -317,6 +317,12 @@ test('while the stale line or the failed block is visible the status line is ann
   assert.equal(u.ds.settled, 'idle'); u.ds.begin(); u.ds.succeed(); assert.equal(u.ds.settled, 'ready');
   u.ds.begin(); u.ds.fail(new Error('down')); assert.equal(u.ds.settled, 'stale'); u.ds.begin(); assert.equal(u.ds.state, 'refreshing'); assert.equal(u.ds.settled, 'stale');
   u.ds.cancel(); assert.equal(u.ds.state, 'stale'); u.ds.begin(); u.ds.succeed(); assert.equal(u.ds.settled, 'ready');
+  // fail(error, { observedAt }) dates the stale line from the failed reply (a held / last-good table) and updates it in place.
+  u.ds.begin(); u.ds.succeed(); u.ds.begin(); u.ds.fail(new Error('down'), { observedAt: new Date(u.c.now() - 45_000).toISOString() });
+  const line = u.head.querySelector('.loading-notice'); assert.equal(line.querySelector('.loading-notice-text').textContent, "Couldn't refresh instances · observed 45s ago");
+  line.querySelector('.loading-retry').focus(); u.ds.begin(); u.ds.fail(new Error('down'), { observedAt: new Date(u.c.now() - 3 * 60_000).toISOString() });
+  assert.equal(u.head.querySelector('.loading-notice'), line, 'updated in place'); assert.equal(line.querySelector('.loading-notice-text').textContent, "Couldn't refresh instances · observed 3 min ago");
+  assert.equal(u.doc.activeElement, line.querySelector('.loading-retry'), 'Retry keeps focus');
   // A surface's own message while stale must be seen: say() lifts the quiet mark; the next failure re-quiets.
   u.ds.begin(); u.ds.succeed(); u.ds.begin(); u.ds.fail(new Error('down')); assert.equal(u.status.classList.contains('loading-quiet'), true);
   u.ds.say('Running knowledge:status…'); assert.equal(u.status.textContent, 'Running knowledge:status…'); assert.equal(u.status.classList.contains('loading-quiet'), false, 'visible');

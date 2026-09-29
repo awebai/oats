@@ -24,6 +24,9 @@ export const OLD_AFTER_MS = 2 * 60_000;
 export const AGE_TICK_MS = 30_000;
 
 const capitalise = s => s ? s[0].toUpperCase() + s.slice(1) : s;
+/** Why a roster-derived action or claim waits while the roster is not settled-good (the sidebar's rule, shared by
+ * every surface that derives from the roster: instance-tree.mjs re-exports it). */
+export const ROSTER_STALE_TITLE = 'Unavailable: roster is not current';
 export const wording = Object.freeze({
   loading: noun => `Loading ${noun}…`,
   refreshing: 'Refreshing…',
@@ -83,10 +86,18 @@ export function skeleton(doc, shape, { columns = 4, width } = {}) {
       break;
     }
     case 'soul-card': {
-      el = element(doc, 'div', 'skeleton-item skeleton-soul-card');
-      const head = element(doc, 'span', 'skeleton-card-head');
-      head.append(bone(doc, 'skeleton-mark'), bone(doc, 'skeleton-line skeleton-name'));
-      el.append(head, bone(doc, 'skeleton-line skeleton-text'), bone(doc, 'skeleton-line skeleton-text short'));
+      // Wears the real card classes (.soul-tile > .soul-card > .sbody (.sname .glyph / .stitle / .scontext, .sdesc, .schips
+      // .schip) + .sfoot) so the Souls grid's own CSS (views/spawn.mjs) gives it the card's height, padding and gaps.
+      el = element(doc, 'div', 'skeleton-item skeleton-soul-card soul-tile');
+      const card = element(doc, 'div', 'soul-card skeleton-card');
+      const body = element(doc, 'span', 'sbody'), name = element(doc, 'span', 'sname'), identity = element(doc, 'span', 'sidentity');
+      identity.append(bone(doc, 'skeleton-line skeleton-name stitle'), bone(doc, 'skeleton-line skeleton-context scontext'));
+      name.append(bone(doc, 'skeleton-mark glyph'), identity);
+      const desc = element(doc, 'span', 'sdesc skeleton-desc'); desc.append(bone(doc, 'skeleton-line skeleton-text'), bone(doc, 'skeleton-line skeleton-text short'));
+      const chips = element(doc, 'span', 'schips'); chips.append(bone(doc, 'schip skeleton-chip'), bone(doc, 'schip skeleton-chip short'));
+      body.append(name, desc, chips);
+      const foot = element(doc, 'span', 'sfoot'); foot.append(bone(doc, 'skeleton-line skeleton-activity sactivity'), bone(doc, 'skeleton-button'));
+      card.append(body, foot); el.append(card);
       break;
     }
     case 'table-row': {
@@ -171,6 +182,64 @@ function walk(root, path) {
   return node;
 }
 
+/* ── the stale / observed notice (shared by the controller and pages that mirror a controller's state) ── */
+function noticeText(kind, noun, observedAt, now) {
+  const age = observedText(observedAt, now);
+  if (kind === 'stale') return age ? `${wording.couldNotRefresh(noun)} · ${age}` : wording.couldNotRefresh(noun);
+  return wording.observed(observedAgeText(observedAt, now));
+}
+/** Build the notice line: `kind` 'stale' (the read failed: Retry, the cause behind a Details disclosure
+ * and in the title) or 'observed' (an old observation, muted, no Retry). `onRetry` runs on an activation
+ * while not busy. Update it in place with `updateNotice()` so a focused Retry survives. */
+export function noticeElement(doc, kind, { noun, observedAt = null, cause = null, busy = false, onRetry = null, now = Date.now() } = {}) {
+  const el = element(doc, 'div', 'loading-notice'); el.dataset.kind = kind;
+  el.append(element(doc, 'span', 'loading-notice-text'));
+  if (kind === 'stale') {
+    const retry = element(doc, 'button', 'act loading-retry'); retry.type = 'button'; retry.textContent = wording.retry; retry.dataset.focusKey = 'retry';
+    retry.addEventListener('click', () => { if (retry.getAttribute('aria-disabled') === 'true') return; onRetry?.(); });
+    if (typeof onRetry !== 'function') retry.hidden = true;
+    // The cause is reachable by keyboard and screen reader through a Details disclosure (a title alone is hover-only).
+    const more = element(doc, 'details', 'loading-notice-details');
+    const summary = element(doc, 'summary', ''); summary.textContent = 'Details';
+    more.append(summary, element(doc, 'p', 'loading-notice-cause'));
+    el.append(retry, more);
+  }
+  updateNotice(el, { noun, observedAt, cause, busy, now });
+  return el;
+}
+/** Refresh a notice's text, cause and busy mark in place (its Retry keeps focus). */
+export function updateNotice(el, { noun, observedAt = null, cause = null, busy = false, now = Date.now() } = {}) {
+  el.querySelector('.loading-notice-text').textContent = noticeText(el.dataset.kind, noun, observedAt, now);
+  if (cause) el.title = cause; else el.removeAttribute('title');
+  const more = el.querySelector('.loading-notice-details');
+  if (more) { more.hidden = !cause; more.querySelector('.loading-notice-cause').textContent = cause || ''; }
+  const retry = el.querySelector('.loading-retry');
+  if (retry) { if (busy) retry.setAttribute('aria-disabled', 'true'); else retry.removeAttribute('aria-disabled'); }
+}
+
+/** Build the failed block (the read failed with nothing to show): the cause, the code behind a Details disclosure,
+ * Retry. Shared by the controller and pages that mirror a controller's state; update in place with `updateFailed()`. */
+export function failedElement(doc, { message = null, code = null, noun = 'data', busy = false, onRetry = null } = {}) {
+  const el = element(doc, 'div', 'loading-failed');
+  el.append(element(doc, 'p', 'loading-failed-message'));
+  const more = element(doc, 'details', 'loading-failed-details');
+  const summary = element(doc, 'summary', ''); summary.textContent = 'Details';
+  more.append(summary, element(doc, 'p', 'loading-failed-code muted'));
+  const retry = element(doc, 'button', 'act loading-retry'); retry.type = 'button'; retry.textContent = wording.retry; retry.dataset.focusKey = 'retry';
+  retry.addEventListener('click', () => { if (retry.getAttribute('aria-disabled') === 'true') return; onRetry?.(); });
+  if (typeof onRetry !== 'function') retry.hidden = true;
+  el.append(more, retry);
+  updateFailed(el, { message, code, noun, busy });
+  return el;
+}
+export function updateFailed(el, { message = null, code = null, noun = 'data', busy = false } = {}) {
+  el.querySelector('.loading-failed-message').textContent = typeof message === 'string' && message ? message : `${wording.couldNotRefresh(noun)}.`;
+  const more = el.querySelector('.loading-failed-details'), shown = typeof code === 'string' && code ? code : null;
+  more.hidden = !shown; more.querySelector('.loading-failed-code').textContent = shown || '';
+  const retry = el.querySelector('.loading-retry');
+  if (retry) { if (busy) retry.setAttribute('aria-disabled', 'true'); else retry.removeAttribute('aria-disabled'); }
+}
+
 /* ── the data-state controller ───────────────────────────────────────────── */
 /**
  * @param {object} o
@@ -248,32 +317,15 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
     indicatorEl.append(dot, doc.createTextNode(wording.refreshing));
     indicatorHost.append(indicatorEl);
   }
-  function noticeText(kind) {
-    const age = observedText(observedAt, now());
-    if (kind === 'stale') return age ? `${wording.couldNotRefresh(noun)} · ${age}` : wording.couldNotRefresh(noun);
-    return wording.observed(observedAgeText(observedAt, now()));
-  }
   function showNotice(kind, { cause = null } = {}) {
     // `cause`: the read's message; code appended when the error carried one (set by fail()).
+    // A notice of the same kind is updated in place: its Retry (which may hold focus) is kept.
     if (!noticeHost) return;
     if (!noticeEl || noticeEl.dataset.kind !== kind) {
       removeNotice();
-      noticeEl = element(doc, 'div', 'loading-notice'); noticeEl.dataset.kind = kind;
-      noticeEl.append(element(doc, 'span', 'loading-notice-text'));
-      if (kind === 'stale') {
-        // The cause is reachable by keyboard and screen reader through a Details disclosure
-        // (a title alone is hover-only); the title is kept for the pointer.
-        const more = element(doc, 'details', 'loading-notice-details');
-        const summary = element(doc, 'summary', ''); summary.textContent = 'Details';
-        more.append(summary, element(doc, 'p', 'loading-notice-cause'));
-        noticeEl.append(retryButton(), more);
-      }
+      noticeEl = noticeElement(doc, kind, { noun, observedAt, cause, busy, now: now(), onRetry: () => { if (!disposed && !busy) onRetry?.(); } });
       noticeHost.append(noticeEl);
-    }
-    noticeEl.querySelector('.loading-notice-text').textContent = noticeText(kind);
-    if (cause) noticeEl.title = cause; else noticeEl.removeAttribute('title');
-    const more = noticeEl.querySelector('.loading-notice-details');
-    if (more) { more.hidden = !cause; more.querySelector('.loading-notice-cause').textContent = cause || ''; }
+    } else updateNotice(noticeEl, { noun, observedAt, cause, busy, now: now() });
     ageTimer = clearTimer(ageTimer);
     if (observedText(observedAt, now())) ageTimer = schedule(() => { ageTimer = null; touch(); }, AGE_TICK_MS);
   }
@@ -281,20 +333,9 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
   function showFailed(error) {
     removeSkeleton();
     if (!failedHost) return;
-    if (!failedEl) {
-      failedEl = element(doc, 'div', 'loading-failed');
-      failedEl.append(element(doc, 'p', 'loading-failed-message'));
-      const more = element(doc, 'details', 'loading-failed-details');
-      const summary = element(doc, 'summary', ''); summary.textContent = 'Details';
-      more.append(summary, element(doc, 'p', 'loading-failed-code muted'));
-      failedEl.append(more, retryButton());
-      failedHost.append(failedEl);
-    }
-    const message = typeof error?.message === 'string' && error.message ? error.message : `${wording.couldNotRefresh(noun)}.`;
-    failedEl.querySelector('.loading-failed-message').textContent = message;
-    const code = typeof error?.code === 'string' && error.code ? error.code : null;
-    const more = failedEl.querySelector('.loading-failed-details');
-    more.hidden = !code; more.querySelector('.loading-failed-code').textContent = code || '';
+    const facts = { message: error?.message, code: error?.code, noun, busy };
+    if (!failedEl) { failedEl = failedElement(doc, { ...facts, onRetry: () => { if (!disposed && !busy) onRetry?.(); } }); failedHost.append(failedEl); }
+    else updateFailed(failedEl, facts);
   }
   function setRegionBusy(value) {
     if (!region) return;
@@ -352,12 +393,16 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
       if (wasUser) say(wording.updated(noun)); else { announced = null; if (status) status.textContent = ''; }
       setBusyControls(); syncQuiet();
     },
-    /** The owning read failed: stale with data, failed without. */
-    fail(error = null) {
+    /** The owning read failed: stale with data, failed without. `observedAt` (ISO): the observation the
+     * kept data comes from, when the failed reply still names it (a held / last-good table) — it dates
+     * the stale line. A surface with data on screen calls fail() alone (never succeed() first: that
+     * would rebuild the line under a focused Retry and announce twice). */
+    fail(error = null, { observedAt: at } = {}) {
       if (disposed) return;
       pendingTimer = clearTimer(pendingTimer); refreshingTimer = clearTimer(refreshingTimer);
       removeSkeleton(); removeIndicator();
       user = false; busy = false;
+      if (typeof at === 'string' && at) observedAt = at;
       const message = typeof error?.message === 'string' && error.message ? error.message : null;
       const code = typeof error?.code === 'string' && error.code ? error.code : null;
       const cause = message && code ? `${message} (${code})` : message || code;
@@ -386,12 +431,17 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
     /** The read settled without an observation (the server's deployment is still pending): stay
      * pending — aria-busy, the one announcement — but with no skeleton, since the surface paints the
      * deployment's own copy. The next begin() adds nothing; the first observation settles it. */
-    defer() {
+    defer({ keepSkeleton = false } = {}) {
       if (disposed) return;
       if (hasData) { api.cancel(); return; } // with data on screen there is nothing to hold: the read is simply over
-      pendingTimer = clearTimer(pendingTimer); refreshingTimer = clearTimer(refreshingTimer);
-      removeSkeleton(); removeIndicator(); removeFailed();
-      busy = false; user = false; state = 'pending'; setRegionBusy(true); say(wording.loading(noun));
+      refreshingTimer = clearTimer(refreshingTimer);
+      // keepSkeleton: the server answered "still reading" (an observed deployment whose list is being read,
+      // `refreshing: true` with nothing held): the subject IS loading, so the skeleton stays or still arrives.
+      if (!keepSkeleton) { pendingTimer = clearTimer(pendingTimer); removeSkeleton(); }
+      removeIndicator(); removeFailed();
+      busy = false; user = false;
+      if (state !== 'pending') { state = 'pending'; if (keepSkeleton && !skeletonEl && pendingTimer === null) pendingTimer = schedule(showSkeleton, PENDING_DELAY_MS); }
+      setRegionBusy(true); say(wording.loading(noun));
       setBusyControls(); syncQuiet();
     },
     /** The in-flight read was superseded or abandoned (the view hid, the host cancelled): drop the

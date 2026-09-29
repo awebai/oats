@@ -117,7 +117,7 @@ test("actual core spawn: directory mode has no Git work tree, canonical composit
   assert.equal(existsSync(join(result.home, "work", ".git")), false);
   assert.equal(readlinkSync(join(result.home, "CLAUDE.md")), "AGENTS.md");
   assert.equal(readlinkSync(join(result.home, ".claude", "skills")), "../.agents/skills");
-  assert.ok(existsSync(join(result.home, ".agents", "skills", "example.worker", "worker-skill", "SKILL.md")), "the module skill is materialized");
+  assert.ok(existsSync(join(result.home, ".agents", "skills", "worker-skill", "SKILL.md")), "the module skill is materialized, flat");
   assert.match(readFileSync(join(result.home, "AGENTS.md"), "utf8"), /Work mode: directory/);
   assert.match(readFileSync(join(result.home, "TASK.md"), "utf8"), /configuration only/);
   assert.deepEqual(result.capabilityMeta["example.worker"], { context: f.context, repo: f.context, root: f.root, work: "directory", branch: "", cli: CLI });
@@ -147,7 +147,7 @@ test("directory repo selector resolves a non-Git relative path; capabilities sta
   const result = await f.spawn("context", { repo: "../other-context" });
   assert.equal(result.repo, external);
   assert.deepEqual(readdirSync(join(result.home, "work")), []);
-  assert.ok(existsSync(join(result.home, ".agents", "skills", "example.worker", "worker-skill", "SKILL.md")), "capabilities come from the soul's resolution, not from the selected context");
+  assert.ok(existsSync(join(result.home, ".agents", "skills", "worker-skill", "SKILL.md")), "capabilities come from the soul's resolution, not from the selected context");
   retireInstance(f.root, result.instance, { deleteBranch: true });
   assert.equal(readFileSync(join(external, "sentinel.txt"), "utf8"), "not owned");
 });

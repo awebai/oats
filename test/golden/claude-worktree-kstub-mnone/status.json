@@ -56,7 +56,7 @@
                 "member local/<base>/remotes/ws.git @ <commit12>"
               ],
               "skills": [
-                "<base>/deployment/agents/dev/instances/dev-claude-worktree-kstub-mnone/.agents/skills/golden.knowledge/golden-knowledge"
+                "<base>/deployment/agents/dev/instances/dev-claude-worktree-kstub-mnone/.agents/skills/golden-knowledge"
               ],
               "hooks": [
                 "spawn"
@@ -90,7 +90,7 @@
                 "type": "skill-tree",
                 "source": "golden.knowledge",
                 "declared": "skills",
-                "resolved": "<base>/deployment/agents/dev/instances/dev-claude-worktree-kstub-mnone/.agents/skills/golden.knowledge",
+                "resolved": "<base>/deployment/agents/dev/instances/dev-claude-worktree-kstub-mnone/.agents/skills",
                 "origin": "member:local/<base>/remotes/ws.git@<sha>",
                 "deferred": "materialize"
               },

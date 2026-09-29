@@ -73,7 +73,10 @@ test('03 (F7): a soul opens as a page in the main area — it replaces the grid,
   // Workspace v4 (human decision 2026-09-26; replaces the header-placed filter): the
   // search and Team/Repo control are the view's own toolbar, directly above the cards.
   assert.equal(u.get('.workspace-recovery').nextElementSibling, u.get('.souls-bar'), 'the Souls toolbar sits in the view, before the cards');
-  assert.equal(u.get('.souls-bar').nextElementSibling, u.get('.souls-grid'), 'no repo-heading row before the cards');
+  // Between the toolbar and the cards only the grid's stale-line host (desktop/loading-states), empty and display:none while the read is good.
+  assert.equal(u.get('.souls-bar').nextElementSibling, u.get('.souls-notice'), 'no repo-heading row before the cards');
+  assert.equal(u.get('.souls-notice').childElementCount, 0); assert.equal(u.css('.souls-notice').display, 'none');
+  assert.equal(u.get('.souls-notice').nextElementSibling, u.get('.souls-grid'));
   assert.equal(u.get('.repo-head'), null);
   assert.equal(u.css('.souls-body').display, 'grid');
   assert.equal(u.css('.souls-body').gridTemplateColumns, 'minmax(0,1fr)', 'no side column for a soul');
@@ -92,7 +95,7 @@ test('03 (F7): a soul opens as a page in the main area — it replaces the grid,
   assert.equal(u.get('.souls-grid').hidden, false); assert.equal(header.hidden, false, 'back restores the Workspace header');
   assert.equal(u.css('.souls-grid').padding, '0px 20px 16px', 'Workspace v4: groups start under the view toolbar');
   // Workspace v4.1 (board 3): search first, then Group by (Repo, Team); every group header opens its own section.
-  assert.deepEqual([...u.get('.souls-bar').children].map(el => el.className), ['ws-search', 'ws-toolbar-lead souls-bar-lead', 'ws-toolbar-label', 'ws-segmented souls-group-by', 'souls-sum workspace-sr-only']);
+  assert.deepEqual([...u.get('.souls-bar').children].map(el => el.className), ['ws-search', 'ws-toolbar-lead souls-bar-lead', 'ws-toolbar-label', 'ws-segmented souls-group-by', 'souls-sum workspace-sr-only', 'loading-status loading-sr souls-status']);
   assert.deepEqual([...u.get('.souls-group-by').querySelectorAll('button')].map(b => [b.textContent, b.getAttribute('aria-pressed')]), [['Repo', 'true'], ['Team', 'false']], 'Repo is the default');
   assert.equal(u.get('.souls-bar-lead').childElementCount, 0, 'no group heading in the toolbar');
   const first = u.get('.souls-grid .souls-group');

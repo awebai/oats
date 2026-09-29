@@ -1,4 +1,4 @@
-import { createDataState, statusLine, skeleton, skeletonBlock } from "./loading.mjs";
+import { createDataState, statusLine, skeleton, skeletonBlock, ROSTER_STALE_TITLE } from './loading.mjs';
 
 export function collapseKey(workspace, instance) {
   return `${workspace || ""}\u0000${instance}`;
@@ -554,7 +554,7 @@ export function renderRosterCount(el, instances, { pending = false, stale = fals
 /** Why Start… and the row actions menu are disabled while the roster is stale: the reason a
  * disabled control carries for the pointer (title) and for assistive tech (aria-description),
  * since a greyed look alone says nothing. */
-export const ROSTER_STALE_TITLE = "Unavailable: roster is not current";
+export { ROSTER_STALE_TITLE };
 export function markStaleControl(control) {
   // aria-disabled, never `disabled`: Chromium blurs a focused control that becomes disabled, and the roster
   // repaints under focus. Every handler on a stale-marked control checks `staleBlocked()` first.

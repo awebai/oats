@@ -35,14 +35,29 @@
 .skeleton-roster-row .skeleton-name { width: 55%; height: 12px; }
 .skeleton-roster-row .skeleton-meta { width: 38%; height: 9px; }
 
-/* Soul card: the Souls grid card at its real size (the grid sets --skeleton-card-h). */
-.skeleton-soul-card { display: flex; flex-direction: column; gap: 10px; min-height: var(--skeleton-card-h, 132px); padding: 14px;
-  border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
-.skeleton-card-head { display: flex; align-items: center; gap: 10px; }
-.skeleton-soul-card .skeleton-mark { width: 28px; height: 28px; flex: none; border-radius: 7px; }
+/* Soul card: wears the real card classes (views/spawn.mjs sizes .soul-card, .sbody, .sname .glyph, .schip, .sfoot);
+   only the bones' own sizes live here. A description bone box is one real line (1.45em): two make the clamp. */
+.skeleton-soul-card .soul-card { pointer-events: none; cursor: default; }
+.skeleton-soul-card .soul-card:hover { border-color: var(--border); }
+.skeleton-soul-card .glyph.skeleton { border-radius: 8px; }
+.skeleton-soul-card .sidentity { gap: 5px; }
 .skeleton-soul-card .skeleton-name { height: 13px; width: 45%; }
-.skeleton-soul-card .skeleton-text { height: 11px; width: 90%; }
+.skeleton-soul-card .skeleton-context { height: 10px; width: 60%; }
+.skeleton-soul-card .sdesc.skeleton-desc { display: flex; flex-direction: column; justify-content: center; height: calc(2 * 1.45em); gap: 0.65em; }
+.skeleton-soul-card .skeleton-text { display: block; height: 0.8em; width: 90%; }
 .skeleton-soul-card .skeleton-text.short { width: 60%; }
+.skeleton-soul-card .schip.skeleton { width: 6.5em; padding: 0; background: color-mix(in srgb, var(--fg) 10%, transparent); } /* .soul-card .schip's tag fill would win */
+.skeleton-soul-card .schip.skeleton.short { width: 4.5em; }
+.skeleton-soul-card .skeleton-activity { height: 11px; width: 36%; }
+.skeleton-soul-card .skeleton-button { margin-left: auto; width: 64px; height: 24px; border-radius: 7px; }
+/* The context panel's Messaging card while its inspection runs: compact team rows wearing the card's classes
+   (teams-panel.mjs sizes .team-row / .team-glyph); only the bones' own sizes live here. */
+.instance-teams-skeleton { pointer-events: none; }
+.instance-teams-skeleton .team-glyph.skeleton-glyph { border-radius: 50%; }
+.instance-teams-skeleton .skeleton-team-name { height: 12px; width: 50%; }
+.instance-teams-skeleton .skeleton-team-state { height: 10px; width: 3em; }
+/* A group of skeleton cards mirrors a real .souls-group (title row, then the card grid). */
+.skeleton-souls-group .skeleton-group-title { height: 13px; width: 160px; }
 
 /* Table row: one cell per column (--skeleton-columns), the first wider. */
 .skeleton-table-row { display: grid; grid-template-columns: minmax(0, 1.6fr) repeat(calc(var(--skeleton-columns, 4) - 1), minmax(0, 1fr));

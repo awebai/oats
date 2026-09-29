@@ -116,6 +116,6 @@ test("knowledge-theory-expert is an oats.framework PACKAGE SOUL: locked with the
   assert.equal(spawned.home, join(fx.root, "oats-framework--knowledge-theory-expert", "instances", "oats-framework-knowledge-theory-expert-author"));
   const meta = JSON.parse(readFileSync(join(spawned.home, "instance.json"), "utf8"));
   assert.deepEqual(Object.keys(meta.modules), ["oats.knowledge-theory"], "its package's theory capability, no knowledge slot");
-  assert.ok(readFileSync(join(spawned.home, ".agents", "skills", "oats.knowledge-theory", "knowledge-capability-authoring", "SKILL.md"), "utf8").includes("name: knowledge-capability-authoring"));
+  assert.ok(readFileSync(join(spawned.home, ".agents", "skills", "knowledge-capability-authoring", "SKILL.md"), "utf8").includes("name: knowledge-capability-authoring"));
   assert.match(readFileSync(join(spawned.home, "AGENTS.md"), "utf8"), /# Knowledge theory expert/);
 });

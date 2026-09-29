@@ -259,7 +259,9 @@ test('Sync runs oats sync and nothing else: no approval control, no sheet for a 
   assert.equal(u.button('Review approvals'), undefined); assert.equal(u.doc.querySelector('.ws-approval'), null);
   await u.tab('capabilities');
   u.doc.querySelector('.ws-sync button.ws-sync-run').click(); await settle();
-  assert.deepEqual(u.syncCalls(), [{ action: 'read' }, { action: 'sync' }, { action: 'read' }], 'sync, then the catalog is read again');
+  // desktop/loading-states: the re-read after a sync is live (refresh: true, spec 02) and the held table stays on screen through it.
+  assert.deepEqual(u.syncCalls(), [{ action: 'read' }, { action: 'sync' }, { action: 'read', refresh: true }], 'sync, then the catalog is read again, live');
+  assert.equal(u.rows().length, 10, 'the table never left');
   assert.equal(u.doc.querySelector('.ws-sync-sheet').hidden, true, 'a clean sync needs nothing from the operator');
   assert.equal(u.doc.querySelector('.ws-sync-state').textContent, '', 'a current lock is shown on Setup (This computer), not beside Sync');
 });
@@ -377,12 +379,17 @@ test('a failed catalog read names the failure and offers an explicit retry', asy
   let fail = true;
   const u = await setup(t, { sync: () => fail ? { workspaceSyncApi: 1, status: 'unavailable', reason: { code: 'E_CLI_TIMEOUT', message: 'The workspace command exceeded its time limit.' } } : catalog('capabilities') });
   await u.tab('capabilities');
-  assert.equal(u.doc.querySelector('.discovery-status').textContent, 'E_CLI_TIMEOUT: The workspace command exceeded its time limit.');
-  const retry = u.doc.querySelector('.discovery-retry');
-  assert.equal(retry.hidden, false);
+  // desktop/loading-states: with nothing held, the failed block in the table's place — the kernel's message, its code behind Details, Retry.
+  const failed = u.doc.querySelector('.catalog-state .loading-failed'); assert.ok(failed);
+  assert.equal(failed.querySelector('.loading-failed-message').textContent, 'The workspace command exceeded its time limit.');
+  assert.equal(failed.querySelector('.loading-failed-code').textContent, 'E_CLI_TIMEOUT');
+  assert.equal(u.doc.querySelector('.discovery-load-status').textContent, "Couldn't refresh capabilities. The workspace command exceeded its time limit.");
+  assert.equal(u.doc.querySelector('#workspace-tab-capabilities .workspace-count').textContent, '', 'no count and no pill after a failed read');
+  const retry = failed.querySelector('.loading-retry');
   fail = false; retry.click(); await settle();
-  assert.equal(u.rows().length, 10); assert.equal(retry.hidden, true);
-  assert.deepEqual(u.syncCalls(), [{ action: 'read' }, { action: 'read' }]);
+  assert.equal(u.rows().length, 10); assert.equal(u.doc.querySelector('.catalog-state .loading-failed'), null);
+  assert.equal(u.doc.querySelector('.discovery-load-status').textContent, 'Capabilities updated', 'a Retry is announced on completion');
+  assert.deepEqual(u.syncCalls(), [{ action: 'read' }, { action: 'read', refresh: true }], 'Retry reads live');
 });
 
 // Team model v2 (0.30, D2): the Workspace's Teams tab, first (human, 2026-09-28), holds "Teams on this

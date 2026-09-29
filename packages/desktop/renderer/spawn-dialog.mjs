@@ -770,6 +770,10 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     return valid ? { value: valid } : { error: 'A value here is not a valid spawn option (no spaces or leading dashes).', field: 'option' };
   }
   const choiceKey = value => JSON.stringify(value);
+  /** The kernel's preview for exactly the choices on screen, else null: a hint that reads from it
+   * (the default harness and model, "Launches … with …") must not describe a previous choice while a
+   * new preview is due or in flight (desktop/loading-states item 9), like the name and work hints. */
+  const matched = () => shown?.data && shown.key === choiceKey(choices().value) ? shown.data : null;
 
   // ── rendering from the latest observation
   function render() {
@@ -794,18 +798,19 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       else if (!fresh) nameResult.append('Instance name: numbered by the kernel');
       if (fresh && typed && !exact && data.instance !== `${soul.name}-${typed.toLowerCase()}`) nameResult.append(' — that name is taken, so the kernel numbered it');
     }
-    // Runtime / model defaults.
-    const defaultRuntime = data && !runtime.value ? ` · ${runtimeName(data.harness)}` : '';
+    // Runtime / model defaults: from the preview for these very choices only.
+    const now = matched();
+    const defaultRuntime = now && !runtime.value ? ` · ${runtimeName(now.harness)}` : '';
     runtime.options[0].textContent = `Default${defaultRuntime}`;
-    const shownRuntime = runtimeName(runtime.value || data?.harness || '');
-    const defaultModel = !data ? '' : nativeModel || data.model === null ? `${shownRuntime}'s default model` : data.model;
+    const shownRuntime = runtimeName(runtime.value || now?.harness || '');
+    const defaultModel = !now ? '' : nativeModel || now.model === null ? `${shownRuntime}'s default model` : now.model;
     model.placeholder = ' '; // :placeholder-shown drives the default overlay
     modelDefault.textContent = model.value ? '' : defaultModel;
-    modelTag.textContent = model.value || !data ? '' : nativeModel || data.modelSource === 'explicit' ? 'chosen' : 'default';
-    modelTag.title = data?.modelSource || '';
+    modelTag.textContent = model.value || !now ? '' : nativeModel || now.modelSource === 'explicit' ? 'chosen' : 'default';
+    modelTag.title = now?.modelSource || '';
     model.setAttribute('aria-label', model.value ? 'Model' : `Model — empty uses ${defaultModel || 'the default'}`);
-    syncRuntime(data);
-    runHint.textContent = !local() ? `Harness and model defaults are decided on ${remoteTarget()}.` : launchHint(data, cli()) ?? (data ? `Launches ${runtimeName(data.harness)} with ${modelText(data)}.` : '');
+    syncRuntime(now);
+    runHint.textContent = !local() ? `Harness and model defaults are decided on ${remoteTarget()}.` : launchHint(now, cli()) ?? (now ? `Launches ${runtimeName(now.harness)} with ${modelText(now)}.` : '');
     // Work.
     worktreeLabel.hidden = soul.work !== 'checkout';
     const worktreeMode = effectiveWork() === 'worktree' && local();
@@ -1092,8 +1097,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   models.trigger.textContent = ''; models.trigger.setAttribute('aria-label', 'Choose model');
   // ── harness picker: the harness's badge, like the design's provider field
   const runtimePicker = createChoicePopup(doc, runtimeLabel, 'Harness choices', 'spawn-runtime-choices', () => [
-    { value: '', label: shown?.data ? `Default · ${runtimeName(shown.data.harness)}` : 'Default', detail: 'What this soul launches with unless you choose', selected: !runtime.value,
-      group: 'Default', search: false, ...(shown?.data ? { mark: () => createRuntimeBadge(doc, shown.data.harness) } : {}) },
+    { value: '', label: matched() ? `Default · ${runtimeName(matched().harness)}` : 'Default', detail: 'What this soul launches with unless you choose', selected: !runtime.value,
+      group: 'Default', search: false, ...(matched() ? { mark: () => createRuntimeBadge(doc, matched().harness) } : {}) },
     ...runtimes.map(v => ({ value: v, label: RUNTIME_NAMES[v], selected: runtime.value === v, group: 'Harnesses', mark: () => createRuntimeBadge(doc, v) })),
   ], item => { runtime.value = item.value; runtime.dispatchEvent(new doc.defaultView.Event('change', { bubbles: true })); });
   function syncRuntime(data) {

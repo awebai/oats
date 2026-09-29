@@ -144,12 +144,15 @@ test("workspace spawn chain over Northwind: sync → spawn materializes whole mo
     assert.ok(isRegular(join(modulesDir, "nw-release-tooling", "bin", "nw-release.mjs")));
     assert.ok(isRegular(join(modulesDir, "nw-release-tooling", "injects", "release-policy.md")));
     assert.ok(isRegular(join(modulesDir, "nw-house-style", "injects", "house-style.md")));
-    // Skills are copied (not symlinked) to where the harness already looks (decision 13).
-    for (const [cap, skill] of [["nw-deploy", "deploy"], ["nw-release-tooling", "cut-release"], ["oats.core", "oats-operate"], ["oats.okf", "okf"]]) {
-      const f = join(home, ".agents", "skills", cap, skill, "SKILL.md");
-      assert.ok(isRegular(f), `.agents/skills/${cap}/${skill}/SKILL.md is a regular file`);
-      assert.ok(!lstatSync(join(home, ".agents", "skills", cap)).isSymbolicLink(), `.agents/skills/${cap} is not a symlink`);
+    // Skills are copied (not symlinked) FLAT to where the harness already looks (decision 13):
+    // .agents/skills/<skill>/SKILL.md, one level deep, and the same through .claude/skills.
+    for (const skill of ["deploy", "cut-release", "oats-operate", "okf"]) {
+      const f = join(home, ".agents", "skills", skill, "SKILL.md");
+      assert.ok(isRegular(f), `.agents/skills/${skill}/SKILL.md is a regular file`);
+      assert.ok(!lstatSync(join(home, ".agents", "skills", skill)).isSymbolicLink(), `.agents/skills/${skill} is not a symlink`);
+      assert.ok(isRegular(join(home, ".claude", "skills", skill, "SKILL.md")), `.claude/skills/${skill}/SKILL.md resolves through the alias`);
     }
+    for (const cap of ["nw-deploy", "nw-release-tooling", "oats.core", "oats.okf"]) assert.ok(!existsSync(join(home, ".agents", "skills", cap)), `no grouped .agents/skills/${cap}/`);
     // Composed instructions: soul AGENTS.md + each module's inject, markers in module order (nw-deploy has no inject).
     const agentsMd = readFileSync(join(home, "AGENTS.md"), "utf8");
     const markers = agentsMd.match(/<!-- oats:capability:[^ ]+/g) || [];
@@ -242,7 +245,7 @@ test("workspace spawn chain over Northwind: sync → spawn materializes whole mo
     assert.deepEqual(Object.keys(toolsMeta.modules).sort(), ["nw-house-style", "nw-lint", "nw-release-tooling", "nw-tools-dev", "oats.core", "oats.okf"]);
     assert.equal(toolsMeta.modules["nw-tools-dev"].from.kind, "member"); assert.equal(toolsMeta.modules["nw-tools-dev"].commit, fx.commits["nw-tools"]);
     assert.equal(toolsMeta.modules["nw-lint"].from.kind, "package", "non-collapse: nw-lint is package-tier even though nw-tools is a member");
-    assert.ok(isRegular(join(toolsHome, ".agents", "skills", "nw-tools-dev", "package-conventions", "SKILL.md")));
+    assert.ok(isRegular(join(toolsHome, ".agents", "skills", "package-conventions", "SKILL.md")));
 
     // ---- status before the nw-tools move: release-manager-x (spawned before the agents soul move) shows the
     // agents member moved (H2 above); release-manager-h2 and tools-expert-x are current ----

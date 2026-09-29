@@ -208,7 +208,7 @@ ${soulTeamsHereCSS}
 
 /** presentation is an optional host lease. Presence belongs to this controller;
  * effective visibility/collapse belongs to the host, not request completions. */
-export function createSoulInspector(container, { ctx, presentation, openSoul = null, layout = 'sidebar', backLabel = 'Souls', openInstance = null, capabilityTable = null, openCapability = null, launch, schedule, files, canFiles = () => false, canLaunch = () => true, spawnRefusal = () => null, launchReason = () => 'Requires a compatible installed OATS CLI.', available = () => true, instances = () => [], workspace = () => null, closed, clock = {} }) {
+export function createSoulInspector(container, { ctx, presentation, openSoul = null, layout = 'sidebar', backLabel = 'Souls', openInstance = null, capabilityTable = null, openCapability = null, launch, schedule, files, canFiles = () => false, canLaunch = () => true, spawnRefusal = () => null, launchReason = () => 'Requires a compatible installed OATS CLI.', available = () => true, instances = () => [], instancesState = () => 'ready', workspace = () => null, closed, clock = {} }) {
   const doc = container.ownerDocument;
   // `serial` is the latest read (a Refresh bumps it: a superseded inspection paints nothing); `subject` is
   // the shown subject (bumped by a new selection or reset only): the frame's and the content's controls
@@ -552,8 +552,11 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     const agent = selection?.agent; if (!agent || !summary) return;
     const id = subject, gen = selectionGen, column = rosterColumn;
     const homes = instances(agent);
+    // The host roster's own state (desktop/loading-states): an empty list is "No instances yet." only after a good
+    // read; while the roster is pending it is a skeleton line, while failed or stale it makes no claim.
+    const rosterState = homes.length ? 'ready' : instancesState();
     const refusal = column ? spawnRefusal(agent) : null, facts = desktopFacts(cliStatus());
-    const signature = JSON.stringify([layout, agent.description, refusal, agent.repoName, agent.work, agent.file, facts,
+    const signature = JSON.stringify([layout, agent.description, refusal, agent.repoName, agent.work, agent.file, facts, rosterState,
       homes.map(i => [i.instance, i.home, i.running, runtimeState(i), buildState(i)])]);
     if (signature === rosterSignature) return;
     rosterSignature = signature;
@@ -577,8 +580,8 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       if (typeof agent.work === 'string' && agent.work) facts$.append(pageFact('branch', WORK_TEXT[agent.work] || `works in ${agent.work}`, 'muted'));
       // Kernel #217: the soul's file. Without a web address (a non-GitHub repo) its path shows instead.
       if (facts && typeof agent.file?.path === 'string' && agent.file.path && !(typeof agent.file.url === 'string' && /^https:\/\//.test(agent.file.url))) facts$.append(pageFact('file', agent.file.path, 'mono'));
-      const card = pageCard(doc, 'Instances', { count: homes.length }); card.card.classList.add('inspector-instances');
-      if (!homes.length) card.card.append(node('p', 'No instances yet.', 'page-note'));
+      const card = pageCard(doc, 'Instances', { count: rosterState === 'ready' || rosterState === 'empty' ? homes.length : null }); card.card.classList.add('inspector-instances');
+      if (!homes.length) card.card.append(emptyInstances(rosterState, 'No instances yet.', 'page-note'));
       for (const instance of homes) {
         const control = node('button', undefined, 'inspector-instance'); control.type = 'button'; control.dataset.focusKey = `instance:${instance.home || instance.instance}`;
         const state = runtimeState(instance), build = buildState(instance);
@@ -597,8 +600,8 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     const roster = node('div', undefined, 'inspector-content inspector-roster');
     // What a person needs: what it does, and its instances.
     if (agent.description) roster.append(node('p', agent.description, 'inspector-lede'));
-    roster.append(node('h3', `Instances · ${homes.length}`));
-    if (!homes.length) roster.append(node('p', 'No instances reported for this soul.', 'muted'));
+    roster.append(node('h3', rosterState === 'ready' || rosterState === 'empty' ? `Instances · ${homes.length}` : 'Instances'));
+    if (!homes.length) roster.append(emptyInstances(rosterState, 'No instances reported for this soul.', 'muted'));
     for (const instance of homes) {
       const control = button(`${instance.instance} · ${runtimeState(instance)}`, () => openHome(instance, control));
       control.classList.add('inspector-instance'); control.dataset.focusKey = `instance:${instance.home || instance.instance}`; control.disabled = !instance.home;
@@ -607,6 +610,13 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     }
     summary.append(roster);
     restore();
+  }
+  /** What stands where the instances go when there are none: the empty copy after a good roster read; a skeleton
+   * line while the roster is pending; while it is failed or stale, no claim (the roster's own line says why). */
+  function emptyInstances(state, copy, cls) {
+    if (state === 'pending' || state === 'idle') { const line = skeleton(doc, 'line', { width: '60%' }); line.classList.add('inspector-instances-pending'); return line; }
+    if (state === 'failed' || state === 'stale') { const none = node('span', undefined, 'inspector-instances-unknown'); none.dataset.rosterState = state; none.setAttribute('aria-hidden', 'true'); return none; }
+    return node('p', copy, cls);
   }
   /** The soul's launch (0.30): `inspect --soul`'s own, else its roster row's; null without the feature. */
   function soulLaunch(inspected) { return shownLaunch(inspected.launch ?? selection?.agent?.launch, cliStatus()); }
@@ -823,7 +833,10 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       control.title = control.disabled ? 'Files need an unambiguous local soul in this workspace.' : 'Read-only soul files';
     }
   }
-  return { show, close, syncAvailability,
+  /** The host's roster changed or its read settled (a poll): the roster-derived block — lede, refusal, facts, the
+   * Instances card and its empty / pending / no-claim state — follows, behind its signature (focus kept). */
+  function syncRoster() { if (alive && selection?.agent && !container.hidden) renderSoulRoster(); }
+  return { show, close, syncAvailability, syncRoster,
     focusLaunch(agent) {
       const selected = selection?.agent;
       if (!alive || container.hidden || (presentation && !presentation.isVisible())

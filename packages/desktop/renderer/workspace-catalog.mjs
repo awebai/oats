@@ -5,6 +5,7 @@
  * `publishes` stays informational, package capabilities stay package rows. */
 import { createCapabilityMark, createSoulMark } from './identity-marks.mjs';
 import { iconElement } from './shell-icons.mjs';
+import { ROSTER_STALE_TITLE } from './loading.mjs';
 
 export const catalogCSS = `
 /* Workspace v4.1: a segmented section jump, section titles with a lead, dropdown filters
@@ -276,7 +277,9 @@ const markCurrent = (button, current) => { if (current) button.setAttribute('ari
  * onOpen(row): the card is one button opening the capability's page (click; Enter and Space are the
  * native button's). Its name is short ("<cap>, <kind>, from <source>"); its description and used-by
  * are its accessible description (aria-describedby), since the column header is for the eye only. */
-export function renderCapabilities(host, { rows, groups = null, status, instances, root, total = list(rows).length, onOpen = null, label = 'Workspace capabilities', empty = null }) {
+/** `rosterState` (desktop/loading-states): the roster the "Used by" cells derive from — 'ready' / 'empty' for a
+ * settled good read; while pending, failed or stale the cell makes no claim (a muted "—" with the reason). */
+export function renderCapabilities(host, { rows, groups = null, status, instances, root, total = list(rows).length, onOpen = null, label = 'Workspace capabilities', empty = null, rosterState = 'ready' }) {
   const doc = host.ownerDocument, names = memberNames(status);
   host.replaceChildren();
   const table = node(doc, 'div', null, 'catalog-table'); table.setAttribute('role', 'group'); table.setAttribute('aria-label', label);
@@ -324,6 +327,9 @@ export function renderCapabilities(host, { rows, groups = null, status, instance
     } else if (use.souls.length) {
       for (const soul of use.souls.slice(0, 3)) marks.append(createSoulMark(doc, soul));
       count.textContent = `${use.souls.length} ${use.souls.length === 1 ? 'soul' : 'souls'}`; count.title = `Used by ${who}`;
+    } else if (rosterState !== 'ready' && rosterState !== 'empty') {
+      // The roster is not settled-good: "Not used" would be a claim the roster cannot back.
+      count.textContent = '—'; count.classList.add('none', 'unknown'); count.title = ROSTER_STALE_TITLE; count.setAttribute('aria-description', ROSTER_STALE_TITLE); count.dataset.rosterState = rosterState;
     } else { count.textContent = 'Not used'; count.classList.add('none'); count.title = 'No instance carries it yet'; }
     // The marks are aria-hidden; assistive tech has no column header, so a count is read as "Used by …"
     // ("Not used" says it already).
@@ -371,12 +377,12 @@ export function lockNotes(status) {
  * capabilities-private), Repo owned grouped by repository. `filterHost` is the
  * discovery's persistent filter row; `query` narrows every section by name.
  * `navHost`, when given, takes the section jump (the view's toolbar row). */
-export function renderCapabilitySections(host, { sections, shown, filterHost, navHost = null, privateListed, status, instances, root, onOpen = null, query = '' }) {
+export function renderCapabilitySections(host, { sections, shown, filterHost, navHost = null, privateListed, status, instances, root, onOpen = null, query = '', rosterState = 'ready' }) {
   const doc = host.ownerDocument, names = memberNames(status);
   host.replaceChildren();
   const needle = String(query || '').trim().toLowerCase();
   const match = rows => needle ? rows.filter(row => String(row.name).toLowerCase().includes(needle)) : rows;
-  const table = (parent, rows, opts) => { const box = node(doc, 'div'); parent.append(box); renderCapabilities(box, { rows, status, instances, root, onOpen, ...opts }); };
+  const table = (parent, rows, opts) => { const box = node(doc, 'div'); parent.append(box); renderCapabilities(box, { rows, status, instances, root, onOpen, rosterState, ...opts }); };
   // Nothing at all: one factual line, not three empty sections.
   if (!sections.workspace.length && !sections.packages.length && !sections.repo.length) { table(host, [], {}); return; }
   const defs = [

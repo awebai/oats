@@ -89,6 +89,14 @@ test("standalone: unreadable workspace host → sync locks only the oats.core pa
     assert.equal(ob.standalone, true); assert.equal(ob.next.spawn, null); assert.deepEqual(ob.next.souls, ["data-analyst"]);
     assert.equal(ob.next.clone.length, 1, "the standalone repo itself is the one clone target"); assert.equal(ob.next.clone[0].name, "data");
 
+    // preview (feature preview-composed-from): standalone, the workspace defaults are unknown — every module,
+    // oats.core included (the kernel's standalone default rides in the soul's entry), is the soul's.
+    r = oats(["spawn", "data-analyst", "--dir", dep, "--agents-root", join(dep, "agents"), "--purpose", "x", "--work", "directory", "--preview", "--json"], { base, env });
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    doc = envelope(r);
+    assert.equal(doc.result.standalone, true);
+    assert.deepEqual(doc.result.modules.map((m) => [m.name, m.composedFrom]), [["nw-warehouse-access", "soul"], ["oats.core", "soul"]]);
+
     // spawn (the package path is the same as in a workspace)
     r = oats(["spawn", "data-analyst", "--dir", dep, "--agents-root", join(dep, "agents"), "--purpose", "x", "--work", "directory", "--no-launch", "--json"], { base, env });
     assert.equal(r.status, 0, r.stderr + r.stdout);
@@ -99,8 +107,10 @@ test("standalone: unreadable workspace host → sync locks only the oats.core pa
     assert.equal(meta.modules["nw-warehouse-access"].from.kind, "member");
     assert.equal(meta.modules["oats.core"].from.kind, "package");
     assert.ok(existsSync(join(home, ".oats", "modules", "oats.core", "oats.json")));
-    assert.ok(existsSync(join(home, ".agents", "skills", "oats.core")));
-    assert.ok(readdirSync(join(home, ".agents", "skills", "nw-warehouse-access")).length > 0);
+    const skillNames = readdirSync(join(home, ".agents", "skills")).sort();
+    assert.deepEqual(skillNames, meta.skills.map((s) => s.name).sort(), "every composed skill flat under .agents/skills");
+    assert.ok(meta.skills.some((s) => s.source === "module:oats.core") && meta.skills.some((s) => s.source === "module:nw-warehouse-access"), "both modules contributed skills");
+    for (const name of skillNames) assert.ok(existsSync(join(home, ".agents", "skills", name, "SKILL.md")), `${name}/SKILL.md one level deep`);
     const agentsMd = readFileSync(join(home, "AGENTS.md"), "utf8");
     assert.ok(agentsMd.includes("<!-- oats:capability:oats.core"), "oats.core inject composed");
     assert.ok(!doc.result.command?.includes("--no-skills"));
