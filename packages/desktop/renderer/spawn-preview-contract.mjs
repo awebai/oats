@@ -91,29 +91,37 @@ function messagingOf(v) {
 }
 /** The composition this spawn will record (kernel `modules[]`, feature instance-modules), for the
  * dialog's Core capabilities and Capabilities: [{name, layer, from:{kind, package?, version?,
- * repoKey?}}] — the same facts /api/capabilities exposes, scoped to this spawn. Only these strings,
- * each on a fixed grammar; never settings, declares, skills, commands, commits or integrity. null
- * when the kernel reports no modules; undefined (a protocol error) when a row is malformed,
- * duplicated or over the cap. The server's projection re-validates with its keys exact. */
+ * repoKey?}, composedFrom?}] — the same facts /api/capabilities exposes, scoped to this spawn. Only
+ * these strings, each on a fixed grammar; never settings, declares, skills, commands, commits or
+ * integrity. null when the kernel reports no modules; undefined (a protocol error) when a row is
+ * malformed, duplicated or over the cap. The server's projection re-validates with its keys exact.
+ * `composedFrom` (why the module is there; feature preview-composed-from, kernel #328) is read from
+ * the kernel only when `composedFrom` says the CLI reports the feature, and kept only when it is
+ * exactly "soul" or "workspace": any other value is dropped, never refused — the row still projects,
+ * without a reason. The server's projection carries it only where the server read it. */
 const MODULES_MAX = 256;
 const MODULE_LAYER = /^[a-z][a-z0-9-]{0,31}$/;
 const MODULE_KIND = /^[a-z][a-z0-9-]{0,31}$/;
 const MODULE_VERSION = /^[0-9A-Za-z][0-9A-Za-z.+-]{0,63}$/;
 const repoKey = v => arg(v, 512) && safe(v, 512) && !/\s/.test(v);
 const is = (re, v) => typeof v === 'string' && re.test(v); // never a coerced number
-function modulesOf(v, projected) {
+const COMPOSED_FROM = ['soul', 'workspace'];
+/** The CLI reports why each preview module is there (modules[].composedFrom). */
+export const previewComposedFrom = cli => Array.isArray(cli?.features) && cli.features.includes('preview-composed-from');
+function modulesOf(v, projected, composedFrom) {
   if (v.modules === undefined || v.modules === null) return null;
   if (!Array.isArray(v.modules) || v.modules.length > MODULES_MAX) return undefined;
   const out = [];
   for (const m of v.modules) {
-    if (!record(m) || projected && !exact(m, ['name', 'layer', 'from']) || !is(CAPABILITY, m.name)) return undefined;
+    if (!record(m) || projected && !exact(m, ['name', 'layer', 'from', 'composedFrom']) || !is(CAPABILITY, m.name)) return undefined;
     const layer = m.layer ?? null, f = m.from;
     if (layer !== null && !is(MODULE_LAYER, layer) || !record(f) || projected && !exact(f, ['kind', 'package', 'version', 'repoKey']) || !is(MODULE_KIND, f.kind)) return undefined;
     const from = { kind: f.kind };
     if (f.package !== undefined) { if (!is(CAPABILITY, f.package)) return undefined; from.package = f.package; }
     if (f.version !== undefined) { if (!is(MODULE_VERSION, f.version)) return undefined; from.version = f.version; }
     if (f.repoKey !== undefined) { if (!repoKey(f.repoKey)) return undefined; from.repoKey = f.repoKey; }
-    out.push({ name: m.name, layer, from });
+    const why = (projected || composedFrom) && COMPOSED_FROM.includes(m.composedFrom) ? { composedFrom: m.composedFrom } : {};
+    out.push({ name: m.name, layer, from, ...why });
   }
   return new Set(out.map(m => m.name)).size === out.length ? out : undefined;
 }
@@ -232,10 +240,11 @@ export function previewFailure(code, target = null, kernelMessage, kernelFix) {
 /** The kernel's v2 preview, projected to what the dialog shows and the apply
  * binds. Top-level facts must agree with the decision the apply is bound to
  * (`--expect-decision`); the revision is opaque producer data. The modules
- * are projected as names and sources only (modulesOf); capabilities[], skills,
+ * are projected as names, sources and (with `composedFrom`, the CLI's feature
+ * preview-composed-from) why each is there (modulesOf); capabilities[], skills,
  * settings and the task are the kernel's business and are not projected. */
 const hex24 = v => typeof v === 'string' && /^[a-f0-9]{24}$/.test(v);
-export function previewData(v, expected) {
+export function previewData(v, expected, { composedFrom = false } = {}) {
   const t = previewTarget(expected);
   if (!t || !record(v) || v.spawnPreviewApi !== 2 || v.preview !== true || !record(v.subject)
     || v.subject.soul !== t.selector.soul || v.subject.agentsRoot !== t.selector.agentsRoot || v.subject.dir !== t.context) return null;
@@ -253,7 +262,7 @@ export function previewData(v, expected) {
     || !record(v.backendStatus) || v.backendStatus.name !== v.backend || typeof v.backendStatus.installed !== 'boolean' || v.backendStatus.started !== false
     || !record(v.preflight) || !['complete', 'timeout'].includes(v.preflight.status) || !Number.isInteger(v.preflight.budgetMs) || v.preflight.budgetMs <= 0 || v.preflight.budgetMs > 20000
     || !Number.isSafeInteger(v.preflight.elapsedMs) || v.preflight.elapsedMs < 0) return null;
-  const messaging = messagingOf(v), teams = teamsOf(v), modules = modulesOf(v, Object.hasOwn(v, 'messaging'));
+  const messaging = messagingOf(v), teams = teamsOf(v), modules = modulesOf(v, Object.hasOwn(v, 'messaging'), composedFrom);
   // Team model v2: the soul's default (the kernel's DefaultTeam, or null); absent on 0.29.
   const defaultTeam = Object.hasOwn(v, 'defaultTeam') ? defaultTeamOf(v.defaultTeam) : undefined;
   if (messaging === undefined || teams === undefined || modules === undefined || (Object.hasOwn(v, 'defaultTeam') && defaultTeam === undefined)) return null;

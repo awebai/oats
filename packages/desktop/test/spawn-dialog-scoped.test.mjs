@@ -251,8 +251,8 @@ function luminance(hex) {
 for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: the scoped dialog's header, preview column, tags and segments meet computed-token AA with no opacity`, async t => {
   const failing = kernel('preview-clone-missing');
   const u = mount(t, { layout: 'scoped', theme, cli: { ...structuredClone(v2('version')), ok: true, bin: '/fixture/oats' }, previews: () => view(target, v2('preview').result) }); await settle(12);
-  // Put every element on screen: the facts and a module section, then a failure sentence beside them.
-  const sections = composePreviewModules(u.doc, v2('preview').result.modules.map(m => ({ name: m.name, layer: m.layer, from: m.from })));
+  // Put every element on screen: the facts and a module section (with a reason tag), then a failure sentence beside them.
+  const sections = composePreviewModules(u.doc, v2('preview').result.modules.map(m => ({ name: m.name, layer: m.layer, from: m.from, composedFrom: 'workspace' })));
   u.q('.spawn-preview-core').hidden = false; u.q('.spawn-preview-core').append(...sections.core); u.q('.spawn-preview-caps').hidden = false; u.q('.spawn-preview-caps').append(...sections.caps);
   const failure = u.doc.createElement('p'); failure.className = 'spawn-preview-failure'; failure.textContent = spawnProblem({ code: failing.error.code, message: failing.error.message }).text; u.q('.spawn-preview-body').append(failure);
   const root = u.dom.window.getComputedStyle(u.doc.documentElement);
@@ -261,7 +261,7 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: the scoped d
     ['.spawn-preview-title', '.spawn-preview', 'muted', 'surface-2'], ['.spawn-preview-facts dt', '.spawn-preview', 'muted', 'surface-2'], ['.spawn-preview-facts', '.spawn-preview', 'fg', 'surface-2'],
     ['.spawn-preview-facts dd .muted', '.spawn-preview', 'muted', 'surface-2'], ['.spawn-preview-failure', '.spawn-preview', 'warn', 'surface-2'], ['.spawn-preview-note', '.spawn-preview', 'muted', 'surface-2'],
     ['.spawn-core-box', '.spawn-core-box', 'fg', 'surface'], ['.spawn-core-layer', '.spawn-core-box', 'muted', 'surface'], ['.spawn-core-row .muted', '.spawn-core-box', 'muted', 'surface'],
-    ['.spawn-cap-list', '.spawn-preview', 'fg', 'surface-2'], ['.spawn-cap-source', '.spawn-cap-source', 'muted', 'tag-bg'],
+    ['.spawn-cap-list', '.spawn-preview', 'fg', 'surface-2'], ['.spawn-cap-source', '.spawn-cap-source', 'muted', 'tag-bg'], ['.spawn-cap-why', '.spawn-cap-why', 'muted', 'tag-bg'],
     ['.spawn-seg input:checked + span', '.spawn-seg input:checked + span', 'accent', 'sel'], ['.spawn-seg input:not(:checked) + span', '.spawn-seg', 'muted', 'surface'],
   ]) {
     const pick = sel => u.ui.dialog.matches(sel) ? u.ui.dialog : u.q(sel);
