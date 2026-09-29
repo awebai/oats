@@ -6,7 +6,7 @@
  * RETRY_MS, unbound prefetch bound by the same cycle's settle) are
  * keyed-catalog.mjs's; this module is the kernel read, the key and the shape. */
 import { cliWorkspace } from '../workspace-cli.mjs';
-import { capabilitiesData } from '../deployment-data.mjs';
+import { capabilitiesData, observationData } from '../deployment-data.mjs';
 import { soulCatalogKey } from './soul-catalog.mjs';
 import { createKeyedCatalog } from './keyed-catalog.mjs';
 
@@ -42,10 +42,8 @@ export function createCapabilityCatalog({ invoke = cliWorkspace, now = () => Dat
       const code = typeof result?.reason?.code === 'string' ? result.reason.code : 'E_CLI_FAILED';
       return { value: null, reason: { code, message: String(result?.reason?.message || ''), kernel: !LOCAL_CODES.has(code) } };
     }
-    try {
-      const stamp = result.document?.result?.observation?.observedAt;
-      return { value: capabilitiesData(result.document), observedAt: typeof stamp === 'string' ? stamp : null };
-    } catch { return { value: null, reason: { code: 'E_CLI_PROTOCOL', message: '', kernel: false } }; }
+    try { return { value: capabilitiesData(result.document), observedAt: observationData(result.document).observedAt }; } // both refuse a malformed document
+    catch { return { value: null, reason: { code: 'E_CLI_PROTOCOL', message: '', kernel: false } }; }
   }
   const catalog = createKeyedCatalog({ read, retryMs: CAPABILITY_CATALOG_RETRY_MS, now });
   const project = (deployment, entry) => entry && { key: entry.key, capabilities: entry.value, reason: entry.reason, at: entry.at, observedAt: entry.observedAt, refreshing: catalog.refreshing(deployment) };
@@ -56,14 +54,18 @@ export function createCapabilityCatalog({ invoke = cliWorkspace, now = () => Dat
     /** Bind this cycle's key: a read starts only when the held table is not for this state (or its
      * failure is old enough to retry) and none is in flight. Never awaits. */
     ensure(deployment, cli, workspaceStatus, options = {}) { catalog.settle(deployment, cli, key(cli, workspaceStatus), options); },
-    /** The held table, immediately, with any needed re-read started behind it; awaited only when
-     * nothing is held yet or the caller forces a live read (refresh: true → maxAge 0, joining an
-     * in-flight read). */
+    /** The held table, immediately, with any needed re-read started behind it; awaited when no table
+     * is held (a first read, or a held failure with nothing behind it) or the caller forces a live
+     * read (refresh: true → maxAge 0). */
     async read(deployment, cli, workspaceStatus, { refresh = false, maxAge } = {}) {
-      if (refresh) return project(deployment, await catalog.refresh(deployment, cli, key(cli, workspaceStatus)));
-      const { entry, pending } = catalog.settle(deployment, cli, key(cli, workspaceStatus), maxAge !== undefined ? { maxAge } : {});
-      return project(deployment, entry ?? (pending ? await pending : null));
+      const k = key(cli, workspaceStatus), options = maxAge !== undefined ? { maxAge } : {};
+      if (refresh) return project(deployment, await catalog.refresh(deployment, cli, k));
+      const { entry } = catalog.settle(deployment, cli, k, options);
+      // A held failure with no table behind it is not an answer for someone asking (today's Retry is a
+      // plain read): read now, whatever the retry window says, and answer with what lands.
+      return project(deployment, entry?.value ? entry : await catalog.demand(deployment, cli, k, options));
     },
+    /** Read-only view of what is held (tests and diagnostics); nothing reads it on the request path. */
     held(deployment) { return project(deployment, catalog.held(deployment)); },
     refreshing: catalog.refreshing,
     forget: catalog.forget,

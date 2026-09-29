@@ -2,6 +2,7 @@
 import { dirname, isAbsolute } from 'node:path';
 import { cliCapability, operationArgs } from '../cli-adapter.mjs';
 import { inspectKey } from './inspect-cache.mjs';
+import { observationData } from '../deployment-data.mjs';
 
 const fail = (message, code = 'E_BAD_ARGS') => { throw Object.assign(new Error(message), { code }); };
 
@@ -67,11 +68,15 @@ export async function capabilityRequest(request, { workspace, cli, agents = [], 
     // A provider operation can change what inspect --home reports: the deployment's entries go, success or not.
     try { envelope = await call(); } finally { cache?.invalidate(workspace.scope); }
   } else if (cache) {
-    ({ envelope, observedAt, refreshing } = await cache.read(key, { deployment: workspace.scope, refresh, produce: call }));
+    // A remote workspace has no state key and no invalidation signal here: its inspections are shared
+    // between concurrent requests but never served from an earlier visit (store: false).
+    ({ envelope, observedAt, refreshing } = await cache.read(key, { deployment: workspace.scope, refresh, produce: call, store: !server }));
   } else {
     envelope = await call();
-    const reported = envelope.ok ? envelope.result?.observation?.observedAt : undefined;
-    observedAt = typeof reported === 'string' ? reported : new Date().toISOString();
+    if (envelope.ok) {
+      try { observedAt = observationData(envelope).observedAt ?? new Date().toISOString(); }
+      catch { envelope = { schemaVersion: 1, ok: false, error: { code: 'E_CLI_PROTOCOL', message: 'The installed OATS CLI returned an invalid observation stamp' } }; }
+    }
   }
   if (!envelope.ok) {
     const code = envelope.error?.code || 'E_OPERATION_FAILED';

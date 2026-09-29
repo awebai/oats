@@ -1,7 +1,12 @@
 /** A bounded, coalescing cache of `oats inspect` envelopes, keyed by the exact
     subject (deployment, server, soul+catalog or home+instance identity). Only
     successful envelopes are kept; a provider run invalidates its deployment
-    because it can change what `inspect --home` reports. */
+    because it can change what `inspect --home` reports. A read may ask to
+    coalesce without holding (`store: false`): a remote workspace has no state
+    key and no invalidation signal on this machine, so its inspections are
+    never served from an earlier visit, only shared between concurrent ones.
+    The kernel's observation stamp is decoded by observationData, bounded. */
+import { observationData } from '../deployment-data.mjs';
 
 export const INSPECT_CACHE_LIMIT = 256;
 
@@ -29,31 +34,35 @@ export function createInspectCache({ limit = INSPECT_CACHE_LIMIT, now = () => Da
     entries.delete(key); entries.set(key, entry);
     while (entries.size > limit) entries.delete(entries.keys().next().value);
   }
-  function start(key, deployment, produce) {
+  function start(key, deployment, produce, { live, keep }) {
     const startedAt = epoch(deployment);
     epochs.set(deployment, startedAt); // registered, so clear() can bump a deployment that is only in flight
     const flight = (async () => {
-      const envelope = await produce();
+      let envelope = await produce();
       if (!envelope?.ok) return { envelope, observedAt: stamp(now()) };
-      const reported = envelope.result?.observation?.observedAt;
-      const observedAt = typeof reported === 'string' ? reported : stamp(now());
-      if (epoch(deployment) === startedAt) store(key, { envelope, observedAt, deployment });
+      let reported;
+      try { reported = observationData(envelope).observedAt; } // a malformed stamp refuses the document, like any producer defect
+      catch { envelope = { schemaVersion: 1, ok: false, error: { code: 'E_CLI_PROTOCOL', message: 'The installed OATS CLI returned an invalid observation stamp' } }; return { envelope, observedAt: stamp(now()) }; }
+      const observedAt = reported ?? stamp(now());
+      if (keep && epoch(deployment) === startedAt) store(key, { envelope, observedAt, deployment });
       return { envelope, observedAt };
     })();
+    flight.live = live; // a refresh joins only a live flight: a background one may carry heads up to maxAge old
     flights.set(key, flight);
     flight.finally(() => { if (flights.get(key) === flight) flights.delete(key); }).catch(() => {});
     return flight;
   }
 
   return {
-    async read(key, { deployment, refresh = false, produce }) {
+    async read(key, { deployment, refresh = false, produce, store: keep = true }) {
       const settled = entries.get(key);
       if (settled && !refresh) {
         store(key, settled);
         return { envelope: structuredClone(settled.envelope), observedAt: settled.observedAt, hit: true, refreshing: flights.has(key) };
       }
-      // Identical concurrent requests share one kernel process, refresh or not.
-      const flight = flights.get(key) || start(key, deployment, produce);
+      // Identical concurrent requests share one kernel process; a refresh shares only a live one.
+      const inFlight = flights.get(key);
+      const flight = inFlight && (!refresh || inFlight.live) ? inFlight : start(key, deployment, produce, { live: refresh, keep });
       const { envelope, observedAt } = await flight;
       return { envelope: structuredClone(envelope), observedAt, hit: false, refreshing: false };
     },

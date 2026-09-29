@@ -636,11 +636,15 @@ async function observeDeployment(id, { live = false } = {}) {
         catalog: catalogProjection(catalogEntry, !!pending), catalogKey },
       instances, generatedAt: new Date().toISOString(), observedAt,
     };
-    // Attach the catalog when it lands, to whatever entry is published then — only if that entry
-    // was read under the same key (an unadopted flight lands under null and is re-read next cycle).
+    // Attach the catalog when it lands: to THIS cycle's entry (it may land before the entry is published —
+    // publication still waits on the liveness child and on the other deployments) and to whatever entry is
+    // published by then. Only an entry read under the same key takes it (an unadopted flight lands under
+    // null and is re-read next cycle).
     if (pending) pending.then((landed) => {
-      const current = snapshot.byWs.get(id);
-      if (current?.deployment?.status === "observed" && landed?.key === current.deployment.catalogKey) current.deployment.catalog = catalogProjection(landed, soulCatalog.refreshing(id));
+      const projection = catalogProjection(landed, soulCatalog.refreshing(id));
+      for (const target of [entry, snapshot.byWs.get(id)]) {
+        if (target?.deployment?.status === "observed" && landed?.key === target.deployment.catalogKey) target.deployment.catalog = projection;
+      }
     }).catch(() => { /* the entry keeps the last good catalog; the next cycle re-reads */ });
     return entry;
   } finally { observing.delete(id); }
@@ -693,10 +697,12 @@ async function observeAll({ live = false } = {}) {
 const refreshLoop = createRefreshLoop({ run: observeAll, focusedMs: REFRESH_FOCUSED_MS, blurredMs: REFRESH_BLURRED_MS });
 /** Observe now (or right after the cycle in flight); `live` makes the kernel observe the remotes afresh. */
 function refreshSnapshot(options = {}) { return refreshLoop.request(options); }
-/** A mutation this backend performed for a deployment: what inspect reported may have changed, and the
- * roster must observe the result live. */
+/** A mutation this backend performed for a workspace: what inspect reported may have changed, and the
+ * roster must observe the result live. Inspections are held under the workspace's SCOPE (the deployment
+ * directory the kernel was pointed at), which is the id for a local deployment but not for a remote one. */
 function observeMutation(wsId) {
-  if (wsId) inspectCache.invalidate(wsId);
+  const scope = workspaces().find((w) => w.id === wsId)?.scope;
+  if (scope) inspectCache.invalidate(scope);
   return refreshSnapshot({ live: true });
 }
 /* OATSWEB_FINDINST_BEGIN — workspace-scoped instance lookup, extracted by tests */
@@ -1279,8 +1285,9 @@ const server = createServer(async (req, res) => {
         const request = await readStrictBody(req, 4096);
         const getContext = () => ({ workspace: workspaces().find(w => w.id === url.searchParams.get('ws')), cli: cliState });
         const result = await (path === '/api/workspace-teams' ? teamsRequest : soulTeamsRequest)(request, getContext);
-        // The writing actions change oats-local.yaml; inspect reports a soul's teams, so the held inspections go.
-        if (['add', 'remove', 'default', 'clear-default'].includes(request.action)) inspectCache.invalidate(url.searchParams.get('ws'));
+        // The writing actions change oats-local.yaml; inspect reports a soul's teams, so the held inspections go
+        // (held under the workspace's scope, see observeMutation).
+        if (['add', 'remove', 'default', 'clear-default'].includes(request.action)) { const scope = getContext().workspace?.scope; if (scope) inspectCache.invalidate(scope); }
         return send(res, 200, result);
       } catch { return send(res, 400, teamsFailure('E_BAD_ARGS')); }
     }

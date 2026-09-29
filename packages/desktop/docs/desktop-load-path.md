@@ -10,9 +10,10 @@ asks it and *what it keeps*.
 One cycle per registered deployment (`observeDeployment`):
 
 1. `oats status` and `oats workspace status` run together
-   (`server/deployment-observer.mjs`). On a **cold** cycle (nothing held for
-   the deployment) `oats souls` and `oats capabilities` start in the same tick,
-   *unbound*: their key is not known until the workspace status lands.
+   (`server/deployment-observer.mjs`). On a **cold** cycle — nothing held for
+   the deployment, or only a failure past its retry window — `oats souls` and
+   `oats capabilities` start in the same tick, *unbound*: their key is not
+   known until the workspace status lands.
 2. When the two roster reads land, the roster snapshot is published. It never
    waits on souls or capabilities.
 3. The cycle's key (`soulCatalogKey`: CLI bin/version, workspace commit,
@@ -28,11 +29,20 @@ catalogs are thin wrappers over it (`soul-catalog.mjs`,
 `capability-catalog.mjs`):
 
 - one flight per deployment; a failed read keeps the last good value with the
-  failure next to it and retries after 60 s;
+  failure next to it, and background cycles retry it only after 60 s;
 - an unbound prefetch is bound **only by the same cycle's settle**. Every
   prefetch opens a cycle; a flight (or a landed value) from an older cycle —
   its roster reads failed — is never bound to a state it was not read under,
-  and the cycle reads again. A value held under `null` answers for no key.
+  and that cycle reads under its own key at settle time. A value that landed
+  unbound is still *held*, so a deployment whose roster reads keep failing
+  (a third `--dir` past the observer's two-slot bound, a status timeout) costs
+  one souls/capabilities read per window, not one per cycle. A value held
+  under `null` answers for no key;
+- the retry window throttles background cycles, never a user: a request that
+  finds no good value held (`demand`) reads now; `refresh` is a live read
+  (`--max-age 0`) that joins only a live flight for the same key — a
+  background flight in the air may carry heads up to a minute old, so a live
+  one starts beside it.
 - `observedAt` is the kernel's `observation.observedAt` when reported, else the
   read's completion time; a failure keeps the previous stamp.
 
@@ -45,9 +55,11 @@ else in `workspace status` changes it.
 ## The request path never runs a kernel read it can avoid
 
 - `POST /api/workspace-sync {action:"read"}` answers from the held table at
-  once (with `reason` beside it when the latest re-read failed); a cold
-  request awaits the admission read. `refresh: true` forces a live read and
-  joins one already in flight. An ok `sync` forgets the held table.
+  once (with `reason` beside it when the latest re-read failed); a request
+  with no table held — a first read, or a held failure with nothing behind it
+  (today's Retry button is a plain read) — reads now and answers with what
+  lands. `refresh: true` forces a live read. An ok `sync` forgets the held
+  table.
 - `POST /api/capabilities {action:"inspect"}` goes through a bounded LRU with
   in-flight coalescing (`server/inspect-cache.mjs`, 256 entries): two identical
   concurrent inspections are one kernel process; a repeat is a hit. Keys:
@@ -55,11 +67,16 @@ else in `workspace status` changes it.
   `inspect --home` → (deployment, server, home, instance, and the status row's
   identity and drift facts: createdAt, startedAt, soul, modules), so a retire,
   restart or drift change is another subject. `refresh: true` bypasses the
-  entry. `run` never reads or fills the cache.
-- Every mutation the backend performs for a deployment (`observeMutation`:
-  lifecycle apply, spawn apply, session start/restart, operation run, sync,
-  teams and soul-teams writes) drops that deployment's inspect entries and
-  observes the roster live. A real CLI change drops everything.
+  entry and shares only a live flight. `run` never reads or fills the cache.
+  A **remote** workspace has no state key and no invalidation signal on this
+  machine, so its inspections are shared between concurrent requests but
+  never held between visits (`store: false`): every visit is live, as before.
+- Every mutation the backend performs for a local deployment
+  (`observeMutation`: lifecycle apply, spawn apply, session start/restart,
+  operation run, sync, teams and soul-teams writes) drops the inspect entries
+  held under that workspace's *scope* (the deployment directory the kernel
+  was pointed at) and observes the roster live. A real CLI change drops
+  everything.
 
 ## Cadence and window state
 

@@ -35,29 +35,43 @@ test('LRU bound: the least recently used entry goes, and a hit refreshes recency
   assert.equal(produced, 5);
 });
 
-test('coalescing: two concurrent identical reads share one produce; refresh bypasses a settled entry but joins an in-flight one', async () => {
+test('coalescing: concurrent identical reads share one produce; a refresh bypasses a settled entry and joins only a LIVE flight', async () => {
   const cache = createInspectCache({ now: clock().now });
   let produced = 0; let gate = deferred();
-  const produce = async () => { produced++; await gate.promise; return ok({ n: produced }); };
+  const produce = async () => { const n = ++produced; await gate.promise; return ok({ n }); };
   const first = cache.read('k', { deployment: '/d', produce }), second = cache.read('k', { deployment: '/d', produce });
   const third = cache.read('k', { deployment: '/d', refresh: true, produce });
-  await tick(); assert.equal(produced, 1, 'one kernel process for three concurrent requests');
+  await tick(); assert.equal(produced, 2, 'the two plain reads share one process; the refresh does not join a background flight (its heads may be up to max-age old)');
   gate.resolve();
   const results = await Promise.all([first, second, third]);
-  assert.deepEqual(results.map(r => [r.hit, r.refreshing, r.envelope.result.n]), [[false, false, 1], [false, false, 1], [false, false, 1]]);
+  assert.deepEqual(results.map(r => [r.hit, r.refreshing, r.envelope.result.n]), [[false, false, 1], [false, false, 1], [false, false, 2]]);
+  produced = 0; // the settled entry now holds the live result; the counting below starts over
   // settled: a plain read hits; a refresh bypasses it and, while in flight, plain reads report refreshing
   gate = deferred();
   assert.equal((await cache.read('k', { deployment: '/d', produce })).hit, true);
   const refresh = cache.read('k', { deployment: '/d', refresh: true, produce });
-  await tick(); assert.equal(produced, 2);
+  await tick(); assert.equal(produced, 1);
   const during = await cache.read('k', { deployment: '/d', produce });
-  assert.deepEqual([during.hit, during.refreshing, during.envelope.result.n], [true, true, 1], 'the settled value is served while the refresh flies');
+  assert.deepEqual([during.hit, during.refreshing, during.envelope.result.n], [true, true, 2], 'the settled value is served while the refresh flies');
   const joined = cache.read('k', { deployment: '/d', refresh: true, produce });
-  await tick(); assert.equal(produced, 2, 'a second refresh joins the flight');
+  const plain = cache.read('k', { deployment: '/d', refresh: false, produce: () => { throw new Error('a plain miss would produce'); } });
+  await tick(); assert.equal(produced, 1, 'a second refresh joins the live flight; so does a plain read (the entry is settled, it hits)');
   gate.resolve();
-  assert.equal((await refresh).envelope.result.n, 2); assert.equal((await joined).envelope.result.n, 2);
+  assert.equal((await refresh).envelope.result.n, 1); assert.equal((await joined).envelope.result.n, 1); assert.equal((await plain).hit, true);
   const after = await cache.read('k', { deployment: '/d', produce });
-  assert.deepEqual([after.hit, after.refreshing, after.envelope.result.n], [true, false, 2]);
+  assert.deepEqual([after.hit, after.refreshing, after.envelope.result.n], [true, false, 1]);
+});
+
+test('store: false coalesces concurrent identical reads but never holds the result (remote workspaces have no invalidation signal)', async () => {
+  const cache = createInspectCache({ now: clock().now });
+  let produced = 0; const gate = deferred();
+  const produce = async () => { produced++; await gate.promise; return ok({ n: produced }); };
+  const a = cache.read('remote', { deployment: '/remote', produce, store: false }), b = cache.read('remote', { deployment: '/remote', produce, store: false });
+  await tick(); assert.equal(produced, 1, 'shared while in flight');
+  gate.resolve(); await Promise.all([a, b]);
+  assert.equal(cache.size(), 0, 'nothing held');
+  const again = await cache.read('remote', { deployment: '/remote', produce: async () => ok({ n: 99 }), store: false });
+  assert.deepEqual([again.hit, again.envelope.result.n], [false, 99], 'the next visit is a kernel run');
 });
 
 test('a failed produce stores nothing and the next read produces again; a thrown produce propagates and clears the flight', async () => {
@@ -191,4 +205,34 @@ test('capabilityRequest without a cache: every inspect reaches the kernel and st
   // failures keep their shaping through the cache path too
   const conflict = { ...b.ctx, invoke: async () => ({ ok: false, error: { code: 'E_TEAM_CONFLICT', message: 'two labels', details: { labels: ['engineering', 'global'] } } }) };
   await assert.rejects(capabilityRequest({ action: 'inspect', selector: soulSelector }, { ...conflict, catalogKey: 'fresh' }), e => e.code === 'E_TEAM_CONFLICT' && e.labels.join() === 'engineering,global');
+});
+
+test('capabilityRequest on a REMOTE workspace: concurrent identical inspects share one routed run, but nothing is held between visits', async () => {
+  const remote = { id: 'remote:g', scope: '/remote/member', remote: true, server: 'hetzner', registrationPresent: true };
+  const remoteCli = { ...cli, remote: ['operations'] };
+  const b = boundary({ cache: createInspectCache(), catalogKey: null });
+  const override = { workspace: remote, cli: remoteCli, agents: [{ name: 'dev', agentsRoot: '/remote/member/agents' }] };
+  const selector = { soul: 'dev', agentsRoot: '/remote/member/agents' };
+  b.hold();
+  const pair = [b.inspect(selector, {}, override), b.inspect(selector, {}, override)];
+  await tick(); assert.equal(b.calls.length, 1, 'two concurrent visits: one routed inspect');
+  b.release(); await Promise.all(pair);
+  assert.equal(b.cache.size(), 0, 'a remote inspection is never held: this machine gets no invalidation signal for that host');
+  const again = await b.inspect(selector, {}, override);
+  assert.equal(b.calls.length, 2, 'the next visit is live'); assert.equal(again.refreshing, false);
+  for (const options of b.calls) { assert.equal(options.server, 'hetzner'); assert.equal(Object.hasOwn(options, 'maxAge'), false, 'reuse is local only'); }
+});
+
+test('observeMutation (server) invalidates the inspections held under the workspace SCOPE, which differs from the id for a remote workspace', async () => {
+  const { readFileSync } = await import('node:fs');
+  const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
+  const start = source.indexOf('function observeMutation('), end = source.indexOf('\n}\n', start) + 3;
+  assert.ok(start > 0 && end > start);
+  const invalidated = [], refreshed = [];
+  const workspaces = () => [{ id: '/local', scope: '/local' }, { id: 'remote:g', scope: '/remote/member', remote: true, server: 'hetzner' }];
+  const observeMutation = new Function('workspaces', 'inspectCache', 'refreshSnapshot', `${source.slice(start, end)}\nreturn observeMutation;`)(
+    workspaces, { invalidate: scope => invalidated.push(scope) }, options => { refreshed.push(options); return Promise.resolve(); });
+  await observeMutation('/local'); await observeMutation('remote:g'); await observeMutation('unknown');
+  assert.deepEqual(invalidated, ['/local', '/remote/member'], 'by scope: the key inspections are stored under');
+  assert.deepEqual(refreshed, [{ live: true }, { live: true }, { live: true }], 'every mutation observes the roster live');
 });

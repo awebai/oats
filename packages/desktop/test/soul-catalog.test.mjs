@@ -161,13 +161,25 @@ test('a flight from an earlier cycle is never bound to a later cycle\'s key; the
   const { entry, pending } = h.catalog.settle('/dep', CLI, WS);
   assert.equal(entry, null); assert.equal(h.requests.length, 2, 'cycle 2 reads under its own key');
   h.open(); h.open(); assert.equal((await pending).key, soulCatalogKey(CLI, WS));
-  // Landed across cycles: the leftover under no key is not usable, so the new cycle prefetches again and adopts THAT.
+  // Landed across cycles: the leftover under no key is HELD (no prefetch storm), shown but not bound; the
+  // next successful cycle reads under its key at settle time.
   const g = gated(); const first = g.catalog.prefetch('/dep', CLI); g.open(); await first;
   assert.equal(g.catalog.held('/dep').key, null);
-  assert.ok(g.catalog.prefetch('/dep', CLI) instanceof Promise);
+  assert.equal(g.catalog.prefetch('/dep', CLI), null, 'a landed value inside its window is held: no new read on prefetch');
   const again = g.catalog.settle('/dep', CLI, WS);
-  assert.equal(again.entry.key, null, 'the leftover is shown but not bound'); assert.equal(g.requests.length, 2);
+  assert.equal(again.entry.key, null, 'the leftover is shown but not bound'); assert.equal(g.requests.length, 2, 'settle reads under this cycle\'s key');
   g.open(); assert.equal((await again.pending).key, soulCatalogKey(CLI, WS));
+});
+
+test('a deployment whose roster reads keep failing costs one souls read per retry window, not one per cycle', async () => {
+  for (const outcome of [() => ({ ok: true, document: copy() }), () => ({ ok: false, reason: { code: 'E_CLI_TIMEOUT', message: 'slow' } })]) {
+    const h = gated(); h.answer(outcome);
+    const first = h.catalog.prefetch('/dep', CLI); h.open(); await first; // cycle 1: souls landed unbound, the roster failed
+    for (let cycle = 2; cycle <= 6; cycle++) { assert.equal(h.catalog.prefetch('/dep', CLI), null, `cycle ${cycle} starts nothing`); h.tick(SOUL_CATALOG_RETRY_MS / 10); }
+    assert.equal(h.requests.length, 1);
+    h.tick(SOUL_CATALOG_RETRY_MS);
+    assert.equal(h.catalog.prefetch('/dep', CLI) instanceof Promise, !outcome().ok, 'past the window only a FAILED leftover is read again; a good one waits for settle');
+  }
 });
 
 test('settle on a moved workspace starts a keyed read once; concurrent settles share it', async () => {

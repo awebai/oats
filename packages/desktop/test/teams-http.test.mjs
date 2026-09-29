@@ -61,7 +61,7 @@ test('oats teams: list/add/remove/default as one argv each (option values as sin
   await h.request({ body: { action: 'default', label: 'oats' } });
   assert.deepEqual(h.calls, [['teams', '--dir', DEPLOYMENT, '--json'], ['teams', 'add', 'antares-oats', '--team=antares-oats:juan.aweb.ai', '--description=Mine', '--dir', DEPLOYMENT, '--json'],
     ['teams', 'remove', 'old', '--dir', DEPLOYMENT, '--json'], ['teams', 'default', 'oats', '--dir', DEPLOYMENT, '--json']]);
-  assert.deepEqual(h.invalidated, ['team', 'team', 'team'], 'each write drops the held inspections; the list did not');
+  assert.deepEqual(h.invalidated, [DEPLOYMENT, DEPLOYMENT, DEPLOYMENT], 'each write drops the inspections held under the workspace SCOPE (not its id); the list did not');
 });
 
 test('no flag injection: option-shaped or out-of-grammar values are refused before any process', async () => {

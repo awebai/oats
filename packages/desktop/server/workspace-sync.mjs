@@ -11,7 +11,7 @@
  * There is no package approval: declaring a package in `packages:` is the
  * trust decision (packages-no-approval). */
 import { cliWorkspace, workspaceGate, workspaceFailure } from '../workspace-cli.mjs';
-import { syncData, capabilitiesData } from '../deployment-data.mjs';
+import { syncData, capabilitiesData, observationData } from '../deployment-data.mjs';
 
 export const WORKSPACE_SYNC_API = 1;
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -31,10 +31,8 @@ const kernelRefusal = result => typeof result?.reason?.code === 'string' && !LOC
   && typeof result.reason.message === 'string';
 const cliStamp = cli => JSON.stringify([cli?.bin ?? null, cli?.version ?? null]);
 
-const observedStamp = (document, now) => {
-  const stamp = document?.result?.observation?.observedAt;
-  return typeof stamp === 'string' ? stamp : new Date(now()).toISOString();
-};
+/** The kernel's stamp (observationData refuses a malformed one), else the read's completion time. */
+const observedStamp = (document, now) => observationData(document).observedAt ?? new Date(now()).toISOString();
 
 /** `catalog` is a capability catalog; `observed(deployment)` yields that
  * deployment's projected workspace status (the catalog key) or null; `maxAge`
@@ -71,7 +69,7 @@ export function createWorkspaceSyncBoundary({ invoke = cliWorkspace, catalog = n
       reads.set(key, Promise.resolve().then(() => invoke(ctx.cli, options))
         .then(result => {
           if (!result?.ok) return { ...(kernelRefusal(result) ? refusal(result) : syncFailure(result?.reason?.code || 'E_CLI_FAILED')), observedAt: null, refreshing: false };
-          try { return { workspaceSyncApi: WORKSPACE_SYNC_API, status: 'ok', report: null, capabilities: capabilitiesData(result.document), reason: null, observedAt: observedStamp(result.document, now), refreshing: false }; }
+          try { return { workspaceSyncApi: WORKSPACE_SYNC_API, status: 'ok', report: null, capabilities: capabilitiesData(result.document), reason: null, observedAt: observedStamp(result.document, now), refreshing: false }; } // capabilitiesData and observedStamp both refuse a malformed document
           catch { return { ...syncFailure('E_CLI_PROTOCOL'), observedAt: null, refreshing: false }; }
         }, () => ({ ...syncFailure('E_CLI_FAILED'), observedAt: null, refreshing: false }))
         .finally(() => reads.delete(key)));

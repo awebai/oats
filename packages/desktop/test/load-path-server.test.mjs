@@ -104,12 +104,17 @@ test('cold cycle, held catalogs, coalescing, focus no-op, cadence and blur back-
   } finally { await s.stop(); }
 });
 
-test('a changed probe (version) still invalidates: pending reads are revoked and every catalog is re-read', async () => {
-  const s = await startLoadPathServer({ delays: { status: 100, 'workspace-status': 100 } });
+test('a souls catalog landing between the roster reads and publication is attached at once; a changed probe (version) still invalidates and re-reads every catalog', async () => {
+  // souls lands ~50ms after the roster reads, while the cycle is still waiting on the liveness child: it must
+  // reach the entry that gets published, not wait for the next cycle (5 s focused, 30 s blurred).
+  const s = await startLoadPathServer({ delays: { status: 100, 'workspace-status': 100, souls: 150 } });
   try {
     await s.post('/api/cli/reprobe', {});
     await s.until(async () => (await s.panel()).deployment?.status === 'observed');
-    await s.until(async () => (await s.agents()).agents.length === 9);
+    const rosterAt = Date.now();
+    await s.until(async () => (await s.agents()).agents.length === 9, { timeout: 2500 });
+    assert.ok(Date.now() - rosterAt < 2500, 'the catalog did not wait for a second cycle');
+    assert.equal(of(s.calls(), 'souls').length, 1);
     assert.deepEqual([of(s.calls(), 'souls').length, of(s.calls(), 'capabilities').length], [1, 1]);
     s.reconfigure(cfg => { cfg.version.version = '0.29.3'; });
     const probe = await s.post('/api/cli/reprobe', {});

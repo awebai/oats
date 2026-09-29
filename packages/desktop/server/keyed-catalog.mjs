@@ -7,11 +7,18 @@
  * - A failed read keeps the last good value with the failure next to it (a stale table beats an
  *   empty view) and is retried only after `retryMs`.
  * - `prefetch` starts a read UNBOUND (key null) before the workspace state is known, so a cold
- *   cycle runs it alongside the roster reads. `settle` binds the state's key to it — whether the
- *   flight is still in the air or already landed — but ONLY when both belong to the same cycle:
+ *   cycle runs it alongside the roster reads. Cold means NOTHING is held for the deployment (or
+ *   what is held is a failure past its retry window): a value that landed unbound, good or failed,
+ *   is held and stops further prefetches for its window, so a deployment whose roster reads keep
+ *   failing costs one read, not one per cycle. `settle` binds the state's key to the unbound
+ *   flight — still in the air or already landed — but ONLY when both belong to the same cycle:
  *   every prefetch opens a cycle, and a flight started by an older prefetch (its roster reads
- *   failed) is never bound to a state it was not read under; the cycle re-reads instead. A value
- *   held under null answers for no key, so it is never served as current.
+ *   failed) is never bound to a state it was not read under; that cycle reads under its key
+ *   instead. A value held under null answers for no key, so it is never served as current.
+ * - `demand` is the request path with nothing good to show: it reads now (a same-key flight is
+ *   joined), whatever the retry window says — the window throttles background cycles, never a
+ *   user who is looking at a failure. `refresh` is a LIVE read: it joins only a live same-key
+ *   flight, never a background one.
  * - `observedAt` is the kernel's observation stamp when it reports one, else the read's
  *   completion time; a failure keeps the previous stamp.
  *
@@ -23,8 +30,8 @@ export function createKeyedCatalog({ read, retryMs, now = () => Date.now() }) {
   const inWindow = entry => !entry.reason || now() - entry.at < retryMs;
   /** A held entry answers for `key` while it is good, or while its failure is inside the retry window. */
   const answers = (last, key) => !!last && last.key === key && inWindow(last);
-  /** Anything bound and inside its window makes a prefetch pointless. */
-  const usable = last => !!last && last.key !== null && inWindow(last);
+  /** Anything held inside its window (bound or not) makes a prefetch pointless. */
+  const usable = last => !!last && inWindow(last);
   function land(deployment, flight, result) {
     const last = held.get(deployment), at = now(), key = flight.key; // the key is read at completion: an adopted flight lands bound
     const entry = result.value
@@ -35,7 +42,7 @@ export function createKeyedCatalog({ read, retryMs, now = () => Date.now() }) {
     return entry;
   }
   function start(deployment, cli, key, maxAge) {
-    const flight = { key, cycle: cycles.get(deployment) ?? 0, promise: null };
+    const flight = { key, maxAge, cycle: cycles.get(deployment) ?? 0, promise: null };
     // Dispatched synchronously: a prefetch's kernel process starts in the same tick as the roster reads.
     let dispatched;
     try { dispatched = Promise.resolve(read(deployment, cli, maxAge !== undefined ? { maxAge } : {})); } catch (error) { dispatched = Promise.reject(error); }
@@ -65,10 +72,18 @@ export function createKeyedCatalog({ read, retryMs, now = () => Date.now() }) {
       if (!flight || flight.key !== key) flight = start(deployment, cli, key, maxAge);
       return { entry: snapshot(deployment), pending: flight.promise.then(() => snapshot(deployment)) };
     },
-    /** A live read for `key` (maxAge 0), joining the flight in progress rather than doubling it. */
+    /** Read now for `key` (the request path with nothing good held): join a same-key flight, else
+     * start one with `maxAge`, ignoring the retry window. */
+    async demand(deployment, cli, key, { maxAge } = {}) {
+      const flight = flights.get(deployment);
+      await (flight?.key === key ? flight : start(deployment, cli, key, maxAge)).promise;
+      return snapshot(deployment);
+    },
+    /** A LIVE read for `key` (maxAge 0): joins only a live same-key flight; a background flight in
+     * the air is not it (its heads may be up to maxAge old), so a live one starts beside it. */
     async refresh(deployment, cli, key) {
-      const flight = flights.get(deployment) ?? start(deployment, cli, key, 0);
-      await flight.promise;
+      const flight = flights.get(deployment);
+      await (flight?.key === key && flight.maxAge === 0 ? flight : start(deployment, cli, key, 0)).promise;
       return snapshot(deployment);
     },
     held: snapshot,

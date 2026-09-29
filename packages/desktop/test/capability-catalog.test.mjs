@@ -104,9 +104,18 @@ test('a first read that fails holds no table; local, protocol and thrown failure
   const timeout = await h.catalog.read(deployment, CLI, WS);
   assert.equal(timeout.capabilities, null); assert.equal(timeout.observedAt, null);
   assert.deepEqual(timeout.reason, { code: 'E_CLI_TIMEOUT', message: 'slow', kernel: false });
-  assert.equal((await h.catalog.read(deployment, CLI, WS)).reason.code, 'E_CLI_TIMEOUT'); assert.equal(h.calls.length, 1, 'inside the retry window it answers the failure');
+  // The retry window throttles background cycles only: someone asking while nothing is held reads now,
+  // and gets the recovered table on the FIRST ask (today's Retry button is a plain read).
+  h.catalog.ensure(deployment, CLI, WS); assert.equal(h.calls.length, 1, 'a cycle inside the window does not retry');
+  assert.equal((await h.catalog.read(deployment, CLI, WS)).reason.code, 'E_CLI_TIMEOUT'); assert.equal(h.calls.length, 2, 'a request inside the window reads again');
+  h.answer(() => ({ ok: true, document: CAPS() }));
+  const recovered = await h.catalog.read(deployment, CLI, WS);
+  assert.equal(recovered.reason, null); assert.equal(recovered.capabilities.capabilities.length, TABLE.capabilities.length); assert.equal(h.calls.length, 3);
+  const h2 = harness(); h2.answer(() => ({ ok: false, reason: { code: 'E_CLI_TIMEOUT', message: 'slow' } })); await h2.catalog.read(deployment, CLI, WS);
+  h2.tick(CAPABILITY_CATALOG_RETRY_MS + 1); h2.answer(() => ({ ok: true, document: CAPS() }));
+  assert.equal((await h2.catalog.read(deployment, CLI, WS)).reason, null, 'after the window too, the first ask returns the table, not the stale failure');
   h.tick(CAPABILITY_CATALOG_RETRY_MS); h.answer(() => ({ ok: true, document: { ...CAPS(), result: { capabilitiesApi: 9 } } }));
-  h.catalog.ensure(deployment, CLI, WS); await settle();
+  h.catalog.ensure(deployment, CLI, move(ws => { ws.stale = ['x']; })); await settle();
   assert.deepEqual(h.catalog.held(deployment).reason, { code: 'E_CLI_PROTOCOL', message: '', kernel: false });
   const thrown = createCapabilityCatalog({ invoke: async () => { throw new Error('spawn ENOENT'); } });
   assert.deepEqual((await thrown.read(deployment, CLI, WS)).reason, { code: 'E_CLI_FAILED', message: '', kernel: false });
@@ -126,8 +135,17 @@ test('refresh: true forces a live read (maxAge 0) and joins an in-flight one ins
   const poll = await h.catalog.read(deployment, CLI, WS);
   assert.equal(poll.capabilities.capabilities.length, TABLE.capabilities.length, 'a poll during the refresh still answers from the held table');
   open(); const [a, b] = await Promise.all([forced, joined]);
-  assert.equal(h.calls.length, 2, 'one flight per deployment'); assert.deepEqual(a, b);
+  assert.equal(h.calls.length, 2, 'two refreshes share one live flight'); assert.deepEqual(a, b);
   assert.equal(a.capabilities.capabilities.length, TABLE.capabilities.length - 1); assert.equal(a.refreshing, false);
+  // A BACKGROUND read in the air (maxAge 60: heads may be up to a minute old) is not a live read: a refresh starts its own.
+  const moved = move(ws => { ws.stale = ['nw.tools']; });
+  let release; h.gate(new Promise(r => { release = r; }));
+  h.catalog.ensure(deployment, CLI, moved, { maxAge: 60 }); await settle();
+  assert.deepEqual(h.calls.at(-1), { action: 'capabilities', context: deployment, maxAge: 60 });
+  const live = h.catalog.read(deployment, CLI, moved, { refresh: true }); await settle();
+  assert.deepEqual(h.calls.at(-1), { action: 'capabilities', context: deployment, maxAge: 0 }, 'refresh:true did not join the background flight');
+  assert.equal(h.calls.length, 4);
+  release(); assert.equal((await live).reason, null);
 });
 
 test('two concurrent read() on a cold deployment share one invoke; a second deployment is its own flight', async () => {
@@ -147,8 +165,11 @@ test('observedAt is the kernel\'s observation stamp when present, else the compl
   h.answer(() => ({ ok: true, document: stamped }));
   const live = await h.catalog.read(deployment, CLI, WS, { refresh: true });
   assert.equal(live.observedAt, '2026-09-26T19:57:15.436Z');
+  // A malformed stamp is a producer defect: the document is refused (observationData), the last good table and its stamp stay.
   const bad = CAPS(); bad.result.observation = { observedAt: 12, reused: false }; h.answer(() => ({ ok: true, document: bad }));
-  h.tick(5000); assert.equal((await h.catalog.read(deployment, CLI, WS, { refresh: true })).observedAt, new Date(h.now()).toISOString());
+  h.tick(5000); const refused = await h.catalog.read(deployment, CLI, WS, { refresh: true });
+  assert.deepEqual([refused.reason.code, refused.observedAt, refused.capabilities.capabilities.length], ['E_CLI_PROTOCOL', '2026-09-26T19:57:15.436Z', TABLE.capabilities.length]);
+  h.answer(() => ({ ok: true, document: CAPS() })); await h.catalog.read(deployment, CLI, WS, { refresh: true });
   const copy = h.catalog.held(deployment); copy.capabilities.capabilities.pop(); copy.reason = { code: 'X' };
   assert.equal(h.catalog.held(deployment).capabilities.capabilities.length, TABLE.capabilities.length); assert.equal(h.catalog.held(deployment).reason, null);
 });

@@ -8,7 +8,7 @@
  * (`prefetch`) and binds it to the key that cycle's workspace status produces
  * (`settle`); the holding rules are keyed-catalog.mjs's. */
 import { cliWorkspace } from '../workspace-cli.mjs';
-import { soulsData } from '../deployment-data.mjs';
+import { soulsData, observationData } from '../deployment-data.mjs';
 import { createKeyedCatalog } from './keyed-catalog.mjs';
 
 export const SOUL_CATALOG_RETRY_MS = 60_000;
@@ -26,8 +26,8 @@ export function createSoulCatalog({ invoke = cliWorkspace, now = () => Date.now(
       // `maxAge` only reaches argv when the kernel declares observe-max-age (the adapter's call).
       const result = await invoke(cli, { action: 'souls', context: deployment, ...options });
       if (result?.ok !== true) return { value: null, reason: result?.reason?.code ? { code: result.reason.code, message: String(result.reason.message || '') } : { code: 'E_CLI_FAILED', message: '' } };
-      const souls = soulsData(result.document), stamp = result.document?.result?.observation?.observedAt;
-      return { value: { souls: souls.souls, ambiguous: souls.ambiguous, workspace: souls.workspace, problems: souls.problems }, observedAt: typeof stamp === 'string' ? stamp : null };
+      const souls = soulsData(result.document), { observedAt } = observationData(result.document); // both refuse a malformed document
+      return { value: { souls: souls.souls, ambiguous: souls.ambiguous, workspace: souls.workspace, problems: souls.problems }, observedAt };
     } catch (error) { return { value: null, reason: { code: error?.code === 'E_CLI_PROTOCOL' ? 'E_CLI_PROTOCOL' : 'E_CLI_FAILED', message: '' } }; }
   }
   const catalog = createKeyedCatalog({ read, retryMs: SOUL_CATALOG_RETRY_MS, now });
@@ -49,7 +49,7 @@ export function createSoulCatalog({ invoke = cliWorkspace, now = () => Date.now(
     /** Start an unbound read when nothing usable is held and nothing is in flight; null when nothing started. */
     prefetch(deployment, cli, options = {}) { const flight = catalog.prefetch(deployment, cli, options); return flight && flight.then(project); },
     refreshing: catalog.refreshing,
-    /** The last catalog held for a deployment (admission reads this). */
+    /** Read-only view of what is held (tests and diagnostics); the server reads catalogs through settle. */
     held(deployment) { return project(catalog.held(deployment)); },
     forget: catalog.forget,
   };
