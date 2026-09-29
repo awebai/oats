@@ -17,14 +17,18 @@ Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
 1. **Super/Meta belongs to the window manager on Linux.** Omarchy (Hyprland),
    GNOME and KDE bind Super+* heavily. The Desktop never binds Super on
    Linux/Windows: `Mod` is ⌘ on macOS and Ctrl everywhere else.
-2. **Inside a terminal, a plain Ctrl+letter chord belongs to the program.**
-   Ctrl+W deletes a word, Ctrl+K kills to the end of the line, Ctrl+\ is
-   SIGQUIT, Ctrl+P is shell history, Ctrl+B is the tmux prefix. On
-   Linux/Windows an application chord that must work while a terminal has
-   focus uses **Ctrl+Shift+key**, the convention of GNOME Terminal, Alacritty,
-   Ghostty and kitty (and of Terminator/Tilix for splits); Omarchy's terminals
-   follow it. A plain Ctrl chord may stay bound for non-terminal focus, but it
-   is never terminal-allowlisted.
+2. **A default chord never takes a key that a program inside the terminal
+   reads.** Plain Ctrl+letter: Ctrl+W deletes a word, Ctrl+K kills to the end
+   of the line, Ctrl+\ is SIGQUIT, Ctrl+P is shell history, Ctrl+B is the tmux
+   prefix. Function keys: F1 and F6 in htop, mc and nano. Alt+digit (ESC and a
+   digit): readline's numeric argument, irssi/weechat windows, a common tmux
+   select-window binding. Ctrl+PgUp/PgDn in vim and weechat. On macOS the
+   ⌃digits, which are control bytes (⌃3 ESC, ⌃4–⌃7 FS/GS/RS/US, ⌃8 DEL; ⌃6 is
+   vim's alternate file). Such a key may stay bound for focus outside a
+   terminal, but it is never terminal-allowlisted. On Linux/Windows an
+   application chord that must work while a terminal has focus uses
+   **Ctrl+Shift+key**, the convention of GNOME Terminal, Alacritty, Ghostty and
+   kitty (and of Terminator/Tilix for splits); Omarchy's terminals follow it.
 3. **macOS keeps ⌘.** ⌘ never reaches the pty, so the macOS column changes only
    where a chord is wrong for macOS users too.
 4. **Every default goes through the collision review** in the keyboard lesson
@@ -42,7 +46,11 @@ Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
 - **Stored overrides win**, on every platform. Action ids never changed, so an
   override saved before this keymap still applies. The shortcuts editor shows
   the platform's effective chord and offers Reset when it differs from the
-  platform default.
+  platform default. A stored rebind that now shares its chord with another
+  binding (a new default, say) is never changed for you: `keymapConflicts`
+  finds it at load and on every keymap change, the footer's shortcuts button
+  carries a warn dot and a description, and the editor names each clash at the
+  top and on its row until you rebind or reset one side.
 - One chord per action. Where the table has two (Ctrl+Tab and Ctrl+PgDn; F and
   0 on the overview canvas), the second is its own action (`tabs.nextPage`,
   `hier.fitZero`), rebindable and unbindable on its own.
@@ -50,8 +58,8 @@ Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
   `TERMINAL_ALLOWLIST` fire while a terminal has focus; everything else reaches
   the program. The rule is by action id, so a user who rebinds an allowlisted
   action keeps their choice in the terminal. On macOS only ⌘ chords fire in a
-  terminal, plus three structural shapes checked by action id *and* shape:
-  Ctrl+Tab / Ctrl+Shift+Tab, ⌃1–⌃9, and F6 / Shift+F6.
+  terminal (⌘ never reaches the pty), plus one structural shape checked by
+  action id *and* shape: Ctrl+Tab / Ctrl+Shift+Tab.
 - Unmodified chords never fire from an editable field; a view's own keys (the
   overview canvas, the Souls grid) stay local to that view.
 
@@ -64,13 +72,14 @@ Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
 | Spawn instance: choose a soul in Workspace (`app.chooseSoul`) | ⌘N | Ctrl+Shift+N | yes |
 | Close tab (`tabs.close`) | ⌘W | Ctrl+Shift+W | yes |
 | Next / previous tab (`tabs.next`, `tabs.prev`) | ⌃Tab / ⌃⇧Tab | Ctrl+Tab / Ctrl+Shift+Tab | yes |
-| Next / previous tab, second chord (`tabs.nextPage`, `tabs.prevPage`) | none | Ctrl+PgDn / Ctrl+PgUp | yes |
-| Go to tab 1–8, last tab (`tabs.goto1`…`tabs.goto9`) | ⌃1–⌃9 | Alt+1–Alt+9 | yes |
+| Next / previous tab, second chord (`tabs.nextPage`, `tabs.prevPage`) | none | Ctrl+PgDn / Ctrl+PgUp | no (vim, weechat) |
+| Go to tab 1–8, last tab (`tabs.goto1`…`tabs.goto9`) | ⌥⌘1–⌥⌘9 | Alt+1–Alt+9 | no (readline, irssi/weechat, tmux) |
 | Split right (`split.vertical`) | ⌘\ | Ctrl+Shift+E | yes |
 | Split down (`split.horizontal`) | ⌘⇧\ | Ctrl+Shift+O | yes |
 | Close the split (`split.close`) | ⌥⌘W | Ctrl+Shift+Alt+W | yes |
 | Active overview / Workspace / Automations (`stage.hierarchy`, `stage.spawn`, `stage.automations`) | ⌘1 / ⌘2 / ⌘3 | Ctrl+1 / Ctrl+2 / Ctrl+3 | no |
-| Focus next / previous region (`focus.nextRegion`, `focus.prevRegion`) | F6 / ⇧F6 | F6 / Shift+F6 | yes |
+| Focus next / previous region (`focus.nextRegion`, `focus.prevRegion`) | F6 / ⇧F6 | F6 / Shift+F6 | no (mc, htop, nano) |
+| Leave the terminal for the next region (`focus.leaveTerminal`) | ⇧⌘F6 | Ctrl+Shift+F6 | yes |
 | Sidebar (`sidebar.toggle`) | ⌘B | Ctrl+B | no (tmux prefix) |
 | Filter instances (`sidebar.focusFilter`) | ⌘F | Ctrl+F | no |
 | Instance panel (`panel.toggle`) | ⌥⌘B | Ctrl+Alt+B | no |
@@ -83,7 +92,19 @@ Changed from 0.30.1 on Linux/Windows: the palette (was Ctrl+K), close tab (was
 Ctrl+W), the splits (were Ctrl+\ and Ctrl+Shift+\, Ctrl+Alt+W), and Spawn
 instance (was Ctrl+N). The theme cycle lost ⌘⇧T / Ctrl+Shift+T on both
 platforms: it means "reopen closed tab" in browsers and "new tab" in Linux
-terminals. New: go to tab, Ctrl+PgDn/PgUp, ⌘3/Ctrl+3, F6.
+terminals. New: go to tab, Ctrl+PgDn/PgUp, ⌘3/Ctrl+3, F6, and ⇧⌘F6 /
+Ctrl+Shift+F6 to leave a terminal.
+
+On macOS the "works in a terminal" column is simpler: every ⌘ chord works there
+(⌘ never reaches the pty), and so does ⌃Tab; ⌃digits and F6 are the program's.
+From a terminal, Ctrl+Tab switches tabs on every platform, and ⌥⌘digit goes to
+a tab on macOS; on Linux/Windows leave the terminal first (Ctrl+Shift+F6), then
+Alt+digit.
+
+Ctrl+Shift+E (split right on Linux) is also IBus's emoji hotkey on GNOME. The
+Desktop keeps it, after Terminator and Tilix; if IBus takes it first, rebind
+split right in the shortcuts editor or change IBus's hotkey (IBus Preferences →
+Emoji).
 
 F1 was considered as a second palette chord and left out: in a terminal F1
 belongs to programs such as htop and mc.
@@ -112,12 +133,17 @@ F6 moves focus to the next region, Shift+F6 to the previous one, in this order:
    its first control. The tab strip and split controls belong here.
 4. **Instance panel**: its selected tab; when collapsed, its rail's pressed
    button. A collapsed panel stays in the cycle on purpose: inside a terminal
-   Tab belongs to the program, so F6 is the way out to it.
+   Tab belongs to the program, so the region cycle is the way out to it.
+
+Inside a terminal F6 belongs to the program (mc, htop, nano). **⇧⌘F6 /
+Ctrl+Shift+F6** (`focus.leaveTerminal`) leaves the terminal for the next region
+in the same order; from there plain F6 and Shift+F6 cycle as usual.
 
 Then back to the nav. A hidden region is skipped (the sidebar while hidden or
 in focus mode, the panel when it has nothing to show), and so is a region with
 nothing focusable at that moment: focus never lands on `<body>`. While a modal
-dialog or the palette is open, F6 does nothing; the dialog keeps focus.
+dialog or the palette is open, F6 and the tab switches (Ctrl+Tab, Ctrl+PgDn/PgUp,
+go to tab) do nothing; the dialog keeps focus.
 
 Tab switches from the keyboard (Ctrl+Tab, Ctrl+PgDn, go to tab) keep focus in
 the new tab's content when it was in content, and on the strip when it was on
@@ -174,7 +200,8 @@ the rig). "Fixed" marks a gap this change closed.
 | Start / Restart dialog, lifecycle dialog | From the row or its menu | Esc; trapped; **focus returns to the row when its tool is hidden again (fixed: fell to `<body>`)** |
 | Sidebar footer: Spawn instance, sidebar, theme, shortcuts, settings, palette | Tab | Enter/Space run the same registered actions as the chords |
 | Sidebar restore edge | Tab, while the sidebar is hidden (hiding moves focus to it) | Enter |
-| Tab bar | One roving stop per tablist (per group when split); F6 (main) | Left/Right/Home/End select; Delete closes the focused tab, and the keymap's `tabs.close` (⌘W / Ctrl+Shift+W, rebindable; the close button's tooltip names it) closes the active one; Ctrl+Tab, Ctrl+PgDn/PgUp and go-to-tab from anywhere in the tab layer, **keeping focus in the content (fixed: fell to `<body>`)** |
+| Tab bar | One roving stop per tablist (per group when split); F6 (main) | Left/Right/Home/End select; Delete closes the focused tab, and the keymap's `tabs.close` (⌘W / Ctrl+Shift+W, rebindable; the close button's tooltip names it) closes the active one; Ctrl+Tab from anywhere in the tab layer, and Ctrl+PgDn/PgUp and go-to-tab outside a terminal (⌥⌘digit also inside one on macOS), **keeping focus in the content (fixed: fell to `<body>`)** |
+| Terminal | Enter on its roster row; F6 (main) | Every key reaches the program except the terminal-allowlisted chords; ⇧⌘F6 / Ctrl+Shift+F6 leaves for the next region |
 | Tab close buttons | Tab | Enter |
 | Split right / down / close, panel toggle | Tab (shown for a terminal) | Enter; their chords |
 | Split separator | Tab | Arrows resize, Home/End to the ends, **Enter resets to even (fixed: double-click only)** |

@@ -484,6 +484,11 @@ body {
 .kb-row:hover { background: var(--surface-2); }
 .kb-label { flex: 1; color: var(--fg); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kb-conflict { color: var(--warn); font-size: 11px; }
+.kb-clashes { margin: 0; padding: 8px 16px; color: var(--warn); font-size: 12px; border-bottom: 1px solid var(--border); }
+/* The footer shortcuts button, while a stored rebind clashes (keymapConflicts): a warn dot. */
+#sidebar-shortcuts { position: relative; }
+#sidebar-shortcuts.has-clash::after { content: ""; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px;
+  border-radius: 50%; background: var(--warn); }
 .kb-chord {
   min-width: 92px; padding: 5px 9px; border: 1px solid var(--border); border-radius: 6px;
   background: var(--bg); color: var(--fg); font: 12px/1 ui-monospace, monospace;

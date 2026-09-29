@@ -559,17 +559,22 @@ section is the module map.
   skips already-consumed (`defaultPrevented`) events, and unmodified/
   shift-only chords never fire while an editable field (input, textarea,
   select, contenteditable) has focus. Terminal
-  policy: inside `.xterm`, on macOS only ⌘-resolved chords fire, plus
-  Ctrl+Tab, ⌃1–⌃9 and F6 for their own actions; on Linux/Windows only
-  `TERMINAL_ALLOWLIST` action ids may fire (their defaults are
-  Ctrl+Shift+key, Alt+digit, Ctrl+Tab/PgDn/PgUp or F6) — plain Ctrl+letter
-  belongs to the attached program. `app.quickOpenSouls` (Mod+P) is
+  policy (a default chord never takes a key a terminal program reads):
+  inside `.xterm`, on macOS only ⌘-resolved chords fire, plus Ctrl+Tab for
+  tabs.next/prev; on Linux/Windows only `TERMINAL_ALLOWLIST` action ids may
+  fire (their defaults are Ctrl+Shift+key or Ctrl+Tab) — plain Ctrl+letter,
+  F6, Alt+digit and Ctrl+PgUp/PgDn belong to the attached program, and
+  `focus.leaveTerminal` (Mod+Shift+F6) is the way out. `keymapConflicts`
+  lists clashes that involve a stored rebind; the shell marks the footer
+  shortcuts button and the editor names them. `app.quickOpenSouls` (Mod+P) is
   deliberately NOT allowlisted: ⌘P fires inside xterm on macOS via the
   ⌘-chord policy, but Ctrl+P inside xterm on Linux/Windows is the shell's
   history navigation and reaches the pty.
-- **focus-regions.mjs** — F6 / Shift+F6 (`focus.nextRegion`/`prevRegion`):
-  sidebar nav → roster → main → instance panel, hidden regions skipped, each
-  region's current item focused, never `<body>`.
+- **focus-regions.mjs** — F6 / Shift+F6 (`focus.nextRegion`/`prevRegion`,
+  outside a terminal; `focus.leaveTerminal` from inside one): sidebar nav →
+  roster → main → instance panel, hidden regions skipped, each region's
+  current item focused, never `<body>`. F6 and the tab switches are no-ops
+  under an open modal.
 - **surface-return.mjs** — "back to where you were" after a flow that moved
   the main surface (Quick Open's spawn dialog): the same tab or stage and
   control, unless the operator moved on.

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import {
-  registerAction, setBinding, resetAllBindings, getBinding, defaultBinding,
+  registerAction, setBinding, resetAllBindings, getBinding, defaultBinding, keymapConflicts,
 } from "../renderer/keybindings.mjs";
 import { createKeybindingsEditor, groupActions } from "../renderer/keybindings-editor.mjs";
 
@@ -301,4 +301,36 @@ test("Tab wraps focus inside the modal dialog", (t) => {
   assert.equal(shiftTab.defaultPrevented, true, "Shift+Tab on the first control is wrapped");
   assert.equal(doc.activeElement, last);
   editor.close();
+});
+
+test("a stored rebind that clashes with another binding is surfaced, never changed silently", (t) => {
+  const { doc, editor } = setup(t);
+  assert.deepEqual(keymapConflicts(true), [], "the defaults alone never clash");
+  // e.g. an old rebind that a new default now shares: ⌘W was set for the palette.
+  setBinding("app.palette", "Mod+W");
+  const clashes = keymapConflicts(true);
+  assert.equal(clashes.length, 1);
+  assert.deepEqual(clashes[0].actions.map((a) => a.id).sort(), ["app.palette", "tabs.close"]);
+  assert.equal(getBinding("app.palette", true), "Mod+W", "the stored rebind is kept");
+  assert.equal(getBinding("tabs.close", true), "Mod+W", "and so is the default");
+  editor.open();
+  const banner = doc.querySelector(".kb-clashes");
+  assert.equal(banner.hidden, false);
+  assert.equal(banner.getAttribute("role"), "status");
+  assert.match(banner.textContent, /⌘W is both “Command palette” and “Close tab”/);
+  const paletteRow = doc.querySelector('.kb-chord[data-action-id="app.palette"]').closest(".kb-row");
+  assert.match(paletteRow.querySelector(".kb-conflict").textContent, /Also bound to “Close tab”/, "and marked on its row");
+  // A clash between defaults only (no stored rebind) is not the operator's to fix: not listed.
+  resetAllBindings();
+  assert.deepEqual(keymapConflicts(true), []);
+  assert.equal(doc.querySelector(".kb-clashes").hidden, true);
+});
+
+test("shell wiring: the footer shortcuts button carries the clash marker, recomputed on keymap change", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
+  assert.match(src, /function markShortcutClashes\(\) \{[^]*?keymapConflicts\(isMac\)[^]*?classList\.toggle\("has-clash"[^]*?aria-description/);
+  assert.match(src, /onKeymapChange\(\(\) => \{[^]*?markShortcutClashes\(\)/);
+  const css = readFileSync(new URL("../renderer/shell.css", import.meta.url), "utf8");
+  assert.match(css, /#sidebar-shortcuts\.has-clash::after \{[^}]*background: var\(--warn\)/);
 });

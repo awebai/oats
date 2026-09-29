@@ -27,7 +27,7 @@ import { createSurfaceReturn } from "./surface-return.mjs";
 import { createFocusRegions, firstTabbable, isShown } from "./focus-regions.mjs";
 import { createFileOpener } from "./open-file.mjs";
 import {
-  registerAction, setActiveContexts, getBinding, onKeymapChange, formatChord, handleKeydown, matchEvent, runAction,
+  registerAction, setActiveContexts, getBinding, onKeymapChange, formatChord, handleKeydown, matchEvent, runAction, keymapConflicts,
 } from "./keybindings.mjs";
 import { createKeybindingsEditor } from "./keybindings-editor.mjs";
 import { createConnections, connectionsCSS } from "./connections.mjs";
@@ -722,12 +722,8 @@ function onRosterRowKey(e) {
   }
   const to = moveTarget(action, at, rows.length);
   if (to < 0 || to === at) return;
-  // skip idle (disabled) rows: delta moves keep travelling in their
-  // direction; Home/End jumps fall back inward toward the focused row.
-  const step = action.to ? (to > at ? -1 : 1) : (to > at ? 1 : -1);
-  let cursor = to;
-  while (cursor >= 0 && cursor < rows.length && cursor !== at && rows[cursor].disabled) cursor += step;
-  if (cursor >= 0 && cursor < rows.length && cursor !== at && !rows[cursor].disabled) setRovingRow(listEl, rows[cursor]);
+  // Every row takes focus (an unavailable one is aria-disabled, never disabled).
+  setRovingRow(listEl, rows[to]);
 }
 
 /* Move focus AND the single tab-order slot to `row` (roving tabindex). */
@@ -1395,9 +1391,10 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
       && tabOpenIntents.ownsFocus(made.id),
     focusInput: () => tabOpenIntents.applyFocus(() => term.focus()),
     fit: () => fit.fit(),
-    // Terminal-allowlisted shortcuts (engine policy: app.palette, tabs.*)
-    // must be intercepted BEFORE xterm writes to the pty — its capture-phase
-    // handler consumes e.g. Ctrl+K, so the bubble-phase window listener
+    // Terminal-allowlisted shortcuts (engine policy: app.palette, tabs.next/
+    // prev/close, split.*, focus.leaveTerminal) must be intercepted BEFORE xterm
+    // writes to the pty — its handler consumes e.g. Ctrl+Shift+P or ⌘⇧F6 and
+    // stops propagation, so the bubble-phase window listener
     // never sees it. matchEvent applies the allowlist (insideTerminal);
     // the action runs once on keydown, and every phase of a matched chord
     // is claimed so no control byte leaks to the attached program.
@@ -1563,6 +1560,22 @@ onWorkspaceChange(() => {
 
 // ── shortcuts editor (rail-footer button + palette + Mod+,) ────────────
 const shortcutsEditor = createKeybindingsEditor({ doc: document, isMac });
+// Stored rebinds vs the effective keymap (spec F review): a clash is never resolved silently;
+// the footer button carries a warn dot and a description until the operator rebinds or resets.
+function markShortcutClashes() {
+  const button = document.getElementById("sidebar-shortcuts");
+  if (!button) return;
+  const clashes = keymapConflicts(isMac).length;
+  button.classList.toggle("has-clash", clashes > 0);
+  if (clashes) button.setAttribute("aria-description", `${clashes === 1 ? "1 shortcut you set clashes" : `${clashes} shortcuts you set clash`} with another: open to review`);
+  else button.removeAttribute("aria-description");
+}
+let clashCheckQueued = false;
+onKeymapChange(() => {
+  if (clashCheckQueued) return;
+  clashCheckQueued = true;
+  queueMicrotask(() => { clashCheckQueued = false; markShortcutClashes(); });
+});
 function openShortcutsEditor() { tabOpenIntents.invalidate(); lifecycleDialog.close(); connections.close(); shortcutsEditor.open(); }
 const connections = createConnections({ doc: document, desk,
   request: body => api('/api/forge-connections', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
@@ -1771,25 +1784,30 @@ registerAction({ id: "terminal.fontBigger", label: "Terminal: increase font size
 registerAction({ id: "terminal.fontSmaller", label: "Terminal: decrease font size", context: "global", run: () => setTerminalFontSize(terminalTypography().fontSize - 1) });
 registerAction({ id: "terminal.fontReset", label: "Terminal: reset typography", context: "global", run: () => { setTerminalFontFamily(""); setTerminalFontSize(13); } });
 // tabs: cycle + close work whether or not a tab trigger has focus (the
-// tab-a11y roving arrows stay as focus keys on the strip itself).
-registerAction({ id: "tabs.next", label: "Next tab", context: "tabs", run: () => cycleTab(1) });
-registerAction({ id: "tabs.prev", label: "Previous tab", context: "tabs", run: () => cycleTab(-1) });
+// tab-a11y roving arrows stay as focus keys on the strip itself). Tab switching
+// never happens under an open modal (the palette, a sheet, a dialog), as F6 doesn't.
+const unlessModal = (fn) => () => { if (!modalOpen()) fn(); };
+registerAction({ id: "tabs.next", label: "Next tab", context: "tabs", run: unlessModal(() => cycleTab(1)) });
+registerAction({ id: "tabs.prev", label: "Previous tab", context: "tabs", run: unlessModal(() => cycleTab(-1)) });
 registerAction({ id: "tabs.close", label: "Close the active tab", context: "tabs", run: () => { if (activeTab != null) closeTab(activeTab, true); } });
 // Second chords for tab cycling (Ctrl+PgDn / Ctrl+PgUp on Linux and Windows): their own ids,
-// so each stays rebindable and unbindable on its own.
-registerAction({ id: "tabs.nextPage", label: "Next tab (second shortcut)", context: "tabs", run: () => cycleTab(1) });
-registerAction({ id: "tabs.prevPage", label: "Previous tab (second shortcut)", context: "tabs", run: () => cycleTab(-1) });
+// so each stays rebindable and unbindable on its own. Neither fires inside a terminal.
+registerAction({ id: "tabs.nextPage", label: "Next tab (second shortcut)", context: "tabs", run: unlessModal(() => cycleTab(1)) });
+registerAction({ id: "tabs.prevPage", label: "Previous tab (second shortcut)", context: "tabs", run: unlessModal(() => cycleTab(-1)) });
 for (let n = 1; n <= 9; n++) {
-  registerAction({ id: `tabs.goto${n}`, label: n === 9 ? "Go to the last tab" : `Go to tab ${n}`, context: "tabs", run: () => gotoTab(n) });
+  registerAction({ id: `tabs.goto${n}`, label: n === 9 ? "Go to the last tab" : `Go to tab ${n}`, context: "tabs", run: unlessModal(() => gotoTab(n)) });
 }
 // Regions: sidebar nav → instance roster → main → instance panel (focus-regions.mjs).
 registerAction({ id: "focus.nextRegion", label: "Focus the next region (sidebar, instances, main, panel)", context: "global", run: () => cycleRegion(1) });
 registerAction({ id: "focus.prevRegion", label: "Focus the previous region", context: "global", run: () => cycleRegion(-1) });
+// F6 stays the program's inside a terminal (mc, htop, nano): this terminal-allowlisted chord
+// leaves it for the next region, same order as F6; from there plain F6 works.
+registerAction({ id: "focus.leaveTerminal", label: "Leave the terminal (focus the next region)", context: "global", run: () => cycleRegion(1) });
 
 // THE one window keydown listener. The engine owns the terminal policy
-// (⌘ chords on mac; the action-id allowlist on Linux/Windows — Ctrl+K now
-// opens the palette inside xterm there, superseding the legacy
-// isPaletteShortcut pass-through). View-local handlers (hierarchy canvas,
+// (⌘ chords on mac; the action-id allowlist on Linux/Windows, where the
+// allowlisted defaults are Ctrl+Shift+key so plain Ctrl+letter stays the
+// program's). View-local handlers (hierarchy canvas,
 // roster rows, palette input) preventDefault the keys they consume; the
 // engine must not double-dispatch them.
 // The engine skips already-consumed (defaultPrevented) events itself.

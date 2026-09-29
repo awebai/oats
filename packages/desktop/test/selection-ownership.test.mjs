@@ -56,6 +56,7 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     document, console, navigator: { platform: "MacIntel" },
     workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A", connectionGeneration: 0,
     instanceActionTarget, sameInstanceActionTarget, instanceSplitPlan, instanceSplitIdentity,
+    modal: false, modalOpen: () => c.modal,
     menuState() {}, getBinding: () => null, formatChord: c => c, isMac: true, applyChordTitles() {}, runAction: id => actions.get(id)?.(),
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "instances", tabLayerVisible: false,
     contextRosterGen: 0, contextInstances: [], contextFilter: "", collapsedInstances: new Set(),
@@ -111,7 +112,8 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     const match = shellSource.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
     assert.ok(match, `exercise shipped ${name}`); return match[0];
   });
-  const setup = shellSource.match(/const tabOpenIntents = [^\n]+/)[0];
+  // The shipped modal guard for tab switching (unlessModal), over a modal flag the test sets.
+  const setup = `${shellSource.match(/const tabOpenIntents = [^\n]+/)[0]}\n${shellSource.match(/const unlessModal = [^\n]+/)[0]}`;
   const registry = shellSource.split("\n").filter(line => /^registerAction\(/.test(line)
     && /id: "(?:tabs\.|split\.close|terminal\.focusActive)/.test(line));
   const s = runInNewContext(`${setup}\n${functions.join("\n")}\n${registry.join("\n")}\n({ ${names.join(", ")}, tabOpenIntents });`, c);
@@ -507,4 +509,22 @@ test("filtering: ArrowDown and the tab stop land on the first match, never an an
   s.dispatch(filter, "keydown", { key: "ArrowDown" });
   assert.equal(s.document.activeElement.dataset.treeInstance, s.c.contextRosterEl.querySelector('.ctx-inst[tabindex="0"]').dataset.treeInstance,
     "no filter: the rows' tab stop");
+});
+
+test("under an open modal the tab-switch actions do nothing (as F6 doesn't); close still works", t => {
+  const s = shell(t);
+  s.seed("one"); s.seed("two");
+  const before = s.c.activeTab;
+  s.c.modal = true;
+  for (const id of ["tabs.next", "tabs.prev"]) { s.actions.get(id)(); assert.equal(s.c.activeTab, before, id); }
+  s.c.modal = false;
+  s.actions.get("tabs.next")();
+  assert.notEqual(s.c.activeTab, before, "without a modal, Ctrl+Tab switches");
+});
+
+test("shell wiring: every tab-switch action (Ctrl+Tab, Ctrl+PgUp/PgDn, go-to-tab) is modal-guarded", () => {
+  for (const id of ["tabs.next", "tabs.prev", "tabs.nextPage", "tabs.prevPage"]) {
+    assert.match(source, new RegExp(`id: "${id.replace(".", "\\.")}".*run: unlessModal\\(`), id);
+  }
+  assert.match(source, /id: `tabs\.goto\$\{n\}`.*run: unlessModal\(\(\) => gotoTab\(n\)\)/);
 });
