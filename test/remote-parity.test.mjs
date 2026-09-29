@@ -251,3 +251,121 @@ test("session attach --server: one version probe at most, every call through the
   assert.equal(r.status, 255);
   assert.match(r.stderr, /ssh to build-host ended with an error \(exit 255\); if the link was lost, the instance keeps running on build\. Reattach with: oats session attach --server build --home \/srv\/ws\/agents\/dev\/instances\/dev-a/);
 });
+
+// ---- item 3: foreign instances are first-class ----
+
+const FULL_PROBE = { ...PROBE, remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "session-upload"], features: ["harness", "retire-home", "session-start", "session-restart", "session-upload", "launch-config"] };
+const WS = "/srv/ws";
+const homeOf = (agent, name) => `${WS}/agents/${agent}/instances/${name}`;
+const ROSTER = { root: `${WS}/agents`, agents: [
+  { name: "dev", instances: [{ instance: "dev-a", home: homeOf("dev", "dev-a"), running: true }, { instance: "twin", home: homeOf("dev", "twin"), running: false }] },
+  { name: "ops", instances: [{ instance: "twin", home: homeOf("ops", "twin"), running: false }] },
+] };
+const ok = (result) => ({ stdout: JSON.stringify({ schemaVersion: 1, ok: true, result }) });
+
+function foreignSetup(name, answers = {}) {
+  const dir = mkdtempSync(join(base, `${name}-`));
+  const host = fakeHost(dir, { probe: FULL_PROBE, answers: { [`status --json --dir ${WS}`]: { stdout: JSON.stringify(ROSTER) }, ...answers } });
+  const env = cliEnv(dir, host);
+  mkdirSync(env.OATS_HOME_DIR, { recursive: true });
+  writeFileSync(join(env.OATS_HOME_DIR, "servers.json"), JSON.stringify({ servers: { build: { sshHost: "build-host", workspace: WS, oatsPath: host.oatsPath } } }));
+  return { dir, host, env, sent: (pattern) => host.calls().filter((c) => c.includes(pattern)) };
+}
+
+test("foreign instances: every routed session command and retire reach a home with no saved route, by --home or by a name unique on the host", () => {
+  const home = homeOf("dev", "dev-a");
+  const { env, host, sent, dir } = foreignSetup("foreign", {
+    [`session inspect --home ${home} --json`]: ok({ home, present: true, state: "running", backend: "tmux" }),
+    [`session start --home ${home} --json`]: ok({ instance: "dev-a", home, backend: "tmux", reused: "pane" }),
+    [`session restart --home ${home} --json`]: ok({ instance: "dev-a", home, backend: "tmux", reused: "pane" }),
+    [`session attach --home ${home}`]: { stdout: "attached" },
+    [`retire dev-a --home ${home} --dir ${WS} --json`]: ok({ retired: "dev-a", agent: "dev", removedDir: true }),
+  });
+  for (const addr of [["--home", home], ["--instance", "dev-a"]]) {
+    let r = cli(env, ["session", "inspect", "--server", "build", ...addr, "--json"]);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(r.json().result.home, home); assert.equal(r.json().result.server, "build");
+    r = cli(env, ["session", "start", "--server", "build", ...addr, "--json"]);
+    assert.equal(r.status, 0, r.stdout + r.stderr); assert.equal(r.json().result.instance, "dev-a");
+    r = cli(env, ["session", "restart", "--server", "build", ...addr, "--json"]);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    r = cli(env, ["session", "attach", "--server", "build", ...addr]);
+    assert.equal(r.status, 0, r.stdout + r.stderr); assert.equal(r.stdout, "attached");
+  }
+  // Upload: the bytes go to the host's receiver for that home.
+  const file = join(dir, "note.txt"); writeFileSync(file, "hello");
+  const sha = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
+  writeFileSync(join(env.OATS_HOME_DIR, "servers.json"), JSON.stringify({ servers: { build: { sshHost: "build-host", workspace: WS, oatsPath: fakeHost(mkdtempSync(join(dir, "upload-")), { probe: FULL_PROBE, answers: {
+    [`status --json --dir ${WS}`]: { stdout: JSON.stringify(ROSTER) },
+    [`session receive --home ${home} --name note.txt --json`]: ok({ path: `${home}/.oats-attachments/note.txt`, bytes: 5, sha256: sha }),
+  } }).oatsPath } } }));
+  let r = cli(env, ["session", "upload", "--server", "build", "--instance", "dev-a", "--file", file, "--json"]);
+  assert.equal(r.status, 0, r.stdout + r.stderr); assert.equal(r.json().result.home, home);
+  // Retire by name: the name resolves through the host's roster to its exact home.
+  writeFileSync(join(env.OATS_HOME_DIR, "servers.json"), JSON.stringify({ servers: { build: { sshHost: "build-host", workspace: WS, oatsPath: host.oatsPath } } }));
+  r = cli(env, ["retire", "dev-a", "--server", "build", "--json"]);
+  assert.equal(r.status, 0, r.stdout + r.stderr); assert.equal(r.json().result.retired, "dev-a");
+  assert.equal(sent(`retire dev-a --home ${home} --dir ${WS} --json`).length, 1, host.calls().join("\n"));
+  r = cli(env, ["retire", "dev-a", "--server", "build", "--home", home, "--json"]);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  // One status read resolves a name; the probe is asked once per command.
+  const before = host.calls().length;
+  cli(env, ["session", "inspect", "--server", "build", "--instance", "dev-a", "--json"]);
+  const calls = host.calls().slice(before);
+  assert.deepEqual(calls.map((c) => (c.includes("version --json") ? "probe" : c.includes("status --json") ? "status" : "inspect")), ["status", "probe", "inspect"]);
+});
+
+test("foreign instances: an ambiguous name lists its homes, an unknown one says the host lists none, a mismatched home is refused, the host's own refusal is relayed", () => {
+  const bad = "/srv/elsewhere/x";
+  const { env, sent } = foreignSetup("foreign-err", {
+    [`session start --home ${bad} --json`]: { stdout: JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_NOT_INSTANCE_HOME", message: `${bad} is not an instance home` } }), exit: 1 },
+  });
+  for (const cmd of [["session", "inspect"], ["session", "start"], ["session", "attach"]]) {
+    let r = cli(env, [...cmd, "--server", "build", "--instance", "twin", "--json"]);
+    assert.notEqual(r.status, 0);
+    const err = r.stdout.trim() ? r.json().error : { code: null, message: r.stderr };
+    if (err.code) assert.equal(err.code, "E_AMBIGUOUS");
+    assert.ok(err.message.includes(homeOf("dev", "twin")) && err.message.includes(homeOf("ops", "twin")), err.message);
+    r = cli(env, [...cmd, "--server", "build", "--instance", "ghost", "--json"]);
+    assert.notEqual(r.status, 0);
+    if (r.stdout.trim()) { assert.equal(r.json().error.code, "E_SNAPSHOT_UNKNOWN"); assert.match(r.json().error.message, /no instance "ghost" on server build: neither a saved route here nor its roster names one/); }
+    else assert.match(r.stderr, /no instance "ghost" on server build/);
+  }
+  let r = cli(env, ["retire", "twin", "--server", "build", "--json"]);
+  assert.equal(r.json().error.code, "E_AMBIGUOUS");
+  assert.deepEqual(r.json().error.details?.candidates?.map((c) => c.home), [homeOf("dev", "twin"), homeOf("ops", "twin")]);
+  assert.equal(sent("retire twin").length, 0, "nothing retired on an ambiguous name");
+  r = cli(env, ["retire", "ghost", "--server", "build", "--json"]);
+  assert.equal(r.json().error.code, "E_SNAPSHOT_UNKNOWN");
+  r = cli(env, ["session", "inspect", "--server", "build", "--instance", "dev-a", "--home", homeOf("dev", "twin"), "--json"]);
+  assert.equal(r.json().error.code, "E_HOME_MISMATCH");
+  r = cli(env, ["session", "start", "--server", "build", "--home", bad, "--json"]);
+  assert.equal(r.status, 1); assert.equal(r.json().error.code, "E_NOT_INSTANCE_HOME", "the host's refusal is relayed as is");
+});
+
+test("server roster: every row the host reports is addressable; savedRoute is information only", () => {
+  const { env } = foreignSetup("addr");
+  const r = cli(env, ["server", "roster", "--json"]);
+  assert.equal(r.status, 0, r.stderr);
+  const rows = r.json().result.groups[0].instances;
+  assert.equal(rows.length, 3);
+  for (const row of rows) { assert.equal(row.addressable, true); assert.equal(row.savedRoute, false); }
+});
+
+test("a remote without the session commands: the fallback hint names the instance's recorded tmux session, else the remote's default", () => {
+  const old = { ...FULL_PROBE, version: "0.22.1", remote: ["spawn", "retire", "status"], features: [] };
+  const dir = mkdtempSync(join(base, "hint-"));
+  const roster = { root: `${WS}/agents`, agents: [{ name: "dev", instances: [
+    { instance: "dev-a", home: homeOf("dev", "dev-a"), tmux: { session: "team-x", window: "dev-a" } },
+    { instance: "dev-b", home: homeOf("dev", "dev-b") },
+  ] }] };
+  const host = fakeHost(dir, { probe: old, answers: { [`status --json --dir ${WS}`]: { stdout: JSON.stringify(roster) } } });
+  const env = cliEnv(dir, host);
+  mkdirSync(env.OATS_HOME_DIR, { recursive: true });
+  writeFileSync(join(env.OATS_HOME_DIR, "servers.json"), JSON.stringify({ servers: { build: { sshHost: "build-host", workspace: WS, oatsPath: host.oatsPath } } }));
+  let r = cli(env, ["session", "inspect", "--server", "build", "--home", homeOf("dev", "dev-a"), "--json"]);
+  assert.equal(r.json().error.code, "E_REMOTE_INCOMPATIBLE");
+  assert.match(r.json().error.message, /attach with ssh -t build-host tmux attach -t team-x:dev-a$/);
+  r = cli(env, ["session", "inspect", "--server", "build", "--home", homeOf("dev", "dev-b"), "--json"]);
+  assert.match(r.json().error.message, /attach with ssh -t build-host tmux attach -t pi-agents$/, "a kernel before 0.22.2 opened its windows in pi-agents");
+});

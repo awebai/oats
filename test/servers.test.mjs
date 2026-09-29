@@ -123,7 +123,9 @@ test("runRemote: a bare retire answer with cleanup still owed is not ok, so a ro
   assert.match(envelope.error.message, /retained there: retire hook acme.chan/);
   assert.equal(envelope.result.retired, "dev-x", "the remote's own result stays visible");
   // Through the route, the failed envelope still names the server and target (R2).
-  const routed = routeCommand("build", "retire", ["dev-x"], { server: { id: "build", sshHost: "h", workspace: "/w", oatsPath: "oats" }, execFileSync: (bin, argv) => (String(argv.at(-1)).includes("version --json") ? JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: "0.22.2", desktopApi: 1 }) : exec()) });
+  // With no saved route, the name resolves through the host's roster first.
+  const roster = JSON.stringify({ root: "/srv/agents", agents: [{ name: "dev", instances: [{ instance: "dev-x", home: "/srv/agents/dev/instances/dev-x" }] }] });
+  const routed = routeCommand("build", "retire", ["dev-x"], { server: { id: "build", sshHost: "h", workspace: "/w", oatsPath: "oats" }, execFileSync: (bin, argv) => (String(argv.at(-1)).includes("version --json") ? JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: "0.22.2", desktopApi: 1 }) : String(argv.at(-1)).includes("status --json") ? roster : exec()) });
   assert.equal(routed.envelope.ok, false);
   assert.equal(routed.envelope.result.server, "build");
   assert.equal(routed.envelope.result.target.sshHost, "h");
@@ -243,7 +245,8 @@ test("oats server + --server: registry, check, remote spawn with a hostile task,
     assert.deepEqual(att.argv.slice(0, 2), ["ssh", "-t"]);
     assert.equal(att.home, home);
     assert.match(att.argv.at(-1), new RegExp(`session attach --home ${home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`));
-    assert.throws(() => attachArgv("build", { instance: "ghost" }, { skipVersionCheck: true }), /no remote instance "ghost"/);
+    r = oats(env, ["session", "attach", "--server", "build", "--instance", "ghost", "--print"]);
+    assert.notEqual(r.status, 0); assert.match(r.stderr, /no instance "ghost" on server build: neither a saved route here nor its roster names one/);
     assert.deepEqual(resolveRoute("build", { instance: "dev-probe" }).target, snap.target, "inspect and attach share the saved route");
     // Session routes need a remote whose probe advertises session; this fake remote is this kernel, which does, so the inspect runs there against the snapshot's home and its envelope is relayed.
     r = oats(env, ["session", "inspect", "--server", "build", "--instance", "dev-probe", "--json"]);

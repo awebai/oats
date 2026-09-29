@@ -1401,7 +1401,7 @@ route target:
                "teams":[{"label":"default","team":"acme:team"}],"startedAt":"2026-09-29T10:00:00.000Z","createdAt":"2026-09-29T09:58:12.004Z",
                "model":"opus","runtimeState":null,"parentInstance":"lead","siblingInstance":null,"relation":"child","relativeTo":"lead",
                "spawnOrigin":"instance","retirePending":false,"rollbackIncomplete":false,
-               "savedRoute":false,"missingRemotely":false}],
+               "savedRoute":false,"addressable":true,"missingRemotely":false}],
  "retireFailures":[]}
 ```
 
@@ -1411,8 +1411,14 @@ route target:
   `relativeTo` and `spawnOrigin` are always present, `null` when the host
   does not supply them (a host before 0.32, a fact it never recorded, or a
   saved route the host no longer lists). Nothing is derived on this side.
+- **`addressable`** (0.32): `true` for every row the host reports. Routed
+  session and lifecycle commands reach it by `--home`, or by name when the
+  name is unique on the host ([addressing](servers.md#run-there); a shared
+  name is `E_AMBIGUOUS` with `error.details.candidates: [{agent, home}]`). A
+  saved-route row the host did not list is addressable only while the host's
+  answer is unknown (`missingRemotely: false`).
 - **`savedRoute`**: the instance was spawned from this machine and has a
-  saved route here.
+  saved route here. Information only; no action depends on it.
 - `running` is `null` when unknown; `backend`, `tmux`, `sessionTarget` and
   `runtimeError` are as the host reports them.
 

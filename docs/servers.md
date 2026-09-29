@@ -85,14 +85,14 @@ sent as text or on stdin, never as paths.
 |---|---|---|
 | `spawn` | registered workspace | the requested harness, backend and yolo option; `launch-config` for `--launch-config`; `schedule` for a wake schedule |
 | `status` | registered workspace | |
-| `retire` | saved route | `retire-home` to retire by exact home |
-| `session inspect`, `session attach` | saved route | `session` |
-| `session start`, `session restart` | saved route | `session-start`; `session-restart`; `launch-config` when `--launch-config`, `--harness` or `--yolo` is given |
-| `session upload` | saved route | `session-upload` |
+| `retire` | the instance's home | `retire-home` to retire by exact home |
+| `session inspect`, `session attach` | the instance's home | `session` |
+| `session start`, `session restart` | the instance's home | `session-start`; `session-restart`; `launch-config` when `--launch-config`, `--harness` or `--yolo` is given |
+| `session upload` | the instance's home | `session-upload` |
 | `okf harvest --instance <name>` | the saved home | `harvest` |
 | `schedule ...` | registered workspace | `schedule` |
-| `launch-config list\|set\|remove\|preview` | `--dir`, a saved route, or the registered workspace | `launch-config` |
-| `inspect`, `operation run` | `--dir`, a saved route, or the registered workspace | `operations` |
+| `launch-config list\|set\|remove\|preview` | `--dir`, the instance's home, or the registered workspace | `launch-config` |
+| `inspect`, `operation run` | `--dir`, the instance's home, or the registered workspace | `operations` |
 
 Before every routed command except `status`, the kernel reads the server's
 `oats version --json`. A remote OATS older than 0.22.1 is refused, and so is a
@@ -101,10 +101,22 @@ checked against the harness it would use (the flag, or the soul's default as
 the remote roster reports it). A host that advertises no harness list is
 assumed to run only pi and claude, on tmux, with no launch options.
 
-**Addressing an instance.** Instance commands take `--instance <name>` (spawned
-from this machine) or `--home </remote/home>`. The home is the identity; use it
-when two souls on the host own same-named instances. A name and a home that
-disagree are refused (`E_HOME_MISMATCH`).
+**Addressing an instance.** Instance commands (`retire`, the `session`
+commands, `inspect`, `operation`, `launch-config`) reach any instance on the
+server, whoever spawned it, by `--home </remote/home>` or by name
+(`--instance <name>`, or the positional name of `retire`):
+
+- A name spawned from this machine resolves through its saved route.
+- Any other name resolves through the server's roster (one `status --json`
+  in the registered workspace) to its one home. A name that two homes carry
+  there is `E_AMBIGUOUS`, listing the homes (`error.details.candidates`);
+  pass `--home`. A name the roster does not list is `E_SNAPSHOT_UNKNOWN`.
+- A `--home` no saved route owns is sent through the registration's target;
+  the server's kernel decides whether it is an instance home and its refusal
+  is relayed as is.
+- The home is the identity; use it when two souls on the host own
+  same-named instances. A name and a home that disagree are refused
+  (`E_HOME_MISMATCH`).
 
 **`--dir` with `--server`.** For `inspect`, `operation` and `launch-config`,
 an explicit `--dir` names a directory on the server and travels as is. Every
@@ -113,7 +125,10 @@ other routed command refuses `--dir`; its scope comes from the registration.
 **Not routed.** `session input` runs on the execution host, where schedules
 and messaging capabilities call it. `session restart --stop-grace` is refused
 with `--server`; the remote default applies. `session attach --print` shows
-the ssh command without running it.
+the ssh command without running it. A server without the `session` commands
+(before 0.22.2) is refused with the tmux command to attach there directly,
+naming the session and window its roster records for the instance (else
+`pi-agents`, that kernel's default).
 
 ## The roster and harvest
 
@@ -126,7 +141,7 @@ The **roster** is what the Desktop shows: one group per server id and route
 target (host and workspace), with the registration (present or not), the
 probe result, the remote souls, the instances joined with saved routes
 (`savedRoute`, `running` or `null` when unknown, `retirePending`,
-`rollbackIncomplete`, `missingRemotely`), and `retireFailures`
+`rollbackIncomplete`, `missingRemotely`, `addressable`), and `retireFailures`
 (deferred self-retirements that failed there). Each instance row also relays
 the host's own facts from its `status --json`: `identity`,
 `identityAddress`, `teams`, `startedAt`, `createdAt`, `model`,
@@ -163,8 +178,5 @@ remote kernel reports the home gone.
 
 ## Limits
 
-- Lifecycle actions need a saved route from this machine. An instance the
-  remote reports but that was spawned elsewhere appears in the roster with
-  `savedRoute: false` and is read-only here.
 - No Git runs over SSH: repository operations always run on the server, by
   its kernel, in its deployment.

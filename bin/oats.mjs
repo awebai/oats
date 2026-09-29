@@ -2984,7 +2984,7 @@ function serverCmd() {
  *  registered server's installed oats, same arguments, same envelope. The
  *  local side only routes and keeps the route snapshot per remote instance. */
 async function serverRouteCmd() {
-  const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
+  const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   const id = flag("server");
   if (id === true || !id) bail("E_BAD_ARGS", "--server needs a registered server id (oats server list)");
   // The operations contract addresses an exact member context on the host,
@@ -3014,7 +3014,7 @@ async function serverRouteCmd() {
       options.keepEnv = args.includes("--keep-env");
     }
     let out;
-    try { out = launchConfigRemote(id, options); } catch (e) { bail(e.code || "E_SSH", e.message); }
+    try { out = launchConfigRemote(id, options); } catch (e) { bail(e.code || "E_SSH", e.message, e.details); }
     if (out.stderr?.trim()) process.stderr.write(out.stderr.endsWith("\n") ? out.stderr : out.stderr + "\n");
     if (JSON_MODE) { console.log(JSON.stringify(withLocalWarnings(out.envelope), null, 2)); if (!out.envelope.ok) process.exit(1); return; }
     if (!out.envelope.ok) die(`${id}: ${out.envelope.error?.message || "launch configuration request failed"} (${out.envelope.error?.code || "E_REMOTE"})`);
@@ -3031,7 +3031,7 @@ async function serverRouteCmd() {
     const inst = flag("instance");
     if (!inst || inst === true) bail("E_BAD_ARGS", "okf harvest --server needs --instance <name> (spawned from here)");
     let routed;
-    try { routed = routeCommand(id, "harvest", [inst]); } catch (e) { bail(e.code || "E_SSH", e.message); }
+    try { routed = routeCommand(id, "harvest", [inst]); } catch (e) { bail(e.code || "E_SSH", e.message, e.details); }
     if (routed.stderr?.trim()) process.stderr.write(routed.stderr.endsWith("\n") ? routed.stderr : routed.stderr + "\n");
     if (JSON_MODE) { console.log(JSON.stringify(withLocalWarnings(routed.envelope), null, 2)); if (!routed.envelope.ok) process.exit(1); return; }
     if (!routed.envelope.ok) die(`${id}: ${routed.envelope.error?.message || "harvest failed"} (${routed.envelope.error?.code || "E_REMOTE"})`);
@@ -3059,7 +3059,7 @@ async function serverRouteCmd() {
       rest.push(a);
     }
     let out;
-    try { out = scheduleRemote(id, rest); } catch (e) { bail(e.code || "E_SSH", e.message); }
+    try { out = scheduleRemote(id, rest); } catch (e) { bail(e.code || "E_SSH", e.message, e.details); }
     if (out.stderr?.trim()) process.stderr.write(out.stderr.endsWith("\n") ? out.stderr : out.stderr + "\n");
     if (JSON_MODE) { console.log(JSON.stringify(withLocalWarnings(out.envelope), null, 2)); if (!out.envelope.ok) process.exit(1); return; }
     if (!out.envelope.ok) die(`${id}: ${out.envelope.error?.message || "schedule command failed"} (${out.envelope.error?.code || "E_REMOTE"})`);
@@ -3072,7 +3072,7 @@ async function serverRouteCmd() {
       // Desktop preflight before a remote attach: the execution host's own
       // inspect, relayed as its envelope; a failure is a failure, nonzero.
       let out;
-      try { out = inspectRemote(id, addr); } catch (e) { bail(e.code || "E_SSH", e.message); }
+      try { out = inspectRemote(id, addr); } catch (e) { bail(e.code || "E_SSH", e.message, e.details); }
       if (out.stderr?.trim()) process.stderr.write(out.stderr.endsWith("\n") ? out.stderr : out.stderr + "\n");
       if (JSON_MODE) { console.log(JSON.stringify(withLocalWarnings(out.envelope), null, 2)); if (!out.envelope.ok) process.exit(1); return; }
       if (!out.envelope.ok) die(`${id}: ${out.envelope.error?.message || "inspect failed"} (${out.envelope.error?.code || "E_REMOTE"})`);
@@ -3085,7 +3085,7 @@ async function serverRouteCmd() {
       const choices = { ...addr, model: value("model"), launchConfig: value("launch-config"), harness: harnessFlag(value), yolo: yoloFlag() };
       if (flag("stop-grace") !== undefined) bail("E_BAD_ARGS", "--stop-grace is currently supported on the execution host; omit it to use the remote restart's default wait");
       let out;
-      try { out = (args[1] === "restart" ? restartRemote : startRemote)(id, choices); } catch (e) { bail(e.code || "E_SSH", e.message); }
+      try { out = (args[1] === "restart" ? restartRemote : startRemote)(id, choices); } catch (e) { bail(e.code || "E_SSH", e.message, e.details); }
       if (out.stderr?.trim()) process.stderr.write(out.stderr.endsWith("\n") ? out.stderr : out.stderr + "\n");
       if (JSON_MODE) { console.log(JSON.stringify(withLocalWarnings(out.envelope), null, 2)); if (!out.envelope.ok) process.exit(1); return; }
       if (!out.envelope.ok) die(`${id}: ${out.envelope.error?.message || "start failed"} (${out.envelope.error?.code || "E_REMOTE"})`);
@@ -3099,7 +3099,7 @@ async function serverRouteCmd() {
       const file = flag("file");
       if (!file || file === true) bail("E_BAD_ARGS", "session upload needs --file <local path>");
       let r;
-      try { r = uploadAttachment({ file, server: id, ...addr }); } catch (e) { bail(e.code || "E_UPLOAD_FAILED", e.message); }
+      try { r = uploadAttachment({ file, server: id, ...addr }); } catch (e) { bail(e.code || "E_UPLOAD_FAILED", e.message, e.details); }
       if (r.stderr) process.stderr.write(r.stderr + "\n");
       if (JSON_MODE) { jsonOk(r); return; }
       console.log(`Uploaded ${r.name} (${r.bytes} bytes) to ${r.instance || r.home} on ${id}: ${r.path}`);
@@ -3108,7 +3108,7 @@ async function serverRouteCmd() {
     if (args[1] !== "attach") bail("E_USAGE", "--server routes `session inspect`, `session start`, `session restart`, `session upload` and `session attach`; input runs on the execution host (the wake broker calls it there)");
     let route;
     try { route = attachArgv(id, addr, { skipVersionCheck: args.includes("--print") }); }
-    catch (e) { bail(e.code || "E_BAD_ARGS", e.message); }
+    catch (e) { bail(e.code || "E_BAD_ARGS", e.message, e.details); }
     if (args.includes("--print")) { console.log(route.argv.map(shellQuote).join(" ")); return; }
     const r = spawnSyncProc(route.argv[0], route.argv.slice(1), { stdio: "inherit" });
     // ssh exits 255 for its own failures: a link that died under the viewer
@@ -3160,7 +3160,7 @@ async function serverRouteCmd() {
   }
   let routed;
   try { routed = routeCommand(id, cmd, rest); }
-  catch (e) { bail(e.code || "E_SSH", e.message); }
+  catch (e) { bail(e.code || "E_SSH", e.message, e.details); }
   const { envelope, stderr } = routed;
   if (stderr && stderr.trim()) process.stderr.write(stderr.endsWith("\n") ? stderr : stderr + "\n");
   if (JSON_MODE) { console.log(JSON.stringify(withLocalWarnings(envelope), null, 2)); if (!envelope.ok || envelope.result?.rollbackIncomplete) process.exit(1); return; }
@@ -3341,8 +3341,8 @@ Usage:
                                             remote instance lives under ~/.oats/remote/)
   oats server roster [--server <id>]         remote roster grouped by server and saved route
       [--budget <ms>] [--per-target <ms>]   target: one status pull per group within a total
-      [--json]                              budget (45 s, 20 s per target); saved routes are
-                                            the authority for actions
+      [--json]                              budget (45 s, 20 s per target); every instance the
+                                            server reports is addressable by --home or name
   oats server forget <id> --instance <name>  drop a saved route whose remote instance is gone
                                             (the roster shows it as missingRemotely)
   oats retire <instance> --home <path>       retire exactly that home when two agents own an
@@ -3350,17 +3350,17 @@ Usage:
   oats okf harvest --server <id>             run the knowledge harvest in a remote instance's
       --instance <name> [--json]            saved home on its host
   oats session inspect|attach --server <id>  inspect (envelope) or attach a viewer (ssh PTY) for a
-      --instance <name> | --home <abs>       remote instance over its saved route (--print shows
-                                            attach); the server needs oats 0.22.2 or later
+      --instance <name> | --home <abs>       remote instance, by its saved route or the server's
+                                            roster (--print shows attach); oats 0.22.2 or later
   oats session start --server <id>           start a stopped remote instance in its existing home
-      --instance <name> | --home <abs>       over its saved route; the server must advertise
+      --instance <name> | --home <abs>       by its saved route or the server's roster; it must advertise
       [--model <m>] [--json]                 session-start (oats 0.22.9 or later)
   oats inspect|operation --server <id>        the same commands on a registered server over its
-      ... [--dir <remote member>] [--home <abs>]  saved route (an explicit --dir travels as is; a --home
+      ... [--dir <remote member>] [--home <abs>]  instance home (an explicit --dir travels as is; a --home
                                             is its own context; else the registered workspace);
                                             the server must advertise operations (oats 0.22.16 or later)
   oats session upload --server <id>          copy a local file into a remote instance's private
-      --instance <name> | --home <abs>       attachments over its saved route (bytes stream on
+      --instance <name> | --home <abs>       attachments, by its home or name (bytes stream on
       --file <path> [--json]                 ssh stdin; sha256 verified); the server must
                                             advertise session-upload (oats 0.22.13 or later)
   oats onboard [<dir>] --workspace <repo ref> realize a workspace here: writes <dir>/oats-local.yaml
