@@ -507,7 +507,10 @@ block never changes height; the Souls grid does the same with a top edge
 `--ws-sticky-h`, the `scroll-margin-top` of the section heads, rows and the
 Teams page's controls, so a pill jump or a focused row never lands under it.
 "Filter by Team / Repo" stays in the Workspace owned header: it filters only
-that section, so it scrolls with it. Section and group headers scroll.
+that section, so it scrolls with it. Section and group headers scroll. This
+holds at every width: soul-inspector's narrow `@container(max-width:700px)`
+block restacks only `.souls-body.inspecting` (the side inspector under the
+list, scrolling together); without it the view keeps the layout above.
 
 Why the containment matters: an absolutely positioned element with no
 positioned ancestor (the `*-sr-only` / `loading-sr` words) escapes a scroller's

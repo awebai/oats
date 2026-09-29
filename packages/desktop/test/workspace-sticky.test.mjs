@@ -15,6 +15,7 @@ import { workspaceStatusData, teamsData } from '../deployment-data.mjs';
 import { discoveryCSS } from '../renderer/workspace-discovery.mjs';
 import { createComputerTeams } from '../renderer/computer-teams.mjs';
 import { trackStickyTop, trackScrolledEdge } from '../renderer/sticky-top.mjs';
+import { inspectorCSS } from '../renderer/soul-inspector.mjs';
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const themeCss = read('../renderer/theme.css'), shellCss = read('../renderer/shell.css'), loadingCss = read('../renderer/loading.css');
@@ -171,6 +172,30 @@ test('the Workspace view is one fixed column that can never scroll; the document
   assert.equal(u.css(u.doc.documentElement).overflow, 'clip');
   const body = u.css(u.doc.body);
   assert.equal(body.position, 'relative'); assert.equal(body.overflow, 'clip'); assert.equal(body.height, '100%');
+});
+
+test('narrow: the Workspace keeps its fixed header and one scroller per tab; only the side inspector stacks and scrolls with the list', async t => {
+  // jsdom evaluates no container queries: soul-inspector's narrow block is applied unwrapped to model a
+  // container at most 700px wide (the rule the rig showed scrolling the whole view, header included).
+  const narrow = inspectorCSS.match(/@container\(max-width:700px\) \{([\s\S]*?)\n\}/)?.[1];
+  assert.ok(narrow, 'the narrow block exists');
+  const u = await mountWorkspace(t);
+  const style = u.doc.createElement('style'); style.textContent = narrow; u.doc.head.append(style);
+  const body = u.get('.souls-body');
+  assert.equal(body.classList.contains('inspecting'), false);
+  assert.notEqual(u.css(body).display, 'block', 'no side inspector: the view keeps its layout');
+  assert.doesNotMatch(u.css(body).overflow, /auto|scroll/, 'and .souls-body never scrolls the header away');
+  const main = u.css('.workspace-main');
+  assert.equal(main.display, 'flex'); assert.equal(main.flexDirection, 'column'); assert.match(main.minHeight, /^0(px)?$/);
+  // jsdom does not expand the overflow shorthand: each is read in the form it is declared.
+  for (const [selector, property] of [['.souls-grid', 'overflowY'], ['.workspace-discovery', 'overflow']]) {
+    assert.equal(u.css(selector)[property], 'auto', `${selector} is still its tab's scroller`);
+    assert.match(u.css(selector).minHeight, /^0(px)?$/, `${selector} can shrink in its flex column`);
+  }
+  // With the side inspector shown, the narrow view stacks it under the list and the two scroll together.
+  body.classList.add('inspecting');
+  assert.equal(u.css(body).display, 'block'); assert.equal(u.css(body).overflow, 'auto');
+  assert.equal(u.css('.workspace-discovery').overflow, 'visible');
 });
 
 test('every visually-hidden utility is anchored at its containing block, so it cannot stretch a scroller', () => {
