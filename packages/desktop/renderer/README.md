@@ -105,8 +105,11 @@ are connected components of the shared parent/sibling resolver across roots and
 repositories, never repository buckets. Groups remain anonymous/count-labeled;
 reported context is metadata, not a derived group name. Header counts distinguish
 multi-member groups from independent instances and keep unknown runtime state
-separate from stopped. Parent/child elbows and dotted sibling lines do not rely
-on color alone. The 220px cards show reported context/runtime/branch—not guessed
+separate from stopped. Parent/child edges are OAS-style cubic S-curves from the
+parent's bottom-centre to the child's top-centre; sibling edges are shallow arcs
+dashed `5 4`, so the two kinds do not rely on color alone. `--graph-edge` holds
+3:1 against every surface it is drawn on (WCAG 1.4.11, pinned in
+`theme-contrast`); the lit lineage is `--accent`. The 220px cards show reported context/runtime/branch—not guessed
 PRs, worktree health or task activity. Same-named nodes carry visible root/home
 suffixes and host qualifiers; their popup exposes the full reported address.
 Those are per-instance identity cues, never invented group names.

@@ -48,8 +48,9 @@ test('frame07 counts relation groups separately from independents, named by thei
   assert.equal(u.one('.hier-chead .cnm').textContent, 'peer', 'the group is named like its sidebar group');
   assert.match(u.one('.hier-chead .cct').textContent, /^3 · (reported-repo · other-repo|other-repo · reported-repo)$/);
   assert.equal(u.one('.hier-context'), null, 'reported contexts live in the one header line');
-  assert.ok(u.all('.hier-edges path:not(.sib)').every(path => !path.getAttribute('d').includes('C')));
-  assert.match(u.one('.hier-edges path:not(.sib)').getAttribute('d'), /V .* H .* V .* H/);
+  // Spec G: parent edges are OAS's cubic S-curves (bottom-centre to top-centre), no square elbows.
+  assert.ok(u.all('.hier-edges path:not(.sib)').every(path => /^M \S+ \S+ C \S+ \S+, \S+ \S+, \S+ \S+$/.test(path.getAttribute('d'))));
+  assert.ok(u.all('.hier-edges path').every(path => !/[VH]/.test(path.getAttribute('d'))), 'no elbow segments remain');
   assert.equal(u.all('.hier-edges .sib').length, 1);
   u.mouse(u.nodes().find(n => n.dataset.name === 'root'), 'click');
   assert.equal(u.one('.pavailability').textContent, 'Activity: unknown · Waiting on you: unknown');

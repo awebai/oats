@@ -204,6 +204,17 @@ for (const [name, palette] of palettes) test(`${name}: focus edges outside opaqu
   assert.ok(ratio("accent", "danger") < 3, `${name} accent on --danger would need the outside edge`);
 });
 
+// Graph connectors (the Active overview's edges on its --surface-2 group cards, Setup's tree lines on
+// --bg/--surface/--surface-2) are meaningful graphics: WCAG 1.4.11 asks 3:1, and --graph-edge must not
+// fall back to the decorative --border it once shared. The accent-lit path already passes the focus rule.
+for (const [name, palette] of palettes) test(`${name}: --graph-edge connectors meet 3:1 on every surface they are drawn on`, () => {
+  for (const bg of ["bg", "surface", "surface-2"]) {
+    const ratio = contrast(opaqueChannels(palette.get("graph-edge")), backgroundChannels(bg, palette));
+    assert.ok(ratio >= 3, `${name} --graph-edge ${palette.get("graph-edge")} on --${bg}: ${ratio.toFixed(2)}:1 < 3:1`);
+  }
+  assert.notEqual(palette.get("graph-edge"), palette.get("border"), `${name} connectors are not the decorative border`);
+});
+
 // Color fixtures are local: no external reference paths, renderer startup or
 // installed theme is needed to detect drift from the approved visual port.
 test("White uses neutral surfaces, ink primaries and AA-safe orange distinct from errors", () => {
@@ -231,7 +242,7 @@ test("dark color palette is preserved; primary is an existing opaque ink/surface
     violet: "#c297ff", ok: "#3fb950", warn: "#d29922", danger: "#f85149",
     "chip-bg": "#21262e", "chip-fg": "#adb6c2", sel: "#1b2b40",
     "term-bg": "#0a0d12", "term-fg": "#e6edf3", "term-sel": "#264f78", "term-sel-fg": "#f5f9ff",
-    "md-code-bg": "#ffffff10", "md-rule": "#ffffff2e", "graph-edge": "#2d333c", "graph-edge-coord": "#4493f8",
+    "md-code-bg": "#ffffff10", "md-rule": "#ffffff2e", "graph-edge": "#636c79", "graph-edge-coord": "#4493f8",
   };
   for (const [key, value] of Object.entries(expected)) assert.equal(dark.get(key), value, key);
   assert.deepEqual(ansi.map(key => dark.get(key)), [
@@ -250,7 +261,7 @@ test("Solarized retains every prior Light semantic and ANSI color from b280ce1b"
     violet: "#7f3f98", ok: "#465f00", warn: "#725500", danger: "#b52f35",
     "chip-bg": "#ede5cc", "chip-fg": "#56676d", sel: "#dce7e8",
     "term-bg": "#fdf6e3", "term-fg": "#52666c", "term-sel": "#d3c9a8", "term-sel-fg": "#37424a",
-    "md-code-bg": "#58637510", "md-rule": "#5863752e", "graph-edge": "#ddd4bc", "graph-edge-coord": "#1f6fb2",
+    "md-code-bg": "#58637510", "md-rule": "#5863752e", "graph-edge": "#8e846f", "graph-edge-coord": "#1f6fb2",
   };
   for (const [key, value] of Object.entries(expected)) assert.equal(solarized.get(key), value, key);
   assert.deepEqual(ansi.map(key => solarized.get(key)), [
