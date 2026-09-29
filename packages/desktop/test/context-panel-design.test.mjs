@@ -107,7 +107,9 @@ test('header: "instance of <soul>" links to the Soul tab; the state reads "Runni
   u.select(instance({ startedAt: started }));
   const link = u.q('[data-context-soul-link]');
   assert.equal(link.tagName, 'BUTTON'); assert.equal(link.textContent, 'web-developer');
-  assert.equal(link.parentElement.textContent, 'instance of web-developer');
+  assert.equal(link.previousElementSibling.textContent, 'instance of'); assert.equal(link.title, 'web-developer: show the Soul tab');
+  // The soul name ellipsizes its own text (a button is atomic inside an ellipsized line, so the line is a flex row).
+  assert.match(contextPanelCSS, /button\.context-panel-soul-link \{ flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;/);
   // Two-row header grid: tile | name | state, then the soul line (+ chip) spanning name and state.
   const head = u.q('[data-context-page="instance"] > .context-panel-identity');
   assert.ok(head.classList.contains('is-instance'));

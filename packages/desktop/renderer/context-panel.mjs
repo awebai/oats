@@ -32,7 +32,9 @@ export const contextPanelCSS = `
 #context-panel .context-panel-identity-copy { display:flex; flex-direction:column; min-width:0; flex:1; }
 #context-panel .context-panel-identity-name { font-size:13.5px; font-weight:650; line-height:1.45; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 #context-panel .context-panel-identity-sub { display:flex; flex-wrap:wrap; align-items:center; gap:2px 6px; min-width:0; font-size:11.5px; line-height:1.45; color:var(--muted); }
-#context-panel .context-panel-soul-line { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* "instance of" keeps its place; the soul name (a button, so it ellipsizes its own text) gives way. */
+#context-panel .context-panel-soul-line { display:flex; align-items:baseline; gap:.3em; flex:0 1 auto; min-width:0; white-space:nowrap; }
+#context-panel .context-panel-soul-line > span { flex:none; }
 /* The Instance tab's header is a two-row grid: tile | name (ellipsis) | state, then "instance of <soul>" + the
    drift chip spanning the name and state columns, so the state never squeezes the soul line. */
 #context-panel .context-panel-identity.is-instance { display:grid; grid-template-columns:36px minmax(0,1fr) auto; column-gap:11px; align-items:center; }
@@ -43,7 +45,7 @@ export const contextPanelCSS = `
 #context-panel .context-panel-identity.is-instance .context-panel-identity-sub { grid-column:2 / 4; grid-row:2; flex-wrap:nowrap; }
 #context-panel .context-panel-identity-sub:empty { display:none; }
 /* "instance of <soul>": the soul name opens the Soul tab. */
-#context-panel button.context-panel-soul-link { padding:0; border:0; border-radius:3px; background:none; font:inherit; color:var(--accent); cursor:pointer; text-align:left; white-space:nowrap; }
+#context-panel button.context-panel-soul-link { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; padding:0; border:0; border-radius:3px; background:none; font:inherit; color:var(--accent); cursor:pointer; text-align:left; white-space:nowrap; }
 #context-panel button.context-panel-soul-link:hover { text-decoration:underline; }
 /* "older build": one neutral chip when the kernel reports drift; its title says what changed. */
 #context-panel .context-panel-drift { flex:none; padding:0 6px; border-radius:4px; background:var(--tag-bg); color:var(--fg); font-size:10.5px; font-weight:600; line-height:18px; white-space:nowrap; cursor:default; }
@@ -321,7 +323,7 @@ export function createContextPanel({
   const soulLink = node('button', 'context-panel-soul-link'); soulLink.type = 'button'; soulLink.dataset.contextSoulLink = '';
   soulLink.title = 'Show the Soul tab';
   soulLink.addEventListener('click', event => { selectTab('soul', event); focus(tabs.get('soul')); });
-  soulLine.append('instance of ', soulLink);
+  soulLine.append(node('span', null, 'instance of'), soulLink);
   const drift = node('span', 'context-panel-drift', 'older build'); drift.dataset.contextDrift = ''; drift.setAttribute('role', 'note');
   instanceSub.append(soulLine, drift);
   instanceHead.copy.append(field('div', 'context-panel-identity-name', 'instance'), instanceSub);
@@ -544,7 +546,7 @@ export function createContextPanel({
       head.mark.dataset.markKey = markKey; head.mark.replaceChildren(...(soul ? [createSoulMark(document, soul)] : []));
     }
     const agent = typeof instance.agent === 'string' && instance.agent ? instance.agent : '';
-    if (soulLink.textContent !== agent) soulLink.textContent = agent;
+    if (soulLink.textContent !== agent) { soulLink.textContent = agent; soulLink.title = agent ? `${agent}: show the Soul tab` : 'Show the Soul tab'; }
     soulLine.hidden = !agent;
     const drifted = driftText(instance);
     drift.hidden = !drifted; drift.title = drifted || '';
