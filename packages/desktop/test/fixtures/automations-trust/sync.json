@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "syncApi": 1,
+    "automations": {
+      "triggers": 1,
+      "schedules": 1,
+      "problems": 0,
+      "takenAt": "2026-09-28T23:46:29.891Z"
+    },
+    "workspace": {
+      "name": "acme",
+      "key": "local//fixture/base/remotes/ws.git",
+      "url": "/fixture/base/remotes/ws.git",
+      "commit": "57dcb6f2b7273ea4e2c185d40b4707230a0920d6",
+      "observedAt": "2026-09-28T23:46:28.966Z",
+      "local": "/fixture/base/deployment/oats-local.yaml",
+      "lock": "/fixture/base/deployment/oats-lock.json"
+    },
+    "members": [
+      {
+        "key": "local//fixture/base/remotes/ws.git",
+        "name": "ws",
+        "commit": "57dcb6f2b7273ea4e2c185d40b4707230a0920d6",
+        "confirmed": true,
+        "status": "confirmed",
+        "detail": null,
+        "souls": [
+          "reviewer"
+        ],
+        "capabilities": [],
+        "publishes": null
+      }
+    ],
+    "packages": [],
+    "changes": [],
+    "problems": [],
+    "warnings": []
+  }
+}

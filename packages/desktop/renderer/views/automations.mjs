@@ -72,6 +72,7 @@ export const automationsCSS = `
 .auto-main-line.auto-wrap { display:block; white-space:normal; overflow-wrap:anywhere; }
 .auto-main-line.auto-text { display:block; }
 .auto-sub { color:var(--muted); font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.auto-sub.auto-remedy { white-space:normal; overflow:visible; overflow-wrap:anywhere; line-height:1.45; }
 .auto-mono { font-family:var(--mono,monospace); }
 .oats-view .auto-row button.auto-open { display:flex; flex-direction:column; align-items:flex-start; gap:3px; min-width:0; min-height:0; padding:2px 0; border:0; background:transparent; color:var(--fg); text-align:left; font:inherit; cursor:pointer; }
 .auto-open .auto-id { max-width:100%; font:650 12.5px var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -208,7 +209,8 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     if (row.group === 'elsewhere') return node('span');
     const b = node('button', undefined, 'auto-switch'); b.type = 'button'; b.setAttribute('role', 'switch');
     b.setAttribute('aria-checked', String(row.enabledHere)); b.setAttribute('aria-label', `${row.id} enabled on this computer`);
-    b.title = row.enabledHere ? 'On here: click to turn it off on this computer' : 'Off here: click to turn it on';
+    b.title = row.reason === 'untrusted' ? `${row.enabledHere ? 'On' : 'Off'} here, but not trusted on this computer: it runs only once oats-local.yaml trusts it`
+      : row.enabledHere ? 'On here: click to turn it off on this computer' : 'Off here: click to turn it on';
     b.disabled = busy || !supports(row.enabledHere ? 'disable' : 'enable');
     b.addEventListener('click', () => perform(row.enabledHere ? 'disable' : 'enable', row));
     return b;
@@ -289,6 +291,8 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     const id = node('span', row.id, 'auto-id'); id.title = row.id; const tags = node('span', undefined, 'auto-tags'); tags.append(originTag(row)); stateTags(row, tags);
     open.append(id, tags); open.setAttribute('aria-label', `Open ${row.id}`); open.addEventListener('click', () => openRow(row.id));
     nameCell.append(open); if (row.description) nameCell.append(node('span', row.description, 'auto-sub'));
+    // Untrusted here (0.30): the kernel's words, which name the oats-local.yaml line to add, in the row itself.
+    if (row.reason === 'untrusted' && row.reasonDetail) nameCell.append(node('span', row.reasonDetail, 'auto-sub auto-remedy'));
     const soul = node('div', undefined, 'auto-cell'); soul.append(soulLine(row), node('span', soulSub(row), 'auto-sub'));
     const cells = [switchFor(row), nameCell, soul, whenCell(row), runsOnCell(row), lastNextCell(row), menuFor(row)];
     for (const [i, cell] of cells.entries()) { if (i && i < 6) cell.setAttribute('role', 'cell'); el.append(cell); }

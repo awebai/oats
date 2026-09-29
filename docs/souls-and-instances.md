@@ -330,6 +330,18 @@ home. **`--force` does not skip work preservation.** It forces only past a
 missing or unusable cleanup marker and past incomplete hook cleanup
 ([capabilities.md](capabilities.md)).
 
+Retire stops the harness through the home's session receipt. A home spawned
+before 0.25.9 has none. It retires only when its session is observably gone:
+instance.json records no launch, or the recorded tmux server is not running,
+or the recorded window is gone and no pane on that server works in the home;
+and, always, no live process on this host works in the home (a harness
+started by hand elsewhere counts). Retire then runs its hooks and preserves
+its work as usual. If the recorded window is still there, a pane or a process
+works in the home (the refusal names its pid), or the process scan (`lsof`)
+cannot run, retire refuses with
+`E_RUNTIME_ENDPOINT_UNKNOWN`, even with `--force`: stop that session yourself,
+then retire again. `oats retire <instance> --plan` says which case applies.
+
 `oats retire <instance> --self` lets an instance retire itself when the human
 or briefing says it is done. A live harness cannot give a stable final
 inspection of its own work, so the calling process inspects, runs, and removes

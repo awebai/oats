@@ -1,0 +1,104 @@
+{
+  "source": "ux-designer: automation trust on the real kernel (0.30, PR #300); the kernel's test/helpers/v2-deployment.mjs as test/automations.test.mjs builds it: trigger ws/kb-review + schedule ws/nightly on kb-host as github.com/kb-bot; fake gh (kb-bot); untrusted, then trust [ws/kb-review, ws/gone]; capture-trust.mjs",
+  "kernelTree": "oats PR #300 @a0562b9feb7f37fbfa3d35c333a487a8f1cc6be6",
+  "redactions": [
+    "<base> (deployment scratch) → /fixture/base",
+    "<oats> (kernel tree) → /fixture/oats"
+  ],
+  "files": {
+    "version": {
+      "argv": [
+        "oats",
+        "version",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "a0562b9feb7f37fbfa3d35c333a487a8f1cc6be6",
+      "sourceSha256": "e67df3fa054de8319874485519063240b69fe2cc69b09fddcab4e9502ee7d5d2",
+      "fixtureSha256": "3f8ec64e1bd6d92a3a861d3e9cad7bd559eee265fa4a10cfe9b3d90b668df13a"
+    },
+    "sync": {
+      "argv": [
+        "oats",
+        "sync",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "a0562b9feb7f37fbfa3d35c333a487a8f1cc6be6",
+      "sourceSha256": "a27e6d4c1bfedb496ef753438d5fd52cfc980a0921c62271c89a5a5001c753c0",
+      "fixtureSha256": "e7310b9856a3320713e9613f344e582a19d8d9eed124c7001807c4c5ac943b8d"
+    },
+    "untrusted-trigger-list": {
+      "argv": [
+        "oats",
+        "trigger",
+        "list",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "a0562b9feb7f37fbfa3d35c333a487a8f1cc6be6",
+      "sourceSha256": "c6cd1c7fe8125ab33853a16f259bc2e4ec59c7a2fc9400d13921efc97c5464dd",
+      "fixtureSha256": "83c42426313237223fb2bdc7bf0fc9a6c53fe93dcc98a5a4708789feda9e7f0a"
+    },
+    "untrusted-schedule-list": {
+      "argv": [
+        "oats",
+        "schedule",
+        "list",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "a0562b9feb7f37fbfa3d35c333a487a8f1cc6be6",
+      "sourceSha256": "8d65ff4002b38edb4804f45fde250790059f86825a28339294f2c015175c0ef7",
+      "fixtureSha256": "cb78aa2375418c95b3f6d4bba2843637c71586fd4ca6eb8a6f00135808a94efc"
+    },
+    "untrusted-workspace-status": {
+      "argv": [
+        "oats",
+        "workspace",
+        "status",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "a0562b9feb7f37fbfa3d35c333a487a8f1cc6be6",
+      "sourceSha256": "205babf22b75296fa84ad6c83bb6c485685710facd52e9f6c67456d9aaa996cb",
+      "fixtureSha256": "a0a8620ec06bdf4fa6290299e7df40dd7cafcd06d4b05460bc95b5956ac085c8"
+    },
+    "partial-trigger-list": {
+      "argv": [
+        "oats",
+        "trigger",
+        "list",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "a0562b9feb7f37fbfa3d35c333a487a8f1cc6be6",
+      "sourceSha256": "fc1a31f7fac9858ca37be07932d0943823ef5be95fc9a5d2e880d6771a08fb60",
+      "fixtureSha256": "0b87cbee84c523558cb955acff2c8388d4be399dc405b8d3e11b740e625a004c"
+    },
+    "partial-schedule-list": {
+      "argv": [
+        "oats",
+        "schedule",
+        "list",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "a0562b9feb7f37fbfa3d35c333a487a8f1cc6be6",
+      "sourceSha256": "8d65ff4002b38edb4804f45fde250790059f86825a28339294f2c015175c0ef7",
+      "fixtureSha256": "cb78aa2375418c95b3f6d4bba2843637c71586fd4ca6eb8a6f00135808a94efc"
+    },
+    "partial-workspace-status": {
+      "argv": [
+        "oats",
+        "workspace",
+        "status",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "a0562b9feb7f37fbfa3d35c333a487a8f1cc6be6",
+      "sourceSha256": "6842e379a70bdfc5f63819aa954783258df7e7f2665aa28a2284fdd7476a62d9",
+      "fixtureSha256": "3b92e90bae2166ae9386fd9f420500e40d376b2ad508895cde12b161ad0c69de"
+    }
+  }
+}

@@ -35,7 +35,7 @@ async function setup(t, { status = 'workspace-status', cli = CLI, sync, teams, w
   const previous = { document: globalThis.document, window: globalThis.window, setInterval: globalThis.setInterval, ws: currentWorkspace() };
   globalThis.document = dom.window.document; globalThis.window = dom.window; globalThis.setInterval = () => 0;
   const calls = [];
-  let observedStatus = statusOf(status);
+  let observedStatus = typeof status === 'string' ? statusOf(status) : status;
   const panel = () => ({ workspace: { id: currentWorkspace(), scope: currentWorkspace(), ...workspace }, workspaces: [], instances,
     deployment: deployment ?? { status: 'observed', root: roster.root, workspace: observedStatus.workspace, workspaceStatus: observedStatus, reachable: { reachable: true }, withheld: [] } });
   const ctx = { hasWorkspaceSwitcher: true, api: async (path, opts = {}) => {
@@ -409,4 +409,19 @@ test('Teams tab (team-model-2): first, before Souls; "Teams on this computer" fr
   assert.equal(u.doc.querySelector('.workspace-discovery .computer-teams'), card, 'the same card: a half-typed form survives');
   assert.equal(u.calls.filter(c => c.path.startsWith('/api/workspace-teams')).length, 1, 'not re-read by switching tabs');
   assert.doesNotMatch(u.doc.querySelector('.workspace-discovery').textContent, /primary|personal/i);
+});
+
+// 0.30 automation trust: the REAL kernel's workspace-status warnings (fixtures/automations-trust, kernel
+// PR #300) spliced into this Northwind status: Setup says each one and its remedy, verbatim.
+test('Setup: automation-untrusted and automation-trust-stale are said verbatim, each untrusted one with its remedy (the oats-local.yaml line)', async t => {
+  const trust = JSON.parse(readFileSync(new URL('./fixtures/automations-trust/partial-workspace-status.json', import.meta.url), 'utf8'));
+  const status = statusOf('workspace-status');
+  status.warnings = workspaceStatusData(trust, '/fixture/base/deployment').warnings;
+  const u = await setup(t, { status });
+  await u.tab('sources');
+  const notes = [...u.doc.querySelectorAll('.catalog-note')].map(el => [el.className, el.textContent]);
+  const said = trust.result.warnings;
+  assert.deepEqual(notes.filter(([, text]) => said.some(w => w.message === text || w.remedy === text)), [
+    ['catalog-note warn', said[0].message], ['catalog-note catalog-remedy', said[0].remedy], ['catalog-note warn', said[1].message]]);
+  assert.equal(u.doc.querySelector('#workspace-tab-sources .workspace-attn').hidden, false, 'Setup carries the attention dot');
 });

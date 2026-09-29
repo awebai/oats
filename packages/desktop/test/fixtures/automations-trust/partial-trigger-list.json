@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "triggerApi": 1,
+    "scope": "/fixture/base/deployment",
+    "host": {
+      "name": "kb-host",
+      "ghUser": {
+        "github.com": "kb-bot"
+      }
+    },
+    "triggers": [
+      {
+        "kind": "trigger",
+        "id": "ws/kb-review",
+        "name": "kb-review",
+        "origin": {
+          "kind": "workspace",
+          "repoKey": "local//fixture/base/remotes/ws.git",
+          "path": "oats-triggers/kb-review.yaml",
+          "commit": "57dcb6f2b7273ea4e2c185d40b4707230a0920d6",
+          "url": null,
+          "localPath": "/fixture/base/deployment/ws/oats-triggers/kb-review.yaml"
+        },
+        "description": "Review harvest PRs",
+        "owner": "github.com/kb-bot",
+        "runsOn": "kb-host",
+        "runsHere": true,
+        "reason": null,
+        "enabledHere": true,
+        "qualifiedId": "ws/kb-review",
+        "soul": {
+          "name": "reviewer",
+          "origin": {
+            "kind": "member",
+            "repoKey": "local//fixture/base/remotes/ws.git",
+            "member": "ws"
+          }
+        },
+        "task": "Review {repo}#{number} ({url}).",
+        "on": {
+          "source": "github.pull_request",
+          "repo": "github.com/acme/knowledge",
+          "events": [
+            "opened"
+          ],
+          "labels": [
+            "okf-harvest"
+          ],
+          "poll": "2m"
+        },
+        "teams": [],
+        "launchConfig": null,
+        "harness": null,
+        "model": null,
+        "concurrency": {
+          "max": 1,
+          "perKey": 1
+        },
+        "lastRun": null,
+        "nextDue": null,
+        "enabled": true,
+        "spawn": {
+          "soul": "reviewer",
+          "purpose": "review-pr-{number}",
+          "task": "Review {repo}#{number} ({url}).",
+          "teams": []
+        },
+        "triggerApi": 1,
+        "scope": "/fixture/base/deployment"
+      }
+    ],
+    "snapshot": {
+      "takenAt": "2026-09-28T23:46:29.891Z",
+      "problems": 0
+    },
+    "scheduler": {
+      "installed": false,
+      "active": false,
+      "unit": "/fixture/base/home/Library/LaunchAgents/ai.oats.schedule-tick.plist",
+      "lastTick": null,
+      "maxConcurrent": 1,
+      "tickIntervalSec": 60,
+      "workspace": "/fixture/base/deployment",
+      "registered": false,
+      "workspaces": [],
+      "live": 0
+    }
+  }
+}
