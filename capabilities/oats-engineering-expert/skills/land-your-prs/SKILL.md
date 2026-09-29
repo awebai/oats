@@ -10,6 +10,9 @@ You own that last stretch for every PR in your domain, even when a developer wro
 and even when another expert coordinates the wider effort.
 
 ## Open
+- **Only after both reviews, on the branch.** A PR is opened for work that has passed the
+  developer's adversarial review loop AND your own verification (`/verify-developer-work`),
+  both on the local branch. Never open a PR to get a review: reviews happen before it.
 - One PR per coherent piece of work. The description says: the goal, what changed, how it
   was verified, the adversarial review's verdict, and what's out of scope.
 - Link the spec and any PRs it depends on or that depend on it.

@@ -1,12 +1,13 @@
 ---
 name: verify-developer-work
-description: The expert's verification of work a developer hands back, after it has passed adversarial code review. Checks architecture, coherence, fit with the whole system, simplicity, and glaring bugs; does not redo the line-by-line review. Use when a developer reports work done, before accepting, merging or passing work on.
+description: The expert's verification of work a developer hands back, after it has passed adversarial code review. Checks architecture, coherence, fit with the whole system, simplicity, and glaring bugs; does not redo the line-by-line review. Use when a developer hands back its reviewed local branch, before any PR is opened for it.
 ---
 
 # Verify developer work
 
-The work has been through an adversarial code review: line-level bugs, security and
-simplification were that reviewer's job. Yours is the view the reviewer doesn't have:
+The work has been through an adversarial code review on the developer's local branch:
+line-level bugs, security and simplification were that reviewer's job. You review the same
+branch, before any PR exists: a PR is opened only after you accept it. Yours is the view the reviewer doesn't have:
 does this belong in the system, the way it was built?
 
 ## 0. Check the handover is complete
@@ -43,7 +44,8 @@ you don't do the reviewer's job for it.
 - Check that the tests prove the "done when" items, not just that the code runs.
 
 ## Verdict
-- **Accept**, or **return** with numbered reasons, each saying what's wrong and why it
+- **Accept**: then, and only then, the work becomes a PR (`/land-your-prs`).
+- Or **return** with numbered reasons, each saying what's wrong and why it
   matters. Keep matters of taste out of a return.
 - A return goes to the same developer. Architecture-level returns may need a spec change
   first: make it, then return.
