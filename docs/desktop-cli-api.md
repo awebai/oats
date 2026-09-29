@@ -1212,7 +1212,7 @@ with `--expect-decision` records the key and decision in `instance.json`.
 
 ```json
 {"instance":"rm-api","agent":"rm","home":"/w/agents/rm/instances/rm-api","work":"worktree","branch":"agents/rm-api","launched":true,"warnings":[],
- "tmux":{"session":"oats-agents","window":"rm-api"},"repo":"/w/agents-repo","harness":"pi","model":null,"parent":null,"sibling":null,"relation":null,
+ "tmux":{"session":"oats-agents","window":"rm-api"},"backend":"tmux","repo":"/w/agents-repo","harness":"pi","model":null,"parent":null,"sibling":null,"relation":null,
  "spawnOrigin":"operator","attach":"tmux attach -t oats-agents","decision":{"instance":"rm-api","revision":"c557d8ec9a272ba1c1739dc3"},"replayed":false,
  "wake":{"requested":false,"saved":null,"error":null},"launchConfig":null,
  "launch":{"version":2,"harness":"pi","launchConfig":null,"launchConfigSource":null,"executable":"/usr/local/bin/pi","executableDeclared":null,
@@ -1222,7 +1222,8 @@ with `--expect-decision` records the key and decision in `instance.json`.
 (`decision` is abridged: it is the full bound decision.)
 
 - Always present: `instance, agent, home, work, branch, launched, warnings
-  (array), tmux ({session, window} | null), repo, harness, model, parent,
+  (array), tmux ({session, window} | null), backend ("tmux"), repo, harness,
+  model, parent,
   sibling, relation, spawnOrigin (operator | instance), attach, launchConfig,
   launch` (the redacted recipe).
 - When they apply: `yolo`, `decision` and

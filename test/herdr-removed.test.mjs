@@ -5,7 +5,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn as spawnProcess } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { attachInstanceSession, inputInstanceSession, inspectInstanceSession, restartInstanceSession, retireInstance, startInstanceSession, stopInstanceSession } from "../lib/core.mjs";
@@ -50,6 +50,7 @@ test("--backend tmux is still accepted, and tmux is the preview's only backend",
   const r = fx.cli(["spawn", "dev", "--name", "tmux-kept", "--backend", "tmux", "--no-launch", "--json"]);
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.equal(r.json().result.instance, "tmux-kept");
+  assert.equal(r.json().result.backend, "tmux", "the spawn result carries the backend too");
 });
 
 test("server add refuses --herdr; a registration or saved route that records herdrPath still loads, and the field is ignored", () => {
@@ -120,6 +121,16 @@ test("a stored local schedule with backend: herdr never runs: the tick reports i
     assert.equal(row.action, "invalid");
     assert.equal(row.errorCode, "E_HERDR_REMOVED");
     assert.equal(row.error, setting(`${definitionsPath(ws)} sets jobs.stored.backend: herdr`));
+    // Every read says so too: list, show and test report the job invalid and not runnable here.
+    const refusal = { code: "E_HERDR_REMOVED", message: setting(`${definitionsPath(ws)} sets jobs.stored.backend: herdr`), field: "backend" };
+    const list = fx.cli(["schedule", "list", "--json"]);
+    assert.equal(list.status, 0, list.stdout + list.stderr);
+    for (const shown of [list.json().result.schedules.find((x) => x.id === "stored"), fx.cli(["schedule", "show", "local/stored", "--json"]).json().result.schedule]) {
+      assert.deepEqual(shown.invalid, refusal);
+      assert.equal(shown.runsHere, false);
+    }
+    const tested = fx.cli(["schedule", "test", "local/stored", "--json"]).json().result;
+    assert.ok(tested.test.problems.includes(`local/stored is invalid: ${refusal.message}`), JSON.stringify(tested.test.problems));
   } finally { writeFileSync(definitionsPath(ws), JSON.stringify({ version: 2, jobs: {} })); }
 });
 
@@ -155,7 +166,7 @@ async function herdrHome(name, { launched = true, receiptOnly = false } = {}) {
   const baselinePath = join(dirname(home), ".oats-retirement", "baselines", `${key}.json`);
   const baseline = readJson(baselinePath);
   writeFileSync(baselinePath, JSON.stringify({ ...baseline, runtime: launched || receiptOnly ? { launched: true, sessionTarget: target } : { launched: false } }, null, 2) + "\n", { mode: 0o600 });
-  return { home, name, target };
+  return { home, name, target, baselinePath };
 }
 
 test("every session operation on a Herdr home refuses with E_HERDR_REMOVED, never E_RUNTIME_ENDPOINT_UNKNOWN", async () => {
@@ -173,6 +184,22 @@ test("every session operation on a Herdr home refuses with E_HERDR_REMOVED, neve
     const r = fx.cli(["session", "inspect", "--home", home, "--json"]);
     assert.equal(r.status, 1);
     assert.deepEqual(r.json().error, { code: "E_HERDR_REMOVED", message: instance(name) });
+  }
+});
+
+test("start and restart recognise a Herdr home before reading its receipt: a broken receipt, or no instance.json", async () => {
+  const broken = await herdrHome("herdr-broken-receipt", { launched: false });
+  writeFileSync(broken.baselinePath, "{broken");
+  const receiptOnly = await herdrHome("herdr-no-meta", { receiptOnly: true });
+  rmSync(join(receiptOnly.home, "instance.json"));
+  for (const { home, name } of [broken, receiptOnly]) {
+    const refused = (e) => e.code === "E_HERDR_REMOVED" && e.message === instance(name);
+    await fx.inEnv(async () => {
+      assert.throws(() => startInstanceSession(home), refused, `${name} start`);
+      assert.throws(() => restartInstanceSession(home), refused, `${name} restart`);
+      assert.throws(() => inspectInstanceSession(home), refused, `${name} inspect`);
+      assert.throws(() => stopInstanceSession(home), refused, `${name} stop`);
+    });
   }
 });
 

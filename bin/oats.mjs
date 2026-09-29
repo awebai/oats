@@ -2114,7 +2114,7 @@ async function spawnCmd() {
       instance: r.instance, agent: r.agent, home: r.home, work: r.work,
       branch: r.branch || null, launched: r.launched, warnings: r.warnings || [],
       ...(wakeSchedule ? { wakeSchedule } : {}), ...(wakeScheduleError ? { wakeScheduleError } : {}),
-      tmux: r.tmux || null, repo: r.repo || null, harness: r.harness || null,
+      tmux: r.tmux || null, backend: "tmux", repo: r.repo || null, harness: r.harness || null,
       model: r.model || null, parent: r.parentInstance || null,
       sibling: r.siblingInstance || null, relation: r.relation || null,
       spawnOrigin: r.spawnOrigin, attach: r.attach,
