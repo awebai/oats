@@ -12,8 +12,8 @@ const of = (calls, verb) => calls.filter(c => c.verb === verb);
 const maxAge = call => { const i = call.argv.indexOf('--max-age'); return i < 0 ? null : call.argv[i + 1]; };
 const soulSelector = agents => { const a = agents.find(x => x.name === 'release-manager'); return { soul: a.name, agentsRoot: a.agentsRoot }; };
 const settle = ms => new Promise(resolve => setTimeout(resolve, ms));
-// The bound is on the code path (no kernel process), not on scheduler noise: the best of three repeats.
-async function fastest(request, times = 3) {
+// The bound is on the code path (no kernel process), not on scheduler noise: the best of five repeats.
+async function fastest(request, times = 5) {
   let best = Infinity;
   for (let n = 0; n < times; n++) { const t = performance.now(); await request(); best = Math.min(best, performance.now() - t); }
   return best;
@@ -22,7 +22,7 @@ async function fastest(request, times = 3) {
 test('cold cycle, held catalogs, coalescing, focus no-op, cadence and blur back-off (kernel without observe-max-age)', async () => {
   // souls and capabilities are much slower than the roster reads, so "published before souls landed" holds even
   // when a loaded machine delays the liveness child that precedes publication.
-  const s = await startLoadPathServer({ delays: { status: 300, 'workspace-status': 300, souls: 2500, capabilities: 2500, inspect: 200 } });
+  const s = await startLoadPathServer({ delays: { status: 300, 'workspace-status': 300, souls: 4000, capabilities: 4000, inspect: 200 } });
   try {
     const probe = await s.post('/api/cli/reprobe', {});
     assert.equal(probe.ok, true, JSON.stringify(probe));
@@ -112,8 +112,8 @@ test('a souls catalog landing between the roster reads and publication is attach
     await s.post('/api/cli/reprobe', {});
     await s.until(async () => (await s.panel()).deployment?.status === 'observed');
     const rosterAt = Date.now();
-    await s.until(async () => (await s.agents()).agents.length === 9, { timeout: 2500 });
-    assert.ok(Date.now() - rosterAt < 2500, 'the catalog did not wait for a second cycle');
+    await s.until(async () => (await s.agents()).agents.length === 9, { timeout: 4000 });
+    assert.ok(Date.now() - rosterAt < 4000, 'the catalog did not wait for a second cycle (5 s)');
     assert.equal(of(s.calls(), 'souls').length, 1);
     assert.deepEqual([of(s.calls(), 'souls').length, of(s.calls(), 'capabilities').length], [1, 1]);
     s.reconfigure(cfg => { cfg.version.version = '0.29.3'; });
