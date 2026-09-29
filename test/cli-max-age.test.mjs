@@ -7,9 +7,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import YAML from "yaml";
 import { buildNorthwind } from "./fixtures/northwind/build.mjs";
 import { inertHarnessPath } from "./helpers/runtime-stub.mjs";
@@ -223,7 +223,25 @@ test("observation.localRevision (Addendum 4): a digest of the local configuratio
     writeFileSync(join(sub, "oats-local.yaml"), readFileSync(localFile, "utf8"));
     const closer = JSON.parse(spawnSync(process.execPath, [CLI, "souls", "--max-age", "60", "--json"], { cwd: sub, encoding: "utf8", env, maxBuffer: 64 << 20 }).stdout);
     rmSync(join(sub, "oats-local.yaml"));
-    assert.notEqual(closer.result?.observation?.localRevision ?? closer.error?.code, fromSub, "a closer oats-local.yaml appearing");
+    assert.equal(closer.ok, true, `souls from the closer oats-local.yaml: ${JSON.stringify(closer.error)}`);
+    assert.match(closer.result.observation.localRevision, /^[0-9a-f]{24}$/);
+    assert.notEqual(closer.result.observation.localRevision, fromSub, "a closer oats-local.yaml appearing");
+    // The automations snapshot (read by workspace status): appearing, and changing, each move the revision.
+    const snapshot = join(dep, ".agents", "automations", "snapshot.json");
+    const hadSnapshot = existsSync(snapshot) ? readFileSync(snapshot) : null;
+    try {
+      const wsRev = () => rev(["workspace", "status"]);
+      rmSync(snapshot, { force: true });
+      const none = wsRev();
+      mkdirSync(dirname(snapshot), { recursive: true });
+      writeFileSync(snapshot, JSON.stringify({ takenAt: "2026-01-01T00:00:00.000Z" }) + "\n");
+      const one = wsRev();
+      assert.notEqual(one, none, "an automations snapshot appearing");
+      writeFileSync(snapshot, JSON.stringify({ takenAt: "2026-01-02T00:00:00.000Z" }) + "\n");
+      assert.notEqual(wsRev(), one, "the automations snapshot rewritten");
+    } finally {
+      if (hadSnapshot) writeFileSync(snapshot, hadSnapshot); else rmSync(snapshot, { force: true });
+    }
     // No path, no content: the observation block is three fields, and the revision is 24 hex.
     for (const args of [["status"], ["workspace", "status"], ["souls"], ["capabilities"], ["teams"]]) {
       const d = json(oats([...args, "--max-age", "60", "--json"]));

@@ -1017,7 +1017,9 @@ async function readinessCmd() {
 
 /** This command's read session (lib/remote.mjs createReadSession): one per process, created at the
  *  first remote read, closed when the command ends (the `finally` of the dispatch) and, for the
- *  process.exit paths, on exit — no `git cat-file --batch` child outlives the command. */
+ *  process.exit paths, on exit — no `git cat-file --batch` child outlives the command. Its git
+ *  children run as their own process groups, so a terminal's Ctrl-C no longer reaches them: a
+ *  SIGINT, SIGTERM or SIGHUP closes the session and exits (128 + the signal number), which kills them. */
 let readSession = null;
 /** The validated `--max-age` seconds (checked once at dispatch: maxAgeRefusal), null when not given. */
 let maxAgeGiven = null;
@@ -1025,6 +1027,11 @@ function commandSession() {
   if (!readSession) {
     readSession = remoteModule.createReadSession({ maxAge: maxAgeGiven ?? 0 });
     process.on("exit", () => readSession.closeNow());
+    for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143], ["SIGHUP", 129]]) process.once(signal, () => {
+      readSession.closeNow();
+      // Another handler (a scheduler lock's release) exits on its own after this one.
+      if (process.listenerCount(signal) === 0) process.exit(code);
+    });
   }
   return readSession;
 }

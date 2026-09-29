@@ -85,7 +85,9 @@ gets the plain per-call behaviour. Within a session:
   `inspect --home`) never prefetches;
 - closing the session (the end of the command, or `process.exit`) rejects
   every queued observation and aborts every git child still running for it
-  (the session's `AbortSignal` rides every `runGit`); before a capability
+  (the session's `AbortSignal` rides every `runGit`). `runGit` starts git as
+  its own process group, so a timeout, an output overflow or an abort kills
+  git's ssh or remote helper with it; before a capability
   command runs its provider, the CLI ends the idle batch readers
   (`closeBatches`);
 - a commit's tree is listed once (`git ls-tree -r -t -l`, bounded by
@@ -96,7 +98,7 @@ gets the plain per-call behaviour. Within a session:
   serial results: declaration order, the first failure in that order. The
   observations and the member reads are two pools, so a discovery runs at
   most sixteen short-lived git processes at once (eight of them fetches at
-  most), besides the cat-file readers above. One
+  most), plus up to twelve cat-file readers: twenty-eight git processes. One
   shared pool would deadlock: a member read holding a slot waits on its
   member's observation, which needs a slot of its own.
 

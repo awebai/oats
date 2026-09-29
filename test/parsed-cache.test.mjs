@@ -5,7 +5,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -142,6 +142,27 @@ test("a hit bumps the entry's mtime (LRU)", async () => {
   utimesSync(file, old, old);
   await memoAtCommit(REF, OID, "enumerate", () => assert.fail("hit"), { cacheDir, session: createReadSession() });
   assert.ok(statSync(file).mtimeMs > old.getTime() + 3_600_000);
+});
+
+test("invalidation: the kernel fingerprint covers the resolved yaml parser, not only the kernel version", () => {
+  const repo = new URL("..", import.meta.url).pathname;
+  const fingerprintWithYaml = (version) => {
+    const root = mkdtempSync(join(tmpdir(), "oats-fp-"));
+    try {
+      cpSync(join(repo, "lib"), join(root, "lib"), { recursive: true });
+      mkdirSync(join(root, "docs"));
+      for (const name of readdirSync(join(repo, "docs"))) if (name.endsWith(".schema.json")) cpSync(join(repo, "docs", name), join(root, "docs", name));
+      cpSync(join(repo, "package.json"), join(root, "package.json"));
+      mkdirSync(join(root, "node_modules", "yaml"), { recursive: true });
+      writeFileSync(join(root, "node_modules", "yaml", "package.json"), JSON.stringify({ name: "yaml", version, main: "index.js" }));
+      writeFileSync(join(root, "node_modules", "yaml", "index.js"), "");
+      return execFileSync(process.execPath, ["--input-type=module", "-e", "const r = await import('./lib/remote.mjs'); process.stdout.write(r.kernelFingerprint());"], { cwd: root, encoding: "utf8" });
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  };
+  const a = fingerprintWithYaml("2.9.1"), b = fingerprintWithYaml("2.9.2");
+  assert.match(a, /^[0-9a-f]{64}$/);
+  assert.notEqual(a, b, "a parser bump without a kernel version bump is another fingerprint");
+  assert.equal(fingerprintWithYaml("2.9.1"), a, "and the same parser is the same fingerprint");
 });
 
 test("prune: least recently used entries go until count AND bytes are under the keep bounds; stale fingerprints, observations and temp files go; once per session", async () => {

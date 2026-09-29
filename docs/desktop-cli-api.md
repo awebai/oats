@@ -246,7 +246,10 @@ oats status | workspace status | souls | capabilities | inspect --soul|--home
   with `--server`, "--max-age cannot be combined with --server: observation
   reuse is local to this machine".
   A capability command's argv (`oats <namespace> …`) is its provider's: the
-  kernel neither reads nor refuses `--max-age` there.
+  kernel neither reads nor refuses `--max-age` there. The same holds for
+  `capture`, `recall`, `setup` and `experimental`, which parse their own argv:
+  `capture`, `setup` and `experimental` refuse it as an unknown argument (not
+  `E_BAD_ARGS`), and `recall` ignores unknown flags.
 
 The observations are kept under the remote cache
 (`$OATS_REMOTE_CACHE`, default `~/.cache/oats/remotes`), in `.observed/`,
