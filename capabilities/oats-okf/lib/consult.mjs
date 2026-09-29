@@ -3,9 +3,9 @@
 // partial clone per Git base (blobs arrive on first read) under the bindings'
 // stateDir; directory bases are read in place under their cooperative lock.
 import { randomUUID } from 'node:crypto';
-import { hostname } from 'node:os';
+import { hostname, tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { fs, join, dirname, resolve, safePath, readJSON, save, digest, tree, withLock, fail, syncDir, identifier, relPath, within, displayRepo } from './io.mjs';
+import { fs, join, dirname, resolve, safePath, readJSON, save, digest, tree, withLock, fail, syncDir, identifier, relPath, within, displayRepo, hash } from './io.mjs';
 import { noGit, gitTimeoutMs, consultMaxAgeMs, splitRef, resolveNodes } from './config.mjs';
 import { git, gitEnv, validateBase, baseLock, journalPath, preflightLocalRepository, requireNotShallow, verifyRemote, unavailable } from './stores.mjs';
 
@@ -42,22 +42,22 @@ const parent = p => p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '';
 const shown = p => '/' + p;
 
 // ---------------------------------------------------------------- git cache
-const cacheDir = (bindings, base) => join(bindings.stateDir, 'cache', `${identifier(base.id)}.git`);
-const cacheLock = (bindings, base) => join(bindings.stateDir, 'cache', `${base.id}.lock`);
+export const cacheDir = (bindings, base) => join(bindings.stateDir, 'cache', `${identifier(base.id)}.git`);
+export const cacheLock = (bindings, base) => join(bindings.stateDir, 'cache', `${base.id}.lock`);
 const stateFile = cache => join(cache, 'okf-consult.json');
 function gitRun(cwd, args, { input, timeout = LOCAL_GIT_MS, maxBuffer = TEXT_BYTES, encoding = 'utf8' } = {}) {
   return spawnSync('git', ['--no-replace-objects', '--literal-pathspecs', '-c', 'core.hooksPath=/dev/null', '-c', 'protocol.ext.allow=never', '-C', cwd, ...args],
     { cwd, env: gitEnv(), input, timeout, maxBuffer, encoding });
 }
 const gitError = r => Object.assign(new Error(`git failed: ${r.error?.message || r.stderr || `exit ${r.status}`}`), { code: r.error?.code === 'ETIMEDOUT' ? 'ETIMEDOUT' : 'E_COMMAND' });
-function acceptedCommit(cache, base) {
+export function acceptedCommit(cache, base) {
   const r = gitRun(cache, ['rev-parse', '--verify', '--quiet', `refs/heads/${base.acceptedBranch}^{commit}`]);
   const oid = r.status === 0 ? r.stdout.trim() : '';
   return /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(oid) ? oid : null;
 }
 /** The cache's bookkeeping, or null when the cache is absent or belongs to a
  *  different repository/branch (then it is rebuilt, never reinterpreted). */
-function usableCache(cache, base) {
+export function usableCache(cache, base) {
   if (!fs.existsSync(cache)) return null;
   safePath(cache);
   let state;
@@ -140,7 +140,7 @@ function resolveGit(bindings, alias, base, { fresh = false } = {}) {
  *  owner process on this host is gone is released (an interrupted clone is
  *  built aside and never renamed in; an interrupted fetch leaves refs whole).
  *  A live, foreign-host or unreadable owner is always waited for. */
-function clearDeadCacheLock(lock) {
+export function clearDeadCacheLock(lock) {
   let owner; try { owner = readJSON(join(lock, 'owner.json')); } catch { return; }
   if (owner?.host !== hostname() || !Number.isInteger(owner.pid)) return;
   try { process.kill(owner.pid, 0); } catch (e) {
@@ -269,15 +269,16 @@ const VALIDATION_CODES = new Set(['E_VALIDATION', 'E_BASE', 'E_PATH', 'E_ID', 'E
 /** Whether the accepted state is a valid OKF base. Git verdicts are cached per
  *  commit inside the host cache; computing one materializes the base root into
  *  a transient host scratch that is removed before returning. */
-export function verdict(ctx) {
+function validationFile(ctx) { return join(ctx.cache, 'okf-validation', `${ctx.commit}-${hash({ root: ctx.base.root }).slice(0, 16)}.json`); }
+export function verdict(ctx, { fetchMissing = true, saveResult = true } = {}) {
   const judge = run => {
     try { const v = run(); return { version: 1, ok: true, digest: v.digest, nodes: v.meta.nodes }; }
     catch (e) { if (!VALIDATION_CODES.has(e.code)) throw e; return { version: 1, ok: false, error: { code: e.code, message: e.message } }; }
   };
   if (ctx.kind === 'directory') return judge(() => validateBase(ctx.base.path, ctx.base));
-  const file = join(ctx.cache, 'okf-validation', `${ctx.commit}.json`);
-  if (fs.existsSync(file)) { const cached = readJSON(file); if (cached?.version === 1) return cached; }
-  const scratch = fs.mkdtempSync(join(dirname(ctx.cache), '.validate-'));
+  const file = validationFile(ctx);
+  if (fs.existsSync(file)) { const cached = readJSON(file); if (cached?.version === 1 && cached.commit === ctx.commit && cached.root === ctx.base.root) return cached; }
+  const scratch = fs.mkdtempSync(join(saveResult ? dirname(ctx.cache) : fs.realpathSync(tmpdir()), saveResult ? '.validate-' : 'okf-validate-'));
   try {
     const result = judge(() => {
       const rows = lsTree(ctx, '', { recursive: true });
@@ -287,7 +288,12 @@ export function verdict(ctx) {
         if (!['100644', '100755'].includes(r.mode) || r.type !== 'blob') fail('E_PATH', 'symlink or submodule in knowledge base is not allowed');
         r.target = containedTarget(scratch, r.name);
       }
-      prefetch(ctx, '');
+      if (fetchMissing) prefetch(ctx, '');
+      else {
+        const missing = gitRun(ctx.cache, ['rev-list', '--objects', '--missing=print', `${ctx.commit}:${repoPath(ctx, '')}`]);
+        if (missing.status !== 0) throw gitError(missing);
+        if (missing.stdout.split('\n').some(line => line.startsWith('?'))) unavailable(ctx.base, ctx.alias, 'read', new Error('cached validation needs missing objects'));
+      }
       for (const r of rows) {
         const target = r.target; fs.mkdirSync(dirname(target), { recursive: true });
         const fd = fs.openSync(target, 'wx', 0o600);
@@ -296,7 +302,7 @@ export function verdict(ctx) {
       }
       return validateBase(scratch, ctx.base);
     });
-    save(file, { ...result, commit: ctx.commit, at: new Date().toISOString() });
+    if (saveResult) save(file, { ...result, commit: ctx.commit, root: ctx.base.root, at: new Date().toISOString() });
     return result;
   } finally { fs.rmSync(scratch, { recursive: true, force: true }); }
 }

@@ -1,11 +1,16 @@
 import { randomUUID } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { fs, join, dirname, resolve, safePath, readJSON, save, atomic, hash, withLock, oats, fail, tree, overlaps, identifier } from './io.mjs';
-import { loadBindings, declaration, bindingFingerprint, settings, validateBindings } from './config.mjs';
-import { acceptedResolution } from './consult.mjs';
+import { loadBindings, declaration, bindingFingerprint, settings, validateBindings, resolveNodes } from './config.mjs';
+import { acceptedResolution, short } from './consult.mjs';
 import { loadInvocationKnowledgeBinding, readPrivateInvocationJson, sourceRuntimeFromKnowledgeBinding } from './binding-wire.mjs';
 import { sameJson } from './portable-binding.mjs';
 import { qualifiedSoulIdentity } from './source-contract.mjs';
 import { harvestSwitch, instanceRecordPath } from './harvest-switch.mjs';
+import { validateBase } from './stores.mjs';
+
+const primeBasesScript=fileURLToPath(new URL('./prime-bases.mjs',import.meta.url));
 
 const obj=value=>value!==null && typeof value==='object' && !Array.isArray(value);
 function exact(value,allowed,required,label) {
@@ -117,6 +122,45 @@ function harvestOff(home,sw,extra={}) {
   return {harvestOff:true,switch:sw,home,...extra};
 }
 export const harvestOffRecord = home => fs.existsSync(instanceRecordPath(home))?readJSON(instanceRecordPath(home)):null;
+const firstLine=text=>String(text||'unknown error').split(/\r?\n/).map(s=>s.trim()).find(Boolean) || 'unknown error';
+function validateHarvestOffRefs(bindings,decl,primed={}) {
+  const accepted={},resolvedAliases=new Set();
+  for(const [alias,base] of Object.entries(bindings.bases)) if(base.kind==='directory') {
+    accepted[alias]={nodes:validateBase(base.path,base).meta.nodes};resolvedAliases.add(alias);
+  }
+  for(const [alias,v] of Object.entries(primed)) {
+    if(!v?.ok) fail(v?.error?.code || 'E_VALIDATION',`base "${alias}" at ${short(v?.receipt || {base:alias,kind:'git',commit:'unknown'})}: ${v?.error?.message || 'base is not a validated knowledge tree'}`);
+    accepted[alias]={nodes:v.nodes};resolvedAliases.add(alias);
+  }
+  const unprimedGit=new Set(Object.entries(bindings.bases).filter(([alias,base])=>base.kind==='git' && !Object.hasOwn(primed,alias)).map(([alias])=>alias));
+  const notSkipped=ref=>!unprimedGit.has(ref.split('/')[0]);
+  resolveNodes({...decl,owns:decl.owns.filter(notSkipped),reads:decl.reads.filter(notSkipped)},bindings,accepted);
+}
+function refsByAlias(decl) {
+  const out={};
+  for(const ref of [...decl.owns,...decl.reads]) {const [alias,node]=ref.split('/');(out[alias]??=[]).push(node);}
+  for(const alias of Object.keys(out)) out[alias]=[...new Set(out[alias])];
+  return out;
+}
+function primeGitBases(bindings,decl) {
+  const allAliases=Object.entries(bindings.bases).filter(([,base])=>base.kind==='git').map(([alias])=>alias);
+  const aliases=allAliases.slice(0,64), skipped=allAliases.slice(64);
+  if(!aliases.length) return {warnings:[],primed:{}};
+  const currentSettings=settings();
+  const primingSettings={...currentSettings,'git-timeout':Math.min(currentSettings['git-timeout'] ?? 20,20)};
+  const result=spawnSync(process.execPath,[primeBasesScript],{input:JSON.stringify({bindings,aliases,refs:refsByAlias(decl)}),encoding:'utf8',timeout:25000,killSignal:'SIGTERM',env:{...process.env,OATS_SETTINGS:JSON.stringify(primingSettings)}});
+  const skippedWarnings=skipped.map(alias=>`okf base ${alias} not primed: too many git bases to prime concurrently; run \`oats okf bases\``);
+  const warnAll=reason=>({warnings:[...aliases.map(alias=>`okf base ${alias} not primed: ${firstLine(reason)}; run \`oats okf bases\``),...skippedWarnings],primed:{}});
+  if(result.error?.code==='ETIMEDOUT') return warnAll('timed out');
+  if(result.status!==0 || result.error) return warnAll(result.stderr || result.error?.message);
+  let rows;try{rows=JSON.parse(result.stdout || '[]');}catch{return warnAll('invalid priming result');}
+  const primed={},warnings=[];
+  for(const row of rows) {
+    if(row?.primed) primed[row.alias]=row;
+    else warnings.push(`okf base ${row?.alias || 'unknown'} not primed: ${firstLine(row?.reason)}; run \`oats okf bases\``);
+  }
+  return {primed,warnings:[...warnings,...skippedWarnings]};
+}
 /** okf 4.0.3: what a harvest-off home consults. Consultation never depends on
  *  the harvest switch: such a home has no registered source by design, so it
  *  reads its soul's declaration (recorded at spawn; the kernel's OATS_SOUL for
@@ -207,7 +251,7 @@ export function register(home) {
   const instance=process.env.OATS_INSTANCE || meta.instance;
   if(!agent || !instance) fail('E_SOURCE','source instance/agent required');
   const sw=harvestSwitch({settings:settings(),soulDir:soul});
-  if(sw.effective!=='on') {acceptedResolution(bindings,decl);return harvestOff(home,sw,{decl});}
+  if(sw.effective!=='on') {const priming=primeGitBases(bindings,decl);validateHarvestOffRefs(bindings,decl,priming.primed);return harvestOff(home,{...sw,warnings:[...sw.warnings,...priming.warnings]},{decl});}
   fs.mkdirSync(bindings.stateDir,{recursive:true,mode:0o700});
   const ownersFile=join(bindings.stateDir,'owners.json');
   const id=randomUUID(); const dir=join(bindings.stateDir,'sources',id);
