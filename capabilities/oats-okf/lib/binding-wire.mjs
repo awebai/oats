@@ -1,7 +1,7 @@
 import { TextDecoder } from 'node:util';
-import { tmpdir } from 'node:os';
-import { isAbsolute, join, resolve } from 'node:path';
-import { fs, safePath } from './io.mjs';
+import { spawn } from 'node:child_process';
+import { isAbsolute, resolve } from 'node:path';
+import { fs, safePath, displayRepo, redactUrls } from './io.mjs';
 import {
   KNOWLEDGE_CONTRACT,
   KNOWLEDGE_CONTRACT_VERSION,
@@ -14,7 +14,8 @@ import {
   sameJson,
 } from './portable-binding.mjs';
 import { declaration as soulDeclaration, loadBindings, validateBindings } from './config.mjs';
-import { stageBase, validateBase } from './stores.mjs';
+import { gitEnv, validateBase } from './stores.mjs';
+import { acceptedCommit, cacheDir, usableCache, verdict } from './consult.mjs';
 
 export const BINDING_WIRE_LIMITS=Object.freeze({bytes:1024*1024,depth:32,entries:16384});
 const CAPABILITY='oats.okf',SLOT='knowledge';
@@ -268,12 +269,28 @@ const checkReasons=Object.freeze({
   'runtime:command-missing':'harvest runtime command is not installed on this host',
   'runtime:not-qualified':'harvest runtime is not qualified: install/configure the selected harvest runtime or set harvest off',
 });
+const checkReasonTemplates=Object.freeze({
+  'cache-stale':'okf base <alias>: cached <cached>, accepted is now <accepted>; the next okf read refreshes it (or run `oats okf bases --fresh`)',
+  'base-unreachable:warm':'okf base <alias>: <repository> unreachable; readers serve the cached <cached> fetched <fetchedAt>',
+  'cache-not-primed':'okf base <alias> is not cached on this host yet: run `oats okf bases` (a spawn primes it)',
+  'cache-not-validated':'okf base <alias>: cached <cached> not yet validated on this host: run `oats okf bases`',
+  'base-unreachable:cold':'okf base <alias>: <repository> <acceptedBranch> unreachable (<reason>)',
+  'base-unresolved':'okf base <alias>: harvest runtime check skipped node resolution because the base is not cached',
+  'base-not-primed:spawn':'okf base <alias> not primed: <reason>; run `oats okf bases`',
+});
+function renderTemplate(name,values={}) {
+  if(!Object.hasOwn(checkReasonTemplates,name)) wireError('invalid-binding');
+  return checkReasonTemplates[name].replace(/<([a-zA-Z0-9]+)>/g,(_,key)=>String(values[key] ?? ''));
+}
 function problem(code,reason) {
   if(reason===undefined) return {code};
   if(!Object.hasOwn(checkReasons,reason)) wireError('invalid-binding');
   return {code,message:checkReasons[reason]};
 }
-export const CHECK_REASONS=Object.values(checkReasons);
+function templatedProblem(code,reason,values) {return {code,message:renderTemplate(reason,values)};}
+function warning(code,reason,values) {return {code,message:renderTemplate(reason,values)};}
+export const CHECK_REASONS=[...Object.values(checkReasons),...Object.values(checkReasonTemplates)];
+export const CHECK_REASON_TEMPLATES=checkReasonTemplates;
 function providerActionName(action) {
   if(action.kind==='operation' && action.slot===SLOT) return action.name;
   if(action.kind!=='command') return null;
@@ -307,7 +324,55 @@ function readinessRuntime(settings,env=process.env) {
   }
   return {problem:problem('needs-configuration','settings:missing')};
 }
-function checkPhase(req) {
+const shortOid=oid=>String(oid||'').slice(0,12);
+const firstLine=text=>String(text||'').split(/\r?\n/).map(s=>s.trim()).find(Boolean) || 'unknown error';
+const PROBE_OUTPUT_LIMIT=64*1024;
+function killGroup(child,signal='SIGKILL') {
+  if(!child.pid) return;
+  try { process.kill(-child.pid,signal); }
+  catch { try { child.kill(signal); } catch { /* already gone */ } }
+}
+function lsRemote(base) {
+  return new Promise(resolveProbe=>{
+    const args=['--no-replace-objects','-c','core.hooksPath=/dev/null','-c','protocol.ext.allow=never','ls-remote','--exit-code','--',base.repository,`refs/heads/${base.acceptedBranch}`];
+    const env={...gitEnv(),GIT_TERMINAL_PROMPT:'0'};
+    const child=spawn('git',args,{env,stdio:['ignore','pipe','pipe'],detached:true});
+    let stdout='',stderr='',settled=false;
+    const finish=result=>{if(settled) return;settled=true;clearTimeout(timer);child.stdout?.destroy();child.stderr?.destroy();resolveProbe(result);};
+    const timer=setTimeout(()=>{killGroup(child);finish({ok:false,error:'timed out'});},10000);
+    child.stdout.setEncoding('utf8');child.stderr.setEncoding('utf8');
+    const collect=(which,chunk)=>{
+      if(settled) return;
+      if(Buffer.byteLength(stdout)+Buffer.byteLength(stderr)+Buffer.byteLength(chunk)>PROBE_OUTPUT_LIMIT) {killGroup(child);finish({ok:false,error:'git ls-remote output exceeded 64 KiB'});return;}
+      if(which==='stdout') stdout+=chunk; else stderr+=chunk;
+    };
+    child.stdout.on('data',chunk=>collect('stdout',chunk));child.stderr.on('data',chunk=>collect('stderr',chunk));
+    child.on('error',error=>finish({ok:false,error:error.message}));
+    child.on('close',status=>{
+      if(settled) return;
+      if(status===0) {
+        const oid=stdout.trim().split(/\s+/)[0];
+        if(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(oid)) finish({ok:true,commit:oid});
+        else finish({ok:false,error:'accepted branch did not resolve to a commit'});
+      } else finish({ok:false,error:firstLine(redactUrls(stderr || stdout || `git ls-remote exited ${status}`))});
+    });
+  });
+}
+function checkError(error,stage) {
+  if(error.code==='E_COMMAND' && stage==='runtime') return {status:'needs-configuration',problem:problem('needs-configuration','runtime:command-missing')};
+  if(error.code==='E_COMMAND') return {status:'unavailable',problem:problem('provider-unavailable')};
+  if(error.code==='E_OWNER') return {status:'needs-configuration',problem:problem('provider-not-qualified','base:owner-unmet')};
+  if(error.code==='E_CONFIRM') return {status:'needs-configuration',problem:problem('provider-not-qualified','base:source-mismatch')};
+  if(stage==='runtime') return {status:'needs-configuration',problem:problem('needs-configuration','runtime:not-qualified')};
+  if(['E_BASE','E_VALIDATION','E_DIRECTORY_GIT','E_PATH','E_ID','E_CONFIG'].includes(error.code)) return {status:'needs-configuration',problem:problem('provider-not-qualified',stage==='stage'?'base:stage-failed':'base:not-validated')};
+  return {status:'unavailable',problem:problem('provider-unavailable')};
+}
+function statusOf(problems) {
+  if(problems.some(p=>p.code==='provider-unavailable')) return 'unavailable';
+  if(problems.some(p=>p.code==='needs-configuration' || p.code==='provider-not-qualified')) return 'needs-configuration';
+  return 'ready';
+}
+async function checkPhase(req) {
   keys(req.input,['context','action'],['context','action'],'check input');
   if(!obj(req.input.context) || !obj(req.input.action)) wireError('invalid-binding');
   const action=req.input.action,name=providerActionName(action);
@@ -317,33 +382,49 @@ function checkPhase(req) {
   if(name && (unsupportedCapturedCommands.has(name) || name==='run-source' || name==='harvest')) return {status:'needs-configuration',problems:[problem('provider-not-qualified','action:not-admitted')]};
   if(action.kind==='hook' && action.name==='soul-scaffold') return {status:'ready',problems:[]};
   let bindings;try{bindings=validateBindings(runtime.bindings,runtime.descriptorFile);}catch{return {status:'needs-configuration',problems:[problem('needs-configuration','bindings:invalid')]};}
-  const accepted={},gitBases=Object.entries(bindings.bases).filter(([,base])=>base.kind==='git');
+  const accepted={},problems=[],warnings=[],unresolved=[];
+  const gitBases=Object.entries(bindings.bases).filter(([,base])=>base.kind==='git');
   if(gitBases.length>64) return {status:'unavailable',problems:[problem('provider-not-qualified','bases:too-many')]};
-  let scratch=null,stage='base';
-  try {
-    if(gitBases.length) scratch=fs.mkdtempSync(join(fs.realpathSync(tmpdir()),'oats-okf-binding-check-'));
-    for(const [alias,base] of Object.entries(bindings.bases)) {
-      stage=base.kind==='directory'?'validate':'stage';
-      accepted[alias]=(base.kind==='directory'?validateBase(base.path,base):stageBase(base,join(scratch,alias),{alias})).meta;
+  const probes=new Map(await Promise.all(gitBases.map(async ([alias,base])=>[alias,await lsRemote(base)])));
+  for(const [alias,base] of Object.entries(bindings.bases)) {
+    if(base.kind==='directory') {
+      try { accepted[alias]=validateBase(base.path,base).meta; }
+      catch(error) { const out=checkError(error,'validate');problems.push(out.problem); }
+      continue;
     }
-    if(req.settings.harvest!=='off') {
-      stage='runtime';
-      checkKnowledgeRuntime({rendered:runtime,accepted});
+    const cache=cacheDir(bindings,base),state=usableCache(cache,base),probe=probes.get(alias);
+    if(!state) {
+      unresolved.push(alias);
+      if(probe?.ok) warnings.push(warning('cache-not-primed','cache-not-primed',{alias}));
+      else problems.push(templatedProblem('provider-unavailable','base-unreachable:cold',{alias,repository:displayRepo(base.repository),acceptedBranch:base.acceptedBranch,reason:firstLine(probe?.error)}));
+      continue;
     }
-  } catch(error) {
-    if(error.code==='E_COMMAND') return {status:'needs-configuration',problems:[problem('needs-configuration','runtime:command-missing')]};
-    if(error.code==='E_OWNER') return {status:'needs-configuration',problems:[problem('provider-not-qualified','base:owner-unmet')]};
-    if(error.code==='E_CONFIRM') return {status:'needs-configuration',problems:[problem('provider-not-qualified','base:source-mismatch')]};
-    if(['E_BASE','E_VALIDATION','E_DIRECTORY_GIT'].includes(error.code)) return {status:'needs-configuration',problems:[problem('provider-not-qualified',stage==='stage'?'base:stage-failed':'base:not-validated')]};
-    if(stage==='runtime') return {status:'needs-configuration',problems:[problem('needs-configuration','runtime:not-qualified')]};
-    return {status:'unavailable',problems:[problem('provider-unavailable')]};
-  } finally {
-    if(scratch) fs.rmSync(scratch,{recursive:true,force:true});
+    const commit=acceptedCommit(cache,base);
+    const ctx={alias,base,bindings,kind:'git',cache,commit,receipt:{base:alias,id:base.id,kind:'git',commit,fetchedAt:state.fetchedAt,stale:!!state.error,...(state.error?{reason:state.error}:{})}};
+    try {
+      const v=verdict(ctx,{fetchMissing:false,saveResult:false});
+      if(v.ok) accepted[alias]={nodes:v.nodes};
+      else problems.push(problem('provider-not-qualified','base:not-validated'));
+    } catch(error) {
+      if(error.code==='E_BASE_UNAVAILABLE' && error.step==='read') {unresolved.push(alias);warnings.push(warning('cache-not-validated','cache-not-validated',{alias,cached:shortOid(commit)}));}
+      else { const out=checkError(error,'validate');problems.push(out.problem); }
+    }
+    if(probe?.ok) {
+      if(probe.commit!==commit) warnings.push(warning('cache-stale','cache-stale',{alias,cached:shortOid(commit),accepted:shortOid(probe.commit)}));
+    } else warnings.push(warning('base-unreachable','base-unreachable:warm',{alias,repository:displayRepo(base.repository),cached:shortOid(commit),fetchedAt:state.fetchedAt}));
   }
-  return {status:'ready',problems:[]};
+  if(req.settings.harvest!=='off') {
+    for(const alias of unresolved) warnings.push(warning('base-unresolved','base-unresolved',{alias}));
+    const rendered=unresolved.length?{...runtime,declaration:{...runtime.declaration,owns:runtime.declaration.owns.filter(ref=>!unresolved.includes(ref.split('/')[0])),reads:runtime.declaration.reads.filter(ref=>!unresolved.includes(ref.split('/')[0]))}}:runtime;
+    try { checkKnowledgeRuntime({rendered,accepted}); }
+    catch(error) { const out=checkError(error,'runtime');problems.push(out.problem); }
+  }
+  const result={status:statusOf(problems),problems};
+  if(warnings.length) result.warnings=warnings;
+  return result;
 }
 
-export function handleBindingRequest(phase,value) {
+export async function handleBindingRequest(phase,value) {
   if(!phases.has(phase)) wireError('invalid-binding');
   const req=request(value,phase);
   if(phase==='normalize') return normalizePhase(req);
@@ -369,7 +450,7 @@ export async function runBindingWire(phase,input=process.stdin,output=process.st
   try {
     const chunks=[];let length=0;
     for await(const chunk of input) {const bytes=Buffer.from(chunk);length+=bytes.length;if(length>BINDING_WIRE_LIMITS.bytes) wireError('invalid-binding');chunks.push(bytes);}
-    const result=handleBindingRequest(phase,parseBindingJson(Buffer.concat(chunks,length)));
+    const result=await handleBindingRequest(phase,parseBindingJson(Buffer.concat(chunks,length)));
     answer=response(phase,{ok:true,result});
   } catch(error) {answer=response(phases.has(phase)?phase:'check',{ok:false,error:errorProblem(error)});}
   let bytes;

@@ -1,7 +1,7 @@
 {
   "capability": "oats.okf",
   "command": "okf",
-  "version": "4.0.4",
+  "version": "4.0.5",
   "compatibility": {
     "oats": ">=0.29.0"
   },
@@ -92,7 +92,14 @@
       "knowledge base owner or remote custody requirement not met",
       "staged git source does not match the declared knowledge base",
       "harvest runtime command is not installed on this host",
-      "harvest runtime is not qualified: install/configure the selected harvest runtime or set harvest off"
+      "harvest runtime is not qualified: install/configure the selected harvest runtime or set harvest off",
+      "okf base <alias>: cached <cached>, accepted is now <accepted>; the next okf read refreshes it (or run `oats okf bases --fresh`)",
+      "okf base <alias>: <repository> unreachable; readers serve the cached <cached> fetched <fetchedAt>",
+      "okf base <alias> is not cached on this host yet: run `oats okf bases` (a spawn primes it)",
+      "okf base <alias>: cached <cached> not yet validated on this host: run `oats okf bases`",
+      "okf base <alias>: <repository> <acceptedBranch> unreachable (<reason>)",
+      "okf base <alias>: harvest runtime check skipped node resolution because the base is not cached",
+      "okf base <alias> not primed: <reason>; run `oats okf bases`"
     ]
   },
   "inject": "injects/okf.md",
