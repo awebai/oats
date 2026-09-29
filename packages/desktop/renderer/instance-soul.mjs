@@ -28,8 +28,8 @@ export const instanceSoulCSS = `
 #context-panel .soul-tab-skeleton .context-panel-label.skeleton { height:10px; width:38%; }
 #context-panel .soul-tab-skeleton .soul-tab-slot.skeleton { height:12px; width:70%; }
 #context-panel .soul-tab-skeleton .soul-tab-source.skeleton { height:12px; width:60%; }
-#context-panel .soul-tab-skeleton .soul-tab-cap-name.skeleton { height:12px; width:55%; }
-#context-panel .soul-tab-skeleton .soul-tab-cap .skeleton-line { height:11px; width:40%; }
+#context-panel .soul-tab-skeleton .soul-tab-cap-name.skeleton { height:14px; width:55%; }
+#context-panel .soul-tab-skeleton .soul-tab-cap > .skeleton-line { height:14px; width:40%; } /* a 12px source line box */
 #context-panel .soul-tab-skeleton .skeleton-tag { flex:none; width:3.2em; height:18px; margin-left:auto; border-radius:4px; }
 #context-panel .soul-tab-section { display:flex; flex-direction:column; gap:8px; min-width:0; }
 #context-panel .soul-tab-core { border:1px solid var(--border); border-radius:9px; overflow:hidden; }
