@@ -95,7 +95,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
 | `desktop-facts` | the facts under [Desktop facts](#desktop-facts-feature-desktop-facts-oats-0290) | |
 | `launch-preference` | soul and local launch preferences; `launch`, `launchCurrent`, `launchFrom`; `--reselect-launch`; `key` on soul and agent rows ([Launch preferences](#soul-launch-preferences-feature-launch-preference-oats-0300)) | |
 | `preview-composed-from` | `composedFrom` on preview `modules[]` ([Composition](#the-preview)) | |
-| `observe-max-age` | `--max-age <s>` on the read verbs and their `observation` block ([Observation reuse](#observation-reuse-feature-observe-max-age-oats-0301)) | |
+| `observe-max-age` | `--max-age <s>` on the read verbs and their `observation` block ([Observation reuse](#observation-reuse-feature-observe-max-age-oats-0302)) | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -182,8 +182,8 @@ an inherited `OATS_DEPLOYMENT` or `OATS_RESOLUTION` (`details.inherited`).
 homes in `problems[]`: `legacy-captured-home {code, instances, homes,
 message}` and `legacy-local-agents {code, dirs, instances, message}`.
 
-<a id="observation-reuse-feature-observe-max-age-oats-0301"></a>
-### Observation reuse (feature `observe-max-age`, OATS 0.30.1)
+<a id="observation-reuse-feature-observe-max-age-oats-0302"></a>
+### Observation reuse (feature `observe-max-age`, OATS 0.30.2)
 
 Every read asks each remote for its current head (`git ls-remote`). With
 `--max-age <seconds>` a read verb reuses a head this machine observed at most
@@ -1419,7 +1419,7 @@ oats status [--dir <d>] [--max-age <s>] --json
 ```
 
 Not an envelope: `{root, agents, observation?, workspace?, problems?, warnings?}`
-(`observation` only with [`--max-age`](#observation-reuse-feature-observe-max-age-oats-0301)).
+(`observation` only with [`--max-age`](#observation-reuse-feature-observe-max-age-oats-0302)).
 
 ```json
 {"root":"/w/agents",

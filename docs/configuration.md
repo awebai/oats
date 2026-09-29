@@ -280,4 +280,4 @@ it is safe to delete); `OATS_PACKAGE_CATALOG` names an alternative package
 catalog file. The read verbs (`status`, `workspace status`, `souls`,
 `capabilities`, `inspect`, and the read forms of `teams` and `soul teams`)
 take `--max-age <seconds>` to reuse a remote head observed that recently
-([Observation reuse](desktop-cli-api.md#observation-reuse-feature-observe-max-age-oats-0301)).
+([Observation reuse](desktop-cli-api.md#observation-reuse-feature-observe-max-age-oats-0302)).
