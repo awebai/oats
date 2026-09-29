@@ -337,6 +337,21 @@ page bar. The spawn dialog's harness, model and launch hints (`matched()` in
 `spawn-dialog.mjs`) read only a preview for the choices on screen, like the
 name and work hints.
 
+The terminal-side context panel's Soul tab (`instance-soul.mjs`) and its
+Messaging section (`instance-teams.mjs`): the roster-derived header is the
+context panel's and stays put; each section owns a body under it
+(`context-panel.mjs` mounts the Soul section on `.context-panel-soul-body`;
+the Teams section appends `.instance-teams-body` to its host) where the
+controller paints the skeleton (rows wearing the real classes), the failed
+block with Retry (`refresh: true`) and, for the soul, the stale line — never
+a silent absence, nothing prepended above. Both re-read the same selection
+when `instanceStatusIdentity(instance)` (`instance-status-identity.mjs`:
+home, last start, running, module drift rows, soul source) changes: the soul
+as a refresh that keeps its content, the teams by refreshing the card's list
+(or inspecting again when there is no card). An inspection without the soul,
+or without a messaging provider, is an empty read: the header stands, the
+Messaging section hides.
+
 ## Team controls on a live instance (teams contract 2026-09-25)
 
 An instance's inspector shows a **Teams** section (after its Instance facts)

@@ -443,11 +443,12 @@ export function createContextPanel({
   soulActions.append(openSoulControl);
   const soulDetails = node('details', 'context-panel-details'); soulDetails.append(node('summary', null, 'Details'));
   const rootRow = node('div', 'context-panel-detail'); rootRow.append(node('div', 'context-panel-label', 'Agents root'), pathLine('agentsRoot', 'Copy agents root path'));
-  soulDetails.append(rootRow); pages.get('soul').append(soulDetails, soulActions);
   // Workspace v4 (W6): the soul as this instance was spawned from it — injected like Teams (this host performs no IO).
-  // While it shows, its own header replaces the roster-only one above.
-  const soulSection = typeof createSoulSection === 'function' ? createSoulSection(pages.get('soul'), {
-    onPresence(present) { if (!disposed) soulHead.wrap.hidden = present; } }) : null;
+  // The roster-derived header above stays put; the section owns the body under it (its skeleton, its
+  // content, its failure), so nothing is swapped or prepended when the read lands (desktop/loading-states).
+  const soulBody = node('div', 'context-panel-soul-body');
+  soulDetails.append(rootRow); pages.get('soul').append(soulBody, soulDetails, soulActions);
+  const soulSection = typeof createSoulSection === 'function' ? createSoulSection(soulBody, { onPresence() {} }) : null;
   const gitPanel = typeof createGitPanel === 'function' ? createGitPanel(pages.get('git'), { applyFocus: projectFocus,
     onObservation(summary) {
       if (disposed) return;
