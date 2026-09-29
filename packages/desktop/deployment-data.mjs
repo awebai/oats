@@ -163,7 +163,9 @@ export function deploymentStatusData(document, deployment) {
     check(!seenSouls.has(agent.dir)); seenSouls.add(agent.dir);
     const out = withHarness(agent, fields(agent, ['name', 'description', 'work', 'model', 'backend', 'team', 'dir', 'kind', 'repo', 'capability', 'color', 'launch-config']));
     if (own(agent, 'yolo')) { check(agent.yolo === null || typeof agent.yolo === 'boolean'); out.yolo = agent.yolo; }
-    if (own(agent, 'key')) { check(soulKey(agent.key)); out.key = agent.key; } // the kernel's soul key, when reported
+    // The kernel's soul key, or null when no instance records a workspace soul (an instance-less
+    // soul dir, e.g. after a preview or its last retire): the roster contract allows both.
+    if (own(agent, 'key')) { check(agent.key === null || soulKey(agent.key)); out.key = agent.key; }
     if (own(agent, 'soulSource')) out.soulSource = soulSource(agent.soulSource);
     if (own(agent, 'retireFailures')) out.retireFailures = array(agent.retireFailures).map(row => fields(row, ['instance', 'completedAt', 'error', 'resultPath']));
     out.instances = array(agent.instances, 10000).flatMap(instance => {

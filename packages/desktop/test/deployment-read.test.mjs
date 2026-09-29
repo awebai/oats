@@ -142,6 +142,29 @@ for (const [reason, mutate] of [
   assert.ok(!homes.includes('/outside/home')); assert.equal(new Set(homes).size, homes.length);
 });
 test('a clean capture withholds nothing', () => assert.deepEqual(deploymentStatusData(status, context).withheld, []));
+// The roster contract: an agent row's `key` is the soul key, or null when no instance records a
+// workspace soul — an instance-less soul dir (a preview's soul copy, or after its last retire).
+// Such a row (shape as the 0.30.0 kernel emits it) must not reject the whole observation.
+const instanceLess = (name, key) => ({ schemaVersion: 2, name, description: 'no instances yet', work: 'directory', knowledge: 'none',
+  capabilities: {}, kind: 'persistent', dir: join(status.root, name), instances: [], key,
+  soulSource: { repoKey: 'github.com/nw/agents', commit: '66566512aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', path: `souls/${name}` } });
+test('an instance-less member or package soul (key null) decodes; the rest of the roster is intact', () => {
+  const doc = structuredClone(status);
+  doc.agents.push(instanceLess('reviewer', null), instanceLess('nw-tools--reviewer', null));
+  const result = deploymentStatusData(doc, context), baseline = deploymentStatusData(status, context);
+  assert.equal(result.agents.length, status.agents.length + 2);
+  for (const name of ['reviewer', 'nw-tools--reviewer']) {
+    const row = result.agents.find(a => a.name === name);
+    assert.equal(row.key, null, name); assert.deepEqual(row.instances, [], name);
+  }
+  assert.deepEqual(result.agents.slice(0, status.agents.length), baseline.agents);
+  assert.deepEqual(result.withheld, []);
+});
+test('an agent key is a soul key or null: a string still decodes, any other type rejects the observation', () => {
+  const withKey = key => { const doc = structuredClone(status); doc.agents.push(instanceLess('reviewer', key)); return doc; };
+  assert.equal(deploymentStatusData(withKey('reviewer'), context).agents.at(-1).key, 'reviewer');
+  for (const bad of [0, 42, {}, [], true, '', '*']) assert.throws(() => deploymentStatusData(withKey(bad), context), undefined, JSON.stringify(bad));
+});
 
 test('the locator carries only an integer workspaceApi 2 from the probe into the accepted CLI state', async () => {
   const { discover } = await import('../cli-locator.mjs');
