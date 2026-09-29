@@ -281,9 +281,8 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
     card.append(line, sub);
     if (data.recorded.drift) card.append(node('p', `Branch differs from recorded branch: ${report(data.recorded.branch)}`, 'git-note'));
     facts.append(card);
-    // The kernel's own notes on the read (a caveat, e.g. no upstream) stay visible as plain lines; there is no
-    // Details disclosure on a healthy read (Details belong to real failures).
-    for (const note of data.notes) facts.append(node('p', note, 'git-note git-read-note'));
+    // A healthy read shows no Details and no kernel notes (e.g. "no upstream configured" on every agent
+    // branch is noise); Details belong to real failures.
     changesSection.hidden = false; github.hidden = false; openDiff.hidden = !n;
     changesCount.textContent = n ? String(n) : ''; files.classList.toggle('git-card', n > 0);
     if (!n) files.append(node('p', 'No uncommitted changes.', 'git-note git-dashed'));

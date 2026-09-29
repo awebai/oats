@@ -47,7 +47,7 @@ test('inert mount; first-visible read once; routine updates preserve controls/fo
   assert.match(u.text(), /actual-branch/); assert.match(u.text(), /Branch differs from recorded branch: recorded-branch/);
   // v4.1: no Details disclosure on a healthy read; the kernel's own notes stay visible as plain lines.
   assert.equal(u.one('.git-more'), null); assert.equal(u.one('.git-branch-section details:not(.git-status-details)'), null);
-  assert.equal(u.one('.git-read-note').textContent, 'No upstream configured.'); assert.doesNotMatch(u.text(), /Not reported/);
+  assert.doesNotMatch(u.text(), /No upstream configured/, 'kernel notes are not shown on a healthy read'); assert.doesNotMatch(u.text(), /Not reported/);
   // v4.1 board 2: the heading is plain "Changes" with the count in its own mono span; the branch card says its base, repo and how many files changed.
   assert.equal(u.one('.git-changes-section h3').textContent, 'Changes'); assert.equal(u.one('.git-head-count').textContent, '2'); assert.equal(u.buttons().length, 2);
   assert.equal(u.one('.git-head-aside').textContent, 'worktree'); assert.equal(u.one('.git-ahead').textContent, '↑2 from main');
@@ -233,7 +233,7 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: actual Git p
   for (const [selector, painted, fg, bg] of [
     // W6 (design): the section labels, branch facts, status letters and links sit on the panel surface (replaces the .git-card pairs).
     ['.git-head', '#context-panel', 'muted', 'surface'], ['.git-branch-line', '#context-panel', 'fg', 'surface'],
-    ['.git-branch-sub', '#context-panel', 'muted', 'surface'], ['.git-read-note', '#context-panel', 'muted', 'surface'],
+    ['.git-branch-sub', '#context-panel', 'muted', 'surface'], 
     // v4.1: the status badge's letter in its status colour (A ok, M warn, D danger, others muted) on the panel surface; --fg once the row is selected.
     ['.git-file:not([aria-pressed=true]) .git-letter[data-letter="?"]', '#context-panel', 'muted', 'surface'], ['.git-file:not([aria-pressed=true]) .git-letter.git-letter-add', '#context-panel', 'ok', 'surface'],
     ['.git-file:not([aria-pressed=true]) .git-letter.git-letter-mod', '#context-panel', 'warn', 'surface'], ['.git-file:not([aria-pressed=true]) .git-letter.git-letter-del', '#context-panel', 'danger', 'surface'],
