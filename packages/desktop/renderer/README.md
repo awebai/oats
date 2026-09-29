@@ -28,6 +28,13 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
   wrappers, roster grouping, and workspace switching (`?ws=`) — the selected
   workspace is shared across views via `setWorkspace`/`onWorkspaceChange`
   (persisted in localStorage), so a shell-level switcher can drive it too.
+  A persisted selection the server no longer serves is **stale**
+  (`staleWorkspaceSelection`: non-empty and absent from the reply's
+  `workspaces` plus `workspace`); both roster paths (hierarchy refresh and
+  the shell's context roster) treat it like an empty selection and silently
+  `adoptWorkspace` the served id, without a generation bump. Without a
+  served list nothing is guessed. A selection that IS served and gets a reply
+  for another workspace stays a refused mismatch.
 
 `theme.css` carries semantic WCAG AA tokens for **White** (default),
 **Solarized**, and **Dark**. Theme actions are available in the command palette;
@@ -68,7 +75,9 @@ with a K1/P1 note; no Tasks destination or new Stop/Remove surface is introduced
 identities rather than silently losing nodes. Local request tickets and global
 workspace generations guard both outcomes. Workspace switches synchronously
 revoke old graph/actions/gestures; a foreign workspace reply is not silently
-adopted over an explicit selection. Failures retain an explicitly stale last
+adopted over an explicit selection that the server still serves (a stale
+selection, no longer among the served choices, is adopted like an empty one).
+Failures retain an explicitly stale last
 observation with actions disabled, not a false healthy empty graph. A manual
 retry can supersede a read; periodic polling skips its own pending request so
 slow responses are not starved.

@@ -482,12 +482,16 @@ export function captureTreeRenderState(listEl) {
 
 /** A first-launch request dispatched with ws="" may complete before or after
  * another view silently adopts the same server-resolved workspace. Both are
- * owned; a real generation/workspace change is not. */
+ * owned; a real generation/workspace change is not. A STALE dispatch (a
+ * persisted selection the served list no longer contains, see
+ * staleWorkspaceSelection) is resolved the same way and owned under the same
+ * rule: the selection may still be current, or the other path may already
+ * have adopted the served workspace. */
 export function rosterResponseOwns({ dispatchWorkspace, responseWorkspace, currentWorkspace,
-  dispatchGeneration, currentGeneration }) {
+  dispatchGeneration, currentGeneration, staleDispatch = false }) {
   if (dispatchGeneration !== currentGeneration) return false;
   return currentWorkspace === dispatchWorkspace
-    || (!dispatchWorkspace && currentWorkspace === responseWorkspace);
+    || ((!dispatchWorkspace || staleDispatch) && currentWorkspace === responseWorkspace);
 }
 
 /** Resolve the roster keyboard handler's ArrowLeft target: the parent
