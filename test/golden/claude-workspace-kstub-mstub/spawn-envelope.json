@@ -13,6 +13,7 @@
       "session": "oats-golden",
       "window": "dev-claude-workspace-kstub-mstub"
     },
+    "backend": "tmux",
     "repo": "<base>/deployment",
     "harness": "claude",
     "model": null,

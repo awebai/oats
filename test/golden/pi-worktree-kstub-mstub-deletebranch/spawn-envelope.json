@@ -13,6 +13,7 @@
       "session": "oats-golden",
       "window": "dev-pi-worktree-kstub-mstub-deletebranch"
     },
+    "backend": "tmux",
     "repo": "<base>/deployment/ws",
     "harness": "pi",
     "model": null,
