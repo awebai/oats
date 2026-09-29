@@ -23,6 +23,7 @@ const args = process.argv.slice(2);
 const a = args.join(" ");
 const fs = require("node:fs"); const p = require("node:path");
 const log = ${JSON.stringify(join(base, "aw.log"))};
+const val = (flag) => { const eq = args.find((x) => x.startsWith(flag + "=")); if (eq) return eq.slice(flag.length + 1); const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : undefined; };
 fs.appendFileSync(log, a + " @" + process.cwd() + "\\n");
 if (a.startsWith("wake ")) { if (process.env.FAKE_NO_WAKE) { console.error("aw: unknown command wake"); process.exit(2); } process.exit(0); }
 if (a.startsWith("team list")) { console.log(JSON.stringify({ active_team: "t:example.test", memberships: [{ team_id: "t:example.test" }] })); process.exit(0); }
@@ -51,7 +52,7 @@ if (a.startsWith("custody status")) {
 }
 if (a.startsWith("id grant mint")) {
   if (process.env.AWEB_IDENTITY_HOME) { console.error("grant mint refuses AWEB_IDENTITY_HOME"); process.exit(2); }
-  const out = args[args.indexOf("--out") + 1]; const socket = args[args.indexOf("--custody-socket") + 1];
+  const out = val("--out"); const socket = val("--custody-socket");
   if (!socket) { console.error("missing --custody-socket"); process.exit(2); }
   fs.mkdirSync(out, { recursive: true });
   const written = process.env.FAKE_GRANT_SOCKET === "missing" ? null : (process.env.FAKE_GRANT_SOCKET || socket);
@@ -79,8 +80,14 @@ function deployment(base) {
   return { root, home };
 }
 
+// oats.aweb 1.17 (team model v2): the primary team is the kernel's default-team env (OATS_DEFAULT_TEAM*,
+// OATS_TEAMS rows { label, team, default, from }), never a provider `team` setting or OATS_TEAM_ID.
+function defaultTeamEnv(team = "t:example.test") {
+  return { OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: team, OATS_DEFAULT_TEAM_FROM: "deployment", OATS_TEAMS: JSON.stringify([{ label: "default", team, default: true, from: "local" }]) };
+}
+
 function runHook(base, bin, event, env) {
-  const r = spawnSync(process.execPath, [HOOK, event], { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, FAKE_BASE: base, OATS_EVENT: event, ...env } });
+  const r = spawnSync(process.execPath, [HOOK, event], { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, FAKE_BASE: base, OATS_EVENT: event, ...defaultTeamEnv(), ...env } });
   let doc; try { doc = JSON.parse(r.stdout.trim()); } catch { doc = undefined; }
   return { ...r, doc };
 }
@@ -91,11 +98,11 @@ function resident(base) {
   return custody;
 }
 
-const globalSettings = (custody, extra = {}) => JSON.stringify({ team: "t:example.test", identity: { mode: "global", resident: "merlin", ...extra.identity }, residents: { merlin: custody }, ...extra });
+const globalSettings = (custody, extra = {}) => JSON.stringify({ identity: { mode: "global", resident: "merlin", ...extra.identity }, residents: { merlin: custody }, ...extra });
 
 function runBindingCheck(bin, settings, context, env = {}) {
   const input = { schemaVersion: 1, phase: "check", slot: "messaging", capability: "oats.aweb", settings: JSON.parse(settings), input: { action: { kind: "readiness" }, context } };
-  const r = spawnSync(process.execPath, [BINDING, "check"], { input: JSON.stringify(input), encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, ...env } });
+  const r = spawnSync(process.execPath, [BINDING, "check"], { input: JSON.stringify(input), encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, ...defaultTeamEnv(), ...env } });
   let doc; try { doc = JSON.parse(r.stdout); } catch { doc = undefined; }
   return { ...r, doc };
 }
@@ -110,7 +117,7 @@ test("global grant spawn attaches the preflight custody socket, verifies grant.y
     const grantYaml = readFileSync(join(home, ".aweb-identity", "grant.yaml"), "utf8");
     assert.match(grantYaml, new RegExp(`socket_path: ${socket.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}`));
     const log = readFileSync(join(base, "aw.log"), "utf8");
-    assert.match(log, new RegExp(`id grant mint --team t:example.test .* --custody-socket ${socket.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}`));
+    assert.match(log, new RegExp(`id grant mint --team=t:example.test .* --custody-socket=${socket.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}`));
     assert.match(log, /^custody status --json @.*\.aweb-identity$/m, "post-mint custody status runs from the grant home");
     assert.match(r.doc.brief, /grant home is attached to the resident's custody service/);
   } finally { rmSync(base, { recursive: true, force: true }); }
@@ -180,7 +187,7 @@ test("spawn with delivery=session: AWEB_DELIVERY in the launch env, no Claude ch
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-110-"));
   try {
     const bin = fakeAw(base); const { root, home } = deployment(base);
-    const env = { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "claude", OATS_TEAM_ID: "t:example.test" };
+    const env = { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "claude" };
     const channel = runHook(base, bin, "spawn", { ...env, OATS_SETTINGS: JSON.stringify({}) });
     assert.equal(channel.status, 0, channel.stdout + channel.stderr);
     assert.equal(channel.doc.meta.delivery, "channel");
@@ -217,7 +224,7 @@ test("spawn: a join killed on timeout that completed server-side is reported as 
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-110-"));
   try {
     const bin = fakeAw(base); const { root, home } = deployment(base);
-    const r = runHook(base, bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "pi", OATS_TEAM_ID: "t:example.test", OATS_SETTINGS: "{}", FAKE_JOIN_LATE: "1", OATS_AWEB_JOIN_TIMEOUT_MS: "500" });
+    const r = runHook(base, bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "pi", OATS_SETTINGS: "{}", FAKE_JOIN_LATE: "1", OATS_AWEB_JOIN_TIMEOUT_MS: "500" });
     assert.notEqual(r.status, 0, "the spawn hook fails (no briefing without a confirmed join)");
     assert.deepEqual(r.doc.meta, { team: "t:example.test", alias: "probe" }, "the late-bound identity is reported for compensation");
     assert.match(r.doc.warning, /reported failed .*bound identity "probe".*retired, not orphaned/);
@@ -261,7 +268,7 @@ test("spawn: a join refused because the alias still holds a certificate is fatal
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-110-"));
   try {
     const bin = fakeAw(base, "conflict"); const { root, home } = deployment(base);
-    const r = runHook(base, bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "pi", OATS_TEAM_ID: "t:example.test", OATS_SETTINGS: "{}" });
+    const r = runHook(base, bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "pi", OATS_SETTINGS: "{}" });
     assert.notEqual(r.status, 0);
     assert.match(r.stdout, /already holds a certificate on t:example.test .*not reusable until aweb-abim.*different --name \(kernels 0\.26\.0\+\) or a different --purpose/);
     assert.equal(r.stdout.includes("TOK-secret"), false, "the invite token never reaches the log");
@@ -273,13 +280,13 @@ test("spawn: local aliases accept 64 characters and reject 65 before aw is calle
   try {
     const bin = fakeAw(base); const { root, home } = deployment(base);
     const alias64 = `a${"b".repeat(63)}`;
-    const ok = runHook(base, bin, "spawn", { OATS_INSTANCE: alias64, OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "pi", OATS_TEAM_ID: "t:example.test", OATS_SETTINGS: "{}" });
+    const ok = runHook(base, bin, "spawn", { OATS_INSTANCE: alias64, OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "pi", OATS_SETTINGS: "{}" });
     assert.equal(ok.status, 0, ok.stdout + ok.stderr);
-    assert.match(readFileSync(join(base, "aw.log"), "utf8"), new RegExp(`team join TOK-secret --name ${alias64} --json`));
+    assert.match(readFileSync(join(base, "aw.log"), "utf8"), new RegExp(`team join TOK-secret --name=${alias64} --json`));
     const before = readFileSync(join(base, "aw.log"), "utf8");
     const alias65 = `a${"b".repeat(64)}`;
     const badHome = join(root, "agents", "dev", "instances", "too-long"); mkdirSync(badHome, { recursive: true });
-    const bad = runHook(base, bin, "spawn", { OATS_INSTANCE: alias65, OATS_HOME: badHome, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "pi", OATS_TEAM_ID: "t:example.test", OATS_SETTINGS: "{}" });
+    const bad = runHook(base, bin, "spawn", { OATS_INSTANCE: alias65, OATS_HOME: badHome, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "pi", OATS_SETTINGS: "{}" });
     assert.notEqual(bad.status, 0);
     assert.match(bad.doc.warning, /invalid alias/i);
     assert.equal(readFileSync(join(base, "aw.log"), "utf8"), before, "invalid alias is rejected before any aw call");
@@ -304,7 +311,7 @@ test("retained identity: authority files copied exactly, coordination reconnecte
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-110-"));
   try {
     const bin = fakeAw(base); const { root, home } = deployment(base); const { src } = legacySeat(base);
-    const env = { OATS_INSTANCE: "merlin-seat", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "claude", OATS_TEAM_ID: "t:example.test", OATS_SETTINGS: JSON.stringify({ identity: { source: src } }) };
+    const env = { OATS_INSTANCE: "merlin-seat", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "claude", OATS_SETTINGS: JSON.stringify({ identity: { source: src } }) };
     const r = runHook(base, bin, "spawn", env);
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.equal(r.doc.meta.retained, true); assert.equal(r.doc.meta.alias, "merlin"); assert.equal(r.doc.meta.team, "t:example.test");
@@ -316,7 +323,7 @@ test("retained identity: authority files copied exactly, coordination reconnecte
     assert.equal((statSync(dest).mode & 0o777), 0o700, ".aw is 0700");
     for (const f of ["workspace.yaml", "context", "interaction-log.jsonl"]) assert.equal(existsSync(join(dest, f)), false, `${f} never copied`);
     const log = readFileSync(join(base, "aw.log"), "utf8");
-    assert.match(log, /^workspace connect --service https:\/\/app\.example\.test --team t:example\.test --role coordinator @/m, "connect with the source's service, the team, and the source's role, nothing else");
+    assert.match(log, /^workspace connect --service=https:\/\/app\.example\.test --team=t:example\.test --role=coordinator @/m, "connect with the source's service, the team, and the source's role, nothing else");
     assert.equal(log.includes("team join"), false, "a retained seat is never minted");
     assert.equal(log.includes("SECRET-API-KEY"), false);
     assert.match(log, /workspace connect[\s\S]*check --online[\s\S]*heartbeat[\s\S]*workspace status[\s\S]*whoami --json/, "connect, check, heartbeat, status, then whoami, in that order");

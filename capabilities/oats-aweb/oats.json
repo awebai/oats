@@ -1,9 +1,9 @@
 {
   "capability": "oats.aweb",
   "command": "aweb",
-  "version": "1.16.1",
+  "version": "1.17.1",
   "compatibility": {
-    "oats": ">=0.26.0"
+    "oats": ">=0.30.0"
   },
   "layer": "messaging",
   "description": "Messaging layer via aweb: per-instance team identities, explicit joined teams with live receive, native aw mail/chat skills and the cross-machine team roster.",
@@ -136,9 +136,6 @@
         "session"
       ],
       "description": "channel: the native aweb channel packages wake the instance (default). session: delivery is external (AWEB_DELIVERY=session), no channel flag; the host wake broker registers the instance once it exists."
-    },
-    "team": {
-      "description": "Target aweb team id for the primary identity lifecycle. In workspace v2 spawns this payload value wins over OATS_TEAM_ID; if both are set and differ the hook warns and uses this setting. Unset means the aweb root's active team."
     },
     "root": {
       "hostOnly": true,

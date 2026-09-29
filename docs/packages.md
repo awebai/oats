@@ -44,14 +44,14 @@ whole organisation:
 
 ```yaml
 packages:
-  oats.okf: v4.0.3                                    # bare version → the official catalog
+  oats.okf: v4.0.4                                    # bare version → the official catalog
   acme.tools: git:github.com/acme/tools@v0.4.0        # direct ref: git:<repo>@<tag or full OID>
 ```
 
-- **Bare version** (`v4.0.3`, `4.0.3`, `1.0.0-rc.1`): the id is looked up in
+- **Bare version** (`v4.0.4`, `4.0.4`, `1.0.0-rc.1`): the id is looked up in
   the official catalog — `package-catalog.json` in the `oats` repo, or the file
   named by `OATS_PACKAGE_CATALOG` — which supplies the repo url, the tag
-  convention (`v4.0.3` or `oats-framework/v1.3.2`) and the payload path. An id
+  convention (`v4.0.4` or `oats-framework/v1.4.0`) and the payload path. An id
   the catalog does not know is `E_PACKAGE_MISSING` ("use `git:<repo>@<ref>` for
   a package outside the catalog"). The catalog is the reviewed official list
   ([official-catalog.md](official-catalog.md)) and the only way a
@@ -74,9 +74,9 @@ members:
   - git:github.com/acme/agents
   - git:github.com/acme/platform
 packages:
-  oats.framework: v1.3.2
-  oats.okf: v4.0.3
-  oats.aweb: v1.16.1
+  oats.framework: v1.4.0
+  oats.okf: v4.0.4
+  oats.aweb: v1.17.1
 teams:
   platform: { team: "platform:acme.aweb.ai", description: Platform engineering }
 defaults:
@@ -105,7 +105,7 @@ decision recorded in the lock.
 $ oats sync
 workspace  acme  (github.com/acme/agents @ 3f2a9c1e)
 members    agents ✓↔ (@ 3f2a9c1e)   platform ✓↔ (@ 77c0a1b2)   billing ✗ (no-backlink)
-packages   acme.tools 0.4.0 ✓ (@ 47f4b816)   oats.okf 4.0.3 ✓ (@ 559835bc)
+packages   acme.tools 0.4.0 ✓ (@ 47f4b816)   oats.okf 4.0.4 ✓ (@ a4ccca02)
 changed    acme.tools  — → 0.4.0 (@ 47f4b816)
 souls      9 discovered (6 members, 1 external, 2 package, 0 disabled here) · 0 private capabilities
 teams      platform (shared) · this deployment's: oats teams
@@ -134,7 +134,7 @@ Declaring a package in the workspace's `packages:` is the trust decision
 ## `oats package add | remove`
 
 ```bash
-oats package add oats.aweb v1.16.1                         # a catalog version
+oats package add oats.aweb v1.17.1                         # a catalog version
 oats package add acme.tools git:github.com/acme/tools@v0.4.0
 oats package remove acme.tools
 ```
@@ -160,8 +160,8 @@ same workspace commit hold identical locks.
       "source": "catalog:oats.okf",
       "url": "https://github.com/awebai/oats-okf.git",
       "path": "oats-package",
-      "version": "4.0.3",
-      "commit": "559835bc992c5b94ee2f85e8c1e1d4e13e1601e6",
+      "version": "4.0.4",
+      "commit": "a4ccca0230b75961daa00f59f29b8264be6fb5e8",
       "integrity": "sha256-…",
       "capabilities": ["oats.okf", "oats.okf-harvest", "oats.okf-maintenance"]
     },
@@ -331,12 +331,12 @@ A soul that names one of the package's capabilities with
 {
   "policy": "docs/official-catalog.md",
   "packages": {
-    "oats.okf":       { "url": "https://github.com/awebai/oats-okf.git", "ref": "v4.0.3", "path": "oats-package" },
-    "oats.framework": { "url": "https://github.com/awebai/oats.git", "ref": "oats-framework/v1.3.2", "path": "oats-package" }
+    "oats.okf":       { "url": "https://github.com/awebai/oats-okf.git", "ref": "v4.0.4", "path": "oats-package" },
+    "oats.framework": { "url": "https://github.com/awebai/oats.git", "ref": "oats-framework/v1.4.0", "path": "oats-package" }
   }
 }
 ```
 
-`ref` carries the tag convention: a workspace's `oats.framework: v1.3.2`
-resolves to tag `oats-framework/v1.3.2`. Resolving through the catalog never
+`ref` carries the tag convention: a workspace's `oats.framework: v1.4.0`
+resolves to tag `oats-framework/v1.4.0`. Resolving through the catalog never
 advances a lock by itself: `oats sync` does, and says so.

@@ -242,15 +242,15 @@ test("the REAL bundled oats.aweb binding check decodes the kernel's check reques
   // (`invalid-binding` / `provider-not-qualified`).
   assert.equal(out.outcome, "result", JSON.stringify(out));
   assert.equal(out.result.problems.some((p) => ["invalid-binding", "provider-not-qualified"].includes(p.code)), false, JSON.stringify(out));
-  // What the bundled 1.16.1 answers under the 0.30 env: needs-configuration — no messaging root here, and
-  // no team, because it reads the removed OATS_TEAM_ID and not OATS_DEFAULT_TEAM_ID (1.17 reads the
-  // kernel's default; re-pin this when its mirror lands). An `aw` version problem depends on the machine.
+  // What the bundled 1.17.1 answers under the 0.30 env (its actual output, recorded from this run):
+  // needs-configuration for the missing messaging root only. It reads the kernel's default team
+  // (OATS_DEFAULT_TEAM_ID), so the 1.16 "no team" problem is gone. An `aw` version problem depends on the machine.
   assert.equal(out.result.status, "needs-configuration", JSON.stringify(out));
   const reasons = out.result.problems.filter((p) => !/^aw /.test(p.message)).map((p) => [p.code, p.message.replace(/ at \S+:/, " at <deployment>:")]);
   assert.deepEqual(reasons, [
     ["needs-configuration", "no messaging root at <deployment>: run oats aweb setup there or set settings.oats.aweb.root"],
-    ["needs-configuration", "no team: set settings.oats.aweb.team or keep an active team at the aweb root"],
   ], JSON.stringify(out));
+  assert.deepEqual(out.result.warnings, [], JSON.stringify(out));
 });
 
 test("the spawn preview's modules and inspect's capabilities list the setting keys each manifest DECLARES (names only); feature settings-declared", async (t) => {

@@ -132,7 +132,13 @@ try {
   const pinnedRef = packedCatalog.packages?.["oats.okf"]?.ref;
   const bundledVersion = readJson(join(kernelRoot, "capabilities/oats-okf/oats.json")).version;
   assert.equal(pinnedRef, `v${bundledVersion}`, "npm mirror and official catalog version drift");
-  assert.equal(bundledVersion, "4.0.3");
+  assert.equal(bundledVersion, "4.0.4");
+  // The PACKED tarball's catalog carries this release's provider pins, each equal to its bundled mirror.
+  for (const [id, slug, version] of [["oats.aweb", "oats-aweb", "1.17.1"], ["oats.engineering", "oats-developer", "1.1.0"]]) {
+    const bundled = readJson(join(kernelRoot, "capabilities", slug, "oats.json")).version;
+    assert.equal(bundled, version, `${id}: the packed mirror is ${bundled}`);
+    assert.equal(packedCatalog.packages?.[id]?.ref, `v${version}`, `${id}: the packed catalog pins ${packedCatalog.packages?.[id]?.ref}`);
+  }
   const okfCommit = gitRepo(officialRepo, "okf");
   const okfTag = `v${bundledVersion}`;
   run("git", ["-C", officialRepo, "tag", okfTag]);

@@ -561,11 +561,11 @@ Edits `packages:` only when `oats-workspace.yaml` is tracked by the checkout
 found from `--dir`; otherwise it reports the change to make.
 
 ```json
-{"action":"add","id":"oats.aweb","value":"v1.17.0","previous":null,"edited":true,"file":"/w/agents-repo/oats-workspace.yaml"}
+{"action":"add","id":"oats.aweb","value":"v1.17.1","previous":null,"edited":true,"file":"/w/agents-repo/oats-workspace.yaml"}
 ```
 
 ```json
-{"action":"add","id":"oats.aweb","value":"v1.17.0","edited":false,"file":null,"line":"packages:\n  oats.aweb: v1.17.0","hint":"oats-workspace.yaml is not in this checkout; commit the change in the workspace repo, then `oats sync`"}
+{"action":"add","id":"oats.aweb","value":"v1.17.1","edited":false,"file":null,"line":"packages:\n  oats.aweb: v1.17.1","hint":"oats-workspace.yaml is not in this checkout; commit the change in the workspace repo, then `oats sync`"}
 ```
 
 `remove` answers `value: null` (and `line: null` when not tracked). An id that
@@ -591,7 +591,7 @@ Read-only (it writes no lock):
              "souls":["rm"],"capabilities":["nw-house-style"],"publishes":null,"url":"https://github.com/nw/agents/tree/66566512…",
              "membershipFile":{"path":"oats-membership.yaml","url":"https://github.com/nw/agents/blob/66566512…/oats-membership.yaml"}}],
  "packages":[{"id":"oats.okf","version":"3.0.0","source":"catalog:oats.okf","commit":"ab897841…","integrity":"sha256-bada35…",
-              "capabilities":["oats.okf"],"souls":[],"latest":{"version":"4.0.3","ref":"v4.0.3"}}],
+              "capabilities":["oats.okf"],"souls":[],"latest":{"version":"4.0.4","ref":"v4.0.4"}}],
  "declaredPackages":["oats.framework","oats.okf"],"unsynced":["oats.framework"],"stale":[],
  "external":[{"source":"git:github.com/oss/experts@3c606e09…","soul":"security-reviewer"}],
  "problems":[],"warnings":[],
@@ -642,8 +642,8 @@ packages' capabilities and souls, sorted by name, then origin. Both carry
     "defaultTeam":{"label":"mine","team":"mine:ana.aweb.ai","from":"deployment"},
     "private":false,"path":"souls/writer","work":"directory","description":"Drafts campaigns.","harness":"pi","model":null,"harnessFrom":"kernel-default",
     "file":{"path":"souls/writer/soul.yaml","url":null},"spawnable":true,"problem":null},
-   {"name":"knowledge-maintainer","qualifiedName":"oats.okf/knowledge-maintainer","origin":"package oats.okf v4.0.3","kind":"package","package":"oats.okf",
-    "version":"4.0.3","repoKey":"github.com/awebai/oats-okf","commit":"71f53649…","teams":null,"defaultTeam":null,"private":false,
+   {"name":"knowledge-maintainer","qualifiedName":"oats.okf/knowledge-maintainer","origin":"package oats.okf v4.0.4","kind":"package","package":"oats.okf",
+    "version":"4.0.4","repoKey":"github.com/awebai/oats-okf","commit":"a4ccca02…","teams":null,"defaultTeam":null,"private":false,
     "path":"oats-package/souls/knowledge-maintainer","work":"directory","description":"Reviews harvested knowledge.","harness":"pi","model":null,
     "harnessFrom":"kernel-default","file":{"path":"oats-package/souls/knowledge-maintainer/soul.yaml","url":null},
     "spawnable":false,"problem":{"code":"E_TEAM_UNKNOWN","message":"team \"reviewers\" is not declared (oats-local.yaml#/souls/teams/…)"}}],
