@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { contextPanelCSS } from '../renderer/context-panel.mjs';
 import { JSDOM } from 'jsdom';
-import { createInstanceGitPanel, instanceGitCSS, baseDistance, noGitReason } from '../renderer/instance-git.mjs';
+import { createInstanceGitPanel, instanceGitCSS, baseDistance, noGitReason, upstreamDistance, readNotes } from '../renderer/instance-git.mjs';
 import { gitState, gitDiff, gitTarget, gitTargetKey, INSTANCE_DIFF_LIMIT } from '../renderer/instance-git-contract.mjs';
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
@@ -15,7 +15,7 @@ const observation = () => ({ revision: oid, indexRevision: idx, at: '2026-09-22T
 const data = (t = target()) => ({ instanceGitApi: 1, instance: t.instance, agent: t.agent, home: t.home, workMode: 'worktree', observation: observation(),
   recorded: { branch: 'recorded-branch', repo: '/recorded/repo', drift: true }, upstream: { ref: null, ahead: null, behind: null },
   base: { ref: 'origin/main', source: 'origin/HEAD', mergeBase: 'e'.repeat(40), ahead: 2, behind: 0 },
-  summary: { changed: 2, renamed: 0, copied: 0, unmerged: 0, untracked: 0 }, files: [file(), file({ id: secondId, path: 'other.txt' })], notes: ['No upstream configured.'] });
+  summary: { changed: 2, renamed: 0, copied: 0, unmerged: 0, untracked: 0 }, files: [file(), file({ id: secondId, path: 'other.txt' })], notes: ['no upstream configured: upstream ahead/behind are unknown, not zero'] });
 const diff = (f = file()) => ({ instanceGitApi: 1, observation: observation(), file: f, against: oid, binary: false, bytes: 8, truncated: false, limit: INSTANCE_DIFF_LIMIT,
   patch: '-old\n+X\n', readOnly: { helpers: 'disabled', optionalLocks: 'off', objectsWritten: 0 } });
 const available = (value, t = target()) => ({ instanceGitApi: 1, minimumVersion: '0.24.7', status: 'available', target: t, data: value, reason: null });
@@ -45,9 +45,9 @@ test('inert mount; first-visible read once; routine updates preserve controls/fo
   assert.deepEqual(u.calls[1].body, { action: 'diff', selector: u.calls[0].body.selector, fileId: id, revision: oid, indexRevision: idx });
   assert.match(u.one('.git-patch').textContent, /-old\n\+X/); assert.equal(u.doc.activeElement, b);
   assert.match(u.text(), /actual-branch/); assert.match(u.text(), /Branch differs from recorded branch: recorded-branch/);
-  // v4.1: no Details disclosure on a healthy read; the kernel's own notes stay visible as plain lines.
+  // v4.1: no Details disclosure on a healthy read; the kernel's own notes stay visible as plain lines, except "no upstream configured".
   assert.equal(u.one('.git-more'), null); assert.equal(u.one('.git-branch-section details:not(.git-status-details)'), null);
-  assert.doesNotMatch(u.text(), /No upstream configured/, 'kernel notes are not shown on a healthy read'); assert.doesNotMatch(u.text(), /Not reported/);
+  assert.doesNotMatch(u.text(), /no upstream configured/i, 'the no-upstream note is noise on every agent branch'); assert.equal(u.one('.git-upstream'), null, 'unknown upstream: no unpushed count'); assert.doesNotMatch(u.text(), /Not reported/);
   // v4.1 board 2: the heading is plain "Changes" with the count in its own mono span; the branch card says its base, repo and how many files changed.
   assert.equal(u.one('.git-changes-section h3').textContent, 'Changes'); assert.equal(u.one('.git-head-count').textContent, '2'); assert.equal(u.buttons().length, 2);
   assert.equal(u.one('.git-head-aside').textContent, 'worktree'); assert.equal(u.one('.git-ahead').textContent, '↑2 from main');
@@ -295,18 +295,44 @@ test('onObservation carries ahead/behind from the default-branch comparison, as 
   assert.deepEqual([seen.at(-1).ahead, seen.at(-1).behind], [null, null], 'not reported stays null, never 0');
 });
 
-test('branch distance: "↑a ↓b from <base>", "up to date" when both are observed zero, nothing when not reported', async t => {
+test('branch distance: "↑a ↓b from <base>", "up to date with <base>" when both are observed zero, nothing when not reported', async t => {
   const base = (ahead, behind, ref = 'origin/main') => ({ ref, source: 'origin/HEAD', mergeBase: 'e'.repeat(40), ahead, behind });
   assert.equal(baseDistance(base(3, 0)), '↑3 from main'); assert.equal(baseDistance(base(0, 1)), '↓1 from main'); assert.equal(baseDistance(base(2, 5)), '↑2 ↓5 from main');
   assert.equal(baseDistance(base(4, 0, 'upstream/develop')), '↑4 from upstream/develop', 'only an origin/ prefix is dropped');
-  assert.equal(baseDistance(base(0, 0)), 'up to date');
+  assert.equal(baseDistance(base(0, 0)), 'up to date with main');
   assert.equal(baseDistance({ ref: null, source: null, mergeBase: null, ahead: null, behind: null }), null);
   assert.equal(baseDistance(base(null, null)), null); assert.equal(baseDistance(base(0, null)), null, 'a half-known zero is not "up to date"');
   assert.equal(baseDistance(base(null, 2)), '↓2 from main');
   const u = setup(t, () => available({ ...data(), base: base(0, 0) })); await u.show();
-  assert.equal(u.one('.git-ahead').textContent, 'up to date'); assert.equal(u.one('.git-ahead').title, '0 ahead of, 0 behind origin/main');
+  assert.equal(u.one('.git-ahead').textContent, 'up to date with main'); assert.equal(u.one('.git-ahead').title, '0 ahead of, 0 behind origin/main');
   u.read(() => available({ ...data(), base: { ref: null, source: null, mergeBase: null, ahead: null, behind: null } })); await u.view.refresh();
   assert.equal(u.one('.git-ahead'), null, 'unknown: nothing');
+});
+
+test('upstream comparison: "↑n unpushed · ↓m behind upstream" beside the base distance, "pushed" at 0/0, nothing when unknown', async t => {
+  const up = (ahead, behind, ref = 'origin/oats') => ({ ref, ahead, behind });
+  assert.equal(upstreamDistance(up(2, 0)), '↑2 unpushed'); assert.equal(upstreamDistance(up(0, 1)), '↓1 behind upstream');
+  assert.equal(upstreamDistance(up(2, 1)), '↑2 unpushed · ↓1 behind upstream'); assert.equal(upstreamDistance(up(0, 0)), 'pushed');
+  assert.equal(upstreamDistance({ ref: null, ahead: null, behind: null }), null); assert.equal(upstreamDistance(up(0, null)), null, 'a half-known zero is not "pushed"');
+  const u = setup(t, () => available({ ...data(), upstream: up(2, 0), base: { ...data().base, ahead: 6 }, notes: [] })); await u.show();
+  assert.equal(u.one('.git-branch-sub').textContent, 'repo · 2 files changed · ↑6 from main · ↑2 unpushed', 'both comparisons, each labelled');
+  assert.equal(u.one('.git-upstream').title, '2 ahead of, 0 behind origin/oats');
+  u.read(() => available({ ...data(), upstream: { ref: null, ahead: null, behind: null } })); await u.view.refresh();
+  assert.equal(u.one('.git-upstream'), null, 'unknown: nothing'); assert.equal(u.one('.git-branch-sub').textContent, 'repo · 2 files changed · ↑2 from main');
+});
+
+test('kernel notes: only "no upstream configured" is hidden; line counts show under Changes, the base note under the branch card', async t => {
+  const numstat = 'line counts unavailable (git diff --numstat failed): additions/deletions are unknown, not zero';
+  const noBase = 'no default branch found (origin/HEAD, origin/main, origin/master, main, master): base comparison unknown';
+  const noUp = 'no upstream configured: upstream ahead/behind are unknown, not zero';
+  assert.deepEqual(readNotes([noUp, noBase, numstat]), { branch: [noBase], changes: [numstat] });
+  assert.deepEqual(readNotes(undefined), { branch: [], changes: [] });
+  const u = setup(t, () => available({ ...data(), notes: [noUp, noBase, numstat] })); await u.show();
+  assert.equal(u.one('.git-changes-section .git-changes-notes .git-read-note').textContent, numstat, 'the numstat note is shown under Changes');
+  assert.equal(u.one('.git-branch-card .git-read-note').textContent, noBase);
+  assert.doesNotMatch(u.text(), /no upstream configured/); assert.equal(u.one('.git-status-details').hidden, true, 'still no Details on a healthy read');
+  u.read(() => available({ ...data(), notes: [] })); await u.view.refresh();
+  assert.equal(u.host.querySelectorAll('.git-read-note').length, 0, 'a new read clears the old notes');
 });
 
 test('status badges: the letter with its class per kind (A add, M mod, D del, others plain), inside a bordered list with hairlines', async t => {

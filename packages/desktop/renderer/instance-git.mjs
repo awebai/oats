@@ -34,7 +34,9 @@ export const instanceGitCSS = `
 .instance-git .git-branch-line { display:flex; align-items:center; gap:7px; min-width:0; font:600 12.5px var(--mono,monospace); }
 .instance-git .git-branch-line .shell-icon { flex:none; color:var(--muted); }
 .instance-git .git-branch { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.instance-git .git-ahead { color:var(--muted); white-space:nowrap; }
+.instance-git .git-ahead, .instance-git .git-upstream { color:var(--muted); white-space:nowrap; }
+.instance-git .git-changes-notes:empty { display:none; }
+.instance-git .git-changes-notes .git-note { margin-top:6px; font-size:11.5px; }
 .instance-git .git-branch-sub { padding-left:21px; color:var(--muted); font-size:11.5px; line-height:1.4; overflow-wrap:anywhere; }
 .instance-git .git-branch-card .git-note { padding-left:21px; font-size:11.5px; }
 .instance-git .git-files { display:flex; flex-direction:column; min-width:0; }
@@ -168,7 +170,26 @@ export function baseDistance(base) {
   if (!base?.ref || (base.ahead === null && base.behind === null)) return null;
   const parts = [base.ahead > 0 ? `↑${base.ahead}` : null, base.behind > 0 ? `↓${base.behind}` : null].filter(Boolean);
   if (parts.length) return `${parts.join(' ')} from ${base.ref.replace(/^origin\//, '')}`;
-  return base.ahead === 0 && base.behind === 0 ? 'up to date' : null;
+  return base.ahead === 0 && base.behind === 0 ? `up to date with ${base.ref.replace(/^origin\//, '')}` : null;
+}
+/** The upstream comparison, labelled apart from the base distance ("↑2 unpushed · ↓1 behind upstream"); null when
+ * the kernel reports no upstream (unknown is not zero). */
+export function upstreamDistance(upstream) {
+  if (!upstream?.ref || (upstream.ahead == null && upstream.behind == null)) return null;
+  const parts = [upstream.ahead > 0 ? `↑${upstream.ahead} unpushed` : null, upstream.behind > 0 ? `↓${upstream.behind} behind upstream` : null].filter(Boolean);
+  if (parts.length) return parts.join(' · ');
+  return upstream.ahead === 0 && upstream.behind === 0 ? 'pushed' : null;
+}
+/** Which kernel notes a healthy read shows, and under which card. The notes are plain strings (no codes), so
+ * the one that is noise on every agent branch ("no upstream configured…") is matched on its prefix and hidden;
+ * the rest stay as muted lines: line counts under Changes, everything else under the branch card. */
+export function readNotes(notes) {
+  const shown = { branch: [], changes: [] };
+  for (const note of Array.isArray(notes) ? notes : []) {
+    if (typeof note !== 'string' || /^no upstream configured\b/i.test(note)) continue;
+    (/^line counts unavailable\b/i.test(note) ? shown.changes : shown.branch).push(note);
+  }
+  return shown;
 }
 /** Why there is no Git for this instance, from the roster's work mode (never inferred from the read). Only the
  * two modes that have no work tree by design are calm; null for every other mode (a worktree, checkout or attached
@@ -212,7 +233,8 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
   const refreshButton = node('button', 'Refresh', 'git-link'); refreshButton.type = 'button';
   footer.append(checked, separator, refreshButton);
   branchSection.append(toolbar, status, statusDetails, facts);
-  changesSection.append(changesHead, files, diffStatus, diffBody);
+  const changesNotes = node('div', undefined, 'git-changes-notes');
+  changesSection.append(changesHead, files, changesNotes, diffStatus, diffBody);
   root.append(branchSection, empty, emptyNote, changesSection, github, footer);
   // Sections with nothing observed are not shown.
   changesSection.hidden = true; github.hidden = true; empty.hidden = true; emptyNote.hidden = true; footer.hidden = true;
@@ -243,7 +265,7 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
     statusCode.textContent = code; statusDetails.hidden = !code;
   };
   const clearDiff = () => { selected = null; fileTicket++; diffBody.replaceChildren(); message(diffStatus); for (const b of controls.values()) b.setAttribute('aria-pressed', 'false'); };
-  const clear = (summary = true) => { if (summary) onObservation(null); observation = null; pullRequest.update(); clearDiff(); controls.clear(); facts.replaceChildren(); files.replaceChildren(); files.classList.remove('git-card'); changesCount.textContent = ''; workMode.textContent = ''; message(status); setChecked(null); noGit(false); changesSection.hidden = true; openDiff.hidden = true; github.hidden = true; };
+  const clear = (summary = true) => { if (summary) onObservation(null); observation = null; pullRequest.update(); clearDiff(); controls.clear(); facts.replaceChildren(); files.replaceChildren(); changesNotes.replaceChildren(); files.classList.remove('git-card'); changesCount.textContent = ''; workMode.textContent = ''; message(status); setChecked(null); noGit(false); changesSection.hidden = true; openDiff.hidden = true; github.hidden = true; };
   const locks = () => {
     refreshButton.disabled = !alive || !active || !target || remote || busy;
     footer.hidden = !alive || !active || !target || remote || !empty.hidden;
@@ -264,7 +286,7 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
     return raw;
   }
   function renderObservation(ref, observationKey) {
-    facts.replaceChildren(); controls.clear(); files.replaceChildren();
+    facts.replaceChildren(); controls.clear(); files.replaceChildren(); changesNotes.replaceChildren();
     const data = observation, o = data.observation;
     workMode.textContent = data.workMode || '';
     // The branch card: the branch on one line (full name in its title), then "repo · N files changed · ↑3 from main".
@@ -280,14 +302,23 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
       const ahead = node('span', distance, 'git-ahead');
       ahead.title = `${report(data.base.ahead)} ahead of, ${report(data.base.behind)} behind ${data.base.ref}`; sub.append(' · ', ahead);
     }
+    // The upstream comparison (unpushed work), labelled so it cannot be read as the base distance; nothing when unknown.
+    const pushed = upstreamDistance(data.upstream);
+    if (pushed) {
+      const up = node('span', pushed, 'git-upstream');
+      up.title = `${report(data.upstream.ahead)} ahead of, ${report(data.upstream.behind)} behind ${data.upstream.ref}`; sub.append(' · ', up);
+    }
     card.append(line, sub);
     if (data.recorded.drift) card.append(node('p', `Branch differs from recorded branch: ${report(data.recorded.branch)}`, 'git-note'));
+    // A healthy read shows no Details (they belong to real failures) and hides only the kernel's "no upstream
+    // configured" note, noise on every agent branch; its other notes stay as plain lines under their card.
+    const notes = readNotes(data.notes);
+    for (const note of notes.branch) card.append(node('p', note, 'git-note git-read-note'));
     facts.append(card);
-    // A healthy read shows no Details and no kernel notes (e.g. "no upstream configured" on every agent
-    // branch is noise); Details belong to real failures.
     changesSection.hidden = false; github.hidden = false; openDiff.hidden = !n;
     changesCount.textContent = n ? String(n) : ''; files.classList.toggle('git-card', n > 0);
     if (!n) files.append(node('p', 'No uncommitted changes.', 'git-note git-dashed'));
+    for (const note of notes.changes) changesNotes.append(node('p', note, 'git-note git-read-note'));
     const snapshot = data;
     for (const file of data.files) {
       const letter = changeLetter(file), shown = `${file.origPath ? `${file.origPath} → ` : ''}${file.path}${file.submodule ? ' · submodule' : ''}`;

@@ -22,7 +22,7 @@ test('PR card renders reported facts/checks, validates external URL, and never c
   assert.equal(root.querySelector('.git-head h3').textContent, 'Pull request');
   assert.equal(root.querySelector('.forge-state').textContent, 'Draft'); assert.equal(pr().isDraft, true);
   assert.equal(root.querySelector('.forge-title').textContent, 'A real PR'); assert.equal(root.querySelector('.forge-sub').textContent, '#42');
-  assert.ok(root.querySelector('.forge-checks')); assert.match(root.textContent, /not proof that the local revision was pushed/);
+  assert.ok(root.querySelector('.forge-checks')); assert.match(root.textContent, /reported for the pull request's head commit, which may not be the local revision/);
   assert.equal(root.querySelector('a'), null, 'no raw link: a button opens it');
   root.querySelector('button.forge-open').click(); assert.deepEqual(opened, [pr().url]);
   panel.dispose(); window.close();

@@ -118,7 +118,7 @@ export function createForgePrPanel(root, { request, generation = () => 0, connec
         open.addEventListener('click', () => { if (owns() && open.isConnected && card.contains(open)) openExternal(data.url); });
         const actions = node('div', undefined, 'forge-actions'); actions.append(open); card.append(actions);
         if (threads && typeof requestThreads === 'function' && !target.server) sendThreads({ card, actions, open, threads, target, owns, key: selected.key });
-        root.replaceChildren(heading(), card, node('p', 'Checks are reported for the pull request, not proof that the local revision was pushed.', 'git-note forge-caveat')); onData(data);
+        root.replaceChildren(heading(), card, node('p', "Checks are reported for the pull request's head commit, which may not be the local revision.", 'git-note forge-caveat')); onData(data);
       } else if (result.status === 'no-pull-request' && result.data === null) clear('No pull request for this branch yet.', 'git-note git-dashed forge-no-pr');
       else {
         const reason = forgeReason(result.reason?.code);

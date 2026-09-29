@@ -107,6 +107,16 @@ or attached instance whose tree is gone, or an unknown mode) it is a failure
 like every other refusal: red, with the kernel's message, its code behind
 **Details** and Refresh.
 
+The branch card's subline carries the two comparisons, labelled apart so they
+cannot be confused: the base distance (`↑6 from main`, `up to date with main`)
+and, when the kernel reports an upstream, the upstream one (`↑2 unpushed`,
+`↓1 behind upstream`, `pushed` at an observed 0/0). An unknown upstream shows
+nothing. A healthy read shows no **Details**; of the kernel's `notes` (plain
+strings, no codes) only "no upstream configured…" is hidden, matched on its
+prefix, because it is true of every agent branch. The others stay as muted lines:
+"line counts unavailable…" under Changes, the rest (e.g. "no default branch
+found…") under the branch card.
+
 Stale diff selection clears the patch and starts a newly owned observation.
 The user must select again. Neither an old patch nor an automatically rebound
 file selection may be rendered. Null upstream/base comparisons stay unknown;
