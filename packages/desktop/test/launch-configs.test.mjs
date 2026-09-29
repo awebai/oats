@@ -202,3 +202,17 @@ for (const restart of [false, true]) test(`${restart ? 'Restart' : 'Start'} reta
     assert.equal(modal.isConnected, false);
   } finally { setWorkspace(previousWs); dom.window.close(); }
 });
+
+test('a remote home is admitted when the kernel reports it addressable, never on savedRoute alone', async () => {
+  const calls = [], remoteWs = { ...workspace, name: 'Build box', remote: true, server: 'host', registrationPresent: true };
+  const row = { instance: 'dev-one', home, agentsRoot: agents[1].agentsRoot, server: 'host', savedRoute: false, addressable: true };
+  const opts = { workspace: remoteWs, cli, agents, localCwd: '/local', invoke: async (_, args) => { calls.push(args); return envelope({}); } };
+  await launchConfigRequest({ action: 'preview', selector: { home } }, { ...opts, instances: [row] });
+  assert.equal(calls.at(-1).server, 'host'); assert.equal(calls.at(-1).home, home);
+  for (const [unaddressable, reason] of [[{ addressable: false, missingRemotely: true }, 'dev-one is no longer on Build box. Remove it from this computer with: oats server forget host --instance dev-one'],
+    [{ addressable: undefined, savedRoute: true }, 'Build box did not report this instance as reachable.']]) {
+    await assert.rejects(launchConfigRequest({ action: 'preview', selector: { home } }, { ...opts, instances: [{ ...row, ...unaddressable }] }),
+      { code: 'E_SNAPSHOT_UNKNOWN', message: reason });
+  }
+  assert.equal(calls.length, 1);
+});

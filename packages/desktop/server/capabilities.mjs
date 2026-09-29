@@ -4,6 +4,7 @@ import { cliCapability, operationArgs } from '../cli-adapter.mjs';
 import { inspectKey } from './inspect-cache.mjs';
 import { observationData } from '../deployment-data.mjs';
 import { OBSERVE_MAX_AGE_FEATURE } from '../renderer/deployment-contract.mjs';
+import { canAddressRemote, unaddressableSentence } from '../renderer/remote-address.mjs';
 
 const fail = (message, code = 'E_BAD_ARGS') => { throw Object.assign(new Error(message), { code }); };
 
@@ -39,7 +40,7 @@ export async function capabilityRequest(request, { workspace, cli, agents = [], 
     const matches = instances.filter(i => i.home === selector.home);
     if (matches.length !== 1) fail('Select one existing home in this workspace');
     const instance = matches[0];
-    if (server && !instance.savedRoute) fail('No saved route for this instance', 'E_SNAPSHOT_UNKNOWN');
+    if (server && !canAddressRemote(instance)) fail(unaddressableSentence({ ...instance, repoName: workspace.name || server }), 'E_SNAPSHOT_UNKNOWN');
     home = instance.home;
     // The owning agents root and the recorded work repository may differ.
     // --home is authoritative; the CLI derives its captured context.

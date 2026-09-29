@@ -35,7 +35,7 @@ const choose = async (control, action) => {
 
 test("instance actions keep full identity and open plan dialogs, never dispatch unguarded stop/retire", async () => {
   const dom = menuDom();
-  const instance = { instance: "dev-one", home: "/remote/home", server: "host", savedRoute: true };
+  const instance = { instance: "dev-one", home: "/remote/home", server: "host", addressable: true };
   const calls = [], dialogs = [];
   const select = instanceActions(dom.window.document, instance, {
     invoke: async (...args) => { calls.push(args); return {}; },
@@ -48,14 +48,17 @@ test("instance actions keep full identity and open plan dialogs, never dispatch 
   assert.equal(calls.length, 1);
   select.remove(); await choose(select, 'retire'); assert.equal(dialogs.length, 2, 'detached old controls are revoked');
   assert.equal(triggerOf(select).disabled, false);
-  assert.equal(triggerOf(instanceActions(dom.window.document, { ...instance, savedRoute: false }, {})).disabled, true);
+  // A remote row the kernel does not report addressable: no actions, and the trigger says why (a saved route is not enough).
+  const refused = triggerOf(instanceActions(dom.window.document, { ...instance, repoName: 'Build box', savedRoute: true, addressable: false, missingRemotely: true }, {}));
+  assert.equal(refused.disabled, true);
+  assert.equal(refused.title, 'dev-one is no longer on Build box. Remove it from this computer with: oats server forget host --instance dev-one');
   dom.window.close();
 });
 
 test('a Herdr-recorded row shows Start disabled with the kernel reason, offers no Restart, and still retires through the plan', async () => {
   const reason = 'E_HERDR_REMOVED: Herdr is no longer supported by OATS (removed in 0.31.0); tmux is the only session backend.';
   for (const instance of [{ instance: 'h1', home: '/home/h1', running: null, runtimeState: 'unsupported', runtimeError: `${reason} (h1)` },
-    { instance: 'h2', home: '/remote/h2', server: 'host', savedRoute: true, running: true, backend: 'herdr' }]) {
+    { instance: 'h2', home: '/remote/h2', server: 'host', addressable: true, running: true, backend: 'herdr' }]) {
     const dom = menuDom(), doc = dom.window.document, calls = [], dialogs = [];
     const control = instanceActions(doc, instance, { invoke: async (...args) => calls.push(args), openLifecycle: (...args) => dialogs.push(args), report: m => assert.fail(m) });
     doc.body.append(control);

@@ -78,7 +78,7 @@ test('same-named instances are visibly distinguished by reported root/home/host,
     instance('twin', { agentsRoot: '/a/project/agents', home: '/a/project/agents/soul/i/twin' }),
     instance('twin', { agentsRoot: '/b/project/agents', home: '/b/project/agents/soul/i/twin' }),
     instance('intra', { home: '/team/agents/one/i/intra' }), instance('intra', { home: '/team/agents/two/i/intra' }),
-    instance('remote', { server: 'host-a', savedRoute: true }), instance('remote', { server: 'host-b', savedRoute: true }),
+    instance('remote', { server: 'host-a', addressable: true }), instance('remote', { server: 'host-b', addressable: true }),
   ] });
   for (const name of ['twin', 'intra', 'remote']) {
     const nodes = u.nodes().filter(node => node.dataset.name === name);
@@ -236,9 +236,9 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: actual Activ
 });
 
 test('remote twins preserve server/home identity; unknown or unaddressed nodes cannot act, and Brain never guesses', async t => {
-  const shared = { home: '/same/home', agentsRoot: '/same/agents', savedRoute: true };
+  const shared = { home: '/same/home', agentsRoot: '/same/agents', addressable: true };
   const u = await setup(t, { instances: [instance('twin', { ...shared, server: 'a' }), instance('twin', { ...shared, server: 'b' }),
-    instance('unknown', { running: null }), instance('unrouted', { server: 'c', savedRoute: false }),
+    instance('unknown', { running: null }), instance('unrouted', { server: 'c', savedRoute: true, addressable: false }),
     instance('weak', { home: '', agentsRoot: '' })] });
   const twins = u.nodes().filter(n => n.dataset.name === 'twin'); for (const n of twins) u.mouse(n, 'dblclick');
   assert.deepEqual(u.opened.map(i => i.server), ['a', 'b']); assert.ok(u.opened.every(i => i.home === '/same/home'));

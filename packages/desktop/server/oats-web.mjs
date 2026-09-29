@@ -69,6 +69,7 @@ import { createReviewPaste } from "./review-paste.mjs";
 import { launchConfigRequest } from "./launch-configs.mjs";
 import { automationsRequest, automationsFailure } from "./automations.mjs";
 import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
+import { canAddressRemote, unaddressableSentence } from "../renderer/remote-address.mjs";
 import { harnessFlag, HARNESSES } from "../renderer/harness-names.mjs";
 import { probeChanged } from "../renderer/cli-probe-contract.mjs";
 
@@ -1506,7 +1507,7 @@ const server = createServer(async (req, res) => {
       if (hm[1] === "start" || hm[1] === "restart") {
         if (!cliState.features?.includes("session-start")) return send(res, 409, { error: "Starting an existing instance requires an updated OATS CLI", code: "unsupported-start-option" });
         if (inst.server) {
-          if (!inst.savedRoute) return send(res, 409, { error: "No saved route for this remote instance", code: "E_SNAPSHOT_UNKNOWN" });
+          if (!canAddressRemote(inst)) return send(res, 409, { error: unaddressableSentence(inst), code: "E_SNAPSHOT_UNKNOWN" });
           locator.requireRemoteSupport(cliState, "session-start");
         } else if (!harvestHome(inst)) return send(res, 409, { error: "Instance home is outside the workspace instances layout" });
         const body = await readBody(req);

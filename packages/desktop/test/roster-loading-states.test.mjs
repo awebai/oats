@@ -17,6 +17,7 @@ import { instanceActions, captureInstanceActionMenu } from '../renderer/instance
 import { instanceActionTarget, sameInstanceActionTarget } from '../renderer/instance-action-target.mjs';
 import { instanceSplitPlan } from '../renderer/instance-split.mjs';
 import { runtimeState, unsupportedSession } from '../renderer/instance-presentation.mjs';
+import { canAddressRemote, rowReason } from '../renderer/remote-address.mjs';
 import { createRuntimeBadge } from '../renderer/identity-marks.mjs';
 import { iconElement, mountShellIcons } from '../renderer/shell-icons.mjs';
 import { rosterTipFacts } from '../renderer/roster-tip.mjs';
@@ -141,7 +142,7 @@ function shell(t) {
     ...tree, document: doc, console,
     // The controller is built by the shipped initContextRoster; the clock is the test's.
     createRosterLoading: (d, el, options) => tree.createRosterLoading(d, el, { ...options, now: c.now, setTimeout: c.setTimeout, clearTimeout: c.clearTimeout }),
-    instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, createRuntimeBadge, instanceActionTarget, instanceSplitPlan, iconElement, prChip, prText,
+    instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge, instanceActionTarget, instanceSplitPlan, iconElement, prChip, prText,
     rosterTipFacts, deploymentUnavailableText, staleWorkspaceSelection,
     rosterTip: { bind() {}, hide() {}, sync() {} }, rosterPrs: { get: () => null, refresh() {} }, ctx: {},
     connectionGeneration: 0, menuState() {}, runAction: assert.fail, getBinding: () => null, formatChord: x => x, isMac: true,

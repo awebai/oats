@@ -23,6 +23,7 @@ import { instanceActions, captureInstanceActionMenu } from "../renderer/instance
 import { instanceActionTarget, sameInstanceActionTarget } from '../renderer/instance-action-target.mjs';
 import { instanceSplitPlan, instanceSplitIdentity } from '../renderer/instance-split.mjs';
 import { runtimeState, unsupportedSession } from "../renderer/instance-presentation.mjs";
+import { canAddressRemote, rowReason } from "../renderer/remote-address.mjs";
 import { createRuntimeBadge } from "../renderer/identity-marks.mjs";
 import { THEMES } from "../renderer/theme.mjs";
 import { rosterKeyAction, moveTarget } from "../renderer/roster-keys.mjs";
@@ -113,7 +114,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     createQuickOpen: options => createQuickOpen({ ...options, doc: document }),
     createSelectionOwnership, wirePaneSelection, prepareOwnedOpen, createViewLifecycle,
     createTabChrome, tabKeyAction, focusAfterLastTab, reserveKey, whenKeyFree, projectSplitDom, splitControlsState,
-    ...tree, ...layout, ...workspaceTabs, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, createRuntimeBadge, rosterKeyAction, moveTarget,
+    ...tree, ...layout, ...workspaceTabs, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge, rosterKeyAction, moveTarget,
     terminalOptions, terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}),
     onThemeChange: () => () => {}, onTerminalTypographyChange: () => () => {}, requestAnimationFrame: cb => cb(),
     FitAddon: { FitAddon: class { fit() {} } },
@@ -195,8 +196,8 @@ function shell(t, shellSource = source, platform = "MacIntel") {
 // Quotes/brackets exercise identity comparison without unsafe CSS interpolation.
 const parent = { instance: "worker", agentsRoot: '/team/"[agents]', home: '/team/"[home]', running: true };
 const child = { instance: "child", agentsRoot: parent.agentsRoot, home: "/team/child", parentInstance: "worker", running: true };
-const twin = { ...parent, server: "remote", savedRoute: true };
-const remoteChild = { ...child, server: "remote", savedRoute: true };
+const twin = { ...parent, server: "remote", addressable: true };
+const remoteChild = { ...child, server: "remote", addressable: true };
 const roster = [parent, child, twin, remoteChild];
 
 async function rosterAttachment(t, action, outcome, shellSource = source) {

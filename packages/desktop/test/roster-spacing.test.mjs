@@ -11,6 +11,7 @@ import { instanceActions, captureInstanceActionMenu } from "../renderer/instance
 import { instanceActionTarget, sameInstanceActionTarget } from '../renderer/instance-action-target.mjs';
 import { instanceSplitPlan } from '../renderer/instance-split.mjs';
 import { runtimeState, unsupportedSession } from "../renderer/instance-presentation.mjs";
+import { canAddressRemote, rowReason } from "../renderer/remote-address.mjs";
 import { createRuntimeBadge } from "../renderer/identity-marks.mjs";
 
 const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url), "utf8");
@@ -36,7 +37,7 @@ function fixture(t, stylesheet = css) {
     return matches[0].style;
   };
   const context = {
-    ...tree, document: doc, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, createRuntimeBadge,
+    ...tree, document: doc, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge,
     instanceActionTarget, instanceSplitPlan, connectionGeneration: 0, menuState() {}, runAction: assert.fail,
     applyChordTitles() {}, updateActiveContexts() {}, getBinding: () => null, formatChord: c => c, isMac: true,
     contextRosterEl: doc.querySelector("#instance-roster"), contextFilter: "", contextWorkspace: "A",

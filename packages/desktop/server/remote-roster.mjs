@@ -16,6 +16,8 @@ export function remotePanel(group) {
     const unsupported = unsupportedSession(i);
     return {
       ...i, server: group.server, savedRoute: i.savedRoute === true,
+      // The last roster read of this server failed: its rows are last-known, their state unknown.
+      serverUnreached: !group.probe.ok,
       home: i.home, agentsRoot: i.agentsRoot || group.agentsRoot,
       workspace: group.target.workspace, repoName: group.label || group.server,
       harness: harnessOf({ runtime: _released, ...i }) || null, model: i.model || null,

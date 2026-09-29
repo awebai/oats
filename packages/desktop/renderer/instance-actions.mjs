@@ -2,6 +2,7 @@
 import { instanceId } from "./instance-tree.mjs";
 import { iconElement } from "./shell-icons.mjs";
 import { unsupportedSession } from "./instance-presentation.mjs";
+import { canAddressRemote, rowReason } from "./remote-address.mjs";
 /** Decorative menu icons (the Redesign's context menu), keyed by action. */
 const MENU_ICONS = Object.freeze({ 'open-split': 'splitRight', 'open-pr': 'pullRequest', inspect: 'knowledge', start: 'start', restart: 'refresh', stop: 'stop', retire: 'remove' });
 
@@ -56,10 +57,11 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
     }
     const first = items.find(item => !item.disabled); if (first) first.autofocus = true;
   };
-  const unrouted = !!instance.server && !instance.savedRoute;
+  // A remote row the kernel does not report addressable has no actions here; the trigger says why.
+  const unrouted = !canAddressRemote(instance);
   trigger.disabled = unrouted || pending.has(key);
   pending.get(key)?.push({ trigger, unrouted, owns });
-  if (unrouted) trigger.title = "No saved route for this remote instance on this machine";
+  if (unrouted) trigger.title = rowReason(instance).sentence;
   const close = (restoreFocus = false) => {
     menu.hidePopover();
     if (restoreFocus && owns() && visible(trigger)) trigger.focus();

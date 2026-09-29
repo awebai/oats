@@ -33,7 +33,7 @@
    selected activity from the guarded K7 POST /api/instance-events boundary. */
 import { computeClusters, siblingEdges } from "./clusters.mjs";
 import { runtimeState, runtimeCounts, unsupportedSession } from "../instance-presentation.mjs";
-import { serverLabel } from '../remote-address.mjs';
+import { serverLabel } from "../remote-address.mjs";
 import { createInstanceEventsView, instanceEventsCSS } from "../instance-events-view.mjs";
 import { instanceId, resolveLinkId } from "../instance-tree.mjs";
 import { projectActivePanel, activeSignature, activeTargetLabel, canAddressInstance, BRAIN_UNAVAILABLE } from "../active-observation.mjs";
