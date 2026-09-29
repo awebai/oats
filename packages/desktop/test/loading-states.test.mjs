@@ -313,6 +313,10 @@ test('while the stale line or the failed block is visible the status line is ann
   u.ds.begin(); u.ds.fail(new Error('down')); assert.equal(u.status.classList.contains('loading-quiet'), true, 'the stale line is the visible message');
   u.ds.begin(); u.ds.succeed(); assert.equal(u.status.classList.contains('loading-quiet'), false);
   u.ds.begin(); u.ds.fail(new Error('down')); u.ds.reset(); assert.equal(u.status.classList.contains('loading-quiet'), false);
+  // A surface's own message while stale must be seen: say() lifts the quiet mark; the next failure re-quiets.
+  u.ds.begin(); u.ds.succeed(); u.ds.begin(); u.ds.fail(new Error('down')); assert.equal(u.status.classList.contains('loading-quiet'), true);
+  u.ds.say('Running knowledge:status…'); assert.equal(u.status.textContent, 'Running knowledge:status…'); assert.equal(u.status.classList.contains('loading-quiet'), false, 'visible');
+  u.ds.begin(); u.ds.fail(new Error('down again')); assert.equal(u.status.classList.contains('loading-quiet'), true); assert.equal(u.status.textContent, "Couldn't refresh instances.");
   const css = readFileSync(new URL('../renderer/loading.css', import.meta.url), 'utf8');
   assert.match(css, /\.loading-quiet \{ clip-path: inset\(50%\); \}/, 'clipped, not removed: the 1.5em box stays, so nothing shifts');
   assert.doesNotMatch(css, /loading-retry:focus-visible/, 'no per-component focus ring: the global :focus-visible rule covers every button');

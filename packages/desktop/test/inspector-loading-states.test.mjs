@@ -400,6 +400,24 @@ test('soul page, Teams here: focus on "Remove gamma" survives a refresh that ins
   assert.equal(u.doc.activeElement, card.querySelector('.page-card-title'), 'gamma is gone: the card title, never "Remove beta"');
 });
 
+test('while stale, the inspector\'s own messages (an Open-soul miss, an operation error) are visible: say() lifts the quiet mark', async t => {
+  const u = mount(t, { openSoul: () => false });
+  void u.inspector.show(homeSelection); await u.resolve(home);
+  u.refresh().click(); await u.reject(refusal('E_BRIDGE', 'bridge down'));
+  assert.equal(u.status().textContent, "Couldn't refresh instance."); assert.equal(u.status().classList.contains('loading-quiet'), true);
+  button(u.el, 'Open soul').click();
+  assert.match(u.status().textContent, /is not in this workspace's souls/); assert.equal(u.status().classList.contains('loading-quiet'), false, 'the miss is seen');
+  const run = u.q('[data-operation]'); assert.ok(run && !run.disabled, 'operations stay enabled while stale');
+  run.click(); await tick();
+  assert.match(u.status().textContent, /^Running /); assert.equal(u.status().classList.contains('loading-quiet'), false);
+  // (the instance Teams panel issues its own `messaging:teams` run on render: match this control's operation)
+  await u.reject(refusal('E_OPERATION_FAILED', 'the provider refused'), r => r.body.action === 'run' && r.body.operation === run.dataset.operation);
+  assert.equal(u.status().textContent, 'the provider refused'); assert.equal(u.status().classList.contains('loading-quiet'), false, 'an operation error has a visible trace');
+  assert.ok(u.q('.inspector-notice .loading-notice'), 'the stale line stays beside it');
+  u.refresh().click(); await u.reject(refusal('E_BRIDGE', 'bridge down'));
+  assert.equal(u.status().classList.contains('loading-quiet'), true, 'the next failure re-quiets');
+});
+
 test('an inspector message on the status line does not swallow the next completion announcement', async t => {
   let miss = false; const u = mount(t, { openSoul: () => miss ? false : true });
   void u.inspector.show(homeSelection); await u.resolve(home);

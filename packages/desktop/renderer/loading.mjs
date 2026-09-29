@@ -372,7 +372,13 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
     /** A surface's own message on the status line (an operation's result, a miss): goes through the
      * controller so its own announcements stay in sync (a direct textContent write would leave a
      * later identical announcement deduplicated away). */
-    say(text) { if (disposed || !status) return; announced = text; status.textContent = text; },
+    say(text) {
+      if (disposed || !status) return;
+      announced = text; status.textContent = text;
+      // A surface's own message (an operation's result, a miss) is a different message from the stale or
+      // failed one the quiet mark hides: it must be seen. The next fail() re-quiets through syncQuiet().
+      status.classList.remove('loading-quiet');
+    },
     /** The read settled without an observation (the server's deployment is still pending): stay
      * pending — aria-busy, the one announcement — but with no skeleton, since the surface paints the
      * deployment's own copy. The next begin() adds nothing; the first observation settles it. */

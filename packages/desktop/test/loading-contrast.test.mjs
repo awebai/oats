@@ -79,12 +79,12 @@ test('Retry reads on its own surface, enabled and aria-disabled, in every theme'
   }
 });
 
-test('the skeleton fill is a token mix, visible (a real shade step) on every host surface in every theme, never a text colour', () => {
-  const fill = rule('.skeleton').get('background');
-  for (const [name, p] of palettes) for (const host of HOSTS) {
+test('the skeleton fills (lines at 10%, large detail blocks at 7%) are token mixes, visible on every host surface in every theme, never a text colour', () => {
+  const fills = [['.skeleton', rule('.skeleton').get('background'), 12], ['.skeleton-detail-section .skeleton-block', rule('.skeleton-detail-section .skeleton-block').get('background'), 10]];
+  for (const [selector, fill, floor] of fills) for (const [name, p] of palettes) for (const host of HOSTS) {
     const bg = channels(p.get(host)), over = mixedOver(fill, p.get(host), p);
     const delta = Math.max(...over.map((v, i) => Math.abs(v - bg[i])));
-    assert.ok(delta >= 12, `${name}: skeleton over --${host} differs by ${delta.toFixed(1)}/255`);
+    assert.ok(delta >= floor, `${name}: ${selector} over --${host} differs by ${delta.toFixed(1)}/255`);
     assert.ok(contrast(over, bg) < 3, `${name}: a skeleton is a soft shape, not a high-contrast block (${contrast(over, bg).toFixed(2)})`);
   }
 });
