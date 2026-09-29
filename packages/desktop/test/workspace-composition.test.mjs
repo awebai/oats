@@ -283,8 +283,10 @@ test('F7: a Capabilities row opens its page (click or Enter) — "← Capabiliti
   page.querySelector('.page-back').click();
   assert.equal(page.hidden, true); assert.equal(page.childElementCount, 0); assert.equal(u.get('.workspace-discovery').hidden, false);
   assert.equal(u.doc.activeElement.dataset.capability, 'oats.okf', 'back returns to its row');
-  key(u, u.doc.activeElement, 'Enter');
-  assert.equal(page.hidden, false, 'Enter opens it too');
+  // Enter is the native button's: a browser follows an uncancelled keydown with the button's click.
+  const focused = u.doc.activeElement; assert.equal(focused.localName, 'button');
+  if (key(u, focused, 'Enter')) focused.click();
+  assert.equal(page.hidden, false, 'Enter opens it too (native activation: nothing cancels the key)');
   key(u, u.doc.activeElement, 'Escape');
   assert.equal(page.hidden, true, 'Esc goes back'); assert.equal(u.doc.activeElement.dataset.capability, 'oats.okf');
   // a tab change closes an open capability page

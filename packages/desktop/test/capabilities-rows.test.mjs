@@ -97,7 +97,7 @@ test('descriptions render as one element on one line (nowrap + ellipsis), never 
   assert.equal(u.css(u.$('.catalog-cap')).flexDirection, 'column', 'the description sits under the name line, not beside it');
 });
 
-test('the row is a button named "<capability>, <kind>, from <source>"; click and Enter open it with the row', t => {
+test('the row is a button named "<capability>, <kind>, from <source>", described by its description and used-by; activation is the native button\'s', t => {
   const u = mount(t);
   const opened = [];
   renderCapabilities(u.$('.caps'), { rows: ROWS, status: STATUS, instances: INSTANCES, onOpen: row => opened.push(row) });
@@ -107,13 +107,31 @@ test('the row is a button named "<capability>, <kind>, from <source>"; click and
   assert.equal(name('oats.jira'), 'oats.jira, Tasks, from tools');
   assert.equal(name('oats.authoring'), 'oats.authoring, capability, from oats latest');
   assert.equal(name('oats.core'), 'oats.core, capability, from oats.framework 1.4.0');
+  // The short name replaces the content, so the rest is its accessible description: the description, then used-by.
+  const described = cap => {
+    const ids = u.$(`.catalog-row[data-capability="${cap}"]`).getAttribute('aria-describedby').split(' ');
+    for (const id of ids) assert.equal(u.doc.querySelectorAll(`#${id}`).length, 1, `${id} resolves to one element`);
+    return ids.map(id => u.doc.getElementById(id).textContent).join(' ');
+  };
+  assert.equal(described('oats.aweb'), 'Messaging layer via aweb: per-instance team identities. Used by 4 souls');
+  assert.equal(described('oats.okf'), `${ROWS[0].description} Used by Every soul`);
+  assert.equal(described('oats.jira'), 'Tasks layer via Jira. Not used');
+  const threeSouls = [{ agent: 'a', agentsRoot: '/w', modules: [{ name: 'oats.jira' }] }, { agent: 'b', agentsRoot: '/w', modules: [{ name: 'oats.jira' }] }, { agent: 'c', agentsRoot: '/w', modules: [{ name: 'oats.jira' }] }];
+  renderCapabilities(u.$('.caps'), { rows: ROWS, status: STATUS, instances: threeSouls, onOpen: row => opened.push(row) });
+  assert.equal(described('oats.jira'), 'Tasks layer via Jira. Used by 3 souls');
+  const ids = u.$$('.catalog-row').flatMap(el => el.getAttribute('aria-describedby').split(' '));
+  assert.equal(new Set(ids).size, ids.length, 'ids are unique across rows');
+  renderCapabilities(u.$('.caps'), { rows: ROWS, status: STATUS, instances: INSTANCES, onOpen: row => opened.push(row) });
   const row = u.$('.catalog-row[data-capability="oats.aweb"]');
-  assert.ok(row.classList.contains('openable')); assert.equal(row.tabIndex, 0);
+  assert.ok(row.classList.contains('openable')); assert.equal(row.tabIndex, 0); assert.equal(row.localName, 'button'); assert.equal(row.type, 'button');
   row.click();
   assert.equal(opened.length, 1); assert.equal(opened[0], ROWS[1], 'the catalog row object itself');
-  key(u, row, 'Enter'); key(u, row, ' ');
-  assert.equal(opened.length, 3); assert.ok(opened.every(r => r === ROWS[1]));
-  key(u, row, 'a'); assert.equal(opened.length, 3, 'other keys do nothing');
+  // Enter and Space are the native button's: the row handles no keydown (nothing cancelled, nothing opened
+  // twice); a browser turns the key into the click above.
+  for (const name of ['Enter', ' ', 'a']) assert.equal(key(u, row, name), true, `${JSON.stringify(name)} is not cancelled`);
+  assert.equal(opened.length, 1, 'a keydown alone opens nothing: only the native activation (click) does');
+  row.focus(); row.dispatchEvent(new u.dom.window.MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 }));
+  assert.equal(opened.length, 2, 'the keyboard\'s activation (a click with detail 0) opens it once'); assert.ok(opened.every(r => r === ROWS[1]));
   // Without a page to open the card is inert, not a live control that does nothing.
   renderCapabilities(u.$('.caps'), { rows: ROWS, status: STATUS, instances: INSTANCES });
   assert.equal(u.$('.catalog-row').disabled, true); assert.equal(u.$('.catalog-row.openable'), null);
@@ -195,7 +213,7 @@ test('rule 2 in the card CSS: hover restyles the border and surface; focus is th
   assert.doesNotMatch(catalogCSS, /#[0-9a-f]{3,8}\b|rgba?\(|opacity/i, 'tokens only');
 });
 
-test('the section jump is one ws-segmented group with aria-pressed; click and scroll sync move the pressed segment', t => {
+test('the section jump is one ws-segmented group of navigation segments (aria-current); click and scroll sync move the current one', t => {
   const u = mount(t);
   const sections = capabilitySections([...ROWS, { name: 'nw-runbook', kind: 'member', repoKey: 'github.com/awebai/oats', private: true, origin: 'member github.com/awebai/oats' }]);
   const opened = [];
@@ -205,7 +223,10 @@ test('the section jump is one ws-segmented group with aria-pressed; click and sc
   assert.equal(u.css(nav).padding, '2px'); assert.equal(u.css(nav).borderRadius, '8px'); assert.equal(u.css(nav).gap, '2px');
   assert.match(catalogCSS, /\.capability-nav\.ws-segmented \{[^}]*border:1px solid var\(--border\); border-radius:8px; background:var\(--surface\)/, 'one outer frame');
   const buttons = [...nav.querySelectorAll('button')];
-  assert.deepEqual(buttons.map(b => [b.dataset.jump, b.getAttribute('aria-pressed'), b.getAttribute('aria-current')]), [['workspace', 'true', null], ['packages', 'false', null], ['repo', 'false', null]]);
+  const current = () => buttons.map(b => b.getAttribute('aria-current'));
+  assert.deepEqual(buttons.map(b => [b.dataset.jump, b.getAttribute('aria-current'), b.getAttribute('aria-pressed')]), [['workspace', 'true', null], ['packages', null, null], ['repo', null, null]]);
+  assert.match(catalogCSS, /\.capability-nav\.ws-segmented button\[aria-current\] \{ background:var\(--sel\); color:var\(--accent\); font-weight:650; \}/, 'rule 1 look on the current segment');
+  assert.doesNotMatch(catalogCSS, /aria-pressed/);
   assert.deepEqual(buttons.map(b => b.querySelector('.capability-nav-count').textContent), ['4', '2', '1'], 'the count span stays');
   assert.equal(u.css(buttons[0]).borderRadius, '6px');
   assert.equal(u.css(buttons[1]).background, 'rgba(0, 0, 0, 0)'); assert.equal(u.css(buttons[1]).color, 'var(--muted)');
@@ -213,16 +234,16 @@ test('the section jump is one ws-segmented group with aria-pressed; click and sc
   const pressed = u.css(buttons[0]);
   assert.equal(pressed.background, 'var(--sel)'); assert.equal(pressed.color, 'var(--accent)'); assert.equal(pressed.fontWeight, '650');
   buttons[1].click();
-  assert.deepEqual(buttons.map(b => b.getAttribute('aria-pressed')), ['false', 'true', 'false']);
+  assert.deepEqual(current(), [null, 'true', null]);
   assert.equal(u.doc.activeElement, u.$('#capability-section-packages'), 'the jump focuses the section title');
   // Scroll sync: the section whose top passed the scroller's top is the pressed one.
   const tops = { workspace: -400, packages: -10, repo: 300 };
   for (const el of u.$$('.capability-section')) el.getBoundingClientRect = () => ({ top: tops[el.dataset.section] });
   syncCapabilityNav(u.$('.sections'), { getBoundingClientRect: () => ({ top: 0 }) });
-  assert.deepEqual(buttons.map(b => b.getAttribute('aria-pressed')), ['false', 'true', 'false']);
+  assert.deepEqual(current(), [null, 'true', null]);
   tops.repo = 10; syncCapabilityNav(u.$('.sections'), { getBoundingClientRect: () => ({ top: 0 }) });
-  assert.deepEqual(buttons.map(b => b.getAttribute('aria-pressed')), ['false', 'false', 'true']);
-  assert.equal(u.$('[aria-current]'), null, 'aria-pressed replaced aria-current');
+  assert.deepEqual(current(), [null, null, 'true']);
+  assert.equal(u.$('[aria-pressed]'), null, 'navigation, not a toggle');
   // Repo owned: the repository heading sits between cards, and its card is a button too.
   const group = u.$('[data-section=repo] .catalog-group');
   assert.equal(group.getAttribute('role'), 'heading'); assert.equal(group.textContent, 'oats');

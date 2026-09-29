@@ -70,9 +70,9 @@ test('Capabilities is the kernel catalog: counts, jump pills, and Capability | S
   await u.tab('capabilities');
   assert.deepEqual(u.syncCalls(), [{ action: 'read' }], 'opening the tab does not read again');
   assert.equal(u.doc.querySelector('#workspace-tab-capabilities .workspace-count').textContent, '10');
-  // Workspace v4.1: the section jump is one segmented group (aria-pressed); each capability is a row card under a column head.
-  assert.deepEqual([...u.doc.querySelectorAll('.capability-nav button')].map(el => [el.dataset.jump, el.textContent, el.getAttribute('aria-pressed')]),
-    [['workspace', 'Workspace owned6', 'true'], ['packages', 'Packages4', 'false']]);
+  // Workspace v4.1: the section jump is one segmented group (navigation: aria-current); each capability is a row card under a column head.
+  assert.deepEqual([...u.doc.querySelectorAll('.capability-nav button')].map(el => [el.dataset.jump, el.textContent, el.getAttribute('aria-current')]),
+    [['workspace', 'Workspace owned6', 'true'], ['packages', 'Packages4', null]]);
   assert.deepEqual([...u.doc.querySelectorAll('[data-section=workspace] .catalog-head span')].map(el => el.textContent), ['', 'Capability', 'Source', 'Used by', '']);
   assert.equal(u.rows().length, 10);
   const row = name => u.rows().find(el => el.dataset.capability === name);

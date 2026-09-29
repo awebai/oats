@@ -15,7 +15,7 @@ export const catalogCSS = `
 .capability-nav.ws-segmented { display:inline-flex; align-items:center; flex:none; height:30px; padding:2px; gap:2px; margin:0 0 22px; border:1px solid var(--border); border-radius:8px; background:var(--surface); overflow:visible; }
 .oats-view .capability-nav.ws-segmented button { display:inline-flex; align-items:center; gap:6px; height:100%; min-height:0; padding:0 12px; border:0; border-radius:6px; background:transparent; color:var(--muted); font:500 12px var(--sans,system-ui); white-space:nowrap; cursor:pointer; }
 .oats-view .capability-nav.ws-segmented button:hover { color:var(--fg); }
-.oats-view .capability-nav.ws-segmented button[aria-pressed=true] { background:var(--sel); color:var(--accent); font-weight:650; }
+.oats-view .capability-nav.ws-segmented button[aria-current] { background:var(--sel); color:var(--accent); font-weight:650; }
 .capability-nav-count { font:10.5px var(--mono,monospace); }
 .catalog-filters { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:0; padding:0 2px; }
 .catalog-filters-label { margin-right:2px; color:var(--muted); font-size:12px; }
@@ -263,19 +263,26 @@ function isWorkspaceDefault(status, row) {
   return !!(slot && typeof slot === 'object' && slot.name === row.name);
 }
 
+// Row ids for aria-describedby: unique in the document across every table rendered.
+let rowIds = 0;
+/** A section jump is navigation: the current one carries aria-current, the others none. */
+const markCurrent = (button, current) => { if (current) button.setAttribute('aria-current', 'true'); else button.removeAttribute('aria-current'); };
+
 /** The capability list: a column header, then one row card per capability —
  * icon tile | name + kind chip over a one-line description | source chip |
  * used by (the souls whose instances carry it, from the roster's module rows;
  * "Every soul" for a workspace default) | chevron.
  * groups: [{ label, rows }] adds a repository heading before each group (Repo owned).
- * onOpen(row): the card is one button opening the capability's page (click, Enter or Space). */
+ * onOpen(row): the card is one button opening the capability's page (click; Enter and Space are the
+ * native button's). Its name is short ("<cap>, <kind>, from <source>"); its description and used-by
+ * are its accessible description (aria-describedby), since the column header is for the eye only. */
 export function renderCapabilities(host, { rows, groups = null, status, instances, root, total = list(rows).length, onOpen = null, label = 'Workspace capabilities', empty = null }) {
   const doc = host.ownerDocument, names = memberNames(status);
   host.replaceChildren();
   const table = node(doc, 'div', null, 'catalog-table'); table.setAttribute('role', 'group'); table.setAttribute('aria-label', label);
   const any = list(rows).length || (groups && groups.some(group => group.rows.length));
   if (any) {
-    // Each card names its own columns to assistive tech; the header is for the eye.
+    // Each card names and describes its own columns to assistive tech; the header is for the eye.
     const head = node(doc, 'div', null, 'catalog-head'); head.setAttribute('aria-hidden', 'true');
     for (const label of ['', 'Capability', 'Source', 'Used by', '']) head.append(node(doc, 'span', label));
     table.append(head);
@@ -285,11 +292,10 @@ export function renderCapabilities(host, { rows, groups = null, status, instance
     el.dataset.capability = row.name;
     const words = sourceText(row, names);
     el.setAttribute('aria-label', `${row.name}, ${text(row.layer) ? layerLabel(row.layer) : 'capability'}, from ${words.label}`);
+    const id = `catalog-row-${++rowIds}`, described = [];
     if (typeof onOpen === 'function') {
       el.classList.add('openable');
-      el.addEventListener('click', () => onOpen(row));
-      // Enter/Space open here and are cancelled, so the button's own activation does not open twice.
-      el.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(row); } });
+      el.addEventListener('click', () => onOpen(row)); // the native button turns Enter and Space into this click
     } else el.disabled = true;
     const shade = tint(row);
     const tile = node(doc, 'span', null, 'catalog-tile'); tile.dataset.tint = shade; tile.setAttribute('aria-hidden', 'true');
@@ -301,7 +307,10 @@ export function renderCapabilities(host, { rows, groups = null, status, instance
     if (text(row.layer)) { const core = node(doc, 'span', layerLabel(row.layer), 'catalog-core'); core.dataset.tint = shade; first.append(core); }
     cap.append(first);
     // Kernel #217: the manifest's description, one line; the page carries the whole text.
-    if (text(row.description)) { const desc = node(doc, 'span', row.description, 'catalog-desc'); desc.title = row.description; cap.append(desc); }
+    if (text(row.description)) {
+      const desc = node(doc, 'span', row.description, 'catalog-desc'); desc.title = row.description; desc.id = `${id}-desc`;
+      described.push(desc.id); cap.append(desc);
+    }
     const source = node(doc, 'span', null, 'catalog-source');
     source.append(sourceChip(doc, row, names, { boxed: true }));
     const use = capabilityUse(instances, row.name);
@@ -316,7 +325,15 @@ export function renderCapabilities(host, { rows, groups = null, status, instance
       for (const soul of use.souls.slice(0, 3)) marks.append(createSoulMark(doc, soul));
       count.textContent = `${use.souls.length} ${use.souls.length === 1 ? 'soul' : 'souls'}`; count.title = `Used by ${who}`;
     } else { count.textContent = 'Not used'; count.classList.add('none'); count.title = 'No instance carries it yet'; }
+    // The marks are aria-hidden; assistive tech has no column header, so a count is read as "Used by …"
+    // ("Not used" says it already).
+    if (!count.classList.contains('none')) {
+      const label = node(doc, 'span', 'Used by', 'workspace-sr-only'); label.id = `${id}-used-by`;
+      described.push(label.id); used.append(label);
+    }
+    count.id = `${id}-used`; described.push(count.id);
     used.append(marks, count);
+    el.setAttribute('aria-describedby', described.join(' '));
     el.append(tile, cap, source, used, iconElement(doc, 'chevronRight', { size: 16, className: 'shell-icon catalog-chevron' }));
     return el;
   };
@@ -367,15 +384,16 @@ export function renderCapabilitySections(host, { sections, shown, filterHost, na
     { id: 'packages', title: 'Packages', lead: 'pinned versions, same everywhere', count: sections.packages.length },
     ...(privateListed ? [{ id: 'repo', title: 'Repo owned', lead: 'only for souls of the same repo', count: sections.repo.length }] : []),
   ];
-  // One segmented group (rule 1): the base class is the shell's, aria-pressed marks the current section.
+  // One segmented group (rule 1 look): the base class is the shell's; the segments are navigation, so
+  // aria-current (not aria-pressed) marks the section in view.
   const nav = node(doc, 'nav', null, 'capability-nav ws-segmented'); nav.setAttribute('aria-label', 'Capability sections');
   for (const def of defs) {
     const jump = node(doc, 'button', null); jump.type = 'button'; jump.dataset.jump = def.id;
     jump.append(node(doc, 'span', def.title), node(doc, 'span', String(def.count), 'capability-nav-count'));
-    jump.setAttribute('aria-pressed', String(def.id === defs[0].id));
+    markCurrent(jump, def.id === defs[0].id);
     jump.addEventListener('click', () => {
       const head = host.querySelector(`#capability-section-${def.id}`);
-      for (const other of nav.querySelectorAll('button')) other.setAttribute('aria-pressed', String(other === jump));
+      for (const other of nav.querySelectorAll('button')) markCurrent(other, other === jump);
       head?.scrollIntoView?.({ block: 'start', behavior: 'smooth' }); head?.focus({ preventScroll: true });
     });
     nav.append(jump);
@@ -409,7 +427,7 @@ export function syncCapabilityNav(host, scroller, navHost = host) {
   let current = null;
   for (const el of host.querySelectorAll('.capability-section')) if (el.getBoundingClientRect().top <= top) current = el.dataset.section;
   current ||= host.querySelector('.capability-section')?.dataset.section;
-  for (const jump of nav.querySelectorAll('button')) jump.setAttribute('aria-pressed', String(jump.dataset.jump === current));
+  for (const jump of nav.querySelectorAll('button')) markCurrent(jump, jump.dataset.jump === current);
 }
 
 

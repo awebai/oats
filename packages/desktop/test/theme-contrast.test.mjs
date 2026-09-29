@@ -375,8 +375,8 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
     ['.catalog-shown', '.oats-view', 'muted', 'bg'], ['.catalog-clear', '.oats-view', 'accent', 'bg'],
     ['.catalog-note.warn', '.oats-view', 'warn', 'bg'], ['.catalog-note.catalog-remedy', '.oats-view', 'muted', 'bg'],
     // Sections: the segmented jump (current = brand tint, rule 1), titles with their lead, repo headings.
-    ['.capability-nav button[aria-pressed=true]', '.capability-nav button[aria-pressed=true]', 'accent', 'sel'],
-    ['.capability-nav button[aria-pressed=false]', '.capability-nav', 'muted', 'surface'],
+    ['.capability-nav button[aria-current]', '.capability-nav button[aria-current]', 'accent', 'sel'],
+    ['.capability-nav button:not([aria-current])', '.capability-nav', 'muted', 'surface'],
     ['.capability-section-title', '.oats-view', 'fg', 'bg'], ['.capability-section-lead', '.oats-view', 'muted', 'bg'],
     ['.catalog-group', '.oats-view', 'muted', 'bg'],
     // Workspace v4 Setup (W1/W2) — replaces the old setup-card/node/sources inventory.
