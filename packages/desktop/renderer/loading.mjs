@@ -77,7 +77,7 @@ export function skeleton(doc, shape, { columns = 4, width } = {}) {
       el.style.setProperty('--depth', '0');
       const inst = element(doc, 'span', 'ctx-inst skeleton-inst');
       const copy = element(doc, 'span', 'ctx-copy skeleton-copy');
-      copy.append(bone(doc, 'skeleton-line skeleton-name ctx-name'), bone(doc, 'skeleton-line skeleton-meta ctx-repo-label'));
+      copy.append(bone(doc, 'skeleton-line skeleton-name ctx-name'), bone(doc, 'skeleton-line skeleton-meta ctx-meta ctx-repo-label'));
       inst.append(bone(doc, 'skeleton-dot ctx-dot'), copy);
       el.append(inst);
       break;
