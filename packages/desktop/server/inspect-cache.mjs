@@ -54,7 +54,9 @@ export function createInspectCache({ limit = INSPECT_CACHE_LIMIT, now = () => Da
   }
 
   return {
-    async read(key, { deployment, refresh = false, produce, store: keep = true }) {
+    /** `live`: the flight this read would start observes the remotes afresh (a refresh, or any read on a
+     * kernel without observe-max-age); a refresh joins only a live flight. */
+    async read(key, { deployment, refresh = false, produce, store: keep = true, live = refresh }) {
       const settled = entries.get(key);
       if (settled && !refresh) {
         store(key, settled);
@@ -62,7 +64,7 @@ export function createInspectCache({ limit = INSPECT_CACHE_LIMIT, now = () => Da
       }
       // Identical concurrent requests share one kernel process; a refresh shares only a live one.
       const inFlight = flights.get(key);
-      const flight = inFlight && (!refresh || inFlight.live) ? inFlight : start(key, deployment, produce, { live: refresh, keep });
+      const flight = inFlight && (!refresh || inFlight.live) ? inFlight : start(key, deployment, produce, { live: live || refresh, keep });
       const { envelope, observedAt } = await flight;
       return { envelope: structuredClone(envelope), observedAt, hit: false, refreshing: false };
     },

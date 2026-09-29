@@ -62,6 +62,16 @@ test('coalescing: concurrent identical reads share one produce; a refresh bypass
   assert.deepEqual([after.hit, after.refreshing, after.envelope.result.n], [true, false, 1]);
 });
 
+test('live: a refresh joins a plain flight marked live (a kernel without observe-max-age observes afresh anyway)', async () => {
+  const cache = createInspectCache({ now: clock().now });
+  let produced = 0; const gate = deferred();
+  const produce = async () => { const n = ++produced; await gate.promise; return ok({ n }); };
+  const plain = cache.read('k', { deployment: '/d', produce, live: true });
+  const refresh = cache.read('k', { deployment: '/d', produce, refresh: true });
+  await tick(); assert.equal(produced, 1, 'the refresh joined the live plain flight');
+  gate.resolve(); assert.equal((await refresh).envelope.result.n, 1); await plain;
+});
+
 test('store: false coalesces concurrent identical reads but never holds the result (remote workspaces have no invalidation signal)', async () => {
   const cache = createInspectCache({ now: clock().now });
   let produced = 0; const gate = deferred();

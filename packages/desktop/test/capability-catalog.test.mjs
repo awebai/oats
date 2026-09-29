@@ -137,15 +137,24 @@ test('refresh: true forces a live read (maxAge 0) and joins an in-flight one ins
   open(); const [a, b] = await Promise.all([forced, joined]);
   assert.equal(h.calls.length, 2, 'two refreshes share one live flight'); assert.deepEqual(a, b);
   assert.equal(a.capabilities.capabilities.length, TABLE.capabilities.length - 1); assert.equal(a.refreshing, false);
-  // A BACKGROUND read in the air (maxAge 60: heads may be up to a minute old) is not a live read: a refresh starts its own.
+  // With observe-max-age declared, a BACKGROUND read in the air (maxAge 60: heads may be up to a minute old)
+  // is not a live read: a refresh starts its own beside it.
+  const REUSING = { ...CLI, features: [...CLI.features, 'observe-max-age'] };
   const moved = move(ws => { ws.stale = ['nw.tools']; });
   let release; h.gate(new Promise(r => { release = r; }));
-  h.catalog.ensure(deployment, CLI, moved, { maxAge: 60 }); await settle();
+  h.catalog.ensure(deployment, REUSING, moved, { maxAge: 60 }); await settle();
   assert.deepEqual(h.calls.at(-1), { action: 'capabilities', context: deployment, maxAge: 60 });
-  const live = h.catalog.read(deployment, CLI, moved, { refresh: true }); await settle();
+  const live = h.catalog.read(deployment, REUSING, moved, { refresh: true }); await settle();
   assert.deepEqual(h.calls.at(-1), { action: 'capabilities', context: deployment, maxAge: 0 }, 'refresh:true did not join the background flight');
   assert.equal(h.calls.length, 4);
   release(); assert.equal((await live).reason, null);
+  // Without the feature every read is live already: a refresh joins the key-change re-read instead of running a twin.
+  const plain = move(ws => { ws.stale = ['oats.okf'] ; });
+  h.gate(new Promise(r => { release = r; }));
+  h.catalog.ensure(deployment, CLI, plain, { maxAge: 60 }); await settle();
+  const shared = h.catalog.read(deployment, CLI, plain, { refresh: true }); await settle();
+  assert.equal(h.calls.length, 5, 'one kernel run: the refresh joined the flight of a kernel that cannot reuse anyway');
+  release(); assert.equal((await shared).reason, null);
 });
 
 test('two concurrent read() on a cold deployment share one invoke; a second deployment is its own flight', async () => {

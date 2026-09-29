@@ -3,6 +3,7 @@ import { dirname, isAbsolute } from 'node:path';
 import { cliCapability, operationArgs } from '../cli-adapter.mjs';
 import { inspectKey } from './inspect-cache.mjs';
 import { observationData } from '../deployment-data.mjs';
+import { OBSERVE_MAX_AGE_FEATURE } from '../renderer/deployment-contract.mjs';
 
 const fail = (message, code = 'E_BAD_ARGS') => { throw Object.assign(new Error(message), { code }); };
 
@@ -70,7 +71,8 @@ export async function capabilityRequest(request, { workspace, cli, agents = [], 
   } else if (cache) {
     // A remote workspace has no state key and no invalidation signal here: its inspections are shared
     // between concurrent requests but never served from an earlier visit (store: false).
-    ({ envelope, observedAt, refreshing } = await cache.read(key, { deployment: workspace.scope, refresh, produce: call, store: !server }));
+    const live = refresh || !(Array.isArray(cli.features) && cli.features.includes(OBSERVE_MAX_AGE_FEATURE)); // no feature: every read is live
+    ({ envelope, observedAt, refreshing } = await cache.read(key, { deployment: workspace.scope, refresh, produce: call, store: !server, live }));
   } else {
     envelope = await call();
     if (envelope.ok) {

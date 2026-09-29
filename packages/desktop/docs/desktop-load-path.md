@@ -42,7 +42,8 @@ catalogs are thin wrappers over it (`soul-catalog.mjs`,
   finds no good value held (`demand`) reads now; `refresh` is a live read
   (`--max-age 0`) that joins only a live flight for the same key — a
   background flight in the air may carry heads up to a minute old, so a live
-  one starts beside it.
+  one starts beside it. On a kernel without `observe-max-age` every flight is
+  live, so a refresh always joins.
 - `observedAt` is the kernel's `observation.observedAt` when reported, else the
   read's completion time; a failure keeps the previous stamp.
 

@@ -24,6 +24,8 @@
  *
  * `read(deployment, cli, { maxAge })` is the catalog's kernel read; it resolves
  * `{ value, reason, observedAt }` (value null on failure) and must not throw. */
+import { OBSERVE_MAX_AGE_FEATURE } from '../renderer/deployment-contract.mjs';
+
 export function createKeyedCatalog({ read, retryMs, now = () => Date.now() }) {
   const held = new Map(), flights = new Map(), cycles = new Map(), unbound = new Map();
   const iso = ms => new Date(ms).toISOString();
@@ -42,7 +44,10 @@ export function createKeyedCatalog({ read, retryMs, now = () => Date.now() }) {
     return entry;
   }
   function start(deployment, cli, key, maxAge) {
-    const flight = { key, maxAge, cycle: cycles.get(deployment) ?? 0, promise: null };
+    // Live = the kernel observes the remotes afresh: asked for (maxAge 0), or the only thing a kernel
+    // without observe-max-age can do — then a refresh joins the flight instead of starting a twin.
+    const live = maxAge === 0 || !(Array.isArray(cli?.features) && cli.features.includes(OBSERVE_MAX_AGE_FEATURE));
+    const flight = { key, live, cycle: cycles.get(deployment) ?? 0, promise: null };
     // Dispatched synchronously: a prefetch's kernel process starts in the same tick as the roster reads.
     let dispatched;
     try { dispatched = Promise.resolve(read(deployment, cli, maxAge !== undefined ? { maxAge } : {})); } catch (error) { dispatched = Promise.reject(error); }
@@ -83,7 +88,7 @@ export function createKeyedCatalog({ read, retryMs, now = () => Date.now() }) {
      * the air is not it (its heads may be up to maxAge old), so a live one starts beside it. */
     async refresh(deployment, cli, key) {
       const flight = flights.get(deployment);
-      await (flight?.key === key && flight.maxAge === 0 ? flight : start(deployment, cli, key, 0)).promise;
+      await (flight?.key === key && flight.live ? flight : start(deployment, cli, key, 0)).promise;
       return snapshot(deployment);
     },
     held: snapshot,
