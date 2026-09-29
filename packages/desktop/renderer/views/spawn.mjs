@@ -9,7 +9,7 @@ import { capabilityRow } from "../workspace-catalog.mjs";
 import { renderCapabilityPage, renderSoulCapabilities, capabilityPageCSS, pageCardCSS, soulCapabilitiesCSS, desktopFacts } from "../capability-page.mjs";
 import { runtimeState } from "../instance-presentation.mjs";
 import { deploymentUnavailableText } from "../deployment-header.mjs";
-import { createSpawnDialog, spawnDialogCSS, worksInText } from "../spawn-dialog.mjs";
+import { createSpawnDialog, spawnDialogCSS } from "../spawn-dialog.mjs";
 import { spawnProblem, catalogProblem } from "../spawn-messages.mjs";
 import { createSoulMark, createRuntimeBadge, identityCSS } from "../identity-marks.mjs";
 import { shownLaunch, launchHarnessName } from "../launch-view.mjs";
@@ -82,19 +82,21 @@ const CSS = `
 .soul-card .schip { display:inline-flex; align-items:center; gap:5px; max-width:100%; height:22px; padding:0 7px; border-radius:5px; background:var(--tag-bg); color:var(--fg); font-size:11px; white-space:nowrap; box-sizing:border-box; }
 .soul-card .schip-key { color:var(--muted); }
 .soul-card .schip b { font-weight:650; overflow:hidden; text-overflow:ellipsis; }
-/* Foot: 12px above and below, a hairline that spans the card, the Spawn button clear of it. */
-.soul-card .sfoot { display:flex; align-items:center; gap:10px; min-height:28px; margin-top:auto; padding:12px 14px; border-top:1px solid var(--border); font-size:12px; }
+/* Foot: a hairline that spans the card, then one 48px row whose centre line the Spawn button
+   shares (24px high: 12px clear of the hairline and of the card's edge). */
+.soul-card .sfoot { display:flex; align-items:center; gap:10px; box-sizing:border-box; height:49px; margin-top:auto; padding:0 14px; border-top:1px solid var(--border); font-size:12px; line-height:16px; }
 .soul-card .sactivity { display:inline-flex; align-items:center; gap:6px; min-width:0; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .soul-card .sactivity.running { color:var(--fg); font-weight:600; }
 .soul-card .sactivity.running::before { content:""; flex:none; width:7px; height:7px; border-radius:50%; background:var(--live); }
-.soul-card .sproblem { min-width:0; color:var(--warn); font-size:12px; font-weight:600; white-space:normal; overflow-wrap:anywhere; }
+.soul-card .sproblem { min-width:0; color:var(--warn); font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 /* A card and its Spawn button share one grid cell (no nested buttons); the
-   button sits in the card's foot, whose facts leave it room. */
+   button sits in the card's foot, whose facts leave it room. Its bottom margin
+   is the card's 1px edge plus the 12px under a 24px button in the 48px row. */
 .soul-tile { display:grid; min-width:0; }
 .soul-tile > .soul-card { grid-area:1/1; }
-.soul-tile.can-spawn > .soul-card .sfoot { padding-right:106px; }
-.oats-view .souls .soul-tile > button.soul-spawn { grid-area:1/1; align-self:end; justify-self:end; display:inline-flex; align-items:center; gap:5px; height:28px; min-height:28px; margin:0 14px 12px 0; padding:0 11px;
-  border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font:600 12px var(--sans,system-ui); }
+.soul-tile.can-spawn > .soul-card .sfoot { padding-right:100px; }
+.oats-view .souls .soul-tile > button.soul-spawn { grid-area:1/1; align-self:end; justify-self:end; display:inline-flex; align-items:center; gap:4px; box-sizing:border-box; height:24px; min-height:24px; margin:0 14px 13px 0; padding:0 9px;
+  border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--fg); font:600 12px var(--sans,system-ui); }
 .oats-view .souls .soul-tile > button.soul-spawn:hover:not(:disabled) { background:var(--surface-2); }
 .oats-view .souls .soul-tile > button.soul-spawn:disabled { color:var(--muted); }
 .oats-view .souls button.spawn-act:not(:disabled), .oats-view .souls button.fspawn:not(:disabled) { background:var(--primary-bg); color:var(--primary-fg); border-color:var(--primary-bg); }
@@ -760,7 +762,7 @@ function activityText(running, total) {
   if (running) return `${running} ${running === 1 ? "instance" : "instances"} running`;
   return total ? `${total} stopped` : "No instances";
 }
-/** A labelled chip: "Team oats", "Works in own worktree", "Repo agents". */
+/** A labelled chip: "Team oats", "Repo agents". */
 function chip(doc, key, value) {
   const el = doc.createElement("span"); el.className = "schip"; el.title = `${key} ${value}`;
   const k = doc.createElement("span"); k.className = "schip-key"; k.textContent = key;
@@ -799,7 +801,8 @@ function soulCard(s, a, groupTeam = null) {
   if (typeof harness === "string" && harness) name.append(createRuntimeBadge(doc, harness));
   body.append(name);
   if (a.description) { const desc = doc.createElement("p"); desc.className = "sdesc"; desc.textContent = a.description; body.append(desc); }
-  // Chips say what they are: its teams on this computer (or, grouped by team, its repository) and where it works.
+  // Chips say what they are: its teams on this computer (or, grouped by team, its repository).
+  // No work-mode chip (human, 2026-09-29): where a soul works is the soul page's and the spawn preview's.
   const chips = span("schips");
   if (groupTeam !== null) chips.append(chip(doc, "Repo", repoGroup(s, a).name));
   soulTeams(a).forEach((team, index) => {
@@ -809,7 +812,6 @@ function soulCard(s, a, groupTeam = null) {
     if (index === 0 && teamGroup(a) === team) { c.dataset.default = "true"; c.title = `Team ${team} (its default)`; }
     chips.append(c);
   });
-  if (typeof a.work === "string" && a.work) chips.append(chip(doc, "Works in", worksInText(a.work)));
   if (chips.childElementCount) body.append(chips);
   // Foot: what runs now, or why a spawn here would be refused (the Spawn button sits at its right).
   const instances = soulInstances(s, a);
@@ -827,7 +829,7 @@ function soulCard(s, a, groupTeam = null) {
   // Workspace v4 (human, 2026-09-26): every spawnable card offers Spawn directly.
   const tile = doc.createElement("div"); tile.className = "soul-tile can-spawn";
   const spawn = doc.createElement("button"); spawn.type = "button"; spawn.className = "act soul-spawn"; spawn.tabIndex = -1;
-  spawn.append(iconElement(doc, "plus", { size: 12 }), span("", "Spawn"));
+  spawn.append(iconElement(doc, "plus", { size: 11 }), span("", "Spawn"));
   spawn.setAttribute("aria-label", `Spawn ${a.name}`);
   const can = canLaunchSoul(s, a); spawn.disabled = !can;
   spawn.title = can ? `Spawn a new ${a.name} instance` : refusal ? `Can't spawn here: ${refusal}` : cliAvailable() ? `${a.name} cannot be spawned from here` : "Spawn needs a compatible installed OATS CLI";

@@ -14,8 +14,8 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
   then packages with their pinned version, then external souls) or **Team**
   (the default team). A card names its harness · model (only as the kernel
   reports them), clamps the description to two lines, labels its chips
-  (*Team oats*, *Works in own worktree*; grouped by team, *Repo …* instead of
-  the group's team) and says what runs in its foot (*N instances running*,
+  (*Team oats*; grouped by team, *Repo …* instead of the group's team; no
+  work-mode chip, that is the soul page's and the spawn preview's) and says what runs in its foot (*N instances running*,
   *N stopped*, *No instances*, or why a spawn here is refused).
   Selection opens the soul's page — read-only: a v2 soul is edited in its
   repository and the inspector never writes it in place; there are no layer bindings

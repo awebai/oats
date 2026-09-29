@@ -119,8 +119,9 @@ test('03: cards have one semantic Details entry with compact identity, descripti
   assert.equal(u.doc.getElementById(card.getAttribute('aria-controls')), u.get('.workspace-soul-page'), 'a card opens its soul\'s page');
   // Workspace v4.1 (board 3): a body (head: mark, name, harness; the description; labelled chips) and a foot.
   assert.deepEqual([...card.children].map(el => el.className), ['sbody', 'sfoot']);
-  assert.deepEqual([...card.querySelector('.sbody').children].map(el => el.className), ['sname', 'sdesc', 'schips']);
-  assert.deepEqual([...card.querySelectorAll('.schip')].map(c => [c.querySelector('.schip-key').textContent, c.querySelector('b').textContent]), [['Works in', 'own worktree']], 'no team reported: no team chip invented');
+  // No team reported: no team chip invented; and no work-mode chip (human, 2026-09-29), so no chip row at all.
+  assert.deepEqual([...card.querySelector('.sbody').children].map(el => el.className), ['sname', 'sdesc']);
+  assert.doesNotMatch(card.textContent, /Works in|worktree/, 'the card does not say where the soul works');
   assert.equal(card.querySelector('button, .sactions'), null, 'no control nested inside the card button');
   // Workspace v4 (human, 2026-09-26; replaces "launch only from an opened soul"): each
   // spawnable card has a Spawn button beside it in one grid cell, which roves with its card.
@@ -145,15 +146,20 @@ test('03: cards have one semantic Details entry with compact identity, descripti
   // The harness appears only as the roster reports it on the soul row (this fixture: pi, no launch): no model claimed.
   assert.equal(u.get('.scontext').textContent, 'Pi');
   assert.equal(u.get('.soul-card .runtime-badge').getAttribute('aria-label'), 'Harness: Pi');
-  // The foot: what runs (never the bare word "none"), 12px above and below a hairline that spans the card.
+  // The foot: what runs (never the bare word "none") in one 48px row under a hairline that spans the card.
   assert.equal(u.get('.soul-card .sactivity').textContent, 'No instances');
-  assert.equal(u.css('.soul-card .sfoot').paddingTop, '12px'); assert.equal(u.css('.soul-card .sfoot').paddingBottom, '12px');
+  const foot = u.css('.soul-card .sfoot');
+  assert.equal(foot.boxSizing, 'border-box'); assert.equal(foot.height, '49px'); assert.equal(foot.alignItems, 'center');
+  assert.equal(foot.paddingTop, '0px'); assert.equal(foot.paddingBottom, '0px');
   const shippedCSS = [...u.doc.querySelectorAll('style')].map(style => style.textContent).join('\n');
   assert.match(shippedCSS, /\.soul-card \.sfoot \{[^}]*border-top:1px solid var\(--border\)/, 'a 1px border hairline');
   assert.equal(u.css('.soul-card .sfoot').marginTop, 'auto');
-  // The button: 28px, secondary (surface + 1px border), 12px clear of the hairline (the foot's own padding).
+  // The button (human, 2026-09-29: smaller, on the instances' line, clear of the hairline): 24px,
+  // secondary (surface + 1px border), centred in the 48px row: 12px above it, 12px + the card's
+  // 1px edge below it.
   const button = u.css('.soul-tile > .soul-spawn');
-  assert.equal(button.height, '28px'); assert.equal(button.marginBottom, '12px'); assert.equal(button.background, 'var(--surface)');
+  assert.equal(button.boxSizing, 'border-box'); assert.equal(button.height, '24px'); assert.equal(button.marginBottom, '13px'); assert.equal(button.background, 'var(--surface)');
+  assert.equal((48 - parseInt(button.height)) / 2 + 1, parseInt(button.marginBottom), 'the button shares the row\'s centre line');
   assert.match(shippedCSS, /button\.soul-spawn \{[^}]*border:1px solid var\(--border\)/);
 
   const fresh = u.get('.soul-card'); // closing the dialog repaints the grid

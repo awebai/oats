@@ -14,7 +14,6 @@ export const catalogCSS = `
    Scoped to .capability-nav.ws-segmented so it holds whichever order the sheets load in. */
 .capability-nav.ws-segmented { display:inline-flex; align-items:center; flex:none; height:30px; padding:2px; gap:2px; margin:0 0 22px; border:1px solid var(--border); border-radius:8px; background:var(--surface); overflow:visible; }
 .oats-view .capability-nav.ws-segmented button { display:inline-flex; align-items:center; gap:6px; height:100%; min-height:0; padding:0 12px; border:0; border-radius:6px; background:transparent; color:var(--muted); font:500 12px var(--sans,system-ui); white-space:nowrap; cursor:pointer; }
-.oats-view .capability-nav.ws-segmented button + button { border-left:0; }
 .oats-view .capability-nav.ws-segmented button:hover { color:var(--fg); }
 .oats-view .capability-nav.ws-segmented button[aria-pressed=true] { background:var(--sel); color:var(--accent); font-weight:650; }
 .capability-nav-count { font:10.5px var(--mono,monospace); }

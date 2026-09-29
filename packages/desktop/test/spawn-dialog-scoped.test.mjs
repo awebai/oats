@@ -61,7 +61,10 @@ test('scoped layout: no chooser, the identity header names the soul and where it
   const change = u.q('button.spawn-change-soul'); assert.equal(change.type, 'button'); assert.equal(change.textContent, 'Change soul'); assert.equal(u.hidden(change), false);
   assert.equal(u.style(change).color, 'var(--accent)'); assert.equal(u.style(change).borderStyle || u.style(change).border, u.style(change).borderStyle ? 'none' : '0');
   assert.equal(u.q('.close-act').getAttribute('aria-label'), 'Close spawn dialog');
-  assert.equal(u.style(u.ui.dialog).width, '1000px'); assert.equal(u.style(u.q('.spawn-columns')).gridTemplateColumns, '360px minmax(0,1fr)');
+  assert.equal(u.style(u.ui.dialog).width, '1000px');
+  // A narrower window never clips it: the cap is the viewport less the modal's 24px padding, not 100%
+  // (the modal's centring grid track grows to the dialog, so a percentage would not cap it).
+  assert.equal(u.style(u.ui.dialog).maxWidth, 'calc(100vw - 48px)'); assert.equal(u.style(u.q('.spawn-columns')).gridTemplateColumns, '360px minmax(0,1fr)');
 });
 
 test('the origin subline: a package soul says its package and version; an external soul its origin', async t => {
@@ -113,8 +116,13 @@ test('the preview column: a skeleton with aria-busy while reading, then the fact
   assert.equal(u.text('.spawn-preview-reading'), 'Reading the preview…'); assert.ok(u.q('.spawn-preview-reading').classList.contains('workspace-sr-only'));
   assert.equal(u.text('.spawn-preview-title'), 'What will be created', 'section titles stay while loading');
   assert.equal(u.text('.spawn-preview-note'), 'Resolved by the installed CLI. Spawn refuses if this changes before you confirm.');
+  assert.equal(u.text('.fstatus'), 'Reading defaults…'); assert.equal(u.q('.fstatus').classList.contains('ok'), false);
   gate.resolve(); await settle(12);
   assert.equal(aside.getAttribute('aria-busy'), 'false'); assert.equal(aside.querySelector('.spawn-preview-skeleton'), null);
+  // Board 6: the footer says the preview settled — a check in --ok (decoration, empty alt), then the words.
+  assert.equal(u.text('.fstatus'), 'Preview ready'); assert.ok(u.q('.fstatus').classList.contains('ok'));
+  assert.equal(u.rule('.spawn-footer .fstatus.ok::before', 'color'), 'var(--ok)');
+  assert.match(u.rule('.spawn-footer .fstatus.ok::before', 'content'), /^"\\2713"\s*\/\s*""$/);
   const data = preview('preview-worktree-default');
   assert.deepEqual(u.facts(), { Name: data.instance, 'Works in': 'own worktree', Harness: 'Pi · native default', Team: 'engineering' });
   assert.ok(u.q('.spawn-preview-facts dd .mono'), 'the name in monospace');
@@ -164,6 +172,7 @@ test('a kernel refusal replaces the facts with the footer\'s plain sentence; a n
   await settle(12);
   const said = spawnProblem({ code: refusal.error.code, message: refusal.error.message }, 'preview').text;
   assert.equal(u.text('.spawn-preview-failure'), said); assert.equal(u.text('.fstatus'), said, 'the same sentence as the footer');
+  assert.equal(u.q('.fstatus').classList.contains('ok'), false, 'a refusal is never "ready"');
   assert.equal(u.style(u.q('.spawn-preview-failure')).color, 'var(--warn)');
   assert.equal(u.q('.spawn-preview-facts'), null); assert.equal(u.q('.spawn-preview').getAttribute('aria-busy'), 'false');
   const taken = kernel('preview-name-taken');

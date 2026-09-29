@@ -318,7 +318,7 @@ test('Souls group by primary team or repository, and unconfirmed members explain
   // Repo is the default grouping (the human's direction).
   assert.equal(u.doc.querySelector('.souls-group-by [data-group-by=repo]').getAttribute('aria-pressed'), 'true');
   assert.deepEqual(titles(), [['repo', 'app', '1 soul'], ['repo', 'site', '2 souls'], ['warning', 'Not available', "lab hasn't joined the workspace"]]);
-  assert.deepEqual(chips('writer'), [['Team', 'marketing'], ['Team', 'engineering'], ['Works in', 'own worktree']], 'labelled chips: its teams, the default first, and where it works');
+  assert.deepEqual(chips('writer'), [['Team', 'marketing'], ['Team', 'engineering']], 'labelled chips: its teams, the default first; no work-mode chip');
   assert.equal(u.doc.querySelector('.soul-card[data-agent=writer] .schip').dataset.default, 'true');
   assert.equal(u.doc.querySelector('.soul-card[data-agent=builder] .scontext').textContent, 'Pi', 'the reported harness; no model claimed without launch data');
   assert.equal(u.doc.querySelector('.soul-card[data-agent=builder] .runtime-badge').getAttribute('aria-label'), 'Harness: Pi');
@@ -331,7 +331,7 @@ test('Souls group by primary team or repository, and unconfirmed members explain
   assert.equal(u.doc.querySelectorAll('.souls-grid .soul-card[tabindex="0"]').length, 1, 'one roving card');
   u.doc.querySelector('.souls-group-by [data-group-by=team]').click();
   assert.deepEqual(titles(), [['users', 'engineering', '2 souls'], ['users', 'marketing', '1 soul'], ['warning', 'Not available', "lab hasn't joined the workspace"]]);
-  assert.deepEqual(chips('writer'), [['Repo', 'site'], ['Team', 'engineering'], ['Works in', 'own worktree']], 'grouped by team: its repository instead of repeating the team');
+  assert.deepEqual(chips('writer'), [['Repo', 'site'], ['Team', 'engineering']], 'grouped by team: its repository instead of repeating the team');
   assert.equal(u.doc.querySelector('.souls-group-by [data-group-by=team]').getAttribute('aria-pressed'), 'true');
   u.doc.querySelector('.souls-group-by [data-group-by=repo]').click();
   assert.equal(u.doc.querySelector('.souls-group-by [data-group-by=repo]').getAttribute('aria-pressed'), 'true');

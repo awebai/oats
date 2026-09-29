@@ -29,7 +29,8 @@ export const RUNTIME_NAMES = Object.freeze({ pi: 'Pi', claude: 'Claude Code', co
 const PURPOSE = /^[a-z0-9][a-z0-9-]*$/i;
 
 export const spawnDialogCSS = `
-.spawn-modal .spawn-dialog { width:880px; max-width:100%; box-sizing:border-box; max-height:calc(100vh - 48px); padding:0; gap:0; overflow:hidden; background:var(--surface); box-shadow:var(--shadow-modal); }
+/* The modal centres in a grid whose auto track grows to the dialog, so 100% would not cap it: the viewport does. */
+.spawn-modal .spawn-dialog { width:880px; max-width:calc(100vw - 48px); box-sizing:border-box; max-height:calc(100vh - 48px); padding:0; gap:0; overflow:hidden; background:var(--surface); box-shadow:var(--shadow-modal); }
 /* Two layouts, switched in place (design board 6): 'picker' = soul chooser + form; 'scoped' = the
    preview of what the kernel will create + form, for one soul. Hidden columns stay in the DOM under
    [hidden] so the host's focus trap skips them. */
@@ -196,6 +197,8 @@ export const spawnDialogCSS = `
 .spawn-status { flex:1 1 240px; min-width:0; display:flex; align-items:baseline; flex-wrap:wrap; gap:2px 10px; }
 .spawn-footer .fstatus { flex:0 1 auto; margin:0; min-width:0; font-size:12.5px; line-height:1.5; color:var(--muted); overflow-wrap:break-word; white-space:pre-line; }
 .spawn-footer .fstatus.err { color:var(--danger); }
+/* Board 6: a settled preview says so; the check is decoration (empty alt), the words are the status. */
+.spawn-footer .fstatus.ok::before { content:"\\2713" / ""; margin-right:5px; color:var(--ok); font-weight:700; }
 .spawn-details-toggle { flex:none; border:0; background:none; padding:0; font:inherit; font-size:12px; color:var(--muted); text-decoration:underline; text-underline-offset:2px; cursor:pointer; }
 .spawn-details-toggle:hover { color:var(--fg); }
 .spawn-details-toggle[hidden], .spawn-problem-detail[hidden] { display:none; }
@@ -850,8 +853,9 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       || !recovering && (!!draftChoice.error || defaultBlocked() || (local() ? !applicable() || !ready : false));
   }
   /** A problem shows one plain sentence; its code and technical text wait behind Details. */
-  function setStatus(text, error = false, problem = null) {
-    status.textContent = text; status.classList.toggle('err', error);
+  function setStatus(text, error = false, problem = null, ok = false) {
+    if (status.textContent !== text) status.textContent = text; // an unchanged status is not re-announced
+    status.classList.toggle('err', error); status.classList.toggle('ok', ok && !error);
     status.dataset.code = problem?.code || '';
     if (details.textContent !== (problem?.detail || '')) {
       details.textContent = problem?.detail || ''; details.hidden = true;
@@ -905,7 +909,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     shown = next;
     if (next.data) {
       if (phase === 'drifted') setStatus('These values changed since you last looked. Check them and press Spawn again.');
-      else if (notice) setStatus(notice.text, true, notice); else setStatus('');
+      else if (notice) setStatus(notice.text, true, notice); else setStatus('Preview ready', false, null, true);
     }
     else if (NAME_REFUSALS.includes(next.failure.code)) setStatus(''); // said next to the name itself
     else showProblem(next.failure, 'preview');

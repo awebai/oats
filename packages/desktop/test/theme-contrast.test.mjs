@@ -771,6 +771,21 @@ for (const [name] of palettes) test(`${name}: the spawn Teams row (fixed, joinab
   dom.window.close();
 });
 
+// Board 6: the spawn footer's "✓ Preview ready" — the check in --ok, the words muted, on the dialog's surface.
+for (const [name] of palettes) test(`${name}: the spawn footer's Preview ready check and words meet computed AA`, () => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="spawn-modal"><div class="spawn-dialog"><div class="spawn-footer"><p class="fstatus ok">Preview ready</p></div></div></div></body></html>`, { pretendToBeVisual: true });
+  const doc = dom.window.document;
+  for (const source of [css, spawnDialogCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  const root = dom.window.getComputedStyle(doc.documentElement), token = t => opaqueChannels(root.getPropertyValue(`--${t}`).trim());
+  const rule = [...doc.styleSheets].flatMap(sheet => [...sheet.cssRules]).find(r => r.selectorText === '.spawn-footer .fstatus.ok::before');
+  assert.equal(rule?.style.color, 'var(--ok)');
+  assert.equal(dom.window.getComputedStyle(doc.querySelector('.fstatus')).color, 'var(--muted)');
+  assert.match(spawnDialogCSS, /\.spawn-modal \.spawn-dialog \{[^}]*background:var\(--surface\)/);
+  for (const fg of ['ok', 'muted']) assert.ok(contrast(token(fg), token('surface')) >= 4.5, `${fg} on surface`);
+  for (let parent = doc.querySelector('.fstatus'); parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+  dom.window.close();
+});
+
 // Workspace v4 pages (W4/W5b) — replaces the F7 page inventory (header band,
 // facts, used-by rows, borderless back): the page bar, side cards, key/value
 // facts, the used-by table and a soul's composition table with its why tags.
