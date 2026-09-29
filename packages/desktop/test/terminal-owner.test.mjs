@@ -76,6 +76,12 @@ test('term:open refuses a Herdr session target with E_HERDR_REMOVED before any p
   assert.deepEqual(f.calls, []); assert.equal(f.ptys.length, 0); assert.equal(f.broker.counts().slots, 0);
 });
 
+test('a remote preparation refused with E_HERDR_REMOVED returns that code and message, never E_TERM_OPEN_FAILED, and creates no pty', async () => {
+  const f = fixture({ prepare: () => { throw Object.assign(new Error('kernel text'), { code: 'E_HERDR_REMOVED' }); } }), a = f.owner('A');
+  assert.deepEqual(await f.open(a, { name: 'herdr-row', remote: true }), { terminalApi: 2, ok: false, code: 'E_HERDR_REMOVED', message: HERDR_REMOVED });
+  assert.equal(f.ptys.length, 0); assert.equal(f.broker.counts().slots, 0);
+});
+
 test('actual handlers: duplicate own target reuses; foreign target gets its own resource/lease, never the other id', async () => {
   const f = fixture(), a = f.owner('A'), b = f.owner('B');
   const [first, duplicate] = await Promise.all([f.open(a), f.open(a)]);

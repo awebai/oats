@@ -51,6 +51,20 @@ test('owned command promise does not settle on AbortError until the child close 
   assert.equal(settled, false); child.emit('close', 1); await work; assert.equal(settled, true);
 });
 
+test('a remote Herdr session never reaches a PTY: an older kernel inspection and a 0.31 refusal are E_HERDR_REMOVED', async () => {
+  for (const stdout of ['{"schemaVersion":1,"ok":true,"result":{"backend":"herdr","present":true,"state":"shell","terminalId":"term_abc"}}',
+    '{"schemaVersion":1,"ok":false,"error":{"code":"E_HERDR_REMOVED","message":"E_HERDR_REMOVED: removed"}}']) {
+    const commands = [], ptys = [];
+    const io = createTerminalIo({ base: () => 'http://127.0.0.1:1111', context: () => 'epoch', attachmentDirectory: () => '/memory/files',
+      spawnPty: (...args) => { ptys.push(args); return {}; }, execFileSync: () => assert.fail('not local'),
+      fetch: async () => response(cli), run: async (bin, args) => { commands.push(args); return { stdout }; },
+    });
+    await assert.rejects(io.prepare(io.admit(structuredClone(spec)).spec, { current: () => true }), error => error.code === 'E_HERDR_REMOVED');
+    assert.deepEqual(commands.map(args => args[1]), ['inspect'], 'inspected, never attached');
+    assert.deepEqual(ptys, []);
+  }
+});
+
 test('remote preparation uses fixed CLI arguments, rechecks identity, and never creates from stale metadata', async () => {
   let reads = 0; const commands = [];
   const io = createTerminalIo({ base: () => 'http://127.0.0.1:1111', context: () => 'epoch', attachmentDirectory: () => '/memory/files',

@@ -70,7 +70,10 @@ there is no synchronous IPC or awaited keystroke round trip.
 - `term:open(spec)` admits exactly one existing backend shape, a tmux session or
   remote, not owner/bin/env/command authority. A spec carrying `sessionTarget`
   (a Herdr target) is refused at admission with `E_HERDR_REMOVED` and the
-  kernel's stem, before any preparation or PTY. `term:close(handle)` is invoke, not an unleased send path.
+  kernel's stem, before any preparation or PTY. A remote target whose `session
+  inspect` reports a Herdr session (an older kernel) or refuses with
+  `E_HERDR_REMOVED` (0.31) is refused with that code at preflight, before any
+  attach. `term:close(handle)` is invoke, not an unleased send path.
 - `term:ready(handle)` acknowledges **after renderer data/exit listeners exist**.
   Early output is FIFO-buffered≤64KiB for≤5s inside the global slot budget; early
   exit also waits for this acknowledgment. Overflow/expiry rolls back only the
