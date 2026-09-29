@@ -13,9 +13,8 @@ instances/.oats-retirement/baselines/<retirement-key>.json
 instances/dev-owner/
 instances/dev-owner/.agents/
 instances/dev-owner/.agents/skills/
-instances/dev-owner/.agents/skills/golden.messaging/
-instances/dev-owner/.agents/skills/golden.messaging/golden-messaging/
-instances/dev-owner/.agents/skills/golden.messaging/golden-messaging/SKILL.md
+instances/dev-owner/.agents/skills/golden-messaging/
+instances/dev-owner/.agents/skills/golden-messaging/SKILL.md
 instances/dev-owner/.claude/
 instances/dev-owner/.claude/skills -> ../.agents/skills
 instances/dev-owner/.oats/
