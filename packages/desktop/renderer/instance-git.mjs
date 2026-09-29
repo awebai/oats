@@ -170,11 +170,13 @@ export function baseDistance(base) {
   if (parts.length) return `${parts.join(' ')} from ${base.ref.replace(/^origin\//, '')}`;
   return base.ahead === 0 && base.behind === 0 ? 'up to date' : null;
 }
-/** Why there is no Git for this instance, from the roster's work mode (never inferred from the read). */
+/** Why there is no Git for this instance, from the roster's work mode (never inferred from the read). Only the
+ * two modes that have no work tree by design are calm; null for every other mode (a worktree, checkout or attached
+ * instance whose tree is gone, or an unknown mode), which the panel reports as a failure with its code. */
 export function noGitReason(work) {
   if (work === 'directory') return 'It works in a plain folder (directory mode), so there is no branch or pull request to show.';
   if (work === 'workspace') return "It works across the workspace's member repositories (workspace mode), so there is no single branch or pull request to show.";
-  return 'It has no Git work tree, so there is no branch or pull request to show.';
+  return null;
 }
 export function createInstanceGitPanel(parent, { request, generation = () => 0, applyFocus = fn => fn(),
   requestForge, requestThreads = null, connectionGeneration = () => 0, subscribeConnections = () => () => {}, connect, openExternal, onObservation = () => {}, onPullRequest = () => {} } = {}) {
@@ -325,8 +327,10 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
       if (!canPaint(ref) || ticket !== observationTicket) return;
       const result = reply(raw, ref);
       if (result.status !== 'available') {
-        // No work tree at all (directory / workspace mode) is a calm fact, not a failure; every other refusal stays red with its code.
-        if (result.reason.code === 'E_NO_WORKTREE' && !facts.childElementCount) { message(status); emptyWhy.textContent = noGitReason(work); noGit(true); locks(); return; }
+        // No work tree by design (directory / workspace mode) is a calm fact, not a failure. Every other refusal,
+        // including E_NO_WORKTREE for a mode that should have a tree (a lost worktree), stays red with its code.
+        const calm = result.reason.code === 'E_NO_WORKTREE' && !facts.childElementCount ? noGitReason(work) : null;
+        if (calm) { message(status); emptyWhy.textContent = calm; noGit(true); locks(); return; }
         unavailable(result.reason.message, result.reason.code); return;
       }
       const data = gitState(result.data, ref.target);

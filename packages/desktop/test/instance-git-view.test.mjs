@@ -330,8 +330,7 @@ test('no uncommitted changes: a dashed card under the Changes header, no count, 
 });
 
 for (const [work, sentence] of [['directory', 'It works in a plain folder (directory mode), so there is no branch or pull request to show.'],
-  ['workspace', "It works across the workspace's member repositories (workspace mode), so there is no single branch or pull request to show."],
-  [undefined, 'It has no Git work tree, so there is no branch or pull request to show.'], ['odd', 'It has no Git work tree, so there is no branch or pull request to show.']]) {
+  ['workspace', "It works across the workspace's member repositories (workspace mode), so there is no single branch or pull request to show."]]) {
   test(`E_NO_WORKTREE for work ${JSON.stringify(work)} is the calm "No Git for this instance" state, not an error`, async t => {
     const u = setup(t, () => refused('E_NO_WORKTREE', target(), 'This instance has no available Git worktree'));
     await u.show({ ...target(), work });
@@ -352,6 +351,18 @@ for (const [work, sentence] of [['directory', 'It works in a plain folder (direc
     assert.equal(u.one('.git-empty').hidden, true); assert.equal(u.one('.git-empty-note').hidden, true); assert.equal(u.one('.git-toolbar').hidden, false);
   });
 }
+
+// A mode that should have a tree (its worktree was lost) or an unknown mode is a failure, never a calm state.
+for (const work of ['worktree', 'checkout', 'attached', undefined, 'odd']) test(`E_NO_WORKTREE for work ${JSON.stringify(work)} stays red with the kernel message, its code and Refresh`, async t => {
+  const u = setup(t, () => refused('E_NO_WORKTREE', target(), 'This instance has no available Git worktree'));
+  await u.show({ ...target(), work });
+  assert.equal(noGitReason(work), null);
+  assert.equal(u.one('.git-empty').hidden, true); assert.equal(u.one('.git-empty-note').hidden, true);
+  const status = u.one('.git-status');
+  assert.equal(status.textContent, 'This instance has no available Git worktree'); assert.ok(status.classList.contains('error'));
+  assert.equal(u.one('.git-status-details').hidden, false); assert.equal(u.one('.git-status-details pre').textContent, 'E_NO_WORKTREE');
+  assert.equal(u.one('.git-toolbar').hidden, false); assert.equal(u.one('.git-footer').hidden, false, 'Refresh to retry');
+});
 
 test('E_NO_WORKTREE after a good observation is a stale failure like any other, never a calm empty state over stale facts', async t => {
   const u = setup(t); await u.show();

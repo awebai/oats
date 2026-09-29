@@ -100,10 +100,12 @@ Important codes include `E_BAD_ARGS`, `E_WORKSPACE_UNKNOWN`,
 error details are never sent to the view. Only a validated current observation
 from a stale refusal is preserved; it is diagnostic, not a replacement patch.
 
-The view renders `E_NO_WORKTREE` (a directory- or workspace-mode instance, or a
-home without a work tree) as the calm "No Git for this instance" state, whose
-sentence names the roster's work mode; it is a fact, not a failure. Every other
-refusal stays red with its code behind **Details**.
+The view renders `E_NO_WORKTREE` as the calm "No Git for this instance" state
+only when the roster's work mode is `directory` or `workspace` (no work tree by
+design); its sentence names that mode. For any other mode (a worktree, checkout
+or attached instance whose tree is gone, or an unknown mode) it is a failure
+like every other refusal: red, with the kernel's message, its code behind
+**Details** and Refresh.
 
 Stale diff selection clears the patch and starts a newly owned observation.
 The user must select again. Neither an old patch nor an automatically rebound
