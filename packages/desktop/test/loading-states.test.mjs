@@ -304,3 +304,16 @@ test('the roster-row skeleton wears the real row classes, so shell.css owns its 
   assert.doesNotMatch(block, /min-height|padding|gap/, 'no copied row pixels: the row classes decide');
   assert.match(block, /pointer-events: none/);
 });
+
+test('while the stale line or the failed block is visible the status line is announced but quiet (clipped, its box kept); pending and updated stay visible', t => {
+  const u = setup(t);
+  u.ds.begin(); assert.equal(u.status.classList.contains('loading-quiet'), false, '"Loading…" is shown');
+  u.ds.fail(new Error('down')); assert.equal(u.status.textContent, "Couldn't refresh instances. down"); assert.equal(u.status.classList.contains('loading-quiet'), true, 'the failed block is the visible message');
+  u.ds.begin({ user: true }); u.ds.succeed(); assert.equal(u.status.textContent, 'Instances updated'); assert.equal(u.status.classList.contains('loading-quiet'), false);
+  u.ds.begin(); u.ds.fail(new Error('down')); assert.equal(u.status.classList.contains('loading-quiet'), true, 'the stale line is the visible message');
+  u.ds.begin(); u.ds.succeed(); assert.equal(u.status.classList.contains('loading-quiet'), false);
+  u.ds.begin(); u.ds.fail(new Error('down')); u.ds.reset(); assert.equal(u.status.classList.contains('loading-quiet'), false);
+  const css = readFileSync(new URL('../renderer/loading.css', import.meta.url), 'utf8');
+  assert.match(css, /\.loading-quiet \{ clip-path: inset\(50%\); \}/, 'clipped, not removed: the 1.5em box stays, so nothing shifts');
+  assert.doesNotMatch(css, /loading-retry:focus-visible/, 'no per-component focus ring: the global :focus-visible rule covers every button');
+});

@@ -85,7 +85,7 @@ ${soulTeamsHereCSS}
 .soul-inspector .inspector-content .skeleton-detail-sections { padding-top:4px; }
 .soul-page .inspector-main .skeleton-detail-sections { gap:22px; }
 .soul-page .inspector-main .skeleton-detail-section { margin:0; }
-.soul-page .inspector-main .skeleton-detail-section .skeleton-block { --skeleton-block-h:120px; }
+.soul-page .inspector-main .skeleton-detail-section .skeleton-block { --skeleton-block-h:150px; }
 /* The side column's card skeleton: a page-card at its size with a title line and a body block. */
 .skeleton-page-card { display:flex; flex-direction:column; gap:10px; min-width:0; padding:12px 14px; box-sizing:border-box; background:var(--surface); border:1px solid var(--border); border-radius:10px; }
 .skeleton-page-card .skeleton-title { height:11px; width:40%; }
@@ -368,7 +368,6 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
         // Dispatch on the payload's own integer: a classic scope still answers operationsApi 1.
         loading.fail(new Error(data?.operationsApi === 1 ? 'This workspace still uses the classic layout, which answers an older inspection. The inspector shows it once it is on the workspace model.'
           : 'The installed OATS CLI returned an inspection this Desktop cannot read. Update OATS and refresh.'));
-        status.classList.add('error');
         return;
       }
       loading.succeed({ observedAt: typeof result?.observedAt === 'string' ? result.observedAt : null });
@@ -386,7 +385,8 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       if (!valid(id, gen)) return;
       // With content: stale (the line under the head, Retry). Without: the failed block where the skeleton
       // stood — the kernel's sentence, the code behind Details, Retry.
-      loading.fail(error); status.classList.add('error');
+      // Stale and failed are calm information (the amber line / the failed block carry them): never the error red.
+      loading.fail(error);
       // E_TEAM_CONFLICT: the soul can't be spawned until the workspace agrees; name the two labels.
       const labels = !loading.hasData && error?.code === 'E_TEAM_CONFLICT' ? teamLabels(error.labels) : null;
       content.querySelector('.inspector-conflict-labels')?.remove();

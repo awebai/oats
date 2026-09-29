@@ -110,7 +110,8 @@ test('a refused inspection reads as the kernel sentence with the code behind Det
   const refused = doc('inspect-soul-conflict').error;
   const u = await rendered(t, soulSelection, Object.assign(new Error(refused.message), { code: refused.code }));
   const status = u.el.querySelector('.inspector-status');
-  assert.equal(status.textContent, `Couldn't refresh soul. ${refused.message}`); assert.ok(status.classList.contains('error'));
+  assert.equal(status.textContent, `Couldn't refresh soul. ${refused.message}`); assert.equal(status.classList.contains('error'), false, 'a failed read is calm information, not the error red');
+  assert.equal(status.classList.contains('loading-quiet'), true, 'announced; the failed block below is the visible message');
   assert.match(status.textContent, /team labels "engineering" and "global" give it different entries/);
   const failed = u.el.querySelector('.inspector-content .loading-failed');
   assert.equal(failed.querySelector('.loading-failed-message').textContent, refused.message);

@@ -181,7 +181,8 @@ test('a failed refresh with content goes stale: "Couldn\'t refresh soul · obser
   assert.equal(notice.querySelector('.loading-notice-text').textContent, "Couldn't refresh soul · observed 45s ago");
   const retry = notice.querySelector('.loading-retry'); assert.equal(retry.textContent, 'Retry');
   assert.deepEqual([...content.children], children, 'the content is kept'); assert.equal(content.hasAttribute('aria-busy'), false);
-  assert.equal(u.status().textContent, "Couldn't refresh soul."); assert.ok(u.status().classList.contains('error'));
+  assert.equal(u.status().textContent, "Couldn't refresh soul."); assert.equal(u.status().classList.contains('error'), false, 'stale is calm information, never the error red');
+  assert.equal(u.status().classList.contains('loading-quiet'), true, 'announced, not shown beside the visible stale line');
   assert.deepEqual(u.all('[data-launch], [data-files]').map(b => b.disabled), disabledBefore, 'the existing disabling rules, nothing new');
   assert.equal(u.q('.loading-failed'), null, 'no failed block over content');
   retry.focus(); retry.click();
@@ -203,7 +204,8 @@ test('a failed first read is the failed block where the skeleton stood: the caus
   assert.equal(failed.querySelector('.loading-failed-details summary').textContent, 'Details');
   assert.equal(failed.querySelector('.loading-failed-code').textContent, 'E_TEAM_CONFLICT');
   assert.equal(failed.nextElementSibling.textContent, 'Team labels in conflict: engineering, global');
-  assert.equal(u.status().textContent, `Couldn't refresh soul. ${conflict.message}`); assert.ok(u.status().classList.contains('error'));
+  assert.equal(u.status().textContent, `Couldn't refresh soul. ${conflict.message}`); assert.equal(u.status().classList.contains('error'), false, 'never red');
+  assert.equal(u.status().classList.contains('loading-quiet'), true, 'the failed block is the one visible message');
   assert.equal(u.q('.loading-notice'), null, 'no stale line without data');
   const retry = failed.querySelector('.loading-retry'); retry.focus(); retry.click();
   assert.equal(u.calls.filter(u.inspect).length, 2); assert.equal(u.calls.at(-1).body.refresh, true);

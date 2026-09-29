@@ -204,6 +204,12 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
     if (!status || text === announced) return;
     announced = text; status.textContent = text;
   }
+  // While the stale line or the failed block is on screen, the status line is announced but not shown
+  // (.loading-quiet: loading.css clips it, its 1.5em box stays so nothing shifts; the class works on any surface's own status element): one visible message, calm.
+  function syncQuiet() {
+    if (!status) return;
+    status.classList.toggle('loading-quiet', noticeEl?.dataset.kind === 'stale' || !!failedEl);
+  }
   // A focused Retry never disappears under the finger silently: focus moves to the fallback first.
   function removeKeepingFocus(el) {
     if (!el) return;
@@ -312,7 +318,7 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
       removeSkeleton(); removeFailed(); removeIndicator(); removeNotice();
       state = settled = 'idle'; busy = false; hasData = false; user = false; observedAt = null; announced = null;
       if (status) status.textContent = '';
-      setRegionBusy(false); setBusyControls();
+      setRegionBusy(false); setBusyControls(); syncQuiet();
     },
     /** A read starts. `user`: a Refresh/Retry the person asked for (its completion is announced). */
     begin({ user: invoked = false } = {}) {
@@ -340,7 +346,7 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
       state = settled = empty ? 'empty' : 'ready'; setRegionBusy(false);
       if (isOldObservation(observedAt, now())) showNotice('observed'); else removeNotice();
       if (wasUser) say(wording.updated(noun)); else { announced = null; if (status) status.textContent = ''; }
-      setBusyControls();
+      setBusyControls(); syncQuiet();
     },
     /** The owning read failed: stale with data, failed without. */
     fail(error = null) {
@@ -360,7 +366,7 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
         showFailed(error);
         say(message ? `${wording.couldNotRefresh(noun)}. ${message}` : `${wording.couldNotRefresh(noun)}.`);
       }
-      setBusyControls();
+      setBusyControls(); syncQuiet();
     },
     touch,
     /** A surface's own message on the status line (an operation's result, a miss): goes through the
@@ -376,7 +382,7 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
       pendingTimer = clearTimer(pendingTimer); refreshingTimer = clearTimer(refreshingTimer);
       removeSkeleton(); removeIndicator(); removeFailed();
       busy = false; user = false; state = 'pending'; setRegionBusy(true); say(wording.loading(noun));
-      setBusyControls();
+      setBusyControls(); syncQuiet();
     },
     /** The in-flight read was superseded or abandoned (the view hid, the host cancelled): drop the
      * pending visuals and the busy mark without announcing anything; the settled state stays. */
