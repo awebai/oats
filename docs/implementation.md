@@ -88,7 +88,9 @@ gets the plain per-call behaviour. Within a session:
 - discovery reads members eight at a time (`DISCOVERY_CONCURRENCY`) with
   serial results: declaration order, the first failure in that order. The
   observations and the member reads are two pools, so a discovery runs at
-  most sixteen git processes at once (eight of them fetches at most).
+  most sixteen git processes at once (eight of them fetches at most). One
+  shared pool would deadlock: a member read holding a slot waits on its
+  member's observation, which needs a slot of its own.
 
 Across commands, `memoAtCommit` keeps parsed reads under
 `<cache>/.parsed/<kernel fingerprint>/`, keyed by (repo key, full commit,
