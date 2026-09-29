@@ -112,6 +112,27 @@ test("no git cat-file --batch child outlives the command — after success and a
   }
 });
 
+test("the member prefetch (Addendum 3): souls and soul teams observe each head once; teams and inspect --home observe the host only", { timeout: 120_000 }, () => {
+  const shim = join(base, "shim-ls");
+  mkdirSync(shim, { recursive: true });
+  const log = join(base, "ls-remote.log");
+  writeFileSync(join(shim, "git"), `#!/bin/bash\n[ "$1" = "ls-remote" ] && echo "$3" >> "${log}"\nexec "${REAL_GIT}" "$@"\n`, { mode: 0o755 });
+  const lsRemotes = (args) => {
+    writeFileSync(log, "");
+    json(oats(args, { extraEnv: { PATH: `${shim}:${env.PATH}` } }));
+    return readFileSync(log, "utf8").split("\n").filter(Boolean);
+  };
+  json(oats(["souls", "--json"])); // the host's record and its workspace entry: the prefetch's source
+  const souls = lsRemotes(["souls", "--json"]);
+  assert.equal(new Set(souls).size, souls.length, `each head once: ${souls.join(", ")}`);
+  assert.equal(souls.length, 5, "the host (also a member) and the four other members");
+  // `soul teams <soul>` discovers the whole workspace to find the soul (as it did before the prefetch).
+  assert.deepEqual(lsRemotes(["soul", "teams", "release-manager", "--json"]).sort(), [...souls].sort(), "soul teams: each head once");
+  for (const args of [["teams", "--json"], ["inspect", "--home", home, "--json"]]) {
+    assert.deepEqual(lsRemotes(args), [fx.refs.agents], `${args.slice(0, 2).join(" ")}: the host only, no member prefetch`);
+  }
+});
+
 test("invalidation: instances, oats-local.yaml and the lock are read afresh — --max-age 60 reflects a retire, a teams edit and a rewritten lock at once", { timeout: 300_000 }, () => {
   const aged = (args) => json(oats([...args, "--max-age", "60"]));
   // An instance spawned now, then retired: status --max-age 60 shows each state immediately.

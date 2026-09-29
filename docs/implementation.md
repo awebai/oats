@@ -69,7 +69,15 @@ Every CLI command owns one read session (`createReadSession` in
 CLI closes it when the command ends). A library caller without a session
 gets the plain per-call behaviour. Within a session:
 
-- a head is observed once per (cache repo, ref) and a commit peeled once;
+- a head is observed once per (cache repo, ref), at most eight `ls-remote`s at
+  once (`LS_REMOTE_LIMIT`), and a commit peeled once;
+- a whole-workspace discovery prefetches its members' heads together with the
+  host's (`prefetchMembers` in `workspace.mjs`): the member list comes from the
+  host's last observation record and the parsed `workspace` entry at that
+  commit, never from a git process, and the answer still uses the list at the
+  host commit observed now. A prefetched failure is adopted by the member's own
+  observation, not retried in the command. `observeWorkspace` alone (the
+  `teams` reads, `inspect --home`) never prefetches;
 - a commit's tree is listed once (`git ls-tree -r -t -l`, bounded by
   `TREE_INDEX_BUDGET`; anything odd falls back to the per-path reads), and
   blobs come from one `git cat-file --batch` reader per cache repo (at most
