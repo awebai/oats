@@ -5,8 +5,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { JSDOM } from "jsdom";
 import {
-  DEFAULT_KEYMAP, TERMINAL_ALLOWLIST, defaultBinding, getBinding, formatChord,
+  DEFAULT_KEYMAP, TERMINAL_ALLOWLIST, defaultBinding, getBinding, formatChord, isPlainChord,
   registerAction, setActiveContexts, resetAllBindings, setBinding, matchEvent, handleKeydown,
 } from "../renderer/keybindings.mjs";
 
@@ -154,4 +155,25 @@ test("shell wiring: the new actions are registered, rebindable and discoverable"
   for (const id of ["tabs.nextPage", "tabs.prevPage", "focus.nextRegion", "focus.prevRegion"]) assert.match(src, new RegExp(`id: "${id.replace(".", "\\.")}"`), id);
   assert.match(src, /id: `tabs\.goto\$\{n\}`/, "go to tab 1–9");
   assert.match(src, /NAV\.forEach\(\(v\) => registerAction\(\{\n  id: `stage\.\$\{v\.name\}`/, "stage.automations comes from the nav manifest");
+});
+
+test("F6 / Shift+F6 fire from a real terminal textarea and a text field (function keys never type)", t => {
+  registerAll(t);
+  const dom = new JSDOM(`<div class="xterm"><textarea class="xterm-helper-textarea"></textarea></div><input class="ctx-filter"><textarea class="ftask"></textarea>`);
+  t.after(() => dom.window.close());
+  const doc = dom.window.document;
+  // Found on the rig: the editable-field guard dropped F6 in xterm's input textarea, so the
+  // pty got it. These are real targets: matchEvent derives insideTerminal and editable from them.
+  for (const target of [doc.querySelector(".xterm-helper-textarea"), doc.querySelector(".ctx-filter"), doc.querySelector(".ftask")]) {
+    for (const isMac of [true, false]) {
+      assert.equal(matchEvent(ev("F6", { target }), { isMac }), "focus.nextRegion", `${target.className} mac=${isMac}`);
+      assert.equal(matchEvent(ev("F6", { target, shiftKey: true }), { isMac }), "focus.prevRegion", `${target.className} mac=${isMac}`);
+    }
+  }
+  assert.equal(isPlainChord("F6"), false); assert.equal(isPlainChord("Shift+F12"), false);
+  // Keys that type stay the field's: a plain-letter binding never fires while typing.
+  setBinding("sidebar.toggle", "B");
+  assert.equal(isPlainChord("B"), true);
+  assert.equal(matchEvent(ev("b", { target: doc.querySelector(".ctx-filter") }), { isMac: false }), null);
+  assert.equal(matchEvent(ev("b", { target: doc.querySelector(".xterm-helper-textarea") }), { isMac: true }), null);
 });

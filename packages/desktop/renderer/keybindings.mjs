@@ -374,10 +374,12 @@ function resolveForCompare(chord, isMac) {
 
 /** True for a chord with no ctrl/alt/mod modifiers (shift-only counts as
  * plain — typing produces shifted characters). Such bindings are guarded off
- * editable fields by matchEvent; the editor warns when recording one. */
+ * editable fields by matchEvent; the editor warns when recording one.
+ * Function keys (F1–F24) never type text, so they are not plain: F6 must cycle
+ * regions from a text field and from a terminal's input textarea (spec F). */
 export function isPlainChord(chord) {
   const c = typeof chord === "string" ? parseChord(chord) : chord;
-  return !!c && !c.mod && !c.ctrl && !c.alt;
+  return !!c && !c.mod && !c.ctrl && !c.alt && !/^f\d{1,2}$/.test(c.key);
 }
 
 // ---------------------------------------------------------------- dispatch
