@@ -26,10 +26,11 @@ packages:
   oats.authoring: v1.0.3
   oats.engineering: v1.1.0
 
-# No shared teams yet (team model v2). A shared team is committed here WITH its
-# provider id (`teams: { oats: { team: <id> } }`) once every deployment using
-# this workspace runs OATS 0.30; personal teams, the default team and which
-# souls join which team live in each deployment's own oats-local.yaml.
+# Shared teams (team model v2; needs OATS 0.30 on every deployment): the same
+# provider team for everyone. Personal teams, the default team and which souls
+# join which team live in each deployment's own oats-local.yaml.
+teams:
+  oats: { description: The OATS framework team, team: "default:oats.aweb.ai" }
 
 # The framework's own souls consume the official core, knowledge and messaging
 # providers as packages, exactly as an adopter does. Every soul gets messaging:
