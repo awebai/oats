@@ -13,15 +13,28 @@ const exiting = (code, stdout, calls = []) => (bin, args, opts) => runTerminalCo
   return child;
 });
 const cli = { bin: "/selected/oats", version: "0.22.2", remote: ["session"] };
-const remote = { serverId: "build", instance: "dev-task", target: { oatsPath: "/untrusted" } };
-test("remote viewer uses host-selected CLI and saved-route address only", async () => {
+const home = "/srv/agents/dev/instances/dev-task";
+const remote = { serverId: "build", instance: "dev-task", home, target: { oatsPath: "/untrusted" } };
+test("remote viewer uses the host-selected CLI and addresses the instance by server and home only, never a bare name", async () => {
   const got = await prepareRemoteTerm(cli, remote, { run: async (bin, args) => {
     assert.equal(bin, "/selected/oats");
-    assert.deepEqual(args, ["session", "inspect", "--server", "build", "--instance", "dev-task", "--json"]);
+    assert.deepEqual(args, ["session", "inspect", "--server", "build", "--home", home, "--json"]);
     return { stdout: JSON.stringify({ schemaVersion: 1, ok: true, result: { present: true } }) };
   } });
-  assert.deepEqual(got, { binary: "/selected/oats", args: ["session", "attach", "--server", "build", "--instance", "dev-task"] });
-  assert.throws(() => remoteTargetKey({ serverId: "--host", instance: "x" }));
+  assert.deepEqual(got, { binary: "/selected/oats", args: ["session", "attach", "--server", "build", "--home", home] });
+  assert.throws(() => remoteTargetKey({ serverId: "--host", instance: "x", home }));
+});
+test("a remote terminal target without an absolute home is refused at admission, before any process", async () => {
+  for (const bad of [{ serverId: "build", instance: "dev-task" }, { serverId: "build", instance: "dev-task", home: "relative/dev-task" },
+    { serverId: "build", instance: "dev-task", home: "" }, { serverId: "build", instance: "dev-task", home: "/a\0b" }]) {
+    assert.throws(() => remoteTargetKey(bad), /invalid remote terminal/);
+    await assert.rejects(prepareRemoteTerm(cli, bad, { run: assert.fail }), /invalid remote terminal/);
+  }
+});
+test("the dedup key is the server and the home: same-named instances differ by home, the same home on two servers never merges", () => {
+  assert.equal(remoteTargetKey(remote), JSON.stringify(["remote", "build", home]));
+  assert.notEqual(remoteTargetKey(remote), remoteTargetKey({ ...remote, home: "/srv/agents/qa/instances/dev-task" }));
+  assert.notEqual(remoteTargetKey(remote), remoteTargetKey({ ...remote, serverId: "other" }));
 });
 test("remote viewer refuses stale and failed preflight", async () => {
   for (const doc of [{ schemaVersion: 1, ok: true, result: { present: false } }, { schemaVersion: 1, ok: false, error: { message: "unreachable" } }]) {
@@ -76,7 +89,7 @@ test("an inspection killed at its deadline is a timeout (a stalled link); one th
 });
 test("remote viewer carries the selected home through preflight, attach and deduplication", async () => {
   const selected = { ...remote, home: "/remote/selected home" };
-  const address = ["--server", "build", "--instance", "dev-task", "--home", selected.home];
+  const address = ["--server", "build", "--home", selected.home];
   const got = await prepareRemoteTerm(cli, selected, { run: async (bin, args) => {
     assert.deepEqual(args, ["session", "inspect", ...address, "--json"]);
     return { stdout: JSON.stringify({ schemaVersion: 1, ok: true, result: { present: true } }) };

@@ -29,7 +29,7 @@ test('remote uploads use installed CLI and exact home; unsupported/failed upload
   const remote={serverId:'build',instance:'dev',home:'/srv/team/agents/dev'};
   const cli={ok:true,bin:'/installed/oats',remote:['session-upload']};let args;
   const paths=await prepareTerminalAttachments([{path}],{directory:dir,remote,cli,run:async(bin,a)=>{assert.equal(bin,cli.bin);args=a;return{stdout:JSON.stringify({schemaVersion:1,ok:true,result:{path:'/remote/image.png'}})};}});
-  assert.deepEqual(paths,['/remote/image.png']);assert.deepEqual(args,['session','upload','--server','build','--instance','dev','--home',remote.home,'--file',path,'--json']);
+  assert.deepEqual(paths,['/remote/image.png']);assert.deepEqual(args,['session','upload','--server','build','--home',remote.home,'--file',path,'--json']);
   await assert.rejects(prepareTerminalAttachments([{path}],{directory:dir,remote,cli:{...cli,remote:[]}}),/Update OATS/);
   await assert.rejects(prepareTerminalAttachments([{path}],{directory:dir,remote,cli,run:async()=>({stdout:'{"schemaVersion":1,"ok":false,"error":{"message":"transfer failed"}}'})}),/transfer failed/);
  }finally{await rm(dir,{recursive:true,force:true});}
