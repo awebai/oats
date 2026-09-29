@@ -144,7 +144,8 @@ function catalogSkeleton(doc, rows = 6) {
   return section;
 }
 
-export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab, onIntent, onOpenCapability = null }) {
+/** `onCatalog`: the catalog changed (a read settled, the subject was reset): a page rendered from it refreshes in place. */
+export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab, onIntent, onOpenCapability = null, onCatalog = null }) {
   const doc = header.ownerDocument;
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
   let alive = true, serial = 0, rosterGen = null, workspace = null, deployment = null, instances = [], tab = 'souls';
@@ -306,7 +307,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
       if (held) loadState.succeed({ observedAt });
       loadState.fail({ message: typeof reason?.message === 'string' && reason.message ? reason.message : 'The workspace capabilities could not be read.', code: typeof reason?.code === 'string' ? reason.code : null });
     }
-    updateCounts(); render();
+    updateCounts(); render(); onCatalog?.();
   }
   function render() {
     syncHeader();
@@ -424,12 +425,16 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   return {
     setTab, updateRoster, syncCli, get tab() { return tab; },
     /** What the capability table renders with (observed facts only), for pages that reuse it. */
-    context: () => ({ status: observed(), instances, root: workspace?.id, catalog: catalog?.capabilities ?? null, catalogState: loadState.state, catalogObservedAt: loadState.observedAt }),
+    context: () => ({ status: observed(), instances, root: workspace?.id, catalog: catalog?.capabilities ?? null,
+      // The catalog's loading state for pages rendered from it (item 7): its state, observation and the last failure's text.
+      catalogState: loadState.state, catalogObservedAt: loadState.observedAt, catalogFailure: failure || null }),
+    /** A page's Retry: re-read the catalog live (announced on completion). */
+    reload() { failure = ''; void load({ user: true, refresh: true }); },
     /** The host's roster read failed with nothing to show: the Souls count is nothing, still (not a pill). */
     rosterUnavailable() { if (soulsCount === 'pending') updateCounts(null); },
     reset() {
       serial++; rosterGen = null; workspace = null; deployment = null; instances = []; catalog = null; loading = false; failure = '';
-      filters = { team: null, repo: null }; sync.reset(); loadState.reset(); updateCounts('pending'); render();
+      filters = { team: null, repo: null }; sync.reset(); loadState.reset(); updateCounts('pending'); render(); onCatalog?.();
     },
     dispose() { alive = false; serial++; sync.dispose(); computerTeams?.dispose(); loadState.dispose(); },
   };

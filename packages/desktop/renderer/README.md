@@ -275,9 +275,14 @@ skeletons.
 
 Skeleton shapes (`skeleton(doc, shape)` / `skeletonBlock`): `roster-row`,
 `soul-card`, `table-row`, `detail-section`, plus `pill` for counts and `line`.
-The roster-row skeleton wears the real row classes (`.ctx-tree-row`,
-`.ctx-inst`, …) so shell.css owns its geometry: a row redesign moves the
-skeleton with it, and no pixel value is copied into loading.css.
+The roster-row and soul-card skeletons wear the real classes (`.ctx-tree-row`,
+`.ctx-inst`, …; `.soul-tile > .soul-card > .sbody / .sfoot`) so shell.css and the
+Souls grid's CSS own their geometry: a redesign moves the skeleton with it, and
+no pixel value is copied into loading.css. The Capabilities table's skeleton
+(`catalogSkeleton` in `workspace-discovery.mjs`) is a disabled, `aria-hidden`
+`button.catalog-row` for the same reason. `defer({ keepSkeleton: true })` is
+for a server that answers "still reading" (`refreshing: true` with nothing
+held): the subject is loading, so the skeleton stays.
 `loading.css` (linked from `index.html` and the harness) derives their fill
 from the theme tokens (`color-mix` of `--fg` over the host), shimmers at 1.6s
 and stops every animation — including the older `.spinner` — under
@@ -304,6 +309,33 @@ repainted behind its own signature, and "Teams here" is created with the frame
 so `soul teams` runs beside `inspect`) and `soul-teams-here.mjs`; readiness in `readiness-view.mjs` (the
 summary line is separate from the status line so an announcement never
 overwrites it).
+
+The Workspace view (`views/spawn.mjs`): the Souls grid's controller
+(`s.gridState`) paints card skeletons in the grid (one row plus one, at the
+real card size), the failed block in the grid and the stale line in
+`.souls-notice` above it; `settleGridState()` reads the reply — the kernel's
+`catalog.reason` is a failed read (stale beside a partial list, failed with
+none), an unobserved deployment defers with the deployment's own copy, and
+`refreshing: true` with no souls keeps the skeleton. `renderGrid()` leaves the
+grid to the controller while there is no data (the one exception is the
+unobserved deployment's copy) and skips an unchanged paint behind
+`s.gridSignature`. The Capabilities tab (`workspace-discovery.mjs`): the held
+table is never set to null within one workspace generation — a CLI emit or a
+sync re-reads it in place (live after a sync, `refresh: true`), a failed
+re-read marks it stale with Retry, and spec 02's held-table shapes (`status:
+'ok'` with `reason`; non-ok with `lastGood: { capabilities, observedAt }`) are
+shown stale. Both tab counts reserve their width with a pill while the count is
+expected (`paintCount`); a failed roster read leaves the Souls count empty and
+still (`rosterUnavailable()`). The capability page (`capability-page.mjs`,
+painted by `paintCapabilityPage` in `views/spawn.mjs`): opened from a soul
+before the catalog is read, the lede and the Comes-from facts are skeletons
+filled in place when the discovery's `onCatalog` fires; a catalog refresh
+while the page is open repaints it behind a signature with focus kept by
+`data-focus-key` (`used:<soul>:<root>`, `file`, `retry`; a vanished control
+hands focus to Back); the catalog's age line (`catalogNotice`) sits under the
+page bar. The spawn dialog's harness, model and launch hints (`matched()` in
+`spawn-dialog.mjs`) read only a preview for the choices on screen, like the
+name and work hints.
 
 ## Team controls on a live instance (teams contract 2026-09-25)
 

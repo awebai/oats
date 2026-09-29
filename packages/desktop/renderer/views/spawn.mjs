@@ -26,7 +26,7 @@ import { cliAvailable, cliKnownUnavailable, cliStatus, refreshCli, onCliChange, 
 import { preselectSchedule } from "./schedules.mjs";
 import { preselectAutomationsTab } from "./automations.mjs";
 import { inspectSupported } from "../inspect-contract.mjs";
-import { createDataState, skeleton, statusLine } from "../loading.mjs";
+import { createDataState, skeleton, statusLine, captureFocusState } from "../loading.mjs";
 
 /** True while the CLI probe has never SETTLED (no response classified yet).
  * Pending is card-less by design, so disabled buttons must explain
@@ -239,13 +239,30 @@ function openCapability(s, row, from = null) {
   if (!s.alive) return;
   // The list is hidden (display:none) while the page is open, which drops its scroll offset: keep it for Back.
   const list = s.q("workspace-discovery");
-  s.capOpen = { row, from, gen: workspaceGeneration(), scrollTop: from ? null : list?.scrollTop ?? null };
-  const { catalog, ...context } = s.discovery.context();
+  s.capOpen = { row, from, gen: workspaceGeneration(), scrollTop: from ? null : list?.scrollTop ?? null, signature: null };
+  paintCapabilityPage(s);
+  showPage(s, "capability");
+  s.q("workspace-cap-page").querySelector(".page-back")?.focus({ preventScroll: true });
+}
+/** The open capability page from the catalog as it is now (desktop/loading-states item 7). From a soul
+ * page before the catalog is read, the catalog's facts are skeletons filled in place when it lands;
+ * when the catalog refreshes while the page is open, the page follows, in place (focus kept by key). */
+function paintCapabilityPage(s) {
+  const open = s.capOpen; if (!open) return;
+  const { row, from } = open;
+  const { catalog, catalogState, catalogObservedAt, catalogFailure, ...context } = s.discovery.context();
   // From a soul page, the catalog's row for the same capability adds what the kernel reports
   // about it in the workspace (#217: description, what it provides, its file and fingerprint).
   const listed = from && Array.isArray(catalog) ? catalog.filter(r => r.name === row.name) : [];
   const facts = listed.length === 1 ? listed[0] : null;
-  renderCapabilityPage(s.q("workspace-cap-page"), { row: facts ? { ...facts, ...row } : row, ...context,
+  const catalogPending = !!from && !Array.isArray(catalog) && (catalogState === "pending" || catalogState === "idle");
+  const observation = { state: catalogState, observedAt: catalogObservedAt, cause: catalogFailure, onRetry: () => s.discovery.reload() };
+  const signature = JSON.stringify([facts, catalogPending, catalogState, catalogObservedAt, catalogFailure, context.instances, context.root]);
+  if (signature === open.signature) return; // an unchanged catalog never rebuilds the page under focus
+  open.signature = signature;
+  const host = s.q("workspace-cap-page");
+  const restore = captureFocusState(host, { fallback: () => host.querySelector(".page-back") });
+  renderCapabilityPage(host, { row: facts ? { ...facts, ...row } : row, ...context, catalogPending, observation,
     openExternal: url => s.ctx.openExternal?.(url),
     backLabel: from ? from.name : "Capabilities", from: from ? { label: from.name } : null,
     onBack: () => closeCapability(s, { restoreFocus: true }),
@@ -254,8 +271,13 @@ function openCapability(s, row, from = null) {
       if (matches.length !== 1) return;
       closeCapability(s); inspectSoul(s, matches[0]);
     } });
-  showPage(s, "capability");
-  s.q("workspace-cap-page").querySelector(".page-back")?.focus({ preventScroll: true });
+  restore();
+}
+/** The catalog changed (a read settled, a reset): the open page follows it; another generation's page closes. */
+function syncCapabilityPage(s) {
+  if (!s.alive || !s.capOpen) return;
+  if (s.capOpen.gen !== workspaceGeneration()) { closeCapability(s); return; }
+  paintCapabilityPage(s);
 }
 function closeCapability(s, { restoreFocus = false } = {}) {
   const open = s.capOpen; s.capOpen = null;
@@ -367,7 +389,7 @@ ${spawnDialogCSS}</style>
     },
   });
   s.discovery = createWorkspaceDiscovery(s.q("workspace-header"), s.q("workspace-discovery"), {
-    ctx, soulsPanel: s.q("souls-grid"), onIntent: () => nextSelectionIntent(),
+    ctx, soulsPanel: s.q("souls-grid"), onIntent: () => nextSelectionIntent(), onCatalog: () => syncCapabilityPage(s),
     onOpenCapability: row => openCapability(s, row, null),
     onTab: tab => {
       s.spawnOp++; closeSpawnModal(s); s.inspector.close(); closeCapability(s); s.page.close();

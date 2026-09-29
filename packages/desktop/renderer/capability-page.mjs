@@ -7,6 +7,7 @@
 import { createSoulMark } from './identity-marks.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { capabilitySource, capabilityUse, capabilityRow, memberNames, layerLabel, sourceChip } from './workspace-catalog.mjs';
+import { skeleton, wording, observedText, observedAgeText, isOldObservation } from './loading.mjs';
 
 /** The shared page chrome: bar, columns, section titles and side cards. */
 export const pageCardCSS = `
@@ -32,6 +33,15 @@ export const pageCardCSS = `
 .page-title.mono { font:700 20px var(--mono,monospace); }
 .page-tag { display:inline-flex; align-items:center; height:22px; padding:0 7px; border-radius:5px; background:var(--chip-bg); color:var(--fg); font:650 11.5px var(--sans,system-ui); letter-spacing:0; white-space:nowrap; }
 .page-lede { margin:0; color:var(--muted); font-size:13px; }
+/* desktop/loading-states item 7: the catalog's facts arrive after the page (opened from a soul): a
+   lede-sized line and a facts-sized block stand where they go; the catalog's age line sits under the bar. */
+.page-lede.skeleton { height:13px; width:55%; margin-top:2px; }
+.page-facts-skeleton { display:flex; flex-direction:column; gap:10px; }
+.page-facts-skeleton .skeleton-line { height:11px; width:70%; }
+.page-facts-skeleton .skeleton-line:nth-child(2n) { width:50%; }
+.page-notice { padding:12px 28px 0; }
+.page-notice:empty { display:none; }
+.page-notice .loading-notice { margin:0; }
 .page-facts-row { display:flex; flex-wrap:wrap; align-items:center; gap:6px 20px; margin-top:8px; font-size:12.5px; }
 .page-fact { display:inline-flex; align-items:center; gap:7px; white-space:nowrap; min-width:0; }
 .page-fact .shell-icon { color:var(--muted); }
@@ -164,14 +174,40 @@ export function packageOrigin(source) {
   return git ? `git · ${git[1]}` : source;
 }
 
-/** @param row a catalog row (or capabilityRow(resolved)); from: { label } when opened from a soul page. */
-export function renderCapabilityPage(host, { row, status, instances, root, backLabel = 'Capabilities', onBack, openSoul = null, from = null, openExternal = null }) {
+/** The catalog's age line for a page (desktop/loading-states): stale (the read failed; Retry, the cause
+ * behind Details) or an old observation; nothing when the catalog is current. `state`: the catalog
+ * controller's state; `observedAt`: ISO or null; `cause`: the failure's text. */
+export function catalogNotice(doc, { state, observedAt = null, cause = null, onRetry = null } = {}, now = Date.now()) {
+  const stale = state === 'stale', old = !stale && isOldObservation(observedAt, now);
+  if (!stale && !old) return null;
+  const notice = el(doc, 'div', null, 'loading-notice'); notice.dataset.kind = stale ? 'stale' : 'observed';
+  const age = observedText(observedAt, now);
+  notice.append(el(doc, 'span', stale ? (age ? `${wording.couldNotRefresh('capabilities')} · ${age}` : wording.couldNotRefresh('capabilities')) : wording.observed(observedAgeText(observedAt, now)), 'loading-notice-text'));
+  if (stale) {
+    if (cause) notice.title = cause;
+    const retry = el(doc, 'button', wording.retry, 'act loading-retry'); retry.type = 'button'; retry.dataset.focusKey = 'retry';
+    retry.addEventListener('click', () => { if (retry.getAttribute('aria-disabled') !== 'true') onRetry?.(); });
+    if (typeof onRetry !== 'function') retry.hidden = true;
+    notice.append(retry);
+    if (cause) { const more = el(doc, 'details', null, 'loading-notice-details'); more.append(el(doc, 'summary', 'Details'), el(doc, 'p', cause, 'loading-notice-cause')); notice.append(more); }
+  }
+  return notice;
+}
+
+/** @param row a catalog row (or capabilityRow(resolved)); from: { label } when opened from a soul page.
+ * `catalogPending`: opened from a soul before the catalog is read — its facts (the lede, Comes from) are
+ * skeletons the host fills in place when it arrives. `observation`: the catalog's { state, observedAt,
+ * cause, onRetry } for the age line. */
+export function renderCapabilityPage(host, { row, status, instances, root, backLabel = 'Capabilities', onBack, openSoul = null, from = null, openExternal = null, catalogPending = false, observation = null }) {
   const doc = host.ownerDocument;
   const node = (tag, value, cls) => el(doc, tag, value, cls);
   host.replaceChildren();
   const resolved = row.resolved;
   const page = node('div', undefined, 'capability-page'); page.dataset.capability = row.name;
+  if (catalogPending) page.dataset.catalogPending = 'true';
   const { bar } = pageBar(doc, { backLabel, crumbs: from ? ['Workspace', 'Souls', from.label] : ['Workspace', 'Capabilities'], current: row.name, onBack });
+  const noticeHost = node('div', undefined, 'page-notice');
+  const notice = observation ? catalogNotice(doc, observation) : null; if (notice) noticeHost.append(notice);
   const body = node('div', undefined, 'page-body'), main = node('div', undefined, 'page-main'), side = node('div', undefined, 'page-side');
   // Identity: its icon, name and core tag.
   const identity = node('div', undefined, 'page-identity');
@@ -180,8 +216,9 @@ export function renderCapabilityPage(host, { row, status, instances, root, backL
   const title = node('h2', undefined, 'page-title mono'); title.append(node('span', row.name));
   if (text(row.layer)) title.append(node('span', `Core · ${layerLabel(row.layer)}`, 'page-tag'));
   copy.append(title);
-  // Kernel #217: the manifest's description.
+  // Kernel #217: the manifest's description (a line-sized skeleton while the catalog is still being read).
   if (text(row.description)) copy.append(node('p', row.description, 'page-lede'));
+  else if (catalogPending) { const lede = skeleton(doc, 'line', { width: '55%' }); lede.classList.add('page-lede'); copy.append(lede); }
   identity.append(glyph, copy); main.append(identity);
   // Kernel #217: what it provides, by name (the manifest's skills, commands and hooks).
   const named = [['Skills', row.skills], ['Commands', row.commands], ['Hooks', row.hooks]].filter(([, v]) => v !== undefined);
@@ -220,7 +257,7 @@ export function renderCapabilityPage(host, { row, status, instances, root, backL
     const behind = carrying.filter(i => moduleRow(i, row.name)?.status === 'moved').length;
     const line = typeof openSoul === 'function' ? node('button', undefined, 'page-table-row used-row') : node('div', undefined, 'page-table-row used-row');
     line.setAttribute('role', 'row');
-    if (line.tagName === 'BUTTON') { line.type = 'button'; line.addEventListener('click', () => openSoul(soul)); line.title = `Open ${soul.name}`; }
+    if (line.tagName === 'BUTTON') { line.type = 'button'; line.addEventListener('click', () => openSoul(soul)); line.title = `Open ${soul.name}`; line.dataset.focusKey = `used:${soul.name}:${soul.agentsRoot || ''}`; }
     const who = node('span', undefined, 'used-soul'); who.setAttribute('role', 'cell'); who.append(createSoulMark(doc, soul), node('span', soul.name, 'used-name'));
     const meta = node('span', `${carrying.length}${behind ? ` · ${behind} on an older version` : ''}`, `used-meta${behind ? ' warn' : ''}`); meta.setAttribute('role', 'cell');
     line.append(who, meta); table.append(line);
@@ -230,7 +267,12 @@ export function renderCapabilityPage(host, { row, status, instances, root, backL
   const names = memberNames(status), source = capabilitySource(row, names);
   const pkg = row.kind === 'package' ? list(status?.packages).find(p => p.id === row.package) : null;
   const origin = pageCard(doc, 'Comes from', { icon: row.kind === 'package' ? 'package' : 'repo' });
-  origin.card.append(pageFacts(doc, row.kind === 'package' ? [
+  if (catalogPending && row.kind !== 'package') {
+    // The catalog's facts (Latest, Path, Fingerprint, File) are not read yet: a facts-sized block, filled in place when they land.
+    const facts = node('div', undefined, 'page-facts-skeleton'); facts.setAttribute('aria-hidden', 'true'); facts.dataset.skeleton = 'facts';
+    for (let i = 0; i < 4; i++) facts.append(skeleton(doc, 'line'));
+    origin.card.append(facts);
+  } else origin.card.append(pageFacts(doc, row.kind === 'package' ? [
     ['Package', row.package], ['Pinned', [row.version, packageOrigin(pkg?.source)].filter(Boolean).join(' · ')],
     ['Commit', short(row.commit), row.commit], ['Fingerprint', fingerprint(pkg?.integrity || row.resolved?.from?.integrity), pkg?.integrity || row.resolved?.from?.integrity],
   ] : [
@@ -240,14 +282,14 @@ export function renderCapabilityPage(host, { row, status, instances, root, backL
     ...(row.private === true ? [['Owned', 'this repo\'s souls only']] : []),
   ]));
   // Kernel #217: its manifest file, as a web page when the repository has one, else its path.
-  if (row.file && text(row.file.path)) {
+  if (row.file && text(row.file.path) && !(catalogPending && row.kind !== 'package')) {
     const web = typeof row.file.url === 'string' && /^https:\/\//.test(row.file.url) ? row.file.url : null;
     const facts = pageFacts(doc, [['File', row.file.path, row.file.path, 'wrap']]), dd = facts.querySelector('dd');
     // A path breaks after its slashes, never inside a name.
     if (dd) { dd.replaceChildren(); row.file.path.split('/').forEach((part, i, all) => { dd.append(node('span', i < all.length - 1 ? `${part}/` : part, 'path-part')); if (i < all.length - 1) dd.append(doc.createElement('wbr')); }); }
     origin.card.append(facts);
     if (web && typeof openExternal === 'function') {
-      const open = node('button', 'Open file', 'act'); open.type = 'button'; open.title = web; open.dataset.verb = 'file';
+      const open = node('button', 'Open file', 'act'); open.type = 'button'; open.title = web; open.dataset.verb = 'file'; open.dataset.focusKey = 'file';
       open.addEventListener('click', () => openExternal(web)); origin.card.append(open);
     }
   }
@@ -262,7 +304,7 @@ export function renderCapabilityPage(host, { row, status, instances, root, backL
     }
     side.append(as.card);
   }
-  body.append(main, side); page.append(bar, body);
+  body.append(main, side); page.append(bar, noticeHost, body);
   host.append(page);
   return page;
 }

@@ -11,13 +11,14 @@ import { currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
 import { refreshCli } from '../renderer/views/cli-status.mjs';
 import { workspaceStatusData, deploymentStatusData } from '../deployment-data.mjs';
 import { PENDING_DELAY_MS, REFRESHING_DELAY_MS } from '../renderer/loading.mjs';
+import { soulInspection } from './helpers/inspect-fixture.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const settle = async () => { for (let i = 0; i < 4; i++) await tick(); };
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 const f2 = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/f2/${name}.json`, import.meta.url), 'utf8'));
 const dir = '/fixture/base/northwind-workspace';
-const CLI = { ...f2('version'), ok: true, bin: '/fixture/bin/oats', operationsApi: 1, relations: true };
+const CLI = { ...f2('version'), ok: true, bin: '/fixture/bin/oats', operationsApi: 2, features: [...(f2('version').features || []), 'operations'], relations: true };
 const status = workspaceStatusData(f2('workspace-status'), dir);
 const roster = deploymentStatusData(f2('status'), dir);
 const agents = roster.agents.map(({ instances: _i, ...soul }) => ({ ...soul, agentsRoot: roster.root }));
@@ -55,6 +56,7 @@ async function setup(t, { holdRoster = false, holdReads = false } = {}) {
     if (path.startsWith('/api/agents')) { if (!holdRoster) return { agents }; const r = deferred(); rosters.push(r); return r.promise; }
     if (path.startsWith('/api/panel')) return panel();
     if (path.startsWith('/api/workspace-sync')) { if (!holdReads) return okRead(); const r = deferred(); reads.push({ ...r, body }); return r.promise; }
+    if (path.startsWith('/api/capabilities') && body?.action === 'inspect') return soulInspection(body.selector.soul || 'release-manager');
     if (path === '/api/servers') return { servers: [] };
     throw new Error(`Unexpected fixture API request: ${path}`);
   } };
@@ -164,4 +166,51 @@ test('a failed roster read with nothing to show leaves the Souls count empty and
 test('retired wording: "Reading the workspace capabilities" and the separate Retry button are gone from the source', () => {
   const source = readFileSync(new URL('../renderer/workspace-discovery.mjs', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /Reading the workspace capabilities \(|discovery-retry/);
+});
+
+// ── item 7: the capability page ─────────────────────────────────────────────────────────────────
+const pageOf = u => u.q('.workspace-cap-page .capability-page');
+
+test('opened from a soul before the catalog is read: the page stands with the catalog facts as skeletons, filled in place when they land; focus stays', async t => {
+  const u = await setup(t, { holdReads: true });
+  u.q('.soul-card').click(); await settle();
+  assert.equal(u.q('.workspace-soul-page').hidden, false, 'the soul page');
+  const row = u.q('.workspace-soul-page .soul-caps [data-capability="nw-house-style"]'); assert.ok(row, 'the soul lists it'); row.click(); await settle();
+  const before = pageOf(u); assert.ok(before); assert.equal(before.dataset.capability, 'nw-house-style'); assert.equal(before.dataset.catalogPending, 'true');
+  assert.ok(before.querySelector('.page-lede.skeleton'), 'a lede-sized line where the description goes');
+  assert.ok(before.querySelector('.page-facts-skeleton[aria-hidden=true]'), 'a facts-sized block in Comes from'); assert.equal(before.querySelector('.page-notice').childElementCount, 0);
+  assert.equal(u.doc.activeElement, before.querySelector('.page-back'));
+  await u.resolveRead(0, okRead());
+  const after = pageOf(u); assert.notEqual(after, before, 'filled in place'); assert.equal(after.dataset.catalogPending, undefined);
+  assert.equal(after.querySelector('.page-lede.skeleton'), null); assert.equal(after.querySelector('.page-facts-skeleton'), null);
+  assert.match(after.querySelector('.page-side').textContent, /Path.*capabilities\/nw-house-style/s, "the catalog's facts");
+  assert.equal(u.doc.activeElement, after.querySelector('.page-back'), 'focus is kept on the same control');
+  assert.equal(u.q('.workspace-cap-page').hidden, false);
+});
+
+test('a catalog refresh while the page is open updates it in place: a failed re-read shows the stale line with Retry (reads live); an unchanged catalog never rebuilds it', async t => {
+  const u = await setup(t, { holdReads: true });
+  await u.resolveRead(0, okRead()); await u.tab('capabilities');
+  u.q('.catalog-row[data-capability="nw-house-style"]').click(); await settle();
+  const first = pageOf(u); assert.ok(first); assert.equal(first.querySelector('.page-notice').childElementCount, 0);
+  await u.cliEmit(); await u.resolveRead(1, okRead());
+  assert.equal(pageOf(u), first, 'identical catalog: the same page node');
+  await u.cliEmit(); await u.resolveRead(2, failedRead());
+  const stale = pageOf(u); assert.notEqual(stale, first);
+  const line = stale.querySelector('.page-notice .loading-notice[data-kind=stale]'); assert.ok(line);
+  assert.equal(line.querySelector('.loading-notice-text').textContent, "Couldn't refresh capabilities");
+  assert.equal(line.querySelector('.loading-notice-cause').textContent, 'E_CLI_TIMEOUT: The workspace command exceeded its time limit.');
+  const retry = line.querySelector('.loading-retry'); retry.focus(); retry.click(); await settle();
+  assert.deepEqual(u.reads.at(-1).body, { action: 'read', refresh: true });
+  await u.resolveRead(3, okRead());
+  assert.equal(pageOf(u).querySelector('.page-notice').childElementCount, 0, 'current again');
+  assert.equal(u.doc.activeElement, pageOf(u).querySelector('.page-back'), 'a vanished Retry hands focus to Back, never to nowhere');
+});
+
+test('the age rule on the page: an old observation is said, muted, without Retry', async t => {
+  const u = await setup(t, { holdReads: true });
+  await u.resolveRead(0, okRead({ observedAt: new Date(Date.now() - 4 * 60_000).toISOString() })); await u.tab('capabilities');
+  u.q('.catalog-row[data-capability="nw-house-style"]').click(); await settle();
+  const line = pageOf(u).querySelector('.page-notice .loading-notice[data-kind=observed]'); assert.ok(line);
+  assert.equal(line.querySelector('.loading-notice-text').textContent, 'Observed 4 min ago'); assert.equal(line.querySelector('.loading-retry'), null);
 });
