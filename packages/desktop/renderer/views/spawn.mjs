@@ -44,7 +44,7 @@ const CSS = `
 .souls-sum { color:var(--muted); font-size:12px; }
 /* The grid's stale line (desktop/loading-states) sits between the toolbar and the scroller; nothing when empty. */
 .souls-notice { flex:none; padding:0 20px; }
-.souls-notice:empty { display:none; }
+.souls-notice:empty, .souls-notice[hidden] { display:none; }
 .souls-notice .loading-notice { margin:0 0 10px; }
 .souls-bar .loading-refreshing { margin-left:auto; }
 .workspace-recovery { flex:none; min-width:0; padding:18px 20px; }
@@ -232,6 +232,7 @@ function showPage(s, mode) {
   const souls = (s.discovery?.tab ?? "souls") === "souls";
   s.q("souls-grid").hidden = !!mode || !souls;
   s.q("souls-bar").hidden = !!mode || !souls;
+  s.q("souls-notice").hidden = !!mode || !souls; // the grid's stale line belongs to the grid
   s.q("workspace-discovery").hidden = !!mode || souls;
 }
 /** A capability's page, from the Capabilities table (from = null) or a soul page (from = the soul). */
@@ -393,7 +394,7 @@ ${spawnDialogCSS}</style>
     onOpenCapability: row => openCapability(s, row, null),
     onTab: tab => {
       s.spawnOp++; closeSpawnModal(s); s.inspector.close(); closeCapability(s); s.page.close();
-      s.q("souls-bar").hidden = tab !== "souls";
+      s.q("souls-bar").hidden = tab !== "souls"; s.q("souls-notice").hidden = tab !== "souls";
     },
   });
   // Capture actual tab choices before discovery projects them. Its onTab

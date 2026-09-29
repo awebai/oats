@@ -151,6 +151,12 @@ test('stale: a failed poll keeps the cards, says "Couldn\'t refresh souls" with 
   assert.equal(u.notice().childElementCount, 0, 'the line leaves on success'); assert.equal(u.status().textContent, 'Souls updated', 'a user-invoked read is announced');
   assert.equal(u.status().classList.contains('loading-quiet'), false);
   assert.ok(u.grid().contains(u.doc.activeElement) || u.doc.activeElement === u.doc.body, 'focus did not vanish silently');
+  // The grid's line belongs to the grid: another tab or an open page hides it with the grid.
+  u.poll(); await tick(); await u.reject(3, new Error('down again')); assert.ok(u.notice().querySelector('.loading-notice'));
+  u.doc.getElementById('workspace-tab-capabilities').click(); await tick();
+  assert.equal(u.notice().hidden, true); assert.equal(u.grid().hidden, true);
+  u.doc.getElementById('workspace-tab-souls').click(); await tick(); assert.equal(u.notice().hidden, false);
+  u.cards()[0].click(); await tick(); await tick(); assert.equal(u.notice().hidden, true, 'a soul page replaces the grid and its line');
 });
 
 test('failed: a first read that fails shows the cause, the code behind Details and Retry in the grid — never the empty copy', async t => {
