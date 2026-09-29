@@ -61,6 +61,8 @@ test('Where it works: one card — the mode band in plain words, then Repo, Bran
   assert.equal(band.querySelector('.context-panel-mode-tile').getAttribute('aria-hidden'), 'true');
   assert.deepEqual([...card.querySelectorAll('dt')].map(dt => dt.textContent), ['Repo', 'Branch', 'Home'], 'no Mode row, no repo-path row');
   assert.equal(u.row('branch').hidden, false); assert.equal(u.field('branch').textContent, 'feat/checkout');
+  assert.equal(u.field('branch').title, 'feat/checkout', 'one line with ellipsis; the full name in the title');
+  assert.match(contextPanelCSS, /\.context-panel-branch-value > \[data-context-field\] \{[^}]*text-overflow:ellipsis; white-space:nowrap/);
   const modes = { worktree: ['Own worktree', "isolated branch in a clone of the soul's repo", 'branch'], checkout: ['Shared checkout', "the repo's current branch", 'branch'],
     directory: ['Plain folder', 'no Git', null], workspace: ['Workspace view', 'reads across member repos', null], attached: ['Attached', "works in its parent's tree", 'branch'] };
   for (const [work, [label, meaning, branch]] of Object.entries(modes)) {
@@ -106,6 +108,13 @@ test('header: "instance of <soul>" links to the Soul tab; the state reads "Runni
   const link = u.q('[data-context-soul-link]');
   assert.equal(link.tagName, 'BUTTON'); assert.equal(link.textContent, 'web-developer');
   assert.equal(link.parentElement.textContent, 'instance of web-developer');
+  // Two-row header grid: tile | name | state, then the soul line (+ chip) spanning name and state.
+  const head = u.q('[data-context-page="instance"] > .context-panel-identity');
+  assert.ok(head.classList.contains('is-instance'));
+  assert.match(contextPanelCSS, /\.context-panel-identity\.is-instance \{ display:grid; grid-template-columns:36px minmax\(0,1fr\) auto;/);
+  assert.match(contextPanelCSS, /\.is-instance \.context-panel-identity-sub \{ grid-column:2 \/ 4; grid-row:2;/);
+  assert.equal(link.closest('.context-panel-identity-sub').querySelector('[data-context-drift]') !== null, true, 'the chip is inline after the soul line');
+  assert.equal(u.field('instance').title, 'web-developer-1');
   const state = u.q('.context-panel-state');
   assert.equal(state.dataset.state, 'running'); assert.equal(state.title, `started ${started}`);
   assert.equal(u.field('running').textContent, 'Running'); assert.equal(state.querySelector('.context-panel-state-age').textContent, '· 42m');

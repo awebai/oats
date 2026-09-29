@@ -44,14 +44,15 @@ test('inert mount; first-visible read once; routine updates preserve controls/fo
   b.click(); await tick();
   assert.deepEqual(u.calls[1].body, { action: 'diff', selector: u.calls[0].body.selector, fileId: id, revision: oid, indexRevision: idx });
   assert.match(u.one('.git-patch').textContent, /-old\n\+X/); assert.equal(u.doc.activeElement, b);
-  assert.match(u.text(), /actual-branch/); assert.match(u.text(), /Recorded branchrecorded-branch/);
-  // Nothing reported is one plain line, never rows of "Not reported".
-  assert.match(u.text(), /Upstream comparisonNo upstream branch is reported\./); assert.doesNotMatch(u.text(), /Not reported/);
-  assert.match(u.text(), /Base reforigin\/mainBase sourceorigin\/HEAD/);
+  assert.match(u.text(), /actual-branch/); assert.match(u.text(), /Branch differs from recorded branch: recorded-branch/);
+  // v4.1: no Details disclosure on a healthy read; the kernel's own notes stay visible as plain lines.
+  assert.equal(u.one('.git-more'), null); assert.equal(u.one('.git-branch-section details:not(.git-status-details)'), null);
+  assert.equal(u.one('.git-read-note').textContent, 'No upstream configured.'); assert.doesNotMatch(u.text(), /Not reported/);
   // v4.1 board 2: the heading is plain "Changes" with the count in its own mono span; the branch card says its base, repo and how many files changed.
   assert.equal(u.one('.git-changes-section h3').textContent, 'Changes'); assert.equal(u.one('.git-head-count').textContent, '2'); assert.equal(u.buttons().length, 2);
   assert.equal(u.one('.git-head-aside').textContent, 'worktree'); assert.equal(u.one('.git-ahead').textContent, '↑2 from main');
-  assert.equal(u.one('.git-branch-sub').textContent, 'repo · 2 files changed'); assert.equal(u.one('.git-branch-sub').title, '/fixture/work');
+  assert.equal(u.one('.git-branch-sub').textContent, 'repo · 2 files changed · ↑2 from main', 'the distance sits in the subline'); assert.equal(u.one('.git-branch-sub').title, '/fixture/work');
+  assert.equal(u.one('.git-branch').title, 'actual-branch', 'one line; the full name in its title');
   assert.ok(u.one('.git-branch-card.git-card') && u.one('.git-files.git-card'), 'the branch and the file list are bordered cards');
   assert.deepEqual(u.buttons().map(b => [b.querySelector('.git-letter').textContent, b.querySelector('.git-file-path').textContent]), [['M', 'file.txt'], ['M', 'other.txt']]);
   assert.match(u.one('.git-github').textContent, /installed OATS CLI does not report a remote/); assert.equal(u.one('a'), null);
@@ -232,7 +233,7 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: actual Git p
   for (const [selector, painted, fg, bg] of [
     // W6 (design): the section labels, branch facts, status letters and links sit on the panel surface (replaces the .git-card pairs).
     ['.git-head', '#context-panel', 'muted', 'surface'], ['.git-branch-line', '#context-panel', 'fg', 'surface'],
-    ['.git-branch-sub', '#context-panel', 'muted', 'surface'], ['.git-more dt', '#context-panel', 'muted', 'surface'],
+    ['.git-branch-sub', '#context-panel', 'muted', 'surface'], ['.git-read-note', '#context-panel', 'muted', 'surface'],
     // v4.1: the status badge's letter in its status colour (A ok, M warn, D danger, others muted) on the panel surface; --fg once the row is selected.
     ['.git-file:not([aria-pressed=true]) .git-letter[data-letter="?"]', '#context-panel', 'muted', 'surface'], ['.git-file:not([aria-pressed=true]) .git-letter.git-letter-add', '#context-panel', 'ok', 'surface'],
     ['.git-file:not([aria-pressed=true]) .git-letter.git-letter-mod', '#context-panel', 'warn', 'surface'], ['.git-file:not([aria-pressed=true]) .git-letter.git-letter-del', '#context-panel', 'danger', 'surface'],
@@ -265,7 +266,7 @@ test('a refused read is one plain sentence with its code behind Details; section
   assert.equal(u.one('.git-footer').hidden, false, 'Refresh stays reachable after a failed read'); assert.equal(u.one('.git-checked').hidden, true, 'nothing was checked yet');
   u.read(() => available(data())); u.one('.git-footer button').click(); await tick(); await tick();
   assert.equal(u.one('.git-status-details').hidden, true, 'a good read clears the code');
-  assert.equal(u.one('.git-github').hidden, false); assert.match(u.text(), /Observed .* ago|Observed just now|Observed \d{4}-/);
+  assert.equal(u.one('.git-github').hidden, false); assert.match(u.one('.git-footer').textContent, /^Checked .+ · Refresh$/);
 });
 
 // v4.1 board 2 (Git & GitHub): the footer, the branch distance, the status badges, the calm "No Git" state.
@@ -324,7 +325,7 @@ test('no uncommitted changes: a dashed card under the Changes header, no count, 
   const u = setup(t, () => available({ ...data(), files: [], summary: { changed: 0, renamed: 0, copied: 0, unmerged: 0, untracked: 0 } })); await u.show();
   const note = u.one('.git-files .git-dashed');
   assert.equal(note.textContent, 'No uncommitted changes.'); assert.equal(u.one('.git-head-count').textContent, ''); assert.equal(u.one('.git-changes-section .git-link').hidden, true);
-  assert.equal(u.one('.git-files').classList.contains('git-card'), false); assert.equal(u.one('.git-branch-sub').textContent, 'repo · clean');
+  assert.equal(u.one('.git-files').classList.contains('git-card'), false); assert.equal(u.one('.git-branch-sub').textContent, 'repo · clean · ↑2 from main');
   assert.doesNotMatch(u.text(), /No changes reported/);
 });
 

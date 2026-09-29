@@ -33,14 +33,10 @@ export const instanceGitCSS = `
 .instance-git .git-branch-card { display:flex; flex-direction:column; gap:3px; padding:10px 12px; }
 .instance-git .git-branch-line { display:flex; align-items:center; gap:7px; min-width:0; font:600 12.5px var(--mono,monospace); }
 .instance-git .git-branch-line .shell-icon { flex:none; color:var(--muted); }
-.instance-git .git-branch { min-width:0; flex:1; }
-.instance-git .git-ahead { flex:none; margin-left:auto; color:var(--muted); font:11.5px var(--mono,monospace); white-space:nowrap; }
+.instance-git .git-branch { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.instance-git .git-ahead { color:var(--muted); white-space:nowrap; }
 .instance-git .git-branch-sub { padding-left:21px; color:var(--muted); font-size:11.5px; line-height:1.4; overflow-wrap:anywhere; }
 .instance-git .git-branch-card .git-note { padding-left:21px; font-size:11.5px; }
-.instance-git .git-more h4 { margin:10px 0 4px; color:var(--muted); font-size:10.5px; font-weight:650; letter-spacing:.05em; text-transform:uppercase; }
-.instance-git dl { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.6fr); gap:4px 10px; margin:0; }
-.instance-git dt { color:var(--muted); }
-.instance-git dd { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; font-family:var(--mono,monospace); font-size:11px; }
 .instance-git .git-files { display:flex; flex-direction:column; min-width:0; }
 .instance-git .git-files.git-card { overflow:hidden; }
 .instance-git button.git-file { display:flex; align-items:center; gap:9px; width:100%; min-height:32px; margin:0; padding:8px 12px; box-sizing:border-box; border:0; border-bottom:1px solid var(--border); border-radius:0; background:transparent; text-align:left; font:12px/1.35 var(--mono,monospace); }
@@ -53,7 +49,10 @@ export const instanceGitCSS = `
 .instance-git .git-letter-add { color:var(--ok); }
 .instance-git .git-letter-mod { color:var(--warn); }
 .instance-git .git-letter-del { color:var(--danger); }
-.instance-git .git-file-path { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* One line: the directory (muted) gives way first, clipped from the left; the file name keeps its place. */
+.instance-git .git-file-path { flex:1; display:flex; min-width:0; overflow:hidden; white-space:nowrap; }
+.instance-git .git-file-dir { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; color:var(--muted); text-align:left; }
+.instance-git .git-file-name { flex:0 0 auto; max-width:100%; overflow:hidden; text-overflow:ellipsis; }
 .instance-git .git-counts { flex:none; display:inline-flex; gap:6px; margin-left:auto; white-space:nowrap; }
 .instance-git .git-count-add { color:var(--ok); }
 .instance-git .git-count-del { color:var(--danger); }
@@ -62,7 +61,6 @@ export const instanceGitCSS = `
 .instance-git .git-count-binary { color:var(--muted); font-family:var(--sans,system-ui); font-size:11px; }
 /* A path or branch breaks after its slashes; a segment breaks inside only when longer than the line. */
 .instance-git .git-seg { display:inline-block; max-width:100%; overflow-wrap:anywhere; }
-.instance-git .git-file-path .git-seg { display:inline; }
 .instance-git .git-diff:empty { display:none; }
 .instance-git .git-diff { display:flex; flex-direction:column; gap:6px; margin-top:10px; }
 .instance-git .git-diff h4 { margin:0; font:600 11.5px var(--mono,monospace); overflow-wrap:anywhere; }
@@ -133,6 +131,17 @@ function slashed(doc, el, value) {
     const seg = doc.createElement('span'); seg.className = 'git-seg'; seg.textContent = i < all.length - 1 ? `${part}/` : part;
     el.append(seg); if (i < all.length - 1) el.append(doc.createElement('wbr'));
   });
+  return el;
+}
+/** A changed file's path on one line: the directory muted and clipped from the left, then the file name. */
+function filePath(doc, value) {
+  const el = doc.createElement('span'); el.className = 'git-file-path'; el.title = value;
+  const cut = value.lastIndexOf('/') + 1;
+  if (cut) {
+    const dir = doc.createElement('span'), text = doc.createElement('bdi');
+    dir.className = 'git-file-dir'; dir.dir = 'rtl'; text.textContent = value.slice(0, cut); dir.append(text); el.append(dir);
+  }
+  const name = doc.createElement('span'); name.className = 'git-file-name'; name.textContent = value.slice(cut); el.append(name);
   return el;
 }
 /** A change's one status letter (git status --short): the index side, else the worktree side. */
@@ -252,43 +261,29 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
       || typeof raw.reason.message !== 'string' || (raw.status === 'stale' && raw.reason.code !== 'E_STALE_OBSERVATION')) throw new Error('Invalid read response');
     return raw;
   }
-  function rows(parent, pairs) {
-    const dl = node('dl'); for (const [key, value] of pairs) dl.append(node('dt', key), node('dd', report(value))); parent.append(dl);
-  }
   function renderObservation(ref, observationKey) {
     facts.replaceChildren(); controls.clear(); files.replaceChildren();
     const data = observation, o = data.observation;
     workMode.textContent = data.workMode || '';
-    // The branch card: the branch, how far it is from the default branch, then the repository and how clean it is.
+    // The branch card: the branch on one line (full name in its title), then "repo · N files changed · ↑3 from main".
     const card = node('div', undefined, 'git-branch-card git-card');
     const line = node('div', undefined, 'git-branch-line');
-    line.append(iconElement(doc, 'branch', { size: 14 }), slashed(doc, node('span', undefined, 'git-branch'), o.unborn ? `${report(o.branch)} · unborn` : o.detached ? 'Detached HEAD' : report(o.branch)));
+    const branchText = o.unborn ? `${report(o.branch)} · unborn` : o.detached ? 'Detached HEAD' : report(o.branch);
+    const branch = node('span', branchText, 'git-branch'); branch.title = branchText;
+    line.append(iconElement(doc, 'branch', { size: 14 }), branch);
+    const n = data.files.length, repo = tail(data.recorded.repo) || tail(o.worktree);
+    const sub = node('div', [repo, n ? `${n} file${n === 1 ? '' : 's'} changed` : 'clean'].filter(Boolean).join(' · '), 'git-branch-sub'); sub.title = o.worktree;
     const distance = baseDistance(data.base);
     if (distance) {
       const ahead = node('span', distance, 'git-ahead');
-      ahead.title = `${report(data.base.ahead)} ahead of, ${report(data.base.behind)} behind ${data.base.ref}`; line.append(ahead);
+      ahead.title = `${report(data.base.ahead)} ahead of, ${report(data.base.behind)} behind ${data.base.ref}`; sub.append(' · ', ahead);
     }
-    const n = data.files.length, repo = tail(data.recorded.repo) || tail(o.worktree);
-    const sub = node('div', [repo, n ? `${n} file${n === 1 ? '' : 's'} changed` : 'clean'].filter(Boolean).join(' · '), 'git-branch-sub'); sub.title = o.worktree;
     card.append(line, sub);
     if (data.recorded.drift) card.append(node('p', `Branch differs from recorded branch: ${report(data.recorded.branch)}`, 'git-note'));
     facts.append(card);
-    // Everything else the read reports, behind Details.
-    const more = node('details', undefined, 'git-more'); more.append(node('summary', 'Details'));
-    const seen = node('p', `Observed ${ageText(o.at)}`, 'git-note'); seen.title = o.at; more.append(seen);
-    more.append(node('h4', 'Observation'));
-    rows(more, [['Worktree', o.worktree], ['Observed revision', o.revision], ['Index fingerprint', o.indexRevision], ['Work mode', data.workMode],
-      ['Recorded branch', data.recorded.branch], ['Branch drift', data.recorded.drift ? 'Changed from recorded branch' : 'No reported drift']]);
-    // A comparison shows only what was reported; nothing reported is one plain line.
-    const comparison = (title, pairs, none) => {
-      more.append(node('h4', title));
-      const known = pairs.filter(([, value]) => value !== null && value !== undefined && value !== '');
-      if (known.length) rows(more, known); else more.append(node('p', none, 'git-note'));
-    };
-    comparison('Upstream comparison', [['Upstream ref', data.upstream.ref], ['Ahead', data.upstream.ahead], ['Behind', data.upstream.behind]], 'No upstream branch is reported.');
-    comparison('Default-branch comparison', [['Base ref', data.base.ref], ['Base source', data.base.source], ['Merge base', data.base.mergeBase], ['Ahead', data.base.ahead], ['Behind', data.base.behind]], 'No default-branch comparison is reported.');
-    for (const note of data.notes) more.append(node('p', note, 'git-note'));
-    facts.append(more);
+    // The kernel's own notes on the read (a caveat, e.g. no upstream) stay visible as plain lines; there is no
+    // Details disclosure on a healthy read (Details belong to real failures).
+    for (const note of data.notes) facts.append(node('p', note, 'git-note git-read-note'));
     changesSection.hidden = false; github.hidden = false; openDiff.hidden = !n;
     changesCount.textContent = n ? String(n) : ''; files.classList.toggle('git-card', n > 0);
     if (!n) files.append(node('p', 'No uncommitted changes.', 'git-note git-dashed'));
@@ -296,7 +291,7 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
     for (const file of data.files) {
       const letter = changeLetter(file), shown = `${file.origPath ? `${file.origPath} → ` : ''}${file.path}${file.submodule ? ' · submodule' : ''}`;
       const badge = node('span', letter, `git-letter${LETTER_CLASS[letter] ? ` ${LETTER_CLASS[letter]}` : ''}`); badge.dataset.letter = letter;
-      const b = node('button', undefined, 'git-file'); b.append(badge, slashed(doc, node('span', undefined, 'git-file-path'), shown));
+      const b = node('button', undefined, 'git-file'); b.append(badge, filePath(doc, shown));
       // Its line counts (kernel #238), as the design's "+84 −3"; nothing when unknown.
       const counts = lineCounts(file);
       if (counts) {

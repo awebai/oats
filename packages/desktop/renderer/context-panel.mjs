@@ -32,11 +32,18 @@ export const contextPanelCSS = `
 #context-panel .context-panel-identity-copy { display:flex; flex-direction:column; min-width:0; flex:1; }
 #context-panel .context-panel-identity-name { font-size:13.5px; font-weight:650; line-height:1.45; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 #context-panel .context-panel-identity-sub { display:flex; flex-wrap:wrap; align-items:center; gap:2px 6px; min-width:0; font-size:11.5px; line-height:1.45; color:var(--muted); }
-/* The soul name always shows (it wraps rather than hiding); the drift chip wraps below it when both do not fit. */
-#context-panel .context-panel-soul-line { flex:0 1 auto; min-width:0; overflow-wrap:anywhere; }
+#context-panel .context-panel-soul-line { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* The Instance tab's header is a two-row grid: tile | name (ellipsis) | state, then "instance of <soul>" + the
+   drift chip spanning the name and state columns, so the state never squeezes the soul line. */
+#context-panel .context-panel-identity.is-instance { display:grid; grid-template-columns:36px minmax(0,1fr) auto; column-gap:11px; align-items:center; }
+#context-panel .context-panel-identity.is-instance > .context-panel-mark { grid-column:1; grid-row:1 / span 2; align-self:center; }
+#context-panel .context-panel-identity.is-instance > .context-panel-identity-copy { display:contents; }
+#context-panel .context-panel-identity.is-instance .context-panel-identity-name { grid-column:2; grid-row:1; }
+#context-panel .context-panel-identity.is-instance > .context-panel-state { grid-column:3; grid-row:1; }
+#context-panel .context-panel-identity.is-instance .context-panel-identity-sub { grid-column:2 / 4; grid-row:2; flex-wrap:nowrap; }
 #context-panel .context-panel-identity-sub:empty { display:none; }
 /* "instance of <soul>": the soul name opens the Soul tab. */
-#context-panel button.context-panel-soul-link { padding:0; border:0; border-radius:3px; background:none; font:inherit; color:var(--accent); cursor:pointer; text-align:left; overflow-wrap:anywhere; }
+#context-panel button.context-panel-soul-link { padding:0; border:0; border-radius:3px; background:none; font:inherit; color:var(--accent); cursor:pointer; text-align:left; white-space:nowrap; }
 #context-panel button.context-panel-soul-link:hover { text-decoration:underline; }
 /* "older build": one neutral chip when the kernel reports drift; its title says what changed. */
 #context-panel .context-panel-drift { flex:none; padding:0 6px; border-radius:4px; background:var(--tag-bg); color:var(--fg); font-size:10.5px; font-weight:600; line-height:18px; white-space:nowrap; cursor:default; }
@@ -68,7 +75,10 @@ export const contextPanelCSS = `
 #context-panel .context-panel-facts dd { margin:0; min-width:0; color:var(--fg); overflow-wrap:anywhere; }
 #context-panel .context-panel-facts .is-mono { font:12px/1.45 ui-monospace, Menlo, monospace; }
 #context-panel .context-panel-facts [data-unreported] { color:var(--muted); }
-#context-panel .context-panel-ahead { margin-left:6px; color:var(--muted); white-space:nowrap; }
+/* Branch: one line, ellipsis (the full name in its title), then ↑/↓. */
+#context-panel .context-panel-branch-value { display:flex; align-items:baseline; min-width:0; }
+#context-panel .context-panel-branch-value > [data-context-field] { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#context-panel .context-panel-ahead { flex:none; margin-left:6px; color:var(--muted); white-space:nowrap; }
 /* A path: one line, clipped at the start so its meaningful end shows (full value in the title), plus an icon Copy. */
 #context-panel .context-panel-pathline { display:flex; align-items:center; gap:6px; min-width:0; }
 #context-panel .context-panel-path { flex:1; min-width:0; font:12px/1.45 ui-monospace, Menlo, monospace; color:var(--fg); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; text-align:left; }
@@ -305,7 +315,7 @@ export function createContextPanel({
   };
   const field = (tag, className, id) => { const el = node(tag, className, 'Not reported'); el.dataset.contextField = id; fields.set(id, el); return el; };
   pages.get('instance').dataset.contextPage = 'instance'; pages.get('soul').dataset.contextPage = 'soul';
-  const instanceHead = identityHeader('instance');
+  const instanceHead = identityHeader('instance'); instanceHead.wrap.classList.add('is-instance');
   // "instance of <soul>": the soul name opens the Soul tab; the drift chip follows it.
   const instanceSub = node('div', 'context-panel-identity-sub'), soulLine = node('span', 'context-panel-soul-line');
   const soulLink = node('button', 'context-panel-soul-link'); soulLink.type = 'button'; soulLink.dataset.contextSoulLink = '';
@@ -363,7 +373,7 @@ export function createContextPanel({
   const whereFacts = node('dl', 'context-panel-facts');
   factRow(whereFacts, 'repoName', 'Repo', field('dd', 'is-mono', 'repoName'));
   // Branch: the reported branch, then ↑/↓ from the default branch once the Git tab has observed them.
-  const branchValue = node('dd', 'is-mono'), ahead = node('span', 'context-panel-ahead');
+  const branchValue = node('dd', 'is-mono context-panel-branch-value'), ahead = node('span', 'context-panel-ahead');
   branchValue.append(field('span', null, 'branch'), ahead);
   const branchRow = factRow(whereFacts, 'branch', 'Branch', branchValue);
   // Home: the instance home, where its files and work/ live (the roster reports no work folder).
@@ -578,7 +588,7 @@ export function createContextPanel({
       el.toggleAttribute('data-unreported', value === 'Not reported');
       const row = rows.get(id); if (row) row.hidden = value === 'Not reported';
       else if (['model', 'modelFrom', 'identity'].includes(id)) el.hidden = value === 'Not reported';
-      if (id === 'identity') el.title = value === 'Not reported' ? '' : value;
+      if (id === 'identity' || id === 'branch' || id === 'instance') el.title = value === 'Not reported' ? '' : value;
       if (id === 'model' || id === 'modelFrom') modelLine.title = [fields.get('model')?.textContent, fields.get('modelFrom')?.textContent].filter(t => t && t !== 'Not reported').join(' · ');
     }
     // Branch: not a fact of a plain folder or a workspace view.
