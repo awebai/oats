@@ -122,8 +122,8 @@ full copy** of every capability the soul resolved to:
 <agents-root>/<soul>/instances/<instance>/
   AGENTS.md                        # generated: soul AGENTS.md + kernel/work-mode blocks + each module's inject
   CLAUDE.md → AGENTS.md
-  .agents/skills/                  # canonical skill tree — soul skills + <capability>/<skill>/ full copies
-    <capability>/<skill>/SKILL.md
+  .agents/skills/                  # canonical skill tree, flat: the soul's skills and every module's, full copies
+    <skill>/SKILL.md               # one level deep, where every harness discovers skills
   .claude/skills → ../.agents/skills
   .oats/modules/<capability>/      # the whole capability: oats.json, bin/, injects/, skills/ (hooks run from here)
   work/                            # worktree, checkout symlink, attached tree, or private directory
@@ -193,7 +193,8 @@ bump affects only new spawns.
 OATS is a skill contributor, not a skill sandbox. The harness (pi, Claude Code,
 Codex) starts with cwd = the instance home and its **own** skill discovery
 intact: it sees, nearest first, the instance's `.agents/skills/` (soul skills
-and the copied capability skills), the repo's own `.agents/skills/` once it
+and the copied capability skills, all flat at `.agents/skills/<skill>/SKILL.md`,
+the one level deep Claude Code discovers through `.claude/skills`), the repo's own `.agents/skills/` once it
 works in `work/`, and whatever the operator keeps at machine level. All three
 are intended. Two *composed* skills with one name is a spawn error naming both
 capabilities (`E_SKILL_DUPLICATE`); a composed skill versus an ambient one is

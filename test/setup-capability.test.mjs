@@ -71,6 +71,6 @@ test("oats.setup's inject and skills compose into an instance that declares it",
   const recorded = JSON.parse(readFileSync(join(home, "instance.json"), "utf8")).skills;
   assert.deepEqual(recorded.map((s) => [s.name, s.source]).sort(), names.map((n) => [n, "module:oats.setup"]).sort());
   for (const name of names) {
-    assert.ok(existsSync(join(home, ".agents", "skills", "oats.setup", name, "SKILL.md")), `${name} is materialized`);
+    assert.ok(existsSync(join(home, ".agents", "skills", name, "SKILL.md")), `${name} is materialized`);
   }
 });

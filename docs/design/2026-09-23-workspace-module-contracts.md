@@ -286,7 +286,8 @@ shims that throw `E_REMOVED { name, contract }`, pointing at this record.
    must match the lock's commit (`E_MATERIALIZE_INTEGRITY { why: "lock" }`); an unknown repo is
    `E_MATERIALIZE_SOURCE`.
 2. The copy's digest must equal the fetch's and any `module.digest` (`E_MATERIALIZE_INTEGRITY`).
-3. Copy skills whole to `<home>/.agents/skills/<name>/<skill>/`.
+3. Copy skills whole to `<home>/.agents/skills/<skill>/`, flat (0.30.2; the grouped
+   `<name>/<skill>/` layout this section first specified hid every skill from the harnesses).
 4. Compose `<home>/AGENTS.md` = soul body (`options.soulAgentsMd` or `soulDir`) + kernel blocks + module
    injects; operating guidance comes from a module such as `oats.core`. Keep `CLAUDE.md → AGENTS.md`
    and `.claude/skills → ../.agents/skills`.

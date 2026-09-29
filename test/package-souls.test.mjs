@@ -67,7 +67,7 @@ test("spawn by the qualified and the bare name materializes the soul at the lock
     assert.equal(meta.workspace.soul.commit, fx.pkg.commit1);
     assert.equal(meta.modules["acme-tool"].from.kind, "package");
     assert.equal(meta.modules["acme-tool"].from.package, "acme.pkg");
-    assert.ok(existsSync(join(home, ".agents", "skills", "acme-tool", "tool-skill", "SKILL.md")));
+    assert.ok(existsSync(join(home, ".agents", "skills", "tool-skill", "SKILL.md")));
     assert.match(readFileSync(join(home, "AGENTS.md"), "utf8"), /# keeper \(package 1\.0\.0\)/);
   }
   const status = JSON.parse(fx.cli(["status", "--json"]).stdout);

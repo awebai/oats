@@ -336,13 +336,12 @@ try {
   // nothing dropped (3.0.0's has no symlink).
   const checkOkfModule = () => assert.deepEqual(payloadEntries(okfModule), capabilityEntries(inventory), "materialized package module must match the OKF source inventory exactly");
   checkOkfModule();
-  // Skills are materialized per module (<home>/.agents/skills/<module>/<skill>)
-  // next to the soul's own skills; the harness discovers them from the home.
+  // Skills are materialized flat (<home>/.agents/skills/<skill>/), the soul's own
+  // beside each module's, one level deep where the harness discovers them.
   const skillsRoot = join(probeHome, ".agents", "skills");
   const skills = readdirSync(skillsRoot).sort();
-  assert.deepEqual(skills, ["oats.okf", "private"], "module skill dirs plus the soul's private skill");
-  assert.deepEqual(readdirSync(join(skillsRoot, "oats.okf")).sort(), ["okf-consultation", "okf-instance-knowledge"], "oats.okf 4.0.0 gives a working soul two skills");
-  assert.ok(existsSync(join(skillsRoot, "oats.okf/okf-consultation/SKILL.md")) && existsSync(join(skillsRoot, "private/SKILL.md")));
+  assert.deepEqual(skills, ["okf-consultation", "okf-instance-knowledge", "private"], "oats.okf 4.0.0's two skills plus the soul's private skill, flat");
+  for (const name of skills) assert.ok(existsSync(join(skillsRoot, name, "SKILL.md")) && existsSync(join(probeHome, ".claude", "skills", name, "SKILL.md")), `${name}/SKILL.md one level deep, also through .claude/skills`);
   // The soul's own skill and each module skill by its `module:<cap>` source (record order is not a contract).
   assert.deepEqual(meta.skills.map((s) => [s.name, s.source]).sort(), [["okf-consultation", "module:oats.okf"], ["okf-instance-knowledge", "module:oats.okf"], ["private", "soul"]]);
   assert.equal(lstatSync(join(probeHome, "AGENTS.md")).isSymbolicLink(), false);
@@ -499,11 +498,10 @@ try {
       const theoryModule = join(authorHome, ".oats/modules/oats.knowledge-theory");
       assert.deepEqual(fingerprint(theoryModule), capFingerprint, "materialized module preserves the full capability including the source alias");
       assert.ok(!existsSync(join(theoryModule, "agents")), "the capability ships no agent (the expert is a package soul)");
-      const materializedSkill = join(authorHome, ".agents/skills/oats.knowledge-theory", basename(SKILL_PATH));
+      const materializedSkill = join(authorHome, ".agents/skills", basename(SKILL_PATH));
       assert.deepEqual(fingerprint(materializedSkill), skillFingerprint, "complete packed skill materialized without a source");
       assert.deepEqual(checkReferenceClosure(materializedSkill), expectedClosure);
-      assert.deepEqual(readdirSync(join(authorHome, ".agents/skills")).sort(), ["oats.knowledge-theory"]);
-      assert.deepEqual(readdirSync(join(authorHome, ".agents/skills/oats.knowledge-theory")), [basename(SKILL_PATH)]);
+      assert.deepEqual(readdirSync(join(authorHome, ".agents/skills")), [basename(SKILL_PATH)]);
       const text = readFileSync(join(authorHome, "AGENTS.md"), "utf8");
       assert.ok(text.includes("Author canonical instructions"));
       assert.doesNotMatch(text, /Knowledge: OKF|oats:capability:oats\.okf/, "theory must not inject knowledge runtime policy");
