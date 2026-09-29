@@ -65,6 +65,15 @@ test('a remote Herdr session never reaches a PTY: an older kernel inspection and
   }
 });
 
+test('a failed command keeps its bounded stdout on the rejection, still only after the child close', async () => {
+  const child = new EventEmitter(); let callback, settled = false;
+  const work = runTerminalCommand('/memory/oats', ['session', 'inspect'], { timeout: 20 }, (_bin, _args, _opts, cb) => { callback = cb; return child; });
+  work.catch(() => {}).finally(() => { settled = true; });
+  callback(Object.assign(new Error('Command failed'), { code: 1 }), '{"ok":false}', 'private stderr'); await flush();
+  assert.equal(settled, false); child.emit('close', 1);
+  await assert.rejects(work, error => error.code === 1 && error.stdout === '{"ok":false}' && error.stderr === undefined);
+});
+
 test('remote preparation uses fixed CLI arguments, rechecks identity, and never creates from stale metadata', async () => {
   let reads = 0; const commands = [];
   const io = createTerminalIo({ base: () => 'http://127.0.0.1:1111', context: () => 'epoch', attachmentDirectory: () => '/memory/files',

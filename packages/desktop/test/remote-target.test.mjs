@@ -1,7 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { prepareRemoteTerm, remoteTargetKey, createTerminalPrepareGate, remoteTerminalEnvironment } from "../remote-target.mjs";
+import { EventEmitter } from "node:events";
 import { HERDR_REMOVED } from "../renderer/terminal-contract.mjs";
+import { runTerminalCommand } from "../terminal-exec.mjs";
+
+/** The real runner over an exec double that exits `code` after printing `stdout`, as the CLI does for a JSON refusal. */
+const exiting = (code, stdout, calls = []) => (bin, args, opts) => runTerminalCommand(bin, args, opts, (_bin, argv, _opts, callback) => {
+  calls.push(argv); const child = new EventEmitter();
+  setImmediate(() => { callback(code ? Object.assign(new Error("Command failed"), { code }) : null, stdout, ""); child.emit("close", code); });
+  return child;
+});
 const cli = { bin: "/selected/oats", version: "0.22.2", remote: ["session"] };
 const remote = { serverId: "build", instance: "dev-task", target: { oatsPath: "/untrusted" } };
 test("remote viewer uses host-selected CLI and saved-route address only", async () => {
@@ -29,6 +38,16 @@ test("remote viewer refuses a Herdr session with E_HERDR_REMOVED: an older kerne
   }
   const tmux = await prepareRemoteTerm(cli, remote, { run: async () => ({ stdout: JSON.stringify({ schemaVersion: 1, ok: true, result: { backend: "tmux", present: true } }) }) });
   assert.equal(tmux.args[1], "attach", "a remote tmux session still attaches");
+});
+test("a 0.31 kernel's E_HERDR_REMOVED refusal exits 1 and is still refused as E_HERDR_REMOVED; any other failure never attaches", async () => {
+  const message = `E_HERDR_REMOVED: ${HERDR_REMOVED} Retire it (\`oats retire dev-task\`) and spawn a new instance; it opens in tmux.`;
+  const calls = [];
+  await assert.rejects(prepareRemoteTerm(cli, remote, { run: exiting(1, JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_HERDR_REMOVED", message } }), calls) }),
+    error => error.code === "E_HERDR_REMOVED" && error.message === message);
+  for (const stdout of [JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_SSH", message: "unreachable" } }), "not json", ""]) {
+    await assert.rejects(prepareRemoteTerm(cli, remote, { run: exiting(1, stdout, calls) }), error => error.code === 1, stdout);
+  }
+  assert.ok(calls.every(argv => argv[1] === "inspect"), "only inspection ran; nothing attached");
 });
 test("remote viewer carries the selected home through preflight, attach and deduplication", async () => {
   const selected = { ...remote, home: "/remote/selected home" };

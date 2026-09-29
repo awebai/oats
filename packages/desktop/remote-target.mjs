@@ -5,6 +5,13 @@ import { runTerminalCommand } from './terminal-exec.mjs';
 import { HERDR_REMOVED } from './renderer/terminal-contract.mjs';
 
 const herdrRemoved = message => Object.assign(new Error(message), { code: 'E_HERDR_REMOVED' });
+/** A 0.31 kernel's E_HERDR_REMOVED envelope (printed with exit 1), or null. */
+function herdrRefusal(stdout) {
+  let envelope;
+  try { envelope = JSON.parse(stdout); } catch { return null; }
+  if (envelope?.schemaVersion !== 1 || envelope.ok !== false || envelope.error?.code !== 'E_HERDR_REMOVED') return null;
+  return herdrRemoved(typeof envelope.error.message === 'string' && envelope.error.message ? envelope.error.message : HERDR_REMOVED);
+}
 
 export function remoteTargetKey(remote) {
   if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(remote?.serverId || "")
@@ -20,16 +27,21 @@ export async function prepareRemoteTerm(cli, remote, { run = runTerminalCommand,
   remoteTargetKey(remote);
   const address = ["--server", remote.serverId, "--instance", remote.instance, ...(remote.home ? ["--home", remote.home] : [])];
   check(); // actual execution owner, not only IPC admission
-  const { stdout } = await run(bin, ["session", "inspect", ...address, "--json"], {
-    encoding: "utf8", timeout: 20000, maxBuffer: 1024 * 1024, shell: false, ...(signal ? { signal } : {}),
-  });
+  let stdout;
+  try {
+    ({ stdout } = await run(bin, ["session", "inspect", ...address, "--json"], {
+      encoding: "utf8", timeout: 20000, maxBuffer: 1024 * 1024, shell: false, ...(signal ? { signal } : {}),
+    }));
+  } catch (error) {
+    check();
+    throw (typeof error?.stdout === 'string' && herdrRefusal(error.stdout)) || error;
+  }
   check();
-  const envelope = JSON.parse(stdout);
   // A 0.31 kernel refuses a Herdr-recorded instance; an older one still reports its live Herdr
   // session. Neither is attached: the refusal keeps its code so the broker reports it.
-  if (envelope.schemaVersion === 1 && envelope.ok === false && envelope.error?.code === 'E_HERDR_REMOVED') {
-    throw herdrRemoved(typeof envelope.error.message === 'string' && envelope.error.message ? envelope.error.message : HERDR_REMOVED);
-  }
+  const refused = herdrRefusal(stdout);
+  if (refused) throw refused;
+  const envelope = JSON.parse(stdout);
   if (envelope.schemaVersion !== 1 || envelope.ok !== true) throw new Error(envelope.error?.message || "remote session inspection failed");
   if (envelope.result?.backend === 'herdr') throw herdrRemoved(HERDR_REMOVED);
   if (envelope.result?.present !== true) throw new Error("remote terminal no longer exists");
