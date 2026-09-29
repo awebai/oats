@@ -38,6 +38,8 @@ const HARNESS_NAMES = { pi: 'Pi', claude: 'Claude Code', codex: 'Codex' };
 const harnessName = value => HARNESS_NAMES[value] || value;
 const WORK_TEXT = { worktree: 'works in its own worktree', checkout: 'works in the repo checkout', attached: 'attaches to an owning instance' };
 const record = v => !!v && typeof v === 'object' && !Array.isArray(v);
+/** Why a stale inspector's mutations wait (the sidebar roster's rule, instance-tree.mjs ROSTER_STALE_TITLE). */
+export const INSPECTION_STALE_TITLE = 'Unavailable: inspection is not current';
 /** What a core capability does for this soul, from its own declarations and teams. */
 function coreDetail(slot, declared, teams, mapped) {
   if (slot === 'knowledge' && record(declared.knowledge)) {
@@ -221,9 +223,19 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el;
   };
   const button = (text, run) => {
-    const b = node('button', text, 'act'); b.type = 'button'; if (typeof run === 'function') b.addEventListener('click', run); return b;
+    const b = node('button', text, 'act'); b.type = 'button';
+    // aria-disabled (the stale mark) blocks the activation without dropping focus.
+    if (typeof run === 'function') b.addEventListener('click', event => { if (b.getAttribute('aria-disabled') !== 'true') run(event); });
+    return b;
   };
   const mutationButton = (text, run) => { const control = button(text, run); control.dataset.mutate = '1'; control.disabled = !available(); return control; };
+  // Stale (the last inspection failed, the content kept): mutations that act on the subject wait for a good read —
+  // the roster's rule (ROSTER_STALE_TITLE), with an accessible reason; Launch, Schedule and Files come from the roster and stay.
+  const stale = () => loading?.state === 'stale';
+  const markStale = control => {
+    if (stale()) { control.setAttribute('aria-disabled', 'true'); control.title = INSPECTION_STALE_TITLE; control.setAttribute('aria-description', INSPECTION_STALE_TITLE); }
+    else if (control.getAttribute('aria-description') === INSPECTION_STALE_TITLE) { control.removeAttribute('aria-disabled'); control.removeAttribute('title'); control.removeAttribute('aria-description'); }
+  };
   const request = (body, query = wsQuery()) => postJson(ctx, `/api/capabilities${query}`, body);
   const valid = (id, gen) => alive && id === serial && gen === workspaceGeneration();
   const ownsSubject = (id, gen) => id === subject && valid(serial, gen);
@@ -391,6 +403,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       const labels = !loading.hasData && error?.code === 'E_TEAM_CONFLICT' ? teamLabels(error.labels) : null;
       content.querySelector('.inspector-conflict-labels')?.remove();
       if (labels) content.append(node('p', `Team labels in conflict: ${labels.join(', ')}`, 'muted inspector-conflict-labels'));
+      syncAvailability(); // stale: the mutations wait, with the reason
     }
   }
   function facts(entries, parent = content) {
@@ -428,7 +441,8 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       if (teams) {
         section('Teams'); const id = subject, gen = selectionGen;
         teamsPanel = createTeamsPanel(content, { operations: teams, selector: selection.selector, request, heading: false,
-          owns: () => ownsSubject(id, gen) && selectionGen === workspaceGeneration(), available });
+          owns: () => ownsSubject(id, gen) && selectionGen === workspaceGeneration(), available,
+          mutable: () => !stale(), mutableReason: INSPECTION_STALE_TITLE }); // join/leave wait while the inspection is stale
       }
       section('Instance'); card(instanceFacts(inspected.instance));
       if (soul) spawnedFrom(soul);
@@ -798,7 +812,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
   function syncAvailability() {
     syncReadiness(); teamsPanel?.sync();
     if (!selection || !content) return;
-    for (const control of content.querySelectorAll('[data-mutate]')) control.disabled = pendingOperations.has(control) || !available() || selectionGen !== workspaceGeneration();
+    for (const control of content.querySelectorAll('[data-mutate]')) { control.disabled = pendingOperations.has(control) || !available() || selectionGen !== workspaceGeneration(); markStale(control); }
     for (const control of container.querySelectorAll('[data-launch]')) {
       control.disabled = !alive || selectionGen !== workspaceGeneration() || !canLaunch(selection.agent) || selection.agent?.work === 'attached' || !selection.agent?.agentsRoot;
       control.title = selection.agent?.work === 'attached' ? 'Attached only — requires an owning instance.' : control.disabled ? launchReason(selection.agent) : '';

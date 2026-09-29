@@ -79,6 +79,18 @@ test('Retry reads on its own surface, enabled and aria-disabled, in every theme'
   }
 });
 
+test("the stale line's Details summary (muted) and its cause (fg) read on the attention background; Retry's hover (accent) reads on its surface, in every theme", () => {
+  const stale = rule('.loading-notice[data-kind="stale"]'), summary = rule('.loading-notice-details > summary'), cause = rule('.loading-notice-cause');
+  const button = rule('button.loading-retry'), hover = rule('button.loading-retry:hover:not([aria-disabled="true"])');
+  assert.equal(summary.get('color'), 'var(--muted)'); assert.equal(cause.get('color'), 'var(--fg)'); assert.equal(hover.get('color'), 'var(--accent)');
+  for (const [name, p] of palettes) {
+    const attn = resolve(stale.get('background'), p);
+    const s = contrast(resolve(summary.get('color'), p), attn); assert.ok(s >= 4.5, `${name}: Details summary on --attn-bg ${s.toFixed(2)}`);
+    const c = contrast(resolve(cause.get('color'), p), attn); assert.ok(c >= 4.5, `${name}: the cause on --attn-bg ${c.toFixed(2)}`);
+    const h = contrast(resolve(hover.get('color'), p), resolve(button.get('background'), p)); assert.ok(h >= 4.5, `${name}: Retry hover on its surface ${h.toFixed(2)}`);
+  }
+});
+
 test('the skeleton fills (lines at 10%, large detail blocks at 7%) are token mixes, visible on every host surface in every theme, never a text colour', () => {
   const fills = [['.skeleton', rule('.skeleton').get('background'), 12], ['.skeleton-detail-section .skeleton-block', rule('.skeleton-detail-section .skeleton-block').get('background'), 10]];
   for (const [selector, fill, floor] of fills) for (const [name, p] of palettes) for (const host of HOSTS) {

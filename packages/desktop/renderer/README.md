@@ -249,7 +249,7 @@ Every data region runs on one state model, owned by the controller
 | pending | no data for this subject yet | after 150ms a skeleton shaped like the final content; `aria-busy` on the region; the status line says "Loading <noun>…" once — never an empty-state message |
 | ready / empty | the last read succeeded | the content, or the surface's own empty copy after a successful zero read |
 | refreshing | data present, a read in flight | the content stays interactive; "Refreshing…" with a static dot after 400ms in the surface header; no `aria-busy`, no announcement |
-| stale | data present, the read failed | content kept; "Couldn't refresh <noun> · observed <age>" with **Retry** in the attention style and the cause behind a **Details** disclosure (and in the line's title); announced once through the status line, which is then clipped (`.loading-quiet`, its box kept) so the amber line is the one visible message — never the error red; actions that need current state are disabled by the surface, each with an accessible reason ("Unavailable: roster is not current") |
+| stale | data present, the read failed | content kept; "Couldn't refresh <noun> · observed <age>" with **Retry** in the attention style and the cause behind a **Details** disclosure (and in the line's title); announced once through the status line, which is then clipped (`.loading-quiet`, its box kept) so the amber line is the one visible message — never the error red; actions that need current state are held by the surface with `aria-disabled` (never `disabled`: Chromium blurs a focused control that becomes disabled) and an accessible reason (`aria-description` + title: "Unavailable: roster is not current", "Unavailable: inspection is not current"), and every handler on a held control checks the mark first |
 | failed | no data, the read failed | the cause, a **Details** disclosure with the code and **Retry**, where the skeleton stood |
 
 The controller owns the two delays, `aria-busy`, the status-line text, the age
@@ -288,10 +288,16 @@ visible status line (the sidebar roster, the hierarchy), `statusLine(doc,
 { visuallyHidden: true })` speaks and the visible notice is a `role=note`.
 
 Where each surface wires it: the sidebar roster in `instance-tree.mjs`
-(`createRosterLoading`, `rosterSignature`, the pending count pill) and
-`shell.mjs` (`refreshContextRoster`); the hierarchy in `views/hierarchy.mjs`
-(the summary pill, its own notice keeps the stale copy); the soul inspector in
-`soul-inspector.mjs` (a same-subject `show()` is a refresh that never runs
+(`createRosterLoading`, `rosterSignature`, the pending count pill,
+`markStaleControl` / `staleBlocked`) and `shell.mjs` (`refreshContextRoster`;
+while stale, Start…, the actions menu and a *stopped* row's own activation are
+held — a stale `running:false` may be running by now — while a running row
+still opens its terminal); the hierarchy in `views/hierarchy.mjs` (the summary
+pill, its own notice keeps the stale copy with the observation's age); the soul
+inspector in `soul-inspector.mjs` (while `loading.state === 'stale'` every
+`[data-mutate]` control and the teams panel's join/leave — `createTeamsPanel`'s
+`mutable` / `mutableReason` — wait with `INSPECTION_STALE_TITLE`; Launch,
+Schedule and Files come from the roster and stay; a same-subject `show()` is a refresh that never runs
 `frame()`: the actions are built once per subject and read the current row at
 click time, the roster-derived block — lede, refusal, facts, Instances — is
 repainted behind its own signature, and "Teams here" is created with the frame

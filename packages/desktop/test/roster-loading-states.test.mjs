@@ -288,11 +288,19 @@ test('failure with data: rows kept, stale line with the observed age and Retry, 
   const retry = notice.querySelector('.loading-retry'); assert.equal(retry.textContent, 'Retry'); assert.equal(retry.getAttribute('aria-disabled'), null);
   assert.equal(s.live().textContent, "Couldn't refresh instances.");
   assert.equal(s.count().title, 'Last observation — 2 running · 1 stopped'); assert.equal(s.count().textContent, 'Last observation: 2 running');
-  const start = s.list().querySelector('.ctx-start');
-  assert.equal(start.disabled, true); assert.equal(start.title, tree.ROSTER_STALE_TITLE); assert.equal(start.getAttribute('aria-description'), 'Unavailable: roster is not current', 'an accessible reason, not just a greyed look');
-  for (const trigger of s.list().querySelectorAll('.ctx-instance-actions')) { assert.equal(trigger.disabled, true); assert.equal(trigger.title, tree.ROSTER_STALE_TITLE); assert.equal(trigger.getAttribute('aria-description'), tree.ROSTER_STALE_TITLE); }
-  assert.equal(s.rows()[0].querySelector('.ctx-inst').disabled, false, 'opening the existing terminal stays possible');
   assert.equal(s.doc.activeElement.dataset.treeInstance, alpha.dataset.treeInstance, 'the focused row survives the stale repaint');
+  // Stale marks are aria-disabled (Chromium blurs a focused control that becomes `disabled`), with the reason; their activation does nothing.
+  const start = s.list().querySelector('.ctx-start'); start.focus();
+  assert.equal(start.disabled, false); assert.equal(start.getAttribute('aria-disabled'), 'true'); assert.equal(start.title, tree.ROSTER_STALE_TITLE); assert.equal(start.getAttribute('aria-description'), 'Unavailable: roster is not current', 'an accessible reason, not just a greyed look');
+  start.click(); assert.equal(s.doc.activeElement, start, 'a stale Start… starts nothing (openInstanceStart is assert.fail here) and keeps focus');
+  for (const trigger of s.list().querySelectorAll('.ctx-instance-actions')) { assert.equal(trigger.getAttribute('aria-disabled'), 'true'); assert.equal(trigger.disabled, false); assert.equal(trigger.title, tree.ROSTER_STALE_TITLE); assert.equal(trigger.getAttribute('aria-description'), tree.ROSTER_STALE_TITLE); }
+  // The row itself: a running row still opens its terminal; a stopped row's activation (click, Enter) starts nothing and says why — the
+  // roster may be wrong about running:false by now (the maintainer's return on #322).
+  const alphaRow = s.rows()[0].querySelector('.ctx-inst'), betaRow = s.rows().find(r => r.querySelector('.ctx-name').textContent === 'beta').querySelector('.ctx-inst');
+  assert.equal(alphaRow.disabled, false); assert.equal(alphaRow.getAttribute('aria-description'), null, 'opening the existing terminal stays possible');
+  assert.equal(betaRow.getAttribute('aria-description'), tree.ROSTER_STALE_TITLE); assert.equal(betaRow.title, tree.ROSTER_STALE_TITLE);
+  betaRow.click(); // openInstanceStart is assert.fail in this shell: reaching it would fail the test
+  alphaRow.focus();
   // The age line keeps itself current.
   s.c.advance(AGE_TICK_MS);
   assert.equal(notice.querySelector('.loading-notice-text').textContent, "Couldn't refresh instances · observed 1 min ago");
@@ -306,8 +314,9 @@ test('failure with data: rows kept, stale line with the observed age and Retry, 
   assert.equal(s.rows().length, 3, 'still kept while retrying');
   await s.reply(3, panelOf('A', roster, { observedAt: new Date(s.c.now()).toISOString() }));
   assert.equal(s.status().children.length, 0); assert.equal(s.context.rosterState.state, 'ready');
-  assert.equal(s.list().querySelector('.ctx-start').disabled, false); assert.equal(s.list().querySelector('.ctx-start').title, '');
-  for (const trigger of s.list().querySelectorAll('.ctx-instance-actions')) assert.equal(trigger.disabled, false);
+  assert.equal(s.list().querySelector('.ctx-start').getAttribute('aria-disabled'), null); assert.equal(s.list().querySelector('.ctx-start').title, '');
+  for (const trigger of s.list().querySelectorAll('.ctx-instance-actions')) assert.equal(trigger.getAttribute('aria-disabled'), null);
+  assert.equal(s.rows().find(r => r.querySelector('.ctx-name').textContent === 'beta').querySelector('.ctx-inst').getAttribute('aria-description'), null, 'the stopped row is a Start again');
   assert.equal(s.count().dataset.stale, undefined);
   assert.equal(s.live().textContent, 'Instances updated');
   assert.equal(s.doc.activeElement, s.rosterEl.querySelector('.ctx-filter'), 'the vanished Retry hands focus to the filter, not to nothing');
@@ -320,7 +329,7 @@ test('a reported panel error beside instances is the last observation: stale lin
   assert.equal(s.context.rosterState.state, 'stale');
   const notice = s.status().querySelector('.loading-notice[data-kind="stale"]');
   assert.equal(notice.title, 'Server is unreachable'); assert.match(notice.textContent, /^Couldn't refresh instances/);
-  assert.equal(s.list().querySelector('.ctx-start').disabled, true);
+  assert.equal(s.list().querySelector('.ctx-start').getAttribute('aria-disabled'), 'true');
   assert.equal(s.live().textContent, "Couldn't refresh instances.");
   const rows = s.rows();
   s.refreshContextRoster(); await s.reply(1, panelOf('A', roster, { error: 'Server is unreachable' }));
@@ -328,7 +337,7 @@ test('a reported panel error beside instances is the last observation: stale lin
   assert.equal(s.status().querySelector('.loading-notice'), notice, 'the stale line is updated in place');
   assert.equal(s.live().textContent, "Couldn't refresh instances.", 'and not announced anew');
   s.refreshContextRoster(); await s.reply(2, panelOf('A', roster));
-  assert.equal(s.status().children.length, 0); assert.equal(s.list().querySelector('.ctx-start').disabled, false);
+  assert.equal(s.status().children.length, 0); assert.equal(s.list().querySelector('.ctx-start').getAttribute('aria-disabled'), null);
   assert.equal(s.context.rosterState.state, 'ready');
 });
 
@@ -412,7 +421,7 @@ test('a panel that reports an error with no instances is a failed read, never "N
   void u.refreshContextRoster(); await u.reply(2, panelOf('A', [], { error: 'Server is unreachable' }));
   assert.deepEqual(u.names(), ['alpha', 'gamma', 'beta'], 'the last observation stays'); assert.equal(u.context.rosterState.state, 'stale');
   assert.match(u.status().textContent, /Couldn't refresh instances/); assert.equal(u.status().querySelector('.loading-notice').title, 'Server is unreachable');
-  assert.ok(u.rows().every(r => !r.querySelector('.ctx-start') || r.querySelector('.ctx-start').disabled), 'stale: Start… disabled');
+  assert.ok(u.rows().every(r => !r.querySelector('.ctx-start') || r.querySelector('.ctx-start').getAttribute('aria-disabled') === 'true'), 'stale: Start… held (aria-disabled)');
   assert.equal(u.count().dataset.stale, '1'); assert.equal(u.list().querySelector('.loading-failed'), null, 'no failed block over data');
 });
 

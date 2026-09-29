@@ -181,7 +181,7 @@ body {
    the menu) takes the tint like every other control. */
 .ctx-instance-actions:hover { background: var(--surface-2); color: var(--fg); }
 .ctx-instance-actions:focus-visible { background: var(--sel); color: var(--fg); }
-.ctx-instance-actions:disabled { color: var(--muted); cursor: default; }
+.ctx-instance-actions:disabled, .ctx-instance-actions[aria-disabled="true"] { color: var(--muted); cursor: default; }
 .ctx-instance-menu { position: fixed; inset: auto; margin: 0; width: 240px; max-width: calc(100vw - 16px);
   max-height: calc(100vh - 16px); overflow-y: auto;
   padding: 6px; background: var(--surface); color: var(--fg); border: 1px solid var(--border);
@@ -200,7 +200,7 @@ body {
 .ctx-instance-menu button:disabled { background: var(--surface-2); color: var(--faint); cursor: default; }
 .ctx-start { flex: none; padding: 2px 7px; font-size: 11.5px; line-height: 1.4; color: var(--accent); background: var(--surface);
   border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
-.ctx-start:disabled { color: var(--muted); cursor: default; }
+.ctx-start:disabled, .ctx-start[aria-disabled="true"] { color: var(--muted); cursor: default; } /* stale (aria-disabled) reads like disabled */
 .instance-start-modal { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center;
   background: var(--scrim); padding: 24px; }
 .instance-start-dialog { width: min(560px, 100%); max-height: 90vh; overflow: auto; padding: 20px;

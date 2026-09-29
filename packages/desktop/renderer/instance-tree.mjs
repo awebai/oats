@@ -556,8 +556,12 @@ export function renderRosterCount(el, instances, { pending = false, stale = fals
  * since a greyed look alone says nothing. */
 export const ROSTER_STALE_TITLE = "Unavailable: roster is not current";
 export function markStaleControl(control) {
-  control.disabled = true; control.title = ROSTER_STALE_TITLE; control.setAttribute("aria-description", ROSTER_STALE_TITLE);
+  // aria-disabled, never `disabled`: Chromium blurs a focused control that becomes disabled, and the roster
+  // repaints under focus. Every handler on a stale-marked control checks `staleBlocked()` first.
+  control.setAttribute("aria-disabled", "true"); control.title = ROSTER_STALE_TITLE; control.setAttribute("aria-description", ROSTER_STALE_TITLE);
 }
+/** True when `markStaleControl` marked this control: its activation must do nothing. */
+export const staleBlocked = control => control?.getAttribute?.("aria-disabled") === "true";
 /** The pending skeleton: five roster rows, the height of the real ones. */
 export const ROSTER_SKELETON_ROWS = 5;
 

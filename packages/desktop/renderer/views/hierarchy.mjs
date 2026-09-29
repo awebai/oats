@@ -40,7 +40,7 @@ import {
   currentWorkspace, setWorkspace, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange,
   renderWorkspaceSelect, wsQuery, workspaceGeneration,
 } from "./common.mjs";
-import { createDataState, skeleton, statusLine } from "../loading.mjs";
+import { createDataState, skeleton, statusLine, observedText } from "../loading.mjs";
 import { deploymentUnavailableText } from "../deployment-header.mjs";
 import { registerAction } from "../keybindings.mjs";
 import { resolveViewKey } from "../view-keys.mjs";
@@ -432,6 +432,11 @@ function dataCurrent(s) {
   return s.alive && s.dataGen === workspaceGeneration() && s.dataWorkspace === currentWorkspace();
 }
 function actionsCurrent(s) { return dataCurrent(s) && !s.stale && !s.pending; }
+/** The stale rule's age (" · observed 45s ago") for the kept observation, from the panel's observedAt; nothing when unreported. */
+function staleAge(s) {
+  const age = observedText(s.load?.observedAt ?? null, Date.now());
+  return age ? ` · ${age}` : '';
+}
 function notice(s, message) {
   const el = s.q('hier-notice'); if (!el) return;
   const text = el.querySelector?.('.hier-notice-message');
@@ -476,7 +481,7 @@ function acceptObservation(s, panel, gen) {
   if (panel.error) s.load?.fail({ message: panel.error }); // a repeated stale poll updates in place, no re-announcement
   if (s.ctx.hasWorkspaceSwitcher) s.q('wssel').style.display = 'none';
   else renderWorkspaceSelect(s.q('wssel'), panel.workspaces, panel.workspace?.id || '');
-  notice(s, panel.error ? `Roster unavailable: ${panel.error.slice(0, 300)}. Showing a reported observation, not current state; actions disabled.` : '');
+  notice(s, panel.error ? `Roster unavailable: ${panel.error.slice(0, 300)}. Showing a reported observation${staleAge(s)}, not current state; actions disabled.` : '');
   if (signature !== s.signature) { s.signature = signature; render(s); }
   else { if (!s.fitted) fit(s); updatePop(s); }
 }
@@ -533,7 +538,7 @@ export async function refresh(s, { user = false } = {}) {
     // notice below is the visible failure surface (no failedHost).
     s.load?.fail(error);
     if (s.dataGen == null) s.q('hier-sum').textContent = 'Roster unknown';
-    notice(s, `Roster unavailable: ${String(error?.message || 'read failed').slice(0, 300)}. ${s.dataGen == null ? 'No current observation.' : 'Showing the last observation, not current state; actions disabled.'}`);
+    notice(s, `Roster unavailable: ${String(error?.message || 'read failed').slice(0, 300)}. ${s.dataGen == null ? 'No current observation.' : `Showing the last observation${staleAge(s)}, not current state; actions disabled.`}`);
     updatePop(s);
   } finally { if (owns()) s.loading = false; }
 }

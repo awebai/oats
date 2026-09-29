@@ -109,7 +109,7 @@ test('a failed poll with data goes stale: content kept, the view notice with Ret
   const nodes = u.nodes(); u.mouse(nodes[0], 'click'); const button = u.one('.pterm');
   u.setRead(() => Promise.reject(new Error('offline'))); u.poll(); await tick();
   assert.deepEqual(u.nodes(), nodes, 'the last observation stays painted');
-  assert.match(u.notice(), /^Roster unavailable: offline\. Showing the last observation, not current state; actions disabled\.$/);
+  assert.match(u.notice(), /^Roster unavailable: offline\. Showing the last observation, not current state; actions disabled\.$/, 'no observedAt reported: no age invented');
   assert.equal(u.one('.hier-retry').hidden, false); assert.equal(u.one('.hier-retry').textContent, 'Retry roster');
   assert.equal(button.disabled, true, 'actions that need current state are disabled');
   assert.equal(u.status(), 'Couldn\'t refresh roster.', 'the failure is announced through the status line');
@@ -189,6 +189,15 @@ test('a deployment the server has not observed yet (status pending, no instances
   u.setRead(() => panel([], currentWorkspace(), { deployment: { status: 'unavailable', reason: { code: 'E_NO_KERNEL', message: 'no kernel here' } } }));
   await u.poll(); await tick();
   assert.match(u.notice(), /Roster unavailable: E_NO_KERNEL: no kernel here/); assert.equal(u.nodes().length, 2, 'the last observation stays');
+});
+
+test('the stale notice carries the kept observation\'s age when the reply reported observedAt (the model\'s rule for every stale line)', async t => {
+  const at = new Date(Date.now() - 45_000).toISOString();
+  const u = await setup(t, { api: () => panel([instance('a')], '/team', { observedAt: at }) }); await tick();
+  u.setRead(() => Promise.reject(new Error('offline'))); u.poll(); await tick();
+  assert.match(u.notice(), /^Roster unavailable: offline\. Showing the last observation · observed 45s ago, not current state; actions disabled\.$/);
+  u.setRead(() => panel([instance('a')], '/team', { observedAt: at, error: 'remote unreachable' })); await u.poll(); await tick();
+  assert.match(u.notice(), /Showing a reported observation · observed 45s ago, not current state/);
 });
 
 test('a panel that reports an error beside its instances is announced as stale once (the notice is a note, the status line speaks)', async t => {

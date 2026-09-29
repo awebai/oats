@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { JSDOM } from 'jsdom';
 import * as spawn from '../renderer/views/spawn.mjs';
-import { createSoulInspector } from '../renderer/soul-inspector.mjs';
+import { createSoulInspector, INSPECTION_STALE_TITLE } from '../renderer/soul-inspector.mjs';
 import { createReadinessView } from '../renderer/readiness-view.mjs';
 import { createPanelOwner } from '../renderer/panel-owner.mjs';
 import { createContextPanel } from '../renderer/context-panel.mjs';
@@ -316,7 +316,7 @@ test('focusLaunch requires effective hosted visibility; silent close/disposal pr
 test('mutation: focusLaunch test detects removal of the effective hosted visibility guard', async () => {
   const source = createSoulInspector.toString(), guard = ' || (presentation && !presentation.isVisible())';
   assert.equal(source.split(guard).length, 2);
-  const mutant = runInNewContext(`(${source.replace(guard, '')})`, { postJson, wsQuery, workspaceGeneration, runtimeState, createSoulMark, createReadinessView, cliStatus, iconElement, inspectData, inspectFacts, createDataState, skeletonBlock, skeleton, captureFocusState, desktopFacts, buildState });
+  const mutant = runInNewContext(`(${source.replace(guard, '')})`, { postJson, wsQuery, workspaceGeneration, runtimeState, createSoulMark, createReadinessView, cliStatus, iconElement, inspectData, inspectFacts, createDataState, skeletonBlock, skeleton, captureFocusState, desktopFacts, buildState, INSPECTION_STALE_TITLE });
   await assert.rejects(launchVisibility(mutant), /hidden lease refuses focusLaunch/);
 });
 

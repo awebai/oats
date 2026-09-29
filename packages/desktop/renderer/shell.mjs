@@ -52,7 +52,7 @@ import {
   collapseKey, hasInstanceChildren, instanceRepoLabel, treeConnectors, filterInstanceTree, instanceVisibleInTree,
   captureTreeRenderState, rosterResponseOwns, clusterSeparator, renderRosterCount,
   instanceId, rosterParentId, terminalKey, resolveTerminalOpen, visibleClusters,
-  createRosterLoading, rosterSignature, markStaleControl,
+  createRosterLoading, rosterSignature, markStaleControl, staleBlocked, ROSTER_STALE_TITLE,
 } from "./instance-tree.mjs";
 import {
   tabVisibleInContext, canActivateTab,
@@ -554,7 +554,12 @@ function renderContextRoster(instances) {
         }
         // pass the FULL reference: same-named instances in other agents
         // roots must open THEIR tmux session, not the first name match
-        row.addEventListener("click", () => i.running ? openTerminalTab(i) : openInstanceStart(i));
+        // A stale roster (the last read failed) may say running:false for an instance that is running by now:
+        // the row's activation (click, Enter) then starts nothing and says why; opening a running row's
+        // terminal stays allowed (the maintainer's return on #322).
+        const staleStart = rosterStale && !i.running;
+        if (staleStart) { row.title = ROSTER_STALE_TITLE; row.setAttribute("aria-description", ROSTER_STALE_TITLE); }
+        row.addEventListener("click", () => { if (staleStart) return; i.running ? openTerminalTab(i) : openInstanceStart(i); });
         // full keyboard tree operability (roving tabindex; policy in
         // roster-keys.mjs). Enter is the button's native activation.
         row.dataset.rosterChildren = hasChildren ? "1" : "0";
@@ -577,7 +582,7 @@ function renderContextRoster(instances) {
           start.textContent = "Start…"; start.setAttribute("aria-label", `Start ${i.instance}`);
           start.disabled = !!i.server && !i.savedRoute;
           if (rosterStale) markStaleControl(start);
-          start.addEventListener("click", () => openInstanceStart(i));
+          start.addEventListener("click", () => { if (!staleBlocked(start)) openInstanceStart(i); });
           tools.append(start);
         }
         const actionTarget = instanceActionTarget(ws, i), menuConnection = connectionGeneration;

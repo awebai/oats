@@ -11,7 +11,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { createSoulInspector, inspectorCSS } from '../renderer/soul-inspector.mjs';
+import { createSoulInspector, inspectorCSS, INSPECTION_STALE_TITLE } from '../renderer/soul-inspector.mjs';
 import { setWorkspace, currentWorkspace } from '../renderer/views/common.mjs';
 import { refreshCli, resetCliStateForTests } from '../renderer/views/cli-status.mjs';
 import { soulTeamsData } from '../deployment-data.mjs';
@@ -278,9 +278,11 @@ test('soul page: the soul teams read is dispatched before inspect answers; main 
   // Both re-read; only the capabilities route takes the refresh hint (the soul-teams route admits no extra key).
   assert.deepEqual(u.calls.slice(-2).map(c => [c.path, c.body.refresh]).sort(), [['/api/capabilities', true], ['/api/workspace-soul-teams', undefined]], 'both re-read, as user refreshes');
   assert.equal(u.q('[data-card="Teams here"]'), card); assert.equal(card.querySelectorAll('.sth-row').length, rows, 'the rows are kept');
-  assert.ok([...card.querySelectorAll('button.sth-act')].every(b => b.disabled), 'its actions lock meanwhile, as before');
+  // Locked with aria-disabled, never `disabled` (Chromium would blur a focused control); an activation meanwhile does nothing.
+  assert.ok([...card.querySelectorAll('button.sth-act')].every(b => b.getAttribute('aria-disabled') === 'true' && !b.disabled), 'its actions lock meanwhile');
+  const lockedCalls = u.calls.length; card.querySelector('button.sth-act').click(); await tick(); assert.equal(u.calls.length, lockedCalls, 'a locked action runs nothing');
   await u.resolve({ status: 'ok', soulTeams: soulTeamsDoc }, u.teamsHere); await u.resolve(soul);
-  assert.equal(card.querySelectorAll('.sth-row').length, rows); assert.ok([...card.querySelectorAll('button.sth-act')].every(b => !b.disabled));
+  assert.equal(card.querySelectorAll('.sth-row').length, rows); assert.ok([...card.querySelectorAll('button.sth-act')].every(b => !b.disabled && b.getAttribute('aria-disabled') === null));
   assert.equal(u.status().textContent, 'Soul updated');
 });
 
@@ -400,22 +402,46 @@ test('soul page, Teams here: focus on "Remove gamma" survives a refresh that ins
   assert.equal(u.doc.activeElement, card.querySelector('.page-card-title'), 'gamma is gone: the card title, never "Remove beta"');
 });
 
-test('while stale, the inspector\'s own messages (an Open-soul miss, an operation error) are visible: say() lifts the quiet mark', async t => {
+test('while stale, the inspector\'s own messages (an Open-soul miss) are visible: say() lifts the quiet mark; an operation error while current has a visible trace', async t => {
   const u = mount(t, { openSoul: () => false });
   void u.inspector.show(homeSelection); await u.resolve(home);
+  // Current: an operation's error is a visible message.
+  const run = u.q('[data-operation]'); assert.ok(run && !run.disabled && run.getAttribute('aria-disabled') === null);
+  run.click(); await tick(); assert.match(u.status().textContent, /^Running /);
+  // (the instance Teams panel issues its own `messaging:teams` run on render: match this control's operation)
+  await u.reject(refusal('E_OPERATION_FAILED', 'the provider refused'), r => r.body.action === 'run' && r.body.operation === run.dataset.operation);
+  assert.equal(u.status().textContent, 'the provider refused'); assert.equal(u.status().classList.contains('loading-quiet'), false, 'an operation error has a visible trace');
   u.refresh().click(); await u.reject(refusal('E_BRIDGE', 'bridge down'));
   assert.equal(u.status().textContent, "Couldn't refresh instance."); assert.equal(u.status().classList.contains('loading-quiet'), true);
   button(u.el, 'Open soul').click();
   assert.match(u.status().textContent, /is not in this workspace's souls/); assert.equal(u.status().classList.contains('loading-quiet'), false, 'the miss is seen');
-  const run = u.q('[data-operation]'); assert.ok(run && !run.disabled, 'operations stay enabled while stale');
-  run.click(); await tick();
-  assert.match(u.status().textContent, /^Running /); assert.equal(u.status().classList.contains('loading-quiet'), false);
-  // (the instance Teams panel issues its own `messaging:teams` run on render: match this control's operation)
-  await u.reject(refusal('E_OPERATION_FAILED', 'the provider refused'), r => r.body.action === 'run' && r.body.operation === run.dataset.operation);
-  assert.equal(u.status().textContent, 'the provider refused'); assert.equal(u.status().classList.contains('loading-quiet'), false, 'an operation error has a visible trace');
   assert.ok(u.q('.inspector-notice .loading-notice'), 'the stale line stays beside it');
   u.refresh().click(); await u.reject(refusal('E_BRIDGE', 'bridge down'));
   assert.equal(u.status().classList.contains('loading-quiet'), true, 'the next failure re-quiets');
+});
+
+test('stale: the inspector\'s mutations (provider operations, the teams panel\'s join/leave) wait with the reason, aria-disabled; Refresh and the roster-derived actions stay; a good read lifts it (the maintainer\'s return on #322)', async t => {
+  const u = mount(t);
+  void u.inspector.show(homeSelection); await u.resolve(home); await u.resolve(teamsRun, r => r.body.operation === 'messaging:teams');
+  const run = u.q('[data-operation]'), join = u.q('[data-team-action]'); assert.ok(run && join, 'a provider operation and a team action');
+  assert.equal(run.getAttribute('aria-disabled'), null); assert.equal(join.getAttribute('aria-disabled'), null);
+  run.focus();
+  u.refresh().click(); await u.reject(refusal('E_BRIDGE', 'bridge down'));
+  assert.ok(u.q('.inspector-notice .loading-notice[data-kind=stale]'), 'stale, content kept');
+  for (const control of [run, join]) {
+    assert.equal(control.getAttribute('aria-disabled'), 'true', `${control.textContent} waits`); assert.equal(control.disabled, false, 'never `disabled`: focus survives');
+    assert.equal(control.getAttribute('aria-description'), INSPECTION_STALE_TITLE); assert.equal(control.title, INSPECTION_STALE_TITLE);
+  }
+  assert.equal(u.doc.activeElement, run, 'the focused control keeps focus');
+  const before = u.calls.length;
+  run.click(); join.click(); await tick();
+  assert.equal(u.calls.length, before, 'a stale mutation runs nothing');
+  assert.equal(u.refresh().getAttribute('aria-disabled'), null, 'Refresh stays');
+  assert.equal(u.q('.teams-refresh')?.getAttribute('aria-disabled') ?? null, null, 'the teams panel\'s own Refresh stays');
+  for (const control of u.el.querySelectorAll('[data-launch], [data-files]')) assert.equal(control.getAttribute('aria-description'), null, 'roster-derived actions are not touched by the stale rule');
+  u.refresh().click(); await u.resolve(home);
+  assert.equal(u.q('[data-operation]').getAttribute('aria-disabled'), null, 'a good read lifts the hold'); assert.equal(u.q('[data-operation]').getAttribute('aria-description'), null);
+  assert.equal(u.q('[data-team-action]').getAttribute('aria-disabled'), null);
 });
 
 test('an inspector message on the status line does not swallow the next completion announcement', async t => {

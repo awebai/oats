@@ -69,8 +69,10 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
     menu.style.left = `${Math.max(8, Math.min(anchor.right - size.width, win.innerWidth - size.width - 8))}px`;
     menu.style.top = `${Math.max(8, anchor.bottom + size.height + 8 <= win.innerHeight ? anchor.bottom + 4 : anchor.top - size.height - 4)}px`;
   };
+  // A stale roster marks the trigger aria-disabled (instance-tree.mjs markStaleControl): blocked like `disabled`, focus kept.
+  const blocked = () => trigger.disabled || trigger.getAttribute("aria-disabled") === "true";
   const open = (action) => {
-    if (trigger.disabled || !visible(trigger) || !owns()) return;
+    if (blocked() || !visible(trigger) || !owns()) return;
     menu.showPopover(); position();
     (items.find((item) => item.dataset.action === action && !item.disabled) || items.find(item => !item.disabled))?.focus();
   };
@@ -79,7 +81,7 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
   // Both native dismissal and explicit close update the trigger's state.
   menu.addEventListener("beforetoggle", (event) => {
     const expanded = event.newState === "open";
-    if (expanded && (!owns() || trigger.disabled || !visible(trigger))) { event.preventDefault(); return; }
+    if (expanded && (!owns() || blocked() || !visible(trigger))) { event.preventDefault(); return; }
     if (expanded) syncOptions();
     menu.dataset.instanceMenuOpen = String(expanded);
     trigger.setAttribute("aria-expanded", String(expanded));
@@ -115,7 +117,7 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
   const launchAction = instance.running === true ? [["restart", "Restart with…"]] : instance.running === false ? [["start", "Start…"]] : [];
   async function execute(action) {
     const item = items.find(row => row.dataset.action === action);
-    if (!item || !owns() || !visible(trigger) || !item.isConnected || trigger.disabled || item.disabled || reasonFor(action) || pending.has(key)) return;
+    if (!item || !owns() || !visible(trigger) || !item.isConnected || blocked() || item.disabled || reasonFor(action) || pending.has(key)) return;
     close(true);
     if (action === 'stop' || action === 'retire') {
       if (typeof openLifecycle === 'function') openLifecycle(action, instance);
@@ -143,7 +145,7 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
     if (actionId) { const hint = doc.createElement('kbd'); hint.dataset.shortcut = actionId; hint.textContent = shortcut(actionId) || ''; hint.hidden = !hint.textContent; item.append(hint); }
     if (reason !== undefined) { const note = doc.createElement('small'); item.append(note); }
     item.addEventListener('click', () => {
-      if (!owns() || !item.isConnected || item.disabled || trigger.disabled) return;
+      if (!owns() || !item.isConnected || item.disabled || blocked()) return;
       if (actionId && typeof dispatch === 'function') dispatch(actionId); else void execute(action);
     });
     items.push(item); menu.append(item);

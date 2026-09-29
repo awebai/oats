@@ -15,7 +15,7 @@
  * buttons disabled meanwhile, as before) and restores focus after the repaint; a failure then
  * keeps the document with the problem box, as before. */
 import { pageCard } from './capability-page.mjs';
-import { createDataState, skeletonBlock, statusLine, captureFocusState } from './loading.mjs';
+import { createDataState, skeletonBlock, statusLine, captureFocusState, observedText } from './loading.mjs';
 
 export const soulTeamsHereCSS = `
 .soul-teams-here .sth-default { margin:0; color:var(--fg); font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
@@ -30,9 +30,9 @@ export const soulTeamsHereCSS = `
 .soul-teams-here .sth-meta.warn { color:var(--warn); }
 .soul-teams-here .sth-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; }
 .oats-view .soul-teams-here button.sth-act { height:26px; min-height:26px; padding:0 10px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--fg); font:600 11.5px var(--sans,system-ui); white-space:nowrap; cursor:pointer; }
-.oats-view .soul-teams-here button.sth-act:hover:not(:disabled) { background:var(--surface-2); }
-.oats-view .soul-teams-here button.sth-act:disabled { color:var(--muted); cursor:default; }
-.oats-view .soul-teams-here button.sth-act.primary:not(:disabled) { background:var(--primary-bg); border-color:var(--primary-bg); color:var(--primary-fg); }
+.oats-view .soul-teams-here button.sth-act:hover:not(:disabled):not([aria-disabled="true"]) { background:var(--surface-2); }
+.oats-view .soul-teams-here button.sth-act:disabled, .oats-view .soul-teams-here button.sth-act[aria-disabled="true"] { color:var(--muted); cursor:default; }
+.oats-view .soul-teams-here button.sth-act.primary:not(:disabled):not([aria-disabled="true"]) { background:var(--primary-bg); border-color:var(--primary-bg); color:var(--primary-fg); }
 .oats-view .soul-teams-here button.sth-act:not(.primary):focus-visible { background:var(--sel); }
 .soul-teams-here .sth-add { display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding-top:8px; border-top:1px solid var(--tag-bg); }
 .soul-teams-here .sth-add select { height:26px; min-width:0; max-width:100%; padding:0 6px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--fg); font:12px var(--mono,monospace); }
@@ -96,7 +96,7 @@ export function createSoulTeamsHere(doc, { soul, request, listTeams = null, cloc
       pending = false;
       if (!next || !Array.isArray(next.teams)) {
         cardError = { message: `The teams of ${soul} on this computer could not be read.` };
-        if (read) loading.fail(cardError);
+        if (read) { loading.fail(cardError); if (current) cardError = { ...cardError, stale: true }; }
         repaint(); return;
       }
       current = next; if (read) loading.succeed({ observedAt: text(next.observedAt) });
@@ -106,12 +106,14 @@ export function createSoulTeamsHere(doc, { soul, request, listTeams = null, cloc
       pending = false;
       const shown = { code: text(error?.code), message: text(error?.message) || 'The change was refused.' };
       if (label) rowError = { label, ...shown }; else cardError = shown;
-      if (read) loading.fail(shown);
+      // A failed re-read over a document: the box carries the observation's age, like every stale line.
+      if (read) { loading.fail(shown); if (current) cardError = { ...shown, stale: true }; }
       repaint();
     }
   }
+  // Locked, not `disabled`: Chromium blurs a focused control that becomes disabled; the mark is lifted by the repaint.
   function lockActions() {
-    for (const control of body.querySelectorAll('button.sth-act, select')) control.disabled = true;
+    for (const control of body.querySelectorAll('button.sth-act, select')) control.setAttribute('aria-disabled', 'true');
     for (const box of body.querySelectorAll('.sth-error')) box.remove();
   }
   async function loadChoices() {
@@ -122,13 +124,15 @@ export function createSoulTeamsHere(doc, { soul, request, listTeams = null, cloc
   function button(label, cls, onClick, { disabled = false, title = '', aria = '', key = '' } = {}) {
     const b = el(doc, 'button', label, `sth-act${cls ? ` ${cls}` : ''}`); b.type = 'button';
     if (key) b.dataset.focusKey = key;
-    b.disabled = disabled || pending; if (title) b.title = title; if (aria) b.setAttribute('aria-label', aria);
-    b.addEventListener('click', () => { if (!b.disabled) onClick(); });
+    if (disabled) b.disabled = true; if (pending) b.setAttribute('aria-disabled', 'true'); if (title) b.title = title; if (aria) b.setAttribute('aria-label', aria);
+    b.addEventListener('click', () => { if (!b.disabled && b.getAttribute('aria-disabled') !== 'true') onClick(); });
     return b;
   }
   function problemBox(error) {
     const wrap = el(doc, 'div', null, 'sth-error'); wrap.setAttribute('role', 'alert');
-    wrap.append(el(doc, 'p', error.message));
+    // A stale document's box names the observation's age ("· observed 45s ago"), the model's rule for every stale line.
+    const age = error.stale ? observedText(loading.observedAt, clock.now?.() ?? Date.now()) : null;
+    wrap.append(el(doc, 'p', age ? `${error.message} · ${age}` : error.message));
     if (error.code) { const more = el(doc, 'details'); more.append(el(doc, 'summary', 'Details'), el(doc, 'pre', error.code)); wrap.append(more); }
     return wrap;
   }
