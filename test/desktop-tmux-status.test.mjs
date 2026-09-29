@@ -57,18 +57,15 @@ test("liveness keeps the kernel-recorded socket/session target and never exposes
   assert.deepEqual(calls[0][1].slice(0, 3), ["-u", "-S", "/saved"]);
 });
 
-test("liveness preserves Herdr targets instead of requiring a tmux window", () => {
+test("liveness reports a Herdr-recorded row unsupported, never probing it or requiring a tmux window", () => {
+  const stem = "E_HERDR_REMOVED: Herdr is no longer supported by OATS (removed in 0.31.0); tmux is the only session backend.";
   const target = { backend: "herdr", terminalId: "term_probe" };
-  const states = { live: { present: true, status: "done" }, gone: { present: false, status: "unknown" } };
   const rows = observeLiveness([
-    { instance: "live", sessionTarget: { ...target, id: "live" } },
-    { instance: "gone", sessionTarget: { ...target, id: "gone" } },
-    { instance: "unreachable", sessionTarget: { ...target, id: "x" } },
-  ], { tmuxReader: () => assert.fail("Herdr rows never probe tmux"),
-    herdr: (t) => { if (!states[t.id]) throw new Error("socket unavailable"); return states[t.id]; } });
-  assert.deepEqual(rows.map((r) => r.running), [true, false, null]);
-  assert.deepEqual(rows.map((r) => r.tmux), [null, null, null], "Herdr is not projected as a fabricated tmux target");
-  assert.equal(rows[2].runtimeState, "unreachable"); assert.equal(rows[2].runtimeError, "socket unavailable");
+    { instance: "old-kernel", sessionTarget: target },
+    { instance: "new-kernel", sessionTarget: target, runtimeState: "unsupported", runtimeError: `${stem} (new-kernel)` },
+  ], { tmuxReader: () => assert.fail("Herdr rows never probe tmux") });
+  assert.deepEqual(rows.map((r) => [r.running, r.runtimeState, r.runtimeError]), [[null, "unsupported", stem], [null, "unsupported", `${stem} (new-kernel)`]]);
+  assert.deepEqual(rows.map((r) => r.tmux), [null, null], "Herdr is not projected as a fabricated tmux target");
 });
 
 test("malformed liveness requests are refused, malformed rows are unknown", () => {
