@@ -2815,7 +2815,7 @@ console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed
     // ...and because that state can persist forever, the operator must still have
     // a way out. --force removes the home and NAMES what it is leaving behind,
     // rather than reporting a clean retirement.
-    const env = { ...process.env, PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" };
+    const env = { ...process.env, OATS_TMUX_SESSION: "oats-test-nosuch", PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" };
     delete env.PI_AGENTS_ROOT;
     const cli = spawnSync(process.execPath, [CLI, "retire", "dev-nohook", "--dir", root, "--force", "--json"], { encoding: "utf8", env });
     assert.equal(cli.status, 0, `a forced removal succeeded, so it exits 0: ${cli.stderr}`);
@@ -3395,7 +3395,7 @@ console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed
   assert.ok(r.rollbackIncomplete, "cleanup is incomplete");
   assert.equal(realpathSync(r.retainedHome), realpathSync(home), "the result names the home that actually survived");
 
-  const cli = fx.cli(["retire", "dev-q"], { env: { PATH: process.env.PATH, PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" } });
+  const cli = fx.cli(["retire", "dev-q"], { env: { PATH: process.env.PATH, OATS_TMUX_SESSION: "oats-test-nosuch", PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" } });
   assert.notEqual(cli.status, 0);
   assert.match(cli.stderr, new RegExp(home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
     `the diagnostic must point at the retained home, got: ${cli.stderr}`);
@@ -3415,7 +3415,7 @@ console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed
   try {
     await assert.rejects(fx.spawn("dev", { instance: "dev-cli", harness: "pi" }),
       (e) => e.code === "E_REQUIRED_HOOK_FAILED");
-    const env = { ...process.env, PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" };
+    const env = { ...process.env, OATS_TMUX_SESSION: "oats-test-nosuch", PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" };
     delete env.PI_AGENTS_ROOT;
     const r = spawnSync(process.execPath, [CLI, "retire", "dev-cli", "--dir", root], { encoding: "utf8", env });
     assert.notEqual(r.status, 0, `an incomplete cleanup must exit nonzero, got ${r.status}: ${r.stdout}`);

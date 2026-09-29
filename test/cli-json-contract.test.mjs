@@ -92,7 +92,7 @@ test("oats version human output stays ergonomic and mentions the version", () =>
 
 test("oats spawn --json success is one envelope with the contract result fields", (t) => {
   const fx = v2Deployment({ souls: { dev: { soul: { work: "checkout" } } } }); t.after(() => fx.cleanup());
-  const r = fx.cli(["spawn", "dev", "--task", "contract check", "--purpose", "ctr", "--no-launch", "--json"], { env: { PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" } });
+  const r = fx.cli(["spawn", "dev", "--task", "contract check", "--purpose", "ctr", "--no-launch", "--json"], { env: { OATS_TMUX_SESSION: "oats-test-nosuch", PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" } });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   const doc = parseOnly(r.stdout);
   assert.equal(doc.schemaVersion, 1);

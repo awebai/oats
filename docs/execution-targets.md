@@ -43,7 +43,11 @@ follow the same order. The spawn result, the spawn preview and the `launched`
 event name the deciding layer as `backendFrom`: `flag`, `local`, `env` or
 `default` (feature `session-backend-config`, 0.31). The backend binary must be
 installed on the execution host. A launched home keeps the backend and session
-it recorded: `session start` and `restart` never re-read these layers. The chosen session
+it recorded: `session start` and `restart` never re-read these layers. A
+`--no-launch` spawn on Herdr records no Herdr server yet, so `session start`
+refuses it (`E_RUNTIME_ENDPOINT_UNKNOWN`); on a host whose `session.backend` is
+`herdr`, spawn launched, or pass `--backend tmux` for a home started later. A
+replayed keyed spawn returns the recorded instance without `backendFrom`. The chosen session
 target is recorded twice: in `instance.json` and in an independent lifecycle
 receipt. Every session command checks that the two agree
 (`E_RUNTIME_AUTHORITY_MISMATCH` otherwise).
