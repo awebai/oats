@@ -21,8 +21,11 @@ adapter and the Desktop (`packages/`), the `oats.framework` package
   the reference page in `docs/` that owns the rule, and the release notes.
 - **Tests pin behaviour.** A behaviour change changes its test in the same
   commit. Never weaken an assertion to make a change pass.
-- `capabilities/oats-okf*` and the other package mirrors are generated from
-  their own repositories; never edit them by hand.
+- The package mirrors in `mirrors/` (`mirrors/oats-okf*` and the other
+  official packages' capabilities) are generated from their own repositories;
+  never edit them by hand. They stay out of `capabilities/`: member discovery
+  would list them as this repository's own capabilities, beside their packages.
+  `capabilities/` holds only this repository's own capabilities.
 
 ## Gates
 
