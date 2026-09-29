@@ -13,8 +13,12 @@
  * panel's, roster-derived) stays put and the body below it carries the state —
  * a skeleton of compact team rows after 150ms while the inspection runs, the
  * failed block with Retry when it fails, the card when it lands; nothing is
- * prepended above. An instance whose status identity changes (a restart, drift)
- * re-reads: the card refreshes its list, or the inspection runs again. */
+ * prepended above. The section claims its place during the inspection only
+ * when the roster row already says messaging applies (`identityAddress`), and
+ * never again for a subject whose inspection found no provider: a section that
+ * appeared and vanished would shift Lineage under it. An instance whose status
+ * identity changes (a restart, drift) re-reads: the card refreshes its list, or
+ * the inspection runs again. */
 import { inspectData, inspectSupported } from './inspect-contract.mjs';
 import { createTeamsPanel, teamsCSS, teamsOperations } from './teams-panel.mjs';
 import { cliStatus } from './views/cli-status.mjs';
@@ -32,6 +36,13 @@ export function createInstanceTeamsSection(host, { request, generation = () => 0
   host.append(status, body);
   const loading = createDataState({ doc, noun: 'teams', region: body, skeletonHost: body, failedHost: body, skeleton: () => skeletonRows(), status,
     indicatorHost: null, noticeHost: null, onRetry: () => { if (current && identity) void load(current.workspace, current.instance, identity, { user: true }); },
+    // A focused Retry whose block leaves on success lands on the card's Refresh (the tools slot, or the card) when it can
+    // take focus (the card's first read holds it disabled), else the section's head (made focusable for it), never on <body>.
+    focusFallback: () => {
+      const refresh = tools?.querySelector('button.teams-refresh') || body.querySelector('button.teams-refresh');
+      if (refresh && !refresh.disabled) return refresh;
+      const head = host.querySelector('.context-panel-section-head'); if (head && !head.hasAttribute('tabindex')) head.tabIndex = -1; return head;
+    },
     setTimeout: (fn, ms) => win.setTimeout(fn, ms), clearTimeout: id => win.clearTimeout(id) });
   const clear = () => { panel?.dispose(); panel = null; body.querySelector('.teams-panel')?.remove(); loading.reset(); onPresence(false); };
   /** Pending: three compact team rows, wearing the card's classes so teams-panel.mjs's CSS gives their height. */
@@ -52,25 +63,29 @@ export function createInstanceTeamsSection(host, { request, generation = () => 0
     const ticket = ++serial, gen = generation();
     const owns = () => !disposed && ticket === serial && identity === id && generation() === gen;
     const selector = { home: instance.home };
-    loading.begin({ user }); onPresence(true);
+    // Claim the section now only when the roster says messaging applies here, or a failure is on screen to retry;
+    // a re-read after a no-provider answer (loading.hasData, no panel) stays hidden.
+    const known = loading.state === 'failed' || !!panel;
+    const claim = known || (!loading.hasData && typeof instance.identityAddress === 'string' && instance.identityAddress);
+    loading.begin({ user }); if (claim) onPresence(true);
     let result;
     try { result = await request(workspace, { action: 'inspect', selector, ...(user ? { refresh: true } : {}) }); }
-    catch (error) { if (owns()) loading.fail(error); return; } // visible: the failed block and Retry, never a silent absence
+    catch (error) { if (owns()) { loading.fail(error); onPresence(true); } return; } // visible: the failed block and Retry, never a silent absence
     if (!owns()) return;
     const inspected = inspectData(result, { instance, selector });
     if (!inspected) {
       loading.fail(new Error(result?.operationsApi === 1 ? 'This workspace still uses the classic layout, which answers an older inspection.'
         : 'The installed OATS CLI returned an inspection this Desktop cannot read. Update OATS and retry.'));
-      return;
+      onPresence(true); return;
     }
     // No messaging provider: no section (a truthful absence, said by hiding it).
-    const operations = teamsOperations(inspected);
-    loading.succeed({ observedAt: typeof result?.observedAt === 'string' ? result.observedAt : null, empty: !operations });
-    if (!operations) { onPresence(false); return; }
-    onPresence(true);
+    const operations = teamsOperations(inspected), observedAt = typeof result?.observedAt === 'string' ? result.observedAt : null;
+    if (!operations) { loading.succeed({ observedAt, empty: true }); onPresence(false); return; }
+    // The card first, then succeed(): a focused Retry in the leaving failed block lands on the card's Refresh.
     panel?.dispose(); body.querySelector('.teams-panel')?.remove();
     panel = createTeamsPanel(body, { operations, selector, heading: false, owns, compact: true, refreshHost: tools,
       request: body => request(workspace, body), available: () => inspectSupported(cli()) });
+    loading.succeed({ observedAt }); onPresence(true);
   }
   return {
     /** active: the Instance tab is the visible page. A new selection resets; an

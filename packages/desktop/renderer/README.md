@@ -358,7 +358,20 @@ home, last start, running, module drift rows, soul source) changes: the soul
 as a refresh that keeps its content, the teams by refreshing the card's list
 (or inspecting again when there is no card). An inspection without the soul,
 or without a messaging provider, is an empty read: the header stands, the
-Messaging section hides.
+Messaging section hides. The Messaging section claims its place during the
+inspection only when the roster row already reports `identityAddress` (or a
+failure is on screen), never again after a no-provider answer, so nothing
+under it shifts. Every controller has a `focusFallback` (the section head or
+the card's Refresh; the Soul body host; the Souls search field; the
+Capabilities search field): a focused Retry whose line or block leaves on
+success never lands on `<body>`.
+
+The soul inspector's roster-derived block follows the host roster through
+`syncRoster()`, which `views/spawn.mjs` calls after every poll (settled or
+failed): the Instances card says "No instances yet." only after a good read,
+shows a skeleton line while the roster is pending (`instancesState()` →
+`s.gridState.state`), and makes no claim (no count) while it is failed or
+stale.
 
 ## Team controls on a live instance (teams contract 2026-09-25)
 

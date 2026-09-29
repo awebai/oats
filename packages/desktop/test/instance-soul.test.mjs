@@ -63,6 +63,7 @@ test('an inactive tab or a remote instance: no read; a failed first read is visi
   const retry = failed.querySelector('.loading-retry'); retry.focus(); fail = false; retry.click(); await tick(); await tick();
   assert.deepEqual(b.calls.at(-1).refresh, true, 'Retry reads live'); assert.equal(b.calls.length, 2);
   assert.ok(b.host.querySelector('.soul-tab')); assert.equal(b.host.querySelector('.loading-failed'), null); assert.equal(b.status().textContent, 'Soul updated');
+  assert.equal(b.doc.activeElement, b.host, 'the vanished Retry hands focus to the body host (tabIndex -1), never to <body>');
 });
 
 test('pending: aria-busy and "Loading soul…" at once, the body skeleton (the sections\' rows, real classes) after 150ms, none for a fast reply', async t => {

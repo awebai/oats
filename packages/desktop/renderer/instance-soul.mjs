@@ -71,8 +71,10 @@ export function createInstanceSoulSection(host, { request, generation = () => 0,
   const status = statusLine(doc, { visuallyHidden: true, className: 'soul-tab-status' });
   const notice = node('div', undefined, 'soul-tab-notice'), content = node('div', undefined, 'soul-tab-content');
   host.append(status, notice, content);
+  host.tabIndex = -1; // the focus fallback below: a focused Retry whose line or block leaves on success lands here, never on <body>
   const loading = createDataState({ doc, noun: 'soul', region: host, skeletonHost: host, failedHost: host, skeleton: () => skeletonBody(), status,
     indicatorHost: notice, noticeHost: notice, onRetry: () => { if (current && identity) void load(current.workspace, current.instance, identity, { user: true }); },
+    focusFallback: host,
     setTimeout: (fn, ms) => win.setTimeout(fn, ms), clearTimeout: id => win.clearTimeout(id) });
   const clear = () => { content.replaceChildren(); painted = null; loading.reset(); onPresence(false); };
   async function load(workspace, instance, id, { user = false } = {}) {

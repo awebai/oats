@@ -25,14 +25,15 @@ function section(t, request) {
   const s = createInstanceTeamsSection(host, { cli: () => ({ ok: true, operationsApi: 2 }), onPresence: p => presence.push(p),
     request: async (workspace, body) => { calls.push({ workspace, ...body }); return request(workspace, body); } });
   t.after(() => { s.dispose(); dom.window.close(); });
-  return { host, s, calls, presence, timers, body: () => host.querySelector('.instance-teams-body'), status: () => host.querySelector('.instance-teams-status') };
+  return { host, s, calls, presence, timers, doc: dom.window.document, body: () => host.querySelector('.instance-teams-body'), status: () => host.querySelector('.instance-teams-status') };
 }
 const answer = (_ws, body) => body.action === 'inspect' ? fx('inspect-home').result : fx('teams-initial').result;
 
 test('pending: the header stays (nothing prepended), the body is busy and says "Loading teams…", compact team rows as a skeleton after 150ms; the card replaces them', async t => {
   let release; const gate = new Promise(r => { release = r; });
   const u = section(t, async (ws, body) => { if (body.action === 'inspect') await gate; return answer(ws, body); });
-  u.s.update({ active: true, workspace: 'A', instance: instance() }); await tick();
+  // The roster row reports a messaging address: the section may claim its place while the inspection runs.
+  u.s.update({ active: true, workspace: 'A', instance: instance({ identityAddress: 'release-manager@oats.aweb.ai' }) }); await tick();
   assert.equal(u.host.firstElementChild.className, 'context-panel-section-head', 'the header keeps its place');
   assert.equal(u.presence.at(-1), true, 'the section shows while the read runs'); assert.equal(u.body().getAttribute('aria-busy'), 'true'); assert.equal(u.status().textContent, 'Loading teams…');
   assert.equal(u.body().querySelector('[data-skeleton]'), null); u.timers.advance(150);
@@ -41,6 +42,21 @@ test('pending: the header stays (nothing prepended), the body is busy and says "
   release(); await tick(); await tick(); await tick();
   assert.equal(u.body().querySelector('[data-skeleton]'), null); assert.equal(u.body().getAttribute('aria-busy'), null);
   assert.ok(u.body().querySelector('.teams-panel [data-team-row="default"]'), 'the card in the body');
+});
+
+test('no messaging on the roster row and none in the inspection: the section never claims its place — not during the read, not on a restart (nothing under it shifts)', async t => {
+  const none = fx('inspect-home').result; for (const c of none.capabilities) if (c.layer === 'messaging') c.layer = null;
+  let release; const gate = new Promise(r => { release = r; });
+  const u = section(t, async () => { await gate; return none; });
+  const row = instance({ startedAt: '2026-09-29T10:00:00Z', running: true });
+  u.s.update({ active: true, workspace: 'A', instance: row }); await tick();
+  assert.equal(u.presence.includes(true), false, 'no claim while the inspection runs (the section stays hidden by its host)'); u.timers.advance(150);
+  release(); await tick(); await tick(); assert.equal(u.presence.includes(true), false);
+  u.s.update({ active: true, workspace: 'A', instance: { ...row, running: false } }); await tick(); await tick(); await tick();
+  assert.equal(u.calls.filter(c => c.action === 'inspect').length, 2, 'a status change re-inspects'); assert.equal(u.presence.includes(true), false, 'and never claims the place either');
+  // A failed re-read is still visible: a failure is something to retry.
+  u.s.update({ active: true, workspace: 'A', instance: { ...row, running: false, startedAt: '2026-09-29T11:00:00Z' } });
+  u.calls.length = 0;
 });
 
 test('a failed inspection is visible: the cause, the code behind Details, Retry (reads live) — never a silent absence; no provider hides the section without a failure', async t => {
@@ -53,6 +69,7 @@ test('a failed inspection is visible: the cause, the code behind Details, Retry 
   const retry = failed.querySelector('.loading-retry'); retry.focus(); fail = false; retry.click(); await tick(); await tick(); await tick();
   assert.equal(u.calls.filter(c => c.action === 'inspect').length, 2); assert.equal(u.calls.filter(c => c.action === 'inspect').at(-1).refresh, true, 'Retry reads live');
   assert.equal(u.body().querySelector('.loading-failed'), null); assert.ok(u.body().querySelector('.teams-panel [data-team-row="default"]')); assert.equal(u.status().textContent, 'Teams updated');
+  assert.ok(u.doc.activeElement?.classList.contains('context-panel-section-head'), 'the vanished Retry hands focus to the section head (the card\'s Refresh is held by its first read), never to <body>');
   const none = fx('inspect-home').result; for (const c of none.capabilities) if (c.layer === 'messaging') c.layer = null;
   const v = section(t, () => none); v.s.update({ active: true, workspace: 'A', instance: instance() }); await tick(); await tick();
   assert.equal(v.presence.at(-1), false); assert.equal(v.body().querySelector('.loading-failed'), null); assert.equal(v.body().getAttribute('aria-busy'), null);

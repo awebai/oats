@@ -572,7 +572,7 @@ test('the injected context-panel section mounts the compact card with its Refres
   // A new selection: the old section and its button go, the new ones come.
   s.update({ active: true, workspace: 'A', instance: instance(`${HOME}-2`) });
   assert.equal(host.querySelector('.teams-panel'), null); assert.equal(tools.childElementCount, 0, 'no orphan button while the next inspection is in flight');
-  assert.equal(presence.at(-1), true, 'desktop/loading-states: the section stays present while the next inspection runs (pending body under its header)');
+  assert.equal(presence.at(-1), false, 'the next row reports no messaging address: the section waits for its inspection before claiming its place');
   await tick(); await tick();
   assert.equal(host.querySelectorAll('.teams-panel').length, 1); assert.equal(tools.querySelectorAll('button.teams-refresh').length, 1, 'exactly one');
   s.dispose();

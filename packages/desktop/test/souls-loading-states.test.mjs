@@ -150,7 +150,7 @@ test('stale: a failed poll keeps the cards, says "Couldn\'t refresh souls" with 
   await u.resolve(2, { agents: ROSTER, catalog: { reason: null, ambiguous: [] } });
   assert.equal(u.notice().childElementCount, 0, 'the line leaves on success'); assert.equal(u.status().textContent, 'Souls updated', 'a user-invoked read is announced');
   assert.equal(u.status().classList.contains('loading-quiet'), false);
-  assert.ok(u.grid().contains(u.doc.activeElement) || u.doc.activeElement === u.doc.body, 'focus did not vanish silently');
+  assert.equal(u.doc.activeElement, u.q('.filter'), 'the vanished Retry hands focus to the search field, never to <body>');
   // The grid's line belongs to the grid: another tab or an open page hides it with the grid.
   u.poll(); await tick(); await u.reject(3, new Error('down again')); assert.ok(u.notice().querySelector('.loading-notice'));
   u.doc.getElementById('workspace-tab-capabilities').click(); await tick();
@@ -204,6 +204,23 @@ test('a workspace switch drops the other workspace\'s cards at once and is pendi
   u.timers.advance(PENDING_DELAY_MS); assert.ok(u.skeleton());
   await u.resolve(1, { agents: [soul('qa')], catalog: { reason: null, ambiguous: [] } });
   assert.equal(u.cards().map(c => c.dataset.agent).join(), 'qa'); assert.equal(u.skeleton(), null);
+});
+
+test('the soul page\'s Instances card follows the host roster: a skeleton line while pending, no claim while failed or stale, "No instances yet." only after a good read', async t => {
+  const u = await setup(t);
+  await u.resolve(0, { agents: ROSTER, catalog: { reason: null, ambiguous: [] } });
+  u.cards()[0].click(); await tick(); await tick();
+  const card = () => u.q('.workspace-soul-page .inspector-instances');
+  assert.ok(card()); assert.equal(card().querySelector('.page-note')?.textContent, 'No instances yet.', 'a good read with none: the empty copy');
+  assert.equal(card().querySelector('.page-card-count')?.textContent, '0');
+  // A failed poll: the roster is stale — the card makes no claim and shows no count.
+  u.poll(); await tick(); await u.reject(1, new Error('down')); await tick();
+  assert.equal(card().querySelector('.page-note'), null, 'no "No instances yet." over a stale roster');
+  assert.ok(card().querySelector('.inspector-instances-unknown[data-roster-state=stale]')); assert.equal(card().querySelector('.page-card-count'), null, 'no count either');
+  // A workspace switch: pending — a skeleton line, no claim.
+  setWorkspace('/other'); await tick();
+  u.timers.advance(PENDING_DELAY_MS);
+  assert.ok(u.skeleton(), 'the grid is pending'); assert.equal(u.doc.body.textContent.includes('No instances yet.'), false);
 });
 
 test('retired wording: "Loading agents…", the "Loading souls…" block and "Unable to refresh souls" are gone from the view source', async () => {

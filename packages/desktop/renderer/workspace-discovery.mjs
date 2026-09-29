@@ -234,7 +234,8 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   panel.append(capTools, status, loadStatus, notice, notes, filterHost, capState, body);
   const win = doc.defaultView;
   const loadState = createDataState({ doc, noun: 'capabilities', region: capState, skeleton: () => catalogSkeleton(doc), status: loadStatus,
-    indicatorHost: refreshHost, noticeHost: notice, onRetry: () => { failure = ''; void load({ user: true, refresh: true }); },
+    indicatorHost: refreshHost, noticeHost: notice, onRetry: () => { void load({ user: true, refresh: true }); },
+    focusFallback: searchInput, // a focused Retry whose line or block leaves on success lands on the search field, never on <body>
     setTimeout: (fn, ms) => win.setTimeout(fn, ms), clearTimeout: id => win.clearTimeout(id) });
 
   const valid = (id, gen) => alive && serial === id && workspaceGeneration() === gen;
@@ -289,7 +290,8 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     if (!alive || loading) return;
     const id = ++serial, gen = workspaceGeneration();
     if (rosterGen !== gen || gate(workspace, deployment)) { render(); return; }
-    loading = true; failure = ''; loadState.begin({ user }); updateCounts(); render(); onCatalog?.(); // a page's Retry wears the busy mark
+    // `failure` (the last cause) stays until the read settles: a page's stale line keeps its Details while its Retry runs.
+    loading = true; loadState.begin({ user }); updateCounts(); render(); onCatalog?.(); // a page's Retry wears the busy mark
     let result;
     try { result = await postJson(ctx, `/api/workspace-sync${wsQuery()}`, { action: 'read', ...(refresh ? { refresh: true } : {}) }); }
     catch (error) { result = { status: 'unavailable', reason: { code: 'E_CLI_FAILED', message: error?.message || 'Reading the workspace capabilities failed.' } }; }
@@ -303,7 +305,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     const observedAt = typeof at === 'string' ? at : null;
     const reason = result?.reason || null;
     if (held) catalog = held;
-    if (ok && !reason) loadState.succeed({ observedAt, empty: !catalog.capabilities.length });
+    if (ok && !reason) { failure = ''; loadState.succeed({ observedAt, empty: !catalog.capabilities.length }); }
     else {
       failure = reasonText(reason) || 'The workspace capabilities could not be read.';
       // A held table arriving with the failure is data: taken once (succeed) when nothing was shown yet; with a
@@ -433,7 +435,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
       // The catalog's loading state for pages rendered from it (item 7): its state, observation and the last failure's text.
       catalogState: loadState.state, catalogSettled: loadState.settled, catalogBusy: loadState.busy, catalogObservedAt: loadState.observedAt, catalogFailure: failure || null }),
     /** A page's Retry: re-read the catalog live (announced on completion). */
-    reload() { failure = ''; void load({ user: true, refresh: true }); },
+    reload() { void load({ user: true, refresh: true }); },
     /** The host's roster read failed with nothing to show: the Souls count is nothing, still (not a pill). */
     rosterUnavailable() { if (soulsCount === 'pending') updateCounts(null); },
     reset() {

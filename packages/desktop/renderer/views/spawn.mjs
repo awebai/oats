@@ -370,6 +370,7 @@ ${spawnDialogCSS}</style>
     s.q("souls-bar").append(s.gridStatus);
     s.gridState = createDataState({ doc, noun: "souls", region: s.q("souls-grid"), skeleton: () => gridSkeleton(s), status: s.gridStatus,
       indicatorHost: s.q("souls-bar-lead"), noticeHost: s.q("souls-notice"), onRetry: () => { if (s.alive) void refresh(s, { user: true }); },
+      focusFallback: () => s.q("filter"), // a focused Retry whose line or block leaves on success lands on the search field, never on <body>
       setTimeout: (fn, ms) => win.setTimeout(fn, ms), clearTimeout: (id) => win.clearTimeout(id) });
   }
   // Move the actual node, never a copied projection: Workspace still owns all
@@ -392,6 +393,8 @@ ${spawnDialogCSS}</style>
     files: agent => s.ctx.openBrain?.(agent.name),
     canFiles: agent => canOpenFiles(s, agent),
     instances: agent => soulInstances(s, agent), workspace: () => s.workspace,
+    instancesState: () => s.gridState?.state ?? 'ready', // the roster the instances come from: pending / failed / stale is not "No instances yet."
+
     schedule: agent => { if (canLaunchSoul(s, agent)) { preselectSchedule(agent); preselectAutomationsTab("schedule"); ctx.openView?.("automations"); } },
   };
   // Instances: the right-panel sidebar (it sits beside a running terminal).
@@ -569,6 +572,7 @@ export async function refresh(s, { user = false } = {}) {
     // failed block replaces the skeleton. The 8s poll keeps trying either way.
     s.gridState?.fail(error);
     if (!s.gridState?.hasData) s.discovery?.rosterUnavailable?.(); // the Souls tab count: nothing, still (a pill would say "still loading")
+    s.inspector?.syncRoster?.(); s.page?.syncRoster?.(); // an open soul's Instances card makes no claim over a stale or failed roster
     return;
   }
   // discard deferred responses from a previous workspace — they'd paint A's
@@ -599,6 +603,7 @@ export async function refresh(s, { user = false } = {}) {
   s.inspector?.syncAvailability(); s.page?.syncAvailability();
   settleGridState(s, souls);
   renderGrid(s);
+  s.inspector?.syncRoster?.(); s.page?.syncRoster?.(); // an open soul's Instances card follows the roster (a new or retired instance, the roster's state)
   touchCapabilityPage(s);
   applyPreselect(s); // Quick Open handoff — after the roster is painted
   applyHome(s);

@@ -203,6 +203,8 @@ test('a catalog refresh while the page is open updates it in place: a failed re-
   const retry = line.querySelector('.loading-retry'); retry.focus(); retry.click(); await settle();
   assert.deepEqual(u.reads.at(-1).body, { action: 'read', refresh: true });
   assert.equal(retry.getAttribute('aria-disabled'), 'true', 'the page\'s Retry is busy while the re-read runs'); assert.equal(u.doc.activeElement, retry);
+  assert.equal(line.querySelector('.loading-notice-cause').textContent, 'E_CLI_TIMEOUT: The workspace command exceeded its time limit.', 'the cause stays while the re-read runs');
+  assert.equal(line.querySelector('.loading-notice-details').hidden, false);
   retry.click(); await settle(); assert.equal(u.reads.length, 4, 'a repeat activation while busy is ignored');
   // The re-read fails again: the same line, updated in place, Retry still focused, no busy mark.
   await u.resolveRead(3, failedRead());
