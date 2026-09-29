@@ -149,6 +149,22 @@ test("first-launch deferred roster owns both completion orders but rejects a tru
   assert.equal(owns("wsA", 1, 2), false);
 });
 
+test("a stale dispatch selection owns both completion orders like an empty one; a served one does not", () => {
+  const owns = (current, { staleDispatch, dispatchGeneration = 1, currentGeneration = 1 }) => rosterResponseOwns({
+    dispatchWorkspace: "/gone", responseWorkspace: "wsA", currentWorkspace: current,
+    dispatchGeneration, currentGeneration, staleDispatch,
+  });
+  // Roster resolves first: the stale selection is still current, then adopts wsA.
+  assert.equal(owns("/gone", { staleDispatch: true }), true);
+  // Hierarchy resolved first and adopted the SAME served workspace.
+  assert.equal(owns("wsA", { staleDispatch: true }), true);
+  // A served (non-stale) dispatch answered with another workspace is not owned once current moved on.
+  assert.equal(owns("wsA", { staleDispatch: false }), false);
+  // A real switch or generation change still rejects the stale-dispatch reply.
+  assert.equal(owns("wsB", { staleDispatch: true }), false);
+  assert.equal(owns("wsA", { staleDispatch: true, currentGeneration: 2 }), false);
+});
+
 /* ── agent clusters (feature/agent-relations) ── */
 
 test("clusterInstances: connected components over parent + sibling links; unrelated are single-node clusters", async () => {

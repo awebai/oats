@@ -90,10 +90,33 @@ export function setWorkspace(id) {
   for (const fn of [...wsListeners]) { try { fn(wsCurrent); } catch { /* listener error must not break others */ } }
 }
 /* Adopt a server-resolved workspace id WITHOUT notifying listeners — used
-   when the server maps a stale/empty selection to a real workspace. */
+   when the server maps a stale/empty selection to a real workspace. Silent
+   on purpose: the adoption is not a user switch, so it must not bump the
+   generation (which would discard the very reply that resolved it in the
+   other roster path) nor run the workspace-change listeners (tab-layer
+   restore, picker closes, a second /api/panel round trip). */
 export function adoptWorkspace(id) {
   wsCurrent = id || "";
   try { localStorage.setItem(WS_KEY, wsCurrent); } catch { /* storage-less env */ }
+}
+/* Is the selection a roster reply was requested with STALE? A persisted
+   selection can name a workspace the server no longer serves (a deleted
+   deployment): the server then answers with its own workspace, and refusing
+   that reply as a mismatch leaves no way out of the UI — the switcher already
+   shows the served workspace as active. Stale means: non-empty and absent
+   from the served choices, i.e. `panel.workspaces` plus `panel.workspace`
+   (what the switcher renders). Both roster paths (the hierarchy refresh and
+   the shell's context roster) treat stale exactly like empty: adopt the
+   served id. The decision needs the served list: when a server does not
+   report one (older server, empty list) nothing is guessed, the selection
+   stands and a differing reply is still a real mismatch. A selection that
+   IS a served choice and gets a reply for another workspace is never stale. */
+export function staleWorkspaceSelection(requested, panel) {
+  if (!requested) return false;
+  const served = Array.isArray(panel?.workspaces) ? panel.workspaces : [];
+  if (!served.length) return false;
+  if (panel.workspace?.id === requested) return false;
+  return !served.some((w) => w && w.id === requested);
 }
 export function onWorkspaceChange(fn) {
   wsListeners.add(fn);

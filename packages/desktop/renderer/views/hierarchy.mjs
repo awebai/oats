@@ -28,7 +28,7 @@ import { instanceId, resolveLinkId } from "../instance-tree.mjs";
 import { projectActivePanel, activeSignature, activeTargetLabel, canAddressInstance, BRAIN_UNAVAILABLE } from "../active-observation.mjs";
 import {
   apiJson, ensureTheme,
-  currentWorkspace, setWorkspace, adoptWorkspace, onWorkspaceChange,
+  currentWorkspace, setWorkspace, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange,
   renderWorkspaceSelect, wsQuery, workspaceGeneration,
 } from "./common.mjs";
 import { registerAction } from "../keybindings.mjs";
@@ -459,8 +459,12 @@ export async function refresh(s) {
     if (!owns()) return;
     const panel = projectActivePanel(data);
     if (panel.error && !panel.instances.length) throw Error(panel.error); // failed absence is not an observed empty roster
-    if (requestedWorkspace && panel.workspace?.id && panel.workspace.id !== requestedWorkspace) throw Error('The roster reply belongs to a different workspace. Choose the workspace again.');
-    if (!requestedWorkspace && panel.workspace?.id) adoptWorkspace(panel.workspace.id);
+    // A stale selection (persisted, no longer served) behaves like an empty
+    // one: adopt the served workspace. A served selection answered with
+    // another workspace is a real mismatch and stays refused.
+    const stale = staleWorkspaceSelection(requestedWorkspace, panel);
+    if (requestedWorkspace && !stale && panel.workspace?.id && panel.workspace.id !== requestedWorkspace) throw Error('The roster reply belongs to a different workspace. Choose the workspace again.');
+    if ((!requestedWorkspace || stale) && panel.workspace?.id) adoptWorkspace(panel.workspace.id);
     if ((s.drag || s.pan) && activeSignature(panel) !== s.signature) {
       s.pending = { panel, gen: myGen, request }; updatePop(s);
       notice(s, 'Roster changed during this gesture; the latest observation will apply on release.');

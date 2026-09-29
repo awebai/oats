@@ -8,7 +8,7 @@
 // chrome stays a thin rail so nothing is duplicated.
 // (groupInstances is not imported here: the feature branch renders the
 // sidebar roster via clusterInstances — lineage clusters with identity keys.)
-import { currentWorkspace, workspaceGeneration, setWorkspace, adoptWorkspace, onWorkspaceChange, instanceApiPath, httpError } from "./views/common.mjs";
+import { currentWorkspace, workspaceGeneration, setWorkspace, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange, instanceApiPath, httpError } from "./views/common.mjs";
 import { instanceActions, captureInstanceActionMenu } from "./instance-actions.mjs";
 import { instanceActionTarget, sameInstanceActionTarget } from "./instance-action-target.mjs";
 import { createInstancePrAction } from "./instance-pr-action.mjs";
@@ -308,12 +308,17 @@ async function refreshContextRoster() {
   const myGen = ++contextRosterGen;
   const commitWorkspaceLabel = workspaceLabel.begin();
   const ws = currentWorkspace();
-  const owns = (responseWs = ws) => rosterResponseOwns({
+  // A stale dispatch selection (persisted, not among the served choices) is
+  // owned like an empty one: the hierarchy may have adopted the served
+  // workspace while this request was in flight, and this reply resolves the
+  // same selection. A real switch still bumps contextRosterGen and loses.
+  const owns = (responseWs = ws, staleDispatch = false) => rosterResponseOwns({
     dispatchWorkspace: ws,
     responseWorkspace: responseWs,
     currentWorkspace: currentWorkspace(),
     dispatchGeneration: myGen,
     currentGeneration: contextRosterGen,
+    staleDispatch,
   });
   const listEl = contextRosterEl.querySelector(".ctx-list");
   let panel;
@@ -328,8 +333,9 @@ async function refreshContextRoster() {
     return;
   }
   const resolvedWs = panel.workspace?.id || ws;
-  if (!owns(resolvedWs)) return;
-  if (!currentWorkspace() && resolvedWs) {
+  const stale = staleWorkspaceSelection(ws, panel);
+  if (!owns(resolvedWs, stale)) return;
+  if ((!currentWorkspace() || stale) && resolvedWs) {
     adoptWorkspace(resolvedWs);
     tabWorkspace = resolvedWs;
   }
