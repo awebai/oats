@@ -8,9 +8,11 @@ manifests or locks) and keeps no fallback reader for older kernels.
 ## Reads
 
 For each registered deployment directory `D`, the server
-(`server/deployment-observer.mjs`) performs exactly two fixed-argv reads with
+(`server/deployment-observer.mjs`) performs two fixed-argv reads with
 the accepted CLI, `cwd = D`, no shell, a 30 s timeout and a 4 MiB output
-bound (`deployment-read-cli.mjs`):
+bound (`deployment-read-cli.mjs`); when the probe declares `observe-max-age`
+they carry `--max-age <seconds>` (see
+[desktop-load-path.md](desktop-load-path.md)):
 
 - `oats status --dir D --json` — the roster. A raw `{root, agents, workspace}`
   object. Instance rows carry `modules[]` drift (or the recorded map when the
@@ -54,7 +56,10 @@ The observer reserves its bounded slots synchronously, admits on the current
 deployment/CLI revision before each invocation and on completion, releases a
 reservation only after both reads settle, coalesces in flight only, and copies
 results per waiter. `/api/panel` serves the latest observation and never waits
-on a CLI read, so readiness probes stay responsive.
+on a CLI read, so readiness probes stay responsive. The spawn catalog
+(`oats souls`) and the capabilities table (`oats capabilities`) are read in the
+same cycle but never block the roster; when they run, what is held and when a
+cycle runs is [desktop-load-path.md](desktop-load-path.md).
 
 ## Unchanged, v2-agnostic
 

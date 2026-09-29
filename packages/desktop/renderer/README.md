@@ -283,8 +283,12 @@ Gate: `version --json` advertises `workspace-v2` with `workspaceApi: 2`; a remot
 workspace is observed through its server and never synced from here.
 
 - **Capabilities** is `oats capabilities --dir <deployment> --json`
-  (capabilitiesApi 1), read on demand via `POST /api/workspace-sync?ws=<id>`
-  `{action:"read"}` when the tab opens (and after a sync, or Refresh). A
+  (capabilitiesApi 1), held by the server and re-read when the workspace
+  state it was read under moves, or when viewed after 60 s
+  (`docs/desktop-load-path.md`); the tab reads
+  the held table via `POST /api/workspace-sync?ws=<id>` `{action:"read"}`
+  when it opens (`refresh: true` forces a live read; after a sync the table
+  is re-read). A
   segmented jump (Workspace owned / Packages / Repo owned; navigation, so the
   section in view carries `aria-current`), then one 58px row
   card per capability (design board 4): a tile tinted by kind (Knowledge,

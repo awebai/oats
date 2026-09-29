@@ -18,9 +18,19 @@
    inventing a band.
 
    This module owns the fetch/refresh/subscribe state and the card DOM so
-   every mutation surface renders the SAME card; views only mount it. */
+   every mutation surface renders the SAME card; views only mount it.
+
+   Subscribers are notified ON CHANGE, not per response. Every subscriber
+   treats an emit as "the CLI changed" — the Workspace view wipes its
+   capabilities catalog and repaints its grid, schedules/automations drop
+   their gates — while a window-focus reprobe of the same binary returns a
+   payload identical in every gate-relevant field with only a fresh
+   `probedAt` (and locator `tried`/`source` diagnostics). Change is judged by
+   the shared probe signature (../cli-probe-contract.mjs), so such a reprobe
+   is a no-op end to end instead of a flash of re-fetched views. */
 import { escapeHtml } from "./common.mjs";
 import { icon } from "../shell-icons.mjs";
+import { probeChanged } from "../cli-probe-contract.mjs";
 
 /** Recovery command when the backend could not tell us which version to
  * pin — version-LESS on purpose: it names the package without restating any
@@ -109,12 +119,23 @@ async function updateCli(ctx, pathname, opts) {
     //                         carded. "Disabled with no card forever" is
     //                         not acceptable (binding UX clarification).
     const d = r.body;
+    const previous = cli, wasUnknown = settledUnknown;
     cli = d && !Array.isArray(d) && typeof d.ok === "boolean" ? d : null;
     settledUnknown = !cli;
+    // The first settled payload always emits (previous null ≠ any payload);
+    // afterwards only a gate-relevant difference or an unknown↔known flip
+    // does — repeated identical probes and repeated garbage stay silent.
+    // While NO CLI is accepted, the card's "Detected" line is drawn from the
+    // `tried` diagnostics, so a Retry that found a different failing
+    // candidate must repaint it; nothing is cached in that state, so the
+    // emit costs no re-fetch.
+    if (probeChanged(previous, cli) || settledUnknown !== wasUnknown || triedChanged(previous, cli)) emit();
   }
-  emit();
+  // TRANSPORT failure: nothing was received, nothing changed, nobody is told.
   return cli;
 }
+
+const triedChanged = (before, after) => !after?.ok && JSON.stringify(before?.tried ?? null) !== JSON.stringify(after?.tried ?? null);
 
 /** Refresh from GET /api/cli (cheap — server-side cached probe state). */
 export function refreshCli(ctx) { return updateCli(ctx, "/api/cli"); }

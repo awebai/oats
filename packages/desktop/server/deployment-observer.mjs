@@ -2,8 +2,8 @@
  * ownership. No cache, queued work, reader fallback or generation conversion. */
 import { isAbsolute, resolve } from 'node:path';
 import { cliDeploymentRead } from '../deployment-read-cli.mjs';
-import { deploymentStatusData, workspaceStatusData } from '../deployment-data.mjs';
-import { deploymentReadGate, deploymentFailure } from '../renderer/deployment-contract.mjs';
+import { deploymentStatusData, workspaceStatusData, observationData } from '../deployment-data.mjs';
+import { deploymentReadGate, deploymentFailure, validMaxAge } from '../renderer/deployment-contract.mjs';
 export const MAX_DEPLOYMENT_OBSERVATIONS = 2; // each owns at most two CLI reads
 const absolute = value => typeof value === 'string' && !value.includes('\0') && isAbsolute(value) && resolve(value) === value;
 
@@ -25,9 +25,13 @@ export function createDeploymentObserver({ getContext, read = cliDeploymentRead 
     return { ok: true, deployment: id, cli, stamp };
   }
   const current = captured => { const next = admit(captured.deployment); return next.ok && next.stamp === captured.stamp; };
-  function observe(id) {
+  /** `maxAge` (feature observe-max-age) rides on both reads; the adapter drops it for a kernel
+   * that does not declare the feature. Waiters coalesce on the stamp alone: a live (0) request
+   * that joins a background flight accepts that flight's observation rather than doubling it. */
+  function observe(id, { maxAge } = {}) {
     const captured = admit(id);
     if (!captured.ok) return Promise.resolve(captured);
+    if (!validMaxAge(maxAge)) return Promise.resolve(deploymentFailure('E_BAD_ARGS'));
     let work = pending.get(captured.stamp);
     if (!work) {
       if (active >= MAX_DEPLOYMENT_OBSERVATIONS) return Promise.resolve(deploymentFailure('E_DEPLOYMENT_BUSY'));
@@ -37,7 +41,7 @@ export function createDeploymentObserver({ getContext, read = cliDeploymentRead 
         try {
           const settled = await Promise.allSettled(['status', 'workspace-status'].map(action => Promise.resolve().then(() => {
             if (!current(captured)) return deploymentFailure('E_DEPLOYMENT_STALE');
-            return read(captured.cli, { action, context: captured.deployment });
+            return read(captured.cli, { action, context: captured.deployment, ...(maxAge !== undefined ? { maxAge } : {}) });
           })));
           // Even a rejecting invoker keeps this reservation until its sibling
           // read settles. Promise.all would release resources prematurely.
@@ -48,7 +52,11 @@ export function createDeploymentObserver({ getContext, read = cliDeploymentRead 
           if (!header?.ok) return header || deploymentFailure('E_CLI_PROTOCOL');
           const workspaceStatus = workspaceStatusData(header.document, captured.deployment);
           const roster = deploymentStatusData(status.document, captured.deployment);
-          return { ok: true, deployment: captured.deployment, workspaceStatus, roster };
+          // The observation's age is its OLDEST remote-head observation across both reads; a
+          // kernel that reports none observed live, so the completion time is the truth.
+          const stamps = [status, header].map(r => observationData(r.document).observedAt).filter(s => typeof s === 'string');
+          const observedAt = stamps.length ? stamps.sort()[0] : new Date().toISOString();
+          return { ok: true, deployment: captured.deployment, workspaceStatus, roster, observedAt };
         } catch (error) {
           if (!current(captured)) return deploymentFailure('E_DEPLOYMENT_STALE');
           return deploymentFailure(error?.code === 'E_DEPLOYMENT_SCOPE' ? 'E_DEPLOYMENT_SCOPE' : 'E_CLI_PROTOCOL');

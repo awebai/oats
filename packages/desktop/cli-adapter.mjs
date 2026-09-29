@@ -27,6 +27,7 @@ import { mkdtempSync, openSync, writeSync, closeSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { gitFileId, gitRevision, gitIndexRevision, gitObservation } from './renderer/instance-git-contract.mjs';
+import { validMaxAge, maxAgeArgv } from './renderer/deployment-contract.mjs';
 
 const ENVELOPE_TIMEOUT_MS = 60_000;
 
@@ -434,7 +435,9 @@ export function operationArgs(args) {
   if (entries.length > 8 || entries.some(([k, v]) => !/^[a-z][a-z0-9-]{0,63}$/.test(k) || typeof v !== 'string' || !v || v.length > 1024 || /[\x00-\x1f\x7f]/.test(v))) return null;
   return entries.flatMap(([k, v]) => ['--arg', `${k}=${v}`]);
 }
-export async function cliCapability(bin, { action, context, server, soul, agentsRoot, home, operation, args, localCwd }, io = {}) {
+/** `maxAge` (feature observe-max-age) is inspect's alone; `features` is the probe's list and
+ * gates the flag, so an undeclared kernel gets the flagless argv even when a value is given. */
+export async function cliCapability(bin, { action, context, server, soul, agentsRoot, home, operation, args, localCwd, maxAge, features }, io = {}) {
   const bad = message => { throw Object.assign(new Error(message), { code: 'E_BAD_ARGS' }); };
   const value = (v, label) => {
     if (typeof v !== 'string' || !v || v.startsWith('-') || v.includes('\0')) bad(`Invalid ${label}`);
@@ -455,7 +458,11 @@ export async function cliCapability(bin, { action, context, server, soul, agents
     argv = ['operation', 'run', operation, ...pairs];
   } else bad('Unknown capability action');
   if (action !== 'run' && args !== undefined) bad('Arguments belong to an operation run');
-  return await runJson(bin, [...argv, ...target, '--json'], {
+  if (action !== 'inspect' && maxAge !== undefined) bad('Observation age belongs to an inspection');
+  // Reuse is local only: the kernel refuses --max-age with --server (E_BAD_ARGS), so a routed inspect never carries it.
+  if (server && maxAge !== undefined) bad('Observation age does not route to a server');
+  if (!validMaxAge(maxAge)) bad('Invalid observation age');
+  return await runJson(bin, [...argv, ...target, ...maxAgeArgv(features, maxAge), '--json'], {
     cwd: localCwd, exec: io.exec, timeout: io.timeout ?? (action === 'run' ? 300_000 : ENVELOPE_TIMEOUT_MS),
   });
 }

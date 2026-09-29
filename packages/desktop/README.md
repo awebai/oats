@@ -64,7 +64,9 @@ The shell has three navigation contexts:
   (workspace header), read by `server/deployment-observer.mjs` — the app reads
   no deployment file and never imports the framework kernel; lifecycle
   mutations require a compatible installed `oats` CLI. See
-  [docs/desktop-deployment-model.md](docs/desktop-deployment-model.md).
+  [docs/desktop-deployment-model.md](docs/desktop-deployment-model.md); when
+  the kernel is asked and what the server holds between asks is
+  [docs/desktop-load-path.md](docs/desktop-load-path.md).
   Binds 127.0.0.1 only — it can type into your terminals.
 - `preload.cjs` — contextBridge surface (`window.oatsDesktop`); renderer runs
   with contextIsolation on, nodeIntegration off.

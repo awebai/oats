@@ -2,12 +2,21 @@
  * workspace it describes moved (member/external commits, the workspace
  * commit) or the accepted CLI changed — never on every roster poll. One read
  * per deployment at a time; a failed read is retried after RETRY_MS, and the
- * last good catalog stays in place with the failure reported next to it. */
+ * last good catalog stays in place with the failure reported next to it.
+ *
+ * On a cold cycle the server starts this read alongside status/workspace status
+ * (`prefetch`) and binds it to the key that cycle's workspace status produces
+ * (`settle`); the holding rules are keyed-catalog.mjs's. */
 import { cliWorkspace } from '../workspace-cli.mjs';
-import { soulsData } from '../deployment-data.mjs';
+import { soulsData, observationData } from '../deployment-data.mjs';
+import { createKeyedCatalog } from './keyed-catalog.mjs';
 
 export const SOUL_CATALOG_RETRY_MS = 60_000;
 
+/** The state a souls catalog was read under: the CLI, the workspace and member commits and the
+ * externals — everything `workspace status` reports that moves the list. What it cannot see
+ * (local configuration edited outside Desktop: teams, launch preferences) is bounded by the held
+ * result's TTL (keyed-catalog HELD_TTL_MS); the Desktop names no deployment file to find out. */
 export function soulCatalogKey(cli, workspaceStatus) {
   const ws = workspaceStatus || {};
   return JSON.stringify([cli?.bin ?? null, cli?.version ?? null, ws.workspace?.key ?? null, ws.workspace?.commit ?? null,
@@ -16,35 +25,46 @@ export function soulCatalogKey(cli, workspaceStatus) {
 }
 
 export function createSoulCatalog({ invoke = cliWorkspace, now = () => Date.now() } = {}) {
-  const held = new Map(), flights = new Map();
-  async function read(deployment, cli, key) {
-    let souls = null, reason = null;
+  async function read(deployment, cli, options) {
     try {
-      const result = await invoke(cli, { action: 'souls', context: deployment });
-      if (result?.ok === true) souls = soulsData(result.document);
-      else reason = result?.reason?.code ? { code: result.reason.code, message: String(result.reason.message || '') } : { code: 'E_CLI_FAILED', message: '' };
-    } catch (error) { reason = { code: error?.code === 'E_CLI_PROTOCOL' ? 'E_CLI_PROTOCOL' : 'E_CLI_FAILED', message: '' }; }
-    const last = held.get(deployment);
-    const entry = souls
-      ? { key, souls: souls.souls, ambiguous: souls.ambiguous, workspace: souls.workspace, problems: souls.problems, reason: null, at: now() }
-      : { key, souls: last?.souls ?? null, ambiguous: last?.ambiguous ?? [], workspace: last?.workspace ?? null, problems: last?.problems ?? [], reason, at: now() };
-    held.set(deployment, entry);
-    return entry;
+      // `maxAge` only reaches argv when the kernel declares observe-max-age (the adapter's call).
+      const result = await invoke(cli, { action: 'souls', context: deployment, ...options });
+      if (result?.ok !== true) return { value: null, reason: result?.reason?.code ? { code: result.reason.code, message: String(result.reason.message || '') } : { code: 'E_CLI_FAILED', message: '' } };
+      const souls = soulsData(result.document), { observedAt } = observationData(result.document); // a malformed stamp is no stamp; the catalog stands
+      return { value: { souls: souls.souls, ambiguous: souls.ambiguous, workspace: souls.workspace, problems: souls.problems }, observedAt };
+    } catch (error) { return { value: null, reason: { code: error?.code === 'E_CLI_PROTOCOL' ? 'E_CLI_PROTOCOL' : 'E_CLI_FAILED', message: '' } }; }
+  }
+  const catalog = createKeyedCatalog({ read, retryMs: SOUL_CATALOG_RETRY_MS, now });
+  /** The public entry: the catalog fields at the top, the failure next to them. */
+  const project = entry => entry && { key: entry.key, souls: entry.value?.souls ?? null, ambiguous: entry.value?.ambiguous ?? [],
+    workspace: entry.value?.workspace ?? null, problems: entry.value?.problems ?? [], reason: entry.reason, at: entry.at, observedAt: entry.observedAt, stale: entry.stale };
+  function settle(deployment, cli, workspaceStatus, options = {}) {
+    const { entry, pending } = catalog.settle(deployment, cli, soulCatalogKey(cli, workspaceStatus), options);
+    return { entry: project(entry), pending: pending && pending.then(project) };
+  }
+  /** The request path (/api/agents) found the held catalog for this state past its TTL: start one re-read
+   * behind the answer (or join the one in flight) and resolve with the landed, projected entry — null when
+   * nothing stale is held for this key (fresh, missing or another state's: the cycle owns those). */
+  function revalidate(deployment, cli, workspaceStatus, options = {}) {
+    const key = soulCatalogKey(cli, workspaceStatus), held = catalog.held(deployment);
+    if (!held || held.key !== key || held.reason || !held.stale) return null;
+    const pending = catalog.revalidate(deployment, cli, key, options);
+    return pending && pending.then(project);
   }
   return {
     /** The catalog for this workspace state, reading it only when needed. */
-    async observe(deployment, cli, workspaceStatus) {
-      const key = soulCatalogKey(cli, workspaceStatus), last = held.get(deployment);
-      if (last?.key === key && (!last.reason || now() - last.at < SOUL_CATALOG_RETRY_MS)) return structuredClone(last);
-      let flight = flights.get(deployment);
-      if (!flight || flight.key !== key) {
-        flight = { key, promise: read(deployment, cli, key).finally(() => { if (flights.get(deployment) === flight) flights.delete(deployment); }) };
-        flights.set(deployment, flight);
-      }
-      return structuredClone(await flight.promise);
+    async observe(deployment, cli, workspaceStatus, options = {}) {
+      const { entry, pending } = settle(deployment, cli, workspaceStatus, options);
+      return pending ? await pending : entry;
     },
-    /** The last catalog held for a deployment (admission reads this). */
-    held(deployment) { const entry = held.get(deployment); return entry ? structuredClone(entry) : null; },
-    forget(deployment) { held.delete(deployment); flights.delete(deployment); },
+    /** Synchronous decision for this workspace state: what is held now, and what (if anything) is still coming. */
+    settle,
+    revalidate,
+    /** Start an unbound read when nothing usable is held and nothing is in flight; null when nothing started. */
+    prefetch(deployment, cli, options = {}) { const flight = catalog.prefetch(deployment, cli, options); return flight && flight.then(project); },
+    refreshing: catalog.refreshing,
+    /** Read-only view of what is held (tests and diagnostics); the server reads catalogs through settle. */
+    held(deployment) { return project(catalog.held(deployment)); },
+    forget: catalog.forget,
   };
 }

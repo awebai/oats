@@ -210,7 +210,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       const bar = pageBar(doc, { backLabel, crumbs: ['Workspace', backLabel], current: title, onBack: () => { if (alive) close({ restoreFocus: true }); } });
       bar.back.classList.add('inspector-back');
       headActions = bar.actions;
-      const refresh = button('', () => show(selection)); refresh.classList.add('icon-act');
+      const refresh = button('', () => show(selection, { user: true })); refresh.classList.add('icon-act');
       refresh.append(iconElement(doc, 'refresh', { size: 14 }), node('span', 'Refresh', 'page-sr')); refresh.title = 'Inspect again';
       headActions.append(refresh);
       summary = node('div', undefined, 'inspector-summary');
@@ -258,13 +258,14 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     else if (layout !== 'page') container.parentElement?.classList.remove('inspecting');
     closed?.({ restoreFocus: !presentation && restoreFocus });
   }
-  async function show(next) {
+  /** `user` marks a read the person asked for (Refresh / "Inspect again"): the server bypasses its held inspection. */
+  async function show(next, { user = false } = {}) {
     if (!next || !alive) return;
     selection = next; const id = ++serial, gen = workspaceGeneration(); selectionGen = gen; data = null;
     frame(next.agent?.name || next.instance?.instance || ''); message('Loading…');
     if (!available()) { message('Inspection needs an installed OATS CLI with operations API 2. Update OATS and refresh.', true); return; }
     try {
-      const result = await request({ action: 'inspect', selector: next.selector });
+      const result = await request({ action: 'inspect', selector: next.selector, ...(user ? { refresh: true } : {}) });
       if (!valid(id, gen)) return;
       data = result; message(''); render();
     } catch (error) {

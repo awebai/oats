@@ -2,7 +2,7 @@
  * projected by the owning observer, never forwarded wholesale to a renderer. */
 import { execFile } from 'node:child_process';
 import { isAbsolute, resolve } from 'node:path';
-import { deploymentReadGate, deploymentFailure, deploymentRecord } from './renderer/deployment-contract.mjs';
+import { deploymentReadGate, deploymentFailure, deploymentRecord, validMaxAge, maxAgeArgv } from './renderer/deployment-contract.mjs';
 
 export const DEPLOYMENT_READ_TIMEOUT = 30_000;
 export const DEPLOYMENT_READ_MAX_BUFFER = 4 * 1024 * 1024;
@@ -14,10 +14,11 @@ export function cliDeploymentRead(cli, options, io = {}) {
   const action = options?.action;
   const gate = deploymentReadGate(cli, action);
   if (gate) return Promise.resolve(gate);
-  if (!absolute(cli.bin) || !deploymentRecord(options) || Object.keys(options).some(k => !['action', 'context'].includes(k))
-    || !absolute(options.context)) return Promise.resolve(deploymentFailure('E_BAD_ARGS'));
+  if (!absolute(cli.bin) || !deploymentRecord(options) || Object.keys(options).some(k => !['action', 'context', 'maxAge'].includes(k))
+    || !absolute(options.context) || !validMaxAge(options.maxAge)) return Promise.resolve(deploymentFailure('E_BAD_ARGS'));
   const context = options.context, bin = cli.bin;
-  const argv = [...(action === 'status' ? ['status'] : ['workspace', 'status']), '--dir', context, '--json'];
+  // --max-age only when the probe declares observe-max-age; otherwise the argv is the flagless one.
+  const argv = [...(action === 'status' ? ['status'] : ['workspace', 'status']), '--dir', context, ...maxAgeArgv(cli.features, options.maxAge), '--json'];
   const env = { ...(io.env ?? process.env) };
   for (const key of ['PI_AGENTS_ROOT', 'PI_AGENT_HOME', 'PI_AGENT_INSTANCE', 'OATS_HOME', 'OATS_INSTANCE_HOME', 'OATS_INSTANCE', 'OATS_DEPLOYMENT', 'OATS_RESOLUTION']) delete env[key];
   return new Promise(done => {
