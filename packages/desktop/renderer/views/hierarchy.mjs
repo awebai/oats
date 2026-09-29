@@ -41,6 +41,7 @@ import {
   renderWorkspaceSelect, wsQuery, workspaceGeneration,
 } from "./common.mjs";
 import { createDataState, skeleton, statusLine } from "../loading.mjs";
+import { deploymentUnavailableText } from "../deployment-header.mjs";
 import { registerAction } from "../keybindings.mjs";
 import { resolveViewKey } from "../view-keys.mjs";
 import { icon } from "../shell-icons.mjs";
@@ -499,6 +500,17 @@ export async function refresh(s, { user = false } = {}) {
     // observedAt (spec 02, additive) labels the observation's age; never invented.
     panel.observedAt = typeof data.observedAt === 'string' && data.observedAt ? data.observedAt : null;
     if (panel.error && !panel.instances.length) throw Error(panel.error); // failed absence is not an observed empty roster
+    // A deployment the kernel has not observed yet (the server's first read is
+    // still running) or could not observe is not an empty roster either. Pending
+    // keeps its own copy in the summary — no skeleton, no counts, no empty state —
+    // and the next poll brings the observation; a refusal is a failed read.
+    const deployment = !panel.workspace?.remote && data.deployment && typeof data.deployment === 'object' && data.deployment.status !== 'observed' ? data.deployment : null;
+    if (deployment && !panel.instances.length) {
+      if (deployment.status !== 'pending') throw Error(deploymentUnavailableText(deployment));
+      // The controller stays pending (aria-busy, the one announcement) without a pill: the copy is the summary.
+      s.load?.defer(); s.q('hier-sum').textContent = deploymentUnavailableText(deployment);
+      return;
+    }
     // A stale selection (persisted, no longer served) behaves like an empty
     // one: adopt the served workspace. A served selection answered with
     // another workspace is a real mismatch and stays refused.

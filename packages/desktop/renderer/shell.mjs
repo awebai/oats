@@ -372,6 +372,22 @@ async function refreshContextRoster({ user = false } = {}) {
     workspace: resolvedWs, error: panel.error || null, deploymentNote,
     activeKey: tabs.get(activeTab)?.key ?? null, connection: connectionGeneration,
   });
+  const prependNote = () => {
+    if (deploymentNote === null) return;
+    const note = document.createElement("div"); note.className = "ctx-empty"; note.setAttribute("role", "status");
+    note.textContent = deploymentNote;
+    listEl.prepend(note);
+  };
+  // Before the server's first observation the panel says deployment "pending"
+  // with no instances: that is not an observed empty roster. The note is the
+  // whole content (its existing copy, no skeleton), the count keeps its pill,
+  // and the controller stays without data until an observation lands.
+  if (panel.deployment?.status === "pending" && !panel.workspace?.remote && !contextInstances.length && !rosterState?.hasData) {
+    rosterState?.defer();
+    refreshPanelInstance(contextInstances, resolvedWs);
+    if (signature !== rosterSignaturePainted) { rosterSignaturePainted = signature; renderContextRoster(contextInstances); prependNote(); }
+    return;
+  }
   const unchanged = !!rosterState?.hasData && signature === rosterSignaturePainted && rosterStale === reportedFailure;
   // The controller learns of the data before the paint (hasData gates the
   // empty copy). A reported failure with data already present skips
@@ -386,11 +402,7 @@ async function refreshContextRoster({ user = false } = {}) {
   if (!unchanged) {
     rosterSignaturePainted = signature;
     renderContextRoster(contextInstances);
-    if (deploymentNote !== null) {
-      const note = document.createElement("div"); note.className = "ctx-empty"; note.setAttribute("role", "status");
-      note.textContent = deploymentNote;
-      listEl.prepend(note);
-    }
+    prependNote();
   }
   if (reportedFailure) rosterState?.fail({ message: panel.error });
 }

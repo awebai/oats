@@ -78,7 +78,9 @@ The shell has three navigation contexts:
   `mount()` MAY return a disposer function; the host prefers it over the
   module-level `unmount()` (required for multi-mounted views such as markdown).
   `views/common.mjs` carries shared helpers and the workspace bus;
-  `theme.css` carries AA dark + solarized-light semantic tokens. Bare ESM deps
+  `theme.css` carries AA dark + solarized-light semantic tokens;
+  `loading.mjs` / `loading.css` are the shared loading-state primitive
+  (skeletons, refreshing, stale and failed; see renderer/README.md). Bare ESM deps
   (marked, dompurify, highlight.js) resolve through the importmap in
   `index.html`; highlight.js is bundled to `renderer/vendor/` by
   `build-vendor.mjs` (postinstall) because its `es/` entry is a

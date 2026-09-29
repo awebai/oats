@@ -378,3 +378,18 @@ test('the retired wording is gone from the roster and the fixed wording is the p
   assert.match(source, /rosterState\?\.reset\(\);[\s\S]*renderContextRoster\(\[\]\);/, 'a switch resets the subject before the list is cleared');
   assert.match(source, /setInterval\(\(\) => refreshContextRoster\(\), 4000\)/, 'the 4s poll stays');
 });
+
+test('a deployment the server has not observed yet (status pending, no instances) keeps its own note: no "No instances", the count stays a pill, no skeleton; the observation then paints the rows', async t => {
+  const u = shell(t);
+  await u.reply(0, panelOf('A', [], { deployment: { status: 'pending' } }));
+  assert.equal(u.text(), 'Reading the deployment through the installed OATS CLI…', 'the existing copy, alone');
+  assert.doesNotMatch(u.text(), /No instances/); assert.ok(u.count().querySelector('.skeleton-pill'), 'never "0 running"');
+  assert.equal(u.list().getAttribute('aria-busy'), 'true', 'still loading, truthfully'); u.c.advance(PENDING_DELAY_MS + 10); assert.equal(u.list().querySelector('.skeleton'), null, 'a deployment state is not a skeleton');
+  assert.equal(u.live().textContent, 'Loading instances…', 'announced once');
+  // The next polls repeat the same panel: no repaint (the note stays the same node).
+  const note = u.list().querySelector('.ctx-empty');
+  void u.refreshContextRoster(); await u.reply(1, panelOf('A', [], { deployment: { status: 'pending' } }));
+  assert.equal(u.list().querySelector('.ctx-empty'), note);
+  void u.refreshContextRoster(); await u.reply(2, panelOf('A', roster));
+  assert.deepEqual(u.names(), ['alpha', 'gamma', 'beta']); assert.equal(u.count().textContent, '2 running'); assert.equal(u.list().querySelector('.ctx-empty'), null);
+});

@@ -239,6 +239,56 @@ the settled DOM; stale successes and rejections cannot overwrite the current
 observation. Native visual acceptance is not inferred from the DOM/CSSOM and
 computed-token AA tests.
 
+## Loading states (`loading.mjs`, `loading.css`)
+
+Every data region runs on one state model, owned by the controller
+`createDataState()` in `loading.mjs` (vanilla DOM, no tokens of its own):
+
+| State | When | What is painted |
+|---|---|---|
+| pending | no data for this subject yet | after 150ms a skeleton shaped like the final content; `aria-busy` on the region; the status line says "Loading <noun>…" once — never an empty-state message |
+| ready / empty | the last read succeeded | the content, or the surface's own empty copy after a successful zero read |
+| refreshing | data present, a read in flight | the content stays interactive; "Refreshing…" with a static dot after 400ms in the surface header; no `aria-busy`, no announcement |
+| stale | data present, the read failed | content kept; "Couldn't refresh <noun> · observed <age>" with **Retry** in the attention style; announced once; actions that need current state are disabled by the surface |
+| failed | no data, the read failed | the cause, a **Details** disclosure with the code and **Retry**, where the skeleton stood |
+
+The controller owns the two delays, `aria-busy`, the status-line text, the age
+line (`observedAt` from the response, `Observed <age>` after two minutes even
+on success; no age when the field is absent) and the Retry wiring. The surface
+owns its latest-intent tokens and calls `begin()` / `succeed()` / `fail()`
+only for the read it still owns; `reset()` on a new subject, `defer()` when a
+read settled without an observation (the server's deployment is still
+`pending`: its copy stands in, no skeleton, still busy), `cancel()` when a read
+was abandoned. Wording is fixed in `wording`; "Reading …" and "Loading…" are
+retired. Refresh and Retry controls go through `bindRefresh()`: `aria-disabled`
+while a read is in flight, never `disabled`, so a focused control keeps focus.
+A rebuild from new data restores focus and scroll through `captureFocusState()`
+(by `data-focus-key` or structural path); an identical poll is skipped through a
+JSON signature of what the surface paints. CLI-missing, deployment-pending and
+not-observed states keep their own copy: they are separate truthful states, not
+skeletons.
+
+Skeleton shapes (`skeleton(doc, shape)` / `skeletonBlock`): `roster-row`,
+`soul-card`, `table-row`, `detail-section`, plus `pill` for counts and `line`.
+`loading.css` (linked from `index.html` and the harness) derives their fill
+from the theme tokens (`color-mix` of `--fg` over the host), shimmers at 1.6s
+and stops every animation — including the older `.spinner` — under
+`prefers-reduced-motion`. Text colours are the inventoried AA pairs (muted on
+bg/surface, warn on attn-bg); `test/loading-contrast.test.mjs` proves them on
+the effective colours. One live region per surface: where a surface has no
+visible status line (the sidebar roster, the hierarchy), `statusLine(doc,
+{ visuallyHidden: true })` speaks and the visible notice is a `role=note`.
+
+Where each surface wires it: the sidebar roster in `instance-tree.mjs`
+(`createRosterLoading`, `rosterSignature`, the pending count pill) and
+`shell.mjs` (`refreshContextRoster`); the hierarchy in `views/hierarchy.mjs`
+(the summary pill, its own notice keeps the stale copy); the soul inspector in
+`soul-inspector.mjs` (a same-subject `show()` is a refresh that never runs
+`frame()`; "Teams here" is created with the frame so `soul teams` runs beside
+`inspect`) and `soul-teams-here.mjs`; readiness in `readiness-view.mjs` (the
+summary line is separate from the status line so an announcement never
+overwrites it).
+
 ## Team controls on a live instance (teams contract 2026-09-25)
 
 An instance's inspector shows a **Teams** section (after its Instance facts)

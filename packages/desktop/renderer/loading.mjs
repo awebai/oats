@@ -334,6 +334,17 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
       setBusyControls();
     },
     touch,
+    /** The read settled without an observation (the server's deployment is still pending): stay
+     * pending — aria-busy, the one announcement — but with no skeleton, since the surface paints the
+     * deployment's own copy. The next begin() adds nothing; the first observation settles it. */
+    defer() {
+      if (disposed) return;
+      if (hasData) { api.cancel(); return; } // with data on screen there is nothing to hold: the read is simply over
+      pendingTimer = clearTimer(pendingTimer); refreshingTimer = clearTimer(refreshingTimer);
+      removeSkeleton(); removeIndicator(); removeFailed();
+      busy = false; user = false; state = 'pending'; setRegionBusy(true); say(wording.loading(noun));
+      setBusyControls();
+    },
     /** The in-flight read was superseded or abandoned (the view hid, the host cancelled): drop the
      * pending visuals and the busy mark without announcing anything; the settled state stays. */
     cancel() {

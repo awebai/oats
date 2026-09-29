@@ -81,6 +81,7 @@ ${soulTeamsHereCSS}
 .soul-inspector > .inspector-notice { padding:10px 14px 0; }
 .soul-page .inspector-notice { margin:0; }
 .soul-inspector .inspector-content .skeleton-detail-sections { padding-top:4px; }
+.soul-page .inspector-main .skeleton-detail-sections { gap:22px; }
 .soul-page .inspector-main .skeleton-detail-section { margin:0; }
 .soul-page .inspector-main .skeleton-detail-section .skeleton-block { --skeleton-block-h:120px; }
 /* The side column's card skeleton: a page-card at its size with a title line and a body block. */

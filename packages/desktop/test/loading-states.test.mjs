@@ -245,3 +245,14 @@ test('failedHost: null keeps the state, aria-busy and the announcement but paint
   u.ds.begin(); u.c.advance(PENDING_DELAY_MS);
   assert.equal(u.all('.skeleton-roster-row').length, 5, 'without a kept block, the retry shows the skeleton again');
 });
+
+test('defer: a read that settled without an observation stays pending without a skeleton; later begins add nothing and re-announce nothing', t => {
+  const u = setup(t);
+  u.ds.begin(); u.ds.defer();
+  assert.equal(u.ds.state, 'pending'); assert.equal(u.ds.busy, false); assert.equal(u.region.getAttribute('aria-busy'), 'true');
+  assert.equal(u.status.textContent, 'Loading instances…'); u.c.advance(PENDING_DELAY_MS * 3); assert.equal(u.all('.skeleton').length, 0);
+  u.status.textContent = 'sentinel'; u.ds.begin(); u.c.advance(PENDING_DELAY_MS * 3);
+  assert.equal(u.all('.skeleton').length, 0, 'no pill beside the surface\'s own copy'); assert.equal(u.status.textContent, 'sentinel', 'not announced again');
+  u.ds.succeed({ empty: true }); assert.equal(u.ds.state, 'empty'); assert.equal(u.region.hasAttribute('aria-busy'), false);
+  u.ds.begin(); u.ds.defer(); assert.equal(u.ds.state, 'empty', 'with data present defer is a cancel'); assert.equal(u.ds.busy, false);
+});
