@@ -151,7 +151,7 @@ preview → spawn → (start / restart / attach) → … → retire
 ```
 
 - **Spawn** creates the instance folder, copies the capabilities in, records provenance, and optionally starts a session.
-- **Start / restart** runs the session (in tmux or Herdr), with a **harness** (Claude, Codex or Pi) and a model.
+- **Start / restart** runs the session in tmux, with a **harness** (Claude, Codex or Pi) and a model.
 - **Attach** opens the live terminal.
 - **Retire** preserves any unfinished work, runs each capability's cleanup (e.g. revokes the messaging identity), and removes the folder.
 

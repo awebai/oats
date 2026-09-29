@@ -77,3 +77,15 @@ test('the context panel instance page projects kernel drift as the "older build"
     panel.dispose?.();
   } finally { globalThis.document = previous.document; globalThis.window = previous.window; dom.window.close(); }
 });
+
+test('a Herdr-recorded row keeps only the recognisable part of its sessionTarget, with the kernel\'s unsupported reason', () => {
+  const doc = structuredClone(status), row = doc.agents[0].instances[0];
+  const reason = 'E_HERDR_REMOVED: Herdr is no longer supported by OATS (removed in 0.31.0); tmux is the only session backend.';
+  Object.assign(row, { running: null, runtimeState: 'unsupported', runtimeError: reason,
+    sessionTarget: { backend: 'herdr', binary: 'herdr', protocol: '20', socket: '/memory/herdr.sock', workspaceId: 'w1', paneId: 'w1:pA', terminalId: 'term_ABC' } });
+  const served = deploymentStatusData(doc, context).agents[0].instances[0];
+  assert.deepEqual(served.sessionTarget, { backend: 'herdr' }, 'no Herdr connection data is forwarded, and an old field never breaks the read');
+  assert.deepEqual([served.running, served.runtimeState, served.runtimeError], [null, 'unsupported', reason]);
+  row.sessionTarget = 'herdr';
+  assert.throws(() => deploymentStatusData(doc, context), 'a non-record sessionTarget is still a malformed report');
+});

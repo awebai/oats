@@ -56,7 +56,7 @@ const FORM = `
         <label>Model<input class="field" name="model" placeholder="Soul default"></label>
       </div>
       <div class="schedule-pair">
-        <label>Session backend<select class="field" name="backend"><option value="">Soul default</option><option value="tmux">tmux</option><option value="herdr">Herdr</option></select></label>
+        <label>Session backend<select class="field" name="backend"><option value="">Soul default</option><option value="tmux">tmux</option></select></label>
         <label>Permissions<select class="field" name="yolo"><option value="">Soul / scope setting</option><option value="true">YOLO — skip permission prompts</option><option value="false">Native permission policy</option></select></label>
       </div>
     </div>

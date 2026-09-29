@@ -6,6 +6,7 @@ const object = value => value && typeof value === 'object' && !Array.isArray(val
 const text = value => typeof value === 'string' ? value : typeof value === 'number' && Number.isFinite(value) ? String(value) : '';
 const identityFields = ['home', 'agentsRoot', 'server'];
 const displayed = ['agent', 'repoName', 'harness', 'branch', 'model', 'backend']; // model/backend preserve existing Start/Restart handoffs
+const reported = ['runtimeState', 'runtimeError']; // the kernel's unsupported state and its reason, shown on disabled controls
 
 export function projectActivePanel(panel) {
   if (!object(panel) || !Array.isArray(panel.instances)) throw new Error('The server did not report a roster.');
@@ -18,7 +19,7 @@ export function projectActivePanel(panel) {
     const instance = { instance: raw.instance, running: panel.error ? null : raw.running === true ? true : raw.running === false ? false : null,
       savedRoute: raw.savedRoute === true, remote: raw.remote === true || panel.workspace?.remote === true,
       createdAt: eventsTimestamp(raw.createdAt) ? raw.createdAt : null };
-    for (const key of [...identityFields, ...displayed]) instance[key] = text(raw[key]);
+    for (const key of [...identityFields, ...displayed, ...reported]) instance[key] = text(raw[key]);
     for (const key of ['parentInstance', 'siblingInstance']) instance[key] = typeof raw[key] === 'string' ? raw[key] : '';
     const id = instanceId(instance);
     if (seen.has(id)) throw new Error('The roster contains duplicate instance identities; actions are unavailable.');

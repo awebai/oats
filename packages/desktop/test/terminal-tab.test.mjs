@@ -64,6 +64,16 @@ test("terminal tab forwards the instance's saved socket to the privileged bridge
   await tab.close();
 });
 
+test("terminal tab opens tmux or remote only: a recorded Herdr sessionTarget never reaches the bridge", async () => {
+  const d = makeDoubles(Promise.resolve(7));
+  let spec;
+  d.desk.termOpen = async (value) => { spec = value; return opened(7); };
+  const tab = mk(d, { sessionTarget: { backend: "herdr", socket: "/memory/herdr.sock", terminalId: "term_ABC" } });
+  await tab.start();
+  assert.deepEqual(Object.keys(spec).sort(), ["cols", "rows", "session", "socket", "window"]);
+  await tab.close();
+});
+
 test("close during pending open: no setup at all, late pty detached, UI disposed once", async () => {
   const gate = deferred();
   const d = makeDoubles(gate.promise);

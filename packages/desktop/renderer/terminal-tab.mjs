@@ -23,7 +23,7 @@ export function terminalKeyDecision(ev, interceptKey) {
   return { handled: false, byte: null };
 }
 
-export function createTerminalTab({ desk, term, tmux, sessionTarget, remote, wrap, isActive, ownsFocus = () => false,
+export function createTerminalTab({ desk, term, tmux, remote, wrap, isActive, ownsFocus = () => false,
   focusInput = () => term.focus(), fit, observe, interceptKey, onError = () => {} }) {
   let offData, offExit, unobserve, detachAttachments, bannerEl;
   let ready = false, closed = false, ended = false, arming = false;
@@ -38,7 +38,7 @@ export function createTerminalTab({ desk, term, tmux, sessionTarget, remote, wra
   };
   const life = createTermLifecycle({
     open: async () => {
-      const result = await desk.termOpen({ ...(remote ? { remote } : sessionTarget ? { sessionTarget } : {
+      const result = await desk.termOpen({ ...(remote ? { remote } : {
         session: tmux.session, window: tmux.window, socket: tmux.socket,
       }), cols: term.cols, rows: term.rows });
       if (result?.terminalApi !== 2) throw terminalFailure('E_TERM_TRANSPORT');

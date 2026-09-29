@@ -16,7 +16,7 @@ import { PENDING_DELAY_MS, REFRESHING_DELAY_MS, AGE_TICK_MS } from '../renderer/
 import { instanceActions, captureInstanceActionMenu } from '../renderer/instance-actions.mjs';
 import { instanceActionTarget, sameInstanceActionTarget } from '../renderer/instance-action-target.mjs';
 import { instanceSplitPlan } from '../renderer/instance-split.mjs';
-import { runtimeState } from '../renderer/instance-presentation.mjs';
+import { runtimeState, unsupportedSession } from '../renderer/instance-presentation.mjs';
 import { createRuntimeBadge } from '../renderer/identity-marks.mjs';
 import { iconElement, mountShellIcons } from '../renderer/shell-icons.mjs';
 import { rosterTipFacts } from '../renderer/roster-tip.mjs';
@@ -141,7 +141,7 @@ function shell(t) {
     ...tree, document: doc, console,
     // The controller is built by the shipped initContextRoster; the clock is the test's.
     createRosterLoading: (d, el, options) => tree.createRosterLoading(d, el, { ...options, now: c.now, setTimeout: c.setTimeout, clearTimeout: c.clearTimeout }),
-    instanceActions, captureInstanceActionMenu, runtimeState, createRuntimeBadge, instanceActionTarget, instanceSplitPlan, iconElement, prChip, prText,
+    instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, createRuntimeBadge, instanceActionTarget, instanceSplitPlan, iconElement, prChip, prText,
     rosterTipFacts, deploymentUnavailableText, staleWorkspaceSelection,
     rosterTip: { bind() {}, hide() {}, sync() {} }, rosterPrs: { get: () => null, refresh() {} }, ctx: {},
     connectionGeneration: 0, menuState() {}, runAction: assert.fail, getBinding: () => null, formatChord: x => x, isMac: true,
@@ -446,4 +446,15 @@ test('the deployment note survives every other roster paint (filter, collapse, P
   assert.equal(noteText(), 'E_X: no kernel'); assert.equal(u.list().querySelectorAll('.ctx-deployment-note').length, 1, 'never doubled');
   // an observed deployment drops it.
   void u.refreshContextRoster(); await u.reply(4, panelOf('A', roster)); assert.equal(u.list().querySelector('.ctx-deployment-note'), null);
+});
+
+test('a Herdr-recorded row cannot open or start: the row and its Open in split and Start say the kernel reason; Remove stays', async t => {
+  const s = shell(t), reason = 'E_HERDR_REMOVED: Herdr is no longer supported by OATS (removed in 0.31.0); tmux is the only session backend.';
+  await s.reply(0, panelOf('A', [row('alpha'), row('herdr-one', { agent: 'soul', running: null, runtimeState: 'unsupported', runtimeError: reason })]));
+  const target = s.rows().find(r => r.textContent.includes('herdr-one')), open = target.querySelector('button[data-tree-control="terminal"]');
+  assert.equal(open.getAttribute('aria-disabled'), 'true'); assert.equal(open.title, reason);
+  assert.equal(target.querySelector('.ctx-start'), null, 'no enabled Start in the row tools');
+  const item = action => target.querySelector(`[data-action="${action}"]`);
+  for (const action of ['open-split', 'start']) { assert.equal(item(action).disabled, true, action); assert.equal(item(action).title, reason, action); }
+  assert.equal(item('restart'), null); assert.equal(item('retire').disabled, false);
 });

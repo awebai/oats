@@ -1206,7 +1206,7 @@ export async function waitForInstanceInPanel(s, ref, isCurrent, { tries = 20, de
     && (strict ? !!ref.home && x.home === ref.home : !ref.home || !x.home || x.home === ref.home)
     && (strict ? !!ref.agentsRoot && x.agentsRoot === ref.agentsRoot : !ref.agentsRoot || !x.agentsRoot || x.agentsRoot === ref.agentsRoot)
     && (!strict || !ref.agent || x.agent === ref.agent)
-    && !!x.running && (!!x.tmux?.session || !!x.sessionTarget || (!!x.server && x.savedRoute));
+    && !!x.running && (!!x.tmux?.session || (!!x.server && x.savedRoute));
   for (let i = 0; i < tries; i++) {
     if (!isCurrent()) return false;          // ws switched / superseded: stop
     try {

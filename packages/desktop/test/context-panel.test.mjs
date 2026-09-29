@@ -356,3 +356,14 @@ test('dispose releases only component DOM and listeners; missing shell controls 
   minimal.setCollapsed(true); minimal.setFocusMode(true); minimal.dispose();
   assert.equal(u.root.hidden, true);
 });
+
+test('a Herdr-recorded instance: the footer shows Start disabled with the kernel reason, no Restart or Stop, and Retire stays available', t => {
+  const u = fixture(t), reason = 'E_HERDR_REMOVED: Herdr is no longer supported by OATS (removed in 0.31.0); tmux is the only session backend.';
+  u.select(instance('/A/h1', { running: null, runtimeState: 'unsupported', runtimeError: reason }));
+  const control = op => u.query(`[data-lifecycle="${op}"]`);
+  assert.equal(control('start').hidden, false); assert.equal(control('start').disabled, true); assert.equal(control('start').title, reason);
+  assert.equal(control('restart').hidden, true); assert.equal(control('stop').hidden, true);
+  assert.equal(control('retire').hidden, false); assert.equal(control('retire').disabled, false);
+  u.select(instance('/A/t1', { running: false }));
+  assert.equal(control('start').disabled, false); assert.equal(control('start').title, '', 'a tmux row carries no Herdr reason');
+});

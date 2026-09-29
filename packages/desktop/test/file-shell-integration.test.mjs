@@ -22,7 +22,7 @@ import { projectSplitDom } from "../renderer/split-dom.mjs";
 import { instanceActions, captureInstanceActionMenu } from "../renderer/instance-actions.mjs";
 import { instanceActionTarget, sameInstanceActionTarget } from '../renderer/instance-action-target.mjs';
 import { instanceSplitPlan, instanceSplitIdentity } from '../renderer/instance-split.mjs';
-import { runtimeState } from "../renderer/instance-presentation.mjs";
+import { runtimeState, unsupportedSession } from "../renderer/instance-presentation.mjs";
 import { createRuntimeBadge } from "../renderer/identity-marks.mjs";
 import { THEMES } from "../renderer/theme.mjs";
 import { rosterKeyAction, moveTarget } from "../renderer/roster-keys.mjs";
@@ -113,7 +113,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     createQuickOpen: options => createQuickOpen({ ...options, doc: document }),
     createSelectionOwnership, wirePaneSelection, prepareOwnedOpen, createViewLifecycle,
     createTabChrome, tabKeyAction, focusAfterLastTab, reserveKey, whenKeyFree, projectSplitDom, splitControlsState,
-    ...tree, ...layout, ...workspaceTabs, instanceActions, captureInstanceActionMenu, runtimeState, createRuntimeBadge, rosterKeyAction, moveTarget,
+    ...tree, ...layout, ...workspaceTabs, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, createRuntimeBadge, rosterKeyAction, moveTarget,
     terminalOptions, terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}),
     onThemeChange: () => () => {}, onTerminalTypographyChange: () => () => {}, requestAnimationFrame: cb => cb(),
     FitAddon: { FitAddon: class { fit() {} } },

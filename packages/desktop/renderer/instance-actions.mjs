@@ -1,6 +1,7 @@
 /** Keyboard-accessible lifecycle actions, independent of terminal liveness. */
 import { instanceId } from "./instance-tree.mjs";
 import { iconElement } from "./shell-icons.mjs";
+import { unsupportedSession } from "./instance-presentation.mjs";
 /** Decorative menu icons (the Redesign's context menu), keyed by action. */
 const MENU_ICONS = Object.freeze({ 'open-split': 'splitRight', 'open-pr': 'pullRequest', inspect: 'knowledge', start: 'start', restart: 'refresh', stop: 'stop', retire: 'remove' });
 
@@ -44,7 +45,7 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
   // the menu, rather than light-dismiss first and immediately reopen it.
   trigger.popoverTargetElement = menu;
   const items = [];
-  const reasonFor = action => { const row = extra.find(item => item.action === action); return typeof row?.reason === 'function' ? row.reason() : row?.reason || ''; };
+  const reasonFor = action => { const row = descriptors.find(item => item.action === action); return typeof row?.reason === 'function' ? row.reason() : row?.reason || ''; };
   const syncOptions = () => {
     for (const item of items) {
       const reason = reasonFor(item.dataset.action), note = item.querySelector('small');
@@ -114,7 +115,10 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
       : (current + (event.key === "ArrowDown" ? 1 : -1) + available.length) % available.length;
     available[index]?.focus();
   });
-  const launchAction = instance.running === true ? [["restart", "Restart with…"]] : instance.running === false ? [["start", "Start…"]] : [];
+  // A Herdr-recorded row cannot start or restart: Start stays visible, disabled, with the kernel's reason.
+  const unsupported = unsupportedSession(instance);
+  const launchAction = unsupported ? [["start", "Start…", unsupported]]
+    : instance.running === true ? [["restart", "Restart with…"]] : instance.running === false ? [["start", "Start…"]] : [];
   async function execute(action) {
     const item = items.find(row => row.dataset.action === action);
     if (!item || !owns() || !visible(trigger) || !item.isConnected || blocked() || item.disabled || reasonFor(action) || pending.has(key)) return;
@@ -134,7 +138,9 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
       }
     }
   }
-  for (const descriptor of [...extra, ...[["inspect", "Knowledge & capabilities…"], ...launchAction, ['stop', 'Stop…'], ["retire", "Remove instance…"]].map(([action, label]) => ({ action, label }))]) {
+  const descriptors = [...extra, ...[["inspect", "Knowledge & capabilities…"], ...launchAction, ['stop', 'Stop…'], ["retire", "Remove instance…"]]
+    .map(([action, label, reason]) => ({ action, label, ...(reason ? { reason } : {}) }))];
+  for (const descriptor of descriptors) {
     const { action, label, reason, actionId } = descriptor;
     const item = doc.createElement("button"); item.type = "button"; item.tabIndex = -1;
     item.setAttribute("role", "menuitem"); item.dataset.action = action;

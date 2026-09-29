@@ -138,7 +138,7 @@ export function previewChoices(v) {
   for (const k of ['purpose', 'name', 'branch', 'base', 'harness', 'launchConfig', 'backend']) if (Object.hasOwn(v, k)) {
     if (!arg(v[k]) || (k === 'purpose' || k === 'name') && !INSTANCE_TOKEN.test(v[k])
       || k === 'launchConfig' && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(v[k])
-      || k === 'harness' && !HARNESSES.includes(v[k]) || k === 'backend' && !['tmux', 'herdr'].includes(v[k])) return null;
+      || k === 'harness' && !HARNESSES.includes(v[k]) || k === 'backend' && v[k] !== 'tmux') return null;
     out[k] = v[k];
   }
   // The only work override the Desktop offers: a checkout soul in a worktree.

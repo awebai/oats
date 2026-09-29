@@ -42,7 +42,7 @@ module.exports = {
     "server-host.mjs",
     "tmux-target.mjs",
     "local-tmux-io.mjs",
-    "herdr-target.mjs", "remote-target.mjs",
+    "remote-target.mjs",
     "terminal-registry.mjs",
     "terminal-attachments.mjs",
     "terminal-owner.mjs", "terminal-target.mjs", "terminal-io.mjs", "terminal-exec.mjs", "terminal-bridge.cjs",

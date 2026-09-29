@@ -16,7 +16,7 @@ Read the current `packages/desktop/package.json`, `main.mjs`, backend target mod
 1. Record fixture source/viewer window and pane identity, host/socket, process IDs and baseline resource counts. Use only generated probe data.
 2. Drive the rendered UI to the exact fixture instance. Use native input or CDP `Input.dispatchMouseEvent` for wheel events, not JavaScript-created DOM events. Locate the active terminal bounds before sending input.
 3. Independently query the session owner. For tmux, record exact window/pane identity, copy mode, history and scroll position before/after wheel-up and wheel-down. Visual scrolling alone is insufficient.
-4. Test stale target refusal and source loss without allowing a sibling to appear. Test navigation restrictions while preserving scrollback. Remote/Herdr targets must be tested through their own supported seams; local tmux success is not evidence for them.
+4. Test stale target refusal and source loss without allowing a sibling to appear. Test navigation restrictions while preserving scrollback. Remote targets must be tested through their own supported seam; local tmux success is not evidence for them.
 5. Close the viewer and prove its ephemeral resources disappear while the durable fixture source survives. Exercise reuse/cap rejection in the owning process, not only UI dedupe.
 6. Clean up only resources proven to be created by the probe, on the exact socket/host. Recheck the baseline; uncertain cleanup is a reported failure, not permission for broad process-name killing or profile deletion.
 

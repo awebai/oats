@@ -64,8 +64,14 @@ cycle runs is [desktop-load-path.md](desktop-load-path.md).
 ## Unchanged, v2-agnostic
 
 Terminal-target liveness (`server/liveness.mjs`, running out of process) still
-observes the exact recorded tmux socket/session/window or Herdr target — it
-reads no deployment file. The terminal owner broker, tmux admission, file
+observes the exact recorded tmux socket/session/window — it reads no deployment
+file. A Herdr-recorded row (a `sessionTarget`, or `runtimeState: "unsupported"`)
+is never probed: it is reported unsupported with the kernel's E_HERDR_REMOVED
+`runtimeError`, or with the E_HERDR_REMOVED stem when an older kernel gave none.
+`remotePanel` does the same for remote rows, including an older remote kernel's
+`backend: herdr` row, and `unsupportedSession()` in
+`renderer/instance-presentation.mjs` is the one rule both sides use. Such a row
+cannot open, start or restart; it can retire. The terminal owner broker, tmux admission, file
 guard, spawn preview/apply, lifecycle, events, schedules and Git boundaries are
 unchanged; they now receive their roster rows from the kernel observation.
 

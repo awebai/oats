@@ -53,7 +53,7 @@ const SPAWN_ARG_RULES = {
   purpose: { flag: "--purpose", re: /^[a-z0-9][a-z0-9-]*$/i },              // instance-name slug
   repo:    { flag: "--repo",    re: /^[^-][^\0]*$/ },                       // path — anything not option-shaped
   work:    { flag: "--work",    re: /^(worktree|checkout|attached|workspace|directory)$/ },
-  backend: { flag: "--backend", re: /^(tmux|herdr)$/ },
+  backend: { flag: "--backend", re: /^tmux$/ },
   // The flag is the kernel's (harness-names.mjs harnessFlag): the caller names it, never guessed.
   harness: { flag: null, re: /^(pi|claude|codex)$/ },
   launchConfig: { flag: "--launch-config", re: /^[a-z0-9][a-z0-9._-]*$/i },

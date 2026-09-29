@@ -542,7 +542,7 @@ function cliStatus() {
    Every local deployment fact is one bounded `oats status --json` plus one
    `oats workspace status --json` (deployment-observer.mjs). Terminal liveness for
    the kernel-reported targets is observed in a separate short-lived child
-   (server/liveness.mjs) so tmux/Herdr latency cannot stall key/echo handling.
+   (server/liveness.mjs) so tmux latency cannot stall key/echo handling.
    Local roster Git is null; only the on-demand K1 route observes Git.
 
    Observation reuse (kernel feature observe-max-age): a background cycle lets the kernel reuse
@@ -628,7 +628,8 @@ async function observeDeployment(id, { live = false } = {}) {
       ...instance, agent: instance.agent || agent.name, description: agent.description || "",
       team: agent.team || null, agentsRoot: roster.root,
     })));
-    const liveness = await observeLivenessRows(rows.map((i) => ({ instance: i.instance, tmux: i.tmux, sessionTarget: i.sessionTarget })));
+    const liveness = await observeLivenessRows(rows.map((i) => ({ instance: i.instance, tmux: i.tmux, sessionTarget: i.sessionTarget,
+      runtimeState: i.runtimeState, runtimeError: i.runtimeError })));
     const instances = rows.map((row, index) => projectPanelInstance({ ...row, ...liveness[index] }))
       .sort((a, b) => (a.running === b.running ? String(a.instance).localeCompare(b.instance) : a.running ? -1 : 1));
     const entry = {

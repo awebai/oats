@@ -13,7 +13,8 @@ const validHandle = h => !!h && typeof h === 'object' && !Array.isArray(h)
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 
 /** All owner registration/rekey calls are main-internal, NOT IPC methods.
- * io.admit(input) -> {key, spec}, copied/frozen, throws on invalid input.
+ * io.admit(input) -> {key, spec}, copied/frozen, throws on invalid input
+ *   (E_TERM_BAD_ARGS; an error coded E_HERDR_REMOVED keeps its code).
  * io.prepare(spec, {signal,current,context}) -> bounded promise (remote only).
  * io.create(spec, prepared, {current}) -> synchronous {pty,killViewer}.
  * An uncertain failed create must throw with private terminalCleanup callback.
@@ -185,7 +186,7 @@ export function createTerminalOwnerBroker({ rendererUrl, io, context = () => '',
       const owner = principal(e);
       if (!owner) return fail('E_TERM_FORBIDDEN_FRAME');
       let admitted;
-      try { admitted = io.admit(input); } catch { return fail('E_TERM_BAD_ARGS'); }
+      try { admitted = io.admit(input); } catch (error) { return fail(error?.code === 'E_HERDR_REMOVED' ? error.code : 'E_TERM_BAD_ARGS'); }
       if (!admitted || typeof admitted.key !== 'string' || !admitted.key || !admitted.spec) return fail('E_TERM_BAD_ARGS');
       const epoch = owner.epoch;
       let r = owner.targets.get(admitted.key), reused = !!r;

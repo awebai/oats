@@ -52,6 +52,22 @@ test("instance actions keep full identity and open plan dialogs, never dispatch 
   dom.window.close();
 });
 
+test('a Herdr-recorded row shows Start disabled with the kernel reason, offers no Restart, and still retires through the plan', async () => {
+  const reason = 'E_HERDR_REMOVED: Herdr is no longer supported by OATS (removed in 0.31.0); tmux is the only session backend.';
+  for (const instance of [{ instance: 'h1', home: '/home/h1', running: null, runtimeState: 'unsupported', runtimeError: `${reason} (h1)` },
+    { instance: 'h2', home: '/remote/h2', server: 'host', savedRoute: true, running: true, backend: 'herdr' }]) {
+    const dom = menuDom(), doc = dom.window.document, calls = [], dialogs = [];
+    const control = instanceActions(doc, instance, { invoke: async (...args) => calls.push(args), openLifecycle: (...args) => dialogs.push(args), report: m => assert.fail(m) });
+    doc.body.append(control);
+    const start = control.querySelector('[data-action="start"]'), shown = instance.runtimeError || reason;
+    assert.equal(start.disabled, true); assert.equal(start.title, shown); assert.equal(start.querySelector('small').textContent, shown);
+    assert.equal(control.querySelector('[data-action="restart"]'), null);
+    await choose(control, 'start'); assert.deepEqual(calls, []);
+    await choose(control, 'retire'); assert.deepEqual(dialogs, [['retire', instance]]);
+    dom.window.close();
+  }
+});
+
 test('frame10 extra actions dispatch registered IDs, refresh reasons/hints on open, and skip disabled entries', async () => {
   const dom = menuDom(), doc = dom.window.document; let available = false, hint = 'first', active;
   const calls = [], dispatched = [];

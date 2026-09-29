@@ -25,7 +25,7 @@ import * as instanceTree from "../renderer/instance-tree.mjs";
 import { instanceActions, captureInstanceActionMenu } from "../renderer/instance-actions.mjs";
 import { instanceActionTarget, sameInstanceActionTarget } from '../renderer/instance-action-target.mjs';
 import { instanceSplitPlan, instanceSplitIdentity } from '../renderer/instance-split.mjs';
-import { runtimeState } from "../renderer/instance-presentation.mjs";
+import { runtimeState, unsupportedSession } from "../renderer/instance-presentation.mjs";
 import { createRuntimeBadge } from "../renderer/identity-marks.mjs";
 import { rosterKeyAction, moveTarget } from "../renderer/roster-keys.mjs";
 
@@ -74,7 +74,7 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     // Panel behavior is covered with the real presenter in split-empty-shell.
     syncContextPanel() {}, contextPanel: { setFocusMode() {} },
     updateSplitControls() {}, refreshContextRoster() {}, setNavActive() {}, setSidebarHidden() {},
-    ...instanceTree, instanceActions, captureInstanceActionMenu, runtimeState, createRuntimeBadge, rosterKeyAction, moveTarget,
+    ...instanceTree, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, createRuntimeBadge, rosterKeyAction, moveTarget,
     api: () => { const gate = deferred(); requests.push(gate); return gate.promise; },
     prepareOwnedOpen: opts => prepareOwnedOpen({ ...opts, load() {
       const gate = deferred(); loads.push(gate); return gate.promise;
