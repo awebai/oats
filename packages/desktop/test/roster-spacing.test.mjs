@@ -252,3 +252,32 @@ test("keyboard: an unavailable row stays focusable with its tools; the tab stop 
   const stops = [...u.doc.querySelectorAll(".ctx-inst")].filter(b => b.tabIndex === 0);
   assert.deepEqual(stops.map(b => b.dataset.treeInstance), [tree.instanceId(roster[1])], "one tab stop: the selected row");
 });
+
+test('a row that cannot open says why on its meta line (text, not colour), with the full sentence as its title and aria-description', t => {
+  const u = fixture(t);
+  const remote = (name, extra) => ({ ...instance(name), home: `/srv/agents/dev/instances/${name}`, agentsRoot: '/srv/agents', server: 'build',
+    repoName: 'Build box', addressable: true, missingRemotely: false, ...extra });
+  const rows = [
+    [{ ...instance('herdr'), running: null, runtimeState: 'unsupported', runtimeError: 'E_HERDR_REMOVED: Herdr is no longer supported.' },
+      'Herdr no longer supported', 'E_HERDR_REMOVED: Herdr is no longer supported.'],
+    [remote('gone', { addressable: false, missingRemotely: true, running: null }), 'gone from Build box',
+      'gone is no longer on Build box. Remove it from this computer with: oats server forget build --instance gone'],
+    [remote('hidden', { addressable: false }), 'not reachable on Build box', 'Build box did not report this instance as reachable.'],
+    [remote('far', { running: null, serverUnreached: true, runtimeError: 'ssh failed: Connection refused' }), 'Build box not reached', 'ssh failed: Connection refused'],
+    [{ ...instance('unsure'), running: null }, 'state unknown', 'unsure: status unknown'],
+  ];
+  u.render(rows.map(([row]) => row));
+  for (const [row, label, sentence] of rows) {
+    const button = [...u.doc.querySelectorAll('.ctx-inst')].find(b => b.querySelector('.ctx-name').textContent === row.instance);
+    assert.ok(button, row.instance);
+    const meta = button.querySelector('.ctx-meta').textContent;
+    assert.ok(meta.endsWith(` · ${label}`), `${row.instance}: meta "${meta}" shows "${label}"`);
+    assert.equal(button.getAttribute('aria-disabled'), 'true');
+    assert.equal(button.title, sentence); assert.equal(button.getAttribute('aria-description'), sentence);
+  }
+  // An addressable foreign row (no saved route here) opens like any other: no reason, no disabled state.
+  u.render([remote('foreign', { savedRoute: false })]);
+  const foreign = u.doc.querySelector('.ctx-inst');
+  assert.equal(foreign.getAttribute('aria-disabled'), null);
+  assert.equal(foreign.querySelector('.ctx-meta').textContent, 'Build box');
+});
