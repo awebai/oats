@@ -1,6 +1,6 @@
-// Feature session-backend-config (0.31): oats-local.yaml `session.backend` / `session.tmuxSession`,
-// the resolution order of a NEW launch's backend and tmux session, and `oats status` liveness that
-// reads each home's recorded endpoint with one Herdr snapshot per server.
+// 0.31 session defaults: oats-local.yaml `session.tmuxSession` and the tmux session a NEW launch opens
+// in, liveness that reads each home's RECORDED endpoint (one Herdr snapshot per server), a keep-dir
+// self-retire of a pre-0.31 home, and the first start of a never-launched Herdr home.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -11,13 +11,7 @@ import { validateLocal } from "../lib/workspace.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-session-backend-")));
-// These tests read the host layers themselves: a runner's own settings must not leak in.
-const savedEnv = { OATS_SESSION_BACKEND: process.env.OATS_SESSION_BACKEND };
-delete process.env.OATS_SESSION_BACKEND;
-test.after(() => {
-  rmSync(base, { recursive: true, force: true });
-  for (const [k, v] of Object.entries(savedEnv)) if (v !== undefined) process.env[k] = v;
-});
+test.after(() => rmSync(base, { recursive: true, force: true }));
 
 /** A fake tmux on PATH: sessions → window names; every call is logged. */
 function fakeTmux(dir, sessions) {
@@ -67,28 +61,11 @@ test("the tmux session: session.tmuxSession, then OATS_TMUX_SESSION, then PI_AGE
   assert.equal(load({ OATS_TMUX_SESSION: "new", PI_AGENTS_TMUX_SESSION: "legacy" }), "new");
 });
 
-test("backend: --backend, then session.backend, then OATS_SESSION_BACKEND, then tmux, each named in backendFrom", () => {
-  const none = deployment("none");
-  const local = deployment("local", { backend: "herdr", tmuxSession: "team-x" });
-  assert.deepEqual(sessionDefaults(none, {}, {}), { backend: "tmux", backendFrom: "default", tmuxSession: "oats-agents" });
-  assert.deepEqual(sessionDefaults(none, {}, { OATS_SESSION_BACKEND: "herdr" }), { backend: "herdr", backendFrom: "env", tmuxSession: "oats-agents" });
-  assert.deepEqual(sessionDefaults(local, {}, { OATS_SESSION_BACKEND: "tmux" }), { backend: "herdr", backendFrom: "local", tmuxSession: "team-x" }, "the host file wins over the environment");
-  assert.deepEqual(sessionDefaults(local, { backend: "tmux" }, { OATS_SESSION_BACKEND: "herdr" }), { backend: "tmux", backendFrom: "flag", tmuxSession: "team-x" });
-  assert.equal(sessionDefaults(local, { tmuxSession: "given" }, {}).tmuxSession, "given", "a caller's session wins over the host file");
-  assert.equal(sessionDefaults(join(base, "no-deployment-here"), {}, {}).backendFrom, "default", "no oats-local.yaml in reach is the plain default");
-});
-
-test("a bad OATS_SESSION_BACKEND is refused by name, never read as tmux", () => {
-  const none = deployment("bad-env");
-  assert.throws(() => sessionDefaults(none, {}, { OATS_SESSION_BACKEND: "screen" }), (e) => e.code === "E_BAD_ARGS" && /OATS_SESSION_BACKEND must be tmux or herdr/.test(e.message));
-  assert.throws(() => sessionDefaults(none, { backend: "herdr" }, { OATS_SESSION_BACKEND: "screen" }), (e) => e.code === "E_BAD_ARGS", "a broken host variable is loud even when a flag decides");
-});
-
-test("oats-local.yaml session is validated: a known backend, a tmux-safe name, no other keys", () => {
+test("oats-local.yaml session is validated: a tmux-safe tmuxSession and no other keys (no backend: Herdr is frozen)", () => {
   const doc = (session) => ({ schemaVersion: 2, workspace: "git:github.com/example/ws", session });
-  assert.deepEqual(validateLocal(doc({ backend: "herdr", tmuxSession: "pi-agents" })), []);
+  assert.deepEqual(validateLocal(doc({ tmuxSession: "pi-agents" })), []);
   assert.deepEqual(validateLocal(doc({})), []);
-  for (const bad of [{ backend: "screen" }, { tmuxSession: "has space" }, { tmuxSession: "a:b" }, { tmuxSession: "" }, { socket: "/x" }]) {
+  for (const bad of [{ backend: "herdr" }, { tmuxSession: "has space" }, { tmuxSession: "a:b" }, { tmuxSession: "" }, { socket: "/x" }]) {
     assert.ok(validateLocal(doc(bad)).length > 0, JSON.stringify(bad));
   }
 });
@@ -121,20 +98,16 @@ test("status reads each Herdr server once, however many homes it holds, and each
   }
 });
 
-test("a spawn reports backendFrom and records the host's session.backend", async () => {
-  const plain = v2Deployment();
-  const chosen = v2Deployment({ local: { session: { backend: "herdr", tmuxSession: "team-x" } } });
+test("a new tmux spawn opens in session.tmuxSession, and a Herdr one still needs --backend herdr", async () => {
+  const chosen = v2Deployment({ local: { session: { tmuxSession: "team-x" } } });
   try {
-    const a = await plain.spawn("dev", { name: "plain-1" });
-    assert.equal(a.backendFrom, "default");
-    assert.equal(a.tmux?.session, plain.env.OATS_TMUX_SESSION || plain.env.PI_AGENTS_TMUX_SESSION || "oats-agents", "the spawn's own environment, read at spawn time");
-    const b = await chosen.spawn("dev", { name: "chosen-1" });
-    assert.equal(b.backendFrom, "local");
-    assert.equal(b.backend, "herdr", "a never-launched home records the chosen backend (a later session start still needs a recorded Herdr endpoint: a known limit)");
-    const c = await chosen.spawn("dev", { name: "chosen-2", backend: "tmux" });
-    assert.equal(c.backendFrom, "flag");
-    assert.equal(c.tmux?.session, "team-x");
-  } finally { plain.cleanup(); chosen.cleanup(); }
+    const a = await chosen.spawn("dev", { name: "chosen-1" });
+    assert.equal(a.tmux?.session, "team-x");
+    assert.equal(a.backendFrom, undefined, "no backendFrom: the backend is only ever --backend");
+    const b = await chosen.spawn("dev", { name: "chosen-2", backend: "herdr" });
+    assert.equal(b.backend, "herdr");
+    assert.equal(b.tmux, undefined);
+  } finally { chosen.cleanup(); }
 });
 
 test("status reads each tmux home in the session it recorded: a pre-0.31 pi-agents home still shows running", async () => {
@@ -180,8 +153,8 @@ test("a self-retire that keeps its directory kills the window the home recorded,
   }
 });
 
-test("the harvester's sequence on a herdr-default host: a --no-launch spawn, then session start, starts and records its Herdr server", async () => {
-  const fx = v2Deployment({ local: { session: { backend: "herdr" } } });
+test("the harvester's sequence on Herdr: a --no-launch spawn, then session start, starts and records its Herdr server", async () => {
+  const fx = v2Deployment();
   const bin = join(base, "herdr-harvest-bin"); mkdirSync(bin, { recursive: true });
   writeFileSync(join(bin, "herdr"), "#!/bin/sh\nexit 1\n"); chmodSync(join(bin, "herdr"), 0o755);
   let panes = [], agent = false;
@@ -199,8 +172,7 @@ test("the harvester's sequence on a herdr-default host: a --no-launch spawn, the
   const path = process.env.PATH;
   try {
     process.env.PATH = fx.env.PATH;
-    const spawned = await fx.spawn("dev", { name: "harvester-1" });
-    assert.equal(spawned.backendFrom, "local");
+    const spawned = await fx.spawn("dev", { name: "harvester-1", backend: "herdr" });
     assert.equal(spawned.launched, false);
     process.env.PATH = `${bin}:${fx.env.PATH}`;
     const started = startInstanceSession(spawned.home, { io });
@@ -210,11 +182,11 @@ test("the harvester's sequence on a herdr-default host: a --no-launch spawn, the
   } finally { process.env.PATH = path; fx.cleanup(); }
 });
 
-test("oats inspect shows what a new spawn here would get (feature session-backend-config)", () => {
-  const fx = v2Deployment({ local: { session: { backend: "herdr", tmuxSession: "team-x" } } });
+test("oats inspect shows the tmux session a new spawn here would open in", () => {
+  const fx = v2Deployment({ local: { session: { tmuxSession: "team-x" } } });
   try {
-    const r = fx.cli(["inspect", "--soul", "dev", "--json"], { env: { OATS_SESSION_BACKEND: "", OATS_TMUX_SESSION: "", PI_AGENTS_TMUX_SESSION: "" } });
+    const r = fx.cli(["inspect", "--soul", "dev", "--json"], { env: { OATS_TMUX_SESSION: "", PI_AGENTS_TMUX_SESSION: "" } });
     assert.equal(r.status, 0, r.stderr);
-    assert.deepEqual(r.json().result.session, { backend: "herdr", backendFrom: "local", tmuxSession: "team-x" });
+    assert.deepEqual(r.json().result.session, { tmuxSession: "team-x" });
   } finally { fx.cleanup(); }
 });

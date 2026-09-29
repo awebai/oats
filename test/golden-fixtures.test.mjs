@@ -376,7 +376,6 @@ exit 0
     OATS_HOME_DIR: join(HERMETIC_HOME, ".oats"),
     OATS_REMOTE_CACHE: fx.env.OATS_REMOTE_CACHE,
     OATS_TMUX_SESSION: "oats-golden",
-    OATS_SESSION_BACKEND: "",
     PI_AGENTS_TMUX_SESSION: "oats-golden",
     PATH: `${bin}:${inertHarnessPath(base)}`,
     GIT_CONFIG_GLOBAL: "/dev/null",
