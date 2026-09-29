@@ -92,11 +92,46 @@ test('a failed re-read keeps the last good table with the reason next to it and 
   assert.deepEqual(failed.reason, { code: 'E_WORKSPACE', message: 'members not ready', kernel: true });
   for (let i = 0; i < 10; i++) { h.catalog.ensure(deployment, CLI, moved); h.tick(CAPABILITY_CATALOG_RETRY_MS / 20); }
   assert.equal(h.calls.length, 2, 'no retry storm');
+  // A held failure — table behind it or not — is not an answer for someone asking: the boundary shows it as a failure
+  // and today's Retry is a plain read, so a request inside the window reads now and gets the recovered table on the first ask.
   const within = await h.catalog.read(deployment, CLI, moved);
-  assert.equal(within.reason.code, 'E_WORKSPACE'); assert.equal(h.calls.length, 2, 'a failed re-read with last-good data still answers immediately');
-  h.tick(CAPABILITY_CATALOG_RETRY_MS); h.answer(() => ({ ok: true, document: CAPS() }));
-  h.catalog.ensure(deployment, CLI, moved); await settle();
-  assert.equal(h.calls.length, 3); assert.equal(h.catalog.held(deployment).reason, null);
+  assert.equal(within.reason.code, 'E_WORKSPACE'); assert.equal(h.calls.length, 3, 'a request inside the window re-reads even with a table behind the failure');
+  h.answer(() => ({ ok: true, document: CAPS() }));
+  const retried = await h.catalog.read(deployment, CLI, moved);
+  assert.deepEqual([retried.reason, retried.capabilities.capabilities.length, h.calls.length], [null, TABLE.capabilities.length, 4], 'Retry recovers on the first press');
+  h.answer(() => ({ ok: false, reason: { code: 'E_WORKSPACE', message: 'members not ready' } }));
+  h.tick(CAPABILITY_CATALOG_RETRY_MS); h.catalog.ensure(deployment, CLI, { ...moved, workspace: { key: 'k', commit: 'c3' } }); await settle();
+  assert.equal(h.calls.length, 5); assert.equal(h.catalog.held(deployment).reason.code, 'E_WORKSPACE');
+  for (let i = 0; i < 10; i++) { h.catalog.ensure(deployment, CLI, { ...moved, workspace: { key: 'k', commit: 'c3' } }); h.tick(CAPABILITY_CATALOG_RETRY_MS / 20); }
+  assert.equal(h.calls.length, 5, 'background cycles are still throttled by the window');
+});
+
+test('a read whose key moves on while it flies answers for the key it asked and never crashes the boundary; the newer state keeps its own entry', async () => {
+  // Cold: the user opens the Workspace tab while the admission read flies; `oats teams` from a terminal moves the fingerprint,
+  // and the next cycle binds the newer key before the request's read lands.
+  const h = harness();
+  const cold = h.catalog.read(deployment, CLI, WS, { fingerprint: 'fp-1' });
+  h.catalog.ensure(deployment, CLI, WS, { fingerprint: 'fp-2' });
+  assert.equal(h.calls.length, 2, 'the newer key has its own flight');
+  const answered = await cold;
+  assert.ok(answered, 'the request is answered, not null');
+  assert.deepEqual([answered.key, answered.reason, answered.capabilities.capabilities.length], [capabilityCatalogKey(CLI, WS, 'fp-1'), null, TABLE.capabilities.length], "with the table ITS read produced");
+  await settle();
+  assert.equal(h.catalog.held(deployment).key, capabilityCatalogKey(CLI, WS, 'fp-2'), 'what is held is the newer state\'s entry');
+  // Warm: a superseded live read that fails does not hand its failure to the newer state, and the request sees its own failure.
+  h.answer(() => ({ ok: false, reason: { code: 'E_CLI_TIMEOUT', message: 'slow' } }));
+  const late = h.catalog.read(deployment, CLI, WS, { fingerprint: 'fp-3', refresh: true });
+  h.answer(() => ({ ok: true, document: CAPS() }));
+  h.catalog.ensure(deployment, CLI, WS, { fingerprint: 'fp-4' });
+  assert.equal((await late).reason.code, 'E_CLI_TIMEOUT'); await settle();
+  assert.deepEqual([h.catalog.held(deployment).key, h.catalog.held(deployment).reason], [capabilityCatalogKey(CLI, WS, 'fp-4'), null]);
+  // Through the boundary: the cold race is a healthy 'ok' answer, never a 400.
+  let fingerprint = 'fp-1';
+  const b = boundary({ observed: () => ({ workspaceStatus: WS, fingerprint }) });
+  const request = b.request({ action: 'read' }, { workspace, cli: CLI });
+  fingerprint = 'fp-2'; b.catalog.ensure(deployment, CLI, WS, { fingerprint });
+  const response = await request;
+  assert.deepEqual([response.status, response.reason, response.capabilities], ['ok', null, TABLE]);
 });
 
 test('a first read that fails holds no table; local, protocol and thrown failures are flagged as not the kernel\'s', async () => {
@@ -224,9 +259,13 @@ test('boundary: refresh: true forces a live read; a failed re-read is today\'s f
   const during = await c.request({ action: 'read' }, { workspace, cli: CLI });
   assert.deepEqual([during.status, during.reason, during.refreshing], ['ok', null, true], 'until the re-read lands, the held table is still the truth (and a re-read is announced)');
   await settle();
+  c.answers.push({ ok: false, reason: { code: 'E_PACKAGE_INTEGRITY', message: 'nw.tools does not match the lock' } }); // the kernel still refuses
   const afterLock = await c.request({ action: 'read' }, { workspace, cli: CLI });
   assert.deepEqual([afterLock.status, afterLock.capabilities, afterLock.reason], ['refused', null, { code: 'E_PACKAGE_INTEGRITY', message: 'nw.tools does not match the lock' }]);
   assert.deepEqual(afterLock.lastGood.capabilities, TABLE); assert.equal(typeof afterLock.lastGood.observedAt, 'string');
+  assert.equal(c.calls.length, 3, 'a held failure is re-read on the ask (today\'s Retry is a plain read): the retry window throttles cycles only');
+  const recovered = await c.request({ action: 'read' }, { workspace, cli: CLI }); // the kernel recovers: Retry works on the first press
+  assert.deepEqual([recovered.status, recovered.reason, recovered.lastGood, c.calls.length], ['ok', null, undefined, 4]);
   const localFailure = boundary({ answers: [{ ok: true, document: CAPS() }, { ok: false, reason: { code: 'E_CLI_TIMEOUT', message: 'x' } }] });
   await localFailure.request({ action: 'read' }, { workspace, cli: CLI });
   const timedOut = await localFailure.request({ action: 'read', refresh: true }, { workspace, cli: CLI });

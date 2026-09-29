@@ -61,9 +61,10 @@ export function createCapabilityCatalog({ invoke = cliWorkspace, now = () => Dat
       const k = key(cli, workspaceStatus, fingerprint), options = maxAge !== undefined ? { maxAge } : {};
       if (refresh) return project(deployment, await catalog.refresh(deployment, cli, k));
       const { entry } = catalog.settle(deployment, cli, k, options);
-      // A held failure with no table behind it is not an answer for someone asking (today's Retry is a
-      // plain read): read now, whatever the retry window says, and answer with what lands.
-      return project(deployment, entry?.value ? entry : await catalog.demand(deployment, cli, k, options));
+      // A held failure is not an answer for someone asking, table behind it or not — the boundary shows
+      // it as a failure and today's Retry is a plain read: read now, whatever the retry window says
+      // (it throttles background cycles only), and answer with what lands.
+      return project(deployment, entry?.value && !entry.reason ? entry : await catalog.demand(deployment, cli, k, options));
     },
     /** Read-only view of what is held (tests and diagnostics); nothing reads it on the request path. */
     held(deployment) { return project(deployment, catalog.held(deployment)); },

@@ -103,6 +103,8 @@ test('observedAt: the OLDEST of the two reads\' kernel stamps; a live (--max-age
   const result = await broken.observe(context);
   assert.equal(result.ok, true, 'a bad stamp beside the roster never costs the roster');
   assert.equal(result.observedAt, '2026-01-01T00:00:00.000Z', 'the sound stamp still counts');
+  const olderBroken = setup(async (_cli, { action }) => stamped(action, action === 'status' ? { observedAt: '2026-01-01T00:00:00.000Z', reused: true } : { observedAt: 12, reused: false }));
+  assert.equal((await olderBroken.observe(context)).observedAt, '2026-01-01T00:00:00.000Z', 'oldest of the SOUND stamps, whichever read carries the bad one');
   const allBroken = setup(async (_cli, { action }) => stamped(action, 'garbage'));
   const fallback = await allBroken.observe(context);
   assert.equal(fallback.ok, true); assert.ok(Date.parse(fallback.observedAt) >= before, 'completion time when no sound stamp exists');

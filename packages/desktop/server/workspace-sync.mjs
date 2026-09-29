@@ -53,13 +53,13 @@ export function createWorkspaceSyncBoundary({ invoke = cliWorkspace, catalog = n
   }
   async function heldRead(ctx, { workspaceStatus, fingerprint = null }, refresh) {
     const entry = await catalog.read(ctx.deployment, ctx.cli, workspaceStatus, { fingerprint, ...(refresh ? { refresh: true } : maxAge !== undefined ? { maxAge } : {}) });
-    const { refreshing } = entry;
-    if (entry.capabilities && !entry.reason) return { workspaceSyncApi: WORKSPACE_SYNC_API, status: 'ok', report: null, capabilities: entry.capabilities, reason: null, observedAt: entry.observedAt, refreshing };
+    const refreshing = entry?.refreshing ?? false;
+    if (entry?.capabilities && !entry.reason) return { workspaceSyncApi: WORKSPACE_SYNC_API, status: 'ok', report: null, capabilities: entry.capabilities, reason: null, observedAt: entry.observedAt, refreshing };
     // The latest read failed: today's failure shape (the renderer shows the error and Retry, exactly as before), with the
     // last good table beside it for a renderer that can label a stale table — additive, never mistaken for a healthy one.
-    const reason = entry.reason || { code: 'E_CLI_FAILED', message: '', kernel: false };
+    const reason = entry?.reason || { code: 'E_CLI_FAILED', message: '', kernel: false };
     const failure = reason.kernel ? refusal({ reason: { code: reason.code, message: reason.message } }) : syncFailure(reason.code);
-    return { ...failure, observedAt: null, refreshing, lastGood: entry.capabilities ? { capabilities: entry.capabilities, observedAt: entry.observedAt } : null };
+    return { ...failure, observedAt: null, refreshing, lastGood: entry?.capabilities ? { capabilities: entry.capabilities, observedAt: entry.observedAt } : null };
   }
   async function read(ctx, refresh) {
     const state = catalog ? observed(ctx.deployment) : null;

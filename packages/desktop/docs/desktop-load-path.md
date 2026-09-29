@@ -50,9 +50,10 @@ catalogs are thin wrappers over it (`soul-catalog.mjs`,
   stamp is provenance beside the result, and a bad stamp never costs the
   roster, the catalog or the document.
 - a keyed flight that lands after the key moved on (a newer `settle`,
-  `demand` or `refresh` under another key) is dropped — its awaiters still
-  resolve with what is held — so a slow read under an old state never
-  overwrites the newer state's entry.
+  `demand` or `refresh` under another key) is not held, so a slow read under
+  an old state never overwrites the newer state's entry; every flight still
+  resolves with the entry *it* built, so a request awaiting it is answered for
+  the key it asked, never with whatever happens to be held (or nothing).
 
 The souls key (`soulCatalogKey`) also carries the **local-config
 fingerprint** (`server/deployment-fingerprint.mjs`): the size and mtime of the
@@ -80,10 +81,10 @@ else in `workspace status` changes it.
   the renderer shows the error and Retry exactly as before) with the additive
   `lastGood: { capabilities, observedAt } | null` beside it for a renderer that
   can label a stale table; a healthy shape is never a stale one. A request
-  with no table held — a first read, or a held failure with nothing behind it
-  (today's Retry button is a plain read) — reads now and answers with what
-  lands. `refresh: true` forces a live read. An ok `sync` forgets the held
-  table.
+  that finds no healthy table held — a first read, or a held failure, table
+  behind it or not (today's Retry button is a plain read) — reads now,
+  whatever the retry window says, and answers with what lands. `refresh: true`
+  forces a live read. An ok `sync` forgets the held table.
 - `POST /api/capabilities {action:"inspect"}` goes through a bounded LRU with
   in-flight coalescing (`server/inspect-cache.mjs`, 256 entries): two identical
   concurrent inspections are one kernel process; a repeat is a hit for at

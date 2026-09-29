@@ -8,7 +8,12 @@
  * This is file METADATA only (size and mtime), never content: the Desktop still learns every
  * deployment fact from the kernel's JSON and parses no deployment file. The fingerprint is a
  * key component that says "ask the kernel again", nothing more. A missing file fingerprints
- * as null (that too is a state: it appearing or vanishing moves the key). */
+ * as null (that too is a state: it appearing or vanishing moves the key).
+ *
+ * Read-only kernel verbs (status, souls, capabilities, inspect) and spawns leave both files'
+ * metadata alone (checked against oats 0.30.0), so the fingerprint is stable across everything
+ * the Desktop itself runs; a future kernel read rewriting them would make every cycle a
+ * re-read — visible in the argv log, not silent. */
 import { statSync } from 'node:fs';
 import { join } from 'node:path';
 
