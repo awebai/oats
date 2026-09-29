@@ -87,7 +87,9 @@ export const instanceGitCSS = `
    review rows, then "Send N threads" beside ↗. The caveat sits under the card. */
 .instance-git .forge-pr-card { display:flex; flex-direction:column; min-width:0; overflow:hidden; }
 .instance-git .forge-head { display:flex; flex-direction:column; gap:4px; min-width:0; padding:11px 12px; border-bottom:1px solid var(--border); }
-.instance-git .forge-title-row { display:flex; align-items:center; gap:8px; min-width:0; }
+/* flex-start, not center: a wrapped title keeps the pill on its first line. The pill (10.5px × 1.5 + 2px padding
+   = 17.75px) matches the title's line (13px × 1.35 = 17.55px), so no margin is needed (measured on the rig). */
+.instance-git .forge-title-row { display:flex; align-items:flex-start; gap:8px; min-width:0; }
 .instance-git .forge-state { flex:none; padding:1px 7px; border-radius:10px; background:var(--tag-bg); color:var(--fg); font-size:10.5px; font-weight:650; line-height:1.5; }
 .instance-git .forge-title { flex:1; min-width:0; font-size:13px; font-weight:650; line-height:1.35; overflow-wrap:anywhere; }
 .instance-git .forge-sub { color:var(--muted); font-size:11.5px; }

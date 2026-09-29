@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { createForgePrPanel, checkRows, checkDuration, prStateLabel } from '../renderer/forge-pr.mjs';
+import { instanceGitCSS } from '../renderer/instance-git.mjs';
 import { pullRequest } from '../renderer/forge-contract.mjs';
 import { target } from './helpers/forge-fixture.mjs';
 
@@ -40,6 +41,18 @@ test('#239, open with its checks running: the Open pill, the title, "#239", one 
   assert.equal(u.root.querySelector('.forge-review'), null, 'no review decision reported: no Review row');
   u.root.querySelector('button.forge-open').click(); assert.deepEqual(u.opened, [u.raw.url]);
   assert.equal(u.root.querySelector('button.forge-open').getAttribute('aria-label'), 'Open pull request #239 on GitHub');
+});
+
+test('a wrapped title keeps the state pill on its first line: top-aligned, and the pill is one title line tall', async t => {
+  const u = await card(t, 239), doc = u.root.ownerDocument, win = doc.defaultView;
+  const style = doc.createElement('style'); style.textContent = instanceGitCSS; doc.head.append(style); u.root.classList.add('instance-git');
+  assert.equal(win.getComputedStyle(u.root.querySelector('.forge-title-row')).alignItems, 'flex-start', 'not centred on a multi-line title');
+  const px = v => parseFloat(v), pill = win.getComputedStyle(u.root.querySelector('.forge-state')), title = win.getComputedStyle(u.root.querySelector('.forge-title'));
+  // Line heights are unitless multipliers here; the pill's box is its line plus its vertical padding.
+  const pillHeight = px(pill.fontSize) * Number(pill.lineHeight) + px(pill.paddingTop) + px(pill.paddingBottom);
+  const titleLine = px(title.fontSize) * Number(title.lineHeight);
+  assert.ok(Math.abs(pillHeight - titleLine) <= 0.5, `pill ${pillHeight}px ≈ title line ${titleLine}px, so a one-line title looks unchanged`);
+  assert.equal(px(pill.marginTop || '0'), 0);
 });
 
 test('#237, merged with one failed check: the failure first, then the passing checks as one row', async t => {
