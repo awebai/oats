@@ -25,8 +25,10 @@ instance family. Bodies are strict JSON objects up to64 KiB:
 ```
 
 The selector matches one exact server-owned roster record. Home and scope come
-from that record, never request paths. Unknown/duplicate/replaced targets and
-remote workspaces/instances refuse; no local or old remote fallback. CLI, argv,
+from that record, never request paths. Unknown/duplicate/replaced targets
+refuse; no local or old remote fallback. A remote row's plan and apply are
+routed by `--server S --home H` (see
+[desktop-deployment-model.md](desktop-deployment-model.md#remote-rows)). CLI, argv,
 environment, revision/key and apply options cannot be supplied by the renderer.
 The old **POST `/api/retire/<name>` returns `E_PLAN_REQUIRED`** before lookup or
 invocation, even for remote callers.
