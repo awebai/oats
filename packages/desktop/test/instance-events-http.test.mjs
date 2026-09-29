@@ -92,7 +92,7 @@ test('proxy rejects wrong origin/path/method/query/body before fetch and pins kn
   for (const path of ['//evil/api/instance-events', 'http://evil/api/instance-events', '/api/other', '/api/instance-events?ws=ws&ws=ws', '/api/instance-events?since=now']) assert.equal((await proxyInstanceEvents(f.event, path, f.opts, f.deps)).body.reason.code, 'E_BAD_ARGS');
   for (const body of ['x'.repeat(16385), JSON.stringify(request()) + ' '.repeat(16384), '{', 'null', JSON.stringify({ ...request(), since: 'now' })]) assert.equal((await proxyInstanceEvents(f.event, '/api/instance-events', { method: 'POST', body }, f.deps)).body.reason.code, 'E_BAD_ARGS');
   assert.equal((await proxyInstanceEvents(f.event, '/api/instance-events', { method: 'GET' }, f.deps)).body.reason.code, 'E_BAD_ARGS');
-  assert.equal(calls, 0); assert.equal(EVENTS_PROXY_TIMEOUT, 20000);
+  assert.equal(calls, 0); assert.equal(EVENTS_PROXY_TIMEOUT, 50000);
   assert.equal((await proxyInstanceEvents(f.event, '/api/instance-events?ws=unadvertised', f.opts, f.deps)).body.status, 'available'); assert.equal(calls, 1);
 });
 test('proxy streaming limit cancels before copying or decoding an over-budget chunk', async () => {

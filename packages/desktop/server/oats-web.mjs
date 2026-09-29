@@ -1322,11 +1322,13 @@ const server = createServer(async (req, res) => {
         const request = await readStrictBody(req);
         const getContext = () => {
           const workspace = workspaces().find(w => w.id === url.searchParams.get('ws'));
-          return { workspace, cli: cliState, instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
+          return { workspace, cli: cliState, localCwd: ctxs[0], instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
         };
         const result = await lifecycleRequest(request, getContext);
         if (request.action === 'apply' && ['complete', 'partial', 'refused', 'unknown'].includes(result.status)) {
-          try { observeMutation(url.searchParams.get('ws')); } catch { /* a refresh must not erase a mutation receipt */ }
+          // A remote apply (even an unknown outcome) re-reads the remote roster at once: the operator sees current state.
+          try { if (getContext().workspace?.remote) void remoteLoop.request(); else observeMutation(url.searchParams.get('ws')); }
+          catch { /* a refresh must not erase a mutation receipt */ }
         }
         return send(res, 200, result);
       } catch {

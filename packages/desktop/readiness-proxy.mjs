@@ -2,6 +2,8 @@
 import { apiUrl, apiInit } from './api-url.mjs';
 import { trustedForgeFrame } from './forge-proxy.mjs';
 import { readinessFailure, readinessTarget, readinessData } from './renderer/readiness-contract.mjs';
+/** A read may be routed to a server (a 45 s CLI deadline): 50 s lets it report itself. */
+export const READINESS_PROXY_TIMEOUT = 50_000;
 export async function proxyReadiness(event, path, opts, { rendererURL, connection, fetch: fetcher = globalThis.fetch } = {}) {
   const reply = (code, status = 503) => ({ ok: false, status, body: readinessFailure(code) });
   let frame; try { frame = event?.senderFrame; } catch { return reply('E_FORBIDDEN_FRAME', 403); }
@@ -15,7 +17,7 @@ export async function proxyReadiness(event, path, opts, { rendererURL, connectio
     if (start.transition) return reply('E_TARGET_CHANGED');
     const url = apiUrl(path, start.base, start.wsId, start.allowedWs);
     if (url.pathname !== '/api/workspace-readiness') return reply('E_BAD_ARGS', 400);
-    const response = await fetcher(url, { ...apiInit({ method: 'POST', body: opts.body }), signal: AbortSignal.timeout(20_000) });
+    const response = await fetcher(url, { ...apiInit({ method: 'POST', body: opts.body }), signal: AbortSignal.timeout(READINESS_PROXY_TIMEOUT) });
     const raw = await response.text();
     if (!owns()) return reply('E_FORBIDDEN_FRAME', 403);
     if (!current()) return reply('E_TARGET_CHANGED');

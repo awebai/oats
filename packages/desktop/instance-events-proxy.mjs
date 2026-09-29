@@ -4,7 +4,8 @@ import { apiUrl, apiInit } from './api-url.mjs';
 import { trustedForgeFrame } from './forge-proxy.mjs';
 import { eventsRequest, eventsTarget, eventsFailure } from './renderer/instance-events-contract.mjs';
 import { eventsData } from './renderer/instance-events-data.mjs';
-export const EVENTS_PROXY_TIMEOUT = 20_000;
+/** A read may be routed to a server (a 45 s CLI deadline): 50 s lets it report itself. */
+export const EVENTS_PROXY_TIMEOUT = 50_000;
 const MAX_BODY = 4 * 1024 * 1024;
 async function boundedText(response) {
   if (!response.body) return '';
