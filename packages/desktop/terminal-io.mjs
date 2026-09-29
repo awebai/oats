@@ -4,7 +4,6 @@ import { isAbsolute } from 'node:path';
 import { admitTerminalTarget } from './terminal-target.mjs';
 import { openTerm } from './tmux-target.mjs';
 import { localTmuxIo, tmuxSocketArgs } from './local-tmux-io.mjs';
-import { openHerdrTerm, readHerdrTarget } from './herdr-target.mjs';
 import { prepareRemoteTerm, remoteTerminalEnvironment } from './remote-target.mjs';
 import { copyTerminalAttachments, prepareTerminalAttachments } from './terminal-attachments.mjs';
 import { runTerminalCommand } from './terminal-exec.mjs';
@@ -57,10 +56,6 @@ export function createTerminalIo({ base, context, attachmentDirectory, spawnPty,
         pty: spawnPty(prepared.binary, prepared.args, { name: 'xterm-256color', cols: Math.max(20, spec.cols), rows: Math.max(5, spec.rows), cwd: env.HOME, env: remoteTerminalEnvironment(env) }),
         killViewer: () => {}, // CLI/SSH child owns its remote viewer, not a durable source
       };
-      if (spec.sessionTarget) return openHerdrTerm(spec, {
-        inspect: target => { check(); const result = readHerdrTarget(target, execFileSync); check(); return result; },
-        spawnPty: (args, cols, rows, environment) => { check(); return spawnPty('herdr', args, { name: 'xterm-256color', cols, rows, cwd: env.HOME, env: environment }); },
-      });
       sweep(spec.socket); check();
       const local = localTmuxIo(spec.socket, { execFileSync, spawnPty, env });
       return openTerm(spec, {

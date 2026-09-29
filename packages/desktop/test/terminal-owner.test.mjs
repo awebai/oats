@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { createTerminalOwnerBroker, installTerminalHandlers } from '../terminal-owner.mjs';
-import { TERM_READY_MS, TERM_READY_BYTES, TERM_CLOSE_MS, terminalHandle, terminalFailure } from '../renderer/terminal-contract.mjs';
+import { admitTerminalTarget } from '../terminal-target.mjs';
+import { TERM_READY_MS, TERM_READY_BYTES, TERM_CLOSE_MS, HERDR_REMOVED, terminalHandle, terminalFailure } from '../renderer/terminal-contract.mjs';
 
 const url = 'file:///memory/renderer/index.html';
 const drain = async () => { for (let n = 0; n < 12; n++) await Promise.resolve(); };
@@ -14,6 +15,7 @@ function fixture(options = {}) {
   const leases = new class extends Map { get(key) { gets++; return super.get(key); } }();
   const io = {
     admit(input) {
+      if (options.admit) return options.admit(input);
       if (typeof input?.name !== 'string' || !input.name) throw new Error('bad fixture target');
       const spec = Object.freeze({ name: input.name, ...(input.remote ? { remote: Object.freeze({ serverId: 'memory' }) } : {}) });
       return { key: `${input.remote ? 'remote' : 'local'}:${input.name}`, spec };
@@ -64,6 +66,14 @@ test('wire v2 refuses numeric/malformed handles and unknown failures are static'
   assert.equal(terminalFailure('secret raw process message').code, 'E_TERM_OPEN_FAILED');
   assert.equal(terminalFailure('E_TERM_CLOSE_PENDING').message, 'closing… not yet confirmed');
   assert.equal(terminalFailure('E_TERM_READY_TIMEOUT').message, 'terminal did not become ready; closed');
+});
+
+test('term:open refuses a Herdr session target with E_HERDR_REMOVED before any preparation or pty', async () => {
+  const f = fixture({ admit: admitTerminalTarget }), a = f.owner('A');
+  const sessionTarget = { backend: 'herdr', protocol: 20, socket: '/memory/herdr.sock', paneId: 'w1:pA', terminalId: 'term_ABC' };
+  assert.deepEqual(await f.open(a, { sessionTarget }), { terminalApi: 2, ok: false, code: 'E_HERDR_REMOVED', message: HERDR_REMOVED });
+  assert.equal((await f.open(a, { session: '=bad' })).code, 'E_TERM_BAD_ARGS');
+  assert.deepEqual(f.calls, []); assert.equal(f.ptys.length, 0); assert.equal(f.broker.counts().slots, 0);
 });
 
 test('actual handlers: duplicate own target reuses; foreign target gets its own resource/lease, never the other id', async () => {

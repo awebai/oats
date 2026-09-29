@@ -11,6 +11,8 @@ export function terminalHandle(v) {
   return !!v && typeof v === 'object' && !Array.isArray(v) && Number.isSafeInteger(v.id) && v.id > 0
     && typeof v.lease === 'string' && /^[a-f0-9]{64}$/.test(v.lease) ? Object.freeze({ id: v.id, lease: v.lease }) : null;
 }
+/** The E_HERDR_REMOVED stem the kernel and the Desktop share (OATS 0.31.0). */
+export const HERDR_REMOVED = 'Herdr is no longer supported by OATS (removed in 0.31.0); tmux is the only session backend.';
 export const terminalGeometry = (cols, rows) => Number.isInteger(cols) && cols >= 1 && cols <= 1000 && Number.isInteger(rows) && rows >= 1 && rows <= 1000;
 const messages = {
   E_TERM_FORBIDDEN_FRAME: 'This document cannot access terminals.',
@@ -29,6 +31,7 @@ const messages = {
   E_TERM_ATTACHMENT_INTERRUPTED: 'Attachment interrupted; some file copies may already exist. No input was inserted.',
   E_TERM_INPUT_LIMIT: 'Terminal input exceeds the safe write limit. Nothing was sent.',
   E_TERM_TRANSPORT: 'The terminal service did not confirm the operation.',
+  E_HERDR_REMOVED: HERDR_REMOVED,
 };
 export function terminalFailure(code) {
   if (typeof code !== 'string' || !Object.hasOwn(messages, code)) code = 'E_TERM_OPEN_FAILED';
