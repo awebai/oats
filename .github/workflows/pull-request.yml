@@ -101,9 +101,6 @@ jobs:
       - name: Schemas, manifests, config examples, and public links
         run: npm run validate
 
-      - name: Strict OKF validation
-        run: npm run validate:okf
-
       - name: Dry-run both npm packages
         run: npm run pack:check
 

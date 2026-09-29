@@ -475,7 +475,7 @@ test("remote homes cannot grant local file access, and unguarded retirement refu
     assert.equal(panel.instances.length, 3, "the remote rows were actually admitted to the roster");
     await observed(port); // the local deployment's kernel-observed roots
     assert.equal((await fetch(`${base}/api/file?path=${encodeURIComponent(secret)}`)).status, 403);
-    assert.equal((await fetch(`${base}/api/file?path=${encodeURIComponent(join(ROOT, 'agents/cli-dev/soul/knowledge/index.md'))}`)).status, 200, "local knowledge remains readable");
+    assert.equal((await fetch(`${base}/api/file?path=${encodeURIComponent(join(ROOT, 'souls/oats-expert/AGENTS.md'))}`)).status, 200, "a local deployment file remains readable");
     const retired = await fetch(`${base}/api/retire/missing-home?ws=remote%3Aguard&server=host`, { method: "POST" });
     assert.equal(retired.status, 409);
     assert.equal((await retired.json()).code, 'E_PLAN_REQUIRED');

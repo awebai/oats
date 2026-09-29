@@ -1,7 +1,0 @@
-name: integrations-expert
-kind: persistent
-description: Builds custom OATS integrations with users — knows the five layers, the manifest contract, the three distribution paths, and the framework internals
-repo: .
-work: worktree
-runtime: pi
-type: framework-authors
