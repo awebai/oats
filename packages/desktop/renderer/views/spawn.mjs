@@ -26,6 +26,7 @@ import { cliAvailable, cliKnownUnavailable, cliStatus, refreshCli, onCliChange, 
 import { preselectSchedule } from "./schedules.mjs";
 import { preselectAutomationsTab } from "./automations.mjs";
 import { inspectSupported } from "../inspect-contract.mjs";
+import { createDataState, skeleton, statusLine } from "../loading.mjs";
 
 /** True while the CLI probe has never SETTLED (no response classified yet).
  * Pending is card-less by design, so disabled buttons must explain
@@ -41,6 +42,11 @@ const CSS = `
 .souls-bar .ws-segmented { margin-left:2px; }
 .workspace-header .wssel { max-width:100%; min-width:0; flex:0 1 140px; }
 .souls-sum { color:var(--muted); font-size:12px; }
+/* The grid's stale line (desktop/loading-states) sits between the toolbar and the scroller; nothing when empty. */
+.souls-notice { flex:none; padding:0 20px; }
+.souls-notice:empty { display:none; }
+.souls-notice .loading-notice { margin:0 0 10px; }
+.souls-bar .loading-refreshing { margin-left:auto; }
 .workspace-recovery { flex:none; min-width:0; padding:18px 20px; }
 .workspace-recovery[hidden] { display:none; }
 /* Counts are already in the Souls tab. Keep the full filter/CLI status for
@@ -295,7 +301,8 @@ ${spawnDialogCSS}</style>
               <div class="ws-segmented souls-group-by" role="group" aria-label="Group souls by"><button type="button" data-group-by="repo" aria-pressed="true">Repo</button><button type="button" data-group-by="team" aria-pressed="false">Team</button></div>
               <span class="souls-sum workspace-sr-only" role="status"></span>
             </div>
-            <div class="souls-grid"><div class="loading-block"><span class="spinner"></span> Loading souls…</div></div>
+            <div class="souls-notice"></div>
+            <div class="souls-grid"></div>
             <section class="workspace-discovery" hidden></section>
             <section id="workspace-soul-page" class="workspace-page workspace-soul-page" aria-label="Soul details" hidden></section>
             <section class="workspace-page workspace-cap-page" aria-label="Capability details" hidden></section>
@@ -305,6 +312,17 @@ ${spawnDialogCSS}</style>
       </div>
     </div>`;
   s.q = (cls) => el.querySelector("." + cls);
+  // The grid's loading state (desktop/loading-states item 5): pending paints card skeletons in the
+  // grid after 150ms, a failed first read its cause with Retry, a failed poll the stale line above
+  // the grid; the cards stay. The status line is a live region (the toolbar has no room for text).
+  {
+    const doc = el.ownerDocument, win = doc.defaultView;
+    s.gridStatus = statusLine(doc, { visuallyHidden: true, className: "souls-status" });
+    s.q("souls-bar").append(s.gridStatus);
+    s.gridState = createDataState({ doc, noun: "souls", region: s.q("souls-grid"), skeleton: () => gridSkeleton(s), status: s.gridStatus,
+      indicatorHost: s.q("souls-bar-lead"), noticeHost: s.q("souls-notice"), onRetry: () => { if (s.alive) void refresh(s, { user: true }); },
+      setTimeout: (fn, ms) => win.setTimeout(fn, ms), clearTimeout: (id) => win.clearTimeout(id) });
+  }
   // Move the actual node, never a copied projection: Workspace still owns all
   // requests, callbacks and unsaved form state. The optional shell host owns
   // presentation only and supplies an .oats-view wrapper for shared styles.
@@ -441,7 +459,8 @@ ${spawnDialogCSS}</style>
     s.discovery.reset();
     s.inspector.close(); closeCapability(s); s.page.close();
     closeSpawnModal(s, { repaint: false }); // the switch replaces the grid below
-    s.q("souls-grid").innerHTML = '<div class="loading-block"><span class="spinner"></span> Loading agents…</div>';
+    // Another workspace's cards leave at once; the new one is pending (a skeleton after 150ms, never a text block nor an empty message).
+    s.gridState.reset(); s.gridSignature = null; s.q("souls-grid").replaceChildren();
     // No force flag: if a newer B poll paints a B spawn modal before this
     // request resolves, the late switch refresh must respect that owner.
     refresh(s);
@@ -470,6 +489,7 @@ export function unmount() {
   state.alive = false;
   state.inspector.dispose(); state.page.dispose();
   state.presentation?.dispose();
+  state.gridState?.dispose();
   state.discovery.dispose();
   state.timers.forEach(clearInterval);
   (state.disposers || []).forEach((off) => { try { off(); } catch {} });
@@ -482,11 +502,12 @@ export function unmount() {
 }
 
 /* Exported for the deferred cross-workspace regression. */
-export async function refresh(s) {
+export async function refresh(s, { user = false } = {}) {
   const myGen = workspaceGeneration();       // capture at dispatch
   const myReq = s.rosterReq = (s.rosterReq || 0) + 1;
   const intent = { intent: selectionIntent, gen: myGen };
   const current = () => s.alive && myGen === workspaceGeneration() && myReq === s.rosterReq;
+  s.gridState?.begin({ user });
   let souls, panel;
   try {
     [souls, panel] = await Promise.all([
@@ -495,14 +516,16 @@ export async function refresh(s) {
     ]);
   } catch (error) {
     if (!current() || !ownsSelection(s, intent)) return;
-    const summary = s.q("souls-sum");
-    if (summary) { summary.classList?.remove("workspace-sr-only"); summary.textContent = `Unable to refresh souls: ${error.message || "unavailable"}. Retrying…`; }
-    return; // keep only this workspace's last good list
+    // The last good list stays (stale, with the cause and Retry above it); with nothing yet, the
+    // failed block replaces the skeleton. The 8s poll keeps trying either way.
+    s.gridState?.fail(error);
+    if (!s.gridState?.hasData) s.discovery?.rosterUnavailable?.(); // the Souls tab count: nothing, still (a pill would say "still loading")
+    return;
   }
   // discard deferred responses from a previous workspace — they'd paint A's
   // agent list over B's after a switch
   if (!current()) return;
-  if (!Array.isArray(souls?.agents)) return;
+  if (!Array.isArray(souls?.agents)) { s.gridState?.fail({ message: "The souls list could not be read.", code: "E_CLI_PROTOCOL" }); return; }
   s.souls = souls;
   s.rosterGen = myGen; // this roster belongs to the current workspace generation
   s.panelInstances = panel.instances || []; // reference-instance picker source
@@ -525,9 +548,45 @@ export async function refresh(s) {
   }
   s.discovery?.updateRoster(souls.agents, panel);
   s.inspector?.syncAvailability(); s.page?.syncAvailability();
+  settleGridState(s, souls);
   renderGrid(s);
   applyPreselect(s); // Quick Open handoff — after the roster is painted
   applyHome(s);
+}
+
+/** What the reply says about the souls list (spec 02's fields are optional; they must not be needed):
+ * `catalog.reason` (the kernel could not read the catalog) is a failed read: stale with cards, failed
+ * without; an observed deployment still reading (`refreshing: true`, no souls, no reason) stays pending;
+ * an unobserved deployment stays pending with the deployment's own copy in the grid; else the read
+ * succeeded, empty when it listed nothing. */
+function settleGridState(s, souls) {
+  const load = s.gridState; if (!load) return;
+  const agents = souls.agents, reason = souls.catalog?.reason || null;
+  const observedAt = typeof souls.observedAt === "string" ? souls.observedAt : null;
+  if (reason) {
+    // Souls listed beside the reason are data (the kernel's partial list): taken, then marked stale.
+    if (agents.length) load.succeed({ observedAt });
+    load.fail({ message: catalogReasonText(reason), code: typeof reason.code === "string" ? reason.code : null }); return;
+  }
+  if (s.deployment && s.deployment.status !== "observed") { load.defer(); return; }
+  if (!agents.length && souls.refreshing === true) { load.defer({ keepSkeleton: true }); return; }
+  load.succeed({ observedAt, empty: !agents.length });
+}
+function catalogReasonText(reason) {
+  const message = typeof reason?.message === "string" && reason.message ? reason.message : "";
+  return message ? `Couldn't read this workspace's souls: ${message}` : "Couldn't read this workspace's souls.";
+}
+/** Pending: one group's worth of card skeletons at the real card size — one row plus one. */
+function gridSkeleton(s) {
+  const grid = s.q("souls-grid"), doc = grid.ownerDocument;
+  const width = grid.clientWidth || 0, columns = Math.max(1, Math.floor((width - 40 + 14) / (240 + 14)));
+  const section = doc.createElement("section"); section.className = "souls-group skeleton-souls-group";
+  const title = doc.createElement("div"); title.className = "souls-group-title";
+  const bone = doc.createElement("span"); bone.className = "skeleton skeleton-line skeleton-group-title"; title.append(bone);
+  const cards = doc.createElement("div"); cards.className = "souls-group-cards";
+  for (let i = 0; i < columns + 1; i++) cards.append(skeleton(doc, "soul-card"));
+  section.append(title, cards); section.setAttribute("aria-hidden", "true"); section.dataset.skeleton = "soul-cards";
+  return section;
 }
 
 function matches(s, a) {
@@ -562,7 +621,6 @@ function renderGrid(s, { restoreFocus = true } = {}) {
     s.cliCardHandle.dispose(); s.cliCardHandle.el.remove(); s.cliCardHandle = null;
   }
   if (recovery) recovery.hidden = !cliKnownUnavailable();
-  grid.innerHTML = "";
   const list = s.souls.agents.filter((a) => matches(s, a));
   s.q("souls-sum").classList?.add("workspace-sr-only");
   s.q("souls-sum").textContent = `${list.length} of ${s.souls.agents.length} souls${cliProbePending() ? " · Checking CLI…" : ""}`;
@@ -577,12 +635,24 @@ function renderGrid(s, { restoreFocus = true } = {}) {
     if (!s.cliCardHandle) s.cliCardHandle = cliCard(grid.ownerDocument, s.ctx);
     if (s.cliCardHandle.el.parentNode !== recovery) recovery.append(s.cliCardHandle.el);
   }
+  // No data yet (desktop/loading-states): the grid is the loading controller's — its skeleton, its failed
+  // block — and never an empty message. The one exception is a deployment that is not observed: that
+  // is a truthful state of its own, said in the deployment's words (the controller shows no skeleton then).
+  const unobserved = !!s.deployment && s.deployment.status !== "observed";
+  const hasData = s.gridState ? s.gridState.hasData : true;
+  if (!hasData && !unobserved) { s.gridSignature = null; return; }
+  // Skip unchanged repaints: an identical poll never rebuilds the cards under focus or a hover.
+  const signature = JSON.stringify([hasData, unobserved && s.deployment, s.souls.agents, s.filterText, s.groupBy, noCli, cliKnownUnavailable(), cliProbePending(), cliStatus()?.features ?? null,
+    s.panelInstances.map((i) => [i.instance, i.agent, i.agentsRoot, i.running === true]), s.deployment?.workspaceStatus?.members ?? null,
+    s.selAgent && [s.selAgent.name, s.selAgent.agentsRoot, s.selAgent.server], s.inspectRef && [s.inspectRef.name, s.inspectRef.agentsRoot, s.inspectRef.server]]);
+  if (signature === s.gridSignature && grid.childElementCount) return;
+  s.gridSignature = signature;
+  grid.innerHTML = "";
   if (!list.length) {
     const empty = grid.ownerDocument.createElement("div");
     empty.className = "empty"; empty.style.gridColumn = "1/-1";
     // An unobserved deployment is not an empty one: say why (a missing
     // advertised feature is named; a kernel refusal keeps its code/message).
-    const unobserved = s.deployment && s.deployment.status !== "observed";
     empty.textContent = s.souls.agents.length ? "Nothing matches the filter."
       : unobserved ? deploymentUnavailableText(s.deployment) : "No souls are materialized in this deployment yet.";
     grid.append(empty);

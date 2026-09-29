@@ -83,10 +83,18 @@ export function skeleton(doc, shape, { columns = 4, width } = {}) {
       break;
     }
     case 'soul-card': {
-      el = element(doc, 'div', 'skeleton-item skeleton-soul-card');
-      const head = element(doc, 'span', 'skeleton-card-head');
-      head.append(bone(doc, 'skeleton-mark'), bone(doc, 'skeleton-line skeleton-name'));
-      el.append(head, bone(doc, 'skeleton-line skeleton-text'), bone(doc, 'skeleton-line skeleton-text short'));
+      // Wears the real card classes (.soul-tile > .soul-card > .sbody (.sname .glyph / .stitle / .scontext, .sdesc, .schips
+      // .schip) + .sfoot) so the Souls grid's own CSS (views/spawn.mjs) gives it the card's height, padding and gaps.
+      el = element(doc, 'div', 'skeleton-item skeleton-soul-card soul-tile');
+      const card = element(doc, 'div', 'soul-card skeleton-card');
+      const body = element(doc, 'span', 'sbody'), name = element(doc, 'span', 'sname'), identity = element(doc, 'span', 'sidentity');
+      identity.append(bone(doc, 'skeleton-line skeleton-name stitle'), bone(doc, 'skeleton-line skeleton-context scontext'));
+      name.append(bone(doc, 'skeleton-mark glyph'), identity);
+      const desc = element(doc, 'span', 'sdesc skeleton-desc'); desc.append(bone(doc, 'skeleton-line skeleton-text'), bone(doc, 'skeleton-line skeleton-text short'));
+      const chips = element(doc, 'span', 'schips'); chips.append(bone(doc, 'schip skeleton-chip'), bone(doc, 'schip skeleton-chip short'));
+      body.append(name, desc, chips);
+      const foot = element(doc, 'span', 'sfoot'); foot.append(bone(doc, 'skeleton-line skeleton-activity sactivity'), bone(doc, 'skeleton-button'));
+      card.append(body, foot); el.append(card);
       break;
     }
     case 'table-row': {
@@ -386,12 +394,17 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
     /** The read settled without an observation (the server's deployment is still pending): stay
      * pending — aria-busy, the one announcement — but with no skeleton, since the surface paints the
      * deployment's own copy. The next begin() adds nothing; the first observation settles it. */
-    defer() {
+    defer({ keepSkeleton = false } = {}) {
       if (disposed) return;
       if (hasData) { api.cancel(); return; } // with data on screen there is nothing to hold: the read is simply over
-      pendingTimer = clearTimer(pendingTimer); refreshingTimer = clearTimer(refreshingTimer);
-      removeSkeleton(); removeIndicator(); removeFailed();
-      busy = false; user = false; state = 'pending'; setRegionBusy(true); say(wording.loading(noun));
+      refreshingTimer = clearTimer(refreshingTimer);
+      // keepSkeleton: the server answered "still reading" (an observed deployment whose list is being read,
+      // `refreshing: true` with nothing held): the subject IS loading, so the skeleton stays or still arrives.
+      if (!keepSkeleton) { pendingTimer = clearTimer(pendingTimer); removeSkeleton(); }
+      removeIndicator(); removeFailed();
+      busy = false; user = false;
+      if (state !== 'pending') { state = 'pending'; if (keepSkeleton && !skeletonEl && pendingTimer === null) pendingTimer = schedule(showSkeleton, PENDING_DELAY_MS); }
+      setRegionBusy(true); say(wording.loading(noun));
       setBusyControls(); syncQuiet();
     },
     /** The in-flight read was superseded or abandoned (the view hid, the host cancelled): drop the
