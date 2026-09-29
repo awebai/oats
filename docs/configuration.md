@@ -274,5 +274,10 @@ oats spawn <soul> --preview    # the exact modules, teams and provider payloads
 oats doctor                    # this deployment's files and the lock
 ```
 
-Environment: `OATS_REMOTE_CACHE` relocates the fetch cache;
-`OATS_PACKAGE_CATALOG` names an alternative package catalog file.
+Environment: `OATS_REMOTE_CACHE` relocates the fetch cache (which also holds
+the bounded parsed-read cache and the observations `--max-age` reuses; all of
+it is safe to delete); `OATS_PACKAGE_CATALOG` names an alternative package
+catalog file. The read verbs (`status`, `workspace status`, `souls`,
+`capabilities`, `inspect`, and the read forms of `teams` and `soul teams`)
+take `--max-age <seconds>` to reuse a remote head observed that recently
+([Observation reuse](desktop-cli-api.md#observation-reuse-feature-observe-max-age-oats-0301)).

@@ -367,7 +367,7 @@ async function inspectCmd() {
   if (t) {
     if (t.resolutionError) return bail(t.resolutionError.code, t.resolutionError.message, t.resolutionError.details ?? undefined);
     const doc = inspectDocument(t, { kernel: OATS_VERSION });
-    if (JSON_MODE) { jsonOk(doc); return; }
+    if (JSON_MODE) { jsonOk(withObservation(doc)); return; }
     printWorkspaceInspect(doc); return;
   }
 }
@@ -1017,13 +1017,40 @@ async function readinessCmd() {
  *  first remote read, closed when the command ends (the `finally` of the dispatch) and, for the
  *  process.exit paths, on exit — no `git cat-file --batch` child outlives the command. */
 let readSession = null;
+/** The validated `--max-age` seconds (checked once at dispatch: maxAgeRefusal), null when not given. */
+let maxAgeGiven = null;
 function commandSession() {
   if (!readSession) {
-    readSession = remoteModule.createReadSession();
+    readSession = remoteModule.createReadSession({ maxAge: maxAgeGiven ?? 0 });
     process.on("exit", () => readSession.closeNow());
   }
   return readSession;
 }
+/** Which kernel command forms take --max-age: THE allow-list (docs/desktop-cli-api.md "Observation reuse").
+ *  → null when this form reads with observation reuse, else the E_BAD_ARGS message. `head` is argv before `--`. */
+const MAX_AGE_READS = "status, workspace status, souls, capabilities, inspect --soul|--home, and the read forms of teams and soul teams";
+function maxAgeRefusal(command, head) {
+  const word = (i) => (head[i] !== undefined && !head[i].startsWith("--") ? head[i] : undefined);
+  const refuse = (form) => `--max-age is not accepted by \`oats ${form}\`: only the read verbs reuse observations (${MAX_AGE_READS})`;
+  if (head.includes("--server")) return "--max-age cannot be combined with --server: observation reuse is local to this machine";
+  switch (command) {
+    case "status": case "souls": case "capabilities": case "inspect": return null;
+    case "workspace": return word(1) === "status" ? null : refuse(["workspace", word(1)].filter(Boolean).join(" "));
+    case "teams": return word(1) === undefined ? null : refuse(`teams ${word(1)}`);
+    case "soul": {
+      if (word(1) !== "teams") return refuse(["soul", word(1)].filter(Boolean).join(" "));
+      const edit = ["--add", "--remove", "--default", "--clear-default"].find((f) => head.includes(f));
+      return edit ? refuse(`soul teams ${edit}`) : null;
+    }
+    default: {
+      const sub = ["package", "schedule", "session", "trigger", "automations", "launch-config", "server", "instance", "operation", "pane"].includes(command) ? word(1) : undefined;
+      return refuse([command, sub].filter(Boolean).join(" "));
+    }
+  }
+}
+/** A read verb's JSON with the observation block — only when --max-age was given (0 included); without
+ *  it the document is exactly what it was before the feature (Desktop decodes closed shapes). */
+const withObservation = (doc) => (maxAgeGiven === null ? doc : { ...doc, observation: commandSession().observation() });
 
 /** Remote options threaded into every remote call. OATS_REMOTE_CACHE relocates
  * the content-addressed fetch cache (tests never touch ~/.cache); `session` is the command's read session. */
@@ -1455,7 +1482,7 @@ async function workspaceCmd() {
     result.warnings.push({ code: "automation-trust-stale", entry, message: `oats-local.yaml automations.trust names ${entry}, which is no workspace trigger or schedule${actx.snapshot ? "" : " (no automations snapshot yet: run oats sync)"}; its member may not have synced yet` });
   }
   await workspaceStatusFacts(result, discovery, lock, ctx);
-  if (JSON_MODE) { jsonOk(result); return; }
+  if (JSON_MODE) { jsonOk(withObservation(result)); return; }
   console.log(`workspace ${workspaceName(discovery)}  (${discovery.key} @ ${short(discovery.commit)})  local ${shortPath(ctx.localPath)}\n`);
   if (standalone) console.log(`  (${standaloneNote(discovery)})\n`);
   console.log("Members:");
@@ -1545,7 +1572,7 @@ async function teamsCmd() {
     else if (sub === "default") result = V.teamsDefault(ctx, label);
   } catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details); throw e; }
   const doc = V.teamsDocument(result ? { ...ctx, local: result.local } : ctx);
-  if (JSON_MODE) { jsonOk(result ? { ...doc, changed: result.changed } : doc); return; }
+  if (JSON_MODE) { jsonOk(result ? { ...doc, changed: result.changed } : withObservation(doc)); return; }
   if (result) console.log(result.changed ? `${sub === "add" ? `Declared team ${label}` : sub === "remove" ? `Removed team ${label}` : `The default team is now ${label}`} in ${shortPath(ctx.localPath)}` : "Nothing to change");
   console.log(`default   ${doc.defaultTeam ?? "(none)"}`);
   if (!doc.teams.length) console.log("teams     (none: `oats aweb setup` creates them, or `oats teams add <label> --team <id>`)");
@@ -1589,7 +1616,7 @@ async function soulCmd() {
     if (mutating) result = V.soulTeamsEdit(teamsCtx, key, edit);
     doc = V.soulTeamsDocument(result ? { ...teamsCtx, local: result.local } : teamsCtx, { soul, key });
   } catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details); throw e; }
-  if (JSON_MODE) { jsonOk(result ? { ...doc, changed: result.changed } : doc); return; }
+  if (JSON_MODE) { jsonOk(result ? { ...doc, changed: result.changed } : withObservation(doc)); return; }
   if (result) console.log(result.changed ? `Updated the teams of ${key === "*" ? "every soul" : key} in ${shortPath(teamsCtx.localPath)}` : "Nothing to change");
   console.log(`${key === "*" ? "every soul" : key} on this computer: default ${doc.defaultTeam ? `${doc.defaultTeam.label} (${doc.defaultTeam.from})` : "(none)"}`);
   if (doc.teams.length) printTable(["team", "id", "from", "why"], doc.teams.map((t) => [t.default ? `${t.label} (default)` : t.label, t.team ?? "(no id yet)", t.from, t.via.join(",")]));
@@ -1608,7 +1635,7 @@ async function itemsCmd(kind) {
   if (kind === "capabilities") await capabilityFacts(items, discovery, lock, ctx, remote);
   if (kind === "souls") await soulFacts(items, discovery, lock, ctx, remote);
   const standalone = discovery.standalone === true;
-  if (JSON_MODE) { jsonOk({ [`${kind}Api`]: 1, standalone: standalone || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, commit: discovery.commit }, [kind]: items, problems: discovery.problems }); return; }
+  if (JSON_MODE) { jsonOk(withObservation({ [`${kind}Api`]: 1, standalone: standalone || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, commit: discovery.commit }, [kind]: items, problems: discovery.problems })); return; }
   console.log(`${kind} of workspace ${workspaceName(discovery)} (${discovery.key} @ ${short(discovery.commit)})${standalone ? `  — ${standaloneNote(discovery)}` : ""}\n`);
   if (!items.length) console.log("  (none)");
   else if (kind === "souls") printTable(["name", "origin", "teams here", "work"], items.map((s) => [s.name, s.origin, s.teams === null ? "(invalid: oats teams)" : s.teams.map((t) => (t.default ? `${t.label}*` : t.label)).join(",") || "—", s.work ?? "—"]));
@@ -1813,7 +1840,8 @@ async function status() {
         if (s) i.soul = { repoKey: s.repoKey, commit: s.commit, current: s.current?.commit ?? null, status: s.status, ...(s.reason ? { reason: s.reason } : {}), ...(s.package ? { package: s.package, version: s.version, currentVersion: s.current?.version ?? null } : {}) };
       }
     }
-    console.log(JSON.stringify({ root, agents: data, ...(ws ? { workspace: ws.unreachable ? { reachable: false, ...ws.unreachable } : { reachable: true } } : {}), ...(problems.length ? { problems } : {}), ...envelopeWarnings() }, null, 2)); return;
+    const observation = maxAgeGiven === null ? {} : { observation: commandSession().observation() };
+    console.log(JSON.stringify({ root, agents: data, ...observation, ...(ws ? { workspace: ws.unreachable ? { reachable: false, ...ws.unreachable } : { reachable: true } } : {}), ...(problems.length ? { problems } : {}), ...envelopeWarnings() }, null, 2)); return;
   }
   console.log(`oats status — agents root ${shortPath(root)}\n`);
   if (ws?.unreachable) console.log(`  workspace: unreachable (${ws.unreachable.reason}) — drift unknown\n`);
@@ -2894,7 +2922,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-2", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2 }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-2", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2 }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -3286,6 +3314,16 @@ try {
   const selector = head.find((a) => /^--(deployment|resolution|artifact-set)$/.test(a));
   const refuse = (message, details) => { if (JSON_MODE) jsonFail("E_UNSUPPORTED_MODE", message, details); die(message); };
   if (selector) refuse(`${selector}: a captured selector is refused (the captured/portable path was removed in 0.26); run the command in its workspace deployment or instance home instead`, { selector });
+  // --max-age (feature observe-max-age): ONE allow-list for every kernel command, here — never a
+  // per-command copy. A capability namespace's argv is its provider's.
+  if (kernelArgv && head.includes("--max-age")) {
+    const refusal = maxAgeRefusal(cmd, head);
+    if (refusal) cmdFail("E_BAD_ARGS", refusal);
+    const raw = flag("max-age");
+    if (raw === true) cmdFail("E_BAD_ARGS", `--max-age needs a value: whole seconds from 0 to ${remoteModule.MAX_AGE_LIMIT}`);
+    if (!/^\d{1,5}$/.test(raw) || Number(raw) > remoteModule.MAX_AGE_LIMIT) cmdFail("E_BAD_ARGS", `--max-age takes whole seconds from 0 to ${remoteModule.MAX_AGE_LIMIT}, got ${JSON.stringify(raw)}`);
+    maxAgeGiven = Number(raw);
+  }
   const inherited = ["OATS_RESOLUTION", "OATS_DEPLOYMENT"].filter((k) => process.env[k]);
   if (inherited.length && cmd !== "version") refuse(`this environment carries a captured context (${inherited.join(", ")}): the captured/portable path was removed in 0.26, and nothing is run against the current context in its place — retire the captured home and re-spawn it from the deployment`, { inherited });
   if (cmd === "inspect" && head.includes("--request")) {
@@ -3390,6 +3428,7 @@ Usage:
   oats version [--json]                      kernel version; --json emits the
                                             Desktop CLI API v1 probe payload
   oats status [--json]                       agents, souls, running instances
+      [--max-age <s>]                        reuse head observations up to <s> s old (below)
   oats server add <id> --ssh <alias>         register another machine's OATS (OpenSSH alias,
       --workspace </abs/path> [--oats <p>]   remote workspace, remote oats path; no keys stored;
       [--path <dir:dir>]                    --path = dirs prepended to the remote PATH, e.g. ~/.local/bin)
@@ -3493,7 +3532,7 @@ Usage:
                                             a detached external retirement runs
   oats inspect [--dir <scope>] [--soul <name>   one authoritative JSON answer for a GUI: souls
       [--agents-root <abs>]] [--home <abs>]   (harness defaults, editability, instructions),
-      [--json]                              installed capabilities with health, effective
+      [--max-age <s>] [--json]              installed capabilities with health, effective
                                             layer bindings and activation, declared
                                             operations with availability; --home answers the
                                             running home's recorded modules and their drift
@@ -3534,19 +3573,20 @@ Usage:
       | remove <id>  [--dir <d>]            workspace repo is the current checkout; otherwise
                                             print the line to add (the file travels through Git)
   oats workspace status [--dir <d>] [--json] membership table (confirmed / no-backlink /
-                                            cannot-read / backlink-elsewhere), locked packages
+      [--max-age <s>]                       cannot-read / backlink-elsewhere), locked packages
   oats capabilities [--dir <d>] [--json]     every capability of every confirmed member (a
-                                            private one is listed as repo-owned: usable only by
+      [--max-age <s>]                       private one is listed as repo-owned: usable only by
                                             its own repo's souls) + the locked packages
   oats souls [--dir <d>] [--json]            every soul of every confirmed member + external souls
-                                            (souls have no private mode), with origin
+      [--max-age <s>]                       (souls have no private mode), with origin
                                             (member <key> @ <commit> | package <id> v<ver>) and its
                                             teams on this deployment
   oats teams [--json] | add <label> --team <id> [--description <d>] | remove <label>
       | default <label>  [--dir <d>]        this deployment's teams (shared + local), the
-                                            default; add/remove/default edit oats-local.yaml
+      [--max-age <s>] (the read form only)  default; add/remove/default edit oats-local.yaml
   oats soul teams <soul>|'*' [--add a,b] [--remove a,b] [--default <l> | --clear-default]
       [--dir <d>] [--json]                  which teams a soul (or every soul) belongs to here
+      [--max-age <s>] (without an edit)
   oats instance git <instance> [--home <abs>] [--dir <d>] [--json]
                                              read-only Git observation of the instance's work
                                              tree: branch, status (renames kept), ahead/behind
@@ -3600,6 +3640,16 @@ The turn record (core — every conversation captured, searchable, replicated):
 
   oats <namespace> <command> [args…]         run an operational command only when its
                                             capability is active (e.g. oats okf harvest)
+
+Observation reuse (feature observe-max-age):
+  --max-age <seconds>                        on the read verbs only — status, workspace status,
+                                            souls, capabilities, inspect --soul|--home, and the
+                                            read forms of teams and soul teams — reuse a remote
+                                            head observation up to <seconds> old (0–86400; 0 is
+                                            live) instead of asking the remote again; the JSON
+                                            then carries observation { observedAt (the oldest
+                                            head used), reused }. Refused (E_BAD_ARGS) by every
+                                            other command, an edit form, and with --server
 
 Layers: ${LAYERS.join(", ")}. Workspace model v2: docs/design/2026-09-23-workspace-module-contracts.md.`;
 }

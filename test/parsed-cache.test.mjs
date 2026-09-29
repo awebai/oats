@@ -161,15 +161,18 @@ test("prune: least recently used entries go until count AND bytes are under the 
   assert.deepEqual(readdirSync(dir).sort(), Array.from({ length: 10 }, (_, i) => `${String(i + 10).padStart(2, "0")}.json`));
   // The byte bound alone.
   assert.deepEqual(pruneStores(root, { fingerprint: fp, limits: { maxEntries: 1000, keepEntries: 1000, maxBytes: 900, keepBytes: 500 }, now }), { removed: 5, entries: 5, bytes: 500 });
-  // Another kernel's directory: kept while in use, removed after the stale window; stale temp files go.
-  const fresh = join(root, ".parsed", "d".repeat(64)), stale = join(root, ".parsed", "e".repeat(64));
-  for (const d of [fresh, stale]) mkdirSync(d, { recursive: true });
+  // Another kernel's directory: kept while in use, removed after the stale window; old observation records and temp files go.
+  const fresh = join(root, ".parsed", "d".repeat(64)), stale = join(root, ".parsed", "e".repeat(64)), observed = join(root, ".observed");
+  for (const d of [fresh, stale, observed]) mkdirSync(d, { recursive: true });
   const ago = (ms) => new Date(now - ms);
   utimesSync(stale, ago(PARSED_LIMITS.staleFingerprintMs + 60_000), ago(PARSED_LIMITS.staleFingerprintMs + 60_000));
+  writeFileSync(join(observed, "old.json"), "{}"); utimesSync(join(observed, "old.json"), ago(PARSED_LIMITS.staleObservationMs + 60_000), ago(PARSED_LIMITS.staleObservationMs + 60_000));
+  writeFileSync(join(observed, "new.json"), "{}");
   writeFileSync(join(dir, ".x.json.1.ab.tmp"), "partial"); utimesSync(join(dir, ".x.json.1.ab.tmp"), ago(PARSED_LIMITS.staleTempMs + 60_000), ago(PARSED_LIMITS.staleTempMs + 60_000));
   pruneStores(root, { fingerprint: fp, now });
   assert.equal(existsSync(fresh), true);
   assert.equal(existsSync(stale), false);
+  assert.deepEqual(readdirSync(observed), ["new.json"]);
   assert.equal(readdirSync(dir).some((f) => f.endsWith(".tmp")), false);
   // memoAtCommit prunes after its first write in a session, and only then.
   const root2 = scratch();

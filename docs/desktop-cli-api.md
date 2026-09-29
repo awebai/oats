@@ -38,7 +38,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
              "instance-events-2","schedule-history","schedule-read-2","spawn-preview-2","spawn-idempotency","spawn-idempotency-2","spawn-apply-2",
              "workspace-v2","instance-modules","spawn-provider-payload","served-identity","packages-no-approval","spawn-name","settings-origins",
              "team-model-2","settings-declared","capabilities-private","layers-from","harness","package-souls","triggers","automations","desktop-facts","launch-preference",
-             "preview-composed-from"],
+             "preview-composed-from","observe-max-age"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2}
 ```
@@ -95,6 +95,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
 | `desktop-facts` | the facts under [Desktop facts](#desktop-facts-feature-desktop-facts-oats-0290) | |
 | `launch-preference` | soul and local launch preferences; `launch`, `launchCurrent`, `launchFrom`; `--reselect-launch`; `key` on soul and agent rows ([Launch preferences](#soul-launch-preferences-feature-launch-preference-oats-0300)) | |
 | `preview-composed-from` | `composedFrom` on preview `modules[]` ([Composition](#the-preview)) | |
+| `observe-max-age` | `--max-age <s>` on the read verbs and their `observation` block ([Observation reuse](#observation-reuse-feature-observe-max-age-oats-0301)) | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -181,6 +182,56 @@ an inherited `OATS_DEPLOYMENT` or `OATS_RESOLUTION` (`details.inherited`).
 homes in `problems[]`: `legacy-captured-home {code, instances, homes,
 message}` and `legacy-local-agents {code, dirs, instances, message}`.
 
+<a id="observation-reuse-feature-observe-max-age-oats-0301"></a>
+### Observation reuse (feature `observe-max-age`, OATS 0.30.1)
+
+Every read asks each remote for its current head (`git ls-remote`). With
+`--max-age <seconds>` a read verb reuses a head this machine observed at most
+that many seconds ago instead, so a refresh right after another costs no
+network round trip. Gate the flag on the feature: an older kernel may ignore
+it and answer live, without the block.
+
+```text
+oats status | workspace status | souls | capabilities | inspect --soul|--home
+     | teams | soul teams <soul>   … --max-age <seconds> --json
+```
+
+- **Values:** whole seconds, `0` to `86400`. `0` is live: it reuses nothing.
+  Anything else is `E_BAD_ARGS` (`--max-age needs a value: whole seconds from 0
+  to 86400`, `--max-age takes whole seconds from 0 to 86400, got "<v>"`).
+- **The block:** with the flag (`0` included) the document gains one key,
+  `observation: {observedAt, reused}`: in the result of an envelope, at the top
+  level of the roster (after `agents`). `observedAt` is the OLDEST remote head
+  the answer used, so the answer is at least that fresh everywhere; `reused` is
+  `true` when any head came from an earlier observation. A command that read no
+  remote head reports the time it started and `reused: false`. Without the
+  flag the key is absent and every document is exactly as before.
+- **What is reused:** only remote heads (the commit a branch or tag named),
+  never local state. Instances, `oats-local.yaml`, the lock and the backlink
+  of every member are read afresh by every command. A reused head's
+  `observedAt` (for example `workspace.observedAt` in `workspace status`) is
+  the time it was observed, not now.
+- **When a head is not reused:** it is older than the flag allows (or dated
+  more than 5 s in the future); it was observed through a different URL
+  spelling of the same repository (ssh vs https) or for a different ref; its
+  commit can no longer be fetched. Each is observed live, as without the flag.
+  A live observation that fails is the usual error, never an older head.
+- **Refusals:** every other command, every edit form (`teams add|remove|default`,
+  `soul teams --add|--remove|--default|--clear-default`) and any `--server`
+  invocation refuse the flag before reading or writing anything, with
+  `E_BAD_ARGS` "--max-age is not accepted by \`oats <form>\`: only the read
+  verbs reuse observations (status, workspace status, souls, capabilities,
+  inspect --soul|--home, and the read forms of teams and soul teams)" and,
+  with `--server`, "--max-age cannot be combined with --server: observation
+  reuse is local to this machine".
+  A capability command's argv (`oats <namespace> …`) is its provider's: the
+  kernel neither reads nor refuses `--max-age` there.
+
+The observations are kept under the remote cache
+(`$OATS_REMOTE_CACHE`, default `~/.cache/oats/remotes`), in `.observed/`,
+beside the bounded parsed-read cache in `.parsed/`; neither stores a remote
+URL. Deleting either is always safe.
+
 <a id="inspect-readiness-and-operation-run-on-the-workspace-model-operationsapi-2-soulsapi-2-readinessapi-2-oats-0260"></a>
 ## Inspect, readiness and operation run
 
@@ -214,7 +265,7 @@ A module's origin (`from`) is `{kind: "member", repoKey, commit}` or `{kind:
 ### `oats inspect`
 
 ```text
-oats inspect (--home <abs> | --soul <name> [--dir <d>]) --json
+oats inspect (--home <abs> | --soul <name> [--dir <d>]) [--max-age <s>] --json
 ```
 
 An instance subject, abridged:
@@ -597,7 +648,7 @@ discovers the workspace over the network to check. Other errors: `E_USAGE`,
 ### `oats workspace status`
 
 ```text
-oats workspace status [--dir <d>] --json
+oats workspace status [--dir <d>] [--max-age <s>] --json
 ```
 
 Read-only (it writes no lock):
@@ -646,8 +697,8 @@ Read-only (it writes no lock):
 ### `oats capabilities` and `oats souls`
 
 ```text
-oats capabilities [--dir <d>] --json
-oats souls [--dir <d>] --json
+oats capabilities [--dir <d>] [--max-age <s>] --json
+oats souls [--dir <d>] [--max-age <s>] --json
 ```
 
 Every item of every confirmed member, the external souls, and the locked
@@ -835,7 +886,7 @@ soul subject), `""` when unknown.
 ### `oats teams`
 
 ```text
-oats teams [--dir <d>] --json
+oats teams [--dir <d>] [--max-age <s>] --json
 oats teams add <label> --team <id> [--description <d>] --json
 oats teams remove <label> --json
 oats teams default <label> --json
@@ -874,6 +925,7 @@ oats teams default <label> --json
 
 ```text
 oats soul teams <soul>|'*' [--add a,b] [--remove a,b] [--default <label> | --clear-default] [--dir <d>] --json
+oats soul teams <soul>|'*' [--dir <d>] [--max-age <s>] --json    (the read form only)
 ```
 
 ```json
@@ -1346,10 +1398,11 @@ the keyed-spawn fields `decision`, `spawnIdempotencyKey`, `spawnCompleted` and
 ### The roster (`oats status --json`)
 
 ```text
-oats status [--dir <d>] --json
+oats status [--dir <d>] [--max-age <s>] --json
 ```
 
-Not an envelope: `{root, agents, workspace?, problems?, warnings?}`.
+Not an envelope: `{root, agents, observation?, workspace?, problems?, warnings?}`
+(`observation` only with [`--max-age`](#observation-reuse-feature-observe-max-age-oats-0301)).
 
 ```json
 {"root":"/w/agents",

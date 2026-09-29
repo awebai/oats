@@ -1,8 +1,8 @@
 // The kernel read verbs over the Northwind fixture (real bare remotes, the real CLI) with the read
-// session and the parsed cache: the cache never changes an answer (cold and warm, against a run that
-// cannot cache at all), two processes filling it at once agree and leave it intact, no
-// `git cat-file --batch` child outlives a command (success or failure), and local state — instances,
-// oats-local.yaml, the lock — is read afresh on every command.
+// session and the parsed cache: the cache never changes an answer (cold, warm, warm with --max-age,
+// against a run that cannot cache at all), two processes filling it at once agree and leave it intact,
+// no `git cat-file --batch` child outlives a command (success or failure), and local state — instances,
+// oats-local.yaml, the lock — is read afresh on every command, --max-age or not.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
@@ -30,9 +30,9 @@ function oatsAsync(args) {
   });
 }
 const json = (r) => { assert.equal(r.status, 0, `exit 0\n${r.stdout.slice(0, 2000)}\n${r.stderr.slice(0, 2000)}`); return JSON.parse(r.stdout); };
-/** Per-run fields only: timestamps. */
-const normal = (doc) => JSON.parse(JSON.stringify(doc, (k, v) => (k === "observedAt" || k === "takenAt" ? undefined : v)));
-const clearStores = () => rmSync(join(cache(), ".parsed"), { recursive: true, force: true });
+/** Per-run fields only: timestamps and the observation block. */
+const normal = (doc) => JSON.parse(JSON.stringify(doc, (k, v) => (k === "observedAt" || k === "takenAt" || k === "observation" ? undefined : v)));
+const clearStores = () => { rmSync(join(cache(), ".parsed"), { recursive: true, force: true }); rmSync(join(cache(), ".observed"), { recursive: true, force: true }); };
 const VERBS = () => ({
   souls: ["souls", "--json"], capabilities: ["capabilities", "--json"], workspaceStatus: ["workspace", "status", "--json"], status: ["status", "--json"],
   inspectSoul: ["inspect", "--soul", "release-manager", "--json"], inspectHome: ["inspect", "--home", home, "--json"],
@@ -56,9 +56,9 @@ test.before(async () => {
 });
 test.after(() => { if (base) { try { chmodSync(cache(), 0o755); } catch {} rmSync(base, { recursive: true, force: true }); } });
 
-test("the cache never changes an answer: cold and warm equal a run that cannot cache at all (unwritable cache root)", { timeout: 300_000 }, () => {
+test("the cache never changes an answer: cold, warm and warm --max-age 60 equal a run that cannot cache at all (unwritable cache root)", { timeout: 300_000 }, () => {
   clearStores();
-  // No cache: the root is read-only, so .parsed cannot exist — and every command still succeeds.
+  // No cache: the root is read-only, so neither .parsed nor .observed can exist — and every command still succeeds.
   chmodSync(cache(), 0o555);
   const baseline = {};
   try { for (const [name, args] of Object.entries(VERBS())) baseline[name] = json(oats(args)); }
@@ -66,9 +66,14 @@ test("the cache never changes an answer: cold and warm equal a run that cannot c
   assert.equal(existsSync(join(cache(), ".parsed")), false);
   for (const [name, args] of Object.entries(VERBS())) {
     clearStores();
-    const cold = json(oats(args)), warm = json(oats(args));
+    const cold = json(oats(args)), warm = json(oats(args)), aged = json(oats([...args, "--max-age", "60"]));
     assert.deepStrictEqual(normal(cold), normal(baseline[name]), `${name}: cold`);
     assert.deepStrictEqual(normal(warm), normal(baseline[name]), `${name}: warm`);
+    assert.deepStrictEqual(normal(aged), normal(baseline[name]), `${name}: warm --max-age 60`);
+    const observation = (d) => d.observation ?? d.result?.observation;
+    assert.equal(observation(cold), undefined, `${name}: no observation without --max-age`);
+    assert.equal(observation(warm), undefined);
+    assert.equal(observation(aged).reused, true, `${name}: the heads were reused`);
   }
   assert.ok(readdirSync(join(cache(), ".parsed")).length === 1, "one fingerprint directory");
 });
@@ -87,6 +92,7 @@ test("two processes filling an empty cache at once: both answers are right and e
     assert.ok(!f.endsWith(".tmp"), `no temp file left: ${f}`);
     assert.equal(JSON.parse(readFileSync(f, "utf8")).v, 1, f);
   }
+  for (const f of readdirSync(join(cache(), ".observed"))) JSON.parse(readFileSync(join(cache(), ".observed", f), "utf8"));
 });
 
 test("no git cat-file --batch child outlives the command — after success and after a refusal mid-command", { timeout: 120_000 }, async () => {
@@ -106,38 +112,38 @@ test("no git cat-file --batch child outlives the command — after success and a
   }
 });
 
-test("invalidation: instances, oats-local.yaml and the lock are read afresh — a warm cache reflects a retire, a teams edit and a rewritten lock at once", { timeout: 300_000 }, () => {
-  const read = (args) => json(oats(args));
-  // An instance spawned now, then retired: status shows each state immediately.
+test("invalidation: instances, oats-local.yaml and the lock are read afresh — --max-age 60 reflects a retire, a teams edit and a rewritten lock at once", { timeout: 300_000 }, () => {
+  const aged = (args) => json(oats([...args, "--max-age", "60"]));
+  // An instance spawned now, then retired: status --max-age 60 shows each state immediately.
   const spawned = json(oats(["spawn", "platform-engineer", "--purpose", "tmp", "--work", "directory", "--no-launch", "--json"]));
   const instances = (doc) => doc.agents.flatMap((a) => a.instances.map((i) => i.instance));
-  assert.ok(instances(read(["status", "--json"])).includes(spawned.result.instance));
+  assert.ok(instances(aged(["status", "--json"])).includes(spawned.result.instance));
   json(oats(["retire", spawned.result.instance, "--json"]));
-  assert.ok(!instances(read(["status", "--json"])).includes(spawned.result.instance), "the retire shows on the next read");
+  assert.ok(!instances(aged(["status", "--json"])).includes(spawned.result.instance), "the retire shows on the next --max-age read");
   // A teams edit in oats-local.yaml (what Desktop does through `oats teams` / `oats soul teams`).
   const teamsOf = (doc) => doc.result.souls.find((s) => s.name === "release-manager").teams.map((t) => t.label);
-  assert.ok(!teamsOf(read(["souls", "--json"])).includes("desk"));
+  assert.ok(!teamsOf(aged(["souls", "--json"])).includes("desk"));
   json(oats(["teams", "add", "desk", "--team", "local:desk.example", "--json"]));
   json(oats(["soul", "teams", "release-manager", "--add", "desk", "--json"]));
-  assert.ok(teamsOf(read(["souls", "--json"])).includes("desk"), "the teams edit shows on the next read");
+  assert.ok(teamsOf(aged(["souls", "--json"])).includes("desk"), "the teams edit shows on the next --max-age read");
   // A sync that rewrites the lock (here: without oats.okf).
   const lockFile = join(dep, "oats-lock.json");
   const lock = JSON.parse(readFileSync(lockFile, "utf8"));
-  const before = read(["workspace", "status", "--json"]).result;
+  const before = aged(["workspace", "status", "--json"]).result;
   assert.ok(before.packages.some((p) => p.id === "oats.okf"));
   delete lock.packages["oats.okf"];
   writeFileSync(lockFile, JSON.stringify(lock, null, 2) + "\n");
-  const after = read(["workspace", "status", "--json"]).result;
-  assert.ok(!after.packages.some((p) => p.id === "oats.okf") && after.unsynced.includes("oats.okf"), "the rewritten lock shows on the next read");
-  assert.ok(!read(["capabilities", "--json"]).result.capabilities.some((c) => c.kind === "package" && c.package === "oats.okf"));
+  const after = aged(["workspace", "status", "--json"]).result;
+  assert.ok(!after.packages.some((p) => p.id === "oats.okf") && after.unsynced.includes("oats.okf"), "the rewritten lock shows on the next --max-age read");
+  assert.ok(!aged(["capabilities", "--json"]).result.capabilities.some((c) => c.kind === "package" && c.package === "oats.okf"));
   json(oats(["sync", "--json"]));
 });
 
-test("invalidation: a member commit that moves is read at its new commit", { timeout: 300_000 }, async () => {
+test("invalidation: a member commit that moves is read at its new commit (a live observation, or --max-age 0)", { timeout: 300_000 }, async () => {
   const soulsOf = (doc) => doc.result.souls.filter((s) => s.repoKey === fx.keys.platform).map((s) => [s.name, s.commit]);
   const before = soulsOf(json(oats(["souls", "--json"])));
   const moved = await moveMember(fx, "platform", async (_work, { writeTree }) => writeTree({ "souls/platform-sre/soul.yaml": { yaml: { schemaVersion: 2, name: "platform-sre", description: "SRE.", work: "directory" } }, "souls/platform-sre/AGENTS.md": "# sre\n" }));
-  for (const args of [["souls", "--json"]]) {
+  for (const args of [["souls", "--json"], ["souls", "--json", "--max-age", "0"]]) {
     const now = soulsOf(json(oats(args)));
     assert.ok(now.every(([, c]) => c === moved.commit), `${args.join(" ")}: every platform soul at the new commit`);
     assert.ok(now.some(([n]) => n === "platform-sre"));

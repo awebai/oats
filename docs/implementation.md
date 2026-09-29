@@ -86,7 +86,10 @@ differs), `package-manifests` (a package's manifests), `list` (a skill
 listing) and `tree-oids` (the tree ids of a set of directories). An entry is only ever a pure function of those bytes and this kernel's
 code, never local state and never a transient error; it is written
 atomically, a corrupt one is a miss, and `pruneStores` bounds the store
-(`PARSED_LIMITS`, least recently used first). Adding a cached item means naming it in `memoAtCommit` and adding it to
+(`PARSED_LIMITS`, least recently used first). `--max-age` adds the observation
+store `<cache>/.observed/` ([Observation reuse](desktop-cli-api.md#observation-reuse-feature-observe-max-age-oats-0301)):
+one record per (repo key, ref args, url digest), so two spellings of one repo
+keep a record each; the url itself is never written. Adding a cached item means naming it in `memoAtCommit` and adding it to
 `test/parsed-cache.test.mjs`; `test/read-path-scale.test.mjs` pins the member
 scaling by call count.
 
