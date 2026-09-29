@@ -64,6 +64,15 @@
         }
       }
     },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "This host's terminal session defaults for NEW launches (0.31). A launched home keeps the backend and session it recorded.",
+      "properties": {
+        "backend": { "enum": ["tmux", "herdr"], "description": "The session backend of a spawn without --backend; wins over OATS_SESSION_BACKEND. Absent: OATS_SESSION_BACKEND, else tmux." },
+        "tmuxSession": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$", "description": "The tmux session new tmux instances open their windows in. Absent: OATS_TMUX_SESSION, else PI_AGENTS_TMUX_SESSION (pre-0.31), else oats-agents." }
+      }
+    },
     "host": {
       "type": "object",
       "additionalProperties": false,

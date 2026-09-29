@@ -199,6 +199,29 @@ test("a live harness is refused; a stopped instance starts in its recorded sessi
   assert.equal(tmux("display-message", "-p", "-t", `=${session}:=live`, "#{pane_current_path}"), f.home, "restart restores the instance cwd after shell navigation");
 });
 
+test("a pre-0.31 home recorded in pi-agents starts in pi-agents, whatever the 0.31 session defaults say", async () => {
+  const f = await makeHome("legacy");
+  const legacy = { ...f.meta.tmux, session: "pi-agents" };
+  writeFileSync(join(f.home, "instance.json"), JSON.stringify({ ...f.meta, tmux: legacy }, null, 2) + "\n");
+  writeFileSync(f.baselinePath, JSON.stringify({ ...readJson(f.baselinePath), runtime: { launched: true, tmux: { session: "pi-agents", window: "legacy", socket } } }, null, 2) + "\n", { mode: 0o600 });
+  const localPath = join(fx.dep, "oats-local.yaml");
+  const local = readFileSync(localPath, "utf8");
+  writeFileSync(localPath, `${local}session:\n  backend: herdr\n  tmuxSession: oats-agents\n`);
+  const env = { OATS_TMUX_SESSION: process.env.OATS_TMUX_SESSION, OATS_SESSION_BACKEND: process.env.OATS_SESSION_BACKEND };
+  Object.assign(process.env, { OATS_TMUX_SESSION: "elsewhere", OATS_SESSION_BACKEND: "herdr" });
+  try {
+    const r = startInstanceSession(f.home);
+    assert.deepEqual(r.target, { backend: "tmux", session: "pi-agents", window: "legacy", socket: resolve(socket) });
+    assert.ok(tmux("list-windows", "-t", "pi-agents", "-F", "#{window_name}").split("\n").includes("legacy"));
+    assert.deepEqual(readJson(f.baselinePath).runtime.tmux, { session: "pi-agents", window: "legacy", socket: resolve(socket) });
+    await harnessReady(f, "legacy");
+    releaseHarness(f.home);
+  } finally {
+    writeFileSync(localPath, local);
+    for (const [k, v] of Object.entries(env)) if (v === undefined) delete process.env[k]; else process.env[k] = v;
+  }
+});
+
 test("a lost tmux server on the recorded socket is a stopped instance: the session comes back on that socket", async () => {
   const f = await makeHome("reboot");
   tmux("kill-server");

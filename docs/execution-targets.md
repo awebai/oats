@@ -35,16 +35,27 @@ variables point at are described in
 
 ## Backends
 
-`oats spawn --backend tmux|herdr` chooses the backend (default `tmux`). The
-backend binary must be installed on the execution host. The chosen session
+A new launch's backend is, in order: `oats spawn --backend tmux|herdr`; the
+deployment's `oats-local.yaml` `session.backend`
+([configuration.md](configuration.md#the-file)); the `OATS_SESSION_BACKEND`
+environment variable; tmux. Desktop and schedule spawns that name no backend
+follow the same order. The spawn result, the spawn preview and the `launched`
+event name the deciding layer as `backendFrom`: `flag`, `local`, `env` or
+`default` (feature `session-backend-config`, 0.31). The backend binary must be
+installed on the execution host. A launched home keeps the backend and session
+it recorded: `session start` and `restart` never re-read these layers. The chosen session
 target is recorded twice: in `instance.json` and in an independent lifecycle
 receipt. Every session command checks that the two agree
 (`E_RUNTIME_AUTHORITY_MISMATCH` otherwise).
 
 ### tmux
 
-Each instance is a window named after the instance in the tmux session
-`pi-agents` (override with `PI_AGENTS_TMUX_SESSION`). The receipt records the
+Each instance is a window named after the instance in a tmux session: the
+deployment's `session.tmuxSession`, else `OATS_TMUX_SESSION`, else
+`PI_AGENTS_TMUX_SESSION` (the pre-0.31 variable), else `oats-agents`. Before
+0.31 the default was `pi-agents`; a home launched then keeps the `pi-agents`
+session it recorded, and `oats status` reads each home in its recorded
+session. The receipt records the
 session, window and socket. The spawn result prints the attach command.
 
 ### Herdr

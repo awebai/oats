@@ -37,7 +37,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
              "instance-events-2","schedule-history","schedule-read-2","spawn-preview-2","spawn-idempotency","spawn-idempotency-2","spawn-apply-2",
              "workspace-v2","instance-modules","spawn-provider-payload","served-identity","packages-no-approval","spawn-name","settings-origins",
              "team-model-2","settings-declared","capabilities-private","layers-from","harness","package-souls","triggers","automations","desktop-facts","launch-preference",
-             "preview-composed-from"],
+             "preview-composed-from","session-backend-config"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2}
 ```
@@ -90,6 +90,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
 | `desktop-facts` | the facts under [Desktop facts](#desktop-facts-feature-desktop-facts-oats-0290) | |
 | `launch-preference` | soul and local launch preferences; `launch`, `launchCurrent`, `launchFrom`; `--reselect-launch`; `key` on soul and agent rows ([Launch preferences](#soul-launch-preferences-feature-launch-preference-oats-0300)) | |
 | `preview-composed-from` | `composedFrom` on preview `modules[]` ([Composition](#the-preview)) | |
+| `session-backend-config` | oats-local.yaml `session.backend` / `session.tmuxSession`; `backendFrom` (`flag`, `local`, `env` or `default`) on the spawn result, the spawn preview and the `launched` event ([Backends](execution-targets.md#backends)) | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -1116,6 +1117,10 @@ it to a temporary copy (`soulFetched: true`).
   (absent when nothing sets it) are the resolved selection.
   `backendStatus` is `{name, installed, started: false}`, `null` with
   `--no-launch`. `executable` is the resolved harness binary.
+- `backendFrom` (feature `session-backend-config`, 0.31) names the layer that
+  chose `backend`: `"flag"`, `"local"` (oats-local.yaml `session.backend`),
+  `"env"` (`OATS_SESSION_BACKEND`) or `"default"` (tmux). The spawn result and
+  the `launched` event carry it too.
 - `modelSource` is `"explicit"`, `"soul default"`, `"launch-config <name>"`,
   `"native default"` or `"native default (explicit)"` (`--model
   @native-default`). Omitting `--model` and asking for the native default are
@@ -1207,8 +1212,8 @@ with `--expect-decision` records the key and decision in `instance.json`.
 
 ```json
 {"instance":"rm-api","agent":"rm","home":"/w/agents/rm/instances/rm-api","work":"worktree","branch":"agents/rm-api","launched":true,"warnings":[],
- "tmux":{"session":"pi-agents","window":"rm-api"},"repo":"/w/agents-repo","harness":"pi","model":null,"parent":null,"sibling":null,"relation":null,
- "spawnOrigin":"operator","attach":"tmux attach -t pi-agents","decision":{"instance":"rm-api","revision":"c557d8ec9a272ba1c1739dc3"},"replayed":false,
+ "tmux":{"session":"oats-agents","window":"rm-api"},"repo":"/w/agents-repo","harness":"pi","model":null,"parent":null,"sibling":null,"relation":null,
+ "spawnOrigin":"operator","attach":"tmux attach -t oats-agents","decision":{"instance":"rm-api","revision":"c557d8ec9a272ba1c1739dc3"},"replayed":false,
  "wake":{"requested":false,"saved":null,"error":null},"launchConfig":null,
  "launch":{"version":2,"harness":"pi","launchConfig":null,"launchConfigSource":null,"executable":"/usr/local/bin/pi","executableDeclared":null,
            "executableResolvedFrom":"PATH","args":[],"env":{},"model":null,"hooks":{"launch":{},"env":{},"contributions":[]},"prompt":{"kind":"task-file","file":"TASK.md"}}}

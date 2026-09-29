@@ -1,6 +1,9 @@
 import { execFileSync } from "node:child_process";
 import { basename } from "node:path";
 
+/** The session a home without a recorded tmux session is looked for in: the kernel's default (0.31). */
+export const DEFAULT_TMUX_SESSION = process.env.OATS_TMUX_SESSION || process.env.PI_AGENTS_TMUX_SESSION || "oats-agents";
+
 const shells = new Set(["sh", "bash", "zsh", "fish", "dash", "ksh", "login"]);
 
 /** One read per socket, and at most one process snapshot per roster collection. */
@@ -44,7 +47,7 @@ export function createTmuxStatusReader({ exec = execFileSync } = {}) {
     }
     return false;
   }
-  return (meta, defaultSession = "pi-agents") => {
+  return (meta, defaultSession = DEFAULT_TMUX_SESSION) => {
     const tmux = { ...meta.tmux, session: meta.tmux?.session || defaultSession, window: meta.tmux?.window || meta.instance };
     const status = readSocket(tmux.socket || "");
     const unknown = (error) => ({ tmux, running: null, runtimeState: "unreachable", runtimeError: error });
