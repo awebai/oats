@@ -223,7 +223,9 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   // `status` says the gate (a CLI or deployment state, its own truthful copy); the catalog's loading
   // controller has its own line, stale-line host and skeleton / failed host, shown on Capabilities only.
   const status = node('p', '', 'discovery-status'); status.setAttribute('role', 'status');
-  const loadStatus = statusLine(doc, { className: 'discovery-status discovery-load-status' });
+  // The status line speaks only (like the sidebar's and the hierarchy's): the skeleton, the stale line and the
+  // failed block are the visible states, and a visually hidden line leaves no empty box between the toolbar and them.
+  const loadStatus = statusLine(doc, { visuallyHidden: true, className: 'discovery-load-status' });
   const notice = node('div', undefined, 'discovery-notice');
   const capState = node('div', undefined, 'catalog-state');
   const refreshHost = node('span', undefined, 'discovery-refreshing'); capTools.prepend(refreshHost);
