@@ -62,6 +62,34 @@ The kernel is runtime-neutral: nothing in `lib/` depends on a harness or on
 a provider. Provider behaviour lives in capabilities; the kernel supplies
 their contracts ([layers](layers.md)).
 
+### The remote read path
+
+Every CLI command owns one read session (`createReadSession` in
+`remote.mjs`, carried to every remote call as `remoteOptions.session`; the
+CLI closes it when the command ends). A library caller without a session
+gets the plain per-call behaviour. Within a session:
+
+- a head is observed once per (cache repo, ref) and a commit peeled once;
+- a commit's tree is listed once (`git ls-tree -r -t -l`, bounded by
+  `TREE_INDEX_BUDGET`; anything odd falls back to the per-path reads), and
+  blobs come from one `git cat-file --batch` reader per cache repo (at most
+  12 open, killed through `process-group.mjs` on timeout and at close);
+- discovery reads members eight at a time (`DISCOVERY_CONCURRENCY`) with
+  serial results: declaration order, the first failure in that order.
+
+Across commands, `memoAtCommit` keeps parsed reads under
+`<cache>/.parsed/<kernel fingerprint>/`, keyed by (repo key, full commit,
+item). The items: `workspace` (the workspace file), `membership` (a member's
+backlink outcome), `enumerate` (a member's souls and capabilities),
+`package-soul` and `external-soul` (one soul file each; their error handling
+differs), `package-manifests` (a package's manifests), `list` (a skill
+listing) and `tree-oids` (the tree ids of a set of directories). An entry is only ever a pure function of those bytes and this kernel's
+code, never local state and never a transient error; it is written
+atomically, a corrupt one is a miss, and `pruneStores` bounds the store
+(`PARSED_LIMITS`, least recently used first). Adding a cached item means naming it in `memoAtCommit` and adding it to
+`test/parsed-cache.test.mjs`; `test/read-path-scale.test.mjs` pins the member
+scaling by call count.
+
 ## Tests and gates
 
 | command | what it checks |

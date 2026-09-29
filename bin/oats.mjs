@@ -1013,11 +1013,23 @@ async function readinessCmd() {
 // remotes (lib/workspace.mjs), packages resolve to exact commits (lib/packages.mjs,
 // lock v3) and the only persisted state is `oats-lock.json` beside oats-local.yaml.
 
+/** This command's read session (lib/remote.mjs createReadSession): one per process, created at the
+ *  first remote read, closed when the command ends (the `finally` of the dispatch) and, for the
+ *  process.exit paths, on exit — no `git cat-file --batch` child outlives the command. */
+let readSession = null;
+function commandSession() {
+  if (!readSession) {
+    readSession = remoteModule.createReadSession();
+    process.on("exit", () => readSession.closeNow());
+  }
+  return readSession;
+}
+
 /** Remote options threaded into every remote call. OATS_REMOTE_CACHE relocates
- * the content-addressed fetch cache (tests never touch ~/.cache). */
+ * the content-addressed fetch cache (tests never touch ~/.cache); `session` is the command's read session. */
 function remoteOptionsFromEnv() {
   const cacheDir = process.env.OATS_REMOTE_CACHE;
-  return cacheDir ? { cacheDir: resolve(cacheDir) } : {};
+  return { ...(cacheDir ? { cacheDir: resolve(cacheDir) } : {}), session: commandSession() };
 }
 
 /** The v2 deployment context at --dir: { dir, localPath, local, deploymentDir, remoteOptions }. */
@@ -1616,14 +1628,26 @@ async function capabilityFacts(rows, discovery, lock, ctx, remote = remoteModule
   for (const [id, entry] of Object.entries(lock?.packages || {})) {
     try { packages.set(id, await lockedPackageCapabilities(id, entry, { catalog, remote, remoteOptions })); } catch { packages.set(id, null); }
   }
+  // Indexes built once (a scan of every member per row was O(rows × members)): the first member row per
+  // key, as `find` gave; the member rows per (key, commit), in row order.
+  const memberOf = new Map();
+  for (const m of discovery.members) if (!memberOf.has(m.key)) memberOf.set(m.key, m);
+  const capOf = (member, name) => member?.capabilities.find((c) => c.name === name);
+  const rowsAt = new Map();
+  for (const r of rows) {
+    if (r.kind === "package") continue;
+    const k = `${r.repoKey}\0${r.commit}`;
+    if (!rowsAt.has(k)) rowsAt.set(k, []);
+    rowsAt.get(k).push(r);
+  }
   // A member capability's fingerprint is its Git tree at the commit (one listing per member commit); a
   // package's is the package integrity (the lock).
   const trees = new Map();
   const treeOf = async ({ repoKey, commit }, ref, dir) => {
     const key = `${repoKey}\0${commit}`;
     if (!trees.has(key)) {
-      const member = discovery.members.find((m) => m.key === repoKey);
-      const dirs = rows.filter((r) => r.kind !== "package" && r.repoKey === repoKey && r.commit === commit).map((r) => member?.capabilities.find((c) => c.name === r.name)?.path).filter(Boolean);
+      const member = memberOf.get(repoKey);
+      const dirs = (rowsAt.get(key) || []).map((r) => capOf(member, r.name)?.path).filter(Boolean);
       trees.set(key, remoteModule.remoteTreeOids(ref, commit, [...new Set(dirs)], remoteOptions).catch(() => new Map()));
     }
     return (await trees.get(key)).get(dir) ?? null;
@@ -1634,7 +1658,7 @@ async function capabilityFacts(rows, discovery, lock, ctx, remote = remoteModule
       const read = packages.get(row.package), cap = read?.capabilities.find((c) => c.name === row.name);
       if (cap) ({ manifest, dir } = cap), ref = read.ref;
     } else {
-      const cap = discovery.members.find((m) => m.key === row.repoKey)?.capabilities.find((c) => c.name === row.name);
+      const cap = capOf(memberOf.get(row.repoKey), row.name);
       if (cap) { manifest = cap.manifest; dir = cap.path; ref = memberRef(discovery, remoteModule, row.repoKey); }
     }
     const provides = manifest ? await capabilityProvides({ ref, commit: row.commit, dir, manifest, remote, remoteOptions }) : { skills: null, commands: null, hooks: null };
@@ -1649,9 +1673,14 @@ async function capabilityFacts(rows, discovery, lock, ctx, remote = remoteModule
  *  discovery and the lock without spawning (soulSpawnability). */
 async function soulFacts(rows, discovery, lock, ctx, remote = remoteModule) {
   const { soulSpawnability } = await import("../lib/instance-resolution.mjs");
-  const entryOf = (row) => row.kind === "package" ? (discovery.packageSouls || []).find((p) => p.qualifiedName === row.qualifiedName)
-    : row.kind === "external" ? (discovery.external || []).map((e) => e.soul).find((x) => x.name === row.name && x.repoKey === row.repoKey)
-    : discovery.members.find((m) => m.key === row.repoKey)?.souls.find((x) => x.name === row.name);
+  // Indexes built once, each keeping the FIRST match as `find` did (a scan per row was O(souls × members)).
+  const first = (pairs) => { const m = new Map(); for (const [k, v] of pairs) if (!m.has(k)) m.set(k, v); return m; };
+  const packageSoul = first((discovery.packageSouls || []).map((p) => [p.qualifiedName, p]));
+  const externalSoul = first((discovery.external || []).map((e) => e.soul).map((x) => [`${x.name}\0${x.repoKey}`, x]));
+  const memberOf = first(discovery.members.map((m) => [m.key, m]));
+  const entryOf = (row) => row.kind === "package" ? packageSoul.get(row.qualifiedName)
+    : row.kind === "external" ? externalSoul.get(`${row.name}\0${row.repoKey}`)
+    : memberOf.get(row.repoKey)?.souls.find((x) => x.name === row.name);
   for (const row of rows) {
     const entry = entryOf(row);
     row.file = { path: `${row.path}/soul.yaml`, url: remoteModule.browseUrl(row.repoKey, row.commit, `${row.path}/soul.yaml`) };
@@ -1707,9 +1736,13 @@ async function statusDrift(data) {
     if (hasSoul(i)) { try { const row = soulDriftOf(i, discovery); if (row) soul.set(key, row); } catch { /* an unreadable soul record shows as no soul row */ } }
   }
   // The roster's soul row reflects the CURRENT member commit too (the pointer may lag a moved member).
+  // First match per key, as `find` gave, from indexes built once (not a scan per agent).
+  const packageSoulAt = new Map(), memberOf = new Map();
+  for (const p of discovery.packageSouls || []) { const k = `${p.package}\0${p.path}`; if (!packageSoulAt.has(k)) packageSoulAt.set(k, p); }
+  for (const m of discovery.members) if (m && !memberOf.has(m.key)) memberOf.set(m.key, m);
   for (const [, stamp] of souls) {
-    if (typeof stamp.package === "string") { const now = (discovery.packageSouls || []).find((p) => p.package === stamp.package && p.path === stamp.path); if (now) stamp.current = now.commit; continue; }
-    const member = discovery.members.find((m) => m && m.key === stamp.repoKey);
+    if (typeof stamp.package === "string") { const now = packageSoulAt.get(`${stamp.package}\0${stamp.path}`); if (now) stamp.current = now.commit; continue; }
+    const member = memberOf.get(stamp.repoKey);
     if (member && typeof member.commit === "string" && (member.confirmed || (discovery.standalone === true && member.key === discovery.key))) stamp.current = member.commit;
   }
   return { drift, soul, souls, unreachable: null };
@@ -3577,4 +3610,7 @@ Layers: ${LAYERS.join(", ")}. Workspace model v2: docs/design/2026-09-23-workspa
   // already names the offending file — the readers re-raise it with one.
   if (JSON_MODE) jsonFail(e.code, e.message);
   die(e.message);
+} finally {
+  // The command's read session: every `git cat-file --batch` child ends before the process does.
+  if (readSession) await readSession.close();
 }
