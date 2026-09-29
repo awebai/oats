@@ -31,3 +31,12 @@ test("Herdr workspace and pane public IDs remain usable after the ninth allocati
   }
   assert.throws(() => herdrTargetKey({ ...target, paneId: "wB:p1;other" }), /invalid Herdr/);
 });
+test("Desktop reads a protocol-22 target (Herdr 0.9) and checks every server against the target's own protocol", () => {
+  const snapshotAt = (protocol) => () => JSON.stringify({ result: { snapshot: { protocol, panes: [{ pane_id: "w1:p1", terminal_id: target.terminalId }] } } });
+  for (const protocol of [20, 22]) {
+    const selected = { ...target, protocol };
+    assert.equal(readHerdrTarget(selected, snapshotAt(protocol)).present, true);
+    assert.throws(() => readHerdrTarget(selected, snapshotAt(protocol === 20 ? 22 : 20)), /incompatible/, "never a retag to what the server speaks");
+  }
+  for (const protocol of [21, 23, "22", null, undefined]) assert.throws(() => herdrTargetKey({ ...target, protocol }), /invalid Herdr/);
+});

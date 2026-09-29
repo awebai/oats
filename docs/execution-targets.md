@@ -59,9 +59,15 @@ id distinguishes a replacement occupant of the same pane.
   (default `~/.config/...`) and starts `herdr --session oats server` if no
   server is running there.
 - The adapter speaks the Herdr socket API at an explicit protocol version,
-  with no negotiation. New sessions use protocol 20. A recorded session target
-  may carry protocol 20 or 22, and each call checks that the server's snapshot
-  reports the recorded protocol.
+  20 or 22. A new session records the protocol its server reports (20 for
+  Herdr 0.8, 22 for 0.9) and refuses any other; before 0.30.3 it always
+  selected 20, so Herdr 0.9 could not be spawned on. A recorded target is
+  never renegotiated: each call, the kernel's and the Desktop's, checks that
+  the server's snapshot reports the recorded protocol.
+- Herdr cannot give a pane a command at creation, so OATS types the launch
+  command into the pane's shell. It waits until the shell has drawn its prompt
+  (`herdr pane read`, at most 10 s): text typed earlier is cut at the
+  terminal's line-buffer limit.
 
 ## Lifecycle
 
