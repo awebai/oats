@@ -7,7 +7,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
@@ -168,4 +168,33 @@ test("a command an earlier kernel recorded round-trips byte for byte, and runs w
   assert.equal(launchShellCommand(recorded, home), recorded.replace(` '/opt/homebrew/bin/claude'`, ` PATH=${dir}:"$PATH" '/opt/homebrew/bin/claude'`));
   const withPath = recorded.replace(`KEY="$OATS_LAUNCH_REF_KEY"`, `KEY="$OATS_LAUNCH_REF_KEY" PATH='/usr/bin:/bin'`);
   assert.equal(launchShellCommand(withPath, home), recorded.replace(`KEY="$OATS_LAUNCH_REF_KEY"`, `KEY="$OATS_LAUNCH_REF_KEY" PATH=${dir}:'/usr/bin:/bin'`));
+});
+
+test("a symlinked .oats or .oats/bin is refused: the shim is never written outside the home, and nothing starts", async () => {
+  for (const [name, component] of [["shim-link-oats", ".oats"], ["shim-link-bin", join(".oats", "bin")]]) {
+    const home = await spawnHome(name);
+    const outside = join(base, `outside-${name}`);
+    write(join(outside, "bin", "oats"), "#!/bin/sh\necho outside\n", 0o755);
+    const before = readFileSync(join(outside, "bin", "oats"));
+    const link = join(home, component);
+    // Keep what .oats holds (the module copies) when it is the link that moves.
+    if (component === ".oats") cpSync(join(home, ".oats", "modules"), join(outside, "modules"), { recursive: true });
+    rmSync(link, { recursive: true, force: true });
+    symlinkSync(component === ".oats" ? outside : join(outside, "bin"), link);
+    assert.throws(() => startInstanceSession(home), (e) => e.code === "E_LAUNCH_SHIM" && e.message.includes(link) && /nothing was started/.test(e.message), component);
+    assert.ok(lstatSync(join(outside, "bin", "oats")).isFile(), `${component}: the outside oats is still a file`);
+    assert.deepEqual(readFileSync(join(outside, "bin", "oats")), before, `${component}: byte-identical`);
+    assert.ok(!windows().includes(name), `${component}: no window`);
+    assert.ok(!existsSync(join(home, ".oats-start-pending.json")), `${component}: no start receipt`);
+  }
+});
+
+test("kernelBin stays in the home's record and out of every JSON answer (spawn, status)", async () => {
+  const spawned = await fx.spawn("dev", { name: "shim-json", work: "checkout", launch: false, launchConfig: "probe" });
+  assert.equal(readJson(join(spawned.home, "instance.json")).launch.kernelBin, KERNEL_BIN, "recorded on disk");
+  assert.ok(spawned.launch && !Object.hasOwn(spawned.launch, "kernelBin"), "the spawn answer's recipe carries no kernelBin");
+  const status = JSON.parse(fx.cli(["status", "--json"]).stdout);
+  const row = status.agents.flatMap((a) => a.instances).find((i) => i.instance === "shim-json");
+  assert.ok(row?.launch && !Object.hasOwn(row.launch, "kernelBin"), "the status row's recipe carries no kernelBin");
+  assert.ok(!JSON.stringify(status).includes("kernelBin"));
 });

@@ -1211,8 +1211,7 @@ with `--expect-decision` records the key and decision in `instance.json`.
  "spawnOrigin":"operator","attach":"tmux attach -t pi-agents","decision":{"instance":"rm-api","revision":"c557d8ec9a272ba1c1739dc3"},"replayed":false,
  "wake":{"requested":false,"saved":null,"error":null},"launchConfig":null,
  "launch":{"version":2,"harness":"pi","launchConfig":null,"launchConfigSource":null,"executable":"/usr/local/bin/pi","executableDeclared":null,
-           "executableResolvedFrom":"PATH","args":[],"env":{},"model":null,"hooks":{"launch":{},"env":{},"contributions":[]},"prompt":{"kind":"task-file","file":"TASK.md"},
-           "kernelBin":"/usr/local/lib/node_modules/@awebai/oats/bin/oats.mjs"}}
+           "executableResolvedFrom":"PATH","args":[],"env":{},"model":null,"hooks":{"launch":{},"env":{},"contributions":[]},"prompt":{"kind":"task-file","file":"TASK.md"}}}
 ```
 
 (`decision` is abridged: it is the full bound decision.)

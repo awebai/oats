@@ -328,8 +328,7 @@
             "prompt": {
               "kind": "task-file",
               "file": "TASK.md"
-            },
-            "kernelBin": "<kernel>/bin/oats.mjs"
+            }
           },
           "command": "OATS_INSTANCE='dev-pi-worktree-kstub-mstub-modellist' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub-modellist' PI_AGENT_INSTANCE='dev-pi-worktree-kstub-mstub-modellist' PI_AGENT_HOME='<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub-modellist' GOLDEN_BROKER_ENDPOINT='<redacted>' '<base>/bin/pi' --append-system-prompt '<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub-modellist/AGENTS.md' --approve --name 'dev-pi-worktree-kstub-mstub-modellist' --model 'anthropic/claude-sonnet-4-5:thinking' '@TASK.md' --golden-channel stub",
           "createdAt": "<createdAt>",

@@ -159,7 +159,8 @@ a link to the launching kernel's `bin/oats.mjs`, and runs the harness with
 machine whose `PATH` finds another kernel first. A launch configuration's own
 `PATH` (literal or `fromEnv`) comes after it. A restart by a different kernel
 re-points the link to that kernel; `spawn --no-launch` writes it too. The
-recipe records the target as `launch.kernelBin`; `oats status` prints it
+recipe in `instance.json` records the target as `launch.kernelBin` (no JSON
+answer carries it); `oats status` prints it
 (`kernel:`) under `--verbose`, or when it is not the `oats` running the status.
 A launch that cannot write the link fails with `E_LAUNCH_SHIM` naming the path
 and the cause: a spawn is rolled back, a start starts nothing. The recorded

@@ -326,8 +326,7 @@
             "prompt": {
               "kind": "task-file",
               "file": "TASK.md"
-            },
-            "kernelBin": "<kernel>/bin/oats.mjs"
+            }
           },
           "command": "OATS_INSTANCE='dev-pi-workspace-kstub-mstub' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-pi-workspace-kstub-mstub' PI_AGENT_INSTANCE='dev-pi-workspace-kstub-mstub' PI_AGENT_HOME='<base>/deployment/agents/dev/instances/dev-pi-workspace-kstub-mstub' GOLDEN_BROKER_ENDPOINT='<redacted>' '<base>/bin/pi' --append-system-prompt '<base>/deployment/agents/dev/instances/dev-pi-workspace-kstub-mstub/AGENTS.md' --approve --name 'dev-pi-workspace-kstub-mstub' '@TASK.md' --golden-channel stub",
           "createdAt": "<createdAt>",

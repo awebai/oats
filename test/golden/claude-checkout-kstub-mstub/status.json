@@ -324,8 +324,7 @@
             "prompt": {
               "kind": "task-file",
               "file": "TASK.md"
-            },
-            "kernelBin": "<kernel>/bin/oats.mjs"
+            }
           },
           "command": "OATS_INSTANCE='dev-claude-checkout-kstub-mstub' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-claude-checkout-kstub-mstub' PI_AGENT_INSTANCE='dev-claude-checkout-kstub-mstub' PI_AGENT_HOME='<base>/deployment/agents/dev/instances/dev-claude-checkout-kstub-mstub' GOLDEN_BROKER_ENDPOINT='<redacted>' '<base>/bin/claude' --golden-channel stub -- \"$(cat TASK.md)\"",
           "createdAt": "<createdAt>",
