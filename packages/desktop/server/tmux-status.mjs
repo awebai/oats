@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { basename } from "node:path";
 
 /** The session a home without a recorded tmux session is looked for in: the kernel's default (0.31),
- * mirrored from lib/core.mjs DEFAULT_TMUX_SESSION — change both. */
+ * mirrored from the kernel's DEFAULT_TMUX_SESSION (its core module; the Desktop never imports it) — change both. */
 export const DEFAULT_TMUX_SESSION = process.env.OATS_TMUX_SESSION || process.env.PI_AGENTS_TMUX_SESSION || "oats-agents";
 
 const shells = new Set(["sh", "bash", "zsh", "fish", "dash", "ksh", "login"]);
