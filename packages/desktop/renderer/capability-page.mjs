@@ -7,7 +7,7 @@
 import { createSoulMark } from './identity-marks.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { capabilitySource, capabilityUse, capabilityRow, memberNames, layerLabel, sourceChip } from './workspace-catalog.mjs';
-import { skeleton, wording, observedText, observedAgeText, isOldObservation } from './loading.mjs';
+import { skeleton, noticeElement, updateNotice, isOldObservation } from './loading.mjs';
 
 /** The shared page chrome: bar, columns, section titles and side cards. */
 export const pageCardCSS = `
@@ -174,30 +174,32 @@ export function packageOrigin(source) {
   return git ? `git · ${git[1]}` : source;
 }
 
-/** The catalog's age line for a page (desktop/loading-states): stale (the read failed; Retry, the cause
- * behind Details) or an old observation; nothing when the catalog is current. `state`: the catalog
- * controller's state; `observedAt`: ISO or null; `cause`: the failure's text. */
-export function catalogNotice(doc, { state, observedAt = null, cause = null, onRetry = null } = {}, now = Date.now()) {
-  const stale = state === 'stale', old = !stale && isOldObservation(observedAt, now);
-  if (!stale && !old) return null;
-  const notice = el(doc, 'div', null, 'loading-notice'); notice.dataset.kind = stale ? 'stale' : 'observed';
-  const age = observedText(observedAt, now);
-  notice.append(el(doc, 'span', stale ? (age ? `${wording.couldNotRefresh('capabilities')} · ${age}` : wording.couldNotRefresh('capabilities')) : wording.observed(observedAgeText(observedAt, now)), 'loading-notice-text'));
-  if (stale) {
-    if (cause) notice.title = cause;
-    const retry = el(doc, 'button', wording.retry, 'act loading-retry'); retry.type = 'button'; retry.dataset.focusKey = 'retry';
-    retry.addEventListener('click', () => { if (retry.getAttribute('aria-disabled') !== 'true') onRetry?.(); });
-    if (typeof onRetry !== 'function') retry.hidden = true;
-    notice.append(retry);
-    if (cause) { const more = el(doc, 'details', null, 'loading-notice-details'); more.append(el(doc, 'summary', 'Details'), el(doc, 'p', cause, 'loading-notice-cause')); notice.append(more); }
-  }
-  return notice;
+/** Which age line a page mirroring the catalog's controller shows: 'stale' (the read failed: Retry, the
+ * cause behind Details), 'observed' (an old observation) or null (current). `state`: the controller's
+ * state (a refreshing read keeps the settled kind through `settled`); `observedAt`: ISO or null. */
+export function catalogNoticeKind({ state, settled = state, observedAt = null } = {}, now = Date.now()) {
+  const kind = state === 'stale' || (state === 'refreshing' && settled === 'stale') ? 'stale' : null;
+  if (kind) return kind;
+  return isOldObservation(observedAt, now) ? 'observed' : null;
+}
+/** The page's copy of the controller's notice (loading.mjs `noticeElement`, so the two never drift):
+ * built once per kind and updated in place by `updateCatalogNotice` — its Retry keeps focus, wears
+ * `aria-disabled` while the re-read runs, and the age ticks with the host's polls. */
+export function catalogNotice(doc, observation = {}, now = Date.now()) {
+  const kind = catalogNoticeKind(observation, now);
+  if (!kind) return null;
+  return noticeElement(doc, kind, { noun: 'capabilities', observedAt: observation.observedAt ?? null, cause: kind === 'stale' ? observation.cause ?? null : null,
+    busy: observation.busy === true, onRetry: observation.onRetry ?? null, now });
+}
+export function updateCatalogNotice(el, observation = {}, now = Date.now()) {
+  updateNotice(el, { noun: 'capabilities', observedAt: observation.observedAt ?? null, cause: el.dataset.kind === 'stale' ? observation.cause ?? null : null, busy: observation.busy === true, now });
 }
 
 /** @param row a catalog row (or capabilityRow(resolved)); from: { label } when opened from a soul page.
  * `catalogPending`: opened from a soul before the catalog is read — its facts (the lede, Comes from) are
- * skeletons the host fills in place when it arrives. `observation`: the catalog's { state, observedAt,
- * cause, onRetry } for the age line. */
+ * skeletons the host fills in place when it arrives. The catalog's age line lives in `.page-notice`
+ * under the bar: the host paints it (`catalogNotice` / `updateCatalogNotice`), optionally seeded here
+ * with `observation` ({ state, settled, busy, observedAt, cause, onRetry }). */
 export function renderCapabilityPage(host, { row, status, instances, root, backLabel = 'Capabilities', onBack, openSoul = null, from = null, openExternal = null, catalogPending = false, observation = null }) {
   const doc = host.ownerDocument;
   const node = (tag, value, cls) => el(doc, tag, value, cls);

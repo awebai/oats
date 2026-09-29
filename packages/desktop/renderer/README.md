@@ -330,10 +330,18 @@ still (`rosterUnavailable()`). The capability page (`capability-page.mjs`,
 painted by `paintCapabilityPage` in `views/spawn.mjs`): opened from a soul
 before the catalog is read, the lede and the Comes-from facts are skeletons
 filled in place when the discovery's `onCatalog` fires; a catalog refresh
-while the page is open repaints it behind a signature with focus kept by
-`data-focus-key` (`used:<soul>:<root>`, `file`, `retry`; a vanished control
-hands focus to Back); the catalog's age line (`catalogNotice`) sits under the
-page bar. The spawn dialog's harness, model and launch hints (`matched()` in
+while the page is open repaints it behind a signature over the content only,
+with focus kept by `data-focus-key` (`used:<soul>:<root>`, `file`; a vanished
+control hands focus to Back); the catalog's age line under the page bar is
+the controller's own notice (`noticeElement` / `updateNotice` in loading.mjs,
+through `catalogNotice` / `updateCatalogNotice`), updated in place on every
+catalog event and on the roster poll (`touchCapabilityPage`), so its Retry
+keeps focus, wears the busy mark while the re-read runs, and its age ticks.
+A failed read that carries data (the kernel's `catalog.reason` beside a list;
+a non-ok capabilities read with `lastGood`) calls `succeed()` only when
+nothing was shown yet, then `fail(error, { observedAt })`: with data on screen
+`fail()` alone updates the stale line in place — one node, one announcement,
+a focused Retry kept. The spawn dialog's harness, model and launch hints (`matched()` in
 `spawn-dialog.mjs`) read only a preview for the choices on screen, like the
 name and work hints.
 

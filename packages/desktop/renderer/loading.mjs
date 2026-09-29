@@ -179,6 +179,41 @@ function walk(root, path) {
   return node;
 }
 
+/* ── the stale / observed notice (shared by the controller and pages that mirror a controller's state) ── */
+function noticeText(kind, noun, observedAt, now) {
+  const age = observedText(observedAt, now);
+  if (kind === 'stale') return age ? `${wording.couldNotRefresh(noun)} · ${age}` : wording.couldNotRefresh(noun);
+  return wording.observed(observedAgeText(observedAt, now));
+}
+/** Build the notice line: `kind` 'stale' (the read failed: Retry, the cause behind a Details disclosure
+ * and in the title) or 'observed' (an old observation, muted, no Retry). `onRetry` runs on an activation
+ * while not busy. Update it in place with `updateNotice()` so a focused Retry survives. */
+export function noticeElement(doc, kind, { noun, observedAt = null, cause = null, busy = false, onRetry = null, now = Date.now() } = {}) {
+  const el = element(doc, 'div', 'loading-notice'); el.dataset.kind = kind;
+  el.append(element(doc, 'span', 'loading-notice-text'));
+  if (kind === 'stale') {
+    const retry = element(doc, 'button', 'act loading-retry'); retry.type = 'button'; retry.textContent = wording.retry; retry.dataset.focusKey = 'retry';
+    retry.addEventListener('click', () => { if (retry.getAttribute('aria-disabled') === 'true') return; onRetry?.(); });
+    if (typeof onRetry !== 'function') retry.hidden = true;
+    // The cause is reachable by keyboard and screen reader through a Details disclosure (a title alone is hover-only).
+    const more = element(doc, 'details', 'loading-notice-details');
+    const summary = element(doc, 'summary', ''); summary.textContent = 'Details';
+    more.append(summary, element(doc, 'p', 'loading-notice-cause'));
+    el.append(retry, more);
+  }
+  updateNotice(el, { noun, observedAt, cause, busy, now });
+  return el;
+}
+/** Refresh a notice's text, cause and busy mark in place (its Retry keeps focus). */
+export function updateNotice(el, { noun, observedAt = null, cause = null, busy = false, now = Date.now() } = {}) {
+  el.querySelector('.loading-notice-text').textContent = noticeText(el.dataset.kind, noun, observedAt, now);
+  if (cause) el.title = cause; else el.removeAttribute('title');
+  const more = el.querySelector('.loading-notice-details');
+  if (more) { more.hidden = !cause; more.querySelector('.loading-notice-cause').textContent = cause || ''; }
+  const retry = el.querySelector('.loading-retry');
+  if (retry) { if (busy) retry.setAttribute('aria-disabled', 'true'); else retry.removeAttribute('aria-disabled'); }
+}
+
 /* ── the data-state controller ───────────────────────────────────────────── */
 /**
  * @param {object} o
@@ -256,32 +291,15 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
     indicatorEl.append(dot, doc.createTextNode(wording.refreshing));
     indicatorHost.append(indicatorEl);
   }
-  function noticeText(kind) {
-    const age = observedText(observedAt, now());
-    if (kind === 'stale') return age ? `${wording.couldNotRefresh(noun)} · ${age}` : wording.couldNotRefresh(noun);
-    return wording.observed(observedAgeText(observedAt, now()));
-  }
   function showNotice(kind, { cause = null } = {}) {
     // `cause`: the read's message; code appended when the error carried one (set by fail()).
+    // A notice of the same kind is updated in place: its Retry (which may hold focus) is kept.
     if (!noticeHost) return;
     if (!noticeEl || noticeEl.dataset.kind !== kind) {
       removeNotice();
-      noticeEl = element(doc, 'div', 'loading-notice'); noticeEl.dataset.kind = kind;
-      noticeEl.append(element(doc, 'span', 'loading-notice-text'));
-      if (kind === 'stale') {
-        // The cause is reachable by keyboard and screen reader through a Details disclosure
-        // (a title alone is hover-only); the title is kept for the pointer.
-        const more = element(doc, 'details', 'loading-notice-details');
-        const summary = element(doc, 'summary', ''); summary.textContent = 'Details';
-        more.append(summary, element(doc, 'p', 'loading-notice-cause'));
-        noticeEl.append(retryButton(), more);
-      }
+      noticeEl = noticeElement(doc, kind, { noun, observedAt, cause, busy, now: now(), onRetry: () => { if (!disposed && !busy) onRetry?.(); } });
       noticeHost.append(noticeEl);
-    }
-    noticeEl.querySelector('.loading-notice-text').textContent = noticeText(kind);
-    if (cause) noticeEl.title = cause; else noticeEl.removeAttribute('title');
-    const more = noticeEl.querySelector('.loading-notice-details');
-    if (more) { more.hidden = !cause; more.querySelector('.loading-notice-cause').textContent = cause || ''; }
+    } else updateNotice(noticeEl, { noun, observedAt, cause, busy, now: now() });
     ageTimer = clearTimer(ageTimer);
     if (observedText(observedAt, now())) ageTimer = schedule(() => { ageTimer = null; touch(); }, AGE_TICK_MS);
   }
@@ -360,12 +378,16 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
       if (wasUser) say(wording.updated(noun)); else { announced = null; if (status) status.textContent = ''; }
       setBusyControls(); syncQuiet();
     },
-    /** The owning read failed: stale with data, failed without. */
-    fail(error = null) {
+    /** The owning read failed: stale with data, failed without. `observedAt` (ISO): the observation the
+     * kept data comes from, when the failed reply still names it (a held / last-good table) — it dates
+     * the stale line. A surface with data on screen calls fail() alone (never succeed() first: that
+     * would rebuild the line under a focused Retry and announce twice). */
+    fail(error = null, { observedAt: at } = {}) {
       if (disposed) return;
       pendingTimer = clearTimer(pendingTimer); refreshingTimer = clearTimer(refreshingTimer);
       removeSkeleton(); removeIndicator();
       user = false; busy = false;
+      if (typeof at === 'string' && at) observedAt = at;
       const message = typeof error?.message === 'string' && error.message ? error.message : null;
       const code = typeof error?.code === 'string' && error.code ? error.code : null;
       const cause = message && code ? `${message} (${code})` : message || code;

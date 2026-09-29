@@ -196,15 +196,39 @@ test('a catalog refresh while the page is open updates it in place: a failed re-
   await u.cliEmit(); await u.resolveRead(1, okRead());
   assert.equal(pageOf(u), first, 'identical catalog: the same page node');
   await u.cliEmit(); await u.resolveRead(2, failedRead());
-  const stale = pageOf(u); assert.notEqual(stale, first);
-  const line = stale.querySelector('.page-notice .loading-notice[data-kind=stale]'); assert.ok(line);
+  assert.equal(pageOf(u), first, 'the page stands; only its age line changes');
+  const line = first.querySelector('.page-notice .loading-notice[data-kind=stale]'); assert.ok(line);
   assert.equal(line.querySelector('.loading-notice-text').textContent, "Couldn't refresh capabilities");
   assert.equal(line.querySelector('.loading-notice-cause').textContent, 'E_CLI_TIMEOUT: The workspace command exceeded its time limit.');
   const retry = line.querySelector('.loading-retry'); retry.focus(); retry.click(); await settle();
   assert.deepEqual(u.reads.at(-1).body, { action: 'read', refresh: true });
-  await u.resolveRead(3, okRead());
+  assert.equal(retry.getAttribute('aria-disabled'), 'true', 'the page\'s Retry is busy while the re-read runs'); assert.equal(u.doc.activeElement, retry);
+  retry.click(); await settle(); assert.equal(u.reads.length, 4, 'a repeat activation while busy is ignored');
+  // The re-read fails again: the same line, updated in place, Retry still focused, no busy mark.
+  await u.resolveRead(3, failedRead());
+  assert.equal(first.querySelector('.page-notice .loading-notice'), line, 'the same node'); assert.equal(u.doc.activeElement, retry); assert.equal(retry.getAttribute('aria-disabled'), null);
+  retry.click(); await settle(); await u.resolveRead(4, okRead());
   assert.equal(pageOf(u).querySelector('.page-notice').childElementCount, 0, 'current again');
   assert.equal(u.doc.activeElement, pageOf(u).querySelector('.page-back'), 'a vanished Retry hands focus to Back, never to nowhere');
+});
+
+test('the page\'s age line ticks with the roster poll, and a failed Retry with a held table keeps the table\'s line and its focused Retry', async t => {
+  const u = await setup(t, { holdReads: true });
+  const base = Date.now(), realNow = Date.now; t.after(() => { Date.now = realNow; });
+  const old = new Date(base - 3 * 60_000).toISOString();
+  await u.resolveRead(0, { workspaceSyncApi: 1, status: 'unavailable', reason: { code: 'E_CLI_FAILED', message: 'bridge down' }, lastGood: { capabilities: CATALOG, observedAt: old } }); await u.tab('capabilities');
+  const line = u.notice().querySelector('.loading-notice[data-kind=stale]'); assert.ok(line);
+  assert.equal(line.querySelector('.loading-notice-text').textContent, "Couldn't refresh capabilities · observed 3 min ago");
+  const retry = line.querySelector('.loading-retry'); retry.focus(); retry.click(); await settle();
+  await u.resolveRead(1, { workspaceSyncApi: 1, status: 'unavailable', reason: { code: 'E_CLI_FAILED', message: 'bridge down' }, lastGood: { capabilities: CATALOG, observedAt: old } });
+  assert.equal(u.notice().querySelector('.loading-notice'), line, 'a failed Retry updates the line in place'); assert.equal(u.doc.activeElement, retry, 'Retry keeps focus');
+  assert.equal(u.status().textContent, "Couldn't refresh capabilities.");
+  u.q('.catalog-row[data-capability="nw-house-style"]').click(); await settle();
+  const pageLine = pageOf(u).querySelector('.page-notice .loading-notice'); assert.ok(pageLine);
+  assert.equal(pageLine.querySelector('.loading-notice-text').textContent, "Couldn't refresh capabilities · observed 3 min ago");
+  Date.now = () => base + 6 * 60_000; u.poll(); await settle();
+  assert.equal(pageOf(u).querySelector('.page-notice .loading-notice'), pageLine, 'the same node');
+  assert.equal(pageLine.querySelector('.loading-notice-text').textContent, "Couldn't refresh capabilities · observed 9 min ago", 'the age ticked with the poll');
 });
 
 test('the age rule on the page: an old observation is said, muted, without Retry', async t => {

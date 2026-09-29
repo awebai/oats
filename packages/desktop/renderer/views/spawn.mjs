@@ -6,7 +6,7 @@
 import { createSoulInspector, inspectorCSS } from "../soul-inspector.mjs";
 import { createWorkspaceDiscovery, discoveryCSS, workspaceTabs } from "../workspace-discovery.mjs";
 import { capabilityRow } from "../workspace-catalog.mjs";
-import { renderCapabilityPage, renderSoulCapabilities, capabilityPageCSS, pageCardCSS, soulCapabilitiesCSS, desktopFacts } from "../capability-page.mjs";
+import { renderCapabilityPage, renderSoulCapabilities, capabilityPageCSS, pageCardCSS, soulCapabilitiesCSS, desktopFacts, catalogNotice, catalogNoticeKind, updateCatalogNotice } from "../capability-page.mjs";
 import { runtimeState } from "../instance-presentation.mjs";
 import { deploymentUnavailableText } from "../deployment-header.mjs";
 import { createSpawnDialog, spawnDialogCSS } from "../spawn-dialog.mjs";
@@ -251,28 +251,54 @@ function openCapability(s, row, from = null) {
 function paintCapabilityPage(s) {
   const open = s.capOpen; if (!open) return;
   const { row, from } = open;
-  const { catalog, catalogState, catalogObservedAt, catalogFailure, ...context } = s.discovery.context();
+  const { catalog, catalogState, catalogSettled, catalogBusy, catalogObservedAt, catalogFailure, ...context } = s.discovery.context();
   // From a soul page, the catalog's row for the same capability adds what the kernel reports
   // about it in the workspace (#217: description, what it provides, its file and fingerprint).
   const listed = from && Array.isArray(catalog) ? catalog.filter(r => r.name === row.name) : [];
   const facts = listed.length === 1 ? listed[0] : null;
   const catalogPending = !!from && !Array.isArray(catalog) && (catalogState === "pending" || catalogState === "idle");
-  const observation = { state: catalogState, observedAt: catalogObservedAt, cause: catalogFailure, onRetry: () => s.discovery.reload() };
-  const signature = JSON.stringify([facts, catalogPending, catalogState, catalogObservedAt, catalogFailure, context.instances, context.root]);
-  if (signature === open.signature) return; // an unchanged catalog never rebuilds the page under focus
-  open.signature = signature;
+  // The page itself follows the catalog's content; its age line (below) follows the controller's state, on its own.
+  const signature = JSON.stringify([facts, catalogPending, context.instances, context.root]);
   const host = s.q("workspace-cap-page");
-  const restore = captureFocusState(host, { fallback: () => host.querySelector(".page-back") });
-  renderCapabilityPage(host, { row: facts ? { ...facts, ...row } : row, ...context, catalogPending, observation,
-    openExternal: url => s.ctx.openExternal?.(url),
-    backLabel: from ? from.name : "Capabilities", from: from ? { label: from.name } : null,
-    onBack: () => closeCapability(s, { restoreFocus: true }),
-    openSoul: target => {
-      const matches = s.souls.agents.filter(a => a.name === target.name && a.agentsRoot === target.agentsRoot);
-      if (matches.length !== 1) return;
-      closeCapability(s); inspectSoul(s, matches[0]);
-    } });
-  restore();
+  if (signature !== open.signature) { // an unchanged catalog never rebuilds the page under focus
+    open.signature = signature; open.noticeSignature = null;
+    const restore = captureFocusState(host, { fallback: () => host.querySelector(".page-back") });
+    renderCapabilityPage(host, { row: facts ? { ...facts, ...row } : row, ...context, catalogPending,
+      openExternal: url => s.ctx.openExternal?.(url),
+      backLabel: from ? from.name : "Capabilities", from: from ? { label: from.name } : null,
+      onBack: () => closeCapability(s, { restoreFocus: true }),
+      openSoul: target => {
+        const matches = s.souls.agents.filter(a => a.name === target.name && a.agentsRoot === target.agentsRoot);
+        if (matches.length !== 1) return;
+        closeCapability(s); inspectSoul(s, matches[0]);
+      } });
+    restore();
+  }
+  paintCapabilityNotice(s, { state: catalogState, settled: catalogSettled, busy: catalogBusy, observedAt: catalogObservedAt, cause: catalogFailure });
+}
+/** The page's age line mirrors the catalog controller (stale with Retry, or an old observation): the same
+ * node is updated in place — its Retry keeps focus and wears the busy mark while the re-read runs — and
+ * the age ticks with the roster poll (`touchCapabilityPage`). */
+function paintCapabilityNotice(s, observation) {
+  const open = s.capOpen, host = s.q("workspace-cap-page")?.querySelector(".page-notice"); if (!open || !host) return;
+  const doc = host.ownerDocument, now = Date.now();
+  const kind = catalogNoticeKind(observation, now);
+  const full = { ...observation, onRetry: () => s.discovery.reload() };
+  let notice = host.querySelector(".loading-notice");
+  if (notice && notice.dataset.kind !== kind) {
+    // The line leaves (or changes kind): a focused Retry hands focus to Back, never to nowhere.
+    if (notice.contains(doc.activeElement)) s.q("workspace-cap-page").querySelector(".page-back")?.focus({ preventScroll: true });
+    notice.remove(); notice = null;
+  }
+  if (!kind) return;
+  if (!notice) { notice = catalogNotice(doc, full, now); if (notice) host.append(notice); }
+  else updateCatalogNotice(notice, full, now);
+}
+/** The roster poll: the open page's age line ticks (nothing else is repainted). */
+function touchCapabilityPage(s) {
+  if (!s.alive || !s.capOpen) return;
+  const { catalogState, catalogSettled, catalogBusy, catalogObservedAt, catalogFailure } = s.discovery.context();
+  paintCapabilityNotice(s, { state: catalogState, settled: catalogSettled, busy: catalogBusy, observedAt: catalogObservedAt, cause: catalogFailure });
 }
 /** The catalog changed (a read settled, a reset): the open page follows it; another generation's page closes. */
 function syncCapabilityPage(s) {
@@ -573,6 +599,7 @@ export async function refresh(s, { user = false } = {}) {
   s.inspector?.syncAvailability(); s.page?.syncAvailability();
   settleGridState(s, souls);
   renderGrid(s);
+  touchCapabilityPage(s);
   applyPreselect(s); // Quick Open handoff — after the roster is painted
   applyHome(s);
 }
@@ -587,9 +614,11 @@ function settleGridState(s, souls) {
   const agents = souls.agents, reason = souls.catalog?.reason || null;
   const observedAt = typeof souls.observedAt === "string" ? souls.observedAt : null;
   if (reason) {
-    // Souls listed beside the reason are data (the kernel's partial list): taken, then marked stale.
-    if (agents.length) load.succeed({ observedAt });
-    load.fail({ message: catalogReasonText(reason), code: typeof reason.code === "string" ? reason.code : null }); return;
+    // Souls listed beside the reason are data (the kernel's partial list): taken, then marked stale. With
+    // data already on screen only fail() runs — succeed() first would rebuild the line under a focused
+    // Retry and announce the failure again on every poll (the hierarchy's rule).
+    if (agents.length && !load.hasData) load.succeed({ observedAt });
+    load.fail({ message: catalogReasonText(reason), code: typeof reason.code === "string" ? reason.code : null }, { observedAt }); return;
   }
   if (s.deployment && s.deployment.status !== "observed") { load.defer(); return; }
   if (!agents.length && souls.refreshing === true) { load.defer({ keepSkeleton: true }); return; }

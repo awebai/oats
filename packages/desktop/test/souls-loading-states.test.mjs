@@ -185,7 +185,13 @@ test('the kernel\'s catalog reason is a failed read: failed without souls, stale
   assert.equal(failed.querySelector('.loading-failed-message').textContent, "Couldn't read this workspace's souls: lock out of date");
   assert.equal(failed.querySelector('.loading-failed-code').textContent, 'E_WORKSPACE_SYNC');
   u.poll(); await tick(); await u.resolve(1, { agents: ROSTER, catalog: { reason: { code: 'E_WORKSPACE_SYNC', message: 'lock out of date' }, ambiguous: [] } });
-  assert.equal(u.cards().length, 2); assert.ok(u.notice().querySelector('.loading-notice[data-kind=stale]'), 'partial souls with a reason: stale');
+  assert.equal(u.cards().length, 2); const line = u.notice().querySelector('.loading-notice[data-kind=stale]'); assert.ok(line, 'partial souls with a reason: stale');
+  assert.equal(u.status().textContent, "Couldn't refresh souls.");
+  // The reason persists across polls: the same line, its focused Retry kept, no second announcement.
+  const retry = line.querySelector('.loading-retry'); retry.focus(); u.status().textContent = '';
+  u.poll(); await tick(); await u.resolve(2, { agents: ROSTER, catalog: { reason: { code: 'E_WORKSPACE_SYNC', message: 'lock out of date' }, ambiguous: [] } });
+  assert.equal(u.notice().querySelector('.loading-notice'), line, 'the same node'); assert.equal(u.doc.activeElement, retry, 'Retry keeps focus');
+  assert.equal(u.status().textContent, '', 'not announced again');
 });
 
 test('a workspace switch drops the other workspace\'s cards at once and is pending again (no "Loading agents…", no empty message)', async t => {
