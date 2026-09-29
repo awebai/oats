@@ -368,10 +368,14 @@ export function createWorkspaceSwitcher({
   const onMenuKey = (event) => {
     if (event.key === "Escape") { event.preventDefault(); closeMenu(true); return; }
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-    event.preventDefault();
+    // Home/End in the search field move its caret.
+    if (event.target === menuSearch && ["Home", "End"].includes(event.key)) return;
     const items = menuItems();
     if (!items.length) return;
+    event.preventDefault();
     const index = items.indexOf(document.activeElement);
+    // Up from the first option goes back to the search field (spec F).
+    if (event.key === "ArrowUp" && index === 0) { menuSearch.focus(); return; }
     const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1
       : event.key === "ArrowDown" ? Math.min(items.length - 1, index + 1) : Math.max(0, index < 0 ? 0 : index - 1);
     items[next].focus();
@@ -409,6 +413,10 @@ export function createWorkspaceSwitcher({
   });
   menuSearch.addEventListener("input", renderOptions);
   menu.addEventListener("keydown", onMenuKey);
+  // Tabbing out of the open menu closes it, like a click elsewhere (spec F).
+  menu.addEventListener("focusout", (event) => {
+    if (!menu.hidden && event.relatedTarget && !menu.contains(event.relatedTarget) && !trigger.contains(event.relatedTarget)) closeMenu();
+  });
   addOpen.addEventListener("click", openModal);
   modalSearch.addEventListener("input", renderSuggestions);
   refInput.addEventListener("input", () => { if (!adding) confirm.disabled = !refInput.value.trim(); });

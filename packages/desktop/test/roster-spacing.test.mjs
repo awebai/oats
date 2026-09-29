@@ -108,7 +108,7 @@ test("roster typography (non-layout): valid control family and supplied sidebar 
   for (const row of u.rows) {
     const name = row.querySelector(".ctx-name"), repo = row.querySelector(".ctx-repo-label");
     assert.equal(name.nextElementSibling, repo, "both labels remain in the same vertical stack");
-    assert.equal(repo.textContent, row.querySelector(".ctx-inst").disabled ? "desktop-repo · state unknown" : "desktop-repo");
+    assert.equal(repo.textContent, row.querySelector(".ctx-inst").getAttribute("aria-disabled") === "true" ? "desktop-repo · state unknown" : "desktop-repo");
     assert.equal(repo.title, "Repository: desktop-repo");
     for (const label of [name, repo]) {
       assert.equal(u.computed(label).textOverflow, "ellipsis");
@@ -168,7 +168,7 @@ test("roster DOM contract: named group separators, identity, active state, hidde
     assert.equal(menu.getAttribute("role"), "menu");
     assert.equal(menu.parentElement, trigger.parentElement);
     assert.deepEqual([...menu.querySelectorAll("[role=menuitem]")].map(item => item.dataset.action),
-      button.disabled ? ['open-split', 'open-pr', "inspect", "stop", "retire"] : ['open-split', 'open-pr', "inspect", "restart", "stop", "retire"]);
+      button.getAttribute('aria-disabled') === 'true' ? ['open-split', 'open-pr', "inspect", "stop", "retire"] : ['open-split', 'open-pr', "inspect", "restart", "stop", "retire"]);
   }
   assertTools(u);
   const active = u.doc.querySelector(".ctx-inst.active");
@@ -233,4 +233,21 @@ test("running dot stays solid --accent on selected and hovered rows; its ring is
   assert.equal(u.computed(active).getPropertyValue("--row-solid").trim(), "var(--sel)", "the selected row resolves its own solid colour");
   assert.equal(u.rule(".ctx-dot").background, "var(--surface)", "only a stopped dot is hollow");
   assert.equal(u.rule(".ctx-dot.on").background, "var(--accent)");
+});
+
+// Spec F audit: an instance whose state is unknown can't open, but its row takes focus
+// (aria-disabled, never disabled) so its tools — the actions menu — stay keyboard-reachable,
+// and the roster's one tab stop is the selected row (its terminal is the active tab).
+test("keyboard: an unavailable row stays focusable with its tools; the tab stop is the selected row", t => {
+  const u = fixture(t);
+  const row = u.rows.at(-1), button = row.querySelector(".ctx-inst");
+  assert.equal(button.disabled, false, "never disabled: a disabled button can't take focus");
+  assert.equal(button.getAttribute("aria-disabled"), "true");
+  assert.equal(button.getAttribute("aria-description"), "unknown: status unknown");
+  button.focus(); assert.equal(u.doc.activeElement, button);
+  button.click(); // the fixture fails on any open/start: an unavailable row's activation does nothing
+  const trigger = row.querySelector(".ctx-instance-actions");
+  assert.equal(trigger.disabled, false, "its actions menu is a Tab stop after the row");
+  const stops = [...u.doc.querySelectorAll(".ctx-inst")].filter(b => b.tabIndex === 0);
+  assert.deepEqual(stops.map(b => b.dataset.treeInstance), [tree.instanceId(roster[1])], "one tab stop: the selected row");
 });

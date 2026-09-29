@@ -12,7 +12,7 @@ import { createSelectionOwnership, wirePaneSelection } from "../renderer/selecti
 import { createTabChrome } from "../renderer/tab-a11y.mjs";
 import { canActivateTab } from "../renderer/workspace-tabs.mjs";
 import {
-  DEFAULT_KEYMAP, TERMINAL_ALLOWLIST, parseChord, matchEvent, registerAction,
+  defaultBinding, TERMINAL_ALLOWLIST, parseChord, matchEvent, registerAction,
   setActiveContexts,
 } from "../renderer/keybindings.mjs";
 import {
@@ -24,9 +24,15 @@ const read = (f) => readFileSync(join(PKG, f), "utf8");
 
 test("split + sidebar actions have parseable default chords; splits are terminal-allowlisted", () => {
   for (const id of ["sidebar.toggle", "split.vertical", "split.horizontal", "split.close"]) {
-    assert.ok(DEFAULT_KEYMAP[id], `${id} has a default chord`);
-    assert.ok(parseChord(DEFAULT_KEYMAP[id]), `${id} chord parses`);
+    for (const isMac of [true, false]) {
+      assert.ok(defaultBinding(id, isMac), `${id} has a default chord (${isMac ? "mac" : "other"})`);
+      assert.ok(parseChord(defaultBinding(id, isMac)), `${id} chord parses`);
+    }
   }
+  // Linux/Windows: Terminator/Tilix splits (spec F), never Ctrl+\ (SIGQUIT in a terminal).
+  assert.equal(defaultBinding("split.vertical", false), "Ctrl+Shift+E");
+  assert.equal(defaultBinding("split.horizontal", false), "Ctrl+Shift+O");
+  assert.equal(defaultBinding("split.close", false), "Ctrl+Shift+Alt+W");
   for (const id of ["split.vertical", "split.horizontal", "split.close"]) {
     assert.ok(TERMINAL_ALLOWLIST.includes(id),
       `${id} must fire inside xterm on Linux/Windows (the active pane IS a terminal)`);
@@ -122,11 +128,15 @@ test("split default chords match REAL key events — Shift+\\ arrives as event.k
     { key: "\\", metaKey: true, shiftKey: false, ctrlKey: false, altKey: false, defaultPrevented: false },
     { isMac: true, insideTerminal: false, editableTarget: false },
   ), "split.vertical");
-  // non-mac inside xterm: allowlisted, Ctrl plays Mod
-  assert.equal(matchEvent(
-    { key: "|", ctrlKey: true, shiftKey: true, metaKey: false, altKey: false, defaultPrevented: false },
-    { isMac: false, insideTerminal: true, editableTarget: false },
-  ), "split.horizontal");
+  // non-mac inside xterm: allowlisted; the REAL shifted events report "E" / "O"
+  const linux = (key, extra = {}) => matchEvent(
+    { key, ctrlKey: true, shiftKey: true, metaKey: false, altKey: false, defaultPrevented: false, ...extra },
+    { isMac: false, insideTerminal: true, editableTarget: false });
+  assert.equal(linux("E"), "split.vertical");
+  assert.equal(linux("O"), "split.horizontal");
+  // Ctrl+\ and Ctrl+Shift+\ (reported "|") reach the program: SIGQUIT is its.
+  assert.equal(linux("\\", { shiftKey: false }), null);
+  assert.equal(linux("|"), null);
 });
 
 test("pane-selection disposer removes pointer and focus entry listeners", () => {

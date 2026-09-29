@@ -159,7 +159,7 @@ test("shell wires quick open: action registered, palette command present, spawn 
   assert.match(src, /id: "app\.quickOpenSouls"/, "action registered");
   assert.match(src, /Souls: quick open…/, "palette discoverability entry");
   assert.match(src, /createQuickOpen\(/, "quick open constructed");
-  assert.match(src, /preselectSoul\(/, "selection preselects the soul in the Spawn view");
+  assert.match(src, /mod\.preselectSpawn\(/, "selection opens the soul's spawn dialog in Workspace");
   assert.match(src, /showStage\("spawn"\)/, "selection routes to the Spawn stage");
 });
 

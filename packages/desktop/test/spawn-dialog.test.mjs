@@ -289,9 +289,9 @@ test('choosing another soul keeps the typed name and instruction', async t => {
   const u = await mountSpawn(t);
   await u.open(); await u.type('.fpurpose', 'api-v2'); await u.type('.ftask', 'keep me');
   [...u.doc.querySelectorAll('.spawn-choice')].find(b => b.dataset.agent === 'support-triager').click(); await settle();
-  assert.equal(u.q('.spawn-choice[aria-pressed=true]').dataset.agent, 'support-triager');
+  assert.equal(u.q('.spawn-choice[aria-selected=true]').dataset.agent, 'support-triager');
   assert.equal(u.q('.fpurpose').value, 'api-v2'); assert.equal(u.q('.ftask').value, 'keep me');
-  assert.equal(u.doc.activeElement, u.q('.spawn-choice[aria-pressed=true]'));
+  assert.equal(u.doc.activeElement, u.q('.spawn-choice[aria-selected=true]'));
 });
 
 test('the soul-name prefix toggle is offered only with spawn-name; off sends --name, and a name refusal shows at the field', async t => {
@@ -389,7 +389,7 @@ test('a soul name with selector metacharacters opens as data, is refused by the 
   const evil = 'a"]b[x=1\\';
   const u = await mountSpawn(t, { agents: [...catalogAgents(), { name: evil, description: '', kind: 'persistent', work: 'worktree', agentsRoot: ROOT, repoName: 'northwind' }] });
   const dialog = await u.open(evil);
-  assert.equal(u.q('.spawn-choice[aria-pressed=true]').dataset.agent, evil);
+  assert.equal(u.q('.spawn-choice[aria-selected=true]').dataset.agent, evil);
   assert.equal(u.previews().at(-1).selector.soul, evil, 'the exact name is sent as data');
   assert.equal(u.q('.fstatus').dataset.code, 'E_BAD_ARGS', 'the boundary refuses a non-kernel soul name'); assert.doesNotMatch(u.text('.fstatus'), /E_[A-Z]/); assert.equal(u.q('.fspawn').disabled, true);
   await u.type('.ftask', 'typed'); for (const poll of u.polls) poll(); await settle(20);
@@ -421,9 +421,9 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: every spawn 
   u.q('.spawn-run .spawn-choice-trigger').click(); await settle();
   const view = u.dom.window, root = view.getComputedStyle(u.doc.documentElement);
   for (const [selector, surfaceSelector, fg, bg] of [
-    ['.spawn-choice[aria-pressed=true] strong', '.spawn-choice[aria-pressed=true]', 'fg', 'sel'],
-    ['.spawn-choice[aria-pressed=true] small', '.spawn-choice[aria-pressed=true]', 'muted', 'sel'],
-    ['.spawn-name-head > label', '.spawn-dialog', 'muted', 'surface'], ['.spawn-relationship > legend', '.spawn-dialog', 'muted', 'surface'],
+    ['.spawn-choice[aria-selected=true] strong', '.spawn-choice[aria-selected=true]', 'fg', 'sel'],
+    ['.spawn-choice[aria-selected=true] small', '.spawn-choice[aria-selected=true]', 'muted', 'sel'],
+    ['.spawn-name > label', '.spawn-dialog', 'muted', 'surface'], ['.spawn-relationship > legend', '.spawn-dialog', 'muted', 'surface'],
     ['.spawn-name-prefix', '.spawn-name-input', 'muted', 'surface'],
     ['.spawn-name-result strong', '.spawn-dialog', 'fg', 'surface'],
     ['.spawn-hint', '.spawn-dialog', 'muted', 'surface'],

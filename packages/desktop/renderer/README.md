@@ -161,7 +161,17 @@ preview carries no per-module reason; a skeleton while it reads, the footer's
 refusal sentence when it fails). **Change soul** switches the same dialog to
 the **picker** (the soul chooser, grouped by source, alphabetical, externals
 last, keyed by `agentsRoot + name + server`); switching soul keeps the typed
-name and instruction, and a soul chosen there reopens in the picker.
+name and instruction, and a soul chosen there reopens in the picker. Quick
+Open (⌘P / Ctrl+P) opens the scoped layout too (`preselectSpawn`), and
+dismissing that dialog returns to where the operator was.
+
+Keyboard (spec F; `../docs/desktop-keyboard.md`): Mod+Enter (`spawn.submit`)
+spawns from any field, plain Enter in Name never does; DOM order is Tab order
+(Name, then its Prefix switch, drawn on the label's line by CSS grid);
+Relationship and Teams are one tab stop each (`roveSegment`: arrows, Home/End);
+the soul chooser is a `listbox` of `option` buttons where typing filters,
+Enter in the search picks the best match and Enter on a soul picks it, both
+moving focus to Name.
 
 Main form, in order: **Name** (the `<soul>-` prefix plus a purpose, with the
 kernel's final name shown below; when the CLI advertises `spawn-name`, a
@@ -404,29 +414,42 @@ workspace generation) checked on success and rejection, mutation-verified in
 
 ## Keybindings (shell-level)
 
-- **Mod+F** reveals the sidebar and focuses the instance filter; **Mod+N** opens
-  Workspace's soul chooser, never automatically spawning an instance. Visible
-  hints and tooltips follow the effective bindings (including explicit unbinds).
-  Existing user overrides are retained. On Linux/Windows, Ctrl+F/Ctrl+N inside
-  the terminal still belong to the attached program; macOS uses Cmd+F/Cmd+N.
+The keymap, its per-platform defaults, the terminal policy, the F6 regions and
+the keyboard audit are documented in `../docs/desktop-keyboard.md`; this
+section is the module map.
+
+- **Mod+F** reveals the sidebar and focuses the instance filter; **⌘N /
+  Ctrl+Shift+N** opens Workspace's soul chooser, never automatically spawning
+  an instance. Visible hints and tooltips follow the effective bindings
+  (including explicit unbinds). Existing user overrides are retained.
 
 - **keybindings.mjs** — the keymap engine: action registry
   (`registerAction`/`setActiveContexts`; a registration may carry a
   `defaultChord` that folds into the effective keymap like a
   `DEFAULT_KEYMAP` entry — override wins, explicit unbind kills it),
-  `DEFAULT_KEYMAP`, user overrides
+  `DEFAULT_KEYMAP` (one entry per action: a chord, or `{ mac, other }`
+  when the platforms differ; `defaultBinding(id, isMac)`), user overrides
   persisted under `localStorage["oats-desktop-keymap"]`, chord
-  parse/format/match, and dispatch (`matchEvent`/`handleKeydown`). The engine
+  parse/format/match, and dispatch (`matchEvent`/`handleKeydown`).
+  `getBinding(id, isMac)` is override → platform default → registration
+  default; pass the platform wherever a chord is shown. The engine
   skips already-consumed (`defaultPrevented`) events, and unmodified/
   shift-only chords never fire while an editable field (input, textarea,
   select, contenteditable) has focus. Terminal
-  policy: inside `.xterm`, on macOS only ⌘-resolved chords fire; on
-  Linux/Windows only `TERMINAL_ALLOWLIST` action ids (palette, tab
-  next/prev/close) may fire — all other Ctrl chords belong to the attached
-  program. `app.quickOpenSouls` (Mod+P) is deliberately NOT allowlisted:
-  ⌘P fires inside xterm on macOS via the ⌘-chord policy, but Ctrl+P inside
-  xterm on Linux/Windows is the shell's history navigation and reaches the
-  pty.
+  policy: inside `.xterm`, on macOS only ⌘-resolved chords fire, plus
+  Ctrl+Tab, ⌃1–⌃9 and F6 for their own actions; on Linux/Windows only
+  `TERMINAL_ALLOWLIST` action ids may fire (their defaults are
+  Ctrl+Shift+key, Alt+digit, Ctrl+Tab/PgDn/PgUp or F6) — plain Ctrl+letter
+  belongs to the attached program. `app.quickOpenSouls` (Mod+P) is
+  deliberately NOT allowlisted: ⌘P fires inside xterm on macOS via the
+  ⌘-chord policy, but Ctrl+P inside xterm on Linux/Windows is the shell's
+  history navigation and reaches the pty.
+- **focus-regions.mjs** — F6 / Shift+F6 (`focus.nextRegion`/`prevRegion`):
+  sidebar nav → roster → main → instance panel, hidden regions skipped, each
+  region's current item focused, never `<body>`.
+- **surface-return.mjs** — "back to where you were" after a flow that moved
+  the main surface (Quick Open's spawn dialog): the same tab or stage and
+  control, unless the operator moved on.
 - **overlay-picker.mjs** — the shared overlay + fuzzy machinery behind the
   command palette and Quick Open: one input over a listbox
   (arrows/Enter/Esc, aria option pattern), the house subsequence scorer
@@ -434,11 +457,12 @@ workspace generation) checked on success and rejection, mutation-verified in
   negative), and the stale-load generation guard.
 - **quick-open.mjs** — Quick Open for souls (`Mod+P`, also “Souls: quick
   open…” in the palette): fuzzy-find a soul from the Spawn view's data
-  source and hand off to soul inspection through `views/spawn.mjs`
-  `preselectSoul()`. Inspection does not launch an instance or open the Spawn
-  dialog; **Launch…** is a separate explicit action. Attached-only and CLI
-  pending/unavailable states remain visible through the existing view. No
-  second spawn form exists.
+  source and hand off through `views/spawn.mjs` `preselectSpawn()`: the
+  spawn dialog scoped to that soul, as its card's Spawn opens it, with focus
+  in Name. Opening never spawns; Spawn stays explicit. Attached-only, refused
+  and CLI pending/unavailable souls open their soul page instead, which says
+  why. Dismissing the dialog returns to where the operator was
+  (`surface-return.mjs`). No second spawn form exists.
 - **keybindings-editor.mjs** — the shortcuts editor dialog (`Mod+,`):
   actions grouped by context, click-to-record (Esc cancels, Backspace
   unbinds), conflict warnings via `findConflict`, per-row reset + reset-all.

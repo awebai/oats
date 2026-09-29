@@ -3,6 +3,7 @@ import { apiJson, postJson, instanceApiPath, currentWorkspace, workspaceGenerati
 import { instanceId } from "./instance-tree.mjs";
 import { waitForInstanceInPanel } from "./views/spawn.mjs";
 import { launchConfigFields } from "./launch-config-fields.mjs";
+import { captureFocusReturn } from "./focus-return.mjs";
 
 /** Existing homes are started, never scaffolded again. One dialog owns a launch. */
 export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstanceInPanel } = {}) {
@@ -12,7 +13,9 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
     if (active) { active.focus(); return; }
     const key = instanceId(instance);
     const ws = currentWorkspace(), generation = workspaceGeneration();
-    const opener = doc.activeElement;
+    // A logical return target: a roster row's Start… hides with its row tools once focus leaves
+    // the row, so focus returns to the row itself (focus-return.mjs), never to <body>.
+    const opener = captureFocusReturn(doc);
     const modal = doc.createElement("div"); modal.className = "oats-view instance-start-modal";
     modal.innerHTML = `<form class="instance-start-dialog" role="dialog" aria-modal="true" aria-labelledby="instance-start-title">
       <h2 id="instance-start-title"></h2>
@@ -67,7 +70,7 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
     const close = () => {
       if (closed) return;
       closed = true; launchFields.dispose(); offWorkspace(); modal.remove(); active = null;
-      if (opener?.isConnected) opener.focus();
+      opener.restore();
     };
     const offWorkspace = onWorkspaceChange(close);
     active = { focus: () => model.focus() };

@@ -226,8 +226,8 @@ body {
 .ctx-inst { position: relative; min-width: 0; flex: 1; min-height: 44px; height: auto; display: flex; align-items: center; gap: 9px;
             padding: 0 8px 0 10px; border: 0; border-radius: 7px; background: none; color: var(--fg);
             font: inherit; text-align: left; cursor: pointer; }
-.ctx-inst.idle, .ctx-inst:disabled { color: var(--muted); }
-.ctx-inst:disabled { cursor: default; }
+.ctx-inst.idle, .ctx-inst:disabled, .ctx-inst[aria-disabled="true"] { color: var(--muted); }
+.ctx-inst:disabled, .ctx-inst[aria-disabled="true"] { cursor: default; }
 /* Connectors sit on each dot's centre column (10px inset + 4px radius):
    solid rounded elbows into children, pass-throughs for open branches,
    dotted dot-to-dot sibling links. Dots paint above them with a ring in the

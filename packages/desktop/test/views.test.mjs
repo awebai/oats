@@ -238,3 +238,32 @@ test("brain: roster failure re-enables the selector; a stale failure cannot unlo
     g.document = saved.document; g.window = saved.window; g.localStorage = saved.localStorage;
   }
 });
+
+// Spec F audit: a running instance's heading in Brain opens its terminal from the keyboard.
+test("brain: a running instance's heading is a button that opens its terminal", async () => {
+  const { JSDOM } = await import("jsdom");
+  const dom = new JSDOM("<!doctype html><body><div id=el></div>", { url: "http://127.0.0.1/" });
+  const g = globalThis;
+  const saved = { document: g.document, window: g.window, localStorage: g.localStorage };
+  g.document = dom.window.document; g.window = dom.window; g.localStorage = dom.window.localStorage;
+  try {
+    const brain = await import("../renderer/views/brain.mjs");
+    const opened = [];
+    const inst = { instance: "dev-1", home: "/r/dev/instances/dev-1", agentsRoot: "/r", running: true, skills: [], notes: [], state: null, task: null };
+    const ctx = {
+      api: (pathname) => pathname.startsWith("/api/agents") ? Promise.resolve({ agents: [{ name: "dev" }] })
+        : Promise.resolve({ agent: "dev", description: "", agentsRoot: "/r", soul: { agentsMd: null, skills: [], knowledge: { index: null, tree: [] } }, instances: [inst] }),
+      openFile: () => {}, openTerminal: ref => opened.push(ref),
+    };
+    await brain.mount(dom.window.document.getElementById("el"), ctx);
+    await new Promise((r) => setTimeout(r, 10));
+    const button = dom.window.document.querySelector(".brain-inst-head .brain-inst-open");
+    assert.ok(button, "a native button inside the heading");
+    assert.equal(button.tagName, "BUTTON"); assert.equal(button.getAttribute("aria-label"), "Open dev-1 terminal");
+    button.click();
+    assert.deepEqual(opened, [{ instance: "dev-1", home: inst.home, agentsRoot: "/r" }]);
+    brain.unmount();
+  } finally {
+    g.document = saved.document; g.window = saved.window; g.localStorage = saved.localStorage;
+  }
+});

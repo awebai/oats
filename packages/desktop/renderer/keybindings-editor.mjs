@@ -9,7 +9,7 @@
 import {
   listActions, getBinding, setBinding, resetBinding, resetAllBindings,
   onKeymapChange, findConflict, formatChord, chordFromEvent, chordToString,
-  isPlainChord, DEFAULT_KEYMAP,
+  isPlainChord, defaultBinding,
 } from "./keybindings.mjs";
 import { takePickerFocusReturn } from "./overlay-picker.mjs";
 import { icon } from "./shell-icons.mjs";
@@ -145,9 +145,10 @@ export function createKeybindingsEditor({ doc = document, isMac } = {}) {
     const row = (action) => {
       const el = doc.createElement("div");
       el.className = "kb-row";
-      const chordStr = getBinding(action.id);
+      const chordStr = getBinding(action.id, isMac); // this platform's effective chord
       // the effective default: static table or registration-supplied
-      const isDefault = chordStr === (DEFAULT_KEYMAP[action.id] ?? action.defaultChord ?? null);
+      const fixed = defaultBinding(action.id, isMac);
+      const isDefault = chordStr === (fixed !== undefined ? fixed : action.defaultChord ?? null);
       el.innerHTML = `
         <span class="kb-label"></span>
         <span class="kb-conflict" role="status"></span>

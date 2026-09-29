@@ -377,6 +377,8 @@ export function mount(el, ctx) {
   // the engine's effective bindings). Disposed on unmount.
   s.viewActions = [
     { id: "hier.fit", defaultChord: "F", label: "Hierarchy: fit to screen", run: () => fit(s) },
+    // Spec F: the canvas's zoom keys are - / = / 0 (zoom out, in, fit); 0 is fit's second shortcut.
+    { id: "hier.fitZero", defaultChord: "0", label: "Hierarchy: fit to screen (second shortcut)", run: () => fit(s) },
     { id: "hier.terminal", defaultChord: "T", label: "Hierarchy: open terminal of selection", run: () => { if (s.sel) openTerm(s, s.sel); } },
     { id: "hier.brain", defaultChord: "B", label: "Hierarchy: open Brain of selection", run: () => openSelBrain(s) },
     { id: "hier.spawn", defaultChord: "S", label: "Hierarchy: open the Spawn view", run: () => openWorkspace(s) },
@@ -890,7 +892,41 @@ function litLineage(s, id, on) {
 function select(s, name) {
   if (!dataCurrent(s) || !visibleOwner(s) || s.pending || !s.nodeEls.has(name)) return;
   s.actionTicket = (s.actionTicket || 0) + 1;
-  s.sel = name; paintSelection(s); openPop(s, name);
+  s.sel = name; paintSelection(s); revealNode(s, name); openPop(s, name);
+}
+
+/* Keep a keyboard-selected node on screen: pan the camera (never zoom) just
+   enough to bring it inside the canvas with a PAD margin. */
+function revealNode(s, id) {
+  const entry = s.nodeEls.get(id);
+  if (!entry || typeof s.canvas.getBoundingClientRect !== "function") return;
+  const rect = s.canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const gx = Number(entry.el.parentElement?.style.left?.replace("px", "") || 0);
+  const gy = Number(entry.el.parentElement?.style.top?.replace("px", "") || 0);
+  const x = (gx + (entry.node.fx ?? entry.node.x)) * s.z + s.tx, y = (gy + (entry.node.fy ?? entry.node.y)) * s.z + s.ty;
+  const w = NODE_W * s.z, h = NODE_H * s.z;
+  let dx = 0, dy = 0;
+  if (x < PAD) dx = PAD - x; else if (x + w > rect.width - PAD) dx = Math.max(PAD - x, rect.width - PAD - (x + w));
+  if (y < PAD) dy = PAD - y; else if (y + h > rect.height - PAD) dy = Math.max(PAD - y, rect.height - PAD - (y + h));
+  if (!dx && !dy) return;
+  s.fitted = true; s.tx += dx; s.ty += dy; applyTransform(s);
+}
+
+/* The nearest node in the same group on the next row up (dir -1) or down (1):
+   Up/Down's move when a node has no parent/child to go to (the Independent
+   grid, a leaf). Closest row first, then the closest horizontal position. */
+function rowNeighbour(s, cur, dir) {
+  const y0 = cur.node.fy ?? cur.node.y, x0 = cur.node.fx ?? cur.node.x;
+  let best = null;
+  for (const [id, entry] of s.nodeEls) {
+    if (entry.ws !== cur.ws || entry === cur) continue;
+    const y = entry.node.fy ?? entry.node.y, x = entry.node.fx ?? entry.node.x;
+    if (dir < 0 ? y >= y0 : y <= y0) continue;
+    const rank = [Math.abs(y - y0), Math.abs(x - x0)];
+    if (!best || rank[0] < best.rank[0] || (rank[0] === best.rank[0] && rank[1] < best.rank[1])) best = { id, rank };
+  }
+  return best?.id ?? null;
 }
 
 function paintSelection(s) {
@@ -1054,10 +1090,11 @@ function onKey(s, e) {
   if (e.key === "ArrowUp") {
     const me = byId.get(s.sel);
     const pid = me?.parentInstance ? resolveLinkId(me, me.parentInstance, byName) : null;
-    if (pid && s.nodeEls.has(pid)) select(s, pid);
+    const up = pid && s.nodeEls.has(pid) ? pid : rowNeighbour(s, cur, -1);
+    if (up) select(s, up);
   } else if (e.key === "ArrowDown") {
-    const kid = cur.node.children[0];
-    if (kid) select(s, kid.id);
+    const kid = cur.node.children[0]?.id ?? rowNeighbour(s, cur, 1);
+    if (kid) select(s, kid);
   } else {
     // peers: same row (y) within the SAME cluster group, ordered by x
     const sibs = [...s.nodeEls.values()].filter((x) => x.node.y === cur.node.y && x.ws === cur.ws).sort((a, b) => a.node.x - b.node.x);

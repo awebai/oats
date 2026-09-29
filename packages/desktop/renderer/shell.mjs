@@ -22,6 +22,9 @@ import {
 } from "./theme.mjs";
 import { createPalette } from "./palette.mjs";
 import { createQuickOpen } from "./quick-open.mjs";
+import { takePickerFocusReturn } from "./overlay-picker.mjs";
+import { createSurfaceReturn } from "./surface-return.mjs";
+import { createFocusRegions, firstTabbable, isShown } from "./focus-regions.mjs";
 import { createFileOpener } from "./open-file.mjs";
 import {
   registerAction, setActiveContexts, getBinding, onKeymapChange, formatChord, handleKeydown, matchEvent, runAction,
@@ -192,6 +195,17 @@ async function showStage(name) {
   }
 }
 
+/** A stage switch from the keyboard (a chord, the palette, a nav button) keeps focus on a
+ * control: where it was when that is still shown (the nav button), else the stage's first
+ * control — never <body> after the terminal it was in is hidden (spec F audit). */
+async function showStageFocused(name) {
+  const op = stageOp;
+  await showStage(name);
+  if (stage?.name !== name || tabLayerVisible || (stageOp !== op && stageOp !== op + 1)) return;
+  const active = document.activeElement;
+  if (!active || active === document.body || !isShown(active)) focusRegions.focusRegion("main");
+}
+
 function setNavActive(name) {
   for (const b of navEl.querySelectorAll(".nav-item")) {
     const active = b.dataset.view === name;
@@ -304,6 +318,13 @@ function initContextRoster() {
   sidebar.addEventListener("pointerdown", () => tabOpenIntents.invalidate());
   sidebar.addEventListener("focusin", () => {
     if (!tabOpenIntents.isApplyingFocus()) tabOpenIntents.invalidate();
+  });
+  // ArrowDown from the filter enters the rows at their tab stop (spec F).
+  input.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowDown" || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.isComposing) return;
+    const row = contextRosterEl.querySelector('.ctx-list .ctx-inst[tabindex="0"]');
+    if (!row) return;
+    e.preventDefault(); tabOpenIntents.invalidate(); setRovingRow(contextRosterEl.querySelector(".ctx-list"), row);
   });
   input.addEventListener("input", (e) => {
     contextFilter = e.target.value.toLowerCase();
@@ -520,12 +541,16 @@ function renderContextRoster(instances) {
         row.className = "ctx-inst" + (state === "stopped" ? " idle" : "") + (isActive ? " active" : "");
         rowWrap.classList.toggle("active", isActive);
         if (hasChildren) row.setAttribute("aria-expanded", String(filtering || !collapsed));
-        row.disabled = i.running == null || (!!i.server && !i.savedRoute);
+        // A row that can't open (unknown state, a remote without a saved route) stays focusable
+        // (aria-disabled, spec F): its row tools — the actions menu's Inspect/Stop/Remove — must
+        // stay reachable from the keyboard. Its activation does nothing and says why.
+        const unavailable = i.running == null || (!!i.server && !i.savedRoute);
+        if (unavailable) { row.setAttribute("aria-disabled", "true"); row.classList.add("unavailable"); }
         const why = i.runtimeError || (i.server && !i.savedRoute ? "No saved route for this instance on this machine"
           : i.running ? `Open ${i.instance} terminal` : i.running === false ? `Start ${i.instance}` : `${i.instance}: status unknown`);
-        // Workspace v4: an enabled row explains itself in the hover/focus card; a disabled one keeps its reason as a title.
+        // Workspace v4: an enabled row explains itself in the hover/focus card; an unavailable one keeps its reason as a title.
         const pr = i.server || i.remote ? null : rosterPrs.get(i.home);
-        if (row.disabled) row.title = why; else rosterTip.bind(row, () => rosterTipFacts(i, why, pr));
+        if (unavailable) { row.title = why; row.setAttribute("aria-description", why); } else rosterTip.bind(row, () => rosterTipFacts(i, why, pr));
         const dot = document.createElement("span");
         dot.className = `ctx-dot ${state === "running" ? "on" : state === "stopped" ? "off" : "unknown"}`;
         const copy = document.createElement("span");
@@ -559,7 +584,7 @@ function renderContextRoster(instances) {
         // terminal stays allowed (the maintainer's return on #322).
         const staleStart = rosterStale && !i.running;
         if (staleStart) { row.title = ROSTER_STALE_TITLE; row.setAttribute("aria-description", ROSTER_STALE_TITLE); }
-        row.addEventListener("click", () => { if (staleStart) return; i.running ? openTerminalTab(i) : openInstanceStart(i); });
+        row.addEventListener("click", () => { if (staleStart || unavailable) return; i.running ? openTerminalTab(i) : openInstanceStart(i); });
         // full keyboard tree operability (roving tabindex; policy in
         // roster-keys.mjs). Enter is the button's native activation.
         row.dataset.rosterChildren = hasChildren ? "1" : "0";
@@ -590,7 +615,7 @@ function renderContextRoster(instances) {
           && (!actionTarget || ownsInstanceTarget(actionTarget));
         tools.append(instanceActions(document, i, {
           scope: ws, owner: menuOwner, onMenuState: menuState, onFocusChange: () => updateActiveContexts(), dispatch: runAction,
-          shortcut: id => { const chord = getBinding(id); return chord ? formatChord(chord, isMac) : ''; },
+          shortcut: id => { const chord = getBinding(id, isMac); return chord ? formatChord(chord, isMac) : ''; },
           extra: [
             { action: 'open-split', actionId: 'instance.openSplit', label: 'Open in split', reason: () => !actionTarget ? 'Instance identity is not fully reported.'
               : i.running !== true ? 'No live terminal is reported.' : instanceSplitPlan(splitOpenState()).reason },
@@ -642,17 +667,19 @@ function renderContextRoster(instances) {
   });
   rosterTip.sync(listEl);
   // roving tabindex: exactly one row enters the tab order — the focused row
-  // when it survived the rebuild, else the first enabled one
+  // when it survived the rebuild, else the selected one (its terminal is the
+  // active tab), else the first
   applyChordTitles(); updateActiveContexts();
   const rowsAfter = [...listEl.querySelectorAll(".ctx-inst")];
   const focusedRow = rowsAfter.find((r) => r === listEl.ownerDocument.activeElement);
-  const tabbable = focusedRow || rowsAfter.find((r) => !r.disabled);
+  const tabbable = focusedRow || rowsAfter.find((r) => r.classList.contains("active")) || rowsAfter[0];
   if (tabbable) tabbable.tabIndex = 0;
 }
 
-/* Keyboard walk over the rendered roster rows. Disabled (idle) rows stay
-   visible but focus skips them; expanding/collapsing re-renders and the
-   focused instance is restored by captureTreeRenderState. */
+/* Keyboard walk over the rendered roster rows. Every row takes focus, an
+   unavailable one included (aria-disabled: its tools stay reachable);
+   expanding/collapsing re-renders and the focused instance is restored by
+   captureTreeRenderState. */
 function onRosterRowKey(e) {
   const btn = e.currentTarget;
   const action = rosterKeyAction(e, {
@@ -792,7 +819,7 @@ const contextPanel = createContextPanel({
   // Focus mode hides the sidebar: focus that was there lands on the active tab, else a stable visible control.
   fallbackFocus: () => stableFocusTarget(),
   // (isMac is declared with the palette, after this first render: read the platform here.)
-  shortcutHint: () => { const chord = getBinding("panel.toggle"); return chord ? formatChord(chord, !!globalThis.navigator?.platform?.includes("Mac")) : ""; },
+  shortcutHint: () => { const mac = !!globalThis.navigator?.platform?.includes("Mac"); const chord = getBinding("panel.toggle", mac); return chord ? formatChord(chord, mac) : ""; },
 });
 window.addEventListener("pagehide", () => contextPanel.dispose(), { once: true });
 
@@ -1448,7 +1475,7 @@ async function openWorkspaceSouls() {
 // ── command palette (⌘K): jump to an instance or run a command ─────────
 const isMac = navigator.platform.includes("Mac");
 const chordDetail = (id) => () => {
-  const b = getBinding(id);
+  const b = getBinding(id, isMac);
   return b ? formatChord(b, isMac) : "";
 };
 const palette = createPalette({
@@ -1461,7 +1488,7 @@ const palette = createPalette({
   commands: [
     // View commands derive from the nav manifest so a new rail destination
     // can never be palette-invisible (review 8441961 nit).
-    ...NAV.map((v) => ({ label: `View: ${v.label}`, detail: chordDetail(`stage.${v.name}`), run: () => showStage(v.name) })),
+    ...NAV.map((v) => ({ label: `View: ${v.label}`, detail: chordDetail(`stage.${v.name}`), run: () => showStageFocused(v.name) })),
     { label: "Spawn instance: choose a soul in Workspace…", detail: chordDetail("app.chooseSoul"), run: () => runAction("app.chooseSoul") },
     { label: "Souls: quick open…", detail: chordDetail("app.quickOpenSouls"), run: () => runAction("app.quickOpenSouls") },
     { label: "File: open read-only…", detail: chordDetail("app.openFile"), run: () => runAction("app.openFile") },
@@ -1490,13 +1517,15 @@ const palette = createPalette({
   ],
 });
 
-// ── Quick Open for souls (Mod+P): find a soul, land in its spawn form ──
-// Selection hands off to the soul inspector (preselectSoul —
-// consumed by the view's next roster paint), so CLI degradation and the
-// attached-only rule render exactly as the Spawn view always renders them.
-// Terminal policy (documented): app.quickOpenSouls is NOT terminal-
-// allowlisted — ⌘P fires inside xterm on macOS by the ⌘-chord policy, but
-// Ctrl+P inside xterm on Linux/Windows belongs to the shell's history.
+// ── Quick Open for souls (Mod+P): find a soul, open its spawn dialog ──
+// Selection hands off to Workspace (preselectSpawn — consumed by the view's
+// next roster paint): the spawn dialog scoped to that soul, exactly as its
+// card's Spawn opens it. A soul that can't be spawned here (attached only,
+// refused, no verified CLI) opens its page instead, which says why.
+// Dismissing the dialog returns to where the operator was before Quick Open
+// (surface-return.mjs). Terminal policy (documented): app.quickOpenSouls is
+// NOT terminal-allowlisted — ⌘P fires inside xterm on macOS by the ⌘-chord
+// policy, but Ctrl+P inside xterm on Linux/Windows belongs to the shell's history.
 const quickOpen = createQuickOpen({
   loadSouls: async () => {
     const ws = currentWorkspace();
@@ -1506,6 +1535,8 @@ const quickOpen = createQuickOpen({
     // Capture before module loading: a new tab/stage/sidebar intent or an
     // A→B→A workspace visit must not turn this old callback into a new pick.
     const owns = tabOpenIntents.begin();
+    // Where the operator was (the picker kept the control they opened it from).
+    const origin = surfaceReturn.capture(takePickerFocusReturn(document));
     let mod;
     try { mod = await import("./views/spawn.mjs"); }
     catch (e) {
@@ -1514,7 +1545,7 @@ const quickOpen = createQuickOpen({
       return;
     }
     if (!owns()) return;
-    mod.preselectSoul(soul);
+    mod.preselectSpawn({ ...soul, onDismiss: () => surfaceReturn.restore(origin) });
     showStage("spawn");
   },
 });
@@ -1633,13 +1664,60 @@ function visibleTabEntries() {
   return [...tabs].filter(([, t]) => !t.tabEl.hidden);
 }
 
+/** A keyboard tab switch keeps focus where the operator works: in the content (a terminal's
+ * input) when it was in a tab's content or nowhere, on the new tab when it was on the strip. */
+function switchTab(id) {
+  const active = document.activeElement;
+  const inContent = tabhost.contains(active) || !active || active === document.body;
+  if (!selectTab(id, { focusContent: inContent })) return;
+  if (!inContent && tabbar.contains(active)) tabs.get(id)?.triggerEl.focus();
+}
+
 function cycleTab(delta) {
   const vis = visibleTabEntries();
   if (!vis.length) return;
   const at = Math.max(0, vis.findIndex(([tid]) => tid === activeTab));
   const [nextId] = vis[(at + delta + vis.length) % vis.length];
-  selectTab(nextId);
+  switchTab(nextId);
 }
+
+/** Go to tab n (1-based) of the visible strip; 9 is the last tab, as in browsers. */
+function gotoTab(n) {
+  const vis = visibleTabEntries();
+  if (!vis.length) return;
+  const [id] = n >= 9 ? vis.at(-1) : vis[n - 1] ?? [];
+  if (id != null) switchTab(id);
+}
+
+// ── keyboard regions (F6 / Shift+F6) and "back to where you were" ──────
+// focus-regions.mjs owns the order and each region's current item; the
+// shell supplies the active tab's content (a terminal focuses through its
+// selection intent, like every explicit terminal focus).
+function focusMainContent() {
+  if (activeTab == null) {
+    const empty = tabhost.querySelector(".focused-group > .split-empty");
+    if (empty) tabOpenIntents.applyFocus(() => empty.focus());
+    return !!empty && document.activeElement === empty;
+  }
+  const t = tabs.get(activeTab);
+  if (!t) return false;
+  if (t.focusContent) { selectTab(activeTab, { focusContent: true }); return t.paneEl.contains(document.activeElement); }
+  const first = firstTabbable(t.paneEl);
+  if (first) tabOpenIntents.applyFocus(() => first.focus());
+  return !!first && document.activeElement === first;
+}
+const focusRegions = createFocusRegions({ doc: document, tabLayerVisible: () => tabLayerVisible, focusMainContent });
+/** A modal (a dialog, the palette) keeps focus inside itself: regions don't cycle out of it. */
+const modalOpen = () => [...document.querySelectorAll('[aria-modal="true"]')].some(dialog => isShown(dialog));
+function cycleRegion(delta) {
+  if (modalOpen()) return;
+  tabOpenIntents.invalidate();
+  focusRegions.cycle(delta);
+}
+const surfaceReturn = createSurfaceReturn({ doc: document, currentWorkspace, workspaceGeneration,
+  surface: () => ({ stage: stage?.name ?? null, tab: activeTab, tabLayerVisible }),
+  tabPane: id => { const t = tabs.get(id); return t && canActivateTab(t, currentWorkspace()) ? t.paneEl : null; },
+  showStage, selectTab: (id, opts) => selectTab(id, opts), focusRegion: name => focusRegions.focusRegion(name), host: "spawn" });
 
 // ── action registry: every mouse affordance, one keyboard action ────────
 // Default chords live in the engine's DEFAULT_KEYMAP (keybindings.mjs);
@@ -1661,7 +1739,7 @@ window.addEventListener("pagehide", () => { tabOpenIntents.invalidate(); unregis
 // palette): a new rail destination can never be shortcut-invisible.
 NAV.forEach((v) => registerAction({
   id: `stage.${v.name}`, label: `View: ${v.label}`, context: "global",
-  run: () => showStage(v.name),
+  run: () => showStageFocused(v.name),
 }));
 registerAction({ id: "app.themeToggle", label: "Cycle White / Solarized / Dark theme", context: "global", run: () => toggleTheme() });
 // Explicit theme choices are rebindable, but add no default keyboard chords.
@@ -1692,6 +1770,16 @@ registerAction({ id: "terminal.fontReset", label: "Terminal: reset typography", 
 registerAction({ id: "tabs.next", label: "Next tab", context: "tabs", run: () => cycleTab(1) });
 registerAction({ id: "tabs.prev", label: "Previous tab", context: "tabs", run: () => cycleTab(-1) });
 registerAction({ id: "tabs.close", label: "Close the active tab", context: "tabs", run: () => { if (activeTab != null) closeTab(activeTab, true); } });
+// Second chords for tab cycling (Ctrl+PgDn / Ctrl+PgUp on Linux and Windows): their own ids,
+// so each stays rebindable and unbindable on its own.
+registerAction({ id: "tabs.nextPage", label: "Next tab (second shortcut)", context: "tabs", run: () => cycleTab(1) });
+registerAction({ id: "tabs.prevPage", label: "Previous tab (second shortcut)", context: "tabs", run: () => cycleTab(-1) });
+for (let n = 1; n <= 9; n++) {
+  registerAction({ id: `tabs.goto${n}`, label: n === 9 ? "Go to the last tab" : `Go to tab ${n}`, context: "tabs", run: () => gotoTab(n) });
+}
+// Regions: sidebar nav → instance roster → main → instance panel (focus-regions.mjs).
+registerAction({ id: "focus.nextRegion", label: "Focus the next region (sidebar, instances, main, panel)", context: "global", run: () => cycleRegion(1) });
+registerAction({ id: "focus.prevRegion", label: "Focus the previous region", context: "global", run: () => cycleRegion(-1) });
 
 // THE one window keydown listener. The engine owns the terminal policy
 // (⌘ chords on mac; the action-id allowlist on Linux/Windows — Ctrl+K now
@@ -1713,12 +1801,12 @@ function applyChordTitles() {
   }
   for (const el of document.querySelectorAll("[data-action]")) {
     if (!baseTitles.has(el)) baseTitles.set(el, el.title || "");
-    const chord = getBinding(el.dataset.action);
+    const chord = getBinding(el.dataset.action, isMac);
     const base = baseTitles.get(el);
     el.title = chord ? `${base} (${formatChord(chord, isMac)})` : base;
   }
   for (const el of document.querySelectorAll("[data-shortcut]")) {
-    const chord = getBinding(el.dataset.shortcut);
+    const chord = getBinding(el.dataset.shortcut, isMac);
     el.textContent = chord ? formatChord(chord, isMac) : "";
     el.hidden = !chord;
   }

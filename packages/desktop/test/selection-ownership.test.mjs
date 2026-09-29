@@ -15,6 +15,7 @@ import { terminalHandle, terminalSameHandle, terminalFailure } from '../renderer
 import { createViewLifecycle } from "../renderer/view-lifecycle.mjs";
 import { reserveKey, whenKeyFree } from "../renderer/tab-keys.mjs";
 import { createTabChrome, tabKeyAction, focusAfterLastTab } from "../renderer/tab-a11y.mjs";
+import * as keymap from "../renderer/keybindings.mjs";
 import { createWorkspaceTabMemory } from "../renderer/workspace-tab-memory.mjs";
 import * as workspaceTabs from "../renderer/workspace-tabs.mjs";
 import * as layout from "../renderer/split-layout.mjs";
@@ -33,7 +34,7 @@ const names = [
   "setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "selectEmptyGroup", "showStage",
   "splitPane", "closeSplit", "onTabKeydown", "addTab", "selectTab", "activateTab", "closeTab",
   "openViewTab", "openTerminalTabFlow", "openTerminalTabInner", "focusActiveTerminal",
-  "visibleTabEntries", "cycleTab", "renderWorkspaceContext", "restoreWorkspaceTabs", "showTerminalContext",
+  "visibleTabEntries", "switchTab", "cycleTab", "gotoTab", "renderWorkspaceContext", "restoreWorkspaceTabs", "showTerminalContext",
   "initContextRoster", "renderContextRoster", "focusRoster", "onRosterRowKey", "setRovingRow",
 ];
 function deferred() {
@@ -47,6 +48,9 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
   const dom = new JSDOM(`<span id="ws-context"></span><div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div><div id="tab-actions"></div></div></div><div id="tabhost"></div><aside id="sidebar"><div id="instance-roster"><input id="entry" class="ctx-filter"><span class="ctx-count"></span><div class="ctx-list"></div></div><nav id="nav"><button class="nav-item active">Hierarchy</button></nav></aside>`);
   t.after(() => dom.window.close());
   const document = dom.window.document;
+  // The shell's one window keydown listener (shell.mjs), on this harness's platform.
+  document.addEventListener("keydown", e => keymap.handleKeydown(e, { isMac: true }));
+  keymap.setActiveContexts(new Set(["tabs"])); t.after(() => keymap.setActiveContexts(new Set()));
   const requests = [], loads = [], attachments = [], terms = [], detached = [], actions = new Map();
   const c = {
     document, console, navigator: { platform: "MacIntel" },
@@ -79,7 +83,8 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     ctx: {}, reserveKey, whenKeyFree, createViewLifecycle, createTabChrome, tabKeyAction, focusAfterLastTab,
     createSelectionOwnership: ownership, wirePaneSelection, terminalOptions,
     ...workspaceTabs, ...layout, projectSplitDom, splitControlsState,
-    registerAction: action => actions.set(action.id, action.run),
+    // tabs.close also goes into the real keymap: the strip's close chord is the keymap's, not tab-a11y's.
+    registerAction: action => { actions.set(action.id, action.run); if (action.id === "tabs.close") t.after(keymap.registerAction(action)); },
     terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}),
     onThemeChange: () => () => {}, onTerminalTypographyChange: () => () => {},
     requestAnimationFrame: fn => fn(),
@@ -269,7 +274,8 @@ for (const outcome of ["resolve", "reject"]) {
     await assert.rejects(olderOpen(t, "artifact", outcome, "cycle", { ownership }), /older open must not replace explicit selection/);
   });
   test(`mutation: cycle must use explicit selection on older ${outcome}`, async t => {
-    const shellSource = source.replace("  selectTab(nextId);", "  activateTab(nextId);");
+    // cycleTab → switchTab: the switch must be an explicit selection, not a projection.
+    const shellSource = source.replace("  if (!selectTab(id, { focusContent: inContent })) return;", "  if (!activateTab(id)) return;");
     assert.notEqual(shellSource, source);
     await assert.rejects(olderOpen(t, "artifact", outcome, "cycle", { shellSource }), /older open must not replace explicit selection/);
   });

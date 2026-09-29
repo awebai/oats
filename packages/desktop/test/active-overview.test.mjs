@@ -316,3 +316,38 @@ test('disposed view ignores pending observations and retained instance actions',
   button.dispatchEvent(new u.dom.window.Event('click')); u.mouse(old, 'dblclick');
   assert.equal(u.host.innerHTML, ''); assert.equal(u.opened.length, 0);
 });
+
+// Spec F, Part 4: every node is reachable from the keyboard, and the canvas has zoom keys.
+test('keyboard: Up/Down walk the Independent grid row by row, and a selected node is panned into view', async t => {
+  const solos = Array.from({ length: 7 }, (_, n) => instance(`solo-${n + 1}`));
+  const u = await setup(t, { instances: solos });
+  const selected = () => u.nodes().find(n => n.getAttribute('aria-selected') === 'true')?.dataset.name;
+  u.canvas.focus(); u.key('ArrowRight');
+  assert.equal(selected(), 'solo-1');
+  u.key('ArrowDown'); assert.equal(selected(), 'solo-4', 'the node below in the next row of three');
+  u.key('ArrowDown'); assert.equal(selected(), 'solo-7');
+  u.key('ArrowDown'); assert.equal(selected(), 'solo-7', 'no row below: stays');
+  u.key('ArrowUp'); assert.equal(selected(), 'solo-4');
+  u.key('ArrowRight'); u.key('ArrowRight'); assert.equal(selected(), 'solo-6');
+  u.key('ArrowUp'); assert.equal(selected(), 'solo-3');
+  // Zoomed in and panned away, the next keyboard selection pans the camera to show it.
+  for (let n = 0; n < 4; n++) u.key('=');
+  const stage = u.one('.hier-stage'), before = stage.style.transform;
+  u.key('ArrowDown'); assert.equal(selected(), 'solo-6');
+  u.key('ArrowDown'); assert.equal(selected(), 'solo-7', 'a shorter row below: its nearest node');
+  assert.notEqual(stage.style.transform, before, 'the camera moved to reveal the node');
+  const [, tx, ty, z] = stage.style.transform.match(/translate\((-?[\d.]+)px, (-?[\d.]+)px\) scale\(([\d.]+)\)/).map(Number);
+  const node = u.nodes().find(n => n.dataset.name === 'solo-7'), group = node.parentElement;
+  const x = (parseFloat(group.style.left || 0) + parseFloat(node.style.left)) * z + tx, y = (parseFloat(group.style.top || 0) + parseFloat(node.style.top)) * z + ty;
+  assert.ok(x >= 0 && x < 1200 && y >= 0 && y < 800, `solo-7 is on screen (${x}, ${y})`);
+});
+
+test('keyboard: - and = zoom, 0 fits (the canvas has focus)', async t => {
+  const u = await setup(t, { instances: [instance('a'), instance('b')] });
+  const zoom = () => Number(u.one('.hier-stage').style.transform.match(/scale\(([\d.]+)\)/)?.[1] ?? 1);
+  u.canvas.focus();
+  u.key('0'); const fitted = zoom();
+  u.key('='); assert.ok(zoom() > fitted, '= zooms in');
+  u.key('-'); u.key('-'); assert.ok(zoom() < fitted, '- zooms out');
+  u.key('0'); assert.equal(zoom(), fitted, '0 fits again');
+});

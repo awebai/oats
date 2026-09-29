@@ -54,6 +54,7 @@ function shell(t, shellSource = source) {
     loadSpawn() { const gate = deferred(); loads.push(gate); return gate.promise; },
     ctx: { notify: text => notices.push(text) },
     showStage(name) { c.tabOpenIntents.invalidate(); events.push(["stage", name]); },
+    showStageFocused: name => c.showStage(name), // the stage switch; its focus keeping is shell glue over focusRegion("main")
     registerAction(action) { const off = registerAction(action); offs.push(off); return off; }, runAction,
     palette: { toggle: () => events.push(["palette"]) },
     quickOpen: { toggle: () => events.push(["quickOpen"]) },
@@ -164,7 +165,8 @@ test("footer has one honest chooser and five permanently named tools, all dispat
   assert.deepEqual(s.events, [["theme"], ["shortcuts"], ["connections"], ["palette"]]);
   assert.equal(getBinding('app.connections'), null, 'Connections does not invent a new global chord');
   assert.match(q("sidebar-spawn").title, /Choose a soul/);
-  assert.equal(getBinding("app.chooseSoul"), "Mod+N", "redesign shortcut chooses a soul, never launches one");
+  assert.equal(getBinding("app.chooseSoul", true), "Mod+N", "redesign shortcut chooses a soul, never launches one");
+  assert.equal(getBinding("app.chooseSoul", false), "Ctrl+Shift+N", "Linux/Windows: Ctrl+Shift+N (spec F), Ctrl+N stays the program's");
   const before = s.c.tabOpenIntents.begin(); q("sidebar-spawn").click();
   assert.equal(before(), false); assert.equal(s.loads.length, 1);
   await s.settle(s.loads[0], "resolve");
@@ -207,7 +209,13 @@ test("sidebar shortcuts keep Ctrl+B/F/N/P with the pty and dispatch Cmd+F/N on m
   }
   for (const [key, action] of [["f", "sidebar.focusFilter"], ["n", "app.chooseSoul"]]) {
     assert.equal(matchEvent({ key, metaKey: true }, { isMac: true, insideTerminal: true }), action);
-    assert.equal(matchEvent({ key, ctrlKey: true }, { isMac: false, insideTerminal: false }), action);
+  }
+  // Linux/Windows: Ctrl+F outside the terminal; "Spawn instance" is Ctrl+Shift+N, which also
+  // works inside it (spec F) while plain Ctrl+N stays the program's.
+  assert.equal(matchEvent({ key: "f", ctrlKey: true }, { isMac: false, insideTerminal: false }), "sidebar.focusFilter");
+  assert.equal(matchEvent({ key: "n", ctrlKey: true }, { isMac: false, insideTerminal: false }), null);
+  for (const insideTerminal of [false, true]) {
+    assert.equal(matchEvent({ key: "N", ctrlKey: true, shiftKey: true }, { isMac: false, insideTerminal }), "app.chooseSoul");
   }
 });
 

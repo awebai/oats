@@ -381,3 +381,23 @@ test("stale suggestion discovery cannot repaint a reopened modal", async () => {
   assert.equal(document.querySelector(".ws-suggestion-title").textContent, "new");
   dom.window.close();
 });
+
+// Spec F audit: Up from the first option returns to the search; Home/End in the search move its
+// caret; tabbing out of the open menu closes it.
+test("keyboard: the switcher menu's search and options connect, and Tab out closes it", () => {
+  const { dom, document, controller } = setup();
+  controller.begin()(A, [A, B]);
+  document.getElementById("ws-trigger").click();
+  const search = document.getElementById("ws-menu-search"), menu = document.getElementById("ws-menu");
+  search.focus();
+  const home = new dom.window.KeyboardEvent("keydown", { key: "Home", bubbles: true, cancelable: true });
+  search.dispatchEvent(home); assert.equal(home.defaultPrevented, false, "Home stays the search field's");
+  search.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+  const options = [...document.querySelectorAll(".ws-option")];
+  assert.equal(document.activeElement, options[0]);
+  options[0].dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, cancelable: true }));
+  assert.equal(document.activeElement, search, "Up from the first option");
+  search.dispatchEvent(new dom.window.FocusEvent("focusout", { bubbles: true, relatedTarget: document.getElementById("sidebar-spawn") }));
+  assert.equal(menu.hidden, true, "Tab out of the menu closes it");
+  dom.window.close();
+});
