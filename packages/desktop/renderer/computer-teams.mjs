@@ -34,6 +34,8 @@ export const computerTeamsCSS = `
 .workspace-discovery[data-tab=teams] > :has(> .computer-teams) { max-width:1120px; }
 .computer-teams { display:flex; flex-direction:column; gap:18px; min-width:0; }
 .computer-teams .ct-page-head { display:flex; align-items:flex-end; gap:16px; }
+/* Pinned (spec G): 8px inside its edge, the page's 18px gap kept by pulling the next block up by 9px. */
+.computer-teams .ct-page-head.ws-sticky { padding-bottom:8px; margin-bottom:-9px; }
 .computer-teams .ct-title-wrap { display:flex; flex-direction:column; gap:4px; flex-grow:1; min-width:0; }
 .computer-teams .ct-title { margin:0; color:var(--fg); font-size:17px; font-weight:700; line-height:1.3; }
 .computer-teams .ct-lead { margin:0; color:var(--muted); font-size:12.5px; line-height:1.45; }
@@ -155,7 +157,8 @@ export function createComputerTeams(doc, { request, onDocument = null, instances
 
   // The page head is static: the title, its one line, and the add button (the form opens below,
   // in "Only on this computer"). Opened twice, the button only brings the focus back to the form.
-  const head = el(doc, 'div', null, 'ct-page-head'), titles = el(doc, 'div', null, 'ct-title-wrap');
+  // The head stays pinned while the page scrolls (spec G: .ws-sticky, discoveryCSS and sticky-top.mjs).
+  const head = el(doc, 'div', null, 'ct-page-head ws-sticky'), titles = el(doc, 'div', null, 'ct-title-wrap');
   titles.append(el(doc, 'h2', 'Teams', 'ct-title'), el(doc, 'p', 'Who your agents can message. A team never adds capabilities or restricts what a soul can do.', 'ct-lead'));
   const addButton = el(doc, 'button', null, 'ct-act ct-add'); addButton.type = 'button';
   addButton.append(iconElement(doc, 'plus', { size: 13 }), el(doc, 'span', 'Add a local team'));

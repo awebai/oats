@@ -15,6 +15,7 @@ import { catalogCSS, renderCapabilitySections, capabilitySections, renderFilters
 import { createWorkspaceSync, syncCSS, reasonText } from './workspace-sync-view.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { createDataState, skeleton, statusLine } from './loading.mjs';
+import { trackStickyTop, trackScrolledEdge } from './sticky-top.mjs';
 
 export const workspaceTabs = ['teams', 'souls', 'capabilities', 'sources'];
 // What a person reads (the ids stay stable): Teams is who can work together (human, 2026-09-28: first,
@@ -65,15 +66,29 @@ ${syncCSS}
 /* Search field (control rule 3): the input's own 1px border is the one frame, accent while focused, no ring. */
 .oats-view .ws-search input.field { width:100%; min-width:0; height:28px; min-height:28px; padding:0 10px 0 30px; border:1px solid var(--border); border-radius:7px; background:var(--surface); font-size:12px; box-sizing:border-box; }
 .oats-view .ws-search:focus-within input.field { border-color:var(--accent); outline:none; }
-.workspace-discovery { padding:18px 20px; overflow:auto; min-width:0; flex:1; container-type:inline-size; }
+/* The tab's one content scroller (spec G): positioned, so its absolute descendants (the sr-only
+   words, loading-sr) are clipped by it instead of stretching the document, which then scrolled the
+   whole Workspace, header included, at the end of the content; its overscroll never chains out. */
+.workspace-discovery { --ws-pad-top:18px; position:relative; padding:var(--ws-pad-top) 20px 18px; overflow:auto; overscroll-behavior:contain; min-width:0; min-height:0; flex:1; container-type:inline-size; }
 /* Capabilities (W5) reads as one centred column. */
-.workspace-discovery[data-tab=capabilities] { padding:16px 28px 20px; }
+.workspace-discovery[data-tab=capabilities] { --ws-pad-top:16px; padding:var(--ws-pad-top) 28px 20px; }
 .workspace-discovery[data-tab=capabilities] > * { max-width:1000px; margin-inline:auto; }
-.workspace-discovery[data-tab=sources] { padding:20px 24px; }
+.workspace-discovery[data-tab=sources] { --ws-pad-top:20px; padding:var(--ws-pad-top) 24px 20px; }
 /* Teams reads as one centred column: the teams card is a list, not a dashboard. */
-.workspace-discovery[data-tab=teams] { padding:20px 24px; }
+.workspace-discovery[data-tab=teams] { --ws-pad-top:20px; padding:var(--ws-pad-top) 24px 20px; }
 .workspace-discovery[data-tab=teams] > * { max-width:760px; margin-inline:auto; }
 .workspace-discovery[hidden], .souls-bar[hidden] { display:none; }
+/* Sticky tops (spec G; sticky-top.mjs): a tab's top-level controls stay pinned while its content
+   scrolls. Chromium insets a sticky box by the scroller's padding, so the block pins at -padding,
+   flush with the scrollport, on the page's opaque --bg (cards never show through or above it); its
+   8px inner top keeps the controls off the tab row. The bottom edge is always 1px, transparent until
+   content has scrolled under the block (.is-stuck), so sticking never changes its height. */
+.workspace-discovery .ws-sticky { position:sticky; top:calc(-1 * var(--ws-pad-top)); z-index:3; margin-top:-8px; padding-top:8px; background:var(--bg); border-bottom:1px solid transparent; }
+.workspace-discovery .ws-sticky.is-stuck { border-bottom-color:var(--border); }
+/* The Capabilities toolbar keeps its 16px below: 8px inside the edge, 7px + the 1px edge outside. */
+.workspace-discovery > .ws-toolbar.ws-sticky { padding-bottom:8px; margin-bottom:7px; }
+/* Jumping to a section or focusing a row never leaves it under the pinned block. */
+.workspace-discovery :is(.capability-section-title, .capability-repo-title, [data-capability], .catalog-row, .computer-teams .ct-body :is(button, a[href], input, select, textarea, [tabindex])) { scroll-margin-top:var(--ws-sticky-h, 60px); }
 .discovery-status { margin:0 0 14px; color:var(--muted); font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
 .discovery-status:empty { display:none; }
 .discovery-status[hidden] { display:none; }
@@ -156,6 +171,8 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   // Team model v2 (kernel feature team-model-2): the Teams tab's "Teams on this computer", one card
   // per workspace generation, kept across renders so a half-typed form survives the status polls.
   let computerTeams = null, computerTeamsGen = null, teamProblems = 0;
+  // The pinned toolbar / Teams head and its edge (sticky-top.mjs); the Souls bar sits outside its scroller.
+  const stickyTop = trackStickyTop(panel), soulsEdge = trackScrolledEdge(soulsPanel);
   function teamsCard() {
     if (!list(cliStatus()?.features).includes('team-model-2') || !workspace?.id || workspace.remote || workspace.server) return null;
     const gen = workspaceGeneration();
@@ -204,7 +221,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   }
   const syncHost = node('div'); setupTools.append(views, syncHost);
   // The Capabilities search lives in the view itself (human, 2026-09-26): a toolbar row above the sections.
-  const capTools = node('div', undefined, 'ws-toolbar'); capTools.dataset.tools = 'capabilities';
+  const capTools = node('div', undefined, 'ws-toolbar ws-sticky'); capTools.dataset.tools = 'capabilities';
   const capLead = node('div', undefined, 'ws-toolbar-lead'); capTools.append(capLead);
   const search = node('label', undefined, 'ws-search');
   const searchInput = node('input', undefined, 'field'); searchInput.type = 'search'; searchInput.placeholder = 'Search capabilities'; searchInput.autocomplete = 'off';
@@ -315,7 +332,8 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     }
     updateCounts(); render(); onCatalog?.();
   }
-  function render() {
+  function render() { paint(); stickyTop.sync(); soulsEdge.sync(); }
+  function paint() {
     syncHeader();
     const unavailable = gate(workspace, deployment);
     const s = observed();
@@ -444,6 +462,6 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
       serial++; rosterGen = null; workspace = null; deployment = null; instances = []; catalog = null; loading = false; failure = '';
       filters = { team: null, repo: null }; sync.reset(); loadState.reset(); updateCounts('pending'); render(); onCatalog?.();
     },
-    dispose() { alive = false; serial++; sync.dispose(); computerTeams?.dispose(); loadState.dispose(); },
+    dispose() { alive = false; serial++; sync.dispose(); computerTeams?.dispose(); loadState.dispose(); stickyTop.dispose(); soulsEdge.dispose(); },
   };
 }

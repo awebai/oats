@@ -490,6 +490,25 @@ workspace is observed through its server and never synced from here.
   --workspace <ref> --json`, then the ordinary transactional add. A refused ref
   gets a fresh offer for the same folder; `rolledBack` is reported.
 
+**Pinned tops and one scroller per tab (spec G, `sticky-top.mjs`).** The view
+is one fixed-height column that never scrolls: the tab row (`.workspace-header`,
+which also carries Setup's List/Graph switch) and the Souls bar sit outside the
+content scrollers (`.souls-grid`, `.workspace-discovery`). Each scroller is
+positioned, `min-height:0` and `overscroll-behavior: contain`; the view root
+(`.souls`) is `position:relative; overflow:clip`. Inside the Capabilities
+scroller the section pills + search (`.ws-toolbar.ws-sticky`) and the Teams page
+head (`.ct-page-head.ws-sticky`) are `position:sticky` on the opaque `--bg`.
+Chromium insets a sticky box by its scroller's padding, so they pin at
+`top: -var(--ws-pad-top)` (flush with the scrollport; nothing shows above
+them) and keep an 8px inner top. Their 1px bottom edge is always there,
+transparent until content has scrolled under the block (`.is-stuck`), so the
+block never changes height; the Souls grid does the same with a top edge
+(`.is-scrolled`). `trackStickyTop` also writes the pinned block's height to
+`--ws-sticky-h`, the `scroll-margin-top` of the section heads, rows and the
+Teams page's controls, so a pill jump or a focused row never lands under it.
+"Filter by Team / Repo" stays in the Workspace owned header: it filters only
+that section, so it scrolls with it. Section and group headers scroll.
+
 All awaited reads and mutations carry latest-intent ownership (request serial +
 workspace generation) checked on success and rejection, mutation-verified in
 `workspace-v2-view.test.mjs`. Fixtures are kernel captures
