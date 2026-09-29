@@ -47,7 +47,7 @@ async function setup(t, { holdRoster = false, holdReads = false } = {}) {
   globalThis.document = dom.window.document; globalThis.window = dom.window;
   const polls = []; globalThis.setInterval = fn => { polls.push(fn); return 0; };
   const timers = clock(dom.window);
-  const rosters = [], reads = [], calls = [];
+  const rosters = [], reads = [], calls = []; let emits = 0;
   const panel = () => ({ workspace: { id: currentWorkspace(), scope: currentWorkspace() }, workspaces: [], instances: [],
     deployment: { status: 'observed', root: roster.root, workspace: status.workspace, workspaceStatus: status, reachable: { reachable: true }, withheld: [] } });
   const ctx = { hasWorkspaceSwitcher: true, api: async (path, opts = {}) => {
@@ -74,7 +74,8 @@ async function setup(t, { holdRoster = false, holdReads = false } = {}) {
     reads_: () => calls.filter(c => c.path.startsWith('/api/workspace-sync')).map(c => c.body),
     resolveRead: async (index, reply) => { reads[index].resolve(reply); await settle(); },
     poll: () => polls.at(-1)(),
-    cliEmit: async () => { await refreshCli({ api: async () => ({ ...CLI, probedAt: (CLI.probedAt || 0) + 1 }) }); await settle(); },
+    // A CLI change: subscribers are told on a gate-relevant difference only (#321, cli-probe-contract), never for a fresh probedAt.
+    cliEmit: async () => { emits++; await refreshCli({ api: async () => ({ ...CLI, version: `${CLI.version}-emit${emits}` }) }); await settle(); },
   };
 }
 
