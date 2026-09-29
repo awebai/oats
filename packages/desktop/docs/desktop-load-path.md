@@ -95,8 +95,11 @@ souls, capabilities and inspect: `0` for the first cycle of a deployment
 (admission), a mutation's follow-up and any `refresh: true`; `60` for
 background cycles, key-change re-reads, inspect cache misses and the focus
 prompt cycle. Without the feature the argv is byte-identical to the flagless
-one whatever the caller asked, and mutating verbs refuse the option
-(`renderer/deployment-contract.mjs`: `maxAgeArgv`, `validMaxAge`).
+one whatever the caller asked. Reuse is local only: a routed call (`--server`)
+never carries the flag, and mutating verbs refuse the option
+(`renderer/deployment-contract.mjs`: `maxAgeArgv`, `validMaxAge`). The kernel
+reports `observation` only when the flag was passed; otherwise `observedAt` is
+the read's completion time.
 
 ## Contract additions (renderer-facing, additive)
 

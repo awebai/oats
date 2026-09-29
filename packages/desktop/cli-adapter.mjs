@@ -459,6 +459,8 @@ export async function cliCapability(bin, { action, context, server, soul, agents
   } else bad('Unknown capability action');
   if (action !== 'run' && args !== undefined) bad('Arguments belong to an operation run');
   if (action !== 'inspect' && maxAge !== undefined) bad('Observation age belongs to an inspection');
+  // Reuse is local only: the kernel refuses --max-age with --server (E_BAD_ARGS), so a routed inspect never carries it.
+  if (server && maxAge !== undefined) bad('Observation age does not route to a server');
   if (!validMaxAge(maxAge)) bad('Invalid observation age');
   return await runJson(bin, [...argv, ...target, ...maxAgeArgv(features, maxAge), '--json'], {
     cwd: localCwd, exec: io.exec, timeout: io.timeout ?? (action === 'run' ? 300_000 : ENVELOPE_TIMEOUT_MS),

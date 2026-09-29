@@ -57,8 +57,9 @@ export async function capabilityRequest(request, { workspace, cli, agents = [], 
     action, context, server, soul, agentsRoot, home,
     operation: request.operation, ...(request.args !== undefined ? { args: request.args } : {}),
     localCwd: server ? localCwd : context || workspace.scope,
-    // --max-age travels only on inspect and only when the probe declared observe-max-age (the adapter's call).
-    ...(action === 'inspect' && (refresh || maxAge !== undefined) ? { maxAge: refresh ? 0 : maxAge } : {}),
+    // --max-age travels only on a LOCAL inspect (reuse is local only: the kernel refuses it with --server)
+    // and only when the probe declared observe-max-age (the adapter's call).
+    ...(action === 'inspect' && !server && (refresh || maxAge !== undefined) ? { maxAge: refresh ? 0 : maxAge } : {}),
     features: cli.features,
   });
   let envelope, observedAt, refreshing = false;

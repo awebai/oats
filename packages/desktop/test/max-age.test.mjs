@@ -8,6 +8,8 @@ import { readFileSync } from 'node:fs';
 import { cliDeploymentRead } from '../deployment-read-cli.mjs';
 import { cliWorkspace, workspaceArgv } from '../workspace-cli.mjs';
 import { cliCapability } from '../cli-adapter.mjs';
+import { capabilityRequest } from '../server/capabilities.mjs';
+import { createInspectCache } from '../server/inspect-cache.mjs';
 import { observationData } from '../deployment-data.mjs';
 import { OBSERVE_MAX_AGE_FEATURE, validMaxAge, maxAgeArgv } from '../renderer/deployment-contract.mjs';
 
@@ -143,6 +145,28 @@ test('operation run refuses maxAge (E_BAD_ARGS, no exec) even with the feature; 
   const io = capture(envelope({ harvest: 'skipped' }));
   await cliCapability('/fixture/bin/oats', { action: 'run', home: '/homes/dev-1', localCwd: '/homes/dev-1', operation: 'knowledge:harvest', features: declared }, io);
   assert.deepEqual(io.calls, [['operation', 'run', 'knowledge:harvest', '--home', '/homes/dev-1', '--json']]);
+});
+
+test('inspect --server never carries --max-age (reuse is local only): the adapter refuses the pair, the boundary omits it for a remote workspace', async () => {
+  for (const features of [declared, undeclared]) for (const maxAge of [60, 0]) {
+    await assert.rejects(cliCapability('/fixture/bin/oats', { action: 'inspect', context, server: 'hetzner', soul: 'dev', agentsRoot: `${context}/agents`, localCwd: '/local', maxAge, features }, { exec: assert.fail }),
+      { code: 'E_BAD_ARGS', message: /route/ });
+  }
+  // Through the capability boundary: a routed inspect is asked WITHOUT maxAge even when the boundary has one and refresh is forced.
+  const calls = [];
+  const remoteCli = { ...cli(true), operationsApi: 2, remote: ['operations'] };
+  const workspace = { id: 'remote:hetzner', scope: '/remote/member', remote: true, server: 'hetzner', registrationPresent: true };
+  const agents = [{ name: 'dev', agentsRoot: '/remote/member/agents' }];
+  const invoke = async (_bin, options) => { calls.push(options); return JSON.parse(envelope({ subject: { kind: 'soul', soul: 'dev' } })); };
+  for (const request of [{ action: 'inspect', selector: { soul: 'dev', agentsRoot: '/remote/member/agents' } }, { action: 'inspect', selector: { soul: 'dev', agentsRoot: '/remote/member/agents' }, refresh: true }]) {
+    await capabilityRequest(request, { workspace, cli: remoteCli, agents, instances: [], localCwd: '/local', invoke, maxAge: 60, cache: createInspectCache() });
+  }
+  assert.equal(calls.length, 2);
+  for (const options of calls) { assert.equal(options.server, 'hetzner'); assert.equal(Object.hasOwn(options, 'maxAge'), false, JSON.stringify(options)); }
+  // The same requests on a local workspace do carry it.
+  calls.length = 0;
+  await capabilityRequest({ action: 'inspect', selector: { soul: 'dev', agentsRoot: `${context}/agents` } }, { workspace: { id: context, scope: context }, cli: remoteCli, agents: [{ name: 'dev', agentsRoot: `${context}/agents` }], instances: [], localCwd: context, invoke, maxAge: 60, cache: createInspectCache() });
+  assert.equal(calls[0].maxAge, 60);
 });
 
 /* ── observationData: one projection for both document shapes ── */
