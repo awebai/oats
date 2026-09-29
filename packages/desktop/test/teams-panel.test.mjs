@@ -8,7 +8,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { createSoulInspector } from '../renderer/soul-inspector.mjs';
-import { teamsOperations, teamsDocument, receiveText, whenText } from '../renderer/teams-panel.mjs';
+import { createTeamsPanel, teamsOperations, teamsDocument, receiveText, whenText, teamsCSS } from '../renderer/teams-panel.mjs';
+import { createInstanceTeamsSection } from '../renderer/instance-teams.mjs';
+import { iconElement } from '../renderer/shell-icons.mjs';
 import { setWorkspace, currentWorkspace } from '../renderer/views/common.mjs';
 import { cliCapability, operationArgs } from '../cli-adapter.mjs';
 import { capabilityRequest } from '../server/capabilities.mjs';
@@ -403,4 +405,182 @@ test("v2 default row: the kernel's DefaultTeam by label, with its id and where i
   assert.equal(none.row('default').querySelector('.team-meta').textContent, 'None configured on this computer: run oats aweb setup.');
   assert.equal(none.row('default').querySelector('.team-badge'), null, 'nothing to be always on');
   for (const u of [deployment, unmapped, none]) assert.doesNotMatch(u.panel().textContent, /primary|personal/i);
+});
+
+// The context panel's Messaging section (v4.1 board): the same panel, `compact: true`. One
+// bordered card, a state glyph per row, the default team by label with a "default" tag,
+// "Always on" as text, Join/Leave as text buttons, one meta line, no identity home; the
+// Refresh is an icon button that goes to the section header's slot (`refreshHost`).
+function card(t, answer, { compact = true, refreshHost = true, operations = teamsOperations(inspection()), owns = () => true } = {}) {
+  const dom = new JSDOM('<body><section id="host"></section><div id="tools"></div></body>'), doc = dom.window.document;
+  const host = doc.querySelector('#host'), tools = doc.querySelector('#tools'), calls = [];
+  const style = doc.createElement('style'); style.textContent = teamsCSS; doc.head.append(style);
+  const panel = createTeamsPanel(host, { operations, selector: { home: HOME }, owns, heading: false, compact, refreshHost: refreshHost ? tools : null,
+    request: async body => { calls.push(body); const out = await answer(body, calls); if (out instanceof Error) throw out; return out; } });
+  t.after(() => { panel.dispose(); dom.window.close(); });
+  const section = () => host.querySelector('.teams-panel');
+  const row = label => section().querySelector(`[data-team-row="${label}"]`);
+  const press = async (verb, label) => { section().querySelector(`[data-team-action="${verb}"][data-team="${label}"]`).click(); await tick(); };
+  const glyphOf = name => iconElement(doc, name, { size: 14 }).outerHTML;
+  return { dom, doc, host, tools, calls, panel, section, row, press, glyphOf, style: el => dom.window.getComputedStyle(el), runs: () => calls.filter(c => c.action === 'run') };
+}
+
+test('compact: one card of glyph rows — the default team tagged and always on, eligible teams with Join, joined teams with Leave; one meta line, no identity home', async t => {
+  const u = card(t, captured()); await tick();
+  const section = u.section();
+  assert.deepEqual([...section.classList], ['teams-panel', 'is-compact']);
+  assert.equal(section.querySelector('.teams-intro'), null, 'the compact card has no intro sentence');
+  assert.equal(section.querySelector('.teams-card'), section.querySelector('.teams-status').nextElementSibling, 'status line, then the one card');
+  // The default team (0.29 shape: its id, tagged default), always on as plain text.
+  const home = u.row('default');
+  assert.equal(home.firstElementChild.className, 'team-glyph is-on'); assert.equal(home.firstElementChild.getAttribute('aria-hidden'), 'true');
+  assert.equal(home.firstElementChild.innerHTML, u.glyphOf('check'), 'a membership: the check');
+  assert.equal(home.querySelector('.team-name').firstChild.textContent, 'default:northwind:alice');
+  assert.equal(home.querySelector('.team-name > .team-tag').textContent, 'default');
+  assert.equal(home.querySelector('.team-meta').textContent, "default:northwind:alice · the messaging root's active team");
+  const always = home.querySelector('.team-badge');
+  assert.equal(always.tagName, 'SPAN'); assert.equal(always.textContent, 'Always on'); assert.equal(always.title, "The default team can't be left.");
+  assert.equal(u.style(always).borderWidth, '0px', 'text, not a pill'); assert.equal(u.style(always).color, 'var(--muted)');
+  assert.equal(home.querySelector('button'), null);
+  // Eligible: the circle, "eligible", Join in accent.
+  const dev = u.row('dev');
+  assert.equal(dev.firstElementChild.className, 'team-glyph'); assert.equal(dev.firstElementChild.innerHTML, u.glyphOf('circle'));
+  assert.equal(u.style(dev.firstElementChild).color, 'var(--muted)'); assert.equal(u.style(home.firstElementChild).color, 'var(--ok)');
+  assert.equal(dev.querySelector('.team-name').textContent, 'dev'); assert.equal(dev.querySelector('.team-tag'), null, 'only the default team is tagged');
+  assert.deepEqual([...dev.querySelectorAll('.team-meta')].map(m => m.textContent), ['eligible']);
+  const join = dev.querySelector('button.team-action');
+  assert.equal(join.textContent, 'Join'); assert.equal(join.dataset.teamAction, 'join'); assert.equal(join.dataset.team, 'dev'); assert.equal(join.type, 'button');
+  assert.equal(u.style(join).color, 'var(--accent)'); assert.equal(u.style(join).borderWidth, '0px'); assert.equal(u.style(join).backgroundColor, 'rgba(0, 0, 0, 0)');
+  assert.equal(u.row('marketing'), null, 'unmapped: not shown');
+  // Joined: the check, when it joined (exact time on hover), Leave in muted; the identity home is not shown here.
+  await u.press('join', 'dev');
+  const joined = u.row('dev'), since = run('join-dev').result.joined[0].since;
+  assert.equal(joined.firstElementChild.className, 'team-glyph is-on'); assert.equal(joined.firstElementChild.innerHTML, u.glyphOf('check'));
+  assert.deepEqual([...joined.querySelectorAll('.team-meta')].map(m => m.textContent), [`Joined ${whenText(since)}`]);
+  assert.equal(joined.querySelector('.team-meta').title, since);
+  assert.doesNotMatch(joined.textContent, /as it arrives|between tasks|northwind:eng/, 'one line: no receive mode, no id');
+  assert.equal(joined.querySelector('details'), null, 'no identity-home details in the compact card');
+  assert.equal(u.section().querySelector('details'), null);
+  const leave = joined.querySelector('button.team-action');
+  assert.equal(leave.textContent, 'Leave'); assert.equal(leave.dataset.teamAction, 'leave'); assert.equal(leave.dataset.team, 'dev');
+  assert.equal(u.style(leave).color, 'var(--muted)');
+  assert.deepEqual([...u.section().querySelectorAll('[data-team-row]')].map(r => r.dataset.teamRow), ['default', 'dev', 'reviewers']);
+  // The v2 default team reads by its label, its id as the one meta line; unmapped keeps its blocking problem and loses "Always on".
+  const v2 = defaultTeam => { const d = structuredClone(run('teams-initial')); delete d.result.primary; delete d.result.unmapped; d.result.defaultTeam = defaultTeam; return d; };
+  const v = card(t, () => v2({ label: 'antares-oats', team: 'antares-oats:juan.aweb.ai', from: 'deployment' })); await tick();
+  assert.equal(v.row('default').querySelector('.team-name').firstChild.textContent, 'antares-oats');
+  assert.equal(v.row('default').querySelector('.team-tag').textContent, 'default');
+  assert.deepEqual([...v.row('default').querySelectorAll('.team-meta')].map(m => m.textContent), ['antares-oats:juan.aweb.ai']);
+  assert.equal(v.row('default').querySelector('.team-badge').textContent, 'Always on');
+  const w = card(t, () => v2({ label: 'oats', team: null, from: 'soul' })); await tick();
+  assert.equal(w.row('default').querySelector('.team-name').firstChild.textContent, 'oats');
+  assert.equal(w.row('default').firstElementChild.innerHTML, w.glyphOf('circle'), 'not a membership yet');
+  assert.equal(w.row('default').querySelector('.team-badge'), null); assert.equal(w.row('default').querySelector('.teams-blocking').getAttribute('role'), 'alert');
+  assert.equal(w.row('default').querySelector('.team-meta').textContent, "this soul's own default on this computer");
+  const n = card(t, () => v2(null)); await tick();
+  assert.equal(n.row('default').querySelector('.team-meta').textContent, 'None configured on this computer: run oats aweb setup.');
+  assert.equal(n.row('default').querySelector('.team-badge'), null);
+});
+
+test('compact: pending, refusals, warnings, the empty line and "Recently left" stay, inside the card', async t => {
+  const gate = deferred(), answer = captured();
+  const u = card(t, body => body.operation === 'messaging:join' ? gate.promise.then(() => answer(body)) : answer(body)); await tick();
+  await u.press('join', 'dev');
+  assert.equal(u.row('dev').querySelector('[data-team-action]').textContent, 'Joining…');
+  assert.ok([...u.section().querySelectorAll('button'), u.tools.querySelector('button')].every(b => b.disabled), 'every control, the icon Refresh too, is locked');
+  gate.resolve(); await tick(); await tick();
+  assert.ok([...u.section().querySelectorAll('button'), u.tools.querySelector('button')].every(b => !b.disabled));
+  // A refusal under its row spans the row (flex-basis 100%).
+  const r = card(t, body => body.operation === 'messaging:teams' ? run('teams-initial') : refusal('join-not-eligible')); await tick();
+  await r.press('join', 'reviewers'); await tick();
+  const problem = r.row('reviewers').querySelector(':scope > .teams-problem');
+  assert.equal(problem.querySelector('p').textContent, 'messaging:join: E_TEAM_NOT_ELIGIBLE: marketing is not an eligible team label for this instance (eligible: dev, reviewers)');
+  assert.equal(r.style(problem).flexBasis, '100%'); assert.equal(r.style(r.row('reviewers')).flexWrap, 'wrap');
+  // The provider's warnings, above the rows; the empty line in the compact words; left entries.
+  const v117 = structuredClone(run('teams-initial')); v117.result.eligible = []; v117.result.unmapped = []; v117.result.warnings = ['oats-aweb: team reviewers has no provider id yet'];
+  v117.result.left = [{ label: 'reviewers', team: 'northwind:review', at: '2026-09-27T09:00:00.000Z', reason: 'no-longer-eligible' }];
+  const w = card(t, () => v117); await tick();
+  const box = w.section().querySelector('.teams-card > .teams-warnings .teams-warning');
+  assert.equal(box.querySelector('.teams-warning-text').textContent, v117.result.warnings[0]);
+  assert.equal(w.section().querySelector('.teams-card > .teams-note').textContent, 'No other teams available to this soul.');
+  assert.doesNotMatch(w.section().textContent, /Its soul has access to no other team/);
+  assert.equal(w.section().querySelector('.teams-subhead').textContent, 'Recently left');
+  assert.deepEqual([...w.section().querySelector('[data-team-left="reviewers"]').querySelectorAll('.team-meta')].map(m => m.textContent), ['northwind:review · Left 2026-09-27 09:00 UTC', 'The soul no longer belongs to it.']);
+  const d = card(t, () => v117, { compact: false }); await tick();
+  assert.equal(d.section().querySelector('.teams-card > .teams-note').textContent, 'Its soul has access to no other team.', 'the default variant keeps its words');
+});
+
+test('compact: the Refresh is an icon-only button in the header slot; it re-reads on click and leaves with dispose()', async t => {
+  const u = card(t, captured()); await tick();
+  const refresh = u.tools.querySelector('button');
+  assert.ok(refresh, 'in refreshHost, not in the section'); assert.equal(u.section().querySelector('.teams-refresh'), null);
+  assert.deepEqual([...refresh.classList], ['teams-refresh', 'is-compact']);
+  assert.equal(refresh.type, 'button'); assert.equal(refresh.getAttribute('aria-label'), 'Refresh teams'); assert.equal(refresh.title, 'Refresh teams');
+  assert.equal(refresh.textContent, '', 'icon only'); assert.equal(refresh.innerHTML, iconElement(u.doc, 'refresh', { size: 13 }).outerHTML);
+  assert.equal(u.style(refresh).width, '24px'); assert.equal(u.style(refresh).height, '24px'); assert.equal(u.style(refresh).borderWidth, '0px');
+  assert.equal(u.style(refresh).color, 'var(--muted)'); assert.equal(u.style(refresh).backgroundColor, 'rgba(0, 0, 0, 0)');
+  assert.equal(u.runs().length, 1);
+  refresh.click(); await tick(); await tick();
+  assert.equal(u.runs().length, 2); assert.equal(u.runs().at(-1).operation, 'messaging:teams');
+  u.panel.dispose();
+  assert.equal(u.tools.querySelector('button'), null, 'dispose removes the button from the slot'); assert.equal(u.section(), null, 'and the section');
+  u.panel.dispose(); assert.equal(u.tools.childElementCount, 0, 'safe to call twice');
+  // Without a slot the icon button sits in the section, like the text button does.
+  const v = card(t, captured(), { refreshHost: false }); await tick();
+  assert.equal(v.tools.childElementCount, 0); assert.equal(v.section().querySelector('button.teams-refresh.is-compact').getAttribute('aria-label'), 'Refresh teams');
+  // "Not supported" / unavailable: no refresh anywhere; dispose still removes the section.
+  const ops = teamsOperations(inspection()); ops.supported = false;
+  const n = card(t, () => assert.fail('no run'), { operations: { provider: 'oats.aweb', supported: false } }); await tick();
+  assert.equal(n.section().textContent, 'Not supported by this messaging provider.'); assert.equal(n.tools.childElementCount, 0);
+  n.panel.dispose(); assert.equal(n.section(), null); n.panel.dispose();
+});
+
+test('the default variant is unchanged: the text "Refresh teams" button in the section, the identity-home details, no glyphs or tags', async t => {
+  const u = card(t, captured(), { compact: false, refreshHost: false }); await tick();
+  assert.deepEqual([...u.section().classList], ['teams-panel']);
+  const refresh = u.section().querySelector('button.teams-refresh');
+  assert.equal(refresh.textContent, 'Refresh teams'); assert.equal(refresh.hasAttribute('aria-label'), false); assert.equal(refresh.querySelector('svg'), null);
+  assert.equal(refresh, u.section().lastElementChild, 'after the card, as before'); assert.equal(u.tools.childElementCount, 0);
+  assert.deepEqual([...u.section().children].map(c => c.className), ['teams-note teams-intro', 'teams-status', 'teams-card', 'teams-refresh']);
+  assert.equal(u.row('default').querySelector('.team-name').textContent, 'Default team');
+  assert.equal(u.section().querySelector('.team-glyph'), null); assert.equal(u.section().querySelector('.team-tag'), null);
+  assert.equal(u.row('dev').querySelector('.team-meta').textContent, 'northwind:eng · Not joined');
+  const badge = u.row('default').querySelector('.team-badge'); assert.equal(badge.textContent, 'Always on'); assert.equal(u.style(badge).borderRadius, '999px', 'still a pill');
+  await u.press('join', 'dev');
+  assert.equal(u.row('dev').querySelector('details pre').textContent, `${HOME}/.aweb-identity-dev`);
+  assert.deepEqual([...u.row('dev').querySelectorAll('.team-meta')].map(m => m.textContent), [`northwind:eng · Joined ${whenText(run('join-dev').result.joined[0].since)}`, "Receives this team's mail as it arrives"]);
+  // A refreshHost with the default variant still takes the text button.
+  const v = card(t, captured(), { compact: false, refreshHost: true }); await tick();
+  assert.equal(v.tools.querySelector('button.teams-refresh').textContent, 'Refresh teams'); assert.equal(v.section().querySelector('.teams-refresh'), null);
+  v.panel.dispose(); assert.equal(v.tools.childElementCount, 0);
+});
+
+test('the injected context-panel section mounts the compact card with its Refresh in the tools slot; a new selection or dispose removes it', async t => {
+  const dom = new JSDOM('<body><section></section><div id="tools"></div></body>'), doc = dom.window.document;
+  const host = doc.querySelector('section'), tools = doc.querySelector('#tools'), calls = [], presence = [];
+  const instance = (home = HOME) => ({ instance: home.split('/').pop(), home });
+  const s = createInstanceTeamsSection(host, { cli: () => ({ ok: true, operationsApi: 2 }), tools, onPresence: p => presence.push(p),
+    request: async (_ws, body) => { calls.push(body); return body.action === 'inspect' ? inspectionFor(body.selector.home) : run('teams-initial'); } });
+  t.after(() => { s.dispose(); dom.window.close(); });
+  s.update({ active: true, workspace: 'A', instance: instance() }); await tick(); await tick();
+  assert.ok(host.querySelector('.teams-panel.is-compact [data-team-row="default"] .team-glyph'), 'the compact card');
+  assert.equal(host.querySelector('.teams-panel > h3'), null);
+  assert.equal(tools.querySelector('button.teams-refresh').getAttribute('aria-label'), 'Refresh teams'); assert.equal(host.querySelector('.teams-refresh'), null);
+  assert.equal(presence.at(-1), true);
+  tools.querySelector('button.teams-refresh').click(); await tick(); await tick();
+  assert.equal(calls.filter(c => c.operation === 'messaging:teams').length, 2, 'the slot button drives the panel');
+  // A new selection: the old section and its button go, the new ones come.
+  s.update({ active: true, workspace: 'A', instance: instance(`${HOME}-2`) });
+  assert.equal(host.querySelector('.teams-panel'), null); assert.equal(tools.childElementCount, 0, 'no orphan button while the next inspection is in flight');
+  assert.equal(presence.at(-1), false);
+  await tick(); await tick();
+  assert.equal(host.querySelectorAll('.teams-panel').length, 1); assert.equal(tools.querySelectorAll('button.teams-refresh').length, 1, 'exactly one');
+  s.dispose();
+  assert.equal(host.querySelector('.teams-panel'), null); assert.equal(tools.childElementCount, 0, 'dispose empties the slot');
+  // Without a tools slot the button stays in the section (the default before the integrator wires the header).
+  const dom2 = new JSDOM('<body><section></section></body>'), host2 = dom2.window.document.querySelector('section');
+  const s2 = createInstanceTeamsSection(host2, { cli: () => ({ ok: true, operationsApi: 2 }), request: async (_ws, body) => body.action === 'inspect' ? inspection() : run('teams-initial') });
+  t.after(() => { s2.dispose(); dom2.window.close(); });
+  s2.update({ active: true, workspace: 'A', instance: instance() }); await tick(); await tick();
+  assert.equal(host2.querySelector('.teams-panel.is-compact button.teams-refresh').getAttribute('aria-label'), 'Refresh teams');
 });

@@ -18,10 +18,10 @@ test('PR card renders reported facts/checks, validates external URL, and never c
   const window = dom().window, root = window.document.querySelector('main'), opened = [];
   const panel = createForgePrPanel(root, { request: async (_ws, body) => { assert.deepEqual(Object.keys(body).sort(), ['observationKey', 'selector']); return card(); }, openExternal: url => opened.push(url) });
   await panel.update(selected);
-  // W6 (design; replaces "#42 · A real PR", the "Reported PR checks" heading and the <a> link):
-  // the title, "#42 · state", the checks list, and an Open on GitHub button.
-  assert.equal(root.querySelector('h3').textContent, 'Pull request');
-  assert.equal(root.querySelector('.forge-title').textContent, 'A real PR'); assert.match(root.querySelector('.forge-sub').textContent, /^#42 · (open|draft|merged|closed)$/);
+  // v4.1 board 2: the label, then a bordered card: the state pill (this fixture is a draft) before the title, "#42", the checks list, and Open on GitHub.
+  assert.equal(root.querySelector('.git-head h3').textContent, 'Pull request');
+  assert.equal(root.querySelector('.forge-state').textContent, 'Draft'); assert.equal(pr().isDraft, true);
+  assert.equal(root.querySelector('.forge-title').textContent, 'A real PR'); assert.equal(root.querySelector('.forge-sub').textContent, '#42');
   assert.ok(root.querySelector('.forge-checks')); assert.match(root.textContent, /not proof that the local revision was pushed/);
   assert.equal(root.querySelector('a'), null, 'no raw link: a button opens it');
   root.querySelector('button.forge-open').click(); assert.deepEqual(opened, [pr().url]);
@@ -55,9 +55,13 @@ test('connection generation partitions PR paints, no-PR differs from unavailable
     subscribeConnections: fn => { change = fn; return () => {}; }, connect: choice => connects.push(choice) });
   await panel.update(selected); const button = root.querySelector('button'); button.click(); assert.equal(connects.length, 1);
   result = { ...card(), status: 'no-pull-request', data: null }; gen++; change(); await tick();
-  assert.match(root.textContent, /No pull request found/); button.click(); assert.equal(connects.length, 1);
+  // v4.1 board 2: a dashed card, no action (none exists today).
+  const none = root.querySelector('.forge-no-pr'); assert.equal(none.textContent, 'No pull request for this branch yet.'); assert.ok(none.classList.contains('git-dashed'));
+  assert.equal(root.querySelector('button'), null, 'no button'); assert.equal(root.querySelector('h3').textContent, 'Pull request'); assert.doesNotMatch(root.textContent, /No pull request found/);
+  button.click(); assert.equal(connects.length, 1);
   result = { ...card(), status: 'unavailable', data: null, reason: { code: 'E_GH_TIMEOUT', message: 'SECRET' } }; gen++; change(); await tick();
-  assert.match(root.textContent, /did not answer in time/); assert.doesNotMatch(root.textContent, /SECRET|No pull request found/);
+  assert.match(root.textContent, /did not answer in time/); assert.doesNotMatch(root.textContent, /SECRET|No pull request for this branch/);
+  assert.equal(root.querySelector('.git-dashed'), null, 'other statuses are a plain muted note, not the dashed card'); assert.ok(root.querySelector('p.git-note'));
   panel.dispose(); window.close();
 });
 function settingsFixture(options = {}) {

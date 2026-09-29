@@ -29,9 +29,12 @@ test('Branch: the branch, its distance from the default branch, the work mode, t
   assert.equal(u.one('.git-head-aside').textContent, git.workMode);
   assert.equal(u.one('.git-branch').textContent, git.observation.branch);
   const { ahead, behind } = git.base;
-  assert.equal(u.one('.git-ahead').textContent, `↑${ahead}${behind ? ` ↓${behind}` : ''} from main`);
+  assert.deepEqual([ahead, behind], [0, 1], 'the capture: at main, one commit behind it');
+  assert.equal(u.one('.git-ahead').textContent, '↓1 from main', 'v4.1: only the non-zero side, never "↑0"');
   assert.equal(u.one('.git-ahead').title, `${ahead} ahead of, ${behind} behind origin/main`);
-  assert.equal(u.one('.git-branch-sub').textContent, `oats · clean except ${git.files.length} files`);
+  assert.equal(u.one('.git-branch-sub').textContent, `oats · ${git.files.length} files changed`);
+  assert.equal(u.one('.git-head-count').textContent, String(git.files.length), 'the Changes header counts the files');
+  assert.match(u.one('.git-footer').textContent, /^Checked .+ · Refresh$/); assert.equal(u.one('.git-checked').title, git.observation.at);
   assert.match(u.one('.git-more').textContent, /No upstream branch is reported\./, 'the rest of the read sits behind Details');
   assert.equal(u.one('.git-more').open, false);
 });
@@ -59,8 +62,9 @@ test('a clean worktree says so and offers no Open diff', async t => {
   const view = createInstanceGitPanel(host, { request: () => answer(clean) }); t.after(() => { view.dispose(); dom.window.close(); });
   await view.update({ active: true, workspace: target.workspace, instance: target, key: gitTargetKey(target) });
   assert.equal(host.querySelector('.git-branch-sub').textContent, 'oats · clean');
-  assert.equal(host.querySelector('.git-changes-section .git-link').hidden, true);
-  assert.match(host.querySelector('.git-files').textContent, /No changes reported in this observation\./);
+  assert.equal(host.querySelector('.git-changes-section .git-link').hidden, true); assert.equal(host.querySelector('.git-head-count').textContent, '');
+  assert.equal(host.querySelector('.git-files .git-dashed').textContent, 'No uncommitted changes.');
+  assert.equal(host.querySelector('.git-files').classList.contains('git-card'), false, 'a dashed note, not a bordered list');
 });
 
 // Line counts (kernel #238, passed through by #245), on the engineer's real capture

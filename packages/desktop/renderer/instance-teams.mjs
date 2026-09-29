@@ -1,19 +1,22 @@
 /** The Teams section of the terminal-side context panel's Instance tab: the
- * same card as the Workspace inspector's (teams-panel.mjs), for the focused
- * terminal's instance. The context panel stays IO-free — this section is
- * injected like the Git panel and owns its reads: `oats inspect --home`
- * (which operations the messaging provider declares), then the provider's
- * `messaging:teams|join|leave`. Every await carries the selection identity,
- * the workspace generation and a serial, checked on success and rejection. */
+ * compact presentation of the Workspace inspector's card (teams-panel.mjs,
+ * `compact: true`), for the focused terminal's instance. The context panel
+ * stays IO-free — this section is injected like the Git panel and owns its
+ * reads: `oats inspect --home` (which operations the messaging provider
+ * declares), then the provider's `messaging:teams|join|leave`. Every await
+ * carries the selection identity, the workspace generation and a serial,
+ * checked on success and rejection. `tools`, when given, is the section
+ * header's right-hand slot: the icon Refresh goes there and leaves with the
+ * panel (a new selection, or dispose). */
 import { inspectData, inspectSupported } from './inspect-contract.mjs';
 import { createTeamsPanel, teamsCSS, teamsOperations } from './teams-panel.mjs';
 import { cliStatus } from './views/cli-status.mjs';
 
 export { teamsCSS };
 
-export function createInstanceTeamsSection(host, { request, generation = () => 0, onPresence = () => {}, cli = cliStatus } = {}) {
+export function createInstanceTeamsSection(host, { request, generation = () => 0, onPresence = () => {}, cli = cliStatus, tools = null } = {}) {
   let identity = null, serial = 0, panel = null, disposed = false, attempted = null;
-  const clear = () => { panel = null; host.querySelector('.teams-panel')?.remove(); onPresence(false); };
+  const clear = () => { panel?.dispose(); panel = null; host.querySelector('.teams-panel')?.remove(); onPresence(false); };
   async function load(workspace, instance, id) {
     const ticket = ++serial, gen = generation();
     const owns = () => !disposed && ticket === serial && identity === id && generation() === gen;
@@ -25,7 +28,7 @@ export function createInstanceTeamsSection(host, { request, generation = () => 0
     const operations = inspected && teamsOperations(inspected);
     if (!operations) return;
     onPresence(true);
-    panel = createTeamsPanel(host, { operations, selector, heading: false, owns,
+    panel = createTeamsPanel(host, { operations, selector, heading: false, owns, compact: true, refreshHost: tools,
       request: body => request(workspace, body), available: () => inspectSupported(cli()) });
   }
   return {

@@ -4,9 +4,13 @@
  * home's inspection), never on a provider name or version. The provider's teams
  * document is decoded strictly and bounded; its refusals are shown verbatim. */
 import { teamRow } from './team-rows.mjs';
+import { iconElement } from './shell-icons.mjs';
 
 /** One card, the same in the Workspace inspector and the context panel:
- * tokens only (computed-AA inventory in theme-contrast), no opacity. */
+ * tokens only (computed-AA inventory in theme-contrast), no opacity.
+ * `.teams-panel.is-compact` is the context panel's Messaging variant (v4.1
+ * board): a state glyph per row, text actions, the refresh as an icon button
+ * that may live outside the section (`button.teams-refresh.is-compact`). */
 export const teamsCSS = `
 .teams-panel { display:flex; flex-direction:column; gap:8px; min-width:0; }
 .teams-panel .teams-status { margin:0; font-size:12px; line-height:1.45; color:var(--muted); }
@@ -41,6 +45,28 @@ export const teamsCSS = `
 .teams-panel .teams-refresh:disabled { color:var(--muted); cursor:default; }
 .teams-panel .teams-subhead { margin:0; padding:9px 12px 0; border-top:1px solid var(--border); font-size:11px; font-weight:650; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); }
 .teams-panel .teams-subhead + .team-row { border-top:0; }
+.teams-panel.is-compact .teams-card { border-radius:9px; }
+.teams-panel.is-compact .teams-card > * + * { border-top:1px solid var(--border); }
+.teams-panel.is-compact .teams-card > .teams-subhead + .team-row { border-top:0; }
+.teams-panel.is-compact .team-row { display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:9px 12px; min-height:40px; }
+.teams-panel.is-compact .team-glyph { flex:none; display:grid; place-items:center; width:14px; height:14px; color:var(--muted); }
+.teams-panel.is-compact .team-glyph.is-on { color:var(--ok); }
+.teams-panel.is-compact .team-glyph > svg { display:block; }
+.teams-panel.is-compact .team-main { flex:1 1 0; gap:1px; }
+.teams-panel.is-compact .team-name { display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:12.5px; font-weight:600; }
+.teams-panel.is-compact .team-tag { font-size:10.5px; font-weight:600; line-height:1.3; padding:1px 6px; border-radius:4px; background:var(--tag-bg); color:var(--muted); }
+.teams-panel.is-compact .team-meta { font-size:11px; }
+.teams-panel.is-compact .team-badge { border:0; border-radius:0; padding:0; font-size:11.5px; font-weight:500; line-height:1.4; color:var(--muted); }
+.teams-panel.is-compact .team-action { height:auto; margin:-2px -4px; padding:2px 4px; border:0; border-radius:4px; background:transparent; font-size:12px; line-height:1.3; color:var(--muted); }
+.teams-panel.is-compact .team-action[data-team-action="join"] { color:var(--accent); }
+.teams-panel.is-compact .team-action:hover:not(:disabled) { background:transparent; text-decoration:underline; }
+.teams-panel.is-compact .team-action:disabled { color:var(--muted); text-decoration:none; }
+.teams-panel.is-compact .team-row > details, .teams-panel.is-compact .team-row > .teams-problem { flex-basis:100%; }
+.teams-panel.is-compact .team-action:focus-visible, .teams-panel.is-compact summary:focus-visible { outline:0; background:var(--sel); box-shadow:inset 0 0 0 1px var(--accent); border-radius:4px; }
+button.teams-refresh.is-compact { flex:none; align-self:auto; display:grid; place-items:center; width:24px; height:24px; padding:0; border:0; border-radius:6px; background:transparent; color:var(--muted); cursor:pointer; }
+button.teams-refresh.is-compact:hover:not(:disabled) { background:var(--surface-2); color:var(--fg); }
+button.teams-refresh.is-compact:disabled { color:var(--muted); cursor:default; }
+button.teams-refresh.is-compact:focus-visible { outline:0; background:var(--sel); box-shadow:inset 0 0 0 1px var(--accent); }
 `;
 
 const record = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -176,25 +202,40 @@ export function receiveText(receive) {
 
 /** One Teams section for an instance home. `request(body)` posts to the
  * capabilities route; `owns()` is the inspector's selection lifetime (checked
- * on success AND rejection); `available()` the CLI gate. */
-export function createTeamsPanel(parent, { operations, selector, request, owns, available = () => true, heading = true }) {
+ * on success AND rejection); `available()` the CLI gate. `compact` is the
+ * context panel's Messaging presentation (glyph rows, text actions, an icon
+ * Refresh that goes to `refreshHost` when given); the default renders the
+ * Workspace inspector's card. `dispose()` removes the section and the refresh
+ * button wherever it was appended (safe to call twice). */
+export function createTeamsPanel(parent, { operations, selector, request, owns, available = () => true, heading = true, compact = false, refreshHost = null }) {
   const doc = parent.ownerDocument;
   const node = (tag, value, cls) => { const el = doc.createElement(tag); if (value !== undefined) el.textContent = value; if (cls) el.className = cls; return el; };
-  const section = node('section', undefined, 'teams-panel');
+  const section = node('section', undefined, compact ? 'teams-panel is-compact' : 'teams-panel');
   if (heading) section.append(node('h3', 'Teams'));
   parent.append(section);
-  if (!operations.supported) { section.append(node('p', 'Not supported by this messaging provider.', 'teams-status')); return { sync() {}, refresh() {} }; }
-  if (!operations.teams.available) { section.append(node('p', operations.teams.reason || 'The provider cannot list teams here.', 'teams-status')); return { sync() {}, refresh() {} }; }
+  let refresh = null;
+  const dispose = () => { refresh?.remove(); section.remove(); };
+  if (!operations.supported) { section.append(node('p', 'Not supported by this messaging provider.', 'teams-status')); return { sync() {}, refresh() {}, dispose }; }
+  if (!operations.teams.available) { section.append(node('p', operations.teams.reason || 'The provider cannot list teams here.', 'teams-status')); return { sync() {}, refresh() {}, dispose }; }
   const status = node('p', '', 'teams-status'); status.setAttribute('role', 'status');
   // What the list is: the workspace's default team, then the teams the soul has access to (unmapped labels are not shown).
   const intro = node('p', "Always in the workspace's default team. It can join the teams its soul has access to.", 'teams-note teams-intro'); intro.hidden = true;
   const body = node('div', undefined, 'teams-card');
-  const refresh = node('button', 'Refresh teams', 'teams-refresh'); refresh.type = 'button';
-  section.append(intro, status, body, refresh);
-  // One row: name + meta lines on the left, the action or a badge on the right.
-  const teamRow = (key, name, metas, side) => {
+  refresh = node('button', compact ? undefined : 'Refresh teams', compact ? 'teams-refresh is-compact' : 'teams-refresh'); refresh.type = 'button';
+  if (compact) { refresh.append(iconElement(doc, 'refresh', { size: 13 })); refresh.setAttribute('aria-label', 'Refresh teams'); refresh.title = 'Refresh teams'; }
+  section.append(...(compact ? [] : [intro]), status, body);
+  (refreshHost || section).append(refresh);
+  // A row's state glyph (compact only): a check for a membership (the default team, a joined
+  // team), a circle for a team it could join or is not in.
+  const glyph = on => { const g = node('span', undefined, on ? 'team-glyph is-on' : 'team-glyph'); g.setAttribute('aria-hidden', 'true'); g.append(iconElement(doc, on ? 'check' : 'circle', { size: 14 })); return g; };
+  // One row: name + meta lines on the left, the action or a badge on the right. Compact: a state
+  // glyph first, `tag` inline after the name (the default team's "default").
+  const teamRow = (key, name, metas, side, { on = false, tag = null } = {}) => {
     const el = node('div', undefined, 'team-row'); el.dataset.teamRow = key;
-    const main = node('div', undefined, 'team-main'); main.append(node('div', name, 'team-name'));
+    if (compact) el.append(glyph(on));
+    const main = node('div', undefined, 'team-main'), title = node('div', name, 'team-name');
+    if (tag) title.append(node('span', tag, 'team-tag'));
+    main.append(title);
     for (const meta of metas) main.append(typeof meta === 'string' ? node('div', meta, 'team-meta') : meta);
     el.append(main); if (side) el.append(side); return el;
   };
@@ -295,17 +336,18 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
       const team = row.from ? `${row.team} · ${row.from}` : row.team;
       let el;
       if (j) {
-        const since = node('div', `${team} · Joined ${whenText(j.since)}`, 'team-meta'); since.title = j.since;
-        const metas = [since, receiveText(j.receive).replace(/^./, c => c.toUpperCase())];
-        if (!row.eligible) metas.push('No longer eligible in this workspace.');
-        el = teamRow(row.label, name, metas, control('leave', row.label));
-        const where = node('details'); where.append(node('summary', 'Identity home'), node('pre', j.identityHome)); el.append(where);
-      } else el = teamRow(row.label, name, [`${team} · Not joined`], control('join', row.label));
+        // Compact: one line, when it joined (and, when so, that the soul lost it); no receive mode, no identity home.
+        const since = node('div', compact ? `Joined ${whenText(j.since)}${row.eligible ? '' : ' · No longer eligible in this workspace.'}` : `${team} · Joined ${whenText(j.since)}`, 'team-meta'); since.title = j.since;
+        const metas = compact ? [since] : [since, receiveText(j.receive).replace(/^./, c => c.toUpperCase())];
+        if (!compact && !row.eligible) metas.push('No longer eligible in this workspace.');
+        el = teamRow(row.label, name, metas, control('leave', row.label), { on: true });
+        if (!compact) { const where = node('details'); where.append(node('summary', 'Identity home'), node('pre', j.identityHome)); el.append(where); }
+      } else el = teamRow(row.label, name, [compact ? 'eligible' : `${team} · Not joined`], control('join', row.label));
       if (rowError?.label === row.label) el.append(problem(rowError.error, 'The messaging provider refused.'));
       for (const a of warned.filter(a => a.label === row.label)) el.append(warning(a));
       body.append(el);
     }
-    if (!rows.length) body.append(node('p', 'Its soul has access to no other team.', 'teams-note'));
+    if (!rows.length) body.append(node('p', compact ? 'No other teams available to this soul.' : 'Its soul has access to no other team.', 'teams-note'));
     // Team model v2: the teams this instance left on a live read (the soul lost them), newest first.
     const left = [...(current.left || [])].sort((a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0));
     if (left.length) {
@@ -318,17 +360,21 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
     }
     sync();
   }
-  /** The default team's row. 0.29: {team, source}. Team model v2: {label, team|null, from}, or null (none configured). */
+  /** The default team's row. 0.29: {team, source}. Team model v2: {label, team|null, from}, or null (none configured).
+   * Compact: the name is the label (v2) or the id (0.29) with a "default" tag; one meta line: the id (v2) or the 0.29 words. */
   function defaultRow(home) {
     const always = badge('Always on', "The default team can't be left.");
     if (home === null) return teamRow('default', 'Default team', ['None configured on this computer: run oats aweb setup.']);
-    if (!Object.hasOwn(home, 'from')) return teamRow('default', 'Default team', [defaultTeamText(home)], always);
-    if (home.team) return teamRow('default', `Default team · ${home.label}`, [`${home.team} · ${DEFAULT_FROM[home.from]}`], always);
+    if (!Object.hasOwn(home, 'from')) return compact ? teamRow('default', home.team, [defaultTeamText(home)], always, { on: true, tag: 'default' })
+      : teamRow('default', 'Default team', [defaultTeamText(home)], always);
+    if (home.team) return compact ? teamRow('default', home.label, [home.team], always, { on: true, tag: 'default' })
+      : teamRow('default', `Default team · ${home.label}`, [`${home.team} · ${DEFAULT_FROM[home.from]}`], always);
     // Unmapped: a blocking problem, not a membership (no "Always on"): nothing can be spawned into it.
     const block = node('div', undefined, 'teams-problem teams-blocking'); block.setAttribute('role', 'alert');
     block.append(node('p', `The default team ${home.label} has no provider id yet.`),
       node('p', 'Its owner runs oats aweb setup, then commits the id; or choose another default in Workspace › Teams (oats teams default).', 'teams-fix'));
-    return teamRow('default', `Default team · ${home.label}`, [DEFAULT_FROM[home.from], block]);
+    return compact ? teamRow('default', home.label, [DEFAULT_FROM[home.from], block], null, { tag: 'default' })
+      : teamRow('default', `Default team · ${home.label}`, [DEFAULT_FROM[home.from], block]);
   }
   function sync() {
     refresh.disabled = !!pending || !available() || !live();
@@ -339,5 +385,5 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
   }
   refresh.addEventListener('click', () => { if (live() && !pending) void read({ explicit: true }); });
   void read();
-  return { sync, refresh: () => { if (live() && !pending) void read({ explicit: true }); } };
+  return { sync, refresh: () => { if (live() && !pending) void read({ explicit: true }); }, dispose };
 }
