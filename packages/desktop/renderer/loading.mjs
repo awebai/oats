@@ -141,6 +141,8 @@ export function captureFocusState(root, { scroller = root, fallback = null } = {
   const path = inside && !key ? pathFrom(root, active) : null;
   const scrollTop = scroller?.scrollTop ?? 0;
   return () => {
+    // A focused control the repaint never touched stays exactly where it is.
+    if (inside && active.isConnected && root.contains(active)) { if (scroller) scroller.scrollTop = scrollTop; return true; }
     let target = null;
     if (key) target = [...root.querySelectorAll('[data-focus-key]')].find(el => el.dataset.focusKey === key) || null;
     else if (path) { target = walk(root, path); if (target && ACTIONABLE.test(target.tagName)) target = null; }

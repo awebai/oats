@@ -217,6 +217,9 @@ test('captureFocusState: a keyed control is found by its key only, a path never 
   root.innerHTML = '<section><button>one</button><button>two</button></section>'; root.querySelectorAll('button')[1].focus();
   restore = captureFocusState(root, { fallback: () => fb }); root.innerHTML = '<section><button>zero</button><button>one</button></section>';
   assert.equal(restore(), false); assert.equal(doc.activeElement, fb);
+  // A focused control the repaint left in place is not moved, keyed or not.
+  root.innerHTML = '<section><button>kept</button><button data-focus-key="k">keyed</button></section>';
+  for (const b of root.querySelectorAll('button')) { b.focus(); restore = captureFocusState(root, { fallback: fb }); root.append(doc.createElement('p')); assert.equal(restore(), true); assert.equal(doc.activeElement, b); }
   // Focus outside the root: nothing happens, the fallback is not used.
   fb.focus(); restore = captureFocusState(root, { fallback: doc.body }); root.innerHTML = '<p>x</p>'; assert.equal(restore(), false); assert.equal(doc.activeElement, fb);
 });

@@ -295,10 +295,11 @@ test('soul page: "Teams here" failing with no document is the failed block (caus
   assert.equal(failed.querySelector('.loading-failed-code').textContent, 'E_SOUL_UNKNOWN');
   assert.equal(card.querySelector('.sth-error'), null, 'not the row problem box');
   assert.equal(card.querySelector('.loading-status').textContent, "Couldn't refresh teams. no soul release-manager here");
-  failed.querySelector('.loading-retry').click();
+  failed.querySelector('.loading-retry').focus(); failed.querySelector('.loading-retry').click();
   assert.deepEqual(u.calls.at(-1).body, { soul: 'release-manager', action: 'show' }, 'the soul-teams route admits no refresh hint (server/teams.mjs keysOnly)');
   await u.resolve({ status: 'ok', soulTeams: soulTeamsDoc }, u.teamsHere);
   assert.equal(card.querySelector('.loading-failed'), null); assert.ok(card.querySelector('.sth-row'));
+  assert.equal(u.doc.activeElement, card.querySelector('.page-card-title'), 'the focused Retry that went with the block hands focus to the card title, not <body>');
   assert.equal(card.querySelector('.loading-status').textContent, 'Teams updated');
   await u.resolve(soul);
   assert.equal(u.q('[data-card="Teams here"]'), card);

@@ -74,6 +74,7 @@ export function createSoulTeamsHere(doc, { soul, request, listTeams = null, cloc
   const status = statusLine(doc, { visuallyHidden: true }); card.append(status);
   const loading = createDataState({ doc, noun: 'teams', region: body, status, indicatorHost: head, noticeHost: null,
     skeleton: () => skeletonBlock(doc, 'line', { count: 3 }), onRetry: () => { void run({ action: 'show' }, { user: true }); },
+    focusFallback: head, // a focused Retry whose failed block goes on success lands on the card title, not <body>
     now: clock.now, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout });
   let current = null, pending = false, serial = 0, disposed = false, rowError = null, cardError = null, choices = null, focusAdd = false;
 
