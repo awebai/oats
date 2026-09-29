@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "home": "/Users/juanre/awebai/oats-v2/agents/nobody/instances/nobody-here",
+    "backend": null,
+    "present": false,
+    "state": "stopped",
+    "server": "dxp2"
+  }
+}

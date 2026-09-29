@@ -4,13 +4,22 @@ import { requireRemoteSupport } from "./cli-locator.mjs";
 import { runTerminalCommand } from './terminal-exec.mjs';
 import { HERDR_REMOVED } from './renderer/terminal-contract.mjs';
 
-const herdrRemoved = message => Object.assign(new Error(message), { code: 'E_HERDR_REMOVED' });
-/** A 0.31 kernel's E_HERDR_REMOVED envelope (printed with exit 1), or null. */
-function herdrRefusal(stdout) {
+const coded = (code, message) => Object.assign(new Error(message), { code });
+const herdrRemoved = message => coded('E_HERDR_REMOVED', message);
+const unreachable = () => coded('E_TERM_REMOTE_UNREACHABLE', 'the remote server could not be reached');
+/** The CLI's JSON envelope, or null when it printed none. */
+function envelopeOf(stdout) {
   let envelope;
   try { envelope = JSON.parse(stdout); } catch { return null; }
-  if (envelope?.schemaVersion !== 1 || envelope.ok !== false || envelope.error?.code !== 'E_HERDR_REMOVED') return null;
-  return herdrRemoved(typeof envelope.error.message === 'string' && envelope.error.message ? envelope.error.message : HERDR_REMOVED);
+  return envelope?.schemaVersion === 1 && typeof envelope.ok === 'boolean' ? envelope : null;
+}
+/** A refusal envelope as a coded error. The CLI reports ssh's own failure as E_SSH (a transport
+ * failure); a 0.31 kernel's E_HERDR_REMOVED keeps its message; any other refusal keeps the host's code. */
+function refusal(envelope) {
+  const { code, message } = envelope.error || {};
+  if (code === 'E_SSH') return unreachable();
+  if (code === 'E_HERDR_REMOVED') return herdrRemoved(typeof message === 'string' && message ? message : HERDR_REMOVED);
+  return coded(typeof code === 'string' && code ? code : 'E_TERM_OPEN_FAILED', message || 'remote session inspection failed');
 }
 
 export function remoteTargetKey(remote) {
@@ -34,17 +43,21 @@ export async function prepareRemoteTerm(cli, remote, { run = runTerminalCommand,
     }));
   } catch (error) {
     check();
-    throw (typeof error?.stdout === 'string' && herdrRefusal(error.stdout)) || error;
+    const envelope = typeof error?.stdout === 'string' ? envelopeOf(error.stdout) : null;
+    if (envelope && !envelope.ok) throw refusal(envelope);
+    // The CLI ran and ended without a refusal (ssh's 255, a bare nonzero exit, or killed at the
+    // deadline): the link is the likely cause. A CLI that never started keeps its own error.
+    if (Number.isInteger(error?.code) || error?.signal) throw unreachable();
+    throw error;
   }
   check();
+  const envelope = envelopeOf(stdout);
+  if (!envelope) throw new Error("remote session inspection answered no envelope");
+  if (!envelope.ok) throw refusal(envelope);
   // A 0.31 kernel refuses a Herdr-recorded instance; an older one still reports its live Herdr
   // session. Neither is attached: the refusal keeps its code so the broker reports it.
-  const refused = herdrRefusal(stdout);
-  if (refused) throw refused;
-  const envelope = JSON.parse(stdout);
-  if (envelope.schemaVersion !== 1 || envelope.ok !== true) throw new Error(envelope.error?.message || "remote session inspection failed");
   if (envelope.result?.backend === 'herdr') throw herdrRemoved(HERDR_REMOVED);
-  if (envelope.result?.present !== true) throw new Error("remote terminal no longer exists");
+  if (envelope.result?.present !== true) throw coded('E_TERM_REMOTE_GONE', "remote terminal no longer exists");
   return { binary: bin, args: ["session", "attach", ...address] };
 }
 

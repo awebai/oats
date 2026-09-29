@@ -82,6 +82,15 @@ test('a remote preparation refused with E_HERDR_REMOVED returns that code and me
   assert.equal(f.ptys.length, 0); assert.equal(f.broker.counts().slots, 0);
 });
 
+test('a remote preparation keeps its transport and gone codes through the broker, never E_TERM_OPEN_FAILED', async () => {
+  for (const code of ['E_TERM_REMOTE_UNREACHABLE', 'E_TERM_REMOTE_GONE']) {
+    const f = fixture({ prepare: () => { throw Object.assign(new Error('kernel text'), { code }); } }), a = f.owner('A');
+    const result = await f.open(a, { name: 'remote-row', remote: true });
+    assert.equal(result.code, code); assert.deepEqual(result, terminalFailure(code));
+    assert.equal(f.ptys.length, 0); assert.equal(f.broker.counts().slots, 0);
+  }
+});
+
 test('actual handlers: duplicate own target reuses; foreign target gets its own resource/lease, never the other id', async () => {
   const f = fixture(), a = f.owner('A'), b = f.owner('B');
   const [first, duplicate] = await Promise.all([f.open(a), f.open(a)]);
