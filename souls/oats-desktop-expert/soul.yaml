@@ -1,6 +1,6 @@
 schemaVersion: 2
 name: oats-desktop-expert
-description: "Desktop product/interaction rationale, accessibility, integration limitations and verification judgment."
+description: "Desktop product, UX and design authority: interaction design, information architecture, visual language, accessibility, integration limitations and verification judgment."
 work: directory
 # oats.core and the oats.okf knowledge slot come from the workspace defaults.
 # What this soul owns and reads in the central base is okf.json beside this file.
