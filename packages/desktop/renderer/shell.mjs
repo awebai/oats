@@ -52,7 +52,7 @@ import { createRosterTip, rosterTipFacts, rosterTipCSS } from "./roster-tip.mjs"
 import { createRosterPrs, prChip, prText, rosterPrCSS } from "./roster-pr.mjs";
 import { createPanelOwner } from "./panel-owner.mjs";
 import {
-  collapseKey, hasInstanceChildren, instanceRepoLabel, treeConnectors, filterInstanceTree, instanceVisibleInTree,
+  collapseKey, hasInstanceChildren, instanceRepoLabel, treeConnectors, filterInstanceTree, instanceMatchesFilter, instanceVisibleInTree,
   captureTreeRenderState, rosterResponseOwns, clusterSeparator, renderRosterCount,
   instanceId, rosterParentId, terminalKey, resolveTerminalOpen, visibleClusters,
   createRosterLoading, rosterSignature, markStaleControl, staleBlocked, ROSTER_STALE_TITLE,
@@ -319,10 +319,12 @@ function initContextRoster() {
   sidebar.addEventListener("focusin", () => {
     if (!tabOpenIntents.isApplyingFocus()) tabOpenIntents.invalidate();
   });
-  // ArrowDown from the filter enters the rows at their tab stop (spec F).
+  // ArrowDown from the filter enters the rows (spec F): while filtering, at the first row that
+  // matches (never an ancestor shown only for context); otherwise at the rows' tab stop.
   input.addEventListener("keydown", (e) => {
     if (e.key !== "ArrowDown" || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.isComposing) return;
-    const row = contextRosterEl.querySelector('.ctx-list .ctx-inst[tabindex="0"]');
+    const row = (contextFilter && contextRosterEl.querySelector('.ctx-list .ctx-inst:not([data-filter-context])'))
+      || contextRosterEl.querySelector('.ctx-list .ctx-inst[tabindex="0"]');
     if (!row) return;
     e.preventDefault(); tabOpenIntents.invalidate(); setRovingRow(contextRosterEl.querySelector(".ctx-list"), row);
   });
@@ -537,6 +539,8 @@ function renderContextRoster(instances) {
         row.type = "button";
         row.dataset.treeInstance = instanceId(i);
         row.dataset.treeControl = "terminal";
+        // An ancestor kept only for a filter match's tree path: shown, but not where the keyboard lands.
+        if (!instanceMatchesFilter(i, contextFilter)) row.dataset.filterContext = "true";
         const state = runtimeState(i);
         row.className = "ctx-inst" + (state === "stopped" ? " idle" : "") + (isActive ? " active" : "");
         rowWrap.classList.toggle("active", isActive);
@@ -668,11 +672,12 @@ function renderContextRoster(instances) {
   rosterTip.sync(listEl);
   // roving tabindex: exactly one row enters the tab order — the focused row
   // when it survived the rebuild, else the selected one (its terminal is the
-  // active tab), else the first
+  // active tab), else the first that matches the filter (not an ancestor kept for context)
   applyChordTitles(); updateActiveContexts();
   const rowsAfter = [...listEl.querySelectorAll(".ctx-inst")];
   const focusedRow = rowsAfter.find((r) => r === listEl.ownerDocument.activeElement);
-  const tabbable = focusedRow || rowsAfter.find((r) => r.classList.contains("active")) || rowsAfter[0];
+  const tabbable = focusedRow || rowsAfter.find((r) => r.classList.contains("active"))
+    || rowsAfter.find((r) => !r.dataset.filterContext) || rowsAfter[0];
   if (tabbable) tabbable.tabIndex = 0;
 }
 

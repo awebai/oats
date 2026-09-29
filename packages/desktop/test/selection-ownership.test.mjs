@@ -488,3 +488,23 @@ for (const [kind, from] of [
   assert.notEqual(mutant, source);
   await assert.rejects(sidebarAttachment(t, kind, "resolve", mutant), /sidebar owns input/);
 });
+
+test("filtering: ArrowDown and the tab stop land on the first match, never an ancestor shown for context", t => {
+  const s = shell(t);
+  const team = [
+    { instance: "lead", home: "/t/lead", agentsRoot: "/t/agents", running: true },
+    { instance: "worker-keyboard", home: "/t/worker-keyboard", agentsRoot: "/t/agents", parentInstance: "lead", running: true },
+  ];
+  s.c.contextInstances = team;
+  const filter = s.document.getElementById("entry");
+  filter.focus(); filter.value = "keyboard"; s.dispatch(filter, "input");
+  const rows = [...s.c.contextRosterEl.querySelectorAll(".ctx-inst")];
+  assert.deepEqual(rows.map(r => r.dataset.filterContext ?? null), ["true", null], "the lead stays visible, marked as context");
+  assert.deepEqual(rows.map(r => r.tabIndex), [-1, 0], "the tab stop is the match");
+  s.dispatch(filter, "keydown", { key: "ArrowDown" });
+  assert.equal(s.document.activeElement, rows[1], "ArrowDown enters at the match, not the ancestor");
+  filter.focus(); filter.value = ""; s.dispatch(filter, "input");
+  s.dispatch(filter, "keydown", { key: "ArrowDown" });
+  assert.equal(s.document.activeElement.dataset.treeInstance, s.c.contextRosterEl.querySelector('.ctx-inst[tabindex="0"]').dataset.treeInstance,
+    "no filter: the rows' tab stop");
+});

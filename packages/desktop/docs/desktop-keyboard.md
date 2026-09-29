@@ -104,7 +104,8 @@ F6 moves focus to the next region, Shift+F6 to the previous one, in this order:
    first. The workspace switcher and the footer tools are in this region and
    are reached with Tab and Shift+Tab from there.
 2. **Instance roster**: its one tab stop, the selected row (the one whose
-   terminal is the active tab), else the first row, else the filter.
+   terminal is the active tab), else the first row that matches the filter,
+   else the filter.
 3. **Main**: with tabs open, the active tab's content (a terminal's input,
    through the same selection intent as any explicit terminal focus), else a
    focused empty split group, else the active tab in the strip; on a stage,
@@ -166,8 +167,8 @@ the rig). "Fixed" marks a gap this change closed.
 | Switcher menu: search, workspaces, Add | Focus starts in the search; Down enters the options, **Up from the first returns to the search (fixed)** | Enter/Space select; Home/End; **Tab out closes the menu (fixed)**; Home/End in the search move its caret (fixed) |
 | Add / onboard workspace dialog | From the menu's Add | Radio-style suggestions with arrows; Esc; trapped; returns to the trigger |
 | Sidebar nav (Active overview, Workspace, Automations) | F6 (current item); Tab; ⌘1/⌘2/⌘3 | Enter/Space |
-| Roster filter | Tab; ⌘F / Ctrl+F; **Down from it enters the rows (fixed)** | Typing filters |
-| Roster rows | One roving stop, **the selected row (fixed: was the first enabled)**; F6; Up/Down/Home/End; Right expands, Left collapses or goes to the parent | Enter/Space open the terminal (running) or Start (stopped) |
+| Roster filter | Tab; ⌘F / Ctrl+F; **Down from it enters the rows (fixed): while filtering, at the first match, never a parent kept only to show its tree path** | Typing filters |
+| Roster rows | One roving stop, **the selected row, else the first filter match (fixed: was the first enabled)**; F6; Up/Down/Home/End; Right expands, Left collapses or goes to the parent | Enter/Space open the terminal (running) or Start (stopped) |
 | Rows whose state is unknown or that have no saved route | **Focusable, `aria-disabled` with the reason as a description (fixed: were `disabled`, which hid their tools from the keyboard)** | Activation does nothing; their tools work |
 | Row tools: PR link, Start…, actions menu | Tab from the focused row (shown on focus) | Enter/Space; the menu: arrows, Home/End, Esc back on its trigger, Tab closes |
 | Start / Restart dialog, lifecycle dialog | From the row or its menu | Esc; trapped; **focus returns to the row when its tool is hidden again (fixed: fell to `<body>`)** |
