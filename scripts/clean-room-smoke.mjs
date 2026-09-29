@@ -134,7 +134,7 @@ try {
   assert.equal(pinnedRef, `v${bundledVersion}`, "npm mirror and official catalog version drift");
   assert.equal(bundledVersion, "4.0.4");
   // The PACKED tarball's catalog carries this release's provider pins, each equal to its bundled mirror.
-  for (const [id, slug, version] of [["oats.aweb", "oats-aweb", "1.17.1"], ["oats.engineering", "oats-developer", "1.2.0"]]) {
+  for (const [id, slug, version] of [["oats.aweb", "oats-aweb", "1.17.1"], ["oats.engineering", "oats-developer", "1.3.0"]]) {
     const bundled = readJson(join(kernelRoot, "capabilities", slug, "oats.json")).version;
     assert.equal(bundled, version, `${id}: the packed mirror is ${bundled}`);
     assert.equal(packedCatalog.packages?.[id]?.ref, `v${version}`, `${id}: the packed catalog pins ${packedCatalog.packages?.[id]?.ref}`);
