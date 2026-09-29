@@ -319,7 +319,12 @@ test('Souls group by primary team or repository, and unconfirmed members explain
   assert.equal(u.doc.querySelector('.souls-group-by [data-group-by=repo]').getAttribute('aria-pressed'), 'true');
   assert.deepEqual(titles(), [['repo', 'app', '1 soul'], ['repo', 'site', '2 souls'], ['warning', 'Not available', "lab hasn't joined the workspace"]]);
   assert.deepEqual(chips('writer'), [['Team', 'marketing'], ['Team', 'engineering']], 'labelled chips: its teams, the default first; no work-mode chip');
-  assert.equal(u.doc.querySelector('.soul-card[data-agent=writer] .schip').dataset.default, 'true');
+  // The default is marked visibly, in words: "Team marketing · default", the word muted, with a tooltip.
+  const [first, second] = u.doc.querySelectorAll('.soul-card[data-agent=writer] .schip');
+  assert.equal(first.dataset.default, 'true'); assert.equal(first.textContent, 'Teammarketing· default');
+  assert.equal(first.querySelector('.schip-note').textContent, '· default'); assert.equal(first.title, "Team marketing: this soul's default team");
+  assert.equal(u.doc.defaultView.getComputedStyle(first.querySelector('.schip-note')).color, 'var(--muted)');
+  assert.equal(second.querySelector('.schip-note'), null, 'only the default says so');
   assert.equal(u.doc.querySelector('.soul-card[data-agent=builder] .scontext').textContent, 'Pi', 'the reported harness; no model claimed without launch data');
   assert.equal(u.doc.querySelector('.soul-card[data-agent=builder] .runtime-badge').getAttribute('aria-label'), 'Harness: Pi');
   assert.equal(u.doc.querySelector('.soul-card[data-agent=builder] .sactivity').textContent, 'No instances', 'never the bare word "none"');

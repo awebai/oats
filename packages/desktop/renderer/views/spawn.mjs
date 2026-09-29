@@ -89,6 +89,10 @@ const CSS = `
 .soul-card .sactivity.running { color:var(--fg); font-weight:600; }
 .soul-card .sactivity.running::before { content:""; flex:none; width:7px; height:7px; border-radius:50%; background:var(--live); }
 .soul-card .sproblem { min-width:0; color:var(--warn); font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* A refused soul says why, then (a muted second line inside the same 48px row) what still runs. */
+.soul-card .sfoot-lines { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.soul-card .sfoot-lines .sactivity { font-size:11.5px; line-height:15px; color:var(--muted); font-weight:400; }
+.soul-card .schip-note { color:var(--muted); font-weight:400; }
 /* A card and its Spawn button share one grid cell (no nested buttons); the
    button sits in the card's foot, whose facts leave it room. Its bottom margin
    is the card's 1px edge plus the 12px under a 24px button in the 48px row. */
@@ -809,7 +813,11 @@ function soulCard(s, a, groupTeam = null) {
     if (team === groupTeam) return;
     const c = chip(doc, "Team", team);
     // The default leads (soulTeams puts it first); marked for assistive tech and tests, not painted.
-    if (index === 0 && teamGroup(a) === team) { c.dataset.default = "true"; c.title = `Team ${team} (its default)`; }
+    if (index === 0 && teamGroup(a) === team) {
+      // The default is said, not painted: "Team oats · default", the word muted (no new colour).
+      c.dataset.default = "true"; c.title = `Team ${team}: this soul's default team`;
+      const note = doc.createElement("span"); note.className = "schip-note"; note.textContent = "· default"; c.append(note);
+    }
     chips.append(c);
   });
   if (chips.childElementCount) body.append(chips);
@@ -818,12 +826,13 @@ function soulCard(s, a, groupTeam = null) {
   const running = instances.filter(i => i.running === true).length;
   const foot = span("sfoot");
   const refusal = attached ? null : spawnRefusal(a);
-  if (refusal) { const note = span("sproblem", `Can't spawn here · ${refusal}`); note.title = refusal; foot.append(note); }
-  else {
-    const activity = span("sactivity" + (running ? " running" : ""), activityText(running, instances.length));
-    activity.title = `${running} running · ${instances.length} ${instances.length === 1 ? "instance" : "instances"}`;
-    foot.append(activity);
-  }
+  const activity = span("sactivity" + (running ? " running" : ""), activityText(running, instances.length));
+  activity.title = `${running} running · ${instances.length} ${instances.length === 1 ? "instance" : "instances"}`;
+  if (refusal) {
+    // Both facts: why a spawn here is refused, and what of it already runs (the row's height is fixed).
+    const note = span("sproblem", `Can't spawn here · ${refusal}`); note.title = refusal;
+    const lines = span("sfoot-lines"); lines.append(note, activity); foot.append(lines);
+  } else foot.append(activity);
   card.append(body, foot);
   if (attached) return card;
   // Workspace v4 (human, 2026-09-26): every spawnable card offers Spawn directly.

@@ -845,6 +845,31 @@ for (const [name] of palettes) test(`${name}: the can't-spawn-here notes meet co
   }
 });
 
+// Board 3 soul cards: the labelled chips (the default team's muted "· default" too) on the tag tint, and the
+// foot's lines on the card: a running count, a stopped one, and a refusal over its muted running count.
+for (const [name] of palettes) test(`${name}: soul-card chips, the default note and the foot lines meet computed AA`, t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"><div class="souls">
+    <div class="soul-tile" id="refused"><button class="soul-card"><span class="sbody"><span class="schips"><span class="schip" data-default="true"><span class="schip-key">Team</span><b>oats</b><span class="schip-note">· default</span></span><span class="schip"><span class="schip-key">Repo</span><b>agents</b></span></span></span>
+      <span class="sfoot"><span class="sfoot-lines"><span class="sproblem">Can't spawn here · disabled</span><span class="sactivity running">1 instance running</span></span></span></button></div>
+    <div class="soul-tile" id="running"><button class="soul-card"><span class="sfoot"><span class="sactivity running">2 instances running</span></span></button></div>
+    <div class="soul-tile" id="stopped"><button class="soul-card"><span class="sfoot"><span class="sactivity">1 stopped</span></span></button></div></div></div></body></html>`);
+  t.after(() => dom.window.close());
+  const doc = dom.window.document, spawnCSS = readFileSync(new URL('views/spawn.mjs', renderer), 'utf8').match(/const CSS = `([\s\S]*?)`;/)[1];
+  for (const source of [css, spawnCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  const painted = el => { for (let p = el; p; p = p.parentElement) { const bg = dom.window.getComputedStyle(p).background; if (/^var\(--/.test(bg)) return bg.slice(6, -1); } return null; };
+  for (const [selector, fg, bg] of [
+    ['#refused .schip .schip-key', 'muted', 'tag-bg'], ['#refused .schip b', 'fg', 'tag-bg'], ['#refused .schip .schip-note', 'muted', 'tag-bg'],
+    ['#refused .sfoot-lines .sproblem', 'warn', 'surface'], ['#refused .sfoot-lines .sactivity', 'muted', 'surface'],
+    ['#running .sactivity.running', 'fg', 'surface'], ['#stopped .sactivity', 'muted', 'surface'],
+  ]) {
+    const el = doc.querySelector(selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector); assert.equal(painted(el), bg, `${selector} painted`);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${selector}: ${fg} on ${bg}`);
+    for (let p = el; p; p = p.parentElement) assert.equal(dom.window.getComputedStyle(p).opacity, '1');
+  }
+});
+
 // 0.30 launch preferences: the soul page's notes under the facts and the side panel's Harness card
 // (where it is set, the soul's own preference, a missing harness), each on its actual painted surface.
 for (const [name] of palettes) test(`${name}: launch preference notes meet computed AA`, t => {
@@ -894,6 +919,9 @@ for (const [name] of palettes) test(`${name}: team model v2 cards, left entries,
     ['.ct-label', '.ct-card', 'fg', 'surface'], ['.ct-scope', '.ct-scope', 'muted', 'surface'],
     ['[data-team="mine"] .ct-id', '.ct-card', 'fg', 'surface'], ['.ct-id.none', '.ct-card', 'warn', 'surface'],
     ['.ct-pill', '.ct-pill', 'accent', 'sel'], ['.ct-why', '.ct-card', 'muted', 'surface'],
+    // Board 5: the team tile (its tint; the default's in the brand tint) and both scope chips ("Shared · Git", dashed "Not shared").
+    ['.ct-tile:not(.default)', '.ct-tile:not(.default)', 'chip-fg', 'chip-bg'], ['.ct-tile.default', '.ct-tile.default', 'accent', 'sel'],
+    ['.ct-scope:not(.dashed)', '.ct-scope:not(.dashed)', 'muted', 'surface'], ['.ct-scope.dashed', '.ct-scope.dashed', 'muted', 'surface'],
     ['button.ct-act:not(:disabled)', 'button.ct-act:not(:disabled)', 'fg', 'surface'], ['button.ct-act:disabled', 'button.ct-act:disabled', 'muted', 'surface'],
     ['.sth-default', '.soul-teams-here', 'fg', 'surface'], ['.sth-default .sth-why', '.soul-teams-here', 'muted', 'surface'],
     ['.sth-label', '.soul-teams-here', 'fg', 'surface'], ['.sth-meta:not(.warn)', '.soul-teams-here', 'muted', 'surface'],

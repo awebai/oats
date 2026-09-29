@@ -23,7 +23,7 @@ const catalogReply = (capabilities = f2('capabilities').result.capabilities) => 
 const soul = { name: 'dev', agentsRoot: '/fixture/agents', repoName: 'fixture', runtime: 'pi', work: 'worktree', description: 'Build and review' };
 // operationsApi 2 soul inspection from the kernel capture.
 const inspection = soulInspection('dev', { instructions: { file: '/fixture/AGENTS.md', text: 'Saved instructions', truncated: false } });
-async function fixture(t, { cli = CLI, inspect = () => inspection, agents = [soul], sync = null } = {}) {
+async function fixture(t, { cli = CLI, inspect = () => inspection, agents = [soul], sync = null, instances = [] } = {}) {
   const dom = new JSDOM('<body><div id="host"></div></body>', { url: 'http://localhost' });
   const doc = dom.window.document;
   const saved = { document: globalThis.document, window: globalThis.window, setInterval: globalThis.setInterval, ws: currentWorkspace() };
@@ -38,7 +38,7 @@ async function fixture(t, { cli = CLI, inspect = () => inspection, agents = [sou
       const body = opts.body && JSON.parse(opts.body); calls.push({ path, body });
       if (path === '/api/cli') { if (currentCli === null) throw new Error('Synthetic transport pending'); return currentCli; }
       if (path.startsWith('/api/agents')) return { agents };
-      if (path.startsWith('/api/panel')) return { instances: [], workspace: { id: currentWorkspace() }, workspaces: [{ id: '/fixture', name: 'Fixture' }, { id: '/other', name: 'Other' }],
+      if (path.startsWith('/api/panel')) return { instances, workspace: { id: currentWorkspace() }, workspaces: [{ id: '/fixture', name: 'Fixture' }, { id: '/other', name: 'Other' }],
         ...(sync ? { deployment: { status: 'observed', root: '/fixture/agents', workspace: observedStatus.workspace, workspaceStatus: observedStatus, reachable: { reachable: true }, withheld: [] } } : {}) };
       if (path.startsWith('/api/workspace-sync') && sync) return sync(body);
       if (path.startsWith('/api/capabilities')) return inspect(body);
@@ -370,10 +370,17 @@ const FACTS_CLI = { ...CLI, features: ['operations', 'desktop-facts'] };
 test('kernel #217: a soul a spawn here would refuse says why on its card and page; Spawn is disabled', async t => {
   const refused = factsRow('campaign-writer'), message = refused.problem.message;
   assert.equal(refused.problem.code, 'E_SOUL_DISABLED', 'the capture disables campaign-writer on this machine');
-  const u = await fixture(t, { cli: FACTS_CLI, agents: [soul, refused] });
+  const u = await fixture(t, { cli: FACTS_CLI, agents: [soul, refused], instances: [{ instance: 'campaign-writer-1', agent: 'campaign-writer', agentsRoot: refused.agentsRoot, running: true, home: '/h/cw-1' }] });
   const tile = name => u.get(`.soul-card[data-agent="${name}"]`).parentElement;
   assert.equal(tile('dev').querySelector('.sproblem'), null);
   assert.equal(tile('campaign-writer').querySelector('.sproblem').textContent, `Can't spawn here · ${message}`);
+  // The refusal does not hide what runs: its count is a second, muted line in the same fixed-height foot.
+  const lines = tile('campaign-writer').querySelector('.sfoot > .sfoot-lines');
+  assert.deepEqual([...lines.children].map(el => [el.className, el.textContent]), [['sproblem', `Can't spawn here · ${message}`], ['sactivity running', '1 instance running']]);
+  const cw = '.soul-card[data-agent="campaign-writer"]';
+  assert.equal(u.css(`${cw} .sfoot-lines .sactivity`).color, 'var(--muted)'); assert.equal(u.css(`${cw} .sfoot-lines`).flexDirection, 'column');
+  assert.equal(u.css(`${cw} .sfoot`).height, '49px', 'the foot keeps its height, so a row of cards does not jump');
+  assert.equal(u.css('.soul-card[data-agent="dev"] .sfoot').height, '49px');
   const button = tile('campaign-writer').querySelector('.soul-spawn');
   assert.equal(button.disabled, true); assert.equal(button.title, `Can't spawn here: ${message}`);
   assert.equal(tile('dev').querySelector('.soul-spawn').disabled, false);
