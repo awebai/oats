@@ -448,7 +448,7 @@ export function matchEvent(e, opts = {}) {
     if (insideTerminal) {
       if (isMac) {
         // ⌘ chords fire; other chords stay with the attached program, even
-        // after a custom rebind — except macStructuralChord's three shapes.
+        // after a custom rebind — except Ctrl+Tab / Ctrl+Shift+Tab (macStructuralChord).
         if (!macStructuralChord(action.id, evChord) && (!(bound.mod && evChord.mod) || evChord.ctrl)) continue;
       } else if (!TERMINAL_ALLOWLIST.includes(action.id)) {
         continue; // Ctrl chords belong to the attached program
