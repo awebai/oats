@@ -1803,6 +1803,31 @@ async function status() {
   }
 }
 
+/** The flags `oats spawn` reads: those taking a value, and switches. `--provider` takes two words.
+ *  `--instance` is refused by a local spawn (with its replacement) but still travels to an older
+ *  host through `--server`, whose route reads it. */
+const SPAWN_VALUE_FLAGS = new Set(["agents-root", "backend", "base", "branch", "dir", "expect-decision", "harness", "herdr-socket", "idempotency-key", "instance", "launch-config", "model", "name", "parent", "purpose", "relation", "relative-root", "relative-to", "repo", "runtime", "task", "task-file", "trigger-event", "wake-cron", "wake-every", "wake-file", "wake-json", "wake-message", "wake-message-file", "wake-tz", "work", "work-dir"]);
+const SPAWN_SWITCHES = new Set(["allow-child-spawns", "json", "no-child-spawns", "no-launch", "no-yolo", "preview", "yolo"]);
+/** Why `argv` (after `spawn`, the soul first) is not a spawn, or undefined: a positional after the
+ *  soul or a flag spawn does not read is never ignored. A value flag consumes its value exactly as
+ *  flag() reads it; a missing value is the flag's own check. */
+function spawnArgvProblem(argv) {
+  const soul = argv[0];
+  for (let i = 1; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--provider") { i += 2; continue; }
+    if (a.startsWith("--")) {
+      const name = a.slice(2);
+      if (SPAWN_SWITCHES.has(name)) continue;
+      if (!SPAWN_VALUE_FLAGS.has(name)) return `oats spawn: unknown flag ${a}`;
+      if (argv[i + 1] !== undefined && !argv[i + 1].startsWith("--")) i++;
+      continue;
+    }
+    if (/^[A-Za-z0-9_.-]+=/.test(a)) return `oats spawn: unexpected argument ${JSON.stringify(a)} after the soul ${JSON.stringify(soul)}: a capability setting is given as --provider <capability> key=value (here: --provider <capability> ${a})`;
+    return `oats spawn: unexpected argument ${JSON.stringify(a)} after the soul ${JSON.stringify(soul)}: spawn takes one soul`;
+  }
+  return undefined;
+}
 async function spawnCmd() {
   // JSON mode: contract envelope, stable error codes, stderr-only progress.
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
@@ -1831,6 +1856,7 @@ async function spawnCmd() {
   // The slug rule is checked here too, before any side effect (soul fetch).
   if (nameFlag !== undefined) { try { explicitInstanceName(String(nameFlag)); } catch (e) { bail(e.code, e.message); throw e; } }
   if (args.includes("--ephemeral")) bail("E_BAD_ARGS", "--ephemeral was removed by the runtime-boundary ruling — declare the agent in a capability manifest (agents:) for automatic ephemeral semantics");
+  { const problem = spawnArgvProblem(args.slice(1)); if (problem) bail("E_BAD_ARGS", problem); }
   let root;
   // A spawn needs a workspace deployment (lead decision c3-1): no oats-local.yaml
   // in reach is E_LOCAL_MISSING, before anything else is read. The agents root is
@@ -3083,6 +3109,12 @@ async function serverRouteCmd() {
     if (args.includes("--print")) { console.log(route.argv.map(shellQuote).join(" ")); return; }
     const r = spawnSyncProc(route.argv[0], route.argv.slice(1), { stdio: "inherit" });
     process.exit(r.status ?? 1);
+  }
+  // A spawn's argv is checked here, before the server is contacted.
+  if (cmd === "spawn") {
+    const local = args.slice(1).filter((a, i, all) => a !== "--server" && all[i - 1] !== "--server");
+    const problem = spawnArgvProblem(local);
+    if (problem) bail("E_BAD_ARGS", problem);
   }
   // Everything after the command word travels, minus the routing flags; a
   // local --task-file is read here and travels as --task text, since the

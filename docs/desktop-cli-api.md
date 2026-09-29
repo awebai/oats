@@ -1146,6 +1146,9 @@ it to a temporary copy (`soulFetched: true`).
   repeatable, `a.b=c` nests): a malformed pair is `E_BAD_ARGS`; a capability
   the soul does not resolve is `E_CAPABILITY_MISSING {capability, soul,
   modules}`.
+- Any other positional after the soul, or a flag spawn does not read, is
+  `E_BAD_ARGS` naming the argument, before anything is resolved; a bare
+  `key=value` is refused with the `--provider <capability> key=value` form.
 
 ### The decision
 
