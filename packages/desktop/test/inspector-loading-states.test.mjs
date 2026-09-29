@@ -439,6 +439,12 @@ test('stale: the inspector\'s mutations (provider operations, the teams panel\'s
   assert.equal(u.refresh().getAttribute('aria-disabled'), null, 'Refresh stays');
   assert.equal(u.q('.teams-refresh')?.getAttribute('aria-disabled') ?? null, null, 'the teams panel\'s own Refresh stays');
   for (const control of u.el.querySelectorAll('[data-launch], [data-files]')) assert.equal(control.getAttribute('aria-description'), null, 'roster-derived actions are not touched by the stale rule');
+  // A Refresh in flight: the content is still the stale observation, so the hold stays through every syncAvailability() (the host's roster poll).
+  u.refresh().click(); u.inspector.syncAvailability(); await tick();
+  assert.equal(u.q('[data-operation]').getAttribute('aria-disabled'), 'true', 'held while the re-read runs'); assert.equal(u.q('[data-team-action]').getAttribute('aria-disabled'), 'true');
+  const inFlight = u.calls.length; u.q('[data-operation]').click(); u.q('[data-team-action]').click(); await tick(); assert.equal(u.calls.length, inFlight, 'still nothing runs');
+  await u.reject(refusal('E_BRIDGE', 'still down')); u.inspector.syncAvailability();
+  assert.equal(u.q('[data-operation]').getAttribute('aria-disabled'), 'true', 'a second failure keeps the hold');
   u.refresh().click(); await u.resolve(home);
   assert.equal(u.q('[data-operation]').getAttribute('aria-disabled'), null, 'a good read lifts the hold'); assert.equal(u.q('[data-operation]').getAttribute('aria-description'), null);
   assert.equal(u.q('[data-team-action]').getAttribute('aria-disabled'), null);

@@ -294,7 +294,7 @@ while stale, Start…, the actions menu and a *stopped* row's own activation are
 held — a stale `running:false` may be running by now — while a running row
 still opens its terminal); the hierarchy in `views/hierarchy.mjs` (the summary
 pill, its own notice keeps the stale copy with the observation's age); the soul
-inspector in `soul-inspector.mjs` (while `loading.state === 'stale'` every
+inspector in `soul-inspector.mjs` (while `loading.settled === 'stale'` — the settled state, so a Retry in flight over stale content keeps the hold — every
 `[data-mutate]` control and the teams panel's join/leave — `createTeamsPanel`'s
 `mutable` / `mutableReason` — wait with `INSPECTION_STALE_TITLE`; Launch,
 Schedule and Files come from the roster and stay; a same-subject `show()` is a refresh that never runs

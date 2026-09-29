@@ -308,6 +308,10 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
 
   const api = {
     get state() { return state; },
+    /** The last state a read left behind (ready / empty / stale / failed): what a refreshing read returns to.
+     * A surface holding actions "while stale" reads this, not `state`: a Retry in flight is `refreshing`
+     * while the content on screen is still the stale observation. */
+    get settled() { return settled; },
     get busy() { return busy; },
     get hasData() { return hasData; },
     get observedAt() { return observedAt; },

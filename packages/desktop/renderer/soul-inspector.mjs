@@ -231,7 +231,8 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
   const mutationButton = (text, run) => { const control = button(text, run); control.dataset.mutate = '1'; control.disabled = !available(); return control; };
   // Stale (the last inspection failed, the content kept): mutations that act on the subject wait for a good read —
   // the roster's rule (ROSTER_STALE_TITLE), with an accessible reason; Launch, Schedule and Files come from the roster and stay.
-  const stale = () => loading?.state === 'stale';
+  // `settled`, not `state`: a Retry or Refresh in flight is `refreshing` while the content is still the stale observation.
+  const stale = () => loading?.settled === 'stale';
   const markStale = control => {
     if (stale()) { control.setAttribute('aria-disabled', 'true'); control.title = INSPECTION_STALE_TITLE; control.setAttribute('aria-description', INSPECTION_STALE_TITLE); }
     else if (control.getAttribute('aria-description') === INSPECTION_STALE_TITLE) { control.removeAttribute('aria-disabled'); control.removeAttribute('title'); control.removeAttribute('aria-description'); }
@@ -261,7 +262,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       onRetry: () => { void show(selection, { user: true }); }, ...timers });
     const aside = side ? createDataState({ doc, noun: noun(), region: side, skeleton: sideSkeleton, noticeHost: null, ...timers }) : null;
     return {
-      get state() { return main.state; }, get hasData() { return main.hasData; }, get busy() { return main.busy; },
+      get state() { return main.state; }, get settled() { return main.settled; }, get hasData() { return main.hasData; }, get busy() { return main.busy; },
       begin(o) { const first = !main.hasData && main.state !== 'failed'; main.begin(o); if (first) aside?.begin(o); },
       succeed(o) { main.succeed(o); aside?.succeed(); },
       fail(e) { main.fail(e); aside?.reset(); },

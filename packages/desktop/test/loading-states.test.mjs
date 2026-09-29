@@ -313,6 +313,10 @@ test('while the stale line or the failed block is visible the status line is ann
   u.ds.begin(); u.ds.fail(new Error('down')); assert.equal(u.status.classList.contains('loading-quiet'), true, 'the stale line is the visible message');
   u.ds.begin(); u.ds.succeed(); assert.equal(u.status.classList.contains('loading-quiet'), false);
   u.ds.begin(); u.ds.fail(new Error('down')); u.ds.reset(); assert.equal(u.status.classList.contains('loading-quiet'), false);
+  // `settled` is the state a refreshing read returns to: stale through a Retry in flight, until a good read (a surface holds actions on it).
+  assert.equal(u.ds.settled, 'idle'); u.ds.begin(); u.ds.succeed(); assert.equal(u.ds.settled, 'ready');
+  u.ds.begin(); u.ds.fail(new Error('down')); assert.equal(u.ds.settled, 'stale'); u.ds.begin(); assert.equal(u.ds.state, 'refreshing'); assert.equal(u.ds.settled, 'stale');
+  u.ds.cancel(); assert.equal(u.ds.state, 'stale'); u.ds.begin(); u.ds.succeed(); assert.equal(u.ds.settled, 'ready');
   // A surface's own message while stale must be seen: say() lifts the quiet mark; the next failure re-quiets.
   u.ds.begin(); u.ds.succeed(); u.ds.begin(); u.ds.fail(new Error('down')); assert.equal(u.status.classList.contains('loading-quiet'), true);
   u.ds.say('Running knowledge:status…'); assert.equal(u.status.textContent, 'Running knowledge:status…'); assert.equal(u.status.classList.contains('loading-quiet'), false, 'visible');
