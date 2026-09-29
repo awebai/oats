@@ -34,7 +34,10 @@ import { createDataState, skeleton, statusLine, captureFocusState } from "../loa
 const cliProbePending = () => !cliStatus() && !cliKnownUnavailable();
 
 const CSS = `
-.souls { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width:0; background: var(--bg); }
+/* One fixed-height column that can never scroll (spec G): the header and toolbars sit outside the
+   content scrollers (.souls-grid, .workspace-discovery), and anything positioned that escapes one is
+   contained here (position + overflow:clip), never in the document, so the headers cannot leave the view. */
+.souls { position:relative; overflow:clip; display: flex; flex-direction: column; height: 100%; min-height: 0; min-width:0; background: var(--bg); }
 /* Workspace v4.1 (board 3): the view's own toolbar row — search on the left, Group by
    on the right; every group header opens its own section below it. */
 .souls-bar { flex:none; margin:0 0 8px; padding:10px 20px 0; }
@@ -51,12 +54,15 @@ const CSS = `
 .workspace-recovery[hidden] { display:none; }
 /* Counts are already in the Souls tab. Keep the full filter/CLI status for
    assistive tech, without another permanent row above the canvas. */
-.workspace-sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+/* Visually hidden, announced; anchored at its containing block's origin so it can never stretch a scroller or the document (spec G). */
+.workspace-sr-only { position:absolute; top:0; left:0; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
 .souls-bar .souls-bar-lead { flex:1 1 auto; }
 /* Workspace v4.1 (board 3): cards grouped by repository (the default) or team; each group
    opens with its header (icon, monospace name, a muted qualifier). Souls of a member that
    has not joined are listed apart, with the reason. */
-.souls-grid { flex:1; min-height:0; min-width:0; overflow-y:auto; padding:0 20px 16px; display:flex; flex-direction:column; gap:14px; }
+.souls-grid { position:relative; flex:1; min-height:0; min-width:0; overflow-y:auto; overscroll-behavior:contain; padding:0 20px 16px; display:flex; flex-direction:column; gap:14px; border-top:1px solid transparent; }
+/* The bar above is outside this scroller, so it never moves; once cards scroll under it, a 1px edge (spec G, sticky-top.mjs). */
+.souls-grid.is-scrolled { border-top-color:var(--border); }
 .souls-group { display:flex; flex-direction:column; gap:14px; min-width:0; }
 .souls-group + .souls-group { padding-top:10px; }
 .souls-group-title { display:flex; align-items:center; gap:8px; margin:0; padding:0 2px; color:var(--fg); font-size:13px; font-weight:650; min-width:0; }

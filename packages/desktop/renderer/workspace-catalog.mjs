@@ -426,10 +426,12 @@ export function renderCapabilitySections(host, { sections, shown, filterHost, na
   table(repo, groups.flatMap(g => g.rows), { groups, label: 'Repo owned capabilities', total: sections.repo.length });
 }
 
-/** The jump segment for the section at the top of the scroller (called on scroll). */
+/** The jump segment for the section at the top of the scroller (called on scroll). The top is the
+ * pinned toolbar's bottom edge when the nav sits in one (spec G), so a section under it is not "in view". */
 export function syncCapabilityNav(host, scroller, navHost = host) {
   const nav = navHost.querySelector('.capability-nav'); if (!nav || !scroller?.getBoundingClientRect) return;
-  const top = scroller.getBoundingClientRect().top + 24;
+  const pinned = navHost.closest?.('.ws-sticky');
+  const top = (pinned ? pinned.getBoundingClientRect().bottom : scroller.getBoundingClientRect().top) + 24;
   let current = null;
   for (const el of host.querySelectorAll('.capability-section')) if (el.getBoundingClientRect().top <= top) current = el.dataset.section;
   current ||= host.querySelector('.capability-section')?.dataset.section;

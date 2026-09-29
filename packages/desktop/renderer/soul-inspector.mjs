@@ -198,10 +198,13 @@ ${soulTeamsHereCSS}
 .inspector-teams-lede { margin:0; }
 .inspector-disclosure { margin-top:14px; }
 .inspector-spawned { display:flex; align-items:center; gap:12px; justify-content:space-between; }
+/* Narrow: only while the side inspector column is shown does it stack under the list, the two scrolling
+   together. Otherwise the Workspace keeps its one fixed column (spec G): the tab row and top controls stay
+   outside the one content scroller at every width. */
 @container(max-width:700px) {
- .souls-body, .souls-body.inspecting { display:block; overflow:auto; }
- .workspace-main { height:auto; }
- .workspace-main > .souls-grid, .workspace-main > .workspace-discovery { flex:none; overflow:visible; }
+ .souls-body.inspecting { display:block; overflow:auto; }
+ .souls-body.inspecting .workspace-main { height:auto; }
+ .souls-body.inspecting .workspace-main > .souls-grid, .souls-body.inspecting .workspace-main > .workspace-discovery { flex:none; overflow:visible; }
  .soul-inspector { width:100%; max-width:none; overflow:visible; border-left:0; border-top:1px solid var(--border); }
 }
 `;

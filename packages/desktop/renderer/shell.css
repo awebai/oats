@@ -2,6 +2,12 @@
    design tokens (scoped under .oats-view); the chrome uses the same tokens. */
 * { box-sizing: border-box; }
 html, body, #app { height: 100%; margin: 0; }
+/* An app shell: the document never scrolls (spec G). Every view scrolls inside its own container;
+   anything that escapes one (an absolute element with no positioned ancestor) is contained by the
+   positioned, clipped body instead of stretching the document. html's clip reaches the viewport as
+   hidden, which still allows programmatic scrolling, so the body is what leaves nothing to scroll. */
+html { overflow: clip; }
+body { position: relative; overflow: clip; }
 body {
   background: var(--bg);
   color: var(--fg);
@@ -17,7 +23,8 @@ body {
     border-left: 0; border-top: 1px solid var(--border); }
   #workbench > #context-panel.context-panel.is-collapsed { flex: 0 0 34px; min-height: 34px; }
   #workbench > #context-panel .context-panel-rail { flex-direction: row; }
-  #workbench > #context-panel .context-panel-expand { min-height: 32px; }
+  /* In the row rail, margin-top:auto would pull the expand control off the centre line. */
+  #workbench > #context-panel .context-panel-expand { min-height: 32px; margin-top: 0; }
 }
 #context-panel .soul-inspector { width: 100%; max-width: none; flex: 1; border: 0; overflow: auto; }
 #app.focus-mode #sidebar { display: none; }
