@@ -1,0 +1,180 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "modules": [
+      {
+        "name": "acme-tool",
+        "from": {
+          "kind": "member",
+          "repoKey": "local//fixture/base/remotes/ws.git",
+          "commit": "c5f59359a2b5acd1b1c9f7c9a6ef9b37aea91b0a"
+        },
+        "layer": null,
+        "private": false,
+        "declares": [],
+        "changedSince": null,
+        "composedFrom": "soul"
+      },
+      {
+        "name": "acme.own",
+        "from": {
+          "kind": "member",
+          "repoKey": "local//fixture/base/remotes/ws.git",
+          "commit": "c5f59359a2b5acd1b1c9f7c9a6ef9b37aea91b0a"
+        },
+        "layer": null,
+        "private": false,
+        "declares": [],
+        "changedSince": null,
+        "composedFrom": "soul"
+      },
+      {
+        "name": "acme.ws",
+        "from": {
+          "kind": "member",
+          "repoKey": "local//fixture/base/remotes/ws.git",
+          "commit": "c5f59359a2b5acd1b1c9f7c9a6ef9b37aea91b0a"
+        },
+        "layer": null,
+        "private": false,
+        "declares": [],
+        "changedSince": null,
+        "composedFrom": "workspace"
+      },
+      {
+        "name": "chat",
+        "from": {
+          "kind": "member",
+          "repoKey": "local//fixture/base/remotes/ws.git",
+          "commit": "c5f59359a2b5acd1b1c9f7c9a6ef9b37aea91b0a"
+        },
+        "layer": "messaging",
+        "private": false,
+        "declares": [],
+        "changedSince": null,
+        "composedFrom": "workspace"
+      }
+    ],
+    "teams": [],
+    "defaultTeam": null,
+    "resolution": "6c85e3c83c88cf8feb4abb71",
+    "declRevision": "179f09b9c0c0d0f3d0ccf28f",
+    "payloadRevision": "31172c988182cb7651d993fa",
+    "workspace": "local//fixture/base/remotes/ws.git",
+    "standalone": false,
+    "providers": {},
+    "settings": {
+      "acme-tool": {},
+      "acme.own": {},
+      "acme.ws": {},
+      "chat": {}
+    },
+    "settingsOrigins": {
+      "acme-tool": {},
+      "acme.own": {},
+      "acme.ws": {},
+      "chat": {}
+    },
+    "spawnPreviewApi": 2,
+    "preview": true,
+    "agent": "dev",
+    "kind": "persistent",
+    "instance": "dev-1",
+    "home": "/fixture/base/deployment/agents/dev/instances/dev-1",
+    "repo": "/fixture/base/deployment",
+    "work": "directory",
+    "subject": {
+      "soul": "dev",
+      "agentsRoot": "/fixture/base/deployment/agents",
+      "dir": "/fixture/base/deployment"
+    },
+    "decision": {
+      "instance": "dev-1",
+      "home": "/fixture/base/deployment/agents/dev/instances/dev-1",
+      "branch": null,
+      "base": null,
+      "effective": {
+        "repo": "/fixture/base/deployment",
+        "work": "directory",
+        "harness": "pi",
+        "model": null,
+        "launchConfig": null,
+        "yolo": null,
+        "backend": "tmux",
+        "childSpawns": true,
+        "relation": null,
+        "providers": {
+          "acme-tool": {},
+          "acme.own": {},
+          "acme.ws": {},
+          "chat": {}
+        }
+      },
+      "resolution": "6c85e3c83c88cf8feb4abb71",
+      "revision": "8c17146a433b0e21ee3a4aac"
+    },
+    "preflight": {
+      "status": "complete",
+      "budgetMs": 20000,
+      "elapsedMs": 36
+    },
+    "backendStatus": {
+      "name": "tmux",
+      "installed": true,
+      "started": false
+    },
+    "harness": "pi",
+    "model": null,
+    "modelSource": "native default",
+    "launchConfig": null,
+    "backend": "tmux",
+    "launch": {
+      "declared": null,
+      "effective": {
+        "harness": "pi",
+        "model": null,
+        "launchConfig": null
+      },
+      "from": "host",
+      "at": null,
+      "problem": null
+    },
+    "branch": null,
+    "base": null,
+    "worktree": null,
+    "relation": null,
+    "parentInstance": null,
+    "policy": {
+      "childSpawns": {
+        "allowed": true,
+        "origin": {
+          "kind": "default",
+          "detail": "no spawn option: children allowed"
+        }
+      }
+    },
+    "executable": "/fixture/base/runtime-stub/pi",
+    "capabilities": [
+      {
+        "name": "acme-tool",
+        "origin": "member:local//fixture/base/remotes/ws.git@c5f59359a2b5acd1b1c9f7c9a6ef9b37aea91b0a"
+      },
+      {
+        "name": "acme.own",
+        "origin": "member:local//fixture/base/remotes/ws.git@c5f59359a2b5acd1b1c9f7c9a6ef9b37aea91b0a"
+      },
+      {
+        "name": "acme.ws",
+        "origin": "member:local//fixture/base/remotes/ws.git@c5f59359a2b5acd1b1c9f7c9a6ef9b37aea91b0a"
+      },
+      {
+        "name": "chat",
+        "origin": "member:local//fixture/base/remotes/ws.git@c5f59359a2b5acd1b1c9f7c9a6ef9b37aea91b0a"
+      }
+    ],
+    "skills": [],
+    "task": null,
+    "soulFetched": true
+  }
+}

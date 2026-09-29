@@ -3,7 +3,7 @@
 import { dirname } from 'node:path';
 import { cliSpawnPreview } from '../spawn-preview-cli.mjs';
 import { admitInstance } from './instance-admission.mjs';
-import { absolute, record, previewSelector, previewChoices, previewSupported, previewFailure, previewData } from '../renderer/spawn-preview-contract.mjs';
+import { absolute, record, previewSelector, previewChoices, previewSupported, previewFailure, previewData, previewComposedFrom } from '../renderer/spawn-preview-contract.mjs';
 const flights = new Set(), byInvoker = new WeakMap();
 export function admitSpawnSelection(selector, choices, { workspace: w, cli, agents = [], instances = [] } = {}) {
   const fail = error => ({ error });
@@ -55,7 +55,7 @@ export function createSpawnPreviewBoundary({ invoke = cliSpawnPreview } = {}) {
         const slot = {}; flights.add(slot);
         const flight = Promise.resolve().then(() => invoke(cli, { target, choices })).then(envelope => {
           if (envelope?.schemaVersion !== 1 || envelope.ok !== true) return previewFailure(envelope?.error?.code, target, envelope?.error?.message, envelope?.error?.details?.fix);
-          const data = previewData(envelope.result, target);
+          const data = previewData(envelope.result, target, { composedFrom: previewComposedFrom(cli) });
           return data ? { spawnPreviewViewApi: 1, status: 'available', target, data, reason: null } : previewFailure('E_CLI_PROTOCOL', target);
         }).catch(() => previewFailure('E_CLI_FAILED', target)).finally(() => { flights.delete(slot); pending.delete(identity); });
         pending.set(identity, flight);

@@ -1,0 +1,39 @@
+{
+  "source": "oats-desktop-developer: the spawn preview's reason tags (modules[].composedFrom); the kernel's test/helpers/v2-deployment.mjs + package-repo.mjs, as test/desktop-facts.test.mjs `origins`: soul dev (acme.own, acme-tool from: here), workspace defaults messaging chat and capabilities acme.ws, package acme.pkg's acme-tool overridden by the soul; capture-composed-from.mjs",
+  "kernelTree": "oats main @3081a2519864fc189637a3dc1862380ce669b199",
+  "redactions": [
+    "<base> (deployment scratch) → /fixture/base",
+    "<pkg> (package repo scratch) → /fixture/pkg",
+    "<oats> (kernel tree) → /fixture/oats"
+  ],
+  "files": {
+    "version": {
+      "argv": [
+        "oats",
+        "version",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "3081a2519864fc189637a3dc1862380ce669b199",
+      "sourceSha256": "47fbf12e2d177094ce75996e59dd23b1e01a01f5bd92d33fc736a22516f9cf55",
+      "fixtureSha256": "e4d59ce54e1803ceead2f66f945df9b80190f3d1100ac340e21a8b3d8bfc7d75"
+    },
+    "preview": {
+      "argv": [
+        "oats",
+        "spawn",
+        "dev",
+        "--dir",
+        "<base>/deployment",
+        "--agents-root",
+        "<base>/deployment/agents",
+        "--preview",
+        "--json"
+      ],
+      "exit": 0,
+      "commit": "3081a2519864fc189637a3dc1862380ce669b199",
+      "sourceSha256": "dc48c3e87f2ec83c6d53ef88218d64950abbad3b918f54e2ee757166c73b489e",
+      "fixtureSha256": "c65ead9fd62909b93d4e5cdba707ec6aa3ad5b28a8dd64c22cd80bb55ea63d38"
+    }
+  }
+}
