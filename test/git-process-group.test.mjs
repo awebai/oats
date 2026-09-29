@@ -25,7 +25,8 @@ test.after(() => { for (const pid of started()) { try { process.kill(pid, "SIGKI
 
 test("a timed-out git takes its ssh with it: no child outlives the timeout", async () => {
   const before = started().length;
-  const error = await runGit(["ls-remote", "ssh://example.invalid/r.git"], { timeout: 1500 }).then(() => null, (e) => e);
+  // The timeout also bounds git's own start: on a loaded machine git can take seconds to reach ssh.
+  const error = await runGit(["ls-remote", "ssh://example.invalid/r.git"], { timeout: 6000 }).then(() => null, (e) => e);
   assert.ok(error, "the hung remote rejects");
   assert.equal(error.timedOut, true); assert.equal(classifyRemoteFailure(error), "timeout");
   const ssh = started().slice(before);
@@ -54,7 +55,7 @@ test("a timed-out https read takes its remote helper with it: the connection clo
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   try {
     const { port } = server.address();
-    const error = await runGit(["ls-remote", `http://127.0.0.1:${port}/r.git`], { timeout: 1500 }).then(() => null, (e) => e);
+    const error = await runGit(["ls-remote", `http://127.0.0.1:${port}/r.git`], { timeout: 6000 }).then(() => null, (e) => e);
     assert.equal(error?.timedOut, true);
     assert.equal(connected, true, "the helper reached the server");
     assert.equal(await until(() => closed, 3000), true, "the helper's connection is closed after the timeout");

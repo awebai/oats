@@ -19,7 +19,7 @@
  */
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readSync, realpathSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
-import { homedir, tmpdir } from "node:os";
+import { constants as osConstants, homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runtimeNameWarning, noteRuntimeName } from "../lib/deprecation.mjs";
@@ -2873,7 +2873,9 @@ async function capabilityCommand() {
     } });
     // Child never ran (spawn error): nothing reached stdout — keep the envelope contract.
     if (r.error) bail("E_CAPABILITY_BROKEN", `oats ${cmd} ${sub}: ${r.error.message || r.error}`);
-    process.exit(r.status ?? 1);
+    // A provider killed by a signal (a Ctrl-C reaches both it and us; our read session's handler
+    // waits for spawnSync) exits as the shell reports a signal death: 128 + its number.
+    process.exit(r.status ?? (r.signal ? 128 + (osConstants.signals[r.signal] ?? 0) : 1));
   }
 }
 
