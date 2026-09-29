@@ -54,6 +54,12 @@ test('no messaging on the roster row and none in the inspection: the section nev
   release(); await tick(); await tick(); assert.equal(u.presence.includes(true), false);
   u.s.update({ active: true, workspace: 'A', instance: { ...row, running: false } }); await tick(); await tick(); await tick();
   assert.equal(u.calls.filter(c => c.action === 'inspect').length, 2, 'a status change re-inspects'); assert.equal(u.presence.includes(true), false, 'and never claims the place either');
+  // With a roster address but no provider in the inspection: a status-identity re-read does not claim the section again.
+  const w = section(t, () => none);
+  w.s.update({ active: true, workspace: 'A', instance: { ...row, identityAddress: 'x@oats.aweb.ai' } }); await tick(); await tick();
+  assert.deepEqual(w.presence.filter(p => p), [true], 'claimed once, from the roster address, before the first answer');
+  w.s.update({ active: true, workspace: 'A', instance: { ...row, identityAddress: 'x@oats.aweb.ai', startedAt: '2026-09-29T12:00:00Z' } }); await tick(); await tick();
+  assert.deepEqual(w.presence.filter(p => p), [true], 'a restart after a no-provider answer never re-claims it');
   // A failed re-read of that subject is the failed block with Retry — never a header over an empty body.
   const v = section(t, (() => { let n = 0; return async () => { if (++n === 1) return none; throw Object.assign(new Error('bridge down'), { code: 'E_BRIDGE' }); }; })());
   v.s.update({ active: true, workspace: 'A', instance: row }); await tick(); await tick();

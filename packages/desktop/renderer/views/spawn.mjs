@@ -605,8 +605,9 @@ export async function refresh(s, { user = false } = {}) {
   s.inspector?.syncAvailability(); s.page?.syncAvailability();
   settleGridState(s, souls);
   renderGrid(s);
-  s.inspector?.syncRoster?.(); s.page?.syncRoster?.(); // an open soul's Instances card follows the roster (a new or retired instance, the roster's state)
-  syncCapabilityPage(s); // the open capability page: its "Used by" (roster-derived) and its age line
+  // Roster-derived claims follow the settled roster (updateRoster above rendered while the read was still 'refreshing'):
+  // an open soul's Instances card, the Capabilities "Used by" cells, an open capability page.
+  s.inspector?.syncRoster?.(); s.page?.syncRoster?.(); s.discovery?.syncRoster?.(); syncCapabilityPage(s);
   applyPreselect(s); // Quick Open handoff — after the roster is painted
   applyHome(s);
 }

@@ -29,7 +29,7 @@ export { teamsCSS };
 
 export function createInstanceTeamsSection(host, { request, generation = () => 0, onPresence = () => {}, cli = cliStatus, tools = null } = {}) {
   const doc = host.ownerDocument, win = doc.defaultView;
-  let identity = null, statusId = null, serial = 0, panel = null, disposed = false, attempted = null, current = null;
+  let identity = null, statusId = null, serial = 0, panel = null, disposed = false, attempted = null, current = null, noProvider = false;
   const node = cls => { const el = doc.createElement('div'); el.className = cls; return el; };
   const status = statusLine(doc, { visuallyHidden: true, className: 'instance-teams-status' });
   const body = node('instance-teams-body');
@@ -66,7 +66,7 @@ export function createInstanceTeamsSection(host, { request, generation = () => 0
     // Claim the section now only when the roster says messaging applies here, or a failure is on screen to retry;
     // a re-read after a no-provider answer (loading.hasData, no panel) stays hidden.
     const known = loading.state === 'failed' || !!panel;
-    const claim = known || (!loading.hasData && typeof instance.identityAddress === 'string' && instance.identityAddress);
+    const claim = known || (!noProvider && !loading.hasData && typeof instance.identityAddress === 'string' && instance.identityAddress);
     loading.begin({ user }); if (claim) onPresence(true);
     let result;
     try { result = await request(workspace, { action: 'inspect', selector, ...(user ? { refresh: true } : {}) }); }
@@ -82,7 +82,8 @@ export function createInstanceTeamsSection(host, { request, generation = () => 0
     const operations = teamsOperations(inspected), observedAt = typeof result?.observedAt === 'string' ? result.observedAt : null;
     // No provider is a settled absence, not data: the read ends (cancel) without a claim, so a later failed re-read
     // is the failed block with Retry — never a bare header over an empty body (a stale line has nowhere to go here).
-    if (!operations) { loading.cancel(); onPresence(false); return; }
+    if (!operations) { noProvider = true; loading.cancel(); onPresence(false); return; }
+    noProvider = false;
     // The card first, then succeed(): a focused Retry in the leaving failed block lands on the card's Refresh.
     panel?.dispose(); body.querySelector('.teams-panel')?.remove();
     panel = createTeamsPanel(body, { operations, selector, heading: false, owns, compact: true, refreshHost: tools,
@@ -97,7 +98,7 @@ export function createInstanceTeamsSection(host, { request, generation = () => 0
     update({ active, workspace, instance } = {}) {
       if (disposed) return;
       const id = instance?.home && !instance.server ? JSON.stringify([workspace, instance.home]) : null;
-      if (id !== identity) { identity = id; attempted = null; statusId = null; serial++; clear(); }
+      if (id !== identity) { identity = id; attempted = null; statusId = null; noProvider = false; serial++; clear(); }
       current = id ? { workspace, instance } : null;
       // One inspection per selection (renders are frequent); a new selection reads again.
       if (!active || !id || !inspectSupported(cli())) { panel?.sync(); return; }

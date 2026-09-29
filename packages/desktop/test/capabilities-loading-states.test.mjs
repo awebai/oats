@@ -247,6 +247,8 @@ test('roster-derived "Used by" claims wait for a settled good roster: "—" with
   assert.doesNotMatch(page.textContent, /No instance carries it yet/);
   u.poll(); await tick(); u.rosters[2].resolve({ agents }); await settle();
   assert.match(pageOf(u).textContent, /No instance carries it yet/, 'a good read restores the claim on the open page');
+  pageOf(u).querySelector('.page-back').click(); await settle();
+  assert.equal(cell().textContent, 'Not used', 'and in the table at once, not one poll later');
 });
 
 test('a catalog that failed with nothing held shows the failed treatment on the page (cause, Details, Retry), not silence', async t => {
