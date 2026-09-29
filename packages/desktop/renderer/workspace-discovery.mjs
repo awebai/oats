@@ -145,7 +145,7 @@ function catalogSkeleton(doc, rows = 6) {
 }
 
 /** `onCatalog`: the catalog changed (a read settled, the subject was reset): a page rendered from it refreshes in place. */
-export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab, onIntent, onOpenCapability = null, onCatalog = null }) {
+export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab, onIntent, onOpenCapability = null, onCatalog = null, rosterState = () => 'ready' }) {
   const doc = header.ownerDocument;
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
   let alive = true, serial = 0, rosterGen = null, workspace = null, deployment = null, instances = [], tab = 'souls';
@@ -327,7 +327,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     refreshHost.hidden = !catalogTab;
     // Identical polls never rebuild a settled projection under focus/selection.
     // (Not `loading` or `failure`: the controller paints those beside the projection, which must not rebuild for them.)
-    const key = JSON.stringify([tab, setupView, setupMember, souls.map(a => a?.team ?? null), query, unavailable, filters, catalog, s, deployment?.withheld, deployment?.reachable, privateListed(), instances.map(i => [i.agent, i.agentsRoot, i.modules, i.running])]);
+    const key = JSON.stringify([tab, setupView, setupMember, souls.map(a => a?.team ?? null), query, unavailable, filters, catalog, s, rosterState(), deployment?.withheld, deployment?.reachable, privateListed(), instances.map(i => [i.agent, i.agentsRoot, i.modules, i.running])]);
     if (key === rendered) return;
     rendered = key;
     notes.replaceChildren(); filterHost.replaceChildren(); body.replaceChildren(); capLead.replaceChildren(); filterHost.className = '';
@@ -370,7 +370,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
         filters = next; render(); refocusFilter(focused);
       } });
     renderCapabilitySections(body, { sections, shown, filterHost, navHost: capLead, privateListed: privateListed(), query,
-      status: s, instances, root: workspace?.id, onOpen: onOpenCapability });
+      status: s, instances, root: workspace?.id, rosterState: rosterState(), onOpen: onOpenCapability });
     reveal();
   }
   // Repo owned is shown only when the kernel lists private capabilities.
@@ -431,11 +431,13 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   return {
     setTab, updateRoster, syncCli, get tab() { return tab; },
     /** What the capability table renders with (observed facts only), for pages that reuse it. */
-    context: () => ({ status: observed(), instances, root: workspace?.id, catalog: catalog?.capabilities ?? null,
+    context: () => ({ status: observed(), instances, root: workspace?.id, rosterState: rosterState(), catalog: catalog?.capabilities ?? null,
       // The catalog's loading state for pages rendered from it (item 7): its state, observation and the last failure's text.
       catalogState: loadState.state, catalogSettled: loadState.settled, catalogBusy: loadState.busy, catalogObservedAt: loadState.observedAt, catalogFailure: failure || null }),
     /** A page's Retry: re-read the catalog live (announced on completion). */
     reload() { void load({ user: true, refresh: true }); },
+    /** The host roster's state changed without new rows (a failed poll): roster-derived cells follow (behind the render key). */
+    syncRoster() { render(); },
     /** The host's roster read failed with nothing to show: the Souls count is nothing, still (not a pill). */
     rosterUnavailable() { if (soulsCount === 'pending') updateCounts(null); },
     reset() {

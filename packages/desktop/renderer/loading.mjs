@@ -24,6 +24,9 @@ export const OLD_AFTER_MS = 2 * 60_000;
 export const AGE_TICK_MS = 30_000;
 
 const capitalise = s => s ? s[0].toUpperCase() + s.slice(1) : s;
+/** Why a roster-derived action or claim waits while the roster is not settled-good (the sidebar's rule, shared by
+ * every surface that derives from the roster: instance-tree.mjs re-exports it). */
+export const ROSTER_STALE_TITLE = 'Unavailable: roster is not current';
 export const wording = Object.freeze({
   loading: noun => `Loading ${noun}…`,
   refreshing: 'Refreshing…',
@@ -214,6 +217,29 @@ export function updateNotice(el, { noun, observedAt = null, cause = null, busy =
   if (retry) { if (busy) retry.setAttribute('aria-disabled', 'true'); else retry.removeAttribute('aria-disabled'); }
 }
 
+/** Build the failed block (the read failed with nothing to show): the cause, the code behind a Details disclosure,
+ * Retry. Shared by the controller and pages that mirror a controller's state; update in place with `updateFailed()`. */
+export function failedElement(doc, { message = null, code = null, noun = 'data', busy = false, onRetry = null } = {}) {
+  const el = element(doc, 'div', 'loading-failed');
+  el.append(element(doc, 'p', 'loading-failed-message'));
+  const more = element(doc, 'details', 'loading-failed-details');
+  const summary = element(doc, 'summary', ''); summary.textContent = 'Details';
+  more.append(summary, element(doc, 'p', 'loading-failed-code muted'));
+  const retry = element(doc, 'button', 'act loading-retry'); retry.type = 'button'; retry.textContent = wording.retry; retry.dataset.focusKey = 'retry';
+  retry.addEventListener('click', () => { if (retry.getAttribute('aria-disabled') === 'true') return; onRetry?.(); });
+  if (typeof onRetry !== 'function') retry.hidden = true;
+  el.append(more, retry);
+  updateFailed(el, { message, code, noun, busy });
+  return el;
+}
+export function updateFailed(el, { message = null, code = null, noun = 'data', busy = false } = {}) {
+  el.querySelector('.loading-failed-message').textContent = typeof message === 'string' && message ? message : `${wording.couldNotRefresh(noun)}.`;
+  const more = el.querySelector('.loading-failed-details'), shown = typeof code === 'string' && code ? code : null;
+  more.hidden = !shown; more.querySelector('.loading-failed-code').textContent = shown || '';
+  const retry = el.querySelector('.loading-retry');
+  if (retry) { if (busy) retry.setAttribute('aria-disabled', 'true'); else retry.removeAttribute('aria-disabled'); }
+}
+
 /* ── the data-state controller ───────────────────────────────────────────── */
 /**
  * @param {object} o
@@ -307,20 +333,9 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
   function showFailed(error) {
     removeSkeleton();
     if (!failedHost) return;
-    if (!failedEl) {
-      failedEl = element(doc, 'div', 'loading-failed');
-      failedEl.append(element(doc, 'p', 'loading-failed-message'));
-      const more = element(doc, 'details', 'loading-failed-details');
-      const summary = element(doc, 'summary', ''); summary.textContent = 'Details';
-      more.append(summary, element(doc, 'p', 'loading-failed-code muted'));
-      failedEl.append(more, retryButton());
-      failedHost.append(failedEl);
-    }
-    const message = typeof error?.message === 'string' && error.message ? error.message : `${wording.couldNotRefresh(noun)}.`;
-    failedEl.querySelector('.loading-failed-message').textContent = message;
-    const code = typeof error?.code === 'string' && error.code ? error.code : null;
-    const more = failedEl.querySelector('.loading-failed-details');
-    more.hidden = !code; more.querySelector('.loading-failed-code').textContent = code || '';
+    const facts = { message: error?.message, code: error?.code, noun, busy };
+    if (!failedEl) { failedEl = failedElement(doc, { ...facts, onRetry: () => { if (!disposed && !busy) onRetry?.(); } }); failedHost.append(failedEl); }
+    else updateFailed(failedEl, facts);
   }
   function setRegionBusy(value) {
     if (!region) return;

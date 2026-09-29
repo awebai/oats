@@ -7,7 +7,7 @@
 import { createSoulMark } from './identity-marks.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { capabilitySource, capabilityUse, capabilityRow, memberNames, layerLabel, sourceChip } from './workspace-catalog.mjs';
-import { skeleton, noticeElement, updateNotice, isOldObservation } from './loading.mjs';
+import { skeleton, noticeElement, updateNotice, failedElement, updateFailed, isOldObservation, ROSTER_STALE_TITLE } from './loading.mjs';
 
 /** The shared page chrome: bar, columns, section titles and side cards. */
 export const pageCardCSS = `
@@ -178,8 +178,9 @@ export function packageOrigin(source) {
  * cause behind Details), 'observed' (an old observation) or null (current). `state`: the controller's
  * state (a refreshing read keeps the settled kind through `settled`); `observedAt`: ISO or null. */
 export function catalogNoticeKind({ state, settled = state, observedAt = null } = {}, now = Date.now()) {
-  const kind = state === 'stale' || (state === 'refreshing' && settled === 'stale') ? 'stale' : null;
-  if (kind) return kind;
+  const at = state === 'refreshing' || state === 'pending' ? settled : state;
+  if (at === 'stale') return 'stale';
+  if (at === 'failed') return 'failed'; // the catalog could not be read and nothing is held: the failed treatment, not silence
   return isOldObservation(observedAt, now) ? 'observed' : null;
 }
 /** The page's copy of the controller's notice (loading.mjs `noticeElement`, so the two never drift):
@@ -188,11 +189,20 @@ export function catalogNoticeKind({ state, settled = state, observedAt = null } 
 export function catalogNotice(doc, observation = {}, now = Date.now()) {
   const kind = catalogNoticeKind(observation, now);
   if (!kind) return null;
+  if (kind === 'failed') {
+    const el = failedElement(doc, { ...failedFacts(observation), onRetry: observation.onRetry ?? null }); el.dataset.kind = 'failed'; return el;
+  }
   return noticeElement(doc, kind, { noun: 'capabilities', observedAt: observation.observedAt ?? null, cause: kind === 'stale' ? observation.cause ?? null : null,
     busy: observation.busy === true, onRetry: observation.onRetry ?? null, now });
 }
 export function updateCatalogNotice(el, observation = {}, now = Date.now()) {
+  if (el.dataset.kind === 'failed') { updateFailed(el, failedFacts(observation)); return; }
   updateNotice(el, { noun: 'capabilities', observedAt: observation.observedAt ?? null, cause: el.dataset.kind === 'stale' ? observation.cause ?? null : null, busy: observation.busy === true, now });
+}
+/** The failed block's facts from the discovery's failure text ("CODE: message", reasonText's shape) or a plain message. */
+function failedFacts({ cause = null, busy = false } = {}) {
+  const m = /^([A-Z][A-Z0-9_]+): (.+)$/s.exec(cause || '');
+  return { noun: 'capabilities', message: m ? m[2] : cause || null, code: m ? m[1] : null, busy: busy === true };
 }
 
 /** @param row a catalog row (or capabilityRow(resolved)); from: { label } when opened from a soul page.
@@ -200,7 +210,7 @@ export function updateCatalogNotice(el, observation = {}, now = Date.now()) {
  * skeletons the host fills in place when it arrives. The catalog's age line lives in `.page-notice`
  * under the bar: the host paints it (`catalogNotice` / `updateCatalogNotice`), optionally seeded here
  * with `observation` ({ state, settled, busy, observedAt, cause, onRetry }). */
-export function renderCapabilityPage(host, { row, status, instances, root, backLabel = 'Capabilities', onBack, openSoul = null, from = null, openExternal = null, catalogPending = false, observation = null }) {
+export function renderCapabilityPage(host, { row, status, instances, root, rosterState = 'ready', backLabel = 'Capabilities', onBack, openSoul = null, from = null, openExternal = null, catalogPending = false, observation = null }) {
   const doc = host.ownerDocument;
   const node = (tag, value, cls) => el(doc, tag, value, cls);
   host.replaceChildren();
@@ -248,12 +258,17 @@ export function renderCapabilityPage(host, { row, status, instances, root, backL
   }
   // Used by: the souls whose instances carry it (roster module rows).
   const use = capabilityUse(instances, row.name);
-  const used = pageSection(doc, 'Used by', `${use.souls.length} soul${use.souls.length === 1 ? '' : 's'}`);
+  // "Used by" derives from the roster: with none carrying it, the claim needs a settled good roster read.
+  const rosterGood = rosterState === 'ready' || rosterState === 'empty';
+  const used = pageSection(doc, 'Used by', use.souls.length || rosterGood ? `${use.souls.length} soul${use.souls.length === 1 ? '' : 's'}` : '');
   const table = node('div', undefined, 'page-table'); table.setAttribute('role', 'table'); table.setAttribute('aria-label', `Souls using ${row.name}`);
   const head = node('div', undefined, 'page-table-row head used-row'); head.setAttribute('role', 'row');
   for (const label of ['Soul', 'Instances']) { const cell = node('span', label); cell.setAttribute('role', 'columnheader'); head.append(cell); }
   table.append(head);
-  if (!use.souls.length) table.append(node('p', 'No instance carries it yet.', 'page-note page-table-row'));
+  if (!use.souls.length) {
+    if (rosterGood) table.append(node('p', 'No instance carries it yet.', 'page-note page-table-row'));
+    else { const none = node('p', '—', 'page-note page-table-row used-unknown'); none.title = ROSTER_STALE_TITLE; none.setAttribute('aria-description', ROSTER_STALE_TITLE); none.dataset.rosterState = rosterState; table.append(none); }
+  }
   for (const soul of use.souls) {
     const carrying = list(instances).filter(i => i.agent === soul.name && i.agentsRoot === soul.agentsRoot && moduleRow(i, row.name));
     const behind = carrying.filter(i => moduleRow(i, row.name)?.status === 'moved').length;

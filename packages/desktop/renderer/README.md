@@ -366,12 +366,34 @@ the card's Refresh; the Soul body host; the Souls search field; the
 Capabilities search field): a focused Retry whose line or block leaves on
 success never lands on `<body>`.
 
-The soul inspector's roster-derived block follows the host roster through
-`syncRoster()`, which `views/spawn.mjs` calls after every poll (settled or
-failed): the Instances card says "No instances yet." only after a good read,
-shows a skeleton line while the roster is pending (`instancesState()` →
-`s.gridState.state`), and makes no claim (no count) while it is failed or
-stale.
+Roster-derived claims follow the roster's *settled* state
+(`rosterSettledState(s)` in `views/spawn.mjs`: the controller's `settled`
+while a re-read runs — a refresh over a stale roster is still stale — else
+its `state`), synced after every poll, settled or failed: the soul
+inspector's Instances card (`instancesState()` → `syncRoster()`) says "No
+instances yet." only after a good read, shows a skeleton line while pending
+and makes no claim (no count) while failed or stale; the Capabilities table's
+"Used by" cell (`renderCapabilities`'s `rosterState`, through the discovery's
+`syncRoster()` and render key) and the capability page's "Used by" section
+show a muted "—" carrying `ROSTER_STALE_TITLE` (`loading.mjs`, re-exported by
+`instance-tree.mjs`) as their accessible description instead of "Not used" /
+"No instance carries it yet." while the roster is not settled-good. A
+roster failure discarded because the selection moved still `cancel()`s the
+grid's read, so nothing is left "refreshing". A catalog that failed with
+nothing held shows the failed treatment on an open capability page
+(`failedElement` / `updateFailed`, shared with the controller's own block:
+cause, Details, Retry), never silence; a Retry over it paints no skeleton
+(`catalogPending` only before the first read settles). The Messaging section
+treats a no-provider answer as a settled absence (`cancel()`, not data), so a
+later failed re-read is the failed block with Retry, never a header over an
+empty body.
+
+Spawn stays enabled over a stale Souls grid: a local spawn goes through the
+dialog's live kernel preview (the preview boundary binds the choices to the
+kernel's decision at spawn time), so the grid's staleness cannot make it act
+on old facts. A remote spawn (`runRemote` → `doSpawn`) has no preview binding;
+that path is unchanged by the loading-states work. Filed for a later a11y
+pass: consolidating each surface's several live regions into one.
 
 ## Team controls on a live instance (teams contract 2026-09-25)
 

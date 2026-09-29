@@ -217,10 +217,28 @@ test('the soul page\'s Instances card follows the host roster: a skeleton line w
   u.poll(); await tick(); await u.reject(1, new Error('down')); await tick();
   assert.equal(card().querySelector('.page-note'), null, 'no "No instances yet." over a stale roster');
   assert.ok(card().querySelector('.inspector-instances-unknown[data-roster-state=stale]')); assert.equal(card().querySelector('.page-card-count'), null, 'no count either');
+  // The maintainer's repro (#326): a poll or Retry over the stale roster is 'refreshing' while settled stays 'stale' — Back, open the
+  // card again: still no claim, no "0" (the settled state rules, as for the catalog's notice).
+  u.poll(); await tick();
+  u.q('.workspace-soul-page .inspector-back').click(); await tick(); u.cards()[0].click(); await tick(); await tick();
+  assert.equal(card().querySelector('.page-note'), null, 'no "No instances yet." while a re-read runs over a stale roster');
+  assert.ok(card().querySelector('.inspector-instances-unknown[data-roster-state=stale]')); assert.equal(card().querySelector('.page-card-count'), null);
+  await u.resolve(2, { agents: ROSTER, catalog: { reason: null, ambiguous: [] } });
+  assert.equal(card().querySelector('.page-note')?.textContent, 'No instances yet.', 'a good read restores the claim');
   // A workspace switch: pending — a skeleton line, no claim.
   setWorkspace('/other'); await tick();
   u.timers.advance(PENDING_DELAY_MS);
   assert.ok(u.skeleton(), 'the grid is pending'); assert.equal(u.doc.body.textContent.includes('No instances yet.'), false);
+});
+
+test('a roster failure discarded because the selection moved still ends the read: the grid is not left "refreshing"', async t => {
+  const u = await setup(t);
+  await u.resolve(0, { agents: ROSTER, catalog: { reason: null, ambiguous: [] } });
+  u.poll(); await tick(); assert.equal(u.q('.souls-grid').getAttribute('aria-busy'), null);
+  u.cards()[0].click(); await tick(); // a selection: the in-flight poll no longer owns the selection
+  await u.reject(1, new Error('down'));
+  assert.equal(u.notice().childElementCount, 0, 'a discarded failure paints no stale line');
+  u.timers.advance(REFRESHING_DELAY_MS); assert.equal(u.q('.souls-bar .loading-refreshing'), null, 'and leaves no "Refreshing…" behind');
 });
 
 test('retired wording: "Loading agents…", the "Loading souls…" block and "Unable to refresh souls" are gone from the view source', async () => {

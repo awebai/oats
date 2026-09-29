@@ -54,9 +54,13 @@ test('no messaging on the roster row and none in the inspection: the section nev
   release(); await tick(); await tick(); assert.equal(u.presence.includes(true), false);
   u.s.update({ active: true, workspace: 'A', instance: { ...row, running: false } }); await tick(); await tick(); await tick();
   assert.equal(u.calls.filter(c => c.action === 'inspect').length, 2, 'a status change re-inspects'); assert.equal(u.presence.includes(true), false, 'and never claims the place either');
-  // A failed re-read is still visible: a failure is something to retry.
-  u.s.update({ active: true, workspace: 'A', instance: { ...row, running: false, startedAt: '2026-09-29T11:00:00Z' } });
-  u.calls.length = 0;
+  // A failed re-read of that subject is the failed block with Retry — never a header over an empty body.
+  const v = section(t, (() => { let n = 0; return async () => { if (++n === 1) return none; throw Object.assign(new Error('bridge down'), { code: 'E_BRIDGE' }); }; })());
+  v.s.update({ active: true, workspace: 'A', instance: row }); await tick(); await tick();
+  assert.equal(v.presence.includes(true), false);
+  v.s.update({ active: true, workspace: 'A', instance: { ...row, startedAt: '2026-09-29T11:00:00Z' } }); await tick(); await tick();
+  assert.equal(v.presence.at(-1), true, 'a failure is shown'); const failed = v.body().querySelector('.loading-failed'); assert.ok(failed, 'the failed block, with Retry');
+  assert.equal(failed.querySelector('.loading-failed-message').textContent, 'bridge down'); assert.ok(failed.querySelector('.loading-retry'));
 });
 
 test('a failed inspection is visible: the cause, the code behind Details, Retry (reads live) — never a silent absence; no provider hides the section without a failure', async t => {

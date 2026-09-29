@@ -256,9 +256,10 @@ function paintCapabilityPage(s) {
   // about it in the workspace (#217: description, what it provides, its file and fingerprint).
   const listed = from && Array.isArray(catalog) ? catalog.filter(r => r.name === row.name) : [];
   const facts = listed.length === 1 ? listed[0] : null;
-  const catalogPending = !!from && !Array.isArray(catalog) && (catalogState === "pending" || catalogState === "idle");
+  // Pending: the catalog was never read (a Retry over a failed read is the failed block's business, not skeletons).
+  const catalogPending = !!from && !Array.isArray(catalog) && (catalogState === "pending" || catalogState === "idle") && catalogSettled === "idle";
   // The page itself follows the catalog's content; its age line (below) follows the controller's state, on its own.
-  const signature = JSON.stringify([facts, catalogPending, context.instances, context.root]);
+  const signature = JSON.stringify([facts, catalogPending, context.instances, context.root, context.rosterState]);
   const host = s.q("workspace-cap-page");
   if (signature !== open.signature) { // an unchanged catalog never rebuilds the page under focus
     open.signature = signature; open.noticeSignature = null;
@@ -284,7 +285,7 @@ function paintCapabilityNotice(s, observation) {
   const doc = host.ownerDocument, now = Date.now();
   const kind = catalogNoticeKind(observation, now);
   const full = { ...observation, onRetry: () => s.discovery.reload() };
-  let notice = host.querySelector(".loading-notice");
+  let notice = host.querySelector(".loading-notice, .loading-failed"); // the stale / observed line, or the failed block
   if (notice && notice.dataset.kind !== kind) {
     // The line leaves (or changes kind): a focused Retry hands focus to Back, never to nowhere.
     if (notice.contains(doc.activeElement)) s.q("workspace-cap-page").querySelector(".page-back")?.focus({ preventScroll: true });
@@ -293,12 +294,6 @@ function paintCapabilityNotice(s, observation) {
   if (!kind) return;
   if (!notice) { notice = catalogNotice(doc, full, now); if (notice) host.append(notice); }
   else updateCatalogNotice(notice, full, now);
-}
-/** The roster poll: the open page's age line ticks (nothing else is repainted). */
-function touchCapabilityPage(s) {
-  if (!s.alive || !s.capOpen) return;
-  const { catalogState, catalogSettled, catalogBusy, catalogObservedAt, catalogFailure } = s.discovery.context();
-  paintCapabilityNotice(s, { state: catalogState, settled: catalogSettled, busy: catalogBusy, observedAt: catalogObservedAt, cause: catalogFailure });
 }
 /** The catalog changed (a read settled, a reset): the open page follows it; another generation's page closes. */
 function syncCapabilityPage(s) {
@@ -393,7 +388,9 @@ ${spawnDialogCSS}</style>
     files: agent => s.ctx.openBrain?.(agent.name),
     canFiles: agent => canOpenFiles(s, agent),
     instances: agent => soulInstances(s, agent), workspace: () => s.workspace,
-    instancesState: () => s.gridState?.state ?? 'ready', // the roster the instances come from: pending / failed / stale is not "No instances yet."
+    // The roster the instances come from: pending / failed / stale is not "No instances yet." — and a re-read over a stale
+    // roster is still stale (the settled state, the catalogNoticeKind rule), not a good read.
+    instancesState: () => rosterSettledState(s),
 
     schedule: agent => { if (canLaunchSoul(s, agent)) { preselectSchedule(agent); preselectAutomationsTab("schedule"); ctx.openView?.("automations"); } },
   };
@@ -420,6 +417,7 @@ ${spawnDialogCSS}</style>
   });
   s.discovery = createWorkspaceDiscovery(s.q("workspace-header"), s.q("workspace-discovery"), {
     ctx, soulsPanel: s.q("souls-grid"), onIntent: () => nextSelectionIntent(), onCatalog: () => syncCapabilityPage(s),
+    rosterState: () => rosterSettledState(s), // "Used by" claims are roster-derived: none while the roster is not settled-good
     onOpenCapability: row => openCapability(s, row, null),
     onTab: tab => {
       s.spawnOp++; closeSpawnModal(s); s.inspector.close(); closeCapability(s); s.page.close();
@@ -567,12 +565,16 @@ export async function refresh(s, { user = false } = {}) {
       apiJson(s.ctx, `/api/panel${wsQuery()}`),
     ]);
   } catch (error) {
-    if (!current() || !ownsSelection(s, intent)) return;
+    // A newer read or another workspace owns the controller now: nothing to say. A read discarded only because the
+    // selection moved is still this controller's: end its visuals (else the grid stays "refreshing" until the next poll).
+    if (!current()) return;
+    if (!ownsSelection(s, intent)) { s.gridState?.cancel(); return; }
     // The last good list stays (stale, with the cause and Retry above it); with nothing yet, the
     // failed block replaces the skeleton. The 8s poll keeps trying either way.
     s.gridState?.fail(error);
     if (!s.gridState?.hasData) s.discovery?.rosterUnavailable?.(); // the Souls tab count: nothing, still (a pill would say "still loading")
-    s.inspector?.syncRoster?.(); s.page?.syncRoster?.(); // an open soul's Instances card makes no claim over a stale or failed roster
+    // Roster-derived claims follow the roster's state: an open soul's Instances card, the Capabilities "Used by" cells, an open capability page.
+    s.inspector?.syncRoster?.(); s.page?.syncRoster?.(); s.discovery?.syncRoster?.(); syncCapabilityPage(s);
     return;
   }
   // discard deferred responses from a previous workspace — they'd paint A's
@@ -604,11 +606,17 @@ export async function refresh(s, { user = false } = {}) {
   settleGridState(s, souls);
   renderGrid(s);
   s.inspector?.syncRoster?.(); s.page?.syncRoster?.(); // an open soul's Instances card follows the roster (a new or retired instance, the roster's state)
-  touchCapabilityPage(s);
+  syncCapabilityPage(s); // the open capability page: its "Used by" (roster-derived) and its age line
   applyPreselect(s); // Quick Open handoff — after the roster is painted
   applyHome(s);
 }
 
+/** The roster's state for surfaces that make claims from it (an instance list, a "Used by" cell): the settled
+ * state while a re-read runs — a refresh over a stale roster is still stale, not a good read. */
+function rosterSettledState(s) {
+  const load = s.gridState; if (!load) return 'ready';
+  return load.state === 'refreshing' ? load.settled : load.state;
+}
 /** What the reply says about the souls list (spec 02's fields are optional; they must not be needed):
  * `catalog.reason` (the kernel could not read the catalog) is a failed read: stale with cards, failed
  * without; an observed deployment still reading (`refreshing: true`, no souls, no reason) stays pending;

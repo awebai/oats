@@ -234,6 +234,36 @@ test('the page\'s age line ticks with the roster poll, and a failed Retry with a
   assert.equal(pageLine.querySelector('.loading-notice-text').textContent, "Couldn't refresh capabilities · observed 9 min ago", 'the age ticked with the poll');
 });
 
+test('roster-derived "Used by" claims wait for a settled good roster: "—" with the reason while the roster is failed or stale, in the table and on the page', async t => {
+  const u = await setup(t, { holdRoster: true, holdReads: true });
+  u.rosters[0].resolve({ agents }); await settle(); await u.resolveRead(0, okRead()); await u.tab('capabilities');
+  const cell = () => u.q('.catalog-row[data-capability="nw-brand-voice"] .catalog-used-count');
+  assert.equal(cell().textContent, 'Not used', 'a good roster: the claim');
+  u.poll(); await tick(); u.rosters[1].reject(new Error('down')); await settle();
+  assert.equal(cell().textContent, '—'); assert.equal(cell().getAttribute('aria-description'), 'Unavailable: roster is not current'); assert.equal(cell().dataset.rosterState, 'stale');
+  u.q('.catalog-row[data-capability="nw-brand-voice"]').click(); await settle();
+  const page = pageOf(u); assert.equal(page.querySelector('.used-unknown')?.textContent, '—', 'the page makes no claim either');
+  assert.equal(page.querySelector('.used-unknown').getAttribute('aria-description'), 'Unavailable: roster is not current');
+  assert.doesNotMatch(page.textContent, /No instance carries it yet/);
+  u.poll(); await tick(); u.rosters[2].resolve({ agents }); await settle();
+  assert.match(pageOf(u).textContent, /No instance carries it yet/, 'a good read restores the claim on the open page');
+});
+
+test('a catalog that failed with nothing held shows the failed treatment on the page (cause, Details, Retry), not silence', async t => {
+  const u = await setup(t, { holdReads: true });
+  await u.resolveRead(0, failedRead()); await u.tab('capabilities');
+  // Open a page from a soul (the table has nothing to open from).
+  u.doc.getElementById('workspace-tab-souls').click(); await settle(); u.q('.soul-card').click(); await settle();
+  u.q('.workspace-soul-page .soul-caps [data-capability="nw-house-style"]').click(); await settle();
+  const failed = pageOf(u).querySelector('.page-notice .loading-failed'); assert.ok(failed, 'the failed block under the bar');
+  assert.equal(failed.querySelector('.loading-failed-message').textContent, 'The workspace command exceeded its time limit.'); assert.equal(failed.querySelector('.loading-failed-code').textContent, 'E_CLI_TIMEOUT');
+  const retry = failed.querySelector('.loading-retry'); retry.focus(); retry.click(); await settle();
+  assert.equal(pageOf(u).querySelector('.page-notice .loading-failed'), failed, 'the block is updated in place, not rebuilt'); assert.equal(pageOf(u).querySelector('.page-lede.skeleton'), null, 'a Retry over a failure paints no skeleton');
+  assert.deepEqual(u.reads.at(-1).body, { action: 'read', refresh: true }); assert.equal(retry.getAttribute('aria-disabled'), 'true'); assert.equal(u.doc.activeElement, retry);
+  await u.resolveRead(1, okRead());
+  assert.equal(pageOf(u).querySelector('.page-notice').childElementCount, 0, 'current'); assert.equal(u.doc.activeElement, pageOf(u).querySelector('.page-back'));
+});
+
 test('the age rule on the page: an old observation is said, muted, without Retry', async t => {
   const u = await setup(t, { holdReads: true });
   await u.resolveRead(0, okRead({ observedAt: new Date(Date.now() - 4 * 60_000).toISOString() })); await u.tab('capabilities');

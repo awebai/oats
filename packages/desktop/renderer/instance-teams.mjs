@@ -80,7 +80,9 @@ export function createInstanceTeamsSection(host, { request, generation = () => 0
     }
     // No messaging provider: no section (a truthful absence, said by hiding it).
     const operations = teamsOperations(inspected), observedAt = typeof result?.observedAt === 'string' ? result.observedAt : null;
-    if (!operations) { loading.succeed({ observedAt, empty: true }); onPresence(false); return; }
+    // No provider is a settled absence, not data: the read ends (cancel) without a claim, so a later failed re-read
+    // is the failed block with Retry — never a bare header over an empty body (a stale line has nowhere to go here).
+    if (!operations) { loading.cancel(); onPresence(false); return; }
     // The card first, then succeed(): a focused Retry in the leaving failed block lands on the card's Refresh.
     panel?.dispose(); body.querySelector('.teams-panel')?.remove();
     panel = createTeamsPanel(body, { operations, selector, heading: false, owns, compact: true, refreshHost: tools,
