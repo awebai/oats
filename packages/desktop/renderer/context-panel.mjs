@@ -532,9 +532,12 @@ export function createContextPanel({
     const inside = root.contains(active);
     const inSidebar = document.getElementById('sidebar')?.contains(active)
       || document.getElementById('sidebar-restore')?.contains(active);
+    // Focus already lost (the palette removes its input before running a command) counts too, but only on
+    // an explicit focus-mode change, so a command never leaves focus on <body>.
+    const lost = !active || active === document.body || !active.isConnected;
     const wasFocusMode = focusMode;
     change(); render(); changed();
-    if ((inside && !visible(active)) || (inSidebar && !wasFocusMode && focusMode)) {
+    if ((inside && !visible(active)) || (inSidebar && !wasFocusMode && focusMode) || (lost && wasFocusMode !== focusMode)) {
       focus(visible(expand) ? expand : fallbackFocus());
     }
   }

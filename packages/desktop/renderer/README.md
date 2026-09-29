@@ -452,7 +452,9 @@ panel; the `#sidebar-restore` edge is shown in focus mode too (the only exit on 
 stage, where there is no tab bar) and runs `sidebar.toggle`, which leaves it.
 Focus that was in the hidden sidebar moves to the active tab's trigger, else to a
 stable visible control (`stableFocusTarget` in `shell.mjs`: the panel toggle, the
-sidebar toggle or the restore edge), never `<body>`. Mod+F and Mod+B leave focus
+sidebar toggle or the restore edge), never `<body>`; a focus-mode change made
+after focus was already lost (the palette removes its input before running the
+command) lands there too. Mod+F and Mod+B leave focus
 mode. Panel collapse and selected tab are session-local per workspace; focus mode
 is a temporary presentation override. Native terminal input and per-window
 lifecycle policies are unchanged.

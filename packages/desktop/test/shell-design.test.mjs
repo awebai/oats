@@ -432,6 +432,20 @@ test('focus fallback prefers a shown active tab, then a visible panel toggle, si
   assert.equal(target(), q('sidebar-restore'), 'sidebar hidden: the restore edge');
 });
 
+test('a focus-mode change made after focus was lost (the palette removed its input) lands on a visible control, never <body>', t => {
+  const s = shell(t), q = id => s.document.getElementById(id);
+  const trigger = s.document.createElement('button'); q('tabbar').append(trigger); s.c.activeTrigger = trigger;
+  const input = s.document.createElement('input'); s.document.body.append(input); input.focus(); input.remove();
+  assert.equal(s.document.activeElement, s.document.body, 'the picker is gone: focus is on <body>');
+  runAction('app.focusMode'); assert.equal(s.contextPanel.isFocusMode(), true);
+  assert.equal(s.document.activeElement, trigger, 'entering: the active tab');
+  s.document.activeElement.blur(); assert.equal(s.document.activeElement, s.document.body);
+  s.c.activeTrigger = null; runAction('app.focusMode'); assert.equal(s.contextPanel.isFocusMode(), false);
+  assert.equal(s.document.activeElement, q('sidebar-toggle'), 'leaving with no active tab: the sidebar toggle');
+  s.document.activeElement.blur(); s.contextPanel.setContext({ workspace: 'A', key: 'terminal' });
+  assert.equal(s.document.activeElement, s.document.body, 'a background projection never moves focus');
+});
+
 test('the palette keeps focus mode reachable without the bar and names the instance panel toggle with its chord', t => {
   const s = shell(t);
   const start = source.indexOf('// ── command palette');
