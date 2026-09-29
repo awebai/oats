@@ -251,3 +251,13 @@ test('observeMutation (server) invalidates the inspections held under the worksp
   assert.deepEqual(invalidated, ['/local', '/remote/member'], 'by scope: the key inspections are stored under');
   assert.deepEqual(refreshed, [{ live: true }, { live: true }, { live: true }], 'every mutation observes the roster live');
 });
+
+test('an entry is served for at most the TTL after it was stored; then it is a miss and the next read reaches the kernel', async () => {
+  const time = clock(); const cache = createInspectCache({ now: time.now, ttlMs: 60_000 });
+  let produced = 0; const produce = async () => ok({ n: ++produced });
+  await cache.read('k', { deployment: '/d', produce });
+  time.advance(59_999); assert.equal((await cache.read('k', { deployment: '/d', produce })).hit, true, 'inside the TTL: a hit');
+  time.advance(1); const expired = await cache.read('k', { deployment: '/d', produce });
+  assert.deepEqual([expired.hit, expired.envelope.result.n, produced], [false, 2, 2], 'at the TTL: re-read, never a stale hit');
+  assert.equal((await cache.read('k', { deployment: '/d', produce })).hit, true, 'the re-read is held again');
+});

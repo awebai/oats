@@ -174,18 +174,17 @@ test('observedAt is the kernel\'s observation stamp when present, else the compl
   h.answer(() => ({ ok: true, document: stamped }));
   const live = await h.catalog.read(deployment, CLI, WS, { refresh: true });
   assert.equal(live.observedAt, '2026-09-26T19:57:15.436Z');
-  // A malformed stamp is a producer defect: the document is refused (observationData), the last good table and its stamp stay.
+  // A malformed stamp is no stamp: the table stands, stamped with the read's completion time (never a refusal).
   const bad = CAPS(); bad.result.observation = { observedAt: 12, reused: false }; h.answer(() => ({ ok: true, document: bad }));
-  h.tick(5000); const refused = await h.catalog.read(deployment, CLI, WS, { refresh: true });
-  assert.deepEqual([refused.reason.code, refused.observedAt, refused.capabilities.capabilities.length], ['E_CLI_PROTOCOL', '2026-09-26T19:57:15.436Z', TABLE.capabilities.length]);
-  h.answer(() => ({ ok: true, document: CAPS() })); await h.catalog.read(deployment, CLI, WS, { refresh: true });
+  h.tick(5000); const unstamped = await h.catalog.read(deployment, CLI, WS, { refresh: true });
+  assert.deepEqual([unstamped.reason, unstamped.observedAt, unstamped.capabilities.capabilities.length], [null, new Date(h.now()).toISOString(), TABLE.capabilities.length]);
   const copy = h.catalog.held(deployment); copy.capabilities.capabilities.pop(); copy.reason = { code: 'X' };
   assert.equal(h.catalog.held(deployment).capabilities.capabilities.length, TABLE.capabilities.length); assert.equal(h.catalog.held(deployment).reason, null);
 });
 
 /* ── through the sync boundary ───────────────────────────────────────── */
 const workspace = { id: deployment, scope: deployment };
-function boundary({ observed = () => WS, maxAge, answers = [] } = {}) {
+function boundary({ observed = () => ({ workspaceStatus: WS, fingerprint: 'fp-1' }), maxAge, answers = [] } = {}) {
   const calls = [];
   const invoke = async (_cli, options) => {
     calls.push(options);
@@ -209,23 +208,54 @@ test('boundary: a read answers from the held table with observedAt and refreshin
   assert.ok(Number(process.hrtime.bigint() - started) / 1e6 < 50); assert.equal(b.calls.length, 1); assert.deepEqual(held, cold);
 });
 
-test('boundary: refresh: true forces a live read; a kernel failure keeps the table with the reason beside it', async () => {
+test('boundary: refresh: true forces a live read; a failed re-read is today\'s failure shape (never a healthy table) with lastGood beside it', async () => {
   const b = boundary();
   await b.request({ action: 'read' }, { workspace, cli: CLI });
   b.answers.push({ ok: false, reason: { code: 'E_WORKSPACE', message: 'members not ready' } });
   const forced = await b.request({ action: 'read', refresh: true }, { workspace, cli: CLI });
   assert.deepEqual(b.calls[1], { action: 'capabilities', context: deployment, maxAge: 0 });
-  assert.equal(forced.status, 'ok'); assert.deepEqual(forced.capabilities, TABLE);
+  assert.equal(forced.status, 'refused', 'the renderer shows the error and Retry exactly as on main'); assert.equal(forced.capabilities, null);
   assert.deepEqual(forced.reason, { code: 'E_WORKSPACE', message: 'members not ready' }); assert.equal(forced.refreshing, false);
+  assert.deepEqual(forced.lastGood, { capabilities: TABLE, observedAt: new Date(1_700_000_000_000).toISOString() }, 'additive: a renderer that can label a stale table finds it here');
+  // The lock moved (a new key) and the kernel refuses the re-read: non-ok with the kernel's reason, lastGood holds the old table.
+  const movedLock = { workspaceStatus: move(ws => { ws.packages[0].integrity = 'sha256-other'; ws.stale = ['nw.tools']; }), fingerprint: 'fp-1' };
+  const c = boundary({ observed: () => movedLock, answers: [{ ok: true, document: CAPS() }, { ok: false, reason: { code: 'E_PACKAGE_INTEGRITY', message: 'nw.tools does not match the lock' } }] });
+  c.catalog.ensure(deployment, CLI, WS, { fingerprint: 'fp-1' }); await settle(); // the table held before the lock moved
+  const during = await c.request({ action: 'read' }, { workspace, cli: CLI });
+  assert.deepEqual([during.status, during.reason, during.refreshing], ['ok', null, true], 'until the re-read lands, the held table is still the truth (and a re-read is announced)');
+  await settle();
+  const afterLock = await c.request({ action: 'read' }, { workspace, cli: CLI });
+  assert.deepEqual([afterLock.status, afterLock.capabilities, afterLock.reason], ['refused', null, { code: 'E_PACKAGE_INTEGRITY', message: 'nw.tools does not match the lock' }]);
+  assert.deepEqual(afterLock.lastGood.capabilities, TABLE); assert.equal(typeof afterLock.lastGood.observedAt, 'string');
+  const localFailure = boundary({ answers: [{ ok: true, document: CAPS() }, { ok: false, reason: { code: 'E_CLI_TIMEOUT', message: 'x' } }] });
+  await localFailure.request({ action: 'read' }, { workspace, cli: CLI });
+  const timedOut = await localFailure.request({ action: 'read', refresh: true }, { workspace, cli: CLI });
+  assert.deepEqual({ ...timedOut, lastGood: undefined }, { ...syncFailure('E_CLI_TIMEOUT'), observedAt: null, refreshing: false, lastGood: undefined });
+  assert.deepEqual(timedOut.lastGood.capabilities, TABLE);
+});
+
+test('boundary: the local-config fingerprint is part of the key — an oats-local.yaml edit outside Desktop re-reads the table', async () => {
+  let fingerprint = 'fp-1';
+  const b = boundary({ observed: () => ({ workspaceStatus: WS, fingerprint }) });
+  await b.request({ action: 'read' }, { workspace, cli: CLI });
+  await b.request({ action: 'read' }, { workspace, cli: CLI });
+  assert.equal(b.calls.length, 1);
+  fingerprint = 'fp-2'; // `oats teams add` from a terminal: oats-local.yaml's size/mtime moved
+  const reread = await b.request({ action: 'read' }, { workspace, cli: CLI });
+  assert.equal(reread.status, 'ok'); await settle();
+  assert.equal(b.calls.length, 2, 'the moved fingerprint is a new key');
+  assert.notEqual(capabilityCatalogKey(CLI, WS, 'fp-1'), capabilityCatalogKey(CLI, WS, 'fp-2'));
+  assert.notEqual(soulCatalogKey(CLI, WS, 'fp-1'), soulCatalogKey(CLI, WS, 'fp-2'));
+  assert.equal(soulCatalogKey(CLI, WS), soulCatalogKey(CLI, WS, null), 'no fingerprint is a state too');
 });
 
 test('boundary: a first read that fails is a refusal or a failure, in today\'s shapes plus observedAt/refreshing', async () => {
   const refusedFirst = boundary({ answers: [{ ok: false, reason: { code: 'E_WORKSPACE', message: 'members not ready' } }] });
   const refused = await refusedFirst.request({ action: 'read' }, { workspace, cli: CLI });
-  assert.deepEqual(refused, { workspaceSyncApi: 1, status: 'refused', report: null, capabilities: null, reason: { code: 'E_WORKSPACE', message: 'members not ready' }, observedAt: null, refreshing: false });
+  assert.deepEqual(refused, { workspaceSyncApi: 1, status: 'refused', report: null, capabilities: null, reason: { code: 'E_WORKSPACE', message: 'members not ready' }, observedAt: null, refreshing: false, lastGood: null });
   const failedFirst = boundary({ answers: [{ ok: false, reason: { code: 'E_CLI_TIMEOUT', message: 'x' } }] });
   const failed = await failedFirst.request({ action: 'read' }, { workspace, cli: CLI });
-  assert.deepEqual(failed, { ...syncFailure('E_CLI_TIMEOUT'), observedAt: null, refreshing: false });
+  assert.deepEqual(failed, { ...syncFailure('E_CLI_TIMEOUT'), observedAt: null, refreshing: false, lastGood: null });
 });
 
 test('boundary: refresh is a read-only boolean flag; a sync forgets the held table', async () => {

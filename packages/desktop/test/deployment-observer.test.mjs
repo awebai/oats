@@ -91,3 +91,19 @@ test('a current invoker rejection is a stable result, not a promise rejection', 
   const result = await owner.observe(context); assert.equal(result.reason.code, 'E_CLI_PROTOCOL');
   assert.equal(JSON.stringify(result).includes('private argv'), false);
 });
+
+test('observedAt: the OLDEST of the two reads\' kernel stamps; a live (--max-age 0) stamp counts; a malformed stamp falls back to completion time and never refuses the roster', async () => {
+  const stamped = (action, block) => { const doc = JSON.parse(JSON.stringify(action === 'status' ? status : header)); if (action === 'status') doc.observation = block; else doc.result.observation = block; return { ok: true, document: doc }; };
+  const oldest = setup(async (_cli, { action }) => stamped(action, action === 'status' ? { observedAt: '2026-01-02T00:00:00.000Z', reused: true } : { observedAt: '2026-01-01T00:00:00.000Z', reused: false }));
+  assert.equal((await oldest.observe(context)).observedAt, '2026-01-01T00:00:00.000Z');
+  const live = setup(async (_cli, { action }) => stamped(action, { observedAt: '2026-01-03T00:00:00.000Z', reused: false }));
+  assert.equal((await live.observe(context)).observedAt, '2026-01-03T00:00:00.000Z', 'a live observation is stamped like any other');
+  const before = Date.now();
+  const broken = setup(async (_cli, { action }) => stamped(action, action === 'status' ? { observedAt: 12, reused: 'yes' } : { observedAt: '2026-01-01T00:00:00.000Z', reused: false }));
+  const result = await broken.observe(context);
+  assert.equal(result.ok, true, 'a bad stamp beside the roster never costs the roster');
+  assert.equal(result.observedAt, '2026-01-01T00:00:00.000Z', 'the sound stamp still counts');
+  const allBroken = setup(async (_cli, { action }) => stamped(action, 'garbage'));
+  const fallback = await allBroken.observe(context);
+  assert.equal(fallback.ok, true); assert.ok(Date.parse(fallback.observedAt) >= before, 'completion time when no sound stamp exists');
+});

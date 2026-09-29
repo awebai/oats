@@ -77,10 +77,7 @@ export async function capabilityRequest(request, { workspace, cli, agents = [], 
     ({ envelope, observedAt, refreshing } = await cache.read(key, { deployment: workspace.scope, refresh, produce: call, store: !server, live }));
   } else {
     envelope = await call();
-    if (envelope.ok) {
-      try { observedAt = observationData(envelope).observedAt ?? new Date().toISOString(); }
-      catch { envelope = { schemaVersion: 1, ok: false, error: { code: 'E_CLI_PROTOCOL', message: 'The installed OATS CLI returned an invalid observation stamp' } }; }
-    }
+    if (envelope.ok) observedAt = observationData(envelope).observedAt ?? new Date().toISOString();
   }
   if (!envelope.ok) {
     const code = envelope.error?.code || 'E_OPERATION_FAILED';

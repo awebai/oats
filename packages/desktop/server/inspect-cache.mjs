@@ -5,10 +5,16 @@
     coalesce without holding (`store: false`): a remote workspace has no state
     key and no invalidation signal on this machine, so its inspections are
     never served from an earlier visit, only shared between concurrent ones.
-    The kernel's observation stamp is decoded by observationData, bounded. */
+    The kernel's observation stamp is decoded by observationData, bounded; an
+    entry is served for at most `ttlMs` after it was stored, then re-read: it
+    bounds what no key can see (teams changed on the messaging side, the
+    launch choice this machine would make now). */
 import { observationData } from '../deployment-data.mjs';
 
 export const INSPECT_CACHE_LIMIT = 256;
+/** How long a held inspection may be served: the background max-age, so a held result is never
+ * older than what a background poll would accept from the kernel. */
+export const INSPECT_CACHE_TTL_MS = 60_000;
 
 /** Every field travels, absent ones as null: two subjects that differ in any
     coordinate never share an entry (same soul name under two agents roots, the
@@ -20,7 +26,7 @@ export function inspectKey({ deployment, server = null, kind, soul, agentsRoot, 
     Array.isArray(identity) ? identity.map(part) : part(identity)]);
 }
 
-export function createInspectCache({ limit = INSPECT_CACHE_LIMIT, now = () => Date.now() } = {}) {
+export function createInspectCache({ limit = INSPECT_CACHE_LIMIT, ttlMs = INSPECT_CACHE_TTL_MS, now = () => Date.now() } = {}) {
   // Map iteration order is insertion order; a hit re-inserts, so the first key is the LRU.
   const entries = new Map();
   const flights = new Map();
@@ -38,13 +44,10 @@ export function createInspectCache({ limit = INSPECT_CACHE_LIMIT, now = () => Da
     const startedAt = epoch(deployment);
     epochs.set(deployment, startedAt); // registered, so clear() can bump a deployment that is only in flight
     const flight = (async () => {
-      let envelope = await produce();
+      const envelope = await produce();
       if (!envelope?.ok) return { envelope, observedAt: stamp(now()) };
-      let reported;
-      try { reported = observationData(envelope).observedAt; } // a malformed stamp refuses the document, like any producer defect
-      catch { envelope = { schemaVersion: 1, ok: false, error: { code: 'E_CLI_PROTOCOL', message: 'The installed OATS CLI returned an invalid observation stamp' } }; return { envelope, observedAt: stamp(now()) }; }
-      const observedAt = reported ?? stamp(now());
-      if (keep && epoch(deployment) === startedAt) store(key, { envelope, observedAt, deployment });
+      const observedAt = observationData(envelope).observedAt ?? stamp(now()); // a malformed stamp is no stamp
+      if (keep && epoch(deployment) === startedAt) store(key, { envelope, observedAt, deployment, at: now() });
       return { envelope, observedAt };
     })();
     flight.live = live; // a refresh joins only a live flight: a background one may carry heads up to maxAge old
@@ -58,7 +61,9 @@ export function createInspectCache({ limit = INSPECT_CACHE_LIMIT, now = () => Da
      * kernel without observe-max-age); a refresh joins only a live flight. */
     async read(key, { deployment, refresh = false, produce, store: keep = true, live = refresh }) {
       const settled = entries.get(key);
-      if (settled && !refresh) {
+      // An entry past its TTL is a miss (dropped, re-read now), not a stale hit.
+      if (settled && now() - settled.at >= ttlMs) entries.delete(key);
+      else if (settled && !refresh) {
         store(key, settled);
         return { envelope: structuredClone(settled.envelope), observedAt: settled.observedAt, hit: true, refreshing: flights.has(key) };
       }

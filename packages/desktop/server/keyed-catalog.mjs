@@ -27,7 +27,7 @@
 import { OBSERVE_MAX_AGE_FEATURE } from '../renderer/deployment-contract.mjs';
 
 export function createKeyedCatalog({ read, retryMs, now = () => Date.now() }) {
-  const held = new Map(), flights = new Map(), cycles = new Map(), unbound = new Map();
+  const held = new Map(), flights = new Map(), cycles = new Map(), unbound = new Map(), current = new Map();
   const iso = ms => new Date(ms).toISOString();
   const inWindow = entry => !entry.reason || now() - entry.at < retryMs;
   /** A held entry answers for `key` while it is good, or while its failure is inside the retry window. */
@@ -36,6 +36,8 @@ export function createKeyedCatalog({ read, retryMs, now = () => Date.now() }) {
   const usable = last => !!last && inWindow(last);
   function land(deployment, flight, result) {
     const last = held.get(deployment), at = now(), key = flight.key; // the key is read at completion: an adopted flight lands bound
+    // A keyed flight that lands after the key moved on (a newer settle) must not overwrite the newer state's entry.
+    if (key !== null && current.has(deployment) && current.get(deployment) !== key) return last ?? null;
     const entry = result.value
       ? { key, value: result.value, reason: null, at, observedAt: result.observedAt ?? iso(at) }
       : { key, value: last?.value ?? null, reason: result.reason ?? { code: 'E_CLI_FAILED', message: '' }, at, observedAt: last?.observedAt ?? null };
@@ -70,6 +72,7 @@ export function createKeyedCatalog({ read, retryMs, now = () => Date.now() }) {
      * held entry for the key, or start a keyed read. Synchronous: `pending` is what is still coming. */
     settle(deployment, cli, key, { maxAge } = {}) {
       const cycle = cycles.get(deployment) ?? 0, last = held.get(deployment);
+      current.set(deployment, key);
       let flight = flights.get(deployment);
       if (flight && flight.key === null && flight.cycle === cycle) flight.key = key;
       if (last && last.key === null && unbound.get(deployment) === cycle) { last.key = key; unbound.delete(deployment); }
@@ -80,6 +83,7 @@ export function createKeyedCatalog({ read, retryMs, now = () => Date.now() }) {
     /** Read now for `key` (the request path with nothing good held): join a same-key flight, else
      * start one with `maxAge`, ignoring the retry window. */
     async demand(deployment, cli, key, { maxAge } = {}) {
+      current.set(deployment, key);
       const flight = flights.get(deployment);
       await (flight?.key === key ? flight : start(deployment, cli, key, maxAge)).promise;
       return snapshot(deployment);
@@ -87,13 +91,14 @@ export function createKeyedCatalog({ read, retryMs, now = () => Date.now() }) {
     /** A LIVE read for `key` (maxAge 0): joins only a live same-key flight; a background flight in
      * the air is not it (its heads may be up to maxAge old), so a live one starts beside it. */
     async refresh(deployment, cli, key) {
+      current.set(deployment, key);
       const flight = flights.get(deployment);
       await (flight?.key === key && flight.live ? flight : start(deployment, cli, key, 0)).promise;
       return snapshot(deployment);
     },
     held: snapshot,
     refreshing(deployment) { return flights.has(deployment); },
-    forget(deployment) { held.delete(deployment); flights.delete(deployment); unbound.delete(deployment); },
-    forgetAll() { held.clear(); flights.clear(); unbound.clear(); },
+    forget(deployment) { held.delete(deployment); flights.delete(deployment); unbound.delete(deployment); current.delete(deployment); },
+    forgetAll() { held.clear(); flights.clear(); unbound.clear(); current.clear(); },
   };
 }

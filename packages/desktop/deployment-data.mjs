@@ -141,17 +141,16 @@ export function workspaceStatusData(document, deployment) {
 
 /** The kernel's observation provenance (feature observe-max-age): `observation` sits at the
  * top of the raw `status` object and under `result` in a schemaVersion:1 envelope; its shape
- * is {observedAt: ISO-8601, reused: boolean}. Absent is the kernel not reporting (an older
- * kernel, or a live read), projected as nulls so the UI never invents a time; present but
- * malformed refuses the document like any other producer defect. */
+ * is {observedAt: ISO-8601, reused: boolean}, reported whenever --max-age was passed (0 included).
+ * Absent, or present but malformed, projects as nulls: the stamp is provenance beside the
+ * result, never the result, so a bad stamp must not cost the roster or the document — the
+ * caller falls back to the time its read completed (maintainer's contract decision). */
 export function observationData(document) {
-  check(record(document));
-  const holder = document.schemaVersion === 1 ? document.result : document;
-  if (!record(holder) || !own(holder, 'observation')) return { observedAt: null, reused: null };
-  const value = holder.observation;
-  check(record(value) && typeof value.observedAt === 'string' && value.observedAt.length <= 64 && !Number.isNaN(Date.parse(value.observedAt))
-    && typeof value.reused === 'boolean');
-  return { observedAt: value.observedAt, reused: value.reused };
+  const holder = record(document) ? (document.schemaVersion === 1 ? document.result : document) : null;
+  const value = record(holder) ? holder.observation : undefined;
+  const sound = record(value) && typeof value.observedAt === 'string' && value.observedAt.length <= 64 && !Number.isNaN(Date.parse(value.observedAt))
+    && typeof value.reused === 'boolean';
+  return sound ? { observedAt: value.observedAt, reused: value.reused } : { observedAt: null, reused: null };
 }
 
 /** status stays a native {root,agents,workspace} observation. No task/state

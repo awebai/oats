@@ -25,9 +25,9 @@ const LOCAL_CODES = new Set(['E_CLI_UNAVAILABLE', 'E_WORKSPACE_FEATURE', 'E_CLI_
  * its path/lockfileVersion only mark a different lock file altogether.
  * Names, warnings, problems, defaults and clones are deliberately not here:
  * they change without the table changing. */
-export function capabilityCatalogKey(cli, workspaceStatus) {
+export function capabilityCatalogKey(cli, workspaceStatus, fingerprint = null) {
   const ws = workspaceStatus || {};
-  return JSON.stringify([soulCatalogKey(cli, workspaceStatus),
+  return JSON.stringify([soulCatalogKey(cli, workspaceStatus, fingerprint),
     (ws.packages || []).map(p => [p.id ?? null, p.version ?? null, p.commit ?? null, p.integrity ?? null]),
     ws.declaredPackages ?? [], ws.unsynced ?? [], ws.stale ?? [],
     ws.lock ? [ws.lock.path ?? null, ws.lock.lockfileVersion ?? null] : null]);
@@ -42,23 +42,23 @@ export function createCapabilityCatalog({ invoke = cliWorkspace, now = () => Dat
       const code = typeof result?.reason?.code === 'string' ? result.reason.code : 'E_CLI_FAILED';
       return { value: null, reason: { code, message: String(result?.reason?.message || ''), kernel: !LOCAL_CODES.has(code) } };
     }
-    try { return { value: capabilitiesData(result.document), observedAt: observationData(result.document).observedAt }; } // both refuse a malformed document
+    try { return { value: capabilitiesData(result.document), observedAt: observationData(result.document).observedAt }; } // a malformed stamp is no stamp; the table stands
     catch { return { value: null, reason: { code: 'E_CLI_PROTOCOL', message: '', kernel: false } }; }
   }
   const catalog = createKeyedCatalog({ read, retryMs: CAPABILITY_CATALOG_RETRY_MS, now });
   const project = (deployment, entry) => entry && { key: entry.key, capabilities: entry.value, reason: entry.reason, at: entry.at, observedAt: entry.observedAt, refreshing: catalog.refreshing(deployment) };
-  const key = (cli, workspaceStatus) => capabilityCatalogKey(cli, workspaceStatus);
+  const key = (cli, workspaceStatus, fingerprint) => capabilityCatalogKey(cli, workspaceStatus, fingerprint);
   return {
     /** Cold cycle: start the read alongside the roster reads, before the key is known. */
     prefetch(deployment, cli, options = {}) { return catalog.prefetch(deployment, cli, options); },
     /** Bind this cycle's key: a read starts only when the held table is not for this state (or its
      * failure is old enough to retry) and none is in flight. Never awaits. */
-    ensure(deployment, cli, workspaceStatus, options = {}) { catalog.settle(deployment, cli, key(cli, workspaceStatus), options); },
+    ensure(deployment, cli, workspaceStatus, { fingerprint = null, ...options } = {}) { catalog.settle(deployment, cli, key(cli, workspaceStatus, fingerprint), options); },
     /** The held table, immediately, with any needed re-read started behind it; awaited when no table
      * is held (a first read, or a held failure with nothing behind it) or the caller forces a live
      * read (refresh: true → maxAge 0). */
-    async read(deployment, cli, workspaceStatus, { refresh = false, maxAge } = {}) {
-      const k = key(cli, workspaceStatus), options = maxAge !== undefined ? { maxAge } : {};
+    async read(deployment, cli, workspaceStatus, { refresh = false, maxAge, fingerprint = null } = {}) {
+      const k = key(cli, workspaceStatus, fingerprint), options = maxAge !== undefined ? { maxAge } : {};
       if (refresh) return project(deployment, await catalog.refresh(deployment, cli, k));
       const { entry } = catalog.settle(deployment, cli, k, options);
       // A held failure with no table behind it is not an answer for someone asking (today's Retry is a

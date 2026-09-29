@@ -183,14 +183,16 @@ test('observationData: reads the raw status top level and the envelope result, a
   // An envelope's top-level `observation` is not the kernel's placement; it is not read.
   assert.deepEqual(observationData({ ...header, observation }), { observedAt: null, reused: null });
 });
-test('observationData: a malformed block refuses the document with E_CLI_PROTOCOL', () => {
+test('observationData: a malformed block is no stamp (nulls), never a refusal of the document (maintainer decision: provenance beside the result cannot cost the result)', () => {
   const malformed = [null, 'live', [], 42, {}, { observedAt: observation.observedAt }, { reused: true },
     { observedAt: 1736072000000, reused: true }, { observedAt: 'yesterday', reused: true }, { observedAt: '', reused: true },
     { observedAt: `${observation.observedAt}${' '.repeat(60)}`, reused: true }, { observedAt: observation.observedAt, reused: 'true' },
     { observedAt: observation.observedAt, reused: 1 }, { observedAt: observation.observedAt, reused: null }];
   for (const block of malformed) {
-    assert.throws(() => observationData({ ...status, observation: block }), { code: 'E_CLI_PROTOCOL' }, JSON.stringify(block));
-    assert.throws(() => observationData({ ...header, result: { ...header.result, observation: block } }), { code: 'E_CLI_PROTOCOL' }, JSON.stringify(block));
+    assert.deepEqual(observationData({ ...status, observation: block }), { observedAt: null, reused: null }, JSON.stringify(block));
+    assert.deepEqual(observationData({ ...header, result: { ...header.result, observation: block } }), { observedAt: null, reused: null }, JSON.stringify(block));
   }
-  for (const document of [undefined, null, [], 'status']) assert.throws(() => observationData(document), { code: 'E_CLI_PROTOCOL' });
+  for (const document of [undefined, null, [], 'status']) assert.deepEqual(observationData(document), { observedAt: null, reused: null });
+  // --max-age 0 is live but still stamped: a live stamp reads like any other.
+  assert.deepEqual(observationData({ ...status, observation: { ...observation, reused: false } }), { ...observation, reused: false });
 });

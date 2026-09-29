@@ -11,7 +11,7 @@ assert.ok(block);
 const invoke = new Function("inst", "cliState", "readBody", "harvestHome", "adapter", "locator", "dirname", "harnessFlag",
   `return (async () => { const hm = [null, "start"], req = {}, res = {}, ctxs = ["/local"];
    const send = (_, status, body) => ({ status, body });
-   const refreshSnapshot = () => {}, refreshRemoteSnapshot = () => {};
+   const observeMutation = () => {}, refreshRemoteSnapshot = () => {}, url = { searchParams: new URLSearchParams("ws=/local") };
    ${block} })();`);
 
 test("start route passes only resolved home/model to CLI, with containment and feature gates", async () => {

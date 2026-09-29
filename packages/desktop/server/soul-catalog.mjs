@@ -13,11 +13,14 @@ import { createKeyedCatalog } from './keyed-catalog.mjs';
 
 export const SOUL_CATALOG_RETRY_MS = 60_000;
 
-export function soulCatalogKey(cli, workspaceStatus) {
+/** The state a souls catalog was read under: the CLI, the workspace and member commits, the
+ * externals, and the local-config fingerprint (server/deployment-fingerprint.mjs: souls report
+ * teams and launch preferences that live in oats-local.yaml, edited outside Desktop too). */
+export function soulCatalogKey(cli, workspaceStatus, fingerprint = null) {
   const ws = workspaceStatus || {};
   return JSON.stringify([cli?.bin ?? null, cli?.version ?? null, ws.workspace?.key ?? null, ws.workspace?.commit ?? null,
     (ws.members || []).map(m => [m.key ?? null, m.commit ?? null, m.status ?? null]),
-    (ws.external || []).map(e => [e.source ?? null, e.soul ?? null])]);
+    (ws.external || []).map(e => [e.source ?? null, e.soul ?? null]), fingerprint]);
 }
 
 export function createSoulCatalog({ invoke = cliWorkspace, now = () => Date.now() } = {}) {
@@ -26,7 +29,7 @@ export function createSoulCatalog({ invoke = cliWorkspace, now = () => Date.now(
       // `maxAge` only reaches argv when the kernel declares observe-max-age (the adapter's call).
       const result = await invoke(cli, { action: 'souls', context: deployment, ...options });
       if (result?.ok !== true) return { value: null, reason: result?.reason?.code ? { code: result.reason.code, message: String(result.reason.message || '') } : { code: 'E_CLI_FAILED', message: '' } };
-      const souls = soulsData(result.document), { observedAt } = observationData(result.document); // both refuse a malformed document
+      const souls = soulsData(result.document), { observedAt } = observationData(result.document); // a malformed stamp is no stamp; the catalog stands
       return { value: { souls: souls.souls, ambiguous: souls.ambiguous, workspace: souls.workspace, problems: souls.problems }, observedAt };
     } catch (error) { return { value: null, reason: { code: error?.code === 'E_CLI_PROTOCOL' ? 'E_CLI_PROTOCOL' : 'E_CLI_FAILED', message: '' } }; }
   }
@@ -34,8 +37,9 @@ export function createSoulCatalog({ invoke = cliWorkspace, now = () => Date.now(
   /** The public entry: the catalog fields at the top, the failure next to them. */
   const project = entry => entry && { key: entry.key, souls: entry.value?.souls ?? null, ambiguous: entry.value?.ambiguous ?? [],
     workspace: entry.value?.workspace ?? null, problems: entry.value?.problems ?? [], reason: entry.reason, at: entry.at, observedAt: entry.observedAt };
-  function settle(deployment, cli, workspaceStatus, options = {}) {
-    const { entry, pending } = catalog.settle(deployment, cli, soulCatalogKey(cli, workspaceStatus), options);
+  /** `options.fingerprint` is the deployment's local-config fingerprint for this cycle; `options.maxAge` the read's. */
+  function settle(deployment, cli, workspaceStatus, { fingerprint = null, ...options } = {}) {
+    const { entry, pending } = catalog.settle(deployment, cli, soulCatalogKey(cli, workspaceStatus, fingerprint), options);
     return { entry: project(entry), pending: pending && pending.then(project) };
   }
   return {

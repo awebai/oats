@@ -49,7 +49,8 @@ import { scheduleRequest } from "./schedules.mjs";
 import { capabilityRequest } from "./capabilities.mjs";
 import { createDeploymentObserver } from "./deployment-observer.mjs";
 import { createSoulCatalog, soulCatalogKey } from "./soul-catalog.mjs";
-import { createCapabilityCatalog } from "./capability-catalog.mjs";
+import { createCapabilityCatalog, capabilityCatalogKey } from "./capability-catalog.mjs";
+import { deploymentFingerprint } from "./deployment-fingerprint.mjs";
 import { createInspectCache } from "./inspect-cache.mjs";
 import { createRefreshLoop, REFRESH_FOCUSED_MS, REFRESH_BLURRED_MS } from "./refresh-loop.mjs";
 import { createWorkspaceSyncBoundary, syncFailure } from "./workspace-sync.mjs";
@@ -558,8 +559,10 @@ const inspectCache = createInspectCache();
 // The read side of /api/workspace-sync answers from the held capabilities table for an
 // observed deployment (the current workspace status is its key); a re-read happens only
 // when that key moves, at admission, or on refresh:true.
+// Its key is the cycle's workspace status plus the local-config fingerprint taken NOW (a file-metadata stat,
+// server/deployment-fingerprint.mjs): an `oats teams` from a terminal is seen by the next read, not the next cycle.
 const workspaceSyncRequest = createWorkspaceSyncBoundary({ catalog: capabilityCatalog, maxAge: BACKGROUND_MAX_AGE,
-  observed: (id) => { const d = snapshot.byWs.get(id)?.deployment; return d?.status === "observed" ? d.workspaceStatus : null; } });
+  observed: (id) => { const d = snapshot.byWs.get(id)?.deployment; return d?.status === "observed" ? { workspaceStatus: d.workspaceStatus, fingerprint: deploymentFingerprint(id) } : null; } });
 const admitted = new Set();  // deployments with at least one successful observation under the current CLI
 const observing = new Set(); // deployments whose observation is in flight right now (/api/panel refreshing)
 const deploymentObserver = createDeploymentObserver({
@@ -618,10 +621,13 @@ async function observeDeployment(id, { live = false } = {}) {
     }
     admitted.add(id);
     const { roster, workspaceStatus, observedAt } = result;
-    const catalogKey = soulCatalogKey(cli, workspaceStatus);
+    // The local-config fingerprint (oats-local.yaml, oats-config.yaml: size+mtime, never content) joins the
+    // kernel's workspace status in both catalog keys: souls report teams and launch preferences from those files.
+    const fingerprint = deploymentFingerprint(id);
+    const catalogKey = soulCatalogKey(cli, workspaceStatus, fingerprint);
     // Bind (or start) the souls read for this workspace state; never wait for it here.
-    const { entry: catalogEntry, pending } = soulCatalog.settle(id, cli, workspaceStatus, { maxAge });
-    capabilityCatalog.ensure(id, cli, workspaceStatus, { maxAge });
+    const { entry: catalogEntry, pending } = soulCatalog.settle(id, cli, workspaceStatus, { maxAge, fingerprint });
+    capabilityCatalog.ensure(id, cli, workspaceStatus, { maxAge, fingerprint });
     const rows = roster.agents.flatMap((agent) => agent.instances.map((instance) => ({
       ...instance, agent: instance.agent || agent.name, description: agent.description || "",
       team: agent.team || null, agentsRoot: roster.root,
@@ -695,6 +701,8 @@ async function observeAll({ live = false } = {}) {
 // is blurred or hidden (/api/window-state); focus returning runs one prompt cycle. A cycle
 // requested during a cycle (a mutation's result must be observed) runs exactly once right after.
 const refreshLoop = createRefreshLoop({ run: observeAll, focusedMs: REFRESH_FOCUSED_MS, blurredMs: REFRESH_BLURRED_MS });
+// The remote roster (`server roster`, one bounded CLI read) follows the same shape: 10 s focused, the same 30 s blurred.
+const remoteLoop = createRefreshLoop({ run: () => refreshRemoteSnapshot(), focusedMs: 10_000, blurredMs: REFRESH_BLURRED_MS });
 /** Observe now (or right after the cycle in flight); `live` makes the kernel observe the remotes afresh. */
 function refreshSnapshot(options = {}) { return refreshLoop.request(options); }
 /** A mutation this backend performed for a workspace: what inspect reported may have changed, and the
@@ -1348,11 +1356,16 @@ const server = createServer(async (req, res) => {
         const request = await readStrictBody(req);
         // Inspections are served from the held cache (keyed by the soul catalog's key or the instance's
         // reported identity) and coalesced; `refresh: true` observes live. A run never touches the cache.
+        // A soul inspection's key is the capabilities key (member/workspace commits, package rows, lock currency) plus
+        // the local-config fingerprint stat'ed NOW, so an `oats teams`/`oats sync` run outside Desktop is seen by the
+        // next inspect. Held entries also expire after INSPECT_CACHE_TTL_MS (what no key can see).
+        const observed = workspace && !workspace.remote ? snapshot.byWs.get(workspace.id)?.deployment : null;
         const result = await capabilityRequest(request, {
           workspace, cli: cliState, localCwd: ctxs[0],
           agents: workspace ? agentsData(workspace.id).agents : [],
           instances: workspace ? panelData(workspace.id).instances : [],
-          cache: inspectCache, catalogKey: workspace ? snapshot.byWs.get(workspace.id)?.deployment?.catalogKey ?? null : null, maxAge: BACKGROUND_MAX_AGE,
+          cache: inspectCache, maxAge: BACKGROUND_MAX_AGE,
+          catalogKey: observed?.status === "observed" ? capabilityCatalogKey(cliState, observed.workspaceStatus, deploymentFingerprint(workspace.id)) : null,
         });
         return send(res, 200, result);
       } catch (e) { const { status, body } = spawnErrorPayload(e); return send(res, status, body); }
@@ -1413,9 +1426,10 @@ const server = createServer(async (req, res) => {
       // Window activity from the Electron main process (window-activity.mjs): the refresh cadence backs off
       // while every window is blurred or hidden, and focus returning runs one prompt cycle. POST, so the
       // Host/Origin guards above cover it; the body is one boolean and nothing else.
-      const body = await readBody(req);
-      if (typeof body.focused !== "boolean") return send(res, 400, { error: "body needs { focused: boolean }", code: "E_BAD_ARGS" });
-      refreshLoop.setFocused(body.focused);
+      let body;
+      try { body = await readStrictBody(req, 1024); } catch { return send(res, 400, { error: "body needs { focused: boolean }", code: "E_BAD_ARGS" }); }
+      if (typeof body.focused !== "boolean" || Object.keys(body).length !== 1) return send(res, 400, { error: "body needs { focused: boolean }", code: "E_BAD_ARGS" });
+      refreshLoop.setFocused(body.focused); remoteLoop.setFocused(body.focused);
       return send(res, 200, { focused: refreshLoop.focused() });
     }
     if (req.method === "POST" && path === "/api/cli/reprobe") {
@@ -1567,4 +1581,4 @@ reprobeCli().then((s) => {
     ? `oats-desktop server: oats CLI ${s.version} at ${s.bin} (${s.source})`
     : `oats-desktop server: no compatible oats CLI found — reads and terminals work; Spawn/Harvest disabled (${(s.tried || []).length} candidate(s) tried)`);
 });
-setInterval(refreshRemoteSnapshot, 10000).unref(); // coalesced host reads, independent of terminal traffic
+void remoteLoop.start();                 // coalesced host reads, independent of terminal traffic

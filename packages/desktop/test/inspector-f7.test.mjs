@@ -246,3 +246,22 @@ test("soul page: 'Teams here' is keyed by the roster row's kernel key (always pr
   assert.equal(unkeyed.card.querySelector('button'), null);
   assert.deepEqual(unkeyed.bodies, [], 'nothing asked without the kernel key');
 });
+
+test("the soul page's Refresh ('Inspect again') asks the server for a live inspection (refresh: true); the first show does not", async t => {
+  const previous = currentWorkspace(); setWorkspace('/team');
+  t.after(() => { setWorkspace(previous); resetCliStateForTests(); });
+  await refreshCli({ api: async () => ({ ...doc('version'), ok: true, bin: '/fixture/bin/oats' }) });
+  const bodies = [];
+  const dom = new JSDOM('<body><main><aside hidden></aside></main></body>'), el = dom.window.document.querySelector('aside');
+  const inspector = createSoulInspector(el, { layout: 'page', ctx: { api: async (url, opts) => {
+    if (url.startsWith('/api/capabilities')) bodies.push(JSON.parse(opts.body));
+    return url.startsWith('/api/workspace-soul-teams') ? { status: 'ok', soulTeams: {} } : structuredClone(soul);
+  } } });
+  t.after(() => { inspector.dispose(); dom.window.close(); });
+  await inspector.show(soulSelection); for (let i = 0; i < 4; i++) await tick();
+  assert.deepEqual(bodies, [{ action: 'inspect', selector: soulSelection.selector }], 'a visit is a plain read (served from the held inspection when one exists)');
+  const refresh = el.querySelector('button[title="Inspect again"]');
+  assert.ok(refresh, 'the Refresh control');
+  refresh.click(); for (let i = 0; i < 4; i++) await tick();
+  assert.deepEqual(bodies.at(-1), { action: 'inspect', selector: soulSelection.selector, refresh: true }, 'Refresh is a live read');
+});

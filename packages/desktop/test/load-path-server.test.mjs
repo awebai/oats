@@ -5,6 +5,8 @@
 // refreshing, and --max-age travels only when the kernel declares observe-max-age.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { appendFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { startLoadPathServer, FAKE_OBSERVED_AT } from './helpers/load-path-server.mjs';
 
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -100,7 +102,8 @@ test('cold cycle, held catalogs, coalescing, focus no-op, cadence and blur back-
     const count = of(s.calls(), 'status').length;
     await settle(6500);
     assert.equal(of(s.calls(), 'status').length, count, 'no cycle within 6.5s while blurred (30s back-off)');
-    for (const body of [{}, { focused: 'yes' }]) assert.equal((await s.post('/api/window-state', body)).code, 'E_BAD_ARGS');
+    for (const body of [{}, { focused: 'yes' }, null, [], { focused: true, extra: 1 }]) assert.equal((await s.post('/api/window-state', body)).code, 'E_BAD_ARGS', JSON.stringify(body));
+    assert.equal((await fetch(`${s.base}/api/window-state`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: 'not json' })).status, 400);
   } finally { await s.stop(); }
 });
 
@@ -163,5 +166,17 @@ test('with observe-max-age declared: admission and refresh observe live (0), bac
     assert.equal(maxAge(of(s.calls(), 'status').at(-1)), '0', 'a mutation\'s follow-up observation is live');
     await s.post(`/api/capabilities${s.ws}`, { action: 'inspect', selector: { home } });
     assert.equal(homeReads(), 2, 'the mutation invalidated the held inspection: the next inspect --home is a kernel run');
+    // An oats-local.yaml edit made OUTSIDE Desktop (`oats teams add` from a terminal): the next inspect --soul and the next
+    // souls read see it through the local-config fingerprint (file metadata), without waiting for the 60 s TTL.
+    const soulReads = () => of(s.calls(), 'inspect').filter(x => x.argv.includes('--soul')).length;
+    await s.post(`/api/capabilities${s.ws}`, { action: 'inspect', selector });
+    const soulsBefore = of(s.calls(), 'souls').length, inspectsBefore = soulReads();
+    assert.equal((await s.post(`/api/capabilities${s.ws}`, { action: 'inspect', selector })).subject.soul, 'release-manager');
+    assert.equal(soulReads(), inspectsBefore, 'held while nothing moved');
+    await settle(20); appendFileSync(join(s.deployment, 'oats-local.yaml'), 'teams:\n  extra: {}\n'); // size and mtime move
+    await s.post(`/api/capabilities${s.ws}`, { action: 'inspect', selector });
+    assert.equal(soulReads(), inspectsBefore + 1, 'the next inspect --soul is a kernel run: the fingerprint moved');
+    await s.until(() => of(s.calls(), 'souls').length > soulsBefore, { timeout: 12_000 });
+    assert.equal(of(s.calls(), 'souls').length, soulsBefore + 1, 'the next cycle re-read the souls catalog under the new fingerprint');
   } finally { await s.stop(); }
 });

@@ -45,7 +45,24 @@ catalogs are thin wrappers over it (`soul-catalog.mjs`,
   one starts beside it. On a kernel without `observe-max-age` every flight is
   live, so a refresh always joins.
 - `observedAt` is the kernel's `observation.observedAt` when reported, else the
-  read's completion time; a failure keeps the previous stamp.
+  read's completion time; a failure keeps the previous stamp. A malformed
+  `observation` block is *no stamp* (`observationData` projects nulls): the
+  stamp is provenance beside the result, and a bad stamp never costs the
+  roster, the catalog or the document.
+- a keyed flight that lands after the key moved on (a newer `settle`,
+  `demand` or `refresh` under another key) is dropped — its awaiters still
+  resolve with what is held — so a slow read under an old state never
+  overwrites the newer state's entry.
+
+The souls key (`soulCatalogKey`) also carries the **local-config
+fingerprint** (`server/deployment-fingerprint.mjs`): the size and mtime of the
+deployment's `oats-local.yaml` and `oats-config.yaml`, stat'ed each cycle.
+Souls report teams and launch preferences that live in those files, and they
+change outside Desktop (`oats teams`, `oats soul teams`, `oats sync`, an agent
+editing its own teams from a terminal). It is file *metadata* only, a "ask the
+kernel again" key component: the Desktop still learns every fact from the
+kernel's JSON and parses no deployment file. A missing file fingerprints as
+null, itself a state.
 
 The capabilities key (`capabilityCatalogKey`) is the souls key plus package
 identity (id, version, commit, integrity from the lock rows) and lock currency
@@ -56,19 +73,31 @@ else in `workspace status` changes it.
 ## The request path never runs a kernel read it can avoid
 
 - `POST /api/workspace-sync {action:"read"}` answers from the held table at
-  once (with `reason` beside it when the latest re-read failed); a request
+  once. Its key is the cycle's workspace status plus the fingerprint stat'ed
+  *at request time*, so a local edit made outside Desktop is seen by the next
+  read, not the next cycle. When the latest re-read failed the answer is
+  today's failure shape (`status` non-ok, `reason`, `capabilities: null` —
+  the renderer shows the error and Retry exactly as before) with the additive
+  `lastGood: { capabilities, observedAt } | null` beside it for a renderer that
+  can label a stale table; a healthy shape is never a stale one. A request
   with no table held — a first read, or a held failure with nothing behind it
   (today's Retry button is a plain read) — reads now and answers with what
   lands. `refresh: true` forces a live read. An ok `sync` forgets the held
   table.
 - `POST /api/capabilities {action:"inspect"}` goes through a bounded LRU with
   in-flight coalescing (`server/inspect-cache.mjs`, 256 entries): two identical
-  concurrent inspections are one kernel process; a repeat is a hit. Keys:
-  `inspect --soul` → (deployment, server, soul, agents root, souls key);
+  concurrent inspections are one kernel process; a repeat is a hit for at
+  most `INSPECT_CACHE_TTL_MS` (60 s, the background max-age) after it was
+  stored, then a miss: the TTL bounds what no key can see (teams changed on
+  the messaging side, the launch choice this machine would make now). Keys:
+  `inspect --soul` → (deployment, server, soul, agents root, capabilities key
+  with the fingerprint stat'ed at request time);
   `inspect --home` → (deployment, server, home, instance, and the status row's
   identity and drift facts: createdAt, startedAt, soul, modules), so a retire,
   restart or drift change is another subject. `refresh: true` bypasses the
-  entry and shares only a live flight. `run` never reads or fills the cache.
+  entry and shares only a live flight; the soul page's Refresh ("Inspect
+  again", `renderer/soul-inspector.mjs` `show(selection, { user: true })`)
+  sends it, a plain visit does not. `run` never reads or fills the cache.
   A **remote** workspace has no state key and no invalidation signal on this
   machine, so its inspections are shared between concurrent requests but
   never held between visits (`store: false`): every visit is live, as before.
@@ -87,10 +116,15 @@ interval **after** the previous completed — 5 s while a window is focused,
 twice at once and an idle app costs little. A cycle requested during a cycle
 (a mutation's follow-up) runs exactly once right after.
 
-The Electron main process posts `{ focused }` to `POST /api/window-state` when
-the reduction of its windows flips (`window-activity.mjs`: visible, not
-minimized, focused). Focus returning runs one prompt cycle. A headless server
-assumes "focused".
+The Electron main process posts `{ focused }` (a strict body: that key and
+nothing else) to `POST /api/window-state` when the reduction of its windows
+flips (`window-activity.mjs`: visible, not minimized, focused). Focus
+returning runs one prompt cycle. A headless server assumes "focused".
+
+The remote roster (`refreshRemoteSnapshot`, one bounded `server roster` read
+per configured host) runs on a second `createRefreshLoop`: 10 s after
+completion while focused, 30 s while blurred, driven by the same window
+state.
 
 ## The CLI probe is compared, not trusted by identity
 
@@ -123,12 +157,14 @@ the read's completion time.
 
 `/api/panel`, `/api/agents`, `/api/workspace-sync` read and `/api/capabilities`
 inspect carry `observedAt` (ISO string or null) and `refreshing` (boolean).
-Existing fields are unchanged.
+A failed `/api/workspace-sync` read also carries `lastGood` (`{ capabilities,
+observedAt }` or null). Existing fields are unchanged.
 
 ## Testing
 
 - Unit: `test/keyed-catalog` behaviour through `test/soul-catalog.test.mjs` and
   `test/capability-catalog.test.mjs`; `test/inspect-cache.test.mjs`;
+  `test/deployment-fingerprint.test.mjs` (fake stat);
   `test/refresh-loop.test.mjs` (fake timers); `test/max-age.test.mjs` (flag
   gate per adapter); `test/cli-probe-signature.test.mjs`,
   `test/cli-status-parity.test.mjs` (emit on change);

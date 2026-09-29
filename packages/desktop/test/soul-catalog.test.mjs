@@ -115,7 +115,7 @@ function gated() {
   const catalog = createSoulCatalog({ now: () => clock, invoke: (cli, request) => new Promise(resolve => {
     requests.push(request); opens.push(() => resolve(next()));
   }) });
-  return { catalog, requests, open: () => opens.shift()(), tick: ms => { clock += ms; }, answer: fn => { next = fn; } };
+  return { catalog, requests, opens, open: () => opens.shift()(), tick: ms => { clock += ms; }, answer: fn => { next = fn; } };
 }
 const settled = () => new Promise(r => setImmediate(r));
 
@@ -222,4 +222,34 @@ test('prefetch retries a held failure only after the retry window', async () => 
   await (h.catalog.prefetch('/dep', CLI), h.open(), h.catalog.settle('/dep', CLI, WS).pending);
   assert.equal(h.catalog.prefetch('/dep', CLI), null);
   h.tick(SOUL_CATALOG_RETRY_MS); assert.ok(h.catalog.prefetch('/dep', CLI) instanceof Promise); assert.equal(h.requests.length, 2);
+});
+
+test('the local-config fingerprint is part of the key: an oats-local.yaml edit outside Desktop re-reads the catalog on the next cycle', async () => {
+  const h = gated();
+  const a = h.catalog.settle('/dep', CLI, WS, { fingerprint: 'fp-1' }); h.open(); await a.pending;
+  assert.equal(h.catalog.settle('/dep', CLI, WS, { fingerprint: 'fp-1' }).pending, null, 'same files, same catalog');
+  const b = h.catalog.settle('/dep', CLI, WS, { fingerprint: 'fp-2' }); // `oats teams add` from a terminal moved oats-local.yaml
+  assert.ok(b.pending); assert.equal(h.requests.length, 2); h.open();
+  assert.equal((await b.pending).key, soulCatalogKey(CLI, WS, 'fp-2'));
+});
+
+test('a flight under an old key that lands after the key moved does not overwrite the newer state\'s entry', async () => {
+  const h = gated();
+  const old = h.catalog.settle('/dep', CLI, WS);                                     // key K1, in flight (gated)
+  const moved = { ...WS, workspace: { key: 'k', commit: 'c2' } };
+  const next = h.catalog.settle('/dep', CLI, moved);                                 // key K2, in flight; K1's flight still running
+  assert.equal(h.requests.length, 2);
+  h.answer(() => { const d = copy(); d.result.souls = d.result.souls.slice(0, 1); return { ok: true, document: d }; });
+  h.open(); h.open(); // K1 lands first (one soul), then K2 (one soul as well, but under the CURRENT key)
+  await Promise.all([old.pending, next.pending]);
+  const held = h.catalog.held('/dep');
+  assert.equal(held.key, soulCatalogKey(CLI, moved), 'the entry is the newer state\'s');
+  // And the late old-key landing alone: K2 lands first, then K1 → K1 is dropped, K2 stays.
+  const g = gated();
+  const first = g.catalog.settle('/dep', CLI, WS), second = g.catalog.settle('/dep', CLI, moved);
+  g.opens.reverse();
+  g.answer(() => ({ ok: true, document: copy() })); g.open(); await second.pending;                            // K2's read lands first, good…
+  g.answer(() => ({ ok: false, reason: { code: 'E_STALE', message: 'old' } })); g.open(); await first.pending; // …then K1 lands, failed, late
+  const kept = g.catalog.held('/dep');
+  assert.equal(kept.key, soulCatalogKey(CLI, moved)); assert.equal(kept.reason, null, 'the late K1 failure did not overwrite K2\'s good entry');
 });
