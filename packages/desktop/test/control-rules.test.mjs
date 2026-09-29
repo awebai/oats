@@ -121,7 +121,10 @@ test("segmented control: selected segment is --sel/--accent at 650, unselected i
   assert.equal(group.padding, "2px", "2px inner padding");
   assert.equal(group.background, "var(--surface)");
   assert.equal(group.overflow, "", "segments are not clipped by the frame; they are inset");
-  assert.equal(u.rules.filter(r => /\.ws-segmented button \+ button/.test(r.selectorText || "")).length, 0, "no dividers between segments");
+  // No dividers: a sibling rule may only clear a border (e.g. border-left:0), never paint one.
+  const dividers = u.rules.filter(r => /\.ws-segmented button \+ button/.test(r.selectorText || ""))
+    .filter(r => [r.style.borderLeft, r.style.borderLeftWidth, r.style.borderLeftStyle].some(v => v && !/^(0(px)?|none)( |$)/.test(v)));
+  assert.deepEqual(dividers.map(r => r.selectorText), [], "no dividers between segments");
   assert.equal(u.rule(".oats-view .ws-segmented button:focus-visible").background, "var(--sel)", "keyboard focus tints an unselected segment");
 });
 
