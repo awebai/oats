@@ -53,11 +53,14 @@ Every routed ssh call carries these options, before `--` and the host:
   others.
 - ssh binds the control socket at the path plus 17 bytes, within the 104-byte
   socket path limit of macOS, so the directory path may be at most 45 bytes.
-  `/Users/<name>/.oats/ssh` fits for any name up to 23 characters. When the
-  path does not fit, or the directory is not private, calls run without the
-  control master (keepalives still apply) and the command warns once per
-  server on stderr, naming the path and the fix: a shorter `OATS_HOME_DIR`
-  or `HOME`.
+  `/Users/<name>/.oats/ssh` fits for any name up to 23 characters. The path
+  must also be one ssh reads literally: letters, digits and `. _ / + , : @ =
+  -` only (a space, `%`, `$`, a quote or `#` is ssh syntax).
+- When the path does not fit, has other characters, or the directory is not
+  private, calls run with `ControlPath=none` instead: no connection sharing,
+  including any your ssh config sets up; keepalives still apply. The command
+  warns once per server on stderr, naming the path and the fix (an
+  `OATS_HOME_DIR` or `HOME` that is shorter or plain).
 - A master left stale by a network drop is replaced by ssh on the next call.
 - The version probe (`oats version --json`) is asked once per process per
   server and target. `server add --replace` to another target forgets it.

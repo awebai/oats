@@ -6,7 +6,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
@@ -62,7 +62,7 @@ test("runRemote: the control socket directory is created private before ssh bind
   assert.deepEqual(warnings, []);
   chmodSync(dir, 0o775);
   runRemote(target, ["status"], io);
-  assert.equal(calls.argv.at(-1).some((a) => a.startsWith("Control")), false, "a group-writable directory is never handed to ssh");
+  assert.deepEqual(calls.argv.at(-1).filter((a) => a.startsWith("Control")), ["ControlPath=none"], "a group-writable directory is never handed to ssh");
   assert.equal(warnings.length, 1); assert.match(warnings[0], /writable/);
   chmodSync(dir, 0o700);
 });
@@ -85,7 +85,7 @@ test("control master: the socket path fits the 104-byte limit at 86 bytes and no
     process.env.OATS_HOME_DIR = join(base, "l".repeat(42 - base.length - 1));
     assert.equal(join(process.env.OATS_HOME_DIR, "ssh", "x".repeat(40)).length, 87);
     runRemote(target, ["status"], io("long"));
-    assert.equal(lastArgv().some((a) => a.startsWith("Control")), false, lastArgv().join(" "));
+    assert.deepEqual(lastArgv().filter((a) => a.startsWith("Control")), ["ControlPath=none"], lastArgv().join(" "));
     assert.ok(lastArgv().includes("ServerAliveInterval=15") && lastArgv().includes("ServerAliveCountMax=3"));
     runRemote(target, ["status"], io("long"));
     assert.equal(warnings.length, 1, "once per process per server id");
@@ -94,7 +94,38 @@ test("control master: the socket path fits the 104-byte limit at 86 bytes and no
     runRemote(target, ["status"], io("other"));
     assert.equal(warnings.length, 2, "another server id is warned on its own");
     process.env.OATS_HOME_DIR = "/" + "x".repeat(120);
-    assert.equal(sshArgv(target, ["version"]).some((a) => a.startsWith("Control")), false, "the argv builder alone never names a path ssh cannot bind");
+    assert.deepEqual(sshArgv(target, ["version"]).filter((a) => a.startsWith("Control")), ["ControlPath=none"], "the argv builder alone never names a path ssh cannot bind");
+  } finally { process.env.OATS_HOME_DIR = prev; }
+});
+
+/** What the real ssh makes of an argv's options, without connecting (ssh -G). */
+function sshEffective(argv, config) {
+  const opts = argv.slice(1, argv.indexOf("--"));
+  const out = execFileSync("ssh", ["-G", "-F", config, ...opts, "localhost"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  return Object.fromEntries(out.split("\n").filter(Boolean).map((l) => { const i = l.indexOf(" "); return [l.slice(0, i), l.slice(i + 1)]; }));
+}
+
+test("control master, read by the real ssh: the path is exactly the one checked; a directory ssh would read as syntax, and every fallback, disable sharing even over the user's own Control* config", () => {
+  const prev = process.env.OATS_HOME_DIR;
+  const userConfig = join(base, "ssh_config");
+  writeFileSync(userConfig, `Host *\n  ControlMaster auto\n  ControlPersist 60\n  ControlPath ${join(base, "missing")}/%C\n`);
+  const warnings = [];
+  const { exec, calls } = countingExec();
+  try {
+    const eff = sshEffective(sshArgv(target, ["version"]), "/dev/null");
+    assert.equal(eff.controlmaster, "auto"); assert.equal(eff.controlpersist, "60");
+    assert.match(eff.controlpath, new RegExp(`^${join(process.env.OATS_HOME_DIR, "ssh").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/[0-9a-f]{40}$`));
+    assert.equal(Buffer.byteLength(eff.controlpath), Buffer.byteLength(join(process.env.OATS_HOME_DIR, "ssh", "x".repeat(40))), "the length checked is the length ssh binds");
+    assert.equal(sshEffective(sshArgv(target, ["version"]), userConfig).controlpath, eff.controlpath, "explicit -o wins over the user's ControlPath");
+    for (const dir of ["a b", "a%z", "a${HOME}b", "a\"b", "a'b", "a#b"]) {
+      process.env.OATS_HOME_DIR = join(base, dir);
+      runRemote(target, ["status"], { execFileSync: exec, serverId: `syntax-${dir}`, warn: (m) => warnings.push(m) });
+      const argv = calls.argv.at(-1);
+      assert.deepEqual(argv.filter((a) => a.startsWith("Control")), ["ControlPath=none"], `${dir}: ${argv.join(" ")}`);
+      assert.match(warnings.at(-1), /characters ssh reads as syntax/, dir);
+      const fallback = sshEffective(["ssh", ...argv], userConfig);
+      assert.equal(fallback.controlpath, undefined, `${dir}: sharing is off even with a configured ControlPath (${fallback.controlpath})`);
+    }
   } finally { process.env.OATS_HOME_DIR = prev; }
 });
 
