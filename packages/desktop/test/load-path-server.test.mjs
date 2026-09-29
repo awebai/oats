@@ -144,12 +144,19 @@ test('with observe-max-age declared: admission and refresh observe live (0), bac
     // The next background cycle reuses.
     await s.until(() => of(s.calls(), 'status').length >= 2 && of(s.calls(), 'workspace-status').length >= 2, { timeout: 12_000 });
     assert.equal(maxAge(of(s.calls(), 'status')[1]), '60'); assert.equal(maxAge(of(s.calls(), 'workspace-status')[1]), '60');
-    // A mutation's follow-up observes live.
+    // A mutation through the backend (session start) drops the deployment's held inspections and observes live.
+    const home = panel.instances[0].home;
+    await s.post(`/api/capabilities${s.ws}`, { action: 'inspect', selector: { home } });
+    await s.post(`/api/capabilities${s.ws}`, { action: 'inspect', selector: { home } });
+    const homeReads = () => of(s.calls(), 'inspect').filter(x => x.argv.includes('--home')).length;
+    assert.equal(homeReads(), 1, 'the repeat is a hit');
     s.reconfigure(cfg => { cfg.delays.status = 0; });
     const statusCount = of(s.calls(), 'status').length;
-    const started = await s.post(`/api/start/${panel.instances[0].instance}${s.ws}&home=${encodeURIComponent(panel.instances[0].home)}`, {});
+    const started = await s.post(`/api/start/${panel.instances[0].instance}${s.ws}&home=${encodeURIComponent(home)}`, {});
     assert.ok(started, 'start answered');
     await s.until(() => of(s.calls(), 'status').length > statusCount, { timeout: 8000 });
     assert.equal(maxAge(of(s.calls(), 'status').at(-1)), '0', 'a mutation\'s follow-up observation is live');
+    await s.post(`/api/capabilities${s.ws}`, { action: 'inspect', selector: { home } });
+    assert.equal(homeReads(), 2, 'the mutation invalidated the held inspection: the next inspect --home is a kernel run');
   } finally { await s.stop(); }
 });
