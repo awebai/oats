@@ -244,7 +244,10 @@ it would bind, `providers` (the `--provider` map exactly as given) and
 the apply refuses with `E_DECISION_STALE` if a member
 moved in between. `--provider <cap> key=value` (repeatable; dotted keys nest)
 must name a capability the soul resolves (`E_CAPABILITY_MISSING` otherwise) and
-needs a workspace deployment. The full DTOs are in
+needs a workspace deployment. Spawn takes one soul and the flags it reads:
+another positional, or a flag it does not know, is `E_BAD_ARGS` naming the
+argument, before anything is created (a bare `key=value` is a provider
+setting given without `--provider <capability>`). The full DTOs are in
 [desktop-cli-api.md](desktop-cli-api.md#workspace-model-workspaceapi-2).
 
 Examples of spawn hooks:
