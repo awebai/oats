@@ -5,7 +5,7 @@ export const connectionsCSS = `
 .forge-settings header, .forge-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .forge-settings header h2 { flex:1; margin:0; font-size:16px; }
 .forge-settings button, .forge-settings select { font:inherit; padding:6px 10px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--fg); }
-.forge-settings button:focus-visible, .forge-settings select:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.forge-settings button:focus-visible { background:var(--sel); }
 .forge-settings [aria-disabled=true] { color:var(--muted); cursor:wait; }
 .forge-settings .forge-card { margin:16px 0; padding:14px; border:1px solid var(--border); border-radius:9px; background:var(--surface-2); }
 .forge-settings .forge-hint { color:var(--muted); line-height:1.5; overflow-wrap:anywhere; }

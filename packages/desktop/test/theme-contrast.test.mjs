@@ -106,7 +106,8 @@ const pairs = [
   ...["fg", "muted", "faint", "accent"].flatMap((fg) => ["bg", "surface", "surface-2"].map((bg) => [fg, bg])),
   ...["ok", "warn", "danger"].flatMap((fg) => ["bg", "surface", "surface-2", "term-bg"].map((bg) => [fg, bg])),
   ["chip-fg", "chip-bg"], ["accent", "chip-bg"], ["warn", "chip-bg"], ["fg", "chip-bg"],
-  ["primary-fg", "primary-bg"], ["term-fg", "term-bg"], ["term-sel-fg", "term-sel"],
+  ["primary-fg", "primary-bg"], ["primary-bg", "primary-fg"] /* toast buttons invert on keyboard focus */,
+  ["term-fg", "term-bg"], ["term-sel-fg", "term-sel"],
   ["term-fg", "surface-2"], ["muted", "term-bg"],
   ["fg", "term-bg"], ["accent", "term-bg"], ["violet", "term-bg"], ["violet", "surface-2"],
   ...["fg", "muted", "faint", "accent", "warn", "ok"].map((fg) => [fg, "sel"]),
@@ -480,7 +481,9 @@ for (const [name] of palettes) test(`${name}: actual Stop/Remove confirmations m
     for (const [selector, surfaceSelector, fg, bg] of [
       ['.lifecycle-dialog h2', '.lifecycle-dialog', 'fg', 'surface'], ['.lifecycle-dialog .lifecycle-note', '.lifecycle-dialog', 'muted', 'surface'],
       ['.lifecycle-dialog dt', '.lifecycle-facts', 'muted', 'surface-2'], ['.lifecycle-dialog dd', '.lifecycle-facts', 'fg', 'surface-2'],
-      ['.lifecycle-dialog label', '.lifecycle-options', 'fg', 'surface-2'], ['.lifecycle-close', '.lifecycle-close', 'fg', 'surface'],
+      ['.lifecycle-dialog label', '.lifecycle-options', 'fg', 'surface-2'],
+      // Close holds focus when the dialog opens; the keyboard-focus tint (control rule 2) is what is painted.
+      ['.lifecycle-close', '.lifecycle-close', 'fg', 'sel'],
       ['.lifecycle-confirm', '.lifecycle-confirm', 'primary-fg', operation === 'stop' ? 'primary-bg' : 'danger'],
     ]) {
       const el = doc.querySelector(selector), surface = doc.querySelector(surfaceSelector); assert.ok(el && surface, selector);

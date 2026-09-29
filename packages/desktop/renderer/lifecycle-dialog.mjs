@@ -21,7 +21,7 @@ export const lifecycleCSS = `
 .lifecycle-dialog input { accent-color:var(--accent); }
 .lifecycle-dialog button { height:32px; padding:0 14px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font:inherit; font-size:12.5px; font-weight:600; cursor:pointer; }
 .lifecycle-dialog button:disabled { color:var(--faint); background:var(--surface-2); cursor:default; }
-.lifecycle-dialog button:focus-visible, .lifecycle-dialog input:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.lifecycle-dialog button:focus-visible { background:var(--sel); }
 .lifecycle-dialog .lifecycle-confirm:not(:disabled) { background:var(--primary-bg); color:var(--primary-fg); }
 .lifecycle-dialog[data-operation=retire] .lifecycle-confirm:not(:disabled) { background:var(--danger); color:var(--primary-fg); }
 .lifecycle-footer { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }

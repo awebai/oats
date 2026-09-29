@@ -53,9 +53,8 @@ body {
   width: 14px; min-width: 14px; padding: 0; border: 0; border-right: 1px solid var(--border);
   background: var(--surface); color: var(--muted); font-size: 13px; cursor: pointer;
 }
-#app.sidebar-hidden #sidebar-restore:hover,
-#app.sidebar-hidden #sidebar-restore:focus-visible { color: var(--fg); background: var(--surface-2); }
-#app.sidebar-hidden #sidebar-restore:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+#app.sidebar-hidden #sidebar-restore:hover { color: var(--fg); background: var(--surface-2); }
+#app.sidebar-hidden #sidebar-restore:focus-visible { color: var(--fg); background: var(--sel); }
 
 /* ── nav rail ── */
 #sidebar {
@@ -74,7 +73,7 @@ body {
               border: 0; border-radius: 6px; background: transparent; color: var(--fg);
               font-family: inherit; font-size: 13.5px; line-height: 1.2; font-weight: 700; cursor: pointer; text-align: left; }
 #ws-trigger:hover { background: var(--surface-2); }
-#ws-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+#ws-trigger:focus-visible { background: var(--sel); } /* the id rule above outranks the global tint */
 /* Brand stays a single 24px mark; the two-line copy flexes, never the icon. */
 .ws-brand-mark { width: 24px; height: 24px; flex: none; display: grid; place-items: center; }
 /* The supplied artwork (transparent ground) at 2x; decorative — the
@@ -89,9 +88,10 @@ body {
 .ws-menu { position: absolute; z-index: 40; top: calc(var(--bar-h) - 1px); left: 8px; width: min(300px, calc(100vw - 16px)); padding: 6px;
            border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: var(--shadow-popover); }
 .ws-menu[hidden], .ws-modal[hidden] { display: none; }
+/* Bare search inputs (no wrapper): their own 1px border is the single frame (rule 3). */
 #ws-menu-search, #ws-suggestion-search { width: 100%; height: 32px; padding: 0 9px; border: 1px solid var(--border);
-  border-radius: 7px; background: var(--surface); color: var(--fg); font-family: inherit; font-size: 12px; line-height: 1; }
-#ws-menu-search:focus, #ws-suggestion-search:focus { border-color: var(--accent); }
+  border-radius: 7px; background: var(--surface); color: var(--fg); font-family: inherit; font-size: 12px; line-height: 1; outline: none; }
+#ws-menu-search:focus-visible, #ws-suggestion-search:focus-visible { border-color: var(--accent); }
 #ws-menu-search::placeholder, #ws-suggestion-search::placeholder { color: var(--faint); }
 .ws-options { max-height: 238px; overflow-y: auto; padding: 5px 0; }
 .ws-menu-empty { margin: 4px 8px 8px; color: var(--muted); font-size: 12px; line-height: 1.5; }
@@ -100,7 +100,7 @@ body {
              padding: 8px; border: 0; border-radius: 6px; background: transparent; color: var(--fg);
              font: inherit; text-align: left; cursor: pointer; }
 .ws-option:hover { background: var(--surface-2); }
-.ws-option:focus-visible { background: var(--sel); outline: 2px solid var(--accent); outline-offset: -2px; }
+.ws-option:focus-visible { background: var(--sel); }
 .ws-option[aria-selected="true"] { background: var(--sel); }
 .ws-check { color: var(--accent); font-weight: 750; }
 .ws-option-copy { min-width: 0; }
@@ -137,6 +137,9 @@ body {
 .ctx-count { margin-left: auto; display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11.5px; font-weight: 500;
              white-space: nowrap; }
 .ctx-count-dot { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--accent); }
+/* Search field (rule 3): the wrapper's border is the only frame, accent on focus-within;
+   the input inside is borderless and never draws an outline (board 7 "Before" shows the
+   old inner 2px ring). */
 .ctx-filter-field { display: flex; align-items: center; gap: 7px; margin: 2px 10px 6px; height: 30px; flex: none;
                     min-width: 0; padding: 0 10px; border: 1px solid var(--border); border-radius: 7px;
                     background: var(--bg); color: var(--muted); }
@@ -145,7 +148,7 @@ body {
 .ctx-filter-icon > .shell-icon { width: 12px; height: 12px; }
 .ctx-filter-field .shortcut-hint { color: var(--muted); }
 .ctx-filter { margin: 0; min-width: 0; width: 100%; height: 100%; flex: 1; padding: 0;
-              border: 0; border-radius: 4px; background: var(--bg); color: var(--fg);
+              border: 0; border-radius: 4px; background: var(--bg); color: var(--fg); outline: none;
               font-family: inherit; font-size: 12px; line-height: 1; }
 .ctx-filter::placeholder { color: var(--muted); }
 .ctx-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 8px 8px; }
@@ -167,7 +170,11 @@ body {
 .ctx-instance-actions { appearance: none; width: 24px; height: 24px; display: grid; place-items: center;
   flex: none; border: 0; border-radius: 6px; padding: 0;
   background: transparent; color: var(--muted); font: inherit; cursor: pointer; }
-.ctx-instance-actions:hover, .ctx-instance-actions:focus { background: var(--surface-2); color: var(--fg); }
+/* :focus-visible, not :focus: the menu trigger is focused again when its menu closes
+   after a click, and that must not paint it (rule 2). Keyboard focus (Escape/Tab out of
+   the menu) takes the tint like every other control. */
+.ctx-instance-actions:hover { background: var(--surface-2); color: var(--fg); }
+.ctx-instance-actions:focus-visible { background: var(--sel); color: var(--fg); }
 .ctx-instance-actions:disabled { color: var(--muted); cursor: default; }
 .ctx-instance-menu { position: fixed; inset: auto; margin: 0; width: 240px; max-width: calc(100vw - 16px);
   max-height: calc(100vh - 16px); overflow-y: auto;
@@ -180,7 +187,6 @@ body {
 .ctx-instance-menu button kbd { color:var(--muted); font:10.5px var(--mono); }
 .ctx-instance-menu button [hidden] { display:none; }
 .ctx-instance-menu button:hover, .ctx-instance-menu button:focus-visible { background: var(--sel); }
-.ctx-instance-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .ctx-instance-menu button[data-action="retire"], .ctx-instance-menu button.danger { color: var(--danger); }
 /* Dark danger ink is AA on raised, not selected. Preserve its semantic color. */
 .ctx-instance-menu button[data-action="retire"]:is(:hover, :focus-visible),
@@ -214,7 +220,6 @@ body {
 .ctx-inst { position: relative; min-width: 0; flex: 1; min-height: 50px; height: auto; display: flex; align-items: center; gap: 9px;
             padding: 0 8px 0 10px; border: 0; border-radius: 7px; background: none; color: var(--fg);
             font: inherit; text-align: left; cursor: pointer; }
-.ctx-inst:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .ctx-inst.idle, .ctx-inst:disabled { color: var(--muted); }
 .ctx-inst:disabled { cursor: default; }
 /* Connectors sit on each dot's centre column (10px inset + 4px radius):
@@ -279,7 +284,8 @@ body {
 .ws-suggestion { width: 100%; display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 9px; padding: 10px;
                  border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--fg);
                  font: inherit; text-align: left; cursor: pointer; }
-.ws-suggestion:hover, .ws-suggestion:focus-visible { background: var(--surface-2); }
+.ws-suggestion:hover { background: var(--surface-2); }
+.ws-suggestion:focus-visible { background: var(--sel); }
 .ws-suggestion:disabled { cursor: default; }
 .ws-suggestion:disabled:hover { background: transparent; }
 .ws-suggestion[aria-checked="true"] { border-color: var(--accent); background: var(--sel); }
@@ -297,9 +303,9 @@ body {
                          font-family: inherit; font-size: 12px; line-height: 1; font-weight: 650; cursor: pointer; }
 .ws-dialog-foot .secondary { background: var(--surface); color: var(--fg); }
 .ws-dialog-foot .secondary:hover { background: var(--surface-2); }
+.ws-dialog-foot .secondary:focus-visible { background: var(--sel); }
 .ws-dialog-foot .primary { border-color: var(--primary-bg); background: var(--primary-bg); color: var(--primary-fg); }
 .ws-dialog-foot button:disabled { cursor: default; border-color: var(--border); background: var(--surface-2); color: var(--faint); }
-.ws-dialog button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ── main / tabs ── */
 #main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -321,8 +327,8 @@ body {
 #tab-actions button { appearance: none; border: 0; border-radius: 6px; background: none; color: var(--muted);
                       display: grid; place-items: center; width: 28px; height: 28px; flex: none;
                       font: inherit; font-size: 14px; padding: 0; cursor: pointer; }
-#tab-actions button:hover:not(:disabled), #tab-actions button:focus-visible { color: var(--fg); background: var(--surface-2); }
-#tab-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+#tab-actions button:hover:not(:disabled) { color: var(--fg); background: var(--surface-2); }
+#tab-actions button:focus-visible { color: var(--fg); background: var(--sel); }
 #tab-actions button:disabled { color: var(--faint); cursor: default; }
 /* Strips scroll instead of compressing tab identity to a few characters.
    Keep the existing long-label cap; full names remain in title/ARIA. */
@@ -338,6 +344,7 @@ body {
 .tab-trigger, .tab .close {
   appearance: none; border: 0; background: none; color: inherit; font: inherit; cursor: pointer;
 }
+.tab-trigger:focus-visible { background: var(--sel); }
 /* dot · name · branch (Redesign v3): the name keeps priority, the branch
    takes what is left and ellipsizes first. */
 .tab-trigger { align-self: stretch; display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto;
@@ -352,7 +359,8 @@ body {
 .tab .close { display: grid; place-items: center; flex: none; width: 20px; height: 20px; color: var(--faint);
               margin: 0; padding: 0; border-radius: 4px; font-size: 13px; }
 .tab .close > .shell-icon { width: 13px; height: 13px; }
-.tab .close:hover, .tab .close:focus-visible { color: var(--fg); background: var(--surface-2); }
+.tab .close:hover { color: var(--fg); background: var(--surface-2); }
+.tab .close:focus-visible { color: var(--fg); background: var(--sel); }
 #tabhost { flex: 1; position: relative; min-height: 0; }
 /* ── editor groups: one .group-cell per group becomes a flex cell of #tabhost;
    each cell stacks its own tab strip (.group-tabbar — the group's REAL tab
@@ -363,7 +371,8 @@ body {
 #tabhost.split-col { display: flex; flex-direction: column; }
 .group-cell { display: flex; flex-direction: column; flex: 1 1 0; min-width: 0; min-height: 0; position: relative; }
 .group-cell.focused-group { outline: 1px solid var(--accent); outline-offset: -1px; }
-.split-empty:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
+/* A whole empty pane does not tint on keyboard focus; the global 1px edge marks it. */
+.split-empty:focus-visible { background: var(--term-bg); }
 .split-resizer { position: absolute; z-index: 8; touch-action: none; }
 .split-resizer[data-orientation="row"] { top: 0; bottom: 0; right: -3px; width: 6px; cursor: col-resize; }
 .split-resizer[data-orientation="col"] { left: 0; right: 0; bottom: -3px; height: 6px; cursor: row-resize; }
@@ -422,7 +431,7 @@ body {
   width: 100%; min-height: 48px; background: var(--surface); color: var(--fg); border: none;
   border-bottom: 1px solid var(--border); padding: 12px 16px; font-family: inherit; font-size: 13px; line-height: 1.45;
 }
-.palette-input:focus-visible { outline-offset: -2px; }
+/* The palette input's only frame is its bottom rule; focus turns it accent (theme.css field rule). */
 .palette-input::placeholder { color: var(--faint); }
 .palette-list { max-height: 46vh; overflow-y: auto; padding: 6px; }
 .palette-item {
@@ -451,8 +460,6 @@ body {
   color: var(--fg); font-family: inherit; font-size: 12px; line-height: 1; padding: 6px 9px; cursor: pointer;
 }
 .kb-reset-all:hover, .kb-close:hover, .kb-reset:hover { background: var(--surface-2); }
-.kb-reset-all:focus-visible, .kb-close:focus-visible, .kb-reset:focus-visible,
-.kb-chord:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .kb-hint { margin: 0; padding: 8px 16px; color: var(--muted); font-size: 11.5px; border-bottom: 1px solid var(--border); }
 .kb-body { overflow-y: auto; padding: 6px 10px 12px; }
 .kb-context { margin: 12px 6px 4px; color: var(--muted); font-size: 10.5px; font-weight: 650;
@@ -473,4 +480,3 @@ body {
 /* forge-roster: open the row's pull request (the chip on the name line says which). */
 .ctx-pr-open { flex: none; display: grid; place-items: center; width: 24px; height: 22px; padding: 0; color: var(--accent); background: var(--surface);
   border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
-.ctx-pr-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

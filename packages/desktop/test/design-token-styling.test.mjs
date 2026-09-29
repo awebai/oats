@@ -117,9 +117,14 @@ for (const palette of ["light", "solarized", "dark"]) test(`${palette}: primary,
   assert.equal(u.rule('.ctx-instance-menu button[data-action="retire"]:is(:hover, :focus-visible), .ctx-instance-menu button.danger:is(:hover, :focus-visible)').background, "var(--surface-2)",
     "danger hover uses the AA-validated raised surface, not dark selection");
   assert.equal(u.rule(".oats-view button.act.primary:hover:not(:disabled)").color, "var(--primary-fg)");
-  assert.equal(u.rule(":focus-visible").outline, "2px solid var(--accent)");
-  for (const selector of ["#ws-trigger:focus-visible", ".ws-option:focus-visible", ".ctx-instance-menu button:focus-visible", ".split-empty:focus-visible"]) {
-    assert.equal(u.rule(selector).outline, "2px solid var(--accent)", selector);
+  // Control rule 2 (control-rules.test.mjs has the full contract): one global 1px inset
+  // accent edge plus the brand tint on keyboard focus; no per-component 2px rings remain.
+  assert.equal(u.rule(":focus-visible").outline, "1px solid var(--accent)");
+  assert.equal(u.rule(":focus-visible").outlineOffset, "-1px");
+  assert.equal(u.rule(":is(button, a, summary):focus-visible").background, "var(--sel)");
+  for (const selector of [".ws-option:focus-visible", ".ctx-instance-menu button:hover, .ctx-instance-menu button:focus-visible", "#tab-actions button:focus-visible"]) {
+    assert.equal(u.rule(selector).background, "var(--sel)", selector);
+    assert.equal(u.rule(selector).outline, "", selector);
   }
 });
 

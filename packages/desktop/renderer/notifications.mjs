@@ -13,7 +13,10 @@ export const notificationCSS = `
 .app-toast-open { flex:none; padding:4px 6px; border:1px solid var(--primary-fg); border-radius:5px; background:var(--primary-bg); color:var(--primary-fg); font:inherit; cursor:pointer; }
 .app-toast-open:disabled { cursor:default; }
 .app-toast-action-status { display:block; font-size:11px; }
-.app-toast :focus-visible { outline:2px solid var(--primary-fg); outline-offset:2px; }
+/* Keyboard focus in the toast's own inverted palette (control rule 2): the 1px edge in --primary-fg,
+   and a button inverts its pair, so the text stays on an AA surface. */
+.app-toast :focus-visible { outline:1px solid var(--primary-fg); outline-offset:-1px; }
+.app-toast button:focus-visible { background:var(--primary-fg); color:var(--primary-bg); }
 `;
 export function createNotificationCenter({ document: doc, generation = () => 0, subscribe = () => () => {},
   applyFocus = fn => fn(), onIntent = () => {}, fallbackFocus = () => null,

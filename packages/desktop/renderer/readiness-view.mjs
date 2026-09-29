@@ -28,7 +28,6 @@ export const readinessCSS = `
 .readiness-item dt { font-size:11px; }
 .readiness-view details { margin-top:8px; }
 .readiness-view summary { cursor:pointer; }
-.readiness-view summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .readiness-view button { min-height:34px; }
 .readiness-actions { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
 .soul-inspector .readiness-view { margin-top:16px; }
