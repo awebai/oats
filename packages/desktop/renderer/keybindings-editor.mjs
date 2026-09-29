@@ -8,8 +8,8 @@
 
 import {
   listActions, getBinding, setBinding, resetBinding, resetAllBindings,
-  onKeymapChange, findConflict, formatChord, chordFromEvent, chordToString,
-  isPlainChord, DEFAULT_KEYMAP,
+  onKeymapChange, findConflict, keymapConflicts, formatChord, chordFromEvent, chordToString,
+  isPlainChord, defaultBinding,
 } from "./keybindings.mjs";
 import { takePickerFocusReturn } from "./overlay-picker.mjs";
 import { icon } from "./shell-icons.mjs";
@@ -79,6 +79,7 @@ export function createKeybindingsEditor({ doc = document, isMac } = {}) {
           <button type="button" class="kb-close" aria-label="Close shortcuts editor">${icon("close", { size: 14 })}</button>
         </div>
         <p class="kb-hint">Click a shortcut to record a new one — Esc cancels, Backspace unbinds.</p>
+        <p class="kb-clashes" role="status" hidden></p>
         <div class="kb-body"></div>
       </div>`;
     overlay.addEventListener("mousedown", (e) => { if (e.target === overlay) close(); });
@@ -116,6 +117,15 @@ export function createKeybindingsEditor({ doc = document, isMac } = {}) {
         ? { id: focused.dataset.actionId, kind: focused.classList.contains("kb-reset") ? "kb-reset" : "kb-chord" }
         : null;
       body.innerHTML = "";
+      // A shortcut you set that now shares its chord with another (a new default, say): named
+      // up top, marked on its row. Nothing is rebound for you.
+      const clashes = keymapConflicts(isMac);
+      const clashEl = overlay.querySelector(".kb-clashes");
+      clashEl.hidden = !clashes.length;
+      clashEl.textContent = clashes.length
+        ? `${clashes.length === 1 ? "A shortcut you set clashes" : `${clashes.length} shortcuts you set clash`} with another: ${clashes
+          .map(({ chord, actions: [a, b] }) => `${formatChord(chord, isMac)} is both “${a.label}” and “${b.label}”`).join("; ")}. Rebind or reset one.`
+        : "";
       const groups = groupActions();
       if (!groups.length) {
         const d = doc.createElement("div");
@@ -145,9 +155,10 @@ export function createKeybindingsEditor({ doc = document, isMac } = {}) {
     const row = (action) => {
       const el = doc.createElement("div");
       el.className = "kb-row";
-      const chordStr = getBinding(action.id);
+      const chordStr = getBinding(action.id, isMac); // this platform's effective chord
       // the effective default: static table or registration-supplied
-      const isDefault = chordStr === (DEFAULT_KEYMAP[action.id] ?? action.defaultChord ?? null);
+      const fixed = defaultBinding(action.id, isMac);
+      const isDefault = chordStr === (fixed !== undefined ? fixed : action.defaultChord ?? null);
       el.innerHTML = `
         <span class="kb-label"></span>
         <span class="kb-conflict" role="status"></span>

@@ -22,7 +22,9 @@ test("tab chrome uses related semantic tab, panel, and focusable close controls"
   assert.equal(paneEl.hidden, true);
   assert.equal(closeEl.tagName, "BUTTON");
   assert.equal(closeEl.getAttribute("aria-label"), "Close Agent terminal");
-  assert.match(closeEl.title, /Delete.*⌘\+W/);
+  assert.equal(closeEl.title, "Close Agent terminal (Delete or ⌘W)");
+  // Linux/Windows name the keymap's close chord, never the plain Ctrl+W a terminal program reads.
+  assert.equal(createTabChrome(dom.window.document, 2, "Agent terminal", false).closeEl.title, "Close Agent terminal (Delete or Ctrl+Shift+W)");
   dom.window.close();
 });
 
@@ -33,8 +35,9 @@ test("tab keyboard policy wraps arrows, supports Home/End, and closes", () => {
   assert.deepEqual(action("Home"), { type: "move", index: 0 });
   assert.deepEqual(action("End"), { type: "move", index: 2 });
   assert.deepEqual(action("Delete"), { type: "close" });
-  assert.deepEqual(action("w", 1, { metaKey: true }), { type: "close" });
-  assert.deepEqual(action("w", 1, { ctrlKey: true }), { type: "close" });
+  // The close chord belongs to the keymap (tabs.close: ⌘W / Ctrl+Shift+W, rebindable), not the strip.
+  assert.equal(action("w", 1, { metaKey: true }), null);
+  assert.equal(action("w", 1, { ctrlKey: true }), null);
   assert.equal(action("Enter"), null, "native button activation handles Enter/Space");
 });
 

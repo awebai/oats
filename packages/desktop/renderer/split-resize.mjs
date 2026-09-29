@@ -48,9 +48,10 @@ export function updateSplitHandle(host, cell, orientation, hasNext, onResize) {
     handle.addEventListener('keydown', e => {
       const m = measure(); if (!m) return;
       const previous = m.row ? 'ArrowLeft' : 'ArrowUp', next = m.row ? 'ArrowRight' : 'ArrowDown';
-      if (![previous, next, 'Home', 'End'].includes(e.key)) return;
+      // Enter resets to an even split, the keyboard twin of the double-click (spec F).
+      if (![previous, next, 'Home', 'End', 'Enter'].includes(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
       e.preventDefault(); e.stopPropagation();
-      resize(m, e.key === 'Home' ? .1 : e.key === 'End' ? .9 : m.initial + (e.key === next ? .05 : -.05));
+      resize(m, e.key === 'Enter' ? .5 : e.key === 'Home' ? .1 : e.key === 'End' ? .9 : m.initial + (e.key === next ? .05 : -.05));
     });
     handle.addEventListener('dblclick', () => { const m = measure(); if (m) resize(m, .5); });
   }

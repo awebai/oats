@@ -89,9 +89,9 @@ export const spawnDialogCSS = `
 .spawn-search-count { flex:none; color:var(--muted); font:10.5px var(--mono,monospace); }
 .spawn-chooser h3 { margin:14px 8px var(--title-gap); font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); overflow-wrap:anywhere; }
 .spawn-choice { width:100%; min-height:56px; display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid transparent; border-radius:8px; text-align:left; background:var(--surface); color:var(--fg); font:inherit; cursor:pointer; }
-.spawn-choice[aria-pressed=true] { background:var(--sel); border-color:var(--accent); }
+.spawn-choice[aria-selected=true] { background:var(--sel); border-color:var(--accent); }
 .spawn-choice .spawn-choice-check { flex:none; color:var(--accent); visibility:hidden; }
-.spawn-choice[aria-pressed=true] .spawn-choice-check { visibility:visible; }
+.spawn-choice[aria-selected=true] .spawn-choice-check { visibility:visible; }
 .spawn-choice:disabled { color:var(--muted); cursor:default; }
 .spawn-choice-copy { min-width:0; display:flex; flex:1; flex-direction:column; gap:1px; }
 .spawn-choice strong { font-size:12.5px; overflow-wrap:anywhere; }
@@ -104,7 +104,7 @@ export const spawnDialogCSS = `
 .spawn-field { display:flex; flex-direction:column; gap:var(--title-gap); min-width:0; margin:0; padding:0; border:0; }
 /* a legend is not a flex item: the title gap is its own margin */
 .spawn-field > legend { margin-bottom:var(--title-gap); }
-.spawn-label, .spawn-field > label, .spawn-name-head > label, .spawn-row > label > .spawn-label-text, .spawn-field > legend { display:flex; align-items:center; gap:6px; padding:0; font-size:11.5px; font-weight:650; color:var(--muted); }
+.spawn-label, .spawn-field > label, .spawn-name > label, .spawn-row > label > .spawn-label-text, .spawn-field > legend { display:flex; align-items:center; gap:6px; padding:0; font-size:11.5px; font-weight:650; color:var(--muted); }
 .spawn-label .shell-icon { color:var(--muted); }
 .spawn-label small { font-weight:500; }
 .spawn-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
@@ -119,8 +119,12 @@ export const spawnDialogCSS = `
 .spawn-name-input input.field { flex:1; height:100%; border:0; border-radius:8px; background:transparent; padding:0 12px 0 1px; font:600 13px var(--mono,monospace); color:var(--fg); }
 .spawn-dialog .spawn-name-input input.field, .spawn-dialog .spawn-name-input input.field:focus, .spawn-dialog .spawn-name-input input.field:focus-visible { outline:none; border:0; box-shadow:none; }
 .spawn-name-result { display:flex; align-items:center; gap:6px; }
-.spawn-name-head { display:flex; align-items:center; gap:12px; }
-.spawn-name-head .spawn-switch { margin-left:auto; font-size:11.5px; color:var(--muted); }
+.spawn-dialog .spawn-name { display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-areas:"label switch" "input input" "result result"; column-gap:12px; align-items:center; }
+/* Tab order is Name, then the prefix switch (spec F); the switch still sits on the label's line. */
+.spawn-name > label { grid-area:label; }
+.spawn-name > .spawn-name-input { grid-area:input; }
+.spawn-name > .spawn-switch { grid-area:switch; justify-self:end; font-size:11.5px; color:var(--muted); }
+.spawn-name > .spawn-name-result { grid-area:result; }
 .spawn-name-input.unprefixed .spawn-name-prefix { display:none; }
 .spawn-name-input.unprefixed input.field { padding-left:12px; }
 .spawn-name-result strong { font:600 11.5px var(--mono,monospace); color:var(--fg); }
@@ -339,6 +343,36 @@ export function composePreviewModules(doc, modules) {
   return { core: [el('h3', 'Core capabilities', 'spawn-preview-title'), coreBox], caps: [el('h3', `Capabilities · ${rows.length}`, 'spawn-preview-title'), capsList] };
 }
 
+/** A segmented group is one tab stop (spec F): Arrow keys move along it (in a radio group they
+ * also choose, as native radios do), Home/End go to its ends. The tab stop is the checked radio,
+ * else the input focused last, else the first enabled one. Returns sync() for after a redraw. */
+export function roveSegment(group, { selects = false } = {}) {
+  const doc = group.ownerDocument;
+  const inputs = () => [...group.querySelectorAll('input')].filter(input => !input.disabled && !input.closest('[hidden]'));
+  let last = null;
+  const sync = () => {
+    const all = inputs();
+    const stop = (selects && all.find(input => input.checked)) || (all.includes(last) ? last : null) || all[0];
+    for (const input of group.querySelectorAll('input')) input.tabIndex = input === stop ? 0 : -1;
+  };
+  const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+  group.addEventListener('keydown', event => {
+    if (!(event.key in step) && event.key !== 'Home' && event.key !== 'End') return;
+    if (event.metaKey || event.ctrlKey || event.altKey || event.isComposing || event.keyCode === 229) return;
+    const all = inputs(), at = all.indexOf(event.target);
+    if (at < 0) return;
+    event.preventDefault(); event.stopPropagation();
+    const next = all[event.key === 'Home' ? 0 : event.key === 'End' ? all.length - 1 : (at + step[event.key] + all.length) % all.length];
+    last = next;
+    if (selects && !next.checked) { next.checked = true; next.dispatchEvent(new doc.defaultView.Event('change', { bubbles: true })); }
+    sync(); next.focus();
+  });
+  group.addEventListener('focusin', event => { if (inputs().includes(event.target)) { last = event.target; sync(); } });
+  group.addEventListener('change', sync);
+  sync();
+  return sync;
+}
+
 /** The soul chooser (left column). */
 function composeChooser(doc, { soul, agents, canChoose, choose, query, note }) {
   const el = (tag, text, cls) => node(doc, tag, text, cls);
@@ -348,7 +382,8 @@ function composeChooser(doc, { soul, agents, canChoose, choose, query, note }) {
   searchLabel.append(search);
   const head = el('div', undefined, 'spawn-chooser-head'), title = el('h2', 'Souls', 'spawn-chooser-title');
   title.id = 'spawn-chooser-title'; chooser.setAttribute('aria-labelledby', title.id); head.append(title, count);
-  const list = el('div', undefined, 'spawn-soul-choices'), empty = el('p', '', 'spawn-chooser-note spawn-chooser-empty'); empty.setAttribute('role', 'status');
+  const list = el('div', undefined, 'spawn-soul-choices'); list.setAttribute('role', 'listbox'); list.setAttribute('aria-labelledby', title.id);
+  const empty = el('p', '', 'spawn-chooser-note spawn-chooser-empty'); empty.setAttribute('role', 'status');
   const catalogNote = el('p', note || '', 'spawn-chooser-note spawn-catalog-note');
   chooser.append(head, searchLabel, list, empty, catalogNote);
   const rows = [], groups = new Map();
@@ -366,15 +401,25 @@ function composeChooser(doc, { soul, agents, canChoose, choose, query, note }) {
     const first = group[0], groupEl = el('div'), label = groupLabel(first);
     const suffix = labels.filter(value => value === label).length > 1 ? ` · ${rootTags.get(first.agentsRoot) || first.agentsRoot || ''}` : '';
     const heading = el('h3', label + suffix); heading.title = first.agentsRoot || ''; groupEl.append(heading);
+    // A listbox group, named by its heading (the listbox holds only groups and options).
+    heading.id = `spawn-choice-group-${list.childElementCount}`; groupEl.setAttribute('role', 'group'); groupEl.setAttribute('aria-labelledby', heading.id);
     for (const candidate of group) {
       const row = el('button', undefined, 'spawn-choice'); row.type = 'button';
       row.dataset.agent = candidate.name; row.dataset.root = candidate.agentsRoot || ''; row.dataset.server = candidate.server || '';
-      row.disabled = !canChoose(candidate); row.tabIndex = -1; row.setAttribute('aria-pressed', String(identity(candidate) === identity(soul)));
+      // An option of the listbox: one tab stop (roving), Arrow/Home/End move, Enter or a click picks.
+      row.setAttribute('role', 'option'); row.disabled = !canChoose(candidate); row.tabIndex = -1;
+      row.setAttribute('aria-selected', String(identity(candidate) === identity(soul))); row.setAttribute('aria-disabled', String(row.disabled));
       const copy = el('span', undefined, 'spawn-choice-copy');
       copy.append(el('strong', candidate.name), el('small', candidate.work === 'attached' ? 'Attached only — cannot launch standalone' : candidate.description || candidate.repoName || ''));
       const check = iconElement(doc, 'check', { size: 15, className: 'shell-icon spawn-choice-check' }); check.setAttribute('aria-hidden', 'true');
       row.append(createSoulMark(doc, candidate), copy, check);
       row.addEventListener('click', () => { if (!row.disabled && row.isConnected) choose(candidate, search.value); });
+      // Enter picks it and goes on to the form's Name (a click or Space keeps the list where it was).
+      row.addEventListener('keydown', event => {
+        if (event.key !== 'Enter' || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.repeat || event.isComposing) return;
+        event.preventDefault(); event.stopPropagation();
+        if (!row.disabled && row.isConnected) choose(candidate, search.value, 'name');
+      });
       groupEl.append(row);
       rows.push({ row, group: groupEl, text: [candidate.name, candidate.description, candidate.repoName, candidate.team, candidate.server].join('\n').toLowerCase() });
     }
@@ -387,18 +432,35 @@ function composeChooser(doc, { soul, agents, canChoose, choose, query, note }) {
     count.textContent = `${shown} of ${rows.length}`;
     empty.textContent = shown ? '' : rows.length ? 'No souls match this filter.' : 'No souls to spawn in this workspace.';
     const visible = rows.filter(entry => !entry.row.hidden && !entry.row.disabled);
-    const tabStop = visible.find(entry => entry.row === doc.activeElement) || visible.find(entry => entry.row.getAttribute('aria-pressed') === 'true') || visible[0];
+    const tabStop = visible.find(entry => entry.row === doc.activeElement) || visible.find(entry => entry.row.getAttribute('aria-selected') === 'true') || visible[0];
     for (const entry of rows) entry.row.tabIndex = entry === tabStop ? 0 : -1;
   };
   search.addEventListener('input', filter); filter();
   /** The row to land on when the chooser opens: the selected soul if the filter shows it, else the search. */
-  const focusTarget = () => rows.find(entry => !entry.row.hidden && !entry.row.disabled && entry.row.getAttribute('aria-pressed') === 'true')?.row || search;
+  const focusTarget = () => rows.find(entry => !entry.row.hidden && !entry.row.disabled && entry.row.getAttribute('aria-selected') === 'true')?.row || search;
+  const choosable = () => rows.filter(entry => !entry.row.hidden && !entry.row.disabled);
   search.addEventListener('keydown', event => {
-    if (event.key !== 'ArrowDown' || event.isComposing || event.keyCode === 229) return;
-    const entry = rows.find(item => !item.row.hidden && !item.row.disabled && item.row.tabIndex === 0);
-    if (entry) { event.preventDefault(); event.stopPropagation(); entry.row.focus(); }
+    if (event.isComposing || event.keyCode === 229) return;
+    if (event.key === 'ArrowDown') {
+      const entry = rows.find(item => !item.row.hidden && !item.row.disabled && item.row.tabIndex === 0);
+      if (entry) { event.preventDefault(); event.stopPropagation(); entry.row.focus(); }
+    } else if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && !event.repeat) {
+      // Type to filter, Enter to pick: the best match (the first shown), or with no query the
+      // selected soul; then on to Name.
+      const visible = choosable();
+      const entry = search.value.trim() ? visible[0] : visible.find(item => item.row.getAttribute('aria-selected') === 'true') || visible[0];
+      if (!entry) return;
+      event.preventDefault(); event.stopPropagation();
+      entry.row.dispatchEvent(new doc.defaultView.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    }
   });
   list.addEventListener('keydown', event => {
+    // Typing on the list filters it: the character goes to the search field.
+    if (event.key.length === 1 && event.key !== ' ' && !event.metaKey && !event.ctrlKey && !event.altKey && !event.isComposing) {
+      event.preventDefault(); event.stopPropagation();
+      search.value += event.key; search.dispatchEvent(new doc.defaultView.Event('input', { bubbles: true })); search.focus();
+      return;
+    }
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) || event.isComposing) return;
     const visible = rows.filter(entry => !entry.row.hidden && !entry.row.disabled).map(entry => entry.row), at = visible.indexOf(doc.activeElement);
     const next = event.key === 'Home' ? 0 : event.key === 'End' ? visible.length - 1 : (at + (event.key === 'ArrowDown' ? 1 : -1) + visible.length) % visible.length;
@@ -437,7 +499,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   header.append(mark, headCopy, changeSoul, closeButton);
   // ── chooser (picker layout)
   const { chooser, search, focusTarget } = composeChooser(doc, { soul, agents, canChoose, query: draft.query || '', note: catalogNote,
-    choose: (candidate, query) => { if (!busy()) choose(candidate, { query, purpose: purpose.value, task: task.value, prefixed: prefixed.checked, layout: 'picker' }); } });
+    choose: (candidate, query, focus) => { if (!busy()) choose(candidate, { query, purpose: purpose.value, task: task.value, prefixed: prefixed.checked, layout: 'picker', ...(focus ? { focus } : {}) }); } });
   // ── preview (scoped layout): what the kernel will create, from the latest observation
   const preview = el('aside', undefined, 'spawn-preview'); preview.setAttribute('aria-label', 'Spawn preview');
   const factsSection = el('section', undefined, 'spawn-preview-section spawn-preview-created');
@@ -461,7 +523,6 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   prefixed.type = 'checkbox'; prefixed.setAttribute('role', 'switch'); prefixed.checked = draft.prefixed !== false;
   prefixLabel.append(prefixed, doc.createTextNode('Prefix with the soul name'));
   prefixLabel.hidden = !cli()?.features?.includes('spawn-name');
-  const nameHead = el('div', undefined, 'spawn-name-head'); nameHead.append(nameLabel, prefixLabel);
   const nameInput = el('div', undefined, 'spawn-name-input');
   const prefix = el('span', `${soul.name}-`, 'spawn-name-prefix'); prefix.setAttribute('aria-hidden', 'true'); prefix.title = `${soul.name}-`;
   const purpose = el('input', undefined, 'field fpurpose'); purpose.id = 'spawn-purpose'; purpose.autocomplete = 'off'; purpose.spellcheck = false;
@@ -469,7 +530,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   purpose.setAttribute('aria-describedby', 'spawn-name-result');
   nameInput.append(prefix, purpose);
   const nameResult = el('p', '', 'spawn-hint spawn-name-result'); nameResult.id = 'spawn-name-result'; nameResult.setAttribute('aria-live', 'polite');
-  nameField.append(nameHead, nameInput, nameResult);
+  // DOM order is tab order: the Name input, then its prefix switch (drawn on the label's line).
+  nameField.append(nameLabel, nameInput, prefixLabel, nameResult);
   // Harness · Model — the harness is a picker with its badge; the select holds the value.
   const runRow = el('div', undefined, 'spawn-row spawn-run');
   const runtimeLabel = el('label'); runtimeLabel.append(el('span', 'Harness', 'spawn-label-text'));
@@ -510,6 +572,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     option.append(input, el('span', label)); seg.append(option);
   }
   const rel = { get value() { return seg.querySelector('input:checked')?.value || 'unrelated'; } };
+  roveSegment(seg, { selects: true });
   const relTo = el('select', undefined, 'field frelto'); relTo.setAttribute('aria-label', 'Which instance');
   relRow.append(seg, relTo);
   const relDesc = el('p', '', 'spawn-hint freldesc'); relDesc.setAttribute('aria-live', 'polite');
@@ -553,6 +616,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const teamsError = el('p', '', 'spawn-hint spawn-teams-error err'); teamsError.setAttribute('aria-live', 'polite');
   teamsField.append(el('legend', 'Teams'), teamsList, teamsHint, teamsError);
   let teamsNow = null, joinDeclaredNow = false, teamsDrawn = '', defaultFromNow = null;
+  const syncTeamsStop = roveSegment(teamsList);
   const joinPicked = new Set();
   // A team the operator may opt into: mapped, and not the soul's default (v2 rows say `default`).
   const joinable = t => t.mapped && t.default !== true;
@@ -581,6 +645,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       const c = chip(`spawn-team${t.mapped ? '' : ' spawn-team-off'}`, t.label, box, t.mapped ? `Join ${t.label} (${t.team})` : `${t.label} has no provider id yet: its owner runs oats aweb setup, then commits the id.`);
       c.dataset.team = t.label;
     }
+    syncTeamsStop();
     const open = rows.filter(joinable).length;
     // An unmapped default blocks the spawn (the kernel refuses it): say so and what to do, not the opt-ins.
     teamsHint.classList.toggle('err', !!home && !home.team);

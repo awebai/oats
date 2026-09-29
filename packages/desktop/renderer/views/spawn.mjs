@@ -197,6 +197,21 @@ export function preselectSoul(ref) {
   if (state?.alive) { applyWorkspaceTab(state); applyPreselect(state); }
 }
 
+/** Quick Open (spec F): open the spawn dialog scoped to this soul, exactly as its card's Spawn does.
+ * A soul that can't be spawned here (attached only, refused, no verified CLI) opens its page
+ * instead, which says why. The Workspace subtab is left alone when the dialog opens: it is a
+ * modal over wherever Workspace was. `onDismiss` runs when the operator dismisses the dialog
+ * (Cancel, Esc, ×, backdrop); it returns true when it took focus back to where they were, and
+ * false to let the dialog restore focus itself. */
+export function preselectSpawn(ref) {
+  const intent = nextSelectionIntent();
+  pendingPreselect = ref && ref.name
+    ? { name: String(ref.name), agentsRoot: ref.agentsRoot, server: ref.server, spawn: true,
+      onMiss: typeof ref.onMiss === 'function' ? ref.onMiss : null, onDismiss: typeof ref.onDismiss === 'function' ? ref.onDismiss : null, ...intent }
+    : null;
+  if (state?.alive) applyPreselect(state);
+}
+
 function applyPreselect(s) {
   if (!pendingPreselect) return;
   // A workspace switch OR newer selection supersedes this handoff.
@@ -212,6 +227,11 @@ function applyPreselect(s) {
   // an incomplete identity must not pick a twin; the caller says why nothing opened
   if (matches.length !== 1) { ref.onMiss?.(matches.length); return; }
   const a = matches[0];
+  if (ref.spawn && canLaunchSoul(s, a)) {
+    openSpawnModal(s, a);
+    if (s.modalEl) s.spawnReturn = ref.onDismiss;
+    return;
+  }
   inspectSoul(s, a, ref);
   // Degraded / attached souls still open their page; its actions and
   // diagnostic status explain availability, and inspectSoul moved focus into it.
@@ -1024,7 +1044,7 @@ function unavailableCard(s, name, member) {
  * a same-named twin (review 41059e0). */
 function closeSpawnModal(s, { restoreFocus = false, repaint = true } = {}) {
   const hadModal = !!s.modalEl;
-  const agentRef = s.selAgent, fromCard = s.spawnFromCard; s.spawnFromCard = false;
+  const agentRef = s.selAgent, fromCard = s.spawnFromCard, dismissed = s.spawnReturn; s.spawnFromCard = false; s.spawnReturn = null;
   if (hadModal) s.spawnOp++; // closing ends the form operation ownership
   s.sel = null; s.selAgent = null;
   s.modalCleanup?.(); s.modalCleanup = null;
@@ -1033,6 +1053,8 @@ function closeSpawnModal(s, { restoreFocus = false, repaint = true } = {}) {
   if (!hadModal || !repaint || s.alive === false) return;
   renderGrid(s); // clear the .open card highlight NOW
   if (!restoreFocus || !agentRef) return;
+  // Opened from Quick Open: back to where the operator was before it, unless they have moved on.
+  if (dismissed) { let returned = false; try { returned = dismissed() === true; } catch { /* fall back */ } if (returned) return; }
   if (!fromCard && s.page?.focusLaunch(agentRef)) return;
   const card = gridCards(s).find(card => cardMatches(card, agentRef));
   if (!canFocusCard(s, card)) return;
@@ -1069,7 +1091,10 @@ function openSpawnModal(s, a, draft = {}) {
     choose: (candidate, next) => {
       if (!ownsModal() || !canLaunchSoul(s, candidate)) return;
       const fresh = s.souls.agents.find(current => current.name === candidate.name && current.agentsRoot === candidate.agentsRoot && (current.server || "") === (candidate.server || ""));
-      openSpawnModal(s, fresh, { ...next, focus: "soul" });
+      // The same dialog flow: a Quick Open return target survives choosing another soul.
+      const dismissed = s.spawnReturn;
+      openSpawnModal(s, fresh, { ...next, focus: next.focus === "name" ? "name" : "soul" });
+      if (s.modalEl && dismissed) s.spawnReturn = dismissed;
     },
     servers: a.server ? [] : () => apiJson(s.ctx, "/api/servers").then(d => Array.isArray(d?.servers) ? d.servers : []),
     remoteSpawn: fields => doSpawn(s, fields),
@@ -1129,7 +1154,7 @@ function openSpawnModal(s, a, draft = {}) {
   const releaseSubmit = registerAction({ id: "spawn.submit", label: "Spawn selected soul", context: "spawn-dialog-local", defaultChord: "Mod+Enter", run: () => {} });
   const updateHint = () => {
     const mac = /mac/i.test(doc.defaultView?.navigator?.platform || "");
-    const label = formatChord(getBinding("spawn.submit"), mac) || "";
+    const label = formatChord(getBinding("spawn.submit", mac), mac) || "";
     ui.spawn.dataset.chord = mac ? label.replace(/Enter$/, "↵") : label;
   };
   const releaseHint = onKeymapChange(updateHint); updateHint();
@@ -1138,7 +1163,7 @@ function openSpawnModal(s, a, draft = {}) {
   s.syncModalRelations = s.syncModalFacts;
   ui.start();
   if (ownsModal()) {
-    const pressed = draft.focus === "soul" && ui.dialog.querySelector('.spawn-choice[aria-pressed="true"]');
+    const pressed = draft.focus === "soul" && ui.dialog.querySelector('.spawn-choice[aria-selected="true"]');
     (pressed || ui.purpose).focus({ preventScroll: true });
   }
   return modal;

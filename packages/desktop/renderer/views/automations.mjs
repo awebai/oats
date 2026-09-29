@@ -274,7 +274,9 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     const menu = node('details', undefined, 'auto-menu'), summary = node('summary');
     summary.append(iconElement(doc, 'more', { size: 15 })); summary.setAttribute('aria-label', `Actions for ${row.id}`);
     const items = node('div', undefined, 'auto-menu-list');
-    const item = (label, verb, enabled = true) => { const b = node('button', label); b.type = 'button'; b.dataset.verb = verb; b.disabled = busy || !enabled; b.addEventListener('click', () => { menu.open = false; if (verb === 'open') openRow(row.id); else if (verb === 'file') openFile?.(row); else void perform(verb, row); }); items.append(b); };
+    // Closing the menu from inside it hands focus back to its summary, never to <body> (spec F).
+    const closeMenu = () => { const inside = menu.contains(doc.activeElement); menu.open = false; if (inside && summary.isConnected) summary.focus(); };
+    const item = (label, verb, enabled = true) => { const b = node('button', label); b.type = 'button'; b.dataset.verb = verb; b.disabled = busy || !enabled; b.addEventListener('click', () => { closeMenu(); if (verb === 'open') openRow(row.id); else if (verb === 'file') openFile?.(row); else void perform(verb, row); }); items.append(b); };
     item('Open', 'open');
     if (supports('test')) item('Test', 'test');
     if (row.kind === 'schedule' && row.runsHere && supports('run')) item('Run now', 'run');
@@ -282,8 +284,11 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     if (canOpen(row)) item('Open file', 'file');
     for (const extra of rowActions ? rowActions(row) : []) {
       const b = node('button', extra.label); b.type = 'button'; b.dataset.verb = extra.verb || ''; b.disabled = busy || extra.enabled === false;
-      b.addEventListener('click', () => { menu.open = false; extra.run(); }); items.append(b);
+      b.addEventListener('click', () => { closeMenu(); extra.run(); }); items.append(b);
     }
+    // Escape closes it (back on its summary); Tab out of it closes it too.
+    menu.addEventListener('keydown', e => { if (e.key === 'Escape' && menu.open && !e.defaultPrevented) { e.preventDefault(); e.stopPropagation(); closeMenu(); } });
+    menu.addEventListener('focusout', e => { if (menu.open && e.relatedTarget && !menu.contains(e.relatedTarget)) menu.open = false; });
     menu.append(summary, items); return menu;
   }
   function rowEl(row) {
@@ -302,6 +307,10 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
 
   // ── list ──
   function renderList() {
+    // A re-render (after an action re-reads the list) keeps keyboard focus on the same row's
+    // same control, never dropping it to <body> (spec F audit).
+    const was = doc.activeElement, wasRow = listHost.contains(was) ? was.closest('.auto-row')?.dataset.id : null;
+    const part = !wasRow ? null : was.closest('.auto-menu') ? '.auto-menu summary' : was.classList.contains('auto-switch') ? '.auto-switch' : '.auto-open';
     notices.replaceChildren(); listHost.replaceChildren();
     const rows = data?.rows || [];
     toolbar.hidden = !data;
@@ -330,6 +339,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
         table.append(hr, ...group.rows.map(rowEl)); section.append(head, table); listHost.append(section);
       }
     }
+    if (wasRow && !listHost.contains(doc.activeElement)) [...listHost.querySelectorAll('.auto-row')].find(r => r.dataset.id === wasRow)?.querySelector(part)?.focus({ preventScroll: true });
     const foot = node('p', undefined, 'auto-foot');
     const snap = data.snapshot ? relativeTime(data.snapshot.takenAt, now()) : null;
     foot.textContent = [data.snapshot ? `Workspace ${title.toLowerCase()} as of the last sync${snap ? ` (${snap.label})` : ''}` : 'Workspace items appear after the next sync',

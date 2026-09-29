@@ -379,6 +379,15 @@ export function treeGuideSegments(items, item, allInstances = items) {
   });
 }
 
+/** Whether an instance itself matches the roster filter (its name, soul, repo or task) — as
+ * opposed to an ancestor shown only to keep a match's tree path. */
+export function instanceMatchesFilter(item, query) {
+  const needle = String(query || "").trim().toLowerCase();
+  if (!needle) return true;
+  return [item.instance, item.agent, item.repoName, item.task]
+    .some((value) => String(value || "").toLowerCase().includes(needle));
+}
+
 /** Include matching instances plus their ancestor paths, in source order.
  * IDENTITY-aware (merged-state review @3e76616): inclusion keys by
  * instanceId and ancestors resolve through resolveLinkId over the FULL
@@ -395,9 +404,7 @@ export function filterInstanceTree(instances, query) {
   }
   const included = new Set();
   for (const item of instances) {
-    const matches = [item.instance, item.agent, item.repoName, item.task]
-      .some((value) => String(value || "").toLowerCase().includes(needle));
-    if (!matches) continue;
+    if (!instanceMatchesFilter(item, needle)) continue;
     let cursor = item;
     const seen = new Set();
     while (cursor) {

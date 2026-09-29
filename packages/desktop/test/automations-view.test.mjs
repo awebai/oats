@@ -261,3 +261,23 @@ test('the mounted page: gates on the CLI, then reads and acts through POST /api/
   el.querySelector('.page-bar-actions button[data-verb=test]').click(); await tick(); await tick();
   assert.match(el.querySelector('.page-card[data-card="Test result"]').textContent, /gh is missing/, 'an unavailable reply shows its reason');
 });
+
+// Spec F audit: the row menu closes with Escape (focus back on its summary), a chosen item
+// returns focus to the summary (never <body>), and tabbing out closes it.
+test('keyboard: the row menu closes on Escape and after an item, focus back on its summary', async t => {
+  const json = fx('trigger-list');
+  const dom = new JSDOM('<!doctype html><body><main></main><button id="after">after</button></body>'), host = dom.window.document.querySelector('main');
+  const view = createAutomationsView(host, { kind: 'trigger', read: async () => json, act: async verb => fx(`trigger-${verb}`), now: () => NOW });
+  t.after(() => { view.dispose(); dom.window.close(); });
+  await tick();
+  const doc = dom.window.document, menu = host.querySelector('.auto-row[data-id="local/hotfix"] .auto-menu'), summary = menu.querySelector('summary');
+  menu.open = true; menu.querySelector('button').focus();
+  menu.querySelector('button').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  assert.equal(menu.open, false); assert.equal(doc.activeElement, summary);
+  menu.open = true; const test = menu.querySelector('button[data-verb=test]'); test.focus(); test.click(); await tick();
+  assert.equal(host.querySelector('.auto-row[data-id="local/hotfix"] .auto-menu').open, false);
+  assert.notEqual(doc.activeElement, doc.body);
+  const again = host.querySelector('.auto-row[data-id="local/hotfix"] .auto-menu'); again.open = true;
+  again.querySelector('button').dispatchEvent(new dom.window.FocusEvent('focusout', { bubbles: true, relatedTarget: doc.getElementById('after') }));
+  assert.equal(again.open, false, 'Tab out of it closes it');
+});

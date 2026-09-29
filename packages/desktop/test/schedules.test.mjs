@@ -214,3 +214,18 @@ test("checking an unknown run preserves the returned remedy across refresh and c
     setWorkspace("/other"); await tick(); assert.equal(s.el.querySelector(".auto-notice"), null);
   } finally { s.cleanup(); }
 });
+
+// Spec F audit: the schedule form is a modal dialog; Tab and Shift+Tab stay inside it.
+test("keyboard: the schedule form is a modal dialog that keeps Tab inside", async () => {
+  const s = setup();
+  try {
+    await tick(); s.el.querySelector(".schedule-new").click(); await tick();
+    const form = s.el.querySelector("form.schedule-form"), doc = s.dom.window.document;
+    assert.equal(form.getAttribute("role"), "dialog"); assert.equal(form.getAttribute("aria-modal"), "true");
+    const tab = (target, shiftKey = false) => { const e = new s.dom.window.KeyboardEvent("keydown", { key: "Tab", shiftKey, bubbles: true, cancelable: true }); target.dispatchEvent(e); return e; };
+    const cancel = form.querySelector(".schedule-cancel"); cancel.focus();
+    assert.equal(tab(cancel).defaultPrevented, true);
+    const first = doc.activeElement; assert.ok(form.contains(first) && first !== cancel, "Tab from the last control wraps to the first");
+    tab(first, true); assert.equal(doc.activeElement, cancel, "Shift+Tab from the first wraps to the last");
+  } finally { s.cleanup(); }
+});

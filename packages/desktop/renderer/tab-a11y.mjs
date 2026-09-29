@@ -1,6 +1,7 @@
 // Semantic tab chrome and keyboard policy, isolated so ARIA relationships and
 // roving-navigation behavior are covered without booting the whole shell.
 import { iconElement } from "./shell-icons.mjs";
+import { getBinding, formatChord } from "./keybindings.mjs";
 /** Decorative icon by tab kind (the accessible name is the bare title). */
 const KIND_ICONS = Object.freeze({ file: "file", brain: "brain" });
 /** decor (all decorative; the accessible name stays the bare title):
@@ -36,7 +37,9 @@ export function createTabChrome(document, id, title, isMac = false, decor = {}) 
   closeEl.className = "close";
   closeEl.append(iconElement(document, "close", { size: 13 }));
   closeEl.setAttribute("aria-label", `Close ${title}`);
-  closeEl.title = `Close ${title} (Delete or ${isMac ? "⌘" : "Ctrl"}+W)`;
+  // The chord half is the keymap's tabs.close on this platform (⌘W / Ctrl+Shift+W), or none when unbound.
+  const chord = getBinding("tabs.close", isMac);
+  closeEl.title = `Close ${title} (${chord ? `Delete or ${formatChord(chord, isMac)}` : "Delete"})`;
   tabEl.append(triggerEl, closeEl);
   // Arrow/Home/End navigation focuses the trigger; Tab can focus Close. Reveal
   // the focused control in either scrollable strip without focusing content or
@@ -57,9 +60,9 @@ export function createTabChrome(document, id, title, isMac = false, decor = {}) 
 
 export function tabKeyAction(event, index, count) {
   const key = event.key;
-  if (key === "Delete" || ((event.metaKey || event.ctrlKey) && key.toLowerCase() === "w")) {
-    return { type: "close" };
-  }
+  // Delete closes the focused tab. The close chord (⌘W / Ctrl+Shift+W) is the keymap's
+  // tabs.close, never hard-coded here: a rebind or unbind must hold on the strip too (spec F).
+  if (key === "Delete" && !event.metaKey && !event.ctrlKey && !event.altKey) return { type: "close" };
   if (!count || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.defaultPrevented) return null;
   if (key === "ArrowRight") return { type: "move", index: (index + 1) % count };
   if (key === "ArrowLeft") return { type: "move", index: (index - 1 + count) % count };

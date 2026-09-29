@@ -91,7 +91,7 @@ test('Change soul switches to the picker in place, keeps every typed value and f
   assert.equal(u.hidden(u.q('.spawn-chooser')), false); assert.equal(u.hidden(u.q('.spawn-preview')), true); assert.equal(u.hidden(u.q('.spawn-change-soul')), true);
   assert.equal(u.text('h2'), 'Spawn instance'); assert.equal(u.text('.spawn-context'), 'in northwind');
   assert.equal(u.q('.fpurpose').value, 'api-v2'); assert.equal(u.q('.ftask').value, 'Cut 3.2');
-  const pressed = u.q('.spawn-choice[aria-pressed=true]'); assert.equal(pressed.dataset.agent, 'release-manager'); assert.equal(u.doc.activeElement, pressed);
+  const pressed = u.q('.spawn-choice[aria-selected=true]'); assert.equal(pressed.dataset.agent, 'release-manager'); assert.equal(u.doc.activeElement, pressed);
   [...dialog.querySelectorAll('.spawn-choice')].find(row => row.dataset.agent === 'support-triager').click();
   assert.equal(u.chosen.length, 1); assert.equal(u.chosen[0].candidate.name, 'support-triager');
   assert.deepEqual(u.chosen[0].draft, { query: '', purpose: 'api-v2', task: 'Cut 3.2', prefixed: true, layout: 'picker' });

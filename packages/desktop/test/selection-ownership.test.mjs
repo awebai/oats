@@ -15,6 +15,7 @@ import { terminalHandle, terminalSameHandle, terminalFailure } from '../renderer
 import { createViewLifecycle } from "../renderer/view-lifecycle.mjs";
 import { reserveKey, whenKeyFree } from "../renderer/tab-keys.mjs";
 import { createTabChrome, tabKeyAction, focusAfterLastTab } from "../renderer/tab-a11y.mjs";
+import * as keymap from "../renderer/keybindings.mjs";
 import { createWorkspaceTabMemory } from "../renderer/workspace-tab-memory.mjs";
 import * as workspaceTabs from "../renderer/workspace-tabs.mjs";
 import * as layout from "../renderer/split-layout.mjs";
@@ -33,7 +34,7 @@ const names = [
   "setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "selectEmptyGroup", "showStage",
   "splitPane", "closeSplit", "onTabKeydown", "addTab", "selectTab", "activateTab", "closeTab",
   "openViewTab", "openTerminalTabFlow", "openTerminalTabInner", "focusActiveTerminal",
-  "visibleTabEntries", "cycleTab", "renderWorkspaceContext", "restoreWorkspaceTabs", "showTerminalContext",
+  "visibleTabEntries", "switchTab", "cycleTab", "gotoTab", "renderWorkspaceContext", "restoreWorkspaceTabs", "showTerminalContext",
   "initContextRoster", "renderContextRoster", "focusRoster", "onRosterRowKey", "setRovingRow",
 ];
 function deferred() {
@@ -47,11 +48,15 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
   const dom = new JSDOM(`<span id="ws-context"></span><div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div><div id="tab-actions"></div></div></div><div id="tabhost"></div><aside id="sidebar"><div id="instance-roster"><input id="entry" class="ctx-filter"><span class="ctx-count"></span><div class="ctx-list"></div></div><nav id="nav"><button class="nav-item active">Hierarchy</button></nav></aside>`);
   t.after(() => dom.window.close());
   const document = dom.window.document;
+  // The shell's one window keydown listener (shell.mjs), on this harness's platform.
+  document.addEventListener("keydown", e => keymap.handleKeydown(e, { isMac: true }));
+  keymap.setActiveContexts(new Set(["tabs"])); t.after(() => keymap.setActiveContexts(new Set()));
   const requests = [], loads = [], attachments = [], terms = [], detached = [], actions = new Map();
   const c = {
     document, console, navigator: { platform: "MacIntel" },
     workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A", connectionGeneration: 0,
     instanceActionTarget, sameInstanceActionTarget, instanceSplitPlan, instanceSplitIdentity,
+    modal: false, modalOpen: () => c.modal,
     menuState() {}, getBinding: () => null, formatChord: c => c, isMac: true, applyChordTitles() {}, runAction: id => actions.get(id)?.(),
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "instances", tabLayerVisible: false,
     contextRosterGen: 0, contextInstances: [], contextFilter: "", collapsedInstances: new Set(),
@@ -79,7 +84,8 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     ctx: {}, reserveKey, whenKeyFree, createViewLifecycle, createTabChrome, tabKeyAction, focusAfterLastTab,
     createSelectionOwnership: ownership, wirePaneSelection, terminalOptions,
     ...workspaceTabs, ...layout, projectSplitDom, splitControlsState,
-    registerAction: action => actions.set(action.id, action.run),
+    // tabs.close also goes into the real keymap: the strip's close chord is the keymap's, not tab-a11y's.
+    registerAction: action => { actions.set(action.id, action.run); if (action.id === "tabs.close") t.after(keymap.registerAction(action)); },
     terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}),
     onThemeChange: () => () => {}, onTerminalTypographyChange: () => () => {},
     requestAnimationFrame: fn => fn(),
@@ -106,7 +112,8 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     const match = shellSource.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
     assert.ok(match, `exercise shipped ${name}`); return match[0];
   });
-  const setup = shellSource.match(/const tabOpenIntents = [^\n]+/)[0];
+  // The shipped modal guard for tab switching (unlessModal), over a modal flag the test sets.
+  const setup = `${shellSource.match(/const tabOpenIntents = [^\n]+/)[0]}\n${shellSource.match(/const unlessModal = [^\n]+/)[0]}`;
   const registry = shellSource.split("\n").filter(line => /^registerAction\(/.test(line)
     && /id: "(?:tabs\.|split\.close|terminal\.focusActive)/.test(line));
   const s = runInNewContext(`${setup}\n${functions.join("\n")}\n${registry.join("\n")}\n({ ${names.join(", ")}, tabOpenIntents });`, c);
@@ -269,7 +276,8 @@ for (const outcome of ["resolve", "reject"]) {
     await assert.rejects(olderOpen(t, "artifact", outcome, "cycle", { ownership }), /older open must not replace explicit selection/);
   });
   test(`mutation: cycle must use explicit selection on older ${outcome}`, async t => {
-    const shellSource = source.replace("  selectTab(nextId);", "  activateTab(nextId);");
+    // cycleTab → switchTab: the switch must be an explicit selection, not a projection.
+    const shellSource = source.replace("  if (!selectTab(id, { focusContent: inContent })) return;", "  if (!activateTab(id)) return;");
     assert.notEqual(shellSource, source);
     await assert.rejects(olderOpen(t, "artifact", outcome, "cycle", { shellSource }), /older open must not replace explicit selection/);
   });
@@ -481,4 +489,42 @@ for (const [kind, from] of [
   const mutant = source.replace(block, block.replace(from, "/* mutation: sidebar did not cancel */"));
   assert.notEqual(mutant, source);
   await assert.rejects(sidebarAttachment(t, kind, "resolve", mutant), /sidebar owns input/);
+});
+
+test("filtering: ArrowDown and the tab stop land on the first match, never an ancestor shown for context", t => {
+  const s = shell(t);
+  const team = [
+    { instance: "lead", home: "/t/lead", agentsRoot: "/t/agents", running: true },
+    { instance: "worker-keyboard", home: "/t/worker-keyboard", agentsRoot: "/t/agents", parentInstance: "lead", running: true },
+  ];
+  s.c.contextInstances = team;
+  const filter = s.document.getElementById("entry");
+  filter.focus(); filter.value = "keyboard"; s.dispatch(filter, "input");
+  const rows = [...s.c.contextRosterEl.querySelectorAll(".ctx-inst")];
+  assert.deepEqual(rows.map(r => r.dataset.filterContext ?? null), ["true", null], "the lead stays visible, marked as context");
+  assert.deepEqual(rows.map(r => r.tabIndex), [-1, 0], "the tab stop is the match");
+  s.dispatch(filter, "keydown", { key: "ArrowDown" });
+  assert.equal(s.document.activeElement, rows[1], "ArrowDown enters at the match, not the ancestor");
+  filter.focus(); filter.value = ""; s.dispatch(filter, "input");
+  s.dispatch(filter, "keydown", { key: "ArrowDown" });
+  assert.equal(s.document.activeElement.dataset.treeInstance, s.c.contextRosterEl.querySelector('.ctx-inst[tabindex="0"]').dataset.treeInstance,
+    "no filter: the rows' tab stop");
+});
+
+test("under an open modal the tab-switch actions do nothing (as F6 doesn't); close still works", t => {
+  const s = shell(t);
+  s.seed("one"); s.seed("two");
+  const before = s.c.activeTab;
+  s.c.modal = true;
+  for (const id of ["tabs.next", "tabs.prev"]) { s.actions.get(id)(); assert.equal(s.c.activeTab, before, id); }
+  s.c.modal = false;
+  s.actions.get("tabs.next")();
+  assert.notEqual(s.c.activeTab, before, "without a modal, Ctrl+Tab switches");
+});
+
+test("shell wiring: every tab-switch action (Ctrl+Tab, Ctrl+PgUp/PgDn, go-to-tab) is modal-guarded", () => {
+  for (const id of ["tabs.next", "tabs.prev", "tabs.nextPage", "tabs.prevPage"]) {
+    assert.match(source, new RegExp(`id: "${id.replace(".", "\\.")}".*run: unlessModal\\(`), id);
+  }
+  assert.match(source, /id: `tabs\.goto\$\{n\}`.*run: unlessModal\(\(\) => gotoTab\(n\)\)/);
 });
