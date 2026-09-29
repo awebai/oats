@@ -518,10 +518,17 @@ export function rosterParentId(instances, id) {
  * liveness is named, never folded into either bucket.
  * `pending`: no read of this subject has succeeded yet, so the count is a
  * skeleton pill (reserving its width), never "0 running" (desktop/loading-states).
+ * `failed`: the read failed with no data: the reserved box, empty and still.
  * `stale`: the last read failed and the count is the last observation. */
-export function renderRosterCount(el, instances, { pending = false, stale = false } = {}) {
+export function renderRosterCount(el, instances, { pending = false, stale = false, failed = false } = {}) {
   if (!el) return;
   const doc = el.ownerDocument;
+  // Failed with no data: nothing is loading, so no shimmering pill — the box stays reserved, empty and still.
+  if (failed) {
+    if (el.dataset.rosterCount !== "failed") { const reserve = doc.createElement("span"); reserve.className = "ctx-count-reserve"; reserve.setAttribute("aria-hidden", "true"); el.replaceChildren(reserve); }
+    el.dataset.rosterCount = "failed"; el.removeAttribute("title"); delete el.dataset.stale;
+    return;
+  }
   if (pending) {
     if (el.dataset.rosterCount !== "pending") el.replaceChildren(skeleton(doc, "pill"));
     el.dataset.rosterCount = "pending"; el.removeAttribute("title"); delete el.dataset.stale;

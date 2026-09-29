@@ -147,6 +147,7 @@ body {
 .ctx-status:empty { display: none; }
 .ctx-head > .loading-refreshing { flex: none; margin-left: 6px; }
 .ctx-count .skeleton-pill { width: 5.5em; }
+.ctx-count-reserve { display: inline-block; width: 5.5em; height: 1em; } /* failed: the pill's box, nothing in it */
 /* A stale count is the last observation: muted, its dot no longer the live accent. */
 .ctx-count[data-stale] { color: var(--muted); }
 .ctx-count[data-stale] .ctx-count-dot { background: var(--muted); }

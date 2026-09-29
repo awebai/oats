@@ -346,8 +346,10 @@ async function refreshContextRoster({ user = false } = {}) {
       // controller paints "Couldn't refresh instances · observed <age>" + Retry.
       // Without: the controller paints the failed block where the skeleton stood.
       rosterState?.fail(e);
-      // The rows are rebuilt once, to disable their actions; a repeat failure keeps them.
+      // The rows are rebuilt once, to disable their actions; a repeat failure keeps them. Without
+      // data, the count's pill stops (nothing is loading): the reserved box, empty and still.
       if (rosterState?.hasData && !rosterStale) { rosterStale = true; renderContextRoster(contextInstances); }
+      else if (rosterState && !rosterState.hasData) renderRosterCount(contextRosterEl.querySelector(".ctx-count"), [], { failed: true });
       refreshPanelInstance([], ws);
     }
     return;
@@ -384,6 +386,7 @@ async function refreshContextRoster({ user = false } = {}) {
     refreshPanelInstance([], resolvedWs);
     rosterState?.fail({ message: panel.error });
     if (rosterState?.hasData && !rosterStale) { rosterStale = true; renderContextRoster(previousInstances); }
+    else if (rosterState && !rosterState.hasData) renderRosterCount(contextRosterEl.querySelector(".ctx-count"), [], { failed: true });
     return;
   }
   const reportedFailure = !!panel.error;
@@ -432,8 +435,8 @@ function renderContextRoster(instances) {
   // No read of this subject has succeeded yet (desktop/loading-states): the
   // skeleton or the failed block own the list and the count is a skeleton
   // pill. Rows of the previous subject go; the empty copy is never painted.
-  const pending = !!rosterState && !rosterState.hasData;
-  renderRosterCount(contextRosterEl.querySelector(".ctx-count"), instances, { pending, stale: rosterStale });
+  const pending = !!rosterState && !rosterState.hasData, failed = pending && rosterState.state === "failed";
+  renderRosterCount(contextRosterEl.querySelector(".ctx-count"), instances, { pending: pending && !failed, failed, stale: rosterStale });
   // The deployment note is painted on every path (poll, filter, collapse, PR change), first in the list.
   const paintNote = () => {
     if (contextDeploymentNote === null) return;

@@ -79,6 +79,9 @@ test('renderRosterCount: pending is a skeleton pill kept in place, never "0 runn
   tree.renderRosterCount(count, roster);
   assert.equal(count.dataset.stale, undefined);
   assert.equal(doc.querySelectorAll('.skeleton-pill').length, 0);
+  tree.renderRosterCount(count, [], { failed: true });
+  assert.equal(count.textContent, ''); assert.equal(count.querySelector('.skeleton'), null, 'failed: nothing animates'); assert.equal(count.querySelector('.ctx-count-reserve').getAttribute('aria-hidden'), 'true');
+  assert.equal(count.hasAttribute('title'), false);
 });
 
 test('createRosterLoading wires the shipped chrome: list region, head indicator, a .ctx-status host before the list, a hidden status line', t => {
@@ -226,7 +229,7 @@ test('a failed first read paints the failed block (cause, Details, Retry) where 
   assert.doesNotMatch(s.text(), /Roster unavailable|No instances/);
   assert.equal(s.list().getAttribute('aria-busy'), null, 'failed is not busy');
   assert.equal(s.live().textContent, "Couldn't refresh instances. bridge down");
-  assert.ok(s.count().querySelector('.skeleton-pill'), 'still no count to tell');
+  assert.equal(s.count().querySelector('.skeleton-pill'), null, 'failed: the pill would say "still loading"'); assert.ok(s.count().querySelector('.ctx-count-reserve'), 'the count box stays reserved, empty and still');
   const retry = failed.querySelector('.loading-retry'); retry.focus(); retry.click();
   assert.equal(s.requests.length, 2, 'Retry re-reads'); assert.equal(retry.getAttribute('aria-disabled'), 'true'); assert.equal(s.doc.activeElement, retry, 'never `disabled`: focus survives');
   retry.click(); assert.equal(s.requests.length, 2, 'a repeat activation while busy is ignored');
@@ -401,7 +404,8 @@ test('a panel that reports an error with no instances is a failed read, never "N
   await u.reply(0, panelOf('A', [], { error: 'Server is unreachable' }));
   assert.doesNotMatch(u.text(), /No instances/); assert.equal(u.context.rosterState.state, 'failed');
   assert.equal(u.list().querySelector('.loading-failed-message').textContent, 'Server is unreachable'); assert.ok(u.list().querySelector('.loading-retry'));
-  assert.ok(u.count().querySelector('.skeleton-pill'), 'the count stays a pill'); assert.equal(u.live().textContent, "Couldn't refresh instances. Server is unreachable");
+  assert.equal(u.count().querySelector('.skeleton-pill'), null, 'failed: no shimmering pill says "still loading"'); assert.ok(u.count().querySelector('.ctx-count-reserve'), 'the box stays reserved, empty and still');
+  assert.doesNotMatch(u.count().textContent, /running/); assert.equal(u.live().textContent, "Couldn't refresh instances. Server is unreachable");
   // Data lands, then the same failed reply: rows kept and stale, the error on the stale line.
   void u.refreshContextRoster(); await u.reply(1, panelOf('A', roster));
   assert.deepEqual(u.names(), ['alpha', 'gamma', 'beta']); assert.equal(u.context.rosterState.state, 'ready');
