@@ -167,6 +167,8 @@ export function createTerminalTab({ desk, term, tmux, remote, serverLabel, wrap,
       wired = true;
       subscriptions.push(term.onData(data => write(data)));
       term.attachCustomKeyEventHandler?.(event => {
+        // While the reconnect strip shows, input is inert: Tab moves focus on to Reconnect now.
+        if (stripEl && event.key === 'Tab' && !event.ctrlKey && !event.altKey && !event.metaKey) return false;
         const { handled, byte } = terminalKeyDecision(event, interceptKey);
         if (!handled) return true;
         if (byte !== null) write(byte);

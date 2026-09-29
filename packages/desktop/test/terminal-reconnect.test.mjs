@@ -43,7 +43,7 @@ function rig({ opens = [1], local = false, ownsFocus = () => true, termReady } =
   doc.body.append(wrap);
   doc.getElementById("elsewhere").focus();
   const clock = fakeClock(), log = [], openedAt = [], exits = new Map(), queue = [...opens];
-  let input;
+  let input, keys;
   const desk = {
     termOpen: async spec => {
       log.push("open"); openedAt.push(clock.now());
@@ -66,6 +66,7 @@ function rig({ opens = [1], local = false, ownsFocus = () => true, termReady } =
     focus: () => log.push("focus"),
     dispose: () => log.push("term.dispose"),
     write: () => {},
+    attachCustomKeyEventHandler: handler => { keys = handler; },
   };
   const tab = createTerminalTab({
     desk, term, wrap, clock, ownsFocus, isActive: () => true, fit: () => {}, observe: () => () => {},
@@ -75,6 +76,7 @@ function rig({ opens = [1], local = false, ownsFocus = () => true, termReady } =
     cleanupPending: false, exitCode: 255, reason: null, ...extra });
   return {
     doc, wrap, clock, log, openedAt, tab, term, exit, type: data => input(data),
+    key: event => keys({ type: "keydown", ctrlKey: false, altKey: false, metaKey: false, shiftKey: false, ...event }),
     opens: () => log.filter(v => v === "open").length,
     strip: () => wrap.querySelector(".term-reconnect"),
     stripText: () => wrap.querySelector(".term-reconnect-text")?.textContent,
@@ -280,4 +282,19 @@ test("a user close before the link's exit arrives never reconnects", async () =>
   await r.clock.advance(120000);
   assert.equal(r.opens(), 1);
   assert.equal(r.strip(), null);
+});
+
+test("while disconnected, Tab and Shift+Tab leave the inert terminal for Reconnect now; connected, Tab goes to the agent", async () => {
+  const r = rig({ opens: [1, 2] });
+  await r.tab.start();
+  assert.equal(r.key({ key: "Tab" }), true, "a connected terminal keeps Tab for the agent");
+  r.exit(1);
+  assert.equal(r.key({ key: "Tab" }), false, "xterm leaves Tab to the browser, which moves focus to Reconnect now");
+  assert.equal(r.key({ key: "Tab", shiftKey: true }), false);
+  assert.equal(r.key({ key: "Tab", ctrlKey: true }), true, "a chord is not focus navigation");
+  assert.ok(!r.log.some(v => v.startsWith("write")));
+  await r.clock.advance(1000);
+  assert.equal(r.strip(), null);
+  assert.equal(r.key({ key: "Tab" }), true, "reconnected: Tab goes to the agent again");
+  await r.tab.close();
 });

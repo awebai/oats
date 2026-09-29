@@ -124,7 +124,9 @@ codes the prepare's failures:
 The captured answers are in `test/fixtures/remote-inspect/`. The strip overlays
 the pane's top rows, so geometry never changes. The countdown is outside the
 pane's visually hidden `role="status"` region, which is written only on a state
-change.
+change. While the strip shows, the tab's key handler leaves Tab and Shift+Tab to
+the browser (xterm would otherwise keep them), so focus moves from the inert
+terminal to Reconnect now; connected, Tab goes to the agent as before.
 
 The main-only `rekey(resource,newOwner)` primitive rotates lease/index/output
 custody atomically and is exercised only by tests. **No escrow/staging, transfer
