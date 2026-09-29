@@ -1379,6 +1379,43 @@ restart, else `createdAt` for a launched home, else `null`. `modelFrom` is
 `"harness-default"`, or `null` for an older home. `identityAddress` is the
 messaging identity's `address` (else `alias`), or `null`.
 
+<a id="the-remote-roster-oats-server-roster---json"></a>
+### The remote roster (`oats server roster --json`)
+
+```text
+oats server roster [--server <id>] [--per-target <ms>] [--budget <ms>] --json
+```
+
+An envelope; `result` is `{groups, bounds}` (remote `roster`,
+[servers.md](servers.md#the-roster-and-harvest)). One group per server id and
+route target:
+
+```json
+{"id":"build:3f2a…","server":"build","label":"Build box","registrationPresent":true,
+ "target":{"sshHost":"build-host","workspace":"/srv/team","oatsPath":"oats"},
+ "probe":{"ok":true},"agentsRoot":"/srv/team/agents",
+ "souls":[{"name":"dev","harness":"claude","work":"worktree","agentsRoot":"/srv/team/agents"}],
+ "instances":[{"server":"build","instance":"dev-a","agent":"dev","home":"/srv/team/agents/dev/instances/dev-a",
+               "agentsRoot":"/srv/team/agents","harness":"claude","backend":"tmux","tmux":{"session":"oats-agents","window":"dev-a"},
+               "running":true,"identity":{"alias":"dev-a","address":"acme/dev-a"},"identityAddress":"acme/dev-a",
+               "teams":[{"label":"default","team":"acme:team"}],"startedAt":"2026-09-29T10:00:00.000Z","createdAt":"2026-09-29T09:58:12.004Z",
+               "model":"opus","runtimeState":null,"parentInstance":"lead","siblingInstance":null,"relation":"child","relativeTo":"lead",
+               "spawnOrigin":"instance","retirePending":false,"rollbackIncomplete":false,
+               "savedRoute":false,"missingRemotely":false}],
+ "retireFailures":[]}
+```
+
+- **Instance rows** relay the host's own `status --json` row: `identity`,
+  `identityAddress`, `teams`, `startedAt`, `createdAt`, `model`,
+  `runtimeState`, `parentInstance`, `siblingInstance`, `relation`,
+  `relativeTo` and `spawnOrigin` are always present, `null` when the host
+  does not supply them (a host before 0.32, a fact it never recorded, or a
+  saved route the host no longer lists). Nothing is derived on this side.
+- **`savedRoute`**: the instance was spawned from this machine and has a
+  saved route here.
+- `running` is `null` when unknown; `backend`, `tmux`, `sessionTarget` and
+  `runtimeError` are as the host reports them.
+
 <a id="instance-git-state-oats-instance-gitdiff-instancegitapi-1-oats-0247"></a>
 ## Git and diff
 
