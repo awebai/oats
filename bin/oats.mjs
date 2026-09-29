@@ -23,6 +23,7 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runtimeNameWarning, noteRuntimeName } from "../lib/deprecation.mjs";
+import { herdrSettingRemoved } from "../lib/errors.mjs";
 import {
   LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
@@ -258,7 +259,7 @@ const INSPECT_TEXT_CAP = 256 * 1024;
 /** The agents root a home belongs to, from its path alone:
  *  <root>/<agent>/instances/<instance>. */
 function agentsRootOfHome(home) { return dirname(dirname(dirname(home))); }
-const SOUL_FIELDS = ["harness", "model", "yolo", "backend", "description", "launch-config"];
+const SOUL_FIELDS = ["harness", "model", "yolo", "description", "launch-config"];
 const realOrResolved = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
 /** Every soul of a scope: the persistent souls of every agents root in
  *  scope, plus packaged souls (read-only). One enumeration for inspect and
@@ -348,7 +349,7 @@ function soulEntry(soul, root, { capability } = {}) {
     declarationProblems: declared.problems,
     name: soul.name, kind: packaged ? "capability" : (soul.kind || "persistent"), capability: capability || null,
     type: soul.type ?? null, description: soul.description ?? null, repo: soul.repo ?? null, work: soul.work || "checkout",
-    harness: soul.harness || "pi", model: soul.model ?? null, yolo: soul.yolo === true || soul.yolo === "true" ? true : soul.yolo === false || soul.yolo === "false" ? false : null, launchConfig: soul["launch-config"] ?? null, backend: soul.backend ?? null,
+    harness: soul.harness || "pi", model: soul.model ?? null, yolo: soul.yolo === true || soul.yolo === "true" ? true : soul.yolo === false || soul.yolo === "false" ? false : null, launchConfig: soul["launch-config"] ?? null,
     agentsRoot: root, dir: packaged ? soulDir : dir, soulFile: join(soulDir, "soul.yaml"), instructionsFile: join(soulDir, "AGENTS.md"),
     editable: packaged
       ? { fields: [], instructions: false, reason: `packaged soul from capability ${capability}: edit the package and update it; scoped bindings still apply through oats use` }
@@ -1809,7 +1810,7 @@ async function status() {
 /** The flags `oats spawn` reads: those taking a value, and switches. `--provider` takes two words.
  *  `--instance` is refused by a local spawn (with its replacement) but still travels to an older
  *  host through `--server`, whose route reads it. */
-const SPAWN_VALUE_FLAGS = new Set(["agents-root", "backend", "base", "branch", "dir", "expect-decision", "harness", "herdr-socket", "idempotency-key", "instance", "launch-config", "model", "name", "parent", "purpose", "relation", "relative-root", "relative-to", "repo", "runtime", "task", "task-file", "trigger-event", "wake-cron", "wake-every", "wake-file", "wake-json", "wake-message", "wake-message-file", "wake-tz", "work", "work-dir"]);
+const SPAWN_VALUE_FLAGS = new Set(["agents-root", "backend", "base", "branch", "dir", "expect-decision", "harness", "idempotency-key", "instance", "launch-config", "model", "name", "parent", "purpose", "relation", "relative-root", "relative-to", "repo", "runtime", "task", "task-file", "trigger-event", "wake-cron", "wake-every", "wake-file", "wake-json", "wake-message", "wake-message-file", "wake-tz", "work", "work-dir"]);
 const SPAWN_SWITCHES = new Set(["allow-child-spawns", "json", "no-child-spawns", "no-launch", "no-yolo", "preview", "yolo"]);
 /** Why `argv` (after `spawn`, the soul first) is not a spawn, or undefined: a positional after the
  *  soul or a flag spawn does not read is never ignored. A value flag consumes its value exactly as
@@ -1831,13 +1832,20 @@ function spawnArgvProblem(argv) {
   }
   return undefined;
 }
+/** The Herdr spawn flags (removed in 0.31.0), named for the refusal; undefined when none is given. */
+function herdrSpawnFlag() {
+  if (flag("backend") === "herdr") return "--backend herdr";
+  if (flag("herdr-socket") !== undefined) return "--herdr-socket";
+  return undefined;
+}
 async function spawnCmd() {
   // JSON mode: contract envelope, stable error codes, stderr-only progress.
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   const note = (msg) => (JSON_MODE ? console.error(msg) : console.log(msg));
   const yolo = yoloFlag();
-  const backend = valueFlag("backend"), herdrSocket = valueFlag("herdr-socket");
-  if (backend !== undefined && !["tmux", "herdr"].includes(backend)) bail("E_BAD_ARGS", "--backend must be tmux or herdr");
+  { const herdr = herdrSpawnFlag(); if (herdr) { const e = herdrSettingRemoved(`${herdr} was given`); bail(e.code, e.message); } }
+  const backend = valueFlag("backend");
+  if (backend !== undefined && backend !== "tmux") bail("E_BAD_ARGS", "--backend must be tmux");
   const requestedWork = valueFlag("work");
   const workDir = valueFlag("work-dir"), branch = valueFlag("branch"), repo = valueFlag("repo");
   const checkDirectoryOptions = (work) => {
@@ -1845,7 +1853,7 @@ async function spawnCmd() {
   };
   checkDirectoryOptions(requestedWork); // before anything is resolved or written
   const name = args[1];
-  if (!name || name.startsWith("--")) bail("E_USAGE", "usage: oats spawn <agent> [--task <text>|--task-file <f>] [--purpose <slug>|--name <slug>] [--preview] [--base <ref>] [--model <id>|@native-default] [--allow-child-spawns|--no-child-spawns] [--relation child|sibling|parent|unrelated --relative-to <instance> [--relative-root <agents-root>]] [--parent <instance>] [--repo <r>] [--work worktree|checkout|attached|workspace|directory] [--work-dir <owner-work>] [--harness pi|claude|codex] [--backend tmux|herdr] [--herdr-socket <path>] [--yolo|--no-yolo] [--model <m>] [--branch <b>] [--no-launch] [--json]");
+  if (!name || name.startsWith("--")) bail("E_USAGE", "usage: oats spawn <agent> [--task <text>|--task-file <f>] [--purpose <slug>|--name <slug>] [--preview] [--base <ref>] [--model <id>|@native-default] [--allow-child-spawns|--no-child-spawns] [--relation child|sibling|parent|unrelated --relative-to <instance> [--relative-root <agents-root>]] [--parent <instance>] [--repo <r>] [--work worktree|checkout|attached|workspace|directory] [--work-dir <owner-work>] [--harness pi|claude|codex] [--backend tmux] [--yolo|--no-yolo] [--model <m>] [--branch <b>] [--no-launch] [--json]");
   // Retired boundary flags (maintainer transport ruling): fail LOUDLY before
   // ANY side effect, including root discovery.
   // Local souls (local-agents/) are gone with the workspace model: a soul is a member
@@ -2039,7 +2047,7 @@ async function spawnCmd() {
       // An attached instance's repository is its work tree owner's (derived by the kernel).
       repo: preparedRepo !== undefined ? preparedRepo : ["directory", "attached"].includes(requestedWork || agent.work)
         ? repo : repo || defaultRepo(workspaceOf(root)) || defaultRepo(process.cwd()),
-      work: requestedWork, workDir, harness: harnessFlag(), backend, herdrSocket, yolo, model: flag("model"), branch,
+      work: requestedWork, workDir, harness: harnessFlag(), backend, yolo, model: flag("model"), branch,
       launchConfig: valueFlag("launch-config"),
       launch: !args.includes("--no-launch"),
       ...(triggerEvent ? { triggerEvent } : {}),
@@ -2110,7 +2118,6 @@ async function spawnCmd() {
       model: r.model || null, parent: r.parentInstance || null,
       sibling: r.siblingInstance || null, relation: r.relation || null,
       spawnOrigin: r.spawnOrigin, attach: r.attach,
-      ...(r.sessionTarget ? { sessionTarget: r.sessionTarget } : {}),
       ...(r.yolo !== undefined ? { yolo: r.yolo } : {}),
       // K6b/K6c: what bound this spawn, and whether this receipt is a replay of an earlier one.
       ...(r.decision ? { decision: r.decision } : {}), ...(r.replayed !== undefined ? { replayed: r.replayed } : {}),
@@ -2119,7 +2126,7 @@ async function spawnCmd() {
     });
     return;
   }
-  console.log(`Spawned ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch}` : ""})${r.launched ? r.sessionTarget ? ` — Herdr pane "${r.sessionTarget.paneId}"` : ` — tmux window "${r.tmux.window}"` : " — not launched"}`);
+  console.log(`Spawned ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch}` : ""})${r.launched ? ` — tmux window "${r.tmux.window}"` : " — not launched"}`);
   console.log(`  home:   ${shortPath(r.home)}`);
   if (wakeSchedule) console.log(`  wake:   schedule ${wakeSchedule.id} (${wakeSchedule.cron} ${wakeSchedule.tz}), next ${wakeSchedule.nextRun || "disabled"}`);
   if (wakeScheduleError) console.error(`  wake:   NOT saved — ${wakeScheduleError.message} (the instance is created and launched; add the wake by hand with oats schedule add)`);
@@ -2852,7 +2859,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-2", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2 }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-2", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2 }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -2898,7 +2905,7 @@ async function experimentalCmd() {
 function serverCmd() {
   const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
   const sub = args[1];
-  const usage = "usage: oats server add <id> --ssh <host-alias> --workspace </abs/path> [--oats <path>] [--herdr <path>] [--path <dir:dir>] [--label <text>] [--replace] | list | remove <id> | check <id> | roster [--server <id>] | forget <id> --instance <name>  [--json]";
+  const usage = "usage: oats server add <id> --ssh <host-alias> --workspace </abs/path> [--oats <path>] [--path <dir:dir>] [--label <text>] [--replace] | list | remove <id> | check <id> | roster [--server <id>] | forget <id> --instance <name>  [--json]";
   if (!["add", "list", "remove", "check", "roster", "forget"].includes(sub)) bail("E_USAGE", usage);
   if (sub === "forget") {
     // A saved route whose remote instance is gone can be dropped only by
@@ -2939,15 +2946,16 @@ function serverCmd() {
     const rows = Object.entries(servers).map(([id, s]) => ({ id, ...s, target: targetOf({ id, ...s }), snapshots: listSnapshots(id).length }));
     if (JSON_MODE) { jsonOk({ file: SERVERS_FILE(), servers: rows }); return; }
     if (!rows.length) { console.log(`no servers registered (${shortPath(SERVERS_FILE())}) — add one with \`oats server add <id> --ssh <alias> --workspace </path>\``); return; }
-    for (const r of rows) console.log(`  ${r.id}${r.label ? `  ${r.label}` : ""}\n      ssh ${r.sshHost}  workspace ${r.workspace}  oats ${r.target.oatsPath}${r.target.herdrPath ? `  herdr ${r.target.herdrPath}` : ""}${r.snapshots ? `  (${r.snapshots} remote instance${r.snapshots === 1 ? "" : "s"} spawned from here)` : ""}`);
+    for (const r of rows) console.log(`  ${r.id}${r.label ? `  ${r.label}` : ""}\n      ssh ${r.sshHost}  workspace ${r.workspace}  oats ${r.target.oatsPath}${r.snapshots ? `  (${r.snapshots} remote instance${r.snapshots === 1 ? "" : "s"} spawned from here)` : ""}`);
     return;
   }
   const id = args[2];
   if (!id || id.startsWith("--")) bail("E_USAGE", usage);
   if (sub === "add") {
     const val = (name) => { const v = flag(name); return v === true ? bail("E_BAD_ARGS", `--${name} needs a value`) : v; };
+    if (flag("herdr") !== undefined) { const e = herdrSettingRemoved("server add --herdr was given"); bail(e.code, e.message); }
     const entry = { sshHost: val("ssh"), workspace: val("workspace") };
-    for (const [k, f] of [["oatsPath", "oats"], ["herdrPath", "herdr"], ["path", "path"], ["label", "label"]]) { const v = val(f); if (v !== undefined) entry[k] = v; }
+    for (const [k, f] of [["oatsPath", "oats"], ["path", "path"], ["label", "label"]]) { const v = val(f); if (v !== undefined) entry[k] = v; }
     if (!entry.sshHost || !entry.workspace) bail("E_USAGE", usage);
     try { validateServer(id, entry); } catch (e) { bail(e.code, e.message); }
     if (servers[id] && !args.includes("--replace")) bail("E_SERVER_EXISTS", `server ${id} is already registered (pass --replace to overwrite; existing remote instances keep the route they were spawned with)`);
@@ -3122,6 +3130,8 @@ async function serverRouteCmd() {
   }
   // A spawn's argv is checked here, before the server is contacted.
   if (cmd === "spawn") {
+    const herdr = herdrSpawnFlag();
+    if (herdr) { const e = herdrSettingRemoved(`${herdr} was given`); bail(e.code, e.message); }
     const local = args.slice(1).filter((a, i, all) => a !== "--server" && all[i - 1] !== "--server");
     const problem = spawnArgvProblem(local);
     if (problem) bail("E_BAD_ARGS", problem);
@@ -3418,14 +3428,14 @@ Usage:
       [--model <m>] [--json]                 (same identity, worktree, notes and launch env; no
                                             spawn hooks); --model replaces the recorded model
                                             for this and later starts; a live harness is refused
-  oats spawn <agent> [--task <text> | --task-file <f>]  spawn an instance (tmux/Herdr; --no-launch
+  oats spawn <agent> [--task <text> | --task-file <f>]  spawn an instance (tmux; --no-launch
       [--purpose <slug>] [--repo <r>]       = scaffold only); the agent is a workspace
       [--parent <instance>]                 soul or a capability-defined agent
       [--relation child|sibling|parent|unrelated]    --relation + --relative-to anchor the
       [--relative-to <instance>]            new instance to an existing one; --parent X
       [--relative-root <agents-root>]       disambiguates same-named team anchors
       [--work worktree|checkout|attached|workspace|directory]  = sugar for --relative-to X --relation
-      [--work-dir <owner-work>] [--harness pi|claude|codex] [--backend tmux|herdr] [--herdr-socket <path>] [--yolo|--no-yolo] [--model <m>] [--branch <b>]  child (default: unrelated, top-level)
+      [--work-dir <owner-work>] [--harness pi|claude|codex] [--backend tmux] [--yolo|--no-yolo] [--model <m>] [--branch <b>]  child (default: unrelated, top-level)
       [--no-launch] [--json]                 without --launch-config/--harness the launch is the
                                             soul's preference: oats-local.yaml souls.launch.<soul>,
                                             then souls.launch."*", then the soul's launch:, then pi

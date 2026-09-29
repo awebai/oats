@@ -6,7 +6,6 @@ import { dirname, join } from "node:path";
 import { startInstanceSession, restartInstanceSession } from "../lib/core.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
-import { HERDR_PROTOCOL } from "../lib/herdr.mjs";
 import { nativeHistoryPath, historicalSessionRoots } from "../packages/record/lib/native-history.mjs";
 import { sessionsForHome } from "../packages/record/lib/sessions-for-home.mjs";
 
@@ -186,7 +185,7 @@ if(a.includes('display-message')) console.log(${JSON.stringify(join(f.base,'fake
 }
 
 // Both entry points, every backend route, and both places a root can change.
-for (const restart of [false, true]) for (const backend of ['new-tmux', 'saved-tmux', 'herdr', 'pending']) {
+for (const restart of [false, true]) for (const backend of ['new-tmux', 'saved-tmux', 'pending']) {
   for (const attack of ['missing', 'file', 'directory', 'home-link', 'mode-edit', 'hook-work-link', 'hook-home-link']) {
     if (backend === 'pending' && attack.startsWith('hook-')) continue; // adoption observes the earlier launch, it does not prepare a new one
     test(`${restart ? 'restart' : 'start'} custody: ${backend} ${attack}`, async t => {
@@ -205,13 +204,10 @@ for (const restart of [false, true]) for (const backend of ['new-tmux', 'saved-t
       const baseDir = join(dirname(r.home), '.oats-retirement', 'baselines');
       const baselinePath = join(baseDir, readdirSync(baseDir)[0]);
       const baseline = readJson(baselinePath);
-      const target = backend === 'herdr'
-        ? { backend:'herdr', binary:'/inert/herdr', socket:join(f.base,'herdr.sock'), protocol:HERDR_PROTOCOL, workspaceId:'w', paneId:'p', terminalId:'t' }
-        : { backend:'tmux', session:'fixture', window:meta.instance, socket:join(f.base,'tmux.sock') };
+      const target = { backend:'tmux', session:'fixture', window:meta.instance, socket:join(f.base,'tmux.sock') };
       if (backend !== 'new-tmux') {
         meta.launched = true;
-        if (backend === 'herdr') { delete meta.tmux; meta.sessionTarget=target; baseline.runtime={launched:true,sessionTarget:target}; }
-        else { const {backend:_,...tmux}=target;meta.tmux=tmux;baseline.runtime={launched:true,tmux}; }
+        const {backend:_,...tmux}=target;meta.tmux=tmux;baseline.runtime={launched:true,tmux};
         write(metaPath, JSON.stringify(meta)); write(baselinePath, JSON.stringify(baseline));
       }
       if (backend === 'pending') write(join(r.home,'.oats-start-pending.json'),JSON.stringify({id:'earlier-start',target,command:meta.command,model:null,startedAt:'2026-09-13T00:00:00Z'}));
@@ -282,31 +278,3 @@ test('unexecuted dispatch stays pending; legacy recipes cannot certify historica
   assert.throws(()=>sessionsForHome(r.home),/earlier launches are unknown/);
 });
 
-test('Herdr execution records roots in its actual launch environment and keeps metadata recovery separate', async t => {
-  const f=fixture(t);emitter(f,'claude');symlinkSync('/bin/cat',join(f.base,'bin/cat'));
-  const r=await f.spawn('herdr-history');
-  const target={backend:'herdr',binary:'/inert/herdr',socket:join(f.base,'herdr.sock'),protocol:HERDR_PROTOCOL,workspaceId:'w0',paneId:'p0',terminalId:'t0'};
-  const metaPath=join(r.home,'instance.json'),meta=readJson(metaPath);delete meta.tmux;
-  write(metaPath,JSON.stringify({...meta,launched:true,backend:'herdr',sessionTarget:target}));
-  const baselines=join(dirname(r.home),'.oats-retirement/baselines'),baselinePath=join(baselines,readdirSync(baselines)[0]);
-  write(baselinePath,JSON.stringify({...readJson(baselinePath),runtime:{launched:true,sessionTarget:target}}));
-  const nativeRoot=join(f.base,'backend-native');
-  process.env.CLAUDE_CONFIG_DIR=join(f.base,'observer-empty');mkdirSync(join(process.env.CLAUDE_CONFIG_DIR,'projects'),{recursive:true});
-  let panes=[];
-  const io={exec:(bin,args,options)=>{
-    assert.equal(bin,target.binary);
-    let result;
-    if(args.join(' ')==='api snapshot') result={snapshot:{protocol:HERDR_PROTOCOL,panes,agents:[]}};
-    else if(args[0]==='workspace') {panes=[{pane_id:'p1',terminal_id:'t1',workspace_id:'w1'}];result={root_pane:panes[0]};}
-    else if(args[1]==='run') {
-      // Backend startup changed the inherited location. The observer and even
-      // the planner never saw it; the execution-side recorder must do so.
-      const run=spawnSync('/bin/sh',['-c',args[3]],{cwd:r.home,env:{...options.env,CLAUDE_CONFIG_DIR:nativeRoot},encoding:'utf8'});
-      assert.equal(run.status,0,run.stderr); result={};
-    } else assert.fail(args.join(' '));
-    return JSON.stringify({result});
-  }};
-  assert.throws(()=>startInstanceSession(r.home,{io:{...io,failBeforeMetadataWrite:true}}),e=>e.code==='E_SESSION_START_INCOMPLETE');
-  const sources=sessionsForHome(r.home);assert.equal(sources.length,1);assert.ok(sources[0].path.startsWith(nativeRoot));
-  assert.equal(readJson(metaPath).sessionTarget.paneId,'p0','metadata failure does not erase independent native custody');
-});
