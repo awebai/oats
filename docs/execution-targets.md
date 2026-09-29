@@ -64,6 +64,10 @@ id distinguishes a replacement occupant of the same pane.
   selected 20, so Herdr 0.9 could not be spawned on. A recorded target is
   never renegotiated: each call, the kernel's and the Desktop's, checks that
   the server's snapshot reports the recorded protocol.
+- Herdr cannot give a pane a command at creation, so OATS types the launch
+  command into the pane's shell. It waits until the shell has drawn its prompt
+  (`herdr pane read`, at most 10 s): text typed earlier is cut at the
+  terminal's line-buffer limit.
 
 ## Lifecycle
 

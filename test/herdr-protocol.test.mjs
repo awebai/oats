@@ -67,7 +67,7 @@ test("snapshot protocol must match the selected endpoint exactly, with no fallba
 });
 
 test("protocol22 reuses explicit allocation/run/input/stop and retains actual returned IDs", () => {
-  const calls = []; let present = true;
+  const calls = []; let present = true, reads = 0;
   const io = { strictHerdrTarget: true, exec(binary, args, options) {
     assert.equal(binary, "/inert/herdr"); assert.equal(options.env.HERDR_SOCKET_PATH, "/owned/herdr.sock");
     assert.equal(options.env.HERDR_SESSION, undefined);
@@ -79,6 +79,7 @@ test("protocol22 reuses explicit allocation/run/input/stop and retains actual re
       return JSON.stringify({ result: { type: "workspace_created", root_pane: pane } });
     }
     assert.equal(args[0], "pane"); assert.equal(args[2], pane.pane_id);
+    if (args[1] === "read") { assert.deepEqual(args, ["pane", "read", pane.pane_id, "--source", "visible"]); return reads++ < 2 ? "\n\n" : "➜ home \n"; }
     if (args[1] === "close") present = false;
     else assert.equal(args[1], "run");
     return "";
@@ -88,6 +89,7 @@ test("protocol22 reuses explicit allocation/run/input/stop and retains actual re
   assert.equal(validHerdrTarget(allocated), true);
   launchHerdr(allocated, "node ./entry.mjs", io);
   assert.deepEqual(calls.at(-1), ["pane", "run", pane.pane_id, "exec /bin/sh -c 'node ./entry.mjs'"]);
+  assert.deepEqual(calls.slice(-4, -1).map((c) => c[1]), ["read", "read", "read"], "the command is typed only once the shell has drawn its prompt");
   const text = "literal $(not-executed); next task";
   inputHerdr(allocated, text, io); assert.deepEqual(calls.at(-1), ["pane", "run", pane.pane_id, text]);
   stopHerdr(allocated, io); assert.equal(inspectHerdr(allocated, io).present, false);
@@ -158,4 +160,21 @@ test("the server-start path records the started server's protocol, and an unsupp
     if (saved === undefined) delete process.env.XDG_CONFIG_HOME; else process.env.XDG_CONFIG_HOME = saved;
     rmSync(xdg, { recursive: true, force: true });
   }
+});
+
+test("a launch waits for the new shell's prompt, bounded, and a Herdr that cannot read a pane types at once", () => {
+  const run = (read) => {
+    const calls = [];
+    const io = { shellReadyMs: 300, exec(binary, args) {
+      calls.push(args);
+      if (args[0] === "api") return JSON.stringify({ result: { snapshot: snapshot(22) } });
+      if (args[1] === "read") return read();
+      return "";
+    } };
+    launchHerdr(target(22), "long launch", io);
+    return calls.filter((c) => c[0] === "pane").map((c) => c[1]);
+  };
+  const silent = run(() => "   \n");
+  assert.ok(silent.length >= 3 && silent.at(-1) === "run" && silent.slice(0, -1).every((c) => c === "read"), "a shell that never draws is typed into after the bound");
+  assert.deepEqual(run(() => { throw Object.assign(new Error("unknown subcommand"), { status: 2 }); }), ["read", "run"]);
 });
