@@ -71,7 +71,9 @@ export async function capabilityRequest(request, { workspace, cli, agents = [], 
   } else if (cache) {
     // A remote workspace has no state key and no invalidation signal here: its inspections are shared
     // between concurrent requests but never served from an earlier visit (store: false).
-    const live = refresh || !(Array.isArray(cli.features) && cli.features.includes(OBSERVE_MAX_AGE_FEATURE)); // no feature: every read is live
+    // Live (observes the remotes afresh): a refresh, a routed inspect (reuse is local only, so it never carries
+    // --max-age), or any read on a kernel without the feature. A refresh joins only a live flight.
+    const live = refresh || !!server || !(Array.isArray(cli.features) && cli.features.includes(OBSERVE_MAX_AGE_FEATURE));
     ({ envelope, observedAt, refreshing } = await cache.read(key, { deployment: workspace.scope, refresh, produce: call, store: !server, live }));
   } else {
     envelope = await call();

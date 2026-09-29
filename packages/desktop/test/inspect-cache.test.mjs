@@ -230,6 +230,11 @@ test('capabilityRequest on a REMOTE workspace: concurrent identical inspects sha
   assert.equal(b.cache.size(), 0, 'a remote inspection is never held: this machine gets no invalidation signal for that host');
   const again = await b.inspect(selector, {}, override);
   assert.equal(b.calls.length, 2, 'the next visit is live'); assert.equal(again.refreshing, false);
+  // A routed inspect never carries --max-age, so it IS live: a refresh during one joins it instead of a second routed run.
+  b.hold();
+  const visit = b.inspect(selector, {}, override), forced = b.inspect(selector, { refresh: true }, override);
+  await tick(); assert.equal(b.calls.length, 3, 'one routed run for the visit and the refresh');
+  b.release(); await Promise.all([visit, forced]);
   for (const options of b.calls) { assert.equal(options.server, 'hetzner'); assert.equal(Object.hasOwn(options, 'maxAge'), false, 'reuse is local only'); }
 });
 
