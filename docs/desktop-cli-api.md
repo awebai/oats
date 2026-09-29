@@ -36,7 +36,8 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
              "instance-git-remote","souls-declarations","lifecycle-plans","retire-retention","readiness","spawn-preview","instance-events",
              "instance-events-2","schedule-history","schedule-read-2","spawn-preview-2","spawn-idempotency","spawn-idempotency-2","spawn-apply-2",
              "workspace-v2","instance-modules","spawn-provider-payload","served-identity","packages-no-approval","spawn-name","settings-origins",
-             "team-model-2","settings-declared","capabilities-private","layers-from","harness","package-souls","triggers","automations","desktop-facts","launch-preference"],
+             "team-model-2","settings-declared","capabilities-private","layers-from","harness","package-souls","triggers","automations","desktop-facts","launch-preference",
+             "preview-composed-from"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2}
 ```
@@ -88,6 +89,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
 | `automations` | workspace triggers and schedules; `oats automations refresh` | `automationsApi: 1` |
 | `desktop-facts` | the facts under [Desktop facts](#desktop-facts-feature-desktop-facts-oats-0290) | |
 | `launch-preference` | soul and local launch preferences; `launch`, `launchCurrent`, `launchFrom`; `--reselect-launch`; `key` on soul and agent rows ([Launch preferences](#soul-launch-preferences-feature-launch-preference-oats-0300)) | |
+| `preview-composed-from` | `composedFrom` on preview `modules[]` ([Composition](#the-preview)) | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -1073,9 +1075,9 @@ it to a temporary copy (`soulFetched: true`).
 ```json
 {"modules":[
    {"name":"nw-tools","from":{"kind":"member","repoKey":"github.com/nw/agents","commit":"66566512…"},"layer":null,"private":false,"declares":[],
-    "changedSince":{"instance":"rm-2","was":"45b86f64…"}},
+    "changedSince":{"instance":"rm-2","was":"45b86f64…"},"composedFrom":"soul"},
    {"name":"oats.okf","from":{"kind":"package","package":"oats.okf","version":"2.1.3","commit":"ab897841…","integrity":"sha256-bada35…","repoKey":"github.com/awebai/oats-okf"},
-    "layer":"knowledge","private":false,"declares":["state-dir"],"changedSince":false}],
+    "layer":"knowledge","private":false,"declares":["state-dir"],"changedSince":false,"composedFrom":"workspace"}],
  "teams":[{"label":"eng","team":"eng:nw.aweb.ai","default":true,"from":"shared"}],
  "defaultTeam":{"label":"eng","team":"eng:nw.aweb.ai","from":"soul"},
  "resolution":"abacbdb5a7975098d77007c8","declRevision":"068a0d3f1311a9e84e9aff2e","payloadRevision":"81a368006c610194aa35dbe0",
@@ -1124,9 +1126,18 @@ it to a temporary copy (`soulFetched: true`).
 
 **Composition.**
 - `modules[]` (feature `instance-modules`): `{name, from, layer, private,
-  declares, changedSince}`; `from` is what `instance.json` will record.
-  `changedSince` is `null` (no previous instance), `false` (unchanged since the
-  newest one) or `{instance, was}`.
+  declares, changedSince, composedFrom}`; `from` is what `instance.json` will
+  record. `changedSince` is `null` (no previous instance), `false` (unchanged
+  since the newest one) or `{instance, was}`.
+- `composedFrom` (feature `preview-composed-from`, OATS 0.30.2): why the
+  module is there — `"soul"` (the soul declares it, including a soul entry
+  that overrides a workspace default of the same name, a package soul's
+  `from: here`, and every module of a standalone view) or `"workspace"` (a
+  `defaults.<slot>` or `defaults.capabilities` entry). It is the same value
+  `oats inspect --soul` reports as `capabilities[].composedFrom`. It is
+  provenance only: it never enters `resolution`, `declRevision`,
+  `payloadRevision` or `decision.revision`, and `instance.json` does not
+  record it. `from` says where the bytes come from.
 - `capabilities[]` (`{name, origin}`, `origin` `package:<id>@<v>` or
   `member:<repoKey>@<commit>`) and `skills[]` (the soul's own skills as
   strings, module skills as `{name, source: "module:<cap>"}`) are display

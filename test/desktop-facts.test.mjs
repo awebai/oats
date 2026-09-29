@@ -188,3 +188,92 @@ test("feature desktop-facts is advertised", (t) => {
   const fx = v2Deployment(); t.after(fx.cleanup);
   assert.ok(JSON.parse(fx.cli(["version", "--json"]).stdout).features.includes("desktop-facts"));
 });
+
+// ---- Feature preview-composed-from (0.30.2): `oats spawn … --preview --json` says why each module is there —
+// modules[].composedFrom, "soul" | "workspace", the same resolution's capabilitiesFrom. Provenance only:
+// no fingerprint moves with it.
+
+/** A workspace that gives dev a capability from each place: the soul's own (acme.own), a slot default
+ *  (messaging: chat), defaults.capabilities (acme.ws), and a package default the soul overrides with its
+ *  own member capability of the same name (acme-tool: workspace `from: package`, soul `from: here`).
+ *  The package's soul keeper declares acme-tool `from: here` (its package). */
+function origins(t) {
+  const pkg = packageRepo(); t.after(pkg.cleanup);
+  const fx = v2Deployment({
+    souls: { dev: { soul: { capabilities: { "acme.own": { from: "here" }, "acme-tool": { from: "here" } } } } },
+    capabilities: { "acme.own": { manifest: {} }, "acme.ws": { manifest: {} }, "acme-tool": { manifest: {} }, chat: { manifest: { layer: "messaging" } } },
+  });
+  t.after(fx.cleanup);
+  fx.commit({ "oats-workspace.yaml": { yaml: { schemaVersion: 2, name: "fixture", members: [fx.ref], teams: { global: { description: "Fixture team" } },
+    packages: { "acme.pkg": `${pkg.ref}@v1.0.0` },
+    defaults: { knowledge: "none", messaging: { chat: { from: fx.key } }, tasks: "none",
+      capabilities: { "acme.ws": { from: fx.key }, "acme-tool": { from: "package" } } } } } }, "origins");
+  assert.equal(fx.cli(["sync", "--json"]).status, 0);
+  return fx;
+}
+const composedFromOf = (preview) => Object.fromEntries(preview.modules.map((m) => [m.name, m.composedFrom]));
+
+test("preview-composed-from: every modules[] row says why it is there — the soul, or the workspace defaults (a slot default, defaults.capabilities)", (t) => {
+  const fx = origins(t);
+  const preview = ok(fx.cli(["spawn", "dev", "--preview", "--json"]));
+  assert.deepEqual(composedFromOf(preview), { "acme-tool": "soul", "acme.own": "soul", "acme.ws": "workspace", chat: "workspace" });
+  const tool = preview.modules.find((m) => m.name === "acme-tool");
+  assert.equal(tool.from.kind, "member", "the soul's entry overrode the workspace's package default of the same name: its own `from` won, and so did its origin");
+  // Agreement: the preview says what inspect --soul says, capability by capability.
+  const inspect = ok(fx.cli(["inspect", "--soul", "dev", "--json"]));
+  assert.deepEqual(composedFromOf(preview), Object.fromEntries(inspect.capabilities.map((c) => [c.id, c.composedFrom])));
+});
+
+test("preview-composed-from: a package soul's own `from: here` capability is the soul's", (t) => {
+  const fx = origins(t);
+  const preview = ok(fx.cli(["spawn", "acme.pkg/keeper", "--preview", "--json"]));
+  assert.deepEqual(composedFromOf(preview), { "acme-tool": "soul", "acme.ws": "workspace", chat: "workspace" });
+  assert.deepEqual(preview.modules.find((m) => m.name === "acme-tool").from.kind, "package", "keeper's `from: here` is its package");
+});
+
+test("preview-composed-from: the same decision under two origins — a module's origin moves composedFrom and no fingerprint (positive control)", async (t) => {
+  // One capability at one source, reached two ways: declared by the soul (over a workspace default of the same
+  // capability at the same source), and, in a copy of the same discovery whose soul entry drops that
+  // declaration (same soul, same commit), through defaults.capabilities alone. Everything else is identical.
+  const fx = v2Deployment({
+    souls: { dev: { soul: { capabilities: { "acme.x": { from: "here" } } } } },
+    capabilities: { "acme.x": { manifest: {} } },
+  });
+  t.after(fx.cleanup);
+  fx.commit({ "oats-workspace.yaml": { yaml: { schemaVersion: 2, name: "fixture", members: [fx.ref], teams: { global: { description: "Fixture team" } },
+    defaults: { knowledge: "none", messaging: "none", tasks: "none", capabilities: { "acme.x": { from: fx.key } } } } } }, "acme.x by default");
+  assert.equal(fx.cli(["sync", "--json"]).status, 0);
+  const saved = process.env.PATH; process.env.PATH = fx.env.PATH; t.after(() => { process.env.PATH = saved; });
+  const { prepareInstance, ensureWorkspaceSoul, modulesPreview, toCapabilityRows } = await import("../lib/instance-resolution.mjs");
+  const { findAgent, spawnInstanceAsync } = await import("../lib/core.mjs");
+  // The CLI's own wiring of a prepared spawn (bin/oats.mjs): `preview` is the preview's modules[], the rest the apply's rows.
+  // In-process, because only here can the soul's declaration change while its commit (fingerprinted) does not.
+  const prepare = (discovery) => fx.inEnv(async () => {
+    const prepared = await prepareInstance(fx.dep, "dev", { remoteOptions: fx.remoteOptions, ...(discovery ? { discovery } : {}) });
+    await ensureWorkspaceSoul(prepared, fx.root);
+    return Object.assign(prepared, { capabilityRows: [], preview: modulesPreview(prepared.resolution, fx.root, "dev"), toCapabilityRows });
+  });
+  const bySoul = await prepare();
+  const discovery = structuredClone(bySoul.discovery);
+  const entry = discovery.members.flatMap((m) => m.souls).find((s) => s.name === "dev");
+  delete entry.definition.capabilities["acme.x"];
+  const byWorkspace = await prepare(discovery);
+  assert.equal(byWorkspace.soulEntry.commit, bySoul.soulEntry.commit, "the same soul at the same commit");
+  const opts = (prepared, extra = {}) => ({ prepared, purpose: "x", work: "directory", repo: fx.dep, launch: false, ...extra });
+  const spawn = (prepared, extra) => fx.inEnv(() => spawnInstanceAsync(fx.root, findAgent(fx.root, "dev"), opts(prepared, extra)));
+  const a = await spawn(bySoul, { preview: true }), b = await spawn(byWorkspace, { preview: true });
+  assert.deepEqual([composedFromOf(a), composedFromOf(b)], [{ "acme.x": "soul" }, { "acme.x": "workspace" }]);
+  const strip = (p) => p.modules.map(({ composedFrom, ...rest }) => rest);
+  assert.deepEqual(strip(a), strip(b), "the rows differ only in composedFrom");
+  for (const k of ["resolution", "declRevision", "payloadRevision", "decision"]) assert.deepEqual(a[k], b[k], `${k} is the same`);
+  // The decision previewed with one origin binds the apply with the other: `expectDecision` is what
+  // --expect-decision hands spawnInstanceAsync, the same E_DECISION_STALE check.
+  const applied = await spawn(byWorkspace, { expectDecision: a.decision.revision });
+  assert.equal(applied.instance, a.decision.instance);
+});
+
+test("feature preview-composed-from is advertised, after launch-preference", (t) => {
+  const fx = v2Deployment(); t.after(fx.cleanup);
+  const { features } = JSON.parse(fx.cli(["version", "--json"]).stdout);
+  assert.equal(features.indexOf("preview-composed-from"), features.indexOf("launch-preference") + 1);
+});
