@@ -177,7 +177,7 @@ test('a failed refresh with content goes stale: "Couldn\'t refresh soul · obser
   await u.reject(refusal('E_TIMEOUT', 'kernel: the inspection timed out'));
   const notice = u.q('.inspector-notice .loading-notice');
   assert.equal(head.nextElementSibling, notice.parentElement, 'right under the head');
-  assert.equal(notice.dataset.kind, 'stale'); assert.equal(notice.title, 'kernel: the inspection timed out');
+  assert.equal(notice.dataset.kind, 'stale'); assert.equal(notice.title, 'kernel: the inspection timed out (E_TIMEOUT)'); assert.equal(notice.querySelector('.loading-notice-cause').textContent, 'kernel: the inspection timed out (E_TIMEOUT)', 'the cause is reachable through Details');
   assert.equal(notice.querySelector('.loading-notice-text').textContent, "Couldn't refresh soul · observed 45s ago");
   const retry = notice.querySelector('.loading-retry'); assert.equal(retry.textContent, 'Retry');
   assert.deepEqual([...content.children], children, 'the content is kept'); assert.equal(content.hasAttribute('aria-busy'), false);

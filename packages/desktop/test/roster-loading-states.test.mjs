@@ -284,8 +284,8 @@ test('failure with data: rows kept, stale line with the observed age and Retry, 
   assert.equal(s.live().textContent, "Couldn't refresh instances.");
   assert.equal(s.count().title, 'Last observation — 2 running · 1 stopped'); assert.equal(s.count().textContent, '2 running');
   const start = s.list().querySelector('.ctx-start');
-  assert.equal(start.disabled, true); assert.equal(start.title, tree.ROSTER_STALE_TITLE);
-  for (const trigger of s.list().querySelectorAll('.ctx-instance-actions')) { assert.equal(trigger.disabled, true); assert.equal(trigger.title, tree.ROSTER_STALE_TITLE); }
+  assert.equal(start.disabled, true); assert.equal(start.title, tree.ROSTER_STALE_TITLE); assert.equal(start.getAttribute('aria-description'), 'Unavailable: roster is not current', 'an accessible reason, not just a greyed look');
+  for (const trigger of s.list().querySelectorAll('.ctx-instance-actions')) { assert.equal(trigger.disabled, true); assert.equal(trigger.title, tree.ROSTER_STALE_TITLE); assert.equal(trigger.getAttribute('aria-description'), tree.ROSTER_STALE_TITLE); }
   assert.equal(s.rows()[0].querySelector('.ctx-inst').disabled, false, 'opening the existing terminal stays possible');
   assert.equal(s.doc.activeElement.dataset.treeInstance, alpha.dataset.treeInstance, 'the focused row survives the stale repaint');
   // The age line keeps itself current.

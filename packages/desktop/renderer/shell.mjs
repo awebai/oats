@@ -52,7 +52,7 @@ import {
   collapseKey, hasInstanceChildren, instanceRepoLabel, treeConnectors, filterInstanceTree, instanceVisibleInTree,
   captureTreeRenderState, rosterResponseOwns, clusterSeparator, renderRosterCount,
   instanceId, rosterParentId, terminalKey, resolveTerminalOpen, visibleClusters,
-  createRosterLoading, rosterSignature, ROSTER_STALE_TITLE,
+  createRosterLoading, rosterSignature, markStaleControl,
 } from "./instance-tree.mjs";
 import {
   tabVisibleInContext, canActivateTab,
@@ -555,8 +555,8 @@ function renderContextRoster(instances) {
         if (i.running === false) {
           const start = document.createElement("button"); start.className = "act ctx-start";
           start.textContent = "Start…"; start.setAttribute("aria-label", `Start ${i.instance}`);
-          start.disabled = (!!i.server && !i.savedRoute) || rosterStale;
-          if (rosterStale) start.title = ROSTER_STALE_TITLE;
+          start.disabled = !!i.server && !i.savedRoute;
+          if (rosterStale) markStaleControl(start);
           start.addEventListener("click", () => openInstanceStart(i));
           tools.append(start);
         }
@@ -601,7 +601,7 @@ function renderContextRoster(instances) {
         // opening an existing terminal (the row itself) stays available.
         if (rosterStale) {
           const trigger = tools.querySelector(".ctx-instance-actions");
-          if (trigger) { trigger.disabled = true; trigger.title = ROSTER_STALE_TITLE; }
+          if (trigger) markStaleControl(trigger);
         }
         rowWrap.append(tools);
         listEl.append(rowWrap);

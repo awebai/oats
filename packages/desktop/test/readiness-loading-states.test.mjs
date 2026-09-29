@@ -113,7 +113,7 @@ test('failure with a value: stale line with the observed age and Retry under the
   u.one('.readiness-refresh').click(); u.gates[1].reject(Object.assign(Error(), { code: 'E_CLI_TIMEOUT' })); await tick();
   const notice = u.one('.readiness-notice .loading-notice[data-kind="stale"]');
   assert.ok(notice, 'the stale line'); assert.equal(notice.querySelector('.loading-notice-text').textContent, "Couldn't refresh readiness · observed 45s ago");
-  assert.equal(notice.title, readinessFailure('E_CLI_TIMEOUT').reason.message, 'the cause travels with the line');
+  assert.equal(notice.title, `${readinessFailure('E_CLI_TIMEOUT').reason.message} (E_CLI_TIMEOUT)`, 'the cause travels with the line'); assert.equal(notice.querySelector('.loading-notice-cause').textContent, notice.title, 'and is reachable through Details');
   assert.equal(notice.parentElement.previousElementSibling, u.summary(), 'under the status and summary, above the body');
   assert.equal(u.one('.readiness-checks'), checks, 'last data kept'); assert.match(u.summary().textContent, /1 failing/);
   assert.equal(u.status().textContent, "Couldn't refresh readiness."); assert.equal(u.section().hasAttribute('aria-busy'), false);

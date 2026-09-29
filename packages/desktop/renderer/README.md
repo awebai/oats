@@ -249,7 +249,7 @@ Every data region runs on one state model, owned by the controller
 | pending | no data for this subject yet | after 150ms a skeleton shaped like the final content; `aria-busy` on the region; the status line says "Loading <noun>…" once — never an empty-state message |
 | ready / empty | the last read succeeded | the content, or the surface's own empty copy after a successful zero read |
 | refreshing | data present, a read in flight | the content stays interactive; "Refreshing…" with a static dot after 400ms in the surface header; no `aria-busy`, no announcement |
-| stale | data present, the read failed | content kept; "Couldn't refresh <noun> · observed <age>" with **Retry** in the attention style; announced once; actions that need current state are disabled by the surface |
+| stale | data present, the read failed | content kept; "Couldn't refresh <noun> · observed <age>" with **Retry** in the attention style and the cause behind a **Details** disclosure (and in the line's title); announced once; actions that need current state are disabled by the surface, each with an accessible reason ("Unavailable: roster is not current") |
 | failed | no data, the read failed | the cause, a **Details** disclosure with the code and **Retry**, where the skeleton stood |
 
 The controller owns the two delays, `aria-busy`, the status-line text, the age

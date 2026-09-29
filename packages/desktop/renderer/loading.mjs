@@ -231,16 +231,26 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
     return wording.observed(observedAgeText(observedAt, now()));
   }
   function showNotice(kind, { cause = null } = {}) {
+    // `cause`: the read's message; code appended when the error carried one (set by fail()).
     if (!noticeHost) return;
     if (!noticeEl || noticeEl.dataset.kind !== kind) {
       removeNotice();
       noticeEl = element(doc, 'div', 'loading-notice'); noticeEl.dataset.kind = kind;
       noticeEl.append(element(doc, 'span', 'loading-notice-text'));
-      if (kind === 'stale') noticeEl.append(retryButton());
+      if (kind === 'stale') {
+        // The cause is reachable by keyboard and screen reader through a Details disclosure
+        // (a title alone is hover-only); the title is kept for the pointer.
+        const more = element(doc, 'details', 'loading-notice-details');
+        const summary = element(doc, 'summary', ''); summary.textContent = 'Details';
+        more.append(summary, element(doc, 'p', 'loading-notice-cause'));
+        noticeEl.append(retryButton(), more);
+      }
       noticeHost.append(noticeEl);
     }
     noticeEl.querySelector('.loading-notice-text').textContent = noticeText(kind);
     if (cause) noticeEl.title = cause; else noticeEl.removeAttribute('title');
+    const more = noticeEl.querySelector('.loading-notice-details');
+    if (more) { more.hidden = !cause; more.querySelector('.loading-notice-cause').textContent = cause || ''; }
     ageTimer = clearTimer(ageTimer);
     if (observedText(observedAt, now())) ageTimer = schedule(() => { ageTimer = null; touch(); }, AGE_TICK_MS);
   }
@@ -321,7 +331,9 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
       pendingTimer = clearTimer(pendingTimer); refreshingTimer = clearTimer(refreshingTimer);
       removeSkeleton(); removeIndicator();
       user = false; busy = false;
-      const cause = typeof error?.message === 'string' && error.message ? error.message : null;
+      const message = typeof error?.message === 'string' && error.message ? error.message : null;
+      const code = typeof error?.code === 'string' && error.code ? error.code : null;
+      const cause = message && code ? `${message} (${code})` : message || code;
       if (hasData) {
         state = settled = 'stale'; setRegionBusy(false);
         showNotice('stale', { cause });
@@ -329,7 +341,7 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
       } else {
         state = settled = 'failed'; setRegionBusy(false); removeNotice();
         showFailed(error);
-        say(cause ? `${wording.couldNotRefresh(noun)}. ${cause}` : `${wording.couldNotRefresh(noun)}.`);
+        say(message ? `${wording.couldNotRefresh(noun)}. ${message}` : `${wording.couldNotRefresh(noun)}.`);
       }
       setBusyControls();
     },

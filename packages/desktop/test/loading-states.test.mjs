@@ -122,10 +122,14 @@ test('stale: content kept, attention line with the observed age and Retry, actio
   const notice = u.head.querySelector('.loading-notice[data-kind="stale"]');
   assert.equal(notice.querySelector('.loading-notice-text').textContent, "Couldn't refresh instances · observed 45s ago");
   assert.equal(notice.title, 'kernel: E_TIMEOUT');
+  // The cause is reachable without a pointer: a Details disclosure under the line (the code joins it when known).
+  const more = notice.querySelector('details.loading-notice-details');
+  assert.equal(more.hidden, false); assert.equal(more.querySelector('summary').textContent, 'Details'); assert.equal(more.querySelector('.loading-notice-cause').textContent, 'kernel: E_TIMEOUT');
   assert.equal(notice.querySelector('button.loading-retry').textContent, 'Retry');
   assert.equal(u.status.textContent, "Couldn't refresh instances.");
-  u.status.textContent = 'sentinel'; u.ds.begin(); u.ds.fail(new Error('again'));
+  u.status.textContent = 'sentinel'; u.ds.begin(); u.ds.fail(Object.assign(new Error('again'), { code: 'E_X' }));
   assert.equal(u.status.textContent, 'sentinel', 'announced once, not on every failed poll');
+  assert.equal(notice.querySelector('.loading-notice-cause').textContent, 'again (E_X)', 'the disclosure follows the latest failure');
   assert.equal(u.all('.loading-notice').length, 1, 'the line is updated in place');
   // the age line follows the clock (AGE_TICK_MS) and touch().
   u.c.advance(AGE_TICK_MS); assert.equal(notice.querySelector('.loading-notice-text').textContent, "Couldn't refresh instances · observed 1 min ago");
