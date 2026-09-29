@@ -411,16 +411,24 @@ keyboard interceptor. No Stop/Remove, K6, editor/detach/PR or OS notification
 surface is introduced. Tests are inert DOM/CSSOM/ownership/contrast checks, not
 native rendered acceptance.
 
-## Context panel and focus mode
+## Instance panel (context panel) and focus mode
 
-The shell owns one right-side **Details** region outside all editor groups.
-A selected terminal shows reported Instance / Soul metadata. Its **Git & GitHub**
-tab uses the qualified K1 CLI read boundary for worktree/branch/changes and a
-bounded unified diff; the GitHub/PR card remains unavailable pending P1 (no
-inferred PRs or checks). Empty groups and file/brain tabs do not inherit another
-terminal's context. Roster refresh matches the exact
-workspace/terminal identity and never selects or focuses a panel; a missing or
-ambiguous observation makes session state unknown.
+The shell owns one right-side region outside all editor groups, the **instance
+panel** (`#context-panel`, `context-panel.mjs`). A selected terminal shows its
+instance in three tabs (v4.1 board 1): **Instance** (header with the soul mark,
+"instance of <soul>" linking to the Soul tab, an "older build" chip only when
+the kernel reports `soul.status`/`modules[].status` other than `current`, and
+"Running · 42m"; then Where it works, Session, Messaging, Lineage and the
+lifecycle footer), **Soul** and **Git & GitHub**. Where it works is one card: the
+work mode in plain words on a band, then Repo, Branch (Git modes only; ↑/↓
+appear once the Git tab has observed them) and Home (the instance home, the
+reported fact; the roster has no work-folder fact). Messaging's header is the
+label plus a tools slot the injected Teams section fills with its icon Refresh
+(`createTeamsPanel(…, { compact: true, refreshHost })`); the identity address
+(`identityAddress`, else the served identity) sits alone under it. Empty groups
+and file/brain tabs do not inherit another terminal's context. Roster refresh
+matches the exact workspace/terminal identity and never selects or focuses a
+panel; a missing or ambiguous observation makes session state unknown.
 
 Workspace projects its actual selected-soul inspector into that same region.
 Workspace still owns its requests and lifetime. Collapse or covering the
@@ -429,13 +437,20 @@ in-flight content; a late response cannot reclaim foreground visibility. True st
 or workspace reset ends that selection. Standalone view hosts keep the inline
 inspector fallback.
 
-**Details** collapses/restores the region. **Focus mode** hides the sidebar and
-right panel without closing tabs or changing split weights. Its footer control
-stays visible as an exit; exit restores the existing sidebar/panel preferences.
-Mod+F leaves focus mode to reveal the filter. Panel collapse and selected tab are
-session-local per workspace; focus mode is a temporary presentation override.
-Both actions are palette/editor-visible with no new default shortcuts. Native
-terminal input and per-window lifecycle policies are unchanged.
+There is no status bar under the editor groups. The editor tab bar's action
+cluster ends with a `panel-right` toggle (`#panel-toggle`, after the split
+controls): it runs `panel.toggle` (default **Mod+Alt+B**, not terminal-allowlisted,
+so Ctrl+Alt+B stays with the program in a Linux/Windows terminal), reports
+`aria-pressed` while the panel is expanded, names its chord in its tooltip (the
+panel owns that title, so the button carries no `data-action`) and is disabled with
+nothing to show or in focus mode. **Focus mode** (`app.focusMode`: palette and a
+rebindable action, no default chord) hides the sidebar and right panel without
+closing tabs or changing split weights; exit restores the existing sidebar/panel
+preferences. Focus that was in the hidden sidebar moves to the active tab's
+trigger (`fallbackFocus`); with no tab it stays put. Mod+F and Mod+B leave focus
+mode. Panel collapse and selected tab are session-local per workspace; focus mode
+is a temporary presentation override. Native terminal input and per-window
+lifecycle policies are unchanged.
 
 ### Git inspection (slice 2a)
 

@@ -18,9 +18,6 @@ export const instanceGitCSS = `
 .instance-git .git-head-aside:empty { display:none; }
 .instance-git .git-changes-section .git-link { margin-left:auto; }
 .instance-git button { font:inherit; color:var(--fg); cursor:pointer; }
-/* Focus (house style): the selection tint plus a 1px accent edge; pointer clicks draw nothing. */
-.instance-git button:focus-visible, .instance-git details > summary:focus-visible { outline:none; background:var(--sel); box-shadow:inset 0 0 0 1px var(--accent); }
-.instance-git button.git-link:focus-visible, .instance-git details > summary:focus-visible { border-radius:3px; }
 .instance-git button.git-link { height:auto; min-height:0; padding:0 2px; margin:0 -2px; border:0; background:transparent; color:var(--accent); font-size:12px; font-weight:600; letter-spacing:0; text-transform:none; }
 .instance-git button.git-link:hover:not(:disabled) { text-decoration:underline; }
 .instance-git button.git-link:disabled { color:var(--muted); cursor:default; text-decoration:none; }
@@ -48,7 +45,6 @@ export const instanceGitCSS = `
 .instance-git .git-files.git-card { overflow:hidden; }
 .instance-git button.git-file { display:flex; align-items:center; gap:9px; width:100%; min-height:32px; margin:0; padding:8px 12px; box-sizing:border-box; border:0; border-bottom:1px solid var(--border); border-radius:0; background:transparent; text-align:left; font:12px/1.35 var(--mono,monospace); }
 .instance-git button.git-file:last-child { border-bottom:0; }
-.instance-git button.git-file:focus-visible { border-radius:0; }
 .instance-git button.git-file:hover:not(:disabled):not([aria-pressed=true]) { background:var(--surface-2); }
 .instance-git button.git-file[aria-pressed=true] { background:var(--sel); color:var(--fg); }
 .instance-git button.git-file:disabled { color:var(--muted); cursor:default; }
@@ -115,7 +111,6 @@ export const instanceGitCSS = `
 .instance-git .forge-actions { display:flex; gap:8px; min-width:0; padding:0 12px 12px; }
 .instance-git .git-github button.forge-open.icon-only { flex:none; width:32px; padding:0; }
 .instance-git .git-github button.forge-send { flex:1; min-width:0; height:32px; padding:0 12px; border:1px solid var(--primary-bg); border-radius:7px; background:var(--primary-bg); color:var(--primary-fg); font-size:12.5px; font-weight:650; white-space:normal; line-height:1.2; }
-.instance-git .git-github button.forge-send:focus-visible { background:var(--primary-bg); box-shadow:inset 0 0 0 2px var(--accent); border-radius:7px; } /* the tint would put --primary-fg on --sel */
 .instance-git .git-github button.forge-send:disabled { border-color:var(--border); background:var(--surface-2); color:var(--muted); cursor:default; }
 .instance-git .git-github button.forge-cancel { height:32px; padding:0 14px; border-radius:7px; color:var(--fg); font-size:12.5px; font-weight:600; }
 .instance-git .forge-send-status { padding:0 12px 12px; }
@@ -126,7 +121,6 @@ export const instanceGitCSS = `
 .instance-git .forge-preview .forge-actions { padding:0; }
 .instance-git .forge-preview-lead { margin:0; color:var(--fg); font-size:12px; line-height:1.45; }
 .instance-git .forge-preview-text { max-height:260px; overflow:auto; padding:8px 10px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--fg); font:11.5px/1.5 var(--mono,monospace); white-space:pre-wrap; overflow-wrap:anywhere; }
-.instance-git .forge-preview-text:focus-visible { outline:none; background:var(--sel); box-shadow:inset 0 0 0 1px var(--accent); }
 .instance-git .forge-preview-seg { display:block; }
 .instance-git .forge-preview-seg + .forge-preview-seg { margin-top:4px; }
 `;

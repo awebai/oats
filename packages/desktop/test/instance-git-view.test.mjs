@@ -368,10 +368,9 @@ for (const code of ['E_GIT_FAILED', 'E_CLI_FAILED', 'E_CLI_PROTOCOL', 'cli-unava
   assert.equal(u.one('.git-footer').hidden, false, 'Refresh to retry');
 });
 
-test('the Git CSS uses semantic tokens only, and its focus style is the tint plus a 1px accent edge (no outline ring)', () => {
+test('the Git CSS uses semantic tokens only and leaves keyboard focus to the global rule (no per-component rings)', () => {
   assert.doesNotMatch(instanceGitCSS, /#[0-9a-f]{3,8}\b|color-mix|opacity/i);
-  assert.match(instanceGitCSS, /\.instance-git button:focus-visible[^{]*\{ outline:none; background:var\(--sel\); box-shadow:inset 0 0 0 1px var\(--accent\); \}/);
-  assert.doesNotMatch(instanceGitCSS, /outline:2px/);
+  assert.doesNotMatch(instanceGitCSS, /focus-visible|outline/);
   assert.match(instanceGitCSS, /\.git-dashed \{[^}]*border:1px dashed var\(--border\); border-radius:9px/);
   assert.match(instanceGitCSS, /\.git-card \{ border:1px solid var\(--border\); border-radius:9px; \}/);
   assert.match(instanceGitCSS, /\.forge-state \{[^}]*background:var\(--tag-bg\); color:var\(--fg\)/);

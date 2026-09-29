@@ -84,7 +84,7 @@ test('withheld instance rows and an unreachable workspace are reported with thei
   assert.match(notes[1], /1 instance row was withheld: .*\(rm-evil\)/);
 });
 
-test('the context panel instance page projects soul source, modules and served identity from the roster row', async () => {
+test('the context panel instance page projects kernel drift as the "older build" chip, and the served identity, from the roster row', async () => {
   const dom = new JSDOM('<!doctype html><html><body><aside id="context-panel"></aside></body></html>', { url: 'http://localhost' });
   const previous = { document: globalThis.document, window: globalThis.window };
   globalThis.document = dom.window.document; globalThis.window = dom.window;
@@ -94,9 +94,12 @@ test('the context panel instance page projects soul source, modules and served i
     const row = { ...instance(), identity: { mode: 'local', alias: 'dev-one', team: 'aweb:example' } };
     panel.setContext({ workspace: { id: context }, instance: row, key: row.home });
     const field = id => dom.window.document.querySelector(`[data-context-field="${id}"]`).textContent;
-    assert.equal(field('soulSource'), `repo: agents @ ${row.soul.commit.slice(0, 7)}`);
-    assert.equal(field('modules'), '5 current');
+    const chip = dom.window.document.querySelector('[data-context-drift]');
+    assert.equal(chip.hidden, true, 'the captured row is current: no chip');
     assert.equal(field('identity'), 'alias dev-one on aweb:example');
+    const drifted = { ...row, modules: row.modules.map((m, i) => i === 1 ? { ...m, status: 'missing', reason: 'capability-absent', current: null } : m) };
+    panel.setContext({ workspace: { id: context }, instance: drifted, key: row.home });
+    assert.equal(chip.hidden, false); assert.match(chip.title, new RegExp(`${drifted.modules[1].name} is no longer available \\(capability-absent\\)`));
     panel.setContext({ workspace: { id: context }, instance: instance(), key: row.home });
     assert.equal(field('identity'), 'Not reported', 'absent identity is never synthesized');
     panel.dispose?.();

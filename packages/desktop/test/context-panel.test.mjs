@@ -10,9 +10,9 @@ function fixture(t) {
   const dom = new JSDOM(`<!doctype html><body><div id="app">
     <aside id="sidebar"><input id="sidebar-input"></aside>
     <button id="sidebar-restore">Restore sidebar</button>
-    <main id="main"><div id="tabhost"><input id="terminal-input"></div></main>
+    <main id="main"><div id="tabbar"><button id="active-tab">dev-1</button><div id="tab-actions"><button id="panel-toggle">Panel</button></div></div>
+      <div id="tabhost"><input id="terminal-input"></div></main>
     <aside id="context-panel"></aside>
-    <footer><button id="panel-toggle">Panel</button><button id="focus-mode-toggle">Focus mode</button></footer>
   </div></body>`);
   const document = dom.window.document;
   const style = document.createElement('style');
@@ -27,6 +27,7 @@ function fixture(t) {
     onIntent: event => { assert.equal(applying, false, 'projected focus cannot mint intent'); intents.push(event.type); },
     applyFocus: callback => { applying = true; focusCalls.push('apply'); try { return callback(); } finally { applying = false; } },
     onFocusModeChange: value => modeCalls.push(value),
+    fallbackFocus: () => document.getElementById('active-tab'), shortcutHint: () => '⌘⌥B',
   });
   t.after(() => { panel.dispose(); dom.window.close(); });
   const query = selector => document.querySelector(selector);
@@ -48,7 +49,7 @@ function fixture(t) {
 }
 const instance = (home, extra = {}) => ({ instance: 'same-name', agent: 'dev', home, harness: 'pi', running: true, ...extra });
 
-test('exact APIs, safe absent-host defaults, shell-owned root and no footer click binding', t => {
+test('exact APIs, safe absent-host defaults, shell-owned root and no toggle click binding', t => {
   const inert = createContextPanel();
   assert.deepEqual(Object.keys(inert), panelAPI);
   assert.deepEqual(Object.keys(inert.attach()), leaseAPI);
@@ -58,14 +59,20 @@ test('exact APIs, safe absent-host defaults, shell-owned root and no footer clic
   assert.deepEqual(Object.keys(u.panel), panelAPI);
   assert.equal(u.root.closest('#main, #tabhost'), null);
   assert.equal(u.root.hidden, true);
-  assert.equal(u.query('#panel-toggle').disabled, true);
-  assert.equal(u.query('#panel-toggle').getAttribute('aria-expanded'), 'false');
+  const toggle = u.query('#panel-toggle');
+  assert.equal(toggle.disabled, true);
+  assert.equal(toggle.getAttribute('aria-pressed'), 'false'); assert.equal(toggle.hasAttribute('aria-expanded'), false);
+  assert.equal(toggle.getAttribute('aria-label'), 'Show instance panel'); assert.equal(toggle.title, 'Show instance panel (⌘⌥B)');
+  assert.equal(toggle.getAttribute('aria-controls'), 'context-panel');
   u.select(instance('/A/one'));
-  u.query('#panel-toggle').click(); u.query('#focus-mode-toggle').click();
+  toggle.click();
   assert.equal(u.root.classList.contains('is-collapsed'), false, 'parent binds registry clicks');
   assert.equal(u.panel.isFocusMode(), false);
-  assert.equal(u.query('#panel-toggle').disabled, false);
-  assert.equal(u.query('#panel-toggle').getAttribute('aria-expanded'), 'true');
+  assert.equal(toggle.disabled, false);
+  assert.equal(toggle.getAttribute('aria-pressed'), 'true');
+  assert.equal(toggle.getAttribute('aria-label'), 'Hide instance panel'); assert.equal(toggle.title, 'Hide instance panel (⌘⌥B)');
+  u.panel.setCollapsed(true);
+  assert.equal(toggle.getAttribute('aria-pressed'), 'false'); assert.equal(toggle.getAttribute('aria-label'), 'Show instance panel');
 });
 
 test('attach never selects; replacement invalidates old leases without disposing content', t => {
@@ -136,7 +143,7 @@ test('collapsed stage retains form identity, pending completion and listeners', 
   assert.equal(u.document.activeElement, u.query('.context-panel-expand'));
   assert.equal(u.intents.length, intents, 'recovery focus is projection, not entry intent');
   assert.equal(u.focusCalls.length, 1);
-  assert.equal(u.query('#panel-toggle').getAttribute('aria-expanded'), 'false');
+  assert.equal(u.query('#panel-toggle').getAttribute('aria-pressed'), 'false');
   finish('Saved by pending operation'); await pending;
   assert.equal(u.root.classList.contains('is-collapsed'), true, 'late presence is not auto-expand');
   u.query('#terminal-input').focus();
@@ -288,10 +295,8 @@ test('focus mode hides panel/sidebar rails, preserves preferences and stage form
   assert.equal(u.query('#app').classList.contains('focus-mode'), true);
   assert.equal(u.query('#app').classList.contains('sidebar-hidden'), true, 'sidebar preference untouched');
   assert.equal(u.query('#panel-toggle').disabled, true);
-  assert.equal(u.query('#panel-toggle').getAttribute('aria-expanded'), 'false');
-  assert.equal(u.query('#focus-mode-toggle').getAttribute('aria-pressed'), 'true');
-  assert.equal(u.query('#focus-mode-toggle').textContent, 'Exit focus mode');
-  assert.equal(u.document.activeElement, u.query('#focus-mode-toggle'));
+  assert.equal(u.query('#panel-toggle').getAttribute('aria-pressed'), 'false');
+  assert.equal(u.document.activeElement, u.query('#active-tab'), 'the hidden form\'s focus lands on the active tab');
   assert.equal(u.intents.length, count);
   lease.setPresent(true);
   assert.equal(u.root.hidden, true, 'late update does not exit focus mode');
@@ -300,9 +305,7 @@ test('focus mode hides panel/sidebar rails, preserves preferences and stage form
   assert.equal(lease.isVisible(), true);
   assert.equal(u.root.querySelector('textarea'), form.input);
   assert.equal(form.input.value, 'focus mode draft'); assert.equal(form.submit.disabled, true);
-  assert.equal(u.document.activeElement, u.query('#focus-mode-toggle'), 'no auto-refocus of draft');
-  assert.equal(u.query('#focus-mode-toggle').getAttribute('aria-pressed'), 'false');
-  assert.equal(u.query('#focus-mode-toggle').textContent, 'Focus mode');
+  assert.equal(u.document.activeElement, u.query('#active-tab'), 'no auto-refocus of draft');
   u.panel.setCollapsed(true); u.query('.context-panel-expand').focus();
   u.panel.setFocusMode(true); u.panel.setFocusMode(false);
   assert.equal(u.root.classList.contains('is-collapsed'), true, 'collapsed panel remains collapsed after mode');
@@ -315,10 +318,10 @@ test('focus recovery is limited to containers hidden by this transition, includi
   const u = fixture(t), owner = {}, form = u.stage();
   u.query('#sidebar-input').focus();
   u.panel.setFocusMode(true);
-  assert.equal(u.document.activeElement, u.query('#focus-mode-toggle'));
+  assert.equal(u.document.activeElement, u.query('#active-tab'));
   u.panel.setFocusMode(false);
   u.query('#sidebar-restore').focus(); u.panel.setFocusMode(true);
-  assert.equal(u.document.activeElement, u.query('#focus-mode-toggle'));
+  assert.equal(u.document.activeElement, u.query('#active-tab'));
   u.panel.setFocusMode(false);
   u.query('#terminal-input').focus();
   const count = u.focusCalls.length;
@@ -327,7 +330,7 @@ test('focus recovery is limited to containers hidden by this transition, includi
   assert.equal(u.focusCalls.length, count);
   u.panel.setContext({ workspace: 'A', owner }); u.panel.attach(owner, form.element);
   form.input.focus(); u.panel.release(owner);
-  assert.equal(u.document.activeElement, u.query('#focus-mode-toggle'));
+  assert.equal(u.document.activeElement, u.query('#active-tab'));
   assert.equal(u.focusCalls.length, count + 1, 'removal recovers only its own focused container');
 });
 
@@ -347,7 +350,7 @@ test('dispose releases only component DOM and listeners; missing shell controls 
   u.root.dispatchEvent(new u.dom.window.Event('pointerdown', { bubbles: true }));
   assert.equal(lease.isVisible(), false); assert.equal(u.intents.length, count);
   assert.equal(u.root.children.length, 0);
-  u.query('#panel-toggle').remove(); u.query('#focus-mode-toggle').remove();
+  u.query('#panel-toggle').remove(); u.query('#active-tab').remove();
   const minimal = createContextPanel({ root: u.root });
   minimal.setContext({ instance: instance('/minimal'), key: 'minimal' });
   minimal.setCollapsed(true); minimal.setFocusMode(true); minimal.dispose();

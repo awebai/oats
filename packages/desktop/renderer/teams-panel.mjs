@@ -27,7 +27,6 @@ export const teamsCSS = `
 .teams-panel .team-action { font:600 11.5px/1 inherit; height:26px; padding:0 10px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--fg); cursor:pointer; white-space:nowrap; }
 .teams-panel .team-action:hover:not(:disabled) { background:var(--surface-2); }
 .teams-panel .team-action:disabled { color:var(--muted); cursor:default; }
-.teams-panel .team-action:focus-visible, .teams-panel .teams-refresh:focus-visible, .teams-panel summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .teams-panel .team-row > details, .teams-panel .team-row > .teams-problem { grid-column:1 / -1; }
 .teams-panel details { font-size:11.5px; color:var(--muted); }
 .teams-panel details > summary { cursor:pointer; }
@@ -62,11 +61,9 @@ export const teamsCSS = `
 .teams-panel.is-compact .team-action:hover:not(:disabled) { background:transparent; text-decoration:underline; }
 .teams-panel.is-compact .team-action:disabled { color:var(--muted); text-decoration:none; }
 .teams-panel.is-compact .team-row > details, .teams-panel.is-compact .team-row > .teams-problem { flex-basis:100%; }
-.teams-panel.is-compact .team-action:focus-visible, .teams-panel.is-compact summary:focus-visible { outline:0; background:var(--sel); box-shadow:inset 0 0 0 1px var(--accent); border-radius:4px; }
 button.teams-refresh.is-compact { flex:none; align-self:auto; display:grid; place-items:center; width:24px; height:24px; padding:0; border:0; border-radius:6px; background:transparent; color:var(--muted); cursor:pointer; }
 button.teams-refresh.is-compact:hover:not(:disabled) { background:var(--surface-2); color:var(--fg); }
 button.teams-refresh.is-compact:disabled { color:var(--muted); cursor:default; }
-button.teams-refresh.is-compact:focus-visible { outline:0; background:var(--sel); box-shadow:inset 0 0 0 1px var(--accent); }
 `;
 
 const record = v => !!v && typeof v === 'object' && !Array.isArray(v);

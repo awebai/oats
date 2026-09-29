@@ -9,25 +9,6 @@ body {
 }
 #app { display: flex; }
 #workbench { flex: 1; min-width: 0; min-height: 0; display: flex; container-type: inline-size; }
-/* Status bar (Redesign v3): 26px, 11px muted; facts left, layout tools right. */
-#context-tools { box-sizing: border-box; height: 26px; flex: none; display: flex; align-items: center; justify-content: flex-end;
-                 gap: 6px; padding: 0 8px 0 12px; border-top: 1px solid var(--border); background: var(--surface);
-                 color: var(--muted); font-size: 11px; }
-.context-status { flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px; color: var(--fg); overflow: hidden; white-space: nowrap; }
-.context-status > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.context-status-branch { display: flex; align-items: center; gap: 5px; font-family: ui-monospace, Menlo, monospace; }
-.context-status-branch > .shell-icon { width: 12px; height: 12px; flex: none; }
-.context-status-branch > span { overflow: hidden; text-overflow: ellipsis; }
-.context-status-harness, .context-status-tmux { display: flex; align-items: center; gap: 6px; }
-.context-status-harness .runtime-badge { width: 16px; height: 16px; border-radius: 4px; font-size: 9px; }
-.context-status-muted { color: var(--muted); }
-.context-status-tmux { font-family: ui-monospace, Menlo, monospace; }
-.context-status-tmux > .shell-icon { width: 12px; height: 12px; flex: none; }
-#context-tools button { border: 0; border-radius: 4px; padding: 2px 8px; font: inherit; font-size: 11px;
-                       background: var(--surface); color: var(--muted); cursor: pointer; }
-#context-tools button:hover { background: var(--surface-2); color: var(--fg); }
-#context-tools button[aria-pressed="true"] { background: var(--sel); color: var(--accent); }
-#context-tools button:disabled { cursor: default; color: var(--faint); }
 /* Narrow workbenches stack details below the main surface, never over a live
    terminal or inside an editor group. The original groups/proportions survive. */
 @media (max-width: 1000px) {
