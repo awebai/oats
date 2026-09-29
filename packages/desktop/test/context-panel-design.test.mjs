@@ -114,6 +114,8 @@ test('header: "instance of <soul>" links to the Soul tab; the state reads "Runni
   u.select(instance({ running: false, startedAt: started }));
   assert.equal(u.field('running').textContent, 'Stopped'); assert.equal(state.querySelector('.context-panel-state-age').hidden, true);
   u.select(instance({ agent: undefined })); assert.equal(link.parentElement.hidden, true, 'no soul reported: no sub-line');
+  u.select(instance({ running: undefined })); assert.equal(state.hidden, true, 'an unknown state is not shown');
+  u.select(instance()); assert.equal(state.hidden, false);
 });
 
 test('drift: one neutral "older build" chip only for moved/missing (soul or capability rows), with a plain-words tooltip', t => {

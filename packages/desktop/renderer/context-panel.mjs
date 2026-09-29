@@ -31,7 +31,9 @@ export const contextPanelCSS = `
 #context-panel .context-panel-identity .identity-mark { width:36px; height:36px; border-radius:9px; font-size:15px; font-weight:700; }
 #context-panel .context-panel-identity-copy { display:flex; flex-direction:column; min-width:0; flex:1; }
 #context-panel .context-panel-identity-name { font-size:13.5px; font-weight:650; line-height:1.45; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-#context-panel .context-panel-identity-sub { display:flex; flex-wrap:wrap; align-items:center; column-gap:6px; font-size:11.5px; line-height:1.45; color:var(--muted); overflow-wrap:anywhere; }
+#context-panel .context-panel-identity-sub { display:flex; flex-wrap:wrap; align-items:center; gap:2px 6px; min-width:0; font-size:11.5px; line-height:1.45; color:var(--muted); }
+/* The soul name always shows (it wraps rather than hiding); the drift chip wraps below it when both do not fit. */
+#context-panel .context-panel-soul-line { flex:0 1 auto; min-width:0; overflow-wrap:anywhere; }
 #context-panel .context-panel-identity-sub:empty { display:none; }
 /* "instance of <soul>": the soul name opens the Soul tab. */
 #context-panel button.context-panel-soul-link { padding:0; border:0; border-radius:3px; background:none; font:inherit; color:var(--accent); cursor:pointer; text-align:left; overflow-wrap:anywhere; }
@@ -557,6 +559,7 @@ export function createContextPanel({
     // "Running · 42m": how long since its last start, when both are reported.
     const since = instance.running === true ? shortAge(instance.startedAt) : null;
     stateAge.textContent = since ? `· ${since}` : ''; stateAge.hidden = !since; state.title = since ? `started ${instance.startedAt}` : '';
+    state.hidden = typeof instance.running !== 'boolean'; // an unknown state is not shown
     for (const [id, el] of fields) {
       const value = id === 'running' ? instance.running === true ? 'Running'
         : instance.running === false ? 'Stopped' : 'Not reported'
@@ -576,6 +579,7 @@ export function createContextPanel({
       const row = rows.get(id); if (row) row.hidden = value === 'Not reported';
       else if (['model', 'modelFrom', 'identity'].includes(id)) el.hidden = value === 'Not reported';
       if (id === 'identity') el.title = value === 'Not reported' ? '' : value;
+      if (id === 'model' || id === 'modelFrom') modelLine.title = [fields.get('model')?.textContent, fields.get('modelFrom')?.textContent].filter(t => t && t !== 'Not reported').join(' · ');
     }
     // Branch: not a fact of a plain folder or a workspace view.
     if (NO_GIT.has(instance.work)) branchRow.hidden = true;
