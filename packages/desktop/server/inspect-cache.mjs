@@ -10,11 +10,11 @@
     bounds what no key can see (teams changed on the messaging side, the
     launch choice this machine would make now). */
 import { observationData } from '../deployment-data.mjs';
+import { HELD_TTL_MS } from './keyed-catalog.mjs';
 
 export const INSPECT_CACHE_LIMIT = 256;
-/** How long a held inspection may be served: the background max-age, so a held result is never
- * older than what a background poll would accept from the kernel. */
-export const INSPECT_CACHE_TTL_MS = 60_000;
+/** How long a held inspection may be served: the same bound as the catalogs (keyed-catalog HELD_TTL_MS). */
+export const INSPECT_CACHE_TTL_MS = HELD_TTL_MS;
 
 /** Every field travels, absent ones as null: two subjects that differ in any
     coordinate never share an entry (same soul name under two agents roots, the

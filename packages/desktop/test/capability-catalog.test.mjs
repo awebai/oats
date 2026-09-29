@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import { workspaceStatusData, capabilitiesData } from '../deployment-data.mjs';
 import { createCapabilityCatalog, capabilityCatalogKey, CAPABILITY_CATALOG_RETRY_MS } from '../server/capability-catalog.mjs';
 import { soulCatalogKey } from '../server/soul-catalog.mjs';
+import { HELD_TTL_MS } from '../server/keyed-catalog.mjs';
 import { createWorkspaceSyncBoundary, syncFailure } from '../server/workspace-sync.mjs';
 
 const facts = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/desktop-facts/${name}.json`, import.meta.url), 'utf8'));
@@ -59,8 +60,8 @@ test('ensure() reads once per key; a repeat read() of an unchanged key answers w
   assert.deepEqual(h.calls[0], { action: 'capabilities', context: deployment }, 'maxAge travels only when given');
   const first = await h.catalog.read(deployment, CLI, WS);
   assert.deepEqual(first.capabilities, TABLE); assert.equal(first.reason, null); assert.equal(first.refreshing, false);
-  for (let i = 0; i < 50; i++) { h.catalog.ensure(deployment, CLI, structuredClone(WS)); h.tick(CAPABILITY_CATALOG_RETRY_MS); }
-  assert.equal(h.calls.length, 1, 'polls never re-read an unchanged workspace');
+  for (let i = 0; i < 50; i++) { h.catalog.ensure(deployment, CLI, structuredClone(WS)); h.tick(HELD_TTL_MS / 100); }
+  assert.equal(h.calls.length, 1, 'polls never re-read an unchanged workspace inside HELD_TTL_MS');
   const started = process.hrtime.bigint();
   const again = await h.catalog.read(deployment, CLI, WS);
   assert.ok(Number(process.hrtime.bigint() - started) / 1e6 < 50, 'a held table is immediate');
@@ -107,29 +108,29 @@ test('a failed re-read keeps the last good table with the reason next to it and 
 });
 
 test('a read whose key moves on while it flies answers for the key it asked and never crashes the boundary; the newer state keeps its own entry', async () => {
-  // Cold: the user opens the Workspace tab while the admission read flies; `oats teams` from a terminal moves the fingerprint,
-  // and the next cycle binds the newer key before the request's read lands.
-  const h = harness();
-  const cold = h.catalog.read(deployment, CLI, WS, { fingerprint: 'fp-1' });
-  h.catalog.ensure(deployment, CLI, WS, { fingerprint: 'fp-2' });
+  // Cold: the user opens the Workspace tab while the admission read flies; a member commit moves, and the next
+  // cycle binds the newer key before the request's read lands.
+  const h = harness(), states = ['c1', 'c2', 'c3', 'c4'].map(commit => move(ws => { ws.workspace.commit = commit; }));
+  const cold = h.catalog.read(deployment, CLI, states[0]);
+  h.catalog.ensure(deployment, CLI, states[1]);
   assert.equal(h.calls.length, 2, 'the newer key has its own flight');
   const answered = await cold;
   assert.ok(answered, 'the request is answered, not null');
-  assert.deepEqual([answered.key, answered.reason, answered.capabilities.capabilities.length], [capabilityCatalogKey(CLI, WS, 'fp-1'), null, TABLE.capabilities.length], "with the table ITS read produced");
+  assert.deepEqual([answered.key, answered.reason, answered.capabilities.capabilities.length], [capabilityCatalogKey(CLI, states[0]), null, TABLE.capabilities.length], "with the table ITS read produced");
   await settle();
-  assert.equal(h.catalog.held(deployment).key, capabilityCatalogKey(CLI, WS, 'fp-2'), 'what is held is the newer state\'s entry');
+  assert.equal(h.catalog.held(deployment).key, capabilityCatalogKey(CLI, states[1]), 'what is held is the newer state\'s entry');
   // Warm: a superseded live read that fails does not hand its failure to the newer state, and the request sees its own failure.
   h.answer(() => ({ ok: false, reason: { code: 'E_CLI_TIMEOUT', message: 'slow' } }));
-  const late = h.catalog.read(deployment, CLI, WS, { fingerprint: 'fp-3', refresh: true });
+  const late = h.catalog.read(deployment, CLI, states[2], { refresh: true });
   h.answer(() => ({ ok: true, document: CAPS() }));
-  h.catalog.ensure(deployment, CLI, WS, { fingerprint: 'fp-4' });
+  h.catalog.ensure(deployment, CLI, states[3]);
   assert.equal((await late).reason.code, 'E_CLI_TIMEOUT'); await settle();
-  assert.deepEqual([h.catalog.held(deployment).key, h.catalog.held(deployment).reason], [capabilityCatalogKey(CLI, WS, 'fp-4'), null]);
+  assert.deepEqual([h.catalog.held(deployment).key, h.catalog.held(deployment).reason], [capabilityCatalogKey(CLI, states[3]), null]);
   // Through the boundary: the cold race is a healthy 'ok' answer, never a 400.
-  let fingerprint = 'fp-1';
-  const b = boundary({ observed: () => ({ workspaceStatus: WS, fingerprint }) });
+  let observed = states[0];
+  const b = boundary({ observed: () => observed });
   const request = b.request({ action: 'read' }, { workspace, cli: CLI });
-  fingerprint = 'fp-2'; b.catalog.ensure(deployment, CLI, WS, { fingerprint });
+  observed = states[1]; b.catalog.ensure(deployment, CLI, observed);
   const response = await request;
   assert.deepEqual([response.status, response.reason, response.capabilities], ['ok', null, TABLE]);
 });
@@ -219,7 +220,7 @@ test('observedAt is the kernel\'s observation stamp when present, else the compl
 
 /* ── through the sync boundary ───────────────────────────────────────── */
 const workspace = { id: deployment, scope: deployment };
-function boundary({ observed = () => ({ workspaceStatus: WS, fingerprint: 'fp-1' }), maxAge, answers = [] } = {}) {
+function boundary({ observed = () => WS, maxAge, answers = [] } = {}) {
   const calls = [];
   const invoke = async (_cli, options) => {
     calls.push(options);
@@ -227,8 +228,9 @@ function boundary({ observed = () => ({ workspaceStatus: WS, fingerprint: 'fp-1'
     if (step === undefined) return { ok: true, document: options.action === 'sync' ? f2('sync-current') : CAPS() };
     return typeof step === 'function' ? step(options) : step;
   };
-  const catalog = createCapabilityCatalog({ invoke, now: () => 1_700_000_000_000 });
-  return { catalog, calls, answers, request: createWorkspaceSyncBoundary({ invoke, catalog, observed, maxAge }) };
+  let clock = 1_700_000_000_000;
+  const catalog = createCapabilityCatalog({ invoke, now: () => clock });
+  return { catalog, calls, answers, now: ms => { clock = 1_700_000_000_000 + ms; }, request: createWorkspaceSyncBoundary({ invoke, catalog, observed, maxAge }) };
 }
 
 test('boundary: a read answers from the held table with observedAt and refreshing; the poll maxAge travels on a miss', async () => {
@@ -253,9 +255,9 @@ test('boundary: refresh: true forces a live read; a failed re-read is today\'s f
   assert.deepEqual(forced.reason, { code: 'E_WORKSPACE', message: 'members not ready' }); assert.equal(forced.refreshing, false);
   assert.deepEqual(forced.lastGood, { capabilities: TABLE, observedAt: new Date(1_700_000_000_000).toISOString() }, 'additive: a renderer that can label a stale table finds it here');
   // The lock moved (a new key) and the kernel refuses the re-read: non-ok with the kernel's reason, lastGood holds the old table.
-  const movedLock = { workspaceStatus: move(ws => { ws.packages[0].integrity = 'sha256-other'; ws.stale = ['nw.tools']; }), fingerprint: 'fp-1' };
+  const movedLock = move(ws => { ws.packages[0].integrity = 'sha256-other'; ws.stale = ['nw.tools']; });
   const c = boundary({ observed: () => movedLock, answers: [{ ok: true, document: CAPS() }, { ok: false, reason: { code: 'E_PACKAGE_INTEGRITY', message: 'nw.tools does not match the lock' } }] });
-  c.catalog.ensure(deployment, CLI, WS, { fingerprint: 'fp-1' }); await settle(); // the table held before the lock moved
+  c.catalog.ensure(deployment, CLI, WS); await settle(); // the table held before the lock moved
   const during = await c.request({ action: 'read' }, { workspace, cli: CLI });
   assert.deepEqual([during.status, during.reason, during.refreshing], ['ok', null, true], 'until the re-read lands, the held table is still the truth (and a re-read is announced)');
   await settle();
@@ -273,19 +275,22 @@ test('boundary: refresh: true forces a live read; a failed re-read is today\'s f
   assert.deepEqual(timedOut.lastGood.capabilities, TABLE);
 });
 
-test('boundary: the local-config fingerprint is part of the key — an oats-local.yaml edit outside Desktop re-reads the table', async () => {
-  let fingerprint = 'fp-1';
-  const b = boundary({ observed: () => ({ workspaceStatus: WS, fingerprint }) });
-  await b.request({ action: 'read' }, { workspace, cli: CLI });
-  await b.request({ action: 'read' }, { workspace, cli: CLI });
-  assert.equal(b.calls.length, 1);
-  fingerprint = 'fp-2'; // `oats teams add` from a terminal: oats-local.yaml's size/mtime moved
-  const reread = await b.request({ action: 'read' }, { workspace, cli: CLI });
-  assert.equal(reread.status, 'ok'); await settle();
-  assert.equal(b.calls.length, 2, 'the moved fingerprint is a new key');
-  assert.notEqual(capabilityCatalogKey(CLI, WS, 'fp-1'), capabilityCatalogKey(CLI, WS, 'fp-2'));
-  assert.notEqual(soulCatalogKey(CLI, WS, 'fp-1'), soulCatalogKey(CLI, WS, 'fp-2'));
-  assert.equal(soulCatalogKey(CLI, WS), soulCatalogKey(CLI, WS, null), 'no fingerprint is a state too');
+test('boundary: a held table is served inside HELD_TTL_MS and re-read past it — an out-of-band `oats teams`/`sync` is seen within 60 s with no file access; Refresh stays live', async () => {
+  const b = boundary({ maxAge: 60 });
+  const first = await b.request({ action: 'read' }, { workspace, cli: CLI });
+  assert.deepEqual([first.status, b.calls.length], ['ok', 1]);
+  b.now(HELD_TTL_MS - 1);
+  const inside = await b.request({ action: 'read' }, { workspace, cli: CLI });
+  assert.deepEqual([inside.status, inside.refreshing, b.calls.length], ['ok', false, 1], 'inside the TTL: the held table, no kernel run');
+  const changed = CAPS(); changed.result.capabilities = changed.result.capabilities.slice(1); // the kernel now reports one capability fewer
+  b.answers.push({ ok: true, document: changed });
+  b.now(HELD_TTL_MS);
+  const past = await b.request({ action: 'read' }, { workspace, cli: CLI });
+  assert.deepEqual([past.status, past.capabilities.capabilities.length, b.calls.length], ['ok', TABLE.capabilities.length - 1, 2], 'past the TTL: the request awaited a re-read and sees the change');
+  assert.deepEqual(b.calls[1], { action: 'capabilities', context: deployment, maxAge: 60 }, 'a TTL re-read is a background-grade read');
+  assert.equal((await b.request({ action: 'read' }, { workspace, cli: CLI })).capabilities.capabilities.length, TABLE.capabilities.length - 1); assert.equal(b.calls.length, 2, 'held again');
+  await b.request({ action: 'read', refresh: true }, { workspace, cli: CLI });
+  assert.deepEqual(b.calls[2], { action: 'capabilities', context: deployment, maxAge: 0 }, 'Refresh is live whatever the age');
 });
 
 test('boundary: a first read that fails is a refusal or a failure, in today\'s shapes plus observedAt/refreshing', async () => {

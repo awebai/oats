@@ -55,15 +55,19 @@ catalogs are thin wrappers over it (`soul-catalog.mjs`,
   resolves with the entry *it* built, so a request awaiting it is answered for
   the key it asked, never with whatever happens to be held (or nothing).
 
-The souls key (`soulCatalogKey`) also carries the **local-config
-fingerprint** (`server/deployment-fingerprint.mjs`): the size and mtime of the
-deployment's `oats-local.yaml` and `oats-config.yaml`, stat'ed each cycle.
-Souls report teams and launch preferences that live in those files, and they
-change outside Desktop (`oats teams`, `oats soul teams`, `oats sync`, an agent
-editing its own teams from a terminal). It is file *metadata* only, a "ask the
-kernel again" key component: the Desktop still learns every fact from the
-kernel's JSON and parses no deployment file. A missing file fingerprints as
-null, itself a state.
+Every held result also has an **age bound**: `HELD_TTL_MS` (60 s, the
+background max-age; `server/keyed-catalog.mjs`) from the time it was stored,
+for the souls catalog, the capabilities table and inspections alike. Past it
+the entry is `stale`: it no longer answers for its key, so the next cycle
+re-reads it (the stale value is still shown while the re-read flies) and a
+request awaits the re-read. The key sees what `workspace status` reports; the
+TTL bounds what it cannot — local configuration edited outside Desktop
+(`oats teams`, `oats soul teams`, `oats sync` from a terminal, an agent editing
+its own teams) is seen within 60 s. The Desktop does not stat, name or parse
+any deployment file to find out sooner: which files hold local configuration
+is the kernel's to know (`test/desktop-package-boundary.test.mjs` enforces
+it), and a kernel-computed local-configuration revision is the maintainer's
+planned follow-up behind `observe-max-age`.
 
 The capabilities key (`capabilityCatalogKey`) is the souls key plus package
 identity (id, version, commit, integrity from the lock rows) and lock currency
@@ -74,25 +78,24 @@ else in `workspace status` changes it.
 ## The request path never runs a kernel read it can avoid
 
 - `POST /api/workspace-sync {action:"read"}` answers from the held table at
-  once. Its key is the cycle's workspace status plus the fingerprint stat'ed
-  *at request time*, so a local edit made outside Desktop is seen by the next
-  read, not the next cycle. When the latest re-read failed the answer is
+  once while it is a healthy answer inside its TTL. When the latest re-read failed the answer is
   today's failure shape (`status` non-ok, `reason`, `capabilities: null` —
   the renderer shows the error and Retry exactly as before) with the additive
   `lastGood: { capabilities, observedAt } | null` beside it for a renderer that
   can label a stale table; a healthy shape is never a stale one. A request
-  that finds no healthy table held — a first read, or a held failure, table
-  behind it or not (today's Retry button is a plain read) — reads now,
-  whatever the retry window says, and answers with what lands. `refresh: true`
-  forces a live read. An ok `sync` forgets the held table.
+  that finds no healthy table held — a first read, a held failure, table
+  behind it or not (today's Retry button is a plain read), or a table past
+  `HELD_TTL_MS` — reads now, whatever the retry window says, and answers with
+  what lands. `refresh: true` forces a live read. An ok `sync` forgets the
+  held table.
 - `POST /api/capabilities {action:"inspect"}` goes through a bounded LRU with
   in-flight coalescing (`server/inspect-cache.mjs`, 256 entries): two identical
   concurrent inspections are one kernel process; a repeat is a hit for at
-  most `INSPECT_CACHE_TTL_MS` (60 s, the background max-age) after it was
-  stored, then a miss: the TTL bounds what no key can see (teams changed on
-  the messaging side, the launch choice this machine would make now). Keys:
-  `inspect --soul` → (deployment, server, soul, agents root, capabilities key
-  with the fingerprint stat'ed at request time);
+  most `INSPECT_CACHE_TTL_MS` (= `HELD_TTL_MS`) after it was stored, then a
+  miss: the TTL bounds what no key can see (local configuration, teams
+  changed on the messaging side, the launch choice this machine would make
+  now). Keys: `inspect --soul` → (deployment, server, soul, agents root,
+  capabilities key);
   `inspect --home` → (deployment, server, home, instance, and the status row's
   identity and drift facts: createdAt, startedAt, soul, modules), so a retire,
   restart or drift change is another subject. `refresh: true` bypasses the
@@ -164,18 +167,26 @@ observedAt }` or null). Existing fields are unchanged.
 ## Testing
 
 - Unit: `test/keyed-catalog` behaviour through `test/soul-catalog.test.mjs` and
-  `test/capability-catalog.test.mjs`; `test/inspect-cache.test.mjs`;
-  `test/deployment-fingerprint.test.mjs` (fake stat);
+  `test/capability-catalog.test.mjs` (both with a fake clock: held inside the
+  TTL, re-read past it, Refresh live); `test/inspect-cache.test.mjs`;
   `test/refresh-loop.test.mjs` (fake timers); `test/max-age.test.mjs` (flag
   gate per adapter); `test/cli-probe-signature.test.mjs`,
   `test/cli-status-parity.test.mjs` (emit on change);
   `test/window-activity.test.mjs`.
 - The shipped server with a scripted fake kernel:
-  `test/load-path-server.test.mjs` on `test/helpers/load-path-server.mjs`
-  (per-verb delays, a reconfigurable probe, argv/timing log). It proves the
-  cold cycle, held catalogs, coalescing, the unchanged-focus no-op, the
-  cadence and blur back-off, and the `--max-age` gate on and off. It takes
-  ~30 s because cadence is measured in real time.
+  `test/load-path-server.test.mjs` on `test/helpers/load-path-server.mjs`.
+  The fake logs every call at start and at end and **gates** the verbs the
+  test names: a gated call waits after its start line until the test releases
+  it, so every ordering asserted (souls started with the roster reads, the
+  roster published before souls landed, two identical inspections one kernel
+  run) is controlled, never timed — no delays, wall-clock waits or margins.
+  Cycles run on demand: the server is blurred for the whole test (30 s
+  cadence, out of reach) and a focus flip runs one prompt cycle; the cadence
+  and the blur back-off themselves are proven with fake timers in
+  `test/refresh-loop.test.mjs`. It proves the cold cycle, held catalogs,
+  coalescing, the unchanged-focus no-op, the catalog landing before and after
+  publication, the mutation follow-up and the `--max-age` gate on and off, in
+  a few seconds (50/50 in a loop under a saturated CPU).
 - Against a real deployment: `node server/oats-web.mjs start --port <p> --dir
   <deployment> --oats-bin <timing shim>` and poll the endpoints; never launch
   the packaged app for this.

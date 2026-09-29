@@ -25,9 +25,9 @@ const LOCAL_CODES = new Set(['E_CLI_UNAVAILABLE', 'E_WORKSPACE_FEATURE', 'E_CLI_
  * its path/lockfileVersion only mark a different lock file altogether.
  * Names, warnings, problems, defaults and clones are deliberately not here:
  * they change without the table changing. */
-export function capabilityCatalogKey(cli, workspaceStatus, fingerprint = null) {
+export function capabilityCatalogKey(cli, workspaceStatus) {
   const ws = workspaceStatus || {};
-  return JSON.stringify([soulCatalogKey(cli, workspaceStatus, fingerprint),
+  return JSON.stringify([soulCatalogKey(cli, workspaceStatus),
     (ws.packages || []).map(p => [p.id ?? null, p.version ?? null, p.commit ?? null, p.integrity ?? null]),
     ws.declaredPackages ?? [], ws.unsynced ?? [], ws.stale ?? [],
     ws.lock ? [ws.lock.path ?? null, ws.lock.lockfileVersion ?? null] : null]);
@@ -46,25 +46,24 @@ export function createCapabilityCatalog({ invoke = cliWorkspace, now = () => Dat
     catch { return { value: null, reason: { code: 'E_CLI_PROTOCOL', message: '', kernel: false } }; }
   }
   const catalog = createKeyedCatalog({ read, retryMs: CAPABILITY_CATALOG_RETRY_MS, now });
-  const project = (deployment, entry) => entry && { key: entry.key, capabilities: entry.value, reason: entry.reason, at: entry.at, observedAt: entry.observedAt, refreshing: catalog.refreshing(deployment) };
-  const key = (cli, workspaceStatus, fingerprint) => capabilityCatalogKey(cli, workspaceStatus, fingerprint);
+  const project = (deployment, entry) => entry && { key: entry.key, capabilities: entry.value, reason: entry.reason, at: entry.at, observedAt: entry.observedAt, stale: entry.stale, refreshing: catalog.refreshing(deployment) };
+  const key = (cli, workspaceStatus) => capabilityCatalogKey(cli, workspaceStatus);
   return {
     /** Cold cycle: start the read alongside the roster reads, before the key is known. */
     prefetch(deployment, cli, options = {}) { return catalog.prefetch(deployment, cli, options); },
     /** Bind this cycle's key: a read starts only when the held table is not for this state (or its
      * failure is old enough to retry) and none is in flight. Never awaits. */
-    ensure(deployment, cli, workspaceStatus, { fingerprint = null, ...options } = {}) { catalog.settle(deployment, cli, key(cli, workspaceStatus, fingerprint), options); },
-    /** The held table, immediately, with any needed re-read started behind it; awaited when no table
-     * is held (a first read, or a held failure with nothing behind it) or the caller forces a live
-     * read (refresh: true → maxAge 0). */
-    async read(deployment, cli, workspaceStatus, { refresh = false, maxAge, fingerprint = null } = {}) {
-      const k = key(cli, workspaceStatus, fingerprint), options = maxAge !== undefined ? { maxAge } : {};
+    ensure(deployment, cli, workspaceStatus, options = {}) { catalog.settle(deployment, cli, key(cli, workspaceStatus), options); },
+    /** The held table, immediately, when it is a healthy answer inside its TTL; otherwise awaited: a
+     * first read, a held failure (table behind it or not — the boundary shows it as a failure and
+     * today's Retry is a plain read, so it reads now whatever the retry window says; the window
+     * throttles background cycles only), a table past HELD_TTL_MS, or a forced live read
+     * (refresh: true → maxAge 0). */
+    async read(deployment, cli, workspaceStatus, { refresh = false, maxAge } = {}) {
+      const k = key(cli, workspaceStatus), options = maxAge !== undefined ? { maxAge } : {};
       if (refresh) return project(deployment, await catalog.refresh(deployment, cli, k));
       const { entry } = catalog.settle(deployment, cli, k, options);
-      // A held failure is not an answer for someone asking, table behind it or not — the boundary shows
-      // it as a failure and today's Retry is a plain read: read now, whatever the retry window says
-      // (it throttles background cycles only), and answer with what lands.
-      return project(deployment, entry?.value && !entry.reason ? entry : await catalog.demand(deployment, cli, k, options));
+      return project(deployment, entry?.value && !entry.reason && !entry.stale ? entry : await catalog.demand(deployment, cli, k, options));
     },
     /** Read-only view of what is held (tests and diagnostics); nothing reads it on the request path. */
     held(deployment) { return project(deployment, catalog.held(deployment)); },

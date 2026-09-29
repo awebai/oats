@@ -13,14 +13,15 @@ import { createKeyedCatalog } from './keyed-catalog.mjs';
 
 export const SOUL_CATALOG_RETRY_MS = 60_000;
 
-/** The state a souls catalog was read under: the CLI, the workspace and member commits, the
- * externals, and the local-config fingerprint (server/deployment-fingerprint.mjs: souls report
- * teams and launch preferences that live in oats-local.yaml, edited outside Desktop too). */
-export function soulCatalogKey(cli, workspaceStatus, fingerprint = null) {
+/** The state a souls catalog was read under: the CLI, the workspace and member commits and the
+ * externals — everything `workspace status` reports that moves the list. What it cannot see
+ * (local configuration edited outside Desktop: teams, launch preferences) is bounded by the held
+ * result's TTL (keyed-catalog HELD_TTL_MS); the Desktop names no deployment file to find out. */
+export function soulCatalogKey(cli, workspaceStatus) {
   const ws = workspaceStatus || {};
   return JSON.stringify([cli?.bin ?? null, cli?.version ?? null, ws.workspace?.key ?? null, ws.workspace?.commit ?? null,
     (ws.members || []).map(m => [m.key ?? null, m.commit ?? null, m.status ?? null]),
-    (ws.external || []).map(e => [e.source ?? null, e.soul ?? null]), fingerprint]);
+    (ws.external || []).map(e => [e.source ?? null, e.soul ?? null])]);
 }
 
 export function createSoulCatalog({ invoke = cliWorkspace, now = () => Date.now() } = {}) {
@@ -36,10 +37,9 @@ export function createSoulCatalog({ invoke = cliWorkspace, now = () => Date.now(
   const catalog = createKeyedCatalog({ read, retryMs: SOUL_CATALOG_RETRY_MS, now });
   /** The public entry: the catalog fields at the top, the failure next to them. */
   const project = entry => entry && { key: entry.key, souls: entry.value?.souls ?? null, ambiguous: entry.value?.ambiguous ?? [],
-    workspace: entry.value?.workspace ?? null, problems: entry.value?.problems ?? [], reason: entry.reason, at: entry.at, observedAt: entry.observedAt };
-  /** `options.fingerprint` is the deployment's local-config fingerprint for this cycle; `options.maxAge` the read's. */
-  function settle(deployment, cli, workspaceStatus, { fingerprint = null, ...options } = {}) {
-    const { entry, pending } = catalog.settle(deployment, cli, soulCatalogKey(cli, workspaceStatus, fingerprint), options);
+    workspace: entry.value?.workspace ?? null, problems: entry.value?.problems ?? [], reason: entry.reason, at: entry.at, observedAt: entry.observedAt, stale: entry.stale };
+  function settle(deployment, cli, workspaceStatus, options = {}) {
+    const { entry, pending } = catalog.settle(deployment, cli, soulCatalogKey(cli, workspaceStatus), options);
     return { entry: project(entry), pending: pending && pending.then(project) };
   }
   return {

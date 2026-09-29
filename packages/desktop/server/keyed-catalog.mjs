@@ -21,19 +21,30 @@
  *   flight, never a background one.
  * - `observedAt` is the kernel's observation stamp when it reports one, else the read's
  *   completion time; a failure keeps the previous stamp.
+ * - Every held result has an AGE BOUND: `ttlMs` (HELD_TTL_MS, the background max-age) from the
+ *   time it was stored. Past it the entry is `stale`: it no longer answers for its key, so the
+ *   next cycle re-reads and a request awaits the re-read. The key sees what `workspace status`
+ *   reports; the TTL bounds what it cannot (local configuration edited outside Desktop: `oats
+ *   teams`, `oats soul teams`, `oats sync` from a terminal) without the Desktop naming or
+ *   touching any deployment file — that is the kernel's to know.
  *
  * `read(deployment, cli, { maxAge })` is the catalog's kernel read; it resolves
  * `{ value, reason, observedAt }` (value null on failure) and must not throw. */
 import { OBSERVE_MAX_AGE_FEATURE } from '../renderer/deployment-contract.mjs';
 
-export function createKeyedCatalog({ read, retryMs, now = () => Date.now() }) {
+/** How long a held result may be served (catalogs and inspections alike): the background
+ * max-age, so nothing held is older than what a background poll would accept from the kernel. */
+export const HELD_TTL_MS = 60_000;
+
+export function createKeyedCatalog({ read, retryMs, ttlMs = HELD_TTL_MS, now = () => Date.now() }) {
   const held = new Map(), flights = new Map(), cycles = new Map(), unbound = new Map(), current = new Map();
   const iso = ms => new Date(ms).toISOString();
   const inWindow = entry => !entry.reason || now() - entry.at < retryMs;
-  /** A held entry answers for `key` while it is good, or while its failure is inside the retry window. */
-  const answers = (last, key) => !!last && last.key === key && inWindow(last);
-  /** Anything held inside its window (bound or not) makes a prefetch pointless. */
-  const usable = last => !!last && inWindow(last);
+  const fresh = entry => now() - entry.at < ttlMs;
+  /** A held entry answers for `key` while it is inside its TTL and good, or its failure is inside the retry window. */
+  const answers = (last, key) => !!last && last.key === key && fresh(last) && inWindow(last);
+  /** Anything held inside its window and TTL (bound or not) makes a prefetch pointless. */
+  const usable = last => !!last && fresh(last) && inWindow(last);
   /** Build the flight's entry and hold it — unless the flight is keyed and the key moved on while it
    * flew (a newer settle/demand/refresh under another key has its own flight): then the newer state's
    * entry is not overwritten. Either way the flight resolves with the entry IT built, so a request
@@ -60,12 +71,12 @@ export function createKeyedCatalog({ read, retryMs, now = () => Date.now() }) {
     try { dispatched = Promise.resolve(read(deployment, cli, maxAge !== undefined ? { maxAge } : {})); } catch (error) { dispatched = Promise.reject(error); }
     flight.promise = dispatched
       .catch(() => ({ value: null, reason: { code: 'E_CLI_FAILED', message: '' }, observedAt: null }))
-      .then(result => structuredClone(land(deployment, flight, result)))
+      .then(result => ({ ...structuredClone(land(deployment, flight, result)), stale: false }))
       .finally(() => { if (flights.get(deployment) === flight) flights.delete(deployment); });
     flights.set(deployment, flight);
     return flight;
   }
-  const snapshot = deployment => { const entry = held.get(deployment); return entry ? structuredClone(entry) : null; };
+  const snapshot = deployment => { const entry = held.get(deployment); return entry ? { ...structuredClone(entry), stale: !fresh(entry) } : null; };
   return {
     /** Open a cycle; start an unbound read when nothing usable is held and nothing is in flight. */
     prefetch(deployment, cli, { maxAge } = {}) {

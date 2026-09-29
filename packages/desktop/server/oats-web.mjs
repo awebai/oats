@@ -50,7 +50,6 @@ import { capabilityRequest } from "./capabilities.mjs";
 import { createDeploymentObserver } from "./deployment-observer.mjs";
 import { createSoulCatalog, soulCatalogKey } from "./soul-catalog.mjs";
 import { createCapabilityCatalog, capabilityCatalogKey } from "./capability-catalog.mjs";
-import { deploymentFingerprint } from "./deployment-fingerprint.mjs";
 import { createInspectCache } from "./inspect-cache.mjs";
 import { createRefreshLoop, REFRESH_FOCUSED_MS, REFRESH_BLURRED_MS } from "./refresh-loop.mjs";
 import { createWorkspaceSyncBoundary, syncFailure } from "./workspace-sync.mjs";
@@ -559,10 +558,8 @@ const inspectCache = createInspectCache();
 // The read side of /api/workspace-sync answers from the held capabilities table for an
 // observed deployment (the current workspace status is its key); a re-read happens only
 // when that key moves, at admission, or on refresh:true.
-// Its key is the cycle's workspace status plus the local-config fingerprint taken NOW (a file-metadata stat,
-// server/deployment-fingerprint.mjs): an `oats teams` from a terminal is seen by the next read, not the next cycle.
 const workspaceSyncRequest = createWorkspaceSyncBoundary({ catalog: capabilityCatalog, maxAge: BACKGROUND_MAX_AGE,
-  observed: (id) => { const d = snapshot.byWs.get(id)?.deployment; return d?.status === "observed" ? { workspaceStatus: d.workspaceStatus, fingerprint: deploymentFingerprint(id) } : null; } });
+  observed: (id) => { const d = snapshot.byWs.get(id)?.deployment; return d?.status === "observed" ? d.workspaceStatus : null; } });
 const admitted = new Set();  // deployments with at least one successful observation under the current CLI
 const observing = new Set(); // deployments whose observation is in flight right now (/api/panel refreshing)
 const deploymentObserver = createDeploymentObserver({
@@ -621,13 +618,12 @@ async function observeDeployment(id, { live = false } = {}) {
     }
     admitted.add(id);
     const { roster, workspaceStatus, observedAt } = result;
-    // The local-config fingerprint (oats-local.yaml, oats-config.yaml: size+mtime, never content) joins the
-    // kernel's workspace status in both catalog keys: souls report teams and launch preferences from those files.
-    const fingerprint = deploymentFingerprint(id);
-    const catalogKey = soulCatalogKey(cli, workspaceStatus, fingerprint);
-    // Bind (or start) the souls read for this workspace state; never wait for it here.
-    const { entry: catalogEntry, pending } = soulCatalog.settle(id, cli, workspaceStatus, { maxAge, fingerprint });
-    capabilityCatalog.ensure(id, cli, workspaceStatus, { maxAge, fingerprint });
+    const catalogKey = soulCatalogKey(cli, workspaceStatus);
+    // Bind (or start) the souls read for this workspace state; never wait for it here. A held catalog past
+    // its TTL is re-read by this settle too: what the key cannot see (local configuration edited outside
+    // Desktop) is bounded by HELD_TTL_MS, not by any file the Desktop would have to name.
+    const { entry: catalogEntry, pending } = soulCatalog.settle(id, cli, workspaceStatus, { maxAge });
+    capabilityCatalog.ensure(id, cli, workspaceStatus, { maxAge });
     const rows = roster.agents.flatMap((agent) => agent.instances.map((instance) => ({
       ...instance, agent: instance.agent || agent.name, description: agent.description || "",
       team: agent.team || null, agentsRoot: roster.root,
@@ -1356,16 +1352,15 @@ const server = createServer(async (req, res) => {
         const request = await readStrictBody(req);
         // Inspections are served from the held cache (keyed by the soul catalog's key or the instance's
         // reported identity) and coalesced; `refresh: true` observes live. A run never touches the cache.
-        // A soul inspection's key is the capabilities key (member/workspace commits, package rows, lock currency) plus
-        // the local-config fingerprint stat'ed NOW, so an `oats teams`/`oats sync` run outside Desktop is seen by the
-        // next inspect. Held entries also expire after INSPECT_CACHE_TTL_MS (what no key can see).
+        // A soul inspection's key is the capabilities key (member/workspace commits, package rows, lock currency);
+        // what no key can see (local configuration edited outside Desktop) is bounded by the cache TTL.
         const observed = workspace && !workspace.remote ? snapshot.byWs.get(workspace.id)?.deployment : null;
         const result = await capabilityRequest(request, {
           workspace, cli: cliState, localCwd: ctxs[0],
           agents: workspace ? agentsData(workspace.id).agents : [],
           instances: workspace ? panelData(workspace.id).instances : [],
           cache: inspectCache, maxAge: BACKGROUND_MAX_AGE,
-          catalogKey: observed?.status === "observed" ? capabilityCatalogKey(cliState, observed.workspaceStatus, deploymentFingerprint(workspace.id)) : null,
+          catalogKey: observed?.status === "observed" ? capabilityCatalogKey(cliState, observed.workspaceStatus) : null,
         });
         return send(res, 200, result);
       } catch (e) { const { status, body } = spawnErrorPayload(e); return send(res, status, body); }

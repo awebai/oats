@@ -35,9 +35,8 @@ const cliStamp = cli => JSON.stringify([cli?.bin ?? null, cli?.version ?? null])
 const observedStamp = (document, now) => observationData(document).observedAt ?? new Date(now()).toISOString();
 
 /** `catalog` is a capability catalog; `observed(deployment)` yields that
- * deployment's projected workspace status and local-config fingerprint (the
- * catalog key) or null; `maxAge` (seconds) is what a non-forced miss may
- * accept from the kernel's cache. */
+ * deployment's projected workspace status (the catalog key) or null; `maxAge`
+ * (seconds) is what a non-forced miss may accept from the kernel's cache. */
 export function createWorkspaceSyncBoundary({ invoke = cliWorkspace, catalog = null, observed = () => null, maxAge, now = () => Date.now() } = {}) {
   const running = new Set();              // deployments with a sync in flight
   const reads = new Map();                // stamp → pending catalog read (coalesced)
@@ -51,8 +50,8 @@ export function createWorkspaceSyncBoundary({ invoke = cliWorkspace, catalog = n
   function refusal(result) {
     return { workspaceSyncApi: WORKSPACE_SYNC_API, status: 'refused', report: null, capabilities: null, reason: result.reason };
   }
-  async function heldRead(ctx, { workspaceStatus, fingerprint = null }, refresh) {
-    const entry = await catalog.read(ctx.deployment, ctx.cli, workspaceStatus, { fingerprint, ...(refresh ? { refresh: true } : maxAge !== undefined ? { maxAge } : {}) });
+  async function heldRead(ctx, workspaceStatus, refresh) {
+    const entry = await catalog.read(ctx.deployment, ctx.cli, workspaceStatus, refresh ? { refresh: true } : maxAge !== undefined ? { maxAge } : {});
     const refreshing = entry?.refreshing ?? false;
     if (entry?.capabilities && !entry.reason) return { workspaceSyncApi: WORKSPACE_SYNC_API, status: 'ok', report: null, capabilities: entry.capabilities, reason: null, observedAt: entry.observedAt, refreshing };
     // The latest read failed: today's failure shape (the renderer shows the error and Retry, exactly as before), with the
@@ -62,8 +61,8 @@ export function createWorkspaceSyncBoundary({ invoke = cliWorkspace, catalog = n
     return { ...failure, observedAt: null, refreshing, lastGood: entry?.capabilities ? { capabilities: entry.capabilities, observedAt: entry.observedAt } : null };
   }
   async function read(ctx, refresh) {
-    const state = catalog ? observed(ctx.deployment) : null;
-    if (catalog && state?.workspaceStatus) return heldRead(ctx, state, refresh);
+    const workspaceStatus = catalog ? observed(ctx.deployment) : null;
+    if (catalog && workspaceStatus) return heldRead(ctx, workspaceStatus, refresh);
     const key = JSON.stringify([ctx.deployment, cliStamp(ctx.cli)]);
     if (!reads.has(key)) {
       const options = { action: 'capabilities', context: ctx.deployment, ...(refresh ? { maxAge: 0 } : maxAge !== undefined ? { maxAge } : {}) };
