@@ -67,3 +67,41 @@ test("every spawn form the docs and skills show still gets past the argument che
     if (!j.ok) assert.doesNotMatch(j.error.message, /^oats spawn: (unknown flag|unexpected argument)/, `oats spawn ${words.join(" ")}`);
   }
 });
+
+/** The source of `name` in bin/oats.mjs: from its declaration to the next top-level function. */
+function functionSource(src, name) {
+  const start = src.search(new RegExp(`^(?:async )?function ${name}\\(`, "m"));
+  assert.ok(start >= 0, `bin/oats.mjs declares ${name}`);
+  const next = src.slice(start + 1).search(/^(?:async )?function /m);
+  return src.slice(start, next < 0 ? undefined : start + 1 + next);
+}
+
+test("the flags spawn accepts are exactly the flags its code path reads", () => {
+  const src = readFileSync(new URL("../bin/oats.mjs", import.meta.url), "utf8");
+  // spawnCmd and the readers it calls; `--json` is read once, globally (JSON_MODE).
+  const path = ["spawnCmd", "dirFlag", "harnessFlag", "yoloFlag"].map((f) => functionSource(src, f)).join("\n")
+    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, ""); // code only: comments name readers too
+  const read = new Set(["json"]);
+  for (const [, name] of path.matchAll(/\b(?:flag|valueFlag|get)\("([a-z][a-z-]*)"\)/g)) read.add(name);
+  for (const [, name] of path.matchAll(/args\.includes\("--([a-z][a-z-]*)"\)/g)) read.add(name);
+  for (const [, name] of path.matchAll(/args\[i\] === "--([a-z][a-z-]*)"/g)) read.add(name);
+  // A reader given anything but a literal would hide a flag from this scan; the one exception
+  // is the loop over retired flags, whose literal list is read here.
+  const retiredLoop = /for \(const removed of \[([^\]]*)\]\) if \(flag\(removed\)/.exec(path);
+  assert.ok(retiredLoop, "the retired-flag loop is where this scan expects it");
+  const retired = [...retiredLoop[1].matchAll(/"([a-z-]+)"/g)].map((m) => m[1]);
+  for (const call of path.matchAll(/\b(?:flag|valueFlag|get)\(([^)]*)\)/g)) {
+    if (/^"[a-z][a-z-]*"$/.test(call[1]) || call[1] === "removed" || call[1] === "name") continue;
+    assert.fail(`spawn reads a flag through ${call[0]}: this scan cannot see it`);
+  }
+  for (const r of retired) read.add(r);
+  // Flags spawn reads only to refuse them with their replacement, before the argument check.
+  const refusedBefore = new Set([...retired, "ephemeral"]);
+  const valueFlags = /const SPAWN_VALUE_FLAGS = new Set\(\[([^\]]*)\]\)/.exec(src), switches = /const SPAWN_SWITCHES = new Set\(\[([^\]]*)\]\)/.exec(src);
+  assert.ok(valueFlags && switches, "bin/oats.mjs declares SPAWN_VALUE_FLAGS and SPAWN_SWITCHES");
+  const accepted = new Set([...valueFlags[1].matchAll(/"([a-z-]+)"/g), ...switches[1].matchAll(/"([a-z-]+)"/g)].map((m) => m[1]));
+  accepted.add("provider"); // two words, handled on its own in spawnArgvProblem
+  for (const name of read) if (!refusedBefore.has(name)) assert.ok(accepted.has(name), `spawn reads --${name}, but the argument check would refuse it: add it to SPAWN_VALUE_FLAGS or SPAWN_SWITCHES`);
+  for (const name of accepted) assert.ok(read.has(name), `--${name} is accepted but nothing on the spawn path reads it`);
+  for (const name of refusedBefore) assert.ok(!accepted.has(name), `--${name} is refused before the argument check; it is not an accepted flag`);
+});
