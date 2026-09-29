@@ -1,0 +1,160 @@
+/* Hierarchy (Active overview) loading states (desktop/loading-states, Phase A
+   item 2): the shared controller drives the summary pill, aria-busy, the
+   "Refreshing…" indicator and the status line; the view's own notice keeps the
+   stale / failed copy. Real timers: the view has no clock seam, so the tests
+   wait past the 150ms / 400ms delays. */
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { JSDOM } from 'jsdom';
+import * as hierarchy from '../renderer/views/hierarchy.mjs';
+import { currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
+
+const tick = () => new Promise(resolve => setImmediate(resolve));
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
+const instance = (name = 'dev', fields = {}) => ({ instance: name, agent: 'soul', agentsRoot: '/team/agents', home: `/team/agents/soul/instances/${name}`, running: true, repoName: 'reported-repo', runtime: 'pi', branch: 'reported-branch', ...fields });
+const panel = (instances = [instance()], id = currentWorkspace(), extra = {}) => ({ instances, workspace: { id }, workspaces: [{ id: '/team', name: 'Team' }, { id: '/other', name: 'Other' }], generatedAt: 'observation-time', ...extra });
+
+async function setup(t, { api, instances } = {}) {
+  const dom = new JSDOM('<body><main id="host"></main></body>', { url: 'http://localhost' });
+  const doc = dom.window.document, host = doc.querySelector('main');
+  const old = { window: globalThis.window, document: globalThis.document, setInterval: globalThis.setInterval, ws: currentWorkspace() };
+  const polls = []; globalThis.window = dom.window; globalThis.document = doc; globalThis.setInterval = fn => { polls.push(fn); return 0; };
+  setWorkspace('/team');
+  let read = api || (() => panel(instances));
+  const ctx = { hasWorkspaceSwitcher: true, api: path => read(path), openTerminal() {}, startInstance() {}, restartInstance() {}, openView() {} };
+  // Every skeleton that ever enters the summary is recorded, so "never" is provable for fast replies.
+  const skeletons = [];
+  const observer = new dom.window.MutationObserver(records => { for (const r of records) for (const n of r.addedNodes) if (n.dataset?.skeleton) skeletons.push(n); });
+  const dispose = hierarchy.mount(host, ctx);
+  observer.observe(host.querySelector('.hier-sum'), { childList: true });
+  t.after(() => { observer.disconnect(); dispose(); setWorkspace(old.ws); globalThis.window = old.window; globalThis.document = old.document; globalThis.setInterval = old.setInterval; dom.window.close(); });
+  const canvas = host.querySelector('.hier-canvas');
+  canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1200, height: 800 });
+  const mouse = (target, type, fields = {}) => target.dispatchEvent(new dom.window.MouseEvent(type, { bubbles: true, button: 0, ...fields }));
+  return { dom, doc, host, canvas, dispose, mouse, skeletons,
+    one: selector => host.querySelector(selector), all: selector => [...host.querySelectorAll(selector)],
+    nodes: () => [...host.querySelectorAll('.hnode')], root: () => host.querySelector('.hier'),
+    sum: () => host.querySelector('.hier-sum'), pill: () => host.querySelector('.hier-sum .skeleton-pill[data-skeleton="pill"]'),
+    status: () => host.querySelector('.hier-status').textContent, indicator: () => host.querySelector('.hier-refreshing .loading-refreshing'),
+    notice: () => (host.querySelector('.hier-notice').hidden ? '' : host.querySelector('.hier-notice-message').textContent),
+    setRead: value => { read = value; }, poll: () => polls[0](), retry: () => host.querySelector('.hier-retry').click() };
+}
+
+test('first load: no counts, no empty copy and no pill before 150ms; then the pill, aria-busy and one "Loading roster…"', async t => {
+  const first = deferred(); const u = await setup(t, { api: () => first.promise });
+  assert.equal(u.sum().textContent, '', 'the summary is blank, not "0 running"');
+  assert.equal(u.one('.spinner'), null, 'the bare spinner is retired');
+  assert.equal(u.one('.empty'), null); assert.equal(u.nodes().length, 0);
+  assert.equal(u.root().getAttribute('aria-busy'), 'true');
+  assert.equal(u.status(), 'Loading roster…');
+  const status = u.one('.hier-status'); assert.equal(status.getAttribute('role'), 'status'); assert.ok(status.classList.contains('loading-sr'));
+  assert.doesNotMatch(u.host.textContent, /Loading reported roster|Reading/);
+  await wait(60); assert.equal(u.pill(), null, 'nothing changes before the delay');
+  await wait(110);
+  const pill = u.pill(); assert.ok(pill, 'the pill arrives after ~150ms'); assert.equal(pill.getAttribute('aria-hidden'), 'true');
+  assert.equal(u.sum().textContent, '', 'the pill carries no text'); assert.equal(u.one('.empty'), null);
+  first.resolve(panel([instance('a'), instance('b', { running: false })])); await tick();
+  assert.equal(u.pill(), null); assert.match(u.sum().textContent, /1 running · 1 stopped/);
+  assert.equal(u.root().hasAttribute('aria-busy'), false); assert.equal(u.status(), '', 'a background completion announces nothing');
+  assert.equal(u.nodes().length, 2); assert.equal(u.notice(), '');
+});
+
+test('a fast reply never shows a pill; a successful zero read is the only empty state', async t => {
+  const u = await setup(t, { instances: [] }); await tick();
+  assert.ok(u.one('.empty'), 'a successful empty read paints the empty copy');
+  assert.match(u.sum().textContent, /0 running · 0 stopped · 0 groups/);
+  await wait(200);
+  assert.deepEqual(u.skeletons, [], 'no skeleton ever entered the summary');
+  assert.equal(u.root().hasAttribute('aria-busy'), false); assert.equal(u.status(), '');
+});
+
+test('a poll with data present refreshes in place: nodes and focus survive, "Refreshing…" only after 400ms, no aria-busy', async t => {
+  const u = await setup(t, { instances: [instance('a'), instance('b')] }); await tick();
+  const nodes = u.nodes(); u.mouse(nodes[0], 'click'); const pop = u.one('.hier-pop'), button = u.one('.pterm'); button.focus();
+  const slow = deferred(); u.setRead(() => slow.promise); u.poll();
+  assert.equal(u.indicator(), null); assert.equal(u.root().hasAttribute('aria-busy'), false); assert.equal(u.status(), '');
+  assert.deepEqual(u.nodes(), nodes, 'the canvas is untouched while the read is in flight');
+  await wait(200); assert.equal(u.indicator(), null, 'not yet');
+  await wait(230);
+  const indicator = u.indicator(); assert.ok(indicator, 'the indicator arrives after ~400ms'); assert.equal(indicator.textContent, 'Refreshing…');
+  assert.ok(u.one('.hier-bar').contains(indicator), 'beside the summary in the bar');
+  assert.equal(u.root().hasAttribute('aria-busy'), false); assert.equal(u.status(), '', 'background polls are silent');
+  assert.equal(u.pill(), null); assert.equal(u.doc.activeElement, button);
+  slow.resolve({ ...panel([instance('a'), instance('b')]), generatedAt: 'later' }); await tick();
+  assert.equal(u.indicator(), null);
+  assert.deepEqual(u.nodes(), nodes, 'an unchanged observation does not repaint');
+  assert.equal(u.one('.hier-pop'), pop); assert.equal(u.doc.activeElement, button);
+  assert.equal(u.status(), '');
+});
+
+test('a failed poll with data goes stale: content kept, the view notice with Retry roster, actions disabled, no controller block or pill', async t => {
+  const u = await setup(t, { instances: [instance('a')] }); await tick();
+  const nodes = u.nodes(); u.mouse(nodes[0], 'click'); const button = u.one('.pterm');
+  u.setRead(() => Promise.reject(new Error('offline'))); u.poll(); await tick();
+  assert.deepEqual(u.nodes(), nodes, 'the last observation stays painted');
+  assert.match(u.notice(), /^Roster unavailable: offline\. Showing the last observation, not current state; actions disabled\.$/);
+  assert.equal(u.one('.hier-retry').hidden, false); assert.equal(u.one('.hier-retry').textContent, 'Retry roster');
+  assert.equal(button.disabled, true, 'actions that need current state are disabled');
+  assert.equal(u.status(), 'Couldn\'t refresh roster.', 'the failure is announced through the status line');
+  assert.equal(u.root().hasAttribute('aria-busy'), false); assert.equal(u.indicator(), null); assert.equal(u.pill(), null);
+  assert.equal(u.one('.loading-notice'), null, 'the view notice owns the stale line: no duplicate');
+  assert.equal(u.one('.loading-failed'), null);
+  assert.match(u.sum().textContent, /1 running/, 'the counts are the last observation, not "Roster unknown"');
+  u.setRead(() => panel([instance('a')])); u.retry(); await tick();
+  assert.equal(u.notice(), ''); assert.equal(button.disabled, false); assert.deepEqual(u.nodes(), nodes);
+  assert.equal(u.status(), 'Roster updated', 'a user-invoked Retry announces its completion');
+});
+
+test('a failure without data: "Roster unknown", the view notice, no empty copy, no controller failed block in the summary', async t => {
+  const u = await setup(t, { api: () => Promise.reject(new Error('probe down')) }); await tick();
+  assert.equal(u.sum().textContent, 'Roster unknown'); assert.equal(u.one('.hier-sum .loading-failed'), null); assert.equal(u.one('.loading-failed'), null);
+  assert.equal(u.one('.empty'), null); assert.equal(u.nodes().length, 0);
+  assert.equal(u.root().hasAttribute('aria-busy'), false); assert.equal(u.pill(), null);
+  assert.equal(u.notice(), 'Roster unavailable: probe down. No current observation.');
+  assert.equal(u.status(), 'Couldn\'t refresh roster. probe down');
+  await wait(200); assert.deepEqual(u.skeletons, [], 'no pill lands after the failure');
+  u.setRead(() => panel([instance('back')])); u.retry();
+  assert.equal(u.root().getAttribute('aria-busy'), 'true', 'a retry without data is pending again');
+  assert.equal(u.sum().textContent, 'Roster unknown', 'the summary keeps its truthful text while the retry runs');
+  await tick();
+  assert.match(u.sum().textContent, /1 running/); assert.equal(u.nodes().length, 1); assert.equal(u.notice(), '');
+  assert.equal(u.status(), 'Roster updated'); assert.equal(u.root().hasAttribute('aria-busy'), false);
+});
+
+test('a workspace switch is a new subject: blank summary (never "0 running"), pending again, pill after 150ms, painted on reply', async t => {
+  const u = await setup(t, { instances: [instance('team-a')] }); await tick();
+  assert.equal(u.nodes().length, 1);
+  const next = deferred(); u.setRead(() => next.promise);
+  setWorkspace('/other');
+  assert.equal(u.nodes().length, 0, 'the old roster is revoked synchronously');
+  assert.equal(u.sum().textContent, ''); assert.equal(u.one('.empty'), null);
+  assert.equal(u.root().getAttribute('aria-busy'), 'true'); assert.equal(u.status(), 'Loading roster…');
+  assert.equal(u.indicator(), null, 'a switch is pending, not refreshing');
+  assert.equal(u.pill(), null); await wait(170); assert.ok(u.pill());
+  next.resolve(panel([instance('other-a'), instance('other-b')], '/other')); await tick();
+  assert.equal(u.pill(), null); assert.match(u.sum().textContent, /2 running/); assert.equal(u.nodes().length, 2);
+  assert.equal(u.root().hasAttribute('aria-busy'), false); assert.equal(u.status(), '');
+});
+
+test('a switch while a slow first read is pending keeps one pill, and the superseded reply never lands', async t => {
+  const requests = []; const u = await setup(t, { api: () => { const d = deferred(); requests.push(d); return d.promise; } });
+  await wait(170); assert.ok(u.pill());
+  setWorkspace('/other');
+  assert.equal(u.pill(), null, 'reset drops the old pill'); assert.equal(u.root().getAttribute('aria-busy'), 'true');
+  await wait(170); assert.equal(u.all('.hier-sum .skeleton-pill').length, 1, 'exactly one pill for the new subject');
+  requests[0].resolve(panel([instance('stale')], '/team')); await tick();
+  assert.ok(u.pill(), 'a superseded success cannot end the pending state'); assert.equal(u.nodes().length, 0);
+  requests[1].resolve(panel([instance('current')], '/other')); await tick();
+  assert.equal(u.pill(), null); assert.match(u.host.textContent, /current/); assert.doesNotMatch(u.host.textContent, /stale/);
+});
+
+test('observedAt is taken from the reply when present and never invented; it does not force a repaint', async t => {
+  const u = await setup(t, { api: () => panel([instance('a')], '/team', { observedAt: new Date().toISOString() }) }); await tick();
+  const nodes = u.nodes();
+  assert.equal(u.one('.loading-notice'), null, 'fresh data shows no age line');
+  u.setRead(() => panel([instance('a')], '/team', { observedAt: new Date(Date.now() + 1000).toISOString() })); u.poll(); await tick();
+  assert.deepEqual(u.nodes(), nodes, 'a changed observedAt alone is not a roster change');
+  u.setRead(() => panel([instance('a')])); u.poll(); await tick();
+  assert.equal(u.one('.loading-notice'), null, 'no age shown when the field is absent');
+});

@@ -43,7 +43,7 @@ function shell(t, shellSource = source) {
     workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A", activeInstanceMenu: null,
     stage: null, stageOp: 0, stageHost: document.getElementById("stagehost"), navEl,
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "overview", tabLayerVisible: false,
-    contextRosterGen: 0, contextInstances: [], contextRosterEl: null,
+    contextRosterGen: 0, contextInstances: [], contextRosterEl: null, rosterState: null, rosterStale: false, rosterSignaturePainted: null,
     tabbar: document.getElementById("tabbar"), tabhost: document.getElementById("tabhost"),
     tabActionsEl: document.getElementById("tab-actions"),
     wsActiveTerminal: new Map(), workspaceTabMemory: createWorkspaceTabMemory(), brainIntents: createIntentGate(),

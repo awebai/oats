@@ -6,8 +6,16 @@
  * {action: 'add'|'remove', soul, labels} | {action: 'default', soul, label} |
  * {action: 'clear-default', soul}, each answering the document after the write.
  * `listTeams()` answers `oats teams --json` for the labels Add can offer. Refusals are
- * shown verbatim with their code. Membership is local: nothing here is shared. */
+ * shown verbatim with their code. Membership is local: nothing here is shared.
+ *
+ * Loading (desktop/loading-states): the first `show` is owned by the shared data-state
+ * controller (loading.mjs) — line skeletons sized like the rows after 150ms, "Loading teams…"
+ * on a visually hidden status line, the failed block (cause, Details, Retry → show again) when
+ * it fails with no document. A `show` with a document present keeps the rows in place (their
+ * buttons disabled meanwhile, as before) and restores focus after the repaint; a failure then
+ * keeps the document with the problem box, as before. */
 import { pageCard } from './capability-page.mjs';
+import { createDataState, skeletonBlock, statusLine, captureFocusState } from './loading.mjs';
 
 export const soulTeamsHereCSS = `
 .soul-teams-here .sth-default { margin:0; color:var(--fg); font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
@@ -32,6 +40,13 @@ export const soulTeamsHereCSS = `
 .soul-teams-here .sth-error p { margin:0; overflow-wrap:anywhere; }
 .soul-teams-here .sth-error summary { color:var(--muted); font-size:11.5px; cursor:pointer; }
 .soul-teams-here .sth-error pre { margin:4px 0 0; color:var(--fg); font:11px var(--mono,monospace); white-space:pre-wrap; overflow-wrap:anywhere; }
+/* Loading placement: the skeleton reads as the default line and two rows (loading.css styles the bones). */
+.soul-teams-here .skeleton-lines { gap:14px; padding:4px 0 6px; }
+.soul-teams-here .skeleton-lines .skeleton-line { height:12px; width:85%; }
+.soul-teams-here .skeleton-lines .skeleton-line:nth-child(2) { width:55%; }
+.soul-teams-here .skeleton-lines .skeleton-line:nth-child(3) { width:65%; }
+.soul-teams-here .loading-failed { padding:6px 0 0; }
+.soul-teams-here .page-card-title .loading-refreshing { margin-left:auto; }
 `;
 
 const text = v => typeof v === 'string' && v ? v : null;
@@ -51,27 +66,48 @@ export function viaText(via, defaultFrom) {
 }
 const fromText = from => from === 'shared' ? 'shared' : from === 'local' ? 'local' : from;
 
-export function createSoulTeamsHere(doc, { soul, request, listTeams = null }) {
-  const { card } = pageCard(doc, 'Teams here', { lead: 'on this computer' });
+export function createSoulTeamsHere(doc, { soul, request, listTeams = null, clock = {} }) {
+  const { card, head } = pageCard(doc, 'Teams here', { lead: 'on this computer' });
   card.classList.add('soul-teams-here');
   const body = el(doc, 'div', null, 'sth-body'); card.append(body);
+  // The card has no visible status line: the announcements ("Loading teams…", a failure) are spoken only.
+  const status = statusLine(doc, { visuallyHidden: true }); card.append(status);
+  const timers = Object.fromEntries(['now', 'setTimeout', 'clearTimeout'].filter(k => typeof clock[k] === 'function').map(k => [k, clock[k]]));
+  const loading = createDataState({ doc, noun: 'teams', region: body, status, indicatorHost: head, noticeHost: null,
+    skeleton: () => skeletonBlock(doc, 'line', { count: 3 }), onRetry: () => { void run({ action: 'show' }, { user: true }); }, ...timers });
   let current = null, pending = false, serial = 0, disposed = false, rowError = null, cardError = null, choices = null, focusAdd = false;
 
-  async function run(action, { label = null } = {}) {
-    const ticket = ++serial; pending = true; rowError = null; cardError = null; render();
+  async function run(action, { label = null, user = false } = {}) {
+    const ticket = ++serial; pending = true; rowError = null; cardError = null;
+    const read = action.action === 'show';
+    if (read) loading.begin({ user });
+    // A read over a document keeps the rows (and what holds focus in them): only the actions lock, in place.
+    const restore = read && current ? captureFocusState(body) : null;
+    if (restore) lockActions(); else render();
     try {
+      // No `refresh: true` hint here: /api/workspace-soul-teams admits {action, soul, labels, label} only (server/teams.mjs).
       const next = await request({ soul, ...action });
       if (disposed || ticket !== serial) return;
       pending = false;
-      if (!next || !Array.isArray(next.teams)) { cardError = { message: `The teams of ${soul} on this computer could not be read.` }; render(); return; }
-      current = next; render();
+      if (!next || !Array.isArray(next.teams)) {
+        cardError = { message: `The teams of ${soul} on this computer could not be read.` };
+        if (read) loading.fail(cardError);
+        render(); restore?.(); return;
+      }
+      current = next; if (read) loading.succeed({ observedAt: text(next.observedAt) });
+      render(); restore?.();
     } catch (error) {
       if (disposed || ticket !== serial) return;
       pending = false;
       const shown = { code: text(error?.code), message: text(error?.message) || 'The change was refused.' };
       if (label) rowError = { label, ...shown }; else cardError = shown;
-      render();
+      if (read) loading.fail(shown);
+      render(); restore?.();
     }
+  }
+  function lockActions() {
+    for (const control of body.querySelectorAll('button.sth-act, select')) control.disabled = true;
+    for (const box of body.querySelectorAll('.sth-error')) box.remove();
   }
   async function loadChoices() {
     if (typeof listTeams !== 'function') return;
@@ -93,8 +129,10 @@ export function createSoulTeamsHere(doc, { soul, request, listTeams = null }) {
 
   function render() {
     if (disposed) return;
-    body.replaceChildren();
-    if (!current) { body.append(el(doc, 'p', pending ? `Reading the teams of ${soul} (oats soul teams)…` : '', 'page-note')); if (cardError) body.append(problemBox(cardError)); return; }
+    // The skeleton and the failed block are the controller's (loading.mjs); the rows are ours.
+    for (const child of [...body.children]) if (!child.dataset.loadingSkeleton && !child.classList.contains('loading-failed')) child.remove();
+    // No document yet: pending shows the skeleton, a failure the failed block — both the controller's. Nothing else to say.
+    if (!current) return;
     const home = current.defaultTeam;
     const line = el(doc, 'p', null, 'sth-default');
     if (home) {
@@ -142,5 +180,5 @@ export function createSoulTeamsHere(doc, { soul, request, listTeams = null }) {
   }
 
   void run({ action: 'show' });
-  return { element: card, refresh: () => run({ action: 'show' }), dispose() { disposed = true; serial++; } };
+  return { element: card, refresh: ({ user = false } = {}) => run({ action: 'show' }, { user }), dispose() { disposed = true; serial++; loading.dispose(); } };
 }

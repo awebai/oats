@@ -141,6 +141,12 @@ body {
               font-family: inherit; font-size: 12px; line-height: 1; }
 .ctx-filter::placeholder { color: var(--muted); }
 .ctx-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 8px 8px; }
+/* Loading states (renderer/loading.mjs): the stale line sits between the filter and the list;
+   "Refreshing…" closes the head after the count; the count's skeleton pill keeps its width. */
+.ctx-status { flex: none; margin: 0 10px 6px; }
+.ctx-status:empty { display: none; }
+.ctx-head > .loading-refreshing { flex: none; margin-left: 6px; }
+.ctx-count .skeleton-pill { width: 5.5em; }
 /* Agent groups (Workspace v4): a 14px gap, no title; the separator names the group for AT.
    The first one sits just under the filter, so it is shorter (human, 2026-09-29). */
 .ctx-group { height: 14px; }

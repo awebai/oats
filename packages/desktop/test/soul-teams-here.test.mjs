@@ -113,9 +113,14 @@ test("the kernel's captured refusals are shown verbatim with their code (a stale
   assert.equal(u.row('engineering').querySelector('.sth-error'), null, 'one error at a time');
 });
 
+// desktop/loading-states: with no document yet, a failed read is the shared failed block (cause, the
+// code behind Details, Retry); with a document, the problem box beside the rows as before.
 test('a failed or malformed read says so', async t => {
   const failed = await mount(t, () => Promise.reject(refusal('E_SOUL_UNKNOWN', 'no soul release-manager here')));
-  assert.equal(failed.q('.sth-error p').textContent, 'no soul release-manager here');
+  assert.equal(failed.q('.loading-failed-message').textContent, 'no soul release-manager here');
+  assert.equal(failed.q('.loading-failed-code').textContent, 'E_SOUL_UNKNOWN'); assert.ok(failed.q('.loading-retry'));
+  assert.equal(failed.q('.sth-error'), null);
   const malformed = await mount(t, () => ({ soulTeamsApi: 1 }));
-  assert.equal(malformed.q('.sth-error p').textContent, 'The teams of release-manager on this computer could not be read.');
+  assert.equal(malformed.q('.loading-failed-message').textContent, 'The teams of release-manager on this computer could not be read.');
+  assert.equal(malformed.q('.loading-failed-details').hidden, true, 'no code to disclose');
 });

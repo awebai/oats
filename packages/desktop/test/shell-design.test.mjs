@@ -14,7 +14,7 @@ import { NAV } from "../renderer/shell-nav.mjs";
 import { shellIcon, mountShellIcons } from "../renderer/shell-icons.mjs";
 import { createSelectionOwnership } from "../renderer/selection-ownership.mjs";
 import { createWorkspaceSwitcher } from "../renderer/workspace-switcher.mjs";
-import { rosterResponseOwns } from "../renderer/instance-tree.mjs";
+import { rosterResponseOwns, rosterSignature } from "../renderer/instance-tree.mjs";
 import { staleWorkspaceSelection } from "../renderer/views/common.mjs";
 import { DEFAULT_KEYMAP, TERMINAL_ALLOWLIST, registerAction, runAction, getBinding, formatChord, setActiveContexts, matchEvent, setBinding, resetBinding, onKeymapChange } from "../renderer/keybindings.mjs";
 
@@ -288,6 +288,7 @@ for (const outcome of ["resolve", "reject"]) test(`reported workspace/root/host 
   const dom = domFixture(t), document = dom.window.document, requests = [];
   const c = {
     document, workspace: "A", contextRosterGen: 0,
+    rosterState: null, rosterStale: false, rosterSignaturePainted: null, rosterSignature, tabs: new Map(), activeTab: null, connectionGeneration: 0,
     currentWorkspace: () => c.workspace, rosterResponseOwns, staleWorkspaceSelection,
     contextRosterEl: document.getElementById("instance-roster"),
     api(path) { const gate = { ...deferred(), path }; requests.push(gate); return gate.promise; },

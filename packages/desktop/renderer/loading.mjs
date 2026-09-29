@@ -158,7 +158,9 @@ function walk(root, path) {
  * @param {Document} o.doc
  * @param {string} o.noun               "instances", "roster", "soul", "readiness"…
  * @param {Element} o.region            gets aria-busy while pending; hosts the skeleton and the failed block unless a host is given
- * @param {Element} [o.skeletonHost]    where the skeleton / failed block is appended (default: region)
+ * @param {Element} [o.skeletonHost]    where the skeleton is appended (default: region)
+ * @param {Element|null} [o.failedHost] where the failed block is appended (default: skeletonHost; null when the surface
+ *                                      keeps its own failure notice and only wants the state, aria-busy and the announcement)
  * @param {() => Element} [o.skeleton]  builds a fresh skeleton (default: none — the region only becomes busy)
  * @param {Element} [o.status]          the role="status" line; text-only announcements
  * @param {Element} [o.indicatorHost]   where "Refreshing…" is appended
@@ -168,10 +170,11 @@ function walk(root, path) {
  *                                      retry removes its line); default: the first bound Refresh control
  * @param {() => number} [o.now]
  */
-export function createDataState({ doc, noun, region, skeletonHost = region, skeleton: buildSkeleton = null, status = null,
+export function createDataState({ doc, noun, region, skeletonHost = region, failedHost = skeletonHost, skeleton: buildSkeleton = null, status = null,
   indicatorHost = null, noticeHost = indicatorHost, onRetry = null, focusFallback = null, now = Date.now,
   setTimeout: schedule = (fn, ms) => globalThis.setTimeout(fn, ms), clearTimeout: cancel = id => globalThis.clearTimeout(id) } = {}) {
-  let state = 'idle', busy = false, hasData = false, user = false, disposed = false;
+  // `settled` is the last state a read left behind (ready / empty / stale / failed): what cancel() returns to.
+  let state = 'idle', settled = 'idle', busy = false, hasData = false, user = false, disposed = false;
   let observedAt = null, announced = null;
   let pendingTimer = null, refreshingTimer = null, ageTimer = null;
   let skeletonEl = null, failedEl = null, indicatorEl = null, noticeEl = null;
@@ -244,7 +247,7 @@ export function createDataState({ doc, noun, region, skeletonHost = region, skel
   // The failed block is updated in place on a repeated failure: its Retry may hold focus.
   function showFailed(error) {
     removeSkeleton();
-    if (!skeletonHost) return;
+    if (!failedHost) return;
     if (!failedEl) {
       failedEl = element(doc, 'div', 'loading-failed');
       failedEl.append(element(doc, 'p', 'loading-failed-message'));
@@ -252,7 +255,7 @@ export function createDataState({ doc, noun, region, skeletonHost = region, skel
       const summary = element(doc, 'summary', ''); summary.textContent = 'Details';
       more.append(summary, element(doc, 'p', 'loading-failed-code muted'));
       failedEl.append(more, retryButton());
-      skeletonHost.append(failedEl);
+      failedHost.append(failedEl);
     }
     const message = typeof error?.message === 'string' && error.message ? error.message : `${wording.couldNotRefresh(noun)}.`;
     failedEl.querySelector('.loading-failed-message').textContent = message;
@@ -280,7 +283,7 @@ export function createDataState({ doc, noun, region, skeletonHost = region, skel
       if (disposed) return;
       pendingTimer = clearTimer(pendingTimer); refreshingTimer = clearTimer(refreshingTimer);
       removeSkeleton(); removeFailed(); removeIndicator(); removeNotice();
-      state = 'idle'; busy = false; hasData = false; user = false; observedAt = null; announced = null;
+      state = settled = 'idle'; busy = false; hasData = false; user = false; observedAt = null; announced = null;
       if (status) status.textContent = '';
       setRegionBusy(false); setBusyControls();
     },
@@ -291,9 +294,8 @@ export function createDataState({ doc, noun, region, skeletonHost = region, skel
       if (!hasData) {
         // A retry from `failed` keeps the block (its Retry may be focused) and shows no skeleton beside it.
         if (state !== 'pending') {
-          const fromFailed = state === 'failed';
           state = 'pending'; setRegionBusy(true); say(wording.loading(noun));
-          if (!fromFailed && pendingTimer === null) pendingTimer = schedule(showSkeleton, PENDING_DELAY_MS);
+          if (!failedEl && pendingTimer === null) pendingTimer = schedule(showSkeleton, PENDING_DELAY_MS);
         }
       } else if (state !== 'refreshing') {
         state = 'refreshing'; setRegionBusy(false);
@@ -308,7 +310,7 @@ export function createDataState({ doc, noun, region, skeletonHost = region, skel
       removeSkeleton(); removeFailed(); removeIndicator();
       const wasUser = user; user = false; busy = false; hasData = true;
       observedAt = typeof at === 'string' && at ? at : null;
-      state = empty ? 'empty' : 'ready'; setRegionBusy(false);
+      state = settled = empty ? 'empty' : 'ready'; setRegionBusy(false);
       if (isOldObservation(observedAt, now())) showNotice('observed'); else removeNotice();
       if (wasUser) say(wording.updated(noun)); else { announced = null; if (status) status.textContent = ''; }
       setBusyControls();
@@ -321,17 +323,28 @@ export function createDataState({ doc, noun, region, skeletonHost = region, skel
       user = false; busy = false;
       const cause = typeof error?.message === 'string' && error.message ? error.message : null;
       if (hasData) {
-        state = 'stale'; setRegionBusy(false);
+        state = settled = 'stale'; setRegionBusy(false);
         showNotice('stale', { cause });
         say(`${wording.couldNotRefresh(noun)}.`);
       } else {
-        state = 'failed'; setRegionBusy(false); removeNotice();
+        state = settled = 'failed'; setRegionBusy(false); removeNotice();
         showFailed(error);
         say(cause ? `${wording.couldNotRefresh(noun)}. ${cause}` : `${wording.couldNotRefresh(noun)}.`);
       }
       setBusyControls();
     },
     touch,
+    /** The in-flight read was superseded or abandoned (the view hid, the host cancelled): drop the
+     * pending visuals and the busy mark without announcing anything; the settled state stays. */
+    cancel() {
+      if (disposed || !busy) return;
+      pendingTimer = clearTimer(pendingTimer); refreshingTimer = clearTimer(refreshingTimer);
+      removeSkeleton(); removeIndicator();
+      busy = false; user = false;
+      if (state === 'pending' && settled === 'idle') { announced = null; if (status) status.textContent = ''; }
+      state = settled; setRegionBusy(false);
+      setBusyControls();
+    },
     /** A Refresh control: aria-disabled while a read is in flight; `run` ignored meanwhile (never `disabled`: focus survives). */
     bindRefresh(control, run) {
       refreshControls.add(control);

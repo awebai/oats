@@ -1,3 +1,5 @@
+import { createDataState, statusLine, skeleton, skeletonBlock } from "./loading.mjs";
+
 export function collapseKey(workspace, instance) {
   return `${workspace || ""}\u0000${instance}`;
 }
@@ -513,10 +515,18 @@ export function rosterParentId(instances, id) {
 }
 
 /** Roster count line, "● 4 running · 2 stopped" (Redesign v3); unknown
- * liveness is named, never folded into either bucket. */
-export function renderRosterCount(el, instances) {
+ * liveness is named, never folded into either bucket.
+ * `pending`: no read of this subject has succeeded yet, so the count is a
+ * skeleton pill (reserving its width), never "0 running" (desktop/loading-states).
+ * `stale`: the last read failed and the count is the last observation. */
+export function renderRosterCount(el, instances, { pending = false, stale = false } = {}) {
   if (!el) return;
   const doc = el.ownerDocument;
+  if (pending) {
+    if (el.dataset.rosterCount !== "pending") el.replaceChildren(skeleton(doc, "pill"));
+    el.dataset.rosterCount = "pending"; el.removeAttribute("title"); delete el.dataset.stale;
+    return;
+  }
   // Same tri-state as runtimeState(): only reported booleans count.
   const running = instances.filter((i) => i.running === true).length;
   const stopped = instances.filter((i) => i.running === false).length;
@@ -524,5 +534,55 @@ export function renderRosterCount(el, instances) {
   const dot = doc.createElement("span"); dot.className = "ctx-count-dot"; dot.setAttribute("aria-hidden", "true");
   // The head says how many are running (human, 2026-09-26); the full breakdown stays in its title.
   el.replaceChildren(...(running ? [dot] : []), doc.createTextNode(`${running} running`));
-  el.title = [`${running} running`, `${stopped} stopped`, ...(unknown ? [`${unknown} unknown`] : [])].join(" · ");
+  el.dataset.rosterCount = "ready";
+  const breakdown = [`${running} running`, `${stopped} stopped`, ...(unknown ? [`${unknown} unknown`] : [])].join(" · ");
+  el.title = stale ? `Last observation — ${breakdown}` : breakdown;
+  if (stale) el.dataset.stale = "1"; else delete el.dataset.stale;
+}
+
+/* ── the roster's loading state (desktop/loading-states) ─────────────────── */
+/** Why Start… and the row actions menu are disabled while the roster is stale. */
+export const ROSTER_STALE_TITLE = "Last observation — actions are disabled until the roster refreshes.";
+/** The pending skeleton: five roster rows, the height of the real ones. */
+export const ROSTER_SKELETON_ROWS = 5;
+
+/** The sidebar roster's data-state controller (renderer/loading.mjs), wired
+ * to the shipped chrome of `#instance-roster`:
+ *   region / skeletonHost   .ctx-list  (aria-busy while pending; the skeleton or the failed block live here)
+ *   indicatorHost           .ctx-head  ("Refreshing…" after the count)
+ *   noticeHost              .ctx-status, created between the filter field and the list (the stale line + Retry)
+ *   status                  a visually hidden role="status" line appended to the roster (the sidebar shows none)
+ *   focusFallback           the filter input, when a focused Retry has to go
+ * Test DOMs may lack the head or the filter field: the controller then has
+ * no indicator host and the status host sits right before the list.
+ * `now` / `setTimeout` / `clearTimeout` are the primitive's injectable clock. */
+export function createRosterLoading(doc, rosterEl, { onRetry = null, now, setTimeout, clearTimeout } = {}) {
+  const listEl = rosterEl.querySelector(".ctx-list");
+  const status = statusLine(doc, { visuallyHidden: true });
+  status.classList.add("ctx-loading-status");
+  rosterEl.append(status);
+  let noticeHost = rosterEl.querySelector(".ctx-status");
+  if (!noticeHost) {
+    noticeHost = doc.createElement("div"); noticeHost.className = "ctx-status";
+    listEl.before(noticeHost);
+  }
+  const clock = {};
+  if (now) clock.now = now;
+  if (setTimeout) clock.setTimeout = setTimeout;
+  if (clearTimeout) clock.clearTimeout = clearTimeout;
+  return createDataState({
+    doc, noun: "instances", region: listEl, skeletonHost: listEl,
+    skeleton: () => skeletonBlock(doc, "roster-row", { count: ROSTER_SKELETON_ROWS }),
+    status, indicatorHost: rosterEl.querySelector(".ctx-head"), noticeHost, onRetry,
+    focusFallback: () => rosterEl.querySelector(".ctx-filter"),
+    ...clock,
+  });
+}
+
+/** What one roster paint depends on, as a string: a poll whose signature
+ * equals the last painted one rebuilds nothing. `facts` carries whatever the
+ * paint reads besides the instances (workspace, panel error, deployment
+ * note, the active terminal key…). */
+export function rosterSignature(instances, facts = {}) {
+  return JSON.stringify([facts, instances]);
 }

@@ -221,3 +221,27 @@ test('loading.css: skeleton fills derive from tokens, the shimmer is slow, reduc
   const html = readFileSync(new URL('../renderer/index.html', import.meta.url), 'utf8');
   assert.match(html, /<link rel="stylesheet" href="loading.css" \/>/);
 });
+
+test('cancel: a superseded or abandoned read drops the pending visuals and the busy mark silently, back to the settled state', t => {
+  const u = setup(t); u.ds.bindRefresh(u.one('.refresh'));
+  u.ds.begin(); u.c.advance(PENDING_DELAY_MS); assert.equal(u.all('.skeleton-roster-row').length, 5);
+  u.ds.cancel();
+  assert.equal(u.ds.state, 'idle'); assert.equal(u.ds.busy, false); assert.equal(u.all('.skeleton').length, 0);
+  assert.equal(u.region.hasAttribute('aria-busy'), false); assert.equal(u.status.textContent, ''); assert.equal(u.c.pending(), 0);
+  u.ds.begin(); u.ds.succeed({ empty: true }); u.ds.begin(); u.c.advance(REFRESHING_DELAY_MS); assert.ok(u.one('.loading-refreshing'));
+  assert.equal(u.one('.refresh').getAttribute('aria-disabled'), 'true');
+  u.ds.cancel();
+  assert.equal(u.ds.state, 'empty'); assert.equal(u.one('.loading-refreshing'), null); assert.equal(u.one('.refresh').hasAttribute('aria-disabled'), false);
+  u.ds.begin(); u.ds.fail(new Error('x')); u.ds.begin(); u.ds.cancel();
+  assert.equal(u.ds.state, 'stale'); assert.ok(u.one('.loading-notice[data-kind="stale"]'), 'the stale line stays');
+  u.ds.cancel(); assert.equal(u.ds.state, 'stale', 'idempotent when nothing is in flight');
+});
+
+test('failedHost: null keeps the state, aria-busy and the announcement but paints no failed block (a surface with its own failure notice)', t => {
+  const u = setup(t, { failedHost: null });
+  u.ds.begin(); u.c.advance(PENDING_DELAY_MS); u.ds.fail(Object.assign(new Error('down'), { code: 'E_X' }));
+  assert.equal(u.ds.state, 'failed'); assert.equal(u.one('.loading-failed'), null); assert.equal(u.all('.skeleton').length, 0);
+  assert.equal(u.status.textContent, "Couldn't refresh instances. down");
+  u.ds.begin(); u.c.advance(PENDING_DELAY_MS);
+  assert.equal(u.all('.skeleton-roster-row').length, 5, 'without a kept block, the retry shows the skeleton again');
+});
