@@ -120,7 +120,7 @@ export const contextPanelCSS = `
 #context-panel .context-panel-tab { height:100%; min-height:0; padding:0; border-radius:0; font-size:12.5px; color:var(--nav-fg); background:none; }
 #context-panel .context-panel-tab:hover { background:none; color:var(--fg); }
 #context-panel .context-panel-tab[aria-selected="true"] { color:var(--fg); background:none; font-weight:650; box-shadow:inset 0 -2px 0 var(--live); }
-/* W6: the Git & GitHub tab's count of unresolved review threads (design: "Git & GitHub 2"). */
+/* W6: the Developer tab's (Git and GitHub) count of unresolved review threads (design: "Developer 2"). */
 #context-panel .context-panel-tab-count { margin-left:5px; color:var(--muted); font:400 10.5px ui-monospace, Menlo, monospace; }
 #context-panel .context-panel-tab-count:empty { display:none; }
 /* The editor tab bar's instance-panel toggle (index.html #tab-actions): pressed is the brand tint,
@@ -251,7 +251,7 @@ export function createContextPanel({
   });
   expand.setAttribute('aria-expanded', 'false'); expand.setAttribute('aria-controls', 'context-panel'); expand.dataset.action = 'panel.toggle';
   const railTabs = new Map();
-  for (const [id, glyph, label] of [['instance', 'info', 'Instance'], ['soul', 'soul', 'Soul'], ['git', 'branch', 'Git & GitHub']]) {
+  for (const [id, glyph, label] of [['instance', 'info', 'Instance'], ['soul', 'soul', 'Soul'], ['git', 'branch', 'Developer']]) {
     const button = control('context-panel-rail-tab', glyph, label, event => {
       if (disposed || root.hidden || !hasGeneric() || !pref().collapsed || !visible(button)) return;
       onIntent(event);
@@ -281,7 +281,7 @@ export function createContextPanel({
   collapse.setAttribute('aria-expanded', 'true'); collapse.setAttribute('aria-controls', 'context-panel');
   header.append(tablist, collapse); generic.append(header);
   const tabs = new Map(), pages = new Map();
-  for (const [id, label] of [['instance', 'Instance'], ['soul', 'Soul'], ['git', 'Git & GitHub']]) {
+  for (const [id, label] of [['instance', 'Instance'], ['soul', 'Soul'], ['git', 'Developer']]) {
     const tab = control('context-panel-tab', null, label, event => selectTab(id, event)); tab.textContent = label;
     tab.id = `context-panel-tab-${id}`; tab.dataset.contextTab = id;
     tab.setAttribute('role', 'tab'); tab.setAttribute('aria-controls', `context-panel-page-${id}`);
@@ -449,8 +449,8 @@ export function createContextPanel({
       && Number.isSafeInteger(prSummary.unresolvedThreads) && prSummary.unresolvedThreads > 0 ? prSummary.unresolvedThreads : 0;
     const said = threads ? `${threads} unresolved review thread${threads === 1 ? '' : 's'}` : '';
     const count = tabs.get('git').querySelector('.context-panel-tab-count'); count.textContent = threads ? String(threads) : '';
-    if (said) tabs.get('git').setAttribute('aria-label', `Git & GitHub, ${said}`); else tabs.get('git').removeAttribute('aria-label');
-    const label = [changed ? 'Git & GitHub — changes in the last accepted observation' : 'Git & GitHub', said].filter(Boolean).join(', ');
+    if (said) tabs.get('git').setAttribute('aria-label', `Developer, ${said}`); else tabs.get('git').removeAttribute('aria-label');
+    const label = [changed ? 'Developer — changes in the last accepted observation' : 'Developer', said].filter(Boolean).join(', ');
     railTabs.get('git').title = label; railTabs.get('git').setAttribute('aria-label', label);
     paintAhead();
   }
@@ -461,9 +461,9 @@ export function createContextPanel({
     const text = [count(gitSummary?.ahead, '↑'), count(gitSummary?.behind, '↓')].filter(Boolean).join(' ');
     if (ahead.textContent !== text) ahead.textContent = text;
     ahead.hidden = !text;
-    ahead.title = text ? 'Commits ahead of (↑) and behind (↓) the default branch, as last observed in Git & GitHub' : '';
+    ahead.title = text ? 'Commits ahead of (↑) and behind (↓) the default branch, as last observed in the Developer tab' : '';
   }
-  if (!gitPanel) pages.get('git').append(node('h2', null, 'Git & GitHub'), node('p', 'context-panel-note',
+  if (!gitPanel) pages.get('git').append(node('h2', null, 'Developer'), node('p', 'context-panel-note',
     'Integration unavailable. This host has no K1 Git reader. No changes, diffs, pull requests, or checks are reported here.'));
   // Workspace v4 (W6): the instance's lifecycle at the foot of its page — the
   // same plan-backed dialogs as the roster's action menu (nothing runs here).

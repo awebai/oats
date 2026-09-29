@@ -6,7 +6,7 @@ import { ageText } from './age-text.mjs';
 import { iconElement } from './shell-icons.mjs';
 
 export const instanceGitCSS = `
-/* v4.1 Git & GitHub (board 2): Branch, Changes and Pull request cards under small-caps labels,
+/* v4.1 Developer tab (Git and GitHub; board 2): Branch, Changes and Pull request cards under small-caps labels,
    a calm "No Git for this instance" state, and "Checked … · Refresh" as the tab's footer. */
 .instance-git { display:flex; flex-direction:column; gap:20px; min-width:0; color:var(--fg); font-size:12px; }
 .instance-git .git-section { display:flex; flex-direction:column; gap:8px; min-width:0; }

@@ -26,7 +26,7 @@ function rail(t, request = async () => git()) {
 test('44px rail has real Instance/Git/Soul buttons; clicking selects/expands, collapse never reads, accepted Git dot survives only its owner', async t => {
   const u = rail(t); u.panel.setCollapsed(true);
   assert.equal(u.dom.window.getComputedStyle(u.q('#context-panel')).width, '44px');
-  assert.deepEqual([...u.doc.querySelectorAll('[data-context-rail]')].map(b => b.dataset.contextRail), ['instance', 'soul', 'git'], 'Git & GitHub is the last section'); assert.equal(u.calls.length, 0);
+  assert.deepEqual([...u.doc.querySelectorAll('[data-context-rail]')].map(b => b.dataset.contextRail), ['instance', 'soul', 'git'], 'Developer is the last section'); assert.equal(u.calls.length, 0);
   u.q('[data-context-rail=git]').click(); await tick(); assert.equal(u.calls.length, 1); assert.equal(u.q('[data-context-tab=git]').getAttribute('aria-selected'), 'true');
   u.panel.setCollapsed(true); assert.equal(u.calls.length, 1); assert.equal(u.q('.context-panel-dot').hidden, false);
   for (let i = 0; i < 4; i++) u.panel.setContext({ workspace: 'team', key: 'target', instance: selected() });

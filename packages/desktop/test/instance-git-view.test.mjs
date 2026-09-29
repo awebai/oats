@@ -269,7 +269,7 @@ test('a refused read is one plain sentence with its code behind Details; section
   assert.equal(u.one('.git-github').hidden, false); assert.match(u.one('.git-footer').textContent, /^Checked .+ · Refresh$/);
 });
 
-// v4.1 board 2 (Git & GitHub): the footer, the branch distance, the status badges, the calm "No Git" state.
+// v4.1 board 2 (the Developer tab): the footer, the branch distance, the status badges, the calm "No Git" state.
 test('footer "Checked <age> · Refresh": the age only with an observation (its title the exact time), Refresh re-reads', async t => {
   const u = setup(t); await u.show();
   const footer = u.one('.git-footer'), checked = u.one('.git-checked'), refresh = u.one('.git-footer button.git-link');

@@ -1,4 +1,4 @@
-// W6 Git & GitHub (design): Branch and Changes from a real `oats instance git` /
+// W6 Developer tab (Git and GitHub; design): Branch and Changes from a real `oats instance git` /
 // `oats instance diff` capture (the CLI's own JSON, paths under /fixture/base).
 import test from 'node:test';
 import assert from 'node:assert/strict';

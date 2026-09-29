@@ -419,9 +419,9 @@ instance in three tabs (v4.1 board 1): **Instance** (header with the soul mark,
 "instance of <soul>" linking to the Soul tab, an "older build" chip only when
 the kernel reports `soul.status`/`modules[].status` other than `current`, and
 "Running · 42m"; then Where it works, Session, Messaging, Lineage and the
-lifecycle footer), **Soul** and **Git & GitHub**. Where it works is one card: the
+lifecycle footer), **Soul** and **Developer** (Git and GitHub). Where it works is one card: the
 work mode in plain words on a band, then Repo, Branch (Git modes only; ↑/↓
-appear once the Git tab has observed them) and Home (the instance home, the
+appear once the Developer tab has observed them) and Home (the instance home, the
 reported fact; the roster has no work-folder fact). Messaging's header is the
 label plus a tools slot the injected Teams section fills with its icon Refresh
 (`createTeamsPanel(…, { compact: true, refreshHost })`); the identity address

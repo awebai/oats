@@ -1,6 +1,6 @@
 // F7 side panels (human direction; Phase F boundary doc F7): the terminal-side
 // context panel shows only what the instance reported, in the spawn modal's
-// design language; Instance · Soul · Git & GitHub (Git last); Teams folded into
+// design language; Instance · Soul · Developer (Developer last); Teams folded into
 // the Instance tab (injected, like Git: the host performs no IO); the Soul tab
 // hands off to the Workspace view.
 import test from 'node:test';

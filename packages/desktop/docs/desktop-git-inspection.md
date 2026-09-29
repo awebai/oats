@@ -1,6 +1,6 @@
 # Desktop instance Git inspection
 
-The selected terminal's Git & GitHub panel is a read-only consumer of the
+The selected terminal's Developer tab (Git and GitHub) is a read-only consumer of the
 installed OATS CLI's **instanceGitApi 1** contract. GitHub/PR/check/review data is
 not part of K1: it uses the separate [forge Connections boundary](desktop-forge-connections.md).
 K1 supplies routing metadata only, never forge facts. No Git command,
@@ -125,7 +125,7 @@ line totals, file authorship or lifecycle state from the patch.
 
 ## Ownership and verification
 
-The controller is active only for the foreground terminal's visible Git tab.
+The controller is active only for the foreground terminal's visible Developer tab.
 Context epoch, global workspace generation and separate observation/file tickets
 guard success and rejection. Collapse, focus mode, stage cover, selection change
 and disposal revoke old controls. Identical roster updates preserve DOM/focus
