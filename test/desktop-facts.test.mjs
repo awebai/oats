@@ -231,7 +231,7 @@ test("preview-composed-from: a package soul's own `from: here` capability is the
   assert.deepEqual(preview.modules.find((m) => m.name === "acme-tool").from.kind, "package", "keeper's `from: here` is its package");
 });
 
-test("preview-composed-from: the same decision with and without the field — a module's origin moves composedFrom and no fingerprint (positive control)", async (t) => {
+test("preview-composed-from: the same decision under two origins — a module's origin moves composedFrom and no fingerprint (positive control)", async (t) => {
   // One capability at one source, reached two ways: declared by the soul (over a workspace default of the same
   // capability at the same source), and, in a copy of the same discovery whose soul entry drops that
   // declaration (same soul, same commit), through defaults.capabilities alone. Everything else is identical.
@@ -246,6 +246,8 @@ test("preview-composed-from: the same decision with and without the field — a 
   const saved = process.env.PATH; process.env.PATH = fx.env.PATH; t.after(() => { process.env.PATH = saved; });
   const { prepareInstance, ensureWorkspaceSoul, modulesPreview, toCapabilityRows } = await import("../lib/instance-resolution.mjs");
   const { findAgent, spawnInstanceAsync } = await import("../lib/core.mjs");
+  // The CLI's own wiring of a prepared spawn (bin/oats.mjs): `preview` is the preview's modules[], the rest the apply's rows.
+  // In-process, because only here can the soul's declaration change while its commit (fingerprinted) does not.
   const prepare = (discovery) => fx.inEnv(async () => {
     const prepared = await prepareInstance(fx.dep, "dev", { remoteOptions: fx.remoteOptions, ...(discovery ? { discovery } : {}) });
     await ensureWorkspaceSoul(prepared, fx.root);
@@ -264,7 +266,8 @@ test("preview-composed-from: the same decision with and without the field — a 
   const strip = (p) => p.modules.map(({ composedFrom, ...rest }) => rest);
   assert.deepEqual(strip(a), strip(b), "the rows differ only in composedFrom");
   for (const k of ["resolution", "declRevision", "payloadRevision", "decision"]) assert.deepEqual(a[k], b[k], `${k} is the same`);
-  // The decision previewed with one origin binds the apply with the other.
+  // The decision previewed with one origin binds the apply with the other: `expectDecision` is what
+  // --expect-decision hands spawnInstanceAsync, the same E_DECISION_STALE check.
   const applied = await spawn(byWorkspace, { expectDecision: a.decision.revision });
   assert.equal(applied.instance, a.decision.instance);
 });
