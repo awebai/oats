@@ -70,8 +70,10 @@ Every CLI command owns one read session (`createReadSession` in
 CLI closes it when the command ends). A library caller without a session
 gets the plain per-call behaviour. Within a session:
 
-- a head is observed once per (cache repo, ref), at most eight `ls-remote`s at
-  once (`LS_REMOTE_LIMIT`), and a commit peeled once;
+- a head is observed once per (cache repo, ref), and a commit peeled once; at
+  most eight observations run at once (`OBSERVE_LIMIT`), each holding its slot
+  for all its git work (the `ls-remote` and the fetch of the commit it names,
+  or the fetch of a reused record's commit);
 - a whole-workspace discovery prefetches its members' heads together with the
   host's (`prefetchMembers` in `workspace.mjs`): the member list comes from the
   host's last observation record and the parsed `workspace` entry at that
@@ -84,7 +86,9 @@ gets the plain per-call behaviour. Within a session:
   blobs come from one `git cat-file --batch` reader per cache repo (at most
   12 open, killed through `process-group.mjs` on timeout and at close);
 - discovery reads members eight at a time (`DISCOVERY_CONCURRENCY`) with
-  serial results: declaration order, the first failure in that order.
+  serial results: declaration order, the first failure in that order. The
+  observations and the member reads are two pools, so a discovery runs at
+  most sixteen git processes at once (eight of them fetches at most).
 
 Across commands, `memoAtCommit` keeps parsed reads under
 `<cache>/.parsed/<kernel fingerprint>/`, keyed by (repo key, full commit,
@@ -98,8 +102,10 @@ atomically, a corrupt one is a miss, and `pruneStores` bounds the store
 (`PARSED_LIMITS`, least recently used first). `--max-age` adds the observation
 store `<cache>/.observed/` ([Observation reuse](desktop-cli-api.md#observation-reuse-feature-observe-max-age-oats-0302)):
 one record per (repo key, ref args, url digest), so two spellings of one repo
-keep a record each; the url itself is never written. Adding a cached item means naming it in `memoAtCommit` and adding it to
-`test/parsed-cache.test.mjs`; `test/read-path-scale.test.mjs` pins the member
+keep a record each; the url itself is never written. Adding a cached item
+means choosing an item name unique to its producer (the item string its
+call site passes to `memoAtCommit`, or to `atCommit` in `workspace.mjs`) and
+adding it to `test/parsed-cache.test.mjs`; `test/read-path-scale.test.mjs` pins the member
 scaling by call count.
 
 ## Tests and gates

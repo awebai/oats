@@ -224,8 +224,12 @@ oats status | workspace status | souls | capabilities | inspect --soul|--home
   homes, member clones and tmux are not inputs either, because the answer
   itself reports them.
 - **What is reused:** only remote heads (the commit a branch or tag named),
-  never local state. Instances, `oats-local.yaml`, the lock and the backlink
-  of every member are read afresh by every command. A reused head's
+  never local state. Instances, `oats-local.yaml` and the lock are read afresh
+  by every command. A member's backlink (`oats-membership.yaml`) is read at
+  the member's observed head, which may be a reused one: a backlink removed
+  less than `<s>` seconds ago can still show the member `confirmed` under
+  `--max-age <s>`. Only the backlink's comparison with this workspace is made
+  afresh. A reused head's
   `observedAt` (for example `workspace.observedAt` in `workspace status`) is
   the time it was observed, not now.
 - **When a head is not reused:** it is older than the flag allows (or dated

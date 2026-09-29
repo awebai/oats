@@ -2,7 +2,7 @@
  *  prefetchObservation): a whole-workspace discovery starts its members' head observations with the host's,
  *  from the member list at the host's last observed commit. The answer is exactly the one without it, a
  *  member no longer listed never appears, every head is observed once per command (a prefetched failure is
- *  adopted, not retried), at most LS_REMOTE_LIMIT ls-remotes run at once, and observeWorkspace alone
+ *  adopted, not retried), at most OBSERVE_LIMIT observations run their git at once, and observeWorkspace alone
  *  never prefetches. Real bare repos; ls-remote counted and timed through an injected exec. */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import YAML from "yaml";
-import { LS_REMOTE_LIMIT, createReadSession, runGit } from "../lib/remote.mjs";
+import { OBSERVE_LIMIT, createReadSession, runGit } from "../lib/remote.mjs";
 import { discoverWorkspace, observeWorkspace } from "../lib/workspace.mjs";
 
 const GIT_ENV = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
@@ -141,7 +141,7 @@ test("a failed prefetch is adopted by the member's own observation, never retrie
   assert.deepStrictEqual(normal(got), normal(plain));
 });
 
-test(`at most LS_REMOTE_LIMIT (${LS_REMOTE_LIMIT}) ls-remotes run at once, prefetched and real together`, async () => {
+test(`at most OBSERVE_LIMIT (${OBSERVE_LIMIT}) ls-remotes run at once, prefetched and real together`, async () => {
   const names = Array.from({ length: 13 }, (_, i) => `m${i}`);
   const ws = workspace(names);
   await warm(ws);
@@ -151,7 +151,53 @@ test(`at most LS_REMOTE_LIMIT (${LS_REMOTE_LIMIT}) ls-remotes run at once, prefe
   await session.close();
   assert.equal(got.members.filter((m) => m.confirmed).length, 13);
   assert.equal(t.calls.length, 14, "each head once");
-  assert.equal(t.max(), LS_REMOTE_LIMIT, "the limit is reached, never passed");
+  assert.equal(t.max(), OBSERVE_LIMIT, "the limit is reached, never passed");
+});
+
+/** The git subcommand of an argv (past -C <dir> and -c <k=v>). */
+function verbOf(args) {
+  for (let i = 0; i < args.length; i++) { if (args[i] === "-C" || args[i] === "-c") { i++; continue; } if (!args[i].startsWith("-")) return args[i]; }
+  return "?";
+}
+/** An exec that tracks the concurrency of every git subcommand (each held 20 ms longer). */
+function concurrency() {
+  const active = {}, max = {};
+  let total = 0, maxTotal = 0;
+  const exec = async (args, opts) => {
+    const v = verbOf(args);
+    active[v] = (active[v] ?? 0) + 1; max[v] = Math.max(max[v] ?? 0, active[v]);
+    total++; maxTotal = Math.max(maxTotal, total);
+    try { await new Promise((r) => setTimeout(r, 20)); return await runGit(args, opts); }
+    finally { active[v]--; total--; }
+  };
+  return { exec, max, maxTotal: () => maxTotal };
+}
+
+test(`an observation holds its slot for all its git: fetches stay within OBSERVE_LIMIT (${OBSERVE_LIMIT}) for reused records without their cache repos, and for moved heads`, async () => {
+  const names = Array.from({ length: 20 }, (_, i) => `n${i}`);
+  const ws = workspace(names);
+  await warm(ws);
+  // 1. Fresh records and parsed entries kept, every cache repo removed (`rm -rf <cache>/*`): each reused
+  //    record's commit must be fetched again.
+  for (const d of readdirSync(ws.cacheDir)) if (!d.startsWith(".")) rmSync(join(ws.cacheDir, d), { recursive: true, force: true });
+  let c = concurrency();
+  let session = createReadSession({ maxAge: 60 });
+  const reused = await discover(ws, { exec: c.exec, session });
+  await session.close();
+  assert.equal(reused.members.filter((m) => m.confirmed).length, 20);
+  assert.ok(c.max.fetch <= OBSERVE_LIMIT, `reused records: at most ${OBSERVE_LIMIT} fetches at once (${JSON.stringify(c.max)})`);
+  assert.ok(c.max.init <= OBSERVE_LIMIT, `init ${JSON.stringify(c.max)}`);
+  // Observations (OBSERVE_LIMIT) and discovery's member reads (DISCOVERY_CONCURRENCY) are the two pools.
+  assert.ok(c.maxTotal() <= 2 * OBSERVE_LIMIT, `all git at once: ${c.maxTotal()}`);
+  // 2. Every member moved: each live observation fetches its new head.
+  for (const n of names) ws.member(n);
+  c = concurrency();
+  session = createReadSession();
+  const moved = await discover(ws, { exec: c.exec, session });
+  await session.close();
+  assert.deepStrictEqual(normal(moved), normal(await discover(ws)));
+  assert.ok(c.max.fetch <= OBSERVE_LIMIT, `moved heads: at most ${OBSERVE_LIMIT} fetches at once (${JSON.stringify(c.max)})`);
+  assert.ok(c.maxTotal() <= 2 * OBSERVE_LIMIT, `all git at once: ${c.maxTotal()}`);
 });
 
 test("no prefetch: observeWorkspace alone, a missing or corrupt host record, a missing parsed workspace entry", async () => {

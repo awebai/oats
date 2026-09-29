@@ -268,3 +268,37 @@ test("every item kind (workspace, membership, enumerate, package-soul, external-
   const items = parsedFiles(cacheDir).map((f) => JSON.parse(readFileSync(f, "utf8")).item.split("\0")[0]);
   for (const kind of ["workspace", "membership", "enumerate", "package-soul", "external-soul", "package-manifests", "list", "tree-oids"]) assert.ok(items.includes(kind), kind);
 });
+
+test("invalidation: a package bump (the lock's commit moves) is read at the new commit — package souls and manifests follow the lock, never a cached older commit", async () => {
+  const fx = kinds();
+  const cacheDir = fx.cacheDir;
+  // Warm every package entry at commit A.
+  const warm = createReadSession();
+  const atA = await discoverWorkspace(fx.host.ref, { local: {}, lock: fx.lock, remoteOptions: { cacheDir, session: warm } });
+  await lockedPackageCapabilities("fx.pkg", fx.lock.packages["fx.pkg"], { remoteOptions: { cacheDir, session: warm } });
+  await warm.close();
+  assert.equal(atA.packageSouls[0].definition.description, "ps.");
+  // Commit B: the package soul and its capability's manifest change.
+  const work = join(fx.base, "pkg-work");
+  writeTree(work, {
+    "oats-package/souls/ps/soul.yaml": { schemaVersion: 2, name: "ps", description: "ps, bumped.", work: "directory" },
+    "oats-package/capabilities/pc/oats.json": { capability: "pc", version: "1.1.0", compatibility: { oats: ">=0.24.0" }, skills: ["skills"] },
+  });
+  git(work, "add", "-A"); git(work, "commit", "-q", "-m", "bump"); git(work, "push", "-q", fx.pkg.bare, "HEAD:main");
+  const commitB = git(work, "rev-parse", "HEAD");
+  const lockB = { ...fx.lock, packages: { "fx.pkg": { ...fx.lock.packages["fx.pkg"], version: "1.1.0", commit: commitB } } };
+  const session = createReadSession({ maxAge: 60 });
+  const atB = await discoverWorkspace(fx.host.ref, { local: {}, lock: lockB, remoteOptions: { cacheDir, session } });
+  const capsB = await lockedPackageCapabilities("fx.pkg", lockB.packages["fx.pkg"], { remoteOptions: { cacheDir, session } });
+  await session.close();
+  assert.equal(atB.packageSouls[0].commit, commitB);
+  assert.equal(atB.packageSouls[0].definition.description, "ps, bumped.");
+  assert.deepStrictEqual(withoutTimes(atB), withoutTimes(await discoverWorkspace(fx.host.ref, { local: {}, lock: lockB, remoteOptions: { cacheDir } })), "the uncached answer at B");
+  assert.deepStrictEqual(capsB, await lockedPackageCapabilities("fx.pkg", lockB.packages["fx.pkg"], { remoteOptions: { cacheDir } }));
+  assert.ok(JSON.stringify(capsB).includes('"1.1.0"'), "the capability's manifest at B");
+  // And back to A: A's entries still answer for A.
+  const back = createReadSession();
+  const againA = await discoverWorkspace(fx.host.ref, { local: {}, lock: fx.lock, remoteOptions: { cacheDir, session: back } });
+  await back.close();
+  assert.equal(againA.packageSouls[0].definition.description, "ps.");
+});

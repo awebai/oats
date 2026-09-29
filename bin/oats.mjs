@@ -33,7 +33,7 @@ import {
 import {
   writeFileAtomic, LOCK_FILE, readLock, readLockIfPresent, writeLock, resolvePackages, memoizedRemote,
   classifyPackageValue, parsePackageRequest } from "../lib/packages.mjs";
-import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, workspaceWarnings } from "../lib/workspace.mjs";
+import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, workspaceWarnings, memberRowByKey } from "../lib/workspace.mjs";
 import { recordedTeams, reportRows, soulKeyOf, soulTeams, teamModel } from "../lib/teams.mjs";
 import { launchLayers } from "../lib/launch-preference.mjs";
 import { parseConfigData } from "../lib/config-data.mjs";
@@ -1659,10 +1659,8 @@ async function capabilityFacts(rows, discovery, lock, ctx, remote = remoteModule
   for (const [id, entry] of Object.entries(lock?.packages || {})) {
     try { packages.set(id, await lockedPackageCapabilities(id, entry, { catalog, remote, remoteOptions })); } catch { packages.set(id, null); }
   }
-  // Indexes built once (a scan of every member per row was O(rows × members)): the first member row per
-  // key, as `find` gave; the member rows per (key, commit), in row order.
-  const memberOf = new Map();
-  for (const m of discovery.members) if (!memberOf.has(m.key)) memberOf.set(m.key, m);
+  // Indexes built once (a scan of every member per row was O(rows × members)): the member row per key
+  // (memberRowByKey); the member rows per (key, commit), in row order.
   const capOf = (member, name) => member?.capabilities.find((c) => c.name === name);
   const rowsAt = new Map();
   for (const r of rows) {
@@ -1677,7 +1675,7 @@ async function capabilityFacts(rows, discovery, lock, ctx, remote = remoteModule
   const treeOf = async ({ repoKey, commit }, ref, dir) => {
     const key = `${repoKey}\0${commit}`;
     if (!trees.has(key)) {
-      const member = memberOf.get(repoKey);
+      const member = memberRowByKey(discovery.members, repoKey);
       const dirs = (rowsAt.get(key) || []).map((r) => capOf(member, r.name)?.path).filter(Boolean);
       trees.set(key, remoteModule.remoteTreeOids(ref, commit, [...new Set(dirs)], remoteOptions).catch(() => new Map()));
     }
@@ -1689,7 +1687,7 @@ async function capabilityFacts(rows, discovery, lock, ctx, remote = remoteModule
       const read = packages.get(row.package), cap = read?.capabilities.find((c) => c.name === row.name);
       if (cap) ({ manifest, dir } = cap), ref = read.ref;
     } else {
-      const cap = capOf(memberOf.get(row.repoKey), row.name);
+      const cap = capOf(memberRowByKey(discovery.members, row.repoKey), row.name);
       if (cap) { manifest = cap.manifest; dir = cap.path; ref = memberRef(discovery, remoteModule, row.repoKey); }
     }
     const provides = manifest ? await capabilityProvides({ ref, commit: row.commit, dir, manifest, remote, remoteOptions }) : { skills: null, commands: null, hooks: null };
@@ -1708,10 +1706,9 @@ async function soulFacts(rows, discovery, lock, ctx, remote = remoteModule) {
   const first = (pairs) => { const m = new Map(); for (const [k, v] of pairs) if (!m.has(k)) m.set(k, v); return m; };
   const packageSoul = first((discovery.packageSouls || []).map((p) => [p.qualifiedName, p]));
   const externalSoul = first((discovery.external || []).map((e) => e.soul).map((x) => [`${x.name}\0${x.repoKey}`, x]));
-  const memberOf = first(discovery.members.map((m) => [m.key, m]));
   const entryOf = (row) => row.kind === "package" ? packageSoul.get(row.qualifiedName)
     : row.kind === "external" ? externalSoul.get(`${row.name}\0${row.repoKey}`)
-    : memberOf.get(row.repoKey)?.souls.find((x) => x.name === row.name);
+    : memberRowByKey(discovery.members, row.repoKey)?.souls.find((x) => x.name === row.name);
   for (const row of rows) {
     const entry = entryOf(row);
     row.file = { path: `${row.path}/soul.yaml`, url: remoteModule.browseUrl(row.repoKey, row.commit, `${row.path}/soul.yaml`) };
@@ -1768,12 +1765,11 @@ async function statusDrift(data) {
   }
   // The roster's soul row reflects the CURRENT member commit too (the pointer may lag a moved member).
   // First match per key, as `find` gave, from indexes built once (not a scan per agent).
-  const packageSoulAt = new Map(), memberOf = new Map();
+  const packageSoulAt = new Map();
   for (const p of discovery.packageSouls || []) { const k = `${p.package}\0${p.path}`; if (!packageSoulAt.has(k)) packageSoulAt.set(k, p); }
-  for (const m of discovery.members) if (m && !memberOf.has(m.key)) memberOf.set(m.key, m);
   for (const [, stamp] of souls) {
     if (typeof stamp.package === "string") { const now = packageSoulAt.get(`${stamp.package}\0${stamp.path}`); if (now) stamp.current = now.commit; continue; }
-    const member = memberOf.get(stamp.repoKey);
+    const member = memberRowByKey(discovery.members, stamp.repoKey);
     if (member && typeof member.commit === "string" && (member.confirmed || (discovery.standalone === true && member.key === discovery.key))) stamp.current = member.commit;
   }
   return { drift, soul, souls, unreachable: null };
