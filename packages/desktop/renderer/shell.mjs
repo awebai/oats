@@ -1220,7 +1220,6 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
   const term = new Terminal(terminalOptions({
     fontSize: type.fontSize,
     fontFamily: type.fontFamily,
-    lineHeight: type.lineHeight,
     theme: xtermTheme(),
   }));
   // live terminals follow app theme + persisted typography preferences
