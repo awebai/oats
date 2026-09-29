@@ -200,12 +200,29 @@ oats status | workspace status | souls | capabilities | inspect --soul|--home
   Anything else is `E_BAD_ARGS` (`--max-age needs a value: whole seconds from 0
   to 86400`, `--max-age takes whole seconds from 0 to 86400, got "<v>"`).
 - **The block:** with the flag (`0` included) the document gains one key,
-  `observation: {observedAt, reused}`: in the result of an envelope, at the top
-  level of the roster (after `agents`). `observedAt` is the OLDEST remote head
-  the answer used, so the answer is at least that fresh everywhere; `reused` is
-  `true` when any head came from an earlier observation. A command that read no
-  remote head reports the time it started and `reused: false`. Without the
-  flag the key is absent and every document is exactly as before.
+  `observation: {observedAt, reused, localRevision}`: in the result of an
+  envelope, at the top level of the roster (after `agents`). `observedAt` is the
+  OLDEST remote head the answer used, so the answer is at least that fresh
+  everywhere; `reused` is `true` when any head came from an earlier observation.
+  A command that read no remote head reports the time it started and
+  `reused: false`. Without the flag the key is absent and every document is
+  exactly as before.
+- **`localRevision`:** 24 lowercase hex characters, opaque. It digests every
+  piece of local configuration the kernel read for this answer:
+  `oats-local.yaml` (and each closer `oats-local.yaml` it looked for and did
+  not find), `oats-lock.json`, an `OATS_PACKAGE_CATALOG` file, and the
+  automations snapshot. Only what the verb actually read counts. The same inputs
+  give the same revision; any byte change, or one of those files appearing or
+  disappearing, gives another. It names no path and no content. Different verbs
+  read different inputs (`workspace status` also reads the automations
+  snapshot; `inspect --home` reads no lock), so compare revisions of the same
+  verb and arguments only. Keep what you
+  hold (catalogs, inspect results) keyed on it: a different revision means the
+  deployment's configuration changed outside you (a `teams` edit, a sync, a
+  hand edit). A kernel upgrade shows through the probe (`oats version --json`),
+  not through `localRevision`: the bundled catalog is not an input. Instance
+  homes, member clones and tmux are not inputs either, because the answer
+  itself reports them.
 - **What is reused:** only remote heads (the commit a branch or tag named),
   never local state. Instances, `oats-local.yaml`, the lock and the backlink
   of every member are read afresh by every command. A reused head's

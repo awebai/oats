@@ -7,9 +7,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import YAML from "yaml";
 import { buildNorthwind } from "./fixtures/northwind/build.mjs";
 import { inertHarnessPath } from "./helpers/runtime-stub.mjs";
 
@@ -29,6 +30,8 @@ const records = () => readdirSync(observed()).map((f) => ({ file: join(observed(
 const recordFor = (key) => { const r = records().find((x) => x.key === key && x.args.length === 1 && x.args[0] === "HEAD"); assert.ok(r, `a HEAD record for ${key}`); return r; };
 const setObservedAt = (rec, iso) => { const { file, ...body } = rec; writeFileSync(file, JSON.stringify({ ...body, observedAt: iso })); };
 const ago = (ms) => new Date(Date.now() - ms).toISOString();
+/** The heads' part of an observation block (localRevision aside). */
+const heads = ({ observedAt, reused }) => ({ observedAt, reused });
 
 test.before(async () => {
   base = mkdtempSync(join(tmpdir(), "oats-max-age-"));
@@ -46,6 +49,7 @@ test.before(async () => {
   home = json(oats(["spawn", "release-manager", "--purpose", "rc", "--work", "directory", "--no-launch", "--provider", "oats.okf", "state-dir=/tmp/x", "--json"])).result.home;
 });
 test.after(() => { if (base) rmSync(base, { recursive: true, force: true }); });
+const catalogFile = () => env.OATS_PACKAGE_CATALOG;
 
 test("the read verbs take --max-age and add observation { observedAt, reused }; without the flag the key is absent", { timeout: 300_000 }, () => {
   const forms = { status: ["status"], workspaceStatus: ["workspace", "status"], souls: ["souls"], capabilities: ["capabilities"], inspectSoul: ["inspect", "--soul", "release-manager"],
@@ -56,8 +60,9 @@ test("the read verbs take --max-age and add observation { observedAt, reused }; 
     assert.ok(!JSON.stringify(plain).includes('"reused"'), `${name}: nothing else added`);
     const aged = json(oats([...args, "--max-age", "60", "--json"]));
     const obs = observationOf(aged);
-    assert.deepEqual(Object.keys(obs), ["observedAt", "reused"], name);
+    assert.deepEqual(Object.keys(obs), ["observedAt", "reused", "localRevision"], name);
     assert.ok(!Number.isNaN(Date.parse(obs.observedAt)) && typeof obs.reused === "boolean", name);
+    assert.match(obs.localRevision, /^[0-9a-f]{24}$/, name);
     // The inline spelling is the same flag.
     assert.ok(observationOf(json(oats([...args, "--max-age=60", "--json"]))), `${name}: --max-age=60`);
   }
@@ -141,7 +146,7 @@ test("oldest wins: one head reused (its recorded time) and one observed live →
   setObservedAt(recordFor(fx.keys.platform), ago(600_000)); // a member: expired, observed live
   const started = Date.now() - 1000;
   const doc = json(oats(["workspace", "status", "--max-age", "60", "--json"]));
-  assert.deepEqual(doc.result.observation, { observedAt: old, reused: true });
+  assert.deepEqual(heads(doc.result.observation), { observedAt: old, reused: true });
   assert.equal(doc.result.workspace.observedAt, old, "the workspace's own observedAt is the recorded time");
   assert.ok(Date.parse(recordFor(fx.keys.platform).observedAt) >= started, "the expired member was observed live and recorded");
   assert.equal(recordFor(fx.keys.agents).observedAt, old, "a reused record is not rewritten");
@@ -157,7 +162,7 @@ test("the boundary: a head recorded 61 s ago is observed again under --max-age 6
   assert.ok(Date.parse(stale.observedAt) >= started);
   const at = ago(30_000);
   every(at);
-  assert.deepEqual(json(oats(["souls", "--max-age", "60", "--json"])).result.observation, { observedAt: at, reused: true });
+  assert.deepEqual(heads(json(oats(["souls", "--max-age", "60", "--json"])).result.observation), { observedAt: at, reused: true });
   // A record from the future (clock skew beyond 5 s) is never trusted.
   every(new Date(Date.now() + 3_600_000).toISOString());
   assert.equal(json(oats(["souls", "--max-age", "60", "--json"])).result.observation.reused, false);
@@ -170,6 +175,66 @@ test("the observation store names no url: records carry a sha256 url digest, nev
   for (const r of records()) {
     assert.deepEqual(Object.keys(r).filter((k) => k !== "file"), ["v", "key", "args", "urlDigest", "commit", "ref", "observedAt"]);
     assert.ok(!readFileSync(r.file, "utf8").includes("file://"), `${r.file} carries no url`);
+  }
+});
+
+test("observation.localRevision (Addendum 4): a digest of the local configuration read — stable, moved by every input kind, by a file appearing or disappearing, and naming no path", { timeout: 300_000 }, () => {
+  const localFile = join(dep, "oats-local.yaml"), lockFile = join(dep, "oats-lock.json");
+  const saved = { local: readFileSync(localFile, "utf8"), lock: readFileSync(lockFile, "utf8"), catalog: readFileSync(catalogFile(), "utf8") };
+  const rev = (args = ["souls"]) => { const d = json(oats([...args, "--max-age", "60", "--json"])); return (d.observation ?? d.result.observation).localRevision; };
+  const editLocal = (change) => { const doc = YAML.parse(readFileSync(localFile, "utf8")); change(doc); writeFileSync(localFile, YAML.stringify(doc)); };
+  try {
+    editLocal(() => {}); // normalised once, so each edit below changes only its own key
+    const base0 = rev();
+    assert.equal(rev(), base0, "unchanged inputs: the same revision");
+    assert.equal(rev(), base0);
+    const seen = new Set([base0]);
+    const moved = (label, args) => { const r = rev(args); assert.ok(!seen.has(r), `${label}: a new revision`); seen.add(r); return r; };
+    // Each input kind.
+    json(oats(["teams", "add", "rev-a", "--team", "local:rev-a.example", "--json"]));
+    moved("oats teams add");
+    json(oats(["soul", "teams", "release-manager", "--add", "rev-a", "--json"]));
+    moved("oats soul teams --add");
+    editLocal((d) => { d.souls = { ...(d.souls ?? {}), launch: { "release-manager": { harness: "claude" } } }; });
+    moved("souls.launch edit");
+    editLocal((d) => { d.automations = { ...(d.automations ?? {}), trust: ["agents/nightly-report"] }; });
+    moved("automations.trust edit");
+    const lock = JSON.parse(readFileSync(lockFile, "utf8"));
+    delete lock.packages["oats.okf"];
+    writeFileSync(lockFile, JSON.stringify(lock, null, 2) + "\n");
+    const edited = moved("the lock rewritten by hand");
+    json(oats(["sync", "--json"])); // rewrites the lock
+    assert.notEqual(rev(), edited, "a sync that rewrites the lock: a new revision");
+    // The catalog override (read by capabilities and workspace status).
+    const capsBefore = rev(["capabilities"]);
+    writeFileSync(catalogFile(), saved.catalog + "\n");
+    assert.notEqual(rev(["capabilities"]), capsBefore, "the OATS_PACKAGE_CATALOG file changed");
+    // A file disappearing and appearing again: the revision follows the bytes, not the history.
+    const withLock = rev();
+    renameSync(lockFile, `${lockFile}.away`);
+    const noLock = rev();
+    assert.notEqual(noLock, withLock, "the lock disappearing");
+    renameSync(`${lockFile}.away`, lockFile);
+    assert.equal(rev(), withLock, "the lock back, byte for byte: the same revision again");
+    // A walk-up candidate appearing: a closer oats-local.yaml changes the answer, and the revision.
+    const sub = join(dep, "agents");
+    const fromSub = (() => { const d = JSON.parse(spawnSync(process.execPath, [CLI, "souls", "--max-age", "60", "--json"], { cwd: sub, encoding: "utf8", env, maxBuffer: 64 << 20 }).stdout); return d.result?.observation?.localRevision ?? null; })();
+    assert.match(fromSub, /^[0-9a-f]{24}$/);
+    writeFileSync(join(sub, "oats-local.yaml"), readFileSync(localFile, "utf8"));
+    const closer = JSON.parse(spawnSync(process.execPath, [CLI, "souls", "--max-age", "60", "--json"], { cwd: sub, encoding: "utf8", env, maxBuffer: 64 << 20 }).stdout);
+    rmSync(join(sub, "oats-local.yaml"));
+    assert.notEqual(closer.result?.observation?.localRevision ?? closer.error?.code, fromSub, "a closer oats-local.yaml appearing");
+    // No path, no content: the observation block is three fields, and the revision is 24 hex.
+    for (const args of [["status"], ["workspace", "status"], ["souls"], ["capabilities"], ["teams"]]) {
+      const d = json(oats([...args, "--max-age", "60", "--json"]));
+      const block = JSON.stringify(d.observation ?? d.result.observation);
+      assert.ok(!block.includes(dep) && !block.includes(base) && !block.includes("oats-local"), `${args.join(" ")}: ${block}`);
+    }
+  } finally {
+    writeFileSync(localFile, saved.local);
+    writeFileSync(lockFile, saved.lock);
+    writeFileSync(catalogFile(), saved.catalog);
+    json(oats(["sync", "--json"]));
   }
 });
 

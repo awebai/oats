@@ -44,6 +44,7 @@ published to npm. Its developer docs are in
 | module | owns |
 |---|---|
 | `remote.mjs` | repo refs, reading Git remotes, content digests |
+| `local-inputs.mjs` | the local configuration a command read, for `observation.localRevision` |
 | `workspace.mjs` | workspace, membership and soul files; discovery |
 | `resolve.mjs` | a soul's resolution: capabilities, slots, provenance |
 | `packages.mjs` | `packages:`, the catalog, `oats sync`, `oats-lock.json` |

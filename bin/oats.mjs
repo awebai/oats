@@ -31,13 +31,14 @@ import {
   findInstanceHome, findInstanceHomes, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, recordedKernelBin, launchConfigsAt, launchReportFor, explicitInstanceName, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
 import {
-  writeFileAtomic, LOCK_FILE, readLock, writeLock, resolvePackages, memoizedRemote,
+  writeFileAtomic, LOCK_FILE, readLock, readLockIfPresent, writeLock, resolvePackages, memoizedRemote,
   classifyPackageValue, parsePackageRequest } from "../lib/packages.mjs";
 import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, workspaceWarnings } from "../lib/workspace.mjs";
 import { recordedTeams, reportRows, soulKeyOf, soulTeams, teamModel } from "../lib/teams.mjs";
 import { launchLayers } from "../lib/launch-preference.mjs";
 import { parseConfigData } from "../lib/config-data.mjs";
 import * as remoteModule from "../lib/remote.mjs";
+import { activateLocalInputs, localRevision } from "../lib/local-inputs.mjs";
 import YAML from "yaml";
 import { attachArgv, checkRemote, forgetSnapshot, getServer, inspectRemote, startRemote, restartRemote, launchConfigRemote, scheduleRemote, listSnapshots, readServers, rosterGroups, routeCommand, targetOf, validateServer, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
 import { spawnSync as spawnSyncProc } from "node:child_process";
@@ -1048,9 +1049,12 @@ function maxAgeRefusal(command, head) {
     }
   }
 }
+/** The observation block: the heads' oldest observedAt and reuse (the read session) and the revision of
+ *  the local configuration this command read (lib/local-inputs.mjs, recording since dispatch). */
+const observationBlock = () => ({ ...commandSession().observation(), localRevision: localRevision() });
 /** A read verb's JSON with the observation block — only when --max-age was given (0 included); without
  *  it the document is exactly what it was before the feature (Desktop decodes closed shapes). */
-const withObservation = (doc) => (maxAgeGiven === null ? doc : { ...doc, observation: commandSession().observation() });
+const withObservation = (doc) => (maxAgeGiven === null ? doc : { ...doc, observation: observationBlock() });
 
 /** Remote options threaded into every remote call. OATS_REMOTE_CACHE relocates
  * the content-addressed fetch cache (tests never touch ~/.cache); `session` is the command's read session. */
@@ -1599,7 +1603,7 @@ async function soulCmd() {
   else {
     // The soul is named as for spawn: E_SOUL_UNKNOWN / E_SOUL_AMBIGUOUS; package souls come from the lock.
     let lock = null;
-    try { lock = existsSync(join(ctx.deploymentDir, LOCK_FILE)) ? readLock(ctx.deploymentDir) : null; } catch (e) { return bail(e.code || "E_LOCK_SCHEMA", e.message, e.details); }
+    try { lock = readLockIfPresent(ctx.deploymentDir); } catch (e) { return bail(e.code || "E_LOCK_SCHEMA", e.message, e.details); }
     let discovery, entry;
     try {
       const { discoverOrStandalone, findSoulEntry } = await import("../lib/instance-resolution.mjs");
@@ -1745,7 +1749,7 @@ async function statusDrift(data) {
   if (!anything) return { drift: new Map(), soul: new Map(), souls, unreachable: null };
   const deploymentDir = dirname(ctx.path);
   let lock = null;
-  try { if (existsSync(join(deploymentDir, LOCK_FILE))) lock = readLock(deploymentDir); } catch { lock = null; }
+  try { lock = readLockIfPresent(deploymentDir); } catch { lock = null; }
   let discovery;
   // The standalone view (decisions 10/25) is a discovery too: drift of a standalone
   // instance is computed against its member's current state, not reported "unreachable".
@@ -1840,7 +1844,7 @@ async function status() {
         if (s) i.soul = { repoKey: s.repoKey, commit: s.commit, current: s.current?.commit ?? null, status: s.status, ...(s.reason ? { reason: s.reason } : {}), ...(s.package ? { package: s.package, version: s.version, currentVersion: s.current?.version ?? null } : {}) };
       }
     }
-    const observation = maxAgeGiven === null ? {} : { observation: commandSession().observation() };
+    const observation = maxAgeGiven === null ? {} : { observation: observationBlock() };
     console.log(JSON.stringify({ root, agents: data, ...observation, ...(ws ? { workspace: ws.unreachable ? { reachable: false, ...ws.unreachable } : { reachable: true } } : {}), ...(problems.length ? { problems } : {}), ...envelopeWarnings() }, null, 2)); return;
   }
   console.log(`oats status — agents root ${shortPath(root)}\n`);
@@ -3323,6 +3327,7 @@ try {
     if (raw === true) cmdFail("E_BAD_ARGS", `--max-age needs a value: whole seconds from 0 to ${remoteModule.MAX_AGE_LIMIT}`);
     if (!/^\d{1,5}$/.test(raw) || Number(raw) > remoteModule.MAX_AGE_LIMIT) cmdFail("E_BAD_ARGS", `--max-age takes whole seconds from 0 to ${remoteModule.MAX_AGE_LIMIT}, got ${JSON.stringify(raw)}`);
     maxAgeGiven = Number(raw);
+    activateLocalInputs(); // observation.localRevision: every local config read from here on is recorded
   }
   const inherited = ["OATS_RESOLUTION", "OATS_DEPLOYMENT"].filter((k) => process.env[k]);
   if (inherited.length && cmd !== "version") refuse(`this environment carries a captured context (${inherited.join(", ")}): the captured/portable path was removed in 0.26, and nothing is run against the current context in its place — retire the captured home and re-spawn it from the deployment`, { inherited });
@@ -3649,8 +3654,10 @@ Observation reuse (feature observe-max-age):
                                             head observation up to <seconds> old (0–86400; 0 is
                                             live) instead of asking the remote again; the JSON
                                             then carries observation { observedAt (the oldest
-                                            head used), reused }. Refused (E_BAD_ARGS) by every
-                                            other command, an edit form, and with --server
+                                            head used), reused, localRevision (a digest of
+                                            the local configuration read) }. Refused
+                                            (E_BAD_ARGS) by every other command, an edit form,
+                                            and with --server
 
 Layers: ${LAYERS.join(", ")}. Workspace model v2: docs/design/2026-09-23-workspace-module-contracts.md.`;
 }
