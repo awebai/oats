@@ -11,8 +11,8 @@ import { runtimeState } from "../instance-presentation.mjs";
 import { deploymentUnavailableText } from "../deployment-header.mjs";
 import { createSpawnDialog, spawnDialogCSS } from "../spawn-dialog.mjs";
 import { spawnProblem, catalogProblem } from "../spawn-messages.mjs";
-import { createSoulMark, createRuntimeBadge, harnessName, identityCSS } from "../identity-marks.mjs";
-import { shownLaunch } from "../launch-view.mjs";
+import { createSoulMark, createRuntimeBadge, identityCSS } from "../identity-marks.mjs";
+import { shownLaunch, launchHarnessName } from "../launch-view.mjs";
 import { harnessOf } from "../harness-names.mjs";
 import { memberState } from "../workspace-catalog.mjs";
 import { iconElement } from "../shell-icons.mjs";
@@ -34,8 +34,8 @@ const cliProbePending = () => !cliStatus() && !cliKnownUnavailable();
 
 const CSS = `
 .souls { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width:0; background: var(--bg); }
-/* Workspace v4 (human, 2026-09-26): the view's own toolbar row — the first group
-   heading on the left, search and Group by on the right, on one line. */
+/* Workspace v4.1 (board 3): the view's own toolbar row — search on the left, Group by
+   on the right; every group header opens its own section below it. */
 .souls-bar { flex:none; margin:0 0 8px; padding:10px 20px 0; }
 .souls-bar .souls-group-title { padding:0 2px; }
 .souls-bar .ws-segmented { margin-left:2px; }
@@ -46,42 +46,63 @@ const CSS = `
 /* Counts are already in the Souls tab. Keep the full filter/CLI status for
    assistive tech, without another permanent row above the canvas. */
 .workspace-sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
-/* Workspace v4 (W3): cards grouped by primary team (or repository); souls of a
-   member that has not joined are listed apart, with the reason. */
-.souls-grid { flex:1; min-height:0; min-width:0; overflow-y:auto; padding:0 20px 16px; display:flex; flex-direction:column; }
-.souls-group-title { display:flex; align-items:baseline; gap:8px; margin:0; padding:10px 2px 8px; color:var(--fg); font-size:12.5px; font-weight:650; overflow-wrap:anywhere; }
-.souls-group-title.warn { color:var(--warn); }
-.souls-group-note { color:var(--muted); font-weight:500; }
-.souls-group-cards { display:grid; gap:12px; grid-template-columns:repeat(auto-fill, minmax(min(240px, 100%), 1fr)); align-content:start; }
+.souls-bar .souls-bar-lead { flex:1 1 auto; }
+/* Workspace v4.1 (board 3): cards grouped by repository (the default) or team; each group
+   opens with its header (icon, monospace name, a muted qualifier). Souls of a member that
+   has not joined are listed apart, with the reason. */
+.souls-grid { flex:1; min-height:0; min-width:0; overflow-y:auto; padding:0 20px 16px; display:flex; flex-direction:column; gap:14px; }
+.souls-group { display:flex; flex-direction:column; gap:14px; min-width:0; }
+.souls-group + .souls-group { padding-top:10px; }
+.souls-group-title { display:flex; align-items:center; gap:8px; margin:0; padding:0 2px; color:var(--fg); font-size:13px; font-weight:650; min-width:0; }
+.souls-group-title .shell-icon { flex:none; color:var(--muted); }
+.souls-group-name { font:650 13px var(--mono,monospace); overflow-wrap:anywhere; }
+.souls-group-name.plain { font-family:inherit; }
+.souls-group-title.warn .souls-group-name { color:var(--warn); }
+.souls-group-title.warn .shell-icon { color:var(--warn); }
+.souls-group-note { color:var(--muted); font-size:12px; font-weight:500; overflow-wrap:anywhere; }
+.souls-group-cards { display:grid; gap:14px; grid-template-columns:repeat(auto-fill, minmax(min(240px, 100%), 1fr)); align-content:start; }
 .soul-card { display:flex; flex-direction:column; min-width:0; padding:0; overflow:hidden; background:var(--surface); border:1px solid var(--border); border-radius:10px;
              cursor:pointer; text-align:left; font:inherit; color:var(--fg); }
 .soul-card:hover { border-color:var(--sel-border); }
 .soul-card.open { border-color:var(--sel-border); box-shadow:0 0 0 1px var(--sel-border); }
-.soul-card.unavailable { cursor:default; background:var(--surface-2); }
-.soul-card .sname { display:flex; align-items:center; gap:10px; padding:12px 12px 2px; }
+.soul-card.unavailable { cursor:default; }
+.soul-card.unavailable .stitle { color:var(--muted); }
+.soul-card .sbody { display:flex; flex-direction:column; gap:10px; padding:14px 14px 12px; min-width:0; }
+.soul-card .sname { display:flex; align-items:center; gap:10px; min-width:0; }
 .soul-card .sidentity { display:flex; flex-direction:column; min-width:0; flex:1; }
 .soul-card .stitle { font-size:13px; font-weight:650; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.soul-card.unavailable .stitle { color:var(--muted); }
-.soul-card .scontext { color:var(--muted); font:11px var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.soul-card .sname .glyph { width:30px; height:30px; flex:none; border-radius:8px; font-size:13px; font-weight:700; }
+.soul-card .scontext { color:var(--muted); font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.soul-card .sname .glyph { width:32px; height:32px; flex:none; border-radius:8px; font-size:13px; font-weight:700; }
 .soul-card .sname .runtime-badge { width:20px; height:20px; font-size:10px; }
-.soul-card .sbody { display:flex; flex-direction:column; gap:6px; padding:8px 12px 10px; flex:1; }
-.soul-card .sdesc { min-height:18px; color:var(--muted); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.soul-card .steams { display:flex; flex-wrap:wrap; gap:4px; }
-.soul-card .steam { display:inline-flex; align-items:center; height:20px; padding:0 6px; border:1px solid var(--border); border-radius:4px; background:var(--surface); color:var(--muted); font-size:11px; font-weight:550; white-space:nowrap; }
-.soul-card .steam.primary { border-color:var(--chip-bg); background:var(--chip-bg); color:var(--fg); font-weight:650; }
-.soul-card .sfoot { display:flex; align-items:center; gap:8px; margin-top:auto; padding-top:6px; border-top:1px solid var(--tag-bg); color:var(--muted); font-size:11.5px; }
-.soul-card .smode { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
-.soul-card .sactivity { display:inline-flex; align-items:center; gap:6px; margin-left:auto; flex:none; color:var(--muted); font-weight:600; white-space:nowrap; }
-.soul-card .sactivity.running { color:var(--fg); }
-.soul-card .sproblem { display:block; color:var(--warn); font-size:11.5px; font-weight:600; white-space:normal; overflow-wrap:anywhere; min-width:0; }
-.soul-card .sactivity.running::before { content:""; width:6px; height:6px; border-radius:50%; background:var(--live); }
+/* Two lines at most; the soul's page carries the whole text. */
+.soul-card .sdesc { margin:0; color:var(--fg); font-size:12.5px; line-height:1.45; overflow:hidden; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow-wrap:anywhere; }
+.soul-card .sdesc:empty { display:none; }
+/* Chips say what they are: a muted label, then the value. */
+.soul-card .schips { display:flex; flex-wrap:wrap; gap:6px; min-width:0; }
+.soul-card .schip { display:inline-flex; align-items:center; gap:5px; max-width:100%; height:22px; padding:0 7px; border-radius:5px; background:var(--tag-bg); color:var(--fg); font-size:11px; white-space:nowrap; box-sizing:border-box; }
+.soul-card .schip-key { color:var(--muted); }
+.soul-card .schip b { font-weight:650; overflow:hidden; text-overflow:ellipsis; }
+/* Foot: a hairline that spans the card, then one 48px row whose centre line the Spawn button
+   shares (24px high: 12px clear of the hairline and of the card's edge). */
+.soul-card .sfoot { display:flex; align-items:center; gap:10px; box-sizing:border-box; height:49px; margin-top:auto; padding:0 14px; border-top:1px solid var(--border); font-size:12px; line-height:16px; }
+.soul-card .sactivity { display:inline-flex; align-items:center; gap:6px; min-width:0; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.soul-card .sactivity.running { color:var(--fg); font-weight:600; }
+.soul-card .sactivity.running::before { content:""; flex:none; width:7px; height:7px; border-radius:50%; background:var(--live); }
+.soul-card .sproblem { min-width:0; color:var(--warn); font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* A refused soul says why, then (a muted second line inside the same 48px row) what still runs. */
+.soul-card .sfoot-lines { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.soul-card .sfoot-lines .sactivity { font-size:11.5px; line-height:15px; color:var(--muted); font-weight:400; }
+.soul-card .schip-note { color:var(--muted); font-weight:400; }
 /* A card and its Spawn button share one grid cell (no nested buttons); the
-   button sits in the card's foot, whose facts leave it room. */
+   button sits in the card's foot, whose facts leave it room. Its bottom margin
+   is the card's 1px edge plus the 12px under a 24px button in the 48px row. */
 .soul-tile { display:grid; min-width:0; }
 .soul-tile > .soul-card { grid-area:1/1; }
-.soul-tile.can-spawn > .soul-card .sfoot { padding-right:98px; min-height:26px; }
-.oats-view .souls .soul-tile > button.soul-spawn { grid-area:1/1; align-self:end; justify-self:end; display:inline-flex; align-items:center; gap:5px; height:26px; min-height:26px; margin:0 12px 8px 0; padding:0 10px; border-radius:6px; font-size:12px; font-weight:600; }
+.soul-tile.can-spawn > .soul-card .sfoot { padding-right:100px; }
+.oats-view .souls .soul-tile > button.soul-spawn { grid-area:1/1; align-self:end; justify-self:end; display:inline-flex; align-items:center; gap:4px; box-sizing:border-box; height:24px; min-height:24px; margin:0 14px 13px 0; padding:0 9px;
+  border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--fg); font:600 12px var(--sans,system-ui); }
+.oats-view .souls .soul-tile > button.soul-spawn:hover:not(:disabled) { background:var(--surface-2); }
+.oats-view .souls .soul-tile > button.soul-spawn:disabled { color:var(--muted); }
 .oats-view .souls button.spawn-act:not(:disabled), .oats-view .souls button.fspawn:not(:disabled) { background:var(--primary-bg); color:var(--primary-fg); border-color:var(--primary-bg); }
 .souls-grid[hidden] { display:none; }
 .spawn-modal { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 24px; background: var(--scrim); }
@@ -210,7 +231,9 @@ function showPage(s, mode) {
 /** A capability's page, from the Capabilities table (from = null) or a soul page (from = the soul). */
 function openCapability(s, row, from = null) {
   if (!s.alive) return;
-  s.capOpen = { row, from, gen: workspaceGeneration() };
+  // The list is hidden (display:none) while the page is open, which drops its scroll offset: keep it for Back.
+  const list = s.q("workspace-discovery");
+  s.capOpen = { row, from, gen: workspaceGeneration(), scrollTop: from ? null : list?.scrollTop ?? null };
   const { catalog, ...context } = s.discovery.context();
   // From a soul page, the catalog's row for the same capability adds what the kernel reports
   // about it in the workspace (#217: description, what it provides, its file and fingerprint).
@@ -235,15 +258,19 @@ function closeCapability(s, { restoreFocus = false } = {}) {
   // Back to where it was opened: the soul's page (still shown) or the Capabilities table.
   const backToSoul = !!open.from && !!s.inspectRef && s.inspectRef.name === open.from.name && s.inspectRef.agentsRoot === open.from.agentsRoot;
   showPage(s, backToSoul ? "soul" : null);
+  // Back to the list where it was: its scroll offset (filters and search live in the discovery's state).
+  const list = s.q("workspace-discovery");
+  if (!backToSoul && list && Number.isFinite(open.scrollTop) && open.gen === workspaceGeneration()) list.scrollTop = open.scrollTop;
   if (!restoreFocus) return;
-  const scope = backToSoul ? s.q("workspace-soul-page") : s.q("workspace-discovery");
-  [...(scope?.querySelectorAll("[data-capability]") || [])].find(el => el.dataset.capability === open.row.name)?.focus({ preventScroll: false });
+  const scope = backToSoul ? s.q("workspace-soul-page") : list;
+  // The row is already in view at the restored offset: focus without scrolling it again.
+  [...(scope?.querySelectorAll("[data-capability]") || [])].find(el => el.dataset.capability === open.row.name)?.focus({ preventScroll: !backToSoul && Number.isFinite(open.scrollTop) });
 }
 
 export function mount(el, ctx) {
   ensureTheme(el.ownerDocument);
   // ctx.spawnTiming (optional, harness only): { previewDelay, wait } — never set by the shell.
-  const s = state = { el, ctx, souls: { agents: [] }, panelInstances: [], filterText: "", groupBy: "team", sel: null, timers: [], unsubWs: null, alive: true, spawnOp: 0, rosterReq: 0, rosterGen: null,
+  const s = state = { el, ctx, souls: { agents: [] }, panelInstances: [], filterText: "", groupBy: "repo", sel: null, timers: [], unsubWs: null, alive: true, spawnOp: 0, rosterReq: 0, rosterGen: null,
     waitOpts: ctx.spawnTiming?.wait };
   el.innerHTML = `
     <div class="oats-view" style="display:block">
@@ -262,10 +289,10 @@ ${spawnDialogCSS}</style>
             <select class="field wssel" aria-label="Workspace" style="display:none"></select>
             <div class="workspace-recovery" hidden></div>
             <div class="souls-bar ws-toolbar">
-              <div class="ws-toolbar-lead souls-bar-lead"></div>
               <label class="ws-search"><span class="workspace-sr-only">Search souls</span><input class="field filter" type="search" placeholder="Search souls" autocomplete="off"></label>
+              <div class="ws-toolbar-lead souls-bar-lead"></div>
               <span class="ws-toolbar-label" aria-hidden="true">Group by</span>
-              <div class="ws-segmented souls-group-by" role="group" aria-label="Group souls by"><button type="button" data-group-by="team" aria-pressed="true">Team</button><button type="button" data-group-by="repo" aria-pressed="false">Repo</button></div>
+              <div class="ws-segmented souls-group-by" role="group" aria-label="Group souls by"><button type="button" data-group-by="repo" aria-pressed="true">Repo</button><button type="button" data-group-by="team" aria-pressed="false">Team</button></div>
               <span class="souls-sum workspace-sr-only" role="status"></span>
             </div>
             <div class="souls-grid"><div class="loading-block"><span class="spinner"></span> Loading souls…</div></div>
@@ -536,7 +563,6 @@ function renderGrid(s, { restoreFocus = true } = {}) {
   }
   if (recovery) recovery.hidden = !cliKnownUnavailable();
   grid.innerHTML = "";
-  const lead = s.q("souls-bar-lead"); lead?.replaceChildren?.();
   const list = s.souls.agents.filter((a) => matches(s, a));
   s.q("souls-sum").classList?.add("workspace-sr-only");
   s.q("souls-sum").textContent = `${list.length} of ${s.souls.agents.length} souls${cliProbePending() ? " · Checking CLI…" : ""}`;
@@ -562,33 +588,39 @@ function renderGrid(s, { restoreFocus = true } = {}) {
     grid.append(empty);
     return;
   }
-  // Workspace v4: grouped by the soul's default team (team model v2 `defaultTeam`,
-  // else 0.29's `team`) or by repository; groups and cards in name order. Souls of
-  // a member that is not confirmed are listed last, apart, with the member's reason
+  // Workspace v4.1 (board 3): grouped by where the soul comes from (a member repository,
+  // a package, an external source; the default) or by its default team (team model v2
+  // `defaultTeam`, else 0.29's `team`); groups ranked, cards in name order. Souls of a
+  // member that is not confirmed are listed last, apart, with the member's reason
   // (workspace status).
   const doc = grid.ownerDocument;
-  const key = (a) => s.groupBy === "repo" ? repoLabel(a) : teamGroup(a);
+  const byRepo = s.groupBy === "repo";
   const groups = new Map();
   for (const a of [...list].sort((a, b) => String(a.name).localeCompare(String(b.name)))) {
-    if (!groups.has(key(a))) groups.set(key(a), []);
-    groups.get(key(a)).push(a);
+    const g = byRepo ? repoGroup(s, a) : { key: `team:${teamGroup(a)}`, rank: 0, icon: "users", name: teamGroup(a), qualifier: "", mono: false };
+    if (!groups.has(g.key)) groups.set(g.key, { ...g, souls: [] });
+    groups.get(g.key).souls.push(a);
   }
-  const group = (title, cards, { note = "", warn = false } = {}) => {
+  const group = (g, cards, { warn = false } = {}) => {
     const section = doc.createElement("section"); section.className = "souls-group";
-    const heading = doc.createElement("h2"); heading.className = `souls-group-title${warn ? " warn" : ""}`; heading.textContent = title;
-    if (note) { const extra = doc.createElement("span"); extra.className = "souls-group-note"; extra.textContent = note; heading.append(extra); }
+    const heading = doc.createElement("h2"); heading.className = `souls-group-title${warn ? " warn" : ""}`;
+    heading.id = `souls-group-${grid.querySelectorAll(".souls-group").length}`; section.setAttribute("aria-labelledby", heading.id);
+    const name = doc.createElement("span"); name.className = "souls-group-name"; name.textContent = g.name;
+    if (g.mono === false) name.classList.add("plain"); // a team label reads as words
+    const icon = iconElement(doc, g.icon, { size: 15 }); icon.setAttribute("data-icon", g.icon);
+    heading.append(icon, name);
+    const note = doc.createElement("span"); note.className = "souls-group-note"; note.textContent = g.qualifier; heading.append(note);
     const body = doc.createElement("div"); body.className = "souls-group-cards";
-    // The first heading shares the toolbar's row; it still names its section.
-    const first = !grid.querySelector(".souls-group") && lead;
-    if (first) { heading.id = "souls-group-first"; section.setAttribute("aria-labelledby", heading.id); lead.append(heading); section.append(body); }
-    else section.append(heading, body);
-    body.append(...cards); grid.append(section);
+    section.append(heading, body); body.append(...cards); grid.append(section);
   };
-  for (const [title, agents] of [...groups].sort(([a], [b]) => a.localeCompare(b))) group(title, agents.map((a) => soulCard(s, a)));
+  const count = (n) => `${n} ${n === 1 ? "soul" : "souls"}`;
+  for (const g of [...groups.values()].sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name))) {
+    group({ ...g, qualifier: [g.qualifier, count(g.souls.length)].filter(Boolean).join(" · ") }, g.souls.map((a) => soulCard(s, a, byRepo ? null : g.name)));
+  }
   for (const { member, state: why, souls } of unavailableMembers(s)) {
     const shown = souls.filter((name) => matches(s, { name }));
     if (s.filterText && !shown.length) continue;
-    group("Not available", shown.map((name) => unavailableCard(s, name, member)), { note: `· ${member.name || member.key} ${why.why}`, warn: true });
+    group({ icon: "warning", name: "Not available", qualifier: `${member.name || member.key} ${why.why}`, mono: false }, shown.map((name) => unavailableCard(s, name, member)), { warn: true });
   }
   // Roving tabindex across the rebuilt grid: keep the previously focused
   // card's identity tabbable (and focused) when it survives the repaint,
@@ -702,6 +734,20 @@ function canLaunchSoul(s, agent) {
 }
 
 const repoLabel = (a) => a.repoName || (a.repo ? String(a.repo).split("/").filter(Boolean).at(-1) : "") || "workspace";
+/** The workspace's host member (the repository holding oats-workspace.yaml), from workspace status. */
+const hostKey = (s) => s.deployment?.status === "observed" ? s.deployment.workspaceStatus?.workspace?.key ?? null : null;
+/** The Repo group a soul sits in (board 3): its member repository (the host first), its package
+ * with the pinned version, or the external souls; icon, monospace name and qualifier as reported. */
+function repoGroup(s, a) {
+  if (a.soulKind === "package" && a.package) {
+    const name = [a.package, a.version].filter(Boolean).join(" ");
+    return { key: `package:${name}`, rank: 2, icon: "package", name, qualifier: "package · pinned" };
+  }
+  if (a.soulKind === "external") return { key: "external", rank: 3, icon: "external", name: "external", qualifier: "not in a member repo" };
+  const host = !!a.repo && a.repo === hostKey(s);
+  if (a.soulKind === "member") return { key: `member:${a.repo || repoLabel(a)}`, rank: host ? 0 : 1, icon: "repo", name: repoLabel(a), qualifier: host ? "member repo · host" : "member repo" };
+  return { key: `repo:${a.server || ""}:${repoLabel(a)}`, rank: 1, icon: "repo", name: repoLabel(a), qualifier: a.server ? `on ${a.server}` : "" };
+}
 /** A soul's team labels, its default first. Team model v2 (0.30) rows carry `teams`
  * [{label, team|null, default, from, mapped}]; 0.29 rows carried `labels` (default
  * first) and `team`, which 0.30 removed. */
@@ -715,8 +761,22 @@ const teamGroup = (a) => {
   if (v2Teams(a)) return a.teams.find((t) => t.default === true)?.label || "No default team";
   return a.team || "No team";
 };
+/** A card's running/stopped line (never the bare word "none"). */
+function activityText(running, total) {
+  if (running) return `${running} ${running === 1 ? "instance" : "instances"} running`;
+  return total ? `${total} stopped` : "No instances";
+}
+/** A labelled chip: "Team oats", "Repo agents". */
+function chip(doc, key, value) {
+  const el = doc.createElement("span"); el.className = "schip"; el.title = `${key} ${value}`;
+  const k = doc.createElement("span"); k.className = "schip-key"; k.textContent = key;
+  const v = doc.createElement("b"); v.textContent = value;
+  el.append(k, v); return el;
+}
 
-function soulCard(s, a) {
+/** One soul card (board 3). groupTeam: the Team group it is drawn in, whose label the card then
+ * leaves out (it shows its Repo instead); null in Repo grouping. */
+function soulCard(s, a, groupTeam = null) {
   const attached = a.work === "attached";
   const doc = s.el.ownerDocument;
   const card = doc.createElement("button");
@@ -730,40 +790,59 @@ function soulCard(s, a) {
   card.title = attached ? "Attached only — select for details and files" : `Inspect ${a.name} — Launch, Files, Schedule and reported defaults`;
   card.addEventListener("click", () => inspectSoul(s, a));
   const span = (cls, text) => { const el = doc.createElement("span"); el.className = cls; if (text !== undefined) el.textContent = text; return el; };
-  // Head: mark, name and repository; the default harness badge only when the kernel reports one.
+  // Head: mark, name and what it launches (harness · model); the harness badge only when the kernel reports one.
+  const body = span("sbody");
   const name = span("sname");
   const avatar = createSoulMark(doc, a); avatar.classList.add("glyph");
   const identity = span("sidentity");
-  identity.append(span("stitle", a.name), span("scontext", a.repoName || a.workspace || "Workspace soul"));
+  identity.append(span("stitle", a.name));
+  // 0.30: the harness and model a spawn here runs (launch preferences); a kernel before it reports
+  // the soul's harness only, and then no model is claimed.
+  const launch = shownLaunch(a.launch, cliStatus())?.effective ?? null;
+  const harness = launch?.harness ?? harnessOf(a);
+  if (typeof harness === "string" && harness) identity.append(span("scontext", launch ? `${launchHarnessName(harness)} · ${launch.model ?? "default model"}` : launchHarnessName(harness)));
   name.append(avatar, identity);
-  // 0.30: the harness a spawn here runs (launch preferences); a kernel before it reports the soul's own.
-  const harness = shownLaunch(a.launch, cliStatus())?.effective.harness ?? harnessOf(a);
   if (typeof harness === "string" && harness) name.append(createRuntimeBadge(doc, harness));
-  const body = span("sbody");
-  body.append(span("sdesc", a.description || ""));
-  const teams = span("steams");
-  soulTeams(a).forEach((team, index) => teams.append(span(`steam${index === 0 ? " primary" : ""}`, team)));
-  if (teams.childElementCount) body.append(teams);
-  const refusal = attached ? null : spawnRefusal(a);
-  if (refusal) { const note = span("sproblem", `Can't spawn here · ${refusal}`); note.title = refusal; body.append(note); }
-  // Foot: where it works (and its harness), then what runs now.
+  body.append(name);
+  if (a.description) { const desc = doc.createElement("p"); desc.className = "sdesc"; desc.textContent = a.description; body.append(desc); }
+  // Chips say what they are: its teams on this computer (or, grouped by team, its repository).
+  // No work-mode chip (human, 2026-09-29): where a soul works is the soul page's and the spawn preview's.
+  const chips = span("schips");
+  if (groupTeam !== null) chips.append(chip(doc, "Repo", repoGroup(s, a).name));
+  soulTeams(a).forEach((team, index) => {
+    if (team === groupTeam) return;
+    const c = chip(doc, "Team", team);
+    // The default leads (soulTeams puts it first); marked for assistive tech and tests, not painted.
+    if (index === 0 && teamGroup(a) === team) {
+      // The default is said, not painted: "Team oats · default", the word muted (no new colour).
+      c.dataset.default = "true"; c.title = `Team ${team}: this soul's default team`;
+      const note = doc.createElement("span"); note.className = "schip-note"; note.textContent = "· default"; c.append(note);
+    }
+    chips.append(c);
+  });
+  if (chips.childElementCount) body.append(chips);
+  // Foot: what runs now, or why a spawn here would be refused (the Spawn button sits at its right).
   const instances = soulInstances(s, a);
   const running = instances.filter(i => i.running === true).length;
   const foot = span("sfoot");
-  foot.append(span("smode", [a.work, typeof harness === "string" && harness ? harnessName(harness) : ""].filter(Boolean).join(" · ")));
-  const activity = span("sactivity" + (running ? " running" : ""), running ? `${running} running` : "none");
+  const refusal = attached ? null : spawnRefusal(a);
+  const activity = span("sactivity" + (running ? " running" : ""), activityText(running, instances.length));
   activity.title = `${running} running · ${instances.length} ${instances.length === 1 ? "instance" : "instances"}`;
-  foot.append(activity);
-  body.append(foot);
-  card.append(name, body);
+  if (refusal) {
+    // Both facts: why a spawn here is refused, and what of it already runs (the row's height is fixed).
+    const note = span("sproblem", `Can't spawn here · ${refusal}`); note.title = refusal;
+    const lines = span("sfoot-lines"); lines.append(note, activity); foot.append(lines);
+  } else foot.append(activity);
+  card.append(body, foot);
   if (attached) return card;
   // Workspace v4 (human, 2026-09-26): every spawnable card offers Spawn directly.
   const tile = doc.createElement("div"); tile.className = "soul-tile can-spawn";
   const spawn = doc.createElement("button"); spawn.type = "button"; spawn.className = "act soul-spawn"; spawn.tabIndex = -1;
-  spawn.append(iconElement(doc, "plus", { size: 13 }), span("", "Spawn"));
+  spawn.append(iconElement(doc, "plus", { size: 11 }), span("", "Spawn"));
   spawn.setAttribute("aria-label", `Spawn ${a.name}`);
   const can = canLaunchSoul(s, a); spawn.disabled = !can;
   spawn.title = can ? `Spawn a new ${a.name} instance` : refusal ? `Can't spawn here: ${refusal}` : cliAvailable() ? `${a.name} cannot be spawned from here` : "Spawn needs a compatible installed OATS CLI";
+  // Board 6: a card's Spawn opens the dialog scoped to this soul (its preview, no picker).
   spawn.addEventListener("click", () => { if (!spawn.disabled && canLaunchSoul(s, a)) { openSpawnModal(s, a); s.spawnFromCard = !!s.modalEl; } });
   tile.append(card, spawn);
   return tile;
@@ -781,14 +860,14 @@ function unavailableCard(s, name, member) {
   const doc = s.el.ownerDocument;
   const card = doc.createElement("div"); card.className = "soul-card unavailable"; card.dataset.unavailable = name;
   const span = (cls, text) => { const el = doc.createElement("span"); el.className = cls; if (text !== undefined) el.textContent = text; return el; };
+  const body = span("sbody");
   const head = span("sname"); const avatar = createSoulMark(doc, { name }); avatar.classList.add("glyph");
   const identity = span("sidentity"); identity.append(span("stitle", name), span("scontext", member.name || member.key));
-  head.append(avatar, identity);
-  const body = span("sbody");
-  body.append(span("sdesc", "Hidden until membership is confirmed"));
-  if (member.team) { const teams = span("steams"); teams.append(span("steam primary", member.team)); body.append(teams); }
-  const foot = span("sfoot"); foot.append(span("smode", ""), span("sactivity", "—")); body.append(foot);
-  card.append(head, body);
+  head.append(avatar, identity); body.append(head);
+  if (member.team) { const chips = span("schips"); chips.append(chip(doc, "Team", member.team)); body.append(chips); }
+  // Why it cannot open: the foot's left slot, in the warning colour.
+  const foot = span("sfoot"); foot.append(span("sproblem", "Hidden until membership is confirmed"));
+  card.append(body, foot);
   return card;
 }
 
@@ -841,6 +920,9 @@ function openSpawnModal(s, a, draft = {}) {
   const ui = createSpawnDialog(modal, {
     ctx: s.ctx, soul: a, agents: s.souls.agents, workspace: () => s.workspace, cli: cliStatus, instances: () => s.panelInstances,
     owns: () => ownsModal() && canLaunchSoul(s, a), canChoose: candidate => canLaunchSoul(s, candidate), draft, catalogNote: catalogNote(s), close,
+    // Board 6: opened for a soul (its card, its page) the dialog is scoped to it; a soul chosen in
+    // the picker (after Change soul) reopens in the picker, so the list stays where it was.
+    layout: draft.layout === "picker" ? "picker" : "scoped",
     ...(Number.isInteger(s.ctx.spawnTiming?.previewDelay) ? { delay: s.ctx.spawnTiming.previewDelay } : {}),
     choose: (candidate, next) => {
       if (!ownsModal() || !canLaunchSoul(s, candidate)) return;

@@ -70,9 +70,10 @@ test('Capabilities is the kernel catalog: counts, jump pills, and Capability | S
   await u.tab('capabilities');
   assert.deepEqual(u.syncCalls(), [{ action: 'read' }], 'opening the tab does not read again');
   assert.equal(u.doc.querySelector('#workspace-tab-capabilities .workspace-count').textContent, '10');
+  // Workspace v4.1: the section jump is one segmented group (navigation: aria-current); each capability is a row card under a column head.
   assert.deepEqual([...u.doc.querySelectorAll('.capability-nav button')].map(el => [el.dataset.jump, el.textContent, el.getAttribute('aria-current')]),
-    [['workspace', 'Workspace owned6', 'true'], ['packages', 'Packages4', 'false']]);
-  assert.deepEqual([...u.doc.querySelectorAll('[data-section=workspace] .catalog-row.head [role=columnheader]')].map(el => el.textContent), ['Capability', 'Source', 'Used by']);
+    [['workspace', 'Workspace owned6', 'true'], ['packages', 'Packages4', null]]);
+  assert.deepEqual([...u.doc.querySelectorAll('[data-section=workspace] .catalog-head span')].map(el => el.textContent), ['', 'Capability', 'Source', 'Used by', '']);
   assert.equal(u.rows().length, 10);
   const row = name => u.rows().find(el => el.dataset.capability === name);
   // Source: the package and its pinned version, or the member repository at its latest.
@@ -84,9 +85,9 @@ test('Capabilities is the kernel catalog: counts, jump pills, and Capability | S
   // Used by = souls whose instances record the module (roster module rows).
   const used = capabilityUse(instances, 'nw-release-tooling');
   assert.deepEqual(used.souls.map(s => s.name), ['release-manager']);
-  assert.equal(row('nw-release-tooling').querySelector('.catalog-used-count').textContent, '1');
+  assert.equal(row('nw-release-tooling').querySelector('.catalog-used-count').textContent, '1 soul');
   assert.equal(row('nw-release-tooling').querySelector('.catalog-used-count').title, 'Used by release-manager');
-  assert.equal(row('nw-brand-voice').querySelector('.catalog-used-count').textContent, '—');
+  assert.equal(row('nw-brand-voice').querySelector('.catalog-used-count').textContent, 'Not used', 'never a lone dash');
   assert.equal(u.doc.querySelector('.workspace-discovery').textContent.includes('Members'), false, 'no Members list in Capabilities');
 });
 
@@ -390,15 +391,18 @@ test('a failed catalog read names the failure and offers an explicit retry', asy
 const { teamsData } = await import('../deployment-data.mjs');
 // The REAL 0.30 kernel's `oats teams` (K1 @bba0a9b8, test/fixtures/team-model-v2/teams-after, #269), decoded as the route answers it.
 const K1_TEAMS = () => teamsData(JSON.parse(readFileSync(new URL('./fixtures/team-model-v2/teams-after.json', import.meta.url), 'utf8')), dir);
-test('Teams tab (team-model-2): first, before Souls; "Teams on this computer" from oats teams; its problems light the dot; Setup has no teams', async t => {
+test('Teams tab (team-model-2): first, before Souls; the Teams page from oats teams; its problems light the dot; Setup has no teams', async t => {
   const u = await setup(t, { cli: { ...CLI, features: [...CLI.features, 'team-model-2'] }, teams: () => ({ status: 'ok', teams: K1_TEAMS() }) });
   assert.deepEqual([...u.doc.querySelectorAll('.workspace-tabs [role=tab]')].map(tab => tab.id), ['workspace-tab-teams', 'workspace-tab-souls', 'workspace-tab-capabilities', 'workspace-tab-sources']);
   assert.equal(u.doc.getElementById('workspace-tab-souls').getAttribute('aria-selected'), 'true', 'Souls stays where the Workspace opens');
   await u.tab('teams');
   const card = u.doc.querySelector('.workspace-discovery .computer-teams');
-  assert.ok(card, 'the card'); assert.equal(card.dataset.box, 'Teams on this computer');
+  assert.ok(card, 'the page'); assert.equal(card.dataset.box, 'Teams'); assert.equal(card.querySelector('.ct-title').textContent, 'Teams');
   assert.equal(u.doc.querySelector('.workspace-discovery').dataset.tab, 'teams');
-  assert.deepEqual([...card.querySelectorAll('.ct-row')].map(r => r.dataset.team), ['engineering', 'global', 'marketing', 'mine']);
+  // One card per team: the shared ones, then this computer's own.
+  const cards = [...card.querySelectorAll('.ct-card')].map(r => [r.closest('.ct-section').dataset.section, r.dataset.team]);
+  assert.deepEqual(cards.map(([, team]) => team).sort(), ['engineering', 'global', 'marketing', 'mine']);
+  assert.deepEqual(cards, [...cards].sort((a, b) => (a[0] === 'local') - (b[0] === 'local')), 'shared first');
   assert.deepEqual(u.calls.filter(c => c.path.startsWith('/api/workspace-teams')).map(c => c.body), [{ action: 'list' }], 'one read');
   assert.equal(u.doc.querySelector('#workspace-tab-teams .workspace-attn').hidden, false);
   assert.equal(u.doc.querySelector('#workspace-tab-teams .workspace-sr-only').textContent, ' — 3 items need attention', 'the three shared teams with no provider id yet');

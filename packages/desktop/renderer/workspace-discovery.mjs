@@ -117,7 +117,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     const gen = workspaceGeneration();
     if (computerTeams && computerTeamsGen === gen) return computerTeams.element;
     computerTeams?.dispose(); computerTeamsGen = gen; teamProblems = 0;
-    computerTeams = createComputerTeams(doc, { onDocument: teams => { teamProblems = list(teams?.problems).length; updateCounts(); }, request: async body => {
+    computerTeams = createComputerTeams(doc, { instances: () => instances, onDocument: teams => { teamProblems = list(teams?.problems).length; updateCounts(); }, request: async body => {
       return teamsAnswer(await postJson(ctx, `/api/workspace-teams${wsQuery()}`, body), 'teams', 'The teams on this computer could not be read.');
     } });
     return computerTeams.element;
@@ -329,6 +329,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     rosterGen = gen; workspace = panelData.workspace || null; deployment = panelData.deployment || null; souls = list(agents);
     instances = list(panelData.instances);
     updateCounts(agents.length); render();
+    computerTeams?.syncRoster(); // the Teams page's "instances in it" follows the roster
     // Read once per roster generation on any tab: the tab bar counts it.
     if (!catalog && !loading && !failure) void load();
   }

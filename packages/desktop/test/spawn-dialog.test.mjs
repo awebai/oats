@@ -39,7 +39,9 @@ test('the dialog shows what the kernel decided: name, harness, model and work â€
   assert.equal(advanced.contains(u.q('.spawn-relationship')), false);
   assert.equal(u.q('.spawn-seg input:checked').value, 'unrelated'); assert.equal(u.q('.frelto').hidden, true);
   // Removed: capability toggles, K6 placeholders, the preview button. The captured kernel advertises spawn-name.
-  assert.doesNotMatch(dialog.textContent, /Attach knowledge|Allow child spawns|Open PR|Available after|Preview invocation|Force native|capabilit/i);
+  assert.doesNotMatch(dialog.textContent, /Attach knowledge|Allow child spawns|Open PR|Available after|Preview invocation|Force native/i);
+  // Board 6: the capabilities are the preview's facts (read-only), never a choice.
+  assert.equal(dialog.querySelector('.spawn-preview :is(input, select, button, textarea)'), null, 'no capability toggles');
   assert.equal(dialog.querySelectorAll('input[type=checkbox]:not(.fworktree):not(.fprefix):not(.fwake-enabled)').length, 0);
   assert.equal(u.q('.spawn-prefix-toggle').hidden, false);
   assert.equal(u.q('.fspawn').disabled, false); assert.equal(u.q('.fspawn').hidden, false, 'the shell must not rewrite the Spawn button');
@@ -115,7 +117,7 @@ for (const outcome of ['success', 'rejection']) test(`an older preview settling 
   if (outcome === 'success') first.resolve(); else first.reject(Object.assign(new Error('late'), { code: 'E_CLI_FAILED' }));
   await settle(20);
   assert.equal(u.q('.spawn-name-result strong').textContent, created().instance);
-  assert.equal(u.text('.fstatus'), ''); assert.equal(u.q('.fspawn').disabled, false);
+  assert.equal(u.text('.fstatus'), 'Preview ready', 'the newer read\'s own status, nothing from the late one'); assert.equal(u.q('.fspawn').disabled, false);
 });
 
 for (const outcome of ['success', 'rejection']) test(`a preview settling (${outcome}) after the dialog was replaced touches nothing`, async t => {
@@ -127,7 +129,7 @@ for (const outcome of ['success', 'rejection']) test(`a preview settling (${outc
   if (outcome === 'success') gate.resolve(); else gate.reject(new Error('late'));
   await settle(20);
   assert.equal(u.dialog(), current); assert.equal(old.isConnected, false);
-  assert.equal(u.text('.spawn-work-text'), 'Works in its own directory in the instance home'); assert.equal(u.text('.fstatus'), '');
+  assert.equal(u.text('.spawn-work-text'), 'Works in its own directory in the instance home'); assert.equal(u.text('.fstatus'), 'Preview ready');
 });
 
 test('Spawn is one click: prepare, then apply of the decision on screen; the terminal opens once the exact instance runs', async t => {
@@ -189,7 +191,7 @@ for (const outcome of ['success', 'rejection']) test(`closing during an in-fligh
   const current = await u.open('support-triager'); await u.type('.ftask', 'newer');
   if (outcome === 'success') gate.resolve(); else gate.reject(new Error('late'));
   await settle(30);
-  assert.equal(u.dialog(), current); assert.equal(u.q('.ftask').value, 'newer'); assert.equal(u.text('.fstatus'), '');
+  assert.equal(u.dialog(), current); assert.equal(u.q('.ftask').value, 'newer'); assert.equal(u.text('.fstatus'), 'Preview ready');
   assert.equal(old.querySelector('.fstatus').textContent, 'Spawningâ€¦', 'the closed dialog does not even take the late response');
   assert.deepEqual(u.opens, []);
   const before = u.spawns().length;
@@ -429,8 +431,8 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: every spawn 
     ['.spawn-input-tag', '.spawn-input-tag', 'muted', 'chip-bg'],
     ['.spawn-run .spawn-trigger-tag', '.spawn-run .spawn-trigger-tag', 'muted', 'chip-bg'],
     ['.spawn-choice-menu [aria-selected=true]', '.spawn-choice-menu [aria-selected=true]', 'fg', 'sel'],
-    ['.spawn-seg input:checked + span', '.spawn-seg input:checked + span', 'accent', 'sel'], // F7: the selected option in the accent on its tint,
-    ['.spawn-seg input:not(:checked) + span', '.spawn-seg', 'muted', 'surface-2'],
+    ['.spawn-seg input:checked + span', '.spawn-seg input:checked + span', 'accent', 'sel'], // the selected segment: brand tint (shared control rule 1)
+    ['.spawn-seg input:not(:checked) + span', '.spawn-seg', 'muted', 'surface'],
     ['.spawn-advanced > summary', '.spawn-advanced', 'fg', 'surface-2'],
     ['.spawn-advanced > summary small', '.spawn-advanced', 'muted', 'surface-2'],
     ['.spawn-joined-from', '.spawn-joined-from', 'muted', 'surface-2'],

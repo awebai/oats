@@ -23,7 +23,7 @@ const catalogReply = (capabilities = f2('capabilities').result.capabilities) => 
 const soul = { name: 'dev', agentsRoot: '/fixture/agents', repoName: 'fixture', runtime: 'pi', work: 'worktree', description: 'Build and review' };
 // operationsApi 2 soul inspection from the kernel capture.
 const inspection = soulInspection('dev', { instructions: { file: '/fixture/AGENTS.md', text: 'Saved instructions', truncated: false } });
-async function fixture(t, { cli = CLI, inspect = () => inspection, agents = [soul], sync = null } = {}) {
+async function fixture(t, { cli = CLI, inspect = () => inspection, agents = [soul], sync = null, instances = [] } = {}) {
   const dom = new JSDOM('<body><div id="host"></div></body>', { url: 'http://localhost' });
   const doc = dom.window.document;
   const saved = { document: globalThis.document, window: globalThis.window, setInterval: globalThis.setInterval, ws: currentWorkspace() };
@@ -38,7 +38,7 @@ async function fixture(t, { cli = CLI, inspect = () => inspection, agents = [sou
       const body = opts.body && JSON.parse(opts.body); calls.push({ path, body });
       if (path === '/api/cli') { if (currentCli === null) throw new Error('Synthetic transport pending'); return currentCli; }
       if (path.startsWith('/api/agents')) return { agents };
-      if (path.startsWith('/api/panel')) return { instances: [], workspace: { id: currentWorkspace() }, workspaces: [{ id: '/fixture', name: 'Fixture' }, { id: '/other', name: 'Other' }],
+      if (path.startsWith('/api/panel')) return { instances, workspace: { id: currentWorkspace() }, workspaces: [{ id: '/fixture', name: 'Fixture' }, { id: '/other', name: 'Other' }],
         ...(sync ? { deployment: { status: 'observed', root: '/fixture/agents', workspace: observedStatus.workspace, workspaceStatus: observedStatus, reachable: { reachable: true }, withheld: [] } } : {}) };
       if (path.startsWith('/api/workspace-sync') && sync) return sync(body);
       if (path.startsWith('/api/capabilities')) return inspect(body);
@@ -91,8 +91,13 @@ test('03 (F7): a soul opens as a page in the main area — it replaces the grid,
   page.querySelector('.inspector-back').click(); await tick();
   assert.equal(u.get('.souls-grid').hidden, false); assert.equal(header.hidden, false, 'back restores the Workspace header');
   assert.equal(u.css('.souls-grid').padding, '0px 20px 16px', 'Workspace v4: groups start under the view toolbar');
-  assert.equal(u.get('.souls-bar-lead .souls-group-title')?.textContent.length > 0, true, 'the first group heading shares the toolbar row');
-  assert.equal(u.css('.souls-group-cards').gap, '12px');
+  // Workspace v4.1 (board 3): search first, then Group by (Repo, Team); every group header opens its own section.
+  assert.deepEqual([...u.get('.souls-bar').children].map(el => el.className), ['ws-search', 'ws-toolbar-lead souls-bar-lead', 'ws-toolbar-label', 'ws-segmented souls-group-by', 'souls-sum workspace-sr-only']);
+  assert.deepEqual([...u.get('.souls-group-by').querySelectorAll('button')].map(b => [b.textContent, b.getAttribute('aria-pressed')]), [['Repo', 'true'], ['Team', 'false']], 'Repo is the default');
+  assert.equal(u.get('.souls-bar-lead').childElementCount, 0, 'no group heading in the toolbar');
+  const first = u.get('.souls-grid .souls-group');
+  assert.equal(first.firstElementChild, first.querySelector('.souls-group-title')); assert.equal(first.getAttribute('aria-labelledby'), first.firstElementChild.id);
+  assert.equal(u.css('.souls-group-cards').gap, '14px');
   assert.equal(u.get('.souls-bar').parentElement, main, 'the toolbar belongs to the view, not the header');
   assert.equal(header.querySelector('.souls-bar, input'), null, 'the header keeps only the tabs');
   assert.equal(u.get('.wssel').parentElement, header);
@@ -112,10 +117,12 @@ test('03: cards have one semantic Details entry with compact identity, descripti
   assert.equal(card.tagName, 'BUTTON'); assert.equal(card.type, 'button');
   assert.equal(card.getAttribute('aria-label'), 'Inspect dev');
   assert.equal(u.doc.getElementById(card.getAttribute('aria-controls')), u.get('.workspace-soul-page'), 'a card opens its soul\'s page');
-  // Workspace v4 (W3): head (mark, name, repository), then description, team chips and a foot.
-  assert.deepEqual([...card.children].map(el => el.className), ['sname', 'sbody']);
-  assert.deepEqual([...card.querySelector('.sbody').children].map(el => el.className), ['sdesc', 'sfoot'], 'no team reported: no team chips invented');
-  assert.equal(card.querySelector('button, .schips, .sactions'), null, 'no control nested inside the card button');
+  // Workspace v4.1 (board 3): a body (head: mark, name, harness; the description; labelled chips) and a foot.
+  assert.deepEqual([...card.children].map(el => el.className), ['sbody', 'sfoot']);
+  // No team reported: no team chip invented; and no work-mode chip (human, 2026-09-29), so no chip row at all.
+  assert.deepEqual([...card.querySelector('.sbody').children].map(el => el.className), ['sname', 'sdesc']);
+  assert.doesNotMatch(card.textContent, /Works in|worktree/, 'the card does not say where the soul works');
+  assert.equal(card.querySelector('button, .sactions'), null, 'no control nested inside the card button');
   // Workspace v4 (human, 2026-09-26; replaces "launch only from an opened soul"): each
   // spawnable card has a Spawn button beside it in one grid cell, which roves with its card.
   const tile = card.parentElement, spawn = tile.querySelector(':scope > .soul-spawn');
@@ -125,16 +132,35 @@ test('03: cards have one semantic Details entry with compact identity, descripti
   assert.equal(spawn.disabled, false);
   spawn.click(); await tick(); assert.ok(u.get('.spawn-dialog'), 'Spawn opens the spawn dialog for that soul, without opening its page');
   assert.equal(u.get('.workspace-soul-page').hidden, true);
+  // Board 6: scoped to that soul — its preview column, no soul picker, "Spawn dev" and Change soul.
+  const dialog = u.get('.spawn-dialog');
+  assert.equal(dialog.dataset.layout, 'scoped'); assert.equal(dialog.querySelector('.spawn-chooser').hidden, true); assert.equal(dialog.querySelector('.spawn-preview').hidden, false);
+  assert.equal(dialog.querySelector('#spawn-dialog-title').textContent, 'Spawn dev'); assert.equal(dialog.querySelector('.spawn-change-soul').hidden, false);
+  assert.equal(u.doc.activeElement, dialog.querySelector('.fpurpose'), 'the name field takes the focus');
   u.get('.spawn-dialog').dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); await tick();
   assert.equal(u.get('.spawn-dialog'), null, 'Escape closes it');
   assert.equal(u.doc.activeElement, u.get('.soul-tile > .soul-spawn'), 'focus returns to the Spawn button that opened it');
   assert.equal(u.css('.soul-card').padding, '0px');
-  assert.equal(u.css('.sdesc').fontSize, '12px');
-  assert.equal(u.css('.glyph').width, '30px'); assert.equal(u.css('.glyph').height, '30px'); assert.equal(u.css('.glyph').borderRadius, '8px');
-  assert.equal(u.get('.scontext').textContent, 'fixture');
-  // The default harness appears only as the roster reports it on the soul row (this fixture: pi).
+  assert.equal(u.css('.sdesc').fontSize, '12.5px'); assert.equal(u.css('.sdesc').webkitLineClamp || u.css('.sdesc').getPropertyValue('-webkit-line-clamp'), '2', 'two lines at most');
+  assert.equal(u.css('.glyph').width, '32px'); assert.equal(u.css('.glyph').height, '32px'); assert.equal(u.css('.glyph').borderRadius, '8px');
+  // The harness appears only as the roster reports it on the soul row (this fixture: pi, no launch): no model claimed.
+  assert.equal(u.get('.scontext').textContent, 'Pi');
   assert.equal(u.get('.soul-card .runtime-badge').getAttribute('aria-label'), 'Harness: Pi');
-  assert.equal(u.get('.soul-card .smode').textContent, 'worktree · Pi');
+  // The foot: what runs (never the bare word "none") in one 48px row under a hairline that spans the card.
+  assert.equal(u.get('.soul-card .sactivity').textContent, 'No instances');
+  const foot = u.css('.soul-card .sfoot');
+  assert.equal(foot.boxSizing, 'border-box'); assert.equal(foot.height, '49px'); assert.equal(foot.alignItems, 'center');
+  assert.equal(foot.paddingTop, '0px'); assert.equal(foot.paddingBottom, '0px');
+  const shippedCSS = [...u.doc.querySelectorAll('style')].map(style => style.textContent).join('\n');
+  assert.match(shippedCSS, /\.soul-card \.sfoot \{[^}]*border-top:1px solid var\(--border\)/, 'a 1px border hairline');
+  assert.equal(u.css('.soul-card .sfoot').marginTop, 'auto');
+  // The button (human, 2026-09-29: smaller, on the instances' line, clear of the hairline): 24px,
+  // secondary (surface + 1px border), centred in the 48px row: 12px above it, 12px + the card's
+  // 1px edge below it.
+  const button = u.css('.soul-tile > .soul-spawn');
+  assert.equal(button.boxSizing, 'border-box'); assert.equal(button.height, '24px'); assert.equal(button.marginBottom, '13px'); assert.equal(button.background, 'var(--surface)');
+  assert.equal((48 - parseInt(button.height)) / 2 + 1, parseInt(button.marginBottom), 'the button shares the row\'s centre line');
+  assert.match(shippedCSS, /button\.soul-spawn \{[^}]*border:1px solid var\(--border\)/);
 
   const fresh = u.get('.soul-card'); // closing the dialog repaints the grid
   fresh.focus(); fresh.dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); await tick();
@@ -142,6 +168,11 @@ test('03: cards have one semantic Details entry with compact identity, descripti
   for (const text of ['Edit defaults', 'Edit instructions']) assert.equal([...u.get('.workspace-soul-page').querySelectorAll('button')].some(b => b.textContent === text), false, `${text}: a v2 soul is edited in its repository`);
   assert.equal(u.get('.inspector-repository'), null, 'no "Edit this soul" block (human, F7)');
   assert.equal(u.get('.spawn-dialog'), null, 'keyboard inspection does not launch');
+  // The soul page's Spawn opens the same scoped dialog.
+  [...u.get('.workspace-soul-page').querySelectorAll('button')].find(b => b.textContent === 'Spawn').click(); await tick();
+  assert.equal(u.get('.spawn-dialog').dataset.layout, 'scoped'); assert.equal(u.get('.spawn-dialog #spawn-dialog-title').textContent, 'Spawn dev');
+  u.get('.spawn-dialog').dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); await tick();
+  assert.equal(u.get('.spawn-dialog'), null);
   u.click('Schedule…'); assert.deepEqual(u.views, ['automations'], 'Automations, on its Schedules subtab');
   u.get('.workspace-soul-page .inspector-back').click();
   assert.equal(u.doc.activeElement, u.get('.soul-card'), 'back returns to the roving card');
@@ -156,16 +187,17 @@ test('W5: the capability table follows the v4 grid — 32px head, 48px rows, mon
   assert.equal(u.get('.readiness-view, .deployment-inventory, .workspace-readiness-entry'), null, 'the 0.24 readiness/inventory blocks are gone');
   const header = u.get('.workspace-header');
   assert.equal(u.get('.ws-sync').closest('.workspace-header'), header, 'sync lives in the Workspace header (Setup tools)');
-  assert.equal(u.css('.catalog-row.head').minHeight, '32px'); assert.equal(u.css('.catalog-row.head').textTransform, 'none');
-  assert.equal(u.css('.catalog-row.head').fontSize, '11.5px');
-  assert.equal(u.css('.catalog-row:not(.head)').minHeight, '48px', 'a minimum: real wrapping can grow a row');
-  assert.equal(u.css('.catalog-row:not(.head)').padding, '0px 16px');
-  assert.equal(u.css('.catalog-row').gridTemplateColumns, 'minmax(0,1.7fr) minmax(0,1fr) 150px');
-  assert.match(u.css('.catalog-name').font, /600 13px var\(--mono/, 'mono 13px names');
+  // Workspace v4.1 (board 4): an uppercase column head, then one 58px row card per capability.
+  assert.equal(u.css('.catalog-head').textTransform, 'uppercase'); assert.equal(u.css('.catalog-head').fontSize, '10.5px');
+  assert.equal(u.css('button.catalog-row').height, '58px', 'a fixed height: one line of description');
+  assert.equal(u.css('button.catalog-row').padding, '0px 16px'); assert.equal(u.css('button.catalog-row').borderRadius, '10px');
+  assert.equal(u.css('button.catalog-row').gridTemplateColumns, '44px minmax(0,1fr) 190px 120px 24px');
+  assert.equal(u.css('.catalog-table').gap, '6px');
+  assert.match(u.css('.catalog-name').font, /650 13px var\(--mono/, 'mono 13px names');
   const shipped = [...u.doc.querySelectorAll('style')].map(style => style.textContent).join('\n');
   assert.match(shipped, /\.catalog-used-marks \.identity-mark \{ width:20px; height:20px; margin-left:-5px; border-radius:6px;/, '20px used-by marks');
   assert.equal(u.get('.catalog-cap .identity-mark'), null, 'no capability monogram in the table');
-  assert.equal(u.css('.capability-nav button').borderRadius, '999px');
+  assert.equal(u.css('.capability-nav button').borderRadius, '6px', 'segments of one group (rule 1), not pills');
   assert.equal(u.get('.workspace-discovery').querySelectorAll('.catalog-select').length, 2, 'Team and Repo dropdowns');
   assert.equal(u.css('.workspace-discovery[data-tab=capabilities] > *').maxWidth, '1000px', 'one centred column');
   u.get('#workspace-tab-sources').click(); await tick();
@@ -251,14 +283,42 @@ test('F7: a Capabilities row opens its page (click or Enter) — "← Capabiliti
   page.querySelector('.page-back').click();
   assert.equal(page.hidden, true); assert.equal(page.childElementCount, 0); assert.equal(u.get('.workspace-discovery').hidden, false);
   assert.equal(u.doc.activeElement.dataset.capability, 'oats.okf', 'back returns to its row');
-  key(u, u.doc.activeElement, 'Enter');
-  assert.equal(page.hidden, false, 'Enter opens it too');
+  // Enter is the native button's: a browser follows an uncancelled keydown with the button's click.
+  const focused = u.doc.activeElement; assert.equal(focused.localName, 'button');
+  if (key(u, focused, 'Enter')) focused.click();
+  assert.equal(page.hidden, false, 'Enter opens it too (native activation: nothing cancels the key)');
   key(u, u.doc.activeElement, 'Escape');
   assert.equal(page.hidden, true, 'Esc goes back'); assert.equal(u.doc.activeElement.dataset.capability, 'oats.okf');
   // a tab change closes an open capability page
   u.get('.workspace-discovery .catalog-row[data-capability="oats.okf"]').click();
   u.get('#workspace-tab-souls').click(); await tick();
   assert.equal(page.hidden, true); assert.equal(page.childElementCount, 0); assert.equal(u.get('.souls-grid').hidden, false);
+});
+
+test('v4.1: a row shows one line of its description and the page the whole of it; Back keeps the list\'s scroll offset, search and filters', async t => {
+  const long = 'Release tooling: cut, tag and publish a release from the agents repository, with the changelog, the version bump and the notes. '.repeat(3).trim();
+  const rows = f2('capabilities').result.capabilities.map(r => r.name === 'nw-release-tooling' ? { ...r, description: long } : r);
+  const u = await fixture(t, { cli: V2_CLI, sync: () => catalogReply(rows) });
+  u.get('#workspace-tab-capabilities').click(); await tick(); await tick();
+  const list = u.get('.workspace-discovery');
+  const desc = list.querySelector('.catalog-row[data-capability="nw-release-tooling"] .catalog-desc');
+  assert.equal(desc.textContent, long); assert.equal(u.css('.catalog-desc').whiteSpace, 'nowrap'); assert.equal(u.css('.catalog-desc').textOverflow, 'ellipsis');
+  // A search and a filter, then scroll the list.
+  const search = list.querySelector('.ws-search input'); search.value = 'nw-'; search.dispatchEvent(new u.dom.window.Event('input', { bubbles: true }));
+  const team = list.querySelector('.catalog-select[data-filter-key="team"] select'); team.value = 'engineering'; team.dispatchEvent(new u.dom.window.Event('change', { bubbles: true }));
+  const owned = () => [...list.querySelectorAll('[data-section=workspace] .catalog-row')].map(r => r.dataset.capability);
+  assert.deepEqual(owned(), ['nw-release-tooling', 'nw-tools-dev', 'nw-warehouse-access']);
+  list.scrollTop = 180;
+  list.querySelector('.catalog-row[data-capability="nw-release-tooling"]').click();
+  const page = u.get('.workspace-cap-page');
+  assert.equal(page.hidden, false); assert.ok(page.querySelector('.page-lede'), 'the page leads with the description');
+  assert.equal(page.querySelector('.page-lede').textContent, long, 'the whole description, not the row\'s one line');
+  list.scrollTop = 0; // Chromium drops a display:none scroller's offset
+  page.querySelector('.page-back').click();
+  assert.equal(list.hidden, false); assert.equal(list.scrollTop, 180, 'back to where the list was');
+  assert.equal(list.querySelector('.ws-search input').value, 'nw-'); assert.equal(list.querySelector('.catalog-select[data-filter-key="team"] select').value, 'engineering');
+  assert.deepEqual(owned(), ['nw-release-tooling', 'nw-tools-dev', 'nw-warehouse-access'], 'the same rows');
+  assert.equal(u.doc.activeElement.dataset.capability, 'nw-release-tooling');
 });
 
 // Replaces the F7 test that pinned the Capabilities view's table on the soul
@@ -310,10 +370,17 @@ const FACTS_CLI = { ...CLI, features: ['operations', 'desktop-facts'] };
 test('kernel #217: a soul a spawn here would refuse says why on its card and page; Spawn is disabled', async t => {
   const refused = factsRow('campaign-writer'), message = refused.problem.message;
   assert.equal(refused.problem.code, 'E_SOUL_DISABLED', 'the capture disables campaign-writer on this machine');
-  const u = await fixture(t, { cli: FACTS_CLI, agents: [soul, refused] });
+  const u = await fixture(t, { cli: FACTS_CLI, agents: [soul, refused], instances: [{ instance: 'campaign-writer-1', agent: 'campaign-writer', agentsRoot: refused.agentsRoot, running: true, home: '/h/cw-1' }] });
   const tile = name => u.get(`.soul-card[data-agent="${name}"]`).parentElement;
   assert.equal(tile('dev').querySelector('.sproblem'), null);
   assert.equal(tile('campaign-writer').querySelector('.sproblem').textContent, `Can't spawn here · ${message}`);
+  // The refusal does not hide what runs: its count is a second, muted line in the same fixed-height foot.
+  const lines = tile('campaign-writer').querySelector('.sfoot > .sfoot-lines');
+  assert.deepEqual([...lines.children].map(el => [el.className, el.textContent]), [['sproblem', `Can't spawn here · ${message}`], ['sactivity running', '1 instance running']]);
+  const cw = '.soul-card[data-agent="campaign-writer"]';
+  assert.equal(u.css(`${cw} .sfoot-lines .sactivity`).color, 'var(--muted)'); assert.equal(u.css(`${cw} .sfoot-lines`).flexDirection, 'column');
+  assert.equal(u.css(`${cw} .sfoot`).height, '49px', 'the foot keeps its height, so a row of cards does not jump');
+  assert.equal(u.css('.soul-card[data-agent="dev"] .sfoot').height, '49px');
   const button = tile('campaign-writer').querySelector('.soul-spawn');
   assert.equal(button.disabled, true); assert.equal(button.title, `Can't spawn here: ${message}`);
   assert.equal(tile('dev').querySelector('.soul-spawn').disabled, false);

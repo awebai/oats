@@ -57,9 +57,9 @@ function originOf(o) {
   return { kind: o.kind, at: o.at };
 }
 function messagingOf(v) {
-  // Idempotent: the renderer re-validates the server's projection, which
-  // carries `messaging` itself instead of the kernel's modules/settings.
-  if (!Object.hasOwn(v, 'modules') && Object.hasOwn(v, 'messaging')) {
+  // Idempotent: the renderer re-validates the server's projection, which carries
+  // `messaging` itself (the kernel's preview never does) instead of the kernel's settings.
+  if (Object.hasOwn(v, 'messaging')) {
     const m = v.messaging;
     if (m === null) return null;
     if (!exact(m, ['provider', 'identity', 'origin', 'join', 'joinDeclared']) || !Object.hasOwn(m, 'origin') || !CAPABILITY.test(m.provider ?? '')
@@ -88,6 +88,34 @@ function messagingOf(v) {
   if (i === undefined) return { provider: cap, identity: null, origin, ...join };
   if (!record(i) || !['local', 'global'].includes(i.mode) || i.resident !== undefined && !RESIDENT.test(i.resident)) return undefined;
   return { provider: cap, identity: { mode: i.mode, resident: i.resident ?? null }, origin, ...join };
+}
+/** The composition this spawn will record (kernel `modules[]`, feature instance-modules), for the
+ * dialog's Core capabilities and Capabilities: [{name, layer, from:{kind, package?, version?,
+ * repoKey?}}] — the same facts /api/capabilities exposes, scoped to this spawn. Only these strings,
+ * each on a fixed grammar; never settings, declares, skills, commands, commits or integrity. null
+ * when the kernel reports no modules; undefined (a protocol error) when a row is malformed,
+ * duplicated or over the cap. The server's projection re-validates with its keys exact. */
+const MODULES_MAX = 256;
+const MODULE_LAYER = /^[a-z][a-z0-9-]{0,31}$/;
+const MODULE_KIND = /^[a-z][a-z0-9-]{0,31}$/;
+const MODULE_VERSION = /^[0-9A-Za-z][0-9A-Za-z.+-]{0,63}$/;
+const repoKey = v => arg(v, 512) && safe(v, 512) && !/\s/.test(v);
+const is = (re, v) => typeof v === 'string' && re.test(v); // never a coerced number
+function modulesOf(v, projected) {
+  if (v.modules === undefined || v.modules === null) return null;
+  if (!Array.isArray(v.modules) || v.modules.length > MODULES_MAX) return undefined;
+  const out = [];
+  for (const m of v.modules) {
+    if (!record(m) || projected && !exact(m, ['name', 'layer', 'from']) || !is(CAPABILITY, m.name)) return undefined;
+    const layer = m.layer ?? null, f = m.from;
+    if (layer !== null && !is(MODULE_LAYER, layer) || !record(f) || projected && !exact(f, ['kind', 'package', 'version', 'repoKey']) || !is(MODULE_KIND, f.kind)) return undefined;
+    const from = { kind: f.kind };
+    if (f.package !== undefined) { if (!is(CAPABILITY, f.package)) return undefined; from.package = f.package; }
+    if (f.version !== undefined) { if (!is(MODULE_VERSION, f.version)) return undefined; from.version = f.version; }
+    if (f.repoKey !== undefined) { if (!repoKey(f.repoKey)) return undefined; from.repoKey = f.repoKey; }
+    out.push({ name: m.name, layer, from });
+  }
+  return new Set(out.map(m => m.name)).size === out.length ? out : undefined;
 }
 export const previewSupported = cli => cli?.ok === true && absolute(cli.bin) && cli.spawnPreviewApi === 2
   && Array.isArray(cli.features) && cli.features.includes('spawn-preview-2');
@@ -203,8 +231,9 @@ export function previewFailure(code, target = null, kernelMessage, kernelFix) {
 }
 /** The kernel's v2 preview, projected to what the dialog shows and the apply
  * binds. Top-level facts must agree with the decision the apply is bound to
- * (`--expect-decision`); the revision is opaque producer data. Modules,
- * capabilities and skills are the kernel's business and are not projected. */
+ * (`--expect-decision`); the revision is opaque producer data. The modules
+ * are projected as names and sources only (modulesOf); capabilities[], skills,
+ * settings and the task are the kernel's business and are not projected. */
 const hex24 = v => typeof v === 'string' && /^[a-f0-9]{24}$/.test(v);
 export function previewData(v, expected) {
   const t = previewTarget(expected);
@@ -224,10 +253,10 @@ export function previewData(v, expected) {
     || !record(v.backendStatus) || v.backendStatus.name !== v.backend || typeof v.backendStatus.installed !== 'boolean' || v.backendStatus.started !== false
     || !record(v.preflight) || !['complete', 'timeout'].includes(v.preflight.status) || !Number.isInteger(v.preflight.budgetMs) || v.preflight.budgetMs <= 0 || v.preflight.budgetMs > 20000
     || !Number.isSafeInteger(v.preflight.elapsedMs) || v.preflight.elapsedMs < 0) return null;
-  const messaging = messagingOf(v), teams = teamsOf(v);
+  const messaging = messagingOf(v), teams = teamsOf(v), modules = modulesOf(v, Object.hasOwn(v, 'messaging'));
   // Team model v2: the soul's default (the kernel's DefaultTeam, or null); absent on 0.29.
   const defaultTeam = Object.hasOwn(v, 'defaultTeam') ? defaultTeamOf(v.defaultTeam) : undefined;
-  if (messaging === undefined || teams === undefined || (Object.hasOwn(v, 'defaultTeam') && defaultTeam === undefined)) return null;
+  if (messaging === undefined || teams === undefined || modules === undefined || (Object.hasOwn(v, 'defaultTeam') && defaultTeam === undefined)) return null;
   // Launch preferences (0.30): the Launch with flags applied; its effective launch IS the preview's.
   const launch = Object.hasOwn(v, 'launch') ? launchOf(v.launch, PREVIEW_FROM) : undefined;
   // Only reports carry `problem`: a preview that would hit one refuses with the error instead.
@@ -238,6 +267,6 @@ export function previewData(v, expected) {
     repo: e.repo, work: e.work, worktree: v.worktree, harness: e.harness, model: e.model, modelSource: v.modelSource, relation: e.relation?.kind ?? null,
     launchConfig: e.launchConfig, yolo: e.yolo, backend: e.backend, team: v.team ?? null,
     backendStatus: { name: v.backendStatus.name, installed: v.backendStatus.installed, started: false },
-    preflight: { status: v.preflight.status, budgetMs: v.preflight.budgetMs, elapsedMs: v.preflight.elapsedMs }, messaging, teams,
+    preflight: { status: v.preflight.status, budgetMs: v.preflight.budgetMs, elapsedMs: v.preflight.elapsedMs }, messaging, teams, modules,
     ...(defaultTeam !== undefined ? { defaultTeam } : {}), ...(launch ? { launch } : {}) };
 }
