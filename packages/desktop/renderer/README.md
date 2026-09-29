@@ -42,6 +42,42 @@ cycling follows that order. Existing valid `oatsweb.theme` preferences survive;
 missing/invalid preferences mean White regardless of OS. Views use tokens only,
 scoped under `.oats-view`. Orange selection is distinct from error/success.
 
+### Control rules (selection, focus, search fields)
+
+Three rules hold everywhere in the renderer (design v4.1 board 7; spec A implemented the
+global part, views follow them in their own CSS). `test/control-rules.test.mjs` pins them.
+
+1. **Selected = brand tint.** A selected segment/pill/toggle is `background: var(--sel);
+   color: var(--accent); font-weight: 650`; unselected is transparent with `var(--muted)`.
+   A segmented group is one 1px `var(--border)` frame with 2px inner padding and 6px-radius
+   segments, no dividers. The shared `.ws-segmented` block in `workspace-discovery.mjs`
+   (Setup List/Graph, Souls Group by) is the reference. Never "white vs grey".
+2. **No ring on pointer interaction.** Visuals hang off `:focus-visible`, never `:focus`,
+   so a clicked button, tab, segment, row or link stays quiet. `theme.css` styles keyboard
+   focus globally: `:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px }`
+   (the edge overlays a bordered control's border and is the inner pixel of a borderless
+   one) plus `background: var(--sel)` on `button`, `a` and `summary`. The tint rule has
+   (0,1,1) specificity on purpose: a control that paints its own opaque pair (primaries,
+   danger, the toast) keeps it and shows the edge only, drawn 1px *outside* (`outline-offset:
+   1px`) because inset it would sit on the control's own fill (accent on `--primary-bg` is
+   1.52-3.38:1, on `--danger` about 1.1:1). `theme.css` lists those controls in one
+   `:where(…):focus-visible` rule; a new opaque-fill control joins it. A control whose base rule has an
+   id or two classes and should tint declares its own `:focus-visible { background:
+   var(--sel) }` (`#ws-trigger`, `#tab-actions button`, `.ws-dialog-foot .secondary`).
+   Do not add per-component `outline: 2px` rings. Large focusable panels (tabpanels,
+   canvases, `pre` blocks) get the edge only. Padding-free text tabs and links
+   (`.workspace-tabs`, `.auto-tabs`, Setup links) give the tint a layout-neutral inset
+   on focus (`padding: 0 6px; margin: 0 -6px`) so it does not hug the label.
+3. **Search/filter fields have one border.** A wrapped field (`.ctx-filter-field`) turns
+   its wrapper border accent on `:focus-within`; the `<input>` inside has `border: 0;
+   outline: none` in every state. A bare field (`.field`, `#ws-menu-search`, the palette
+   input's bottom rule) turns its own border accent on `:focus-visible` and never outlines.
+
+Contrast is checked on effective colours in all three themes: `--accent` on `--sel`
+(selected text, focus tint) is AA text, and the accent edge/border is ≥3:1 on `--surface`,
+`--bg` and `--sel`. Dark `--danger` on `--sel` is 4.27:1, which is why danger buttons
+never tint.
+
 Soul marks use a stable hash of the reported root/name/server identity and a
 muted six-color palette. Optional top-level `color: sage` in an existing canonical
 `soul.yaml` overrides the local Desktop mark. Accepted names: `sand`, `sage`,

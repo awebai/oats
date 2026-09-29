@@ -25,7 +25,7 @@ export const soulTeamsHereCSS = `
 .oats-view .soul-teams-here button.sth-act:hover:not(:disabled) { background:var(--surface-2); }
 .oats-view .soul-teams-here button.sth-act:disabled { color:var(--muted); cursor:default; }
 .oats-view .soul-teams-here button.sth-act.primary:not(:disabled) { background:var(--primary-bg); border-color:var(--primary-bg); color:var(--primary-fg); }
-.oats-view .soul-teams-here button.sth-act:focus-visible, .soul-teams-here select:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+.oats-view .soul-teams-here button.sth-act:not(.primary):focus-visible { background:var(--sel); }
 .soul-teams-here .sth-add { display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding-top:8px; border-top:1px solid var(--tag-bg); }
 .soul-teams-here .sth-add select { height:26px; min-width:0; max-width:100%; padding:0 6px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--fg); font:12px var(--mono,monospace); }
 .soul-teams-here .sth-error { grid-column:1 / -1; border-left:2px solid var(--danger); padding-left:8px; color:var(--fg); font-size:12px; line-height:1.45; }

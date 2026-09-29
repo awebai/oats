@@ -9,9 +9,12 @@ export const ROSTER_PR_TTL = 60_000;
 const STATES = ['OPEN', 'CLOSED', 'MERGED'];
 
 export const rosterPrCSS = `
-/* The name never gives way to the chip: without room, the chip wraps under it. */
-.ctx-name-line { display:flex; flex-wrap:wrap; align-items:center; gap:3px 6px; max-width:100%; min-width:0; }
-.ctx-name-line .ctx-name { flex:0 0 auto; max-width:100%; }
+/* The chip sits on the meta line, "repo · #317 branch": the repo and chip keep their width, the
+   branch ellipsizes, and the chip is no taller than the line so the row keeps its height. */
+.ctx-meta.ctx-meta-pr { display:flex; align-items:center; gap:5px; min-width:0; }
+.ctx-meta-pr .ctx-meta-lead { flex:none; }
+.ctx-meta-pr .ctx-meta-tail { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ctx-meta-pr .ctx-pr { height:14px; padding:0 4px; }
 .ctx-pr { display:inline-flex; align-items:center; gap:3px; flex:none; height:16px; padding:0 5px; box-sizing:border-box; border:1px solid transparent; border-radius:4px; background:var(--tag-bg); color:var(--fg); font:600 10.5px/1 ui-monospace, Menlo, monospace; white-space:nowrap; }
 .ctx-pr .shell-icon { flex:none; }
 .ctx-pr[data-pr-state=draft] { background:transparent; border:1px dashed var(--border); color:var(--muted); }
@@ -30,7 +33,7 @@ export function rosterPrRow(row) {
 export const prState = row => row.state === 'MERGED' ? 'merged' : row.state === 'CLOSED' ? 'closed' : row.isDraft ? 'draft' : 'open';
 export const prText = row => `#${row.number} · ${prState(row)}`;
 
-/** The chip on the roster row's name line: "#231", with its state said when not open. */
+/** The chip on the roster row's meta line (before the branch): "#231", with its state said when not open. */
 export function prChip(doc, row) {
   const state = prState(row), chip = doc.createElement('span');
   chip.className = 'ctx-pr'; chip.dataset.prState = state;

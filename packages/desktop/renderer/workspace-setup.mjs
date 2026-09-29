@@ -42,7 +42,7 @@ export const setupCSS = `
 .setup-end.warn { color:var(--warn); font-weight:600; }
 .oats-view .setup button.setup-link-act { justify-self:end; height:auto; min-height:0; padding:2px 0; border:0; background:transparent; color:var(--accent); font:600 12px var(--sans,system-ui); white-space:nowrap; cursor:pointer; }
 .oats-view .setup button.setup-link-act:hover { text-decoration:underline; }
-.oats-view .setup button.setup-link-act:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:3px; }
+.oats-view .setup button.setup-link-act:focus-visible { background:var(--sel); border-radius:4px; padding:2px 4px; margin:0 -4px; } /* layout-neutral inset */
 .setup-empty { margin:0; padding:14px 16px; color:var(--muted); font-size:12px; }
 .setup-team { display:flex; flex-direction:column; gap:4px; padding:10px 16px; border-top:1px solid var(--tag-bg); }
 .setup-box-head + .setup-team { border-top:0; }
@@ -75,7 +75,7 @@ export const setupCSS = `
 .setup-kv dd.wrap { white-space:normal; overflow:visible; overflow-wrap:anywhere; padding:6px 0; line-height:1.45; }
 .setup-local-sub { margin:0; padding:10px 16px 0; border-top:1px dashed var(--border); color:var(--muted); font-size:11px; font-weight:650; letter-spacing:.05em; text-transform:uppercase; }
 .oats-view .setup button.setup-file { height:auto; min-height:0; padding:0; border:0; background:transparent; color:var(--accent); font:inherit; font-family:var(--mono,monospace); text-decoration:underline; text-underline-offset:2px; cursor:pointer; overflow-wrap:anywhere; text-align:left; }
-.oats-view .setup button.setup-file:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:3px; }
+.oats-view .setup button.setup-file:focus-visible { background:var(--sel); border-radius:4px; padding:0 3px; margin:0 -3px; }
 /* W2: this computer → the workspace → its members and packages. */
 .setup-graph-wrap { display:grid; grid-template-columns:minmax(0,1fr); gap:16px; align-items:stretch; min-width:0; }
 .setup-graph-wrap.with-panel { grid-template-columns:minmax(0,1fr) 340px; }
@@ -110,7 +110,6 @@ export const setupCSS = `
 .setup-node { display:flex; align-items:center; gap:8px; width:100%; height:34px; min-height:34px; padding:0 10px; box-sizing:border-box; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font:inherit; text-align:left; }
 .oats-view .setup button.setup-node { cursor:pointer; font-weight:400; }
 .oats-view .setup button.setup-node:hover { border-color:var(--sel-border); }
-.oats-view .setup button.setup-node:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
 .setup-node .shell-icon { flex:none; color:var(--muted); }
 .setup-node-name { min-width:0; font:600 12px var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .setup-node-meta { flex:none; margin-left:auto; color:var(--muted); font-size:11.5px; white-space:nowrap; }

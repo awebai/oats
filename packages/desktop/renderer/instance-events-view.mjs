@@ -13,7 +13,6 @@ export const instanceEventsCSS = `
 .events-integrity { color:var(--warn); }
 .events-view button { min-height:30px; }
 .events-view summary { cursor:pointer; color:var(--fg); }
-.events-view summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .events-view [hidden], .events-status:empty { display:none; }
 .events-rows { max-height:220px; overflow:auto; padding-left:18px; margin:8px 0; }
 .events-rows li { margin:0 0 10px; overflow-wrap:anywhere; }

@@ -32,7 +32,8 @@ ${syncCSS}
 .workspace-tabs button { flex:none; display:inline-flex; align-items:center; gap:6px; padding:0; border:0; border-radius:0; background:none; color:var(--nav-fg); font:500 13px var(--sans,system-ui); cursor:pointer; }
 .workspace-tabs button:hover { color:var(--fg); }
 .workspace-tabs button[aria-selected=true] { color:var(--fg); font-weight:650; box-shadow:inset 0 -2px 0 var(--live); }
-.workspace-tabs button:focus-visible { outline:2px solid var(--accent); outline-offset:-4px; border-radius:6px; }
+/* Keyboard focus: the tint gets a layout-neutral 6px inset so it does not hug the label. */
+.workspace-tabs button:focus-visible { background:var(--sel); border-radius:6px; padding:0 6px; margin:0 -6px; }
 .workspace-count { color:var(--muted); font:10.5px var(--mono,monospace); }
 .workspace-count:empty { display:none; }
 .workspace-sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
@@ -40,11 +41,16 @@ ${syncCSS}
 .workspace-attn[hidden] { display:none; }
 .workspace-tools { display:flex; align-items:center; gap:10px; margin-left:auto; min-width:0; flex:none; }
 .workspace-tools[hidden] { display:none; }
-.ws-segmented { display:inline-flex; height:28px; border:1px solid var(--border); border-radius:7px; overflow:hidden; flex:none; }
-.oats-view .ws-segmented button { min-height:0; height:100%; padding:0 10px; border:0; border-radius:0; background:var(--surface); color:var(--muted); font:500 12px var(--sans,system-ui); cursor:pointer; }
-.oats-view .ws-segmented button + button { border-left:1px solid var(--border); }
-.oats-view .ws-segmented button[aria-pressed=true] { background:var(--chip-bg); color:var(--fg); font-weight:650; }
-.oats-view .ws-segmented button:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+/* Segmented control (control rule 1, board 7): one 1px frame with 3px inner padding, 6px
+   segments, no dividers. Selected = brand tint (--sel fill, --accent text, 650); unselected =
+   transparent, --muted. Keyboard focus adds the tint under the global 1px accent edge.
+   Geometry (human, 2026-09-29, "looks cropped"): 24px segments inside 3px padding make a 30px frame
+   (32px with its 1px border), text centred at line-height 1, and flex:none so no bar squeezes it. */
+.ws-segmented { display:inline-flex; align-items:center; box-sizing:content-box; height:24px; padding:3px; gap:2px; border:1px solid var(--border); border-radius:8px; background:var(--surface); flex:none; }
+.oats-view .ws-segmented button { display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; min-height:0; height:24px; padding:0 10px; border:0; border-radius:6px; background:transparent; color:var(--muted); font:500 12px/1 var(--sans,system-ui); white-space:nowrap; cursor:pointer; }
+.oats-view .ws-segmented button:hover { color:var(--fg); }
+.oats-view .ws-segmented button[aria-pressed=true] { background:var(--sel); color:var(--accent); font-weight:650; }
+.oats-view .ws-segmented button:focus-visible { background:var(--sel); }
 /* A view's own toolbar (human, 2026-09-26): its search and controls sit in the view, not in the header. */
 /* A view's toolbar row (human, 2026-09-26): the view's own top row on the left
    (section pills, first group heading), the search and view controls on the right. */
@@ -55,7 +61,9 @@ ${syncCSS}
 .ws-toolbar-label { color:var(--muted); font-size:12px; }
 .ws-search { position:relative; display:flex; align-items:center; min-width:0; flex:0 1 220px; }
 .ws-search .shell-icon { position:absolute; left:10px; color:var(--muted); pointer-events:none; }
+/* Search field (control rule 3): the input's own 1px border is the one frame, accent while focused, no ring. */
 .oats-view .ws-search input.field { width:100%; min-width:0; height:28px; min-height:28px; padding:0 10px 0 30px; border:1px solid var(--border); border-radius:7px; background:var(--surface); font-size:12px; box-sizing:border-box; }
+.oats-view .ws-search:focus-within input.field { border-color:var(--accent); outline:none; }
 .workspace-discovery { padding:18px 20px; overflow:auto; min-width:0; flex:1; container-type:inline-size; }
 /* Capabilities (W5) reads as one centred column. */
 .workspace-discovery[data-tab=capabilities] { padding:16px 28px 20px; }

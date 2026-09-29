@@ -56,8 +56,14 @@ function fixture(t, stylesheet = css) {
 }
 
 function assertRoom(u) {
-  assert.equal(u.rule(".ctx-tree-row").minHeight, "50px", "rows are the roomier 50px the human chose over the design's 44px");
-  assert.equal(u.rule(".ctx-inst").minHeight, "50px", "the whole row height is one click target");
+  // Human, 2026-09-29: a 48px row box whose background fills 44px inside 2px transparent borders,
+  // so neighbouring backgrounds keep a 4px gap and never touch.
+  assert.equal(u.rule(".ctx-tree-row").minHeight, "48px", "a 48px row box");
+  assert.equal(u.rule(".ctx-tree-row").borderTop, "var(--row-gap) solid transparent");
+  assert.equal(u.rule(".ctx-tree-row").borderBottom, "var(--row-gap) solid transparent");
+  assert.equal(u.rule(".ctx-tree-row").getPropertyValue("--row-gap"), "2px");
+  assert.equal(u.rule(".ctx-tree-row").backgroundClip, "padding-box", "the background stops short of the gap");
+  assert.equal(u.rule(".ctx-inst").minHeight, "44px", "the whole painted row is one click target");
   assert.equal(u.rule(".ctx-inst").height, "auto", "never squeeze two labels into a fixed box");
   assert.equal(u.rule(".ctx-copy").gap, "3px", "name/meta gap follows the supplied 3px stack");
   assert.equal(u.computed(u.doc.querySelector(".ctx-filter-field")).marginBottom, "6px", "filter/list separation");
@@ -76,7 +82,7 @@ function assertRoom(u) {
   }
 }
 
-test("roster spacing (non-layout): 50px rows, padded controls and filter/list separation", t => {
+test("roster spacing (non-layout): 48px rows with a 4px gap, padded controls and filter/list separation", t => {
   const u = fixture(t);
   assertRoom(u);
   const filter = u.doc.querySelector(".ctx-filter");
@@ -92,6 +98,7 @@ test("roster typography (non-layout): valid control family and supplied sidebar 
   assert.equal(u.rule(".ctx-filter").fontFamily, "inherit");
   assert.equal(u.rule(".ctx-filter").fontSize, "12px");
   assert.equal(u.rule(".ctx-group").height, "14px", "Workspace v4: groups read from a 14px gap, no title");
+  assert.equal(u.rule(".ctx-group:first-child").height, "7px", "the first row sits closer to the filter (human, 2026-09-29)");
   assert.equal(u.rule(".ctx-inst").getPropertyValue("font"), "inherit");
   assert.equal(u.rule(".ctx-name").fontSize, "12.5px");
   assert.equal(u.rule(".ctx-name").fontWeight, "600");
@@ -112,7 +119,8 @@ test("roster typography (non-layout): valid control family and supplied sidebar 
 
 function assertConnectors(u) {
   assert.equal(u.rule(".ctx-tree-row").position, "relative");
-  assert.equal(u.rule(".ctx-guides").getPropertyValue("inset"), "0 auto 0 0", "span the entire row");
+  assert.equal(u.rule(".ctx-guides").getPropertyValue("inset"), "calc(-1 * var(--row-gap)) auto calc(-1 * var(--row-gap)) 0",
+    "span the entire row, including the transparent gap borders, so lines stay continuous");
   assert.equal(u.rule(".ctx-guides").pointerEvents, "none");
   assert.equal(u.rule(".ctx-guide").position, "absolute");
   assert.equal(u.rule(".ctx-guide").left, "calc(13.25px + var(--guide-level) * var(--tree-step))",
@@ -124,7 +132,8 @@ function assertConnectors(u) {
   assert.equal(u.rule(".ctx-guide.down").top, "50%", "a parent's line leaves from its own dot");
   assert.equal(u.rule(".ctx-guide.link-in, .ctx-guide.link-out, .ctx-guide.link-through").borderLeft,
     "1.5px dotted var(--tree-link)", "sibling links are dotted");
-  assert.equal(u.rule(".ctx-dot").boxShadow, "0 0 0 2px var(--surface)", "the dot's ring hides the line under it");
+  assert.equal(u.rule(".ctx-dot").boxShadow, "0 0 0 2px var(--row-solid, var(--surface))",
+    "the dot's ring hides the line under it, in the row's own solid colour");
 }
 
 test("tree connectors (non-layout): lines leave the dots, no disclosure arrows", t => {
@@ -195,7 +204,7 @@ test("sidebar metadata uses reported branch/harness without claiming membership 
 // Mutants exist only as in-memory stylesheets: no shared-file rollback, reload
 // or browser is needed to prove the contracts reject the reported regressions.
 for (const [label, before, after, check, message] of [
-  ["fixed button height", "min-height: 50px; height: auto; display: flex", "min-height: 50px; height: 40px; display: flex", assertRoom, /fixed box/],
+  ["fixed button height", "min-height: 44px; height: auto; display: flex", "min-height: 44px; height: 40px; display: flex", assertRoom, /fixed box/],
   ["cramped label gap", "align-items: flex-start; gap: 3px", "align-items: flex-start; gap: 0", assertRoom, /3px stack/],
   ["connectors off the dot column", "left: calc(13.25px + var(--guide-level)", "left: calc(8px + var(--guide-level)", assertConnectors, /dot centre column/],
   ["square elbows", "border-bottom-left-radius: 5px", "border-bottom-left-radius: 0", assertConnectors, /rounded elbows/],
@@ -204,4 +213,23 @@ for (const [label, before, after, check, message] of [
   assert.ok(css.includes(before), "mutate the shipped declaration");
   const u = fixture(t, css.replace(before, after));
   assert.throws(() => check(u), { code: "ERR_ASSERTION", message });
+});
+
+// Human, 2026-09-29: a running dot stays solid on a selected or hovered row. Its knockout ring takes the
+// row's own solid colour, so on the tint it never reads as a hollow dot inside a white halo.
+test("running dot stays solid --accent on selected and hovered rows; its ring is the row's colour", t => {
+  const u = fixture(t);
+  const active = u.doc.querySelector(".ctx-tree-row.active");
+  assert.ok(active, "the fixture has a selected row");
+  const dot = active.querySelector(".ctx-dot");
+  assert.equal(dot.className, "ctx-dot on", "the selected fixture row is running");
+  const style = u.computed(dot);
+  assert.equal(style.background, "var(--accent)", "solid fill");
+  assert.equal(u.rule(".ctx-dot.on").borderColor, "var(--accent)", "jsdom keeps var() only in the shorthand, so the border is read from the rule");
+  assert.equal(style.boxShadow, "0 0 0 2px var(--row-solid, var(--surface))", "the ring follows the row's solid colour");
+  assert.equal(u.rule(".ctx-tree-row.active").getPropertyValue("--row-solid"), "var(--sel)", "the ring on a selected row is the tint");
+  assert.equal(u.rule(".ctx-tree-row:hover").getPropertyValue("--row-solid"), "var(--surface-2)", "and on hover the hover surface");
+  assert.equal(u.computed(active).getPropertyValue("--row-solid").trim(), "var(--sel)", "the selected row resolves its own solid colour");
+  assert.equal(u.rule(".ctx-dot").background, "var(--surface)", "only a stopped dot is hollow");
+  assert.equal(u.rule(".ctx-dot.on").background, "var(--accent)");
 });

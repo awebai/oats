@@ -48,8 +48,8 @@ export const hierarchyCSS = `
 .hier-notice-message { flex:1; }
 .hier-retry { flex:none; }
 .hier-notice[hidden] { display:none; }
-.hier-canvas:focus-visible { outline:2px solid var(--accent); outline-offset:-3px; }
-.hier :is(button,select):focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+/* The canvas is a large focusable panel: the global 1px edge only (its base rule clears the outline). */
+.hier-canvas:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 .hier-canvas { flex: 1; position: relative; overflow: hidden; min-height: 0; cursor: grab; outline: none; }
 .hier-canvas.panning { cursor: grabbing; }
 .hier-stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
@@ -67,6 +67,7 @@ export const hierarchyCSS = `
 .hier-zoom button { background: none; border: none; color: var(--muted); font: 14px/1 inherit; width: 26px; height: 24px;
                     border-radius: 5px; cursor: pointer; }
 .hier-zoom button:hover { background: var(--surface-2); color: var(--fg); }
+.hier-zoom button:focus-visible { background: var(--sel); }
 .hier-edges { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
 .hier-edges path { stroke: var(--graph-edge); stroke-width: 1.5; fill: none; }
 .hier-edges path.sib { stroke-dasharray:2 4; }

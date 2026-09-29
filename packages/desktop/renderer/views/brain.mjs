@@ -24,7 +24,7 @@ const CSS = `
 .brain-bar label { color: var(--muted); font-size: 12px; }
 .brain-bar select { background: var(--surface-2); color: var(--fg); border: 1px solid var(--border); border-radius: 8px;
                     padding: 5px 8px; font: inherit; max-width: 320px; }
-.brain-bar select:hover, .brain-bar select:focus { border-color: var(--accent); outline: none; }
+.brain-bar select:hover, .brain-bar select:focus-visible { border-color: var(--accent); outline: none; }
 .brain-desc { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .brain-body { flex: 1; display: flex; gap: 14px; padding: 14px; overflow: auto; min-height: 0; align-items: flex-start; }
 .brain-col { flex: 1; min-width: 280px; display: flex; flex-direction: column; gap: 12px; }

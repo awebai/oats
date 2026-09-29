@@ -86,7 +86,6 @@ ${soulTeamsHereCSS}
 .core-card { display:flex; flex-direction:column; align-items:stretch; gap:8px; min-width:0; padding:14px; box-sizing:border-box; background:var(--surface); border:1px solid var(--border); border-radius:10px; color:var(--fg); text-align:left; font-size:12px; font-weight:400; }
 .oats-view .soul-page button.core-card { height:auto; min-height:0; font:inherit; font-size:12px; cursor:pointer; }
 .oats-view .soul-page button.core-card:hover { border-color:var(--sel-border); }
-.oats-view .soul-page button.core-card:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .core-slot { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:11px; font-weight:650; letter-spacing:.05em; text-transform:uppercase; }
 .core-slot-icon { display:grid; place-items:center; width:26px; height:26px; border-radius:7px; background:var(--bg); color:var(--fg); flex:none; }
 .core-id { display:flex; align-items:center; gap:6px; min-width:0; color:var(--fg); font:650 13px var(--mono,monospace); }
@@ -105,7 +104,7 @@ ${soulTeamsHereCSS}
 .knowledge-role.owns { color:var(--accent); }
 .oats-view .soul-page button.inspector-instance { display:flex; align-items:center; gap:8px; width:100%; min-height:28px; height:auto; margin:0; padding:0 4px; box-sizing:border-box; border:0; border-radius:6px; background:var(--surface); color:var(--fg); text-align:left; font:inherit; font-size:12.5px; font-weight:500; white-space:nowrap; }
 .oats-view .soul-page button.inspector-instance:hover:not(:disabled) { background:var(--surface-2); color:var(--fg); }
-.oats-view .soul-page button.inspector-instance:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+.oats-view .soul-page button.inspector-instance:focus-visible { background:var(--sel); }
 .soul-page .instance-dot { width:7px; height:7px; border-radius:50%; box-sizing:border-box; border:1.5px solid var(--muted); flex:none; }
 .soul-page .instance-dot.running { border-color:var(--live); background:var(--live); }
 .soul-page .instance-name { min-width:0; overflow:hidden; text-overflow:ellipsis; }

@@ -32,7 +32,7 @@ export const automationsCSS = `
 .oats-view .auto-tabs button { flex:none; display:inline-flex; align-items:center; gap:6px; height:auto; min-height:0; padding:0; border:0; border-radius:0; background:none; color:var(--nav-fg); font:500 13px var(--sans,system-ui); cursor:pointer; }
 .oats-view .auto-tabs button:hover { color:var(--fg); }
 .oats-view .auto-tabs button[aria-selected=true] { color:var(--fg); font-weight:650; box-shadow:inset 0 -2px 0 var(--live); }
-.oats-view .auto-tabs button:focus-visible { outline:2px solid var(--accent); outline-offset:-4px; border-radius:6px; }
+.oats-view .auto-tabs button:focus-visible { background:var(--sel); border-radius:6px; padding:0 6px; margin:0 -6px; } /* layout-neutral inset */
 .auto-tab-count { color:var(--muted); font:10.5px var(--mono,monospace); }
 .auto-tab-count:empty { display:none; }
 .auto-spacer { flex:1; }
@@ -56,7 +56,7 @@ export const automationsCSS = `
 .auto-search { display:flex; align-items:center; gap:7px; flex:0 1 240px; min-width:0; height:28px; padding:0 10px; box-sizing:border-box; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--muted); }
 .auto-search .shell-icon { flex:none; }
 .oats-view .auto-search input { flex:1; min-width:0; height:100%; min-height:0; padding:0; border:0; background:transparent; color:var(--fg); font-size:12px; outline:none; }
-.auto-search:focus-within { outline:2px solid var(--accent); outline-offset:1px; }
+.auto-search:focus-within { border-color:var(--accent); }
 .auto-group { display:flex; flex-direction:column; gap:8px; margin:0 0 20px; }
 .auto-group-title { display:flex; align-items:baseline; gap:8px; margin:0; padding:0 2px; font-size:12.5px; font-weight:650; color:var(--fg); }
 .auto-group-title.warn { color:var(--warn); }
@@ -89,7 +89,8 @@ export const automationsCSS = `
 .oats-view button.auto-switch::after { content:""; position:absolute; top:2px; left:2px; width:12px; height:12px; border-radius:50%; background:var(--muted); }
 .oats-view button.auto-switch[aria-checked=true] { border-color:var(--primary-bg); background:var(--primary-bg); }
 .oats-view button.auto-switch[aria-checked=true]::after { left:14px; background:var(--primary-fg); }
-.oats-view button.auto-switch:focus-visible, .auto-menu summary:focus-visible, .oats-view .auto-row button.auto-open:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+/* Keyboard focus (theme.css rule 2): the switch keeps its own pair under the global edge; the row link tints. */
+.oats-view .auto-row button.auto-open:focus-visible { background:var(--sel); border-radius:6px; padding:2px 6px; margin:0 -6px; }
 .auto-menu { position:relative; justify-self:end; }
 .auto-menu summary { display:grid; place-items:center; width:28px; height:28px; border-radius:6px; color:var(--muted); cursor:pointer; list-style:none; }
 .auto-menu summary::-webkit-details-marker { display:none; }
