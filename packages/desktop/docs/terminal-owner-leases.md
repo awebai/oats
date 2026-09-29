@@ -1,6 +1,6 @@
 # Terminal owner leases (Desktop wire2)
 
-The terminal is still a viewer of the exact existing tmux/Herdr/remote source.
+The terminal is still a viewer of the exact existing tmux or remote source.
 This boundary protects Desktop-owned PTY resources, not every general HTTP/API
 operation as a per-window sandbox. Kernel lifecycle stays with the compatible
 installed CLI. Workspace-v2/catalog/editor/detach changes are not part of this fix.
@@ -63,12 +63,14 @@ this is an algorithmic-shape measurement, not a native latency benchmark.
 ## Private IPC and renderer lifecycle
 
 Invocations return `{terminalApi:2, ok:true, status, ...}` or a stable static
-`E_TERM_*` refusal. Raw native/CLI/filesystem errors are not forwarded. Write and
+`E_TERM_*` refusal (or `E_HERDR_REMOVED` from `term:open`). Raw native/CLI/filesystem errors are not forwarded. Write and
 resize remain one-way, zero-effect/no-throw on invalid, foreign or stale requests;
 there is no synchronous IPC or awaited keystroke round trip.
 
-- `term:open(spec)` admits exactly one existing backend shape, not owner/bin/env/
-  command authority. `term:close(handle)` is invoke, not an unleased send path.
+- `term:open(spec)` admits exactly one existing backend shape, a tmux session or
+  remote, not owner/bin/env/command authority. A spec carrying `sessionTarget`
+  (a Herdr target) is refused at admission with `E_HERDR_REMOVED` and the
+  kernel's stem, before any preparation or PTY. `term:close(handle)` is invoke, not an unleased send path.
 - `term:ready(handle)` acknowledges **after renderer data/exit listeners exist**.
   Early output is FIFO-buffered≤64KiB for≤5s inside the global slot budget; early
   exit also waits for this acknowledgment. Overflow/expiry rolls back only the
@@ -110,7 +112,7 @@ original handle/operation, with focus gated by current explicit intent.
 Tests use real shared broker/handler/bridge/adapter/renderer code with inert owners,
 PTYs, clocks, CLI/FS recorders and DOM. The main composition/window-registration
 and quit wiring are source-exercised under injected effects. These tests do not
-need Electron/CDP/tmux/SSH/Herdr sessions, native signals, live models or an operator
+need Electron/CDP/tmux/SSH sessions, native signals, live models or an operator
 backend. The mixed root `test/desktop-tmux-target.test.mjs` contains live native
 cases and must not be loaded for inert Desktop qualification: a test-name filter
 is not an isolation boundary. Computed style/DOM tests and incidental native test
