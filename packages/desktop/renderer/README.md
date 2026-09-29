@@ -624,7 +624,11 @@ sidebar toggle or the restore edge), never `<body>`; a focus-mode change made
 after focus was already lost (the palette removes its input before running the
 command) lands there too. Mod+F and Mod+B leave focus
 mode. Panel collapse and selected tab are session-local per workspace; focus mode
-is a temporary presentation override. Native terminal input and per-window
+is a temporary presentation override. Collapsed, the panel is a rail (a 44px column, or a
+34px row when the workbench stacks): the rail centres its controls on its cross
+axis, each control centres its block `.shell-icon` as a flex box, and no control
+has a cross-axis auto margin (the stacked expand drops its `margin-top:auto`), so
+every icon sits on the rail's centre line (`context-panel-rail.test.mjs`). Native terminal input and per-window
 lifecycle policies are unchanged.
 
 ### Git inspection (slice 2a)
