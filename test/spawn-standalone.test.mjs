@@ -89,6 +89,14 @@ test("standalone: unreadable workspace host → sync locks only the oats.core pa
     assert.equal(ob.standalone, true); assert.equal(ob.next.spawn, null); assert.deepEqual(ob.next.souls, ["data-analyst"]);
     assert.equal(ob.next.clone.length, 1, "the standalone repo itself is the one clone target"); assert.equal(ob.next.clone[0].name, "data");
 
+    // preview (feature preview-composed-from): standalone, the workspace defaults are unknown — every module,
+    // oats.core included (the kernel's standalone default rides in the soul's entry), is the soul's.
+    r = oats(["spawn", "data-analyst", "--dir", dep, "--agents-root", join(dep, "agents"), "--purpose", "x", "--work", "directory", "--preview", "--json"], { base, env });
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    doc = envelope(r);
+    assert.equal(doc.result.standalone, true);
+    assert.deepEqual(doc.result.modules.map((m) => [m.name, m.composedFrom]), [["nw-warehouse-access", "soul"], ["oats.core", "soul"]]);
+
     // spawn (the package path is the same as in a workspace)
     r = oats(["spawn", "data-analyst", "--dir", dep, "--agents-root", join(dep, "agents"), "--purpose", "x", "--work", "directory", "--no-launch", "--json"], { base, env });
     assert.equal(r.status, 0, r.stderr + r.stdout);
