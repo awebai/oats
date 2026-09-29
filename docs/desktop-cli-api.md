@@ -1426,8 +1426,9 @@ route target:
   answer is unknown (`missingRemotely: false`).
 - **`savedRoute`**: the instance was spawned from this machine and has a
   saved route here. Information only; no action depends on it.
-- `running` is `null` when unknown; `backend`, `tmux`, `sessionTarget` and
-  `runtimeError` are as the host reports them.
+- `running` is `null` when unknown; `backend` is `tmux` for a row with a tmux
+  target, else `null`; `tmux`, `sessionTarget` (the recorded target of a home
+  a Herdr-era kernel opened) and `runtimeError` are as the host reports them.
 
 <a id="routed-reads-and-plans"></a>
 ### Routed reads and plans (`--server`, 0.31)
