@@ -79,7 +79,7 @@ test("scheduled spawn keeps same-named souls in different repositories distinct"
 // verbs (add/update/remove/reconcile/host-install) on /api/schedules.
 const localRow = s => ({ ...s, name: s.id, qualifiedId: `local/${s.id}`, origin: { kind: "local", path: "local" }, owner: null, runsOn: null,
   runsHere: true, reason: null, enabledHere: s.enabled !== false, soul: null, teams: [], nextDue: s.nextRun || null });
-function setup({ mutate, read, host = { installed: true, active: true, registered: true, lastTick: "2026-09-07T11:59:00Z", maxConcurrent: 1 } } = {}) {
+function setup({ mutate, read, cliFacts = {}, host = { installed: true, active: true, registered: true, lastTick: "2026-09-07T11:59:00Z", maxConcurrent: 1 } } = {}) {
   const dom = new JSDOM("<body><main></main></body>", { pretendToBeVisual: true }); const el = dom.window.document.querySelector("main");
   const calls = []; setWorkspace("/team");
   const ctx = { api: async (path, opts) => {
@@ -96,11 +96,23 @@ function setup({ mutate, read, host = { installed: true, active: true, registere
     if (path.startsWith("/api/panel")) return { instances: [{ home, instance: "reviewer-seat" }] };
     assert.fail(path);
   } };
-  const view = createSchedulesView(el, ctx, { cli: () => ({ ...cli, scheduleApi: 2, automationsApi: 1, features: ["schedule", "automations"] }), subscribeCli: () => () => {} });
+  const view = createSchedulesView(el, ctx, { cli: () => ({ ...cli, ...cliFacts, scheduleApi: 2, automationsApi: 1, features: ["schedule", "automations"] }), subscribeCli: () => () => {} });
   const rowAction = (id, verb) => el.querySelector(`.auto-row[data-id="local/${id}"] .auto-menu button[data-verb=${verb}]`);
   return { dom, el, calls, view, rowAction, cleanup() { view.dispose(); dom.window.close(); } };
 }
 const posts = (s, prefix) => s.calls.filter(c => c.path.startsWith(prefix) && c.opts?.method === "POST");
+
+test("the spawn schedule form offers tmux as its only session backend, even from an older kernel that lists herdr", async () => {
+  for (const sessionBackends of [["tmux"], ["tmux", "herdr"]]) {
+    const s = setup({ cliFacts: { sessionBackends } });
+    try {
+      await tick(); s.el.querySelector(".schedule-new").click();
+      const select = s.el.querySelector("form").elements.backend;
+      assert.deepEqual([...select.options].map(o => [o.value, o.textContent]), [["", "Soul default"], ["tmux", "tmux"]], String(sessionBackends));
+      assert.doesNotMatch(s.el.querySelector("form").textContent, /herdr/i);
+    } finally { s.cleanup(); }
+  }
+});
 
 test("wake form saves exact home/message and explicit refresh preserves unsaved input", async () => {
   const s = setup();

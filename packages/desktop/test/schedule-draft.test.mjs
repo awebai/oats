@@ -21,6 +21,6 @@ for (const key of ['definitionVersion', 'recurrencePolicy', 'execution', 'prepar
 });
 
 test('unpreservable inputs and the command kind get no invented default or stripped policy', () => {
-  for (const v of [entry({ tz: undefined }), entry({ kind: 'command', argv: ['oats', 'status'] }), entry({ backend: 'future' }), entry({ runtime: 'future' }),
+  for (const v of [entry({ tz: undefined }), entry({ kind: 'command', argv: ['oats', 'status'] }), entry({ backend: 'future' }), entry({ backend: 'herdr' }), entry({ runtime: 'future' }),
     entry({ wake: { cron: '* * * * *', tz: 'UTC', message: 'wake', enabled: false } }), entry({ name: 'nightly', origin: { kind: 'local' } })]) assert.equal(scheduleDraft(v), null);
 });

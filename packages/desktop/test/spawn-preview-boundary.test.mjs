@@ -21,20 +21,22 @@ for (const c of [null, { ...cli, spawnPreviewApi: 1, features: ['spawn-preview']
 });
 test('qualified boundary uses fixed exact-root argv, tagged model and anchor; no task, apply or files', async () => {
   const c = context(); let seen;
-  const choices = { purpose: 'review', branch: 'feat/review', base: 'release', model: { kind: 'native-default' }, harness: 'codex', backend: 'herdr', launchConfig: 'personal', yolo: false,
+  const choices = { purpose: 'review', branch: 'feat/review', base: 'release', model: { kind: 'native-default' }, harness: 'codex', backend: 'tmux', launchConfig: 'personal', yolo: false,
     relation: { kind: 'child', anchor } };
   const read = createSpawnPreviewBoundary({ invoke: (cli, args) => cliSpawnPreview(cli, args, { env: { PATH: '/fixture/bin', HOME: '/fixture/home', PI_AGENTS_ROOT: '/other', OATS_DEPLOYMENT: '/D', OATS_RESOLUTION: '/R', OATS_PREVIEW_PREFLIGHT_BUDGET_MS: '999999' }, exec: (bin, argv, opts, callback) => {
     seen = { bin, argv, opts }; callback(null, JSON.stringify(envelope(data(args.target))));
   } }) });
   const result = await read(request(choices), () => c); assert.equal(result.status, 'available');
-  assert.deepEqual(seen.argv, ['spawn', 'release-manager', '--dir', DEPLOYMENT, '--agents-root', ROOT, '--preview', '--purpose', 'review', '--branch', 'feat/review', '--base', 'release', '--runtime', 'codex', '--launch-config', 'personal', '--backend', 'herdr', '--model', '@native-default', '--no-yolo', '--relation', 'child', '--relative-to', 'release-manager-race', '--relative-root', ROOT, '--json']);
+  assert.deepEqual(seen.argv, ['spawn', 'release-manager', '--dir', DEPLOYMENT, '--agents-root', ROOT, '--preview', '--purpose', 'review', '--branch', 'feat/review', '--base', 'release', '--runtime', 'codex', '--launch-config', 'personal', '--backend', 'tmux', '--model', '@native-default', '--no-yolo', '--relation', 'child', '--relative-to', 'release-manager-race', '--relative-root', ROOT, '--json']);
   assert.deepEqual(seen.opts.env, { PATH: '/fixture/bin', HOME: '/fixture/home' }); assert.equal(seen.opts.cwd, DEPLOYMENT); assert.equal(seen.opts.shell, false);
   assert.equal(seen.opts.timeout, 30000); assert.equal(seen.opts.maxBuffer, 4194304);
 });
 for (const choices of [{ task: 'SECRET' }, { repo: '/other' }, { workDir: '/other' }, { env: { TOKEN: 'secret' } }, { expectDecision: 'x' }, { branch: '--no-launch' }, { base: 'x\n--force' }, { purpose: '../elsewhere' },
   { model: null }, { relation: null }, { model: { kind: 'custom', value: '@native-default' } }, { model: { kind: 'custom', value: '--preview' } },
   { allowChildSpawns: false }, { work: 'checkout' }, { work: 'directory' }, { work: true },
-  { relation: { kind: 'child', anchor: { ...anchor, server: 'remote' } } }]) test(`strict read choices refuse ${JSON.stringify(choices)}`, async () => {
+  { relation: { kind: 'child', anchor: { ...anchor, server: 'remote' } } },
+  // The fixture CLI is an older kernel whose sessionBackends still lists herdr: Herdr is refused anyway.
+  { backend: 'herdr' }]) test(`strict read choices refuse ${JSON.stringify(choices)}`, async () => {
   assert.equal(previewChoices(choices), null);
   const result = await createSpawnPreviewBoundary({ invoke: assert.fail })(request(choices), context); assert.equal(result.reason.code, 'E_BAD_ARGS');
 });
@@ -108,6 +110,10 @@ test('projection rejects API1, wrong echoes and inconsistent decisions; drops ta
   assert.equal(previewData(kernel('preview-yolo').result, target).yolo, true);
   for (const name of ['preview-worktree-default', 'preview-runtime-claude', 'preview-native-default', 'preview-branch-base', 'preview-after-apply'])
     assert.ok(previewData(kernel(name).result, target), `${name} projects`);
+});
+test('an older kernel preview that resolves the Herdr backend does not project', () => {
+  const v = data(); v.backend = v.backendStatus.name = v.decision.effective.backend = 'herdr';
+  assert.equal(previewData(v, target), null);
 });
 
 // `--name <slug>` (kernel 0.25.9, feature spawn-name): the exact instance

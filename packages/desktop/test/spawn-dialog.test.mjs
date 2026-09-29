@@ -18,6 +18,18 @@ function applyThatRuns(u, preview = created()) {
   };
 }
 
+test('the session backend select offers tmux only: from the older-kernel f3 capture that lists herdr, and from a 0.31 CLI', async t => {
+  for (const cli of [undefined, { ...structuredClone(CLI), sessionBackends: ['tmux'] }]) {
+    const u = await mountSpawn(t, cli ? { cli } : {});
+    await u.open(); u.q('.spawn-advanced').open = true;
+    assert.deepEqual(CLI.sessionBackends, ['tmux', 'herdr'], 'the f3 capture is an older kernel');
+    const select = u.q('.fbackend');
+    assert.deepEqual([...select.options].map(o => o.value), ['', 'tmux']);
+    assert.equal(select.options[0].textContent, 'Default · tmux');
+    assert.doesNotMatch(u.q('.spawn-advanced').textContent, /herdr/i);
+  }
+});
+
 test('the dialog shows what the kernel decided: name, harness, model and work — no toggles, placeholders or preview button', async t => {
   const u = await mountSpawn(t);
   const dialog = await u.open();

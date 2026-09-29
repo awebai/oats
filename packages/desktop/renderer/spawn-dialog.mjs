@@ -701,8 +701,9 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   fillSelect(runtime, [['', 'Default'], ...runtimes.map(v => [v, RUNTIME_NAMES[v]])]);
   const yoloSupported = Array.isArray(c0?.launchOptions) && c0.launchOptions.includes('yolo');
   fillSelect(yolo, [['', 'Default'], ['false', "Ask — harness's policy", !yoloSupported], ['true', 'Skip prompts (YOLO)', !yoloSupported]]);
-  const backends = Array.isArray(c0?.sessionBackends) ? c0.sessionBackends.filter(v => ['tmux', 'herdr'].includes(v)) : [];
-  fillSelect(backend, [['', 'Default'], ...backends.map(v => [v, v === 'herdr' ? 'Herdr' : 'tmux'])]);
+  // tmux is the only session backend; an older kernel may still list herdr, which is never offered.
+  const backends = Array.isArray(c0?.sessionBackends) ? c0.sessionBackends.filter(v => v === 'tmux') : [];
+  fillSelect(backend, [['', 'Default'], ...backends.map(v => [v, v])]);
   fillSelect(config, [['', 'Default']]);
   fillSelect(server, [['', 'This machine']]);
   if (soul.server) { fillSelect(server, [[soul.server, soul.repoName || soul.server]]); server.value = soul.server; server.disabled = true; }
@@ -839,7 +840,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     }
     // Advanced defaults.
     yolo.options[0].textContent = data ? `Default · ${permissionText(data.yolo)}` : 'Default';
-    backend.options[0].textContent = data ? `Default · ${data.backend === 'herdr' ? 'Herdr' : data.backend}` : 'Default';
+    backend.options[0].textContent = data ? `Default · ${data.backend}` : 'Default';
     config.options[0].textContent = data?.launchConfig ? `Default · ${data.launchConfig}` : 'Default';
     branch.placeholder = data?.branch && !branch.value ? data.branch : `agents/${soul.name}-…`;
     base.placeholder = data?.base ? `${data.base.ref} · ${short(data.base.oid)}` : 'HEAD';
