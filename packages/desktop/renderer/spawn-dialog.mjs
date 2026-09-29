@@ -29,12 +29,56 @@ export const RUNTIME_NAMES = Object.freeze({ pi: 'Pi', claude: 'Claude Code', co
 const PURPOSE = /^[a-z0-9][a-z0-9-]*$/i;
 
 export const spawnDialogCSS = `
-.spawn-modal .spawn-dialog { width:880px; max-width:100%; box-sizing:border-box; max-height:calc(100vh - 48px); padding:0; gap:0; overflow:hidden; box-shadow:var(--shadow-modal); }
+.spawn-modal .spawn-dialog { width:880px; max-width:100%; box-sizing:border-box; max-height:calc(100vh - 48px); padding:0; gap:0; overflow:hidden; background:var(--surface); box-shadow:var(--shadow-modal); }
+/* Two layouts, switched in place (design board 6): 'picker' = soul chooser + form; 'scoped' = the
+   preview of what the kernel will create + form, for one soul. Hidden columns stay in the DOM under
+   [hidden] so the host's focus trap skips them. */
+.spawn-modal .spawn-dialog[data-layout=scoped] { width:1000px; }
 .spawn-modal .spawn-dialog-head { min-height:52px; flex:none; align-items:center; gap:10px; padding:0 12px 0 20px; border-bottom:1px solid var(--border); }
 .spawn-modal .spawn-dialog-head h2 { flex:none; font-size:15px; font-weight:700; }
+.spawn-head-copy { flex:1; min-width:0; display:flex; align-items:center; gap:10px; }
 .spawn-context { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); font-size:12px; }
+.spawn-modal .spawn-dialog[data-layout=scoped] .spawn-dialog-head { min-height:0; padding:16px 12px 16px 20px; gap:12px; }
+.spawn-dialog-head .spawn-head-mark { width:34px; height:34px; border-radius:9px; font-size:14px; }
+.spawn-dialog[data-layout=scoped] .spawn-head-copy { flex-direction:column; align-items:stretch; gap:1px; }
+.spawn-modal .spawn-dialog[data-layout=scoped] .spawn-dialog-head h2 { font-size:16px; }
+/* A link, not a button: the soul is the dialog's subject, changing it is a side path. */
+.spawn-change-soul { flex:none; border:0; background:none; padding:0; font:600 12px var(--sans,system-ui); color:var(--accent); cursor:pointer; }
+.spawn-change-soul:hover { text-decoration:underline; text-underline-offset:2px; }
 .spawn-dialog .close-act { flex:none; margin-left:auto; display:grid; place-items:center; }
 .spawn-columns { display:grid; grid-template-columns:300px minmax(0,1fr); height:calc(100vh - 100px); max-height:700px; min-height:0; overflow:hidden; }
+.spawn-dialog[data-layout=scoped] .spawn-columns { grid-template-columns:360px minmax(0,1fr); }
+/* The preview column: what the kernel will create, re-drawn from every observation. */
+.spawn-preview { display:flex; flex-direction:column; gap:16px; min-width:0; min-height:0; overflow:auto; padding:18px 20px; box-sizing:border-box; background:var(--surface-2); border-right:1px solid var(--border); }
+.spawn-preview-section { display:flex; flex-direction:column; gap:6px; min-width:0; }
+.spawn-preview-title { margin:0; font-size:10.5px; font-weight:650; letter-spacing:.065em; text-transform:uppercase; color:var(--muted); }
+.spawn-preview-facts { display:grid; grid-template-columns:86px minmax(0,1fr); row-gap:8px; column-gap:10px; margin:0; font-size:12.5px; color:var(--fg); }
+.spawn-preview-facts dt { margin:0; color:var(--muted); }
+.spawn-preview-facts dd { margin:0; min-width:0; overflow-wrap:anywhere; }
+.spawn-preview-facts .mono, .spawn-core-row .mono, .spawn-cap-row .mono { font-family:var(--mono,monospace); }
+.spawn-preview .muted { color:var(--muted); }
+.spawn-preview-harness { display:flex; align-items:center; gap:6px; }
+.spawn-preview-harness .runtime-badge { width:16px; height:16px; border-radius:4px; font-size:9px; }
+/* Loading: the shape of the facts, no words (the sr-only text says it). */
+.spawn-preview-skeleton { display:grid; grid-template-columns:86px minmax(0,1fr); row-gap:10px; column-gap:10px; align-items:center; }
+.spawn-preview-skeleton span { display:block; height:12px; border-radius:6px; background:var(--tag-bg); }
+.spawn-preview-skeleton span:nth-child(odd) { width:56px; }
+.spawn-preview-skeleton span:nth-child(2) { width:72%; }
+.spawn-preview-skeleton span:nth-child(4) { width:46%; }
+.spawn-preview-skeleton span:nth-child(6) { width:60%; }
+.spawn-preview-skeleton span:nth-child(8) { width:34%; }
+.spawn-preview-failure { margin:0; font-size:12.5px; line-height:1.5; color:var(--warn); overflow-wrap:anywhere; }
+.spawn-preview-empty { margin:0; font-size:12.5px; line-height:1.5; color:var(--muted); overflow-wrap:anywhere; }
+.spawn-core-box { display:flex; flex-direction:column; border:1px solid var(--border); border-radius:8px; background:var(--surface); font-size:12px; color:var(--fg); }
+.spawn-core-row { display:flex; padding:7px 10px; border-bottom:1px solid var(--border); min-width:0; }
+.spawn-core-row:last-child { border-bottom:0; }
+.spawn-core-row .spawn-core-layer { flex:none; width:84px; color:var(--muted); }
+.spawn-core-row .mono, .spawn-core-row .muted { min-width:0; overflow-wrap:anywhere; }
+.spawn-cap-list { display:flex; flex-direction:column; gap:5px; font-size:12px; color:var(--fg); }
+.spawn-cap-row { display:flex; align-items:center; gap:8px; min-width:0; }
+.spawn-cap-row .mono { flex:1; min-width:0; overflow-wrap:anywhere; }
+.spawn-cap-source { flex:none; padding:1px 6px; border-radius:4px; background:var(--tag-bg); color:var(--muted); font-size:10.5px; font-weight:600; white-space:nowrap; }
+.spawn-preview-note { margin:auto 0 0; font-size:11.5px; line-height:1.5; color:var(--muted); }
 .spawn-chooser { border-right:1px solid var(--border); min-width:0; min-height:0; overflow:auto; padding:16px 10px 12px; }
 .spawn-chooser-head { display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin:0 6px 10px; }
 .spawn-chooser-title { margin:0; font-size:13px; font-weight:650; color:var(--fg); }
@@ -64,13 +108,14 @@ export const spawnDialogCSS = `
 .spawn-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
 .spawn-row > label { display:flex; flex-direction:column; gap:var(--title-gap); min-width:0; }
 .spawn-form .field { min-width:0; width:100%; box-sizing:border-box; }
-.spawn-form :is(input.field, select.field, textarea.field):focus-visible, .spawn-name-input:focus-within, .spawn-joined:focus-within {
-  outline:none; border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
-/* Name: the hero field */
-.spawn-name-input { display:flex; align-items:stretch; min-width:0; height:42px; border:1px solid var(--border); border-radius:9px; background:var(--surface); }
-.spawn-name-prefix { flex:none; display:flex; align-items:center; max-width:55%; padding:0 0 0 12px; color:var(--muted); font:13.5px var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.spawn-name-input input.field { flex:1; height:100%; border:0; border-radius:9px; background:transparent; padding:0 12px 0 1px; font:600 13.5px var(--mono,monospace); color:var(--fg); }
-.spawn-name-input input.field:focus-visible { box-shadow:none; }
+/* Focus is the shell's (rule 2/3: fields turn their border accent); a joined wrapper is the one frame of its inputs. */
+.spawn-joined:focus-within { border-color:var(--accent); }
+/* Name: the hero field. One frame (the wrapper's border) that turns to the accent on focus; no ring. */
+.spawn-name-input { display:flex; align-items:stretch; min-width:0; height:36px; border:1px solid var(--border); border-radius:8px; background:var(--surface); }
+.spawn-name-input:focus-within { border-color:var(--accent); box-shadow:none; outline:none; }
+.spawn-name-prefix { flex:none; display:flex; align-items:center; max-width:55%; padding:0 0 0 12px; color:var(--muted); font:13px var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.spawn-name-input input.field { flex:1; height:100%; border:0; border-radius:8px; background:transparent; padding:0 12px 0 1px; font:600 13px var(--mono,monospace); color:var(--fg); }
+.spawn-dialog .spawn-name-input input.field, .spawn-dialog .spawn-name-input input.field:focus, .spawn-dialog .spawn-name-input input.field:focus-visible { outline:none; border:0; box-shadow:none; }
 .spawn-name-result { display:flex; align-items:center; gap:6px; }
 .spawn-name-head { display:flex; align-items:center; gap:12px; }
 .spawn-name-head .spawn-switch { margin-left:auto; font-size:11.5px; color:var(--muted); }
@@ -86,8 +131,8 @@ export const spawnDialogCSS = `
 .spawn-seg input:disabled { cursor:default; }
 /* A shared team with no provider id yet: shown, not choosable (muted text, still AA; no opacity). */
 .spawn-seg .spawn-team-off .spawn-team-name { color:var(--muted); cursor:default; }
-/* Default is fixed, not a choice: a quiet neutral chip, not the accent. */
-.spawn-seg .spawn-team-fixed input:checked + span { background:var(--surface); color:var(--fg); box-shadow:none; cursor:default; }
+/* Default is fixed, not a choice: a quiet neutral chip (its own hairline, not the accent tint). */
+.spawn-seg .spawn-team-fixed input:checked + span { background:var(--surface); color:var(--fg); font-weight:500; box-shadow:inset 0 0 0 1px var(--border); cursor:default; }
 /* Runtime picker and model field */
 .spawn-run .spawn-choice-trigger { height:38px; min-height:38px; border-radius:8px; }
 .spawn-run .spawn-choice-trigger .runtime-badge, .spawn-choice-menu .runtime-badge { flex:none; width:20px; height:20px; border-radius:5px; display:grid; place-items:center; font-size:9.5px; font-weight:700; }
@@ -121,16 +166,15 @@ export const spawnDialogCSS = `
 .spawn-switch input::before { content:''; position:absolute; top:3px; left:3px; width:12px; height:12px; border-radius:50%; background:var(--surface); transition:left .15s; }
 .spawn-switch input:checked { background:var(--primary-bg); }
 .spawn-switch input:checked::before { left:15px; }
-.spawn-switch input:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
-/* Relationship */
+/* Relationship: a segmented control per the shared control rules — one outer frame, tinted
+   selection (never white-vs-grey), keyboard focus as tint + a 1px accent edge, no ring on click. */
 .spawn-relationship-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; min-width:0; }
-.spawn-seg { display:inline-flex; flex:none; gap:2px; padding:3px; border:1px solid var(--border); border-radius:9px; background:var(--surface-2); }
+.spawn-seg { display:inline-flex; flex:none; gap:2px; padding:2px; border:1px solid var(--border); border-radius:8px; background:var(--surface); }
 .spawn-seg label { position:relative; display:block; cursor:pointer; }
 .spawn-seg input { position:absolute; inset:0; appearance:none; -webkit-appearance:none; margin:0; border:0; background:transparent; cursor:pointer; }
-.spawn-seg span { display:block; padding:5px 11px; border-radius:6px; font-size:12px; font-weight:600; color:var(--muted); white-space:nowrap; }
-/* The selected option (Relationship, Teams): the accent on its selected tint, outlined. */
-.spawn-seg input:checked + span { background:var(--sel); color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); }
-.spawn-seg input:focus-visible + span { outline:2px solid var(--accent); outline-offset:1px; }
+.spawn-seg span { display:flex; align-items:center; height:28px; padding:0 12px; border-radius:6px; font-size:12px; font-weight:500; color:var(--muted); white-space:nowrap; }
+.spawn-seg input:checked + span { background:var(--sel); color:var(--accent); font-weight:650; }
+.spawn-seg input:focus-visible + span { background:var(--sel); box-shadow:inset 0 0 0 1px var(--accent); }
 .spawn-relationship-row .frelto { flex:1 1 200px; width:auto; min-width:0; height:34px; }
 .spawn-relationship-row .frelto[hidden] { display:none; }
 .spawn-form .ftask { min-height:88px; resize:vertical; border-radius:8px; line-height:1.5; }
@@ -154,7 +198,6 @@ export const spawnDialogCSS = `
 .spawn-footer .fstatus.err { color:var(--danger); }
 .spawn-details-toggle { flex:none; border:0; background:none; padding:0; font:inherit; font-size:12px; color:var(--muted); text-decoration:underline; text-underline-offset:2px; cursor:pointer; }
 .spawn-details-toggle:hover { color:var(--fg); }
-.spawn-details-toggle:focus-visible { outline:2px solid var(--focus, var(--accent)); outline-offset:2px; border-radius:3px; }
 .spawn-details-toggle[hidden], .spawn-problem-detail[hidden] { display:none; }
 .spawn-problem-detail { order:9; flex:1 0 100%; margin:0; padding:8px 10px; border-radius:6px; background:var(--surface-2); color:var(--muted); font-size:11.5px; line-height:1.5; overflow-wrap:anywhere; max-height:96px; overflow:auto; }
 .spawn-footer .act { min-height:34px; padding:0 16px; border-radius:8px; font-weight:600; }
@@ -174,11 +217,13 @@ export const spawnDialogCSS = `
 .spawn-choice-menu button[aria-selected=true] { background:var(--sel); }
 .spawn-choice-menu button:disabled { color:var(--muted); cursor:default; }
 .spawn-choice-menu small { display:block; font-size:10.5px; color:var(--muted); }
-.spawn-dialog :is(button,summary,input,textarea,select):focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+/* The segmented inputs are invisible hit areas: their keyboard focus is drawn on the span (above), not on the input. */
+.spawn-dialog .spawn-seg input:focus-visible { outline:none; box-shadow:none; }
 .spawn-dialog [hidden] { display:none; }
 @media(max-width:760px) {
- .spawn-columns { grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); }
+ .spawn-columns, .spawn-dialog[data-layout=scoped] .spawn-columns { grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); }
  .spawn-chooser { max-height:200px; border-right:0; border-bottom:1px solid var(--border); }
+ .spawn-preview { max-height:220px; border-right:0; border-bottom:1px solid var(--border); }
  .spawn-row { grid-template-columns:minmax(0,1fr); }
  .spawn-form-body { padding:14px; }
  .spawn-footer { padding:10px 14px; }
@@ -239,6 +284,43 @@ export function workText(data, soulWork) {
 export function permissionText(yolo) {
   return yolo === true ? 'skips prompts' : "harness's policy";
 }
+/** Where a catalog soul comes from, for the scoped header (soul rows carry soulKind/package/version/repoName/origin). */
+export function soulOriginText(soul) {
+  if (soul?.soulKind === 'package' && soul.package) return `from package ${soul.package}${soul.version ? ` ${soul.version}` : ''}`;
+  if (soul?.soulKind === 'member') return soul.repoName ? `from ${soul.repoName}` : '';
+  const from = soul?.origin || soul?.repoName;
+  return from ? `from ${from}` : '';
+}
+/** The preview's work mode in words (board 6, "Works in"); an unknown mode verbatim. */
+const WORK_PHRASES = Object.freeze({ __proto__: null, worktree: 'own worktree', checkout: 'shared checkout', attached: "a parent's worktree", directory: 'a folder', workspace: 'all member repos' });
+export const worksInText = work => WORK_PHRASES[work] ?? work;
+/** A preview module's source, as the Capabilities tag says it: the package and version, the member
+ * repository, or the kind verbatim. Never a reason ("soul", "workspace default"): the preview has none. */
+export function moduleSourceText(from) {
+  if (from?.kind === 'package') return `package ${from.package ?? ''}${from.version ? ` ${from.version}` : ''}`.trimEnd();
+  if (from?.kind === 'member') return `${String(from.repoKey ?? '').split('/').pop().replace(/\.git$/, '') || 'member'} · latest`;
+  return typeof from?.kind === 'string' ? from.kind : '';
+}
+/** The preview column's Core capabilities and Capabilities sections (their children), from the
+ * preview's `modules` rows [{name, layer, from}]; null when the preview carries none (no placeholder). */
+export function composePreviewModules(doc, modules) {
+  if (!Array.isArray(modules)) return null;
+  const el = (tag, text, cls) => node(doc, tag, text, cls);
+  const rows = modules.filter(m => m && typeof m === 'object' && typeof m.name === 'string' && m.name);
+  const coreBox = el('div', undefined, 'spawn-core-box');
+  for (const [layer, label] of [['knowledge', 'Knowledge'], ['messaging', 'Messaging'], ['tasks', 'Tasks']]) {
+    const row = el('span', undefined, 'spawn-core-row'), m = rows.find(x => x.layer === layer);
+    row.append(el('span', label, 'spawn-core-layer'), m ? el('span', `${m.name}${m.from?.version ? ` ${m.from.version}` : ''}`, 'mono') : el('span', 'none', 'muted'));
+    coreBox.append(row);
+  }
+  const capsList = el('div', undefined, 'spawn-cap-list');
+  for (const m of [...rows].sort((a, b) => a.name.localeCompare(b.name))) {
+    const row = el('span', undefined, 'spawn-cap-row'); row.dataset.module = m.name;
+    row.append(el('span', m.name, 'mono'), el('span', moduleSourceText(m.from), 'spawn-cap-source'));
+    capsList.append(row);
+  }
+  return { core: [el('h3', 'Core capabilities', 'spawn-preview-title'), coreBox], caps: [el('h3', `Capabilities · ${rows.length}`, 'spawn-preview-title'), capsList] };
+}
 
 /** The soul chooser (left column). */
 function composeChooser(doc, { soul, agents, canChoose, choose, query, note }) {
@@ -292,6 +374,8 @@ function composeChooser(doc, { soul, agents, canChoose, choose, query, note }) {
     for (const entry of rows) entry.row.tabIndex = entry === tabStop ? 0 : -1;
   };
   search.addEventListener('input', filter); filter();
+  /** The row to land on when the chooser opens: the selected soul if the filter shows it, else the search. */
+  const focusTarget = () => rows.find(entry => !entry.row.hidden && !entry.row.disabled && entry.row.getAttribute('aria-pressed') === 'true')?.row || search;
   search.addEventListener('keydown', event => {
     if (event.key !== 'ArrowDown' || event.isComposing || event.keyCode === 229) return;
     const entry = rows.find(item => !item.row.hidden && !item.row.disabled && item.row.tabIndex === 0);
@@ -305,32 +389,48 @@ function composeChooser(doc, { soul, agents, canChoose, choose, query, note }) {
     for (const row of visible) row.tabIndex = row === visible[next] ? 0 : -1;
     visible[next]?.focus();
   });
-  return { chooser, search };
+  return { chooser, search, focusTarget };
 }
 
 /**
  * @param modal  the .spawn-modal element (backdrop); the dialog is built inside it.
  * @param opts   ctx, soul, agents, workspace(), cli(), instances(), servers (Promise|array),
  *               canChoose(soul), choose(soul, draft), close(), owns(), draft,
+ *               layout 'picker' (chooser + form; the default) | 'scoped' (preview + form, one soul),
  *               onCreated(view, isCurrent) — local creation handoff,
  *               remoteSpawn(fields) — execution-server spawn (unguarded route).
  */
 export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, instances, canChoose, choose, close, owns,
-  draft = {}, catalogNote = '', onCreated = async () => {}, remoteSpawn = async () => {}, servers = [], delay: debounce = PREVIEW_DEBOUNCE_MS }) {
+  draft = {}, catalogNote = '', onCreated = async () => {}, remoteSpawn = async () => {}, servers = [], delay: debounce = PREVIEW_DEBOUNCE_MS, layout = 'picker' }) {
   const doc = modal.ownerDocument, el = (tag, text, cls) => node(doc, tag, text, cls);
   const titleId = 'spawn-dialog-title';
   const dialog = el('section', undefined, 'spawn-dialog');
   dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-labelledby', titleId);
-  // ── header
+  // ── header: one h2 (the dialog's name) whose words follow the layout
   const header = el('div', undefined, 'spawn-dialog-head');
-  const title = el('h2', 'Spawn instance'); title.id = titleId;
-  const context = el('span', `in ${workspace()?.name || workspace()?.id || soul.repoName || 'this workspace'}`, 'spawn-context'); context.title = context.textContent;
+  const mark = createSoulMark(doc, soul); mark.classList.add('spawn-head-mark');
+  const headCopy = el('div', undefined, 'spawn-head-copy');
+  const title = el('h2'); title.id = titleId;
+  const workspaceName = () => workspace()?.name || workspace()?.id || soul.repoName || 'this workspace';
+  const context = el('span', '', 'spawn-context');
+  headCopy.append(title, context);
+  const changeSoul = el('button', 'Change soul', 'spawn-change-soul'); changeSoul.type = 'button';
   const closeButton = el('button', undefined, 'close-act fcancel-x'); closeButton.type = 'button'; closeButton.setAttribute('aria-label', 'Close spawn dialog');
   closeButton.append(iconElement(doc, 'close', { size: 14 }));
-  header.append(title, context, closeButton);
-  // ── chooser
-  const { chooser, search } = composeChooser(doc, { soul, agents, canChoose, query: draft.query || '', note: catalogNote,
-    choose: (candidate, query) => { if (!busy()) choose(candidate, { query, purpose: purpose.value, task: task.value, prefixed: prefixed.checked }); } });
+  header.append(mark, headCopy, changeSoul, closeButton);
+  // ── chooser (picker layout)
+  const { chooser, search, focusTarget } = composeChooser(doc, { soul, agents, canChoose, query: draft.query || '', note: catalogNote,
+    choose: (candidate, query) => { if (!busy()) choose(candidate, { query, purpose: purpose.value, task: task.value, prefixed: prefixed.checked, layout: 'picker' }); } });
+  // ── preview (scoped layout): what the kernel will create, from the latest observation
+  const preview = el('aside', undefined, 'spawn-preview'); preview.setAttribute('aria-label', 'Spawn preview');
+  const factsSection = el('section', undefined, 'spawn-preview-section spawn-preview-created');
+  const factsBody = el('div', undefined, 'spawn-preview-body');
+  factsSection.append(el('h3', 'What will be created', 'spawn-preview-title'), factsBody);
+  // Core capabilities / Capabilities: filled only when the preview carries `modules`; otherwise empty and hidden.
+  const coreSection = el('section', undefined, 'spawn-preview-section spawn-preview-core'), capsSection = el('section', undefined, 'spawn-preview-section spawn-preview-caps');
+  coreSection.hidden = capsSection.hidden = true;
+  const previewNote = el('p', 'Resolved by the installed CLI. Spawn refuses if this changes before you confirm.', 'spawn-preview-note');
+  preview.append(factsSection, coreSection, capsSection, previewNote);
   // ── form
   const form = el('div', undefined, 'spawn-form');
   const selectionSummary = el('span', `Selected soul ${soul.name}${soul.server ? ` on ${soul.server}` : ''}`, 'workspace-sr-only');
@@ -388,7 +488,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const relation = el('fieldset', undefined, 'spawn-field spawn-relationship');
   relation.append(el('legend', 'Relationship'));
   const relRow = el('div', undefined, 'spawn-relationship-row'), seg = el('div', undefined, 'spawn-seg frelation'); seg.setAttribute('role', 'radiogroup'); seg.setAttribute('aria-label', 'Relationship');
-  for (const [value, label] of [['unrelated', 'None'], ['child', 'Child of'], ['sibling', 'Sibling of'], ['parent', 'Parent of']]) {
+  for (const [value, label] of [['unrelated', 'Independent'], ['child', 'Child of'], ['sibling', 'Sibling of'], ['parent', 'Parent of']]) {
     const option = el('label'), input = el('input'); input.type = 'radio'; input.name = `spawn-relation-${Math.floor(workspaceGeneration())}`; input.value = value; input.checked = value === 'unrelated';
     option.append(input, el('span', label)); seg.append(option);
   }
@@ -497,8 +597,20 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const body = el('div', undefined, 'spawn-form-body');
   body.append(selectionSummary, nameField, runField, relation, teamsField, taskLabel, advanced);
   form.append(body, footer); // the footer stays in view while the body scrolls
-  const columns = el('div', undefined, 'spawn-columns'); columns.append(chooser, form);
+  const columns = el('div', undefined, 'spawn-columns'); columns.append(preview, chooser, form);
   dialog.append(header, columns); modal.append(dialog);
+  let layoutNow = 'picker';
+  /** Switch layout in place: the other column goes under [hidden]; every typed value stays. */
+  function setLayout(name) {
+    layoutNow = name === 'scoped' ? 'scoped' : 'picker';
+    const scoped = layoutNow === 'scoped';
+    dialog.dataset.layout = layoutNow;
+    chooser.hidden = scoped; preview.hidden = !scoped; mark.hidden = !scoped; changeSoul.hidden = !scoped;
+    title.textContent = scoped ? `Spawn ${soul.name}` : 'Spawn instance';
+    context.textContent = scoped ? [soulOriginText(soul), `in ${workspaceName()}`].filter(Boolean).join(' · ') : `in ${workspaceName()}`;
+    context.title = context.textContent;
+    if (scoped) renderPreview();
+  }
 
   // ── static options
   const c0 = cli();
@@ -655,7 +767,64 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     const related = rel.value !== 'unrelated';
     relTo.hidden = !related; relTo.disabled = !related; relTo.setAttribute('aria-label', related ? `${rel.value[0].toUpperCase()}${rel.value.slice(1)} of which instance?` : 'Which instance');
     relDesc.textContent = !related ? 'Independent — not linked to another instance.' : relTo.value ? `Spawns as a ${rel.value} of ${relTo.value}.` : `Pick the instance this one is a ${rel.value} of.`;
+    if (layoutNow === 'scoped') renderPreview();
     syncButton();
+  }
+  /** What the preview column shows for the choices on screen: the kernel's data for exactly these
+   * choices, its refusal, the loading shape while a read is due or in flight, or why there is none. */
+  function previewState() {
+    const draftChoice = choices(), key = choiceKey(draftChoice.value);
+    if (!local()) return { kind: 'empty', text: `Decided on ${remoteTarget()} when it spawns.` };
+    if (shown && shown.key === key) {
+      if (shown.data) return { kind: 'data', data: shown.data, key };
+      // A name refusal is already said next to the Name field.
+      if (NAME_REFUSALS.includes(shown.failure.code)) return { kind: 'empty', text: 'No preview until the name is accepted.' };
+      return { kind: 'failure', text: spawnProblem(shown.failure, 'preview').text };
+    }
+    if (timer || reading) return { kind: 'reading' };
+    if (draftChoice.error) return { kind: 'empty', text: 'The preview reads once the form is valid.' };
+    if (!previewable()) return { kind: 'empty', text: soul.work === 'attached' ? 'Attached souls are started by the instance they attach to.' : 'The installed CLI can’t preview this spawn.' };
+    return { kind: 'reading' };
+  }
+  let previewDrawn = '';
+  function renderPreview() {
+    const state = previewState(), data = state.data;
+    const signature = state.kind === 'data' ? `data:${state.key}:${data.resolution}:${JSON.stringify(data.modules ?? null)}` : `${state.kind}:${state.text || ''}`;
+    preview.setAttribute('aria-busy', String(state.kind === 'reading'));
+    if (signature === previewDrawn) return;
+    previewDrawn = signature; factsBody.replaceChildren();
+    if (state.kind === 'reading') {
+      const skeleton = el('div', undefined, 'spawn-preview-skeleton'); skeleton.setAttribute('aria-hidden', 'true');
+      for (let i = 0; i < 4; i++) skeleton.append(el('span'), el('span'));
+      factsBody.append(skeleton, el('p', 'Reading the preview…', 'workspace-sr-only spawn-preview-reading'));
+    } else if (state.kind === 'failure') factsBody.append(el('p', state.text, 'spawn-preview-failure'));
+    else if (state.kind === 'empty') factsBody.append(el('p', state.text, 'spawn-preview-empty'));
+    else {
+      const facts = el('dl', undefined, 'spawn-preview-facts');
+      const fact = (label, ...value) => { const dd = el('dd'); dd.append(...value); facts.append(el('dt', label), dd); };
+      const muted = text => el('span', text, 'muted');
+      fact('Name', el('span', data.instance, 'mono'));
+      if (data.work) fact('Works in', worksInText(data.work));
+      if (data.harness) {
+        // Where the harness came from: the Launch's `from` in words (0.30), else the kernel's modelSource verbatim.
+        const launch = shownLaunch(data.launch, cli());
+        const from = launch ? launchFromText(launch.from) : data.modelSource;
+        const harness = el('span', undefined, 'spawn-preview-harness');
+        // The badge is decorative here: the term says Harness and the text names it.
+        const badge = createRuntimeBadge(doc, data.harness); badge.setAttribute('aria-hidden', 'true');
+        harness.append(badge, doc.createTextNode(`${runtimeName(data.harness)}${from ? ` · ${from}` : ''}`));
+        fact('Harness', harness);
+      }
+      // Team model v2: the default the kernel resolved (or none). A 0.29 kernel reports only `team`, the primary label.
+      if (data.defaultTeam) fact('Team', doc.createTextNode(`${data.defaultTeam.label} `), muted('(default)'));
+      else if (data.defaultTeam === null && !(data.teams?.length)) fact('Team', muted('none'));
+      else if (data.defaultTeam === undefined && typeof data.team === 'string' && data.team) fact('Team', data.team);
+      factsBody.append(facts);
+    }
+    // Core capabilities and Capabilities exist only when the preview carries `modules`.
+    const sections = state.kind === 'data' ? composePreviewModules(doc, data.modules) : null;
+    coreSection.hidden = capsSection.hidden = !sections;
+    coreSection.replaceChildren(...(sections?.core ?? [])); capsSection.replaceChildren(...(sections?.caps ?? []));
   }
   /** The default team has no provider id yet: the spawn is refused (team model v2, the lead's ruling). */
   const defaultBlocked = () => (teamsNow || []).some(t => t.default === true && !t.team);
@@ -686,8 +855,9 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     if (!alive) return;
     clearTimeout(timer);
     if (submitted && !['complete', 'partial', 'incomplete'].includes(phase)) return; // the submitted intent owns the form until settled
-    serial++; render();
-    timer = setTimeout(() => { timer = null; void read(); }, delay);
+    serial++;
+    timer = setTimeout(() => { timer = null; void read(); }, delay); // before render(): the preview column shows a read is due
+    render();
   }
   async function read() {
     if (!current()) return;
@@ -901,12 +1071,16 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   spawn.addEventListener('click', () => { void run(); });
   cancel.addEventListener('click', () => close());
   closeButton.addEventListener('click', () => close());
+  // Change soul: the picker, in place — never a reopen, so nothing typed is lost.
+  changeSoul.addEventListener('click', () => { setLayout('picker'); focusTarget().focus({ preventScroll: true }); });
 
-  render();
+  setLayout(layout); render();
   return {
     /** Begin reading once the host owns the attached dialog. */
     start() { if (!current()) return; schedule(0); void fillModels(); void fillConfigs(); },
-    dialog, search, purpose, spawn, status,
+    dialog, search, purpose, spawn, status, preview, changeSoul,
+    /** 'scoped' (preview + form) or 'picker' (chooser + form); switched in place. */
+    get layout() { return layoutNow; }, setLayout,
     submit: () => { if (!spawn.disabled) void run(); },
     busy,
     /** CLI/roster/workspace facts changed under the open dialog. */

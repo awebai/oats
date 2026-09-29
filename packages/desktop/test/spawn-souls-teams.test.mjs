@@ -47,11 +47,14 @@ async function mountGrid(t, agents) {
   await tick(); await tick();
   t.after(() => { spawn.unmount(); common.setWorkspace(previous); Object.assign(globalThis, saved); dom.window.close(); });
   const doc = dom.window.document;
+  // Board 3: Repo is the default grouping; Team is one click away.
+  const groupBy = (key) => doc.querySelector(`.souls-group-by [data-group-by="${key}"]`).click();
   const groups = () => Object.fromEntries([...doc.querySelectorAll(".souls-group")].map((g) => [
-    (g.querySelector(".souls-group-title") || doc.getElementById(g.getAttribute("aria-labelledby"))).textContent,
-    [...g.querySelectorAll(".soul-card")].map((c) => c.dataset.agent)]));
-  const chips = (name) => [...doc.querySelector(`.soul-card[data-agent="${name}"]`).querySelectorAll(".steam")].map((c) => [c.textContent, c.classList.contains("primary")]);
-  return { doc, groups, chips };
+    g.querySelector(".souls-group-name").textContent, [...g.querySelectorAll(".soul-card")].map((c) => c.dataset.agent)]));
+  // A card's Team chips ("Team <label>"), the default marked (not painted: the board draws them alike).
+  const chips = (name) => [...doc.querySelector(`.soul-card[data-agent="${name}"]`).querySelectorAll(".schip")]
+    .filter((c) => c.querySelector(".schip-key").textContent === "Team").map((c) => [c.querySelector("b").textContent, c.dataset.default === "true"]);
+  return { doc, groups, chips, groupBy };
 }
 
 test("0.30 rows: souls group by their default team, never 'No team'; chips list the soul's teams, the default first and marked", async (t) => {
@@ -60,13 +63,19 @@ test("0.30 rows: souls group by their default team, never 'No team'; chips list 
   assert.equal(Object.hasOwn(rm, "team") || Object.hasOwn(rm, "labels"), false, "0.30 rows carry neither team nor labels");
   assert.deepEqual(rm.defaultTeam, { label: "engineering", team: null, from: "soul" }, "captured: release-manager's own (unmapped) default");
   const u = await mountGrid(t, rows);
+  // In Repo grouping (the default) a card lists every team it is in, the default first.
+  assert.deepEqual(u.chips("release-manager"), [["engineering", true], ["global", false], ["mine", false]]);
+  assert.deepEqual(u.chips("campaign-writer"), [["mine", true], ["global", false]]);
+  u.groupBy("team");
   const groups = u.groups();
   assert.equal(Object.hasOwn(groups, "No team"), false, "no soul falls into 'No team'");
   assert.deepEqual(groups.engineering, ["release-manager"]);
   assert.deepEqual(Object.keys(groups).sort(), ["engineering", "mine"]);
   assert.ok(groups.mine.includes("campaign-writer") && groups.mine.length === rows.length - 1, "every other soul is in the local default, mine");
-  assert.deepEqual(u.chips("release-manager"), [["engineering", true], ["global", false], ["mine", false]]);
-  assert.deepEqual(u.chips("campaign-writer"), [["mine", true], ["global", false]]);
+  // Grouped by team, the group's own team is not repeated: the card names its repository instead.
+  assert.deepEqual(u.chips("release-manager"), [["global", false], ["mine", false]]);
+  const repo = u.doc.querySelector('.soul-card[data-agent="release-manager"] .schip');
+  assert.equal(repo.querySelector(".schip-key").textContent, "Repo"); assert.ok(repo.querySelector("b").textContent);
 });
 
 test("0.30: the default chip leads even when the kernel lists it later; a v2 soul with no default team says so", async (t) => {
@@ -75,12 +84,15 @@ test("0.30: the default chip leads even when the kernel lists it later; a v2 sou
   const none = { ...structuredClone(base), name: "none", defaultTeam: null, teams: structuredClone(base.teams).map((t) => ({ ...t, default: false })) };
   const u = await mountGrid(t, [later, none]);
   assert.deepEqual(u.chips("later"), [["mine", true], ["global", false]]);
+  assert.deepEqual(u.chips("none"), [["mine", false], ["global", false]], "no default: the kernel's order, none marked");
+  u.groupBy("team");
   assert.deepEqual(u.groups(), { "mine": ["later"], "No default team": ["none"] });
 });
 
 test("0.29 rows (team + labels) still group and chip as before", async (t) => {
   const old = (name, labels) => ({ name, agentsRoot: "/w/agents", description: "", work: "workspace", repo: true, repoName: "r", ...(labels ? { labels, team: labels[0] } : {}) });
   const u = await mountGrid(t, [old("a", ["engineering", "global"]), old("b")]);
-  assert.deepEqual(u.groups(), { engineering: ["a"], "No team": ["b"] });
   assert.deepEqual(u.chips("a"), [["engineering", true], ["global", false]]);
+  u.groupBy("team");
+  assert.deepEqual(u.groups(), { engineering: ["a"], "No team": ["b"] });
 });

@@ -1,5 +1,5 @@
-/** Workspace model v2 catalog views: the Capabilities sections (design frame 04
- * table) and the Setup tab (graph + lists). Pure DOM from kernel JSON — `oats capabilities`,
+/** Workspace model v2 catalog views: the Capabilities sections (design board
+ * v4.1/Capabilities: one row card per capability) and the Setup tab (graph + lists). Pure DOM from kernel JSON — `oats capabilities`,
  * `oats workspace status` and the roster's module rows. Nothing is resolved,
  * joined across the non-collapse boundary, or inferred: a member's
  * `publishes` stays informational, package capabilities stay package rows. */
@@ -7,12 +7,16 @@ import { createCapabilityMark, createSoulMark } from './identity-marks.mjs';
 import { iconElement } from './shell-icons.mjs';
 
 export const catalogCSS = `
-/* Workspace v4 (W5): jump pills, section titles with a lead, dropdown filters inside
-   Workspace owned, and a Capability | Source | Used by table. */
-.capability-nav { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:0 0 22px; }
-.oats-view .capability-nav button { display:inline-flex; align-items:center; gap:7px; height:28px; min-height:28px; padding:0 12px; border:0; border-radius:999px; background:var(--surface); color:var(--fg); font:600 12px var(--sans,system-ui); white-space:nowrap; cursor:pointer; }
-.oats-view .capability-nav button:hover { background:var(--surface-2); }
-.oats-view .capability-nav button[aria-current=true] { background:var(--primary-bg); color:var(--primary-fg); }
+/* Workspace v4.1: a segmented section jump, section titles with a lead, dropdown filters
+   inside Workspace owned, and a Capability | Source | Used by list of row cards. */
+/* The jump is one segmented group (shared control rule 1): one frame, 2px inner padding,
+   6px segments, no dividers; the current section is the brand tint, never ink-on-white.
+   Scoped to .capability-nav.ws-segmented so it holds whichever order the sheets load in. */
+.capability-nav.ws-segmented { display:inline-flex; align-items:center; flex:none; height:30px; padding:2px; gap:2px; margin:0 0 22px; border:1px solid var(--border); border-radius:8px; background:var(--surface); overflow:visible; }
+.oats-view .capability-nav.ws-segmented button { display:inline-flex; align-items:center; gap:6px; height:100%; min-height:0; padding:0 12px; border:0; border-radius:6px; background:transparent; color:var(--muted); font:500 12px var(--sans,system-ui); white-space:nowrap; cursor:pointer; }
+.oats-view .capability-nav.ws-segmented button + button { border-left:0; }
+.oats-view .capability-nav.ws-segmented button:hover { color:var(--fg); }
+.oats-view .capability-nav.ws-segmented button[aria-pressed=true] { background:var(--sel); color:var(--accent); font-weight:650; }
 .capability-nav-count { font:10.5px var(--mono,monospace); }
 .catalog-filters { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:0; padding:0 2px; }
 .catalog-filters-label { margin-right:2px; color:var(--muted); font-size:12px; }
@@ -23,37 +27,53 @@ export const catalogCSS = `
 /* The native select is the visible value (no platform chrome); the chevron sits over its right padding. */
 .oats-view .catalog-select select { appearance:none; -webkit-appearance:none; height:26px; min-height:0; margin:0; padding:0 26px 0 0; border:0; background:transparent; color:var(--fg); font:600 12px var(--sans,system-ui); cursor:pointer; }
 .oats-view .catalog-select.active select { font:650 12px var(--mono,monospace); }
-.oats-view .catalog-select select:focus { outline:none; }
+/* Rule 3: the wrapper's border is the field's one frame; the select inside never draws its own. */
+.oats-view .catalog-select select, .oats-view .catalog-select select:focus-visible { outline:none; }
 .catalog-select .shell-icon { position:absolute; right:8px; color:var(--muted); pointer-events:none; }
-.catalog-select:focus-within { outline:2px solid var(--accent); outline-offset:1px; }
+.catalog-select:focus-within { border-color:var(--accent); }
 .catalog-shown { margin-left:4px; color:var(--muted); font-size:12px; white-space:nowrap; }
 .oats-view button.catalog-clear { min-height:0; height:auto; padding:0; border:0; background:none; color:var(--accent); font:600 12px var(--sans,system-ui); cursor:pointer; }
 .oats-view button.catalog-clear:hover { text-decoration:underline; }
-.catalog-table { border:1px solid var(--border); border-radius:10px; background:var(--surface); overflow:hidden; font-size:12px; }
-.catalog-row { display:grid; grid-template-columns:minmax(0,1.7fr) minmax(0,1fr) 150px; align-items:center; gap:16px; min-height:48px; padding:0 16px; box-sizing:border-box; border-top:1px solid var(--tag-bg); }
-.catalog-row.head { min-height:32px; border-top:0; border-bottom:1px solid var(--border); color:var(--muted); font-size:11.5px; font-weight:550; }
-.catalog-row.head + .catalog-row, .catalog-group + .catalog-row { border-top:0; }
-.catalog-row.head > :last-child, .catalog-used { justify-self:end; }
-.catalog-row.head > :last-child { width:94px; }
-.catalog-cap { display:flex; flex-wrap:wrap; align-items:center; column-gap:10px; row-gap:2px; min-width:0; }
-.catalog-desc { flex-basis:100%; min-width:0; color:var(--muted); font-size:12px; line-height:1.4; white-space:normal; overflow-wrap:anywhere; }
-.catalog-name { color:var(--fg); font:600 13px var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
-.catalog-core { display:inline-flex; align-items:center; flex:none; height:18px; padding:0 6px; border-radius:4px; background:var(--chip-bg); color:var(--fg); font-size:10.5px; font-weight:650; white-space:nowrap; }
-.catalog-group { display:flex; align-items:center; gap:7px; min-height:32px; padding:0 16px; border-top:1px solid var(--tag-bg); color:var(--muted); font:600 11.5px var(--mono,monospace); }
-.catalog-group:first-of-type { border-top:0; }
+/* The list: a column header, then one card per capability (58px, 6px apart). The
+   header and the cards share one grid so the columns line up. */
+.catalog-table { display:flex; flex-direction:column; gap:6px; font-size:12px; }
+.catalog-head, .catalog-row { display:grid; grid-template-columns:44px minmax(0,1fr) 190px 120px 24px; column-gap:14px; align-items:center; padding:0 16px; box-sizing:border-box; }
+.catalog-head { margin:0 0 4px; color:var(--muted); font-size:10.5px; font-weight:650; letter-spacing:.065em; text-transform:uppercase; }
+/* The whole card is one button (rule: no nested interactive elements); reset the UA button. */
+.oats-view button.catalog-row, button.catalog-row { appearance:none; -webkit-appearance:none; width:100%; height:58px; min-height:0; margin:0; border:1px solid var(--border); border-radius:10px; background:var(--surface); color:var(--fg); font:inherit; text-align:left; cursor:pointer; }
+.oats-view button.catalog-row:hover, button.catalog-row:hover { background:var(--surface-2); border-color:var(--tree-line); }
+/* Focus is the shell's rule 2 (keyboard only: the tint with a 1px accent edge). */
+/* Listed without a page to open (no onOpen): a plain card, not a dimmed control. */
+.oats-view button.catalog-row:disabled, button.catalog-row:disabled { color:var(--fg); background:var(--surface); border-color:var(--border); cursor:default; }
+/* Icon tile and kind chip: one tint per kind (7b), a layer always wins so both agree.
+   Neutral = a package without a layer. */
+.catalog-tile { display:grid; place-items:center; flex:none; width:32px; height:32px; border-radius:8px; background:var(--chip-bg); color:var(--chip-fg); }
+.catalog-core { display:inline-flex; align-items:center; flex:none; height:18px; padding:0 6px; border-radius:4px; background:var(--chip-bg); color:var(--chip-fg); font:650 10.5px var(--sans,system-ui); white-space:nowrap; }
+.catalog-tile[data-tint=slate], .catalog-core[data-tint=slate] { background:var(--soul-slate-bg); color:var(--soul-slate-fg); }
+.catalog-tile[data-tint=sage], .catalog-core[data-tint=sage] { background:var(--soul-sage-bg); color:var(--soul-sage-fg); }
+.catalog-tile[data-tint=mauve], .catalog-core[data-tint=mauve] { background:var(--soul-mauve-bg); color:var(--soul-mauve-fg); }
+.catalog-tile[data-tint=clay], .catalog-core[data-tint=clay] { background:var(--soul-clay-bg); color:var(--soul-clay-fg); }
+.catalog-cap { display:flex; flex-direction:column; justify-content:center; min-width:0; }
+.catalog-cap-line { display:flex; align-items:center; gap:7px; min-width:0; }
+.catalog-name { color:var(--fg); font:650 13px var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+/* One line, always: the card keeps its height and the page holds the full text. */
+.catalog-desc { display:block; min-width:0; color:var(--muted); font-size:12px; line-height:1.4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.catalog-source { display:flex; min-width:0; }
+.catalog-chevron { color:var(--muted); }
+.catalog-group { display:flex; align-items:center; gap:7px; min-height:28px; margin:8px 0 0; padding:0 16px; color:var(--muted); font:600 11.5px var(--mono,monospace); }
+.catalog-group:first-child { margin-top:0; }
 .source-chip { display:inline-flex; align-items:center; gap:7px; min-width:0; color:var(--muted); font:12px var(--mono,monospace); }
 .source-chip .shell-icon { flex:none; }
 .source-chip-name { color:var(--fg); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
 .source-chip-version { white-space:nowrap; }
 .source-chip.boxed { height:24px; padding:0 8px; border:1px solid var(--border); border-radius:6px; background:var(--surface); font-size:11.5px; box-sizing:border-box; }
 .source-note { color:var(--warn); font:600 11px var(--sans,system-ui); white-space:nowrap; }
-.catalog-used { display:flex; align-items:center; gap:8px; }
-.catalog-used-marks { display:flex; padding-left:5px; }
+.catalog-used { display:flex; align-items:center; gap:6px; min-width:0; }
+.catalog-used-marks { display:flex; flex:none; padding-left:5px; }
+.catalog-used-marks:empty { display:none; }
 .catalog-used-marks .identity-mark { width:20px; height:20px; margin-left:-5px; border-radius:6px; border:1.5px solid var(--surface); font-size:9.5px; font-weight:700; box-sizing:border-box; }
-.catalog-used-count { width:48px; color:var(--muted); font-size:12px; white-space:nowrap; }
-.catalog-row.openable { cursor:pointer; }
-.catalog-row.openable:hover { background:var(--surface-2); }
-.catalog-row.openable:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+.catalog-used-count { color:var(--fg); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.catalog-used-count.none { color:var(--muted); }
 .catalog-empty { margin:0; padding:24px 16px; color:var(--muted); line-height:1.5; }
 .catalog-notes { display:grid; gap:4px; margin:0 0 14px; }
 .catalog-notes:empty { display:none; }
@@ -61,13 +81,17 @@ export const catalogCSS = `
 .catalog-note.warn { color:var(--warn); }
 .capability-section { display:flex; flex-direction:column; gap:10px; }
 .capability-section + .capability-section { margin-top:22px; }
-.capability-section-title { display:flex; align-items:baseline; gap:10px; margin:0; padding:0 2px; color:var(--fg); font-size:14px; font-weight:700; }
-.capability-section-title:focus { outline:none; }
+.capability-section-head { display:flex; align-items:center; flex-wrap:wrap; gap:8px 16px; min-width:0; }
+.capability-section-head .catalog-filters { margin-left:auto; }
+.capability-section-title { display:flex; align-items:baseline; gap:10px; margin:0; padding:0 2px; color:var(--fg); font-size:15px; font-weight:650; }
 .capability-section-lead { color:var(--muted); font-size:12px; font-weight:400; }
 .capability-none { margin:0; }
+/* Narrow: the card grows; source and used-by drop under the name, the tile and chevron stay on the first line. */
 @container(max-width:700px) {
- .catalog-row { grid-template-columns:minmax(0,1fr); gap:6px; }
- .catalog-row.head { display:none; }
+ .catalog-head { display:none; }
+ .oats-view button.catalog-row, button.catalog-row { grid-template-columns:44px minmax(0,1fr) 24px; height:auto; min-height:58px; padding:10px 16px; row-gap:6px; }
+ .catalog-row .catalog-tile, .catalog-row .catalog-chevron { grid-row:1; }
+ .catalog-row .catalog-source, .catalog-row .catalog-used { grid-column:2; }
 }
 `;
 
@@ -201,66 +225,108 @@ export function capabilityRow(cap) {
 const LAYERS = { knowledge: 'Knowledge', messaging: 'Messaging', tasks: 'Tasks' };
 /** A core capability's name in the UI (Knowledge, Messaging, Tasks), else the layer verbatim. */
 export const layerLabel = layer => LAYERS[layer] || layer;
+/** The tile/chip tint of a row (7b): a layer always wins, so the tile and the kind chip
+ * agree; any other member/external capability is clay; a plain package stays neutral. */
+const TINTS = { knowledge: 'slate', messaging: 'sage', tasks: 'mauve' };
+const tint = row => TINTS[row.layer] || (row.kind === 'package' ? 'neutral' : 'clay');
+const TILE_ICONS = { knowledge: 'knowledge', messaging: 'mail', tasks: 'tasks' };
+const tileIcon = row => TILE_ICONS[row.layer] || (row.kind === 'package' ? 'package' : 'soul');
+
+/** The source chip's words: the package with its pinned version, or the repository at latest. */
+function sourceText(row, names = new Map()) {
+  const source = capabilitySource(row, names);
+  const name = row.kind === 'package' ? text(row.package) || source.label : source.label;
+  const version = row.kind === 'package' ? text(row.version) : row.kind === 'member' ? 'latest' : null;
+  return { source, name, version, label: [name, version].filter(Boolean).join(' ') };
+}
 
 /** Where a capability comes from, as one chip: a package with its pinned
  * version, a member repository at its latest, or (repo owned) this soul's own
  * repository at its latest. `boxed` draws it as a bordered chip. */
 export function sourceChip(doc, row, names = new Map(), { boxed = false } = {}) {
-  const source = capabilitySource(row, names);
+  const { source, name, version, label } = sourceText(row, names);
   const el = node(doc, 'span', null, `source-chip${boxed ? ' boxed' : ''}`); el.dataset.source = source.kind;
   const icon = row.kind === 'package' ? 'package' : row.private === true ? 'home' : 'repo';
-  const name = row.kind === 'package' ? text(row.package) || source.label : source.label;
-  const version = row.kind === 'package' ? text(row.version) : row.kind === 'member' ? 'latest' : null;
   el.append(iconElement(doc, icon, { size: 13 }), node(doc, 'span', name, 'source-chip-name'));
   if (version) el.append(node(doc, 'span', version, 'source-chip-version'));
-  el.title = text(row.origin) || [name, version].filter(Boolean).join(' ');
+  el.title = text(row.origin) || label;
   return el;
 }
 
-/** The capability table: Capability (name, core tag) | Source | Used by (the
- * souls whose instances carry it, from the roster's module rows).
- * groups: [{ label, rows }] adds a repository sub-heading per group (Repo owned).
- * onOpen(row): rows open the capability's page (click, Enter or Space). */
+/** A workspace default ("Every soul"): the row is one of status.defaults.capabilities
+ * not turned off, or fills its layer's default slot. Without reported defaults
+ * nothing is claimed. */
+function isWorkspaceDefault(status, row) {
+  const defaults = status?.defaults;
+  if (!defaults || typeof defaults !== 'object') return false;
+  if (list(defaults.capabilities).some(cap => cap?.name === row.name && cap.off !== true)) return true;
+  const slot = text(row.layer) ? defaults.slots?.[row.layer] : null;
+  return !!(slot && typeof slot === 'object' && slot.name === row.name);
+}
+
+/** The capability list: a column header, then one row card per capability —
+ * icon tile | name + kind chip over a one-line description | source chip |
+ * used by (the souls whose instances carry it, from the roster's module rows;
+ * "Every soul" for a workspace default) | chevron.
+ * groups: [{ label, rows }] adds a repository heading before each group (Repo owned).
+ * onOpen(row): the card is one button opening the capability's page (click, Enter or Space). */
 export function renderCapabilities(host, { rows, groups = null, status, instances, root, total = list(rows).length, onOpen = null, label = 'Workspace capabilities', empty = null }) {
   const doc = host.ownerDocument, names = memberNames(status);
   host.replaceChildren();
-  const table = node(doc, 'div', null, 'catalog-table'); table.setAttribute('role', 'table'); table.setAttribute('aria-label', label);
-  const head = node(doc, 'div', null, 'catalog-row head'); head.setAttribute('role', 'row');
-  for (const label of ['Capability', 'Source', 'Used by']) { const cell = node(doc, 'span', label); cell.setAttribute('role', 'columnheader'); head.append(cell); }
-  table.append(head);
+  const table = node(doc, 'div', null, 'catalog-table'); table.setAttribute('role', 'group'); table.setAttribute('aria-label', label);
+  const any = list(rows).length || (groups && groups.some(group => group.rows.length));
+  if (any) {
+    // Each card names its own columns to assistive tech; the header is for the eye.
+    const head = node(doc, 'div', null, 'catalog-head'); head.setAttribute('aria-hidden', 'true');
+    for (const label of ['', 'Capability', 'Source', 'Used by', '']) head.append(node(doc, 'span', label));
+    table.append(head);
+  }
   const line = row => {
-    const el = node(doc, 'div', null, 'catalog-row'); el.setAttribute('role', 'row');
+    const el = node(doc, 'button', null, 'catalog-row'); el.type = 'button';
     el.dataset.capability = row.name;
+    const words = sourceText(row, names);
+    el.setAttribute('aria-label', `${row.name}, ${text(row.layer) ? layerLabel(row.layer) : 'capability'}, from ${words.label}`);
     if (typeof onOpen === 'function') {
-      el.classList.add('openable'); el.tabIndex = 0; el.setAttribute('aria-label', `${row.name}: open its page`);
+      el.classList.add('openable');
       el.addEventListener('click', () => onOpen(row));
+      // Enter/Space open here and are cancelled, so the button's own activation does not open twice.
       el.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(row); } });
-    }
-    const cap = node(doc, 'span', null, 'catalog-cap'); cap.setAttribute('role', 'cell');
+    } else el.disabled = true;
+    const shade = tint(row);
+    const tile = node(doc, 'span', null, 'catalog-tile'); tile.dataset.tint = shade; tile.setAttribute('aria-hidden', 'true');
+    tile.append(iconElement(doc, tileIcon(row), { size: 16 }));
+    const cap = node(doc, 'span', null, 'catalog-cap');
+    const first = node(doc, 'span', null, 'catalog-cap-line');
     const name = node(doc, 'span', row.name, 'catalog-name'); name.title = row.name;
-    cap.append(name);
-    if (text(row.layer)) cap.append(node(doc, 'span', layerLabel(row.layer), 'catalog-core'));
-    // Kernel #217: the manifest's description.
-    if (text(row.description)) cap.append(node(doc, 'span', row.description, 'catalog-desc'));
-    const source = node(doc, 'span', null, 'catalog-source'); source.setAttribute('role', 'cell');
-    source.style.minWidth = '0'; source.append(sourceChip(doc, row, names));
+    first.append(name);
+    if (text(row.layer)) { const core = node(doc, 'span', layerLabel(row.layer), 'catalog-core'); core.dataset.tint = shade; first.append(core); }
+    cap.append(first);
+    // Kernel #217: the manifest's description, one line; the page carries the whole text.
+    if (text(row.description)) { const desc = node(doc, 'span', row.description, 'catalog-desc'); desc.title = row.description; cap.append(desc); }
+    const source = node(doc, 'span', null, 'catalog-source');
+    source.append(sourceChip(doc, row, names, { boxed: true }));
     const use = capabilityUse(instances, row.name);
-    const used = node(doc, 'span', null, 'catalog-used'); used.setAttribute('role', 'cell');
+    const used = node(doc, 'span', null, 'catalog-used');
     const marks = node(doc, 'span', null, 'catalog-used-marks'); marks.setAttribute('aria-hidden', 'true');
-    for (const soul of use.souls.slice(0, 4)) marks.append(createSoulMark(doc, soul));
-    const count = node(doc, 'span', use.souls.length ? String(use.souls.length) : '—', 'catalog-used-count');
-    count.title = use.souls.length ? `Used by ${use.souls.map(soul => soul.name).join(', ')}` : 'No instance carries it yet';
+    const count = node(doc, 'span', null, 'catalog-used-count');
+    const who = use.souls.map(soul => soul.name).join(', ');
+    if (isWorkspaceDefault(status, row)) {
+      count.textContent = 'Every soul'; count.classList.add('every');
+      count.title = `A workspace default: every soul starts with it${who ? ` (recorded by ${who})` : ''}`;
+    } else if (use.souls.length) {
+      for (const soul of use.souls.slice(0, 3)) marks.append(createSoulMark(doc, soul));
+      count.textContent = `${use.souls.length} ${use.souls.length === 1 ? 'soul' : 'souls'}`; count.title = `Used by ${who}`;
+    } else { count.textContent = 'Not used'; count.classList.add('none'); count.title = 'No instance carries it yet'; }
     used.append(marks, count);
-    el.append(cap, source, used);
+    el.append(tile, cap, source, used, iconElement(doc, 'chevronRight', { size: 16, className: 'shell-icon catalog-chevron' }));
     return el;
   };
   if (groups) for (const group of groups) {
-    const title = node(doc, 'div', null, 'catalog-group'); title.setAttribute('role', 'row'); title.dataset.repo = group.key;
-    const cell = node(doc, 'span', null); cell.setAttribute('role', 'rowheader'); cell.style.display = 'contents';
-    cell.append(iconElement(doc, 'repo', { size: 13 }), node(doc, 'span', group.label));
-    title.append(cell); table.append(title, ...group.rows.map(line));
+    const title = node(doc, 'div', null, 'catalog-group'); title.setAttribute('role', 'heading'); title.setAttribute('aria-level', '3'); title.dataset.repo = group.key;
+    title.append(iconElement(doc, 'repo', { size: 13 }), node(doc, 'span', group.label));
+    table.append(title, ...group.rows.map(line));
   } else for (const row of list(rows)) table.append(line(row));
-  if (!list(rows).length && !(groups && groups.length)) table.append(node(doc, 'p', total ? 'No capabilities match these filters.' : empty || 'The workspace reports no capabilities yet: members publish capabilities and packages lock theirs on sync.', 'catalog-empty'));
+  if (!any) table.append(node(doc, 'p', total ? 'No capabilities match these filters.' : empty || 'The workspace reports no capabilities yet: members publish capabilities and packages lock theirs on sync.', 'catalog-empty'));
   host.append(table);
 }
 
@@ -284,11 +350,11 @@ export function lockNotes(status) {
   return lines;
 }
 
-/** The Capabilities tab: jump pills, then Workspace owned (with its team/repo
+/** The Capabilities tab: the section jump, then Workspace owned (with its team/repo
  * filters), Packages and, when the kernel lists them (feature
  * capabilities-private), Repo owned grouped by repository. `filterHost` is the
  * discovery's persistent filter row; `query` narrows every section by name.
- * `navHost`, when given, takes the jump pills (the view's toolbar row). */
+ * `navHost`, when given, takes the section jump (the view's toolbar row). */
 export function renderCapabilitySections(host, { sections, shown, filterHost, navHost = null, privateListed, status, instances, root, onOpen = null, query = '' }) {
   const doc = host.ownerDocument, names = memberNames(status);
   host.replaceChildren();
@@ -302,14 +368,15 @@ export function renderCapabilitySections(host, { sections, shown, filterHost, na
     { id: 'packages', title: 'Packages', lead: 'pinned versions, same everywhere', count: sections.packages.length },
     ...(privateListed ? [{ id: 'repo', title: 'Repo owned', lead: 'only for souls of the same repo', count: sections.repo.length }] : []),
   ];
-  const nav = node(doc, 'nav', null, 'capability-nav'); nav.setAttribute('aria-label', 'Capability sections');
+  // One segmented group (rule 1): the base class is the shell's, aria-pressed marks the current section.
+  const nav = node(doc, 'nav', null, 'capability-nav ws-segmented'); nav.setAttribute('aria-label', 'Capability sections');
   for (const def of defs) {
     const jump = node(doc, 'button', null); jump.type = 'button'; jump.dataset.jump = def.id;
     jump.append(node(doc, 'span', def.title), node(doc, 'span', String(def.count), 'capability-nav-count'));
-    jump.setAttribute('aria-current', String(def.id === defs[0].id));
+    jump.setAttribute('aria-pressed', String(def.id === defs[0].id));
     jump.addEventListener('click', () => {
       const head = host.querySelector(`#capability-section-${def.id}`);
-      for (const other of nav.querySelectorAll('button')) other.setAttribute('aria-current', String(other === jump));
+      for (const other of nav.querySelectorAll('button')) other.setAttribute('aria-pressed', String(other === jump));
       head?.scrollIntoView?.({ block: 'start', behavior: 'smooth' }); head?.focus({ preventScroll: true });
     });
     nav.append(jump);
@@ -319,10 +386,12 @@ export function renderCapabilitySections(host, { sections, shown, filterHost, na
     const el = node(doc, 'section', null, 'capability-section'); el.dataset.section = def.id;
     const head = node(doc, 'h2', null, 'capability-section-title'); head.id = `capability-section-${def.id}`; head.tabIndex = -1;
     head.append(node(doc, 'span', def.title), node(doc, 'span', def.lead, 'capability-section-lead'));
-    el.setAttribute('aria-labelledby', head.id); el.append(head); host.append(el); return el;
+    // The title row (board 4): the title and its lead, then (Workspace owned) the filters at its right.
+    const row = node(doc, 'div', null, 'capability-section-head'); row.append(head);
+    el.setAttribute('aria-labelledby', head.id); el.append(row); host.append(el); return el;
   };
   const owned = section(defs[0]);
-  if (filterHost) owned.append(filterHost);
+  if (filterHost) owned.querySelector('.capability-section-head').append(filterHost);
   table(owned, match(shown), { total: sections.workspace.length, label: 'Workspace owned capabilities', empty: 'No workspace repository offers a capability yet.' });
   table(section(defs[1]), match(sections.packages), { label: 'Package capabilities', empty: 'No package capability is locked yet. Sync to lock the declared packages.' });
   if (!privateListed) return;
@@ -334,14 +403,14 @@ export function renderCapabilitySections(host, { sections, shown, filterHost, na
   table(repo, groups.flatMap(g => g.rows), { groups, label: 'Repo owned capabilities', total: sections.repo.length });
 }
 
-/** The jump pill for the section at the top of the scroller (called on scroll). */
+/** The jump segment for the section at the top of the scroller (called on scroll). */
 export function syncCapabilityNav(host, scroller, navHost = host) {
   const nav = navHost.querySelector('.capability-nav'); if (!nav || !scroller?.getBoundingClientRect) return;
   const top = scroller.getBoundingClientRect().top + 24;
   let current = null;
   for (const el of host.querySelectorAll('.capability-section')) if (el.getBoundingClientRect().top <= top) current = el.dataset.section;
   current ||= host.querySelector('.capability-section')?.dataset.section;
-  for (const jump of nav.querySelectorAll('button')) jump.setAttribute('aria-current', String(jump.dataset.jump === current));
+  for (const jump of nav.querySelectorAll('button')) jump.setAttribute('aria-pressed', String(jump.dataset.jump === current));
 }
 
 

@@ -39,7 +39,9 @@ test('the dialog shows what the kernel decided: name, harness, model and work â€
   assert.equal(advanced.contains(u.q('.spawn-relationship')), false);
   assert.equal(u.q('.spawn-seg input:checked').value, 'unrelated'); assert.equal(u.q('.frelto').hidden, true);
   // Removed: capability toggles, K6 placeholders, the preview button. The captured kernel advertises spawn-name.
-  assert.doesNotMatch(dialog.textContent, /Attach knowledge|Allow child spawns|Open PR|Available after|Preview invocation|Force native|capabilit/i);
+  assert.doesNotMatch(dialog.textContent, /Attach knowledge|Allow child spawns|Open PR|Available after|Preview invocation|Force native/i);
+  // Board 6: the capabilities are the preview's facts (read-only), never a choice.
+  assert.equal(dialog.querySelector('.spawn-preview :is(input, select, button, textarea)'), null, 'no capability toggles');
   assert.equal(dialog.querySelectorAll('input[type=checkbox]:not(.fworktree):not(.fprefix):not(.fwake-enabled)').length, 0);
   assert.equal(u.q('.spawn-prefix-toggle').hidden, false);
   assert.equal(u.q('.fspawn').disabled, false); assert.equal(u.q('.fspawn').hidden, false, 'the shell must not rewrite the Spawn button');
@@ -429,8 +431,8 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: every spawn 
     ['.spawn-input-tag', '.spawn-input-tag', 'muted', 'chip-bg'],
     ['.spawn-run .spawn-trigger-tag', '.spawn-run .spawn-trigger-tag', 'muted', 'chip-bg'],
     ['.spawn-choice-menu [aria-selected=true]', '.spawn-choice-menu [aria-selected=true]', 'fg', 'sel'],
-    ['.spawn-seg input:checked + span', '.spawn-seg input:checked + span', 'accent', 'sel'], // F7: the selected option in the accent on its tint,
-    ['.spawn-seg input:not(:checked) + span', '.spawn-seg', 'muted', 'surface-2'],
+    ['.spawn-seg input:checked + span', '.spawn-seg input:checked + span', 'accent', 'sel'], // the selected segment: brand tint (shared control rule 1)
+    ['.spawn-seg input:not(:checked) + span', '.spawn-seg', 'muted', 'surface'],
     ['.spawn-advanced > summary', '.spawn-advanced', 'fg', 'surface-2'],
     ['.spawn-advanced > summary small', '.spawn-advanced', 'muted', 'surface-2'],
     ['.spawn-joined-from', '.spawn-joined-from', 'muted', 'surface-2'],

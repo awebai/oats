@@ -190,7 +190,7 @@ test('instance rows reflect exact root/host identity and open only read-only sna
   const instance = { agent: 'dev', instance: 'dev-seat', agentsRoot: '/team/one/agents', home: '/team/one/agents/dev/instances/dev-seat', running: true };
   const u = await setup(t, { instances: [instance, { ...instance, agentsRoot: '/team/two/agents' }, { ...instance, server: 'another-host' }],
     inspect: body => body.selector.home ? homeInspection(body.selector.home, { instance: 'dev-seat', soul: 'dev', instructions: { file: '/fixture/AGENTS.md', text: 'Captured instructions', truncated: false, sources: [] } }) : inspectData() });
-  assert.equal(u.doc.querySelector('.sactivity').textContent, '1 running');
+  assert.equal(u.doc.querySelector('.sactivity').textContent, '1 instance running');
   assert.equal(u.doc.querySelector('.sactivity').title, '1 running · 1 instance', 'the full count stays on the activity');
   u.doc.querySelector('.soul-card').click(); await tick();
   const buttons = u.doc.querySelectorAll('.inspector-instance'); assert.equal(buttons.length, 1);
@@ -311,18 +311,28 @@ test('Souls group by primary team or repository, and unconfirmed members explain
     return d;
   };
   const u = await setup(t, { agents, deployment: status });
-  const titles = () => [...u.doc.querySelectorAll('.souls-group-title')].map(el => el.textContent);
-  assert.deepEqual(titles(), ['engineering', 'marketing', "Not available· lab hasn't joined the workspace"]);
-  const writer = u.doc.querySelector('.soul-card[data-agent=writer]');
-  assert.deepEqual([...writer.querySelectorAll('.steam')].map(el => [el.textContent, el.classList.contains('primary')]), [['marketing', true], ['engineering', false]]);
-  assert.equal(u.doc.querySelector('.soul-card[data-agent=builder] .smode').textContent, 'worktree · Pi', 'work mode and the reported default harness');
+  // Board 3: each header is an icon, the name and a muted qualifier (with the count).
+  const titles = () => [...u.doc.querySelectorAll('.souls-group-title')].map(el => [el.querySelector('svg').getAttribute('data-icon'),
+    el.querySelector('.souls-group-name').textContent, el.querySelector('.souls-group-note').textContent]);
+  const chips = name => [...u.doc.querySelector(`.soul-card[data-agent=${name}]`).querySelectorAll('.schip')].map(el => [el.querySelector('.schip-key').textContent, el.querySelector('b').textContent]);
+  // Repo is the default grouping (the human's direction).
+  assert.equal(u.doc.querySelector('.souls-group-by [data-group-by=repo]').getAttribute('aria-pressed'), 'true');
+  assert.deepEqual(titles(), [['repo', 'app', '1 soul'], ['repo', 'site', '2 souls'], ['warning', 'Not available', "lab hasn't joined the workspace"]]);
+  assert.deepEqual(chips('writer'), [['Team', 'marketing'], ['Team', 'engineering'], ['Works in', 'own worktree']], 'labelled chips: its teams, the default first, and where it works');
+  assert.equal(u.doc.querySelector('.soul-card[data-agent=writer] .schip').dataset.default, 'true');
+  assert.equal(u.doc.querySelector('.soul-card[data-agent=builder] .scontext').textContent, 'Pi', 'the reported harness; no model claimed without launch data');
   assert.equal(u.doc.querySelector('.soul-card[data-agent=builder] .runtime-badge').getAttribute('aria-label'), 'Harness: Pi');
-  assert.equal(u.doc.querySelector('.soul-card[data-agent=builder] .sactivity').textContent, 'none');
+  assert.equal(u.doc.querySelector('.soul-card[data-agent=builder] .sactivity').textContent, 'No instances', 'never the bare word "none"');
+  assert.doesNotMatch(u.doc.querySelector('.souls-grid').textContent, /\bnone\b/);
   const hidden = u.doc.querySelector('[data-unavailable=prober]');
   assert.equal(hidden.tagName, 'DIV', 'an unavailable soul is not a control: it has no page to open');
-  assert.match(hidden.textContent, /Hidden until membership is confirmed/);
+  assert.equal(hidden.querySelector('.sfoot .sproblem').textContent, 'Hidden until membership is confirmed', 'the reason, in the foot\'s left slot');
+  assert.deepEqual([...hidden.querySelectorAll('.schip')].map(el => el.textContent), ['Teamresearch']);
   assert.equal(u.doc.querySelectorAll('.souls-grid .soul-card[tabindex="0"]').length, 1, 'one roving card');
+  u.doc.querySelector('.souls-group-by [data-group-by=team]').click();
+  assert.deepEqual(titles(), [['users', 'engineering', '2 souls'], ['users', 'marketing', '1 soul'], ['warning', 'Not available', "lab hasn't joined the workspace"]]);
+  assert.deepEqual(chips('writer'), [['Repo', 'site'], ['Team', 'engineering'], ['Works in', 'own worktree']], 'grouped by team: its repository instead of repeating the team');
+  assert.equal(u.doc.querySelector('.souls-group-by [data-group-by=team]').getAttribute('aria-pressed'), 'true');
   u.doc.querySelector('.souls-group-by [data-group-by=repo]').click();
-  assert.deepEqual(titles().slice(0, 2), ['app', 'site']);
   assert.equal(u.doc.querySelector('.souls-group-by [data-group-by=repo]').getAttribute('aria-pressed'), 'true');
 });

@@ -20,7 +20,7 @@ export const LUCIDE_NAMES = Object.freeze([
   'columns-2', 'contrast', 'ellipsis', 'external-link', 'file-text', 'folder-git-2', 'git-branch', 'git-pull-request', 'house',
   'flask-conical', 'info', 'keyboard', 'laptop', 'list-checks', 'mail', 'maximize-2', 'minus', 'package', 'panel-left', 'play', 'plus', 'refresh-cw', 'rotate-ccw', 'rows-2',
   'search', 'sliders-horizontal', 'sparkles', 'square', 'square-terminal', 'square-x', 'terminal', 'trash-2',
-  'triangle-alert', 'workflow', 'x', 'zap',
+  'triangle-alert', 'users', 'workflow', 'x', 'zap',
 ]);
 const pascal = name => name.split('-').map(part => part[0].toUpperCase() + part.slice(1)).join('');
 const ALLOWED_TAGS = new Set(['path', 'circle', 'rect', 'line', 'polyline', 'polygon', 'ellipse']);

@@ -359,12 +359,13 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
   doc.querySelector('main').append(sheet);
   const root = dom.window.getComputedStyle(doc.documentElement);
   for (const [selector, painted, fg, bg] of [
-    // Workspace v4 (W5): the table head sits on the table surface; names, source chips and used-by counts.
-    ['.catalog-row.head', '.catalog-table', 'muted', 'surface'],
-    ['.catalog-name', '.catalog-table', 'fg', 'surface'],
-    ['.catalog-desc', '.catalog-table', 'muted', 'surface'],
-    ['.source-chip', '.catalog-table', 'muted', 'surface'], ['.source-chip-name', '.catalog-table', 'fg', 'surface'],
-    ['.catalog-used-count', '.catalog-table', 'muted', 'surface'],
+    // Workspace v4.1: the column head sits on the page; each capability is a row card (surface) with its
+    // name, one-line description, boxed source chip and used-by words.
+    ['.catalog-head', '.oats-view', 'muted', 'bg'],
+    ['.catalog-name', 'button.catalog-row', 'fg', 'surface'],
+    ['.catalog-desc', 'button.catalog-row', 'muted', 'surface'],
+    ['.source-chip', '.source-chip.boxed', 'muted', 'surface'], ['.source-chip-name', '.source-chip.boxed', 'fg', 'surface'],
+    ['.catalog-used-count.none', 'button.catalog-row', 'muted', 'surface'],
     // Filters: "Filter by", a plain dropdown, an active one (Team = marketing), the count and Clear filters.
     ['.catalog-filters-label', '.oats-view', 'muted', 'bg'],
     ['.catalog-select:not(.active) .catalog-select-key', '.catalog-select:not(.active)', 'muted', 'surface'],
@@ -373,11 +374,11 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
     ['.catalog-select.active select', '.catalog-select.active', 'fg', 'sel'],
     ['.catalog-shown', '.oats-view', 'muted', 'bg'], ['.catalog-clear', '.oats-view', 'accent', 'bg'],
     ['.catalog-note.warn', '.oats-view', 'warn', 'bg'], ['.catalog-note.catalog-remedy', '.oats-view', 'muted', 'bg'],
-    // Sections: jump pills (current = ink), titles with their lead, repo sub-headings.
-    ['.capability-nav button[aria-current=true]', '.capability-nav button[aria-current=true]', 'primary-fg', 'primary-bg'],
-    ['.capability-nav button[aria-current=false]', '.capability-nav button[aria-current=false]', 'fg', 'surface'],
+    // Sections: the segmented jump (current = brand tint, rule 1), titles with their lead, repo headings.
+    ['.capability-nav button[aria-pressed=true]', '.capability-nav button[aria-pressed=true]', 'accent', 'sel'],
+    ['.capability-nav button[aria-pressed=false]', '.capability-nav', 'muted', 'surface'],
     ['.capability-section-title', '.oats-view', 'fg', 'bg'], ['.capability-section-lead', '.oats-view', 'muted', 'bg'],
-    ['.catalog-group', '.catalog-table', 'muted', 'surface'],
+    ['.catalog-group', '.oats-view', 'muted', 'bg'],
     // Workspace v4 Setup (W1/W2) — replaces the old setup-card/node/sources inventory.
     ['.setup-lede h2', '.oats-view', 'fg', 'bg'], ['.setup-lede-where', '.oats-view', 'muted', 'bg'],
     ['.setup-box-head h3', '.setup-box', 'fg', 'surface'], ['.setup-box-lead', '.setup-box', 'muted', 'surface'],
@@ -758,7 +759,8 @@ for (const [name] of palettes) test(`${name}: the spawn Teams row (fixed, joinab
   for (const source of [css, spawnDialogCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
   const root = dom.window.getComputedStyle(doc.documentElement);
   for (const [selector, painted, fg, bg] of [['.spawn-team-fixed span', '.spawn-team-fixed span', 'fg', 'surface'],
-    ['.spawn-team:not(.picked):not(.spawn-team-fixed) span', '.spawn-teams-row', 'muted', 'surface-2'],
+    // Rule 1: an unselected segment is transparent on the group's surface.
+    ['.spawn-team:not(.picked):not(.spawn-team-fixed) span', '.spawn-teams-row', 'muted', 'surface'],
     ['.spawn-team.picked span', '.spawn-team.picked span', 'accent', 'sel']]) {
     const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
     assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
@@ -873,18 +875,19 @@ for (const [name] of palettes) test(`${name}: team model v2 cards, left entries,
   for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve));
   const root = dom.window.getComputedStyle(doc.documentElement);
   for (const [selector, painted, fg, bg] of [
-    ['.ct-label', '.computer-teams', 'fg', 'surface-2'], ['.ct-from', '.computer-teams', 'muted', 'surface-2'],
-    ['[data-team="mine"] .ct-id', '.computer-teams', 'fg', 'surface-2'], ['.ct-id.none', '.computer-teams', 'warn', 'surface-2'],
-    ['.ct-chip', '.ct-chip', 'fg', 'tag-bg'], ['.ct-why', '.computer-teams', 'muted', 'surface-2'],
+    // The v4.1 Teams page: one card per team on the surface; the section's scope chip; the default pill in the tint.
+    ['.ct-label', '.ct-card', 'fg', 'surface'], ['.ct-scope', '.ct-scope', 'muted', 'surface'],
+    ['[data-team="mine"] .ct-id', '.ct-card', 'fg', 'surface'], ['.ct-id.none', '.ct-card', 'warn', 'surface'],
+    ['.ct-pill', '.ct-pill', 'accent', 'sel'], ['.ct-why', '.ct-card', 'muted', 'surface'],
     ['button.ct-act:not(:disabled)', 'button.ct-act:not(:disabled)', 'fg', 'surface'], ['button.ct-act:disabled', 'button.ct-act:disabled', 'muted', 'surface'],
     ['.sth-default', '.soul-teams-here', 'fg', 'surface'], ['.sth-default .sth-why', '.soul-teams-here', 'muted', 'surface'],
     ['.sth-label', '.soul-teams-here', 'fg', 'surface'], ['.sth-meta:not(.warn)', '.soul-teams-here', 'muted', 'surface'],
     ['.sth-meta.warn', '.soul-teams-here', 'warn', 'surface'], ['button.sth-act', 'button.sth-act', 'fg', 'surface'],
-    ['.ct-blocking', '.computer-teams', 'muted', 'surface-2'], ['.ct-blocking strong', '.computer-teams', 'fg', 'surface-2'],
+    ['.ct-blocking', '.ct-card', 'muted', 'surface'], ['.ct-blocking strong', '.ct-card', 'fg', 'surface'],
     ['.sth-blocking', '.soul-teams-here', 'muted', 'surface'], ['.sth-blocking strong', '.soul-teams-here', 'fg', 'surface'],
     ['.teams-subhead', '.soul-inspector', 'muted', 'surface'],
     ['.teams-warning-head', '.soul-inspector', 'warn', 'surface'], ['.teams-warning-text', '.soul-inspector', 'fg', 'surface'],
-    ['.spawn-team-off .spawn-team-name', '.spawn-teams-row', 'muted', 'surface-2'],
+    ['.spawn-team-off .spawn-team-name', '.spawn-teams-row', 'muted', 'surface'],
   ]) {
     const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
     assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);

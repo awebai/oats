@@ -14,7 +14,6 @@ export const pageCardCSS = `
 .page-bar { position:sticky; top:0; z-index:2; display:flex; align-items:center; gap:8px; height:var(--bar-h); min-height:48px; padding:0 16px; box-sizing:border-box; border-bottom:1px solid var(--border); background:var(--surface); font-size:12.5px; }
 .oats-view .page-bar button.page-back { display:inline-flex; align-items:center; gap:6px; height:30px; min-height:30px; margin-right:6px; padding:0 10px 0 8px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font:600 12.5px var(--sans,system-ui); cursor:pointer; flex:none; }
 .oats-view .page-bar button.page-back:hover { background:var(--surface-2); }
-.oats-view .page-bar button.page-back:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .page-crumbs { display:flex; align-items:center; gap:8px; min-width:0; color:var(--muted); white-space:nowrap; overflow:hidden; }
 .page-crumbs .page-crumb-current { color:var(--fg); font-weight:650; overflow:hidden; text-overflow:ellipsis; }
 .page-bar-actions { margin-left:auto; display:flex; align-items:center; gap:8px; flex:none; }
@@ -66,7 +65,6 @@ export const pageCardCSS = `
 .page-table-row.head + .page-table-row { border-top:0; }
 .oats-view .page-table button.page-table-row { width:100%; border-left:0; border-right:0; border-bottom:0; border-radius:0; background:var(--surface); color:var(--fg); text-align:left; font:inherit; cursor:pointer; }
 .oats-view .page-table button.page-table-row:hover { background:var(--surface-2); }
-.oats-view .page-table button.page-table-row:focus-visible, .page-table .page-table-row.openable:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
 .page-table .page-table-row.openable { cursor:pointer; }
 .page-table .page-table-row.openable:hover { background:var(--surface-2); }
 .why-tag { display:inline-flex; align-items:center; justify-self:start; flex:none; height:20px; padding:0 6px; border-radius:4px; background:var(--tag-bg); color:var(--fg); font-size:11px; font-weight:600; white-space:nowrap; }

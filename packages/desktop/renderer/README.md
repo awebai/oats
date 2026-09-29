@@ -9,8 +9,15 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
 ## Views (`views/`)
 
 - **spawn.mjs** — **Workspace**, with Souls / Capabilities / Sources subtabs.
-  Souls come from `GET /api/agents` (the kernel's `oats souls` catalog);
-  selection opens the side inspector — read-only: a v2 soul is edited in its
+  Souls come from `GET /api/agents` (the kernel's `oats souls` catalog),
+  grouped by **Repo** (the default: the member repository, the host first,
+  then packages with their pinned version, then external souls) or **Team**
+  (the default team). A card names its harness · model (only as the kernel
+  reports them), clamps the description to two lines, labels its chips
+  (*Team oats*, *Works in own worktree*; grouped by team, *Repo …* instead of
+  the group's team) and says what runs in its foot (*N instances running*,
+  *N stopped*, *No instances*, or why a spawn here is refused).
+  Selection opens the soul's page — read-only: a v2 soul is edited in its
   repository and the inspector never writes it in place; there are no layer bindings
   (`oats use` was removed by workspace model v2). Its Spawn action opens the Spawn dialog
   (see below), which previews through the kernel and applies through the
@@ -142,16 +149,24 @@ surface, not final K7 or native/rendered acceptance.
 `spawn-dialog.mjs` owns the form; `views/spawn.mjs` is a thin host (modal,
 focus trap, Esc/backdrop close, the `spawn.submit` binding and the terminal
 handoff). Souls come from the kernel's spawn catalog (`oats souls --json` via
-`GET /api/agents`), never from the roster. The chooser is grouped by source
-(alphabetical, externals last) and keyed by `agentsRoot + name + server`;
-switching soul keeps the typed name and instruction.
+`GET /api/agents`), never from the roster. Two layouts, switched in place
+(design board 6): **scoped** — opened from a soul card's Spawn or the soul
+page's Spawn — heads the dialog *Spawn <soul>* with where the soul comes from
+and shows the preview column (*What will be created*: name, works in, harness
+and where it came from, default team; *Core capabilities* and *Capabilities*
+from the preview's projected `modules`, each with its source, since the
+preview carries no per-module reason; a skeleton while it reads, the footer's
+refusal sentence when it fails). **Change soul** switches the same dialog to
+the **picker** (the soul chooser, grouped by source, alphabetical, externals
+last, keyed by `agentsRoot + name + server`); switching soul keeps the typed
+name and instruction, and a soul chosen there reopens in the picker.
 
 Main form, in order: **Name** (the `<soul>-` prefix plus a purpose, with the
 kernel's final name shown below; when the CLI advertises `spawn-name`, a
 **Prefix with the soul name** switch sends `--name` instead of `--purpose`),
 **Runtime** and **Model** (always visible, showing the kernel's real defaults
-with a *default* pill), **Relationship** (None / Child of / Sibling of /
-Parent of; choosing one reveals the instance picker) and the **Opening
+with a *default* pill), **Relationship** (Independent / Child of / Sibling of /
+Parent of, a segmented control; choosing one reveals the instance picker) and the **Opening
 instruction**. **Developer settings** is collapsed: work area (base | branch,
 the worktree path relative to the deployment, *Use a worktree instead* for
 checkout souls), permissions, **messaging identity** (Default / Local /
@@ -267,15 +282,24 @@ workspace is observed through its server and never synced from here.
 
 - **Capabilities** is `oats capabilities --dir <deployment> --json`
   (capabilitiesApi 1), read on demand via `POST /api/workspace-sync?ws=<id>`
-  `{action:"read"}` when the tab opens (and after a sync, or Refresh). The
-  design table: *Capability* (name; `Member · <repo> · <team>` /
-  `Package · <id> v<version>` / `External · <origin>`), *Status* (package:
-  locked; member: confirmed; the commit; "N instances
-  behind" only from the roster's own `moved` module rows) and *Used by* (souls
-  whose instances record the module). No Members list here. **Team** and
-  **Source** pill groups filter locally (AND); pills name only what the rows
-  hold — member repositories first, then packages (non-collapse rule: a
-  member's `publishes` never absorbs its package's capabilities).
+  `{action:"read"}` when the tab opens (and after a sync, or Refresh). A
+  segmented jump (Workspace owned / Packages / Repo owned), then one 58px row
+  card per capability (design board 4): a tile tinted by kind (Knowledge,
+  Messaging, Tasks, other, package), the name with its kind chip over a
+  one-line description, the source chip (package + pinned version, or the
+  member repository at latest), *Used by* (souls whose instances record the
+  module: up to three tiles and "N souls"; "Every soul" for a reported
+  workspace default; "Not used") and a chevron. The whole row is one button
+  that opens the capability's page with the full description; Back returns to
+  the list with its scroll offset, search and filters. No Members list here.
+  The **Team** and **Repo** dropdowns filter Workspace owned locally (AND);
+  they name only what the rows hold (non-collapse rule: a member's
+  `publishes` never absorbs its package's capabilities).
+- **Teams** (kernel feature `team-model-2`, `computer-teams.mjs`) is the
+  *Teams* page: *Shared with the workspace* (read-only, edited by PR) and
+  *Only on this computer* (add, remove, make default), one card per team with
+  its address, who may join and, from the roster, the instances whose
+  identity's team is that team's id (nothing when none).
 - **Sources** renders the roster observation's `oats workspace status`:
   repositories (team, confirmation status + the kernel's detail), packages
   (lock, capabilities) and external souls. No extra read.

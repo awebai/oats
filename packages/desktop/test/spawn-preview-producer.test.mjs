@@ -68,7 +68,11 @@ for (const [name, [soul, choices]] of Object.entries(cases)) test(`kernel previe
   assert.equal(response.data.harness, harnessOf(r), 'a released kernel\'s runtime reads as the harness');
   assert.equal(typeof response.data.harness, 'string');
   assert.deepEqual(response.data.base, r.base); assert.equal(response.data.yolo, r.yolo ?? null);
-  for (const key of ['task', 'executable', 'env', 'modules', 'capabilities', 'skills', 'settings', 'providers']) assert.equal(Object.hasOwn(response.data, key), false, key);
+  for (const key of ['task', 'executable', 'env', 'capabilities', 'skills', 'settings', 'providers']) assert.equal(Object.hasOwn(response.data, key), false, key);
+  // The composition crosses as names and sources only (the dialog's Core capabilities / Capabilities).
+  const pick = f => Object.fromEntries(['kind', 'package', 'version', 'repoKey'].filter(k => f[k] !== undefined).map(k => [k, f[k]]));
+  assert.deepEqual(response.data.modules, Array.isArray(r.modules) ? r.modules.map(m => ({ name: m.name, layer: m.layer ?? null, from: pick(m.from) })) : null);
+  assert.doesNotMatch(JSON.stringify(response.data.modules), /"(commit|integrity|declares|changedSince|private)"/);
 });
 test('the worktree override is the kernel\'s: a checkout soul previews as a worktree with branch and base', () => {
   const plain = kernel('preview-checkout-default').result, asWorktree = kernel('preview-checkout-as-worktree').result;

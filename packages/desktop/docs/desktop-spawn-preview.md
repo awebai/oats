@@ -95,8 +95,23 @@ names `at`); without the feature, or with no identity in the payload, plain
 Desktop never supplies a mode the kernel did not report —
 `backendStatus{name,installed,started:false}` and
 `preflight{status:complete|timeout,budgetMs,elapsedMs}`. Installation is not daemon
-reachability. Omitted yolo remains unknown. Capabilities, skills, providers, task,
-environment, executable recipes and unknown trees are not exposed. Missing/mismatched data is not empty success.
+reachability. Omitted yolo remains unknown.
+
+`modules[{name, layer|null, from{kind, package?, version?, repoKey?}}]` (kernel
+`modules[]`, feature `instance-modules`) is the composition this spawn will
+record, for the dialog's Core capabilities and Capabilities list: the same
+composition `/api/capabilities` exposes, scoped to this spawn. Each string has a
+fixed grammar (the capability-name grammar for `name` and `package`; bounded
+`layer`, `kind`, `version` and `repoKey`); a row's `commit`, `integrity`,
+`declares`, `private` and `changedSince` are not projected. More than 256 rows,
+a duplicate name or a malformed row refuses the preview (`E_CLI_PROTOCOL`), and
+the renderer re-validates the projection with its keys exact. A kernel without
+`modules[]` projects `null`. The preview carries no reason per module (workspace
+default or soul: `oats inspect --soul`'s `composedFrom`), so the dialog shows
+each module's source instead.
+
+`capabilities[]`, skills, settings, providers, task, environment, executable
+recipes and unknown trees are not exposed. Missing/mismatched data is not empty success.
 
 ## Confirmed HTTP transaction
 
