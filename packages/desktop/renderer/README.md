@@ -14,9 +14,11 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
   then packages with their pinned version, then external souls) or **Team**
   (the default team). A card names its harness · model (only as the kernel
   reports them), clamps the description to two lines, labels its chips
-  (*Team oats*; grouped by team, *Repo …* instead of the group's team; no
-  work-mode chip, that is the soul page's and the spawn preview's) and says what runs in its foot (*N instances running*,
-  *N stopped*, *No instances*, or why a spawn here is refused).
+  (*Team oats · default* for its default team, other teams plain; grouped by
+  team, *Repo …* instead of the group's team; no work-mode chip, that is the
+  soul page's and the spawn preview's) and says what runs in its foot (*N
+  instances running*, *N stopped*, *No instances*); a soul a spawn here would
+  refuse says why in `--warn`, with that count as a muted second line.
   Selection opens the soul's page — read-only: a v2 soul is edited in its
   repository and the inspector never writes it in place; there are no layer bindings
   (`oats use` was removed by workspace model v2). Its Spawn action opens the Spawn dialog
@@ -283,14 +285,17 @@ workspace is observed through its server and never synced from here.
 - **Capabilities** is `oats capabilities --dir <deployment> --json`
   (capabilitiesApi 1), read on demand via `POST /api/workspace-sync?ws=<id>`
   `{action:"read"}` when the tab opens (and after a sync, or Refresh). A
-  segmented jump (Workspace owned / Packages / Repo owned), then one 58px row
+  segmented jump (Workspace owned / Packages / Repo owned; navigation, so the
+  section in view carries `aria-current`), then one 58px row
   card per capability (design board 4): a tile tinted by kind (Knowledge,
   Messaging, Tasks, other, package), the name with its kind chip over a
   one-line description, the source chip (package + pinned version, or the
   member repository at latest), *Used by* (souls whose instances record the
   module: up to three tiles and "N souls"; "Every soul" for a reported
-  workspace default; "Not used") and a chevron. The whole row is one button
-  that opens the capability's page with the full description; Back returns to
+  workspace default; "Not used") and a chevron. The whole row is one native
+  button (Enter and Space are its own) named "<cap>, <kind>, from <source>"
+  and described by its description and used-by (`aria-describedby`); it opens
+  the capability's page with the full description; Back returns to
   the list with its scroll offset, search and filters. No Members list here.
   The **Team** and **Repo** dropdowns filter Workspace owned locally (AND);
   they name only what the rows hold (non-collapse rule: a member's
