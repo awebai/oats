@@ -195,6 +195,13 @@ selection, CLI/workspace or mount change revokes pending read/confirmation autho
 Older completion cannot clear a new task, re-enable a successor operation, steal
 focus or navigate another workspace. Roster changes alone are not new user drafts.
 
+The roster poll re-reads the preview (a read, never an apply) only when a fact it
+depends on changed (the CLI's identity and features, the workspace, the relation
+anchor's roster rows) or when the settled answer is a failure other than a name
+refusal; a read in flight or a settled preview otherwise stands. That key does not
+watch the rest of the roster or on-disk soul and team edits: this is safe, because
+the decision check refuses at **Spawn** if they changed what the kernel decides.
+
 **Check result** reads the retained record. Only a prior settled **unknown** may
 then invoke apply with the same ref/key as part of that explicit recovery click.
 Pending and known outcomes never re-invoke. There is no timer-driven retry.

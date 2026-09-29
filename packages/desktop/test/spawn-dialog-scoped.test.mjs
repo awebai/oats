@@ -20,7 +20,7 @@ const packaged = { name: 'code-reviewer', description: 'Reviews.', kind: 'persis
 const preview = name => kernel(name).result;
 const v2 = name => JSON.parse(readFileSync(new URL(`./fixtures/team-model-v2/${name}.json`, import.meta.url), 'utf8'));
 
-function mount(t, { soul = member, agents = [member, other, packaged], layout, previews = () => view(target, preview('preview-worktree-default')), cli = CLI, theme = 'light' } = {}) {
+function mount(t, { soul = member, agents = [member, other, packaged], layout, previews = () => view(target, preview('preview-worktree-default')), cli = CLI, theme = 'light', workspace = () => ({ id: 'northwind', name: 'northwind' }), instances = () => [] } = {}) {
   const dom = new JSDOM(`<!doctype html><html data-theme="${theme}"><body><div class="oats-view"><div class="spawn-modal"></div></div></body></html>`, { url: 'http://localhost', pretendToBeVisual: true });
   const doc = dom.window.document;
   for (const source of [themeCSS, identityCSS, spawnDialogCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
@@ -32,7 +32,7 @@ function mount(t, { soul = member, agents = [member, other, packaged], layout, p
     if (path.startsWith('/api/launch-configs')) return { selected: body.selector, configurations: [] };
     throw new Error(`unexpected ${path}`);
   } };
-  const ui = createSpawnDialog(doc.querySelector('.spawn-modal'), { ctx, soul, agents, workspace: () => ({ id: 'northwind', name: 'northwind' }), cli: () => cli, instances: () => [],
+  const ui = createSpawnDialog(doc.querySelector('.spawn-modal'), { ctx, soul, agents, workspace, cli: () => cli, instances,
     owns: () => true, canChoose: () => true, choose: (candidate, draft) => chosen.push({ candidate, draft }), close: () => {}, servers: [], delay: 0, ...(layout ? { layout } : {}) });
   ui.start();
   t.after(() => { ui.dispose(); dom.window.close(); });
@@ -303,4 +303,58 @@ test('roster polls (sync) with unchanged facts never supersede the read in fligh
   assert.equal(u.facts().Name, 'release-manager-1', 'the superseded answer (api-gateway) is never shown');
   gates[2].resolve(); await settle(12);
   assert.equal(u.facts().Name, 'release-manager-api-v2', 'the latest read is shown'); assert.equal(reads(), 3);
+});
+
+const reads = u => u.calls.filter(c => c.path.startsWith('/api/workspace-spawn-preview')).length;
+const refusal = (code, message = code) => ({ spawnPreviewViewApi: 1, status: 'unavailable', target, data: null, reason: { code, message } });
+
+for (const [kind, fail] of [['refused busy (E_BUSY)', () => refusal('E_BUSY', 'The workspace is busy.')], ['rejected (E_CLI_FAILED)', () => { throw Object.assign(new Error('boom'), { code: 'E_CLI_FAILED' }); }]]) {
+  test(`a preview that settled on a transient failure, ${kind}, is read again by the next poll; a settled success is not`, async t => {
+    let n = 0;
+    const u = mount(t, { layout: 'scoped', previews: () => n++ === 0 ? fail() : view(target, preview('preview-worktree-default')) });
+    await settle(12);
+    assert.equal(reads(u), 1); assert.ok(u.q('.spawn-preview-failure'), 'the failure is shown'); assert.equal(u.q('.fspawn').disabled, true);
+    u.ui.sync(); await settle(12); // a routine poll, no fact changed
+    assert.equal(reads(u), 2, 'the poll retries the failed read');
+    assert.equal(u.facts().Name, preview('preview-worktree-default').instance); assert.equal(u.text('.fstatus'), 'Preview ready');
+    for (let i = 0; i < 3; i++) { u.ui.sync(); await settle(); }
+    assert.equal(reads(u), 2, 'a settled success stands under polls while its facts are unchanged');
+  });
+}
+
+test('a name refusal is not retried by a poll: it waits for the operator to change the name', async t => {
+  const taken = kernel('preview-name-taken').error;
+  const u = mount(t, { layout: 'scoped', previews: () => refusal(taken.code, taken.message) });
+  await settle(12);
+  assert.equal(reads(u), 1); assert.ok(u.q('.spawn-name-result').classList.contains('err'));
+  for (let i = 0; i < 3; i++) { u.ui.sync(); await settle(); }
+  assert.equal(reads(u), 1);
+});
+
+test('a workspace-id change under the open dialog re-previews for the new workspace and settles there', async t => {
+  let ws = 'northwind';
+  const u = mount(t, { layout: 'scoped', workspace: () => ({ id: ws, name: ws }),
+    previews: () => view({ ...target, workspace: ws }, preview(ws === 'northwind' ? 'preview-worktree-default' : 'preview-worktree-purpose')) });
+  await settle(12);
+  assert.equal(u.facts().Name, 'release-manager-1');
+  ws = 'northwind-2'; u.ui.sync(); await settle(12);
+  assert.equal(reads(u), 2); assert.match(u.calls.at(-1).path, /ws=northwind-2$/, 'read for the new workspace');
+  assert.equal(u.facts().Name, 'release-manager-api-v2', 'the new workspace\'s answer is shown'); assert.equal(u.text('.fstatus'), 'Preview ready');
+});
+
+test('the relation anchor\'s roster row changing re-previews; another instance\'s row changing does not', async t => {
+  const rows = [{ instance: 'dev-1', agent: 'release-manager', agentsRoot: ROOT, running: true, home: '/h/dev-1' }, { instance: 'other-1', agent: 'support-triager', agentsRoot: ROOT, running: true, home: '/h/other-1' }];
+  let n = 0;
+  const u = mount(t, { layout: 'scoped', instances: () => rows,
+    previews: () => view(target, preview(n++ % 2 ? 'preview-worktree-purpose' : 'preview-worktree-default')) });
+  await settle(12);
+  u.q('.spawn-seg input[value=child]').click(); await settle();
+  const pick = u.q('.frelto'); pick.value = 'dev-1'; pick.dispatchEvent(new u.dom.window.Event('change', { bubbles: true })); await settle(12);
+  const before = reads(u), shown = u.facts().Name;
+  assert.deepEqual(u.calls.at(-1).body.choices.relation, { kind: 'child', anchor: { instance: 'dev-1', agent: 'release-manager', agentsRoot: ROOT, server: null } });
+  rows[1] = { ...rows[1], running: false, home: '/h/moved' }; u.ui.sync(); await settle(12);
+  assert.equal(reads(u), before, 'another instance\'s row is not a fact of this preview');
+  rows[0] = { ...rows[0], home: '/h/dev-1-moved' }; u.ui.sync(); await settle(12);
+  assert.equal(reads(u), before + 1, 'the anchor moved: read again');
+  assert.notEqual(u.facts().Name, shown, 'and the new answer settles'); assert.equal(u.text('.fstatus'), 'Preview ready');
 });

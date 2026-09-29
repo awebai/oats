@@ -1106,7 +1106,10 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       if (!alive) return;
       if (!current() || flight || submitted) { syncButton(); return; }
       const facts = factsKey();
-      if (facts === factsSeen) { syncButton(); return; } // a routine poll: the read in flight stands
+      // A settled failure (the CLI failed, was busy…) is retried on the next poll; a name refusal waits
+      // for the operator's edit, and a settled preview or a read in flight stands until a fact changes.
+      const retry = !timer && !reading && !!shown?.failure && !NAME_REFUSALS.includes(shown.failure.code);
+      if (facts === factsSeen && !retry) { syncButton(); return; }
       factsSeen = facts; schedule(0);
     },
     closePopups() { models.close(); runtimePicker.close(); },
