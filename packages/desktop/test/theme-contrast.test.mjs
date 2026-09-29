@@ -737,6 +737,8 @@ for (const [name] of palettes) test(`${name}: F7 inspector cards, teams, compact
     ['#context-panel .context-panel-session-from', '#context-panel .context-panel-session', 'muted', 'surface'],
     ['#context-panel .context-panel-detail .context-panel-path', '#context-panel', 'muted', 'surface'],
     ['#context-panel .context-panel-copy', '#context-panel', 'muted', 'surface'],
+    // Spec D: the Folder row's "shared" tag (linked modes), the muted tag pair.
+    ['#context-panel .context-panel-shared-tag', '#context-panel .context-panel-shared-tag', 'muted', 'tag-bg'],
   ];
   checks.push(['.git-status-details > summary', '#context-panel', 'muted', 'surface']);
   for (const [selector, painted, fg, bg] of checks) {

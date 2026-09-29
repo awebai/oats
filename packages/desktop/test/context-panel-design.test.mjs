@@ -52,14 +52,14 @@ test('only reported facts: an unreported fact hides its row (its field still say
   assert.doesNotMatch([...u.document.querySelectorAll('#context-panel [data-row]:not([hidden])')].map(r => r.textContent).join('|'), /Not reported/);
 });
 
-test('Where it works: one card — the mode band in plain words, then Repo, Branch (Git modes) and Home with an icon Copy', async t => {
+test('Where it works: one card — the mode band in plain words, then Repo, Branch (Git modes), Folder and Home with an icon Copy', async t => {
   const u = fixture(t); u.select(instance({ work: 'worktree', repoName: 'northwind', branch: 'feat/checkout' }));
   const card = u.q('.context-panel-where'), band = u.row('work');
   assert.equal(band.parentElement, card); assert.equal(band.className, 'context-panel-mode');
   assert.equal(band.querySelector('.context-panel-mode-title').textContent, 'Own worktree');
   assert.equal(band.querySelector('.context-panel-mode-meaning').textContent, "isolated branch in a clone of the soul's repo");
   assert.equal(band.querySelector('.context-panel-mode-tile').getAttribute('aria-hidden'), 'true');
-  assert.deepEqual([...card.querySelectorAll('dt')].map(dt => dt.textContent), ['Repo', 'Branch', 'Home'], 'no Mode row, no repo-path row');
+  assert.deepEqual([...card.querySelectorAll('dt')].map(dt => dt.textContent), ['Repo', 'Branch', 'Folder', 'Home'], 'no Mode row, no repo-path row');
   assert.equal(u.row('branch').hidden, false); assert.equal(u.field('branch').textContent, 'feat/checkout');
   assert.equal(u.field('branch').title, 'feat/checkout', 'one line with ellipsis; the full name in the title');
   assert.match(contextPanelCSS, /\.context-panel-branch-value > \[data-context-field\] \{[^}]*text-overflow:ellipsis; white-space:nowrap/);
@@ -90,6 +90,40 @@ test('Where it works: one card — the mode band in plain words, then Repo, Bran
   copy.click(); await tick();
   assert.deepEqual(written, [HOME]); assert.equal(copy.getAttribute('aria-label'), 'Copied');
   assert.equal(u.document.querySelector('#context-panel').textContent.includes('Copy'), false, 'no text Copy button');
+});
+
+test('Folder: <home>/work in every mode, an icon Copy, and "shared" exactly for the linked modes', async t => {
+  const u = fixture(t), shared = u.q('[data-context-shared]');
+  const tip = 'A link to the shared tree; changes here are visible to every instance that shares it.';
+  for (const work of ['worktree', 'directory', 'checkout', 'attached', 'workspace']) {
+    u.select(instance({ work }));
+    assert.equal(u.row('workFolder').hidden, false, work);
+    assert.equal(u.row('workFolder').querySelector('dt').textContent, 'Folder');
+    assert.equal(u.field('workFolder').textContent, `${HOME}/work`, work);
+    assert.equal(u.field('workFolder').closest('.context-panel-path').title, `${HOME}/work`);
+    assert.equal(u.field('workFolder').closest('.context-panel-path').dir, 'rtl', 'clipped at the start');
+    const copy = u.q('[data-copy="workFolder"]');
+    assert.equal(copy.getAttribute('aria-label'), 'Copy folder path'); assert.equal(copy.textContent, '', 'icon only');
+    assert.equal(shared.hidden, !['checkout', 'attached', 'workspace'].includes(work), `${work}: shared only when linked`);
+    assert.equal(shared.textContent, 'shared'); assert.equal(shared.title, tip);
+    assert.equal(shared.previousElementSibling, u.field('workFolder').closest('.context-panel-path'), 'the tag follows the path');
+  }
+  // Rows: Repo, Branch, Folder, Home; Folder is built from the home, with the home's own separator.
+  u.select(instance({ work: 'worktree', repoName: 'northwind' }));
+  assert.deepEqual([...u.q('.context-panel-where').querySelectorAll('.context-panel-fact:not([hidden]) dt')].map(dt => dt.textContent), ['Repo', 'Branch', 'Folder', 'Home']);
+  u.select(instance({ home: 'C:\\Users\\me\\agents\\dev\\instances\\dev-1\\' }));
+  assert.equal(u.field('workFolder').textContent, 'C:\\Users\\me\\agents\\dev\\instances\\dev-1\\work');
+  u.select(instance({ home: 'C:/Users/me/dev-1/' })); assert.equal(u.field('workFolder').textContent, 'C:/Users/me/dev-1/work');
+  // No home (or not a string): no Folder row, like Home.
+  for (const home of [undefined, 42, '']) {
+    u.select(instance({ home, work: 'checkout' }));
+    assert.equal(u.row('workFolder').hidden, true, `home ${JSON.stringify(home)}: no Folder row`);
+  }
+  u.select(instance({ work: 'checkout' }));
+  const written = [];
+  Object.defineProperty(u.dom.window.navigator, 'clipboard', { value: { writeText: async text => { written.push(text); } }, configurable: true });
+  u.q('[data-copy="workFolder"]').click(); await tick();
+  assert.deepEqual(written, [`${HOME}/work`]);
 });
 
 test('created reads as a relative age with the exact value in its title', t => {

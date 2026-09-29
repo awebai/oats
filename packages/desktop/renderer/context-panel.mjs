@@ -84,6 +84,8 @@ export const contextPanelCSS = `
 /* A path: one line, clipped at the start so its meaningful end shows (full value in the title), plus an icon Copy. */
 #context-panel .context-panel-pathline { display:flex; align-items:center; gap:6px; min-width:0; }
 #context-panel .context-panel-path { flex:1; min-width:0; font:12px/1.45 ui-monospace, Menlo, monospace; color:var(--fg); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; text-align:left; }
+/* "shared": the work folder is a link to a tree other instances share (its title says so). */
+#context-panel .context-panel-shared-tag { flex:none; padding:0 6px; border-radius:4px; background:var(--tag-bg); color:var(--muted); font-size:10.5px; font-weight:600; line-height:18px; white-space:nowrap; cursor:default; }
 #context-panel button.context-panel-copy { flex:none; display:grid; place-items:center; width:22px; height:22px; padding:0; border:0; border-radius:5px; background:transparent; color:var(--muted); cursor:pointer; }
 #context-panel button.context-panel-copy:hover { background:var(--surface-2); color:var(--fg); }
 #context-panel .context-panel-details { border-top:1px solid var(--border); padding-top:12px; min-width:0; }
@@ -150,6 +152,16 @@ const WORK_MODES = Object.freeze({ __proto__: null,
   directory: { icon: 'folder', label: 'Plain folder', meaning: 'no Git' },
   workspace: { icon: 'layers', label: 'Workspace view', meaning: 'reads across member repos' } });
 const NO_GIT = new Set(['directory', 'workspace']);
+/** Modes whose <home>/work is a link to a tree other instances share (the kernel symlinks it). */
+const LINKED = new Set(['checkout', 'attached', 'workspace']);
+/** The folder an instance works in: <home>/work in every mode (a real folder for worktree and
+ * directory, a link to the shared tree otherwise). Joined with the home's own separator, so a
+ * Windows home stays a Windows path; null without a home. */
+function workFolder(home) {
+  if (typeof home !== 'string' || !home) return null;
+  const sep = home.includes('\\') && !home.includes('/') ? '\\' : '/';
+  return `${home.replace(/[\\/]+$/, '')}${sep}work`;
+}
 /** How long ago, compactly ("42m", "3h", "2d"); null when not a timestamp. */
 function shortAge(iso, now = Date.now()) {
   const at = typeof iso === 'string' ? Date.parse(iso) : NaN;
@@ -365,7 +377,7 @@ export function createContextPanel({
     host.append(dl); return dl;
   }
   // Where it works (board 1): one card — the work mode on a band (its tile, its
-  // plain-language label and meaning), then Repo, Branch (Git modes) and Home.
+  // plain-language label and meaning), then Repo, Branch (Git modes), Folder and Home.
   const worktree = section('instance', 'Where it works');
   const whereCard = node('div', 'context-panel-where');
   const mode = node('div', 'context-panel-mode'), modeTile = node('span', 'context-panel-mode-tile'), modeCopy = node('div', 'context-panel-mode-copy');
@@ -378,7 +390,14 @@ export function createContextPanel({
   const branchValue = node('dd', 'is-mono context-panel-branch-value'), ahead = node('span', 'context-panel-ahead');
   branchValue.append(field('span', null, 'branch'), ahead);
   const branchRow = factRow(whereFacts, 'branch', 'Branch', branchValue);
-  // Home: the instance home, where its files and work/ live (the roster reports no work folder).
+  // Folder: <home>/work, where it works; "shared" when that is a link to a shared tree.
+  const folderValue = node('dd'), folderLine = pathLine('workFolder', 'Copy folder path', { own: false });
+  const sharedTag = node('span', 'context-panel-shared-tag', 'shared'); sharedTag.dataset.contextShared = '';
+  sharedTag.title = 'A link to the shared tree; changes here are visible to every instance that shares it.';
+  sharedTag.setAttribute('role', 'note'); sharedTag.setAttribute('aria-label', `shared: ${sharedTag.title}`);
+  folderLine.lastChild.before(sharedTag); folderValue.append(folderLine);
+  factRow(whereFacts, 'workFolder', 'Folder', folderValue);
+  // Home: the instance home, where its own files live.
   const homeValue = node('dd'); homeValue.append(pathLine('home', 'Copy home path', { own: false }));
   factRow(whereFacts, 'home', 'Home', homeValue);
   whereCard.append(mode, whereFacts); worktree.append(whereCard);
@@ -584,6 +603,7 @@ export function createContextPanel({
         : id === 'harness' && typeof instance.harness === 'string' && instance.harness ? harnessName(instance.harness)
         // Where the model came from says nothing without the model beside it.
         : id === 'modelFrom' ? (reported(instance.model) !== 'Not reported' && MODEL_FROM[instance.modelFrom]) || 'Not reported'
+        : id === 'workFolder' ? workFolder(instance.home) ?? 'Not reported'
         : reported(instance[id]);
       const age = ['createdAt', 'startedAt'].includes(id);
       const shown = age && value !== 'Not reported' ? ageText(value) : value;
@@ -599,6 +619,7 @@ export function createContextPanel({
     }
     // Branch: not a fact of a plain folder or a workspace view.
     if (NO_GIT.has(instance.work)) branchRow.hidden = true;
+    sharedTag.hidden = !LINKED.has(instance.work);
     paintAhead();
     // A reported start replaces the spawn age (startedAt is null for a home never launched).
     startedLine.hidden = fields.get('startedAt').textContent === 'Not reported';

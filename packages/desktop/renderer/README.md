@@ -425,8 +425,13 @@ the kernel reports `soul.status`/`modules[].status` other than `current`, and
 "Running · 42m"; then Where it works, Session, Messaging, Lineage and the
 lifecycle footer), **Soul** and **Developer** (Git and GitHub). Where it works is one card: the
 work mode in plain words on a band, then Repo, Branch (Git modes only; ↑/↓
-appear once the Developer tab has observed them) and Home (the instance home, the
-reported fact; the roster has no work-folder fact). Messaging's header is the
+appear once the Developer tab has observed them), Folder and Home. Folder is
+`<home>/work`, joined from the roster row's `home` with the home's own separator:
+the kernel gives every instance that folder, a real one in worktree and
+directory mode and a link to the shared tree in checkout, attached and workspace
+mode, where a muted "shared" tag follows the path (the link's target is not
+resolved; that would need a server read). Home is the instance home, where its
+own files live; without a reported `home` string there is no Folder row. Messaging's header is the
 label plus a tools slot the injected Teams section fills with its icon Refresh
 (`createTeamsPanel(…, { compact: true, refreshHost })`); the identity address
 (`identityAddress`, else the served identity) sits alone under it. Empty groups
