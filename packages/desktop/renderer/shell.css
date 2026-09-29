@@ -398,7 +398,7 @@ body {
 /* FitAddon measures .xterm's parent and subtracts padding from .xterm itself.
    Keep horizontal gutters here—not on .term-wrap—or it allocates columns wider
    than the visible terminal and the screen overflows the right edge. */
-.term-wrap .xterm { width: 100%; height: 100%; padding: 14px 18px; } /* Redesign v3 transcript inset */
+.term-wrap .xterm { width: 100%; height: 100%; padding: 0 32px; }
 .term-banner {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   background: var(--term-bg); color: var(--warn); font-size: 15px; z-index: 5;

@@ -10,11 +10,11 @@ export function shiftEnterAction(ev) {
   if (ev.key !== 'Enter' || !ev.shiftKey || ev.ctrlKey || ev.altKey || ev.metaKey) return { suppress: false, byte: null };
   return { suppress: true, byte: ev.type === 'keydown' ? '\n' : null };
 }
-export function terminalOptions({ fontSize, fontFamily, theme, lineHeight = 1.7 }) {
+// Native terminal geometry: no lineHeight (xterm's default 1.0), so cells and
+// the block cursor keep their natural height and tmux owns row spacing.
+export function terminalOptions({ fontSize, fontFamily, theme }) {
   // tmux mouse capture must not defeat Option-drag local copy selection on macOS.
-  // The Redesign v3 transcript rhythm: 12px mono at 1.7 line height; xterm's
-  // custom box-drawing glyphs fill the taller cells, so TUI borders still join.
-  return { fontSize, fontFamily, theme, lineHeight, customGlyphs: true, scrollback: 5000, macOptionClickForcesSelection: true };
+  return { fontSize, fontFamily, theme, scrollback: 5000, macOptionClickForcesSelection: true };
 }
 export function terminalKeyDecision(ev, interceptKey) {
   const { suppress, byte } = shiftEnterAction(ev);

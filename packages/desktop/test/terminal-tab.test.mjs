@@ -278,10 +278,22 @@ test("terminalOptions: forces Option+drag local selection and carries typography
   assert.deepEqual(o.theme, { background: "#000" });
 });
 
+// Native terminal geometry (060de502; reverts the Redesign v3 1.7 rhythm): no
+// lineHeight reaches xterm, so its default 1.0 keeps cells and the block
+// cursor one natural cell tall; tmux owns row spacing. A caller passing a
+// lineHeight (e.g. a stale typography object) must not leak it through.
+test("terminalOptions: native geometry — no lineHeight, no customGlyphs, OAS option shape", () => {
+  const o = terminalOptions({ fontSize: 13, fontFamily: "mono", theme: {}, lineHeight: 1.7 });
+  assert.equal("lineHeight" in o, false, "xterm must run at its default line height");
+  assert.equal("customGlyphs" in o, false, "xterm's default glyph handling; customGlyphs only justified the tall cells");
+  assert.deepEqual(Object.keys(o).sort(), ["fontFamily", "fontSize", "macOptionClickForcesSelection", "scrollback", "theme"]);
+});
+
 test("shell.mjs constructs its Terminal through terminalOptions", () => {
   const here = dirname(fileURLToPath(import.meta.url));
   const src = readFileSync(join(here, "..", "renderer", "shell.mjs"), "utf8");
   assert.match(src, /new Terminal\(terminalOptions\(/, "shell must build xterm options via terminalOptions()");
+  assert.doesNotMatch(src, /lineHeight/, "no caller (terminal tab, preview terminal, typography listener) sets lineHeight");
 });
 
 // ── shortcut interception before the pty (review d64daeb important) ──────
