@@ -33,7 +33,7 @@ test('#239, open with its checks running: the Open pill, the title, "#239", one 
   assert.equal(u.root.querySelector('.forge-sub').textContent, '#239');
   assert.ok(u.root.querySelector('.forge-pr-card.git-card'), 'a bordered card'); assert.ok(u.root.querySelector('.forge-head + .forge-body'), 'the head, a hairline, then the rows');
   assert.equal(u.root.querySelector('.git-head h3').textContent, 'Pull request', 'the label in the small-caps head style');
-  assert.equal(u.root.querySelector('.forge-pr-card + .forge-caveat')?.textContent.includes('not proof'), true, 'the caveat under the card');
+  assert.equal(u.root.querySelector('.forge-pr-card + .forge-caveat')?.textContent.includes('may not be the local revision'), true, 'the caveat under the card');
   assert.match(u.root.querySelector('.forge-sub').title, /^main ← agents\/ux-designer-w6-git · updated /);
   assert.equal(u.rows.length, u.raw.statusCheckRollup.length);
   assert.ok(u.rows.every(r => r.outcome === 'pending' && r.mark === 'pending' && r.meta === 'in progress'));
