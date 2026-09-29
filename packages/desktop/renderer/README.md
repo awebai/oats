@@ -509,6 +509,14 @@ Teams page's controls, so a pill jump or a focused row never lands under it.
 "Filter by Team / Repo" stays in the Workspace owned header: it filters only
 that section, so it scrolls with it. Section and group headers scroll.
 
+Why the containment matters: an absolutely positioned element with no
+positioned ancestor (the `*-sr-only` / `loading-sr` words) escapes a scroller's
+clip and stretches the document; wheel chaining, `scrollIntoView` and End then
+scroll the whole app, headers included. The sr-only utilities are anchored
+(`top:0; left:0`) and the shell's `body` is positioned and clipped, so the
+document never has anything to scroll (`workspace-sticky.test.mjs`; the
+browser behaviour is verified live over CDP).
+
 All awaited reads and mutations carry latest-intent ownership (request serial +
 workspace generation) checked on success and rejection, mutation-verified in
 `workspace-v2-view.test.mjs`. Fixtures are kernel captures

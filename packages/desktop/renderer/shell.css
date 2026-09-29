@@ -2,6 +2,12 @@
    design tokens (scoped under .oats-view); the chrome uses the same tokens. */
 * { box-sizing: border-box; }
 html, body, #app { height: 100%; margin: 0; }
+/* An app shell: the document never scrolls (spec G). Every view scrolls inside its own container;
+   anything that escapes one (an absolute element with no positioned ancestor) is contained by the
+   positioned, clipped body instead of stretching the document. html's clip reaches the viewport as
+   hidden, which still allows programmatic scrolling, so the body is what leaves nothing to scroll. */
+html { overflow: clip; }
+body { position: relative; overflow: clip; }
 body {
   background: var(--bg);
   color: var(--fg);

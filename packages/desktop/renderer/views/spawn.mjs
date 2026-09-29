@@ -54,7 +54,8 @@ const CSS = `
 .workspace-recovery[hidden] { display:none; }
 /* Counts are already in the Souls tab. Keep the full filter/CLI status for
    assistive tech, without another permanent row above the canvas. */
-.workspace-sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+/* Visually hidden, announced; anchored at its containing block's origin so it can never stretch a scroller or the document (spec G). */
+.workspace-sr-only { position:absolute; top:0; left:0; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
 .souls-bar .souls-bar-lead { flex:1 1 auto; }
 /* Workspace v4.1 (board 3): cards grouped by repository (the default) or team; each group
    opens with its header (icon, monospace name, a muted qualifier). Souls of a member that

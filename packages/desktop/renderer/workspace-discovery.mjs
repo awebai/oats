@@ -38,7 +38,8 @@ ${syncCSS}
 .workspace-tabs button:focus-visible { background:var(--sel); border-radius:6px; padding:0 6px; margin:0 -6px; }
 .workspace-count { color:var(--muted); font:10.5px var(--mono,monospace); }
 .workspace-count:empty { display:none; }
-.workspace-sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+/* Visually hidden, announced; anchored at its containing block's origin so it can never stretch a scroller or the document (spec G). */
+.workspace-sr-only { position:absolute; top:0; left:0; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
 .workspace-attn { width:6px; height:6px; border-radius:50%; background:var(--attn-dot); }
 .workspace-attn[hidden] { display:none; }
 .workspace-tools { display:flex; align-items:center; gap:10px; margin-left:auto; min-width:0; flex:none; }

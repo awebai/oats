@@ -155,7 +155,7 @@ test('Teams: the page head ("Teams" + Add a local team) is the pinned block; its
   for (const el of focusables) assert.equal(dom.window.getComputedStyle(el).scrollMarginTop, 'var(--ws-sticky-h, 60px)');
 });
 
-test('the Workspace view is one fixed column that can never scroll', async t => {
+test('the Workspace view is one fixed column that can never scroll; the document never scrolls either', async t => {
   const u = await mountWorkspace(t);
   const view = u.css('.souls');
   assert.equal(view.position, 'relative', 'anything positioned that escapes a scroller is contained by the view');
@@ -166,5 +166,21 @@ test('the Workspace view is one fixed column that can never scroll', async t => 
   assert.equal(discovery.overscrollBehavior, 'contain'); assert.match(discovery.minHeight, /^0(px)?$/);
   assert.equal(u.get('.workspace-header').parentElement, u.get('.workspace-main'), 'the header is outside every scroller');
   for (const scroller of [u.get('.souls-grid'), u.get('.workspace-discovery')]) assert.equal(scroller.contains(u.get('.workspace-header')), false);
+  // The app shell: html clips at the viewport; the body is positioned and clipped, so an absolute
+  // element with no positioned ancestor is contained by it and cannot stretch the document.
+  assert.equal(u.css(u.doc.documentElement).overflow, 'clip');
+  const body = u.css(u.doc.body);
+  assert.equal(body.position, 'relative'); assert.equal(body.overflow, 'clip'); assert.equal(body.height, '100%');
 });
 
+test('every visually-hidden utility is anchored at its containing block, so it cannot stretch a scroller', () => {
+  const sources = { 'views/spawn.mjs': read('../renderer/views/spawn.mjs'), 'workspace-discovery.mjs': read('../renderer/workspace-discovery.mjs'), 'loading.css': loadingCss };
+  const rules = [];
+  for (const [file, text] of Object.entries(sources)) for (const [, rule, body] of text.matchAll(/(\.[\w-]*(?:sr-only|-sr))\s*\{([^}]*)\}/g)) rules.push({ file, rule, body });
+  assert.deepEqual(rules.map(r => `${r.file} ${r.rule}`).sort(), ['loading.css .loading-sr', 'views/spawn.mjs .workspace-sr-only', 'workspace-discovery.mjs .workspace-sr-only']);
+  for (const { file, rule, body } of rules) {
+    for (const decl of [/position:\s*absolute/, /top:\s*0/, /left:\s*0/, /width:\s*1px/, /height:\s*1px/, /overflow:\s*hidden/, /clip-path:\s*inset\(50%\)/, /white-space:\s*nowrap/, /margin:\s*-1px/]) {
+      assert.match(body, decl, `${file} ${rule} has ${decl}`);
+    }
+  }
+});
