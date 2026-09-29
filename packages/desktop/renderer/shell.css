@@ -152,13 +152,20 @@ body {
               font-family: inherit; font-size: 12px; line-height: 1; }
 .ctx-filter::placeholder { color: var(--muted); }
 .ctx-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 8px 8px; }
-/* Agent groups (Workspace v4): a 14px gap, no title; the separator names the group for AT. */
+/* Agent groups (Workspace v4): a 14px gap, no title; the separator names the group for AT.
+   The first one sits just under the filter, so it is shorter (human, 2026-09-29). */
 .ctx-group { height: 14px; }
-/* One instance row: the design's tree at a slightly roomier 50px (human
-   preference over the design's 44px), 18px per level; the row (not the
-   button) carries hover/selection so it spans the indent like the design. */
-.ctx-tree-row { --tree-step: 18px; --row-solid: var(--surface); position: relative; width: 100%; min-height: 50px;
-                display: flex; align-items: center; border-radius: 7px;
+.ctx-group:first-child { height: 7px; }
+/* One instance row: a 48px box, 18px per level; the row (not the button)
+   carries hover/selection so it spans the indent like the design. Its
+   background fills 44px, clipped inside 2px transparent borders top and
+   bottom, so neighbouring backgrounds never touch (human, 2026-09-29) while
+   the connectors, which span the whole box, stay continuous. The vertical
+   radius adds the border so the painted corners stay 7px round. */
+.ctx-tree-row { --tree-step: 18px; --row-gap: 2px; --row-solid: var(--surface); position: relative; width: 100%; min-height: 48px;
+                box-sizing: border-box; display: flex; align-items: center;
+                border-top: var(--row-gap) solid transparent; border-bottom: var(--row-gap) solid transparent;
+                background-clip: padding-box; border-radius: 7px / 9px;
                 padding-left: calc(var(--depth) * var(--tree-step)); }
 .ctx-tree-row:hover { --row-solid: var(--surface-2); background: var(--surface-2); }
 .ctx-tree-row.active { --row-solid: var(--sel); background: var(--sel); }
@@ -217,7 +224,7 @@ body {
 .launch-config-editor { margin-top: 12px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; }
 .launch-config-editor summary { cursor: pointer; }
 .launch-preview-output { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: var(--surface-2); max-height: 240px; overflow: auto; }
-.ctx-inst { position: relative; min-width: 0; flex: 1; min-height: 50px; height: auto; display: flex; align-items: center; gap: 9px;
+.ctx-inst { position: relative; min-width: 0; flex: 1; min-height: 44px; height: auto; display: flex; align-items: center; gap: 9px;
             padding: 0 8px 0 10px; border: 0; border-radius: 7px; background: none; color: var(--fg);
             font: inherit; text-align: left; cursor: pointer; }
 .ctx-inst.idle, .ctx-inst:disabled { color: var(--muted); }
@@ -226,7 +233,8 @@ body {
    solid rounded elbows into children, pass-throughs for open branches,
    dotted dot-to-dot sibling links. Dots paint above them with a surface
    ring, so every line appears to leave the dot itself. */
-.ctx-guides { position: absolute; inset: 0 auto 0 0; width: 100%; pointer-events: none; }
+/* The guides span the row's transparent borders too, so lines cross the gap between rows. */
+.ctx-guides { position: absolute; inset: calc(-1 * var(--row-gap)) auto calc(-1 * var(--row-gap)) 0; width: 100%; pointer-events: none; }
 .ctx-guide { position: absolute; box-sizing: border-box; width: 0;
              left: calc(13.25px + var(--guide-level) * var(--tree-step));
              border-left: 1.5px solid var(--tree-line); }

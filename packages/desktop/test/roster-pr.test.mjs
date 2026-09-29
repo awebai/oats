@@ -89,8 +89,15 @@ test('the shipped roster row: the chip beside the name, the link in the row tool
   runInNewContext(`${source}\nrenderContextRoster`, context)(roster);
   const at = name => [...doc.querySelectorAll('.ctx-tree-row')].find(r => r.querySelector('.ctx-name').textContent === name);
   const withPr = at('with-pr');
-  const chip = withPr.querySelector('.ctx-name-line > .ctx-pr');
-  assert.equal(chip.textContent, '#231'); assert.equal(chip.previousElementSibling.className, 'ctx-name', 'right after the name');
+  // Human, 2026-09-29: the chip moved from the name line to the meta line, before the branch.
+  const chip = withPr.querySelector('.ctx-meta.ctx-meta-pr > .ctx-pr');
+  assert.equal(chip.textContent, '#231');
+  assert.equal(chip.previousElementSibling.className, 'ctx-meta-lead', 'after the repository');
+  assert.match(chip.previousElementSibling.textContent, / ·$/);
+  const branch = chip.nextElementSibling;
+  assert.ok(!branch || branch.className === 'ctx-meta-tail', 'the branch (if any) follows the chip');
+  assert.equal(withPr.querySelector('.ctx-copy').firstElementChild.className, 'ctx-name', 'the name line holds only the name');
+  assert.equal(withPr.querySelector('.ctx-name').children.length, 0);
   assert.equal(withPr.querySelector('.ctx-inst a, .ctx-inst button'), null, 'the row button holds no nested control');
   const open = withPr.querySelector('.ctx-row-tools button.ctx-pr-open');
   assert.equal(open.getAttribute('aria-label'), "Open with-pr's pull request #231 · open on GitHub");
@@ -99,6 +106,6 @@ test('the shipped roster row: the chip beside the name, the link in the row tool
   const draft = at('draft-no-url');
   assert.equal(draft.querySelector('.ctx-pr').dataset.prState, 'draft');
   assert.equal(draft.querySelector('.ctx-pr-open'), null, 'no web address: no link');
-  assert.equal(at('none').querySelector('.ctx-pr, .ctx-pr-open, .ctx-name-line'), null, 'no PR: the row is unchanged');
+  assert.equal(at('none').querySelector('.ctx-pr, .ctx-pr-open, .ctx-meta-pr'), null, 'no PR: the row is unchanged');
   assert.equal(at('remote').querySelector('.ctx-pr'), null, 'a remote instance never shows a local read');
 });

@@ -460,10 +460,14 @@ function renderContextRoster(instances) {
         meta.textContent = [instanceRepoLabel(i), i.branch, state === "unknown" ? "state unknown" : ""].filter(Boolean).join(" · ");
         meta.title = `Repository: ${instanceRepoLabel(i)}${i.branch ? `\nBranch: ${i.branch}` : ""}`;
         if (pr) {
-          // Its pull request beside the name; the link itself sits in the row tools (a button holds no link).
-          const line = document.createElement("span"); line.className = "ctx-name-line";
-          line.append(name, prChip(document, pr)); copy.append(line, meta);
-        } else copy.append(name, meta);
+          // Its pull request on the meta line, before the branch: "repo · #317 branch" (the name line
+          // holds only the name). The link itself sits in the row tools (a button holds no link).
+          const lead = document.createElement("span"); lead.className = "ctx-meta-lead"; lead.textContent = `${instanceRepoLabel(i)} ·`;
+          const rest = [i.branch, state === "unknown" ? "state unknown" : ""].filter(Boolean).join(" · ");
+          meta.textContent = ""; meta.classList.add("ctx-meta-pr"); meta.append(lead, prChip(document, pr));
+          if (rest) { const tail = document.createElement("span"); tail.className = "ctx-meta-tail"; tail.textContent = rest; meta.append(tail); }
+        }
+        copy.append(name, meta);
         row.append(dot, copy);
         if (typeof i.harness === "string" && i.harness) {
           const runtime = createRuntimeBadge(document, i.harness);

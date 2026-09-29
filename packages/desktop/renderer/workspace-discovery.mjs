@@ -41,11 +41,13 @@ ${syncCSS}
 .workspace-attn[hidden] { display:none; }
 .workspace-tools { display:flex; align-items:center; gap:10px; margin-left:auto; min-width:0; flex:none; }
 .workspace-tools[hidden] { display:none; }
-/* Segmented control (control rule 1, board 7): one 1px frame with 2px inner padding, 6px
+/* Segmented control (control rule 1, board 7): one 1px frame with 3px inner padding, 6px
    segments, no dividers. Selected = brand tint (--sel fill, --accent text, 650); unselected =
-   transparent, --muted. Keyboard focus adds the tint under the global 1px accent edge. */
-.ws-segmented { display:inline-flex; height:28px; padding:2px; gap:2px; border:1px solid var(--border); border-radius:8px; background:var(--surface); flex:none; }
-.oats-view .ws-segmented button { min-height:0; height:100%; padding:0 10px; border:0; border-radius:6px; background:transparent; color:var(--muted); font:500 12px var(--sans,system-ui); cursor:pointer; }
+   transparent, --muted. Keyboard focus adds the tint under the global 1px accent edge.
+   Geometry (human, 2026-09-29, "looks cropped"): 24px segments inside 3px padding make a 30px frame
+   (32px with its 1px border), text centred at line-height 1, and flex:none so no bar squeezes it. */
+.ws-segmented { display:inline-flex; align-items:center; box-sizing:content-box; height:24px; padding:3px; gap:2px; border:1px solid var(--border); border-radius:8px; background:var(--surface); flex:none; }
+.oats-view .ws-segmented button { display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; min-height:0; height:24px; padding:0 10px; border:0; border-radius:6px; background:transparent; color:var(--muted); font:500 12px/1 var(--sans,system-ui); white-space:nowrap; cursor:pointer; }
 .oats-view .ws-segmented button:hover { color:var(--fg); }
 .oats-view .ws-segmented button[aria-pressed=true] { background:var(--sel); color:var(--accent); font-weight:650; }
 .oats-view .ws-segmented button:focus-visible { background:var(--sel); }

@@ -82,7 +82,7 @@ test("visual shell geometry: 264px sidebar, aligned 48px bars, 24px brand and 16
   assert.equal(u.style("#ws-context").fontSize, "10.5px");
 });
 
-test("nav/footer rhythm stays separate from the 50px roster rows", t => {
+test("nav/footer rhythm stays separate from the 48px roster rows", t => {
   const u = fixture(t);
   assert.equal(u.style("#nav").padding, "8px 8px 14px", "room before the Instances separator (human, 2026-09-28)");
   assert.equal(u.style("#nav").gap, "1px");
@@ -95,8 +95,8 @@ test("nav/footer rhythm stays separate from the 50px roster rows", t => {
   assert.equal(u.doc.querySelectorAll("#sidebar-tools .nav-item").length, 4);
   assert.equal(u.style("#sidebar-tools .nav-item").height, "26px");
   assert.equal(u.style("#sidebar-tools .nav-item").flexGrow, "1");
-  assert.equal(u.style(".ctx-tree-row").minHeight, "50px");
-  assert.equal(u.style(".ctx-inst").minHeight, "50px");
+  assert.equal(u.style(".ctx-tree-row").minHeight, "48px");
+  assert.equal(u.style(".ctx-inst").minHeight, "44px");
   assert.equal(u.style(".ctx-inst").height, "auto");
   assert.equal(u.style(".ctx-copy").gap, "3px");
   assert.equal(u.style(".ctx-list").overflowY, "auto");
