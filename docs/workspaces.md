@@ -226,6 +226,11 @@ A repository may be a **member** (it completed the handshake; its `souls/*` and
   version }` on the member row (informational) and does **not** list the
   package's capabilities as member capabilities.
 
+A publisher that also keeps copies of its package's capabilities (a mirror, a
+fixture) keeps them outside `capabilities/`, or discovery lists them as member
+capabilities too: the same capability offered twice, once at latest state. The
+`oats` repository keeps its mirrors of the official packages in `mirrors/`.
+
 So the framework's own souls say `oats.okf: { from: package }` even though
 `oats-okf` is a member of the OATS workspace, and every package repo carries a
 member soul that is the expert in that capability (`oats-okf-expert`,

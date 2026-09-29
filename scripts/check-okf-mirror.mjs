@@ -8,9 +8,9 @@
 // node scripts/check-okf-mirror.mjs --generate --source <standalone-repo> [--repo-root <framework>]
 // node scripts/check-okf-mirror.mjs --verify-source --source <standalone-repo> [--repo-root <framework>]
 // node scripts/check-okf-mirror.mjs --finalize --source <standalone-repo> --final-tag v2.0.0 --final-commit <full-oid>
-// --generate/--finalize replace ONLY the capabilities/oats-okf* directories the
-// package exports and the inventory. The package's souls/ and triggers/ files are
-// recorded in the inventory as exact text (like the wrappers), never mirrored
+// --generate/--finalize replace ONLY the mirrors/oats-okf* directories (the
+// capabilities the package exports) and the inventory. The package's souls/ and
+// triggers/ files are recorded in the inventory as exact text (like the wrappers), never mirrored
 // into this repository: the kernel reads a package's souls and triggers from Git
 // at its locked commit, and a souls/ copy here would be discovered as this
 // repository's own member souls.
@@ -27,6 +27,15 @@ export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // harvester and maintainer capabilities its package souls take.
 export const CAPABILITY_PATHS = ["capabilities/oats-okf", "capabilities/oats-okf-harvest", "capabilities/oats-okf-maintenance"];
 export const CAPABILITY_PATH = CAPABILITY_PATHS[0];
+// Where this repository keeps the mirror: mirrors/<dir>, never capabilities/<dir>.
+// Member discovery reads every capabilities/*/oats.json of a member at its latest
+// state, so a mirror there would be offered a second time, as a member
+// capability of this repository beside its package. Inventory entries keep the
+// package-relative paths above (what the release tag attests); MIRROR_PATHS
+// says where each exported capability sits here.
+export const MIRROR_ROOT = "mirrors";
+export const mirrorPath = (cap) => `${MIRROR_ROOT}/${posix.basename(cap)}`;
+export const MIRROR_PATHS = CAPABILITY_PATHS.map(mirrorPath);
 const CAPABILITY_IDS = { "capabilities/oats-okf": "oats.okf", "capabilities/oats-okf-harvest": "oats.okf-harvest", "capabilities/oats-okf-maintenance": "oats.okf-maintenance" };
 export const DISTRIBUTION_PATH = "oats-package";
 export const INVENTORY_PATH = "scripts/okf-source-inventory.json";
@@ -112,10 +121,16 @@ export function payloadEntries(capabilityRoot) {
   walk(root);
   return entries.sort((a, b) => compare(a.path, b.path));
 }
-/** The mirrored capability payload, relative to a distribution root (the
- * standalone oats-package/, a materialized copy, or this repository). */
-export function distributionEntries(root) {
-  return CAPABILITY_PATHS.flatMap((cap) => [{ path: cap, type: "directory" }, ...payloadEntries(join(root, cap)).map((entry) => ({ ...entry, path: `${cap}/${entry.path}` }))])
+/** The directory holding exported capability `cap` under `root`: a distribution
+ * root (the standalone oats-package/, a materialized copy) holds it at `cap`;
+ * this repository (`mirror`) holds it at mirrorPath(cap). */
+function capabilityDir(root, cap, { mirror = false } = {}) {
+  return join(root, mirror ? mirrorPath(cap) : cap);
+}
+/** The mirrored capability payload, with package-relative paths, read from a
+ * distribution root or (`mirror`) from this repository's mirrors/. */
+export function distributionEntries(root, { mirror = false } = {}) {
+  return CAPABILITY_PATHS.flatMap((cap) => [{ path: cap, type: "directory" }, ...payloadEntries(capabilityDir(root, cap, { mirror })).map((entry) => ({ ...entry, path: `${cap}/${entry.path}` }))])
     .sort((a, b) => compare(a.path, b.path));
 }
 /** One exported capability's inventory entries, relative to that capability
@@ -159,6 +174,7 @@ function validateInventory(inventory) {
   assert.equal(inventory.schemaVersion, 2, "unsupported OKF inventory schema");
   assert.equal(inventory.distributionPath, DISTRIBUTION_PATH);
   assert.deepEqual(inventory.capabilityPaths, CAPABILITY_PATHS);
+  assert.deepEqual(inventory.mirrorPaths, MIRROR_PATHS, "the inventory must record where this repository mirrors each exported capability");
   assert.equal(typeof inventory.source.repository, "string");
   assert.ok(inventory.source.repository.length > 0, "missing source repository");
   assert.match(inventory.source.head, OBJECT_ID);
@@ -211,10 +227,11 @@ function validateInventory(inventory) {
   return inventory;
 }
 
-/** root holds the exported capability directories (a distribution root, or this repository). */
-export function checkOkfPayload(root, inventory) {
+/** root holds the exported capability directories: a distribution root, or
+ * (`mirror`) this repository, whose copies live under mirrors/. */
+export function checkOkfPayload(root, inventory, { mirror = false } = {}) {
   validateInventory(inventory);
-  const actual = distributionEntries(root);
+  const actual = distributionEntries(root, { mirror });
   const expectedPaths = inventory.entries.map((entry) => entry.path);
   const actualPaths = actual.map((entry) => entry.path);
   assert.deepEqual(actualPaths, expectedPaths, "OKF payload file-set drift (missing/extra/obsolete entry)");
@@ -222,7 +239,7 @@ export function checkOkfPayload(root, inventory) {
     assert.deepEqual(actual[i], inventory.entries[i], `OKF payload drift: ${actual[i].path} (type/mode/bytes/target)`);
   }
   for (const cap of CAPABILITY_PATHS) {
-    const capability = JSON.parse(readFileSync(join(root, cap, "oats.json"), "utf8"));
+    const capability = JSON.parse(readFileSync(join(capabilityDir(root, cap, { mirror }), "oats.json"), "utf8"));
     assert.equal(capability.capability, CAPABILITY_IDS[cap], `wrong capability identity in ${cap}`);
     assert.equal(capability.version, inventory.version, `capability version drift in ${cap}`);
   }
@@ -230,11 +247,11 @@ export function checkOkfPayload(root, inventory) {
 }
 
 export function checkOkfMirror({ repoRoot = REPO_ROOT } = {}) {
-  plainDirectory(join(repoRoot, "capabilities"));
+  plainDirectory(join(repoRoot, MIRROR_ROOT));
   const path = join(repoRoot, INVENTORY_PATH);
   plainFile(path);
   const inventory = JSON.parse(readFileSync(path, "utf8"));
-  return checkOkfPayload(repoRoot, inventory);
+  return checkOkfPayload(repoRoot, inventory, { mirror: true });
 }
 
 /** destination is the distribution root (e.g. <fixture-git-repo>/oats-package).
@@ -243,7 +260,7 @@ export function checkOkfMirror({ repoRoot = REPO_ROOT } = {}) {
  */
 export function materializeOkfGitPayload(destination, { repoRoot = REPO_ROOT } = {}) {
   const inventory = checkOkfMirror({ repoRoot });
-  const mirrors = CAPABILITY_PATHS.map((cap) => realpathSync(join(repoRoot, cap)));
+  const mirrors = CAPABILITY_PATHS.map((cap) => realpathSync(capabilityDir(repoRoot, cap, { mirror: true })));
   // Resolve an absent destination through its nearest existing ancestor before
   // making directories, so an alias cannot accidentally write into the mirror.
   let ancestor = resolve(destination);
@@ -258,7 +275,7 @@ export function materializeOkfGitPayload(destination, { repoRoot = REPO_ROOT } =
   mkdirSync(destination, { recursive: true });
   plainDirectory(destination);
   assert.deepEqual(readdirSync(destination), [], "OKF payload destination must be empty");
-  for (const cap of CAPABILITY_PATHS) cpSync(join(repoRoot, cap), join(destination, cap), { recursive: true, verbatimSymlinks: true });
+  for (const cap of CAPABILITY_PATHS) cpSync(capabilityDir(repoRoot, cap, { mirror: true }), join(destination, cap), { recursive: true, verbatimSymlinks: true });
   for (const file of inventory.distributionFiles) {
     mkdirSync(dirname(join(destination, file.path)), { recursive: true });
     writeFileSync(join(destination, file.path), file.text, { flag: "wx" });
@@ -316,6 +333,7 @@ export function generateOkfSourceInventory(standaloneRoot) {
     generatedBy: "scripts/check-okf-mirror.mjs --generate --source <standalone-repository>",
     distributionPath: DISTRIBUTION_PATH,
     capabilityPaths: CAPABILITY_PATHS,
+    mirrorPaths: MIRROR_PATHS,
     version: manifest.version,
     source: before,
     release: { status: "pending", finalMergedCommit: null, plannedTag: `v${manifest.version}`, finalTag: null, published: false },
@@ -466,9 +484,9 @@ function syncInventory(standaloneRoot, repoRoot, makeInventory) {
   const inventory = makeInventory();
   const repo = realpathSync(repoRoot);
   const source = realpathSync(standaloneRoot);
-  const destinations = CAPABILITY_PATHS.map((cap) => join(repo, cap));
+  const destinations = CAPABILITY_PATHS.map((cap) => capabilityDir(repo, cap, { mirror: true }));
   for (const destination of destinations) assert.ok(!contained(destination, source) && !contained(source, destination), "source and mirror must not overlap");
-  plainDirectory(join(repo, "capabilities"));
+  plainDirectory(join(repo, MIRROR_ROOT));
   plainDirectory(join(repo, "scripts"));
   const output = join(repo, INVENTORY_PATH);
   // Reject links (including dangling links) before replacing anything.
@@ -477,7 +495,7 @@ function syncInventory(standaloneRoot, repoRoot, makeInventory) {
     try { stat = lstatSync(path); } catch (error) { if (error.code !== "ENOENT") throw error; }
     if (stat) assert.ok(type === "directory" ? stat.isDirectory() : stat.isFile(), `unsafe mirror destination: ${path}`);
   }
-  const staging = mkdtempSync(join(repo, "capabilities/.okf-mirror-"));
+  const staging = mkdtempSync(join(repo, `${MIRROR_ROOT}/.okf-mirror-`));
   try {
     const staged = join(staging, "payload");
     for (const cap of CAPABILITY_PATHS) cpSync(join(source, DISTRIBUTION_PATH, cap), join(staged, cap), { recursive: true, verbatimSymlinks: true });

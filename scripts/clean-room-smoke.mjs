@@ -18,7 +18,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 // The optional Git payloads are copied once into isolated fixture repositories;
 // all post-sync reads use installed/materialized bytes after their deletion.
 import { CAPABILITY_PATH, EXPERT_PATH, SKILL_PATH, checkKnowledgeTheoryPackage, checkReferenceClosure, treeFiles } from "./check-knowledge-theory-package.mjs";
-import { checkJavaScript, checkKernelPackFiles, checkNpmOkfPayload } from "./check-package-dry-runs.mjs";
+import { checkJavaScript, checkKernelPackFiles } from "./check-package-dry-runs.mjs";
 import { CAPABILITY_PATHS, capabilityEntries, checkOkfMirror, checkOkfPayload, materializeOkfGitPayload, payloadEntries } from "./check-okf-mirror.mjs";
 
 const started = Date.now();
@@ -105,9 +105,12 @@ try {
   write(join(app, "package.json"), JSON.stringify({ name: "oats-clean-room", private: true, type: "module" }, null, 2));
   run("npm", ["install", "--ignore-scripts", "--legacy-peer-deps", "--no-audit", "--no-fund", kernelTgz, adapterTgz], { cwd: app });
 
-  for (const path of [join(kernelRoot, "lib", "core.mjs"), join(kernelRoot, "capabilities", "oats-okf", "oats.json"), join(adapterRoot, "extension", "index.ts"), oats]) {
+  for (const path of [join(kernelRoot, "lib", "core.mjs"), join(adapterRoot, "extension", "index.ts"), oats]) {
     if (!existsSync(path)) throw new Error(`packed install missing ${path}`);
   }
+  // Capabilities resolve from Git at the locked commit: the kernel package
+  // carries neither the repository's own capabilities nor the package mirrors.
+  for (const dir of ["capabilities", "mirrors"]) assert.ok(!existsSync(join(kernelRoot, dir)), `npm kernel must not ship ${dir}/`);
   if (kernelRoot.startsWith(repo) || adapterRoot.startsWith(repo)) throw new Error("smoke install did not leave the checkout");
   const installedJsChecked = checkJavaScript(kernelRoot);
   run(process.execPath, ["--check", join(adapterRoot, "extension/core-loader.mjs")]);
@@ -116,12 +119,10 @@ try {
   // After npm dependency installation, enforce offline Git acquisition.
   env.GIT_ALLOW_PROTOCOL = process.env.GIT_ALLOW_PROTOCOL = "file";
   assert.ok(!existsSync(join(kernelRoot, "oats-package")), "npm kernel must not ship a partial Git-only optional package");
-  // npm intentionally omits source symlinks. Its regular bytes must match the
-  // checked-in standalone inventory, but it is NOT a self-contained OKF Git
-  // distribution. Materialize the actual verified source payload instead;
-  // never wrap an npm copy, invent wrapper bytes or synthesize CLAUDE.md.
+  // The "official" oats.okf is the checkout's verified mirror (mirrors/),
+  // materialized as the exact standalone Git payload: never invent wrapper
+  // bytes or synthesize CLAUDE.md.
   const inventory = checkOkfMirror({ repoRoot: repo });
-  const npmOkf = checkNpmOkfPayload(kernelRoot, inventory);
   const officialRepo = join(room, "official", "oats-okf");
   const payload = join(officialRepo, "oats-package");
   materializeOkfGitPayload(payload, { repoRoot: repo });
@@ -130,23 +131,22 @@ try {
   assert.equal(readFileSync(join(payload, "LICENSE"), "utf8"), inventory.distributionLicenseText);
   const packedCatalog = readJson(join(kernelRoot, "package-catalog.json"));
   const pinnedRef = packedCatalog.packages?.["oats.okf"]?.ref;
-  const bundledVersion = readJson(join(kernelRoot, "capabilities/oats-okf/oats.json")).version;
-  assert.equal(pinnedRef, `v${bundledVersion}`, "npm mirror and official catalog version drift");
-  assert.equal(bundledVersion, "4.0.5");
-  // The PACKED tarball's catalog carries this release's provider pins, each equal to its bundled mirror.
+  const mirroredVersion = readJson(join(payload, "capabilities/oats-okf/oats.json")).version;
+  assert.equal(pinnedRef, `v${mirroredVersion}`, "okf mirror and packed official catalog version drift");
+  assert.equal(mirroredVersion, "4.0.5");
+  // The PACKED tarball's catalog carries this release's provider pins, each equal to the checkout's mirror of it.
   for (const [id, slug, version] of [["oats.aweb", "oats-aweb", "1.17.1"], ["oats.engineering", "oats-developer", "1.3.0"]]) {
-    const bundled = readJson(join(kernelRoot, "capabilities", slug, "oats.json")).version;
-    assert.equal(bundled, version, `${id}: the packed mirror is ${bundled}`);
+    const mirrored = readJson(join(repo, "mirrors", slug, "oats.json")).version;
+    assert.equal(mirrored, version, `${id}: the mirror is ${mirrored}`);
     assert.equal(packedCatalog.packages?.[id]?.ref, `v${version}`, `${id}: the packed catalog pins ${packedCatalog.packages?.[id]?.ref}`);
   }
   const okfCommit = gitRepo(officialRepo, "okf");
-  const okfTag = `v${bundledVersion}`;
+  const okfTag = `v${mirroredVersion}`;
   run("git", ["-C", officialRepo, "tag", okfTag]);
   // okf 4.0.0 has no capability agents (the harvester is the package soul oats.okf/knowledge-harvester)
-  // and ships no symlinks: none in the release commit, none in the packed trees.
+  // and ships no symlinks: none in the release commit's capability trees.
   assert.equal(run("git", ["-C", officialRepo, "ls-tree", okfCommit, "--", "oats-package/capabilities/oats-okf/agents"], { capture: true }).trim(), "", "okf 4.0.0 ships no capability agents");
-  for (const cap of CAPABILITY_PATHS) assert.deepEqual(payloadEntries(join(kernelRoot, cap)).filter((e) => e.type === "symlink"), [], `the packed ${cap} tree has no symlinks`);
-  assert.deepEqual(npmOkf.omittedSourceSymlinks, []);
+  for (const cap of CAPABILITY_PATHS) assert.deepEqual(payloadEntries(join(payload, cap)).filter((e) => e.type === "symlink"), [], `the okf ${cap} tree has no symlinks`);
 
   // Optional theory uses a DIFFERENT release channel: the exact self-contained
   // Git payload (oats.framework), not an npm copy with its source CLAUDE.md
@@ -275,7 +275,7 @@ try {
       assert.equal(row.source, `catalog:${id}`, id);
     }
     assert.equal(lock.packages["oats.okf"].commit, okfCommit);
-    assert.equal(lock.packages["oats.okf"].version, bundledVersion);
+    assert.equal(lock.packages["oats.okf"].version, mirroredVersion);
     assert.equal(lock.packages["oats.framework"].commit, theoryCommit);
     assert.equal(lock.packages["oats.framework"].version, distribution.version);
     assert.doesNotMatch(JSON.stringify(lock), /"lockfileVersion":\s*2/);
@@ -539,7 +539,7 @@ try {
     workspace: { host: hostCommit, lockfileVersion: 3, packages: Object.keys(locked.packages).sort(), okfIntegrity: locked.packages["oats.okf"].integrity, v1Residue: false, doctorLockError: null },
     exactSkills: skills, canonicalSoulUnchanged: true, launchLoadsSkills: true,
     stubbedInactiveStatusProbes: existsSync(statusProbes) ? readFileSync(statusProbes, "utf8").trim().split("\n").length : 0,
-    okf: { version: bundledVersion, catalogRef: pinnedRef, npm: npmOkf,
+    okf: { version: mirroredVersion, catalogRef: pinnedRef, excludedFromNpm: true,
       acquiredFromVerifiedGit: true, exactCommit: okfCommit, sourceRemoved: true,
       trackedSourceAliasPreserved: true, moduleMatchesInventory: true, requiredHooks: true, dispatchFromModules: true, largePipedInspection: true,
       sourceCustody: true, independentWorker: true, acceptedCompletion: true,

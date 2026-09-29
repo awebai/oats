@@ -7,6 +7,11 @@
     "capabilities/oats-okf-harvest",
     "capabilities/oats-okf-maintenance"
   ],
+  "mirrorPaths": [
+    "mirrors/oats-okf",
+    "mirrors/oats-okf-harvest",
+    "mirrors/oats-okf-maintenance"
+  ],
   "version": "4.0.5",
   "source": {
     "repository": "https://github.com/awebai/oats-okf.git",

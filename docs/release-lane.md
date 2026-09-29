@@ -174,9 +174,14 @@ not weaken the pre-publish build/inventory/ABI gates.
 ## Mirroring a released `oats.okf`
 
 The standalone `awebai/oats-okf` repository is authoritative. This repository
-carries a generated mirror of its capabilities under `capabilities/oats-okf*/`
+carries a generated mirror of its capabilities under `mirrors/oats-okf*/`
 and the inventory `scripts/okf-source-inventory.json`; neither is edited by
-hand. After an okf release is tagged:
+hand. The inventory records each capability at its path inside the package
+(`capabilities/oats-okf`, what the tag attests) and, in `mirrorPaths`, where
+this repository keeps it. The mirror is not under `capabilities/`: this
+repository is a workspace member, and member discovery would list it as a
+latest-state member capability beside the package. After an okf release is
+tagged:
 
 1. Check out the release in a clean clone of `awebai/oats-okf` at the tagged
    commit, with the tag present locally and `origin` pointing at the official

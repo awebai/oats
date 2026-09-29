@@ -5,12 +5,16 @@ import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readF
 import { devNull } from "node:os";
 import { dirname, join } from "node:path";
 import {
-  REPO_ROOT, CAPABILITY_PATH, CAPABILITY_PATHS, INVENTORY_PATH, checkOkfMirror, checkOkfPayload,
-  distributionEntries, finalizeOkfMirror, generateOkfSourceInventory, materializeOkfGitPayload, payloadEntries,
+  REPO_ROOT, CAPABILITY_PATH, CAPABILITY_PATHS, INVENTORY_PATH, MIRROR_PATHS, checkOkfMirror, checkOkfPayload,
+  distributionEntries, finalizeOkfMirror, generateOkfSourceInventory, materializeOkfGitPayload, mirrorPath, payloadEntries,
   syncOkfMirror, verifyOkfSource,
 } from "../scripts/check-okf-mirror.mjs";
 
 const CHECKER = join(REPO_ROOT, "scripts/check-okf-mirror.mjs");
+// Where a framework root keeps the oats.okf mirror (mirrors/oats-okf); inventory
+// entries and a distribution root keep the package-relative CAPABILITY_PATH.
+const MIRROR = mirrorPath(CAPABILITY_PATH);
+const mirrorEntries = (root) => distributionEntries(root, { mirror: true });
 // okf 4.0.0 ships no symlink; the symlink rules get a fixture alias beside a real file.
 const ALIAS = "lib/alias.mjs";
 const FILE = "lib/config.mjs";
@@ -26,7 +30,7 @@ function temp(t) {
 }
 function copyMirror(base) {
   const root = join(base, "framework");
-  for (const cap of CAPABILITY_PATHS) cpSync(join(REPO_ROOT, cap), join(root, cap), { recursive: true, verbatimSymlinks: true });
+  for (const cap of MIRROR_PATHS) cpSync(join(REPO_ROOT, cap), join(root, cap), { recursive: true, verbatimSymlinks: true });
   write(join(root, INVENTORY_PATH), readFileSync(join(REPO_ROOT, INVENTORY_PATH)));
   return root;
 }
@@ -67,7 +71,7 @@ function copyMirrorWithAlias(base) {
   symlinkSync("config.mjs", join(fixture.root, "oats-package", CAPABILITY_PATH, ALIAS));
   const root = copyMirror(base);
   syncOkfMirror(fixture.root, { repoRoot: root });
-  assert.ok(lstatSync(join(root, CAPABILITY_PATH, ALIAS)).isSymbolicLink());
+  assert.ok(lstatSync(join(root, MIRROR, ALIAS)).isSymbolicLink());
   return root;
 }
 function publishFixture(base, fixture, { annotated = true, publish = true } = {}) {
@@ -82,10 +86,10 @@ function publishFixture(base, fixture, { annotated = true, publish = true } = {}
 }
 function assertMirrorUnchanged(root, run, pattern) {
   const before = readFileSync(join(root, INVENTORY_PATH));
-  const payloadBefore = distributionEntries(root);
+  const payloadBefore = mirrorEntries(root);
   assert.throws(run, pattern);
   assert.deepEqual(readFileSync(join(root, INVENTORY_PATH)), before, "failed finalization must not stamp inventory");
-  assert.deepEqual(distributionEntries(root), payloadBefore, "failed finalization must not touch mirror");
+  assert.deepEqual(mirrorEntries(root), payloadBefore, "failed finalization must not touch mirror");
 }
 
 test("checked-in mirror is a complete standalone inventory with consistent pending or published provenance", () => {
@@ -108,6 +112,9 @@ test("checked-in mirror is a complete standalone inventory with consistent pendi
   assert.ok(!inventory.entries.some((entry) => entry.path.endsWith("/lib/harvest-branch.mjs")));
   for (const cap of CAPABILITY_PATHS) assert.ok(inventory.entries.some((entry) => entry.path === `${cap}/oats.json`), `${cap} is mirrored`);
   assert.deepEqual(JSON.parse(inventory.distributionManifestText).capabilities, CAPABILITY_PATHS);
+  // This repository keeps the mirror outside capabilities/, where member discovery would list it as its own.
+  assert.deepEqual(inventory.mirrorPaths, ["mirrors/oats-okf", "mirrors/oats-okf-harvest", "mirrors/oats-okf-maintenance"]);
+  for (const cap of CAPABILITY_PATHS) assert.ok(!existsSync(join(REPO_ROOT, cap)), `no mirror at ${cap}: it would be discovered as a member capability of this repository`);
   // 4.0.0's package souls and trigger are recorded as exact text, never mirrored into this repository's souls/.
   assert.deepEqual(inventory.distributionFiles.map((file) => file.path), ["souls/knowledge-harvester/AGENTS.md", SOUL_FILE, "souls/knowledge-maintainer/AGENTS.md", "souls/knowledge-maintainer/soul.yaml", "triggers/harvest-review.json"]);
   assert.ok(!existsSync(join(REPO_ROOT, "souls/knowledge-harvester")), "no package soul in this repository's own souls/");
@@ -139,7 +146,7 @@ for (const [label, mutate, pattern] of [
   ["regular file replaced by symlink", (cap) => { rmSync(join(cap, "injects/okf.md")); symlinkSync("../" + FILE, join(cap, "injects/okf.md")); }, /payload drift/],
   ["symlink target bytes drift despite same resolution", (cap) => { rmSync(join(cap, ALIAS)); symlinkSync("./config.mjs", join(cap, ALIAS)); }, /payload drift/],
   ["symlink target drift to another file", (cap) => { rmSync(join(cap, ALIAS)); symlinkSync("consult.mjs", join(cap, ALIAS)); }, /payload drift/],
-  ["absolute symlink escape", (cap) => { rmSync(join(cap, ALIAS)); symlinkSync(join(REPO_ROOT, CAPABILITY_PATH, FILE), join(cap, ALIAS)); }, /unsafe symlink/],
+  ["absolute symlink escape", (cap) => { rmSync(join(cap, ALIAS)); symlinkSync(join(REPO_ROOT, MIRROR, FILE), join(cap, ALIAS)); }, /unsafe symlink/],
   ["relative symlink escape", (cap) => { rmSync(join(cap, ALIAS)); symlinkSync("../../../../package.json", join(cap, ALIAS)); }, /symlink escapes/],
   ["dangling symlink", (cap) => { rmSync(join(cap, ALIAS)); symlinkSync("MISSING.md", join(cap, ALIAS)); }, /ENOENT/],
   ["missing file in another exported capability", (cap) => rmSync(join(cap, "../oats-okf-harvest/oats.json")), /ENOENT|file-set drift/],
@@ -147,7 +154,7 @@ for (const [label, mutate, pattern] of [
 ]) {
   test(`mirror rejects ${label}`, (t) => {
     const root = copyMirrorWithAlias(temp(t));
-    mutate(join(root, CAPABILITY_PATH));
+    mutate(join(root, MIRROR));
     assert.throws(() => checkOkfMirror({ repoRoot: root }), pattern);
   });
 }
@@ -166,14 +173,14 @@ test("Git payload materialization preserves exact wrappers and symlinks; never r
   assert.deepEqual(distributionEntries(destination), inventory.entries);
   assert.deepEqual(checkOkfPayload(destination, inventory), inventory);
   assert.throws(() => materializeOkfGitPayload(destination, { repoRoot: root }), /must be empty/);
-  const overlapping = join(root, CAPABILITY_PATH, "do-not-create");
+  const overlapping = join(root, MIRROR, "do-not-create");
   assert.throws(() => materializeOkfGitPayload(overlapping, { repoRoot: root }), /must not overlap/);
   assert.ok(!existsSync(overlapping));
-  rmSync(join(root, CAPABILITY_PATH, ALIAS));
+  rmSync(join(root, MIRROR, ALIAS));
   const absent = join(base, "must-not-be-created");
   assert.throws(() => materializeOkfGitPayload(absent, { repoRoot: root }), /file-set drift/);
   assert.ok(!existsSync(absent), "verify source before creating destination");
-  assert.ok(!existsSync(join(root, CAPABILITY_PATH, ALIAS)), "no alias repair");
+  assert.ok(!existsSync(join(root, MIRROR, ALIAS)), "no alias repair");
 });
 
 test("generation captures dirty/untracked exported bytes deterministically, prunes obsolete files and ignores unexported copies", (t) => {
@@ -197,10 +204,10 @@ test("generation captures dirty/untracked exported bytes deterministically, prun
   assert.equal(inventory.distributionManifestText, readFileSync(manifestFile, "utf8"));
   const sourceBefore = payloadEntries(sourceCap);
   const root = copyMirror(base);
-  write(join(root, CAPABILITY_PATH, "obsolete.txt"), "must disappear\n");
+  write(join(root, MIRROR, "obsolete.txt"), "must disappear\n");
   syncOkfMirror(fixture.root, { repoRoot: root });
   assert.deepEqual(checkOkfMirror({ repoRoot: root }), inventory);
-  assert.ok(!existsSync(join(root, CAPABILITY_PATH, "obsolete.txt")));
+  assert.ok(!existsSync(join(root, MIRROR, "obsolete.txt")));
   assert.deepEqual(verifyOkfSource(fixture.root, { repoRoot: root }), inventory);
   const inventoryBytes = readFileSync(join(root, INVENTORY_PATH));
   command(process.execPath, [CHECKER, "--generate", "--source", fixture.root, "--repo-root", root], base, fixture.env);
@@ -224,12 +231,12 @@ test("generation requires explicit source and safely restricts distribution enum
   const file = join(source, "oats-package/oats-package.json");
   const original = JSON.parse(readFileSync(file, "utf8"));
   const before = readFileSync(join(root, INVENTORY_PATH));
-  const mirrorBefore = distributionEntries(root);
+  const mirrorBefore = mirrorEntries(root);
   for (const capabilities of [["../outside"], ["/absolute"], [...CAPABILITY_PATHS, "bin"], [CAPABILITY_PATH], ["capabilities/../capabilities/oats-okf"], [{ path: CAPABILITY_PATH }]]) {
     writeFileSync(file, JSON.stringify({ ...original, capabilities }));
     assert.throws(() => syncOkfMirror(source, { repoRoot: root }), /must export exactly/);
     assert.deepEqual(readFileSync(join(root, INVENTORY_PATH)), before);
-    assert.deepEqual(distributionEntries(root), mirrorBefore);
+    assert.deepEqual(mirrorEntries(root), mirrorBefore);
   }
   for (const [change, pattern] of [[{ souls: ["../outside"] }, /unsafe payload path/], [{ souls: ["agents/x"] }, /outside souls/], [{ triggers: [{ id: "x", file: "../x.json" }] }, /unsafe payload path/], [{ triggers: [{ id: "x", file: "bin/x.json" }] }, /outside triggers/]]) {
     writeFileSync(file, JSON.stringify({ ...original, ...change }));
@@ -242,10 +249,10 @@ test("generation requires explicit source and safely restricts distribution enum
   const cap = join(source, "oats-package", CAPABILITY_PATH);
   assert.ok(!existsSync(join(cap, ALIAS)), "the 4.0.0 source ships no alias");
   syncOkfMirror(source, { repoRoot: root });
-  assert.ok(!existsSync(join(cap, ALIAS)) && !existsSync(join(root, CAPABILITY_PATH, ALIAS)), "generation never synthesizes an alias");
-  assert.deepEqual(distributionEntries(root), mirrorBefore);
+  assert.ok(!existsSync(join(cap, ALIAS)) && !existsSync(join(root, MIRROR, ALIAS)), "generation never synthesizes an alias");
+  assert.deepEqual(mirrorEntries(root), mirrorBefore);
   rmSync(cap, { recursive: true });
-  symlinkSync(join(REPO_ROOT, CAPABILITY_PATH), cap);
+  symlinkSync(join(REPO_ROOT, MIRROR), cap);
   assert.throws(() => syncOkfMirror(source, { repoRoot: root }), /real directory, not symlink/);
 });
 
@@ -263,6 +270,11 @@ test("inventory wrapper-byte tampering is rejected", (t) => {
   inventory.distributionFiles.find((f) => f.path === SOUL_FILE).text += "\n";
   writeFileSync(path, JSON.stringify(inventory));
   assert.throws(() => checkOkfMirror({ repoRoot: root }), /distribution file bytes drift/, "package soul/trigger text is verified like the wrappers");
+  // The mirror location is recorded, and a mirror back under capabilities/ is refused.
+  for (const mirrorPaths of [undefined, CAPABILITY_PATHS]) {
+    writeFileSync(path, JSON.stringify({ ...JSON.parse(original), mirrorPaths }));
+    assert.throws(() => checkOkfMirror({ repoRoot: root }), /record where this repository mirrors/);
+  }
 });
 
 for (const annotated of [true, false]) {
@@ -295,7 +307,7 @@ for (const annotated of [true, false]) {
     assert.equal(inventory.source.dirty, false);
     assert.deepEqual(inventory.source.workingTreeStatus, []);
     assert.deepEqual(inventory.entries, beforeSource);
-    assert.deepEqual(distributionEntries(root), beforeSource);
+    assert.deepEqual(mirrorEntries(root), beforeSource);
     assert.deepEqual(distributionEntries(join(fixture.root, "oats-package")), beforeSource, "finalization leaves source untouched");
     assert.equal(inventory.distributionLicenseMode, "100755");
     const materialized = join(base, "finalized/oats-package");

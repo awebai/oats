@@ -1,12 +1,9 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { tmpdir } from "node:os";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CAPABILITY_PATHS, checkOkfMirror } from "./check-okf-mirror.mjs";
 import { checkKnowledgeTheoryPackage, treeFiles } from "./check-knowledge-theory-package.mjs";
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -15,7 +12,7 @@ export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // it is committed too. Capability libs and nested record/package scripts must
 // not silently fall between hand-maintained one-level globs.
 export const JS_ROOTS = [
-  "bin", "lib", "capabilities", "oats-package", "packages/record/bin",
+  "bin", "lib", "capabilities", "mirrors", "oats-package", "packages/record/bin",
   "packages/record/lib", "packages/pi/extension", "scripts",
 ];
 export function shippedJavaScript(root = ROOT) {
@@ -55,16 +52,17 @@ export function checkKernelPackFiles(pack, root = ROOT) {
   // Keep its strict source alias/closure gate; never bless npm's partial copy
   // by checking only regular files or by manufacturing a missing source alias.
   checkKnowledgeTheoryPackage({ repoRoot: root });
-  const inventory = checkOkfMirror({ repoRoot: root });
   const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
   assert.ok(!manifest.files.some((path) => /^\/?oats-package(?:\/|$)/.test(path)), "npm files must not include the Git-only oats-package payload");
+  // So are this repository's own capabilities (capabilities/) and the package
+  // mirrors (mirrors/): nothing at runtime reads a bundled capability; a
+  // capability resolves from its Git remote at the commit the lock records.
+  assert.ok(!manifest.files.some((path) => /^\/?(?:capabilities|mirrors)(?:\/|$)/.test(path)), "npm files must not include capabilities/ or mirrors/: capabilities resolve from Git, never from the kernel package");
   const canonicalFiles = ["docs/knowledge-capability-authoring.md", ...treeFiles(join(root, "docs/knowledge-reference")).map((f) => `docs/knowledge-reference/${f}`)];
   const files = requireFiles(pack, [
-    "bin/oats.mjs", "lib/core.mjs", "lib/tmux-config.mjs", "capabilities/oats-okf/oats.json",
-    "capabilities/oats-authoring/oats.json", "docs/capabilities.md", "docs/capability-manifest.schema.json",
+    "bin/oats.mjs", "lib/core.mjs", "lib/tmux-config.mjs", "docs/capabilities.md", "docs/capability-manifest.schema.json",
     "package-catalog.json", "package.json", "packages/record/bin/capture.mjs", "packages/record/bin/recall.mjs",
     ...canonicalFiles,
-    ...inventory.entries.filter((entry) => entry.type === "file").map((entry) => entry.path),
   ]);
   for (const path of files) {
     if (path === "oats-package" || path.startsWith("oats-package/")) {
@@ -74,45 +72,11 @@ export function checkKernelPackFiles(pack, root = ROOT) {
       || path.startsWith("test/") || path.startsWith("tests/") || path.split("/").some((part) => [".agents", ".git", "instances"].includes(part))) {
       throw new Error(`kernel tarball leaks non-runtime file ${path}`);
     }
+    if (/^(?:capabilities|mirrors)(?:\/|$)/.test(path)) {
+      throw new Error(`kernel tarball contains Git-only capability file ${path}`);
+    }
   }
-  const expected = inventory.entries.filter((entry) => entry.type === "file");
-  assert.deepEqual([...files].filter((path) => CAPABILITY_PATHS.some((cap) => path.startsWith(`${cap}/`))).sort(),
-    expected.map((entry) => entry.path).sort(),
-    "npm OKF regular file-set drift; source symlinks must be omitted, never synthesized");
-  const sizes = new Map(pack.files.map((entry) => [entry.path, entry.size]));
-  for (const entry of expected) assert.equal(sizes.get(entry.path), entry.size, `npm OKF size drift: ${entry.path}`);
   return files;
-}
-
-// npm deliberately drops the canonical source symlink. Compare its complete
-// regular-file projection to the verified standalone inventory, WITHOUT calling
-// that projection a self-contained distribution or manufacturing the alias.
-// `root` holds the packed capabilities/oats-okf* directories (the unpacked npm package root).
-export function checkNpmOkfPayload(root, inventory = checkOkfMirror()) {
-  const expected = inventory.entries.filter((entry) => entry.type === "file");
-  assert.deepEqual(CAPABILITY_PATHS.flatMap((cap) => treeFiles(join(root, cap)).map((file) => `${cap}/${file}`)).sort(), expected.map((entry) => entry.path).sort(), "npm OKF regular file-set drift");
-  for (const entry of expected) {
-    const path = join(root, entry.path);
-    assert.ok(lstatSync(path).isFile(), `npm OKF requires regular bytes: ${entry.path}`);
-    const bytes = readFileSync(path);
-    assert.equal(bytes.length, entry.size, `npm OKF size drift: ${entry.path}`);
-    assert.equal(createHash("sha256").update(bytes).digest("hex"), entry.sha256, `npm OKF byte drift: ${entry.path}`);
-  }
-  return { regularFiles: expected.length,
-    omittedSourceSymlinks: inventory.entries.filter((entry) => entry.type === "symlink").map((entry) => entry.path),
-    selfContainedGitPayload: false };
-}
-
-function checkPackedOkfBytes(root) {
-  const inventory = checkOkfMirror({ repoRoot: root });
-  const scratch = mkdtempSync(join(tmpdir(), "oats-pack-byte-check-"));
-  try {
-    const [pack] = JSON.parse(execFileSync("npm", ["pack", "--json", "--pack-destination", scratch], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }));
-    checkKernelPackFiles(pack, root);
-    const unpacked = join(scratch, "unpacked"); mkdirSync(unpacked);
-    execFileSync("tar", ["-xzf", join(scratch, pack.filename), "-C", unpacked, ...CAPABILITY_PATHS.map((cap) => `package/${cap}`)], { stdio: "pipe" });
-    return checkNpmOkfPayload(join(unpacked, "package"), inventory);
-  } finally { rmSync(scratch, { recursive: true, force: true }); }
 }
 
 export function checkReleaseVersions(root = ROOT) {
@@ -133,14 +97,13 @@ export function checkPackages(root = ROOT) {
   requireFiles(adapter, ["extension/index.ts", "extension/core-loader.mjs", "README.md", "package.json"]);
   assert.equal(kernel.version, version);
   assert.equal(adapter.version, version);
-  const okfNpm = checkPackedOkfBytes(root);
-  return { version, kernelFiles: kernel.entryCount, adapterFiles: adapter.entryCount, okfNpm };
+  return { version, kernelFiles: kernel.entryCount, adapterFiles: adapter.entryCount };
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     assert.ok(process.argv.slice(2).every((arg) => arg === "--syntax-only"), "usage: node scripts/check-package-dry-runs.mjs [--syntax-only]");
     if (process.argv.includes("--syntax-only")) console.log(`JavaScript syntax passed: ${checkJavaScript()} shipped/support files.`);
-    else console.log(`Package dry runs passed: ${JSON.stringify(checkPackages())}; public curriculum present; OKF regular bytes match the standalone inventory (npm omits source symlinks, not a self-contained Git payload); Git-only optional package and workspace state excluded.`);
+    else console.log(`Package dry runs passed: ${JSON.stringify(checkPackages())}; public curriculum present; Git-only optional package, capabilities, package mirrors and workspace state excluded.`);
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;

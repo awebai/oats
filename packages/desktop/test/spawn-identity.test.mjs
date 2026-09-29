@@ -22,7 +22,7 @@ const previewFor = choices => choices.identity?.mode === 'global' ? 'preview-mes
 const withoutPayload = () => ({ ...structuredClone(CLI), features: CLI.features.filter(f => f !== 'spawn-provider-payload') });
 
 test('the stand-in copies oats.aweb\'s settings.identity byte for byte, on layer messaging, with no executables', () => {
-  const real = JSON.parse(readFileSync(new URL('../../../capabilities/oats-aweb/oats.json', import.meta.url), 'utf8'));
+  const real = JSON.parse(readFileSync(new URL('../../../mirrors/oats-aweb/oats.json', import.meta.url), 'utf8'));
   const { standIn } = provenance;
   assert.equal(real.layer, 'messaging');
   assert.equal(JSON.stringify(standIn.declaration), JSON.stringify(real.settings.identity));

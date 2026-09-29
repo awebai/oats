@@ -232,7 +232,7 @@ test("the REAL bundled oats.aweb binding check decodes the kernel's check reques
   const meta = JSON.parse(readFileSync(join(home, "instance.json"), "utf8"));
   const target = await homeTarget(home, meta);
   assert.deepEqual([target.teams, target.teamsSource], [[MINE, OATS], "live"]);
-  const dir = fileURLToPath(new URL("../capabilities/oats-aweb", import.meta.url));
+  const dir = fileURLToPath(new URL("../mirrors/oats-aweb", import.meta.url));
   const manifest = JSON.parse(readFileSync(join(dir, "oats.json"), "utf8"));
   const catalog = JSON.parse(readFileSync(fileURLToPath(new URL("../package-catalog.json", import.meta.url)), "utf8"));
   assert.equal(`v${manifest.version}`, catalog.packages["oats.aweb"].ref, "the bundled provider is the catalog's pinned release");
