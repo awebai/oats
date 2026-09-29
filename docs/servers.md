@@ -33,6 +33,41 @@ oats server remove build
 - Registrations live in `~/.oats/servers.json` on this machine, never in a
   repository.
 
+## Connections
+
+Every routed ssh call carries these options, before `--` and the host:
+
+| Option | Why |
+|---|---|
+| `BatchMode=yes`, `ConnectTimeout=15` | a prompt or an unreachable host fails fast |
+| `ServerAliveInterval=15`, `ServerAliveCountMax=3` | a link that died without a reset ends the call, an attached viewer included, within about 60 s |
+| `ControlMaster=auto`, `ControlPath=~/.oats/ssh/%C`, `ControlPersist=60` | every call to one host (the probe, the command, a viewer, concurrent Desktop reads) shares one authenticated connection, kept 60 s after its last client |
+
+- Options given with `-o` override `~/.ssh/config`, so these replace any
+  `ControlMaster`, `ControlPath` or `ControlPersist` set there for the host.
+  Everything else in your ssh config (users, keys, `ProxyJump`, host
+  verification) applies as usual; a `ProxyJump` host is reached once per
+  master.
+- `~/.oats/ssh` (under `OATS_HOME_DIR` when set) is created mode 0700. OATS
+  does not use it if it is owned by another user or writable by group or
+  others.
+- ssh binds the control socket at the path plus 17 bytes, within the 104-byte
+  socket path limit of macOS, so the directory path may be at most 45 bytes.
+  `/Users/<name>/.oats/ssh` fits for any name up to 23 characters. The path
+  must also be one ssh reads literally: letters, digits and `. _ / + , : @ =
+  -` only (a space, `%`, `$`, a quote or `#` is ssh syntax).
+- When the path does not fit, has other characters, or the directory is not
+  private, calls run with `ControlPath=none` instead: no connection sharing,
+  including any your ssh config sets up; keepalives still apply. The command
+  warns once per server on stderr, naming the path and the fix (an
+  `OATS_HOME_DIR` or `HOME` that is shorter or plain).
+- A master left stale by a network drop is replaced by ssh on the next call.
+- The version probe (`oats version --json`) is asked once per process per
+  server and target. `server add --replace` to another target forgets it.
+- When ssh fails under an attached viewer (a lost link, or one never made),
+  `session attach --server` exits 255 and says that, if the link was lost,
+  the instance keeps running on the server, with the command to reattach.
+
 ## Run there
 
 ```bash
@@ -91,8 +126,13 @@ The **roster** is what the Desktop shows: one group per server id and route
 target (host and workspace), with the registration (present or not), the
 probe result, the remote souls, the instances joined with saved routes
 (`savedRoute`, `running` or `null` when unknown, `retirePending`,
-`rollbackIncomplete`, `missingRemotely`), and `retireFailures` (deferred
-self-retirements that failed there). A removed or edited registration keeps
+`rollbackIncomplete`, `missingRemotely`), and `retireFailures`
+(deferred self-retirements that failed there). Each instance row also relays
+the host's own facts from its `status --json`: `identity`,
+`identityAddress`, `teams`, `startedAt`, `createdAt`, `model`,
+`runtimeState`, `parentInstance`, `siblingInstance`, `relation`,
+`relativeTo` and `spawnOrigin`. A fact the host does not supply is `null`
+(an older host, or a saved route the host no longer lists). A removed or edited registration keeps
 its group from the saved routes. State is pulled on every call within
 `--per-target` (default 20 s) of a total `--budget` (default 45 s); a group
 not reached is reported with `E_ROSTER_BUDGET`. `--server <id>` narrows it.

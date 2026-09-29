@@ -2970,7 +2970,7 @@ function serverCmd() {
   let server; try { server = getServer(id); } catch (e) { bail(e.code, e.message); }
   const target = targetOf(server);
   try {
-    const remote = checkRemote(target);
+    const remote = checkRemote(target, { serverId: id });
     const status = routeCommand(id, "status", [], { server });
     const agents = status.envelope.ok ? (status.envelope.result.agents || []).length : undefined;
     if (JSON_MODE) { jsonOk({ id, target, remote, workspaceReachable: !!status.envelope.ok, agents, error: status.envelope.ok ? undefined : status.envelope.error }); return; }
@@ -3111,6 +3111,10 @@ async function serverRouteCmd() {
     catch (e) { bail(e.code || "E_BAD_ARGS", e.message); }
     if (args.includes("--print")) { console.log(route.argv.map(shellQuote).join(" ")); return; }
     const r = spawnSyncProc(route.argv[0], route.argv.slice(1), { stdio: "inherit" });
+    // ssh exits 255 for its own failures: a link that died under the viewer
+    // (keepalives unanswered, the master or the host's sshd gone), or one
+    // never made. Say what is known rather than ending silently.
+    if (r.status === 255) console.error(`\noats: ssh to ${route.target.sshHost} ended with an error (exit 255); if the link was lost, the instance keeps running on ${id}. Reattach with: oats session attach --server ${id} --home ${shellQuote(route.home)}`);
     process.exit(r.status ?? 1);
   }
   // A spawn's argv is checked here, before the server is contacted.
