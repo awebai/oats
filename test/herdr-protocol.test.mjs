@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   HERDR_PROTOCOL, HERDR_SUPPORTED_PROTOCOLS, isSupportedHerdrProtocol,
-  herdrSnapshot, allocateHerdr, inspectHerdr, launchHerdr, stopHerdr, inputHerdr, validHerdrTarget,
+  herdrSnapshot, allocateHerdr, inspectHerdr, launchHerdr, stopHerdr, inputHerdr, validHerdrTarget, ensureHerdr,
 } from "../lib/herdr.mjs";
 
 const endpoint = protocol => ({ backend: "herdr", binary: "/inert/herdr", socket: "/owned/herdr.sock", protocol });
@@ -108,4 +108,54 @@ test("protocol22 retains strict workspace/pane/terminal and replacement protecti
   stopHerdr(target(22), replaced);
   assert.throws(() => inputHerdr(target(22), "never", replaced), /stopped or was replaced/);
   assert.throws(() => launchHerdr(target(22), "never", replaced), /disappeared/);
+});
+
+test("a new session records the supported protocol its server reports (Herdr 0.8 → 20, 0.9 → 22)", () => {
+  for (const protocol of [20, 22]) {
+    const io = reader(snapshot(protocol, []));
+    const selected = ensureHerdr({ binary: "/inert/herdr", socket: "/owned/herdr.sock", io });
+    assert.deepEqual(selected, { backend: "herdr", binary: "/inert/herdr", socket: "/owned/herdr.sock", protocol });
+    assert.equal(validHerdrTarget({ ...selected, workspaceId: "w", paneId: "p", terminalId: "t" }), true);
+    assert.deepEqual(io.calls, [["api", "snapshot"], ["api", "snapshot"]], "only reads: the protocol, then the check against it");
+  }
+});
+
+test("a new session on a server speaking an unsupported protocol is a named refusal, never a retag", () => {
+  for (const protocol of [21, 23, "22", null, undefined]) {
+    const io = reader(snapshot(protocol, []));
+    assert.throws(() => ensureHerdr({ binary: "/inert/herdr", socket: "/owned/herdr.sock", io }),
+      new RegExp(`Herdr server speaks protocol ${protocol ?? "unknown"}; OATS supports 20 and 22`));
+    assert.deepEqual(io.calls, [["api", "snapshot"]], "an operator-managed socket is refused without starting a server");
+  }
+});
+
+test("a server whose protocol changes between the two reads of a new session is refused", () => {
+  let n = 0;
+  const io = { exec() { n++; return JSON.stringify({ result: { snapshot: snapshot(n === 1 ? 22 : 20, []) } }); } };
+  assert.throws(() => ensureHerdr({ binary: "/inert/herdr", socket: "/owned/herdr.sock", io }), /match selected protocol 22/);
+});
+
+test("the server-start path records the started server's protocol, and an unsupported one fails at once", async () => {
+  const { mkdtempSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const xdg = mkdtempSync(join(tmpdir(), "oats-herdr-start-"));
+  const saved = process.env.XDG_CONFIG_HOME;
+  process.env.XDG_CONFIG_HOME = xdg;
+  try {
+    // No socket file yet: ensureHerdr starts `<binary> --session <s> server` (an inert path here; the
+    // spawn error is ignored) and polls; the injected reader stands for the server that came up.
+    let calls = 0;
+    const up = { exec() { calls++; if (calls < 3) throw new Error("connect ENOENT"); return JSON.stringify({ result: { snapshot: snapshot(22, []) } }); } };
+    const selected = ensureHerdr({ binary: "/inert/herdr", session: "t1", io: up });
+    assert.equal(selected.protocol, 22);
+    assert.equal(selected.socket, join(xdg, "herdr", "sessions", "t1", "herdr.sock"));
+    let asked = 0;
+    const wrong = { exec() { asked++; return JSON.stringify({ result: { snapshot: snapshot(23, []) } }); } };
+    assert.throws(() => ensureHerdr({ binary: "/inert/herdr", session: "t2", io: wrong }), /speaks protocol 23; OATS supports 20 and 22/);
+    assert.equal(asked, 2, "the probe before the start, then one answer from the started server: no 3 s poll");
+  } finally {
+    if (saved === undefined) delete process.env.XDG_CONFIG_HOME; else process.env.XDG_CONFIG_HOME = saved;
+    rmSync(xdg, { recursive: true, force: true });
+  }
 });

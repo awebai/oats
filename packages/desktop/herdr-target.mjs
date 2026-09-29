@@ -1,10 +1,13 @@
 // Desktop's read/attach-only Herdr adapter. Lifecycle belongs to installed oats.
 import { isAbsolute } from "node:path";
 import { execFileSync } from "node:child_process";
+// The Herdr protocols a recorded target may carry (the kernel's lib/herdr.mjs set): 20 for Herdr 0.8,
+// 22 for 0.9. Each read checks the server against the target's OWN protocol, never a fixed one.
+const HERDR_PROTOCOLS = [20, 22];
 // Herdr public numbers use uppercase letters after 9 (workspace.rs),
 // for both workspace and pane suffixes. They are not decimal integers.
 export function herdrTargetKey(target) {
-  if (target?.backend !== "herdr" || target.protocol !== 20
+  if (target?.backend !== "herdr" || !HERDR_PROTOCOLS.includes(target.protocol)
     || typeof target.socket !== "string" || !isAbsolute(target.socket)
     || typeof target.paneId !== "string" || !/^w[0-9A-Z]+:p[0-9A-Z]+$/.test(target.paneId)
     || typeof target.terminalId !== "string" || !/^term_[a-zA-Z0-9]+$/.test(target.terminalId)) {
@@ -26,7 +29,7 @@ export function readHerdrTarget(target, exec = execFileSync) {
     stdio: ["ignore", "pipe", "pipe"],
   }));
   const snapshot = response.result?.snapshot;
-  if (snapshot?.protocol !== 20 || !Array.isArray(snapshot.panes)) throw new Error("Herdr snapshot unavailable or incompatible");
+  if (snapshot?.protocol !== target.protocol || !Array.isArray(snapshot.panes)) throw new Error("Herdr snapshot unavailable or incompatible");
   const pane = snapshot.panes.find((p) => p.pane_id === target.paneId && p.terminal_id === target.terminalId);
   return { present: !!pane, status: snapshot.agents?.find((a) => a.terminal_id === target.terminalId)?.agent_status || "unknown" };
 }
