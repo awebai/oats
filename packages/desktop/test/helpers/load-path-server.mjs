@@ -9,7 +9,9 @@
 // landed", "two identical inspections were one kernel run" — is CONTROLLED,
 // never timed: there are no delays, wall-clock waits or margins here. Cycles
 // are driven the same way: the test blurs the window once (30 s cadence, out
-// of reach) and flips focus to run one prompt cycle when it wants one; the
+// of reach: a run takes seconds, and `until` gives up before the server's own
+// timer could add a cycle — a pathological run times out rather than
+// miscounting) and flips focus to run one prompt cycle when it wants one; the
 // cadence itself is proven with fake timers in test/refresh-loop.test.mjs.
 // The config is re-read on every invocation and every poll, so the probe, the
 // feature list and the gated set can change mid-run.
