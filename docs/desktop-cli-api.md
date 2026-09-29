@@ -250,8 +250,11 @@ oats status | workspace status | souls | capabilities | inspect --soul|--home
 
 The observations are kept under the remote cache
 (`$OATS_REMOTE_CACHE`, default `~/.cache/oats/remotes`), in `.observed/`,
-beside the bounded parsed-read cache in `.parsed/`; neither stores a remote
-URL. Deleting either is always safe.
+beside the bounded parsed-read cache in `.parsed/`. An observation record
+keeps a digest of the fetch URL, never the URL. A parsed entry keeps repository
+content as committed (member refs included), and a value that carries a
+credential-bearing URL (userinfo on http(s), or `user:password@` on any
+scheme) is never written. Deleting either is always safe.
 
 <a id="inspect-readiness-and-operation-run-on-the-workspace-model-operationsapi-2-soulsapi-2-readinessapi-2-oats-0260"></a>
 ## Inspect, readiness and operation run

@@ -79,8 +79,15 @@ gets the plain per-call behaviour. Within a session:
   host's last observation record and the parsed `workspace` entry at that
   commit, never from a git process, and the answer still uses the list at the
   host commit observed now. A prefetched failure is adopted by the member's own
-  observation, not retried in the command. `observeWorkspace` alone (the
-  `teams` reads, `inspect --home`) never prefetches;
+  observation, not retried in the command. A prefetch no caller adopts (the
+  host could not be observed, or the member was dropped since) is abandoned:
+  one still queued runs no git. `observeWorkspace` alone (the `teams` reads,
+  `inspect --home`) never prefetches;
+- closing the session (the end of the command, or `process.exit`) rejects
+  every queued observation and aborts every git child still running for it
+  (the session's `AbortSignal` rides every `runGit`); before a capability
+  command runs its provider, the CLI ends the idle batch readers
+  (`closeBatches`);
 - a commit's tree is listed once (`git ls-tree -r -t -l`, bounded by
   `TREE_INDEX_BUDGET`; anything odd falls back to the per-path reads), and
   blobs come from one `git cat-file --batch` reader per cache repo (at most

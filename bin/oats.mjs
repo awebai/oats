@@ -537,6 +537,7 @@ async function workspaceOperation(t, { bail, address, layer, opName }) {
   const env = { ...lp.env(mod.name, settings), OATS_OPERATION: address, OATS_CONTEXT: t.deployment, OATS_ROOT: t.agentsRoot, PI_AGENTS_ROOT: t.agentsRoot };
   if (op.context === "home") Object.assign(env, { OATS_INSTANCE: t.meta.instance, OATS_INSTANCE_HOME: t.home, OATS_HOME: t.home, PI_AGENT_INSTANCE: t.meta.instance, PI_AGENT_HOME: t.home });
   else for (const k of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "PI_AGENT_INSTANCE", "PI_AGENT_HOME"]) delete env[k];
+  await readSession?.closeBatches(); // no idle `git cat-file --batch` child held for the provider's whole run
   const r = spawnSync("node", [abs, ...rest, ...argFlags, "--json"], { cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 16 * 1024 * 1024, timeout: OPERATION_TIMEOUT_MS, killSignal: "SIGTERM" });
   finishOperation({ r, bail, address, provider, op, argFlags, cwd, home: t.home, meta: t.meta, api: INSPECT_OPERATIONS_API });
 }
@@ -2843,6 +2844,7 @@ async function capabilityCommand() {
     // OATS_SOUL is the recorded soul or nothing: an ambient value inherited from the
     // invoking process names some other soul (a coordinator's own), never this one.
     const { OATS_SOUL: _ambientSoul, ...inherited } = process.env;
+    await readSession?.closeBatches(); // no idle `git cat-file --batch` child held for the provider's whole run
     const r = spawnSync("node", [abs, ...rest, ...rawArgs.slice(2)], { stdio: "inherit", env: {
       ...inherited, OATS_CAPABILITY: m.capability,
       // Package-runtime boundary: dispatched commands receive the active

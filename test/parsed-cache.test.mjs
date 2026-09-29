@@ -302,3 +302,20 @@ test("invalidation: a package bump (the lock's commit moves) is read at the new 
   await back.close();
   assert.equal(againA.packageSouls[0].definition.description, "ps.");
 });
+
+test("a value carrying a credential-bearing URL is never written to the parsed cache; an ssh user without a password is", async () => {
+  const cacheDir = scratch();
+  const session = createReadSession({ fingerprint: "f".repeat(64) });
+  const commit = "a".repeat(40);
+  const files = () => { try { return readdirSync(join(cacheDir, ".parsed", "f".repeat(64))).filter((f) => f.endsWith(".json")); } catch { return []; } };
+  const opts = { cacheDir, session };
+  for (const secret of ["https://tok3n@github.com/o/r", "https://x:tok3n@github.com/o/r", "ssh://u:tok3n@example.com/o/r"]) {
+    const value = { members: [secret] };
+    assert.deepStrictEqual(await memoAtCommit("https://github.com/o/r", commit, `ws\0${secret}`, async () => value, opts), value, "the value is still answered");
+  }
+  assert.deepEqual(files(), [], "nothing written");
+  await memoAtCommit("https://github.com/o/r", commit, "ws-ssh", async () => ({ members: ["ssh://git@github.com/o/r"] }), opts);
+  assert.equal(files().length, 1, "a user without a password is not a secret");
+  for (const f of files()) assert.ok(!readFileSync(join(cacheDir, ".parsed", "f".repeat(64), f), "utf8").includes("tok3n"));
+  await session.close();
+});

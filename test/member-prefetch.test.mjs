@@ -229,3 +229,34 @@ test("no prefetch: observeWorkspace alone, a missing or corrupt host record, a m
     assert.equal(t.calls.length, 3, `${name}: each head once`);
   }
 });
+
+test("the host cannot be observed: the queued prefetches are given up, and no member ls-remote starts after the rejection", async () => {
+  const names = Array.from({ length: 24 }, (_, i) => `h${i}`);
+  const ws = workspace(names);
+  await warm(ws);
+  const t = tracing({ delay: (u) => (u === hostPath(ws) ? 0 : 100), failUrl: hostPath(ws) });
+  const session = createReadSession();
+  let rejectedAt = null;
+  await assert.rejects(discover(ws, { exec: t.exec, session }).finally(() => { rejectedAt = performance.now(); }), (e) => e.code === "E_REMOTE_UNREADABLE");
+  const startedBefore = t.calls.length;
+  // The host's failure frees its slot for one queued member before the rejection reaches discoverWorkspace.
+  assert.ok(startedBefore <= OBSERVE_LIMIT + 1, `at most one round had started (${startedBefore})`);
+  await new Promise((r) => setTimeout(r, 400)); // long enough for the queue to drain, if anything still ran it
+  assert.equal(t.calls.filter((c) => c.start > rejectedAt).length, 0, "no ls-remote started after the rejection");
+  assert.equal(t.calls.length, startedBefore);
+  await session.close();
+});
+
+test("close() gives up whatever is still queued and aborts the git still running for the session", async () => {
+  const ws = workspace(["a"]);
+  const signals = [];
+  const exec = (args, opts) => { signals.push(opts?.signal); return new Promise((_, reject) => opts?.signal?.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })))); };
+  const session = createReadSession();
+  const pending = discover(ws, { exec, session }); // the host's ls-remote never answers until aborted
+  await new Promise((r) => setTimeout(r, 20));
+  assert.ok(signals.length >= 1 && signals.every((s) => s instanceof AbortSignal), "every session git call carries the session's signal");
+  await session.close();
+  assert.ok(signals.every((s) => s.aborted), "close() aborted it");
+  await assert.rejects(pending, (e) => e.code === "E_REMOTE_UNREADABLE");
+  await assert.rejects(session.observeSlot(), (e) => e.details?.abandoned === true, "a closed session runs nothing more");
+});
