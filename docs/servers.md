@@ -26,9 +26,9 @@ oats server remove build
 - `--path` prepends directories to the minimal remote PATH of every routed
   command (`~/.local/bin:/opt/pi/bin`), where the remote spawn looks for the
   harness binary.
-- `--herdr` records the remote Herdr path in the registration and in each
-  saved route. Routed commands do not pass it on; the remote kernel finds
-  `herdr` on its own PATH.
+- `--herdr` is refused (`E_HERDR_REMOVED`): Herdr was removed in 0.31.0. A
+  registration or saved route that still records `herdrPath` loads; the field
+  is ignored, never written or printed.
 - `--label` sets a display name. `--replace` overwrites an existing id.
 - Registrations live in `~/.oats/servers.json` on this machine, never in a
   repository.
@@ -164,8 +164,8 @@ instance's saved home on the server and relays its envelope.
 ## What this machine keeps
 
 A **saved route** per remote instance, under `~/.oats/remote/<server>/`,
-written at spawn: the ssh host, workspace, oats path, optional Herdr path and
-PATH prefix, and the remote home. Retire, harvest and session commands use
+written at spawn: the ssh host, workspace, oats path and PATH prefix, and the
+remote home. Retire, harvest and session commands use
 the saved route, not the current registration, so editing or removing a
 registration never orphans a remote home. The route is removed when the
 remote kernel reports the home gone.
