@@ -288,7 +288,7 @@ for (const outcome of ["resolve", "reject"]) test(`reported workspace/root/host 
   const dom = domFixture(t), document = dom.window.document, requests = [];
   const c = {
     document, workspace: "A", contextRosterGen: 0,
-    rosterState: null, rosterStale: false, rosterSignaturePainted: null, rosterSignature, tabs: new Map(), activeTab: null, connectionGeneration: 0,
+    rosterState: null, rosterStale: false, contextDeploymentNote: null, rosterSignaturePainted: null, rosterSignature, contextInstances: [], tabs: new Map(), activeTab: null, connectionGeneration: 0,
     currentWorkspace: () => c.workspace, rosterResponseOwns, staleWorkspaceSelection,
     contextRosterEl: document.getElementById("instance-roster"),
     api(path) { const gate = { ...deferred(), path }; requests.push(gate); return gate.promise; },

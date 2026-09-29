@@ -147,6 +147,9 @@ body {
 .ctx-status:empty { display: none; }
 .ctx-head > .loading-refreshing { flex: none; margin-left: 6px; }
 .ctx-count .skeleton-pill { width: 5.5em; }
+/* A stale count is the last observation: muted, its dot no longer the live accent. */
+.ctx-count[data-stale] { color: var(--muted); }
+.ctx-count[data-stale] .ctx-count-dot { background: var(--muted); }
 /* Agent groups (Workspace v4): a 14px gap, no title; the separator names the group for AT.
    The first one sits just under the filter, so it is shorter (human, 2026-09-29). */
 .ctx-group { height: 14px; }

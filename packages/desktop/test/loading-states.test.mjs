@@ -201,6 +201,33 @@ test('bindRefresh: aria-disabled while busy, never disabled, repeats ignored, fo
   u.ds.succeed(); assert.equal(button.hasAttribute('aria-disabled'), false); button.click(); assert.equal(runs, 2);
 });
 
+test('captureFocusState: a keyed control is found by its key only, a path never lands on a mutation control, the fallback takes over', t => {
+  const dom = new JSDOM('<body><button id="fb">fallback</button><div class="root"><section><button data-focus-key="remove:beta">Remove beta</button><button data-focus-key="remove:gamma">Remove gamma</button></section><section><button>plain</button></section></div></body>', { pretendToBeVisual: true });
+  t.after(() => dom.window.close());
+  const doc = dom.window.document, root = doc.querySelector('.root'), fb = doc.querySelector('#fb');
+  // New data inserts a row before the focused one: the key finds "Remove gamma", not the control now at its old position.
+  root.querySelector('[data-focus-key="remove:gamma"]').focus(); let restore = captureFocusState(root, { fallback: fb });
+  root.innerHTML = '<section><button data-focus-key="remove:alpha">Remove alpha</button><button data-focus-key="remove:beta">Remove beta</button><button data-focus-key="remove:gamma">Remove gamma</button></section><section><button>plain</button></section>';
+  assert.equal(restore(), true); assert.equal(doc.activeElement.textContent, 'Remove gamma');
+  // The key is gone (the team was removed): no path guess onto another button — the fallback gets focus.
+  root.querySelector('[data-focus-key="remove:gamma"]').focus(); restore = captureFocusState(root, { fallback: fb });
+  root.innerHTML = '<section><button data-focus-key="remove:alpha">Remove alpha</button><button data-focus-key="remove:beta">Remove beta</button></section>';
+  assert.equal(restore(), false); assert.equal(doc.activeElement, fb);
+  // An unkeyed button is never re-found by path (the path could now be a different button).
+  root.innerHTML = '<section><button>one</button><button>two</button></section>'; root.querySelectorAll('button')[1].focus();
+  restore = captureFocusState(root, { fallback: () => fb }); root.innerHTML = '<section><button>zero</button><button>one</button></section>';
+  assert.equal(restore(), false); assert.equal(doc.activeElement, fb);
+  // Focus outside the root: nothing happens, the fallback is not used.
+  fb.focus(); restore = captureFocusState(root, { fallback: doc.body }); root.innerHTML = '<p>x</p>'; assert.equal(restore(), false); assert.equal(doc.activeElement, fb);
+});
+
+test('say(): a surface message on the status line keeps the controller\'s announcements in sync', t => {
+  const u = setup(t);
+  u.ds.begin({ user: true }); u.ds.succeed(); assert.equal(u.status.textContent, 'Instances updated');
+  u.ds.say('release-manager is not in this workspace\'s souls.'); assert.equal(u.status.textContent, "release-manager is not in this workspace's souls.");
+  u.ds.begin({ user: true }); u.ds.succeed(); assert.equal(u.status.textContent, 'Instances updated', 'the completion is shown (and announced) again');
+});
+
 test('captureFocusState restores focus by data-focus-key or by structural path after a rebuild, and the scroll position', t => {
   const dom = new JSDOM('<body><div class="root"><section><button>a</button><button data-focus-key="b">b</button></section><section><details><summary>s</summary></details></section></div></body>', { pretendToBeVisual: true });
   t.after(() => dom.window.close());
@@ -212,6 +239,8 @@ test('captureFocusState restores focus by data-focus-key or by structural path a
   assert.equal(restore(), true); assert.equal(doc.activeElement.textContent, 's2');
   doc.activeElement.blur(); restore = captureFocusState(root); rebuild(); assert.equal(restore(), false);
   root.querySelector('button').focus(); restore = captureFocusState(root); root.innerHTML = '<p>gone</p>'; assert.equal(restore(), false);
+  root.innerHTML = '<section><button>a</button></section>'; root.querySelector('button').focus(); restore = captureFocusState(root); rebuild();
+  assert.equal(restore(), false, 'an unkeyed button is not re-found by path');
 });
 
 test('loading.css: skeleton fills derive from tokens, the shimmer is slow, reduced motion stops every animation, no opacity over text, no raw text colours', () => {

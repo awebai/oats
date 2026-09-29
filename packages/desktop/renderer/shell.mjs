@@ -246,6 +246,8 @@ let contextWorkspace = "";
 let rosterState = null;
 let rosterStale = false;
 let rosterSignaturePainted = null;
+// The deployment note ("Reading the deployment…", a kernel refusal): its own truthful state above the rows.
+let contextDeploymentNote = null;
 let activeInstanceMenu = null;
 const splitOpenState = () => ({ split, activeId: activeTab, tabs, workspace: currentWorkspace(), visible: tabLayerVisible });
 const ownsInstanceTarget = target => target?.workspace === currentWorkspace() && contextWorkspace === currentWorkspace()
@@ -359,25 +361,32 @@ async function refreshContextRoster({ user = false } = {}) {
   }
   if (commitWorkspaceLabel(panel.workspace, panel.workspaces)) renderWorkspaceContext(panel.workspace);
   contextWorkspace = resolvedWs;
-  contextInstances = panel.instances || [];
+  // A failed read with no instances keeps the rows already shown for this workspace (stale), so the
+  // previous list survives that reply; every other reply replaces it.
+  const previousInstances = contextInstances;
+  if (!(panel.error && !(panel.instances || []).length && rosterState?.hasData)) contextInstances = panel.instances || [];
   // A deployment the kernel could not observe is not an empty one: name the
   // missing feature or keep the kernel's refusal (never an optimistic read).
-  // It is its own truthful state, painted above the rows, never a skeleton.
-  const deploymentNote = panel.deployment && panel.deployment.status !== "observed" && !panel.workspace?.remote
+  // It is its own truthful state, painted above the rows by renderContextRoster
+  // on every path (module state, so a filter edit or a collapse keeps it).
+  contextDeploymentNote = panel.deployment && panel.deployment.status !== "observed" && !panel.workspace?.remote
     ? deploymentUnavailableText(panel.deployment) : null;
-  // A panel that reports an error beside its instances (a remote server the
-  // kernel could not reach) is the last observation: stale, actions disabled.
-  const reportedFailure = !!panel.error && contextInstances.length > 0;
   const signature = rosterSignature(contextInstances, {
-    workspace: resolvedWs, error: panel.error || null, deploymentNote,
+    workspace: resolvedWs, error: panel.error || null, deploymentNote: contextDeploymentNote,
     activeKey: tabs.get(activeTab)?.key ?? null, connection: connectionGeneration,
   });
-  const prependNote = () => {
-    if (deploymentNote === null) return;
-    const note = document.createElement("div"); note.className = "ctx-empty"; note.setAttribute("role", "status");
-    note.textContent = deploymentNote;
-    listEl.prepend(note);
-  };
+  // A panel that reports an error is the kernel's failed read, not an observed
+  // roster: with instances beside it (a remote server the kernel could not
+  // reach, its last roster) the list is kept and goes stale; with none, it is a
+  // failed read — the failed block with Retry where the skeleton stood, or the
+  // previous rows of this workspace kept and marked stale. Never "No instances.".
+  if (panel.error && !contextInstances.length) {
+    refreshPanelInstance([], resolvedWs);
+    rosterState?.fail({ message: panel.error });
+    if (rosterState?.hasData && !rosterStale) { rosterStale = true; renderContextRoster(previousInstances); }
+    return;
+  }
+  const reportedFailure = !!panel.error;
   // Before the server's first observation the panel says deployment "pending"
   // with no instances: that is not an observed empty roster. The note is the
   // whole content (its existing copy, no skeleton), the count keeps its pill,
@@ -385,7 +394,7 @@ async function refreshContextRoster({ user = false } = {}) {
   if (panel.deployment?.status === "pending" && !panel.workspace?.remote && !contextInstances.length && !rosterState?.hasData) {
     rosterState?.defer();
     refreshPanelInstance(contextInstances, resolvedWs);
-    if (signature !== rosterSignaturePainted) { rosterSignaturePainted = signature; renderContextRoster(contextInstances); prependNote(); }
+    if (signature !== rosterSignaturePainted) { rosterSignaturePainted = signature; renderContextRoster(contextInstances); }
     return;
   }
   const unchanged = !!rosterState?.hasData && signature === rosterSignaturePainted && rosterStale === reportedFailure;
@@ -402,7 +411,6 @@ async function refreshContextRoster({ user = false } = {}) {
   if (!unchanged) {
     rosterSignaturePainted = signature;
     renderContextRoster(contextInstances);
-    prependNote();
   }
   if (reportedFailure) rosterState?.fail({ message: panel.error });
 }
@@ -426,8 +434,16 @@ function renderContextRoster(instances) {
   // pill. Rows of the previous subject go; the empty copy is never painted.
   const pending = !!rosterState && !rosterState.hasData;
   renderRosterCount(contextRosterEl.querySelector(".ctx-count"), instances, { pending, stale: rosterStale });
+  // The deployment note is painted on every path (poll, filter, collapse, PR change), first in the list.
+  const paintNote = () => {
+    if (contextDeploymentNote === null) return;
+    const note = document.createElement("div"); note.className = "ctx-empty ctx-deployment-note"; note.setAttribute("role", "status");
+    note.textContent = contextDeploymentNote;
+    listEl.prepend(note);
+  };
   if (pending) {
     for (const el of listEl.querySelectorAll(":scope > .ctx-tree-row, :scope > .ctx-group, :scope > .ctx-empty")) el.remove();
+    paintNote();
     tabOpenIntents.applyFocus(restoreTreeState);
     return;
   }
@@ -441,6 +457,7 @@ function renderContextRoster(instances) {
   ));
   if (!visible.length) {
     listEl.innerHTML = `<div class="ctx-empty">${instances.length ? "Nothing matches." : "No instances."}</div>`;
+    paintNote();
     tabOpenIntents.applyFocus(restoreTreeState);
     return;
   }
@@ -608,6 +625,7 @@ function renderContextRoster(instances) {
       }
     }
   }
+  paintNote();
   // Polling restores the same logical focus; it must not cancel a pending
   // terminal open from that row as if the user had re-entered the sidebar.
   tabOpenIntents.applyFocus(() => {
@@ -1725,7 +1743,7 @@ function restoreWorkspaceTabs() {
   // The list clears into pending (a skeleton pill for the count); the rows of
   // the new workspace arrive with the refresh below, never "No instances".
   rosterState?.reset();
-  rosterStale = false; rosterSignaturePainted = null;
+  rosterStale = false; rosterSignaturePainted = null; contextDeploymentNote = null;
   renderContextRoster([]);
   if (restored.tabLayerVisible) {
     setSidebarMode(restored.sidebarMode);

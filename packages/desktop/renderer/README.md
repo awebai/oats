@@ -262,8 +262,13 @@ read settled without an observation (the server's deployment is still
 was abandoned. Wording is fixed in `wording`; "Reading …" and "Loading…" are
 retired. Refresh and Retry controls go through `bindRefresh()`: `aria-disabled`
 while a read is in flight, never `disabled`, so a focused control keeps focus.
-A rebuild from new data restores focus and scroll through `captureFocusState()`
-(by `data-focus-key` or structural path); an identical poll is skipped through a
+A rebuild from new data restores focus and scroll through `captureFocusState()`,
+called right before the repaint (focus may have moved while the read ran):
+actionable controls carry `data-focus-key` (`remove:<label>`, `op:<layer>:<name>`,
+`instance:<home>`…) and are re-found by key only — a path is never trusted onto
+a button, since a repaint happens exactly when positions shift — while a
+disclosure summary is re-found by its structural path; a control that vanished
+hands focus to the surface's Refresh. An identical poll is skipped through a
 JSON signature of what the surface paints. CLI-missing, deployment-pending and
 not-observed states keep their own copy: they are separate truthful states, not
 skeletons.
@@ -287,8 +292,10 @@ Where each surface wires it: the sidebar roster in `instance-tree.mjs`
 `shell.mjs` (`refreshContextRoster`); the hierarchy in `views/hierarchy.mjs`
 (the summary pill, its own notice keeps the stale copy); the soul inspector in
 `soul-inspector.mjs` (a same-subject `show()` is a refresh that never runs
-`frame()`; "Teams here" is created with the frame so `soul teams` runs beside
-`inspect`) and `soul-teams-here.mjs`; readiness in `readiness-view.mjs` (the
+`frame()`: the actions are built once per subject and read the current row at
+click time, the roster-derived block — lede, refusal, facts, Instances — is
+repainted behind its own signature, and "Teams here" is created with the frame
+so `soul teams` runs beside `inspect`) and `soul-teams-here.mjs`; readiness in `readiness-view.mjs` (the
 summary line is separate from the status line so an announcement never
 overwrites it).
 

@@ -68,13 +68,13 @@ const fromText = from => from === 'shared' ? 'shared' : from === 'local' ? 'loca
 
 export function createSoulTeamsHere(doc, { soul, request, listTeams = null, clock = {} }) {
   const { card, head } = pageCard(doc, 'Teams here', { lead: 'on this computer' });
-  card.classList.add('soul-teams-here');
+  card.classList.add('soul-teams-here'); head.tabIndex = -1; // the focus fallback when a focused row is gone
   const body = el(doc, 'div', null, 'sth-body'); card.append(body);
   // The card has no visible status line: the announcements ("Loading teams…", a failure) are spoken only.
   const status = statusLine(doc, { visuallyHidden: true }); card.append(status);
-  const timers = Object.fromEntries(['now', 'setTimeout', 'clearTimeout'].filter(k => typeof clock[k] === 'function').map(k => [k, clock[k]]));
   const loading = createDataState({ doc, noun: 'teams', region: body, status, indicatorHost: head, noticeHost: null,
-    skeleton: () => skeletonBlock(doc, 'line', { count: 3 }), onRetry: () => { void run({ action: 'show' }, { user: true }); }, ...timers });
+    skeleton: () => skeletonBlock(doc, 'line', { count: 3 }), onRetry: () => { void run({ action: 'show' }, { user: true }); },
+    now: clock.now, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout });
   let current = null, pending = false, serial = 0, disposed = false, rowError = null, cardError = null, choices = null, focusAdd = false;
 
   async function run(action, { label = null, user = false } = {}) {
@@ -82,8 +82,12 @@ export function createSoulTeamsHere(doc, { soul, request, listTeams = null, cloc
     const read = action.action === 'show';
     if (read) loading.begin({ user });
     // A read over a document keeps the rows (and what holds focus in them): only the actions lock, in place.
-    const restore = read && current ? captureFocusState(body) : null;
-    if (restore) lockActions(); else render();
+    // Focus is captured right before each repaint below, not here: it may move while the read runs.
+    const keep = read && !!current;
+    if (keep) lockActions(); else render();
+    // Repaint with focus restored by key (remove:<label>, default:<label>, add…): a row that moved is found
+    // again, a row that is gone hands focus to the card's title, never to the neighbouring control.
+    const repaint = () => { const restore = keep ? captureFocusState(body, { fallback: head }) : null; render(); restore?.(); };
     try {
       // No `refresh: true` hint here: /api/workspace-soul-teams admits {action, soul, labels, label} only (server/teams.mjs).
       const next = await request({ soul, ...action });
@@ -92,17 +96,17 @@ export function createSoulTeamsHere(doc, { soul, request, listTeams = null, cloc
       if (!next || !Array.isArray(next.teams)) {
         cardError = { message: `The teams of ${soul} on this computer could not be read.` };
         if (read) loading.fail(cardError);
-        render(); restore?.(); return;
+        repaint(); return;
       }
       current = next; if (read) loading.succeed({ observedAt: text(next.observedAt) });
-      render(); restore?.();
+      repaint();
     } catch (error) {
       if (disposed || ticket !== serial) return;
       pending = false;
       const shown = { code: text(error?.code), message: text(error?.message) || 'The change was refused.' };
       if (label) rowError = { label, ...shown }; else cardError = shown;
       if (read) loading.fail(shown);
-      render(); restore?.();
+      repaint();
     }
   }
   function lockActions() {
@@ -114,8 +118,9 @@ export function createSoulTeamsHere(doc, { soul, request, listTeams = null, cloc
     try { const all = await listTeams(); if (!disposed) { choices = list(all?.teams).filter(t => text(t?.label)); focusAdd = true; render(); } }
     catch { if (!disposed) { choices = []; render(); } }
   }
-  function button(label, cls, onClick, { disabled = false, title = '', aria = '' } = {}) {
+  function button(label, cls, onClick, { disabled = false, title = '', aria = '', key = '' } = {}) {
     const b = el(doc, 'button', label, `sth-act${cls ? ` ${cls}` : ''}`); b.type = 'button';
+    if (key) b.dataset.focusKey = key;
     b.disabled = disabled || pending; if (title) b.title = title; if (aria) b.setAttribute('aria-label', aria);
     b.addEventListener('click', () => { if (!b.disabled) onClick(); });
     return b;
@@ -156,9 +161,9 @@ export function createSoulTeamsHere(doc, { soul, request, listTeams = null, cloc
       main.append(el(doc, 'span', `${team.team ?? 'no provider id yet'} · ${fromText(team.from)}`, `sth-meta${team.team ? '' : ' warn'}`));
       main.append(el(doc, 'span', viaText(team.via, home?.from), 'sth-meta'));
       const actions = el(doc, 'div', null, 'sth-actions');
-      if (!team.default && team.team) actions.append(button('Make default', '', () => run({ action: 'default', label: team.label }, { label: team.label }), { aria: `Make ${team.label} the default team of ${soul}` }));
-      if (team.default && home?.from === 'soul') actions.append(button('Use workspace default', '', () => run({ action: 'clear-default' }, { label: team.label }), { aria: `Use the workspace's default team for ${soul}` }));
-      if (list(team.via).includes('soul')) actions.append(button('Remove', '', () => run({ action: 'remove', labels: [team.label] }, { label: team.label }), { aria: `Remove ${team.label} from ${soul}` }));
+      if (!team.default && team.team) actions.append(button('Make default', '', () => run({ action: 'default', label: team.label }, { label: team.label }), { aria: `Make ${team.label} the default team of ${soul}`, key: `default:${team.label}` }));
+      if (team.default && home?.from === 'soul') actions.append(button('Use workspace default', '', () => run({ action: 'clear-default' }, { label: team.label }), { aria: `Use the workspace's default team for ${soul}`, key: 'clear-default' }));
+      if (list(team.via).includes('soul')) actions.append(button('Remove', '', () => run({ action: 'remove', labels: [team.label] }, { label: team.label }), { aria: `Remove ${team.label} from ${soul}`, key: `remove:${team.label}` }));
       row.append(main, actions);
       if (rowError?.label === team.label) row.append(problemBox(rowError));
       body.append(row);
@@ -167,12 +172,12 @@ export function createSoulTeamsHere(doc, { soul, request, listTeams = null, cloc
     const have = new Set(list(current.teams).map(t => t.label));
     const offer = (choices || []).filter(t => !have.has(t.label));
     const add = el(doc, 'div', null, 'sth-add');
-    if (choices === null) add.append(button('Add a team', '', () => { void loadChoices(); }));
+    if (choices === null) add.append(button('Add a team', '', () => { void loadChoices(); }, { key: 'add-team' }));
     else if (!offer.length) add.append(el(doc, 'span', `${soul} is in every team on this computer.`, 'sth-meta'));
     else {
-      const select = el(doc, 'select'); select.setAttribute('aria-label', `Team to add to ${soul}`);
+      const select = el(doc, 'select'); select.setAttribute('aria-label', `Team to add to ${soul}`); select.dataset.focusKey = 'add-select';
       for (const t of offer) { const o = el(doc, 'option', t.team ? t.label : `${t.label} (no provider id yet)`); o.value = t.label; select.append(o); }
-      add.append(select, button('Add', 'primary', () => run({ action: 'add', labels: [select.value] })));
+      add.append(select, button('Add', 'primary', () => run({ action: 'add', labels: [select.value] }), { key: 'add' }));
       if (focusAdd) { focusAdd = false; queueMicrotask(() => { if (select.isConnected) select.focus(); }); }
     }
     if (cardError) add.append(problemBox(cardError));

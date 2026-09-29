@@ -190,3 +190,16 @@ test('a deployment the server has not observed yet (status pending, no instances
   await u.poll(); await tick();
   assert.match(u.notice(), /Roster unavailable: E_NO_KERNEL: no kernel here/); assert.equal(u.nodes().length, 2, 'the last observation stays');
 });
+
+test('a panel that reports an error beside its instances is announced as stale once (the notice is a note, the status line speaks)', async t => {
+  const u = await setup(t); await tick();
+  assert.equal(u.nodes().length, 1);
+  u.setRead(() => panel([instance()], currentWorkspace(), { error: 'remote unreachable' }));
+  await u.poll(); await tick();
+  assert.match(u.notice(), /^Roster unavailable: remote unreachable\./); assert.equal(u.one('.hier-notice').getAttribute('role'), 'note');
+  assert.equal(u.status(), "Couldn't refresh roster."); assert.equal(u.nodes().length, 1, 'the observation is kept');
+  const status = u.one('.hier-status'); status.textContent = 'sentinel';
+  await u.poll(); await tick(); assert.equal(status.textContent, 'sentinel', 'announced once, not on every poll');
+  u.setRead(() => panel([instance()])); await u.poll(); await tick();
+  assert.equal(u.notice(), ''); assert.equal(u.status(), '');
+});

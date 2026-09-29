@@ -329,3 +329,78 @@ test('CLI and deployment states keep their own copy: no CLI is said on the statu
   assert.match(u.status().textContent, /operations API 2/); assert.equal(u.q('.skeleton'), null); assert.equal(u.content().hasAttribute('aria-busy'), false);
   assert.deepEqual(u.calls, [], 'nothing asked');
 });
+
+/* ── review round 1: the roster-derived header follows a refresh; focus is captured before the repaint and re-found by key ── */
+const homesOf = (n, running = true) => Array.from({ length: n }, (_, i) => ({ instance: `release-manager-${i + 1}`, agentsRoot, home: `${agentsRoot}/release-manager/instances/release-manager-${i + 1}`, running }));
+
+for (const layout of ['page', 'sidebar']) test(`${layout}: a same-subject Refresh repaints the roster-derived block from the CURRENT roster row; an unchanged roster keeps its nodes; actions read the row at click time`, async t => {
+  let list = homesOf(1), refusal = null; const launched = [];
+  const u = mount(t, { layout, instances: () => list, spawnRefusal: () => refusal, launch: agent => launched.push(agent) });
+  void u.inspector.show(keyedSelection); await u.resolve(soul);
+  const count = () => u.all('.inspector-instance').length;
+  assert.equal(count(), 1);
+  const before = u.q('.inspector-instance'); before.focus();
+  // Unchanged roster: the block is kept (same node, focus untouched).
+  u.refresh().click(); await u.resolve(soul);
+  assert.equal(u.q('.inspector-instance'), before); assert.equal(u.doc.activeElement, before);
+  // A second instance appears, one stops; a refresh repaints the block and re-finds the focused instance by key.
+  list = [...homesOf(1, false), ...homesOf(2).slice(1)]; refusal = layout === 'page' ? 'no default team here' : null;
+  u.refresh().click(); await u.resolve(soul);
+  assert.equal(count(), 2, 'the Instances block followed the roster'); assert.match(layout === 'page' ? u.all('.inspector-instance')[0].getAttribute('aria-label') : u.all('.inspector-instance')[0].textContent, /stopped/);
+  assert.equal(u.doc.activeElement.dataset.focusKey, `instance:${list[0].home}`, 'focus stays on the same instance, by key');
+  if (layout === 'page') { assert.equal(u.q('.inspector-refusal').textContent, "Can't spawn here · no default team here"); assert.equal(u.q('.page-card-count')?.textContent ?? u.q('.inspector-instances .page-card-count')?.textContent, '2'); }
+  else assert.match(u.q('.inspector-roster h3').textContent, /Instances · 2/);
+  assert.equal(u.all('.inspector-lede').length, 1, 'the lede is not doubled');
+  // The action handlers act on the current selection row, not the one captured at frame time.
+  const renamed = { ...keyedSelection, agent: { ...keyedSelection.agent, description: 'Ships the releases, faster.' } };
+  void u.inspector.show(renamed); await u.resolve(soul);
+  assert.equal(u.q('.inspector-lede').textContent, 'Ships the releases, faster.');
+  const spawn = u.q('.spawn-act'); assert.equal(spawn.dataset.focusKey, 'spawn'); spawn.click();
+  assert.equal(launched.at(-1)?.description, 'Ships the releases, faster.');
+});
+
+test('focus that moved into the content while the read ran survives the repaint (captured right before it), and a vanished keyed control hands focus to Refresh', async t => {
+  const u = mount(t);
+  void u.inspector.show(homeSelection); await u.resolve(home);
+  const withOps = u.all('[data-focus-key^="op:"]'); assert.ok(withOps.length >= 1, 'operation controls carry keys');
+  // Refresh from the Refresh button, then tab into the content during the read.
+  u.refresh().focus(); u.refresh().click(); await tick();
+  const summary = u.content().querySelector('details > summary'); summary.focus();
+  const changed = structuredClone(home); changed.instance.instructions = { ...changed.instance.instructions, text: 'changed instructions' };
+  await u.resolve(changed);
+  assert.equal(u.doc.activeElement.tagName, 'SUMMARY', 'the disclosure focused during the read keeps focus after the repaint');
+  assert.notEqual(u.doc.activeElement, summary, 'on the repainted node');
+  // An operation control focused during the read whose operation disappears: no neighbour gets focus; Refresh does.
+  u.refresh().click(); await tick();
+  u.all('[data-focus-key^="op:"]')[0].focus();
+  const noOps = structuredClone(home); for (const cap of noOps.capabilities) cap.operations = [];
+  await u.resolve(noOps);
+  assert.equal(u.doc.activeElement, u.refresh(), 'focus falls back to Refresh, never to a different mutation control');
+});
+
+test('soul page, Teams here: focus on "Remove gamma" survives a refresh that inserts a row before it; a removed row hands focus to the card title', async t => {
+  await withTeamModel2(t);
+  const u = mount(t, { layout: 'page' });
+  void u.inspector.show(keyedSelection);
+  const team = (label, via = ['soul']) => ({ label, team: `t:${label}`, default: false, from: 'local', via });
+  const docOf = teams => ({ ...soulTeamsDoc, teams: [{ ...soulTeamsDoc.teams[0] }, ...teams.map(l => team(l))] });
+  await u.resolve({ status: 'ok', soulTeams: docOf(['beta', 'gamma']) }, u.teamsHere); await u.resolve(soul);
+  const card = u.q('[data-card="Teams here"]');
+  const remove = label => [...card.querySelectorAll('button')].find(b => b.dataset.focusKey === `remove:${label}`);
+  remove('gamma').focus();
+  u.refresh().click(); await tick();
+  await u.resolve({ status: 'ok', soulTeams: docOf(['alpha', 'beta', 'gamma']) }, u.teamsHere); await u.resolve(soul);
+  assert.equal(u.doc.activeElement, remove('gamma'), 'found again by key, not by position');
+  assert.ok(card.querySelectorAll('.sth-row').length === 4);
+  u.refresh().click(); await tick();
+  await u.resolve({ status: 'ok', soulTeams: docOf(['alpha', 'beta']) }, u.teamsHere); await u.resolve(soul);
+  assert.equal(u.doc.activeElement, card.querySelector('.page-card-title'), 'gamma is gone: the card title, never "Remove beta"');
+});
+
+test('an inspector message on the status line does not swallow the next completion announcement', async t => {
+  let miss = false; const u = mount(t, { openSoul: () => miss ? false : true });
+  void u.inspector.show(homeSelection); await u.resolve(home);
+  u.refresh().click(); await u.resolve(home); assert.equal(u.status().textContent, 'Instance updated');
+  miss = true; button(u.el, 'Open soul').click(); assert.match(u.status().textContent, /is not in this workspace's souls/);
+  u.refresh().click(); await u.resolve(home); assert.equal(u.status().textContent, 'Instance updated', 'shown and announced again');
+});

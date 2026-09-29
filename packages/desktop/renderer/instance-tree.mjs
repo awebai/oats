@@ -533,7 +533,10 @@ export function renderRosterCount(el, instances, { pending = false, stale = fals
   const unknown = instances.length - running - stopped;
   const dot = doc.createElement("span"); dot.className = "ctx-count-dot"; dot.setAttribute("aria-hidden", "true");
   // The head says how many are running (human, 2026-09-26); the full breakdown stays in its title.
-  el.replaceChildren(...(running ? [dot] : []), doc.createTextNode(`${running} running`));
+  // Stale: the count is the last observation, said to AT (a hidden span), shown muted (shell.css
+  // reads data-stale) and titled; the visible number stays, because it is what was last observed.
+  const last = doc.createElement("span"); last.className = "loading-sr ctx-count-stale"; last.textContent = "Last observation: ";
+  el.replaceChildren(...(stale ? [last] : []), ...(running ? [dot] : []), doc.createTextNode(`${running} running`));
   el.dataset.rosterCount = "ready";
   const breakdown = [`${running} running`, `${stopped} stopped`, ...(unknown ? [`${unknown} unknown`] : [])].join(" · ");
   el.title = stale ? `Last observation — ${breakdown}` : breakdown;
@@ -571,16 +574,13 @@ export function createRosterLoading(doc, rosterEl, { onRetry = null, now, setTim
     noticeHost = doc.createElement("div"); noticeHost.className = "ctx-status";
     listEl.before(noticeHost);
   }
-  const clock = {};
-  if (now) clock.now = now;
-  if (setTimeout) clock.setTimeout = setTimeout;
-  if (clearTimeout) clock.clearTimeout = clearTimeout;
+  // createDataState's defaults apply on undefined, so the clock passes straight through.
   return createDataState({
     doc, noun: "instances", region: listEl, skeletonHost: listEl,
     skeleton: () => skeletonBlock(doc, "roster-row", { count: ROSTER_SKELETON_ROWS }),
     status, indicatorHost: rosterEl.querySelector(".ctx-head"), noticeHost, onRetry,
     focusFallback: () => rosterEl.querySelector(".ctx-filter"),
-    ...clock,
+    now, setTimeout, clearTimeout,
   });
 }
 

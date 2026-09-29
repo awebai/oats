@@ -50,7 +50,7 @@ function shell(t, shellSource = source) {
     workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A",
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "instances", tabLayerVisible: false,
     contextRosterGen: 0, contextInstances: [], wsActiveTerminal: new Map(), pendingTerms: new Set(),
-    rosterState: null, rosterStale: false, rosterSignaturePainted: null, // roster loading state (renderContextRoster is stubbed)
+    rosterState: null, rosterStale: false, contextDeploymentNote: null, rosterSignaturePainted: null, // roster loading state (renderContextRoster is stubbed)
     tabbar: document.getElementById("tabbar"), tabhost: document.getElementById("tabhost"),
     tabActionsEl: document.getElementById("tab-actions"), contextRosterEl: document.getElementById("roster"),
     stageHost: document.getElementById("stagehost"), stage: { name: "hierarchy" }, navEl: document.getElementById("nav"),

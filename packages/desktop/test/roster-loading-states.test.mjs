@@ -73,7 +73,9 @@ test('renderRosterCount: pending is a skeleton pill kept in place, never "0 runn
   tree.renderRosterCount(count, roster);
   assert.equal(count.textContent, '2 running'); assert.equal(count.title, '2 running · 1 stopped'); assert.equal(count.dataset.stale, undefined);
   tree.renderRosterCount(count, roster, { stale: true });
-  assert.equal(count.textContent, '2 running'); assert.equal(count.title, 'Last observation — 2 running · 1 stopped'); assert.equal(count.dataset.stale, '1');
+  assert.equal(count.textContent, 'Last observation: 2 running', 'AT hears that it is the last observation'); assert.ok(count.querySelector('.ctx-count-stale.loading-sr'), 'visually hidden: the visible number is what was last observed');
+  assert.equal(count.title, 'Last observation — 2 running · 1 stopped'); assert.equal(count.dataset.stale, '1');
+  assert.match(readFileSync(new URL('../renderer/shell.css', import.meta.url), 'utf8'), /\.ctx-count\[data-stale\] \{ color: var\(--muted\)/, 'and it looks muted, not current');
   tree.renderRosterCount(count, roster);
   assert.equal(count.dataset.stale, undefined);
   assert.equal(doc.querySelectorAll('.skeleton-pill').length, 0);
@@ -141,7 +143,7 @@ function shell(t) {
     rosterTip: { bind() {}, hide() {}, sync() {} }, rosterPrs: { get: () => null, refresh() {} }, ctx: {},
     connectionGeneration: 0, menuState() {}, runAction: assert.fail, getBinding: () => null, formatChord: x => x, isMac: true,
     contextRosterEl: null, contextRosterGen: 0, contextFilter: '', contextWorkspace: 'A', contextInstances: [], tabWorkspace: 'A',
-    rosterState: null, rosterStale: false, rosterSignaturePainted: null,
+    rosterState: null, rosterStale: false, contextDeploymentNote: null, rosterSignaturePainted: null,
     workspace: 'A', generation: 0, tabs: new Map(), activeTab: null, split: null, sidebarMode: 'instances', tabLayerVisible: false,
     stage: { name: 'hierarchy' }, collapsedInstances: new Set(),
     workspaceGeneration: () => context.generation, currentWorkspace: () => context.workspace,
@@ -282,7 +284,7 @@ test('failure with data: rows kept, stale line with the observed age and Retry, 
   assert.equal(notice.title, 'bridge down');
   const retry = notice.querySelector('.loading-retry'); assert.equal(retry.textContent, 'Retry'); assert.equal(retry.getAttribute('aria-disabled'), null);
   assert.equal(s.live().textContent, "Couldn't refresh instances.");
-  assert.equal(s.count().title, 'Last observation — 2 running · 1 stopped'); assert.equal(s.count().textContent, '2 running');
+  assert.equal(s.count().title, 'Last observation — 2 running · 1 stopped'); assert.equal(s.count().textContent, 'Last observation: 2 running');
   const start = s.list().querySelector('.ctx-start');
   assert.equal(start.disabled, true); assert.equal(start.title, tree.ROSTER_STALE_TITLE); assert.equal(start.getAttribute('aria-description'), 'Unavailable: roster is not current', 'an accessible reason, not just a greyed look');
   for (const trigger of s.list().querySelectorAll('.ctx-instance-actions')) { assert.equal(trigger.disabled, true); assert.equal(trigger.title, tree.ROSTER_STALE_TITLE); assert.equal(trigger.getAttribute('aria-description'), tree.ROSTER_STALE_TITLE); }
@@ -392,4 +394,43 @@ test('a deployment the server has not observed yet (status pending, no instances
   assert.equal(u.list().querySelector('.ctx-empty'), note);
   void u.refreshContextRoster(); await u.reply(2, panelOf('A', roster));
   assert.deepEqual(u.names(), ['alpha', 'gamma', 'beta']); assert.equal(u.count().textContent, '2 running'); assert.equal(u.list().querySelector('.ctx-empty'), null);
+});
+
+test('a panel that reports an error with no instances is a failed read, never "No instances.": failed block without data, stale rows kept with data', async t => {
+  const u = shell(t);
+  await u.reply(0, panelOf('A', [], { error: 'Server is unreachable' }));
+  assert.doesNotMatch(u.text(), /No instances/); assert.equal(u.context.rosterState.state, 'failed');
+  assert.equal(u.list().querySelector('.loading-failed-message').textContent, 'Server is unreachable'); assert.ok(u.list().querySelector('.loading-retry'));
+  assert.ok(u.count().querySelector('.skeleton-pill'), 'the count stays a pill'); assert.equal(u.live().textContent, "Couldn't refresh instances. Server is unreachable");
+  // Data lands, then the same failed reply: rows kept and stale, the error on the stale line.
+  void u.refreshContextRoster(); await u.reply(1, panelOf('A', roster));
+  assert.deepEqual(u.names(), ['alpha', 'gamma', 'beta']); assert.equal(u.context.rosterState.state, 'ready');
+  void u.refreshContextRoster(); await u.reply(2, panelOf('A', [], { error: 'Server is unreachable' }));
+  assert.deepEqual(u.names(), ['alpha', 'gamma', 'beta'], 'the last observation stays'); assert.equal(u.context.rosterState.state, 'stale');
+  assert.match(u.status().textContent, /Couldn't refresh instances/); assert.equal(u.status().querySelector('.loading-notice').title, 'Server is unreachable');
+  assert.ok(u.rows().every(r => !r.querySelector('.ctx-start') || r.querySelector('.ctx-start').disabled), 'stale: Start… disabled');
+  assert.equal(u.count().dataset.stale, '1'); assert.equal(u.list().querySelector('.loading-failed'), null, 'no failed block over data');
+});
+
+test('the deployment note survives every other roster paint (filter, collapse, PR change) and an unchanged poll, while pending and with rows', async t => {
+  const u = shell(t);
+  const filter = u.rosterEl.querySelector('.ctx-filter'), type = v => { filter.value = v; filter.dispatchEvent(new u.dom.window.Event('input', { bubbles: true })); };
+  // pending deployment: the note is the whole content; a filter edit keeps it.
+  await u.reply(0, panelOf('A', [], { deployment: { status: 'pending' } }));
+  type('zzz'); type('');
+  assert.equal(u.text(), 'Reading the deployment through the installed OATS CLI…'); assert.equal(u.list().getAttribute('aria-busy'), 'true');
+  void u.refreshContextRoster(); await u.reply(1, panelOf('A', [], { deployment: { status: 'pending' } }));
+  assert.equal(u.text(), 'Reading the deployment through the installed OATS CLI…', 'an unchanged poll keeps it');
+  // unavailable deployment with rows: the note stays above the rows through a filter edit, a collapse-free repaint and an unchanged poll.
+  const unavailable = { status: 'unavailable', reason: { code: 'E_X', message: 'no kernel' } };
+  void u.refreshContextRoster(); await u.reply(2, panelOf('A', roster, { deployment: unavailable }));
+  const noteText = () => u.list().querySelector('.ctx-deployment-note')?.textContent;
+  assert.equal(noteText(), 'E_X: no kernel'); assert.equal(u.list().firstElementChild.className, 'ctx-empty ctx-deployment-note');
+  type('alp'); assert.equal(noteText(), 'E_X: no kernel'); assert.deepEqual(u.names(), ['alpha']);
+  type(''); assert.equal(noteText(), 'E_X: no kernel'); assert.deepEqual(u.names(), ['alpha', 'gamma', 'beta']);
+  u.renderContextRoster(u.context.contextInstances); assert.equal(noteText(), 'E_X: no kernel', 'the PR-change path repaints it too');
+  void u.refreshContextRoster(); await u.reply(3, panelOf('A', roster, { deployment: unavailable }));
+  assert.equal(noteText(), 'E_X: no kernel'); assert.equal(u.list().querySelectorAll('.ctx-deployment-note').length, 1, 'never doubled');
+  // an observed deployment drops it.
+  void u.refreshContextRoster(); await u.reply(4, panelOf('A', roster)); assert.equal(u.list().querySelector('.ctx-deployment-note'), null);
 });

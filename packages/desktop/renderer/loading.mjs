@@ -123,11 +123,18 @@ export function statusLine(doc, { visuallyHidden = false, className = '' } = {})
   return el;
 }
 
-/** Capture the focused element inside `root` (and `root`'s scroll) before a
- * rebuild and return a restore callback. Identity is `data-focus-key` when the
- * control carries one, else its structural path from `root`; a rebuild from the
- * same data yields the same path. Returns whether focus was restored. */
-export function captureFocusState(root, { scroller = root } = {}) {
+/** Capture the focused element inside `root` (and `scroller`'s scroll) right before
+ * a rebuild and return a restore callback. Call it immediately before the repaint,
+ * not when the read starts: focus may have moved into the content meanwhile.
+ * Identity: an actionable control carries `data-focus-key` (e.g. `remove:<label>`,
+ * `op:<layer>:<name>`) and is found again ONLY by that key — a repaint happens when
+ * the data changed, which is exactly when positions shift, and a keyboard user must
+ * never land on a different mutation control. Anything else (a disclosure summary,
+ * a plain element) is found by its structural path, but a path is never trusted
+ * onto a button, select, input or link. When nothing matches, `fallback` (an
+ * element or a function returning one) receives focus, else focus is left alone.
+ * Returns whether focus was restored to the same identity. */
+export function captureFocusState(root, { scroller = root, fallback = null } = {}) {
   const doc = root.ownerDocument, active = doc.activeElement;
   const inside = !!active && root.contains(active);
   const key = inside ? active.dataset?.focusKey || null : null;
@@ -136,13 +143,18 @@ export function captureFocusState(root, { scroller = root } = {}) {
   return () => {
     let target = null;
     if (key) target = [...root.querySelectorAll('[data-focus-key]')].find(el => el.dataset.focusKey === key) || null;
-    else if (path) target = walk(root, path);
-    const focusable = target && typeof target.focus === 'function' && !target.disabled && target.isConnected;
+    else if (path) { target = walk(root, path); if (target && ACTIONABLE.test(target.tagName)) target = null; }
+    const focusable = !!target && typeof target.focus === 'function' && !target.disabled && target.isConnected;
     if (focusable) target.focus({ preventScroll: true });
+    else if (inside) {
+      const to = typeof fallback === 'function' ? fallback() : fallback;
+      if (to && typeof to.focus === 'function') to.focus({ preventScroll: true });
+    }
     if (scroller) scroller.scrollTop = scrollTop;
     return focusable ? doc.activeElement === target : false;
   };
 }
+const ACTIONABLE = /^(BUTTON|SELECT|INPUT|TEXTAREA|A)$/;
 function pathFrom(root, el) {
   const path = [];
   for (let node = el; node && node !== root; node = node.parentElement) {
@@ -204,11 +216,9 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
   function removeIndicator() { indicatorEl?.remove(); indicatorEl = null; }
   function removeNotice() { removeKeepingFocus(noticeEl); noticeEl = null; ageTimer = clearTimer(ageTimer); }
   function setBusyControls() {
-    for (const control of refreshControls) {
-      if (busy) control.setAttribute('aria-disabled', 'true'); else control.removeAttribute('aria-disabled');
-    }
-    if (noticeEl) { const retry = noticeEl.querySelector('.loading-retry'); if (retry) { if (busy) retry.setAttribute('aria-disabled', 'true'); else retry.removeAttribute('aria-disabled'); } }
-    if (failedEl) { const retry = failedEl.querySelector('.loading-retry'); if (retry) { if (busy) retry.setAttribute('aria-disabled', 'true'); else retry.removeAttribute('aria-disabled'); } }
+    const mark = el => busy ? el.setAttribute('aria-disabled', 'true') : el.removeAttribute('aria-disabled');
+    refreshControls.forEach(mark);
+    for (const host of [noticeEl, failedEl]) { const retry = host?.querySelector('.loading-retry'); if (retry) mark(retry); }
   }
   function retryButton() {
     const b = element(doc, 'button', 'act loading-retry'); b.type = 'button'; b.textContent = wording.retry;
@@ -351,6 +361,10 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
       setBusyControls();
     },
     touch,
+    /** A surface's own message on the status line (an operation's result, a miss): goes through the
+     * controller so its own announcements stay in sync (a direct textContent write would leave a
+     * later identical announcement deduplicated away). */
+    say(text) { if (disposed || !status) return; announced = text; status.textContent = text; },
     /** The read settled without an observation (the server's deployment is still pending): stay
      * pending — aria-busy, the one announcement — but with no skeleton, since the surface paints the
      * deployment's own copy. The next begin() adds nothing; the first observation settles it. */

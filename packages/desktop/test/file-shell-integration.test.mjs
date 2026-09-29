@@ -82,7 +82,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     instanceActionTarget, sameInstanceActionTarget, instanceSplitPlan, instanceSplitIdentity, baseTitles: new WeakMap(), menuState() {},
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "instances", tabLayerVisible: false,
     contextRosterGen: 0, contextInstances: [], contextFilter: "", collapsedInstances: new Set(), rosterTip: { bind() {}, hide() {}, sync() {} }, rosterTipFacts: () => ({}), rosterPrs: { get: () => null, refresh() {} }, contextRosterEl: null,
-    rosterState: null, rosterStale: false, rosterSignaturePainted: null, // initContextRoster builds the real controller (instance-tree createRosterLoading)
+    rosterState: null, rosterStale: false, contextDeploymentNote: null, rosterSignaturePainted: null, // initContextRoster builds the real controller (instance-tree createRosterLoading)
     wsActiveTerminal: new Map(), pendingTerms: new Set(), brainIntents: createIntentGate(), workspaceTabMemory: createWorkspaceTabMemory(),
     tabbar: document.getElementById("tabbar"), tabhost: document.getElementById("tabhost"),
     tabActionsEl: document.getElementById("tab-actions"),

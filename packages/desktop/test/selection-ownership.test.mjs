@@ -55,7 +55,7 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     menuState() {}, getBinding: () => null, formatChord: c => c, isMac: true, applyChordTitles() {}, runAction: id => actions.get(id)?.(),
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "instances", tabLayerVisible: false,
     contextRosterGen: 0, contextInstances: [], contextFilter: "", collapsedInstances: new Set(),
-    rosterState: null, rosterStale: false, rosterSignaturePainted: null, // initContextRoster builds the real controller; tests mark it ready before rendering rows
+    rosterState: null, rosterStale: false, contextDeploymentNote: null, rosterSignaturePainted: null, // initContextRoster builds the real controller; tests mark it ready before rendering rows
     rosterTip: { bind() {}, hide() {}, sync() {} }, rosterTipFacts: () => ({}), rosterPrs: { get: () => null, refresh() {} },
     wsActiveTerminal: new Map(), pendingTerms: new Set(),
     tabbar: document.getElementById("tabbar"), tabhost: document.getElementById("tabhost"),

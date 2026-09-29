@@ -469,8 +469,11 @@ function acceptObservation(s, panel, gen) {
   for (const key of s.nodeOffsets.keys()) if (!ids.has(key)) s.nodeOffsets.delete(key);
   for (const key of s.nodeIds?.keys() || []) if (!ids.has(key)) s.nodeIds.delete(key);
   s.panel = panel; s.dataGen = gen; s.dataWorkspace = currentWorkspace(); s.stale = !!panel.error; s.pending = null;
-  // The read landed: the controller drops the pill / indicator before the summary repaints.
-  s.load?.succeed({ observedAt: panel.observedAt ?? null, empty: !panel.instances.length });
+  // The read landed: the controller drops the pill / indicator before the summary repaints. A panel
+  // that reports an error beside its instances is the kernel's last observation: stale, announced once
+  // (the view's notice is a note; the controller's hidden status line is the one live region).
+  if (s.load && (!panel.error || !s.load.hasData)) s.load.succeed({ observedAt: panel.observedAt ?? null, empty: !panel.instances.length });
+  if (panel.error) s.load?.fail({ message: panel.error }); // a repeated stale poll updates in place, no re-announcement
   if (s.ctx.hasWorkspaceSwitcher) s.q('wssel').style.display = 'none';
   else renderWorkspaceSelect(s.q('wssel'), panel.workspaces, panel.workspace?.id || '');
   notice(s, panel.error ? `Roster unavailable: ${panel.error.slice(0, 300)}. Showing a reported observation, not current state; actions disabled.` : '');

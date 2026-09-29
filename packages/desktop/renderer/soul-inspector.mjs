@@ -13,7 +13,9 @@
  * ("Couldn't refresh soul · observed <age>" + Retry under the head); a failure
  * with no content shows the failed block where the skeleton stood. On the soul
  * page "Teams here" is created in frame(), so its read runs in parallel with
- * `inspect` instead of after it. */
+ * `inspect` instead of after it. Focus across a repaint: actionable controls carry
+ * `data-focus-key` and are re-found by key only (loading.mjs captureFocusState);
+ * a control that vanished hands focus to Refresh. */
 import { harnessOf } from './harness-names.mjs';
 import { postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
 import { runtimeState } from './instance-presentation.mjs';
@@ -212,8 +214,8 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
   let alive = true, serial = 0, subject = 0, operationSerial = 0, selectionGen = null, selection, data, teamsPanel = null, teamsHere = null;
   // The loading controller of the shown subject (loading.mjs), and the signature of what the content paints.
   let loading = null, painted = null;
+  // The controller's clock (tests inject one); createDataState's defaults apply on undefined.
   const timers = { now: clock.now, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout };
-  for (const key of Object.keys(timers)) if (timers[key] === undefined) delete timers[key];
   const pendingOperations = new WeakMap();
   const node = (tag, text, cls) => {
     const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el;
@@ -226,6 +228,9 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
   const valid = (id, gen) => alive && id === serial && gen === workspaceGeneration();
   const ownsSubject = (id, gen) => id === subject && valid(serial, gen);
   let status, content, summary, readiness, headActions = null, facts$ = null, side = null, notice = null;
+  // The Refresh control (focus fallback when a repaint drops the focused control) and the
+  // roster-derived block's host and signature (repainted on every show(), kept when unchanged).
+  let refreshControl = null, rosterColumn = null, rosterSignature = null;
   /** The subject's identity: a soul by name, agents root and server; an instance by its home. */
   const subjectKey = sel => sel?.instance || sel?.selector?.home ? `home:${sel.instance?.home ?? sel.selector?.home ?? ''}|${sel.instance?.server ?? ''}`
     : sel?.agent ? `soul:${sel.agent.name}|${sel.agent.agentsRoot ?? ''}|${sel.agent.server ?? ''}` : JSON.stringify(sel?.selector ?? null);
@@ -248,7 +253,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       begin(o) { const first = !main.hasData && main.state !== 'failed'; main.begin(o); if (first) aside?.begin(o); },
       succeed(o) { main.succeed(o); aside?.succeed(); },
       fail(e) { main.fail(e); aside?.reset(); },
-      bindRefresh: main.bindRefresh, touch: main.touch,
+      bindRefresh: main.bindRefresh, touch: main.touch, say: main.say,
       dispose() { main.dispose(); aside?.dispose(); },
     };
   }
@@ -260,7 +265,10 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     readiness?.update({ active: !!selection && selectionGen === workspaceGeneration(), workspace: w, selector, cli: cliStatus(), identity: ref?.createdAt });
   }
   function message(text, error = false) {
-    if (!status) return; status.textContent = text; status.classList.toggle('error', error);
+    if (!status) return;
+    // Through the controller when it exists, so its own announcements stay in sync (loading.mjs say()).
+    if (loading) loading.say(text); else status.textContent = text;
+    status.classList.toggle('error', error);
   }
   function frame(title) {
     container.hidden = false;
@@ -277,6 +285,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     // "Refreshing…" lands here, beside the Refresh control (loading.mjs owns its 400ms).
     const refreshing = node('span', undefined, 'inspector-refreshing');
     const refresh = button(layout === 'page' ? '' : 'Refresh'); // bound below: aria-disabled while a read is in flight, never disabled
+    refreshControl = refresh; rosterSignature = null;
     if (layout === 'page') {
       // Workspace v4 (W4): the page bar replaces the Workspace tabs; back returns to the list it came from.
       const bar = pageBar(doc, { backLabel, crumbs: ['Workspace', backLabel], current: title, onBack: () => { if (alive) close({ restoreFocus: true }); } });
@@ -295,7 +304,8 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       main.append(summary, status, notice, content); column.append(side); body.append(main, column);
       container.append(bar.bar, body);
       loading = createLoading(refreshing); loading.bindRefresh(refresh, () => { void show(selection, { user: true }); });
-      if (selection.agent) renderSelectedSoul(column);
+      rosterColumn = column;
+      if (selection.agent) { renderSoulActions(column); renderSoulRoster(); }
       // "Teams here" reads `oats soul teams` in parallel with `inspect`, not after it.
       if (selection.agent) ensureTeamsHere();
       return;
@@ -319,7 +329,8 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     container.append(head, notice, summary, status, ...(withReadiness ? [readinessHost] : []), content);
     loading = createLoading(refreshing); loading.bindRefresh(refresh, () => { void show(selection, { user: true }); });
     readiness = withReadiness ? createReadinessView(readinessHost, { ctx, compact: true }) : null; syncReadiness();
-    if (selection.agent) renderSelectedSoul();
+    rosterColumn = null;
+    if (selection.agent) { renderSoulActions(null); renderSoulRoster(); }
   }
   // Resets are silent by default: workspace/subtab/disposal must not focus an
   // obsolete or hidden card. Only an explicit standalone X restores focus.
@@ -345,8 +356,8 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     if (!available()) { message('Inspection needs an installed OATS CLI with operations API 2. Update OATS and refresh.', true); return; }
     status.classList.remove('error');
     loading.begin({ user });
-    // Focus and scroll inside the content survive a repaint (a superseded read restores nothing).
-    const restore = same && loading.hasData ? captureFocusState(content, { scroller: container }) : null;
+    // The roster-derived header (lede, refusal, facts, Instances) follows the host's current roster row.
+    if (same && selection.agent) renderSoulRoster();
     if (same && teamsHere) void teamsHere.refresh({ user });
     try {
       const result = await request({ action: 'inspect', selector: next.selector, ...(user ? { refresh: true } : {}) });
@@ -364,7 +375,12 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       // An unchanged inspection is not repainted: the DOM (and whatever holds focus in it) stays.
       // The read's own metadata (observedAt, refreshing) is not what the content paints.
       const signature = JSON.stringify({ ...result, observedAt: undefined, refreshing: undefined });
-      if (signature !== painted) { render(inspected); painted = signature; restore?.(); }
+      if (signature !== painted) {
+        // Focus and scroll are captured right before the repaint (the person may have moved into the
+        // content while the read ran); a control that vanished hands focus to Refresh, never to a neighbour.
+        const restore = same ? captureFocusState(content, { scroller: container, fallback: refreshControl }) : null;
+        render(inspected); painted = signature; restore?.();
+      }
       syncAvailability();
     } catch (error) {
       if (!valid(id, gen)) return;
@@ -463,7 +479,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
         if (!ownsSubject(id, gen) || !open.isConnected) return;
         if (openSoul(ref) !== true) message(`${ref.name} is not in this workspace's souls.`);
       });
-      open.title = 'Inspect the soul this instance was spawned from'; box.append(open);
+      open.title = 'Inspect the soul this instance was spawned from'; open.dataset.focusKey = 'open-soul'; box.append(open);
     }
     content.append(box);
   }
@@ -486,30 +502,50 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     content.append(row);
   }
   // Roster-owned actions do not depend on operationsApi, inspect success, or
-  // an editable soul record. Keep their DOM stable while inspection settles.
-  function renderSelectedSoul(column = null) {
-    const agent = selection.agent, id = subject, gen = selectionGen;
+  // an editable soul record. Built once per subject; each handler reads the
+  // CURRENT selection row at click time, since a refresh swaps the row without
+  // rebuilding these controls.
+  function renderSoulActions(column = null) {
+    const id = subject, gen = selectionGen;
     const actions = node('div', undefined, 'inspector-actions');
-    const action = (label, cls, can, run) => {
+    const action = (label, cls, key, can, run) => {
       const control = button(label, () => {
-        if (ownsSubject(id, gen) && control.isConnected && !control.disabled && can(agent)) run?.(agent);
+        const agent = selection?.agent;
+        if (agent && ownsSubject(id, gen) && control.isConnected && !control.disabled && can(agent)) run?.(agent);
       });
-      control.classList.add(cls); return control;
+      control.classList.add(cls); control.dataset.focusKey = key; return control;
     };
     // The soul page's primary action is Spawn (human, 2026-09-26; it opens the spawn dialog).
-    const launchButton = action(column ? 'Spawn' : 'Launch…', 'spawn-act', canLaunch, launch); launchButton.classList.add('primary'); launchButton.dataset.launch = '1';
-    const scheduleButton = action('Schedule…', 'schedule-act', canLaunch, schedule); scheduleButton.dataset.launch = '1';
-    const filesButton = action('Files', 'brain-act', canFiles, files); filesButton.dataset.files = '1';
+    const launchButton = action(column ? 'Spawn' : 'Launch…', 'spawn-act', 'spawn', canLaunch, launch); launchButton.classList.add('primary'); launchButton.dataset.launch = '1';
+    const scheduleButton = action('Schedule…', 'schedule-act', 'schedule', canLaunch, schedule); scheduleButton.dataset.launch = '1';
+    const filesButton = action('Files', 'brain-act', 'files', canFiles, files); filesButton.dataset.files = '1';
     actions.append(filesButton, scheduleButton, launchButton);
     // Kernel #217 (desktop-facts): the soul's file opens as its web page, when reported.
-    const fileUrl = column && desktopFacts(cliStatus()) && typeof agent.file?.url === 'string' && /^https:\/\//.test(agent.file.url) ? agent.file.url : null;
+    const webFile = agent => desktopFacts(cliStatus()) && typeof agent?.file?.url === 'string' && /^https:\/\//.test(agent.file.url) ? agent.file.url : null;
+    const fileUrl = column ? webFile(selection.agent) : null;
     if (fileUrl && typeof ctx?.openExternal === 'function') {
-      const open = button('Open file', () => { if (ownsSubject(id, gen)) ctx.openExternal(fileUrl); });
-      open.classList.add('file-act'); open.title = agent.file.path || fileUrl; actions.prepend(open);
+      const open = button('Open file', () => { const url = webFile(selection?.agent); if (url && ownsSubject(id, gen)) ctx.openExternal(url); });
+      open.classList.add('file-act'); open.dataset.focusKey = 'open-file'; open.title = selection.agent.file.path || fileUrl; actions.prepend(open);
     }
     if (headActions) headActions.prepend(actions); else summary.append(actions);
     syncAvailability();
+  }
+  /** What the roster row says about the soul — its lede, a spawn refusal, the repo/work/file facts and
+   * its Instances — repainted on every show() behind a signature, so a refresh follows the roster
+   * (a new or retired instance) while an unchanged roster keeps its nodes and whatever holds focus. */
+  function renderSoulRoster() {
+    const agent = selection?.agent; if (!agent || !summary) return;
+    const id = subject, gen = selectionGen, column = rosterColumn;
     const homes = instances(agent);
+    const refusal = column ? spawnRefusal(agent) : null, facts = desktopFacts(cliStatus());
+    const signature = JSON.stringify([layout, agent.description, refusal, agent.repoName, agent.work, agent.file, facts,
+      homes.map(i => [i.instance, i.home, i.running, runtimeState(i), buildState(i)])]);
+    if (signature === rosterSignature) return;
+    rosterSignature = signature;
+    // The block spans the identity copy (lede, refusal, facts) and the Instances card (page: the side column).
+    const restore = captureFocusState(container, { scroller: container, fallback: refreshControl });
+    for (const el of container.querySelectorAll('.inspector-lede, .inspector-refusal, .inspector-instances, .inspector-roster')) el.remove();
+    if (facts$) for (const el of facts$.querySelectorAll('[data-fact="repo"], [data-fact="branch"], [data-fact="file"]')) el.remove();
     const openHome = (instance, control) => {
       if (!ownsSubject(id, gen) || !control.isConnected) return;
       // Instances keep the sidebar: from a soul page, the host opens it beside the page.
@@ -519,16 +555,17 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       // Identity: what it does, then where it works (the harness joins once inspected).
       if (agent.description) facts$.before(node('p', agent.description, 'inspector-lede'));
       // Kernel #217: a soul a spawn here would refuse says why, beside the disabled Spawn.
-      const refusal = spawnRefusal(agent);
       if (refusal) { const note = node('p', `Can't spawn here · ${refusal}`, 'inspector-refusal'); note.setAttribute('role', 'note'); facts$.before(note); }
-      if (typeof agent.repoName === 'string' && agent.repoName) facts$.append(pageFact('repo', agent.repoName, 'mono'));
+      const harness = facts$.querySelector('[data-fact="harness"]');
+      const place = fact => harness ? harness.before(fact) : facts$.append(fact);
+      if (typeof agent.repoName === 'string' && agent.repoName) place(pageFact('repo', agent.repoName, 'mono'));
       if (typeof agent.work === 'string' && agent.work) facts$.append(pageFact('branch', WORK_TEXT[agent.work] || `works in ${agent.work}`, 'muted'));
       // Kernel #217: the soul's file. Without a web address (a non-GitHub repo) its path shows instead.
-      if (desktopFacts(cliStatus()) && typeof agent.file?.path === 'string' && agent.file.path && !(typeof agent.file.url === 'string' && /^https:\/\//.test(agent.file.url))) facts$.append(pageFact('file', agent.file.path, 'mono'));
+      if (facts && typeof agent.file?.path === 'string' && agent.file.path && !(typeof agent.file.url === 'string' && /^https:\/\//.test(agent.file.url))) facts$.append(pageFact('file', agent.file.path, 'mono'));
       const card = pageCard(doc, 'Instances', { count: homes.length }); card.card.classList.add('inspector-instances');
       if (!homes.length) card.card.append(node('p', 'No instances yet.', 'page-note'));
       for (const instance of homes) {
-        const control = node('button', undefined, 'inspector-instance'); control.type = 'button';
+        const control = node('button', undefined, 'inspector-instance'); control.type = 'button'; control.dataset.focusKey = `instance:${instance.home || instance.instance}`;
         const state = runtimeState(instance), build = buildState(instance);
         const dot = node('span', undefined, `instance-dot ${state}`); dot.setAttribute('aria-hidden', 'true');
         control.append(dot, node('span', instance.instance, 'instance-name'));
@@ -540,20 +577,21 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
         card.card.append(control);
       }
       column.append(card.card);
-      return;
+      restore(); return;
     }
-    const roster = node('div', undefined, 'inspector-content');
+    const roster = node('div', undefined, 'inspector-content inspector-roster');
     // What a person needs: what it does, and its instances.
     if (agent.description) roster.append(node('p', agent.description, 'inspector-lede'));
     roster.append(node('h3', `Instances · ${homes.length}`));
     if (!homes.length) roster.append(node('p', 'No instances reported for this soul.', 'muted'));
     for (const instance of homes) {
       const control = button(`${instance.instance} · ${runtimeState(instance)}`, () => openHome(instance, control));
-      control.classList.add('inspector-instance'); control.disabled = !instance.home;
+      control.classList.add('inspector-instance'); control.dataset.focusKey = `instance:${instance.home || instance.instance}`; control.disabled = !instance.home;
       control.title = instance.home ? 'Inspect the immutable instance snapshot' : 'No instance home reported';
       roster.append(control);
     }
     summary.append(roster);
+    restore();
   }
   /** The soul's launch (0.30): `inspect --soul`'s own, else its roster row's; null without the feature. */
   function soulLaunch(inspected) { return shownLaunch(inspected.launch ?? selection?.agent?.launch, cliStatus()); }
@@ -619,7 +657,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       const why = layer?.id && layersFrom() ? coreWhy(layer.from) : null;
       if (why) card.append(node('span', why, 'core-why'));
       if (opens) {
-        card.type = 'button'; card.dataset.capability = cap.id;
+        card.type = 'button'; card.dataset.capability = cap.id; card.dataset.focusKey = `core:${slot}`;
         card.setAttribute('aria-label', [`${layerLabel(slot)}: ${cap.id}`, detail, why].filter(Boolean).join(', ') + ' — open its page');
         card.addEventListener('click', () => { if (alive && card.isConnected) openCapability(cap, selection.agent); });
       }
@@ -751,7 +789,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
             if (ownsControl()) { pendingOperations.delete(control); syncAvailability(); }
           }
         });
-        control.dataset.operation = address; row.append(control);
+        control.dataset.operation = address; control.dataset.focusKey = `op:${address}`; row.append(control);
       }
       content.append(row);
     }

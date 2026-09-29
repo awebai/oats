@@ -153,7 +153,7 @@ function shellRoster(t) {
   const requests = [], rendered = [], selected = [];
   const c = {
     document, contextRosterGen: 0, contextWorkspace: "", contextInstances: [], tabWorkspace: common.currentWorkspace(),
-    rosterState: null, rosterStale: false, rosterSignaturePainted: null, rosterSignature, tabs: new Map(), activeTab: null, connectionGeneration: 0,
+    rosterState: null, rosterStale: false, contextDeploymentNote: null, rosterSignaturePainted: null, rosterSignature, tabs: new Map(), activeTab: null, connectionGeneration: 0,
     currentWorkspace: common.currentWorkspace, adoptWorkspace: common.adoptWorkspace,
     staleWorkspaceSelection: common.staleWorkspaceSelection, rosterResponseOwns,
     contextRosterEl: document.getElementById("instance-roster"),
