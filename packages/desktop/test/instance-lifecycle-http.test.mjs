@@ -117,3 +117,26 @@ test('remote lifecycle over HTTP: no remote entry on this machine refuses and sp
     assert.equal(h.calls.length, 0);
   }
 });
+test('remote lifecycle over HTTP: a row of another group of the same server is never admitted, and nothing is sent', async () => {
+  const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
+  const start = source.indexOf('const send = (res, code, body, type'), end = source.indexOf('\nserver.on("error",');
+  const ctx = context(), calls = [];
+  const groupA = { id: 'remote:build:aaaa', name: 'Build box', scope: '/srv/a', remote: true, server: 'build' };
+  const groupB = { id: 'remote:build:bbbb', name: 'Build box', scope: '/srv/b', remote: true, server: 'build' };
+  const row = { ...ctx.instances[0], server: 'build', addressable: true };
+  const deps = { createServer: fn => fn, lifecycleRequest: createLifecycleBoundary({ invoke: async (...args) => { calls.push(args); return envelope(stopPlan()); } }),
+    cliState: { ...ctx.cli, remote: ['lifecycle-plans'] }, workspaces: () => [groupA, groupB], ctxs: ['/Users/me/work'],
+    snapshot: { byWs: new Map([[groupA.id, { instances: [] }], [groupB.id, { instances: [row] }]]) }, observeMutation: assert.fail, remoteLoop: { request: assert.fail },
+    resolveInstanceOr: assert.fail, panelData: assert.fail, snapshotPanel: assert.fail, collectNow: assert.fail };
+  const handler = new Function(...Object.keys(deps), `${source.slice(start, end)}\nreturn server;`)(...Object.values(deps));
+  const ask = async ws => {
+    const req = new EventEmitter(); let result;
+    Object.assign(req, { url: `/api/instance-lifecycle?ws=${encodeURIComponent(ws)}`, method: 'POST', headers: { host: '127.0.0.1:4820', origin: 'http://localhost:4820' } });
+    const res = { writeHead(status) { result = { status }; }, end(text) { result.body = JSON.parse(text); } };
+    const done = handler(req, res); req.emit('data', Buffer.from(JSON.stringify({ ...request(), selector: { ...request().selector, server: 'build' } }))); req.emit('end'); await done; return result;
+  };
+  assert.equal((await ask(groupA.id)).body.reason.code, 'E_SESSION_UNKNOWN');
+  assert.equal(calls.length, 0);
+  assert.equal((await ask(groupB.id)).body.status, 'plan', 'its own group admits it');
+  assert.equal(calls.length, 1);
+});
