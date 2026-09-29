@@ -19,6 +19,15 @@
    4s refresh).
    Keyboard: arrows walk the tree, Enter/t opens the terminal, b Brain,
    s Spawn view, o action popover, +/- zoom, f fits, Escape clears.
+   Loading (desktop/loading-states): the shared controller in loading.mjs owns
+   the pending / refreshing presentation. Pending (no roster for this workspace
+   yet) shows a skeleton pill in .hier-sum after 150ms, aria-busy on the view
+   root and one "Loading roster…" announcement; the canvas paints no fake
+   nodes (a tidy tree has no honest skeleton shape). Refreshing appends
+   "Refreshing…" beside the summary after 400ms. Stale and failed keep the
+   view's own .hier-notice and its "Retry roster" button (the notice owns that
+   copy; the primitive gets no noticeHost and no failedHost). The controller's
+   hidden status line is the view's one live region: the notice is a note.
    Contract: mount(el, ctx) / unmount(); roster from GET /api/panel, explicit
    selected activity from the guarded K7 POST /api/instance-events boundary. */
 import { computeClusters, siblingEdges } from "./clusters.mjs";
@@ -31,6 +40,8 @@ import {
   currentWorkspace, setWorkspace, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange,
   renderWorkspaceSelect, wsQuery, workspaceGeneration,
 } from "./common.mjs";
+import { createDataState, skeleton, statusLine, observedText } from "../loading.mjs";
+import { deploymentUnavailableText } from "../deployment-header.mjs";
 import { registerAction } from "../keybindings.mjs";
 import { resolveViewKey } from "../view-keys.mjs";
 import { icon } from "../shell-icons.mjs";
@@ -43,6 +54,9 @@ export const hierarchyCSS = `
             border-bottom: 1px solid var(--border); background: var(--surface); }
 .hier-sum { color: var(--muted); font-size: 12.5px; }
 .hier-sum b { color: var(--fg); font-weight: 600; }
+.hier-sum .skeleton-pill { height: 0.9em; }
+.hier-refreshing { flex: none; display: inline-flex; align-items: center; }
+.hier-refreshing:empty { display: none; }
 .hier .spawnbtn { display:inline-flex; align-items:center; gap:6px; min-height:28px; padding:0 12px; font-size:12px; font-weight:650; white-space:nowrap; }
 .hier-notice { flex:none; display:flex; align-items:center; gap:8px; padding:8px 16px; color:var(--muted); background:var(--surface); font-size:12px; overflow-wrap:anywhere; }
 .hier-notice-message { flex:1; }
@@ -256,6 +270,8 @@ export function layoutClusters(instances) {
 }
 
 const DRAG_THRESHOLD = 5; // px before a node-drag moves its tree (else it's a click)
+const ROSTER_NOUN = 'roster';
+const SUMMARY_PILL_WIDTH = '15em'; // about the width of "2 running · 1 stopped · 1 group"
 
 export function mount(el, ctx) {
   ensureTheme(el.ownerDocument);
@@ -273,11 +289,12 @@ export function mount(el, ctx) {
       <style>${hierarchyCSS}</style>
       <div class="hier-bar">
         <select class="field wssel" aria-label="Workspace" style="display:none"></select>
-        <span class="hier-sum"><span class="spinner"></span></span>
+        <span class="hier-sum"></span>
+        <span class="hier-refreshing"></span>
         <span style="flex:1"></span>
         <button class="act primary spawnbtn" title="Choose a soul in Workspace to spawn">${icon("plus", { size: 14 })}Spawn</button>
       </div>
-      <div class="hier-notice" role="status" aria-live="polite" hidden><span class="hier-notice-message"></span><button class="act hier-retry" type="button">Retry roster</button></div>
+      <div class="hier-notice" role="note" hidden><span class="hier-notice-message"></span><button class="act hier-retry" type="button">Retry roster</button></div>
       <div class="hier-canvas" tabindex="0" role="tree" aria-label="Active agents by cluster">
         <div class="hier-zoom">
           <button class="zout" title="Zoom out" aria-label="Zoom out">${icon("zoomOut", { size: 14 })}</button>
@@ -288,7 +305,19 @@ export function mount(el, ctx) {
     </div>`;
   s.q = (cls) => el.querySelector("." + cls);
   s.canvas = s.q("hier-canvas");
-  s.q('hier-retry').addEventListener('click', () => { if (s.alive) void refresh(s); });
+  // The shared loading controller. The summary hosts the pending pill; the
+  // view's own .hier-notice keeps the stale / failed copy, so no noticeHost.
+  const doc = el.ownerDocument;
+  s.status = statusLine(doc, { visuallyHidden: true, className: 'hier-status' });
+  s.q('hier-bar').after(s.status);
+  s.load = createDataState({ doc, noun: ROSTER_NOUN, region: s.q('hier'), skeletonHost: s.q('hier-sum'),
+    skeleton: () => skeleton(doc, 'pill', { width: SUMMARY_PILL_WIDTH }), status: s.status,
+    indicatorHost: s.q('hier-refreshing'), noticeHost: null, failedHost: null,
+    setTimeout: (fn, ms) => s.win.setTimeout(fn, ms), clearTimeout: id => s.win.clearTimeout(id) });
+  // Retry roster keeps its plain click: a second click supersedes the first
+  // request (the ownership race tests pin this), so it is not bound through
+  // the controller's busy gate.
+  s.q('hier-retry').addEventListener('click', () => { if (s.alive) void refresh(s, { user: true }); });
   s.q("wssel").addEventListener("change", (e) => setWorkspace(e.target.value));
   s.q("spawnbtn").addEventListener("click", () => openWorkspace(s));
   if (!ctx.openView) { s.q("spawnbtn").disabled = true; s.q("spawnbtn").title = 'Workspace navigation is unavailable in this host'; }
@@ -372,6 +401,7 @@ function teardown(s) {
   if (!s.alive) return;
   s.alive = false; s.request++; s.actionTicket++; s.pending = null; s.pan = null; s.drag = null;
   s.activity?.dispose(); s.activity = null;
+  s.load?.dispose(); s.load = null;
   s.win.clearTimeout(s.clickResetTimer);
   s.timers.forEach(clearInterval);
   (s.disposers || []).forEach((off) => { try { off(); } catch {} });
@@ -402,6 +432,11 @@ function dataCurrent(s) {
   return s.alive && s.dataGen === workspaceGeneration() && s.dataWorkspace === currentWorkspace();
 }
 function actionsCurrent(s) { return dataCurrent(s) && !s.stale && !s.pending; }
+/** The stale rule's age (" · observed 45s ago") for the kept observation, from the panel's observedAt; nothing when unreported. */
+function staleAge(s) {
+  const age = observedText(s.load?.observedAt ?? null, Date.now());
+  return age ? ` · ${age}` : '';
+}
 function notice(s, message) {
   const el = s.q('hier-notice'); if (!el) return;
   const text = el.querySelector?.('.hier-notice-message');
@@ -428,7 +463,10 @@ function resetObservation(s) {
   s.drag?.node.classList.remove('dragging'); s.drag = null; s.dragConsumedClick = null; s.pan = null;
   s.canvas.classList.remove('panning'); s.pending = null; s.signature = null; s.bounds = null;
   s.panel = { instances: [] }; s.loading = false; s.dataGen = null; s.dataWorkspace = null; s.stale = true;
-  clearCanvas(s); s.q('hier-sum').textContent = 'Loading reported roster…'; notice(s, '');
+  // A new subject: the controller forgets its data; the summary stays blank
+  // until the pending pill (150ms) or the first reply. Never counts of nothing.
+  s.load?.reset();
+  clearCanvas(s); s.q('hier-sum').textContent = ''; notice(s, '');
 }
 function acceptObservation(s, panel, gen) {
   const signature = activeSignature(panel);
@@ -436,9 +474,14 @@ function acceptObservation(s, panel, gen) {
   for (const key of s.nodeOffsets.keys()) if (!ids.has(key)) s.nodeOffsets.delete(key);
   for (const key of s.nodeIds?.keys() || []) if (!ids.has(key)) s.nodeIds.delete(key);
   s.panel = panel; s.dataGen = gen; s.dataWorkspace = currentWorkspace(); s.stale = !!panel.error; s.pending = null;
+  // The read landed: the controller drops the pill / indicator before the summary repaints. A panel
+  // that reports an error beside its instances is the kernel's last observation: stale, announced once
+  // (the view's notice is a note; the controller's hidden status line is the one live region).
+  if (s.load && (!panel.error || !s.load.hasData)) s.load.succeed({ observedAt: panel.observedAt ?? null, empty: !panel.instances.length });
+  if (panel.error) s.load?.fail({ message: panel.error }); // a repeated stale poll updates in place, no re-announcement
   if (s.ctx.hasWorkspaceSwitcher) s.q('wssel').style.display = 'none';
   else renderWorkspaceSelect(s.q('wssel'), panel.workspaces, panel.workspace?.id || '');
-  notice(s, panel.error ? `Roster unavailable: ${panel.error.slice(0, 300)}. Showing a reported observation, not current state; actions disabled.` : '');
+  notice(s, panel.error ? `Roster unavailable: ${panel.error.slice(0, 300)}. Showing a reported observation${staleAge(s)}, not current state; actions disabled.` : '');
   if (signature !== s.signature) { s.signature = signature; render(s); }
   else { if (!s.fitted) fit(s); updatePop(s); }
 }
@@ -448,18 +491,34 @@ function applyPending(s) {
   acceptObservation(s, pending.panel, pending.gen);
 }
 
-/* Every request owns BOTH outcomes, even within the same workspace. */
-export async function refresh(s) {
+/* Every request owns BOTH outcomes, even within the same workspace. The
+   loading controller hears begin() here and succeed()/fail() only from the
+   request that still owns the view. `user`: a Retry the person asked for. */
+export async function refresh(s, { user = false } = {}) {
   if (!s.alive) return;
   const myGen = workspaceGeneration(), requestedWorkspace = currentWorkspace();
   const request = s.request = (s.request || 0) + 1;
   const owns = () => s.alive && request === s.request && myGen === workspaceGeneration();
   s.loading = true;
+  s.load?.begin({ user });
   try {
     const data = await apiJson(s.ctx, `/api/panel${wsQuery()}`);
     if (!owns()) return;
     const panel = projectActivePanel(data);
+    // observedAt (spec 02, additive) labels the observation's age; never invented.
+    panel.observedAt = typeof data.observedAt === 'string' && data.observedAt ? data.observedAt : null;
     if (panel.error && !panel.instances.length) throw Error(panel.error); // failed absence is not an observed empty roster
+    // A deployment the kernel has not observed yet (the server's first read is
+    // still running) or could not observe is not an empty roster either. Pending
+    // keeps its own copy in the summary — no skeleton, no counts, no empty state —
+    // and the next poll brings the observation; a refusal is a failed read.
+    const deployment = !panel.workspace?.remote && data.deployment && typeof data.deployment === 'object' && data.deployment.status !== 'observed' ? data.deployment : null;
+    if (deployment && !panel.instances.length) {
+      if (deployment.status !== 'pending') throw Error(deploymentUnavailableText(deployment));
+      // The controller stays pending (aria-busy, the one announcement) without a pill: the copy is the summary.
+      s.load?.defer(); s.q('hier-sum').textContent = deploymentUnavailableText(deployment);
+      return;
+    }
     // A stale selection (persisted, no longer served) behaves like an empty
     // one: adopt the served workspace. A served selection answered with
     // another workspace is a real mismatch and stays refused.
@@ -475,8 +534,11 @@ export async function refresh(s) {
   } catch (error) {
     if (!owns()) return;
     s.pending = null; s.stale = true; s.actionTicket = (s.actionTicket || 0) + 1;
+    // The controller announces the failure and drops its pill; the view's
+    // notice below is the visible failure surface (no failedHost).
+    s.load?.fail(error);
     if (s.dataGen == null) s.q('hier-sum').textContent = 'Roster unknown';
-    notice(s, `Roster unavailable: ${String(error?.message || 'read failed').slice(0, 300)}. ${s.dataGen == null ? 'No current observation.' : 'Showing the last observation, not current state; actions disabled.'}`);
+    notice(s, `Roster unavailable: ${String(error?.message || 'read failed').slice(0, 300)}. ${s.dataGen == null ? 'No current observation.' : `Showing the last observation${staleAge(s)}, not current state; actions disabled.`}`);
     updatePop(s);
   } finally { if (owns()) s.loading = false; }
 }

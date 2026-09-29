@@ -80,6 +80,7 @@ test('the shipped roster row: the chip beside the name, the link in the row tool
     rosterTip: { bind(el, facts) { tips.set(el.dataset.treeInstance, facts); }, hide() {}, sync() {} }, rosterTipFacts,
     connectionGeneration: 0, menuState() {}, runAction: assert.fail, getBinding: () => null, formatChord: c => c, isMac: true,
     contextRosterEl: doc.querySelector('#instance-roster'), contextFilter: '', contextWorkspace: 'A', contextInstances: roster,
+    rosterState: { hasData: true, state: 'ready' }, rosterStale: false, contextDeploymentNote: null, // the roster's loading state (instance-tree createRosterLoading): a read succeeded
     currentWorkspace: () => 'A', workspaceGeneration: () => 0, collapsedInstances: new Set(), tabs: new Map(), activeTab: null,
     tabOpenIntents: { applyFocus: fn => fn() }, openTerminalTab: assert.fail, openInstanceStart: assert.fail, onRosterRowKey: assert.fail,
     api: assert.fail, showStage: assert.fail, updateActiveContexts() {}, applyChordTitles() {},

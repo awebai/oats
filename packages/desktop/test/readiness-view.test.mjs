@@ -61,7 +61,7 @@ test('overlapping Refresh within one mounted owner guards both result and busy c
 });
 test('malformed or wrong qualified target never paints Ready; explicit retry recovers', async t => {
   let result = view(); result.data.summary.ready = true; const u = setup(t, () => result); await u.update();
-  assert.match(u.text(), /invalid or contradictory/); assert.doesNotMatch(u.one('.readiness-status').textContent, /^Ready/);
+  assert.match(u.text(), /invalid or contradictory/); assert.doesNotMatch(u.one('.readiness-summary').textContent, /^Ready/); assert.doesNotMatch(u.one('.readiness-status').textContent, /^Ready/);
   result = view({ ...target, selector: { kind: 'soul', soul: 'other', agentsRoot: '/team/agents' } }); await u.component.refresh(); assert.match(u.text(), /invalid or contradictory/);
   result = view(); await u.component.refresh(); assert.match(u.text(), /1 failing/); assert.equal(u.calls.length, 3);
 });
@@ -124,7 +124,7 @@ test('a passing provider item shows its warnings as reported, counted on its lin
   assert.equal(item.querySelector('.readiness-warning').textContent, `Warning: ${warning.message} (e2ee-disabled)`);
   assert.equal(u.host.querySelector('img'), null, 'inert text');
   assert.match(u.text(), /Ready — every required check passes/, 'a warning does not unready the subject');
-  assert.doesNotMatch(u.one('.readiness-status').textContent, /warning/i, 'warnings do not count in the summary');
+  assert.doesNotMatch(u.one('.readiness-summary').textContent, /warning/i, 'warnings do not count in the summary');
 });
 
 // One provider item per answer, with the item status the kernel maps it to.

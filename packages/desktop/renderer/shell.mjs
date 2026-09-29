@@ -52,6 +52,7 @@ import {
   collapseKey, hasInstanceChildren, instanceRepoLabel, treeConnectors, filterInstanceTree, instanceVisibleInTree,
   captureTreeRenderState, rosterResponseOwns, clusterSeparator, renderRosterCount,
   instanceId, rosterParentId, terminalKey, resolveTerminalOpen, visibleClusters,
+  createRosterLoading, rosterSignature, markStaleControl, staleBlocked, ROSTER_STALE_TITLE,
 } from "./instance-tree.mjs";
 import {
   tabVisibleInContext, canActivateTab,
@@ -236,6 +237,17 @@ let contextRosterEl = null;
 let contextFilter = "";
 let contextInstances = [];
 let contextWorkspace = "";
+// The roster's loading state (desktop/loading-states): the controller owns the
+// pending skeleton, "Refreshing…", the stale line and Retry; shell owns the
+// latest-intent tokens (contextRosterGen / owns()) and calls it only for a
+// read it still owns. rosterStale: the last owned read failed with data on
+// screen, so Start… and the row actions menu are disabled until one succeeds.
+// rosterSignaturePainted: what the list last painted; an identical poll skips the rebuild.
+let rosterState = null;
+let rosterStale = false;
+let rosterSignaturePainted = null;
+// The deployment note ("Reading the deployment…", a kernel refusal): its own truthful state above the rows.
+let contextDeploymentNote = null;
 let activeInstanceMenu = null;
 const splitOpenState = () => ({ split, activeId: activeTab, tabs, workspace: currentWorkspace(), visible: tabLayerVisible });
 const ownsInstanceTarget = target => target?.workspace === currentWorkspace() && contextWorkspace === currentWorkspace()
@@ -284,6 +296,8 @@ function updateActiveContexts(tabLayerOn = tabLayerVisible) {
 function initContextRoster() {
   contextRosterEl = document.getElementById("instance-roster");
   const input = contextRosterEl.querySelector(".ctx-filter");
+  rosterState = createRosterLoading(document, contextRosterEl, { onRetry: () => { void refreshContextRoster({ user: true }); } });
+  renderRosterCount(contextRosterEl.querySelector(".ctx-count"), [], { pending: true });
   // Native pointer/keyboard entry is a newer UI intent, even if no command
   // ran (or the filter already had focus). Retained attachments stay alive.
   const sidebar = document.getElementById("sidebar");
@@ -303,7 +317,7 @@ function setSidebarMode(mode) {
   if (typeof tabs !== "undefined") updateContextTabs();
 }
 
-async function refreshContextRoster() {
+async function refreshContextRoster({ user = false } = {}) {
   if (!contextRosterEl) return;
   const myGen = ++contextRosterGen;
   const commitWorkspaceLabel = workspaceLabel.begin();
@@ -321,13 +335,21 @@ async function refreshContextRoster() {
     staleDispatch,
   });
   const listEl = contextRosterEl.querySelector(".ctx-list");
+  // pending (skeleton after 150ms) without data, refreshing (content stays) with it.
+  rosterState?.begin({ user });
   let panel;
   try {
     panel = await api(`/api/panel${ws ? `?ws=${encodeURIComponent(ws)}` : ""}`);
   } catch (e) {
     if (owns()) {
-      const notice = document.createElement("div"); notice.className = "ctx-empty";
-      notice.textContent = `Roster unavailable: ${e.message}`; listEl.replaceChildren(notice);
+      // With data: stale — the list is kept, its actions disabled, the
+      // controller paints "Couldn't refresh instances · observed <age>" + Retry.
+      // Without: the controller paints the failed block where the skeleton stood.
+      rosterState?.fail(e);
+      // The rows are rebuilt once, to disable their actions; a repeat failure keeps them. Without
+      // data, the count's pill stops (nothing is loading): the reserved box, empty and still.
+      if (rosterState?.hasData && !rosterStale) { rosterStale = true; renderContextRoster(contextInstances); }
+      else if (rosterState && !rosterState.hasData) renderRosterCount(contextRosterEl.querySelector(".ctx-count"), [], { failed: true });
       refreshPanelInstance([], ws);
     }
     return;
@@ -341,21 +363,59 @@ async function refreshContextRoster() {
   }
   if (commitWorkspaceLabel(panel.workspace, panel.workspaces)) renderWorkspaceContext(panel.workspace);
   contextWorkspace = resolvedWs;
-  contextInstances = panel.instances || [];
-  void rosterPrs.refresh(panel.workspace?.remote ? null : resolvedWs);
-  refreshPanelInstance(contextInstances, resolvedWs);
-  renderContextRoster(contextInstances);
-  if (panel.error) {
-    const error = document.createElement("div"); error.className = "ctx-empty"; error.textContent = panel.error;
-    listEl.prepend(error);
-  }
+  // A failed read with no instances keeps the rows already shown for this workspace (stale), so the
+  // previous list survives that reply; every other reply replaces it.
+  const previousInstances = contextInstances;
+  if (!(panel.error && !(panel.instances || []).length && rosterState?.hasData)) contextInstances = panel.instances || [];
   // A deployment the kernel could not observe is not an empty one: name the
   // missing feature or keep the kernel's refusal (never an optimistic read).
-  if (panel.deployment && panel.deployment.status !== "observed" && !panel.workspace?.remote) {
-    const note = document.createElement("div"); note.className = "ctx-empty"; note.setAttribute("role", "status");
-    note.textContent = deploymentUnavailableText(panel.deployment);
-    listEl.prepend(note);
+  // It is its own truthful state, painted above the rows by renderContextRoster
+  // on every path (module state, so a filter edit or a collapse keeps it).
+  contextDeploymentNote = panel.deployment && panel.deployment.status !== "observed" && !panel.workspace?.remote
+    ? deploymentUnavailableText(panel.deployment) : null;
+  const signature = rosterSignature(contextInstances, {
+    workspace: resolvedWs, error: panel.error || null, deploymentNote: contextDeploymentNote,
+    activeKey: tabs.get(activeTab)?.key ?? null, connection: connectionGeneration,
+  });
+  // A panel that reports an error is the kernel's failed read, not an observed
+  // roster: with instances beside it (a remote server the kernel could not
+  // reach, its last roster) the list is kept and goes stale; with none, it is a
+  // failed read — the failed block with Retry where the skeleton stood, or the
+  // previous rows of this workspace kept and marked stale. Never "No instances.".
+  if (panel.error && !contextInstances.length) {
+    refreshPanelInstance([], resolvedWs);
+    rosterState?.fail({ message: panel.error });
+    if (rosterState?.hasData && !rosterStale) { rosterStale = true; renderContextRoster(previousInstances); }
+    else if (rosterState && !rosterState.hasData) renderRosterCount(contextRosterEl.querySelector(".ctx-count"), [], { failed: true });
+    return;
   }
+  const reportedFailure = !!panel.error;
+  // Before the server's first observation the panel says deployment "pending"
+  // with no instances: that is not an observed empty roster. The note is the
+  // whole content (its existing copy, no skeleton), the count keeps its pill,
+  // and the controller stays without data until an observation lands.
+  if (panel.deployment?.status === "pending" && !panel.workspace?.remote && !contextInstances.length && !rosterState?.hasData) {
+    rosterState?.defer();
+    refreshPanelInstance(contextInstances, resolvedWs);
+    if (signature !== rosterSignaturePainted) { rosterSignaturePainted = signature; renderContextRoster(contextInstances); }
+    return;
+  }
+  const unchanged = !!rosterState?.hasData && signature === rosterSignaturePainted && rosterStale === reportedFailure;
+  // The controller learns of the data before the paint (hasData gates the
+  // empty copy). A reported failure with data already present skips
+  // succeed(): its stale line then updates in place instead of being
+  // announced anew on every poll.
+  if (rosterState && (!reportedFailure || !rosterState.hasData)) {
+    rosterState.succeed({ observedAt: typeof panel.observedAt === "string" ? panel.observedAt : null, empty: !contextInstances.length });
+  }
+  rosterStale = reportedFailure;
+  void rosterPrs.refresh(panel.workspace?.remote ? null : resolvedWs);
+  refreshPanelInstance(contextInstances, resolvedWs);
+  if (!unchanged) {
+    rosterSignaturePainted = signature;
+    renderContextRoster(contextInstances);
+  }
+  if (reportedFailure) rosterState?.fail({ message: panel.error });
 }
 
 // Only reported context, never inferred team/membership/readiness. A local
@@ -372,6 +432,24 @@ function renderContextRoster(instances) {
   const listEl = contextRosterEl.querySelector(".ctx-list");
   const restoreTreeState = captureTreeRenderState(listEl);
   const restoreActionMenu = captureInstanceActionMenu(listEl);
+  // No read of this subject has succeeded yet (desktop/loading-states): the
+  // skeleton or the failed block own the list and the count is a skeleton
+  // pill. Rows of the previous subject go; the empty copy is never painted.
+  const pending = !!rosterState && !rosterState.hasData, failed = pending && rosterState.state === "failed";
+  renderRosterCount(contextRosterEl.querySelector(".ctx-count"), instances, { pending: pending && !failed, failed, stale: rosterStale });
+  // The deployment note is painted on every path (poll, filter, collapse, PR change), first in the list.
+  const paintNote = () => {
+    if (contextDeploymentNote === null) return;
+    const note = document.createElement("div"); note.className = "ctx-empty ctx-deployment-note"; note.setAttribute("role", "status");
+    note.textContent = contextDeploymentNote;
+    listEl.prepend(note);
+  };
+  if (pending) {
+    for (const el of listEl.querySelectorAll(":scope > .ctx-tree-row, :scope > .ctx-group, :scope > .ctx-empty")) el.remove();
+    paintNote();
+    tabOpenIntents.applyFocus(restoreTreeState);
+    return;
+  }
   listEl.innerHTML = "";
   const matching = filterInstanceTree(instances, contextFilter);
   const ws = contextWorkspace || currentWorkspace();
@@ -380,9 +458,9 @@ function renderContextRoster(instances) {
   const visible = matching.filter((i) => instanceVisibleInTree(
     i, instances, collapsedInstances, ws, filtering,
   ));
-  renderRosterCount(contextRosterEl.querySelector(".ctx-count"), instances);
   if (!visible.length) {
     listEl.innerHTML = `<div class="ctx-empty">${instances.length ? "Nothing matches." : "No instances."}</div>`;
+    paintNote();
     tabOpenIntents.applyFocus(restoreTreeState);
     return;
   }
@@ -476,7 +554,12 @@ function renderContextRoster(instances) {
         }
         // pass the FULL reference: same-named instances in other agents
         // roots must open THEIR tmux session, not the first name match
-        row.addEventListener("click", () => i.running ? openTerminalTab(i) : openInstanceStart(i));
+        // A stale roster (the last read failed) may say running:false for an instance that is running by now:
+        // the row's activation (click, Enter) then starts nothing and says why; opening a running row's
+        // terminal stays allowed (the maintainer's return on #322).
+        const staleStart = rosterStale && !i.running;
+        if (staleStart) { row.title = ROSTER_STALE_TITLE; row.setAttribute("aria-description", ROSTER_STALE_TITLE); }
+        row.addEventListener("click", () => { if (staleStart) return; i.running ? openTerminalTab(i) : openInstanceStart(i); });
         // full keyboard tree operability (roving tabindex; policy in
         // roster-keys.mjs). Enter is the button's native activation.
         row.dataset.rosterChildren = hasChildren ? "1" : "0";
@@ -498,7 +581,8 @@ function renderContextRoster(instances) {
           const start = document.createElement("button"); start.className = "act ctx-start";
           start.textContent = "Start…"; start.setAttribute("aria-label", `Start ${i.instance}`);
           start.disabled = !!i.server && !i.savedRoute;
-          start.addEventListener("click", () => openInstanceStart(i));
+          if (rosterStale) markStaleControl(start);
+          start.addEventListener("click", () => { if (!staleBlocked(start)) openInstanceStart(i); });
           tools.append(start);
         }
         const actionTarget = instanceActionTarget(ws, i), menuConnection = connectionGeneration;
@@ -538,11 +622,18 @@ function renderContextRoster(instances) {
             alert([message, retirementSummary(result)].filter(Boolean).join("\n"));
           },
         }));
+        // Stale roster: actions that need current state wait for a refresh;
+        // opening an existing terminal (the row itself) stays available.
+        if (rosterStale) {
+          const trigger = tools.querySelector(".ctx-instance-actions");
+          if (trigger) markStaleControl(trigger);
+        }
         rowWrap.append(tools);
         listEl.append(rowWrap);
       }
     }
   }
+  paintNote();
   // Polling restores the same logical focus; it must not cancel a pending
   // terminal open from that row as if the user had re-entered the sidebar.
   tabOpenIntents.applyFocus(() => {
@@ -1656,6 +1747,11 @@ function restoreWorkspaceTabs() {
   split = restored.split;
   contextInstances = [];
   contextWorkspace = tabWorkspace;
+  // A new subject: forget the data, the stale mark and the painted signature.
+  // The list clears into pending (a skeleton pill for the count); the rows of
+  // the new workspace arrive with the refresh below, never "No instances".
+  rosterState?.reset();
+  rosterStale = false; rosterSignaturePainted = null; contextDeploymentNote = null;
   renderContextRoster([]);
   if (restored.tabLayerVisible) {
     setSidebarMode(restored.sidebarMode);

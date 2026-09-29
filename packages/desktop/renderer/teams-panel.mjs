@@ -26,7 +26,7 @@ export const teamsCSS = `
 .teams-panel .team-badge { font-size:11px; font-weight:650; line-height:1; color:var(--muted); border:1px solid var(--border); border-radius:999px; padding:4px 8px; white-space:nowrap; }
 .teams-panel .team-action { font:600 11.5px/1 inherit; height:26px; padding:0 10px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--fg); cursor:pointer; white-space:nowrap; }
 .teams-panel .team-action:hover:not(:disabled) { background:var(--surface-2); }
-.teams-panel .team-action:disabled { color:var(--muted); cursor:default; }
+.teams-panel .team-action:disabled, .teams-panel .team-action[aria-disabled="true"] { color:var(--muted); cursor:default; }
 .teams-panel .team-row > details, .teams-panel .team-row > .teams-problem { grid-column:1 / -1; }
 .teams-panel details { font-size:11.5px; color:var(--muted); }
 .teams-panel details > summary { cursor:pointer; }
@@ -59,7 +59,7 @@ export const teamsCSS = `
 .teams-panel.is-compact .team-action { height:auto; margin:-2px -4px; padding:2px 4px; border:0; border-radius:4px; background:transparent; font-size:12px; line-height:1.3; color:var(--muted); }
 .teams-panel.is-compact .team-action[data-team-action="join"] { color:var(--accent); }
 .teams-panel.is-compact .team-action:hover:not(:disabled) { background:transparent; text-decoration:underline; }
-.teams-panel.is-compact .team-action:disabled { color:var(--muted); text-decoration:none; }
+.teams-panel.is-compact .team-action:disabled, .teams-panel.is-compact .team-action[aria-disabled="true"] { color:var(--muted); text-decoration:none; }
 .teams-panel.is-compact .team-row > details, .teams-panel.is-compact .team-row > .teams-problem { flex-basis:100%; }
 button.teams-refresh.is-compact { flex:none; align-self:auto; display:grid; place-items:center; width:24px; height:24px; padding:0; border:0; border-radius:6px; background:transparent; color:var(--muted); cursor:pointer; }
 button.teams-refresh.is-compact:hover:not(:disabled) { background:var(--surface-2); color:var(--fg); }
@@ -203,8 +203,12 @@ export function receiveText(receive) {
  * context panel's Messaging presentation (glyph rows, text actions, an icon
  * Refresh that goes to `refreshHost` when given); the default renders the
  * Workspace inspector's card. `dispose()` removes the section and the refresh
- * button wherever it was appended (safe to call twice). */
-export function createTeamsPanel(parent, { operations, selector, request, owns, available = () => true, heading = true, compact = false, refreshHost = null }) {
+ * button wherever it was appended (safe to call twice). `mutable()` false (the
+ * host's inspection is stale) holds join/leave with `mutableReason` as their
+ * accessible reason — aria-disabled, so a focused control keeps focus; Refresh
+ * stays. Controls carry `data-focus-key` (`teams-refresh`, `join:<label>`,
+ * `leave:<label>`) for a host's focus restore across repaints. */
+export function createTeamsPanel(parent, { operations, selector, request, owns, available = () => true, heading = true, compact = false, refreshHost = null, mutable = () => true, mutableReason = '' }) {
   const doc = parent.ownerDocument;
   const node = (tag, value, cls) => { const el = doc.createElement(tag); if (value !== undefined) el.textContent = value; if (cls) el.className = cls; return el; };
   const section = node('section', undefined, compact ? 'teams-panel is-compact' : 'teams-panel');
@@ -218,7 +222,7 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
   // What the list is: the workspace's default team, then the teams the soul has access to (unmapped labels are not shown).
   const intro = node('p', "Always in the workspace's default team. It can join the teams its soul has access to.", 'teams-note teams-intro'); intro.hidden = true;
   const body = node('div', undefined, 'teams-card');
-  refresh = node('button', compact ? undefined : 'Refresh teams', compact ? 'teams-refresh is-compact' : 'teams-refresh'); refresh.type = 'button';
+  refresh = node('button', compact ? undefined : 'Refresh teams', compact ? 'teams-refresh is-compact' : 'teams-refresh'); refresh.type = 'button'; refresh.dataset.focusKey = 'teams-refresh';
   if (compact) { refresh.append(iconElement(doc, 'refresh', { size: 13 })); refresh.setAttribute('aria-label', 'Refresh teams'); refresh.title = 'Refresh teams'; }
   section.append(...(compact ? [] : [intro]), status, body);
   (refreshHost || section).append(refresh);
@@ -296,12 +300,12 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
   }
   function control(verb, target) {
     const op = operations[verb], b = node('button', verb === 'join' ? 'Join' : 'Leave', 'team-action'); b.type = 'button';
-    b.dataset.team = target; b.dataset.teamAction = verb;
+    b.dataset.team = target; b.dataset.teamAction = verb; b.dataset.focusKey = `${verb}:${target}`;
     if (pending?.label === target && pending.verb === verb) b.textContent = verb === 'join' ? 'Joining…' : 'Leaving…';
     if (!op) b.title = `This messaging provider does not declare messaging:${verb}.`;
     else if (!op.arg) b.title = `This provider's messaging:${verb} needs arguments the Desktop cannot supply; use the OATS CLI.`;
     else if (!op.available) b.title = op.reason || '';
-    b.addEventListener('click', () => { if (!b.disabled) void change(verb, target); });
+    b.addEventListener('click', () => { if (!b.disabled && b.getAttribute('aria-disabled') !== 'true') void change(verb, target); });
     return b;
   }
   function render() {
@@ -375,9 +379,13 @@ export function createTeamsPanel(parent, { operations, selector, request, owns, 
   }
   function sync() {
     refresh.disabled = !!pending || !available() || !live();
+    const held = !mutable();
     for (const b of body.querySelectorAll('[data-team-action]')) {
       const op = operations[b.dataset.teamAction];
       b.disabled = !!pending || !available() || !live() || !op || !op.arg || !op.available;
+      // The host's inspection is stale: held with the reason, aria-disabled (focus survives); the next good read lifts it.
+      if (held) { b.setAttribute('aria-disabled', 'true'); b.setAttribute('aria-description', mutableReason); if (!b.disabled) b.title = mutableReason; }
+      else if (b.getAttribute('aria-description') === mutableReason) { b.removeAttribute('aria-disabled'); b.removeAttribute('aria-description'); if (b.title === mutableReason) b.removeAttribute('title'); }
     }
   }
   refresh.addEventListener('click', () => { if (live() && !pending) void read({ explicit: true }); });

@@ -141,6 +141,16 @@ body {
               font-family: inherit; font-size: 12px; line-height: 1; }
 .ctx-filter::placeholder { color: var(--muted); }
 .ctx-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 8px 8px; }
+/* Loading states (renderer/loading.mjs): the stale line sits between the filter and the list;
+   "Refreshing…" closes the head after the count; the count's skeleton pill keeps its width. */
+.ctx-status { flex: none; margin: 0 10px 6px; }
+.ctx-status:empty { display: none; }
+.ctx-head > .loading-refreshing { flex: none; margin-left: 6px; }
+.ctx-count .skeleton-pill { width: 5.5em; }
+.ctx-count-reserve { display: inline-block; width: 5.5em; height: 1em; } /* failed: the pill's box, nothing in it */
+/* A stale count is the last observation: muted, its dot no longer the live accent. */
+.ctx-count[data-stale] { color: var(--muted); }
+.ctx-count[data-stale] .ctx-count-dot { background: var(--muted); }
 /* Agent groups (Workspace v4): a 14px gap, no title; the separator names the group for AT.
    The first one sits just under the filter, so it is shorter (human, 2026-09-29). */
 .ctx-group { height: 14px; }
@@ -171,7 +181,7 @@ body {
    the menu) takes the tint like every other control. */
 .ctx-instance-actions:hover { background: var(--surface-2); color: var(--fg); }
 .ctx-instance-actions:focus-visible { background: var(--sel); color: var(--fg); }
-.ctx-instance-actions:disabled { color: var(--muted); cursor: default; }
+.ctx-instance-actions:disabled, .ctx-instance-actions[aria-disabled="true"] { color: var(--muted); cursor: default; }
 .ctx-instance-menu { position: fixed; inset: auto; margin: 0; width: 240px; max-width: calc(100vw - 16px);
   max-height: calc(100vh - 16px); overflow-y: auto;
   padding: 6px; background: var(--surface); color: var(--fg); border: 1px solid var(--border);
@@ -190,7 +200,7 @@ body {
 .ctx-instance-menu button:disabled { background: var(--surface-2); color: var(--faint); cursor: default; }
 .ctx-start { flex: none; padding: 2px 7px; font-size: 11.5px; line-height: 1.4; color: var(--accent); background: var(--surface);
   border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
-.ctx-start:disabled { color: var(--muted); cursor: default; }
+.ctx-start:disabled, .ctx-start[aria-disabled="true"] { color: var(--muted); cursor: default; } /* stale (aria-disabled) reads like disabled */
 .instance-start-modal { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center;
   background: var(--scrim); padding: 24px; }
 .instance-start-dialog { width: min(560px, 100%); max-height: 90vh; overflow: auto; padding: 20px;

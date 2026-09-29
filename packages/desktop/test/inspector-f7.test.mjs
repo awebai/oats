@@ -104,14 +104,20 @@ test('instance: Open soul says so when the roster has no exact match; no host re
   assert.match(v.el.querySelector('.inspector-spawned').textContent, /^Spawned from release-manager/);
 });
 
+// desktop/loading-states: a first read that fails is the failed block where the skeleton stood (the
+// kernel's sentence, the code behind Details, Retry); the status line announces it once.
 test('a refused inspection reads as the kernel sentence with the code behind Details (E_TEAM_CONFLICT, captured)', async t => {
   const refused = doc('inspect-soul-conflict').error;
   const u = await rendered(t, soulSelection, Object.assign(new Error(refused.message), { code: refused.code }));
   const status = u.el.querySelector('.inspector-status');
-  assert.equal(status.textContent, refused.message); assert.ok(status.classList.contains('error'));
+  assert.equal(status.textContent, `Couldn't refresh soul. ${refused.message}`); assert.equal(status.classList.contains('error'), false, 'a failed read is calm information, not the error red');
+  assert.equal(status.classList.contains('loading-quiet'), true, 'announced; the failed block below is the visible message');
   assert.match(status.textContent, /team labels "engineering" and "global" give it different entries/);
-  const details = u.el.querySelector('.inspector-problem-code');
-  assert.equal(details.querySelector('summary').textContent, 'Details'); assert.equal(details.querySelector('p').textContent, 'E_TEAM_CONFLICT');
+  const failed = u.el.querySelector('.inspector-content .loading-failed');
+  assert.equal(failed.querySelector('.loading-failed-message').textContent, refused.message);
+  const details = failed.querySelector('.loading-failed-details');
+  assert.equal(details.querySelector('summary').textContent, 'Details'); assert.equal(details.querySelector('.loading-failed-code').textContent, 'E_TEAM_CONFLICT');
+  assert.equal(failed.querySelector('.loading-retry').textContent, 'Retry');
 });
 
 // E_TEAM_CONFLICT end to end: the kernel's details.labels, bounded, through the
@@ -156,7 +162,8 @@ test('E_TEAM_CONFLICT in the inspector: the sentence, the two labels, the code b
   const make = labels => Object.assign(new Error(conflict.error.message), { code: 'E_TEAM_CONFLICT', labels });
   const u = await rendered(t, soulSelection, make(['engineering', 'global']));
   assert.equal(u.el.querySelector('.inspector-conflict-labels').textContent, 'Team labels in conflict: engineering, global');
-  assert.equal(u.el.querySelector('.inspector-problem-code p').textContent, 'E_TEAM_CONFLICT');
+  assert.equal(u.el.querySelector('.loading-failed-code').textContent, 'E_TEAM_CONFLICT');
+  assert.equal(u.el.querySelector('.loading-failed').nextElementSibling, u.el.querySelector('.inspector-conflict-labels'), 'the labels follow the failed block');
   for (const labels of [undefined, ['engineering'], ['engineering', 'engineering'], ['a b', 'c']]) {
     const v = await rendered(t, soulSelection, make(labels));
     assert.equal(v.el.querySelector('.inspector-conflict-labels'), null, JSON.stringify(labels));

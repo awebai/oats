@@ -1,0 +1,107 @@
+/* oats desktop — loading states (desktop/loading-states).
+   The shared skeleton, "Refreshing…" indicator, stale / observed line, failed
+   block and status line that renderer/loading.mjs builds. Colours derive from
+   the theme tokens only (no new tokens): skeleton fills are the theme's
+   foreground mixed at 10% over whatever surface hosts them, so every theme
+   (light, solarized, dark) shows them; text uses the AA pairs theme.css
+   already inventories (muted on bg/surface, warn on attn-bg, fg on surface).
+   Under prefers-reduced-motion nothing animates — including the older
+   .spinner / .loading-block, whose theme.css rule only shortens the duration. */
+
+/* ── skeletons (decorative; every node is aria-hidden) ── */
+.skeleton {
+  display: block; position: relative; overflow: hidden; border-radius: 6px;
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+}
+.skeleton::after {
+  content: ""; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--fg) 7%, transparent) 50%, transparent 100%);
+  animation: oats-shimmer 1.6s ease-in-out infinite;
+}
+@keyframes oats-shimmer { to { transform: translateX(100%); } }
+.skeleton-block-list { display: flex; flex-direction: column; }
+.skeleton-item { box-sizing: border-box; }
+.skeleton-line { height: 12px; width: 60%; }
+.skeleton-line.short { width: 40%; }
+.skeleton-pill { display: inline-block; vertical-align: middle; width: 4.5em; height: 1em; border-radius: 999px; }
+
+/* Roster row: the skeleton carries the real row classes (.ctx-tree-row, .ctx-inst, .ctx-dot, .ctx-copy,
+   .ctx-name, .ctx-repo-label — shell.css), so height, gap, padding and line rhythm are the row's own.
+   Only what makes it a skeleton is set here: inert, no hover, bones instead of text and the dot fill. */
+.skeleton-roster-row { pointer-events: none; }
+.skeleton-roster-row.ctx-tree-row:hover { background: none; }
+.skeleton-roster-row .skeleton-inst { cursor: default; }
+.skeleton-roster-row .skeleton-dot.ctx-dot { border: 0; box-shadow: none; background: color-mix(in srgb, var(--fg) 14%, transparent); }
+.skeleton-roster-row .skeleton-name { width: 55%; height: 12px; }
+.skeleton-roster-row .skeleton-meta { width: 38%; height: 9px; }
+
+/* Soul card: the Souls grid card at its real size (the grid sets --skeleton-card-h). */
+.skeleton-soul-card { display: flex; flex-direction: column; gap: 10px; min-height: var(--skeleton-card-h, 132px); padding: 14px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.skeleton-card-head { display: flex; align-items: center; gap: 10px; }
+.skeleton-soul-card .skeleton-mark { width: 28px; height: 28px; flex: none; border-radius: 7px; }
+.skeleton-soul-card .skeleton-name { height: 13px; width: 45%; }
+.skeleton-soul-card .skeleton-text { height: 11px; width: 90%; }
+.skeleton-soul-card .skeleton-text.short { width: 60%; }
+
+/* Table row: one cell per column (--skeleton-columns), the first wider. */
+.skeleton-table-row { display: grid; grid-template-columns: minmax(0, 1.6fr) repeat(calc(var(--skeleton-columns, 4) - 1), minmax(0, 1fr));
+  gap: 12px; align-items: center; min-height: var(--skeleton-row-h, 40px); padding: 0 12px; border-top: 1px solid var(--border); }
+.skeleton-table-row .skeleton-cell { height: 11px; width: 70%; }
+.skeleton-table-row .skeleton-cell.first { width: 85%; }
+
+/* Detail section: the inspector's section title (uppercase 10.5px, --title-gap below) and its card. */
+.skeleton-detail-section { display: flex; flex-direction: column; gap: var(--title-gap, 10px); margin: var(--section-gap, 20px) 0 0; }
+.skeleton-detail-section:first-child { margin-top: 4px; }
+.skeleton-detail-section .skeleton-title { height: 11px; width: 32%; }
+.skeleton-detail-section .skeleton-block { height: var(--skeleton-block-h, 72px); width: 100%; border-radius: 8px;
+  background: color-mix(in srgb, var(--fg) 7%, transparent); /* a large block reads lighter than a line beside bordered cards */ }
+
+/* ── status line: keeps its line while it has text; a hidden one only speaks ── */
+.loading-status { min-height: 1.5em; margin: 0; font-size: 12px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
+.loading-status:empty { min-height: 0; }
+/* Announced, not shown: while the stale line or the failed block is visible the status line keeps
+   its box (no shift) but its text is clipped — one visible message for one failure. */
+.loading-quiet { clip-path: inset(50%); }
+.loading-sr { position: absolute; width: 1px; height: 1px; min-height: 0; margin: -1px; padding: 0; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+/* ── refreshing: small, muted, a static dot ── */
+.loading-refreshing { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11.5px; font-weight: 500;
+  line-height: 1; white-space: nowrap; }
+.loading-refreshing .loading-dot { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--muted); }
+
+/* ── stale / observed line ── */
+.loading-notice { display: flex; align-items: center; gap: 8px; box-sizing: border-box; padding: 5px 8px 5px 10px; border-radius: 7px;
+  font-size: 12px; line-height: 1.4; }
+.loading-notice[data-kind="stale"] { color: var(--warn); background: var(--attn-bg); border: 1px solid var(--attn-border); }
+.loading-notice[data-kind="observed"] { color: var(--muted); }
+.loading-notice-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+/* The cause behind Details, on its own line under the text and Retry (keyboard and screen-reader reachable). */
+.loading-notice { flex-wrap: wrap; }
+.loading-notice-details { flex-basis: 100%; font-size: 11.5px; }
+.loading-notice-details[hidden] { display: none; }
+.loading-notice-details > summary { cursor: pointer; color: var(--muted); }
+.loading-notice-cause { margin: 2px 0 0; color: var(--fg); overflow-wrap: anywhere; }
+
+/* ── failed: cause, Details, Retry — where the skeleton stood ── */
+.loading-failed { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 14px 10px; color: var(--fg); font-size: 12.5px; line-height: 1.5; }
+.loading-failed-message { margin: 0; overflow-wrap: anywhere; }
+.loading-failed-details { font-size: 12px; }
+.loading-failed-details > summary { cursor: pointer; color: var(--muted); }
+.loading-failed-details[hidden] { display: none; }
+.loading-failed-code { margin: 4px 0 0; color: var(--muted); font-family: var(--mono, ui-monospace, Menlo, monospace); }
+
+/* Retry: styled here because the sidebar sits outside .oats-view (where button.act lives).
+   aria-disabled, never disabled: the control keeps focus while its read is in flight. */
+button.loading-retry { appearance: none; flex: none; min-height: 28px; padding: 3px 12px; border: 1px solid var(--border); border-radius: 7px;
+  background: var(--surface); color: var(--fg); font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
+button.loading-retry:hover:not([aria-disabled="true"]) { border-color: var(--accent); color: var(--accent); }
+button.loading-retry[aria-disabled="true"] { color: var(--muted); cursor: default; }
+/* Focus: the global :focus-visible rule (theme.css) — no per-component ring. */
+
+/* ── reduced motion: no animation at all (theme.css only shortens durations) ── */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after { animation: none; display: none; }
+  .oats-view .spinner, .spinner, .oats-view .loading-block, .loading-block, .loading-block * { animation: none !important; }
+}

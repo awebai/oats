@@ -54,7 +54,9 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     instanceActionTarget, sameInstanceActionTarget, instanceSplitPlan, instanceSplitIdentity,
     menuState() {}, getBinding: () => null, formatChord: c => c, isMac: true, applyChordTitles() {}, runAction: id => actions.get(id)?.(),
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "instances", tabLayerVisible: false,
-    contextRosterGen: 0, contextInstances: [], contextFilter: "", collapsedInstances: new Set(), rosterTip: { bind() {}, hide() {}, sync() {} }, rosterTipFacts: () => ({}), rosterPrs: { get: () => null, refresh() {} },
+    contextRosterGen: 0, contextInstances: [], contextFilter: "", collapsedInstances: new Set(),
+    rosterState: null, rosterStale: false, contextDeploymentNote: null, rosterSignaturePainted: null, // initContextRoster builds the real controller; tests mark it ready before rendering rows
+    rosterTip: { bind() {}, hide() {}, sync() {} }, rosterTipFacts: () => ({}), rosterPrs: { get: () => null, refresh() {} },
     wsActiveTerminal: new Map(), pendingTerms: new Set(),
     tabbar: document.getElementById("tabbar"), tabhost: document.getElementById("tabhost"),
     tabActionsEl: document.getElementById("tab-actions"),
@@ -109,6 +111,8 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     && /id: "(?:tabs\.|split\.close|terminal\.focusActive)/.test(line));
   const s = runInNewContext(`${setup}\n${functions.join("\n")}\n${registry.join("\n")}\n({ ${names.join(", ")}, tabOpenIntents });`, c);
   s.initContextRoster();
+  // refreshContextRoster is stubbed here: the roster's loading state reads as observed, so rows paint.
+  c.rosterState.succeed();
   const dispatch = (el, type, options = {}) => el.dispatchEvent(type === "keydown"
     ? new dom.window.KeyboardEvent(type, { bubbles: true, cancelable: true, ...options })
     : new dom.window.Event(type, { bubbles: true }));

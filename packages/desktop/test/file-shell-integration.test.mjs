@@ -82,6 +82,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     instanceActionTarget, sameInstanceActionTarget, instanceSplitPlan, instanceSplitIdentity, baseTitles: new WeakMap(), menuState() {},
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "instances", tabLayerVisible: false,
     contextRosterGen: 0, contextInstances: [], contextFilter: "", collapsedInstances: new Set(), rosterTip: { bind() {}, hide() {}, sync() {} }, rosterTipFacts: () => ({}), rosterPrs: { get: () => null, refresh() {} }, contextRosterEl: null,
+    rosterState: null, rosterStale: false, contextDeploymentNote: null, rosterSignaturePainted: null, // initContextRoster builds the real controller (instance-tree createRosterLoading)
     wsActiveTerminal: new Map(), pendingTerms: new Set(), brainIntents: createIntentGate(), workspaceTabMemory: createWorkspaceTabMemory(),
     tabbar: document.getElementById("tabbar"), tabhost: document.getElementById("tabhost"),
     tabActionsEl: document.getElementById("tab-actions"),
@@ -160,7 +161,8 @@ function shell(t, shellSource = source, platform = "MacIntel") {
   return {
     ...s, c, keys, document, window: dom.window, requests, loads, chooserInputs, tickets, opens, attachments, terms, detached, notices, key, change,
     cancel: input => input.dispatchEvent(new dom.window.Event("cancel")),
-    roster(instances) { c.contextInstances = instances; s.renderContextRoster(instances); },
+    // refreshContextRoster is stubbed: a roster handed in reads as observed, so its rows paint.
+    roster(instances) { c.contextInstances = instances; c.rosterState.succeed(); s.renderContextRoster(instances); },
     control(instance, control = "terminal") {
       const terminal = [...document.querySelectorAll("[data-tree-instance][data-tree-control=terminal]")]
         .find(el => el.dataset.treeInstance === tree.instanceId(instance));
