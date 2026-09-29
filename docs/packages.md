@@ -212,7 +212,7 @@ At spawn a `from: package` module is fetched at the lock's commit from the
 lock's `url`, at the manifest-listed directory (`oats-package.json#capabilities[]`
 entry), into `<home>/.oats/modules/<cap>/`; the copy's digest is verified
 against what the fetch reported; skills are copied to
-`<home>/.agents/skills/<cap>/<skill>/`. `instance.json.modules.<cap>.from` is
+`<home>/.agents/skills/<skill>/` (flat). `instance.json.modules.<cap>.from` is
 `{ kind: "package", package, version, commit, integrity, repoKey }`. Bumping
 `packages:` and syncing affects **only new spawns**; `oats status` shows a
 running instance's package module as `moved` once the lock points elsewhere.

@@ -28,7 +28,7 @@ is not shown here, read `oats help`; never invent one.
 <deployment>/agents/<soul>/instances/<instance>/   ← your home ($OATS_INSTANCE_HOME)
 ├── AGENTS.md            composed instructions: the soul's own + each module's inject + work-mode block
 ├── CLAUDE.md → AGENTS.md
-├── .agents/skills/<capability>/<skill>/             every skill you were given, copied
+├── .agents/skills/<skill>/                          every skill you were given, copied, flat
 ├── .claude/skills → ../.agents/skills
 ├── .oats/modules/<capability>/                      each capability, copied whole
 ├── instance.json        what you were given and from where

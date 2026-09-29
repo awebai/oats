@@ -120,7 +120,7 @@ oats status
 `--harness pi|claude|codex` picks the harness; complete any native folder
 trust or authentication prompt in the printed session. The instance home is
 `agents/<soul>/instances/<instance>/`; `work/` is its repository view;
-`.oats/modules/<cap>/` and `.agents/skills/<cap>/` are the copied capabilities;
+`.oats/modules/<cap>/` are the copied capabilities and `.agents/skills/<skill>/` their skills;
 `instance.json` records `modules` (from, commit, digest), `providers` and
 `workspace`. A running instance never changes under itself — a member that
 moves affects only new spawns, and `oats status` shows the drift

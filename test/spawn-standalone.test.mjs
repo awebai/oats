@@ -107,8 +107,10 @@ test("standalone: unreadable workspace host → sync locks only the oats.core pa
     assert.equal(meta.modules["nw-warehouse-access"].from.kind, "member");
     assert.equal(meta.modules["oats.core"].from.kind, "package");
     assert.ok(existsSync(join(home, ".oats", "modules", "oats.core", "oats.json")));
-    assert.ok(existsSync(join(home, ".agents", "skills", "oats.core")));
-    assert.ok(readdirSync(join(home, ".agents", "skills", "nw-warehouse-access")).length > 0);
+    const skillNames = readdirSync(join(home, ".agents", "skills")).sort();
+    assert.deepEqual(skillNames, meta.skills.map((s) => s.name).sort(), "every composed skill flat under .agents/skills");
+    assert.ok(meta.skills.some((s) => s.source === "module:oats.core") && meta.skills.some((s) => s.source === "module:nw-warehouse-access"), "both modules contributed skills");
+    for (const name of skillNames) assert.ok(existsSync(join(home, ".agents", "skills", name, "SKILL.md")), `${name}/SKILL.md one level deep`);
     const agentsMd = readFileSync(join(home, "AGENTS.md"), "utf8");
     assert.ok(agentsMd.includes("<!-- oats:capability:oats.core"), "oats.core inject composed");
     assert.ok(!doc.result.command?.includes("--no-skills"));

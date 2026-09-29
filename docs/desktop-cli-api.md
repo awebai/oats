@@ -1299,8 +1299,9 @@ the keyed-spawn fields `decision`, `spawnIdempotencyKey`, `spawnCompleted` and
 `wake`; later starts add `restarts` and `restartCount`.
 
 - `modules.<cap>`: `{from, commit, digest, materializedAt}`; `digest` hashes
-  the copy at `<home>/.oats/modules/<cap>/`. Module skills are copied to
-  `<home>/.agents/skills/<cap>/<skill>/`.
+  the copy at `<home>/.oats/modules/<cap>/`. Module skills are copied flat to
+  `<home>/.agents/skills/<skill>/` (homes spawned by 0.30.1 or earlier keep
+  `<home>/.agents/skills/<cap>/<skill>/`).
 - `providers.<cap>`: the merged payload (`{}` when none).
 - `workspace`: `{key, name, deployment, commit, resolution, standalone, soul,
   layers}`. `name` is recorded, and every hook, command and operation of the

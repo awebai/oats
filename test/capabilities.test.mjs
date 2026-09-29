@@ -125,8 +125,8 @@ test("pi and Claude instances receive the same exact local skills and generated 
   const canonical = readFileSync(join(soul, "AGENTS.md"), "utf8");
   for (const meta of [pi, claude]) {
     const names = readdirSync(join(meta.home, ".agents", "skills")).sort();
-    assert.deepEqual(names, ["acme.review", "private"], "the soul's own skills and one namespace per module — no kernel-shipped fallback trio");
-    assert.equal(lstatSync(join(meta.home, ".agents", "skills", "acme.review", "review")).isDirectory(), true);
+    assert.deepEqual(names, ["private", "review"], "the soul's own skills and each module's, flat — no kernel-shipped fallback trio");
+    assert.equal(lstatSync(join(meta.home, ".agents", "skills", "review")).isDirectory(), true);
     assert.equal(existsSync(join(meta.home, ".agents", "skills", "pollution")), false);
     assert.equal(lstatSync(join(meta.home, "AGENTS.md")).isSymbolicLink(), false);
     assert.equal(readlinkSync(join(meta.home, "CLAUDE.md")), "AGENTS.md");
@@ -154,7 +154,7 @@ test("pi and Claude instances receive the same exact local skills and generated 
   assert.equal(readFileSync(join(soul, "AGENTS.md"), "utf8"), canonical);
 });
 
-test("duplicate skill names across modules fail the spawn closed (decision 16); a soul's own skill and a module's live in separate namespaces", async (t) => {
+test("duplicate skill names fail the spawn closed (decision 16): across modules, and between a soul's own skill and a module's (skills are flat)", async (t) => {
   const shared = { "skills/shared/SKILL.md": "---\nname: shared\ndescription: A.\n---\n" };
   const fx = v2(t, {
     souls: {
@@ -166,9 +166,8 @@ test("duplicate skill names across modules fail the spawn closed (decision 16); 
   process.env.PATH = fakeHarnesses(fx.base);
   await assert.rejects(fx.spawn("dev", { instance: "dev-bad" }), (e) => e.code === "E_SKILL_DUPLICATE");
   assert.equal(existsSync(join(fx.root, "dev", "instances", "dev-bad")), false, "nothing was created");
-  const own = await fx.spawn("own", { instance: "own-ok" });
-  assert.match(readFileSync(join(own.home, ".agents", "skills", "shared", "SKILL.md"), "utf8"), /description: B/, "the soul's own skill");
-  assert.match(readFileSync(join(own.home, ".agents", "skills", "acme.dup", "shared", "SKILL.md"), "utf8"), /description: A/, "the module's, under its namespace");
+  await assert.rejects(fx.spawn("own", { instance: "own-bad" }), (e) => e.code === "E_SKILL_DUPLICATE" && /skill "shared" from soul collides with module acme\.dup's skill/.test(e.message));
+  assert.equal(existsSync(join(fx.root, "own", "instances", "own-bad")), false, "nothing was created");
 });
 
 test("claude harness resolves oats-claude-config and hooks contribute launch args", async (t) => {
@@ -1610,18 +1609,17 @@ test("instance.json records expected == materialized, and the .claude/skills ali
   process.env.PATH = fakeHarnesses(fx.base);
   const r = await fx.spawn("dev", { instance: "dev-mat" });
   const meta = instanceMeta(r.home);
-  // The soul's own skills are recorded by name; a module's skills are expected as
-  // its skill tree and materialized under its module namespace.
-  // A module skill is recorded with its `module:<cap>` source and lives under that namespace.
+  // The soul's own skills are recorded by name; a module skill is recorded with its
+  // `module:<cap>` source. Both live flat at .agents/skills/<skill>/.
   const names = meta.composition.materialized.skills.map((s) => s.name);
   assert.ok(names.includes("soul-skill"), `soul skills materialized: ${names}`);
   assert.deepEqual(meta.composition.materialized.skills.map((s) => [s.name, s.source]), [["soul-skill", "soul"], ["cap-skill", "module:acme.withskill"]]);
   for (const s of meta.composition.materialized.skills) {
-    const at = s.source.startsWith("module:") ? join(r.home, ".agents", "skills", s.source.slice("module:".length), s.name) : join(r.home, ".agents", "skills", s.name);
+    const at = join(r.home, ".agents", "skills", s.name);
     assert.ok(lstatSync(join(at, "SKILL.md")).isFile(), `${s.name} is a real copy`);
   }
   const tree = meta.composition.expected.find((e) => e.type === "skill-tree" && e.source === "acme.withskill");
-  assert.equal(tree?.resolved, join(r.home, ".agents", "skills", "acme.withskill"));
+  assert.equal(tree?.resolved, join(r.home, ".agents", "skills"));
   assert.equal(lstatSync(join(tree.resolved, "cap-skill", "SKILL.md")).isFile(), true, "the module skill is a real copy");
   // .agents/skills is canonical; .claude/skills aliases it and must resolve
   // exactly onto it — the founder's canonical layout.
