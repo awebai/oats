@@ -4,6 +4,7 @@
  * is relayed verbatim. An admitted read is not a lease or spawn authority. */
 import { effectiveOf, REPORT_FROM } from './launch-contract.mjs';
 import { defaultTeamOf } from './team-rows.mjs';
+import { remoteReason } from './remote-address.mjs';
 export const READINESS_API = 2;
 export const CHECKS = ['installed', 'configured', 'member', 'providers'];
 export const record = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -26,7 +27,7 @@ export function readinessSupported(cli) { return cli?.ok === true && absolute(cl
 export function readinessTarget(v) {
   const selector = readinessSelector(v?.selector);
   if (!selector || !record(v) || typeof v.workspace !== 'string' || !v.workspace || v.workspace.length > 4096 || !absolute(v.context)
-    || v.observedAs !== selector.kind || selector.kind === 'instance' && (!absolute(v.home) || selector.server)) return null;
+    || v.observedAs !== selector.kind || selector.kind === 'instance' && !absolute(v.home)) return null;
   return { workspace: v.workspace, context: v.context, observedAs: selector.kind, selector, ...(selector.kind === 'instance' ? { home: v.home } : {}) };
 }
 const ERRORS = {
@@ -35,7 +36,7 @@ const ERRORS = {
   E_SESSION_UNKNOWN: 'The selected instance is no longer reported.', E_AMBIGUOUS_INSTANCE: 'The selected instance is ambiguous.',
   E_SOUL_UNKNOWN: 'Select one local soul and its exact agents root.', E_HOME_MISMATCH: 'The instance home no longer matches its admitted identity.',
   'cli-unavailable': 'Select a compatible installed OATS CLI.', 'cli-no-readiness': 'The installed OATS CLI is older than this Desktop (no readiness API 2). Update OATS and retry.',
-  'unsupported-remote-operation': 'Readiness is unavailable for remote targets; no local substitution.',
+  'unsupported-remote-operation': "This computer's OATS can't route this to the server. Update OATS here.",
   E_UNSUPPORTED_MODE: 'Captured incarnation: readiness comes from its resolution, not current configuration.',
   'unsupported-action': 'Readiness is unavailable for this captured target; no classic fallback.', E_BUSY: 'The readiness read limit is reached. Retry when another read finishes.',
   E_FORBIDDEN_FRAME: 'This frame cannot request readiness.', E_CLI_FAILED: 'The installed CLI could not complete the readiness read.',
@@ -45,10 +46,13 @@ const ERRORS = {
 };
 /** A provider binding check's own answer → the item status the kernel reports for it. */
 export const PROVIDER_ITEM_STATUS = Object.freeze({ ready: 'pass', 'needs-configuration': 'fail', 'authorization-required': 'fail', unavailable: 'unknown' });
-export function readinessFailure(code, target = null) {
+/** `reason`: a remote read's reason (remote-address.mjs), kept only when it validates. */
+export function readinessFailure(code, target = null, reason = null) {
   if (!Object.hasOwn(ERRORS, code)) code = 'E_CLI_FAILED';
-  return { readinessViewApi: 1, status: 'unavailable', target: readinessTarget(target), data: null, reason: { code, message: ERRORS[code] } };
+  return { readinessViewApi: 1, status: 'unavailable', target: readinessTarget(target), data: null, reason: remoteReason(reason) || { code, message: ERRORS[code] } };
 }
+/** The fixed sentence for a readiness code: the headline of a host refusal outside the remote table. */
+export const readinessMessage = code => readinessFailure(code).reason.message;
 const problems = v => {
   if (!Array.isArray(v) || v.length > 64) throw Error();
   return v.map(p => { if (!record(p)) throw Error(); return { code: text(p.code, 128), message: text(p.message) }; });

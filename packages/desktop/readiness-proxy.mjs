@@ -24,7 +24,7 @@ export async function proxyReadiness(event, path, opts, { rendererURL, connectio
     if (typeof raw !== 'string' || Buffer.byteLength(raw) > 4 * 1024 * 1024) return reply('E_CLI_OUTPUT_LIMIT');
     let value; try { value = JSON.parse(raw); } catch { return reply('E_CLI_PROTOCOL'); }
     if (value?.readinessViewApi !== 1) return reply('E_CLI_PROTOCOL');
-    if (value.status === 'unavailable') return { ok: response.ok, status: response.status, body: readinessFailure(value.reason?.code, value.target) };
+    if (value.status === 'unavailable') return { ok: response.ok, status: response.status, body: readinessFailure(value.reason?.code, value.target, value.reason) };
     const target = readinessTarget(value.target), data = readinessData(value.data, target);
     if (!response.ok || value.status !== 'available' || !data || target.workspace !== url.searchParams.get('ws')) return reply('E_CLI_PROTOCOL');
     return { ok: true, status: response.status, body: { readinessViewApi: 1, status: 'available', target, data, reason: null } };

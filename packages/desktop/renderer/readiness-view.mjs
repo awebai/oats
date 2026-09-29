@@ -17,6 +17,7 @@ import { createDataState, skeletonBlock, captureFocusState } from './loading.mjs
 import { CHECKS, readinessSelector, readinessSupported, readinessTarget, readinessData, readinessFailure } from './readiness-contract.mjs';
 import { originText } from './inspect-contract.mjs';
 import { iconElement } from './shell-icons.mjs';
+import { readingFrom, remoteReason } from './remote-address.mjs';
 export const readinessCSS = `
 .readiness-view { color:var(--fg); min-width:0; margin:18px 0; font-size:12px; line-height:1.5; }
 .readiness-view[hidden], .readiness-view [hidden] { display:none; }
@@ -109,7 +110,6 @@ export function createReadinessView(host, { ctx, compact = false, clock = {} } =
   function availability(next) {
     // The panel's workspace is {id, name} (v2); the server admits the read against its own registry.
     if (!next.workspace?.id || !readinessSelector(next.selector)) return 'Waiting for a qualified workspace selection…';
-    if (next.workspace.remote || next.workspace.server || next.selector.server) return readinessFailure('unsupported-remote-operation').reason.message;
     if (!readinessSupported(next.cli)) return readinessFailure(next.cli?.ok ? 'cli-no-readiness' : 'cli-unavailable').reason.message;
     return '';
   }
@@ -176,12 +176,14 @@ export function createReadinessView(host, { ctx, compact = false, clock = {} } =
   async function load({ user = false } = {}) {
     if (!current() || blocked) return;
     const ticket = ++serial, selection = state.selector, workspace = state.workspace.id;
-    attempted = true; busy = true; loading.begin({ user });
+    // A remote instance's readiness is read on its own machine: say so while it is in flight.
+    const server = selection.kind === 'instance' && selection.server ? state.workspace.name || selection.server : null;
+    attempted = true; busy = true; loading.begin({ user, message: server ? readingFrom(server) : null });
     try {
       const response = await postJson(ctx, `/api/workspace-readiness?ws=${encodeURIComponent(workspace)}`, { action: 'read', selector: selection });
       if (!owns(ticket)) return;
       if (response?.readinessViewApi !== 1) throw Object.assign(Error(), { code: 'E_CLI_PROTOCOL' });
-      if (response.status !== 'available') throw Object.assign(Error(), { code: response.reason?.code });
+      if (response.status !== 'available') throw Object.assign(Error(), { code: response.reason?.code, reason: remoteReason(response.reason) });
       const target = readinessTarget(response.target), data = readinessData(response.data, target);
       if (!data || target.workspace !== workspace || JSON.stringify(target.selector) !== JSON.stringify(selection)) throw Object.assign(Error(), { code: 'E_CLI_PROTOCOL' });
       value = { target, data };
@@ -191,8 +193,9 @@ export function createReadinessView(host, { ctx, compact = false, clock = {} } =
     } catch (error) {
       if (!owns(ticket)) return;
       // Stale (value kept) or failed (no value): the contract's plain-language message is the cause, its code the Details.
-      const { code, message } = readinessFailure(error?.code).reason;
-      loading.fail(Object.assign(Error(message), { code }));
+      // A remote read's reason (the host's headline, its code and message) is shown as relayed.
+      const { code, message, detail = null } = error?.reason || readinessFailure(error?.code).reason;
+      loading.fail(Object.assign(Error(message), { code, detail }));
     } finally { if (owns(ticket)) busy = false; }
   }
   return {

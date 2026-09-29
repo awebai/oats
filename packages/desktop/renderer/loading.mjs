@@ -258,12 +258,18 @@ export function updateFailed(el, { message = null, code = null, noun = 'data', b
  *                                      retry removes its line); default: the first bound Refresh control
  * @param {() => number} [o.now]
  */
+/** The Details line of a failure: its code, and the kernel's own message when a remote host sent one. */
+function codeLine(error) {
+  const code = typeof error?.code === 'string' && error.code ? error.code : null;
+  const detail = typeof error?.detail === 'string' && error.detail ? error.detail : null;
+  return code && detail ? `${code}: ${detail}` : code;
+}
 export function createDataState({ doc, noun, region, skeletonHost = region, failedHost = skeletonHost, skeleton: buildSkeleton = null, status = null,
   indicatorHost = null, noticeHost = indicatorHost, onRetry = null, focusFallback = null, now = Date.now,
   setTimeout: schedule = (fn, ms) => globalThis.setTimeout(fn, ms), clearTimeout: cancel = id => globalThis.clearTimeout(id) } = {}) {
   // `settled` is the last state a read left behind (ready / empty / stale / failed): what cancel() returns to.
   let state = 'idle', settled = 'idle', busy = false, hasData = false, user = false, disposed = false;
-  let observedAt = null, announced = null;
+  let observedAt = null, announced = null, inFlight = null;
   let pendingTimer = null, refreshingTimer = null, ageTimer = null;
   let skeletonEl = null, failedEl = null, indicatorEl = null, noticeEl = null;
   const refreshControls = new Set();
@@ -314,7 +320,7 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
     removeIndicator();
     indicatorEl = element(doc, 'span', 'loading-refreshing');
     const dot = element(doc, 'span', 'loading-dot'); dot.setAttribute('aria-hidden', 'true');
-    indicatorEl.append(dot, doc.createTextNode(wording.refreshing));
+    indicatorEl.append(dot, doc.createTextNode(inFlight || wording.refreshing));
     indicatorHost.append(indicatorEl);
   }
   function showNotice(kind, { cause = null } = {}) {
@@ -333,7 +339,7 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
   function showFailed(error) {
     removeSkeleton();
     if (!failedHost) return;
-    const facts = { message: error?.message, code: error?.code, noun, busy };
+    const facts = { message: error?.message, code: codeLine(error), noun, busy };
     if (!failedEl) { failedEl = failedElement(doc, { ...facts, onRetry: () => { if (!disposed && !busy) onRetry?.(); } }); failedHost.append(failedEl); }
     else updateFailed(failedEl, facts);
   }
@@ -365,14 +371,16 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
       if (status) status.textContent = '';
       setRegionBusy(false); setBusyControls(); syncQuiet();
     },
-    /** A read starts. `user`: a Refresh/Retry the person asked for (its completion is announced). */
-    begin({ user: invoked = false } = {}) {
+    /** A read starts. `user`: a Refresh/Retry the person asked for (its completion is announced).
+     * `message`: what the read is doing when the generic wording would hide it ("Reading from <server>…"). */
+    begin({ user: invoked = false, message = null } = {}) {
       if (disposed) return;
       user = user || invoked; busy = true;
+      inFlight = typeof message === 'string' && message ? message : null;
       if (!hasData) {
         // A retry from `failed` keeps the block (its Retry may be focused) and shows no skeleton beside it.
         if (state !== 'pending') {
-          state = 'pending'; setRegionBusy(true); say(wording.loading(noun));
+          state = 'pending'; setRegionBusy(true); say(inFlight || wording.loading(noun));
           if (!failedEl && pendingTimer === null) pendingTimer = schedule(showSkeleton, PENDING_DELAY_MS);
         }
       } else if (state !== 'refreshing') {
@@ -404,7 +412,7 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
       user = false; busy = false;
       if (typeof at === 'string' && at) observedAt = at;
       const message = typeof error?.message === 'string' && error.message ? error.message : null;
-      const code = typeof error?.code === 'string' && error.code ? error.code : null;
+      const code = codeLine(error);
       const cause = message && code ? `${message} (${code})` : message || code;
       if (hasData) {
         state = settled = 'stale'; setRegionBusy(false);

@@ -1297,7 +1297,7 @@ const server = createServer(async (req, res) => {
         const getContext = () => {
           const workspace = workspaces().find(w => w.id === url.searchParams.get('ws'));
           return { workspace, cli: cliState, agents: workspace && !workspace.remote && !workspace.server ? agentsData(workspace.id).agents : [],
-            instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
+            localCwd: ctxs[0], instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
         };
         return send(res, 200, await readinessRequest(request, getContext));
       } catch { return send(res, 400, readinessFailure('E_BAD_ARGS')); }
