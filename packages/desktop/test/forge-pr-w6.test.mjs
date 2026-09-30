@@ -130,3 +130,11 @@ test('the state pill reads Open / Draft / Merged / Closed from the PR\'s state a
     assert.equal(u.root.querySelector('.forge-sub').textContent, '#14430', 'no state word in the sub-line');
   }
 });
+
+test('a remote row\'s pull request says it is not read here (this machine\'s clones only), and sends nothing', async t => {
+  const dom = new JSDOM('<!doctype html><main></main>', { pretendToBeVisual: true }), root = dom.window.document.querySelector('main');
+  const panel = createForgePrPanel(root, { request: assert.fail });
+  t.after(() => { panel.dispose(); dom.window.close(); });
+  await panel.update({ target: { ...target, server: 'build' }, key, branch: 'main', revision });
+  assert.equal(root.querySelector('.git-note').textContent, 'Remote forge inspection is unavailable. No local fallback was used.');
+});

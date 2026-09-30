@@ -61,6 +61,8 @@ export function createForgePrPanel(root, { request, generation = () => 0, connec
     const owns = () => alive && selected === selection && mine === ticket && ws === generation() && account === connectionGeneration() && visible();
     if (!selected || !visible()) return;
     if (!ref(selected.key) || typeof request !== 'function') { clear(forgeReason('E_REMOTE_NOT_REPORTED').message); return; }
+    // A pull request is read from this machine's clone of the work: a remote row has none here.
+    if (selected.target.server) { clear(forgeReason('unsupported-remote-operation').message); return; }
     clear('Reading pull request…');
     try {
       const target = selected.target;
