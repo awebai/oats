@@ -54,8 +54,8 @@ if (argv[0] === "version" && argv.includes("--json")) {
   process.exit(0);
 } else if (argv[0] === "spawn" && argv.includes("--json")) {
   const agent = argv[1];
-  const tf = argv[argv.indexOf("--task-file") + 1];
-  const task = readFileSync(tf, "utf8");
+  // Like the kernel, --task-file is optional: a remote spawn with no opening instruction sends none.
+  const task = argv.includes("--task-file") ? readFileSync(argv[argv.indexOf("--task-file") + 1], "utf8") : "";
   if (agent === "boom") { process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_SPAWN_FAILED", message: "boom" } })); process.exit(1); }
   // purpose "ambig": a LONG case-(d) E_RELATIVE_AMBIGUOUS envelope (two
   // deeply nested absolute homes, >2500 chars) — the endpoint must pass it
