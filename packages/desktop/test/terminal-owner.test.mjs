@@ -82,8 +82,8 @@ test('a remote preparation refused with E_HERDR_REMOVED returns that code and me
   assert.equal(f.ptys.length, 0); assert.equal(f.broker.counts().slots, 0);
 });
 
-test('a remote preparation keeps its transport and gone codes through the broker, never E_TERM_OPEN_FAILED', async () => {
-  for (const code of ['E_TERM_REMOTE_UNREACHABLE', 'E_TERM_REMOTE_GONE']) {
+test('a remote preparation keeps its transport, no-answer and gone codes through the broker, never E_TERM_OPEN_FAILED', async () => {
+  for (const code of ['E_TERM_REMOTE_UNREACHABLE', 'E_TERM_REMOTE_GONE', 'E_TERM_REMOTE_NO_ANSWER']) {
     const f = fixture({ prepare: () => { throw Object.assign(new Error('kernel text'), { code }); } }), a = f.owner('A');
     const result = await f.open(a, { name: 'remote-row', remote: true });
     assert.equal(result.code, code); assert.deepEqual(result, terminalFailure(code));
