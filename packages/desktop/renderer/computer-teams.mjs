@@ -323,8 +323,6 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
     const join = el(doc, 'span', 'Who may join ', 'ct-fact'), who = whoMayJoin(current, team.label);
     join.append(el(doc, 'b', who ?? 'No soul yet', `ct-join${who ? '' : ' none'}`));
     facts.append(address, join); main.append(facts);
-    const listed = membersOf(team);
-    if (listed.length) main.append(memberList(listed));
     for (const problem of list(current.problems).filter(p => p?.label === team.label)) main.append(kernelProblem(problem));
     const actions = el(doc, 'div', null, 'ct-actions');
     if (!team.default) actions.append(button('Make default', '', () => { confirming = team.label; render(); focusIn(`[data-team="${team.label}"] .ct-confirm .primary`); },
@@ -335,6 +333,9 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
         { disabled: !!why, title: why || '', aria: why ? `Remove ${team.label}: ${why}` : `Remove ${team.label}` }));
       if (why) main.append(el(doc, 'span', why, 'ct-why'));
     }
+    // The members come last in the main column: below the facts and the card's own notes (problems, why Remove is off).
+    const listed = membersOf(team);
+    if (listed.length) main.append(memberList(listed));
     card.append(tile, main);
     // The right column says who is in the team only when the roster shows someone; never a zero.
     const side = el(doc, 'div', null, 'ct-side'), members = membersOf(team);

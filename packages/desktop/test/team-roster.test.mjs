@@ -115,3 +115,11 @@ test('a route answer that does not validate leaves the cards saying nothing abou
   const u = await mount(t, { members: 'nope' });
   assert.equal(u.q('.ct-members'), null); assert.equal(u.q('.ct-side .ct-count'), null); assert.equal(u.q('.ct-reach').textContent, '');
 });
+
+test('the member list comes last in the card\'s main column, after its facts and notes', async t => {
+  const u = await mount(t, { members: [m('dev-a')], servers: [], notReached: [] });
+  const main = u.q('[data-team="juan"] .ct-main');
+  assert.equal(main.lastElementChild, main.querySelector('.ct-members'));
+  assert.ok(main.querySelector('.ct-facts').compareDocumentPosition(main.querySelector('.ct-members')) & 4, 'below the facts');
+  assert.ok(main.querySelector('.ct-why').compareDocumentPosition(main.querySelector('.ct-members')) & 4, 'below why Remove is off');
+});
