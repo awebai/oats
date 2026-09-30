@@ -86,7 +86,9 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
         const found = panel.instances?.find((i) => instanceId(i) === key);
         live = found?.running === true;
         hasLaunchConfig = !!cli.ok && cli.features?.includes("launch-config") && (!instance.server || cli.remote?.includes("launch-config"));
-        hasLaunchConfigDefault = hasLaunchConfig && cli.features.includes("launch-config-default");
+        // Offered for this computer's own configurations only: its CLI can't tell whether a
+        // remote host's kernel has the feature (the fields still keep a default that host reports).
+        hasLaunchConfigDefault = hasLaunchConfig && !instance.server && cli.features.includes("launch-config-default");
         modal.querySelector(".start-launch-controls").hidden = modal.querySelector(".start-configurations").hidden = !hasLaunchConfig;
         if (hasLaunchConfig && !configsLoaded) { configsLoaded = true; void launchFields.load(); }
         submit.textContent = restart ? "Restart" : live ? "Open terminal" : "Start";

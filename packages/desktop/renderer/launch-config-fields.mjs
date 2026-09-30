@@ -125,7 +125,10 @@ export function launchConfigFields(el, { ctx, selector, choices, owns = () => tr
         for (const key of ["executable", "model"]) if (field(key).value.trim()) definition[key] = field(key).value.trim();
         if (field("yolo").value !== "") definition.yolo = field("yolo").value === "true";
         // Sent only when set: the kernel replaces the whole entry, so an absent key clears it.
-        if (supportsDefault() && field("default").checked) definition.default = true;
+        // Where it can't be offered, a default the listing host reported is kept for the same
+        // name (that host has the feature); a new name never becomes a second default.
+        const keepDefault = supportsDefault() ? field("default").checked : selected()?.default === true && name === selected()?.name;
+        if (keepDefault) definition.default = true;
       }
       busy = true; invalidate(); updateControls();
       status.textContent = action === "set" ? "Saving…" : "Removing configuration…";

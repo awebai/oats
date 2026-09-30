@@ -291,3 +291,17 @@ test("an existing home's empty choice keeps its recorded launch, and says so", a
     assert.equal(u.el.querySelector('.launch-config-source').textContent, "Use this home's recorded launch.");
   } finally { u.close(); }
 });
+
+test('where the default cannot be offered (a remote home), an existing default is still kept on save, and never copied to a new name', async () => {
+  const u = ui(body => body.action === 'list' ? { context: '/team', configurations: [defaultConfig] } : {}, { supportsDefault: () => false });
+  try {
+    await u.controller.load('personal');
+    assert.equal(u.el.querySelector('.lc-default-label').hidden, true);
+    u.el.querySelector('.lc-model').value = 'm'; u.el.querySelector('.lc-save').click(); await tick();
+    assert.equal(lastSet(u).definition.default, true, 'the host reported it, so it is sent back');
+    u.el.querySelector('.lc-name').value = 'copy'; u.el.querySelector('.lc-name').dispatchEvent(new u.dom.window.Event('input'));
+    u.el.querySelector('.lc-save').click(); await tick();
+    assert.equal(lastSet(u).name, 'copy');
+    assert.equal(Object.hasOwn(lastSet(u).definition, 'default'), false, 'a new name never becomes a second default');
+  } finally { u.close(); }
+});
