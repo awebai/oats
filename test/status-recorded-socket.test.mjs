@@ -52,7 +52,8 @@ test("status liveness follows each row's recorded socket, with TMUX unset or poi
     return [name, r.json().result.present];
   }));
   assert.deepEqual(inspected, { "on-a": true, "on-b": true, "gone-a": false, "gone-b": false });
-  for (const env of [{}, { TMUX: `${sockets.ambient},${ambientPid},0` }]) {
+  // TMUX: undefined drops the variable from the child even when the runner itself runs inside tmux.
+  for (const env of [{ TMUX: undefined }, { TMUX: `${sockets.ambient},${ambientPid},0` }]) {
     const r = fx.cli(["status", "--json"], { env });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     const rows = JSON.parse(r.stdout).agents.flatMap((a) => a.instances).filter((i) => i.instance in homes);
@@ -69,13 +70,22 @@ test("a row whose recorded server is gone reads not running, and status still ex
 });
 
 test("a row whose recorded server cannot be read is unknown, never not-running, and status still exits 0", async () => {
-  const notASocket = join(base, "not-a-socket");
-  writeFileSync(notASocket, "x");
-  const home = await recordedHome("server-unreadable", notASocket);
+  // A socket path under a regular file fails lookup (ENOTDIR) the same way on Linux and macOS; a
+  // regular file as the socket itself reads as "no server running" on Linux. Under a short /tmp
+  // directory: the macOS temporary directory would make the path too long for a socket first.
+  const short = mkdtempSync("/tmp/oats-ss-");
+  test.after(() => rmSync(short, { recursive: true, force: true }));
+  const notADirectory = join(short, "not-a-directory");
+  writeFileSync(notADirectory, "x");
+  const home = await recordedHome("server-unreadable", join(notADirectory, "x.sock"));
   const r = fx.cli(["status", "--json"]);
   assert.equal(r.status, 0, r.stdout + r.stderr);
   const row = JSON.parse(r.stdout).agents.flatMap((a) => a.instances).find((i) => i.home === home);
   assert.equal(row.running, null);
   assert.equal(row.runtimeState, "unreachable");
-  assert.match(row.runtimeError, /non-socket/);
+  assert.match(row.runtimeError, /Not a directory/);
+  const text = fx.cli(["status"]);
+  assert.equal(text.status, 0, text.stdout + text.stderr);
+  const line = text.stdout.split("\n").find((l) => l.includes("• server-unreadable"));
+  assert.match(line, /• server-unreadable  unknown .*Not a directory/, "the text status says unknown and why, never idle");
 });

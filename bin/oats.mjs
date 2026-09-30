@@ -1790,7 +1790,7 @@ async function status() {
     console.log(`  ${a.name}  [work: ${a.work || "checkout"}, repo: ${soulRepoLabel(a, ws)}]`);
     if (a.description) console.log(`      ${a.description}`);
     for (const i of a.instances) {
-      console.log(`      • ${i.instance}  ${i.retirePending ? "RETIRING" : i.running ? "RUNNING" : "idle"}  (branch ${i.branch || "?"}, ${i.work || "?"})`);
+      console.log(`      • ${i.instance}  ${i.retirePending ? "RETIRING" : livenessWord(i)}  (branch ${i.branch || "?"}, ${i.work || "?"})${i.runtimeError ? `  ${i.runtimeError}` : ""}`);
       const key = i.home ?? `${a.name}/${i.instance}`;
       if (i.identity) console.log(`          identity: ${servedIdentityLine(i.identity)}`);
       // The kernel the home's plain `oats` runs (its last launch's), when it is not this one.
@@ -1807,6 +1807,8 @@ async function status() {
   }
 }
 
+/** A status row's liveness in text: `running` null (a server that cannot be read, a Herdr home) is unknown, never idle. */
+const livenessWord = (i) => i.running === true ? "RUNNING" : i.running === false ? "idle" : "unknown";
 /** The flags `oats spawn` reads: those taking a value, and switches. `--provider` takes two words.
  *  `--instance` is refused by a local spawn (with its replacement) but still travels to an older
  *  host through `--server`, whose route reads it. */
@@ -3212,7 +3214,7 @@ async function serverRouteCmd() {
     console.log(`oats status — server ${id} (ssh ${r.target.sshHost}, workspace ${r.target.workspace})\n`);
     for (const a of r.agents || []) {
       console.log(`  ${a.name}  [work: ${a.work || "checkout"}, repo: ${a.repo || "?"}]`);
-      for (const i of a.instances || []) console.log(`      • ${i.instance}  ${i.retirePending ? "RETIRING" : i.running ? "RUNNING" : "idle"}`);
+      for (const i of a.instances || []) console.log(`      • ${i.instance}  ${i.retirePending ? "RETIRING" : livenessWord(i)}${i.runtimeError ? `  ${i.runtimeError}` : ""}`);
     }
     const snaps = r.snapshots || [];
     if (snaps.length) console.log(`\n  spawned from this machine: ${snaps.map((s) => s.instance).join(", ")}`);
