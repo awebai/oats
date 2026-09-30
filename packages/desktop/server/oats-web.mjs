@@ -67,6 +67,7 @@ import { previewFailure } from '../renderer/spawn-preview-contract.mjs';
 import { forgeBoundary, FORGE_EPOCH_HEADER, validForgeEpoch } from "./forge.mjs";
 import { createReviewPaste } from "./review-paste.mjs";
 import { launchConfigRequest } from "./launch-configs.mjs";
+import { teamMembers } from "./team-members.mjs";
 import { automationsRequest, automationsFailure } from "./automations.mjs";
 import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
 import { canAddressRemote, unaddressableSentence } from "../renderer/remote-address.mjs";
@@ -1428,6 +1429,16 @@ const server = createServer(async (req, res) => {
       const harness = typeof body.harness === "string" && body.harness ? body.harness : "pi";
       if (!HARNESSES.includes(harness)) return send(res, 400, { error: `unknown harness "${harness}" (pi|claude|codex)` });
       return send(res, 200, { harness, models: await modelsData(harness) });
+    }
+    if (req.method === "GET" && path === "/api/team-members") {
+      // Who is in each team, wherever it runs (spec 02): the held observations only, no command.
+      if (url.searchParams.getAll("ws").length !== 1 || [...url.searchParams.keys()].some(k => k !== "ws")) return send(res, 400, { error: "Expected one workspace selector", code: "E_BAD_ARGS" });
+      const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
+      if (!workspace) return send(res, 400, { error: "Select a known workspace", code: "E_WORKSPACE_UNKNOWN" });
+      const result = teamMembers({ workspace, instances: snapshot.byWs.get(workspace.id)?.instances || [],
+        groups: remoteGroups.map(group => ({ group, panel: snapshot.byWs.get(`remote:${group.id}`) || remote.remotePanel(group) })) });
+      if (result.error) return send(res, 409, { error: "The Teams board is local; a remote workspace's teams are read on that machine", code: result.error });
+      return send(res, 200, result);
     }
     if (req.method === "GET" && path === "/api/servers") {
       // Registered execution servers, read through the CLI (the Desktop
