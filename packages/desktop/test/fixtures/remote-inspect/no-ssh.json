@@ -1,0 +1,1 @@
+{"schemaVersion":1,"ok":false,"error":{"code":"E_SSH","message":"ssh to localhost failed: spawnSync ssh ENOENT","details":{"sshStarted":false}}}

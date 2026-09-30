@@ -52,7 +52,7 @@ test("a 0.31 kernel's E_HERDR_REMOVED refusal exits 1 and is still refused as E_
   assert.ok(calls.every(argv => argv[1] === "inspect"), "only inspection ran; nothing attached");
 });
 const captured = name => readFileSync(new URL(`./fixtures/remote-inspect/${name}.json`, import.meta.url), "utf8");
-test("prepare failures carry codes from real captures: unreachable is transport, no envelope is no answer, not present is gone, a host refusal keeps its code", async () => {
+test("prepare failures carry codes from real captures: unreachable is transport, ssh that never started is no ssh, no envelope is no answer, not present is gone, a host refusal keeps its code", async () => {
   const calls = [];
   for (const [run, code] of [
     [exiting(1, captured("unreachable"), calls), "E_TERM_REMOTE_UNREACHABLE"],
@@ -60,6 +60,7 @@ test("prepare failures carry codes from real captures: unreachable is transport,
     [exiting(1, "", calls), "E_TERM_REMOTE_NO_ANSWER"],
     [exiting(0, captured("not-present"), calls), "E_TERM_REMOTE_GONE"],
     [exiting(1, captured("unknown-server"), calls), "E_SERVER_UNKNOWN"],
+    [exiting(1, captured("no-ssh"), calls), "E_TERM_REMOTE_NO_SSH"],
   ]) await assert.rejects(prepareRemoteTerm(cli, remote, { run }), error => error.code === code, code);
   assert.ok(calls.every(argv => argv[1] === "inspect"), "only inspection ran; nothing attached");
 });
@@ -102,4 +103,12 @@ test("remote viewer rejects old CLI before SSH and clears local nesting only", a
   const source = { PATH: "/bin", SSH_AUTH_SOCK: "/agent", TMUX: "/local,1,2", HERDR_SESSION: "local", HERDR_SOCKET_PATH: "/local" };
   assert.deepEqual(remoteTerminalEnvironment(source), { PATH: "/bin", SSH_AUTH_SOCK: "/agent" });
   assert.equal(source.TMUX, "/local,1,2");
+});
+
+test("only an E_SSH whose details say ssh never started is no ssh; any other E_SSH stays a retried transport failure", async () => {
+  const envelope = details => JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_SSH", message: "ssh to build failed", ...(details === undefined ? {} : { details }) } });
+  for (const [details, code] of [[{ sshStarted: false }, "E_TERM_REMOTE_NO_SSH"], [undefined, "E_TERM_REMOTE_UNREACHABLE"],
+    [{ sshStarted: true }, "E_TERM_REMOTE_UNREACHABLE"], [{}, "E_TERM_REMOTE_UNREACHABLE"], [{ sshStarted: "false" }, "E_TERM_REMOTE_UNREACHABLE"]]) {
+    await assert.rejects(prepareRemoteTerm(cli, remote, { run: exiting(1, envelope(details), []) }), error => error.code === code, JSON.stringify(details));
+  }
 });
