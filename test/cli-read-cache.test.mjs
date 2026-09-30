@@ -99,8 +99,18 @@ test("no git cat-file --batch child outlives the command — after success and a
   const shim = join(base, "shim");
   mkdirSync(shim, { recursive: true });
   const pids = join(base, "batch-pids");
-  writeFileSync(join(shim, "git"), `#!/bin/bash\nfor a in "$@"; do [ "$a" = "--batch" ] && echo $$ >> "${pids}"; done\nexec "${REAL_GIT}" "$@"\n`, { mode: 0o755 });
+  // A batch child that does not end at stdin EOF (a hung git, or one mid lazy fetch): the shim outlives its
+  // git, so only the kernel's group kill can end it — on the success path and after a refusal alike.
+  writeFileSync(join(shim, "git"), `#!/bin/bash\nfor a in "$@"; do [ "$a" = "--batch" ] && { echo $$ >> "${pids}"; "${REAL_GIT}" "$@"; exec sleep 60 </dev/null >/dev/null 2>&1; }; done\nexec "${REAL_GIT}" "$@"\n`, { mode: 0o755 });
   const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  // A refusal exits through process.exit: the exit hook group-kills the batch children, but the process
+  // is gone before it can reap them, so the system reaps them a moment later. Killed and not yet reaped
+  // is not alive: wait (bounded) for that, and name the state of any pid still there at the deadline.
+  const survivors = async (started) => {
+    const deadline = Date.now() + 2000;
+    while (started.some(alive) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25));
+    return started.filter(alive).map((pid) => `${pid} (${spawnSync("ps", ["-o", "stat=,command=", "-p", String(pid)], { encoding: "utf8" }).stdout.trim() || "gone"})`);
+  };
   for (const args of [["souls", "--json"], ["inspect", "--soul", "no-such-soul", "--json"]]) {
     writeFileSync(pids, "");
     clearStores(); // cold: the reads go through the batch
@@ -108,7 +118,7 @@ test("no git cat-file --batch child outlives the command — after success and a
     const started = readFileSync(pids, "utf8").split("\n").filter(Boolean).map(Number);
     assert.ok(started.length > 0, `${args[0]}: batch readers were used`);
     if (args[1] === "--soul") assert.equal(JSON.parse(r.stdout).error.code, "E_SOUL_UNKNOWN");
-    assert.deepEqual(started.filter(alive), [], `${args.join(" ")}: every batch child is gone when the command has exited`);
+    assert.deepEqual(await survivors(started), [], `${args.join(" ")}: every batch child is gone when the command has exited`);
   }
 });
 
