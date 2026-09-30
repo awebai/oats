@@ -183,7 +183,7 @@ homes in `problems[]`: `legacy-captured-home {code, instances, homes,
 message}` and `legacy-local-agents {code, dirs, instances, message}`.
 
 <a id="observation-reuse-feature-observe-max-age-oats-0311"></a>
-### Observation reuse (feature `observe-max-age`, OATS 0.31.1)
+### Observation reuse (feature `observe-max-age`, OATS 0.32.0)
 
 Every read asks each remote for its current head (`git ls-remote`). With
 `--max-age <seconds>` a read verb reuses a head this machine observed at most
