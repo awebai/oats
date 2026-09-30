@@ -62,8 +62,7 @@ export async function prepareTerminalAttachments(items, { directory, remote, cli
     }
     if (remote) {
       check();
-      const { stdout } = await run(cli.bin, ["session", "upload", "--server", remote.serverId, "--instance", remote.instance,
-        ...(remote.home ? ["--home", remote.home] : []), "--file", path, "--json"], { encoding: "utf8", timeout: 60000, maxBuffer: 1024 * 1024, shell: false, ...(signal ? { signal } : {}) });
+      const { stdout } = await run(cli.bin, ["session", "upload", "--server", remote.serverId, "--home", remote.home, "--file", path, "--json"], { encoding: "utf8", timeout: 60000, maxBuffer: 1024 * 1024, shell: false, ...(signal ? { signal } : {}) });
       check();
       const result = JSON.parse(stdout);
       if (result.schemaVersion !== 1 || result.ok !== true || typeof result.result?.path !== "string"

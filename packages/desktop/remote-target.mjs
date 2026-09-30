@@ -24,11 +24,12 @@ function refusal(envelope) {
   return coded(typeof code === 'string' && code ? code : 'E_TERM_OPEN_FAILED', message || 'remote session inspection failed');
 }
 
+/** A remote terminal is its server and its absolute home: routed as `--server S --home H`, never by a bare name. */
 export function remoteTargetKey(remote) {
   if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(remote?.serverId || "")
     || !/^[a-z0-9][a-z0-9-]*$/.test(remote?.instance || "")) throw new Error("invalid remote terminal target");
-  if (remote.home !== undefined && (typeof remote.home !== "string" || !remote.home.startsWith("/") || remote.home.includes("\0"))) throw new Error("invalid remote terminal home");
-  return JSON.stringify(["remote", remote.serverId, remote.instance, ...(remote.home ? [remote.home] : [])]);
+  if (typeof remote.home !== "string" || !remote.home.startsWith("/") || remote.home.includes("\0")) throw new Error("invalid remote terminal home");
+  return JSON.stringify(["remote", remote.serverId, remote.home]);
 }
 export async function prepareRemoteTerm(cli, remote, { run = runTerminalCommand, signal, current = () => true } = {}) {
   const check = () => { if (signal?.aborted || !current()) throw Object.assign(new Error('Terminal context changed'), { code: 'E_TERM_CONTEXT_CHANGED' }); };
@@ -36,7 +37,7 @@ export async function prepareRemoteTerm(cli, remote, { run = runTerminalCommand,
   requireRemoteSupport(cli, "session");
   const bin = cli.bin;
   remoteTargetKey(remote);
-  const address = ["--server", remote.serverId, "--instance", remote.instance, ...(remote.home ? ["--home", remote.home] : [])];
+  const address = ["--server", remote.serverId, "--home", remote.home];
   check(); // actual execution owner, not only IPC admission
   let stdout;
   try {

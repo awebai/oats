@@ -134,12 +134,22 @@ test('stale automatic re-observation cannot overwrite a newer selection or leak 
   assert.equal(u.host.innerHTML, before); assert.doesNotMatch(u.text(), /Select a file from|OLD/);
 });
 
-test('remote and incomplete targets cannot read or act, including retained Refresh dispatch', async t => {
-  const u = setup(t); await u.show(); const b = u.one('.git-footer button');
-  await u.show(target('/team/agents', 'host-b'));
-  b.dispatchEvent(new u.dom.window.Event('click')); await u.view.refresh();
-  assert.equal(u.calls.length, 1); assert.match(u.text(), /Remote Git inspection is unavailable/);
-  assert.equal(u.one('.git-footer').hidden, true, 'nothing to refresh: no footer');
+test('a remote row is read on its own machine ("Reading from <server>…"); a host refusal shows its headline, code and message', async t => {
+  const gate = deferred(), remote = { ...target('/srv/agents', 'build'), repoName: 'Build box' };
+  const u = setup(t, () => gate.promise);
+  const shown = u.show(remote);
+  assert.equal(u.calls.length, 1, 'the server is the gate');
+  assert.deepEqual(u.calls[0].body.selector, { instance: 'dev-1', agent: 'dev', agentsRoot: '/srv/agents', server: 'build' });
+  assert.match(u.text(), /Reading from Build box…/);
+  const { repoName: _label, ...echo } = remote;
+  gate.resolve({ instanceGitApi: 1, minimumVersion: '0.24.7', status: 'unavailable', target: echo, data: null,
+    reason: { code: 'E_REMOTE_INCOMPATIBLE', message: "Build box runs an OATS that can't do this yet.", detail: 'build runs 0.30.2', remote: true } });
+  await shown; await tick();
+  assert.match(u.text(), /Build box runs an OATS that can't do this yet\./);
+  assert.match(u.text(), /E_REMOTE_INCOMPATIBLE: build runs 0.30.2/);
+});
+test('incomplete targets cannot read or act', async t => {
+  const u = setup(t); await u.show(); assert.equal(u.calls.length, 1);
   await u.show({ ...target(), agent: undefined }); assert.equal(u.calls.length, 1); assert.match(u.text(), /fully qualified/);
 });
 

@@ -36,11 +36,12 @@ version number: `workspaceApi === 2`, `workspace-v2` and
 `packages-no-approval` for the header, plus `instance-modules` and
 `served-identity` for the roster. A missing feature is
 shown by name in the header and roster; nothing is invoked optimistically.
-`ACCEPT_RANGE` is `>=0.25.8 <0.32.0`: the floor admits main's kernel before
+`ACCEPT_RANGE` is `>=0.25.8 <0.33.0`: the floor admits main's kernel before
 0.26.0 was tagged, the ceiling admits 0.27 (the harness rename, gated on feature
-`harness`) through 0.31 (0.30 is team model v2, gated on feature `team-model-2`; the
-0.29 team shapes are still read; 0.31 removes Herdr and adds routed remote reads), and the `packages-no-approval` fence is the
-real gate.
+`harness`) through 0.30 (team model v2, gated on feature `team-model-2`; the
+0.29 team shapes are still read), 0.31 (Herdr removed; per-instance reads and
+plans routed by `--server`/`--home`, gated on the probe's `remote` entries) and
+0.32, and the `packages-no-approval` fence is the real gate.
 
 ## Projection and ownership
 
@@ -60,6 +61,57 @@ on a CLI read, so readiness probes stay responsive. The spawn catalog
 (`oats souls`) and the capabilities table (`oats capabilities`) are read in the
 same cycle but never block the roster; when they run, what is held and when a
 cycle runs is [desktop-load-path.md](desktop-load-path.md).
+
+## Remote rows
+
+A remote workspace is one group of the kernel's remote roster (`oats server
+roster --json`, projected by `server/remote-roster.mjs`); its rows carry
+`server`, `home`, and the kernel's `addressable` and `missingRemotely` facts.
+
+- **One predicate.** `canAddressRemote(row)` in `renderer/remote-address.mjs`
+  (re-exported by `server/instance-admission.mjs`): a local row, or a remote row
+  with `addressable === true`. It gates every action on a row: opening the
+  terminal, Start…, the actions menu, the context panel's buttons, the start
+  and restart dialog and route, launch configurations, inspection, lifecycle
+  plans and applies, readiness, activity, Git and diff, and the wait for a
+  started or spawned instance's terminal. `savedRoute` (spawned from this
+  machine) decides only when this computer's OATS predates 0.31 and reports no
+  `addressable`: a row it spawned stays reachable through its saved route.
+- **Why a row can't open.** `rowReason(row)` in the same module is the one
+  source of a row's reason: a short label on the roster meta line (Herdr no
+  longer supported, gone from `<server>`, not reachable on `<server>`,
+  `<server>` not reached, state unknown), and the full sentence used as the
+  row's `title`, `aria-description` and the actions menu's reason. The server
+  label is the registration's label, else the server id.
+- **Admission.** `admitInstance` admits a remote selector only in its own
+  remote workspace (the same server id in another group is another
+  workspace), for a row that passes `canAddressRemote`, when this machine's
+  probe lists the operation's `remote` entry (`readiness`, `instance-events`,
+  `instance-git`, `lifecycle-plans`). Otherwise it refuses and nothing is sent;
+  a local selector never resolves in a remote workspace, or the reverse.
+- **Addressing.** Every routed command names `--server <id> --home <abs>`, runs
+  from this machine's first deployment directory as its cwd, and carries no
+  `--dir` (the kernel sends the registered workspace). Nothing remote is
+  addressed by a bare `--instance`. A remote terminal is keyed
+  `["remote", server, home]`.
+- **Deadlines.** A remote read or plan has 45 s at the CLI (ssh's 15 s connect
+  timeout plus the command) and 50 s at the renderer→main proxy; an apply keeps
+  its 600 s / 610 s.
+- **Refusals.** A host refusal is relayed as `{code, message, detail, remote:
+  true}` (`hostReason`): the kernel's code, a headline naming the server
+  (`remoteHeadline`, the view's own sentence for codes outside its table), and
+  the kernel's message as the detail, bounded and withheld when it looks like a
+  credential. Every hop re-validates it (`remoteReason`); views show the
+  headline with the code and detail behind Details. A missing `remote` entry is
+  "This computer's OATS can't route this to `<server>`. Update OATS here."
+- **Views.** A remote read in flight says "Reading from `<server>`…". A remote
+  row's pull request stays unavailable: the forge reads this machine's clones.
+- **Lifecycle.** A remote apply that times out or loses its link is an unknown
+  outcome, never a failure; codes the router or the host refuse before any
+  effect (`E_REMOTE_INCOMPATIBLE`, `E_AMBIGUOUS`, `E_HOME_MISMATCH`,
+  `E_SNAPSHOT_UNKNOWN`) are refused. The routed retire receipt may also carry
+  `server` and `target`; a local one may not. After any remote apply the
+  remote roster is re-read at once.
 
 ## Unchanged, v2-agnostic
 

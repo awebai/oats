@@ -387,8 +387,8 @@ test("remote overview opens the selected server and shows unknown separately fro
   let un;
   try {
     const panel = { instances: [
-      { instance: "dev", agent: "dev", home: "/same/home", agentsRoot: "/agents", server: "one", savedRoute: true, running: true },
-      { instance: "dev", agent: "dev", home: "/same/home", agentsRoot: "/agents", server: "two", savedRoute: true, running: true },
+      { instance: "dev", agent: "dev", home: "/same/home", agentsRoot: "/agents", server: "one", addressable: true, running: true },
+      { instance: "dev", agent: "dev", home: "/same/home", agentsRoot: "/agents", server: "two", addressable: true, running: true },
       { instance: "unreachable", home: "/unknown", server: "two", running: null },
       { instance: "ended", home: "/stopped", server: "two", running: false },
     ], workspaces: [], workspace: null };

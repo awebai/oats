@@ -47,6 +47,7 @@ import { createContextPanel, contextPanelCSS } from "./context-panel.mjs";
 import { createInstanceTeamsSection, teamsCSS } from "./instance-teams.mjs";
 import { createInstanceSoulSection, instanceSoulCSS } from "./instance-soul.mjs";
 import { createInstanceGitPanel, instanceGitCSS } from "./instance-git.mjs";
+import { canAddressRemote, rowReason } from "./remote-address.mjs";
 import { createNotificationCenter, notificationCSS } from "./notifications.mjs";
 import { createRosterTip, rosterTipFacts, rosterTipCSS } from "./roster-tip.mjs";
 import { createRosterPrs, prChip, prText, rosterPrCSS } from "./roster-pr.mjs";
@@ -545,13 +546,14 @@ function renderContextRoster(instances) {
         row.className = "ctx-inst" + (state === "stopped" ? " idle" : "") + (isActive ? " active" : "");
         rowWrap.classList.toggle("active", isActive);
         if (hasChildren) row.setAttribute("aria-expanded", String(filtering || !collapsed));
-        // A row that can't open (unknown state, a remote without a saved route) stays focusable
-        // (aria-disabled, spec F): its row tools — the actions menu's Inspect/Stop/Remove — must
+        // A row that can't open (unknown state, a remote row the kernel does not report addressable) stays
+        // focusable (aria-disabled, spec F): its row tools — the actions menu's Inspect/Stop/Remove — must
         // stay reachable from the keyboard. Its activation does nothing and says why.
-        const unavailable = i.running == null || (!!i.server && !i.savedRoute);
+        const unavailable = i.running == null || !canAddressRemote(i);
         if (unavailable) { row.setAttribute("aria-disabled", "true"); row.classList.add("unavailable"); }
-        const why = i.runtimeError || (i.server && !i.savedRoute ? "No saved route for this instance on this machine"
-          : i.running ? `Open ${i.instance} terminal` : i.running === false ? `Start ${i.instance}` : `${i.instance}: status unknown`);
+        // Why it can't open: a short label on the meta line, the full sentence as its title and description.
+        const reason = rowReason(i);
+        const why = reason?.sentence || i.runtimeError || (i.running ? `Open ${i.instance} terminal` : `Start ${i.instance}`);
         // Workspace v4: an enabled row explains itself in the hover/focus card; an unavailable one keeps its reason as a title.
         const pr = i.server || i.remote ? null : rosterPrs.get(i.home);
         if (unavailable) { row.title = why; row.setAttribute("aria-description", why); } else rosterTip.bind(row, () => rosterTipFacts(i, why, pr));
@@ -564,13 +566,13 @@ function renderContextRoster(instances) {
         name.textContent = i.instance;
         const meta = document.createElement("span");
         meta.className = "ctx-meta ctx-repo-label";
-        meta.textContent = [instanceRepoLabel(i), i.branch, state === "unknown" ? "state unknown" : ""].filter(Boolean).join(" · ");
+        meta.textContent = [instanceRepoLabel(i), i.branch, reason?.label].filter(Boolean).join(" · ");
         meta.title = `Repository: ${instanceRepoLabel(i)}${i.branch ? `\nBranch: ${i.branch}` : ""}`;
         if (pr) {
           // Its pull request on the meta line, before the branch: "repo · #317 branch" (the name line
           // holds only the name). The link itself sits in the row tools (a button holds no link).
           const lead = document.createElement("span"); lead.className = "ctx-meta-lead"; lead.textContent = `${instanceRepoLabel(i)} ·`;
-          const rest = [i.branch, state === "unknown" ? "state unknown" : ""].filter(Boolean).join(" · ");
+          const rest = [i.branch, reason?.label].filter(Boolean).join(" · ");
           meta.textContent = ""; meta.classList.add("ctx-meta-pr"); meta.append(lead, prChip(document, pr));
           if (rest) { const tail = document.createElement("span"); tail.className = "ctx-meta-tail"; tail.textContent = rest; meta.append(tail); }
         }
@@ -609,7 +611,7 @@ function renderContextRoster(instances) {
         if (i.running === false) {
           const start = document.createElement("button"); start.className = "act ctx-start";
           start.textContent = "Start…"; start.setAttribute("aria-label", `Start ${i.instance}`);
-          start.disabled = !!i.server && !i.savedRoute;
+          start.disabled = !canAddressRemote(i);
           if (rosterStale) markStaleControl(start);
           start.addEventListener("click", () => { if (!staleBlocked(start)) openInstanceStart(i); });
           tools.append(start);
@@ -1351,7 +1353,7 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
   // may have waited across a workspace switch.
   if (!owns()) return;
   const name = inst.instance;
-  if (inst.server && !inst.savedRoute) return notify("No saved route for this remote instance on this machine");
+  if (!canAddressRemote(inst)) return notify(rowReason(inst).sentence);
   if (!inst.running || (!inst.server && !inst.tmux?.session)) return notify(inst.runtimeError || `"${name}" has no live terminal session`);
 
   if (!commitDestination()) return notify('The terminal destination changed. Select the instance again.');

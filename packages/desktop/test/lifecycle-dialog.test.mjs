@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { createLifecycleDialog } from '../renderer/lifecycle-dialog.mjs';
+import { createLifecycleDialog, lifecycleCSS } from '../renderer/lifecycle-dialog.mjs';
 import { lifecycleReceipt } from '../renderer/lifecycle-contract.mjs';
 import { pullRequest } from '../renderer/forge-contract.mjs';
 import { pr as rawPr } from './helpers/forge-fixture.mjs';
@@ -139,4 +139,48 @@ test('forge overlay requires target/revision/branch/repository match; late rejec
     f.open('retire'); await tick(); await tick();
     assert.match(f.doc.querySelector('.lifecycle-forge').textContent, mode === 'match' ? /No pull request reported/ : /unknown/); f.close();
   }
+});
+
+const remoteInstance = { ...instance, server: 'build', repoName: 'Build box', addressable: true };
+const remoteTarget = { ...target, server: 'build' };
+test('a remote plan says "Reading from <server>…" in flight; a host refusal shows its headline with the kernel\'s code and message in Details', async () => {
+  const gate = deferred();
+  const f = fixture({ request: () => gate.promise });
+  try {
+    f.dialog.open({ operation: 'retire', instance: remoteInstance, workspace: 'team' }); await tick();
+    assert.deepEqual(f.calls[0].body.selector, { instance: instance.instance, agent: instance.agent, agentsRoot: instance.agentsRoot, server: 'build' });
+    assert.equal(f.doc.querySelector('.lifecycle-dialog [role=status]').textContent, 'Reading from Build box…');
+    gate.resolve({ lifecycleApi: 1, status: 'unavailable', target: remoteTarget, planRef: null, plan: null, receipt: null,
+      reason: { code: 'E_REMOTE_INCOMPATIBLE', message: "Build box runs an OATS that can't do this yet.", detail: 'build runs 0.30.2: lifecycle-plans needs lifecycleApi 1', remote: true } });
+    await tick();
+    assert.equal(f.doc.querySelector('.lifecycle-dialog [role=status]').textContent, "Build box runs an OATS that can't do this yet.");
+    const details = f.doc.querySelector('.lifecycle-details');
+    assert.equal(details.querySelector('summary').textContent, 'Details');
+    assert.equal(details.querySelector('p').textContent, 'E_REMOTE_INCOMPATIBLE: build runs 0.30.2: lifecycle-plans needs lifecycleApi 1');
+    assert.equal(f.button('lifecycle-confirm').disabled, true);
+  } finally { f.close(); }
+});
+test('a remote apply that lost the link is an unknown outcome with the transport cause, never a failure; Check recorded result stays', async () => {
+  const f = fixture({ request: (_ws, body) => body.action === 'plan' ? { ...planned('stop'), target: remoteTarget }
+    : { lifecycleApi: 1, status: 'unknown', target: remoteTarget, planRef: reference, options: options('stop'), plan: null, receipt: null,
+      reason: { code: 'E_OUTCOME_UNKNOWN', message: 'The submitted operation has no confirmed outcome. Observe current state; do not assume no effect.' },
+      cause: { code: 'E_SSH', message: "Couldn't reach Build box.", detail: 'ssh: connect to host build-host port 22: Connection refused', remote: true } } });
+  try {
+    f.dialog.open({ operation: 'stop', instance: remoteInstance, workspace: 'team' }); await tick();
+    f.button('lifecycle-confirm').click(); await tick();
+    assert.match(f.doc.querySelector('.lifecycle-dialog [role=status]').textContent, /no confirmed outcome/);
+    assert.match(f.doc.querySelector('.lifecycle-result').textContent, /Couldn't reach Build box\./);
+    assert.equal(f.doc.querySelector('.lifecycle-result .lifecycle-details p').textContent, 'E_SSH: ssh: connect to host build-host port 22: Connection refused');
+    assert.equal(f.button('lifecycle-retry').hidden, false);
+    assert.equal(f.settled.length, 1, 'the host settles the roster refresh even for an unknown outcome');
+  } finally { f.close(); }
+});
+
+test('each dialog shows only its own choices: a hidden choice stays hidden despite the label layout (Stop has no worktree/branch options, Remove no children option)', () => {
+  // The label's display:flex beats the user agent's [hidden] rule in Chromium; jsdom's cascade does not model that, so pin the rule.
+  const dom = new JSDOM('<!doctype html><style></style>'), sheet = dom.window.document.querySelector('style');
+  sheet.textContent = lifecycleCSS;
+  const rule = [...sheet.sheet.cssRules].find(r => r.selectorText === '.lifecycle-dialog label[hidden]');
+  assert.equal(rule?.style.display, 'none');
+  dom.window.close();
 });

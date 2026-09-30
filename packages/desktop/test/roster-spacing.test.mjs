@@ -11,6 +11,7 @@ import { instanceActions, captureInstanceActionMenu } from "../renderer/instance
 import { instanceActionTarget, sameInstanceActionTarget } from '../renderer/instance-action-target.mjs';
 import { instanceSplitPlan } from '../renderer/instance-split.mjs';
 import { runtimeState, unsupportedSession } from "../renderer/instance-presentation.mjs";
+import { canAddressRemote, rowReason } from "../renderer/remote-address.mjs";
 import { createRuntimeBadge } from "../renderer/identity-marks.mjs";
 
 const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url), "utf8");
@@ -36,7 +37,7 @@ function fixture(t, stylesheet = css) {
     return matches[0].style;
   };
   const context = {
-    ...tree, document: doc, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, createRuntimeBadge,
+    ...tree, document: doc, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge,
     instanceActionTarget, instanceSplitPlan, connectionGeneration: 0, menuState() {}, runAction: assert.fail,
     applyChordTitles() {}, updateActiveContexts() {}, getBinding: () => null, formatChord: c => c, isMac: true,
     contextRosterEl: doc.querySelector("#instance-roster"), contextFilter: "", contextWorkspace: "A",
@@ -250,4 +251,40 @@ test("keyboard: an unavailable row stays focusable with its tools; the tab stop 
   assert.equal(trigger.disabled, false, "its actions menu is a Tab stop after the row");
   const stops = [...u.doc.querySelectorAll(".ctx-inst")].filter(b => b.tabIndex === 0);
   assert.deepEqual(stops.map(b => b.dataset.treeInstance), [tree.instanceId(roster[1])], "one tab stop: the selected row");
+});
+
+test('a row that cannot open says why on its meta line (text, not colour), with the full sentence as its title and aria-description', t => {
+  const u = fixture(t);
+  const remote = (name, extra) => ({ ...instance(name), home: `/srv/agents/dev/instances/${name}`, agentsRoot: '/srv/agents', server: 'build',
+    repoName: 'Build box', addressable: true, missingRemotely: false, ...extra });
+  const rows = [
+    [{ ...instance('herdr'), running: null, runtimeState: 'unsupported', runtimeError: 'E_HERDR_REMOVED: Herdr is no longer supported.' },
+      'Herdr no longer supported', 'E_HERDR_REMOVED: Herdr is no longer supported.'],
+    [remote('gone', { addressable: false, missingRemotely: true, running: null }), 'gone from Build box',
+      'gone is no longer on Build box. Remove it from this computer with: oats server forget build --instance gone'],
+    [remote('hidden', { addressable: false }), 'not reachable on Build box', 'Build box did not report this instance as reachable.'],
+    [remote('far', { running: null, serverUnreached: true, runtimeError: 'ssh failed: Connection refused' }), 'Build box not reached', 'ssh failed: Connection refused'],
+    [{ ...instance('unsure'), running: null }, 'state unknown', 'unsure: status unknown'],
+  ];
+  u.render(rows.map(([row]) => row));
+  for (const [row, label, sentence] of rows) {
+    const button = [...u.doc.querySelectorAll('.ctx-inst')].find(b => b.querySelector('.ctx-name').textContent === row.instance);
+    assert.ok(button, row.instance);
+    const meta = button.querySelector('.ctx-meta').textContent;
+    assert.ok(meta.endsWith(` · ${label}`), `${row.instance}: meta "${meta}" shows "${label}"`);
+    assert.equal(button.getAttribute('aria-disabled'), 'true');
+    assert.equal(button.title, sentence); assert.equal(button.getAttribute('aria-description'), sentence);
+  }
+  // An addressable foreign row (no saved route here) opens like any other: no reason, no disabled state.
+  u.render([remote('foreign', { savedRoute: false })]);
+  const foreign = u.doc.querySelector('.ctx-inst');
+  assert.equal(foreign.getAttribute('aria-disabled'), null);
+  assert.equal(foreign.querySelector('.ctx-meta').textContent, 'Build box');
+});
+
+test('a row\'s tools stay visible while its actions menu is open: the menu (a top-layer popover inside them) stays clickable once the pointer leaves the row', t => {
+  // In the top layer the row is neither :hover nor :focus-within while the pointer is in the menu. Without this rule the
+  // tools (and the menu, which inherits their visibility) go hidden: the item is not hit and its action refuses to run.
+  const u = fixture(t);
+  assert.equal(u.rule('.ctx-tree-row > .ctx-row-tools:has(.ctx-instance-menu:popover-open)').visibility, 'visible');
 });

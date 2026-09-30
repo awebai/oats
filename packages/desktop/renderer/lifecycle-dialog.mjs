@@ -3,6 +3,7 @@ import { gitTarget, gitTargetKey } from './instance-git-contract.mjs';
 import { lifecyclePlan, lifecycleOptions, planReference, lifecycleReason, publicLifecycleReceipt, stoppedTargets, lifecycleChoicesApplicable } from './lifecycle-contract.mjs';
 import { projectedPullRequest } from './forge-contract.mjs';
 import { iconElement } from './shell-icons.mjs';
+import { readingFrom, remoteReason, serverLabel } from './remote-address.mjs';
 export const lifecycleCSS = `
 .lifecycle-dialog { width:min(420px,calc(100vw - 32px)); max-height:88vh; overflow:auto; display:flex; flex-direction:column; gap:14px; padding:20px; border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--fg); box-shadow:var(--shadow-popover); font-size:12.5px; }
 .lifecycle-dialog h2 { margin:0; font-size:15px; font-weight:700; overflow-wrap:anywhere; }
@@ -18,6 +19,7 @@ export const lifecycleCSS = `
 .lifecycle-dialog ul { margin:0; padding-left:18px; }
 .lifecycle-dialog li { margin:6px 0; overflow-wrap:anywhere; }
 .lifecycle-dialog label { display:flex; gap:8px; align-items:flex-start; }
+.lifecycle-dialog label[hidden] { display:none; }
 .lifecycle-dialog input { accent-color:var(--accent); }
 .lifecycle-dialog button { height:32px; padding:0 14px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font:inherit; font-size:12.5px; font-weight:600; cursor:pointer; }
 .lifecycle-dialog button:disabled { color:var(--faint); background:var(--surface-2); cursor:default; }
@@ -32,7 +34,7 @@ const report = v => v === null || v === undefined ? 'Unknown' : String(v);
 export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, generation = () => 0,
   subscribeWorkspace = () => () => {}, subscribeConnections = () => () => {}, connectionGeneration = () => 0,
   onIntent = () => {}, applyFocus = fn => fn(), onSettled = () => {}, openExternal = () => {} } = {}) {
-  let alive = true, overlay = null, ui = null, target = null, operation = null, choices = null, plan = null, planRef = null;
+  let alive = true, overlay = null, ui = null, target = null, operation = null, choices = null, plan = null, planRef = null, server = null;
   let life = 0, ticket = 0, applying = false, restore = null, submission = null;
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
   const capture = () => ({ life, ticket, generation: generation(), target, overlay });
@@ -55,6 +57,18 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     if (operation === 'retire' && plan && !choices.deleteBranch && (!plan.facts.work.observed || plan.facts.work.branch === null || plan.facts.workMode !== 'worktree')) ui.branch.disabled = true;
     ui.retry.disabled = applying; ui.retry.hidden = !submission || !submission.uncertain;
     ui.close.textContent = applying ? 'Close status' : 'Close';
+  }
+  /** A remote reason's code and the kernel's message, behind a Details disclosure (keyboard and screen reader reachable). */
+  function details(parent, reason) {
+    if (!reason.detail) return;
+    const more = node('details', undefined, 'lifecycle-details'); more.append(node('summary', 'Details'), node('p', `${reason.code}: ${reason.detail}`));
+    parent.append(more);
+  }
+  /** A refusal: a remote host's headline (its code and message in Details), else the fixed sentence for the code. */
+  function refusal(reason) {
+    const remote = remoteReason(reason);
+    ui.status.textContent = remote ? remote.message : lifecycleReason(reason?.code).message;
+    if (remote) details(ui.result, remote);
   }
   function rows(parent, values) {
     const dl = node('dl'); for (const [label, value] of values) dl.append(node('dt', label), node('dd', report(value))); parent.append(dl);
@@ -121,11 +135,11 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     if (!overlay || applying) return;
     ticket++; const ref = capture(), requested = { ...choices };
     plan = null; planRef = null; submission = null; ui.facts.replaceChildren(); ui.result.replaceChildren(); ui.forge.replaceChildren();
-    ui.status.textContent = 'Reading the kernel plan…'; locks();
+    ui.status.textContent = server ? readingFrom(server) : 'Reading the kernel plan…'; locks();
     try {
       const result = await request(ref.target.workspace, { action: 'plan', operation, selector: selector(), options: requested });
       if (!owns(ref)) return;
-      if (!validTarget(result, ref) || result.status !== 'plan') { ui.status.textContent = lifecycleReason(result?.reason?.code).message; return; }
+      if (!validTarget(result, ref) || result.status !== 'plan') { refusal(validTarget(result, ref) ? result.reason : { code: result?.reason?.code }); return; }
       const value = lifecyclePlan(result.plan, ref.target, operation, requested);
       if (!value || !planReference(result.planRef) || JSON.stringify(lifecycleOptions(operation, result.options)) !== JSON.stringify(requested)) throw new Error('Invalid plan');
       plan = value; planRef = result.planRef; ui.status.textContent = 'Review these facts before confirming.'; renderPlan(plan); void overlayForge(ref, plan);
@@ -168,8 +182,11 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
         }
         if (receipt.replayed || result.repeated) ui.result.append(node('p', 'Recorded result for this confirmation, not a new action.', 'lifecycle-note'));
       } else {
-        ui.status.textContent = lifecycleReason(result.reason?.code || 'E_OUTCOME_UNKNOWN').message;
-        if (result.cause) ui.result.append(node('p', lifecycleReason(result.cause.code).message, 'lifecycle-note'));
+        refusal(result.reason?.code ? result.reason : { code: 'E_OUTCOME_UNKNOWN' });
+        // Why the outcome is unknown: a remote transport or host cause keeps its headline and Details.
+        const cause = result.cause && remoteReason(result.cause);
+        if (cause) { ui.result.append(node('p', cause.message, 'lifecycle-note')); details(ui.result, cause); }
+        else if (result.cause) ui.result.append(node('p', lifecycleReason(result.cause.code).message, 'lifecycle-note'));
         if (result.childrenStopped) {
           const children = stoppedTargets(result.childrenStopped, snapshot.facts?.children || []); if (!children) throw new Error('Invalid child outcomes');
           stopped(ui.result, children);
@@ -185,6 +202,7 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     close({ restoreFocus: false }); if (!alive || !['stop', 'retire'].includes(next)) return;
     target = gitTarget({ workspace, instance: instance?.instance, agent: instance?.agent, agentsRoot: instance?.agentsRoot, home: instance?.home, server: instance?.server ?? null });
     if (!target) return;
+    server = target.server ? serverLabel(instance) : null;
     onIntent(); restore = takePickerFocusReturn(doc); life++; operation = next;
     choices = next === 'stop' ? { recursive: true } : { discardWorktree: false, deleteBranch: false };
     overlay = node('div', undefined, 'palette-overlay lifecycle-overlay');

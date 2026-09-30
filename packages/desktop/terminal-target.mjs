@@ -23,8 +23,8 @@ export function admitTerminalTarget(input) {
     if (input.window !== undefined || input.socket !== undefined) invalid();
     closed(input.remote, ['serverId', 'instance', 'home']);
     const { serverId, instance, home } = input.remote;
-    if (!text(serverId, 64) || !text(instance, 128) || (home !== undefined && !text(home, 4096))) invalid();
-    const remote = Object.freeze({ serverId, instance, ...(home !== undefined ? { home } : {}) });
+    if (!text(serverId, 64) || !text(instance, 128) || !text(home, 4096)) invalid();
+    const remote = Object.freeze({ serverId, instance, home });
     key = remoteTargetKey(remote); spec = { remote, cols, rows };
   } else {
     const { session } = input;

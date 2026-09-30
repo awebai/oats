@@ -34,7 +34,24 @@ test('the four kernel checks and policy use real facts; no signature or enrolmen
   assert.equal(u.one('.readiness-policy'), policy); assert.equal(policy.open, true); assert.equal(u.doc.activeElement, policy.querySelector('summary')); assert.equal(u.calls.length, 1);
   assert.equal(u.one('.readiness-skip'), null, 'the Workspace readiness frame (and its Skip) is gone');
 });
-for (const [name, fields] of [['remote', { workspace: { ...workspace, remote: true } }], ['missing CLI', { cli: null }], ['API 1 (0.25)', { cli: { ...cli, readinessApi: 1 } }], ['wrong API', { cli: { ...cli, readinessApi: '2' } }]]) test(`${name} has reachable read-only explanation but no request`, async t => {
+test('a remote instance: read on its own machine ("Reading from <server>…"), a host refusal is its headline with the kernel\'s code and message in Details', async t => {
+  const gate = deferred();
+  const u = setup(t, () => gate.promise);
+  const remoteWs = { id: 'remote:build:1', name: 'Build box', remote: true, server: 'build' };
+  const remoteSelector = { kind: 'instance', instance: 'dev-1', agent: 'dev', agentsRoot: '/srv/agents', server: 'build' };
+  setWorkspace('remote:build:1');
+  const done = u.update({ workspace: remoteWs, selector: remoteSelector });
+  assert.equal(u.calls.length, 1, 'the server is the gate, not the renderer');
+  assert.deepEqual(u.calls[0].body, { action: 'read', selector: remoteSelector });
+  assert.match(u.text(), /Reading from Build box…/);
+  gate.resolve(readinessFailure('E_REMOTE_INCOMPATIBLE', null, { code: 'E_REMOTE_INCOMPATIBLE', message: "Build box runs an OATS that can't do this yet.",
+    detail: 'build runs 0.30.2; readiness needs readinessApi 2', remote: true }));
+  await done; await tick();
+  assert.equal(u.one('.loading-failed-message').textContent, "Build box runs an OATS that can't do this yet.");
+  assert.equal(u.one('.loading-failed-code').textContent, 'E_REMOTE_INCOMPATIBLE: build runs 0.30.2; readiness needs readinessApi 2');
+  setWorkspace('team');
+});
+for (const [name, fields] of [['missing CLI', { cli: null }], ['API 1 (0.25)', { cli: { ...cli, readinessApi: 1 } }], ['wrong API', { cli: { ...cli, readinessApi: '2' } }]]) test(`${name} has reachable read-only explanation but no request`, async t => {
   const u = setup(t, assert.fail); await u.update(fields); assert.equal(u.calls.length, 0); assert.equal(u.one('.readiness-refresh').disabled, true); assert.equal(u.one('.readiness-view').hidden, false);
 });
 for (const rejection of [false, true]) for (const change of ['selection', 'A-B-A', 'global-generation', 'CLI', 'dispose', 'hide']) test(`newest intent owns stale ${rejection ? 'rejection' : 'success'} after ${change}`, async t => {

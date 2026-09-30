@@ -25,6 +25,7 @@ import { instanceSplitPlan, instanceSplitIdentity } from '../renderer/instance-s
 import { instanceActionTarget, sameInstanceActionTarget } from '../renderer/instance-action-target.mjs';
 import * as layout from "../renderer/split-layout.mjs";
 import * as workspaceTabs from "../renderer/workspace-tabs.mjs";
+import { canAddressRemote, rowReason } from "../renderer/remote-address.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const tick = () => new Promise(setImmediate);
@@ -44,7 +45,7 @@ function shell(t, shellSource = source) {
   t.after(() => dom.window.close());
   const document = dom.window.document, requests = [], attachments = [], terms = [], detached = [], projections = [], actions = new Map();
   const c = {
-    document, window: dom.window, createContextPanel, createInstanceGitPanel, createInstanceTeamsSection, createInstanceSoulSection, console, navigator: { platform: "MacIntel" },
+    document, window: dom.window, createContextPanel, createInstanceGitPanel, createInstanceTeamsSection, createInstanceSoulSection, canAddressRemote, rowReason, console, navigator: { platform: "MacIntel" },
     getBinding, formatChord, stableFocusTarget: () => null,
     connectionGeneration: 0, subscribeConnections: () => () => {}, ctx: { openExternal: assert.fail }, openConnections: assert.fail,
     workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A",
@@ -489,7 +490,7 @@ test('same-name roots/hosts stay distinct and exact-key metadata refresh is focu
   const s = shell(t);
   const local = { ...instance('same'), agentsRoot: '/one/agents', home: '/one/same', model: 'one' };
   const otherRoot = { ...local, agentsRoot: '/two/agents', home: '/two/same', model: 'two' };
-  const remote = { ...local, server: 'saved-host', savedRoute: true, model: 'remote' };
+  const remote = { ...local, server: 'saved-host', addressable: true, model: 'remote' };
   const roster = [local, otherRoot, remote], opened = [];
   for (const ref of roster) {
     opened.push(await s.open(ref, true, roster)); assertPanel(s, ref); assert.equal(s.field('model'), ref.model);

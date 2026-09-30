@@ -69,6 +69,7 @@ import { createReviewPaste } from "./review-paste.mjs";
 import { launchConfigRequest } from "./launch-configs.mjs";
 import { automationsRequest, automationsFailure } from "./automations.mjs";
 import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
+import { canAddressRemote, unaddressableSentence } from "../renderer/remote-address.mjs";
 import { harnessFlag, HARNESSES } from "../renderer/harness-names.mjs";
 import { probeChanged } from "../renderer/cli-probe-contract.mjs";
 
@@ -1272,7 +1273,7 @@ const server = createServer(async (req, res) => {
         const request = await readStrictBody(req, 16384);
         const getContext = () => {
           const workspace = workspaces().find(w => w.id === url.searchParams.get('ws'));
-          return { workspace, cli: cliState, epoch: cliProbeGeneration,
+          return { workspace, cli: cliState, epoch: cliProbeGeneration, localCwd: ctxs[0],
             instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
         };
         return send(res, 200, await instanceEventsRequest(request, getContext));
@@ -1297,7 +1298,7 @@ const server = createServer(async (req, res) => {
         const getContext = () => {
           const workspace = workspaces().find(w => w.id === url.searchParams.get('ws'));
           return { workspace, cli: cliState, agents: workspace && !workspace.remote && !workspace.server ? agentsData(workspace.id).agents : [],
-            instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
+            localCwd: ctxs[0], instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
         };
         return send(res, 200, await readinessRequest(request, getContext));
       } catch { return send(res, 400, readinessFailure('E_BAD_ARGS')); }
@@ -1322,11 +1323,13 @@ const server = createServer(async (req, res) => {
         const request = await readStrictBody(req);
         const getContext = () => {
           const workspace = workspaces().find(w => w.id === url.searchParams.get('ws'));
-          return { workspace, cli: cliState, instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
+          return { workspace, cli: cliState, localCwd: ctxs[0], instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
         };
         const result = await lifecycleRequest(request, getContext);
         if (request.action === 'apply' && ['complete', 'partial', 'refused', 'unknown'].includes(result.status)) {
-          try { observeMutation(url.searchParams.get('ws')); } catch { /* a refresh must not erase a mutation receipt */ }
+          // A remote apply (even an unknown outcome) re-reads the remote roster at once: the operator sees current state.
+          try { if (getContext().workspace?.remote) void remoteLoop.request(); else observeMutation(url.searchParams.get('ws')); }
+          catch { /* a refresh must not erase a mutation receipt */ }
         }
         return send(res, 200, result);
       } catch {
@@ -1344,7 +1347,7 @@ const server = createServer(async (req, res) => {
         // Never collect Git here or fall back to another workspace.
         // An absent exact snapshot is unavailable; refreshing the roster is
         // the existing collector's job, not an authority to infer another home.
-        const result = await instanceGitRequest(request, { workspace, cli: cliState,
+        const result = await instanceGitRequest(request, { workspace, cli: cliState, localCwd: ctxs[0],
           instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] });
         return send(res, 200, result);
       } catch (error) {
@@ -1504,7 +1507,7 @@ const server = createServer(async (req, res) => {
       if (hm[1] === "start" || hm[1] === "restart") {
         if (!cliState.features?.includes("session-start")) return send(res, 409, { error: "Starting an existing instance requires an updated OATS CLI", code: "unsupported-start-option" });
         if (inst.server) {
-          if (!inst.savedRoute) return send(res, 409, { error: "No saved route for this remote instance", code: "E_SNAPSHOT_UNKNOWN" });
+          if (!canAddressRemote(inst)) return send(res, 409, { error: unaddressableSentence(inst), code: "E_SNAPSHOT_UNKNOWN" });
           locator.requireRemoteSupport(cliState, "session-start");
         } else if (!harvestHome(inst)) return send(res, 409, { error: "Instance home is outside the workspace instances layout" });
         const body = await readBody(req);

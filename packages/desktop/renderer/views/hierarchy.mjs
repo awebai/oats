@@ -33,6 +33,7 @@
    selected activity from the guarded K7 POST /api/instance-events boundary. */
 import { computeClusters, siblingEdges } from "./clusters.mjs";
 import { runtimeState, runtimeCounts, unsupportedSession } from "../instance-presentation.mjs";
+import { serverLabel } from "../remote-address.mjs";
 import { createInstanceEventsView, instanceEventsCSS } from "../instance-events-view.mjs";
 import { instanceId, resolveLinkId } from "../instance-tree.mjs";
 import { projectActivePanel, activeSignature, activeTargetLabel, canAddressInstance, BRAIN_UNAVAILABLE } from "../active-observation.mjs";
@@ -987,7 +988,7 @@ function activitySelection(s, id) {
   const i = selectedInstance(s, id);
   if (!i) return null;
   const selection = row => ({ workspace: currentWorkspace(), selector: { instance: row.instance, agent: row.agent,
-    agentsRoot: row.agentsRoot, server: row.server || null }, home: row.home, incarnation: row.createdAt ?? null, remote: row.remote });
+    agentsRoot: row.agentsRoot, server: row.server || null }, home: row.home, incarnation: row.createdAt ?? null, serverLabel: serverLabel(row) });
   const selected = selection(i);
   if (s.pending) {
     const next = s.pending.panel.instances.filter(row => instanceId(row) === id);

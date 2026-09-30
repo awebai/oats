@@ -36,6 +36,11 @@ for (const [name, alter] of [
   const c = context(); alter(c); let calls = 0;
   const result = await createReadinessBoundary({ invoke: () => { calls++; return envelope(data()); } })(request(), () => c);
   assert.equal(result.status, 'unavailable'); assert.equal(result.data, null); assert.equal(calls, 0);
+  // A local instance selector never resolves in a remote workspace (remote reads: remote-readiness.test.mjs).
+  if (name.includes('workspace') && name !== 'missing workspace') {
+    const local = await createReadinessBoundary({ invoke: () => { calls++; return envelope(data()); } })(request(instanceTarget.selector), () => c);
+    assert.equal(local.reason.code, 'E_SESSION_UNKNOWN'); assert.equal(calls, 0);
+  }
 });
 for (const bad of [null, {}, [], { action: 'verify', selector }, { action: 'read', selector, verifySignatures: true },
   request({ ...selector, home: '/arbitrary' }), request({ kind: 'scope', context: '/team' }), request({ kind: 'scope', context: '/foreign' }),

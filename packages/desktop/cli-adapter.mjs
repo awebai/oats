@@ -193,22 +193,31 @@ export function gitReadFailure(code, details) {
 /** K1 read adapter. Not a roster resolver: only the server boundary may supply
  * the instance/home/context triple. The boundary requires the hardened K1
  * contract. No direct Git command or renderer path arguments. */
+/** A remote read's CLI deadline: ssh's ConnectTimeout (15 s) plus the command. */
+export const REMOTE_GIT_TIMEOUT = 45_000;
 export async function cliInstanceGit(bin, options = {}, io = {}) {
   try {
-    const base = ['action', 'instance', 'context', 'home'];
+    // `server`: a remote row, sent as `--server S --home H` (no --dir); `context` is then this machine's cwd.
+    const base = ['action', 'instance', 'context', 'home', 'server'];
     const diff = options?.action === 'diff';
     const allowed = diff ? [...base, 'fileId', 'revision', 'indexRevision'] : base;
     if (!absoluteReadPath(bin) || !readObject(options) || !['git', 'diff'].includes(options.action)
       || Object.keys(options).some(k => !allowed.includes(k))
       || typeof options.instance !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(options.instance)
       || !absoluteReadPath(options.context) || !absoluteReadPath(options.home)
+      || (Object.hasOwn(options, 'server') && (typeof options.server !== 'string' || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(options.server)))
       || (diff && (!gitFileId(options.fileId) || !gitRevision(options.revision) || !gitIndexRevision(options.indexRevision)))) return gitReadFailure('E_BAD_ARGS');
-    const argv = ['instance', options.action, options.instance, '--dir', options.context, '--home', options.home];
+    const remote = Object.hasOwn(options, 'server');
+    const argv = ['instance', options.action, options.instance, ...(remote ? ['--server', options.server] : ['--dir', options.context]), '--home', options.home];
     if (diff) argv.push('--file', options.fileId, '--revision', options.revision, '--index-revision', options.indexRevision);
     argv.push('--json');
-    const timeout = Number.isFinite(io.timeout) && io.timeout > 0 ? Math.min(io.timeout, 15_000) : 15_000;
+    const limit = remote ? REMOTE_GIT_TIMEOUT : 15_000;
+    const timeout = Number.isFinite(io.timeout) && io.timeout > 0 ? Math.min(io.timeout, limit) : limit;
     const result = await runJson(bin, argv, { cwd: options.context, exec: io.exec, timeout, strictExit: true });
-    return result.ok ? result : gitReadFailure(result.error?.code, result.error?.details);
+    if (result.ok) return result;
+    // A host's refusal keeps its own code and message (the boundary bounds and shows them); this machine's own failures do not.
+    if (remote && !Object.hasOwn(READ_ERRORS, result.error?.code) && result.error?.code !== 'E_STALE_OBSERVATION') return { schemaVersion: 1, ok: false, error: { code: result.error?.code, message: result.error?.message } };
+    return gitReadFailure(result.error?.code, result.error?.details);
   } catch { return gitReadFailure('E_CLI_FAILED'); }
 }
 

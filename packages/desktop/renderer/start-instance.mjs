@@ -4,6 +4,7 @@ import { instanceId } from "./instance-tree.mjs";
 import { waitForInstanceInPanel } from "./views/spawn.mjs";
 import { launchConfigFields } from "./launch-config-fields.mjs";
 import { captureFocusReturn } from "./focus-return.mjs";
+import { canAddressRemote, unaddressableSentence } from "./remote-address.mjs";
 
 /** Existing homes are started, never scaffolded again. One dialog owns a launch. */
 export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstanceInPanel } = {}) {
@@ -91,7 +92,7 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
         if (live && !restart) { submit.disabled = false; status.textContent = "This instance is already running."; return; }
         if (!found) throw new Error("This instance is no longer in this workspace. Refresh the workspace roster.");
         if (found.running !== false && !(restart && live)) throw new Error(found.runtimeError || "Could not verify whether this instance is running. Refresh its status before starting.");
-        if (instance.server && !found.savedRoute) throw new Error("This remote instance has no saved route. Check the server registration.");
+        if (!canAddressRemote(found)) throw new Error(unaddressableSentence(found));
         if (!cli.ok || !cli.features?.includes("session-start")) throw new Error(`Starting an existing instance needs an updated OATS CLI. ${cli.install || "Update OATS and retry."}`);
         if (instance.server && !cli.remote?.includes("session-start")) throw new Error("Update the OATS CLI to enable starting instances on a server.");
         if (restart && (!cli.features?.includes("session-restart") || (instance.server && !cli.remote?.includes("session-restart")))) throw new Error("Update OATS to restart with another harness or configuration.");

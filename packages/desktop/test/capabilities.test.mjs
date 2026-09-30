@@ -128,3 +128,14 @@ test('inspector preserves current provider, availability, kind and required-argu
     assert.equal(view.calls.length, 2, 'optional args are not synthesized and completion does not rerun');
   } finally { view.close(); }
 });
+
+test('a remote home is inspected when the kernel reports it addressable, never on savedRoute alone', async () => {
+  const calls = [], remoteWs = { ...workspace, name: 'Build box', remote: true, server: 'hetzner', registrationPresent: true };
+  const row = { instance: 'dev-seat', home, agentsRoot: agents[1].agentsRoot, server: 'hetzner', savedRoute: false, addressable: true };
+  const options = { workspace: remoteWs, cli, agents, localCwd: '/local', invoke: async (bin, args) => { calls.push(args); return envelope({}); } };
+  await capabilityRequest({ action: 'inspect', selector: { home } }, { ...options, instances: [row] });
+  assert.equal(calls.at(-1).server, 'hetzner'); assert.equal(calls.at(-1).home, home);
+  await assert.rejects(capabilityRequest({ action: 'inspect', selector: { home } }, { ...options, instances: [{ ...row, addressable: false, missingRemotely: true }] }),
+    { code: 'E_SNAPSHOT_UNKNOWN', message: 'dev-seat is no longer on Build box. Remove it from this computer with: oats server forget hetzner --instance dev-seat' });
+  assert.equal(calls.length, 1);
+});

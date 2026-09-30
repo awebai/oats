@@ -70,7 +70,7 @@ test('selectors reject malformed, remote and path-authority extensions', () => {
   for (const v of [null, [], {}, { ...selector, instance: '--json' }, { ...selector, instance: '../other' },
     { ...selector, instance: 'a'.repeat(257) }, { ...selector, agent: 'dev\nflag' }, { ...selector, agent: '' },
     { ...selector, agentsRoot: 'relative' }, { ...selector, agentsRoot: '/x\0' }, { ...selector, agentsRoot: '/' + 'a'.repeat(4096) },
-    { ...selector, server: 'remote' }, { ...selector, server: undefined }, { ...selector, home: target.home }, { ...selector, incarnation: 'guessed' }]) {
+    { ...selector, server: 'Remote Host' }, { ...selector, server: undefined }, { ...selector, home: target.home }, { ...selector, incarnation: 'guessed' }]) {
     assert.equal(eventsSelector(v), null); assert.equal(eventsRequest({ action: 'read', selector: v }), null);
   }
   for (const v of [null, [], {}, { action: 'clear', selector }, { action: 'read', selector, target }, { action: 'watch', selector }]) assert.equal(eventsRequest(v), null);
@@ -78,10 +78,14 @@ test('selectors reject malformed, remote and path-authority extensions', () => {
 test('admitted target syntactic validation is strict but does not replace roster admission', async () => {
   for (const v of [null, [], { ...target, workspace: '' }, { ...target, context: 'relative' }, { ...target, context: '/x\n' },
     { ...target, home: '/team/agents/dev/instances/other' }, { ...target, home: target.home + '/' },
-    { ...target, selector: { ...selector, server: 'remote' } }, { ...target, home: 'relative/dev-probe' }]) {
+    { ...target, selector: { ...selector, server: 'Remote Host' } }, { ...target, home: 'relative/dev-probe' }]) {
     assert.equal(eventsTarget(v), null);
     assert.equal((await cliInstanceEvents(cli, { target: v }, { exec: assert.fail })).error.code, 'E_BAD_ARGS');
   }
+  // A remote target travels only with its route (server and this machine's cwd), and a route only with a remote target.
+  const remote = { ...target, selector: { ...selector, server: 'build' } };
+  for (const options of [{ target: remote }, { target: remote, route: { server: 'other', cwd: '/w' } }, { target: remote, route: { server: 'build', cwd: 'rel' } },
+    { target, route: { server: 'build', cwd: '/w' } }]) assert.equal((await cliInstanceEvents(cli, options, { exec: assert.fail })).error.code, 'E_BAD_ARGS');
   for (const options of [null, [], {}, { target, argv: ['spawn'] }]) assert.equal((await cliInstanceEvents(cli, options, { exec: assert.fail })).error.code, 'E_BAD_ARGS');
 });
 test('omitted transport limit defaults, no ambient mutation or caller budget override', async () => {

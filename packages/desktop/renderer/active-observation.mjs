@@ -1,6 +1,7 @@
 /** Presentation of the existing /api/panel roster, not an activity/Git resolver. */
 import { instanceId, distinguishingRootTags } from './instance-tree.mjs';
 import { eventsTimestamp } from './instance-events-contract.mjs';
+import { canAddressRemote } from './remote-address.mjs';
 
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const text = value => typeof value === 'string' ? value : typeof value === 'number' && Number.isFinite(value) ? String(value) : '';
@@ -17,7 +18,10 @@ export function projectActivePanel(panel) {
     if (!object(raw) || typeof raw.instance !== 'string' || !raw.instance) throw new Error('The roster contains an invalid instance identity.');
     for (const key of identityFields) if (raw[key] != null && (typeof raw[key] !== 'string' || raw[key].includes('\0'))) throw new Error('The roster contains an invalid instance address.');
     const instance = { instance: raw.instance, running: panel.error ? null : raw.running === true ? true : raw.running === false ? false : null,
-      savedRoute: raw.savedRoute === true, remote: raw.remote === true || panel.workspace?.remote === true,
+      remote: raw.remote === true || panel.workspace?.remote === true,
+      // addressable stays absent when this computer's OATS (before 0.31) reports none: the saved route then decides.
+      ...(typeof raw.addressable === 'boolean' ? { addressable: raw.addressable } : {}), savedRoute: raw.savedRoute === true,
+      missingRemotely: raw.missingRemotely === true, serverUnreached: raw.serverUnreached === true,
       createdAt: eventsTimestamp(raw.createdAt) ? raw.createdAt : null };
     for (const key of [...identityFields, ...displayed, ...reported]) instance[key] = text(raw[key]);
     for (const key of ['parentInstance', 'siblingInstance']) instance[key] = typeof raw[key] === 'string' ? raw[key] : '';
@@ -45,7 +49,7 @@ export function canAddressInstance(instance) {
   if (instance.home && !absolute(instance.home)) return false; // never fall back from a malformed primary address
   if (instance.agentsRoot && !absolute(instance.agentsRoot)) return false;
   return !!(absolute(instance.home) || absolute(instance.agentsRoot))
-    && (!(instance.remote || instance.server) || (typeof instance.server === 'string' && !!instance.server && instance.savedRoute === true));
+    && (!(instance.remote || instance.server) || (typeof instance.server === 'string' && !!instance.server && canAddressRemote(instance)));
 }
 
 /** Display-only disambiguation, never a grouping key or a filesystem target. */

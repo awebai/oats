@@ -331,3 +331,19 @@ test('while the stale line or the failed block is visible the status line is ann
   assert.match(css, /\.loading-quiet \{ clip-path: inset\(50%\); \}/, 'clipped, not removed: the 1.5em box stays, so nothing shifts');
   assert.doesNotMatch(css, /loading-retry:focus-visible/, 'no per-component focus ring: the global :focus-visible rule covers every button');
 });
+test('a remote read: begin({message}) says what is in flight, pending and refreshing; a host detail joins the code in Details and the cause', t => {
+  const u = setup(t);
+  u.ds.begin({ message: 'Reading from Build box…' });
+  assert.equal(u.status.textContent, 'Reading from Build box…');
+  u.ds.fail(Object.assign(new Error("Build box runs an OATS that can't do this yet."), { code: 'E_REMOTE_INCOMPATIBLE', detail: 'build runs 0.30.2; needs readinessApi 2' }));
+  const failed = u.region.querySelector('.loading-failed');
+  assert.equal(failed.querySelector('.loading-failed-message').textContent, "Build box runs an OATS that can't do this yet.");
+  assert.equal(failed.querySelector('.loading-failed-code').textContent, 'E_REMOTE_INCOMPATIBLE: build runs 0.30.2; needs readinessApi 2');
+  u.ds.begin({ message: 'Reading from Build box…' }); u.ds.succeed();
+  u.ds.begin({ message: 'Reading from Build box…' }); u.c.advance(REFRESHING_DELAY_MS);
+  assert.equal(u.one('.loading-refreshing').textContent, 'Reading from Build box…');
+  u.ds.fail(Object.assign(new Error("Couldn't reach Build box."), { code: 'E_SSH', detail: 'ssh: connect to host build-host port 22: Connection refused' }));
+  assert.equal(u.one('.loading-notice-cause').textContent, "Couldn't reach Build box. (E_SSH: ssh: connect to host build-host port 22: Connection refused)");
+  u.ds.begin(); u.c.advance(REFRESHING_DELAY_MS);
+  assert.equal(u.one('.loading-refreshing').textContent, 'Refreshing…', 'the message belongs to one read only');
+});

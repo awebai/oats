@@ -93,7 +93,7 @@ test('remote preparation uses fixed CLI arguments, rechecks identity, and never 
   });
   await assert.rejects(io.prepare(spec, { current: () => true }), error => error.code === 'E_TERM_CONTEXT_CHANGED');
   assert.equal(commands.length, 1); assert.equal(commands[0].bin, cli.bin);
-  assert.deepEqual(commands[0].args, ['session', 'inspect', '--server', 'peer', '--instance', 'one', '--home', '/memory/home', '--json']);
+  assert.deepEqual(commands[0].args, ['session', 'inspect', '--server', 'peer', '--home', '/memory/home', '--json']);
   assert.equal(commands[0].options.shell, false); assert.equal(commands[0].options.timeout, 20000);
 });
 

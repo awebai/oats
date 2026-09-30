@@ -19,7 +19,7 @@ const messages = {
   E_HOME_MISMATCH: 'The instance home no longer matches this selection.',
   'cli-unavailable': 'Choose a compatible installed OATS CLI.',
   E_LIFECYCLE_UNAVAILABLE: 'This OATS CLI does not advertise the required lifecycle contract. Update OATS.',
-  'unsupported-remote-operation': 'Remote lifecycle plans are unavailable. No local fallback was used.',
+  'unsupported-remote-operation': "This computer's OATS can't route this to the server. Update OATS here.",
   E_PLAN_REQUIRED: 'Open a fresh Stop or Remove confirmation; unguarded retirement is unavailable.',
   E_PLAN_EXPIRED: 'This confirmation expired or its server changed. Observe a fresh plan before confirming.',
   E_PLAN_CHANGED: 'The target or CLI changed. Observe a fresh plan before confirming.',
@@ -127,8 +127,13 @@ export function stoppedTargets(value, expected, withState = false) {
   });
   return result.some(v => !v) ? null : result;
 }
-export function lifecycleReceipt(v, plan, key) {
+/** `server`: the request was routed there. The routed retire's result then may also carry `server`
+ * and `target` (its route); a local result carrying them is refused. */
+export function lifecycleReceipt(v, plan, key, { server = null } = {}) {
   if (!object(v) || v.idempotencyKey !== key || v.planRevision !== plan.planRevision || typeof v.replayed !== 'boolean') return null;
+  if (!server ? Object.hasOwn(v, 'server') || Object.hasOwn(v, 'target')
+    : plan.action !== 'retire' && (Object.hasOwn(v, 'server') || Object.hasOwn(v, 'target'))
+      || Object.hasOwn(v, 'server') && v.server !== server || Object.hasOwn(v, 'target') && !object(v.target)) return null;
   if (plan.action === 'stop') {
     const results = stoppedTargets(v.results, plan.targets, true);
     if (v.lifecycleApi !== 1 || v.action !== 'stop' || v.instance !== plan.instance || v.home !== plan.home || !at(v.at)

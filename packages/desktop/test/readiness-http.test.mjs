@@ -13,7 +13,7 @@ function http() {
   const start = source.indexOf('const send = (res, code, body, type'), end = source.indexOf('\nserver.on("error",');
   const c = context(), calls = [];
   const deps = { createServer: fn => fn, readinessFailure, readinessRequest: createReadinessBoundary({ invoke: async (bin, args) => { calls.push({ bin, args }); return envelope(data(args.target)); } }),
-    cliState: c.cli, workspaces: () => [c.workspace], agentsData: () => ({ agents: c.agents }), snapshot: { byWs: new Map([['team', { instances: c.instances }]]) },
+    cliState: c.cli, workspaces: () => [c.workspace], ctxs: ['/Users/me/work'], agentsData: () => ({ agents: c.agents }), snapshot: { byWs: new Map([['team', { instances: c.instances }]]) },
     panelData: assert.fail, collectNow: assert.fail };
   const handler = new Function(...Object.keys(deps), `${source.slice(start, end)}\nreturn server;`)(...Object.values(deps));
   return { calls, c, async request({ url = '/api/workspace-readiness?ws=team', method = 'POST', body = JSON.stringify({ action: 'read', selector }), headers = { host: '127.0.0.1:4820', origin: 'http://localhost:4820' } } = {}) {

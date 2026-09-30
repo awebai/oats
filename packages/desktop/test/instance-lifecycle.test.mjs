@@ -29,9 +29,11 @@ test('locator preserves only the exact lifecycleApi integer', async () => {
     assert.equal(found.lifecycleApi, value === 1 ? 1 : undefined);
   }
 });
-test('qualified admission refuses remote, forged scope/home/options and duplicate targets before invocation', async () => {
+test('qualified admission refuses a local/remote crossing, forged scope/home/options and duplicate targets before invocation', async () => {
   const f = fixture({ invoke: assert.fail });
-  f.ctx.workspace.remote = true; assert.equal((await f.plan()).reason.code, 'unsupported-remote-operation'); delete f.ctx.workspace.remote;
+  // A local selector never resolves in a remote workspace (remote routing: remote-lifecycle.test.mjs).
+  Object.assign(f.ctx.workspace, { remote: true, server: 'build' }); assert.equal((await f.plan()).reason.code, 'E_SESSION_UNKNOWN');
+  delete f.ctx.workspace.remote; delete f.ctx.workspace.server;
   f.ctx.instances.push(structuredClone(instance)); assert.equal((await f.plan()).reason.code, 'E_AMBIGUOUS_INSTANCE'); f.ctx.instances.pop();
   for (const extra of ['home', 'cwd', 'argv', 'env', 'force', 'self', 'key', 'revision']) {
     assert.equal((await f.service({ ...request(), [extra]: 'forged' }, () => f.ctx)).reason.code, 'E_BAD_ARGS');

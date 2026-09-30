@@ -70,9 +70,10 @@ There is **no persistent response cache** and no command polling from this view.
 The CLI floor is released **0.24.7** within Desktop's accepted compatibility
 band. A version floor does not substitute for DTO negotiation: responses must
 validate as `instanceGitApi: 1`. Missing/unknown commands, unsupported captured
-selectors, invalid envelopes and command failures remain unavailable. Remote
-workspaces/instances refuse explicitly; the app does not invent `--server`
-support or execute remote paths locally.
+selectors, invalid envelopes and command failures remain unavailable. A remote
+row's Git and diff are read on its own machine (`instance git|diff NAME --server
+S --home H`), never from a local path; remote rows follow
+[desktop-deployment-model.md](desktop-deployment-model.md#remote-rows).
 
 ## Response and refusal semantics
 

@@ -20,8 +20,11 @@ Body size is limited to 64 KiB. Duplicate/extra/missing query or body keys
 refuse. Workspace-addressed route families are pinned in the main-process
 proxy; the backend's loopback Host/Origin guards and IPC
 main-frame/navigation/epoch guards precede dispatch. Domain errors resolve with
-stable codes, not raw exceptions. Remote/server-marked targets refuse, with
-**no local or classic fallback**.
+stable codes, not raw exceptions. A remote instance's readiness is read on its
+own machine (`readiness --server S --home H --soul A --agents-root R`, with the
+row's own agents root); a soul's readiness is read on this machine only. There
+is **no local or classic fallback**; remote rows follow
+[desktop-deployment-model.md](desktop-deployment-model.md#remote-rows).
 
 **Gate:** the installed CLI's probe integer `readinessApi` is exactly `2`; there
 is no feature string. A 0.25 kernel (`readinessApi: 1`), or an absent, string

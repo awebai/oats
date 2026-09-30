@@ -110,6 +110,22 @@ registered remote workspace the timer and definitions live on that server, so
 they do not depend on the Mac staying awake. See [Schedules](schedules.md) for
 the CLI, cron semantics, observed outcomes and recovery commands.
 
+## Instances on servers
+
+Every instance a registered server reports shows in its workspace's roster, whoever spawned it. You
+can open its terminal, start, restart, stop and remove it, and read its readiness, activity, Git
+and diffs, as for a local one. Only its pull request is not read here, since the forge reads this
+computer's clones. Every command goes to the server by the instance's home (`--server <id> --home
+<path>`), never by a bare name. Stop and Remove show the plan the server makes, and confirm
+against it.
+
+A read waits for the server: the view says "Reading from <server>…", and gives up after about
+45 seconds with "Couldn't reach <server>." When the server refuses, you see its code and message;
+nothing is read from this computer in its place. A row that can't be opened says why on the row:
+Herdr no longer supported, gone from <server>, not reachable on <server>, or <server> not reached.
+For an instance a server no longer lists, the reason names the command that removes it from this
+computer (`oats server forget <server> --instance <name>`).
+
 ## Remote terminals
 
 A terminal for an instance on a registered server is a viewer over ssh
