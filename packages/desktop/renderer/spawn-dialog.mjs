@@ -183,6 +183,7 @@ export const spawnDialogCSS = `
 .spawn-seg input:focus-visible + span { background:var(--sel); box-shadow:inset 0 0 0 1px var(--accent); }
 .spawn-relationship-row .frelto { flex:1 1 200px; width:auto; min-width:0; height:34px; }
 .spawn-relationship-row .frelto[hidden] { display:none; }
+.spawn-server-hint:empty { display:none; }
 .spawn-form .ftask { min-height:88px; resize:vertical; border-radius:8px; line-height:1.5; }
 /* Developer settings */
 .spawn-advanced { border:1px solid var(--border); border-radius:10px; background:var(--surface-2); }
@@ -477,10 +478,13 @@ function composeChooser(doc, { soul, agents, canChoose, choose, query, note }) {
  *               canChoose(soul), choose(soul, draft), close(), owns(), draft,
  *               layout 'picker' (chooser + form; the default) | 'scoped' (preview + form, one soul),
  *               onCreated(view, isCurrent) — local creation handoff,
- *               remoteSpawn(fields) — execution-server spawn (unguarded route).
+ *               remoteSpawn(fields) — execution-server spawn (unguarded route),
+ *               serverFacts() — each remote group (/api/team-members `servers`): reached, registered, souls,
+ *               serverRows(group) — a remote group's roster rows (the relation picker for a chosen server).
  */
 export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, instances, canChoose, choose, close, owns,
-  draft = {}, catalogNote = '', onCreated = async () => {}, remoteSpawn = async () => {}, servers = [], delay: debounce = PREVIEW_DEBOUNCE_MS, layout = 'picker' }) {
+  draft = {}, catalogNote = '', onCreated = async () => {}, remoteSpawn = async () => {}, servers = [], serverFacts = () => [], serverRows = async () => [],
+  delay: debounce = PREVIEW_DEBOUNCE_MS, layout = 'picker' }) {
   const doc = modal.ownerDocument, el = (tag, text, cls) => node(doc, tag, text, cls);
   const titleId = 'spawn-dialog-title';
   const dialog = el('section', undefined, 'spawn-dialog');
@@ -547,6 +551,11 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   runRow.append(runtimeLabel, modelLabel);
   const runHint = el('p', '', 'spawn-hint spawn-run-hint'); runHint.setAttribute('aria-live', 'polite');
   const runField = el('div', undefined, 'spawn-field'); runField.append(runRow, runHint);
+  // Where to run: a primary decision, at the top level just above Relationship (whose picker lists that machine's instances).
+  const placeRow = el('div', undefined, 'spawn-row'), serverLabel = el('label'); serverLabel.append(el('span', 'Where to run', 'spawn-label-text'));
+  const server = el('select', undefined, 'field fserver'); server.setAttribute('aria-label', 'Where to run'); serverLabel.append(server); placeRow.append(serverLabel);
+  const serverHint = el('p', '', 'spawn-hint spawn-server-hint');
+  const placeField = el('div', undefined, 'spawn-field spawn-place'); placeField.append(placeRow, serverHint);
   // Work — read from the soul; a worktree gets the joined "from base | branch" control.
   const workField = el('div', undefined, 'spawn-field spawn-work');
   const workLabel = el('span', undefined, 'spawn-label'); workLabel.append(iconElement(doc, 'branch', { size: 13 }), doc.createTextNode('Work'));
@@ -657,8 +666,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   }
   const hostRow = el('div', undefined, 'spawn-row');
   const backendLabel = el('label', 'Session backend'), backend = el('select', undefined, 'field fbackend'); backendLabel.append(backend);
-  const serverLabel = el('label', 'Run on'), server = el('select', undefined, 'field fserver'); server.setAttribute('aria-label', 'Execution server'); serverLabel.append(server);
-  hostRow.append(backendLabel, serverLabel);
+  hostRow.append(backendLabel);
   const wake = wakeScheduleFields(doc);
   advancedBody.append(workField, permRow, identityField, hostRow, wake.el);
   // Footer
@@ -677,7 +685,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const spawn = el('button', 'Spawn', 'act fspawn primary'); spawn.type = 'button';
   footer.append(statusRow, cancel, spawn, details);
   const body = el('div', undefined, 'spawn-form-body');
-  body.append(selectionSummary, nameField, runField, relation, teamsField, taskLabel, advanced);
+  body.append(selectionSummary, nameField, runField, placeField, relation, teamsField, taskLabel, advanced);
   form.append(body, footer); // the footer stays in view while the body scrolls
   const columns = el('div', undefined, 'spawn-columns'); columns.append(preview, chooser, form);
   dialog.append(header, columns); modal.append(dialog);
@@ -705,16 +713,24 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const backends = Array.isArray(c0?.sessionBackends) ? c0.sessionBackends.filter(v => v === 'tmux') : [];
   fillSelect(backend, [['', 'Default'], ...backends.map(v => [v, v])]);
   fillSelect(config, [['', 'Default']]);
-  fillSelect(server, [['', 'This machine']]);
+  fillSelect(server, [['', 'This computer']]);
   if (soul.server) { fillSelect(server, [[soul.server, soul.repoName || soul.server]]); server.value = soul.server; server.disabled = true; }
-  const rows = instances() || [];
-  const counts = new Map(); for (const i of rows) counts.set(i.instance, (counts.get(i.instance) || 0) + 1);
-  const tags = distinguishingRootTags(rows.filter(i => counts.get(i.instance) > 1).map(i => i.agentsRoot));
-  fillSelect(relTo, [['', '— which instance? —']]);
-  for (const i of rows) {
-    const o = el('option', `${i.instance}${counts.get(i.instance) > 1 && i.agentsRoot ? ` [${tags.get(String(i.agentsRoot)) || i.agentsRoot}]` : ''}${i.running === true ? '' : ' (stopped)'}`);
-    o.value = i.instance; o.dataset.root = i.agentsRoot || ''; relTo.append(o);
+  // The relation picker lists the rows of the machine the instance will run on: relations never cross machines.
+  // relativesPending: the chosen machine's rows are still being read; until they land no relation can be chosen.
+  let relativeRows = [], relativesReq = 0, relativesPending = false;
+  function paintRelatives(rows) {
+    relativeRows = rows; const picked = [relTo.value, relTo.selectedOptions[0]?.dataset.root];
+    const counts = new Map(); for (const i of rows) counts.set(i.instance, (counts.get(i.instance) || 0) + 1);
+    const tags = distinguishingRootTags(rows.filter(i => counts.get(i.instance) > 1).map(i => i.agentsRoot));
+    fillSelect(relTo, [['', '— which instance? —']]);
+    for (const i of rows) {
+      const o = el('option', `${i.instance}${counts.get(i.instance) > 1 && i.agentsRoot ? ` [${tags.get(String(i.agentsRoot)) || i.agentsRoot}]` : ''}${i.running === true ? '' : ' (stopped)'}`);
+      o.value = i.instance; o.dataset.root = i.agentsRoot || ''; relTo.append(o);
+    }
+    const keep = [...relTo.options].find(o => o.value && o.value === picked[0] && o.dataset.root === picked[1]);
+    if (keep) keep.selected = true;
   }
+  paintRelatives(instances() || []);
 
   // ── state
   let alive = true, mount = workspaceGeneration(), serial = 0, timer = null, reading = null, shown = null, nativeModel = false;
@@ -722,6 +738,21 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   let notice = null; // a refusal from the last Spawn stays visible until the operator edits
   const current = () => alive && owns() && mount === workspaceGeneration();
   const remoteTarget = () => soul.server || server.value || '';
+  // Each server's registered group (where `spawn --server` goes), from the route's facts; its label for the hint.
+  const serverGroups = new Map(), serverNames = new Map();
+  async function fillRelatives() {
+    const target = soul.server ? '' : server.value, ticket = ++relativesReq, group = serverGroups.get(target);
+    relativesPending = !!target; syncButton();
+    let rows = instances() || [];
+    if (target) { try { rows = group ? await serverRows(group.group) : []; } catch { rows = []; } }
+    if (ticket !== relativesReq || !current()) return;
+    relativesPending = false;
+    paintRelatives(Array.isArray(rows) ? rows : []); render(); syncButton();
+  }
+  function paintServerHint() {
+    const target = remoteTarget();
+    serverHint.textContent = target ? `Runs on ${serverNames.get(target) || soul.repoName || target}. Its teams and defaults come from that machine's workspace.` : '';
+  }
   const local = () => !remoteTarget() && !workspace()?.remote && !workspace()?.server;
   // The server admits the workspace against its own registry (absolute scope, local); /api/panel carries only the id.
   const previewable = () => local() && previewSupported(cli()) && !!workspace()?.id && soul.work !== 'attached';
@@ -751,11 +782,12 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
 
   function relationChoice() {
     if (rel.value === 'unrelated') return { kind: 'unrelated' };
-    const name = relTo.value, root = relTo.selectedOptions[0]?.dataset.root;
-    const matches = (instances() || []).filter(i => i.instance === name && i.agentsRoot === root && !i.remote && !i.server);
+    if (relativesPending) return null;
+    const name = relTo.value, root = relTo.selectedOptions[0]?.dataset.root, target = remoteTarget();
+    const matches = relativeRows.filter(i => i.instance === name && i.agentsRoot === root && (target ? true : !i.remote && !i.server));
     if (matches.length !== 1) return null;
     const a = matches[0];
-    return { kind: rel.value, anchor: { instance: a.instance, agent: a.agent, agentsRoot: a.agentsRoot, server: null } };
+    return { kind: rel.value, anchor: { instance: a.instance, agent: a.agent, agentsRoot: a.agentsRoot, server: target || null } };
   }
   /** The choices the fields express, or { error } for one the operator must fix. */
   function choices() {
@@ -778,7 +810,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       ...(runtime.value ? { harness: runtime.value } : {}), ...(config.value ? { launchConfig: config.value } : {}),
       ...(backend.value ? { backend: backend.value } : {}), ...(yolo.value ? { yolo: yolo.value === 'true' } : {}),
       model: nativeModel ? { kind: 'native-default' } : model.value.trim() ? { kind: 'custom', value: model.value.trim() } : { kind: 'inherit' },
-      relation: relationValue, ...(identityChoice ? { identity: identityChoice } : {}),
+      // A remote spawn sends its relation to /api/spawn itself; the local preview contract never sees a remote anchor.
+      relation: relationValue.anchor?.server ? { kind: 'unrelated' } : relationValue, ...(identityChoice ? { identity: identityChoice } : {}),
       ...(joinLabels().length ? { join: { provider: messagingProvider, labels: joinLabels() } } : {}) };
     const valid = previewChoices(out);
     return valid ? { value: valid } : { error: 'A value here is not a valid spawn option (no spaces or leading dashes).', field: 'option' };
@@ -1151,12 +1184,26 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     } catch { /* the default stays */ }
   }
   // ── execution servers (Advanced › Run on)
-  Promise.resolve(typeof servers === 'function' ? servers() : servers).then(list => {
+  // Disabled with why: the server's registered group failed its last roster read, or no group of it is the
+  // registration's. Before the roster answers nothing is known: nothing is guessed. A group's souls are only
+  // those spawned there before, not the ones its workspace offers, so they never disable a server: the kernel
+  // refuses a soul the host doesn't offer, in its own words.
+  Promise.all([Promise.resolve(typeof servers === 'function' ? servers() : servers),
+    Promise.resolve().then(() => serverFacts()).catch(() => [])]).then(([list, facts]) => {
     if (!current() || soul.server || !Array.isArray(list)) return;
-    for (const srv of list) { const o = el('option', `${srv.label} (ssh ${srv.sshHost})`); o.value = srv.id; server.append(o); }
-    serverLabel.hidden = !list.length;
+    facts = Array.isArray(facts) ? facts : [];
+    for (const srv of list) {
+      const groups = facts.filter(f => f.server === srv.id), group = groups.find(f => f.registered === true);
+      const why = !groups.length ? null : !group ? 'not registered' : !group.reached ? 'not reached' : null;
+      const o = el('option', why ? `${srv.label} (${why})` : srv.label !== srv.id ? `${srv.label} (${srv.id})` : srv.label);
+      o.value = srv.id; o.disabled = !!why; server.append(o);
+      if (group) serverGroups.set(srv.id, group);
+      serverNames.set(srv.id, srv.label);
+    }
+    placeField.hidden = !list.length;
   }).catch(() => {});
-  serverLabel.hidden = !soul.server;
+  placeField.hidden = !soul.server;
+  paintServerHint();
 
   // ── events
   const onEdit = event => {
@@ -1165,7 +1212,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     notice = null;
     if (phase === 'drifted') phase = 'idle';
     if (event.target === runtime || event.target === server) void fillModels();
-    if (event.target === server) { shown = null; void fillConfigs(); }
+    if (event.target === server) { shown = null; void fillConfigs(); void fillRelatives(); paintServerHint(); }
     if ([search].includes(event.target) || wake.el.contains(event.target) || event.target === task) { syncButton(); return; }
     schedule(event.type === 'change' && (event.target.tagName !== 'INPUT' || event.target.type === 'checkbox') ? 0 : debounce);
   };

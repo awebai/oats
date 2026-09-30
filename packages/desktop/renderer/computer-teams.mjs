@@ -8,9 +8,11 @@
  * {action: 'remove', label} | {action: 'default', label}, each answering the document after the
  * write. A refusal (E_TEAM_IN_USE, E_TEAM_EXISTS, …) is shown verbatim with its code. The page owns
  * its state, so the Teams tab mounts it once and keeps it across re-renders; `onDocument(doc)`
- * hears each document read (the tab's attention dot counts its problems). `instances()` is the
- * panel's roster (/api/panel rows), read at each render: an instance is in a team when its
- * identity.team is that team's provider id. Without a roster the cards simply say nothing about it. */
+ * hears each document read (the tab's attention dot counts its problems). `readMembers()` answers
+ * /api/team-members (packages/desktop/docs/desktop-teams.md): every instance of this workspace and of
+ * every registered server whose identity.team is a team's provider id, read on mount and at each
+ * roster poll (`syncRoster`). A card lists its members by machine; `onMember('open' | 'show', member)`
+ * opens one's terminal or selects its roster row. Without the route the cards say nothing about them. */
 import { iconElement } from './shell-icons.mjs';
 import { createSoulMark } from './identity-marks.mjs';
 
@@ -105,6 +107,25 @@ export const computerTeamsCSS = `
 .computer-teams .ct-hint code { color:var(--fg); font:11px var(--mono,monospace); }
 .computer-teams .ct-status { margin:0; color:var(--muted); font-size:12px; }
 .computer-teams .ct-status:empty { display:none; }
+/* The members (spec 02): grouped by machine, one row per instance with its state in words and two buttons. */
+.computer-teams .ct-reach { margin:0; color:var(--muted); font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
+.computer-teams .ct-reach:empty { display:none; }
+.computer-teams .ct-members { display:flex; flex-direction:column; gap:10px; margin:6px 0 0; padding:0; list-style:none; min-width:0; }
+.computer-teams .ct-group { display:flex; flex-direction:column; gap:4px; min-width:0; }
+.computer-teams .ct-group-head { margin:0; color:var(--muted); font-size:12px; font-weight:500; line-height:1.45; overflow-wrap:anywhere; }
+.computer-teams .ct-member-list { display:flex; flex-direction:column; gap:2px; margin:0; padding:0; list-style:none; min-width:0; }
+.computer-teams .ct-member { display:flex; align-items:center; gap:8px; min-height:26px; min-width:0; }
+.computer-teams .ct-member .identity-mark { width:18px; height:18px; border-radius:5px; font-size:9px; font-weight:700; flex:none; }
+.computer-teams .ct-dot { box-sizing:border-box; width:8px; height:8px; flex:none; border-radius:50%; border:1.5px solid var(--faint); background:var(--surface); }
+.computer-teams .ct-dot[data-state=running] { border-color:var(--accent); background:var(--accent); }
+.computer-teams .ct-dot[data-state=unknown], .computer-teams .ct-dot[data-state=gone] { border-color:var(--warn); background:var(--warn); }
+/* The name is the roster's (proportional, 12.5px/600) and shows the row: a text control, underlined on hover and focus. */
+.oats-view .computer-teams .ct-member-name { appearance:none; margin:0; padding:0; border:0; background:none; color:var(--fg); font:600 12.5px/1.3 var(--sans,system-ui); text-align:left; overflow-wrap:anywhere; min-width:0; cursor:pointer; }
+.oats-view .computer-teams .ct-member-name:hover, .oats-view .computer-teams .ct-member-name:focus-visible { text-decoration:underline; }
+.computer-teams .ct-member-state { color:var(--muted); font-size:11.5px; white-space:nowrap; flex-grow:1; }
+/* Terminal: quiet, borderless until hover or focus. */
+.oats-view .computer-teams .ct-member-term { appearance:none; display:inline-flex; align-items:center; gap:4px; flex:none; height:22px; padding:0 6px; border:1px solid transparent; border-radius:5px; background:none; color:var(--muted); font:600 11px var(--sans,system-ui); cursor:pointer; }
+.oats-view .computer-teams .ct-member-term:hover, .oats-view .computer-teams .ct-member-term:focus-visible { border-color:var(--border); background:var(--surface-2); color:var(--fg); }
 `;
 
 const text = v => typeof v === 'string' && v ? v : null;
@@ -147,9 +168,64 @@ export function whoMayJoin(document, label) {
 
 const MAX_MARKS = 3;
 
-export function createComputerTeams(doc, { request, onDocument = null, instances = () => [] }) {
+const codePoint = (a, b) => a < b ? -1 : a > b ? 1 : 0;
+/** A member's state in words (never colour alone): running, stopped, unknown, or gone from its server. */
+export const memberState = m => m.missingRemotely ? 'gone' : m.running === true ? 'running' : m.running === false ? 'stopped' : 'unknown';
+/** The state word on a member row: running when it can be opened; else the roster's short reason
+ * ("gone from X", "not reachable on X", "X not reached"), else stopped or unknown. */
+export function stateWord(m) {
+  if (m.running === true && m.addressable === true) return 'running';
+  return text(m.reasonLabel) && m.reasonLabel !== 'state unknown' ? m.reasonLabel : memberState(m);
+}
+/** Why a member's terminal can't be opened: the roster's own reason (the route sends it), or, for a
+ * stopped member the roster has no reason for, that it is not running. Null when it can be opened. */
+export function openBlocked(m) {
+  if (m.running === true && m.addressable === true) return null;
+  return text(m.reason) ?? `${m.instance} is not running.`;
+}
+/** Members by machine: this computer first, then servers by label (code points), the server id breaking ties;
+ * within one, by instance name, then home. A machine is not reached when every roster group its members come
+ * from failed its last read; when only some did (an edited registration keeps its old group), the heading stays
+ * reached and those members' own state ("unknown") and reason carry it. */
+export function memberGroups(members, servers = []) {
+  const byGroup = new Map(list(servers).map(s => [`remote:${s.group}`, s]));
+  const groups = new Map();
+  for (const m of members) {
+    const key = m.server ?? '';
+    if (!groups.has(key)) groups.set(key, { key, server: m.server ?? null, label: m.server ? text(m.serverLabel) ?? m.server : 'This computer', reached: true, error: null, members: [], sources: new Map() });
+    const group = groups.get(key), source = m.server ? byGroup.get(m.workspace) : null;
+    if (source) group.sources.set(source.group, source);
+    group.members.push(m);
+  }
+  for (const group of groups.values()) {
+    const sources = [...group.sources.values()];
+    if (sources.length && sources.every(s => !s.reached)) { group.reached = false; group.error = text(sources[0].error); }
+    delete group.sources;
+  }
+  for (const group of groups.values()) group.members.sort((a, b) => codePoint(a.instance, b.instance) || codePoint(a.home, b.home));
+  return [...groups.values()].sort((a, b) => (a.server === null ? -1 : b.server === null ? 1 : codePoint(a.label, b.label) || codePoint(a.server, b.server)));
+}
+/** The card's summary: "N members", with "· M on other machines" when some run elsewhere; nothing for none. */
+export function memberSummary(members) {
+  if (!members.length) return null;
+  const elsewhere = members.filter(m => m.server).length;
+  return `${plural(members.length, 'member')}${elsewhere ? ` · ${elsewhere} on other machines` : ''}`;
+}
+/** The route's answer, kept only as far as it validates (every string still enters the DOM by assignment). */
+function membersAnswer(v) {
+  if (!v || typeof v !== 'object' || !Array.isArray(v.members)) return null;
+  const members = v.members.filter(m => m && typeof m === 'object' && text(m.instance) && text(m.home) && text(m.team) && text(m.workspace)
+    && (m.server === null || text(m.server)));
+  return { members, servers: list(v.servers).filter(s => s && typeof s === 'object' && text(s.group)),
+    notReached: list(v.notReached).filter(s => s && typeof s === 'object' && text(s.label)) };
+}
+
+export function createComputerTeams(doc, { request, onDocument = null, readMembers = null, onMember = () => {} }) {
   const page = el(doc, 'section', null, 'computer-teams'); page.dataset.box = 'Teams'; page.setAttribute('aria-label', 'Teams');
   const status = el(doc, 'p', '', 'ct-status'); status.setAttribute('role', 'status');
+  // Servers we hold no rows for yet: said under the head, and kept current as they answer (outside the redraw barrier).
+  const reach = el(doc, 'p', '', 'ct-reach'); reach.setAttribute('role', 'status');
+  let roster = null, rosterSerial = 0, groupIds = 0;
   const body = el(doc, 'div', null, 'ct-body');
   let current = null, pending = false, serial = 0, disposed = false;
   let rowError = null, cardError = null, confirming = null, adding = false, opener = 'head';
@@ -165,7 +241,7 @@ export function createComputerTeams(doc, { request, onDocument = null, instances
   addButton.setAttribute('aria-expanded', 'false');
   addButton.addEventListener('click', () => { if (addButton.disabled) return; openAdd('head'); });
   head.append(titles, addButton);
-  page.append(head, status, body);
+  page.append(head, reach, status, body);
 
   function openAdd(from) {
     opener = from;
@@ -218,11 +294,41 @@ export function createComputerTeams(doc, { request, onDocument = null, instances
     return line;
   }
 
-  /** The roster rows in a team: its provider id is the identity's team. An unmapped team has none. */
+  /** A team's members, wherever they run: its provider id is their identity's team. An unmapped team has none. */
   function membersOf(team) {
-    if (!text(team.team)) return [];
-    let rows; try { rows = list(instances?.()); } catch { rows = []; }
-    return rows.filter(row => row && typeof row === 'object' && row.identity?.team === team.team);
+    if (!text(team.team) || !roster) return [];
+    return roster.members.filter(m => m.team === team.team);
+  }
+  /** One member: its dot, its name (which shows its roster row), its soul mark, its state in words and, only
+   * when it can be opened, a quiet Terminal. A member that can't be opened says why in its state word. */
+  function memberRow(m) {
+    const item = el(doc, 'li', null, 'ct-member'), machine = m.server ? text(m.serverLabel) ?? m.server : 'this computer';
+    const dot = el(doc, 'span', null, 'ct-dot'); dot.dataset.state = memberState(m); dot.setAttribute('aria-hidden', 'true');
+    const name = el(doc, 'button', m.instance, 'ct-member-name'); name.type = 'button'; name.setAttribute('aria-label', `Show ${m.instance} in the roster`);
+    name.addEventListener('click', () => onMember('show', { ...m }));
+    const word = el(doc, 'span', stateWord(m), 'ct-member-state'), blocked = openBlocked(m);
+    if (blocked) { word.title = blocked; word.setAttribute('aria-description', blocked); }
+    item.append(dot, name, createSoulMark(doc, { name: m.agent, agentsRoot: m.agentsRoot }), word);
+    if (!blocked) {
+      const term = el(doc, 'button', null, 'ct-member-term'); term.type = 'button'; term.setAttribute('aria-label', `Open ${m.instance} terminal on ${machine}`);
+      term.append(iconElement(doc, 'terminal', { size: 12 }), el(doc, 'span', 'Terminal'));
+      term.addEventListener('click', () => onMember('open', { ...m }));
+      item.append(term);
+    }
+    return item;
+  }
+  function memberList(members) {
+    const groups = el(doc, 'ul', null, 'ct-members');
+    for (const group of memberGroups(members, roster?.servers)) {
+      const item = el(doc, 'li', null, 'ct-group'), id = `ct-group-${++groupIds}`;
+      item.setAttribute('role', 'group'); item.setAttribute('aria-labelledby', id);
+      const head = el(doc, 'h4', `${group.label} · ${group.reached ? group.members.length : 'not reached'}`, 'ct-group-head'); head.id = id;
+      if (!group.reached && group.error) head.title = group.error;
+      const rows = el(doc, 'ul', null, 'ct-member-list');
+      for (const m of group.members) rows.append(memberRow(m));
+      item.append(head, rows); groups.append(item);
+    }
+    return groups;
   }
 
   function teamCard(team) {
@@ -251,13 +357,16 @@ export function createComputerTeams(doc, { request, onDocument = null, instances
         { disabled: !!why, title: why || '', aria: why ? `Remove ${team.label}: ${why}` : `Remove ${team.label}` }));
       if (why) main.append(el(doc, 'span', why, 'ct-why'));
     }
+    // The members come last in the main column: below the facts and the card's own notes (problems, why Remove is off).
+    const members = membersOf(team);
+    if (members.length) main.append(memberList(members));
     card.append(tile, main);
     // The right column says who is in the team only when the roster shows someone; never a zero.
-    const side = el(doc, 'div', null, 'ct-side'), members = membersOf(team);
+    const side = el(doc, 'div', null, 'ct-side');
     if (members.length) {
       const line = el(doc, 'div', null, 'ct-inst'), marks = el(doc, 'span', null, 'ct-marks');
       for (const row of members.slice(0, MAX_MARKS)) marks.append(createSoulMark(doc, { name: row.agent, agentsRoot: row.agentsRoot }));
-      line.append(marks, el(doc, 'span', `${plural(members.length, 'instance')} in it`, 'ct-count'));
+      line.append(marks, el(doc, 'span', memberSummary(members), 'ct-count'));
       side.append(line);
       if (team.default) side.append(el(doc, 'span', 'every instance joins its default team', 'ct-note'));
     }
@@ -313,7 +422,8 @@ export function createComputerTeams(doc, { request, onDocument = null, instances
 
   // Who is in each team, as drawn: a roster poll that changes it redraws the cards (syncRoster).
   let rosterDrawn = '';
-  const rosterKey = () => JSON.stringify(list(current?.teams).map(team => membersOf(team).map(row => [row.agent, row.agentsRoot, row.instance])));
+  const rosterKey = () => JSON.stringify([list(current?.teams).map(team => membersOf(team).map(m => [m.server, m.home, m.instance, m.agent, m.agentsRoot,
+    m.running, m.addressable, m.missingRemotely, m.reason])), list(roster?.servers).map(s => [s.group, s.reached, s.error])]);
   function render() {
     if (disposed) return;
     body.replaceChildren();
@@ -338,14 +448,27 @@ export function createComputerTeams(doc, { request, onDocument = null, instances
     body.append(sharedSection, localSection);
     rosterDrawn = rosterKey();
   }
-  /** The roster changed: redraw only when who is in a team changed, and never under an open form,
-   * a pending confirmation or the keyboard (a redraw would drop what is typed or focused). */
-  function syncRoster() {
+  /** The members changed: redraw only when who is in a team (or their state) changed, and never under an
+   * open form, a pending confirmation or the keyboard (a redraw would drop what is typed or focused). */
+  function redrawMembers() {
     if (disposed || !current || pending || adding || confirming || page.contains(doc.activeElement) || rosterKey() === rosterDrawn) return;
     render();
   }
+  function paintReach() {
+    const labels = list(roster?.notReached).map(s => s.label);
+    reach.textContent = labels.length ? `Not reached: ${labels.join(', ')}. Their members aren't shown until they answer.` : '';
+  }
+  /** Read the members (on mount and at each roster poll); the notice follows every answer. */
+  async function readRoster() {
+    if (typeof readMembers !== 'function') return;
+    const ticket = ++rosterSerial;
+    let answer; try { answer = membersAnswer(await readMembers()); } catch { answer = null; }
+    if (disposed || ticket !== rosterSerial || !answer) return;
+    roster = answer; paintReach(); redrawMembers();
+  }
+  function syncRoster() { void readRoster(); }
   function focusIn(selector) { queueMicrotask(() => page.querySelector(selector)?.focus()); }
 
-  void read();
-  return { element: page, refresh: read, syncRoster, dispose() { disposed = true; serial++; } };
+  void read(); void readRoster();
+  return { element: page, refresh: read, syncRoster, dispose() { disposed = true; serial++; rosterSerial++; } };
 }

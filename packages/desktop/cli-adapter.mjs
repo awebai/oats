@@ -246,12 +246,18 @@ export async function cliSpawn(bin, { agent, workspaceDir, task, ...opts }, io =
     // — the endpoint maps them like CLI envelope failures.
     return { schemaVersion: 1, ok: false, error: { code: e.code || "E_BAD_ARGS", message: e.message } };
   }
-  const { file, cleanup } = writeTaskFile(task ?? "", io);
-  // Replace the placeholder POSITIONALLY — the slot after --task-file —
-  // never by value search: an agent literally named "__TASKFILE__" would
-  // occupy an earlier argv slot and indexOf would clobber the agent name
-  // instead (review 0b83988).
-  argv[argv.indexOf("--task-file") + 1] = file;
+  // An empty opening instruction on a server spawn travels as no task at all: the routed spawn
+  // refuses an empty task file, and no task is what a local empty spawn amounts to.
+  let cleanup = () => {};
+  if (opts.server && !String(task ?? "").trim()) argv.splice(argv.indexOf("--task-file"), 2);
+  else {
+    const written = writeTaskFile(task ?? "", io); cleanup = written.cleanup;
+    // Replace the placeholder POSITIONALLY — the slot after --task-file —
+    // never by value search: an agent literally named "__TASKFILE__" would
+    // occupy an earlier argv slot and indexOf would clobber the agent name
+    // instead (review 0b83988).
+    argv[argv.indexOf("--task-file") + 1] = written.file;
+  }
   let wakeFile;
   try {
     if (wake) { wakeFile = writeTaskFile(JSON.stringify(wake), io); argv.push("--wake-file", wakeFile.file); }

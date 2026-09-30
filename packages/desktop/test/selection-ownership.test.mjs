@@ -37,7 +37,7 @@ const names = [
   "splitPane", "closeSplit", "onTabKeydown", "addTab", "selectTab", "activateTab", "closeTab",
   "openViewTab", "openTerminalTabFlow", "openTerminalTabInner", "focusActiveTerminal",
   "visibleTabEntries", "switchTab", "cycleTab", "gotoTab", "renderWorkspaceContext", "restoreWorkspaceTabs", "showTerminalContext",
-  "initContextRoster", "renderContextRoster", "focusRoster", "onRosterRowKey", "setRovingRow",
+  "initContextRoster", "renderContextRoster", "focusRoster", "onRosterRowKey", "setRovingRow", "showInRoster",
 ];
 function deferred() {
   let resolve, reject;
@@ -546,4 +546,23 @@ test("a remote row's terminal tab carries the row's server label, else the serve
     await s.pending("dev");
     assert.equal(seen.at(-1).serverLabel, label);
   }
+});
+
+test("showInRoster: the row with that server and home is revealed (a filter cleared, a collapsed parent opened), selected and focused", async t => {
+  const s = shell(t);
+  const row = (name, extra = {}) => ({ instance: name, agent: "dev", agentsRoot: "/srv/agents", home: `/srv/agents/dev/instances/${name}`,
+    server: "build", addressable: true, running: true, repoName: "Build box", ...extra });
+  const parent = row("lead"), child = row("helper", { parentInstance: "lead" }), twin = row("helper", { server: "other", repoName: "Other box" });
+  s.c.contextInstances = [parent, child, twin];
+  s.c.collapsedInstances.add(s.c.collapseKey("A", s.c.instanceId(parent)));
+  s.c.contextFilter = "lead"; s.document.getElementById("entry").value = "lead";
+  s.renderContextRoster(s.c.contextInstances);
+  assert.equal([...s.document.querySelectorAll(".ctx-inst")].some(b => b.dataset.treeInstance === s.c.instanceId(child)), false, "hidden to begin with");
+  assert.equal(await s.showInRoster({ server: "build", home: child.home }), true);
+  const active = s.document.activeElement;
+  assert.equal(active.dataset.treeInstance, s.c.instanceId(child), "the build row, not its same-named twin on another server");
+  assert.equal(active.tabIndex, 0);
+  assert.equal(s.document.getElementById("entry").value, "", "the filter that hid it is cleared");
+  assert.equal(s.c.collapsedInstances.size, 0, "its collapsed parent is opened");
+  assert.equal(await s.showInRoster({ server: "build", home: "/srv/agents/dev/instances/nobody" }), false);
 });

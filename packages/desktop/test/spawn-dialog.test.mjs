@@ -498,3 +498,77 @@ test('a name longer than the kernel cap (#159) is refused at the field before an
   await u.type('.fpurpose', 'b'.repeat(65)); await settle(20);
   assert.match(u.text('.spawn-name-result'), /at most 64 characters/); assert.equal(u.previews().length, sent);
 });
+
+// Spec 02: "Where to run".
+const buildFacts = (extra = {}) => ({ server: 'build', label: 'Build host', group: 'build:1', reached: true, error: null, registered: true, ...extra });
+test('Where to run: "This computer" first, then each server by label (and id when it differs); an unreached or unregistered server is disabled with why, never for its souls', async t => {
+  const u = await mountSpawn(t, {
+    servers: [{ id: 'build', label: 'Build host', sshHost: 'build.lan' }, { id: 'same', label: 'same', sshHost: 's' }, { id: 'down', label: 'Down box', sshHost: 'd' },
+      { id: 'bare', label: 'Bare box', sshHost: 'b' }, { id: 'moved', label: 'Moved box', sshHost: 'm' }],
+    teamMembers: { members: [], notReached: [], servers: [buildFacts(), buildFacts({ server: 'same', label: 'same', group: 'same:1' }),
+      buildFacts({ server: 'down', label: 'Down box', group: 'down:1', reached: false, error: 'ssh failed' }),
+      buildFacts({ server: 'bare', label: 'Bare box', group: 'bare:1' }),
+      buildFacts({ server: 'moved', label: 'Moved box', group: 'moved:old', registered: false })] } });
+  await u.open();
+  // A primary decision: at the form's top level, directly above Relationship (whose picker depends on it), not in Developer settings.
+  const place = u.q('.spawn-place');
+  assert.equal(place.querySelector('.spawn-label-text').textContent, 'Where to run');
+  assert.equal(place.contains(u.q('.fserver')), true); assert.equal(place.contains(u.q('.spawn-server-hint')), true);
+  assert.equal(u.q('.spawn-advanced').contains(place), false);
+  assert.equal(place.nextElementSibling, u.q('.spawn-relationship'));
+  assert.deepEqual([...u.q('.fserver').options].map(o => [o.textContent, o.disabled]), [
+    ['This computer', false], ['Build host (build)', false], ['same', false],
+    ['Down box (not reached)', true], ['Bare box (bare)', false], ['Moved box (not registered)', true]]);
+});
+
+test('a refused remote spawn says the refusal in OATS\'s own words (a soul the host doesn\'t offer), with the code behind Details', async t => {
+  const message = 'no soul "release-manager" among the confirmed members, external souls or package souls of this workspace';
+  const u = await mountSpawn(t, { servers: [{ id: 'build', label: 'Build host', sshHost: 'build.lan' }], teamMembers: { members: [], notReached: [], servers: [buildFacts()] },
+    remote: () => { throw Object.assign(new Error(message), { code: 'E_SOUL_UNKNOWN' }); } });
+  await u.open(); await u.type('.fpurpose', 'api-v2');
+  await u.change('.fserver', 'build');
+  await u.spawn();
+  assert.equal(u.text('.fstatus'), `Couldn’t spawn on build: ${message}`);
+  assert.equal(u.q('.fstatus').dataset.code, 'E_SOUL_UNKNOWN'); assert.ok(u.q('.fstatus').classList.contains('err'));
+  assert.equal(u.text('.spawn-problem-detail'), `E_SOUL_UNKNOWN · ${message}`);
+});
+
+test('Where to run a server: the hint says so, the relation picker lists only that server\'s rows, and the relation travels with the remote spawn', async t => {
+  const remote = [];
+  const farRow = { instance: 'far-lead', agent: 'release-manager', agentsRoot: '/srv/agents', home: '/srv/agents/release-manager/instances/far-lead', server: 'build', running: true, addressable: true };
+  const u = await mountSpawn(t, { servers: [{ id: 'build', label: 'Build host', sshHost: 'build.lan' }], teamMembers: { members: [], notReached: [], servers: [buildFacts()] },
+    serverPanels: { 'remote:build:1': [farRow] }, remote: body => { remote.push(body); return { instance: 'release-manager-api-v2', server: 'build' }; } });
+  await u.open(); await u.type('.fpurpose', 'api-v2');
+  const local = [...u.q('.frelto').options].map(o => o.value).filter(Boolean);
+  u.q('.spawn-advanced').open = true;
+  await u.change('.fserver', 'build');
+  assert.equal(u.text('.spawn-server-hint'), "Runs on Build host. Its teams and defaults come from that machine's workspace.");
+  assert.deepEqual([...u.q('.frelto').options].map(o => o.value).filter(Boolean), ['far-lead'], 'never this computer\'s rows: relations do not cross machines');
+  const child = [...u.doc.querySelectorAll('.spawn-dialog .frelation input')].find(i => i.value === 'child'); child.checked = true; child.dispatchEvent(new u.dom.window.Event('change', { bubbles: true })); await settle();
+  await u.change('.frelto', 'far-lead');
+  await u.spawn();
+  assert.equal(remote.length, 1);
+  assert.deepEqual([remote[0].serverId, remote[0].relation, remote[0].relativeTo, remote[0].relativeRoot], ['build', 'child', 'far-lead', '/srv/agents']);
+  await u.change('.fserver', '');
+  assert.equal(u.text('.spawn-server-hint'), '');
+  assert.deepEqual([...u.q('.frelto').options].map(o => o.value).filter(Boolean), local, 'back on this computer: its own rows again');
+});
+
+test('Where to run a server: while its rows are still being read, a relation picked on this computer cannot be sent to it', async t => {
+  const gate = deferred(), remote = [];
+  const farRow = { instance: 'far-lead', agent: 'release-manager', agentsRoot: '/srv/agents', home: '/srv/agents/release-manager/instances/far-lead', server: 'build', running: true, addressable: true };
+  const u = await mountSpawn(t, { servers: [{ id: 'build', label: 'Build host', sshHost: 'build.lan' }], teamMembers: { members: [], notReached: [], servers: [buildFacts()] },
+    serverPanels: { 'remote:build:1': [farRow] }, serverPanelGate: gate.promise, remote: body => { remote.push(body); return { instance: 'x', server: 'build' }; } });
+  await u.open(); await u.type('.fpurpose', 'api-v2');
+  const child = [...u.doc.querySelectorAll('.spawn-dialog .frelation input')].find(i => i.value === 'child'); child.checked = true; child.dispatchEvent(new u.dom.window.Event('change', { bubbles: true })); await settle();
+  const localPick = [...u.q('.frelto').options].find(o => o.value);
+  await u.change('.frelto', localPick.value);
+  u.q('.spawn-advanced').open = true;
+  await u.change('.fserver', 'build');
+  assert.equal(u.q('.fspawn').disabled, true, 'the picker still holds this computer\'s rows: nothing may be sent');
+  u.q('.fspawn').click(); await settle(); assert.equal(remote.length, 0);
+  gate.resolve(); await settle();
+  assert.deepEqual([...u.q('.frelto').options].map(o => o.value).filter(Boolean), ['far-lead']);
+  assert.equal(u.q('.frelto').value, '', 'a local pick does not carry over'); assert.equal(u.q('.fspawn').disabled, true, 'a relation still needs a pick');
+  await u.change('.frelto', 'far-lead'); assert.equal(u.q('.fspawn').disabled, false);
+});

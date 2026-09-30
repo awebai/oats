@@ -242,3 +242,18 @@ test("spawnArgv forwards explicit yolo booleans, including false", () => {
   assert.ok(spawnArgv("dev", "/ws", "/t", { yolo: false }).includes("--no-yolo"));
   assert.throws(() => spawnArgv("dev", "/ws", "/t", { yolo: "false" }), /boolean/);
 });
+
+test("cliSpawn on a server: an empty opening instruction sends no --task-file (the routed spawn refuses an empty one); a written one does", async () => {
+  const seen = [];
+  const exec = (_bin, argv, _opts, done) => { seen.push(argv); done(null, JSON.stringify({ schemaVersion: 1, ok: true, result: { instance: "dev-1" } })); };
+  for (const task of ["", "   ", undefined]) {
+    await cliSpawn("/abs/oats", { agent: "dev", workspaceDir: "/local", task, server: "build", purpose: "x1" }, { exec });
+    assert.equal(seen.at(-1).includes("--task-file"), false, JSON.stringify(task));
+    assert.deepEqual(seen.at(-1).slice(0, 2), ["spawn", "dev"]);
+    assert.ok(seen.at(-1).includes("--server"));
+  }
+  await cliSpawn("/abs/oats", { agent: "dev", workspaceDir: "/local", task: "do it", server: "build" }, { exec });
+  assert.ok(seen.at(-1).includes("--task-file"));
+  await cliSpawn("/abs/oats", { agent: "dev", workspaceDir: "/ws", task: "" }, { exec });
+  assert.ok(seen.at(-1).includes("--task-file"), "a local spawn keeps its (empty) task file, as before");
+});

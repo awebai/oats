@@ -922,7 +922,14 @@ for (const [name] of palettes) test(`${name}: team model v2 cards, left entries,
   const v2 = name => JSON.parse(readFileSync(new URL(`./fixtures/team-model-v2/${name}.json`, import.meta.url), 'utf8'));
   const teams = teamsData(v2('teams-after'), '/fixture/base/northwind-workspace'), soulTeams = soulTeamsData(v2('soul-teams-default'));
   teams.defaultTeam = 'engineering'; for (const r of teams.teams) r.default = r.label === 'engineering'; for (const p of teams.problems) if (p.label === 'engineering') p.default = true; // DERIVED: a blocking default
-  const setup = createComputerTeams(doc, { request: async () => structuredClone(teams) });
+  // Spec 02: engineering's members on this computer and on a server that was not reached, and the not-reached status line.
+  const TEAM = 'engineering:northwind.aweb.ai'; teams.teams.find(t => t.label === 'engineering').team = TEAM;
+  const member = (instance, extra = {}) => ({ workspace: '/w', server: null, serverLabel: null, instance, agent: 'engineer', agentsRoot: '/w/agents',
+    home: `/w/agents/engineer/instances/${instance}`, team: TEAM, running: true, addressable: true, missingRemotely: false, reason: null, createdAt: null, ...extra });
+  const setup = createComputerTeams(doc, { request: async () => structuredClone(teams), readMembers: async () => ({
+    members: [member('eng-1'), member('eng-2', { workspace: 'remote:build:1', server: 'build', serverLabel: 'Build box', running: null, reason: 'ssh failed' })],
+    servers: [{ server: 'build', label: 'Build box', group: 'build:1', reached: false, error: 'ssh failed', registered: true, souls: [] }],
+    notReached: [{ server: 'far', label: 'Far box' }] }) });
   const soul = createSoulTeamsHere(doc, { soul: 'release-manager', request: async () => structuredClone(soulTeams), listTeams: async () => structuredClone(teams) });
   doc.querySelector('#setup').append(setup.element); doc.querySelector('#soul').append(soul.element);
   t.after(() => { setup.dispose(); soul.dispose(); dom.window.close(); });
@@ -941,6 +948,9 @@ for (const [name] of palettes) test(`${name}: team model v2 cards, left entries,
     ['.sth-label', '.soul-teams-here', 'fg', 'surface'], ['.sth-meta:not(.warn)', '.soul-teams-here', 'muted', 'surface'],
     ['.sth-meta.warn', '.soul-teams-here', 'warn', 'surface'], ['button.sth-act', 'button.sth-act', 'fg', 'surface'],
     ['.ct-blocking', '.ct-card', 'muted', 'surface'], ['.ct-blocking strong', '.ct-card', 'fg', 'surface'],
+    // Spec 02: the member list on the card (group heads, names, the state words, both buttons).
+    ['.ct-group-head', '.ct-card', 'muted', 'surface'], ['.ct-member-name', '.ct-card', 'fg', 'surface'], ['.ct-member-state', '.ct-card', 'muted', 'surface'],
+    ['.ct-member-term', '.ct-card', 'muted', 'surface'],
     ['.sth-blocking', '.soul-teams-here', 'muted', 'surface'], ['.sth-blocking strong', '.soul-teams-here', 'fg', 'surface'],
     ['.teams-subhead', '.soul-inspector', 'muted', 'surface'],
     ['.teams-warning-head', '.soul-inspector', 'warn', 'surface'], ['.teams-warning-text', '.soul-inspector', 'fg', 'surface'],
@@ -952,6 +962,15 @@ for (const [name] of palettes) test(`${name}: team model v2 cards, left entries,
     assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
   }
+  // Hover and focus-visible: the name keeps --fg (underlined) on the card; Terminal turns --fg on --surface-2.
+  const rule = selector => [...doc.styleSheets].flatMap(sheet => [...sheet.cssRules]).find(r => r.selectorText === selector)?.style;
+  assert.equal(rule('.oats-view .computer-teams .ct-member-name:hover, .oats-view .computer-teams .ct-member-name:focus-visible').color, '', 'no colour change on the name');
+  const lit = rule('.oats-view .computer-teams .ct-member-term:hover, .oats-view .computer-teams .ct-member-term:focus-visible');
+  assert.equal(lit.color, 'var(--fg)'); assert.equal(lit.background, 'var(--surface-2)');
+  assert.ok(contrast(opaqueChannels(root.getPropertyValue('--fg').trim()), opaqueChannels(root.getPropertyValue('--surface-2').trim())) >= 4.5, 'Terminal lit');
+    // The not-reached line is the page head's lead style: the same colour on the same ground.
+  assert.equal(dom.window.getComputedStyle(doc.querySelector('.ct-reach')).color, dom.window.getComputedStyle(doc.querySelector('.ct-lead')).color);
+  assert.ok(doc.querySelector('.ct-reach').textContent.includes('Far box'));
 });
 
 // v4.1 cleanup (boards 1 and 2): the instance panel's header chip and soul link, the Where it works band

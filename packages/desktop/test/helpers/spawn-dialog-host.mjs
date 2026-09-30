@@ -75,7 +75,11 @@ export async function mountSpawn(t, options = {}) {
       const body = opts.body ? JSON.parse(opts.body) : undefined; calls.push({ path, body, method: opts.method || 'GET' });
       if (path === '/api/cli') return cli;
       if (path.startsWith('/api/agents')) return { workspace: { id: 'northwind', name: 'northwind' }, agents, ...(options.catalog ? { catalog: options.catalog } : {}) };
+      // A remote workspace's panel (the relation picker for a chosen server): options.serverPanels[<ws id>] rows.
+      if (path.startsWith('/api/panel?ws=remote')) await options.serverPanelGate;
+      if (path.startsWith('/api/panel?ws=remote')) return { workspace: { id: decodeURIComponent(path.split('ws=')[1]), remote: true }, instances: options.serverPanels?.[decodeURIComponent(path.split('ws=')[1])] ?? [] };
       if (path.startsWith('/api/panel')) return panel();
+      if (path.startsWith('/api/team-members')) return options.teamMembers ?? { members: [], servers: [], notReached: [] };
       if (path.startsWith('/api/workspace-spawn-preview')) { await options.previewGate?.(body); return previewBoundary(body, context); }
       if (path.startsWith('/api/spawn?')) { await options.spawnGate?.(body); return broker(body, context); }
       if (path === '/api/spawn') return options.remote ? options.remote(body) : assert.fail('no unguarded spawn in these tests');
