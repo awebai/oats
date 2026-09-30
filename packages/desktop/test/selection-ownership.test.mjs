@@ -541,7 +541,7 @@ test("a remote row's terminal tab carries the row's server label, else the serve
     const seen = [];
     const s = shell(t, { terminal: opts => { seen.push(opts); return createTerminalTab(opts); } });
     s.c.resolveTerminalOpen = (_instances, ref, ws) => ({ key: `${ws}:${ref}`, inst: row.server
-      ? { instance: ref, running: true, savedRoute: true, home: `/srv/${ref}`, ...row }
+      ? { instance: ref, running: true, addressable: true, home: `/srv/${ref}`, ...row }
       : { instance: ref, running: true, tmux: { session: "synthetic", window: ref } } });
     await s.pending("dev");
     assert.equal(seen.at(-1).serverLabel, label);
