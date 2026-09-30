@@ -284,7 +284,7 @@ test("a user close before the link's exit arrives never reconnects", async () =>
   assert.equal(r.strip(), null);
 });
 
-test("while disconnected, Tab and Shift+Tab leave the inert terminal for Reconnect now; connected, Tab goes to the agent", async () => {
+test("while disconnected, Tab moves from the inert terminal to Reconnect now (Shift+Tab leaves the pane backwards); connected, Tab goes to the agent", async () => {
   const r = rig({ opens: [1, 2] });
   await r.tab.start();
   assert.equal(r.key({ key: "Tab" }), true, "a connected terminal keeps Tab for the agent");
@@ -296,5 +296,26 @@ test("while disconnected, Tab and Shift+Tab leave the inert terminal for Reconne
   await r.clock.advance(1000);
   assert.equal(r.strip(), null);
   assert.equal(r.key({ key: "Tab" }), true, "reconnected: Tab goes to the agent again");
+  await r.tab.close();
+});
+
+test("an attempt's own lease that dies before it is ready continues the backoff: no reset, no burst, no stop", async () => {
+  const gate = deferred();
+  const r = rig({ opens: [1, 2, 3], termReady: h => h.id === 2 ? gate.promise : ready(h) });
+  await r.tab.start(); r.exit(1);
+  await r.clock.advance(1000);
+  assert.equal(r.opens(), 2, "the first attempt is in flight, waiting for its ready");
+  const lost = r.clock.now(); r.exit(2); gate.resolve(ready(handle(2))); await r.clock.advance(0);
+  assert.equal(r.stripText(), "Disconnected from Build box. Reconnecting in 2s…", "the second wait, not the first again");
+  await r.clock.advance(1000); assert.equal(r.opens(), 2, "no burst");
+  await r.clock.advance(1000);
+  assert.equal(r.openedAt.at(-1) - lost, 2000); assert.equal(r.strip(), null, "lease 3 connected");
+  await r.tab.close();
+});
+
+test("a remote tab's first open failure names the server as a reconnect does", async () => {
+  const r = rig({ opens: ["E_TERM_REMOTE_UNREACHABLE"] });
+  await r.tab.start();
+  assert.equal(r.banner(), "could not attach: Couldn't reach Build box.");
   await r.tab.close();
 });

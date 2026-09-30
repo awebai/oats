@@ -212,7 +212,7 @@ export function createTerminalTab({ desk, term, tmux, remote, serverLabel, wrap,
     focus();
   }
   return {
-    start: () => life.start(connect, error => banner(`could not attach: ${terminalFailure(error?.code).message}`)),
+    start: () => life.start(connect, error => banner(`could not attach: ${terminalMessage(error?.code, server)}`)),
     focus,
     async close() {
       closed = true; ready = false; arming = false; clearTimer();
