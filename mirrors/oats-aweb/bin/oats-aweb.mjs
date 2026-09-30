@@ -601,6 +601,14 @@ function globalGrantRenew() {
     try { rmSync(grantHome, { recursive: true, force: true }); } catch { /* best effort */ }
     out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta, oldHome), warning: `oats-aweb: renewal grant ${grantId} custody attachment failed (${e.message || e}); keeping previous grant ${oldMeta.identity.grant.id}` });
   }
+  if (newMeta.delivery === "session") {
+    try { wakeRegister(home, grantHome); }
+    catch (e) {
+      try { revokeGrant(custody, grantId); } catch { /* new grant expires by TTL if revoke fails */ }
+      try { rmSync(grantHome, { recursive: true, force: true }); } catch { /* best effort */ }
+      out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta, oldHome), warning: `oats-aweb: renewal session delivery registration failed for new grant ${grantId} (${e.message || e}); keeping previous grant ${oldMeta.identity.grant.id}` });
+    }
+  }
   let warning;
   try { revokeGrant(custody, oldMeta.identity.grant.id); }
   catch (e) { warning = `oats-aweb: previous grant ${oldMeta.identity.grant.id} was not revoked (${e.message || e}); new grant ${grantId} is kept and the previous grant still expires at ${oldMeta.identity.grant.expiresAt || "its TTL"}`; }
@@ -661,12 +669,12 @@ function globalGrantSpawn() {
     const warnings = [...teamWarnings, ...preflight.warnings];
     const e2eeBrief = preflight.warnings.length ? ` Warning: ${preflight.warnings.join(" ")}` : "";
     const deliveryBrief = deliveryMode === "session"
-      ? ` Notification delivery: external (AWEB_DELIVERY=session): the host wake broker (aw wake) is registered for this home and nudges you when mail or chat arrives; the native aweb channel is not running. If you have waited long with nothing arriving, check \`aw mail inbox\` and \`aw chat pending\` yourself at task boundaries.`
+      ? ` Notification delivery: external (AWEB_DELIVERY=session): the host wake broker presents incoming mail/chat in your terminal, either as a line naming what is waiting or as the full event with body; the native aweb channel is not running. Handle what is presented. After an uncertain crash, compaction or restart, recover by reconciling STATE and task records against exact delivered ids: use \`aw mail show --message-id <id> --json\`, or page \`aw mail inbox --show-all --json\` with \`--cursor\`. Read state is not completion, and \`--conversation-id\` is not a recovery check.`
       : "";
     out({
       meta,
       env,
-      brief: `Comms: you act as resident aweb identity "${alias}" on team ${mintedTeam} through a session grant for ${resident}; scopes: ${scopes.join(", ")}; expires: ${expiresAt}. Root keys are not in this home, and identity lifecycle commands are not yours to run; your grant home is attached to the resident's custody service. If a message you sent shows unverified at the receiver, report it, do not retry.${e2eeBrief}${deliveryBrief} Use \`aw mail\`/\`aw chat\` for messaging (see the aweb-messaging skill); coordination stays in your deployment's task layer.`,
+      brief: `Comms: you act as resident aweb identity "${alias}" on team ${mintedTeam} through a session grant for ${resident}; scopes: ${scopes.join(", ")}; expires: ${expiresAt}. Root keys are not in this home, and identity lifecycle commands are not yours to run; your grant home is attached to the resident's custody service. At session start, run \`aw whoami\`, then \`aw mail inbox\` and \`aw chat pending\`; do not run \`aw workspace status\` or \`aw id show\` from this grant seat. Grant inspection (\`aw id grant list/show\`) runs from the resident custody \`.aw\`, not from this grant home. If a message you sent shows unverified at the receiver, report it, do not retry.${e2eeBrief}${deliveryBrief} Use \`aw mail\`/\`aw chat\` for messaging (see the aweb-messaging skill); coordination stays in your deployment's task layer.`, 
       ...(launch ? { launch } : {}),
       ...(warnings.length ? { warning: warnings.join(" | ") } : {}),
     });
@@ -815,7 +823,7 @@ function retainedSeatSpawn(source, takeOver) {
       : undefined;
     const env = { ...(deliveryMode === "session" ? { AWEB_DELIVERY: "session" } : {}), AWEB_IDENTITY_HOME: dest };
     const deliveryBrief = deliveryMode === "session"
-      ? ` Notification delivery: external (AWEB_DELIVERY=session); until the host wake broker registers this instance NOTHING wakes you: check \`aw mail inbox\` and \`aw chat pending\` at every task boundary.`
+      ? ` Notification delivery: external (AWEB_DELIVERY=session): the host wake broker presents incoming mail/chat in your terminal, either as a line naming what is waiting or as the full event with body; the native aweb channel is not running. Handle what is presented. After an uncertain crash, compaction or restart, recover by reconciling STATE and task records against exact delivered ids: use \`aw mail show --message-id <id> --json\`, or page \`aw mail inbox --show-all --json\` with \`--cursor\`. Read state is not completion, and \`--conversation-id\` is not a recovery check.`
       : "";
     if (deliveryMode === "session") wakeRegister(home, dest);
     const warnings = [];
@@ -1323,7 +1331,7 @@ if (event === "launch") {
     const channelWarning = undefined;
     if (deliveryMode === "session") wakeRegister(home, join(home, ".aw"));
     const deliveryBrief = deliveryMode === "session"
-      ? ` Notification delivery: external (AWEB_DELIVERY=session): the host wake broker (aw wake) is registered for this home and nudges you when mail or chat arrives; the native aweb channel is not running. If you have waited long with nothing arriving, check \`aw mail inbox\` and \`aw chat pending\` yourself at task boundaries.`
+      ? ` Notification delivery: external (AWEB_DELIVERY=session): the host wake broker presents incoming mail/chat in your terminal, either as a line naming what is waiting or as the full event with body; the native aweb channel is not running. Handle what is presented. After an uncertain crash, compaction or restart, recover by reconciling STATE and task records against exact delivered ids: use \`aw mail show --message-id <id> --json\`, or page \`aw mail inbox --show-all --json\` with \`--cursor\`. Read state is not completion, and \`--conversation-id\` is not a recovery check.`
       : "";
     let meta = { team: joined.team_id, alias, delivery: deliveryMode, defaultTeam: { label: primary.label, team: joined.team_id, from: primary.from }, left: [], ...(process.env.OATS_RUNTIME ? { runtime: process.env.OATS_RUNTIME } : {}), identity: identityMeta({ mode: "local", alias, team: joined.team_id }) };
     for (const row of joinRows) { const result = mintJoinedTeam(row, meta); meta = result.meta; spawnMeta = meta; writeProviderTeamsState(meta); if (result.warning) warnings.push(`oats-aweb: ${result.warning}`); }

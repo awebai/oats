@@ -157,6 +157,11 @@ aw id show
 aw workspace status
 ```
 
+If TASK.md says you act through a resident session grant, run `aw whoami` only
+from the grant seat: `aw id show` and `aw id grant list/show` are custody-side
+inspection commands and run from the resident custody `.aw`, not from the grant
+home.
+
 Interpret failures by what's missing (file references assume a self-custodial CLI workspace; custodial browser/MCP identities live entirely in the hosted account):
 
 - **No `.aw/` in this directory** — there is no workspace here at all. Run `aw init` or move to a directory that has been initialized.
@@ -179,7 +184,7 @@ For team-membership-shaped failures (no team certificate, active-team mismatch, 
 
 ### "Who am I acting as?"
 
-Run `aw whoami` and `aw id show`. Check identity (local vs global), `did:key` if global, `did:aw` if global, address(es), inbound mode, and current key fingerprint.
+Run `aw whoami`; for a normal local/global workspace, also run `aw id show`. For a resident session-grant seat, do not run `aw id show` or `aw id grant list/show` from the grant home; grant inspection runs from the resident custody `.aw`. Check identity (local vs global or grant-backed), `did:key` if global, `did:aw` if global, address(es), inbound mode, and current key fingerprint where the active authority exposes them.
 
 ### "I need to be reachable across teams"
 

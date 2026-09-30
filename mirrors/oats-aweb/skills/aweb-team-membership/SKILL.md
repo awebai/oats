@@ -38,8 +38,9 @@ oats aweb leave --labels <label>[,<label>]  # leave joined wider-team labels
 - Since oats.aweb 1.15 a joined team receives **live** (`receive: native`) when
   the host wake broker holds its identity: always on session-delivery homes,
   and on Claude/Pi channel homes through aw's mixed mode (the channel keeps the
-  primary identity, the broker adds the joined ones). Codex homes, a stopped
-  wake daemon or a refused registration leave it `receive: poll`.
+  primary identity, the broker adds the joined ones). The broker may present a
+  waiting-items line or the full mail/chat event; handle what appears. Codex
+  homes, a stopped wake daemon or a refused registration leave it `receive: poll`.
 - Send as a joined team with exactly:
 
 ```bash
