@@ -140,3 +140,9 @@ test("a definition's default reaches only a host with launch-config-default: tru
   launchConfigRemote("s", { action: "set", name: "personal", definition: { harness: "claude", default: true } }, current);
   assert.deepEqual(JSON.parse(current.calls[1].options.input.toString()), { harness: "claude", default: true });
 });
+
+test("a malformed default is refused before a routed set, never dropped", () => {
+  const old = transport();
+  assert.throws(() => launchConfigRemote("s", { action: "set", name: "personal", definition: { harness: "claude", default: "true" } }, old), e => e.code === "E_LAUNCH_CONFIG_INVALID");
+  assert.equal(old.calls.length, 1, "only the version probe ran");
+});

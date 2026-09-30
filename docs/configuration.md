@@ -119,19 +119,26 @@ account directory (`CLAUDE_CONFIG_DIR`), a wrapper `executable`, an argument.
 
 - **When it applies:** a new launch that picks the harness without naming a
   configuration: a soul's `launch:`, an inline `souls.launch` preference,
-  `--harness`, and the host default (`pi`). It supplies the executable, args,
-  env and `yolo`.
+  `--harness` (on a spawn, or on `session start|restart` of an existing
+  home), `--reselect-launch`, and the host default (`pi`). It supplies the
+  executable, args, env and `yolo`. A `yolo` recorded from a default stays
+  with it: a later `--launch-config none` or another harness does not carry
+  it over.
 - **The model** comes from whatever picked the harness (`--model`, then the
   preference); the default's `model` is the last fallback, before the
   harness's own.
 - **A named configuration runs as declared**: `--launch-config <name>` or a
   `souls.launch` name never inherits from the default. `--launch-config none`
-  asks for the bare harness and bypasses it.
+  (or a `souls.launch` entry of `none`) asks for the bare harness and
+  bypasses it.
 - **One per harness.** A second `default: true` for the same harness is
   refused (`E_LAUNCH_CONFIG_INVALID`, naming both); move it by clearing the
   old one first.
 - **Existing homes keep their launch** until `--reselect-launch` or a
-  respawn, like any change of preference.
+  respawn, like any change of preference. Declaring a default is such a
+  change: `oats readiness --home` warns `launch-changed` on each existing
+  home the default would now apply to, until it is restarted with
+  `--reselect-launch` or respawned.
 - **It is visible.** `oats launch-config list` marks it; `spawn --preview`,
   `launch-config preview`, `instance.json` and `oats inspect --home` say when
   a launch's configuration came from the default (`launchConfigDefault`).

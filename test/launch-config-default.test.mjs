@@ -153,3 +153,30 @@ test("oats-claude-config is no longer read: one in reach refuses a new claude la
   v["launch-configs"] = { personal: { harness: "claude", default: true } }; writeFileSync(p, YAML.stringify(v));
   assert.equal(fx.cli(["spawn", "writer", "--preview", "--json"]).json().error?.code, "E_CLAUDE_CONFIG_REMOVED");
 });
+
+test("a recorded home: preview round-trips the default; its yolo never follows into a bare or other-harness launch; the old file does not break it", async (t) => {
+  const fx = v2Deployment({ name: "acme", souls: { dev: {}, writer: { soul: { launch: OPUS } } },
+    local: { "launch-configs": { pidef: { harness: "pi", yolo: true, default: true }, personal: { harness: "claude", default: true } } } });
+  t.after(fx.cleanup); stubbedPath(t, fx);
+  const { home } = await fx.spawn("dev", { instance: "dev-1" });
+  const meta = JSON.parse(readFileSync(join(home, "instance.json"), "utf8"));
+  assert.deepEqual([meta.harness, meta.launch.launchConfig, meta.launch.launchConfigDefault, meta.launch.yolo], ["pi", "pidef", true, true]);
+  const recorded = ok(fx.cli(["launch-config", "preview", "--home", home, "--json"]), "preview recorded");
+  assert.deepEqual([recorded.launchConfig, recorded.launchConfigDefault, recorded.yolo], ["pidef", true, true], "a plain start runs the recorded default");
+  const bare = ok(fx.cli(["launch-config", "preview", "--home", home, "--launch-config", "none", "--json"]), "preview none");
+  assert.deepEqual([bare.launchConfig, bare.launchConfigDefault, bare.yolo ?? null], [null, false, null], "the bare harness is not yolo because the default was");
+  const claude = ok(fx.cli(["launch-config", "preview", "--home", home, "--harness", "claude", "--json"]), "preview --harness claude");
+  assert.deepEqual([claude.harness, claude.launchConfig, claude.launchConfigDefault, claude.yolo ?? null], ["claude", "personal", true, null], "another harness takes its own default, not pi's yolo");
+  // A home recorded before the file was refused keeps running what it recorded.
+  const { home: wHome } = await fx.spawn("writer", { instance: "writer-1" });
+  writeFileSync(join(fx.dep, "oats-claude-config"), "claude-personal\n");
+  assert.equal(ok(fx.cli(["launch-config", "preview", "--home", wHome, "--json"]), "frozen claude").ok, true);
+});
+
+test("souls.launch naming none asks for the bare harness in listings as in a spawn", (t) => {
+  const fx = fixture({ souls: { launch: { writer: "none" } }, "launch-configs": { pidef: { harness: "pi", model: "pi-model-x", default: true } } }); t.after(fx.cleanup);
+  const souls = Object.fromEntries(ok(fx.cli(["souls", "--json"]), "souls").souls.map((s) => [s.name, s]));
+  const preview = ok(fx.cli(["spawn", "writer", "--preview", "--json"]), "preview");
+  assert.deepEqual([souls.writer.launch.effective.harness, souls.writer.launch.effective.launchConfig, souls.writer.launch.effective.model], [preview.harness, preview.launchConfig, null]);
+  assert.deepEqual([preview.harness, preview.launchConfig, preview.launchConfigDefault], ["pi", null, false]);
+});

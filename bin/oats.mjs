@@ -770,7 +770,7 @@ function launchPreview(bail) {
       // (E_LAUNCH_LEGACY: re-spawn it from the deployment).
       let d;
       try { d = describeLaunchCommand(meta.command); } catch (e) { bail(e.code || "E_LAUNCH_COMMAND_UNSUPPORTED", e.message); }
-      jsonOk({ context, selected, selection: { source: "frozen-command", launchConfig: null, harness: null, model: null, yolo: null }, harness: meta.harness, model: meta.model || null, modelSource: meta.model ? "recorded" : "native default", yolo: meta.yolo ?? null, launchConfig: null, launchConfigSource: null, executable: { path: d.executable, declared: null, resolvedFrom: "recorded" }, argv: d.argv, environment: d.environment, command: redactLaunchCommand(meta.command), prompt: { kind: "task-file", file: "TASK.md" }, hooks: null, preflight: [{ check: "recipe", ok: true, detail: "frozen command; a selection is refused (E_LAUNCH_LEGACY): re-spawn it" }], ok: true });
+      jsonOk({ context, selected, selection: { source: "frozen-command", launchConfig: null, harness: null, model: null, yolo: null }, harness: meta.harness, model: meta.model || null, modelSource: meta.model ? "recorded" : "native default", yolo: meta.yolo ?? null, launchConfig: null, launchConfigSource: null, launchConfigDefault: false, executable: { path: d.executable, declared: null, resolvedFrom: "recorded" }, argv: d.argv, environment: d.environment, command: redactLaunchCommand(meta.command), prompt: { kind: "task-file", file: "TASK.md" }, hooks: null, preflight: [{ check: "recipe", ok: true, detail: "frozen command; a selection is refused (E_LAUNCH_LEGACY): re-spawn it" }], ok: true });
       return;
     }
     const agentsRoot = agentsRootOfHome(home);
