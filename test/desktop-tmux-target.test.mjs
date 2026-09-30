@@ -300,7 +300,12 @@ test("live tmux: real wheel events through an attached pty client — installed 
     const probePty = ptyMod.spawn("true", [], { name: "xterm", cols: 10, rows: 5 });
     probePty.kill();
   }
-  catch { return t.skip("node-pty not available/built for this node ABI"); }
+  catch (error) {
+    // Say why, so a local pass is not mistaken for this test having run. A fresh `npm ci`
+    // (install scripts withheld) leaves node-pty's prebuilt spawn-helper non-executable.
+    return t.skip(`node-pty can't spawn here (${String(error?.message || error).slice(0, 120)}): not built for this node ABI, `
+      + "or its prebuilds/<platform>/spawn-helper is not executable (chmod +x it, or npm rebuild node-pty)");
+  }
   const sock = `/tmp/oatswhl-${process.pid}.sock`;
   const T = (args, out = false) => {
     const r = spawnSync("tmux", ["-S", sock, ...args], { encoding: "utf8", timeout: 5000 });
@@ -329,7 +334,9 @@ test("live tmux: real wheel events through an attached pty client — installed 
     await sleep(1200); // client attached
 
     // (1) the stale forbidden binding was cleared by the unbind-all
-    const table = T(["list-keys", "-T", "oatsdesk-locked"], true);
+    // Read every binding and keep this table's lines: tmux 3.7 lists nothing for a CUSTOM
+    // table under `list-keys -T <table>` (built-in tables still list), though its bindings exist.
+    const table = T(["list-keys"], true).split("\n").filter(line => /-T oatsdesk-locked\s/.test(line)).join("\n");
     assert.ok(!table.includes("next-window"), "stale forbidden binding cleared from the server-global table");
     assert.match(table, /WheelUpPane/, "allow-list installed");
 
