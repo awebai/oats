@@ -109,7 +109,7 @@ test('admission: a remote row the kernel does not report addressable is refused 
   assert.equal(missing.reason.message, 'dev-a is no longer on Build box. Remove it from this computer with: oats server forget build --instance dev-a');
   const other = admit(sel(), { instances: [row({ addressable: null })] });
   assert.equal(other.reason.message, 'Build box did not report this instance as reachable.');
-  assert.equal(admit(sel(), { instances: [row({ addressable: undefined, savedRoute: true })] }).code, 'E_SNAPSHOT_UNKNOWN', 'a saved route is not enough');
+  assert.equal(admit(sel(), { instances: [row({ addressable: false, savedRoute: true })] }).code, 'E_SNAPSHOT_UNKNOWN', 'a saved route does not override a 0.31 kernel\'s answer');
 });
 
 test('admission: no remote entry on this machine for the operation refuses before anything is sent', () => {
@@ -133,4 +133,14 @@ test('admission: a server/home mismatch, another group, or a local/remote crossi
   assert.equal(admit(sel(), { workspace: localWs }).code, 'E_SESSION_UNKNOWN');
   assert.equal(admit(sel(), { workspace: { ...remoteWs, server: 'other' } }).code, 'E_SESSION_UNKNOWN');
   assert.equal(admit(sel(), { localCwd: 'relative' }).code, 'E_WORKSPACE_UNKNOWN');
+});
+
+test('a local OATS before 0.31 reports no addressable fact: a saved-route row keeps working as before, and a row without one says why accurately', () => {
+  const older = remote({ addressable: undefined });
+  assert.equal(canAddressRemote({ ...older, savedRoute: true }), true, 'spawned from here: routed by its saved route, as before 0.31');
+  assert.equal(canAddressRemote({ ...older, savedRoute: false }), false);
+  assert.equal(canAddressRemote(remote({ addressable: false, savedRoute: true })), false, 'a 0.31 kernel\'s explicit answer wins over the saved route');
+  assert.equal(canAddressRemote(remote({ addressable: null, savedRoute: true })), false, 'only an absent fact falls back');
+  assert.equal(rowReason({ ...older, savedRoute: false }).sentence,
+    "This computer's OATS does not report whether Build box can reach this instance. Update OATS here.");
 });

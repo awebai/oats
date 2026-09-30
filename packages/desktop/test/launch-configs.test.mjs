@@ -210,7 +210,7 @@ test('a remote home is admitted when the kernel reports it addressable, never on
   await launchConfigRequest({ action: 'preview', selector: { home } }, { ...opts, instances: [row] });
   assert.equal(calls.at(-1).server, 'host'); assert.equal(calls.at(-1).home, home);
   for (const [unaddressable, reason] of [[{ addressable: false, missingRemotely: true }, 'dev-one is no longer on Build box. Remove it from this computer with: oats server forget host --instance dev-one'],
-    [{ addressable: undefined, savedRoute: true }, 'Build box did not report this instance as reachable.']]) {
+    [{ addressable: false, savedRoute: true }, 'Build box did not report this instance as reachable.']]) {
     await assert.rejects(launchConfigRequest({ action: 'preview', selector: { home } }, { ...opts, instances: [{ ...row, ...unaddressable }] }),
       { code: 'E_SNAPSHOT_UNKNOWN', message: reason });
   }

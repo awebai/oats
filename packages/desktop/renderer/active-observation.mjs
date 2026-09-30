@@ -19,7 +19,9 @@ export function projectActivePanel(panel) {
     for (const key of identityFields) if (raw[key] != null && (typeof raw[key] !== 'string' || raw[key].includes('\0'))) throw new Error('The roster contains an invalid instance address.');
     const instance = { instance: raw.instance, running: panel.error ? null : raw.running === true ? true : raw.running === false ? false : null,
       remote: raw.remote === true || panel.workspace?.remote === true,
-      addressable: raw.addressable === true, missingRemotely: raw.missingRemotely === true, serverUnreached: raw.serverUnreached === true,
+      // addressable stays absent when this computer's OATS (before 0.31) reports none: the saved route then decides.
+      ...(typeof raw.addressable === 'boolean' ? { addressable: raw.addressable } : {}), savedRoute: raw.savedRoute === true,
+      missingRemotely: raw.missingRemotely === true, serverUnreached: raw.serverUnreached === true,
       createdAt: eventsTimestamp(raw.createdAt) ? raw.createdAt : null };
     for (const key of [...identityFields, ...displayed, ...reported]) instance[key] = text(raw[key]);
     for (const key of ['parentInstance', 'siblingInstance']) instance[key] = typeof raw[key] === 'string' ? raw[key] : '';

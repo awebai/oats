@@ -75,7 +75,8 @@ roster --json`, projected by `server/remote-roster.mjs`); its rows carry
   and restart dialog and route, launch configurations, inspection, lifecycle
   plans and applies, readiness, activity, Git and diff, and the wait for a
   started or spawned instance's terminal. `savedRoute` (spawned from this
-  machine) is information only; nothing reads it.
+  machine) decides only when this computer's OATS predates 0.31 and reports no
+  `addressable`: a row it spawned stays reachable through its saved route.
 - **Why a row can't open.** `rowReason(row)` in the same module is the one
   source of a row's reason: a short label on the roster meta line (Herdr no
   longer supported, gone from `<server>`, not reachable on `<server>`,

@@ -2,8 +2,10 @@
  * that the host (or this machine's router) refused. Shared by the renderer and the server. */
 import { unsupportedSession } from './instance-presentation.mjs';
 
-/** A local row, or a remote row the kernel reports addressable (routed by `--server <id> --home <abs>`). */
-export const canAddressRemote = row => !!row && (!row.server || row.addressable === true);
+/** A local row, or a remote row the kernel reports addressable (routed by `--server <id> --home <abs>`).
+ * A local OATS before 0.31 reports no `addressable` at all: a row it spawned keeps its saved route. */
+export const canAddressRemote = row => !!row && (!row.server || row.addressable === true
+  || (row.addressable === undefined && row.savedRoute === true));
 
 /** The server's registration label as the roster reports it, else its id. */
 export const serverLabel = row => row?.repoName || row?.server || '';
@@ -11,8 +13,8 @@ export const serverLabel = row => row?.repoName || row?.server || '';
 /** Why a remote row is refused when the kernel does not report it addressable. */
 export function unaddressableSentence(row) {
   const label = serverLabel(row);
-  return row.missingRemotely === true
-    ? `${row.instance} is no longer on ${label}. Remove it from this computer with: oats server forget ${row.server} --instance ${row.instance}`
+  if (row.missingRemotely === true) return `${row.instance} is no longer on ${label}. Remove it from this computer with: oats server forget ${row.server} --instance ${row.instance}`;
+  return row.addressable === undefined ? `This computer's OATS does not report whether ${label} can reach this instance. Update OATS here.`
     : `${label} did not report this instance as reachable.`;
 }
 
