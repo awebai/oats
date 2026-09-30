@@ -154,6 +154,20 @@ string for this: to support older kernels, use the spaced form.
 | `E_LOCAL_MISSING` | No `oats-local.yaml` in reach of `--dir` or the working directory |
 | `E_UNSUPPORTED_MODE` | A home or selector the kernel no longer runs (below) |
 
+<a id="ssh-failures-e_ssh"></a>
+### ssh failures (`E_SSH`)
+
+A routed command (`--server`, and `oats server check`) reports ssh's own
+failure as `E_SSH`, message `ssh to <host> failed: …`:
+
+- `error.details` is `{"sshStarted": false}` when ssh never started on this
+  machine (not installed, not executable): nothing reached the host, and
+  retrying cannot help.
+- No `details`: ssh ran and the link failed (unreachable host, refused key,
+  lost connection, timeout); a retry may succeed.
+
+(0.31.0; before it `E_SSH` never carried details.)
+
 Capability dispatch inside a home uses the home's module copies; from a
 deployment it resolves the module as `oats spawn --soul <x>` would and runs it
 with the soul's merged payload. `oats <namespace> --help --json` answers

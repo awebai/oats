@@ -2905,7 +2905,7 @@ async function experimentalCmd() {
  *  an OpenSSH host alias, the remote workspace, the remote oats path. Keys
  *  and passwords never enter it; ssh owns those. */
 function serverCmd() {
-  const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
+  const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   const sub = args[1];
   const usage = "usage: oats server add <id> --ssh <host-alias> --workspace </abs/path> [--oats <path>] [--path <dir:dir>] [--label <text>] [--replace] | list | remove <id> | check <id> | roster [--server <id>] | forget <id> --instance <name>  [--json]";
   if (!["add", "list", "remove", "check", "roster", "forget"].includes(sub)) bail("E_USAGE", usage);
@@ -2987,7 +2987,7 @@ function serverCmd() {
     console.log(`${id}: ssh ${target.sshHost} ok, remote oats ${remote.version} (envelope v${remote.schemaVersion})`);
     console.log(status.envelope.ok ? `  workspace ${target.workspace}: ${agents} agent(s)` : `  workspace ${target.workspace}: ${status.envelope.error?.message || "not usable"}`);
     if (!status.envelope.ok) process.exit(1);
-  } catch (e) { bail(e.code || "E_SSH", e.message); }
+  } catch (e) { bail(e.code || "E_SSH", e.message, e.details); }
 }
 
 /** `oats <spawn|retire|status> --server <id> ...`: run the command on the
@@ -3124,7 +3124,7 @@ async function serverRouteCmd() {
     // ssh failing before the viewer (the version probe, a name resolved through the host's roster)
     // is the failure ssh has under it: exit 255, on which a caller reconnects. Every other refusal,
     // and an ssh that never started (no link can come back), exits 1.
-    catch (e) { bail(e.code || "E_BAD_ARGS", e.message, e.details, e.code === "E_SSH" && e.sshStarted !== false ? 255 : 1); }
+    catch (e) { bail(e.code || "E_BAD_ARGS", e.message, e.details, e.code === "E_SSH" && e.details?.sshStarted !== false ? 255 : 1); }
     if (args.includes("--print")) { console.log(route.argv.map(shellQuote).join(" ")); return; }
     const r = spawnSyncProc(route.argv[0], route.argv.slice(1), { stdio: "inherit" });
     // ssh exits 255 for its own failures: a link that died under the viewer

@@ -73,6 +73,11 @@ Every routed ssh call carries these options, before `--` and the host:
   (an incompatible host, an unknown or ambiguous name, bad arguments) exits 1,
   and so does an ssh that cannot be run on this machine at all: no link can
   come back.
+- Every routed command reports ssh's own failure as `E_SSH` (`ssh to <host>
+  failed: …`). When ssh never started on this machine, the `--json` envelope
+  says so with `error.details: {"sshStarted": false}`; without details, ssh
+  ran and the link failed
+  ([desktop-cli-api.md](desktop-cli-api.md#ssh-failures-e_ssh)).
 
 ## Run there
 
