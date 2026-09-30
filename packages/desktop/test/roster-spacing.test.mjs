@@ -281,3 +281,10 @@ test('a row that cannot open says why on its meta line (text, not colour), with 
   assert.equal(foreign.getAttribute('aria-disabled'), null);
   assert.equal(foreign.querySelector('.ctx-meta').textContent, 'Build box');
 });
+
+test('a row\'s tools stay visible while its actions menu is open: the menu (a top-layer popover inside them) stays clickable once the pointer leaves the row', t => {
+  // In the top layer the row is neither :hover nor :focus-within while the pointer is in the menu. Without this rule the
+  // tools (and the menu, which inherits their visibility) go hidden: the item is not hit and its action refuses to run.
+  const u = fixture(t);
+  assert.equal(u.rule('.ctx-tree-row > .ctx-row-tools:has(.ctx-instance-menu:popover-open)').visibility, 'visible');
+});

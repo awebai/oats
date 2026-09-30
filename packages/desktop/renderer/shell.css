@@ -179,6 +179,9 @@ body {
                  display: flex; align-items: center; gap: 4px; padding-left: 6px;
                  background: var(--row-solid); visibility: hidden; }
 .ctx-tree-row:is(:hover, :focus-within) > .ctx-row-tools { visibility: visible; }
+/* The actions menu is a top-layer popover inside the tools: with the pointer in it the row is neither :hover nor
+   :focus-within, so the tools stay visible while their menu is open (else the menu inherits hidden and cannot be clicked). */
+.ctx-tree-row > .ctx-row-tools:has(.ctx-instance-menu:popover-open) { visibility: visible; }
 .ctx-actions { flex: none; display: flex; }
 .ctx-instance-actions { appearance: none; width: 24px; height: 24px; display: grid; place-items: center;
   flex: none; border: 0; border-radius: 6px; padding: 0;
