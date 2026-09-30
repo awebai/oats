@@ -224,25 +224,26 @@ test('the section jump is one ws-segmented group of navigation segments (aria-cu
   assert.match(catalogCSS, /\.capability-nav\.ws-segmented \{[^}]*border:1px solid var\(--border\); border-radius:8px; background:var\(--surface\)/, 'one outer frame');
   const buttons = [...nav.querySelectorAll('button')];
   const current = () => buttons.map(b => b.getAttribute('aria-current'));
-  assert.deepEqual(buttons.map(b => [b.dataset.jump, b.getAttribute('aria-current'), b.getAttribute('aria-pressed')]), [['workspace', 'true', null], ['packages', null, null], ['repo', null, null]]);
+  assert.deepEqual(buttons.map(b => [b.dataset.jump, b.getAttribute('aria-current'), b.getAttribute('aria-pressed')]), [['workspace', 'true', null], ['repo', null, null], ['packages', null, null]], 'Repo owned before Packages');
+  assert.deepEqual(u.$$('.capability-section').map(el => el.dataset.section), ['workspace', 'repo', 'packages'], 'the sections in the nav\'s order');
   assert.match(catalogCSS, /\.capability-nav\.ws-segmented button\[aria-current\] \{ background:var\(--sel\); color:var\(--accent\); font-weight:650; \}/, 'rule 1 look on the current segment');
   assert.doesNotMatch(catalogCSS, /aria-pressed/);
-  assert.deepEqual(buttons.map(b => b.querySelector('.capability-nav-count').textContent), ['4', '2', '1'], 'the count span stays');
+  assert.deepEqual(buttons.map(b => b.querySelector('.capability-nav-count').textContent), ['4', '1', '2'], 'the count span stays');
   assert.equal(u.css(buttons[0]).borderRadius, '6px');
   assert.equal(u.css(buttons[1]).background, 'rgba(0, 0, 0, 0)'); assert.equal(u.css(buttons[1]).color, 'var(--muted)');
   assert.equal(u.css(nav).background, 'var(--surface)', 'the unpressed segment reads on the group frame');
   const pressed = u.css(buttons[0]);
   assert.equal(pressed.background, 'var(--sel)'); assert.equal(pressed.color, 'var(--accent)'); assert.equal(pressed.fontWeight, '650');
-  buttons[1].click();
-  assert.deepEqual(current(), [null, 'true', null]);
+  buttons[2].click();
+  assert.deepEqual(current(), [null, null, 'true']);
   assert.equal(u.doc.activeElement, u.$('#capability-section-packages'), 'the jump focuses the section title');
   // Scroll sync: the section whose top passed the scroller's top is the pressed one.
-  const tops = { workspace: -400, packages: -10, repo: 300 };
+  const tops = { workspace: -400, repo: -10, packages: 300 };
   for (const el of u.$$('.capability-section')) el.getBoundingClientRect = () => ({ top: tops[el.dataset.section] });
   syncCapabilityNav(u.$('.sections'), { getBoundingClientRect: () => ({ top: 0 }) });
-  assert.deepEqual(current(), [null, 'true', null]);
-  tops.repo = 10; syncCapabilityNav(u.$('.sections'), { getBoundingClientRect: () => ({ top: 0 }) });
-  assert.deepEqual(current(), [null, null, 'true']);
+  assert.deepEqual(current(), [null, 'true', null], 'Repo owned in view');
+  tops.packages = 10; syncCapabilityNav(u.$('.sections'), { getBoundingClientRect: () => ({ top: 0 }) });
+  assert.deepEqual(current(), [null, null, 'true'], 'Packages in view');
   assert.equal(u.$('[aria-pressed]'), null, 'navigation, not a toggle');
   // Repo owned: the repository heading sits between cards, and its card is a button too.
   const group = u.$('[data-section=repo] .catalog-group');

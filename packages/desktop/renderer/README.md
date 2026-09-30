@@ -159,8 +159,8 @@ handoff). Souls come from the kernel's spawn catalog (`oats souls --json` via
 page's Spawn — heads the dialog *Spawn <soul>* with where the soul comes from
 and shows the preview column (*What will be created*: name, works in, harness
 and where it came from, default team; *Core capabilities* and *Capabilities*
-from the preview's projected `modules`, each with its source, since the
-preview carries no per-module reason; a skeleton while it reads, the footer's
+from the preview's projected `modules`, each with its source and, when the
+preview reports it, its reason; a skeleton while it reads, the footer's
 refusal sentence when it fails). **Change soul** switches the same dialog to
 the **picker** (the soul chooser, grouped by source, alphabetical, externals
 last, keyed by `agentsRoot + name + server`); switching soul keeps the typed
@@ -364,6 +364,22 @@ a focused Retry kept. The spawn dialog's harness, model and launch hints (`match
 `spawn-dialog.mjs`) read only a preview for the choices on screen, like the
 name and work hints.
 
+**Core capabilities and Capabilities read as one system.** Wherever the two
+sections appear (the soul page, the inspector's *Modules as spawned*, the
+spawn preview, the context panel's Soul tab), a core slot's provider (by
+`layers.<slot>.id` or by a core `layer`) and a soul emptying a slot
+(`capabilitiesOff[]` with `reason: "slot-none"`) belong to Core only: never
+listed or counted under Capabilities (`compositionEntries`,
+`composePreviewModules`). Core's rows come from `coreEntries` in
+`capability-page.mjs`: one per slot, with the reason the kernel reports
+(`layers.<slot>.from` behind `layers-from`, the emptied slot behind
+`desktop-facts`, "No default" only with both and a soul subject; never a
+guess), in the same words everywhere (`whyTag`, `coreNote`, `whyFact` for the
+capability page's "Why" row). On the soul page both tables go through one row
+builder (`renderSoulCore` / `renderSoulCapabilities`), so the grid, source chip
+and why tag cannot drift; a filled core row is a `button` with
+`data-focus-key="core:<slot>"`.
+
 The terminal-side context panel's Soul tab (`instance-soul.mjs`) and its
 Messaging section (`instance-teams.mjs`): the roster-derived header is the
 context panel's and stays put; each section owns a body under it
@@ -464,7 +480,8 @@ workspace is observed through its server and never synced from here.
   the held table via `POST /api/workspace-sync?ws=<id>` `{action:"read"}`
   when it opens (`refresh: true` forces a live read; after a sync the table
   is re-read). A
-  segmented jump (Workspace owned / Packages / Repo owned; navigation, so the
+  segmented jump (Workspace owned / Repo owned, when the CLI lists it / Packages,
+  the sections in the same order; navigation, so the
   section in view carries `aria-current`), then one 58px row
   card per capability (design board 4): a tile tinted by kind (Knowledge,
   Messaging, Tasks, other, package), the name with its kind chip over a

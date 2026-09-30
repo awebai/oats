@@ -6,7 +6,7 @@
 import { createSoulInspector, inspectorCSS } from "../soul-inspector.mjs";
 import { createWorkspaceDiscovery, discoveryCSS, workspaceTabs } from "../workspace-discovery.mjs";
 import { capabilityRow } from "../workspace-catalog.mjs";
-import { renderCapabilityPage, renderSoulCapabilities, capabilityPageCSS, pageCardCSS, soulCapabilitiesCSS, desktopFacts, catalogNotice, catalogNoticeKind, updateCatalogNotice } from "../capability-page.mjs";
+import { renderCapabilityPage, renderSoulCapabilities, renderSoulCore, capabilityPageCSS, pageCardCSS, soulCapabilitiesCSS, desktopFacts, catalogNotice, catalogNoticeKind, updateCatalogNotice } from "../capability-page.mjs";
 import { runtimeState } from "../instance-presentation.mjs";
 import { deploymentUnavailableText } from "../deployment-header.mjs";
 import { createSpawnDialog, spawnDialogCSS } from "../spawn-dialog.mjs";
@@ -263,12 +263,13 @@ function showPage(s, mode) {
   s.q("souls-notice").hidden = !!mode || !souls; // the grid's stale line belongs to the grid
   s.q("workspace-discovery").hidden = !!mode || souls;
 }
-/** A capability's page, from the Capabilities table (from = null) or a soul page (from = the soul). */
-function openCapability(s, row, from = null) {
+/** A capability's page, from the Capabilities table (from = null) or a soul page (from = the soul; `why`:
+ * the soul page's entry for it, which the page's "Why" row says). */
+function openCapability(s, row, from = null, why = null) {
   if (!s.alive) return;
   // The list is hidden (display:none) while the page is open, which drops its scroll offset: keep it for Back.
   const list = s.q("workspace-discovery");
-  s.capOpen = { row, from, gen: workspaceGeneration(), scrollTop: from ? null : list?.scrollTop ?? null, signature: null };
+  s.capOpen = { row, from, why: from ? why : null, gen: workspaceGeneration(), scrollTop: from ? null : list?.scrollTop ?? null, signature: null };
   paintCapabilityPage(s);
   showPage(s, "capability");
   s.q("workspace-cap-page").querySelector(".page-back")?.focus({ preventScroll: true });
@@ -278,7 +279,7 @@ function openCapability(s, row, from = null) {
  * when the catalog refreshes while the page is open, the page follows, in place (focus kept by key). */
 function paintCapabilityPage(s) {
   const open = s.capOpen; if (!open) return;
-  const { row, from } = open;
+  const { row, from, why } = open;
   const { catalog, catalogState, catalogSettled, catalogBusy, catalogObservedAt, catalogFailure, ...context } = s.discovery.context();
   // From a soul page, the catalog's row for the same capability adds what the kernel reports
   // about it in the workspace (#217: description, what it provides, its file and fingerprint).
@@ -294,7 +295,7 @@ function paintCapabilityPage(s) {
     const restore = captureFocusState(host, { fallback: () => host.querySelector(".page-back") });
     renderCapabilityPage(host, { row: facts ? { ...facts, ...row } : row, ...context, catalogPending,
       openExternal: url => s.ctx.openExternal?.(url),
-      backLabel: from ? from.name : "Capabilities", from: from ? { label: from.name } : null,
+      backLabel: from ? from.name : "Capabilities", from: from ? { label: from.name, why } : null,
       onBack: () => closeCapability(s, { restoreFocus: true }),
       openSoul: target => {
         const matches = s.souls.agents.filter(a => a.name === target.name && a.agentsRoot === target.agentsRoot);
@@ -430,8 +431,10 @@ ${spawnDialogCSS}</style>
     openInstance: instance => s.inspector.show({ instance, selector: { home: instance.home } }),
     // A soul's capabilities: the Capabilities view's own table; a row opens the capability's page.
     capabilityTable: (host, entries, { soul }) => renderSoulCapabilities(host, { entries, ...s.discovery.context(),
-      onOpen: row => openCapability(s, row, soul) }),
-    openCapability: (cap, soul) => openCapability(s, capabilityRow(cap), soul),
+      onOpen: (row, entry) => openCapability(s, row, soul, entry) }),
+    // Its core capabilities: the same row grammar and source chips; a filled row opens as a table row does.
+    coreTable: (host, entries, { onOpen }) => renderSoulCore(host, { entries, ...s.discovery.context(), onOpen }),
+    openCapability: (cap, soul, entry) => openCapability(s, capabilityRow(cap), soul, entry),
     closed: ({ restoreFocus } = {}) => {
       const ref = s.inspectRef; s.inspectRef = null;
       if (!s.alive) return;

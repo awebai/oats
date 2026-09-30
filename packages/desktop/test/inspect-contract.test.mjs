@@ -7,6 +7,7 @@ import { discover } from '../cli-locator.mjs';
 import { inspectData, inspectSupported, inspectFacts, originText } from '../renderer/inspect-contract.mjs';
 import { JSDOM } from 'jsdom';
 import { createSoulInspector } from '../renderer/soul-inspector.mjs';
+import { coreEntries } from '../renderer/capability-page.mjs';
 import { setWorkspace, currentWorkspace } from '../renderer/views/common.mjs';
 
 const doc = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/f3b2/${name}.json`, import.meta.url), 'utf8'));
@@ -47,7 +48,7 @@ test("facts are the kernel's records: a module's origin is its from (member comm
   assert.equal(originText(okf.from), `package oats.okf ${okf.from.version} @ ${okf.from.commit.slice(0, 7)}`);
   assert.equal(originText(house.from), `member agents @ ${house.from.commit.slice(0, 7)}`);
   assert.deepEqual(Object.fromEntries(inspectFacts.capability(okf)), { Version: okf.version, Layer: 'knowledge', Origin: originText(okf.from), 'Missing requirements': 'None' });
-  assert.deepEqual(Object.fromEntries(inspectFacts.layers(soul.layers)), { Knowledge: 'oats.okf', Messaging: 'None', Tasks: 'None' });
+  assert.deepEqual(coreEntries(soul).map(e => [e.slot, e.id, e.cap?.id ?? null]), [['knowledge', 'oats.okf', 'oats.okf'], ['messaging', null, null], ['tasks', null, null]]);
   assert.equal(Object.fromEntries(inspectFacts.instance(home.instance)).Resolution, home.instance.resolution.slice(0, 12));
   // Removed classic fields are not read (and not present).
   for (const key of ['scope', 'selected', 'currentConfig', 'snapshot', 'sources']) assert.equal(Object.hasOwn(soul, key), false, key);
@@ -67,7 +68,8 @@ test('the inspector renders a soul and a home from the capture, read-only, with 
   const s = await rendered(t, { ...soulSelection, selector: { soul: 'release-manager', agentsRoot: soulSelection.agent.agentsRoot } }, v);
   const text = s.textContent;
   assert.match(text, /Harness/); assert.match(text, /No default harness: you choose one when you launch it\./); assert.doesNotMatch(text, /When spawned|Source|readiness/i);
-  assert.match(text, /Capabilities · 5/); assert.match(text, /package oats\.okf 2\.1\.3 @ [0-9a-f]{7}/);
+  // oats.okf fills the knowledge slot: the Core capabilities card's, never listed again under Capabilities.
+  assert.match(text, /Capabilities · 4/); assert.match(text, /package nw\.tools 0\.4\.0 @ [0-9a-f]{7}/); assert.doesNotMatch(text, /package oats\.okf/);
   const problem = s.querySelector('.inspector-problem');
   assert.equal(problem.querySelector('p').textContent, 'The kernel could not read one declaration.');
   assert.equal(problem.querySelector('details summary').textContent, 'Details'); assert.equal(problem.querySelector('details p').textContent, 'E_EXAMPLE_PROBLEM');

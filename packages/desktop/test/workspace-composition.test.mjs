@@ -325,13 +325,17 @@ test('v4.1: a row shows one line of its description and the page the whole of it
 });
 
 // Replaces the F7 test that pinned the Capabilities view's table on the soul
-// page: Workspace v4 (W4) shows core capabilities as cards and the rest as a
-// composition table (Capability | Source | Why it's here).
-test('W4: a soul page shows its core capabilities as cards and the rest with why each is there; a row opens the capability as the soul resolves it, back returns to the soul', async t => {
+// page: Workspace v4 (W4) shows core capabilities and the rest as two tables of
+// one grammar (Core capability / Capability | Source | Why it's here).
+test('W4: a soul page shows its core capabilities and the rest in one row grammar with why each is there; a row opens the capability as the soul resolves it, back returns to the soul', async t => {
   const u = await fixture(t, { cli: V2_CLI, sync: () => catalogReply() });
   u.get('.soul-card').click(); await tick(); await tick();
   const soulPage = u.get('.workspace-soul-page');
-  assert.deepEqual([...soulPage.querySelectorAll('.core-card')].map(c => c.dataset.layer), ['knowledge', 'messaging', 'tasks'], 'one card per core slot');
+  const coreTable = soulPage.querySelector('.inspector-core-table .soul-caps.soul-core');
+  assert.ok(coreTable, 'the Core capabilities table, in the composition table\'s grid');
+  assert.deepEqual([...coreTable.querySelectorAll('.soul-cap-row:not(.head)')].map(c => c.dataset.layer), ['knowledge', 'messaging', 'tasks'], 'one row per core slot');
+  assert.equal(soulPage.querySelector('.core-card'), null, 'no cards');
+  assert.ok(coreTable.querySelector('.soul-cap-row[data-layer="knowledge"] .source-chip.boxed'), 'the same source chip');
   const coreIds = new Set(Object.values(inspection.layers).map(l => l?.id).filter(Boolean));
   const table = soulPage.querySelector('.inspector-capability-table .soul-caps');
   assert.ok(table, 'the composition table');
@@ -352,6 +356,38 @@ test('W4: a soul page shows its core capabilities as cards and the rest with why
   key(u, u.doc.activeElement, 'Escape');
   assert.equal(cap.hidden, true); assert.equal(soulPage.hidden, false, 'back to the soul\'s page');
   assert.equal(u.doc.activeElement.dataset.capability, first);
+});
+
+// Spec A: with layers-from and desktop-facts the soul page's Core rows say why, and the capability page
+// opened from either table repeats it in its "As <soul> resolves it" card; focus comes back to the row.
+test('a core row and a capability row open their page with the soul page\'s reason as a "Why" row', async t => {
+  const facts = structuredClone(inspection);
+  facts.layers = { knowledge: { id: 'oats.okf', from: 'workspace' }, messaging: { id: null, from: null }, tasks: { id: null, from: null } };
+  for (const cap of facts.capabilities) cap.composedFrom = cap.id === 'nw-release-tooling' ? 'soul' : 'workspace';
+  facts.capabilitiesOff = [{ id: 'oats.aweb', off: true, from: 'soul', reason: 'slot-none', slot: 'messaging', overrides: 'workspace' }];
+  const u = await fixture(t, { cli: { ...V2_CLI, features: [...V2_CLI.features, 'layers-from', 'desktop-facts'] }, inspect: () => facts, sync: () => catalogReply() });
+  u.get('.soul-card').click(); await tick(); await tick();
+  const soulPage = u.get('.workspace-soul-page');
+  const knowledge = soulPage.querySelector('.soul-core .soul-cap-row[data-layer="knowledge"]');
+  assert.equal(knowledge.querySelector('.why-tag').textContent, 'workspace');
+  assert.equal(knowledge.querySelector('.soul-cap-why-note').textContent, "Resolves the workspace default: this soul doesn't choose a knowledge capability");
+  const messaging = soulPage.querySelector('.soul-core .soul-cap-row[data-layer="messaging"]');
+  assert.equal(messaging.querySelector('.soul-cap-id').textContent, 'None'); assert.equal(messaging.querySelector('.soul-cap-why-note').textContent, 'This soul empties the messaging slot; the workspace default is oats.aweb');
+  assert.equal(messaging.querySelector('.why-note').textContent, 'turned off by soul');
+  assert.equal(soulPage.querySelector('.soul-core .soul-cap-row[data-layer="tasks"] .why-note').textContent, 'No default');
+  const caps = soulPage.querySelector('.inspector-capability-table .soul-caps');
+  assert.equal(caps.querySelector('[data-capability="oats.aweb"]'), null, 'the emptied slot is not a Capabilities row');
+  const why = () => { const row = u.get('.workspace-cap-page [data-fact="why"]'); return row && [row.querySelector('.page-why-label').textContent, row.querySelector('.page-why-note').textContent]; };
+  knowledge.focus(); knowledge.click();
+  assert.equal(u.get('.workspace-cap-page').hidden, false);
+  assert.deepEqual(why(), ['Workspace default · knowledge', "dev doesn't choose a knowledge capability; it resolves the workspace's default."]);
+  key(u, u.doc.activeElement, 'Escape');
+  assert.equal(u.doc.activeElement.dataset.focusKey, 'core:knowledge', 'back to the core row');
+  caps.querySelector('[data-capability="nw-release-tooling"]').click();
+  assert.deepEqual(why(), ['Declared by the soul', 'dev declares it.']);
+  key(u, u.doc.activeElement, 'Escape');
+  caps.querySelector('[data-capability="nw-house-style"]').click();
+  assert.deepEqual(why(), ['Workspace default', "dev doesn't declare it; it resolves the workspace's default."]);
 });
 
 test('F7: capabilityRow maps an inspected capability onto the catalog row shape (reported facts only)', () => {

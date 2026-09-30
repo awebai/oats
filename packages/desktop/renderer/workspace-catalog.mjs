@@ -373,8 +373,8 @@ export function lockNotes(status) {
 }
 
 /** The Capabilities tab: the section jump, then Workspace owned (with its team/repo
- * filters), Packages and, when the kernel lists them (feature
- * capabilities-private), Repo owned grouped by repository. `filterHost` is the
+ * filters), Repo owned grouped by repository when the kernel lists it (feature
+ * capabilities-private), then Packages. `filterHost` is the
  * discovery's persistent filter row; `query` narrows every section by name.
  * `navHost`, when given, takes the section jump (the view's toolbar row). */
 export function renderCapabilitySections(host, { sections, shown, filterHost, navHost = null, privateListed, status, instances, root, onOpen = null, query = '', rosterState = 'ready' }) {
@@ -385,10 +385,11 @@ export function renderCapabilitySections(host, { sections, shown, filterHost, na
   const table = (parent, rows, opts) => { const box = node(doc, 'div'); parent.append(box); renderCapabilities(box, { rows, status, instances, root, onOpen, rosterState, ...opts }); };
   // Nothing at all: one factual line, not three empty sections.
   if (!sections.workspace.length && !sections.packages.length && !sections.repo.length) { table(host, [], {}); return; }
+  // Workspace owned → Repo owned (when listed) → Packages: the nav segments and the sections, in one order.
   const defs = [
     { id: 'workspace', title: 'Workspace owned', lead: 'latest from member repos', count: sections.workspace.length },
-    { id: 'packages', title: 'Packages', lead: 'pinned versions, same everywhere', count: sections.packages.length },
     ...(privateListed ? [{ id: 'repo', title: 'Repo owned', lead: 'only for souls of the same repo', count: sections.repo.length }] : []),
+    { id: 'packages', title: 'Packages', lead: 'pinned versions, same everywhere', count: sections.packages.length },
   ];
   // One segmented group (rule 1 look): the base class is the shell's; the segments are navigation, so
   // aria-current (not aria-pressed) marks the section in view.
@@ -413,17 +414,21 @@ export function renderCapabilitySections(host, { sections, shown, filterHost, na
     const row = node(doc, 'div', null, 'capability-section-head'); row.append(head);
     el.setAttribute('aria-labelledby', head.id); el.append(row); host.append(el); return el;
   };
-  const owned = section(defs[0]);
-  if (filterHost) owned.querySelector('.capability-section-head').append(filterHost);
-  table(owned, match(shown), { total: sections.workspace.length, label: 'Workspace owned capabilities', empty: 'No workspace repository offers a capability yet.' });
-  table(section(defs[1]), match(sections.packages), { label: 'Package capabilities', empty: 'No package capability is locked yet. Sync to lock the declared packages.' });
-  if (!privateListed) return;
-  const repo = section(defs[2]);
-  if (!sections.repo.length) { repo.append(node(doc, 'p', 'No repository keeps a private capability.', 'catalog-empty capability-none')); return; }
-  const byRepo = new Map();
-  for (const row of match(sections.repo)) { const source = capabilitySource(row, names); if (!byRepo.has(source.key)) byRepo.set(source.key, { key: source.key, label: source.label, rows: [] }); byRepo.get(source.key).rows.push(row); }
-  const groups = [...byRepo.values()].sort((a, b) => a.label.localeCompare(b.label));
-  table(repo, groups.flatMap(g => g.rows), { groups, label: 'Repo owned capabilities', total: sections.repo.length });
+  const render = {
+    workspace: owned => {
+      if (filterHost) owned.querySelector('.capability-section-head').append(filterHost);
+      table(owned, match(shown), { total: sections.workspace.length, label: 'Workspace owned capabilities', empty: 'No workspace repository offers a capability yet.' });
+    },
+    repo: repo => {
+      if (!sections.repo.length) { repo.append(node(doc, 'p', 'No repository keeps a private capability.', 'catalog-empty capability-none')); return; }
+      const byRepo = new Map();
+      for (const row of match(sections.repo)) { const source = capabilitySource(row, names); if (!byRepo.has(source.key)) byRepo.set(source.key, { key: source.key, label: source.label, rows: [] }); byRepo.get(source.key).rows.push(row); }
+      const groups = [...byRepo.values()].sort((a, b) => a.label.localeCompare(b.label));
+      table(repo, groups.flatMap(g => g.rows), { groups, label: 'Repo owned capabilities', total: sections.repo.length });
+    },
+    packages: packages => table(packages, match(sections.packages), { label: 'Package capabilities', empty: 'No package capability is locked yet. Sync to lock the declared packages.' }),
+  };
+  for (const def of defs) render[def.id](section(def));
 }
 
 /** The jump segment for the section at the top of the scroller (called on scroll). The top is the

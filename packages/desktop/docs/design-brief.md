@@ -106,7 +106,7 @@ workspace defaults  →  the soul's own list
 - Teams play no part: a soul gets the same capabilities for every person and machine.
 - The result is an exact, fingerprinted **resolution**. Preview shows it before anything is created; if something changed between preview and spawn, OATS refuses and asks you to preview again.
 
-**Design implication:** for any soul, the Desktop can show a **composition view**: each capability, and **why it's there** (a workspace default or the soul's own choice). The kernel reports this per core capability as `from: soul | workspace`.
+**Design implication:** for any soul, the Desktop can show a **composition view**: each capability, and **why it's there** (a workspace default or the soul's own choice). The kernel reports this per core capability as `from: soul | workspace`, per other capability as `composedFrom`, and lists what the soul turned off, including a core slot it emptied with `none`. The Desktop shows the composition as two sections of one system: **Core capabilities** (always the three slots, see §5) above **Capabilities** (everything else), in the same row grammar (the capability, its source, why it's there). A core provider, or a slot the soul emptied, appears only under Core, never again under Capabilities.
 
 ---
 
@@ -121,6 +121,8 @@ Most capabilities are unlimited and additive (a soul can have any number). Three
 | **Tasks** | a tracker for assignment, status, blockers (Jira, Linear) | `oats.jira`, `oats.linear` | yes |
 
 **Why slots:** an agent should have exactly one memory, one address book and one task list, not two competing ones. Everything else is additive.
+
+Each core row says why the slot holds what it holds: the workspace default ("this soul doesn't choose a messaging capability"), the soul's own choice, **None** because the soul emptied it ("this soul empties the knowledge slot; the workspace default is oats.okf"), or **None** with no default at all. Every reason is visible text in the row, not only a tooltip. Only what the kernel reports is said; an older kernel's row carries no reason.
 
 Plus one **default capability** almost every soul has: **`oats.core`**, which teaches the agent how to operate inside OATS (see its teammates, spawn helpers, retire). It's a workspace default and can be turned off per soul.
 

@@ -96,7 +96,7 @@ test('any other value, or none, is dropped without refusing the row: the preview
   assert.equal((await proxied(extra)).reason.code, 'E_CLI_PROTOCOL');
 });
 
-test('the dialog tags each Capabilities row with why it is there, beside its source; no tag when the preview does not say', async () => {
+test('the dialog tags each row with why it is there, beside its source, in Core and Capabilities alike; no tag when the preview does not say', async () => {
   const dom = new JSDOM('<body></body>'), doc = dom.window.document;
   const { response } = await read();
   const { core, caps } = composePreviewModules(doc, response.data.modules);
@@ -105,25 +105,27 @@ test('the dialog tags each Capabilities row with why it is there, beside its sou
     [['mono', 'acme-tool'], ['spawn-cap-source', 'ws · latest'], ['spawn-cap-why', 'Soul']],
     [['mono', 'acme.own'], ['spawn-cap-source', 'ws · latest'], ['spawn-cap-why', 'Soul']],
     [['mono', 'acme.ws'], ['spawn-cap-source', 'ws · latest'], ['spawn-cap-why', 'Workspace default']],
-    [['mono', 'chat'], ['spawn-cap-source', 'ws · latest'], ['spawn-cap-why', 'Workspace default · messaging']],
-  ]);
+  ], 'chat fills the messaging slot: Core\'s only');
+  assert.equal(caps[0].textContent, 'Capabilities · 3');
   // The reason is part of the row's accessible text: plain text, never hidden from assistive technology.
   for (const row of rows) { assert.equal(row.querySelector('[aria-hidden]'), null); assert.ok(row.textContent.endsWith(row.querySelector('.spawn-cap-why').textContent)); }
-  // The Core capabilities table is unchanged: no reason there.
-  assert.deepEqual([...core[1].querySelectorAll('.spawn-core-row')].map(row => row.textContent), ['KnowledgeNone', 'Messagingchat', 'TasksNone']);
-  assert.equal(core[1].querySelector('.spawn-cap-why'), null);
+  // A core row: the same chips, its reason without the slot (the row already names it).
+  assert.deepEqual([...core[1].querySelectorAll('.spawn-core-row')].map(row => [...row.children].map(c => [c.className, c.textContent])), [
+    [['spawn-core-layer', 'Knowledge'], ['muted', 'None']],
+    [['spawn-core-layer', 'Messaging'], ['mono', 'chat'], ['spawn-cap-source', 'ws · latest'], ['spawn-cap-why', 'Workspace default']],
+    [['spawn-core-layer', 'Tasks'], ['muted', 'None']]]);
   // An older CLI (or a dropped value): the rows carry no composedFrom, and no tag is guessed.
   const older = composePreviewModules(doc, (await read(kernel(), WITHOUT)).response.data.modules);
-  assert.equal(older.caps[1].querySelectorAll('.spawn-cap-row').length, 4); assert.equal(older.caps[1].querySelector('.spawn-cap-why'), null);
+  assert.equal(older.caps[1].querySelectorAll('.spawn-cap-row').length, 3); assert.equal(older.caps[1].querySelector('.spawn-cap-why'), null);
+  assert.equal(older.core[1].querySelector('.spawn-cap-why'), null);
   dom.window.close();
 });
 
-test('moduleWhyText: Soul; Workspace default, naming the core slot it fills; nothing otherwise', () => {
+test('moduleWhyText: Soul; Workspace default (a core row names its own slot); nothing otherwise', () => {
   assert.equal(moduleWhyText({ composedFrom: 'soul', layer: null }), 'Soul');
   assert.equal(moduleWhyText({ composedFrom: 'soul', layer: 'messaging' }), 'Soul');
   assert.equal(moduleWhyText({ composedFrom: 'workspace', layer: null }), 'Workspace default');
-  for (const layer of ['knowledge', 'messaging', 'tasks']) assert.equal(moduleWhyText({ composedFrom: 'workspace', layer }), `Workspace default · ${layer}`);
-  assert.equal(moduleWhyText({ composedFrom: 'workspace', layer: 'tools' }), 'Workspace default', 'only a core slot is named');
+  for (const layer of ['knowledge', 'messaging', 'tasks', 'tools']) assert.equal(moduleWhyText({ composedFrom: 'workspace', layer }), 'Workspace default');
   for (const m of [{}, { composedFrom: 'team:eng' }, { composedFrom: null }, null, undefined]) assert.equal(moduleWhyText(m), '');
 });
 
@@ -134,8 +136,9 @@ test('the reason tag reuses the source chip\'s muted tag pair (--muted on --tag-
   assert.equal(spawnDialogCSS.match(/\.spawn-cap-why/g).length, 1, 'no rule, colour or opacity of its own');
   // A long name beside a package source and a reason: the tags wrap to a right-aligned line of their own
   // instead of squeezing the name to one character per line (seen in a 360px column, fixed here).
-  assert.match(spawnDialogCSS, /\.spawn-cap-row \{ display:flex; flex-wrap:wrap; justify-content:flex-end;/);
-  assert.match(spawnDialogCSS, /\.spawn-cap-row \.mono \{ flex:1 1 auto; min-width:0; overflow-wrap:anywhere; \}/);
+  // Core rows share the rule: one row grammar for both boxes.
+  assert.match(spawnDialogCSS, /\.spawn-core-row, \.spawn-cap-row \{ display:flex; flex-wrap:wrap; justify-content:flex-end;/);
+  assert.match(spawnDialogCSS, /\.spawn-core-row \.mono, \.spawn-cap-row \.mono, [^{]*\{ flex:1 1 auto; min-width:0; overflow-wrap:anywhere; \}/);
   const contrast = readFileSync(new URL('./theme-contrast.test.mjs', import.meta.url), 'utf8');
   assert.match(contrast, /\["fg", "muted"\]\.map\(\(fg\) => \[fg, "tag-bg"\]\)/, 'muted on tag-bg is in the computed contrast inventory');
 });

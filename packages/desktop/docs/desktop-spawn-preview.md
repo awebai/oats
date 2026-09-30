@@ -148,14 +148,18 @@ still projects. It is optional in the projection's exact key list, so the proxy
 and the renderer re-validate it the same way. It is provenance only and never
 enters the decision the apply binds.
 
-The dialog's Capabilities list shows each module's source chip and, beside it, a
-reason tag in the same muted tag pair (`--muted` on `--tag-bg`, one CSS rule):
-**Soul**, **Workspace default**, or for a workspace default filling a core slot
-(`layer` knowledge, messaging or tasks) **Workspace default · messaging**. The tag
-is plain text in the row, part of its accessible text. No `composedFrom`, no tag:
-the Desktop never guesses a reason from the soul. The Core capabilities table
-shows no reason. `test/fixtures/composed-from` is the real kernel's preview for
-a soul with both origins (`capture-composed-from.mjs`).
+The dialog's Core capabilities and Capabilities are two bordered boxes of one
+row grammar: the module in mono, its source chip and, beside it, a reason tag in
+the same muted tag pair (`--muted` on `--tag-bg`, one CSS rule): **Soul** or
+**Workspace default**. A core row leads with its slot (Knowledge, Messaging,
+Tasks), so its reason never repeats it; an empty slot reads **None**, with no
+chips (the preview does not project `capabilitiesOff`, so it cannot say whether
+the soul emptied it). A module filling a core slot (`layer` knowledge,
+messaging or tasks) is Core's only: never in the Capabilities list or its
+count. The tag is plain text in the row, part of its accessible text. No
+`composedFrom`, no tag: the Desktop never guesses a reason from the soul.
+`test/fixtures/composed-from` is the real kernel's preview for a soul with both
+origins (`capture-composed-from.mjs`).
 
 `capabilities[]`, skills, settings, providers, task, environment, executable
 recipes and unknown trees are not exposed. Missing/mismatched data is not empty success.
