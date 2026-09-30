@@ -14,7 +14,7 @@ test('the remote messages name the server; every other message is the static one
   assert.equal(terminalMessage('E_TERM_REMOTE_UNREACHABLE', 'build box'), "Couldn't reach build box.");
   assert.equal(terminalMessage('E_TERM_REMOTE_GONE', 'build box'), 'The session is no longer running on build box.');
   assert.equal(terminalMessage('E_TERM_REMOTE_NO_ANSWER', 'build box'), 'OATS on this computer gave no answer while connecting to build box.');
-  assert.equal(terminalMessage('E_TERM_REMOTE_NO_SSH', 'build box'), "ssh isn't available on this computer, so build box can't be reached. Install OpenSSH, then open the terminal again.");
+  assert.equal(terminalMessage('E_TERM_REMOTE_NO_SSH', 'build box'), "ssh isn't available on this computer, so build box can't be reached. Install OpenSSH on this computer.");
   assert.equal(terminalMessage('E_TERM_CAP', 'build box'), terminalFailure('E_TERM_CAP').message);
   assert.equal(terminalMessage('E_TERM_REMOTE_UNREACHABLE'), terminalFailure('E_TERM_REMOTE_UNREACHABLE').message);
 });
