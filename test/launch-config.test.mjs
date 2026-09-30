@@ -64,7 +64,7 @@ test("launch-config set/list/remove rewrite only the launch-configs block, round
   let r = oats(["launch-config", "set", "fast", "--file", join(base, "fast.json"), "--dir", scope]);
   assert.equal(r.json.ok, true, r.stdout);
   assert.equal(r.json.result.before, null);
-  assert.deepEqual(r.json.result.after, { harness: "claude", executable: "./bin/claude wrapper.sh", args: ["--flag", HOSTILE], env: { FOO: { redacted: true }, KEY: { fromEnv: "SRC" } }, model: "claude-opus-5", yolo: null === undefined ? null : false });
+  assert.deepEqual(r.json.result.after, { harness: "claude", executable: "./bin/claude wrapper.sh", args: ["--flag", HOSTILE], env: { FOO: { redacted: true }, KEY: { fromEnv: "SRC" } }, model: "claude-opus-5", yolo: null === undefined ? null : false, default: false });
   assert.equal(r.json.result.effective.source, scope);
   const text = readFileSync(join(scope, "oats-local.yaml"), "utf8");
   assert.ok(text.startsWith(original.trimEnd() + "\n"), "every original byte is still there, in place");

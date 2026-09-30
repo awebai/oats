@@ -95,8 +95,12 @@ here | package | <repo key> }` or `off`), slot payloads `knowledge:`,
 slot) and `compatibility` (floors on package versions). Beside it:
 `AGENTS.md`, `CLAUDE.md → AGENTS.md`, `skills/`, and what the slot providers
 read (`okf.json` for `oats.okf`). Harness, model and yolo are spawn flags or a
-launch configuration, never soul fields. `private:` on a soul is ignored. A
-`team` is refused since 0.30 (`oats soul teams` on each deployment).
+launch configuration, never soul fields. A soul may state only a preference
+(`launch: {harness, model?}`); how this machine starts a harness (executable,
+args, env, yolo) is a host launch configuration, and `default: true` on one
+makes it the machine's baseline for its harness (0.32). `private:` on a soul
+is ignored. A `team` is refused since 0.30 (`oats soul teams` on each
+deployment).
 
 ## Provider payloads: three homes
 
@@ -142,6 +146,8 @@ reports this deployment's local file and lock.
 | `E_TEAM_IN_USE`, `E_TEAM_SHARED`, `E_TEAM_EXISTS` | `oats teams remove`/`add` refused: still referenced, shared (edit by PR), or already declared | see `/oats-teams` |
 | `E_HARNESS_UNAVAILABLE` | the harness a launch preference (or flag) chose is not installed here; `details.from`/`at` name the layer | install it, or override it on this machine in `oats-local.yaml` `souls.launch` |
 | `E_LAUNCH_CONFIG_UNKNOWN` | `souls.launch` names a launch configuration this `oats-local.yaml` lacks | declare it (`oats launch-config set`), or change `souls.launch` |
+| `E_LAUNCH_CONFIG_INVALID` | a launch configuration is malformed, or two are `default: true` for one harness (`details.configurations` names both) | fix the entry; keep one default per harness (clear the old one first) |
+| `E_CLAUDE_CONFIG_REMOVED` | an `oats-claude-config` file is in reach of a new claude launch; 0.32 no longer reads it | declare its name as the claude default (`executable: <name>`, `default: true`), then delete the file |
 | `E_SLOT_CONFLICT` | two capabilities fill one slot, a slot default of the wrong layer, or `none` beside the soul's own capability of that layer | keep one per slot |
 | `E_CAPABILITY_MISSING` | a capability is not where `from:` says, or `--provider` names one the soul does not resolve | `oats capabilities`; correct the `from:` or pin the package |
 | `E_CAPABILITY_PRIVATE` | a repo-owned capability used by another repo's soul | use it only from its own repo, or ask its owners to share it |

@@ -81,6 +81,24 @@ lesson "the installed provider is the authority for a setting".
   is one — use `/private/tmp`). A soul whose knowledge slot is `oats.okf`
   does not spawn until these exist — set them before spawning any soul, the
   operator expert included.
+- **How this machine starts each harness.** Ask whether every instance of a
+  harness here needs something the harness alone does not give: an account
+  directory (Claude Code's `CLAUDE_CONFIG_DIR`, for a second account), a
+  wrapper executable, an argument. If so, declare it once as that harness's
+  default launch configuration (kernel 0.32+), not per soul:
+  ```bash
+  echo '{"harness":"claude","env":{"CLAUDE_CONFIG_DIR":"/abs/.claude-personal"},"default":true}' > /tmp/mine.json
+  oats launch-config set mine --file /tmp/mine.json --dir <deployment-dir>
+  oats launch-config list --dir <deployment-dir>   # "mine: claude (this machine's claude default) …"
+  ```
+  Every new claude launch that names no configuration then runs it, whatever
+  soul or preference chose claude; the model still comes from the soul. A
+  shell alias (`claude-personal`) is not an executable: use `env`, or point
+  `executable` at a real wrapper script. Do not rely on the terminal
+  multiplexer's environment for it: a tmux server started elsewhere loses it.
+  An old `oats-claude-config` file is refused from 0.32: move its name into
+  the default (`executable`) and delete it. Every kernel reading this
+  deployment must be 0.32+ once a `default` is declared.
 - **Messaging** is set up in its own step, after sync (step 6).
 - A fact true of **one spawn** (a retained messaging seat) is not a host
   setting: it is `oats spawn <soul> --provider <cap> key=value`.
@@ -150,7 +168,8 @@ Positive enumeration, in order — absence of errors proves nothing
 ```bash
 oats workspace status --dir <deployment-dir>   # every member confirmed, every package locked
 oats souls --dir <deployment-dir>              # every expected soul, with origin, teams and default team
-oats spawn <soul> --preview                    # modules at locked commits; merged settings show the host values
+oats spawn <soul> --preview                    # modules at locked commits; merged settings show the host values;
+                                               # "via launch configuration <name> (this machine's <harness> default)" when one applies
 ```
 
 Then spawn one soul with `--no-launch` and check its home: exactly one "You run

@@ -128,3 +128,15 @@ test("remote named-config spawns gate support without substituting the soul harn
   assert.throws(() => checkRemoteSupport({ ...remote, features: [] }, target, args, roster), e => e.code === "E_REMOTE_INCOMPATIBLE");
   assert.throws(() => checkRemoteSupport(remote, target, [...args, "--harness", "claude"], roster), e => e.code === "E_REMOTE_INCOMPATIBLE");
 });
+
+test("a definition's default reaches only a host with launch-config-default: true is refused before sending, false is dropped", () => {
+  const old = transport();
+  assert.throws(() => launchConfigRemote("s", { action: "set", name: "personal", definition: { harness: "claude", default: true } }, old), e => e.code === "E_REMOTE_INCOMPATIBLE" && e.message.includes("launch-config-default"));
+  assert.equal(old.calls.length, 1, "only the version probe ran");
+  const dropped = transport();
+  launchConfigRemote("s", { action: "set", name: "personal", definition: { harness: "claude", default: false } }, dropped);
+  assert.deepEqual(JSON.parse(dropped.calls[1].options.input.toString()), { harness: "claude" });
+  const current = transport([...allFeatures, "launch-config-default"]);
+  launchConfigRemote("s", { action: "set", name: "personal", definition: { harness: "claude", default: true } }, current);
+  assert.deepEqual(JSON.parse(current.calls[1].options.input.toString()), { harness: "claude", default: true });
+});

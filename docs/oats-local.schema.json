@@ -60,7 +60,8 @@
             "description": "Environment for the harness. A string is a literal (non-secret by contract; still redacted in every answer). {fromEnv: NAME} is resolved from the execution host's environment at start time; the reference, never the value, is recorded. A missing reference refuses the start before anything stops."
           },
           "model": { "type": "string", "minLength": 1, "description": "Model for this configuration's harness; overrides the soul default when this configuration is selected." },
-          "yolo": { "type": "boolean", "description": "Permission bypass for this configuration; overrides scope and soul defaults when selected." }
+          "yolo": { "type": "boolean", "description": "Permission bypass for this configuration; overrides scope and soul defaults when selected." },
+          "default": { "type": "boolean", "description": "This host's baseline for its harness (0.32, feature launch-config-default): a new launch that picks this harness without naming a configuration (a soul's or souls.launch preference, --harness, the host default) runs this configuration's executable, args, env and yolo; its model is the last fallback. At most one per harness. `--launch-config none` bypasses it. OATS 0.31 and older refuse the key." }
         }
       }
     },
