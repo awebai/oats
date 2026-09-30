@@ -45,12 +45,12 @@ export async function prepareRemoteTerm(cli, remote, { run = runTerminalCommand,
     check();
     const envelope = typeof error?.stdout === 'string' ? envelopeOf(error.stdout) : null;
     if (envelope && !envelope.ok) throw refusal(envelope);
-    // Killed at the deadline: a stalled link outlives ssh's keepalives (about 45 s), so it is a
-    // timeout. A CLI that ran to its end with a nonzero exit (255 included) and no refusal gave
-    // no answer: ssh's own failures arrive as E_SSH, so this is more likely the local CLI.
-    // A CLI that never started keeps its own error.
-    if (error?.signal) throw coded('E_TERM_PREPARE_TIMEOUT', 'remote session inspection timed out');
-    if (Number.isInteger(error?.code)) throw coded('E_TERM_REMOTE_NO_ANSWER', 'the local oats gave no answer');
+    // Killed by execFile at the deadline: a stalled link outlives ssh's keepalives (about 45 s),
+    // so it is a timeout. A CLI that ended without a refusal, by a nonzero exit (255 included) or
+    // a signal of its own, gave no answer: ssh's own failures arrive as E_SSH, so this is more
+    // likely the local CLI. A CLI that never started keeps its own error.
+    if (error?.killed) throw coded('E_TERM_PREPARE_TIMEOUT', 'remote session inspection timed out');
+    if (Number.isInteger(error?.code) || error?.signal) throw coded('E_TERM_REMOTE_NO_ANSWER', 'the local oats gave no answer');
     throw error;
   }
   check();

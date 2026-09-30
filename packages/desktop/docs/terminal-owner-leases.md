@@ -122,8 +122,8 @@ failures:
   `E_TERM_REMOTE_UNREACHABLE`;
 - the inspect killed at its 20 s exec deadline → `E_TERM_PREPARE_TIMEOUT`: a
   stalled link outlives ssh's keepalives (about 45 s);
-- a nonzero exit, 255 included, with no refusal envelope →
-  `E_TERM_REMOTE_NO_ANSWER`. ssh's own failures arrive as `E_SSH`, so this is
+- a nonzero exit (255 included) or a death by the CLI's own signal, with no
+  refusal envelope → `E_TERM_REMOTE_NO_ANSWER`. ssh's own failures arrive as `E_SSH`, so this is
   more likely the local CLI failing than the link;
 - `ok: true` with `present !== true` → `E_TERM_REMOTE_GONE`;
 - any other refusal keeps the host's code, which the broker reports as

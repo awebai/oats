@@ -63,9 +63,13 @@ test("prepare failures carry codes from real captures: unreachable is transport,
   ]) await assert.rejects(prepareRemoteTerm(cli, remote, { run }), error => error.code === code, code);
   assert.ok(calls.every(argv => argv[1] === "inspect"), "only inspection ran; nothing attached");
 });
-test("an inspection killed at its deadline is a timeout (a stalled link); a CLI that never started keeps its own error", async () => {
+test("an inspection killed at its deadline is a timeout (a stalled link); one that died by a signal gave no answer; a CLI that never started keeps its own error", async () => {
   const killed = async () => { throw Object.assign(new Error("Command failed"), { code: null, killed: true, signal: "SIGTERM", stdout: "" }); };
   await assert.rejects(prepareRemoteTerm(cli, remote, { run: killed }), error => error.code === "E_TERM_PREPARE_TIMEOUT");
+  for (const signal of ["SIGABRT", "SIGSEGV"]) {
+    const crashed = async () => { throw Object.assign(new Error("Command failed"), { code: null, killed: false, signal, stdout: "" }); };
+    await assert.rejects(prepareRemoteTerm(cli, remote, { run: crashed }), error => error.code === "E_TERM_REMOTE_NO_ANSWER", `a local CLI that died by ${signal} gave no answer`);
+  }
   const missing = async () => { throw Object.assign(new Error("spawn /selected/oats ENOENT"), { code: "ENOENT" }); };
   await assert.rejects(prepareRemoteTerm(cli, remote, { run: missing }), error => error.code === "ENOENT");
 });
