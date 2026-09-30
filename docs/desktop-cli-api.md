@@ -1214,6 +1214,12 @@ it to a temporary copy (`soulFetched: true`).
   (absent when nothing sets it) are the resolved selection.
   `backendStatus` is `{name, installed, started: false}`, `null` with
   `--no-launch`. `executable` is the resolved harness binary.
+- `launchConfigDefault` (0.32, feature `launch-config-default`) is `true`
+  when `launchConfig` is this host's default for the harness (its
+  executable, args, env and `yolo` apply without being chosen), `false`
+  otherwise. Show it, and `yolo`, whenever it is `true`. An explicit
+  `--launch-config none` asks for the bare harness and bypasses the default;
+  to run the host's default, omit `--launch-config`.
 - `modelSource` is `"explicit"`, `"soul default"`, `"launch-config <name>"`,
   `"native default"` or `"native default (explicit)"` (`--model
   @native-default`). Omitting `--model` and asking for the native default are
@@ -1892,25 +1898,44 @@ accept `--server <id>`.
 {"context":"/w","level":"/w","file":"/w/oats-local.yaml","selected":null,
  "configurations":[{"name":"reviewers","harness":"claude","executable":null,"args":["--permission-mode","plan"],
                     "env":{"ANTHROPIC_API_KEY":{"fromEnv":"REVIEW_KEY"},"REVIEW_MODE":{"redacted":true}},
-                    "model":"opus","yolo":null,"source":"/w/oats-local.yaml","shadows":[]}]}
+                    "model":"opus","yolo":null,"default":false,"source":"/w/oats-local.yaml","shadows":[]}]}
 ```
 
 - **list**: `selected` is `null`, `{home, instance}` or `{soul, agentsRoot}`;
   `level` and `file` are `null` without an `oats-local.yaml` (the set is then
   empty). An environment literal is `{redacted: true}`, a reference
-  `{fromEnv}`; values never leave the file.
+  `{fromEnv}`; values never leave the file. `default` (0.32, feature
+  `launch-config-default`) is always a boolean: `true` marks this host's
+  default for the configuration's harness.
 - **set**/**remove**: `{name, action, level, file, before, after,
   effective}`. `set --file` takes `{harness, executable?, args?, env?, model?,
-  yolo?}` (`-` reads stdin). `--keep-env` keeps the declared environment when
-  `env` is omitted. Errors: `E_LOCAL_MISSING`, `E_BAD_ARGS` (including
-  `--home`/`--soul`), `E_LAUNCH_CONFIG_UNKNOWN`, `E_LAUNCH_CONFIG_INVALID`,
-  `E_CONFIG_BROKEN`, `E_HOME_UNKNOWN`.
+  yolo?, default?}` (`-` reads stdin); it replaces the whole entry and refuses
+  a key it does not know, so an editor sends `default` back to keep it.
+  `default: false` is written as its absence. A second `default: true` for a
+  harness is `E_LAUNCH_CONFIG_INVALID` with `details: {harness,
+  configurations: [<the declared one>, <this one>]}` and nothing is written;
+  moving the default is two writes, never an automatic move. `--keep-env`
+  keeps the declared environment when `env` is omitted. Routed with
+  `--server`, a definition with `default: true` to a host that does not
+  advertise `launch-config-default` is `E_REMOTE_INCOMPATIBLE` before
+  anything is sent (`default: false` is dropped). Errors: `E_LOCAL_MISSING`,
+  `E_BAD_ARGS` (including `--home`/`--soul`), `E_LAUNCH_CONFIG_UNKNOWN`,
+  `E_LAUNCH_CONFIG_INVALID`, `E_CONFIG_BROKEN`, `E_HOME_UNKNOWN`,
+  `E_REMOTE_INCOMPATIBLE`.
 - **preview** (read-only) answers `{context, selected, selection: {source,
   launchConfig, harness, model, yolo}, harness, model, modelSource, yolo,
-  launchConfig, launchConfigSource, executable: {path, declared,
-  resolvedFrom}, argv, environment: [{name, fromEnv} | {name, redacted:
+  launchConfig, launchConfigSource, launchConfigDefault, executable: {path,
+  declared, resolvedFrom}, argv, environment: [{name, fromEnv} | {name, redacted:
   true} | {name, reference: true}], command (redacted), prompt, hooks,
   preflight: [{check, ok, detail}], ok}`.
+
+`launchConfigDefault` (0.32) is `true` when `launchConfig` is this host's
+default for the harness rather than a chosen configuration; the spawn preview
+carries the same top-level field, `instance.json` records it as
+`launch.launchConfigDefault: true`, and `inspect --json` of a home answers
+`instance.launchConfig` and `instance.launchConfigDefault`. The closed `Launch`
+object is unchanged: its `effective.launchConfig` names the default
+configuration.
 
 A successful envelope can carry `ok: false`: show the failed `preflight`
 checks. The prompt is named, never the task body. A home predating launch

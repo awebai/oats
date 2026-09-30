@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import {
   capabilityManifest, completeDeferredRetirement, composeInstanceAgentsMd, deferredRetireResultPath, findAgent, findInstanceHomes, retirePendingMarkerPath,
-  listInstances, resolveClaudeBinary, retireInstance, runLifecycleHooks, spawnInstanceAsync,
+  listInstances, retireInstance, runLifecycleHooks, spawnInstanceAsync,
 } from "@awebai/oats/core";
 import { inertHarnessPath } from "./helpers/runtime-stub.mjs";
 import { capabilityFiles, soulFiles, v2Deployment } from "./helpers/v2-deployment.mjs";
@@ -170,14 +170,11 @@ test("duplicate skill names fail the spawn closed (decision 16): across modules,
   assert.equal(existsSync(join(fx.root, "own", "instances", "own-bad")), false, "nothing was created");
 });
 
-test("claude harness resolves oats-claude-config and hooks contribute launch args", async (t) => {
+test("claude runs this host's claude default launch configuration and hooks contribute launch args", async (t) => {
   // A spawn hook contributes harness launch args (the aweb channel-plugin pattern).
   const script = `console.log(JSON.stringify({ launch: { claude: "--extra-flag", pi: "--never-used" } }));`;
-  const fx = v2Dev(t, { "acme.chan": cap({ hooks: { spawn: "hook.mjs" } }, { "hook.mjs": script }) });
-  // Closest oats-claude-config names the binary; none → claude.
-  assert.equal(resolveClaudeBinary(fx.dep), "claude");
-  write(join(fx.base, "oats-claude-config"), "# personal account\nclaude-personal\n");
-  assert.equal(resolveClaudeBinary(fx.dep), "claude-personal");
+  // The host names its claude executable once, as the claude default (0.32); `--harness claude` names no configuration.
+  const fx = v2Dev(t, { "acme.chan": cap({ hooks: { spawn: "hook.mjs" } }, { "hook.mjs": script }) }, { local: { "launch-configs": { personal: { harness: "claude", executable: "claude-personal", default: true } } } });
   const bin = join(fx.base, "bin"); mkdirSync(bin, { recursive: true });
   write(join(bin, "claude-personal"), "#!/bin/sh\nexit 0\n");
   execFileSync("chmod", ["+x", join(bin, "claude-personal")]);
@@ -186,6 +183,8 @@ test("claude harness resolves oats-claude-config and hooks contribute launch arg
   const meta = instanceMeta(res.home);
   assert.equal(meta.harness, "claude");
   assert.match(meta.command, /claude-personal/);
+  assert.equal(meta.launch.launchConfig, "personal");
+  assert.equal(meta.launch.launchConfigDefault, true, "the record says the configuration came from the harness default");
   assert.match(meta.command, /--extra-flag/);
   assert.doesNotMatch(meta.command, /--never-used/);
   // "--" must terminate option parsing BEFORE the prompt: hook-contributed
@@ -2507,13 +2506,12 @@ test("the aweb hook runs argv only, and detects `aw` without a shell builtin", (
   rmSync(base, { recursive: true, force: true });
 });
 
-test("the plugin probe uses the CONTEXT-SELECTED claude executable, not the literal one (reviewer-6f1bb9c)", async (t) => {
+test("the plugin probe uses the SELECTED claude executable (the host's claude default), not the literal one (reviewer-6f1bb9c)", async (t) => {
+  // The claude default names a wrapper — a separate account with its own plugins.
   const fx = v2Dev(t, { "acme.chan": cap({
     requires: [{ harness: "claude", package: "chan@acme-marketplace", marketplace: "acme/claude-plugins", why: "push events" }],
-  }) });
+  }) }, { local: { "launch-configs": { personal: { harness: "claude", executable: "claude-personal", default: true } } } });
   const { base, root } = fx;
-  // oats-claude-config names a wrapper — a separate account with its own plugins.
-  write(join(fx.dep, "oats-claude-config"), "claude-personal\n");
   const oldPath = process.env.PATH;
   try {
     // Default `claude` HAS the plugin; the selected `claude-personal` does NOT.

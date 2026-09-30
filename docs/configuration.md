@@ -50,6 +50,11 @@ launch-configs:                              # named ways this host starts a har
       CLAUDE_CONFIG_DIR: { fromEnv: PERSONAL_CLAUDE_DIR }
     model: opus
     yolo: false
+  mine:
+    harness: claude
+    default: true                            # this host's baseline for every claude launch (0.32)
+    env:
+      CLAUDE_CONFIG_DIR: /home/ana/.claude-personal
 ```
 
 Schema: [`oats-local.schema.json`](oats-local.schema.json). Unknown keys are
@@ -70,7 +75,7 @@ refused (`E_WORKSPACE_SCHEMA`).
 | `host.name` | This machine's name. A workspace trigger or schedule runs only on the host named by its `runsOn` ([schedules.md](schedules.md)). |
 | `automations.trust` | The workspace triggers and schedules (`<member>/<id>`) this host agrees to run, or `"*"` for every one the workspace places here (0.30). Absent or empty: none runs. See [Who runs workspace automations](#who-runs-workspace-automations). |
 | `triggers.disabled`, `schedules.disabled` | Workspace triggers and schedules (`<member>/<id>`) this host does not run, without a commit. Written by `oats trigger disable` / `oats schedule disable`. |
-| `launch-configs.<name>` | A named way to start a harness on this host, chosen at spawn or session start, never by the soul. See [Launch configurations](#launch-configurations). |
+| `launch-configs.<name>` | A named way to start a harness on this host, chosen at spawn or session start, never by the soul. `default: true` makes it this host's baseline for its harness (0.32). See [Launch configurations](#launch-configurations). |
 | `souls.launch` | This machine's launch preference per soul (0.30): `"*"` for every soul, a soul's own entry (its name, or `<package>/<soul>`) over it. A value is a `launch-configs` name or an inline `{ harness, model? }`. It overrides the soul's own `launch:`; explicit spawn flags win over both. See [Launch preferences](#launch-preferences). |
 
 How teams are resolved, and what a messaging provider does with them, is in
@@ -81,8 +86,9 @@ How teams are resolved, and what a messaging provider does with them, is in
 An entry has `harness` (`pi` \| `claude` \| `codex`, required), `executable`
 (a bare name looked up on `PATH`, or a path relative to this deployment
 directory), `args` (literal, no shell), `env` (a literal string, or
-`{ fromEnv: NAME }` resolved on the host at start), `model` and `yolo`. A
-launch configuration is a host choice: a soul never names one.
+`{ fromEnv: NAME }` resolved on the host at start), `model`, `yolo` and
+`default` (0.32; see [the harness default](#the-harness-default)). A launch
+configuration is a host choice: a soul never names one.
 
 - Select one with `--launch-config <name>` on `oats spawn`,
   `oats session start` and `oats session restart`. A named configuration is
@@ -103,6 +109,50 @@ launch configuration is a host choice: a soul never names one.
   environment, command and preflight checks) and starts nothing.
 - The old key `runtime` is still read as `harness`, with a
   `deprecated-runtime-name` warning.
+
+### The harness default
+
+`default: true` makes a configuration this host's baseline for its harness
+(0.32, feature `launch-config-default`). Use it for what every launch of a
+harness on this machine needs, whatever soul or preference chose it: an
+account directory (`CLAUDE_CONFIG_DIR`), a wrapper `executable`, an argument.
+
+- **When it applies:** a new launch that picks the harness without naming a
+  configuration: a soul's `launch:`, an inline `souls.launch` preference,
+  `--harness` (on a spawn, or on `session start|restart` of an existing
+  home), `--reselect-launch`, and the host default (`pi`). It supplies the
+  executable, args, env and `yolo`. A `yolo` recorded from a default stays
+  with it: a later `--launch-config none` or another harness does not carry
+  it over.
+- **The model** comes from whatever picked the harness (`--model`, then the
+  preference); the default's `model` is the last fallback, before the
+  harness's own.
+- **A named configuration runs as declared**: `--launch-config <name>` or a
+  `souls.launch` name never inherits from the default. `--launch-config none`
+  (or a `souls.launch` entry of `none`) asks for the bare harness and
+  bypasses it.
+- **One per harness.** A second `default: true` for the same harness is
+  refused (`E_LAUNCH_CONFIG_INVALID`, naming both); move it by clearing the
+  old one first.
+- **Existing homes keep their launch** until `--reselect-launch` or a
+  respawn, like any change of preference. Declaring a default is such a
+  change: `oats readiness --home` warns `launch-changed` on each existing
+  home the default would now apply to, until it is restarted with
+  `--reselect-launch` or respawned.
+- **It is visible.** `oats launch-config list` marks it; `spawn --preview`,
+  `launch-config preview`, `instance.json` and `oats inspect --home` say when
+  a launch's configuration came from the default (`launchConfigDefault`).
+  A default with `yolo: true` turns yolo on for every launch of that harness
+  here: the preview shows it.
+- **Every kernel that reads the deployment needs OATS 0.32+.** OATS 0.31
+  and older refuse the whole `oats-local.yaml` (`E_WORKSPACE_SCHEMA`) once a
+  configuration declares `default`.
+
+`oats-claude-config` (a one-line file naming the claude binary, found walking
+up from the deployment) is no longer read. A new claude launch with one in
+reach is refused (`E_CLAUDE_CONFIG_REMOVED`) naming the file: declare the
+name it holds as the claude default (`executable: <name>`, `default: true`)
+and delete the file. Homes launched with it keep their recorded executable.
 
 ### Launch preferences
 
@@ -128,9 +178,11 @@ souls:
   harness and replaces only its model.
 - A **launch configuration** name runs that configuration's full recipe. An
   **inline or soul preference** runs its harness the way this host starts it
-  without a configuration (the executable on `PATH`, no args, no env), with
-  its `model`. A preference without `model` uses the harness's own model; it
-  never borrows a lower layer's.
+  without a configuration: [the harness default](#the-harness-default) if
+  one is declared, else the executable on `PATH` with no args and no env,
+  with the preference's `model`. A preference without `model` uses the
+  harness default's model, else the harness's own; it never borrows a lower
+  layer's.
 - **A missing harness is refused**, never replaced: `E_HARNESS_UNAVAILABLE`
   names the layer that chose it and the fix (install the harness, or override
   it here in `souls.launch`). `oats souls` still lists the soul, with the
