@@ -3121,7 +3121,16 @@ async function serverRouteCmd() {
     if (args[1] !== "attach") bail("E_USAGE", "--server routes `session inspect`, `session start`, `session restart`, `session upload` and `session attach`; input runs on the execution host (the wake broker calls it there)");
     let route;
     try { route = attachArgv(id, addr, { skipVersionCheck: args.includes("--print") }); }
-    catch (e) { bail(e.code || "E_BAD_ARGS", e.message, e.details); }
+    catch (e) {
+      // ssh failing before the viewer (the version probe, a name resolved through the host's roster)
+      // is the failure ssh has under it: exit 255, on which a caller reconnects. Every other refusal exits 1.
+      if (e.code === "E_SSH") {
+        if (JSON_MODE) console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code: e.code, message: e.message }, ...envelopeWarnings() }));
+        else console.error(`oats: ${e.message}`);
+        process.exit(255);
+      }
+      bail(e.code || "E_BAD_ARGS", e.message, e.details);
+    }
     if (args.includes("--print")) { console.log(route.argv.map(shellQuote).join(" ")); return; }
     const r = spawnSyncProc(route.argv[0], route.argv.slice(1), { stdio: "inherit" });
     // ssh exits 255 for its own failures: a link that died under the viewer
