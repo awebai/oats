@@ -57,7 +57,7 @@ import { instanceGitRequest } from "./instance-git.mjs";
 import { lifecycleRequest } from "./instance-lifecycle.mjs";
 import { readinessRequest } from './readiness.mjs';
 import { readinessFailure } from '../renderer/readiness-contract.mjs';
-import { spawnPreviewRequest } from './spawn-preview.mjs';
+import { spawnPreviewCachedRequest, spawnPreviewCache } from './spawn-preview.mjs';
 import { teamsRequest, soulTeamsRequest, teamsFailure } from './teams.mjs';
 import { instanceEventsRequest } from './instance-events.mjs';
 import { eventsFailure } from '../renderer/instance-events-contract.mjs';
@@ -492,7 +492,7 @@ async function reprobeCli(chosen) {
   cliProbeGeneration++;
   cliState = { ...r, probedAt: Date.now() };
   // Everything held was read with the previous CLI.
-  inspectCache.clear(); capabilityCatalog.forgetAll(); admitted.clear();
+  inspectCache.clear(); capabilityCatalog.forgetAll(); admitted.clear(); spawnPreviewCache.invalidate();
   void refreshSnapshot({ live: true }); // the deployment observation belongs to the accepted CLI
   void refreshRemoteSnapshot();
   return cliState;
@@ -730,6 +730,8 @@ function refreshSnapshot(options = {}) { return refreshLoop.request(options); }
 function observeMutation(wsId) {
   const scope = workspaces().find((w) => w.id === wsId)?.scope;
   if (scope) inspectCache.invalidate(scope);
+  // The dialog's held spawn previews are keyed by workspace id, not scope.
+  if (wsId) spawnPreviewCache.invalidate(wsId);
   return refreshSnapshot({ live: true });
 }
 /* OATSWEB_FINDINST_BEGIN — workspace-scoped instance lookup, extracted by tests */
@@ -1232,11 +1234,12 @@ const server = createServer(async (req, res) => {
     if (path === "/api/launch-configs" && req.method === "POST") {
       const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
       try {
-        const result = await launchConfigRequest(await readBody(req), {
+        const request = await readBody(req);
+        const result = await launchConfigRequest(request, {
           workspace, cli: cliState, localCwd: ctxs[0],
           agents: workspace ? agentsData(workspace.id).agents : [],
           instances: workspace ? panelData(workspace.id).instances : [],
-        });
+        }).finally(() => { if (workspace && ['set', 'remove'].includes(request?.action)) spawnPreviewCache.invalidate(workspace.id); }); // the default launch a preview reports
         return send(res, 200, result);
       } catch (e) { const { status, body } = spawnErrorPayload(e); return send(res, status, body); }
     }
@@ -1289,7 +1292,8 @@ const server = createServer(async (req, res) => {
           return { workspace, cli: cliState, agents: workspace && !workspace.remote && !workspace.server ? agentsData(workspace.id).agents : [],
             instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
         };
-        return send(res, 200, await spawnPreviewRequest(request, getContext));
+        // Settled answers are reused for a short window (server/spawn-preview.mjs); prepare never reads them.
+        return send(res, 200, await spawnPreviewCachedRequest(request, getContext));
       } catch { return send(res, 400, previewFailure('E_BAD_ARGS')); }
     }
     if (path === '/api/workspace-readiness' && req.method === 'POST') {
@@ -1314,7 +1318,11 @@ const server = createServer(async (req, res) => {
         const result = await (path === '/api/workspace-teams' ? teamsRequest : soulTeamsRequest)(request, getContext);
         // The writing actions change oats-local.yaml; inspect reports a soul's teams, so the held inspections go
         // (held under the workspace's scope, see observeMutation).
-        if (['add', 'remove', 'default', 'clear-default'].includes(request.action)) { const scope = getContext().workspace?.scope; if (scope) inspectCache.invalidate(scope); }
+        if (['add', 'remove', 'default', 'clear-default'].includes(request.action)) {
+          const { scope, id } = getContext().workspace || {};
+          if (scope) inspectCache.invalidate(scope);
+          if (id) spawnPreviewCache.invalidate(id); // a spawn preview reports the soul's teams
+        }
         return send(res, 200, result);
       } catch { return send(res, 400, teamsFailure('E_BAD_ARGS')); }
     }
@@ -1386,7 +1394,7 @@ const server = createServer(async (req, res) => {
           instances: workspace ? panelData(workspace.id).instances : [],
           cache: inspectCache, maxAge: BACKGROUND_MAX_AGE,
           catalogKey: observed?.status === "observed" ? capabilityCatalogKey(cliState, observed.workspaceStatus) : null,
-        });
+        }).finally(() => { if (workspace && request?.action === "run") spawnPreviewCache.invalidate(workspace.id); }); // an operation can change what a spawn preview reads
         return send(res, 200, result);
       } catch (e) { const { status, body } = spawnErrorPayload(e); return send(res, status, body); }
     }
@@ -1542,7 +1550,7 @@ const server = createServer(async (req, res) => {
         agents: workspace ? agentsData(workspace.id).agents : [],
         instances: workspace ? panelData(workspace.id).instances : [],
         cache: inspectCache, // a run invalidates the deployment's held inspections
-      });
+      }).finally(() => { if (workspace) spawnPreviewCache.invalidate(workspace.id); });
       return send(res, 200, result);
     }
     if (req.method === "GET" && path === "/api/file") {

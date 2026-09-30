@@ -70,7 +70,7 @@ export async function mountSpawn(t, options = {}) {
   const panel = () => ({ workspace: { id: 'northwind', name: 'northwind', team: null }, workspaces: [], instances,
     deployment: { status: 'observed', root: `${northwindDir}/agents`, workspace: workspaceStatusData(northwind, northwindDir).workspace,
       workspaceStatus: workspaceStatusData(northwind, northwindDir), reachable: { reachable: true } } });
-  const ctx = { hasWorkspaceSwitcher: true, spawnTiming: { previewDelay: options.previewDelay ?? 0, wait: { tries: 3, delayMs: 0, sleep: options.sleep ?? (async () => {}) } },
+  const ctx = { hasWorkspaceSwitcher: true, spawnTiming: { previewDelay: options.previewDelay ?? 0, busyDelay: options.busyDelay ?? 0, wait: { tries: 3, delayMs: 0, sleep: options.sleep ?? (async () => {}) } },
     api: async (path, opts = {}) => {
       const body = opts.body ? JSON.parse(opts.body) : undefined; calls.push({ path, body, method: opts.method || 'GET' });
       if (path === '/api/cli') return cli;

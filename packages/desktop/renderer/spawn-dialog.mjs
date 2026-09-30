@@ -3,10 +3,15 @@
  * What the operator sees is what the kernel decided: the dialog reads a spawn
  * preview in the background whenever a choice changes (latest intent wins)
  * and shows the real defaults — instance name, harness, model and where it
- * came from, the work area, branch and base. Nothing here derives a name, a
- * path or a default.
+ * came from, the work area, branch and base. Nothing here derives a path or a
+ * default; the only name it spells is the one the form states exactly.
  *
- * Spawn is one click: the server prepares a fresh confirmation, and only when
+ * Editing never waits on a read: fields stay live, and after the first answer
+ * the preview column keeps the last settled facts, marked Updating…, until the
+ * answer for the choices on screen lands (docs/desktop-spawn-preview.md).
+ *
+ * Spawn is one click, pressable whenever the form is valid: a press before the
+ * preview for those choices settled waits for it. The server prepares a fresh confirmation, and only when
  * its decision is the one on screen does it apply it (`--expect-decision`,
  * idempotency key). If the world moved, the dialog shows the new values and
  * asks again. An unknown outcome is checked on the same intent, never retried
@@ -25,6 +30,10 @@ import { iconElement } from './shell-icons.mjs';
 import { shownLaunch, launchHarnessName, launchModelText, launchFromText, preferenceText, declaredDiffers } from './launch-view.mjs';
 
 export const PREVIEW_DEBOUNCE_MS = 250;
+/** E_BUSY (the server's two-read budget) is retried inside the dialog: as soon as one of its own reads
+ * lands, else after this delay, for about the CLI's 30 s timeout before it shows as a failure. */
+export const PREVIEW_BUSY_RETRY_MS = 400;
+const BUSY_RETRIES = 75;
 import { HARNESS_NAMES as RUNTIME_NAMES } from './harness-names.mjs';
 export { RUNTIME_NAMES };
 const PURPOSE = /^[a-z0-9][a-z0-9-]*$/i;
@@ -54,6 +63,9 @@ export const spawnDialogCSS = `
 .spawn-preview { display:flex; flex-direction:column; gap:16px; min-width:0; min-height:0; overflow:auto; padding:18px 20px; box-sizing:border-box; background:var(--surface-2); border-right:1px solid var(--border); }
 .spawn-preview-section { display:flex; flex-direction:column; gap:6px; min-width:0; }
 .spawn-preview-title { margin:0; font-size:10.5px; font-weight:650; letter-spacing:.065em; text-transform:uppercase; color:var(--muted); }
+/* A newer preview is reading: the settled facts stay, and the title line says so in words (never fading the text: AA). */
+.spawn-preview-head { display:flex; align-items:baseline; justify-content:space-between; gap:8px; min-width:0; }
+.spawn-preview-updating { flex:none; font-size:10.5px; font-weight:600; color:var(--muted); }
 .spawn-preview-facts { display:grid; grid-template-columns:86px minmax(0,1fr); row-gap:8px; column-gap:10px; margin:0; font-size:12.5px; color:var(--fg); }
 .spawn-preview-facts dt { margin:0; color:var(--muted); }
 .spawn-preview-facts dd { margin:0; min-width:0; overflow-wrap:anywhere; }
@@ -487,7 +499,7 @@ function composeChooser(doc, { soul, agents, canChoose, choose, query, note }) {
  */
 export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, instances, canChoose, choose, close, owns,
   draft = {}, catalogNote = '', onCreated = async () => {}, remoteSpawn = async () => {}, servers = [], serverFacts = () => [], serverRows = async () => [],
-  delay: debounce = PREVIEW_DEBOUNCE_MS, layout = 'picker' }) {
+  delay: debounce = PREVIEW_DEBOUNCE_MS, busyDelay = PREVIEW_BUSY_RETRY_MS, layout = 'picker' }) {
   const doc = modal.ownerDocument, el = (tag, text, cls) => node(doc, tag, text, cls);
   const titleId = 'spawn-dialog-title';
   const dialog = el('section', undefined, 'spawn-dialog');
@@ -511,7 +523,9 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const preview = el('aside', undefined, 'spawn-preview'); preview.setAttribute('aria-label', 'Spawn preview');
   const factsSection = el('section', undefined, 'spawn-preview-section spawn-preview-created');
   const factsBody = el('div', undefined, 'spawn-preview-body');
-  factsSection.append(el('h3', 'What will be created', 'spawn-preview-title'), factsBody);
+  const factsHead = el('div', undefined, 'spawn-preview-head'), updatingMark = el('span', 'Updating…', 'spawn-preview-updating');
+  updatingMark.hidden = true; factsHead.append(el('h3', 'What will be created', 'spawn-preview-title'), updatingMark);
+  factsSection.append(factsHead, factsBody);
   // Core capabilities / Capabilities: filled only when the preview carries `modules`; otherwise empty and hidden.
   const coreSection = el('section', undefined, 'spawn-preview-section spawn-preview-core'), capsSection = el('section', undefined, 'spawn-preview-section spawn-preview-caps');
   coreSection.hidden = capsSection.hidden = true;
@@ -640,6 +654,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   function drawTeams() {
     const key = JSON.stringify([teamsNow, defaultFromNow]);
     if (key === teamsDrawn) return;
+    // A preview landing redraws the row: focus stays on the same team (its label is the stable key).
+    const focusedTeam = teamsList.contains(doc.activeElement) ? doc.activeElement.closest('[data-team]')?.dataset.team ?? null : null;
     teamsDrawn = key; teamsList.replaceChildren();
     const chip = (cls, name, box, title) => { const c = el('label', undefined, cls); c.append(box, el('span', name, 'spawn-team-name')); c.title = title; teamsList.append(c); return c; };
     const rows = teamsNow || [], home = rows.find(t => t.default === true);
@@ -658,6 +674,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       c.dataset.team = t.label;
     }
     syncTeamsStop();
+    if (focusedTeam !== null) [...teamsList.querySelectorAll('[data-team]')].find(c => c.dataset.team === focusedTeam)?.querySelector('input')?.focus({ preventScroll: true });
     const open = rows.filter(joinable).length;
     // An unmapped default blocks the spawn (the kernel refuses it): say so and what to do, not the opt-ins.
     teamsHint.classList.toggle('err', !!home && !home.team);
@@ -736,7 +753,14 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   paintRelatives(instances() || []);
 
   // ── state
-  let alive = true, mount = workspaceGeneration(), serial = 0, timer = null, reading = null, shown = null, nativeModel = false;
+  // shown: the latest read's settled answer, data or failure ({ key, value, data|failure }); settled: the
+  // latest settled DATA, which the preview column and the derived rows keep while a newer read is due or
+  // in the air (never blanked after the first read). latest: the newest read in the air ({ ticket, key });
+  // a newer schedule starts its own read without waiting for it, and only the latest ticket may settle.
+  let alive = true, mount = workspaceGeneration(), serial = 0, timer = null, latest = null, shown = null, settled = null, nativeModel = false;
+  let inFlight = 0, retryOnSettle = false, busyRetries = 0;
+  // A Spawn press before the preview for these exact choices settled, kept as intent ({ key }).
+  let pressed = null;
   let flight = null, phase = 'idle', intent = null, submitted = false, delivered = false, modelsReq = 0, configsReq = 0, remoteBusy = false, modelsFor = null;
   let notice = null; // a refusal from the last Spawn stays visible until the operator edits
   const current = () => alive && owns() && mount === workspaceGeneration();
@@ -820,15 +844,32 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     return valid ? { value: valid } : { error: 'A value here is not a valid spawn option (no spaces or leading dashes).', field: 'option' };
   }
   const choiceKey = value => JSON.stringify(value);
-  /** The kernel's preview for exactly the choices on screen, else null: a hint that reads from it
-   * (the default harness and model, "Launches … with …") must not describe a previous choice while a
-   * new preview is due or in flight (desktop/loading-states item 9), like the name and work hints. */
-  const matched = () => shown?.data && shown.key === choiceKey(choices().value) ? shown.data : null;
+  /** A read is scheduled, or the latest one is in the air: what is shown is not yet for these choices. */
+  const readDue = () => !!timer || latest?.ticket === serial;
+  /** Two choice values agree on these fields (absent = absent). */
+  const sameOn = (a, b, fields) => !!a && !!b && fields.every(f => JSON.stringify(a[f] ?? null) === JSON.stringify(b[f] ?? null));
+  /** The settled preview where it still speaks for the choices on screen on `fields` (what decides the
+   * fact a hint reads), else null. A hint never describes a previous choice of its own fields
+   * (desktop/loading-states item 9), and never blinks while an unrelated field is edited. */
+  const settledFor = fields => settled && sameOn(settled.value, choices().value, fields) ? settled.data : null;
+  // The default harness and model follow the harness, model and launch configuration chosen.
+  const LAUNCH_CHOICES = ['harness', 'model', 'launchConfig'];
+  const matched = () => settledFor(LAUNCH_CHOICES);
+  /** The instance name for the choices on screen: the kernel's, from a settled preview for the same
+   * name input; else the one the form spells (the kernel may still number a taken one); else null
+   * (numbered by the kernel). Never a stale name while a read is due. */
+  function nameNow() {
+    const same = settledFor(['purpose', 'name']);
+    if (same) return { name: same.instance, kernel: true };
+    const typed = purpose.value.trim(), exact = !prefixLabel.hidden && !prefixed.checked;
+    return { name: typed ? exact ? typed : `${soul.name}-${typed}` : null, kernel: false };
+  }
 
   // ── rendering from the latest observation
   function render() {
     if (!alive) return;
-    const data = shown?.data, draftChoice = choices();
+    // Derived rows read the last settled preview: they update when a read lands, never vanish while one reads.
+    const data = settled?.data, draftChoice = choices();
     const typed = purpose.value.trim();
     // Name: what was typed, then the kernel's decision.
     const exact = !prefixLabel.hidden && !prefixed.checked;
@@ -842,11 +883,10 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     else if (!local()) nameResult.textContent = `Named by ${remoteTarget()} when it spawns.`;
     else {
       nameResult.replaceChildren();
-      const fresh = data && shown.key === choiceKey(draftChoice.value);
-      const name = fresh ? data.instance : typed ? exact ? typed : `${soul.name}-${typed}` : '';
+      const { name, kernel } = nameNow();
       if (name) { nameResult.append('Instance name: '); nameResult.append(el('strong', name)); }
-      else if (!fresh) nameResult.append('Instance name: numbered by the kernel');
-      if (fresh && typed && !exact && data.instance !== `${soul.name}-${typed.toLowerCase()}`) nameResult.append(' — that name is taken, so the kernel numbered it');
+      else nameResult.append('Instance name: numbered by the kernel');
+      if (kernel && typed && !exact && name !== `${soul.name}-${typed.toLowerCase()}`) nameResult.append(' — that name is taken, so the kernel numbered it');
     }
     // Runtime / model defaults: from the preview for these very choices only.
     const now = matched();
@@ -864,7 +904,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     // Work.
     worktreeLabel.hidden = soul.work !== 'checkout';
     const worktreeMode = effectiveWork() === 'worktree' && local();
-    const work = workText(data && shown.key === choiceKey(draftChoice.value) ? data : null, effectiveWork());
+    const work = workText(settledFor(['work', 'branch', 'base']), effectiveWork());
     workText_.replaceChildren();
     if (!worktreeMode) { workText_.append(work.lead); if (work.code) workText_.append(el('code', work.code)); if (work.tail) workText_.append(work.tail); }
     joined.hidden = !worktreeMode;
@@ -887,7 +927,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     teamsField.hidden = !teamsOffered() && !defaultBlocked();
     if (!teamsField.hidden) drawTeams();
     if (teamsOffered()) {
-      teamsError.textContent = data && shown?.key === choiceKey(draftChoice.value) && !joinBound(data)
+      teamsError.textContent = shown?.data && shown.key === choiceKey(draftChoice.value) && !joinBound(shown.data)
         ? "The kernel didn't bind the ticked teams. Spawn waits until it does." : '';
     }
     identityField.hidden = !identityOffered();
@@ -906,27 +946,36 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     syncButton();
   }
   /** What the preview column shows for the choices on screen: the kernel's data for exactly these
-   * choices, its refusal, the loading shape while a read is due or in flight, or why there is none. */
+   * choices or its refusal; once anything settled, while a newer read is due or in the air, the last
+   * settled facts (else the last refusal) marked `updating`; before the first settle, the loading
+   * shape, or why there is none. */
   function previewState() {
     const draftChoice = choices(), key = choiceKey(draftChoice.value);
     if (!local()) return { kind: 'empty', text: `Decided on ${remoteTarget()} when it spawns.` };
-    if (shown && shown.key === key) {
-      if (shown.data) return { kind: 'data', data: shown.data, key };
+    const said = answer => {
+      if (answer.data) return { kind: 'data', data: answer.data, key: answer.key };
       // A name refusal is already said next to the Name field.
-      if (NAME_REFUSALS.includes(shown.failure.code)) return { kind: 'empty', text: 'No preview until the name is accepted.' };
-      return { kind: 'failure', text: spawnProblem(shown.failure, 'preview').text };
-    }
-    if (timer || reading) return { kind: 'reading' };
+      if (NAME_REFUSALS.includes(answer.failure.code)) return { kind: 'empty', text: 'No preview until the name is accepted.' };
+      return { kind: 'failure', text: spawnProblem(answer.failure, 'preview').text };
+    };
+    if (shown && shown.key === key && !readDue()) return said(shown);
+    // A failure for the choices on screen stays while its retry reads; otherwise the last settled facts.
+    // Marked updating only while a read is due or will be (an invalid form reads nothing).
+    if (shown) return { ...said(shown.key === key ? shown : settled ?? shown), updating: readDue() || !draftChoice.error };
+    if (readDue()) return { kind: 'reading' };
     if (draftChoice.error) return { kind: 'empty', text: 'The preview reads once the form is valid.' };
     if (!previewable()) return { kind: 'empty', text: soul.work === 'attached' ? 'Attached souls are started by the instance they attach to.' : 'The installed CLI can’t preview this spawn.' };
     return { kind: 'reading' };
   }
-  let previewDrawn = '';
+  let previewDrawn = '', modulesDrawn = '';
   function renderPreview() {
     const state = previewState(), data = state.data;
+    // The Name fact is the form's own while a read is due (nameNow), so it is never a stale name.
+    const name = state.kind === 'data' ? nameNow().name : null;
     // The whole (bounded) projection: a re-read for the same choices may answer different facts.
-    const signature = state.kind === 'data' ? `data:${state.key}:${JSON.stringify(data)}` : `${state.kind}:${state.text || ''}`;
-    preview.setAttribute('aria-busy', String(state.kind === 'reading'));
+    const signature = state.kind === 'data' ? `data:${state.key}:${name}:${JSON.stringify(data)}` : `${state.kind}:${state.text || ''}`;
+    preview.setAttribute('aria-busy', String(state.kind === 'reading' || !!state.updating));
+    updatingMark.hidden = !state.updating;
     if (signature === previewDrawn) return;
     previewDrawn = signature; factsBody.replaceChildren();
     if (state.kind === 'reading') {
@@ -939,7 +988,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       const facts = el('dl', undefined, 'spawn-preview-facts');
       const fact = (label, ...value) => { const dd = el('dd'); dd.append(...value); facts.append(el('dt', label), dd); };
       const muted = text => el('span', text, 'muted');
-      fact('Name', el('span', data.instance, 'mono'));
+      fact('Name', name ? el('span', name, 'mono') : muted('numbered by the kernel'));
       if (data.work) fact('Works in', worksInText(data.work));
       if (data.harness) {
         // Where the harness came from: the Launch's `from` in words (0.30), else the kernel's modelSource verbatim.
@@ -957,7 +1006,10 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       else if (data.defaultTeam === undefined && typeof data.team === 'string' && data.team) fact('Team', data.team);
       factsBody.append(facts);
     }
-    // Core capabilities and Capabilities exist only when the preview carries `modules`.
+    // Core capabilities and Capabilities exist only when the preview carries `modules`; redrawn only when those change.
+    const modules = state.kind === 'data' ? JSON.stringify(data.modules ?? null) : '';
+    if (modules === modulesDrawn) return;
+    modulesDrawn = modules;
     const sections = state.kind === 'data' ? composePreviewModules(doc, data.modules) : null;
     coreSection.hidden = capsSection.hidden = !sections;
     coreSection.replaceChildren(...(sections?.core ?? [])); capsSection.replaceChildren(...(sections?.caps ?? []));
@@ -966,12 +1018,17 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const defaultBlocked = () => (teamsNow || []).some(t => t.default === true && !t.team);
   function syncButton() {
     if (!alive) return;
-    const draftChoice = choices(), ready = local() ? !!shown?.data && shown.key === choiceKey(draftChoice.value) && !reading && joinBound(shown.data) : true;
-    spawn.textContent = flight ? (phase === 'checking' ? 'Checking…' : 'Spawning…')
+    // Spawn is pressable whenever the form is valid: a press before the preview for these choices
+    // settled is kept as intent (run). Only a settled answer for exactly these choices that cannot be
+    // spawned (a refusal, or teams it did not bind) keeps it disabled.
+    const draftChoice = choices(), known = local() && !!shown && shown.key === choiceKey(draftChoice.value) && !readDue();
+    const refused = known && (!shown.data || !joinBound(shown.data));
+    spawn.textContent = flight || pressed ? (phase === 'checking' ? 'Checking…' : 'Spawning…')
       : ['unknown', 'pending'].includes(phase) ? 'Check result' : ['complete', 'partial'].includes(phase) ? 'Created' : phase === 'incomplete' ? 'Spawn incomplete' : 'Spawn';
+    spawn.setAttribute('aria-busy', String(!!(flight || pressed)));
     const recovering = ['unknown', 'pending'].includes(phase);
-    spawn.disabled = !current() || busy() || ['complete', 'partial', 'incomplete'].includes(phase)
-      || !recovering && (!!draftChoice.error || defaultBlocked() || (local() ? !applicable() || !ready : false));
+    spawn.disabled = !current() || busy() || !!pressed || ['complete', 'partial', 'incomplete'].includes(phase)
+      || !recovering && (!!draftChoice.error || defaultBlocked() || (local() ? !applicable() || refused : false));
   }
   /** A problem shows one plain sentence; its code and technical text wait behind Details. */
   function setStatus(text, error = false, problem = null, ok = false) {
@@ -998,39 +1055,63 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   }
   async function read() {
     if (!current()) return;
-    if (!local()) { shown = null; setStatus(''); render(); return; }
+    // A read that cannot answer the pressed choices ends the press: it never spawns later on its own.
+    if (!local()) { endPress(); shown = settled = null; setStatus(''); render(); return; }
     if (!previewable()) {
-      shown = null;
+      endPress(); shown = settled = null;
       if (soul.work === 'attached') setStatus('Attached souls are started by the instance they attach to.', true);
       else showProblem(previewFailure('E_PREVIEW_UNAVAILABLE').reason, 'preview');
       render(); return;
     }
     const draftChoice = choices();
-    if (draftChoice.error) { shown = null; setStatus(''); render(); return; }
-    if (reading) return; // the settling read re-reads if it was superseded
-    const ticket = serial, key = choiceKey(draftChoice.value), ws = workspace().id, owner = mount;
-    const valid = () => current() && owner === mount && ticket === serial;
-    reading = { ticket }; factsSeen = factsKey(); // the facts this read is based on
-    if (!shown || shown.key !== key) setStatus('Reading defaults…'); syncButton();
+    // Nothing to read until the form is valid; what settled stays on screen (the field says what to fix).
+    if (draftChoice.error) { endPress(); setStatus(''); render(); return; }
+    // Never queued behind a superseded read: that one's answer is discarded when it lands.
+    const ticket = serial, value = draftChoice.value, key = choiceKey(value), ws = workspace().id, owner = mount;
+    latest = { ticket, key }; inFlight++; retryOnSettle = false; factsSeen = factsKey(); // the facts this read is based on
+    // Only the first read says so in the footer; afterwards the column's "Updating…" is the signal. A
+    // preview failure no longer describes these choices (a Spawn refusal, the notice, stays until an edit).
+    if (!shown) setStatus('Reading defaults…');
+    else if (status.classList.contains('err') && !notice && shown.key !== key) setStatus('');
+    syncButton();
     let next = null;
     try {
-      const response = await postJson(ctx, `/api/workspace-spawn-preview?ws=${encodeURIComponent(ws)}`, { action: 'preview', selector, choices: draftChoice.value });
+      const response = await postJson(ctx, `/api/workspace-spawn-preview?ws=${encodeURIComponent(ws)}`, { action: 'preview', selector, choices: value });
       if (!alive) return;
-      if (response?.spawnPreviewViewApi !== 1) next = { key, failure: previewFailure('E_CLI_PROTOCOL').reason };
-      else if (response.status !== 'available') next = { key, failure: reasonOf(response.reason) };
+      if (response?.spawnPreviewViewApi !== 1) next = { key, value, failure: previewFailure('E_CLI_PROTOCOL').reason };
+      else if (response.status !== 'available') next = { key, value, failure: reasonOf(response.reason) };
       else {
         const target = previewTarget(response.target), data = target && previewData(response.data, target);
         next = data && target.workspace === ws && target.selector.soul === soul.name && target.selector.agentsRoot === soul.agentsRoot
-          ? { key, data } : { key, failure: previewFailure('E_CLI_PROTOCOL').reason };
+          ? { key, value, data } : { key, value, failure: previewFailure('E_CLI_PROTOCOL').reason };
       }
-    } catch (error) { next = { key, failure: previewFailure(error?.code === 'E_FORBIDDEN_FRAME' ? 'E_FORBIDDEN_FRAME' : 'E_CLI_FAILED').reason }; }
-    finally { if (reading?.ticket === ticket) reading = null; }
-    if (!valid()) { void read(); return; } // superseded (or closed: read() then returns) — read the latest intent now
+    } catch (error) { next = { key, value, failure: previewFailure(error?.code === 'E_FORBIDDEN_FRAME' ? 'E_FORBIDDEN_FRAME' : 'E_CLI_FAILED').reason }; }
+    finally { inFlight--; if (latest?.ticket === ticket) latest = null; }
+    // Every completion, success or failure, is checked for ownership: a closed dialog, another
+    // workspace or mount, or a newer ticket discards it (stale errors would corrupt newer state too).
+    if (!current() || owner !== mount) return;
+    if (ticket !== serial) {
+      // Superseded. It freed a server slot a busy latest read is waiting for: read the latest now.
+      if (retryOnSettle) { retryOnSettle = false; schedule(0); } else render(); // the column may no longer be waiting for any read
+      return;
+    }
     if (next.failure?.code === 'E_TARGET_CHANGED') { schedule(0); return; }
-    shown = next;
+    // The server's two-read budget is full (superseded reads still running): an internal retry, as soon
+    // as one of this dialog's reads lands, else shortly. Never a failure while a newer read is pending.
+    if (next.failure?.code === 'E_BUSY' && busyRetries < BUSY_RETRIES) {
+      busyRetries++; retryOnSettle = inFlight > 0; schedule(busyDelay); return;
+    }
+    busyRetries = 0;
+    shown = next; if (next.data) settled = next;
+    // A press kept as intent continues only on the preview for exactly the choices pressed.
+    const press = pressed; pressed = null;
+    if (press) phase = 'idle';
+    if (press && next.data && press.key === key && joinBound(next.data)) { render(); void run(); return; }
     if (next.data) {
       if (phase === 'drifted') setStatus('These values changed since you last looked. Check them and press Spawn again.');
-      else if (notice) setStatus(notice.text, true, notice); else setStatus('Preview ready', false, null, true);
+      else if (notice) setStatus(notice.text, true, notice);
+      else if (press && press.key !== key) setStatus('Changed: press Spawn again');
+      else setStatus('Preview ready', false, null, true);
     }
     else if (NAME_REFUSALS.includes(next.failure.code)) setStatus(''); // said next to the name itself
     else showProblem(next.failure, 'preview');
@@ -1038,6 +1119,20 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     render();
     // Suggestions follow the harness the kernel resolved, once it is known.
     if (next.data && !runtime.value && modelsFor !== next.data.harness) void fillModels();
+  }
+  /** Spawn pressed before the preview for these exact choices settled: keep the press as intent until
+   * the read for them lands (read continues it, or shows its failure). The button says Checking…. */
+  function holdPress() {
+    pressed = { key: choiceKey(choices().value) }; phase = 'checking';
+    setStatus('Spawning…'); syncButton();
+    if (!readDue()) schedule(0);
+  }
+  /** No answer can come for the pressed choices (the form or the CLI changed under it): the press ends. */
+  function endPress() { if (pressed) { pressed = null; phase = 'idle'; } }
+  /** An edit while a press waits: the intent belonged to the choices at press time. */
+  function dropPress() {
+    if (!pressed) return;
+    pressed = null; phase = 'idle'; setStatus('Changed: press Spawn again'); syncButton();
   }
   // A launch refusal (0.30) may carry the kernel's `fix`, flat on the reason: kept, bounded text.
   const fixOf = reason => typeof reason?.fix === 'string' && reason.fix.length && reason.fix.length <= 1024 && !/[\x00-\x1f\x7f]/.test(reason.fix) ? { fix: reason.fix } : {};
@@ -1050,6 +1145,9 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     if (!current() || busy() || spawn.disabled) return;
     if (!local()) return runRemote();
     const recovering = ['unknown', 'pending'].includes(phase) && intent;
+    // The decision a spawn binds is the kernel's for exactly these choices: until that preview settled,
+    // the press waits for it (and prepare checks the prepared decision against it, as always).
+    if (!recovering && !(shown?.data && shown.key === choiceKey(choices().value) && !readDue())) { holdPress(); return; }
     let prepareInput = null;
     if (!recovering) {
       const draftChoice = choices();
@@ -1084,7 +1182,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
         }
         // The confirmation is re-read by the server; apply only what is on screen.
         if (!shown?.data || !sameSpawnDecision(prepared.preview.decision, shown.data.decision)) {
-          phase = 'drifted'; shown = { key: shown?.key, data: prepared.preview }; render();
+          phase = 'drifted'; shown = settled = { key: shown?.key, value: shown?.value, data: prepared.preview }; render();
           setStatus('These values changed since you last looked. Check them and press Spawn again.'); return;
         }
         intent = prepared; submitted = true; phase = 'submitting';
@@ -1134,15 +1232,15 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   // ── model suggestions (advisory; free text stays valid)
   const suggestions = [];
   const models = createChoicePopup(doc, modelControls, 'Model choices', 'spawn-model-choices', () => [
-    { value: '', label: shown?.data && !model.value && !nativeModel ? `Default · ${shown.data.model ?? "harness's own"}` : 'Default', selected: !model.value && !nativeModel, group: 'Defaults', search: false },
+    { value: '', label: matched() && !model.value && !nativeModel ? `Default · ${matched().model ?? "harness's own"}` : 'Default', selected: !model.value && !nativeModel, group: 'Defaults', search: false },
     { native: true, label: "The harness's own default", selected: nativeModel, group: 'Defaults', search: false },
     ...suggestions.map(m => ({ value: m.id, label: m.label || m.id, detail: m.label && m.label !== m.id ? m.id : undefined, selected: model.value === m.id, group: 'Suggestions' })),
     { custom: true, label: 'Custom…', detail: model.value || 'Type a model ID', group: 'Custom', search: false, selected: !!model.value && !suggestions.some(m => m.id === model.value) },
   ], item => {
     if (item.native) { nativeModel = true; model.value = ''; }
     else if (!item.custom) { nativeModel = false; model.value = item.value; }
-    schedule(0); model.focus();
-  }, { searchable: true, scope: () => JSON.stringify([runtime.value || shown?.data?.harness || '', remoteTarget()]),
+    notice = null; dropPress(); schedule(0); model.focus();
+  }, { searchable: true, scope: () => JSON.stringify([runtime.value || settled?.data?.harness || '', remoteTarget()]),
     nothingReported: 'No model suggestions reported. Any model ID can be typed.', noMatch: 'No suggestions match this filter.' });
   models.trigger.textContent = ''; models.trigger.setAttribute('aria-label', 'Choose model');
   // ── harness picker: the harness's badge, like the design's provider field
@@ -1161,7 +1259,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     runtimePicker.refresh();
   }
   async function fillModels() {
-    const ticket = ++modelsReq, rt = runtime.value || shown?.data?.harness || '';
+    const ticket = ++modelsReq, rt = runtime.value || settled?.data?.harness || '';
     modelsFor = rt; suggestions.length = 0; models.refresh();
     if (!rt || !local() || !current()) return;
     try {
@@ -1212,10 +1310,10 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const onEdit = event => {
     if (!current()) return;
     if (event.target === model) nativeModel = false;
-    notice = null;
+    notice = null; dropPress();
     if (phase === 'drifted') phase = 'idle';
     if (event.target === runtime || event.target === server) void fillModels();
-    if (event.target === server) { shown = null; void fillConfigs(); void fillRelatives(); paintServerHint(); }
+    if (event.target === server) { shown = settled = null; void fillConfigs(); void fillRelatives(); paintServerHint(); }
     if ([search].includes(event.target) || wake.el.contains(event.target) || event.target === task) { syncButton(); return; }
     schedule(event.type === 'change' && (event.target.tagName !== 'INPUT' || event.target.type === 'checkbox') ? 0 : debounce);
   };
@@ -1224,7 +1322,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   cancel.addEventListener('click', () => close());
   closeButton.addEventListener('click', () => close());
   // Change soul: the picker, in place — never a reopen, so nothing typed is lost.
-  changeSoul.addEventListener('click', () => { setLayout('picker'); focusTarget().focus({ preventScroll: true }); });
+  changeSoul.addEventListener('click', () => { dropPress(); setLayout('picker'); focusTarget().focus({ preventScroll: true }); });
 
   setLayout(layout); render();
   return {
@@ -1242,11 +1340,11 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       const facts = factsKey();
       // A settled failure (the CLI failed, was busy…) is retried on the next poll; a name refusal waits
       // for the operator's edit, and a settled preview or a read in flight stands until a fact changes.
-      const retry = !timer && !reading && !!shown?.failure && !NAME_REFUSALS.includes(shown.failure.code);
+      const retry = !readDue() && !!shown?.failure && !NAME_REFUSALS.includes(shown.failure.code);
       if (facts === factsSeen && !retry) { syncButton(); return; }
       factsSeen = facts; schedule(0);
     },
     closePopups() { models.close(); runtimePicker.close(); },
-    dispose() { alive = false; clearTimeout(timer); serial++; modelsReq++; configsReq++; models.dispose(); runtimePicker.dispose(); form.removeEventListener('input', onEdit); form.removeEventListener('change', onEdit); },
+    dispose() { alive = false; clearTimeout(timer); serial++; pressed = null; modelsReq++; configsReq++; models.dispose(); runtimePicker.dispose(); form.removeEventListener('input', onEdit); form.removeEventListener('change', onEdit); },
   };
 }
