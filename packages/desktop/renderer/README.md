@@ -9,8 +9,17 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
 ## Views (`views/`)
 
 - **spawn.mjs** — **Workspace**, with Souls / Capabilities / Sources subtabs.
-  Souls come from `GET /api/agents` (the kernel's `oats souls` catalog);
-  selection opens the side inspector — read-only: a v2 soul is edited in its
+  Souls come from `GET /api/agents` (the kernel's `oats souls` catalog),
+  grouped by **Repo** (the default: the member repository, the host first,
+  then packages with their pinned version, then external souls) or **Team**
+  (the default team). A card names its harness · model (only as the kernel
+  reports them), clamps the description to two lines, labels its chips
+  (*Team oats · default* for its default team, other teams plain; grouped by
+  team, *Repo …* instead of the group's team; no work-mode chip, that is the
+  soul page's and the spawn preview's) and says what runs in its foot (*N
+  instances running*, *N stopped*, *No instances*); a soul a spawn here would
+  refuse says why in `--warn`, with that count as a muted second line.
+  Selection opens the soul's page — read-only: a v2 soul is edited in its
   repository and the inspector never writes it in place; there are no layer bindings
   (`oats use` was removed by workspace model v2). Its Spawn action opens the Spawn dialog
   (see below), which previews through the kernel and applies through the
@@ -42,6 +51,42 @@ cycling follows that order. Existing valid `oatsweb.theme` preferences survive;
 missing/invalid preferences mean White regardless of OS. Views use tokens only,
 scoped under `.oats-view`. Orange selection is distinct from error/success.
 
+### Control rules (selection, focus, search fields)
+
+Three rules hold everywhere in the renderer (design v4.1 board 7; spec A implemented the
+global part, views follow them in their own CSS). `test/control-rules.test.mjs` pins them.
+
+1. **Selected = brand tint.** A selected segment/pill/toggle is `background: var(--sel);
+   color: var(--accent); font-weight: 650`; unselected is transparent with `var(--muted)`.
+   A segmented group is one 1px `var(--border)` frame with 2px inner padding and 6px-radius
+   segments, no dividers. The shared `.ws-segmented` block in `workspace-discovery.mjs`
+   (Setup List/Graph, Souls Group by) is the reference. Never "white vs grey".
+2. **No ring on pointer interaction.** Visuals hang off `:focus-visible`, never `:focus`,
+   so a clicked button, tab, segment, row or link stays quiet. `theme.css` styles keyboard
+   focus globally: `:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px }`
+   (the edge overlays a bordered control's border and is the inner pixel of a borderless
+   one) plus `background: var(--sel)` on `button`, `a` and `summary`. The tint rule has
+   (0,1,1) specificity on purpose: a control that paints its own opaque pair (primaries,
+   danger, the toast) keeps it and shows the edge only, drawn 1px *outside* (`outline-offset:
+   1px`) because inset it would sit on the control's own fill (accent on `--primary-bg` is
+   1.52-3.38:1, on `--danger` about 1.1:1). `theme.css` lists those controls in one
+   `:where(…):focus-visible` rule; a new opaque-fill control joins it. A control whose base rule has an
+   id or two classes and should tint declares its own `:focus-visible { background:
+   var(--sel) }` (`#ws-trigger`, `#tab-actions button`, `.ws-dialog-foot .secondary`).
+   Do not add per-component `outline: 2px` rings. Large focusable panels (tabpanels,
+   canvases, `pre` blocks) get the edge only. Padding-free text tabs and links
+   (`.workspace-tabs`, `.auto-tabs`, Setup links) give the tint a layout-neutral inset
+   on focus (`padding: 0 6px; margin: 0 -6px`) so it does not hug the label.
+3. **Search/filter fields have one border.** A wrapped field (`.ctx-filter-field`) turns
+   its wrapper border accent on `:focus-within`; the `<input>` inside has `border: 0;
+   outline: none` in every state. A bare field (`.field`, `#ws-menu-search`, the palette
+   input's bottom rule) turns its own border accent on `:focus-visible` and never outlines.
+
+Contrast is checked on effective colours in all three themes: `--accent` on `--sel`
+(selected text, focus tint) is AA text, and the accent edge/border is ≥3:1 on `--surface`,
+`--bg` and `--sel`. Dark `--danger` on `--sel` is 4.27:1, which is why danger buttons
+never tint.
+
 Soul marks use a stable hash of the reported root/name/server identity and a
 muted six-color palette. Optional top-level `color: sage` in an existing canonical
 `soul.yaml` overrides the local Desktop mark. Accepted names: `sand`, `sage`,
@@ -60,8 +105,11 @@ are connected components of the shared parent/sibling resolver across roots and
 repositories, never repository buckets. Groups remain anonymous/count-labeled;
 reported context is metadata, not a derived group name. Header counts distinguish
 multi-member groups from independent instances and keep unknown runtime state
-separate from stopped. Parent/child elbows and dotted sibling lines do not rely
-on color alone. The 220px cards show reported context/runtime/branch—not guessed
+separate from stopped. Parent/child edges are OAS-style cubic S-curves from the
+parent's bottom-centre to the child's top-centre; sibling edges are shallow arcs
+dashed `5 4`, so the two kinds do not rely on color alone. `--graph-edge` holds
+3:1 against every surface it is drawn on (WCAG 1.4.11, pinned in
+`theme-contrast`); the lit lineage is `--accent`. The 220px cards show reported context/runtime/branch—not guessed
 PRs, worktree health or task activity. Same-named nodes carry visible root/home
 suffixes and host qualifiers; their popup exposes the full reported address.
 Those are per-instance identity cues, never invented group names.
@@ -106,16 +154,34 @@ surface, not final K7 or native/rendered acceptance.
 `spawn-dialog.mjs` owns the form; `views/spawn.mjs` is a thin host (modal,
 focus trap, Esc/backdrop close, the `spawn.submit` binding and the terminal
 handoff). Souls come from the kernel's spawn catalog (`oats souls --json` via
-`GET /api/agents`), never from the roster. The chooser is grouped by source
-(alphabetical, externals last) and keyed by `agentsRoot + name + server`;
-switching soul keeps the typed name and instruction.
+`GET /api/agents`), never from the roster. Two layouts, switched in place
+(design board 6): **scoped** — opened from a soul card's Spawn or the soul
+page's Spawn — heads the dialog *Spawn <soul>* with where the soul comes from
+and shows the preview column (*What will be created*: name, works in, harness
+and where it came from, default team; *Core capabilities* and *Capabilities*
+from the preview's projected `modules`, each with its source, since the
+preview carries no per-module reason; a skeleton while it reads, the footer's
+refusal sentence when it fails). **Change soul** switches the same dialog to
+the **picker** (the soul chooser, grouped by source, alphabetical, externals
+last, keyed by `agentsRoot + name + server`); switching soul keeps the typed
+name and instruction, and a soul chosen there reopens in the picker. Quick
+Open (⌘P / Ctrl+P) opens the scoped layout too (`preselectSpawn`), and
+dismissing that dialog returns to where the operator was.
+
+Keyboard (spec F; `../docs/desktop-keyboard.md`): Mod+Enter (`spawn.submit`)
+spawns from any field, plain Enter in Name never does; DOM order is Tab order
+(Name, then its Prefix switch, drawn on the label's line by CSS grid);
+Relationship and Teams are one tab stop each (`roveSegment`: arrows, Home/End);
+the soul chooser is a `listbox` of `option` buttons where typing filters,
+Enter in the search picks the best match and Enter on a soul picks it, both
+moving focus to Name.
 
 Main form, in order: **Name** (the `<soul>-` prefix plus a purpose, with the
 kernel's final name shown below; when the CLI advertises `spawn-name`, a
 **Prefix with the soul name** switch sends `--name` instead of `--purpose`),
 **Runtime** and **Model** (always visible, showing the kernel's real defaults
-with a *default* pill), **Relationship** (None / Child of / Sibling of /
-Parent of; choosing one reveals the instance picker) and the **Opening
+with a *default* pill), **Relationship** (Independent / Child of / Sibling of /
+Parent of, a segmented control; choosing one reveals the instance picker) and the **Opening
 instruction**. **Developer settings** is collapsed: work area (base | branch,
 the worktree path relative to the deployment, *Use a worktree instead* for
 checkout souls), permissions, **messaging identity** (Default / Local /
@@ -186,6 +252,162 @@ the settled DOM; stale successes and rejections cannot overwrite the current
 observation. Native visual acceptance is not inferred from the DOM/CSSOM and
 computed-token AA tests.
 
+## Loading states (`loading.mjs`, `loading.css`)
+
+Every data region runs on one state model, owned by the controller
+`createDataState()` in `loading.mjs` (vanilla DOM, no tokens of its own):
+
+| State | When | What is painted |
+|---|---|---|
+| pending | no data for this subject yet | after 150ms a skeleton shaped like the final content; `aria-busy` on the region; the status line says "Loading <noun>…" once — never an empty-state message |
+| ready / empty | the last read succeeded | the content, or the surface's own empty copy after a successful zero read |
+| refreshing | data present, a read in flight | the content stays interactive; "Refreshing…" with a static dot after 400ms in the surface header; no `aria-busy`, no announcement |
+| stale | data present, the read failed | content kept; "Couldn't refresh <noun> · observed <age>" with **Retry** in the attention style and the cause behind a **Details** disclosure (and in the line's title); announced once through the status line, which is then clipped (`.loading-quiet`, its box kept) so the amber line is the one visible message — never the error red; actions that need current state are held by the surface with `aria-disabled` (never `disabled`: Chromium blurs a focused control that becomes disabled) and an accessible reason (`aria-description` + title: "Unavailable: roster is not current", "Unavailable: inspection is not current"), and every handler on a held control checks the mark first |
+| failed | no data, the read failed | the cause, a **Details** disclosure with the code and **Retry**, where the skeleton stood |
+
+The controller owns the two delays, `aria-busy`, the status-line text, the age
+line (`observedAt` from the response, `Observed <age>` after two minutes even
+on success; no age when the field is absent) and the Retry wiring. The surface
+owns its latest-intent tokens and calls `begin()` / `succeed()` / `fail()`
+only for the read it still owns; `reset()` on a new subject, `defer()` when a
+read settled without an observation (the server's deployment is still
+`pending`: its copy stands in, no skeleton, still busy), `cancel()` when a read
+was abandoned. Wording is fixed in `wording`; "Reading …" and "Loading…" are
+retired. Refresh and Retry controls go through `bindRefresh()`: `aria-disabled`
+while a read is in flight, never `disabled`, so a focused control keeps focus.
+A rebuild from new data restores focus and scroll through `captureFocusState()`,
+called right before the repaint (focus may have moved while the read ran):
+actionable controls carry `data-focus-key` (`remove:<label>`, `op:<layer>:<name>`,
+`instance:<home>`…) and are re-found by key only — a path is never trusted onto
+a button, since a repaint happens exactly when positions shift — while a
+disclosure summary is re-found by its structural path; a control that vanished
+hands focus to the surface's Refresh. An identical poll is skipped through a
+JSON signature of what the surface paints. CLI-missing, deployment-pending and
+not-observed states keep their own copy: they are separate truthful states, not
+skeletons.
+
+Skeleton shapes (`skeleton(doc, shape)` / `skeletonBlock`): `roster-row`,
+`soul-card`, `table-row`, `detail-section`, plus `pill` for counts and `line`.
+The roster-row and soul-card skeletons wear the real classes (`.ctx-tree-row`,
+`.ctx-inst`, …; `.soul-tile > .soul-card > .sbody / .sfoot`) so shell.css and the
+Souls grid's CSS own their geometry: a redesign moves the skeleton with it, and
+no pixel value is copied into loading.css. The Capabilities table's skeleton
+(`catalogSkeleton` in `workspace-discovery.mjs`) is a disabled, `aria-hidden`
+`button.catalog-row` for the same reason. `defer({ keepSkeleton: true })` is
+for a server that answers "still reading" (`refreshing: true` with nothing
+held): the subject is loading, so the skeleton stays.
+`loading.css` (linked from `index.html` and the harness) derives their fill
+from the theme tokens (`color-mix` of `--fg` over the host), shimmers at 1.6s
+and stops every animation — including the older `.spinner` — under
+`prefers-reduced-motion`. Text colours are the inventoried AA pairs (muted on
+bg/surface, warn on attn-bg); `test/loading-contrast.test.mjs` proves them on
+the effective colours. One live region per surface: where a surface has no
+visible status line (the sidebar roster, the hierarchy), `statusLine(doc,
+{ visuallyHidden: true })` speaks and the visible notice is a `role=note`.
+
+Where each surface wires it: the sidebar roster in `instance-tree.mjs`
+(`createRosterLoading`, `rosterSignature`, the pending count pill,
+`markStaleControl` / `staleBlocked`) and `shell.mjs` (`refreshContextRoster`;
+while stale, Start…, the actions menu and a *stopped* row's own activation are
+held — a stale `running:false` may be running by now — while a running row
+still opens its terminal); the hierarchy in `views/hierarchy.mjs` (the summary
+pill, its own notice keeps the stale copy with the observation's age); the soul
+inspector in `soul-inspector.mjs` (while `loading.settled === 'stale'` — the settled state, so a Retry in flight over stale content keeps the hold — every
+`[data-mutate]` control and the teams panel's join/leave — `createTeamsPanel`'s
+`mutable` / `mutableReason` — wait with `INSPECTION_STALE_TITLE`; Launch,
+Schedule and Files come from the roster and stay; a same-subject `show()` is a refresh that never runs
+`frame()`: the actions are built once per subject and read the current row at
+click time, the roster-derived block — lede, refusal, facts, Instances — is
+repainted behind its own signature, and "Teams here" is created with the frame
+so `soul teams` runs beside `inspect`) and `soul-teams-here.mjs`; readiness in `readiness-view.mjs` (the
+summary line is separate from the status line so an announcement never
+overwrites it).
+
+The Workspace view (`views/spawn.mjs`): the Souls grid's controller
+(`s.gridState`) paints card skeletons in the grid (one row plus one, at the
+real card size), the failed block in the grid and the stale line in
+`.souls-notice` above it; `settleGridState()` reads the reply — the kernel's
+`catalog.reason` is a failed read (stale beside a partial list, failed with
+none), an unobserved deployment defers with the deployment's own copy, and
+`refreshing: true` with no souls keeps the skeleton. `renderGrid()` leaves the
+grid to the controller while there is no data (the one exception is the
+unobserved deployment's copy) and skips an unchanged paint behind
+`s.gridSignature`. The Capabilities tab (`workspace-discovery.mjs`): the held
+table is never set to null within one workspace generation — a CLI emit or a
+sync re-reads it in place (live after a sync, `refresh: true`), a failed
+re-read marks it stale with Retry, and spec 02's held-table shapes (`status:
+'ok'` with `reason`; non-ok with `lastGood: { capabilities, observedAt }`) are
+shown stale. Both tab counts reserve their width with a pill while the count is
+expected (`paintCount`); a failed roster read leaves the Souls count empty and
+still (`rosterUnavailable()`). The capability page (`capability-page.mjs`,
+painted by `paintCapabilityPage` in `views/spawn.mjs`): opened from a soul
+before the catalog is read, the lede and the Comes-from facts are skeletons
+filled in place when the discovery's `onCatalog` fires; a catalog refresh
+while the page is open repaints it behind a signature over the content only,
+with focus kept by `data-focus-key` (`used:<soul>:<root>`, `file`; a vanished
+control hands focus to Back); the catalog's age line under the page bar is
+the controller's own notice (`noticeElement` / `updateNotice` in loading.mjs,
+through `catalogNotice` / `updateCatalogNotice`), updated in place on every
+catalog event and on the roster poll (`touchCapabilityPage`), so its Retry
+keeps focus, wears the busy mark while the re-read runs, and its age ticks.
+A failed read that carries data (the kernel's `catalog.reason` beside a list;
+a non-ok capabilities read with `lastGood`) calls `succeed()` only when
+nothing was shown yet, then `fail(error, { observedAt })`: with data on screen
+`fail()` alone updates the stale line in place — one node, one announcement,
+a focused Retry kept. The spawn dialog's harness, model and launch hints (`matched()` in
+`spawn-dialog.mjs`) read only a preview for the choices on screen, like the
+name and work hints.
+
+The terminal-side context panel's Soul tab (`instance-soul.mjs`) and its
+Messaging section (`instance-teams.mjs`): the roster-derived header is the
+context panel's and stays put; each section owns a body under it
+(`context-panel.mjs` mounts the Soul section on `.context-panel-soul-body`;
+the Teams section appends `.instance-teams-body` to its host) where the
+controller paints the skeleton (rows wearing the real classes), the failed
+block with Retry (`refresh: true`) and, for the soul, the stale line — never
+a silent absence, nothing prepended above. Both re-read the same selection
+when `instanceStatusIdentity(instance)` (`instance-status-identity.mjs`:
+home, last start, running, module drift rows, soul source) changes: the soul
+as a refresh that keeps its content, the teams by refreshing the card's list
+(or inspecting again when there is no card). An inspection without the soul,
+or without a messaging provider, is an empty read: the header stands, the
+Messaging section hides. The Messaging section claims its place during the
+inspection only when the roster row already reports `identityAddress` (or a
+failure is on screen), never again after a no-provider answer, so nothing
+under it shifts. Every controller has a `focusFallback` (the section head or
+the card's Refresh; the Soul body host; the Souls search field; the
+Capabilities search field): a focused Retry whose line or block leaves on
+success never lands on `<body>`.
+
+Roster-derived claims follow the roster's *settled* state
+(`rosterSettledState(s)` in `views/spawn.mjs`: the controller's `settled`
+while a re-read runs — a refresh over a stale roster is still stale — else
+its `state`), synced after every poll, settled or failed: the soul
+inspector's Instances card (`instancesState()` → `syncRoster()`) says "No
+instances yet." only after a good read, shows a skeleton line while pending
+and makes no claim (no count) while failed or stale; the Capabilities table's
+"Used by" cell (`renderCapabilities`'s `rosterState`, through the discovery's
+`syncRoster()` and render key) and the capability page's "Used by" section
+show a muted "—" carrying `ROSTER_STALE_TITLE` (`loading.mjs`, re-exported by
+`instance-tree.mjs`) as their accessible description instead of "Not used" /
+"No instance carries it yet." while the roster is not settled-good. A
+roster failure discarded because the selection moved still `cancel()`s the
+grid's read, so nothing is left "refreshing". A catalog that failed with
+nothing held shows the failed treatment on an open capability page
+(`failedElement` / `updateFailed`, shared with the controller's own block:
+cause, Details, Retry), never silence; a Retry over it paints no skeleton
+(`catalogPending` only before the first read settles). The Messaging section
+treats a no-provider answer as a settled absence (`cancel()`, not data), so a
+later failed re-read is the failed block with Retry, never a header over an
+empty body.
+
+Spawn stays enabled over a stale Souls grid: a local spawn goes through the
+dialog's live kernel preview (the preview boundary binds the choices to the
+kernel's decision at spawn time), so the grid's staleness cannot make it act
+on old facts. A remote spawn (`runRemote` → `doSpawn`) has no preview binding;
+that path is unchanged by the loading-states work. Filed for a later a11y
+pass: consolidating each surface's several live regions into one.
+
 ## Team controls on a live instance (teams contract 2026-09-25)
 
 An instance's inspector shows a **Teams** section (after its Instance facts)
@@ -230,16 +452,32 @@ Gate: `version --json` advertises `workspace-v2` with `workspaceApi: 2`; a remot
 workspace is observed through its server and never synced from here.
 
 - **Capabilities** is `oats capabilities --dir <deployment> --json`
-  (capabilitiesApi 1), read on demand via `POST /api/workspace-sync?ws=<id>`
-  `{action:"read"}` when the tab opens (and after a sync, or Refresh). The
-  design table: *Capability* (name; `Member · <repo> · <team>` /
-  `Package · <id> v<version>` / `External · <origin>`), *Status* (package:
-  locked; member: confirmed; the commit; "N instances
-  behind" only from the roster's own `moved` module rows) and *Used by* (souls
-  whose instances record the module). No Members list here. **Team** and
-  **Source** pill groups filter locally (AND); pills name only what the rows
-  hold — member repositories first, then packages (non-collapse rule: a
-  member's `publishes` never absorbs its package's capabilities).
+  (capabilitiesApi 1), held by the server and re-read when the workspace
+  state it was read under moves, or when viewed after 60 s
+  (`docs/desktop-load-path.md`); the tab reads
+  the held table via `POST /api/workspace-sync?ws=<id>` `{action:"read"}`
+  when it opens (`refresh: true` forces a live read; after a sync the table
+  is re-read). A
+  segmented jump (Workspace owned / Packages / Repo owned; navigation, so the
+  section in view carries `aria-current`), then one 58px row
+  card per capability (design board 4): a tile tinted by kind (Knowledge,
+  Messaging, Tasks, other, package), the name with its kind chip over a
+  one-line description, the source chip (package + pinned version, or the
+  member repository at latest), *Used by* (souls whose instances record the
+  module: up to three tiles and "N souls"; "Every soul" for a reported
+  workspace default; "Not used") and a chevron. The whole row is one native
+  button (Enter and Space are its own) named "<cap>, <kind>, from <source>"
+  and described by its description and used-by (`aria-describedby`); it opens
+  the capability's page with the full description; Back returns to
+  the list with its scroll offset, search and filters. No Members list here.
+  The **Team** and **Repo** dropdowns filter Workspace owned locally (AND);
+  they name only what the rows hold (non-collapse rule: a member's
+  `publishes` never absorbs its package's capabilities).
+- **Teams** (kernel feature `team-model-2`, `computer-teams.mjs`) is the
+  *Teams* page: *Shared with the workspace* (read-only, edited by PR) and
+  *Only on this computer* (add, remove, make default), one card per team with
+  its address, who may join and, from the roster, the instances whose
+  identity's team is that team's id (nothing when none).
 - **Sources** renders the roster observation's `oats workspace status`:
   repositories (team, confirmation status + the kernel's detail), packages
   (lock, capabilities) and external souls. No extra read.
@@ -262,6 +500,36 @@ workspace is observed through its server and never synced from here.
   --workspace <ref> --json`, then the ordinary transactional add. A refused ref
   gets a fresh offer for the same folder; `rolledBack` is reported.
 
+**Pinned tops and one scroller per tab (spec G, `sticky-top.mjs`).** The view
+is one fixed-height column that never scrolls: the tab row (`.workspace-header`,
+which also carries Setup's List/Graph switch) and the Souls bar sit outside the
+content scrollers (`.souls-grid`, `.workspace-discovery`). Each scroller is
+positioned, `min-height:0` and `overscroll-behavior: contain`; the view root
+(`.souls`) is `position:relative; overflow:clip`. Inside the Capabilities
+scroller the section pills + search (`.ws-toolbar.ws-sticky`) and the Teams page
+head (`.ct-page-head.ws-sticky`) are `position:sticky` on the opaque `--bg`.
+Chromium insets a sticky box by its scroller's padding, so they pin at
+`top: -var(--ws-pad-top)` (flush with the scrollport; nothing shows above
+them) and keep an 8px inner top. Their 1px bottom edge is always there,
+transparent until content has scrolled under the block (`.is-stuck`), so the
+block never changes height; the Souls grid does the same with a top edge
+(`.is-scrolled`). `trackStickyTop` also writes the pinned block's height to
+`--ws-sticky-h`, the `scroll-margin-top` of the section heads, rows and the
+Teams page's controls, so a pill jump or a focused row never lands under it.
+"Filter by Team / Repo" stays in the Workspace owned header: it filters only
+that section, so it scrolls with it. Section and group headers scroll. This
+holds at every width: soul-inspector's narrow `@container(max-width:700px)`
+block restacks only `.souls-body.inspecting` (the side inspector under the
+list, scrolling together); without it the view keeps the layout above.
+
+Why the containment matters: an absolutely positioned element with no
+positioned ancestor (the `*-sr-only` / `loading-sr` words) escapes a scroller's
+clip and stretches the document; wheel chaining, `scrollIntoView` and End then
+scroll the whole app, headers included. The sr-only utilities are anchored
+(`top:0; left:0`) and the shell's `body` is positioned and clipped, so the
+document never has anything to scroll (`workspace-sticky.test.mjs`; the
+browser behaviour is verified live over CDP).
+
 All awaited reads and mutations carry latest-intent ownership (request serial +
 workspace generation) checked on success and rejection, mutation-verified in
 `workspace-v2-view.test.mjs`. Fixtures are kernel captures
@@ -269,29 +537,47 @@ workspace generation) checked on success and rejection, mutation-verified in
 
 ## Keybindings (shell-level)
 
-- **Mod+F** reveals the sidebar and focuses the instance filter; **Mod+N** opens
-  Workspace's soul chooser, never automatically spawning an instance. Visible
-  hints and tooltips follow the effective bindings (including explicit unbinds).
-  Existing user overrides are retained. On Linux/Windows, Ctrl+F/Ctrl+N inside
-  the terminal still belong to the attached program; macOS uses Cmd+F/Cmd+N.
+The keymap, its per-platform defaults, the terminal policy, the F6 regions and
+the keyboard audit are documented in `../docs/desktop-keyboard.md`; this
+section is the module map.
+
+- **Mod+F** reveals the sidebar and focuses the instance filter; **⌘N /
+  Ctrl+Shift+N** opens Workspace's soul chooser, never automatically spawning
+  an instance. Visible hints and tooltips follow the effective bindings
+  (including explicit unbinds). Existing user overrides are retained.
 
 - **keybindings.mjs** — the keymap engine: action registry
   (`registerAction`/`setActiveContexts`; a registration may carry a
   `defaultChord` that folds into the effective keymap like a
   `DEFAULT_KEYMAP` entry — override wins, explicit unbind kills it),
-  `DEFAULT_KEYMAP`, user overrides
+  `DEFAULT_KEYMAP` (one entry per action: a chord, or `{ mac, other }`
+  when the platforms differ; `defaultBinding(id, isMac)`), user overrides
   persisted under `localStorage["oats-desktop-keymap"]`, chord
-  parse/format/match, and dispatch (`matchEvent`/`handleKeydown`). The engine
+  parse/format/match, and dispatch (`matchEvent`/`handleKeydown`).
+  `getBinding(id, isMac)` is override → platform default → registration
+  default; pass the platform wherever a chord is shown. The engine
   skips already-consumed (`defaultPrevented`) events, and unmodified/
   shift-only chords never fire while an editable field (input, textarea,
   select, contenteditable) has focus. Terminal
-  policy: inside `.xterm`, on macOS only ⌘-resolved chords fire; on
-  Linux/Windows only `TERMINAL_ALLOWLIST` action ids (palette, tab
-  next/prev/close) may fire — all other Ctrl chords belong to the attached
-  program. `app.quickOpenSouls` (Mod+P) is deliberately NOT allowlisted:
-  ⌘P fires inside xterm on macOS via the ⌘-chord policy, but Ctrl+P inside
-  xterm on Linux/Windows is the shell's history navigation and reaches the
-  pty.
+  policy (a default chord never takes a key a terminal program reads):
+  inside `.xterm`, on macOS only ⌘-resolved chords fire, plus Ctrl+Tab for
+  tabs.next/prev; on Linux/Windows only `TERMINAL_ALLOWLIST` action ids may
+  fire (their defaults are Ctrl+Shift+key or Ctrl+Tab) — plain Ctrl+letter,
+  F6, Alt+digit and Ctrl+PgUp/PgDn belong to the attached program, and
+  `focus.leaveTerminal` (Mod+Shift+F6) is the way out. `keymapConflicts`
+  lists clashes that involve a stored rebind; the shell marks the footer
+  shortcuts button and the editor names them. `app.quickOpenSouls` (Mod+P) is
+  deliberately NOT allowlisted: ⌘P fires inside xterm on macOS via the
+  ⌘-chord policy, but Ctrl+P inside xterm on Linux/Windows is the shell's
+  history navigation and reaches the pty.
+- **focus-regions.mjs** — F6 / Shift+F6 (`focus.nextRegion`/`prevRegion`,
+  outside a terminal; `focus.leaveTerminal` from inside one): sidebar nav →
+  roster → main → instance panel, hidden regions skipped, each region's
+  current item focused, never `<body>`. F6 and the tab switches are no-ops
+  under an open modal.
+- **surface-return.mjs** — "back to where you were" after a flow that moved
+  the main surface (Quick Open's spawn dialog): the same tab or stage and
+  control, unless the operator moved on.
 - **overlay-picker.mjs** — the shared overlay + fuzzy machinery behind the
   command palette and Quick Open: one input over a listbox
   (arrows/Enter/Esc, aria option pattern), the house subsequence scorer
@@ -299,11 +585,12 @@ workspace generation) checked on success and rejection, mutation-verified in
   negative), and the stale-load generation guard.
 - **quick-open.mjs** — Quick Open for souls (`Mod+P`, also “Souls: quick
   open…” in the palette): fuzzy-find a soul from the Spawn view's data
-  source and hand off to soul inspection through `views/spawn.mjs`
-  `preselectSoul()`. Inspection does not launch an instance or open the Spawn
-  dialog; **Launch…** is a separate explicit action. Attached-only and CLI
-  pending/unavailable states remain visible through the existing view. No
-  second spawn form exists.
+  source and hand off through `views/spawn.mjs` `preselectSpawn()`: the
+  spawn dialog scoped to that soul, as its card's Spawn opens it, with focus
+  in Name. Opening never spawns; Spawn stays explicit. Attached-only, refused
+  and CLI pending/unavailable souls open their soul page instead, which says
+  why. Dismissing the dialog returns to where the operator was
+  (`surface-return.mjs`). No second spawn form exists.
 - **keybindings-editor.mjs** — the shortcuts editor dialog (`Mod+,`):
   actions grouped by context, click-to-record (Esc cancels, Backspace
   unbinds), conflict warnings via `findConflict`, per-row reset + reset-all.
@@ -346,16 +633,29 @@ keyboard interceptor. No Stop/Remove, K6, editor/detach/PR or OS notification
 surface is introduced. Tests are inert DOM/CSSOM/ownership/contrast checks, not
 native rendered acceptance.
 
-## Context panel and focus mode
+## Instance panel (context panel) and focus mode
 
-The shell owns one right-side **Details** region outside all editor groups.
-A selected terminal shows reported Instance / Soul metadata. Its **Git & GitHub**
-tab uses the qualified K1 CLI read boundary for worktree/branch/changes and a
-bounded unified diff; the GitHub/PR card remains unavailable pending P1 (no
-inferred PRs or checks). Empty groups and file/brain tabs do not inherit another
-terminal's context. Roster refresh matches the exact
-workspace/terminal identity and never selects or focuses a panel; a missing or
-ambiguous observation makes session state unknown.
+The shell owns one right-side region outside all editor groups, the **instance
+panel** (`#context-panel`, `context-panel.mjs`). A selected terminal shows its
+instance in three tabs (v4.1 board 1): **Instance** (header with the soul mark,
+"instance of <soul>" linking to the Soul tab, an "older build" chip only when
+the kernel reports `soul.status`/`modules[].status` other than `current`, and
+"Running · 42m"; then Where it works, Session, Messaging, Lineage and the
+lifecycle footer), **Soul** and **Developer** (Git and GitHub). Where it works is one card: the
+work mode in plain words on a band, then Repo, Branch (Git modes only; ↑/↓
+appear once the Developer tab has observed them), Folder and Home. Folder is
+`<home>/work`, joined from the roster row's `home` with the home's own separator:
+the kernel gives every instance that folder, a real one in worktree and
+directory mode and a link to the shared tree in checkout, attached and workspace
+mode, where a muted "shared" tag follows the path (the link's target is not
+resolved; that would need a server read). Home is the instance home, where its
+own files live; without a reported `home` string there is no Folder row. Messaging's header is the
+label plus a tools slot the injected Teams section fills with its icon Refresh
+(`createTeamsPanel(…, { compact: true, refreshHost })`); the identity address
+(`identityAddress`, else the served identity) sits alone under it. Empty groups
+and file/brain tabs do not inherit another terminal's context. Roster refresh
+matches the exact workspace/terminal identity and never selects or focuses a
+panel; a missing or ambiguous observation makes session state unknown.
 
 Workspace projects its actual selected-soul inspector into that same region.
 Workspace still owns its requests and lifetime. Collapse or covering the
@@ -364,13 +664,31 @@ in-flight content; a late response cannot reclaim foreground visibility. True st
 or workspace reset ends that selection. Standalone view hosts keep the inline
 inspector fallback.
 
-**Details** collapses/restores the region. **Focus mode** hides the sidebar and
-right panel without closing tabs or changing split weights. Its footer control
-stays visible as an exit; exit restores the existing sidebar/panel preferences.
-Mod+F leaves focus mode to reveal the filter. Panel collapse and selected tab are
-session-local per workspace; focus mode is a temporary presentation override.
-Both actions are palette/editor-visible with no new default shortcuts. Native
-terminal input and per-window lifecycle policies are unchanged.
+There is no status bar under the editor groups. The editor tab bar's action
+cluster ends with a `panel-right` toggle (`#panel-toggle`, after the split
+controls): it runs `panel.toggle` (default **Mod+Alt+B**, not terminal-allowlisted,
+so Ctrl+Alt+B stays with the program in a Linux/Windows terminal). Its accessible
+name is the constant "Instance panel" with `aria-pressed` while the panel is
+expanded; its tooltip names the chord (the panel owns that title, so the button
+carries no `data-action`). It is disabled only with nothing to show. **Focus mode**
+(`app.focusMode`: palette and a rebindable action, no default chord) hides the
+sidebar and right panel without closing tabs or changing split weights; exit
+restores the existing sidebar/panel preferences. Focus mode always has a visible
+exit: the panel toggle stays enabled and, in focus mode, leaves it and shows the
+panel; the `#sidebar-restore` edge is shown in focus mode too (the only exit on a
+stage, where there is no tab bar) and runs `sidebar.toggle`, which leaves it.
+Focus that was in the hidden sidebar moves to the active tab's trigger, else to a
+stable visible control (`stableFocusTarget` in `shell.mjs`: the panel toggle, the
+sidebar toggle or the restore edge), never `<body>`; a focus-mode change made
+after focus was already lost (the palette removes its input before running the
+command) lands there too. Mod+F and Mod+B leave focus
+mode. Panel collapse and selected tab are session-local per workspace; focus mode
+is a temporary presentation override. Collapsed, the panel is a rail (a 44px column, or a
+34px row when the workbench stacks): the rail centres its controls on its cross
+axis, each control centres its block `.shell-icon` as a flex box, and no control
+has a cross-axis auto margin (the stacked expand drops its `margin-top:auto`), so
+every icon sits on the rail's centre line (`context-panel-rail.test.mjs`). Native terminal input and per-window
+lifecycle policies are unchanged.
 
 ### Git inspection (slice 2a)
 

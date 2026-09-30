@@ -2,6 +2,7 @@
 import { dirname } from "node:path";
 import { cliLaunchConfig } from "../cli-adapter.mjs";
 import { harnessFlag, harnessKey } from "../renderer/harness-names.mjs";
+import { canAddressRemote, unaddressableSentence } from "../renderer/remote-address.mjs";
 
 const fail = (message, code = "E_BAD_ARGS") => { throw Object.assign(new Error(message), { code }); };
 
@@ -20,7 +21,7 @@ export async function launchConfigRequest(request, { workspace, cli, agents = []
     if (!["list", "preview"].includes(action)) fail("Edit launch configurations in their configuration scope");
     const matches = instances.filter(i => i.home === selector.home);
     if (matches.length !== 1) fail("Select one existing home in this workspace");
-    if (server && !matches[0].savedRoute) fail("This instance has no saved server route", "E_SNAPSHOT_UNKNOWN");
+    if (server && !canAddressRemote(matches[0])) fail(unaddressableSentence({ ...matches[0], repoName: workspace.name || server }), "E_SNAPSHOT_UNKNOWN");
     home = matches[0].home; context = undefined;
   } else if (selector.soul !== undefined) {
     if (selector.context !== undefined) fail("Select one home, soul or configuration scope");

@@ -1,6 +1,8 @@
 /** Keyboard-accessible lifecycle actions, independent of terminal liveness. */
 import { instanceId } from "./instance-tree.mjs";
 import { iconElement } from "./shell-icons.mjs";
+import { unsupportedSession } from "./instance-presentation.mjs";
+import { canAddressRemote, rowReason } from "./remote-address.mjs";
 /** Decorative menu icons (the Redesign's context menu), keyed by action. */
 const MENU_ICONS = Object.freeze({ 'open-split': 'splitRight', 'open-pr': 'pullRequest', inspect: 'knowledge', start: 'start', restart: 'refresh', stop: 'stop', retire: 'remove' });
 
@@ -44,7 +46,7 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
   // the menu, rather than light-dismiss first and immediately reopen it.
   trigger.popoverTargetElement = menu;
   const items = [];
-  const reasonFor = action => { const row = extra.find(item => item.action === action); return typeof row?.reason === 'function' ? row.reason() : row?.reason || ''; };
+  const reasonFor = action => { const row = descriptors.find(item => item.action === action); return typeof row?.reason === 'function' ? row.reason() : row?.reason || ''; };
   const syncOptions = () => {
     for (const item of items) {
       const reason = reasonFor(item.dataset.action), note = item.querySelector('small');
@@ -55,10 +57,11 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
     }
     const first = items.find(item => !item.disabled); if (first) first.autofocus = true;
   };
-  const unrouted = !!instance.server && !instance.savedRoute;
+  // A remote row the kernel does not report addressable has no actions here; the trigger says why.
+  const unrouted = !canAddressRemote(instance);
   trigger.disabled = unrouted || pending.has(key);
   pending.get(key)?.push({ trigger, unrouted, owns });
-  if (unrouted) trigger.title = "No saved route for this remote instance on this machine";
+  if (unrouted) trigger.title = rowReason(instance).sentence;
   const close = (restoreFocus = false) => {
     menu.hidePopover();
     if (restoreFocus && owns() && visible(trigger)) trigger.focus();
@@ -69,8 +72,10 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
     menu.style.left = `${Math.max(8, Math.min(anchor.right - size.width, win.innerWidth - size.width - 8))}px`;
     menu.style.top = `${Math.max(8, anchor.bottom + size.height + 8 <= win.innerHeight ? anchor.bottom + 4 : anchor.top - size.height - 4)}px`;
   };
+  // A stale roster marks the trigger aria-disabled (instance-tree.mjs markStaleControl): blocked like `disabled`, focus kept.
+  const blocked = () => trigger.disabled || trigger.getAttribute("aria-disabled") === "true";
   const open = (action) => {
-    if (trigger.disabled || !visible(trigger) || !owns()) return;
+    if (blocked() || !visible(trigger) || !owns()) return;
     menu.showPopover(); position();
     (items.find((item) => item.dataset.action === action && !item.disabled) || items.find(item => !item.disabled))?.focus();
   };
@@ -79,7 +84,7 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
   // Both native dismissal and explicit close update the trigger's state.
   menu.addEventListener("beforetoggle", (event) => {
     const expanded = event.newState === "open";
-    if (expanded && (!owns() || trigger.disabled || !visible(trigger))) { event.preventDefault(); return; }
+    if (expanded && (!owns() || blocked() || !visible(trigger))) { event.preventDefault(); return; }
     if (expanded) syncOptions();
     menu.dataset.instanceMenuOpen = String(expanded);
     trigger.setAttribute("aria-expanded", String(expanded));
@@ -112,10 +117,13 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
       : (current + (event.key === "ArrowDown" ? 1 : -1) + available.length) % available.length;
     available[index]?.focus();
   });
-  const launchAction = instance.running === true ? [["restart", "Restart with…"]] : instance.running === false ? [["start", "Start…"]] : [];
+  // A Herdr-recorded row cannot start or restart: Start stays visible, disabled, with the kernel's reason.
+  const unsupported = unsupportedSession(instance);
+  const launchAction = unsupported ? [["start", "Start…", unsupported]]
+    : instance.running === true ? [["restart", "Restart with…"]] : instance.running === false ? [["start", "Start…"]] : [];
   async function execute(action) {
     const item = items.find(row => row.dataset.action === action);
-    if (!item || !owns() || !visible(trigger) || !item.isConnected || trigger.disabled || item.disabled || reasonFor(action) || pending.has(key)) return;
+    if (!item || !owns() || !visible(trigger) || !item.isConnected || blocked() || item.disabled || reasonFor(action) || pending.has(key)) return;
     close(true);
     if (action === 'stop' || action === 'retire') {
       if (typeof openLifecycle === 'function') openLifecycle(action, instance);
@@ -132,7 +140,9 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
       }
     }
   }
-  for (const descriptor of [...extra, ...[["inspect", "Knowledge & capabilities…"], ...launchAction, ['stop', 'Stop…'], ["retire", "Remove instance…"]].map(([action, label]) => ({ action, label }))]) {
+  const descriptors = [...extra, ...[["inspect", "Knowledge & capabilities…"], ...launchAction, ['stop', 'Stop…'], ["retire", "Remove instance…"]]
+    .map(([action, label, reason]) => ({ action, label, ...(reason ? { reason } : {}) }))];
+  for (const descriptor of descriptors) {
     const { action, label, reason, actionId } = descriptor;
     const item = doc.createElement("button"); item.type = "button"; item.tabIndex = -1;
     item.setAttribute("role", "menuitem"); item.dataset.action = action;
@@ -143,7 +153,7 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
     if (actionId) { const hint = doc.createElement('kbd'); hint.dataset.shortcut = actionId; hint.textContent = shortcut(actionId) || ''; hint.hidden = !hint.textContent; item.append(hint); }
     if (reason !== undefined) { const note = doc.createElement('small'); item.append(note); }
     item.addEventListener('click', () => {
-      if (!owns() || !item.isConnected || item.disabled || trigger.disabled) return;
+      if (!owns() || !item.isConnected || item.disabled || blocked()) return;
       if (actionId && typeof dispatch === 'function') dispatch(actionId); else void execute(action);
     });
     items.push(item); menu.append(item);

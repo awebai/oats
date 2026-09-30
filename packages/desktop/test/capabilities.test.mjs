@@ -38,6 +38,12 @@ test('scope boundary keeps same-named souls distinct, rejects foreign homes and 
   await capabilityRequest({ action: 'inspect', selector: { soul: 'dev', agentsRoot: agents[1].agentsRoot } }, { ...options, workspace: { ...workspace, remote: true, server: 'hetzner', registrationPresent: true } });
   assert.equal(calls.at(-1).server, 'hetzner'); assert.equal(calls.at(-1).context, '/team/two'); assert.equal(calls.at(-1).localCwd, '/local');
   assert.ok(calls.every(call => ['inspect', 'run'].includes(call.action)), 'only read and provider-operation calls reach the CLI');
+  // observe-max-age contract: the probe's features travel so the adapter can decide on --max-age; without a
+  // configured max-age the key is absent, and every inspect result reports when it was observed.
+  assert.ok(calls.every(call => call.features === cli.features && !Object.hasOwn(call, 'maxAge')));
+  const observed = await capabilityRequest({ action: 'inspect', selector: { home } }, options);
+  assert.match(observed.observedAt, /^\d{4}-\d{2}-\d{2}T.*Z$/); assert.equal(observed.refreshing, false);
+  await assert.rejects(capabilityRequest({ action: 'run', selector: { home }, operation: 'knowledge:reindex', refresh: true }, options), { code: 'E_BAD_ARGS' });
 });
 
 test('adapter: inspect and provider operations only — soul set and use are refused before any CLI call', async () => {
@@ -121,4 +127,15 @@ test('inspector preserves current provider, availability, kind and required-argu
     assert.deepEqual(JSON.parse(view.el.querySelector('.operation-output pre').textContent), { digested: true });
     assert.equal(view.calls.length, 2, 'optional args are not synthesized and completion does not rerun');
   } finally { view.close(); }
+});
+
+test('a remote home is inspected when the kernel reports it addressable, never on savedRoute alone', async () => {
+  const calls = [], remoteWs = { ...workspace, name: 'Build box', remote: true, server: 'hetzner', registrationPresent: true };
+  const row = { instance: 'dev-seat', home, agentsRoot: agents[1].agentsRoot, server: 'hetzner', savedRoute: false, addressable: true };
+  const options = { workspace: remoteWs, cli, agents, localCwd: '/local', invoke: async (bin, args) => { calls.push(args); return envelope({}); } };
+  await capabilityRequest({ action: 'inspect', selector: { home } }, { ...options, instances: [row] });
+  assert.equal(calls.at(-1).server, 'hetzner'); assert.equal(calls.at(-1).home, home);
+  await assert.rejects(capabilityRequest({ action: 'inspect', selector: { home } }, { ...options, instances: [{ ...row, addressable: false, missingRemotely: true }] }),
+    { code: 'E_SNAPSHOT_UNKNOWN', message: 'dev-seat is no longer on Build box. Remove it from this computer with: oats server forget hetzner --instance dev-seat' });
+  assert.equal(calls.length, 1);
 });

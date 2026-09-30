@@ -38,7 +38,7 @@ function shell(t) {
     tabActionsEl: document.getElementById("tab-actions"),
     workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A",
     split: null, activeTab: null, sidebarMode: "overview", tabLayerVisible: false,
-    contextRosterGen: 0, contextInstances: [],
+    contextRosterGen: 0, contextInstances: [], rosterState: null, rosterStale: false, contextDeploymentNote: null, rosterSignaturePainted: null,
     workspaceTabMemory: createWorkspaceTabMemory(), wsActiveTerminal: new Map(),
     brainIntents: createIntentGate(),
     workspaceLabel: { reset() {} }, stageSidebarMode: () => "overview",

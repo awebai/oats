@@ -48,7 +48,8 @@
   --ansi-bright-cyan: #70e0e8; --ansi-bright-white: #f5f9ff;
   /* ── component tokens (thin aliases — themes rarely override) ── */
   --md-code-bg: #ffffff10; --md-rule: #ffffff2e;
-  --graph-edge: #2d333c; --graph-edge-coord: #4493f8;
+  /* --graph-edge draws connectors, which are meaningful graphics: ≥3:1 on bg/surface/surface-2 (WCAG 1.4.11). */
+  --graph-edge: #636c79; --graph-edge-coord: #4493f8;
   /* Opaque identity pairs: fixed names only, never CSS supplied by a soul. */
   --soul-sand-bg: #393128; --soul-sand-fg: #d4b991;
   --soul-sage-bg: #29392e; --soul-sage-fg: #a9c6ad;
@@ -104,7 +105,7 @@
   /* White over canvas paints approximately --surface-2. A dark overlay on
      this canvas would fail AA for syntax accent/violet. Keep alpha tested. */
   --md-code-bg: #ffffff60; --md-rule: #1a1a182e;
-  --graph-edge: #e3e3df; --graph-edge-coord: #ad5500;
+  --graph-edge: #8c8c86; --graph-edge-coord: #ad5500;
   /* Opaque identity pairs: fixed names only, never CSS supplied by a soul. */
   --soul-sand-bg: #eee5d7; --soul-sand-fg: #665239;
   --soul-sage-bg: #e2ebe2; --soul-sage-fg: #46634b;
@@ -155,7 +156,7 @@
   --ansi-bright-yellow: #725500; --ansi-bright-blue: #155f96; --ansi-bright-magenta: #9d2b61;
   --ansi-bright-cyan: #0f6863; --ansi-bright-white: #37424a;
   --md-code-bg: #58637510; --md-rule: #5863752e;
-  --graph-edge: #ddd4bc; --graph-edge-coord: #1f6fb2;
+  --graph-edge: #8e846f; --graph-edge-coord: #1f6fb2;
   /* Opaque identity pairs: fixed names only, never CSS supplied by a soul. */
   --soul-sand-bg: #eee5d7; --soul-sand-fg: #665239;
   --soul-sage-bg: #e2ebe2; --soul-sage-fg: #46634b;
@@ -172,9 +173,30 @@
   --runtime-unknown-bg: #5f5f5a; --runtime-unknown-fg: #ffffff;
 }
 
-/* Keyboard-first accessibility: every interactive element shows a visible
-   focus ring (mouse focus stays quiet via :focus-visible). */
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 4px; }
+/* ── control rules (design v4.1, board 7; renderer/README.md "Control rules") ──
+   Focus (rule 2). Pointer interaction never draws a ring: visuals hang off
+   :focus-visible, never :focus, so a clicked button, tab, segment, row or link
+   stays quiet. Keyboard focus stays visible (WCAG 2.4.7) as the brand tint plus
+   a 1px accent edge, not a 2px offset ring. The edge is an inset outline: on a
+   bordered control it overlays the border (the border turns accent), on a
+   borderless one it is the inner pixel, and it never fights a component's own
+   box-shadow. The tint is deliberately low-specificity ((0,1,1)): a control that
+   paints its own opaque pair (primary, danger) keeps it and shows the edge only.
+   On such a fill the inset edge would be invisible (accent on --primary-bg is
+   1.52-3.38:1, on --danger 1.08-1.19:1), so there the same 1px edge sits 1px
+   OUTSIDE, on the surface around the control (accent on --bg, --surface,
+   --surface-2, --term-bg and --sel is AA in every theme). A new control that
+   paints its own opaque fill joins this list (or restates the offset itself). */
+:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+:is(button, a, summary):focus-visible { background: var(--sel); }
+:where(button.primary, .lifecycle-confirm, button.fspawn, button.spawn-act, button.forge-send, .context-panel-action,
+  .capability-nav button[aria-current="true"], button.auto-switch[aria-checked="true"]):focus-visible { outline-offset: 1px; }
+/* Checkboxes and radios are too small for an inset edge: the same 1px line sits just outside. */
+input:is([type="checkbox"], [type="radio"]):focus-visible { outline-offset: 1px; }
+/* Fields (rule 3). A text field has one frame: its own border, or its wrapper's
+   (wrapper:focus-within turns it accent). The <input> itself never draws an
+   outline or a second ring, in any state. */
+:is(input:not([type="checkbox"]):not([type="radio"]), textarea, select):focus-visible { outline: none; border-color: var(--accent); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
@@ -197,6 +219,9 @@
 .oats-view button.act { background: var(--surface); color: var(--fg); border: 1px solid var(--border); border-radius: 7px;
                        min-height: 32px; padding: 5px 14px; cursor: pointer; font-size: 12.5px; font-weight: 650; font-family: inherit; }
 .oats-view button.act:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+/* Keyboard focus tints plain .act buttons (the global edge already turns the border accent). Primaries keep
+   their pair; danger ink is not AA on the dark tint (4.27:1), so .danger shows the edge only. */
+.oats-view button.act:not(.primary):not(.danger):focus-visible { background: var(--sel); }
 /* Opt-in primaries only: never recolor every .act or its descendants. */
 .oats-view button.act.primary { background: var(--primary-bg); color: var(--primary-fg); border-color: var(--primary-bg); }
 .oats-view button.act.primary:hover:not(:disabled) { background: var(--primary-bg); color: var(--primary-fg); border-color: var(--primary-bg); }
@@ -207,7 +232,7 @@
   background: var(--surface); border: 1px solid var(--border); color: var(--fg);
   min-height: 36px; border-radius: 7px; padding: 7px 10px; font-family: inherit; font-size: 12.5px; line-height: 1.45; }
 .oats-view textarea.field { min-height: 64px; }
-.oats-view input.field:focus, .oats-view textarea.field:focus, .oats-view select.field:focus { border-color: var(--accent); }
+.oats-view input.field:focus-visible, .oats-view textarea.field:focus-visible, .oats-view select.field:focus-visible { outline: none; border-color: var(--accent); }
 .oats-view input.field::placeholder, .oats-view textarea.field::placeholder { color: var(--faint); }
 .oats-view input.field:disabled, .oats-view textarea.field:disabled, .oats-view select.field:disabled {
   background: var(--surface-2); color: var(--faint); cursor: default; }

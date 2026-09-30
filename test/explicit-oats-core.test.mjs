@@ -93,18 +93,20 @@ test('K7 events: spawn writes spawned (+launched when launching); a refused chil
 test('K6b (spawnPreviewApi 2): a preview — success OR refusal — leaves the deployment byte-identical (no event, no daemon, no soul write); --agents-root binds the exact root with no fallback; decision.revision binds the apply via --expect-decision (drift → E_DECISION_STALE, nothing created); preflight is bounded and reported', async t => {
   const fx = deployment(t, { souls: { ...WORKTREE, boss: {} }, local: OPUS });
   const git = (...a) => gitIn(fx.member, ...a);
-  writeFileSync(join(fx.bin, 'herdr'), `#!/bin/sh\necho STARTED >> "${fx.base}/herdr-started"; sleep 30\n`, { mode: 0o700 });
+  // A tmux that records every call: a session or window it was asked to create is a started backend.
+  writeFileSync(join(fx.bin, 'tmux'), `#!/bin/sh\necho "$*" >> "${fx.base}/tmux-calls"; exit 1\n`, { mode: 0o700 });
+  const tmuxStarted = () => existsSync(join(fx.base, 'tmux-calls')) && /new-session|new-window/.test(readFileSync(join(fx.base, 'tmux-calls'), 'utf8'));
   const boss = await fx.spawn('boss', { purpose: 'p', allowChildSpawns: false });
   const treeHash = () => { const out = spawnSync('bash', ['-c', `cd "${fx.dep}" && find . -name .git -prune -o -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256`], { encoding: 'utf8' }); return out.stdout.trim(); };
   // The FIRST preview of a never-spawned soul is inside the hashed window too: a
   // preview fetches the soul to a temporary copy, never into agents/<soul>/.
   const bossSoul = join(fx.member, 'souls', 'boss', 'soul.yaml');
   const before = treeHash(), eventsBefore = existsSync(join(boss.home, '.oats-events.jsonl')) ? readFileSync(join(boss.home, '.oats-events.jsonl'), 'utf8') : '';
-  // Success preview with the Herdr backend requested: no daemon started, backend reported as installed but not started.
-  const ok = fx.last(['spawn', 'wt', '--purpose', 'a', '--launch-config', 'opus', '--preview', '--backend', 'herdr', '--agents-root', fx.root, '--json']).result;
+  // Success preview with the backend requested: nothing started, backend reported as installed but not started.
+  const ok = fx.last(['spawn', 'wt', '--purpose', 'a', '--launch-config', 'opus', '--preview', '--backend', 'tmux', '--agents-root', fx.root, '--json']).result;
   assert.equal(ok.soulFetched, true, 'the first preview fetched the soul source'); assert.equal(existsSync(join(fx.root, 'wt')), false, 'and wrote no soul copy');
   assert.equal(ok.spawnPreviewApi, 2); assert.deepEqual(ok.subject, { soul: 'wt', agentsRoot: fx.root, dir: null });
-  assert.deepEqual(ok.backendStatus, { name: 'herdr', installed: true, started: false }); assert.equal(existsSync(join(fx.base, 'herdr-started')), false, 'preview started no daemon');
+  assert.deepEqual(ok.backendStatus, { name: 'tmux', installed: true, started: false }); assert.equal(tmuxStarted(), false, 'preview started no session');
   assert.match(ok.decision.revision, /^[a-f0-9]{24}$/); assert.equal(ok.decision.instance, 'wt-a'); assert.equal(ok.decision.base.oid, git('rev-parse', 'HEAD'));
   assert.equal(ok.preflight.status, 'complete'); assert.equal(ok.preflight.budgetMs, 20000);
   // Refusal preview (child of a parent that forbids children): typed refusal, NO event appended to the parent.
@@ -198,9 +200,11 @@ test('K6c spawn idempotency: --expect-decision + --idempotency-key — a retry o
   assert.equal(spawn('--purpose', 'b', '--idempotency-key', 'bad key!', '--no-launch').error.code, 'E_BAD_ARGS');
 });
 
-test('K6d (spawn-apply-2): the decision binds EFFECTIVE launch facts (a changed inherited model drifts it); a stale apply with a Herdr backend starts no daemon; two concurrent applies of one decision create exactly one home (E_PLACEMENT_TAKEN for the loser)', async t => {
+test('K6d (spawn-apply-2): the decision binds EFFECTIVE launch facts (a changed inherited model drifts it); a stale launching apply starts no session; two concurrent applies of one decision create exactly one home (E_PLACEMENT_TAKEN for the loser)', async t => {
   const fx = deployment(t, { souls: WORKTREE, local: OPUS });
-  writeFileSync(join(fx.bin, 'herdr'), `#!/bin/sh\necho STARTED >> "${fx.base}/herdr-started"; sleep 30\n`, { mode: 0o700 });
+  // A tmux that records every call: a session or window it was asked to create is a started backend.
+  writeFileSync(join(fx.bin, 'tmux'), `#!/bin/sh\necho "$*" >> "${fx.base}/tmux-calls"; exit 1\n`, { mode: 0o700 });
+  const tmuxStarted = () => existsSync(join(fx.base, 'tmux-calls')) && /new-session|new-window/.test(readFileSync(join(fx.base, 'tmux-calls'), 'utf8'));
   const spawnArgs = ['spawn', 'wt', '--purpose', 'a', '--launch-config', 'opus'];
   // A. effective facts are hashed: same placement, different inherited model (the launch configuration's) → stale.
   const pv = fx.last([...spawnArgs, '--preview', '--json']).result;
@@ -209,9 +213,9 @@ test('K6d (spawn-apply-2): the decision binds EFFECTIVE launch facts (a changed 
   const drift = fx.last([...spawnArgs, '--expect-decision', pv.decision.revision, '--no-launch', '--json']);
   assert.equal(drift.error.code, 'E_DECISION_STALE'); assert.equal(drift.error.details.decision.effective.model, 'haiku'); assert.equal(drift.error.details.decision.instance, 'wt-a', 'placement unchanged — only the effective model moved');
   assert.deepEqual(homes(fx, 'wt'), []);
-  // B. a stale LAUNCHING apply with backend herdr starts no daemon.
-  const stale = fx.last([...spawnArgs, '--backend', 'herdr', '--expect-decision', pv.decision.revision, '--json']);
-  assert.equal(stale.error.code, 'E_DECISION_STALE'); assert.equal(existsSync(join(fx.base, 'herdr-started')), false, 'stale apply started no backend');
+  // B. a stale LAUNCHING apply starts no session.
+  const stale = fx.last([...spawnArgs, '--backend', 'tmux', '--expect-decision', pv.decision.revision, '--json']);
+  assert.equal(stale.error.code, 'E_DECISION_STALE'); assert.equal(tmuxStarted(), false, 'stale apply started no backend');
   // C. two concurrent applies of ONE fresh decision → exactly one home; the loser refuses E_PLACEMENT_TAKEN having touched nothing.
   const fresh = fx.last([...spawnArgs, '--preview', '--json']).result.decision.revision;
   const run = () => new Promise(res => { const p = spawnChild(process.execPath, [CLI, ...spawnArgs, '--expect-decision', fresh, '--no-launch', '--json'], { cwd: fx.dep, env: { ...fx.env, PATH: fx.path, TMUX: '' } }); let out = '', err = ''; p.stdout.on('data', d => out += d); p.stderr.on('data', d => err += d); p.on('close', code => { let doc; try { doc = JSON.parse(out.trim().split('\n').pop()); } catch { doc = { ok: false, error: { code: 'UNPARSEABLE', raw: (out + err).slice(0, 400) } }; } res({ code, doc }); }); });

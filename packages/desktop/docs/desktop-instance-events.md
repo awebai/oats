@@ -12,13 +12,16 @@ not probe, install or reconfigure OATS on its own.
   admission and the actual CLI execution owner. API 1 and version-only guesses
   are insufficient.
 - `POST /api/instance-events?ws=<advertised-id>` accepts a 16 KiB JSON object:
-  `{action:"read", selector:{instance,agent,agentsRoot,server:null}, limit?}`.
+  `{action:"read", selector:{instance,agent,agentsRoot,server}, limit?}` (`server`
+  is `null` for a local row).
   Limits are exactly 50, 100 or 200 (default 100; the overview uses 100).
-- The server admits one current local roster home and pins its recorded birth,
+- The server admits one current roster home and pins its recorded birth,
   workspace and CLI. The renderer cannot choose a home, cwd, log, environment,
-  command, cursor or `--since`. Remote/captured refusals have no classic fallback.
+  command, cursor or `--since`. Captured refusals have no classic fallback.
 - Fixed no-shell argv: `instance events NAME --dir CONTEXT --home HOME --limit N
-  --json`. CLI budget: 15 seconds / 4 MiB. Two process-wide read slots, identical
+  --json`; a remote row's is `instance events NAME --server S --home HOME --limit
+  N --json` ([remote rows](desktop-deployment-model.md#remote-rows)). CLI budget:
+  15 seconds (45 for a remote read) / 4 MiB. Two process-wide read slots, identical
   reads coalesce before dispatch, no queue or settled server cache.
 - Main normalizes route aliases before selecting the specialized proxy. Trusted
   mainFrame/navigation and copied backend base/epoch/workspace are checked on

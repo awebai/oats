@@ -33,6 +33,10 @@ test('a preview without its effective plan is refused; a preview-only CLI cannot
   const readOnly = { ...capable(), features: capable().features.filter(f => f !== 'spawn-apply-2') };
   assert.equal(spawnApplySupported(readOnly), false); assert.ok(previewData(data(), target));
 });
+test('an effective Herdr backend (an older kernel decision) is not a spawn decision', () => {
+  const v = strong(); v.decision.effective.backend = 'herdr';
+  assert.equal(spawnEffective(v.decision.effective), null); assert.equal(previewData(v, target), null);
+});
 test('K6d projection preserves opaque full decision and refuses contradictory effective facts', () => {
   // The projected decision is the kernel's minus provider payloads (they stay kernel-side; the revision binds them).
   const v = strong(), projected = spawnDecision(v.decision, { effectiveRequired: true });

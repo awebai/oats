@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runInNewContext } from 'node:vm';
 import { JSDOM } from 'jsdom';
-import { createSoulInspector } from '../renderer/soul-inspector.mjs';
+import { createSoulInspector, INSPECTION_STALE_TITLE } from '../renderer/soul-inspector.mjs';
 import { createReadinessView } from '../renderer/readiness-view.mjs';
 import { cliStatus } from '../renderer/views/cli-status.mjs';
 import { postJson, wsQuery, workspaceGeneration, currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
@@ -13,6 +13,9 @@ import { createTeamsPanel, teamsOperations, soulTeams } from '../renderer/teams-
 import { ageText } from '../renderer/age-text.mjs';
 import { homeInspection, capturedOperations, capturedRun } from './helpers/inspect-fixture.mjs';
 import { iconElement } from '../renderer/shell-icons.mjs';
+import { createDataState, skeletonBlock, skeleton, captureFocusState } from '../renderer/loading.mjs';
+import { desktopFacts } from '../renderer/capability-page.mjs';
+import { buildState } from '../renderer/soul-inspector.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => {
@@ -129,7 +132,7 @@ for (const outcome of ['resolve', 'reject']) {
 function mutant(from, to) {
   const source = createSoulInspector.toString();
   assert.equal(source.split(from).length, 2, 'mutation targets exactly one production guard');
-  return runInNewContext(`(${source.replace(from, to)})`, { postJson, wsQuery, workspaceGeneration, runtimeState, createSoulMark, createReadinessView, cliStatus, iconElement, originText, createTeamsPanel, teamsOperations, soulTeams, ageText, inspectData, inspectFacts });
+  return runInNewContext(`(${source.replace(from, to)})`, { postJson, wsQuery, workspaceGeneration, runtimeState, createSoulMark, createReadinessView, cliStatus, iconElement, originText, createTeamsPanel, teamsOperations, soulTeams, ageText, inspectData, inspectFacts, createDataState, skeletonBlock, skeleton, captureFocusState, desktopFacts, buildState, INSPECTION_STALE_TITLE });
 }
 test('mutation: pending ownership is essential during availability sync', async () => {
   const factory = mutant('pendingOperations.has(control) || !available()', '!available()');

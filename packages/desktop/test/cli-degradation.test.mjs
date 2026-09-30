@@ -64,6 +64,7 @@ test("cli-status: a RECEIVED 404 (absent endpoint) settles as unavailable and ca
 });
 
 test("refreshCli/reprobeCli update shared state and notify subscribers", async () => {
+  cs.resetCliStateForTests(); // subscribers hear CHANGES: start from probe-pending, not the previous test's state
   const state = { get: payload(false), post: payload(true), reprobes: [] };
   const ctx = jsonCtx(state);
   const seen = [];
@@ -73,6 +74,12 @@ test("refreshCli/reprobeCli update shared state and notify subscribers", async (
   await cs.reprobeCli(ctx);
   assert.equal(cs.cliAvailable(), true);
   assert.deepEqual(seen, [false, true]);
+  // The same CLI probed again (fresh probedAt, as every /api/cli response
+  // carries) is not a change: nobody is told, nothing is wiped.
+  state.post = payload(true, { probedAt: 2 });
+  await cs.reprobeCli(ctx);
+  assert.equal(cs.cliAvailable(), true);
+  assert.deepEqual(seen, [false, true], "identical reprobe must not notify");
   off();
 });
 

@@ -41,7 +41,7 @@
         "member local/<base>/remotes/ws.git @ <commit12>"
       ],
       "skills": [
-        "<base>/deployment/agents/dev/instances/dev-pi-attached-kstub-mnone/.agents/skills/golden.knowledge/golden-knowledge"
+        "<base>/deployment/agents/dev/instances/dev-pi-attached-kstub-mnone/.agents/skills/golden-knowledge"
       ],
       "hooks": [
         "spawn"
@@ -75,7 +75,7 @@
         "type": "skill-tree",
         "source": "golden.knowledge",
         "declared": "skills",
-        "resolved": "<base>/deployment/agents/dev/instances/dev-pi-attached-kstub-mnone/.agents/skills/golden.knowledge",
+        "resolved": "<base>/deployment/agents/dev/instances/dev-pi-attached-kstub-mnone/.agents/skills",
         "origin": "member:local/<base>/remotes/ws.git@<sha>",
         "deferred": "materialize"
       },
@@ -194,7 +194,8 @@
     "prompt": {
       "kind": "task-file",
       "file": "TASK.md"
-    }
+    },
+    "kernelBin": "<kernel>/bin/oats.mjs"
   },
   "command": "OATS_INSTANCE='dev-pi-attached-kstub-mnone' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-pi-attached-kstub-mnone' PI_AGENT_INSTANCE='dev-pi-attached-kstub-mnone' PI_AGENT_HOME='<base>/deployment/agents/dev/instances/dev-pi-attached-kstub-mnone' '<base>/bin/pi' --append-system-prompt '<base>/deployment/agents/dev/instances/dev-pi-attached-kstub-mnone/AGENTS.md' --approve --name 'dev-pi-attached-kstub-mnone' '@TASK.md'",
   "createdAt": "<createdAt>",

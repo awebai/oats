@@ -29,6 +29,7 @@ import { createInstanceGitPanel } from '../renderer/instance-git.mjs';
 import { spawnDialogCSS } from '../renderer/spawn-dialog.mjs';
 import { createAutomationsView } from '../renderer/views/automations.mjs';
 import { setWorkspace } from '../renderer/views/common.mjs';
+import { createTerminalTab } from "../renderer/terminal-tab.mjs";
 
 const renderer = new URL("../renderer/", import.meta.url);
 const css = readFileSync(new URL("theme.css", renderer), "utf8");
@@ -106,7 +107,8 @@ const pairs = [
   ...["fg", "muted", "faint", "accent"].flatMap((fg) => ["bg", "surface", "surface-2"].map((bg) => [fg, bg])),
   ...["ok", "warn", "danger"].flatMap((fg) => ["bg", "surface", "surface-2", "term-bg"].map((bg) => [fg, bg])),
   ["chip-fg", "chip-bg"], ["accent", "chip-bg"], ["warn", "chip-bg"], ["fg", "chip-bg"],
-  ["primary-fg", "primary-bg"], ["term-fg", "term-bg"], ["term-sel-fg", "term-sel"],
+  ["primary-fg", "primary-bg"], ["primary-bg", "primary-fg"] /* toast buttons invert on keyboard focus */,
+  ["term-fg", "term-bg"], ["term-sel-fg", "term-sel"],
   ["term-fg", "surface-2"], ["muted", "term-bg"],
   ["fg", "term-bg"], ["accent", "term-bg"], ["violet", "term-bg"], ["violet", "surface-2"],
   ...["fg", "muted", "faint", "accent", "warn", "ok"].map((fg) => [fg, "sel"]),
@@ -188,6 +190,32 @@ for (const [name, palette] of palettes) {
   });
 }
 
+// Control rule 2: keyboard focus is a 1px edge (WCAG 1.4.11 non-text, 3:1). Controls that paint their own
+// opaque pair (primary, danger fill) carry it 1px OUTSIDE, so it is measured against the surfaces those
+// buttons sit on; inset it would sit on their own fill, which fails in every theme. The toast's edge is
+// --primary-fg outside its inverted buttons, on the toast's --primary-bg.
+for (const [name, palette] of palettes) test(`${name}: focus edges outside opaque-pair controls meet 3:1 on the surfaces around them`, () => {
+  const ratio = (fg, bg) => contrast(opaqueChannels(palette.get(fg)), backgroundChannels(bg, palette));
+  for (const bg of ["bg", "surface", "surface-2", "term-bg", "sel"]) {
+    assert.ok(ratio("accent", bg) >= 3, `${name} accent edge on --${bg}: ${ratio("accent", bg).toFixed(2)}:1`);
+  }
+  assert.ok(ratio("primary-fg", "primary-bg") >= 3, `${name} toast edge --primary-fg on --primary-bg: ${ratio("primary-fg", "primary-bg").toFixed(2)}:1`);
+  // Why the edge moved outside: inset on a danger fill it is below 3:1 in every theme (and on
+  // --primary-bg in dark and solarized; light's 3.38:1 is too thin to rely on).
+  assert.ok(ratio("accent", "danger") < 3, `${name} accent on --danger would need the outside edge`);
+});
+
+// Graph connectors (the Active overview's edges on its --surface-2 group cards, Setup's tree lines on
+// --bg/--surface/--surface-2) are meaningful graphics: WCAG 1.4.11 asks 3:1, and --graph-edge must not
+// fall back to the decorative --border it once shared. The accent-lit path already passes the focus rule.
+for (const [name, palette] of palettes) test(`${name}: --graph-edge connectors meet 3:1 on every surface they are drawn on`, () => {
+  for (const bg of ["bg", "surface", "surface-2"]) {
+    const ratio = contrast(opaqueChannels(palette.get("graph-edge")), backgroundChannels(bg, palette));
+    assert.ok(ratio >= 3, `${name} --graph-edge ${palette.get("graph-edge")} on --${bg}: ${ratio.toFixed(2)}:1 < 3:1`);
+  }
+  assert.notEqual(palette.get("graph-edge"), palette.get("border"), `${name} connectors are not the decorative border`);
+});
+
 // Color fixtures are local: no external reference paths, renderer startup or
 // installed theme is needed to detect drift from the approved visual port.
 test("White uses neutral surfaces, ink primaries and AA-safe orange distinct from errors", () => {
@@ -215,7 +243,7 @@ test("dark color palette is preserved; primary is an existing opaque ink/surface
     violet: "#c297ff", ok: "#3fb950", warn: "#d29922", danger: "#f85149",
     "chip-bg": "#21262e", "chip-fg": "#adb6c2", sel: "#1b2b40",
     "term-bg": "#0a0d12", "term-fg": "#e6edf3", "term-sel": "#264f78", "term-sel-fg": "#f5f9ff",
-    "md-code-bg": "#ffffff10", "md-rule": "#ffffff2e", "graph-edge": "#2d333c", "graph-edge-coord": "#4493f8",
+    "md-code-bg": "#ffffff10", "md-rule": "#ffffff2e", "graph-edge": "#636c79", "graph-edge-coord": "#4493f8",
   };
   for (const [key, value] of Object.entries(expected)) assert.equal(dark.get(key), value, key);
   assert.deepEqual(ansi.map(key => dark.get(key)), [
@@ -234,7 +262,7 @@ test("Solarized retains every prior Light semantic and ANSI color from b280ce1b"
     violet: "#7f3f98", ok: "#465f00", warn: "#725500", danger: "#b52f35",
     "chip-bg": "#ede5cc", "chip-fg": "#56676d", sel: "#dce7e8",
     "term-bg": "#fdf6e3", "term-fg": "#52666c", "term-sel": "#d3c9a8", "term-sel-fg": "#37424a",
-    "md-code-bg": "#58637510", "md-rule": "#5863752e", "graph-edge": "#ddd4bc", "graph-edge-coord": "#1f6fb2",
+    "md-code-bg": "#58637510", "md-rule": "#5863752e", "graph-edge": "#8e846f", "graph-edge-coord": "#1f6fb2",
   };
   for (const [key, value] of Object.entries(expected)) assert.equal(solarized.get(key), value, key);
   assert.deepEqual(ansi.map(key => solarized.get(key)), [
@@ -343,12 +371,13 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
   doc.querySelector('main').append(sheet);
   const root = dom.window.getComputedStyle(doc.documentElement);
   for (const [selector, painted, fg, bg] of [
-    // Workspace v4 (W5): the table head sits on the table surface; names, source chips and used-by counts.
-    ['.catalog-row.head', '.catalog-table', 'muted', 'surface'],
-    ['.catalog-name', '.catalog-table', 'fg', 'surface'],
-    ['.catalog-desc', '.catalog-table', 'muted', 'surface'],
-    ['.source-chip', '.catalog-table', 'muted', 'surface'], ['.source-chip-name', '.catalog-table', 'fg', 'surface'],
-    ['.catalog-used-count', '.catalog-table', 'muted', 'surface'],
+    // Workspace v4.1: the column head sits on the page; each capability is a row card (surface) with its
+    // name, one-line description, boxed source chip and used-by words.
+    ['.catalog-head', '.oats-view', 'muted', 'bg'],
+    ['.catalog-name', 'button.catalog-row', 'fg', 'surface'],
+    ['.catalog-desc', 'button.catalog-row', 'muted', 'surface'],
+    ['.source-chip', '.source-chip.boxed', 'muted', 'surface'], ['.source-chip-name', '.source-chip.boxed', 'fg', 'surface'],
+    ['.catalog-used-count.none', 'button.catalog-row', 'muted', 'surface'],
     // Filters: "Filter by", a plain dropdown, an active one (Team = marketing), the count and Clear filters.
     ['.catalog-filters-label', '.oats-view', 'muted', 'bg'],
     ['.catalog-select:not(.active) .catalog-select-key', '.catalog-select:not(.active)', 'muted', 'surface'],
@@ -357,11 +386,11 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
     ['.catalog-select.active select', '.catalog-select.active', 'fg', 'sel'],
     ['.catalog-shown', '.oats-view', 'muted', 'bg'], ['.catalog-clear', '.oats-view', 'accent', 'bg'],
     ['.catalog-note.warn', '.oats-view', 'warn', 'bg'], ['.catalog-note.catalog-remedy', '.oats-view', 'muted', 'bg'],
-    // Sections: jump pills (current = ink), titles with their lead, repo sub-headings.
-    ['.capability-nav button[aria-current=true]', '.capability-nav button[aria-current=true]', 'primary-fg', 'primary-bg'],
-    ['.capability-nav button[aria-current=false]', '.capability-nav button[aria-current=false]', 'fg', 'surface'],
+    // Sections: the segmented jump (current = brand tint, rule 1), titles with their lead, repo headings.
+    ['.capability-nav button[aria-current]', '.capability-nav button[aria-current]', 'accent', 'sel'],
+    ['.capability-nav button:not([aria-current])', '.capability-nav', 'muted', 'surface'],
     ['.capability-section-title', '.oats-view', 'fg', 'bg'], ['.capability-section-lead', '.oats-view', 'muted', 'bg'],
-    ['.catalog-group', '.catalog-table', 'muted', 'surface'],
+    ['.catalog-group', '.oats-view', 'muted', 'bg'],
     // Workspace v4 Setup (W1/W2) — replaces the old setup-card/node/sources inventory.
     ['.setup-lede h2', '.oats-view', 'fg', 'bg'], ['.setup-lede-where', '.oats-view', 'muted', 'bg'],
     ['.setup-box-head h3', '.setup-box', 'fg', 'surface'], ['.setup-box-lead', '.setup-box', 'muted', 'surface'],
@@ -480,7 +509,9 @@ for (const [name] of palettes) test(`${name}: actual Stop/Remove confirmations m
     for (const [selector, surfaceSelector, fg, bg] of [
       ['.lifecycle-dialog h2', '.lifecycle-dialog', 'fg', 'surface'], ['.lifecycle-dialog .lifecycle-note', '.lifecycle-dialog', 'muted', 'surface'],
       ['.lifecycle-dialog dt', '.lifecycle-facts', 'muted', 'surface-2'], ['.lifecycle-dialog dd', '.lifecycle-facts', 'fg', 'surface-2'],
-      ['.lifecycle-dialog label', '.lifecycle-options', 'fg', 'surface-2'], ['.lifecycle-close', '.lifecycle-close', 'fg', 'surface'],
+      ['.lifecycle-dialog label', '.lifecycle-options', 'fg', 'surface-2'],
+      // Close holds focus when the dialog opens; the keyboard-focus tint (control rule 2) is what is painted.
+      ['.lifecycle-close', '.lifecycle-close', 'fg', 'sel'],
       ['.lifecycle-confirm', '.lifecycle-confirm', 'primary-fg', operation === 'stop' ? 'primary-bg' : 'danger'],
     ]) {
       const el = doc.querySelector(selector), surface = doc.querySelector(surfaceSelector); assert.ok(el && surface, selector);
@@ -616,7 +647,7 @@ for (const [name] of palettes) test(`${name}: frame10 rail, disabled menu reason
   for (const [selector, painted, fg, bg] of [
     ['.context-panel-rail-tab[aria-pressed=true]', '.context-panel-rail-tab[aria-pressed=true]', 'accent', 'sel'],
     ['.context-panel-rail-tab[aria-pressed=false]', '#context-panel', 'muted', 'surface'],
-    ['.context-panel-tab-count', '#context-panel', 'muted', 'surface'], // W6: the Git & GitHub tab's thread count
+    ['.context-panel-tab-count', '#context-panel', 'muted', 'surface'], // W6: the Developer tab's thread count
     ['.ctx-instance-menu small', '.ctx-instance-menu button:disabled', 'muted', 'surface-2'],
     ['.ws-option-meta', '.ws-option', 'muted', 'sel'],
     ['.app-toast-open', '.app-toast-open', 'primary-fg', 'primary-bg'],
@@ -712,12 +743,14 @@ for (const [name] of palettes) test(`${name}: F7 inspector cards, teams, compact
     ['#home .teams-card .team-meta', '#home .teams-card', 'muted', 'surface'],
     ['#home .teams-card .team-badge', '#home .teams-card', 'muted', 'surface'],
     ['#home .inspector-spawned button', '#home .inspector-spawned button', 'fg', 'surface'],
-    // Workspace v4 (W6): the Folder row's path reads as a value; Details' home path stays muted.
-    ['#context-panel .context-panel-folder .context-panel-path', '#context-panel', 'fg', 'surface'],
+    // v4.1: the Home row's path reads as a value in the Where it works card; the Soul tab's Details path stays muted.
+    ['#context-panel .context-panel-where .context-panel-path', '#context-panel .context-panel-where', 'fg', 'surface'],
     // desktop-facts: where the model came from, under the model in the Session card.
     ['#context-panel .context-panel-session-from', '#context-panel .context-panel-session', 'muted', 'surface'],
     ['#context-panel .context-panel-detail .context-panel-path', '#context-panel', 'muted', 'surface'],
-    ['#context-panel .context-panel-copy', '#context-panel .context-panel-copy', 'fg', 'surface'],
+    ['#context-panel .context-panel-copy', '#context-panel', 'muted', 'surface'],
+    // Spec D: the Folder row's "shared" tag (linked modes), the muted tag pair.
+    ['#context-panel .context-panel-shared-tag', '#context-panel .context-panel-shared-tag', 'muted', 'tag-bg'],
   ];
   checks.push(['.git-status-details > summary', '#context-panel', 'muted', 'surface']);
   for (const [selector, painted, fg, bg] of checks) {
@@ -740,7 +773,8 @@ for (const [name] of palettes) test(`${name}: the spawn Teams row (fixed, joinab
   for (const source of [css, spawnDialogCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
   const root = dom.window.getComputedStyle(doc.documentElement);
   for (const [selector, painted, fg, bg] of [['.spawn-team-fixed span', '.spawn-team-fixed span', 'fg', 'surface'],
-    ['.spawn-team:not(.picked):not(.spawn-team-fixed) span', '.spawn-teams-row', 'muted', 'surface-2'],
+    // Rule 1: an unselected segment is transparent on the group's surface.
+    ['.spawn-team:not(.picked):not(.spawn-team-fixed) span', '.spawn-teams-row', 'muted', 'surface'],
     ['.spawn-team.picked span', '.spawn-team.picked span', 'accent', 'sel']]) {
     const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
     assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
@@ -748,6 +782,21 @@ for (const [name] of palettes) test(`${name}: the spawn Teams row (fixed, joinab
     assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
   }
+  dom.window.close();
+});
+
+// Board 6: the spawn footer's "✓ Preview ready" — the check in --ok, the words muted, on the dialog's surface.
+for (const [name] of palettes) test(`${name}: the spawn footer's Preview ready check and words meet computed AA`, () => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="spawn-modal"><div class="spawn-dialog"><div class="spawn-footer"><p class="fstatus ok">Preview ready</p></div></div></div></body></html>`, { pretendToBeVisual: true });
+  const doc = dom.window.document;
+  for (const source of [css, spawnDialogCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  const root = dom.window.getComputedStyle(doc.documentElement), token = t => opaqueChannels(root.getPropertyValue(`--${t}`).trim());
+  const rule = [...doc.styleSheets].flatMap(sheet => [...sheet.cssRules]).find(r => r.selectorText === '.spawn-footer .fstatus.ok::before');
+  assert.equal(rule?.style.color, 'var(--ok)');
+  assert.equal(dom.window.getComputedStyle(doc.querySelector('.fstatus')).color, 'var(--muted)');
+  assert.match(spawnDialogCSS, /\.spawn-modal \.spawn-dialog \{[^}]*background:var\(--surface\)/);
+  for (const fg of ['ok', 'muted']) assert.ok(contrast(token(fg), token('surface')) >= 4.5, `${fg} on surface`);
+  for (let parent = doc.querySelector('.fstatus'); parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
   dom.window.close();
 });
 
@@ -810,6 +859,31 @@ for (const [name] of palettes) test(`${name}: the can't-spawn-here notes meet co
   }
 });
 
+// Board 3 soul cards: the labelled chips (the default team's muted "· default" too) on the tag tint, and the
+// foot's lines on the card: a running count, a stopped one, and a refusal over its muted running count.
+for (const [name] of palettes) test(`${name}: soul-card chips, the default note and the foot lines meet computed AA`, t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"><div class="souls">
+    <div class="soul-tile" id="refused"><button class="soul-card"><span class="sbody"><span class="schips"><span class="schip" data-default="true"><span class="schip-key">Team</span><b>oats</b><span class="schip-note">· default</span></span><span class="schip"><span class="schip-key">Repo</span><b>agents</b></span></span></span>
+      <span class="sfoot"><span class="sfoot-lines"><span class="sproblem">Can't spawn here · disabled</span><span class="sactivity running">1 instance running</span></span></span></button></div>
+    <div class="soul-tile" id="running"><button class="soul-card"><span class="sfoot"><span class="sactivity running">2 instances running</span></span></button></div>
+    <div class="soul-tile" id="stopped"><button class="soul-card"><span class="sfoot"><span class="sactivity">1 stopped</span></span></button></div></div></div></body></html>`);
+  t.after(() => dom.window.close());
+  const doc = dom.window.document, spawnCSS = readFileSync(new URL('views/spawn.mjs', renderer), 'utf8').match(/const CSS = `([\s\S]*?)`;/)[1];
+  for (const source of [css, spawnCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  const painted = el => { for (let p = el; p; p = p.parentElement) { const bg = dom.window.getComputedStyle(p).background; if (/^var\(--/.test(bg)) return bg.slice(6, -1); } return null; };
+  for (const [selector, fg, bg] of [
+    ['#refused .schip .schip-key', 'muted', 'tag-bg'], ['#refused .schip b', 'fg', 'tag-bg'], ['#refused .schip .schip-note', 'muted', 'tag-bg'],
+    ['#refused .sfoot-lines .sproblem', 'warn', 'surface'], ['#refused .sfoot-lines .sactivity', 'muted', 'surface'],
+    ['#running .sactivity.running', 'fg', 'surface'], ['#stopped .sactivity', 'muted', 'surface'],
+  ]) {
+    const el = doc.querySelector(selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector); assert.equal(painted(el), bg, `${selector} painted`);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${selector}: ${fg} on ${bg}`);
+    for (let p = el; p; p = p.parentElement) assert.equal(dom.window.getComputedStyle(p).opacity, '1');
+  }
+});
+
 // 0.30 launch preferences: the soul page's notes under the facts and the side panel's Harness card
 // (where it is set, the soul's own preference, a missing harness), each on its actual painted surface.
 for (const [name] of palettes) test(`${name}: launch preference notes meet computed AA`, t => {
@@ -848,25 +922,39 @@ for (const [name] of palettes) test(`${name}: team model v2 cards, left entries,
   const v2 = name => JSON.parse(readFileSync(new URL(`./fixtures/team-model-v2/${name}.json`, import.meta.url), 'utf8'));
   const teams = teamsData(v2('teams-after'), '/fixture/base/northwind-workspace'), soulTeams = soulTeamsData(v2('soul-teams-default'));
   teams.defaultTeam = 'engineering'; for (const r of teams.teams) r.default = r.label === 'engineering'; for (const p of teams.problems) if (p.label === 'engineering') p.default = true; // DERIVED: a blocking default
-  const setup = createComputerTeams(doc, { request: async () => structuredClone(teams) });
+  // Spec 02: engineering's members on this computer and on a server that was not reached, and the not-reached status line.
+  const TEAM = 'engineering:northwind.aweb.ai'; teams.teams.find(t => t.label === 'engineering').team = TEAM;
+  const member = (instance, extra = {}) => ({ workspace: '/w', server: null, serverLabel: null, instance, agent: 'engineer', agentsRoot: '/w/agents',
+    home: `/w/agents/engineer/instances/${instance}`, team: TEAM, running: true, addressable: true, missingRemotely: false, reason: null, createdAt: null, ...extra });
+  const setup = createComputerTeams(doc, { request: async () => structuredClone(teams), readMembers: async () => ({
+    members: [member('eng-1'), member('eng-2', { workspace: 'remote:build:1', server: 'build', serverLabel: 'Build box', running: null, reason: 'ssh failed' })],
+    servers: [{ server: 'build', label: 'Build box', group: 'build:1', reached: false, error: 'ssh failed', registered: true, souls: [] }],
+    notReached: [{ server: 'far', label: 'Far box' }] }) });
   const soul = createSoulTeamsHere(doc, { soul: 'release-manager', request: async () => structuredClone(soulTeams), listTeams: async () => structuredClone(teams) });
   doc.querySelector('#setup').append(setup.element); doc.querySelector('#soul').append(soul.element);
   t.after(() => { setup.dispose(); soul.dispose(); dom.window.close(); });
   for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve));
   const root = dom.window.getComputedStyle(doc.documentElement);
   for (const [selector, painted, fg, bg] of [
-    ['.ct-label', '.computer-teams', 'fg', 'surface-2'], ['.ct-from', '.computer-teams', 'muted', 'surface-2'],
-    ['[data-team="mine"] .ct-id', '.computer-teams', 'fg', 'surface-2'], ['.ct-id.none', '.computer-teams', 'warn', 'surface-2'],
-    ['.ct-chip', '.ct-chip', 'fg', 'tag-bg'], ['.ct-why', '.computer-teams', 'muted', 'surface-2'],
+    // The v4.1 Teams page: one card per team on the surface; the section's scope chip; the default pill in the tint.
+    ['.ct-label', '.ct-card', 'fg', 'surface'], ['.ct-scope', '.ct-scope', 'muted', 'surface'],
+    ['[data-team="mine"] .ct-id', '.ct-card', 'fg', 'surface'], ['.ct-id.none', '.ct-card', 'warn', 'surface'],
+    ['.ct-pill', '.ct-pill', 'accent', 'sel'], ['.ct-why', '.ct-card', 'muted', 'surface'],
+    // Board 5: the team tile (its tint; the default's in the brand tint) and both scope chips ("Shared · Git", dashed "Not shared").
+    ['.ct-tile:not(.default)', '.ct-tile:not(.default)', 'chip-fg', 'chip-bg'], ['.ct-tile.default', '.ct-tile.default', 'accent', 'sel'],
+    ['.ct-scope:not(.dashed)', '.ct-scope:not(.dashed)', 'muted', 'surface'], ['.ct-scope.dashed', '.ct-scope.dashed', 'muted', 'surface'],
     ['button.ct-act:not(:disabled)', 'button.ct-act:not(:disabled)', 'fg', 'surface'], ['button.ct-act:disabled', 'button.ct-act:disabled', 'muted', 'surface'],
     ['.sth-default', '.soul-teams-here', 'fg', 'surface'], ['.sth-default .sth-why', '.soul-teams-here', 'muted', 'surface'],
     ['.sth-label', '.soul-teams-here', 'fg', 'surface'], ['.sth-meta:not(.warn)', '.soul-teams-here', 'muted', 'surface'],
     ['.sth-meta.warn', '.soul-teams-here', 'warn', 'surface'], ['button.sth-act', 'button.sth-act', 'fg', 'surface'],
-    ['.ct-blocking', '.computer-teams', 'muted', 'surface-2'], ['.ct-blocking strong', '.computer-teams', 'fg', 'surface-2'],
+    ['.ct-blocking', '.ct-card', 'muted', 'surface'], ['.ct-blocking strong', '.ct-card', 'fg', 'surface'],
+    // Spec 02: the member list on the card (group heads, names, the state words, both buttons).
+    ['.ct-group-head', '.ct-card', 'muted', 'surface'], ['.ct-member-name', '.ct-card', 'fg', 'surface'], ['.ct-member-state', '.ct-card', 'muted', 'surface'],
+    ['.ct-member-term', '.ct-card', 'muted', 'surface'],
     ['.sth-blocking', '.soul-teams-here', 'muted', 'surface'], ['.sth-blocking strong', '.soul-teams-here', 'fg', 'surface'],
     ['.teams-subhead', '.soul-inspector', 'muted', 'surface'],
     ['.teams-warning-head', '.soul-inspector', 'warn', 'surface'], ['.teams-warning-text', '.soul-inspector', 'fg', 'surface'],
-    ['.spawn-team-off .spawn-team-name', '.spawn-teams-row', 'muted', 'surface-2'],
+    ['.spawn-team-off .spawn-team-name', '.spawn-teams-row', 'muted', 'surface'],
   ]) {
     const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
     assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
@@ -874,4 +962,131 @@ for (const [name] of palettes) test(`${name}: team model v2 cards, left entries,
     assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
   }
+  // Hover and focus-visible: the name keeps --fg (underlined) on the card; Terminal turns --fg on --surface-2.
+  const rule = selector => [...doc.styleSheets].flatMap(sheet => [...sheet.cssRules]).find(r => r.selectorText === selector)?.style;
+  assert.equal(rule('.oats-view .computer-teams .ct-member-name:hover, .oats-view .computer-teams .ct-member-name:focus-visible').color, '', 'no colour change on the name');
+  const lit = rule('.oats-view .computer-teams .ct-member-term:hover, .oats-view .computer-teams .ct-member-term:focus-visible');
+  assert.equal(lit.color, 'var(--fg)'); assert.equal(lit.background, 'var(--surface-2)');
+  assert.ok(contrast(opaqueChannels(root.getPropertyValue('--fg').trim()), opaqueChannels(root.getPropertyValue('--surface-2').trim())) >= 4.5, 'Terminal lit');
+    // The not-reached line is the page head's lead style: the same colour on the same ground.
+  assert.equal(dom.window.getComputedStyle(doc.querySelector('.ct-reach')).color, dom.window.getComputedStyle(doc.querySelector('.ct-lead')).color);
+  assert.ok(doc.querySelector('.ct-reach').textContent.includes('Far box'));
+});
+
+// v4.1 cleanup (boards 1 and 2): the instance panel's header chip and soul link, the Where it works band
+// and grid, the Messaging address and compact team rows, and the Git tab's cards, badges and empty state.
+for (const [name] of palettes) test(`${name}: v4.1 instance panel, compact Messaging rows and Git tab cards meet computed AA`, t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div id="context-panel" class="context-panel"><div class="context-panel-page">
+    <div class="context-panel-identity"><span class="context-panel-identity-sub"><button class="context-panel-soul-link">dev</button><span class="context-panel-drift">older build</span></span>
+      <span class="context-panel-state" data-state="running"><span>Running</span><span>· 42m</span></span><span id="stopped" class="context-panel-state" data-state="stopped">Stopped</span></div>
+    <div class="context-panel-where"><div class="context-panel-mode"><span class="context-panel-mode-copy"><span class="context-panel-mode-title">Own worktree</span><span class="context-panel-mode-meaning">isolated branch</span></span></div>
+      <dl class="context-panel-facts"><div class="context-panel-fact"><dt>Branch</dt><dd class="is-mono"><span>main</span><span class="context-panel-ahead">↑3</span></dd></div></dl></div>
+    <section class="context-panel-section"><div class="context-panel-section-head"><div class="context-panel-label">Messaging</div></div><div class="context-panel-address">team/dev-1</div>
+      <section class="teams-panel is-compact"><div class="teams-card"><div class="team-row"><div class="team-main"><div class="team-name">oats<span class="team-tag">default</span></div><div class="team-meta">oats:team</div></div><span class="team-badge">Always on</span></div>
+        <div class="team-row"><div class="team-main"><div class="team-name">eng</div></div><button class="team-action" data-team-action="leave">Leave</button></div>
+        <div class="team-row"><div class="team-main"><div class="team-name">product</div><div class="team-meta">eligible</div></div><button class="team-action" data-team-action="join">Join</button></div>
+        <p class="teams-note">No other teams available to this soul.</p></div></section></section>
+    <div class="instance-git"><div class="git-files git-card"><button class="git-file"><span class="git-letter git-letter-add">A</span><span class="git-file-path">a</span></button>
+      <button class="git-file"><span class="git-letter git-letter-mod">M</span></button><button class="git-file"><span class="git-letter git-letter-del">D</span></button><button class="git-file"><span id="rename" class="git-letter">R</span></button></div>
+      <p class="git-note git-dashed">No uncommitted changes.</p>
+      <div class="git-empty git-dashed"><span class="git-empty-title">No Git for this instance</span><span class="git-empty-why">plain folder</span></div><p class="git-empty-note">in <b>worktree</b> mode</p>
+      <div class="git-footer"><span>Checked just now</span><button class="git-link">Refresh</button></div>
+      <section class="git-github"><div class="forge-pr-card git-card"><div class="forge-head"><span class="forge-title-row"><span class="forge-state">Open</span><span class="forge-title">Title</span></span><span class="forge-sub">#1</span></div></div></section></div>
+  </div></div></body></html>`, { pretendToBeVisual: true });
+  const doc = dom.window.document;
+  for (const source of [css, contextPanelCSS, teamsCSS, instanceGitCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  t.after(() => dom.window.close());
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  for (const [selector, painted, fg, bg] of [
+    ['.context-panel-soul-link', '#context-panel', 'accent', 'surface'],
+    ['.context-panel-drift', '.context-panel-drift', 'fg', 'tag-bg'],
+    ['.context-panel-state[data-state=running]', '#context-panel', 'accent', 'surface'],
+    ['#stopped', '#context-panel', 'muted', 'surface'],
+    ['.context-panel-mode-title', '.context-panel-mode', 'fg', 'surface-2'],
+    ['.context-panel-mode-meaning', '.context-panel-mode', 'muted', 'surface-2'],
+    ['.context-panel-where dt', '.context-panel-where', 'muted', 'surface'],
+    ['.context-panel-where dd', '.context-panel-where', 'fg', 'surface'],
+    ['.context-panel-ahead', '.context-panel-where', 'muted', 'surface'],
+    ['.context-panel-label', '#context-panel', 'muted', 'surface'],
+    ['.context-panel-address', '#context-panel', 'muted', 'surface'],
+    ['.is-compact .team-name', '#context-panel', 'fg', 'surface'],
+    ['.is-compact .team-tag', '.is-compact .team-tag', 'muted', 'tag-bg'],
+    ['.is-compact .team-meta', '#context-panel', 'muted', 'surface'],
+    ['.is-compact .team-badge', '#context-panel', 'muted', 'surface'],
+    ['.is-compact .team-action[data-team-action=leave]', '#context-panel', 'muted', 'surface'],
+    ['.is-compact .team-action[data-team-action=join]', '#context-panel', 'accent', 'surface'],
+    ['.is-compact .teams-note', '#context-panel', 'muted', 'surface'],
+    ['.git-letter-add', '#context-panel', 'ok', 'surface'],
+    ['.git-letter-mod', '#context-panel', 'warn', 'surface'],
+    ['.git-letter-del', '#context-panel', 'danger', 'surface'],
+    ['#rename', '#context-panel', 'muted', 'surface'],
+    ['.git-note.git-dashed', '#context-panel', 'muted', 'surface'],
+    ['.git-empty-title', '#context-panel', 'fg', 'surface'],
+    ['.git-empty-why', '#context-panel', 'muted', 'surface'],
+    ['.git-empty-note', '#context-panel', 'muted', 'surface'],
+    ['.git-empty-note b', '#context-panel', 'fg', 'surface'],
+    ['.git-footer', '#context-panel', 'muted', 'surface'],
+    ['.git-footer .git-link', '#context-panel', 'accent', 'surface'],
+    ['.forge-state', '.forge-state', 'fg', 'tag-bg'],
+    ['.forge-sub', '#context-panel', 'muted', 'surface'],
+  ]) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.equal(dom.window.getComputedStyle(surface).background.replace(/^.*(var\(--[\w-]+\)).*$/, '$1'), `var(--${bg})`, painted);
+    // Every surface between the text and its painted ground is transparent (no other ground intervenes).
+    if (surface !== el) for (let parent = el.parentElement; parent && parent !== surface; parent = parent.parentElement) {
+      const background = dom.window.getComputedStyle(parent).background;
+      assert.ok(!/var\(--/.test(background) || background.includes(`var(--${bg})`), `${selector}: ${parent.className} paints ${background}`);
+    }
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${selector}: ${fg} on ${bg}`);
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+  }
+});
+
+// The reconnect strip overlays the pane's top rows (no layout change, so no refit) and never
+// dims the terminal under it. Driven into both strip states through the real terminal tab.
+for (const [name] of palettes) test(`${name}: the remote reconnect strip and its button meet computed AA and overlay the pane`, async t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="term-wrap"></div></body></html>`), doc = dom.window.document;
+  t.after(() => dom.window.close());
+  for (const source of [css, readFileSync(new URL('shell.css', renderer), 'utf8')]) {
+    const style = doc.createElement('style'); style.textContent = source; doc.head.append(style);
+  }
+  const wrap = doc.querySelector('.term-wrap'), exits = [], gate = new Promise(() => {});
+  let opens = 0, timers = [];
+  const h = Object.freeze({ id: 1, lease: '1'.padStart(64, '0') });
+  const tab = createTerminalTab({
+    wrap, remote: { serverId: 'build', instance: 'dev', home: '/srv/dev' }, serverLabel: 'Build box',
+    isActive: () => true, fit() {}, observe: () => () => {},
+    clock: { now: () => 0, setTimeout: fn => { timers.push(fn); return timers.length; }, clearTimeout() {} },
+    term: { cols: 80, rows: 24, options: {}, onData: () => ({}), onResize: () => ({}), focus() {}, dispose() {}, write() {} },
+    desk: {
+      termOpen: async () => (++opens === 1 ? { terminalApi: 2, ok: true, status: 'opened', handle: h } : gate),
+      termReady: async () => ({ terminalApi: 2, ok: true, status: 'ready', handle: h }),
+      termClose: async () => ({ terminalApi: 2, ok: true, status: 'closed', handle: h }),
+      termResize() {}, termWrite() {}, onTermData: () => () => {}, onTermExit: (_h, cb) => { exits.push(cb); return () => {}; },
+    },
+  });
+  await tab.start();
+  exits[0]({ terminalApi: 2, status: 'ended', handle: h, cleanupPending: false, exitCode: 255, reason: null });
+  const root = dom.window.getComputedStyle(doc.documentElement), style = el => dom.window.getComputedStyle(el);
+  const aa = (fg, bg, what) => assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()),
+    opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${name} ${what}: --${fg} on --${bg}`);
+  const strip = doc.querySelector('.term-reconnect'), text = doc.querySelector('.term-reconnect-text'), button = strip.querySelector('button');
+  assert.equal(style(strip).position, 'absolute'); assert.equal(style(strip).top, '0px');
+  assert.equal(style(strip).left, '0px'); assert.equal(style(strip).right, '0px');
+  assert.equal(style(strip).background, 'var(--surface)');
+  assert.equal(style(text).color, 'var(--fg)'); aa('fg', 'surface', 'strip text');
+  assert.equal(style(button).color, 'var(--fg)'); assert.equal(style(button).background, 'var(--surface)'); aa('fg', 'surface', 'Reconnect now');
+  // jsdom's :focus-visible needs a modifier-free keydown, and its style cache a mutation.
+  button.focus(); button.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+  button.setAttribute('data-focus-probe', ''); button.removeAttribute('data-focus-probe');
+  assert.equal(doc.activeElement, button); assert.ok(button.matches(':focus-visible'));
+  assert.equal(style(button).background, 'var(--sel)', 'keyboard focus paints the tint');
+  assert.equal(style(button).color, 'var(--fg)'); aa('fg', 'sel', 'focused Reconnect now');
+  for (const el of [text, button, wrap]) for (let node = el; node; node = node.parentElement) assert.equal(style(node).opacity, '1');
+  const live = doc.querySelector('.term-live');
+  assert.equal(style(live).position, 'absolute'); assert.equal(style(live).width, '1px'); assert.equal(style(live).overflow, 'hidden');
+  button.click(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(text.textContent, 'Reconnecting to Build box…');
+  assert.equal(style(button).color, 'var(--fg)', 'an attempt in flight keeps the button legible'); aa('fg', 'surface', 'busy Reconnect now');
 });

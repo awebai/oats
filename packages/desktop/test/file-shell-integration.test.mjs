@@ -22,7 +22,8 @@ import { projectSplitDom } from "../renderer/split-dom.mjs";
 import { instanceActions, captureInstanceActionMenu } from "../renderer/instance-actions.mjs";
 import { instanceActionTarget, sameInstanceActionTarget } from '../renderer/instance-action-target.mjs';
 import { instanceSplitPlan, instanceSplitIdentity } from '../renderer/instance-split.mjs';
-import { runtimeState } from "../renderer/instance-presentation.mjs";
+import { runtimeState, unsupportedSession } from "../renderer/instance-presentation.mjs";
+import { canAddressRemote, rowReason } from "../renderer/remote-address.mjs";
 import { createRuntimeBadge } from "../renderer/identity-marks.mjs";
 import { THEMES } from "../renderer/theme.mjs";
 import { rosterKeyAction, moveTarget } from "../renderer/roster-keys.mjs";
@@ -82,6 +83,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     instanceActionTarget, sameInstanceActionTarget, instanceSplitPlan, instanceSplitIdentity, baseTitles: new WeakMap(), menuState() {},
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "instances", tabLayerVisible: false,
     contextRosterGen: 0, contextInstances: [], contextFilter: "", collapsedInstances: new Set(), rosterTip: { bind() {}, hide() {}, sync() {} }, rosterTipFacts: () => ({}), rosterPrs: { get: () => null, refresh() {} }, contextRosterEl: null,
+    rosterState: null, rosterStale: false, contextDeploymentNote: null, rosterSignaturePainted: null, // initContextRoster builds the real controller (instance-tree createRosterLoading)
     wsActiveTerminal: new Map(), pendingTerms: new Set(), brainIntents: createIntentGate(), workspaceTabMemory: createWorkspaceTabMemory(),
     tabbar: document.getElementById("tabbar"), tabhost: document.getElementById("tabhost"),
     tabActionsEl: document.getElementById("tab-actions"),
@@ -112,7 +114,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     createQuickOpen: options => createQuickOpen({ ...options, doc: document }),
     createSelectionOwnership, wirePaneSelection, prepareOwnedOpen, createViewLifecycle,
     createTabChrome, tabKeyAction, focusAfterLastTab, reserveKey, whenKeyFree, projectSplitDom, splitControlsState,
-    ...tree, ...layout, ...workspaceTabs, instanceActions, captureInstanceActionMenu, runtimeState, createRuntimeBadge, rosterKeyAction, moveTarget,
+    ...tree, ...layout, ...workspaceTabs, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge, rosterKeyAction, moveTarget,
     terminalOptions, terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}),
     onThemeChange: () => () => {}, onTerminalTypographyChange: () => () => {}, requestAnimationFrame: cb => cb(),
     FitAddon: { FitAddon: class { fit() {} } },
@@ -160,7 +162,8 @@ function shell(t, shellSource = source, platform = "MacIntel") {
   return {
     ...s, c, keys, document, window: dom.window, requests, loads, chooserInputs, tickets, opens, attachments, terms, detached, notices, key, change,
     cancel: input => input.dispatchEvent(new dom.window.Event("cancel")),
-    roster(instances) { c.contextInstances = instances; s.renderContextRoster(instances); },
+    // refreshContextRoster is stubbed: a roster handed in reads as observed, so its rows paint.
+    roster(instances) { c.contextInstances = instances; c.rosterState.succeed(); s.renderContextRoster(instances); },
     control(instance, control = "terminal") {
       const terminal = [...document.querySelectorAll("[data-tree-instance][data-tree-control=terminal]")]
         .find(el => el.dataset.treeInstance === tree.instanceId(instance));
@@ -193,8 +196,8 @@ function shell(t, shellSource = source, platform = "MacIntel") {
 // Quotes/brackets exercise identity comparison without unsafe CSS interpolation.
 const parent = { instance: "worker", agentsRoot: '/team/"[agents]', home: '/team/"[home]', running: true };
 const child = { instance: "child", agentsRoot: parent.agentsRoot, home: "/team/child", parentInstance: "worker", running: true };
-const twin = { ...parent, server: "remote", savedRoute: true };
-const remoteChild = { ...child, server: "remote", savedRoute: true };
+const twin = { ...parent, server: "remote", addressable: true };
+const remoteChild = { ...child, server: "remote", addressable: true };
 const roster = [parent, child, twin, remoteChild];
 
 async function rosterAttachment(t, action, outcome, shellSource = source) {

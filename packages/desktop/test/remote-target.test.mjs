@@ -1,25 +1,95 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { prepareRemoteTerm, remoteTargetKey, createTerminalPrepareGate, remoteTerminalEnvironment } from "../remote-target.mjs";
+import { EventEmitter } from "node:events";
+import { readFileSync } from "node:fs";
+import { HERDR_REMOVED } from "../renderer/terminal-contract.mjs";
+import { runTerminalCommand } from "../terminal-exec.mjs";
+
+/** The real runner over an exec double that exits `code` after printing `stdout`, as the CLI does for a JSON refusal. */
+const exiting = (code, stdout, calls = []) => (bin, args, opts) => runTerminalCommand(bin, args, opts, (_bin, argv, _opts, callback) => {
+  calls.push(argv); const child = new EventEmitter();
+  setImmediate(() => { callback(code ? Object.assign(new Error("Command failed"), { code }) : null, stdout, ""); child.emit("close", code); });
+  return child;
+});
 const cli = { bin: "/selected/oats", version: "0.22.2", remote: ["session"] };
-const remote = { serverId: "build", instance: "dev-task", target: { oatsPath: "/untrusted" } };
-test("remote viewer uses host-selected CLI and saved-route address only", async () => {
+const home = "/srv/agents/dev/instances/dev-task";
+const remote = { serverId: "build", instance: "dev-task", home, target: { oatsPath: "/untrusted" } };
+test("remote viewer uses the host-selected CLI and addresses the instance by server and home only, never a bare name", async () => {
   const got = await prepareRemoteTerm(cli, remote, { run: async (bin, args) => {
     assert.equal(bin, "/selected/oats");
-    assert.deepEqual(args, ["session", "inspect", "--server", "build", "--instance", "dev-task", "--json"]);
+    assert.deepEqual(args, ["session", "inspect", "--server", "build", "--home", home, "--json"]);
     return { stdout: JSON.stringify({ schemaVersion: 1, ok: true, result: { present: true } }) };
   } });
-  assert.deepEqual(got, { binary: "/selected/oats", args: ["session", "attach", "--server", "build", "--instance", "dev-task"] });
-  assert.throws(() => remoteTargetKey({ serverId: "--host", instance: "x" }));
+  assert.deepEqual(got, { binary: "/selected/oats", args: ["session", "attach", "--server", "build", "--home", home] });
+  assert.throws(() => remoteTargetKey({ serverId: "--host", instance: "x", home }));
+});
+test("a remote terminal target without an absolute home is refused at admission, before any process", async () => {
+  for (const bad of [{ serverId: "build", instance: "dev-task" }, { serverId: "build", instance: "dev-task", home: "relative/dev-task" },
+    { serverId: "build", instance: "dev-task", home: "" }, { serverId: "build", instance: "dev-task", home: "/a\0b" }]) {
+    assert.throws(() => remoteTargetKey(bad), /invalid remote terminal/);
+    await assert.rejects(prepareRemoteTerm(cli, bad, { run: assert.fail }), /invalid remote terminal/);
+  }
+});
+test("the dedup key is the server and the home: same-named instances differ by home, the same home on two servers never merges", () => {
+  assert.equal(remoteTargetKey(remote), JSON.stringify(["remote", "build", home]));
+  assert.notEqual(remoteTargetKey(remote), remoteTargetKey({ ...remote, home: "/srv/agents/qa/instances/dev-task" }));
+  assert.notEqual(remoteTargetKey(remote), remoteTargetKey({ ...remote, serverId: "other" }));
 });
 test("remote viewer refuses stale and failed preflight", async () => {
   for (const doc of [{ schemaVersion: 1, ok: true, result: { present: false } }, { schemaVersion: 1, ok: false, error: { message: "unreachable" } }]) {
     await assert.rejects(prepareRemoteTerm(cli, remote, { run: async () => ({ stdout: JSON.stringify(doc) }) }));
   }
 });
+test("remote viewer refuses a Herdr session with E_HERDR_REMOVED: an older kernel's live Herdr inspection and a 0.31 refusal", async () => {
+  const kernelMessage = `E_HERDR_REMOVED: ${HERDR_REMOVED} Retire it (\`oats retire dev-task\`) and spawn a new instance; it opens in tmux.`;
+  for (const [doc, message] of [
+    [{ schemaVersion: 1, ok: true, result: { backend: "herdr", present: true, state: "shell", terminalId: "term_abc" } }, HERDR_REMOVED],
+    [{ schemaVersion: 1, ok: false, error: { code: "E_HERDR_REMOVED", message: kernelMessage } }, kernelMessage],
+  ]) {
+    await assert.rejects(prepareRemoteTerm(cli, remote, { run: async () => ({ stdout: JSON.stringify(doc) }) }),
+      error => error.code === "E_HERDR_REMOVED" && error.message === message);
+  }
+  const tmux = await prepareRemoteTerm(cli, remote, { run: async () => ({ stdout: JSON.stringify({ schemaVersion: 1, ok: true, result: { backend: "tmux", present: true } }) }) });
+  assert.equal(tmux.args[1], "attach", "a remote tmux session still attaches");
+});
+test("a 0.31 kernel's E_HERDR_REMOVED refusal exits 1 and is still refused as E_HERDR_REMOVED; any other failure never attaches", async () => {
+  const message = `E_HERDR_REMOVED: ${HERDR_REMOVED} Retire it (\`oats retire dev-task\`) and spawn a new instance; it opens in tmux.`;
+  const calls = [];
+  await assert.rejects(prepareRemoteTerm(cli, remote, { run: exiting(1, JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_HERDR_REMOVED", message } }), calls) }),
+    error => error.code === "E_HERDR_REMOVED" && error.message === message);
+  for (const [stdout, code] of [[JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_SSH", message: "unreachable" } }), "E_TERM_REMOTE_UNREACHABLE"],
+    ["not json", "E_TERM_REMOTE_NO_ANSWER"], ["", "E_TERM_REMOTE_NO_ANSWER"]]) {
+    await assert.rejects(prepareRemoteTerm(cli, remote, { run: exiting(1, stdout, calls) }), error => error.code === code, stdout);
+  }
+  assert.ok(calls.every(argv => argv[1] === "inspect"), "only inspection ran; nothing attached");
+});
+const captured = name => readFileSync(new URL(`./fixtures/remote-inspect/${name}.json`, import.meta.url), "utf8");
+test("prepare failures carry codes from real captures: unreachable is transport, ssh that never started is no ssh, no envelope is no answer, not present is gone, a host refusal keeps its code", async () => {
+  const calls = [];
+  for (const [run, code] of [
+    [exiting(1, captured("unreachable"), calls), "E_TERM_REMOTE_UNREACHABLE"],
+    [exiting(255, "", calls), "E_TERM_REMOTE_NO_ANSWER"],
+    [exiting(1, "", calls), "E_TERM_REMOTE_NO_ANSWER"],
+    [exiting(0, captured("not-present"), calls), "E_TERM_REMOTE_GONE"],
+    [exiting(1, captured("unknown-server"), calls), "E_SERVER_UNKNOWN"],
+    [exiting(1, captured("no-ssh"), calls), "E_TERM_REMOTE_NO_SSH"],
+  ]) await assert.rejects(prepareRemoteTerm(cli, remote, { run }), error => error.code === code, code);
+  assert.ok(calls.every(argv => argv[1] === "inspect"), "only inspection ran; nothing attached");
+});
+test("an inspection killed at its deadline is a timeout (a stalled link); one that died by a signal gave no answer; a CLI that never started keeps its own error", async () => {
+  const killed = async () => { throw Object.assign(new Error("Command failed"), { code: null, killed: true, signal: "SIGTERM", stdout: "" }); };
+  await assert.rejects(prepareRemoteTerm(cli, remote, { run: killed }), error => error.code === "E_TERM_PREPARE_TIMEOUT");
+  for (const signal of ["SIGABRT", "SIGSEGV"]) {
+    const crashed = async () => { throw Object.assign(new Error("Command failed"), { code: null, killed: false, signal, stdout: "" }); };
+    await assert.rejects(prepareRemoteTerm(cli, remote, { run: crashed }), error => error.code === "E_TERM_REMOTE_NO_ANSWER", `a local CLI that died by ${signal} gave no answer`);
+  }
+  const missing = async () => { throw Object.assign(new Error("spawn /selected/oats ENOENT"), { code: "ENOENT" }); };
+  await assert.rejects(prepareRemoteTerm(cli, remote, { run: missing }), error => error.code === "ENOENT");
+});
 test("remote viewer carries the selected home through preflight, attach and deduplication", async () => {
   const selected = { ...remote, home: "/remote/selected home" };
-  const address = ["--server", "build", "--instance", "dev-task", "--home", selected.home];
+  const address = ["--server", "build", "--home", selected.home];
   const got = await prepareRemoteTerm(cli, selected, { run: async (bin, args) => {
     assert.deepEqual(args, ["session", "inspect", ...address, "--json"]);
     return { stdout: JSON.stringify({ schemaVersion: 1, ok: true, result: { present: true } }) };
@@ -46,4 +116,12 @@ test("remote viewer rejects old CLI before SSH and clears local nesting only", a
   const source = { PATH: "/bin", SSH_AUTH_SOCK: "/agent", TMUX: "/local,1,2", HERDR_SESSION: "local", HERDR_SOCKET_PATH: "/local" };
   assert.deepEqual(remoteTerminalEnvironment(source), { PATH: "/bin", SSH_AUTH_SOCK: "/agent" });
   assert.equal(source.TMUX, "/local,1,2");
+});
+
+test("only an E_SSH whose details say ssh never started is no ssh; any other E_SSH stays a retried transport failure", async () => {
+  const envelope = details => JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_SSH", message: "ssh to build failed", ...(details === undefined ? {} : { details }) } });
+  for (const [details, code] of [[{ sshStarted: false }, "E_TERM_REMOTE_NO_SSH"], [undefined, "E_TERM_REMOTE_UNREACHABLE"],
+    [{ sshStarted: true }, "E_TERM_REMOTE_UNREACHABLE"], [{}, "E_TERM_REMOTE_UNREACHABLE"], [{ sshStarted: "false" }, "E_TERM_REMOTE_UNREACHABLE"]]) {
+    await assert.rejects(prepareRemoteTerm(cli, remote, { run: exiting(1, envelope(details), []) }), error => error.code === code, JSON.stringify(details));
+  }
 });

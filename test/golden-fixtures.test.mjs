@@ -375,6 +375,7 @@ exit 0
     HOME: HERMETIC_HOME,
     OATS_HOME_DIR: join(HERMETIC_HOME, ".oats"),
     OATS_REMOTE_CACHE: fx.env.OATS_REMOTE_CACHE,
+    OATS_TMUX_SESSION: "oats-golden",
     PI_AGENTS_TMUX_SESSION: "oats-golden",
     PATH: `${bin}:${inertHarnessPath(base)}`,
     GIT_CONFIG_GLOBAL: "/dev/null",
@@ -748,25 +749,26 @@ for (const kase of CASES) {
     // break in a refactor is the copy — a skipped symlink, a dropped mode, a
     // source resolved before an override was applied — and that is what this
     // catches, at every case, without a fixture to re-approve.
-    // A module's skills sit under its namespace (source "module:<cap>").
+    // Every skill sits flat at .agents/skills/<skill>/, the soul's and each module's.
     for (const s of parsedMeta.composition.materialized.skills) {
-      const placed = s.source?.startsWith("module:") ? join(home, ".agents", "skills", s.source.slice("module:".length), s.name) : join(home, ".agents", "skills", s.name);
+      const placed = join(home, ".agents", "skills", s.name);
       assert.equal(
         treeFingerprint(placed), treeFingerprint(s.from),
         `materialized skill "${s.name}" does not match the source instance.json records it came from (${s.from})`);
     }
-    // Workspace model: a module's skills are copied whole to .agents/skills/<module>/<skill>/
+    // Workspace model: a module's skills are copied whole and flat to .agents/skills/<skill>/
     // from the home's own module copy (.oats/modules/<module>/, the stubs declare
     // `skills: ["skills"]`). The same property, over every module the home records.
     let moduleSkills = 0;
     for (const module of Object.keys(parsedMeta.modules || {})) {
-      const placed = join(home, ".agents", "skills", module);
-      if (!existsSync(placed)) continue;
-      for (const skill of readdirSync(placed)) {
-        const from = join(home, ".oats", "modules", module, "skills", skill);
-        assert.ok(existsSync(from), `module skill ${module}/${skill} has no source in the home's module copy`);
-        assert.equal(treeFingerprint(join(placed, skill)), treeFingerprint(from),
-          `materialized module skill "${module}/${skill}" does not match its module copy (${from})`);
+      assert.ok(!existsSync(join(home, ".agents", "skills", module)), `no grouped .agents/skills/${module}/`);
+      const sources = join(home, ".oats", "modules", module, "skills");
+      if (!existsSync(sources)) continue;
+      for (const skill of readdirSync(sources)) {
+        const placed = join(home, ".agents", "skills", skill);
+        assert.ok(existsSync(join(placed, "SKILL.md")), `module skill ${module}/${skill} is not at .agents/skills/${skill}/SKILL.md`);
+        assert.equal(treeFingerprint(placed), treeFingerprint(join(sources, skill)),
+          `materialized module skill "${module}/${skill}" does not match its module copy (${join(sources, skill)})`);
         moduleSkills++;
       }
     }

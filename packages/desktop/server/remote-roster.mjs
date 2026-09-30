@@ -1,4 +1,5 @@
 import { harnessOf } from "../renderer/harness-names.mjs";
+import { unsupportedSession } from "../renderer/instance-presentation.mjs";
 /** Projection of the installed CLI's remote roster. Never reads remote paths locally. */
 export function remoteWorkspace(group) {
   return {
@@ -10,15 +11,22 @@ export function remoteWorkspace(group) {
 
 export function remotePanel(group) {
   const ws = remoteWorkspace(group);
-  const instances = (group.instances || []).map(({ runtime: _released, ...i }) => ({
-    ...i, server: group.server, savedRoute: i.savedRoute === true,
-    home: i.home, agentsRoot: i.agentsRoot || group.agentsRoot,
-    workspace: group.target.workspace, repoName: group.label || group.server,
-    harness: harnessOf({ runtime: _released, ...i }) || null, model: i.model || null,
-    running: group.probe.ok ? i.running : null,
-    runtimeError: group.probe.ok ? i.runtimeError : group.probe.error?.message || "Server is unreachable",
-    tmux: i.tmux || null, git: i.git || null, task: i.task || "", next: i.next || "",
-  }));
+  // A Herdr-recorded row is unsupported whatever the host's probe said: it cannot open or start.
+  const instances = (group.instances || []).map(({ runtime: _released, ...i }) => {
+    const unsupported = unsupportedSession(i);
+    return {
+      ...i, server: group.server, savedRoute: i.savedRoute === true,
+      // The last roster read of this server failed: its rows are last-known, their state unknown.
+      serverUnreached: !group.probe.ok,
+      home: i.home, agentsRoot: i.agentsRoot || group.agentsRoot,
+      workspace: group.target.workspace, repoName: group.label || group.server,
+      harness: harnessOf({ runtime: _released, ...i }) || null, model: i.model || null,
+      running: group.probe.ok ? i.running : null,
+      runtimeError: group.probe.ok ? i.runtimeError : group.probe.error?.message || "Server is unreachable",
+      tmux: i.tmux || null, git: i.git || null, task: i.task || "", next: i.next || "",
+      ...(unsupported ? { running: null, runtimeState: "unsupported", runtimeError: unsupported } : {}),
+    };
+  });
   return {
     workspace: { id: ws.id, name: ws.name, scope: ws.scope, team: null, server: ws.server,
       remote: true, registrationPresent: ws.registrationPresent === true },

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   parseChord, formatChord, chordToString, chordFromEvent, normalizeKey,
-  DEFAULT_KEYMAP, TERMINAL_ALLOWLIST, CONTEXTS,
+  DEFAULT_KEYMAP, TERMINAL_ALLOWLIST, CONTEXTS, defaultBinding,
   registerAction, listActions, setActiveContexts,
   getBinding, setBinding, resetBinding, resetAllBindings, onKeymapChange,
   matchEvent, handleKeydown, findConflict,
@@ -40,11 +40,15 @@ test("parseChord handles modifiers, aliases, and the Mod+= edge", () => {
   assert.equal(parseChord("A+B"), null, "two main keys is invalid");
 });
 
-test("every DEFAULT_KEYMAP entry parses and round-trips through chordToString", () => {
-  for (const [id, chord] of Object.entries(DEFAULT_KEYMAP)) {
-    const parsed = parseChord(chord);
-    assert.ok(parsed, `${id}: ${chord} must parse`);
-    assert.deepEqual(parseChord(chordToString(parsed)), parsed, `${id}: round-trip`);
+test("every DEFAULT_KEYMAP entry parses and round-trips through chordToString, on both platforms", () => {
+  for (const id of Object.keys(DEFAULT_KEYMAP)) {
+    for (const isMac of [true, false]) {
+      const chord = defaultBinding(id, isMac);
+      if (chord === null) continue; // no default on this platform (e.g. the theme cycle)
+      const parsed = parseChord(chord);
+      assert.ok(parsed, `${id} (${isMac ? "mac" : "other"}): ${chord} must parse`);
+      assert.deepEqual(parseChord(chordToString(parsed)), parsed, `${id}: round-trip`);
+    }
   }
 });
 
@@ -72,16 +76,20 @@ test("chordFromEvent maps the platform Mod correctly and normalizes keys", () =>
 test("overrides persist to localStorage and reset cleanly", () => {
   const store = installStorage();
   resetAllBindings();
-  assert.equal(getBinding("app.palette"), "Mod+K");
+  assert.equal(getBinding("app.palette", true), "Mod+K");
   setBinding("app.palette", "Mod+P");
-  assert.equal(getBinding("app.palette"), "Mod+P");
+  assert.equal(getBinding("app.palette", true), "Mod+P");
+  assert.equal(getBinding("app.palette", false), "Mod+P", "an override wins on every platform");
   assert.match(store.get("oats-desktop-keymap"), /Mod\+P/);
   setBinding("tabs.close", null); // explicit unbind
-  assert.equal(getBinding("tabs.close"), null);
+  assert.equal(getBinding("tabs.close", true), null);
+  assert.equal(getBinding("tabs.close", false), null);
   resetBinding("app.palette");
-  assert.equal(getBinding("app.palette"), "Mod+K");
+  assert.equal(getBinding("app.palette", true), "Mod+K");
+  assert.equal(getBinding("app.palette", false), "Ctrl+Shift+P");
   resetAllBindings();
-  assert.equal(getBinding("tabs.close"), "Mod+W");
+  assert.equal(getBinding("tabs.close", true), "Mod+W");
+  assert.equal(getBinding("tabs.close", false), "Ctrl+Shift+W");
   assert.equal(store.has("oats-desktop-keymap"), false, "empty overrides remove the key");
 });
 
@@ -117,7 +125,9 @@ function withActions(t, actions) {
 test("matchEvent: global action fires on its default chord (mac + non-mac)", (t) => {
   withActions(t, [{ id: "app.palette", label: "Palette", context: "global", run: () => {} }]);
   assert.equal(matchEvent(ev("k", { metaKey: true }), { isMac: true, insideTerminal: false }), "app.palette");
-  assert.equal(matchEvent(ev("k", { ctrlKey: true }), { isMac: false, insideTerminal: false }), "app.palette");
+  // Linux/Windows: Ctrl+Shift+P (spec F); plain Ctrl+K is no longer the palette anywhere.
+  assert.equal(matchEvent(ev("P", { ctrlKey: true, shiftKey: true }), { isMac: false, insideTerminal: false }), "app.palette");
+  assert.equal(matchEvent(ev("k", { ctrlKey: true }), { isMac: false, insideTerminal: false }), null);
   assert.equal(matchEvent(ev("k"), { isMac: true, insideTerminal: false }), null);
   assert.equal(matchEvent(ev("k", { metaKey: true, shiftKey: true }), { isMac: true, insideTerminal: false }), null,
     "extra modifiers must not match");
@@ -173,39 +183,26 @@ test("terminal policy non-mac: only allowlisted action ids fire inside xterm", (
     { id: "app.themeToggle", label: "Theme", context: "global", run: () => {} },
   ]);
   const inTerm = { isMac: false, insideTerminal: true };
-  assert.equal(matchEvent(ev("k", { ctrlKey: true }), inTerm), "app.palette");
+  assert.equal(matchEvent(ev("P", { ctrlKey: true, shiftKey: true }), inTerm), "app.palette");
   assert.equal(matchEvent(ev("Tab", { ctrlKey: true }), inTerm), "tabs.next");
   assert.equal(matchEvent(ev("Tab", { ctrlKey: true, shiftKey: true }), inTerm), "tabs.prev");
-  assert.equal(matchEvent(ev("w", { ctrlKey: true }), inTerm), "tabs.close");
-  // Ctrl+Shift+T (theme) is NOT allowlisted — belongs to the attached program
-  assert.equal(matchEvent(ev("t", { ctrlKey: true, shiftKey: true }), inTerm), null);
-  assert.equal(matchEvent(ev("t", { ctrlKey: true, shiftKey: true }), { isMac: false, insideTerminal: false }), "app.themeToggle");
-  // allowlist is action-id based, so it follows a rebind
-  setBinding("app.palette", "Ctrl+P");
-  assert.equal(matchEvent(ev("p", { ctrlKey: true }), inTerm), "app.palette");
-  assert.equal(matchEvent(ev("k", { ctrlKey: true }), inTerm), null, "old chord no longer bound");
+  assert.equal(matchEvent(ev("W", { ctrlKey: true, shiftKey: true }), inTerm), "tabs.close");
+  // Ctrl+K / Ctrl+W are the program's (kill line, delete word): no default claims them.
+  assert.equal(matchEvent(ev("k", { ctrlKey: true }), inTerm), null);
+  assert.equal(matchEvent(ev("w", { ctrlKey: true }), inTerm), null);
+  // A non-allowlisted action never fires inside the terminal, whatever its chord.
+  setBinding("app.themeToggle", "Ctrl+Shift+T");
+  assert.equal(matchEvent(ev("T", { ctrlKey: true, shiftKey: true }), inTerm), null);
+  assert.equal(matchEvent(ev("T", { ctrlKey: true, shiftKey: true }), { isMac: false, insideTerminal: false }), "app.themeToggle");
+  // allowlist is action-id based, so it follows a rebind (the user's choice)
+  setBinding("app.palette", "Ctrl+K");
+  assert.equal(matchEvent(ev("k", { ctrlKey: true }), inTerm), "app.palette");
+  assert.equal(matchEvent(ev("P", { ctrlKey: true, shiftKey: true }), inTerm), null, "old chord no longer bound");
 });
 
-test("engine absorbs the palette chord: parity with isPaletteShortcut except the task's Linux allowlist", async (t) => {
-  const { isPaletteShortcut } = await import("../renderer/palette.mjs");
-  withActions(t, [{ id: "app.palette", label: "Palette", context: "global", run: () => {} }]);
-  const cases = [
-    [ev("k", { metaKey: true }), true, false], [ev("k", { metaKey: true }), true, true],
-    [ev("k", { ctrlKey: true }), false, false],
-    [ev("k", { ctrlKey: true, shiftKey: true }), false, false],
-    [ev("b", { ctrlKey: true }), false, false],
-    [ev("k", { metaKey: true, altKey: true }), true, false],
-  ];
-  for (const [e, isMac, insideTerminal] of cases) {
-    const legacy = isPaletteShortcut(e, insideTerminal);
-    const engine = matchEvent(e, { isMac, insideTerminal }) === "app.palette";
-    assert.equal(engine, legacy,
-      `parity for key=${e.key} meta=${!!e.metaKey} ctrl=${!!e.ctrlKey} shift=${!!e.shiftKey} alt=${!!e.altKey} mac=${isMac} term=${insideTerminal}`);
-  }
-  // Deliberate divergence per the keybindings contract: on Linux/Windows the
-  // palette chord is allowlisted INSIDE the terminal (legacy passed it through).
-  assert.equal(isPaletteShortcut(ev("k", { ctrlKey: true }), true), false);
-  assert.equal(matchEvent(ev("k", { ctrlKey: true }), { isMac: false, insideTerminal: true }), "app.palette");
+test("the legacy palette chord check is gone: the engine is the one palette policy", async () => {
+  const palette = await import("../renderer/palette.mjs");
+  assert.equal(palette.isPaletteShortcut, undefined);
 });
 
 test("handleKeydown runs the action, preventDefaults, and isolates errors", (t) => {
@@ -304,8 +301,14 @@ test("registerAction defaultChord: folds into the effective keymap (addendum 3)"
 
   // static DEFAULT_KEYMAP wins over a registration default for the same id
   const off2 = registerAction({ id: "app.palette", label: "P", context: "global", run: () => {}, defaultChord: "Mod+9" });
-  assert.equal(getBinding("app.palette"), "Mod+K");
+  assert.equal(getBinding("app.palette", true), "Mod+K");
+  assert.equal(getBinding("app.palette", false), "Ctrl+Shift+P");
   off2();
+  // …including a static "no default" on a platform: never the registration's chord.
+  const off4 = registerAction({ id: "app.themeToggle", label: "T", context: "global", run: () => {}, defaultChord: "Mod+Shift+T" });
+  assert.equal(getBinding("app.themeToggle", true), null);
+  assert.equal(getBinding("app.themeToggle", false), null);
+  off4();
 
   // invalid defaultChord is discarded, not thrown
   const off3 = registerAction({ id: "x.bad", label: "Bad", context: "global", run: () => {}, defaultChord: "A+B" });

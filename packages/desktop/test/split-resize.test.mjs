@@ -14,3 +14,17 @@ test('split separator resizes with keyboard and pointer, preserves node on refre
  h.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Home',cancelable:true}));assert.equal(h.getAttribute('aria-valuenow'),'10');
  updateSplitHandle(host,a,'col',false);assert.equal(a.querySelector('[role=separator]'),null);dom.window.close();
 });
+
+// Spec F audit: the double-click reset has a keyboard twin, Enter.
+test('Enter on the split separator resets an even split', () => {
+  const dom = new JSDOM('<div id="host" class="split-row"><div class="group-cell"></div><div class="group-cell"></div></div>');
+  const host = dom.window.document.querySelector('#host'), [a, b] = host.children;
+  a.getBoundingClientRect = b.getBoundingClientRect = () => ({ width: 400, height: 200 });
+  updateSplitHandle(host, a, 'row', true); const h = a.querySelector('[role=separator]');
+  h.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'End', cancelable: true }));
+  assert.equal(h.getAttribute('aria-valuenow'), '90');
+  a.getBoundingClientRect = () => ({ width: 720, height: 200 }); b.getBoundingClientRect = () => ({ width: 80, height: 200 });
+  const enter = new dom.window.KeyboardEvent('keydown', { key: 'Enter', cancelable: true }); h.dispatchEvent(enter);
+  assert.equal(enter.defaultPrevented, true); assert.equal(h.getAttribute('aria-valuenow'), '50');
+  dom.window.close();
+});

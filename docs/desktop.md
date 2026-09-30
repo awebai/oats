@@ -110,6 +110,42 @@ registered remote workspace the timer and definitions live on that server, so
 they do not depend on the Mac staying awake. See [Schedules](schedules.md) for
 the CLI, cron semantics, observed outcomes and recovery commands.
 
+## Instances on servers
+
+Every instance a registered server reports shows in its workspace's roster, whoever spawned it. You
+can open its terminal, start, restart, stop and remove it, and read its readiness, activity, Git
+and diffs, as for a local one. Only its pull request is not read here, since the forge reads this
+computer's clones. Every command goes to the server by the instance's home (`--server <id> --home
+<path>`), never by a bare name. Stop and Remove show the plan the server makes, and confirm
+against it.
+
+A read waits for the server: the view says "Reading from <server>…", and gives up after about
+45 seconds with "Couldn't reach <server>." When the server refuses, you see its code and message;
+nothing is read from this computer in its place. A row that can't be opened says why on the row:
+Herdr no longer supported, gone from <server>, not reachable on <server>, or <server> not reached.
+For an instance a server no longer lists, the reason names the command that removes it from this
+computer (`oats server forget <server> --instance <name>`).
+
+## Remote terminals
+
+A terminal for an instance on a registered server is a viewer over ssh
+(`oats session attach --server`). When the link dies, ssh ends the viewer with
+exit 255 within about a minute, and the tab reconnects by itself. It keeps its
+place and scrollback, stops taking input, and shows "Disconnected from
+<server>" with a countdown and a **Reconnect now** button. Attempts wait 1, 2,
+4, 8 and 15 s, then 30 s each for as long as the tab is open. A successful
+attach resets that. Tmux redraws the screen when the viewer attaches again.
+
+Reconnecting stops, with a message and "Close this tab", when the server
+answers that the session is gone, the instance is unknown, the terminal limit
+is reached or the app's backend changed, and at once when ssh cannot be run on
+this computer. It stops after four attempts in a
+row in which OATS on this computer gave no answer, since that is more likely
+the local CLI failing than the link. It also stops when the viewer ends with
+any other exit code. Closing the tab ends the reconnecting. Reconnecting
+never stops or restarts the agent on the server: only the local ssh viewer
+ends.
+
 ## Attach files and screenshots
 
 Drop a file onto an agent terminal to insert its path into that agent's draft.

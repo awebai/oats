@@ -1,10 +1,10 @@
-// Closed admission for the existing three terminal adapters. No target discovery
-// or caller-owned executable/env/owner/window authority is introduced here.
+// Closed admission for the two terminal adapters, a tmux session and remote. No
+// target discovery or caller-owned executable/env/owner/window authority is
+// introduced here. A Herdr session target is refused with E_HERDR_REMOVED.
 import { tmuxAttachTarget } from './tmux-target.mjs';
 import { tmuxSocketArgs } from './local-tmux-io.mjs';
-import { herdrTargetKey } from './herdr-target.mjs';
 import { remoteTargetKey } from './remote-target.mjs';
-import { terminalGeometry } from './renderer/terminal-contract.mjs';
+import { HERDR_REMOVED, terminalGeometry } from './renderer/terminal-contract.mjs';
 
 const invalid = () => { throw new Error('Invalid terminal target'); };
 const closed = (v, keys) => {
@@ -12,26 +12,20 @@ const closed = (v, keys) => {
 };
 const text = (v, max) => typeof v === 'string' && v.length > 0 && v.length <= max && !/[\x00-\x1f\x7f]/.test(v);
 export function admitTerminalTarget(input) {
-  closed(input, ['session', 'window', 'socket', 'sessionTarget', 'remote', 'cols', 'rows']);
+  if (input && typeof input === 'object' && Object.hasOwn(input, 'sessionTarget')) throw Object.assign(new Error(HERDR_REMOVED), { code: 'E_HERDR_REMOVED' });
+  closed(input, ['session', 'window', 'socket', 'remote', 'cols', 'rows']);
   const cols = input.cols === undefined ? 80 : input.cols, rows = input.rows === undefined ? 24 : input.rows;
   if (!terminalGeometry(cols, rows)) invalid();
-  const families = [input.session !== undefined, input.sessionTarget !== undefined, input.remote !== undefined].filter(Boolean).length;
+  const families = [input.session !== undefined, input.remote !== undefined].filter(Boolean).length;
   if (families !== 1) invalid();
   let key, spec;
   if (input.remote !== undefined) {
     if (input.window !== undefined || input.socket !== undefined) invalid();
     closed(input.remote, ['serverId', 'instance', 'home']);
     const { serverId, instance, home } = input.remote;
-    if (!text(serverId, 64) || !text(instance, 128) || (home !== undefined && !text(home, 4096))) invalid();
-    const remote = Object.freeze({ serverId, instance, ...(home !== undefined ? { home } : {}) });
+    if (!text(serverId, 64) || !text(instance, 128) || !text(home, 4096)) invalid();
+    const remote = Object.freeze({ serverId, instance, home });
     key = remoteTargetKey(remote); spec = { remote, cols, rows };
-  } else if (input.sessionTarget !== undefined) {
-    if (input.window !== undefined || input.socket !== undefined) invalid();
-    closed(input.sessionTarget, ['backend', 'protocol', 'socket', 'paneId', 'terminalId']);
-    const { backend, protocol, socket, paneId, terminalId } = input.sessionTarget;
-    if (!text(socket, 4096) || !text(paneId, 128) || !text(terminalId, 128)) invalid();
-    const sessionTarget = Object.freeze({ backend, protocol, socket, paneId, terminalId });
-    key = herdrTargetKey(sessionTarget); spec = { sessionTarget, cols, rows };
   } else {
     const { session } = input;
     if (!text(session, 128)) invalid();

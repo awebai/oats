@@ -74,7 +74,7 @@ export function capabilityFiles(id, manifest = {}, files = {}) {
  * Build a deployment. Options:
  *   souls         { <name>: { soul: {soul.yaml fields}, agents, skills } }   (default: one `dev` soul, work: directory)
  *   capabilities  { <id>: { manifest, files } }                                member capabilities of the one repo
- *   capabilityDirs { <dir name>: <abs source dir> }   copied whole to capabilities/<dir name>/ (e.g. the real capabilities/oats-okf)
+ *   capabilityDirs { <dir name>: <abs source dir> }   copied whole to capabilities/<dir name>/ (e.g. the real mirrors/oats-okf)
  *   workspace     extra oats-workspace.yaml keys, merged over the base (defaults: messaging/tasks/knowledge none)
  *   local         extra oats-local.yaml keys (launch-configs, settings, clones…)
  *   files         any other repo files

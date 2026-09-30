@@ -207,9 +207,9 @@ its `oats trigger test` passes.
 
 | Capability | Composed into | Skills | Inject |
 |---|---|---|---|
-| `oats.okf` | every working soul it serves | [`okf-consultation`](../capabilities/oats-okf/skills/okf-consultation/SKILL.md), [`okf-instance-knowledge`](../capabilities/oats-okf/skills/okf-instance-knowledge/SKILL.md) | Consult soul and instance knowledge; capture with judgment. |
-| `oats.okf-harvest` | `oats.okf/knowledge-harvester` | `knowledge-theory`, [`knowledge-harvest`](../capabilities/oats-okf-harvest/skills/knowledge-harvest/SKILL.md), `okf-authoring` | A judge; its staged roots are its only write surface. |
-| `oats.okf-maintenance` | `oats.okf/knowledge-maintainer` | `knowledge-theory`, [`knowledge-review`](../capabilities/oats-okf-maintenance/skills/knowledge-review/SKILL.md), `okf-authoring`, [`okf-trigger-setup`](../capabilities/oats-okf-maintenance/skills/okf-trigger-setup/SKILL.md) | One PR per instance; never supersede silently. |
+| `oats.okf` | every working soul it serves | [`okf-consultation`](../mirrors/oats-okf/skills/okf-consultation/SKILL.md), [`okf-instance-knowledge`](../mirrors/oats-okf/skills/okf-instance-knowledge/SKILL.md) | Consult soul and instance knowledge; capture with judgment. |
+| `oats.okf-harvest` | `oats.okf/knowledge-harvester` | `knowledge-theory`, [`knowledge-harvest`](../mirrors/oats-okf-harvest/skills/knowledge-harvest/SKILL.md), `okf-authoring` | A judge; its staged roots are its only write surface. |
+| `oats.okf-maintenance` | `oats.okf/knowledge-maintainer` | `knowledge-theory`, [`knowledge-review`](../mirrors/oats-okf-maintenance/skills/knowledge-review/SKILL.md), `okf-authoring`, [`okf-trigger-setup`](../mirrors/oats-okf-maintenance/skills/okf-trigger-setup/SKILL.md) | One PR per instance; never supersede silently. |
 
 Working souls get no promotion doctrine: only the harvester judges and only
 the maintainer merges. `knowledge-theory` and `okf-authoring` ship as

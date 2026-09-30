@@ -19,6 +19,16 @@ import { attachArgv, checkRemoteSupport, resolveRoute, routeCommand, runRemote, 
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 
+// In-process routes prepare the ssh control directory under OATS_HOME_DIR:
+// never the operator's own ~/.oats. Tests that need their own set and restore it.
+const isolatedHomeDir = mkdtempSync("/tmp/oats-servers-oh-");
+const outerHomeDir = process.env.OATS_HOME_DIR;
+process.env.OATS_HOME_DIR = isolatedHomeDir;
+test.after(() => {
+  if (outerHomeDir === undefined) delete process.env.OATS_HOME_DIR; else process.env.OATS_HOME_DIR = outerHomeDir;
+  rmSync(isolatedHomeDir, { recursive: true, force: true });
+});
+
 function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, c); }
 
 /** A PATH dir with: a fake ssh that logs its argv and runs the command
@@ -68,9 +78,10 @@ test("remoteQuote/sshArgv: every argument survives the remote login shell byte f
   const target = { sshHost: "h", workspace: "/w", oatsPath: "oats" };
   const argv = sshArgv(target, args);
   assert.deepEqual(argv.slice(0, 5), ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15"]);
-  assert.equal(argv[5], "--"); assert.equal(argv[6], "h");
+  const end = argv.indexOf("--");
+  assert.equal(argv[end + 1], "h"); assert.equal(argv.length, end + 3);
   // Run the produced command word through a real sh, with `oats` replaced by an argv echo.
-  const cmd = argv[7].replace(/^oats /, "");
+  const cmd = argv[end + 2].replace(/^oats /, "");
   const out = execFileSync("sh", ["-c", `node -e 'console.log(JSON.stringify(process.argv.slice(1)))' -- ${cmd}`], { encoding: "utf8" });
   assert.deepEqual(JSON.parse(out), args);
   assert.equal(existsSync("NEVER_RUN"), false);
@@ -79,12 +90,12 @@ test("remoteQuote/sshArgv: every argument survives the remote login shell byte f
   // A ~/ path prefix expands on the REMOTE shell; a spaced one stays quoted; $PATH is the remote's.
   // A cwd prefix is quoted like any argument and precedes the PATH prefix.
   const withCwd = sshArgv({ sshHost: "h", workspace: "/w", oatsPath: "oats" }, ["okf", "harvest"], { cwd: "/w/it's here/$(touch NEVER_RUN)" });
-  assert.equal(withCwd[7], `cd '/w/it'\\''s here/$(touch NEVER_RUN)' && oats okf harvest`);
-  const cwdSeen = execFileSync("/bin/sh", ["-c", withCwd[7].replace(/ && oats okf harvest$/, " 2>/dev/null || printf %s \"$1\"") , "--", "cd-failed-as-expected"], { encoding: "utf8" });
+  assert.equal(withCwd.at(-1), `cd '/w/it'\\''s here/$(touch NEVER_RUN)' && oats okf harvest`);
+  const cwdSeen = execFileSync("/bin/sh", ["-c", withCwd.at(-1).replace(/ && oats okf harvest$/, " 2>/dev/null || printf %s \"$1\"") , "--", "cd-failed-as-expected"], { encoding: "utf8" });
   assert.equal(cwdSeen, "cd-failed-as-expected"); assert.equal(existsSync("NEVER_RUN"), false);
   const withPath = sshArgv({ sshHost: "h", workspace: "/w", oatsPath: "oats", path: "~/.local/bin:/opt/my tools/bin" }, ["version"]);
-  assert.equal(withPath[7], `PATH="$HOME"/.local/bin:'/opt/my tools/bin':"$PATH" oats version`);
-  const seen = execFileSync("/bin/sh", ["-c", withPath[7].replace(/ oats version$/, "; printf %s \"$PATH\"")], { encoding: "utf8", env: { HOME: "/home/remote", PATH: "/usr/bin:/bin" } });
+  assert.equal(withPath.at(-1), `PATH="$HOME"/.local/bin:'/opt/my tools/bin':"$PATH" oats version`);
+  const seen = execFileSync("/bin/sh", ["-c", withPath.at(-1).replace(/ oats version$/, "; printf %s \"$PATH\"")], { encoding: "utf8", env: { HOME: "/home/remote", PATH: "/usr/bin:/bin" } });
   assert.equal(seen, "/home/remote/.local/bin:/opt/my tools/bin:/usr/bin:/bin");
 });
 
@@ -112,7 +123,9 @@ test("runRemote: a bare retire answer with cleanup still owed is not ok, so a ro
   assert.match(envelope.error.message, /retained there: retire hook acme.chan/);
   assert.equal(envelope.result.retired, "dev-x", "the remote's own result stays visible");
   // Through the route, the failed envelope still names the server and target (R2).
-  const routed = routeCommand("build", "retire", ["dev-x"], { server: { id: "build", sshHost: "h", workspace: "/w", oatsPath: "oats" }, execFileSync: (bin, argv) => (String(argv.at(-1)).includes("version --json") ? JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: "0.22.2", desktopApi: 1 }) : exec()) });
+  // With no saved route, the name resolves through the host's roster first.
+  const roster = JSON.stringify({ root: "/srv/agents", agents: [{ name: "dev", instances: [{ instance: "dev-x", home: "/srv/agents/dev/instances/dev-x" }] }] });
+  const routed = routeCommand("build", "retire", ["dev-x"], { server: { id: "build", sshHost: "h", workspace: "/w", oatsPath: "oats" }, execFileSync: (bin, argv) => (String(argv.at(-1)).includes("version --json") ? JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: "0.22.2", desktopApi: 1 }) : String(argv.at(-1)).includes("status --json") ? roster : exec()) });
   assert.equal(routed.envelope.ok, false);
   assert.equal(routed.envelope.result.server, "build");
   assert.equal(routed.envelope.result.target.sshHost, "h");
@@ -122,7 +135,7 @@ test("runRemote: a bare retire answer with cleanup still owed is not ok, so a ro
 
 test("checkRemoteSupport: a request is held to what the remote kernel advertises, soul defaults included", () => {
   const legacy = { version: "0.22.1", harnesses: ["pi", "claude"], sessionBackends: [], launchOptions: [], features: [], advertised: false };
-  const modern = { version: "0.22.2", harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], features: [], advertised: true };
+  const modern = { version: "0.22.2", harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], features: [], advertised: true };
   const current = { ...modern, version: "0.27.0", features: ["harness"] };
   const target = { sshHost: "h" };
   const roster = { agents: [{ name: "dev", harness: "codex" }, { name: "rev", harness: "claude" }] };
@@ -135,13 +148,13 @@ test("checkRemoteSupport: a request is held to what the remote kernel advertises
   assert.deepEqual(checkRemoteSupport(legacy, target, ["rev", "--runtime", "pi"], roster), { harness: "pi", backend: undefined, yolo: false });
   assert.deepEqual(checkRemoteSupport(current, target, ["rev", "--harness", "codex"], roster), { harness: "codex", backend: undefined, yolo: false });
   assert.throws(() => checkRemoteSupport(legacy, target, ["rev", "--yolo"], roster), /yolo launch option/);
-  assert.throws(() => checkRemoteSupport(legacy, target, ["rev", "--backend", "herdr"], roster), /session backend herdr/);
-  assert.deepEqual(checkRemoteSupport(modern, target, ["dev", "--backend", "herdr", "--yolo"], roster), { harness: "codex", backend: "herdr", yolo: true });
+  assert.throws(() => checkRemoteSupport(legacy, target, ["rev", "--backend", "tmux"], roster), /session backend tmux/);
+  assert.deepEqual(checkRemoteSupport(modern, target, ["dev", "--backend", "tmux", "--yolo"], roster), { harness: "codex", backend: "tmux", yolo: true });
   assert.throws(() => checkRemoteSupport(modern, target, ["dev", "--backend", "screen"], roster), /session backend screen/);
 });
 
 test("oats server + --server: registry, check, remote spawn with a hostile task, status, retire from the snapshot after the registration is gone", () => {
-  const base = mkdtempSync(join(tmpdir(), "oats-servers-"));
+  const base = mkdtempSync("/tmp/oats-servers-"); // short: the control socket path must fit in 104 bytes
   try {
     const { bin, log, tools } = fakeBin(base);
     const repo = remoteWorkspace();
@@ -173,7 +186,8 @@ test("oats server + --server: registry, check, remote spawn with a hostile task,
     // (its per-commit copy); none has been yet.
     assert.equal(chk.workspaceReachable, true); assert.equal(chk.agents, 0);
     const sshLines = readFileSync(log, "utf8");
-    assert.match(sshLines, /^-o\nBatchMode=yes\n-o\nConnectTimeout=15\n--\nbuild-host\n/m, "non-interactive, options ended with -- before the host");
+    const controlPath = join(env.OATS_HOME_DIR, "ssh", "%C");
+    assert.ok(sshLines.startsWith(["-o", "BatchMode=yes", "-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=3", "-o", "ControlMaster=auto", "-o", `ControlPath=${controlPath}`, "-o", "ControlPersist=60", "--", "build-host", ""].join("\n")), `non-interactive, kept alive, one control master, options ended with -- before the host:\n${sshLines}`);
 
     // remote spawn: the task travels as text and lands byte for byte
     const hostile = "Review `this` and $(touch NEVER_RUN) 'quotes' \"dq\"\nsecond line % and * and ~\n";
@@ -202,7 +216,7 @@ test("oats server + --server: registry, check, remote spawn with a hostile task,
     assert.equal(snap.agentsRoot, join(repo, "agents"), "the agents root comes from the remote roster, not guessed from the workspace");
     // A request beyond what the remote advertises is refused BEFORE any spawn
     // reaches it. This fake remote is this kernel, which advertises pi, claude
-    // and codex on tmux and herdr with the yolo option; ask for what it lacks.
+    // and codex on tmux with the yolo option; ask for what it lacks.
     const before = readFileSync(log, "utf8");
     r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "nope", "--harness", "gemini", "--no-launch", "--json"]);
     assert.equal(r.json().error.code, "E_REMOTE_INCOMPATIBLE");
@@ -231,7 +245,8 @@ test("oats server + --server: registry, check, remote spawn with a hostile task,
     assert.deepEqual(att.argv.slice(0, 2), ["ssh", "-t"]);
     assert.equal(att.home, home);
     assert.match(att.argv.at(-1), new RegExp(`session attach --home ${home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`));
-    assert.throws(() => attachArgv("build", { instance: "ghost" }, { skipVersionCheck: true }), /no remote instance "ghost"/);
+    r = oats(env, ["session", "attach", "--server", "build", "--instance", "ghost", "--print"]);
+    assert.notEqual(r.status, 0); assert.match(r.stderr, /no instance "ghost" on server build: neither a saved route here nor its roster names one/);
     assert.deepEqual(resolveRoute("build", { instance: "dev-probe" }).target, snap.target, "inspect and attach share the saved route");
     // Session routes need a remote whose probe advertises session; this fake remote is this kernel, which does, so the inspect runs there against the snapshot's home and its envelope is relayed.
     r = oats(env, ["session", "inspect", "--server", "build", "--instance", "dev-probe", "--json"]);
@@ -243,7 +258,7 @@ test("oats server + --server: registry, check, remote spawn with a hostile task,
     r = oats(env, ["session", "inspect", "--server", "build", "--instance", "ghost", "--json"]);
     assert.equal(r.json().error.code, "E_SNAPSHOT_UNKNOWN");
     r = oats(env, ["session", "attach", "--server", "build", "--instance", "dev-probe", "--print"]);
-    assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /^ssh -t -o 'BatchMode=yes' .* -- build-host /);
+    assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /^ssh -t -o 'BatchMode=yes' .* -o 'ControlPersist=60' -- build-host /);
     // the snapshot store is read with OATS_HOME_DIR in effect for the in-process calls above
     void before;
     assert.equal(snap.target.path, tools, "the PATH prefix is part of the frozen route");
@@ -513,7 +528,7 @@ test("routed retire with same-named twins: exact home on a 0.22.3 remote, refusa
 });
 
 test("routed spawn: a success reply without a home never replaces an existing saved route", () => {
-  const base = mkdtempSync(join(tmpdir(), "oats-servers-nohome-"));
+  const base = mkdtempSync("/tmp/oats-nohome-");
   const prevHomeDir = process.env.OATS_HOME_DIR; process.env.OATS_HOME_DIR = join(base, "oats-home"); mkdirSync(process.env.OATS_HOME_DIR);
   try {
     const server = { id: "build", sshHost: "h", workspace: "/w", oatsPath: "oats" };

@@ -24,7 +24,7 @@ const CSS = `
 .brain-bar label { color: var(--muted); font-size: 12px; }
 .brain-bar select { background: var(--surface-2); color: var(--fg); border: 1px solid var(--border); border-radius: 8px;
                     padding: 5px 8px; font: inherit; max-width: 320px; }
-.brain-bar select:hover, .brain-bar select:focus { border-color: var(--accent); outline: none; }
+.brain-bar select:hover, .brain-bar select:focus-visible { border-color: var(--accent); outline: none; }
 .brain-desc { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .brain-body { flex: 1; display: flex; gap: 14px; padding: 14px; overflow: auto; min-height: 0; align-items: flex-start; }
 .brain-col { flex: 1; min-width: 280px; display: flex; flex-direction: column; gap: 12px; }
@@ -47,6 +47,7 @@ const CSS = `
 .brain-tree button:hover { background: var(--sel); color: var(--accent); }
 .brain-tree .indent { padding-left: 26px; }
 .brain-inst-head { display: flex; align-items: center; gap: 8px; }
+.brain-inst-head .brain-inst-open { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .brain-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
 .brain-dot.on { background: var(--ok); }
 .brain-status { padding: 48px 24px; color: var(--muted); text-align: center; font-size: 13.5px; }
@@ -163,9 +164,13 @@ function renderBrain(body, d, ctx) {
     h.className = "brain-inst-head";
     h.innerHTML = `<span class="brain-dot${i.running ? " on" : ""}"></span>${esc(i.instance)}<span class="cnt">${runtimeState(i)}</span>`;
     if (i.running && typeof ctx.openTerminal === "function") {
-      h.style.cursor = "pointer";
-      h.title = "open terminal";
-      h.addEventListener("click", () => ctx.openTerminal({ instance: i.instance, home: i.home, agentsRoot: i.agentsRoot }));
+      // A button inside the heading: Tab reaches it and Enter/Space open the terminal (spec F).
+      const open = document.createElement("button");
+      open.type = "button"; open.className = "brain-inst-open"; open.title = "open terminal";
+      open.setAttribute("aria-label", `Open ${i.instance} terminal`);
+      open.append(...h.childNodes);
+      open.addEventListener("click", () => ctx.openTerminal({ instance: i.instance, home: i.home, agentsRoot: i.agentsRoot }));
+      h.append(open);
     }
     c.append(h, box);
     instCol.append(c);

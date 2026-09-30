@@ -8,13 +8,15 @@ import { runInNewContext } from "node:vm";
 import { JSDOM } from "jsdom";
 import { createSelectionOwnership, wirePaneSelection } from "../renderer/selection-ownership.mjs";
 import { createIntentGate, prepareOwnedOpen } from "../renderer/open-intent.mjs";
-import { createTerminalTab, terminalOptions, terminalKeyDecision } from "../renderer/terminal-tab.mjs";
+import { createTerminalTab, terminalOptions, terminalKeyDecision, RECONNECT_DELAYS_MS, RECONNECT_RETRIED, NO_ANSWER_RETRIES, LOST_LINK_EXIT } from "../renderer/terminal-tab.mjs";
 import { createTermLifecycle } from "../renderer/term-lifecycle.mjs";
 import { opened, confirmed, ready } from './helpers/terminal-wire.mjs';
-import { terminalHandle, terminalSameHandle, terminalFailure } from '../renderer/terminal-contract.mjs';
+import { terminalHandle, terminalSameHandle, terminalFailure, terminalMessage } from '../renderer/terminal-contract.mjs';
+import { wireTerminalAttachments } from '../renderer/terminal-attachments.mjs';
 import { createViewLifecycle } from "../renderer/view-lifecycle.mjs";
 import { reserveKey, whenKeyFree } from "../renderer/tab-keys.mjs";
 import { createTabChrome, tabKeyAction, focusAfterLastTab } from "../renderer/tab-a11y.mjs";
+import * as keymap from "../renderer/keybindings.mjs";
 import { createWorkspaceTabMemory } from "../renderer/workspace-tab-memory.mjs";
 import * as workspaceTabs from "../renderer/workspace-tabs.mjs";
 import * as layout from "../renderer/split-layout.mjs";
@@ -24,7 +26,8 @@ import * as instanceTree from "../renderer/instance-tree.mjs";
 import { instanceActions, captureInstanceActionMenu } from "../renderer/instance-actions.mjs";
 import { instanceActionTarget, sameInstanceActionTarget } from '../renderer/instance-action-target.mjs';
 import { instanceSplitPlan, instanceSplitIdentity } from '../renderer/instance-split.mjs';
-import { runtimeState } from "../renderer/instance-presentation.mjs";
+import { runtimeState, unsupportedSession } from "../renderer/instance-presentation.mjs";
+import { canAddressRemote, rowReason } from "../renderer/remote-address.mjs";
 import { createRuntimeBadge } from "../renderer/identity-marks.mjs";
 import { rosterKeyAction, moveTarget } from "../renderer/roster-keys.mjs";
 
@@ -33,8 +36,8 @@ const names = [
   "setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "selectEmptyGroup", "showStage",
   "splitPane", "closeSplit", "onTabKeydown", "addTab", "selectTab", "activateTab", "closeTab",
   "openViewTab", "openTerminalTabFlow", "openTerminalTabInner", "focusActiveTerminal",
-  "visibleTabEntries", "cycleTab", "renderWorkspaceContext", "restoreWorkspaceTabs", "showTerminalContext",
-  "initContextRoster", "renderContextRoster", "focusRoster", "onRosterRowKey", "setRovingRow",
+  "visibleTabEntries", "switchTab", "cycleTab", "gotoTab", "renderWorkspaceContext", "restoreWorkspaceTabs", "showTerminalContext",
+  "initContextRoster", "renderContextRoster", "focusRoster", "onRosterRowKey", "setRovingRow", "showInRoster",
 ];
 function deferred() {
   let resolve, reject;
@@ -47,14 +50,20 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
   const dom = new JSDOM(`<span id="ws-context"></span><div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div><div id="tab-actions"></div></div></div><div id="tabhost"></div><aside id="sidebar"><div id="instance-roster"><input id="entry" class="ctx-filter"><span class="ctx-count"></span><div class="ctx-list"></div></div><nav id="nav"><button class="nav-item active">Hierarchy</button></nav></aside>`);
   t.after(() => dom.window.close());
   const document = dom.window.document;
+  // The shell's one window keydown listener (shell.mjs), on this harness's platform.
+  document.addEventListener("keydown", e => keymap.handleKeydown(e, { isMac: true }));
+  keymap.setActiveContexts(new Set(["tabs"])); t.after(() => keymap.setActiveContexts(new Set()));
   const requests = [], loads = [], attachments = [], terms = [], detached = [], actions = new Map();
   const c = {
     document, console, navigator: { platform: "MacIntel" },
     workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A", connectionGeneration: 0,
     instanceActionTarget, sameInstanceActionTarget, instanceSplitPlan, instanceSplitIdentity,
+    modal: false, modalOpen: () => c.modal,
     menuState() {}, getBinding: () => null, formatChord: c => c, isMac: true, applyChordTitles() {}, runAction: id => actions.get(id)?.(),
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "instances", tabLayerVisible: false,
-    contextRosterGen: 0, contextInstances: [], contextFilter: "", collapsedInstances: new Set(), rosterTip: { bind() {}, hide() {}, sync() {} }, rosterTipFacts: () => ({}), rosterPrs: { get: () => null, refresh() {} },
+    contextRosterGen: 0, contextInstances: [], contextFilter: "", collapsedInstances: new Set(),
+    rosterState: null, rosterStale: false, contextDeploymentNote: null, rosterSignaturePainted: null, // initContextRoster builds the real controller; tests mark it ready before rendering rows
+    rosterTip: { bind() {}, hide() {}, sync() {} }, rosterTipFacts: () => ({}), rosterPrs: { get: () => null, refresh() {} },
     wsActiveTerminal: new Map(), pendingTerms: new Set(),
     tabbar: document.getElementById("tabbar"), tabhost: document.getElementById("tabhost"),
     tabActionsEl: document.getElementById("tab-actions"),
@@ -67,7 +76,7 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     // Panel behavior is covered with the real presenter in split-empty-shell.
     syncContextPanel() {}, contextPanel: { setFocusMode() {} },
     updateSplitControls() {}, refreshContextRoster() {}, setNavActive() {}, setSidebarHidden() {},
-    ...instanceTree, instanceActions, captureInstanceActionMenu, runtimeState, createRuntimeBadge, rosterKeyAction, moveTarget,
+    ...instanceTree, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge, rosterKeyAction, moveTarget,
     api: () => { const gate = deferred(); requests.push(gate); return gate.promise; },
     prepareOwnedOpen: opts => prepareOwnedOpen({ ...opts, load() {
       const gate = deferred(); loads.push(gate); return gate.promise;
@@ -77,7 +86,8 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     ctx: {}, reserveKey, whenKeyFree, createViewLifecycle, createTabChrome, tabKeyAction, focusAfterLastTab,
     createSelectionOwnership: ownership, wirePaneSelection, terminalOptions,
     ...workspaceTabs, ...layout, projectSplitDom, splitControlsState,
-    registerAction: action => actions.set(action.id, action.run),
+    // tabs.close also goes into the real keymap: the strip's close chord is the keymap's, not tab-a11y's.
+    registerAction: action => { actions.set(action.id, action.run); if (action.id === "tabs.close") t.after(keymap.registerAction(action)); },
     terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}),
     onThemeChange: () => () => {}, onTerminalTypographyChange: () => () => {},
     requestAnimationFrame: fn => fn(),
@@ -104,11 +114,14 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     const match = shellSource.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
     assert.ok(match, `exercise shipped ${name}`); return match[0];
   });
-  const setup = shellSource.match(/const tabOpenIntents = [^\n]+/)[0];
+  // The shipped modal guard for tab switching (unlessModal), over a modal flag the test sets.
+  const setup = `${shellSource.match(/const tabOpenIntents = [^\n]+/)[0]}\n${shellSource.match(/const unlessModal = [^\n]+/)[0]}`;
   const registry = shellSource.split("\n").filter(line => /^registerAction\(/.test(line)
     && /id: "(?:tabs\.|split\.close|terminal\.focusActive)/.test(line));
   const s = runInNewContext(`${setup}\n${functions.join("\n")}\n${registry.join("\n")}\n({ ${names.join(", ")}, tabOpenIntents });`, c);
   s.initContextRoster();
+  // refreshContextRoster is stubbed here: the roster's loading state reads as observed, so rows paint.
+  c.rosterState.succeed();
   const dispatch = (el, type, options = {}) => el.dispatchEvent(type === "keydown"
     ? new dom.window.KeyboardEvent(type, { bubbles: true, cancelable: true, ...options })
     : new dom.window.Event(type, { bubbles: true }));
@@ -265,7 +278,8 @@ for (const outcome of ["resolve", "reject"]) {
     await assert.rejects(olderOpen(t, "artifact", outcome, "cycle", { ownership }), /older open must not replace explicit selection/);
   });
   test(`mutation: cycle must use explicit selection on older ${outcome}`, async t => {
-    const shellSource = source.replace("  selectTab(nextId);", "  activateTab(nextId);");
+    // cycleTab → switchTab: the switch must be an explicit selection, not a projection.
+    const shellSource = source.replace("  if (!selectTab(id, { focusContent: inContent })) return;", "  if (!activateTab(id)) return;");
     assert.notEqual(shellSource, source);
     await assert.rejects(olderOpen(t, "artifact", outcome, "cycle", { shellSource }), /older open must not replace explicit selection/);
   });
@@ -299,7 +313,8 @@ test("mutation: readiness must consult current focus ownership, not pane visibil
     assert.equal(pending.term.focuses, 0, "readiness must not steal focus");
   }
   await run();
-  const terminal = mutatedFactory(createTerminalTab, "!ownsFocus()", "!isActive()", { createTermLifecycle, terminalKeyDecision, terminalHandle, terminalSameHandle, terminalFailure });
+  const terminal = mutatedFactory(createTerminalTab, "!ownsFocus()", "!isActive()", { createTermLifecycle, terminalKeyDecision, terminalHandle, terminalSameHandle, terminalFailure,
+    terminalMessage, wireTerminalAttachments, RECONNECT_DELAYS_MS, RECONNECT_RETRIED, NO_ANSWER_RETRIES, LOST_LINK_EXIT });
   await assert.rejects(run(terminal), /readiness must not steal focus/);
 });
 
@@ -477,4 +492,77 @@ for (const [kind, from] of [
   const mutant = source.replace(block, block.replace(from, "/* mutation: sidebar did not cancel */"));
   assert.notEqual(mutant, source);
   await assert.rejects(sidebarAttachment(t, kind, "resolve", mutant), /sidebar owns input/);
+});
+
+test("filtering: ArrowDown and the tab stop land on the first match, never an ancestor shown for context", t => {
+  const s = shell(t);
+  const team = [
+    { instance: "lead", home: "/t/lead", agentsRoot: "/t/agents", running: true },
+    { instance: "worker-keyboard", home: "/t/worker-keyboard", agentsRoot: "/t/agents", parentInstance: "lead", running: true },
+  ];
+  s.c.contextInstances = team;
+  const filter = s.document.getElementById("entry");
+  filter.focus(); filter.value = "keyboard"; s.dispatch(filter, "input");
+  const rows = [...s.c.contextRosterEl.querySelectorAll(".ctx-inst")];
+  assert.deepEqual(rows.map(r => r.dataset.filterContext ?? null), ["true", null], "the lead stays visible, marked as context");
+  assert.deepEqual(rows.map(r => r.tabIndex), [-1, 0], "the tab stop is the match");
+  s.dispatch(filter, "keydown", { key: "ArrowDown" });
+  assert.equal(s.document.activeElement, rows[1], "ArrowDown enters at the match, not the ancestor");
+  filter.focus(); filter.value = ""; s.dispatch(filter, "input");
+  s.dispatch(filter, "keydown", { key: "ArrowDown" });
+  assert.equal(s.document.activeElement.dataset.treeInstance, s.c.contextRosterEl.querySelector('.ctx-inst[tabindex="0"]').dataset.treeInstance,
+    "no filter: the rows' tab stop");
+});
+
+test("under an open modal the tab-switch actions do nothing (as F6 doesn't); close still works", t => {
+  const s = shell(t);
+  s.seed("one"); s.seed("two");
+  const before = s.c.activeTab;
+  s.c.modal = true;
+  for (const id of ["tabs.next", "tabs.prev"]) { s.actions.get(id)(); assert.equal(s.c.activeTab, before, id); }
+  s.c.modal = false;
+  s.actions.get("tabs.next")();
+  assert.notEqual(s.c.activeTab, before, "without a modal, Ctrl+Tab switches");
+});
+
+test("shell wiring: every tab-switch action (Ctrl+Tab, Ctrl+PgUp/PgDn, go-to-tab) is modal-guarded", () => {
+  for (const id of ["tabs.next", "tabs.prev", "tabs.nextPage", "tabs.prevPage"]) {
+    assert.match(source, new RegExp(`id: "${id.replace(".", "\\.")}".*run: unlessModal\\(`), id);
+  }
+  assert.match(source, /id: `tabs\.goto\$\{n\}`.*run: unlessModal\(\(\) => gotoTab\(n\)\)/);
+});
+
+test("a remote row's terminal tab carries the row's server label, else the server id; a local tab has none", async t => {
+  for (const [row, label] of [
+    [{ server: "build", repoName: "Build box" }, "Build box"],
+    [{ server: "build" }, "build"],
+    [{}, undefined],
+  ]) {
+    const seen = [];
+    const s = shell(t, { terminal: opts => { seen.push(opts); return createTerminalTab(opts); } });
+    s.c.resolveTerminalOpen = (_instances, ref, ws) => ({ key: `${ws}:${ref}`, inst: row.server
+      ? { instance: ref, running: true, addressable: true, home: `/srv/${ref}`, ...row }
+      : { instance: ref, running: true, tmux: { session: "synthetic", window: ref } } });
+    await s.pending("dev");
+    assert.equal(seen.at(-1).serverLabel, label);
+  }
+});
+
+test("showInRoster: the row with that server and home is revealed (a filter cleared, a collapsed parent opened), selected and focused", async t => {
+  const s = shell(t);
+  const row = (name, extra = {}) => ({ instance: name, agent: "dev", agentsRoot: "/srv/agents", home: `/srv/agents/dev/instances/${name}`,
+    server: "build", addressable: true, running: true, repoName: "Build box", ...extra });
+  const parent = row("lead"), child = row("helper", { parentInstance: "lead" }), twin = row("helper", { server: "other", repoName: "Other box" });
+  s.c.contextInstances = [parent, child, twin];
+  s.c.collapsedInstances.add(s.c.collapseKey("A", s.c.instanceId(parent)));
+  s.c.contextFilter = "lead"; s.document.getElementById("entry").value = "lead";
+  s.renderContextRoster(s.c.contextInstances);
+  assert.equal([...s.document.querySelectorAll(".ctx-inst")].some(b => b.dataset.treeInstance === s.c.instanceId(child)), false, "hidden to begin with");
+  assert.equal(await s.showInRoster({ server: "build", home: child.home }), true);
+  const active = s.document.activeElement;
+  assert.equal(active.dataset.treeInstance, s.c.instanceId(child), "the build row, not its same-named twin on another server");
+  assert.equal(active.tabIndex, 0);
+  assert.equal(s.document.getElementById("entry").value, "", "the filter that hid it is cleared");
+  assert.equal(s.c.collapsedInstances.size, 0, "its collapsed parent is opened");
+  assert.equal(await s.showInRoster({ server: "build", home: "/srv/agents/dev/instances/nobody" }), false);
 });

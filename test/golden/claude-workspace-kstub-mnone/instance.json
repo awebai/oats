@@ -39,7 +39,7 @@
         "member local/<base>/remotes/ws.git @ <commit12>"
       ],
       "skills": [
-        "<base>/deployment/agents/dev/instances/dev-claude-workspace-kstub-mnone/.agents/skills/golden.knowledge/golden-knowledge"
+        "<base>/deployment/agents/dev/instances/dev-claude-workspace-kstub-mnone/.agents/skills/golden-knowledge"
       ],
       "hooks": [
         "spawn"
@@ -73,7 +73,7 @@
         "type": "skill-tree",
         "source": "golden.knowledge",
         "declared": "skills",
-        "resolved": "<base>/deployment/agents/dev/instances/dev-claude-workspace-kstub-mnone/.agents/skills/golden.knowledge",
+        "resolved": "<base>/deployment/agents/dev/instances/dev-claude-workspace-kstub-mnone/.agents/skills",
         "origin": "member:local/<base>/remotes/ws.git@<sha>",
         "deferred": "materialize"
       },
@@ -189,7 +189,8 @@
     "prompt": {
       "kind": "task-file",
       "file": "TASK.md"
-    }
+    },
+    "kernelBin": "<kernel>/bin/oats.mjs"
   },
   "command": "OATS_INSTANCE='dev-claude-workspace-kstub-mnone' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-claude-workspace-kstub-mnone' PI_AGENT_INSTANCE='dev-claude-workspace-kstub-mnone' PI_AGENT_HOME='<base>/deployment/agents/dev/instances/dev-claude-workspace-kstub-mnone' '<base>/bin/claude' -- \"$(cat TASK.md)\"",
   "createdAt": "<createdAt>",

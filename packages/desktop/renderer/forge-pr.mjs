@@ -7,6 +7,8 @@ import { ageText } from './age-text.mjs';
 /** W6 (design): the PR's state word, its checks as rows (failing and running each, passing
  * grouped) and its review decision, each with a mark and a colour token. */
 const prState = d => d.state === 'MERGED' ? 'merged' : d.state === 'CLOSED' ? 'closed' : d.isDraft ? 'draft' : 'open';
+// The state pill's word (board 2): Open / Draft / Merged / Closed.
+export const prStateLabel = d => { const s = prState(d); return s[0].toUpperCase() + s.slice(1); };
 // Marks are Lucide icons (never text glyphs): check, x, clock, minus, circle-dot.
 const MARK = { pass: 'check', fail: 'close', pending: 'schedules', neutral: 'zoomOut', review: 'overview' };
 const REVIEW = { APPROVED: ['approved', 'pass'], CHANGES_REQUESTED: ['changes requested', 'fail'], REVIEW_REQUIRED: ['review required', 'pending'] };
@@ -49,14 +51,18 @@ export function createForgePrPanel(root, { request, generation = () => 0, connec
     }
     return true;
   };
+  // The section label, in the same small-caps head style as Branch and Changes (an h3 for a11y).
+  const heading = () => { const head = node('div', undefined, 'git-head'); head.append(node('h3', 'Pull request')); return head; };
   // onData: the painted PR's data, or null whenever no PR is shown (for the tab's badge).
-  const clear = text => { root.replaceChildren(node('h3', 'Pull request'), node('p', text, 'git-note')); onData(null); };
+  const clear = (text, cls = 'git-note') => { root.replaceChildren(heading(), node('p', text, cls)); onData(null); };
   function update(value = null) { selection = value; ticket++; clear(value ? 'Reading pull request…' : 'No current Git observation.'); if (value) return refresh(); }
   async function refresh() {
     const selected = selection, mine = ++ticket, ws = generation(), account = connectionGeneration();
     const owns = () => alive && selected === selection && mine === ticket && ws === generation() && account === connectionGeneration() && visible();
     if (!selected || !visible()) return;
     if (!ref(selected.key) || typeof request !== 'function') { clear(forgeReason('E_REMOTE_NOT_REPORTED').message); return; }
+    // A pull request is read from this machine's clone of the work: a remote row has none here.
+    if (selected.target.server) { clear(forgeReason('unsupported-remote-operation').message); return; }
     clear('Reading pull request…');
     try {
       const target = selected.target;
@@ -70,8 +76,10 @@ export function createForgePrPanel(root, { request, generation = () => 0, connec
       if (result.status === 'available') {
         const data = projectedPullRequest(result.data, { host: result.host, path: result.repository, branch: selected.branch });
         if (!data) throw new Error('Invalid PR projection');
-        const card = node('div', undefined, 'forge-pr-card');
-        const head = node('div', undefined, 'forge-head'), sub = node('span', `#${data.number} · ${prState(data)}`, 'forge-sub');
+        const card = node('div', undefined, 'forge-pr-card git-card');
+        // The top block: the state pill before the title, then "#N · closes #a, #b" (there is no commit count in the data).
+        const head = node('div', undefined, 'forge-head'), sub = node('span', `#${data.number}`, 'forge-sub');
+        const titleRow = node('span', undefined, 'forge-title-row'), pill = node('span', prStateLabel(data), 'forge-state'); pill.dataset.prState = prState(data);
         // The issues it closes (closingIssues), each opening its page; null or none says nothing.
         if (Array.isArray(data.closingIssues) && data.closingIssues.length) {
           sub.append(' · closes ');
@@ -84,8 +92,9 @@ export function createForgePrPanel(root, { request, generation = () => 0, connec
           });
         }
         sub.title = `${data.baseRefName} ← ${data.headRefName} · updated ${ageText(data.updatedAt)}`; sub.dataset.prState = prState(data);
-        head.append(node('span', data.title, 'forge-title'), sub); card.append(head);
-        // Checks, then the review decision, as rows.
+        titleRow.append(pill, node('span', data.title, 'forge-title')); head.append(titleRow, sub); card.append(head);
+        // Checks, then the review decision, as rows in the card's body.
+        const body = node('div', undefined, 'forge-body'); card.append(body);
         const list = node('ul', undefined, 'forge-checks'); list.setAttribute('aria-label', 'Reported pull request checks');
         const row = ({ outcome, name, meta, title }, kind = outcome) => {
           const li = node('li', undefined, `forge-check forge-${kind}`); li.dataset.outcome = outcome;
@@ -96,14 +105,14 @@ export function createForgePrPanel(root, { request, generation = () => 0, connec
           li.setAttribute('aria-label', `${name}: ${meta || (outcome === 'pass' ? 'passed' : word(outcome))}`); if (title) li.title = title;
           list.append(li);
         };
-        if (data.checks === null) card.append(node('p', 'Checks not reported.', 'git-note'));
-        else if (!data.checks.length) card.append(node('p', 'No checks returned.', 'git-note'));
+        if (data.checks === null) body.append(node('p', 'Checks not reported.', 'git-note'));
+        else if (!data.checks.length) body.append(node('p', 'No checks returned.', 'git-note'));
         else for (const r of checkRows(data.checks)) row(r);
         // Review: the decision and the unresolved threads (unresolvedThreads; null is unknown and says nothing).
         const review = REVIEW[data.reviewDecision], threads = Number.isSafeInteger(data.unresolvedThreads) && data.unresolvedThreads > 0 ? data.unresolvedThreads : 0;
         if (review || threads) row({ outcome: review?.[1] ?? 'pending', name: 'Review',
           meta: [review?.[0], threads ? `${threads} unresolved thread${threads === 1 ? '' : 's'}` : null].filter(Boolean).join(' · ') }, 'review');
-        if (list.children.length) card.append(list);
+        if (list.children.length) body.append(list);
         // Open it on GitHub (the design's ↗): the whole row, or beside "Send N threads" when that shows.
         const open = node('button', undefined, 'forge-open'); open.type = 'button';
         open.append(node('span', 'Open on GitHub'), iconElement(doc, 'external', { size: 13 }));
@@ -111,9 +120,8 @@ export function createForgePrPanel(root, { request, generation = () => 0, connec
         open.addEventListener('click', () => { if (owns() && open.isConnected && card.contains(open)) openExternal(data.url); });
         const actions = node('div', undefined, 'forge-actions'); actions.append(open); card.append(actions);
         if (threads && typeof requestThreads === 'function' && !target.server) sendThreads({ card, actions, open, threads, target, owns, key: selected.key });
-        card.append(node('p', 'Checks are reported for the pull request, not proof that the local revision was pushed.', 'git-note forge-caveat'));
-        root.replaceChildren(node('h3', 'Pull request'), card); onData(data);
-      } else if (result.status === 'no-pull-request' && result.data === null) clear('No pull request found for this branch.');
+        root.replaceChildren(heading(), card, node('p', "Checks are reported for the pull request's head commit, which may not be the local revision.", 'git-note forge-caveat')); onData(data);
+      } else if (result.status === 'no-pull-request' && result.data === null) clear('No pull request for this branch yet.', 'git-note git-dashed forge-no-pr');
       else {
         const reason = forgeReason(result.reason?.code);
         clear(result.status === 'not-connected' ? 'Not connected to GitHub.' : reason.message);

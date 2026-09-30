@@ -1,4 +1,4 @@
-// W6 Git & GitHub (design): Branch and Changes from a real `oats instance git` /
+// W6 Developer tab (Git and GitHub; design): Branch and Changes from a real `oats instance git` /
 // `oats instance diff` capture (the CLI's own JSON, paths under /fixture/base).
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -29,11 +29,14 @@ test('Branch: the branch, its distance from the default branch, the work mode, t
   assert.equal(u.one('.git-head-aside').textContent, git.workMode);
   assert.equal(u.one('.git-branch').textContent, git.observation.branch);
   const { ahead, behind } = git.base;
-  assert.equal(u.one('.git-ahead').textContent, `↑${ahead}${behind ? ` ↓${behind}` : ''} from main`);
+  assert.deepEqual([ahead, behind], [0, 1], 'the capture: at main, one commit behind it');
+  assert.equal(u.one('.git-ahead').textContent, '↓1 from main', 'v4.1: only the non-zero side, never "↑0"');
   assert.equal(u.one('.git-ahead').title, `${ahead} ahead of, ${behind} behind origin/main`);
-  assert.equal(u.one('.git-branch-sub').textContent, `oats · clean except ${git.files.length} files`);
-  assert.match(u.one('.git-more').textContent, /No upstream branch is reported\./, 'the rest of the read sits behind Details');
-  assert.equal(u.one('.git-more').open, false);
+  assert.equal(u.one('.git-branch-sub').textContent, `oats · ${git.files.length} files changed · ↓1 from main`, 'v4.1: the distance moves to the subline');
+  assert.equal(u.one('.git-ahead').parentElement, u.one('.git-branch-sub')); assert.equal(u.one('.git-branch').title, git.observation.branch);
+  assert.equal(u.one('.git-head-count').textContent, String(git.files.length), 'the Changes header counts the files');
+  assert.match(u.one('.git-footer').textContent, /^Checked .+ · Refresh$/); assert.equal(u.one('.git-checked').title, git.observation.at);
+  assert.equal(u.one('.git-more'), null, 'no Details disclosure on a healthy read');
 });
 
 test('Changes: one row per file with its status letter and path; Open diff reads the first file, a row reads its own', async t => {
@@ -58,9 +61,10 @@ test('a clean worktree says so and offers no Open diff', async t => {
   const dom = new JSDOM('<!doctype html><body><aside></aside></body>'), host = dom.window.document.querySelector('aside');
   const view = createInstanceGitPanel(host, { request: () => answer(clean) }); t.after(() => { view.dispose(); dom.window.close(); });
   await view.update({ active: true, workspace: target.workspace, instance: target, key: gitTargetKey(target) });
-  assert.equal(host.querySelector('.git-branch-sub').textContent, 'oats · clean');
-  assert.equal(host.querySelector('.git-changes-section .git-link').hidden, true);
-  assert.match(host.querySelector('.git-files').textContent, /No changes reported in this observation\./);
+  assert.equal(host.querySelector('.git-branch-sub').textContent, 'oats · clean · ↓1 from main');
+  assert.equal(host.querySelector('.git-changes-section .git-link').hidden, true); assert.equal(host.querySelector('.git-head-count').textContent, '');
+  assert.equal(host.querySelector('.git-files .git-dashed').textContent, 'No uncommitted changes.');
+  assert.equal(host.querySelector('.git-files').classList.contains('git-card'), false, 'a dashed note, not a bordered list');
 });
 
 // Line counts (kernel #238, passed through by #245), on the engineer's real capture
@@ -85,4 +89,18 @@ test('Changes rows show "+N −M" as reported; binary says so; unknown (null) an
   // My earlier capture predates #238: no count keys, no counts.
   const u = mount(t); await u.show();
   assert.equal(u.host.querySelector('.git-counts'), null);
+});
+
+test('v4.1: a changed file is one line: the directory muted and clipped from the left, then the file name; the full path in the title', async t => {
+  const u = mount(t); await u.show();
+  const nested = git.files.find(f => f.path.includes('/')); assert.ok(nested, 'the capture has a nested path');
+  const row = [...u.host.querySelectorAll('button.git-file')].find(b => b.querySelector('.git-file-path').textContent === nested.path);
+  const path = row.querySelector('.git-file-path'), cut = nested.path.lastIndexOf('/') + 1;
+  assert.equal(path.title, nested.path);
+  assert.equal(path.querySelector('.git-file-dir').dir, 'rtl'); assert.equal(path.querySelector('.git-file-dir bdi').textContent, nested.path.slice(0, cut));
+  assert.equal(path.querySelector('.git-file-name').textContent, nested.path.slice(cut));
+  const flat = git.files.find(f => !f.path.includes('/'));
+  if (flat) assert.equal([...u.host.querySelectorAll('.git-file-path')].find(p => p.textContent === flat.path).querySelector('.git-file-dir'), null);
+  assert.match(instanceGitCSS, /\.git-file-dir \{[^}]*text-overflow:ellipsis; color:var\(--muted\)/);
+  assert.match(instanceGitCSS, /\.git-branch \{[^}]*text-overflow:ellipsis; white-space:nowrap/);
 });

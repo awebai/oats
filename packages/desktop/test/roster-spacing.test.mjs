@@ -10,7 +10,8 @@ import * as tree from "../renderer/instance-tree.mjs";
 import { instanceActions, captureInstanceActionMenu } from "../renderer/instance-actions.mjs";
 import { instanceActionTarget, sameInstanceActionTarget } from '../renderer/instance-action-target.mjs';
 import { instanceSplitPlan } from '../renderer/instance-split.mjs';
-import { runtimeState } from "../renderer/instance-presentation.mjs";
+import { runtimeState, unsupportedSession } from "../renderer/instance-presentation.mjs";
+import { canAddressRemote, rowReason } from "../renderer/remote-address.mjs";
 import { createRuntimeBadge } from "../renderer/identity-marks.mjs";
 
 const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url), "utf8");
@@ -36,10 +37,11 @@ function fixture(t, stylesheet = css) {
     return matches[0].style;
   };
   const context = {
-    ...tree, document: doc, instanceActions, captureInstanceActionMenu, runtimeState, createRuntimeBadge,
+    ...tree, document: doc, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge,
     instanceActionTarget, instanceSplitPlan, connectionGeneration: 0, menuState() {}, runAction: assert.fail,
     applyChordTitles() {}, updateActiveContexts() {}, getBinding: () => null, formatChord: c => c, isMac: true,
     contextRosterEl: doc.querySelector("#instance-roster"), contextFilter: "", contextWorkspace: "A",
+    rosterState: { hasData: true, state: "ready" }, rosterStale: false, contextDeploymentNote: null, // loading state: a read succeeded
     contextInstances: roster, currentWorkspace: () => "A", workspaceGeneration: () => 0, collapsedInstances: new Set(), rosterTip: { bind() {}, hide() {}, sync() {} }, rosterTipFacts: () => ({}), rosterPrs: { get: () => null, refresh() {} },
     tabs: new Map([[1, { key: tree.terminalKey("A", roster[1]) }]]), activeTab: 1,
     tabOpenIntents: { applyFocus: fn => fn() },
@@ -56,8 +58,14 @@ function fixture(t, stylesheet = css) {
 }
 
 function assertRoom(u) {
-  assert.equal(u.rule(".ctx-tree-row").minHeight, "50px", "rows are the roomier 50px the human chose over the design's 44px");
-  assert.equal(u.rule(".ctx-inst").minHeight, "50px", "the whole row height is one click target");
+  // Human, 2026-09-29: a 48px row box whose background fills 44px inside 2px transparent borders,
+  // so neighbouring backgrounds keep a 4px gap and never touch.
+  assert.equal(u.rule(".ctx-tree-row").minHeight, "48px", "a 48px row box");
+  assert.equal(u.rule(".ctx-tree-row").borderTop, "var(--row-gap) solid transparent");
+  assert.equal(u.rule(".ctx-tree-row").borderBottom, "var(--row-gap) solid transparent");
+  assert.equal(u.rule(".ctx-tree-row").getPropertyValue("--row-gap"), "2px");
+  assert.equal(u.rule(".ctx-tree-row").backgroundClip, "padding-box", "the background stops short of the gap");
+  assert.equal(u.rule(".ctx-inst").minHeight, "44px", "the whole painted row is one click target");
   assert.equal(u.rule(".ctx-inst").height, "auto", "never squeeze two labels into a fixed box");
   assert.equal(u.rule(".ctx-copy").gap, "3px", "name/meta gap follows the supplied 3px stack");
   assert.equal(u.computed(u.doc.querySelector(".ctx-filter-field")).marginBottom, "6px", "filter/list separation");
@@ -76,7 +84,7 @@ function assertRoom(u) {
   }
 }
 
-test("roster spacing (non-layout): 50px rows, padded controls and filter/list separation", t => {
+test("roster spacing (non-layout): 48px rows with a 4px gap, padded controls and filter/list separation", t => {
   const u = fixture(t);
   assertRoom(u);
   const filter = u.doc.querySelector(".ctx-filter");
@@ -92,6 +100,7 @@ test("roster typography (non-layout): valid control family and supplied sidebar 
   assert.equal(u.rule(".ctx-filter").fontFamily, "inherit");
   assert.equal(u.rule(".ctx-filter").fontSize, "12px");
   assert.equal(u.rule(".ctx-group").height, "14px", "Workspace v4: groups read from a 14px gap, no title");
+  assert.equal(u.rule(".ctx-group:first-child").height, "7px", "the first row sits closer to the filter (human, 2026-09-29)");
   assert.equal(u.rule(".ctx-inst").getPropertyValue("font"), "inherit");
   assert.equal(u.rule(".ctx-name").fontSize, "12.5px");
   assert.equal(u.rule(".ctx-name").fontWeight, "600");
@@ -100,7 +109,7 @@ test("roster typography (non-layout): valid control family and supplied sidebar 
   for (const row of u.rows) {
     const name = row.querySelector(".ctx-name"), repo = row.querySelector(".ctx-repo-label");
     assert.equal(name.nextElementSibling, repo, "both labels remain in the same vertical stack");
-    assert.equal(repo.textContent, row.querySelector(".ctx-inst").disabled ? "desktop-repo · state unknown" : "desktop-repo");
+    assert.equal(repo.textContent, row.querySelector(".ctx-inst").getAttribute("aria-disabled") === "true" ? "desktop-repo · state unknown" : "desktop-repo");
     assert.equal(repo.title, "Repository: desktop-repo");
     for (const label of [name, repo]) {
       assert.equal(u.computed(label).textOverflow, "ellipsis");
@@ -112,7 +121,8 @@ test("roster typography (non-layout): valid control family and supplied sidebar 
 
 function assertConnectors(u) {
   assert.equal(u.rule(".ctx-tree-row").position, "relative");
-  assert.equal(u.rule(".ctx-guides").getPropertyValue("inset"), "0 auto 0 0", "span the entire row");
+  assert.equal(u.rule(".ctx-guides").getPropertyValue("inset"), "calc(-1 * var(--row-gap)) auto calc(-1 * var(--row-gap)) 0",
+    "span the entire row, including the transparent gap borders, so lines stay continuous");
   assert.equal(u.rule(".ctx-guides").pointerEvents, "none");
   assert.equal(u.rule(".ctx-guide").position, "absolute");
   assert.equal(u.rule(".ctx-guide").left, "calc(13.25px + var(--guide-level) * var(--tree-step))",
@@ -124,7 +134,8 @@ function assertConnectors(u) {
   assert.equal(u.rule(".ctx-guide.down").top, "50%", "a parent's line leaves from its own dot");
   assert.equal(u.rule(".ctx-guide.link-in, .ctx-guide.link-out, .ctx-guide.link-through").borderLeft,
     "1.5px dotted var(--tree-link)", "sibling links are dotted");
-  assert.equal(u.rule(".ctx-dot").boxShadow, "0 0 0 2px var(--surface)", "the dot's ring hides the line under it");
+  assert.equal(u.rule(".ctx-dot").boxShadow, "0 0 0 2px var(--row-solid, var(--surface))",
+    "the dot's ring hides the line under it, in the row's own solid colour");
 }
 
 test("tree connectors (non-layout): lines leave the dots, no disclosure arrows", t => {
@@ -158,7 +169,7 @@ test("roster DOM contract: named group separators, identity, active state, hidde
     assert.equal(menu.getAttribute("role"), "menu");
     assert.equal(menu.parentElement, trigger.parentElement);
     assert.deepEqual([...menu.querySelectorAll("[role=menuitem]")].map(item => item.dataset.action),
-      button.disabled ? ['open-split', 'open-pr', "inspect", "stop", "retire"] : ['open-split', 'open-pr', "inspect", "restart", "stop", "retire"]);
+      button.getAttribute('aria-disabled') === 'true' ? ['open-split', 'open-pr', "inspect", "stop", "retire"] : ['open-split', 'open-pr', "inspect", "restart", "stop", "retire"]);
   }
   assertTools(u);
   const active = u.doc.querySelector(".ctx-inst.active");
@@ -195,7 +206,7 @@ test("sidebar metadata uses reported branch/harness without claiming membership 
 // Mutants exist only as in-memory stylesheets: no shared-file rollback, reload
 // or browser is needed to prove the contracts reject the reported regressions.
 for (const [label, before, after, check, message] of [
-  ["fixed button height", "min-height: 50px; height: auto; display: flex", "min-height: 50px; height: 40px; display: flex", assertRoom, /fixed box/],
+  ["fixed button height", "min-height: 44px; height: auto; display: flex", "min-height: 44px; height: 40px; display: flex", assertRoom, /fixed box/],
   ["cramped label gap", "align-items: flex-start; gap: 3px", "align-items: flex-start; gap: 0", assertRoom, /3px stack/],
   ["connectors off the dot column", "left: calc(13.25px + var(--guide-level)", "left: calc(8px + var(--guide-level)", assertConnectors, /dot centre column/],
   ["square elbows", "border-bottom-left-radius: 5px", "border-bottom-left-radius: 0", assertConnectors, /rounded elbows/],
@@ -204,4 +215,76 @@ for (const [label, before, after, check, message] of [
   assert.ok(css.includes(before), "mutate the shipped declaration");
   const u = fixture(t, css.replace(before, after));
   assert.throws(() => check(u), { code: "ERR_ASSERTION", message });
+});
+
+// Human, 2026-09-29: a running dot stays solid on a selected or hovered row. Its knockout ring takes the
+// row's own solid colour, so on the tint it never reads as a hollow dot inside a white halo.
+test("running dot stays solid --accent on selected and hovered rows; its ring is the row's colour", t => {
+  const u = fixture(t);
+  const active = u.doc.querySelector(".ctx-tree-row.active");
+  assert.ok(active, "the fixture has a selected row");
+  const dot = active.querySelector(".ctx-dot");
+  assert.equal(dot.className, "ctx-dot on", "the selected fixture row is running");
+  const style = u.computed(dot);
+  assert.equal(style.background, "var(--accent)", "solid fill");
+  assert.equal(u.rule(".ctx-dot.on").borderColor, "var(--accent)", "jsdom keeps var() only in the shorthand, so the border is read from the rule");
+  assert.equal(style.boxShadow, "0 0 0 2px var(--row-solid, var(--surface))", "the ring follows the row's solid colour");
+  assert.equal(u.rule(".ctx-tree-row.active").getPropertyValue("--row-solid"), "var(--sel)", "the ring on a selected row is the tint");
+  assert.equal(u.rule(".ctx-tree-row:hover").getPropertyValue("--row-solid"), "var(--surface-2)", "and on hover the hover surface");
+  assert.equal(u.computed(active).getPropertyValue("--row-solid").trim(), "var(--sel)", "the selected row resolves its own solid colour");
+  assert.equal(u.rule(".ctx-dot").background, "var(--surface)", "only a stopped dot is hollow");
+  assert.equal(u.rule(".ctx-dot.on").background, "var(--accent)");
+});
+
+// Spec F audit: an instance whose state is unknown can't open, but its row takes focus
+// (aria-disabled, never disabled) so its tools — the actions menu — stay keyboard-reachable,
+// and the roster's one tab stop is the selected row (its terminal is the active tab).
+test("keyboard: an unavailable row stays focusable with its tools; the tab stop is the selected row", t => {
+  const u = fixture(t);
+  const row = u.rows.at(-1), button = row.querySelector(".ctx-inst");
+  assert.equal(button.disabled, false, "never disabled: a disabled button can't take focus");
+  assert.equal(button.getAttribute("aria-disabled"), "true");
+  assert.equal(button.getAttribute("aria-description"), "unknown: status unknown");
+  button.focus(); assert.equal(u.doc.activeElement, button);
+  button.click(); // the fixture fails on any open/start: an unavailable row's activation does nothing
+  const trigger = row.querySelector(".ctx-instance-actions");
+  assert.equal(trigger.disabled, false, "its actions menu is a Tab stop after the row");
+  const stops = [...u.doc.querySelectorAll(".ctx-inst")].filter(b => b.tabIndex === 0);
+  assert.deepEqual(stops.map(b => b.dataset.treeInstance), [tree.instanceId(roster[1])], "one tab stop: the selected row");
+});
+
+test('a row that cannot open says why on its meta line (text, not colour), with the full sentence as its title and aria-description', t => {
+  const u = fixture(t);
+  const remote = (name, extra) => ({ ...instance(name), home: `/srv/agents/dev/instances/${name}`, agentsRoot: '/srv/agents', server: 'build',
+    repoName: 'Build box', addressable: true, missingRemotely: false, ...extra });
+  const rows = [
+    [{ ...instance('herdr'), running: null, runtimeState: 'unsupported', runtimeError: 'E_HERDR_REMOVED: Herdr is no longer supported.' },
+      'Herdr no longer supported', 'E_HERDR_REMOVED: Herdr is no longer supported.'],
+    [remote('gone', { addressable: false, missingRemotely: true, running: null }), 'gone from Build box',
+      'gone is no longer on Build box. Remove it from this computer with: oats server forget build --instance gone'],
+    [remote('hidden', { addressable: false }), 'not reachable on Build box', 'Build box did not report this instance as reachable.'],
+    [remote('far', { running: null, serverUnreached: true, runtimeError: 'ssh failed: Connection refused' }), 'Build box not reached', 'ssh failed: Connection refused'],
+    [{ ...instance('unsure'), running: null }, 'state unknown', 'unsure: status unknown'],
+  ];
+  u.render(rows.map(([row]) => row));
+  for (const [row, label, sentence] of rows) {
+    const button = [...u.doc.querySelectorAll('.ctx-inst')].find(b => b.querySelector('.ctx-name').textContent === row.instance);
+    assert.ok(button, row.instance);
+    const meta = button.querySelector('.ctx-meta').textContent;
+    assert.ok(meta.endsWith(` · ${label}`), `${row.instance}: meta "${meta}" shows "${label}"`);
+    assert.equal(button.getAttribute('aria-disabled'), 'true');
+    assert.equal(button.title, sentence); assert.equal(button.getAttribute('aria-description'), sentence);
+  }
+  // An addressable foreign row (no saved route here) opens like any other: no reason, no disabled state.
+  u.render([remote('foreign', { savedRoute: false })]);
+  const foreign = u.doc.querySelector('.ctx-inst');
+  assert.equal(foreign.getAttribute('aria-disabled'), null);
+  assert.equal(foreign.querySelector('.ctx-meta').textContent, 'Build box');
+});
+
+test('a row\'s tools stay visible while its actions menu is open: the menu (a top-layer popover inside them) stays clickable once the pointer leaves the row', t => {
+  // In the top layer the row is neither :hover nor :focus-within while the pointer is in the menu. Without this rule the
+  // tools (and the menu, which inherits their visibility) go hidden: the item is not hit and its action refuses to run.
+  const u = fixture(t);
+  assert.equal(u.rule('.ctx-tree-row > .ctx-row-tools:has(.ctx-instance-menu:popover-open)').visibility, 'visible');
 });

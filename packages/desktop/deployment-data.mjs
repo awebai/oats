@@ -139,16 +139,29 @@ export function workspaceStatusData(document, deployment) {
     warnings: own(data, 'warnings') ? array(data.warnings).map(row => fields(row, ['code', 'message', 'label', 'soul', 'repoKey', 'kind', 'id', 'remedy', 'entry'])) : [] });
 }
 
+/** The kernel's observation provenance (feature observe-max-age): `observation` sits at the
+ * top of the raw `status` object and under `result` in a schemaVersion:1 envelope; its shape
+ * is {observedAt: ISO-8601, reused: boolean}, reported whenever --max-age was passed (0 included).
+ * Absent, or present but malformed, projects as nulls: the stamp is provenance beside the
+ * result, never the result, so a bad stamp must not cost the roster or the document — the
+ * caller falls back to the time its read completed (maintainer's contract decision). */
+export function observationData(document) {
+  const holder = record(document) ? (document.schemaVersion === 1 ? document.result : document) : null;
+  const value = record(holder) ? holder.observation : undefined;
+  const sound = record(value) && typeof value.observedAt === 'string' && value.observedAt.length <= 64 && !Number.isNaN(Date.parse(value.observedAt))
+    && typeof value.reused === 'boolean';
+  return sound ? { observedAt: value.observedAt, reused: value.reused } : { observedAt: null, reused: null };
+}
+
 /** status stays a native {root,agents,workspace} observation. No task/state
  * parsing, file counts, runtime defaults, metadata hydration or v1 card DTO.
  * Liveness here is the kernel's report; terminal-target observation is a
  * separate v2-agnostic Desktop concern. */
 const inside = (path, parent) => path.startsWith(parent.endsWith('/') ? parent : parent + '/');
+/** A Herdr-recorded row's sessionTarget, reduced to what recognises it as unsupported.
+ * Nothing connects with it, so no socket, pane or terminal id is forwarded. */
 function sessionTarget(value) {
-  check(record(value));
-  const out = fields(value, ['backend', 'socket', 'paneId', 'terminalId']);
-  if (own(value, 'protocol')) { check(Number.isSafeInteger(value.protocol)); out.protocol = value.protocol; }
-  return out;
+  return fields(value, ['backend']);
 }
 export function deploymentStatusData(document, deployment) {
   check(absolute(deployment), 'E_BAD_ARGS'); check(record(document));

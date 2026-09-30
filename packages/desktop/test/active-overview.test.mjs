@@ -48,8 +48,9 @@ test('frame07 counts relation groups separately from independents, named by thei
   assert.equal(u.one('.hier-chead .cnm').textContent, 'peer', 'the group is named like its sidebar group');
   assert.match(u.one('.hier-chead .cct').textContent, /^3 · (reported-repo · other-repo|other-repo · reported-repo)$/);
   assert.equal(u.one('.hier-context'), null, 'reported contexts live in the one header line');
-  assert.ok(u.all('.hier-edges path:not(.sib)').every(path => !path.getAttribute('d').includes('C')));
-  assert.match(u.one('.hier-edges path:not(.sib)').getAttribute('d'), /V .* H .* V .* H/);
+  // Spec G: parent edges are OAS's cubic S-curves (bottom-centre to top-centre), no square elbows.
+  assert.ok(u.all('.hier-edges path:not(.sib)').every(path => /^M \S+ \S+ C \S+ \S+, \S+ \S+, \S+ \S+$/.test(path.getAttribute('d'))));
+  assert.ok(u.all('.hier-edges path').every(path => !/[VH]/.test(path.getAttribute('d'))), 'no elbow segments remain');
   assert.equal(u.all('.hier-edges .sib').length, 1);
   u.mouse(u.nodes().find(n => n.dataset.name === 'root'), 'click');
   assert.equal(u.one('.pavailability').textContent, 'Activity: unknown · Waiting on you: unknown');
@@ -77,7 +78,7 @@ test('same-named instances are visibly distinguished by reported root/home/host,
     instance('twin', { agentsRoot: '/a/project/agents', home: '/a/project/agents/soul/i/twin' }),
     instance('twin', { agentsRoot: '/b/project/agents', home: '/b/project/agents/soul/i/twin' }),
     instance('intra', { home: '/team/agents/one/i/intra' }), instance('intra', { home: '/team/agents/two/i/intra' }),
-    instance('remote', { server: 'host-a', savedRoute: true }), instance('remote', { server: 'host-b', savedRoute: true }),
+    instance('remote', { server: 'host-a', addressable: true }), instance('remote', { server: 'host-b', addressable: true }),
   ] });
   for (const name of ['twin', 'intra', 'remote']) {
     const nodes = u.nodes().filter(node => node.dataset.name === name);
@@ -235,9 +236,9 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: actual Activ
 });
 
 test('remote twins preserve server/home identity; unknown or unaddressed nodes cannot act, and Brain never guesses', async t => {
-  const shared = { home: '/same/home', agentsRoot: '/same/agents', savedRoute: true };
+  const shared = { home: '/same/home', agentsRoot: '/same/agents', addressable: true };
   const u = await setup(t, { instances: [instance('twin', { ...shared, server: 'a' }), instance('twin', { ...shared, server: 'b' }),
-    instance('unknown', { running: null }), instance('unrouted', { server: 'c', savedRoute: false }),
+    instance('unknown', { running: null }), instance('unrouted', { server: 'c', savedRoute: true, addressable: false }),
     instance('weak', { home: '', agentsRoot: '' })] });
   const twins = u.nodes().filter(n => n.dataset.name === 'twin'); for (const n of twins) u.mouse(n, 'dblclick');
   assert.deepEqual(u.opened.map(i => i.server), ['a', 'b']); assert.ok(u.opened.every(i => i.home === '/same/home'));
@@ -315,4 +316,39 @@ test('disposed view ignores pending observations and retained instance actions',
   request.resolve(panel([instance('late')])); await tick();
   button.dispatchEvent(new u.dom.window.Event('click')); u.mouse(old, 'dblclick');
   assert.equal(u.host.innerHTML, ''); assert.equal(u.opened.length, 0);
+});
+
+// Spec F, Part 4: every node is reachable from the keyboard, and the canvas has zoom keys.
+test('keyboard: Up/Down walk the Independent grid row by row, and a selected node is panned into view', async t => {
+  const solos = Array.from({ length: 7 }, (_, n) => instance(`solo-${n + 1}`));
+  const u = await setup(t, { instances: solos });
+  const selected = () => u.nodes().find(n => n.getAttribute('aria-selected') === 'true')?.dataset.name;
+  u.canvas.focus(); u.key('ArrowRight');
+  assert.equal(selected(), 'solo-1');
+  u.key('ArrowDown'); assert.equal(selected(), 'solo-4', 'the node below in the next row of three');
+  u.key('ArrowDown'); assert.equal(selected(), 'solo-7');
+  u.key('ArrowDown'); assert.equal(selected(), 'solo-7', 'no row below: stays');
+  u.key('ArrowUp'); assert.equal(selected(), 'solo-4');
+  u.key('ArrowRight'); u.key('ArrowRight'); assert.equal(selected(), 'solo-6');
+  u.key('ArrowUp'); assert.equal(selected(), 'solo-3');
+  // Zoomed in and panned away, the next keyboard selection pans the camera to show it.
+  for (let n = 0; n < 4; n++) u.key('=');
+  const stage = u.one('.hier-stage'), before = stage.style.transform;
+  u.key('ArrowDown'); assert.equal(selected(), 'solo-6');
+  u.key('ArrowDown'); assert.equal(selected(), 'solo-7', 'a shorter row below: its nearest node');
+  assert.notEqual(stage.style.transform, before, 'the camera moved to reveal the node');
+  const [, tx, ty, z] = stage.style.transform.match(/translate\((-?[\d.]+)px, (-?[\d.]+)px\) scale\(([\d.]+)\)/).map(Number);
+  const node = u.nodes().find(n => n.dataset.name === 'solo-7'), group = node.parentElement;
+  const x = (parseFloat(group.style.left || 0) + parseFloat(node.style.left)) * z + tx, y = (parseFloat(group.style.top || 0) + parseFloat(node.style.top)) * z + ty;
+  assert.ok(x >= 0 && x < 1200 && y >= 0 && y < 800, `solo-7 is on screen (${x}, ${y})`);
+});
+
+test('keyboard: - and = zoom, 0 fits (the canvas has focus)', async t => {
+  const u = await setup(t, { instances: [instance('a'), instance('b')] });
+  const zoom = () => Number(u.one('.hier-stage').style.transform.match(/scale\(([\d.]+)\)/)?.[1] ?? 1);
+  u.canvas.focus();
+  u.key('0'); const fitted = zoom();
+  u.key('='); assert.ok(zoom() > fitted, '= zooms in');
+  u.key('-'); u.key('-'); assert.ok(zoom() < fitted, '- zooms out');
+  u.key('0'); assert.equal(zoom(), fitted, '0 fits again');
 });

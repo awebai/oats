@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { remoteWorkspace, remotePanel, remoteAgents, unavailableGroups, spawnedWorkspace } from "../server/remote-roster.mjs";
+import { HERDR_REMOVED } from "../renderer/terminal-contract.mjs";
 
 const group = {
   id: "host-abc", server: "host", label: "Build server", registrationPresent: true,
@@ -46,4 +47,18 @@ test("removed registration keeps saved instances while unreachable means unknown
   assert.equal(panel.instances[0].savedRoute, true);
   assert.equal(panel.instances[0].runtimeError, "Connection refused");
   assert.equal(panel.error, "Connection refused");
+});
+
+test("a remote Herdr row is unsupported with the kernel's reason, from a 0.31 or an older remote kernel", () => {
+  const stem = `E_HERDR_REMOVED: ${HERDR_REMOVED}`;
+  const panel = remotePanel({ ...group, instances: [
+    { instance: "h-new", agent: "dev", home: "/remote/h-new", running: null, savedRoute: true, runtimeState: "unsupported", runtimeError: `${stem} (h-new)` },
+    { instance: "h-old", agent: "dev", home: "/remote/h-old", running: true, savedRoute: true, backend: "herdr", runtimeError: "Herdr snapshot unavailable" },
+    { instance: "t-one", agent: "dev", home: "/remote/t-one", running: true, savedRoute: true, backend: "tmux" },
+  ] });
+  const [fresh, old, tmux] = panel.instances;
+  assert.deepEqual([fresh.running, fresh.runtimeState, fresh.runtimeError], [null, "unsupported", `${stem} (h-new)`]);
+  assert.deepEqual([old.running, old.runtimeState, old.runtimeError], [null, "unsupported", stem]);
+  assert.equal(tmux.running, true); assert.equal(tmux.runtimeError, undefined);
+  assert.equal(panel.running, 1);
 });

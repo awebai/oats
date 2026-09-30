@@ -55,6 +55,69 @@ The shape is the lead's (0.30 D2 review):
   - **The Desktop's own codes** come with a plain message: `E_TEAMS_UNAVAILABLE` (no `team-model-2`, e.g. on 0.29: a clear refusal, no kernel call), `unsupported-remote-operation`, `E_WORKSPACE_UNKNOWN`, `E_BUSY` (one mutation per deployment at a time; reads are not blocked), and `E_CLI_PROTOCOL`.
 - **Actions** come from a closed allow-list: each builds its own argv, and the action string is never passed through.
 
+## Team members
+
+`GET /api/team-members?ws=<local workspace ID>` answers who is in each team, wherever it runs.
+
+- **Held observations only.** It runs no command and adds no ssh. It reads this workspace's roster and
+  every remote group's panel, as the remote roster loop's one `oats server roster` read left them.
+  The server-wide Host guard applies, and the proxy pins `ws` to an advertised workspace.
+- **A remote workspace** is refused with `409 unsupported-remote-operation`: the Teams board is shown
+  only for a local workspace. A missing or repeated `ws` is `E_BAD_ARGS`; an unknown one is
+  `E_WORKSPACE_UNKNOWN`.
+
+```json
+{"members":[{"workspace":"<ws id to navigate to>","server":null,"serverLabel":null,"instance":"…","agent":"…",
+  "agentsRoot":"…","home":"…","team":"<identity.team>","running":true,"addressable":true,"missingRemotely":false,
+  "reason":null,"reasonLabel":null,"createdAt":"…"}],
+ "servers":[{"server":"<id>","label":"…","group":"<group id>","reached":true,"error":null,"registered":true}],
+ "notReached":[{"server":"<id>","label":"…"}]}
+```
+
+- **`members`**: every row whose `identity.team` is a non-empty string: this workspace's rows, then
+  each remote group's rows. `workspace` is where to go for the row (`remote:<group id>` for a remote
+  one); `running` is `null` when unknown; `reason` and `reasonLabel` are the roster's own reason the
+  row can't be opened and its short label (`rowReason`), or `null`. The same instance seen from two machines is two members.
+- **`servers`**: one entry per remote group. `reached` is the group's last roster read; `registered`
+  marks the group the server's registration targets (where `spawn --server` goes).
+- **`notReached`**: every group whose last read failed and that holds no rows, last-known or current.
+  Before the first roster answer there are no groups, so nothing is named.
+
+**On the board** (`renderer/computer-teams.mjs`, read on mount and at each roster poll):
+- A team card with a provider id lists its members, grouped by machine: "This computer" first, then
+  servers by label in code-point order (the server id breaks ties); within a group by instance name,
+  then home. An unmapped team shows no list.
+- Machine headings are sentence-case meta text with a count ("This computer · 3", "build · not
+  reached"), each a `role="group"` labelled by its heading.
+- A member row is its state dot, its name (the roster's font), its soul mark and its state in words.
+  The **name** is a text button that shows the member's roster row ("Show <instance> in the roster").
+  A quiet **Terminal** button ("Open <instance> terminal on <machine>") is there only when the member
+  is running and addressable. Otherwise the state word says why, as the roster's short label ("gone
+  from X", "not reachable on X", "X not reached") or `stopped`/`unknown`, with the full reason as its
+  title and description. The list holds no disabled buttons.
+- Both go to the member's workspace, wait for the row by server and home (`handOff` in
+  `views/spawn.mjs`, shared with the remote spawn), then open it or select and focus it
+  (`ctx.showInRoster`).
+- A machine whose roster groups all failed their last read keeps its last-known members, heads
+  itself "<label> · not reached" and carries the error as its title; its members read `unknown`.
+  When only some of a machine's groups failed (an edited registration keeps its old group), the
+  heading stays reached and those members' own state (`unknown`) and reason say it.
+- `notReached` is said under the page head: "Not reached: <label>, …. Their members aren't shown until
+  they answer." That status line follows every answer, even while the cards wait under the redraw
+  barrier (an open form, a pending confirmation, or focus inside the page).
+- The card's summary is "N members" or "N members · M on other machines", and nothing for none.
+
+**Where to run** (the spawn dialog, at the form's top level just above Relationship): "This computer",
+then each registered server (`/api/servers`).
+It takes its disabled states from this route's `servers`, using the registered group of each server:
+"(not registered)" when the server has groups but none is the registration's, or "(not reached)". A
+server the roster has no group for yet (before its first answer) stays enabled: nothing is guessed.
+A server is never disabled for its souls: the roster lists only the souls spawned there before, not
+those its workspace offers. The host's kernel refuses a soul it doesn't offer, and the dialog says
+that refusal in its own words ("Couldn’t spawn on <server>: <message>"). With a server
+chosen, the relation picker lists that group's rows (`/api/panel?ws=remote:<group>`): relations never
+cross machines.
+
 ## Fixtures
 
 `test/fixtures/team-model-v2/` holds **real captures** from the K1 kernel (oats

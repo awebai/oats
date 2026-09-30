@@ -2,8 +2,9 @@
    observations, not an inferred activity feed. Agent clusters — connected
    components of parent/child/sibling links (see clusters.mjs) — are the
    primary visual unit: each multi-member cluster renders as a card with its
-   internal tidy tree (parent/child solid elbows; sibling links as
-   dotted horizontal edges between peers — never color alone). Unrelated
+   internal tidy tree (parent/child solid S-curves, bottom-centre to
+   top-centre; sibling links as dashed shallow arcs between peers — never
+   color alone). Unrelated
    single instances collect in a visually quieter "Independent" strip below.
    Layout inside a cluster is a layered tidy tree, deliberately NOT
    force-directed: deterministic, no jitter.
@@ -19,10 +20,20 @@
    4s refresh).
    Keyboard: arrows walk the tree, Enter/t opens the terminal, b Brain,
    s Spawn view, o action popover, +/- zoom, f fits, Escape clears.
+   Loading (desktop/loading-states): the shared controller in loading.mjs owns
+   the pending / refreshing presentation. Pending (no roster for this workspace
+   yet) shows a skeleton pill in .hier-sum after 150ms, aria-busy on the view
+   root and one "Loading roster…" announcement; the canvas paints no fake
+   nodes (a tidy tree has no honest skeleton shape). Refreshing appends
+   "Refreshing…" beside the summary after 400ms. Stale and failed keep the
+   view's own .hier-notice and its "Retry roster" button (the notice owns that
+   copy; the primitive gets no noticeHost and no failedHost). The controller's
+   hidden status line is the view's one live region: the notice is a note.
    Contract: mount(el, ctx) / unmount(); roster from GET /api/panel, explicit
    selected activity from the guarded K7 POST /api/instance-events boundary. */
 import { computeClusters, siblingEdges } from "./clusters.mjs";
-import { runtimeState, runtimeCounts } from "../instance-presentation.mjs";
+import { runtimeState, runtimeCounts, unsupportedSession } from "../instance-presentation.mjs";
+import { serverLabel } from "../remote-address.mjs";
 import { createInstanceEventsView, instanceEventsCSS } from "../instance-events-view.mjs";
 import { instanceId, resolveLinkId } from "../instance-tree.mjs";
 import { projectActivePanel, activeSignature, activeTargetLabel, canAddressInstance, BRAIN_UNAVAILABLE } from "../active-observation.mjs";
@@ -31,6 +42,8 @@ import {
   currentWorkspace, setWorkspace, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange,
   renderWorkspaceSelect, wsQuery, workspaceGeneration,
 } from "./common.mjs";
+import { createDataState, skeleton, statusLine, observedText } from "../loading.mjs";
+import { deploymentUnavailableText } from "../deployment-header.mjs";
 import { registerAction } from "../keybindings.mjs";
 import { resolveViewKey } from "../view-keys.mjs";
 import { icon } from "../shell-icons.mjs";
@@ -43,13 +56,16 @@ export const hierarchyCSS = `
             border-bottom: 1px solid var(--border); background: var(--surface); }
 .hier-sum { color: var(--muted); font-size: 12.5px; }
 .hier-sum b { color: var(--fg); font-weight: 600; }
+.hier-sum .skeleton-pill { height: 0.9em; }
+.hier-refreshing { flex: none; display: inline-flex; align-items: center; }
+.hier-refreshing:empty { display: none; }
 .hier .spawnbtn { display:inline-flex; align-items:center; gap:6px; min-height:28px; padding:0 12px; font-size:12px; font-weight:650; white-space:nowrap; }
 .hier-notice { flex:none; display:flex; align-items:center; gap:8px; padding:8px 16px; color:var(--muted); background:var(--surface); font-size:12px; overflow-wrap:anywhere; }
 .hier-notice-message { flex:1; }
 .hier-retry { flex:none; }
 .hier-notice[hidden] { display:none; }
-.hier-canvas:focus-visible { outline:2px solid var(--accent); outline-offset:-3px; }
-.hier :is(button,select):focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+/* The canvas is a large focusable panel: the global 1px edge only (its base rule clears the outline). */
+.hier-canvas:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 .hier-canvas { flex: 1; position: relative; overflow: hidden; min-height: 0; cursor: grab; outline: none; }
 .hier-canvas.panning { cursor: grabbing; }
 .hier-stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
@@ -67,9 +83,10 @@ export const hierarchyCSS = `
 .hier-zoom button { background: none; border: none; color: var(--muted); font: 14px/1 inherit; width: 26px; height: 24px;
                     border-radius: 5px; cursor: pointer; }
 .hier-zoom button:hover { background: var(--surface-2); color: var(--fg); }
+.hier-zoom button:focus-visible { background: var(--sel); }
 .hier-edges { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
 .hier-edges path { stroke: var(--graph-edge); stroke-width: 1.5; fill: none; }
-.hier-edges path.sib { stroke-dasharray:2 4; }
+.hier-edges path.sib { stroke-dasharray:5 4; }
 .hier-edges path.lit { stroke: var(--accent); stroke-width: 2; }
 .hier-ws { position: absolute; color: var(--faint); font-size: 11px; font-weight: 650;
            text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; }
@@ -255,6 +272,8 @@ export function layoutClusters(instances) {
 }
 
 const DRAG_THRESHOLD = 5; // px before a node-drag moves its tree (else it's a click)
+const ROSTER_NOUN = 'roster';
+const SUMMARY_PILL_WIDTH = '15em'; // about the width of "2 running · 1 stopped · 1 group"
 
 export function mount(el, ctx) {
   ensureTheme(el.ownerDocument);
@@ -272,11 +291,12 @@ export function mount(el, ctx) {
       <style>${hierarchyCSS}</style>
       <div class="hier-bar">
         <select class="field wssel" aria-label="Workspace" style="display:none"></select>
-        <span class="hier-sum"><span class="spinner"></span></span>
+        <span class="hier-sum"></span>
+        <span class="hier-refreshing"></span>
         <span style="flex:1"></span>
         <button class="act primary spawnbtn" title="Choose a soul in Workspace to spawn">${icon("plus", { size: 14 })}Spawn</button>
       </div>
-      <div class="hier-notice" role="status" aria-live="polite" hidden><span class="hier-notice-message"></span><button class="act hier-retry" type="button">Retry roster</button></div>
+      <div class="hier-notice" role="note" hidden><span class="hier-notice-message"></span><button class="act hier-retry" type="button">Retry roster</button></div>
       <div class="hier-canvas" tabindex="0" role="tree" aria-label="Active agents by cluster">
         <div class="hier-zoom">
           <button class="zout" title="Zoom out" aria-label="Zoom out">${icon("zoomOut", { size: 14 })}</button>
@@ -287,7 +307,19 @@ export function mount(el, ctx) {
     </div>`;
   s.q = (cls) => el.querySelector("." + cls);
   s.canvas = s.q("hier-canvas");
-  s.q('hier-retry').addEventListener('click', () => { if (s.alive) void refresh(s); });
+  // The shared loading controller. The summary hosts the pending pill; the
+  // view's own .hier-notice keeps the stale / failed copy, so no noticeHost.
+  const doc = el.ownerDocument;
+  s.status = statusLine(doc, { visuallyHidden: true, className: 'hier-status' });
+  s.q('hier-bar').after(s.status);
+  s.load = createDataState({ doc, noun: ROSTER_NOUN, region: s.q('hier'), skeletonHost: s.q('hier-sum'),
+    skeleton: () => skeleton(doc, 'pill', { width: SUMMARY_PILL_WIDTH }), status: s.status,
+    indicatorHost: s.q('hier-refreshing'), noticeHost: null, failedHost: null,
+    setTimeout: (fn, ms) => s.win.setTimeout(fn, ms), clearTimeout: id => s.win.clearTimeout(id) });
+  // Retry roster keeps its plain click: a second click supersedes the first
+  // request (the ownership race tests pin this), so it is not bound through
+  // the controller's busy gate.
+  s.q('hier-retry').addEventListener('click', () => { if (s.alive) void refresh(s, { user: true }); });
   s.q("wssel").addEventListener("change", (e) => setWorkspace(e.target.value));
   s.q("spawnbtn").addEventListener("click", () => openWorkspace(s));
   if (!ctx.openView) { s.q("spawnbtn").disabled = true; s.q("spawnbtn").title = 'Workspace navigation is unavailable in this host'; }
@@ -347,6 +379,8 @@ export function mount(el, ctx) {
   // the engine's effective bindings). Disposed on unmount.
   s.viewActions = [
     { id: "hier.fit", defaultChord: "F", label: "Hierarchy: fit to screen", run: () => fit(s) },
+    // Spec F: the canvas's zoom keys are - / = / 0 (zoom out, in, fit); 0 is fit's second shortcut.
+    { id: "hier.fitZero", defaultChord: "0", label: "Hierarchy: fit to screen (second shortcut)", run: () => fit(s) },
     { id: "hier.terminal", defaultChord: "T", label: "Hierarchy: open terminal of selection", run: () => { if (s.sel) openTerm(s, s.sel); } },
     { id: "hier.brain", defaultChord: "B", label: "Hierarchy: open Brain of selection", run: () => openSelBrain(s) },
     { id: "hier.spawn", defaultChord: "S", label: "Hierarchy: open the Spawn view", run: () => openWorkspace(s) },
@@ -371,6 +405,7 @@ function teardown(s) {
   if (!s.alive) return;
   s.alive = false; s.request++; s.actionTicket++; s.pending = null; s.pan = null; s.drag = null;
   s.activity?.dispose(); s.activity = null;
+  s.load?.dispose(); s.load = null;
   s.win.clearTimeout(s.clickResetTimer);
   s.timers.forEach(clearInterval);
   (s.disposers || []).forEach((off) => { try { off(); } catch {} });
@@ -401,6 +436,11 @@ function dataCurrent(s) {
   return s.alive && s.dataGen === workspaceGeneration() && s.dataWorkspace === currentWorkspace();
 }
 function actionsCurrent(s) { return dataCurrent(s) && !s.stale && !s.pending; }
+/** The stale rule's age (" · observed 45s ago") for the kept observation, from the panel's observedAt; nothing when unreported. */
+function staleAge(s) {
+  const age = observedText(s.load?.observedAt ?? null, Date.now());
+  return age ? ` · ${age}` : '';
+}
 function notice(s, message) {
   const el = s.q('hier-notice'); if (!el) return;
   const text = el.querySelector?.('.hier-notice-message');
@@ -427,7 +467,10 @@ function resetObservation(s) {
   s.drag?.node.classList.remove('dragging'); s.drag = null; s.dragConsumedClick = null; s.pan = null;
   s.canvas.classList.remove('panning'); s.pending = null; s.signature = null; s.bounds = null;
   s.panel = { instances: [] }; s.loading = false; s.dataGen = null; s.dataWorkspace = null; s.stale = true;
-  clearCanvas(s); s.q('hier-sum').textContent = 'Loading reported roster…'; notice(s, '');
+  // A new subject: the controller forgets its data; the summary stays blank
+  // until the pending pill (150ms) or the first reply. Never counts of nothing.
+  s.load?.reset();
+  clearCanvas(s); s.q('hier-sum').textContent = ''; notice(s, '');
 }
 function acceptObservation(s, panel, gen) {
   const signature = activeSignature(panel);
@@ -435,9 +478,14 @@ function acceptObservation(s, panel, gen) {
   for (const key of s.nodeOffsets.keys()) if (!ids.has(key)) s.nodeOffsets.delete(key);
   for (const key of s.nodeIds?.keys() || []) if (!ids.has(key)) s.nodeIds.delete(key);
   s.panel = panel; s.dataGen = gen; s.dataWorkspace = currentWorkspace(); s.stale = !!panel.error; s.pending = null;
+  // The read landed: the controller drops the pill / indicator before the summary repaints. A panel
+  // that reports an error beside its instances is the kernel's last observation: stale, announced once
+  // (the view's notice is a note; the controller's hidden status line is the one live region).
+  if (s.load && (!panel.error || !s.load.hasData)) s.load.succeed({ observedAt: panel.observedAt ?? null, empty: !panel.instances.length });
+  if (panel.error) s.load?.fail({ message: panel.error }); // a repeated stale poll updates in place, no re-announcement
   if (s.ctx.hasWorkspaceSwitcher) s.q('wssel').style.display = 'none';
   else renderWorkspaceSelect(s.q('wssel'), panel.workspaces, panel.workspace?.id || '');
-  notice(s, panel.error ? `Roster unavailable: ${panel.error.slice(0, 300)}. Showing a reported observation, not current state; actions disabled.` : '');
+  notice(s, panel.error ? `Roster unavailable: ${panel.error.slice(0, 300)}. Showing a reported observation${staleAge(s)}, not current state; actions disabled.` : '');
   if (signature !== s.signature) { s.signature = signature; render(s); }
   else { if (!s.fitted) fit(s); updatePop(s); }
 }
@@ -447,18 +495,34 @@ function applyPending(s) {
   acceptObservation(s, pending.panel, pending.gen);
 }
 
-/* Every request owns BOTH outcomes, even within the same workspace. */
-export async function refresh(s) {
+/* Every request owns BOTH outcomes, even within the same workspace. The
+   loading controller hears begin() here and succeed()/fail() only from the
+   request that still owns the view. `user`: a Retry the person asked for. */
+export async function refresh(s, { user = false } = {}) {
   if (!s.alive) return;
   const myGen = workspaceGeneration(), requestedWorkspace = currentWorkspace();
   const request = s.request = (s.request || 0) + 1;
   const owns = () => s.alive && request === s.request && myGen === workspaceGeneration();
   s.loading = true;
+  s.load?.begin({ user });
   try {
     const data = await apiJson(s.ctx, `/api/panel${wsQuery()}`);
     if (!owns()) return;
     const panel = projectActivePanel(data);
+    // observedAt (spec 02, additive) labels the observation's age; never invented.
+    panel.observedAt = typeof data.observedAt === 'string' && data.observedAt ? data.observedAt : null;
     if (panel.error && !panel.instances.length) throw Error(panel.error); // failed absence is not an observed empty roster
+    // A deployment the kernel has not observed yet (the server's first read is
+    // still running) or could not observe is not an empty roster either. Pending
+    // keeps its own copy in the summary — no skeleton, no counts, no empty state —
+    // and the next poll brings the observation; a refusal is a failed read.
+    const deployment = !panel.workspace?.remote && data.deployment && typeof data.deployment === 'object' && data.deployment.status !== 'observed' ? data.deployment : null;
+    if (deployment && !panel.instances.length) {
+      if (deployment.status !== 'pending') throw Error(deploymentUnavailableText(deployment));
+      // The controller stays pending (aria-busy, the one announcement) without a pill: the copy is the summary.
+      s.load?.defer(); s.q('hier-sum').textContent = deploymentUnavailableText(deployment);
+      return;
+    }
     // A stale selection (persisted, no longer served) behaves like an empty
     // one: adopt the served workspace. A served selection answered with
     // another workspace is a real mismatch and stays refused.
@@ -474,8 +538,11 @@ export async function refresh(s) {
   } catch (error) {
     if (!owns()) return;
     s.pending = null; s.stale = true; s.actionTicket = (s.actionTicket || 0) + 1;
+    // The controller announces the failure and drops its pill; the view's
+    // notice below is the visible failure surface (no failedHost).
+    s.load?.fail(error);
     if (s.dataGen == null) s.q('hier-sum').textContent = 'Roster unknown';
-    notice(s, `Roster unavailable: ${String(error?.message || 'read failed').slice(0, 300)}. ${s.dataGen == null ? 'No current observation.' : 'Showing the last observation, not current state; actions disabled.'}`);
+    notice(s, `Roster unavailable: ${String(error?.message || 'read failed').slice(0, 300)}. ${s.dataGen == null ? 'No current observation.' : `Showing the last observation${staleAge(s)}, not current state; actions disabled.`}`);
     updatePop(s);
   } finally { if (owns()) s.loading = false; }
 }
@@ -686,23 +753,25 @@ function openTerm(s, id) {
   if (i) invokeInstance(s, id, i.running === false ? 'start' : 'terminal');
 }
 
-/* Edge between a parent and child node, from their FINAL (fx/fy) positions. */
+/* Edge between a parent and child node, from their FINAL (fx/fy) positions:
+   a smooth cubic S-curve from the parent's bottom-centre to the child's
+   top-centre (OAS's connector), both control points on the vertical midpoint. */
 function drawEdge(p, parent, child) {
-  const x1 = parent.fx + 20, y1 = parent.fy + NODE_H;
-  const x2 = child.fx, y2 = child.fy + NODE_H / 2;
-  const middle = (y1 + child.fy) / 2, trunk = Math.min(x1, x2 - 20);
-  p.setAttribute('d', `M ${x1} ${y1} V ${middle} H ${trunk} V ${y2} H ${x2}`);
+  const x1 = parent.fx + NODE_W / 2, y1 = parent.fy + NODE_H;
+  const x2 = child.fx + NODE_W / 2, y2 = child.fy;
+  const my = (y1 + y2) / 2;
+  p.setAttribute('d', `M ${x1} ${y1} C ${x1} ${my}, ${x2} ${my}, ${x2} ${y2}`);
 }
 
-/* Sibling peer edge: a dotted connection between two boxes' vertical
-   midpoints — distinguishable from parent edges by STYLE (dotted peer line),
-   not color alone. */
+/* Sibling peer edge: a shallow dashed arc between the two boxes' facing
+   vertical midpoints — distinguishable from parent edges by STYLE (dash + flat
+   arc), not color alone. */
 function drawSiblingEdge(p, a, b) {
   const [l, r] = a.fx <= b.fx ? [a, b] : [b, a];
   const x1 = l.fx + NODE_W, y1 = l.fy + NODE_H / 2;
   const x2 = r.fx, y2 = r.fy + NODE_H / 2;
   const mx = (x1 + x2) / 2;
-  p.setAttribute('d', `M ${x1} ${y1} H ${mx} V ${y2} H ${x2}`);
+  p.setAttribute('d', `M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`);
 }
 
 /* Redraw one edge path from its endpoints' final positions. */
@@ -827,7 +896,41 @@ function litLineage(s, id, on) {
 function select(s, name) {
   if (!dataCurrent(s) || !visibleOwner(s) || s.pending || !s.nodeEls.has(name)) return;
   s.actionTicket = (s.actionTicket || 0) + 1;
-  s.sel = name; paintSelection(s); openPop(s, name);
+  s.sel = name; paintSelection(s); revealNode(s, name); openPop(s, name);
+}
+
+/* Keep a keyboard-selected node on screen: pan the camera (never zoom) just
+   enough to bring it inside the canvas with a PAD margin. */
+function revealNode(s, id) {
+  const entry = s.nodeEls.get(id);
+  if (!entry || typeof s.canvas.getBoundingClientRect !== "function") return;
+  const rect = s.canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const gx = Number(entry.el.parentElement?.style.left?.replace("px", "") || 0);
+  const gy = Number(entry.el.parentElement?.style.top?.replace("px", "") || 0);
+  const x = (gx + (entry.node.fx ?? entry.node.x)) * s.z + s.tx, y = (gy + (entry.node.fy ?? entry.node.y)) * s.z + s.ty;
+  const w = NODE_W * s.z, h = NODE_H * s.z;
+  let dx = 0, dy = 0;
+  if (x < PAD) dx = PAD - x; else if (x + w > rect.width - PAD) dx = Math.max(PAD - x, rect.width - PAD - (x + w));
+  if (y < PAD) dy = PAD - y; else if (y + h > rect.height - PAD) dy = Math.max(PAD - y, rect.height - PAD - (y + h));
+  if (!dx && !dy) return;
+  s.fitted = true; s.tx += dx; s.ty += dy; applyTransform(s);
+}
+
+/* The nearest node in the same group on the next row up (dir -1) or down (1):
+   Up/Down's move when a node has no parent/child to go to (the Independent
+   grid, a leaf). Closest row first, then the closest horizontal position. */
+function rowNeighbour(s, cur, dir) {
+  const y0 = cur.node.fy ?? cur.node.y, x0 = cur.node.fx ?? cur.node.x;
+  let best = null;
+  for (const [id, entry] of s.nodeEls) {
+    if (entry.ws !== cur.ws || entry === cur) continue;
+    const y = entry.node.fy ?? entry.node.y, x = entry.node.fx ?? entry.node.x;
+    if (dir < 0 ? y >= y0 : y <= y0) continue;
+    const rank = [Math.abs(y - y0), Math.abs(x - x0)];
+    if (!best || rank[0] < best.rank[0] || (rank[0] === best.rank[0] && rank[1] < best.rank[1])) best = { id, rank };
+  }
+  return best?.id ?? null;
 }
 
 function paintSelection(s) {
@@ -885,7 +988,7 @@ function activitySelection(s, id) {
   const i = selectedInstance(s, id);
   if (!i) return null;
   const selection = row => ({ workspace: currentWorkspace(), selector: { instance: row.instance, agent: row.agent,
-    agentsRoot: row.agentsRoot, server: row.server || null }, home: row.home, incarnation: row.createdAt ?? null, remote: row.remote });
+    agentsRoot: row.agentsRoot, server: row.server || null }, home: row.home, incarnation: row.createdAt ?? null, serverLabel: serverLabel(row) });
   const selected = selection(i);
   if (s.pending) {
     const next = s.pending.panel.instances.filter(row => instanceId(row) === id);
@@ -907,8 +1010,9 @@ function updatePop(s) {
   const terminal = pop.querySelector('.pterm');
   setText(terminal, i.running === false ? 'Start…' : 'Terminal');
   terminal.disabled = !allowed || (i.running === true ? !s.ctx.openTerminal : i.running === false ? !s.ctx.startInstance : true);
-  terminal.title = terminal.disabled ? 'Requires a current, addressed instance with known runtime state and an available route.' : i.running === false ? 'Open the existing Start dialog' : 'Open this exact instance terminal';
-  const restart = pop.querySelector('.prestart'); if (restart) restart.disabled = !allowed || i.running !== true;
+  const unsupported = unsupportedSession(i);
+  terminal.title = unsupported || (terminal.disabled ? 'Requires a current, addressed instance with known runtime state and an available route.' : i.running === false ? 'Open the existing Start dialog' : 'Open this exact instance terminal');
+  const restart = pop.querySelector('.prestart'); if (restart) { restart.disabled = !allowed || i.running !== true; restart.title = unsupported || ''; }
   s.activity?.sync();
   positionPop(s);
 }
@@ -991,10 +1095,11 @@ function onKey(s, e) {
   if (e.key === "ArrowUp") {
     const me = byId.get(s.sel);
     const pid = me?.parentInstance ? resolveLinkId(me, me.parentInstance, byName) : null;
-    if (pid && s.nodeEls.has(pid)) select(s, pid);
+    const up = pid && s.nodeEls.has(pid) ? pid : rowNeighbour(s, cur, -1);
+    if (up) select(s, up);
   } else if (e.key === "ArrowDown") {
-    const kid = cur.node.children[0];
-    if (kid) select(s, kid.id);
+    const kid = cur.node.children[0]?.id ?? rowNeighbour(s, cur, 1);
+    if (kid) select(s, kid);
   } else {
     // peers: same row (y) within the SAME cluster group, ordered by x
     const sibs = [...s.nodeEls.values()].filter((x) => x.node.y === cur.node.y && x.ws === cur.ws).sort((a, b) => a.node.x - b.node.x);

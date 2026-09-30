@@ -1,19 +1,11 @@
-/* oats desktop — command palette (⌘K).
+/* oats desktop — command palette (app.palette: ⌘K on macOS, Ctrl+Shift+P on
+   Linux/Windows; the keymap engine owns the chord and its terminal policy).
    One input, two result kinds: instances (default; fuzzy jump-to-terminal)
    and commands (also matched by name — ">" prefix restricts to commands).
    Overlay chrome + fuzzy machinery live in overlay-picker.mjs (shared with
    Quick Open); this module owns only the palette's row semantics. */
 import { runtimeState } from "./instance-presentation.mjs";
 import { createOverlayPicker, subsequenceScore } from "./overlay-picker.mjs";
-
-export function isPaletteShortcut(e, insideTerminal = false) {
-  if (String(e.key || "").toLowerCase() !== "k" || e.altKey || e.shiftKey) return false;
-  // Cmd-K is shell-owned on macOS. Ctrl-K is shell-owned on Windows/Linux
-  // only outside xterm; inside xterm it belongs to the attached program.
-  if (e.metaKey && !e.ctrlKey) return true;
-  if (e.ctrlKey && !e.metaKey) return !insideTerminal;
-  return false;
-}
 
 /** Pure row computation — exported for tests. `instances` is the roster,
  * `commands` the static command list, `raw` the input value. */

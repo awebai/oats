@@ -30,13 +30,15 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
 
 ```json
 {"schemaVersion":1,"name":"@awebai/oats","version":"0.30.0","desktopApi":1,
- "harnesses":["pi","claude","codex"],"sessionBackends":["tmux","herdr"],"launchOptions":["yolo"],
- "remote":["spawn","retire","status","session","session-start","session-restart","launch-config","roster","harvest","schedule","session-upload","operations"],
+ "harnesses":["pi","claude","codex"],"sessionBackends":["tmux"],"launchOptions":["yolo"],
+ "remote":["spawn","retire","status","session","session-start","session-restart","launch-config","roster","harvest","schedule","session-upload","operations",
+           "readiness","instance-events","instance-git","lifecycle-plans"],
  "features":["retire-home","session-start","session-restart","launch-config","schedule","session-upload","operations","instance-git",
              "instance-git-remote","souls-declarations","lifecycle-plans","retire-retention","readiness","spawn-preview","instance-events",
              "instance-events-2","schedule-history","schedule-read-2","spawn-preview-2","spawn-idempotency","spawn-idempotency-2","spawn-apply-2",
              "workspace-v2","instance-modules","spawn-provider-payload","served-identity","packages-no-approval","spawn-name","settings-origins",
-             "team-model-2","settings-declared","capabilities-private","layers-from","harness","package-souls","triggers","automations","desktop-facts","launch-preference"],
+             "team-model-2","settings-declared","capabilities-private","layers-from","harness","package-souls","triggers","automations","desktop-facts","launch-preference",
+             "preview-composed-from","observe-max-age"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2}
 ```
@@ -46,10 +48,14 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
   accepted. The real gate is the feature list; its minimum is
   `packages-no-approval`.
 - `harnesses` is what `--harness` accepts; `sessionBackends` what `--backend`
-  accepts. A host without the `harness` feature lists `runtimes` instead.
+  accepts: `["tmux"]` since 0.31.0, when Herdr was removed (`--backend herdr`
+  is refused with `E_HERDR_REMOVED`). A host without the `harness` feature
+  lists `runtimes` instead.
 - `remote` is the routed surface: the commands `--server <id>` sends to a
   registered server, plus `roster`. The Desktop checks the execution host's
-  probe before a routed mutation.
+  probe before a routed mutation. From 0.31: `readiness`, `instance-events`,
+  `instance-git` and `lifecycle-plans` name the
+  [routed reads and plans](#routed-reads-and-plans).
 - In text mode the command prints `@awebai/oats <version> (desktop API v1)`.
 
 ### Features
@@ -88,6 +94,8 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
 | `automations` | workspace triggers and schedules; `oats automations refresh` | `automationsApi: 1` |
 | `desktop-facts` | the facts under [Desktop facts](#desktop-facts-feature-desktop-facts-oats-0290) | |
 | `launch-preference` | soul and local launch preferences; `launch`, `launchCurrent`, `launchFrom`; `--reselect-launch`; `key` on soul and agent rows ([Launch preferences](#soul-launch-preferences-feature-launch-preference-oats-0300)) | |
+| `preview-composed-from` | `composedFrom` on preview `modules[]` ([Composition](#the-preview)) | |
+| `observe-max-age` | `--max-age <s>` on the read verbs and their `observation` block ([Observation reuse](#observation-reuse-feature-observe-max-age-oats-0311)) | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -147,6 +155,20 @@ string for this: to support older kernels, use the spaced form.
 | `E_LOCAL_MISSING` | No `oats-local.yaml` in reach of `--dir` or the working directory |
 | `E_UNSUPPORTED_MODE` | A home or selector the kernel no longer runs (below) |
 
+<a id="ssh-failures-e_ssh"></a>
+### ssh failures (`E_SSH`)
+
+A routed command (`--server`, and `oats server check`) reports ssh's own
+failure as `E_SSH`, message `ssh to <host> failed: …`:
+
+- `error.details` is `{"sshStarted": false}` when ssh never started on this
+  machine (not installed, not executable): nothing reached the host, and
+  retrying cannot help.
+- No `details`: ssh ran and the link failed (unreachable host, refused key,
+  lost connection, timeout); a retry may succeed.
+
+(0.31.0; before it `E_SSH` never carried details.)
+
 Capability dispatch inside a home uses the home's module copies; from a
 deployment it resolves the module as `oats spawn --soul <x>` would and runs it
 with the soul's merged payload. `oats <namespace> --help --json` answers
@@ -159,6 +181,83 @@ an inherited `OATS_DEPLOYMENT` or `OATS_RESOLUTION` (`details.inherited`).
 `oats version` and `oats retire` still work. `oats status --json` names such
 homes in `problems[]`: `legacy-captured-home {code, instances, homes,
 message}` and `legacy-local-agents {code, dirs, instances, message}`.
+
+<a id="observation-reuse-feature-observe-max-age-oats-0311"></a>
+### Observation reuse (feature `observe-max-age`, OATS 0.31.1)
+
+Every read asks each remote for its current head (`git ls-remote`). With
+`--max-age <seconds>` a read verb reuses a head this machine observed at most
+that many seconds ago instead, so a refresh right after another costs no
+network round trip. Gate the flag on the feature: an older kernel may ignore
+it and answer live, without the block.
+
+```text
+oats status | workspace status | souls | capabilities | inspect --soul|--home
+     | teams | soul teams <soul>   … --max-age <seconds> --json
+```
+
+- **Values:** whole seconds, `0` to `86400`. `0` is live: it reuses nothing.
+  Anything else is `E_BAD_ARGS` (`--max-age needs a value: whole seconds from 0
+  to 86400`, `--max-age takes whole seconds from 0 to 86400, got "<v>"`).
+- **The block:** with the flag (`0` included) the document gains one key,
+  `observation: {observedAt, reused, localRevision}`: in the result of an
+  envelope, at the top level of the roster (after `agents`). `observedAt` is the
+  OLDEST remote head the answer used, so the answer is at least that fresh
+  everywhere; `reused` is `true` when any head came from an earlier observation.
+  A command that read no remote head reports the time it started and
+  `reused: false`. Without the flag the key is absent and every document is
+  exactly as before.
+- **`localRevision`:** 24 lowercase hex characters, opaque. It digests every
+  piece of local configuration the kernel read for this answer:
+  `oats-local.yaml` (and each closer `oats-local.yaml` it looked for and did
+  not find), `oats-lock.json`, an `OATS_PACKAGE_CATALOG` file, and the
+  automations snapshot. Only what the verb actually read counts. The same inputs
+  give the same revision; any byte change, or one of those files appearing or
+  disappearing, gives another. It names no path and no content. Different verbs
+  read different inputs (`workspace status` also reads the automations
+  snapshot; `inspect --home` reads no lock), so compare revisions of the same
+  verb and arguments only. Keep what you
+  hold (catalogs, inspect results) keyed on it: a different revision means the
+  deployment's configuration changed outside you (a `teams` edit, a sync, a
+  hand edit). A kernel upgrade shows through the probe (`oats version --json`),
+  not through `localRevision`: the bundled catalog is not an input. Instance
+  homes, member clones and tmux are not inputs either, because the answer
+  itself reports them.
+- **What is reused:** only remote heads (the commit a branch or tag named),
+  never local state. Instances, `oats-local.yaml` and the lock are read afresh
+  by every command. A member's backlink (`oats-membership.yaml`) is read at
+  the member's observed head, which may be a reused one: a backlink removed
+  less than `<s>` seconds ago can still show the member `confirmed` under
+  `--max-age <s>`. Only the backlink's comparison with this workspace is made
+  afresh. A reused head's
+  `observedAt` (for example `workspace.observedAt` in `workspace status`) is
+  the time it was observed, not now.
+- **When a head is not reused:** it is older than the flag allows (or dated
+  more than 5 s in the future); it was observed through a different URL
+  spelling of the same repository (ssh vs https) or for a different ref; its
+  commit can no longer be fetched. Each is observed live, as without the flag.
+  A live observation that fails is the usual error, never an older head.
+- **Refusals:** every other command, every edit form (`teams add|remove|default`,
+  `soul teams --add|--remove|--default|--clear-default`) and any `--server`
+  invocation refuse the flag before reading or writing anything, with
+  `E_BAD_ARGS` "--max-age is not accepted by \`oats <form>\`: only the read
+  verbs reuse observations (status, workspace status, souls, capabilities,
+  inspect --soul|--home, and the read forms of teams and soul teams)" and,
+  with `--server`, "--max-age cannot be combined with --server: observation
+  reuse is local to this machine".
+  A capability command's argv (`oats <namespace> …`) is its provider's: the
+  kernel neither reads nor refuses `--max-age` there. The same holds for
+  `capture`, `recall`, `setup` and `experimental`, which parse their own argv:
+  `capture`, `setup` and `experimental` refuse it as an unknown argument (not
+  `E_BAD_ARGS`), and `recall` ignores unknown flags.
+
+The observations are kept under the remote cache
+(`$OATS_REMOTE_CACHE`, default `~/.cache/oats/remotes`), in `.observed/`,
+beside the bounded parsed-read cache in `.parsed/`. An observation record
+keeps a digest of the fetch URL, never the URL. A parsed entry keeps repository
+content as committed (member refs included), and a value that carries a
+credential-bearing URL (userinfo on http(s), or `user:password@` on any
+scheme) is never written. Deleting either is always safe.
 
 <a id="inspect-readiness-and-operation-run-on-the-workspace-model-operationsapi-2-soulsapi-2-readinessapi-2-oats-0260"></a>
 ## Inspect, readiness and operation run
@@ -193,7 +292,7 @@ A module's origin (`from`) is `{kind: "member", repoKey, commit}` or `{kind:
 ### `oats inspect`
 
 ```text
-oats inspect (--home <abs> | --soul <name> [--dir <d>]) --json
+oats inspect (--home <abs> | --soul <name> [--dir <d>]) [--max-age <s>] --json
 ```
 
 An instance subject, abridged:
@@ -576,7 +675,7 @@ discovers the workspace over the network to check. Other errors: `E_USAGE`,
 ### `oats workspace status`
 
 ```text
-oats workspace status [--dir <d>] --json
+oats workspace status [--dir <d>] [--max-age <s>] --json
 ```
 
 Read-only (it writes no lock):
@@ -625,8 +724,8 @@ Read-only (it writes no lock):
 ### `oats capabilities` and `oats souls`
 
 ```text
-oats capabilities [--dir <d>] --json
-oats souls [--dir <d>] --json
+oats capabilities [--dir <d>] [--max-age <s>] --json
+oats souls [--dir <d>] [--max-age <s>] --json
 ```
 
 Every item of every confirmed member, the external souls, and the locked
@@ -814,7 +913,7 @@ soul subject), `""` when unknown.
 ### `oats teams`
 
 ```text
-oats teams [--dir <d>] --json
+oats teams [--dir <d>] [--max-age <s>] --json
 oats teams add <label> --team <id> [--description <d>] --json
 oats teams remove <label> --json
 oats teams default <label> --json
@@ -853,6 +952,7 @@ oats teams default <label> --json
 
 ```text
 oats soul teams <soul>|'*' [--add a,b] [--remove a,b] [--default <label> | --clear-default] [--dir <d>] --json
+oats soul teams <soul>|'*' [--dir <d>] [--max-age <s>] --json    (the read form only)
 ```
 
 ```json
@@ -1073,9 +1173,9 @@ it to a temporary copy (`soulFetched: true`).
 ```json
 {"modules":[
    {"name":"nw-tools","from":{"kind":"member","repoKey":"github.com/nw/agents","commit":"66566512…"},"layer":null,"private":false,"declares":[],
-    "changedSince":{"instance":"rm-2","was":"45b86f64…"}},
+    "changedSince":{"instance":"rm-2","was":"45b86f64…"},"composedFrom":"soul"},
    {"name":"oats.okf","from":{"kind":"package","package":"oats.okf","version":"2.1.3","commit":"ab897841…","integrity":"sha256-bada35…","repoKey":"github.com/awebai/oats-okf"},
-    "layer":"knowledge","private":false,"declares":["state-dir"],"changedSince":false}],
+    "layer":"knowledge","private":false,"declares":["state-dir"],"changedSince":false,"composedFrom":"workspace"}],
  "teams":[{"label":"eng","team":"eng:nw.aweb.ai","default":true,"from":"shared"}],
  "defaultTeam":{"label":"eng","team":"eng:nw.aweb.ai","from":"soul"},
  "resolution":"abacbdb5a7975098d77007c8","declRevision":"068a0d3f1311a9e84e9aff2e","payloadRevision":"81a368006c610194aa35dbe0",
@@ -1124,9 +1224,18 @@ it to a temporary copy (`soulFetched: true`).
 
 **Composition.**
 - `modules[]` (feature `instance-modules`): `{name, from, layer, private,
-  declares, changedSince}`; `from` is what `instance.json` will record.
-  `changedSince` is `null` (no previous instance), `false` (unchanged since the
-  newest one) or `{instance, was}`.
+  declares, changedSince, composedFrom}`; `from` is what `instance.json` will
+  record. `changedSince` is `null` (no previous instance), `false` (unchanged
+  since the newest one) or `{instance, was}`.
+- `composedFrom` (feature `preview-composed-from`, OATS 0.30.2): why the
+  module is there — `"soul"` (the soul declares it, including a soul entry
+  that overrides a workspace default of the same name, a package soul's
+  `from: here`, and every module of a standalone view) or `"workspace"` (a
+  `defaults.<slot>` or `defaults.capabilities` entry). It is the same value
+  `oats inspect --soul` reports as `capabilities[].composedFrom`. It is
+  provenance only: it never enters `resolution`, `declRevision`,
+  `payloadRevision` or `decision.revision`, and `instance.json` does not
+  record it. `from` says where the bytes come from.
 - `capabilities[]` (`{name, origin}`, `origin` `package:<id>@<v>` or
   `member:<repoKey>@<commit>`) and `skills[]` (the soul's own skills as
   strings, module skills as `{name, source: "module:<cap>"}`) are display
@@ -1146,6 +1255,9 @@ it to a temporary copy (`soulFetched: true`).
   repeatable, `a.b=c` nests): a malformed pair is `E_BAD_ARGS`; a capability
   the soul does not resolve is `E_CAPABILITY_MISSING {capability, soul,
   modules}`.
+- Any other positional after the soul, or a flag spawn does not read, is
+  `E_BAD_ARGS` naming the argument, before anything is resolved; a bare
+  `key=value` is refused with the `--provider <capability> key=value` form.
 
 ### The decision
 
@@ -1193,8 +1305,8 @@ with `--expect-decision` records the key and decision in `instance.json`.
 
 ```json
 {"instance":"rm-api","agent":"rm","home":"/w/agents/rm/instances/rm-api","work":"worktree","branch":"agents/rm-api","launched":true,"warnings":[],
- "tmux":{"session":"pi-agents","window":"rm-api"},"repo":"/w/agents-repo","harness":"pi","model":null,"parent":null,"sibling":null,"relation":null,
- "spawnOrigin":"operator","attach":"tmux attach -t pi-agents","decision":{"instance":"rm-api","revision":"c557d8ec9a272ba1c1739dc3"},"replayed":false,
+ "tmux":{"session":"oats-agents","window":"rm-api"},"backend":"tmux","repo":"/w/agents-repo","harness":"pi","model":null,"parent":null,"sibling":null,"relation":null,
+ "spawnOrigin":"operator","attach":"tmux attach -t oats-agents","decision":{"instance":"rm-api","revision":"c557d8ec9a272ba1c1739dc3"},"replayed":false,
  "wake":{"requested":false,"saved":null,"error":null},"launchConfig":null,
  "launch":{"version":2,"harness":"pi","launchConfig":null,"launchConfigSource":null,"executable":"/usr/local/bin/pi","executableDeclared":null,
            "executableResolvedFrom":"PATH","args":[],"env":{},"model":null,"hooks":{"launch":{},"env":{},"contributions":[]},"prompt":{"kind":"task-file","file":"TASK.md"}}}
@@ -1203,10 +1315,11 @@ with `--expect-decision` records the key and decision in `instance.json`.
 (`decision` is abridged: it is the full bound decision.)
 
 - Always present: `instance, agent, home, work, branch, launched, warnings
-  (array), tmux ({session, window} | null), repo, harness, model, parent,
+  (array), tmux ({session, window} | null), backend ("tmux"), repo, harness,
+  model, parent,
   sibling, relation, spawnOrigin (operator | instance), attach, launchConfig,
   launch` (the redacted recipe).
-- When they apply: `sessionTarget` (Herdr), `yolo`, `decision` and
+- When they apply: `yolo`, `decision` and
   `replayed` (bound apply), `wake` (keyed apply), `wakeSchedule` and
   `wakeScheduleError` (a requested wake).
 
@@ -1228,7 +1341,7 @@ Feature `spawn-name`. `--name <slug>` is the exact name, with no prefix.
 
 | Code | Details | When |
 |---|---|---|
-| `E_USAGE`, `E_BAD_ARGS` | | no soul; bad, contradictory or removed flags |
+| `E_USAGE`, `E_BAD_ARGS` | | no soul; bad, contradictory, removed or unknown flags; an argument after the soul |
 | `E_LOCAL_MISSING`, `E_NO_DEPLOYMENT` | | no `oats-local.yaml`; no `agents/` root |
 | `E_SOUL_UNKNOWN` | `{name, members, packages}` | no such soul, or not at `--agents-root` |
 | `E_SOUL_AMBIGUOUS` | `{name, repos, qualified}` | several souls answer the bare name; use one of `qualified` |
@@ -1251,6 +1364,7 @@ Feature `spawn-name`. `--name <slug>` is the exact name, with no prefix.
 | `E_PLACEMENT_TAKEN`, `E_IDEMPOTENCY_CONFLICT` | `{instance, home}` | |
 | `E_SPAWN_INCOMPLETE` | `{instance, home, launched}` | |
 | `E_LAUNCH_*`, `E_MODEL_UNKNOWN`, `E_UNSUPPORTED_HARNESS` | | the launch selection is refused |
+| `E_LAUNCH_SHIM` | | the home's `oats` (`<home>/.oats/bin/oats`) cannot be written; the spawn is rolled back |
 | `E_SCHEDULE_INVALID` | | a bad wake (`--wake-json`, `--wake-file`, `--wake-*`) |
 | `E_SPAWN_FAILED` | | anything else |
 
@@ -1282,14 +1396,15 @@ workspace-model fields (feature `instance-modules`):
 ```
 
 Abridged: the record also carries the launch recipe and command,
-composition evidence, the capability runtime, the tmux or Herdr target,
+composition evidence, the capability runtime, the tmux target,
 lineage (`parentInstance`, `siblingInstance`, `relation`, `relativeTo`), and
 the keyed-spawn fields `decision`, `spawnIdempotencyKey`, `spawnCompleted` and
 `wake`; later starts add `restarts` and `restartCount`.
 
 - `modules.<cap>`: `{from, commit, digest, materializedAt}`; `digest` hashes
-  the copy at `<home>/.oats/modules/<cap>/`. Module skills are copied to
-  `<home>/.agents/skills/<cap>/<skill>/`.
+  the copy at `<home>/.oats/modules/<cap>/`. Module skills are copied flat to
+  `<home>/.agents/skills/<skill>/` (homes spawned by 0.30.1 or earlier keep
+  `<home>/.agents/skills/<cap>/<skill>/`).
 - `providers.<cap>`: the merged payload (`{}` when none).
 - `workspace`: `{key, name, deployment, commit, resolution, standalone, soul,
   layers}`. `name` is recorded, and every hook, command and operation of the
@@ -1310,10 +1425,11 @@ the keyed-spawn fields `decision`, `spawnIdempotencyKey`, `spawnCompleted` and
 ### The roster (`oats status --json`)
 
 ```text
-oats status [--dir <d>] --json
+oats status [--dir <d>] [--max-age <s>] --json
 ```
 
-Not an envelope: `{root, agents, workspace?, problems?, warnings?}`.
+Not an envelope: `{root, agents, observation?, workspace?, problems?, warnings?}`
+(`observation` only with [`--max-age`](#observation-reuse-feature-observe-max-age-oats-0311)).
 
 ```json
 {"root":"/w/agents",
@@ -1338,8 +1454,13 @@ Not an envelope: `{root, agents, workspace?, problems?, warnings?}`.
   description, dir, instances}`.
 - **Instance rows**: the home's `instance.json` (launch recipe and command
   redacted) plus `home` and `instance` (from the directory; a disagreeing
-  claim is kept as `recordedHome`/`recordedInstance`), `running` (`null` when
-  a Herdr session is unreachable, with `runtimeState`/`runtimeError`),
+  claim is kept as `recordedHome`/`recordedInstance`), `running` (read from
+  the row's recorded tmux socket and session, never the caller's `$TMUX`;
+  `null` with `runtimeState: "unreachable"` and the tmux error as
+  `runtimeError` when that server cannot be read; `null` for a home a
+  Herdr-era kernel recorded, with `runtimeState: "unsupported"` and
+  `runtimeError: "E_HERDR_REMOVED: …"`, the recorded `sessionTarget` staying
+  in the row),
   `identity` when a provider recorded one, `rollbackIncomplete` and
   `retirePending` when present, and the Desktop facts below.
 - **`modules`** becomes drift rows `{name, from, commit, current, status,
@@ -1362,6 +1483,82 @@ restart, else `createdAt` for a launched home, else `null`. `modelFrom` is
 `"soul"`, `"spawn"` or `"start"` (an explicit `--model`), `"launch-config"`,
 `"harness-default"`, or `null` for an older home. `identityAddress` is the
 messaging identity's `address` (else `alias`), or `null`.
+
+<a id="the-remote-roster-oats-server-roster---json"></a>
+### The remote roster (`oats server roster --json`)
+
+```text
+oats server roster [--server <id>] [--per-target <ms>] [--budget <ms>] --json
+```
+
+An envelope; `result` is `{groups, bounds}` (remote `roster`,
+[servers.md](servers.md#the-roster-and-harvest)). One group per server id and
+route target:
+
+```json
+{"id":"build:3f2a…","server":"build","label":"Build box","registrationPresent":true,
+ "target":{"sshHost":"build-host","workspace":"/srv/team","oatsPath":"oats"},
+ "probe":{"ok":true},"agentsRoot":"/srv/team/agents",
+ "souls":[{"name":"dev","harness":"claude","work":"worktree","agentsRoot":"/srv/team/agents"}],
+ "instances":[{"server":"build","instance":"dev-a","agent":"dev","home":"/srv/team/agents/dev/instances/dev-a",
+               "agentsRoot":"/srv/team/agents","harness":"claude","backend":"tmux","tmux":{"session":"oats-agents","window":"dev-a"},
+               "running":true,"identity":{"alias":"dev-a","address":"acme/dev-a"},"identityAddress":"acme/dev-a",
+               "teams":[{"label":"default","team":"acme:team"}],"startedAt":"2026-09-29T10:00:00.000Z","createdAt":"2026-09-29T09:58:12.004Z",
+               "model":"opus","runtimeState":null,"parentInstance":"lead","siblingInstance":null,"relation":"child","relativeTo":"lead",
+               "spawnOrigin":"instance","retirePending":false,"rollbackIncomplete":false,
+               "savedRoute":false,"addressable":true,"missingRemotely":false}],
+ "retireFailures":[]}
+```
+
+- **Instance rows** relay the host's own `status --json` row: `identity`,
+  `identityAddress`, `teams`, `startedAt`, `createdAt`, `model`,
+  `runtimeState`, `parentInstance`, `siblingInstance`, `relation`,
+  `relativeTo` and `spawnOrigin` are always present, `null` when the host
+  does not supply them (a host before 0.31, a fact it never recorded, or a
+  saved route the host no longer lists). Nothing is derived on this side.
+- **`addressable`** (0.31): `true` for every row the host reports. Routed
+  session and lifecycle commands reach it by `--home`, or by name when the
+  name is unique on the host ([addressing](servers.md#run-there); a shared
+  name is `E_AMBIGUOUS` with `error.details.candidates: [{agent, home}]`). A
+  saved-route row the host did not list is addressable only while the host's
+  answer is unknown (`missingRemotely: false`).
+- **`savedRoute`**: the instance was spawned from this machine and has a
+  saved route here. Information only; no action depends on it.
+- `running` is `null` when unknown; `backend` is `tmux` for a row with a tmux
+  target, else `null`; `tmux`, `sessionTarget` (the recorded target of a home
+  a Herdr-era kernel opened) and `runtimeError` are as the host reports them.
+
+<a id="routed-reads-and-plans"></a>
+### Routed reads and plans (`--server`, 0.31)
+
+The Desktop's per-instance reads and the lifecycle plans run on the
+instance's own machine: the local command, with `--server <id>` added.
+
+| Command | `remote` entry | The host must advertise |
+|---|---|---|
+| `oats readiness --server <id> (--home <abs> \| --soul <n>) …` | `readiness` | `readiness`, `readinessApi: 2` |
+| `oats instance events <name> --server <id> …` | `instance-events` | `instance-events-2`, `eventsApi: 2` |
+| `oats instance git\|diff <name> --server <id> …` | `instance-git` | `instance-git`, `instanceGitApi: 1` |
+| `oats instance stop <name> --server <id> (--plan \| --apply …)` | `lifecycle-plans` | `lifecycle-plans`, `lifecycleApi: 1` |
+| `oats retire <name> --server <id> --plan`, and the guarded apply (`--plan-revision`, `--idempotency-key`) | `lifecycle-plans` | `lifecycle-plans`, `lifecycleApi: 1` |
+
+- The flags are the local command's. The instance is addressed like every
+  routed instance command ([servers.md](servers.md#run-there)): `--home` as
+  given, else the name through its saved route or the host's roster, sent
+  as `--home`. `--dir` names a directory on the host and travels as is;
+  without it the registered workspace is sent (not for `readiness --home`,
+  whose home is its own context). A retire plan and its guarded apply take
+  `--dir` like the rest; an unguarded `retire --server` refuses it.
+- An instance with a saved route is reached through it, registration or not.
+  A guarded retire apply whose name the host no longer lists is sent by name,
+  so a repeated key gets the host's recorded receipt (or its refusal).
+- The host's envelope is relayed unchanged, success or failure: the same
+  document the local command answers, with no routing keys added. The
+  guarded retire apply is the routed `retire`, whose result carries
+  `server` and `target` as before.
+- A host that does not advertise the feature and API number is refused with
+  `E_REMOTE_INCOMPATIBLE`, naming both and the host's version, before
+  anything is sent. A name two homes share on the host is `E_AMBIGUOUS`.
 
 <a id="instance-git-state-oats-instance-gitdiff-instancegitapi-1-oats-0247"></a>
 ## Git and diff
@@ -1658,8 +1855,9 @@ selection flags. See [the start workflow](desktop-instance-start.md).
 - A lost response does not mean the launch failed: check status before a
   retry. A remote home's saved route names its execution host.
 - Errors: `E_BAD_ARGS`, `E_SESSION_UNKNOWN`, `E_UNSUPPORTED_MODE`,
-  `E_SESSION_START_BUSY`, `E_INSTANCE_RETIRING`, `E_LAUNCH_*`,
-  `E_MODEL_UNKNOWN`, `E_UNSUPPORTED_HARNESS`, `E_SESSION_FAILED`.
+  `E_SESSION_START_BUSY`, `E_INSTANCE_RETIRING`, `E_LAUNCH_*` (among them
+  `E_LAUNCH_SHIM`: the home's `oats` link cannot be written, nothing was
+  started), `E_MODEL_UNKNOWN`, `E_UNSUPPORTED_HARNESS`, `E_SESSION_FAILED`.
 
 ### Upload
 

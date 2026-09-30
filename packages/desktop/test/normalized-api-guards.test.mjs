@@ -18,7 +18,7 @@ const callback = source.slice(start, end), base = 'http://127.0.0.1:4820', rende
 const routes = [
   ['/api/workspace-readiness', 'readiness'], ['/api/instance-lifecycle', 'lifecycle'],
   ['/api/forge-connections', 'forge'], ['/api/instance-forge', 'forge'], ['/api/forge-roster', 'forge'], ['/api/instance-review-threads', 'forge'],
-  ['/api/capabilities', 'capabilities'], ['/api/panel', 'panel'], ['/api/automations', 'automations'],
+  ['/api/capabilities', 'capabilities'], ['/api/panel', 'panel'], ['/api/automations', 'automations'], ['/api/instance-git', 'instance-git'],
 ];
 const guarded = routes.slice(0, 4);
 const slash = String.fromCharCode(92);
@@ -88,7 +88,7 @@ for (const [path, kind] of routes) test(`${path}: valid aliases preserve workspa
     if (kind === 'forge') {
       assert.deepEqual(Object.entries(init.headers).filter(([k]) => k.toLowerCase() === FORGE_EPOCH_HEADER), [[FORGE_EPOCH_HEADER, 'fixture:0']]);
       assert.equal(init.signal.timeout, ['/api/instance-forge', '/api/forge-roster', '/api/instance-review-threads'].includes(path) ? 50000 : 25000);
-    } else if (kind !== 'readiness') assert.equal(init.signal.timeout, kind === 'lifecycle' ? 35000 : kind === 'capabilities' ? 310000 : kind === 'automations' ? 90000 : 20000);
+    } else if (kind !== 'readiness') assert.equal(init.signal.timeout, kind === 'lifecycle' || kind === 'instance-git' ? 50000 : kind === 'capabilities' ? 310000 : kind === 'automations' ? 90000 : 20000);
     if (kind === 'panel') assert.deepEqual([...f.context.allowedWs], ['team', 'other']);
   }
 });

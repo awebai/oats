@@ -387,8 +387,8 @@ test("remote overview opens the selected server and shows unknown separately fro
   let un;
   try {
     const panel = { instances: [
-      { instance: "dev", agent: "dev", home: "/same/home", agentsRoot: "/agents", server: "one", savedRoute: true, running: true },
-      { instance: "dev", agent: "dev", home: "/same/home", agentsRoot: "/agents", server: "two", savedRoute: true, running: true },
+      { instance: "dev", agent: "dev", home: "/same/home", agentsRoot: "/agents", server: "one", addressable: true, running: true },
+      { instance: "dev", agent: "dev", home: "/same/home", agentsRoot: "/agents", server: "two", addressable: true, running: true },
       { instance: "unreachable", home: "/unknown", server: "two", running: null },
       { instance: "ended", home: "/stopped", server: "two", running: false },
     ], workspaces: [], workspace: null };
@@ -412,4 +412,55 @@ test("remote overview opens the selected server and shows unknown separately fro
     el.querySelector('.hier-canvas').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'b', bubbles: true }));
     assert.deepEqual(brains, []);
   } finally { un?.(); Object.assign(globalThis, prev); dom.window.close(); }
+});
+
+test("edges follow OAS: parent→child is a bottom-centre to top-centre S-curve; siblings are dashed shallow arcs", async t => {
+  const { JSDOM } = await import("jsdom");
+  const dom = new JSDOM(`<div id="root"></div>`, { pretendToBeVisual: true });
+  const g = globalThis;
+  const prev = { window: g.window, document: g.document, localStorage: g.localStorage };
+  g.window = dom.window; g.document = dom.window.document;
+  g.localStorage = { getItem: () => null, setItem: () => {} };
+  try {
+    const panel = { instances: [
+      { instance: "root", running: true },
+      { instance: "kid", running: true, parentInstance: "root" },
+      { instance: "peer", running: false, siblingInstance: "root" },
+    ], workspaces: [], workspace: null };
+    const ctx = { api: async () => ({ ok: true, status: 200, json: async () => panel }), openTerminal() {} };
+    const el = dom.window.document.getElementById("root");
+    const un = hier.mount(el, ctx); t.after(() => { un(); dom.window.close(); });
+    await new Promise((r) => setTimeout(r, 30));
+    const box = (name) => {
+      const n = el.querySelector(`.hnode[data-name="${name}"]`);
+      return { x: parseFloat(n.style.left), y: parseFloat(n.style.top) };
+    };
+    const W = 220, H = 60, num = String.raw`(-?[\d.]+)`;
+    const parentEdge = el.querySelector('.hier-edges path[data-parent="root"][data-child="kid"]');
+    assert.ok(parentEdge && !parentEdge.classList.contains("sib"), "parent edge is a solid path");
+    const [, x1, y1, c1x, c1y, c2x, c2y, x2, y2] = parentEdge.getAttribute("d")
+      .match(new RegExp(`^M ${num} ${num} C ${num} ${num}, ${num} ${num}, ${num} ${num}$`)).map(Number);
+    const r = box("root"), k = box("kid");
+    assert.deepEqual([x1, y1], [r.x + W / 2, r.y + H], "starts at the parent's bottom-centre");
+    assert.deepEqual([x2, y2], [k.x + W / 2, k.y], "ends at the child's top-centre");
+    const my = (y1 + y2) / 2;
+    assert.deepEqual([c1x, c1y, c2x, c2y], [x1, my, x2, my], "both control points sit on the vertical midpoint");
+
+    const sib = el.querySelector(".hier-edges path.sib");
+    assert.ok(sib, "the sibling edge carries the dashed class");
+    const [, sx1, sy1, sc1x, sc1y, sc2x, sc2y, sx2, sy2] = sib.getAttribute("d")
+      .match(new RegExp(`^M ${num} ${num} C ${num} ${num}, ${num} ${num}, ${num} ${num}$`)).map(Number);
+    const [left, right] = [box("root"), box("peer")].sort((a, b) => a.x - b.x);
+    assert.deepEqual([sx1, sy1], [left.x + W, left.y + H / 2], "leaves the left box's right-edge midpoint");
+    assert.deepEqual([sx2, sy2], [right.x, right.y + H / 2], "reaches the right box's left-edge midpoint");
+    const mx = (sx1 + sx2) / 2;
+    assert.deepEqual([sc1x, sc1y, sc2x, sc2y], [mx, sy1, mx, sy2], "a shallow arc through the horizontal midpoint");
+    assert.match(hier.hierarchyCSS, /\.hier-edges path\.sib \{ stroke-dasharray:\s*5 4; \}/,
+      "siblings differ by dash, not colour alone");
+    assert.match(hier.hierarchyCSS, /\.hier-edges path \{ stroke: var\(--graph-edge\); stroke-width: 1\.5;/);
+    assert.match(hier.hierarchyCSS, /\.hier-edges path\.lit \{ stroke: var\(--accent\); stroke-width: 2; \}/);
+    un();
+  } finally {
+    g.window = prev.window; g.document = prev.document; g.localStorage = prev.localStorage;
+  }
 });

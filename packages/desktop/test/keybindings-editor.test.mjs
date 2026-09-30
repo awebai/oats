@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import {
-  registerAction, setBinding, resetAllBindings, getBinding, DEFAULT_KEYMAP,
+  registerAction, setBinding, resetAllBindings, getBinding, defaultBinding, keymapConflicts,
 } from "../renderer/keybindings.mjs";
 import { createKeybindingsEditor, groupActions } from "../renderer/keybindings-editor.mjs";
 
@@ -69,19 +69,19 @@ test("recording: keydown sets the binding; Esc cancels; Backspace unbinds", (t) 
   rowFor("Command palette").querySelector(".kb-chord").click();
   assert.match(rowFor("Command palette")?.querySelector(".kb-chord").textContent ?? doc.querySelector(".kb-recording").textContent, /Press keys/);
   doc.dispatchEvent(key(doc, "p", { metaKey: true, shiftKey: true }));
-  assert.equal(getBinding("app.palette"), "Mod+Shift+P");
+  assert.equal(getBinding("app.palette", true), "Mod+Shift+P");
   assert.equal(rowFor("Command palette").querySelector(".kb-chord").textContent, "⇧⌘P");
 
   // Esc cancels without changing the binding
   rowFor("Close tab").querySelector(".kb-chord").click();
   doc.dispatchEvent(key(doc, "Escape"));
-  assert.equal(getBinding("tabs.close"), DEFAULT_KEYMAP["tabs.close"]);
+  assert.equal(getBinding("tabs.close", true), defaultBinding("tabs.close", true));
   assert.ok(doc.querySelector('[role="dialog"]'), "Esc during recording must not close the dialog");
 
   // Backspace unbinds
   rowFor("Close tab").querySelector(".kb-chord").click();
   doc.dispatchEvent(key(doc, "Backspace"));
-  assert.equal(getBinding("tabs.close"), null);
+  assert.equal(getBinding("tabs.close", true), null);
   assert.equal(rowFor("Close tab").querySelector(".kb-chord").textContent, "unbound");
   editor.close();
 });
@@ -106,7 +106,7 @@ test("recording a bare key shows the editable-field warning on the row", (t) => 
     .find((r) => r.querySelector(".kb-label").textContent === label);
   rowFor("Focus tree").querySelector(".kb-chord").click();
   doc.dispatchEvent(key(doc, "b"));
-  assert.equal(getBinding("stage.hierarchy.focus"), "B");
+  assert.equal(getBinding("stage.hierarchy.focus", true), "B");
   assert.match(rowFor("Focus tree").querySelector(".kb-conflict").textContent,
     /won’t fire while typing/, "bare-key binding warns about the editable-field guard");
   // shift-only is still a bare key
@@ -136,10 +136,10 @@ test("per-row reset and reset-all restore defaults", (t) => {
   const paletteReset = rowFor("Command palette").querySelector(".kb-reset");
   assert.equal(paletteReset.hidden, false, "overridden row shows reset");
   paletteReset.click();
-  assert.equal(getBinding("app.palette"), "Mod+K");
+  assert.equal(getBinding("app.palette", true), "Mod+K");
   assert.equal(rowFor("Command palette").querySelector(".kb-reset").hidden, true, "default row hides reset");
   doc.querySelector(".kb-reset-all").click();
-  assert.equal(getBinding("tabs.close"), "Mod+W");
+  assert.equal(getBinding("tabs.close", true), "Mod+W");
   editor.close();
 });
 
@@ -158,14 +158,14 @@ test("registration defaultChord displays honestly and Backspace-unbind disables 
   // Backspace-unbind actually disables dispatch
   row.querySelector(".kb-chord").click();
   doc.dispatchEvent(key(doc, "Backspace"));
-  assert.equal(getBinding("hier.fit"), null);
+  assert.equal(getBinding("hier.fit", true), null);
   assert.equal(rowFor("Fit to screen").querySelector(".kb-chord").textContent, "unbound");
   const fakeEvent = { key: "f", metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, preventDefault() {} };
   assert.equal(matchEvent(fakeEvent, { isMac: true, insideTerminal: false, editableTarget: false }), null,
     "unbound registration default no longer dispatches");
   // per-row reset restores the registration default
   rowFor("Fit to screen").querySelector(".kb-reset").click();
-  assert.equal(getBinding("hier.fit"), "F");
+  assert.equal(getBinding("hier.fit", true), "F");
   editor.close();
 });
 
@@ -241,7 +241,7 @@ test("recording does not survive dialog close or reset-all", (t) => {
   const e = key(doc, "x", { metaKey: true });
   doc.dispatchEvent(e);
   assert.equal(e.defaultPrevented, false, "closed editor must not swallow keys");
-  assert.equal(getBinding("app.palette"), DEFAULT_KEYMAP["app.palette"],
+  assert.equal(getBinding("app.palette", true), defaultBinding("app.palette", true),
     "closed editor must not persist a binding");
 
   // reset-all during recording: capture ends, nothing recorded afterwards
@@ -249,13 +249,13 @@ test("recording does not survive dialog close or reset-all", (t) => {
   rowFor("Command palette").querySelector(".kb-chord").click();
   doc.querySelector(".kb-reset-all").click();
   doc.dispatchEvent(key(doc, "y", { metaKey: true }));
-  assert.equal(getBinding("app.palette"), DEFAULT_KEYMAP["app.palette"]);
+  assert.equal(getBinding("app.palette", true), defaultBinding("app.palette", true));
 
   // rerender (keymap change from elsewhere) also invalidates a capture
   rowFor("Command palette").querySelector(".kb-chord").click();
   setBinding("tabs.close", "Mod+X"); // triggers render
   doc.dispatchEvent(key(doc, "z", { metaKey: true }));
-  assert.equal(getBinding("app.palette"), DEFAULT_KEYMAP["app.palette"]);
+  assert.equal(getBinding("app.palette", true), defaultBinding("app.palette", true));
   editor.close();
 });
 
@@ -264,12 +264,12 @@ test("malformed persisted overrides are sanitized and cannot break the editor", 
   localStorage.setItem("oats-desktop-keymap",
     JSON.stringify({ "app.palette": 42, "tabs.close": { evil: true }, "stage.hierarchy.focus": "Mod+K+P", "x.legacy": "Mod+Shift+L", "x.unbound": null }));
   const fresh = await import("../renderer/keybindings.mjs?fresh=" + Math.random());
-  assert.equal(fresh.getBinding("app.palette"), "Mod+K", "non-string value discarded → default");
-  assert.equal(fresh.getBinding("tabs.close"), "Mod+W", "object value discarded → default");
-  assert.equal(fresh.getBinding("stage.hierarchy.focus"), null,
+  assert.equal(fresh.getBinding("app.palette", true), "Mod+K", "non-string value discarded → default");
+  assert.equal(fresh.getBinding("tabs.close", true), "Mod+W", "object value discarded → default");
+  assert.equal(fresh.getBinding("stage.hierarchy.focus", true), null,
     "unparsable chord string (two main keys) discarded → no default → unbound");
-  assert.equal(fresh.getBinding("x.legacy"), "Mod+Shift+L", "valid chord survives");
-  assert.equal(fresh.getBinding("x.unbound"), null, "explicit null unbind survives");
+  assert.equal(fresh.getBinding("x.legacy", true), "Mod+Shift+L", "valid chord survives");
+  assert.equal(fresh.getBinding("x.unbound", true), null, "explicit null unbind survives");
   localStorage.removeItem("oats-desktop-keymap");
 
   // and the editor renders instead of throwing on a poisoned live map too
@@ -301,4 +301,36 @@ test("Tab wraps focus inside the modal dialog", (t) => {
   assert.equal(shiftTab.defaultPrevented, true, "Shift+Tab on the first control is wrapped");
   assert.equal(doc.activeElement, last);
   editor.close();
+});
+
+test("a stored rebind that clashes with another binding is surfaced, never changed silently", (t) => {
+  const { doc, editor } = setup(t);
+  assert.deepEqual(keymapConflicts(true), [], "the defaults alone never clash");
+  // e.g. an old rebind that a new default now shares: ⌘W was set for the palette.
+  setBinding("app.palette", "Mod+W");
+  const clashes = keymapConflicts(true);
+  assert.equal(clashes.length, 1);
+  assert.deepEqual(clashes[0].actions.map((a) => a.id).sort(), ["app.palette", "tabs.close"]);
+  assert.equal(getBinding("app.palette", true), "Mod+W", "the stored rebind is kept");
+  assert.equal(getBinding("tabs.close", true), "Mod+W", "and so is the default");
+  editor.open();
+  const banner = doc.querySelector(".kb-clashes");
+  assert.equal(banner.hidden, false);
+  assert.equal(banner.getAttribute("role"), "status");
+  assert.match(banner.textContent, /⌘W is both “Command palette” and “Close tab”/);
+  const paletteRow = doc.querySelector('.kb-chord[data-action-id="app.palette"]').closest(".kb-row");
+  assert.match(paletteRow.querySelector(".kb-conflict").textContent, /Also bound to “Close tab”/, "and marked on its row");
+  // A clash between defaults only (no stored rebind) is not the operator's to fix: not listed.
+  resetAllBindings();
+  assert.deepEqual(keymapConflicts(true), []);
+  assert.equal(doc.querySelector(".kb-clashes").hidden, true);
+});
+
+test("shell wiring: the footer shortcuts button carries the clash marker, recomputed on keymap change", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
+  assert.match(src, /function markShortcutClashes\(\) \{[^]*?keymapConflicts\(isMac\)[^]*?classList\.toggle\("has-clash"[^]*?aria-description/);
+  assert.match(src, /onKeymapChange\(\(\) => \{[^]*?markShortcutClashes\(\)/);
+  const css = readFileSync(new URL("../renderer/shell.css", import.meta.url), "utf8");
+  assert.match(css, /#sidebar-shortcuts\.has-clash::after \{[^}]*background: var\(--warn\)/);
 });

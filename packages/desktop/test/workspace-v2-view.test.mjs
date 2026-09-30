@@ -33,7 +33,8 @@ const report = (name, status) => ({ workspaceSyncApi: 1, status, report: syncDat
 async function setup(t, { status = 'workspace-status', cli = CLI, sync, teams, workspace = {}, deployment } = {}) {
   const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>', { url: 'http://localhost' });
   const previous = { document: globalThis.document, window: globalThis.window, setInterval: globalThis.setInterval, ws: currentWorkspace() };
-  globalThis.document = dom.window.document; globalThis.window = dom.window; globalThis.setInterval = () => 0;
+  const polls = [];
+  globalThis.document = dom.window.document; globalThis.window = dom.window; globalThis.setInterval = fn => { polls.push(fn); return 0; };
   const calls = [];
   let observedStatus = typeof status === 'string' ? statusOf(status) : status;
   const panel = () => ({ workspace: { id: currentWorkspace(), scope: currentWorkspace(), ...workspace }, workspaces: [], instances,
@@ -60,6 +61,8 @@ async function setup(t, { status = 'workspace-status', cli = CLI, sync, teams, w
     button: text => [...doc.querySelectorAll('button')].find(el => el.textContent.trim() === text),
     syncCalls: () => calls.filter(call => call.path.startsWith('/api/workspace-sync')).map(call => call.body),
     setStatus: name => { observedStatus = statusOf(name); },
+    // The roster poll, answered by a newer observation of the same workspace status.
+    poll: async observedAt => { observedStatus = { ...observedStatus, workspace: { ...observedStatus.workspace, observedAt } }; for (const fn of polls) fn(); await settle(); },
   };
 }
 
@@ -70,9 +73,10 @@ test('Capabilities is the kernel catalog: counts, jump pills, and Capability | S
   await u.tab('capabilities');
   assert.deepEqual(u.syncCalls(), [{ action: 'read' }], 'opening the tab does not read again');
   assert.equal(u.doc.querySelector('#workspace-tab-capabilities .workspace-count').textContent, '10');
+  // Workspace v4.1: the section jump is one segmented group (navigation: aria-current); each capability is a row card under a column head.
   assert.deepEqual([...u.doc.querySelectorAll('.capability-nav button')].map(el => [el.dataset.jump, el.textContent, el.getAttribute('aria-current')]),
-    [['workspace', 'Workspace owned6', 'true'], ['packages', 'Packages4', 'false']]);
-  assert.deepEqual([...u.doc.querySelectorAll('[data-section=workspace] .catalog-row.head [role=columnheader]')].map(el => el.textContent), ['Capability', 'Source', 'Used by']);
+    [['workspace', 'Workspace owned6', 'true'], ['packages', 'Packages4', null]]);
+  assert.deepEqual([...u.doc.querySelectorAll('[data-section=workspace] .catalog-head span')].map(el => el.textContent), ['', 'Capability', 'Source', 'Used by', '']);
   assert.equal(u.rows().length, 10);
   const row = name => u.rows().find(el => el.dataset.capability === name);
   // Source: the package and its pinned version, or the member repository at its latest.
@@ -84,9 +88,9 @@ test('Capabilities is the kernel catalog: counts, jump pills, and Capability | S
   // Used by = souls whose instances record the module (roster module rows).
   const used = capabilityUse(instances, 'nw-release-tooling');
   assert.deepEqual(used.souls.map(s => s.name), ['release-manager']);
-  assert.equal(row('nw-release-tooling').querySelector('.catalog-used-count').textContent, '1');
+  assert.equal(row('nw-release-tooling').querySelector('.catalog-used-count').textContent, '1 soul');
   assert.equal(row('nw-release-tooling').querySelector('.catalog-used-count').title, 'Used by release-manager');
-  assert.equal(row('nw-brand-voice').querySelector('.catalog-used-count').textContent, '—');
+  assert.equal(row('nw-brand-voice').querySelector('.catalog-used-count').textContent, 'Not used', 'never a lone dash');
   assert.equal(u.doc.querySelector('.workspace-discovery').textContent.includes('Members'), false, 'no Members list in Capabilities');
 });
 
@@ -258,7 +262,9 @@ test('Sync runs oats sync and nothing else: no approval control, no sheet for a 
   assert.equal(u.button('Review approvals'), undefined); assert.equal(u.doc.querySelector('.ws-approval'), null);
   await u.tab('capabilities');
   u.doc.querySelector('.ws-sync button.ws-sync-run').click(); await settle();
-  assert.deepEqual(u.syncCalls(), [{ action: 'read' }, { action: 'sync' }, { action: 'read' }], 'sync, then the catalog is read again');
+  // desktop/loading-states: the re-read after a sync is live (refresh: true, spec 02) and the held table stays on screen through it.
+  assert.deepEqual(u.syncCalls(), [{ action: 'read' }, { action: 'sync' }, { action: 'read', refresh: true }], 'sync, then the catalog is read again, live');
+  assert.equal(u.rows().length, 10, 'the table never left');
   assert.equal(u.doc.querySelector('.ws-sync-sheet').hidden, true, 'a clean sync needs nothing from the operator');
   assert.equal(u.doc.querySelector('.ws-sync-state').textContent, '', 'a current lock is shown on Setup (This computer), not beside Sync');
 });
@@ -376,12 +382,17 @@ test('a failed catalog read names the failure and offers an explicit retry', asy
   let fail = true;
   const u = await setup(t, { sync: () => fail ? { workspaceSyncApi: 1, status: 'unavailable', reason: { code: 'E_CLI_TIMEOUT', message: 'The workspace command exceeded its time limit.' } } : catalog('capabilities') });
   await u.tab('capabilities');
-  assert.equal(u.doc.querySelector('.discovery-status').textContent, 'E_CLI_TIMEOUT: The workspace command exceeded its time limit.');
-  const retry = u.doc.querySelector('.discovery-retry');
-  assert.equal(retry.hidden, false);
+  // desktop/loading-states: with nothing held, the failed block in the table's place — the kernel's message, its code behind Details, Retry.
+  const failed = u.doc.querySelector('.catalog-state .loading-failed'); assert.ok(failed);
+  assert.equal(failed.querySelector('.loading-failed-message').textContent, 'The workspace command exceeded its time limit.');
+  assert.equal(failed.querySelector('.loading-failed-code').textContent, 'E_CLI_TIMEOUT');
+  assert.equal(u.doc.querySelector('.discovery-load-status').textContent, "Couldn't refresh capabilities. The workspace command exceeded its time limit.");
+  assert.equal(u.doc.querySelector('#workspace-tab-capabilities .workspace-count').textContent, '', 'no count and no pill after a failed read');
+  const retry = failed.querySelector('.loading-retry');
   fail = false; retry.click(); await settle();
-  assert.equal(u.rows().length, 10); assert.equal(retry.hidden, true);
-  assert.deepEqual(u.syncCalls(), [{ action: 'read' }, { action: 'read' }]);
+  assert.equal(u.rows().length, 10); assert.equal(u.doc.querySelector('.catalog-state .loading-failed'), null);
+  assert.equal(u.doc.querySelector('.discovery-load-status').textContent, 'Capabilities updated', 'a Retry is announced on completion');
+  assert.deepEqual(u.syncCalls(), [{ action: 'read' }, { action: 'read', refresh: true }], 'Retry reads live');
 });
 
 // Team model v2 (0.30, D2): the Workspace's Teams tab, first (human, 2026-09-28), holds "Teams on this
@@ -390,15 +401,18 @@ test('a failed catalog read names the failure and offers an explicit retry', asy
 const { teamsData } = await import('../deployment-data.mjs');
 // The REAL 0.30 kernel's `oats teams` (K1 @bba0a9b8, test/fixtures/team-model-v2/teams-after, #269), decoded as the route answers it.
 const K1_TEAMS = () => teamsData(JSON.parse(readFileSync(new URL('./fixtures/team-model-v2/teams-after.json', import.meta.url), 'utf8')), dir);
-test('Teams tab (team-model-2): first, before Souls; "Teams on this computer" from oats teams; its problems light the dot; Setup has no teams', async t => {
+test('Teams tab (team-model-2): first, before Souls; the Teams page from oats teams; its problems light the dot; Setup has no teams', async t => {
   const u = await setup(t, { cli: { ...CLI, features: [...CLI.features, 'team-model-2'] }, teams: () => ({ status: 'ok', teams: K1_TEAMS() }) });
   assert.deepEqual([...u.doc.querySelectorAll('.workspace-tabs [role=tab]')].map(tab => tab.id), ['workspace-tab-teams', 'workspace-tab-souls', 'workspace-tab-capabilities', 'workspace-tab-sources']);
   assert.equal(u.doc.getElementById('workspace-tab-souls').getAttribute('aria-selected'), 'true', 'Souls stays where the Workspace opens');
   await u.tab('teams');
   const card = u.doc.querySelector('.workspace-discovery .computer-teams');
-  assert.ok(card, 'the card'); assert.equal(card.dataset.box, 'Teams on this computer');
+  assert.ok(card, 'the page'); assert.equal(card.dataset.box, 'Teams'); assert.equal(card.querySelector('.ct-title').textContent, 'Teams');
   assert.equal(u.doc.querySelector('.workspace-discovery').dataset.tab, 'teams');
-  assert.deepEqual([...card.querySelectorAll('.ct-row')].map(r => r.dataset.team), ['engineering', 'global', 'marketing', 'mine']);
+  // One card per team: the shared ones, then this computer's own.
+  const cards = [...card.querySelectorAll('.ct-card')].map(r => [r.closest('.ct-section').dataset.section, r.dataset.team]);
+  assert.deepEqual(cards.map(([, team]) => team).sort(), ['engineering', 'global', 'marketing', 'mine']);
+  assert.deepEqual(cards, [...cards].sort((a, b) => (a[0] === 'local') - (b[0] === 'local')), 'shared first');
   assert.deepEqual(u.calls.filter(c => c.path.startsWith('/api/workspace-teams')).map(c => c.body), [{ action: 'list' }], 'one read');
   assert.equal(u.doc.querySelector('#workspace-tab-teams .workspace-attn').hidden, false);
   assert.equal(u.doc.querySelector('#workspace-tab-teams .workspace-sr-only').textContent, ' — 3 items need attention', 'the three shared teams with no provider id yet');
@@ -409,6 +423,15 @@ test('Teams tab (team-model-2): first, before Souls; "Teams on this computer" fr
   assert.equal(u.doc.querySelector('.workspace-discovery .computer-teams'), card, 'the same card: a half-typed form survives');
   assert.equal(u.calls.filter(c => c.path.startsWith('/api/workspace-teams')).length, 1, 'not re-read by switching tabs');
   assert.doesNotMatch(u.doc.querySelector('.workspace-discovery').textContent, /primary|personal/i);
+});
+
+test('Teams tab: a poll that only re-stamps the workspace status keeps the page and its focus', async t => {
+  const u = await setup(t, { cli: { ...CLI, features: [...CLI.features, 'team-model-2'] }, teams: () => ({ status: 'ok', teams: K1_TEAMS() }) });
+  await u.tab('teams');
+  const add = u.button('Add a local team'); add.focus();
+  await u.poll('2026-09-30T07:28:04.414Z');
+  assert.ok(u.calls.filter(c => c.path.startsWith('/api/panel')).length >= 2, 'the poll read the panel again');
+  assert.equal(u.doc.activeElement, add, 'focus stays where it was');
 });
 
 // 0.30 automation trust: the REAL kernel's workspace-status warnings (fixtures/automations-trust, kernel

@@ -6,7 +6,7 @@
  *     capability table.
  * Sync is the kernel's `oats sync` (workspace-sync-view.mjs); there is no
  * package approval. Souls stay the host view's own grid. */
-import { postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
+import { apiJson, postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
 import { cliStatus, cliKnownUnavailable } from './views/cli-status.mjs';
 import { deploymentUnavailableText } from './deployment-header.mjs';
 import { setupCSS, renderSetup, teamsBox } from './workspace-setup.mjs';
@@ -14,6 +14,8 @@ import { computerTeamsCSS, createComputerTeams, teamsAnswer } from './computer-t
 import { catalogCSS, renderCapabilitySections, capabilitySections, renderFilters, filterChoices, filterCapabilities, memberNames, deploymentNotes, syncCapabilityNav } from './workspace-catalog.mjs';
 import { createWorkspaceSync, syncCSS, reasonText } from './workspace-sync-view.mjs';
 import { iconElement } from './shell-icons.mjs';
+import { createDataState, skeleton, statusLine } from './loading.mjs';
+import { trackStickyTop, trackScrolledEdge } from './sticky-top.mjs';
 
 export const workspaceTabs = ['teams', 'souls', 'capabilities', 'sources'];
 // What a person reads (the ids stay stable): Teams is who can work together (human, 2026-09-28: first,
@@ -32,19 +34,26 @@ ${syncCSS}
 .workspace-tabs button { flex:none; display:inline-flex; align-items:center; gap:6px; padding:0; border:0; border-radius:0; background:none; color:var(--nav-fg); font:500 13px var(--sans,system-ui); cursor:pointer; }
 .workspace-tabs button:hover { color:var(--fg); }
 .workspace-tabs button[aria-selected=true] { color:var(--fg); font-weight:650; box-shadow:inset 0 -2px 0 var(--live); }
-.workspace-tabs button:focus-visible { outline:2px solid var(--accent); outline-offset:-4px; border-radius:6px; }
+/* Keyboard focus: the tint gets a layout-neutral 6px inset so it does not hug the label. */
+.workspace-tabs button:focus-visible { background:var(--sel); border-radius:6px; padding:0 6px; margin:0 -6px; }
 .workspace-count { color:var(--muted); font:10.5px var(--mono,monospace); }
 .workspace-count:empty { display:none; }
-.workspace-sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+/* Visually hidden, announced; anchored at its containing block's origin so it can never stretch a scroller or the document (spec G). */
+.workspace-sr-only { position:absolute; top:0; left:0; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
 .workspace-attn { width:6px; height:6px; border-radius:50%; background:var(--attn-dot); }
 .workspace-attn[hidden] { display:none; }
 .workspace-tools { display:flex; align-items:center; gap:10px; margin-left:auto; min-width:0; flex:none; }
 .workspace-tools[hidden] { display:none; }
-.ws-segmented { display:inline-flex; height:28px; border:1px solid var(--border); border-radius:7px; overflow:hidden; flex:none; }
-.oats-view .ws-segmented button { min-height:0; height:100%; padding:0 10px; border:0; border-radius:0; background:var(--surface); color:var(--muted); font:500 12px var(--sans,system-ui); cursor:pointer; }
-.oats-view .ws-segmented button + button { border-left:1px solid var(--border); }
-.oats-view .ws-segmented button[aria-pressed=true] { background:var(--chip-bg); color:var(--fg); font-weight:650; }
-.oats-view .ws-segmented button:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+/* Segmented control (control rule 1, board 7): one 1px frame with 3px inner padding, 6px
+   segments, no dividers. Selected = brand tint (--sel fill, --accent text, 650); unselected =
+   transparent, --muted. Keyboard focus adds the tint under the global 1px accent edge.
+   Geometry (human, 2026-09-29, "looks cropped"): 24px segments inside 3px padding make a 30px frame
+   (32px with its 1px border), text centred at line-height 1, and flex:none so no bar squeezes it. */
+.ws-segmented { display:inline-flex; align-items:center; box-sizing:content-box; height:24px; padding:3px; gap:2px; border:1px solid var(--border); border-radius:8px; background:var(--surface); flex:none; }
+.oats-view .ws-segmented button { display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; min-height:0; height:24px; padding:0 10px; border:0; border-radius:6px; background:transparent; color:var(--muted); font:500 12px/1 var(--sans,system-ui); white-space:nowrap; cursor:pointer; }
+.oats-view .ws-segmented button:hover { color:var(--fg); }
+.oats-view .ws-segmented button[aria-pressed=true] { background:var(--sel); color:var(--accent); font-weight:650; }
+.oats-view .ws-segmented button:focus-visible { background:var(--sel); }
 /* A view's own toolbar (human, 2026-09-26): its search and controls sit in the view, not in the header. */
 /* A view's toolbar row (human, 2026-09-26): the view's own top row on the left
    (section pills, first group heading), the search and view controls on the right. */
@@ -55,21 +64,49 @@ ${syncCSS}
 .ws-toolbar-label { color:var(--muted); font-size:12px; }
 .ws-search { position:relative; display:flex; align-items:center; min-width:0; flex:0 1 220px; }
 .ws-search .shell-icon { position:absolute; left:10px; color:var(--muted); pointer-events:none; }
+/* Search field (control rule 3): the input's own 1px border is the one frame, accent while focused, no ring. */
 .oats-view .ws-search input.field { width:100%; min-width:0; height:28px; min-height:28px; padding:0 10px 0 30px; border:1px solid var(--border); border-radius:7px; background:var(--surface); font-size:12px; box-sizing:border-box; }
-.workspace-discovery { padding:18px 20px; overflow:auto; min-width:0; flex:1; container-type:inline-size; }
+.oats-view .ws-search:focus-within input.field { border-color:var(--accent); outline:none; }
+/* The tab's one content scroller (spec G): positioned, so its absolute descendants (the sr-only
+   words, loading-sr) are clipped by it instead of stretching the document, which then scrolled the
+   whole Workspace, header included, at the end of the content; its overscroll never chains out. */
+.workspace-discovery { --ws-pad-top:18px; position:relative; padding:var(--ws-pad-top) 20px 18px; overflow:auto; overscroll-behavior:contain; min-width:0; min-height:0; flex:1; container-type:inline-size; }
 /* Capabilities (W5) reads as one centred column. */
-.workspace-discovery[data-tab=capabilities] { padding:16px 28px 20px; }
+.workspace-discovery[data-tab=capabilities] { --ws-pad-top:16px; padding:var(--ws-pad-top) 28px 20px; }
 .workspace-discovery[data-tab=capabilities] > * { max-width:1000px; margin-inline:auto; }
-.workspace-discovery[data-tab=sources] { padding:20px 24px; }
+.workspace-discovery[data-tab=sources] { --ws-pad-top:20px; padding:var(--ws-pad-top) 24px 20px; }
 /* Teams reads as one centred column: the teams card is a list, not a dashboard. */
-.workspace-discovery[data-tab=teams] { padding:20px 24px; }
+.workspace-discovery[data-tab=teams] { --ws-pad-top:20px; padding:var(--ws-pad-top) 24px 20px; }
 .workspace-discovery[data-tab=teams] > * { max-width:760px; margin-inline:auto; }
 .workspace-discovery[hidden], .souls-bar[hidden] { display:none; }
+/* Sticky tops (spec G; sticky-top.mjs): a tab's top-level controls stay pinned while its content
+   scrolls. Chromium insets a sticky box by the scroller's padding, so the block pins at -padding,
+   flush with the scrollport, on the page's opaque --bg (cards never show through or above it); its
+   8px inner top keeps the controls off the tab row. The bottom edge is always 1px, transparent until
+   content has scrolled under the block (.is-stuck), so sticking never changes its height. */
+.workspace-discovery .ws-sticky { position:sticky; top:calc(-1 * var(--ws-pad-top)); z-index:3; margin-top:-8px; padding-top:8px; background:var(--bg); border-bottom:1px solid transparent; }
+.workspace-discovery .ws-sticky.is-stuck { border-bottom-color:var(--border); }
+/* The Capabilities toolbar keeps its 16px below: 8px inside the edge, 7px + the 1px edge outside. */
+.workspace-discovery > .ws-toolbar.ws-sticky { padding-bottom:8px; margin-bottom:7px; }
+/* Jumping to a section or focusing a row never leaves it under the pinned block. */
+.workspace-discovery :is(.capability-section-title, .capability-repo-title, [data-capability], .catalog-row, .computer-teams .ct-body :is(button, a[href], input, select, textarea, [tabindex])) { scroll-margin-top:var(--ws-sticky-h, 60px); }
 .discovery-status { margin:0 0 14px; color:var(--muted); font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
 .discovery-status:empty { display:none; }
-.discovery-status.error { color:var(--danger); }
-.discovery-retry { margin:0 0 14px; }
-.discovery-retry[hidden] { display:none; }
+.discovery-status[hidden] { display:none; }
+/* The catalog's loading states (desktop/loading-states item 6): the status line, the stale line, the
+   skeleton / failed block host (only on the Capabilities tab), "Refreshing…" in the toolbar. */
+.discovery-notice[hidden], .catalog-state[hidden] { display:none; }
+.discovery-notice .loading-notice { margin:0 0 14px; }
+.ws-toolbar .loading-refreshing { margin-right:auto; }
+.catalog-state .capability-section-title.skeleton { height:15px; width:30%; margin:0 0 2px; }
+.catalog-state .catalog-head .skeleton { height:9px; width:60%; }
+.skeleton-catalog-row { pointer-events:none; }
+.skeleton-catalog-row .catalog-tile.skeleton { background:color-mix(in srgb, var(--fg) 10%, transparent); }
+.skeleton-catalog-row .catalog-cap { gap:6px; }
+.skeleton-catalog-row .skeleton-name { height:13px; width:45%; }
+.skeleton-catalog-row .skeleton-desc { height:11px; width:80%; }
+.skeleton-catalog-row .skeleton-cell { height:11px; width:70%; }
+.skeleton-catalog-row .skeleton-chevron { width:14px; height:14px; }
 `;
 
 const list = value => Array.isArray(value) ? value : [];
@@ -95,21 +132,55 @@ function gate(workspace, deployment) {
   return '';
 }
 
-export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab, onIntent, onOpenCapability = null }) {
+/** A gate that will lift by itself (a probe or observation still running): the counts stay a pill. */
+function gateTransient(workspace, deployment) {
+  const cli = cliStatus();
+  if (!cli) return !cliKnownUnavailable();
+  if (!cli.ok || cli.workspaceApi !== 2 || !list(cli.features).includes('workspace-v2')) return false;
+  if (!workspace) return true;
+  if (workspace.remote || workspace.server) return false;
+  return !deployment || deployment.status === 'pending';
+}
+
+/** Pending catalog: one section's worth of the real card rows (a disabled, aria-hidden button wears
+ * the table's own classes, so workspace-catalog.mjs's CSS gives the height, frame and columns). */
+function catalogSkeleton(doc, rows = 6) {
+  const section = doc.createElement('div'); section.className = 'capability-section skeleton-item'; section.setAttribute('aria-hidden', 'true'); section.dataset.skeleton = 'catalog-rows';
+  const bone = cls => { const el = doc.createElement('span'); el.className = `skeleton ${cls}`; el.setAttribute('aria-hidden', 'true'); return el; };
+  section.append(bone('capability-section-title'));
+  const table = doc.createElement('div'); table.className = 'catalog-table';
+  const head = doc.createElement('div'); head.className = 'catalog-head'; head.append(doc.createElement('span'), bone('skeleton-cell'), bone('skeleton-cell'), bone('skeleton-cell')); table.append(head);
+  for (let i = 0; i < rows; i++) {
+    const row = doc.createElement('button'); row.type = 'button'; row.className = 'catalog-row skeleton-catalog-row'; row.disabled = true; row.tabIndex = -1; row.setAttribute('aria-hidden', 'true');
+    const cap = doc.createElement('span'); cap.className = 'catalog-cap'; cap.append(bone('skeleton-name'), bone('skeleton-desc'));
+    row.append(bone('catalog-tile'), cap, bone('skeleton-cell'), bone('skeleton-cell'), bone('skeleton-chevron'));
+    table.append(row);
+  }
+  section.append(table);
+  return section;
+}
+
+/** `onCatalog`: the catalog changed (a read settled, the subject was reset): a page rendered from it refreshes in place. */
+export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab, onIntent, onOpenCapability = null, onCatalog = null, onTeamMember = () => {}, rosterState = () => 'ready' }) {
   const doc = header.ownerDocument;
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
   let alive = true, serial = 0, rosterGen = null, workspace = null, deployment = null, instances = [], tab = 'souls';
   let catalog = null, loading = false, failure = '', filters = { team: null, repo: null }, rendered = null;
   let setupView = 'list', query = '', setupMember = null, souls = [];
+  // The Souls tab's count: a number, 'pending' (a pill reserving its width) or null (a failed roster read: nothing, still).
+  let soulsCount = 'pending';
   // Team model v2 (kernel feature team-model-2): the Teams tab's "Teams on this computer", one card
   // per workspace generation, kept across renders so a half-typed form survives the status polls.
   let computerTeams = null, computerTeamsGen = null, teamProblems = 0;
+  // The pinned toolbar / Teams head and its edge (sticky-top.mjs); the Souls bar sits outside its scroller.
+  const stickyTop = trackStickyTop(panel), soulsEdge = trackScrolledEdge(soulsPanel);
   function teamsCard() {
     if (!list(cliStatus()?.features).includes('team-model-2') || !workspace?.id || workspace.remote || workspace.server) return null;
     const gen = workspaceGeneration();
     if (computerTeams && computerTeamsGen === gen) return computerTeams.element;
     computerTeams?.dispose(); computerTeamsGen = gen; teamProblems = 0;
-    computerTeams = createComputerTeams(doc, { onDocument: teams => { teamProblems = list(teams?.problems).length; updateCounts(); }, request: async body => {
+    computerTeams = createComputerTeams(doc, { readMembers: () => apiJson(ctx, `/api/team-members${wsQuery()}`), onMember: (action, member) => onTeamMember(action, member),
+      onDocument: teams => { teamProblems = list(teams?.problems).length; updateCounts(); }, request: async body => {
       return teamsAnswer(await postJson(ctx, `/api/workspace-teams${wsQuery()}`, body), 'teams', 'The teams on this computer could not be read.');
     } });
     return computerTeams.element;
@@ -152,7 +223,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   }
   const syncHost = node('div'); setupTools.append(views, syncHost);
   // The Capabilities search lives in the view itself (human, 2026-09-26): a toolbar row above the sections.
-  const capTools = node('div', undefined, 'ws-toolbar'); capTools.dataset.tools = 'capabilities';
+  const capTools = node('div', undefined, 'ws-toolbar ws-sticky'); capTools.dataset.tools = 'capabilities';
   const capLead = node('div', undefined, 'ws-toolbar-lead'); capTools.append(capLead);
   const search = node('label', undefined, 'ws-search');
   const searchInput = node('input', undefined, 'field'); searchInput.type = 'search'; searchInput.placeholder = 'Search capabilities'; searchInput.autocomplete = 'off';
@@ -160,19 +231,31 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   searchInput.addEventListener('input', () => { query = searchInput.value; render(); });
   search.append(iconElement(doc, 'search', { size: 14 }), searchInput); capTools.append(search);
   header.append(setupTools);
-  const sync = createWorkspaceSync(syncHost, { ctx, onSynced: () => { catalog = null; failure = ''; void load(); } });
+  // After a sync the table is re-read live; the held table stays on screen until the new one lands (never null while the deployment is the same).
+  const sync = createWorkspaceSync(syncHost, { ctx, onSynced: () => { failure = ''; void load({ refresh: true }); } });
   function syncTools() {
     setupTools.hidden = tab !== 'sources'; capTools.hidden = tab !== 'capabilities';
     for (const [id, button] of viewButtons) button.setAttribute('aria-pressed', String(id === setupView));
   }
   soulsPanel.id = 'workspace-souls'; soulsPanel.setAttribute('role', 'tabpanel'); soulsPanel.setAttribute('aria-labelledby', 'workspace-tab-souls');
   panel.className = 'workspace-discovery'; panel.setAttribute('role', 'tabpanel'); panel.tabIndex = 0;
+  // `status` says the gate (a CLI or deployment state, its own truthful copy); the catalog's loading
+  // controller has its own line, stale-line host and skeleton / failed host, shown on Capabilities only.
   const status = node('p', '', 'discovery-status'); status.setAttribute('role', 'status');
-  const retry = node('button', 'Retry', 'act discovery-retry'); retry.type = 'button'; retry.hidden = true;
-  retry.addEventListener('click', () => { failure = ''; void load(); });
+  // The status line speaks only (like the sidebar's and the hierarchy's): the skeleton, the stale line and the
+  // failed block are the visible states, and a visually hidden line leaves no empty box between the toolbar and them.
+  const loadStatus = statusLine(doc, { visuallyHidden: true, className: 'discovery-load-status' });
+  const notice = node('div', undefined, 'discovery-notice');
+  const capState = node('div', undefined, 'catalog-state');
+  const refreshHost = node('span', undefined, 'discovery-refreshing'); capTools.prepend(refreshHost);
   const notes = node('div', undefined, 'catalog-notes');
   const filterHost = node('div'), body = node('div');
-  panel.append(capTools, status, retry, notes, filterHost, body);
+  panel.append(capTools, status, loadStatus, notice, notes, filterHost, capState, body);
+  const win = doc.defaultView;
+  const loadState = createDataState({ doc, noun: 'capabilities', region: capState, skeleton: () => catalogSkeleton(doc), status: loadStatus,
+    indicatorHost: refreshHost, noticeHost: notice, onRetry: () => { void load({ user: true, refresh: true }); },
+    focusFallback: searchInput, // a focused Retry whose line or block leaves on success lands on the search field, never on <body>
+    setTimeout: (fn, ms) => win.setTimeout(fn, ms), clearTimeout: id => win.clearTimeout(id) });
 
   const valid = (id, gen) => alive && serial === id && workspaceGeneration() === gen;
   function revealTab(control) {
@@ -183,9 +266,17 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     else if (box.right > right) tabs.scrollLeft += box.right - right;
   }
   const observed = () => deployment?.status === 'observed' ? deployment.workspaceStatus || null : null;
+  // A tab's count: the number, a pill reserving its width while the count is expected, nothing when it is not.
+  function paintCount(name, value) {
+    const el = counts.get(name);
+    if (value === 'pending') { if (!el.querySelector('.skeleton-pill')) el.replaceChildren(skeleton(doc, 'pill', { width: '1.6em' })); return; }
+    el.textContent = value === null ? '' : String(value);
+  }
   function updateCounts(souls) {
-    if (souls !== undefined) counts.get('souls').textContent = souls === null ? '' : String(souls);
-    counts.get('capabilities').textContent = catalog ? String(catalog.capabilities.length) : '';
+    if (souls !== undefined) soulsCount = souls;
+    paintCount('souls', soulsCount);
+    // Capabilities: the table's count; a pill while it is being read (or a transient gate holds it); nothing after a failed read or a terminal gate.
+    paintCount('capabilities', catalog ? catalog.capabilities.length : failure ? null : !gate(workspace, deployment) || gateTransient(workspace, deployment) ? 'pending' : null);
     const s = observed();
     // Setup and Teams carry no count: a dot says when something there needs attention.
     const teamsV2 = !!teamsCard();
@@ -211,29 +302,54 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     revealTab(controls.get(tab));
     return true;
   }
-  async function load() {
+  /** Read the catalog. `user`: a Retry (its completion is announced); `refresh`: bypass the server's
+   * held observation (Retry, and after a sync). The held table stays through the read: a failure
+   * marks it stale (the line above, with the cause and Retry) and a success replaces it in place. */
+  async function load({ user = false, refresh = false } = {}) {
     if (!alive || loading) return;
     const id = ++serial, gen = workspaceGeneration();
     if (rosterGen !== gen || gate(workspace, deployment)) { render(); return; }
-    loading = true; failure = ''; render();
+    // `failure` (the last cause) stays until the read settles: a page's stale line keeps its Details while its Retry runs.
+    loading = true; loadState.begin({ user }); updateCounts(); render(); onCatalog?.(); // a page's Retry wears the busy mark
     let result;
-    try { result = await postJson(ctx, `/api/workspace-sync${wsQuery()}`, { action: 'read' }); }
+    try { result = await postJson(ctx, `/api/workspace-sync${wsQuery()}`, { action: 'read', ...(refresh ? { refresh: true } : {}) }); }
     catch (error) { result = { status: 'unavailable', reason: { code: 'E_CLI_FAILED', message: error?.message || 'Reading the workspace capabilities failed.' } }; }
     if (!valid(id, gen)) return;
     loading = false;
-    if (result?.status === 'ok' && result.capabilities) catalog = result.capabilities;
-    else failure = reasonText(result?.reason) || 'The workspace capabilities could not be read.';
-    updateCounts(); render();
+    // spec 02 (additive, optional): `observedAt`; a failed re-read may still hand back the last good table
+    // (`status: 'ok'` with `reason`, or non-ok with `lastGood: { capabilities, observedAt }`): shown, marked stale.
+    const ok = result?.status === 'ok' && !!result.capabilities;
+    const held = ok ? result.capabilities : result?.lastGood?.capabilities || null;
+    const at = ok ? result.observedAt : result?.lastGood?.observedAt;
+    const observedAt = typeof at === 'string' ? at : null;
+    const reason = result?.reason || null;
+    if (held) catalog = held;
+    if (ok && !reason) { failure = ''; loadState.succeed({ observedAt, empty: !catalog.capabilities.length }); }
+    else {
+      failure = reasonText(reason) || 'The workspace capabilities could not be read.';
+      // A held table arriving with the failure is data: taken once (succeed) when nothing was shown yet; with a
+      // table on screen only fail() runs, updating the stale line in place (its Retry keeps focus, one announcement).
+      if (held && !loadState.hasData) loadState.succeed({ observedAt });
+      loadState.fail({ message: typeof reason?.message === 'string' && reason.message ? reason.message : 'The workspace capabilities could not be read.', code: typeof reason?.code === 'string' ? reason.code : null }, { observedAt });
+    }
+    updateCounts(); render(); onCatalog?.();
   }
-  function render() {
+  function render() { paint(); stickyTop.sync(); soulsEdge.sync(); }
+  function paint() {
     syncHeader();
     const unavailable = gate(workspace, deployment);
     const s = observed();
-    status.textContent = unavailable || (tab === 'capabilities' && loading && !catalog ? 'Reading the workspace capabilities (oats capabilities)…' : failure);
-    status.classList.toggle('error', !unavailable && !!failure);
-    retry.hidden = !!unavailable || !failure || tab !== 'capabilities';
+    // The gate's copy is its own truthful state (CLI, deployment); it is never a skeleton. The catalog's
+    // loading line, stale line and skeleton / failed host show on the Capabilities tab only.
+    status.textContent = unavailable;
+    const catalogTab = tab === 'capabilities' && !unavailable;
+    loadStatus.hidden = notice.hidden = capState.hidden = !catalogTab;
+    refreshHost.hidden = !catalogTab;
     // Identical polls never rebuild a settled projection under focus/selection.
-    const key = JSON.stringify([tab, setupView, setupMember, souls.map(a => a?.team ?? null), query, unavailable, loading, failure, filters, catalog, s, deployment?.withheld, deployment?.reachable, privateListed(), instances.map(i => [i.agent, i.agentsRoot, i.modules, i.running])]);
+    // (Not `loading` or `failure`: the controller paints those beside the projection, which must not rebuild for them.)
+    // The status's observation stamp moves on every poll and nothing here paints it: it is left out.
+    const stableStatus = s && { ...s, workspace: s.workspace && { ...s.workspace, observedAt: undefined } };
+    const key = JSON.stringify([tab, setupView, setupMember, souls.map(a => a?.team ?? null), query, unavailable, filters, catalog, stableStatus, rosterState(), deployment?.withheld, deployment?.reachable, privateListed(), instances.map(i => [i.agent, i.agentsRoot, i.modules, i.running])]);
     if (key === rendered) return;
     rendered = key;
     notes.replaceChildren(); filterHost.replaceChildren(); body.replaceChildren(); capLead.replaceChildren(); filterHost.className = '';
@@ -261,7 +377,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
       renderSetup(body, { status: s, instances, souls, cli: cliStatus(), view: setupView, selected: setupMember,
         onSelect: key => selectMember(key), onOpenRepo: openRepo, onOpenPackages: openPackages, openExternal: url => ctx.openExternal?.(url) }); return;
     }
-    if (!catalog) return;
+    if (!catalog) return; // pending, or failed with nothing held: the controller's skeleton or failed block stands in capState
     for (const problem of list(catalog.problems)) notes.append(node('p', reasonText(problem), 'catalog-note warn'));
     const names = memberNames(s);
     const sections = capabilitySections(catalog.capabilities);
@@ -276,7 +392,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
         filters = next; render(); refocusFilter(focused);
       } });
     renderCapabilitySections(body, { sections, shown, filterHost, navHost: capLead, privateListed: privateListed(), query,
-      status: s, instances, root: workspace?.id, onOpen: onOpenCapability });
+      status: s, instances, root: workspace?.id, rosterState: rosterState(), onOpen: onOpenCapability });
     reveal();
   }
   // Repo owned is shown only when the kernel lists private capabilities.
@@ -317,26 +433,39 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   panel.addEventListener('scroll', () => { if (tab === 'capabilities') syncCapabilityNav(body, panel, capLead); }, { passive: true });
   function updateRoster(agents, panelData) {
     const gen = workspaceGeneration();
-    if (rosterGen !== gen) { catalog = null; failure = ''; filters = { team: null, repo: null }; setupMember = null; serial++; loading = false; }
+    // Another workspace generation is another subject: the table is forgotten. Within one, it is never set to null.
+    if (rosterGen !== gen) { catalog = null; failure = ''; filters = { team: null, repo: null }; setupMember = null; serial++; loading = false; loadState.reset(); }
     rosterGen = gen; workspace = panelData.workspace || null; deployment = panelData.deployment || null; souls = list(agents);
     instances = list(panelData.instances);
     updateCounts(agents.length); render();
+    computerTeams?.syncRoster(); // the Teams page's members follow the roster poll
     // Read once per roster generation on any tab: the tab bar counts it.
     if (!catalog && !loading && !failure) void load();
+    // The catalog's age line (when the observation is old) follows the roster poll.
+    loadState.touch();
   }
+  /** The CLI probe settled or flipped: re-read. A held table stays (refreshing), it is not thrown away. */
   function syncCli() {
-    catalog = null; failure = ''; serial++; loading = false; updateCounts(); render();
+    failure = ''; serial++; if (loading) { loading = false; loadState.cancel(); } updateCounts(); render();
     void load();
   }
-  setTab('souls');
+  updateCounts(); setTab('souls');
   return {
     setTab, updateRoster, syncCli, get tab() { return tab; },
     /** What the capability table renders with (observed facts only), for pages that reuse it. */
-    context: () => ({ status: observed(), instances, root: workspace?.id, catalog: catalog?.capabilities ?? null }),
+    context: () => ({ status: observed(), instances, root: workspace?.id, rosterState: rosterState(), catalog: catalog?.capabilities ?? null,
+      // The catalog's loading state for pages rendered from it (item 7): its state, observation and the last failure's text.
+      catalogState: loadState.state, catalogSettled: loadState.settled, catalogBusy: loadState.busy, catalogObservedAt: loadState.observedAt, catalogFailure: failure || null }),
+    /** A page's Retry: re-read the catalog live (announced on completion). */
+    reload() { void load({ user: true, refresh: true }); },
+    /** The host roster's state changed without new rows (a failed poll): roster-derived cells follow (behind the render key). */
+    syncRoster() { render(); },
+    /** The host's roster read failed with nothing to show: the Souls count is nothing, still (not a pill). */
+    rosterUnavailable() { if (soulsCount === 'pending') updateCounts(null); },
     reset() {
       serial++; rosterGen = null; workspace = null; deployment = null; instances = []; catalog = null; loading = false; failure = '';
-      filters = { team: null, repo: null }; sync.reset(); updateCounts(null); render();
+      filters = { team: null, repo: null }; sync.reset(); loadState.reset(); updateCounts('pending'); render(); onCatalog?.();
     },
-    dispose() { alive = false; serial++; sync.dispose(); computerTeams?.dispose(); },
+    dispose() { alive = false; serial++; sync.dispose(); computerTeams?.dispose(); loadState.dispose(); stickyTop.dispose(); soulsEdge.dispose(); },
   };
 }

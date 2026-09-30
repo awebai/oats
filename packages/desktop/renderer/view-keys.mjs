@@ -26,7 +26,7 @@ export function resolveViewKey(e, actions, { isMac = /mac/i.test(navigator.platf
   const evChord = chordFromEvent(e, isMac);
   if (!evChord) return null;
   for (const a of actions) {
-    const bound = parseChord(binding(a.id) || "");
+    const bound = parseChord(binding(a.id, isMac) || "");
     if (bound && chordsEqual(bound, evChord, isMac)) return a.id;
   }
   return null;

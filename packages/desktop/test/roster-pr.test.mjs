@@ -10,7 +10,8 @@ import * as tree from '../renderer/instance-tree.mjs';
 import { instanceActions, captureInstanceActionMenu } from '../renderer/instance-actions.mjs';
 import { instanceActionTarget, sameInstanceActionTarget } from '../renderer/instance-action-target.mjs';
 import { instanceSplitPlan } from '../renderer/instance-split.mjs';
-import { runtimeState } from '../renderer/instance-presentation.mjs';
+import { runtimeState, unsupportedSession } from '../renderer/instance-presentation.mjs';
+import { canAddressRemote, rowReason } from '../renderer/remote-address.mjs';
 import { createRuntimeBadge } from '../renderer/identity-marks.mjs';
 import { iconElement } from '../renderer/shell-icons.mjs';
 import { rosterTipFacts } from '../renderer/roster-tip.mjs';
@@ -75,11 +76,12 @@ test('the shipped roster row: the chip beside the name, the link in the row tool
   const rows = new Map([[roster[0].home, pr(roster[0].home)], [roster[1].home, pr(roster[1].home, { number: 7, isDraft: true, url: null })], [roster[3].home, pr(roster[3].home)]]);
   const opened = [], tips = new Map();
   const context = {
-    ...tree, document: doc, instanceActions, captureInstanceActionMenu, runtimeState, createRuntimeBadge, instanceActionTarget, instanceSplitPlan,
+    ...tree, document: doc, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge, instanceActionTarget, instanceSplitPlan,
     iconElement, prChip, prText, rosterPrs: { get: home => rows.get(home) ?? null }, ctx: { openExternal: url => opened.push(url) },
     rosterTip: { bind(el, facts) { tips.set(el.dataset.treeInstance, facts); }, hide() {}, sync() {} }, rosterTipFacts,
     connectionGeneration: 0, menuState() {}, runAction: assert.fail, getBinding: () => null, formatChord: c => c, isMac: true,
     contextRosterEl: doc.querySelector('#instance-roster'), contextFilter: '', contextWorkspace: 'A', contextInstances: roster,
+    rosterState: { hasData: true, state: 'ready' }, rosterStale: false, contextDeploymentNote: null, // the roster's loading state (instance-tree createRosterLoading): a read succeeded
     currentWorkspace: () => 'A', workspaceGeneration: () => 0, collapsedInstances: new Set(), tabs: new Map(), activeTab: null,
     tabOpenIntents: { applyFocus: fn => fn() }, openTerminalTab: assert.fail, openInstanceStart: assert.fail, onRosterRowKey: assert.fail,
     api: assert.fail, showStage: assert.fail, updateActiveContexts() {}, applyChordTitles() {},
@@ -89,8 +91,15 @@ test('the shipped roster row: the chip beside the name, the link in the row tool
   runInNewContext(`${source}\nrenderContextRoster`, context)(roster);
   const at = name => [...doc.querySelectorAll('.ctx-tree-row')].find(r => r.querySelector('.ctx-name').textContent === name);
   const withPr = at('with-pr');
-  const chip = withPr.querySelector('.ctx-name-line > .ctx-pr');
-  assert.equal(chip.textContent, '#231'); assert.equal(chip.previousElementSibling.className, 'ctx-name', 'right after the name');
+  // Human, 2026-09-29: the chip moved from the name line to the meta line, before the branch.
+  const chip = withPr.querySelector('.ctx-meta.ctx-meta-pr > .ctx-pr');
+  assert.equal(chip.textContent, '#231');
+  assert.equal(chip.previousElementSibling.className, 'ctx-meta-lead', 'after the repository');
+  assert.match(chip.previousElementSibling.textContent, / ·$/);
+  const branch = chip.nextElementSibling;
+  assert.ok(!branch || branch.className === 'ctx-meta-tail', 'the branch (if any) follows the chip');
+  assert.equal(withPr.querySelector('.ctx-copy').firstElementChild.className, 'ctx-name', 'the name line holds only the name');
+  assert.equal(withPr.querySelector('.ctx-name').children.length, 0);
   assert.equal(withPr.querySelector('.ctx-inst a, .ctx-inst button'), null, 'the row button holds no nested control');
   const open = withPr.querySelector('.ctx-row-tools button.ctx-pr-open');
   assert.equal(open.getAttribute('aria-label'), "Open with-pr's pull request #231 · open on GitHub");
@@ -99,6 +108,6 @@ test('the shipped roster row: the chip beside the name, the link in the row tool
   const draft = at('draft-no-url');
   assert.equal(draft.querySelector('.ctx-pr').dataset.prState, 'draft');
   assert.equal(draft.querySelector('.ctx-pr-open'), null, 'no web address: no link');
-  assert.equal(at('none').querySelector('.ctx-pr, .ctx-pr-open, .ctx-name-line'), null, 'no PR: the row is unchanged');
+  assert.equal(at('none').querySelector('.ctx-pr, .ctx-pr-open, .ctx-meta-pr'), null, 'no PR: the row is unchanged');
   assert.equal(at('remote').querySelector('.ctx-pr'), null, 'a remote instance never shows a local read');
 });

@@ -167,7 +167,9 @@ test('mint collision cannot alias another confirmation or dispatch with its ref 
   assert.equal((await f.send({ action: 'apply', spawnRef: first.spawnRef })).reason.code, 'E_BUSY'); assert.equal(f.calls.length, 0);
 });
 test('bloated kernel payloads are not retained: 32 intents fit the byte budget, the 33rd is refused by count', async () => {
-  const v = applyPreview(target); v.skills = Array(512).fill('界'.repeat(512)); v.capabilities = [...v.skills]; v.modules = [...v.skills];
+  const v = applyPreview(target); v.skills = Array(512).fill('界'.repeat(512)); v.capabilities = [...v.skills];
+  // modules[] is projected (names and sources only): the bloat its rows carry beside them is not.
+  if (Array.isArray(v.modules)) v.modules = v.modules.map(m => ({ ...m, declares: [...v.skills], from: { ...m.from, integrity: '界'.repeat(4096) } }));
   const f = fixture({ read: () => ({ status: 'available', data: v }) });
   for (let i = 0; i < 32; i++) { const r = await f.send(prepare()); assert.equal(r.status, 'prepared'); assert.doesNotMatch(JSON.stringify(r), /界/); }
   assert.equal((await f.send(prepare())).reason.code, 'E_BUSY'); assert.equal(f.calls.length, 0);

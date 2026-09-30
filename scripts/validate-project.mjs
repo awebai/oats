@@ -51,6 +51,7 @@ try { checkReleaseVersions(root); } catch (error) { fail(`release manifests: ${e
 let manifests = 0;
 for (const path of [
   ...walk(join(root, "capabilities"), (p) => basename(p) === "oats.json"),
+  ...walk(join(root, "mirrors"), (p) => basename(p) === "oats.json"),
   ...walk(join(root, "oats-package"), (p) => basename(p) === "oats.json"),
 ]) {
   manifests++;
@@ -63,7 +64,7 @@ if (existsSync(join(root, "oats-config.yaml"))) fail("oats-config.yaml: the 0.25
 
 // Public Markdown set: local links/anchors and v2 declaration YAML examples.
 const markdown = [join(root, "README.md"), ...walk(join(root, "docs"), (p) => extname(p) === ".md")];
-for (const dir of walk(join(root, "capabilities"), (p) => basename(p) === "README.md")) markdown.push(dir);
+for (const dir of ["capabilities", "mirrors"]) markdown.push(...walk(join(root, dir), (p) => basename(p) === "README.md"));
 markdown.push(join(root, "packages", "pi", "README.md"));
 markdown.push(...walk(join(root, "oats-package"), (p) => extname(p) === ".md"));
 const publicMarkdown = [...new Set(markdown.filter(existsSync))].sort();
@@ -73,6 +74,7 @@ const exampleMarkdown = [...new Set([
   ...publicMarkdown.filter((p) => !relative(root, p).startsWith(`docs${sep}design${sep}`)),
   ...walk(join(root, "skills"), (p) => basename(p) === "SKILL.md"),
   ...walk(join(root, "capabilities"), (p) => basename(p) === "SKILL.md"),
+  ...walk(join(root, "mirrors"), (p) => basename(p) === "SKILL.md"),
 ].filter(existsSync))].sort();
 
 function slugHeadings(text) {

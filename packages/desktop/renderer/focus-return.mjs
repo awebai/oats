@@ -6,6 +6,9 @@ export function captureFocusReturn(doc) {
   const id = original?.id;
   const treeInstance = original?.dataset?.treeInstance;
   const treeControl = original?.dataset?.treeControl;
+  // A roster row's tools (Start…, the actions menu) are shown only while their row has focus:
+  // when one of them can't take focus back, its row can (spec F audit).
+  const rowInstance = original?.closest?.('.ctx-tree-row')?.querySelector?.('.ctx-inst')?.dataset?.treeInstance;
   const ancestors = [];
   for (let node = original?.parentElement; node; node = node.parentElement) {
     if (node.id && !node.closest('.palette-overlay')) ancestors.push(node.id);
@@ -26,6 +29,10 @@ export function captureFocusReturn(doc) {
       const replacement = [...doc.querySelectorAll('[data-tree-instance][data-tree-control]')]
         .find(el => el.dataset.treeInstance === treeInstance && el.dataset.treeControl === treeControl && eligible(el));
       if (replacement) return replacement;
+    }
+    if (rowInstance) {
+      const row = [...doc.querySelectorAll('.ctx-inst[data-tree-instance]')].find(el => el.dataset.treeInstance === rowInstance && eligible(el));
+      if (row) return row;
     }
     for (const parentId of ancestors) {
       const replacement = [...(doc.getElementById(parentId)?.querySelectorAll('input, button, [tabindex="0"]') || [])].find(eligible);

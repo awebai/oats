@@ -2,6 +2,12 @@
    design tokens (scoped under .oats-view); the chrome uses the same tokens. */
 * { box-sizing: border-box; }
 html, body, #app { height: 100%; margin: 0; }
+/* An app shell: the document never scrolls (spec G). Every view scrolls inside its own container;
+   anything that escapes one (an absolute element with no positioned ancestor) is contained by the
+   positioned, clipped body instead of stretching the document. html's clip reaches the viewport as
+   hidden, which still allows programmatic scrolling, so the body is what leaves nothing to scroll. */
+html { overflow: clip; }
+body { position: relative; overflow: clip; }
 body {
   background: var(--bg);
   color: var(--fg);
@@ -9,25 +15,6 @@ body {
 }
 #app { display: flex; }
 #workbench { flex: 1; min-width: 0; min-height: 0; display: flex; container-type: inline-size; }
-/* Status bar (Redesign v3): 26px, 11px muted; facts left, layout tools right. */
-#context-tools { box-sizing: border-box; height: 26px; flex: none; display: flex; align-items: center; justify-content: flex-end;
-                 gap: 6px; padding: 0 8px 0 12px; border-top: 1px solid var(--border); background: var(--surface);
-                 color: var(--muted); font-size: 11px; }
-.context-status { flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px; color: var(--fg); overflow: hidden; white-space: nowrap; }
-.context-status > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.context-status-branch { display: flex; align-items: center; gap: 5px; font-family: ui-monospace, Menlo, monospace; }
-.context-status-branch > .shell-icon { width: 12px; height: 12px; flex: none; }
-.context-status-branch > span { overflow: hidden; text-overflow: ellipsis; }
-.context-status-harness, .context-status-tmux { display: flex; align-items: center; gap: 6px; }
-.context-status-harness .runtime-badge { width: 16px; height: 16px; border-radius: 4px; font-size: 9px; }
-.context-status-muted { color: var(--muted); }
-.context-status-tmux { font-family: ui-monospace, Menlo, monospace; }
-.context-status-tmux > .shell-icon { width: 12px; height: 12px; flex: none; }
-#context-tools button { border: 0; border-radius: 4px; padding: 2px 8px; font: inherit; font-size: 11px;
-                       background: var(--surface); color: var(--muted); cursor: pointer; }
-#context-tools button:hover { background: var(--surface-2); color: var(--fg); }
-#context-tools button[aria-pressed="true"] { background: var(--sel); color: var(--accent); }
-#context-tools button:disabled { cursor: default; color: var(--faint); }
 /* Narrow workbenches stack details below the main surface, never over a live
    terminal or inside an editor group. The original groups/proportions survive. */
 @media (max-width: 1000px) {
@@ -36,10 +23,19 @@ body {
     border-left: 0; border-top: 1px solid var(--border); }
   #workbench > #context-panel.context-panel.is-collapsed { flex: 0 0 34px; min-height: 34px; }
   #workbench > #context-panel .context-panel-rail { flex-direction: row; }
-  #workbench > #context-panel .context-panel-expand { min-height: 32px; }
+  /* In the row rail, margin-top:auto would pull the expand control off the centre line. */
+  #workbench > #context-panel .context-panel-expand { min-height: 32px; margin-top: 0; }
 }
 #context-panel .soul-inspector { width: 100%; max-width: none; flex: 1; border: 0; overflow: auto; }
-#app.focus-mode #sidebar, #app.focus-mode.sidebar-hidden #sidebar-restore { display: none; }
+#app.focus-mode #sidebar { display: none; }
+/* Focus mode hides the sidebar, so the restore edge (below) is also its visible exit: sidebar.toggle leaves focus mode. */
+#app.focus-mode #sidebar-restore {
+  display: flex; align-items: center; justify-content: center;
+  width: 14px; min-width: 14px; padding: 0; border: 0; border-right: 1px solid var(--border);
+  background: var(--surface); color: var(--muted); font-size: 13px; cursor: pointer;
+}
+#app.focus-mode #sidebar-restore:hover { color: var(--fg); background: var(--surface-2); }
+#app.focus-mode #sidebar-restore:focus-visible { color: var(--fg); background: var(--sel); }
 /* Hideable sidebar: terminals get the full window width. Class-driven so the
    toggle is one line of JS; every terminal tab's ResizeObserver refits xterm
    when the panes change size. */
@@ -53,9 +49,8 @@ body {
   width: 14px; min-width: 14px; padding: 0; border: 0; border-right: 1px solid var(--border);
   background: var(--surface); color: var(--muted); font-size: 13px; cursor: pointer;
 }
-#app.sidebar-hidden #sidebar-restore:hover,
-#app.sidebar-hidden #sidebar-restore:focus-visible { color: var(--fg); background: var(--surface-2); }
-#app.sidebar-hidden #sidebar-restore:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+#app.sidebar-hidden #sidebar-restore:hover { color: var(--fg); background: var(--surface-2); }
+#app.sidebar-hidden #sidebar-restore:focus-visible { color: var(--fg); background: var(--sel); }
 
 /* ── nav rail ── */
 #sidebar {
@@ -74,7 +69,7 @@ body {
               border: 0; border-radius: 6px; background: transparent; color: var(--fg);
               font-family: inherit; font-size: 13.5px; line-height: 1.2; font-weight: 700; cursor: pointer; text-align: left; }
 #ws-trigger:hover { background: var(--surface-2); }
-#ws-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+#ws-trigger:focus-visible { background: var(--sel); } /* the id rule above outranks the global tint */
 /* Brand stays a single 24px mark; the two-line copy flexes, never the icon. */
 .ws-brand-mark { width: 24px; height: 24px; flex: none; display: grid; place-items: center; }
 /* The supplied artwork (transparent ground) at 2x; decorative — the
@@ -89,9 +84,10 @@ body {
 .ws-menu { position: absolute; z-index: 40; top: calc(var(--bar-h) - 1px); left: 8px; width: min(300px, calc(100vw - 16px)); padding: 6px;
            border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: var(--shadow-popover); }
 .ws-menu[hidden], .ws-modal[hidden] { display: none; }
+/* Bare search inputs (no wrapper): their own 1px border is the single frame (rule 3). */
 #ws-menu-search, #ws-suggestion-search { width: 100%; height: 32px; padding: 0 9px; border: 1px solid var(--border);
-  border-radius: 7px; background: var(--surface); color: var(--fg); font-family: inherit; font-size: 12px; line-height: 1; }
-#ws-menu-search:focus, #ws-suggestion-search:focus { border-color: var(--accent); }
+  border-radius: 7px; background: var(--surface); color: var(--fg); font-family: inherit; font-size: 12px; line-height: 1; outline: none; }
+#ws-menu-search:focus-visible, #ws-suggestion-search:focus-visible { border-color: var(--accent); }
 #ws-menu-search::placeholder, #ws-suggestion-search::placeholder { color: var(--faint); }
 .ws-options { max-height: 238px; overflow-y: auto; padding: 5px 0; }
 .ws-menu-empty { margin: 4px 8px 8px; color: var(--muted); font-size: 12px; line-height: 1.5; }
@@ -100,7 +96,7 @@ body {
              padding: 8px; border: 0; border-radius: 6px; background: transparent; color: var(--fg);
              font: inherit; text-align: left; cursor: pointer; }
 .ws-option:hover { background: var(--surface-2); }
-.ws-option:focus-visible { background: var(--sel); outline: 2px solid var(--accent); outline-offset: -2px; }
+.ws-option:focus-visible { background: var(--sel); }
 .ws-option[aria-selected="true"] { background: var(--sel); }
 .ws-check { color: var(--accent); font-weight: 750; }
 .ws-option-copy { min-width: 0; }
@@ -137,6 +133,9 @@ body {
 .ctx-count { margin-left: auto; display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11.5px; font-weight: 500;
              white-space: nowrap; }
 .ctx-count-dot { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--accent); }
+/* Search field (rule 3): the wrapper's border is the only frame, accent on focus-within;
+   the input inside is borderless and never draws an outline (board 7 "Before" shows the
+   old inner 2px ring). */
 .ctx-filter-field { display: flex; align-items: center; gap: 7px; margin: 2px 10px 6px; height: 30px; flex: none;
                     min-width: 0; padding: 0 10px; border: 1px solid var(--border); border-radius: 7px;
                     background: var(--bg); color: var(--muted); }
@@ -145,17 +144,34 @@ body {
 .ctx-filter-icon > .shell-icon { width: 12px; height: 12px; }
 .ctx-filter-field .shortcut-hint { color: var(--muted); }
 .ctx-filter { margin: 0; min-width: 0; width: 100%; height: 100%; flex: 1; padding: 0;
-              border: 0; border-radius: 4px; background: var(--bg); color: var(--fg);
+              border: 0; border-radius: 4px; background: var(--bg); color: var(--fg); outline: none;
               font-family: inherit; font-size: 12px; line-height: 1; }
 .ctx-filter::placeholder { color: var(--muted); }
 .ctx-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 8px 8px; }
-/* Agent groups (Workspace v4): a 14px gap, no title; the separator names the group for AT. */
+/* Loading states (renderer/loading.mjs): the stale line sits between the filter and the list;
+   "Refreshing…" closes the head after the count; the count's skeleton pill keeps its width. */
+.ctx-status { flex: none; margin: 0 10px 6px; }
+.ctx-status:empty { display: none; }
+.ctx-head > .loading-refreshing { flex: none; margin-left: 6px; }
+.ctx-count .skeleton-pill { width: 5.5em; }
+.ctx-count-reserve { display: inline-block; width: 5.5em; height: 1em; } /* failed: the pill's box, nothing in it */
+/* A stale count is the last observation: muted, its dot no longer the live accent. */
+.ctx-count[data-stale] { color: var(--muted); }
+.ctx-count[data-stale] .ctx-count-dot { background: var(--muted); }
+/* Agent groups (Workspace v4): a 14px gap, no title; the separator names the group for AT.
+   The first one sits just under the filter, so it is shorter (human, 2026-09-29). */
 .ctx-group { height: 14px; }
-/* One instance row: the design's tree at a slightly roomier 50px (human
-   preference over the design's 44px), 18px per level; the row (not the
-   button) carries hover/selection so it spans the indent like the design. */
-.ctx-tree-row { --tree-step: 18px; --row-solid: var(--surface); position: relative; width: 100%; min-height: 50px;
-                display: flex; align-items: center; border-radius: 7px;
+.ctx-group:first-child { height: 7px; }
+/* One instance row: a 48px box, 18px per level; the row (not the button)
+   carries hover/selection so it spans the indent like the design. Its
+   background fills 44px, clipped inside 2px transparent borders top and
+   bottom, so neighbouring backgrounds never touch (human, 2026-09-29) while
+   the connectors, which span the whole box, stay continuous. The vertical
+   radius adds the border so the painted corners stay 7px round. */
+.ctx-tree-row { --tree-step: 18px; --row-gap: 2px; --row-solid: var(--surface); position: relative; width: 100%; min-height: 48px;
+                box-sizing: border-box; display: flex; align-items: center;
+                border-top: var(--row-gap) solid transparent; border-bottom: var(--row-gap) solid transparent;
+                background-clip: padding-box; border-radius: 7px / 9px;
                 padding-left: calc(var(--depth) * var(--tree-step)); }
 .ctx-tree-row:hover { --row-solid: var(--surface-2); background: var(--surface-2); }
 .ctx-tree-row.active { --row-solid: var(--sel); background: var(--sel); }
@@ -163,12 +179,19 @@ body {
                  display: flex; align-items: center; gap: 4px; padding-left: 6px;
                  background: var(--row-solid); visibility: hidden; }
 .ctx-tree-row:is(:hover, :focus-within) > .ctx-row-tools { visibility: visible; }
+/* The actions menu is a top-layer popover inside the tools: with the pointer in it the row is neither :hover nor
+   :focus-within, so the tools stay visible while their menu is open (else the menu inherits hidden and cannot be clicked). */
+.ctx-tree-row > .ctx-row-tools:has(.ctx-instance-menu:popover-open) { visibility: visible; }
 .ctx-actions { flex: none; display: flex; }
 .ctx-instance-actions { appearance: none; width: 24px; height: 24px; display: grid; place-items: center;
   flex: none; border: 0; border-radius: 6px; padding: 0;
   background: transparent; color: var(--muted); font: inherit; cursor: pointer; }
-.ctx-instance-actions:hover, .ctx-instance-actions:focus { background: var(--surface-2); color: var(--fg); }
-.ctx-instance-actions:disabled { color: var(--muted); cursor: default; }
+/* :focus-visible, not :focus: the menu trigger is focused again when its menu closes
+   after a click, and that must not paint it (rule 2). Keyboard focus (Escape/Tab out of
+   the menu) takes the tint like every other control. */
+.ctx-instance-actions:hover { background: var(--surface-2); color: var(--fg); }
+.ctx-instance-actions:focus-visible { background: var(--sel); color: var(--fg); }
+.ctx-instance-actions:disabled, .ctx-instance-actions[aria-disabled="true"] { color: var(--muted); cursor: default; }
 .ctx-instance-menu { position: fixed; inset: auto; margin: 0; width: 240px; max-width: calc(100vw - 16px);
   max-height: calc(100vh - 16px); overflow-y: auto;
   padding: 6px; background: var(--surface); color: var(--fg); border: 1px solid var(--border);
@@ -180,7 +203,6 @@ body {
 .ctx-instance-menu button kbd { color:var(--muted); font:10.5px var(--mono); }
 .ctx-instance-menu button [hidden] { display:none; }
 .ctx-instance-menu button:hover, .ctx-instance-menu button:focus-visible { background: var(--sel); }
-.ctx-instance-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .ctx-instance-menu button[data-action="retire"], .ctx-instance-menu button.danger { color: var(--danger); }
 /* Dark danger ink is AA on raised, not selected. Preserve its semantic color. */
 .ctx-instance-menu button[data-action="retire"]:is(:hover, :focus-visible),
@@ -188,7 +210,7 @@ body {
 .ctx-instance-menu button:disabled { background: var(--surface-2); color: var(--faint); cursor: default; }
 .ctx-start { flex: none; padding: 2px 7px; font-size: 11.5px; line-height: 1.4; color: var(--accent); background: var(--surface);
   border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
-.ctx-start:disabled { color: var(--muted); cursor: default; }
+.ctx-start:disabled, .ctx-start[aria-disabled="true"] { color: var(--muted); cursor: default; } /* stale (aria-disabled) reads like disabled */
 .instance-start-modal { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center;
   background: var(--scrim); padding: 24px; }
 .instance-start-dialog { width: min(560px, 100%); max-height: 90vh; overflow: auto; padding: 20px;
@@ -211,17 +233,19 @@ body {
 .launch-config-editor { margin-top: 12px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; }
 .launch-config-editor summary { cursor: pointer; }
 .launch-preview-output { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: var(--surface-2); max-height: 240px; overflow: auto; }
-.ctx-inst { position: relative; min-width: 0; flex: 1; min-height: 50px; height: auto; display: flex; align-items: center; gap: 9px;
+.ctx-inst { position: relative; min-width: 0; flex: 1; min-height: 44px; height: auto; display: flex; align-items: center; gap: 9px;
             padding: 0 8px 0 10px; border: 0; border-radius: 7px; background: none; color: var(--fg);
             font: inherit; text-align: left; cursor: pointer; }
-.ctx-inst:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.ctx-inst.idle, .ctx-inst:disabled { color: var(--muted); }
-.ctx-inst:disabled { cursor: default; }
+.ctx-inst.idle, .ctx-inst:disabled, .ctx-inst[aria-disabled="true"] { color: var(--muted); }
+.ctx-inst:disabled, .ctx-inst[aria-disabled="true"] { cursor: default; }
 /* Connectors sit on each dot's centre column (10px inset + 4px radius):
    solid rounded elbows into children, pass-throughs for open branches,
-   dotted dot-to-dot sibling links. Dots paint above them with a surface
-   ring, so every line appears to leave the dot itself. */
-.ctx-guides { position: absolute; inset: 0 auto 0 0; width: 100%; pointer-events: none; }
+   dotted dot-to-dot sibling links. Dots paint above them with a ring in the
+   row's own solid colour (--row-solid: surface, hover surface-2, selected sel),
+   so every line appears to leave the dot itself and a running dot stays solid
+   on the tint instead of reading hollow inside a white halo. */
+/* The guides span the row's transparent borders too, so lines cross the gap between rows. */
+.ctx-guides { position: absolute; inset: calc(-1 * var(--row-gap)) auto calc(-1 * var(--row-gap)) 0; width: 100%; pointer-events: none; }
 .ctx-guide { position: absolute; box-sizing: border-box; width: 0;
              left: calc(13.25px + var(--guide-level) * var(--tree-step));
              border-left: 1.5px solid var(--tree-line); }
@@ -234,7 +258,7 @@ body {
 .ctx-guide.link-out { top: 50%; bottom: 0; }
 .ctx-guide.link-through { top: 0; bottom: 0; }
 .ctx-dot { position: relative; z-index: 1; box-sizing: border-box; width: 8px; height: 8px; flex: none; border-radius: 50%;
-           border: 1.5px solid var(--faint); background: var(--surface); box-shadow: 0 0 0 2px var(--surface); }
+           border: 1.5px solid var(--faint); background: var(--surface); box-shadow: 0 0 0 2px var(--row-solid, var(--surface)); }
 .ctx-dot.on { border-color: var(--accent); background: var(--accent); }
 .ctx-dot.unknown { border-color: var(--warn); background: var(--warn); }
 .ctx-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
@@ -279,7 +303,8 @@ body {
 .ws-suggestion { width: 100%; display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 9px; padding: 10px;
                  border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--fg);
                  font: inherit; text-align: left; cursor: pointer; }
-.ws-suggestion:hover, .ws-suggestion:focus-visible { background: var(--surface-2); }
+.ws-suggestion:hover { background: var(--surface-2); }
+.ws-suggestion:focus-visible { background: var(--sel); }
 .ws-suggestion:disabled { cursor: default; }
 .ws-suggestion:disabled:hover { background: transparent; }
 .ws-suggestion[aria-checked="true"] { border-color: var(--accent); background: var(--sel); }
@@ -297,9 +322,9 @@ body {
                          font-family: inherit; font-size: 12px; line-height: 1; font-weight: 650; cursor: pointer; }
 .ws-dialog-foot .secondary { background: var(--surface); color: var(--fg); }
 .ws-dialog-foot .secondary:hover { background: var(--surface-2); }
+.ws-dialog-foot .secondary:focus-visible { background: var(--sel); }
 .ws-dialog-foot .primary { border-color: var(--primary-bg); background: var(--primary-bg); color: var(--primary-fg); }
 .ws-dialog-foot button:disabled { cursor: default; border-color: var(--border); background: var(--surface-2); color: var(--faint); }
-.ws-dialog button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ── main / tabs ── */
 #main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -321,8 +346,8 @@ body {
 #tab-actions button { appearance: none; border: 0; border-radius: 6px; background: none; color: var(--muted);
                       display: grid; place-items: center; width: 28px; height: 28px; flex: none;
                       font: inherit; font-size: 14px; padding: 0; cursor: pointer; }
-#tab-actions button:hover:not(:disabled), #tab-actions button:focus-visible { color: var(--fg); background: var(--surface-2); }
-#tab-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+#tab-actions button:hover:not(:disabled) { color: var(--fg); background: var(--surface-2); }
+#tab-actions button:focus-visible { color: var(--fg); background: var(--sel); }
 #tab-actions button:disabled { color: var(--faint); cursor: default; }
 /* Strips scroll instead of compressing tab identity to a few characters.
    Keep the existing long-label cap; full names remain in title/ARIA. */
@@ -338,6 +363,7 @@ body {
 .tab-trigger, .tab .close {
   appearance: none; border: 0; background: none; color: inherit; font: inherit; cursor: pointer;
 }
+.tab-trigger:focus-visible { background: var(--sel); }
 /* dot · name · branch (Redesign v3): the name keeps priority, the branch
    takes what is left and ellipsizes first. */
 .tab-trigger { align-self: stretch; display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto;
@@ -352,7 +378,8 @@ body {
 .tab .close { display: grid; place-items: center; flex: none; width: 20px; height: 20px; color: var(--faint);
               margin: 0; padding: 0; border-radius: 4px; font-size: 13px; }
 .tab .close > .shell-icon { width: 13px; height: 13px; }
-.tab .close:hover, .tab .close:focus-visible { color: var(--fg); background: var(--surface-2); }
+.tab .close:hover { color: var(--fg); background: var(--surface-2); }
+.tab .close:focus-visible { color: var(--fg); background: var(--sel); }
 #tabhost { flex: 1; position: relative; min-height: 0; }
 /* ── editor groups: one .group-cell per group becomes a flex cell of #tabhost;
    each cell stacks its own tab strip (.group-tabbar — the group's REAL tab
@@ -363,7 +390,8 @@ body {
 #tabhost.split-col { display: flex; flex-direction: column; }
 .group-cell { display: flex; flex-direction: column; flex: 1 1 0; min-width: 0; min-height: 0; position: relative; }
 .group-cell.focused-group { outline: 1px solid var(--accent); outline-offset: -1px; }
-.split-empty:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
+/* A whole empty pane does not tint on keyboard focus; the global 1px edge marks it. */
+.split-empty:focus-visible { background: var(--term-bg); }
 .split-resizer { position: absolute; z-index: 8; touch-action: none; }
 .split-resizer[data-orientation="row"] { top: 0; bottom: 0; right: -3px; width: 6px; cursor: col-resize; }
 .split-resizer[data-orientation="col"] { left: 0; right: 0; bottom: -3px; height: 6px; cursor: row-resize; }
@@ -407,6 +435,19 @@ body {
   padding: 10px 14px; background: var(--surface); color: var(--fg); border: 1px solid var(--border);
   border-radius: 8px; z-index: 6; font-size: 13px; }
 .term-attachment-status[hidden] { display: none; }
+/* A lost remote link: the strip overlays the pane's top rows, so the terminal keeps its
+   geometry (no refit) and its scrollback stays readable, undimmed, under it. */
+.term-reconnect { position: absolute; top: 0; left: 0; right: 0; z-index: 6; display: flex; align-items: center; gap: 12px;
+  padding: 6px 10px 6px 16px; background: var(--surface); color: var(--fg); border-bottom: 1px solid var(--border); font-size: 13px; }
+.term-reconnect-text { flex: 1; min-width: 0; color: var(--fg); }
+.term-reconnect button { flex: none; min-height: 26px; padding: 0 11px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--fg); font-family: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
+.term-reconnect button:hover { background: var(--surface-2); }
+.term-reconnect button:focus-visible { background: var(--sel); }
+.term-reconnect button[aria-disabled="true"] { cursor: default; }
+/* Visually hidden, announced: the pane's reconnect state changes. */
+.term-sr-only { position: absolute; top: 0; left: 0; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap; }
 
 /* ── command palette (⌘K) ── */
 .palette-overlay {
@@ -422,7 +463,7 @@ body {
   width: 100%; min-height: 48px; background: var(--surface); color: var(--fg); border: none;
   border-bottom: 1px solid var(--border); padding: 12px 16px; font-family: inherit; font-size: 13px; line-height: 1.45;
 }
-.palette-input:focus-visible { outline-offset: -2px; }
+/* The palette input's only frame is its bottom rule; focus turns it accent (theme.css field rule). */
 .palette-input::placeholder { color: var(--faint); }
 .palette-list { max-height: 46vh; overflow-y: auto; padding: 6px; }
 .palette-item {
@@ -451,8 +492,6 @@ body {
   color: var(--fg); font-family: inherit; font-size: 12px; line-height: 1; padding: 6px 9px; cursor: pointer;
 }
 .kb-reset-all:hover, .kb-close:hover, .kb-reset:hover { background: var(--surface-2); }
-.kb-reset-all:focus-visible, .kb-close:focus-visible, .kb-reset:focus-visible,
-.kb-chord:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .kb-hint { margin: 0; padding: 8px 16px; color: var(--muted); font-size: 11.5px; border-bottom: 1px solid var(--border); }
 .kb-body { overflow-y: auto; padding: 6px 10px 12px; }
 .kb-context { margin: 12px 6px 4px; color: var(--muted); font-size: 10.5px; font-weight: 650;
@@ -461,6 +500,11 @@ body {
 .kb-row:hover { background: var(--surface-2); }
 .kb-label { flex: 1; color: var(--fg); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kb-conflict { color: var(--warn); font-size: 11px; }
+.kb-clashes { margin: 0; padding: 8px 16px; color: var(--warn); font-size: 12px; border-bottom: 1px solid var(--border); }
+/* The footer shortcuts button, while a stored rebind clashes (keymapConflicts): a warn dot. */
+#sidebar-shortcuts { position: relative; }
+#sidebar-shortcuts.has-clash::after { content: ""; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px;
+  border-radius: 50%; background: var(--warn); }
 .kb-chord {
   min-width: 92px; padding: 5px 9px; border: 1px solid var(--border); border-radius: 6px;
   background: var(--bg); color: var(--fg); font: 12px/1 ui-monospace, monospace;
@@ -473,4 +517,3 @@ body {
 /* forge-roster: open the row's pull request (the chip on the name line says which). */
 .ctx-pr-open { flex: none; display: grid; place-items: center; width: 24px; height: 22px; padding: 0; color: var(--accent); background: var(--surface);
   border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
-.ctx-pr-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

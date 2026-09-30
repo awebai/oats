@@ -21,7 +21,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { buildNorthwind } from "./fixtures/northwind/build.mjs";
 import { prepareInstance, ensureWorkspaceSoul, toCapabilityRows, modulesPreview, materializePrepared } from "../lib/instance-resolution.mjs";
 import { spawnInstanceAsync, findAgent, retireInstance, composeInstanceAgentsMd, planInstanceResources } from "../lib/core.mjs";
@@ -110,7 +110,7 @@ test("H1/M3/M11/S1: a prepared spawn runs with the resolution's capability rows 
     assert.equal(okf.layer, "knowledge"); assert.equal(okf.origin, "package:oats.okf@2.1.3"); assert.equal(okf.trusted, true);
     assert.equal(okf.settings["state-dir"], "/tmp/x", "the merged provider payload is the row's settings");
     assert.deepEqual(okf.hooks.sort(), ["retire", "spawn"]);
-    assert.equal(okf.skills.length, 1); assert.ok(okf.skills[0].startsWith(join(home, ".agents", "skills", "oats.okf")), "skill paths point INTO the home");
+    assert.equal(okf.skills.length, 1); assert.equal(dirname(okf.skills[0]), join(home, ".agents", "skills"), "skill paths point INTO the home, flat");
     const okfRuntime = meta.capabilityRuntime.find((c) => c.id === "oats.okf");
     assert.match(okfRuntime.hooks.spawn, /^node '.*\/\.oats\/modules\/oats\.okf\/bin\/oats-okf\.mjs' spawn$/, "hooks are shell strings into the module copy (what the runner and retire execute)");
     assert.match(okfRuntime.hooks.retire, /^node '.*\/\.oats\/modules\/oats\.okf\/bin\/oats-okf\.mjs' retire$/);
@@ -133,7 +133,7 @@ test("H1/M3/M11/S1: a prepared spawn runs with the resolution's capability rows 
     assert.deepEqual(meta.composition.expected.filter((r) => r.type === "instruction-block").map((r) => r.source).filter((s) => s.startsWith("capability:")), capabilityMarkers, "S1: composition.expected carries the capability blocks");
     assert.deepEqual(meta.composition.materialized.instructions.map((b) => b.source).filter((s) => s.startsWith("capability:")), capabilityMarkers);
     const expectedOkfSkill = meta.composition.expected.find((r) => r.type === "skill-tree" && r.source === "oats.okf");
-    assert.equal(expectedOkfSkill.deferred, "materialize"); assert.equal(expectedOkfSkill.resolved, join(home, ".agents", "skills", "oats.okf"), "deferred module skills resolve to the landed copy");
+    assert.equal(expectedOkfSkill.deferred, "materialize"); assert.equal(expectedOkfSkill.resolved, join(home, ".agents", "skills"), "deferred module skills resolve to the flat skills root they landed in");
     const expectedOkfInject = meta.composition.expected.find((r) => r.type === "injection" && r.source === "oats.okf");
     assert.equal(expectedOkfInject.resolved, join(home, ".oats", "modules", "oats.okf", "injects", "okf.md"));
     // the preview's capability list IS the applied one
@@ -186,8 +186,8 @@ test("M1: materialize → launch is one rollback — a failure after the home is
     const pathBefore = process.env.PATH; process.env.PATH = bin;
     let materializeCalls = 0;
     try {
-      await assert.rejects(spawnInstanceAsync(d.root, agent, { prepared, purpose: "m1c", work: "directory", repo: d.dep, launch: true, backend: "herdr", materialize: async () => { materializeCalls++; throw new Error("must not be reached"); } }),
-        (e) => /herdr not installed/.test(e.message) && /nothing was created/.test(e.message));
+      await assert.rejects(spawnInstanceAsync(d.root, agent, { prepared, purpose: "m1c", work: "directory", repo: d.dep, launch: true, materialize: async () => { materializeCalls++; throw new Error("must not be reached"); } }),
+        (e) => /tmux not installed/.test(e.message) && /nothing was created/.test(e.message));
     } finally { process.env.PATH = pathBefore; }
     assert.equal(materializeCalls, 0, "M1: backend presence is checked before placement/materialize");
     assert.deepEqual(left(), [], "M1: an absent backend leaves no home");
@@ -247,7 +247,7 @@ test("R3: the resolution alone decides the 'You run on OATS' section — oats.co
     assert.match(rmMd, /<!-- oats:capability:oats\.core /, "the module's inject is the one section");
     assert.doesNotMatch(rmMd, /Load the oats skill before/, "the kernel's text naming the bundled `oats` skill is gone");
     const rmSkills = readdirSync(join(rmSpawned.home, ".agents", "skills")).sort();
-    assert.deepEqual(rmSkills, ["nw-deploy", "nw-release-tooling", "oats.core", "oats.okf", "release-checklist"], "R3: module skills + the soul's own; none of the kernel's bundled trio (oats, oats-config, oats-packages)");
+    assert.deepEqual(rmSkills, ["cut-release", "deploy", "oats-operate", "okf", "release-checklist"], "R3: module skills + the soul's own, flat; none of the kernel's bundled trio (oats, oats-config, oats-packages)");
     retireInstance(d.root, rmSpawned.instance);
 
     // (b) no-core: the soul turned oats.core OFF → no oats.core/oats.setup module → no operational block at all.

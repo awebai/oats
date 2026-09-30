@@ -45,7 +45,7 @@
         "member local/<base>/remotes/ws.git @ <commit12>"
       ],
       "skills": [
-        "<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub-modellist/.agents/skills/golden.knowledge/golden-knowledge"
+        "<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub-modellist/.agents/skills/golden-knowledge"
       ],
       "hooks": [
         "spawn"
@@ -63,7 +63,7 @@
         "member local/<base>/remotes/ws.git @ <commit12>"
       ],
       "skills": [
-        "<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub-modellist/.agents/skills/golden.messaging/golden-messaging"
+        "<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub-modellist/.agents/skills/golden-messaging"
       ],
       "hooks": [
         "spawn",
@@ -109,7 +109,7 @@
         "type": "skill-tree",
         "source": "golden.knowledge",
         "declared": "skills",
-        "resolved": "<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub-modellist/.agents/skills/golden.knowledge",
+        "resolved": "<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub-modellist/.agents/skills",
         "origin": "member:local/<base>/remotes/ws.git@<sha>",
         "deferred": "materialize"
       },
@@ -125,7 +125,7 @@
         "type": "skill-tree",
         "source": "golden.messaging",
         "declared": "skills",
-        "resolved": "<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub-modellist/.agents/skills/golden.messaging",
+        "resolved": "<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub-modellist/.agents/skills",
         "origin": "member:local/<base>/remotes/ws.git@<sha>",
         "deferred": "materialize"
       },
@@ -307,7 +307,8 @@
     "prompt": {
       "kind": "task-file",
       "file": "TASK.md"
-    }
+    },
+    "kernelBin": "<kernel>/bin/oats.mjs"
   },
   "command": "OATS_INSTANCE='dev-pi-worktree-kstub-mstub-modellist' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub-modellist' PI_AGENT_INSTANCE='dev-pi-worktree-kstub-mstub-modellist' PI_AGENT_HOME='<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub-modellist' GOLDEN_BROKER_ENDPOINT='stub://broker/dev-pi-worktree-kstub-mstub-modellist' '<base>/bin/pi' --append-system-prompt '<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mstub-modellist/AGENTS.md' --approve --name 'dev-pi-worktree-kstub-mstub-modellist' --model 'anthropic/claude-sonnet-4-5:thinking' '@TASK.md' --golden-channel stub",
   "createdAt": "<createdAt>",

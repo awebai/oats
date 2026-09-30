@@ -37,7 +37,7 @@ export function scheduleDraft(v) {
       out.wake = { cron: v.wake.cron, tz: v.wake.tz, message: v.wake.message };
     }
     // The current form cannot retain an unknown select option.
-    if (out.harness && !HARNESSES.includes(out.harness) || v.backend && !['tmux', 'herdr'].includes(v.backend)) return null;
+    if (out.harness && !HARNESSES.includes(out.harness) || v.backend && v.backend !== 'tmux') return null;
   }
   return out;
 }

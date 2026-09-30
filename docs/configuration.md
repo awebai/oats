@@ -34,6 +34,8 @@ souls:
 
 host:
   name: ana-laptop                           # which workspace triggers and schedules run here
+session:                                     # terminal defaults for NEW launches on this host (0.31)
+  tmuxSession: oats-agents                   # the tmux session new tmux instances open in
 triggers:
   disabled: [platform/nightly-review]
 schedules:
@@ -64,6 +66,7 @@ refused (`E_WORKSPACE_SCHEMA`).
 | `souls.teams` | Which teams each soul joins here: `"*"` applies to every soul; a soul's own entry (its name, or `<package>/<soul>`) adds to it. Every soul is also in its default team. Written by `oats soul teams <soul>\|'*' --add … --remove …`. |
 | `souls.default` | A per-soul override of `defaultTeam`; it must be one of that soul's teams here (`E_TEAM_NOT_ELIGIBLE`). Written by `oats soul teams <soul> --default <label>`. |
 | `souls.disabled` | Souls not run on this machine; a spawn is refused with `E_SOUL_DISABLED`. A bare name disables every soul of that name; `<package>/<soul>` or `<member>/<soul>` disables one. |
+| `session.tmuxSession` | The tmux session new tmux instances open their windows in (0.31). Absent: `OATS_TMUX_SESSION`, else `PI_AGENTS_TMUX_SESSION` (the pre-0.31 variable), else `oats-agents`. `session: { tmuxSession: pi-agents }` keeps the pre-0.31 layout. `oats inspect --json` reports it as `session`. |
 | `host.name` | This machine's name. A workspace trigger or schedule runs only on the host named by its `runsOn` ([schedules.md](schedules.md)). |
 | `automations.trust` | The workspace triggers and schedules (`<member>/<id>`) this host agrees to run, or `"*"` for every one the workspace places here (0.30). Absent or empty: none runs. See [Who runs workspace automations](#who-runs-workspace-automations). |
 | `triggers.disabled`, `schedules.disabled` | Workspace triggers and schedules (`<member>/<id>`) this host does not run, without a commit. Written by `oats trigger disable` / `oats schedule disable`. |
@@ -151,10 +154,27 @@ source variable must be set on the host (`E_LAUNCH_ENV_MISSING`, before
 anything is created or stopped), and only the harness's pane receives it.
 `list` and `preview` redact every environment value, literals included.
 
+**The instance's `oats`.** Every launch (`oats spawn`, `session start`,
+`session restart`, locally or through `--server`) writes `<home>/.oats/bin/oats`,
+a link to the launching kernel's `bin/oats.mjs`, and runs the harness with
+`<home>/.oats/bin` first on `PATH` and the rest of `PATH` unchanged. Plain
+`oats` inside an instance is therefore the kernel that launched it, even on a
+machine whose `PATH` finds another kernel first. A launch configuration's own
+`PATH` (literal or `fromEnv`) comes after it. A restart by a different kernel
+re-points the link to that kernel; `spawn --no-launch` writes it too. The
+recipe in `instance.json` records the target as `launch.kernelBin` (no JSON
+answer carries it); `oats status` prints it
+(`kernel:`) under `--verbose`, or when it is not the `oats` running the status.
+A launch that cannot write the link fails with `E_LAUNCH_SHIM` naming the path
+and the cause: a spawn is rolled back, a start starts nothing. The recorded
+`command` does not carry the `PATH`; the kernel adds it when it runs the
+command. Hooks still receive `OATS_CLI_BIN`, unchanged.
+
 **The launch recipe.** A spawn records what a start is made of in
 `instance.json` under `launch`: the harness, the configuration and where it
 came from, the executable, args, env, model, yolo, and each capability's
-launch contribution with its settings and trust. One renderer turns it into
+launch contribution with its settings and trust, and the kernel that launched
+it (`kernelBin`, re-written by every start). One renderer turns it into
 the `command`. Configuration `args` go after the harness's own options and
 before capability arguments; every argument is single-quoted.
 
@@ -254,5 +274,10 @@ oats spawn <soul> --preview    # the exact modules, teams and provider payloads
 oats doctor                    # this deployment's files and the lock
 ```
 
-Environment: `OATS_REMOTE_CACHE` relocates the fetch cache;
-`OATS_PACKAGE_CATALOG` names an alternative package catalog file.
+Environment: `OATS_REMOTE_CACHE` relocates the fetch cache (which also holds
+the bounded parsed-read cache and the observations `--max-age` reuses; all of
+it is safe to delete); `OATS_PACKAGE_CATALOG` names an alternative package
+catalog file. The read verbs (`status`, `workspace status`, `souls`,
+`capabilities`, `inspect`, and the read forms of `teams` and `soul teams`)
+take `--max-age <seconds>` to reuse a remote head observed that recently
+([Observation reuse](desktop-cli-api.md#observation-reuse-feature-observe-max-age-oats-0311)).

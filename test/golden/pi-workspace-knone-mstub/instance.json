@@ -39,7 +39,7 @@
         "member local/<base>/remotes/ws.git @ <commit12>"
       ],
       "skills": [
-        "<base>/deployment/agents/dev/instances/dev-pi-workspace-knone-mstub/.agents/skills/golden.messaging/golden-messaging"
+        "<base>/deployment/agents/dev/instances/dev-pi-workspace-knone-mstub/.agents/skills/golden-messaging"
       ],
       "hooks": [
         "spawn",
@@ -77,7 +77,7 @@
         "type": "skill-tree",
         "source": "golden.messaging",
         "declared": "skills",
-        "resolved": "<base>/deployment/agents/dev/instances/dev-pi-workspace-knone-mstub/.agents/skills/golden.messaging",
+        "resolved": "<base>/deployment/agents/dev/instances/dev-pi-workspace-knone-mstub/.agents/skills",
         "origin": "member:local/<base>/remotes/ws.git@<sha>",
         "deferred": "materialize"
       },
@@ -225,7 +225,8 @@
     "prompt": {
       "kind": "task-file",
       "file": "TASK.md"
-    }
+    },
+    "kernelBin": "<kernel>/bin/oats.mjs"
   },
   "command": "OATS_INSTANCE='dev-pi-workspace-knone-mstub' OATS_INSTANCE_HOME='<base>/deployment/agents/dev/instances/dev-pi-workspace-knone-mstub' PI_AGENT_INSTANCE='dev-pi-workspace-knone-mstub' PI_AGENT_HOME='<base>/deployment/agents/dev/instances/dev-pi-workspace-knone-mstub' GOLDEN_BROKER_ENDPOINT='stub://broker/dev-pi-workspace-knone-mstub' '<base>/bin/pi' --append-system-prompt '<base>/deployment/agents/dev/instances/dev-pi-workspace-knone-mstub/AGENTS.md' --approve --name 'dev-pi-workspace-knone-mstub' '@TASK.md' --golden-channel stub",
   "createdAt": "<createdAt>",

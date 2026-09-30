@@ -113,9 +113,30 @@ test("the kernel's captured refusals are shown verbatim with their code (a stale
   assert.equal(u.row('engineering').querySelector('.sth-error'), null, 'one error at a time');
 });
 
+test('a failed re-read over a document keeps the rows and says so with the observation\'s age; a focused action keeps focus through the lock', async t => {
+  let fail = false, calls = 0;
+  const observedAt = new Date(Date.now() - 45_000).toISOString();
+  const u = await mount(t, () => { calls++; if (fail) return Promise.reject(refusal('E_CLI_FAILED', 'bridge down')); return { ...soulTeams('soul-teams-clear-default'), observedAt }; });
+  const rows = u.q('.sth-row') ? [...u.card.element.querySelectorAll('.sth-row')].length : 0; assert.ok(rows > 0);
+  const action = u.card.element.querySelector('button.sth-act'); action.focus();
+  fail = true; const p = u.card.refresh({ user: true });
+  assert.equal(action.getAttribute('aria-disabled'), 'true'); assert.equal(action.disabled, false); assert.equal(u.doc.activeElement, action, 'locked, focus kept');
+  await p; await tick();
+  assert.equal(u.card.element.querySelectorAll('.sth-row').length, rows, 'the rows are kept');
+  const box = u.q('.sth-add .sth-error'); assert.ok(box, 'the problem box beside the rows');
+  assert.equal(box.querySelector('p').textContent, 'bridge down · observed 45s ago', 'the stale rule: the observation\'s age');
+  assert.equal(box.querySelector('pre').textContent, 'E_CLI_FAILED');
+  assert.equal(u.q('.loading-failed'), null, 'not the failed block: there is a document');
+});
+
+// desktop/loading-states: with no document yet, a failed read is the shared failed block (cause, the
+// code behind Details, Retry); with a document, the problem box beside the rows as before.
 test('a failed or malformed read says so', async t => {
   const failed = await mount(t, () => Promise.reject(refusal('E_SOUL_UNKNOWN', 'no soul release-manager here')));
-  assert.equal(failed.q('.sth-error p').textContent, 'no soul release-manager here');
+  assert.equal(failed.q('.loading-failed-message').textContent, 'no soul release-manager here');
+  assert.equal(failed.q('.loading-failed-code').textContent, 'E_SOUL_UNKNOWN'); assert.ok(failed.q('.loading-retry'));
+  assert.equal(failed.q('.sth-error'), null);
   const malformed = await mount(t, () => ({ soulTeamsApi: 1 }));
-  assert.equal(malformed.q('.sth-error p').textContent, 'The teams of release-manager on this computer could not be read.');
+  assert.equal(malformed.q('.loading-failed-message').textContent, 'The teams of release-manager on this computer could not be read.');
+  assert.equal(malformed.q('.loading-failed-details').hidden, true, 'no code to disclose');
 });

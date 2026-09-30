@@ -17,7 +17,7 @@ for (const outcome of ["visible", "switched", "missing", "routeConflict"]) test(
         if (path === "/api/spawn") { submitted = JSON.parse(opts.body); return { ...ref, workspaceId: "remote:host-key", launched: true, ...(outcome === "routeConflict" ? { routeConflict: { existingHome: "/other/home" } } : {}) }; }
         assert.equal(path, "/api/panel?ws=remote%3Ahost-key");
         if (switched) setWorkspace("another");
-        return { instances: outcome === "missing" ? [] : [{ ...ref, savedRoute: true, running: true }] };
+        return { instances: outcome === "missing" ? [] : [{ ...ref, savedRoute: true, addressable: true, running: true }] };
       },
       openTerminal: (instance) => opens.push(instance),
       notify: (message) => notices.push(message),

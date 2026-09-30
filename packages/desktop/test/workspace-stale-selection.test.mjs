@@ -23,7 +23,7 @@ const stored = () => store.get(WS_KEY);
 
 const common = await import("../renderer/views/common.mjs");
 const hier = await import("../renderer/views/hierarchy.mjs");
-const { rosterResponseOwns } = await import("../renderer/instance-tree.mjs");
+const { rosterResponseOwns, rosterSignature } = await import("../renderer/instance-tree.mjs");
 const { createWorkspaceSwitcher } = await import("../renderer/workspace-switcher.mjs");
 const { mountShellIcons } = await import("../renderer/shell-icons.mjs");
 
@@ -153,6 +153,7 @@ function shellRoster(t) {
   const requests = [], rendered = [], selected = [];
   const c = {
     document, contextRosterGen: 0, contextWorkspace: "", contextInstances: [], tabWorkspace: common.currentWorkspace(),
+    rosterState: null, rosterStale: false, contextDeploymentNote: null, rosterSignaturePainted: null, rosterSignature, tabs: new Map(), activeTab: null, connectionGeneration: 0,
     currentWorkspace: common.currentWorkspace, adoptWorkspace: common.adoptWorkspace,
     staleWorkspaceSelection: common.staleWorkspaceSelection, rosterResponseOwns,
     contextRosterEl: document.getElementById("instance-roster"),

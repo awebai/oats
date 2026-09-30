@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { JSDOM } from 'jsdom';
-import { memberLabel, moduleDriftText, servedIdentityText, soulSourceText } from '../renderer/deployment-facts.mjs';
+import { memberLabel, servedIdentityText } from '../renderer/deployment-facts.mjs';
 import { deploymentUnavailableText } from '../renderer/deployment-header.mjs';
 import { deploymentNotes, lockNotes } from '../renderer/workspace-catalog.mjs';
 import { deploymentStatusData, workspaceStatusData } from '../deployment-data.mjs';
@@ -15,8 +15,6 @@ const instance = () => structuredClone(deploymentStatusData(status, context).age
 
 test('captured roster facts render in the kernel\'s own terms', () => {
   const i = instance();
-  assert.equal(soulSourceText(i.soul), `repo: agents @ ${i.soul.commit.slice(0, 7)}`);
-  assert.equal(moduleDriftText(i.modules), '5 current');
   assert.equal(servedIdentityText(i.identity), null, 'the captured Northwind instance has no served identity');
   assert.equal(memberLabel('local//x/fx/remotes/nw-tools.git'), 'nw-tools');
 });
@@ -31,32 +29,6 @@ test('served identity from the exit-0 capture: absent key stays absent; local an
   assert.equal(servedIdentityText(rows['release-manager-grant-id'].identity), 'acts as example.org/release-manager via grant, expires 2026-12-31T00:00:00Z');
   const renamed = { ...rows['release-manager-local-id'].identity, provider: 'some.other.provider' };
   assert.equal(servedIdentityText(renamed), servedIdentityText(rows['release-manager-local-id'].identity), 'rendering never keys on a provider name');
-});
-
-test('module drift names moved/missing rows with reason and origin; the recorded map says drift is unobserved', () => {
-  const i = instance();
-  i.modules[0] = { ...i.modules[0], status: 'moved', current: { commit: 'f'.repeat(40) } };
-  i.modules[1] = { ...i.modules[1], status: 'missing', reason: 'capability-absent', current: null };
-  const text = moduleDriftText(i.modules);
-  // Names, origins and recorded commits come from the capture (never hand-typed SHAs).
-  const [a, b] = i.modules, at = m => m.commit.slice(0, 7);
-  assert.deepEqual([a.name, a.from.kind, a.from.package, b.name, b.from.kind], ['nw-deploy', 'package', 'nw.tools', 'nw-house-style', 'member']);
-  assert.equal(text, `nw-deploy: moved since — package nw.tools @ ${at(a)}; nw-house-style: missing (capability-absent) — member agents @ ${at(b)}; 3 current`);
-  assert.equal(moduleDriftText({ a: {}, b: {} }), '2 recorded — drift not observed (workspace unreachable)');
-  // Kernel #217: a moved row's current.version names what it moved to (the recorded version from its origin).
-  const moved = [{ ...a, current: { commit: 'f'.repeat(40), version: '2.2.0' } }];
-  assert.equal(moduleDriftText(moved), `nw-deploy: moved ${a.from.version ? `${a.from.version} → ` : 'to '}2.2.0 — package nw.tools @ ${at(a)}; 0 current`);
-  assert.equal(moduleDriftText([{ ...moved[0], from: { ...a.from, version: '2.1.5' } }]), `nw-deploy: moved 2.1.5 → 2.2.0 — package nw.tools @ ${at(a)}; 0 current`);
-  assert.equal(moduleDriftText([{ ...moved[0], current: { commit: 'f'.repeat(40), version: null } }]), `nw-deploy: moved since — package nw.tools @ ${at(a)}; 0 current`, 'no version: the old wording');
-  assert.equal(moduleDriftText([]), 'None');
-  assert.equal(moduleDriftText(undefined), null);
-});
-
-test('soul source reports the member moved since, never a computed drift', () => {
-  const soul = { ...instance().soul, status: 'moved', current: '1234567abcdef' };
-  assert.match(soulSourceText(soul), /— member moved since \(now @ 1234567\)$/);
-  assert.equal(soulSourceText({ ...soul, status: 'no-longer-present' }).endsWith('— no-longer-present'), true);
-  assert.equal(soulSourceText(null), null);
 });
 
 test('served identity follows the documented layer contract; absent stays absent', () => {
@@ -84,7 +56,7 @@ test('withheld instance rows and an unreachable workspace are reported with thei
   assert.match(notes[1], /1 instance row was withheld: .*\(rm-evil\)/);
 });
 
-test('the context panel instance page projects soul source, modules and served identity from the roster row', async () => {
+test('the context panel instance page projects kernel drift as the "older build" chip, and the served identity, from the roster row', async () => {
   const dom = new JSDOM('<!doctype html><html><body><aside id="context-panel"></aside></body></html>', { url: 'http://localhost' });
   const previous = { document: globalThis.document, window: globalThis.window };
   globalThis.document = dom.window.document; globalThis.window = dom.window;
@@ -94,11 +66,26 @@ test('the context panel instance page projects soul source, modules and served i
     const row = { ...instance(), identity: { mode: 'local', alias: 'dev-one', team: 'aweb:example' } };
     panel.setContext({ workspace: { id: context }, instance: row, key: row.home });
     const field = id => dom.window.document.querySelector(`[data-context-field="${id}"]`).textContent;
-    assert.equal(field('soulSource'), `repo: agents @ ${row.soul.commit.slice(0, 7)}`);
-    assert.equal(field('modules'), '5 current');
+    const chip = dom.window.document.querySelector('[data-context-drift]');
+    assert.equal(chip.hidden, true, 'the captured row is current: no chip');
     assert.equal(field('identity'), 'alias dev-one on aweb:example');
+    const drifted = { ...row, modules: row.modules.map((m, i) => i === 1 ? { ...m, status: 'missing', reason: 'capability-absent', current: null } : m) };
+    panel.setContext({ workspace: { id: context }, instance: drifted, key: row.home });
+    assert.equal(chip.hidden, false); assert.match(chip.title, new RegExp(`${drifted.modules[1].name} is no longer available \\(capability-absent\\)`));
     panel.setContext({ workspace: { id: context }, instance: instance(), key: row.home });
     assert.equal(field('identity'), 'Not reported', 'absent identity is never synthesized');
     panel.dispose?.();
   } finally { globalThis.document = previous.document; globalThis.window = previous.window; dom.window.close(); }
+});
+
+test('a Herdr-recorded row keeps only the recognisable part of its sessionTarget, with the kernel\'s unsupported reason', () => {
+  const doc = structuredClone(status), row = doc.agents[0].instances[0];
+  const reason = 'E_HERDR_REMOVED: Herdr is no longer supported by OATS (removed in 0.31.0); tmux is the only session backend.';
+  Object.assign(row, { running: null, runtimeState: 'unsupported', runtimeError: reason,
+    sessionTarget: { backend: 'herdr', binary: 'herdr', protocol: '20', socket: '/memory/herdr.sock', workspaceId: 'w1', paneId: 'w1:pA', terminalId: 'term_ABC' } });
+  const served = deploymentStatusData(doc, context).agents[0].instances[0];
+  assert.deepEqual(served.sessionTarget, { backend: 'herdr' }, 'no Herdr connection data is forwarded, and an old field never breaks the read');
+  assert.deepEqual([served.running, served.runtimeState, served.runtimeError], [null, 'unsupported', reason]);
+  row.sessionTarget = 'herdr';
+  assert.throws(() => deploymentStatusData(doc, context), 'a non-record sessionTarget is still a malformed report');
 });

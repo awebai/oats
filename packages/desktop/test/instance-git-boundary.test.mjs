@@ -43,7 +43,7 @@ test('adapter fixes argv/cwd, forwards both opaque revisions, bounds execution a
 test('adapter rejects unknown options, path-as-file, missing index revision and option-shaped names without execution', async () => {
   const base = { action: 'git', instance: 'dev-1', home: instance.home, context: workspace.scope };
   const inputs = [null, [], {}, { ...base, instance: '--home' }, { ...base, home: '--dir' }, { ...base, context: '/bad\0cwd' },
-    ...['argv', 'server', 'env', 'bin', 'localCwd', 'fileId', 'revision'].map(k => ({ ...base, [k]: 'forbidden' })),
+    ...['argv', 'env', 'bin', 'localCwd', 'fileId', 'revision'].map(k => ({ ...base, [k]: 'forbidden' })), { ...base, server: '--dir' },
     { ...base, action: 'diff', fileId: '../file.txt', revision: rev, indexRevision: idx }, { ...base, action: 'diff', fileId: id, revision: rev }];
   for (const input of inputs) assert.equal((await cliInstanceGit(cli.bin, input, { exec: assert.fail })).error.code, 'E_BAD_ARGS');
   assert.equal((await cliInstanceGit('oats', base, { exec: assert.fail })).error.code, 'E_BAD_ARGS');
@@ -97,11 +97,11 @@ test('unknown workspace, root, host, duplicate roster rows and malformed server 
   for (const home of [undefined, 'relative', '/another-instance', '/bad\0dev-1']) unavailable(await read(observe, { ...options, instances: [{ ...instance, home }] }), 'E_HOME_MISMATCH');
 });
 
-test('remote workspaces and remote roster records are explicitly unavailable, never local fallback', async () => {
+test('a local selector never resolves in a remote workspace, and a remote row never in a local one: no local fallback', async () => {
   const read = createInstanceGitBoundary({ invoke: assert.fail });
-  for (const ws of [{ ...workspace, remote: true }, { ...workspace, server: 'host-a' }]) unavailable(await read(observe, { ...options, workspace: ws }), 'unsupported-remote-operation');
-  unavailable(await read(observe, { ...options, instances: [{ ...instance, remote: true }] }), 'unsupported-remote-operation');
-  unavailable(await read({ ...observe, selector: { ...selector, server: 'host-a' } }, { ...options, instances: [{ ...instance, server: 'host-a' }] }), 'unsupported-remote-operation');
+  for (const ws of [{ ...workspace, remote: true }, { ...workspace, server: 'host-a' }]) unavailable(await read(observe, { ...options, workspace: ws }), 'E_SESSION_UNKNOWN');
+  unavailable(await read(observe, { ...options, instances: [{ ...instance, remote: true }] }), 'E_SESSION_UNKNOWN');
+  unavailable(await read({ ...observe, selector: { ...selector, server: 'host-a' } }, { ...options, instances: [{ ...instance, server: 'host-a', addressable: true }] }), 'E_SESSION_UNKNOWN');
 });
 
 test('outer compatibility and released0.24.7 floor precede invocation; command unknown stays unavailable', async () => {

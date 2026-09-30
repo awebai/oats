@@ -10,19 +10,26 @@ import { forgeFailure } from '../renderer/forge-contract.mjs';
 import { lifecycleFailure } from '../renderer/lifecycle-contract.mjs';
 import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
 import { context, request, stopPlan, retirePlan, stopReceipt, retireReceipt, envelope } from './helpers/lifecycle-fixture.mjs';
-function http({ remote = false, missing = false } = {}) {
+function http({ remote = false, missing = false, routed = false, entries = ['lifecycle-plans'], apply = null } = {}) {
   const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
   const start = source.indexOf('const send = (res, code, body, type'), end = source.indexOf('\nserver.on("error",');
   const ctx = context(); ctx.workspace.remote = remote; if (missing) delete ctx.cli.lifecycleApi;
-  const calls = [], service = createLifecycleBoundary({ invoke: async (bin, args) => {
-    calls.push({ bin, args }); return envelope(args.phase === 'plan' ? args.operation === 'stop' ? stopPlan() : retirePlan()
+  // `routed`: a remote workspace whose addressable row is reached by --server and --home.
+  if (routed) {
+    Object.assign(ctx.workspace, { remote: true, server: 'build', name: 'Build box' }); ctx.cli.remote = entries;
+    Object.assign(ctx.instances[0], { server: 'build', addressable: true });
+  }
+  const calls = [], refreshed = { local: 0, remote: 0 }, service = createLifecycleBoundary({ invoke: async (bin, args) => {
+    calls.push({ bin, args }); if (args.phase === 'apply' && apply) return apply(args);
+    return envelope(args.phase === 'plan' ? args.operation === 'stop' ? stopPlan() : retirePlan()
       : args.operation === 'stop' ? stopReceipt(args) : retireReceipt(args));
   } });
-  const deps = { createServer: fn => fn, lifecycleRequest: service, cliState: ctx.cli, workspaces: () => [ctx.workspace],
-    snapshot: { byWs: new Map([['team', { instances: ctx.instances }]]) }, refreshSnapshot() {},
+  const deps = { createServer: fn => fn, lifecycleRequest: service, cliState: ctx.cli, workspaces: () => [ctx.workspace], ctxs: ['/Users/me/work'],
+    snapshot: { byWs: new Map([['team', { instances: ctx.instances }]]) }, observeMutation() { refreshed.local++; },
+    remoteLoop: { request() { refreshed.remote++; } },
     resolveInstanceOr: assert.fail, panelData: assert.fail, snapshotPanel: assert.fail, collectNow: assert.fail };
   const handler = new Function(...Object.keys(deps), `${source.slice(start, end)}\nreturn server;`)(...Object.values(deps));
-  return { calls, async request({ url = '/api/instance-lifecycle?ws=team', method = 'POST', body = JSON.stringify(request()),
+  return { calls, refreshed, async request({ url = '/api/instance-lifecycle?ws=team', method = 'POST', body = JSON.stringify(request()),
     headers = { host: '127.0.0.1:4820', origin: 'http://localhost:4820' } } = {}) {
     const req = new EventEmitter(); Object.assign(req, { url, method, headers }); let result;
     const res = { writeHead(status, headers) { result = { status, headers }; }, end(text) { result.body = JSON.parse(text); } };
@@ -42,7 +49,7 @@ test('shipped IPC bounds plan/apply separately and classifies lost mutation tran
       fetch: async (url, opts) => { seen = { url, opts }; if (fail) throw new Error('PRIVATE transport'); return { ok: true, status: 200, text: async () => '{"lifecycleApi":1}' }; } };
     runInNewContext(source.slice(start, end), c);
     const response = await handler({ sender: owner, senderFrame: frame }, '/api/instance-lifecycle?ws=team', { method: 'POST', body: JSON.stringify({ action: phase }) });
-    assert.equal(seen.opts.signal.ms, phase === 'apply' ? 610000 : 35000);
+    assert.equal(seen.opts.signal.ms, phase === 'apply' ? 610000 : 50000);
     if (fail) { assert.equal(response.body.status, phase === 'apply' ? 'unknown' : 'unavailable'); assert.doesNotMatch(JSON.stringify(response), /PRIVATE/); }
     seen = null;
     const denied = await handler({ sender: owner, senderFrame: { url: renderer } }, '/api/instance-lifecycle?ws=team', { method: 'POST', body: '{}' });
@@ -79,4 +86,57 @@ test('remote and missing feature/API refusal executes nothing; real callback sep
   assert.equal(h.calls[1].args.phase, 'apply'); assert.match(h.calls[1].args.key, /^[a-f0-9]{64}$/);
   const again = await h.request({ body }); assert.equal(again.body.repeated, true); assert.equal(h.calls.length, 2);
   assert.equal(result.headers['cache-control'], 'no-store');
+});
+
+test('remote lifecycle over HTTP: a routed plan and apply, and the remote roster re-read at once after any apply', async () => {
+  const selector = { ...request().selector, server: 'build' };
+  const h = http({ routed: true });
+  const plan = await h.request({ body: JSON.stringify({ ...request(), selector }) });
+  assert.equal(plan.body.status, 'plan');
+  assert.equal(h.calls[0].args.server, 'build'); assert.equal(h.calls[0].args.context, '/Users/me/work');
+  const done = await h.request({ body: JSON.stringify({ action: 'apply', planRef: plan.body.planRef }) });
+  assert.equal(done.body.status, 'complete'); assert.deepEqual(h.refreshed, { local: 0, remote: 1 });
+  // An unknown outcome (the link was lost) is not a failure, and the roster is re-read all the same.
+  const lost = http({ routed: true, apply: () => ({ schemaVersion: 1, ok: false, error: { code: 'E_SSH', message: 'ssh failed' } }) });
+  const next = await lost.request({ body: JSON.stringify({ ...request(), selector }) });
+  const unknown = await lost.request({ body: JSON.stringify({ action: 'apply', planRef: next.body.planRef }) });
+  assert.equal(unknown.body.status, 'unknown'); assert.equal(unknown.body.cause.message, "Couldn't reach Build box.");
+  assert.deepEqual(lost.refreshed, { local: 0, remote: 1 });
+  // A local apply observes the local deployment, as before.
+  const local = http(); const localPlan = await local.request();
+  await local.request({ body: JSON.stringify({ action: 'apply', planRef: localPlan.body.planRef }) });
+  assert.deepEqual(local.refreshed, { local: 1, remote: 0 });
+});
+test('remote lifecycle over HTTP: no remote entry on this machine refuses and spawns nothing', async () => {
+  const selector = { ...request().selector, server: 'build' };
+  for (const entries of [[], ['session', 'retire'], null]) {
+    const h = http({ routed: true, entries });
+    const refused = await h.request({ body: JSON.stringify({ ...request('retire'), selector }) });
+    assert.equal(refused.body.reason.code, 'unsupported-remote-operation');
+    assert.equal(refused.body.reason.message, "This computer's OATS can't route this to Build box. Update OATS here.");
+    assert.equal(h.calls.length, 0);
+  }
+});
+test('remote lifecycle over HTTP: a row of another group of the same server is never admitted, and nothing is sent', async () => {
+  const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
+  const start = source.indexOf('const send = (res, code, body, type'), end = source.indexOf('\nserver.on("error",');
+  const ctx = context(), calls = [];
+  const groupA = { id: 'remote:build:aaaa', name: 'Build box', scope: '/srv/a', remote: true, server: 'build' };
+  const groupB = { id: 'remote:build:bbbb', name: 'Build box', scope: '/srv/b', remote: true, server: 'build' };
+  const row = { ...ctx.instances[0], server: 'build', addressable: true };
+  const deps = { createServer: fn => fn, lifecycleRequest: createLifecycleBoundary({ invoke: async (...args) => { calls.push(args); return envelope(stopPlan()); } }),
+    cliState: { ...ctx.cli, remote: ['lifecycle-plans'] }, workspaces: () => [groupA, groupB], ctxs: ['/Users/me/work'],
+    snapshot: { byWs: new Map([[groupA.id, { instances: [] }], [groupB.id, { instances: [row] }]]) }, observeMutation: assert.fail, remoteLoop: { request: assert.fail },
+    resolveInstanceOr: assert.fail, panelData: assert.fail, snapshotPanel: assert.fail, collectNow: assert.fail };
+  const handler = new Function(...Object.keys(deps), `${source.slice(start, end)}\nreturn server;`)(...Object.values(deps));
+  const ask = async ws => {
+    const req = new EventEmitter(); let result;
+    Object.assign(req, { url: `/api/instance-lifecycle?ws=${encodeURIComponent(ws)}`, method: 'POST', headers: { host: '127.0.0.1:4820', origin: 'http://localhost:4820' } });
+    const res = { writeHead(status) { result = { status }; }, end(text) { result.body = JSON.parse(text); } };
+    const done = handler(req, res); req.emit('data', Buffer.from(JSON.stringify({ ...request(), selector: { ...request().selector, server: 'build' } }))); req.emit('end'); await done; return result;
+  };
+  assert.equal((await ask(groupA.id)).body.reason.code, 'E_SESSION_UNKNOWN');
+  assert.equal(calls.length, 0);
+  assert.equal((await ask(groupB.id)).body.status, 'plan', 'its own group admits it');
+  assert.equal(calls.length, 1);
 });

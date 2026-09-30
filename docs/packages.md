@@ -51,7 +51,7 @@ packages:
 - **Bare version** (`v4.0.5`, `4.0.5`, `1.0.0-rc.1`): the id is looked up in
   the official catalog — `package-catalog.json` in the `oats` repo, or the file
   named by `OATS_PACKAGE_CATALOG` — which supplies the repo url, the tag
-  convention (`v4.0.5` or `oats-framework/v1.4.0`) and the payload path. An id
+  convention (`v4.0.5` or `oats-framework/v1.4.1`) and the payload path. An id
   the catalog does not know is `E_PACKAGE_MISSING` ("use `git:<repo>@<ref>` for
   a package outside the catalog"). The catalog is the reviewed official list
   ([official-catalog.md](official-catalog.md)) and the only way a
@@ -74,9 +74,9 @@ members:
   - git:github.com/acme/agents
   - git:github.com/acme/platform
 packages:
-  oats.framework: v1.4.0
+  oats.framework: v1.4.1
   oats.okf: v4.0.5
-  oats.aweb: v1.17.1
+  oats.aweb: v1.17.3
 teams:
   platform: { team: "platform:acme.aweb.ai", description: Platform engineering }
 defaults:
@@ -134,7 +134,7 @@ Declaring a package in the workspace's `packages:` is the trust decision
 ## `oats package add | remove`
 
 ```bash
-oats package add oats.aweb v1.17.1                         # a catalog version
+oats package add oats.aweb v1.17.3                         # a catalog version
 oats package add acme.tools git:github.com/acme/tools@v0.4.0
 oats package remove acme.tools
 ```
@@ -212,7 +212,7 @@ At spawn a `from: package` module is fetched at the lock's commit from the
 lock's `url`, at the manifest-listed directory (`oats-package.json#capabilities[]`
 entry), into `<home>/.oats/modules/<cap>/`; the copy's digest is verified
 against what the fetch reported; skills are copied to
-`<home>/.agents/skills/<cap>/<skill>/`. `instance.json.modules.<cap>.from` is
+`<home>/.agents/skills/<skill>/` (flat). `instance.json.modules.<cap>.from` is
 `{ kind: "package", package, version, commit, integrity, repoKey }`. Bumping
 `packages:` and syncing affects **only new spawns**; `oats status` shows a
 running instance's package module as `moved` once the lock points elsewhere.
@@ -332,11 +332,11 @@ A soul that names one of the package's capabilities with
   "policy": "docs/official-catalog.md",
   "packages": {
     "oats.okf":       { "url": "https://github.com/awebai/oats-okf.git", "ref": "v4.0.5", "path": "oats-package" },
-    "oats.framework": { "url": "https://github.com/awebai/oats.git", "ref": "oats-framework/v1.4.0", "path": "oats-package" }
+    "oats.framework": { "url": "https://github.com/awebai/oats.git", "ref": "oats-framework/v1.4.1", "path": "oats-package" }
   }
 }
 ```
 
-`ref` carries the tag convention: a workspace's `oats.framework: v1.4.0`
-resolves to tag `oats-framework/v1.4.0`. Resolving through the catalog never
+`ref` carries the tag convention: a workspace's `oats.framework: v1.4.1`
+resolves to tag `oats-framework/v1.4.1`. Resolving through the catalog never
 advances a lock by itself: `oats sync` does, and says so.

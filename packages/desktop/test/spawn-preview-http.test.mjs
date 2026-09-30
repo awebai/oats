@@ -108,3 +108,34 @@ test('a kernel preview refusal reaches the dialog with its words: code, message,
   const noMessage = structuredClone(served); noMessage.reason.message = 'x\u0000'; delete noMessage.reason.fix;
   assert.equal((await through(noMessage)).code, 'E_CLI_FAILED', 'without safe kernel words, the Desktop\'s own');
 });
+
+test('the preview\'s modules cross boundary → proxy as names and sources only; a malformed, duplicated, over-cap or extra-keyed row refuses as E_CLI_PROTOCOL', async () => {
+  const read = async result => createSpawnPreviewBoundary({ invoke: async () => envelope(result) })(structuredClone(request()), () => context());
+  const through = async body => (await proxySpawnPreview(proxy().event, '/api/workspace-spawn-preview', proxy().opts,
+    { ...proxy().deps, fetch: async () => ({ ok: true, status: 200, text: async () => JSON.stringify(body) }) })).body;
+  const served = await read(data());
+  assert.equal(served.status, 'available');
+  const kernelRows = data().modules;
+  assert.deepEqual(served.data.modules.map(m => m.name), kernelRows.map(m => m.name));
+  const okf = served.data.modules.find(m => m.name === 'oats.okf');
+  assert.deepEqual(Object.keys(okf), ['name', 'layer', 'from']); assert.equal(okf.layer, 'knowledge');
+  assert.deepEqual(Object.keys(okf.from).sort(), ['kind', 'package', 'repoKey', 'version']);
+  assert.doesNotMatch(JSON.stringify(served.data.modules), /commit|integrity|declares|changedSince|private/);
+  const proxied = await through(served);
+  assert.equal(proxied.status, 'available'); assert.deepEqual(proxied.data.modules, served.data.modules, 'the proxy re-validates the projection unchanged');
+  // A kernel without modules[] projects null; the dialog then shows neither section.
+  const bare = data(); delete bare.modules;
+  const noModules = await read(bare); assert.equal(noModules.status, 'available'); assert.equal(noModules.data.modules, null);
+  // The kernel side: malformed rows refuse the whole preview.
+  for (const alter of [m => { m[0].name = 'Bad Name'; }, m => { m[0].layer = 'Knowledge!'; }, m => { m[0].from = 'package'; }, m => { m[0].from.kind = 'x y'; },
+    m => { m[0].from.version = '-1'; }, m => { m[0].from.package = '../evil'; }, m => { m[0].from.repoKey = 'a\u0007b'; }, m => { m.push(structuredClone(m[0])); },
+    m => { m.length = 0; for (let i = 0; i < 257; i++) m.push({ name: `cap${i}`, layer: null, from: { kind: 'member', repoKey: 'github.com/a/b' } }); }]) {
+    const bad = data(); alter(bad.modules);
+    assert.equal((await read(bad)).reason?.code, 'E_CLI_PROTOCOL', JSON.stringify(bad.modules[0]).slice(0, 80));
+  }
+  // The proxy side: the projection's keys are exact.
+  for (const alter of [m => { m[0].commit = 'abc'; }, m => { m[0].from.integrity = 'sha256-x'; }, m => { m[0].name = 7; }, m => { m[0].from.version = 1; }]) {
+    const hostile = structuredClone(served); alter(hostile.data.modules);
+    assert.equal((await through(hostile)).reason.code, 'E_CLI_PROTOCOL');
+  }
+});

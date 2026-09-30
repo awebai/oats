@@ -16,7 +16,7 @@ function http() {
   const start = source.indexOf('const send = (res, code, body, type'), end = source.indexOf('\nserver.on("error",');
   const c = context(), calls = [];
   const deps = { createServer: fn => fn, eventsFailure, instanceEventsRequest: createInstanceEventsBoundary({ invoke: async (_cli, opts) => { calls.push(opts); return envelope(); } }),
-    workspaces: () => [c.workspace], cliState: c.cli, cliProbeGeneration: 1, snapshot: { byWs: new Map([['ws', { instances: c.instances }]]) } };
+    workspaces: () => [c.workspace], ctxs: ['/Users/me/work'], cliState: c.cli, cliProbeGeneration: 1, snapshot: { byWs: new Map([['ws', { instances: c.instances }]]) } };
   const handler = new Function(...Object.keys(deps), `${source.slice(start, end)}\nreturn server;`)(...Object.values(deps));
   return { c, calls, async request({ url = '/api/instance-events?ws=ws', method = 'POST', body = JSON.stringify(request()), headers = { host: 'localhost:4820', origin: 'http://localhost:4820' } } = {}) {
     const req = new EventEmitter(); Object.assign(req, { url, method, headers }); let result;
@@ -37,7 +37,12 @@ test('shipped POST handler: Host/Origin/method/query/16KiB gates precede any pro
 test('shipped handler refuses old CLI/remote/extra paths/flags/write actions without fallback', async () => {
   const h = http(); h.c.cli.eventsApi = 1;
   assert.equal((await h.request()).body.reason.code, 'E_EVENTS_UNAVAILABLE'); h.c.cli.eventsApi = 2;
-  h.c.workspace.remote = true; assert.equal((await h.request()).body.reason.code, 'unsupported-remote-operation'); h.c.workspace.remote = false;
+  // A local selector never resolves in a remote workspace; a remote row without this machine's remote entry is refused.
+  Object.assign(h.c.workspace, { remote: true, server: 'build', name: 'Build box' }); assert.equal((await h.request()).body.reason.code, 'E_SESSION_UNKNOWN');
+  h.c.instances[0].server = 'build'; h.c.instances[0].addressable = true;
+  const unroutable = (await h.request({ body: JSON.stringify(request({ selector: { ...request().selector, server: 'build' } })) })).body.reason;
+  assert.equal(unroutable.code, 'unsupported-remote-operation'); assert.equal(unroutable.message, "This computer's OATS can't route this to Build box. Update OATS here.");
+  h.c.workspace.remote = false; delete h.c.workspace.server; delete h.c.instances[0].server;
   for (const bad of [{ ...request(), action: 'clear' }, { ...request(), action: 'watch' }, { ...request(), home: '/log' }, { ...request(), since: 'today' }, { ...request(), limit: 500 }]) {
     assert.equal((await h.request({ body: JSON.stringify(bad) })).body.reason.code, 'E_BAD_ARGS');
   }
@@ -92,7 +97,7 @@ test('proxy rejects wrong origin/path/method/query/body before fetch and pins kn
   for (const path of ['//evil/api/instance-events', 'http://evil/api/instance-events', '/api/other', '/api/instance-events?ws=ws&ws=ws', '/api/instance-events?since=now']) assert.equal((await proxyInstanceEvents(f.event, path, f.opts, f.deps)).body.reason.code, 'E_BAD_ARGS');
   for (const body of ['x'.repeat(16385), JSON.stringify(request()) + ' '.repeat(16384), '{', 'null', JSON.stringify({ ...request(), since: 'now' })]) assert.equal((await proxyInstanceEvents(f.event, '/api/instance-events', { method: 'POST', body }, f.deps)).body.reason.code, 'E_BAD_ARGS');
   assert.equal((await proxyInstanceEvents(f.event, '/api/instance-events', { method: 'GET' }, f.deps)).body.reason.code, 'E_BAD_ARGS');
-  assert.equal(calls, 0); assert.equal(EVENTS_PROXY_TIMEOUT, 20000);
+  assert.equal(calls, 0); assert.equal(EVENTS_PROXY_TIMEOUT, 50000);
   assert.equal((await proxyInstanceEvents(f.event, '/api/instance-events?ws=unadvertised', f.opts, f.deps)).body.status, 'available'); assert.equal(calls, 1);
 });
 test('proxy streaming limit cancels before copying or decoding an over-budget chunk', async () => {

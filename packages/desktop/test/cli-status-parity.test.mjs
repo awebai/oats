@@ -135,6 +135,10 @@ test("actual card tolerates incomplete diagnostics without inventing binary abse
   const c = card(cs, {});
   try {
     for (const tried of [undefined, null, {}, "garbage", [null, {}], [{ path: "/failed/oats" }]]) {
+      // Each shape is judged as a first settled payload: `tried` is locator
+      // diagnostics outside the change signature, so a repeat from a settled
+      // state would (by design) not repaint.
+      cs.resetCliStateForTests();
       await cs.refreshCli({ api: async () => ({ ok: false, tried }) });
       assert.equal(cs.cliKnownUnavailable(), true);
       assert.match(c.el.textContent, /unknown/);
@@ -280,6 +284,70 @@ for (const boundary of ["dispose", "reset", "refresh", "retry"]) {
   }
 }
 
+// Subscribers hear CHANGES. Every subscriber treats an emit as "the CLI
+// changed" (the Workspace view wipes its capabilities catalog), and a
+// window-focus reprobe of the same binary differs only in probedAt/tried.
+async function emitOnChange(shape, mod = cs) {
+  mod.resetCliStateForTests();
+  const seen = [];
+  const off = mod.onCliChange(s => seen.push(s));
+  const refresh = body => mod.refreshCli(context(shape, async () => reply(body)));
+  try {
+    const first = { ...compatible, probedAt: 1, tried: [] };
+    await refresh(first);
+    assert.deepEqual(seen, [first], "the first settled payload always emits");
+    await refresh({ ...compatible, probedAt: 2, tried: [{ path: "/old/oats", reason: "probe failed: spawn ETIMEDOUT" }], source: "login-shell" });
+    assert.equal(seen.length, 1, "identical probe with fresh diagnostics must not emit");
+    assert.equal(mod.cliStatus().probedAt, 2, "but the latest payload IS retained");
+    await refresh({ ...compatible, probedAt: 3, version: "0.22.20" });
+    assert.equal(seen.length, 2, "a changed version emits");
+    assert.equal(seen[1].version, "0.22.20");
+    await refresh({ ...compatible, probedAt: 4, version: "0.22.20", features: ["observe-max-age"] });
+    assert.equal(seen.length, 3, "a declared feature emits");
+    await mod.refreshCli(context(shape, async () => { throw new TypeError("fetch failed"); }));
+    assert.equal(seen.length, 3, "transport failure keeps state and stays silent");
+    assert.equal(mod.cliAvailable(), true);
+    await refresh(unavailable());
+    assert.equal(seen.length, 4, "ok → unavailable emits");
+    assert.equal(mod.cliKnownUnavailable(), true);
+    await refresh({ legacy: true });
+    assert.equal(seen.length, 5, "unavailable → settled-unknown emits once");
+    assert.deepEqual(seen[4], null);
+    await refresh({ other: "garbage" }); await refresh(null); await refresh([]);
+    assert.equal(seen.length, 5, "repeated garbage stays silent");
+    assert.equal(mod.cliKnownUnavailable(), true);
+    await refresh(unavailable());
+    assert.equal(seen.length, 6, "settled-unknown → unavailable emits");
+    await refresh(unavailable("other"));
+    assert.equal(seen.length, 7, "with no accepted CLI a different failing candidate repaints the card's Detected line");
+    await refresh({ ...unavailable("other"), probedAt: 9 });
+    assert.equal(seen.length, 7, "the same failing candidate probed again stays silent");
+  } finally { off(); mod.resetCliStateForTests(); }
+}
+for (const shape of ["parsed", "response"]) {
+  test(`${shape} subscribers are notified on change only`, () => emitOnChange(shape));
+}
+test("reset notifies unconditionally, even from probe-pending", () => {
+  cs.resetCliStateForTests();
+  const seen = [];
+  const off = cs.onCliChange(s => seen.push(s));
+  try { cs.resetCliStateForTests(); assert.deepEqual(seen, [null]); } finally { off(); }
+});
+// Pending and settled-unknown share `cli === null`: the flip itself is the change.
+async function unknownFromPending(mod = cs) {
+  mod.resetCliStateForTests();
+  const seen = [];
+  const off = mod.onCliChange(s => seen.push(s));
+  try {
+    await mod.refreshCli({ api: async () => ({ legacy: true }) });
+    assert.deepEqual(seen, [null], "pending → settled-unknown emits once (the card must appear)");
+    assert.equal(mod.cliKnownUnavailable(), true);
+    await mod.refreshCli({ api: async () => ({ other: 1 }) });
+    assert.deepEqual(seen, [null], "repeated garbage stays silent");
+  } finally { off(); mod.resetCliStateForTests(); }
+}
+test("pending → settled-unknown notifies exactly once", () => unknownFromPending());
+
 // Bounded mutations of the exact shipped module, loaded only in memory.
 // Each mutant must fail one of the behavioral assertions above, not a source check.
 async function mutant(from, to) {
@@ -291,12 +359,12 @@ test("mutation: interpreting parsed domain ok:false as HTTP failure is caught", 
   const mod = await mutant('if (!r || typeof r.json !== "function") return { received: true, body: r };', 'if (!r || typeof r.json !== "function") return r?.ok === false ? { received: true, error: true } : { received: true, body: r };');
   await assert.rejects(domainParity("parsed", "refreshCli", mod), /domain diagnostics must survive parsing/);
 });
-for (const outcome of ["compatible", "transport"]) {
-  test(`mutation: request ownership is essential on stale ${outcome}`, async () => {
-    const mod = await mutant('if (request !== requestGeneration) return cli;', '/* mutation: completion always commits */');
-    await assert.rejects(overlap("parsed", "refreshCli", "reprobeCli", outcome, mod), outcome === "transport" ? /stale completion must not emit/ : /domain diagnostics must survive parsing/);
-  });
-}
+// A stale TRANSPORT completion is silent by construction (nothing received,
+// nothing emitted), so only a stale RECEIVED completion can prove ownership.
+test("mutation: request ownership is essential on stale compatible", async () => {
+  const mod = await mutant('if (request !== requestGeneration) return cli;', '/* mutation: completion always commits */');
+  await assert.rejects(overlap("parsed", "refreshCli", "reprobeCli", "compatible", mod), /domain diagnostics must survive parsing/);
+});
 test("mutation: real Response HTTP status cannot be ignored", async () => {
   const mod = await mutant('if (!r.ok) return { received: true, error: true, status: r.status };', '/* mutation: ignore HTTP status */');
   await mod.refreshCli(context("response", async () => reply(compatible, 503)));
@@ -318,4 +386,16 @@ test("mutation: latest card action must own its completion message", async () =>
 test("mutation: disposal must invalidate a pending picker", async () => {
   const mod = await mutant('dispose() { alive = false; off(); }', 'dispose() { off(); }');
   await assert.rejects(pickerRace("dispose", "resolve", mod), /obsolete picker must not dispatch reprobe/);
+});
+test("mutation: emitting per response instead of per change is caught", async () => {
+  const mod = await mutant('if (probeChanged(previous, cli) || settledUnknown !== wasUnknown || triedChanged(previous, cli)) emit();', 'emit();');
+  await assert.rejects(emitOnChange("parsed", mod), /identical probe with fresh diagnostics must not emit/);
+});
+test("mutation: comparing payloads by identity instead of signature is caught", async () => {
+  const mod = await mutant('if (probeChanged(previous, cli) || settledUnknown !== wasUnknown || triedChanged(previous, cli)) emit();', 'if (previous !== cli || settledUnknown !== wasUnknown) emit();');
+  await assert.rejects(emitOnChange("parsed", mod), /identical probe with fresh diagnostics must not emit/);
+});
+test("mutation: dropping the settled-unknown flip loses the pending → unknown emit", async () => {
+  const mod = await mutant('if (probeChanged(previous, cli) || settledUnknown !== wasUnknown || triedChanged(previous, cli)) emit();', 'if (probeChanged(previous, cli) || triedChanged(previous, cli)) emit();');
+  await assert.rejects(unknownFromPending(mod), /pending → settled-unknown emits once/);
 });

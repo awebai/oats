@@ -805,3 +805,44 @@ test("live teams of a STANDALONE deployment come from its oats-local.yaml alone:
     assert.deepEqual([bad.source, bad.reason, bad.error.code], ["recorded", "invalid-teams", "E_TEAM_UNKNOWN"]);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
+
+/* ───────────────────── bounded parallel discovery (read path) ───────────────────── */
+
+test("parallel discovery assembles rows and problems in declaration order, unconfirmed members interleaved, whatever order the reads finish in", async () => {
+  const serialized = (d) => JSON.parse(JSON.stringify({ members: d.members, problems: d.problems, external: d.external, warnings: d.warnings }));
+  const reference = serialized(await discoverWorkspace(WS, { remote: northwind() }));
+  // Every member's reads are delayed so that the LAST declared member finishes first.
+  const members = workspaceFile().members.map((r) => parseRepoRef(r).key);
+  const slow = northwind();
+  for (const name of ["observeRemote", "readRemoteFile", "listRemoteTree"]) {
+    const inner = slow[name];
+    slow[name] = async (ref, ...rest) => {
+      const i = members.indexOf(parseRepoRef(ref).key);
+      await new Promise((r) => setTimeout(r, i < 0 ? 0 : (members.length - i) * 15));
+      return inner(ref, ...rest);
+    };
+  }
+  const discovered = await discoverWorkspace(WS, { remote: slow });
+  assert.deepStrictEqual(serialized(discovered), reference);
+  assert.deepEqual(discovered.members.map((m) => m.key), members);
+  assert.deepEqual(discovered.members.map((m) => m.confirmed), [true, true, true, false, false, false]);
+});
+
+test("parallel discovery throws what the serial loop threw: the failure of the LOWEST member index, even when a later one fails first", async () => {
+  const boom = (what) => Object.assign(new TypeError(`${what} exploded`), { code: undefined });
+  const remote = northwind({ mutate: (repos) => {
+    repos[K.platform].faults = { read: { "oats-membership.yaml": boom("platform") } };
+    repos[K.data].faults = { read: { "oats-membership.yaml": boom("data") } };
+  } });
+  const inner = remote.readRemoteFile;
+  remote.readRemoteFile = async (ref, commit, path) => {
+    if (parseRepoRef(ref).key === K.platform) await new Promise((r) => setTimeout(r, 60)); // platform (index 1) fails LAST
+    return inner(ref, commit, path);
+  };
+  await assert.rejects(discoverWorkspace(WS, { remote }), /platform exploded/);
+});
+
+test("the same repo listed twice under two spellings is refused as before (duplicates member), never discovered twice", async () => {
+  const remote = northwind({ workspace: workspaceFile({ members: [R.agents, R.platform, "https://github.com/northwind/platform.git"] }) });
+  await assert.rejects(discoverWorkspace(WS, { remote }), (err) => err.code === "E_WORKSPACE_SCHEMA" && err.details.problems.some((p) => p.path === "/members/2" && /duplicates member 1/.test(p.message)));
+});

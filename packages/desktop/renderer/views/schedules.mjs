@@ -2,6 +2,7 @@
  * grouped by where they run (views/automations.mjs, on the kernel's `oats schedule list`).
  * This module adds what only local schedules have: the New / Edit form, Delete, the run
  * state check, and enabling the host scheduler — through the local `/api/schedules` verbs. */
+import { isShown } from "../focus-regions.mjs";
 import { apiJson, postJson, workspaceGeneration, wsQuery, onWorkspaceChange } from "./common.mjs";
 import { wakeScheduleFields } from "../wake-schedule-fields.mjs";
 import { scheduleDraft } from "../schedule-read-data.mjs";
@@ -40,7 +41,7 @@ const CSS = `
 @media(max-width:650px) { .schedule-form .schedule-pair { grid-template-columns:minmax(0, 1fr); } }
 `;
 const FORM = `
-  <form class="schedule-form" aria-labelledby="schedule-form-title">
+  <form class="schedule-form" role="dialog" aria-modal="true" aria-labelledby="schedule-form-title">
     <h3 class="schedule-form-title" id="schedule-form-title">New schedule</h3>
     <label>Name<input class="field" name="id" required pattern="[a-z0-9][a-z0-9-]{0,39}" placeholder="daily-review"></label>
     <label>Action<select class="field" name="kind"><option value="wake">Wake an existing agent</option><option value="spawn">Launch a new agent</option><option value="operation">Run a provider operation</option></select></label>
@@ -55,7 +56,7 @@ const FORM = `
         <label>Model<input class="field" name="model" placeholder="Soul default"></label>
       </div>
       <div class="schedule-pair">
-        <label>Session backend<select class="field" name="backend"><option value="">Soul default</option><option value="tmux">tmux</option><option value="herdr">Herdr</option></select></label>
+        <label>Session backend<select class="field" name="backend"><option value="">Soul default</option><option value="tmux">tmux</option></select></label>
         <label>Permissions<select class="field" name="yolo"><option value="">Soul / scope setting</option><option value="true">YOLO — skip permission prompts</option><option value="false">Native permission policy</option></select></label>
       </div>
     </div>
@@ -223,7 +224,16 @@ export function createSchedulesView(el, ctx, { cli = cliStatus, subscribeCli = o
     void mutate(editing ? "update" : "add", field("id").value.trim(), spec);
   });
   q(".schedule-cancel").addEventListener("click", closeForm);
-  sheet.addEventListener("keydown", e => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeForm(); } });
+  sheet.addEventListener("keydown", e => {
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeForm(); return; }
+    // A modal sheet: Tab and Shift+Tab stay inside it (spec F audit).
+    if (e.key !== "Tab") return;
+    const stops = [...form.querySelectorAll("button, input, select, textarea, summary, [tabindex]")]
+      .filter(f => !f.disabled && f.tabIndex >= 0 && isShown(f));
+    if (!stops.length) return;
+    const first = stops[0], last = stops.at(-1);
+    if (e.shiftKey ? doc.activeElement === first : doc.activeElement === last) { e.preventDefault(); (e.shiftKey ? last : first).focus(); }
+  });
   sheet.addEventListener("mousedown", e => { if (e.target === sheet && !busy) closeForm(); });
 
   // Delete asks first, in the app (a native confirm would block the renderer).

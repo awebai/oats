@@ -14,7 +14,7 @@ import { instanceActionTarget, sameInstanceActionTarget } from "./instance-actio
 import { createInstancePrAction } from "./instance-pr-action.mjs";
 import { instanceSplitPlan, instanceSplitIdentity } from "./instance-split.mjs";
 import { createInstanceStarter } from "./start-instance.mjs";
-import { retirementSummary, runtimeState } from "./instance-presentation.mjs";
+import { retirementSummary, runtimeState, unsupportedSession } from "./instance-presentation.mjs";
 import { deploymentUnavailableText } from "./deployment-header.mjs";
 import {
   initTheme, toggleTheme, setTheme, THEMES, xtermTheme, onThemeChange,
@@ -22,9 +22,12 @@ import {
 } from "./theme.mjs";
 import { createPalette } from "./palette.mjs";
 import { createQuickOpen } from "./quick-open.mjs";
+import { takePickerFocusReturn } from "./overlay-picker.mjs";
+import { createSurfaceReturn } from "./surface-return.mjs";
+import { createFocusRegions, firstTabbable, isShown } from "./focus-regions.mjs";
 import { createFileOpener } from "./open-file.mjs";
 import {
-  registerAction, setActiveContexts, getBinding, onKeymapChange, formatChord, handleKeydown, matchEvent, runAction,
+  registerAction, setActiveContexts, getBinding, onKeymapChange, formatChord, handleKeydown, matchEvent, runAction, keymapConflicts,
 } from "./keybindings.mjs";
 import { createKeybindingsEditor } from "./keybindings-editor.mjs";
 import { createConnections, connectionsCSS } from "./connections.mjs";
@@ -44,14 +47,16 @@ import { createContextPanel, contextPanelCSS } from "./context-panel.mjs";
 import { createInstanceTeamsSection, teamsCSS } from "./instance-teams.mjs";
 import { createInstanceSoulSection, instanceSoulCSS } from "./instance-soul.mjs";
 import { createInstanceGitPanel, instanceGitCSS } from "./instance-git.mjs";
+import { canAddressRemote, rowReason } from "./remote-address.mjs";
 import { createNotificationCenter, notificationCSS } from "./notifications.mjs";
 import { createRosterTip, rosterTipFacts, rosterTipCSS } from "./roster-tip.mjs";
 import { createRosterPrs, prChip, prText, rosterPrCSS } from "./roster-pr.mjs";
 import { createPanelOwner } from "./panel-owner.mjs";
 import {
-  collapseKey, hasInstanceChildren, instanceRepoLabel, treeConnectors, filterInstanceTree, instanceVisibleInTree,
+  collapseKey, hasInstanceChildren, instanceRepoLabel, treeConnectors, filterInstanceTree, instanceMatchesFilter, instanceVisibleInTree,
   captureTreeRenderState, rosterResponseOwns, clusterSeparator, renderRosterCount,
   instanceId, rosterParentId, terminalKey, resolveTerminalOpen, visibleClusters,
+  createRosterLoading, rosterSignature, markStaleControl, staleBlocked, ROSTER_STALE_TITLE,
 } from "./instance-tree.mjs";
 import {
   tabVisibleInContext, canActivateTab,
@@ -87,7 +92,7 @@ const notifications = createNotificationCenter({ document, generation: workspace
   workspace: currentWorkspace, connectionGeneration: () => connectionGeneration, subscribeConnections,
   onIntent: () => { if (!tabOpenIntents.isApplyingFocus()) tabOpenIntents.invalidate(); },
   applyFocus: callback => tabOpenIntents.applyFocus(callback),
-  fallbackFocus: () => document.getElementById('focus-mode-toggle'),
+  fallbackFocus: () => stableFocusTarget(),
 });
 window.addEventListener('pagehide', () => notifications.dispose(), { once: true });
 
@@ -119,6 +124,7 @@ const ctx = {
   },
   openFile: (path) => openViewTab("markdown", String(path).split("/").pop(), { path }, `file:${path}`),
   openTerminal: (instance, opts) => openTerminalTab(instance, opts),
+  showInRoster: (instance) => showInRoster(instance),
   startInstance: (instance) => openInstanceStart(instance),
   restartInstance: (instance) => openInstanceStart(instance, { restart: true }),
   openBrain: (agent) => openBrainTab(agent),
@@ -191,6 +197,17 @@ async function showStage(name) {
   }
 }
 
+/** A stage switch from the keyboard (a chord, the palette, a nav button) keeps focus on a
+ * control: where it was when that is still shown (the nav button), else the stage's first
+ * control — never <body> after the terminal it was in is hidden (spec F audit). */
+async function showStageFocused(name) {
+  const op = stageOp;
+  await showStage(name);
+  if (stage?.name !== name || tabLayerVisible || (stageOp !== op && stageOp !== op + 1)) return;
+  const active = document.activeElement;
+  if (!active || active === document.body || !isShown(active)) focusRegions.focusRegion("main");
+}
+
 function setNavActive(name) {
   for (const b of navEl.querySelectorAll(".nav-item")) {
     const active = b.dataset.view === name;
@@ -236,6 +253,17 @@ let contextRosterEl = null;
 let contextFilter = "";
 let contextInstances = [];
 let contextWorkspace = "";
+// The roster's loading state (desktop/loading-states): the controller owns the
+// pending skeleton, "Refreshing…", the stale line and Retry; shell owns the
+// latest-intent tokens (contextRosterGen / owns()) and calls it only for a
+// read it still owns. rosterStale: the last owned read failed with data on
+// screen, so Start… and the row actions menu are disabled until one succeeds.
+// rosterSignaturePainted: what the list last painted; an identical poll skips the rebuild.
+let rosterState = null;
+let rosterStale = false;
+let rosterSignaturePainted = null;
+// The deployment note ("Reading the deployment…", a kernel refusal): its own truthful state above the rows.
+let contextDeploymentNote = null;
 let activeInstanceMenu = null;
 const splitOpenState = () => ({ split, activeId: activeTab, tabs, workspace: currentWorkspace(), visible: tabLayerVisible });
 const ownsInstanceTarget = target => target?.workspace === currentWorkspace() && contextWorkspace === currentWorkspace()
@@ -284,12 +312,23 @@ function updateActiveContexts(tabLayerOn = tabLayerVisible) {
 function initContextRoster() {
   contextRosterEl = document.getElementById("instance-roster");
   const input = contextRosterEl.querySelector(".ctx-filter");
+  rosterState = createRosterLoading(document, contextRosterEl, { onRetry: () => { void refreshContextRoster({ user: true }); } });
+  renderRosterCount(contextRosterEl.querySelector(".ctx-count"), [], { pending: true });
   // Native pointer/keyboard entry is a newer UI intent, even if no command
   // ran (or the filter already had focus). Retained attachments stay alive.
   const sidebar = document.getElementById("sidebar");
   sidebar.addEventListener("pointerdown", () => tabOpenIntents.invalidate());
   sidebar.addEventListener("focusin", () => {
     if (!tabOpenIntents.isApplyingFocus()) tabOpenIntents.invalidate();
+  });
+  // ArrowDown from the filter enters the rows (spec F): while filtering, at the first row that
+  // matches (never an ancestor shown only for context); otherwise at the rows' tab stop.
+  input.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowDown" || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.isComposing) return;
+    const row = (contextFilter && contextRosterEl.querySelector('.ctx-list .ctx-inst:not([data-filter-context])'))
+      || contextRosterEl.querySelector('.ctx-list .ctx-inst[tabindex="0"]');
+    if (!row) return;
+    e.preventDefault(); tabOpenIntents.invalidate(); setRovingRow(contextRosterEl.querySelector(".ctx-list"), row);
   });
   input.addEventListener("input", (e) => {
     contextFilter = e.target.value.toLowerCase();
@@ -303,7 +342,7 @@ function setSidebarMode(mode) {
   if (typeof tabs !== "undefined") updateContextTabs();
 }
 
-async function refreshContextRoster() {
+async function refreshContextRoster({ user = false } = {}) {
   if (!contextRosterEl) return;
   const myGen = ++contextRosterGen;
   const commitWorkspaceLabel = workspaceLabel.begin();
@@ -321,13 +360,21 @@ async function refreshContextRoster() {
     staleDispatch,
   });
   const listEl = contextRosterEl.querySelector(".ctx-list");
+  // pending (skeleton after 150ms) without data, refreshing (content stays) with it.
+  rosterState?.begin({ user });
   let panel;
   try {
     panel = await api(`/api/panel${ws ? `?ws=${encodeURIComponent(ws)}` : ""}`);
   } catch (e) {
     if (owns()) {
-      const notice = document.createElement("div"); notice.className = "ctx-empty";
-      notice.textContent = `Roster unavailable: ${e.message}`; listEl.replaceChildren(notice);
+      // With data: stale — the list is kept, its actions disabled, the
+      // controller paints "Couldn't refresh instances · observed <age>" + Retry.
+      // Without: the controller paints the failed block where the skeleton stood.
+      rosterState?.fail(e);
+      // The rows are rebuilt once, to disable their actions; a repeat failure keeps them. Without
+      // data, the count's pill stops (nothing is loading): the reserved box, empty and still.
+      if (rosterState?.hasData && !rosterStale) { rosterStale = true; renderContextRoster(contextInstances); }
+      else if (rosterState && !rosterState.hasData) renderRosterCount(contextRosterEl.querySelector(".ctx-count"), [], { failed: true });
       refreshPanelInstance([], ws);
     }
     return;
@@ -341,21 +388,59 @@ async function refreshContextRoster() {
   }
   if (commitWorkspaceLabel(panel.workspace, panel.workspaces)) renderWorkspaceContext(panel.workspace);
   contextWorkspace = resolvedWs;
-  contextInstances = panel.instances || [];
-  void rosterPrs.refresh(panel.workspace?.remote ? null : resolvedWs);
-  refreshPanelInstance(contextInstances, resolvedWs);
-  renderContextRoster(contextInstances);
-  if (panel.error) {
-    const error = document.createElement("div"); error.className = "ctx-empty"; error.textContent = panel.error;
-    listEl.prepend(error);
-  }
+  // A failed read with no instances keeps the rows already shown for this workspace (stale), so the
+  // previous list survives that reply; every other reply replaces it.
+  const previousInstances = contextInstances;
+  if (!(panel.error && !(panel.instances || []).length && rosterState?.hasData)) contextInstances = panel.instances || [];
   // A deployment the kernel could not observe is not an empty one: name the
   // missing feature or keep the kernel's refusal (never an optimistic read).
-  if (panel.deployment && panel.deployment.status !== "observed" && !panel.workspace?.remote) {
-    const note = document.createElement("div"); note.className = "ctx-empty"; note.setAttribute("role", "status");
-    note.textContent = deploymentUnavailableText(panel.deployment);
-    listEl.prepend(note);
+  // It is its own truthful state, painted above the rows by renderContextRoster
+  // on every path (module state, so a filter edit or a collapse keeps it).
+  contextDeploymentNote = panel.deployment && panel.deployment.status !== "observed" && !panel.workspace?.remote
+    ? deploymentUnavailableText(panel.deployment) : null;
+  const signature = rosterSignature(contextInstances, {
+    workspace: resolvedWs, error: panel.error || null, deploymentNote: contextDeploymentNote,
+    activeKey: tabs.get(activeTab)?.key ?? null, connection: connectionGeneration,
+  });
+  // A panel that reports an error is the kernel's failed read, not an observed
+  // roster: with instances beside it (a remote server the kernel could not
+  // reach, its last roster) the list is kept and goes stale; with none, it is a
+  // failed read — the failed block with Retry where the skeleton stood, or the
+  // previous rows of this workspace kept and marked stale. Never "No instances.".
+  if (panel.error && !contextInstances.length) {
+    refreshPanelInstance([], resolvedWs);
+    rosterState?.fail({ message: panel.error });
+    if (rosterState?.hasData && !rosterStale) { rosterStale = true; renderContextRoster(previousInstances); }
+    else if (rosterState && !rosterState.hasData) renderRosterCount(contextRosterEl.querySelector(".ctx-count"), [], { failed: true });
+    return;
   }
+  const reportedFailure = !!panel.error;
+  // Before the server's first observation the panel says deployment "pending"
+  // with no instances: that is not an observed empty roster. The note is the
+  // whole content (its existing copy, no skeleton), the count keeps its pill,
+  // and the controller stays without data until an observation lands.
+  if (panel.deployment?.status === "pending" && !panel.workspace?.remote && !contextInstances.length && !rosterState?.hasData) {
+    rosterState?.defer();
+    refreshPanelInstance(contextInstances, resolvedWs);
+    if (signature !== rosterSignaturePainted) { rosterSignaturePainted = signature; renderContextRoster(contextInstances); }
+    return;
+  }
+  const unchanged = !!rosterState?.hasData && signature === rosterSignaturePainted && rosterStale === reportedFailure;
+  // The controller learns of the data before the paint (hasData gates the
+  // empty copy). A reported failure with data already present skips
+  // succeed(): its stale line then updates in place instead of being
+  // announced anew on every poll.
+  if (rosterState && (!reportedFailure || !rosterState.hasData)) {
+    rosterState.succeed({ observedAt: typeof panel.observedAt === "string" ? panel.observedAt : null, empty: !contextInstances.length });
+  }
+  rosterStale = reportedFailure;
+  void rosterPrs.refresh(panel.workspace?.remote ? null : resolvedWs);
+  refreshPanelInstance(contextInstances, resolvedWs);
+  if (!unchanged) {
+    rosterSignaturePainted = signature;
+    renderContextRoster(contextInstances);
+  }
+  if (reportedFailure) rosterState?.fail({ message: panel.error });
 }
 
 // Only reported context, never inferred team/membership/readiness. A local
@@ -372,6 +457,24 @@ function renderContextRoster(instances) {
   const listEl = contextRosterEl.querySelector(".ctx-list");
   const restoreTreeState = captureTreeRenderState(listEl);
   const restoreActionMenu = captureInstanceActionMenu(listEl);
+  // No read of this subject has succeeded yet (desktop/loading-states): the
+  // skeleton or the failed block own the list and the count is a skeleton
+  // pill. Rows of the previous subject go; the empty copy is never painted.
+  const pending = !!rosterState && !rosterState.hasData, failed = pending && rosterState.state === "failed";
+  renderRosterCount(contextRosterEl.querySelector(".ctx-count"), instances, { pending: pending && !failed, failed, stale: rosterStale });
+  // The deployment note is painted on every path (poll, filter, collapse, PR change), first in the list.
+  const paintNote = () => {
+    if (contextDeploymentNote === null) return;
+    const note = document.createElement("div"); note.className = "ctx-empty ctx-deployment-note"; note.setAttribute("role", "status");
+    note.textContent = contextDeploymentNote;
+    listEl.prepend(note);
+  };
+  if (pending) {
+    for (const el of listEl.querySelectorAll(":scope > .ctx-tree-row, :scope > .ctx-group, :scope > .ctx-empty")) el.remove();
+    paintNote();
+    tabOpenIntents.applyFocus(restoreTreeState);
+    return;
+  }
   listEl.innerHTML = "";
   const matching = filterInstanceTree(instances, contextFilter);
   const ws = contextWorkspace || currentWorkspace();
@@ -380,9 +483,9 @@ function renderContextRoster(instances) {
   const visible = matching.filter((i) => instanceVisibleInTree(
     i, instances, collapsedInstances, ws, filtering,
   ));
-  renderRosterCount(contextRosterEl.querySelector(".ctx-count"), instances);
   if (!visible.length) {
     listEl.innerHTML = `<div class="ctx-empty">${instances.length ? "Nothing matches." : "No instances."}</div>`;
+    paintNote();
     tabOpenIntents.applyFocus(restoreTreeState);
     return;
   }
@@ -438,16 +541,23 @@ function renderContextRoster(instances) {
         row.type = "button";
         row.dataset.treeInstance = instanceId(i);
         row.dataset.treeControl = "terminal";
+        // An ancestor kept only for a filter match's tree path: shown, but not where the keyboard lands.
+        if (!instanceMatchesFilter(i, contextFilter)) row.dataset.filterContext = "true";
         const state = runtimeState(i);
         row.className = "ctx-inst" + (state === "stopped" ? " idle" : "") + (isActive ? " active" : "");
         rowWrap.classList.toggle("active", isActive);
         if (hasChildren) row.setAttribute("aria-expanded", String(filtering || !collapsed));
-        row.disabled = i.running == null || (!!i.server && !i.savedRoute);
-        const why = i.runtimeError || (i.server && !i.savedRoute ? "No saved route for this instance on this machine"
-          : i.running ? `Open ${i.instance} terminal` : i.running === false ? `Start ${i.instance}` : `${i.instance}: status unknown`);
-        // Workspace v4: an enabled row explains itself in the hover/focus card; a disabled one keeps its reason as a title.
+        // A row that can't open (unknown state, a remote row the kernel does not report addressable) stays
+        // focusable (aria-disabled, spec F): its row tools — the actions menu's Inspect/Stop/Remove — must
+        // stay reachable from the keyboard. Its activation does nothing and says why.
+        const unavailable = i.running == null || !canAddressRemote(i);
+        if (unavailable) { row.setAttribute("aria-disabled", "true"); row.classList.add("unavailable"); }
+        // Why it can't open: a short label on the meta line, the full sentence as its title and description.
+        const reason = rowReason(i);
+        const why = reason?.sentence || i.runtimeError || (i.running ? `Open ${i.instance} terminal` : `Start ${i.instance}`);
+        // Workspace v4: an enabled row explains itself in the hover/focus card; an unavailable one keeps its reason as a title.
         const pr = i.server || i.remote ? null : rosterPrs.get(i.home);
-        if (row.disabled) row.title = why; else rosterTip.bind(row, () => rosterTipFacts(i, why, pr));
+        if (unavailable) { row.title = why; row.setAttribute("aria-description", why); } else rosterTip.bind(row, () => rosterTipFacts(i, why, pr));
         const dot = document.createElement("span");
         dot.className = `ctx-dot ${state === "running" ? "on" : state === "stopped" ? "off" : "unknown"}`;
         const copy = document.createElement("span");
@@ -457,13 +567,17 @@ function renderContextRoster(instances) {
         name.textContent = i.instance;
         const meta = document.createElement("span");
         meta.className = "ctx-meta ctx-repo-label";
-        meta.textContent = [instanceRepoLabel(i), i.branch, state === "unknown" ? "state unknown" : ""].filter(Boolean).join(" · ");
+        meta.textContent = [instanceRepoLabel(i), i.branch, reason?.label].filter(Boolean).join(" · ");
         meta.title = `Repository: ${instanceRepoLabel(i)}${i.branch ? `\nBranch: ${i.branch}` : ""}`;
         if (pr) {
-          // Its pull request beside the name; the link itself sits in the row tools (a button holds no link).
-          const line = document.createElement("span"); line.className = "ctx-name-line";
-          line.append(name, prChip(document, pr)); copy.append(line, meta);
-        } else copy.append(name, meta);
+          // Its pull request on the meta line, before the branch: "repo · #317 branch" (the name line
+          // holds only the name). The link itself sits in the row tools (a button holds no link).
+          const lead = document.createElement("span"); lead.className = "ctx-meta-lead"; lead.textContent = `${instanceRepoLabel(i)} ·`;
+          const rest = [i.branch, reason?.label].filter(Boolean).join(" · ");
+          meta.textContent = ""; meta.classList.add("ctx-meta-pr"); meta.append(lead, prChip(document, pr));
+          if (rest) { const tail = document.createElement("span"); tail.className = "ctx-meta-tail"; tail.textContent = rest; meta.append(tail); }
+        }
+        copy.append(name, meta);
         row.append(dot, copy);
         if (typeof i.harness === "string" && i.harness) {
           const runtime = createRuntimeBadge(document, i.harness);
@@ -472,7 +586,12 @@ function renderContextRoster(instances) {
         }
         // pass the FULL reference: same-named instances in other agents
         // roots must open THEIR tmux session, not the first name match
-        row.addEventListener("click", () => i.running ? openTerminalTab(i) : openInstanceStart(i));
+        // A stale roster (the last read failed) may say running:false for an instance that is running by now:
+        // the row's activation (click, Enter) then starts nothing and says why; opening a running row's
+        // terminal stays allowed (the maintainer's return on #322).
+        const staleStart = rosterStale && !i.running;
+        if (staleStart) { row.title = ROSTER_STALE_TITLE; row.setAttribute("aria-description", ROSTER_STALE_TITLE); }
+        row.addEventListener("click", () => { if (staleStart || unavailable) return; i.running ? openTerminalTab(i) : openInstanceStart(i); });
         // full keyboard tree operability (roving tabindex; policy in
         // roster-keys.mjs). Enter is the button's native activation.
         row.dataset.rosterChildren = hasChildren ? "1" : "0";
@@ -493,8 +612,9 @@ function renderContextRoster(instances) {
         if (i.running === false) {
           const start = document.createElement("button"); start.className = "act ctx-start";
           start.textContent = "Start…"; start.setAttribute("aria-label", `Start ${i.instance}`);
-          start.disabled = !!i.server && !i.savedRoute;
-          start.addEventListener("click", () => openInstanceStart(i));
+          start.disabled = !canAddressRemote(i);
+          if (rosterStale) markStaleControl(start);
+          start.addEventListener("click", () => { if (!staleBlocked(start)) openInstanceStart(i); });
           tools.append(start);
         }
         const actionTarget = instanceActionTarget(ws, i), menuConnection = connectionGeneration;
@@ -502,10 +622,10 @@ function renderContextRoster(instances) {
           && (!actionTarget || ownsInstanceTarget(actionTarget));
         tools.append(instanceActions(document, i, {
           scope: ws, owner: menuOwner, onMenuState: menuState, onFocusChange: () => updateActiveContexts(), dispatch: runAction,
-          shortcut: id => { const chord = getBinding(id); return chord ? formatChord(chord, isMac) : ''; },
+          shortcut: id => { const chord = getBinding(id, isMac); return chord ? formatChord(chord, isMac) : ''; },
           extra: [
             { action: 'open-split', actionId: 'instance.openSplit', label: 'Open in split', reason: () => !actionTarget ? 'Instance identity is not fully reported.'
-              : i.running !== true ? 'No live terminal is reported.' : instanceSplitPlan(splitOpenState()).reason },
+              : unsupportedSession(i) || (i.running !== true ? 'No live terminal is reported.' : instanceSplitPlan(splitOpenState()).reason) },
             { action: 'open-pr', actionId: 'instance.openPullRequest', label: 'Open pull request…', reason: !actionTarget ? 'Instance identity is not fully reported.'
               : i.server || i.remote ? 'Remote PR inspection is unavailable; no local fallback.' : '' },
           ],
@@ -534,11 +654,18 @@ function renderContextRoster(instances) {
             alert([message, retirementSummary(result)].filter(Boolean).join("\n"));
           },
         }));
+        // Stale roster: actions that need current state wait for a refresh;
+        // opening an existing terminal (the row itself) stays available.
+        if (rosterStale) {
+          const trigger = tools.querySelector(".ctx-instance-actions");
+          if (trigger) markStaleControl(trigger);
+        }
         rowWrap.append(tools);
         listEl.append(rowWrap);
       }
     }
   }
+  paintNote();
   // Polling restores the same logical focus; it must not cancel a pending
   // terminal open from that row as if the user had re-entered the sidebar.
   tabOpenIntents.applyFocus(() => {
@@ -547,17 +674,20 @@ function renderContextRoster(instances) {
   });
   rosterTip.sync(listEl);
   // roving tabindex: exactly one row enters the tab order — the focused row
-  // when it survived the rebuild, else the first enabled one
+  // when it survived the rebuild, else the selected one (its terminal is the
+  // active tab), else the first that matches the filter (not an ancestor kept for context)
   applyChordTitles(); updateActiveContexts();
   const rowsAfter = [...listEl.querySelectorAll(".ctx-inst")];
   const focusedRow = rowsAfter.find((r) => r === listEl.ownerDocument.activeElement);
-  const tabbable = focusedRow || rowsAfter.find((r) => !r.disabled);
+  const tabbable = focusedRow || rowsAfter.find((r) => r.classList.contains("active"))
+    || rowsAfter.find((r) => !r.dataset.filterContext) || rowsAfter[0];
   if (tabbable) tabbable.tabIndex = 0;
 }
 
-/* Keyboard walk over the rendered roster rows. Disabled (idle) rows stay
-   visible but focus skips them; expanding/collapsing re-renders and the
-   focused instance is restored by captureTreeRenderState. */
+/* Keyboard walk over the rendered roster rows. Every row takes focus, an
+   unavailable one included (aria-disabled: its tools stay reachable);
+   expanding/collapsing re-renders and the focused instance is restored by
+   captureTreeRenderState. */
 function onRosterRowKey(e) {
   const btn = e.currentTarget;
   const action = rosterKeyAction(e, {
@@ -595,12 +725,8 @@ function onRosterRowKey(e) {
   }
   const to = moveTarget(action, at, rows.length);
   if (to < 0 || to === at) return;
-  // skip idle (disabled) rows: delta moves keep travelling in their
-  // direction; Home/End jumps fall back inward toward the focused row.
-  const step = action.to ? (to > at ? -1 : 1) : (to > at ? 1 : -1);
-  let cursor = to;
-  while (cursor >= 0 && cursor < rows.length && cursor !== at && rows[cursor].disabled) cursor += step;
-  if (cursor >= 0 && cursor < rows.length && cursor !== at && !rows[cursor].disabled) setRovingRow(listEl, rows[cursor]);
+  // Every row takes focus (an unavailable one is aria-disabled, never disabled).
+  setRovingRow(listEl, rows[to]);
 }
 
 /* Move focus AND the single tab-order slot to `row` (roving tabindex). */
@@ -608,6 +734,30 @@ function setRovingRow(listEl, row) {
   for (const r of listEl.querySelectorAll('.ctx-inst[tabindex="0"]')) r.tabIndex = -1;
   row.tabIndex = 0;
   row.focus();
+}
+
+/** Select a roster row of this workspace (by server and home) and move keyboard focus to it: through a
+ * filter that hides it and any collapsed ancestor. False when the roster does not list it (yet). */
+async function showInRoster(instance) {
+  const ws = currentWorkspace();
+  const find = () => contextWorkspace === ws ? contextInstances.find(i => (i.server || null) === (instance?.server || null) && i.home === instance?.home) : null;
+  if (!find()) await refreshContextRoster();
+  const row = find();
+  if (!row || ws !== currentWorkspace() || !contextRosterEl) return false;
+  if (contextFilter && !instanceMatchesFilter(row, contextFilter)) {
+    contextFilter = "";
+    const input = contextRosterEl.querySelector(".ctx-filter"); if (input) input.value = "";
+  }
+  for (let id = rosterParentId(contextInstances, instanceId(row)), seen = new Set(); id && !seen.has(id); id = rosterParentId(contextInstances, id)) {
+    seen.add(id); collapsedInstances.delete(collapseKey(ws, id));
+  }
+  renderContextRoster(contextInstances);
+  const listEl = contextRosterEl.querySelector(".ctx-list");
+  const target = listEl && [...listEl.querySelectorAll(".ctx-inst")].find(r => r.dataset.treeInstance === instanceId(row));
+  if (!target) return false;
+  tabOpenIntents.invalidate(); // an explicit navigation, not a polling restoration
+  setRovingRow(listEl, target);
+  return true;
 }
 
 function showTerminalContext() {
@@ -661,7 +811,7 @@ const contextPanel = createContextPanel({
     }),
   }),
   // Teams (teams contract): the instance's own teams through its messaging provider's operations.
-  createTeamsSection: (host, { onPresence }) => createInstanceTeamsSection(host, { onPresence, generation: workspaceGeneration,
+  createTeamsSection: (host, options) => createInstanceTeamsSection(host, { ...options, generation: workspaceGeneration,
     request: (workspace, body) => api(`/api/capabilities?ws=${encodeURIComponent(workspace)}`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
     }),
@@ -694,6 +844,10 @@ const contextPanel = createContextPanel({
   onIntent: () => { if (!tabOpenIntents.isApplyingFocus()) tabOpenIntents.invalidate(); },
   applyFocus: callback => tabOpenIntents.applyFocus(callback),
   onFocusModeChange: () => updateSidebarControls(),
+  // Focus mode hides the sidebar: focus that was there lands on the active tab, else a stable visible control.
+  fallbackFocus: () => stableFocusTarget(),
+  // (isMac is declared with the palette, after this first render: read the platform here.)
+  shortcutHint: () => { const mac = !!globalThis.navigator?.platform?.includes("Mac"); const chord = getBinding("panel.toggle", mac); return chord ? formatChord(chord, mac) : ""; },
 });
 window.addEventListener("pagehide", () => contextPanel.dispose(), { once: true });
 
@@ -703,6 +857,21 @@ function syncContextPanel() {
   const terminal = tab?.kind === "terminal" && canActivateTab(tab, currentWorkspace());
   contextPanel.setContext({ workspace: currentWorkspace(), owner: tabLayerVisible ? null : stage,
     instance: terminal ? tab.instanceRef : null, key: terminal && tab.instanceRef ? tab.key : null });
+}
+onKeymapChange(() => syncContextPanel()); // the panel toggle's tooltip names its chord
+function activeTabTrigger() { return activeTab != null ? tabs.get(activeTab)?.triggerEl ?? null : null; }
+/** Where focus goes when the control holding it disappears: the active tab's trigger when it is shown, else a
+ * stable visible control (the panel toggle, the sidebar toggle, or the restore edge that focus mode and a
+ * hidden sidebar show), never <body>. */
+function stableFocusTarget() {
+  const shown = el => {
+    if (!el?.isConnected || el.disabled) return false;
+    for (let node = el; node; node = node.parentElement) {
+      if (node.hidden || node.inert || document.defaultView.getComputedStyle(node).display === "none") return false;
+    }
+    return true;
+  };
+  return [activeTabTrigger(), ...["panel-toggle", "sidebar-toggle", "sidebar-restore"].map(id => document.getElementById(id))].find(shown) ?? null;
 }
 function refreshPanelInstance(instances, workspace) {
   const tab = tabs.get(activeTab);
@@ -1209,8 +1378,8 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
   // may have waited across a workspace switch.
   if (!owns()) return;
   const name = inst.instance;
-  if (inst.server && !inst.savedRoute) return notify("No saved route for this remote instance on this machine");
-  if (!inst.running || (!inst.server && !inst.tmux?.session && !inst.sessionTarget)) return notify(inst.runtimeError || `"${name}" has no live terminal session`);
+  if (!canAddressRemote(inst)) return notify(rowReason(inst).sentence);
+  if (!inst.running || (!inst.server && !inst.tmux?.session)) return notify(inst.runtimeError || `"${name}" has no live terminal session`);
 
   if (!commitDestination()) return notify('The terminal destination changed. Select the instance again.');
   const wrap = document.createElement("div");
@@ -1238,8 +1407,9 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
     desk,
     term,
     tmux: inst.tmux,
-    sessionTarget: inst.sessionTarget,
     remote: inst.server ? { serverId: inst.server, instance: inst.instance, home: inst.home } : undefined,
+    // A remote row's repoName is its server's registered label, else the server id.
+    serverLabel: inst.server ? inst.repoName || inst.server : undefined,
     wrap,
     isActive: () => made.paneEl.classList.contains("active"),
     // Visibility is a fit concern, not permission to focus. Consult the
@@ -1249,9 +1419,10 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
       && tabOpenIntents.ownsFocus(made.id),
     focusInput: () => tabOpenIntents.applyFocus(() => term.focus()),
     fit: () => fit.fit(),
-    // Terminal-allowlisted shortcuts (engine policy: app.palette, tabs.*)
-    // must be intercepted BEFORE xterm writes to the pty — its capture-phase
-    // handler consumes e.g. Ctrl+K, so the bubble-phase window listener
+    // Terminal-allowlisted shortcuts (engine policy: app.palette, tabs.next/
+    // prev/close, split.*, focus.leaveTerminal) must be intercepted BEFORE xterm
+    // writes to the pty — its handler consumes e.g. Ctrl+Shift+P or ⌘⇧F6 and
+    // stops propagation, so the bubble-phase window listener
     // never sees it. matchEvent applies the allowlist (insideTerminal);
     // the action runs once on keydown, and every phase of a matched chord
     // is claimed so no control byte leaks to the attached program.
@@ -1334,7 +1505,7 @@ async function openWorkspaceSouls() {
 // ── command palette (⌘K): jump to an instance or run a command ─────────
 const isMac = navigator.platform.includes("Mac");
 const chordDetail = (id) => () => {
-  const b = getBinding(id);
+  const b = getBinding(id, isMac);
   return b ? formatChord(b, isMac) : "";
 };
 const palette = createPalette({
@@ -1347,7 +1518,7 @@ const palette = createPalette({
   commands: [
     // View commands derive from the nav manifest so a new rail destination
     // can never be palette-invisible (review 8441961 nit).
-    ...NAV.map((v) => ({ label: `View: ${v.label}`, detail: chordDetail(`stage.${v.name}`), run: () => showStage(v.name) })),
+    ...NAV.map((v) => ({ label: `View: ${v.label}`, detail: chordDetail(`stage.${v.name}`), run: () => showStageFocused(v.name) })),
     { label: "Spawn instance: choose a soul in Workspace…", detail: chordDetail("app.chooseSoul"), run: () => runAction("app.chooseSoul") },
     { label: "Souls: quick open…", detail: chordDetail("app.quickOpenSouls"), run: () => runAction("app.quickOpenSouls") },
     { label: "File: open read-only…", detail: chordDetail("app.openFile"), run: () => runAction("app.openFile") },
@@ -1358,7 +1529,7 @@ const palette = createPalette({
     { label: "Workspace: switch…", detail: chordDetail("app.workspaces"), run: () => workspaceLabel.openMenu() },
     { label: "Instances: focus the sidebar roster", detail: chordDetail("sidebar.focusFilter"), run: () => focusRoster() },
     { label: "Sidebar: toggle (hide/show)", detail: chordDetail("sidebar.toggle"), run: () => toggleSidebar() },
-    { label: "Context panel: toggle", detail: chordDetail("panel.toggle"), run: () => runAction("panel.toggle") },
+    { label: "Instance panel: show / hide", detail: chordDetail("panel.toggle"), run: () => runAction("panel.toggle") },
     { label: "Focus mode: toggle", detail: chordDetail("app.focusMode"), run: () => runAction("app.focusMode") },
     { label: "Split: terminal right (side by side)", detail: chordDetail("split.vertical"), run: () => splitPane("row") },
     { label: "Split: terminal down (stacked)", detail: chordDetail("split.horizontal"), run: () => splitPane("col") },
@@ -1376,13 +1547,15 @@ const palette = createPalette({
   ],
 });
 
-// ── Quick Open for souls (Mod+P): find a soul, land in its spawn form ──
-// Selection hands off to the soul inspector (preselectSoul —
-// consumed by the view's next roster paint), so CLI degradation and the
-// attached-only rule render exactly as the Spawn view always renders them.
-// Terminal policy (documented): app.quickOpenSouls is NOT terminal-
-// allowlisted — ⌘P fires inside xterm on macOS by the ⌘-chord policy, but
-// Ctrl+P inside xterm on Linux/Windows belongs to the shell's history.
+// ── Quick Open for souls (Mod+P): find a soul, open its spawn dialog ──
+// Selection hands off to Workspace (preselectSpawn — consumed by the view's
+// next roster paint): the spawn dialog scoped to that soul, exactly as its
+// card's Spawn opens it. A soul that can't be spawned here (attached only,
+// refused, no verified CLI) opens its page instead, which says why.
+// Dismissing the dialog returns to where the operator was before Quick Open
+// (surface-return.mjs). Terminal policy (documented): app.quickOpenSouls is
+// NOT terminal-allowlisted — ⌘P fires inside xterm on macOS by the ⌘-chord
+// policy, but Ctrl+P inside xterm on Linux/Windows belongs to the shell's history.
 const quickOpen = createQuickOpen({
   loadSouls: async () => {
     const ws = currentWorkspace();
@@ -1392,6 +1565,8 @@ const quickOpen = createQuickOpen({
     // Capture before module loading: a new tab/stage/sidebar intent or an
     // A→B→A workspace visit must not turn this old callback into a new pick.
     const owns = tabOpenIntents.begin();
+    // Where the operator was (the picker kept the control they opened it from).
+    const origin = surfaceReturn.capture(takePickerFocusReturn(document));
     let mod;
     try { mod = await import("./views/spawn.mjs"); }
     catch (e) {
@@ -1400,7 +1575,7 @@ const quickOpen = createQuickOpen({
       return;
     }
     if (!owns()) return;
-    mod.preselectSoul(soul);
+    mod.preselectSpawn({ ...soul, onDismiss: () => surfaceReturn.restore(origin) });
     showStage("spawn");
   },
 });
@@ -1413,6 +1588,22 @@ onWorkspaceChange(() => {
 
 // ── shortcuts editor (rail-footer button + palette + Mod+,) ────────────
 const shortcutsEditor = createKeybindingsEditor({ doc: document, isMac });
+// Stored rebinds vs the effective keymap (spec F review): a clash is never resolved silently;
+// the footer button carries a warn dot and a description until the operator rebinds or resets.
+function markShortcutClashes() {
+  const button = document.getElementById("sidebar-shortcuts");
+  if (!button) return;
+  const clashes = keymapConflicts(isMac).length;
+  button.classList.toggle("has-clash", clashes > 0);
+  if (clashes) button.setAttribute("aria-description", `${clashes === 1 ? "1 shortcut you set clashes" : `${clashes} shortcuts you set clash`} with another: open to review`);
+  else button.removeAttribute("aria-description");
+}
+let clashCheckQueued = false;
+onKeymapChange(() => {
+  if (clashCheckQueued) return;
+  clashCheckQueued = true;
+  queueMicrotask(() => { clashCheckQueued = false; markShortcutClashes(); });
+});
 function openShortcutsEditor() { tabOpenIntents.invalidate(); lifecycleDialog.close(); connections.close(); shortcutsEditor.open(); }
 const connections = createConnections({ doc: document, desk,
   request: body => api('/api/forge-connections', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
@@ -1519,13 +1710,60 @@ function visibleTabEntries() {
   return [...tabs].filter(([, t]) => !t.tabEl.hidden);
 }
 
+/** A keyboard tab switch keeps focus where the operator works: in the content (a terminal's
+ * input) when it was in a tab's content or nowhere, on the new tab when it was on the strip. */
+function switchTab(id) {
+  const active = document.activeElement;
+  const inContent = tabhost.contains(active) || !active || active === document.body;
+  if (!selectTab(id, { focusContent: inContent })) return;
+  if (!inContent && tabbar.contains(active)) tabs.get(id)?.triggerEl.focus();
+}
+
 function cycleTab(delta) {
   const vis = visibleTabEntries();
   if (!vis.length) return;
   const at = Math.max(0, vis.findIndex(([tid]) => tid === activeTab));
   const [nextId] = vis[(at + delta + vis.length) % vis.length];
-  selectTab(nextId);
+  switchTab(nextId);
 }
+
+/** Go to tab n (1-based) of the visible strip; 9 is the last tab, as in browsers. */
+function gotoTab(n) {
+  const vis = visibleTabEntries();
+  if (!vis.length) return;
+  const [id] = n >= 9 ? vis.at(-1) : vis[n - 1] ?? [];
+  if (id != null) switchTab(id);
+}
+
+// ── keyboard regions (F6 / Shift+F6) and "back to where you were" ──────
+// focus-regions.mjs owns the order and each region's current item; the
+// shell supplies the active tab's content (a terminal focuses through its
+// selection intent, like every explicit terminal focus).
+function focusMainContent() {
+  if (activeTab == null) {
+    const empty = tabhost.querySelector(".focused-group > .split-empty");
+    if (empty) tabOpenIntents.applyFocus(() => empty.focus());
+    return !!empty && document.activeElement === empty;
+  }
+  const t = tabs.get(activeTab);
+  if (!t) return false;
+  if (t.focusContent) { selectTab(activeTab, { focusContent: true }); return t.paneEl.contains(document.activeElement); }
+  const first = firstTabbable(t.paneEl);
+  if (first) tabOpenIntents.applyFocus(() => first.focus());
+  return !!first && document.activeElement === first;
+}
+const focusRegions = createFocusRegions({ doc: document, tabLayerVisible: () => tabLayerVisible, focusMainContent });
+/** A modal (a dialog, the palette) keeps focus inside itself: regions don't cycle out of it. */
+const modalOpen = () => [...document.querySelectorAll('[aria-modal="true"]')].some(dialog => isShown(dialog));
+function cycleRegion(delta) {
+  if (modalOpen()) return;
+  tabOpenIntents.invalidate();
+  focusRegions.cycle(delta);
+}
+const surfaceReturn = createSurfaceReturn({ doc: document, currentWorkspace, workspaceGeneration,
+  surface: () => ({ stage: stage?.name ?? null, tab: activeTab, tabLayerVisible }),
+  tabPane: id => { const t = tabs.get(id); return t && canActivateTab(t, currentWorkspace()) ? t.paneEl : null; },
+  showStage, selectTab: (id, opts) => selectTab(id, opts), focusRegion: name => focusRegions.focusRegion(name), host: "spawn" });
 
 // ── action registry: every mouse affordance, one keyboard action ────────
 // Default chords live in the engine's DEFAULT_KEYMAP (keybindings.mjs);
@@ -1547,7 +1785,7 @@ window.addEventListener("pagehide", () => { tabOpenIntents.invalidate(); unregis
 // palette): a new rail destination can never be shortcut-invisible.
 NAV.forEach((v) => registerAction({
   id: `stage.${v.name}`, label: `View: ${v.label}`, context: "global",
-  run: () => showStage(v.name),
+  run: () => showStageFocused(v.name),
 }));
 registerAction({ id: "app.themeToggle", label: "Cycle White / Solarized / Dark theme", context: "global", run: () => toggleTheme() });
 // Explicit theme choices are rebindable, but add no default keyboard chords.
@@ -1557,11 +1795,10 @@ THEMES.forEach(({ id, label }) => registerAction({
 registerAction({ id: "app.workspaces", label: "Open the workspace switcher", context: "global", run: () => workspaceLabel.openMenu() });
 registerAction({ id: "sidebar.focusFilter", label: "Focus the instance roster filter", context: "global", run: () => focusRoster() });
 registerAction({ id: "sidebar.toggle", label: "Toggle the sidebar", context: "global", run: () => toggleSidebar() });
-registerAction({ id: "panel.toggle", label: "Toggle the context panel", context: "global", run: () => { tabOpenIntents.invalidate(); contextPanel.toggle(); } });
-registerAction({ id: "app.focusMode", label: "Toggle focus mode (sidebar and context panel)", context: "global", run: () => { tabOpenIntents.invalidate(); contextPanel.toggleFocusMode(); } });
-for (const [id, action] of [["panel-toggle", "panel.toggle"], ["focus-mode-toggle", "app.focusMode"]]) {
-  document.getElementById(id).addEventListener("click", () => runAction(action));
-}
+registerAction({ id: "panel.toggle", label: "Show or hide the instance panel", context: "global", run: () => { tabOpenIntents.invalidate(); contextPanel.toggle(); } });
+// Focus mode lives on the keyboard (rebindable, no default chord) and the palette.
+registerAction({ id: "app.focusMode", label: "Toggle focus mode (sidebar and instance panel)", context: "global", run: () => { tabOpenIntents.invalidate(); contextPanel.toggleFocusMode(); } });
+document.getElementById("panel-toggle").addEventListener("click", () => runAction("panel.toggle"));
 // splits live on the tab layer (they arrange terminal tabs); the actions
 // are terminal-allowlisted so the chords work inside xterm too.
 registerAction({ id: "split.vertical", label: "Split terminal right (side by side)", context: "tabs", run: () => splitPane("row") });
@@ -1575,15 +1812,30 @@ registerAction({ id: "terminal.fontBigger", label: "Terminal: increase font size
 registerAction({ id: "terminal.fontSmaller", label: "Terminal: decrease font size", context: "global", run: () => setTerminalFontSize(terminalTypography().fontSize - 1) });
 registerAction({ id: "terminal.fontReset", label: "Terminal: reset typography", context: "global", run: () => { setTerminalFontFamily(""); setTerminalFontSize(13); } });
 // tabs: cycle + close work whether or not a tab trigger has focus (the
-// tab-a11y roving arrows stay as focus keys on the strip itself).
-registerAction({ id: "tabs.next", label: "Next tab", context: "tabs", run: () => cycleTab(1) });
-registerAction({ id: "tabs.prev", label: "Previous tab", context: "tabs", run: () => cycleTab(-1) });
+// tab-a11y roving arrows stay as focus keys on the strip itself). Tab switching
+// never happens under an open modal (the palette, a sheet, a dialog), as F6 doesn't.
+const unlessModal = (fn) => () => { if (!modalOpen()) fn(); };
+registerAction({ id: "tabs.next", label: "Next tab", context: "tabs", run: unlessModal(() => cycleTab(1)) });
+registerAction({ id: "tabs.prev", label: "Previous tab", context: "tabs", run: unlessModal(() => cycleTab(-1)) });
 registerAction({ id: "tabs.close", label: "Close the active tab", context: "tabs", run: () => { if (activeTab != null) closeTab(activeTab, true); } });
+// Second chords for tab cycling (Ctrl+PgDn / Ctrl+PgUp on Linux and Windows): their own ids,
+// so each stays rebindable and unbindable on its own. Neither fires inside a terminal.
+registerAction({ id: "tabs.nextPage", label: "Next tab (second shortcut)", context: "tabs", run: unlessModal(() => cycleTab(1)) });
+registerAction({ id: "tabs.prevPage", label: "Previous tab (second shortcut)", context: "tabs", run: unlessModal(() => cycleTab(-1)) });
+for (let n = 1; n <= 9; n++) {
+  registerAction({ id: `tabs.goto${n}`, label: n === 9 ? "Go to the last tab" : `Go to tab ${n}`, context: "tabs", run: unlessModal(() => gotoTab(n)) });
+}
+// Regions: sidebar nav → instance roster → main → instance panel (focus-regions.mjs).
+registerAction({ id: "focus.nextRegion", label: "Focus the next region (sidebar, instances, main, panel)", context: "global", run: () => cycleRegion(1) });
+registerAction({ id: "focus.prevRegion", label: "Focus the previous region", context: "global", run: () => cycleRegion(-1) });
+// F6 stays the program's inside a terminal (mc, htop, nano): this terminal-allowlisted chord
+// leaves it for the next region, same order as F6; from there plain F6 works.
+registerAction({ id: "focus.leaveTerminal", label: "Leave the terminal (focus the next region)", context: "global", run: () => cycleRegion(1) });
 
 // THE one window keydown listener. The engine owns the terminal policy
-// (⌘ chords on mac; the action-id allowlist on Linux/Windows — Ctrl+K now
-// opens the palette inside xterm there, superseding the legacy
-// isPaletteShortcut pass-through). View-local handlers (hierarchy canvas,
+// (⌘ chords on mac; the action-id allowlist on Linux/Windows, where the
+// allowlisted defaults are Ctrl+Shift+key so plain Ctrl+letter stays the
+// program's). View-local handlers (hierarchy canvas,
 // roster rows, palette input) preventDefault the keys they consume; the
 // engine must not double-dispatch them.
 // The engine skips already-consumed (defaultPrevented) events itself.
@@ -1600,12 +1852,12 @@ function applyChordTitles() {
   }
   for (const el of document.querySelectorAll("[data-action]")) {
     if (!baseTitles.has(el)) baseTitles.set(el, el.title || "");
-    const chord = getBinding(el.dataset.action);
+    const chord = getBinding(el.dataset.action, isMac);
     const base = baseTitles.get(el);
     el.title = chord ? `${base} (${formatChord(chord, isMac)})` : base;
   }
   for (const el of document.querySelectorAll("[data-shortcut]")) {
-    const chord = getBinding(el.dataset.shortcut);
+    const chord = getBinding(el.dataset.shortcut, isMac);
     el.textContent = chord ? formatChord(chord, isMac) : "";
     el.hidden = !chord;
   }
@@ -1634,6 +1886,11 @@ function restoreWorkspaceTabs() {
   split = restored.split;
   contextInstances = [];
   contextWorkspace = tabWorkspace;
+  // A new subject: forget the data, the stale mark and the painted signature.
+  // The list clears into pending (a skeleton pill for the count); the rows of
+  // the new workspace arrive with the refresh below, never "No instances".
+  rosterState?.reset();
+  rosterStale = false; rosterSignaturePainted = null; contextDeploymentNote = null;
   renderContextRoster([]);
   if (restored.tabLayerVisible) {
     setSidebarMode(restored.sidebarMode);

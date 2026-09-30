@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="../node_modules/@xterm/xterm/css/xterm.css" />
   <link rel="stylesheet" href="theme.css" />
   <link rel="stylesheet" href="shell.css" />
+  <link rel="stylesheet" href="loading.css" />
   <script src="../node_modules/@xterm/xterm/lib/xterm.js"></script>
   <script src="../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
 </head>
@@ -78,18 +79,14 @@
                   title="Split terminal down (stacked)" aria-label="Split terminal down"><span data-shell-icon="splitDown" aria-hidden="true"></span></button>
           <button id="split-close" type="button" data-action="split.close"
                   title="Close the split (back to single pane)" aria-label="Close the split"><span data-shell-icon="splitClose" aria-hidden="true"></span></button>
+          <span class="tab-actions-sep" aria-hidden="true"></span>
+          <button id="panel-toggle" type="button" title="Show instance panel" aria-label="Show instance panel"
+                  aria-controls="context-panel" aria-pressed="false" disabled><span data-shell-icon="panelRight" aria-hidden="true"></span></button>
           </div>
         </div>
       </div>
       <div id="stagehost"></div>
       <div id="tabhost" style="display:none"></div>
-      <footer id="context-tools" aria-label="Workspace layout">
-        <span id="context-status" class="context-status"></span>
-        <button id="panel-toggle" type="button" data-action="panel.toggle" title="Toggle the context panel"
-                aria-controls="context-panel" aria-expanded="false" disabled>Details</button>
-        <button id="focus-mode-toggle" type="button" data-action="app.focusMode" title="Toggle focus mode"
-                aria-pressed="false">Focus mode</button>
-      </footer>
     </main>
     <aside id="context-panel" aria-label="Selection details" hidden></aside>
     </div>

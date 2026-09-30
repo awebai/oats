@@ -1,19 +1,40 @@
 /** Owned offline readiness presentation (readinessApi 2: a soul or an instance;
  * installed · configured · member · providers). No background polling or
- * remediation; a provider's own binding check is shown as it answered. */
+ * remediation; a provider's own binding check is shown as it answered.
+ *
+ * Loading states (desktop/loading-states) come from the shared controller in
+ * loading.mjs: the first read of a subject is pending (status "Loading
+ * readiness…", a detail-section skeleton in the body after 150ms), a Refresh
+ * with a value present keeps the checks in place and shows "Refreshing…"
+ * beside the title after 400ms, a failure with a value keeps it and paints the
+ * stale line ("Couldn't refresh readiness · observed <age>" + Retry) under the
+ * status, and a failure without a value paints the failed block (cause,
+ * Details, Retry) where the skeleton stood. The visible `.readiness-status` is
+ * the controller's status line; the summary (Ready / failing counts) has its
+ * own `.readiness-summary` line so an announcement never overwrites it. */
 import { postJson, workspaceGeneration } from './views/common.mjs';
+import { createDataState, skeletonBlock, captureFocusState } from './loading.mjs';
 import { CHECKS, readinessSelector, readinessSupported, readinessTarget, readinessData, readinessFailure } from './readiness-contract.mjs';
 import { originText } from './inspect-contract.mjs';
 import { iconElement } from './shell-icons.mjs';
+import { readingFrom, remoteReason } from './remote-address.mjs';
 export const readinessCSS = `
 .readiness-view { color:var(--fg); min-width:0; margin:18px 0; font-size:12px; line-height:1.5; }
 .readiness-view[hidden], .readiness-view [hidden] { display:none; }
 .readiness-view h2 { font-size:14px; margin:0; }
 .readiness-more > summary { cursor:pointer; font-size:12px; color:var(--muted); margin:4px 0; }
 .readiness-more[open] > summary { margin-bottom:10px; }
-.readiness-context, .readiness-note, .readiness-status, .readiness-item dt { color:var(--muted); overflow-wrap:anywhere; }
+.readiness-context, .readiness-note, .readiness-status, .readiness-summary, .readiness-item dt { color:var(--muted); overflow-wrap:anywhere; }
 .readiness-view p { margin:4px 0; }
-.readiness-status { min-height:1.5em; }
+/* The status line keeps its height while it speaks and collapses when silent (mirrors loading.css
+   .loading-status); the summary reserves its line from the first read, so data landing shifts nothing. */
+.readiness-status, .readiness-summary { min-height:1.5em; }
+.readiness-status:empty { min-height:0; }
+.readiness-head { display:flex; flex-wrap:wrap; align-items:baseline; gap:10px; }
+.readiness-head h2 { flex:none; }
+.readiness-indicator:empty, .readiness-notice:empty { display:none; }
+.readiness-notice { margin:6px 0; }
+.readiness-content:empty { display:none; }
 .readiness-checks { border:1px solid var(--border); border-radius:12px; background:var(--surface); overflow:hidden; }
 .readiness-check { padding:16px 18px; border-top:1px solid var(--border); }
 .readiness-check:first-child { border-top:0; }
@@ -28,7 +49,6 @@ export const readinessCSS = `
 .readiness-item dt { font-size:11px; }
 .readiness-view details { margin-top:8px; }
 .readiness-view summary { cursor:pointer; }
-.readiness-view summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .readiness-view button { min-height:34px; }
 .readiness-actions { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
 .soul-inspector .readiness-view { margin-top:16px; }
@@ -50,22 +70,29 @@ const PROVIDER_SAYS = {
   'authorization-required': 'Sign in needed: the provider is set up but is not signed in.', unavailable: 'The provider says: unavailable right now.',
 };
 const signIn = i => i.result?.status === 'authorization-required';
-export function createReadinessView(host, { ctx, compact = false } = {}) {
+/** @param {object} [options.clock] `{ now, setTimeout, clearTimeout }` for the loading controller's delays (tests). */
+export function createReadinessView(host, { ctx, compact = false, clock = {} } = {}) {
   const doc = host.ownerDocument;
   const node = (tag, value, cls) => { const el = doc.createElement(tag); if (value !== undefined) el.textContent = value; if (cls) el.className = cls; return el; };
-  let alive = true, active = false, serial = 0, identity = null, gen = null, state = {}, attempted = false, busy = false, value = null, blocked = '', query = '';
+  let alive = true, active = false, serial = 0, identity = null, gen = null, state = {}, attempted = false, busy = false, value = null, blocked = '', query = '', painted = null;
   const section = node('section', undefined, 'readiness-view'); section.hidden = true; section.setAttribute('aria-label', 'Effective readiness');
-  const title = node('h2', 'Readiness'), context = node('p', '', 'readiness-context');
+  const heading = node('div', undefined, 'readiness-head'), title = node('h2', 'Readiness'), indicator = node('span', undefined, 'readiness-indicator');
+  heading.append(title, indicator);
+  const context = node('p', '', 'readiness-context');
+  // The controller's line: "Loading readiness…", "Readiness updated", the failure. The summary has its own line below it.
   const status = node('p', '', 'readiness-status'); status.setAttribute('role', 'status');
-  const body = node('div'), actions = node('div', undefined, 'readiness-actions');
+  const summary = node('p', '', 'readiness-summary'), notice = node('div', undefined, 'readiness-notice');
+  // body = the painted content, then the controller's skeleton or failed block beside it (never inside it).
+  const body = node('div'), content = node('div', undefined, 'readiness-content'), actions = node('div', undefined, 'readiness-actions');
+  body.append(content);
   const refresh = node('button', 'Refresh readiness', 'act readiness-refresh'); refresh.type = 'button';
   actions.append(refresh);
   const note = node('p', 'Independent kernel observations, not launch permission. Unknown is not granted; an empty required set is not Ready.', 'readiness-note');
   if (compact) {
-    // Compact (the inspector): one status line up front; the checks, their context and the policy behind a disclosure.
+    // Compact (the inspector): the status and summary lines up front; the checks, their context and the policy behind a disclosure.
     const more = node('details', undefined, 'readiness-more'); more.append(node('summary', 'Checks and policy'), context, note, body);
-    section.append(title, status, more, actions);
-  } else section.append(title, context, note, status, body, actions);
+    section.append(heading, status, summary, notice, more, actions);
+  } else section.append(heading, context, note, status, summary, notice, body, actions);
   host.append(section);
   const current = () => alive && active && gen === workspaceGeneration();
   const owns = ticket => current() && serial === ticket;
@@ -74,21 +101,34 @@ export function createReadinessView(host, { ctx, compact = false } = {}) {
     for (let el = section; el; el = el.parentElement) if (el.hidden || el.inert || el.style.display === 'none' || el.style.visibility === 'hidden') return false;
     return true;
   }
-  refresh.addEventListener('click', () => { if (current() && visible() && !refresh.disabled) void load(); });
+  // One detail-section skeleton roughly the height of the observed note plus the checks card.
+  const skeleton = () => { const el = skeletonBlock(doc, 'detail-section', { count: 1 }); el.style.setProperty('--skeleton-block-h', compact ? '220px' : '320px'); return el; };
+  const loading = createDataState({ doc, noun: 'readiness', region: section, skeletonHost: body, skeleton, status, indicatorHost: indicator, noticeHost: notice,
+    onRetry: () => { if (current() && visible()) void load({ user: true }); }, focusFallback: refresh, ...clock });
+  // Refresh: aria-disabled while a read is in flight (bindRefresh), never `disabled`, so a focused button keeps focus.
+  loading.bindRefresh(refresh, () => { if (current() && visible()) void load({ user: true }); });
   function availability(next) {
     // The panel's workspace is {id, name} (v2); the server admits the read against its own registry.
     if (!next.workspace?.id || !readinessSelector(next.selector)) return 'Waiting for a qualified workspace selection…';
-    if (next.workspace.remote || next.workspace.server || next.selector.server) return readinessFailure('unsupported-remote-operation').reason.message;
     if (!readinessSupported(next.cli)) return readinessFailure(next.cli?.ok ? 'cli-no-readiness' : 'cli-unavailable').reason.message;
     return '';
   }
+  /** Open disclosures by their summary text, so a repaint from refreshed data keeps what the person opened. */
+  const openDisclosures = () => new Set([...content.querySelectorAll('details')].filter(d => d.open).map(d => d.querySelector('summary')?.textContent));
   function render() {
-    body.replaceChildren();
-    if (!value) return;
-    const data = value.data, checks = node('div', undefined, 'readiness-checks');
-    status.textContent = data.summary.ready ? 'Ready — every required check passes or is not applicable.'
+    if (!value) { content.replaceChildren(); summary.textContent = ''; painted = null; return; }
+    const data = value.data;
+    summary.textContent = data.summary.ready ? 'Ready — every required check passes or is not applicable.'
       : data.summary.required === 0 ? 'Readiness not established — no required checks reported.' : `${data.summary.fail} failing · ${data.summary.unknown} unknown · ${data.summary.required} required checks`;
-    body.append(node('p', `Observed: ${data.at}. Target: ${value.target.observedAs}. This is not an atomic snapshot or a permission lease.`, 'readiness-note'), checks);
+    const observed = `Observed: ${data.at}. Target: ${value.target.observedAs}. This is not an atomic snapshot or a permission lease.`;
+    // Unchanged facts (the observation time aside) are not repainted: the open disclosures and any focus inside stay untouched.
+    const signature = JSON.stringify([value.target.observedAs, query, { ...data, at: null }]);
+    if (signature === painted) { content.querySelector('.readiness-observed').textContent = observed; return; }
+    painted = signature;
+    const restoreFocus = captureFocusState(content), open = openDisclosures();
+    content.replaceChildren();
+    const checks = node('div', undefined, 'readiness-checks');
+    content.append(node('p', observed, 'readiness-note readiness-observed'), checks);
     for (const key of CHECKS) {
       const c = data.checks[key], row = node('section', undefined, 'readiness-check'), head = node('div', undefined, 'readiness-check-head');
       // A check failing only because providers need a sign-in is its own state, not broken.
@@ -125,25 +165,38 @@ export function createReadinessView(host, { ctx, compact = false } = {}) {
     }
     const policy = node('details', undefined, 'readiness-policy'); policy.append(node('summary', 'View policy'), node('p', 'Lifecycle authority, not an OS sandbox.', 'readiness-note'));
     for (const [key, p] of Object.entries(data.policy)) policy.append(node('p', `${key === 'childSpawns' ? 'Child spawns' : 'Worktrees'}: ${p.allowed === null ? 'unknown' : p.allowed ? 'allowed' : 'not allowed'} · ${p.enforced ? 'enforced' : 'advisory, not enforced'} · ${p.origin.kind}${p.origin.detail ? `: ${p.origin.detail}` : ''}${p.mode ? ` · mode ${p.mode}` : ''}`));
-    body.append(policy);
-    for (const note of data.notes) body.append(node('p', note, 'readiness-note'));
+    content.append(policy);
+    for (const note of data.notes) content.append(node('p', note, 'readiness-note'));
+    for (const d of content.querySelectorAll('details')) if (open.has(d.querySelector('summary')?.textContent)) d.open = true;
+    restoreFocus();
   }
-  async function load() {
+  /** One read. `user`: a Refresh/Retry the person asked for (its completion is announced). The previous
+   * value stays painted until the reply: pending only when the subject has none yet. The readiness
+   * endpoint admits `{action, selector}` only, so no `refresh: true` hint travels with a user refresh. */
+  async function load({ user = false } = {}) {
     if (!current() || blocked) return;
     const ticket = ++serial, selection = state.selector, workspace = state.workspace.id;
-    attempted = true; busy = true; value = null; render(); status.textContent = 'Reading effective readiness…'; refresh.disabled = true;
+    // A remote instance's readiness is read on its own machine: say so while it is in flight.
+    const server = selection.kind === 'instance' && selection.server ? state.workspace.name || selection.server : null;
+    attempted = true; busy = true; loading.begin({ user, message: server ? readingFrom(server) : null });
     try {
       const response = await postJson(ctx, `/api/workspace-readiness?ws=${encodeURIComponent(workspace)}`, { action: 'read', selector: selection });
       if (!owns(ticket)) return;
       if (response?.readinessViewApi !== 1) throw Object.assign(Error(), { code: 'E_CLI_PROTOCOL' });
-      if (response.status !== 'available') throw Object.assign(Error(), { code: response.reason?.code });
+      if (response.status !== 'available') throw Object.assign(Error(), { code: response.reason?.code, reason: remoteReason(response.reason) });
       const target = readinessTarget(response.target), data = readinessData(response.data, target);
       if (!data || target.workspace !== workspace || JSON.stringify(target.selector) !== JSON.stringify(selection)) throw Object.assign(Error(), { code: 'E_CLI_PROTOCOL' });
-      value = { target, data }; render();
+      value = { target, data };
+      // The kernel's observation time labels the data's age; a server `observedAt` (spec 02) wins when present.
+      loading.succeed({ observedAt: typeof response.observedAt === 'string' ? response.observedAt : data.at ?? null });
+      render();
     } catch (error) {
       if (!owns(ticket)) return;
-      value = null; render(); status.textContent = readinessFailure(error?.code).reason.message;
-    } finally { if (owns(ticket)) { busy = false; refresh.disabled = false; } }
+      // Stale (value kept) or failed (no value): the contract's plain-language message is the cause, its code the Details.
+      // A remote read's reason (the host's headline, its code and message) is shown as relayed.
+      const { code, message, detail = null } = error?.reason || readinessFailure(error?.code).reason;
+      loading.fail(Object.assign(Error(message), { code, detail }));
+    } finally { if (owns(ticket)) busy = false; }
   }
   return {
     update(next) {
@@ -156,14 +209,21 @@ export function createReadinessView(host, { ctx, compact = false } = {}) {
         state = { workspace: { ...next.workspace }, selector }; blocked = reason;
         context.textContent = selector?.kind === 'soul' ? `Soul: ${selector.soul} · ${selector.agentsRoot}` : selector ? `Instance: ${selector.instance} · ${selector.agentsRoot}` : '';
         title.textContent = selector?.kind === 'instance' ? 'Instance readiness' : selector?.kind === 'soul' ? 'Soul readiness' : 'Readiness';
-        status.textContent = blocked; refresh.disabled = !!blocked; render();
+        // A new subject: the controller forgets the old one (skeleton, lines, announcement) and the content goes.
+        loading.reset(); render();
+        // Blocked (no CLI, remote, no qualified selection) is its own truthful state, not a skeleton: the reason
+        // sits in the status line and nothing can be in flight, so `disabled` is right here — a busy read is
+        // never what disables this button (that is bindRefresh's aria-disabled).
+        status.textContent = blocked; summary.hidden = !!blocked; refresh.disabled = !!blocked;
       }
-      if (active && !next.active) { serial++; if (busy) { busy = false; attempted = false; } }
+      // Hidden while a read is in flight: the reply is dropped (serial), so the controller's busy visuals go too.
+      if (active && !next.active) { serial++; if (busy) { busy = false; attempted = false; loading.cancel(); } }
       active = next.active === true; section.hidden = !active;
       if (active && !blocked && !attempted) return load();
     },
-    refresh: load,
+    /** The host's explicit refresh: a person asked, so its completion is announced. */
+    refresh: () => load({ user: true }),
     setQuery(next) { const q = typeof next === 'string' ? next.toLowerCase() : ''; if (q !== query && alive) { query = q; render(); } },
-    dispose() { alive = false; serial++; section.remove(); },
+    dispose() { alive = false; serial++; loading.dispose(); section.remove(); },
   };
 }

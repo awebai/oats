@@ -222,7 +222,9 @@ for (const kind of ['soul', 'home']) for (const boundary of ['workspace A → B 
 test('current roster rejection still reports failure and a current pending home can recover', async t => {
   const u = await setup(t, { hold: true, beforeMount: () => handoff('home') });
   u.rosters[0].reject(new Error('current roster unavailable')); await tick();
-  assert.match(u.doc.querySelector('.souls-sum').textContent, /current roster unavailable/);
+  // desktop/loading-states: a failed first read is the failed block in the grid (cause + Retry) and one announcement.
+  assert.equal(u.doc.querySelector('.souls-grid .loading-failed-message').textContent, 'current roster unavailable');
+  assert.equal(u.doc.querySelector('.souls-status').textContent, "Couldn't refresh souls. current roster unavailable");
   u.poll(); u.resolve(1); await tick();
   assert.deepEqual(u.inspections().map(call => call.body.selector), [{ home: home.home }]);
   assert.equal(u.doc.querySelector('.inspector-head h2').textContent, 'dev-seat');

@@ -13,15 +13,15 @@ instances/.oats-retirement/baselines/<retirement-key>.json
 instances/dev-owner/
 instances/dev-owner/.agents/
 instances/dev-owner/.agents/skills/
-instances/dev-owner/.agents/skills/golden.knowledge/
-instances/dev-owner/.agents/skills/golden.knowledge/golden-knowledge/
-instances/dev-owner/.agents/skills/golden.knowledge/golden-knowledge/SKILL.md
-instances/dev-owner/.agents/skills/golden.messaging/
-instances/dev-owner/.agents/skills/golden.messaging/golden-messaging/
-instances/dev-owner/.agents/skills/golden.messaging/golden-messaging/SKILL.md
+instances/dev-owner/.agents/skills/golden-knowledge/
+instances/dev-owner/.agents/skills/golden-knowledge/SKILL.md
+instances/dev-owner/.agents/skills/golden-messaging/
+instances/dev-owner/.agents/skills/golden-messaging/SKILL.md
 instances/dev-owner/.claude/
 instances/dev-owner/.claude/skills -> ../.agents/skills
 instances/dev-owner/.oats/
+instances/dev-owner/.oats/bin/
+instances/dev-owner/.oats/bin/oats -> <kernel>/bin/oats.mjs
 instances/dev-owner/.oats/modules/
 instances/dev-owner/.oats/modules/golden.knowledge/
 instances/dev-owner/.oats/modules/golden.knowledge/hooks/

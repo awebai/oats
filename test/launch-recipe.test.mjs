@@ -19,7 +19,7 @@ for (const n of ["pi", "claude", "codex", "tmux"]) { writeFileSync(join(binDir, 
 // environment handed to spawned CLIs: the fakes go first here too, so a host without the real harnesses
 // (the hosted runner) plans exactly like one with them.
 process.env.PATH = `${binDir}:${process.env.PATH}`;
-const env = (extra = {}) => { const e = { ...process.env, PATH: `${binDir}:${process.env.PATH}`, OATS_HOME_DIR: join(base, "oats-home"), PI_AGENTS_TMUX_SESSION: "oats-launch-recipe-test", ...extra }; for (const k of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "PI_AGENT_INSTANCE", "PI_AGENT_HOME", "PI_AGENTS_ROOT"]) delete e[k]; return e; };
+const env = (extra = {}) => { const e = { ...process.env, PATH: `${binDir}:${process.env.PATH}`, OATS_HOME_DIR: join(base, "oats-home"), OATS_TMUX_SESSION: "oats-launch-recipe-test", PI_AGENTS_TMUX_SESSION: "oats-launch-recipe-test", ...extra }; for (const k of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "PI_AGENT_INSTANCE", "PI_AGENT_HOME", "PI_AGENTS_ROOT"]) delete e[k]; return e; };
 function oats(args, { cwd = base, extra = {} } = {}) {
   const r = spawnSync(process.execPath, [CLI, ...args, "--json"], { encoding: "utf8", env: env(extra), cwd });
   let json; try { json = JSON.parse(r.stdout.trim()); } catch { throw new Error(`no JSON envelope: ${r.stdout}\n${r.stderr}`); }

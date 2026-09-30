@@ -125,8 +125,8 @@ test("pi and Claude instances receive the same exact local skills and generated 
   const canonical = readFileSync(join(soul, "AGENTS.md"), "utf8");
   for (const meta of [pi, claude]) {
     const names = readdirSync(join(meta.home, ".agents", "skills")).sort();
-    assert.deepEqual(names, ["acme.review", "private"], "the soul's own skills and one namespace per module — no kernel-shipped fallback trio");
-    assert.equal(lstatSync(join(meta.home, ".agents", "skills", "acme.review", "review")).isDirectory(), true);
+    assert.deepEqual(names, ["private", "review"], "the soul's own skills and each module's, flat — no kernel-shipped fallback trio");
+    assert.equal(lstatSync(join(meta.home, ".agents", "skills", "review")).isDirectory(), true);
     assert.equal(existsSync(join(meta.home, ".agents", "skills", "pollution")), false);
     assert.equal(lstatSync(join(meta.home, "AGENTS.md")).isSymbolicLink(), false);
     assert.equal(readlinkSync(join(meta.home, "CLAUDE.md")), "AGENTS.md");
@@ -154,7 +154,7 @@ test("pi and Claude instances receive the same exact local skills and generated 
   assert.equal(readFileSync(join(soul, "AGENTS.md"), "utf8"), canonical);
 });
 
-test("duplicate skill names across modules fail the spawn closed (decision 16); a soul's own skill and a module's live in separate namespaces", async (t) => {
+test("duplicate skill names fail the spawn closed (decision 16): across modules, and between a soul's own skill and a module's (skills are flat)", async (t) => {
   const shared = { "skills/shared/SKILL.md": "---\nname: shared\ndescription: A.\n---\n" };
   const fx = v2(t, {
     souls: {
@@ -166,9 +166,8 @@ test("duplicate skill names across modules fail the spawn closed (decision 16); 
   process.env.PATH = fakeHarnesses(fx.base);
   await assert.rejects(fx.spawn("dev", { instance: "dev-bad" }), (e) => e.code === "E_SKILL_DUPLICATE");
   assert.equal(existsSync(join(fx.root, "dev", "instances", "dev-bad")), false, "nothing was created");
-  const own = await fx.spawn("own", { instance: "own-ok" });
-  assert.match(readFileSync(join(own.home, ".agents", "skills", "shared", "SKILL.md"), "utf8"), /description: B/, "the soul's own skill");
-  assert.match(readFileSync(join(own.home, ".agents", "skills", "acme.dup", "shared", "SKILL.md"), "utf8"), /description: A/, "the module's, under its namespace");
+  await assert.rejects(fx.spawn("own", { instance: "own-bad" }), (e) => e.code === "E_SKILL_DUPLICATE" && /skill "shared" from soul collides with module acme\.dup's skill/.test(e.message));
+  assert.equal(existsSync(join(fx.root, "own", "instances", "own-bad")), false, "nothing was created");
 });
 
 test("claude harness resolves oats-claude-config and hooks contribute launch args", async (t) => {
@@ -549,6 +548,15 @@ test("operational commands are gated by active instance metadata; doctor exposes
   r = fx.cli(["doctor", "--soul", "nope", "--json"]);
   assert.equal(r.json().error.code, "E_SOUL_UNKNOWN");
   assert.equal(readFileSync(join(fx.member, "souls", "dev", "AGENTS.md"), "utf8"), "# Canonical dev\n\nNever mutate me.\n");
+});
+
+test("a capability command whose provider dies of a signal exits as the shell reports it (128 + n), not 1", (t) => {
+  const fx = v2(t, {
+    souls: { dev: { soul: { capabilities: here("acme.ops") } } },
+    capabilities: { "acme.ops": cap({ command: "ops", commands: { die: "die.mjs" } }, { "die.mjs": "process.kill(process.pid, 'SIGINT');\nsetTimeout(() => {}, 5000);\n" }) },
+  });
+  const r = fx.cli(["ops", "die", "--soul", "dev"]);
+  assert.equal(r.status, 130, r.stderr);
 });
 
 test("inject eject is a removed verb", () => {
@@ -1610,18 +1618,17 @@ test("instance.json records expected == materialized, and the .claude/skills ali
   process.env.PATH = fakeHarnesses(fx.base);
   const r = await fx.spawn("dev", { instance: "dev-mat" });
   const meta = instanceMeta(r.home);
-  // The soul's own skills are recorded by name; a module's skills are expected as
-  // its skill tree and materialized under its module namespace.
-  // A module skill is recorded with its `module:<cap>` source and lives under that namespace.
+  // The soul's own skills are recorded by name; a module skill is recorded with its
+  // `module:<cap>` source. Both live flat at .agents/skills/<skill>/.
   const names = meta.composition.materialized.skills.map((s) => s.name);
   assert.ok(names.includes("soul-skill"), `soul skills materialized: ${names}`);
   assert.deepEqual(meta.composition.materialized.skills.map((s) => [s.name, s.source]), [["soul-skill", "soul"], ["cap-skill", "module:acme.withskill"]]);
   for (const s of meta.composition.materialized.skills) {
-    const at = s.source.startsWith("module:") ? join(r.home, ".agents", "skills", s.source.slice("module:".length), s.name) : join(r.home, ".agents", "skills", s.name);
+    const at = join(r.home, ".agents", "skills", s.name);
     assert.ok(lstatSync(join(at, "SKILL.md")).isFile(), `${s.name} is a real copy`);
   }
   const tree = meta.composition.expected.find((e) => e.type === "skill-tree" && e.source === "acme.withskill");
-  assert.equal(tree?.resolved, join(r.home, ".agents", "skills", "acme.withskill"));
+  assert.equal(tree?.resolved, join(r.home, ".agents", "skills"));
   assert.equal(lstatSync(join(tree.resolved, "cap-skill", "SKILL.md")).isFile(), true, "the module skill is a real copy");
   // .agents/skills is canonical; .claude/skills aliases it and must resolve
   // exactly onto it — the founder's canonical layout.
@@ -2133,7 +2140,7 @@ test("the SHIPPED aweb spawn hook exits nonzero when it cannot mint an identity"
   // The required-hook contract is worthless if the capability that declares it
   // swallows its own failures. This executes the real hook, not a fixture.
   const base = temp();
-  const hook = resolve(new URL("../capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
+  const hook = resolve(new URL("../mirrors/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
   // A floor-satisfying `aw` that answers only `version`, so the hook deterministically reaches the root
   // check whatever aw the host has (1.16's no-root and no-aw refusals shared one phrase; 1.17's differ).
   const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
@@ -2145,7 +2152,7 @@ test("the SHIPPED aweb spawn hook exits nonzero when it cannot mint an identity"
   });
   assert.notEqual(r.status, 0, `no aweb root must be fatal, got exit ${r.status}: ${r.stdout}`);
   assert.match(r.stdout, /no messaging root at .*could not mint this instance/);
-  const manifest = JSON.parse(readFileSync(resolve(new URL("../capabilities/oats-aweb/oats.json", import.meta.url).pathname), "utf8"));
+  const manifest = JSON.parse(readFileSync(resolve(new URL("../mirrors/oats-aweb/oats.json", import.meta.url).pathname), "utf8"));
   assert.equal(manifest.hooks.spawn.required, true, "and the manifest declares it required, so the kernel acts on that exit code");
   rmSync(base, { recursive: true, force: true });
 });
@@ -2165,7 +2172,7 @@ test("the manifest schema rejects `required` on non-spawn hooks, matching harnes
 
 test("the SHIPPED aweb hook is fatal on every terminal pre-mint path (reviewer-5b78764)", () => {
   const base = temp();
-  const hook = resolve(new URL("../capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
+  const hook = resolve(new URL("../mirrors/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
   // A stub `aw` that reports an initialized root but NO team, so the hook gets
   // past the root check and reaches team resolution — the paths that used to
   // warn-and-exit-0 while minting nothing.
@@ -2256,7 +2263,7 @@ console.log(JSON.stringify({ meta: { retired: false, reason: 'nothing-to-delete'
 // name against `aw team list` memberships; a name-only id is refused up front. Floor:
 test("a name-only default team id is refused with the provider's id-shape message before any aw call", () => {
   const base = temp();
-  const hook = resolve(new URL("../capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
+  const hook = resolve(new URL("../mirrors/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
   const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
   const log = join(base, "aw.log");
   write(join(bin, "aw"), `#!/bin/sh\necho "$*" >> ${JSON.stringify(log)}\nif [ "$1" = "version" ]; then echo "aw 1.36.13"; exit 0; fi\nif [ "$1" = "team" ] && [ "$2" = "list" ]; then echo '{"active_team":null,"memberships":[{"team_id":"default:acme.aweb.ai","alias":"x"}]}'; exit 0; fi\nexit 0\n`);
@@ -2273,7 +2280,7 @@ test("a name-only default team id is refused with the provider's id-shape messag
 });
 
 test("no failure path discloses the invite token (reviewer-aggregate2, reviewer-1a6e82e)", () => {
-  const hook = resolve(new URL("../capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
+  const hook = resolve(new URL("../mirrors/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
   const TOKEN = "inv_SUPERSECRET_TOKEN_9f3a";
   // execFileSync puts the whole argv in its error message, JSON.parse quotes the
   // malformed input in its SyntaxError, and a command that MINTS a credential can
@@ -2314,7 +2321,7 @@ exit 0
 
 test("a WELL-FORMED join response cannot reflect the invite token into the output (reviewer-a6aa1c5)", () => {
   const base = temp();
-  const hook = resolve(new URL("../capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
+  const hook = resolve(new URL("../mirrors/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
   const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
   // Suppressing the FAILURE paths achieves nothing if a successful reply is
   // copied into meta and the briefing verbatim. Here every command succeeds and
@@ -2346,7 +2353,7 @@ exit 0
 
 test("an alias minted with no local key is incomplete cleanup, not 'nothing to delete'", () => {
   const base = temp();
-  const hook = resolve(new URL("../capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
+  const hook = resolve(new URL("../mirrors/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
   const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
   write(join(bin, "aw"), "#!/bin/sh\nexit 0\n");
   execFileSync("chmod", ["+x", join(bin, "aw")]);
@@ -2463,7 +2470,7 @@ test("a missing or DISABLED Claude plugin fails the spawn with the consent remed
 });
 
 test("the shipped aweb capability declares the Claude channel instead of installing it", () => {
-  const dir = resolve(new URL("../capabilities/oats-aweb", import.meta.url).pathname);
+  const dir = resolve(new URL("../mirrors/oats-aweb", import.meta.url).pathname);
   const manifest = JSON.parse(readFileSync(join(dir, "oats.json"), "utf8"));
   const req = (manifest.requires || []).find((r) => r.runtime === "claude"); // the released manifest names it `runtime` (read as `harness`)
   assert.ok(req, "the Claude channel plugin is a declared requirement");
@@ -2476,7 +2483,7 @@ test("the shipped aweb capability declares the Claude channel instead of install
 });
 
 test("the aweb hook runs argv only, and detects `aw` without a shell builtin", () => {
-  const dir = resolve(new URL("../capabilities/oats-aweb", import.meta.url).pathname);
+  const dir = resolve(new URL("../mirrors/oats-aweb", import.meta.url).pathname);
   const hook = readFileSync(join(dir, "bin", "oats-aweb.mjs"), "utf8");
   // This is a REQUIRED spawn hook: it gates every spawn, and team ids, aliases,
   // instance names and invite tokens all flow through it. argv removes the
@@ -2817,7 +2824,7 @@ console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed
     // ...and because that state can persist forever, the operator must still have
     // a way out. --force removes the home and NAMES what it is leaving behind,
     // rather than reporting a clean retirement.
-    const env = { ...process.env, PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" };
+    const env = { ...process.env, OATS_TMUX_SESSION: "oats-test-nosuch", PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" };
     delete env.PI_AGENTS_ROOT;
     const cli = spawnSync(process.execPath, [CLI, "retire", "dev-nohook", "--dir", root, "--force", "--json"], { encoding: "utf8", env });
     assert.equal(cli.status, 0, `a forced removal succeeded, so it exits 0: ${cli.stderr}`);
@@ -2996,16 +3003,16 @@ test("harvest briefing and staged inputs give an actual independent worker its c
   f.retire(run.instance); f.retire(f.source.instance);
 });
 
-test("bundled capabilities respect the actual public kernel module boundary", async () => {
+test("the package mirrors respect the actual public kernel module boundary", async () => {
   // docs/design/package-harness-api.md: "independently released packages MUST
   // NOT import kernel-private lib/core.mjs (including via `oats root` + dynamic
-  // import)". Everything under capabilities/ is a byte-identical copy of an
+  // import)". Everything under mirrors/ is a byte-identical copy of an
   // independently released package, so the rule applies to every file there.
   //
   // Scan for private-file escapes, including dynamically assembled paths.
   // Separately prove the actual package export boundary below: direct kernel
   // unit tests may use public exports; capability execution stays on the CLI.
-  const capsDir = resolve(new URL("../capabilities", import.meta.url).pathname);
+  const capsDir = resolve(new URL("../mirrors", import.meta.url).pathname);
   const files = [];
   const walk = (dir) => {
     for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -3015,9 +3022,9 @@ test("bundled capabilities respect the actual public kernel module boundary", as
     }
   };
   walk(capsDir);
-  assert.ok(files.length > 20, `expected the full bundled capability set, saw ${files.length}`);
+  assert.ok(files.length > 20, `expected the full mirrored capability set, saw ${files.length}`);
   const code = files.filter((f) => f.endsWith(".mjs") || f.endsWith(".js"));
-  assert.ok(code.length >= 4, `expected the bundled executables, saw ${code.length}`);
+  assert.ok(code.length >= 4, `expected the mirrored executables, saw ${code.length}`);
   for (const f of code) {
     const text = readFileSync(f, "utf8");
     // Match the FILENAME, not the path: the violation that shipped wrote it as
@@ -3037,9 +3044,9 @@ test("bundled capabilities respect the actual public kernel module boundary", as
   await assert.rejects(import("@awebai/oats/lib/core.mjs"), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
 });
 
-test("bundled capabilities carry the versions package-catalog.json pins", () => {
-  // The bundled trees exist only as copies of the published payloads (the
-  // clean-room smoke wraps capabilities/oats-okf as the "official" oats.okf).
+test("the package mirrors carry the versions package-catalog.json pins", () => {
+  // The mirrors exist only as copies of the published payloads (the clean-room
+  // smoke wraps mirrors/oats-okf as the "official" oats.okf).
   //
   // This checks VERSION drift and nothing more. It does NOT detect a copy that
   // differs from its payload while claiming the payload's version — the bundled
@@ -3059,24 +3066,24 @@ test("bundled capabilities carry the versions package-catalog.json pins", () => 
   for (const [slug, pkg] of Object.entries(expected)) {
     const ref = catalog.packages[pkg]?.ref;
     assert.ok(ref, `package-catalog.json pins no ref for ${pkg}`);
-    const manifest = JSON.parse(readFileSync(join(pkgRoot, "capabilities", slug, "oats.json"), "utf8"));
-    assert.equal(manifest.version, String(ref).replace(/^v/, ""), `capabilities/${slug} must carry the version ${pkg} is pinned at`);
+    const manifest = JSON.parse(readFileSync(join(pkgRoot, "mirrors", slug, "oats.json"), "utf8"));
+    assert.equal(manifest.version, String(ref).replace(/^v/, ""), `mirrors/${slug} must carry the version ${pkg} is pinned at`);
   }
   // oats.engineering exports three capabilities under their own ids; the
   // catalog aliases each to the package, and the reviewer is a package soul.
   for (const [slug, id] of [["oats-engineering-expert", "oats.engineering-expert"], ["oats-developer", "oats.developer"], ["oats-code-review", "oats.code-review"]]) {
-    const manifest = JSON.parse(readFileSync(join(pkgRoot, "capabilities", slug, "oats.json"), "utf8"));
+    const manifest = JSON.parse(readFileSync(join(pkgRoot, "mirrors", slug, "oats.json"), "utf8"));
     assert.equal(manifest.capability, id);
     assert.equal(catalog.capabilities[id], "oats.engineering", `${id} is supplied by the oats.engineering package`);
     assert.equal(Object.hasOwn(manifest, "agents"), false, `${id} declares no capability agent: the code-reviewer is oats.engineering's package soul`);
   }
   assert.equal(catalog.packages["oats.engineering"].ref, "v1.3.0");
-  // oats.dev is retired: no package, alias or bundled copy remains.
+  // oats.dev is retired: no package, alias or mirror remains.
   assert.equal(catalog.packages["oats.dev"], undefined, "oats.dev is no longer listed");
   for (const [alias, target] of Object.entries(catalog.capabilities)) {
     assert.notEqual(typeof target === "string" ? target : target.package, "oats.dev", `alias ${alias} still points at the retired oats.dev`);
   }
-  assert.equal(existsSync(join(pkgRoot, "capabilities", "oats-review")), false, "the oats.review copy is gone");
+  for (const dir of ["capabilities", "mirrors"]) assert.equal(existsSync(join(pkgRoot, dir, "oats-review")), false, `the oats.review copy is gone from ${dir}/`);
 });
 
 test("no shipped instructional surface teaches settling in the work tree (maintainer contract)", () => {
@@ -3095,6 +3102,7 @@ test("no shipped instructional surface teaches settling in the work tree (mainta
   walk(join(pkg, "docs"), (n) => n.endsWith(".md"));
   walk(join(pkg, "skills"), (n) => n === "SKILL.md");
   walk(join(pkg, "capabilities"), (n) => n.endsWith(".md"));
+  walk(join(pkg, "mirrors"), (n) => n.endsWith(".md"));
   surfaces.push(join(pkg, "README.md"));
   assert.ok(surfaces.length > 10, `expected the full instructional surface, saw ${surfaces.length}`);
   for (const f of surfaces) {
@@ -3110,7 +3118,7 @@ test("the independently targetable oats.engineering capabilities assume no knowl
   // prose: when these surfaces change, it needs semantic review by the
   // maintainer, which the PR process already provides.
   for (const slug of ["oats-engineering-expert", "oats-developer", "oats-code-review"]) {
-    const dir = resolve(new URL(`../capabilities/${slug}`, import.meta.url).pathname);
+    const dir = resolve(new URL(`../mirrors/${slug}`, import.meta.url).pathname);
     const manifest = JSON.parse(readFileSync(join(dir, "oats.json"), "utf8"));
     for (const r of manifest.requires || []) {
       assert.ok(!r.capability && !r.layer, `${slug}: requires must not carry layer dependencies: ${JSON.stringify(r)}`);
@@ -3126,7 +3134,7 @@ test("the independently targetable oats.engineering capabilities assume no knowl
   }
   // The reviewer's report states the no-layer delivery: what an instance needs
   // to behave correctly with, and without, a messaging layer.
-  const reviewer = readFileSync(resolve(new URL("../capabilities/oats-code-review/injects/reviewer.md", import.meta.url).pathname), "utf8");
+  const reviewer = readFileSync(resolve(new URL("../mirrors/oats-code-review/injects/reviewer.md", import.meta.url).pathname), "utf8");
   assert.match(reviewer, /messaging layer if one is active[\s\S]*otherwise print it as your final message/, "the reviewer's report falls back to its own session");
 });
 
@@ -3396,7 +3404,7 @@ console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed
   assert.ok(r.rollbackIncomplete, "cleanup is incomplete");
   assert.equal(realpathSync(r.retainedHome), realpathSync(home), "the result names the home that actually survived");
 
-  const cli = fx.cli(["retire", "dev-q"], { env: { PATH: process.env.PATH, PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" } });
+  const cli = fx.cli(["retire", "dev-q"], { env: { PATH: process.env.PATH, OATS_TMUX_SESSION: "oats-test-nosuch", PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" } });
   assert.notEqual(cli.status, 0);
   assert.match(cli.stderr, new RegExp(home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
     `the diagnostic must point at the retained home, got: ${cli.stderr}`);
@@ -3416,7 +3424,7 @@ console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed
   try {
     await assert.rejects(fx.spawn("dev", { instance: "dev-cli", harness: "pi" }),
       (e) => e.code === "E_REQUIRED_HOOK_FAILED");
-    const env = { ...process.env, PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" };
+    const env = { ...process.env, OATS_TMUX_SESSION: "oats-test-nosuch", PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" };
     delete env.PI_AGENTS_ROOT;
     const r = spawnSync(process.execPath, [CLI, "retire", "dev-cli", "--dir", root], { encoding: "utf8", env });
     assert.notEqual(r.status, 0, `an incomplete cleanup must exit nonzero, got ${r.status}: ${r.stdout}`);

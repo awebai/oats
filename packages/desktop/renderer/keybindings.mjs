@@ -4,12 +4,18 @@
 // ({ id, label, context, run }); this module owns chord parsing, the default
 // keymap, user overrides (localStorage), context scoping, and dispatch.
 //
-// Terminal safety (mirrors palette.mjs isPaletteShortcut and app-menu.mjs):
-// when the keydown target is inside `.xterm`, on macOS ONLY chords whose
-// `Mod` resolves to ⌘ (meta), plus Ctrl+Tab navigation, may fire — other Ctrl chords belong to the
-// attached program. On Linux/Windows the Ctrl key IS the terminal's control
-// key, so only an explicit allowlist of action ids (palette, tab next/prev/
-// close) may fire inside the terminal; every other Ctrl chord passes through.
+// Terminal safety (the rule: a default chord never takes a key a program inside
+// the terminal reads). When the keydown target is inside `.xterm`, on macOS ONLY
+// chords whose `Mod` resolves to ⌘ (meta) may fire — ⌘ never reaches the pty —
+// plus one structural shape, Ctrl+Tab tab cycling; every other chord (⌃digits,
+// F6, Ctrl+letters) belongs to the attached program. On Linux/Windows the Ctrl key
+// IS the terminal's control key, so only an explicit allowlist of action ids may
+// fire inside the terminal; every other chord passes through. Their defaults
+// there are Ctrl+Shift+key (the GNOME Terminal / Alacritty / Ghostty / kitty
+// convention), so plain Ctrl+letter (Ctrl+W, Ctrl+K, Ctrl+P, Ctrl+B, Ctrl+\),
+// F6, Alt+digit and Ctrl+PgUp/PgDn stay the program's. app-menu.mjs follows the
+// same policy for the menu accelerators.
+// docs/desktop-keyboard.md is the keymap's reference.
 
 const STORAGE_KEY = "oats-desktop-keymap";
 
@@ -21,6 +27,7 @@ const MOD_ORDER = ["Mod", "Ctrl", "Alt", "Shift"];
 const KEY_ALIASES = new Map([
   ["+", "="], // Shift-= / numpad plus both mean the "=" binding (Mod+=)
   ["|", "\\"], // Shift-\ produces "|" — both mean the "\" binding (Mod+Shift+\)
+  ["pgdn", "pagedown"], ["pgup", "pageup"],
   ["esc", "escape"],
   [" ", "space"],
   ["spacebar", "space"],
@@ -59,6 +66,7 @@ const KEY_LABELS = new Map([
   ["escape", "Esc"], ["arrowup", "↑"], ["arrowdown", "↓"],
   ["arrowleft", "←"], ["arrowright", "→"], ["space", "Space"],
   ["tab", "Tab"], ["enter", "Enter"], ["backspace", "Backspace"],
+  ["pagedown", "PgDn"], ["pageup", "PgUp"],
 ]);
 
 function keyLabel(key) {
@@ -139,30 +147,69 @@ function isEditableTarget(target) {
 
 // ---------------------------------------------------------------- defaults
 
+// One entry per action: a chord string (the same on every platform, `Mod` = ⌘ on
+// macOS and Ctrl elsewhere) or `{ mac, other }` when the platforms differ (null =
+// no default there). Principles (docs/desktop-keyboard.md): Super/Meta belongs to
+// the window manager on Linux, so `Mod` is Ctrl there and nothing binds Super;
+// a chord that must work while a terminal has focus is Ctrl+Shift+key on
+// Linux/Windows, because plain Ctrl+letter belongs to the program; macOS keeps ⌘,
+// which never reaches the pty. Every default passed the collision review in the
+// keyboard lesson, shifted punctuation included (KEY_ALIASES, tested with the
+// real shifted event). Action ids never change, so stored overrides survive.
 export const DEFAULT_KEYMAP = Object.freeze({
-  "app.palette": "Mod+K",
+  "app.palette": { mac: "Mod+K", other: "Ctrl+Shift+P" },
   "app.quickOpenSouls": "Mod+P",
-  "app.chooseSoul": "Mod+N",
+  "app.chooseSoul": { mac: "Mod+N", other: "Ctrl+Shift+N" },
   "app.shortcuts": "Mod+,",
-  "app.themeToggle": "Mod+Shift+T",
+  // No default (spec F): ⌘⇧T is "reopen closed tab" in browsers and Ctrl+Shift+T "new tab" in
+  // Linux terminals. The palette keeps the command; the editor can bind one.
+  "app.themeToggle": null,
   "stage.hierarchy": "Mod+1",
   "stage.spawn": "Mod+2",
+  "stage.automations": "Mod+3",
   "tabs.next": "Ctrl+Tab",
   "tabs.prev": "Ctrl+Shift+Tab",
-  "tabs.close": "Mod+W",
+  "tabs.nextPage": { mac: null, other: "Ctrl+PageDown" },
+  "tabs.prevPage": { mac: null, other: "Ctrl+PageUp" },
+  // ⌘⌥1–⌘⌥9 on macOS (⌘1–⌘3 are the stages; ⌃digits are control bytes a program reads);
+  // Alt+1–Alt+9 elsewhere (GNOME Terminal, Firefox), outside a terminal only. 9 is the last tab.
+  ...Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`tabs.goto${i + 1}`, { mac: `Mod+Alt+${i + 1}`, other: `Alt+${i + 1}` }])),
+  "tabs.close": { mac: "Mod+W", other: "Ctrl+Shift+W" },
+  // F6 / Shift+F6 cycle regions outside a terminal (mc, htop and nano read F6 in one);
+  // ⌘⇧F6 / Ctrl+Shift+F6 leaves a terminal for the next region, after which F6 works.
+  "focus.nextRegion": "F6",
+  "focus.prevRegion": "Shift+F6",
+  "focus.leaveTerminal": "Mod+Shift+F6",
   "sidebar.focusFilter": "Mod+F",
   "sidebar.toggle": "Mod+B",
-  "split.vertical": "Mod+\\",
-  "split.horizontal": "Mod+Shift+\\",
-  "split.close": "Mod+Alt+W",
+  // Terminator / Tilix: Ctrl+Shift+E splits right, Ctrl+Shift+O splits down.
+  "split.vertical": { mac: "Mod+\\", other: "Ctrl+Shift+E" },
+  "split.horizontal": { mac: "Mod+Shift+\\", other: "Ctrl+Shift+O" },
+  "split.close": { mac: "Mod+Alt+W", other: "Ctrl+Shift+Alt+W" },
+  // The instance panel (the tab bar's panel-right toggle). Not terminal-allowlisted: on
+  // Linux/Windows Ctrl+Alt+B stays with the program in the terminal (macOS ⌘⌥B fires there).
+  "panel.toggle": "Mod+Alt+B",
   "terminal.fontBigger": "Mod+=",
   "terminal.fontSmaller": "Mod+-",
   "terminal.fontReset": "Mod+0",
 });
 
+/** The default chord for an action on this platform (string or null). */
+export function defaultBinding(actionId, isMac = defaultIsMac()) {
+  if (!Object.prototype.hasOwnProperty.call(DEFAULT_KEYMAP, actionId)) return undefined;
+  const entry = DEFAULT_KEYMAP[actionId];
+  if (entry && typeof entry === "object") return (isMac ? entry.mac : entry.other) ?? null;
+  return entry ?? null;
+}
+
 // Action ids allowed to fire inside .xterm on Linux/Windows, where their
 // chords would otherwise belong to the attached program. Allowlisting by
 // action id (not chord) keeps the policy stable across user rebinds.
+// Their defaults there are Ctrl+Shift+key or Ctrl+Tab: none is a key a program
+// reads. Deliberately absent, so they reach the program: focus.next/prevRegion
+// (F6: mc, htop, nano), tabs.goto1–9 (Alt+digit: readline's numeric argument,
+// irssi/weechat, tmux window bindings) and tabs.next/prevPage (Ctrl+PgUp/PgDn:
+// vim, weechat). From a terminal, Ctrl+Tab switches tabs and Mod+Shift+F6 leaves.
 // sidebar.toggle is deliberately NOT allowlisted: its default Mod+B would
 // intercept Ctrl+B — the tmux prefix — inside the terminal on non-mac
 // (macOS ⌘B still fires in xterm via the ⌘-chord rule).
@@ -170,8 +217,10 @@ export const DEFAULT_KEYMAP = Object.freeze({
 // is shell history navigation — it must reach the pty (⌘P on macOS still
 // fires inside xterm via the ⌘-chord policy above).
 export const TERMINAL_ALLOWLIST = Object.freeze([
-  "app.palette", "tabs.next", "tabs.prev", "tabs.close",
+  "app.palette", "app.chooseSoul",
+  "tabs.next", "tabs.prev", "tabs.close",
   "split.vertical", "split.horizontal", "split.close",
+  "focus.leaveTerminal",
 ]);
 
 export const CONTEXTS = Object.freeze([
@@ -260,15 +309,18 @@ function notifyKeymapChange() {
   for (const fn of [...keymapListeners]) { try { fn(); } catch { /* isolate listener */ } }
 }
 
-/** Effective chord string for an action (override ?? static default ??
- * registration default), or null. An explicit persisted null (editor
- * Backspace-unbind) wins over BOTH default sources. */
-export function getBinding(actionId) {
+/** Effective chord string for an action (override ?? this platform's static
+ * default ?? registration default), or null. An explicit persisted null (editor
+ * Backspace-unbind) wins over BOTH default sources, and a DEFAULT_KEYMAP entry
+ * that is null on this platform means "no default" (never the registration's). */
+export function getBinding(actionId, isMac = defaultIsMac()) {
   if (Object.prototype.hasOwnProperty.call(overrides, actionId)) {
     const v = overrides[actionId];
     return v == null ? null : v; // explicit null = unbound
   }
-  return DEFAULT_KEYMAP[actionId] ?? actions.get(actionId)?.defaultChord ?? null;
+  const fixed = defaultBinding(actionId, isMac);
+  if (fixed !== undefined) return fixed;
+  return actions.get(actionId)?.defaultChord ?? null;
 }
 
 /** Persist an override: chord (string or object) or null to unbind. */
@@ -312,12 +364,32 @@ export function findConflict(chord, context, excludeId = null, isMac = defaultIs
   if (!c) return null;
   for (const action of actions.values()) {
     if (action.id === excludeId) continue;
-    const bound = parseChord(getBinding(action.id) || "");
+    const bound = parseChord(getBinding(action.id, isMac) || "");
     if (!bound) continue;
     if (!chordMatches(bound, resolveForCompare(c, isMac), isMac)) continue;
     if (context === "global" || action.context === "global" || action.context === context) return action;
   }
   return null;
+}
+
+/** Clashes that involve a stored rebind: pairs of actions whose effective chords
+ * collide (findConflict's visibility rule) where at least one side is a user
+ * override — e.g. a rebind that a new default now shares. Nothing is ever changed
+ * silently; the shell marks the shortcuts button and the editor lists them. */
+export function keymapConflicts(isMac = defaultIsMac()) {
+  const own = (id) => Object.prototype.hasOwnProperty.call(overrides, id);
+  const out = [], seen = new Set();
+  for (const action of actions.values()) {
+    const chord = getBinding(action.id, isMac);
+    if (!chord) continue;
+    const other = findConflict(chord, action.context, action.id, isMac);
+    if (!other || !(own(action.id) || own(other.id))) continue;
+    const key = [action.id, other.id].sort().join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ chord, actions: [action, other] });
+  }
+  return out;
 }
 
 // findConflict compares two stored chords (both may use Mod); flatten one to
@@ -329,13 +401,25 @@ function resolveForCompare(chord, isMac) {
 
 /** True for a chord with no ctrl/alt/mod modifiers (shift-only counts as
  * plain — typing produces shifted characters). Such bindings are guarded off
- * editable fields by matchEvent; the editor warns when recording one. */
+ * editable fields by matchEvent; the editor warns when recording one.
+ * Function keys (F1–F24) never type text, so they are not plain: F6 must cycle
+ * regions from a text field and from a terminal's input textarea (spec F). */
 export function isPlainChord(chord) {
   const c = typeof chord === "string" ? parseChord(chord) : chord;
-  return !!c && !c.mod && !c.ctrl && !c.alt;
+  return !!c && !c.mod && !c.ctrl && !c.alt && !/^f\d{1,2}$/.test(c.key);
 }
 
 // ---------------------------------------------------------------- dispatch
+
+/** On macOS inside a terminal, one non-⌘ shape still belongs to the app, by
+ * action id AND chord shape (a rebind to another Ctrl chord stays the program's):
+ * Ctrl+Tab / Ctrl+Shift+Tab cycling tabs (standard on macOS too; a terminal
+ * program never sees Ctrl+Tab as anything but Tab). */
+function macStructuralChord(id, c) {
+  if (c.mod || c.alt) return false;
+  if (id === "tabs.next" || id === "tabs.prev") return c.key === "tab" && c.ctrl;
+  return false;
+}
 
 /** Match a keydown to an eligible action id, or null. Honors context scoping
  * and the terminal policy. `opts` is for tests: { isMac, insideTerminal,
@@ -359,15 +443,13 @@ export function matchEvent(e, opts = {}) {
   let contextHit = null;
   for (const action of actions.values()) {
     if (!contextEligible(action.context)) continue;
-    const bound = parseChord(getBinding(action.id) || "");
+    const bound = parseChord(getBinding(action.id, isMac) || "");
     if (!bound || !chordMatches(bound, evChord, isMac)) continue;
     if (insideTerminal) {
       if (isMac) {
-        // Ctrl+Tab is standard tab navigation on macOS too. Keep other
-        // Ctrl chords with the attached program, even after a custom rebind.
-        const tabNavigation = ["tabs.next", "tabs.prev"].includes(action.id)
-          && evChord.key === "tab" && evChord.ctrl && !evChord.mod && !evChord.alt;
-        if (!tabNavigation && (!(bound.mod && evChord.mod) || evChord.ctrl)) continue;
+        // ⌘ chords fire; other chords stay with the attached program, even
+        // after a custom rebind — except Ctrl+Tab / Ctrl+Shift+Tab (macStructuralChord).
+        if (!macStructuralChord(action.id, evChord) && (!(bound.mod && evChord.mod) || evChord.ctrl)) continue;
       } else if (!TERMINAL_ALLOWLIST.includes(action.id)) {
         continue; // Ctrl chords belong to the attached program
       }

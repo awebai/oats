@@ -19,24 +19,26 @@
  */
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readSync, realpathSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
-import { homedir, tmpdir } from "node:os";
+import { constants as osConstants, homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runtimeNameWarning, noteRuntimeName } from "../lib/deprecation.mjs";
+import { herdrSettingRemoved } from "../lib/errors.mjs";
 import {
   LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
   officialPackageCatalog, officialCatalogFile, officialCapabilityAliases, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, isCapturedHome, capturedHomeRefusal, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
-  findInstanceHome, findInstanceHomes, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, launchConfigsAt, launchReportFor, explicitInstanceName, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
+  findInstanceHome, findInstanceHomes, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, recordedKernelBin, launchConfigsAt, launchReportFor, explicitInstanceName, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
 import {
-  writeFileAtomic, LOCK_FILE, readLock, writeLock, resolvePackages, memoizedRemote,
+  writeFileAtomic, LOCK_FILE, readLock, readLockIfPresent, writeLock, resolvePackages, memoizedRemote,
   classifyPackageValue, parsePackageRequest } from "../lib/packages.mjs";
-import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, workspaceWarnings } from "../lib/workspace.mjs";
+import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, workspaceWarnings, memberRowByKey } from "../lib/workspace.mjs";
 import { recordedTeams, reportRows, soulKeyOf, soulTeams, teamModel } from "../lib/teams.mjs";
 import { launchLayers } from "../lib/launch-preference.mjs";
 import { parseConfigData } from "../lib/config-data.mjs";
 import * as remoteModule from "../lib/remote.mjs";
+import { activateLocalInputs, localRevision } from "../lib/local-inputs.mjs";
 import YAML from "yaml";
 import { attachArgv, checkRemote, forgetSnapshot, getServer, inspectRemote, startRemote, restartRemote, launchConfigRemote, scheduleRemote, listSnapshots, readServers, rosterGroups, routeCommand, targetOf, validateServer, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
 import { spawnSync as spawnSyncProc } from "node:child_process";
@@ -78,7 +80,7 @@ const KERNEL_COMMANDS = new Set(["automations", "trigger", "capture", "capabilit
 /** Commands whose argv another parser reads (packages/record and packages/experimental parse process.argv). */
 const OWN_ARGV_COMMANDS = new Set(["capture", "recall", "setup", "experimental"]);
 /** Commands `--server <id>` runs on a registered server. */
-const ROUTED_COMMANDS = new Set(["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "launch-config"]);
+const ROUTED_COMMANDS = new Set(["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "launch-config", "readiness", "instance"]);
 const flag = (name) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? (args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : true) : undefined;
@@ -92,7 +94,7 @@ function valueFlag(name) {
   if (value === true) cmdFail("E_BAD_ARGS", `--${name} needs a value`);
   return value;
 }
-const die = (msg) => { console.error(`oats: ${msg}`); process.exit(1); };
+const die = (msg, exit = 1) => { console.error(`oats: ${msg}`); process.exit(exit); };
 /** A command's harness: --harness, or --runtime, its pre-0.27 name (the released okf worker and
  *  a 0.26-era Desktop pass it) — read either, with the deprecation warning. Both, disagreeing,
  *  are refused. `get` reads one flag (the command's own reader where it has one). */
@@ -139,7 +141,7 @@ const withLocalWarnings = (envelope) => {
   const sources = [...new Set([...(Array.isArray(same.sources) ? same.sources : []), ...mine.sources])];
   return { ...envelope, warnings: theirs.map((w) => (w === same ? { ...mine, sources, message: mine.message.replace(/\(.*\)/, `(${sources.join("; ")})`) } : w)) };
 };
-const jsonFail = (code, message, details) => { console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code, message: String(message), ...(details !== undefined ? { details } : {}) }, ...envelopeWarnings() })); process.exit(1); };
+const jsonFail = (code, message, details, exit = 1) => { console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code, message: String(message), ...(details !== undefined ? { details } : {}) }, ...envelopeWarnings() })); process.exit(exit); };
 const jsonOk = (result) => { console.log(JSON.stringify({ schemaVersion: 1, ok: true, result, ...envelopeWarnings() })); };
 // Text mode (or a JSON answer printed before the read): the warning goes to stderr, never stdout.
 process.on("exit", () => { const w = runtimeNameWarning(); if (w && !warningDelivered) process.stderr.write(`oats: warning: ${w.message}\n`); });
@@ -258,7 +260,7 @@ const INSPECT_TEXT_CAP = 256 * 1024;
 /** The agents root a home belongs to, from its path alone:
  *  <root>/<agent>/instances/<instance>. */
 function agentsRootOfHome(home) { return dirname(dirname(dirname(home))); }
-const SOUL_FIELDS = ["harness", "model", "yolo", "backend", "description", "launch-config"];
+const SOUL_FIELDS = ["harness", "model", "yolo", "description", "launch-config"];
 const realOrResolved = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
 /** Every soul of a scope: the persistent souls of every agents root in
  *  scope, plus packaged souls (read-only). One enumeration for inspect and
@@ -348,7 +350,7 @@ function soulEntry(soul, root, { capability } = {}) {
     declarationProblems: declared.problems,
     name: soul.name, kind: packaged ? "capability" : (soul.kind || "persistent"), capability: capability || null,
     type: soul.type ?? null, description: soul.description ?? null, repo: soul.repo ?? null, work: soul.work || "checkout",
-    harness: soul.harness || "pi", model: soul.model ?? null, yolo: soul.yolo === true || soul.yolo === "true" ? true : soul.yolo === false || soul.yolo === "false" ? false : null, launchConfig: soul["launch-config"] ?? null, backend: soul.backend ?? null,
+    harness: soul.harness || "pi", model: soul.model ?? null, yolo: soul.yolo === true || soul.yolo === "true" ? true : soul.yolo === false || soul.yolo === "false" ? false : null, launchConfig: soul["launch-config"] ?? null,
     agentsRoot: root, dir: packaged ? soulDir : dir, soulFile: join(soulDir, "soul.yaml"), instructionsFile: join(soulDir, "AGENTS.md"),
     editable: packaged
       ? { fields: [], instructions: false, reason: `packaged soul from capability ${capability}: edit the package and update it; scoped bindings still apply through oats use` }
@@ -366,7 +368,7 @@ async function inspectCmd() {
   if (t) {
     if (t.resolutionError) return bail(t.resolutionError.code, t.resolutionError.message, t.resolutionError.details ?? undefined);
     const doc = inspectDocument(t, { kernel: OATS_VERSION });
-    if (JSON_MODE) { jsonOk(doc); return; }
+    if (JSON_MODE) { jsonOk(withObservation(doc)); return; }
     printWorkspaceInspect(doc); return;
   }
 }
@@ -535,6 +537,7 @@ async function workspaceOperation(t, { bail, address, layer, opName }) {
   const env = { ...lp.env(mod.name, settings), OATS_OPERATION: address, OATS_CONTEXT: t.deployment, OATS_ROOT: t.agentsRoot, PI_AGENTS_ROOT: t.agentsRoot };
   if (op.context === "home") Object.assign(env, { OATS_INSTANCE: t.meta.instance, OATS_INSTANCE_HOME: t.home, OATS_HOME: t.home, PI_AGENT_INSTANCE: t.meta.instance, PI_AGENT_HOME: t.home });
   else for (const k of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "PI_AGENT_INSTANCE", "PI_AGENT_HOME"]) delete env[k];
+  await readSession?.closeBatches(); // no idle `git cat-file --batch` child held for the provider's whole run
   const r = spawnSync("node", [abs, ...rest, ...argFlags, "--json"], { cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 16 * 1024 * 1024, timeout: OPERATION_TIMEOUT_MS, killSignal: "SIGTERM" });
   finishOperation({ r, bail, address, provider, op, argFlags, cwd, home: t.home, meta: t.meta, api: INSPECT_OPERATIONS_API });
 }
@@ -1012,11 +1015,60 @@ async function readinessCmd() {
 // remotes (lib/workspace.mjs), packages resolve to exact commits (lib/packages.mjs,
 // lock v3) and the only persisted state is `oats-lock.json` beside oats-local.yaml.
 
+/** This command's read session (lib/remote.mjs createReadSession): one per process, created at the
+ *  first remote read, closed when the command ends (the `finally` of the dispatch) and, for the
+ *  process.exit paths, on exit — no `git cat-file --batch` child outlives the command. Its git
+ *  children run as their own process groups, so a terminal's Ctrl-C no longer reaches them: a
+ *  SIGINT, SIGTERM or SIGHUP closes the session and exits (128 + the signal number), which kills them. */
+let readSession = null;
+/** The validated `--max-age` seconds (checked once at dispatch: maxAgeRefusal), null when not given. */
+let maxAgeGiven = null;
+function commandSession() {
+  if (!readSession) {
+    readSession = remoteModule.createReadSession({ maxAge: maxAgeGiven ?? 0 });
+    process.on("exit", () => readSession.closeNow());
+    for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143], ["SIGHUP", 129]]) process.once(signal, () => {
+      readSession.closeNow();
+      // Another handler (a scheduler lock's release) exits on its own after this one.
+      if (process.listenerCount(signal) === 0) process.exit(code);
+    });
+  }
+  return readSession;
+}
+/** Which kernel command forms take --max-age: THE allow-list (docs/desktop-cli-api.md "Observation reuse").
+ *  → null when this form reads with observation reuse, else the E_BAD_ARGS message. `head` is argv before `--`. */
+const MAX_AGE_READS = "status, workspace status, souls, capabilities, inspect --soul|--home, and the read forms of teams and soul teams";
+function maxAgeRefusal(command, head) {
+  const word = (i) => (head[i] !== undefined && !head[i].startsWith("--") ? head[i] : undefined);
+  const refuse = (form) => `--max-age is not accepted by \`oats ${form}\`: only the read verbs reuse observations (${MAX_AGE_READS})`;
+  if (head.includes("--server")) return "--max-age cannot be combined with --server: observation reuse is local to this machine";
+  switch (command) {
+    case "status": case "souls": case "capabilities": case "inspect": return null;
+    case "workspace": return word(1) === "status" ? null : refuse(["workspace", word(1)].filter(Boolean).join(" "));
+    case "teams": return word(1) === undefined ? null : refuse(`teams ${word(1)}`);
+    case "soul": {
+      if (word(1) !== "teams") return refuse(["soul", word(1)].filter(Boolean).join(" "));
+      const edit = ["--add", "--remove", "--default", "--clear-default"].find((f) => head.includes(f));
+      return edit ? refuse(`soul teams ${edit}`) : null;
+    }
+    default: {
+      const sub = ["package", "schedule", "session", "trigger", "automations", "launch-config", "server", "instance", "operation", "pane"].includes(command) ? word(1) : undefined;
+      return refuse([command, sub].filter(Boolean).join(" "));
+    }
+  }
+}
+/** The observation block: the heads' oldest observedAt and reuse (the read session) and the revision of
+ *  the local configuration this command read (lib/local-inputs.mjs, recording since dispatch). */
+const observationBlock = () => ({ ...commandSession().observation(), localRevision: localRevision() });
+/** A read verb's JSON with the observation block — only when --max-age was given (0 included); without
+ *  it the document is exactly what it was before the feature (Desktop decodes closed shapes). */
+const withObservation = (doc) => (maxAgeGiven === null ? doc : { ...doc, observation: observationBlock() });
+
 /** Remote options threaded into every remote call. OATS_REMOTE_CACHE relocates
- * the content-addressed fetch cache (tests never touch ~/.cache). */
+ * the content-addressed fetch cache (tests never touch ~/.cache); `session` is the command's read session. */
 function remoteOptionsFromEnv() {
   const cacheDir = process.env.OATS_REMOTE_CACHE;
-  return cacheDir ? { cacheDir: resolve(cacheDir) } : {};
+  return { ...(cacheDir ? { cacheDir: resolve(cacheDir) } : {}), session: commandSession() };
 }
 
 /** The v2 deployment context at --dir: { dir, localPath, local, deploymentDir, remoteOptions }. */
@@ -1442,7 +1494,7 @@ async function workspaceCmd() {
     result.warnings.push({ code: "automation-trust-stale", entry, message: `oats-local.yaml automations.trust names ${entry}, which is no workspace trigger or schedule${actx.snapshot ? "" : " (no automations snapshot yet: run oats sync)"}; its member may not have synced yet` });
   }
   await workspaceStatusFacts(result, discovery, lock, ctx);
-  if (JSON_MODE) { jsonOk(result); return; }
+  if (JSON_MODE) { jsonOk(withObservation(result)); return; }
   console.log(`workspace ${workspaceName(discovery)}  (${discovery.key} @ ${short(discovery.commit)})  local ${shortPath(ctx.localPath)}\n`);
   if (standalone) console.log(`  (${standaloneNote(discovery)})\n`);
   console.log("Members:");
@@ -1532,7 +1584,7 @@ async function teamsCmd() {
     else if (sub === "default") result = V.teamsDefault(ctx, label);
   } catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details); throw e; }
   const doc = V.teamsDocument(result ? { ...ctx, local: result.local } : ctx);
-  if (JSON_MODE) { jsonOk(result ? { ...doc, changed: result.changed } : doc); return; }
+  if (JSON_MODE) { jsonOk(result ? { ...doc, changed: result.changed } : withObservation(doc)); return; }
   if (result) console.log(result.changed ? `${sub === "add" ? `Declared team ${label}` : sub === "remove" ? `Removed team ${label}` : `The default team is now ${label}`} in ${shortPath(ctx.localPath)}` : "Nothing to change");
   console.log(`default   ${doc.defaultTeam ?? "(none)"}`);
   if (!doc.teams.length) console.log("teams     (none: `oats aweb setup` creates them, or `oats teams add <label> --team <id>`)");
@@ -1559,7 +1611,7 @@ async function soulCmd() {
   else {
     // The soul is named as for spawn: E_SOUL_UNKNOWN / E_SOUL_AMBIGUOUS; package souls come from the lock.
     let lock = null;
-    try { lock = existsSync(join(ctx.deploymentDir, LOCK_FILE)) ? readLock(ctx.deploymentDir) : null; } catch (e) { return bail(e.code || "E_LOCK_SCHEMA", e.message, e.details); }
+    try { lock = readLockIfPresent(ctx.deploymentDir); } catch (e) { return bail(e.code || "E_LOCK_SCHEMA", e.message, e.details); }
     let discovery, entry;
     try {
       const { discoverOrStandalone, findSoulEntry } = await import("../lib/instance-resolution.mjs");
@@ -1576,7 +1628,7 @@ async function soulCmd() {
     if (mutating) result = V.soulTeamsEdit(teamsCtx, key, edit);
     doc = V.soulTeamsDocument(result ? { ...teamsCtx, local: result.local } : teamsCtx, { soul, key });
   } catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details); throw e; }
-  if (JSON_MODE) { jsonOk(result ? { ...doc, changed: result.changed } : doc); return; }
+  if (JSON_MODE) { jsonOk(result ? { ...doc, changed: result.changed } : withObservation(doc)); return; }
   if (result) console.log(result.changed ? `Updated the teams of ${key === "*" ? "every soul" : key} in ${shortPath(teamsCtx.localPath)}` : "Nothing to change");
   console.log(`${key === "*" ? "every soul" : key} on this computer: default ${doc.defaultTeam ? `${doc.defaultTeam.label} (${doc.defaultTeam.from})` : "(none)"}`);
   if (doc.teams.length) printTable(["team", "id", "from", "why"], doc.teams.map((t) => [t.default ? `${t.label} (default)` : t.label, t.team ?? "(no id yet)", t.from, t.via.join(",")]));
@@ -1595,7 +1647,7 @@ async function itemsCmd(kind) {
   if (kind === "capabilities") await capabilityFacts(items, discovery, lock, ctx, remote);
   if (kind === "souls") await soulFacts(items, discovery, lock, ctx, remote);
   const standalone = discovery.standalone === true;
-  if (JSON_MODE) { jsonOk({ [`${kind}Api`]: 1, standalone: standalone || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, commit: discovery.commit }, [kind]: items, problems: discovery.problems }); return; }
+  if (JSON_MODE) { jsonOk(withObservation({ [`${kind}Api`]: 1, standalone: standalone || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, commit: discovery.commit }, [kind]: items, problems: discovery.problems })); return; }
   console.log(`${kind} of workspace ${workspaceName(discovery)} (${discovery.key} @ ${short(discovery.commit)})${standalone ? `  — ${standaloneNote(discovery)}` : ""}\n`);
   if (!items.length) console.log("  (none)");
   else if (kind === "souls") printTable(["name", "origin", "teams here", "work"], items.map((s) => [s.name, s.origin, s.teams === null ? "(invalid: oats teams)" : s.teams.map((t) => (t.default ? `${t.label}*` : t.label)).join(",") || "—", s.work ?? "—"]));
@@ -1615,14 +1667,24 @@ async function capabilityFacts(rows, discovery, lock, ctx, remote = remoteModule
   for (const [id, entry] of Object.entries(lock?.packages || {})) {
     try { packages.set(id, await lockedPackageCapabilities(id, entry, { catalog, remote, remoteOptions })); } catch { packages.set(id, null); }
   }
+  // Indexes built once (a scan of every member per row was O(rows × members)): the member row per key
+  // (memberRowByKey); the member rows per (key, commit), in row order.
+  const capOf = (member, name) => member?.capabilities.find((c) => c.name === name);
+  const rowsAt = new Map();
+  for (const r of rows) {
+    if (r.kind === "package") continue;
+    const k = `${r.repoKey}\0${r.commit}`;
+    if (!rowsAt.has(k)) rowsAt.set(k, []);
+    rowsAt.get(k).push(r);
+  }
   // A member capability's fingerprint is its Git tree at the commit (one listing per member commit); a
   // package's is the package integrity (the lock).
   const trees = new Map();
   const treeOf = async ({ repoKey, commit }, ref, dir) => {
     const key = `${repoKey}\0${commit}`;
     if (!trees.has(key)) {
-      const member = discovery.members.find((m) => m.key === repoKey);
-      const dirs = rows.filter((r) => r.kind !== "package" && r.repoKey === repoKey && r.commit === commit).map((r) => member?.capabilities.find((c) => c.name === r.name)?.path).filter(Boolean);
+      const member = memberRowByKey(discovery.members, repoKey);
+      const dirs = (rowsAt.get(key) || []).map((r) => capOf(member, r.name)?.path).filter(Boolean);
       trees.set(key, remoteModule.remoteTreeOids(ref, commit, [...new Set(dirs)], remoteOptions).catch(() => new Map()));
     }
     return (await trees.get(key)).get(dir) ?? null;
@@ -1633,7 +1695,7 @@ async function capabilityFacts(rows, discovery, lock, ctx, remote = remoteModule
       const read = packages.get(row.package), cap = read?.capabilities.find((c) => c.name === row.name);
       if (cap) ({ manifest, dir } = cap), ref = read.ref;
     } else {
-      const cap = discovery.members.find((m) => m.key === row.repoKey)?.capabilities.find((c) => c.name === row.name);
+      const cap = capOf(memberRowByKey(discovery.members, row.repoKey), row.name);
       if (cap) { manifest = cap.manifest; dir = cap.path; ref = memberRef(discovery, remoteModule, row.repoKey); }
     }
     const provides = manifest ? await capabilityProvides({ ref, commit: row.commit, dir, manifest, remote, remoteOptions }) : { skills: null, commands: null, hooks: null };
@@ -1648,9 +1710,13 @@ async function capabilityFacts(rows, discovery, lock, ctx, remote = remoteModule
  *  discovery and the lock without spawning (soulSpawnability). */
 async function soulFacts(rows, discovery, lock, ctx, remote = remoteModule) {
   const { soulSpawnability } = await import("../lib/instance-resolution.mjs");
-  const entryOf = (row) => row.kind === "package" ? (discovery.packageSouls || []).find((p) => p.qualifiedName === row.qualifiedName)
-    : row.kind === "external" ? (discovery.external || []).map((e) => e.soul).find((x) => x.name === row.name && x.repoKey === row.repoKey)
-    : discovery.members.find((m) => m.key === row.repoKey)?.souls.find((x) => x.name === row.name);
+  // Indexes built once, each keeping the FIRST match as `find` did (a scan per row was O(souls × members)).
+  const first = (pairs) => { const m = new Map(); for (const [k, v] of pairs) if (!m.has(k)) m.set(k, v); return m; };
+  const packageSoul = first((discovery.packageSouls || []).map((p) => [p.qualifiedName, p]));
+  const externalSoul = first((discovery.external || []).map((e) => e.soul).map((x) => [`${x.name}\0${x.repoKey}`, x]));
+  const entryOf = (row) => row.kind === "package" ? packageSoul.get(row.qualifiedName)
+    : row.kind === "external" ? externalSoul.get(`${row.name}\0${row.repoKey}`)
+    : memberRowByKey(discovery.members, row.repoKey)?.souls.find((x) => x.name === row.name);
   for (const row of rows) {
     const entry = entryOf(row);
     row.file = { path: `${row.path}/soul.yaml`, url: remoteModule.browseUrl(row.repoKey, row.commit, `${row.path}/soul.yaml`) };
@@ -1688,7 +1754,7 @@ async function statusDrift(data) {
   if (!anything) return { drift: new Map(), soul: new Map(), souls, unreachable: null };
   const deploymentDir = dirname(ctx.path);
   let lock = null;
-  try { if (existsSync(join(deploymentDir, LOCK_FILE))) lock = readLock(deploymentDir); } catch { lock = null; }
+  try { lock = readLockIfPresent(deploymentDir); } catch { lock = null; }
   let discovery;
   // The standalone view (decisions 10/25) is a discovery too: drift of a standalone
   // instance is computed against its member's current state, not reported "unreachable".
@@ -1706,9 +1772,12 @@ async function statusDrift(data) {
     if (hasSoul(i)) { try { const row = soulDriftOf(i, discovery); if (row) soul.set(key, row); } catch { /* an unreadable soul record shows as no soul row */ } }
   }
   // The roster's soul row reflects the CURRENT member commit too (the pointer may lag a moved member).
+  // First match per key, as `find` gave, from indexes built once (not a scan per agent).
+  const packageSoulAt = new Map();
+  for (const p of discovery.packageSouls || []) { const k = `${p.package}\0${p.path}`; if (!packageSoulAt.has(k)) packageSoulAt.set(k, p); }
   for (const [, stamp] of souls) {
-    if (typeof stamp.package === "string") { const now = (discovery.packageSouls || []).find((p) => p.package === stamp.package && p.path === stamp.path); if (now) stamp.current = now.commit; continue; }
-    const member = discovery.members.find((m) => m && m.key === stamp.repoKey);
+    if (typeof stamp.package === "string") { const now = packageSoulAt.get(`${stamp.package}\0${stamp.path}`); if (now) stamp.current = now.commit; continue; }
+    const member = memberRowByKey(discovery.members, stamp.repoKey);
     if (member && typeof member.commit === "string" && (member.confirmed || (discovery.standalone === true && member.key === discovery.key))) stamp.current = member.commit;
   }
   return { drift, soul, souls, unreachable: null };
@@ -1779,7 +1848,8 @@ async function status() {
         if (s) i.soul = { repoKey: s.repoKey, commit: s.commit, current: s.current?.commit ?? null, status: s.status, ...(s.reason ? { reason: s.reason } : {}), ...(s.package ? { package: s.package, version: s.version, currentVersion: s.current?.version ?? null } : {}) };
       }
     }
-    console.log(JSON.stringify({ root, agents: data, ...(ws ? { workspace: ws.unreachable ? { reachable: false, ...ws.unreachable } : { reachable: true } } : {}), ...(problems.length ? { problems } : {}), ...envelopeWarnings() }, null, 2)); return;
+    const observation = maxAgeGiven === null ? {} : { observation: observationBlock() };
+    console.log(JSON.stringify({ root, agents: data, ...observation, ...(ws ? { workspace: ws.unreachable ? { reachable: false, ...ws.unreachable } : { reachable: true } } : {}), ...(problems.length ? { problems } : {}), ...envelopeWarnings() }, null, 2)); return;
   }
   console.log(`oats status — agents root ${shortPath(root)}\n`);
   if (ws?.unreachable) console.log(`  workspace: unreachable (${ws.unreachable.reason}) — drift unknown\n`);
@@ -1789,9 +1859,12 @@ async function status() {
     console.log(`  ${a.name}  [work: ${a.work || "checkout"}, repo: ${soulRepoLabel(a, ws)}]`);
     if (a.description) console.log(`      ${a.description}`);
     for (const i of a.instances) {
-      console.log(`      • ${i.instance}  ${i.retirePending ? "RETIRING" : i.running ? "RUNNING" : "idle"}  (branch ${i.branch || "?"}, ${i.work || "?"})`);
+      console.log(`      • ${i.instance}  ${i.retirePending ? "RETIRING" : livenessWord(i)}  (branch ${i.branch || "?"}, ${i.work || "?"})${i.runtimeError ? `  ${i.runtimeError}` : ""}`);
       const key = i.home ?? `${a.name}/${i.instance}`;
       if (i.identity) console.log(`          identity: ${servedIdentityLine(i.identity)}`);
+      // The kernel the home's plain `oats` runs (its last launch's), when it is not this one.
+      const launchedBy = i.home ? recordedKernelBin(i.home) : null;
+      if (typeof launchedBy === "string" && (verbose || launchedBy !== CLI_BIN)) console.log(`          kernel: ${launchedBy}${launchedBy !== CLI_BIN ? " (not this oats)" : ""}`);
       const s = ws?.soul.get(key);
       if (s && (verbose || s.status !== "current")) console.log(`          ${soulDriftLine(s, a.name)}`);
       const rows = ws?.drift.get(key) || [];
@@ -1803,13 +1876,47 @@ async function status() {
   }
 }
 
+/** A status row's liveness in text: `running` null (a server that cannot be read, a Herdr home) is unknown, never idle. */
+const livenessWord = (i) => i.running === true ? "RUNNING" : i.running === false ? "idle" : "unknown";
+/** The flags `oats spawn` reads: those taking a value, and switches. `--provider` takes two words.
+ *  `--instance` is refused by a local spawn (with its replacement) but still travels to an older
+ *  host through `--server`, whose route reads it. */
+const SPAWN_VALUE_FLAGS = new Set(["agents-root", "backend", "base", "branch", "dir", "expect-decision", "harness", "idempotency-key", "instance", "launch-config", "model", "name", "parent", "purpose", "relation", "relative-root", "relative-to", "repo", "runtime", "task", "task-file", "trigger-event", "wake-cron", "wake-every", "wake-file", "wake-json", "wake-message", "wake-message-file", "wake-tz", "work", "work-dir"]);
+const SPAWN_SWITCHES = new Set(["allow-child-spawns", "json", "no-child-spawns", "no-launch", "no-yolo", "preview", "yolo"]);
+/** Why `argv` (after `spawn`, the soul first) is not a spawn, or undefined: a positional after the
+ *  soul or a flag spawn does not read is never ignored. A value flag consumes its value exactly as
+ *  flag() reads it; a missing value is the flag's own check. */
+function spawnArgvProblem(argv) {
+  const soul = argv[0];
+  for (let i = 1; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--provider") { i += 2; continue; }
+    if (a.startsWith("--")) {
+      const name = a.slice(2);
+      if (SPAWN_SWITCHES.has(name)) continue;
+      if (!SPAWN_VALUE_FLAGS.has(name)) return `oats spawn: unknown flag ${a}`;
+      if (argv[i + 1] !== undefined && !argv[i + 1].startsWith("--")) i++;
+      continue;
+    }
+    if (/^[A-Za-z0-9_.-]+=/.test(a)) return `oats spawn: unexpected argument ${JSON.stringify(a)} after the soul ${JSON.stringify(soul)}: a capability setting is given as --provider <capability> key=value (here: --provider <capability> ${a})`;
+    return `oats spawn: unexpected argument ${JSON.stringify(a)} after the soul ${JSON.stringify(soul)}: spawn takes one soul`;
+  }
+  return undefined;
+}
+/** The Herdr spawn flags (removed in 0.31.0), named for the refusal; undefined when none is given. */
+function herdrSpawnFlag() {
+  if (flag("backend") === "herdr") return "--backend herdr";
+  if (flag("herdr-socket") !== undefined) return "--herdr-socket";
+  return undefined;
+}
 async function spawnCmd() {
   // JSON mode: contract envelope, stable error codes, stderr-only progress.
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   const note = (msg) => (JSON_MODE ? console.error(msg) : console.log(msg));
   const yolo = yoloFlag();
-  const backend = valueFlag("backend"), herdrSocket = valueFlag("herdr-socket");
-  if (backend !== undefined && !["tmux", "herdr"].includes(backend)) bail("E_BAD_ARGS", "--backend must be tmux or herdr");
+  { const herdr = herdrSpawnFlag(); if (herdr) { const e = herdrSettingRemoved(`${herdr} was given`); bail(e.code, e.message); } }
+  const backend = valueFlag("backend");
+  if (backend !== undefined && backend !== "tmux") bail("E_BAD_ARGS", "--backend must be tmux");
   const requestedWork = valueFlag("work");
   const workDir = valueFlag("work-dir"), branch = valueFlag("branch"), repo = valueFlag("repo");
   const checkDirectoryOptions = (work) => {
@@ -1817,7 +1924,7 @@ async function spawnCmd() {
   };
   checkDirectoryOptions(requestedWork); // before anything is resolved or written
   const name = args[1];
-  if (!name || name.startsWith("--")) bail("E_USAGE", "usage: oats spawn <agent> [--task <text>|--task-file <f>] [--purpose <slug>|--name <slug>] [--preview] [--base <ref>] [--model <id>|@native-default] [--allow-child-spawns|--no-child-spawns] [--relation child|sibling|parent|unrelated --relative-to <instance> [--relative-root <agents-root>]] [--parent <instance>] [--repo <r>] [--work worktree|checkout|attached|workspace|directory] [--work-dir <owner-work>] [--harness pi|claude|codex] [--backend tmux|herdr] [--herdr-socket <path>] [--yolo|--no-yolo] [--model <m>] [--branch <b>] [--no-launch] [--json]");
+  if (!name || name.startsWith("--")) bail("E_USAGE", "usage: oats spawn <agent> [--task <text>|--task-file <f>] [--purpose <slug>|--name <slug>] [--preview] [--base <ref>] [--model <id>|@native-default] [--allow-child-spawns|--no-child-spawns] [--relation child|sibling|parent|unrelated --relative-to <instance> [--relative-root <agents-root>]] [--parent <instance>] [--repo <r>] [--work worktree|checkout|attached|workspace|directory] [--work-dir <owner-work>] [--harness pi|claude|codex] [--backend tmux] [--yolo|--no-yolo] [--model <m>] [--branch <b>] [--no-launch] [--json]");
   // Retired boundary flags (maintainer transport ruling): fail LOUDLY before
   // ANY side effect, including root discovery.
   // Local souls (local-agents/) are gone with the workspace model: a soul is a member
@@ -1831,6 +1938,7 @@ async function spawnCmd() {
   // The slug rule is checked here too, before any side effect (soul fetch).
   if (nameFlag !== undefined) { try { explicitInstanceName(String(nameFlag)); } catch (e) { bail(e.code, e.message); throw e; } }
   if (args.includes("--ephemeral")) bail("E_BAD_ARGS", "--ephemeral was removed by the runtime-boundary ruling — declare the agent in a capability manifest (agents:) for automatic ephemeral semantics");
+  { const problem = spawnArgvProblem(args.slice(1)); if (problem) bail("E_BAD_ARGS", problem); }
   let root;
   // A spawn needs a workspace deployment (lead decision c3-1): no oats-local.yaml
   // in reach is E_LOCAL_MISSING, before anything else is read. The agents root is
@@ -2010,7 +2118,7 @@ async function spawnCmd() {
       // An attached instance's repository is its work tree owner's (derived by the kernel).
       repo: preparedRepo !== undefined ? preparedRepo : ["directory", "attached"].includes(requestedWork || agent.work)
         ? repo : repo || defaultRepo(workspaceOf(root)) || defaultRepo(process.cwd()),
-      work: requestedWork, workDir, harness: harnessFlag(), backend, herdrSocket, yolo, model: flag("model"), branch,
+      work: requestedWork, workDir, harness: harnessFlag(), backend, yolo, model: flag("model"), branch,
       launchConfig: valueFlag("launch-config"),
       launch: !args.includes("--no-launch"),
       ...(triggerEvent ? { triggerEvent } : {}),
@@ -2077,11 +2185,10 @@ async function spawnCmd() {
       instance: r.instance, agent: r.agent, home: r.home, work: r.work,
       branch: r.branch || null, launched: r.launched, warnings: r.warnings || [],
       ...(wakeSchedule ? { wakeSchedule } : {}), ...(wakeScheduleError ? { wakeScheduleError } : {}),
-      tmux: r.tmux || null, repo: r.repo || null, harness: r.harness || null,
+      tmux: r.tmux || null, backend: "tmux", repo: r.repo || null, harness: r.harness || null,
       model: r.model || null, parent: r.parentInstance || null,
       sibling: r.siblingInstance || null, relation: r.relation || null,
       spawnOrigin: r.spawnOrigin, attach: r.attach,
-      ...(r.sessionTarget ? { sessionTarget: r.sessionTarget } : {}),
       ...(r.yolo !== undefined ? { yolo: r.yolo } : {}),
       // K6b/K6c: what bound this spawn, and whether this receipt is a replay of an earlier one.
       ...(r.decision ? { decision: r.decision } : {}), ...(r.replayed !== undefined ? { replayed: r.replayed } : {}),
@@ -2090,7 +2197,7 @@ async function spawnCmd() {
     });
     return;
   }
-  console.log(`Spawned ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch}` : ""})${r.launched ? r.sessionTarget ? ` — Herdr pane "${r.sessionTarget.paneId}"` : ` — tmux window "${r.tmux.window}"` : " — not launched"}`);
+  console.log(`Spawned ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch}` : ""})${r.launched ? ` — tmux window "${r.tmux.window}"` : " — not launched"}`);
   console.log(`  home:   ${shortPath(r.home)}`);
   if (wakeSchedule) console.log(`  wake:   schedule ${wakeSchedule.id} (${wakeSchedule.cron} ${wakeSchedule.tz}), next ${wakeSchedule.nextRun || "disabled"}`);
   if (wakeScheduleError) console.error(`  wake:   NOT saved — ${wakeScheduleError.message} (the instance is created and launched; add the wake by hand with oats schedule add)`);
@@ -2744,6 +2851,7 @@ async function capabilityCommand() {
     // OATS_SOUL is the recorded soul or nothing: an ambient value inherited from the
     // invoking process names some other soul (a coordinator's own), never this one.
     const { OATS_SOUL: _ambientSoul, ...inherited } = process.env;
+    await readSession?.closeBatches(); // no idle `git cat-file --batch` child held for the provider's whole run
     const r = spawnSync("node", [abs, ...rest, ...rawArgs.slice(2)], { stdio: "inherit", env: {
       ...inherited, OATS_CAPABILITY: m.capability,
       // Package-runtime boundary: dispatched commands receive the active
@@ -2765,7 +2873,9 @@ async function capabilityCommand() {
     } });
     // Child never ran (spawn error): nothing reached stdout — keep the envelope contract.
     if (r.error) bail("E_CAPABILITY_BROKEN", `oats ${cmd} ${sub}: ${r.error.message || r.error}`);
-    process.exit(r.status ?? 1);
+    // A provider killed by a signal (a Ctrl-C reaches both it and us; our read session's handler
+    // waits for spawnSync) exits as the shell reports a signal death: 128 + its number.
+    process.exit(r.status ?? (r.signal ? 128 + (osConstants.signals[r.signal] ?? 0) : 1));
   }
 }
 
@@ -2823,7 +2933,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-2", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2 }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-2", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2 }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -2867,9 +2977,9 @@ async function experimentalCmd() {
  *  an OpenSSH host alias, the remote workspace, the remote oats path. Keys
  *  and passwords never enter it; ssh owns those. */
 function serverCmd() {
-  const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
+  const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   const sub = args[1];
-  const usage = "usage: oats server add <id> --ssh <host-alias> --workspace </abs/path> [--oats <path>] [--herdr <path>] [--path <dir:dir>] [--label <text>] [--replace] | list | remove <id> | check <id> | roster [--server <id>] | forget <id> --instance <name>  [--json]";
+  const usage = "usage: oats server add <id> --ssh <host-alias> --workspace </abs/path> [--oats <path>] [--path <dir:dir>] [--label <text>] [--replace] | list | remove <id> | check <id> | roster [--server <id>] | forget <id> --instance <name>  [--json]";
   if (!["add", "list", "remove", "check", "roster", "forget"].includes(sub)) bail("E_USAGE", usage);
   if (sub === "forget") {
     // A saved route whose remote instance is gone can be dropped only by
@@ -2910,15 +3020,16 @@ function serverCmd() {
     const rows = Object.entries(servers).map(([id, s]) => ({ id, ...s, target: targetOf({ id, ...s }), snapshots: listSnapshots(id).length }));
     if (JSON_MODE) { jsonOk({ file: SERVERS_FILE(), servers: rows }); return; }
     if (!rows.length) { console.log(`no servers registered (${shortPath(SERVERS_FILE())}) — add one with \`oats server add <id> --ssh <alias> --workspace </path>\``); return; }
-    for (const r of rows) console.log(`  ${r.id}${r.label ? `  ${r.label}` : ""}\n      ssh ${r.sshHost}  workspace ${r.workspace}  oats ${r.target.oatsPath}${r.target.herdrPath ? `  herdr ${r.target.herdrPath}` : ""}${r.snapshots ? `  (${r.snapshots} remote instance${r.snapshots === 1 ? "" : "s"} spawned from here)` : ""}`);
+    for (const r of rows) console.log(`  ${r.id}${r.label ? `  ${r.label}` : ""}\n      ssh ${r.sshHost}  workspace ${r.workspace}  oats ${r.target.oatsPath}${r.snapshots ? `  (${r.snapshots} remote instance${r.snapshots === 1 ? "" : "s"} spawned from here)` : ""}`);
     return;
   }
   const id = args[2];
   if (!id || id.startsWith("--")) bail("E_USAGE", usage);
   if (sub === "add") {
     const val = (name) => { const v = flag(name); return v === true ? bail("E_BAD_ARGS", `--${name} needs a value`) : v; };
+    if (flag("herdr") !== undefined) { const e = herdrSettingRemoved("server add --herdr was given"); bail(e.code, e.message); }
     const entry = { sshHost: val("ssh"), workspace: val("workspace") };
-    for (const [k, f] of [["oatsPath", "oats"], ["herdrPath", "herdr"], ["path", "path"], ["label", "label"]]) { const v = val(f); if (v !== undefined) entry[k] = v; }
+    for (const [k, f] of [["oatsPath", "oats"], ["path", "path"], ["label", "label"]]) { const v = val(f); if (v !== undefined) entry[k] = v; }
     if (!entry.sshHost || !entry.workspace) bail("E_USAGE", usage);
     try { validateServer(id, entry); } catch (e) { bail(e.code, e.message); }
     if (servers[id] && !args.includes("--replace")) bail("E_SERVER_EXISTS", `server ${id} is already registered (pass --replace to overwrite; existing remote instances keep the route they were spawned with)`);
@@ -2941,27 +3052,30 @@ function serverCmd() {
   let server; try { server = getServer(id); } catch (e) { bail(e.code, e.message); }
   const target = targetOf(server);
   try {
-    const remote = checkRemote(target);
+    const remote = checkRemote(target, { serverId: id });
     const status = routeCommand(id, "status", [], { server });
     const agents = status.envelope.ok ? (status.envelope.result.agents || []).length : undefined;
     if (JSON_MODE) { jsonOk({ id, target, remote, workspaceReachable: !!status.envelope.ok, agents, error: status.envelope.ok ? undefined : status.envelope.error }); return; }
     console.log(`${id}: ssh ${target.sshHost} ok, remote oats ${remote.version} (envelope v${remote.schemaVersion})`);
     console.log(status.envelope.ok ? `  workspace ${target.workspace}: ${agents} agent(s)` : `  workspace ${target.workspace}: ${status.envelope.error?.message || "not usable"}`);
     if (!status.envelope.ok) process.exit(1);
-  } catch (e) { bail(e.code || "E_SSH", e.message); }
+  } catch (e) { bail(e.code || "E_SSH", e.message, e.details); }
 }
 
 /** `oats <spawn|retire|status> --server <id> ...`: run the command on the
  *  registered server's installed oats, same arguments, same envelope. The
  *  local side only routes and keeps the route snapshot per remote instance. */
 async function serverRouteCmd() {
-  const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
+  const bail = (code, msg, details, exit) => (JSON_MODE ? jsonFail(code, msg, details, exit) : die(msg, exit));
   const id = flag("server");
   if (id === true || !id) bail("E_BAD_ARGS", "--server needs a registered server id (oats server list)");
-  // The operations contract addresses an exact member context on the host,
-  // so its explicit --dir travels; every other routed command takes its
-  // scope from the registration.
-  const explicitScopeOk = ["inspect", "operation", "launch-config"].includes(cmd);
+  // The operations contract, launch-config and the host's reads address an
+  // exact member context on the host, so their explicit --dir travels, as
+  // does a retire plan's or guarded apply's (the lifecycle contract's own
+  // arguments); every other routed command takes its scope from the
+  // registration.
+  const explicitScopeOk = ["inspect", "operation", "launch-config", "readiness", "instance"].includes(cmd)
+    || (cmd === "retire" && ["--plan", "--plan-revision", "--idempotency-key"].some((f) => args.includes(f)));
   if (!explicitScopeOk && flag("dir") !== undefined) bail("E_BAD_ARGS", "--dir cannot be combined with --server: the remote workspace comes from the server registration");
   if (cmd === "launch-config") {
     const action = args[1];
@@ -2985,7 +3099,7 @@ async function serverRouteCmd() {
       options.keepEnv = args.includes("--keep-env");
     }
     let out;
-    try { out = launchConfigRemote(id, options); } catch (e) { bail(e.code || "E_SSH", e.message); }
+    try { out = launchConfigRemote(id, options); } catch (e) { bail(e.code || "E_SSH", e.message, e.details); }
     if (out.stderr?.trim()) process.stderr.write(out.stderr.endsWith("\n") ? out.stderr : out.stderr + "\n");
     if (JSON_MODE) { console.log(JSON.stringify(withLocalWarnings(out.envelope), null, 2)); if (!out.envelope.ok) process.exit(1); return; }
     if (!out.envelope.ok) die(`${id}: ${out.envelope.error?.message || "launch configuration request failed"} (${out.envelope.error?.code || "E_REMOTE"})`);
@@ -3002,7 +3116,7 @@ async function serverRouteCmd() {
     const inst = flag("instance");
     if (!inst || inst === true) bail("E_BAD_ARGS", "okf harvest --server needs --instance <name> (spawned from here)");
     let routed;
-    try { routed = routeCommand(id, "harvest", [inst]); } catch (e) { bail(e.code || "E_SSH", e.message); }
+    try { routed = routeCommand(id, "harvest", [inst]); } catch (e) { bail(e.code || "E_SSH", e.message, e.details); }
     if (routed.stderr?.trim()) process.stderr.write(routed.stderr.endsWith("\n") ? routed.stderr : routed.stderr + "\n");
     if (JSON_MODE) { console.log(JSON.stringify(withLocalWarnings(routed.envelope), null, 2)); if (!routed.envelope.ok) process.exit(1); return; }
     if (!routed.envelope.ok) die(`${id}: ${routed.envelope.error?.message || "harvest failed"} (${routed.envelope.error?.code || "E_REMOTE"})`);
@@ -3030,7 +3144,7 @@ async function serverRouteCmd() {
       rest.push(a);
     }
     let out;
-    try { out = scheduleRemote(id, rest); } catch (e) { bail(e.code || "E_SSH", e.message); }
+    try { out = scheduleRemote(id, rest); } catch (e) { bail(e.code || "E_SSH", e.message, e.details); }
     if (out.stderr?.trim()) process.stderr.write(out.stderr.endsWith("\n") ? out.stderr : out.stderr + "\n");
     if (JSON_MODE) { console.log(JSON.stringify(withLocalWarnings(out.envelope), null, 2)); if (!out.envelope.ok) process.exit(1); return; }
     if (!out.envelope.ok) die(`${id}: ${out.envelope.error?.message || "schedule command failed"} (${out.envelope.error?.code || "E_REMOTE"})`);
@@ -3043,7 +3157,7 @@ async function serverRouteCmd() {
       // Desktop preflight before a remote attach: the execution host's own
       // inspect, relayed as its envelope; a failure is a failure, nonzero.
       let out;
-      try { out = inspectRemote(id, addr); } catch (e) { bail(e.code || "E_SSH", e.message); }
+      try { out = inspectRemote(id, addr); } catch (e) { bail(e.code || "E_SSH", e.message, e.details); }
       if (out.stderr?.trim()) process.stderr.write(out.stderr.endsWith("\n") ? out.stderr : out.stderr + "\n");
       if (JSON_MODE) { console.log(JSON.stringify(withLocalWarnings(out.envelope), null, 2)); if (!out.envelope.ok) process.exit(1); return; }
       if (!out.envelope.ok) die(`${id}: ${out.envelope.error?.message || "inspect failed"} (${out.envelope.error?.code || "E_REMOTE"})`);
@@ -3056,7 +3170,7 @@ async function serverRouteCmd() {
       const choices = { ...addr, model: value("model"), launchConfig: value("launch-config"), harness: harnessFlag(value), yolo: yoloFlag() };
       if (flag("stop-grace") !== undefined) bail("E_BAD_ARGS", "--stop-grace is currently supported on the execution host; omit it to use the remote restart's default wait");
       let out;
-      try { out = (args[1] === "restart" ? restartRemote : startRemote)(id, choices); } catch (e) { bail(e.code || "E_SSH", e.message); }
+      try { out = (args[1] === "restart" ? restartRemote : startRemote)(id, choices); } catch (e) { bail(e.code || "E_SSH", e.message, e.details); }
       if (out.stderr?.trim()) process.stderr.write(out.stderr.endsWith("\n") ? out.stderr : out.stderr + "\n");
       if (JSON_MODE) { console.log(JSON.stringify(withLocalWarnings(out.envelope), null, 2)); if (!out.envelope.ok) process.exit(1); return; }
       if (!out.envelope.ok) die(`${id}: ${out.envelope.error?.message || "start failed"} (${out.envelope.error?.code || "E_REMOTE"})`);
@@ -3070,7 +3184,7 @@ async function serverRouteCmd() {
       const file = flag("file");
       if (!file || file === true) bail("E_BAD_ARGS", "session upload needs --file <local path>");
       let r;
-      try { r = uploadAttachment({ file, server: id, ...addr }); } catch (e) { bail(e.code || "E_UPLOAD_FAILED", e.message); }
+      try { r = uploadAttachment({ file, server: id, ...addr }); } catch (e) { bail(e.code || "E_UPLOAD_FAILED", e.message, e.details); }
       if (r.stderr) process.stderr.write(r.stderr + "\n");
       if (JSON_MODE) { jsonOk(r); return; }
       console.log(`Uploaded ${r.name} (${r.bytes} bytes) to ${r.instance || r.home} on ${id}: ${r.path}`);
@@ -3079,10 +3193,25 @@ async function serverRouteCmd() {
     if (args[1] !== "attach") bail("E_USAGE", "--server routes `session inspect`, `session start`, `session restart`, `session upload` and `session attach`; input runs on the execution host (the wake broker calls it there)");
     let route;
     try { route = attachArgv(id, addr, { skipVersionCheck: args.includes("--print") }); }
-    catch (e) { bail(e.code || "E_BAD_ARGS", e.message); }
+    // ssh failing before the viewer (the version probe, a name resolved through the host's roster)
+    // is the failure ssh has under it: exit 255, on which a caller reconnects. Every other refusal,
+    // and an ssh that never started (no link can come back), exits 1.
+    catch (e) { bail(e.code || "E_BAD_ARGS", e.message, e.details, e.code === "E_SSH" && e.details?.sshStarted !== false ? 255 : 1); }
     if (args.includes("--print")) { console.log(route.argv.map(shellQuote).join(" ")); return; }
     const r = spawnSyncProc(route.argv[0], route.argv.slice(1), { stdio: "inherit" });
+    // ssh exits 255 for its own failures: a link that died under the viewer
+    // (keepalives unanswered, the master or the host's sshd gone), or one
+    // never made. Say what is known rather than ending silently.
+    if (r.status === 255) console.error(`\noats: ssh to ${route.target.sshHost} ended with an error (exit 255); if the link was lost, the instance keeps running on ${id}. Reattach with: oats session attach --server ${id} --home ${shellQuote(route.home)}`);
     process.exit(r.status ?? 1);
+  }
+  // A spawn's argv is checked here, before the server is contacted.
+  if (cmd === "spawn") {
+    const herdr = herdrSpawnFlag();
+    if (herdr) { const e = herdrSettingRemoved(`${herdr} was given`); bail(e.code, e.message); }
+    const local = args.slice(1).filter((a, i, all) => a !== "--server" && all[i - 1] !== "--server");
+    const problem = spawnArgvProblem(local);
+    if (problem) bail("E_BAD_ARGS", problem);
   }
   // Everything after the command word travels, minus the routing flags; a
   // local --task-file is read here and travels as --task text, since the
@@ -3121,9 +3250,16 @@ async function serverRouteCmd() {
   }
   let routed;
   try { routed = routeCommand(id, cmd, rest); }
-  catch (e) { bail(e.code || "E_SSH", e.message); }
+  catch (e) { bail(e.code || "E_SSH", e.message, e.details); }
   const { envelope, stderr } = routed;
   if (stderr && stderr.trim()) process.stderr.write(stderr.endsWith("\n") ? stderr : stderr + "\n");
+  // The host's own reads and plans: its envelope, relayed unchanged.
+  if (cmd === "readiness" || cmd === "instance" || (cmd === "retire" && rest.includes("--plan"))) {
+    if (JSON_MODE) { console.log(JSON.stringify(withLocalWarnings(envelope), null, 2)); if (!envelope.ok) process.exit(1); return; }
+    if (!envelope.ok) die(`${id}: ${envelope.error?.message || "remote command failed"} (${envelope.error?.code || "E_REMOTE"})`);
+    console.log(JSON.stringify(envelope.result, null, 2));
+    return;
+  }
   if (JSON_MODE) { console.log(JSON.stringify(withLocalWarnings(envelope), null, 2)); if (!envelope.ok || envelope.result?.rollbackIncomplete) process.exit(1); return; }
   if (!envelope.ok && !(cmd === "retire" && envelope.result)) die(`${id}: ${envelope.error?.message || "remote command failed"} (${envelope.error?.code || "E_REMOTE"})`);
   const r = envelope.result;
@@ -3153,7 +3289,7 @@ async function serverRouteCmd() {
     console.log(`oats status — server ${id} (ssh ${r.target.sshHost}, workspace ${r.target.workspace})\n`);
     for (const a of r.agents || []) {
       console.log(`  ${a.name}  [work: ${a.work || "checkout"}, repo: ${a.repo || "?"}]`);
-      for (const i of a.instances || []) console.log(`      • ${i.instance}  ${i.retirePending ? "RETIRING" : i.running ? "RUNNING" : "idle"}`);
+      for (const i of a.instances || []) console.log(`      • ${i.instance}  ${i.retirePending ? "RETIRING" : livenessWord(i)}${i.runtimeError ? `  ${i.runtimeError}` : ""}`);
     }
     const snaps = r.snapshots || [];
     if (snaps.length) console.log(`\n  spawned from this machine: ${snaps.map((s) => s.instance).join(", ")}`);
@@ -3189,6 +3325,17 @@ try {
   const selector = head.find((a) => /^--(deployment|resolution|artifact-set)$/.test(a));
   const refuse = (message, details) => { if (JSON_MODE) jsonFail("E_UNSUPPORTED_MODE", message, details); die(message); };
   if (selector) refuse(`${selector}: a captured selector is refused (the captured/portable path was removed in 0.26); run the command in its workspace deployment or instance home instead`, { selector });
+  // --max-age (feature observe-max-age): ONE allow-list for every kernel command, here — never a
+  // per-command copy. A capability namespace's argv is its provider's.
+  if (kernelArgv && head.includes("--max-age")) {
+    const refusal = maxAgeRefusal(cmd, head);
+    if (refusal) cmdFail("E_BAD_ARGS", refusal);
+    const raw = flag("max-age");
+    if (raw === true) cmdFail("E_BAD_ARGS", `--max-age needs a value: whole seconds from 0 to ${remoteModule.MAX_AGE_LIMIT}`);
+    if (!/^\d{1,5}$/.test(raw) || Number(raw) > remoteModule.MAX_AGE_LIMIT) cmdFail("E_BAD_ARGS", `--max-age takes whole seconds from 0 to ${remoteModule.MAX_AGE_LIMIT}, got ${JSON.stringify(raw)}`);
+    maxAgeGiven = Number(raw);
+    activateLocalInputs(); // observation.localRevision: every local config read from here on is recorded
+  }
   const inherited = ["OATS_RESOLUTION", "OATS_DEPLOYMENT"].filter((k) => process.env[k]);
   if (inherited.length && cmd !== "version") refuse(`this environment carries a captured context (${inherited.join(", ")}): the captured/portable path was removed in 0.26, and nothing is run against the current context in its place — retire the captured home and re-spawn it from the deployment`, { inherited });
   if (cmd === "inspect" && head.includes("--request")) {
@@ -3265,7 +3412,8 @@ else if (cmd && !cmd.startsWith("--") && !HELP_WORDS.has(cmd) && JSON_MODE) json
 else {
   if (cmd && !HELP_WORDS.has(cmd) && !cmd.startsWith("--")) console.error(`oats: unknown command "${cmd}" — no kernel subcommand or active capability namespace matches\n`);
   console.log(usageText());
-  process.exit(cmd && !HELP_WORDS.has(cmd) ? 1 : 0);
+  // exitCode, not exit(): the usage is ~20 KB, and exit() cuts off whatever a pipe has not drained yet.
+  process.exitCode = cmd && !HELP_WORDS.has(cmd) ? 1 : 0;
 }
 } // end: every command but onboard
 
@@ -3293,6 +3441,7 @@ Usage:
   oats version [--json]                      kernel version; --json emits the
                                             Desktop CLI API v1 probe payload
   oats status [--json]                       agents, souls, running instances
+      [--max-age <s>]                        reuse head observations up to <s> s old (below)
   oats server add <id> --ssh <alias>         register another machine's OATS (OpenSSH alias,
       --workspace </abs/path> [--oats <p>]   remote workspace, remote oats path; no keys stored;
       [--path <dir:dir>]                    --path = dirs prepended to the remote PATH, e.g. ~/.local/bin)
@@ -3302,8 +3451,8 @@ Usage:
                                             remote instance lives under ~/.oats/remote/)
   oats server roster [--server <id>]         remote roster grouped by server and saved route
       [--budget <ms>] [--per-target <ms>]   target: one status pull per group within a total
-      [--json]                              budget (45 s, 20 s per target); saved routes are
-                                            the authority for actions
+      [--json]                              budget (45 s, 20 s per target); every instance the
+                                            server reports is addressable by --home or name
   oats server forget <id> --instance <name>  drop a saved route whose remote instance is gone
                                             (the roster shows it as missingRemotely)
   oats retire <instance> --home <path>       retire exactly that home when two agents own an
@@ -3311,17 +3460,20 @@ Usage:
   oats okf harvest --server <id>             run the knowledge harvest in a remote instance's
       --instance <name> [--json]            saved home on its host
   oats session inspect|attach --server <id>  inspect (envelope) or attach a viewer (ssh PTY) for a
-      --instance <name> | --home <abs>       remote instance over its saved route (--print shows
-                                            attach); the server needs oats 0.22.2 or later
+      --instance <name> | --home <abs>       remote instance, by its saved route or the server's
+                                            roster (--print shows attach); oats 0.22.2 or later
   oats session start --server <id>           start a stopped remote instance in its existing home
-      --instance <name> | --home <abs>       over its saved route; the server must advertise
+      --instance <name> | --home <abs>       by its saved route or the server's roster; it must advertise
       [--model <m>] [--json]                 session-start (oats 0.22.9 or later)
   oats inspect|operation --server <id>        the same commands on a registered server over its
-      ... [--dir <remote member>] [--home <abs>]  saved route (an explicit --dir travels as is; a --home
+      ... [--dir <remote member>] [--home <abs>]  instance home (an explicit --dir travels as is; a --home
                                             is its own context; else the registered workspace);
                                             the server must advertise operations (oats 0.22.16 or later)
+  oats readiness|instance events|git|diff|stop  the Desktop's reads and lifecycle plans, and retire --plan,
+      ... --server <id>                      run on the instance's own machine; the host's envelope is
+                                            relayed unchanged (the host must advertise the feature)
   oats session upload --server <id>          copy a local file into a remote instance's private
-      --instance <name> | --home <abs>       attachments over its saved route (bytes stream on
+      --instance <name> | --home <abs>       attachments, by its home or name (bytes stream on
       --file <path> [--json]                 ssh stdin; sha256 verified); the server must
                                             advertise session-upload (oats 0.22.13 or later)
   oats onboard [<dir>] --workspace <repo ref> realize a workspace here: writes <dir>/oats-local.yaml
@@ -3366,14 +3518,14 @@ Usage:
       [--model <m>] [--json]                 (same identity, worktree, notes and launch env; no
                                             spawn hooks); --model replaces the recorded model
                                             for this and later starts; a live harness is refused
-  oats spawn <agent> [--task <text> | --task-file <f>]  spawn an instance (tmux/Herdr; --no-launch
+  oats spawn <agent> [--task <text> | --task-file <f>]  spawn an instance (tmux; --no-launch
       [--purpose <slug>] [--repo <r>]       = scaffold only); the agent is a workspace
       [--parent <instance>]                 soul or a capability-defined agent
       [--relation child|sibling|parent|unrelated]    --relation + --relative-to anchor the
       [--relative-to <instance>]            new instance to an existing one; --parent X
       [--relative-root <agents-root>]       disambiguates same-named team anchors
       [--work worktree|checkout|attached|workspace|directory]  = sugar for --relative-to X --relation
-      [--work-dir <owner-work>] [--harness pi|claude|codex] [--backend tmux|herdr] [--herdr-socket <path>] [--yolo|--no-yolo] [--model <m>] [--branch <b>]  child (default: unrelated, top-level)
+      [--work-dir <owner-work>] [--harness pi|claude|codex] [--backend tmux] [--yolo|--no-yolo] [--model <m>] [--branch <b>]  child (default: unrelated, top-level)
       [--no-launch] [--json]                 without --launch-config/--harness the launch is the
                                             soul's preference: oats-local.yaml souls.launch.<soul>,
                                             then souls.launch."*", then the soul's launch:, then pi
@@ -3393,7 +3545,7 @@ Usage:
                                             a detached external retirement runs
   oats inspect [--dir <scope>] [--soul <name>   one authoritative JSON answer for a GUI: souls
       [--agents-root <abs>]] [--home <abs>]   (harness defaults, editability, instructions),
-      [--json]                              installed capabilities with health, effective
+      [--max-age <s>] [--json]              installed capabilities with health, effective
                                             layer bindings and activation, declared
                                             operations with availability; --home answers the
                                             running home's recorded modules and their drift
@@ -3434,19 +3586,20 @@ Usage:
       | remove <id>  [--dir <d>]            workspace repo is the current checkout; otherwise
                                             print the line to add (the file travels through Git)
   oats workspace status [--dir <d>] [--json] membership table (confirmed / no-backlink /
-                                            cannot-read / backlink-elsewhere), locked packages
+      [--max-age <s>]                       cannot-read / backlink-elsewhere), locked packages
   oats capabilities [--dir <d>] [--json]     every capability of every confirmed member (a
-                                            private one is listed as repo-owned: usable only by
+      [--max-age <s>]                       private one is listed as repo-owned: usable only by
                                             its own repo's souls) + the locked packages
   oats souls [--dir <d>] [--json]            every soul of every confirmed member + external souls
-                                            (souls have no private mode), with origin
+      [--max-age <s>]                       (souls have no private mode), with origin
                                             (member <key> @ <commit> | package <id> v<ver>) and its
                                             teams on this deployment
   oats teams [--json] | add <label> --team <id> [--description <d>] | remove <label>
       | default <label>  [--dir <d>]        this deployment's teams (shared + local), the
-                                            default; add/remove/default edit oats-local.yaml
+      [--max-age <s>] (the read form only)  default; add/remove/default edit oats-local.yaml
   oats soul teams <soul>|'*' [--add a,b] [--remove a,b] [--default <l> | --clear-default]
       [--dir <d>] [--json]                  which teams a soul (or every soul) belongs to here
+      [--max-age <s>] (without an edit)
   oats instance git <instance> [--home <abs>] [--dir <d>] [--json]
                                              read-only Git observation of the instance's work
                                              tree: branch, status (renames kept), ahead/behind
@@ -3501,6 +3654,18 @@ The turn record (core — every conversation captured, searchable, replicated):
   oats <namespace> <command> [args…]         run an operational command only when its
                                             capability is active (e.g. oats okf harvest)
 
+Observation reuse (feature observe-max-age):
+  --max-age <seconds>                        on the read verbs only — status, workspace status,
+                                            souls, capabilities, inspect --soul|--home, and the
+                                            read forms of teams and soul teams — reuse a remote
+                                            head observation up to <seconds> old (0–86400; 0 is
+                                            live) instead of asking the remote again; the JSON
+                                            then carries observation { observedAt (the oldest
+                                            head used), reused, localRevision (a digest of
+                                            the local configuration read) }. Refused
+                                            (E_BAD_ARGS) by every other command, an edit form,
+                                            and with --server
+
 Layers: ${LAYERS.join(", ")}. Workspace model v2: docs/design/2026-09-23-workspace-module-contracts.md.`;
 }
 } catch (e) {
@@ -3510,4 +3675,7 @@ Layers: ${LAYERS.join(", ")}. Workspace model v2: docs/design/2026-09-23-workspa
   // already names the offending file — the readers re-raise it with one.
   if (JSON_MODE) jsonFail(e.code, e.message);
   die(e.message);
+} finally {
+  // The command's read session: every `git cat-file --batch` child ends before the process does.
+  if (readSession) await readSession.close();
 }

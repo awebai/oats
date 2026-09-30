@@ -28,7 +28,7 @@ A capability lives in one of two kinds of source:
 A soul says `capabilities: { <name>: { from: here | <repo key> | package } }`
 (or `off`); the workspace supplies defaults. At spawn every resolved
 capability is **copied whole** into the instance (`<home>/.oats/modules/<name>/`,
-skills into `<home>/.agents/skills/<name>/`), and the instance's `AGENTS.md` is
+its skills flat into `<home>/.agents/skills/<skill>/`), and the instance's `AGENTS.md` is
 generated without changing the canonical soul. Nothing is installed or
 activated at a deployment.
 
@@ -237,8 +237,8 @@ live.
 
 Every spawned instance gets a **full copy** of each capability its soul
 resolved to, under `<home>/.oats/modules/<capability>/` (manifest, `bin/`,
-injects, skills), and those skills under
-`<home>/.agents/skills/<capability>/<skill>/`. Its generated `AGENTS.md` is the
+injects, skills), and those skills flat under `<home>/.agents/skills/<skill>/`
+beside the soul's own, one level deep where harnesses discover them. Its generated `AGENTS.md` is the
 soul's `AGENTS.md`, the kernel and work-mode blocks, then each module's inject
 in name order. Two composed skills with one name fail the spawn
 (`E_SKILL_DUPLICATE`). The harness then starts normally, with its own skill

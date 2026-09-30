@@ -54,8 +54,8 @@ if (argv[0] === "version" && argv.includes("--json")) {
   process.exit(0);
 } else if (argv[0] === "spawn" && argv.includes("--json")) {
   const agent = argv[1];
-  const tf = argv[argv.indexOf("--task-file") + 1];
-  const task = readFileSync(tf, "utf8");
+  // Like the kernel, --task-file is optional: a remote spawn with no opening instruction sends none.
+  const task = argv.includes("--task-file") ? readFileSync(argv[argv.indexOf("--task-file") + 1], "utf8") : "";
   if (agent === "boom") { process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_SPAWN_FAILED", message: "boom" } })); process.exit(1); }
   // purpose "ambig": a LONG case-(d) E_RELATIVE_AMBIGUOUS envelope (two
   // deeply nested absolute homes, >2500 chars) — the endpoint must pass it
@@ -150,7 +150,7 @@ test("desktop server: /api/cli reports discovery status; compatible fake CLI acc
     assert.equal(s.ok, true, JSON.stringify(s));
     assert.equal(s.version, "0.25.8");
     assert.equal(s.source, "env");
-    assert.deepEqual(s.required, { desktopApi: 1, range: ">=0.25.8 <0.31.0" });
+    assert.deepEqual(s.required, { desktopApi: 1, range: ">=0.25.8 <0.33.0" });
     // The recovery command is DERIVED from this app's own version, so it names
     // the lockstep-published kernel and always lands inside the band above —
     // never a hand-pinned version that rots below a feature floor.
@@ -197,8 +197,8 @@ test("desktop server: incompatible CLI → status carries per-candidate diagnost
 // release published, so it degraded to observation-only in the field while
 // every unit test passed. Preserve 0.23.x acceptance, accept the paired 0.24.x
 // kernel, and reject the next minor at the exclusive ceiling.
-test("desktop server: 0.25.8 through 0.30.x CLIs are ACCEPTED and 0.31.0 is REJECTED at the band ceiling", async () => {
-  for (const version of ["0.25.8", "0.26.0", "0.26.4", "0.27.0", "0.28.0", "0.29.0", "0.30.0"]) {
+test("desktop server: 0.25.8 through 0.32.x CLIs are ACCEPTED and 0.33.0 is REJECTED at the band ceiling", async () => {
+  for (const version of ["0.25.8", "0.26.0", "0.26.4", "0.27.0", "0.28.0", "0.29.0", "0.30.0", "0.31.0", "0.32.0"]) {
     const okDir = mkdtempSync(join(tmpdir(), "oats-cli-compatible-"));
     const compatible = fakeCli(okDir, { version });
     const a = await startServer({ OATS_DESKTOP_OATS_BIN: compatible.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
@@ -212,15 +212,15 @@ test("desktop server: 0.25.8 through 0.30.x CLIs are ACCEPTED and 0.31.0 is REJE
   }
 
   const badDir = mkdtempSync(join(tmpdir(), "oats-cli-ceiling-"));
-  const next = fakeCli(badDir, { version: "0.31.0" });
+  const next = fakeCli(badDir, { version: "0.33.0" });
   const b = await startServer({ OATS_DESKTOP_OATS_BIN: next.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   try {
     const s = await (await fetch(`http://127.0.0.1:${b.port}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json();
-    assert.equal(s.ok, false, "0.31.0 is past the exclusive ceiling and must not become the mutation binary");
+    assert.equal(s.ok, false, "0.33.0 is past the exclusive ceiling and must not become the mutation binary");
     const tried = s.tried.find((t) => t.path === next.real);
     assert.ok(tried, "the rejected candidate is in diagnostics");
-    assert.match(tried.reason, /outside >=0\.25\.8 <0\.31\.0/);
-    assert.equal(tried.version, "0.31.0");
+    assert.match(tried.reason, /outside >=0\.25\.8 <0\.33\.0/);
+    assert.equal(tried.version, "0.33.0");
   } finally { b.proc.kill(); }
 });
 
@@ -381,9 +381,12 @@ test("desktop server: remote capability survives discovery and HTTP projection i
   try {
     await fetch(`http://127.0.0.1:${port}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
     const cli = await (await fetch(`http://127.0.0.1:${port}/api/cli`)).json();
-    const prepared = await prepareRemoteTerm(cli, { serverId: "test", instance: "dev-task" });
-    assert.deepEqual(prepared, { binary: fake.real, args: ["session", "attach", "--server", "test", "--instance", "dev-task"] });
-    assert.ok(fake.calls().some(c => c.argv.join(" ") === "session inspect --server test --instance dev-task --json"));
+    // A remote terminal is addressed by server and home, never a bare name.
+    const home = "/srv/agents/dev/instances/dev-task";
+    const prepared = await prepareRemoteTerm(cli, { serverId: "test", instance: "dev-task", home });
+    assert.deepEqual(prepared, { binary: fake.real, args: ["session", "attach", "--server", "test", "--home", home] });
+    assert.ok(fake.calls().some(c => c.argv.join(" ") === `session inspect --server test --home ${home} --json`));
+    await assert.rejects(prepareRemoteTerm(cli, { serverId: "test", instance: "dev-task" }), /invalid remote terminal home/);
   } finally { proc.kill(); }
 });
 

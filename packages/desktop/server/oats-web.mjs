@@ -16,10 +16,11 @@
  *   POST /api/interrupt/<instance>  sends Ctrl-C (Escape for pi/claude prompts stays manual)
 
  *   POST /api/instance-git?ws=<id>  { action: git|diff, selector, fileId?, revision?, indexRevision? } → qualified K1 read
- *   POST /api/workspace-sync?ws=<id> { action: read|sync } → `oats capabilities` / `oats sync` (workspace-v2)
+ *   POST /api/workspace-sync?ws=<id> { action: read|sync, refresh? } → the held `oats capabilities` catalog / `oats sync` (workspace-v2)
  *   POST /api/models                { harness: pi|claude|codex } → advisory model catalog for the spawn modal
  *   GET  /api/cli                   CLI discovery status (bin, version, required range, tried)
  *   POST /api/cli/reprobe           re-run discovery; body { bin? } prioritizes a user-chosen binary
+ *   POST /api/window-state          { focused } → the refresh cadence backs off while the window is blurred/hidden
  *   POST /api/harvest/<instance>    the active provider’s harvest operation addressed by the exact --home; the CLI derives the recorded context
  *   GET  /api/brain/<agent>?ws=<id> agent "brain" JSON: soul (AGENTS.md, skills,
  *                                   knowledge tree) + per-instance artifacts (abs paths)
@@ -29,6 +30,12 @@
  * Deployment model: every roster/header fact is the installed kernel's
  * `oats status --json` / `oats workspace status --json` (workspace model v2).
  * The server reads no deployment file and has no fallback reader.
+ * Load path: status, workspace status and (cold) souls start together and the roster is
+ * published as soon as the first two land; souls, the capabilities table and inspect results
+ * are held server-side and re-read only when the kernel state they were read under moves
+ * (see docs/desktop-load-path.md). Every roster/agents/catalog/inspect answer carries
+ * `observedAt` (the kernel's observation time when reported, else the read's completion) and
+ * `refreshing` (a read for that data is in flight).
  * Interaction model: terminal-direct (tmux send-keys / capture-pane) — the
  * feel of sitting at the agent's terminal; identical for pi and claude runs.
  */
@@ -41,7 +48,10 @@ import { homedir } from "node:os";
 import { scheduleRequest } from "./schedules.mjs";
 import { capabilityRequest } from "./capabilities.mjs";
 import { createDeploymentObserver } from "./deployment-observer.mjs";
-import { createSoulCatalog } from "./soul-catalog.mjs";
+import { createSoulCatalog, soulCatalogKey } from "./soul-catalog.mjs";
+import { createCapabilityCatalog, capabilityCatalogKey } from "./capability-catalog.mjs";
+import { createInspectCache } from "./inspect-cache.mjs";
+import { createRefreshLoop, REFRESH_FOCUSED_MS, REFRESH_BLURRED_MS } from "./refresh-loop.mjs";
 import { createWorkspaceSyncBoundary, syncFailure } from "./workspace-sync.mjs";
 import { instanceGitRequest } from "./instance-git.mjs";
 import { lifecycleRequest } from "./instance-lifecycle.mjs";
@@ -57,9 +67,12 @@ import { previewFailure } from '../renderer/spawn-preview-contract.mjs';
 import { forgeBoundary, FORGE_EPOCH_HEADER, validForgeEpoch } from "./forge.mjs";
 import { createReviewPaste } from "./review-paste.mjs";
 import { launchConfigRequest } from "./launch-configs.mjs";
+import { teamMembers } from "./team-members.mjs";
 import { automationsRequest, automationsFailure } from "./automations.mjs";
 import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
+import { canAddressRemote, unaddressableSentence } from "../renderer/remote-address.mjs";
 import { harnessFlag, HARNESSES } from "../renderer/harness-names.mjs";
+import { probeChanged } from "../renderer/cli-probe-contract.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -113,7 +126,7 @@ function workspaceById(id) {
 function panelData(wsId) {
   const all = workspaces();
   const ws = wsId ? workspaceById(wsId) : all[0];
-  if (ws?.remote) return { ...remote.remotePanel(ws.group), workspaces: workspaceChoices(all) };
+  if (ws?.remote) return { ...remote.remotePanel(ws.group), workspaces: workspaceChoices(all), observedAt: null, refreshing: remoteCollecting };
   const observed = ws ? snapshot.byWs.get(ws.id) : null;
   const instances = observed?.instances || [];
   return {
@@ -122,6 +135,10 @@ function panelData(wsId) {
     team: null,
     deployment: publicDeployment(observed?.deployment),
     generatedAt: observed?.generatedAt || new Date().toISOString(),
+    // When the kernel observed the remotes this roster rests on, and whether a newer
+    // observation of this deployment is running right now (the renderer labels stale data).
+    observedAt: observed?.observedAt ?? null,
+    refreshing: !!ws && observing.has(ws.id),
     running: instances.filter((i) => i.running).length,
     instances,
   };
@@ -132,7 +149,7 @@ function panelData(wsId) {
 function publicDeployment(deployment) {
   if (!deployment) return { status: "pending" };
   if (deployment.status !== "observed") return deployment;
-  const { souls: _souls, ...rest } = deployment;
+  const { souls: _souls, catalogKey: _catalogKey, ...rest } = deployment;
   return rest;
 }
 
@@ -189,7 +206,7 @@ function projectPanelInstance(i) {
  * here, and a soul outside the catalog is not offered for spawning. */
 function agentsData(wsId) {
   const ws = wsId ? workspaceById(wsId) : workspaces()[0];
-  if (ws?.remote) return { workspace: { id: ws.id, name: ws.name, server: ws.server }, agents: remote.remoteAgents(ws.group) };
+  if (ws?.remote) return { workspace: { id: ws.id, name: ws.name, server: ws.server }, agents: remote.remoteAgents(ws.group), observedAt: null, refreshing: false };
   const deployment = ws ? snapshot.byWs.get(ws.id)?.deployment : null;
   const agents = [];
   let catalog = null;
@@ -222,7 +239,11 @@ function agentsData(wsId) {
     }
   }
   agents.sort((a, b) => a.name.localeCompare(b.name));
-  return { workspace: ws ? { id: ws.id, name: ws.name } : null, agents, ...(catalog ? { catalog } : {}) };
+  // The souls read's own stamps (it runs apart from the roster reads): when the kernel observed
+  // the remotes for this catalog, and whether a re-read is in flight. Both live on the snapshot
+  // entry so this projection needs nothing but the snapshot.
+  return { workspace: ws ? { id: ws.id, name: ws.name } : null, agents, ...(catalog ? { catalog } : {}),
+    observedAt: deployment?.catalog?.observedAt ?? null, refreshing: deployment?.catalog?.refreshing === true };
 }
 
 /* ── Model catalog (spawn-modal dropdown) ──
@@ -418,7 +439,13 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
    process as --oats-bin (main owns persistence in userData); re-probe runs at
    startup, on explicit /api/cli/reprobe (app focus, Retry, choose). */
 let cliState = { ok: false, probedAt: 0, tried: [] };
+// The revision every deployment read is admitted under: pending reads are revoked (E_DEPLOYMENT_STALE)
+// when it moves, so it moves ONLY when the accepted CLI actually changed in a gate-relevant field
+// (bin, version, features, API integers, remote support: renderer/cli-probe-contract.mjs). A focus
+// reprobe of the same binary is a no-op here: it neither cancels the observation in flight nor
+// wipes the held catalogs, and cliState keeps its identity (the remote roster compares by it).
 let cliProbeGeneration = 0;
+let probeSequence = 0; // orders concurrent probes; a superseded probe's result is dropped
 // User-chosen binary: seeded from --oats-bin (main passes the persisted pick
 // at server start) and updated by /api/cli/reprobe {bin} — top candidate on
 // every subsequent probe until replaced.
@@ -451,12 +478,22 @@ const probeBin = (path) => new Promise((ok, bad) => {
     (err, stdout) => (err ? bad(err) : ok({ stdout })));
 });
 async function reprobeCli(chosen) {
-  const generation = ++cliProbeGeneration;
+  const sequence = ++probeSequence;
   if (chosen) chosenBin = chosen;
   const r = await locator.discover(cliIo, probeBin);
-  if (generation !== cliProbeGeneration) return cliState;
+  if (sequence !== probeSequence) return cliState;
+  const first = !cliState.probedAt;
+  if (!probeChanged(cliState, r)) {
+    // Same CLI: refresh the diagnostics in place (the card reads `tried`), nothing downstream moves.
+    Object.assign(cliState, { probedAt: Date.now(), tried: r.tried || [] });
+    if (first) void refreshSnapshot({ live: true }); // the first verdict, even "none found", must be published
+    return cliState;
+  }
+  cliProbeGeneration++;
   cliState = { ...r, probedAt: Date.now() };
-  void refreshSnapshot(); // the deployment observation belongs to the accepted CLI
+  // Everything held was read with the previous CLI.
+  inspectCache.clear(); capabilityCatalog.forgetAll(); admitted.clear();
+  void refreshSnapshot({ live: true }); // the deployment observation belongs to the accepted CLI
   void refreshRemoteSnapshot();
   return cliState;
 }
@@ -503,21 +540,33 @@ function cliStatus() {
   };
 }
 
-/* ── Non-blocking roster snapshot ──
 /* ── Kernel-observed roster snapshot ──
    Every local deployment fact is one bounded `oats status --json` plus one
    `oats workspace status --json` (deployment-observer.mjs). Terminal liveness for
    the kernel-reported targets is observed in a separate short-lived child
-   (server/liveness.mjs) so tmux/Herdr latency cannot stall key/echo handling.
-   Local roster Git is null; only the on-demand K1 route observes Git. */
-let snapshot = { at: 0, byWs: new Map() };   // wsId -> { deployment, instances, generatedAt } | remote panel
-const DEPLOYMENT_REFRESH_MS = 5000;
+   (server/liveness.mjs) so tmux latency cannot stall key/echo handling.
+   Local roster Git is null; only the on-demand K1 route observes Git.
+
+   Observation reuse (kernel feature observe-max-age): a background cycle lets the kernel reuse
+   remote-head observations up to BACKGROUND_MAX_AGE seconds old; the FIRST cycle of a deployment
+   (admission), a mutation's follow-up and an explicit user refresh observe live (0). The adapters
+   pass no flag at all to a kernel that does not declare the feature. */
+let snapshot = { at: 0, byWs: new Map() };   // wsId -> { deployment, instances, generatedAt, observedAt } | remote panel
+const BACKGROUND_MAX_AGE = 60;
 const LIVENESS = join(HERE, "liveness.mjs");
-const workspaceSyncRequest = createWorkspaceSyncBoundary();
 const soulCatalog = createSoulCatalog();
+const capabilityCatalog = createCapabilityCatalog();
+const inspectCache = createInspectCache();
+// The read side of /api/workspace-sync answers from the held capabilities table for an
+// observed deployment (the current workspace status is its key); a re-read happens only
+// when that key moves, at admission, or on refresh:true.
+const workspaceSyncRequest = createWorkspaceSyncBoundary({ catalog: capabilityCatalog, maxAge: BACKGROUND_MAX_AGE,
+  observed: (id) => { const d = snapshot.byWs.get(id)?.deployment; return d?.status === "observed" ? d.workspaceStatus : null; } });
+const admitted = new Set();  // deployments with at least one successful observation under the current CLI
+const observing = new Set(); // deployments whose observation is in flight right now (/api/panel refreshing)
 const deploymentObserver = createDeploymentObserver({
   // Only a registered local deployment, with the CURRENT accepted CLI. The
-  // probe generation is the revision: a reprobe revokes pending reads.
+  // probe generation is the revision: a real CLI change revokes pending reads.
   getContext: (id) => ctxs.includes(id) ? { deployment: id, revision: cliProbeGeneration, cli: cliState } : null,
 });
 function observeLivenessRows(rows) {
@@ -538,35 +587,92 @@ function observeLivenessRows(rows) {
     } catch { unknown(); }
   });
 }
+/** The /api/agents view of a souls-catalog entry: the last good catalog (or none), the latest
+ * failure next to it, and its own stamps. `refreshing` is patched on the snapshot entry when a
+ * pending read lands, so the projection needs nothing but the snapshot. */
+function catalogProjection(entry, refreshing) {
+  return { souls: entry?.souls ?? null, ambiguous: entry?.ambiguous ?? [], reason: entry?.reason ?? null,
+    observedAt: entry?.observedAt ?? null, refreshing };
+}
 /** One deployment's panel entry. A transient busy/stale read keeps the last
  * observation; every other failure is shown as unavailable, with the kernel's
- * code/message or the missing feature's name, never as an empty roster. */
-async function observeDeployment(id) {
+ * code/message or the missing feature's name, never as an empty roster.
+ * The roster is published as soon as status and workspace status land: the souls catalog
+ * is started alongside them on a cold cycle (soulCatalog.prefetch), bound to this cycle's
+ * key when the workspace status is known (settle), and attached to the published entry
+ * when it lands. The capabilities table follows the same cycle (prefetch, then ensure binds
+ * it) and is re-read whenever its key moves, never on the request path. */
+async function observeDeployment(id, { live = false } = {}) {
   const previous = snapshot.byWs.get(id);
   // Before the first CLI probe settles there is no verdict to report.
   if (!cliState.probedAt) return previous || { deployment: { status: "pending" }, instances: [], generatedAt: new Date().toISOString() };
-  const result = await deploymentObserver.observe(id);
-  if (!result.ok) {
-    if (previous && ["E_DEPLOYMENT_BUSY", "E_DEPLOYMENT_STALE"].includes(result.reason?.code)) return previous;
-    return { deployment: { status: "unavailable", reason: result.reason }, instances: [], generatedAt: new Date().toISOString() };
-  }
-  const { roster, workspaceStatus } = result;
-  // The spawn catalog is read only when the workspace moved (or the CLI changed).
-  const catalog = await soulCatalog.observe(id, cliState, workspaceStatus);
-  const rows = roster.agents.flatMap((agent) => agent.instances.map((instance) => ({
-    ...instance, agent: instance.agent || agent.name, description: agent.description || "",
-    team: agent.team || null, agentsRoot: roster.root,
-  })));
-  const liveness = await observeLivenessRows(rows.map((i) => ({ instance: i.instance, tmux: i.tmux, sessionTarget: i.sessionTarget })));
-  const instances = rows.map((row, index) => projectPanelInstance({ ...row, ...liveness[index] }))
-    .sort((a, b) => (a.running === b.running ? String(a.instance).localeCompare(b.instance) : a.running ? -1 : 1));
-  return {
-    deployment: { status: "observed", root: roster.root, workspace: workspaceStatus.workspace, workspaceStatus,
-      reachable: roster.workspace ?? null, withheld: roster.withheld,
-      souls: roster.agents.map(({ instances: _instances, ...soul }) => soul),
-      catalog: { souls: catalog.souls, ambiguous: catalog.ambiguous, reason: catalog.reason } },
-    instances, generatedAt: new Date().toISOString(),
-  };
+  const cli = cliState, admission = !admitted.has(id);
+  const maxAge = live || admission ? 0 : BACKGROUND_MAX_AGE;
+  observing.add(id);
+  try {
+    // Cold: souls and the capabilities table start WITH the roster reads (unbound), and are bound to
+    // this cycle's key once the workspace status lands. Warm: nothing starts here.
+    soulCatalog.prefetch(id, cli, { maxAge }); capabilityCatalog.prefetch(id, cli, { maxAge });
+    const result = await deploymentObserver.observe(id, { maxAge });
+    if (!result.ok) {
+      if (previous && ["E_DEPLOYMENT_BUSY", "E_DEPLOYMENT_STALE"].includes(result.reason?.code)) return previous;
+      return { deployment: { status: "unavailable", reason: result.reason }, instances: [], generatedAt: new Date().toISOString() };
+    }
+    admitted.add(id);
+    const { roster, workspaceStatus, observedAt } = result;
+    const catalogKey = soulCatalogKey(cli, workspaceStatus);
+    // Bind (or start) the souls read for this workspace state; never wait for it here. Age alone never
+    // makes this cycle re-read: a catalog past HELD_TTL_MS is re-read when someone looks (/api/agents →
+    // revalidateCatalog), so an idle app costs nothing and no deployment file is ever named to find out.
+    const { entry: catalogEntry, pending } = soulCatalog.settle(id, cli, workspaceStatus, { maxAge });
+    capabilityCatalog.ensure(id, cli, workspaceStatus, { maxAge });
+    const rows = roster.agents.flatMap((agent) => agent.instances.map((instance) => ({
+      ...instance, agent: instance.agent || agent.name, description: agent.description || "",
+      team: agent.team || null, agentsRoot: roster.root,
+    })));
+    const liveness = await observeLivenessRows(rows.map((i) => ({ instance: i.instance, tmux: i.tmux, sessionTarget: i.sessionTarget,
+      runtimeState: i.runtimeState, runtimeError: i.runtimeError })));
+    const instances = rows.map((row, index) => projectPanelInstance({ ...row, ...liveness[index] }))
+      .sort((a, b) => (a.running === b.running ? String(a.instance).localeCompare(b.instance) : a.running ? -1 : 1));
+    const entry = {
+      deployment: { status: "observed", root: roster.root, workspace: workspaceStatus.workspace, workspaceStatus,
+        reachable: roster.workspace ?? null, withheld: roster.withheld,
+        souls: roster.agents.map(({ instances: _instances, ...soul }) => soul),
+        catalog: catalogProjection(catalogEntry, !!pending), catalogKey },
+      instances, generatedAt: new Date().toISOString(), observedAt,
+    };
+    // Attach the catalog when it lands: to THIS cycle's entry (it may land before the entry is published —
+    // publication still waits on the liveness child and on the other deployments) and to whatever entry is
+    // published by then.
+    if (pending) attachCatalog(id, pending, entry);
+    return entry;
+  } finally { observing.delete(id); }
+}
+/** Put a landed souls catalog on the entries that were read under its key: `entry` (a cycle's, possibly not yet
+ * published) and whatever is published for the deployment by then. Only an entry read under the same key takes
+ * it (an unadopted flight lands under null and is re-read next cycle). */
+function attachCatalog(id, pending, entry = null) {
+  pending.then((landed) => {
+    const projection = catalogProjection(landed, soulCatalog.refreshing(id));
+    for (const target of [entry, snapshot.byWs.get(id)]) {
+      if (target?.deployment?.status === "observed" && landed?.key === target.deployment.catalogKey) target.deployment.catalog = projection;
+    }
+  }).catch(() => { /* the entry keeps the last good catalog; the next cycle re-reads */ });
+}
+/** /api/agents found a held catalog past its TTL: answer from it (the caller projects it, with `refreshing`)
+ * and start one re-read behind the answer, attached to the published entry when it lands. Request-driven on
+ * purpose, and gated on window focus: the renderer's Spawn/Workspace view polls /api/agents every 8 s while
+ * mounted, blurred or minimized included, so without the gate age would become a periodic `oats souls` run
+ * again. Focused with that view open, the catalog is re-read about once per TTL + read; blurred, never. */
+function revalidateCatalog(wsId) {
+  if (!refreshLoop.focused()) return;
+  const ws = wsId ? workspaceById(wsId) : workspaces()[0];
+  const published = ws && !ws.remote ? snapshot.byWs.get(ws.id) : null, d = published?.deployment;
+  if (d?.status !== "observed" || !cliState.ok) return;
+  const pending = soulCatalog.revalidate(ws.id, cliState, d.workspaceStatus, { maxAge: BACKGROUND_MAX_AGE });
+  if (!pending) return;
+  d.catalog = { ...d.catalog, refreshing: true }; // this answer says a re-read is in flight
+  attachCatalog(ws.id, pending);
 }
 function mergeRemotePanels(byWs) {
   for (const id of byWs.keys()) if (id.startsWith("remote:")) byWs.delete(id);
@@ -600,19 +706,31 @@ async function refreshRemoteSnapshot() {
     if (cliState !== probe) void refreshRemoteSnapshot();
   }
 }
-let refreshing = null, refreshAgain = false;
-/** Single-flight refresh; a request during a refresh schedules exactly one
- * follow-up (a mutation's result must be observed), never a queue. */
-function refreshSnapshot() {
-  if (refreshing) { refreshAgain = true; return refreshing; }
-  refreshing = (async () => {
-    const entries = await Promise.all(ctxs.map(async (id) => [id, await observeDeployment(id)]));
+/** One observation cycle over every registered deployment; the refresh loop owns when it runs. */
+async function observeAll({ live = false } = {}) {
+  try {
+    const entries = await Promise.all(ctxs.map(async (id) => [id, await observeDeployment(id, { live })]));
     const byWs = new Map(entries);
     for (const [id, panel] of snapshot.byWs) if (id.startsWith("remote:")) byWs.set(id, panel);
     snapshot = { at: Date.now(), byWs: mergeRemotePanels(byWs) };
-  })().catch((e) => { if (DEBUG) console.log(`[snapshot] refresh failed: ${e.message}`); })
-    .finally(() => { refreshing = null; if (refreshAgain) { refreshAgain = false; void refreshSnapshot(); } });
-  return refreshing;
+  } catch (e) { if (DEBUG) console.log(`[snapshot] refresh failed: ${e.message}`); }
+}
+// Cadence: the next cycle starts a fixed interval AFTER the previous one completed (a slow
+// kernel is never asked twice at once), 5 s while a window is focused, 30 s while every window
+// is blurred or hidden (/api/window-state); focus returning runs one prompt cycle. A cycle
+// requested during a cycle (a mutation's result must be observed) runs exactly once right after.
+const refreshLoop = createRefreshLoop({ run: observeAll, focusedMs: REFRESH_FOCUSED_MS, blurredMs: REFRESH_BLURRED_MS });
+// The remote roster (`server roster`, one bounded CLI read) follows the same shape: 10 s focused, the same 30 s blurred.
+const remoteLoop = createRefreshLoop({ run: () => refreshRemoteSnapshot(), focusedMs: 10_000, blurredMs: REFRESH_BLURRED_MS });
+/** Observe now (or right after the cycle in flight); `live` makes the kernel observe the remotes afresh. */
+function refreshSnapshot(options = {}) { return refreshLoop.request(options); }
+/** A mutation this backend performed for a workspace: what inspect reported may have changed, and the
+ * roster must observe the result live. Inspections are held under the workspace's SCOPE (the deployment
+ * directory the kernel was pointed at), which is the id for a local deployment but not for a remote one. */
+function observeMutation(wsId) {
+  const scope = workspaces().find((w) => w.id === wsId)?.scope;
+  if (scope) inspectCache.invalidate(scope);
+  return refreshSnapshot({ live: true });
 }
 /* OATSWEB_FINDINST_BEGIN — workspace-scoped instance lookup, extracted by tests */
 function findInstance(name, wsId, home, server) {
@@ -1110,7 +1228,7 @@ const server = createServer(async (req, res) => {
       // Served from the latest kernel observation; never waits on a CLI read.
       return send(res, 200, panelData(url.searchParams.get("ws") || undefined));
     }
-    if (req.method === "GET" && path === "/api/agents") return send(res, 200, agentsData(url.searchParams.get("ws") || undefined));
+    if (req.method === "GET" && path === "/api/agents") { revalidateCatalog(url.searchParams.get("ws") || undefined); return send(res, 200, agentsData(url.searchParams.get("ws") || undefined)); }
     if (path === "/api/launch-configs" && req.method === "POST") {
       const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
       try {
@@ -1156,7 +1274,7 @@ const server = createServer(async (req, res) => {
         const request = await readStrictBody(req, 16384);
         const getContext = () => {
           const workspace = workspaces().find(w => w.id === url.searchParams.get('ws'));
-          return { workspace, cli: cliState, epoch: cliProbeGeneration,
+          return { workspace, cli: cliState, epoch: cliProbeGeneration, localCwd: ctxs[0],
             instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
         };
         return send(res, 200, await instanceEventsRequest(request, getContext));
@@ -1181,7 +1299,7 @@ const server = createServer(async (req, res) => {
         const getContext = () => {
           const workspace = workspaces().find(w => w.id === url.searchParams.get('ws'));
           return { workspace, cli: cliState, agents: workspace && !workspace.remote && !workspace.server ? agentsData(workspace.id).agents : [],
-            instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
+            localCwd: ctxs[0], instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
         };
         return send(res, 200, await readinessRequest(request, getContext));
       } catch { return send(res, 400, readinessFailure('E_BAD_ARGS')); }
@@ -1193,7 +1311,11 @@ const server = createServer(async (req, res) => {
         if (url.searchParams.getAll('ws').length !== 1 || !url.searchParams.get('ws') || [...url.searchParams.keys()].some(k => k !== 'ws')) throw new Error('bad query');
         const request = await readStrictBody(req, 4096);
         const getContext = () => ({ workspace: workspaces().find(w => w.id === url.searchParams.get('ws')), cli: cliState });
-        return send(res, 200, await (path === '/api/workspace-teams' ? teamsRequest : soulTeamsRequest)(request, getContext));
+        const result = await (path === '/api/workspace-teams' ? teamsRequest : soulTeamsRequest)(request, getContext);
+        // The writing actions change oats-local.yaml; inspect reports a soul's teams, so the held inspections go
+        // (held under the workspace's scope, see observeMutation).
+        if (['add', 'remove', 'default', 'clear-default'].includes(request.action)) { const scope = getContext().workspace?.scope; if (scope) inspectCache.invalidate(scope); }
+        return send(res, 200, result);
       } catch { return send(res, 400, teamsFailure('E_BAD_ARGS')); }
     }
     if (path === '/api/instance-lifecycle' && req.method === 'POST') {
@@ -1202,11 +1324,13 @@ const server = createServer(async (req, res) => {
         const request = await readStrictBody(req);
         const getContext = () => {
           const workspace = workspaces().find(w => w.id === url.searchParams.get('ws'));
-          return { workspace, cli: cliState, instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
+          return { workspace, cli: cliState, localCwd: ctxs[0], instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
         };
         const result = await lifecycleRequest(request, getContext);
         if (request.action === 'apply' && ['complete', 'partial', 'refused', 'unknown'].includes(result.status)) {
-          try { refreshSnapshot(); } catch { /* a refresh must not erase a mutation receipt */ }
+          // A remote apply (even an unknown outcome) re-reads the remote roster at once: the operator sees current state.
+          try { if (getContext().workspace?.remote) void remoteLoop.request(); else observeMutation(url.searchParams.get('ws')); }
+          catch { /* a refresh must not erase a mutation receipt */ }
         }
         return send(res, 200, result);
       } catch {
@@ -1224,7 +1348,7 @@ const server = createServer(async (req, res) => {
         // Never collect Git here or fall back to another workspace.
         // An absent exact snapshot is unavailable; refreshing the roster is
         // the existing collector's job, not an authority to infer another home.
-        const result = await instanceGitRequest(request, { workspace, cli: cliState,
+        const result = await instanceGitRequest(request, { workspace, cli: cliState, localCwd: ctxs[0],
           instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] });
         return send(res, 200, result);
       } catch (error) {
@@ -1242,7 +1366,7 @@ const server = createServer(async (req, res) => {
         const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
         const result = await workspaceSyncRequest(request, { workspace, cli: cliState });
         if (request?.action === "sync" && result.status === "ok") {
-          try { refreshSnapshot(); } catch { /* a refresh must not erase the sync report */ }
+          try { observeMutation(workspace?.id); } catch { /* a refresh must not erase the sync report */ }
         }
         return send(res, 200, result);
       } catch { return send(res, 400, syncFailure("E_BAD_ARGS")); }
@@ -1251,10 +1375,17 @@ const server = createServer(async (req, res) => {
       const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
       try {
         const request = await readStrictBody(req);
+        // Inspections are served from the held cache (keyed by the soul catalog's key or the instance's
+        // reported identity) and coalesced; `refresh: true` observes live. A run never touches the cache.
+        // A soul inspection's key is the capabilities key (member/workspace commits, package rows, lock currency);
+        // what no key can see (local configuration edited outside Desktop) is bounded by the cache TTL.
+        const observed = workspace && !workspace.remote ? snapshot.byWs.get(workspace.id)?.deployment : null;
         const result = await capabilityRequest(request, {
           workspace, cli: cliState, localCwd: ctxs[0],
           agents: workspace ? agentsData(workspace.id).agents : [],
           instances: workspace ? panelData(workspace.id).instances : [],
+          cache: inspectCache, maxAge: BACKGROUND_MAX_AGE,
+          catalogKey: observed?.status === "observed" ? capabilityCatalogKey(cliState, observed.workspaceStatus) : null,
         });
         return send(res, 200, result);
       } catch (e) { const { status, body } = spawnErrorPayload(e); return send(res, status, body); }
@@ -1299,6 +1430,16 @@ const server = createServer(async (req, res) => {
       if (!HARNESSES.includes(harness)) return send(res, 400, { error: `unknown harness "${harness}" (pi|claude|codex)` });
       return send(res, 200, { harness, models: await modelsData(harness) });
     }
+    if (req.method === "GET" && path === "/api/team-members") {
+      // Who is in each team, wherever it runs (spec 02): the held observations only, no command.
+      if (url.searchParams.getAll("ws").length !== 1 || [...url.searchParams.keys()].some(k => k !== "ws")) return send(res, 400, { error: "Expected one workspace selector", code: "E_BAD_ARGS" });
+      const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
+      if (!workspace) return send(res, 400, { error: "Select a known workspace", code: "E_WORKSPACE_UNKNOWN" });
+      const result = teamMembers({ workspace, instances: snapshot.byWs.get(workspace.id)?.instances || [],
+        groups: remoteGroups.map(group => ({ group, panel: snapshot.byWs.get(`remote:${group.id}`) || remote.remotePanel(group) })) });
+      if (result.error) return send(res, 409, { error: "The Teams board is local; a remote workspace's teams are read on that machine", code: result.error });
+      return send(res, 200, result);
+    }
     if (req.method === "GET" && path === "/api/servers") {
       // Registered execution servers, read through the CLI (the Desktop
       // holds no registry of its own). Without a compatible CLI there are
@@ -1310,6 +1451,16 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === "GET" && path === "/api/cli") {
       return send(res, 200, cliStatus());
+    }
+    if (req.method === "POST" && path === "/api/window-state") {
+      // Window activity from the Electron main process (window-activity.mjs): the refresh cadence backs off
+      // while every window is blurred or hidden, and focus returning runs one prompt cycle. POST, so the
+      // Host/Origin guards above cover it; the body is one boolean and nothing else.
+      let body;
+      try { body = await readStrictBody(req, 1024); } catch { return send(res, 400, { error: "body needs { focused: boolean }", code: "E_BAD_ARGS" }); }
+      if (typeof body.focused !== "boolean" || Object.keys(body).length !== 1) return send(res, 400, { error: "body needs { focused: boolean }", code: "E_BAD_ARGS" });
+      refreshLoop.setFocused(body.focused); remoteLoop.setFocused(body.focused);
+      return send(res, 200, { focused: refreshLoop.focused() });
     }
     if (req.method === "POST" && path === "/api/cli/reprobe") {
       // Re-probe triggers (contract): launch, app focus, explicit Retry, and
@@ -1333,7 +1484,9 @@ const server = createServer(async (req, res) => {
           return { workspace, cli: cliState, agents: workspace && !workspace.remote && !workspace.server ? agentsData(workspace.id).agents : [],
             instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
         };
-        return send(res, 200, await spawnApplyRequest(body, getContext));
+        const result = await spawnApplyRequest(body, getContext);
+        if (body.action === 'apply') { try { observeMutation(url.searchParams.get('ws')); } catch { /* a refresh must not erase a spawn receipt */ } }
+        return send(res, 200, result);
       }
       // Only an actual remote argv route exempts a fully capable CLI from the
       // local confirmation fence. Truthy arrays/objects must not bypass it.
@@ -1365,7 +1518,7 @@ const server = createServer(async (req, res) => {
       if (hm[1] === "start" || hm[1] === "restart") {
         if (!cliState.features?.includes("session-start")) return send(res, 409, { error: "Starting an existing instance requires an updated OATS CLI", code: "unsupported-start-option" });
         if (inst.server) {
-          if (!inst.savedRoute) return send(res, 409, { error: "No saved route for this remote instance", code: "E_SNAPSHOT_UNKNOWN" });
+          if (!canAddressRemote(inst)) return send(res, 409, { error: unaddressableSentence(inst), code: "E_SNAPSHOT_UNKNOWN" });
           locator.requireRemoteSupport(cliState, "session-start");
         } else if (!harvestHome(inst)) return send(res, 409, { error: "Instance home is outside the workspace instances layout" });
         const body = await readBody(req);
@@ -1379,7 +1532,7 @@ const server = createServer(async (req, res) => {
         const env = await adapter.cliStart(cliState.bin, { home: inst.home, model: body.model,
           launchConfig: body.launchConfig, harness: body.harness, harnessFlag: harnessFlag(cliState), yolo: body.yolo, restart,
           workspaceDir: inst.server ? ctxs[0] : dirname(inst.agentsRoot), server: inst.server });
-        refreshSnapshot(); void refreshRemoteSnapshot();
+        observeMutation(url.searchParams.get("ws")); void refreshRemoteSnapshot();
         return env.ok ? send(res, 200, env.result) : send(res, env.error.code === "E_BAD_ARGS" ? 400 : 409, { error: env.error.message, code: env.error.code });
       }
       /* OATSWEB_START_END */
@@ -1388,6 +1541,7 @@ const server = createServer(async (req, res) => {
         workspace, cli: cliState, localCwd: ctxs[0],
         agents: workspace ? agentsData(workspace.id).agents : [],
         instances: workspace ? panelData(workspace.id).instances : [],
+        cache: inspectCache, // a run invalidates the deployment's held inspections
       });
       return send(res, 200, result);
     }
@@ -1451,11 +1605,10 @@ server.listen(port, "127.0.0.1", () => {
   console.log(`oats-desktop server — API at ${addr}  (workspaces: ${workspaces().map((w) => w.name).join(", ") || "none"})`);
   console.log("Bound to 127.0.0.1 only. This process can type into your agent terminals — do not expose it.");
 });
-void refreshSnapshot();                  // pending until the CLI probe settles
+void refreshLoop.start();                // the first cycle publishes "pending" until the CLI probe settles
 reprobeCli().then((s) => {
   console.log(s.ok
     ? `oats-desktop server: oats CLI ${s.version} at ${s.bin} (${s.source})`
     : `oats-desktop server: no compatible oats CLI found — reads and terminals work; Spawn/Harvest disabled (${(s.tried || []).length} candidate(s) tried)`);
 });
-setInterval(refreshSnapshot, DEPLOYMENT_REFRESH_MS).unref(); // single-flight kernel observation
-setInterval(refreshRemoteSnapshot, 10000).unref(); // coalesced host reads, independent of terminal traffic
+void remoteLoop.start();                 // coalesced host reads, independent of terminal traffic

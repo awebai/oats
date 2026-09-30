@@ -13,7 +13,7 @@ export const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 // These are local integration tests, never ambient installed-capability tests.
 // Packed-kernel execution has its own clean-room driver and public API boundary.
 export const CLI = resolve(ROOT, 'bin/oats.mjs');
-export const CAP = resolve(ROOT, 'capabilities/oats-okf');
+export const CAP = resolve(ROOT, 'mirrors/oats-okf');
 export const write = (p, text) => { fs.mkdirSync(dirname(p), { recursive: true }); fs.writeFileSync(p, text); };
 export const json = (p, value) => write(p, JSON.stringify(value, null, 2) + '\n');
 export const readJSON = p => JSON.parse(fs.readFileSync(p, 'utf8'));

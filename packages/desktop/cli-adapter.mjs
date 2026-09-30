@@ -27,6 +27,7 @@ import { mkdtempSync, openSync, writeSync, closeSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { gitFileId, gitRevision, gitIndexRevision, gitObservation } from './renderer/instance-git-contract.mjs';
+import { validMaxAge, maxAgeArgv } from './renderer/deployment-contract.mjs';
 
 const ENVELOPE_TIMEOUT_MS = 60_000;
 
@@ -52,7 +53,7 @@ const SPAWN_ARG_RULES = {
   purpose: { flag: "--purpose", re: /^[a-z0-9][a-z0-9-]*$/i },              // instance-name slug
   repo:    { flag: "--repo",    re: /^[^-][^\0]*$/ },                       // path — anything not option-shaped
   work:    { flag: "--work",    re: /^(worktree|checkout|attached|workspace|directory)$/ },
-  backend: { flag: "--backend", re: /^(tmux|herdr)$/ },
+  backend: { flag: "--backend", re: /^tmux$/ },
   // The flag is the kernel's (harness-names.mjs harnessFlag): the caller names it, never guessed.
   harness: { flag: null, re: /^(pi|claude|codex)$/ },
   launchConfig: { flag: "--launch-config", re: /^[a-z0-9][a-z0-9._-]*$/i },
@@ -192,22 +193,31 @@ export function gitReadFailure(code, details) {
 /** K1 read adapter. Not a roster resolver: only the server boundary may supply
  * the instance/home/context triple. The boundary requires the hardened K1
  * contract. No direct Git command or renderer path arguments. */
+/** A remote read's CLI deadline: ssh's ConnectTimeout (15 s) plus the command. */
+export const REMOTE_GIT_TIMEOUT = 45_000;
 export async function cliInstanceGit(bin, options = {}, io = {}) {
   try {
-    const base = ['action', 'instance', 'context', 'home'];
+    // `server`: a remote row, sent as `--server S --home H` (no --dir); `context` is then this machine's cwd.
+    const base = ['action', 'instance', 'context', 'home', 'server'];
     const diff = options?.action === 'diff';
     const allowed = diff ? [...base, 'fileId', 'revision', 'indexRevision'] : base;
     if (!absoluteReadPath(bin) || !readObject(options) || !['git', 'diff'].includes(options.action)
       || Object.keys(options).some(k => !allowed.includes(k))
       || typeof options.instance !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(options.instance)
       || !absoluteReadPath(options.context) || !absoluteReadPath(options.home)
+      || (Object.hasOwn(options, 'server') && (typeof options.server !== 'string' || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(options.server)))
       || (diff && (!gitFileId(options.fileId) || !gitRevision(options.revision) || !gitIndexRevision(options.indexRevision)))) return gitReadFailure('E_BAD_ARGS');
-    const argv = ['instance', options.action, options.instance, '--dir', options.context, '--home', options.home];
+    const remote = Object.hasOwn(options, 'server');
+    const argv = ['instance', options.action, options.instance, ...(remote ? ['--server', options.server] : ['--dir', options.context]), '--home', options.home];
     if (diff) argv.push('--file', options.fileId, '--revision', options.revision, '--index-revision', options.indexRevision);
     argv.push('--json');
-    const timeout = Number.isFinite(io.timeout) && io.timeout > 0 ? Math.min(io.timeout, 15_000) : 15_000;
+    const limit = remote ? REMOTE_GIT_TIMEOUT : 15_000;
+    const timeout = Number.isFinite(io.timeout) && io.timeout > 0 ? Math.min(io.timeout, limit) : limit;
     const result = await runJson(bin, argv, { cwd: options.context, exec: io.exec, timeout, strictExit: true });
-    return result.ok ? result : gitReadFailure(result.error?.code, result.error?.details);
+    if (result.ok) return result;
+    // A host's refusal keeps its own code and message (the boundary bounds and shows them); this machine's own failures do not.
+    if (remote && !Object.hasOwn(READ_ERRORS, result.error?.code) && result.error?.code !== 'E_STALE_OBSERVATION') return { schemaVersion: 1, ok: false, error: { code: result.error?.code, message: result.error?.message } };
+    return gitReadFailure(result.error?.code, result.error?.details);
   } catch { return gitReadFailure('E_CLI_FAILED'); }
 }
 
@@ -236,12 +246,18 @@ export async function cliSpawn(bin, { agent, workspaceDir, task, ...opts }, io =
     // — the endpoint maps them like CLI envelope failures.
     return { schemaVersion: 1, ok: false, error: { code: e.code || "E_BAD_ARGS", message: e.message } };
   }
-  const { file, cleanup } = writeTaskFile(task ?? "", io);
-  // Replace the placeholder POSITIONALLY — the slot after --task-file —
-  // never by value search: an agent literally named "__TASKFILE__" would
-  // occupy an earlier argv slot and indexOf would clobber the agent name
-  // instead (review 0b83988).
-  argv[argv.indexOf("--task-file") + 1] = file;
+  // An empty opening instruction on a server spawn travels as no task at all: the routed spawn
+  // refuses an empty task file, and no task is what a local empty spawn amounts to.
+  let cleanup = () => {};
+  if (opts.server && !String(task ?? "").trim()) argv.splice(argv.indexOf("--task-file"), 2);
+  else {
+    const written = writeTaskFile(task ?? "", io); cleanup = written.cleanup;
+    // Replace the placeholder POSITIONALLY — the slot after --task-file —
+    // never by value search: an agent literally named "__TASKFILE__" would
+    // occupy an earlier argv slot and indexOf would clobber the agent name
+    // instead (review 0b83988).
+    argv[argv.indexOf("--task-file") + 1] = written.file;
+  }
   let wakeFile;
   try {
     if (wake) { wakeFile = writeTaskFile(JSON.stringify(wake), io); argv.push("--wake-file", wakeFile.file); }
@@ -434,7 +450,9 @@ export function operationArgs(args) {
   if (entries.length > 8 || entries.some(([k, v]) => !/^[a-z][a-z0-9-]{0,63}$/.test(k) || typeof v !== 'string' || !v || v.length > 1024 || /[\x00-\x1f\x7f]/.test(v))) return null;
   return entries.flatMap(([k, v]) => ['--arg', `${k}=${v}`]);
 }
-export async function cliCapability(bin, { action, context, server, soul, agentsRoot, home, operation, args, localCwd }, io = {}) {
+/** `maxAge` (feature observe-max-age) is inspect's alone; `features` is the probe's list and
+ * gates the flag, so an undeclared kernel gets the flagless argv even when a value is given. */
+export async function cliCapability(bin, { action, context, server, soul, agentsRoot, home, operation, args, localCwd, maxAge, features }, io = {}) {
   const bad = message => { throw Object.assign(new Error(message), { code: 'E_BAD_ARGS' }); };
   const value = (v, label) => {
     if (typeof v !== 'string' || !v || v.startsWith('-') || v.includes('\0')) bad(`Invalid ${label}`);
@@ -455,7 +473,11 @@ export async function cliCapability(bin, { action, context, server, soul, agents
     argv = ['operation', 'run', operation, ...pairs];
   } else bad('Unknown capability action');
   if (action !== 'run' && args !== undefined) bad('Arguments belong to an operation run');
-  return await runJson(bin, [...argv, ...target, '--json'], {
+  if (action !== 'inspect' && maxAge !== undefined) bad('Observation age belongs to an inspection');
+  // Reuse is local only: the kernel refuses --max-age with --server (E_BAD_ARGS), so a routed inspect never carries it.
+  if (server && maxAge !== undefined) bad('Observation age does not route to a server');
+  if (!validMaxAge(maxAge)) bad('Invalid observation age');
+  return await runJson(bin, [...argv, ...target, ...maxAgeArgv(features, maxAge), '--json'], {
     cwd: localCwd, exec: io.exec, timeout: io.timeout ?? (action === 'run' ? 300_000 : ENVELOPE_TIMEOUT_MS),
   });
 }

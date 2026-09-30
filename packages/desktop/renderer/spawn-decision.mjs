@@ -8,7 +8,7 @@ const nullable = v => v === null || safe(v);
 export function spawnEffective(v) {
   if (!record(v) || !absolute(v.repo) || !['worktree', 'checkout', 'directory', 'workspace', 'attached'].includes(v.work)
     || !HARNESSES.includes(harnessOf(v)) || !nullable(v.model) || !nullable(v.launchConfig)
-    || v.yolo !== null && typeof v.yolo !== 'boolean' || !['tmux', 'herdr'].includes(v.backend)
+    || v.yolo !== null && typeof v.yolo !== 'boolean' || v.backend !== 'tmux'
     || typeof v.childSpawns !== 'boolean') return null;
   let relation = null;
   if (v.relation !== null) {

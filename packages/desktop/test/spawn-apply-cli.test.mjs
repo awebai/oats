@@ -35,13 +35,13 @@ for (const alter of [c => delete c.spawnApplyApi, c => c.spawnApplyApi = '1', c 
   assert.equal(f.calls.length, 0); assert.equal(f.dirs.length, 0);
 });
 test('apply fixed argv, exact roots, tagged choices and original key/revision; private bytes never argv', async () => {
-  const f = fixture(), input = options({ choices: { purpose: 'review', branch: 'feat/review', base: 'release', harness: 'codex', launchConfig: 'personal', backend: 'herdr',
+  const f = fixture(), input = options({ choices: { purpose: 'review', branch: 'feat/review', base: 'release', harness: 'codex', launchConfig: 'personal', backend: 'tmux',
     model: { kind: 'native-default' }, yolo: false, relation: { kind: 'child', anchor } }, wake });
   const result = await cliSpawnApply(capable(), input, f.io);
   assert.equal(result.started, true); assert.deepEqual(result.envelope, ok);
   assert.equal(f.calls.length, 1);
   assert.deepEqual(f.calls[0].argv, ['spawn', 'release-manager', '--dir', DEPLOYMENT, '--agents-root', ROOT, '--purpose', 'review', '--branch', 'feat/review', '--base', 'release',
-    '--runtime', 'codex', '--launch-config', 'personal', '--backend', 'herdr', '--model', '@native-default', '--no-yolo', '--relation', 'child',
+    '--runtime', 'codex', '--launch-config', 'personal', '--backend', 'tmux', '--model', '@native-default', '--no-yolo', '--relation', 'child',
     '--relative-to', 'release-manager-race', '--relative-root', ROOT, '--expect-decision', input.decision.revision, '--idempotency-key', input.key,
     '--task-file', f.files[0].file, '--wake-file', f.files[1].file, '--json']);
   assert.deepEqual(f.calls[0].opts, { cwd: DEPLOYMENT, env: { PATH: '/inert/bin', HOME: '/inert/home' }, shell: false, encoding: 'utf8', timeout: 60000, maxBuffer: 4194304 });
@@ -75,14 +75,16 @@ test('inherit omits model; custom model is a single value; booleans stay explici
 });
 const withoutEffective = () => { const d = structuredClone(data().decision); delete d.effective; return d; };
 for (const changes of [{ key: 'caller key' }, { key: 'b'.repeat(63) }, { decision: withoutEffective() }, { env: { KEY: 'PRIVATE' } }, { workDir: '/caller' },
-  { choices: { model: { kind: 'custom', value: '@native-default' } } }, { choices: { branch: '--no-launch' } }, { choices: { base: 'x\n--force' } }, { wake: null }]) test(`invalid apply input is zero-effect: ${JSON.stringify(changes)}`, async () => {
+  { choices: { model: { kind: 'custom', value: '@native-default' } } }, { choices: { branch: '--no-launch' } }, { choices: { base: 'x\n--force' } }, { wake: null },
+  // The fixture CLI is an older kernel whose sessionBackends still lists herdr: Herdr is refused anyway.
+  { choices: { backend: 'herdr' } }]) test(`invalid apply input is zero-effect: ${JSON.stringify(changes)}`, async () => {
   const f = fixture(), result = await cliSpawnApply(capable(), options(changes), f.io);
   assert.equal(result.started, false); assert.equal(result.envelope.error.code, 'E_BAD_ARGS'); assert.equal(f.dirs.length, 0); assert.equal(f.calls.length, 0);
 });
 for (const [label, change, overrides] of [
   ['wake', c => c.features = c.features.filter(f => f !== 'schedule'), { wake }],
   ['harness', c => c.harnesses = [], { choices: { harness: 'codex' } }],
-  ['backend', c => c.sessionBackends = [], { choices: { backend: 'herdr' } }],
+  ['backend', c => c.sessionBackends = [], { choices: { backend: 'tmux' } }],
   ['permission', c => c.launchOptions = [], { choices: { yolo: false } }],
   ['configuration', c => c.features = c.features.filter(f => f !== 'launch-config'), { choices: { launchConfig: 'personal' } }],
 ]) test(`optional ${label} support is positive before input files and exec`, async () => {

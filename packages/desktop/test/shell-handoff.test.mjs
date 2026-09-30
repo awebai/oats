@@ -21,7 +21,7 @@ function fixture(t, { shellSource = source, ownership = createSelectionOwnership
   const dom = new JSDOM("<button id='opener'>Quick Open</button>");
   t.after(() => dom.window.close());
   const document = dom.window.document;
-  const requests = [], loads = [], handoffs = [], events = [], notices = [], listeners = [];
+  const requests = [], loads = [], handoffs = [], events = [], notices = [], listeners = [], captures = [], returns = [], dismissals = [];
   let paletteCloses = 0;
   const c = {
     workspace: "A", generation: 0, activeTab: null,
@@ -38,6 +38,9 @@ function fixture(t, { shellSource = source, ownership = createSelectionOwnership
       return createQuickOpen({ ...options, onPick: pick, doc: document });
     },
     palette: { close() { paletteCloses++; } },
+    // The picker's opener, and where the operator was: captured at the pick, before any await.
+    document, takePickerFocusReturn: () => ({ opener: true }),
+    surfaceReturn: { capture: opener => { captures.push(opener); return { origin: true }; }, restore: origin => { returns.push(origin); return true; } },
     onWorkspaceChange: listener => listeners.push(listener),
   };
   const setup = shellSource.match(/const tabOpenIntents = [^\n]+/)[0];
@@ -50,7 +53,7 @@ function fixture(t, { shellSource = source, ownership = createSelectionOwnership
   const s = runInNewContext(`${setup}\n${selection}\n${composition}\n({ quickOpen, tabOpenIntents, selectTab });`, c);
   document.getElementById("opener").focus();
   return {
-    ...s, c, document, requests, loads, events, notices, handoffs,
+    ...s, c, document, requests, loads, events, notices, handoffs, captures, returns, dismissals,
     get paletteCloses() { return paletteCloses; },
     switchTo(workspace) { c.workspace = workspace; c.generation++; listeners.forEach(listener => listener()); },
     async showPicker(items = souls) {
@@ -64,23 +67,28 @@ function fixture(t, { shellSource = source, ownership = createSelectionOwnership
       return { gate: loads.at(-1), done: handoffs.at(-1) };
     },
     settle(pick, outcome) {
-      if (outcome === "resolve") pick.gate.resolve({ preselectSoul: soul => events.push(["preselect", soul]) });
+      if (outcome === "resolve") pick.gate.resolve({ preselectSpawn: ({ onDismiss, ...soul }) => { events.push(["preselect", soul]); dismissals.push(onDismiss); } });
       else pick.gate.reject(new Error("spawn module unavailable"));
       return pick.done;
     },
   };
 }
 
-test("Quick Open captures ownership before awaiting the module, then preselects the exact soul before showing Spawn", async t => {
+test("Quick Open captures ownership and the return point before awaiting the module, then opens the soul's spawn dialog in Workspace", async t => {
   const s = fixture(t); await s.showPicker();
   const old = s.tabOpenIntents.begin();
   const pick = s.choose();
   assert.equal(old(), false, "the click, not module arrival, begins selection ownership");
   assert.deepEqual(s.events, []);
+  assert.deepEqual(s.captures, [{ opener: true }], "where the operator was is captured at the pick, from the picker's opener");
   assert.equal(s.requests[0].path, "/api/agents?ws=A");
   await s.settle(pick, "resolve");
   assert.deepEqual(s.events, [["preselect", souls[0]], ["stage", "spawn"]]);
   assert.deepEqual(s.notices, []);
+  // Dismissing the dialog hands the captured origin back to the shell's return.
+  assert.deepEqual(s.returns, []);
+  assert.equal(s.dismissals.at(-1)(), true);
+  assert.deepEqual(s.returns, [{ origin: true }]);
 });
 
 test("a current Quick Open module rejection is contained and reported without preselection/navigation", async t => {
@@ -150,7 +158,7 @@ test("a loaded picker row from the old workspace cannot run after A→B→A", as
 for (const outcome of ["resolve", "reject"]) {
   test(`mutation: Quick Open ${outcome} must check its dispatch ticket`, async t => {
     const oldBlock = source.slice(source.indexOf("const quickOpen ="), source.indexOf("// ── shortcuts editor"));
-    const guard = outcome === "resolve" ? "    if (!owns()) return;\n    mod.preselectSoul" : "      if (!owns()) return;\n      ctx.notify";
+    const guard = outcome === "resolve" ? "    if (!owns()) return;\n    mod.preselectSpawn" : "      if (!owns()) return;\n      ctx.notify";
     assert.ok(oldBlock.includes(guard));
     const mutant = source.replace(oldBlock, oldBlock.replace(guard, guard.replace("if (!owns()) return;", "/* weakened guard */")));
     await assert.rejects(staleHandoff(t, outcome, "newer-tab", { shellSource: mutant }), /stale handoff|stale rejection/);

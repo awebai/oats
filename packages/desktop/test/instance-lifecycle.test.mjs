@@ -29,9 +29,11 @@ test('locator preserves only the exact lifecycleApi integer', async () => {
     assert.equal(found.lifecycleApi, value === 1 ? 1 : undefined);
   }
 });
-test('qualified admission refuses remote, forged scope/home/options and duplicate targets before invocation', async () => {
+test('qualified admission refuses a local/remote crossing, forged scope/home/options and duplicate targets before invocation', async () => {
   const f = fixture({ invoke: assert.fail });
-  f.ctx.workspace.remote = true; assert.equal((await f.plan()).reason.code, 'unsupported-remote-operation'); delete f.ctx.workspace.remote;
+  // A local selector never resolves in a remote workspace (remote routing: remote-lifecycle.test.mjs).
+  Object.assign(f.ctx.workspace, { remote: true, server: 'build' }); assert.equal((await f.plan()).reason.code, 'E_SESSION_UNKNOWN');
+  delete f.ctx.workspace.remote; delete f.ctx.workspace.server;
   f.ctx.instances.push(structuredClone(instance)); assert.equal((await f.plan()).reason.code, 'E_AMBIGUOUS_INSTANCE'); f.ctx.instances.pop();
   for (const extra of ['home', 'cwd', 'argv', 'env', 'force', 'self', 'key', 'revision']) {
     assert.equal((await f.service({ ...request(), [extra]: 'forged' }, () => f.ctx)).reason.code, 'E_BAD_ARGS');
@@ -173,4 +175,12 @@ test('CLI fixes every argv, caps timeout/output, supports raw/replayed retire an
     const args = { operation: 'stop', phase: 'apply', instance: instance.instance, home: instance.home, context: '/team', choices: options('stop'), revision: 'a'.repeat(24), key: 'x' };
     const result = await cliLifecycle(cli.bin, args, { exec: (_b, _a, _o, done) => done(error, 'PRIVATE') }); assert.equal(result.ok, false); assert.doesNotMatch(JSON.stringify(result), /PRIVATE/);
   }
+});
+test('a Herdr-recorded instance still plans and applies Retire: the kernel decides, the Desktop never blocks it', async () => {
+  const f = fixture(), reason = 'E_HERDR_REMOVED: Herdr is no longer supported by OATS (removed in 0.31.0); tmux is the only session backend.';
+  Object.assign(f.ctx.instances[0], { running: null, runtimeState: 'unsupported', runtimeError: reason, sessionTarget: { backend: 'herdr' } });
+  const plan = await f.plan('retire');
+  assert.equal(plan.status, 'plan');
+  assert.equal((await f.apply(plan.planRef)).status, 'complete');
+  assert.deepEqual(f.calls.map(c => [c.args.operation, c.args.phase]), [['retire', 'plan'], ['retire', 'apply']]);
 });

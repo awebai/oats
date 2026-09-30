@@ -18,6 +18,18 @@ function applyThatRuns(u, preview = created()) {
   };
 }
 
+test('the session backend select offers tmux only: from the older-kernel f3 capture that lists herdr, and from a 0.31 CLI', async t => {
+  for (const cli of [undefined, { ...structuredClone(CLI), sessionBackends: ['tmux'] }]) {
+    const u = await mountSpawn(t, cli ? { cli } : {});
+    await u.open(); u.q('.spawn-advanced').open = true;
+    assert.deepEqual(CLI.sessionBackends, ['tmux', 'herdr'], 'the f3 capture is an older kernel');
+    const select = u.q('.fbackend');
+    assert.deepEqual([...select.options].map(o => o.value), ['', 'tmux']);
+    assert.equal(select.options[0].textContent, 'Default · tmux');
+    assert.doesNotMatch(u.q('.spawn-advanced').textContent, /herdr/i);
+  }
+});
+
 test('the dialog shows what the kernel decided: name, harness, model and work — no toggles, placeholders or preview button', async t => {
   const u = await mountSpawn(t);
   const dialog = await u.open();
@@ -39,7 +51,9 @@ test('the dialog shows what the kernel decided: name, harness, model and work �
   assert.equal(advanced.contains(u.q('.spawn-relationship')), false);
   assert.equal(u.q('.spawn-seg input:checked').value, 'unrelated'); assert.equal(u.q('.frelto').hidden, true);
   // Removed: capability toggles, K6 placeholders, the preview button. The captured kernel advertises spawn-name.
-  assert.doesNotMatch(dialog.textContent, /Attach knowledge|Allow child spawns|Open PR|Available after|Preview invocation|Force native|capabilit/i);
+  assert.doesNotMatch(dialog.textContent, /Attach knowledge|Allow child spawns|Open PR|Available after|Preview invocation|Force native/i);
+  // Board 6: the capabilities are the preview's facts (read-only), never a choice.
+  assert.equal(dialog.querySelector('.spawn-preview :is(input, select, button, textarea)'), null, 'no capability toggles');
   assert.equal(dialog.querySelectorAll('input[type=checkbox]:not(.fworktree):not(.fprefix):not(.fwake-enabled)').length, 0);
   assert.equal(u.q('.spawn-prefix-toggle').hidden, false);
   assert.equal(u.q('.fspawn').disabled, false); assert.equal(u.q('.fspawn').hidden, false, 'the shell must not rewrite the Spawn button');
@@ -115,7 +129,7 @@ for (const outcome of ['success', 'rejection']) test(`an older preview settling 
   if (outcome === 'success') first.resolve(); else first.reject(Object.assign(new Error('late'), { code: 'E_CLI_FAILED' }));
   await settle(20);
   assert.equal(u.q('.spawn-name-result strong').textContent, created().instance);
-  assert.equal(u.text('.fstatus'), ''); assert.equal(u.q('.fspawn').disabled, false);
+  assert.equal(u.text('.fstatus'), 'Preview ready', 'the newer read\'s own status, nothing from the late one'); assert.equal(u.q('.fspawn').disabled, false);
 });
 
 for (const outcome of ['success', 'rejection']) test(`a preview settling (${outcome}) after the dialog was replaced touches nothing`, async t => {
@@ -127,7 +141,7 @@ for (const outcome of ['success', 'rejection']) test(`a preview settling (${outc
   if (outcome === 'success') gate.resolve(); else gate.reject(new Error('late'));
   await settle(20);
   assert.equal(u.dialog(), current); assert.equal(old.isConnected, false);
-  assert.equal(u.text('.spawn-work-text'), 'Works in its own directory in the instance home'); assert.equal(u.text('.fstatus'), '');
+  assert.equal(u.text('.spawn-work-text'), 'Works in its own directory in the instance home'); assert.equal(u.text('.fstatus'), 'Preview ready');
 });
 
 test('Spawn is one click: prepare, then apply of the decision on screen; the terminal opens once the exact instance runs', async t => {
@@ -189,7 +203,7 @@ for (const outcome of ['success', 'rejection']) test(`closing during an in-fligh
   const current = await u.open('support-triager'); await u.type('.ftask', 'newer');
   if (outcome === 'success') gate.resolve(); else gate.reject(new Error('late'));
   await settle(30);
-  assert.equal(u.dialog(), current); assert.equal(u.q('.ftask').value, 'newer'); assert.equal(u.text('.fstatus'), '');
+  assert.equal(u.dialog(), current); assert.equal(u.q('.ftask').value, 'newer'); assert.equal(u.text('.fstatus'), 'Preview ready');
   assert.equal(old.querySelector('.fstatus').textContent, 'Spawning…', 'the closed dialog does not even take the late response');
   assert.deepEqual(u.opens, []);
   const before = u.spawns().length;
@@ -266,6 +280,22 @@ test('a launch configuration is listed for this soul and sent only when chosen',
   await u.change('.flaunch', 'fast'); assert.equal(last(u).launchConfig, 'fast');
 });
 
+test('the harness, model and launch hints describe the preview for the choices on screen only: blank while a new preview is in flight, like the name hint (desktop/loading-states item 9)', async t => {
+  const gate = deferred(); let hold = false;
+  const u = await mountSpawn(t, { previewGate: () => hold ? gate.promise : undefined });
+  await u.open();
+  assert.equal(u.text('.spawn-run-hint'), 'Launches Pi with its own default model.'); assert.equal(u.text('.spawn-model-default'), "Pi's default model");
+  assert.equal(u.q('.spawn-run .spawn-choice-trigger .spawn-trigger-tag')?.textContent, 'default');
+  hold = true; await u.change('.fyolo', 'true'); // a new choice: the preview on screen is for another spawn
+  assert.equal(u.text('.spawn-run-hint'), '', 'no launch sentence from the previous choices');
+  assert.equal(u.text('.spawn-model-default'), ''); assert.equal(u.text('.spawn-input-tag'), '');
+  assert.equal(u.q('.spawn-run .spawn-choice-trigger .spawn-trigger-tag'), null, 'no "default" tag from the previous preview');
+  assert.equal(u.q('.spawn-run .spawn-choice-trigger').getAttribute('aria-label'), 'Harness: default (default)');
+  gate.resolve(); await settle(20);
+  assert.equal(u.text('.spawn-run-hint'), 'Launches Pi with its own default model.', 'the hint returns with the matching preview');
+  assert.equal(u.text('.spawn-model-default'), "Pi's default model"); assert.equal(u.text('.spawn-input-tag'), 'default');
+});
+
 test('permissions default to what the kernel reports and are sent only when chosen', async t => {
   const u = await mountSpawn(t);
   await u.open(); await u.type('.fpurpose', 'api-v2');
@@ -287,9 +317,9 @@ test('choosing another soul keeps the typed name and instruction', async t => {
   const u = await mountSpawn(t);
   await u.open(); await u.type('.fpurpose', 'api-v2'); await u.type('.ftask', 'keep me');
   [...u.doc.querySelectorAll('.spawn-choice')].find(b => b.dataset.agent === 'support-triager').click(); await settle();
-  assert.equal(u.q('.spawn-choice[aria-pressed=true]').dataset.agent, 'support-triager');
+  assert.equal(u.q('.spawn-choice[aria-selected=true]').dataset.agent, 'support-triager');
   assert.equal(u.q('.fpurpose').value, 'api-v2'); assert.equal(u.q('.ftask').value, 'keep me');
-  assert.equal(u.doc.activeElement, u.q('.spawn-choice[aria-pressed=true]'));
+  assert.equal(u.doc.activeElement, u.q('.spawn-choice[aria-selected=true]'));
 });
 
 test('the soul-name prefix toggle is offered only with spawn-name; off sends --name, and a name refusal shows at the field', async t => {
@@ -387,7 +417,7 @@ test('a soul name with selector metacharacters opens as data, is refused by the 
   const evil = 'a"]b[x=1\\';
   const u = await mountSpawn(t, { agents: [...catalogAgents(), { name: evil, description: '', kind: 'persistent', work: 'worktree', agentsRoot: ROOT, repoName: 'northwind' }] });
   const dialog = await u.open(evil);
-  assert.equal(u.q('.spawn-choice[aria-pressed=true]').dataset.agent, evil);
+  assert.equal(u.q('.spawn-choice[aria-selected=true]').dataset.agent, evil);
   assert.equal(u.previews().at(-1).selector.soul, evil, 'the exact name is sent as data');
   assert.equal(u.q('.fstatus').dataset.code, 'E_BAD_ARGS', 'the boundary refuses a non-kernel soul name'); assert.doesNotMatch(u.text('.fstatus'), /E_[A-Z]/); assert.equal(u.q('.fspawn').disabled, true);
   await u.type('.ftask', 'typed'); for (const poll of u.polls) poll(); await settle(20);
@@ -419,9 +449,9 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: every spawn 
   u.q('.spawn-run .spawn-choice-trigger').click(); await settle();
   const view = u.dom.window, root = view.getComputedStyle(u.doc.documentElement);
   for (const [selector, surfaceSelector, fg, bg] of [
-    ['.spawn-choice[aria-pressed=true] strong', '.spawn-choice[aria-pressed=true]', 'fg', 'sel'],
-    ['.spawn-choice[aria-pressed=true] small', '.spawn-choice[aria-pressed=true]', 'muted', 'sel'],
-    ['.spawn-name-head > label', '.spawn-dialog', 'muted', 'surface'], ['.spawn-relationship > legend', '.spawn-dialog', 'muted', 'surface'],
+    ['.spawn-choice[aria-selected=true] strong', '.spawn-choice[aria-selected=true]', 'fg', 'sel'],
+    ['.spawn-choice[aria-selected=true] small', '.spawn-choice[aria-selected=true]', 'muted', 'sel'],
+    ['.spawn-name > label', '.spawn-dialog', 'muted', 'surface'], ['.spawn-relationship > legend', '.spawn-dialog', 'muted', 'surface'],
     ['.spawn-name-prefix', '.spawn-name-input', 'muted', 'surface'],
     ['.spawn-name-result strong', '.spawn-dialog', 'fg', 'surface'],
     ['.spawn-hint', '.spawn-dialog', 'muted', 'surface'],
@@ -429,8 +459,8 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: every spawn 
     ['.spawn-input-tag', '.spawn-input-tag', 'muted', 'chip-bg'],
     ['.spawn-run .spawn-trigger-tag', '.spawn-run .spawn-trigger-tag', 'muted', 'chip-bg'],
     ['.spawn-choice-menu [aria-selected=true]', '.spawn-choice-menu [aria-selected=true]', 'fg', 'sel'],
-    ['.spawn-seg input:checked + span', '.spawn-seg input:checked + span', 'accent', 'sel'], // F7: the selected option in the accent on its tint,
-    ['.spawn-seg input:not(:checked) + span', '.spawn-seg', 'muted', 'surface-2'],
+    ['.spawn-seg input:checked + span', '.spawn-seg input:checked + span', 'accent', 'sel'], // the selected segment: brand tint (shared control rule 1)
+    ['.spawn-seg input:not(:checked) + span', '.spawn-seg', 'muted', 'surface'],
     ['.spawn-advanced > summary', '.spawn-advanced', 'fg', 'surface-2'],
     ['.spawn-advanced > summary small', '.spawn-advanced', 'muted', 'surface-2'],
     ['.spawn-joined-from', '.spawn-joined-from', 'muted', 'surface-2'],
@@ -467,4 +497,78 @@ test('a name longer than the kernel cap (#159) is refused at the field before an
   const sent = u.previews().length;
   await u.type('.fpurpose', 'b'.repeat(65)); await settle(20);
   assert.match(u.text('.spawn-name-result'), /at most 64 characters/); assert.equal(u.previews().length, sent);
+});
+
+// Spec 02: "Where to run".
+const buildFacts = (extra = {}) => ({ server: 'build', label: 'Build host', group: 'build:1', reached: true, error: null, registered: true, ...extra });
+test('Where to run: "This computer" first, then each server by label (and id when it differs); an unreached or unregistered server is disabled with why, never for its souls', async t => {
+  const u = await mountSpawn(t, {
+    servers: [{ id: 'build', label: 'Build host', sshHost: 'build.lan' }, { id: 'same', label: 'same', sshHost: 's' }, { id: 'down', label: 'Down box', sshHost: 'd' },
+      { id: 'bare', label: 'Bare box', sshHost: 'b' }, { id: 'moved', label: 'Moved box', sshHost: 'm' }],
+    teamMembers: { members: [], notReached: [], servers: [buildFacts(), buildFacts({ server: 'same', label: 'same', group: 'same:1' }),
+      buildFacts({ server: 'down', label: 'Down box', group: 'down:1', reached: false, error: 'ssh failed' }),
+      buildFacts({ server: 'bare', label: 'Bare box', group: 'bare:1' }),
+      buildFacts({ server: 'moved', label: 'Moved box', group: 'moved:old', registered: false })] } });
+  await u.open();
+  // A primary decision: at the form's top level, directly above Relationship (whose picker depends on it), not in Developer settings.
+  const place = u.q('.spawn-place');
+  assert.equal(place.querySelector('.spawn-label-text').textContent, 'Where to run');
+  assert.equal(place.contains(u.q('.fserver')), true); assert.equal(place.contains(u.q('.spawn-server-hint')), true);
+  assert.equal(u.q('.spawn-advanced').contains(place), false);
+  assert.equal(place.nextElementSibling, u.q('.spawn-relationship'));
+  assert.deepEqual([...u.q('.fserver').options].map(o => [o.textContent, o.disabled]), [
+    ['This computer', false], ['Build host (build)', false], ['same', false],
+    ['Down box (not reached)', true], ['Bare box (bare)', false], ['Moved box (not registered)', true]]);
+});
+
+test('a refused remote spawn says the refusal in OATS\'s own words (a soul the host doesn\'t offer), with the code behind Details', async t => {
+  const message = 'no soul "release-manager" among the confirmed members, external souls or package souls of this workspace';
+  const u = await mountSpawn(t, { servers: [{ id: 'build', label: 'Build host', sshHost: 'build.lan' }], teamMembers: { members: [], notReached: [], servers: [buildFacts()] },
+    remote: () => { throw Object.assign(new Error(message), { code: 'E_SOUL_UNKNOWN' }); } });
+  await u.open(); await u.type('.fpurpose', 'api-v2');
+  await u.change('.fserver', 'build');
+  await u.spawn();
+  assert.equal(u.text('.fstatus'), `Couldn’t spawn on build: ${message}`);
+  assert.equal(u.q('.fstatus').dataset.code, 'E_SOUL_UNKNOWN'); assert.ok(u.q('.fstatus').classList.contains('err'));
+  assert.equal(u.text('.spawn-problem-detail'), `E_SOUL_UNKNOWN · ${message}`);
+});
+
+test('Where to run a server: the hint says so, the relation picker lists only that server\'s rows, and the relation travels with the remote spawn', async t => {
+  const remote = [];
+  const farRow = { instance: 'far-lead', agent: 'release-manager', agentsRoot: '/srv/agents', home: '/srv/agents/release-manager/instances/far-lead', server: 'build', running: true, addressable: true };
+  const u = await mountSpawn(t, { servers: [{ id: 'build', label: 'Build host', sshHost: 'build.lan' }], teamMembers: { members: [], notReached: [], servers: [buildFacts()] },
+    serverPanels: { 'remote:build:1': [farRow] }, remote: body => { remote.push(body); return { instance: 'release-manager-api-v2', server: 'build' }; } });
+  await u.open(); await u.type('.fpurpose', 'api-v2');
+  const local = [...u.q('.frelto').options].map(o => o.value).filter(Boolean);
+  u.q('.spawn-advanced').open = true;
+  await u.change('.fserver', 'build');
+  assert.equal(u.text('.spawn-server-hint'), "Runs on Build host. Its teams and defaults come from that machine's workspace.");
+  assert.deepEqual([...u.q('.frelto').options].map(o => o.value).filter(Boolean), ['far-lead'], 'never this computer\'s rows: relations do not cross machines');
+  const child = [...u.doc.querySelectorAll('.spawn-dialog .frelation input')].find(i => i.value === 'child'); child.checked = true; child.dispatchEvent(new u.dom.window.Event('change', { bubbles: true })); await settle();
+  await u.change('.frelto', 'far-lead');
+  await u.spawn();
+  assert.equal(remote.length, 1);
+  assert.deepEqual([remote[0].serverId, remote[0].relation, remote[0].relativeTo, remote[0].relativeRoot], ['build', 'child', 'far-lead', '/srv/agents']);
+  await u.change('.fserver', '');
+  assert.equal(u.text('.spawn-server-hint'), '');
+  assert.deepEqual([...u.q('.frelto').options].map(o => o.value).filter(Boolean), local, 'back on this computer: its own rows again');
+});
+
+test('Where to run a server: while its rows are still being read, a relation picked on this computer cannot be sent to it', async t => {
+  const gate = deferred(), remote = [];
+  const farRow = { instance: 'far-lead', agent: 'release-manager', agentsRoot: '/srv/agents', home: '/srv/agents/release-manager/instances/far-lead', server: 'build', running: true, addressable: true };
+  const u = await mountSpawn(t, { servers: [{ id: 'build', label: 'Build host', sshHost: 'build.lan' }], teamMembers: { members: [], notReached: [], servers: [buildFacts()] },
+    serverPanels: { 'remote:build:1': [farRow] }, serverPanelGate: gate.promise, remote: body => { remote.push(body); return { instance: 'x', server: 'build' }; } });
+  await u.open(); await u.type('.fpurpose', 'api-v2');
+  const child = [...u.doc.querySelectorAll('.spawn-dialog .frelation input')].find(i => i.value === 'child'); child.checked = true; child.dispatchEvent(new u.dom.window.Event('change', { bubbles: true })); await settle();
+  const localPick = [...u.q('.frelto').options].find(o => o.value);
+  await u.change('.frelto', localPick.value);
+  u.q('.spawn-advanced').open = true;
+  await u.change('.fserver', 'build');
+  assert.equal(u.q('.fspawn').disabled, true, 'the picker still holds this computer\'s rows: nothing may be sent');
+  u.q('.fspawn').click(); await settle(); assert.equal(remote.length, 0);
+  gate.resolve(); await settle();
+  assert.deepEqual([...u.q('.frelto').options].map(o => o.value).filter(Boolean), ['far-lead']);
+  assert.equal(u.q('.frelto').value, '', 'a local pick does not carry over'); assert.equal(u.q('.fspawn').disabled, true, 'a relation still needs a pick');
+  await u.change('.frelto', 'far-lead'); assert.equal(u.q('.fspawn').disabled, false);
 });

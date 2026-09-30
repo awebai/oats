@@ -7,6 +7,7 @@
 import { createSoulMark } from './identity-marks.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { capabilitySource, capabilityUse, capabilityRow, memberNames, layerLabel, sourceChip } from './workspace-catalog.mjs';
+import { skeleton, noticeElement, updateNotice, failedElement, updateFailed, isOldObservation, ROSTER_STALE_TITLE } from './loading.mjs';
 
 /** The shared page chrome: bar, columns, section titles and side cards. */
 export const pageCardCSS = `
@@ -14,7 +15,6 @@ export const pageCardCSS = `
 .page-bar { position:sticky; top:0; z-index:2; display:flex; align-items:center; gap:8px; height:var(--bar-h); min-height:48px; padding:0 16px; box-sizing:border-box; border-bottom:1px solid var(--border); background:var(--surface); font-size:12.5px; }
 .oats-view .page-bar button.page-back { display:inline-flex; align-items:center; gap:6px; height:30px; min-height:30px; margin-right:6px; padding:0 10px 0 8px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font:600 12.5px var(--sans,system-ui); cursor:pointer; flex:none; }
 .oats-view .page-bar button.page-back:hover { background:var(--surface-2); }
-.oats-view .page-bar button.page-back:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .page-crumbs { display:flex; align-items:center; gap:8px; min-width:0; color:var(--muted); white-space:nowrap; overflow:hidden; }
 .page-crumbs .page-crumb-current { color:var(--fg); font-weight:650; overflow:hidden; text-overflow:ellipsis; }
 .page-bar-actions { margin-left:auto; display:flex; align-items:center; gap:8px; flex:none; }
@@ -33,6 +33,15 @@ export const pageCardCSS = `
 .page-title.mono { font:700 20px var(--mono,monospace); }
 .page-tag { display:inline-flex; align-items:center; height:22px; padding:0 7px; border-radius:5px; background:var(--chip-bg); color:var(--fg); font:650 11.5px var(--sans,system-ui); letter-spacing:0; white-space:nowrap; }
 .page-lede { margin:0; color:var(--muted); font-size:13px; }
+/* desktop/loading-states item 7: the catalog's facts arrive after the page (opened from a soul): a
+   lede-sized line and a facts-sized block stand where they go; the catalog's age line sits under the bar. */
+.page-lede.skeleton { height:13px; width:55%; margin-top:2px; }
+.page-facts-skeleton { display:flex; flex-direction:column; gap:10px; }
+.page-facts-skeleton .skeleton-line { height:11px; width:70%; }
+.page-facts-skeleton .skeleton-line:nth-child(2n) { width:50%; }
+.page-notice { padding:12px 28px 0; }
+.page-notice:empty { display:none; }
+.page-notice .loading-notice { margin:0; }
 .page-facts-row { display:flex; flex-wrap:wrap; align-items:center; gap:6px 20px; margin-top:8px; font-size:12.5px; }
 .page-fact { display:inline-flex; align-items:center; gap:7px; white-space:nowrap; min-width:0; }
 .page-fact .shell-icon { color:var(--muted); }
@@ -66,7 +75,6 @@ export const pageCardCSS = `
 .page-table-row.head + .page-table-row { border-top:0; }
 .oats-view .page-table button.page-table-row { width:100%; border-left:0; border-right:0; border-bottom:0; border-radius:0; background:var(--surface); color:var(--fg); text-align:left; font:inherit; cursor:pointer; }
 .oats-view .page-table button.page-table-row:hover { background:var(--surface-2); }
-.oats-view .page-table button.page-table-row:focus-visible, .page-table .page-table-row.openable:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
 .page-table .page-table-row.openable { cursor:pointer; }
 .page-table .page-table-row.openable:hover { background:var(--surface-2); }
 .why-tag { display:inline-flex; align-items:center; justify-self:start; flex:none; height:20px; padding:0 6px; border-radius:4px; background:var(--tag-bg); color:var(--fg); font-size:11px; font-weight:600; white-space:nowrap; }
@@ -166,14 +174,52 @@ export function packageOrigin(source) {
   return git ? `git · ${git[1]}` : source;
 }
 
-/** @param row a catalog row (or capabilityRow(resolved)); from: { label } when opened from a soul page. */
-export function renderCapabilityPage(host, { row, status, instances, root, backLabel = 'Capabilities', onBack, openSoul = null, from = null, openExternal = null }) {
+/** Which age line a page mirroring the catalog's controller shows: 'stale' (the read failed: Retry, the
+ * cause behind Details), 'observed' (an old observation) or null (current). `state`: the controller's
+ * state (a refreshing read keeps the settled kind through `settled`); `observedAt`: ISO or null. */
+export function catalogNoticeKind({ state, settled = state, observedAt = null } = {}, now = Date.now()) {
+  const at = state === 'refreshing' || state === 'pending' ? settled : state;
+  if (at === 'stale') return 'stale';
+  if (at === 'failed') return 'failed'; // the catalog could not be read and nothing is held: the failed treatment, not silence
+  return isOldObservation(observedAt, now) ? 'observed' : null;
+}
+/** The page's copy of the controller's notice (loading.mjs `noticeElement`, so the two never drift):
+ * built once per kind and updated in place by `updateCatalogNotice` — its Retry keeps focus, wears
+ * `aria-disabled` while the re-read runs, and the age ticks with the host's polls. */
+export function catalogNotice(doc, observation = {}, now = Date.now()) {
+  const kind = catalogNoticeKind(observation, now);
+  if (!kind) return null;
+  if (kind === 'failed') {
+    const el = failedElement(doc, { ...failedFacts(observation), onRetry: observation.onRetry ?? null }); el.dataset.kind = 'failed'; return el;
+  }
+  return noticeElement(doc, kind, { noun: 'capabilities', observedAt: observation.observedAt ?? null, cause: kind === 'stale' ? observation.cause ?? null : null,
+    busy: observation.busy === true, onRetry: observation.onRetry ?? null, now });
+}
+export function updateCatalogNotice(el, observation = {}, now = Date.now()) {
+  if (el.dataset.kind === 'failed') { updateFailed(el, failedFacts(observation)); return; }
+  updateNotice(el, { noun: 'capabilities', observedAt: observation.observedAt ?? null, cause: el.dataset.kind === 'stale' ? observation.cause ?? null : null, busy: observation.busy === true, now });
+}
+/** The failed block's facts from the discovery's failure text ("CODE: message", reasonText's shape) or a plain message. */
+function failedFacts({ cause = null, busy = false } = {}) {
+  const m = /^([A-Z][A-Z0-9_]+): (.+)$/s.exec(cause || '');
+  return { noun: 'capabilities', message: m ? m[2] : cause || null, code: m ? m[1] : null, busy: busy === true };
+}
+
+/** @param row a catalog row (or capabilityRow(resolved)); from: { label } when opened from a soul page.
+ * `catalogPending`: opened from a soul before the catalog is read — its facts (the lede, Comes from) are
+ * skeletons the host fills in place when it arrives. The catalog's age line lives in `.page-notice`
+ * under the bar: the host paints it (`catalogNotice` / `updateCatalogNotice`), optionally seeded here
+ * with `observation` ({ state, settled, busy, observedAt, cause, onRetry }). */
+export function renderCapabilityPage(host, { row, status, instances, root, rosterState = 'ready', backLabel = 'Capabilities', onBack, openSoul = null, from = null, openExternal = null, catalogPending = false, observation = null }) {
   const doc = host.ownerDocument;
   const node = (tag, value, cls) => el(doc, tag, value, cls);
   host.replaceChildren();
   const resolved = row.resolved;
   const page = node('div', undefined, 'capability-page'); page.dataset.capability = row.name;
+  if (catalogPending) page.dataset.catalogPending = 'true';
   const { bar } = pageBar(doc, { backLabel, crumbs: from ? ['Workspace', 'Souls', from.label] : ['Workspace', 'Capabilities'], current: row.name, onBack });
+  const noticeHost = node('div', undefined, 'page-notice');
+  const notice = observation ? catalogNotice(doc, observation) : null; if (notice) noticeHost.append(notice);
   const body = node('div', undefined, 'page-body'), main = node('div', undefined, 'page-main'), side = node('div', undefined, 'page-side');
   // Identity: its icon, name and core tag.
   const identity = node('div', undefined, 'page-identity');
@@ -182,8 +228,9 @@ export function renderCapabilityPage(host, { row, status, instances, root, backL
   const title = node('h2', undefined, 'page-title mono'); title.append(node('span', row.name));
   if (text(row.layer)) title.append(node('span', `Core · ${layerLabel(row.layer)}`, 'page-tag'));
   copy.append(title);
-  // Kernel #217: the manifest's description.
+  // Kernel #217: the manifest's description (a line-sized skeleton while the catalog is still being read).
   if (text(row.description)) copy.append(node('p', row.description, 'page-lede'));
+  else if (catalogPending) { const lede = skeleton(doc, 'line', { width: '55%' }); lede.classList.add('page-lede'); copy.append(lede); }
   identity.append(glyph, copy); main.append(identity);
   // Kernel #217: what it provides, by name (the manifest's skills, commands and hooks).
   const named = [['Skills', row.skills], ['Commands', row.commands], ['Hooks', row.hooks]].filter(([, v]) => v !== undefined);
@@ -211,18 +258,23 @@ export function renderCapabilityPage(host, { row, status, instances, root, backL
   }
   // Used by: the souls whose instances carry it (roster module rows).
   const use = capabilityUse(instances, row.name);
-  const used = pageSection(doc, 'Used by', `${use.souls.length} soul${use.souls.length === 1 ? '' : 's'}`);
+  // "Used by" derives from the roster: with none carrying it, the claim needs a settled good roster read.
+  const rosterGood = rosterState === 'ready' || rosterState === 'empty';
+  const used = pageSection(doc, 'Used by', use.souls.length || rosterGood ? `${use.souls.length} soul${use.souls.length === 1 ? '' : 's'}` : '');
   const table = node('div', undefined, 'page-table'); table.setAttribute('role', 'table'); table.setAttribute('aria-label', `Souls using ${row.name}`);
   const head = node('div', undefined, 'page-table-row head used-row'); head.setAttribute('role', 'row');
   for (const label of ['Soul', 'Instances']) { const cell = node('span', label); cell.setAttribute('role', 'columnheader'); head.append(cell); }
   table.append(head);
-  if (!use.souls.length) table.append(node('p', 'No instance carries it yet.', 'page-note page-table-row'));
+  if (!use.souls.length) {
+    if (rosterGood) table.append(node('p', 'No instance carries it yet.', 'page-note page-table-row'));
+    else { const none = node('p', '—', 'page-note page-table-row used-unknown'); none.title = ROSTER_STALE_TITLE; none.setAttribute('aria-description', ROSTER_STALE_TITLE); none.dataset.rosterState = rosterState; table.append(none); }
+  }
   for (const soul of use.souls) {
     const carrying = list(instances).filter(i => i.agent === soul.name && i.agentsRoot === soul.agentsRoot && moduleRow(i, row.name));
     const behind = carrying.filter(i => moduleRow(i, row.name)?.status === 'moved').length;
     const line = typeof openSoul === 'function' ? node('button', undefined, 'page-table-row used-row') : node('div', undefined, 'page-table-row used-row');
     line.setAttribute('role', 'row');
-    if (line.tagName === 'BUTTON') { line.type = 'button'; line.addEventListener('click', () => openSoul(soul)); line.title = `Open ${soul.name}`; }
+    if (line.tagName === 'BUTTON') { line.type = 'button'; line.addEventListener('click', () => openSoul(soul)); line.title = `Open ${soul.name}`; line.dataset.focusKey = `used:${soul.name}:${soul.agentsRoot || ''}`; }
     const who = node('span', undefined, 'used-soul'); who.setAttribute('role', 'cell'); who.append(createSoulMark(doc, soul), node('span', soul.name, 'used-name'));
     const meta = node('span', `${carrying.length}${behind ? ` · ${behind} on an older version` : ''}`, `used-meta${behind ? ' warn' : ''}`); meta.setAttribute('role', 'cell');
     line.append(who, meta); table.append(line);
@@ -232,7 +284,12 @@ export function renderCapabilityPage(host, { row, status, instances, root, backL
   const names = memberNames(status), source = capabilitySource(row, names);
   const pkg = row.kind === 'package' ? list(status?.packages).find(p => p.id === row.package) : null;
   const origin = pageCard(doc, 'Comes from', { icon: row.kind === 'package' ? 'package' : 'repo' });
-  origin.card.append(pageFacts(doc, row.kind === 'package' ? [
+  if (catalogPending && row.kind !== 'package') {
+    // The catalog's facts (Latest, Path, Fingerprint, File) are not read yet: a facts-sized block, filled in place when they land.
+    const facts = node('div', undefined, 'page-facts-skeleton'); facts.setAttribute('aria-hidden', 'true'); facts.dataset.skeleton = 'facts';
+    for (let i = 0; i < 4; i++) facts.append(skeleton(doc, 'line'));
+    origin.card.append(facts);
+  } else origin.card.append(pageFacts(doc, row.kind === 'package' ? [
     ['Package', row.package], ['Pinned', [row.version, packageOrigin(pkg?.source)].filter(Boolean).join(' · ')],
     ['Commit', short(row.commit), row.commit], ['Fingerprint', fingerprint(pkg?.integrity || row.resolved?.from?.integrity), pkg?.integrity || row.resolved?.from?.integrity],
   ] : [
@@ -242,14 +299,14 @@ export function renderCapabilityPage(host, { row, status, instances, root, backL
     ...(row.private === true ? [['Owned', 'this repo\'s souls only']] : []),
   ]));
   // Kernel #217: its manifest file, as a web page when the repository has one, else its path.
-  if (row.file && text(row.file.path)) {
+  if (row.file && text(row.file.path) && !(catalogPending && row.kind !== 'package')) {
     const web = typeof row.file.url === 'string' && /^https:\/\//.test(row.file.url) ? row.file.url : null;
     const facts = pageFacts(doc, [['File', row.file.path, row.file.path, 'wrap']]), dd = facts.querySelector('dd');
     // A path breaks after its slashes, never inside a name.
     if (dd) { dd.replaceChildren(); row.file.path.split('/').forEach((part, i, all) => { dd.append(node('span', i < all.length - 1 ? `${part}/` : part, 'path-part')); if (i < all.length - 1) dd.append(doc.createElement('wbr')); }); }
     origin.card.append(facts);
     if (web && typeof openExternal === 'function') {
-      const open = node('button', 'Open file', 'act'); open.type = 'button'; open.title = web; open.dataset.verb = 'file';
+      const open = node('button', 'Open file', 'act'); open.type = 'button'; open.title = web; open.dataset.verb = 'file'; open.dataset.focusKey = 'file';
       open.addEventListener('click', () => openExternal(web)); origin.card.append(open);
     }
   }
@@ -264,7 +321,7 @@ export function renderCapabilityPage(host, { row, status, instances, root, backL
     }
     side.append(as.card);
   }
-  body.append(main, side); page.append(bar, body);
+  body.append(main, side); page.append(bar, noticeHost, body);
   host.append(page);
   return page;
 }

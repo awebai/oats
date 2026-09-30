@@ -29,6 +29,7 @@ that model.
 | Instance operating doc | `<home>/AGENTS.md` (generated) |
 | Instance skills | `<home>/.agents/skills/` |
 | Instance modules | `<home>/.oats/modules/<capability>/` (the copies this instance runs) |
+| Instance `oats` | `<home>/.oats/bin/oats` (a link to the kernel that last launched it) |
 | Instance record | `<home>/instance.json` (`modules`, `providers`, `workspace`, `teams`) |
 
 ## Soul anatomy
@@ -84,8 +85,8 @@ launch: { harness: claude, model: claude-opus-5-5 }   # optional (0.30): what th
 
 Schema: [`soul.schema.json`](soul.schema.json). Which teams a soul joins is the
 deployment's choice (`oats-local.yaml`, [workspaces.md](workspaces.md#teams)),
-and the backend, yolo and launch configuration are spawn-time host choices
-(`--backend`, `--yolo`, `--launch-config`, or a launch configuration in
+and yolo and the launch configuration are spawn-time host choices
+(`--yolo`, `--launch-config`, or a launch configuration in
 `oats-local.yaml`), not soul identity. The harness and model are a soul's
 *preference* at most (`launch:`), which each machine overrides and spawn flags
 (`--harness`, `--model`) win over.
@@ -122,10 +123,11 @@ full copy** of every capability the soul resolved to:
 <agents-root>/<soul>/instances/<instance>/
   AGENTS.md                        # generated: soul AGENTS.md + kernel/work-mode blocks + each module's inject
   CLAUDE.md → AGENTS.md
-  .agents/skills/                  # canonical skill tree — soul skills + <capability>/<skill>/ full copies
-    <capability>/<skill>/SKILL.md
+  .agents/skills/                  # canonical skill tree, flat: the soul's skills and every module's, full copies
+    <skill>/SKILL.md               # one level deep, where every harness discovers skills
   .claude/skills → ../.agents/skills
   .oats/modules/<capability>/      # the whole capability: oats.json, bin/, injects/, skills/ (hooks run from here)
+  .oats/bin/oats → <kernel>/bin/oats.mjs  # the kernel that last launched this home: first on the harness's PATH
   work/                            # worktree, checkout symlink, attached tree, or private directory
   TASK.md                          # briefing and task
   instance.json                    # provenance (below); `soulDir` = the soul directory hooks get as OATS_SOUL
@@ -193,7 +195,8 @@ bump affects only new spawns.
 OATS is a skill contributor, not a skill sandbox. The harness (pi, Claude Code,
 Codex) starts with cwd = the instance home and its **own** skill discovery
 intact: it sees, nearest first, the instance's `.agents/skills/` (soul skills
-and the copied capability skills), the repo's own `.agents/skills/` once it
+and the copied capability skills, all flat at `.agents/skills/<skill>/SKILL.md`,
+the one level deep Claude Code discovers through `.claude/skills`), the repo's own `.agents/skills/` once it
 works in `work/`, and whatever the operator keeps at machine level. All three
 are intended. Two *composed* skills with one name is a spawn error naming both
 capabilities (`E_SKILL_DUPLICATE`); a composed skill versus an ambient one is
@@ -243,7 +246,10 @@ it would bind, `providers` (the `--provider` map exactly as given) and
 the apply refuses with `E_DECISION_STALE` if a member
 moved in between. `--provider <cap> key=value` (repeatable; dotted keys nest)
 must name a capability the soul resolves (`E_CAPABILITY_MISSING` otherwise) and
-needs a workspace deployment. The full DTOs are in
+needs a workspace deployment. Spawn takes one soul and the flags it reads:
+another positional, or a flag it does not know, is `E_BAD_ARGS` naming the
+argument, before anything is created (a bare `key=value` is a provider
+setting given without `--provider <capability>`). The full DTOs are in
 [desktop-cli-api.md](desktop-cli-api.md#workspace-model-workspaceapi-2).
 
 Examples of spawn hooks:

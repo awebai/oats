@@ -35,33 +35,56 @@ variables point at are described in
 
 ## Backends
 
-`oats spawn --backend tmux|herdr` chooses the backend (default `tmux`). The
-backend binary must be installed on the execution host. The chosen session
-target is recorded twice: in `instance.json` and in an independent lifecycle
-receipt. Every session command checks that the two agree
-(`E_RUNTIME_AUTHORITY_MISMATCH` otherwise).
+tmux is the only session backend. `oats spawn --backend tmux` is accepted (it
+is the default); `tmux` must be installed on the execution host. A launched
+home keeps the session it recorded: `session start` and `restart` never
+re-read the defaults. The session target is recorded twice: in
+`instance.json` and in an independent lifecycle receipt. Every session command
+checks that the two agree (`E_RUNTIME_AUTHORITY_MISMATCH` otherwise).
 
 ### tmux
 
-Each instance is a window named after the instance in the tmux session
-`pi-agents` (override with `PI_AGENTS_TMUX_SESSION`). The receipt records the
+Each instance is a window named after the instance in a tmux session: the
+deployment's `session.tmuxSession`, else `OATS_TMUX_SESSION`, else
+`PI_AGENTS_TMUX_SESSION` (the pre-0.31 variable), else `oats-agents`. Before
+0.31 the default was `pi-agents`; a home launched then keeps the `pi-agents`
+session it recorded, and `oats status` reads each home on its recorded tmux
+socket and session, never the caller's `$TMUX` server: a caller outside the
+agents' tmux (ssh, cron, a plain terminal) sees the same liveness as `session
+inspect`. A recorded server that cannot be read gives `running: null` with
+`runtimeState: "unreachable"`. The environment variables are read when the spawn runs, and `oats
+inspect --json` reports the session a new spawn would open in as `session`
+(`{tmuxSession}`). A spawn refuses an instance name that is a live window in the
+session it would open in (`E_INSTANCE_NAME_TAKEN`); a live window of that name
+in another session, such as a `pi-agents` window after the default moved, does
+not block it. Session commands target each home's exact recorded window, so
+the two never mix. The receipt records the
 session, window and socket. The spawn result prints the attach command.
 
-### Herdr
+### Herdr (removed in 0.31.0)
 
-Each instance is a Herdr workspace with one pane. The receipt records the
-binary, socket, workspace id, pane id, terminal id and protocol. The terminal
-id distinguishes a replacement occupant of the same pane.
+OATS no longer supports Herdr. Everything that meets it refuses with
+`E_HERDR_REMOVED`, whose message starts `Herdr is no longer supported by OATS
+(removed in 0.31.0); tmux is the only session backend.` and says what to do:
 
-- `--herdr-socket <path>` uses an operator-managed Herdr server. OATS never
-  starts a different server when that socket cannot be inspected.
-- Without it, OATS uses `$XDG_CONFIG_HOME/herdr/sessions/oats/herdr.sock`
-  (default `~/.config/...`) and starts `herdr --session oats server` if no
-  server is running there.
-- The adapter speaks the Herdr socket API at an explicit protocol version,
-  with no negotiation. New sessions use protocol 20. A recorded session target
-  may carry protocol 20 or 22, and each call checks that the server's snapshot
-  reports the recorded protocol.
+- `oats spawn --backend herdr` or `--herdr-socket`, local or routed with
+  `--server` (refused before the server is contacted), and `oats server add
+  --herdr`: remove the flag, or use tmux.
+- A schedule's `backend: herdr` or a trigger's `spawn.backend: herdr`: the
+  message names the file and key; remove it, or use tmux. A stored local job
+  that names it is reported invalid and never runs.
+- `session inspect`, `attach`, `input`, `start`, `restart` and `instance stop`
+  on a home a Herdr-era kernel recorded (its `instance.json` records a
+  `sessionTarget` or `backend: "herdr"`, or its receipt records a session
+  target): retire it and spawn a new instance, which opens in tmux.
+- `oats retire` of such a home needs no Herdr: when no process works in the
+  home it proceeds as for an absent session; when one does, it refuses and
+  names the pids, so stop its Herdr pane first (for example `herdr --session
+  oats server stop`).
+
+`oats status` lists such a home with `running: null`, `runtimeState:
+"unsupported"` and the refusal as `runtimeError`. A server registration or
+saved route that records `herdrPath` still loads; the field is ignored.
 
 ## Lifecycle
 
@@ -77,8 +100,8 @@ id distinguishes a replacement occupant of the same pane.
 
 `session start` keeps the instance's identity, work tree and notes. It runs no
 spawn hooks and creates no new home. It runs the recorded launch recipe on the
-recorded tmux session or Herdr server; a `--no-launch` home starts on the
-default tmux server.
+recorded tmux session; a `--no-launch` home starts on the default tmux
+server.
 
 - `--model`, `--launch-config <name>|none`, `--harness` and `--yolo` /
   `--no-yolo` re-resolve the recipe against the home's recorded context and
@@ -112,18 +135,18 @@ oats session input --home /abs/home --text-file message.txt --json
 oats session attach --home /abs/home
 ```
 
-- **inspect** reports `backend`, `present` and `state`: the Herdr agent state
-  when available, `unknown` for a live harness, `shell` for a fallback shell,
+- **inspect** reports `backend`, `present` and `state`: `unknown` for a live
+  harness, `shell` for a fallback shell,
   `stopped` for an absent or dead terminal, or `not-launched`. An unavailable
   backend is an error (`E_SESSION_UNAVAILABLE`), never a stopped result.
 - **input** submits UTF-8 text (stdin or `--text-file`, at most 256 KiB, no
-  NUL) followed by Enter: bracketed paste in tmux, `pane run` in Herdr. The
-  text is never run by a shell. A fallback shell, a stopped session or a split
+  NUL) followed by Enter, as a bracketed paste. The text is never run by a
+  shell. A fallback shell, a stopped session or a split
   tmux window is refused. `submitted: true` means the terminal accepted the
   text, not that the agent processed it. Wake schedules and messaging
   capabilities use this command ([schedules.md](schedules.md)).
-- **attach** is interactive and takes no `--json`. It opens a Herdr terminal
-  viewer, or a temporary tmux session linked to the agent's window alone.
+- **attach** is interactive and takes no `--json`. It opens a temporary tmux
+  session linked to the agent's window alone.
   Closing the viewer leaves the agent running.
 
 ### Attachments

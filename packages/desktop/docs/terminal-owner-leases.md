@@ -1,6 +1,6 @@
 # Terminal owner leases (Desktop wire2)
 
-The terminal is still a viewer of the exact existing tmux/Herdr/remote source.
+The terminal is still a viewer of the exact existing tmux or remote source.
 This boundary protects Desktop-owned PTY resources, not every general HTTP/API
 operation as a per-window sandbox. Kernel lifecycle stays with the compatible
 installed CLI. Workspace-v2/catalog/editor/detach changes are not part of this fix.
@@ -63,12 +63,17 @@ this is an algorithmic-shape measurement, not a native latency benchmark.
 ## Private IPC and renderer lifecycle
 
 Invocations return `{terminalApi:2, ok:true, status, ...}` or a stable static
-`E_TERM_*` refusal. Raw native/CLI/filesystem errors are not forwarded. Write and
+`E_TERM_*` refusal (or `E_HERDR_REMOVED` from `term:open`). Raw native/CLI/filesystem errors are not forwarded. Write and
 resize remain one-way, zero-effect/no-throw on invalid, foreign or stale requests;
 there is no synchronous IPC or awaited keystroke round trip.
 
-- `term:open(spec)` admits exactly one existing backend shape, not owner/bin/env/
-  command authority. `term:close(handle)` is invoke, not an unleased send path.
+- `term:open(spec)` admits exactly one existing backend shape, a tmux session or
+  remote, not owner/bin/env/command authority. A spec carrying `sessionTarget`
+  (a Herdr target) is refused at admission with `E_HERDR_REMOVED` and the
+  kernel's stem, before any preparation or PTY. A remote target whose `session
+  inspect` reports a Herdr session (an older kernel) or refuses with
+  `E_HERDR_REMOVED` (0.31) is refused with that code at preflight, before any
+  attach. `term:close(handle)` is invoke, not an unleased send path.
 - `term:ready(handle)` acknowledges **after renderer data/exit listeners exist**.
   Early output is FIFO-buffered≤64KiB for≤5s inside the global slot budget; early
   exit also waits for this acknowledgment. Overflow/expiry rolls back only the
@@ -88,6 +93,52 @@ there is no synchronous IPC or awaited keystroke round trip.
   **terminal did not become ready; closed**. Neither is a healthy terminal or
   silently removed tab. Only confirmed explicit close disposes a pending view.
   Late completion must not steal a newer workspace/stage/selection or focus.
+
+## Remote reconnect (renderer)
+
+A remote tab reconnects in the renderer; the broker, bridge and event set are
+unchanged. `renderer/terminal-tab.mjs` keeps one state (connected, waiting,
+attempting, stopped) and one timer. A `term:exit` for a remote lease with
+`exitCode === 255`, no `reason` and no user close is a lost link. The tab keeps
+its xterm, sets `disableStdin`, and waits (1, 2, 4, 8, 15 s, then 30 s,
+against a wall-clock due time, so after a sleep one overdue attempt runs, not a
+burst). The next lease opens only after the old one is forgotten, that is on
+its confirmed (`cleanupPending: false`) exit. `term-lifecycle.mjs` `reopen`
+then acquires it through the same `desk.termOpen` path. It waits for any
+acquisition in flight and never runs after a close request, and a close during
+it detaches the late handle as `start` does. Per-lease data/exit listeners are
+replaced on each lease; the xterm wiring is installed once, and input and
+resize go to the current lease only.
+
+`E_TERM_REMOTE_UNREACHABLE` and `E_TERM_PREPARE_TIMEOUT` retry without limit.
+`E_TERM_REMOTE_NO_ANSWER` retries `NO_ANSWER_RETRIES` (3) times in a row, and
+the next one stops. An `E_TERM_REMOTE_UNREACHABLE` answer or a successful attach
+resets that count; a timeout neither resets nor counts. Any other refusal stops
+with its message and "Close this tab". So does a non-255 exit ("session ended")
+or a ready failure. `remote-target.mjs` `prepareRemoteTerm` codes the prepare's
+failures:
+
+- an `E_SSH` envelope whose `details.sshStarted` is `false` (ssh could not be
+  run on this computer) → `E_TERM_REMOTE_NO_SSH`, final: nothing reached the
+  host, so a retry cannot help;
+- any other `E_SSH` envelope (the CLI's wrapping of ssh's own failure) →
+  `E_TERM_REMOTE_UNREACHABLE`;
+- the inspect killed at its 20 s exec deadline → `E_TERM_PREPARE_TIMEOUT`: a
+  stalled link outlives ssh's keepalives (about 45 s);
+- a nonzero exit (255 included) or a death by the CLI's own signal, with no
+  refusal envelope → `E_TERM_REMOTE_NO_ANSWER`. ssh's own failures arrive as `E_SSH`, so this is
+  more likely the local CLI failing than the link;
+- `ok: true` with `present !== true` → `E_TERM_REMOTE_GONE`;
+- any other refusal keeps the host's code, which the broker reports as
+  `E_TERM_OPEN_FAILED` unless the contract has it.
+
+The captured answers are in `test/fixtures/remote-inspect/`. The strip overlays
+the pane's top rows, so geometry never changes. The countdown is outside the
+pane's visually hidden `role="status"` region, which is written only on a state
+change. While the strip shows, the tab's key handler leaves Tab and Shift+Tab to
+the browser (xterm would otherwise keep them): Tab moves focus from the inert
+terminal to Reconnect now, and Shift+Tab leaves the pane backwards. Connected,
+Tab goes to the agent as before.
 
 The main-only `rekey(resource,newOwner)` primitive rotates lease/index/output
 custody atomically and is exercised only by tests. **No escrow/staging, transfer
@@ -110,7 +161,7 @@ original handle/operation, with focus gated by current explicit intent.
 Tests use real shared broker/handler/bridge/adapter/renderer code with inert owners,
 PTYs, clocks, CLI/FS recorders and DOM. The main composition/window-registration
 and quit wiring are source-exercised under injected effects. These tests do not
-need Electron/CDP/tmux/SSH/Herdr sessions, native signals, live models or an operator
+need Electron/CDP/tmux/SSH sessions, native signals, live models or an operator
 backend. The mixed root `test/desktop-tmux-target.test.mjs` contains live native
 cases and must not be loaded for inert Desktop qualification: a test-name filter
 is not an isolation boundary. Computed style/DOM tests and incidental native test

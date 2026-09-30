@@ -32,7 +32,7 @@ export const automationsCSS = `
 .oats-view .auto-tabs button { flex:none; display:inline-flex; align-items:center; gap:6px; height:auto; min-height:0; padding:0; border:0; border-radius:0; background:none; color:var(--nav-fg); font:500 13px var(--sans,system-ui); cursor:pointer; }
 .oats-view .auto-tabs button:hover { color:var(--fg); }
 .oats-view .auto-tabs button[aria-selected=true] { color:var(--fg); font-weight:650; box-shadow:inset 0 -2px 0 var(--live); }
-.oats-view .auto-tabs button:focus-visible { outline:2px solid var(--accent); outline-offset:-4px; border-radius:6px; }
+.oats-view .auto-tabs button:focus-visible { background:var(--sel); border-radius:6px; padding:0 6px; margin:0 -6px; } /* layout-neutral inset */
 .auto-tab-count { color:var(--muted); font:10.5px var(--mono,monospace); }
 .auto-tab-count:empty { display:none; }
 .auto-spacer { flex:1; }
@@ -56,7 +56,7 @@ export const automationsCSS = `
 .auto-search { display:flex; align-items:center; gap:7px; flex:0 1 240px; min-width:0; height:28px; padding:0 10px; box-sizing:border-box; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--muted); }
 .auto-search .shell-icon { flex:none; }
 .oats-view .auto-search input { flex:1; min-width:0; height:100%; min-height:0; padding:0; border:0; background:transparent; color:var(--fg); font-size:12px; outline:none; }
-.auto-search:focus-within { outline:2px solid var(--accent); outline-offset:1px; }
+.auto-search:focus-within { border-color:var(--accent); }
 .auto-group { display:flex; flex-direction:column; gap:8px; margin:0 0 20px; }
 .auto-group-title { display:flex; align-items:baseline; gap:8px; margin:0; padding:0 2px; font-size:12.5px; font-weight:650; color:var(--fg); }
 .auto-group-title.warn { color:var(--warn); }
@@ -89,7 +89,8 @@ export const automationsCSS = `
 .oats-view button.auto-switch::after { content:""; position:absolute; top:2px; left:2px; width:12px; height:12px; border-radius:50%; background:var(--muted); }
 .oats-view button.auto-switch[aria-checked=true] { border-color:var(--primary-bg); background:var(--primary-bg); }
 .oats-view button.auto-switch[aria-checked=true]::after { left:14px; background:var(--primary-fg); }
-.oats-view button.auto-switch:focus-visible, .auto-menu summary:focus-visible, .oats-view .auto-row button.auto-open:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+/* Keyboard focus (theme.css rule 2): the switch keeps its own pair under the global edge; the row link tints. */
+.oats-view .auto-row button.auto-open:focus-visible { background:var(--sel); border-radius:6px; padding:2px 6px; margin:0 -6px; }
 .auto-menu { position:relative; justify-self:end; }
 .auto-menu summary { display:grid; place-items:center; width:28px; height:28px; border-radius:6px; color:var(--muted); cursor:pointer; list-style:none; }
 .auto-menu summary::-webkit-details-marker { display:none; }
@@ -273,7 +274,9 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     const menu = node('details', undefined, 'auto-menu'), summary = node('summary');
     summary.append(iconElement(doc, 'more', { size: 15 })); summary.setAttribute('aria-label', `Actions for ${row.id}`);
     const items = node('div', undefined, 'auto-menu-list');
-    const item = (label, verb, enabled = true) => { const b = node('button', label); b.type = 'button'; b.dataset.verb = verb; b.disabled = busy || !enabled; b.addEventListener('click', () => { menu.open = false; if (verb === 'open') openRow(row.id); else if (verb === 'file') openFile?.(row); else void perform(verb, row); }); items.append(b); };
+    // Closing the menu from inside it hands focus back to its summary, never to <body> (spec F).
+    const closeMenu = () => { const inside = menu.contains(doc.activeElement); menu.open = false; if (inside && summary.isConnected) summary.focus(); };
+    const item = (label, verb, enabled = true) => { const b = node('button', label); b.type = 'button'; b.dataset.verb = verb; b.disabled = busy || !enabled; b.addEventListener('click', () => { closeMenu(); if (verb === 'open') openRow(row.id); else if (verb === 'file') openFile?.(row); else void perform(verb, row); }); items.append(b); };
     item('Open', 'open');
     if (supports('test')) item('Test', 'test');
     if (row.kind === 'schedule' && row.runsHere && supports('run')) item('Run now', 'run');
@@ -281,8 +284,11 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
     if (canOpen(row)) item('Open file', 'file');
     for (const extra of rowActions ? rowActions(row) : []) {
       const b = node('button', extra.label); b.type = 'button'; b.dataset.verb = extra.verb || ''; b.disabled = busy || extra.enabled === false;
-      b.addEventListener('click', () => { menu.open = false; extra.run(); }); items.append(b);
+      b.addEventListener('click', () => { closeMenu(); extra.run(); }); items.append(b);
     }
+    // Escape closes it (back on its summary); Tab out of it closes it too.
+    menu.addEventListener('keydown', e => { if (e.key === 'Escape' && menu.open && !e.defaultPrevented) { e.preventDefault(); e.stopPropagation(); closeMenu(); } });
+    menu.addEventListener('focusout', e => { if (menu.open && e.relatedTarget && !menu.contains(e.relatedTarget)) menu.open = false; });
     menu.append(summary, items); return menu;
   }
   function rowEl(row) {
@@ -301,6 +307,10 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
 
   // ── list ──
   function renderList() {
+    // A re-render (after an action re-reads the list) keeps keyboard focus on the same row's
+    // same control, never dropping it to <body> (spec F audit).
+    const was = doc.activeElement, wasRow = listHost.contains(was) ? was.closest('.auto-row')?.dataset.id : null;
+    const part = !wasRow ? null : was.closest('.auto-menu') ? '.auto-menu summary' : was.classList.contains('auto-switch') ? '.auto-switch' : '.auto-open';
     notices.replaceChildren(); listHost.replaceChildren();
     const rows = data?.rows || [];
     toolbar.hidden = !data;
@@ -329,6 +339,7 @@ export function createAutomationsView(host, { kind, read, act = null, status = n
         table.append(hr, ...group.rows.map(rowEl)); section.append(head, table); listHost.append(section);
       }
     }
+    if (wasRow && !listHost.contains(doc.activeElement)) [...listHost.querySelectorAll('.auto-row')].find(r => r.dataset.id === wasRow)?.querySelector(part)?.focus({ preventScroll: true });
     const foot = node('p', undefined, 'auto-foot');
     const snap = data.snapshot ? relativeTime(data.snapshot.takenAt, now()) : null;
     foot.textContent = [data.snapshot ? `Workspace ${title.toLowerCase()} as of the last sync${snap ? ` (${snap.label})` : ''}` : 'Workspace items appear after the next sync',

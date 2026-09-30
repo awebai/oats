@@ -54,7 +54,7 @@ members:                                   # repo refs, NO @revision (E_WORKSPAC
   - git:github.com/acme/tools              # a member that ALSO publishes a package (see below)
 
 packages:                                  # the ONLY versioned things
-  oats.framework: v1.4.0                   # bare version → resolves through the official catalog
+  oats.framework: v1.4.1                   # bare version → resolves through the official catalog
   oats.okf: v4.0.5
   acme.tools: git:github.com/acme/tools@v0.4.0   # outside the catalog → git:<repo>@<tag|OID>; still a package
 
@@ -225,6 +225,11 @@ A repository may be a **member** (it completed the handshake; its `souls/*` and
 - Discovery reports a member's `oats-package/` as `publishes: { package,
   version }` on the member row (informational) and does **not** list the
   package's capabilities as member capabilities.
+
+A publisher that also keeps copies of its package's capabilities (a mirror, a
+fixture) keeps them outside `capabilities/`, or discovery lists them as member
+capabilities too: the same capability offered twice, once at latest state. The
+`oats` repository keeps its mirrors of the official packages in `mirrors/`.
 
 So the framework's own souls say `oats.okf: { from: package }` even though
 `oats-okf` is a member of the OATS workspace, and every package repo carries a

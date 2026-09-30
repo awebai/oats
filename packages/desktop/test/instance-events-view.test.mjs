@@ -122,8 +122,18 @@ test('history/claims are plain attributed facts; old-incarnation retirement neve
   assert.match(u.host.textContent, /provider.a: claim cleared/); assert.match(u.summary.textContent, /Reported waiting: provider.b/);
   assert.match(u.host.textContent, /<img src=x onerror=PRIVATE>/); assert.equal(u.one('img'), null); assert.equal(u.one('a'), null);
 });
-test('remote and unqualified selections remain observation-only; no CLI read or local fallback', async t => {
-  const u = setup(t); u.state.target.selector.server = 'remote'; u.controller.sync(); await u.controller.read(); assert.equal(u.calls.length, 0);
+test('a remote selection is read on its own machine ("Reading from <server>…"); its host refusal shows the headline, code and message', async t => {
+  const gate = deferred(), u = setup(t, () => gate.promise);
+  u.state.target = { ...u.state.target, selector: { ...target.selector, server: 'build' }, serverLabel: 'Build box' }; u.controller.sync();
+  const pending = u.controller.read();
+  assert.equal(u.calls.length, 1, 'the server is the gate'); assert.deepEqual(JSON.parse(u.calls[0].opts.body).selector, { ...target.selector, server: 'build' });
+  assert.equal(u.one('.events-status').textContent, 'Reading from Build box…');
+  gate.resolve(eventsFailure('E_SSH', null, { code: 'E_SSH', message: "Couldn't reach Build box.", detail: 'ssh: connect to host build-host port 22: Connection refused', remote: true }));
+  await pending;
+  assert.equal(u.one('.events-status').textContent, "Couldn't reach Build box. (E_SSH: ssh: connect to host build-host port 22: Connection refused)");
+});
+test('unqualified selections remain observation-only; no CLI read or local fallback', async t => {
+  const u = setup(t);
   u.state.target = { ...target, home: '', selector: target.selector }; u.controller.sync(); await u.controller.read(); assert.equal(u.calls.length, 0);
 });
 test('foreign workspace/root/home/birth replies cannot render or become provenance links', async t => {

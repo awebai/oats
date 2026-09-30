@@ -27,6 +27,16 @@ test('preload chunks UTF8 at codepoint boundaries, keeps Ctrl bytes; caller over
   assert.equal(bridge.termWrite(1, 'bad').ok, false); assert.equal(calls.length, 0);
 });
 
+test('preload forwards a term:open E_HERDR_REMOVED refusal with its code and message; any other non-terminal code stays a transport failure', async () => {
+  const message = 'Herdr is no longer supported by OATS (removed in 0.31.0); tmux is the only session backend.';
+  for (const [code, expected] of [['E_HERDR_REMOVED', 'E_HERDR_REMOVED'], ['E_HERDR_OTHER', 'E_TERM_TRANSPORT'], ['E_SECRET', 'E_TERM_TRANSPORT']]) {
+    const ipc = { send() {}, invoke: async () => ({ terminalApi: 2, ok: false, code, message }) };
+    const result = await createTerminalBridge(ipc, {}).termOpen({ sessionTarget: { backend: 'herdr' } });
+    assert.equal(result.code, expected, code);
+    if (expected === code) assert.equal(result.message, message);
+  }
+});
+
 test('preload resolving results, copied handles and lease channels do not implement a mutable id->lease alias', async () => {
   const ipc = new EventEmitter(), calls = [];
   ipc.send = (...args) => calls.push(args);
@@ -51,6 +61,29 @@ test('owned command promise does not settle on AbortError until the child close 
   assert.equal(settled, false); child.emit('close', 1); await work; assert.equal(settled, true);
 });
 
+test('a remote Herdr session never reaches a PTY: an older kernel inspection and a 0.31 refusal are E_HERDR_REMOVED', async () => {
+  for (const stdout of ['{"schemaVersion":1,"ok":true,"result":{"backend":"herdr","present":true,"state":"shell","terminalId":"term_abc"}}',
+    '{"schemaVersion":1,"ok":false,"error":{"code":"E_HERDR_REMOVED","message":"E_HERDR_REMOVED: removed"}}']) {
+    const commands = [], ptys = [];
+    const io = createTerminalIo({ base: () => 'http://127.0.0.1:1111', context: () => 'epoch', attachmentDirectory: () => '/memory/files',
+      spawnPty: (...args) => { ptys.push(args); return {}; }, execFileSync: () => assert.fail('not local'),
+      fetch: async () => response(cli), run: async (bin, args) => { commands.push(args); return { stdout }; },
+    });
+    await assert.rejects(io.prepare(io.admit(structuredClone(spec)).spec, { current: () => true }), error => error.code === 'E_HERDR_REMOVED');
+    assert.deepEqual(commands.map(args => args[1]), ['inspect'], 'inspected, never attached');
+    assert.deepEqual(ptys, []);
+  }
+});
+
+test('a failed command keeps its bounded stdout on the rejection, still only after the child close', async () => {
+  const child = new EventEmitter(); let callback, settled = false;
+  const work = runTerminalCommand('/memory/oats', ['session', 'inspect'], { timeout: 20 }, (_bin, _args, _opts, cb) => { callback = cb; return child; });
+  work.catch(() => {}).finally(() => { settled = true; });
+  callback(Object.assign(new Error('Command failed'), { code: 1 }), '{"ok":false}', 'private stderr'); await flush();
+  assert.equal(settled, false); child.emit('close', 1);
+  await assert.rejects(work, error => error.code === 1 && error.stdout === '{"ok":false}' && error.stderr === undefined);
+});
+
 test('remote preparation uses fixed CLI arguments, rechecks identity, and never creates from stale metadata', async () => {
   let reads = 0; const commands = [];
   const io = createTerminalIo({ base: () => 'http://127.0.0.1:1111', context: () => 'epoch', attachmentDirectory: () => '/memory/files',
@@ -60,7 +93,7 @@ test('remote preparation uses fixed CLI arguments, rechecks identity, and never 
   });
   await assert.rejects(io.prepare(spec, { current: () => true }), error => error.code === 'E_TERM_CONTEXT_CHANGED');
   assert.equal(commands.length, 1); assert.equal(commands[0].bin, cli.bin);
-  assert.deepEqual(commands[0].args, ['session', 'inspect', '--server', 'peer', '--instance', 'one', '--home', '/memory/home', '--json']);
+  assert.deepEqual(commands[0].args, ['session', 'inspect', '--server', 'peer', '--home', '/memory/home', '--json']);
   assert.equal(commands[0].options.shell, false); assert.equal(commands[0].options.timeout, 20000);
 });
 

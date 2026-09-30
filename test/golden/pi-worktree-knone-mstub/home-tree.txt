@@ -1,11 +1,12 @@
 .agents/
 .agents/skills/
-.agents/skills/golden.messaging/
-.agents/skills/golden.messaging/golden-messaging/
-.agents/skills/golden.messaging/golden-messaging/SKILL.md
+.agents/skills/golden-messaging/
+.agents/skills/golden-messaging/SKILL.md
 .claude/
 .claude/skills -> ../.agents/skills
 .oats/
+.oats/bin/
+.oats/bin/oats -> <kernel>/bin/oats.mjs
 .oats/modules/
 .oats/modules/golden.messaging/
 .oats/modules/golden.messaging/hooks/

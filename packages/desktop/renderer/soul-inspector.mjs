@@ -1,6 +1,21 @@
 /** On-demand kernel inspection, read-only: a v2 soul is edited in its
  * repository (soul-repository.mjs), never in place. Roster polling never
- * rebuilds the selected inspector. */
+ * rebuilds the selected inspector.
+ *
+ * Loading (desktop/loading-states): the header and actions paint at once for a
+ * new subject; the body is owned by the shared data-state controller
+ * (loading.mjs): detail-section skeletons after 150ms, "Loading soul…" /
+ * "Loading instance…" on the status line, then the content. A Refresh of the
+ * SAME subject never runs frame(): head, actions, readiness and content stay
+ * (and stay interactive), "Refreshing…" joins the head after 400ms, and the
+ * content is repainted in place with focus and scroll restored — or not at all
+ * when the inspection is unchanged. A failed refresh with content goes stale
+ * ("Couldn't refresh soul · observed <age>" + Retry under the head); a failure
+ * with no content shows the failed block where the skeleton stood. On the soul
+ * page "Teams here" is created in frame(), so its read runs in parallel with
+ * `inspect` instead of after it. Focus across a repaint: actionable controls carry
+ * `data-focus-key` and are re-found by key only (loading.mjs captureFocusState);
+ * a control that vanished hands focus to Refresh. */
 import { harnessOf } from './harness-names.mjs';
 import { postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
 import { runtimeState } from './instance-presentation.mjs';
@@ -16,12 +31,15 @@ import { ageText } from './age-text.mjs';
 import { pageBar, pageCard, pageSection, capabilityIcon, compositionEntries, coreWhy, desktopFacts } from './capability-page.mjs';
 import { layerLabel } from './workspace-catalog.mjs';
 import { shownLaunch, launchHarnessName, launchModelText, launchFromText, launchAtText, declaredText, preferenceText, declaredDiffers } from './launch-view.mjs';
+import { createDataState, skeletonBlock, skeleton, captureFocusState } from './loading.mjs';
 
 
 const HARNESS_NAMES = { pi: 'Pi', claude: 'Claude Code', codex: 'Codex' };
 const harnessName = value => HARNESS_NAMES[value] || value;
 const WORK_TEXT = { worktree: 'works in its own worktree', checkout: 'works in the repo checkout', attached: 'attaches to an owning instance' };
 const record = v => !!v && typeof v === 'object' && !Array.isArray(v);
+/** Why a stale inspector's mutations wait (the sidebar roster's rule, instance-tree.mjs ROSTER_STALE_TITLE). */
+export const INSPECTION_STALE_TITLE = 'Unavailable: inspection is not current';
 /** What a core capability does for this soul, from its own declarations and teams. */
 function coreDetail(slot, declared, teams, mapped) {
   if (slot === 'knowledge' && record(declared.knowledge)) {
@@ -58,6 +76,22 @@ ${soulTeamsHereCSS}
 .soul-inspector .inspector-summary { padding:0 14px; }
 .soul-inspector .inspector-summary .inspector-content { padding:0; }
 .soul-inspector > .inspector-status { padding:0 14px; }
+/* Loading placement (desktop/loading-states): "Refreshing…" sits before the Refresh control
+   in the head; the stale line has its own host right under the head (page: above the content).
+   The primitive's own classes are styled by loading.css. */
+.inspector-refreshing { display:inline-flex; align-items:center; min-width:0; }
+.inspector-refreshing:empty { display:none; }
+.inspector-notice:empty { display:none; }
+.soul-inspector > .inspector-notice { padding:10px 14px 0; }
+.soul-page .inspector-notice { margin:0; }
+.soul-inspector .inspector-content .skeleton-detail-sections { padding-top:4px; }
+.soul-page .inspector-main .skeleton-detail-sections { gap:22px; }
+.soul-page .inspector-main .skeleton-detail-section { margin:0; }
+.soul-page .inspector-main .skeleton-detail-section .skeleton-block { --skeleton-block-h:150px; }
+/* The side column's card skeleton: a page-card at its size with a title line and a body block. */
+.skeleton-page-card { display:flex; flex-direction:column; gap:10px; min-width:0; padding:12px 14px; box-sizing:border-box; background:var(--surface); border:1px solid var(--border); border-radius:10px; }
+.skeleton-page-card .skeleton-title { height:11px; width:40%; }
+.skeleton-page-card .skeleton-block { height:56px; width:100%; border-radius:8px; }
 .oats-view .soul-inspector button.primary:not(:disabled) { background:var(--primary-bg); color:var(--primary-fg); border-color:var(--primary-bg); }
 /* The soul page (Workspace v4 W4): the page bar in place of the Workspace
    tabs, then identity, core capabilities and the composition table beside a
@@ -76,7 +110,6 @@ ${soulTeamsHereCSS}
 .soul-page .inspector-head h2 { flex:none; margin:0; font-size:20px; font-weight:700; letter-spacing:-.01em; line-height:1.3; }
 .soul-page .inspector-head .inspector-lede { margin:0; color:var(--muted); font-size:13px; line-height:1.45; }
 .soul-page .page-facts-row:empty { display:none; }
-.soul-page .page-main > .inspector-status:empty { display:none; }
 .soul-page .inspector-main { display:flex; flex-direction:column; gap:22px; padding:0; }
 .soul-page .inspector-main:empty { display:none; }
 .soul-page .soul-page-side { display:flex; flex-direction:column; gap:14px; min-width:0; }
@@ -86,7 +119,6 @@ ${soulTeamsHereCSS}
 .core-card { display:flex; flex-direction:column; align-items:stretch; gap:8px; min-width:0; padding:14px; box-sizing:border-box; background:var(--surface); border:1px solid var(--border); border-radius:10px; color:var(--fg); text-align:left; font-size:12px; font-weight:400; }
 .oats-view .soul-page button.core-card { height:auto; min-height:0; font:inherit; font-size:12px; cursor:pointer; }
 .oats-view .soul-page button.core-card:hover { border-color:var(--sel-border); }
-.oats-view .soul-page button.core-card:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .core-slot { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:11px; font-weight:650; letter-spacing:.05em; text-transform:uppercase; }
 .core-slot-icon { display:grid; place-items:center; width:26px; height:26px; border-radius:7px; background:var(--bg); color:var(--fg); flex:none; }
 .core-id { display:flex; align-items:center; gap:6px; min-width:0; color:var(--fg); font:650 13px var(--mono,monospace); }
@@ -105,7 +137,7 @@ ${soulTeamsHereCSS}
 .knowledge-role.owns { color:var(--accent); }
 .oats-view .soul-page button.inspector-instance { display:flex; align-items:center; gap:8px; width:100%; min-height:28px; height:auto; margin:0; padding:0 4px; box-sizing:border-box; border:0; border-radius:6px; background:var(--surface); color:var(--fg); text-align:left; font:inherit; font-size:12.5px; font-weight:500; white-space:nowrap; }
 .oats-view .soul-page button.inspector-instance:hover:not(:disabled) { background:var(--surface-2); color:var(--fg); }
-.oats-view .soul-page button.inspector-instance:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+.oats-view .soul-page button.inspector-instance:focus-visible { background:var(--sel); }
 .soul-page .instance-dot { width:7px; height:7px; border-radius:50%; box-sizing:border-box; border:1.5px solid var(--muted); flex:none; }
 .soul-page .instance-dot.running { border-color:var(--live); background:var(--live); }
 .soul-page .instance-name { min-width:0; overflow:hidden; text-overflow:ellipsis; }
@@ -127,8 +159,12 @@ ${soulTeamsHereCSS}
 .inspector-instance { display:block; width:100%; min-height:56px; height:auto; margin:6px 0; text-align:left; overflow-wrap:anywhere; white-space:normal; }
 .inspector-cap h4 { margin:0 0 7px; font-size:14px; }
 .inspector-actions { display:flex; gap:8px; flex-wrap:wrap; margin:10px 0; }
-.inspector-status { min-height:1.5em; font-size:13px; color:var(--muted); white-space:pre-wrap; }
-.inspector-status:empty { min-height:0; margin:0; }
+/* The status line reserves its one line while the inspector shows a subject (no :empty
+   collapse, on the page too): it reads "Loading soul…" while pending, empties when the data
+   lands, and speaks again on a failure — collapsing on empty would move the content up by a
+   line exactly when the data arrives, the shift desktop/loading-states forbids. The line is
+   gone with the whole frame when nothing is selected, so an empty inspector reserves nothing. */
+.inspector-status { min-height:1.5em; margin:0; font-size:13px; color:var(--muted); white-space:pre-wrap; }
 .inspector-status.error { color:var(--danger); }
 /* F7: cards and compact lists (the spawn modal / context panel language); tokens only. */
 .inspector-content h3.inspector-section { color:var(--muted); }
@@ -162,30 +198,81 @@ ${soulTeamsHereCSS}
 .inspector-teams-lede { margin:0; }
 .inspector-disclosure { margin-top:14px; }
 .inspector-spawned { display:flex; align-items:center; gap:12px; justify-content:space-between; }
+/* Narrow: only while the side inspector column is shown does it stack under the list, the two scrolling
+   together. Otherwise the Workspace keeps its one fixed column (spec G): the tab row and top controls stay
+   outside the one content scroller at every width. */
 @container(max-width:700px) {
- .souls-body, .souls-body.inspecting { display:block; overflow:auto; }
- .workspace-main { height:auto; }
- .workspace-main > .souls-grid, .workspace-main > .workspace-discovery { flex:none; overflow:visible; }
+ .souls-body.inspecting { display:block; overflow:auto; }
+ .souls-body.inspecting .workspace-main { height:auto; }
+ .souls-body.inspecting .workspace-main > .souls-grid, .souls-body.inspecting .workspace-main > .workspace-discovery { flex:none; overflow:visible; }
  .soul-inspector { width:100%; max-width:none; overflow:visible; border-left:0; border-top:1px solid var(--border); }
 }
 `;
 
 /** presentation is an optional host lease. Presence belongs to this controller;
  * effective visibility/collapse belongs to the host, not request completions. */
-export function createSoulInspector(container, { ctx, presentation, openSoul = null, layout = 'sidebar', backLabel = 'Souls', openInstance = null, capabilityTable = null, openCapability = null, launch, schedule, files, canFiles = () => false, canLaunch = () => true, spawnRefusal = () => null, launchReason = () => 'Requires a compatible installed OATS CLI.', available = () => true, instances = () => [], workspace = () => null, closed }) {
+export function createSoulInspector(container, { ctx, presentation, openSoul = null, layout = 'sidebar', backLabel = 'Souls', openInstance = null, capabilityTable = null, openCapability = null, launch, schedule, files, canFiles = () => false, canLaunch = () => true, spawnRefusal = () => null, launchReason = () => 'Requires a compatible installed OATS CLI.', available = () => true, instances = () => [], instancesState = () => 'ready', workspace = () => null, closed, clock = {} }) {
   const doc = container.ownerDocument;
-  let alive = true, serial = 0, operationSerial = 0, selectionGen = null, selection, data, teamsPanel = null, teamsHere = null;
+  // `serial` is the latest read (a Refresh bumps it: a superseded inspection paints nothing); `subject` is
+  // the shown subject (bumped by a new selection or reset only): the frame's and the content's controls
+  // stay valid across a refresh of the same subject, which no longer rebuilds them.
+  let alive = true, serial = 0, subject = 0, operationSerial = 0, selectionGen = null, selection, data, teamsPanel = null, teamsHere = null;
+  // The loading controller of the shown subject (loading.mjs), and the signature of what the content paints.
+  let loading = null, painted = null;
+  // The controller's clock (tests inject one); createDataState's defaults apply on undefined.
+  const timers = { now: clock.now, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout };
   const pendingOperations = new WeakMap();
   const node = (tag, text, cls) => {
     const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el;
   };
   const button = (text, run) => {
-    const b = node('button', text, 'act'); b.type = 'button'; b.addEventListener('click', run); return b;
+    const b = node('button', text, 'act'); b.type = 'button';
+    // aria-disabled (the stale mark) blocks the activation without dropping focus.
+    if (typeof run === 'function') b.addEventListener('click', event => { if (b.getAttribute('aria-disabled') !== 'true') run(event); });
+    return b;
   };
   const mutationButton = (text, run) => { const control = button(text, run); control.dataset.mutate = '1'; control.disabled = !available(); return control; };
+  // Stale (the last inspection failed, the content kept): mutations that act on the subject wait for a good read —
+  // the roster's rule (ROSTER_STALE_TITLE), with an accessible reason; Launch, Schedule and Files come from the roster and stay.
+  // `settled`, not `state`: a Retry or Refresh in flight is `refreshing` while the content is still the stale observation.
+  const stale = () => loading?.settled === 'stale';
+  const markStale = control => {
+    if (stale()) { control.setAttribute('aria-disabled', 'true'); control.title = INSPECTION_STALE_TITLE; control.setAttribute('aria-description', INSPECTION_STALE_TITLE); }
+    else if (control.getAttribute('aria-description') === INSPECTION_STALE_TITLE) { control.removeAttribute('aria-disabled'); control.removeAttribute('title'); control.removeAttribute('aria-description'); }
+  };
   const request = (body, query = wsQuery()) => postJson(ctx, `/api/capabilities${query}`, body);
   const valid = (id, gen) => alive && id === serial && gen === workspaceGeneration();
-  let status, content, summary, readiness, headActions = null, facts$ = null, side = null;
+  const ownsSubject = (id, gen) => id === subject && valid(serial, gen);
+  let status, content, summary, readiness, headActions = null, facts$ = null, side = null, notice = null;
+  // The Refresh control (focus fallback when a repaint drops the focused control) and the
+  // roster-derived block's host and signature (repainted on every show(), kept when unchanged).
+  let refreshControl = null, rosterColumn = null, rosterSignature = null;
+  /** The subject's identity: a soul by name, agents root and server; an instance by its home. */
+  const subjectKey = sel => sel?.instance || sel?.selector?.home ? `home:${sel.instance?.home ?? sel.selector?.home ?? ''}|${sel.instance?.server ?? ''}`
+    : sel?.agent ? `soul:${sel.agent.name}|${sel.agent.agentsRoot ?? ''}|${sel.agent.server ?? ''}` : JSON.stringify(sel?.selector ?? null);
+  const noun = () => selection?.agent ? 'soul' : 'instance';
+  /** One skeleton of the final content's shape: the sidebar's three sections; the page's two, with a card beside. */
+  const contentSkeleton = () => skeletonBlock(doc, 'detail-section', { count: layout === 'page' ? 2 : 3 });
+  function sideSkeleton() {
+    const card = node('div', undefined, 'skeleton-item skeleton-page-card'); card.setAttribute('aria-hidden', 'true'); card.dataset.skeleton = 'page-card';
+    const title = skeleton(doc, 'line'); title.classList.add('skeleton-title');
+    const block = skeleton(doc, 'line'); block.classList.add('skeleton-block');
+    card.append(title, block); return card;
+  }
+  /** The subject's controllers: the content's (status, indicator, notice, Retry) and, on the page, the side column's skeleton. */
+  function createLoading(indicatorHost) {
+    const main = createDataState({ doc, noun: noun(), region: content, skeleton: contentSkeleton, status, indicatorHost, noticeHost: notice,
+      onRetry: () => { void show(selection, { user: true }); }, ...timers });
+    const aside = side ? createDataState({ doc, noun: noun(), region: side, skeleton: sideSkeleton, noticeHost: null, ...timers }) : null;
+    return {
+      get state() { return main.state; }, get settled() { return main.settled; }, get hasData() { return main.hasData; }, get busy() { return main.busy; },
+      begin(o) { const first = !main.hasData && main.state !== 'failed'; main.begin(o); if (first) aside?.begin(o); },
+      succeed(o) { main.succeed(o); aside?.succeed(); },
+      fail(e) { main.fail(e); aside?.reset(); },
+      bindRefresh: main.bindRefresh, touch: main.touch, say: main.say,
+      dispose() { main.dispose(); aside?.dispose(); },
+    };
+  }
   function syncReadiness() {
     const w = workspace();
     const ref = selection?.instance;
@@ -194,26 +281,35 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     readiness?.update({ active: !!selection && selectionGen === workspaceGeneration(), workspace: w, selector, cli: cliStatus(), identity: ref?.createdAt });
   }
   function message(text, error = false) {
-    if (!status) return; status.textContent = text; status.classList.toggle('error', error);
+    if (!status) return;
+    // Through the controller when it exists, so its own announcements stay in sync (loading.mjs say()).
+    if (loading) loading.say(text); else status.textContent = text;
+    status.classList.toggle('error', error);
   }
   function frame(title) {
     container.hidden = false;
     if (presentation) presentation.setPresent(true);
     else if (layout !== 'page') container.parentElement?.classList.add('inspecting'); // the page replaces the list; no side column
-    readiness?.dispose(); readiness = null; container.replaceChildren();
+    subject++; readiness?.dispose(); readiness = null; loading?.dispose(); loading = null; painted = null; teamsHere?.dispose(); teamsHere = null;
+    container.replaceChildren();
     const head = node('div', undefined, 'inspector-head');
     container.classList.toggle('soul-page', layout === 'page');
     const heading = node('h2', title); heading.title = title;
     status = node('p', '', 'inspector-status'); status.setAttribute('role', 'status');
     content = node('div', undefined, 'inspector-content inspector-main');
+    notice = node('div', undefined, 'inspector-notice');
+    // "Refreshing…" lands here, beside the Refresh control (loading.mjs owns its 400ms).
+    const refreshing = node('span', undefined, 'inspector-refreshing');
+    const refresh = button(layout === 'page' ? '' : 'Refresh'); // bound below: aria-disabled while a read is in flight, never disabled
+    refreshControl = refresh; rosterSignature = null;
     if (layout === 'page') {
       // Workspace v4 (W4): the page bar replaces the Workspace tabs; back returns to the list it came from.
       const bar = pageBar(doc, { backLabel, crumbs: ['Workspace', backLabel], current: title, onBack: () => { if (alive) close({ restoreFocus: true }); } });
       bar.back.classList.add('inspector-back');
       headActions = bar.actions;
-      const refresh = button('', () => show(selection)); refresh.classList.add('icon-act');
+      refresh.classList.add('icon-act');
       refresh.append(iconElement(doc, 'refresh', { size: 14 }), node('span', 'Refresh', 'page-sr')); refresh.title = 'Inspect again';
-      headActions.append(refresh);
+      headActions.append(refreshing, refresh);
       summary = node('div', undefined, 'inspector-summary');
       const copy = node('div', undefined, 'page-identity-copy');
       facts$ = node('div', undefined, 'page-facts-row');
@@ -221,9 +317,13 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       copy.append(heading, facts$); head.append(copy); summary.append(head);
       side = node('div', undefined, 'soul-page-side');
       const body = node('div', undefined, 'page-body'), main = node('div', undefined, 'page-main'), column = node('div', undefined, 'page-side');
-      main.append(summary, status, content); column.append(side); body.append(main, column);
+      main.append(summary, status, notice, content); column.append(side); body.append(main, column);
       container.append(bar.bar, body);
-      if (selection.agent) renderSelectedSoul(column);
+      loading = createLoading(refreshing); loading.bindRefresh(refresh, () => { void show(selection, { user: true }); });
+      rosterColumn = column;
+      if (selection.agent) { renderSoulActions(column); renderSoulRoster(); }
+      // "Teams here" reads `oats soul teams` in parallel with `inspect`, not after it.
+      if (selection.agent) ensureTeamsHere();
       return;
     }
     headActions = null; facts$ = null; side = null;
@@ -236,15 +336,17 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     closeControl.classList.add('icon-act'); closeControl.append(iconElement(doc, 'close', { size: 14 }));
     closeControl.setAttribute('aria-label', 'Close inspector');
     if (selection.agent) head.append(createSoulMark(doc, selection.agent));
-    head.append(heading, button('Refresh', () => show(selection)), closeControl);
+    head.append(heading, refreshing, refresh, closeControl);
     summary = node('div', undefined, 'inspector-summary');
     // Readiness is a first question ("can it run?"): one line under the summary, its checks behind a disclosure.
     const readinessHost = node('div', undefined, 'inspector-content inspector-readiness');
     // Readiness belongs to an instance; a soul's page shows what a person needs (human, F7).
     const withReadiness = !selection.agent;
-    container.append(head, summary, status, ...(withReadiness ? [readinessHost] : []), content);
+    container.append(head, notice, summary, status, ...(withReadiness ? [readinessHost] : []), content);
+    loading = createLoading(refreshing); loading.bindRefresh(refresh, () => { void show(selection, { user: true }); });
     readiness = withReadiness ? createReadinessView(readinessHost, { ctx, compact: true }) : null; syncReadiness();
-    if (selection.agent) renderSelectedSoul();
+    rosterColumn = null;
+    if (selection.agent) { renderSoulActions(null); renderSoulRoster(); }
   }
   // Resets are silent by default: workspace/subtab/disposal must not focus an
   // obsolete or hidden card. Only an explicit standalone X restores focus.
@@ -252,30 +354,60 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     if (alive) reset(restoreFocus);
   }
   function reset(restoreFocus = false) {
-    serial++; selection = null; selectionGen = null; data = null; teamsPanel = null; teamsHere?.dispose(); teamsHere = null; container.hidden = true;
-    readiness?.dispose(); readiness = null;
+    serial++; subject++; selection = null; selectionGen = null; data = null; teamsPanel = null; teamsHere?.dispose(); teamsHere = null; container.hidden = true;
+    readiness?.dispose(); readiness = null; loading?.dispose(); loading = null; painted = null;
     container.replaceChildren();
     if (presentation) presentation.setPresent(false);
     else if (layout !== 'page') container.parentElement?.classList.remove('inspecting');
     closed?.({ restoreFocus: !presentation && restoreFocus });
   }
-  async function show(next) {
+  /** Show `next`. The same subject again (Refresh, Retry, a reselection) keeps the frame and refreshes
+   * in place; `user` marks a read the person asked for (announced on completion, `refresh: true` sent). */
+  async function show(next, { user = false } = {}) {
     if (!next || !alive) return;
-    selection = next; const id = ++serial, gen = workspaceGeneration(); selectionGen = gen; data = null;
-    frame(next.agent?.name || next.instance?.instance || ''); message('Loading…');
+    const gen = workspaceGeneration();
+    const same = !!loading && !!selection && !container.hidden && selectionGen === gen && subjectKey(next) === subjectKey(selection);
+    selection = next; const id = ++serial; selectionGen = gen;
+    if (!same) { data = null; frame(next.agent?.name || next.instance?.instance || ''); }
     if (!available()) { message('Inspection needs an installed OATS CLI with operations API 2. Update OATS and refresh.', true); return; }
+    status.classList.remove('error');
+    loading.begin({ user });
+    // The roster-derived header (lede, refusal, facts, Instances) follows the host's current roster row.
+    if (same && selection.agent) renderSoulRoster();
+    if (same && teamsHere) void teamsHere.refresh({ user });
     try {
-      const result = await request({ action: 'inspect', selector: next.selector });
+      const result = await request({ action: 'inspect', selector: next.selector, ...(user ? { refresh: true } : {}) });
       if (!valid(id, gen)) return;
-      data = result; message(''); render();
+      data = result;
+      const inspected = inspectData(data, selection);
+      if (!inspected) {
+        // Dispatch on the payload's own integer: a classic scope still answers operationsApi 1.
+        loading.fail(new Error(data?.operationsApi === 1 ? 'This workspace still uses the classic layout, which answers an older inspection. The inspector shows it once it is on the workspace model.'
+          : 'The installed OATS CLI returned an inspection this Desktop cannot read. Update OATS and refresh.'));
+        return;
+      }
+      loading.succeed({ observedAt: typeof result?.observedAt === 'string' ? result.observedAt : null });
+      // An unchanged inspection is not repainted: the DOM (and whatever holds focus in it) stays.
+      // The read's own metadata (observedAt, refreshing) is not what the content paints.
+      const signature = JSON.stringify({ ...result, observedAt: undefined, refreshing: undefined });
+      if (signature !== painted) {
+        // Focus and scroll are captured right before the repaint (the person may have moved into the
+        // content while the read ran); a control that vanished hands focus to Refresh, never to a neighbour.
+        const restore = same ? captureFocusState(content, { scroller: container, fallback: refreshControl }) : null;
+        render(inspected); painted = signature; restore?.();
+      }
+      syncAvailability();
     } catch (error) {
-      // One plain sentence (the kernel's), the code behind Details — e.g. E_TEAM_CONFLICT names the two labels.
       if (!valid(id, gen)) return;
-      message(error.message || 'Inspection failed. Refresh to retry.', true);
+      // With content: stale (the line under the head, Retry). Without: the failed block where the skeleton
+      // stood — the kernel's sentence, the code behind Details, Retry.
+      // Stale and failed are calm information (the amber line / the failed block carry them): never the error red.
+      loading.fail(error);
       // E_TEAM_CONFLICT: the soul can't be spawned until the workspace agrees; name the two labels.
-      const labels = error.code === 'E_TEAM_CONFLICT' ? teamLabels(error.labels) : null;
+      const labels = !loading.hasData && error?.code === 'E_TEAM_CONFLICT' ? teamLabels(error.labels) : null;
+      content.querySelector('.inspector-conflict-labels')?.remove();
       if (labels) content.append(node('p', `Team labels in conflict: ${labels.join(', ')}`, 'muted inspector-conflict-labels'));
-      if (error.code) { const more = node('details', undefined, 'inspector-problem-code'); more.append(node('summary', 'Details'), node('p', error.code, 'muted')); content.append(more); }
+      syncAvailability(); // stale: the mutations wait, with the reason
     }
   }
   function facts(entries, parent = content) {
@@ -296,16 +428,13 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     content.append(box);
     if (doc?.truncated) content.append(node('p', truncatedNote, 'muted'));
   }
-  function render() {
-    operationSerial++; teamsPanel = null; teamsHere?.dispose(); teamsHere = null;
-    content.replaceChildren(); side?.replaceChildren();
-    const inspected = inspectData(data, selection);
-    if (!inspected) {
-      // Dispatch on the payload's own integer: a classic scope still answers operationsApi 1.
-      message(data?.operationsApi === 1 ? 'This workspace still uses the classic layout, which answers an older inspection. The inspector shows it once it is on the workspace model.'
-        : 'The installed OATS CLI returned an inspection this Desktop cannot read. Update OATS and refresh.', true);
-      return;
-    }
+  function render(inspected) {
+    operationSerial++; teamsPanel = null;
+    content.replaceChildren();
+    // The side column keeps "Teams here" (created with the frame; its own read); the rest is repainted.
+    if (side) for (const child of [...side.children]) if (child !== teamsHere?.element) child.remove();
+    // What the last inspection added beside the identity (page): the harness fact and the launch notes.
+    facts$?.querySelector('[data-fact="harness"]')?.remove(); facts$?.parentElement?.querySelector('[data-launch-notes]')?.remove();
     for (const p of inspected.problems) problem(p);
     const soul = inspected.souls[0] ?? null;
     if (inspected.subject.kind === 'instance') {
@@ -314,9 +443,10 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       // Teams first (join/leave), then the instance, the soul it came from, and the as-spawned detail.
       const teams = teamsOperations(inspected);
       if (teams) {
-        section('Teams'); const id = serial, gen = selectionGen;
+        section('Teams'); const id = subject, gen = selectionGen;
         teamsPanel = createTeamsPanel(content, { operations: teams, selector: selection.selector, request, heading: false,
-          owns: () => valid(id, gen) && selectionGen === workspaceGeneration(), available });
+          owns: () => ownsSubject(id, gen) && selectionGen === workspaceGeneration(), available,
+          mutable: () => !stale(), mutableReason: INSPECTION_STALE_TITLE }); // join/leave wait while the inspection is stale
       }
       section('Instance'); card(instanceFacts(inspected.instance));
       if (soul) spawnedFrom(soul);
@@ -362,12 +492,12 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     // The host resolves the soul in its roster (exact identity) and selects it; a miss is said, not silent.
     const ref = { name: soul.name, agentsRoot: selection.instance?.agentsRoot, server: selection.instance?.server ?? null };
     if (typeof openSoul === 'function' && ref.name && ref.agentsRoot) {
-      const id = serial, gen = selectionGen;
+      const id = subject, gen = selectionGen;
       const open = button('Open soul', () => {
-        if (!valid(id, gen) || !open.isConnected) return;
+        if (!ownsSubject(id, gen) || !open.isConnected) return;
         if (openSoul(ref) !== true) message(`${ref.name} is not in this workspace's souls.`);
       });
-      open.title = 'Inspect the soul this instance was spawned from'; box.append(open);
+      open.title = 'Inspect the soul this instance was spawned from'; open.dataset.focusKey = 'open-soul'; box.append(open);
     }
     content.append(box);
   }
@@ -390,32 +520,55 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     content.append(row);
   }
   // Roster-owned actions do not depend on operationsApi, inspect success, or
-  // an editable soul record. Keep their DOM stable while inspection settles.
-  function renderSelectedSoul(column = null) {
-    const agent = selection.agent, id = serial, gen = selectionGen;
+  // an editable soul record. Built once per subject; each handler reads the
+  // CURRENT selection row at click time, since a refresh swaps the row without
+  // rebuilding these controls.
+  function renderSoulActions(column = null) {
+    const id = subject, gen = selectionGen;
     const actions = node('div', undefined, 'inspector-actions');
-    const action = (label, cls, can, run) => {
+    const action = (label, cls, key, can, run) => {
       const control = button(label, () => {
-        if (valid(id, gen) && control.isConnected && !control.disabled && can(agent)) run?.(agent);
+        const agent = selection?.agent;
+        if (agent && ownsSubject(id, gen) && control.isConnected && !control.disabled && can(agent)) run?.(agent);
       });
-      control.classList.add(cls); return control;
+      control.classList.add(cls); control.dataset.focusKey = key; return control;
     };
     // The soul page's primary action is Spawn (human, 2026-09-26; it opens the spawn dialog).
-    const launchButton = action(column ? 'Spawn' : 'Launch…', 'spawn-act', canLaunch, launch); launchButton.classList.add('primary'); launchButton.dataset.launch = '1';
-    const scheduleButton = action('Schedule…', 'schedule-act', canLaunch, schedule); scheduleButton.dataset.launch = '1';
-    const filesButton = action('Files', 'brain-act', canFiles, files); filesButton.dataset.files = '1';
+    const launchButton = action(column ? 'Spawn' : 'Launch…', 'spawn-act', 'spawn', canLaunch, launch); launchButton.classList.add('primary'); launchButton.dataset.launch = '1';
+    const scheduleButton = action('Schedule…', 'schedule-act', 'schedule', canLaunch, schedule); scheduleButton.dataset.launch = '1';
+    const filesButton = action('Files', 'brain-act', 'files', canFiles, files); filesButton.dataset.files = '1';
     actions.append(filesButton, scheduleButton, launchButton);
     // Kernel #217 (desktop-facts): the soul's file opens as its web page, when reported.
-    const fileUrl = column && desktopFacts(cliStatus()) && typeof agent.file?.url === 'string' && /^https:\/\//.test(agent.file.url) ? agent.file.url : null;
+    const webFile = agent => desktopFacts(cliStatus()) && typeof agent?.file?.url === 'string' && /^https:\/\//.test(agent.file.url) ? agent.file.url : null;
+    const fileUrl = column ? webFile(selection.agent) : null;
     if (fileUrl && typeof ctx?.openExternal === 'function') {
-      const open = button('Open file', () => { if (valid(id, gen)) ctx.openExternal(fileUrl); });
-      open.classList.add('file-act'); open.title = agent.file.path || fileUrl; actions.prepend(open);
+      const open = button('Open file', () => { const url = webFile(selection?.agent); if (url && ownsSubject(id, gen)) ctx.openExternal(url); });
+      open.classList.add('file-act'); open.dataset.focusKey = 'open-file'; open.title = selection.agent.file.path || fileUrl; actions.prepend(open);
     }
     if (headActions) headActions.prepend(actions); else summary.append(actions);
     syncAvailability();
+  }
+  /** What the roster row says about the soul — its lede, a spawn refusal, the repo/work/file facts and
+   * its Instances — repainted on every show() behind a signature, so a refresh follows the roster
+   * (a new or retired instance) while an unchanged roster keeps its nodes and whatever holds focus. */
+  function renderSoulRoster() {
+    const agent = selection?.agent; if (!agent || !summary) return;
+    const id = subject, gen = selectionGen, column = rosterColumn;
     const homes = instances(agent);
+    // The host roster's own state (desktop/loading-states): an empty list is "No instances yet." only after a good
+    // read; while the roster is pending it is a skeleton line, while failed or stale it makes no claim.
+    const rosterState = homes.length ? 'ready' : instancesState();
+    const refusal = column ? spawnRefusal(agent) : null, facts = desktopFacts(cliStatus());
+    const signature = JSON.stringify([layout, agent.description, refusal, agent.repoName, agent.work, agent.file, facts, rosterState,
+      homes.map(i => [i.instance, i.home, i.running, runtimeState(i), buildState(i)])]);
+    if (signature === rosterSignature) return;
+    rosterSignature = signature;
+    // The block spans the identity copy (lede, refusal, facts) and the Instances card (page: the side column).
+    const restore = captureFocusState(container, { scroller: container, fallback: refreshControl });
+    for (const el of container.querySelectorAll('.inspector-lede, .inspector-refusal, .inspector-instances, .inspector-roster')) el.remove();
+    if (facts$) for (const el of facts$.querySelectorAll('[data-fact="repo"], [data-fact="branch"], [data-fact="file"]')) el.remove();
     const openHome = (instance, control) => {
-      if (!valid(id, gen) || !control.isConnected) return;
+      if (!ownsSubject(id, gen) || !control.isConnected) return;
       // Instances keep the sidebar: from a soul page, the host opens it beside the page.
       if (typeof openInstance === 'function') openInstance(instance); else void show({ instance, selector: { home: instance.home } });
     };
@@ -423,16 +576,17 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       // Identity: what it does, then where it works (the harness joins once inspected).
       if (agent.description) facts$.before(node('p', agent.description, 'inspector-lede'));
       // Kernel #217: a soul a spawn here would refuse says why, beside the disabled Spawn.
-      const refusal = spawnRefusal(agent);
       if (refusal) { const note = node('p', `Can't spawn here · ${refusal}`, 'inspector-refusal'); note.setAttribute('role', 'note'); facts$.before(note); }
-      if (typeof agent.repoName === 'string' && agent.repoName) facts$.append(pageFact('repo', agent.repoName, 'mono'));
+      const harness = facts$.querySelector('[data-fact="harness"]');
+      const place = fact => harness ? harness.before(fact) : facts$.append(fact);
+      if (typeof agent.repoName === 'string' && agent.repoName) place(pageFact('repo', agent.repoName, 'mono'));
       if (typeof agent.work === 'string' && agent.work) facts$.append(pageFact('branch', WORK_TEXT[agent.work] || `works in ${agent.work}`, 'muted'));
       // Kernel #217: the soul's file. Without a web address (a non-GitHub repo) its path shows instead.
-      if (desktopFacts(cliStatus()) && typeof agent.file?.path === 'string' && agent.file.path && !(typeof agent.file.url === 'string' && /^https:\/\//.test(agent.file.url))) facts$.append(pageFact('file', agent.file.path, 'mono'));
-      const card = pageCard(doc, 'Instances', { count: homes.length }); card.card.classList.add('inspector-instances');
-      if (!homes.length) card.card.append(node('p', 'No instances yet.', 'page-note'));
+      if (facts && typeof agent.file?.path === 'string' && agent.file.path && !(typeof agent.file.url === 'string' && /^https:\/\//.test(agent.file.url))) facts$.append(pageFact('file', agent.file.path, 'mono'));
+      const card = pageCard(doc, 'Instances', { count: rosterState === 'ready' || rosterState === 'empty' ? homes.length : null }); card.card.classList.add('inspector-instances');
+      if (!homes.length) card.card.append(emptyInstances(rosterState, 'No instances yet.', 'page-note'));
       for (const instance of homes) {
-        const control = node('button', undefined, 'inspector-instance'); control.type = 'button';
+        const control = node('button', undefined, 'inspector-instance'); control.type = 'button'; control.dataset.focusKey = `instance:${instance.home || instance.instance}`;
         const state = runtimeState(instance), build = buildState(instance);
         const dot = node('span', undefined, `instance-dot ${state}`); dot.setAttribute('aria-hidden', 'true');
         control.append(dot, node('span', instance.instance, 'instance-name'));
@@ -444,20 +598,28 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
         card.card.append(control);
       }
       column.append(card.card);
-      return;
+      restore(); return;
     }
-    const roster = node('div', undefined, 'inspector-content');
+    const roster = node('div', undefined, 'inspector-content inspector-roster');
     // What a person needs: what it does, and its instances.
     if (agent.description) roster.append(node('p', agent.description, 'inspector-lede'));
-    roster.append(node('h3', `Instances · ${homes.length}`));
-    if (!homes.length) roster.append(node('p', 'No instances reported for this soul.', 'muted'));
+    roster.append(node('h3', rosterState === 'ready' || rosterState === 'empty' ? `Instances · ${homes.length}` : 'Instances'));
+    if (!homes.length) roster.append(emptyInstances(rosterState, 'No instances reported for this soul.', 'muted'));
     for (const instance of homes) {
       const control = button(`${instance.instance} · ${runtimeState(instance)}`, () => openHome(instance, control));
-      control.classList.add('inspector-instance'); control.disabled = !instance.home;
+      control.classList.add('inspector-instance'); control.dataset.focusKey = `instance:${instance.home || instance.instance}`; control.disabled = !instance.home;
       control.title = instance.home ? 'Inspect the immutable instance snapshot' : 'No instance home reported';
       roster.append(control);
     }
     summary.append(roster);
+    restore();
+  }
+  /** What stands where the instances go when there are none: the empty copy after a good roster read; a skeleton
+   * line while the roster is pending; while it is failed or stale, no claim (the roster's own line says why). */
+  function emptyInstances(state, copy, cls) {
+    if (state === 'pending' || state === 'idle') { const line = skeleton(doc, 'line', { width: '60%' }); line.classList.add('inspector-instances-pending'); return line; }
+    if (state === 'failed' || state === 'stale') { const none = node('span', undefined, 'inspector-instances-unknown'); none.dataset.rosterState = state; none.setAttribute('aria-hidden', 'true'); return none; }
+    return node('p', copy, cls);
   }
   /** The soul's launch (0.30): `inspect --soul`'s own, else its roster row's; null without the feature. */
   function soulLaunch(inspected) { return shownLaunch(inspected.launch ?? selection?.agent?.launch, cliStatus()); }
@@ -523,7 +685,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       const why = layer?.id && layersFrom() ? coreWhy(layer.from) : null;
       if (why) card.append(node('span', why, 'core-why'));
       if (opens) {
-        card.type = 'button'; card.dataset.capability = cap.id;
+        card.type = 'button'; card.dataset.capability = cap.id; card.dataset.focusKey = `core:${slot}`;
         card.setAttribute('aria-label', [`${layerLabel(slot)}: ${cap.id}`, detail, why].filter(Boolean).join(', ') + ' — open its page');
         card.addEventListener('click', () => { if (alive && card.isConnected) openCapability(cap, selection.agent); });
       }
@@ -536,23 +698,16 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     const table = node('div', undefined, 'inspector-capability-table'); composition.append(table); content.append(composition);
     if (typeof capabilityTable === 'function') capabilityTable(table, entries, { soul: selection.agent });
     // Beside: its teams (joining is per instance) and its knowledge nodes. Team model v2
-    // (kernel feature team-model-2): "Teams here", this computer's membership, editable.
-    teamsHere?.dispose(); teamsHere = null;
-    const teamModel2 = (cliStatus()?.features || []).includes('team-model-2');
-    // `oats soul teams` takes the kernel's soul key, on every roster row as `key` (#275, #276): the
-    // bare name for a member or external soul, <package>/<soul> for a package soul. A row without one
-    // (a Desktop server from before #275) gets no card: the CLI says it, and nothing is sent.
-    const soulKey = typeof selection?.agent?.key === 'string' && selection.agent.key ? selection.agent.key : null;
+    // (kernel feature team-model-2): "Teams here", this computer's membership, editable — created
+    // with the frame so its read ran beside `inspect`; ensured here for a CLI probe that settled since.
+    const { teamModel2, soulKey } = teamsHereConditions();
+    if (teamsHere && !teamModel2) { teamsHere.element.remove(); teamsHere.dispose(); teamsHere = null; } // the CLI lost the feature since the frame
     if (teamModel2 && !soulKey) {
       const { card: note } = pageCard(doc, 'Teams here', { lead: 'on this computer' });
       note.append(node('p', "Set this soul's teams with the CLI (oats soul teams): this Desktop's server does not report the soul's key.", 'page-note'));
       side.append(note);
-    } else if (teamModel2) {
-      const soulTeamsRoute = async body => teamsAnswer(await postJson(ctx, `/api/workspace-soul-teams${wsQuery()}`, body), 'soulTeams', 'The teams of this soul could not be read.');
-      const teamsRoute = async () => teamsAnswer(await postJson(ctx, `/api/workspace-teams${wsQuery()}`, { action: 'list' }), 'teams', 'The teams on this computer could not be read.');
-      teamsHere = createSoulTeamsHere(doc, { soul: soulKey, request: soulTeamsRoute, listTeams: teamsRoute });
-      side.append(teamsHere.element);
-    } else if (teams) {
+    } else if (teamModel2) ensureTeamsHere();
+    else if (teams) {
       const card = pageCard(doc, 'Teams', { lead: 'organise · add defaults · never restrict' });
       if (!mapped.length) card.card.append(node('p', 'Default team only: this soul has access to no other team.', 'page-note'));
       for (const team of mapped) {
@@ -576,6 +731,25 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       side.append(card.card);
     }
   }
+  // `oats soul teams` takes the kernel's soul key, on every roster row as `key` (#275, #276): the
+  // bare name for a member or external soul, <package>/<soul> for a package soul. A row without one
+  // (a Desktop server from before #275) gets no card: the CLI says it, and nothing is sent.
+  function teamsHereConditions() {
+    return { teamModel2: (cliStatus()?.features || []).includes('team-model-2'),
+      soulKey: typeof selection?.agent?.key === 'string' && selection.agent.key ? selection.agent.key : null };
+  }
+  /** The page's "Teams here" card, once per subject, first in the side column; its `oats soul teams`
+   * read starts when it is created (with the frame), not after `inspect` answers. */
+  function ensureTeamsHere() {
+    if (teamsHere || !side) return teamsHere;
+    const { teamModel2, soulKey } = teamsHereConditions();
+    if (!teamModel2 || !soulKey) return null;
+    const soulTeamsRoute = async body => teamsAnswer(await postJson(ctx, `/api/workspace-soul-teams${wsQuery()}`, body), 'soulTeams', 'The teams of this soul could not be read.');
+    const teamsRoute = async () => teamsAnswer(await postJson(ctx, `/api/workspace-teams${wsQuery()}`, { action: 'list' }), 'teams', 'The teams on this computer could not be read.');
+    teamsHere = createSoulTeamsHere(doc, { soul: soulKey, request: soulTeamsRoute, listTeams: teamsRoute, clock: timers });
+    side.prepend(teamsHere.element);
+    return teamsHere;
+  }
   // Core capabilities name their origin only when the CLI advertises layers-from.
   const layersFrom = () => Array.isArray(cliStatus()?.features) && cliStatus().features.includes('layers-from');
   function renderCapabilities(inspected, { collapsed = false } = {}) {
@@ -597,7 +771,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     host.append(list);
   }
   function renderOperations(inspected) {
-    const id = serial, gen = selectionGen;
+    const id = subject, gen = selectionGen;
     content.append(node('h3', 'Provider operations'));
     // A layer provider is the module that fills the layer (no activation record in v2).
     const providers = inspected.capabilities.filter(cap => cap.layer);
@@ -612,10 +786,10 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       else {
         const address = `${provider.layer}:${operation.name}`;
         const control = mutationButton(operation.kind === 'view' ? 'View' : 'Run', async () => {
-          if (!available() || !valid(id, gen) || !control.isConnected || !content.contains(control) || pendingOperations.has(control)) return;
+          if (!available() || !ownsSubject(id, gen) || !control.isConnected || !content.contains(control) || pendingOperations.has(control)) return;
           const op = ++operationSerial; pendingOperations.set(control, op); control.disabled = true;
           // Output/status follow latest intent; each pending control owns only its lock.
-          const ownsControl = () => valid(id, gen) && control.isConnected && content.contains(control) && pendingOperations.get(control) === op;
+          const ownsControl = () => ownsSubject(id, gen) && control.isConnected && content.contains(control) && pendingOperations.get(control) === op;
           const owns = () => ownsControl() && op === operationSerial;
           message(`Running ${address}…`);
           try {
@@ -643,7 +817,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
             if (ownsControl()) { pendingOperations.delete(control); syncAvailability(); }
           }
         });
-        control.dataset.operation = address; row.append(control);
+        control.dataset.operation = address; control.dataset.focusKey = `op:${address}`; row.append(control);
       }
       content.append(row);
     }
@@ -652,7 +826,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
   function syncAvailability() {
     syncReadiness(); teamsPanel?.sync();
     if (!selection || !content) return;
-    for (const control of content.querySelectorAll('[data-mutate]')) control.disabled = pendingOperations.has(control) || !available() || selectionGen !== workspaceGeneration();
+    for (const control of content.querySelectorAll('[data-mutate]')) { control.disabled = pendingOperations.has(control) || !available() || selectionGen !== workspaceGeneration(); markStale(control); }
     for (const control of container.querySelectorAll('[data-launch]')) {
       control.disabled = !alive || selectionGen !== workspaceGeneration() || !canLaunch(selection.agent) || selection.agent?.work === 'attached' || !selection.agent?.agentsRoot;
       control.title = selection.agent?.work === 'attached' ? 'Attached only — requires an owning instance.' : control.disabled ? launchReason(selection.agent) : '';
@@ -662,7 +836,10 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       control.title = control.disabled ? 'Files need an unambiguous local soul in this workspace.' : 'Read-only soul files';
     }
   }
-  return { show, close, syncAvailability,
+  /** The host's roster changed or its read settled (a poll): the roster-derived block — lede, refusal, facts, the
+   * Instances card and its empty / pending / no-claim state — follows, behind its signature (focus kept). */
+  function syncRoster() { if (alive && selection?.agent && !container.hidden) renderSoulRoster(); }
+  return { show, close, syncAvailability, syncRoster,
     focusLaunch(agent) {
       const selected = selection?.agent;
       if (!alive || container.hidden || (presentation && !presentation.isVisible())

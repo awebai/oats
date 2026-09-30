@@ -5,7 +5,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { createForgePrPanel, checkRows, checkDuration } from '../renderer/forge-pr.mjs';
+import { createForgePrPanel, checkRows, checkDuration, prStateLabel } from '../renderer/forge-pr.mjs';
+import { instanceGitCSS } from '../renderer/instance-git.mjs';
 import { pullRequest } from '../renderer/forge-contract.mjs';
 import { target } from './helpers/forge-fixture.mjs';
 
@@ -24,10 +25,16 @@ async function card(t, n) {
   return { raw, data, root, rows, opened };
 }
 
-test('#239, open with its checks running: the title, "#239 · open", one row per running check, and Open on GitHub', async t => {
+test('#239, open with its checks running: the Open pill, the title, "#239", one row per running check, and Open on GitHub', async t => {
   const u = await card(t, 239);
   assert.equal(u.root.querySelector('.forge-title').textContent, u.raw.title);
-  assert.equal(u.root.querySelector('.forge-sub').textContent, '#239 · open');
+  // v4.1 board 2: the state is a pill before the title; the sub-line is the number (and what it closes), no state word.
+  assert.equal(u.root.querySelector('.forge-state').textContent, 'Open'); assert.equal(u.root.querySelector('.forge-state').dataset.prState, 'open');
+  assert.equal(u.root.querySelector('.forge-title-row').firstElementChild, u.root.querySelector('.forge-state'), 'the pill comes first');
+  assert.equal(u.root.querySelector('.forge-sub').textContent, '#239');
+  assert.ok(u.root.querySelector('.forge-pr-card.git-card'), 'a bordered card'); assert.ok(u.root.querySelector('.forge-head + .forge-body'), 'the head, a hairline, then the rows');
+  assert.equal(u.root.querySelector('.git-head h3').textContent, 'Pull request', 'the label in the small-caps head style');
+  assert.equal(u.root.querySelector('.forge-pr-card + .forge-caveat')?.textContent.includes('may not be the local revision'), true, 'the caveat under the card');
   assert.match(u.root.querySelector('.forge-sub').title, /^main ← agents\/ux-designer-w6-git · updated /);
   assert.equal(u.rows.length, u.raw.statusCheckRollup.length);
   assert.ok(u.rows.every(r => r.outcome === 'pending' && r.mark === 'pending' && r.meta === 'in progress'));
@@ -36,9 +43,21 @@ test('#239, open with its checks running: the title, "#239 · open", one row per
   assert.equal(u.root.querySelector('button.forge-open').getAttribute('aria-label'), 'Open pull request #239 on GitHub');
 });
 
+test('a wrapped title keeps the state pill on its first line: top-aligned, and the pill is one title line tall', async t => {
+  const u = await card(t, 239), doc = u.root.ownerDocument, win = doc.defaultView;
+  const style = doc.createElement('style'); style.textContent = instanceGitCSS; doc.head.append(style); u.root.classList.add('instance-git');
+  assert.equal(win.getComputedStyle(u.root.querySelector('.forge-title-row')).alignItems, 'flex-start', 'not centred on a multi-line title');
+  const px = v => parseFloat(v), pill = win.getComputedStyle(u.root.querySelector('.forge-state')), title = win.getComputedStyle(u.root.querySelector('.forge-title'));
+  // Line heights are unitless multipliers here; the pill's box is its line plus its vertical padding.
+  const pillHeight = px(pill.fontSize) * Number(pill.lineHeight) + px(pill.paddingTop) + px(pill.paddingBottom);
+  const titleLine = px(title.fontSize) * Number(title.lineHeight);
+  assert.ok(Math.abs(pillHeight - titleLine) <= 0.5, `pill ${pillHeight}px ≈ title line ${titleLine}px, so a one-line title looks unchanged`);
+  assert.equal(px(pill.marginTop || '0'), 0);
+});
+
 test('#237, merged with one failed check: the failure first, then the passing checks as one row', async t => {
   const u = await card(t, 237);
-  assert.equal(u.root.querySelector('.forge-sub').textContent, '#237 · merged');
+  assert.equal(u.root.querySelector('.forge-sub').textContent, '#237'); assert.equal(u.root.querySelector('.forge-state').textContent, 'Merged');
   const failed = u.raw.statusCheckRollup.filter(c => c.conclusion === 'FAILURE'), passed = u.raw.statusCheckRollup.filter(c => c.conclusion === 'SUCCESS');
   // The failure's duration comes from gh's own start and finish (#241).
   const took = checkDuration(failed[0]); assert.match(took, /^\d+(s|m|h \d+m)$/);
@@ -70,9 +89,9 @@ async function cliCard(t, n, extra = {}) {
   return { raw, data, root, opened, review: () => root.querySelector('.forge-review .forge-check-meta')?.textContent ?? null };
 }
 
-test('closing issues: "#N · state · closes #14495", each opening its issue; none says nothing', async t => {
+test('closing issues: "#N · closes #14495", each opening its issue; none says nothing', async t => {
   const u = await cliCard(t, 14516);
-  assert.equal(u.root.querySelector('.forge-sub').textContent, `#14516 · ${u.raw.isDraft ? 'draft' : u.raw.state.toLowerCase()} · closes #14495`);
+  assert.equal(u.root.querySelector('.forge-sub').textContent, '#14516 · closes #14495');
   const issue = u.root.querySelector('button.forge-issue');
   assert.equal(issue.getAttribute('aria-label'), 'Open issue #14495 on GitHub');
   issue.click(); assert.deepEqual(u.opened, ['https://github.com/cli/cli/issues/14495']);
@@ -101,4 +120,21 @@ test('durations: only when gh reports both times and the finish is not before th
   const at = s => new Date(Date.UTC(2026, 8, 26, 10, 0, s)).toISOString();
   assert.deepEqual([[0, 45], [0, 150], [0, 3900]].map(([a, b]) => checkDuration({ startedAt: at(a), completedAt: at(b) })), ['45s', '2m', '1h 5m']);
   for (const c of [{ startedAt: null, completedAt: at(5) }, { startedAt: at(5), completedAt: null }, { startedAt: at(9), completedAt: at(1) }]) assert.equal(checkDuration(c), null);
+});
+
+test('the state pill reads Open / Draft / Merged / Closed from the PR\'s state and isDraft', async t => {
+  for (const [state, isDraft, label] of [['OPEN', false, 'Open'], ['OPEN', true, 'Draft'], ['MERGED', false, 'Merged'], ['CLOSED', false, 'Closed'], ['MERGED', true, 'Merged']]) {
+    const u = await cliCard(t, 14430, { state, isDraft });
+    assert.equal(prStateLabel(u.data), label);
+    assert.equal(u.root.querySelector('.forge-state').textContent, label, `${state}${isDraft ? ' draft' : ''}`);
+    assert.equal(u.root.querySelector('.forge-sub').textContent, '#14430', 'no state word in the sub-line');
+  }
+});
+
+test('a remote row\'s pull request says it is not read here (this machine\'s clones only), and sends nothing', async t => {
+  const dom = new JSDOM('<!doctype html><main></main>', { pretendToBeVisual: true }), root = dom.window.document.querySelector('main');
+  const panel = createForgePrPanel(root, { request: assert.fail });
+  t.after(() => { panel.dispose(); dom.window.close(); });
+  await panel.update({ target: { ...target, server: 'build' }, key, branch: 'main', revision });
+  assert.equal(root.querySelector('.git-note').textContent, 'Remote forge inspection is unavailable. No local fallback was used.');
 });
