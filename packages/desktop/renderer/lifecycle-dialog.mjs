@@ -19,6 +19,7 @@ export const lifecycleCSS = `
 .lifecycle-dialog ul { margin:0; padding-left:18px; }
 .lifecycle-dialog li { margin:6px 0; overflow-wrap:anywhere; }
 .lifecycle-dialog label { display:flex; gap:8px; align-items:flex-start; }
+.lifecycle-dialog label[hidden] { display:none; }
 .lifecycle-dialog input { accent-color:var(--accent); }
 .lifecycle-dialog button { height:32px; padding:0 14px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font:inherit; font-size:12.5px; font-weight:600; cursor:pointer; }
 .lifecycle-dialog button:disabled { color:var(--faint); background:var(--surface-2); cursor:default; }

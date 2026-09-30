@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { createLifecycleDialog } from '../renderer/lifecycle-dialog.mjs';
+import { createLifecycleDialog, lifecycleCSS } from '../renderer/lifecycle-dialog.mjs';
 import { lifecycleReceipt } from '../renderer/lifecycle-contract.mjs';
 import { pullRequest } from '../renderer/forge-contract.mjs';
 import { pr as rawPr } from './helpers/forge-fixture.mjs';
@@ -174,4 +174,13 @@ test('a remote apply that lost the link is an unknown outcome with the transport
     assert.equal(f.button('lifecycle-retry').hidden, false);
     assert.equal(f.settled.length, 1, 'the host settles the roster refresh even for an unknown outcome');
   } finally { f.close(); }
+});
+
+test('each dialog shows only its own choices: a hidden choice stays hidden despite the label layout (Stop has no worktree/branch options, Remove no children option)', () => {
+  // The label's display:flex beats the user agent's [hidden] rule in Chromium; jsdom's cascade does not model that, so pin the rule.
+  const dom = new JSDOM('<!doctype html><style></style>'), sheet = dom.window.document.querySelector('style');
+  sheet.textContent = lifecycleCSS;
+  const rule = [...sheet.sheet.cssRules].find(r => r.selectorText === '.lifecycle-dialog label[hidden]');
+  assert.equal(rule?.style.display, 'none');
+  dom.window.close();
 });
