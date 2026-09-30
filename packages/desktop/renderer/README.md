@@ -191,10 +191,16 @@ messaging provider, and its hint says what the decision binds), launch
 configuration, session backend, Run on and the wake schedule. The footer (Cancel, Spawn ⌘↵) is sticky.
 
 Every value shown is the kernel's own preview: the dialog reads
-`POST /api/workspace-spawn-preview` in the background (debounced, one latest
-intent, owner-checked on success and rejection) and never resolves a default
-itself. **Spawn** is one click: prepare → the server checks the prepared
-decision still matches what was shown → apply with the bound revision and key.
+`POST /api/workspace-spawn-preview` in the background (debounced; a newer
+choice starts its own read at once and only the latest ticket settles,
+owner-checked on success and rejection) and never resolves a default itself.
+Editing never waits on it: no field is disabled or rebuilt by a read, and after
+the first settle the preview column keeps the last settled facts marked
+**Updating…** (`aria-busy`) while the Name fact follows the form. **Spawn** is
+one click, pressable whenever the form is valid (a press before the preview for
+those choices settled waits as **Checking…**, and an edit drops it): prepare →
+the server checks the prepared decision still matches what was shown → apply
+with the bound revision and key.
 If the kernel decided differently at Spawn time nothing is applied and the
 dialog shows the new values for review. An unknown outcome offers **Check
 result** on the same intent. A completed receipt hands off to the terminal

@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { EventEmitter } from 'node:events';
 import { runInNewContext } from 'node:vm';
 import { classifyApiRoute } from '../api-url.mjs';
-import { createSpawnPreviewBoundary } from '../server/spawn-preview.mjs';
+import { createSpawnPreviewBoundary, createSpawnPreviewCache } from '../server/spawn-preview.mjs';
 import { proxySpawnPreview } from '../spawn-preview-proxy.mjs';
 import { previewFailure } from '../renderer/spawn-preview-contract.mjs';
 import { spawnApplyFailure } from '../renderer/spawn-apply-contract.mjs';
@@ -15,7 +15,7 @@ function http() {
   const c = context(), calls = [];
   const deps = { createServer: fn => fn, previewFailure, spawnAgent: assert.fail,
     spawnApplyFailure, spawnApplyRequest: assert.fail,
-    spawnPreviewRequest: createSpawnPreviewBoundary({ invoke: async (cli, opts) => { calls.push(opts); return envelope(data(opts.target)); } }),
+    spawnPreviewCachedRequest: createSpawnPreviewBoundary({ cache: createSpawnPreviewCache(), invoke: async (cli, opts) => { calls.push(opts); return envelope(data(opts.target)); } }),
     workspaces: () => [c.workspace], cliState: c.cli, agentsData: () => ({ agents: c.agents }), snapshot: { byWs: new Map([['northwind', { instances: c.instances }]]) } };
   const handler = new Function(...Object.keys(deps), `${source.slice(start, end)}\nreturn server;`)(...Object.values(deps));
   return { c, calls, async request({ url = '/api/workspace-spawn-preview?ws=northwind', method = 'POST', body = JSON.stringify(request()), headers = { host: 'localhost:4820', origin: 'http://localhost:4820' } } = {}) {
@@ -32,6 +32,12 @@ test('shipped HTTP: Host/Origin, method, query and 16KiB body refuse before disp
   for (const body of ['{', 'null', '[]', ' '.repeat(16385)]) assert.equal((await h.request({ body })).status, 400);
   assert.equal(h.calls.length, 0);
   const result = await h.request(); assert.equal(result.body.status, 'available'); assert.equal(result.headers['cache-control'], 'no-store'); assert.equal(h.calls.length, 1);
+});
+test('shipped HTTP: the dialog route reuses a settled answer — the same choices twice run one kernel process', async () => {
+  const h = http();
+  const first = await h.request(), second = await h.request();
+  assert.equal(first.body.status, 'available'); assert.deepEqual(second.body, first.body); assert.equal(h.calls.length, 1);
+  await h.request({ body: JSON.stringify(request({ purpose: 'other' })) }); assert.equal(h.calls.length, 2, 'other choices are another answer');
 });
 test('shipped HTTP never dispatches API1, remote, task/file flags or an apply action', async () => {
   const h = http(); h.c.cli.spawnPreviewApi = 1;

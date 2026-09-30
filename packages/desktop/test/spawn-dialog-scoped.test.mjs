@@ -33,7 +33,7 @@ function mount(t, { soul = member, agents = [member, other, packaged], layout, p
     throw new Error(`unexpected ${path}`);
   } };
   const ui = createSpawnDialog(doc.querySelector('.spawn-modal'), { ctx, soul, agents, workspace, cli: () => cli, instances,
-    owns: () => true, canChoose: () => true, choose: (candidate, draft) => chosen.push({ candidate, draft }), close: () => {}, servers: [], delay: 0, ...(layout ? { layout } : {}) });
+    owns: () => true, canChoose: () => true, choose: (candidate, draft) => chosen.push({ candidate, draft }), close: () => {}, servers: [], delay: 0, busyDelay: 0, ...(layout ? { layout } : {}) });
   ui.start();
   t.after(() => { ui.dispose(); dom.window.close(); });
   const q = selector => ui.dialog.querySelector(selector);
@@ -142,16 +142,30 @@ test('the preview column: a skeleton with aria-busy while reading, then the fact
   assert.equal(u.style(aside).background, 'var(--surface-2)'); assert.equal(u.rule('.spawn-preview', 'width'), '', 'sized by its 360px grid column');
 });
 
-test('the preview follows the latest choice: typing shows the skeleton again, then the new name', async t => {
-  let n = 0;
-  const u = mount(t, { layout: 'scoped', previews: body => { n++; return view(target, preview(body.choices.purpose ? 'preview-worktree-purpose' : 'preview-worktree-default')); } });
+test('the preview follows the latest choice: typing keeps the settled facts, marked Updating…, and the Name fact follows the form at once', async t => {
+  const gate = deferred(); let n = 0;
+  const u = mount(t, { layout: 'scoped', previews: async body => { n++; if (body.choices.purpose) await gate.promise; return view(target, preview(body.choices.purpose ? 'preview-worktree-purpose' : 'preview-worktree-default')); } });
   await settle();
-  assert.equal(u.facts().Name, preview('preview-worktree-default').instance);
+  const aside = u.q('.spawn-preview'), mark = u.q('.spawn-preview-updating');
+  assert.equal(u.facts().Name, preview('preview-worktree-default').instance); assert.equal(u.hidden(mark), true, 'nothing is updating');
+  const core = u.q('.spawn-preview-core .spawn-core-box');
   const el = u.q('.fpurpose'); el.value = 'api-v2'; el.dispatchEvent(new u.dom.window.Event('input', { bubbles: true }));
-  assert.equal(u.q('.spawn-preview').getAttribute('aria-busy'), 'true', 'a read is due for the new choice');
-  assert.ok(u.q('.spawn-preview-skeleton'));
+  assert.equal(aside.getAttribute('aria-busy'), 'true', 'a read is due for the new choice');
+  assert.equal(u.q('.spawn-preview-skeleton'), null, 'never the skeleton after the first settle');
+  assert.equal(u.hidden(mark), false); assert.equal(mark.textContent, 'Updating…');
+  assert.equal(mark.parentElement, u.q('.spawn-preview-created .spawn-preview-head'), 'beside the "What will be created" title');
+  assert.equal(u.facts().Name, 'release-manager-api-v2', 'the name the form spells, at once: never a stale name');
+  assert.equal(u.facts()['Works in'], 'own worktree', 'the other settled facts stay');
+  assert.equal(u.hidden(u.q('.spawn-preview-core')), false); assert.equal(u.q('.spawn-preview-core .spawn-core-box'), core, 'Core capabilities stay in place, not redrawn');
+  assert.equal(u.hidden(u.q('.spawn-preview-caps')), false);
   await settle(12);
-  assert.equal(u.facts().Name, 'release-manager-api-v2'); assert.ok(n >= 2);
+  assert.equal(aside.getAttribute('aria-busy'), 'true', 'still reading'); assert.equal(u.hidden(mark), false);
+  assert.equal(u.text('.fstatus'), 'Preview ready', 'the footer stays quiet while updating: no "Reading defaults…" churn');
+  gate.resolve(); await settle(12);
+  assert.equal(u.facts().Name, 'release-manager-api-v2'); assert.equal(n, 2);
+  assert.equal(aside.getAttribute('aria-busy'), 'false'); assert.equal(u.hidden(mark), true);
+  // The marker is words in the muted token, beside the title: no text is faded (AA).
+  assert.equal(u.style(mark).color, 'var(--muted)'); assert.equal(u.style(mark).opacity, '1');
 });
 
 test('Harness says where the launch came from (0.30 launch), Team the default the kernel resolved (team model v2)', async t => {
@@ -308,19 +322,26 @@ test('roster polls (sync) with unchanged facts never supersede the read in fligh
 const reads = u => u.calls.filter(c => c.path.startsWith('/api/workspace-spawn-preview')).length;
 const refusal = (code, message = code) => ({ spawnPreviewViewApi: 1, status: 'unavailable', target, data: null, reason: { code, message } });
 
-for (const [kind, fail] of [['refused busy (E_BUSY)', () => refusal('E_BUSY', 'The workspace is busy.')], ['rejected (E_CLI_FAILED)', () => { throw Object.assign(new Error('boom'), { code: 'E_CLI_FAILED' }); }]]) {
-  test(`a preview that settled on a transient failure, ${kind}, is read again by the next poll; a settled success is not`, async t => {
-    let n = 0;
-    const u = mount(t, { layout: 'scoped', previews: () => n++ === 0 ? fail() : view(target, preview('preview-worktree-default')) });
-    await settle(12);
-    assert.equal(reads(u), 1); assert.ok(u.q('.spawn-preview-failure'), 'the failure is shown'); assert.equal(u.q('.fspawn').disabled, true);
-    u.ui.sync(); await settle(12); // a routine poll, no fact changed
-    assert.equal(reads(u), 2, 'the poll retries the failed read');
-    assert.equal(u.facts().Name, preview('preview-worktree-default').instance); assert.equal(u.text('.fstatus'), 'Preview ready');
-    for (let i = 0; i < 3; i++) { u.ui.sync(); await settle(); }
-    assert.equal(reads(u), 2, 'a settled success stands under polls while its facts are unchanged');
-  });
-}
+test('a preview that settled on a transient failure (E_CLI_FAILED) is read again by the next poll; a settled success is not', async t => {
+  let n = 0;
+  const u = mount(t, { layout: 'scoped', previews: () => { if (n++ === 0) throw Object.assign(new Error('boom'), { code: 'E_CLI_FAILED' }); return view(target, preview('preview-worktree-default')); } });
+  await settle(12);
+  assert.equal(reads(u), 1); assert.ok(u.q('.spawn-preview-failure'), 'the failure is shown'); assert.equal(u.q('.fspawn').disabled, true);
+  u.ui.sync(); await settle(12); // a routine poll, no fact changed
+  assert.equal(reads(u), 2, 'the poll retries the failed read');
+  assert.equal(u.facts().Name, preview('preview-worktree-default').instance); assert.equal(u.text('.fstatus'), 'Preview ready');
+  for (let i = 0; i < 3; i++) { u.ui.sync(); await settle(); }
+  assert.equal(reads(u), 2, 'a settled success stands under polls while its facts are unchanged');
+});
+
+test('E_BUSY (the server\'s two-read budget) is retried inside the dialog, never shown as a failure', async t => {
+  let n = 0;
+  const u = mount(t, { layout: 'scoped', previews: () => n++ < 2 ? refusal('E_BUSY', 'The workspace is busy.') : view(target, preview('preview-worktree-default')) });
+  await settle(20);
+  assert.equal(reads(u), 3, 'retried until a slot was free');
+  assert.equal(u.q('.spawn-preview-failure'), null); assert.equal(u.q('.fstatus').classList.contains('err'), false);
+  assert.equal(u.facts().Name, preview('preview-worktree-default').instance); assert.equal(u.text('.fstatus'), 'Preview ready');
+});
 
 test('a name refusal is not retried by a poll: it waits for the operator to change the name', async t => {
   const taken = kernel('preview-name-taken').error;

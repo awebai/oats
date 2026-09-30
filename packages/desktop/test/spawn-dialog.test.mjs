@@ -280,19 +280,24 @@ test('a launch configuration is listed for this soul and sent only when chosen',
   await u.change('.flaunch', 'fast'); assert.equal(last(u).launchConfig, 'fast');
 });
 
-test('the harness, model and launch hints describe the preview for the choices on screen only: blank while a new preview is in flight, like the name hint (desktop/loading-states item 9)', async t => {
+test('the harness, model and launch hints describe the preview for the harness, model and configuration on screen only: kept while another field reads, blank while their own change reads (desktop/loading-states item 9)', async t => {
   const gate = deferred(); let hold = false;
   const u = await mountSpawn(t, { previewGate: () => hold ? gate.promise : undefined });
   await u.open();
   assert.equal(u.text('.spawn-run-hint'), 'Launches Pi with its own default model.'); assert.equal(u.text('.spawn-model-default'), "Pi's default model");
   assert.equal(u.q('.spawn-run .spawn-choice-trigger .spawn-trigger-tag')?.textContent, 'default');
-  hold = true; await u.change('.fyolo', 'true'); // a new choice: the preview on screen is for another spawn
-  assert.equal(u.text('.spawn-run-hint'), '', 'no launch sentence from the previous choices');
+  hold = true; await u.change('.fyolo', 'true'); // another field: the launch facts on screen still describe this harness and model
+  assert.equal(u.text('.spawn-run-hint'), 'Launches Pi with its own default model.', 'no blink while an unrelated field reads');
+  assert.equal(u.text('.spawn-model-default'), "Pi's default model"); assert.equal(u.text('.spawn-input-tag'), 'default');
+  await u.change('.fruntime', 'claude'); // the harness itself: the previous preview is for another launch
+  assert.equal(u.text('.spawn-run-hint'), '', 'no launch sentence from the previous harness');
   assert.equal(u.text('.spawn-model-default'), ''); assert.equal(u.text('.spawn-input-tag'), '');
   assert.equal(u.q('.spawn-run .spawn-choice-trigger .spawn-trigger-tag'), null, 'no "default" tag from the previous preview');
-  assert.equal(u.q('.spawn-run .spawn-choice-trigger').getAttribute('aria-label'), 'Harness: default (default)');
+  await u.change('.fruntime', ''); // back to the default harness: the settled preview speaks for it again
+  assert.equal(u.q('.spawn-run .spawn-choice-trigger').getAttribute('aria-label'), 'Harness: Pi (default)');
+  assert.equal(u.text('.spawn-model-default'), "Pi's default model");
   gate.resolve(); await settle(20);
-  assert.equal(u.text('.spawn-run-hint'), 'Launches Pi with its own default model.', 'the hint returns with the matching preview');
+  assert.equal(u.text('.spawn-run-hint'), 'Launches Pi with its own default model.', 'the hint stands with the matching preview');
   assert.equal(u.text('.spawn-model-default'), "Pi's default model"); assert.equal(u.text('.spawn-input-tag'), 'default');
 });
 

@@ -26,12 +26,12 @@ function http({ reply } = {}) {
   };
   const boundary = createTeamsBoundary({ teams: (bin, a) => cliTeams(bin, a, { exec }), soulTeams: (bin, a) => cliSoulTeams(bin, a, { exec }) });
   // A writing action drops the deployment's held inspections (inspect reports a soul's teams).
-  const invalidated = [];
+  const invalidated = [], previewsInvalidated = [];
   const deps = { createServer: fn => fn, teamsRequest: boundary.teams, soulTeamsRequest: boundary.soulTeams, teamsFailure, cliState, workspaces: () => [workspace],
-    inspectCache: { invalidate: ws => invalidated.push(ws) },
+    inspectCache: { invalidate: ws => invalidated.push(ws) }, spawnPreviewCache: { invalidate: ws => previewsInvalidated.push(ws) },
     panelData: assert.fail, collectNow: assert.fail };
   const handler = new Function(...Object.keys(deps), `${source.slice(start, end)}\nreturn server;`)(...Object.values(deps));
-  return { calls, workspace, cliState, invalidated, async request({ url = '/api/workspace-teams?ws=team', method = 'POST', body = { action: 'list' }, headers = HEADERS } = {}) {
+  return { calls, workspace, cliState, invalidated, previewsInvalidated, async request({ url = '/api/workspace-teams?ws=team', method = 'POST', body = { action: 'list' }, headers = HEADERS } = {}) {
     const req = new EventEmitter(); Object.assign(req, { url, method, headers }); let result;
     const res = { writeHead(status, h) { result = { status, headers: h }; }, end(text) { result.body = JSON.parse(text); } };
     const done = handler(req, res); req.emit('data', Buffer.from(typeof body === 'string' ? body : JSON.stringify(body))); req.emit('end'); await done; return result;
@@ -62,6 +62,7 @@ test('oats teams: list/add/remove/default as one argv each (option values as sin
   assert.deepEqual(h.calls, [['teams', '--dir', DEPLOYMENT, '--json'], ['teams', 'add', 'antares-oats', '--team=antares-oats:juan.aweb.ai', '--description=Mine', '--dir', DEPLOYMENT, '--json'],
     ['teams', 'remove', 'old', '--dir', DEPLOYMENT, '--json'], ['teams', 'default', 'oats', '--dir', DEPLOYMENT, '--json']]);
   assert.deepEqual(h.invalidated, [DEPLOYMENT, DEPLOYMENT, DEPLOYMENT], 'each write drops the inspections held under the workspace SCOPE (not its id); the list did not');
+  assert.deepEqual(h.previewsInvalidated, ['team', 'team', 'team'], 'and the spawn previews held under the workspace ID (a preview reports the soul\'s teams)');
 });
 
 test('no flag injection: option-shaped or out-of-grammar values are refused before any process', async () => {
