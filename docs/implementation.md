@@ -93,7 +93,11 @@ gets the plain per-call behaviour. Within a session:
 - a commit's tree is listed once (`git ls-tree -r -t -l`, bounded by
   `TREE_INDEX_BUDGET`; anything odd falls back to the per-path reads), and
   blobs come from one `git cat-file --batch` reader per cache repo (at most
-  12 open, killed through `process-group.mjs` on timeout and at close). A
+  12 open, killed through `process-group.mjs` on timeout and at close). That
+  reader serves `readRemoteFile` and every blob and symlink target
+  `fetchRemoteTree` copies (a module's or soul's tree: no git process per
+  file; a tree read may take what is left of `TREE_BUDGET`), and the
+  subtree listing a fetch inspects comes from the same tree index. A
   command that ends normally awaits the close, so its readers are reaped
   before it exits; a `process.exit` (every refusal) group-kills them in the
   exit hook (`closeNow`), and the system reaps them once the process is gone;
