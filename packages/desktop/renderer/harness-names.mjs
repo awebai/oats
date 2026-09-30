@@ -5,6 +5,8 @@
  * kernel (flags, definition keys) follows the feature. Drop the old spellings
  * when the accepted range no longer includes a kernel without `harness`. */
 export const HARNESSES = Object.freeze(['pi', 'claude', 'codex']);
+/** Each harness as people read it. */
+export const HARNESS_NAMES = Object.freeze({ pi: 'Pi', claude: 'Claude Code', codex: 'Codex' });
 
 export const harnessFeature = cli => Array.isArray(cli?.features) && cli.features.includes('harness');
 /** The spawn/session/launch-config flag for this kernel. */

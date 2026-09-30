@@ -59,11 +59,11 @@ test('restart uses one kernel call with the exact home and launch choices', asyn
   }
 });
 
-function ui(respond) {
+function ui(respond, { supportsDefault } = {}) {
   setWorkspace('/team');
   const dom = new JSDOM('<body><section></section></body>'), el = dom.window.document.querySelector('section');
   const calls = [];
-  const controller = launchConfigFields(el, { selector: () => ({ home }), choices: () => ({ harness: 'codex' }), ctx: { api: async (path, opts) => {
+  const controller = launchConfigFields(el, { selector: () => ({ home }), choices: () => ({ harness: 'codex' }), ...(supportsDefault ? { supportsDefault } : {}), ctx: { api: async (path, opts) => {
     const body = JSON.parse(opts.body); calls.push({ path, ...body }); return respond(body);
   } } });
   return { dom, el, calls, controller, close() { controller.dispose(); dom.window.close(); } };
@@ -215,4 +215,69 @@ test('a remote home is admitted when the kernel reports it addressable, never on
       { code: 'E_SNAPSHOT_UNKNOWN', message: reason });
   }
   assert.equal(calls.length, 1);
+});
+
+const defaultConfig = { name: 'personal', harness: 'codex', source: '/team', args: [], env: {}, executable: null, model: null, yolo: null, shadows: [], default: true };
+const lastSet = u => u.calls.filter(c => c.action === 'set').at(-1);
+
+test('a default configuration keeps default: true when it is edited and saved (launch-config-default)', async () => {
+  const u = ui(body => body.action === 'list' ? { context: '/team', configurations: [defaultConfig] } : {}, { supportsDefault: () => true });
+  try {
+    await u.controller.load('personal');
+    const box = u.el.querySelector('.lc-default');
+    assert.equal(box.checked, true);
+    assert.equal(u.el.querySelector('.lc-default-label').hidden, false);
+    assert.match(u.el.querySelector('.lc-default-label').textContent, /Default for Codex on this machine/);
+    assert.match(u.el.querySelector('.launch-config-select').selectedOptions[0].textContent, /default/);
+    u.el.querySelector('.lc-model').value = 'new-model'; u.el.querySelector('.lc-save').click(); await tick();
+    assert.equal(lastSet(u).definition.default, true);
+    assert.equal(lastSet(u).definition.model, 'new-model');
+    for (const key of ['name', 'source', 'shadows']) assert.equal(Object.hasOwn(lastSet(u).definition, key), false, `${key} is row metadata, never sent back`);
+  } finally { u.close(); }
+});
+
+test('unchecking the default sends no default key, which clears it; checking it on another configuration sends default: true', async () => {
+  const other = { ...defaultConfig, name: 'other', default: false };
+  const u = ui(body => body.action === 'list' ? { context: '/team', configurations: [defaultConfig, other] } : {}, { supportsDefault: () => true });
+  try {
+    await u.controller.load('personal');
+    u.el.querySelector('.lc-default').click(); u.el.querySelector('.lc-save').click(); await tick();
+    assert.equal(Object.hasOwn(lastSet(u).definition, 'default'), false);
+    await u.controller.load('other');
+    assert.equal(u.el.querySelector('.lc-default').checked, false);
+    u.el.querySelector('.lc-default').click(); u.el.querySelector('.lc-save').click(); await tick();
+    assert.equal(lastSet(u).definition.default, true);
+  } finally { u.close(); }
+});
+
+test('the default checkbox names the harness chosen in the editor, and a new configuration starts unchecked', async () => {
+  const u = ui(body => body.action === 'list' ? { context: '/team', configurations: [defaultConfig] } : {}, { supportsDefault: () => true });
+  try {
+    await u.controller.load('personal');
+    const harness = u.el.querySelector('.lc-runtime'); harness.value = 'claude'; harness.dispatchEvent(new u.dom.window.Event('change'));
+    assert.match(u.el.querySelector('.lc-default-label').textContent, /Default for Claude Code on this machine/);
+    u.el.querySelector('.lc-new').click();
+    assert.equal(u.el.querySelector('.lc-default').checked, false);
+  } finally { u.close(); }
+});
+
+test('without launch-config-default the checkbox is hidden and default is never sent', async () => {
+  const u = ui(body => body.action === 'list' ? { context: '/team', configurations: [config] } : {});
+  try {
+    await u.controller.load('personal');
+    assert.equal(u.el.querySelector('.lc-default-label').hidden, true);
+    u.el.querySelector('.lc-model').value = 'm'; u.el.querySelector('.lc-save').click(); await tick();
+    assert.equal(Object.hasOwn(lastSet(u).definition, 'default'), false);
+  } finally { u.close(); }
+});
+
+test("a second default is refused in the kernel's own words", async () => {
+  const message = 'launch configurations "personal" and "other" in /team/oats-local.yaml are both default: true for codex; keep one default per harness';
+  const u = ui(body => body.action === 'list' ? { context: '/team', configurations: [{ ...defaultConfig, name: 'other', default: false }] }
+    : Promise.reject(Object.assign(new Error(message), { code: 'E_LAUNCH_CONFIG_INVALID' })), { supportsDefault: () => true });
+  try {
+    await u.controller.load('other');
+    u.el.querySelector('.lc-default').click(); u.el.querySelector('.lc-save').click(); await tick();
+    assert.equal(u.el.querySelector('.launch-config-status').textContent, message);
+  } finally { u.close(); }
 });

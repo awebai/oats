@@ -43,7 +43,7 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
     modal.querySelector(".start-context").textContent = `${instance.harness || "Harness not reported"} · ${instance.server || "This machine"} · ${instance.home}`;
     model.placeholder = instance.model || "Harness default";
     modal.querySelector(".start-model-help").textContent = `Leave blank to keep ${instance.model || "the harness default"}. Choosing a model here changes this instance’s next launch.`;
-    let closed = false, starting = false, started = false, live = false, canStart = false, refreshGeneration = 0, hasLaunchConfig = false, configsLoaded = false;
+    let closed = false, starting = false, started = false, live = false, canStart = false, refreshGeneration = 0, hasLaunchConfig = false, hasLaunchConfigDefault = false, configsLoaded = false;
     const owns = () => !closed && ws === currentWorkspace() && generation === workspaceGeneration();
     const runtime = modal.querySelector(".start-runtime"), yolo = modal.querySelector(".start-yolo");
     let chosenConfig, modelRequest = 0;
@@ -64,6 +64,7 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
     };
     const choices = () => ({ ...(model.value.trim() ? { model: model.value.trim() } : {}), ...(hasLaunchConfig && runtime.value ? { harness: runtime.value } : {}), ...(hasLaunchConfig && yolo.value !== "" ? { yolo: yolo.value === "true" } : {}) });
     const launchFields = launchConfigFields(modal.querySelector(".start-configurations"), { ctx, selector: () => ({ home: instance.home }), choices, owns,
+      supportsDefault: () => hasLaunchConfigDefault,
       changed: row => { chosenConfig = row; runtime.value = ""; runtime.disabled = !!row; runtime.querySelector("option").textContent = row ? `Configuration harness (${harnessOf(row)})` : `Recorded harness (${instance.runtime || "pi"})`; updateModelHelp(); void fillModels(); },
     });
     for (const input of [runtime, model, yolo]) input.addEventListener("input", () => launchFields.invalidate());
@@ -85,6 +86,7 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
         const found = panel.instances?.find((i) => instanceId(i) === key);
         live = found?.running === true;
         hasLaunchConfig = !!cli.ok && cli.features?.includes("launch-config") && (!instance.server || cli.remote?.includes("launch-config"));
+        hasLaunchConfigDefault = hasLaunchConfig && cli.features.includes("launch-config-default");
         modal.querySelector(".start-launch-controls").hidden = modal.querySelector(".start-configurations").hidden = !hasLaunchConfig;
         if (hasLaunchConfig && !configsLoaded) { configsLoaded = true; void launchFields.load(); }
         submit.textContent = restart ? "Restart" : live ? "Open terminal" : "Start";

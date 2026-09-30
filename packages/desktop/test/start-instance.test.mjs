@@ -148,3 +148,13 @@ test("an accepted launch that exits permits recovery after a fresh status check"
     assert.equal(s.modal.querySelector(".start-submit").disabled, false);
   } finally { s.cleanup(); }
 });
+
+test("the start dialog offers the default checkbox only when this computer's OATS has launch-config-default", async () => {
+  for (const [features, hidden] of [[['session-start', 'launch-config'], true], [['session-start', 'launch-config', 'launch-config-default'], false]]) {
+    const s = setup({ cli: { ok: true, features } });
+    try {
+      await tick();
+      assert.equal(s.modal.querySelector('.lc-default-label').hidden, hidden, features.join(','));
+    } finally { s.cleanup(); }
+  }
+});

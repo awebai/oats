@@ -1,8 +1,8 @@
-import { harnessOf } from './harness-names.mjs';
+import { harnessOf, HARNESS_NAMES } from './harness-names.mjs';
 import { postJson, currentWorkspace, workspaceGeneration } from "./views/common.mjs";
 
 /** Shared launch configuration selector/editor. The kernel resolves every preview. */
-export function launchConfigFields(el, { ctx, selector, choices, owns = () => true, changed = () => {} }) {
+export function launchConfigFields(el, { ctx, selector, choices, owns = () => true, changed = () => {}, supportsDefault = () => false }) {
   const doc = el.ownerDocument, ws = currentWorkspace(), generation = workspaceGeneration();
   let listRequest = 0, previewRequest = 0, disposed = false, busy = false, disabled = false, loading = false, reload = false, configurations = [], context;
   const current = () => !disposed && owns() && ws === currentWorkspace() && generation === workspaceGeneration();
@@ -24,6 +24,7 @@ export function launchConfigFields(el, { ctx, selector, choices, owns = () => tr
       <p>Use native configuration flags or environment variables. Reference credentials with {"fromEnv":"VARIABLE_NAME"}; they must exist on the execution host.</p>
       <label>Default model<input class="field lc-model" autocomplete="off" placeholder="Harness default"></label>
       <label>Permissions<select class="field lc-yolo"><option value="">Use defaults</option><option value="true">YOLO — skip permission prompts</option><option value="false">Use native permission policy</option></select></label>
+      <label class="lc-default-label" hidden><span><input type="checkbox" class="lc-default"> <span class="lc-default-text"></span></span></label>
       <div class="start-buttons"><button class="act lc-new" type="button">New</button><button class="act lc-save" type="button">Save configuration</button><button class="act lc-remove" type="button" disabled>Remove from this scope</button></div>
     </details><p class="launch-config-status" role="status" aria-live="polite"></p>`;
   const select = el.querySelector(".launch-config-select"), status = el.querySelector(".launch-config-status");
@@ -42,6 +43,8 @@ export function launchConfigFields(el, { ctx, selector, choices, owns = () => tr
     field("remove").disabled ||= !removable();
     field("env").disabled ||= field("keep-env").checked;
   };
+  // This machine's baseline for every new launch of the harness (feature launch-config-default).
+  const defaultText = () => { const h = field("runtime").value; field("default-text").textContent = `Default for ${HARNESS_NAMES[h] || h} on this machine`; };
   const fillEditor = row => {
     const def = row?.definition || row || {};
     field("name").value = row?.name || "";
@@ -56,6 +59,9 @@ export function launchConfigFields(el, { ctx, selector, choices, owns = () => tr
     field("env").disabled = field("keep-env").checked;
     field("model").value = def.model || "";
     field("yolo").value = def.yolo == null ? "" : String(def.yolo);
+    field("default-label").hidden = !supportsDefault();
+    field("default").checked = def.default === true;
+    defaultText();
     updateControls();
   };
   const selectionChanged = (notify = true) => {
@@ -65,6 +71,7 @@ export function launchConfigFields(el, { ctx, selector, choices, owns = () => tr
   };
   select.addEventListener("change", () => selectionChanged());
   field("name").addEventListener("input", updateControls);
+  field("runtime").addEventListener("change", defaultText);
   field("keep-env").addEventListener("change", () => {
     field("env").disabled = field("keep-env").checked;
     if (!field("keep-env").checked) field("env").value = "{}";
@@ -78,7 +85,7 @@ export function launchConfigFields(el, { ctx, selector, choices, owns = () => tr
       configurations = data.configurations || []; context = data.context || data.scope?.context;
       select.replaceChildren();
       const option = doc.createElement("option"); option.value = ""; option.textContent = "Keep recorded / soul defaults"; select.append(option);
-      for (const row of configurations) { const option = doc.createElement("option"); option.value = row.name; option.textContent = `${row.name} (${harnessOf(row)})`; select.append(option); }
+      for (const row of configurations) { const option = doc.createElement("option"); option.value = row.name; option.textContent = `${row.name} (${harnessOf(row)}${row.default === true ? ", default" : ""})`; select.append(option); }
       select.value = configurations.some(c => c.name === prefer) ? prefer : "";
       editor.hidden = !context;
       el.querySelector(".launch-config-scope").textContent = context ? `Configuration scope: ${context}` : "";
@@ -117,6 +124,8 @@ export function launchConfigFields(el, { ctx, selector, choices, owns = () => tr
         definition = { harness: field("runtime").value, args, ...(env ? { env } : {}) };
         for (const key of ["executable", "model"]) if (field(key).value.trim()) definition[key] = field(key).value.trim();
         if (field("yolo").value !== "") definition.yolo = field("yolo").value === "true";
+        // Sent only when set: the kernel replaces the whole entry, so an absent key clears it.
+        if (supportsDefault() && field("default").checked) definition.default = true;
       }
       busy = true; invalidate(); updateControls();
       status.textContent = action === "set" ? "Saving…" : "Removing configuration…";
