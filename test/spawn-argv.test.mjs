@@ -78,10 +78,11 @@ function functionSource(src, name) {
 
 test("the flags spawn accepts are exactly the flags its code path reads", () => {
   const src = readFileSync(new URL("../bin/oats.mjs", import.meta.url), "utf8");
-  // spawnCmd and the readers it calls; `--json` is read once, globally (JSON_MODE).
+  // spawnCmd and the readers it calls; `--json` is read once, globally (JSON_MODE), and `--max-age`
+  // once, at dispatch (maxAgeRefusal, then maxAgeGiven: the preview's read session and observation block).
   const path = ["spawnCmd", "dirFlag", "harnessFlag", "yoloFlag"].map((f) => functionSource(src, f)).join("\n")
     .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, ""); // code only: comments name readers too
-  const read = new Set(["json"]);
+  const read = new Set(["json", "max-age"]);
   for (const [, name] of path.matchAll(/\b(?:flag|valueFlag|get)\("([a-z][a-z-]*)"\)/g)) read.add(name);
   for (const [, name] of path.matchAll(/args\.includes\("--([a-z][a-z-]*)"\)/g)) read.add(name);
   for (const [, name] of path.matchAll(/args\[i\] === "--([a-z][a-z-]*)"/g)) read.add(name);
