@@ -950,8 +950,7 @@ for (const [name] of palettes) test(`${name}: team model v2 cards, left entries,
     ['.ct-blocking', '.ct-card', 'muted', 'surface'], ['.ct-blocking strong', '.ct-card', 'fg', 'surface'],
     // Spec 02: the member list on the card (group heads, names, the state words, both buttons).
     ['.ct-group-head', '.ct-card', 'muted', 'surface'], ['.ct-member-name', '.ct-card', 'fg', 'surface'], ['.ct-member-state', '.ct-card', 'muted', 'surface'],
-    ['.ct-member button.ct-act:not(:disabled)', '.ct-member button.ct-act:not(:disabled)', 'fg', 'surface'],
-    ['.ct-member button.ct-act:disabled', '.ct-member button.ct-act:disabled', 'muted', 'surface'],
+    ['.ct-member-term', '.ct-card', 'muted', 'surface'],
     ['.sth-blocking', '.soul-teams-here', 'muted', 'surface'], ['.sth-blocking strong', '.soul-teams-here', 'fg', 'surface'],
     ['.teams-subhead', '.soul-inspector', 'muted', 'surface'],
     ['.teams-warning-head', '.soul-inspector', 'warn', 'surface'], ['.teams-warning-text', '.soul-inspector', 'fg', 'surface'],
@@ -963,7 +962,13 @@ for (const [name] of palettes) test(`${name}: team model v2 cards, left entries,
     assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
   }
-  // The not-reached line is the page head's lead style: the same colour on the same ground.
+  // Hover and focus-visible: the name keeps --fg (underlined) on the card; Terminal turns --fg on --surface-2.
+  const rule = selector => [...doc.styleSheets].flatMap(sheet => [...sheet.cssRules]).find(r => r.selectorText === selector)?.style;
+  assert.equal(rule('.oats-view .computer-teams .ct-member-name:hover, .oats-view .computer-teams .ct-member-name:focus-visible').color, '', 'no colour change on the name');
+  const lit = rule('.oats-view .computer-teams .ct-member-term:hover, .oats-view .computer-teams .ct-member-term:focus-visible');
+  assert.equal(lit.color, 'var(--fg)'); assert.equal(lit.background, 'var(--surface-2)');
+  assert.ok(contrast(opaqueChannels(root.getPropertyValue('--fg').trim()), opaqueChannels(root.getPropertyValue('--surface-2').trim())) >= 4.5, 'Terminal lit');
+    // The not-reached line is the page head's lead style: the same colour on the same ground.
   assert.equal(dom.window.getComputedStyle(doc.querySelector('.ct-reach')).color, dom.window.getComputedStyle(doc.querySelector('.ct-lead')).color);
   assert.ok(doc.querySelector('.ct-reach').textContent.includes('Far box'));
 });

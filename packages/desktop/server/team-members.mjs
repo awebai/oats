@@ -14,8 +14,8 @@ function member(row, { workspace, server = null, serverLabel = null }) {
     running: row.running === true ? true : row.running === false ? false : null,
     // The roster's own rule (a saved route decides when this computer's OATS reports no fact).
     addressable: canAddressRemote(row), missingRemotely: row.missingRemotely === true,
-    // The roster's own reason for a row that can't be opened (spec 01), once, here.
-    reason: rowReason(row)?.sentence ?? null,
+    // The roster's own reason for a row that can't be opened (spec 01), once, here: the sentence and its short label.
+    reason: rowReason(row)?.sentence ?? null, reasonLabel: rowReason(row)?.label ?? null,
     createdAt: text(row.createdAt),
   };
 }

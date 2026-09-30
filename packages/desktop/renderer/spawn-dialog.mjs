@@ -183,7 +183,6 @@ export const spawnDialogCSS = `
 .spawn-seg input:focus-visible + span { background:var(--sel); box-shadow:inset 0 0 0 1px var(--accent); }
 .spawn-relationship-row .frelto { flex:1 1 200px; width:auto; min-width:0; height:34px; }
 .spawn-relationship-row .frelto[hidden] { display:none; }
-.spawn-server-hint { margin:0; color:var(--muted); font-size:11.5px; line-height:1.45; overflow-wrap:anywhere; }
 .spawn-server-hint:empty { display:none; }
 .spawn-form .ftask { min-height:88px; resize:vertical; border-radius:8px; line-height:1.5; }
 /* Developer settings */
@@ -552,6 +551,11 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   runRow.append(runtimeLabel, modelLabel);
   const runHint = el('p', '', 'spawn-hint spawn-run-hint'); runHint.setAttribute('aria-live', 'polite');
   const runField = el('div', undefined, 'spawn-field'); runField.append(runRow, runHint);
+  // Where to run: a primary decision, at the top level just above Relationship (whose picker lists that machine's instances).
+  const placeRow = el('div', undefined, 'spawn-row'), serverLabel = el('label'); serverLabel.append(el('span', 'Where to run', 'spawn-label-text'));
+  const server = el('select', undefined, 'field fserver'); server.setAttribute('aria-label', 'Where to run'); serverLabel.append(server); placeRow.append(serverLabel);
+  const serverHint = el('p', '', 'spawn-hint spawn-server-hint');
+  const placeField = el('div', undefined, 'spawn-field spawn-place'); placeField.append(placeRow, serverHint);
   // Work — read from the soul; a worktree gets the joined "from base | branch" control.
   const workField = el('div', undefined, 'spawn-field spawn-work');
   const workLabel = el('span', undefined, 'spawn-label'); workLabel.append(iconElement(doc, 'branch', { size: 13 }), doc.createTextNode('Work'));
@@ -662,11 +666,9 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   }
   const hostRow = el('div', undefined, 'spawn-row');
   const backendLabel = el('label', 'Session backend'), backend = el('select', undefined, 'field fbackend'); backendLabel.append(backend);
-  const serverLabel = el('label', 'Where to run'), server = el('select', undefined, 'field fserver'); server.setAttribute('aria-label', 'Where to run'); serverLabel.append(server);
-  hostRow.append(backendLabel, serverLabel);
-  const serverHint = el('p', '', 'spawn-server-hint');
+  hostRow.append(backendLabel);
   const wake = wakeScheduleFields(doc);
-  advancedBody.append(workField, permRow, identityField, hostRow, serverHint, wake.el);
+  advancedBody.append(workField, permRow, identityField, hostRow, wake.el);
   // Footer
   const footer = el('div', undefined, 'spawn-footer');
   const statusRow = el('div', undefined, 'spawn-status');
@@ -683,7 +685,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const spawn = el('button', 'Spawn', 'act fspawn primary'); spawn.type = 'button';
   footer.append(statusRow, cancel, spawn, details);
   const body = el('div', undefined, 'spawn-form-body');
-  body.append(selectionSummary, nameField, runField, relation, teamsField, taskLabel, advanced);
+  body.append(selectionSummary, nameField, runField, placeField, relation, teamsField, taskLabel, advanced);
   form.append(body, footer); // the footer stays in view while the body scrolls
   const columns = el('div', undefined, 'spawn-columns'); columns.append(preview, chooser, form);
   dialog.append(header, columns); modal.append(dialog);
@@ -1197,9 +1199,9 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       if (group) serverGroups.set(srv.id, group);
       serverNames.set(srv.id, srv.label);
     }
-    serverLabel.hidden = !list.length;
+    placeField.hidden = !list.length;
   }).catch(() => {});
-  serverLabel.hidden = !soul.server;
+  placeField.hidden = !soul.server;
   paintServerHint();
 
   // ── events

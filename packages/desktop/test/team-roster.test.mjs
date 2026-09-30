@@ -65,28 +65,38 @@ test('memberState and openBlocked: the state in words; Open only for a running, 
   assert.notEqual(openBlocked(far('a', 'build', { addressable: undefined, reason: 'x' })), null, 'only an explicit true opens (the route sends the roster\'s answer)');
 });
 
-test('the card lists its members by machine: labelled groups, the state in words, two named buttons; Open disabled with the reason', async t => {
+test('the card lists its members by machine: sentence-case headings with a count, the name shows the row, Terminal only when it can open', async t => {
   const calls = [];
-  const u = await mount(t, { members: [m('dev-a'), far('far-b', 'build', { running: false }), far('far-c', 'down', { running: null, reason: 'ssh failed: timeout' })],
+  const u = await mount(t, { members: [m('dev-a'), far('far-b', 'build', { running: false }),
+    far('far-c', 'down', { running: null, reason: 'ssh failed: timeout', reasonLabel: 'Down box not reached' }),
+    far('far-d', 'build', { addressable: false, reason: 'Build box did not report this instance as reachable.', reasonLabel: 'not reachable on Build box' })],
     servers: [server('build'), server('down', { reached: false, error: 'ssh failed: timeout' })], notReached: [] }, { onMember: (action, x) => calls.push([action, x.instance, x.server]) });
   const groups = u.all('.ct-members > .ct-group');
-  assert.deepEqual(groups.map(g => g.querySelector('.ct-group-head').textContent), ['This computer', 'Build box', 'Down box · not reached']);
+  assert.deepEqual(groups.map(g => g.querySelector('.ct-group-head').textContent), ['This computer · 1', 'Build box · 2', 'Down box · not reached']);
   for (const g of groups) { assert.equal(g.getAttribute('role'), 'group'); assert.equal(u.doc.getElementById(g.getAttribute('aria-labelledby')), g.querySelector('.ct-group-head')); }
   assert.equal(groups[2].querySelector('.ct-group-head').title, 'ssh failed: timeout');
   const rows = u.all('.ct-member');
+  const row = name => rows.find(r => r.querySelector('.ct-member-name').textContent === name);
   assert.deepEqual(rows.map(r => [r.querySelector('.ct-member-name').textContent, r.querySelector('.ct-member-state').textContent, r.querySelector('.ct-dot').dataset.state]),
-    [['dev-a', 'running', 'running'], ['far-b', 'stopped', 'stopped'], ['far-c', 'unknown', 'unknown']]);
-  const [open, show] = rows[0].querySelectorAll('button');
-  assert.equal(open.getAttribute('aria-label'), 'Open dev-a terminal on this computer'); assert.equal(open.disabled, false);
-  assert.equal(show.getAttribute('aria-label'), 'Show dev-a in the roster');
-  const [openB, showB] = rows[1].querySelectorAll('button');
-  assert.equal(openB.getAttribute('aria-label'), 'Open far-b terminal on Build box');
-  assert.equal(openB.disabled, true); assert.equal(openB.title, 'far-b is not running.'); assert.equal(openB.getAttribute('aria-description'), 'far-b is not running.');
-  assert.equal(showB.disabled, false, 'Show in roster is always enabled');
-  assert.equal(rows[2].querySelector('button').title, 'ssh failed: timeout');
-  open.click(); showB.click();
+    [['dev-a', 'running', 'running'], ['far-b', 'stopped', 'stopped'], ['far-d', 'not reachable on Build box', 'running'], ['far-c', 'Down box not reached', 'unknown']],
+    'the state word says why a member cannot open: the roster\'s short label, else stopped or unknown');
+  // The name is the Show-in-roster control; Terminal is there only when the member can be opened.
+  const name = row('dev-a').querySelector('.ct-member-name');
+  assert.equal(name.tagName, 'BUTTON'); assert.equal(name.getAttribute('aria-label'), 'Show dev-a in the roster');
+  const term = row('dev-a').querySelector('.ct-member-term');
+  assert.equal(term.getAttribute('aria-label'), 'Open dev-a terminal on this computer'); assert.equal(term.textContent, 'Terminal');
+  assert.deepEqual([...row('dev-a').querySelectorAll('button')], [name, term], 'the keyboard order: name, then Terminal');
+  for (const blocked of ['far-b', 'far-c', 'far-d']) {
+    assert.equal(row(blocked).querySelector('.ct-member-term'), null, `${blocked}: no disabled button in the list`);
+    assert.equal(row(blocked).querySelectorAll('button:disabled').length, 0);
+  }
+  const word = row('far-d').querySelector('.ct-member-state');
+  assert.equal(word.title, 'Build box did not report this instance as reachable.'); assert.equal(word.getAttribute('aria-description'), word.title);
+  assert.equal(row('far-b').querySelector('.ct-member-state').title, 'far-b is not running.');
+  assert.equal(row('dev-a').querySelector('.ct-member-state').hasAttribute('title'), false);
+  term.click(); row('far-b').querySelector('.ct-member-name').click();
   assert.deepEqual(calls, [['open', 'dev-a', null], ['show', 'far-b', 'build']]);
-  assert.equal(u.q('.ct-side .ct-count').textContent, '3 members · 2 on other machines');
+  assert.equal(u.q('.ct-side .ct-count').textContent, '4 members · 3 on other machines');
 });
 
 test('not reached: a status line under the head names every server we hold no rows for, and follows each answer even with focus inside', async t => {
@@ -118,7 +128,8 @@ test('hostile instance, home and server label strings are text, never markup', a
     servers: [server('build', { label: hostile })], notReached: [{ server: 'n', label: hostile }] });
   assert.equal(u.card.element.querySelector('img, [onerror]'), null);
   assert.ok(u.q('.ct-group-head').textContent.includes(hostile)); assert.ok(u.q('.ct-reach').textContent.includes(hostile));
-  assert.equal(u.q('.ct-member button').title, hostile);
+  assert.equal(u.q('.ct-member .ct-member-state').title, hostile);
+  assert.equal(u.q('.ct-member-name').getAttribute('aria-label'), `Show x${hostile} in the roster`);
 });
 
 test('a route answer that does not validate leaves the cards saying nothing about members', async t => {

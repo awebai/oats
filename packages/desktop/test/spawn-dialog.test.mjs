@@ -510,8 +510,12 @@ test('Where to run: "This computer" first, then each server by label (and id whe
       buildFacts({ server: 'bare', label: 'Bare box', group: 'bare:1', souls: ['someone-else'] }),
       buildFacts({ server: 'moved', label: 'Moved box', group: 'moved:old', registered: false })] } });
   await u.open();
-  const label = u.q('.fserver').closest('label');
-  assert.equal(label.firstChild.textContent, 'Where to run');
+  // A primary decision: at the form's top level, directly above Relationship (whose picker depends on it), not in Developer settings.
+  const place = u.q('.spawn-place');
+  assert.equal(place.querySelector('.spawn-label-text').textContent, 'Where to run');
+  assert.equal(place.contains(u.q('.fserver')), true); assert.equal(place.contains(u.q('.spawn-server-hint')), true);
+  assert.equal(u.q('.spawn-advanced').contains(place), false);
+  assert.equal(place.nextElementSibling, u.q('.spawn-relationship'));
   assert.deepEqual([...u.q('.fserver').options].map(o => [o.textContent, o.disabled]), [
     ['This computer', false], ['Build host (build)', false], ['same', false],
     ['Down box (not reached)', true], ['Bare box (no release-manager soul there)', true], ['Moved box (not registered)', true]]);

@@ -69,15 +69,15 @@ The shape is the lead's (0.30 D2 review):
 ```json
 {"members":[{"workspace":"<ws id to navigate to>","server":null,"serverLabel":null,"instance":"…","agent":"…",
   "agentsRoot":"…","home":"…","team":"<identity.team>","running":true,"addressable":true,"missingRemotely":false,
-  "reason":null,"createdAt":"…"}],
+  "reason":null,"reasonLabel":null,"createdAt":"…"}],
  "servers":[{"server":"<id>","label":"…","group":"<group id>","reached":true,"error":null,"registered":true,"souls":["dev"]}],
  "notReached":[{"server":"<id>","label":"…"}]}
 ```
 
 - **`members`**: every row whose `identity.team` is a non-empty string: this workspace's rows, then
   each remote group's rows. `workspace` is where to go for the row (`remote:<group id>` for a remote
-  one); `running` is `null` when unknown; `reason` is the roster's own reason the row can't be opened
-  (`rowReason`), or `null`. The same instance seen from two machines is two members.
+  one); `running` is `null` when unknown; `reason` and `reasonLabel` are the roster's own reason the
+  row can't be opened and its short label (`rowReason`), or `null`. The same instance seen from two machines is two members.
 - **`servers`**: one entry per remote group. `reached` is the group's last roster read; `registered`
   marks the group the server's registration targets (where `spawn --server` goes); `souls` are the
   souls its roster lists.
@@ -88,10 +88,14 @@ The shape is the lead's (0.30 D2 review):
 - A team card with a provider id lists its members, grouped by machine: "This computer" first, then
   servers by label in code-point order (the server id breaks ties); within a group by instance name,
   then home. An unmapped team shows no list.
-- A member shows its state dot and, in words, `running`, `stopped`, `unknown` or `gone` (missing from
-  its server).
-- **Open terminal** is enabled for a running, addressable member; otherwise it is disabled with the
-  roster's reason as its title and description. **Show in roster** is always enabled.
+- Machine headings are sentence-case meta text with a count ("This computer · 3", "build · not
+  reached"), each a `role="group"` labelled by its heading.
+- A member row is its state dot, its name (the roster's font), its soul mark and its state in words.
+  The **name** is a text button that shows the member's roster row ("Show <instance> in the roster").
+  A quiet **Terminal** button ("Open <instance> terminal on <machine>") is there only when the member
+  is running and addressable. Otherwise the state word says why, as the roster's short label ("gone
+  from X", "not reachable on X", "X not reached") or `stopped`/`unknown`, with the full reason as its
+  title and description. The list holds no disabled buttons.
 - Both go to the member's workspace, wait for the row by server and home (`handOff` in
   `views/spawn.mjs`, shared with the remote spawn), then open it or select and focus it
   (`ctx.showInRoster`).
@@ -104,7 +108,8 @@ The shape is the lead's (0.30 D2 review):
   barrier (an open form, a pending confirmation, or focus inside the page).
 - The card's summary is "N members" or "N members · M on other machines", and nothing for none.
 
-**Where to run** (the spawn dialog): "This computer", then each registered server (`/api/servers`).
+**Where to run** (the spawn dialog, at the form's top level just above Relationship): "This computer",
+then each registered server (`/api/servers`).
 It takes its disabled states from this route's `servers`, using the registered group of each server:
 "(not registered)" when the server has groups but none is the registration's, "(not reached)", or
 "(no <soul> soul there)". A server the roster has no group for yet (before its first answer) stays

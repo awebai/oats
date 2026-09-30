@@ -112,17 +112,20 @@ export const computerTeamsCSS = `
 .computer-teams .ct-reach:empty { display:none; }
 .computer-teams .ct-members { display:flex; flex-direction:column; gap:10px; margin:6px 0 0; padding:0; list-style:none; min-width:0; }
 .computer-teams .ct-group { display:flex; flex-direction:column; gap:4px; min-width:0; }
-.computer-teams .ct-group-head { margin:0; color:var(--muted); font-size:10.5px; font-weight:650; letter-spacing:.065em; text-transform:uppercase; overflow-wrap:anywhere; }
+.computer-teams .ct-group-head { margin:0; color:var(--muted); font-size:12px; font-weight:500; line-height:1.45; overflow-wrap:anywhere; }
 .computer-teams .ct-member-list { display:flex; flex-direction:column; gap:2px; margin:0; padding:0; list-style:none; min-width:0; }
-.computer-teams .ct-member { display:flex; align-items:center; gap:8px; min-height:30px; min-width:0; }
+.computer-teams .ct-member { display:flex; align-items:center; gap:8px; min-height:26px; min-width:0; }
 .computer-teams .ct-member .identity-mark { width:18px; height:18px; border-radius:5px; font-size:9px; font-weight:700; flex:none; }
 .computer-teams .ct-dot { box-sizing:border-box; width:8px; height:8px; flex:none; border-radius:50%; border:1.5px solid var(--faint); background:var(--surface); }
 .computer-teams .ct-dot[data-state=running] { border-color:var(--accent); background:var(--accent); }
 .computer-teams .ct-dot[data-state=unknown], .computer-teams .ct-dot[data-state=gone] { border-color:var(--warn); background:var(--warn); }
-.computer-teams .ct-member-name { color:var(--fg); font:12px var(--mono,monospace); overflow-wrap:anywhere; min-width:0; }
+/* The name is the roster's (proportional, 12.5px/600) and shows the row: a text control, underlined on hover and focus. */
+.oats-view .computer-teams .ct-member-name { appearance:none; margin:0; padding:0; border:0; background:none; color:var(--fg); font:600 12.5px/1.3 var(--sans,system-ui); text-align:left; overflow-wrap:anywhere; min-width:0; cursor:pointer; }
+.oats-view .computer-teams .ct-member-name:hover, .oats-view .computer-teams .ct-member-name:focus-visible { text-decoration:underline; }
 .computer-teams .ct-member-state { color:var(--muted); font-size:11.5px; white-space:nowrap; flex-grow:1; }
-.computer-teams .ct-member-actions { display:flex; gap:6px; flex:none; }
-.oats-view .computer-teams .ct-member button.ct-act { height:24px; min-height:24px; padding:0 8px; font-size:11px; }
+/* Terminal: quiet, borderless until hover or focus. */
+.oats-view .computer-teams .ct-member-term { appearance:none; display:inline-flex; align-items:center; gap:4px; flex:none; height:22px; padding:0 6px; border:1px solid transparent; border-radius:5px; background:none; color:var(--muted); font:600 11px var(--sans,system-ui); cursor:pointer; }
+.oats-view .computer-teams .ct-member-term:hover, .oats-view .computer-teams .ct-member-term:focus-visible { border-color:var(--border); background:var(--surface-2); color:var(--fg); }
 `;
 
 const text = v => typeof v === 'string' && v ? v : null;
@@ -168,6 +171,12 @@ const MAX_MARKS = 3;
 const codePoint = (a, b) => a < b ? -1 : a > b ? 1 : 0;
 /** A member's state in words (never colour alone): running, stopped, unknown, or gone from its server. */
 export const memberState = m => m.missingRemotely ? 'gone' : m.running === true ? 'running' : m.running === false ? 'stopped' : 'unknown';
+/** The state word on a member row: running when it can be opened; else the roster's short reason
+ * ("gone from X", "not reachable on X", "X not reached"), else stopped or unknown. */
+export function stateWord(m) {
+  if (m.running === true && m.addressable === true) return 'running';
+  return text(m.reasonLabel) && m.reasonLabel !== 'state unknown' ? m.reasonLabel : memberState(m);
+}
 /** Why a member's terminal can't be opened: the roster's own reason (the route sends it), or, for a
  * stopped member the roster has no reason for, that it is not running. Null when it can be opened. */
 export function openBlocked(m) {
@@ -290,15 +299,22 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
     if (!text(team.team) || !roster) return [];
     return roster.members.filter(m => m.team === team.team);
   }
+  /** One member: its dot, its name (which shows its roster row), its soul mark, its state in words and, only
+   * when it can be opened, a quiet Terminal. A member that can't be opened says why in its state word. */
   function memberRow(m) {
-    const item = el(doc, 'li', null, 'ct-member'), state = memberState(m), machine = m.server ? text(m.serverLabel) ?? m.server : 'this computer';
-    const dot = el(doc, 'span', null, 'ct-dot'); dot.dataset.state = state; dot.setAttribute('aria-hidden', 'true');
-    item.append(dot, el(doc, 'span', m.instance, 'ct-member-name'), createSoulMark(doc, { name: m.agent, agentsRoot: m.agentsRoot }), el(doc, 'span', state, 'ct-member-state'));
-    const actions = el(doc, 'span', null, 'ct-member-actions'), blocked = openBlocked(m);
-    const open = button('Open terminal', '', () => onMember('open', { ...m }), { disabled: !!blocked, title: blocked || '', aria: `Open ${m.instance} terminal on ${machine}` });
-    if (blocked) open.setAttribute('aria-description', blocked);
-    actions.append(open, button('Show in roster', '', () => onMember('show', { ...m }), { aria: `Show ${m.instance} in the roster` }));
-    item.append(actions);
+    const item = el(doc, 'li', null, 'ct-member'), machine = m.server ? text(m.serverLabel) ?? m.server : 'this computer';
+    const dot = el(doc, 'span', null, 'ct-dot'); dot.dataset.state = memberState(m); dot.setAttribute('aria-hidden', 'true');
+    const name = el(doc, 'button', m.instance, 'ct-member-name'); name.type = 'button'; name.setAttribute('aria-label', `Show ${m.instance} in the roster`);
+    name.addEventListener('click', () => onMember('show', { ...m }));
+    const word = el(doc, 'span', stateWord(m), 'ct-member-state'), blocked = openBlocked(m);
+    if (blocked) { word.title = blocked; word.setAttribute('aria-description', blocked); }
+    item.append(dot, name, createSoulMark(doc, { name: m.agent, agentsRoot: m.agentsRoot }), word);
+    if (!blocked) {
+      const term = el(doc, 'button', null, 'ct-member-term'); term.type = 'button'; term.setAttribute('aria-label', `Open ${m.instance} terminal on ${machine}`);
+      term.append(iconElement(doc, 'terminal', { size: 12 }), el(doc, 'span', 'Terminal'));
+      term.addEventListener('click', () => onMember('open', { ...m }));
+      item.append(term);
+    }
     return item;
   }
   function memberList(members) {
@@ -306,7 +322,7 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
     for (const group of memberGroups(members, roster?.servers)) {
       const item = el(doc, 'li', null, 'ct-group'), id = `ct-group-${++groupIds}`;
       item.setAttribute('role', 'group'); item.setAttribute('aria-labelledby', id);
-      const head = el(doc, 'h4', group.reached ? group.label : `${group.label} · not reached`, 'ct-group-head'); head.id = id;
+      const head = el(doc, 'h4', `${group.label} · ${group.reached ? group.members.length : 'not reached'}`, 'ct-group-head'); head.id = id;
       if (!group.reached && group.error) head.title = group.error;
       const rows = el(doc, 'ul', null, 'ct-member-list');
       for (const m of group.members) rows.append(memberRow(m));

@@ -21,9 +21,9 @@ test('members: this workspace\'s rows and every remote panel\'s rows with a team
   const result = project({ rows: [localRow('dev-a'), localRow('solo', { identity: { alias: 'solo' } })], groups: [build] });
   assert.deepEqual(result.members.map(m => [m.server, m.instance]), [[null, 'dev-a'], ['build', 'far-a']]);
   assert.deepEqual(result.members[0], { workspace: '/w', server: null, serverLabel: null, instance: 'dev-a', agent: 'dev', agentsRoot: '/w/agents',
-    home: '/w/agents/dev/instances/dev-a', team: TEAM, running: true, addressable: true, missingRemotely: false, reason: null, createdAt: '2026-09-30T00:00:00.000Z' });
+    home: '/w/agents/dev/instances/dev-a', team: TEAM, running: true, addressable: true, missingRemotely: false, reason: null, reasonLabel: null, createdAt: '2026-09-30T00:00:00.000Z' });
   assert.deepEqual(result.members[1], { workspace: 'remote:build:1a2b', server: 'build', serverLabel: 'build box', instance: 'far-a', agent: 'dev',
-    agentsRoot: '/srv/agents', home: '/srv/agents/dev/instances/far-a', team: TEAM, running: true, addressable: true, missingRemotely: false, reason: null, createdAt: null });
+    agentsRoot: '/srv/agents', home: '/srv/agents/dev/instances/far-a', team: TEAM, running: true, addressable: true, missingRemotely: false, reason: null, reasonLabel: null, createdAt: null });
 });
 
 test('members: a row that cannot be opened carries the roster\'s own reason; missingRemotely is kept', () => {
@@ -32,6 +32,7 @@ test('members: a row that cannot be opened carries the roster\'s own reason; mis
   assert.equal(gone.missingRemotely, true); assert.equal(gone.addressable, false);
   assert.equal(gone.reason, 'gone is no longer on build box. Remove it from this computer with: oats server forget build --instance gone');
   assert.equal(hidden.reason, 'build box did not report this instance as reachable.');
+  assert.deepEqual([gone.reasonLabel, hidden.reasonLabel], ['gone from build box', 'not reachable on build box'], 'the roster\'s short label, for the state word');
 });
 
 test('servers: every remote group, reached or not; an unreached group keeps its last-known rows, their state unknown', () => {
