@@ -275,6 +275,11 @@ test("session attach --server: ssh failing before the viewer (the probe, the nam
   r = cli(flakyEnv, ["session", "attach", "--server", "build", "--instance", "dev-a"]);
   assert.equal(r.status, 255, r.stderr);
   assert.match(r.stderr, /^oats: ssh to build-host failed: /m);
+  // No ssh on this machine at all: nothing ran, so there is no link to come back; exit 1.
+  const noSsh = { ...env, PATH: `${dirname(process.execPath)}:/nonexistent` };
+  r = cli(noSsh, ["session", "attach", "--server", "build", "--home", home]);
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /^oats: ssh to build-host failed: .*ENOENT/m);
   // A host that answers, but without `oats session`: a refusal, exit 1.
   const old = fakeHost(join(dir, "old"), { probe: { ...PROBE, version: "0.22.1", remote: ["spawn", "retire", "status"] }, answers: { [`status --json --dir ${WS}`]: { stdout: JSON.stringify(ROSTER) } } });
   const oldEnv = cliEnv(join(dir, "old"), old); register(oldEnv, old.oatsPath);
