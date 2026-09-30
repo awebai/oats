@@ -1,5 +1,5 @@
 // /api/panel per-instance contract projection (review 2092e0f): renderer
-// clustering and ux-designer's cluster-first overview consume these exact
+// clustering and its cluster-first overview consume these exact
 // fields, but renderer tests inject them directly — a dropped or typo'd
 // projection field would stay green there. Extract the REAL projection
 // function from server/oats-web.mjs via block markers (house pattern,

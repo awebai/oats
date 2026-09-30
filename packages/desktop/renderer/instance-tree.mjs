@@ -38,8 +38,8 @@ export function instanceId(instance) {
  * (intra-root duplicates are legal and inherently ambiguous; merged-state
  * review @7dd1e7b) — resolves to nothing (fail safe: two separate clusters,
  * never a wrong merge, a false edge, or a hidden node).
- * EXPORTED as the one shared resolver — ux-designer's hierarchy/cluster
- * maps must use the same semantics rather than re-implementing them.
+ * EXPORTED as the one shared resolver — the hierarchy and cluster maps
+ * must use the same semantics rather than re-implementing them.
  * byName: Map<name, instance[]> over the same roster. */
 export function resolveLinkId(fromInstance, name, byName) {
   const candidates = byName.get(name)?.filter((i) => (i.server || "") === (fromInstance.server || ""));

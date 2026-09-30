@@ -1,5 +1,5 @@
 // Workspace suggestions + runtime add — the privileged side's testable core.
-// (Phase-2 hook 3; the renderer switcher/modal is the UX designer's.)
+// (Phase-2 hook 3; the switcher and its modal live in the renderer.)
 //
 // Discovery is BOUNDED and deterministic — never arbitrary filesystem
 // scanning: (a) deployments the app already knows, (b) a persisted
