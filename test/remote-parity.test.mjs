@@ -288,6 +288,27 @@ test("session attach --server: ssh failing before the viewer (the probe, the nam
   assert.match(r.stderr, /does not advertise the `oats session` commands/);
 });
 
+test("an E_SSH envelope says details.sshStarted: false when ssh never started; a failed link carries no such details", () => {
+  const dir = mkdtempSync(join(base, "ssh-started-"));
+  const home = "/srv/ws/agents/dev/instances/dev-a";
+  const down = join(dir, "down-bin"); mkdirSync(down, { recursive: true });
+  writeFileSync(join(down, "ssh"), "#!/bin/sh\necho 'ssh: connect to host build-host port 22: Connection refused' >&2\nexit 255\n", { mode: 0o755 });
+  const env = cliEnv(dir, { bin: down });
+  mkdirSync(env.OATS_HOME_DIR, { recursive: true });
+  writeFileSync(join(env.OATS_HOME_DIR, "servers.json"), JSON.stringify({ servers: { build: { sshHost: "build-host", workspace: WS, oatsPath: "oats" } } }));
+  const noSsh = { ...env, PATH: `${dirname(process.execPath)}:/nonexistent` };
+  for (const args of [["session", "inspect", "--server", "build", "--home", home, "--json"], ["server", "check", "build", "--json"]]) {
+    let r = cli(noSsh, args);
+    assert.equal(r.status, 1, r.stderr);
+    assert.equal(r.json().error.code, "E_SSH", args.join(" "));
+    assert.deepEqual(r.json().error.details, { sshStarted: false }, args.join(" "));
+    r = cli(env, args);
+    assert.equal(r.status, 1, r.stderr);
+    assert.equal(r.json().error.code, "E_SSH", args.join(" "));
+    assert.equal(Object.hasOwn(r.json().error, "details"), false, `a link that failed is not marked: ${args.join(" ")}`);
+  }
+});
+
 // ---- item 3: foreign instances are first-class ----
 
 const FULL_PROBE = { ...PROBE, remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "session-upload"], features: ["harness", "retire-home", "session-start", "session-restart", "session-upload", "launch-config"] };
