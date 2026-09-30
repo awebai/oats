@@ -4,7 +4,7 @@ import { postJson, workspaceGeneration } from './views/common.mjs';
 import { cliStatus, onCliChange } from './views/cli-status.mjs';
 import { absolute } from './readiness-contract.mjs';
 import { eventsSelector, eventsSupported, eventsTarget, eventsFailure, eventsTimestamp } from './instance-events-contract.mjs';
-import { readingFrom, remoteReason } from './remote-address.mjs';
+import { codeLine, readingFrom, remoteReason } from './remote-address.mjs';
 import { eventsData, eventsIncomplete, eventIncarnation, EVENT_TITLES } from './instance-events-data.mjs';
 export const instanceEventsCSS = `
 .events-view { color:var(--fg); margin-top:10px; padding-top:10px; border-top:1px solid var(--border); font-size:11px; line-height:1.5; }
@@ -148,7 +148,7 @@ export function createInstanceEventsView(host, { ctx, selection, owner = () => t
       if (!owns()) return;
       // A remote read's reason: the host's headline, then its code and message.
       const reason = error?.reason || eventsFailure(error?.code).reason;
-      stale = !!value; message = `${reason.message}${reason.remote && reason.code !== 'unsupported-remote-operation' ? ` (${reason.detail ? `${reason.code}: ${reason.detail}` : reason.code})` : ''}${value ? ' Last observation retained — refresh required.' : ''}`;
+      stale = !!value; message = `${reason.message}${reason.remote && reason.code !== 'unsupported-remote-operation' ? ` (${codeLine(reason)})` : ''}${value ? ' Last observation retained — refresh required.' : ''}`;
     } finally { if (owns()) { busy = false; controls(); } }
   }
   load.addEventListener('click', () => { if (!load.disabled) void read(); });

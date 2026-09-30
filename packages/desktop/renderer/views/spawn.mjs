@@ -27,6 +27,7 @@ import { preselectSchedule } from "./schedules.mjs";
 import { preselectAutomationsTab } from "./automations.mjs";
 import { inspectSupported } from "../inspect-contract.mjs";
 import { createDataState, skeleton, statusLine, captureFocusState } from "../loading.mjs";
+import { canAddressRemote } from "../remote-address.mjs";
 
 /** True while the CLI probe has never SETTLED (no response classified yet).
  * Pending is card-less by design, so disabled buttons must explain
@@ -1200,13 +1201,14 @@ export async function waitForInstanceInPanel(s, ref, isCurrent, { tries = 20, de
   // roster, a bare-name wait would succeed early and the follow-up open then
   // refuse the ambiguous name (merged-state review @7dd1e7b) — and require
   // the readiness the shell's open path checks (running + tmux session), so
-  // the auto-open can never race the tmux registration.
+  // the auto-open can never race the tmux registration. A remote row opens by
+  // server and home: it is ready once running and addressable (tmux is the host's).
   const matches = (x) => x.instance === ref.instance
     && (x.server || "") === (ref.server || "")
     && (strict ? !!ref.home && x.home === ref.home : !ref.home || !x.home || x.home === ref.home)
     && (strict ? !!ref.agentsRoot && x.agentsRoot === ref.agentsRoot : !ref.agentsRoot || !x.agentsRoot || x.agentsRoot === ref.agentsRoot)
     && (!strict || !ref.agent || x.agent === ref.agent)
-    && !!x.running && (!!x.tmux?.session || (!!x.server && x.savedRoute));
+    && !!x.running && (x.server ? canAddressRemote(x) : !!x.tmux?.session);
   for (let i = 0; i < tries; i++) {
     if (!isCurrent()) return false;          // ws switched / superseded: stop
     try {

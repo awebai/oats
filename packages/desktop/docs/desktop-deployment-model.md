@@ -73,9 +73,9 @@ roster --json`, projected by `server/remote-roster.mjs`); its rows carry
   with `addressable === true`. It gates every action on a row: opening the
   terminal, Start…, the actions menu, the context panel's buttons, the start
   and restart dialog and route, launch configurations, inspection, lifecycle
-  plans and applies, readiness, activity, Git and diff. `savedRoute` (spawned
-  from this machine) is information only; the post-spawn wait in
-  `views/spawn.mjs` is its one reader.
+  plans and applies, readiness, activity, Git and diff, and the wait for a
+  started or spawned instance's terminal. `savedRoute` (spawned from this
+  machine) is information only; nothing reads it.
 - **Why a row can't open.** `rowReason(row)` in the same module is the one
   source of a row's reason: a short label on the roster meta line (Herdr no
   longer supported, gone from `<server>`, not reachable on `<server>`,

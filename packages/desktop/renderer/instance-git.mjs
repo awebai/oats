@@ -4,7 +4,7 @@ import { gitTarget, gitTargetKey, gitState, gitDiff, gitObservation, gitKinds, I
 import { createForgePrPanel } from './forge-pr.mjs';
 import { ageText } from './age-text.mjs';
 import { iconElement } from './shell-icons.mjs';
-import { readingFrom, serverLabel } from './remote-address.mjs';
+import { codeLine, readingFrom, serverLabel } from './remote-address.mjs';
 
 export const instanceGitCSS = `
 /* v4.1 Developer tab (Git and GitHub; board 2): Branch, Changes and Pull request cards under small-caps labels,
@@ -202,8 +202,6 @@ export function noGitReason(work) {
   if (work === 'workspace') return "It works across the workspace's member repositories (workspace mode), so there is no single branch or pull request to show.";
   return null;
 }
-/** A refusal's code, and the kernel's own message when a remote host sent one. */
-const codeLine = reason => typeof reason.detail === 'string' && reason.detail ? `${reason.code}: ${reason.detail}` : reason.code;
 export function createInstanceGitPanel(parent, { request, generation = () => 0, applyFocus = fn => fn(),
   requestForge, requestThreads = null, connectionGeneration = () => 0, subscribeConnections = () => () => {}, connect, openExternal, onObservation = () => {}, onPullRequest = () => {} } = {}) {
   const doc = parent.ownerDocument;

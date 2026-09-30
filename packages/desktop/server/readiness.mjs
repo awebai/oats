@@ -11,8 +11,9 @@ function admit(selector, { workspace: w, cli, agents = [], instances = [], local
   if (!w || typeof w.id !== 'string' || !w.id || !absolute(w.scope)) return fail('E_WORKSPACE_UNKNOWN');
   let context = w.scope, home, incarnation = null, route;
   if (selector.kind === 'soul') {
-    // A soul's readiness is read on this machine only.
-    if (w.remote || w.server) return fail('unsupported-remote-operation');
+    // A soul's readiness is read on this machine only: never routed, so updating OATS would not help.
+    if (w.remote || w.server) return fail('unsupported-remote-operation', { code: 'unsupported-remote-operation',
+      message: "A remote soul's readiness is not read from this computer.", detail: null, remote: true });
     const rows = agents.filter(a => a.name === selector.soul && a.agentsRoot === selector.agentsRoot);
     if (rows.length !== 1) return fail('E_SOUL_UNKNOWN');
     if (rows[0].remote || rows[0].server) return fail('unsupported-remote-operation');

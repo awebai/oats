@@ -51,6 +51,7 @@ test('remote readiness: refused before any process without the probe entry, for 
   const boundary = createReadinessBoundary({ invoke: assert.fail });
   const soul = await boundary({ action: 'read', selector: { kind: 'soul', soul: 'dev', agentsRoot: '/srv/agents' } }, context);
   assert.equal(soul.reason.code, 'unsupported-remote-operation');
+  assert.equal(soul.reason.message, "A remote soul's readiness is not read from this computer.", 'never routed, so not an update-OATS remedy');
   assert.equal(a.calls.length + b.calls.length, 0);
 });
 

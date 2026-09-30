@@ -45,6 +45,13 @@ export const remoteHeadline = (code, label, fallback) => Object.hasOwn(HEADLINES
 
 export const readingFrom = label => `Reading from ${label}…`;
 
+/** A failure's Details line: its code, and the kernel's own message when a remote host sent one. */
+export const codeLine = reason => {
+  const code = typeof reason?.code === 'string' && reason.code ? reason.code : null;
+  const detail = typeof reason?.detail === 'string' && reason.detail ? reason.detail : null;
+  return code && detail ? `${code}: ${detail}` : code;
+};
+
 const CODE = /^E_[A-Z0-9_]{1,64}$/;
 const UNSAFE = /[\x00-\x08\x0b-\x1f\x7f]|[a-z][a-z0-9+.-]*:\/\/[^\s/]*@|(?:token|authorization|password|secret|api[_ -]?key)\s*[:=]\s*\S+|(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{16,}/i;
 const MAX_MESSAGE = 512, MAX_DETAIL = 2048;

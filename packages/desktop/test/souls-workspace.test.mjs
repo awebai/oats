@@ -169,3 +169,14 @@ test("shell api errors: httpError carries the server's stable domain code (merge
   assert.ok(/if \(!r\.ok\) throw httpError\(r, pathname\);/.test(src), "shell ctx.api throws via the shared httpError");
   assert.ok(/httpError\s*\}?\s*from ".\/views\/common.mjs"|,\s*httpError\s*\}/.test(src), "shell imports httpError from common");
 });
+
+test("the terminal wait accepts a running remote row the kernel reports addressable, saved route or not; never an unaddressable one", async () => {
+  const spawn = await import("../renderer/views/spawn.mjs");
+  const ref = { instance: "dev-1", home: "/srv/agents/dev/instances/dev-1", server: "build" };
+  const wait = row => spawn.waitForInstanceInPanel({ ctx: { api: () => Promise.resolve({ ok: true, status: 200, json: async () => ({ instances: [row] }) }) } },
+    ref, () => true, { tries: 1, delayMs: 0, sleep: async () => {} });
+  // A foreign row (started from here, spawned elsewhere): no saved route, and the host may not relay tmux.
+  assert.equal(await wait({ ...ref, running: true, savedRoute: false, addressable: true, tmux: null }), true);
+  assert.equal(await wait({ ...ref, running: true, savedRoute: true, addressable: false }), false, "a saved route alone is not addressable");
+  assert.equal(await wait({ ...ref, running: false, addressable: true }), false);
+});

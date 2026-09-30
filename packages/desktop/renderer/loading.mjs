@@ -15,6 +15,7 @@
  * the age line and the Retry wiring. The surface owns its latest-intent
  * tokens: it calls begin()/succeed()/fail() only for the read it still owns.
  * Wording is fixed here so no surface drifts. No framework: vanilla DOM. */
+import { codeLine } from './remote-address.mjs';
 
 export const PENDING_DELAY_MS = 150;
 export const REFRESHING_DELAY_MS = 400;
@@ -258,12 +259,6 @@ export function updateFailed(el, { message = null, code = null, noun = 'data', b
  *                                      retry removes its line); default: the first bound Refresh control
  * @param {() => number} [o.now]
  */
-/** The Details line of a failure: its code, and the kernel's own message when a remote host sent one. */
-function codeLine(error) {
-  const code = typeof error?.code === 'string' && error.code ? error.code : null;
-  const detail = typeof error?.detail === 'string' && error.detail ? error.detail : null;
-  return code && detail ? `${code}: ${detail}` : code;
-}
 export function createDataState({ doc, noun, region, skeletonHost = region, failedHost = skeletonHost, skeleton: buildSkeleton = null, status = null,
   indicatorHost = null, noticeHost = indicatorHost, onRetry = null, focusFallback = null, now = Date.now,
   setTimeout: schedule = (fn, ms) => globalThis.setTimeout(fn, ms), clearTimeout: cancel = id => globalThis.clearTimeout(id) } = {}) {

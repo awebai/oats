@@ -18,7 +18,7 @@ export function projectActivePanel(panel) {
     if (!object(raw) || typeof raw.instance !== 'string' || !raw.instance) throw new Error('The roster contains an invalid instance identity.');
     for (const key of identityFields) if (raw[key] != null && (typeof raw[key] !== 'string' || raw[key].includes('\0'))) throw new Error('The roster contains an invalid instance address.');
     const instance = { instance: raw.instance, running: panel.error ? null : raw.running === true ? true : raw.running === false ? false : null,
-      savedRoute: raw.savedRoute === true, remote: raw.remote === true || panel.workspace?.remote === true,
+      remote: raw.remote === true || panel.workspace?.remote === true,
       addressable: raw.addressable === true, missingRemotely: raw.missingRemotely === true, serverUnreached: raw.serverUnreached === true,
       createdAt: eventsTimestamp(raw.createdAt) ? raw.createdAt : null };
     for (const key of [...identityFields, ...displayed, ...reported]) instance[key] = text(raw[key]);

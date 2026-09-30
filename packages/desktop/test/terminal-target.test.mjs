@@ -32,6 +32,7 @@ test('a Herdr session target is refused at admission with E_HERDR_REMOVED, whate
 });
 
 const invalid = [null, [], {}, { session: 's', remote: remote.remote }, { remote: null },
+  { remote: { serverId: 'peer', instance: 'dev-1' } }, // a remote target is addressed by its home, never a bare name
   { session: 's', owner: 2 }, { ...remote, bin: '/memory/evil' },
   { remote: { ...remote.remote, command: 'anything' } },
   { ...remote, socket: '/memory/other' },
