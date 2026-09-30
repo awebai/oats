@@ -93,7 +93,10 @@ gets the plain per-call behaviour. Within a session:
 - a commit's tree is listed once (`git ls-tree -r -t -l`, bounded by
   `TREE_INDEX_BUDGET`; anything odd falls back to the per-path reads), and
   blobs come from one `git cat-file --batch` reader per cache repo (at most
-  12 open, killed through `process-group.mjs` on timeout and at close);
+  12 open, killed through `process-group.mjs` on timeout and at close). A
+  command that ends normally awaits the close, so its readers are reaped
+  before it exits; a `process.exit` (every refusal) group-kills them in the
+  exit hook (`closeNow`), and the system reaps them once the process is gone;
 - discovery reads members eight at a time (`DISCOVERY_CONCURRENCY`) with
   serial results: declaration order, the first failure in that order. The
   observations and the member reads are two pools, so a discovery runs at
