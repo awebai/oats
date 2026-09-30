@@ -82,8 +82,11 @@ test('Core rows say why in the Capabilities grammar: workspace, team, soul, empt
     }
     const knowledge = coreRow(host, 'knowledge');
     assert.equal(knowledge.querySelector('.soul-cap-slot').textContent, 'Knowledge'); assert.equal(knowledge.querySelector('.soul-cap-id').textContent, 'None');
-    assert.equal(knowledge.querySelector('.soul-cap-struck').textContent, 'oats.okf', 'the capability it turned off, struck through');
     assert.deepEqual(whyOf(knowledge), ['turned off by soul', 'This soul empties the knowledge slot, which the workspace default filled with oats.okf', 'why-note']);
+    // The reason is visible row text, not only a title: what was turned off is named once, in the note.
+    assert.equal(knowledge.querySelector('.soul-cap-why-note').textContent, 'This soul empties the knowledge slot; the workspace default is oats.okf');
+    assert.equal(knowledge.querySelector('.soul-cap-name').textContent, 'KnowledgeNone', 'no second statement of the turned-off name');
+    assert.match(knowledge.textContent, /This soul empties the knowledge slot; the workspace default is oats\.okf/);
     assert.equal(knowledge.localName, 'div', 'an empty slot does not open'); assert.equal(knowledge.querySelector('.source-chip'), null);
     const messaging = coreRow(host, 'messaging');
     assert.equal(messaging.localName, 'button'); assert.equal(messaging.dataset.focusKey, 'core:messaging'); assert.equal(messaging.dataset.capability, 'oats.aweb');
@@ -94,6 +97,7 @@ test('Core rows say why in the Capabilities grammar: workspace, team, soul, empt
     const tasks = coreRow(host, 'tasks');
     assert.equal(tasks.querySelector('.soul-cap-id').textContent, 'None');
     assert.deepEqual(whyOf(tasks), ['No default', 'Neither this soul nor the workspace fills the tasks slot', 'why-note']);
+    assert.equal(tasks.querySelector('.soul-cap-why-note').textContent, 'Neither this soul nor the workspace fills the tasks slot.');
   } finally { dom.window.close(); }
 });
 
@@ -115,6 +119,10 @@ test('Core rows: a team default, the soul\'s own choice, a detail line; a filled
   } finally { dom.window.close(); }
   assert.equal(coreNote({ why: 'team', team: 'eng' }, { spawned: true }), "Resolved the eng team's default at spawn");
   assert.equal(coreNote({ why: 'workspace', slot: 'tasks' }, { spawned: true }), 'Resolved the workspace default at spawn');
+  // An emptied slot names the default it turned off, a team's in the overridden() wording; a home reports neither.
+  assert.equal(coreNote({ why: 'off', slot: 'messaging', name: 'oats.aweb', overrides: 'team:oats' }), "This soul empties the messaging slot; the oats team's default is oats.aweb");
+  assert.equal(coreNote({ why: 'off', slot: 'knowledge', name: 'oats.okf', overrides: 'workspace' }, { spawned: true }), null);
+  assert.equal(coreNote({ why: 'none', slot: 'tasks' }, { spawned: true }), null);
 });
 
 test('Core: no reason without the features; a contradiction shows the provider; a missing provider row; layers not reported', () => {
@@ -151,7 +159,7 @@ test('every emptied-slot entry lands in exactly one section: all of a slot\'s in
   assert.equal(whyTag(knowledge)[1], 'This soul empties the knowledge slot, which the workspace default filled with acme.notes, oats.okf');
   assert.deepEqual(compositionEntries(two, null, { facts: true }).filter(e => e.why === 'off'), []);
   const { dom, host } = render(renderSoulCore, { entries: coreEntries(two, { layersFrom: true, facts: true }), status: null });
-  try { assert.deepEqual([...coreRow(host, 'knowledge').querySelectorAll('.soul-cap-struck')].map(n => n.textContent), ['acme.notes', 'oats.okf']); } finally { dom.window.close(); }
+  try { assert.equal(coreRow(host, 'knowledge').querySelector('.soul-cap-why-note').textContent, 'This soul empties the knowledge slot; the workspace default is acme.notes, oats.okf'); } finally { dom.window.close(); }
   // A slot-none without a core slot: Core cannot place it, so it stays a Capabilities off row and no slot claims "No default".
   const loose = layered(empty, { capabilitiesOff: [{ id: 'oats.okf', off: true, from: 'soul', reason: 'slot-none', overrides: 'workspace' }] });
   assert.deepEqual(coreEntries(loose, { layersFrom: true, facts: true }).map(e => e.why), [null, null, null]);

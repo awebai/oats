@@ -372,7 +372,7 @@ test('a core row and a capability row open their page with the soul page\'s reas
   assert.equal(knowledge.querySelector('.why-tag').textContent, 'workspace');
   assert.equal(knowledge.querySelector('.soul-cap-why-note').textContent, "Resolves the workspace default: this soul doesn't choose a knowledge capability");
   const messaging = soulPage.querySelector('.soul-core .soul-cap-row[data-layer="messaging"]');
-  assert.equal(messaging.querySelector('.soul-cap-id').textContent, 'None'); assert.equal(messaging.querySelector('.soul-cap-struck').textContent, 'oats.aweb');
+  assert.equal(messaging.querySelector('.soul-cap-id').textContent, 'None'); assert.equal(messaging.querySelector('.soul-cap-why-note').textContent, 'This soul empties the messaging slot; the workspace default is oats.aweb');
   assert.equal(messaging.querySelector('.why-note').textContent, 'turned off by soul');
   assert.equal(soulPage.querySelector('.soul-core .soul-cap-row[data-layer="tasks"] .why-note').textContent, 'No default');
   const caps = soulPage.querySelector('.inspector-capability-table .soul-caps');

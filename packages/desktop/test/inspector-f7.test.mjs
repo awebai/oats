@@ -188,7 +188,7 @@ test('Core capabilities say why each slot is filled in the soul page\'s words, o
   assert.deepEqual(core(withFrom.el), {
     knowledge: { id: 'oats.okf', tag: 'workspace', title: 'A workspace default', note: "Resolves the workspace default: this soul doesn't choose a knowledge capability" },
     messaging: { id: 'oats.aweb', tag: 'workspace', title: 'A workspace default', note: "Resolves the workspace default: this soul doesn't choose a messaging capability" },
-    tasks: { id: 'None', tag: 'No default', title: 'Neither this soul nor the workspace fills the tasks slot', note: null } });
+    tasks: { id: 'None', tag: 'No default', title: 'Neither this soul nor the workspace fills the tasks slot', note: 'Neither this soul nor the workspace fills the tasks slot.' } });
   // An instance: what its spawn recorded; a home reports no emptied slot, so an empty one claims nothing.
   const spawned = await rendered(t, homeSelection, body => body.action === 'inspect' ? home : teamsRun);
   assert.deepEqual(core(spawned.el), {

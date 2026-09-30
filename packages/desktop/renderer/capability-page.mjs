@@ -104,7 +104,7 @@ export const soulCapabilitiesCSS = `
 .soul-cap-name { display:flex; flex-direction:column; min-width:0; }
 .soul-cap-id { color:var(--fg); font:600 12.5px var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .soul-cap-note { color:var(--muted); font-size:11px; }
-.soul-cap-row.off:not(.none) .soul-cap-id, .soul-cap-struck { color:var(--muted); text-decoration:line-through; }
+.soul-cap-row.off:not(.none) .soul-cap-id { color:var(--muted); text-decoration:line-through; }
 .soul-cap-why { display:flex; flex-wrap:wrap; align-items:center; gap:4px 6px; min-width:0; padding:6px 0; font-size:12px; }
 .soul-cap-why-note { flex-basis:100%; min-width:0; color:var(--muted); font-size:11px; line-height:1.4; }
 /* Core capabilities: the same grid, each row led by its slot's icon and name. */
@@ -112,7 +112,6 @@ export const soulCapabilitiesCSS = `
 .soul-cap-slot-icon { display:grid; place-items:center; width:24px; height:24px; border-radius:6px; background:var(--bg); color:var(--fg); flex:none; }
 .soul-cap-copy { display:flex; flex-direction:column; min-width:0; }
 .soul-cap-slot { color:var(--muted); font-size:10.5px; font-weight:650; letter-spacing:.05em; text-transform:uppercase; }
-.soul-cap-struck { font:12px var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .oats-view .page-table button.soul-cap-row { height:auto; min-height:44px; font-size:12px; font-weight:400; }
 .soul-core .soul-cap-row.none .soul-cap-id { color:var(--muted); font-family:var(--sans,system-ui); font-weight:500; }
 .soul-caps .page-note { padding:12px 16px; }
@@ -408,6 +407,9 @@ export function coreNote(entry, { spawned = false } = {}) {
   if (entry?.why === 'workspace') return spawned ? 'Resolved the workspace default at spawn' : `Resolves the workspace default: this soul doesn't choose a ${entry.slot} capability`;
   if (entry?.why === 'team') return spawned ? `Resolved the ${entry.team} team's default at spawn` : `Resolves the ${entry.team} team's default`;
   if (entry?.why === 'soul' && spawned) return 'Chosen by the soul at spawn'; // on the soul page the soul tag says it
+  // An empty slot explains itself in visible text too (a home reports neither: its capabilitiesOff is always []).
+  if (entry?.why === 'off' && !spawned) return `This soul empties the ${entry.slot} slot; ${overridden(entry.overrides)} is ${entry.name}`;
+  if (entry?.why === 'none' && !spawned) return `Neither this soul nor the workspace fills the ${entry.slot} slot.`;
   return null;
 }
 /** The capability page's "Why" row (opened from a soul): [reason, sentence], or null with no reported reason.
@@ -529,8 +531,6 @@ export function renderSoulCore(host, { entries, status, onOpen = null }) {
     icon.setAttribute('aria-hidden', 'true'); icon.append(iconElement(doc, capabilityIcon({ layer: entry.slot }), { size: 14 }));
     copy.append(node('span', layerLabel(entry.slot), 'soul-cap-slot'));
     const id = node('span', entry.id || (entry.reported ? 'None' : 'Not reported'), 'soul-cap-id'); if (entry.id) id.title = entry.id; copy.append(id);
-    // What the soul turned off by emptying the slot, struck through as a turned-off row is.
-    if (entry.why === 'off') for (const name of list(entry.names)) { const gone = node('span', name, 'soul-cap-struck'); gone.title = name; copy.append(gone); }
     if (entry.id && text(entry.detail)) copy.append(node('span', entry.detail, 'soul-cap-note'));
     cap.append(icon, copy);
     const note = coreNote(entry);

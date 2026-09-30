@@ -842,7 +842,7 @@ for (const [name] of palettes) test(`${name}: v4 page bar, cards, facts, used-by
     ['.page-why-note', '.capability-page .page-card', 'muted', 'surface'],
     ['.soul-core .soul-cap-slot', '.soul-core', 'muted', 'surface'],
     ['.soul-core .soul-cap-row.none .soul-cap-id', '.soul-core', 'muted', 'surface'],
-    ['.soul-core .soul-cap-struck', '.soul-core', 'muted', 'surface'],
+    ['.soul-core .soul-cap-row.none .soul-cap-why-note', '.soul-core', 'muted', 'surface'],
     ['.soul-core button.soul-cap-row .soul-cap-id', '.soul-core button.soul-cap-row', 'fg', 'surface'],
     ['.soul-core .soul-cap-why-note', '.soul-core button.soul-cap-row', 'muted', 'surface'],
     ['.soul-core .soul-cap-note', '.soul-core button.soul-cap-row', 'muted', 'surface'],

@@ -176,7 +176,6 @@ ${soulTeamsHereCSS}
 .inspector-core dd { display:flex; flex-wrap:wrap; align-items:center; gap:4px 6px; min-width:0; }
 .inspector-core-id { font-family:var(--mono,monospace); overflow-wrap:anywhere; min-width:0; }
 .inspector-core-id.none { color:var(--muted); font-family:var(--sans,system-ui); }
-.inspector-core-struck { color:var(--muted); font-family:var(--mono,monospace); text-decoration:line-through; overflow-wrap:anywhere; }
 .inspector-core-note { flex-basis:100%; color:var(--muted); font-size:11px; line-height:1.4; }
 .inspector-list { border:1px solid var(--border); border-radius:8px; background:var(--surface); overflow:hidden; }
 .inspector-item { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:12px; row-gap:4px; align-items:center; padding:9px 12px; }
@@ -750,7 +749,6 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     for (const entry of entries) {
       const dd = node('dd'); dd.dataset.layer = entry.slot;
       dd.append(node('span', entry.id || (entry.reported ? 'None' : 'Not reported'), `inspector-core-id${entry.id ? '' : ' none'}`));
-      if (entry.why === 'off') for (const name of entry.names) { const gone = node('span', name, 'inspector-core-struck'); gone.title = name; dd.append(gone); }
       const tag = whyElement(doc, entry); if (tag) dd.append(tag);
       const note = coreNote(entry, { spawned }); if (note) dd.append(node('span', note, 'inspector-core-note'));
       dl.append(node('dt', layerLabel(entry.slot)), dd);
