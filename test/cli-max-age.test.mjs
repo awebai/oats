@@ -11,11 +11,11 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSy
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import YAML from "yaml";
-import { buildNorthwind } from "./fixtures/northwind/build.mjs";
+import { buildNorthwind, moveMember } from "./fixtures/northwind/build.mjs";
 import { inertHarnessPath } from "./helpers/runtime-stub.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
-const READS = "status, workspace status, souls, capabilities, inspect --soul|--home, and the read forms of teams and soul teams";
+const READS = "status, workspace status, souls, capabilities, inspect --soul|--home, spawn --preview, and the read forms of teams and soul teams";
 const refusedBy = (form) => `--max-age is not accepted by \`oats ${form}\`: only the read verbs reuse observations (${READS})`;
 
 let base, fx, dep, env, home;
@@ -94,7 +94,6 @@ test("structural refusal: every other command, every edit form and --server refu
   const instancesBefore = readdirSync(join(dep, "agents")).sort();
   const cases = [
     [["sync"], refusedBy("sync")],
-    [["spawn", "release-manager", "--preview"], refusedBy("spawn")],
     [["spawn", "release-manager", "--purpose", "x", "--no-launch"], refusedBy("spawn")],
     [["retire", "release-manager-rc"], refusedBy("retire")],
     [["onboard", fx.refs.agents], refusedBy("onboard")],
@@ -277,4 +276,60 @@ test("feature and help surface: observe-max-age in `oats version --json` feature
     const end = lines.findIndex((l, i) => i > at && !/^ {6}/.test(l));
     assert.ok(lines.slice(at, end).some((l) => l.includes("[--max-age <s>]")), `oats ${command} --help names [--max-age <s>] for oats ${verb}`);
   }
+});
+
+// Feature spawn-preview-max-age: the preview reads with observation reuse, the apply always observes live.
+test("spawn --preview takes --max-age: the observation block, a reused head bound by the decision, and a re-preview that sees the head apply saw", { timeout: 300_000 }, async () => {
+  const spawnArgs = ["spawn", "release-manager", "--purpose", "pv", "--work", "directory", "--provider", "oats.okf", "state-dir=/tmp/x"];
+  const preview = (...flags) => json(oats([...spawnArgs, "--preview", ...flags, "--json"])).result;
+  const plain = preview();
+  assert.equal(plain.observation, undefined, "no observation without --max-age");
+  const live = preview("--max-age", "0");
+  const { observation, ...rest } = live;
+  assert.deepEqual(Object.keys(observation), ["observedAt", "reused", "localRevision"], "the read verbs' block, as they shape it");
+  assert.equal(observation.reused, false, "--max-age 0 is live");
+  assert.match(observation.localRevision, /^[0-9a-f]{24}$/);
+  const steady = (doc) => JSON.parse(JSON.stringify(doc, (k, v) => (k === "elapsedMs" ? undefined : v))); // a probe's timing
+  assert.deepStrictEqual(steady(rest), steady(plain), "the flag adds the observation key and changes nothing else");
+  const warm = preview("--max-age", "120");
+  assert.equal(warm.observation.reused, true, "a warm preview reuses the recorded heads");
+  assert.equal(warm.decision.revision, plain.decision.revision);
+  // The soul's member moves. A warm preview still answers from the reused head, and its decision says so.
+  const moved = await moveMember(fx, "agents", async (_work, { writeTree }) => writeTree({ "souls/release-manager/AGENTS.md": "# release-manager\n\nMoved.\n" }));
+  const reused = preview("--max-age", "120");
+  assert.equal(reused.observation.reused, true);
+  assert.equal(reused.decision.revision, warm.decision.revision, "the decision covers the (reused) heads the preview used");
+  // The apply observes live: the confirmed decision is stale, nothing is created.
+  const before = readdirSync(join(dep, "agents")).sort();
+  const stale = oats([...spawnArgs, "--no-launch", "--expect-decision", reused.decision.revision, "--json"]);
+  assert.equal(stale.status, 1, stale.stdout + stale.stderr);
+  const refusal = JSON.parse(stale.stdout).error;
+  assert.equal(refusal.code, "E_DECISION_STALE");
+  assert.deepEqual(readdirSync(join(dep, "agents")).sort(), before, "nothing created");
+  // The apply recorded what it observed: a re-preview under --max-age shows the new head and a new revision.
+  const fresh = preview("--max-age", "120");
+  assert.equal(fresh.observation.reused, true, "the head the apply observed, reused");
+  assert.notEqual(fresh.decision.revision, reused.decision.revision, "a new revision");
+  assert.equal(fresh.decision.revision, refusal.details.decision.revision, "the revision the apply refused with");
+  assert.ok(JSON.stringify(fresh).includes(moved.commit), "the moved head");
+  assert.ok(!JSON.stringify(reused).includes(moved.commit), "(the reused preview did not show it)");
+});
+
+test("spawn --max-age: refused on an apply, with or without --expect-decision; a refused preview is the usual envelope, as inspect --soul's", { timeout: 120_000 }, () => {
+  const before = readdirSync(join(dep, "agents")).sort();
+  for (const extra of [[], ["--expect-decision", "0".repeat(24)]]) {
+    const r = oats(["spawn", "release-manager", "--purpose", "ap", "--no-launch", ...extra, "--max-age", "60", "--json"]);
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.deepEqual(JSON.parse(r.stdout).error, { code: "E_BAD_ARGS", message: refusedBy("spawn") }, extra.join(" ") || "no --expect-decision");
+  }
+  assert.deepEqual(readdirSync(join(dep, "agents")).sort(), before);
+  // An unknown soul: the refusal envelope carries no observation block, as for inspect --soul.
+  const spawnRefusal = JSON.parse(oats(["spawn", "no-such-soul", "--preview", "--max-age", "60", "--json"]).stdout);
+  const inspectRefusal = JSON.parse(oats(["inspect", "--soul", "no-such-soul", "--max-age", "60", "--json"]).stdout);
+  for (const doc of [spawnRefusal, inspectRefusal]) {
+    assert.equal(doc.ok, false);
+    assert.equal(JSON.stringify(doc).includes('"observation"'), false, JSON.stringify(doc));
+  }
+  assert.equal(spawnRefusal.error.code, "E_SOUL_UNKNOWN");
+  assert.ok(json(oats(["version", "--json"], { cwd: base })).features.includes("spawn-preview-max-age"));
 });

@@ -38,7 +38,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
              "instance-events-2","schedule-history","schedule-read-2","spawn-preview-2","spawn-idempotency","spawn-idempotency-2","spawn-apply-2",
              "workspace-v2","instance-modules","spawn-provider-payload","served-identity","packages-no-approval","spawn-name","settings-origins",
              "team-model-2","settings-declared","capabilities-private","layers-from","harness","package-souls","triggers","automations","desktop-facts","launch-preference",
-             "preview-composed-from","observe-max-age"],
+             "preview-composed-from","observe-max-age","spawn-preview-max-age"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2}
 ```
@@ -96,6 +96,7 @@ canonical (`github.com/<org>/<repo>`, or `local/<abs-path>`). Examples use
 | `launch-preference` | soul and local launch preferences; `launch`, `launchCurrent`, `launchFrom`; `--reselect-launch`; `key` on soul and agent rows ([Launch preferences](#soul-launch-preferences-feature-launch-preference-oats-0300)) | |
 | `preview-composed-from` | `composedFrom` on preview `modules[]` ([Composition](#the-preview)) | |
 | `observe-max-age` | `--max-age <s>` on the read verbs and their `observation` block ([Observation reuse](#observation-reuse-feature-observe-max-age-oats-0311)) | |
+| `spawn-preview-max-age` | `--max-age <s>` on `spawn --preview` and its `observation` block ([Observation reuse](#observation-reuse-feature-observe-max-age-oats-0311), [The preview](#the-preview)) | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -194,6 +195,7 @@ it and answer live, without the block.
 ```text
 oats status | workspace status | souls | capabilities | inspect --soul|--home
      | teams | soul teams <soul>   … --max-age <seconds> --json
+oats spawn <soul> … --preview --max-age <seconds> --json    (feature spawn-preview-max-age)
 ```
 
 - **Values:** whole seconds, `0` to `86400`. `0` is live: it reuses nothing.
@@ -206,7 +208,15 @@ oats status | workspace status | souls | capabilities | inspect --soul|--home
   everywhere; `reused` is `true` when any head came from an earlier observation.
   A command that read no remote head reports the time it started and
   `reused: false`. Without the flag the key is absent and every document is
-  exactly as before.
+  exactly as before. A refusal (`E_SOUL_UNKNOWN`, any error envelope) never
+  carries the block.
+- **Spawn preview** (feature `spawn-preview-max-age`, OATS 0.33.0): the
+  preview's `result` gains the same block, so you can say "as of
+  `<observedAt>`". The `decision` covers the heads the preview used, reused
+  or live: a reused head the member has since moved from makes the apply
+  (which always observes live) refuse `E_DECISION_STALE`, and the apply
+  records the head it observed, so the next preview under `--max-age` shows
+  it with a new `decision.revision`. The apply itself refuses the flag.
 - **`localRevision`:** 24 lowercase hex characters, opaque. It digests every
   piece of local configuration the kernel read for this answer:
   `oats-local.yaml` (and each closer `oats-local.yaml` it looked for and did
@@ -237,12 +247,14 @@ oats status | workspace status | souls | capabilities | inspect --soul|--home
   spelling of the same repository (ssh vs https) or for a different ref; its
   commit can no longer be fetched. Each is observed live, as without the flag.
   A live observation that fails is the usual error, never an older head.
-- **Refusals:** every other command, every edit form (`teams add|remove|default`,
+- **Refusals:** every other command, a spawn apply (with or without
+  `--expect-decision`; the form named is `spawn`), every edit form (`teams add|remove|default`,
   `soul teams --add|--remove|--default|--clear-default`) and any `--server`
   invocation refuse the flag before reading or writing anything, with
   `E_BAD_ARGS` "--max-age is not accepted by \`oats <form>\`: only the read
   verbs reuse observations (status, workspace status, souls, capabilities,
-  inspect --soul|--home, and the read forms of teams and soul teams)" and,
+  inspect --soul|--home, spawn --preview, and the read forms of teams and soul
+  teams)" and,
   with `--server`, "--max-age cannot be combined with --server: observation
   reuse is local to this machine".
   A capability command's argv (`oats <namespace> …`) is its provider's: the
@@ -1162,7 +1174,7 @@ the result with `oats inspect --soul <name> --json`.
 ### The preview
 
 ```text
-oats spawn <soul> [the flags of a real spawn] --preview --json
+oats spawn <soul> [the flags of a real spawn] --preview [--max-age <s>] --json
 ```
 
 Feature `spawn-preview-2`, `spawnPreviewApi: 2`. The preview runs every
@@ -1249,6 +1261,20 @@ it to a temporary copy (`soulFetched: true`).
 - `resolution` (24 hex) hashes `declRevision` (the declarations) and
   `payloadRevision` (the merged payloads). `workspace` is the host key;
   `standalone` marks a standalone view. `task` is the task text or `null`.
+
+**Observation reuse** (feature `spawn-preview-max-age`, OATS 0.33.0).
+- `--preview --max-age <s>` reuses member heads this machine observed at
+  most `<s>` seconds ago, as the read verbs do ([Observation
+  reuse](#observation-reuse-feature-observe-max-age-oats-0311): the same
+  values, refusals and fallbacks to a live observation). With the flag (`0`
+  included) the result gains `observation: {observedAt, reused,
+  localRevision}`, shaped exactly as the read verbs' block; without it the
+  preview is exactly as before, and no other field changes shape.
+- `decision.revision` covers the heads the preview used, reused or live.
+  Apply never reuses (it refuses `--max-age`): a head that moved since the
+  reused observation refuses `E_DECISION_STALE`, and the apply records what
+  it observed, so re-preview under `--max-age` to get the new head and
+  revision.
 
 **Provider settings.**
 - `providers` is the `--provider` map as typed.

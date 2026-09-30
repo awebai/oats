@@ -1041,13 +1041,15 @@ function commandSession() {
 }
 /** Which kernel command forms take --max-age: THE allow-list (docs/desktop-cli-api.md "Observation reuse").
  *  → null when this form reads with observation reuse, else the E_BAD_ARGS message. `head` is argv before `--`. */
-const MAX_AGE_READS = "status, workspace status, souls, capabilities, inspect --soul|--home, and the read forms of teams and soul teams";
+const MAX_AGE_READS = "status, workspace status, souls, capabilities, inspect --soul|--home, spawn --preview, and the read forms of teams and soul teams";
 function maxAgeRefusal(command, head) {
   const word = (i) => (head[i] !== undefined && !head[i].startsWith("--") ? head[i] : undefined);
   const refuse = (form) => `--max-age is not accepted by \`oats ${form}\`: only the read verbs reuse observations (${MAX_AGE_READS})`;
   if (head.includes("--server")) return "--max-age cannot be combined with --server: observation reuse is local to this machine";
   switch (command) {
     case "status": case "souls": case "capabilities": case "inspect": return null;
+    // A preview reads (feature spawn-preview-max-age); an apply always observes live.
+    case "spawn": return head.includes("--preview") ? null : refuse("spawn");
     case "workspace": return word(1) === "status" ? null : refuse(["workspace", word(1)].filter(Boolean).join(" "));
     case "teams": return word(1) === undefined ? null : refuse(`teams ${word(1)}`);
     case "soul": {
@@ -1884,8 +1886,9 @@ async function status() {
 const livenessWord = (i) => i.running === true ? "RUNNING" : i.running === false ? "idle" : "unknown";
 /** The flags `oats spawn` reads: those taking a value, and switches. `--provider` takes two words.
  *  `--instance` is refused by a local spawn (with its replacement) but still travels to an older
- *  host through `--server`, whose route reads it. */
-const SPAWN_VALUE_FLAGS = new Set(["agents-root", "backend", "base", "branch", "dir", "expect-decision", "harness", "idempotency-key", "instance", "launch-config", "model", "name", "parent", "purpose", "relation", "relative-root", "relative-to", "repo", "runtime", "task", "task-file", "trigger-event", "wake-cron", "wake-every", "wake-file", "wake-json", "wake-message", "wake-message-file", "wake-tz", "work", "work-dir"]);
+ *  host through `--server`, whose route reads it. `--max-age` reaches here only on a preview: the
+ *  dispatch allow-list (maxAgeRefusal) refuses it on an apply. */
+const SPAWN_VALUE_FLAGS = new Set(["agents-root", "backend", "base", "branch", "dir", "expect-decision", "harness", "idempotency-key", "instance", "launch-config", "max-age", "model", "name", "parent", "purpose", "relation", "relative-root", "relative-to", "repo", "runtime", "task", "task-file", "trigger-event", "wake-cron", "wake-every", "wake-file", "wake-json", "wake-message", "wake-message-file", "wake-tz", "work", "work-dir"]);
 const SPAWN_SWITCHES = new Set(["allow-child-spawns", "json", "no-child-spawns", "no-launch", "no-yolo", "preview", "yolo"]);
 /** Why `argv` (after `spawn`, the soul first) is not a spawn, or undefined: a positional after the
  *  soul or a flag spawn does not read is never ignored. A value flag consumes its value exactly as
@@ -2141,7 +2144,7 @@ async function spawnCmd() {
       // A workspace preview may have fetched the soul's SOURCE to a temporary copy
       // (the deployment's cache had no entry for its commit): the result says so.
       if (prepared) r.soulFetched = soulFetched;
-      if (JSON_MODE) { jsonOk(r); return; }
+      if (JSON_MODE) { jsonOk(withObservation(r)); return; }
       console.log(`preview ${r.agent} → ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch} from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}) harness ${r.harness}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}${r.launchConfig ? ` via launch configuration ${r.launchConfig}${r.launchConfigDefault ? ` (this machine's ${r.harness} default)` : ""}` : ""}${r.yolo ? " YOLO" : ""}; nothing was created${soulFetched ? " (the soul source was fetched to a temporary copy, not kept)" : ""}`);
       return;
     }
@@ -2937,7 +2940,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-2", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "launch-config-default"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2 }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-2", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default"], automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2 }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -3543,6 +3546,9 @@ Usage:
       [--provider <capability> <key>=<value>]  a provider setting for this spawn only
                                             (repeatable; dotted keys nest; recorded in
                                             instance.json providers.<capability>)
+      [--preview [--max-age <s>]]           decide everything, create nothing; the JSON's
+                                            decision binds an apply (--expect-decision <rev>);
+                                            --max-age reuses recent heads (preview only)
   oats retire <instance> [--force]           retire an instance (window, hooks,
       [--self] [--delete-branch]            worktree, home); --self = retire the
       [--keep-dir] [--json]                 CALLING instance: the window dies, then
@@ -3660,15 +3666,17 @@ The turn record (core — every conversation captured, searchable, replicated):
 
 Observation reuse (feature observe-max-age):
   --max-age <seconds>                        on the read verbs only — status, workspace status,
-                                            souls, capabilities, inspect --soul|--home, and the
-                                            read forms of teams and soul teams — reuse a remote
-                                            head observation up to <seconds> old (0–86400; 0 is
-                                            live) instead of asking the remote again; the JSON
+                                            souls, capabilities, inspect --soul|--home,
+                                            spawn --preview (feature spawn-preview-max-age),
+                                            and the read forms of teams and soul teams —
+                                            reuse a remote head observation up to <seconds>
+                                            old (0–86400; 0 is live) instead of asking the
+                                            remote again; the JSON
                                             then carries observation { observedAt (the oldest
                                             head used), reused, localRevision (a digest of
                                             the local configuration read) }. Refused
                                             (E_BAD_ARGS) by every other command, an edit form,
-                                            and with --server
+                                            a spawn apply, and with --server
 
 Layers: ${LAYERS.join(", ")}. Workspace model v2: docs/design/2026-09-23-workspace-module-contracts.md.`;
 }
