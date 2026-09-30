@@ -1194,7 +1194,7 @@ function openSpawnModal(s, a, draft = {}) {
    session typically follows a couple of seconds later. Exported for the
    stale-snapshot regression. delayMs is injectable so tests run without
    real waits. */
-export async function waitForInstanceInPanel(s, ref, isCurrent, { tries = 20, delayMs = 700, sleep, strict = false, onAdmitted } = {}) {
+export async function waitForInstanceInPanel(s, ref, isCurrent, { tries = 20, delayMs = 700, sleep, strict = false, present = false, onAdmitted } = {}) {
   const wait = sleep || ((ms) => new Promise((ok) => setTimeout(ok, ms)));
   // ref: { instance, home?, agentsRoot? }. Match the COMPOSITE identity when
   // the spawn result provides it — with a same-named twin already in the
@@ -1203,12 +1203,13 @@ export async function waitForInstanceInPanel(s, ref, isCurrent, { tries = 20, de
   // the readiness the shell's open path checks (running + tmux session), so
   // the auto-open can never race the tmux registration. A remote row opens by
   // server and home: it is ready once running and addressable (tmux is the host's).
+  // `present`: any row of that identity will do (a place to show, not a terminal to open).
   const matches = (x) => x.instance === ref.instance
     && (x.server || "") === (ref.server || "")
     && (strict ? !!ref.home && x.home === ref.home : !ref.home || !x.home || x.home === ref.home)
     && (strict ? !!ref.agentsRoot && x.agentsRoot === ref.agentsRoot : !ref.agentsRoot || !x.agentsRoot || x.agentsRoot === ref.agentsRoot)
     && (!strict || !ref.agent || x.agent === ref.agent)
-    && !!x.running && (x.server ? canAddressRemote(x) : !!x.tmux?.session);
+    && (present || !!x.running && (x.server ? canAddressRemote(x) : !!x.tmux?.session));
   for (let i = 0; i < tries; i++) {
     if (!isCurrent()) return false;          // ws switched / superseded: stop
     try {
@@ -1223,6 +1224,22 @@ export async function waitForInstanceInPanel(s, ref, isCurrent, { tries = 20, de
     await wait(delayMs);
   }
   return false;                              // snapshot never caught up: no auto-open
+}
+
+/** Go to a row, maybe in another workspace: switch to `workspace` when it is not the current one,
+ * wait until its roster serves the row `ref` (by server and home; `present` accepts a stopped row),
+ * then `then(row)`, with null when it never became ready. Gives up quietly (false, `then` unheard)
+ * when the workspace or the connection changes before that. */
+export async function handOff(s, { workspace, ref, present = false, then }) {
+  const connection = s.ctx.connectionGeneration?.() ?? 0;
+  if (currentWorkspace() !== workspace) setWorkspace(workspace);
+  const gen = workspaceGeneration();
+  const stillThere = () => gen === workspaceGeneration() && currentWorkspace() === workspace && connection === (s.ctx.connectionGeneration?.() ?? 0);
+  let admitted = null;
+  const visible = await waitForInstanceInPanel(s, ref, stillThere, { ...s.waitOpts, present, onAdmitted: row => { admitted = row; } });
+  if (!stillThere()) return false;
+  await then(visible ? admitted ?? ref : null);
+  return visible;
 }
 
 /** Execution-server spawn (Developer settings › Run on, or a remote soul). The
@@ -1267,15 +1284,11 @@ export async function doSpawn(s, fields) {
     if (d.workspaceId && d.workspaceId !== currentWorkspace()) {
       const ref = { instance: d.instance, home: d.home, server: d.server };
       closeSpawnModal(s);
-      setWorkspace(d.workspaceId);
-      const remoteGen = workspaceGeneration();
-      const stillThere = () => remoteGen === workspaceGeneration() && currentWorkspace() === d.workspaceId && connection === (s.ctx.connectionGeneration?.() ?? 0);
-      let admitted;
-      const visible = await waitForInstanceInPanel(s, ref, stillThere, { ...s.waitOpts, onAdmitted: row => { admitted = row; } });
-      if (visible && stillThere()) {
-        if (typeof d.home === "string" && admitted?.home === d.home && admitted.agent === a.name) s.ctx.notifySpawn?.(admitted, d.workspaceId, connection);
+      await handOff(s, { workspace: d.workspaceId, ref, then: admitted => {
+        if (!admitted) { s.ctx.notify?.(`Spawned ${d.instance} on ${d.server}; it is not visible yet. Check the server roster to open it.`); return; }
+        if (typeof d.home === "string" && admitted.home === d.home && admitted.agent === a.name) s.ctx.notifySpawn?.(admitted, d.workspaceId, connection);
         s.ctx.openTerminal(ref, { quiet: true });
-      } else if (stillThere()) s.ctx.notify?.(`Spawned ${d.instance} on ${d.server}; it is not visible yet. Check the server roster to open it.`);
+      } });
       return { created: true };
     }
     if (!d.workspaceId) { fields.status(`Spawned ${d.instance} on ${d.server}. Attach with: oats session attach --server ${d.server} --instance ${d.instance}`); return { created: true }; }

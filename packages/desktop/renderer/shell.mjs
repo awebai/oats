@@ -124,6 +124,7 @@ const ctx = {
   },
   openFile: (path) => openViewTab("markdown", String(path).split("/").pop(), { path }, `file:${path}`),
   openTerminal: (instance, opts) => openTerminalTab(instance, opts),
+  showInRoster: (instance) => showInRoster(instance),
   startInstance: (instance) => openInstanceStart(instance),
   restartInstance: (instance) => openInstanceStart(instance, { restart: true }),
   openBrain: (agent) => openBrainTab(agent),
@@ -733,6 +734,30 @@ function setRovingRow(listEl, row) {
   for (const r of listEl.querySelectorAll('.ctx-inst[tabindex="0"]')) r.tabIndex = -1;
   row.tabIndex = 0;
   row.focus();
+}
+
+/** Select a roster row of this workspace (by server and home) and move keyboard focus to it: through a
+ * filter that hides it and any collapsed ancestor. False when the roster does not list it (yet). */
+async function showInRoster(instance) {
+  const ws = currentWorkspace();
+  const find = () => contextWorkspace === ws ? contextInstances.find(i => (i.server || null) === (instance?.server || null) && i.home === instance?.home) : null;
+  if (!find()) await refreshContextRoster();
+  const row = find();
+  if (!row || ws !== currentWorkspace() || !contextRosterEl) return false;
+  if (contextFilter && !instanceMatchesFilter(row, contextFilter)) {
+    contextFilter = "";
+    const input = contextRosterEl.querySelector(".ctx-filter"); if (input) input.value = "";
+  }
+  for (let id = rosterParentId(contextInstances, instanceId(row)), seen = new Set(); id && !seen.has(id); id = rosterParentId(contextInstances, id)) {
+    seen.add(id); collapsedInstances.delete(collapseKey(ws, id));
+  }
+  renderContextRoster(contextInstances);
+  const listEl = contextRosterEl.querySelector(".ctx-list");
+  const target = listEl && [...listEl.querySelectorAll(".ctx-inst")].find(r => r.dataset.treeInstance === instanceId(row));
+  if (!target) return false;
+  tabOpenIntents.invalidate(); // an explicit navigation, not a polling restoration
+  setRovingRow(listEl, target);
+  return true;
 }
 
 function showTerminalContext() {
