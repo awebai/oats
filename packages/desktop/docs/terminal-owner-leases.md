@@ -118,7 +118,10 @@ with its message and "Close this tab". So does a non-255 exit ("session ended")
 or a ready failure. `remote-target.mjs` `prepareRemoteTerm` codes the prepare's
 failures:
 
-- an `E_SSH` envelope (the CLI's wrapping of ssh's own failure) →
+- an `E_SSH` envelope whose `details.sshStarted` is `false` (ssh could not be
+  run on this computer) → `E_TERM_REMOTE_NO_SSH`, final: nothing reached the
+  host, so a retry cannot help;
+- any other `E_SSH` envelope (the CLI's wrapping of ssh's own failure) →
   `E_TERM_REMOTE_UNREACHABLE`;
 - the inspect killed at its 20 s exec deadline → `E_TERM_PREPARE_TIMEOUT`: a
   stalled link outlives ssh's keepalives (about 45 s);

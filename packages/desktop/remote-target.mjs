@@ -13,10 +13,12 @@ function envelopeOf(stdout) {
   try { envelope = JSON.parse(stdout); } catch { return null; }
   return envelope?.schemaVersion === 1 && typeof envelope.ok === 'boolean' ? envelope : null;
 }
-/** A refusal envelope as a coded error. The CLI reports ssh's own failure as E_SSH (a transport
- * failure); a 0.31 kernel's E_HERDR_REMOVED keeps its message; any other refusal keeps the host's code. */
+/** A refusal envelope as a coded error. The CLI reports ssh's own failure as E_SSH: a transport
+ * failure, unless its details say ssh never started on this computer (nothing to retry); a 0.31
+ * kernel's E_HERDR_REMOVED keeps its message; any other refusal keeps the host's code. */
 function refusal(envelope) {
-  const { code, message } = envelope.error || {};
+  const { code, message, details } = envelope.error || {};
+  if (code === 'E_SSH' && details?.sshStarted === false) return coded('E_TERM_REMOTE_NO_SSH', 'ssh is not available on this computer');
   if (code === 'E_SSH') return unreachable();
   if (code === 'E_HERDR_REMOVED') return herdrRemoved(typeof message === 'string' && message ? message : HERDR_REMOVED);
   return coded(typeof code === 'string' && code ? code : 'E_TERM_OPEN_FAILED', message || 'remote session inspection failed');

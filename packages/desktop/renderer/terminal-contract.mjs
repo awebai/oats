@@ -19,6 +19,7 @@ const serverMessages = {
   E_TERM_REMOTE_UNREACHABLE: server => `Couldn't reach ${server}.`,
   E_TERM_REMOTE_GONE: server => `The session is no longer running on ${server}.`,
   E_TERM_REMOTE_NO_ANSWER: server => `OATS on this computer gave no answer while connecting to ${server}.`,
+  E_TERM_REMOTE_NO_SSH: server => `ssh isn't available on this computer, so ${server} can't be reached. Install OpenSSH on this computer.`,
 };
 const messages = {
   E_TERM_FORBIDDEN_FRAME: 'This document cannot access terminals.',
@@ -41,6 +42,7 @@ const messages = {
   E_TERM_REMOTE_UNREACHABLE: serverMessages.E_TERM_REMOTE_UNREACHABLE('the server'),
   E_TERM_REMOTE_GONE: serverMessages.E_TERM_REMOTE_GONE('the server'),
   E_TERM_REMOTE_NO_ANSWER: serverMessages.E_TERM_REMOTE_NO_ANSWER('the server'),
+  E_TERM_REMOTE_NO_SSH: serverMessages.E_TERM_REMOTE_NO_SSH('the server'),
 };
 export function terminalFailure(code) {
   if (typeof code !== 'string' || !Object.hasOwn(messages, code)) code = 'E_TERM_OPEN_FAILED';

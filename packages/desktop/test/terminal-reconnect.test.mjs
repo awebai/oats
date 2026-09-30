@@ -194,7 +194,7 @@ test("close during an in-flight open: that lease is closed as soon as it resolve
 });
 
 test("every refusal but a transport failure stops reconnecting with its message and Close this tab", async () => {
-  for (const code of ["E_TERM_REMOTE_GONE", "E_TERM_OPEN_FAILED", "E_TERM_CONTEXT_CHANGED", "E_TERM_CAP", "E_TERM_BAD_ARGS"]) {
+  for (const code of ["E_TERM_REMOTE_GONE", "E_TERM_REMOTE_NO_SSH", "E_TERM_OPEN_FAILED", "E_TERM_CONTEXT_CHANGED", "E_TERM_CAP", "E_TERM_BAD_ARGS"]) {
     const r = rig({ opens: [1, code] });
     await r.tab.start(); r.exit(1);
     await r.clock.advance(1000);
