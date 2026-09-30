@@ -1100,6 +1100,9 @@ function openSpawnModal(s, a, draft = {}) {
       if (s.modalEl && dismissed) s.spawnReturn = dismissed;
     },
     servers: a.server ? [] : () => apiJson(s.ctx, "/api/servers").then(d => Array.isArray(d?.servers) ? d.servers : []),
+    // "Where to run": each server's disabled state and, once chosen, its rows for the relation picker (held observations only).
+    serverFacts: () => a.server ? [] : apiJson(s.ctx, `/api/team-members${wsQuery()}`).then(d => Array.isArray(d?.servers) ? d.servers : []),
+    serverRows: group => apiJson(s.ctx, `/api/panel?ws=${encodeURIComponent(`remote:${group}`)}`).then(d => Array.isArray(d?.instances) ? d.instances : []),
     remoteSpawn: fields => doSpawn(s, fields),
     onCreated: async (view, isCurrent) => {
       if (!isCurrent()) return;
@@ -1271,7 +1274,6 @@ export async function doSpawn(s, fields) {
   const myOp = ++s.spawnOp;
   const owns = () => myOp === s.spawnOp && s.alive !== false && myGen === workspaceGeneration() && connection === (s.ctx.connectionGeneration?.() ?? 0);
   const relation = fields.relation || "unrelated";
-  if (relation !== "unrelated" && !a.server) { fields.status("Select the server workspace to choose a related remote agent, or spawn unrelated.", true); return; }
   if (relation !== "unrelated" && !fields.relativeTo) { fields.status(`The "${relation}" relation needs a reference instance.`, true); return; }
   fields.status(`Spawning on ${fields.server}…`);
   try {

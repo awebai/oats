@@ -498,3 +498,42 @@ test('a name longer than the kernel cap (#159) is refused at the field before an
   await u.type('.fpurpose', 'b'.repeat(65)); await settle(20);
   assert.match(u.text('.spawn-name-result'), /at most 64 characters/); assert.equal(u.previews().length, sent);
 });
+
+// Spec 02: "Where to run".
+const buildFacts = (extra = {}) => ({ server: 'build', label: 'Build host', group: 'build:1', reached: true, error: null, registered: true, souls: ['release-manager'], ...extra });
+test('Where to run: "This computer" first, then each server by label (and id when it differs); unusable servers are disabled with why', async t => {
+  const u = await mountSpawn(t, {
+    servers: [{ id: 'build', label: 'Build host', sshHost: 'build.lan' }, { id: 'same', label: 'same', sshHost: 's' }, { id: 'down', label: 'Down box', sshHost: 'd' },
+      { id: 'bare', label: 'Bare box', sshHost: 'b' }, { id: 'moved', label: 'Moved box', sshHost: 'm' }],
+    teamMembers: { members: [], notReached: [], servers: [buildFacts(), buildFacts({ server: 'same', label: 'same', group: 'same:1' }),
+      buildFacts({ server: 'down', label: 'Down box', group: 'down:1', reached: false, error: 'ssh failed' }),
+      buildFacts({ server: 'bare', label: 'Bare box', group: 'bare:1', souls: ['someone-else'] }),
+      buildFacts({ server: 'moved', label: 'Moved box', group: 'moved:old', registered: false })] } });
+  await u.open();
+  const label = u.q('.fserver').closest('label');
+  assert.equal(label.firstChild.textContent, 'Where to run');
+  assert.deepEqual([...u.q('.fserver').options].map(o => [o.textContent, o.disabled]), [
+    ['This computer', false], ['Build host (build)', false], ['same', false],
+    ['Down box (not reached)', true], ['Bare box (no release-manager soul there)', true], ['Moved box (not registered)', true]]);
+});
+
+test('Where to run a server: the hint says so, the relation picker lists only that server\'s rows, and the relation travels with the remote spawn', async t => {
+  const remote = [];
+  const farRow = { instance: 'far-lead', agent: 'release-manager', agentsRoot: '/srv/agents', home: '/srv/agents/release-manager/instances/far-lead', server: 'build', running: true, addressable: true };
+  const u = await mountSpawn(t, { servers: [{ id: 'build', label: 'Build host', sshHost: 'build.lan' }], teamMembers: { members: [], notReached: [], servers: [buildFacts()] },
+    serverPanels: { 'remote:build:1': [farRow] }, remote: body => { remote.push(body); return { instance: 'release-manager-api-v2', server: 'build' }; } });
+  await u.open(); await u.type('.fpurpose', 'api-v2');
+  const local = [...u.q('.frelto').options].map(o => o.value).filter(Boolean);
+  u.q('.spawn-advanced').open = true;
+  await u.change('.fserver', 'build');
+  assert.equal(u.text('.spawn-server-hint'), "Runs on Build host. Its teams and defaults come from that machine's workspace.");
+  assert.deepEqual([...u.q('.frelto').options].map(o => o.value).filter(Boolean), ['far-lead'], 'never this computer\'s rows: relations do not cross machines');
+  const child = [...u.doc.querySelectorAll('.spawn-dialog .frelation input')].find(i => i.value === 'child'); child.checked = true; child.dispatchEvent(new u.dom.window.Event('change', { bubbles: true })); await settle();
+  await u.change('.frelto', 'far-lead');
+  await u.spawn();
+  assert.equal(remote.length, 1);
+  assert.deepEqual([remote[0].serverId, remote[0].relation, remote[0].relativeTo, remote[0].relativeRoot], ['build', 'child', 'far-lead', '/srv/agents']);
+  await u.change('.fserver', '');
+  assert.equal(u.text('.spawn-server-hint'), '');
+  assert.deepEqual([...u.q('.frelto').options].map(o => o.value).filter(Boolean), local, 'back on this computer: its own rows again');
+});

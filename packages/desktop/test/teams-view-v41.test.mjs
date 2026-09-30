@@ -34,7 +34,10 @@ async function mount(t, theme) {
   const dom = new JSDOM(`<!doctype html><html data-theme="${theme}"><body><main class="oats-view"><div class="workspace-discovery" data-tab="teams"></div></main></body></html>`, { pretendToBeVisual: true });
   const doc = dom.window.document;
   for (const source of [css, identityCSS, computerTeamsCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
-  const page = createComputerTeams(doc, { request: async () => document(), instances: () => roster });
+  // The members as /api/team-members answers them for these rows of this computer.
+  const members = roster.map(r => ({ workspace: '/w', server: null, serverLabel: null, instance: r.instance, agent: r.agent, agentsRoot: r.agentsRoot,
+    home: `/a/${r.agent}/instances/${r.instance}`, team: r.identity.team, running: r.running, addressable: true, missingRemotely: false, reason: null, createdAt: null }));
+  const page = createComputerTeams(doc, { request: async () => document(), readMembers: async () => ({ members, servers: [], notReached: [] }) });
   doc.querySelector('.workspace-discovery').append(page.element);
   t.after(() => { page.dispose(); dom.window.close(); });
   await tick();
@@ -113,7 +116,7 @@ test('the copy is the board\'s; the roster shows only matches, and nothing witho
   assert.deepEqual([...u.doc.querySelectorAll('.ct-section-title')].map(h => h.textContent), ['Shared with the workspace', 'Only on this computer']);
   assert.deepEqual([...u.doc.querySelectorAll('.ct-scope')].map(h => h.textContent), ['Shared · Git', 'Not shared']);
   assert.deepEqual([...u.doc.querySelectorAll('.ct-card')].map(c => [c.dataset.team, c.querySelector('.ct-count')?.textContent ?? null, c.querySelector('.ct-note')?.textContent ?? null]),
-    [['engineering', '1 instance in it', null], ['global', null, null], ['marketing', null, null], ['mine', '1 instance in it', 'every instance joins its default team']]);
+    [['engineering', '1 member', null], ['global', null, null], ['marketing', null, null], ['mine', '1 member', 'every instance joins its default team']]);
   const dom = new JSDOM('<!doctype html><body><main class="oats-view"></main></body>'), doc = dom.window.document;
   const bare = createComputerTeams(doc, { request: async () => document() }); doc.querySelector('main').append(bare.element);
   t.after(() => { bare.dispose(); dom.window.close(); }); await tick();
