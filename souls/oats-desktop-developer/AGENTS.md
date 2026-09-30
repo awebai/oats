@@ -17,9 +17,9 @@ which owns Desktop's product, UX and design direction.
 - The backend stays zero-dependency and loopback-only. App dependencies live
   in `packages/desktop/package.json`; the root package never gains Electron
   or Desktop dependencies, and `packages/desktop` stays private.
-- Design decisions belong to oats-desktop-expert: propose, don't drift.
-  Product direction, security posture (new endpoints, IPC surface, guards) and
-  release signing go to the maintainer (oats-expert) first.
+- Product and design decisions belong to oats-desktop-expert: propose, don't
+  drift. Security posture (new endpoints, IPC surface, guards), contract
+  changes and release signing go to the maintainer (oats-expert) first.
 - Read the Desktop docs (`packages/desktop/docs/`, `docs/desktop*.md`) before
   changing an established decision, and ask `oats-desktop-expert` when the
   rationale is not written down: the terminal identity chain and the transactional
