@@ -6,10 +6,10 @@ import { setWorkspace } from "../renderer/views/common.mjs";
 import { cliStart } from "../cli-adapter.mjs";
 
 const tick = () => new Promise((r) => setImmediate(r));
-function setup({ running = false, cli = { ok: true, features: ["session-start"], remote: ["session-start"] }, start, ready = true, restart = false } = {}) {
+function setup({ running = false, cli = { ok: true, features: ["session-start"], remote: ["session-start"] }, start, ready = true, restart = false, server } = {}) {
   const dom = new JSDOM("<body><button id='opener'>Start</button></body>");
   setWorkspace("/workspace");
-  const instance = { instance: "accountant-minerva", home: "/workspace/agents/accountant/instances/accountant-minerva", runtime: "claude", model: "sonnet", running };
+  const instance = { instance: "accountant-minerva", home: "/workspace/agents/accountant/instances/accountant-minerva", runtime: "claude", model: "sonnet", running, ...(server ? { server, addressable: true } : {}) };
   const calls = [], opened = [];
   const ctx = { api: async (path, opts) => {
     calls.push({ path, opts });
@@ -146,5 +146,24 @@ test("an accepted launch that exits permits recovery after a fresh status check"
     assert.equal(s.modal.querySelector(".start-retry").disabled, false);
     s.modal.querySelector(".start-retry").click(); await tick();
     assert.equal(s.modal.querySelector(".start-submit").disabled, false);
+  } finally { s.cleanup(); }
+});
+
+test("the start dialog offers the default checkbox only when this computer's OATS has launch-config-default", async () => {
+  for (const [features, hidden] of [[['session-start', 'launch-config'], true], [['session-start', 'launch-config', 'launch-config-default'], false]]) {
+    const s = setup({ cli: { ok: true, features } });
+    try {
+      await tick();
+      assert.equal(s.modal.querySelector('.lc-default-label').hidden, hidden, features.join(','));
+    } finally { s.cleanup(); }
+  }
+});
+
+test("a remote home never offers the default checkbox: this computer can't tell whether that host has the feature", async () => {
+  const s = setup({ server: 'build', cli: { ok: true, features: ['session-start', 'launch-config', 'launch-config-default'], remote: ['session-start', 'launch-config'] } });
+  try {
+    await tick();
+    assert.equal(s.modal.querySelector('.start-configurations').hidden, false);
+    assert.equal(s.modal.querySelector('.lc-default-label').hidden, true);
   } finally { s.cleanup(); }
 });
