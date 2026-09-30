@@ -196,7 +196,7 @@ function guard(e) { if (!trustedFrame(e)) throw new Error("forbidden: untrusted 
 
 // ---- IPC: workspace suggestions + runtime add ---------------------------
 // Privileged side of the runtime workspace switcher (phase-2 hook 3; the
-// renderer modal is the designer's). Discovery is bounded: known deployment
+// renderer owns the modal). Discovery is bounded: known deployment
 // dirs and validated recents. The kernel reads the deployment itself.
 // workspace:add only ever replaces an app-OWNED server; foreign servers fail
 // closed.

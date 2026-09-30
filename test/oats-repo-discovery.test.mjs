@@ -50,12 +50,13 @@ function checkoutRemote() {
   };
 }
 
-test("member discovery over this repository lists oats.workspace-experts as its only member capability; every package mirror comes from its package", async () => {
+test("member discovery over this repository lists its two private member capabilities, oats.desktop-ui and oats.workspace-experts; every package mirror comes from its package", async () => {
   const d = await discoverRepo("git:github.com/awebai/oats", { remote: checkoutRemote() });
   assert.equal(d.key, "github.com/awebai/oats");
   assert.deepEqual(d.problems, []);
   assert.deepEqual(d.capabilities.map((c) => ({ name: c.name, path: c.path, private: c.private })),
-    [{ name: "oats.workspace-experts", path: "capabilities/oats-workspace-experts", private: true }],
+    [{ name: "oats.desktop-ui", path: "capabilities/oats-desktop-ui", private: true },
+     { name: "oats.workspace-experts", path: "capabilities/oats-workspace-experts", private: true }],
     "a package mirror under capabilities/ is discovered as a member capability of this repository");
   // What the repository publishes is reported, never enumerated as member capabilities.
   assert.equal(d.publishes?.package, "oats.framework");

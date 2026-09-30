@@ -160,8 +160,8 @@ function workspaceChoices(all = workspaces()) {
 /* OATSWEB_PANELPROJ_BEGIN — the /api/panel per-instance contract projection.
    Extracted by packages/desktop/test/panel-projection.test.mjs via block
    markers so a dropped/typo'd field fails a real assertion (review
-   2092e0f): the renderer's cluster grouping and ux-designer's overview
-   consume exactly these fields. */
+   2092e0f): the renderer's cluster grouping and its overview consume
+   exactly these fields. */
 function projectPanelInstance(i) {
   return {
     instance: i.instance, agent: i.agent, description: i.description,
@@ -174,7 +174,7 @@ function projectPanelInstance(i) {
     // Agent relations (kernel contract, final): siblingInstance links a
     // declared sibling to a ROOT anchor; relation/relativeTo record what
     // was declared at spawn. Forwarded for cluster grouping and the
-    // cluster-first overview (ux-designer reads /api/panel).
+    // cluster-first overview (the renderer reads /api/panel).
     siblingInstance: i.siblingInstance || null,
     relation: i.relation || null,
     relativeTo: i.relativeTo || null,

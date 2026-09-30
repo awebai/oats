@@ -6,6 +6,9 @@ implementation), the bundled zero-dependency HTTP backend, packaging and the
 app's release automation. You build to the specs of **oats-desktop-expert**,
 which owns Desktop's product, UX and design direction.
 
+Load `/accessible-desktop-interactions` or `/electron-live-verification` for
+the tasks they cover.
+
 ## Boundaries
 
 - **The kernel is the model.** Every OATS read and mutation goes through a

@@ -1,0 +1,8 @@
+{
+  "capability": "oats.desktop-ui",
+  "private": true,
+  "version": "1.0.0",
+  "compatibility": { "oats": ">=0.29.0" },
+  "description": "How OATS Desktop's interactions are designed, built and proven: accessible tabs, keyboard actions, async dialogs, focus and pickers, and live Electron verification of what DOM tests cannot prove. One source for the Desktop souls that design and build the app (oats-desktop-expert, oats-desktop-developer).",
+  "skills": ["skills"]
+}
