@@ -3075,7 +3075,7 @@ test("the package mirrors carry the versions package-catalog.json pins", () => {
     assert.equal(catalog.capabilities[id], "oats.engineering", `${id} is supplied by the oats.engineering package`);
     assert.equal(Object.hasOwn(manifest, "agents"), false, `${id} declares no capability agent: the code-reviewer is oats.engineering's package soul`);
   }
-  assert.equal(catalog.packages["oats.engineering"].ref, "v1.3.0");
+  assert.equal(catalog.packages["oats.engineering"].ref, "v1.4.0");
   // oats.dev is retired: no package, alias or mirror remains.
   assert.equal(catalog.packages["oats.dev"], undefined, "oats.dev is no longer listed");
   for (const [alias, target] of Object.entries(catalog.capabilities)) {

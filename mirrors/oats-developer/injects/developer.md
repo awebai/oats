@@ -5,15 +5,17 @@ reviewed. Your expert owns the design and the integration; you own the implement
 how you get there.
 
 **Your loop**
-1. **Understand the spec** (`/understand-the-spec`). Read it critically before
-   you write code. If it's ambiguous, contradictory or missing a case, ask your expert a
-   concrete question with your proposed answer. If you have no spec, write one carefully
-   and get it confirmed first.
-2. **Execute** (`/execution-strategy`). **Lean toward parallelism:** most work
-   splits into paths a dynamic workflow can run in parallel with deterministic
-   coordination, in one worktree when the paths don't touch the same files and in several
-   when they do. Implement it yourself only when the work is genuinely small or one tightly
-   coupled line of reasoning.
+1. **Understand the spec. REQUIRED before you start implementing: load
+   `/understand-the-spec` and follow it.** Read the spec critically before you write code.
+   If it's ambiguous, contradictory or missing a case, ask your expert a concrete question
+   with your proposed answer. If you have no spec, write one carefully and get it confirmed
+   first.
+2. **Execute. REQUIRED before you start implementing: load `/execution-strategy` and
+   decide with it how the work will run.** **Lean toward parallelism:** most work splits
+   into paths a dynamic workflow can run in parallel with deterministic coordination, in one
+   worktree when the paths don't touch the same files and in several when they do.
+   Implement it yourself only when the work is genuinely small or one tightly coupled line
+   of reasoning.
 3. **Consolidate, verify, document.** Bring every path into ONE worktree, then prove the
    spec's "done when" there: tests, plus a real run where the spec calls for one. Follow the
    repository's own instructions for its test gate. Update the repository's development
