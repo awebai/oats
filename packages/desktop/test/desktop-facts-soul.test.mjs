@@ -142,6 +142,32 @@ test('Core: no reason without the features; a contradiction shows the provider; 
   assert.deepEqual(coreEntries(home, { layersFrom: true, facts: true }).map(e => e.why), [null, null, null]);
 });
 
+test('every emptied-slot entry lands in exactly one section: all of a slot\'s in Core, one Core cannot place in Capabilities', () => {
+  const empty = { knowledge: { id: null, from: null }, messaging: { id: null, from: null }, tasks: { id: null, from: null } };
+  const two = layered(empty, { capabilitiesOff: [{ id: 'acme.notes', off: true, from: 'soul', reason: 'slot-none', slot: 'knowledge', overrides: 'workspace' },
+    { id: 'oats.okf', off: true, from: 'soul', reason: 'slot-none', slot: 'knowledge', overrides: 'workspace' }] });
+  const knowledge = coreEntries(two, { layersFrom: true, facts: true })[0];
+  assert.deepEqual([knowledge.why, knowledge.names], ['off', ['acme.notes', 'oats.okf']], 'both, not the first');
+  assert.equal(whyTag(knowledge)[1], 'This soul empties the knowledge slot, which the workspace default filled with acme.notes, oats.okf');
+  assert.deepEqual(compositionEntries(two, null, { facts: true }).filter(e => e.why === 'off'), []);
+  const { dom, host } = render(renderSoulCore, { entries: coreEntries(two, { layersFrom: true, facts: true }), status: null });
+  try { assert.deepEqual([...coreRow(host, 'knowledge').querySelectorAll('.soul-cap-struck')].map(n => n.textContent), ['acme.notes', 'oats.okf']); } finally { dom.window.close(); }
+  // A slot-none without a core slot: Core cannot place it, so it stays a Capabilities off row and no slot claims "No default".
+  const loose = layered(empty, { capabilitiesOff: [{ id: 'oats.okf', off: true, from: 'soul', reason: 'slot-none', overrides: 'workspace' }] });
+  assert.deepEqual(coreEntries(loose, { layersFrom: true, facts: true }).map(e => e.why), [null, null, null]);
+  const kept = compositionEntries(loose, null, { facts: true }).filter(e => e.why === 'off');
+  assert.deepEqual(kept.map(e => [e.name, e.reason]), [['oats.okf', 'slot-none']]);
+  assert.equal(whyTag(kept[0])[1], 'This soul empties a core slot, which the workspace default filled with oats.okf');
+});
+
+test('a core-layer capability whose slot inspect does not report stays under Capabilities (Core has no row to show it)', () => {
+  const v = layered({}, { capabilitiesOff: [] }); v.capabilities = [{ id: 'oats.aweb', layer: 'messaging', from: { kind: 'package', package: 'oats.aweb' }, composedFrom: 'workspace' }];
+  assert.deepEqual(coreEntries(v, { layersFrom: true, facts: true }).map(e => e.reported), [false, false, false]);
+  assert.deepEqual(compositionEntries(v, null, { facts: true }).map(e => e.cap?.id), ['oats.aweb']);
+  v.layers = { messaging: { id: null, from: null } };
+  assert.deepEqual(compositionEntries(v, null, { facts: true }).map(e => e.cap?.id), [], 'a reported slot: Core\'s');
+});
+
 test('Capabilities never lists a core-layer module, even one the soul also declares', () => {
   const v = withFacts();
   v.capabilities.push({ ...v.capabilities.find(c => c.id === 'oats.core'), id: 'acme.mail', layer: 'messaging', composedFrom: 'soul' });

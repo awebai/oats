@@ -138,15 +138,15 @@ test('the view search narrows every section by capability name', async t => {
   assert.equal(search.closest('.ws-toolbar').hidden, true, 'the search belongs to Capabilities');
 });
 
-test('three sections: Workspace owned, Packages, and Repo owned (grouped by repo) only when the CLI advertises capabilities-private', async t => {
+test('three sections: Workspace owned, Repo owned (grouped by repo, only when the CLI advertises capabilities-private), then Packages', async t => {
   const sections = capabilitySections(fx('f7/capabilities').result.capabilities);
   assert.deepEqual(sections.repo.map(r => r.name), ['nw-platform-runbook'], 'the kernel\'s private: true row (#185)');
   const withFeature = { ...CLI, features: [...CLI.features, 'capabilities-private'] };
   const u = await setup(t, { cli: withFeature, sync: () => catalog('f7/capabilities') });
   await u.tab('capabilities');
-  assert.deepEqual([...u.doc.querySelectorAll('.capability-section-title > span:first-child')].map(el => el.textContent), ['Workspace owned', 'Packages', 'Repo owned']);
-  assert.deepEqual([...u.doc.querySelectorAll('.capability-section-lead')].map(el => el.textContent), ['latest from member repos', 'pinned versions, same everywhere', 'only for souls of the same repo']);
-  assert.deepEqual([...u.doc.querySelectorAll('.capability-nav button')].map(el => el.dataset.jump), ['workspace', 'packages', 'repo']);
+  assert.deepEqual([...u.doc.querySelectorAll('.capability-section-title > span:first-child')].map(el => el.textContent), ['Workspace owned', 'Repo owned', 'Packages']);
+  assert.deepEqual([...u.doc.querySelectorAll('.capability-section-lead')].map(el => el.textContent), ['latest from member repos', 'only for souls of the same repo', 'pinned versions, same everywhere']);
+  assert.deepEqual([...u.doc.querySelectorAll('.capability-nav button')].map(el => el.dataset.jump), ['workspace', 'repo', 'packages']);
   assert.ok(!u.owned().includes('nw-platform-runbook'), 'a repo-owned capability is never listed as workspace owned');
   const group = u.doc.querySelector('[data-section=repo] .catalog-group');
   assert.equal(group.textContent, 'platform');
@@ -159,6 +159,7 @@ test('three sections: Workspace owned, Packages, and Repo owned (grouped by repo
   const v = await setup(t, { sync: () => catalog('f7/capabilities') });
   await v.tab('capabilities');
   assert.deepEqual([...v.doc.querySelectorAll('.capability-section')].map(el => el.dataset.section), ['workspace', 'packages']);
+  assert.deepEqual([...v.doc.querySelectorAll('.capability-nav button')].map(el => el.dataset.jump), ['workspace', 'packages']);
 });
 
 // Workspace v4 (W1/W2) — replaces the Setup tests that pinned the old

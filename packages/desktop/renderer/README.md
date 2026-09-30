@@ -474,7 +474,8 @@ workspace is observed through its server and never synced from here.
   the held table via `POST /api/workspace-sync?ws=<id>` `{action:"read"}`
   when it opens (`refresh: true` forces a live read; after a sync the table
   is re-read). A
-  segmented jump (Workspace owned / Packages / Repo owned; navigation, so the
+  segmented jump (Workspace owned / Repo owned, when the CLI lists it / Packages,
+  the sections in the same order; navigation, so the
   section in view carries `aria-current`), then one 58px row
   card per capability (design board 4): a tile tinted by kind (Knowledge,
   Messaging, Tasks, other, package), the name with its kind chip over a

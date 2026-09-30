@@ -28,7 +28,7 @@ import { createTeamsPanel, teamsOperations, teamsCSS, soulTeams, teamLabels } fr
 import { createSoulTeamsHere, soulTeamsHereCSS } from './soul-teams-here.mjs';
 import { teamsAnswer } from './computer-teams.mjs';
 import { ageText } from './age-text.mjs';
-import { pageBar, pageCard, pageSection, CORE_SLOTS, compositionEntries, coreEntries, coreNote, whyTag, renderSoulCore, desktopFacts } from './capability-page.mjs';
+import { pageBar, pageCard, pageSection, isCoreCapability, compositionEntries, coreEntries, coreNote, whyElement, renderSoulCore, desktopFacts } from './capability-page.mjs';
 import { layerLabel } from './workspace-catalog.mjs';
 import { shownLaunch, launchHarnessName, launchModelText, launchFromText, launchAtText, declaredText, preferenceText, declaredDiffers } from './launch-view.mjs';
 import { createDataState, skeletonBlock, skeleton, captureFocusState } from './loading.mjs';
@@ -729,8 +729,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     host.append(node('h3', 'Core capabilities', 'inspector-section'));
     coreCard(coreEntries(inspected, { layersFrom: layersFrom(), facts: desktopFacts(cliStatus()) }), host, { spawned: inspected.subject.kind === 'instance' });
     // Every other capability: a core slot's provider is the card's above, never listed twice.
-    const core = new Set(CORE_SLOTS.map(slot => inspected.layers?.[slot]?.id).filter(Boolean));
-    const others = inspected.capabilities.filter(cap => !core.has(cap.id) && !CORE_SLOTS.includes(cap.layer));
+    const others = inspected.capabilities.filter(cap => !isCoreCapability(inspected, cap));
     host.append(node('h3', `Capabilities · ${others.length}`, 'inspector-section'));
     if (!others.length) { host.append(node('p', inspected.capabilities.length ? 'No other capabilities: only the core ones.' : 'No capabilities resolved.', 'muted')); return; }
     const list = node('div', undefined, 'inspector-list');
@@ -751,9 +750,8 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     for (const entry of entries) {
       const dd = node('dd'); dd.dataset.layer = entry.slot;
       dd.append(node('span', entry.id || (entry.reported ? 'None' : 'Not reported'), `inspector-core-id${entry.id ? '' : ' none'}`));
-      if (entry.why === 'off') { const gone = node('span', entry.name, 'inspector-core-struck'); gone.title = entry.name; dd.append(gone); }
-      const [label, title, plain] = entry.why ? whyTag(entry) : [];
-      if (label) { const tag = node('span', label, plain ? 'why-note' : `why-tag${entry.why === 'soul' ? ' soul' : ''}`); tag.title = title; dd.append(tag); }
+      if (entry.why === 'off') for (const name of entry.names) { const gone = node('span', name, 'inspector-core-struck'); gone.title = name; dd.append(gone); }
+      const tag = whyElement(doc, entry); if (tag) dd.append(tag);
       const note = coreNote(entry, { spawned }); if (note) dd.append(node('span', note, 'inspector-core-note'));
       dl.append(node('dt', layerLabel(entry.slot)), dd);
     }

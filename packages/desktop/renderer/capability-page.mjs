@@ -362,8 +362,15 @@ function moduleRow(instance, name) {
 /** The three core capabilities (a soul's `layers`), in the order every surface shows them. */
 export const CORE_SLOTS = Object.freeze(['knowledge', 'messaging', 'tasks']);
 const record = v => !!v && typeof v === 'object' && !Array.isArray(v);
-/** A `capabilitiesOff` entry that is a soul emptying a core slot (`<slot>: none`), not a capability it turned off. */
-const emptiesSlot = off => off?.reason === 'slot-none' || !!text(off?.slot);
+/** A `capabilitiesOff` entry Core places: a soul emptying a core slot it names (`<slot>: none`). Anything
+ * else (a plain off, or a slot-none without a core slot) stays a Capabilities row, so nothing is dropped. */
+const emptiesSlot = off => CORE_SLOTS.includes(off?.slot);
+/** Whether a resolved capability is Core's: a slot's provider, or a module with a core `layer` whose slot
+ * inspect reports (an unreported slot has no Core row to show it, so it stays under Capabilities). */
+export function isCoreCapability(inspected, cap) {
+  if (CORE_SLOTS.some(slot => text(inspected?.layers?.[slot]?.id) && inspected.layers[slot].id === cap?.id)) return true;
+  return CORE_SLOTS.includes(cap?.layer) && record(inspected?.layers?.[cap.layer]);
+}
 /** `layers.<slot>.from` (feature layers-from) as a reason; null when not reported or a kind this Desktop does not know. */
 function layerWhy(from) {
   if (from === 'workspace' || from === 'soul') return { why: from };
@@ -371,26 +378,29 @@ function layerWhy(from) {
   return team ? { why: 'team', team: team[1] } : { why: null };
 }
 /** A soul's (or an instance's) core capabilities: one entry per slot, in CORE_SLOTS order,
- * { slot, id, cap, reported, why, team?, name?, reason?, overrides? }. `id` fills the slot (`cap` its
+ * { slot, id, cap, reported, why, team?, names?, name?, reason?, overrides? }. `id` fills the slot (`cap` its
  * capabilities[] row, null when missing); `reported` is false when inspect has no `layers.<slot>`.
  * `why`, only from what the kernel reports: workspace / team / soul from `layers.<slot>.from`
  * (`layersFrom`: the CLI reports layers-from); 'off' for an empty slot the soul emptied
- * (`capabilitiesOff[]` slot-none, `name` the capability it turned off; `facts`: desktop-facts);
- * 'none' for an empty slot nothing filled, which needs both features and a soul subject (a home's
- * `capabilitiesOff` is always []); else null: no reason is shown. A filled slot never takes an
+ * (`capabilitiesOff[]` slot-none, `names` every capability it turned off, `name` them joined; `facts`:
+ * desktop-facts); 'none' for an empty slot nothing filled, which needs both features, a soul subject (a
+ * home's `capabilitiesOff` is always []) and no slot-none entry Core cannot place; else null: no reason is shown. A filled slot never takes an
  * off entry (a contradiction: the provider wins). */
 export function coreEntries(inspected, { layersFrom = false, facts = false } = {}) {
   const caps = list(inspected?.capabilities);
-  const offs = facts && Array.isArray(inspected?.capabilitiesOff) ? inspected.capabilitiesOff.filter(off => record(off) && text(off.id) && emptiesSlot(off)) : null;
+  const all = facts && Array.isArray(inspected?.capabilitiesOff) ? inspected.capabilitiesOff.filter(off => record(off) && text(off.id)) : null;
+  const offs = all?.filter(emptiesSlot) ?? null;
+  // A slot-none this Desktop cannot place might be any slot's: then no empty slot is claimed to have no default.
+  const unplaced = !!all?.some(off => off.reason === 'slot-none' && !emptiesSlot(off));
   const soul = inspected?.subject?.kind !== 'instance';
   return CORE_SLOTS.map(slot => {
     const layer = inspected?.layers?.[slot];
     if (!record(layer)) return { slot, id: null, cap: null, reported: false, why: null };
     const id = text(layer.id);
     if (id) return { slot, id, cap: caps.find(cap => cap?.id === id) || null, reported: true, ...(layersFrom ? layerWhy(layer.from) : { why: null }) };
-    const off = offs?.find(entry => entry.slot === slot);
-    if (off) return { slot, id: null, cap: null, reported: true, why: 'off', reason: 'slot-none', name: off.id, overrides: text(off.overrides) };
-    return { slot, id: null, cap: null, reported: true, why: layersFrom && offs && soul && layer.from == null ? 'none' : null };
+    const off = offs?.filter(entry => entry.slot === slot) ?? [];
+    if (off.length) { const names = off.map(entry => entry.id); return { slot, id: null, cap: null, reported: true, why: 'off', reason: 'slot-none', names, name: names.join(', '), overrides: text(off[0].overrides) }; }
+    return { slot, id: null, cap: null, reported: true, why: layersFrom && offs && soul && !unplaced && layer.from == null ? 'none' : null };
   });
 }
 /** The plain-text note a core row carries after its tag (part of the row's text); `spawned`: an instance's words. */
@@ -420,13 +430,11 @@ export const desktopFacts = cli => Array.isArray(cli?.features) && cli.features.
  * Order: workspace defaults → team defaults → soul → turned off. */
 export function compositionEntries(inspected, soul, { facts = false } = {}) {
   const declared = record(soul?.declarations) ? soul.declarations : {};
-  const coreIds = new Set(CORE_SLOTS.map(slot => inspected?.layers?.[slot]?.id).filter(Boolean));
   const choices = record(declared.capabilities) ? declared.capabilities : {};
   const caps = list(inspected?.capabilities);
   const reported = facts && caps.some(cap => typeof cap.composedFrom === 'string');
-  // Core capabilities are the Core section's: a slot's provider (by id or by its core layer) and a soul
-  // emptying a slot (slot-none) never show here.
-  const entries = caps.filter(cap => !coreIds.has(cap.id) && !CORE_SLOTS.includes(cap.layer)).map(cap => {
+  // Core capabilities are the Core section's (isCoreCapability), and so is a soul emptying a core slot.
+  const entries = caps.filter(cap => !isCoreCapability(inspected, cap)).map(cap => {
     const own = record(choices[cap.id]), repoOwned = own && choices[cap.id].from === 'here';
     if (!reported) return { cap, why: own ? 'soul' : 'default', repoOwned };
     const team = typeof cap.composedFrom === 'string' && /^team:(.+)$/.exec(cap.composedFrom);
@@ -434,7 +442,7 @@ export function compositionEntries(inspected, soul, { facts = false } = {}) {
   });
   if (facts && Array.isArray(inspected?.capabilitiesOff)) {
     for (const off of inspected.capabilitiesOff) if (record(off) && typeof off.id === 'string' && off.id && !emptiesSlot(off))
-      entries.push({ name: off.id, why: 'off', reason: 'off', overrides: typeof off.overrides === 'string' ? off.overrides : null });
+      entries.push({ name: off.id, why: 'off', reason: off.reason === 'slot-none' ? 'slot-none' : 'off', slot: null, overrides: typeof off.overrides === 'string' ? off.overrides : null });
   } else for (const [name, choice] of Object.entries(choices)) if (choice === 'off' && !caps.some(cap => cap.id === name)) entries.push({ name, why: 'off' });
   const order = { workspace: 0, default: 0, team: 1, soul: 2, off: 3 };
   return entries.map((entry, i) => [entry, i]).sort(([a, i], [b, j]) => order[a.why] - order[b.why] || i - j).map(([entry]) => entry);
@@ -448,14 +456,21 @@ export function whyTag(entry) {
   if (entry.why === 'none') return ['No default', `Neither this soul nor the workspace fills the ${entry.slot} slot`, true];
   if (entry.why === 'team') return [`team · ${entry.team}`, `A default of the ${entry.team} team`, false];
   if (entry.why === 'off') return entry.reason === 'slot-none'
-    ? ['turned off by soul', `This soul empties the ${entry.slot || 'layer'} slot, which ${overridden(entry.overrides)} filled with ${entry.name}`, true]
+    ? ['turned off by soul', `This soul empties ${entry.slot ? `the ${entry.slot}` : 'a core'} slot, which ${overridden(entry.overrides)} filled with ${entry.name}`, true]
     : ['turned off by soul', `This soul turns off ${overridden(entry.overrides)}`, true];
   const [label, title] = WHY[entry.why] || WHY.default;
   return [label, title, false];
 }
+/** An entry's why, as every surface shows it: the tag, or the plain note (turned off, no default); null with no reason. */
+export function whyElement(doc, entry) {
+  const [label, title, plain] = entry?.why ? whyTag(entry) : [];
+  if (!label) return null;
+  const tag = el(doc, 'span', label, plain ? 'why-note' : `why-tag${entry.why === 'soul' ? ' soul' : ''}`); tag.title = title;
+  return tag;
+}
 /** A soul's composition table (Capability | Source | Why it's here) or its Core capabilities table, one grid. */
-function soulTable(doc, label, headers) {
-  const table = el(doc, 'div', undefined, `page-table soul-caps${label === 'Core capabilities' ? ' soul-core' : ''}`); table.setAttribute('role', 'table'); table.setAttribute('aria-label', label);
+function soulTable(doc, label, headers, { core = false } = {}) {
+  const table = el(doc, 'div', undefined, `page-table soul-caps${core ? ' soul-core' : ''}`); table.setAttribute('role', 'table'); table.setAttribute('aria-label', label);
   const head = el(doc, 'div', undefined, 'page-table-row head soul-cap-row'); head.setAttribute('role', 'row');
   for (const text of headers) { const cell = el(doc, 'span', text); cell.setAttribute('role', 'columnheader'); head.append(cell); }
   table.append(head);
@@ -469,8 +484,7 @@ function soulRow(doc, line, { name, source = null, names, entry, note = null }) 
   const cell = el(doc, 'span', undefined, 'soul-cap-source'); cell.setAttribute('role', 'cell'); cell.style.minWidth = '0';
   if (source) cell.append(sourceChip(doc, source, names, { boxed: true }));
   const why = el(doc, 'span', undefined, 'soul-cap-why'); why.setAttribute('role', 'cell');
-  const [label, title, plain] = entry?.why ? whyTag(entry) : [];
-  if (label) { const tag = el(doc, 'span', label, plain ? 'why-note' : `why-tag${entry.why === 'soul' ? ' soul' : ''}`); tag.title = title; why.append(tag); }
+  const tag = whyElement(doc, entry); if (tag) why.append(tag);
   if (note) why.append(el(doc, 'span', note, 'soul-cap-why-note'));
   line.append(name, cell, why);
   return line;
@@ -507,7 +521,7 @@ export function renderSoulCore(host, { entries, status, onOpen = null }) {
   const doc = host.ownerDocument, names = memberNames(status);
   const node = (tag, value, cls) => el(doc, tag, value, cls);
   host.replaceChildren();
-  const table = soulTable(doc, 'Core capabilities', ['Core capability', 'Source', "Why it's here"]);
+  const table = soulTable(doc, 'Core capabilities', ['Core capability', 'Source', "Why it's here"], { core: true });
   for (const entry of list(entries)) {
     const opens = !!entry.cap && typeof onOpen === 'function';
     const line = node(opens ? 'button' : 'div', undefined, entry.id ? '' : entry.why === 'off' ? 'none off' : 'none'); line.dataset.layer = entry.slot;
@@ -515,8 +529,8 @@ export function renderSoulCore(host, { entries, status, onOpen = null }) {
     icon.setAttribute('aria-hidden', 'true'); icon.append(iconElement(doc, capabilityIcon({ layer: entry.slot }), { size: 14 }));
     copy.append(node('span', layerLabel(entry.slot), 'soul-cap-slot'));
     const id = node('span', entry.id || (entry.reported ? 'None' : 'Not reported'), 'soul-cap-id'); if (entry.id) id.title = entry.id; copy.append(id);
-    // The capability the soul turned off by emptying the slot, struck through as a turned-off row is.
-    if (entry.why === 'off') { const gone = node('span', entry.name, 'soul-cap-struck'); gone.title = entry.name; copy.append(gone); }
+    // What the soul turned off by emptying the slot, struck through as a turned-off row is.
+    if (entry.why === 'off') for (const name of list(entry.names)) { const gone = node('span', name, 'soul-cap-struck'); gone.title = name; copy.append(gone); }
     if (entry.id && text(entry.detail)) copy.append(node('span', entry.detail, 'soul-cap-note'));
     cap.append(icon, copy);
     const note = coreNote(entry);

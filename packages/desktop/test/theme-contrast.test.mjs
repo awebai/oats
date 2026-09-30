@@ -818,7 +818,7 @@ for (const [name] of palettes) test(`${name}: v4 page bar, cards, facts, used-by
     { name: 'pr-hygiene', why: 'off' }] });
   // Core: a filled (openable) row with its note, an emptied slot (struck name, off note) and no default.
   renderSoulCore(doc.querySelector('.core'), { status: null, onOpen() {}, entries: [
-    { slot: 'knowledge', id: null, cap: null, reported: true, why: 'off', reason: 'slot-none', name: 'oats.okf', overrides: 'workspace' },
+    { slot: 'knowledge', id: null, cap: null, reported: true, why: 'off', reason: 'slot-none', names: ['oats.okf'], name: 'oats.okf', overrides: 'workspace' },
     { slot: 'messaging', id: 'oats.aweb', cap: { id: 'oats.aweb', version: '1.17.3', from: { kind: 'package', package: 'oats.aweb', version: '1.17.3' } }, reported: true, why: 'workspace', detail: 'Default team only' },
     { slot: 'tasks', id: null, cap: null, reported: true, why: 'none' }] });
   const root = dom.window.getComputedStyle(doc.documentElement);
