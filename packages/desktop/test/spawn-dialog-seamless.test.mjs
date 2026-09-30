@@ -158,3 +158,72 @@ test('the busy budget: a read refused E_BUSY while this dialog\'s superseded rea
   held.get('race').resolve(); await settle(20);
   assert.equal(facts(u).Name, 'release-manager-api-v2', 'the superseded answer never shows');
 });
+
+// Review round 1.
+const runPolls = async u => { for (const poll of u.polls) poll(); await settle(20); };
+test('a read that cannot answer the pressed choices ends the press: it never spawns later on its own', async t => {
+  const g = gates(); const u = await mountSpawn(t, { previewGate: g.gate });
+  const CLI = structuredClone(u.ctx && (await u.ctx.api('/api/cli')));
+  await u.open(); g.hold();
+  input(u, '.fpurpose', 'api-v2'); await settle();
+  u.q('.fspawn').click(); await settle();
+  assert.equal(u.q('.fspawn').textContent, 'Checking…');
+  // The CLI loses the preview under the waiting press: the read returns early (not previewable).
+  await u.setCli({ ...CLI, spawnPreviewApi: null, features: CLI.features.filter(f => f !== 'spawn-preview-2') }); await runPolls(u);
+  assert.equal(u.q('.fspawn').textContent, 'Spawn'); assert.equal(u.q('.fspawn').getAttribute('aria-busy'), 'false');
+  assert.ok(u.q('.fstatus').classList.contains('err'), 'the failure shows');
+  g.open(); for (const h of g.held) h.resolve(); await settle(20);
+  await u.setCli(CLI); await runPolls(u);
+  assert.deepEqual(u.spawns(), [], 'the press ended: no spawn without a new press');
+  assert.equal(u.q('.fspawn').textContent, 'Spawn');
+});
+
+test('an invalid form reads nothing and the column says so: no Updating…, no aria-busy; before the first settle, why there is no preview', async t => {
+  const g = gates(); const u = await mountSpawn(t, { previewGate: g.gate });
+  await u.open(); const before = u.previews().length;
+  input(u, '.fpurpose', 'a b'); await settle(20);
+  assert.equal(u.previews().length, before);
+  assert.equal(u.q('.spawn-preview').getAttribute('aria-busy'), 'false'); assert.equal(u.q('.spawn-preview-updating').hidden, true);
+  assert.ok(u.q('.spawn-preview-facts'), 'the settled facts stay (never blanked)');
+  const v = await mountSpawn(t, { previewGate: g.gate });
+  g.hold(); await v.open();
+  assert.ok(v.q('.spawn-preview-skeleton'), 'first read in the air');
+  input(v, '.fpurpose', 'a b'); await settle();
+  g.open(); for (const h of g.held) h.resolve(); await settle(20);
+  assert.equal(v.q('.spawn-preview-skeleton'), null); assert.equal(v.q('.spawn-preview').getAttribute('aria-busy'), 'false');
+  assert.equal(v.text('.spawn-preview-empty'), 'The preview reads once the form is valid.');
+});
+
+test('a failure for the choices on screen stays while a poll retries it: no flip to older facts, the footer keeps it', async t => {
+  const g = gates();
+  const u = await mountSpawn(t, { previewGate: g.gate, previewName: (_soul, choices) => choices.purpose === 'broken' ? 'preview-clone-missing' : undefined });
+  await u.open();
+  input(u, '.fpurpose', 'broken'); await settle(20);
+  const said = u.text('.spawn-preview-failure'); assert.ok(said); assert.equal(u.q('.fstatus').dataset.code, 'E_CLONE_MISSING');
+  g.hold(); await runPolls(u);
+  assert.equal(g.held.length, 1, 'the poll retries the failed read');
+  assert.equal(u.text('.spawn-preview-failure'), said, 'the failure stays'); assert.equal(u.q('.spawn-preview-facts'), null, 'never the previous choices\' facts');
+  assert.equal(u.q('.fstatus').dataset.code, 'E_CLONE_MISSING', 'the footer keeps it while its retry reads');
+  g.open(); g.held[0].resolve(); await settle(20);
+  assert.equal(u.text('.spawn-preview-failure'), said);
+});
+
+test('"Reading defaults…" is the first read\'s only: after a first answer that is a refusal, edits do not say it', async t => {
+  const g = gates(); const u = await mountSpawn(t, { previewGate: g.gate, previewName: () => 'preview-clone-missing' });
+  await u.open(); assert.equal(u.q('.fstatus').dataset.code, 'E_CLONE_MISSING');
+  g.hold(); input(u, '.fpurpose', 'x'); await settle();
+  assert.equal(g.held.length, 1); assert.notEqual(u.text('.fstatus'), 'Reading defaults…');
+  g.open(); g.held[0].resolve(); await settle(20);
+});
+
+test('Change soul while a press waits drops it', async t => {
+  const g = gates(); const u = await mountSpawn(t, { previewGate: g.gate });
+  await u.open(); g.hold();
+  input(u, '.fpurpose', 'api-v2'); await settle();
+  u.q('.fspawn').click(); await settle();
+  assert.equal(u.q('.fspawn').textContent, 'Checking…');
+  u.q('.spawn-change-soul').click(); await settle();
+  assert.equal(u.text('.fstatus'), 'Changed: press Spawn again'); assert.equal(u.q('.fspawn').textContent, 'Spawn');
+  g.open(); for (const h of g.held) h.resolve(); await settle(30);
+  assert.deepEqual(u.spawns(), []);
+});

@@ -957,8 +957,10 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       return { kind: 'failure', text: spawnProblem(answer.failure, 'preview').text };
     };
     if (shown && shown.key === key && !readDue()) return said(shown);
-    if (shown) return { ...said(settled ?? shown), updating: true };
-    if (timer || latest) return { kind: 'reading' };
+    // A failure for the choices on screen stays while its retry reads; otherwise the last settled facts.
+    // Marked updating only while a read is due or will be (an invalid form reads nothing).
+    if (shown) return { ...said(shown.key === key ? shown : settled ?? shown), updating: readDue() || !draftChoice.error };
+    if (readDue()) return { kind: 'reading' };
     if (draftChoice.error) return { kind: 'empty', text: 'The preview reads once the form is valid.' };
     if (!previewable()) return { kind: 'empty', text: soul.work === 'attached' ? 'Attached souls are started by the instance they attach to.' : 'The installed CLI can’t preview this spawn.' };
     return { kind: 'reading' };
@@ -1051,23 +1053,24 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   }
   async function read() {
     if (!current()) return;
-    if (!local()) { shown = settled = null; setStatus(''); render(); return; }
+    // A read that cannot answer the pressed choices ends the press: it never spawns later on its own.
+    if (!local()) { endPress(); shown = settled = null; setStatus(''); render(); return; }
     if (!previewable()) {
-      shown = settled = null;
+      endPress(); shown = settled = null;
       if (soul.work === 'attached') setStatus('Attached souls are started by the instance they attach to.', true);
       else showProblem(previewFailure('E_PREVIEW_UNAVAILABLE').reason, 'preview');
       render(); return;
     }
     const draftChoice = choices();
     // Nothing to read until the form is valid; what settled stays on screen (the field says what to fix).
-    if (draftChoice.error) { setStatus(''); render(); return; }
+    if (draftChoice.error) { endPress(); setStatus(''); render(); return; }
     // Never queued behind a superseded read: that one's answer is discarded when it lands.
     const ticket = serial, value = draftChoice.value, key = choiceKey(value), ws = workspace().id, owner = mount;
     latest = { ticket, key }; inFlight++; retryOnSettle = false; factsSeen = factsKey(); // the facts this read is based on
     // Only the first read says so in the footer; afterwards the column's "Updating…" is the signal. A
     // preview failure no longer describes these choices (a Spawn refusal, the notice, stays until an edit).
-    if (!settled) setStatus('Reading defaults…');
-    else if (status.classList.contains('err') && !notice) setStatus('');
+    if (!shown) setStatus('Reading defaults…');
+    else if (status.classList.contains('err') && !notice && shown.key !== key) setStatus('');
     syncButton();
     let next = null;
     try {
@@ -1087,7 +1090,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     if (!current() || owner !== mount) return;
     if (ticket !== serial) {
       // Superseded. It freed a server slot a busy latest read is waiting for: read the latest now.
-      if (retryOnSettle) { retryOnSettle = false; schedule(0); }
+      if (retryOnSettle) { retryOnSettle = false; schedule(0); } else render(); // the column may no longer be waiting for any read
       return;
     }
     if (next.failure?.code === 'E_TARGET_CHANGED') { schedule(0); return; }
@@ -1122,6 +1125,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     setStatus('Spawning…'); syncButton();
     if (!readDue()) schedule(0);
   }
+  /** No answer can come for the pressed choices (the form or the CLI changed under it): the press ends. */
+  function endPress() { if (pressed) { pressed = null; phase = 'idle'; } }
   /** An edit while a press waits: the intent belonged to the choices at press time. */
   function dropPress() {
     if (!pressed) return;
@@ -1315,7 +1320,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   cancel.addEventListener('click', () => close());
   closeButton.addEventListener('click', () => close());
   // Change soul: the picker, in place — never a reopen, so nothing typed is lost.
-  changeSoul.addEventListener('click', () => { setLayout('picker'); focusTarget().focus({ preventScroll: true }); });
+  changeSoul.addEventListener('click', () => { dropPress(); setLayout('picker'); focusTarget().focus({ preventScroll: true }); });
 
   setLayout(layout); render();
   return {

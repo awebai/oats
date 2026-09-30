@@ -259,7 +259,10 @@ identity, defaults in Developer settings) read the last settled answer; the
 harness and model defaults read it only while the harness, model and launch
 configuration on screen are the ones it answered (desktop/loading-states item 9),
 and the work text only for the same work, branch and base. A refusal for the
-choices on screen replaces the facts, as does any failure.
+choices on screen replaces the facts, as does any failure, and stays (marked
+Updating…, the footer unchanged) while a poll retries it. An invalid form reads
+nothing, so nothing is marked: the settled facts stay without the marker (before
+the first answer, the column says the preview reads once the form is valid).
 
 **A press before the preview settled is kept as intent.** Spawn is pressable
 whenever the form is valid, except on a settled refusal for exactly these
@@ -268,8 +271,11 @@ the answer for the choices on screen settled, the button reads **Checking…**
 (busy) and nothing is sent. When that answer lands, the ordinary prepare/apply
 flow continues with it as the reference for the drift check; if it failed, the
 failure shows and nothing spawns; if it did not bind the ticked teams, nothing
-spawns. Any edit while the press waits drops it (**Changed: press Spawn
-again**): the intent belonged to the choices at press time. Sending prepare at
+spawns. Any edit while the press waits, or **Change soul**, drops it
+(**Changed: press Spawn again**): the intent belonged to the choices at press
+time. So does a read that cannot answer them (the form turned invalid under it,
+or the CLI can no longer preview): the press ends there and never spawns later
+without a new press. Sending prepare at
 once was rejected: it duplicates the read in the air and turns a value the
 operator just typed into a "values changed" drift. Spawn prepares, and the
 server applies only if the prepared decision equals the one on screen; if the
