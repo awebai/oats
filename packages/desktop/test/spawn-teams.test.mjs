@@ -216,3 +216,24 @@ test('real 0.30 preview: the soul\'s own default (engineering) has no provider i
   assert.equal(u.text('.spawn-teams-hint'), "The default team engineering has no provider id yet, so release-manager can't be spawned here. Its owner runs oats aweb setup, then commits the id; or choose another default for release-manager on its page (Teams here).");
   assert.equal(u.q('.fspawn').disabled, true);
 });
+
+test('Spec B: while a newer preview reads, the Teams and identity rows keep their settled content; a pending press never continues on a preview that did not bind the ticked teams', async t => {
+  const { deferred } = await import('./helpers/spawn-preview-fixture.mjs');
+  let gate = null;
+  const u = await dialog(t, { kernel: () => declared(f7('preview-teams-default')), previewGate: () => gate?.promise });
+  const settledRows = rows(u), list = u.q('.spawn-team-list');
+  assert.equal(u.q('.spawn-teams').hidden, false); assert.equal(u.q('.spawn-identity').hidden, false);
+  gate = deferred();
+  const box = u.q('.fteam[value="engineering"]'); box.focus();
+  box.checked = true; box.dispatchEvent(new u.dom.window.Event('change', { bubbles: true })); await settle();
+  assert.deepEqual(u.previews().at(-1).choices.join, JOIN, 'a read for the ticked team is in the air');
+  assert.equal(u.q('.spawn-teams').hidden, false, 'the row never vanishes while it reads'); assert.equal(u.q('.spawn-identity').hidden, false);
+  assert.deepEqual(rows(u).map(r => r[0]), settledRows.map(r => r[0])); assert.equal(u.q('.spawn-team-list'), list);
+  assert.equal(u.doc.activeElement, box, 'focus stays on the ticked team');
+  u.q('.fspawn').click(); await settle();
+  assert.equal(u.q('.fspawn').textContent, 'Checking…');
+  gate.resolve(); gate = null; await settle(30);
+  assert.deepEqual(u.spawns(), [], 'the preview did not bind engineering: the press waits for one that does, so nothing is prepared');
+  assert.equal(u.text('.spawn-teams-error'), "The kernel didn't bind the ticked teams. Spawn waits until it does.");
+  assert.equal(u.q('.fspawn').textContent, 'Spawn'); assert.equal(u.q('.fspawn').disabled, true);
+});

@@ -65,10 +65,38 @@ spawn <admitted-soul> --dir <admitted-context> --agents-root <admitted-root> --p
 ```
 
 No task/file, expected-decision/key, no-launch workaround or fallback. Two reads
-process-wide; exact invoker/CLI/workspace/subject/anchor/choice duplicates coalesce
-before await. No unbounded queue or settled observation cache. **30s / 4MiB CLI,
+process-wide (a third refuses `E_BUSY`); exact invoker/CLI/workspace/subject/anchor/choice
+duplicates coalesce before await. No unbounded queue. **30s / 4MiB CLI,
 35s proxy**, clean exit and JSON-v1 envelope. Admission revalidation applies to
 success and rejection.
+
+**The reuse window.** This route (and only this route) answers from a bounded
+settled-answer cache (`spawnPreviewCachedRequest`, `server/spawn-preview.mjs`):
+64 entries, **60 s**, keyed by the admission identity (workspace id and scope,
+subject, soul work/repo/capability, anchor incarnation, choices and every CLI
+field the admission reads). It holds `available` answers and the name refusals
+`E_INSTANCE_NAME_TAKEN`/`E_INSTANCE_NAME_INVALID`, nothing else. A held answer is
+returned only after the request is admitted against the current context, like a
+fresh one, and costs no flight slot. Returning to choices the kernel answered
+within the window (a toggle back, a retyped name, the dialog reopened for the
+same soul) settles without a CLI call.
+
+Invalidation drops a workspace's entries when Desktop performs a change that
+can alter a preview: every `/api/spawn` apply, a local lifecycle apply, a
+workspace sync and instance start/restart (all through `observeMutation`), a
+teams or soul-teams write, a launch-configuration `set`/`remove`, and a
+capability run. A CLI re-probe that changes the CLI clears it all (its fields
+are in the key anyway). The backend's workspace set is fixed per process: adding
+a workspace replaces the backend, and its cache with it. A flight that started
+before an invalidation never fills the cache, even when a later request joined
+it (a monotonic clock stamps flight starts and invalidations). What Desktop does
+not observe (a spawn by another window's backend or by the CLI, an on-disk edit)
+may show an older answer for up to 60 s. That is safe: prepare never reads the
+cache (below), so the decision check refuses a changed decision at **Spawn**.
+
+**Prepare is always fresh.** `/api/spawn` prepare reads through the uncached
+`spawnPreviewRequest`: the decision a spawn binds is a fresh kernel read, never
+a held answer (it may still coalesce onto an identical read in the air).
 
 Response: `{spawnPreviewViewApi:1,status,target,data,reason}`. Success requires
 API2, `preview:true`, byte-exact `subject{soul,agentsRoot,dir}` and consistent
@@ -206,7 +234,44 @@ rollback or stop an already launched agent.
 ## Recovery limits and modal ownership
 
 The dialog previews in the background, so the operator reviews the kernel's own
-values before pressing **Spawn** (or Mod+Enter) once. Spawn prepares, and the
+values before pressing **Spawn** (or Mod+Enter) once.
+
+**Editing never waits on the kernel.** Each change schedules a read (250 ms
+debounce for typing, at once for a choice). A newer schedule starts its own read
+without waiting for one in the air; only the latest ticket may settle, and a
+superseded answer, success or failure, is discarded (every completion is
+ownership-checked: dialog alive, same workspace mount, latest ticket). An
+`E_BUSY` refusal (both server slots held, usually by this dialog's superseded
+reads) is retried inside the dialog as soon as one of its reads lands, else
+after 400 ms, for about the CLI's timeout, and is never shown while it retries.
+
+No field is disabled, hidden or rebuilt because a read is in the air; focus and
+caret stay. Before the first settled answer the preview column shows the loading
+shape and the footer says **Reading defaults…**. Afterwards the column keeps the
+last settled facts, Core capabilities and Capabilities in place, marked
+**Updating…** beside the "What will be created" title with `aria-busy="true"` on
+the column (words in `--muted`, never faded text), until the answer for the
+choices on screen lands; the footer stays quiet. The **Name** fact follows the
+form at once: the kernel's name from a settled answer for the same name input,
+else the name the form spells (the kernel may still number a taken one), else
+"numbered by the kernel". Rows derived from the preview (teams, messaging
+identity, defaults in Developer settings) read the last settled answer; the
+harness and model defaults read it only while the harness, model and launch
+configuration on screen are the ones it answered (desktop/loading-states item 9),
+and the work text only for the same work, branch and base. A refusal for the
+choices on screen replaces the facts, as does any failure.
+
+**A press before the preview settled is kept as intent.** Spawn is pressable
+whenever the form is valid, except on a settled refusal for exactly these
+choices or a settled answer that does not bind the ticked teams. Pressed before
+the answer for the choices on screen settled, the button reads **Checking…**
+(busy) and nothing is sent. When that answer lands, the ordinary prepare/apply
+flow continues with it as the reference for the drift check; if it failed, the
+failure shows and nothing spawns; if it did not bind the ticked teams, nothing
+spawns. Any edit while the press waits drops it (**Changed: press Spawn
+again**): the intent belonged to the choices at press time. Sending prepare at
+once was rejected: it duplicates the read in the air and turns a value the
+operator just typed into a "values changed" drift. Spawn prepares, and the
 server applies only if the prepared decision equals the one on screen; if the
 kernel now decides differently, nothing is applied and the new values are shown
 for another explicit Spawn. An unseen decision never continues into mutation. Any relevant draft,
