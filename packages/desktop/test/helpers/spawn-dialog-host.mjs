@@ -76,6 +76,7 @@ export async function mountSpawn(t, options = {}) {
       if (path === '/api/cli') return cli;
       if (path.startsWith('/api/agents')) return { workspace: { id: 'northwind', name: 'northwind' }, agents, ...(options.catalog ? { catalog: options.catalog } : {}) };
       // A remote workspace's panel (the relation picker for a chosen server): options.serverPanels[<ws id>] rows.
+      if (path.startsWith('/api/panel?ws=remote')) await options.serverPanelGate;
       if (path.startsWith('/api/panel?ws=remote')) return { workspace: { id: decodeURIComponent(path.split('ws=')[1]), remote: true }, instances: options.serverPanels?.[decodeURIComponent(path.split('ws=')[1])] ?? [] };
       if (path.startsWith('/api/panel')) return panel();
       if (path.startsWith('/api/team-members')) return options.teamMembers ?? { members: [], servers: [], notReached: [] };

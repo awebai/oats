@@ -537,3 +537,22 @@ test('Where to run a server: the hint says so, the relation picker lists only th
   assert.equal(u.text('.spawn-server-hint'), '');
   assert.deepEqual([...u.q('.frelto').options].map(o => o.value).filter(Boolean), local, 'back on this computer: its own rows again');
 });
+
+test('Where to run a server: while its rows are still being read, a relation picked on this computer cannot be sent to it', async t => {
+  const gate = deferred(), remote = [];
+  const farRow = { instance: 'far-lead', agent: 'release-manager', agentsRoot: '/srv/agents', home: '/srv/agents/release-manager/instances/far-lead', server: 'build', running: true, addressable: true };
+  const u = await mountSpawn(t, { servers: [{ id: 'build', label: 'Build host', sshHost: 'build.lan' }], teamMembers: { members: [], notReached: [], servers: [buildFacts()] },
+    serverPanels: { 'remote:build:1': [farRow] }, serverPanelGate: gate.promise, remote: body => { remote.push(body); return { instance: 'x', server: 'build' }; } });
+  await u.open(); await u.type('.fpurpose', 'api-v2');
+  const child = [...u.doc.querySelectorAll('.spawn-dialog .frelation input')].find(i => i.value === 'child'); child.checked = true; child.dispatchEvent(new u.dom.window.Event('change', { bubbles: true })); await settle();
+  const localPick = [...u.q('.frelto').options].find(o => o.value);
+  await u.change('.frelto', localPick.value);
+  u.q('.spawn-advanced').open = true;
+  await u.change('.fserver', 'build');
+  assert.equal(u.q('.fspawn').disabled, true, 'the picker still holds this computer\'s rows: nothing may be sent');
+  u.q('.fspawn').click(); await settle(); assert.equal(remote.length, 0);
+  gate.resolve(); await settle();
+  assert.deepEqual([...u.q('.frelto').options].map(o => o.value).filter(Boolean), ['far-lead']);
+  assert.equal(u.q('.frelto').value, '', 'a local pick does not carry over'); assert.equal(u.q('.fspawn').disabled, true, 'a relation still needs a pick');
+  await u.change('.frelto', 'far-lead'); assert.equal(u.q('.fspawn').disabled, false);
+});

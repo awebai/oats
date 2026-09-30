@@ -39,6 +39,15 @@ test('memberGroups: a group whose roster read failed is not reached, with the se
   assert.equal(group.reached, false); assert.equal(group.error, 'ssh failed: timeout');
 });
 
+test('memberGroups: one server\'s two groups (an edited registration): the machine stays reached while one answers; not reached only when all failed', () => {
+  const old = far('legacy', 'build', { workspace: 'remote:build:old', running: null, reason: 'ssh failed' }), current = far('now', 'build');
+  const partial = memberGroups([old, current], [server('build', { group: 'build:old', reached: false, error: 'ssh failed', registered: false }), server('build')]);
+  assert.equal(partial.length, 1); assert.equal(partial[0].reached, true); assert.equal(partial[0].error, null);
+  assert.deepEqual(partial[0].members.map(x => [x.instance, memberState(x)]), [['legacy', 'unknown'], ['now', 'running']]);
+  const down = memberGroups([old, { ...current, running: null }], [server('build', { group: 'build:old', reached: false, error: 'ssh failed' }), server('build', { reached: false, error: 'timeout' })]);
+  assert.equal(down[0].reached, false); assert.equal(down[0].error, 'ssh failed');
+});
+
 test('memberSummary: "N members", "· M on other machines" when some run elsewhere, and nothing for none', () => {
   assert.equal(memberSummary([]), null);
   assert.equal(memberSummary([m('a')]), '1 member');
@@ -53,6 +62,7 @@ test('memberState and openBlocked: the state in words; Open only for a running, 
   assert.equal(openBlocked(far('a', 'build', { addressable: false, reason: 'Build box did not report this instance as reachable.' })), 'Build box did not report this instance as reachable.');
   assert.equal(openBlocked(m('a', { running: false })), 'a is not running.');
   assert.equal(openBlocked(m('a', { running: null, reason: 'a: status unknown' })), 'a: status unknown');
+  assert.notEqual(openBlocked(far('a', 'build', { addressable: undefined, reason: 'x' })), null, 'only an explicit true opens (the route sends the roster\'s answer)');
 });
 
 test('the card lists its members by machine: labelled groups, the state in words, two named buttons; Open disabled with the reason', async t => {

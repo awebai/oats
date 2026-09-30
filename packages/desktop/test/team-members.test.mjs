@@ -105,3 +105,10 @@ test('GET /api/team-members over the shipped handler: Host guard, one ws, 409 fo
   assert.equal((await ask('/api/team-members?ws=%2Fnope')).body.code, 'E_WORKSPACE_UNKNOWN');
   assert.equal((await ask('/api/team-members?ws=%2Fw', { host: 'evil.example' })).status, 403);
 });
+
+test('a member is addressable exactly when the roster can open it: a saved-route row from a local OATS before 0.31 is, an explicit false is not', () => {
+  const build = group('build', { instances: [remoteRow('older', { addressable: undefined, savedRoute: true }), remoteRow('refused', { addressable: false, savedRoute: true })] });
+  const [older, refused] = project({ rows: [], groups: [build] }).members;
+  assert.deepEqual([older.addressable, older.reason], [true, null]);
+  assert.equal(refused.addressable, false); assert.equal(refused.reason, 'build box did not report this instance as reachable.');
+});

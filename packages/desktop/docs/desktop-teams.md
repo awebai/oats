@@ -95,8 +95,10 @@ The shape is the lead's (0.30 D2 review):
 - Both go to the member's workspace, wait for the row by server and home (`handOff` in
   `views/spawn.mjs`, shared with the remote spawn), then open it or select and focus it
   (`ctx.showInRoster`).
-- A group from a failed read keeps its last-known members, heads itself "<label> · not reached" and
-  carries the error as its title; its members read `unknown`.
+- A machine whose roster groups all failed their last read keeps its last-known members, heads
+  itself "<label> · not reached" and carries the error as its title; its members read `unknown`.
+  When only some of a machine's groups failed (an edited registration keeps its old group), the
+  heading stays reached and those members' own state (`unknown`) and reason say it.
 - `notReached` is said under the page head: "Not reached: <label>, …. Their members aren't shown until
   they answer." That status line follows every answer, even while the cards wait under the redraw
   barrier (an open form, a pending confirmation, or focus inside the page).
@@ -104,7 +106,9 @@ The shape is the lead's (0.30 D2 review):
 
 **Where to run** (the spawn dialog): "This computer", then each registered server (`/api/servers`).
 It takes its disabled states from this route's `servers`, using the registered group of each server:
-"(not registered)" when there is none, "(not reached)", or "(no <soul> soul there)". With a server
+"(not registered)" when the server has groups but none is the registration's, "(not reached)", or
+"(no <soul> soul there)". A server the roster has no group for yet (before its first answer) stays
+enabled: nothing is guessed. With a server
 chosen, the relation picker lists that group's rows (`/api/panel?ws=remote:<group>`): relations never
 cross machines.
 

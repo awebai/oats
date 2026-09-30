@@ -168,22 +168,30 @@ const MAX_MARKS = 3;
 const codePoint = (a, b) => a < b ? -1 : a > b ? 1 : 0;
 /** A member's state in words (never colour alone): running, stopped, unknown, or gone from its server. */
 export const memberState = m => m.missingRemotely ? 'gone' : m.running === true ? 'running' : m.running === false ? 'stopped' : 'unknown';
-/** Why a member's terminal can't be opened (the roster's own reason), or null when it can. */
+/** Why a member's terminal can't be opened: the roster's own reason (the route sends it), or, for a
+ * stopped member the roster has no reason for, that it is not running. Null when it can be opened. */
 export function openBlocked(m) {
-  if (m.running === true && (!m.server || m.addressable === true)) return null;
-  return text(m.reason) ?? (m.running === false ? `${m.instance} is not running.` : `${m.instance}: status unknown`);
+  if (m.running === true && m.addressable === true) return null;
+  return text(m.reason) ?? `${m.instance} is not running.`;
 }
 /** Members by machine: this computer first, then servers by label (code points), the server id breaking ties;
- * within one, by instance name, then home. A group is not reached when a roster group it comes from failed. */
+ * within one, by instance name, then home. A machine is not reached when every roster group its members come
+ * from failed its last read; when only some did (an edited registration keeps its old group), the heading stays
+ * reached and those members' own state ("unknown") and reason carry it. */
 export function memberGroups(members, servers = []) {
   const byGroup = new Map(list(servers).map(s => [`remote:${s.group}`, s]));
   const groups = new Map();
   for (const m of members) {
     const key = m.server ?? '';
-    if (!groups.has(key)) groups.set(key, { key, server: m.server ?? null, label: m.server ? text(m.serverLabel) ?? m.server : 'This computer', reached: true, error: null, members: [] });
+    if (!groups.has(key)) groups.set(key, { key, server: m.server ?? null, label: m.server ? text(m.serverLabel) ?? m.server : 'This computer', reached: true, error: null, members: [], sources: new Map() });
     const group = groups.get(key), source = m.server ? byGroup.get(m.workspace) : null;
-    if (source && !source.reached) { group.reached = false; group.error ??= text(source.error); }
+    if (source) group.sources.set(source.group, source);
     group.members.push(m);
+  }
+  for (const group of groups.values()) {
+    const sources = [...group.sources.values()];
+    if (sources.length && sources.every(s => !s.reached)) { group.reached = false; group.error = text(sources[0].error); }
+    delete group.sources;
   }
   for (const group of groups.values()) group.members.sort((a, b) => codePoint(a.instance, b.instance) || codePoint(a.home, b.home));
   return [...groups.values()].sort((a, b) => (a.server === null ? -1 : b.server === null ? 1 : codePoint(a.label, b.label) || codePoint(a.server, b.server)));
@@ -334,11 +342,11 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
       if (why) main.append(el(doc, 'span', why, 'ct-why'));
     }
     // The members come last in the main column: below the facts and the card's own notes (problems, why Remove is off).
-    const listed = membersOf(team);
-    if (listed.length) main.append(memberList(listed));
+    const members = membersOf(team);
+    if (members.length) main.append(memberList(members));
     card.append(tile, main);
     // The right column says who is in the team only when the roster shows someone; never a zero.
-    const side = el(doc, 'div', null, 'ct-side'), members = membersOf(team);
+    const side = el(doc, 'div', null, 'ct-side');
     if (members.length) {
       const line = el(doc, 'div', null, 'ct-inst'), marks = el(doc, 'span', null, 'ct-marks');
       for (const row of members.slice(0, MAX_MARKS)) marks.append(createSoulMark(doc, { name: row.agent, agentsRoot: row.agentsRoot }));

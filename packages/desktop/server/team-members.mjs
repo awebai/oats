@@ -2,7 +2,7 @@
  * roster and every remote group's panel). It runs no command and adds no ssh: the remote roster
  * loop's `server roster` read is the only source for other machines. A member is a row whose
  * identity.team is a non-empty string; the renderer groups them by team. */
-import { rowReason } from '../renderer/remote-address.mjs';
+import { canAddressRemote, rowReason } from '../renderer/remote-address.mjs';
 
 const text = v => typeof v === 'string' && v ? v : null;
 const team = row => text(row?.identity?.team);
@@ -12,7 +12,8 @@ function member(row, { workspace, server = null, serverLabel = null }) {
     workspace, server, serverLabel,
     instance: row.instance, agent: row.agent, agentsRoot: row.agentsRoot, home: row.home, team: team(row),
     running: row.running === true ? true : row.running === false ? false : null,
-    addressable: !server || row.addressable === true, missingRemotely: row.missingRemotely === true,
+    // The roster's own rule (a saved route decides when this computer's OATS reports no fact).
+    addressable: canAddressRemote(row), missingRemotely: row.missingRemotely === true,
     // The roster's own reason for a row that can't be opened (spec 01), once, here.
     reason: rowReason(row)?.sentence ?? null,
     createdAt: text(row.createdAt),

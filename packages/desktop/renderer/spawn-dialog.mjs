@@ -714,7 +714,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   fillSelect(server, [['', 'This computer']]);
   if (soul.server) { fillSelect(server, [[soul.server, soul.repoName || soul.server]]); server.value = soul.server; server.disabled = true; }
   // The relation picker lists the rows of the machine the instance will run on: relations never cross machines.
-  let relativeRows = [], relativesReq = 0;
+  // relativesPending: the chosen machine's rows are still being read; until they land no relation can be chosen.
+  let relativeRows = [], relativesReq = 0, relativesPending = false;
   function paintRelatives(rows) {
     relativeRows = rows; const picked = [relTo.value, relTo.selectedOptions[0]?.dataset.root];
     const counts = new Map(); for (const i of rows) counts.set(i.instance, (counts.get(i.instance) || 0) + 1);
@@ -739,10 +740,12 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const serverGroups = new Map(), serverNames = new Map();
   async function fillRelatives() {
     const target = soul.server ? '' : server.value, ticket = ++relativesReq, group = serverGroups.get(target);
+    relativesPending = !!target; syncButton();
     let rows = instances() || [];
     if (target) { try { rows = group ? await serverRows(group.group) : []; } catch { rows = []; } }
     if (ticket !== relativesReq || !current()) return;
-    paintRelatives(Array.isArray(rows) ? rows : []); render();
+    relativesPending = false;
+    paintRelatives(Array.isArray(rows) ? rows : []); render(); syncButton();
   }
   function paintServerHint() {
     const target = remoteTarget();
@@ -777,6 +780,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
 
   function relationChoice() {
     if (rel.value === 'unrelated') return { kind: 'unrelated' };
+    if (relativesPending) return null;
     const name = relTo.value, root = relTo.selectedOptions[0]?.dataset.root, target = remoteTarget();
     const matches = relativeRows.filter(i => i.instance === name && i.agentsRoot === root && (target ? true : !i.remote && !i.server));
     if (matches.length !== 1) return null;
