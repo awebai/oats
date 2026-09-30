@@ -64,7 +64,14 @@ test('real capture: the page head; the shared and local sections with their chip
   assert.equal(whoMayJoin(teams('teams-after'), 'global'), 'every soul'); assert.equal(whoMayJoin(teams('teams-after'), 'marketing'), null);
 });
 
-test('the roster: overlapping soul tiles (at most three) and "N instances in it" only for the instances whose identity.team is the team\'s id; the default team adds why', async t => {
+/** /api/team-members for these rows of this computer (plus any remote ones given), as the route answers. */
+const member = (row, extra = {}) => ({ workspace: '/w', server: null, serverLabel: null, instance: row.instance, agent: row.agent, agentsRoot: row.agentsRoot,
+  home: row.home ?? `${row.agentsRoot}/${row.agent}/instances/${row.instance}`, team: row.identity?.team ?? null, running: row.running ?? null,
+  addressable: true, missingRemotely: false, reason: null, createdAt: null, ...extra });
+const route = (rows, { remote = [], servers = [], notReached = [] } = {}) =>
+  ({ members: [...rows.filter(r => r.identity?.team).map(r => member(r)), ...remote], servers, notReached });
+
+test('the members: overlapping soul tiles (at most three) and "N members" only for the members whose identity.team is the team\'s id; the default team adds why', async t => {
   const rows = [
     { instance: 'rm-1', agent: 'release-manager', agentsRoot: '/a', identity: { team: 'mine:juan.aweb.ai' }, running: true },
     { instance: 'rm-2', agent: 'release-manager', agentsRoot: '/a', identity: { team: 'mine:juan.aweb.ai' }, running: false },
@@ -74,34 +81,42 @@ test('the roster: overlapping soul tiles (at most three) and "N instances in it"
     { instance: 'x-1', agent: 'stray', agentsRoot: '/a', identity: { team: null }, running: true },
     { instance: 'x-2', agent: 'legacy', agentsRoot: '/a', running: true },
   ];
-  const u = await mount(t, () => mapped(), { instances: () => rows });
+  const u = await mount(t, () => mapped(), { readMembers: async () => route(rows) });
   const mine = u.row('mine').querySelector('.ct-side');
-  assert.equal(mine.querySelector('.ct-count').textContent, '4 instances in it');
+  assert.equal(mine.querySelector('.ct-count').textContent, '4 members');
   assert.deepEqual([...mine.querySelectorAll('.ct-marks .identity-mark')].map(m => m.textContent), ['R', 'R', 'W'], 'three tiles at most, the soul monograms');
   assert.equal(mine.querySelector('.ct-note').textContent, 'every instance joins its default team');
   const eng = u.row('engineering').querySelector('.ct-side');
-  assert.equal(eng.querySelector('.ct-count').textContent, '1 instance in it'); assert.equal(eng.querySelector('.ct-note'), null, 'only the default team says why');
-  for (const label of ['global', 'marketing']) { assert.equal(u.row(label).querySelector('.ct-inst'), null, 'unmapped: nobody can be in it — nothing, never a zero'); assert.ok(u.row(label).querySelector('.ct-side .ct-actions'), 'the actions keep the right column'); }
-  const none = await mount(t, () => mapped(), { instances: () => [{ instance: 'x', agent: 'x', agentsRoot: '/a', identity: { team: 'other:x.aweb.ai' }, running: true }] });
-  assert.equal(none.row('mine').querySelector('.ct-inst'), null, 'no match: nothing, not "0 instances"');
-  assert.doesNotMatch(none.card.element.textContent, /0 instance|No instances/);
+  assert.equal(eng.querySelector('.ct-count').textContent, '1 member'); assert.equal(eng.querySelector('.ct-note'), null, 'only the default team says why');
+  for (const label of ['global', 'marketing']) {
+    assert.equal(u.row(label).querySelector('.ct-inst'), null, 'unmapped: nobody can be in it — nothing, never a zero');
+    assert.equal(u.row(label).querySelector('.ct-members'), null, 'and no member list');
+    assert.ok(u.row(label).querySelector('.ct-side .ct-actions'), 'the actions keep the right column');
+  }
+  const none = await mount(t, () => mapped(), { readMembers: async () => route([{ instance: 'x', agent: 'x', agentsRoot: '/a', identity: { team: 'other:x.aweb.ai' }, running: true }]) });
+  assert.equal(none.row('mine').querySelector('.ct-inst'), null, 'no match: nothing, not "0 members"');
+  assert.doesNotMatch(none.card.element.textContent, /0 member|No members/);
 });
 
 test('syncRoster: a roster poll that changes who is in a team redraws the cards; an unchanged one, an open form or keyboard focus does not', async t => {
   let rows = [{ instance: 'rm-1', agent: 'release-manager', agentsRoot: '/a', identity: { team: 'mine:juan.aweb.ai' }, running: true }];
-  const u = await mount(t, () => mapped(), { instances: () => rows });
+  const u = await mount(t, () => mapped(), { readMembers: async () => route(rows) });
   const before = u.row('mine');
-  assert.equal(before.querySelector('.ct-count').textContent, '1 instance in it');
-  u.card.syncRoster(); assert.equal(u.row('mine'), before, 'the same roster: nothing redrawn');
+  assert.equal(before.querySelector('.ct-count').textContent, '1 member');
+  u.card.syncRoster(); await tick(); assert.equal(u.row('mine'), before, 'the same roster: nothing redrawn');
   rows = [...rows, { instance: 'w-2', agent: 'writer', agentsRoot: '/a', identity: { team: 'mine:juan.aweb.ai' }, running: true }];
-  u.card.syncRoster();
-  assert.notEqual(u.row('mine'), before); assert.equal(u.row('mine').querySelector('.ct-count').textContent, '2 instances in it');
+  u.card.syncRoster(); await tick();
+  assert.notEqual(u.row('mine'), before); assert.equal(u.row('mine').querySelector('.ct-count').textContent, '2 members');
+  // A state change redraws too (the state word and the Open button follow it).
+  const running = u.row('mine');
+  rows = rows.map(r => r.instance === 'w-2' ? { ...r, running: false } : r); u.card.syncRoster(); await tick();
+  assert.notEqual(u.row('mine'), running);
   // An open add form keeps what is typed: the roster waits for the form to close.
   u.card.element.querySelector('.ct-add').click(); await tick();
   const label = u.card.element.querySelector('.ct-form input[name=label]'); label.value = 'half'; label.dispatchEvent(new u.dom.window.Event('input', { bubbles: true }));
-  rows = rows.slice(0, 1); u.card.syncRoster();
+  rows = rows.slice(0, 1); u.card.syncRoster(); await tick();
   assert.equal(u.card.element.querySelector('.ct-form input[name=label]'), label, 'the form is not rebuilt');
-  assert.equal(u.row('mine').querySelector('.ct-count').textContent, '2 instances in it');
+  assert.equal(u.row('mine').querySelector('.ct-count').textContent, '2 members');
 });
 
 test('no local teams: the dashed card with its link opens the add form (Only on this computer); Cancel returns the focus to the link; the head button opens it too', async t => {

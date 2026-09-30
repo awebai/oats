@@ -28,6 +28,7 @@ import { preselectAutomationsTab } from "./automations.mjs";
 import { inspectSupported } from "../inspect-contract.mjs";
 import { createDataState, skeleton, statusLine, captureFocusState } from "../loading.mjs";
 import { canAddressRemote } from "../remote-address.mjs";
+import { instanceActionTarget } from "../instance-action-target.mjs";
 
 /** True while the CLI probe has never SETTLED (no response classified yet).
  * Pending is card-less by design, so disabled buttons must explain
@@ -446,6 +447,7 @@ ${spawnDialogCSS}</style>
     ctx, soulsPanel: s.q("souls-grid"), onIntent: () => nextSelectionIntent(), onCatalog: () => syncCapabilityPage(s),
     rosterState: () => rosterSettledState(s), // "Used by" claims are roster-derived: none while the roster is not settled-good
     onOpenCapability: row => openCapability(s, row, null),
+    onTeamMember: (action, member) => void teamMemberAction(s, action, member),
     onTab: tab => {
       s.spawnOp++; closeSpawnModal(s); s.inspector.close(); closeCapability(s); s.page.close();
       s.q("souls-bar").hidden = tab !== "souls"; s.q("souls-notice").hidden = tab !== "souls";
@@ -1240,6 +1242,18 @@ export async function handOff(s, { workspace, ref, present = false, then }) {
   if (!stillThere()) return false;
   await then(visible ? admitted ?? ref : null);
   return visible;
+}
+
+/** A Teams-board member (spec 02): go to its workspace and its row, then open its terminal ('open') or
+ * select the row and move keyboard focus to it ('show'). Every action lives on the roster row. */
+function teamMemberAction(s, action, member) {
+  const ref = { instance: member.instance, home: member.home, agentsRoot: member.agentsRoot, ...(member.server ? { server: member.server } : {}) };
+  return handOff(s, { workspace: member.workspace, ref, present: action === "show", then: row => {
+    if (!row) { s.ctx.notify?.(action === "show" ? `${member.instance} is not in the roster yet.` : `${member.instance} has no terminal to open yet.`); return; }
+    if (action === "show") return s.ctx.showInRoster?.(row);
+    const expected = instanceActionTarget(member.workspace, row);
+    return s.ctx.openTerminal(row, { quiet: true, ...(expected ? { expected } : {}) });
+  } });
 }
 
 /** Execution-server spawn (Developer settings › Run on, or a remote soul). The

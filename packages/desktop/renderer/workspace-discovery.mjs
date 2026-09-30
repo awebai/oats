@@ -6,7 +6,7 @@
  *     capability table.
  * Sync is the kernel's `oats sync` (workspace-sync-view.mjs); there is no
  * package approval. Souls stay the host view's own grid. */
-import { postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
+import { apiJson, postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
 import { cliStatus, cliKnownUnavailable } from './views/cli-status.mjs';
 import { deploymentUnavailableText } from './deployment-header.mjs';
 import { setupCSS, renderSetup, teamsBox } from './workspace-setup.mjs';
@@ -161,7 +161,7 @@ function catalogSkeleton(doc, rows = 6) {
 }
 
 /** `onCatalog`: the catalog changed (a read settled, the subject was reset): a page rendered from it refreshes in place. */
-export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab, onIntent, onOpenCapability = null, onCatalog = null, rosterState = () => 'ready' }) {
+export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab, onIntent, onOpenCapability = null, onCatalog = null, onTeamMember = () => {}, rosterState = () => 'ready' }) {
   const doc = header.ownerDocument;
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
   let alive = true, serial = 0, rosterGen = null, workspace = null, deployment = null, instances = [], tab = 'souls';
@@ -179,7 +179,8 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     const gen = workspaceGeneration();
     if (computerTeams && computerTeamsGen === gen) return computerTeams.element;
     computerTeams?.dispose(); computerTeamsGen = gen; teamProblems = 0;
-    computerTeams = createComputerTeams(doc, { instances: () => instances, onDocument: teams => { teamProblems = list(teams?.problems).length; updateCounts(); }, request: async body => {
+    computerTeams = createComputerTeams(doc, { readMembers: () => apiJson(ctx, `/api/team-members${wsQuery()}`), onMember: (action, member) => onTeamMember(action, member),
+      onDocument: teams => { teamProblems = list(teams?.problems).length; updateCounts(); }, request: async body => {
       return teamsAnswer(await postJson(ctx, `/api/workspace-teams${wsQuery()}`, body), 'teams', 'The teams on this computer could not be read.');
     } });
     return computerTeams.element;
@@ -435,7 +436,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     rosterGen = gen; workspace = panelData.workspace || null; deployment = panelData.deployment || null; souls = list(agents);
     instances = list(panelData.instances);
     updateCounts(agents.length); render();
-    computerTeams?.syncRoster(); // the Teams page's "instances in it" follows the roster
+    computerTeams?.syncRoster(); // the Teams page's members follow the roster poll
     // Read once per roster generation on any tab: the tab bar counts it.
     if (!catalog && !loading && !failure) void load();
     // The catalog's age line (when the observation is old) follows the roster poll.
