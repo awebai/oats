@@ -55,7 +55,7 @@ symlink enters as `symlink:<target>`; empty directories and a top-level `.git/` 
 ### 1.3 Access, cache, failures
 
 - Git uses the operator's own configuration and credentials; `GIT_TERMINAL_PROMPT=0`,
-  `GIT_ASKPASS=/usr/bin/false` and ssh `-o BatchMode=yes` mean nothing prompts. 30 s per git call.
+  `GIT_ASKPASS=/usr/bin/false` and ssh `-o BatchMode=yes` mean nothing prompts. 30 s per git call; 10 minutes for the fetch of a commit.
 - A commit is fetched depth 1 (no blob filter) into a bare cache `<cacheDir>/<sha256(key)>/` (default
   `~/.cache/oats/remotes`; the CLI honours `OATS_REMOTE_CACHE`) and pinned as `refs/oats/commits/<oid>`.
   The cache may be wiped at any time. Operations on one cache repo are serialized.
