@@ -77,7 +77,7 @@ export function runCapturedNative({selected,event,settings,run,env=process.env})
    const did=observe();meta={team,alias:name,delivery:'session',did,pending:'wake-register'};
    plain(['wake','register','--home',home,'--identity-home',join(home,'.aw'),'--delivery','session']);
    meta={team,alias:name,delivery:'session',did};
-   return{exitCode:0,output:{meta,env:{AWEB_DELIVERY:'session'},brief:`Comms: your own native aweb identity is ${name} on ${team}. Notification delivery: external (session); registration is durable, not proof of broker delivery or model consumption. Use aw mail/aw chat from this instance home.`}};
+   return{exitCode:0,output:{meta,env:{AWEB_DELIVERY:'session'},brief:`Comms: your own native aweb identity is ${name} on ${team}. Notification delivery: external (session): the host wake broker presents incoming mail/chat in your terminal, either as a waiting-items line or as the full event with body. After an uncertain crash, compaction or restart, recover by reconciling STATE and task records against exact delivered ids: use aw mail show --message-id <id> --json, or page aw mail inbox --show-all --json with --cursor. Read state is not completion, and --conversation-id is not a recovery check. Use aw mail/aw chat from this instance home.`}};
   }
   if(event==='retire'){
    if(!meta||meta.alias!==name||meta.team!==team||meta.delivery!=='session'||typeof meta.did!=='string')fail('needs-configuration','recorded owned native identity is required for cleanup; absence is not proof of no effects');

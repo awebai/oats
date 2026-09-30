@@ -62,8 +62,9 @@ and **no `--reply-to`**.
 aw mail send --to <alias> --subject "<short subject>" --body-file /tmp/msg.md
 aw mail reply <message-id> --body-file /tmp/reply.md    # stay in the thread
 aw mail inbox                                          # UNREAD only
-aw mail inbox --show-all                               # history; read mail is not lost
-aw mail show --conversation-id <id>                    # a whole thread
+aw mail inbox --show-all --json                       # history; page recovery with --cursor
+aw mail show --message-id <id> --json                  # exact delivered message recovery
+aw mail show --conversation-id <id>                    # thread view, not recovery
 aw mail ack <message-id>                               # mark one read without replying
 ```
 
@@ -95,21 +96,25 @@ joined identity home is answered with that same `--identity-home`.
 
 ## 4. How messages reach you (delivery and wakes)
 
-A **wake** is a short prompt typed into or pushed to your session saying
-messages are waiting. It never contains the message: you fetch it with `aw`.
+A **wake** is incoming mail or chat presented in your session. Depending on
+which broker delivered it, the terminal may show either a line naming what is
+waiting or the full mail/chat event (metadata plus body). Handle what is
+presented; do not assume either form.
 
 | Your `Comms:` line / teams doc says | What wakes you |
 |---|---|
 | (no "Notification delivery" note), Claude or Pi | the aweb channel plugin / Pi extension pushes the event; you saw `✓ aweb connected` at start |
-| `Notification delivery: external` | the host wake broker types `aweb: N items waiting …` into your terminal |
-| joined team with `receive: native` | the host wake broker types a line per identity: `<label>: aw --identity-home <path> mail inbox and … chat pending` |
+| `Notification delivery: external` | the host wake broker presents incoming mail/chat in your terminal, either as a waiting-items line or as the full event |
+| joined team with `receive: native` | the host wake broker presents that identity's mail/chat, either as a line with `aw --identity-home <path> …` commands or as the full event |
 | joined team with `receive: poll` | nothing: check that team's inbox and pending chat at task boundaries |
 | Codex / no channel | nothing: check `aw mail inbox` and `aw chat pending` at task boundaries |
 
 **When woken:**
 
-1. Read the event metadata or the typed lines first. Run exactly the listed
-   `aw … mail inbox` / `aw … chat pending` commands (with their `--identity-home`).
+1. Read the presented event or typed lines first. If it lists `aw … mail inbox`
+   / `aw … chat pending` commands, run exactly those commands (with their
+   `--identity-home`). If it presents the full message or chat turn, handle
+   that directly and fetch only when you need more history.
 2. Handle what is there: reply in thread (`aw mail reply <message-id>`), answer
    a waiting chat promptly or `extend-wait`, then `aw mail ack` anything you
    read but do not need to answer.
@@ -118,8 +123,15 @@ messages are waiting. It never contains the message: you fetch it with `aw`.
 
 **Never sleep, poll or busy-wait for a reply.** Send, finish your turn, and let
 the wake bring the answer. With `receive: poll` or no channel, check at natural
-task boundaries only. An empty `aw mail inbox` means no *unread* mail, not lost
-mail (`--show-all`).
+task boundaries only; there, an empty `aw mail inbox` means no *unread* mail.
+For `Notification delivery: external` recovery after an uncertain crash,
+compaction or restart, reconcile STATE and task records against exact delivered
+ids. If you know an id, use `aw mail show --message-id <id> --json`; otherwise
+page `aw mail inbox --show-all --json` across the uncertain interval, following
+`has_more` / `next_cursor` with `--cursor`. Read state is not completion: check
+the receipts of earlier side effects before retrying. `aw mail show
+--conversation-id` is a thread view, not a recovery check. The unread inbox
+stays useful for new waiting mail.
 
 ## 5. Teams: join and leave
 
@@ -195,7 +207,9 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 - *Sent from the wrong team:* you forgot or added `--identity-home`. Reply from
   the identity that received the message.
 - *A grant condition* (`grant_expired`, `grant_revoked`, …) in resident-grant
-  mode: stop messaging and report the exact condition; the host renews it.
+  mode: stop messaging and report the exact condition. With `renew: off` the
+  grant expires at its TTL; the remedy is `renew: launch` plus a restart, or a
+  respawn.
 - *Nothing arrives:* compare your `Comms:` line with section 4, run the inbox
   commands once, and report a readiness warning rather than looping.
 - A flag looks wrong: run `aw <command> --help`; never guess flags.
@@ -266,7 +280,7 @@ member.
 
 ## Gotchas
 
-- `aw mail inbox` shows **unread** only; `--show-all` shows history.
+- `aw mail inbox` shows **unread** only; session-delivery recovery uses `aw mail show --message-id <id> --json` or paginated `aw mail inbox --show-all --json` with `--cursor`, not read state or `--conversation-id`.
 - `aw chat send` continues a session; it has no `--to`.
 - Every `aw` call for a joined team needs `--identity-home` **before** the subcommand.
 - `oats aweb …` run from `./work` cannot tell which instance you are; run it
