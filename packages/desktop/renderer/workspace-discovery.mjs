@@ -347,7 +347,9 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     refreshHost.hidden = !catalogTab;
     // Identical polls never rebuild a settled projection under focus/selection.
     // (Not `loading` or `failure`: the controller paints those beside the projection, which must not rebuild for them.)
-    const key = JSON.stringify([tab, setupView, setupMember, souls.map(a => a?.team ?? null), query, unavailable, filters, catalog, s, rosterState(), deployment?.withheld, deployment?.reachable, privateListed(), instances.map(i => [i.agent, i.agentsRoot, i.modules, i.running])]);
+    // The status's observation stamp moves on every poll and nothing here paints it: it is left out.
+    const stableStatus = s && { ...s, workspace: s.workspace && { ...s.workspace, observedAt: undefined } };
+    const key = JSON.stringify([tab, setupView, setupMember, souls.map(a => a?.team ?? null), query, unavailable, filters, catalog, stableStatus, rosterState(), deployment?.withheld, deployment?.reachable, privateListed(), instances.map(i => [i.agent, i.agentsRoot, i.modules, i.running])]);
     if (key === rendered) return;
     rendered = key;
     notes.replaceChildren(); filterHost.replaceChildren(); body.replaceChildren(); capLead.replaceChildren(); filterHost.className = '';

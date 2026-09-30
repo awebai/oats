@@ -33,7 +33,8 @@ const report = (name, status) => ({ workspaceSyncApi: 1, status, report: syncDat
 async function setup(t, { status = 'workspace-status', cli = CLI, sync, teams, workspace = {}, deployment } = {}) {
   const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>', { url: 'http://localhost' });
   const previous = { document: globalThis.document, window: globalThis.window, setInterval: globalThis.setInterval, ws: currentWorkspace() };
-  globalThis.document = dom.window.document; globalThis.window = dom.window; globalThis.setInterval = () => 0;
+  const polls = [];
+  globalThis.document = dom.window.document; globalThis.window = dom.window; globalThis.setInterval = fn => { polls.push(fn); return 0; };
   const calls = [];
   let observedStatus = typeof status === 'string' ? statusOf(status) : status;
   const panel = () => ({ workspace: { id: currentWorkspace(), scope: currentWorkspace(), ...workspace }, workspaces: [], instances,
@@ -60,6 +61,8 @@ async function setup(t, { status = 'workspace-status', cli = CLI, sync, teams, w
     button: text => [...doc.querySelectorAll('button')].find(el => el.textContent.trim() === text),
     syncCalls: () => calls.filter(call => call.path.startsWith('/api/workspace-sync')).map(call => call.body),
     setStatus: name => { observedStatus = statusOf(name); },
+    // The roster poll, answered by a newer observation of the same workspace status.
+    poll: async observedAt => { observedStatus = { ...observedStatus, workspace: { ...observedStatus.workspace, observedAt } }; for (const fn of polls) fn(); await settle(); },
   };
 }
 
@@ -420,6 +423,15 @@ test('Teams tab (team-model-2): first, before Souls; the Teams page from oats te
   assert.equal(u.doc.querySelector('.workspace-discovery .computer-teams'), card, 'the same card: a half-typed form survives');
   assert.equal(u.calls.filter(c => c.path.startsWith('/api/workspace-teams')).length, 1, 'not re-read by switching tabs');
   assert.doesNotMatch(u.doc.querySelector('.workspace-discovery').textContent, /primary|personal/i);
+});
+
+test('Teams tab: a poll that only re-stamps the workspace status keeps the page and its focus', async t => {
+  const u = await setup(t, { cli: { ...CLI, features: [...CLI.features, 'team-model-2'] }, teams: () => ({ status: 'ok', teams: K1_TEAMS() }) });
+  await u.tab('teams');
+  const add = u.button('Add a local team'); add.focus();
+  await u.poll('2026-09-30T07:28:04.414Z');
+  assert.ok(u.calls.filter(c => c.path.startsWith('/api/panel')).length >= 2, 'the poll read the panel again');
+  assert.equal(u.doc.activeElement, add, 'focus stays where it was');
 });
 
 // 0.30 automation trust: the REAL kernel's workspace-status warnings (fixtures/automations-trust, kernel
