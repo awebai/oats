@@ -94,6 +94,41 @@ there is no synchronous IPC or awaited keystroke round trip.
   silently removed tab. Only confirmed explicit close disposes a pending view.
   Late completion must not steal a newer workspace/stage/selection or focus.
 
+## Remote reconnect (renderer)
+
+A remote tab reconnects in the renderer; the broker, bridge and event set are
+unchanged. `renderer/terminal-tab.mjs` keeps one state (connected, waiting,
+attempting, stopped) and one timer. A `term:exit` for a remote lease with
+`exitCode === 255`, no `reason` and no user close is a lost link. The tab keeps
+its xterm, sets `disableStdin`, and waits (1, 2, 4, 8, 15 s, then 30 s,
+against a wall-clock due time, so after a sleep one overdue attempt runs, not a
+burst). The next lease opens only after the old one is forgotten, that is on
+its confirmed (`cleanupPending: false`) exit. `term-lifecycle.mjs` `reopen`
+then acquires it through the same `desk.termOpen` path. It waits for any
+acquisition in flight and never runs after a close request, and a close during
+it detaches the late handle as `start` does. Per-lease data/exit listeners are
+replaced on each lease; the xterm wiring is installed once, and input and
+resize go to the current lease only.
+
+Only `E_TERM_REMOTE_UNREACHABLE` and `E_TERM_PREPARE_TIMEOUT` retry. Any other
+refusal stops with its message and "Close this tab". So does a non-255 exit
+("session ended") or a ready failure. `remote-target.mjs` `prepareRemoteTerm`
+codes the prepare's failures:
+
+- an `E_SSH` envelope (the CLI's wrapping of ssh's own failure), or a nonzero
+  exit, 255 or kill with no refusal envelope → `E_TERM_REMOTE_UNREACHABLE`;
+- `ok: true` with `present !== true` → `E_TERM_REMOTE_GONE`;
+- any other refusal keeps the host's code, which the broker reports as
+  `E_TERM_OPEN_FAILED` unless the contract has it.
+
+The captured answers are in `test/fixtures/remote-inspect/`. The strip overlays
+the pane's top rows, so geometry never changes. The countdown is outside the
+pane's visually hidden `role="status"` region, which is written only on a state
+change. While the strip shows, the tab's key handler leaves Tab and Shift+Tab to
+the browser (xterm would otherwise keep them): Tab moves focus from the inert
+terminal to Reconnect now, and Shift+Tab leaves the pane backwards. Connected,
+Tab goes to the agent as before.
+
 The main-only `rekey(resource,newOwner)` primitive rotates lease/index/output
 custody atomically and is exercised only by tests. **No escrow/staging, transfer
 IPC, extra window, detach UI, automatic return, screen/scrollback transfer or

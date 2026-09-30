@@ -8,10 +8,11 @@ import { runInNewContext } from "node:vm";
 import { JSDOM } from "jsdom";
 import { createSelectionOwnership, wirePaneSelection } from "../renderer/selection-ownership.mjs";
 import { createIntentGate, prepareOwnedOpen } from "../renderer/open-intent.mjs";
-import { createTerminalTab, terminalOptions, terminalKeyDecision } from "../renderer/terminal-tab.mjs";
+import { createTerminalTab, terminalOptions, terminalKeyDecision, RECONNECT_DELAYS_MS, RECONNECT_RETRIED, LOST_LINK_EXIT } from "../renderer/terminal-tab.mjs";
 import { createTermLifecycle } from "../renderer/term-lifecycle.mjs";
 import { opened, confirmed, ready } from './helpers/terminal-wire.mjs';
-import { terminalHandle, terminalSameHandle, terminalFailure } from '../renderer/terminal-contract.mjs';
+import { terminalHandle, terminalSameHandle, terminalFailure, terminalMessage } from '../renderer/terminal-contract.mjs';
+import { wireTerminalAttachments } from '../renderer/terminal-attachments.mjs';
 import { createViewLifecycle } from "../renderer/view-lifecycle.mjs";
 import { reserveKey, whenKeyFree } from "../renderer/tab-keys.mjs";
 import { createTabChrome, tabKeyAction, focusAfterLastTab } from "../renderer/tab-a11y.mjs";
@@ -311,7 +312,8 @@ test("mutation: readiness must consult current focus ownership, not pane visibil
     assert.equal(pending.term.focuses, 0, "readiness must not steal focus");
   }
   await run();
-  const terminal = mutatedFactory(createTerminalTab, "!ownsFocus()", "!isActive()", { createTermLifecycle, terminalKeyDecision, terminalHandle, terminalSameHandle, terminalFailure });
+  const terminal = mutatedFactory(createTerminalTab, "!ownsFocus()", "!isActive()", { createTermLifecycle, terminalKeyDecision, terminalHandle, terminalSameHandle, terminalFailure,
+    terminalMessage, wireTerminalAttachments, RECONNECT_DELAYS_MS, RECONNECT_RETRIED, LOST_LINK_EXIT });
   await assert.rejects(run(terminal), /readiness must not steal focus/);
 });
 
@@ -527,4 +529,20 @@ test("shell wiring: every tab-switch action (Ctrl+Tab, Ctrl+PgUp/PgDn, go-to-tab
     assert.match(source, new RegExp(`id: "${id.replace(".", "\\.")}".*run: unlessModal\\(`), id);
   }
   assert.match(source, /id: `tabs\.goto\$\{n\}`.*run: unlessModal\(\(\) => gotoTab\(n\)\)/);
+});
+
+test("a remote row's terminal tab carries the row's server label, else the server id; a local tab has none", async t => {
+  for (const [row, label] of [
+    [{ server: "build", repoName: "Build box" }, "Build box"],
+    [{ server: "build" }, "build"],
+    [{}, undefined],
+  ]) {
+    const seen = [];
+    const s = shell(t, { terminal: opts => { seen.push(opts); return createTerminalTab(opts); } });
+    s.c.resolveTerminalOpen = (_instances, ref, ws) => ({ key: `${ws}:${ref}`, inst: row.server
+      ? { instance: ref, running: true, savedRoute: true, home: `/srv/${ref}`, ...row }
+      : { instance: ref, running: true, tmux: { session: "synthetic", window: ref } } });
+    await s.pending("dev");
+    assert.equal(seen.at(-1).serverLabel, label);
+  }
 });

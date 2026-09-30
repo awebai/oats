@@ -84,3 +84,44 @@ test('late materialization with uncertain close does not automatically retry or 
   gate.resolve(handle(10)); await starting; assert.equal((await closing).ok, false);
   assert.equal(closes, 1); assert.equal(disposed, 0);
 });
+
+test('reopen acquires a new lease only once the previous one is forgotten, never while closing', async () => {
+  const handles = [handle(1), handle(2)], readies = [];
+  const life = createTermLifecycle({ open: async () => handles.shift(), closePty: h => confirmed(h) });
+  await life.start(h => readies.push(h.id), assert.fail);
+  assert.equal(await life.reopen(assert.fail, assert.fail), false, 'the first lease is still held');
+  life.forget(handle(1));
+  assert.equal(await life.reopen(h => readies.push(h.id), assert.fail), true);
+  assert.deepEqual(readies, [1, 2]); assert.deepEqual(life.ptyId(), handle(2));
+  life.forget(handle(2));
+  assert.equal((await life.close()).ok, true);
+  assert.equal(await life.reopen(assert.fail, assert.fail), false, 'a closed lifecycle never acquires again');
+});
+
+test('reopen reports its open failure; close during a reopen in flight detaches the late lease without setup', async () => {
+  const life = createTermLifecycle({ open: () => Promise.reject(terminalFailure('E_TERM_REMOTE_UNREACHABLE')), closePty: assert.fail });
+  await life.start(assert.fail, () => {});
+  const errors = [];
+  assert.equal(await life.reopen(assert.fail, error => errors.push(error.code)), true);
+  assert.deepEqual(errors, ['E_TERM_REMOTE_UNREACHABLE']);
+
+  const gate = deferred(), closed = []; let disposed = 0;
+  const late = createTermLifecycle({ open: (() => { let n = 0; return () => ++n === 1 ? Promise.resolve(handle(1)) : gate.promise; })(),
+    closePty: h => { closed.push(h.id); return confirmed(h); } });
+  await late.start(() => {}, assert.fail); late.forget(handle(1));
+  const reopening = late.reopen(() => assert.fail('late setup'), () => assert.fail('late error'));
+  const closing = late.close(() => disposed++);
+  gate.resolve(handle(5)); await reopening;
+  assert.equal((await closing).ok, true);
+  assert.deepEqual(closed, [5]); assert.equal(disposed, 1);
+});
+
+test('reopen waits for a start still in flight before deciding', async () => {
+  const gate = deferred(); let opens = 0;
+  const life = createTermLifecycle({ open: () => { opens++; return opens === 1 ? gate.promise : Promise.resolve(handle(2)); }, closePty: h => confirmed(h) });
+  const starting = life.start(h => life.forget(h), assert.fail);
+  const reopening = life.reopen(() => {}, assert.fail);
+  gate.resolve(handle(1)); await starting;
+  assert.equal(await reopening, true); assert.equal(opens, 2);
+  await life.close();
+});

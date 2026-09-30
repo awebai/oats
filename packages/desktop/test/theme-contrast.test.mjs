@@ -29,6 +29,7 @@ import { createInstanceGitPanel } from '../renderer/instance-git.mjs';
 import { spawnDialogCSS } from '../renderer/spawn-dialog.mjs';
 import { createAutomationsView } from '../renderer/views/automations.mjs';
 import { setWorkspace } from '../renderer/views/common.mjs';
+import { createTerminalTab } from "../renderer/terminal-tab.mjs";
 
 const renderer = new URL("../renderer/", import.meta.url);
 const css = readFileSync(new URL("theme.css", renderer), "utf8");
@@ -1021,4 +1022,52 @@ for (const [name] of palettes) test(`${name}: v4.1 instance panel, compact Messa
     assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${selector}: ${fg} on ${bg}`);
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
   }
+});
+
+// The reconnect strip overlays the pane's top rows (no layout change, so no refit) and never
+// dims the terminal under it. Driven into both strip states through the real terminal tab.
+for (const [name] of palettes) test(`${name}: the remote reconnect strip and its button meet computed AA and overlay the pane`, async t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="term-wrap"></div></body></html>`), doc = dom.window.document;
+  t.after(() => dom.window.close());
+  for (const source of [css, readFileSync(new URL('shell.css', renderer), 'utf8')]) {
+    const style = doc.createElement('style'); style.textContent = source; doc.head.append(style);
+  }
+  const wrap = doc.querySelector('.term-wrap'), exits = [], gate = new Promise(() => {});
+  let opens = 0, timers = [];
+  const h = Object.freeze({ id: 1, lease: '1'.padStart(64, '0') });
+  const tab = createTerminalTab({
+    wrap, remote: { serverId: 'build', instance: 'dev', home: '/srv/dev' }, serverLabel: 'Build box',
+    isActive: () => true, fit() {}, observe: () => () => {},
+    clock: { now: () => 0, setTimeout: fn => { timers.push(fn); return timers.length; }, clearTimeout() {} },
+    term: { cols: 80, rows: 24, options: {}, onData: () => ({}), onResize: () => ({}), focus() {}, dispose() {}, write() {} },
+    desk: {
+      termOpen: async () => (++opens === 1 ? { terminalApi: 2, ok: true, status: 'opened', handle: h } : gate),
+      termReady: async () => ({ terminalApi: 2, ok: true, status: 'ready', handle: h }),
+      termClose: async () => ({ terminalApi: 2, ok: true, status: 'closed', handle: h }),
+      termResize() {}, termWrite() {}, onTermData: () => () => {}, onTermExit: (_h, cb) => { exits.push(cb); return () => {}; },
+    },
+  });
+  await tab.start();
+  exits[0]({ terminalApi: 2, status: 'ended', handle: h, cleanupPending: false, exitCode: 255, reason: null });
+  const root = dom.window.getComputedStyle(doc.documentElement), style = el => dom.window.getComputedStyle(el);
+  const aa = (fg, bg, what) => assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()),
+    opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${name} ${what}: --${fg} on --${bg}`);
+  const strip = doc.querySelector('.term-reconnect'), text = doc.querySelector('.term-reconnect-text'), button = strip.querySelector('button');
+  assert.equal(style(strip).position, 'absolute'); assert.equal(style(strip).top, '0px');
+  assert.equal(style(strip).left, '0px'); assert.equal(style(strip).right, '0px');
+  assert.equal(style(strip).background, 'var(--surface)');
+  assert.equal(style(text).color, 'var(--fg)'); aa('fg', 'surface', 'strip text');
+  assert.equal(style(button).color, 'var(--fg)'); assert.equal(style(button).background, 'var(--surface)'); aa('fg', 'surface', 'Reconnect now');
+  // jsdom's :focus-visible needs a modifier-free keydown, and its style cache a mutation.
+  button.focus(); button.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+  button.setAttribute('data-focus-probe', ''); button.removeAttribute('data-focus-probe');
+  assert.equal(doc.activeElement, button); assert.ok(button.matches(':focus-visible'));
+  assert.equal(style(button).background, 'var(--sel)', 'keyboard focus paints the tint');
+  assert.equal(style(button).color, 'var(--fg)'); aa('fg', 'sel', 'focused Reconnect now');
+  for (const el of [text, button, wrap]) for (let node = el; node; node = node.parentElement) assert.equal(style(node).opacity, '1');
+  const live = doc.querySelector('.term-live');
+  assert.equal(style(live).position, 'absolute'); assert.equal(style(live).width, '1px'); assert.equal(style(live).overflow, 'hidden');
+  button.click(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(text.textContent, 'Reconnecting to Build box…');
+  assert.equal(style(button).color, 'var(--fg)', 'an attempt in flight keeps the button legible'); aa('fg', 'surface', 'busy Reconnect now');
 });

@@ -110,6 +110,23 @@ registered remote workspace the timer and definitions live on that server, so
 they do not depend on the Mac staying awake. See [Schedules](schedules.md) for
 the CLI, cron semantics, observed outcomes and recovery commands.
 
+## Remote terminals
+
+A terminal for an instance on a registered server is a viewer over ssh
+(`oats session attach --server`). When the link dies, ssh ends the viewer with
+exit 255 within about a minute, and the tab reconnects by itself. It keeps its
+place and scrollback, stops taking input, and shows "Disconnected from
+<server>" with a countdown and a **Reconnect now** button. Attempts wait 1, 2,
+4, 8 and 15 s, then 30 s each for as long as the tab is open. A successful
+attach resets that. Tmux redraws the screen when the viewer attaches again.
+
+Reconnecting stops, with a message and "Close this tab", when the server
+answers that the session is gone, the instance is unknown, the terminal limit
+is reached or the app's backend changed. It also stops when the viewer ends
+with any other exit code. Closing the tab ends the reconnecting. Reconnecting
+never stops or restarts the agent on the server: only the local ssh viewer
+ends.
+
 ## Attach files and screenshots
 
 Drop a file onto an agent terminal to insert its path into that agent's draft.
