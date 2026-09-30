@@ -70,7 +70,7 @@ The shape is the lead's (0.30 D2 review):
 {"members":[{"workspace":"<ws id to navigate to>","server":null,"serverLabel":null,"instance":"…","agent":"…",
   "agentsRoot":"…","home":"…","team":"<identity.team>","running":true,"addressable":true,"missingRemotely":false,
   "reason":null,"reasonLabel":null,"createdAt":"…"}],
- "servers":[{"server":"<id>","label":"…","group":"<group id>","reached":true,"error":null,"registered":true,"souls":["dev"]}],
+ "servers":[{"server":"<id>","label":"…","group":"<group id>","reached":true,"error":null,"registered":true}],
  "notReached":[{"server":"<id>","label":"…"}]}
 ```
 
@@ -79,8 +79,7 @@ The shape is the lead's (0.30 D2 review):
   one); `running` is `null` when unknown; `reason` and `reasonLabel` are the roster's own reason the
   row can't be opened and its short label (`rowReason`), or `null`. The same instance seen from two machines is two members.
 - **`servers`**: one entry per remote group. `reached` is the group's last roster read; `registered`
-  marks the group the server's registration targets (where `spawn --server` goes); `souls` are the
-  souls its roster lists.
+  marks the group the server's registration targets (where `spawn --server` goes).
 - **`notReached`**: every group whose last read failed and that holds no rows, last-known or current.
   Before the first roster answer there are no groups, so nothing is named.
 
@@ -111,9 +110,11 @@ The shape is the lead's (0.30 D2 review):
 **Where to run** (the spawn dialog, at the form's top level just above Relationship): "This computer",
 then each registered server (`/api/servers`).
 It takes its disabled states from this route's `servers`, using the registered group of each server:
-"(not registered)" when the server has groups but none is the registration's, "(not reached)", or
-"(no <soul> soul there)". A server the roster has no group for yet (before its first answer) stays
-enabled: nothing is guessed. With a server
+"(not registered)" when the server has groups but none is the registration's, or "(not reached)". A
+server the roster has no group for yet (before its first answer) stays enabled: nothing is guessed.
+A server is never disabled for its souls: the roster lists only the souls spawned there before, not
+those its workspace offers. The host's kernel refuses a soul it doesn't offer, and the dialog says
+that refusal in its own words ("Couldn’t spawn on <server>: <message>"). With a server
 chosen, the relation picker lists that group's rows (`/api/panel?ws=remote:<group>`): relations never
 cross machines.
 

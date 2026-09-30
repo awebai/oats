@@ -30,7 +30,7 @@ export function teamMembers({ workspace, instances = [], groups = [] }) {
     for (const row of rows.filter(r => team(r))) members.push(member(row, { workspace: panel.workspace.id, server: group.server, serverLabel: label }));
     servers.push({ server: group.server, label, group: group.id, reached: group.probe?.ok === true,
       error: group.probe?.ok === true ? null : text(group.probe?.error?.message) ?? 'Server is unreachable',
-      registered: group.registrationPresent === true, souls: (group.souls || []).map(s => s?.name).filter(text) });
+      registered: group.registrationPresent === true });
     // A failed group holding no rows (last-known or current) is a server we have nothing to show for.
     if (group.probe?.ok !== true && !rows.length) notReached.push({ server: group.server, label });
   }

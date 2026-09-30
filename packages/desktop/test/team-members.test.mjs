@@ -39,8 +39,8 @@ test('servers: every remote group, reached or not; an unreached group keeps its 
   const down = group('down', { probe: { ok: false, error: { code: 'E_SSH', message: 'ssh failed: timeout' } }, instances: [remoteRow('kept')] });
   const result = project({ rows: [], groups: [group('build'), down] });
   assert.deepEqual(result.servers, [
-    { server: 'build', label: 'build box', group: 'build:1a2b', reached: true, error: null, registered: true, souls: ['dev', 'qa'] },
-    { server: 'down', label: 'down box', group: 'down:1a2b', reached: false, error: 'ssh failed: timeout', registered: true, souls: ['dev', 'qa'] },
+    { server: 'build', label: 'build box', group: 'build:1a2b', reached: true, error: null, registered: true },
+    { server: 'down', label: 'down box', group: 'down:1a2b', reached: false, error: 'ssh failed: timeout', registered: true },
   ]);
   assert.equal(result.members[0].running, null, 'last-known, state unknown');
   assert.equal(result.members[0].reason, 'ssh failed: timeout');

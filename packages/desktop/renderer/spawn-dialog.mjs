@@ -1184,16 +1184,17 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     } catch { /* the default stays */ }
   }
   // ── execution servers (Advanced › Run on)
-  // Disabled with why: the server's registered group failed its last roster read, it lists no soul of this
-  // name, or no group of it is the registration's. Before the roster answers nothing is known: nothing is guessed.
+  // Disabled with why: the server's registered group failed its last roster read, or no group of it is the
+  // registration's. Before the roster answers nothing is known: nothing is guessed. A group's souls are only
+  // those spawned there before, not the ones its workspace offers, so they never disable a server: the kernel
+  // refuses a soul the host doesn't offer, in its own words.
   Promise.all([Promise.resolve(typeof servers === 'function' ? servers() : servers),
     Promise.resolve().then(() => serverFacts()).catch(() => [])]).then(([list, facts]) => {
     if (!current() || soul.server || !Array.isArray(list)) return;
     facts = Array.isArray(facts) ? facts : [];
     for (const srv of list) {
       const groups = facts.filter(f => f.server === srv.id), group = groups.find(f => f.registered === true);
-      const why = !groups.length ? null : !group ? 'not registered' : !group.reached ? 'not reached'
-        : !(group.souls || []).includes(soul.name) ? `no ${soul.name} soul there` : null;
+      const why = !groups.length ? null : !group ? 'not registered' : !group.reached ? 'not reached' : null;
       const o = el('option', why ? `${srv.label} (${why})` : srv.label !== srv.id ? `${srv.label} (${srv.id})` : srv.label);
       o.value = srv.id; o.disabled = !!why; server.append(o);
       if (group) serverGroups.set(srv.id, group);

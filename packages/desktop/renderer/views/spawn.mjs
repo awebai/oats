@@ -1319,7 +1319,11 @@ export async function doSpawn(s, fields) {
     return { created: true };
   } catch (e) {
     if (!owns()) return;
-    const problem = spawnProblem({ code: e?.code, message: String(e?.message || e || "") }, "spawn");
+    const message = String(e?.message || e || "").trim();
+    const problem = spawnProblem({ code: e?.code, message }, "spawn");
+    // The host decides a remote spawn (its souls, its workspace), so its refusal is said in OATS's own words;
+    // this computer's own transport failures (E_CLI_*, cli-*) keep their plain sentence.
+    if (message && typeof e?.code === "string" && !/^(E_CLI_|cli-)/.test(e.code)) problem.text = `Couldn’t spawn on ${fields.server}: ${message}`;
     fields.status(problem.text, true, problem);
   }
 }
