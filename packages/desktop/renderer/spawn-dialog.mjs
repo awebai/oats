@@ -25,7 +25,8 @@ import { iconElement } from './shell-icons.mjs';
 import { shownLaunch, launchHarnessName, launchModelText, launchFromText, preferenceText, declaredDiffers } from './launch-view.mjs';
 
 export const PREVIEW_DEBOUNCE_MS = 250;
-export const RUNTIME_NAMES = Object.freeze({ pi: 'Pi', claude: 'Claude Code', codex: 'Codex' });
+import { HARNESS_NAMES as RUNTIME_NAMES } from './harness-names.mjs';
+export { RUNTIME_NAMES };
 const PURPOSE = /^[a-z0-9][a-z0-9-]*$/i;
 
 export const spawnDialogCSS = `
