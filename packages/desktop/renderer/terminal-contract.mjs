@@ -18,6 +18,7 @@ export const terminalGeometry = (cols, rows) => Number.isInteger(cols) && cols >
 const serverMessages = {
   E_TERM_REMOTE_UNREACHABLE: server => `Couldn't reach ${server}.`,
   E_TERM_REMOTE_GONE: server => `The session is no longer running on ${server}.`,
+  E_TERM_REMOTE_NO_ANSWER: server => `OATS on this computer gave no answer while connecting to ${server}.`,
 };
 const messages = {
   E_TERM_FORBIDDEN_FRAME: 'This document cannot access terminals.',
@@ -39,6 +40,7 @@ const messages = {
   E_HERDR_REMOVED: HERDR_REMOVED,
   E_TERM_REMOTE_UNREACHABLE: serverMessages.E_TERM_REMOTE_UNREACHABLE('the server'),
   E_TERM_REMOTE_GONE: serverMessages.E_TERM_REMOTE_GONE('the server'),
+  E_TERM_REMOTE_NO_ANSWER: serverMessages.E_TERM_REMOTE_NO_ANSWER('the server'),
 };
 export function terminalFailure(code) {
   if (typeof code !== 'string' || !Object.hasOwn(messages, code)) code = 'E_TERM_OPEN_FAILED';

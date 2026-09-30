@@ -29,7 +29,10 @@ export function terminalKeyDecision(ev, interceptKey) {
 /** Waits before each reconnect attempt; the last one repeats while the tab is open. */
 export const RECONNECT_DELAYS_MS = [1000, 2000, 4000, 8000, 15000, 30000];
 /** Open failures that may be the link again, so reconnecting goes on; any other stops it. */
-export const RECONNECT_RETRIED = new Set(['E_TERM_REMOTE_UNREACHABLE', 'E_TERM_PREPARE_TIMEOUT']);
+export const RECONNECT_RETRIED = new Set(['E_TERM_REMOTE_UNREACHABLE', 'E_TERM_PREPARE_TIMEOUT', 'E_TERM_REMOTE_NO_ANSWER']);
+/** No answer from this computer's oats is more likely the CLI than the link: it is retried this
+ * many times in a row, then reconnecting stops. An E_SSH answer or a success resets the count. */
+export const NO_ANSWER_RETRIES = 3;
 /** ssh exits 255 for its own failures: here, a link that died under the viewer. */
 export const LOST_LINK_EXIT = 255;
 
@@ -40,7 +43,7 @@ export function createTerminalTab({ desk, term, tmux, remote, serverLabel, wrap,
   let ready = false, closed = false, ended = false, arming = false, wired = false;
   // Reconnect state: connected, waiting (for the next attempt's time and the old lease's
   // cleanup), attempting (a lease open in flight) or stopped. One timer drives the waiting.
-  let link = 'connected', failures = 0, dueAt = 0, timer = null;
+  let link = 'connected', failures = 0, noAnswers = 0, dueAt = 0, timer = null;
   const server = serverLabel || remote?.serverId;
   const subscriptions = [];
   const doc = wrap.ownerDocument;
@@ -131,7 +134,9 @@ export function createTerminalTab({ desk, term, tmux, remote, serverLabel, wrap,
     strip(`Reconnecting to ${server}…`, true); announce(`Reconnecting to ${server}…`);
     life.reopen(connect, error => {
       if (closed) return;
-      if (RECONNECT_RETRIED.has(error?.code)) wait();
+      if (error?.code === 'E_TERM_REMOTE_NO_ANSWER') noAnswers++;
+      else if (error?.code === 'E_TERM_REMOTE_UNREACHABLE') noAnswers = 0;
+      if (RECONNECT_RETRIED.has(error?.code) && noAnswers <= NO_ANSWER_RETRIES) wait();
       else stop(`${terminalMessage(error?.code, server)} Close this tab.`);
     });
   }
@@ -208,7 +213,7 @@ export function createTerminalTab({ desk, term, tmux, remote, serverLabel, wrap,
     if (remote) term.options.disableStdin = false;
     // tmux redraws the screen for the new client: the scrollback is left as it is.
     desk.termResize(h, term.cols, term.rows);
-    if (link !== 'connected') { link = 'connected'; failures = 0; clearStrip(); announce(`Reconnected to ${server}.`); }
+    if (link !== 'connected') { link = 'connected'; failures = 0; noAnswers = 0; clearStrip(); announce(`Reconnected to ${server}.`); }
     focus();
   }
   return {

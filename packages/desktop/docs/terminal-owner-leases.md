@@ -110,13 +110,21 @@ it detaches the late handle as `start` does. Per-lease data/exit listeners are
 replaced on each lease; the xterm wiring is installed once, and input and
 resize go to the current lease only.
 
-Only `E_TERM_REMOTE_UNREACHABLE` and `E_TERM_PREPARE_TIMEOUT` retry. Any other
-refusal stops with its message and "Close this tab". So does a non-255 exit
-("session ended") or a ready failure. `remote-target.mjs` `prepareRemoteTerm`
-codes the prepare's failures:
+`E_TERM_REMOTE_UNREACHABLE` and `E_TERM_PREPARE_TIMEOUT` retry without limit.
+`E_TERM_REMOTE_NO_ANSWER` retries `NO_ANSWER_RETRIES` (3) times in a row, and
+the next one stops. An `E_TERM_REMOTE_UNREACHABLE` answer or a successful attach
+resets that count; a timeout neither resets nor counts. Any other refusal stops
+with its message and "Close this tab". So does a non-255 exit ("session ended")
+or a ready failure. `remote-target.mjs` `prepareRemoteTerm` codes the prepare's
+failures:
 
-- an `E_SSH` envelope (the CLI's wrapping of ssh's own failure), or a nonzero
-  exit, 255 or kill with no refusal envelope → `E_TERM_REMOTE_UNREACHABLE`;
+- an `E_SSH` envelope (the CLI's wrapping of ssh's own failure) →
+  `E_TERM_REMOTE_UNREACHABLE`;
+- the inspect killed at its 20 s exec deadline → `E_TERM_PREPARE_TIMEOUT`: a
+  stalled link outlives ssh's keepalives (about 45 s);
+- a nonzero exit (255 included) or a death by the CLI's own signal, with no
+  refusal envelope → `E_TERM_REMOTE_NO_ANSWER`. ssh's own failures arrive as `E_SSH`, so this is
+  more likely the local CLI failing than the link;
 - `ok: true` with `present !== true` → `E_TERM_REMOTE_GONE`;
 - any other refusal keeps the host's code, which the broker reports as
   `E_TERM_OPEN_FAILED` unless the contract has it.

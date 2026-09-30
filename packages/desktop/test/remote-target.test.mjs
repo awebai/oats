@@ -45,26 +45,31 @@ test("a 0.31 kernel's E_HERDR_REMOVED refusal exits 1 and is still refused as E_
   const calls = [];
   await assert.rejects(prepareRemoteTerm(cli, remote, { run: exiting(1, JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_HERDR_REMOVED", message } }), calls) }),
     error => error.code === "E_HERDR_REMOVED" && error.message === message);
-  for (const stdout of [JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_SSH", message: "unreachable" } }), "not json", ""]) {
-    await assert.rejects(prepareRemoteTerm(cli, remote, { run: exiting(1, stdout, calls) }), error => error.code === "E_TERM_REMOTE_UNREACHABLE", stdout);
+  for (const [stdout, code] of [[JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_SSH", message: "unreachable" } }), "E_TERM_REMOTE_UNREACHABLE"],
+    ["not json", "E_TERM_REMOTE_NO_ANSWER"], ["", "E_TERM_REMOTE_NO_ANSWER"]]) {
+    await assert.rejects(prepareRemoteTerm(cli, remote, { run: exiting(1, stdout, calls) }), error => error.code === code, stdout);
   }
   assert.ok(calls.every(argv => argv[1] === "inspect"), "only inspection ran; nothing attached");
 });
 const captured = name => readFileSync(new URL(`./fixtures/remote-inspect/${name}.json`, import.meta.url), "utf8");
-test("prepare failures carry codes from real captures: unreachable is transport, not present is gone, a host refusal keeps its code", async () => {
+test("prepare failures carry codes from real captures: unreachable is transport, no envelope is no answer, not present is gone, a host refusal keeps its code", async () => {
   const calls = [];
   for (const [run, code] of [
     [exiting(1, captured("unreachable"), calls), "E_TERM_REMOTE_UNREACHABLE"],
-    [exiting(255, "", calls), "E_TERM_REMOTE_UNREACHABLE"],
-    [exiting(1, "", calls), "E_TERM_REMOTE_UNREACHABLE"],
+    [exiting(255, "", calls), "E_TERM_REMOTE_NO_ANSWER"],
+    [exiting(1, "", calls), "E_TERM_REMOTE_NO_ANSWER"],
     [exiting(0, captured("not-present"), calls), "E_TERM_REMOTE_GONE"],
     [exiting(1, captured("unknown-server"), calls), "E_SERVER_UNKNOWN"],
   ]) await assert.rejects(prepareRemoteTerm(cli, remote, { run }), error => error.code === code, code);
   assert.ok(calls.every(argv => argv[1] === "inspect"), "only inspection ran; nothing attached");
 });
-test("a killed inspection is transport; a CLI that never started is not", async () => {
+test("an inspection killed at its deadline is a timeout (a stalled link); one that died by a signal gave no answer; a CLI that never started keeps its own error", async () => {
   const killed = async () => { throw Object.assign(new Error("Command failed"), { code: null, killed: true, signal: "SIGTERM", stdout: "" }); };
-  await assert.rejects(prepareRemoteTerm(cli, remote, { run: killed }), error => error.code === "E_TERM_REMOTE_UNREACHABLE");
+  await assert.rejects(prepareRemoteTerm(cli, remote, { run: killed }), error => error.code === "E_TERM_PREPARE_TIMEOUT");
+  for (const signal of ["SIGABRT", "SIGSEGV"]) {
+    const crashed = async () => { throw Object.assign(new Error("Command failed"), { code: null, killed: false, signal, stdout: "" }); };
+    await assert.rejects(prepareRemoteTerm(cli, remote, { run: crashed }), error => error.code === "E_TERM_REMOTE_NO_ANSWER", `a local CLI that died by ${signal} gave no answer`);
+  }
   const missing = async () => { throw Object.assign(new Error("spawn /selected/oats ENOENT"), { code: "ENOENT" }); };
   await assert.rejects(prepareRemoteTerm(cli, remote, { run: missing }), error => error.code === "ENOENT");
 });

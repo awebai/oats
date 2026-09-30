@@ -122,8 +122,10 @@ attach resets that. Tmux redraws the screen when the viewer attaches again.
 
 Reconnecting stops, with a message and "Close this tab", when the server
 answers that the session is gone, the instance is unknown, the terminal limit
-is reached or the app's backend changed. It also stops when the viewer ends
-with any other exit code. Closing the tab ends the reconnecting. Reconnecting
+is reached or the app's backend changed. It stops after four attempts in a
+row in which OATS on this computer gave no answer, since that is more likely
+the local CLI failing than the link. It also stops when the viewer ends with
+any other exit code. Closing the tab ends the reconnecting. Reconnecting
 never stops or restarts the agent on the server: only the local ssh viewer
 ends.
 

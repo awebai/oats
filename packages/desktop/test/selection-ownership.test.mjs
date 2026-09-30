@@ -8,7 +8,7 @@ import { runInNewContext } from "node:vm";
 import { JSDOM } from "jsdom";
 import { createSelectionOwnership, wirePaneSelection } from "../renderer/selection-ownership.mjs";
 import { createIntentGate, prepareOwnedOpen } from "../renderer/open-intent.mjs";
-import { createTerminalTab, terminalOptions, terminalKeyDecision, RECONNECT_DELAYS_MS, RECONNECT_RETRIED, LOST_LINK_EXIT } from "../renderer/terminal-tab.mjs";
+import { createTerminalTab, terminalOptions, terminalKeyDecision, RECONNECT_DELAYS_MS, RECONNECT_RETRIED, NO_ANSWER_RETRIES, LOST_LINK_EXIT } from "../renderer/terminal-tab.mjs";
 import { createTermLifecycle } from "../renderer/term-lifecycle.mjs";
 import { opened, confirmed, ready } from './helpers/terminal-wire.mjs';
 import { terminalHandle, terminalSameHandle, terminalFailure, terminalMessage } from '../renderer/terminal-contract.mjs';
@@ -313,7 +313,7 @@ test("mutation: readiness must consult current focus ownership, not pane visibil
   }
   await run();
   const terminal = mutatedFactory(createTerminalTab, "!ownsFocus()", "!isActive()", { createTermLifecycle, terminalKeyDecision, terminalHandle, terminalSameHandle, terminalFailure,
-    terminalMessage, wireTerminalAttachments, RECONNECT_DELAYS_MS, RECONNECT_RETRIED, LOST_LINK_EXIT });
+    terminalMessage, wireTerminalAttachments, RECONNECT_DELAYS_MS, RECONNECT_RETRIED, NO_ANSWER_RETRIES, LOST_LINK_EXIT });
   await assert.rejects(run(terminal), /readiness must not steal focus/);
 });
 

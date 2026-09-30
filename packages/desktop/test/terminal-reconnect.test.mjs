@@ -319,3 +319,65 @@ test("a remote tab's first open failure names the server as a reconnect does", a
   assert.equal(r.banner(), "could not attach: Couldn't reach Build box.");
   await r.tab.close();
 });
+
+const NO_ANSWER = "E_TERM_REMOTE_NO_ANSWER", UNREACHABLE = "E_TERM_REMOTE_UNREACHABLE";
+const noAnswerFinal = "OATS on this computer gave no answer while connecting to Build box. Close this tab.";
+
+test("no answer from this computer's oats is retried 3 times in a row, then reconnecting stops", async () => {
+  const r = rig({ opens: [1, NO_ANSWER, NO_ANSWER, NO_ANSWER, NO_ANSWER, 2] });
+  await r.tab.start(); r.exit(1);
+  await r.clock.advance(1000 + 2000 + 4000);
+  assert.equal(r.opens(), 4, "three no-answer attempts so far");
+  assert.equal(r.banner(), undefined, "still reconnecting");
+  await r.clock.advance(8000);
+  assert.equal(r.opens(), 5, "the third retry ran");
+  assert.equal(r.banner(), noAnswerFinal);
+  assert.equal(r.live().textContent, noAnswerFinal);
+  assert.equal(r.strip(), null);
+  await r.clock.advance(120000);
+  assert.equal(r.opens(), 5, "no attempt after the stop"); assert.equal(r.clock.pending(), 0);
+  await r.tab.close();
+});
+
+test("the no-answer count resets on an E_SSH answer and on a successful attach", async () => {
+  const r = rig({ opens: [1, NO_ANSWER, NO_ANSWER, NO_ANSWER, UNREACHABLE, NO_ANSWER, NO_ANSWER, NO_ANSWER, 2,
+    NO_ANSWER, NO_ANSWER, NO_ANSWER, 3] });
+  await r.tab.start(); r.exit(1);
+  await r.clock.advance(1000 + 2000 + 4000 + 8000 + 15000 + 30000 + 30000 + 30000);
+  assert.equal(r.opens(), 9, "the E_SSH answer between the runs of no-answer kept it going");
+  assert.equal(r.strip(), null); assert.equal(r.banner(), undefined, "reconnected");
+  r.exit(2);
+  await r.clock.advance(1000 + 2000 + 4000 + 8000);
+  assert.equal(r.opens(), 13, "a success started the count again");
+  assert.equal(r.strip(), null); assert.equal(r.banner(), undefined);
+  await r.tab.close();
+});
+
+test("an unreachable server (E_SSH) is retried without limit", async () => {
+  const r = rig({ opens: [1, ...Array(12).fill(UNREACHABLE)] });
+  await r.tab.start(); r.exit(1);
+  await r.clock.advance(1000 + 2000 + 4000 + 8000 + 15000 + 30000 * 7);
+  assert.equal(r.opens(), 13);
+  assert.equal(r.banner(), undefined, "never stops on its own");
+  assert.match(r.stripText(), /^Disconnected from Build box\. Reconnecting in \d+s…$/);
+  await r.tab.close();
+});
+
+test("a first open that gets no answer says so, naming the server", async () => {
+  const r = rig({ opens: [NO_ANSWER] });
+  await r.tab.start();
+  assert.equal(r.banner(), "could not attach: OATS on this computer gave no answer while connecting to Build box.");
+  await r.tab.close();
+});
+
+test("a prepare timeout between no-answers neither resets nor counts toward the cap", async () => {
+  const r = rig({ opens: [1, NO_ANSWER, NO_ANSWER, "E_TERM_PREPARE_TIMEOUT", NO_ANSWER, NO_ANSWER, 2] });
+  await r.tab.start(); r.exit(1);
+  await r.clock.advance(1000 + 2000 + 4000 + 8000);
+  assert.equal(r.opens(), 5, "no-answer, no-answer, timeout, no-answer");
+  assert.equal(r.banner(), undefined, "three no-answers so far: still reconnecting");
+  await r.clock.advance(15000);
+  assert.equal(r.opens(), 6);
+  assert.equal(r.banner(), noAnswerFinal, "the fourth no-answer stops; the timeout did not reset the count");
+  await r.tab.close();
+});
