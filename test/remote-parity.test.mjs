@@ -252,6 +252,42 @@ test("session attach --server: one version probe at most, every call through the
   assert.match(r.stderr, /ssh to build-host ended with an error \(exit 255\); if the link was lost, the instance keeps running on build\. Reattach with: oats session attach --server build --home \/srv\/ws\/agents\/dev\/instances\/dev-a/);
 });
 
+test("session attach --server: ssh failing before the viewer (the probe, the name's roster) exits 255 and names the host; any other refusal exits 1 (#349)", () => {
+  const dir = mkdtempSync(join(base, "att-pre-"));
+  const home = "/srv/ws/agents/dev/instances/dev-a";
+  const register = (env, oatsPath) => { mkdirSync(env.OATS_HOME_DIR, { recursive: true }); writeFileSync(join(env.OATS_HOME_DIR, "servers.json"), JSON.stringify({ servers: { build: { sshHost: "build-host", workspace: WS, oatsPath } } })); };
+  // ssh itself fails on the probe (the link is down): 255, like ssh failing under the viewer.
+  const down = join(dir, "down-bin"); mkdirSync(down, { recursive: true });
+  writeFileSync(join(down, "ssh"), "#!/bin/sh\necho 'ssh: connect to host build-host port 22: Connection refused' >&2\nexit 255\n", { mode: 0o755 });
+  const env = { ...cliEnv(dir, { bin: down }), PATH: `${down}:${dirname(process.execPath)}:/usr/bin:/bin` };
+  register(env, "oats");
+  let r = cli(env, ["session", "attach", "--server", "build", "--home", home]);
+  assert.equal(r.status, 255, r.stderr);
+  assert.match(r.stderr, /^oats: ssh to build-host failed: ssh: connect to host build-host port 22: Connection refused/m);
+  // --json keeps its envelope, with the same exit.
+  r = cli(env, ["session", "attach", "--server", "build", "--home", home, "--json"]);
+  assert.equal(r.status, 255);
+  assert.equal(r.json().error.code, "E_SSH");
+  assert.match(r.json().error.message, /^ssh to build-host failed: /);
+  // ssh fails while the name resolves through the host's roster: 255 too.
+  const flaky = fakeHost(join(dir, "flaky"), { probe: FULL_PROBE, answers: { [`status --json --dir ${WS}`]: { exit: 255 } } });
+  const flakyEnv = cliEnv(join(dir, "flaky"), flaky); register(flakyEnv, flaky.oatsPath);
+  r = cli(flakyEnv, ["session", "attach", "--server", "build", "--instance", "dev-a"]);
+  assert.equal(r.status, 255, r.stderr);
+  assert.match(r.stderr, /^oats: ssh to build-host failed: /m);
+  // No ssh on this machine at all: nothing ran, so there is no link to come back; exit 1.
+  const noSsh = { ...env, PATH: `${dirname(process.execPath)}:/nonexistent` };
+  r = cli(noSsh, ["session", "attach", "--server", "build", "--home", home]);
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /^oats: ssh to build-host failed: .*ENOENT/m);
+  // A host that answers, but without `oats session`: a refusal, exit 1.
+  const old = fakeHost(join(dir, "old"), { probe: { ...PROBE, version: "0.22.1", remote: ["spawn", "retire", "status"] }, answers: { [`status --json --dir ${WS}`]: { stdout: JSON.stringify(ROSTER) } } });
+  const oldEnv = cliEnv(join(dir, "old"), old); register(oldEnv, old.oatsPath);
+  r = cli(oldEnv, ["session", "attach", "--server", "build", "--home", home]);
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /does not advertise the `oats session` commands/);
+});
+
 // ---- item 3: foreign instances are first-class ----
 
 const FULL_PROBE = { ...PROBE, remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "session-upload"], features: ["harness", "retire-home", "session-start", "session-restart", "session-upload", "launch-config"] };

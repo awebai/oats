@@ -93,7 +93,7 @@ function valueFlag(name) {
   if (value === true) cmdFail("E_BAD_ARGS", `--${name} needs a value`);
   return value;
 }
-const die = (msg) => { console.error(`oats: ${msg}`); process.exit(1); };
+const die = (msg, exit = 1) => { console.error(`oats: ${msg}`); process.exit(exit); };
 /** A command's harness: --harness, or --runtime, its pre-0.27 name (the released okf worker and
  *  a 0.26-era Desktop pass it) — read either, with the deprecation warning. Both, disagreeing,
  *  are refused. `get` reads one flag (the command's own reader where it has one). */
@@ -140,7 +140,7 @@ const withLocalWarnings = (envelope) => {
   const sources = [...new Set([...(Array.isArray(same.sources) ? same.sources : []), ...mine.sources])];
   return { ...envelope, warnings: theirs.map((w) => (w === same ? { ...mine, sources, message: mine.message.replace(/\(.*\)/, `(${sources.join("; ")})`) } : w)) };
 };
-const jsonFail = (code, message, details) => { console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code, message: String(message), ...(details !== undefined ? { details } : {}) }, ...envelopeWarnings() })); process.exit(1); };
+const jsonFail = (code, message, details, exit = 1) => { console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code, message: String(message), ...(details !== undefined ? { details } : {}) }, ...envelopeWarnings() })); process.exit(exit); };
 const jsonOk = (result) => { console.log(JSON.stringify({ schemaVersion: 1, ok: true, result, ...envelopeWarnings() })); };
 // Text mode (or a JSON answer printed before the read): the warning goes to stderr, never stdout.
 process.on("exit", () => { const w = runtimeNameWarning(); if (w && !warningDelivered) process.stderr.write(`oats: warning: ${w.message}\n`); });
@@ -2994,7 +2994,7 @@ function serverCmd() {
  *  registered server's installed oats, same arguments, same envelope. The
  *  local side only routes and keeps the route snapshot per remote instance. */
 async function serverRouteCmd() {
-  const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
+  const bail = (code, msg, details, exit) => (JSON_MODE ? jsonFail(code, msg, details, exit) : die(msg, exit));
   const id = flag("server");
   if (id === true || !id) bail("E_BAD_ARGS", "--server needs a registered server id (oats server list)");
   // The operations contract, launch-config and the host's reads address an
@@ -3121,7 +3121,10 @@ async function serverRouteCmd() {
     if (args[1] !== "attach") bail("E_USAGE", "--server routes `session inspect`, `session start`, `session restart`, `session upload` and `session attach`; input runs on the execution host (the wake broker calls it there)");
     let route;
     try { route = attachArgv(id, addr, { skipVersionCheck: args.includes("--print") }); }
-    catch (e) { bail(e.code || "E_BAD_ARGS", e.message, e.details); }
+    // ssh failing before the viewer (the version probe, a name resolved through the host's roster)
+    // is the failure ssh has under it: exit 255, on which a caller reconnects. Every other refusal,
+    // and an ssh that never started (no link can come back), exits 1.
+    catch (e) { bail(e.code || "E_BAD_ARGS", e.message, e.details, e.code === "E_SSH" && e.sshStarted !== false ? 255 : 1); }
     if (args.includes("--print")) { console.log(route.argv.map(shellQuote).join(" ")); return; }
     const r = spawnSyncProc(route.argv[0], route.argv.slice(1), { stdio: "inherit" });
     // ssh exits 255 for its own failures: a link that died under the viewer

@@ -67,6 +67,12 @@ Every routed ssh call carries these options, before `--` and the host:
 - When ssh fails under an attached viewer (a lost link, or one never made),
   `session attach --server` exits 255 and says that, if the link was lost,
   the instance keeps running on the server, with the command to reattach.
+  When ssh fails before the viewer opens (the version probe, or a name
+  resolved through the host's roster), it also exits 255, with `oats: ssh to
+  <host> failed: …` (`--json`: the `E_SSH` envelope). Every other refusal
+  (an incompatible host, an unknown or ambiguous name, bad arguments) exits 1,
+  and so does an ssh that cannot be run on this machine at all: no link can
+  come back.
 
 ## Run there
 
