@@ -550,6 +550,15 @@ test("operational commands are gated by active instance metadata; doctor exposes
   assert.equal(readFileSync(join(fx.member, "souls", "dev", "AGENTS.md"), "utf8"), "# Canonical dev\n\nNever mutate me.\n");
 });
 
+test("a capability command whose provider dies of a signal exits as the shell reports it (128 + n), not 1", (t) => {
+  const fx = v2(t, {
+    souls: { dev: { soul: { capabilities: here("acme.ops") } } },
+    capabilities: { "acme.ops": cap({ command: "ops", commands: { die: "die.mjs" } }, { "die.mjs": "process.kill(process.pid, 'SIGINT');\nsetTimeout(() => {}, 5000);\n" }) },
+  });
+  const r = fx.cli(["ops", "die", "--soul", "dev"]);
+  assert.equal(r.status, 130, r.stderr);
+});
+
 test("inject eject is a removed verb", () => {
   const base = temp(); const repo = join(base, "repo"); gitRepo(repo);
   // `inject eject` was removed by the workspace model (a capability's inject is
