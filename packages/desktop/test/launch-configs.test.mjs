@@ -281,3 +281,13 @@ test("a second default is refused in the kernel's own words", async () => {
     assert.equal(u.el.querySelector('.launch-config-status').textContent, message);
   } finally { u.close(); }
 });
+
+test("an existing home's empty choice keeps its recorded launch, and says so", async () => {
+  const u = ui(body => body.action === 'list' ? { context: '/team', configurations: [defaultConfig] } : {}, { supportsDefault: () => true });
+  try {
+    assert.equal(u.el.querySelector('.launch-config-select').options[0].textContent, 'Keep the recorded launch');
+    await u.controller.load('');
+    assert.equal(u.el.querySelector('.launch-config-select').options[0].textContent, 'Keep the recorded launch');
+    assert.equal(u.el.querySelector('.launch-config-source').textContent, "Use this home's recorded launch.");
+  } finally { u.close(); }
+});

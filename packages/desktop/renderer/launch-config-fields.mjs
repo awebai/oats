@@ -8,7 +8,7 @@ export function launchConfigFields(el, { ctx, selector, choices, owns = () => tr
   const current = () => !disposed && owns() && ws === currentWorkspace() && generation === workspaceGeneration();
   const api = body => postJson(ctx, `/api/launch-configs?ws=${encodeURIComponent(ws)}`, body);
   el.classList.add("launch-config-fields");
-  el.innerHTML = `<label>Launch configuration<select class="field launch-config-select"><option value="">Keep defaults</option></select></label>
+  el.innerHTML = `<label>Launch configuration<select class="field launch-config-select"><option value="">Keep the recorded launch</option></select></label>
     <p class="launch-config-source"></p>
     <button type="button" class="act launch-preview">Preview invocation</button>
     <pre class="launch-preview-output" hidden></pre>
@@ -66,7 +66,7 @@ export function launchConfigFields(el, { ctx, selector, choices, owns = () => tr
   };
   const selectionChanged = (notify = true) => {
     invalidate(); const row = selected();
-    el.querySelector(".launch-config-source").textContent = row ? `${harnessOf(row)} · ${row.source || "Selected scope"}` : "Use the recorded launch for this home, or the soul defaults for a new instance.";
+    el.querySelector(".launch-config-source").textContent = row ? `${harnessOf(row)} · ${row.source || "Selected scope"}` : "Use this home's recorded launch.";
     fillEditor(row); if (notify) changed(row);
   };
   select.addEventListener("change", () => selectionChanged());
@@ -84,7 +84,7 @@ export function launchConfigFields(el, { ctx, selector, choices, owns = () => tr
       const previous = selected();
       configurations = data.configurations || []; context = data.context || data.scope?.context;
       select.replaceChildren();
-      const option = doc.createElement("option"); option.value = ""; option.textContent = "Keep recorded / soul defaults"; select.append(option);
+      const option = doc.createElement("option"); option.value = ""; option.textContent = "Keep the recorded launch"; select.append(option);
       for (const row of configurations) { const option = doc.createElement("option"); option.value = row.name; option.textContent = `${row.name} (${harnessOf(row)}${row.default === true ? ", default" : ""})`; select.append(option); }
       select.value = configurations.some(c => c.name === prefer) ? prefer : "";
       editor.hidden = !context;
