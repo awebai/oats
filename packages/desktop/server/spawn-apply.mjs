@@ -4,7 +4,7 @@
 import { randomBytes } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { cliSpawnApply } from '../spawn-apply-cli.mjs';
-import { admitSpawnSelection, spawnPreviewRequest } from './spawn-preview.mjs';
+import { admitSpawnSelection, spawnPreviewPrepareRequest } from './spawn-preview.mjs';
 import { record } from '../renderer/spawn-preview-contract.mjs';
 import { spawnApplySupported, spawnApplyChoicesSupported, spawnPrepareInput, spawnRefInput, spawnPreparedData, spawnReference,
   spawnCreationReceipt, spawnApplyFailure, WAKE_OUTCOME_UNKNOWN } from '../renderer/spawn-apply-contract.mjs';
@@ -12,7 +12,9 @@ const clone = v => structuredClone(v);
 const byteSize = v => Buffer.byteLength(JSON.stringify(v));
 const scopeKey = c => JSON.stringify([c?.workspace?.id, c?.workspace?.scope, c?.workspace?.remote, c?.workspace?.server,
   c?.cli?.bin, c?.cli?.version, c?.cli?.spawnPreviewApi, c?.cli?.spawnApplyApi, c?.cli?.features, c?.cli?.harnesses, c?.cli?.sessionBackends, c?.cli?.launchOptions]);
-export function createSpawnApplyBoundary({ read = spawnPreviewRequest, invoke = cliSpawnApply,
+// Prepare reads through the dialog's cache: a fresh held answer for exactly these choices is the decision
+// (no second CLI read); apply's --expect-decision is the drift guard. No held answer: a fresh read.
+export function createSpawnApplyBoundary({ read = spawnPreviewPrepareRequest, invoke = cliSpawnApply,
   now = () => performance.now(), mint = () => randomBytes(32).toString('hex') } = {}) {
   const prepared = new Map(), submitted = new Map();
   let preparing = 0, reservedBytes = 0, active = null;

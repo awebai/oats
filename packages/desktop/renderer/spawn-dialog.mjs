@@ -495,11 +495,15 @@ function composeChooser(doc, { soul, agents, canChoose, choose, query, note }) {
  *               onCreated(view, isCurrent) — local creation handoff,
  *               remoteSpawn(fields) — execution-server spawn (unguarded route),
  *               serverFacts() — each remote group (/api/team-members `servers`): reached, registered, souls,
- *               serverRows(group) — a remote group's roster rows (the relation picker for a chosen server).
+ *               serverRows(group) — a remote group's roster rows (the relation picker for a chosen server),
+ *               handoff(spec) — Spec C: a confirmed local press hands its transaction to the background spawn
+ *                 store and the host closes the dialog (returns true when taken). Without it the dialog runs
+ *                 the transaction itself (the view harness, and tests of that flow).
+ *               draft.restore — { choices, wake }: every choice of an earlier press, restored (Reopen spawn).
  */
 export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, instances, canChoose, choose, close, owns,
   draft = {}, catalogNote = '', onCreated = async () => {}, remoteSpawn = async () => {}, servers = [], serverFacts = () => [], serverRows = async () => [],
-  delay: debounce = PREVIEW_DEBOUNCE_MS, busyDelay = PREVIEW_BUSY_RETRY_MS, layout = 'picker' }) {
+  delay: debounce = PREVIEW_DEBOUNCE_MS, busyDelay = PREVIEW_BUSY_RETRY_MS, layout = 'picker', handoff = null }) {
   const doc = modal.ownerDocument, el = (tag, text, cls) => node(doc, tag, text, cls);
   const titleId = 'spawn-dialog-title';
   const dialog = el('section', undefined, 'spawn-dialog');
@@ -761,6 +765,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   let inFlight = 0, retryOnSettle = false, busyRetries = 0;
   // A Spawn press before the preview for these exact choices settled, kept as intent ({ key }).
   let pressed = null;
+  // Spec C: this dialog's one handoff (single-flight: the store refuses a token it has seen).
+  const handoffToken = {}; let handedOff = false;
   let flight = null, phase = 'idle', intent = null, submitted = false, delivered = false, modelsReq = 0, configsReq = 0, remoteBusy = false, modelsFor = null;
   let notice = null; // a refusal from the last Spawn stays visible until the operator edits
   const current = () => alive && owns() && mount === workspaceGeneration();
@@ -784,7 +790,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   // The server admits the workspace against its own registry (absolute scope, local); /api/panel carries only the id.
   const previewable = () => local() && previewSupported(cli()) && !!workspace()?.id && soul.work !== 'attached';
   const applicable = () => previewable() && spawnApplySupported(cli()) && !soul.captured;
-  const busy = () => !!flight || remoteBusy;
+  const busy = () => !!flight || remoteBusy || handedOff;
   const effectiveWork = () => worktree.checked && soul.work === 'checkout' ? 'worktree' : soul.work;
   const identityOffered = () => local() && !!messagingProvider && !!cli()?.features?.includes('spawn-provider-payload');
   // The row shows the teams the soul has access to: a joinable one, or (v2) its default; with neither, no row.
@@ -1155,6 +1161,19 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       try { wakeValue = wake.read(); } catch (error) { setStatus(error.message, true); return; }
       prepareInput = spawnPrepareInput({ action: 'prepare', selector, choices: draftChoice.value, task: task.value, ...(wakeValue ? { wake: wakeValue } : {}) });
       if (draftChoice.error || !prepareInput) { showProblem(spawnApplyReason('E_BAD_ARGS'), 'spawn'); return; }
+      // Spec C: the confirmed press leaves the dialog. The store runs the transaction against exactly the
+      // decision on screen; the dialog is single-flight: one press, one handoff (handedOff), never two.
+      if (handoff) {
+        if (handedOff) return;
+        const draftNow = { purpose: purpose.value, prefixed: prefixed.checked, task: task.value, layout: 'scoped',
+          restore: { choices: structuredClone(draftChoice.value), ...(wakeValue ? { wake: structuredClone(wakeValue) } : {}) } };
+        handedOff = true; syncButton();
+        let taken = false;
+        try { taken = handoff({ token: handoffToken, workspace: workspace().id, selector: { ...selector }, input: prepareInput, decision: structuredClone(shown.data.decision), relation: draftChoice.value.relation, draft: draftNow }) === true; }
+        catch { taken = false; }
+        if (!taken && alive) { handedOff = false; showProblem(spawnApplyReason('E_BUSY'), 'spawn'); syncButton(); }
+        return;
+      }
     }
     const ws = workspace().id, token = {}, connection = ctx.connectionGeneration?.() ?? 0, owner = mount;
     const valid = () => current() && owner === mount && flight === token && connection === (ctx.connectionGeneration?.() ?? 0);
@@ -1270,8 +1289,9 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     } catch { /* advisory only */ }
   }
   // ── launch configurations for this soul
+  let configWanted = null; // a restored launch configuration, chosen once its options are listed
   async function fillConfigs() {
-    const ticket = ++configsReq, prefer = config.value;
+    const ticket = ++configsReq, prefer = configWanted ?? config.value;
     fillSelect(config, [['', config.options[0]?.textContent || 'Default']]);
     if (!local() || !cli()?.features?.includes('launch-config') || !current()) return;
     try {
@@ -1282,6 +1302,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
         const o = el('option', `${row.name} · ${runtimeName(harnessOf(row))}`); o.value = row.name; config.append(o);
       }
       if ([...config.options].some(o => o.value === prefer)) config.value = prefer;
+      if (configWanted !== null) { configWanted = null; schedule(0); }
     } catch { /* the default stays */ }
   }
   // ── execution servers (Advanced › Run on)
@@ -1324,6 +1345,34 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   // Change soul: the picker, in place — never a reopen, so nothing typed is lost.
   changeSoul.addEventListener('click', () => { dropPress(); setLayout('picker'); focusTarget().focus({ preventScroll: true }); });
 
+  /** Reopen spawn (Spec C): put back every choice an earlier press made, exactly as sent. The preview
+   * then reads for them as for any edit; nothing restored bypasses validation (choices()). */
+  function restoreDraft(restore) {
+    const c = restore?.choices;
+    if (c && typeof c === 'object') {
+      if (typeof c.name === 'string') { purpose.value = c.name; prefixed.checked = false; }
+      else if (typeof c.purpose === 'string') { purpose.value = c.purpose; prefixed.checked = true; }
+      worktree.checked = c.work === 'worktree' && soul.work === 'checkout';
+      if (typeof c.branch === 'string') branch.value = c.branch;
+      if (typeof c.base === 'string') base.value = c.base;
+      if (typeof c.harness === 'string' && [...runtime.options].some(o => o.value === c.harness)) runtime.value = c.harness;
+      if (typeof c.launchConfig === 'string') configWanted = c.launchConfig;
+      if (typeof c.backend === 'string' && [...backend.options].some(o => o.value === c.backend)) backend.value = c.backend;
+      if (typeof c.yolo === 'boolean') yolo.value = String(c.yolo);
+      if (c.model?.kind === 'native-default') nativeModel = true;
+      else if (c.model?.kind === 'custom' && typeof c.model.value === 'string') model.value = c.model.value;
+      const kind = c.relation?.kind, anchor = c.relation?.anchor;
+      if (kind && kind !== 'unrelated' && anchor) {
+        const radio = [...seg.querySelectorAll('input')].find(i => i.value === kind);
+        const option = [...relTo.options].find(o => o.value === anchor.instance && o.dataset.root === anchor.agentsRoot);
+        if (radio && option) { radio.checked = true; option.selected = true; }
+      }
+      if (c.identity?.mode === 'local' || c.identity?.mode === 'global') { identity.value = c.identity.mode; resident.value = c.identity.resident || ''; }
+      for (const label of Array.isArray(c.join?.labels) ? c.join.labels : []) joinPicked.add(label);
+    }
+    if (restore?.wake) wake.set(restore.wake);
+  }
+  restoreDraft(draft.restore);
   setLayout(layout); render();
   return {
     /** Begin reading once the host owns the attached dialog. */

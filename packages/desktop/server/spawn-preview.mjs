@@ -1,11 +1,12 @@
 /** Exact local soul/anchor admission against the deployment's spawn catalog,
  * the two-slot read-only preview budget, and the dialog's settled-answer cache.
  *
- * The cache (60 s, keyed by the admission identity) serves only the dialog's
- * preview route: an answer is still admitted against the current context before
- * it is returned, and a workspace's entries go when Desktop observes a change
- * that can alter a preview (oats-web.mjs). Prepare reads through the uncached
- * `spawnPreviewRequest`, so the decision a spawn binds is always a fresh read. */
+ * The cache (60 s, keyed by the admission identity) serves the dialog's preview
+ * route and prepare: an answer is still admitted against the current context
+ * before it is returned, and a workspace's entries go when Desktop observes a
+ * change that can alter a preview (oats-web.mjs). Prepare taking a held decision
+ * is safe because apply binds it with the kernel's --expect-decision: a decision
+ * the kernel no longer makes is refused there (E_DECISION_STALE), never applied. */
 import { dirname } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { cliSpawnPreview } from '../spawn-preview-cli.mjs';
@@ -81,7 +82,9 @@ export function admitSpawnSelection(selector, choices, { workspace: w, cli, agen
     cli.bin, cli.version, cli.spawnPreviewApi, cli.spawnApplyApi, cli.features, cli.harnesses, cli.sessionBackends, cli.launchOptions]);
   return { target, identity, cli: structuredClone(cli) };
 }
-export function createSpawnPreviewBoundary({ invoke = cliSpawnPreview, cache = null } = {}) {
+/** maxAge: the dialog's reads may reuse member heads the kernel observed within that many seconds (feature
+ * spawn-preview-max-age, passed only when the admitted CLI advertises it). Prepare's reads never do. */
+export function createSpawnPreviewBoundary({ invoke = cliSpawnPreview, cache = null, maxAge = null } = {}) {
   return async function read(request, getContext) {
     try {
       if (!record(request) || request.action !== 'preview' || Object.keys(request).some(k => !['action', 'selector', 'choices'].includes(k))) return previewFailure('E_BAD_ARGS');
@@ -93,25 +96,29 @@ export function createSpawnPreviewBoundary({ invoke = cliSpawnPreview, cache = n
       const held = cache?.get(identity);
       if (held) return held; // admitted above against the current context, like a fresh answer
       let pending = byInvoker.get(invoke); if (!pending) { pending = new Map(); byInvoker.set(invoke, pending); }
-      if (!pending.has(identity)) {
+      const reuse = maxAge !== null && cli.features.includes('spawn-preview-max-age') ? { maxAge } : {};
+      // A reusing read and a live one never coalesce: prepare must not ride on a dialog read's older heads.
+      const key = reuse.maxAge ? `${identity}\u0000max-age` : identity;
+      if (!pending.has(key)) {
         if (flights.size >= 2) return previewFailure('E_BUSY', target);
         const slot = {}; flights.add(slot);
-        const flight = Promise.resolve().then(() => invoke(cli, { target, choices })).then(envelope => {
+        const flight = Promise.resolve().then(() => invoke(cli, { target, choices, ...reuse })).then(envelope => {
           if (envelope?.schemaVersion !== 1 || envelope.ok !== true) return previewFailure(envelope?.error?.code, target, envelope?.error?.message, envelope?.error?.details?.fix);
           const data = previewData(envelope.result, target, { composedFrom: previewComposedFrom(cli) });
           return data ? { spawnPreviewViewApi: 1, status: 'available', target, data, reason: null } : previewFailure('E_CLI_PROTOCOL', target);
-        }).catch(() => previewFailure('E_CLI_FAILED', target)).finally(() => { flights.delete(slot); pending.delete(identity); });
-        flightStarted.set(flight, ++clock); pending.set(identity, flight);
+        }).catch(() => previewFailure('E_CLI_FAILED', target)).finally(() => { flights.delete(slot); pending.delete(key); });
+        flightStarted.set(flight, ++clock); pending.set(key, flight);
       }
-      const flight = pending.get(identity), result = await flight, current = admitSpawnSelection(selector, choices, getContext());
+      const flight = pending.get(key), result = await flight, current = admitSpawnSelection(selector, choices, getContext());
       if (current.identity !== identity) return previewFailure('E_TARGET_CHANGED', target);
       cache?.set(identity, target.workspace, result, flightStarted.get(flight));
       return result;
     } catch { return previewFailure('E_CLI_FAILED'); }
   };
 }
-/** Uncached: prepare's read (spawn-apply.mjs). */
-export const spawnPreviewRequest = createSpawnPreviewBoundary();
-/** The dialog's preview route: settled answers reused within the TTL. */
+/** The dialog's preview route and prepare's read (spawn-apply.mjs) share the settled answers (TTL). The
+ * dialog's own kernel reads may reuse recent member heads (--max-age 60); prepare's never do. */
+export const PREVIEW_MAX_AGE_S = 60;
 export const spawnPreviewCache = createSpawnPreviewCache();
-export const spawnPreviewCachedRequest = createSpawnPreviewBoundary({ cache: spawnPreviewCache });
+export const spawnPreviewCachedRequest = createSpawnPreviewBoundary({ cache: spawnPreviewCache, maxAge: PREVIEW_MAX_AGE_S });
+export const spawnPreviewPrepareRequest = createSpawnPreviewBoundary({ cache: spawnPreviewCache });

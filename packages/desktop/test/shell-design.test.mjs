@@ -300,7 +300,7 @@ for (const outcome of ["resolve", "reject"]) test(`reported workspace/root/host 
     currentWorkspace: () => c.workspace, rosterResponseOwns, staleWorkspaceSelection,
     contextRosterEl: document.getElementById("instance-roster"),
     api(path) { const gate = { ...deferred(), path }; requests.push(gate); return gate.promise; },
-    renderContextRoster() {}, refreshPanelInstance() {}, rosterPrs: { get: () => null, refresh() {} }, // label-only polling fixture
+    renderContextRoster() {}, refreshPanelInstance() {}, rosterPrs: { get: () => null, refresh() {} }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} }, // label-only polling fixture
     workspaceLabel: createWorkspaceSwitcher({ document, selectWorkspace() {}, discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}) }),
   };
   const s = runInNewContext(`${fn("refreshContextRoster")}\n${fn("renderWorkspaceContext")}\n({ refreshContextRoster, renderWorkspaceContext });`, c);

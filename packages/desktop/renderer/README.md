@@ -152,8 +152,12 @@ surface, not final K7 or native/rendered acceptance.
 ## Spawn dialog — workspace model v2
 
 `spawn-dialog.mjs` owns the form; `views/spawn.mjs` is a thin host (modal,
-focus trap, Esc/backdrop close, the `spawn.submit` binding and the terminal
-handoff). Souls come from the kernel's spawn catalog (`oats souls --json` via
+focus trap, Esc/backdrop close, the `spawn.submit` binding and the handoff). In
+the shell a confirmed local press is handed to `spawn-jobs.mjs` (`ctx.spawnJobs`)
+and the dialog closes at once; the store runs the transaction, owns the roster's
+pending row (`shell.mjs` `pendingSpawnRow`) and the outcome notification, and
+keeps the draft for **Reopen spawn** (`preselectSpawn({…, draft})`). See
+`docs/desktop-spawn-preview.md`, "Background spawn". Souls come from the kernel's spawn catalog (`oats souls --json` via
 `GET /api/agents`), never from the roster. Two layouts, switched in place
 (design board 6): **scoped** — opened from a soul card's Spawn or the soul
 page's Spawn — heads the dialog *Spawn <soul>* with where the soul comes from
@@ -623,7 +627,13 @@ section is the module map.
 `notifications.mjs` replaces the roster-prepended `ctx.notify` notices with one
 renderer-only, viewport-bounded scroll stack. Messages are literal text, not inferred severity/activity,
 links or action callbacks. There are at most three cards; capacity eviction skips
-the focused card. **No expiry timer**: dismissal is explicit, while a workspace
+the focused card. `notify` returns a handle `{dismiss(), shown}` (or `false`).
+Options add owned `buttons` (each an explicit, epoch-checked activation whose
+failure says "<label> did not complete. Try again."), a `detail` behind a
+Details disclosure, and `sticky` cards (background-spawn failures) that are
+exempt from the cap, report the operator's × through `onDismiss`, and collapse
+by `group` into one expandable "N … failed" entry when there are more than
+three. **No expiry timer**: dismissal is explicit, while a workspace
 visit or disposal revokes the old scope. Background arrival never focuses or
 mints navigation intent. Actual notification entry does; dismissal recovery uses
 the shell's projection guard, a surviving next control or a visible same-scope

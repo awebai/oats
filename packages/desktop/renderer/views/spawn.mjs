@@ -10,6 +10,7 @@ import { renderCapabilityPage, renderSoulCapabilities, renderSoulCore, capabilit
 import { runtimeState } from "../instance-presentation.mjs";
 import { deploymentUnavailableText } from "../deployment-header.mjs";
 import { createSpawnDialog, spawnDialogCSS } from "../spawn-dialog.mjs";
+import { pendingPlacement } from "../spawn-jobs.mjs";
 import { spawnProblem, catalogProblem } from "../spawn-messages.mjs";
 import { createSoulMark, createRuntimeBadge, identityCSS } from "../identity-marks.mjs";
 import { shownLaunch, launchHarnessName } from "../launch-view.mjs";
@@ -209,7 +210,9 @@ export function preselectSpawn(ref) {
   const intent = nextSelectionIntent();
   pendingPreselect = ref && ref.name
     ? { name: String(ref.name), agentsRoot: ref.agentsRoot, server: ref.server, spawn: true,
-      onMiss: typeof ref.onMiss === 'function' ? ref.onMiss : null, onDismiss: typeof ref.onDismiss === 'function' ? ref.onDismiss : null, ...intent }
+      onMiss: typeof ref.onMiss === 'function' ? ref.onMiss : null, onDismiss: typeof ref.onDismiss === 'function' ? ref.onDismiss : null,
+      // Reopen spawn (Spec C): the draft a failed background spawn kept, restored into the dialog.
+      draft: ref.draft && typeof ref.draft === 'object' ? ref.draft : null, ...intent }
     : null;
   if (state?.alive) applyPreselect(state);
 }
@@ -230,7 +233,7 @@ function applyPreselect(s) {
   if (matches.length !== 1) { ref.onMiss?.(matches.length); return; }
   const a = matches[0];
   if (ref.spawn && canLaunchSoul(s, a)) {
-    openSpawnModal(s, a);
+    openSpawnModal(s, a, ref.draft || {});
     if (s.modalEl) s.spawnReturn = ref.onDismiss;
     return;
   }
@@ -1108,6 +1111,17 @@ function openSpawnModal(s, a, draft = {}) {
     serverFacts: () => a.server ? [] : apiJson(s.ctx, `/api/team-members${wsQuery()}`).then(d => Array.isArray(d?.servers) ? d.servers : []),
     serverRows: group => apiJson(s.ctx, `/api/panel?ws=${encodeURIComponent(`remote:${group}`)}`).then(d => Array.isArray(d?.instances) ? d.instances : []),
     remoteSpawn: fields => doSpawn(s, fields),
+    // Spec C: a confirmed local press is handed to the shell's spawn-jobs store and the dialog closes at
+    // once; the store owns the transaction, the pending roster row, the outcome and the kept draft.
+    // Without a store (the view harness) the dialog runs the transaction itself, as before.
+    ...(s.ctx.spawnJobs && !a.server ? { handoff: spec => {
+      if (!ownsModal() || spec.workspace !== s.workspace?.id) return false;
+      const id = s.ctx.spawnJobs.submit({ ...spec, soul: { name: a.name, agentsRoot: a.agentsRoot },
+        placement: pendingPlacement(spec.relation, s.panelInstances || []) });
+      if (!id) return false;
+      closeSpawnModal(s, { restoreFocus: true });
+      return true;
+    } } : {}),
     onCreated: async (view, isCurrent) => {
       if (!isCurrent()) return;
       const receipt = view.receipt;

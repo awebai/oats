@@ -8,7 +8,7 @@
 // chrome stays a thin rail so nothing is duplicated.
 // (groupInstances is not imported here: the feature branch renders the
 // sidebar roster via clusterInstances — lineage clusters with identity keys.)
-import { currentWorkspace, workspaceGeneration, setWorkspace, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange, instanceApiPath, httpError } from "./views/common.mjs";
+import { currentWorkspace, workspaceGeneration, setWorkspace, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange, instanceApiPath, postJson, httpError } from "./views/common.mjs";
 import { instanceActions, captureInstanceActionMenu } from "./instance-actions.mjs";
 import { instanceActionTarget, sameInstanceActionTarget } from "./instance-action-target.mjs";
 import { createInstancePrAction } from "./instance-pr-action.mjs";
@@ -49,6 +49,7 @@ import { createInstanceSoulSection, instanceSoulCSS } from "./instance-soul.mjs"
 import { createInstanceGitPanel, instanceGitCSS } from "./instance-git.mjs";
 import { canAddressRemote, rowReason } from "./remote-address.mjs";
 import { createNotificationCenter, notificationCSS } from "./notifications.mjs";
+import { createSpawnJobs } from "./spawn-jobs.mjs";
 import { createRosterTip, rosterTipFacts, rosterTipCSS } from "./roster-tip.mjs";
 import { createRosterPrs, prChip, prText, rosterPrCSS } from "./roster-pr.mjs";
 import { createPanelOwner } from "./panel-owner.mjs";
@@ -139,6 +140,47 @@ const ctx = {
   openView: (name) => showStage(name),
 };
 const openInstanceStart = createInstanceStarter(document, ctx);
+
+// Background spawns (Spec C): a confirmed press in the spawn dialog is handed here and the dialog
+// closes; the store runs the transaction, owns the roster's pending rows and the outcome
+// notifications, and keeps the draft for Reopen spawn. Repaints are coalesced into one per task.
+let spawnRepaint = false;
+const spawnJobs = createSpawnJobs({
+  post: (ws, body) => postJson(ctx, `/api/spawn?ws=${encodeURIComponent(ws)}`, body),
+  notify: notifications.notify,
+  notifySpawned: (row, ws, epoch) => ctx.notifySpawn(row, ws, epoch),
+  reopen: async (job) => {
+    const owns = tabOpenIntents.begin();
+    let mod;
+    try { mod = await import("./views/spawn.mjs"); }
+    catch (e) { if (owns()) ctx.notify(`Could not reopen spawn: ${e.message || e}`); return; }
+    if (!owns() || currentWorkspace() !== job.workspace) return;
+    mod.preselectSpawn({ name: job.soul?.name, agentsRoot: job.soul?.agentsRoot, server: job.soul?.server, draft: job.draft });
+    showStage("spawn");
+  },
+  viewSchedules: async () => {
+    const mod = await import("./views/automations.mjs");
+    mod.preselectAutomationsTab("schedule");
+    await showStage("automations");
+  },
+  currentWorkspace,
+  connection: () => connectionGeneration,
+  onChange: () => {
+    if (spawnRepaint) return;
+    spawnRepaint = true;
+    queueMicrotask(() => { spawnRepaint = false; if (contextRosterEl && rosterState?.hasData) renderContextRoster(contextInstances); followSpawns(); });
+  },
+});
+// A created instance is awaited at the dialog's former pace (700 ms), not the roster's 4 s poll.
+let spawnFollowTimer = 0;
+function followSpawns() {
+  if (spawnFollowTimer || !spawnJobs.settling(currentWorkspace())) return;
+  spawnFollowTimer = setTimeout(async () => {
+    try { await refreshContextRoster(); } finally { spawnFollowTimer = 0; followSpawns(); }
+  }, 700);
+}
+ctx.spawnJobs = spawnJobs;
+window.addEventListener('pagehide', () => spawnJobs.dispose(), { once: true });
 
 // ── stage: the sidebar-driven main surface ──────────────────────────
 // Sidebar items switch the stage view in place; they never create tabs.
@@ -434,6 +476,9 @@ async function refreshContextRoster({ user = false } = {}) {
     rosterState.succeed({ observedAt: typeof panel.observedAt === "string" ? panel.observedAt : null, empty: !contextInstances.length });
   }
   rosterStale = reportedFailure;
+  // Background spawns: a created instance the roster now reports becomes its real row; outcomes held
+  // for this workspace are posted. Only an observed roster counts (never a failed read's last rows).
+  if (!reportedFailure && !panel.workspace?.remote) spawnJobs.observe(resolvedWs, contextInstances);
   void rosterPrs.refresh(panel.workspace?.remote ? null : resolvedWs);
   refreshPanelInstance(contextInstances, resolvedWs);
   if (!unchanged) {
@@ -476,8 +521,18 @@ function renderContextRoster(instances) {
     return;
   }
   listEl.innerHTML = "";
-  const matching = filterInstanceTree(instances, contextFilter);
   const ws = contextWorkspace || currentWorkspace();
+  // Background spawns (Spec C): this workspace's pending rows join the layout where the real row will
+  // stand (its relation), so the real row replaces them in place. A row the roster already reports is
+  // the real one. The count above stays the kernel's observation only.
+  const reported = new Set(instances.map(instanceId));
+  const spawning = ws && ws === currentWorkspace() ? spawnJobs.rows(ws)
+    // Only what the kernel decided (name, home, soul, relation): never a guessed runtime state.
+    .map((p) => ({ instance: p.instance, agent: p.agent, agentsRoot: p.agentsRoot, home: p.home,
+      ...(p.parentInstance ? { parentInstance: p.parentInstance } : {}), ...(p.siblingInstance ? { siblingInstance: p.siblingInstance } : {}), pendingSpawn: p }))
+    .filter((p) => !reported.has(instanceId(p))) : [];
+  if (spawning.length) instances = [...instances, ...spawning];
+  const matching = filterInstanceTree(instances, contextFilter);
   const rosterGeneration = workspaceGeneration();
   const filtering = !!contextFilter.trim();
   const visible = matching.filter((i) => instanceVisibleInTree(
@@ -513,6 +568,7 @@ function renderContextRoster(instances) {
     for (const cluster of group.clusters) {
       const items = cluster.instances;
       for (const i of items) {
+        if (i.pendingSpawn) { listEl.append(pendingSpawnRow(i, items, instances)); continue; }
         const rowWrap = document.createElement("div");
         rowWrap.className = "ctx-tree-row";
         rowWrap.style.setProperty("--depth", String(i.depth || 0));
@@ -682,6 +738,81 @@ function renderContextRoster(instances) {
   const tabbable = focusedRow || rowsAfter.find((r) => r.classList.contains("active"))
     || rowsAfter.find((r) => !r.dataset.filterContext) || rowsAfter[0];
   if (tabbable) tabbable.tabIndex = 0;
+}
+
+/* A pending spawn's row (Spec C): "Spawning…" text and a spinner (never colour alone), announced once;
+   it opens nothing and has no instance actions until the real row replaces it. It keeps the real row's
+   identity (data-tree-instance), so a focused pending row stays focused across the replacement. An
+   unknown outcome reads "Outcome unknown" with a visible Check result (the existing result action). */
+function pendingSpawnRow(i, items, instances) {
+  const p = i.pendingSpawn, unknown = p.pending !== "spawning", checking = p.pending === "checking";
+  const rowWrap = document.createElement("div");
+  rowWrap.className = "ctx-tree-row ctx-spawn-row" + (unknown ? " ctx-spawn-unknown" : "");
+  rowWrap.style.setProperty("--depth", String(i.depth || 0));
+  const guides = document.createElement("span");
+  guides.className = "ctx-guides";
+  guides.setAttribute("aria-hidden", "true");
+  for (const { kind, level } of treeConnectors(items, i, instances)) {
+    const guide = document.createElement("span");
+    guide.className = `ctx-guide ${kind}`;
+    guide.style.setProperty("--guide-level", String(level));
+    guides.append(guide);
+  }
+  const row = document.createElement("button");
+  row.type = "button";
+  row.className = "ctx-inst pending";
+  row.dataset.treeInstance = instanceId(i);
+  row.dataset.treeControl = "terminal";
+  row.dataset.rosterChildren = "0";
+  row.dataset.rosterCollapsed = "0";
+  if (!instanceMatchesFilter(i, contextFilter)) row.dataset.filterContext = "true";
+  row.setAttribute("aria-disabled", "true");
+  const why = unknown ? `The outcome of spawning ${i.instance} is not known yet. Check result asks again.`
+    : `${i.instance} is being spawned. It opens once the roster reports it.`;
+  row.title = why; row.setAttribute("aria-description", why);
+  const mark = document.createElement("span");
+  mark.setAttribute("aria-hidden", "true");
+  mark.className = unknown && !checking ? "ctx-dot unknown" : "ctx-spawn-spinner";
+  const copy = document.createElement("span");
+  copy.className = "ctx-copy";
+  const name = document.createElement("span");
+  name.className = "ctx-name";
+  name.textContent = i.instance;
+  const meta = document.createElement("span");
+  meta.className = "ctx-meta ctx-spawn-state";
+  meta.textContent = checking ? "Checking result…" : unknown ? "Outcome unknown" : "Spawning…";
+  copy.append(name, meta);
+  row.append(mark, copy);
+  row.tabIndex = -1;
+  row.addEventListener("keydown", onRosterRowKey);
+  rowWrap.append(guides, row);
+  if (unknown) {
+    const tools = document.createElement("span");
+    tools.className = "ctx-row-tools ctx-spawn-tools";
+    const check = document.createElement("button");
+    check.type = "button"; check.className = "act ctx-start ctx-spawn-check";
+    check.textContent = "Check result"; check.setAttribute("aria-label", `Check result for ${i.instance}`);
+    check.dataset.treeInstance = instanceId(i); check.dataset.treeControl = "check-result";
+    // aria-disabled while checking, not disabled: focus stays on it across the repaint.
+    if (checking) check.setAttribute("aria-disabled", "true");
+    check.addEventListener("click", () => { if (!checking) void spawnJobs.check(p.id); });
+    tools.append(check);
+    rowWrap.append(tools);
+  }
+  if (spawnJobs.announce(p.id)) announceSpawn(`Spawning ${i.instance}…`);
+  return rowWrap;
+}
+
+/* The roster's polite live region for pending spawns (outside the rebuilt list). */
+function announceSpawn(text) {
+  let region = contextRosterEl.querySelector(":scope > .ctx-spawn-live");
+  if (!region) {
+    region = document.createElement("div");
+    region.className = "loading-sr ctx-spawn-live";
+    region.setAttribute("aria-live", "polite");
+    contextRosterEl.append(region);
+  }
+  region.textContent = text;
 }
 
 /* Keyboard walk over the rendered roster rows. Every row takes focus, an

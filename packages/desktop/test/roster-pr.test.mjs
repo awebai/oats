@@ -77,7 +77,7 @@ test('the shipped roster row: the chip beside the name, the link in the row tool
   const opened = [], tips = new Map();
   const context = {
     ...tree, document: doc, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge, instanceActionTarget, instanceSplitPlan,
-    iconElement, prChip, prText, rosterPrs: { get: home => rows.get(home) ?? null }, ctx: { openExternal: url => opened.push(url) },
+    iconElement, prChip, prText, rosterPrs: { get: home => rows.get(home) ?? null }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} }, ctx: { openExternal: url => opened.push(url) },
     rosterTip: { bind(el, facts) { tips.set(el.dataset.treeInstance, facts); }, hide() {}, sync() {} }, rosterTipFacts,
     connectionGeneration: 0, menuState() {}, runAction: assert.fail, getBinding: () => null, formatChord: c => c, isMac: true,
     contextRosterEl: doc.querySelector('#instance-roster'), contextFilter: '', contextWorkspace: 'A', contextInstances: roster,
