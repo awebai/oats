@@ -36,10 +36,10 @@ version number: `workspaceApi === 2`, `workspace-v2` and
 `packages-no-approval` for the header, plus `instance-modules` and
 `served-identity` for the roster. A missing feature is
 shown by name in the header and roster; nothing is invoked optimistically.
-`ACCEPT_RANGE` is `>=0.25.8 <0.31.0`: the floor admits main's kernel before
+`ACCEPT_RANGE` is `>=0.25.8 <0.32.0`: the floor admits main's kernel before
 0.26.0 was tagged, the ceiling admits 0.27 (the harness rename, gated on feature
-`harness`) through 0.30 (team model v2, gated on feature `team-model-2`; the
-0.29 team shapes are still read), and the `packages-no-approval` fence is the
+`harness`) through 0.31 (0.30 is team model v2, gated on feature `team-model-2`; the
+0.29 team shapes are still read; 0.31 removes Herdr and adds routed remote reads), and the `packages-no-approval` fence is the
 real gate.
 
 ## Projection and ownership
