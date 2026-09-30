@@ -48,6 +48,17 @@ test('one read per selection renders the meta line, the three core slots and the
   await tick(); assert.equal(u.calls.length, 1, 'renders are frequent: one inspection per selection');
 });
 
+test('the core rows say why in the soul page\'s words for an instance (layers-from): resolved at spawn; an empty slot claims nothing', async t => {
+  const u = section(t, () => fx().result, () => ({ ok: true, operationsApi: 2, features: ['layers-from', 'desktop-facts'] }));
+  u.s.update({ active: true, workspace: 'A', instance: instance() }); await tick(); await tick();
+  const why = Object.fromEntries([...u.host.querySelectorAll('.soul-tab-core-row')].map(r => [r.dataset.layer, r.querySelector('.soul-tab-why')?.textContent ?? null]));
+  assert.deepEqual(why, { knowledge: 'Resolved the workspace default at spawn', messaging: 'Resolved the workspace default at spawn', tasks: null });
+  assert.equal(u.host.querySelector('.soul-tab-core-row[data-layer="tasks"] .soul-tab-none').textContent, 'None');
+  const without = section(t, () => fx().result);
+  without.s.update({ active: true, workspace: 'A', instance: instance() }); await tick(); await tick();
+  assert.equal(without.host.querySelector('.soul-tab-why'), null, 'no reason without the feature');
+});
+
 test('an inactive tab or a remote instance: no read; a failed first read is visible — the cause, its code behind Details, Retry (which reads live)', async t => {
   const a = section(t, () => fx().result);
   a.s.update({ active: false, workspace: 'A', instance: instance() }); await tick();

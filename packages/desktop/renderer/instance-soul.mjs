@@ -10,7 +10,7 @@ import { cliStatus } from './views/cli-status.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { soulTeams } from './teams-panel.mjs';
 import { memberLabel } from './deployment-facts.mjs';
-import { compositionEntries, coreWhy, whyTag, desktopFacts } from './capability-page.mjs';
+import { compositionEntries, coreEntries, coreNote, whyTag, desktopFacts } from './capability-page.mjs';
 import { layerLabel } from './workspace-catalog.mjs';
 import { createDataState, statusLine, captureFocusState } from './loading.mjs';
 import { instanceStatusIdentity } from './instance-status-identity.mjs';
@@ -145,16 +145,15 @@ export function createInstanceSoulSection(host, { request, generation = () => 0,
     const core = node('section', undefined, 'soul-tab-section');
     core.append(node('div', 'Core capabilities', 'context-panel-label'));
     const table = node('div', undefined, 'soul-tab-core');
-    for (const slot of ['knowledge', 'messaging', 'tasks']) {
-      const layer = inspected.layers?.[slot], cap = layer?.id ? inspected.capabilities.find(c => c.id === layer.id) : null;
-      const row = node('div', undefined, 'soul-tab-core-row'); row.dataset.layer = slot;
+    // Why, in the soul page's words (an instance's: "Resolved … at spawn"); a home reports no emptied slot.
+    for (const entry of coreEntries(inspected, { layersFrom: layersFrom(cli()), facts: desktopFacts(cli()) })) {
+      const row = node('div', undefined, 'soul-tab-core-row'); row.dataset.layer = entry.slot;
       const provider = node('div', undefined, 'soul-tab-provider');
-      if (layer?.id) {
-        provider.append(cap ? source(cap) : node('span', layer.id, 'soul-tab-source'));
-        const why = layersFrom(cli()) ? coreWhy(layer.from) : null;
-        if (why) provider.append(node('span', why, 'soul-tab-why'));
-      } else provider.append(node('span', layer ? 'None' : 'Not reported', 'soul-tab-none'));
-      row.append(node('span', layerLabel(slot), 'soul-tab-slot'), provider);
+      if (entry.id) {
+        provider.append(entry.cap ? source(entry.cap) : node('span', entry.id, 'soul-tab-source'));
+        const note = coreNote(entry, { spawned: true }); if (note) provider.append(node('span', note, 'soul-tab-why'));
+      } else provider.append(node('span', entry.reported ? 'None' : 'Not reported', 'soul-tab-none'));
+      row.append(node('span', layerLabel(entry.slot), 'soul-tab-slot'), provider);
       table.append(row);
     }
     core.append(table); root.append(core);

@@ -131,9 +131,12 @@ test('the preview column: a skeleton with aria-busy while reading, then the fact
   assert.equal(u.style(harness.querySelector('.runtime-badge')).width, '16px');
   // The captured kernel's modules[] (projected as names and sources): Core capabilities and the Capabilities list.
   assert.equal(u.hidden(u.q('.spawn-preview-core')), false); assert.equal(u.q('.spawn-preview-core h3').textContent, 'Core capabilities');
-  assert.deepEqual([...u.q('.spawn-preview-core').querySelectorAll('.spawn-core-row')].map(row => row.textContent), ['Knowledgeoats.okf 2.1.3', 'MessagingNone', 'TasksNone']);
-  assert.equal(u.hidden(u.q('.spawn-preview-caps')), false); assert.equal(u.q('.spawn-preview-caps h3').textContent, `Capabilities · ${data.modules.length}`);
-  assert.deepEqual([...u.q('.spawn-preview-caps').querySelectorAll('.spawn-cap-row')].map(row => row.dataset.module), data.modules.map(m => m.name).sort());
+  assert.deepEqual([...u.q('.spawn-preview-core').querySelectorAll('.spawn-core-row')].map(row => row.textContent), ['Knowledgeoats.okfpackage oats.okf 2.1.3', 'MessagingNone', 'TasksNone']);
+  // A module filling a core slot is Core's: never listed or counted again under Capabilities.
+  const others = data.modules.filter(m => !['knowledge', 'messaging', 'tasks'].includes(m.layer));
+  assert.ok(others.length < data.modules.length, 'the capture has a core provider');
+  assert.equal(u.hidden(u.q('.spawn-preview-caps')), false); assert.equal(u.q('.spawn-preview-caps h3').textContent, `Capabilities · ${others.length}`);
+  assert.deepEqual([...u.q('.spawn-preview-caps').querySelectorAll('.spawn-cap-row')].map(row => row.dataset.module), others.map(m => m.name).sort());
   // A kernel without modules[]: neither section exists, not even a title.
   const bare = { ...data }; delete bare.modules;
   const without = mount(t, { layout: 'scoped', previews: () => view(target, bare) }); await settle(12);
@@ -188,13 +191,19 @@ test('Core capabilities and Capabilities come from the preview\'s modules only',
   const modules = preview('preview-worktree-purpose').modules.map(m => ({ name: m.name, layer: m.layer, from: m.from }));
   const { core, caps } = composePreviewModules(doc, modules);
   assert.equal(core[0].textContent, 'Core capabilities');
-  assert.deepEqual([...core[1].querySelectorAll('.spawn-core-row')].map(row => [row.firstChild.textContent, row.lastChild.textContent, row.lastChild.className]),
-    [['Knowledge', 'oats.okf 2.1.3', 'mono'], ['Messaging', 'None', 'muted'], ['Tasks', 'None', 'muted']]);
+  // Core rows speak the Capabilities rows' grammar (the module in mono, its source chip), led by the slot.
+  assert.deepEqual([...core[1].querySelectorAll('.spawn-core-row')].map(row => [...row.children].map(c => [c.className, c.textContent])),
+    [[['spawn-core-layer', 'Knowledge'], ['mono', 'oats.okf'], ['spawn-cap-source', 'package oats.okf 2.1.3']],
+      [['spawn-core-layer', 'Messaging'], ['muted', 'None']], [['spawn-core-layer', 'Tasks'], ['muted', 'None']]]);
   // An empty slot reads as an absence (muted "None"), never as a provider named "none".
-  assert.match(spawnDialogCSS, /\.spawn-core-row \.muted \{ color:var\(--muted\); \}/);
-  assert.equal(caps[0].textContent, 'Capabilities · 5');
+  assert.match(spawnDialogCSS, /\.spawn-core-row \.muted, [^{]*\{ color:var\(--muted\); \}/);
+  // oats.okf fills the knowledge slot: Core's only.
+  assert.equal(caps[0].textContent, 'Capabilities · 4');
   assert.deepEqual([...caps[1].querySelectorAll('.spawn-cap-row')].map(row => [row.querySelector('.mono').textContent, row.querySelector('.spawn-cap-source').textContent]),
-    [['nw-deploy', 'package nw.tools 0.4.0'], ['nw-house-style', 'agents · latest'], ['nw-release-tooling', 'agents · latest'], ['oats.core', 'package oats.framework 1.1.3'], ['oats.okf', 'package oats.okf 2.1.3']]);
+    [['nw-deploy', 'package nw.tools 0.4.0'], ['nw-house-style', 'agents · latest'], ['nw-release-tooling', 'agents · latest'], ['oats.core', 'package oats.framework 1.1.3']]);
+  // Nothing but core: the Capabilities box says so rather than standing empty.
+  const only = composePreviewModules(doc, modules.filter(m => m.layer));
+  assert.equal(only.caps[0].textContent, 'Capabilities · 0'); assert.equal(only.caps[1].textContent, 'No other capabilities: only the core ones.');
   assert.equal(moduleSourceText({ kind: 'external' }), 'external'); assert.equal(moduleSourceText(undefined), '');
   assert.equal(worksInText('checkout'), 'shared checkout'); assert.equal(worksInText('attached'), "a parent's worktree"); assert.equal(worksInText('directory'), 'a folder');
   assert.equal(worksInText('workspace'), 'all member repos'); assert.equal(worksInText('other'), 'other');
@@ -261,7 +270,7 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: the scoped d
     ['.spawn-preview-title', '.spawn-preview', 'muted', 'surface-2'], ['.spawn-preview-facts dt', '.spawn-preview', 'muted', 'surface-2'], ['.spawn-preview-facts', '.spawn-preview', 'fg', 'surface-2'],
     ['.spawn-preview-facts dd .muted', '.spawn-preview', 'muted', 'surface-2'], ['.spawn-preview-failure', '.spawn-preview', 'warn', 'surface-2'], ['.spawn-preview-note', '.spawn-preview', 'muted', 'surface-2'],
     ['.spawn-core-box', '.spawn-core-box', 'fg', 'surface'], ['.spawn-core-layer', '.spawn-core-box', 'muted', 'surface'], ['.spawn-core-row .muted', '.spawn-core-box', 'muted', 'surface'],
-    ['.spawn-cap-list', '.spawn-preview', 'fg', 'surface-2'], ['.spawn-cap-source', '.spawn-cap-source', 'muted', 'tag-bg'], ['.spawn-cap-why', '.spawn-cap-why', 'muted', 'tag-bg'],
+    ['.spawn-cap-list', '.spawn-cap-list', 'fg', 'surface'], ['.spawn-core-row .spawn-cap-why', '.spawn-core-row .spawn-cap-why', 'muted', 'tag-bg'], ['.spawn-cap-source', '.spawn-cap-source', 'muted', 'tag-bg'], ['.spawn-cap-why', '.spawn-cap-why', 'muted', 'tag-bg'],
     ['.spawn-seg input:checked + span', '.spawn-seg input:checked + span', 'accent', 'sel'], ['.spawn-seg input:not(:checked) + span', '.spawn-seg', 'muted', 'surface'],
   ]) {
     const pick = sel => u.ui.dialog.matches(sel) ? u.ui.dialog : u.q(sel);

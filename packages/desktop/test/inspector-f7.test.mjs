@@ -11,7 +11,6 @@ import { createSoulInspector } from '../renderer/soul-inspector.mjs';
 import { soulTeams } from '../renderer/teams-panel.mjs';
 import { setWorkspace, currentWorkspace } from '../renderer/views/common.mjs';
 import { refreshCli, resetCliStateForTests } from '../renderer/views/cli-status.mjs';
-import { layerFrom } from '../renderer/inspect-contract.mjs';
 
 const doc = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/f7/${name}.json`, import.meta.url), 'utf8'));
 const soul = doc('inspect-soul').result, home = doc('inspect-home').result, teamsRun = doc('teams-initial').result;
@@ -42,7 +41,9 @@ test('the capture: a soul with two labels, one mapped; the kernel answers teams 
 
 test('soul: only what a person needs — Teams, Harness, Core capabilities, Capabilities; no readiness, source, spawn internals or declarations', async t => {
   const u = await rendered(t, soulSelection, soul);
-  assert.deepEqual(u.sections(), ['Teams', 'Harness', 'Core capabilities', `Capabilities · ${soul.capabilities.length}`]);
+  // The core providers (oats.okf, oats.aweb) are the Core capabilities card's: never counted or listed again.
+  const others = soul.capabilities.filter(cap => !cap.layer);
+  assert.deepEqual(u.sections(), ['Teams', 'Harness', 'Core capabilities', `Capabilities · ${others.length}`]);
   assert.doesNotMatch(u.el.textContent, /When spawned|Effective providers|Declared in soul\.yaml|AGENTS\.md|Provider operations/);
   assert.equal(u.el.querySelector('.readiness-view'), null);
   const chips = u.el.querySelector('h3.inspector-section + p + .inspector-chips');
@@ -53,7 +54,8 @@ test('soul: only what a person needs — Teams, Harness, Core capabilities, Capa
   assert.doesNotMatch(u.el.textContent, /global/);
   assert.equal(u.el.querySelector('form, input, select, textarea'), null, 'read-only: joining is per instance');
   const caps = [...u.el.querySelectorAll('.inspector-cap-row')];
-  assert.equal(caps.length, soul.capabilities.length);
+  assert.deepEqual(caps.map(row => row.querySelector('.inspector-item-name').textContent), others.map(cap => cap.id));
+  assert.doesNotMatch(u.el.querySelector('.inspector-list').textContent, /provider/, 'no "<layer> provider" rows');
 });
 
 test('soul: no teams reported shows nothing; an empty list says default team only', async t => {
@@ -170,24 +172,35 @@ test('E_TEAM_CONFLICT in the inspector: the sentence, the two labels, the code b
   }
 });
 
-test('Core capabilities name where each provider came from, only with feature layers-from (kernel #191, captured)', async t => {
+test('Core capabilities say why each slot is filled in the soul page\'s words, only with the features (kernel #191, #217, captured)', async t => {
   assert.deepEqual(soul.layers.knowledge, { id: 'oats.okf', from: 'workspace' }, 'the capture');
   assert.deepEqual(home.layers.messaging, { id: 'oats.aweb', from: 'workspace' }, 'a home answers what its spawn recorded');
-  // The contract's values in words; a home from before layers-from (null) and junk name nothing; a newer kind is shown as sent.
-  assert.deepEqual(['soul', 'workspace', 'team:engineering', 'someday', null, 7, ''].map(layerFrom),
-    ["the soul's own choice", 'workspace default', 'team engineering default', 'someday', null, null, null]);
   const core = el => {
     const head = [...el.querySelectorAll('h3.inspector-section')].find(h => h.textContent === 'Core capabilities');
-    return Object.fromEntries([...head.nextElementSibling.querySelectorAll('dt')].map(dt => [dt.textContent, dt.nextElementSibling.textContent]));
+    return Object.fromEntries([...head.nextElementSibling.querySelectorAll('dd')].map(dd => [dd.dataset.layer, {
+      id: dd.querySelector('.inspector-core-id').textContent, tag: dd.querySelector('.why-tag, .why-note')?.textContent ?? null,
+      title: dd.querySelector('.why-tag, .why-note')?.title ?? null, note: dd.querySelector('.inspector-core-note')?.textContent ?? null }]));
   };
   t.after(() => resetCliStateForTests());
   await refreshCli({ api: async () => ({ ...doc('version'), ok: true, bin: '/fixture/bin/oats' }) });
-  assert.ok(doc('version').features.includes('layers-from'));
+  assert.ok(doc('version').features.includes('layers-from') && doc('version').features.includes('desktop-facts'));
   const withFrom = await rendered(t, soulSelection, soul);
-  assert.deepEqual(core(withFrom.el), { Knowledge: 'oats.okf · workspace default', Messaging: 'oats.aweb · workspace default', Tasks: 'None' });
+  assert.deepEqual(core(withFrom.el), {
+    knowledge: { id: 'oats.okf', tag: 'workspace', title: 'A workspace default', note: "Resolves the workspace default: this soul doesn't choose a knowledge capability" },
+    messaging: { id: 'oats.aweb', tag: 'workspace', title: 'A workspace default', note: "Resolves the workspace default: this soul doesn't choose a messaging capability" },
+    tasks: { id: 'None', tag: 'No default', title: 'Neither this soul nor the workspace fills the tasks slot', note: null } });
+  // An instance: what its spawn recorded; a home reports no emptied slot, so an empty one claims nothing.
+  const spawned = await rendered(t, homeSelection, body => body.action === 'inspect' ? home : teamsRun);
+  assert.deepEqual(core(spawned.el), {
+    knowledge: { id: 'oats.okf', tag: 'workspace', title: 'A workspace default', note: 'Resolved the workspace default at spawn' },
+    messaging: { id: 'oats.aweb', tag: 'workspace', title: 'A workspace default', note: 'Resolved the workspace default at spawn' },
+    tasks: { id: 'None', tag: null, title: null, note: null } });
+  const modules = [...spawned.el.querySelectorAll('h3.inspector-section')].find(h => /^Capabilities · /.test(h.textContent));
+  assert.equal(modules.textContent, `Capabilities · ${home.capabilities.filter(cap => !cap.layer).length}`, 'the core providers are not listed again');
   await refreshCli({ api: async () => ({ ...doc('version'), features: doc('version').features.filter(f => f !== 'layers-from'), ok: true, bin: '/fixture/bin/oats' }) });
   const without = await rendered(t, soulSelection, soul);
-  assert.deepEqual(core(without.el), { Knowledge: 'oats.okf', Messaging: 'oats.aweb', Tasks: 'None' }, 'no origin without the feature');
+  assert.deepEqual(core(without.el), { knowledge: { id: 'oats.okf', tag: null, title: null, note: null }, messaging: { id: 'oats.aweb', tag: null, title: null, note: null },
+    tasks: { id: 'None', tag: null, title: null, note: null } }, 'no reason without the feature, and no "No default" guessed');
 });
 
 // Team model v2 (0.30, D2 screen 2): with kernel feature team-model-2 the soul page shows

@@ -159,8 +159,8 @@ handoff). Souls come from the kernel's spawn catalog (`oats souls --json` via
 page's Spawn — heads the dialog *Spawn <soul>* with where the soul comes from
 and shows the preview column (*What will be created*: name, works in, harness
 and where it came from, default team; *Core capabilities* and *Capabilities*
-from the preview's projected `modules`, each with its source, since the
-preview carries no per-module reason; a skeleton while it reads, the footer's
+from the preview's projected `modules`, each with its source and, when the
+preview reports it, its reason; a skeleton while it reads, the footer's
 refusal sentence when it fails). **Change soul** switches the same dialog to
 the **picker** (the soul chooser, grouped by source, alphabetical, externals
 last, keyed by `agentsRoot + name + server`); switching soul keeps the typed
@@ -357,6 +357,22 @@ nothing was shown yet, then `fail(error, { observedAt })`: with data on screen
 a focused Retry kept. The spawn dialog's harness, model and launch hints (`matched()` in
 `spawn-dialog.mjs`) read only a preview for the choices on screen, like the
 name and work hints.
+
+**Core capabilities and Capabilities read as one system.** Wherever the two
+sections appear (the soul page, the inspector's *Modules as spawned*, the
+spawn preview, the context panel's Soul tab), a core slot's provider (by
+`layers.<slot>.id` or by a core `layer`) and a soul emptying a slot
+(`capabilitiesOff[]` with `reason: "slot-none"`) belong to Core only: never
+listed or counted under Capabilities (`compositionEntries`,
+`composePreviewModules`). Core's rows come from `coreEntries` in
+`capability-page.mjs`: one per slot, with the reason the kernel reports
+(`layers.<slot>.from` behind `layers-from`, the emptied slot behind
+`desktop-facts`, "No default" only with both and a soul subject; never a
+guess), in the same words everywhere (`whyTag`, `coreNote`, `whyFact` for the
+capability page's "Why" row). On the soul page both tables go through one row
+builder (`renderSoulCore` / `renderSoulCapabilities`), so the grid, source chip
+and why tag cannot drift; a filled core row is a `button` with
+`data-focus-key="core:<slot>"`.
 
 The terminal-side context panel's Soul tab (`instance-soul.mjs`) and its
 Messaging section (`instance-teams.mjs`): the roster-derived header is the

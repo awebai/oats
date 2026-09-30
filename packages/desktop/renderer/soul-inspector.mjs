@@ -28,7 +28,7 @@ import { createTeamsPanel, teamsOperations, teamsCSS, soulTeams, teamLabels } fr
 import { createSoulTeamsHere, soulTeamsHereCSS } from './soul-teams-here.mjs';
 import { teamsAnswer } from './computer-teams.mjs';
 import { ageText } from './age-text.mjs';
-import { pageBar, pageCard, pageSection, capabilityIcon, compositionEntries, coreWhy, desktopFacts } from './capability-page.mjs';
+import { pageBar, pageCard, pageSection, CORE_SLOTS, compositionEntries, coreEntries, coreNote, whyTag, renderSoulCore, desktopFacts } from './capability-page.mjs';
 import { layerLabel } from './workspace-catalog.mjs';
 import { shownLaunch, launchHarnessName, launchModelText, launchFromText, launchAtText, declaredText, preferenceText, declaredDiffers } from './launch-view.mjs';
 import { createDataState, skeletonBlock, skeleton, captureFocusState } from './loading.mjs';
@@ -115,19 +115,6 @@ ${soulTeamsHereCSS}
 .soul-page .soul-page-side { display:flex; flex-direction:column; gap:14px; min-width:0; }
 .soul-page .soul-page-side:empty { display:none; }
 .soul-page .page-sr { display:inline-block; width:1px; height:1px; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
-/* Core capabilities: one card per slot. */
-.core-card { display:flex; flex-direction:column; align-items:stretch; gap:8px; min-width:0; padding:14px; box-sizing:border-box; background:var(--surface); border:1px solid var(--border); border-radius:10px; color:var(--fg); text-align:left; font-size:12px; font-weight:400; }
-.oats-view .soul-page button.core-card { height:auto; min-height:0; font:inherit; font-size:12px; cursor:pointer; }
-.oats-view .soul-page button.core-card:hover { border-color:var(--sel-border); }
-.core-slot { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:11px; font-weight:650; letter-spacing:.05em; text-transform:uppercase; }
-.core-slot-icon { display:grid; place-items:center; width:26px; height:26px; border-radius:7px; background:var(--bg); color:var(--fg); flex:none; }
-.core-id { display:flex; align-items:center; gap:6px; min-width:0; color:var(--fg); font:650 13px var(--mono,monospace); }
-.core-id .shell-icon { color:var(--muted); flex:none; }
-.core-id-name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
-.core-version { color:var(--muted); font-weight:500; white-space:nowrap; }
-.core-card.none .core-id { color:var(--muted); font-family:var(--sans,system-ui); font-weight:500; }
-.core-detail { color:var(--fg); font-size:12px; }
-.core-why { padding-top:8px; border-top:1px solid var(--tag-bg); color:var(--muted); font-size:11.5px; }
 /* Side cards: teams, knowledge nodes, instances. */
 .soul-team { display:flex; flex-direction:column; gap:3px; padding:8px 0; border-top:1px solid var(--tag-bg); }
 .soul-team-name { display:flex; align-items:center; gap:8px; color:var(--fg); font-size:13px; font-weight:650; }
@@ -186,6 +173,11 @@ ${soulTeamsHereCSS}
 .inspector-refusal { margin:6px 0 0; color:var(--warn); font-size:12.5px; font-weight:600; line-height:1.45; overflow-wrap:anywhere; }
 .inspector-card { border:1px solid var(--border); border-radius:8px; background:var(--surface); padding:10px 12px; }
 .inspector-card .inspector-facts { font-size:12px; margin:0; }
+.inspector-core dd { display:flex; flex-wrap:wrap; align-items:center; gap:4px 6px; min-width:0; }
+.inspector-core-id { font-family:var(--mono,monospace); overflow-wrap:anywhere; min-width:0; }
+.inspector-core-id.none { color:var(--muted); font-family:var(--sans,system-ui); }
+.inspector-core-struck { color:var(--muted); font-family:var(--mono,monospace); text-decoration:line-through; overflow-wrap:anywhere; }
+.inspector-core-note { flex-basis:100%; color:var(--muted); font-size:11px; line-height:1.4; }
 .inspector-list { border:1px solid var(--border); border-radius:8px; background:var(--surface); overflow:hidden; }
 .inspector-item { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:12px; row-gap:4px; align-items:center; padding:9px 12px; }
 .inspector-item + .inspector-item { border-top:1px solid var(--border); }
@@ -211,7 +203,7 @@ ${soulTeamsHereCSS}
 
 /** presentation is an optional host lease. Presence belongs to this controller;
  * effective visibility/collapse belongs to the host, not request completions. */
-export function createSoulInspector(container, { ctx, presentation, openSoul = null, layout = 'sidebar', backLabel = 'Souls', openInstance = null, capabilityTable = null, openCapability = null, launch, schedule, files, canFiles = () => false, canLaunch = () => true, spawnRefusal = () => null, launchReason = () => 'Requires a compatible installed OATS CLI.', available = () => true, instances = () => [], instancesState = () => 'ready', workspace = () => null, closed, clock = {} }) {
+export function createSoulInspector(container, { ctx, presentation, openSoul = null, layout = 'sidebar', backLabel = 'Souls', openInstance = null, capabilityTable = null, coreTable = null, openCapability = null, launch, schedule, files, canFiles = () => false, canLaunch = () => true, spawnRefusal = () => null, launchReason = () => 'Requires a compatible installed OATS CLI.', available = () => true, instances = () => [], instancesState = () => 'ready', workspace = () => null, closed, clock = {} }) {
   const doc = container.ownerDocument;
   // `serial` is the latest read (a Refresh bumps it: a superseded inspection paints nothing); `subject` is
   // the shown subject (bumped by a new selection or reset only): the frame's and the content's controls
@@ -635,7 +627,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     fact.dataset.fact = icon; fact.append(iconElement(doc, icon, { size: 15 }), node('span', value, cls)); return fact;
   }
   // Workspace v4 (W4): the soul's harness joins its identity; core capabilities
-  // as cards; its composition (host-injected table) with why each is there;
+  // and its composition as two tables of one grammar; its composition (host-injected table) with why each is there;
   // teams and knowledge beside. Only reported facts: what the kernel does not
   // say (which default a capability came from) is said as not reported.
   function renderSoulPage(inspected, soul) {
@@ -662,36 +654,15 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     }
     const declared = record(soul.declarations) ? soul.declarations : {};
     const teams = soulTeams(inspected.teams), mapped = (teams || []).filter(t => t.mapped);
-    // Core capabilities: one card per slot, the provider, what it does for this soul, and why.
+    // Core capabilities: the three slots, in the composition table's row grammar (host-injected, like it,
+    // for the workspace's repository names): the provider, what it does for this soul, and why.
     const core = pageSection(doc, 'Core capabilities', 'one of each per soul');
-    const cards = node('div', undefined, 'page-cards3');
-    for (const slot of ['knowledge', 'messaging', 'tasks']) {
-      const layer = inspected.layers?.[slot], cap = layer?.id ? inspected.capabilities.find(c => c.id === layer.id) : null;
-      const opens = !!cap && typeof openCapability === 'function';
-      const card = node(opens ? 'button' : 'div', undefined, `core-card${layer?.id ? '' : ' none'}`); card.dataset.layer = slot;
-      const head = node('span', undefined, 'core-slot'), icon = node('span', undefined, 'core-slot-icon');
-      icon.append(iconElement(doc, capabilityIcon({ layer: slot }), { size: 15 })); head.append(icon, node('span', layerLabel(slot)));
-      const id = node('span', undefined, 'core-id');
-      if (layer?.id) {
-        const kind = cap?.from?.kind;
-        if (kind === 'package' || kind === 'member') id.append(iconElement(doc, kind === 'package' ? 'package' : 'repo', { size: 13 }));
-        id.append(node('span', layer.id, 'core-id-name'));
-        const version = kind === 'package' ? cap.version : kind === 'member' ? 'latest' : null;
-        if (typeof version === 'string' && version) id.append(node('span', version, 'core-version'));
-      } else id.append(node('span', layer ? 'None' : 'Not reported'));
-      card.append(head, id);
-      const detail = layer?.id ? coreDetail(slot, declared, teams, mapped) : null;
-      if (detail) card.append(node('span', detail, 'core-detail'));
-      const why = layer?.id && layersFrom() ? coreWhy(layer.from) : null;
-      if (why) card.append(node('span', why, 'core-why'));
-      if (opens) {
-        card.type = 'button'; card.dataset.capability = cap.id; card.dataset.focusKey = `core:${slot}`;
-        card.setAttribute('aria-label', [`${layerLabel(slot)}: ${cap.id}`, detail, why].filter(Boolean).join(', ') + ' — open its page');
-        card.addEventListener('click', () => { if (alive && card.isConnected) openCapability(cap, selection.agent); });
-      }
-      cards.append(card);
-    }
-    core.append(cards); content.append(core);
+    const coreHost = node('div', undefined, 'inspector-core-table'); core.append(coreHost); content.append(core);
+    const coreRows = coreEntries(inspected, { layersFrom: layersFrom(), facts: desktopFacts(cliStatus()) })
+      .map(entry => ({ ...entry, detail: entry.id ? coreDetail(entry.slot, declared, teams, mapped) : null }));
+    const openCore = typeof openCapability === 'function' ? entry => { if (alive && coreHost.isConnected) openCapability(entry.cap, selection.agent, entry); } : null;
+    if (typeof coreTable === 'function') coreTable(coreHost, coreRows, { soul: selection.agent, onOpen: openCore });
+    else renderSoulCore(coreHost, { entries: coreRows, status: null, onOpen: openCore });
     // Composition: every other capability with its source and why it is here.
     const entries = compositionEntries(inspected, soul, { facts: desktopFacts(cliStatus()) });
     const composition = pageSection(doc, 'Capabilities', 'workspace defaults → team defaults → this soul · later wins');
@@ -756,19 +727,37 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     let host = content;
     if (collapsed) { host = node('details', undefined, 'inspector-disclosure'); host.append(node('summary', `Modules as spawned · ${inspected.capabilities.length}`)); content.append(host); }
     host.append(node('h3', 'Core capabilities', 'inspector-section'));
-    card(inspectFacts.layers(inspected.layers, { from: layersFrom() }), host);
-    host.append(node('h3', `Capabilities · ${inspected.capabilities.length}`, 'inspector-section'));
-    if (!inspected.capabilities.length) { host.append(node('p', 'No capabilities resolved.', 'muted')); return; }
+    coreCard(coreEntries(inspected, { layersFrom: layersFrom(), facts: desktopFacts(cliStatus()) }), host, { spawned: inspected.subject.kind === 'instance' });
+    // Every other capability: a core slot's provider is the card's above, never listed twice.
+    const core = new Set(CORE_SLOTS.map(slot => inspected.layers?.[slot]?.id).filter(Boolean));
+    const others = inspected.capabilities.filter(cap => !core.has(cap.id) && !CORE_SLOTS.includes(cap.layer));
+    host.append(node('h3', `Capabilities · ${others.length}`, 'inspector-section'));
+    if (!others.length) { host.append(node('p', inspected.capabilities.length ? 'No other capabilities: only the core ones.' : 'No capabilities resolved.', 'muted')); return; }
     const list = node('div', undefined, 'inspector-list');
-    for (const cap of inspected.capabilities) {
+    for (const cap of others) {
       const missing = Array.isArray(cap.missingRequires) && cap.missingRequires.length ? `Missing: ${cap.missingRequires.join(', ')}` : '';
-      const row = item(cap.id, [[cap.version, cap.layer ? `${cap.layer} provider` : '', originText(cap.from)].filter(Boolean).join(' · '), missing]);
+      const row = item(cap.id, [[cap.version, originText(cap.from)].filter(Boolean).join(' · '), missing]);
       row.classList.add('inspector-cap-row');
       const more = node('details'); more.append(node('summary', 'Details')); facts(inspectFacts.capability(cap), more);
       if (cap.settings && typeof cap.settings === 'object' && Object.keys(cap.settings).length) more.append(node('pre', JSON.stringify(cap.settings, null, 2)));
       row.append(more); list.append(row);
     }
     host.append(list);
+  }
+  /** The Core capabilities card (sidebar soul, instance): each slot's provider with the soul page's reason
+   * words — the same tag and note (`spawned`: an instance's) — or None / Not reported. */
+  function coreCard(entries, parent, { spawned = false } = {}) {
+    const box = node('div', undefined, 'inspector-card'), dl = node('dl', undefined, 'inspector-facts inspector-core');
+    for (const entry of entries) {
+      const dd = node('dd'); dd.dataset.layer = entry.slot;
+      dd.append(node('span', entry.id || (entry.reported ? 'None' : 'Not reported'), `inspector-core-id${entry.id ? '' : ' none'}`));
+      if (entry.why === 'off') { const gone = node('span', entry.name, 'inspector-core-struck'); gone.title = entry.name; dd.append(gone); }
+      const [label, title, plain] = entry.why ? whyTag(entry) : [];
+      if (label) { const tag = node('span', label, plain ? 'why-note' : `why-tag${entry.why === 'soul' ? ' soul' : ''}`); tag.title = title; dd.append(tag); }
+      const note = coreNote(entry, { spawned }); if (note) dd.append(node('span', note, 'inspector-core-note'));
+      dl.append(node('dt', layerLabel(entry.slot)), dd);
+    }
+    box.append(dl); parent.append(box); return box;
   }
   function renderOperations(inspected) {
     const id = subject, gen = selectionGen;

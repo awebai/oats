@@ -71,15 +71,14 @@ export const spawnDialogCSS = `
 .spawn-preview-skeleton span:nth-child(8) { width:34%; }
 .spawn-preview-failure { margin:0; font-size:12.5px; line-height:1.5; color:var(--warn); overflow-wrap:anywhere; }
 .spawn-preview-empty { margin:0; font-size:12.5px; line-height:1.5; color:var(--muted); overflow-wrap:anywhere; }
-.spawn-core-box { display:flex; flex-direction:column; border:1px solid var(--border); border-radius:8px; background:var(--surface); font-size:12px; color:var(--fg); }
-.spawn-core-row { display:flex; padding:7px 10px; border-bottom:1px solid var(--border); min-width:0; }
-.spawn-core-row:last-child { border-bottom:0; }
+.spawn-core-box, .spawn-cap-list { display:flex; flex-direction:column; border:1px solid var(--border); border-radius:8px; background:var(--surface); font-size:12px; color:var(--fg); }
+/* One row grammar for both boxes (core rows lead with their slot): the module in mono, then its source and reason chips. */
+.spawn-core-row, .spawn-cap-row { display:flex; flex-wrap:wrap; justify-content:flex-end; align-items:center; gap:3px 8px; min-width:0; padding:7px 10px; border-bottom:1px solid var(--border); }
+.spawn-core-row:last-child, .spawn-cap-row:last-child { border-bottom:0; }
 .spawn-core-row .spawn-core-layer { flex:none; width:84px; color:var(--muted); }
-.spawn-core-row .mono, .spawn-core-row .muted { min-width:0; overflow-wrap:anywhere; }
-.spawn-core-row .muted { color:var(--muted); }
-.spawn-cap-list { display:flex; flex-direction:column; gap:5px; font-size:12px; color:var(--fg); }
-.spawn-cap-row { display:flex; flex-wrap:wrap; justify-content:flex-end; align-items:center; gap:3px 8px; min-width:0; }
-.spawn-cap-row .mono { flex:1 1 auto; min-width:0; overflow-wrap:anywhere; }
+.spawn-core-row .mono, .spawn-cap-row .mono, .spawn-core-row .muted, .spawn-cap-row .muted { flex:1 1 auto; min-width:0; overflow-wrap:anywhere; }
+.spawn-core-row .muted, .spawn-cap-row .muted, .spawn-cap-row.spawn-cap-none { color:var(--muted); }
+.spawn-cap-row.spawn-cap-none { justify-content:flex-start; }
 .spawn-cap-source, .spawn-cap-why { flex:none; padding:1px 6px; border-radius:4px; background:var(--tag-bg); color:var(--muted); font-size:10.5px; font-weight:600; white-space:nowrap; }
 .spawn-preview-note { margin:auto 0 0; font-size:11.5px; line-height:1.5; color:var(--muted); }
 .spawn-chooser { border-right:1px solid var(--border); min-width:0; min-height:0; overflow:auto; padding:16px 10px 12px; }
@@ -312,37 +311,40 @@ export function moduleSourceText(from) {
   return typeof from?.kind === 'string' ? from.kind : '';
 }
 /** Why a preview module is there, as the reason tag beside its source says it: the projection's
- * `composedFrom` (feature preview-composed-from) — "Soul", or "Workspace default" with the core slot
- * a workspace default fills ("Workspace default · messaging"). '' (no tag) when the preview does not
- * say: an older CLI, or a value the projection dropped. Never guessed from the soul. */
+ * `composedFrom` (feature preview-composed-from) — "Soul" or "Workspace default" (a core row already
+ * names its slot). '' (no tag) when the preview does not say: an older CLI, or a value the projection
+ * dropped. Never guessed from the soul. */
 const CORE_LAYERS = ['knowledge', 'messaging', 'tasks'];
 export function moduleWhyText(m) {
   if (m?.composedFrom === 'soul') return 'Soul';
-  if (m?.composedFrom === 'workspace') return CORE_LAYERS.includes(m.layer) ? `Workspace default · ${m.layer}` : 'Workspace default';
+  if (m?.composedFrom === 'workspace') return 'Workspace default';
   return '';
 }
 /** The preview column's Core capabilities and Capabilities sections (their children), from the
  * preview's `modules` rows [{name, layer, from, composedFrom?}]; null when the preview carries none
- * (no placeholder). */
+ * (no placeholder). Both are bordered boxes of one row grammar: the module in mono, its source chip
+ * and its reason chip. A module filling a core slot is Core's only: never in Capabilities or its count. */
 export function composePreviewModules(doc, modules) {
   if (!Array.isArray(modules)) return null;
   const el = (tag, text, cls) => node(doc, tag, text, cls);
   const rows = modules.filter(m => m && typeof m === 'object' && typeof m.name === 'string' && m.name);
+  // The reason is plain text in the row: part of what a screen reader reads for it.
+  const describe = (row, m) => {
+    row.dataset.module = m.name; row.append(el('span', m.name, 'mono'), el('span', moduleSourceText(m.from), 'spawn-cap-source'));
+    const why = moduleWhyText(m); if (why) row.append(el('span', why, 'spawn-cap-why'));
+  };
   const coreBox = el('div', undefined, 'spawn-core-box');
   for (const [layer, label] of [['knowledge', 'Knowledge'], ['messaging', 'Messaging'], ['tasks', 'Tasks']]) {
-    const row = el('span', undefined, 'spawn-core-row'), m = rows.find(x => x.layer === layer);
-    row.append(el('span', label, 'spawn-core-layer'), m ? el('span', `${m.name}${m.from?.version ? ` ${m.from.version}` : ''}`, 'mono') : el('span', 'None', 'muted')); // an empty slot, not a provider named "none"
+    const row = el('span', undefined, 'spawn-core-row'), m = rows.find(x => x.layer === layer); row.dataset.layer = layer;
+    row.append(el('span', label, 'spawn-core-layer'));
+    if (m) describe(row, m); else row.append(el('span', 'None', 'muted')); // an empty slot, not a provider named "none"
     coreBox.append(row);
   }
+  const others = rows.filter(m => !CORE_LAYERS.includes(m.layer)).sort((a, b) => a.name.localeCompare(b.name));
   const capsList = el('div', undefined, 'spawn-cap-list');
-  for (const m of [...rows].sort((a, b) => a.name.localeCompare(b.name))) {
-    const row = el('span', undefined, 'spawn-cap-row'); row.dataset.module = m.name;
-    row.append(el('span', m.name, 'mono'), el('span', moduleSourceText(m.from), 'spawn-cap-source'));
-    // The reason is plain text in the row: part of what a screen reader reads for it.
-    const why = moduleWhyText(m); if (why) row.append(el('span', why, 'spawn-cap-why'));
-    capsList.append(row);
-  }
-  return { core: [el('h3', 'Core capabilities', 'spawn-preview-title'), coreBox], caps: [el('h3', `Capabilities · ${rows.length}`, 'spawn-preview-title'), capsList] };
+  for (const m of others) { const row = el('span', undefined, 'spawn-cap-row'); describe(row, m); capsList.append(row); }
+  if (!others.length) capsList.append(el('span', 'No other capabilities: only the core ones.', 'spawn-cap-row spawn-cap-none'));
+  return { core: [el('h3', 'Core capabilities', 'spawn-preview-title'), coreBox], caps: [el('h3', `Capabilities · ${others.length}`, 'spawn-preview-title'), capsList] };
 }
 
 /** A segmented group is one tab stop (spec F): Arrow keys move along it (in a radio group they

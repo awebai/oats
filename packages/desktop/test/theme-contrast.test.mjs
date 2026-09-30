@@ -803,17 +803,24 @@ for (const [name] of palettes) test(`${name}: the spawn footer's Preview ready c
 // Workspace v4 pages (W4/W5b) — replaces the F7 page inventory (header band,
 // facts, used-by rows, borderless back): the page bar, side cards, key/value
 // facts, the used-by table and a soul's composition table with its why tags.
-import { renderCapabilityPage, renderSoulCapabilities, capabilityPageCSS, pageCardCSS, soulCapabilitiesCSS } from '../renderer/capability-page.mjs';
-for (const [name] of palettes) test(`${name}: v4 page bar, cards, facts, used-by rows and why tags meet computed AA`, () => {
-  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"><section class="host"></section><section class="soul"></section></div></body></html>`, { pretendToBeVisual: true });
+import { renderCapabilityPage, renderSoulCapabilities, renderSoulCore, capabilityPageCSS, pageCardCSS, soulCapabilitiesCSS } from '../renderer/capability-page.mjs';
+for (const [name] of palettes) test(`${name}: v4 page bar, cards, facts, used-by rows, why tags and the core table meet computed AA`, () => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"><section class="host"></section><section class="soul"></section><section class="core"></section></div></body></html>`, { pretendToBeVisual: true });
   const doc = dom.window.document;
   for (const source of [css, discoveryCSS, pageCardCSS, capabilityPageCSS, soulCapabilitiesCSS, identityCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
-  renderCapabilityPage(doc.querySelector('.host'), { row: { name: 'oats.okf', kind: 'package', package: 'oats.okf', version: '2.1.3', commit: 'a'.repeat(40), origin: 'package oats.okf v2.1.3', layer: 'knowledge' },
-    status: null, root: 'team', instances: [{ agent: 'dev', agentsRoot: '/a', instance: 'dev-1', modules: [{ name: 'oats.okf', status: 'moved' }] }], onBack() {}, openSoul() {} });
+  renderCapabilityPage(doc.querySelector('.host'), { row: { name: 'oats.okf', kind: 'package', package: 'oats.okf', version: '2.1.3', commit: 'a'.repeat(40), origin: 'package oats.okf v2.1.3', layer: 'knowledge',
+    resolved: { id: 'oats.okf', version: '2.1.3', missingRequires: [] } },
+    status: null, root: 'team', instances: [{ agent: 'dev', agentsRoot: '/a', instance: 'dev-1', modules: [{ name: 'oats.okf', status: 'moved' }] }], onBack() {}, openSoul() {},
+    from: { label: 'dev', why: { slot: 'knowledge', why: 'workspace' } } });
   renderSoulCapabilities(doc.querySelector('.soul'), { status: null, onOpen() {}, entries: [
     { cap: { id: 'house-style', version: '0.0.0-workspace', from: { kind: 'member', repoKey: 'x/agents.git' } }, why: 'default' },
     { cap: { id: 'runner', from: { kind: 'member', repoKey: 'x/app.git' } }, why: 'soul', repoOwned: true },
     { name: 'pr-hygiene', why: 'off' }] });
+  // Core: a filled (openable) row with its note, an emptied slot (struck name, off note) and no default.
+  renderSoulCore(doc.querySelector('.core'), { status: null, onOpen() {}, entries: [
+    { slot: 'knowledge', id: null, cap: null, reported: true, why: 'off', reason: 'slot-none', name: 'oats.okf', overrides: 'workspace' },
+    { slot: 'messaging', id: 'oats.aweb', cap: { id: 'oats.aweb', version: '1.17.3', from: { kind: 'package', package: 'oats.aweb', version: '1.17.3' } }, reported: true, why: 'workspace', detail: 'Default team only' },
+    { slot: 'tasks', id: null, cap: null, reported: true, why: 'none' }] });
   const root = dom.window.getComputedStyle(doc.documentElement);
   for (const [selector, painted, fg, bg] of [
     ['.page-crumbs', '.page-bar', 'muted', 'surface'],
@@ -831,6 +838,17 @@ for (const [name] of palettes) test(`${name}: v4 page bar, cards, facts, used-by
     ['.why-tag:not(.soul)', '.why-tag:not(.soul)', 'fg', 'tag-bg'],
     ['.why-tag.soul', '.why-tag.soul', 'primary-fg', 'primary-bg'],
     ['.why-note', '.soul-caps', 'muted', 'surface'],
+    ['.page-why-label', '.capability-page .page-card', 'fg', 'surface'],
+    ['.page-why-note', '.capability-page .page-card', 'muted', 'surface'],
+    ['.soul-core .soul-cap-slot', '.soul-core', 'muted', 'surface'],
+    ['.soul-core .soul-cap-row.none .soul-cap-id', '.soul-core', 'muted', 'surface'],
+    ['.soul-core .soul-cap-struck', '.soul-core', 'muted', 'surface'],
+    ['.soul-core button.soul-cap-row .soul-cap-id', '.soul-core button.soul-cap-row', 'fg', 'surface'],
+    ['.soul-core .soul-cap-why-note', '.soul-core button.soul-cap-row', 'muted', 'surface'],
+    ['.soul-core .soul-cap-note', '.soul-core button.soul-cap-row', 'muted', 'surface'],
+    ['.soul-core .why-tag', '.soul-core .why-tag', 'fg', 'tag-bg'],
+    ['.soul-core .why-note', '.soul-core', 'muted', 'surface'],
+    ['.soul-cap-slot-icon', '.soul-cap-slot-icon', 'fg', 'bg'],
   ]) {
     const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
     const color = dom.window.getComputedStyle(el).color;
