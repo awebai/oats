@@ -414,6 +414,10 @@ test("K3 stop: plan reports real session/work facts and recorded children deepes
   const kids = descendantsOf(root, "k3-parent");
   assert.deepEqual(kids.map((k) => [k.instance, k.depth]), [["k3-grandchild", 2], ["k3-child", 1]], "deepest first");
   rmSync(join(grandchild.home, "work"), { force: true });
+  // A session's state is part of the plan revision: a pane still showing its launching shell reads "shell" for a
+  // moment after the stand-in's pid appears. Plan once every target has settled, so two plans moments apart agree
+  // (awebai/oats#345).
+  assert.ok(await waitFor(() => planStop(repo, root, "k3-parent").targets.every((t) => t.session.present && t.session.state !== "shell")), "the sessions settle");
   const plan = planStop(repo, root, "k3-parent");
   assert.equal(plan.lifecycleApi, 1); assert.equal(plan.recursive, true);
   assert.deepEqual(plan.targets.map((t) => t.instance), ["k3-grandchild", "k3-child", "k3-parent"]);
