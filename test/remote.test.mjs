@@ -241,7 +241,7 @@ test("listRemoteTree lists relative entries bounded by depth; missing dir → []
   const opts = { cacheDir: f.cacheDir };
   const depth1 = await listRemoteTree(f.repo.bare, f.c1, "capabilities/nw-tool", { ...opts, depth: 1 });
   assert.deepEqual(depth1, [
-    { path: "bin", type: "tree" }, { path: "deep", type: "tree" }, { path: "oats.json", type: "blob", size: 25 }, { path: "skills", type: "tree" },
+    { path: "bin", type: "tree" }, { path: "deep", type: "tree" }, { path: "oats.json", type: "blob" }, { path: "skills", type: "tree" },
   ]);
   const depth2 = await listRemoteTree(f.repo.bare, f.c1, "capabilities/nw-tool", opts);
   assert.deepEqual(depth2.map((e) => e.path), ["bin", "bin/run.mjs", "deep", "deep/a", "oats.json", "skills", "skills/cut"]);
@@ -306,7 +306,7 @@ test("fetchRemoteTree refuses a symlink in the tree (E_REMOTE_TREE_UNSAFE symlin
   const read = await caughtAsync(readRemoteFile(f.repo.bare, c, "capabilities/nw-tool/alias.json", { cacheDir: f.cacheDir }));
   assert.equal(read.code, "E_REMOTE_TREE_UNSAFE"); assert.equal(read.details.why, "symlink");
   const listed = await listRemoteTree(f.repo.bare, c, "capabilities/nw-tool", { cacheDir: f.cacheDir, depth: 1 });
-  assert.deepEqual(listed.find((x) => x.path === "alias.json"), { path: "alias.json", type: "symlink", size: 9 });
+  assert.deepEqual(listed.find((x) => x.path === "alias.json"), { path: "alias.json", type: "symlink" });
 });
 
 // The module store's fetch (a capability-defined agent's soul): the tracked CLAUDE.md -> AGENTS.md
@@ -510,10 +510,17 @@ test("M2: the fetch url is the form written — an ssh ref is fetched over ssh, 
     calls.push(args);
     if (args[0] === "init") { execFileSync("git", args, { env: GIT_ENV, stdio: "ignore" }); return { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }; }
     if (args.includes("rev-parse")) { const e = new Error("missing"); e.code = 128; e.stderr = Buffer.from("fatal: Needed a single revision"); throw e; }
+    if (args.includes("config")) {
+      if (args.includes("--get")) { const e = new Error("unset"); e.code = 1; e.stderr = Buffer.alloc(0); throw e; }
+      return { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+    }
     const e = new Error("fail"); e.code = 128; e.stderr = Buffer.from("ssh: Could not resolve hostname example.invalid"); throw e;
   };
   const cacheDir = join(base, "cache");
-  const urlOf = (word) => calls.filter((a) => a.includes(word)).map((a) => a[a.indexOf(word) + (word === "fetch" ? 6 : 2)]);
+  // ls-remote names the url; a fetch names the remote "origin" and passes its url as `-c remote.origin.url=…`.
+  const urlOf = (word) => calls.filter((a) => a.includes(word)).map((a) => word === "fetch"
+    ? a.find((x) => x.startsWith("remote.origin.url="))?.slice("remote.origin.url=".length)
+    : a[a.indexOf(word) + 2]);
   const oid = "0123456789abcdef0123456789abcdef01234567";
 
   const sshRef = "git@example.invalid:org/repo.git";

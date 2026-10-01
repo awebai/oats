@@ -40,7 +40,9 @@ const readRecord = (cacheDir, remote, args) => JSON.parse(readFileSync(recordFil
 const setObservedAt = (cacheDir, remote, iso) => { const f = recordFile(cacheDir, remote); writeFileSync(f, JSON.stringify({ ...JSON.parse(readFileSync(f, "utf8")), observedAt: iso })); };
 function counting() {
   const calls = [];
-  const exec = (args, opts) => { calls.push(args.find((a) => !a.startsWith("-") && !a.startsWith("/") && a !== "gc.auto=0") ?? args[0]); return runGit(args, opts); };
+  // The git verb: the first argument that is neither an option nor the value of `-C`/`-c`.
+  const verb = (args) => args.find((a, i) => !a.startsWith("-") && args[i - 1] !== "-C" && args[i - 1] !== "-c") ?? args[0];
+  const exec = (args, opts) => { calls.push(verb(args)); return runGit(args, opts); };
   return { exec, calls };
 }
 const ago = (ms) => new Date(Date.now() - ms).toISOString();

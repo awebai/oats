@@ -105,6 +105,21 @@ gets the plain per-call behaviour. Within a session:
   shared pool would deadlock: a member read holding a slot waits on its
   member's observation, which needs a slot of its own.
 
+The cache repos are partial: a commit is fetched with all its trees and
+only the blobs up to `SMALL_BLOB_LIMIT` (64 KiB), which covers every file
+discovery reads, so listings and discovery stay local after one fetch. A
+read that needs a larger blob, or a `fetchRemoteTree` of a module, fetches
+the missing blobs first in one fetch by id (`ensureBlobs`), then applies the
+budgets to their real sizes before anything is written. git never fetches a
+blob lazily (`GIT_NO_LAZY_FETCH=1`, and no url is stored in the cache: each
+fetch passes it with `-c remote.origin.url=`). A server without partial
+fetches gets whole trees; the cache records that (`oats.fetch = full` in its
+config) and the CLI prints the session's notice once, on stderr. Partial
+caches need git 2.45 or later (`PARTIAL_FETCH_GIT`, the first git with
+`GIT_NO_LAZY_FETCH`): with an older git every cache fetches whole trees, a
+partial cache it meets is deleted and fetched again whole, and the same
+notice says why.
+
 Across commands, `memoAtCommit` keeps parsed reads under
 `<cache>/.parsed/<kernel fingerprint>/`, keyed by (repo key, full commit,
 item). The items: `workspace` (the workspace file), `membership` (a member's

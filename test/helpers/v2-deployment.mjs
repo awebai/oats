@@ -94,6 +94,9 @@ export function v2Deployment({ souls = { dev: {} }, capabilities = {}, capabilit
   const home = join(base, "home");
   for (const d of [bare, root, home]) mkdirSync(d, { recursive: true });
   git(bare, "init", "-q", "--bare");
+  // Served like GitHub: partial fetches (lib/remote.mjs fetches a commit's small blobs, then what a read needs).
+  git(bare, "config", "uploadpack.allowFilter", "true");
+  git(bare, "config", "uploadpack.allowAnySHA1InWant", "true");
 
   const { defaults: extraDefaults, ...extraWorkspace } = workspace;
   const spec = {
