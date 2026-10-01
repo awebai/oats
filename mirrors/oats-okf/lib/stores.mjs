@@ -404,6 +404,47 @@ export function confirmGitBaseline(base,stage,{alias=base.id}={}) {
   }
   fail('E_BASELINE','accepted base changed; rejudge on fresh baseline');
 }
+/** Whether `pr` is this publication's PR: its branch into the accepted
+ *  branch, a real identity, and the known identity when there is one. The
+ *  caller decides what its head must be. */
+const prMatches=(pr,base,branch,identity)=>pr?.headRefName===branch && pr.baseRefName===base.acceptedBranch && Number.isInteger(pr.number) && pr.number>=1 && /^https:\/\//.test(pr.url) && (!identity || (pr.number===identity.number && pr.url===identity.url));
+const MERGE_VERDICTS=['merge','amend+merge'],REVIEWER_ASSOCIATIONS=['OWNER','MEMBER','COLLABORATOR'];
+/** The verdict of the latest okf-review comment (the knowledge-review skill's
+ *  record) left on `pr` for the head it merged, by a repository member or by
+ *  the account that merged it (merging proves write access; a GitHub App
+ *  token's comments carry no member association): a merge verdict, or null
+ *  when there is none or it is not a merge. */
+function mergeVerdict(base,pr,cwd) {
+  const {comments,mergedBy}=JSON.parse(exec('gh',['pr','view',String(pr.number),'--repo',base.pr.repository,'--json','comments,mergedBy'],{cwd,env:gitEnv()}));
+  // gh prints an App merger as app/<name> but its comments' author as <name>;
+  // a login cannot contain '/', so stripping the prefix is safe for users.
+  const merger=typeof mergedBy?.login==='string' && mergedBy.login?mergedBy.login.replace(/^app\//,''):null;
+  for(const comment of [...(Array.isArray(comments)?comments:[])].reverse()) {
+    if(!REVIEWER_ASSOCIATIONS.includes(comment?.authorAssociation) && !(merger && comment?.author?.login===merger)) continue;
+    // A body written in GitHub's web UI has CRLF line endings.
+    const block=/```okf-review[ \t]*\r?\n([\s\S]*?)\r?\n```/.exec(String(comment.body || ''));
+    let review;try {review=block && JSON.parse(block[1]);} catch {continue;}
+    if(review?.pr===pr.url && review.headSha===pr.headRefOid) return MERGE_VERDICTS.includes(review.verdict)?review.verdict:null;
+  }
+  return null;
+}
+/** Record acceptance of the receipt's merged PR, at its merge commit. The PR
+ *  was merged either at the delivered commit, or at a head the maintainer
+ *  amended, which a member's okf-review merge verdict must name. Either way the
+ *  merge settles the inputs: never a baseline check, never a rejudge. */
+function acceptMerged(base,cwd,branch,receipt,pr,persist,acceptedHead) {
+  if(!prMatches(pr,base,branch,receipt.pr)) fail('E_PR','merged PR identity/head/base could not be verified');
+  const merge=pr.mergeCommit?.oid;
+  if(!merge) fail('E_CONFIRM','merged PR lacks merge commit');
+  let verdict=null;
+  if(pr.headRefOid!==receipt.commit) {
+    verdict=mergeVerdict(base,pr,cwd);
+    if(!verdict) fail('E_PR',`PR ${pr.url} was merged at head ${pr.headRefOid}, not at the delivered commit ${receipt.commit}, and no okf-review verdict (merge or amend+merge) from a repository member or the account that merged it names that head; record the maintainer's verdict on the PR, then run complete again (merged inputs need no rejudgment)`);
+  }
+  git(cwd,['merge-base','--is-ancestor',merge,acceptedHead]);
+  Object.assign(receipt,{status:'accepted',acceptedCommit:acceptedHead,mergeCommit:merge,...(verdict?{mergedHead:pr.headRefOid,verdict}:{}),acceptedAt:new Date().toISOString()});persist();
+  return receipt;
+}
 export function gitPublish(base, stage, proposal, receipt, persist, {beforePublish=()=>{},prIdentity=receipt.pr,pr:presentation}={}) {
   const cwd=stage.checkout, branch=`okf/${proposal.attempt || proposal.run}-${base.id}`;
   verifyRemote(base,cwd);
@@ -412,10 +453,17 @@ export function gitPublish(base, stage, proposal, receipt, persist, {beforePubli
   // The judged root must still be accepted. A head that moved outside it is
   // delivered onto; changed root bytes are never rebased without rejudging.
   const accepted=fetchAccepted(base,cwd);
+  // A PR that is merged is settled by its merge, whatever the accepted branch
+  // holds now (the merge itself changes the root). Without a known identity
+  // (creation uncertain), it is the one PR of this branch.
+  if(receipt.commit && (prIdentity || ['pr-intent','pr-unknown'].includes(receipt.status))) {
+    const rows=prRows(base,branch,cwd,prIdentity?{identity:prIdentity}:{});
+    if(rows.length===1 && rows[0].mergedAt) return acceptMerged(base,cwd,branch,receipt,rows[0],persist,accepted);
+  }
   if(accepted!==receipt.confirmedHead && !rootUnchanged(base,stage,cwd,accepted)) {
     // A known or uncertain previously created PR may be reconciled, but a
     // committed/pushed proposal alone does not authorize a NEW stale-base PR.
-    const prior=receipt.commit?prRows(base,branch,cwd,{identity:prIdentity}).filter(p=>p.headRefOid===receipt.commit && p.headRefName===branch && p.baseRefName===base.acceptedBranch):[];
+    const prior=receipt.commit?prRows(base,branch,cwd,{identity:prIdentity}).filter(p=>p.headRefOid===receipt.commit && prMatches(p,base,branch,prIdentity)):[];
     if(prior.length!==1) fail('E_BASELINE','accepted Git head changed before verified PR delivery; explicit rejudgment required');
   }
   if(!receipt.commit) {
@@ -486,17 +534,11 @@ export function gitPublish(base, stage, proposal, receipt, persist, {beforePubli
     catch(e) {receipt.status='pr-unknown';receipt.error=e.message;persist();throw e;}
     rows=prRows(base,branch,cwd);
   }
-  const matching=rows.filter(p=>p.headRefOid===receipt.commit && p.headRefName===branch && p.baseRefName===base.acceptedBranch && Number.isInteger(p.number) && /^https:\/\//.test(p.url) && (!prIdentity || (p.number===prIdentity.number && p.url===prIdentity.url)));
+  const matching=rows.filter(p=>p.headRefOid===receipt.commit && prMatches(p,base,branch,prIdentity));
   if(matching.length!==1 || rows.length!==1) {receipt.status='pr-unknown';persist();fail('E_PR','actual PR identity/head/base could not be uniquely verified');}
   const pr=matching[0];receipt.pr=pr;receipt.status='delivered';receipt.deliveredAt ||= new Date().toISOString();persist();
   if(pr.state==='CLOSED' && !pr.mergedAt) {receipt.status='rejected';persist();fail('E_PR','PR closed without merge; retained proposal requires operator review');}
-  if(pr.mergedAt) {
-    git(cwd,['fetch','origin',`refs/heads/${base.acceptedBranch}`],{timeout:gitTimeoutMs()});
-    const merge=pr.mergeCommit?.oid;
-    if(!merge) fail('E_CONFIRM','merged PR lacks merge commit');
-    git(cwd,['merge-base','--is-ancestor',merge,'FETCH_HEAD']);
-    receipt.status='accepted';receipt.acceptedCommit=git(cwd,['rev-parse','FETCH_HEAD']);receipt.acceptedAt=new Date().toISOString();persist();
-  }
+  if(pr.mergedAt) acceptMerged(base,cwd,branch,receipt,pr,persist,fetchAccepted(base,cwd));
   return receipt;
 }
 
@@ -520,7 +562,11 @@ export function gitRecoveryState(base,receipt,cwd,{identity=receipt.pr,onObserve
     return 'unresolved';
   }
   const pr=rows[0];
-  if(rows.length!==1 || pr.headRefOid!==receipt.commit || pr.headRefName!==receipt.branch || pr.baseRefName!==base.acceptedBranch || !Number.isInteger(pr.number) || pr.number<1 || !/^https:\/\//.test(pr.url) || [identity,receipt.pr].some(known=>known && (pr.number!==known.number || pr.url!==known.url)) || !['OPEN','CLOSED','MERGED'].includes(pr.state) || (pr.state==='MERGED' && !pr.mergedAt)) fail('E_RECOVERY','actual PR identity/head/base could not be uniquely verified for recovery');
+  if(rows.length!==1 || ![identity,receipt.pr].every(known=>prMatches(pr,base,receipt.branch,known)) || !['OPEN','CLOSED','MERGED'].includes(pr.state) || (pr.state==='MERGED' && !pr.mergedAt)) fail('E_RECOVERY','actual PR identity/head/base could not be uniquely verified for recovery');
+  // A maintainer's amend+merge moves the head: complete records that merge,
+  // and merged inputs are never rejudged.
+  if(pr.headRefOid!==receipt.commit && pr.mergedAt) fail('E_RECOVERY',`PR ${pr.url} was merged at an amended head ${pr.headRefOid}: run complete to record its acceptance; merged inputs are never rejudged`);
+  if(pr.headRefOid!==receipt.commit) fail('E_RECOVERY','actual PR identity/head/base could not be uniquely verified for recovery');
   onObserve(pr);
   return pr.state==='CLOSED' && !pr.mergedAt?'unresolved':'settled';
 }

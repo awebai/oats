@@ -10,7 +10,7 @@ or workspace membership alone does not make a package official.
 | package | release | capabilities | package souls |
 |---|---|---|---|
 | `oats.framework` | `oats-framework/v1.4.1` (this repository) | `oats.core`, `oats.setup`, `oats.knowledge-theory` | `knowledge-theory-expert` |
-| `oats.okf` | `v4.0.6` | `oats.okf` (knowledge), `oats.okf-harvest`, `oats.okf-maintenance` | `knowledge-harvester`, `knowledge-maintainer` |
+| `oats.okf` | `v4.0.7` | `oats.okf` (knowledge), `oats.okf-harvest`, `oats.okf-maintenance` | `knowledge-harvester`, `knowledge-maintainer` |
 | `oats.aweb` | `v1.17.7` | `oats.aweb` (messaging) | |
 | `oats.engineering` | `v1.5.0` | `oats.engineering-expert`, `oats.developer`, `oats.code-review` | `code-reviewer` |
 | `oats.authoring` | `v1.0.3` | `oats.authoring` | |
@@ -27,7 +27,7 @@ no lock and adds nothing to an existing workspace.
 ## Find and use packages
 
 - A workspace pins an official package by **bare version** in its
-  `packages:` map (`oats.okf: v4.0.6`); `oats sync` resolves it through the
+  `packages:` map (`oats.okf: v4.0.7`); `oats sync` resolves it through the
   catalog to an exact commit, fetches it, verifies its integrity and locks it.
   A package outside the catalog is written `git:<repo>@<ref>`. Pinning does
   not join a team or adopt the publisher's workspace. See
