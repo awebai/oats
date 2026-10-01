@@ -612,6 +612,14 @@ test("#387: a git killed by anything but our timer (an OOM kill) reads 'killed (
   assert.equal(e.code, "E_REMOTE_UNREADABLE");
   assert.equal(e.message, `cannot read remote ${f.repo.bare} (killed): git was killed (signal SIGKILL)`);
   assert.equal(e.details.reason, "killed"); assert.equal(e.details.signal, "SIGKILL");
+  // A listing (lsTree classifies on its own) says the same.
+  const killedLs = (args, o) => args.includes("ls-tree")
+    ? Promise.reject(Object.assign(new Error("Command failed: git ls-tree"), { code: null, signal: "SIGKILL", killed: false, timedOut: false, overflowed: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }))
+    : runGit(args, o);
+  const ls = await caughtAsync(listRemoteTree(f.repo.bare, f.c1, "", { cacheDir: f.cacheDir, exec: killedLs }));
+  assert.equal(ls.code, "E_REMOTE_UNREADABLE");
+  assert.equal(ls.details.reason, "killed"); assert.equal(ls.details.signal, "SIGKILL");
+  assert.match(ls.message, /\(killed: git was killed \(signal SIGKILL\)\)$/);
 });
 
 test("L4: a maxBuffer overflow is NOT a timeout; a timeout kill is; an unclassified ls-tree failure becomes E_REMOTE_UNREADABLE { reason: unknown }, never a raw error", async () => {
