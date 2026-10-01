@@ -28,7 +28,7 @@ import {
   LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
   officialPackageCatalog, officialCatalogFile, officialCapabilityAliases, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, isCapturedHome, capturedHomeRefusal, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
-  findInstanceHome, findInstanceHomes, enclosingInstanceHome, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, recordedKernelBin, launchConfigsAt, launchReportFor, explicitInstanceName, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
+  findInstanceHome, findInstanceHomes, enclosingInstanceHome, logicalCwd, workspaceOf, stopInstanceSession, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, recordedKernelBin, launchConfigsAt, launchReportFor, explicitInstanceName, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
 import {
   writeFileAtomic, LOCK_FILE, readLock, readLockIfPresent, writeLock, resolvePackages, memoizedRemote,
@@ -2768,7 +2768,7 @@ async function capabilityCommand() {
     let teamCtx, homeMeta, homeTeamCtx;
     // OATS_INSTANCE_HOME is the canonical identity; the older names still count. With none set
     // (a harness that strips the session env), the home enclosing the cwd.
-    const instanceHome = process.env.OATS_INSTANCE_HOME || process.env.PI_AGENT_HOME || process.env.OATS_HOME || enclosingInstanceHome(process.cwd());
+    const instanceHome = process.env.OATS_INSTANCE_HOME || process.env.PI_AGENT_HOME || process.env.OATS_HOME || enclosingInstanceHome(logicalCwd());
     const metaFile = instanceHome && join(instanceHome, "instance.json");
     // Capability-id keyed — never answer for `constructor`/`toString`. Belt and
     // braces: the ids come from instance.json, which spawn wrote from resolved

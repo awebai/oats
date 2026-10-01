@@ -261,7 +261,11 @@ A capability command (`oats <namespace> …`) run with none of
 `OATS_INSTANCE_HOME`, `PI_AGENT_HOME` or `OATS_HOME` set finds its instance
 from the working directory. It uses the nearest enclosing directory laid out as
 `<agents-root>/<soul>/instances/<name>` whose `instance.json` records that
-name, and validates it like a home named by the environment.
+name, and validates it like a home named by the environment. The walk uses the
+directory as the shell names it (`$PWD`). That matters for an attached
+instance, whose `work/` links into its owner's tree: below it, the physical
+path is the owner's. A process that has no `$PWD` there would act as the
+owner, so an attached instance runs capability commands from its home.
 
 ## Lifecycle
 
