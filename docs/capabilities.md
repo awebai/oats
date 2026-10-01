@@ -533,7 +533,12 @@ passed as arguments; no shell is involved.
   - `OATS_SOUL`, the soul directory: a home's recorded one, or for a soul
     (`readiness --soul`, `inspect --soul`) its copy at the resolved commit,
     which the kernel materialises first as a spawn would (0.30; a copy that
-    cannot be made fails readiness under `installed`, producer `soul copy`);
+    cannot be made fails readiness under `installed`, producer `soul copy`).
+    An operator command (`oats <namespace> … --soul <name>` from the
+    deployment) gets the soul's source at the resolved commit too: the copy a
+    spawn left under the agents root, else a temporary copy removed when the
+    command ends. A soul that cannot be read refuses the command; it never
+    runs without `OATS_SOUL`;
   - for a home, `OATS_INSTANCE` and `OATS_INSTANCE_HOME`.
 - `OATS_TEAM_SCOPE` is the deployment directory; `OATS_TEAM_NAME` is always
   empty.

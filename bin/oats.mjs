@@ -2838,14 +2838,20 @@ async function capabilityCommand() {
     if (!hit) return NOT_DISPATCHED;
     // The same team/workspace facts a spawn hook receives (lead decision c3-7).
     const teamCtx = teamEnv(resolvedFromPrepared(hit.prepared, hit.deployment));
-    // No home, so no recorded soul: the soul's per-commit copy is OATS_SOUL when a spawn
-    // already fetched exactly this commit; otherwise the command gets none (never ambient).
-    // The agent directory is the soul entry's own (a package soul's is `<package>--<soul>`), never
-    // the bare name, which a same-named member soul's copy may occupy (as instance-inspect does).
-    const { agentDirOf } = await import("../lib/instance-resolution.mjs");
-    const entry = hit.prepared?.soulEntry;
-    const cachedSoul = entry?.commit ? join(hit.deployment, "agents", agentDirOf(entry), "souls", String(entry.commit).slice(0, 12)) : null;
-    return runManifestCommand({ capability: hit.module.name, ...hit.manifest }, { settings: hit.settings, origins: hit.resolution?.payloadOrigins?.[hit.module.name] }, teamCtx, hit.ensureTree, cachedSoul && existsSync(join(cachedSoul, "soul.yaml")) ? realpathSync(cachedSoul) : undefined);
+    // No home, so no recorded soul: OATS_SOUL is the soul's source at the resolved commit, read
+    // as a spawn preview reads it (the per-commit copy a spawn left under the agents root, else a
+    // temporary fetch removed when the command ends). Read only when the command runs (after its
+    // --help). A soul that cannot be read refuses the command: it never runs with OATS_SOUL unset.
+    const soul = async () => {
+      const { previewWorkspaceSoul } = await import("../lib/instance-resolution.mjs");
+      const entry = hit.prepared?.soulEntry;
+      try { const p = await previewWorkspaceSoul(hit.prepared, join(hit.deployment, "agents")); return { dir: p.soulDir, cleanup: p.cleanup }; }
+      catch (e) {
+        throw Object.assign(new Error(`oats ${cmd}: cannot read soul ${flag("soul")} at ${String(entry?.commit ?? "?").slice(0, 12)}, so the command would run without OATS_SOUL; nothing was run: ${e.message}`),
+          { code: typeof e?.code === "string" && e.code.startsWith("E_") ? e.code : "E_REMOTE_UNREADABLE", details: { soul: flag("soul"), repoKey: entry?.repoKey ?? null, commit: entry?.commit ?? null } });
+      }
+    };
+    return runManifestCommand({ capability: hit.module.name, ...hit.manifest }, { settings: hit.settings, origins: hit.resolution?.payloadOrigins?.[hit.module.name] }, teamCtx, hit.ensureTree, soul);
   }
 
   async function dispatch() {
@@ -2958,6 +2964,12 @@ async function capabilityCommand() {
     try { abs = capabilityExecutablePath(withDir, script); }
     catch (e) { bail("E_CAPABILITY_BROKEN", e.message); }
     if (!abs) bail("E_CAPABILITY_BROKEN", `${cmd} ${sub}: script not found (${join(dir, script)})`);
+    // `soulDir` is a home's recorded soul directory, or (operator dispatch) a reader of the soul at
+    // its resolved commit, whose temporary copy is removed when this process exits.
+    if (typeof soulDir === "function") {
+      try { const read = await soulDir(); soulDir = read.dir; process.once("exit", read.cleanup); }
+      catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) bail(e.code, e.message, e.details); throw e; }
+    }
     // OATS_SOUL is the recorded soul or nothing: an ambient value inherited from the
     // invoking process names some other soul (a coordinator's own), never this one.
     const { OATS_SOUL: _ambientSoul, ...inherited } = process.env;
