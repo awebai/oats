@@ -5,8 +5,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn as spawnChild, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { abandonHarnessPackageProbes, hasHarnessPackageProbe, settleHarnessPackageProbe, startHarnessPackageProbe } from "../lib/core.mjs";
 import { CLI, v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const REQUIRES = { "acme.chan": { manifest: { requires: [{ harness: "claude", package: "chan@acme-marketplace" }] } } };
@@ -187,4 +189,24 @@ test("an early probe's stdout is bounded as the synchronous probe's is: over it,
   const deadline = Date.now() + 10000;
   while (pids.some(alive) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
   assert.deepEqual(pids.filter(alive), [], "its group is gone");
+});
+
+test("a probe whose group was empty at its close is never signalled again: abandonment does not touch an id another group may now lead", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "oats-probe-reuse-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const bin = join(dir, "claude");
+  writeFileSync(bin, "#!/bin/sh\nprintf '[]'\nexit 0\n", { mode: 0o755 });
+  spawnSync(bin, ["--version"]);
+  const env = { PATH: process.env.PATH };
+  startHarnessPackageProbe({ bin, env });
+  // Settled: the leader has closed, leaving an empty group, and the probe is still this command's.
+  assert.equal(await settleHarnessPackageProbe({ bin, env }), "[]");
+  assert.equal(hasHarnessPackageProbe(), true);
+  // Its id now leads an unrelated, live group: every probe of it says populated, and every signal is recorded.
+  const calls = [];
+  const real = process.kill;
+  process.kill = (pid, signal) => { calls.push([pid, signal]); return true; };
+  try { abandonHarnessPackageProbes(); } finally { process.kill = real; }
+  assert.deepEqual(calls, [], "no check and no signal for a closed probe's id");
+  assert.equal(hasHarnessPackageProbe(), false);
 });

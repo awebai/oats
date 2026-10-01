@@ -47,8 +47,9 @@ function fixture({ branches = 2 } = {}) {
   return { base, bare, work, commit: git(work, "rev-parse", "HEAD"), cacheDir: join(base, "cache") };
 }
 const cacheRepoOf = (f) => join(f.cacheDir, createHash("sha256").update(`local/${f.bare}`).digest("hex"));
-const recordOf = (f) => join(f.cacheDir, ".ls-remote", `${createHash("sha256").update(`local/${f.bare}`).digest("hex")}.json`);
-const readRecord = (f) => JSON.parse(readFileSync(recordOf(f), "utf8"));
+const recordOf = (f, reason) => join(f.cacheDir, ".ls-remote", `${createHash("sha256").update(`local/${f.bare}`).digest("hex")}.${reason}.json`);
+const readRecord = (f, reason) => JSON.parse(readFileSync(recordOf(f, reason), "utf8"));
+const noRecords = (f) => !existsSync(join(f.cacheDir, ".ls-remote")) || readdirSync(join(f.cacheDir, ".ls-remote")).length === 0;
 const caught = (promise) => promise.then(() => assert.fail("expected a refusal"), (e) => e);
 const plain = (obs) => { const { observedAt, ...rest } = obs; assert.equal(typeof observedAt, "string"); return rest; };
 const errorShape = (e) => ({ code: e.code, message: e.message, details: e.details });
@@ -137,7 +138,7 @@ test("an advertisement over budget: git is killed, the remote observed under v2,
   assert.equal(t.lsRemote[0].maxBuffer, 512);
   assert.deepEqual(plain(obs), { key: `local/${f.bare}`, url: f.bare, commit: f.commit, ref: "refs/heads/trunk" });
   assert.deepEqual(session.notices, [`${f.bare} sends a ref advertisement over 512 bytes; OATS observes it with protocol v2`]);
-  const rec = readRecord(f);
+  const rec = readRecord(f, "overflow");
   assert.deepEqual([rec.protocol, rec.reason, typeof rec.recordedAt], ["v2", "overflow", "string"]);
   await session.close();
   // The next command: v2 at once, nothing said.
@@ -148,7 +149,7 @@ test("an advertisement over budget: git is killed, the remote observed under v2,
   assert.deepEqual(later.notices, []);
   await later.close();
   // An overflow record never expires.
-  writeFileSync(recordOf(f), JSON.stringify({ ...rec, recordedAt: "2020-01-01T00:00:00.000Z" }));
+  writeFileSync(recordOf(f, "overflow"), JSON.stringify({ ...rec, recordedAt: "2020-01-01T00:00:00.000Z" }));
   const old = intercepting();
   await observeRemote(f.bare, { cacheDir: f.cacheDir, exec: old.exec, session: createReadSession({ v0AdvertisementBudget: 512 }) });
   assert.deepEqual(old.lsRemote.map((c) => c.protocol), [2]);
@@ -187,7 +188,7 @@ test("a final v0 failure (timeout, auth, not-found, cache, an abort) is today's 
   await session.close();
   assert.equal((await pending).code, "E_REMOTE_UNREADABLE");
   assert.deepEqual(t.lsRemote.map((c) => c.protocol), [0]);
-  assert.equal(existsSync(recordOf(f)), false, "an abort records nothing");
+  assert.ok(noRecords(f), "an abort records nothing");
 });
 
 test("a v0 timeout records v2 for 7 days and says so: the next command goes straight to v2; an expired, corrupt or unknown record is no record", async () => {
@@ -198,7 +199,7 @@ test("a v0 timeout records v2 for 7 days and says so: the next command goes stra
   await session.close();
   assert.deepEqual([e.code, e.details.reason], ["E_REMOTE_UNREADABLE", "timeout"]);
   assert.deepEqual(session.notices, [`${f.bare} timed out under protocol v0; OATS observes it with protocol v2 for 7 days`]);
-  const rec = readRecord(f);
+  const rec = readRecord(f, "timeout");
   assert.deepEqual(Object.keys(rec).sort(), ["protocol", "reason", "recordedAt"]);
   assert.deepEqual([rec.protocol, rec.reason], ["v2", "timeout"]);
   assert.ok(Math.abs(Date.parse(rec.recordedAt) - Date.now()) < 60_000);
@@ -211,23 +212,58 @@ test("a v0 timeout records v2 for 7 days and says so: the next command goes stra
   // Each of these is no record: v0 is tried again.
   const DAY = 24 * 3600 * 1000;
   const noRecord = {
-    expired: JSON.stringify({ protocol: "v2", reason: "timeout", recordedAt: new Date(Date.now() - 7 * DAY - 60_000).toISOString() }),
-    future: JSON.stringify({ protocol: "v2", reason: "timeout", recordedAt: new Date(Date.now() + DAY).toISOString() }),
-    "unknown reason": JSON.stringify({ protocol: "v2", reason: "slow", recordedAt: new Date().toISOString() }),
-    "no protocol": JSON.stringify({ reason: "overflow", recordedAt: new Date().toISOString() }),
-    corrupt: "{ not json",
+    expired: ["timeout", JSON.stringify({ protocol: "v2", reason: "timeout", recordedAt: new Date(Date.now() - 7 * DAY - 60_000).toISOString() })],
+    future: ["timeout", JSON.stringify({ protocol: "v2", reason: "timeout", recordedAt: new Date(Date.now() + DAY).toISOString() })],
+    "unknown reason": ["timeout", JSON.stringify({ protocol: "v2", reason: "slow", recordedAt: new Date().toISOString() })],
+    "another file's reason": ["overflow", JSON.stringify({ protocol: "v2", reason: "timeout", recordedAt: new Date().toISOString() })],
+    "no protocol": ["overflow", JSON.stringify({ reason: "overflow", recordedAt: new Date().toISOString() })],
+    corrupt: ["overflow", "{ not json"],
   };
-  for (const [what, text] of Object.entries(noRecord)) {
-    writeFileSync(recordOf(f), text);
+  for (const [what, [file, text]] of Object.entries(noRecord)) {
+    rmSync(join(f.cacheDir, ".ls-remote"), { recursive: true, force: true });
+    mkdirSync(join(f.cacheDir, ".ls-remote"), { recursive: true });
+    writeFileSync(recordOf(f, file), text);
     const t = intercepting();
     await observeRemote(f.bare, { cacheDir: f.cacheDir, exec: t.exec });
     assert.deepEqual(t.lsRemote.map((c) => c.protocol), [0], what);
   }
   // Six days old: still v2.
-  writeFileSync(recordOf(f), JSON.stringify({ protocol: "v2", reason: "timeout", recordedAt: new Date(Date.now() - 6 * DAY).toISOString() }));
+  rmSync(join(f.cacheDir, ".ls-remote"), { recursive: true, force: true });
+  mkdirSync(join(f.cacheDir, ".ls-remote"), { recursive: true });
+  writeFileSync(recordOf(f, "timeout"), JSON.stringify({ protocol: "v2", reason: "timeout", recordedAt: new Date(Date.now() - 6 * DAY).toISOString() }));
   const recent = intercepting();
   await observeRemote(f.bare, { cacheDir: f.cacheDir, exec: recent.exec });
   assert.deepEqual(recent.lsRemote.map((c) => c.protocol), [2]);
+});
+
+test("a timeout recorded by a command already in flight never replaces a permanent overflow record", async () => {
+  const f = fixture();
+  // B passes the no-record check and starts its v0 read, held there until released.
+  let release;
+  const held = new Promise((r) => { release = r; });
+  const timeout = failure("", { code: null, killed: true, signal: "SIGTERM", timedOut: true });
+  const b = intercepting({ v0: () => held.then(() => timeout()), v2: () => assert.fail("no v2 retry after a timeout") });
+  const sessionB = createReadSession();
+  const pendingB = caught(observeRemote(f.bare, { cacheDir: f.cacheDir, exec: b.exec, session: sessionB }));
+  const started = Date.now() + 10_000;
+  while (b.lsRemote.length === 0 && Date.now() < started) await new Promise((r) => setTimeout(r, 10));
+  assert.deepEqual(b.lsRemote.map((c) => c.protocol), [0], "B is reading under v0");
+  // A overflows meanwhile: recorded for good.
+  const sessionA = createReadSession({ v0AdvertisementBudget: 64 });
+  await observeRemote(f.bare, { cacheDir: f.cacheDir, exec: intercepting().exec, session: sessionA });
+  await sessionA.close();
+  assert.equal(readRecord(f, "overflow").reason, "overflow");
+  // B's timeout lands after it, and records its own fact beside it.
+  release();
+  assert.equal((await pendingB).details.reason, "timeout");
+  await sessionB.close();
+  assert.equal(readRecord(f, "timeout").reason, "timeout");
+  assert.equal(readRecord(f, "overflow").reason, "overflow", "the overflow record is untouched");
+  // The timeout record expires; the overflow record still holds: v2.
+  writeFileSync(recordOf(f, "timeout"), JSON.stringify({ protocol: "v2", reason: "timeout", recordedAt: new Date(Date.now() - 8 * 24 * 3600 * 1000).toISOString() }));
+  const later = intercepting();
+  await observeRemote(f.bare, { cacheDir: f.cacheDir, exec: later.exec });
+  assert.deepEqual(later.lsRemote.map((c) => c.protocol), [2]);
 });
 
 test("any other v0 failure is retried once under v2: said once, never recorded; a failed retry is its own error", async () => {
@@ -244,7 +280,7 @@ test("any other v0 failure is retried once under v2: said once, never recorded; 
     assert.deepEqual(t.lsRemote.map((c) => c.protocol), [0, 2], reason);
     assert.equal(obs.commit, f.commit);
     assert.deepEqual(session.notices, [`${f.bare} failed under protocol v0 (${reason === "unknown" ? "network" : reason}); observed with protocol v2`]);
-    assert.equal(existsSync(recordOf(f)), false, "a retried failure is not recorded");
+    assert.ok(noRecords(f), "a retried failure is not recorded");
     await session.close();
   }
   // Said once per remote per command, however many observations of it the command makes.
@@ -358,7 +394,7 @@ test("over real smart HTTP: v0 is one GET where v2 is a GET and a POST, and both
     await session.close();
     assert.deepEqual(plain(fallback), plain(viaV2));
     assert.deepEqual(session.notices, ["https://smart.example/org/remote.git sends a ref advertisement over 1024 bytes; OATS observes it with protocol v2"]);
-    assert.equal(JSON.parse(readFileSync(join(f.base, "h3", ".ls-remote", `${createHash("sha256").update("smart.example/org/remote").digest("hex")}.json`), "utf8")).reason, "overflow");
+    assert.equal(JSON.parse(readFileSync(join(f.base, "h3", ".ls-remote", `${createHash("sha256").update("smart.example/org/remote").digest("hex")}.overflow.json`), "utf8")).reason, "overflow");
   } finally { http.close(); }
 });
 
@@ -388,7 +424,7 @@ test("the budget bounds what OATS keeps, not the wire: git reads a whole adverti
     assert.equal(flushed, true, "git overflowed only once the advertisement was complete");
     assert.deepEqual([obs.commit, obs.ref], [f.commit, "refs/heads/trunk"], "observed under v2");
     assert.deepEqual(session.notices, ["https://huge.example/org/remote.git sends a ref advertisement over 4 MiB; OATS observes it with protocol v2"]);
-    const record = join(f.base, "cache-huge", ".ls-remote", `${createHash("sha256").update("huge.example/org/remote").digest("hex")}.json`);
+    const record = join(f.base, "cache-huge", ".ls-remote", `${createHash("sha256").update("huge.example/org/remote").digest("hex")}.overflow.json`);
     assert.equal(JSON.parse(readFileSync(record, "utf8")).reason, "overflow");
     // Paid once: the next command asks for v2 only.
     const mark = http.requests.length;

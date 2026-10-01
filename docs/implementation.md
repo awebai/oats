@@ -79,8 +79,9 @@ gets the plain per-call behaviour. Within a session:
   prints a ref, so a remote over budget costs its advertisement once, then
   git is killed, the remote observed again under v2 and recorded. A v0
   timeout stays today's error (no retry) and is recorded too. The record is
-  `<cacheRoot>/.ls-remote/<sha256(key)>.json`, `{ protocol: "v2", reason:
-  "overflow" | "timeout", recordedAt }`, written atomically with no lock;
+  `<cacheRoot>/.ls-remote/<sha256(key)>.<reason>.json`, `{ protocol: "v2",
+  reason: "overflow" | "timeout", recordedAt }`, one file per reason (an
+  in-flight timeout never replaces an overflow), written atomically with no lock;
   `overflow` is permanent, `timeout` expires after 7 days, and an unreadable,
   corrupt or expired record is no record (v0 is tried). Another v0 failure
   that is not final (auth, not-found, cache, an abort) is retried once under
