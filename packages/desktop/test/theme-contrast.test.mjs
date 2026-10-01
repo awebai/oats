@@ -743,8 +743,8 @@ for (const [name] of palettes) test(`${name}: F7 inspector cards, teams, compact
     ['#home .teams-card .team-meta', '#home .teams-card', 'muted', 'surface'],
     ['#home .teams-card .team-badge', '#home .teams-card', 'muted', 'surface'],
     ['#home .inspector-spawned button', '#home .inspector-spawned button', 'fg', 'surface'],
-    // v4.1: the Home row's path reads as a value in the Where it works card; the Soul tab's Details path stays muted.
-    ['#context-panel .context-panel-where .context-panel-path', '#context-panel .context-panel-where', 'fg', 'surface'],
+    // Spec A: the Home row's path reads as a value in the Work card's Paths; the Soul tab's Details path stays muted.
+    ['#context-panel .context-panel-paths .context-panel-path', '#context-panel .context-panel-work', 'fg', 'surface'],
     // desktop-facts: where the model came from, under the model in the Session card.
     ['#context-panel .context-panel-session-from', '#context-panel .context-panel-session', 'muted', 'surface'],
     ['#context-panel .context-panel-detail .context-panel-path', '#context-panel', 'muted', 'surface'],
@@ -991,16 +991,17 @@ for (const [name] of palettes) test(`${name}: team model v2 cards, left entries,
   assert.ok(doc.querySelector('.ct-reach').textContent.includes('Far box'));
 });
 
-// v4.1 cleanup (boards 1 and 2): the instance panel's header chip and soul link, the Where it works band
-// and grid, the Messaging address and compact team rows, and the Git tab's cards, badges and empty state.
+// v4.1 cleanup (boards 1 and 2): the instance panel's header chip and soul link, the Work card's sentence
+// and Paths (Spec A), the Messaging & Teams parts and compact team rows, and the Git tab's cards, badges and empty state.
 for (const [name] of palettes) test(`${name}: v4.1 instance panel, compact Messaging rows and Git tab cards meet computed AA`, t => {
   const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div id="context-panel" class="context-panel"><div class="context-panel-page">
     <div class="context-panel-identity"><span class="context-panel-identity-sub"><button class="context-panel-soul-link">dev</button><span class="context-panel-drift">older build</span></span>
       <span class="context-panel-state" data-state="running"><span>Running</span><span>· 42m</span></span><span id="stopped" class="context-panel-state" data-state="stopped">Stopped</span></div>
-    <div class="context-panel-where"><div class="context-panel-mode"><span class="context-panel-mode-copy"><span class="context-panel-mode-title">Own worktree</span><span class="context-panel-mode-meaning">isolated branch</span></span></div>
-      <dl class="context-panel-facts"><div class="context-panel-fact"><dt>Branch</dt><dd class="is-mono"><span>main</span><span class="context-panel-ahead">↑3</span></dd></div></dl></div>
-    <section class="context-panel-section"><div class="context-panel-section-head"><div class="context-panel-label">Messaging</div></div><div class="context-panel-address">team/dev-1</div>
-      <section class="teams-panel is-compact"><div class="teams-card"><div class="team-row"><div class="team-main"><div class="team-name">oats<span class="team-tag">default</span></div><div class="team-meta">oats:team</div></div><span class="team-badge">Always on</span></div>
+    <div class="context-panel-work"><div class="context-panel-work-main"><span class="context-panel-mode-tile"></span><p class="context-panel-work-sentence">Works in its own worktree of <span class="context-panel-fact-code">oats</span>, on branch <span class="context-panel-fact-code">main</span>.</p></div>
+      <details class="context-panel-paths"><summary>Paths</summary><dl class="context-panel-facts"><div class="context-panel-fact"><dt>Home</dt><dd><div class="context-panel-pathline"><div class="context-panel-path">/h</div></div></dd></div></dl></details></div>
+    <section class="context-panel-section"><div class="context-panel-section-head"><div class="context-panel-label">Messaging &amp; Teams</div></div>
+      <div class="context-panel-part"><div class="context-panel-sublabel">Messaging ID</div><div class="context-panel-idline"><span class="context-panel-id">team/dev-1</span></div></div><div id="teams-sublabel" class="context-panel-sublabel">Teams</div>
+      <section class="teams-panel is-compact"><p class="teams-note teams-intro">The messaging teams this soul is allowed to join. It is always in the default team.</p><div class="teams-card"><div class="team-row"><div class="team-main"><div class="team-name">oats<span class="team-tag">default</span></div><div class="team-meta">oats:team</div></div><span class="team-badge">Always on</span></div>
         <div class="team-row"><div class="team-main"><div class="team-name">eng</div></div><button class="team-action" data-team-action="leave">Leave</button></div>
         <div class="team-row"><div class="team-main"><div class="team-name">product</div><div class="team-meta">eligible</div></div><button class="team-action" data-team-action="join">Join</button></div>
         <p class="teams-note">No other teams available to this soul.</p></div></section></section>
@@ -1020,13 +1021,17 @@ for (const [name] of palettes) test(`${name}: v4.1 instance panel, compact Messa
     ['.context-panel-drift', '.context-panel-drift', 'fg', 'tag-bg'],
     ['.context-panel-state[data-state=running]', '#context-panel', 'accent', 'surface'],
     ['#stopped', '#context-panel', 'muted', 'surface'],
-    ['.context-panel-mode-title', '.context-panel-mode', 'fg', 'surface-2'],
-    ['.context-panel-mode-meaning', '.context-panel-mode', 'muted', 'surface-2'],
-    ['.context-panel-where dt', '.context-panel-where', 'muted', 'surface'],
-    ['.context-panel-where dd', '.context-panel-where', 'fg', 'surface'],
-    ['.context-panel-ahead', '.context-panel-where', 'muted', 'surface'],
+    // Spec A: the Work card's sentence and its mono facts, the Paths disclosure, the Messaging & Teams parts.
+    ['.context-panel-work-sentence', '.context-panel-work', 'fg', 'surface'],
+    ['.context-panel-fact-code', '.context-panel-work', 'fg', 'surface'],
+    ['.context-panel-paths > summary', '.context-panel-work', 'muted', 'surface'],
+    ['.context-panel-paths dt', '.context-panel-work', 'muted', 'surface'],
+    ['.context-panel-paths dd', '.context-panel-work', 'fg', 'surface'],
     ['.context-panel-label', '#context-panel', 'muted', 'surface'],
-    ['.context-panel-address', '#context-panel', 'muted', 'surface'],
+    ['.context-panel-sublabel', '#context-panel', 'muted', 'surface'],
+    ['#teams-sublabel', '#context-panel', 'muted', 'surface'],
+    ['.context-panel-id', '#context-panel', 'fg', 'surface'],
+    ['.is-compact .teams-intro', '#context-panel', 'muted', 'surface'],
     ['.is-compact .team-name', '#context-panel', 'fg', 'surface'],
     ['.is-compact .team-tag', '.is-compact .team-tag', 'muted', 'tag-bg'],
     ['.is-compact .team-meta', '#context-panel', 'muted', 'surface'],

@@ -385,7 +385,7 @@ and why tag cannot drift; a filled core row is a `button` with
 `data-focus-key="core:<slot>"`.
 
 The terminal-side context panel's Soul tab (`instance-soul.mjs`) and its
-Messaging section (`instance-teams.mjs`): the roster-derived header is the
+Messaging & Teams section (`instance-teams.mjs`): the roster-derived header is the
 context panel's and stays put; each section owns a body under it
 (`context-panel.mjs` mounts the Soul section on `.context-panel-soul-body`;
 the Teams section appends `.instance-teams-body` to its host) where the
@@ -397,7 +397,7 @@ home, last start, running, module drift rows, soul source) changes: the soul
 as a refresh that keeps its content, the teams by refreshing the card's list
 (or inspecting again when there is no card). An inspection without the soul,
 or without a messaging provider, is an empty read: the header stands, the
-Messaging section hides. The Messaging section claims its place during the
+Messaging & Teams section hides. That section claims its place during the
 inspection only when the roster row already reports `identityAddress` (or a
 failure is on screen), never again after a no-provider answer, so nothing
 under it shifts. Every controller has a `focusFallback` (the section head or
@@ -422,7 +422,7 @@ grid's read, so nothing is left "refreshing". A catalog that failed with
 nothing held shows the failed treatment on an open capability page
 (`failedElement` / `updateFailed`, shared with the controller's own block:
 cause, Details, Retry), never silence; a Retry over it paints no skeleton
-(`catalogPending` only before the first read settles). The Messaging section
+(`catalogPending` only before the first read settles). The Messaging & Teams section
 treats a no-provider answer as a settled absence (`cancel()`, not data), so a
 later failed re-read is the failed block with Retry, never a header over an
 empty body.
@@ -673,19 +673,31 @@ panel** (`#context-panel`, `context-panel.mjs`). A selected terminal shows its
 instance in three tabs (v4.1 board 1): **Instance** (header with the soul mark,
 "instance of <soul>" linking to the Soul tab, an "older build" chip only when
 the kernel reports `soul.status`/`modules[].status` other than `current`, and
-"Running · 42m"; then Where it works, Session, Messaging, Lineage and the
-lifecycle footer), **Soul** and **Developer** (Git and GitHub). Where it works is one card: the
-work mode in plain words on a band, then Repo, Branch (Git modes only; ↑/↓
-appear once the Developer tab has observed them), Folder and Home. Folder is
+"Running · 42m"; then Work, Session, Messaging & Teams, Lineage and the
+lifecycle footer), **Soul** and **Developer** (Git and GitHub). Work is one card:
+the work mode's tile and one sentence saying what the mode means for this
+instance (`WORK_MODES` in `context-panel.mjs`: an icon and a sentence builder per
+mode). The roster row's own facts (repo, branch, parent) sit in it in the mono
+face, and an unreported fact gets the generic words ("its soul's repository",
+"its parent's tree"), never an invented name. An unknown mode hides the section.
+The sentence is rebuilt only when its words change. Ahead/behind counts are the
+Developer tab's alone. Under the sentence, a closed **Paths** disclosure holds
+Folder and Home, each with an icon Copy. It is built once and never rebuilt, so a
+repaint keeps its open state and a focused Copy. It closes when the selection
+changes. The panel's visibility check treats a closed `<details>`'s content as
+hidden, so focus inside it falls back. Folder is
 `<home>/work`, joined from the roster row's `home` with the home's own separator:
 the kernel gives every instance that folder, a real one in worktree and
 directory mode and a link to the shared tree in checkout, attached and workspace
 mode, where a muted "shared" tag follows the path (the link's target is not
 resolved; that would need a server read). Home is the instance home, where its
-own files live; without a reported `home` string there is no Folder row. Messaging's header is the
-label plus a tools slot the injected Teams section fills with its icon Refresh
-(`createTeamsPanel(…, { compact: true, refreshHost })`); the identity address
-(`identityAddress`, else the served identity) sits alone under it. Empty groups
+own files live; without a reported `home` string there is no Paths. Messaging &
+Teams' header is the label plus a tools slot the injected Teams section fills
+with its icon Refresh (`createTeamsPanel(…, { compact: true, refreshHost })`).
+Under it come two parts with sentence-case sub-labels. **Messaging ID** is the
+identity address (`identityAddress`, else the served identity) on one mono line
+with an icon Copy. **Teams** is followed by the compact card's lead line, shown
+once a teams document has been read, and the card. Empty groups
 and file/brain tabs do not inherit another terminal's context. Roster refresh
 matches the exact workspace/terminal identity and never selects or focuses a
 panel; a missing or ambiguous observation makes session state unknown.
