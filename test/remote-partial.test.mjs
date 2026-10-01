@@ -13,7 +13,7 @@ import {
   contentDigest, createReadSession, fetchRemoteTree, listRemoteTree, observeRemote, parseRepoRef, readRemoteFile, runGit,
   FILE_BUDGET, PARTIAL_FETCH_GIT, SMALL_BLOB_LIMIT, gitVersion, keepsPartialCache,
 } from "../lib/remote.mjs";
-import { PARTIAL_GIT, GIT_VERSION_TEXT, partialMechanics } from "./helpers/partial-git.mjs";
+import { PARTIAL_GIT, olderGitNotice, skipPartialMechanics } from "./helpers/partial-git.mjs";
 
 const GIT_ENV = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t",
   GIT_AUTHOR_DATE: "2026-01-01T00:00:00Z", GIT_COMMITTER_DATE: "2026-01-01T00:00:00Z" };
@@ -99,7 +99,7 @@ test("a commit arrives with its trees and its small blobs only (with an older gi
       assert.deepEqual(session.notices, []);
     } else {
       assert.equal(git(f.repoDir, "config", "--get", "oats.fetch"), "full");
-      assert.deepEqual(session.notices, [`git ${GIT_VERSION_TEXT ?? "(unknown version)"} cannot keep a partial cache (it needs ${PARTIAL_FETCH_GIT.join(".")}); OATS fetches whole trees from ${f.bare}`]);
+      assert.deepEqual(session.notices, [olderGitNotice(f.bare)]);
     }
     assert.throws(() => git(f.repoDir, "config", "--get-all", "remote.origin.url"), "the url (it may carry credentials) is never written");
   } finally { await session.close(); }
@@ -116,7 +116,7 @@ test("listing never needs a blob: complete listings, no fetch, and rows carry no
   assert.equal(fetches.length, 1, "only the commit's own fetch");
 });
 
-test("reading a small file costs no fetch; reading a large one fetches exactly that blob", { skip: partialMechanics }, async () => {
+test("reading a small file costs no fetch; reading a large one fetches exactly that blob", { skip: skipPartialMechanics }, async () => {
   for (const withSession of [false, true]) {
     const f = fixture();
     const { fetches, exec } = counting();
@@ -136,7 +136,7 @@ test("reading a small file costs no fetch; reading a large one fetches exactly t
   }
 });
 
-test("materializing a directory fetches its missing blobs in ONE fetch, and digests like a checkout", { skip: partialMechanics }, async () => {
+test("materializing a directory fetches its missing blobs in ONE fetch, and digests like a checkout", { skip: skipPartialMechanics }, async () => {
   const f = fixture();
   const { fetches, exec } = counting();
   const opts = { cacheDir: f.cacheDir, exec };
@@ -149,7 +149,7 @@ test("materializing a directory fetches its missing blobs in ONE fetch, and dige
   assert.deepEqual(f.present("assets/huge-1.bin", "assets/huge-2.bin"), { "assets/huge-1.bin": false, "assets/huge-2.bin": false });
 });
 
-test("an unknown size never passes a budget: a missing blob is fetched, then FILE_BUDGET and TREE_BUDGET apply before any write", { skip: partialMechanics }, async () => {
+test("an unknown size never passes a budget: a missing blob is fetched, then FILE_BUDGET and TREE_BUDGET apply before any write", { skip: skipPartialMechanics }, async () => {
   const f = fixture();
   write(f.work, "big/over.bin", noise(FILE_BUDGET + 1, "over"));
   git(f.work, "add", "-A"); git(f.work, "commit", "-q", "-m", "two"); git(f.work, "push", "-q", "origin", "HEAD:main");
@@ -169,7 +169,7 @@ test("an unknown size never passes a budget: a missing blob is fetched, then FIL
   assert.equal(fetches.length, 0, "the blob fetched for the refused read is not fetched again");
 });
 
-test("a read whose blob was not fetched fails loudly: git never fetches lazily from a cache", { skip: partialMechanics }, async () => {
+test("a read whose blob was not fetched fails loudly: git never fetches lazily from a cache", { skip: skipPartialMechanics }, async () => {
   const f = fixture();
   await observeRemote(f.bare, { cacheDir: f.cacheDir });
   const e = await runGit(["-C", f.repoDir, "cat-file", "blob", f.blob("assets/huge-1.bin")]).then(() => assert.fail("expected a failure"), (x) => x);
@@ -177,7 +177,7 @@ test("a read whose blob was not fetched fails loudly: git never fetches lazily f
   assert.deepEqual(f.present("assets/huge-1.bin"), { "assets/huge-1.bin": false }, "and nothing was fetched");
 });
 
-test("a cache filled by whole-tree fetches keeps working and fetches the next commit partially", { skip: partialMechanics }, async () => {
+test("a cache filled by whole-tree fetches keeps working and fetches the next commit partially", { skip: skipPartialMechanics }, async () => {
   const f = fixture();
   mkdirSync(f.repoDir, { recursive: true });
   git(f.base, "init", "-q", "--bare", f.repoDir);
@@ -199,7 +199,7 @@ test("a cache filled by whole-tree fetches keeps working and fetches the next co
 // servers that cannot serve partial fetches
 // ---------------------------------------------------------------------------
 
-test("a server without filters: whole trees, recorded per cache, said once in the session's notices", { skip: partialMechanics }, async () => {
+test("a server without filters: whole trees, recorded per cache, said once in the session's notices", { skip: skipPartialMechanics }, async () => {
   const f = fixture("plain");
   const session = createReadSession();
   try {
@@ -220,7 +220,7 @@ test("a server without filters: whole trees, recorded per cache, said once in th
   } finally { await later.close(); }
 });
 
-test("a server that filters but refuses blob wants: the commit is fetched again in full, recorded, said once", { skip: partialMechanics }, async () => {
+test("a server that filters but refuses blob wants: the commit is fetched again in full, recorded, said once", { skip: skipPartialMechanics }, async () => {
   const f = fixture("no-blob-wants");
   await withGlobalGitConfig(f.base, "[protocol]\n\tversion = 0\n", async () => {
     const session = createReadSession();
@@ -266,7 +266,7 @@ test(`a git older than ${PARTIAL_FETCH_GIT.join(".")} (no GIT_NO_LAZY_FETCH) fet
     assert.ok(fetches.length > 0 && fetches.every((a) => !a.some((x) => x.startsWith("--filter"))), `no fetch asks the (partial-capable) server for a filter: ${JSON.stringify(fetches)}`);
     assert.deepEqual(f.present("assets/huge-1.bin"), { "assets/huge-1.bin": true }, "a whole tree, never a partial one");
     assert.equal(git(f.repoDir, "config", "--get", "oats.fetch"), "full");
-    assert.deepEqual(session.notices, [`git 2.43.0 cannot keep a partial cache (it needs ${PARTIAL_FETCH_GIT.join(".")}); OATS fetches whole trees from ${f.bare}`]);
+    assert.deepEqual(session.notices, [olderGitNotice(f.bare, "2.43.0")]);
   } finally { await session.close(); }
 });
 
@@ -278,7 +278,7 @@ test(`the kernel's git probe: a partial cache from ${PARTIAL_FETCH_GIT.join(".")
   assert.equal(keepsPartialCache(null), false);
 });
 
-test("a partial cache met by an older git is rebuilt with whole trees, and reads keep working", { skip: partialMechanics }, async () => {
+test("a partial cache met by an older git is rebuilt with whole trees, and reads keep working", { skip: skipPartialMechanics }, async () => {
   const f = fixture();
   await observeRemote(f.bare, { cacheDir: f.cacheDir, at: f.commit });
   assert.equal(git(f.repoDir, "config", "--get", "oats.fetch"), "partial");
