@@ -2323,7 +2323,7 @@ exit 0
   }
 });
 
-test("a WELL-FORMED mint response cannot reflect a token-shaped value into the team, and the hook holds no token (reviewer-a6aa1c5)", () => {
+test("a WELL-FORMED mint response cannot reflect a token-shaped value into the alias or team, and the hook holds no token (reviewer-a6aa1c5)", () => {
   const base = temp();
   const hook = resolve(new URL("../mirrors/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
   const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
@@ -2331,11 +2331,11 @@ test("a WELL-FORMED mint response cannot reflect a token-shaped value into the t
   // copied into meta and the briefing verbatim. Before oats.aweb 1.17.4 the hook
   // held the invite token and rejected any reply field carrying it. From 1.17.4
   // the token is created and spent inside one \`aw init --join-from\` and never
-  // reaches the hook or any argv, so the hook has nothing to compare against:
-  // what remains is the plausibility rule. A team id that is not
-  // <name>:<domain> (a token has no colon) falls back to the requested team.
-  // (A token-shaped ALIAS would pass the alias rule; that case is recorded as an
-  // oats.aweb follow-up, not asserted here.)
+  // reaches the hook or any argv, so the hook has nothing to compare against.
+  // A team id that is not <name>:<domain> (a token has no colon) falls back to
+  // the requested team. A token-shaped ALIAS would pass the alias rule, so from
+  // oats.aweb 1.17.5 the requested alias always stands in, and a different
+  // reported alias is named by a warning that quotes nothing from the reply.
   const TOKEN = "inv_SUPERSECRET_TOKEN_9f3a";
   const log = join(base, "aw.log");
   write(join(bin, "aw"), `#!/bin/sh
@@ -2344,7 +2344,7 @@ if [ "$1" = "version" ]; then echo "aw 1.36.13"; exit 0; fi
 if [ "$1" = "team" ] && [ "$2" = "list" ]; then echo '{"active_team":"default:acme.aweb.ai","memberships":[{"team_id":"default:acme.aweb.ai","alias":"x"}]}'; exit 0; fi
 if [ "$1" = "team" ] && [ "$2" = "invite" ]; then echo '{"token":"${TOKEN}"}'; exit 0; fi
 if [ "$1" = "team" ] && [ "$2" = "join" ]; then echo '{"team_id":"${TOKEN}","alias":"${TOKEN}"}'; exit 0; fi
-if [ "$1" = "init" ]; then case "$*" in *--join-from=*) echo '{"team_id":"${TOKEN}","alias":"probe","status":"connected"}'; exit 0;; esac; fi
+if [ "$1" = "init" ]; then case "$*" in *--join-from=*) echo '{"team_id":"${TOKEN}","alias":"${TOKEN}","status":"connected"}'; exit 0;; esac; fi
 exit 0
 `);
   execFileSync("chmod", ["+x", join(bin, "aw")]);
@@ -2355,10 +2355,13 @@ exit 0
   });
   assert.doesNotMatch(r.stdout, new RegExp(TOKEN), "no emitted field may carry the token");
   assert.doesNotMatch(r.stderr, new RegExp(TOKEN));
-  // The spawn still succeeds, using what WE asked for: the requested team is
-  // always known, so a rejected field has an honest fallback.
+  // The spawn still succeeds, using what WE asked for: the requested alias and
+  // team are always known, so a rejected field has an honest fallback.
   assert.equal(r.status, 0, `a successful mint stays successful: ${r.stderr}`);
-  assert.match(r.stdout, /"alias":"probe"/);
+  const doc = JSON.parse(r.stdout);
+  assert.equal(doc.meta.alias, "probe", "the requested alias stands in");
+  assert.match(doc.brief, /alias "probe"/);
+  assert.equal(doc.warning, 'oats-aweb: aw reported a different alias than requested; using the requested alias "probe"');
   assert.match(r.stdout, /default:acme\.aweb\.ai/, "the requested team stands in");
   // And the token never passed through the hook: no invite, no join, no argv carrying it.
   const calls = readFileSync(log, "utf8");
