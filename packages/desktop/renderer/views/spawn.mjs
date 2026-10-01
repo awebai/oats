@@ -1253,10 +1253,11 @@ function openSpawnModal(s, a, draft = {}) {
   const nextFrame = doc.defaultView?.requestAnimationFrame?.bind(doc.defaultView) || (f => setTimeout(f, 16));
   const focusInitial = tries => {
     if (!ownsModal()) return;
+    // Before each attempt: focus already in the dialog, or moved anywhere new, is the operator's: stop.
+    const now = doc.activeElement;
+    if (modal.contains(now) || (now && now !== from && now !== doc.body)) return;
     ui.focusName();
-    const at = doc.activeElement;
-    if (modal.contains(at) || tries <= 0 || (at !== from && at && at !== doc.body)) return;
-    nextFrame(() => focusInitial(tries - 1));
+    if (!modal.contains(doc.activeElement) && tries > 0) nextFrame(() => focusInitial(tries - 1));
   };
   focusInitial(10);
   return modal;

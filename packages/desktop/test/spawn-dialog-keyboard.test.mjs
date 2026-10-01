@@ -312,8 +312,9 @@ test('Spec E: a section key from an open Harness picker closes the picker and mo
 // shows it right after): focus on Name cannot land yet. It lands once the stage is shown, unless the
 // operator focused something else in between. (Seen live: the dialog opened with focus on <body>.)
 for (const [why, between, lands] of [
-  ['the stage shows a frame later: Name takes focus then', () => {}, true],
-  ['the operator focused something else first: it stays theirs', u => { const b = u.doc.createElement('button'); u.doc.body.append(b); b.focus(); }, false],
+  ['the stage shows a frame later: Name takes focus then', show => show(), true],
+  ['the operator focused something else first: it stays theirs', (show, u) => { const b = u.doc.createElement('button'); u.doc.body.append(b); b.focus(); show(); }, false],
+  ['the operator focused a control in the dialog first: it stays theirs', (show, u) => { show(); u.q('.ftask').focus(); }, false],
 ]) test(`opened before its stage is on screen: ${why}`, async t => {
   const u = await mountSpawn(t);
   const proto = u.dom.window.HTMLElement.prototype, focus = proto.focus;
@@ -322,9 +323,8 @@ for (const [why, between, lands] of [
   t.after(() => { proto.focus = focus; });
   spawn.preselectSpawn({ name: 'release-manager', agentsRoot: ROOT, onDismiss: () => true });
   assert.ok(u.dialog(), 'the dialog is open'); assert.notEqual(u.doc.activeElement, u.q('.fpurpose'), 'not yet');
-  between(u);
+  between(() => { offscreen = false; }, u); // the stage is shown
   const other = u.doc.activeElement;
-  offscreen = false; // the stage is shown
   await new Promise(r => u.dom.window.requestAnimationFrame(() => u.dom.window.requestAnimationFrame(r)));
   if (lands) assert.equal(u.doc.activeElement, u.q('.fpurpose'), 'focus lands in Name');
   else assert.equal(u.doc.activeElement, other, 'the operator\'s focus is not taken');
