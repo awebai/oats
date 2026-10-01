@@ -40,7 +40,7 @@ arrives from.
 ```yaml
 # oats-workspace.yaml: one default per slot, for every soul
 packages:
-  oats.okf: v4.0.5
+  oats.okf: v4.0.6
   oats.aweb: v1.17.6
   oats.linear: v1.0.1
   oats.jira: v1.0.1

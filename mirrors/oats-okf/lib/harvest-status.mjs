@@ -26,7 +26,13 @@ export function harvestStatus({ home, flags = {} }) {
   const soul = flags.soul || process.env.OATS_AGENT || null;
   const inHome = !!process.env.OATS_INSTANCE_HOME && fs.existsSync(join(home, 'instance.json'));
   const instance = inHome ? { home, registered: fs.existsSync(markerPath(home)), spawnedWith: fs.existsSync(markerPath(home)) ? 'on' : harvestOffRecord(home) ? 'off' : 'unknown' } : null;
-  return { harvest: sw.effective, reason: sw.reason, rows: sw.rows, warnings: sw.warnings, soul, instance, ...registeredSources(soul),
+  // Capture fails closed on an opt-out it cannot read; a status read does not
+  // turn that uncertainty into a definite off.
+  const [deployment, soulRow] = sw.rows;
+  const unknown = sw.effective === 'off' && deployment.value === 'on' && soulRow.readable === false;
+  const harvest = unknown ? 'unknown' : sw.effective;
+  const reason = unknown ? `the soul's opt-out could not be read (${soulRow.why}); capture treats it as off` : sw.reason;
+  return { harvest, reason, rows: sw.rows, warnings: sw.warnings, soul, instance, ...registeredSources(soul),
     note: 'harvest applies from the next spawn: switching it on never captures earlier sessions, and switching it off stops run-source capture for registered sources. `oats schedule disable okf-<source>` is the per-source emergency brake.' };
 }
 

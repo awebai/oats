@@ -1,10 +1,13 @@
 import { randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
+import { hostname } from 'node:os';
 import { isAbsolute, resolve } from 'node:path';
-import { fs, join, dirname, safePath, readJSON, save, atomic, tree, materialize, digest, hash, withLock, oats, command, fail, relPath, quote } from './io.mjs';
+import { fileURLToPath } from 'node:url';
+import { fs, join, dirname, safePath, readJSON, save, atomic, tree, materialize, digest, hash, withLock, oats, command, fail, relPath, quote, pidAlive, redactUrls } from './io.mjs';
 import { loadSource, loadStatus, saveStatus, updateStatus, capture, input, markerPath, homeSource, settleRetiredSchedule } from './sources.mjs';
 import {capturedSource,qualifyCapturedWorker,assertCapturedRun,capturedScaffold,retainCapturedWorkerCustody,assertCapturedWorkerHome,capturedStart} from './captured-worker.mjs';
 import { metadata, splitRef } from './config.mjs';
-import { stageBase, validateBase, allowedChanges, verifyGitScope, gitPublish, directoryPublish, journalPath, baseLock, recoveryStage, reconcileDirectoryIntent, gitRecoveryState } from './stores.mjs';
+import { stageBase, validateBase, allowedChanges, verifyGitScope, gitPublish, confirmGitBaseline, directoryPublish, journalPath, baseLock, recoveryStage, reconcileDirectoryIntent, gitRecoveryState } from './stores.mjs';
 export const runPath=(source,id)=>join(dirname(source.file),'runs',id,'run.json');
 export function readRun(source,id) {
   if(!/^[0-9a-f-]{36}$/.test(id)) fail('E_RUN','invalid run id');
@@ -19,6 +22,9 @@ function persist(source,run) {
   }
   save(runPath(source,run.id),run);
 }
+/** The source's worker lock. Every holder's work is resumable from what it
+ *  persisted, so a lock whose owner died is reclaimed (never a live one). */
+const withWorkerLock=(source,fn,{waitMs=0}={})=>withLock(join(dirname(source.file),'worker.lock'),fn,{waitMs,reclaimDead:true});
 export function requireQualifiedHelper(source) {
   if(['providerBinding','executionBinding','registration'].some(key=>Object.hasOwn(source,key))) fail('E_CAPTURED_HELPER','captured worker requires a qualified generic captured-helper launch API; legacy helper selection is forbidden');
 }
@@ -50,7 +56,7 @@ export function harvesterCommands(source,id) {
 export function runSource(source,{noLaunch=false,manual=false,capturedInvocation,nativeRequest}={}) {
   const plan=capturedSource(source)?qualifyCapturedWorker(source,{context:capturedInvocation,nativeRequest}):null;
   if(!plan) requireQualifiedHelper(source);
-  return withLock(join(dirname(source.file),'worker.lock'),()=>{
+  return withWorkerLock(source,()=>{
     let status=loadStatus(source);
     if(plan && status.activeRun) {
       const existing=readRun(source,status.activeRun);assertCapturedRun(source,existing,plan);
@@ -108,7 +114,7 @@ function spawnWorker(source,run,{parent=false}={}) {
     task=`Process only durable OKF run ${id}. Load the knowledge-harvest skill first.${recovery}\n\n${evidence}\n\nWrite ./work/judgment.json per the skill, then execute the completion command below, replacing only the quoted placeholder with the absolute judgment file path (shell-quote it). A successful command, not this task, is the delivery receipt. On failure retain the worker and report it; do not self-retire. On success report receipt then retire normally.\n\n${complete}\n`;
   } else {
     const cmd=harvesterCommands(source,id);
-    task=`Process only durable OKF run ${id}. Load the knowledge-harvest skill first.${recovery}\n\n${evidence}\n\nWrite ./work/judgment.json per the skill, then run the completion command below, replacing only the quoted placeholder with the absolute judgment file path (shell-quote it). It runs this source's frozen completion in the source deployment. A successful command, not this task, is the delivery receipt. On failure keep your home and report it; do not retire.\n\nAfter a successful completion, stay alive until your PR is merged or closed. On every wake run the status command first, and retire only when it says retire or max-age. Never close the PR yourself.\n\nComplete: ${cmd.complete}\nStatus:   ${cmd.status}\n`;
+    task=`Process only durable OKF run ${id}. Load the knowledge-harvest skill first.${recovery}\n\n${evidence}\n\nWrite ./work/judgment.json per the skill, then run the completion command below, replacing only the quoted placeholder with the absolute judgment file path (shell-quote it). It runs this source's frozen completion in the source deployment. A successful command, not this task, is the delivery receipt. It persists your judgment first; if it answers status delivering, delivery continues in the background: run the status command to follow it, and if that reports a failed or stopped delivery, run the completion command again (it resumes, never judges again). On failure keep your home and report it; do not retire.\n\nAfter a successful completion, stay alive until your PR is merged or closed. On every wake run the status command first, and retire only when it says retire or max-age. Never close the PR yourself.\n\nComplete: ${cmd.complete}\nStatus:   ${cmd.status}\n`;
   }
   const taskFile=join(dirname(runPath(source,id)),'TASK.md');
   const actualTask=run.capturedWorker?task.replace('On success report receipt then retire normally.',`On success report the actual receipt and include run ${id} in your final assistant reply. RETAIN this home/history. Public captured retirement is not qualified; never use legacy retirement or self-retire.`) :task;
@@ -257,63 +263,180 @@ function finishStatus(source,run) {
   }
   });
 }
-export function complete(source,id,judgmentFile,opts={}) {
-  return withLock(join(dirname(source.file),'worker.lock'),()=>{
-    const run=readRun(source,id);
-    const successor=loadStatus(source).recoveries?.[id];
-    if(successor) fail('E_RECOVERY',`run superseded by recovery ${successor}; complete that run instead`);
-    if(run.status==='abandoned') fail('E_RECOVERY','abandoned run cannot complete; use run-source for its pending successor');
-    checkRecoveryGuards(source,run);
-    persist(source,run); // preserve receipts created by older capability versions too
-    if(!run.judgment) workerHome(run,source);
-    if(!run.judgment) {
-      if(!['ready','running','launch-intent','launch-unknown'].includes(run.status)) fail('E_RUN','worker is not prepared');
-      const judgment=judge(source,run,judgmentFile);
-      // Validate EVERY staged base, including read-only nodes, before any
-      // destination mutates. Multi-base publication is not a transaction.
-      const proposals={};
-      for(const [alias,s] of Object.entries(run.stages)) {
-        if(run.settled?.includes(alias)) continue;
-        const base=source.bindings.bases[alias];
-        const validated=validateBase(s.root,base);const m=metadata(s.baseline,base);
-        const changed=allowedChanges(s.baseline,validated.files,m,s.owned);
-        if(base.kind==='git') verifyGitScope(base,s.checkout,s.head);
-        const checkDir=fs.mkdtempSync(join(source.bindings.stateDir,'baseline-'));
-        try {
-          const current=stageBase(base,join(checkDir,'base'),{alias});
-          if(current.digest!==s.digest || (base.kind==='git' && current.head!==s.head)) fail('E_BASELINE','accepted base changed; rejudge on fresh baseline');
-        } finally {fs.rmSync(checkDir,{recursive:true,force:true});}
-        const claims=judgment.outcomes.flatMap(o=>o.concepts).filter(c=>c.base===alias).map(c=>c.path);
-        for(const p of changed.filter(p=>p.endsWith('.md'))) {
-          const text=Buffer.from(validated.files[p] || '', 'base64').toString();
-          if(/-----BEGIN [\w ]*PRIVATE KEY-----|\b(?:ghp|github_pat|sk_live)_[A-Za-z0-9_]{12,}/.test(text)) fail('E_EXCLUSION','credential-shaped output prohibited');
-          if(!validated.files[p] && !(judgment.removals || []).some(r=>r.base===alias && r.path===p)) fail('E_JUDGMENT',`deletion needs explicit removal rationale: ${alias}/${p}`);
-          if(!/(^|\/)(index|log)\.md$/.test(p) && validated.files[p] && !claims.includes(p)) fail('E_JUDGMENT',`changed concept lacks outcome/provenance: ${alias}/${p}`);
-        }
-        const file=join(run.attemptDir || dirname(runPath(source,id)),`${alias}-proposal.json`);
-        proposals[alias]={version:1,run:id,...(run.attempt?{attempt:run.attempt}:{}),created:run.created,file,before:s.baseline,after:validated.files,changed};
-      }
-      for(const [alias,p] of Object.entries(proposals)) {
-        save(p.file,p);run.receipts[alias]={status:p.changed.length?'validated':'no-change',proposal:p.file,proposalHash:hash(p)};
-      }
-      run.judgment=judgment;run.status='delivering';persist(source,run);
+/** The run `id`, checked fit to complete or deliver. */
+function completableRun(source,id) {
+  const run=readRun(source,id);
+  const successor=loadStatus(source).recoveries?.[id];
+  if(successor) fail('E_RECOVERY',`run superseded by recovery ${successor}; complete that run instead`);
+  if(run.status==='abandoned') fail('E_RECOVERY','abandoned run cannot complete; use run-source for its pending successor');
+  checkRecoveryGuards(source,run);
+  persist(source,run); // preserve receipts created by older capability versions too
+  return run;
+}
+/** Judge the harvester's output and persist it FIRST: the judgment and its
+ *  proposals land in one run.json write, after local checks only (no
+ *  network). A completion killed later loses nothing; delivery
+ *  resumes from what is persisted here, and never judges again. */
+function persistJudgment(source,run,judgmentFile) {
+  workerHome(run,source);
+  if(!['ready','running','launch-intent','launch-unknown'].includes(run.status)) fail('E_RUN','worker is not prepared');
+  const judgment=judge(source,run,judgmentFile);
+  // Validate EVERY staged base, including read-only nodes, before any
+  // destination mutates. Multi-base publication is not a transaction.
+  const proposals={};
+  for(const [alias,s] of Object.entries(run.stages)) {
+    if(run.settled?.includes(alias)) continue;
+    const base=source.bindings.bases[alias];
+    const validated=validateBase(s.root,base);const m=metadata(s.baseline,base);
+    const changed=allowedChanges(s.baseline,validated.files,m,s.owned);
+    if(base.kind==='git') verifyGitScope(base,s.checkout,s.head);
+    const claims=judgment.outcomes.flatMap(o=>o.concepts).filter(c=>c.base===alias).map(c=>c.path);
+    for(const p of changed.filter(p=>p.endsWith('.md'))) {
+      const text=Buffer.from(validated.files[p] || '', 'base64').toString();
+      if(/-----BEGIN [\w ]*PRIVATE KEY-----|\b(?:ghp|github_pat|sk_live)_[A-Za-z0-9_]{12,}/.test(text)) fail('E_EXCLUSION','credential-shaped output prohibited');
+      if(!validated.files[p] && !(judgment.removals || []).some(r=>r.base===alias && r.path===p)) fail('E_JUDGMENT',`deletion needs explicit removal rationale: ${alias}/${p}`);
+      if(!/(^|\/)(index|log)\.md$/.test(p) && validated.files[p] && !claims.includes(p)) fail('E_JUDGMENT',`changed concept lacks outcome/provenance: ${alias}/${p}`);
     }
-    for(const [alias,r] of Object.entries(run.receipts)) {
-      if(r.status==='no-change' || (run.settled?.includes(alias) && source.bindings.bases[alias].kind==='directory')) continue;
-      if(r.status==='accepted' && !(source.bindings.bases[alias].kind==='directory' && fs.existsSync(journalPath(source.bindings.bases[alias])))) continue;
-      const proposal=readJSON(r.proposal);if(hash(proposal)!==r.proposalHash) fail('E_INPUT','proposal hash mismatch');
-      const base=source.bindings.bases[alias];const saveReceipt=()=>persist(source,run);
+    const file=join(run.attemptDir || dirname(runPath(source,run.id)),`${alias}-proposal.json`);
+    proposals[alias]={version:1,run:run.id,...(run.attempt?{attempt:run.attempt}:{}),created:run.created,file,before:s.baseline,after:validated.files,changed};
+  }
+  for(const p of Object.values(proposals)) save(p.file,p);
+  run.proposals=Object.fromEntries(Object.entries(proposals).map(([alias,p])=>[alias,{proposal:p.file,proposalHash:hash(p),changed:p.changed.length>0}]));
+  run.judgment=judgment;run.status='delivering';persist(source,run);
+}
+/** Before any destination mutates, confirm that each judged base still holds
+ *  the bytes judged (multi-base publication is not a transaction). Receipts
+ *  exist only once every base is confirmed, so recovery never mistakes an
+ *  unconfirmed no-change for a settled destination. A Git head that moved
+ *  outside the root is no change: a Git receipt records the head its root was
+ *  confirmed at (confirmedHead), and a written base is delivered onto it
+ *  (gitPublish). */
+function confirmBaselines(source,run) {
+  const pending=Object.entries(run.proposals || {}).filter(([alias])=>!Object.hasOwn(run.receipts,alias));
+  if(!pending.length) return;
+  const receipts={};
+  for(const [alias,p] of pending) {
+    const base=source.bindings.bases[alias],s=run.stages[alias];
+    let head;
+    if(base.kind==='git') head=confirmGitBaseline(base,s,{alias});
+    else {
+      const checkDir=fs.mkdtempSync(join(source.bindings.stateDir,'baseline-'));
       try {
-        if(base.kind==='git') {
-          if(!fs.existsSync(run.stages[alias].checkout)) {run.stages[alias]=recoveryStage(base,run.stages[alias],proposal,join(run.attemptDir || dirname(runPath(source,id)),`${alias}-recovery`));persist(source,run);}
-          gitPublish(base,run.stages[alias],proposal,r,saveReceipt,{beforePublish:()=>checkRecoveryGuards(source,run),prIdentity:recoveryObservation(source,alias,r).observed?.pr || r.pr,pr:harvestPr(source,run)});
-        }
-        else directoryPublish(base,proposal,r,saveReceipt,opts);
-      } catch(e) {r.error=e.message;persist(source,run);finishStatus(source,run);throw e;}
+        if(stageBase(base,join(checkDir,'base'),{alias}).digest!==s.digest) fail('E_BASELINE','accepted base changed; rejudge on fresh baseline');
+      } finally {fs.rmSync(checkDir,{recursive:true,force:true});}
     }
-    finishStatus(source,run);
-    return {status:run.status,run:id,processed:run.status==='processed',receipts:run.receipts};
+    receipts[alias]={status:p.changed?'validated':'no-change',proposal:p.proposal,proposalHash:p.proposalHash,...(head?{confirmedHead:head}:{})};
+  }
+  Object.assign(run.receipts,receipts);persist(source,run);
+}
+/** Persist after an idempotent delivery step, naming it in the run's
+ *  delivery record when a background worker delivers. */
+function checkpoint(source,run,alias) {
+  if(run.delivery?.state==='running') run.delivery={...run.delivery,step:`${alias}: ${run.receipts[alias].status}`,updatedAt:new Date().toISOString()};
+  persist(source,run);
+}
+/** Deliver a judged run: confirm baselines, then publish each destination. */
+function deliverRun(source,run,opts={}) {
+  confirmBaselines(source,run);
+  for(const [alias,r] of Object.entries(run.receipts)) {
+    if(r.status==='no-change' || (run.settled?.includes(alias) && source.bindings.bases[alias].kind==='directory')) continue;
+    if(r.status==='accepted' && !(source.bindings.bases[alias].kind==='directory' && fs.existsSync(journalPath(source.bindings.bases[alias])))) continue;
+    const proposal=readJSON(r.proposal);if(hash(proposal)!==r.proposalHash) fail('E_INPUT','proposal hash mismatch');
+    const base=source.bindings.bases[alias];const saveReceipt=()=>checkpoint(source,run,alias);
+    try {
+      if(base.kind==='git') {
+        if(!fs.existsSync(run.stages[alias].checkout)) {run.stages[alias]=recoveryStage(base,run.stages[alias],proposal,join(run.attemptDir || dirname(runPath(source,run.id)),`${alias}-recovery`));persist(source,run);}
+        gitPublish(base,run.stages[alias],proposal,r,saveReceipt,{beforePublish:()=>checkRecoveryGuards(source,run),prIdentity:recoveryObservation(source,alias,r).observed?.pr || r.pr,pr:harvestPr(source,run)});
+      }
+      else directoryPublish(base,proposal,r,saveReceipt,opts);
+    } catch(e) {r.error=e.message;persist(source,run);finishStatus(source,run);throw e;}
+  }
+  finishStatus(source,run);
+  return {status:run.status,run:run.id,processed:run.status==='processed',receipts:run.receipts};
+}
+export function complete(source,id,judgmentFile,opts={}) {
+  return withWorkerLock(source,()=>{
+    const run=completableRun(source,id);
+    if(!run.judgment) persistJudgment(source,run,judgmentFile);
+    return deliverRun(source,run,opts);
   });
+}
+/** How long the complete command waits for its delivery before it answers
+ *  with a receipt: well under an agent's tool-call limit. */
+export const RECEIPT_WITHIN_MS=30000;
+// Bounded waits for the worker lock: complete queues briefly behind a
+// capture; a delivery worker behind the complete that started it.
+const COMPLETE_LOCK_WAIT_MS=10000,DELIVERY_LOCK_WAIT_MS=60000;
+const DELIVERY_WORKER=fileURLToPath(new URL('./delivery-worker.mjs',import.meta.url));
+const deliveryLog=(source,id)=>join(dirname(runPath(source,id)),'delivery.log');
+/** Whether the run's recorded delivery worker is a process still running here. */
+const liveDelivery=run=>['starting','running'].includes(run.delivery?.state) && run.delivery.host===hostname() && pidAlive(run.delivery.pid);
+const deliveryProgress=run=>({status:'delivering',run:run.id,processed:false,receipts:run.receipts,delivery:run.delivery,
+  next:`delivery continues in the background (pid ${run.delivery.pid}, log ${run.delivery.log}); harvest-status, or the complete command again, reports its progress`});
+/** A run's live delivery worker owns it: recovery waits for it to end. */
+function refuseLiveDelivery(run) {
+  if(liveDelivery(run)) fail('E_RECOVERY',`delivery of run ${run.id} is in progress (pid ${run.delivery.pid}, ${run.delivery.step || run.delivery.state}); follow it with harvest-status and rejudge only once it has ended`);
+}
+/** Start the detached worker that delivers a judged run. Caller holds the
+ *  worker lock, which the worker takes next (one worker per run: a live one
+ *  is never doubled). Its own session survives the caller, and its output goes
+ *  to a log in the run directory, never to the caller's pipes. */
+function startDelivery(source,run) {
+  const log=deliveryLog(source,run.id),fd=fs.openSync(log,'a',0o600);
+  let child;
+  try {child=spawn(process.execPath,[DELIVERY_WORKER,source.file,run.id],{detached:true,stdio:['ignore',fd,fd],cwd:dirname(source.file),env:process.env});}
+  finally {fs.closeSync(fd);}
+  if(!child.pid) fail('E_DELIVERY',`the delivery worker could not start; see ${log}`);
+  child.on('error',()=>{}); // a start failure is reported through the run record
+  child.unref();
+  run.delivery={state:'starting',pid:child.pid,host:hostname(),startedAt:new Date().toISOString(),log};persist(source,run);
+}
+/** The detached worker's side: deliver a judged run under the worker lock,
+ *  recording progress and outcome in run.delivery. */
+export function deliver(source,id) {
+  // Every failure is recorded under the lock, including one before delivery
+  // starts, so the run never shows a stopped worker with no reason.
+  const failed=(run,e)=>{run.delivery={...run.delivery,pid:process.pid,host:hostname(),state:'failed',error:{code:e.code || 'E_OKF',message:redactUrls(e.message)},updatedAt:new Date().toISOString()};persist(source,run);};
+  try {
+    return withWorkerLock(source,()=>{
+      let run;
+      try {
+        run=completableRun(source,id);
+        if(!run.judgment) fail('E_RUN','run has no persisted judgment to deliver');
+        const {error,...previous}=run.delivery || {};
+        const record=fields=>{run.delivery={...run.delivery,...fields,updatedAt:new Date().toISOString()};persist(source,run);};
+        run.delivery={...previous,pid:process.pid,host:hostname()};record({state:'running',step:'confirming baselines'});
+        const result=deliverRun(source,run);record({state:'done'});return result;
+      } catch(e) {failed(run ?? readRun(source,id),e);throw e;}
+    },{waitMs:DELIVERY_LOCK_WAIT_MS});
+  } catch(e) {
+    // The lock never came free: record why once it does, if it does soon.
+    if(e.code==='E_LOCKED') try {withWorkerLock(source,()=>{const run=readRun(source,id);if(run.delivery?.pid===process.pid) failed(run,e);},{waitMs:5000});} catch { /* the log keeps it */ }
+    throw e;
+  }
+}
+/** `oats okf complete`: persist the judgment, then deliver in a detached
+ *  worker, answering with the final receipt if delivery ends within
+ *  `receiptWithinMs`, else with its progress. A killed call loses nothing: a
+ *  rerun reclaims its lock and resumes from the persisted judgment. */
+export async function completeInBackground(source,id,judgmentFile,{receiptWithinMs=RECEIPT_WITHIN_MS,afterJudgment}={}) {
+  const deadline=Date.now()+receiptWithinMs;
+  if(!liveDelivery(readRun(source,id))) {
+    try {
+      withWorkerLock(source,()=>{
+        const run=completableRun(source,id);
+        if(!run.judgment) {persistJudgment(source,run,judgmentFile);afterJudgment?.();} // fault injection is programmatic tests only
+        if(!liveDelivery(run)) startDelivery(source,run);
+      },{waitMs:COMPLETE_LOCK_WAIT_MS});
+    } catch(e) {if(e.code!=='E_LOCKED' || !liveDelivery(readRun(source,id))) throw e;}
+  }
+  let run=readRun(source,id);
+  while(liveDelivery(run) && Date.now()<deadline) {await new Promise(r=>setTimeout(r,100));run=readRun(source,id);}
+  const delivery=run.delivery;
+  if(liveDelivery(run)) return deliveryProgress(run);
+  if(delivery.state==='failed') throw Object.assign(new Error(`${delivery.error.message} (delivery log: ${delivery.log}); fix the cause, then run complete again to resume, or retry --rejudge after E_BASELINE`),{code:delivery.error.code});
+  if(delivery.state!=='done') fail('E_DELIVERY',`the delivery worker (pid ${delivery.pid}) stopped at "${delivery.step || delivery.state}"; run complete again to resume (log: ${delivery.log})`);
+  return {status:run.status,run:id,processed:run.status==='processed',receipts:run.receipts};
 }
 /** The harvester's messaging alias, from its home's recorded hook meta. */
 function harvesterAlias(run) {
@@ -350,9 +473,11 @@ export function retry(source,{run:id,rejudge=false,launch=false,adoptHome}={}) {
   }
   const status=loadStatus(source);if(!status.activeRun) return runSource(source,{manual:true,noLaunch:!launch});
   const run=readRun(source,status.activeRun);
+  if(rejudge) refuseLiveDelivery(run);
+  else if(liveDelivery(run)) return deliveryProgress(run);
   if(rejudge && !run.judgment && ['spawn-intent','scaffolded','launch-intent','launch-unknown'].includes(run.status)) fail('E_RECOVERY','inspect/adopt the uncertain worker before rejudging; never duplicate an uncertain spawn or launch');
   if(rejudge && run.recoveryOf && !Object.values(run.receipts).some(r=>['accepted','delivered','no-change'].includes(r.status))) return recoverRun(source,run.id,{launch});
-  if(rejudge) return withLock(join(dirname(source.file),'worker.lock'),()=>{
+  if(rejudge) return withWorkerLock(source,()=>{
     if(loadStatus(source).activeRun!==status.activeRun) fail('E_RUN','active run changed; inspect before retrying');
     const run=readRun(source,status.activeRun);
     checkRecoveryGuards(source,run);
@@ -391,14 +516,14 @@ export function retry(source,{run:id,rejudge=false,launch=false,adoptHome}={}) {
     save(history,{judgment:run.judgment,receipts:run.receipts,stages:run.stages,attempt:run.attempt || run.id});
     run.history=[...(run.history || []),history];run.stages=stages;run.settled=settled;run.recoveryGuards=guards;
     run.receipts=Object.fromEntries(settled.map(alias=>[alias,run.receipts[alias]]));
-    run.attempt=attempt;run.attemptDir=attemptDir;delete run.judgment;delete run.error;
+    run.attempt=attempt;run.attemptDir=attemptDir;delete run.judgment;delete run.proposals;delete run.error;
     run.status='ready';persist(source,run);writeStagingMap(source,run);
     if(launch) startWorker(source,run);
     return {status:run.status,run:run.id,rejudged:true,outstanding,settled,worker:run.worker,next:'Re-read work/staging.json; judge only outstanding destinations. Earlier receipts and work are preserved.'};
   });
   if(run.judgment) return complete(source,run.id);
   requireQualifiedHelper(source);
-  return withLock(join(dirname(source.file),'worker.lock'),()=>{
+  return withWorkerLock(source,()=>{
     if(adoptHome) {
       if(run.status!=='spawn-intent') fail('E_RECOVERY','adoption only resolves uncertain spawn');
       const meta=readJSON(join(safePath(adoptHome),'instance.json'));
@@ -438,8 +563,9 @@ function checkRecoveryGuards(source,run) {
   }
 }
 function recoverRun(source,id,{launch=false}={}) {
-  return withLock(join(dirname(source.file),'worker.lock'),()=>{
+  return withWorkerLock(source,()=>{
     const previous=readRun(source,id),status=loadStatus(source),successor=status.recoveries?.[id];
+    refuseLiveDelivery(previous);
     if(status.activeRun && status.activeRun!==id && status.activeRun!==successor) fail('E_RECOVERY',`another active run ${status.activeRun}; finish it before explicit recovery`);
     if(successor) {
       const existing=readRun(source,successor);

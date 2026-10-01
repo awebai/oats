@@ -5,13 +5,15 @@
 // `oats okf complete` from the source deployment, never from this home.
 import { spawnSync } from 'node:child_process';
 import { readFileSync, lstatSync } from 'node:fs';
+import { hostname } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HELP = `oats okf-harvest complete --source FILE --run ID --judgment ABS_FILE [--json]
 oats okf-harvest harvest-status --source FILE --run ID [--json]
 complete runs the source's frozen \`oats okf complete\` in its deployment (the
-only delivery path). harvest-status reports each PR's state and what to do:
+only delivery path): it persists the judgment, then delivers in the background,
+answering \`delivering\` when delivery outlasts the 30 s it waits. harvest-status reports each PR's state and what to do:
 stay, retire or max-age (setting harvester-max-age, default 7d).
 `;
 const fail = (code, message, extra = {}) => { throw Object.assign(new Error(message), { code, ...extra }); };
@@ -95,6 +97,19 @@ function prState(pr, env) {
   const v = JSON.parse(r.stdout);
   return { url: v.url, number: v.number, state: v.state, mergedAt: v.mergedAt || null, closedAt: v.closedAt || null };
 }
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
+const RESUME = 'run the complete command again to resume (it reuses your persisted judgment)';
+/** Why a judged run is not delivered yet, from its background delivery record. */
+function deliveryReason(delivery, pending) {
+  const live = ['starting', 'running'].includes(delivery?.state) && delivery.host === hostname() && alive(delivery.pid);
+  if (live) return `delivery in progress (${delivery.step || delivery.state})`;
+  if (delivery?.state === 'failed') {
+    const { code, message } = delivery.error ?? {};
+    return `delivery failed: ${code}: ${message}; ${code === 'E_BASELINE' ? 'the accepted base changed under your judgment: report it to your operator, who rejudges with oats okf retry --rejudge' : RESUME}`;
+  }
+  if (['starting', 'running'].includes(delivery?.state)) return `delivery stopped at "${delivery.step || delivery.state}"; ${RESUME}`;
+  return `destinations not delivered: ${pending.join(', ')}; ${RESUME}`;
+}
 export function harvestStatus(flags, env = process.env, { now = Date.now(), view = prState } = {}) {
   for (const k of ['source', 'run']) if (!flags[k]) fail('E_USAGE', `--${k} is required`);
   const source = readSource(flags.source), run = readRun(source, flags.source, flags.run);
@@ -105,19 +120,21 @@ export function harvestStatus(flags, env = process.env, { now = Date.now(), view
     if (r?.pr?.url) return { alias, receipt: r.status, pr: view(r.pr, env) };
     return { alias, receipt: r?.status ?? null, pr: null };
   });
-  const judged = !!run.judgment;
+  const judged = !!run.judgment, delivery = run.delivery ?? null;
   let action, reason;
   const open = destinations.filter((d) => d.pr && !['MERGED', 'CLOSED'].includes(d.pr.state));
-  const pending = destinations.filter((d) => !d.pr && !['no-change', 'accepted'].includes(d.receipt));
-  if (!judged || pending.length) { action = age >= limit ? 'max-age' : 'stay'; reason = !judged ? 'the run is not completed yet' : `destinations not delivered: ${pending.map((d) => d.alias).join(', ')}`; }
+  // A judged destination gets its receipt only once delivery confirms its baseline.
+  const pending = [...destinations.filter((d) => !d.pr && !['no-change', 'accepted'].includes(d.receipt)).map((d) => d.alias),
+    ...Object.keys(run.proposals ?? {}).filter((alias) => !Object.hasOwn(receipts, alias))];
+  if (!judged || pending.length) { action = age >= limit ? 'max-age' : 'stay'; reason = !judged ? 'the run is not completed yet' : deliveryReason(delivery, pending); }
   else if (open.length) { action = age >= limit ? 'max-age' : 'stay'; reason = `open PR: ${open.map((d) => d.pr.url).join(', ')}`; }
   else { action = 'retire'; reason = destinations.some((d) => d.pr) ? 'every PR is merged or closed' : 'no PR was needed (no-change or directory publication)'; }
   if (action === 'max-age') reason += `; older than harvester-max-age (${Math.round(limit / 3600000)}h): tell your operator and retire, never close the PR`;
-  return { run: run.id, status: run.status, ageSeconds: Math.round(age / 1000), maxAgeSeconds: limit / 1000, destinations, action, reason };
+  return { run: run.id, status: run.status, ageSeconds: Math.round(age / 1000), maxAgeSeconds: limit / 1000, destinations, delivery, action, reason };
 }
 function text(event, r) {
   if (event === 'harvest-status') return [`run ${r.run} (${r.status}): ${r.action} — ${r.reason}`, ...r.destinations.map((d) => `  ${d.alias}: ${d.pr ? `${d.pr.state} ${d.pr.url}` : d.receipt}`)].join('\n');
-  return `completed run ${r.run}: ${r.status}${Object.entries(r.receipts || {}).map(([a, x]) => `\n  ${a}: ${x.status}${x.pr?.url ? ` ${x.pr.url}` : ''}`).join('')}`;
+  return `completed run ${r.run}: ${r.status}${Object.entries(r.receipts || {}).map(([a, x]) => `\n  ${a}: ${x.status}${x.pr?.url ? ` ${x.pr.url}` : ''}`).join('')}${r.next ? `\n${r.next}` : ''}`;
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2), event = args[0];
