@@ -15,7 +15,10 @@ how you get there.
    into paths a dynamic workflow can run in parallel with deterministic coordination, in one
    worktree when the paths don't touch the same files and in several when they do.
    Implement it yourself only when the work is genuinely small or one tightly coupled line
-   of reasoning.
+   of reasoning. Keep each workflow **under 10 agents**; for 10 or more, ask your human
+   for permission first. Within that cap, run a workflow without asking each time where
+   your harness allows it; where your harness requires your human's opt-in, ask for it
+   once per task with the planned agent count, or use the standing opt-in they set.
 3. **Consolidate, verify, document.** Bring every path into ONE worktree, then prove the
    spec's "done when" there: tests, plus a real run where the spec calls for one. Follow the
    repository's own instructions for its test gate. Update the repository's development
