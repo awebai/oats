@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import * as spawn from '../../renderer/views/spawn.mjs';
-import { currentWorkspace, setWorkspace } from '../../renderer/views/common.mjs';
+import { currentWorkspace, setWorkspace, postJson } from '../../renderer/views/common.mjs';
+import { createSpawnJobs } from '../../renderer/spawn-jobs.mjs';
 import { refreshCli } from '../../renderer/views/cli-status.mjs';
 import { createSpawnPreviewBoundary } from '../../server/spawn-preview.mjs';
 import { createSpawnApplyBoundary } from '../../server/spawn-apply.mjs';
@@ -92,13 +93,25 @@ export async function mountSpawn(t, options = {}) {
       throw new Error(`Unexpected fixture API request: ${path}`);
     },
     openTerminal: (ref, o) => opens.push({ ref, o }), notifySpawn: (row, ws) => notified.push({ row, ws }), notify: () => {}, openBrain: () => {} };
-  t.after(() => { spawn.unmount(); setWorkspace(previous.ws); globalThis.document = previous.document; globalThis.window = previous.window; globalThis.setInterval = previous.setInterval; dom.window.close(); });
+  // options.jobs: the shell's background-spawn store (Spec C), wired as shell.mjs wires it; its options override.
+  const notices = [], reopened = [], schedules = [];
+  if (options.jobs) {
+    ctx.spawnJobs = createSpawnJobs({ post: (ws, body) => postJson(ctx, `/api/spawn?ws=${encodeURIComponent(ws)}`, body),
+      notify: (message, opts = {}) => {
+        const n = { message, options: opts, shown: true }; notices.push(n);
+        return { dismiss() { n.shown = false; }, get shown() { return n.shown; } };
+      },
+      notifySpawned: (row, ws) => notified.push({ row, ws }),
+      reopen: job => { reopened.push(job); spawn.preselectSpawn({ name: job.soul.name, agentsRoot: job.soul.agentsRoot, draft: job.draft }); },
+      viewSchedules: () => schedules.push(true), currentWorkspace, ...(options.jobs === true ? {} : options.jobs) });
+  }
+  t.after(() => { ctx.spawnJobs?.dispose(); spawn.unmount(); setWorkspace(previous.ws); globalThis.document = previous.document; globalThis.window = previous.window; globalThis.setInterval = previous.setInterval; dom.window.close(); });
   setWorkspace('northwind');
   await refreshCli({ api: async () => cli });
   spawn.mount(dom.window.document.querySelector('#host'), ctx); await settle();
   const doc = dom.window.document;
   const u = {
-    doc, dom, calls, opens, notified, applied, polls, ctx,
+    doc, dom, calls, opens, notified, applied, polls, ctx, notices, reopened, schedules, jobs: ctx.spawnJobs,
     dialog: () => doc.querySelector('.spawn-dialog'),
     q: selector => doc.querySelector(`.spawn-dialog ${selector}`),
     text: selector => (doc.querySelector(`.spawn-dialog ${selector}`)?.textContent || '').trim(),

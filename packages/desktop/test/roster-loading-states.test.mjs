@@ -144,7 +144,7 @@ function shell(t) {
     createRosterLoading: (d, el, options) => tree.createRosterLoading(d, el, { ...options, now: c.now, setTimeout: c.setTimeout, clearTimeout: c.clearTimeout }),
     instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge, instanceActionTarget, instanceSplitPlan, iconElement, prChip, prText,
     rosterTipFacts, deploymentUnavailableText, staleWorkspaceSelection,
-    rosterTip: { bind() {}, hide() {}, sync() {} }, rosterPrs: { get: () => null, refresh() {} }, ctx: {},
+    rosterTip: { bind() {}, hide() {}, sync() {} }, rosterPrs: { get: () => null, refresh() {} }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} }, ctx: {},
     connectionGeneration: 0, menuState() {}, runAction: assert.fail, getBinding: () => null, formatChord: x => x, isMac: true,
     contextRosterEl: null, contextRosterGen: 0, contextFilter: '', contextWorkspace: 'A', contextInstances: [], tabWorkspace: 'A',
     rosterState: null, rosterStale: false, contextDeploymentNote: null, rosterSignaturePainted: null,

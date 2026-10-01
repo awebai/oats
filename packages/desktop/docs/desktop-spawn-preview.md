@@ -70,8 +70,8 @@ duplicates coalesce before await. No unbounded queue. **30s / 4MiB CLI,
 35s proxy**, clean exit and JSON-v1 envelope. Admission revalidation applies to
 success and rejection.
 
-**The reuse window.** This route (and only this route) answers from a bounded
-settled-answer cache (`spawnPreviewCachedRequest`, `server/spawn-preview.mjs`):
+**The reuse window.** This route and `/api/spawn` prepare (below) answer from one
+bounded settled-answer cache (`spawnPreviewCache`, `server/spawn-preview.mjs`):
 64 entries, **60 s**, keyed by the admission identity (workspace id and scope,
 subject, soul work/repo/capability, anchor incarnation, choices and every CLI
 field the admission reads). It holds `available` answers and the name refusals
@@ -82,7 +82,8 @@ within the window (a toggle back, a retyped name, the dialog reopened for the
 same soul) settles without a CLI call.
 
 Invalidation drops a workspace's entries when Desktop performs a change that
-can alter a preview: every `/api/spawn` apply, a local lifecycle apply, a
+can alter a preview: every `/api/spawn` apply (when it starts, before the kernel
+runs, and again when it settles), a local lifecycle apply, a
 workspace sync and instance start/restart (all through `observeMutation`), a
 teams or soul-teams write, a launch-configuration `set`/`remove`, and a
 capability run. A CLI re-probe that changes the CLI clears it all (its fields
@@ -91,12 +92,26 @@ a workspace replaces the backend, and its cache with it. A flight that started
 before an invalidation never fills the cache, even when a later request joined
 it (a monotonic clock stamps flight starts and invalidations). What Desktop does
 not observe (a spawn by another window's backend or by the CLI, an on-disk edit)
-may show an older answer for up to 60 s. That is safe: prepare never reads the
-cache (below), so the decision check refuses a changed decision at **Spawn**.
+may show an older answer for up to 60 s. That is safe: the apply passes the
+decision's revision as `--expect-decision`, and the kernel refuses a decision
+that no longer holds (`E_DECISION_STALE`) before it creates anything.
 
-**Prepare is always fresh.** `/api/spawn` prepare reads through the uncached
-`spawnPreviewRequest`: the decision a spawn binds is a fresh kernel read, never
-a held answer (it may still coalesce onto an identical read in the air).
+**Prepare reuses the dialog's answer** (Spec C). `/api/spawn` prepare reads
+through `spawnPreviewPrepareRequest`, the same cache: when the dialog already
+holds a fresh settled answer for exactly this admission identity (not
+invalidated, younger than 60 s), prepare binds it without a CLI call (well under
+50 ms); otherwise it reads fresh as before, and may coalesce onto an identical
+read in the air. `--expect-decision` at apply is the drift guard that makes this
+safe; the apply-start invalidation keeps a spawn's own decision from being
+reused by the next one.
+
+**Member-head reuse (`--max-age`).** When the admitted CLI advertises the feature
+`spawn-preview-max-age`, the dialog's reads pass `--max-age 60`, letting the
+kernel answer from member heads it observed within 60 s (its reply may carry an
+`observation {observedAt, reused, localRevision}` block, which the projection
+drops and never shows). Prepare's own uncached read and the apply never pass it,
+and a reusing read never coalesces with a live one (their flights are keyed
+apart). Without the feature, no read passes it.
 
 Response: `{spawnPreviewViewApi:1,status,target,data,reason}`. Success requires
 API2, `preview:true`, byte-exact `subject{soul,agentsRoot,dir}` and consistent
@@ -296,7 +311,8 @@ refusal; a read in flight or a settled preview otherwise stands. That key does n
 watch the rest of the roster or on-disk soul and team edits: this is safe, because
 the decision check refuses at **Spawn** if they changed what the kernel decides.
 
-**Check result** reads the retained record. Only a prior settled **unknown** may
+**Check result** (on the pending roster row, below; in the dialog on the view
+harness) reads the retained record. Only a prior settled **unknown** may
 then invoke apply with the same ref/key as part of that explicit recovery click.
 Pending and known outcomes never re-invoke. There is no timer-driven retry.
 
@@ -309,11 +325,79 @@ observations can block retry after disappearance, but no roster read closes a
 concurrent retire race. No lifetime exactly-once/no-resurrection promise.
 
 A qualified completed receipt still needs the current **exact** composite roster
-home/root/agent and running-session match before handoff. Not-launched, partial,
-incomplete, unknown, stale or mismatched results never open a guessed terminal.
+home/root/agent and running-session match before **<name> spawned** (with Open)
+is posted. Not-launched, partial, incomplete, unknown, stale or mismatched results
+never offer a guessed terminal.
 Existing anchored targets, linked-window viewers, locked keys and detach-only
 closure remain unchanged. A changed submitted draft can check its original result
 but cannot turn that old completion into authority over the new draft.
+
+## Background spawn: the dialog closes on Spawn
+
+Spec C. In the shell, a confirmed local press does not wait for the transaction:
+the dialog hands it to the spawn-jobs store (`renderer/spawn-jobs.mjs`, created by
+`shell.mjs` as `ctx.spawnJobs`) and closes in the same task as the press, focus
+returning where the dialog was opened from. A press still waiting for its preview
+(**Checking…**) closes when that preview settles. The dialog stays open only when
+the press cannot proceed: an invalid form, a settled refusal, or an answer that
+does not bind the ticked teams. Remote (server) spawns, and a host without a store
+(the view harness), keep the in-dialog transaction.
+
+The handoff carries the press token, the prepare input, the decision on screen,
+the relation and the draft (name, every choice, teams, opening instruction,
+wake). The store is single-flight per press token, so one press never starts two
+spawns; a new press, even of the same soul, is its own job with its own fresh
+preview. The store then runs the same transaction: prepare (usually a cache hit),
+the same decision check against what the operator saw, apply, and `result` for
+recovery. Every completion checks that the store is alive and the job is still
+its own.
+
+**The pending row.** The job's workspace roster shows a row at once, under its
+parent when there is a relation (the placement the kernel will record:
+`pendingPlacement`), with the kernel's name from the decision. It reads
+**Spawning…** beside a small spinner (the text carries the state; the spinner
+stands still under reduced motion), is `aria-disabled` with no instance actions
+and no hover card, and is announced once through the roster's polite live
+region. It carries the real row's identity (`data-tree-instance` is the decided
+home), so when the roster reports that home the real row replaces it in place
+and a focused pending row stays focused. The head's count stays the kernel's
+observation; pending rows are not counted. While a created instance is awaited
+the shell reads the roster every 700 ms (the dialog's former pace) instead of
+every 4 s. Pending rows are Desktop-local and never persisted: after a restart
+they are gone, and a created instance appears through the roster as usual.
+
+**Outcomes.** Creation, roster presence and a live session are separate
+observations:
+
+- `complete`: the row stays **Spawning…** until the roster reports the instance.
+  Once it runs with a session, the notification **<name> spawned** offers Open;
+  the terminal is never opened automatically. Not seen within 14 s: "Created
+  <name> — not yet visible as a running session. Open it from the roster when it
+  appears."
+- `partial`: the kernel's words (the wake was not saved, or its outcome is
+  unknown) with **View schedules**. `incomplete`: "<name> was created but didn't
+  finish starting. Open it from the instance list instead of spawning again."
+  Created but not launched: "Created <name> — not launched. Open its session from
+  the roster."
+- Refused or failed (nothing was created): the row goes, and a sticky
+  notification gives the reason (the `spawnProblem` text, Details behind a
+  disclosure) with **Reopen spawn** ("Reopen spawn for <name>"), which reopens the
+  dialog for that soul with the whole draft restored. Only `E_DECISION_STALE`,
+  or a prepared decision that differs from the one the operator saw, reads
+  "These values changed since you last looked. Reopen spawn to check them.";
+  `E_IDEMPOTENCY_CONFLICT`, `E_PLACEMENT_TAKEN`, `E_INSTANCE_NAME_TAKEN` and
+  every other refusal keep their own words.
+- `unknown` / `pending`: the row stays, reading **Outcome unknown**, with a
+  visible **Check result** button ("Check result for <name>") that runs the
+  recovery above. The notification says it once. The row never silently
+  disappears.
+
+**Where outcomes appear.** An outcome belongs to its workspace: while another
+workspace is on screen it is held, and posted on return. Failure notifications
+are exempt from the notification cap and come back after a scope clear; more
+than three collapse into one "N spawns failed" entry that expands. The draft is
+kept until the spawn completes, Reopen takes it back into the dialog, or the
+operator dismisses its failure (the × of that notification).
 
 A CLI without the confirmed-apply fence can still preview but never spawn
 locally; submitted uncertainty does not fall back. Launch readiness is not shown

@@ -15,16 +15,16 @@ const draft = () => ({ action: 'prepare', selector, choices: {}, task: 'PRIVATE 
 function http() {
   const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
   const start = source.indexOf('const send = (res, code, body, type'), end = source.indexOf('\nserver.on("error",');
-  const c = applyContext(), reads = [], calls = [], serverSpawns = []; let nonce = 0;
+  const c = applyContext(), reads = [], calls = [], serverSpawns = [], order = []; let nonce = 0;
   const broker = createSpawnApplyBoundary({ mint: () => (++nonce).toString(16).padStart(64, '0'),
     read: request => { reads.push(request); return { status: 'available', data: applyPreview(target) }; },
-    invoke: (_cli, args) => { calls.push(args); return { started: true, envelope: envelope(creation(applyPreview(args.target))) }; } });
-  const deps = { createServer: fn => fn, spawnApplyFailure, spawnApplyRequest: broker,
+    invoke: (_cli, args) => { calls.push(args); order.push('invoke'); return { started: true, envelope: envelope(creation(applyPreview(args.target))) }; } });
+  const deps = { createServer: fn => fn, spawnApplyFailure, spawnApplyRequest: broker, spawnPreviewCache: { invalidate: ws => order.push(`invalidate:${ws}`) },
     spawnAgent: async body => { serverSpawns.push(body); return { instance: 'dev-1', home: '/fixture/dev-1', agent: 'dev', launched: true }; },
     spawnErrorPayload: () => assert.fail('unexpected execution-server error'), workspaces: () => [c.workspace], cliState: c.cli,
     agentsData: () => ({ agents: c.agents }), snapshot: { byWs: new Map([['northwind', { instances: c.instances }]]) } };
   const handler = new Function(...Object.keys(deps), `${source.slice(start, end)}\nreturn server;`)(...Object.values(deps));
-  return { c, reads, calls, serverSpawns, async request({ url = '/api/spawn?ws=northwind', method = 'POST', body = draft(), headers = { host: 'localhost:4820', origin: 'http://localhost:4820' } } = {}) {
+  return { c, reads, calls, serverSpawns, order, async request({ url = '/api/spawn?ws=northwind', method = 'POST', body = draft(), headers = { host: 'localhost:4820', origin: 'http://localhost:4820' } } = {}) {
     const req = new EventEmitter(); Object.assign(req, { url, method, headers }); let result;
     const res = { writeHead(status, headers) { result = { status, headers }; }, end(text) { result.body = JSON.parse(text); } };
     const done = handler(req, res); req.emit('data', Buffer.from(typeof body === 'string' ? body : JSON.stringify(body))); req.emit('end'); await done; return result;
@@ -120,4 +120,12 @@ test('malformed/oversize outputs after possible apply are unknown; wrong method/
     const f = proxy(async () => ({ ok: true, status: 200, text: async () => raw }));
     assert.equal((await proxySpawnApply(f.event, '/api/spawn', { method: 'POST', body: { action: 'apply', spawnRef: ref } }, f.deps)).body.status, 'unknown');
   }
+});
+
+test('Spec C: an apply drops the workspace\'s held previews before the kernel runs (a preview read meanwhile must not be the pre-spawn answer)', async () => {
+  const h = http();
+  const prepared = await h.request(); assert.equal(prepared.body.status, 'prepared');
+  assert.deepEqual(h.order, [], 'prepare invalidates nothing');
+  await h.request({ body: { action: 'apply', spawnRef: prepared.body.spawnRef } });
+  assert.deepEqual(h.order.slice(0, 2), ['invalidate:northwind', 'invoke']);
 });

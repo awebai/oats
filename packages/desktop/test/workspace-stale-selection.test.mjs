@@ -159,7 +159,7 @@ function shellRoster(t) {
     contextRosterEl: document.getElementById("instance-roster"),
     api(path) { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); requests.push({ path, resolve, reject }); return promise; },
     renderContextRoster(instances) { rendered.push(instances.map((i) => i.instance)); },
-    refreshPanelInstance() {}, rosterPrs: { get: () => null, refresh() {} },
+    refreshPanelInstance() {}, rosterPrs: { get: () => null, refresh() {} }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} },
     workspaceLabel: createWorkspaceSwitcher({ document, selectWorkspace: (id) => selected.push(id), discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}) }),
   };
   const s = runInNewContext(`${fn("refreshContextRoster")}\n${fn("renderWorkspaceContext")}\n({ refreshContextRoster });`, c);

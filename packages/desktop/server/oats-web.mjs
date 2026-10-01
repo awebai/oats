@@ -1492,6 +1492,10 @@ const server = createServer(async (req, res) => {
           return { workspace, cli: cliState, agents: workspace && !workspace.remote && !workspace.server ? agentsData(workspace.id).agents : [],
             instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
         };
+        // A spawn in the air changes what a preview answers (the next instance number, the roster): held
+        // previews go when it starts, and again when it ends (observeMutation), so a preview read meanwhile
+        // never refills them with the pre-spawn answer (the cache's flight clock).
+        if (body.action === 'apply') { try { spawnPreviewCache.invalidate(url.searchParams.get('ws')); } catch { /* never blocks the apply */ } }
         const result = await spawnApplyRequest(body, getContext);
         if (body.action === 'apply') { try { observeMutation(url.searchParams.get('ws')); } catch { /* a refresh must not erase a spawn receipt */ } }
         return send(res, 200, result);

@@ -7,8 +7,13 @@ export function cliSpawnPreview(cli, options = {}, io = {}) {
   // Defense at the actual exec owner as well as at HTTP admission.
   if (!previewSupported(cli)) return Promise.resolve(failure('E_PREVIEW_UNAVAILABLE'));
   const target = previewTarget(options.target), choices = previewChoices(options.choices);
-  if (!target || !choices || Object.keys(options).some(k => !['target', 'choices'].includes(k))) return Promise.resolve(failure('E_BAD_ARGS'));
-  const argv = ['spawn', target.selector.soul, '--dir', target.context, '--agents-root', target.selector.agentsRoot, '--preview', ...choiceArgv(choices, cli), '--json'];
+  if (!target || !choices || Object.keys(options).some(k => !['target', 'choices', 'maxAge'].includes(k))) return Promise.resolve(failure('E_BAD_ARGS'));
+  // Feature spawn-preview-max-age: reuse member heads the kernel observed within maxAge seconds. Only
+  // where the CLI advertises it (an older kernel refuses the flag); prepare and apply never pass it.
+  const maxAge = options.maxAge;
+  if (maxAge !== undefined && (!Number.isInteger(maxAge) || maxAge < 1 || maxAge > 3600)) return Promise.resolve(failure('E_BAD_ARGS'));
+  const reuse = maxAge !== undefined && Array.isArray(cli.features) && cli.features.includes('spawn-preview-max-age') ? ['--max-age', String(maxAge)] : [];
+  const argv = ['spawn', target.selector.soul, '--dir', target.context, '--agents-root', target.selector.agentsRoot, '--preview', ...choiceArgv(choices, cli), ...reuse, '--json'];
   const env = { ...(io.env ?? process.env) };
   for (const k of ['PI_AGENTS_ROOT', 'OATS_DEPLOYMENT', 'OATS_RESOLUTION', 'OATS_PREVIEW_PREFLIGHT_BUDGET_MS']) delete env[k];
   return new Promise(resolve => {
