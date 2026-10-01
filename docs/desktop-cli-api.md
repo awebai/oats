@@ -535,7 +535,9 @@ Feature `workspace-v2`, `workspaceApi: 2`. Model: [workspaces.md](workspaces.md)
   `E_LOCAL_MISSING {dir, searched}`.
 - The workspace is read over Git remotes with the operator's credentials,
   never prompting: `E_REMOTE_UNREADABLE {url, reason: "auth" | "not-found" |
-  "network" | "timeout" | "cache"}`. `cache` (OATS 0.33.0) is local: the
+  "network" | "timeout" | "killed" | "cache" | "unknown"}`. `killed` (the
+  system killed git, for example out of memory) also carries `signal`.
+  `cache` (OATS 0.33.0) is local: the
   remote cache on this machine could not be written (a git lock still held,
   another oats process still writing it, or a lock file one left when it
   died); `details.cacheDir` and, when known, `details.lock`,

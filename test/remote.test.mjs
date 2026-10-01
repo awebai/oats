@@ -603,6 +603,25 @@ test("#362: a fetch that times out names the operation, the repo and the elapsed
   assert.match(e.message, new RegExp(`^cannot read remote ${f.repo.bare} \\(timeout\\): git fetch of ${f.c1} timed out after \\d+ s$`));
 });
 
+test("#387: a git killed by anything but our timer (an OOM kill) reads 'killed (signal SIGKILL)', never a timeout", async () => {
+  const f = fixture();
+  const exec = (args, o) => args.includes("fetch")
+    ? Promise.reject(Object.assign(new Error("Command failed: git fetch"), { code: null, signal: "SIGKILL", killed: false, timedOut: false, overflowed: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }))
+    : runGit(args, o);
+  const e = await caughtAsync(observeRemote(f.repo.bare, { cacheDir: f.cacheDir, exec, at: f.c1 }));
+  assert.equal(e.code, "E_REMOTE_UNREADABLE");
+  assert.equal(e.message, `cannot read remote ${f.repo.bare} (killed): git was killed (signal SIGKILL)`);
+  assert.equal(e.details.reason, "killed"); assert.equal(e.details.signal, "SIGKILL");
+  // A listing (lsTree classifies on its own) says the same.
+  const killedLs = (args, o) => args.includes("ls-tree")
+    ? Promise.reject(Object.assign(new Error("Command failed: git ls-tree"), { code: null, signal: "SIGKILL", killed: false, timedOut: false, overflowed: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }))
+    : runGit(args, o);
+  const ls = await caughtAsync(listRemoteTree(f.repo.bare, f.c1, "", { cacheDir: f.cacheDir, exec: killedLs }));
+  assert.equal(ls.code, "E_REMOTE_UNREADABLE");
+  assert.equal(ls.details.reason, "killed"); assert.equal(ls.details.signal, "SIGKILL");
+  assert.match(ls.message, /\(killed: git was killed \(signal SIGKILL\)\)$/);
+});
+
 test("L4: a maxBuffer overflow is NOT a timeout; a timeout kill is; an unclassified ls-tree failure becomes E_REMOTE_UNREADABLE { reason: unknown }, never a raw error", async () => {
   const { classifyRemoteFailure } = await import("../lib/remote.mjs");
   const f = fixture();
@@ -617,9 +636,25 @@ test("L4: a maxBuffer overflow is NOT a timeout; a timeout kill is; an unclassif
   const slow = await caughtAsync(runGit(["-C", f.repo.bare, "log", "--all", "-p", "--stdin"], { timeout: 50 }));
   assert.equal(slow.timedOut, true); assert.equal(slow.overflowed, false);
   assert.equal(classifyRemoteFailure(slow), "timeout");
+  // 2b. #387: a SIGKILL from anything but our timer (the kernel's OOM killer) is not a timeout.
+  const marker = `oats.test=${process.pid}-${Date.now()}`;
+  const killed = runGit(["-c", marker, "-C", f.repo.bare, "cat-file", "--batch"], { timeout: 60_000 });
+  let pid = "";
+  for (let i = 0; i < 100 && !pid; i++) { await new Promise((r) => setTimeout(r, 20)); try { pid = execFileSync("pgrep", ["-f", marker], { encoding: "utf8" }).trim().split("\n")[0]; } catch { /* not started yet */ } }
+  assert.ok(pid, "the git child is running");
+  process.kill(Number(pid), "SIGKILL");
+  const oom = await caughtAsync(killed);
+  assert.equal(oom.signal, "SIGKILL"); assert.equal(oom.timedOut, false, "only our own timer makes a timeout");
+  assert.equal(classifyRemoteFailure(oom), "killed");
   // Synthetic shapes classifyRemoteFailure must get right.
   assert.equal(classifyRemoteFailure({ code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER", killed: true, signal: "SIGKILL", stderr: Buffer.alloc(0) }), "network", "a maxBuffer kill is not a timeout even when Node reports killed/signal");
-  assert.equal(classifyRemoteFailure({ killed: true, signal: "SIGKILL", stderr: Buffer.alloc(0) }), "timeout");
+  // #387: a signal is a timeout only when our timer sent it (timedOut), whatever the signal.
+  assert.equal(classifyRemoteFailure({ killed: true, signal: "SIGKILL", stderr: Buffer.alloc(0) }), "killed");
+  assert.equal(classifyRemoteFailure({ signal: "SIGTERM", stderr: Buffer.alloc(0) }), "killed");
+  assert.equal(classifyRemoteFailure({ killed: true, signal: "SIGKILL", timedOut: true, stderr: Buffer.alloc(0) }), "timeout");
+  assert.equal(classifyRemoteFailure({ signal: "SIGTERM", timedOut: true, stderr: Buffer.alloc(0) }), "timeout");
+  // #386/#387: a killed git that also printed a lock error is the actionable `cache`, not `killed`.
+  assert.equal(classifyRemoteFailure({ signal: "SIGKILL", stderr: Buffer.from("fatal: Unable to create '/c/config.lock': File exists.") }), "cache");
 
   // 3. an unclassified listing failure surfaces as E_REMOTE_UNREADABLE unknown (enumerateRepo → problem row).
   const overflowLs = (args, o) => args.includes("ls-tree") ? runGit(args, { ...o, maxBuffer: 1 }) : runGit(args, o);
