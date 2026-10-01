@@ -67,7 +67,8 @@ export const capabilityContentsCSS = `
 .cap-node-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .cap-node-name.mono, .cap-node-file { font-family:var(--mono,monospace); }
 .cap-node-file, .cap-node-desc { color:var(--muted); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.cap-tree ul[role=group] .cap-node { padding-left:22px; font-family:var(--mono,monospace); font-size:11.5px; }
+/* A skill's files (a group inside a skill item; the top-level groups are Instructions and Skills): indented, monospace. */
+.cap-tree [role=treeitem] [role=group] .cap-node { padding-left:22px; font-family:var(--mono,monospace); font-size:11.5px; }
 .cap-tree .cap-more { padding:3px 6px 3px 22px; color:var(--muted); font-size:11px; }
 .cap-reader-head { position:sticky; top:0; z-index:1; display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 12px; padding:8px 16px; border-bottom:1px solid var(--border); background:var(--bg); font-size:11.5px; }
 .cap-reader-path { color:var(--fg); font:600 11.5px var(--mono,monospace); overflow-wrap:anywhere; }
@@ -84,12 +85,21 @@ export const capabilityContentsCSS = `
 .cap-nav-skeleton .skeleton-line:nth-child(2n) { width:55%; }
 .cap-contents-nav > .loading-failed, .cap-contents-reader .loading-failed { margin:6px; }
 /* The viewer's reader (.mdv, views/markdown.mjs) sized for a pane: its colours and code styles are the viewer's own. */
-.cap-reader-body .mdv { max-width:none; margin:0; padding:0; font-size:13.5px; line-height:1.6; overflow-wrap:anywhere; }
+.cap-reader-body .mdv { max-width:none; margin:0; padding:0; font-size:13px; line-height:1.6; overflow-wrap:anywhere; }
+/* A file is read inside the page: its headings stay below the page's own title (20px), its code at the page's 12px. */
+.cap-reader-body .mdv h1 { font-size:1.35em; }
+.cap-reader-body .mdv h2 { font-size:1.18em; }
+.cap-reader-body .mdv h3, .cap-reader-body .mdv h4 { font-size:1.04em; }
+.cap-reader-body .mdv code { font-size:12px; }
 .cap-reader-body .mdv pre.md-code { white-space:pre-wrap; overflow-wrap:anywhere; }
+.cap-reader-body .mdv > :first-child { margin-top:0; }
 .cap-fm { width:100%; margin:0 0 16px; border-collapse:collapse; font-size:12px; }
+/* The facts table sits inside .mdv: none of the viewer's Markdown-table chrome (block display, cell borders, a tinted head). */
+.cap-reader-body .mdv table.cap-fm { display:table; }
+.cap-reader-body .mdv .cap-fm th, .cap-reader-body .mdv .cap-fm td { border:0; background:none; }
 .cap-fm th { width:1%; padding:5px 14px 5px 0; color:var(--muted); font-weight:500; text-align:left; vertical-align:top; white-space:nowrap; }
 .cap-fm td { padding:5px 0; color:var(--fg); vertical-align:top; overflow-wrap:anywhere; white-space:pre-wrap; }
-.cap-fm tr + tr > * { border-top:1px solid var(--tag-bg); }
+.cap-reader-body .mdv .cap-fm tr + tr > * { border-top:1px solid var(--tag-bg); }
 `;
 
 const isSkillMd = (skill, file) => file.path === `${skill.path}/SKILL.md`;
@@ -289,7 +299,7 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
     else if (skill.filesTruncated) item.setAttribute('aria-description', CONTENTS_COPY.moreFiles);
     const row = node('div', 'cap-node'); if (skill.description) row.title = skill.description;
     const twisty = node('span', 'cap-node-twisty', open_ ? '▾' : '▸'); twisty.setAttribute('aria-hidden', 'true');
-    const copy = node('span', 'cap-node-copy'); copy.append(node('span', 'cap-node-name mono', skill.name));
+    const copy = node('span', 'cap-node-copy'); const label = node('span', 'cap-node-name mono', skill.name); label.title = skill.name; copy.append(label);
     if (sentence) copy.append(node('span', 'cap-node-desc', sentence));
     row.append(twisty, copy); item.append(row);
     const children = node('ul'); children.setAttribute('role', 'group'); children.hidden = !open_;

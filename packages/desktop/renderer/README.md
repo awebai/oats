@@ -395,7 +395,12 @@ and everything else as highlighted code; links are settled after rendering
 (`settleLinks`): a listed file, `https:` through `openExternal`, `#fragment`,
 or plain text. `E_CAPABILITY_FILE_UNKNOWN` and `E_REMOTE_FILE_OVERSIZE` are
 muted lines, not failures. The reader sits on `--bg`, the viewer's own ground,
-so the viewer's checked colours hold.
+so the viewer's checked colours hold, with a type scale kept under the page's
+own (headings below the 20px title, code at 12px). The page's *Provides* is one
+compact card (`providesSection`): a row per kind (Skills, Commands, Hooks; from
+a soul, Commands and Settings) with every name its own code chip, wrapping.
+`paintCapabilityPage` renders the page's facts and Contents from the same
+current catalog row (`contentsRow`), so a refresh moves them together.
 
 **Core capabilities and Capabilities read as one system.** Wherever the two
 sections appear (the soul page, the inspector's *Modules as spawned*, the

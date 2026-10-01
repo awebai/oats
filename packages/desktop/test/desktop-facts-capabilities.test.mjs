@@ -17,7 +17,7 @@ function page(t, target, options = {}) {
   t.after(() => dom.window.close());
   renderCapabilityPage(host, { row: target, status: null, instances: [], root: '/fx', onBack() {}, ...options });
   const facts = card => Object.fromEntries([...host.querySelectorAll(`.page-card[data-card="${card}"] .page-kv`)].map(r => [r.querySelector('dt').textContent, r.querySelector('dd').textContent]));
-  const provides = kind => [...host.querySelectorAll(`.page-card[data-provides="${kind}"] .page-list-item`)].map(i => i.textContent);
+  const provides = kind => [...host.querySelectorAll(`.provides-row[data-provides="${kind}"] .provides-chip`)].map(i => i.textContent);
   return { host, facts, provides, $: s => host.querySelector(s) };
 }
 
@@ -25,7 +25,7 @@ test('a member capability: description, what it provides, its manifest path and 
   const cap = row('nw-release-tooling'), u = page(t, cap);
   assert.equal(u.$('.page-lede').textContent, cap.description);
   assert.deepEqual([u.provides('skills'), u.provides('commands'), u.provides('hooks')], [['cut-release'], ['cut', 'verify'], []]);
-  assert.equal(u.$('.page-card[data-provides="hooks"] .page-note').textContent, 'None');
+  assert.equal(u.$('.provides-row[data-provides="hooks"] .page-note').textContent, 'None');
   const from = u.facts('Comes from');
   assert.equal(from.Fingerprint, cap.tree.slice(0, 7)); assert.equal(from.File, 'capabilities/nw-release-tooling/oats.json');
   assert.equal(u.$('.page-card[data-card="Comes from"] button[data-verb=file]'), null, 'the capture\'s repos are local: no web address, the path shows');
@@ -42,7 +42,7 @@ test('a package capability keeps its lock integrity as fingerprint (tree is null
 test('skills a spawn could not list say so; a hosted manifest opens as its web page', t => {
   const url = 'https://github.com/northwind/agents/blob/abc/capabilities/nw-house-style/oats.json', opened = [];
   const u = page(t, { ...row('nw-house-style'), skills: null, file: { path: 'capabilities/nw-house-style/oats.json', url } }, { openExternal: link => opened.push(link) });
-  assert.match(u.$('.page-card[data-provides="skills"] .page-note').textContent, /Not listable/);
+  assert.match(u.$('.provides-row[data-provides="skills"] .page-note').textContent, /Not listable/);
   u.$('.page-card[data-card="Comes from"] button[data-verb=file]').click(); assert.deepEqual(opened, [url]);
 });
 

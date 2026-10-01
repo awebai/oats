@@ -1164,6 +1164,18 @@ for (const [name] of palettes) test(`${name}: capability Contents navigation, re
     assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${name} ${selector}`);
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
   }
+  // Provides: one card, a row per kind, every name its own code chip.
+  const page = doc.createElement('section'); doc.querySelector('.oats-view').append(page);
+  renderCapabilityPage(page, { row: { name: 'oats.aweb', kind: 'package', package: 'oats.aweb', skills: ['oats-aweb'], commands: ['join'], hooks: [] }, status: null, instances: [], root: '/ws', onBack() {} });
+  for (const [selector, painted, fg, bg] of [['.provides-chip', '.provides-chip', 'fg', 'tag-bg'], ['.provides-kind', '.provides-card', 'muted', 'surface'], ['.provides-items .page-note', '.provides-card', 'muted', 'surface']]) {
+    const el = page.querySelector(selector), surface = page.querySelector(painted); assert.ok(el && surface, selector);
+    const color = dom.window.getComputedStyle(el).color;
+    assert.ok(color === `var(--${fg})` || (fg === 'fg' && ['', 'var(--fg)'].includes(color)), `${selector}: ${color}`);
+    assert.equal(dom.window.getComputedStyle(surface).background.replace(/^.*(var\(--[\w-]+\)).*$/, '$1'), `var(--${bg})`, painted);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${name} ${selector}`);
+  }
+  // The facts table drops the viewer's Markdown-table chrome: its cells sit on the reader's own ground.
+  for (const cell of doc.querySelectorAll('.cap-fm th, .cap-fm td')) assert.match(dom.window.getComputedStyle(cell).background, /none|rgba\(0, 0, 0, 0\)/, 'no tinted head');
   // A hovered row (--surface-2) keeps its muted second line legible too.
   assert.ok(contrast(opaqueChannels(root.getPropertyValue('--muted').trim()), opaqueChannels(root.getPropertyValue('--surface-2').trim())) >= 4.5, `${name} muted on surface-2`);
   contents.dispose(); dom.window.close();

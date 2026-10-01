@@ -302,13 +302,19 @@ function paintCapabilityPage(s) {
   const facts = listed.length === 1 ? listed[0] : null;
   // Pending: the catalog was never read (a Retry over a failed read is the failed block's business, not skeletons).
   const catalogPending = !!from && !Array.isArray(catalog) && (catalogState === "pending" || catalogState === "idle") && catalogSettled === "idle";
+  // The catalog's row as it is NOW (contentsRow): the page's facts and its Contents both come from it, so a refresh
+  // that moves the commit moves the whole page together — never one commit's provenance beside another's contents.
+  // Catalog form: that row (the opened one while no catalog is held, or after it left the catalog: Contents says so);
+  // from a soul: the soul's resolved row over it.
+  const current = contentsRow(row, from, catalog, facts);
+  const shown = from ? (current && current !== row ? { ...current, ...row } : row) : current || row;
   // The page itself follows the catalog's content; its age line (below) follows the controller's state, on its own.
-  const signature = JSON.stringify([facts, catalogPending, context.instances, context.root, context.rosterState]);
+  const signature = JSON.stringify([current === row ? null : current, catalogPending, context.instances, context.root, context.rosterState]);
   const host = s.q("workspace-cap-page");
   if (signature !== open.signature) { // an unchanged catalog never rebuilds the page under focus
     open.signature = signature; open.noticeSignature = null;
     const restore = captureFocusState(host, { fallback: () => host.querySelector(".page-back") }), keep = open.contents.hold();
-    renderCapabilityPage(host, { row: facts ? { ...facts, ...row } : row, ...context, catalogPending, contents: open.contents.element,
+    renderCapabilityPage(host, { row: shown, ...context, catalogPending, contents: open.contents.element,
       openExternal: url => s.ctx.openExternal?.(url),
       backLabel: from ? from.name : "Capabilities", from: from ? { label: from.name, why } : null,
       onBack: () => closeCapability(s, { restoreFocus: true }),
@@ -321,7 +327,7 @@ function paintCapabilityPage(s) {
   }
   // Its subject is the CURRENT catalog row (the selector and commit `capabilities show` reads at): a refresh that
   // moves the commit re-reads; unchanged → nothing.
-  open.contents.update({ row: contentsRow(row, from, catalog, facts), cli: cliStatus(), remote: context.remote === true, catalogPending, deployment: context.root ?? null });
+  open.contents.update({ row: current, cli: cliStatus(), remote: context.remote === true, catalogPending, deployment: context.root ?? null });
   paintCapabilityNotice(s, { state: catalogState, settled: catalogSettled, busy: catalogBusy, observedAt: catalogObservedAt, cause: catalogFailure });
 }
 /** The catalog row the page's Contents reads (spec C), from the catalog as it is NOW: the opened row (a catalog row,

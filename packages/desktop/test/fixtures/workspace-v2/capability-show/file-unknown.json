@@ -1,0 +1,1 @@
+{"schemaVersion":1,"ok":false,"error":{"code":"E_CAPABILITY_FILE_UNKNOWN","message":"skills/nope/SKILL.md is not a file `oats capabilities show oats.desktop-ui` lists (the inject, or a skill's files)","details":{"path":"skills/nope/SKILL.md","name":"oats.desktop-ui"}}}

@@ -83,7 +83,7 @@ async function setup(t, { holdRoster = false, holdReads = false, shows } = {}) {
 const ROW = CATALOG.capabilities.find(r => r.name === 'nw-house-style');
 const at = c => ({ name: ROW.name, kind: 'member', repoKey: ROW.repoKey, package: null, version: null, commit: c, path: ROW.path ?? null, capabilityShowApi: 1,
   inject: { path: 'inject.md', bytes: 12, text: `# Inject at ${c.slice(0, 7)}`, binary: false, truncated: false }, skills: [], problems: [] });
-const movedCatalog = commit => { const c = structuredClone(CATALOG); c.capabilities.find(r => r.name === ROW.name).commit = commit; return c; };
+const movedCatalog = commit => { const c = structuredClone(CATALOG); Object.assign(c.capabilities.find(r => r.name === ROW.name), { commit, description: `At ${commit.slice(0, 7)}.`, skills: [`skill-${commit.slice(0, 3)}`] }); return c; };
 async function openFromCatalog(t, answer) {
   const asked = [];
   const u = await setup(t, { holdReads: true, shows: { answer: body => { asked.push(body); return answer(body); } } });
@@ -103,6 +103,11 @@ test('catalog form: a refresh that moves the row\'s commit re-reads Contents; a 
   assert.equal(u.asked.length, 2, 'the moved row is read again');
   assert.equal(u.lead().textContent, 'What an instance gets, at bbbbbbb');
   assert.match(u.reader(), /Inject at bbbbbbb/);
+  // The whole page follows the same row: its provenance never shows another commit than its contents.
+  const latest = [...u.doc.querySelectorAll('.page-card[data-card="Comes from"] .page-kv')].find(r => r.querySelector('dt').textContent === 'Latest').querySelector('dd');
+  assert.equal(latest.textContent, 'bbbbbbb'); assert.equal(latest.title, moved);
+  assert.equal(u.q('.capability-page .page-lede').textContent, 'At bbbbbbb.');
+  assert.deepEqual([...u.doc.querySelectorAll('.capability-page [data-provides="skills"] .provides-chip')].map(i => i.textContent), ['skill-bbb']);
   const gone = structuredClone(CATALOG); gone.capabilities = gone.capabilities.filter(r => r.name !== ROW.name);
   await u.cliEmit(); await u.resolveRead(2, okRead({ capabilities: gone }));
   assert.equal(u.q('.cap-contents-gate').textContent, CONTENTS_COPY.unlisted);
