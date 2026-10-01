@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import {
   classifyRemoteFailure, contentDigest, createReadSession, fetchRemoteTree, listRemoteTree, observeRemote, parseRepoRef, readRemoteFile, runGit,
-  FILE_BUDGET, PARTIAL_FETCH_GIT, SMALL_BLOB_LIMIT, gitVersion, keepsPartialCache,
+  FILE_BUDGET, OATS_ALIAS_SYMLINK, PARTIAL_FETCH_GIT, SMALL_BLOB_LIMIT, gitVersion, keepsPartialCache,
 } from "../lib/remote.mjs";
 import { PARTIAL_GIT, olderGitNotice, skipPartialMechanics } from "./helpers/partial-git.mjs";
 
@@ -757,4 +757,107 @@ test("a fetch that cannot write the local cache (FETCH_HEAD unwritable, or a dir
     assert.deepEqual([e.details.reason, e.details.stage, e.details.cacheDir], ["cache", "fetch", f.repoDir], name);
     assert.match(e.message, /\(cache, fetch\): .*cannot open 'FETCH_HEAD': .*; check that .* is writable by this user and its disk has room$/, name);
   }
+});
+
+// ---------------------------------------------------------------------------
+// fetchRemoteTree through a read session's `cat-file --batch` reader, on a partial cache
+// ---------------------------------------------------------------------------
+
+test("a session's batch reader opened before ensureBlobs fetched a blob reads it afterwards: the tree copies as a checkout", { skip: skipPartialMechanics }, async () => {
+  const f = fixture();
+  const session = createReadSession();
+  try {
+    const opts = { cacheDir: f.cacheDir, session };
+    // A small read opens the cache's reader while model.bin (over SMALL_BLOB_LIMIT) is not in the cache.
+    await readRemoteFile(f.bare, f.commit, "souls/dev/soul.yaml", opts);
+    const reader = session.batches.get(f.repoDir);
+    assert.ok(reader, "the reader is open");
+    assert.deepEqual(f.present("elsewhere/tools/data/model.bin"), { "elsewhere/tools/data/model.bin": false });
+    const dest = join(f.base, "out", "tools");
+    const r = await fetchRemoteTree(f.bare, f.commit, "elsewhere/tools", dest, opts);
+    assert.equal(r.digest, contentDigest(join(f.work, "elsewhere", "tools")));
+    assert.equal(r.digest, contentDigest(dest));
+    assert.equal(session.batches.get(f.repoDir), reader, "the same reader read the blob ensureBlobs fetched after it opened");
+    assert.deepEqual(f.present("assets/huge-1.bin"), { "assets/huge-1.bin": false }, "nothing beyond the subtree was fetched");
+  } finally { await session.close(); }
+});
+
+/** A `git` shim first on PATH whose `cat-file --batch-check` says every MISSING object is a 9-byte blob (so
+ *  ensureBlobs believes a blob is present and fetches nothing); every other call, `--batch` included, is the
+ *  real git. Each `fetch` is logged. */
+async function withLyingBatchCheck(base, fn) {
+  const dir = join(base, "lying-shim"), log = join(base, "fetches.log");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(log, "");
+  const real = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim();
+  writeFileSync(join(dir, "git"), `#!/bin/bash
+for a in "$@"; do [ "$a" = "fetch" ] && echo "$*" >> "${log}"; done
+for a in "$@"; do
+  if [ "$a" = "--batch-check" ]; then "${real}" "$@" | sed -E 's/^([0-9a-f]{40}) missing$/\\1 blob 9/'; exit "\${PIPESTATUS[0]}"; fi
+done
+exec "${real}" "$@"
+`, { mode: 0o755 });
+  const saved = process.env.PATH;
+  process.env.PATH = `${dir}:${saved}`;
+  try { return await fn(() => execFileSync("cat", [log], { encoding: "utf8" }).split("\n").filter(Boolean)); }
+  finally { process.env.PATH = saved; }
+}
+
+test("a blob still missing when the batch reader reads it fails exactly as without a session: never a lazy fetch, never a hang, nothing left", { skip: skipPartialMechanics }, async () => {
+  const f = fixture();
+  await observeRemote(f.bare, { cacheDir: f.cacheDir, at: f.commit });
+  assert.deepEqual(f.present("elsewhere/tools/data/model.bin"), { "elsewhere/tools/data/model.bin": false });
+  await withLyingBatchCheck(f.base, async (fetches) => {
+    const session = createReadSession({ batchTimeoutMs: 10_000 });
+    const dest = join(f.base, "out", "tools");
+    const failure = (opts) => fetchRemoteTree(f.bare, f.commit, "elsewhere/tools", dest, { cacheDir: f.cacheDir, ...opts }).then(() => assert.fail("expected a failure"), (x) => x);
+    const shape = (x) => ({ code: x.code, reason: x.details.reason, path: x.details.path, commit: x.details.commit });
+    const plain = await failure({});
+    const started = Date.now();
+    const e = await failure({ session });
+    assert.deepEqual(shape(e), shape(plain), "the same error as without a session");
+    assert.equal(e.code, "E_REMOTE_UNREADABLE");
+    assert.equal(e.details.path, "data/model.bin");
+    assert.ok(Date.now() - started < 5_000, "answered at once, not by a timeout");
+    assert.deepEqual(fetches(), [], "neither ensureBlobs (it was lied to) nor git (GIT_NO_LAZY_FETCH) fetched");
+    assert.deepEqual(f.present("elsewhere/tools/data/model.bin"), { "elsewhere/tools/data/model.bin": false });
+    assert.deepEqual(readdirSync(join(f.base, "out")), [], "no staging directory, no destination");
+    await session.close();
+  });
+});
+
+test("a symlink target over its 64 KiB cap fails exactly as without a session, whatever its id spells (an oid holding 403 is not an auth failure)", async () => {
+  const f = fixture();
+  // The reviewer's deterministic blob: 65,540 bytes, oid 8cc834859992ea403d394e514826263be431fb85.
+  const oid = execFileSync("git", ["-C", f.work, "hash-object", "-w", "--stdin"], { input: "a".repeat(65537) + "216", encoding: "utf8" }).trim();
+  assert.equal(oid, "8cc834859992ea403d394e514826263be431fb85");
+  write(f.work, "aliased/AGENTS.md", "# aliased\n");
+  git(f.work, "add", "-A");
+  git(f.work, "update-index", "--add", "--cacheinfo", `120000,${oid},aliased/CLAUDE.md`);
+  git(f.work, "commit", "-q", "-m", "long link"); git(f.work, "push", "-q", "origin", "HEAD:main");
+  const commit = git(f.work, "rev-parse", "HEAD");
+  const failure = (opts, out) => fetchRemoteTree(f.bare, commit, "aliased", join(f.base, out, "aliased"), { cacheDir: f.cacheDir, allowSymlinks: OATS_ALIAS_SYMLINK, ...opts })
+    .then(() => assert.fail("expected a failure"), (x) => x);
+  const shape = (x) => ({ code: x.code, reason: x.details?.reason, path: x.details?.path });
+  const plain = await failure({}, "plain");
+  const session = createReadSession();
+  try {
+    const batched = await failure({ session }, "batch");
+    assert.deepEqual(shape(batched), shape(plain), "the same error as without a session");
+    assert.deepEqual(shape(batched), { code: "E_REMOTE_UNREADABLE", reason: "network", path: "CLAUDE.md" });
+    assert.deepEqual(readdirSync(join(f.base, "batch")), [], "nothing left");
+  } finally { await session.close(); }
+});
+
+test("a full-mode cache (a server without filters) copies the same tree through the batch reader as without a session", async () => {
+  const f = fixture("plain");
+  const session = createReadSession();
+  try {
+    const batched = await fetchRemoteTree(f.bare, f.commit, "elsewhere/tools", join(f.base, "batch", "tools"), { cacheDir: f.cacheDir, session });
+    assert.equal(git(f.repoDir, "config", "--get", "oats.fetch"), "full");
+    assert.equal(session.batches.size, 1, "read through the batch reader");
+    const plain = await fetchRemoteTree(f.bare, f.commit, "elsewhere/tools", join(f.base, "plain", "tools"), { cacheDir: f.cacheDir });
+    assert.deepStrictEqual(batched, plain);
+    assert.equal(batched.digest, contentDigest(join(f.work, "elsewhere", "tools")));
+  } finally { await session.close(); }
 });

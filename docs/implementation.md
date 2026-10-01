@@ -94,7 +94,13 @@ gets the plain per-call behaviour. Within a session:
 - a commit's tree is listed once (`git ls-tree -r -t -l`, bounded by
   `TREE_INDEX_BUDGET`; anything odd falls back to the per-path reads), and
   blobs come from one `git cat-file --batch` reader per cache repo (at most
-  12 open, ended through `process-group.mjs` on timeout and at close). A
+  12 open, ended through `process-group.mjs` on timeout and at close);
+  `fetchRemoteTree` copies a module through it too, once `ensureBlobs` has
+  fetched what was missing (git re-reads its packs on a miss, so a reader
+  opened earlier finds the new blobs; one still missing answers `missing`,
+  never a fetch), with what is left of `TREE_BUDGET` as each read's bound;
+  a blob the reader answers `missing` or over its bound is read once more
+  alone, so the error is the one a copy without a session gives. A
   command that ends normally awaits the close, so its readers are reaped
   before it exits; a `process.exit` (every refusal) ends them in the
   exit hook (`closeNow`), and the system reaps them once the process is gone;
