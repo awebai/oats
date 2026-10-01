@@ -7,6 +7,9 @@ import { createSoulInspector, inspectorCSS } from "../soul-inspector.mjs";
 import { createWorkspaceDiscovery, discoveryCSS, workspaceTabs } from "../workspace-discovery.mjs";
 import { capabilityRow } from "../workspace-catalog.mjs";
 import { renderCapabilityPage, renderSoulCapabilities, renderSoulCore, capabilityPageCSS, pageCardCSS, soulCapabilitiesCSS, desktopFacts, catalogNotice, catalogNoticeKind, updateCatalogNotice } from "../capability-page.mjs";
+import { createCapabilityContents, capabilityContentsCSS } from "../capability-contents.mjs";
+import { capabilitySelector, sameSelector } from "../capability-show-contract.mjs";
+import { MARKDOWN_CSS } from "./markdown.mjs";
 import { runtimeState } from "../instance-presentation.mjs";
 import { deploymentUnavailableText } from "../deployment-header.mjs";
 import { createSpawnDialog, spawnDialogCSS } from "../spawn-dialog.mjs";
@@ -272,7 +275,16 @@ function openCapability(s, row, from = null, why = null) {
   if (!s.alive) return;
   // The list is hidden (display:none) while the page is open, which drops its scroll offset: keep it for Back.
   const list = s.q("workspace-discovery");
-  s.capOpen = { row, from, why: from ? why : null, gen: workspaceGeneration(), scrollTop: from ? null : list?.scrollTop ?? null, signature: null };
+  s.capOpen?.contents.dispose();
+  // Contents (spec C): one controller per open page, bound to this workspace (a switch closes the page).
+  const query = wsQuery();
+  const contents = createCapabilityContents(s.el.ownerDocument, {
+    request: body => postJson(s.ctx, `/api/capabilities${query}`, body),
+    openExternal: url => s.ctx.openExternal?.(url),
+    // The kernel no longer knows it, or it moved since the catalog was read: re-read the catalog, the page follows.
+    onCatalogStale: () => { if (s.alive && s.capOpen?.contents === contents) s.discovery.reload(); },
+  });
+  s.capOpen = { row, from, why: from ? why : null, gen: workspaceGeneration(), scrollTop: from ? null : list?.scrollTop ?? null, signature: null, contents };
   paintCapabilityPage(s);
   showPage(s, "capability");
   s.q("workspace-cap-page").querySelector(".page-back")?.focus({ preventScroll: true });
@@ -290,13 +302,19 @@ function paintCapabilityPage(s) {
   const facts = listed.length === 1 ? listed[0] : null;
   // Pending: the catalog was never read (a Retry over a failed read is the failed block's business, not skeletons).
   const catalogPending = !!from && !Array.isArray(catalog) && (catalogState === "pending" || catalogState === "idle") && catalogSettled === "idle";
+  // The catalog's row as it is NOW (contentsRow): the page's facts and its Contents both come from it, so a refresh
+  // that moves the commit moves the whole page together — never one commit's provenance beside another's contents.
+  // Catalog form: that row (the opened one while no catalog is held, or after it left the catalog: Contents says so);
+  // from a soul: the soul's resolved row over it.
+  const current = contentsRow(row, from, catalog, facts);
+  const shown = from ? (current && current !== row ? { ...current, ...row } : row) : current || row;
   // The page itself follows the catalog's content; its age line (below) follows the controller's state, on its own.
-  const signature = JSON.stringify([facts, catalogPending, context.instances, context.root, context.rosterState]);
+  const signature = JSON.stringify([current === row ? null : current, catalogPending, context.instances, context.root, context.rosterState]);
   const host = s.q("workspace-cap-page");
   if (signature !== open.signature) { // an unchanged catalog never rebuilds the page under focus
     open.signature = signature; open.noticeSignature = null;
-    const restore = captureFocusState(host, { fallback: () => host.querySelector(".page-back") });
-    renderCapabilityPage(host, { row: facts ? { ...facts, ...row } : row, ...context, catalogPending,
+    const restore = captureFocusState(host, { fallback: () => host.querySelector(".page-back") }), keep = open.contents.hold();
+    renderCapabilityPage(host, { row: shown, ...context, catalogPending, contents: open.contents.element,
       openExternal: url => s.ctx.openExternal?.(url),
       backLabel: from ? from.name : "Capabilities", from: from ? { label: from.name, why } : null,
       onBack: () => closeCapability(s, { restoreFocus: true }),
@@ -305,9 +323,23 @@ function paintCapabilityPage(s) {
         if (matches.length !== 1) return;
         closeCapability(s); inspectSoul(s, matches[0]);
       } });
-    restore();
+    restore(); keep();
   }
+  // Its subject is the CURRENT catalog row (the selector and commit `capabilities show` reads at): a refresh that
+  // moves the commit re-reads; unchanged → nothing.
+  open.contents.update({ row: current, cli: cliStatus(), remote: context.remote === true, catalogPending, deployment: context.root ?? null });
   paintCapabilityNotice(s, { state: catalogState, settled: catalogSettled, busy: catalogBusy, observedAt: catalogObservedAt, cause: catalogFailure });
+}
+/** The catalog row the page's Contents reads (spec C), from the catalog as it is NOW: the opened row (a catalog row,
+ * or a soul's resolved one, which names the same member or package) matched by its full selector, else, from a
+ * soul page, the catalog's one row of that name. The opened row while no catalog is held (catalog form); null when
+ * the catalog no longer lists it (Contents says so). An external capability has no selector: its own gate line. */
+export function contentsRow(row, from, catalog, facts = null) {
+  if (row?.kind === "external") return row;
+  if (!Array.isArray(catalog)) return from ? null : row;
+  const wanted = capabilitySelector(row);
+  const matches = wanted ? catalog.filter(r => sameSelector(capabilitySelector(r), wanted)) : [];
+  return matches.length === 1 ? matches[0] : from ? facts : null;
 }
 /** The page's age line mirrors the catalog controller (stale with Retry, or an old observation): the same
  * node is updated in place — its Retry keeps focus and wears the busy mark while the re-read runs — and
@@ -335,6 +367,7 @@ function syncCapabilityPage(s) {
 }
 function closeCapability(s, { restoreFocus = false } = {}) {
   const open = s.capOpen; s.capOpen = null;
+  open?.contents.dispose();
   const host = s.q("workspace-cap-page"); if (host) host.replaceChildren();
   if (!open) return;
   // Back to where it was opened: the soul's page (still shown) or the Capabilities table.
@@ -360,6 +393,8 @@ export function mount(el, ctx) {
 ${inspectorCSS}
 ${pageCardCSS}
 ${capabilityPageCSS}
+${capabilityContentsCSS}
+${MARKDOWN_CSS}
 ${soulCapabilitiesCSS}
 ${discoveryCSS}
 ${identityCSS}
@@ -572,7 +607,7 @@ export function unmount() {
   pendingWorkspaceTab = null;
   selectionIntent++;
   state.alive = false;
-  state.inspector.dispose(); state.page.dispose();
+  state.inspector.dispose(); state.page.dispose(); state.capOpen?.contents.dispose();
   state.presentation?.dispose();
   state.gridState?.dispose();
   state.discovery.dispose();

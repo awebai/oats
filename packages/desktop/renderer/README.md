@@ -368,6 +368,40 @@ a focused Retry kept. The spawn dialog's harness, model and launch hints (`match
 `spawn-dialog.mjs`) read only a preview for the choices on screen, like the
 name and work hints.
 
+**The capability page's Contents (spec C).** What an instance gets, read through
+`oats capabilities show` (feature `capability-show` AND `capabilityShowApi: 1`;
+gated off with a line for an older CLI, a remote workspace, an external
+capability or one the catalog does not list): `capability-contents.mjs`, a
+controller `views/spawn.mjs` creates per open page (`s.capOpen.contents`) and
+whose one long-lived `element` `renderCapabilityPage` re-appends after
+Provides on every rebuild (`hold()` puts focus and both panes' scroll back),
+so a catalog repaint never touches what is open. `update()` takes the
+CATALOG row (from a soul page, the catalog's row, not the resolved one): its
+selector (`--member repoKey` / `--package id`) and commit key the subject; an
+unchanged subject reads nothing. The decoder (`capability-show-contract.mjs`,
+shared with the server) refuses a whole answer it cannot read. Every path is
+relative to the capability directory (a skill's files too; the tree shows
+them relative to the skill). The show read and each file read carry tickets
+checked on success and failure (A→B→A safe); an answer at another commit
+than the row's is never rendered (`E_CAPABILITY_MOVED`: the catalog is re-read
+through `onCatalogStale`, as on `E_CAPABILITY_UNKNOWN`). A moved commit keeps
+the open file while it is still listed. The navigation is ONE `role=tree`
+holding two labelled `role=group`s (Instructions, Skills; an empty group is a
+label and a note beside it), with a roving tab stop found again by
+`data-focus-key` (`file:<path>`, `skill:<path>`). The reader renders Markdown
+through `views/markdown.mjs` in its strict profile (front matter through
+`front-matter.mjs` as a facts table, or as YAML code when outside its subset)
+and everything else as highlighted code; links are settled after rendering
+(`settleLinks`): a listed file, `https:` through `openExternal`, `#fragment`,
+or plain text. `E_CAPABILITY_FILE_UNKNOWN` and `E_REMOTE_FILE_OVERSIZE` are
+muted lines, not failures. The reader sits on `--bg`, the viewer's own ground,
+so the viewer's checked colours hold, with a type scale kept under the page's
+own (headings below the 20px title, code at 12px). The page's *Provides* is one
+compact card (`providesSection`): a row per kind (Skills, Commands, Hooks; from
+a soul, Commands and Settings) with every name its own code chip, wrapping.
+`paintCapabilityPage` renders the page's facts and Contents from the same
+current catalog row (`contentsRow`), so a refresh moves them together.
+
 **Core capabilities and Capabilities read as one system.** Wherever the two
 sections appear (the soul page, the inspector's *Modules as spawned*, the
 spawn preview, the context panel's Soul tab), a core slot's provider (by

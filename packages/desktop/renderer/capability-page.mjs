@@ -52,8 +52,6 @@ export const pageCardCSS = `
 .page-section { display:flex; flex-direction:column; gap:10px; min-width:0; }
 .page-section-title { display:flex; align-items:baseline; flex-wrap:wrap; gap:10px; margin:0; font-size:13.5px; font-weight:650; }
 .page-section-lead { color:var(--muted); font-size:12px; font-weight:400; }
-.page-cards3 { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
-@container (max-width: 700px) { .page-cards3 { grid-template-columns:minmax(0,1fr); } }
 .page-card { display:flex; flex-direction:column; gap:6px; min-width:0; padding:12px 14px; box-sizing:border-box; background:var(--surface); border:1px solid var(--border); border-radius:10px; font-size:12px; }
 .page-card-title { display:flex; align-items:baseline; gap:8px; margin:0 0 4px; color:var(--muted); font-size:11px; font-weight:650; letter-spacing:.05em; text-transform:uppercase; }
 .page-card-title .shell-icon { align-self:center; }
@@ -94,6 +92,14 @@ export const capabilityPageCSS = `
 .capability-page .page-kv.why dd { display:flex; flex-direction:column; gap:2px; padding:7px 0; white-space:normal; overflow:visible; font:12px var(--sans,system-ui); }
 .capability-page .page-why-label { color:var(--fg); font-weight:600; }
 .capability-page .page-why-note { color:var(--muted); line-height:1.45; }
+.capability-page .provides-card { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:0 16px; margin:0; padding:4px 14px; }
+.capability-page .provides-row { display:contents; }
+.capability-page .provides-kind { display:flex; align-items:baseline; gap:6px; padding:9px 0; color:var(--muted); font-size:11px; font-weight:650; letter-spacing:.05em; text-transform:uppercase; white-space:nowrap; }
+.capability-page .provides-count { font:11px var(--mono,monospace); letter-spacing:0; }
+.capability-page .provides-items { display:flex; flex-wrap:wrap; align-items:center; gap:6px; min-width:0; margin:0; padding:6px 0; }
+.capability-page .provides-row + .provides-row > * { border-top:1px solid var(--tag-bg); }
+.capability-page .provides-chip { display:inline-block; max-width:100%; padding:2px 7px; border-radius:5px; background:var(--tag-bg); color:var(--fg); font:12px/1.5 var(--mono,monospace); overflow-wrap:anywhere; }
+.capability-page .provides-items .page-note { padding:2px 0; }
 .capability-page pre { margin:0; padding:10px; border:1px solid var(--border); border-radius:7px; background:var(--surface-2); color:var(--fg); overflow:auto; font-size:11.5px; }
 `;
 
@@ -223,8 +229,9 @@ function failedFacts({ cause = null, busy = false } = {}) {
  * `catalogPending`: opened from a soul before the catalog is read — its facts (the lede, Comes from) are
  * skeletons the host fills in place when it arrives. The catalog's age line lives in `.page-notice`
  * under the bar: the host paints it (`catalogNotice` / `updateCatalogNotice`), optionally seeded here
- * with `observation` ({ state, settled, busy, observedAt, cause, onRetry }). */
-export function renderCapabilityPage(host, { row, status, instances, root, rosterState = 'ready', backLabel = 'Capabilities', onBack, openSoul = null, from = null, openExternal = null, catalogPending = false, observation = null }) {
+ * with `observation` ({ state, settled, busy, observedAt, cause, onRetry }). `contents`: the Contents section's
+ * element (createCapabilityContents), placed after Provides and before Used by. */
+export function renderCapabilityPage(host, { row, status, instances, root, rosterState = 'ready', backLabel = 'Capabilities', onBack, openSoul = null, from = null, openExternal = null, catalogPending = false, observation = null, contents = null }) {
   const doc = host.ownerDocument;
   const node = (tag, value, cls) => el(doc, tag, value, cls);
   host.replaceChildren();
@@ -248,28 +255,17 @@ export function renderCapabilityPage(host, { row, status, instances, root, roste
   identity.append(glyph, copy); main.append(identity);
   // Kernel #217: what it provides, by name (the manifest's skills, commands and hooks).
   const named = [['Skills', row.skills], ['Commands', row.commands], ['Hooks', row.hooks]].filter(([, v]) => v !== undefined);
-  if (!(from && resolved) && named.length) {
-    const provides = pageSection(doc, 'Provides');
-    const cards = node('div', undefined, 'page-cards3');
-    for (const [label, names] of named) {
-      const c = pageCard(doc, label, { count: Array.isArray(names) ? names.length : null }); c.card.dataset.provides = label.toLowerCase();
-      if (names === null) c.card.append(node('p', 'Not listable: a spawn of it would refuse.', 'page-note'));
-      else if (!names.length) c.card.append(node('p', 'None', 'page-note'));
-      else for (const name of names) c.card.append(node('span', name, 'page-list-item mono'));
-      cards.append(c.card);
-    }
-    provides.append(cards); main.append(provides);
-  }
+  if (!(from && resolved) && named.length) main.append(providesSection(doc, named));
   // Provides: the commands the resolved capability declares (inspect operations), when opened from a soul.
   if (from && resolved) {
-    const provides = pageSection(doc, 'Provides');
-    const cards = node('div', undefined, 'page-cards3');
     const commands = list(resolved.operations).map(op => list(op.argv).filter(part => typeof part === 'string' && part).join(' ') || op.name).filter(Boolean);
-    if (commands.length) { const c = pageCard(doc, 'Commands', { count: commands.length }); for (const cmd of commands) c.card.append(node('span', cmd, 'page-list-item')); cards.append(c.card); }
     const declared = list(resolved.declares);
-    if (declared.length) { const c = pageCard(doc, 'Settings', { count: declared.length }); for (const key of declared) c.card.append(node('span', key, 'page-list-item')); cards.append(c.card); }
-    if (cards.childElementCount) { provides.append(cards); main.append(provides); }
+    const kinds = [...(commands.length ? [['Commands', commands]] : []), ...(declared.length ? [['Settings', declared]] : [])];
+    if (kinds.length) main.append(providesSection(doc, kinds));
   }
+  // Contents (spec C): the host's long-lived section (capability-contents.mjs), re-appended on every rebuild so
+  // what is open in its reader survives a catalog repaint. In both forms: the catalog's and a soul's.
+  if (contents) main.append(contents);
   // Used by: the souls whose instances carry it (roster module rows).
   const use = capabilityUse(instances, row.name);
   // "Used by" derives from the roster: with none carrying it, the claim needs a settled good roster read.
@@ -346,6 +342,25 @@ export function renderCapabilityPage(host, { row, status, instances, root, roste
   body.append(main, side); page.append(bar, noticeHost, body);
   host.append(page);
   return page;
+}
+/** "Provides": one compact card, a row per kind (its label and count, then every name as its own code chip,
+ * wrapping), so a capability with many commands takes a few lines, not a column each. `kinds`: [[label, names]],
+ * names null when not listable (a spawn of it would refuse) or [] for none. */
+function providesSection(doc, kinds) {
+  const section = pageSection(doc, 'Provides');
+  const card = el(doc, 'dl', null, 'page-card provides-card');
+  for (const [label, names] of kinds) {
+    const row = el(doc, 'div', null, 'provides-row'); row.dataset.provides = label.toLowerCase();
+    const term = el(doc, 'dt', null, 'provides-kind'); term.append(el(doc, 'span', label));
+    if (Array.isArray(names)) term.append(el(doc, 'span', String(names.length), 'provides-count'));
+    const value = el(doc, 'dd', null, 'provides-items');
+    if (names === null) value.append(el(doc, 'span', 'Not listable: a spawn of it would refuse.', 'page-note'));
+    else if (!names.length) value.append(el(doc, 'span', 'None', 'page-note'));
+    else for (const name of names) value.append(el(doc, 'code', name, 'provides-chip'));
+    row.append(term, value); card.append(row);
+  }
+  section.append(card);
+  return section;
 }
 /** sha256-<64 hex> → sha256:9f2c…a71e (the full value stays in the title). */
 export function fingerprint(integrity) {

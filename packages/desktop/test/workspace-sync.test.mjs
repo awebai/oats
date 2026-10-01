@@ -39,7 +39,7 @@ test('F2 fixtures are kernel documents with recorded argv, exit and hashes; no a
 });
 
 test('argv is fixed per verb; there is no approve verb', () => {
-  assert.deepEqual(WORKSPACE_ACTIONS, ['capabilities', 'souls', 'sync', 'onboard']);
+  assert.deepEqual(WORKSPACE_ACTIONS, ['capabilities', 'souls', 'sync', 'onboard', 'capability-show']);
   assert.deepEqual(workspaceArgv({ action: 'capabilities', context: deployment }).argv, ['capabilities', '--dir', deployment, '--json']);
   assert.equal(workspaceArgv({ action: 'capabilities', context: deployment }).timeout, WORKSPACE_READ_TIMEOUT);
   assert.deepEqual(workspaceArgv({ action: 'sync', context: deployment }).argv, ['sync', '--dir', deployment, '--json']);
@@ -221,4 +221,69 @@ test('HTTP: loopback Host/Origin guards first, one ws selector, snapshot refresh
   assert.equal((await http.request({ body: '{"action":"sync"}' })).body.status, 'refused');
   assert.equal(http.refreshes(), 1, 'a refused sync wrote nothing to refresh');
   assert.equal((await http.request({ body: '{"action":"approve","approvals":[]}' })).body.reason.code, 'E_BAD_ARGS');
+});
+
+/* ── capability-show: `oats capabilities show` (feature capability-show, capabilityShowApi 1) ── */
+const showCli = (extra = {}) => ({ ...cli(), features: [...cli().features, 'capability-show'], capabilityShowApi: 1, ...extra });
+const MEMBER = 'local//fixture/base/fx/remotes/agents.git';
+
+test('capability-show: fixed argv per selector, --file only with a path, --max-age before --json, read timeout', () => {
+  const base = { action: 'capability-show', context: deployment, name: 'nw-house-style' };
+  assert.deepEqual(workspaceArgv({ ...base, member: MEMBER }),
+    { argv: ['capabilities', 'show', 'nw-house-style', '--member', MEMBER, '--dir', deployment, '--json'], cwd: deployment, timeout: WORKSPACE_READ_TIMEOUT });
+  assert.deepEqual(workspaceArgv({ ...base, name: 'oats.core', package: 'oats.framework', path: 'skills/oats-operate/SKILL.md', maxAge: 60 }).argv,
+    ['capabilities', 'show', 'oats.core', '--package', 'oats.framework', '--file', 'skills/oats-operate/SKILL.md', '--dir', deployment, '--max-age', '60', '--json']);
+  assert.deepEqual(workspaceArgv({ ...base, member: MEMBER, maxAge: 0 }).argv.slice(-3), ['--max-age', '0', '--json']);
+});
+
+test('capability-show: refuses anything that is not one selector, a valid name and a plain relative path', () => {
+  const base = { action: 'capability-show', context: deployment, name: 'nw-house-style', member: MEMBER };
+  for (const bad of [
+    { ...base, path: '../x' }, { ...base, path: 'a/../b' }, { ...base, path: '/abs' }, { ...base, path: '-x' }, { ...base, path: 'a\\b' },
+    { ...base, path: 'a//b' }, { ...base, path: './a' }, { ...base, path: '' }, { ...base, path: 'a\nb' }, { ...base, path: undefined }, { ...base, path: 7 },
+    { ...base, package: 'oats.framework' }, { action: 'capability-show', context: deployment, name: 'x' },
+    { ...base, member: '--help' }, { ...base, member: '' }, { ...base, member: undefined },
+    { action: 'capability-show', context: deployment, name: 'oats.core', package: 'Bad Id' },
+    { ...base, name: '-x' }, { ...base, name: '' }, { ...base, name: 'a b' }, { ...base, name: undefined },
+    { ...base, context: 'relative' }, { ...base, context: '/a/../b' }, { ...base, file: 'SKILL.md' }, { ...base, extra: 1 }, { ...base, maxAge: -1 }, { ...base, maxAge: '60' },
+  ]) assert.equal(workspaceArgv(bad), null, JSON.stringify(bad));
+});
+
+test('capability-show: gated on the feature AND capabilityShowApi 1; nothing dispatches otherwise', async () => {
+  const request = { action: 'capability-show', context: deployment, name: 'nw-house-style', member: MEMBER };
+  for (const state of [cli(), showCli({ capabilityShowApi: undefined }), showCli({ capabilityShowApi: 2 }), showCli({ capabilityShowApi: '1' }),
+    { ...cli(), capabilityShowApi: 1 }]) {
+    const result = await cliWorkspace(state, request, { exec: assert.fail });
+    assert.deepEqual(result, { ok: false, reason: { code: 'E_CAPABILITY_SHOW_FEATURE', message: "The installed OATS CLI can't show what a capability ships. Update OATS and retry." } });
+  }
+  // The workspace line itself still gates first; a bad request is still a bad request.
+  assert.equal((await cliWorkspace({ ...showCli(), workspaceApi: 1 }, request, { exec: assert.fail })).reason.code, 'E_WORKSPACE_FEATURE');
+  assert.equal((await cliWorkspace(showCli(), { ...request, path: '../x' }, { exec: assert.fail })).reason.code, 'E_BAD_ARGS');
+  // The other verbs never needed the feature.
+  assert.equal((await cliWorkspace(cli(), { action: 'capabilities', context: deployment }, { exec: replay('capabilities') })).ok, true);
+});
+
+test('capability-show: --max-age reaches argv only when the probe declares observe-max-age (it is a read)', async () => {
+  const request = Object.freeze({ action: 'capability-show', context: deployment, name: 'nw-house-style', member: MEMBER, maxAge: 60 });
+  for (const declared of [true, false]) {
+    const state = showCli(declared ? { features: [...showCli().features, 'observe-max-age'] } : {});
+    let argv;
+    const result = await cliWorkspace(state, request, { exec: (_b, a, _o, done) => { argv = a; done(null, JSON.stringify({ schemaVersion: 1, ok: true, result: {} })); } });
+    assert.equal(result.ok, true);
+    assert.equal(argv.includes('--max-age'), declared, `declared ${declared}`);
+    assert.equal(argv.at(-1), '--json');
+  }
+  assert.equal((await cliWorkspace(showCli(), { ...request, maxAge: -1 }, { exec: assert.fail })).reason.code, 'E_BAD_ARGS');
+});
+
+test('capability-show: a refusal is the kernel code/message only; never a shell', async () => {
+  let seen;
+  const result = await cliWorkspace(showCli(), { action: 'capability-show', context: deployment, name: 'nw-house-style', member: MEMBER, path: 'skills/x/SKILL.md' }, {
+    exec(bin, argv, options, done) {
+      seen = { bin, argv, options };
+      done(exitError(1), JSON.stringify({ schemaVersion: 1, ok: false, error: { code: 'E_CAPABILITY_FILE_NOT_FOUND', message: 'no such file: skills/x/SKILL.md', details: { secret: 1 } } }));
+    } });
+  assert.deepEqual(result, { ok: false, reason: { code: 'E_CAPABILITY_FILE_NOT_FOUND', message: 'no such file: skills/x/SKILL.md' } });
+  assert.equal(seen.options.shell, false); assert.equal(seen.options.cwd, deployment); assert.equal(seen.options.timeout, WORKSPACE_READ_TIMEOUT);
+  assert.deepEqual(seen.argv, ['capabilities', 'show', 'nw-house-style', '--member', MEMBER, '--file', 'skills/x/SKILL.md', '--dir', deployment, '--json']);
 });
