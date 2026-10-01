@@ -56,6 +56,9 @@ test("codex argv hands tool commands the env the launch prefix sets: the instanc
 test("spawn: codex trusts the new home only under a trusted root; claude and codex warn when the home is not covered; the operator's config is never written", async (t) => {
   // This machine prefers codex for dev: a readiness read of the soul reports codex's trust.
   const fx = v2Deployment({ local: { souls: { launch: { dev: { harness: "codex" } } } } }); t.after(fx.cleanup);
+  // The in-process spawns resolve the harness on this process's PATH: the fixture's inert claude and codex
+  // come first, so the test never depends on the host having either installed.
+  const hostPath = process.env.PATH; process.env.PATH = fx.env.PATH; t.after(() => { process.env.PATH = hostPath; });
   const userHome = fx.env.HOME, dep = realpathSync(fx.dep);
   const codexConfig = join(userHome, ".codex", "config.toml"), claudeConfig = join(userHome, ".claude.json");
   const spawn = async (purpose, harness) => { const r = await fx.spawn("dev", { purpose, harness }); return { r, meta: JSON.parse(readFileSync(join(r.home, "instance.json"), "utf8")) }; };
