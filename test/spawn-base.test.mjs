@@ -62,3 +62,19 @@ test("an explicit --base is the operator's word, as before", async (t) => {
   assert.equal(git(join(r.home, "work"), "rev-parse", "HEAD"), local);
   assert.deepEqual(r.base, { ref: "HEAD", oid: local });
 });
+
+test("the fetch never prompts: ssh runs in BatchMode and askpass is refused", (t) => {
+  const { fx } = behind(t);
+  // The clone's remote still names the member (its configured url), but git reaches it over ssh, through a
+  // logging ssh that fails: the spawn refuses, and the argv says whether ssh could have prompted.
+  const log = join(fx.base, "ssh-argv.log"), ssh = join(fx.base, "logging-ssh");
+  writeFileSync(ssh, `#!/bin/sh\necho "$@" >> '${log}'\necho "askpass=$GIT_ASKPASS" >> '${log}'\nexit 1\n`, { mode: 0o755 });
+  git(fx.member, "config", `url.ssh://example.invalid${fx.repo}.insteadOf`, fx.repo);
+  const r = fx.cli(["spawn", "dev", "--name", "dev-ssh", "--no-launch", "--json"], { env: { GIT_SSH_COMMAND: ssh } });
+  assert.notEqual(r.status, 0, r.stdout);
+  assert.equal(r.json().error.code, "E_REMOTE_UNREADABLE", r.stdout);
+  assert.deepEqual(r.json().error.details, { repo: fx.member, repoKey: fx.key, commit: git(fx.repo, "rev-parse", "main"), remote: "origin" });
+  const argv = readFileSync(log, "utf8");
+  assert.match(argv, /-o BatchMode=yes/, argv);
+  assert.match(argv, /askpass=\/usr\/bin\/false/, argv);
+});

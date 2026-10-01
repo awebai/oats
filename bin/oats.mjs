@@ -2256,6 +2256,8 @@ async function spawnCmd() {
     if (e?.code === "E_REQUIREMENT_INACTIVE") { bail(e.code, e.message, { soul: e.soul, capabilities: e.capabilities, context: e.context, remedy: e.remedy }); throw e; }
     if (e?.code === "E_CHILD_SPAWNS_DISABLED") { bail(e.code, e.message, { parent: e.parent, policy: e.policy }); throw e; }
     if (["E_BRANCH_EXISTS", "E_BASE_UNKNOWN"].includes(e?.code)) { bail(e.code, e.message); throw e; }
+    // The observed base could not be fetched into the clone: the clone, the repository and the commit travel along.
+    if (e?.code === "E_REMOTE_UNREADABLE" && e.details?.commit) { bail(e.code, e.message, e.details); throw e; }
     // K6b: the confirmed decision drifted — the fresh decision travels with the refusal so a GUI re-previews.
     if (e?.code === "E_DECISION_STALE") { bail(e.code, e.message, { decision: e.decision }); throw e; }
     if (e?.code === "E_IDEMPOTENCY_CONFLICT") { bail(e.code, e.message, { instance: e.instance, home: e.home }); throw e; }

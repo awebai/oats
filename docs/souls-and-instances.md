@@ -479,7 +479,10 @@ The spawn fetches that commit by id into the clone from the remote that names
 the repository, and never moves the clone's own branches, remote-tracking refs
 or work tree. A commit that cannot be fetched refuses the spawn
 (`E_REMOTE_UNREADABLE`, naming the clone and the commit); it never falls back
-to the clone's branch. `--base <ref>` names another start point in the clone;
+to the clone's branch. The fetch never prompts (ssh runs in BatchMode, askpass
+is refused). A server that serves only its advertised refs (protocol v0 without
+`allowAnySHA1InWant`) refuses a commit its branches have moved past; `--base`
+is then the way on. `--base <ref>` names another start point in the clone;
 a `--repo` that is not a clone of the soul's repository starts at its `HEAD`.
 The spawn result and `instance.json` record the start point as
 `base: {ref, oid}`.

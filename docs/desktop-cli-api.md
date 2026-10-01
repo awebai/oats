@@ -1394,13 +1394,13 @@ it to a temporary copy (`soulFetched: true`).
  "settingsOrigins":{"nw-tools":{},"oats.okf":{"/owns":{"kind":"soul","at":"soul.yaml#/knowledge"}}},
  "spawnPreviewApi":2,"preview":true,"agent":"rm","kind":"persistent","instance":"rm-api","home":"/w/agents/rm/instances/rm-api",
  "repo":"/w/agents-repo","work":"worktree","subject":{"soul":"rm","agentsRoot":null,"dir":"/w"},
- "decision":{"instance":"rm-api","home":"/w/agents/rm/instances/rm-api","branch":"agents/rm-api","base":{"ref":"HEAD","oid":"66566512…"},
+ "decision":{"instance":"rm-api","home":"/w/agents/rm/instances/rm-api","branch":"agents/rm-api","base":{"ref":"github.com/nw/agents","oid":"66566512…"},
              "effective":{"repo":"/w/agents-repo","work":"worktree","harness":"pi","model":null,"launchConfig":null,"yolo":null,"backend":"tmux",
                           "childSpawns":true,"relation":null,"providers":{"nw-tools":{},"oats.okf":{"owns":"rm"}}},
              "resolution":"abacbdb5a7975098d77007c8","revision":"c557d8ec9a272ba1c1739dc3"},
  "preflight":{"status":"complete","budgetMs":20000,"elapsedMs":53},"backendStatus":{"name":"tmux","installed":true,"started":false},
  "harness":"pi","model":null,"modelSource":"native default","launchConfig":null,"backend":"tmux",
- "branch":"agents/rm-api","base":{"ref":"HEAD","oid":"66566512…"},"worktree":"/w/agents/rm/instances/rm-api/work",
+ "branch":"agents/rm-api","base":{"ref":"github.com/nw/agents","oid":"66566512…"},"worktree":"/w/agents/rm/instances/rm-api/work",
  "relation":null,"parentInstance":null,"policy":{"childSpawns":{"allowed":true,"origin":{"kind":"default","detail":"no spawn option: children allowed"}}},
  "executable":"/usr/local/bin/pi",
  "capabilities":[{"name":"nw-tools","origin":"member:github.com/nw/agents@66566512…"},{"name":"oats.okf","origin":"package:oats.okf@2.1.3"}],
@@ -1538,7 +1538,7 @@ with `--expect-decision` records the key and decision in `instance.json`.
 
 ```json
 {"instance":"rm-api","agent":"rm","home":"/w/agents/rm/instances/rm-api","work":"worktree","branch":"agents/rm-api",
- "base":{"ref":"github.com/acme/agents","oid":"3857e7e3cd52…"},"launched":true,"warnings":[],
+ "base":{"ref":"github.com/nw/agents","oid":"66566512…"},"launched":true,"warnings":[],
  "tmux":{"session":"oats-agents","window":"rm-api"},"backend":"tmux","repo":"/w/agents-repo","harness":"pi","model":null,"parent":null,"sibling":null,"relation":null,
  "spawnOrigin":"operator","attach":"tmux attach -t oats-agents","decision":{"instance":"rm-api","revision":"c557d8ec9a272ba1c1739dc3"},"replayed":false,
  "wake":{"requested":false,"saved":null,"error":null},"launchConfig":null,
@@ -1613,7 +1613,8 @@ workspace-model fields (feature `instance-modules`):
 
 ```json
 {"agent":"rm","kind":"persistent","instance":"rm-api","home":"/w/agents/rm/instances/rm-api","soulDir":"/w/agents/rm/souls/66566512168e",
- "repo":"/w/agents-repo","work":"worktree","branch":"agents/rm-api","harness":"pi","modelFrom":"harness-default","spawnOrigin":"operator",
+ "repo":"/w/agents-repo","work":"worktree","branch":"agents/rm-api","base":{"ref":"github.com/nw/agents","oid":"66566512…"},
+ "harness":"pi","modelFrom":"harness-default","spawnOrigin":"operator",
  "policy":{"childSpawns":{"allowed":true,"origin":{"kind":"default","detail":"no spawn option: children allowed"}}},
  "modules":{"oats.okf":{"from":{"kind":"package","package":"oats.okf","version":"2.1.3","commit":"ab897841…","integrity":"sha256-bada35…","repoKey":"github.com/awebai/oats-okf"},
                         "commit":"ab897841…","digest":"sha256-9a0e…","materializedAt":"2026-09-28T10:08:01.100Z"}},
@@ -1640,6 +1641,8 @@ the keyed-spawn fields `decision`, `spawnIdempotencyKey`, `spawnCompleted` and
   the copy at `<home>/.oats/modules/<cap>/`. Module skills are copied flat to
   `<home>/.agents/skills/<skill>/` (homes spawned by 0.30.1 or earlier keep
   `<home>/.agents/skills/<cap>/<skill>/`).
+- `base` (a worktree instance): `{ref, oid}`, the commit its branch started
+  at, as the spawn result states it (see Placement under the spawn preview).
 - `providers.<cap>`: the merged payload (`{}` when none).
 - `workspace`: `{key, name, deployment, commit, resolution, standalone, soul,
   layers}`. `name` is recorded, and every hook, command and operation of the
