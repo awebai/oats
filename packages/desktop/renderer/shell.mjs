@@ -165,6 +165,8 @@ const spawnJobs = createSpawnJobs({
   },
   currentWorkspace,
   connection: () => connectionGeneration,
+  // Spec D (#383): submitted jobs whose outcome is unknown survive a window reload (no task text, no key).
+  storage: (() => { try { return window.sessionStorage; } catch { return null; } })(),
   onChange: () => {
     if (spawnRepaint) return;
     spawnRepaint = true;
@@ -180,6 +182,8 @@ function followSpawns() {
   }, 700);
 }
 ctx.spawnJobs = spawnJobs;
+ctx.showPendingSpawn = (id) => showPendingSpawn(id);
+spawnJobs.recover();
 window.addEventListener('pagehide', () => spawnJobs.dispose(), { once: true });
 
 // ── stage: the sidebar-driven main surface ──────────────────────────
@@ -885,6 +889,30 @@ async function showInRoster(instance) {
   renderContextRoster(contextInstances);
   const listEl = contextRosterEl.querySelector(".ctx-list");
   const target = listEl && [...listEl.querySelectorAll(".ctx-inst")].find(r => r.dataset.treeInstance === instanceId(row));
+  if (!target) return false;
+  tabOpenIntents.invalidate(); // an explicit navigation, not a polling restoration
+  setRovingRow(listEl, target);
+  return true;
+}
+
+/* "Show its row" (Spec D): focus a background spawn's pending row, revealing it like showInRoster. */
+function showPendingSpawn(id) {
+  const ws = currentWorkspace();
+  const pending = spawnJobs.rows(ws).find(p => p.id === id);
+  if (!pending || !contextRosterEl) return false;
+  const all = [...contextInstances, { instance: pending.instance, agent: pending.agent, agentsRoot: pending.agentsRoot, home: pending.home,
+    ...(pending.parentInstance ? { parentInstance: pending.parentInstance } : {}), ...(pending.siblingInstance ? { siblingInstance: pending.siblingInstance } : {}) }];
+  const self = all.at(-1);
+  if (contextFilter && !instanceMatchesFilter(self, contextFilter)) {
+    contextFilter = "";
+    const input = contextRosterEl.querySelector(".ctx-filter"); if (input) input.value = "";
+  }
+  for (let pid = rosterParentId(all, instanceId(self)), seen = new Set(); pid && !seen.has(pid); pid = rosterParentId(all, pid)) {
+    seen.add(pid); collapsedInstances.delete(collapseKey(ws, pid));
+  }
+  renderContextRoster(contextInstances);
+  const listEl = contextRosterEl.querySelector(".ctx-list");
+  const target = listEl && [...listEl.querySelectorAll(".ctx-inst")].find(r => r.dataset.treeInstance === instanceId(self));
   if (!target) return false;
   tabOpenIntents.invalidate(); // an explicit navigation, not a polling restoration
   setRovingRow(listEl, target);

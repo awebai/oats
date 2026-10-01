@@ -346,8 +346,14 @@ does not bind the ticked teams. Remote (server) spawns, and a host without a sto
 The handoff carries the press token, the prepare input, the decision on screen,
 the relation and the draft (name, every choice, teams, opening instruction,
 wake). The store is single-flight per press token, so one press never starts two
-spawns; a new press, even of the same soul, is its own job with its own fresh
-preview. The store then runs the same transaction: prepare (usually a cache hit),
+spawns, and per soul (Spec D, #383): while a spawn of a soul is in flight in this
+window (**Spawning…** or **Checking result…**), the store refuses another of the same
+workspace and soul, and the dialog opened for that soul from any entry point keeps
+Spawn disabled under a polite line, "A spawn of <soul> is in progress.", with **Show
+its row** (focuses the pending row). It re-enables when the job settles: created,
+refused, or unknown (an unknown outcome does not block, or a record lost to a backend
+restart would block the soul for the life of the window). Another soul is never
+blocked; a new spawn of the same soul afterwards is its own job with a fresh preview. The store then runs the same transaction: prepare (usually a cache hit),
 the same decision check against what the operator saw, apply, and `result` for
 recovery. Every completion checks that the store is alive and the job is still
 its own.
@@ -363,8 +369,21 @@ home), so when the roster reports that home the real row replaces it in place
 and a focused pending row stays focused. The head's count stays the kernel's
 observation; pending rows are not counted. While a created instance is awaited
 the shell reads the roster every 700 ms (the dialog's former pace) instead of
-every 4 s. Pending rows are Desktop-local and never persisted: after a restart
-they are gone, and a created instance appears through the roster as usual.
+every 4 s.
+
+**Window reload.** Pending rows are Desktop-local. A submitted job whose outcome is
+not known yet is kept in the window's `sessionStorage` as `{workspace, spawnRef,
+soul, selector, instance, home, placement, startedAt}`: never the opening
+instruction, and never the idempotency key, which the renderer does not hold (the
+server keeps a `spawnRef` 30 minutes after it settles, bound to the workspace scope,
+not to a frame). After a reload the store brings each one back as a pending row and
+reads the existing `result` action (every 2 s while the server says pending, for up
+to the 65 s apply deadline, then **Outcome unknown**); the outcome is reported like
+any other and the entry dropped. A recovered failure's **Reopen spawn** restores the
+soul and the exact name only. If the backend itself restarted, its records are gone:
+the job reads **Outcome unknown** with Check result, never a guess. Closing the window
+or quitting Desktop (a new session) loses the entries; a created instance still
+appears through the roster as usual, but a failure is then not reported.
 
 **Outcomes.** Creation, roster presence and a live session are separate
 observations:

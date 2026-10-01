@@ -8,7 +8,7 @@ import { cli as CLI } from './helpers/spawn-preview-fixture.mjs';
 import { createSpawnPreviewBoundary } from '../server/spawn-preview.mjs';
 import { createSpawnApplyBoundary } from '../server/spawn-apply.mjs';
 import { creation } from './helpers/spawn-apply-fixture.mjs';
-import { createSpawnJobs, pendingPlacement, DRIFT_TEXT } from '../renderer/spawn-jobs.mjs';
+import { createSpawnJobs, pendingPlacement, DRIFT_TEXT, SPAWN_STORAGE_KEY } from '../renderer/spawn-jobs.mjs';
 
 const created = (name = 'preview-worktree-purpose') => kernel(name).result;
 const receipt = (preview = created(), changes = {}) => ({ started: true, envelope: { schemaVersion: 1, ok: true, result: creation(preview, changes) } });
@@ -158,14 +158,19 @@ function store(overrides = {}) {
 const spec = (extra = {}) => ({ token: {}, workspace: 'A', soul: { name: 'dev', agentsRoot: '/d/agents' }, selector: { soul: 'dev', agentsRoot: '/d/agents' },
   input: { action: 'prepare', selector: { soul: 'dev', agentsRoot: '/d/agents' }, choices: {} }, decision, draft: { purpose: 'x', task: 'do' }, ...extra });
 
-test('store: one press token starts one spawn; a new press of the same soul is its own job', async () => {
+test('store: one press token starts one spawn; a second spawn of the same soul waits until the first is no longer in flight (Spec D)', async () => {
   const { s, posted } = store();
   const press = spec();
   const first = s.submit(press);
   assert.ok(first); assert.equal(s.submit(press), null, 'the same press never starts a second spawn');
-  assert.ok(s.submit(spec()), 'a new press is allowed');
+  assert.deepEqual(s.inFlight('A', press.soul), { id: first, instance: 'dev-x', home: decision.home });
+  assert.equal(s.submit(spec()), null, 'a new press of the same soul is refused while one is in flight');
+  assert.ok(s.submit(spec({ soul: { name: 'other', agentsRoot: '/d/agents' } })), 'another soul is not blocked');
   await settle(4);
-  assert.equal(posted.filter(b => b.action === 'prepare').length, 2);
+  assert.equal(s.inFlight('A', press.soul), null, 'settled (refused here): no longer in flight');
+  assert.ok(s.submit(spec()), 'a new press of the same soul is allowed again');
+  await settle(4);
+  assert.equal(posted.filter(b => b.action === 'prepare').length, 3);
 });
 
 test('store: a failure before submit is a refusal whose draft Reopen restores; dismissing the notice forgets it', async () => {
@@ -246,4 +251,143 @@ test('pendingPlacement: the row sits where the roster will place the real one', 
   assert.deepEqual(pendingPlacement({ kind: 'sibling', anchor }, [{ instance: 'lead', agentsRoot: '/r', parentInstance: 'boss' }]), { parentInstance: 'boss' });
   assert.deepEqual(pendingPlacement({ kind: 'sibling', anchor }, [{ instance: 'lead', agentsRoot: '/r' }]), { siblingInstance: 'lead' });
   assert.deepEqual(pendingPlacement({ kind: 'parent', anchor }), { siblingInstance: 'lead' });
+});
+
+// ── Spec D (#383): no second spawn of a soul in flight; a reload does not lose an outcome ─────────────
+
+test('Spec D: reopening Spawn for a soul whose spawn is in flight shows the press disabled, says so politely, and links to its row; it re-enables when the job settles', async t => {
+  const hold = deferred();
+  const u = await mountSpawn(t, { jobs: true, spawnGate: body => body.action === 'apply' ? hold.promise : undefined, apply: () => receipt() });
+  await u.open(); await u.type('.fpurpose', 'api-v2');
+  u.q('.fspawn').click(); await settle(10);
+  assert.equal(u.dialog(), null);
+  await u.open(); await settle(10);
+  const line = u.q('.spawn-inflight');
+  assert.equal(line.hidden, false); assert.equal(line.getAttribute('role'), 'status', 'announced politely');
+  assert.equal(u.text('.spawn-inflight-text'), 'A spawn of release-manager is in progress.');
+  assert.equal(u.q('.fspawn').disabled, true, 'the press is disabled');
+  const show = u.q('.spawn-inflight-show');
+  assert.equal(show.getAttribute('aria-label'), `Show the pending row of ${created().decision.instance}`);
+  const before = u.spawns().length;
+  const ta = u.q('.ftask'); ta.focus();
+  ta.dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: 'Enter', metaKey: true, ctrlKey: true, bubbles: true, cancelable: true })); await settle(5);
+  assert.equal(u.spawns().length, before, 'Cmd-Enter does nothing while blocked'); assert.ok(u.dialog());
+  hold.resolve(); await settle(20);
+  assert.equal(u.q('.spawn-inflight').hidden, true, 'the job settled: the line goes');
+  assert.equal(u.q('.fspawn').disabled, false, 'and the press is enabled again');
+});
+
+test('Spec D: “Show its row” closes the dialog and focuses the pending row; another soul is not blocked', async t => {
+  const hold = deferred();
+  const u = await mountSpawn(t, { jobs: true, spawnGate: body => body.action === 'apply' ? hold.promise : undefined, apply: () => receipt() });
+  await u.open(); await u.type('.fpurpose', 'api-v2');
+  u.q('.fspawn').click(); await settle(10);
+  await u.open('support-triager'); await settle(10);
+  assert.equal(u.q('.spawn-inflight').hidden, true, 'a different soul'); assert.equal(u.q('.fspawn').disabled, false);
+  await u.open(); await settle(10);
+  const [row] = u.jobs.rows('northwind');
+  u.q('.spawn-inflight-show').click(); await settle();
+  assert.equal(u.dialog(), null); assert.deepEqual(u.shownRows, [row.id]);
+  hold.resolve(); await settle(20);
+});
+
+const memoryStorage = () => { const m = new Map(); return { getItem: k => m.has(k) ? m.get(k) : null, setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k), raw: () => m.get(SPAWN_STORAGE_KEY) ?? null }; };
+/** One backend (the real broker) and stores that come and go like a window reload. */
+function reloadRig(apply) {
+  const context = () => ({ workspace: { id: 'northwind', scope: DEPLOYMENT }, cli: structuredClone(CLI), agents: catalogAgents(), instances: [] });
+  const read = createSpawnPreviewBoundary({ invoke: async (_c, { target, choices }) => kernel(kernelPreviewName(target.selector.soul, choices)) });
+  let ids = 0;
+  const broker = createSpawnApplyBoundary({ mint: () => (++ids).toString(16).padStart(64, '0'), read, invoke: async args => apply(args) });
+  const posts = [];
+  const selector = { soul: 'release-manager', agentsRoot: ROOT };
+  return {
+    posts,
+    window(storage, overrides = {}) {
+      return store({ storage, sleep: () => settle(2), post: async (_ws, body) => { posts.push(body.action); return broker(body, context); }, currentWorkspace: () => 'northwind', ...overrides });
+    },
+    submit(s) {
+      return s.submit({ token: {}, workspace: 'northwind', soul: { name: 'release-manager', agentsRoot: ROOT }, selector,
+        input: { action: 'prepare', selector, choices: { purpose: 'api-v2', model: { kind: 'inherit' }, relation: { kind: 'unrelated' } }, task: 'private opening words' },
+        decision: created().decision, draft: { purpose: 'api-v2', task: 'private opening words' } });
+    },
+  };
+}
+
+test('Spec D: a spawn submitted before a window reload is recovered: its pending row comes back and its outcome is reported (result action only)', async () => {
+  const gate = deferred();
+  const rig = reloadRig(async () => { await gate.promise; return receipt(); });
+  const storage = memoryStorage();
+  const before = rig.window(storage);
+  rig.submit(before.s); await settle(10);
+  assert.ok(storage.raw(), 'kept while the apply runs'); assert.doesNotMatch(storage.raw(), /private opening words/, 'never the opening instruction');
+  assert.doesNotMatch(storage.raw(), /idempotency|"key"/, 'never a key');
+  before.s.dispose(); // pagehide: the window reloads
+  const after = rig.window(storage);
+  assert.equal(after.s.recover(), 1);
+  const [row] = after.s.rows('northwind');
+  assert.equal(row.instance, created().decision.instance); assert.equal(row.pending, 'spawning');
+  assert.ok(after.s.inFlight('northwind', { name: 'release-manager', agentsRoot: ROOT }), 'still in flight after the reload');
+  await settle(6);
+  assert.ok(rig.posts.filter(a => a === 'result').length >= 1); assert.equal(rig.posts.filter(a => a === 'apply').length, 1, 'never applied again');
+  gate.resolve(); await settle(20);
+  assert.equal(storage.raw(), null, 'dropped once the outcome is known');
+  after.s.observe('northwind', [realRow()]);
+  assert.equal(after.spawned.length, 1, '“spawned” is posted after the reload'); assert.equal(after.s.size(), 0);
+});
+
+test('Spec D: a spawn that fails after a reload is reported, with Reopen restoring the exact name', async () => {
+  const gate = deferred();
+  const rig = reloadRig(async () => { await gate.promise; return failure('E_BRANCH_EXISTS'); });
+  const storage = memoryStorage(), reopened = [];
+  const before = rig.window(storage);
+  rig.submit(before.s); await settle(10);
+  before.s.dispose();
+  const after = rig.window(storage, { reopen: job => reopened.push(job) });
+  after.s.recover(); gate.resolve(); await settle(20);
+  assert.equal(after.s.rows('northwind').length, 0, 'the row goes');
+  assert.equal(after.notes.length, 1); assert.match(after.notes[0].message, /Nothing was created/);
+  await after.notes[0].options.buttons[0].activate();
+  assert.deepEqual(reopened[0].draft, { layout: 'scoped', restore: { choices: { name: created().decision.instance } } });
+  assert.equal(storage.raw(), null);
+});
+
+test('Spec D: a recovered spawn whose record is gone (the backend restarted) stays “Outcome unknown”, never guessed', async () => {
+  const gate = deferred();
+  const first = reloadRig(async () => { await gate.promise; return receipt(); });
+  const storage = memoryStorage();
+  const before = first.window(storage);
+  first.submit(before.s); await settle(10);
+  before.s.dispose();
+  const restarted = reloadRig(async () => receipt()); // a new backend: the ref is unknown to it
+  const after = restarted.window(storage);
+  after.s.recover(); await settle(10);
+  const [row] = after.s.rows('northwind');
+  assert.equal(row.pending, 'unknown'); assert.equal(after.notes.length, 1);
+  assert.deepEqual(restarted.posts, ['result'], 'it only asked');
+  assert.ok(storage.raw(), 'kept while unknown, so Check result survives another reload');
+  gate.resolve(); await settle(5);
+});
+
+test('Spec D: a recovered spawn the server still reports pending past the apply deadline becomes unknown', async () => {
+  const gate = deferred();
+  let clock = 0;
+  const rig = reloadRig(async () => { await gate.promise; return receipt(); });
+  const storage = memoryStorage();
+  const before = rig.window(storage);
+  rig.submit(before.s); await settle(10);
+  before.s.dispose();
+  const after = rig.window(storage, { now: () => clock, recoverWithinMs: 1000, sleep: async () => { clock += 600; await settle(1); } });
+  after.s.recover(); await settle(20);
+  assert.equal(after.s.rows('northwind')[0].pending, 'unknown');
+  assert.match(after.notes[0].message, /still running/);
+  gate.resolve(); await settle(5);
+});
+
+test('Spec D: storage that throws or holds junk never breaks the store', async () => {
+  const broken = { getItem() { throw new Error('denied'); }, setItem() { throw new Error('denied'); }, removeItem() { throw new Error('denied'); } };
+  const { s } = store({ storage: broken });
+  assert.equal(s.recover(), 0); assert.ok(s.submit(spec())); await settle(4);
+  const junk = memoryStorage(); junk.setItem(SPAWN_STORAGE_KEY, JSON.stringify([{ workspace: 'A' }, 7, null, { spawnRef: 'x' }]));
+  const t2 = store({ storage: junk });
+  assert.equal(t2.s.recover(), 0); assert.equal(junk.raw(), null, 'junk is dropped');
 });

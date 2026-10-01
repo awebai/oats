@@ -94,8 +94,9 @@ export async function mountSpawn(t, options = {}) {
     },
     openTerminal: (ref, o) => opens.push({ ref, o }), notifySpawn: (row, ws) => notified.push({ row, ws }), notify: () => {}, openBrain: () => {} };
   // options.jobs: the shell's background-spawn store (Spec C), wired as shell.mjs wires it; its options override.
-  const notices = [], reopened = [], schedules = [];
+  const notices = [], reopened = [], schedules = [], shownRows = [];
   if (options.jobs) {
+    ctx.showPendingSpawn = id => { shownRows.push(id); return true; };
     ctx.spawnJobs = createSpawnJobs({ post: (ws, body) => postJson(ctx, `/api/spawn?ws=${encodeURIComponent(ws)}`, body),
       notify: (message, opts = {}) => {
         const n = { message, options: opts, shown: true }; notices.push(n);
@@ -111,7 +112,7 @@ export async function mountSpawn(t, options = {}) {
   spawn.mount(dom.window.document.querySelector('#host'), ctx); await settle();
   const doc = dom.window.document;
   const u = {
-    doc, dom, calls, opens, notified, applied, polls, ctx, notices, reopened, schedules, jobs: ctx.spawnJobs,
+    doc, dom, calls, opens, notified, applied, polls, ctx, notices, reopened, schedules, shownRows, jobs: ctx.spawnJobs,
     dialog: () => doc.querySelector('.spawn-dialog'),
     q: selector => doc.querySelector(`.spawn-dialog ${selector}`),
     text: selector => (doc.querySelector(`.spawn-dialog ${selector}`)?.textContent || '').trim(),
