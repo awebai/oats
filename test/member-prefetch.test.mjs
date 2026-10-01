@@ -41,19 +41,21 @@ function workspace(names) {
   list(names.map(url));
   return { base, hostRef, url, path: bare, member, list, cacheDir: join(base, "cache") };
 }
-/** An exec that counts and times every ls-remote (by url), optionally delaying or failing some. */
+/** An exec that counts and times every ls-remote (by url, whichever protocol it speaks), optionally delaying or
+ *  failing some. A failure is an auth refusal: final under either protocol, so one observation is one ls-remote. */
 function tracing({ delay = () => 0, failUrl = null } = {}) {
   const calls = [];
   let active = 0, maxActive = 0;
   const exec = async (args, opts) => {
-    if (args[0] !== "ls-remote") return runGit(args, opts);
-    const call = { url: args[2], start: performance.now(), end: null };
+    if (!args.includes("ls-remote")) return runGit(args, opts);
+    const url = args[args.indexOf("--symref") + 1];
+    const call = { url, start: performance.now(), end: null };
     calls.push(call);
     active++; maxActive = Math.max(maxActive, active);
     try {
-      const ms = delay(args[2]);
+      const ms = delay(url);
       if (ms) await new Promise((r) => setTimeout(r, ms));
-      if (args[2] === failUrl) throw Object.assign(new Error("x"), { stderr: Buffer.from("fatal: unable to access: Could not resolve host") });
+      if (url === failUrl) throw Object.assign(new Error("x"), { code: 128, stderr: Buffer.from("fatal: Authentication failed") });
       return await runGit(args, opts);
     } finally { active--; call.end = performance.now(); }
   };

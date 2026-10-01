@@ -174,7 +174,13 @@ from *outside* that boundary, and **declaring one in the workspace's
 access context.** The kernel reads both halves over the remotes
 (`git ls-remote`, shallow fetches, the operator's own credential helpers,
 never a prompt). A half that cannot be read makes the member *unconfirmed*,
-never a half-success. `oats workspace status` and `oats sync` show each member
+never a half-success. A remote's current head is read with Git's protocol v0
+(one round trip) unless your Git configuration sets `protocol.version`, which
+is then used as set; a tag or branch is read as before. A remote whose v0 ref
+advertisement is over 4 MiB, or that fails under v0 for a reason other than a
+timeout, an authentication refusal, a missing repository or the local cache,
+is read with protocol v2 instead, with one `oats: warning` saying so (the
+first case is remembered in the remote cache, so it is said once). `oats workspace status` and `oats sync` show each member
 as `confirmed` or the reason it is not:
 
 | status | meaning |

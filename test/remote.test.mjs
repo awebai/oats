@@ -513,6 +513,9 @@ test("M2: the fetch url is the form written — an ssh ref is fetched over ssh, 
     if (args[0] === "init") { execFileSync("git", args, { env: GIT_ENV, stdio: "ignore" }); return { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }; }
     if (args.includes("rev-parse")) { const e = new Error("missing"); e.code = 128; e.stderr = Buffer.from("fatal: Needed a single revision"); throw e; }
     if (args.includes("config")) {
+      // protocol.version pinned: this test is about WHICH url git is asked for, under today's argv (the v0 argv
+      // carries the same url: test/remote-protocol.test.mjs).
+      if (args.includes("protocol.version")) return { stdout: Buffer.from("2\n"), stderr: Buffer.alloc(0) };
       if (args.includes("--get")) { const e = new Error("unset"); e.code = 1; e.stderr = Buffer.alloc(0); throw e; }
       return { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
     }

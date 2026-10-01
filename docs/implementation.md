@@ -71,6 +71,15 @@ Every CLI command owns one read session (`createReadSession` in
 CLI closes it when the command ends). A library caller without a session
 gets the plain per-call behaviour. Within a session:
 
+- a HEAD observation speaks protocol v0 when the operator has not pinned
+  `protocol.version` (`git config --get`, read once per command): the whole
+  ref advertisement in one round trip, bounded by `V0_ADVERTISEMENT_BUDGET`
+  as git's `maxBuffer`, resolved exactly as v2's filtered answer. Over budget,
+  it is observed again under v2 and recorded in the cache repo
+  (`oats-ls-remote.json`); another v0 failure that is not final (timeout,
+  auth, not-found, cache, an abort) is retried once under v2. Either is a
+  session notice. The v2 argv (`lsRemoteArgs`) stays the observation's
+  identity: records and memo keys do not depend on the protocol;
 - a head is observed once per (cache repo, ref), and a commit peeled once; at
   most eight observations run at once (`OBSERVE_LIMIT`), each holding its slot
   for all its git work (the `ls-remote` and the fetch of the commit it names,
