@@ -535,7 +535,11 @@ Feature `workspace-v2`, `workspaceApi: 2`. Model: [workspaces.md](workspaces.md)
   `E_LOCAL_MISSING {dir, searched}`.
 - The workspace is read over Git remotes with the operator's credentials,
   never prompting: `E_REMOTE_UNREADABLE {url, reason: "auth" | "not-found" |
-  "network" | "timeout"}`.
+  "network" | "timeout" | "cache"}`. `cache` (OATS 0.33.0) is local: the
+  remote cache on this machine could not be written (a git lock still held,
+  or another oats process still writing it); `details.cacheDir` and, when
+  known, `details.lock` or `details.holderPid` say which, and the message
+  says what to do.
 - There is no package approval: declaring a package is the trust decision.
   No payload carries `approvalNeeded`, `approval` or `approved`.
 - A **standalone view** is a member repository whose workspace is not read

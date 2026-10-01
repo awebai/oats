@@ -11,6 +11,8 @@ import {
   contentDigest, fetchRemoteTree, listRemoteTree, observeRemote, parseRepoRef, readRemoteFile, runGit, FILE_BUDGET, GIT_FETCH_TIMEOUT_MS, GIT_TIMEOUT_MS, OATS_ALIAS_SYMLINK,
 } from "../lib/remote.mjs";
 
+/** The cache repos under a cache root (its dot-entries are the stores and the write locks: .locks, .parsed, .observed). */
+const cacheRepos = (root) => readdirSync(root).filter((n) => !n.startsWith("."));
 const GIT_ENV = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t",
   GIT_AUTHOR_DATE: "2026-01-01T00:00:00Z", GIT_COMMITTER_DATE: "2026-01-01T00:00:00Z" };
 const git = (cwd, ...args) => execFileSync("git", args, { cwd, env: GIT_ENV, stdio: ["ignore", "pipe", "pipe"] }).toString("utf8").trim();
@@ -171,7 +173,7 @@ test("observeRemote never half-succeeds: the failing observation leaves no pinne
   const f = fixture();
   const cacheDir = f.cacheDir;
   await assert.rejects(observeRemote(f.repo.bare, { cacheDir, at: "0000000000000000000000000000000000000001" }), (e) => e.code === "E_REMOTE_UNREADABLE" && e.details.reason === "not-found");
-  const [hash] = readdirSync(cacheDir);
+  const [hash] = cacheRepos(cacheDir);
   assert.equal(git(join(cacheDir, hash), "for-each-ref", "refs/oats/"), "", "no pin recorded for a failed fetch");
 });
 
@@ -441,7 +443,7 @@ test("HIGH: observeRemote refuses a tag or OID that names a tree/blob, and readR
     assert.ok(["tree", "blob"].includes(e.details.type), `type reported (${e.details.type})`);
   }
   assert.equal((await caughtAsync(readRemoteFile(f.repo.bare, tree, "README.md", opts))).code, "E_REMOTE_UNREADABLE");
-  const [hash] = readdirSync(f.cacheDir);
+  const [hash] = cacheRepos(f.cacheDir);
   assert.equal(git(join(f.cacheDir, hash), "for-each-ref", "refs/oats/"), "", "no pin for a non-commit");
 });
 
@@ -453,7 +455,7 @@ test("MED: concurrent observes of one key never surface raw git errors; a wiped 
   assert.deepEqual(results, [f.c1, f.c2, c3, f.c1, f.c2, c3]);
 
   // pin survives, objects gone → the cache must not claim the remote lacks a.txt / README.md
-  const [hash] = readdirSync(f.cacheDir);
+  const [hash] = cacheRepos(f.cacheDir);
   rmSync(join(f.cacheDir, hash, "objects"), { recursive: true, force: true }); mkdirSync(join(f.cacheDir, hash, "objects"));
   const calls = [];
   const exec = (args, o) => { calls.push(args); return runGit(args, o); };
@@ -541,7 +543,7 @@ test("M2: the fetch url is the form written — an ssh ref is fetched over ssh, 
   assert.deepEqual(urlOf("ls-remote"), ["https://example.invalid/org/repo.git"], "an explicit https form is never rewritten to ssh");
 
   // ONE cache repo for the identity, whatever the transport: the cache is keyed by `key`.
-  assert.equal(readdirSync(cacheDir).length, 1, "ssh/https/git: forms of one repo share one cache dir");
+  assert.equal(cacheRepos(cacheDir).length, 1, "ssh/https/git: forms of one repo share one cache dir");
   assert.equal(caught(() => parseRepoRef("git:example.invalid/org/repo", { transport: "rsync" })).code, "E_REPO_REF");
 });
 
@@ -555,7 +557,7 @@ test("M4: an annotated tag's own OID given as `at` is accepted but the PEELED co
   const obs = await observeRemote(f.repo.bare, { ...opts, at: tagOid });
   assert.equal(obs.commit, f.c1, "observeRemote records the peeled commit, not the tag OID");
   assert.equal(obs.ref, null);
-  const [hash] = readdirSync(f.cacheDir);
+  const [hash] = cacheRepos(f.cacheDir);
   const pins = git(join(f.cacheDir, hash), "for-each-ref", "--format=%(refname) %(objectname)", "refs/oats/").split("\n");
   assert.ok(pins.includes(`refs/oats/commits/${f.c1} ${f.c1}`), `the pin is on the commit: ${pins}`);
   assert.ok(!pins.includes(`refs/oats/commits/${tagOid} ${tagOid}`), "the tag OID is never pinned as a commit");
