@@ -23,6 +23,7 @@ import { iconElement, mountShellIcons } from '../renderer/shell-icons.mjs';
 import { rosterTipFacts } from '../renderer/roster-tip.mjs';
 import { prChip, prText } from '../renderer/roster-pr.mjs';
 import { deploymentUnavailableText } from '../renderer/deployment-header.mjs';
+import { panelErrorCause } from '../renderer/deployment-contract.mjs';
 import { staleWorkspaceSelection } from '../renderer/views/common.mjs';
 import { createWorkspaceTabMemory } from '../renderer/workspace-tab-memory.mjs';
 
@@ -143,7 +144,7 @@ function shell(t) {
     // The controller is built by the shipped initContextRoster; the clock is the test's.
     createRosterLoading: (d, el, options) => tree.createRosterLoading(d, el, { ...options, now: c.now, setTimeout: c.setTimeout, clearTimeout: c.clearTimeout }),
     instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge, instanceActionTarget, instanceSplitPlan, iconElement, prChip, prText,
-    rosterTipFacts, deploymentUnavailableText, staleWorkspaceSelection,
+    rosterTipFacts, deploymentUnavailableText, staleWorkspaceSelection, panelErrorCause,
     rosterTip: { bind() {}, hide() {}, sync() {} }, rosterPrs: { get: () => null, refresh() {} }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} }, ctx: {},
     connectionGeneration: 0, menuState() {}, runAction: assert.fail, getBinding: () => null, formatChord: x => x, isMac: true,
     contextRosterEl: null, contextRosterGen: 0, contextFilter: '', contextWorkspace: 'A', contextInstances: [], tabWorkspace: 'A',
@@ -458,4 +459,69 @@ test('a Herdr-recorded row cannot open or start: the row and its Open in split a
   const item = action => target.querySelector(`[data-action="${action}"]`);
   for (const action of ['open-split', 'start']) { assert.equal(item(action).disabled, true, action); assert.equal(item(action).title, reason, action); }
   assert.equal(item('restart'), null); assert.equal(item('retire').disabled, false);
+});
+
+/* ── Spec D: a remote the kernel could not read, worded by its cause (E_REMOTE_UNREADABLE details.reason) ──
+   Fixture of the kernel's documented shape (#386): details { url, key, reason: "cache", stage, cacheDir, lock? };
+   the server forwards only { reason, host } (deployment-read-cli) and keeps the last observation. */
+const CACHE_MESSAGE = 'cannot read github.com/awebai/oats: the remote cache is locked by /Users/op/.cache/oats/remotes/x/index.lock (no oats process holds it). Remove that file and retry.';
+const cachePanel = (instances, extra = {}) => panelOf('A', instances, { observedAt: '2026-09-29T14:00:00.000Z', error: CACHE_MESSAGE, errorCause: { code: 'E_REMOTE_UNREADABLE', reason: 'cache' }, ...extra });
+
+test('Spec D: a cache problem with data keeps the rows and says so: "Couldn\'t refresh instances · OATS cache problem · observed <age>", the kernel\'s message in full on the line, Retry; Details holds only the code', async t => {
+  const s = shell(t);
+  await s.reply(0, cachePanel(roster));
+  assert.equal(s.rows().length, 3, 'the last observation stays');
+  assert.equal(s.context.rosterState.state, 'stale');
+  const notice = s.status().querySelector('.loading-notice[data-kind="stale"]');
+  assert.equal(notice.dataset.variant, 'cache');
+  assert.match(notice.querySelector('.loading-notice-text').textContent, /^Couldn't refresh instances · OATS cache problem · observed 5 min ago$/);
+  const said = notice.querySelector('.loading-notice-message');
+  assert.equal(said.hidden, false); assert.equal(said.textContent, CACHE_MESSAGE, 'the remedy, as given, not behind Details');
+  assert.equal(notice.querySelector('.loading-notice-cause').textContent, 'E_REMOTE_UNREADABLE');
+  assert.ok(notice.querySelector('.loading-retry'));
+  assert.equal(s.live().textContent, "Couldn't refresh instances.", 'the existing announcement');
+  const retry = notice.querySelector('.loading-retry'); retry.focus();
+  s.refreshContextRoster(); await s.reply(1, cachePanel(roster));
+  assert.equal(s.status().querySelector('.loading-notice'), notice, 'a repeat updates in place'); assert.equal(s.doc.activeElement, retry, 'focus kept');
+  s.refreshContextRoster(); await s.reply(2, panelOf('A', roster));
+  assert.equal(s.status().children.length, 0, 'a good read clears it');
+});
+
+test('Spec D: a cache problem with nothing observed is a failed read showing the kernel\'s message, never "No instances."', async t => {
+  const s = shell(t);
+  await s.reply(0, panelOf('A', [], { deployment: { status: 'unavailable', reason: { code: 'E_REMOTE_UNREADABLE', message: CACHE_MESSAGE, cause: { reason: 'cache' } } } }));
+  assert.equal(s.context.rosterState.state, 'failed');
+  const failed = s.list().querySelector('.loading-failed');
+  assert.equal(failed.querySelector('.loading-failed-message').textContent, CACHE_MESSAGE);
+  assert.equal(failed.querySelector('.loading-failed-code').textContent, 'E_REMOTE_UNREADABLE');
+  assert.ok(failed.querySelector('.loading-retry'));
+  assert.doesNotMatch(s.text(), /No instances/); assert.equal(s.list().querySelector('.ctx-deployment-note'), null, 'not also a note');
+});
+
+test('Spec D: a network failure with data keeps the rows with the calm wording "Couldn\'t reach <host> · showing what was read <age>"; the raw code is behind Details', async t => {
+  const s = shell(t);
+  await s.reply(0, panelOf('A', roster, { observedAt: '2026-09-29T14:00:00.000Z', error: 'cannot read https://github.com/awebai/oats.git (network)', errorCause: { code: 'E_REMOTE_UNREADABLE', reason: 'network', host: 'github.com' } }));
+  assert.equal(s.rows().length, 3);
+  const notice = s.status().querySelector('.loading-notice[data-kind="stale"]');
+  assert.equal(notice.querySelector('.loading-notice-text').textContent, "Couldn't reach github.com · showing what was read 5 min ago");
+  assert.equal(notice.querySelector('.loading-notice-message').hidden, true, 'no message line for the network');
+  assert.match(notice.querySelector('.loading-notice-cause').textContent, /\(E_REMOTE_UNREADABLE\)$/);
+  assert.ok(notice.querySelector('.loading-retry'));
+});
+
+test('Spec D: an unknown reason, a malformed cause or none keeps the generic stale line', async t => {
+  for (const errorCause of [{ code: 'E_REMOTE_UNREADABLE', reason: 'quota' }, { code: 'E_REMOTE_UNREADABLE', reason: 'cache', lock: '/x' }, { code: 'bad', reason: 'cache' }, undefined]) {
+    const s = shell(t);
+    await s.reply(0, panelOf('A', roster, { observedAt: '2026-09-29T14:00:00.000Z', error: 'cannot read it', ...(errorCause ? { errorCause } : {}) }));
+    const notice = s.status().querySelector('.loading-notice[data-kind="stale"]');
+    assert.equal(notice.querySelector('.loading-notice-text').textContent, "Couldn't refresh instances · observed 5 min ago", JSON.stringify(errorCause));
+    assert.equal(notice.dataset.variant, undefined); assert.equal(notice.querySelector('.loading-notice-message').hidden, true);
+  }
+});
+
+test('Spec D: a remote (server) panel without the cause renders exactly as before', async t => {
+  const s = shell(t);
+  await s.reply(0, panelOf('A', roster, { workspace: { id: 'A', name: 'A', remote: true }, error: 'Server is unreachable' }));
+  const notice = s.status().querySelector('.loading-notice[data-kind="stale"]');
+  assert.equal(notice.title, 'Server is unreachable'); assert.match(notice.textContent, /^Couldn't refresh instances/);
 });

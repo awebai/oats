@@ -8,6 +8,8 @@
  *               muted "Refreshing…" appears after REFRESHING_DELAY_MS
  *   stale       data present, last read failed: content kept, an attention line
  *               "Couldn't refresh <noun> · observed <age>" with Retry
+ *               (an unreadable remote, by the kernel's cause: "… · OATS cache problem · observed <age>" with
+ *               its message in full, or "Couldn't reach <host> · showing what was read <age>"; Spec D)
  *   empty       a successful read returned zero items (the surface paints its copy)
  *   failed      no data and the read failed: cause, Details (code), Retry
  *
@@ -32,6 +34,10 @@ export const wording = Object.freeze({
   loading: noun => `Loading ${noun}…`,
   refreshing: 'Refreshing…',
   couldNotRefresh: noun => `Couldn't refresh ${noun}`,
+  // Spec D: a remote the kernel could not read, by its cause (E_REMOTE_UNREADABLE details.reason).
+  cacheProblem: 'OATS cache problem',
+  couldNotReach: host => `Couldn't reach ${host}`,
+  showingRead: age => age ? `showing what was read ${age}` : 'showing what was last read',
   retry: 'Retry',
   updated: noun => `${capitalise(noun)} updated`,
   observed: age => `Observed ${age}`,
@@ -184,17 +190,28 @@ function walk(root, path) {
 }
 
 /* ── the stale / observed notice (shared by the controller and pages that mirror a controller's state) ── */
-function noticeText(kind, noun, observedAt, now) {
+/** The cause variant a stale line words itself by: { reason, host? } from the kernel (Spec D), or null. */
+export function noticeVariant(cause) {
+  if (!cause || typeof cause !== 'object' || typeof cause.reason !== 'string') return null;
+  if (cause.reason === 'cache') return { reason: 'cache' };
+  if (['network', 'timeout'].includes(cause.reason) && typeof cause.host === 'string' && cause.host) return { reason: cause.reason, host: cause.host };
+  return null; // other reasons keep the generic line
+}
+function noticeText(kind, noun, observedAt, now, variant = null) {
   const age = observedText(observedAt, now);
+  if (kind === 'stale' && variant?.reason === 'cache') return [wording.couldNotRefresh(noun), wording.cacheProblem, age].filter(Boolean).join(' · ');
+  if (kind === 'stale' && variant?.host) return `${wording.couldNotReach(variant.host)} · ${wording.showingRead(observedAgeText(observedAt, now))}`;
   if (kind === 'stale') return age ? `${wording.couldNotRefresh(noun)} · ${age}` : wording.couldNotRefresh(noun);
   return wording.observed(observedAgeText(observedAt, now));
 }
 /** Build the notice line: `kind` 'stale' (the read failed: Retry, the cause behind a Details disclosure
  * and in the title) or 'observed' (an old observation, muted, no Retry). `onRetry` runs on an activation
  * while not busy. Update it in place with `updateNotice()` so a focused Retry survives. */
-export function noticeElement(doc, kind, { noun, observedAt = null, cause = null, busy = false, onRetry = null, now = Date.now() } = {}) {
+export function noticeElement(doc, kind, { noun, observedAt = null, cause = null, busy = false, onRetry = null, now = Date.now(), variant = null, message = null } = {}) {
   const el = element(doc, 'div', 'loading-notice'); el.dataset.kind = kind;
   el.append(element(doc, 'span', 'loading-notice-text'));
+  // A cache problem's remedy is the kernel's message: shown in full on the line, never behind Details.
+  if (kind === 'stale') { const said = element(doc, 'p', 'loading-notice-message'); said.hidden = true; el.append(said); }
   if (kind === 'stale') {
     const retry = element(doc, 'button', 'act loading-retry'); retry.type = 'button'; retry.textContent = wording.retry; retry.dataset.focusKey = 'retry';
     retry.addEventListener('click', () => { if (retry.getAttribute('aria-disabled') === 'true') return; onRetry?.(); });
@@ -205,12 +222,15 @@ export function noticeElement(doc, kind, { noun, observedAt = null, cause = null
     more.append(summary, element(doc, 'p', 'loading-notice-cause'));
     el.append(retry, more);
   }
-  updateNotice(el, { noun, observedAt, cause, busy, now });
+  updateNotice(el, { noun, observedAt, cause, busy, now, variant, message });
   return el;
 }
 /** Refresh a notice's text, cause and busy mark in place (its Retry keeps focus). */
-export function updateNotice(el, { noun, observedAt = null, cause = null, busy = false, now = Date.now() } = {}) {
-  el.querySelector('.loading-notice-text').textContent = noticeText(el.dataset.kind, noun, observedAt, now);
+export function updateNotice(el, { noun, observedAt = null, cause = null, busy = false, now = Date.now(), variant = null, message = null } = {}) {
+  el.querySelector('.loading-notice-text').textContent = noticeText(el.dataset.kind, noun, observedAt, now, variant);
+  if (variant) el.dataset.variant = variant.reason; else delete el.dataset.variant;
+  const said = el.querySelector('.loading-notice-message');
+  if (said) { const text = variant?.reason === 'cache' && typeof message === 'string' ? message : ''; if (said.textContent !== text) said.textContent = text; said.hidden = !text; }
   if (cause) el.title = cause; else el.removeAttribute('title');
   const more = el.querySelector('.loading-notice-details');
   if (more) { more.hidden = !cause; more.querySelector('.loading-notice-cause').textContent = cause || ''; }
@@ -266,7 +286,7 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
   let state = 'idle', settled = 'idle', busy = false, hasData = false, user = false, disposed = false;
   let observedAt = null, announced = null, inFlight = null;
   let pendingTimer = null, refreshingTimer = null, ageTimer = null;
-  let skeletonEl = null, failedEl = null, indicatorEl = null, noticeEl = null;
+  let skeletonEl = null, failedEl = null, indicatorEl = null, noticeEl = null, noticeVariantNow = null, noticeMessage = null;
   const refreshControls = new Set();
 
   const clearTimer = id => { if (id !== null) cancel(id); return null; };
@@ -318,15 +338,17 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
     indicatorEl.append(dot, doc.createTextNode(inFlight || wording.refreshing));
     indicatorHost.append(indicatorEl);
   }
-  function showNotice(kind, { cause = null } = {}) {
+  function showNotice(kind, { cause = null, variant = null, message = null } = {}) {
     // `cause`: the read's message; code appended when the error carried one (set by fail()).
+    // `variant` / `message`: the kernel's cause and message for an unreadable remote (Spec D).
     // A notice of the same kind is updated in place: its Retry (which may hold focus) is kept.
     if (!noticeHost) return;
+    noticeVariantNow = variant; noticeMessage = message;
     if (!noticeEl || noticeEl.dataset.kind !== kind) {
       removeNotice();
-      noticeEl = noticeElement(doc, kind, { noun, observedAt, cause, busy, now: now(), onRetry: () => { if (!disposed && !busy) onRetry?.(); } });
+      noticeEl = noticeElement(doc, kind, { noun, observedAt, cause, busy, now: now(), variant, message, onRetry: () => { if (!disposed && !busy) onRetry?.(); } });
       noticeHost.append(noticeEl);
-    } else updateNotice(noticeEl, { noun, observedAt, cause, busy, now: now() });
+    } else updateNotice(noticeEl, { noun, observedAt, cause, busy, now: now(), variant, message });
     ageTimer = clearTimer(ageTimer);
     if (observedText(observedAt, now())) ageTimer = schedule(() => { ageTimer = null; touch(); }, AGE_TICK_MS);
   }
@@ -345,7 +367,7 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
   /** Re-render the age line (called on a timer, and by surfaces on their own polls). */
   function touch() {
     if (disposed || !noticeEl) return;
-    showNotice(noticeEl.dataset.kind, { cause: noticeEl.title || null });
+    showNotice(noticeEl.dataset.kind, { cause: noticeEl.title || null, variant: noticeEl.dataset.kind === 'stale' ? noticeVariantNow : null, message: noticeMessage });
   }
 
   const api = {
@@ -408,10 +430,12 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
       if (typeof at === 'string' && at) observedAt = at;
       const message = typeof error?.message === 'string' && error.message ? error.message : null;
       const code = codeLine(error);
-      const cause = message && code ? `${message} (${code})` : message || code;
+      const variant = noticeVariant(error?.cause);
+      // A cache problem's message is on the line itself; Details keeps only the code.
+      const cause = variant?.reason === 'cache' ? code : message && code ? `${message} (${code})` : message || code;
       if (hasData) {
         state = settled = 'stale'; setRegionBusy(false);
-        showNotice('stale', { cause });
+        showNotice('stale', { cause, variant, message });
         say(`${wording.couldNotRefresh(noun)}.`);
       } else {
         state = settled = 'failed'; setRegionBusy(false); removeNotice();

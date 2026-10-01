@@ -16,6 +16,7 @@ import { instanceSplitPlan, instanceSplitIdentity } from "./instance-split.mjs";
 import { createInstanceStarter } from "./start-instance.mjs";
 import { retirementSummary, runtimeState, unsupportedSession } from "./instance-presentation.mjs";
 import { deploymentUnavailableText } from "./deployment-header.mjs";
+import { panelErrorCause } from "./deployment-contract.mjs";
 import {
   initTheme, toggleTheme, setTheme, THEMES, xtermTheme, onThemeChange,
   terminalTypography, setTerminalFontSize, setTerminalFontFamily, onTerminalTypographyChange,
@@ -165,6 +166,8 @@ const spawnJobs = createSpawnJobs({
   },
   currentWorkspace,
   connection: () => connectionGeneration,
+  // Spec D (#383): submitted jobs whose outcome is unknown survive a window reload (no task text, no key).
+  storage: (() => { try { return window.sessionStorage; } catch { return null; } })(),
   onChange: () => {
     if (spawnRepaint) return;
     spawnRepaint = true;
@@ -180,6 +183,8 @@ function followSpawns() {
   }, 700);
 }
 ctx.spawnJobs = spawnJobs;
+ctx.showPendingSpawn = (id) => showPendingSpawn(id);
+spawnJobs.recover();
 window.addEventListener('pagehide', () => spawnJobs.dispose(), { once: true });
 
 // ── stage: the sidebar-driven main surface ──────────────────────────
@@ -433,15 +438,24 @@ async function refreshContextRoster({ user = false } = {}) {
   // A failed read with no instances keeps the rows already shown for this workspace (stale), so the
   // previous list survives that reply; every other reply replaces it.
   const previousInstances = contextInstances;
-  if (!(panel.error && !(panel.instances || []).length && rosterState?.hasData)) contextInstances = panel.instances || [];
+  // The read's failure, if any: the kernel's message with its bounded cause (Spec D). A remote the kernel
+  // could not read keeps the last observation (panel.error + errorCause); a cache problem with nothing
+  // observed yet is a failed read with that message, never an empty roster.
+  const unreadable = !panel.workspace?.remote && panel.deployment?.status === "unavailable" && panel.deployment.reason?.code === "E_REMOTE_UNREADABLE"
+    ? panelErrorCause({ code: "E_REMOTE_UNREADABLE", ...(panel.deployment.reason.cause || {}) }) : null;
+  const failure = typeof panel.error === "string" && panel.error
+    ? { message: panel.error, ...(panelErrorCause(panel.errorCause) ? { code: panel.errorCause.code, cause: panelErrorCause(panel.errorCause) } : {}) }
+    : unreadable?.reason === "cache" && typeof panel.deployment.reason.message === "string"
+      ? { message: panel.deployment.reason.message, code: unreadable.code, cause: unreadable } : null;
+  if (!(failure && !(panel.instances || []).length && rosterState?.hasData)) contextInstances = panel.instances || [];
   // A deployment the kernel could not observe is not an empty one: name the
   // missing feature or keep the kernel's refusal (never an optimistic read).
   // It is its own truthful state, painted above the rows by renderContextRoster
   // on every path (module state, so a filter edit or a collapse keeps it).
-  contextDeploymentNote = panel.deployment && panel.deployment.status !== "observed" && !panel.workspace?.remote
+  contextDeploymentNote = panel.deployment && panel.deployment.status !== "observed" && !panel.workspace?.remote && !failure
     ? deploymentUnavailableText(panel.deployment) : null;
   const signature = rosterSignature(contextInstances, {
-    workspace: resolvedWs, error: panel.error || null, deploymentNote: contextDeploymentNote,
+    workspace: resolvedWs, error: failure, deploymentNote: contextDeploymentNote,
     activeKey: tabs.get(activeTab)?.key ?? null, connection: connectionGeneration,
   });
   // A panel that reports an error is the kernel's failed read, not an observed
@@ -449,14 +463,14 @@ async function refreshContextRoster({ user = false } = {}) {
   // reach, its last roster) the list is kept and goes stale; with none, it is a
   // failed read — the failed block with Retry where the skeleton stood, or the
   // previous rows of this workspace kept and marked stale. Never "No instances.".
-  if (panel.error && !contextInstances.length) {
+  if (failure && !contextInstances.length) {
     refreshPanelInstance([], resolvedWs);
-    rosterState?.fail({ message: panel.error });
+    rosterState?.fail(failure);
     if (rosterState?.hasData && !rosterStale) { rosterStale = true; renderContextRoster(previousInstances); }
     else if (rosterState && !rosterState.hasData) renderRosterCount(contextRosterEl.querySelector(".ctx-count"), [], { failed: true });
     return;
   }
-  const reportedFailure = !!panel.error;
+  const reportedFailure = !!failure;
   // Before the server's first observation the panel says deployment "pending"
   // with no instances: that is not an observed empty roster. The note is the
   // whole content (its existing copy, no skeleton), the count keeps its pill,
@@ -485,7 +499,7 @@ async function refreshContextRoster({ user = false } = {}) {
     rosterSignaturePainted = signature;
     renderContextRoster(contextInstances);
   }
-  if (reportedFailure) rosterState?.fail({ message: panel.error });
+  if (reportedFailure) rosterState?.fail(failure);
 }
 
 // Only reported context, never inferred team/membership/readiness. A local
@@ -885,6 +899,30 @@ async function showInRoster(instance) {
   renderContextRoster(contextInstances);
   const listEl = contextRosterEl.querySelector(".ctx-list");
   const target = listEl && [...listEl.querySelectorAll(".ctx-inst")].find(r => r.dataset.treeInstance === instanceId(row));
+  if (!target) return false;
+  tabOpenIntents.invalidate(); // an explicit navigation, not a polling restoration
+  setRovingRow(listEl, target);
+  return true;
+}
+
+/* "Show its row" (Spec D): focus a background spawn's pending row, revealing it like showInRoster. */
+function showPendingSpawn(id) {
+  const ws = currentWorkspace();
+  const pending = spawnJobs.rows(ws).find(p => p.id === id);
+  if (!pending || !contextRosterEl) return false;
+  const all = [...contextInstances, { instance: pending.instance, agent: pending.agent, agentsRoot: pending.agentsRoot, home: pending.home,
+    ...(pending.parentInstance ? { parentInstance: pending.parentInstance } : {}), ...(pending.siblingInstance ? { siblingInstance: pending.siblingInstance } : {}) }];
+  const self = all.at(-1);
+  if (contextFilter && !instanceMatchesFilter(self, contextFilter)) {
+    contextFilter = "";
+    const input = contextRosterEl.querySelector(".ctx-filter"); if (input) input.value = "";
+  }
+  for (let pid = rosterParentId(all, instanceId(self)), seen = new Set(); pid && !seen.has(pid); pid = rosterParentId(all, pid)) {
+    seen.add(pid); collapsedInstances.delete(collapseKey(ws, pid));
+  }
+  renderContextRoster(contextInstances);
+  const listEl = contextRosterEl.querySelector(".ctx-list");
+  const target = listEl && [...listEl.querySelectorAll(".ctx-inst")].find(r => r.dataset.treeInstance === instanceId(self));
   if (!target) return false;
   tabOpenIntents.invalidate(); // an explicit navigation, not a polling restoration
   setRovingRow(listEl, target);

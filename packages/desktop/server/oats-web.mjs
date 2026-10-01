@@ -141,6 +141,9 @@ function panelData(wsId) {
     refreshing: !!ws && observing.has(ws.id),
     running: instances.filter((i) => i.running).length,
     instances,
+    // A failed re-read kept the last observation (observeDeployment): the kernel's message and its bounded cause.
+    ...(typeof observed?.error === "string" ? { error: observed.error } : {}),
+    ...(observed?.errorCause ? { errorCause: observed.errorCause } : {}),
   };
 }
 
@@ -616,6 +619,14 @@ async function observeDeployment(id, { live = false } = {}) {
     const result = await deploymentObserver.observe(id, { maxAge });
     if (!result.ok) {
       if (previous && ["E_DEPLOYMENT_BUSY", "E_DEPLOYMENT_STALE"].includes(result.reason?.code)) return previous;
+      // A remote the kernel could not read (a cache problem, the network, a timeout) does not erase what
+      // was observed: the last observation stays, marked with the failure (Spec D). The roster shows it
+      // stale with the kernel's message and its bounded cause; other failures replace it as before.
+      if (previous?.deployment?.status === "observed" && result.reason?.code === "E_REMOTE_UNREADABLE") {
+        const { error: _error, errorCause: _cause, ...kept } = previous;
+        const cause = result.reason.cause;
+        return { ...kept, error: result.reason.message, ...(cause ? { errorCause: { code: result.reason.code, ...cause } } : {}) };
+      }
       return { deployment: { status: "unavailable", reason: result.reason }, instances: [], generatedAt: new Date().toISOString() };
     }
     admitted.add(id);

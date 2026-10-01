@@ -217,6 +217,9 @@ export const spawnDialogCSS = `
 .spawn-footer .fstatus.err { color:var(--danger); }
 /* Board 6: a settled preview says so; the check is decoration (empty alt), the words are the status. */
 .spawn-footer .fstatus.ok::before { content:"\\2713" / ""; margin-right:5px; color:var(--ok); font-weight:700; }
+.spawn-inflight { flex:1 0 100%; margin:0; font-size:12.5px; line-height:1.5; color:var(--fg); }
+.spawn-inflight[hidden] { display:none; }
+.spawn-inflight-show { border:0; background:none; padding:0; font:inherit; color:var(--accent); text-decoration:underline; text-underline-offset:2px; cursor:pointer; }
 .spawn-details-toggle { flex:none; border:0; background:none; padding:0; font:inherit; font-size:12px; color:var(--muted); text-decoration:underline; text-underline-offset:2px; cursor:pointer; }
 .spawn-details-toggle:hover { color:var(--fg); }
 .spawn-details-toggle[hidden], .spawn-problem-detail[hidden] { display:none; }
@@ -500,10 +503,13 @@ function composeChooser(doc, { soul, agents, canChoose, choose, query, note }) {
  *                 store and the host closes the dialog (returns true when taken). Without it the dialog runs
  *                 the transaction itself (the view harness, and tests of that flow).
  *               draft.restore — { choices, wake }: every choice of an earlier press, restored (Reopen spawn).
+ *               spawnInFlight() — Spec D (#383): { instance, show() } while a background spawn of this soul is in
+ *                 flight in this window, else null. The press stays disabled and a polite line says so, with a
+ *                 link to its pending row; the host calls syncInFlight() when the store changes.
  */
 export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, instances, canChoose, choose, close, owns,
   draft = {}, catalogNote = '', onCreated = async () => {}, remoteSpawn = async () => {}, servers = [], serverFacts = () => [], serverRows = async () => [],
-  delay: debounce = PREVIEW_DEBOUNCE_MS, busyDelay = PREVIEW_BUSY_RETRY_MS, layout = 'picker', handoff = null }) {
+  delay: debounce = PREVIEW_DEBOUNCE_MS, busyDelay = PREVIEW_BUSY_RETRY_MS, layout = 'picker', handoff = null, spawnInFlight = null }) {
   const doc = modal.ownerDocument, el = (tag, text, cls) => node(doc, tag, text, cls);
   const titleId = 'spawn-dialog-title';
   const dialog = el('section', undefined, 'spawn-dialog');
@@ -704,7 +710,13 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     details.hidden = !details.hidden; detailsToggle.setAttribute('aria-expanded', String(!details.hidden));
     detailsToggle.textContent = details.hidden ? 'Details' : 'Hide details';
   });
-  statusRow.append(status, detailsToggle);
+  // Spec D: a spawn of this soul still in flight in this window (text, announced politely, with its row).
+  const inflight = el('p', undefined, 'spawn-inflight'); inflight.setAttribute('role', 'status'); inflight.hidden = true;
+  const inflightText = el('span', '', 'spawn-inflight-text');
+  const inflightShow = el('button', 'Show its row', 'spawn-inflight-show'); inflightShow.type = 'button';
+  inflightShow.addEventListener('click', () => { try { inFlightNow()?.show?.(); } catch { /* the row is gone: nothing to show */ } });
+  inflight.append(inflightText, ' ', inflightShow);
+  statusRow.append(inflight, status, detailsToggle);
   const cancel = el('button', 'Cancel', 'act fcancel'); cancel.type = 'button';
   const spawn = el('button', 'Spawn', 'act fspawn primary'); spawn.type = 'button';
   footer.append(statusRow, cancel, spawn, details);
@@ -1022,8 +1034,17 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   }
   /** The default team has no provider id yet: the spawn is refused (team model v2, the lead's ruling). */
   const defaultBlocked = () => (teamsNow || []).some(t => t.default === true && !t.team);
+  const inFlightNow = () => { if (!local() || typeof spawnInFlight !== 'function') return null; try { return spawnInFlight() || null; } catch { return null; } };
+  function syncInFlightLine(job) {
+    const text = job ? `A spawn of ${soul.name} is in progress.` : '';
+    if (inflightText.textContent !== text) inflightText.textContent = text; // an unchanged line is not re-announced
+    inflight.hidden = !job;
+    if (job) inflightShow.setAttribute('aria-label', `Show the pending row of ${job.instance}`);
+  }
   function syncButton() {
     if (!alive) return;
+    const blocking = inFlightNow();
+    syncInFlightLine(blocking);
     // Spawn is pressable whenever the form is valid: a press before the preview for these choices
     // settled is kept as intent (run). Only a settled answer for exactly these choices that cannot be
     // spawned (a refusal, or teams it did not bind) keeps it disabled.
@@ -1033,7 +1054,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       : ['unknown', 'pending'].includes(phase) ? 'Check result' : ['complete', 'partial'].includes(phase) ? 'Created' : phase === 'incomplete' ? 'Spawn incomplete' : 'Spawn';
     spawn.setAttribute('aria-busy', String(!!(flight || pressed)));
     const recovering = ['unknown', 'pending'].includes(phase);
-    spawn.disabled = !current() || busy() || !!pressed || ['complete', 'partial', 'incomplete'].includes(phase)
+    spawn.disabled = !current() || busy() || !!pressed || !!blocking || ['complete', 'partial', 'incomplete'].includes(phase)
       || !recovering && (!!draftChoice.error || defaultBlocked() || (local() ? !applicable() || refused : false));
   }
   /** A problem shows one plain sentence; its code and technical text wait behind Details. */
@@ -1393,6 +1414,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       if (facts === factsSeen && !retry) { syncButton(); return; }
       factsSeen = facts; schedule(0);
     },
+    /** The background spawn store changed: re-read whether a spawn of this soul is in flight. */
+    syncInFlight() { if (alive) syncButton(); },
     closePopups() { models.close(); runtimePicker.close(); },
     dispose() { alive = false; clearTimeout(timer); serial++; pressed = null; modelsReq++; configsReq++; models.dispose(); runtimePicker.dispose(); form.removeEventListener('input', onEdit); form.removeEventListener('change', onEdit); },
   };

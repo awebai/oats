@@ -1121,6 +1121,12 @@ function openSpawnModal(s, a, draft = {}) {
       if (!id) return false;
       closeSpawnModal(s, { restoreFocus: true });
       return true;
+    },
+    // Spec D (#383): while a spawn of this soul is in flight here, the press stays disabled and says so;
+    // "Show its row" closes the dialog and takes focus to the pending row.
+    spawnInFlight: () => {
+      const job = s.ctx.spawnJobs.inFlight(s.workspace?.id, { name: a.name, agentsRoot: a.agentsRoot });
+      return job ? { instance: job.instance, show: () => { if (!ownsModal()) return; closeSpawnModal(s); s.ctx.showPendingSpawn?.(job.id); } } : null;
     } } : {}),
     onCreated: async (view, isCurrent) => {
       if (!isCurrent()) return;
@@ -1182,7 +1188,8 @@ function openSpawnModal(s, a, draft = {}) {
     ui.spawn.dataset.chord = mac ? label.replace(/Enter$/, "↵") : label;
   };
   const releaseHint = onKeymapChange(updateHint); updateHint();
-  s.modalCleanup = () => { ui.dispose(); releaseHint(); releaseSubmit(); };
+  const releaseJobs = s.ctx.spawnJobs && !a.server ? s.ctx.spawnJobs.subscribe(() => { if (ownsModal()) ui.syncInFlight(); }) : () => {};
+  s.modalCleanup = () => { ui.dispose(); releaseHint(); releaseSubmit(); releaseJobs(); };
   s.syncModalFacts = () => { if (ownsModal()) ui.sync(); };
   s.syncModalRelations = s.syncModalFacts;
   ui.start();
