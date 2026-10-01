@@ -36,7 +36,8 @@ test("codex argv: the update prompt is always off; the home is trusted only unde
 });
 
 test("spawn: codex trusts the new home only under a trusted root; claude and codex warn when the home is not covered; the operator's config is never written", async (t) => {
-  const fx = v2Deployment(); t.after(fx.cleanup);
+  // This machine prefers codex for dev: a readiness read of the soul reports codex's trust.
+  const fx = v2Deployment({ local: { souls: { launch: { dev: { harness: "codex" } } } } }); t.after(fx.cleanup);
   const userHome = fx.env.HOME, dep = realpathSync(fx.dep);
   const codexConfig = join(userHome, ".codex", "config.toml"), claudeConfig = join(userHome, ".claude.json");
   const spawn = async (purpose, harness) => { const r = await fx.spawn("dev", { purpose, harness }); return { r, meta: JSON.parse(readFileSync(join(r.home, "instance.json"), "utf8")) }; };
@@ -51,6 +52,15 @@ test("spawn: codex trusts the new home only under a trusted root; claude and cod
   ({ r } = await spawn("k1", "claude"));
   assert.ok(r.warnings?.includes(claudeWarning), JSON.stringify(r.warnings));
 
+  // readiness says the same, as a configured item that does not block ready.
+  const trustItems = (args) => { const r = fx.cli(["readiness", ...args, "--json"]); assert.equal(r.status, 0, r.stdout + r.stderr); return r.json().result.checks.configured.items.filter((i) => i.code === "harness-trust"); };
+  const h1 = join(fx.root, "dev", "instances", "dev-c1"), k1 = join(fx.root, "dev", "instances", "dev-k1");
+  for (const [args, warning, harness] of [[["--home", h1], codexWarning, "codex"], [["--home", k1], claudeWarning, "claude"], [["--soul", "dev"], codexWarning, "codex"]]) {
+    const [i, ...rest] = trustItems(args);
+    assert.deepEqual(rest, [], JSON.stringify(args));
+    assert.deepEqual([i.subject, i.status, i.required, i.producer, i.reason, i.harness, i.deployment], ["launch", "fail", false, "harness folder trust", warning, harness, dep], JSON.stringify(args));
+  }
+
   // The operator trusts the deployment root once.
   mkdirSync(join(userHome, ".codex"));
   writeFileSync(codexConfig, `[projects."${dep}"]\ntrust_level = "trusted"\n`);
@@ -63,8 +73,9 @@ test("spawn: codex trusts the new home only under a trusted root; claude and cod
   assert.equal((r.warnings || []).filter((w) => /folder-trust/.test(w)).length, 0, JSON.stringify(r.warnings));
   assert.deepEqual([readFileSync(codexConfig, "utf8"), statSync(codexConfig).mtimeMs, readFileSync(claudeConfig, "utf8"), statSync(claudeConfig).mtimeMs], before, "read, never written");
 
+  for (const args of [["--home", h1], ["--home", k1], ["--soul", "dev"]]) assert.deepEqual(trustItems(args), [], JSON.stringify(args));
+
   // A start re-plans from the home: the override follows the root's trust now.
-  const h1 = join(fx.root, "dev", "instances", "dev-c1");
   let p = fx.cli(["launch-config", "preview", "--home", h1, "--json"]);
   assert.equal(p.status, 0, p.stdout + p.stderr);
   assert.ok(p.json().result.argv.includes(trustArg(realpathSync(h1))), JSON.stringify(p.json().result.argv));
