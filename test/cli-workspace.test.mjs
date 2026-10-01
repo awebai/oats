@@ -310,6 +310,7 @@ test("oats version --json advertises workspaceApi 2 and only the wired v2 featur
     assert.ok(doc.features.includes("workspace-v2"));
     // Phase C: spawn runs on resolve/materialize, so both features are now advertised (a feature is listed only once wired).
     for (const f of ["instance-modules", "spawn-provider-payload"]) assert.ok(doc.features.includes(f), `${f} is wired in Phase C`);
+    assert.ok(doc.features.includes("capability-show") && doc.capabilityShowApi === 1, "oats capabilities show (0.34.0)");
     assert.ok(!doc.features.includes("catalog"), "the `catalog` verb is removed, so the feature is no longer advertised");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
