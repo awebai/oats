@@ -177,10 +177,13 @@ never a prompt). A half that cannot be read makes the member *unconfirmed*,
 never a half-success. A remote's current head is read with Git's protocol v0
 (one round trip) unless your Git configuration sets `protocol.version`, which
 is then used as set; a tag or branch is read as before. A remote whose v0 ref
-advertisement is over 4 MiB, or that fails under v0 for a reason other than a
-timeout, an authentication refusal, a missing repository or the local cache,
-is read with protocol v2 instead, with one `oats: warning` saying so (the
-first case is remembered in the remote cache, so it is said once). `oats workspace status` and `oats sync` show each member
+advertisement is over 4 MiB is read with protocol v2 from then on: the 4 MiB
+bounds what OATS keeps, not the download, so the first read transfers that
+advertisement once before falling back. A remote that times out under v0
+fails as before and is read with protocol v2 for the next 7 days. One that
+fails under v0 for another reason than an authentication refusal, a missing
+repository or the local cache is read again with v2. Each case prints one
+`oats: warning`; the first two are remembered in the remote cache. `oats workspace status` and `oats sync` show each member
 as `confirmed` or the reason it is not:
 
 | status | meaning |
