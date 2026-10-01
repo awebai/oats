@@ -666,6 +666,8 @@ test("terminateGroup kills a descendant that survives SIGTERM after its leader e
       assert.equal(leader.signalCode, "SIGTERM", "the leader ended on SIGTERM");
       await closed;
       assert.deepEqual(kills, [[leader.pid, "SIGTERM"], [leader.pid, "SIGKILL"]], "the group SIGKILL came while the descendant held the pipes");
+      // Killed, it may linger briefly as a zombie until its new parent reaps it (Linux: kill(pid, 0) still succeeds).
+      for (let i = 0; i < 100 && alive(descendant); i++) await new Promise((r) => setTimeout(r, 50));
       assert.equal(alive(descendant), false, "the TERM-resistant descendant was killed after the grace");
     });
   } finally { try { process.kill(descendant, "SIGKILL"); } catch { /* gone */ } }
